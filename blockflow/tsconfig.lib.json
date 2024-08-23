@@ -1,0 +1,23 @@
+/* To learn more about this file see: https://angular.io/config/tsconfig. */
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../out-tsc/lib",
+    "baseUrl": ".",
+    "declaration": true,
+    "declarationMap": true,
+    "inlineSources": true,
+    "types": [],
+    "paths": {
+      "@blocks": ["src/blocks"],
+      "@blocks/*": ["src/blocks/*"],
+      "@core": ["src/core"],
+      "@core/*": ["src/core/*"],
+      "@editor": ["src/editor"],
+      "@editor/*": ["src/editor/*"]
+    }
+  },
+  "exclude": [
+    "**/*.spec.ts"
+  ]
+}
