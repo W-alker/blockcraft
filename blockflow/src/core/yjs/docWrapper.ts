@@ -1,4 +1,4 @@
-import Y, {ModelSyncer} from "@core/yjs";
+import Y, {ModelSyncer, syncChangeArray} from "@core/yjs";
 import {DeltaOperation, IBlockModel} from "@core/types";
 import {BehaviorSubject} from "rxjs";
 
@@ -25,9 +25,9 @@ export class BlockFlowDoc {
 
   public readonly doc: Y.Doc = new Y.Doc({guid: this.config.rootId})
   public readonly rootYModel: Y.Array<Y.Map<any>> = this.doc.getArray(this.config.rootId)
-  private readonly flatMapStore: Map<string, { m: IBlockModel, y: Y.Map<any> }> = new Map()
+  public readonly flatMapStore: Map<string, { m: IBlockModel, y: Y.Map<any> }> = new Map()
 
-  private readonly modelSyncer = new ModelSyncer(this.config.stopSyncSign)
+  public readonly modelSyncer = new ModelSyncer(this.config.stopSyncSign)
 
   constructor(private config: InitConfig) {
   }
@@ -58,7 +58,7 @@ export class BlockFlowDoc {
 
   queryBlockIndexAndParentId(id: string): { index: number, parentId: string } {
     const yMap = this.queryYBlockModel(id)
-    if (!yMap)  throw new Error(`Can not find block ${id}`)
+    if (!yMap) throw new Error(`Can not find block ${id}`)
     const parent = yMap.parent
     if (!parent) throw new Error(`Can not find parent of block ${id}`)
     // root
@@ -86,6 +86,7 @@ export class BlockFlowDoc {
    * @param blocks block model array
    */
   blocks2Y(blocks: IBlockModel[]) {
+    return blocks
     return blocks.map(block => this.modelSyncer.blockModel2Y(block,
       (block, yMap) => {
         this.flatMapStore.set(block.id, {
@@ -97,11 +98,10 @@ export class BlockFlowDoc {
   }
 
   insertBlocks(insertIndex: number, blocks: IBlockModel[], parentId: string) {
-    // console.log('%cinsertBlocks ++++++++++++++', 'background: blue; padding: 6px; color: white', blocks)
-    const yBlocks = this.blocks2Y(blocks)
+    // const yBlocks = this.blocks2Y(blocks)
 
     if (parentId === this.rootId) {
-      this.rootYModel.insert(insertIndex, yBlocks)
+      // this.rootYModel.insert(insertIndex, yBlocks)
       this.rootModel.splice(insertIndex, 0, ...blocks)
       return
     }
@@ -109,7 +109,7 @@ export class BlockFlowDoc {
     const yb = this.queryYBlockModel(parentId)
     if (!yb) throw new Error(`Can not find block ${parentId}`)
     const bm = this.queryBlockModel(parentId)!
-    yb.get('children').insert(insertIndex, yBlocks)
+    // yb.get('children').insert(insertIndex, yBlocks)
     bm.children?.splice(insertIndex, 0, ...blocks)
     return
   }
@@ -135,7 +135,7 @@ export class BlockFlowDoc {
       _t.children = target.toDelta()
     } else if (target instanceof Y.Array) {
       const _t = findByPath(path, this.rootModel)
-      this.applyYChangeDeltaToArray(changes.delta as DeltaOperation[], _t)
+      this.applyYChangeToArray(changes.delta as DeltaOperation[], _t)
     } else {
       const _t = findByPath(path, this.rootModel)
       event.changes.keys.forEach((change, key) => {
@@ -151,28 +151,25 @@ export class BlockFlowDoc {
     }
   }
 
-  private applyYChangeDeltaToArray(deltas: Array<{
-    insert?: Array<any> | string;
-    delete?: number;
-    retain?: number;
-  }>, array: Array<any>) {
+  applyYChangeToArray(deltas: Y.YEvent<any>['changes']['delta'], array: Array<any>) {
     let retain = 0
     deltas.forEach((d) => {
       const {retain: r, insert, delete: del} = d
       if (r) {
         retain += r
       } else if (insert) {
+        // is a block
         if (insert instanceof Array && insert[0] instanceof Y.Map && insert[0].get('flavour')) {
           const bms = insert.map((v: Y.Map<any>) => v.toJSON()) as IBlockModel[]
-          // restore to flatMapStore
+          // restore to flatMapStore and sync model change with yjs
           bms.forEach((bm, idx) => {
             this.flatMapStore.set(bm.id, {m: bm, y: insert[idx]})
           })
           array.splice(retain, 0, ...bms)
-          // markCheck()
         } else {
           array.splice(retain, 0, insert)
         }
+
       } else {
         array.splice(retain, del)
       }

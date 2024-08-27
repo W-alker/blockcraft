@@ -4,4 +4,6 @@ export type SimpleValue = SimpleBasicType | Record<string, SimpleBasicType> | Ar
 
 export type SimpleRecord = Record<string, SimpleValue>
 
+export type SimpleArray = Array<SimpleValue>
+
 export type UnknownRecord = Record<string, unknown>

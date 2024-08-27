@@ -2,7 +2,6 @@ import {Component, Input, ViewChild} from "@angular/core";
 import {Controller, EditorRoot, IBlockModelMap, LazyEditorRoot} from "@core";
 import {GlobalConfig} from "@editor/types";
 import {NgForOf, NgIf, NgSwitch} from "@angular/common";
-import {YController} from "../../y-blockflow/y-controller";
 
 @Component({
   selector: 'bf-editor',
@@ -53,7 +52,7 @@ export class BlockFlowEditor<BMap extends IBlockModelMap = IBlockModelMap> {
   private createController(config: GlobalConfig) {
     if (!config || !this.root) return
     this._globalConfig = config
-    this._controller = new YController(config)
+    this._controller = new Controller(config)
     this._controller.attach(this.root)
   }
 

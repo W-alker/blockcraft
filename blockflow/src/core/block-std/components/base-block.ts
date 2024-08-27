@@ -46,12 +46,6 @@ export class BaseBlock<Model extends IBlockModel = IBlockModel> {
   public hostEl = inject(ElementRef)
   protected DOCUMENT = inject(DOCUMENT)
 
-  yModel!: Y.Map<any>
-
-  ngOnInit() {
-    this.yModel = this.controller.docManager.queryYBlockModel(this.model.id)!
-  }
-
   ngAfterViewInit() {
     this.controller.storeBlockRef(this)
   }
