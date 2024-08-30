@@ -8,7 +8,6 @@ import {
 import {DOCUMENT} from "@angular/common";
 import {IBlockModel} from "../../types";
 import {Controller} from "@core/controller";
-import Y from "@core/yjs";
 
 @Component({
   selector: '[bf-base-block]',
@@ -17,9 +16,7 @@ import Y from "@core/yjs";
 })
 export class BaseBlock<Model extends IBlockModel = IBlockModel> {
   @Input({required: true}) readonly controller!: Controller
-
   @Input({required: true}) model!: Model
-
 
   @HostBinding('id')
   get id() {
@@ -39,17 +36,10 @@ export class BaseBlock<Model extends IBlockModel = IBlockModel> {
     return this.model!.props as Model['props']
   }
 
-  get children() {
-    return this.model!.children as Model['children']
-  }
-
   public hostEl = inject(ElementRef)
   protected DOCUMENT = inject(DOCUMENT)
 
-  yModel!: Y.Map<any>
-
   ngOnInit() {
-    this.yModel = this.controller.docManager.queryYBlockModel(this.model.id)!
   }
 
   ngAfterViewInit() {

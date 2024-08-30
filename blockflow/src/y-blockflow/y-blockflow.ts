@@ -1,33 +1,81 @@
-import {Controller, DeltaOperation, EditableBlock} from "@core";
+import {Controller, DeltaOperation, ICharacterRange} from "@core";
 import {WebsocketProvider} from "y-websocket";
-import Y from '@core/yjs'
+import Y from "@core/yjs";
 
 export class BlockflowBinding {
 
-    provider =  new WebsocketProvider('ws://localhost:1234', 'root-demo', this.controller.docManager.doc);
+  provider = new WebsocketProvider('ws://196.168.1.52:1234', this.controller.rootId, this.controller.docManager.doc, {
+    connect: false,
+  });
 
-    constructor(
-        public controller: Controller<any>
-    ) {
-        console.log('BlockflowBinding', this.provider);
+  get doc() {
+    return this.controller.docManager.doc
+  }
 
-        const doc = this.controller.docManager.doc
+  _awareness = this.provider.awareness
+  _userName = 'user' + Date.now()
 
-        this.provider.on('status', (e: any) => {
-            console.log(e.status); // logs "connected" or "disconnected"
-        });
+  constructor(
+    public controller: Controller
+  ) {
+    // fromEvent(controller.rootElement)
 
-        doc.on('update', (update, origin, doc, tr) => {
-            console.log('%cupdate', 'font-size:large;color: green', update, origin, doc, tr);
-            if(!tr.local) return
-        })
+    // doc.on('update', (update, origin, doc, tr) => {
+    //   console.log('%cupdate', 'font-size:large;color: green', update, origin, doc, tr);
+    //   if (!tr.local) return
+    // })
 
-        this.controller.docManager.rootYModel.observeDeep((e) => {
-            console.log('%cupdate', 'font-size:large;color: yellow',e, e[0].changes);
+    this._awareness.setLocalStateField('user', {
+      name: this._userName,
+    })
 
-        })
+    this.controller.docManager.rootYModel.observeDeep((e, tr) => {
+      if (!tr.local) {
+        this.controller.syncYEventUpdate(e)
+      } else {
+        for (const event of e) {
+          if (!(event.target instanceof Y.Text)) continue
+          // this.updateCursor(event.target, pos)
+        }
+      }
+    })
+  }
 
-    }
+  updateCursor(ytext: Y.Text, pos: ICharacterRange) {
+    const relPos = Y.createRelativePositionFromTypeIndex(ytext, pos.start, pos.end - pos.start)
+    const parsedRelPos = JSON.parse(JSON.stringify(relPos))
+    const absPos = Y.createAbsolutePositionFromRelativePosition(relPos, this.doc)
+    console.log('updateCursor', parsedRelPos, absPos)
+    this._awareness.setLocalStateField('cursor', {
+      anchor: {
+        id: (ytext.parent as Y.Map<any>).get('id'),
+        ...pos
+      },
+    })
+  }
+
+  connect() {
+    this.provider.connect()
+    this.provider.on('sync', (isSynced: boolean) => {
+      if (!isSynced) return
+      console.log('synced')
+    })
+    this._awareness.on('change', (t: any) => {
+      console.log('awareness-----change', t, this._awareness.getStates())
+      const {added, updated, removed} = t
+      const states = this._awareness.getStates()
+      if (added.length) {
+        for (const id of added) {
+          const state = states.get(id)
+          alert(state?.['user'].name + ' 进入房间')
+        }
+      }
+
+    })
+  }
+
+  destroy() {
+  }
 
 
 }

@@ -10,7 +10,7 @@ export interface IPlugin {
   constructor(schemaStore: SchemaStore): void;
 
   // 插件初始化
-  init(controller: Controller<any>): void;
+  init(controller: Controller): void;
 
   // 插件销毁
   destroy(): void;

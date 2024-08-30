@@ -1,18 +1,17 @@
 import Y, {ModelSyncer} from "@core/yjs";
 import {DeltaOperation, IBlockModel} from "@core/types";
-import {BehaviorSubject} from "rxjs";
 
 export interface InitConfig {
-  rootId: string
-  stopSyncSign: BehaviorSubject<boolean>
-  initModel?: IBlockModel[]
+    rootId: string
 }
 
 const findByPath = (path: Array<string | number> | null, obj: any): any => {
-  let res = obj
-  if (!path?.length) return res
-  res = res[path[0]]
-  return findByPath(path.slice(1), res)
+    let res = obj
+    if (!path?.length) return res
+    for(let i = 0; i < path.length; i++) {
+        res = res[path[i]]
+    }
+    return res
 }
 
 /**
@@ -20,164 +19,166 @@ const findByPath = (path: Array<string | number> | null, obj: any): any => {
  *  Doc -> Root(Y.Array) -> Block(Y.Map) -> Block.Children(Y.Array) -> Block.Children.Block(Y.Map) -> ...
  */
 export class BlockFlowDoc {
+    public readonly rootModel: Array<IBlockModel> = []
 
-  public readonly rootModel: Array<IBlockModel> = []
+    public readonly doc: Y.Doc = new Y.Doc({guid: this.config.rootId})
+    public readonly rootYModel: Y.Array<Y.Map<any>> = this.doc.getArray(this.config.rootId)
+    private readonly flatMapStore: Map<string, { m: IBlockModel, y: Y.Map<any> }> = new Map()
 
-  public readonly doc: Y.Doc = new Y.Doc({guid: this.config.rootId})
-  public readonly rootYModel: Y.Array<Y.Map<any>> = this.doc.getArray(this.config.rootId)
-  private readonly flatMapStore: Map<string, { m: IBlockModel, y: Y.Map<any> }> = new Map()
+    private readonly modelSyncer = new ModelSyncer()
 
-  private readonly modelSyncer = new ModelSyncer(this.config.stopSyncSign)
-
-  constructor(private config: InitConfig) {
-  }
-
-  get rootId() {
-    return this.config.rootId
-  }
-
-  toJSON() {
-    return this.rootYModel.toJSON()
-  }
-
-  applyUpdate(update: Uint8Array) {
-    Y.applyUpdate(this.doc, update)
-  }
-
-  transact(fn: () => void, origin: any = null) {
-    this.doc.transact(fn, origin)
-  }
-
-  queryBlockModel(id: string) {
-    return this.flatMapStore.get(id)?.m
-  }
-
-  queryYBlockModel(id: string) {
-    return this.flatMapStore.get(id)?.y
-  }
-
-  queryBlockIndexAndParentId(id: string): { index: number, parentId: string } {
-    const yMap = this.queryYBlockModel(id)
-    if (!yMap)  throw new Error(`Can not find block ${id}`)
-    const parent = yMap.parent
-    if (!parent) throw new Error(`Can not find parent of block ${id}`)
-    // root
-    if (!parent.parent) {
-      return {index: this.rootModel.findIndex(b => b.id === id), parentId: this.rootId}
+    constructor(private config: InitConfig) {
     }
 
-    const parentId = (parent as Y.Map<any>).get('id')
-    const m = this.flatMapStore.get(parentId)!.m
-    return {
-      index: m.children!.findIndex(b => (b as IBlockModel).id === id),
-      parentId
-    }
-  }
-
-  queryParentId(id: string) {
-    const ym = this.queryYBlockModel(id)
-    if (!ym) return null
-    const parent = ym.parent as Y.Map<any>
-    return parent ? parent.get('id') : null
-  }
-
-  /**
-   * @desc Convert block model to Yjs model and store them
-   * @param blocks block model array
-   */
-  blocks2Y(blocks: IBlockModel[]) {
-    return blocks.map(block => this.modelSyncer.blockModel2Y(block,
-      (block, yMap) => {
-        this.flatMapStore.set(block.id, {
-          m: block,
-          y: yMap
-        })
-      }
-    ))
-  }
-
-  insertBlocks(insertIndex: number, blocks: IBlockModel[], parentId: string) {
-    // console.log('%cinsertBlocks ++++++++++++++', 'background: blue; padding: 6px; color: white', blocks)
-    const yBlocks = this.blocks2Y(blocks)
-
-    if (parentId === this.rootId) {
-      this.rootYModel.insert(insertIndex, yBlocks)
-      this.rootModel.splice(insertIndex, 0, ...blocks)
-      return
+    get rootId() {
+        return this.config.rootId
     }
 
-    const yb = this.queryYBlockModel(parentId)
-    if (!yb) throw new Error(`Can not find block ${parentId}`)
-    const bm = this.queryBlockModel(parentId)!
-    yb.get('children').insert(insertIndex, yBlocks)
-    bm.children?.splice(insertIndex, 0, ...blocks)
-    return
-  }
-
-  deleteBlocks(deleteIndex: number, numBlocks: number, parentId: string) {
-    const bm = this.queryBlockModel(parentId)!
-    this.flatMapStore.delete(this.rootModel[deleteIndex].id)
-    if (parentId === this.rootId) {
-      this.rootModel.splice(deleteIndex, numBlocks)
-      this.rootYModel.delete(deleteIndex, numBlocks)
-    } else {
-      const yb = this.queryYBlockModel(parentId)
-      if (!yb) throw new Error(`Can not find block ${parentId}`)
-      bm.children?.splice(deleteIndex, numBlocks)
-      yb.get('children').delete(deleteIndex, numBlocks)
+    toJSON() {
+        return this.rootYModel.toJSON()
     }
-  }
 
-  applyYChangeToModel(event: Y.YEvent<any>) {
-    const {path, target, changes} = event
-    if (target instanceof Y.Text) {
-      const _t = findByPath(path, this.rootModel)
-      _t.children = target.toDelta()
-    } else if (target instanceof Y.Array) {
-      const _t = findByPath(path, this.rootModel)
-      this.applyYChangeDeltaToArray(changes.delta as DeltaOperation[], _t)
-    } else {
-      const _t = findByPath(path, this.rootModel)
-      event.changes.keys.forEach((change, key) => {
-        switch (change.action) {
-          case 'add':
-          case 'update':
-            _t[key] = target.get(key)
-            break
-          case 'delete':
-            delete _t[key]
+    applyUpdate(update: Uint8Array) {
+        Y.applyUpdate(this.doc, update)
+    }
+
+    transact(fn: () => void, origin: any = null) {
+        this.doc.transact(fn, origin)
+    }
+
+    queryBlockModel(id: string) {
+        return this.flatMapStore.get(id)?.m
+    }
+
+    queryYBlockModel(id: string) {
+        return this.flatMapStore.get(id)?.y
+    }
+
+    queryBlockIndexAndParentId(id: string): { index: number, parentId: string } {
+        const yMap = this.queryYBlockModel(id)
+        if (!yMap) throw new Error(`Can not find block ${id}`)
+        const parent = yMap.parent
+        if (!parent) throw new Error(`Can not find parent of block ${id}`)
+        // root
+        if (!parent.parent) {
+            return {index: this.rootModel.findIndex(b => b.id === id), parentId: this.rootId}
         }
-      })
-    }
-  }
 
-  private applyYChangeDeltaToArray(deltas: Array<{
-    insert?: Array<any> | string;
-    delete?: number;
-    retain?: number;
-  }>, array: Array<any>) {
-    let retain = 0
-    deltas.forEach((d) => {
-      const {retain: r, insert, delete: del} = d
-      if (r) {
-        retain += r
-      } else if (insert) {
-        if (insert instanceof Array && insert[0] instanceof Y.Map && insert[0].get('flavour')) {
-          const bms = insert.map((v: Y.Map<any>) => v.toJSON()) as IBlockModel[]
-          // restore to flatMapStore
-          bms.forEach((bm, idx) => {
-            this.flatMapStore.set(bm.id, {m: bm, y: insert[idx]})
-          })
-          array.splice(retain, 0, ...bms)
-          // markCheck()
+        const parentId = (parent as Y.Map<any>).get('id')
+        const m = this.flatMapStore.get(parentId)!.m
+        return {
+            index: m.children!.findIndex(b => (b as IBlockModel).id === id),
+            parentId
+        }
+    }
+
+    queryParentId(id: string) {
+        const ym = this.queryYBlockModel(id)
+        if (!ym) return null
+        const parent = ym.parent as Y.Map<any>
+        return parent ? parent.get('id') : null
+    }
+
+    /**
+     * @desc Convert block model to Yjs model and store them
+     * @param blocks block model array
+     */
+    blocks2Y(blocks: IBlockModel[]) {
+        return blocks.map(block => this.modelSyncer.blockModel2Y(block,
+            (block, yMap) => {
+                this.flatMapStore.set(block.id, {
+                    m: block,
+                    y: yMap
+                })
+            }
+        ))
+    }
+
+    insertBlocks(insertIndex: number, blocks: IBlockModel[], parentId: string) {
+        const yBlocks = this.blocks2Y(blocks)
+
+        if (parentId === this.rootId) {
+            this.rootYModel.insert(insertIndex, yBlocks)
+            this.rootModel.splice(insertIndex, 0, ...blocks)
+            return
+        }
+
+        const yb = this.queryYBlockModel(parentId)
+        if (!yb) throw new Error(`Can not find block ${parentId}`)
+        const bm = this.queryBlockModel(parentId)!
+        yb.get('children').insert(insertIndex, yBlocks)
+        bm.children?.splice(insertIndex, 0, ...blocks)
+        return
+    }
+
+    deleteBlocks(deleteIndex: number, numBlocks: number, parentId: string) {
+        const bm = this.queryBlockModel(parentId)!
+        this.flatMapStore.delete(this.rootModel[deleteIndex].id)
+        if (parentId === this.rootId) {
+            this.rootModel.splice(deleteIndex, numBlocks)
+            this.rootYModel.delete(deleteIndex, numBlocks)
         } else {
-          array.splice(retain, 0, insert)
+            const yb = this.queryYBlockModel(parentId)
+            if (!yb) throw new Error(`Can not find block ${parentId}`)
+            bm.children?.splice(deleteIndex, numBlocks)
+            yb.get('children').delete(deleteIndex, numBlocks)
         }
-      } else {
-        array.splice(retain, del)
-      }
-    })
-  }
+    }
+
+    applyYChangeToModel(event: Y.YEvent<any>) {
+        const {path, target, changes} = event
+        if (target instanceof Y.Text) {
+            const _t = findByPath(path, this.rootModel)
+            _t.children = target.toDelta()
+        } else if (target instanceof Y.Array) {
+            const _t = findByPath(path, this.rootModel)
+            this.applyYChangeDeltaToArray(changes.delta as DeltaOperation[], _t)
+        } else {
+            const _t = findByPath(path, this.rootModel)
+            event.changes.keys.forEach((change, key) => {
+                switch (change.action) {
+                    case 'add':
+                    case 'update':
+                        Reflect.set(_t, key, target.get(key))
+                        break
+                    case 'delete':
+                        Reflect.deleteProperty(_t, key)
+                }
+            })
+        }
+    }
+
+    private applyYChangeDeltaToArray(deltas: Array<{
+        insert?: Array<any> | string;
+        delete?: number;
+        retain?: number;
+    }>, array: Array<any>) {
+        let retain = 0
+        deltas.forEach((d) => {
+            const {retain: r, insert, delete: del} = d
+            if (r) {
+                retain += r
+            } else if (insert) {
+                if (insert instanceof Array) {
+                    if (insert[0] instanceof Y.Map && insert[0].get('flavour')) {
+                        const bms = insert.map((v: Y.Map<any>) => v.toJSON()) as IBlockModel[]
+                        console.log('restore  block model', insert)
+                        // restore to flatMapStore
+                        bms.forEach((bm, idx) => {
+                            this.flatMapStore.set(bm.id, {m: bm, y: insert[idx]})
+                            // re-proxy block model
+                            bms[idx] = this.modelSyncer.proxy(bm, insert[idx]) as IBlockModel
+                        })
+                        Array.prototype.splice.call(array, retain, 0, ...bms)
+                    } else {
+                        Array.prototype.splice.call(array, retain, 0, ...insert)
+                    }
+                }
+            } else {
+                Array.prototype.splice.call(array, retain, del!)
+            }
+        })
+    }
 
 }
 

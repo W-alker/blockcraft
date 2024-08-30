@@ -21,7 +21,7 @@ export interface LazyLoadConfig {
     selector: 'div[bf-node-type="root"][lazy-load="true"]',
     template: `
         <ng-container *ngIf="controller">
-            <ng-container *ngFor="let block of controller.rootModel;trackBy:trackBy">
+            <ng-container *ngFor="let block of controller.rootModel; trackBy:trackBy">
                 <div bf-block-wrap [controller]="controller" [model]="block"></div>
             </ng-container>
         </ng-container>
@@ -33,7 +33,7 @@ export interface LazyLoadConfig {
         BlockWrap,
     ]
 })
-export class LazyEditorRoot<BMap extends IBlockModelMap = IBlockModelMap> extends EditorRoot<BMap> {
+export class LazyEditorRoot extends EditorRoot {
     @Input({required: true}) config!: LazyLoadConfig
 
     get model() {
@@ -75,7 +75,7 @@ export class LazyEditorRoot<BMap extends IBlockModelMap = IBlockModelMap> extend
             this.pagination.totalCount = totalCount
             this.pagination.pageNum++
             this.controller.transact(()=>{
-                this.controller.insertBlocks(this.model.length, data as BMap[keyof BMap][])
+                this.controller.insertBlocks(this.model.length, data)
             }, Symbol('lazy-load'))
             this.cdr.detectChanges()
             console.log('res', res, this.pagination, this.model)
@@ -83,7 +83,7 @@ export class LazyEditorRoot<BMap extends IBlockModelMap = IBlockModelMap> extend
         })
     }
 
-    override setController(controller: Controller<BMap>) {
+    override setController(controller: Controller) {
         super.setController(controller)
         this.observe()
     }

@@ -9,7 +9,7 @@ import {Controller, IBlockModel} from "@core";
     standalone: true,
 })
 export class BlockWrap {
-    @Input({required: true}) controller!: Controller<any>
+    @Input({required: true}) controller!: Controller
     @Input({required: true}) model!: IBlockModel
 
     @ViewChild('container', {read: ViewContainerRef, static: true}) container!: ViewContainerRef

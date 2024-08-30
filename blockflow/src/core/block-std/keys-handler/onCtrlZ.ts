@@ -1,6 +1,6 @@
-import {Controller} from "@core";
+import {Controller, IKeyEventHandler} from "@core";
 
-export const onCtrlZ = (e: KeyboardEvent, controller: Controller) => {
+export const onCtrlZ: IKeyEventHandler = (e: KeyboardEvent, controller: Controller) => {
   e.preventDefault()
   if(e.shiftKey) controller.redo()
   else controller.undo()

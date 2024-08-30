@@ -1,4 +1,4 @@
-import {BlockNodeType, DeltaInsert, IBlockFlavour, IBlockProps, IMetadata} from "../types";
+import {BlockNodeType, DeltaInsert, IBlockFlavour, IBlockModel, IBlockProps, IMetadata} from "../types";
 import {Type} from "@angular/core";
 import {BaseBlock} from "@core/block-std";
 
@@ -16,5 +16,6 @@ export interface BlockSchema<T extends IBlockProps = IBlockProps> {
   }
 }
 
+export type IBlockModelMap = Record<IBlockFlavour, IBlockModel>
 
 

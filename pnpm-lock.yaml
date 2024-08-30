@@ -38,9 +38,15 @@ importers:
       '@angular/router':
         specifier: ^16.0.0
         version: 16.2.12(@angular/common@16.2.12(@angular/core@16.2.12(rxjs@7.8.1)(zone.js@0.13.3))(rxjs@7.8.1))(@angular/core@16.2.12(rxjs@7.8.1)(zone.js@0.13.3))(@angular/platform-browser@16.2.12(@angular/animations@16.2.12(@angular/core@16.2.12(rxjs@7.8.1)(zone.js@0.13.3)))(@angular/common@16.2.12(@angular/core@16.2.12(rxjs@7.8.1)(zone.js@0.13.3))(rxjs@7.8.1))(@angular/core@16.2.12(rxjs@7.8.1)(zone.js@0.13.3)))(rxjs@7.8.1)
+      '@types/rangy':
+        specifier: ^0.0.38
+        version: 0.0.38
       ngx-virtual-scroller:
         specifier: ^4.0.3
         version: 4.0.3(@angular/core@16.2.12(rxjs@7.8.1)(zone.js@0.13.3))(tslib@2.6.3)
+      rangy:
+        specifier: ^1.3.1
+        version: 1.3.1
       rxjs:
         specifier: ~7.8.0
         version: 7.8.1
@@ -1541,6 +1547,9 @@ packages:
 
   '@types/range-parser@1.2.7':
     resolution: {integrity: sha512-hKormJbkJqzQGhziax5PItDUTMAM9uE2XXQmM37dyd4hVM+5aVl7oVxMVUiVQn2oCQFN/LKCZdvSM0pFRqbSmQ==}
+
+  '@types/rangy@0.0.38':
+    resolution: {integrity: sha512-KMybA3NQLSc5Fl5VOyLVSZ10AMSY6anQqLxP8dxgNsui3dScPIB7smywq69gwJkud2ODVTIImMNN3RtHcFKYgA==}
 
   '@types/resolve@1.20.2':
     resolution: {integrity: sha512-60BCwRFOZCQhDncwQdxxeOEEkbc5dIMccYLwbxsS4TUNeVECQ/pBJ0j09mrHOl/JJvpRPGwO9SvE4nR2Nb/a4Q==}
@@ -3710,6 +3719,9 @@ packages:
   range-parser@1.2.1:
     resolution: {integrity: sha512-Hrgsx+orqoygnmhFbKaHE6c296J+HTAQXoxEF6gNupROmmGJRoyzfG3ccAveqCBrwr/2yxQ5BVd/GTl5agOwSg==}
     engines: {node: '>= 0.6'}
+
+  rangy@1.3.1:
+    resolution: {integrity: sha512-gfo1FOzdvcrcCR+wf0XMKPJBD3p2nHUw2wvNtuKsaHoI2dXQ9vH2QIpSQMV+mWLvKSqPfDNThhlyK8UN1hJijw==}
 
   raw-body@2.5.2:
     resolution: {integrity: sha512-8zGqypfENjCIqGhgXToC8aB2r7YrBX+AQAfIPs/Mlk+BtPTztOvTS01NRW/3Eh60J+a48lt8qsCzirQ6loCVfA==}
@@ -6720,6 +6732,8 @@ snapshots:
 
   '@types/range-parser@1.2.7': {}
 
+  '@types/rangy@0.0.38': {}
+
   '@types/resolve@1.20.2': {}
 
   '@types/retry@0.12.0': {}
@@ -9221,6 +9235,8 @@ snapshots:
       safe-buffer: 5.2.1
 
   range-parser@1.2.1: {}
+
+  rangy@1.3.1: {}
 
   raw-body@2.5.2:
     dependencies:

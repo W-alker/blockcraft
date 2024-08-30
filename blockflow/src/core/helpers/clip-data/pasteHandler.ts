@@ -1,6 +1,6 @@
 import {ClipDataParser, Controller, DeltaOperation, genUniqueID} from "@core";
 
-export const pasteHandler = (event: ClipboardEvent, controller: Controller<any>) => {
+export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
   event.preventDefault()
   const clipboardData = event.clipboardData!
   const types = clipboardData.types!
@@ -24,33 +24,33 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller<any>)
         })
         controller.transact(() => {
           controller.insertBlocks(curIndex + 1, data.data)
-          //   .then(() => {
-          //   controller.clearSelectedBlocks()
-          //   controller.selectBlocks(curIndex + 1, curIndex + data.data.length)
-          // })
+            .then(() => {
+              controller.selectBlocks(curIndex + 1, curIndex + data.data.length)
+            })
         })
-
+        return;
       } else if (data.type === 'delta') {
-
         const deltas: DeltaOperation[] = [
           {retain: range.blockRange.start},
           ...data.data,
         ]
-        if (range.blockRange.start !== range.blockRange.end)
+        if (range.blockRange.start !== range.blockRange.end) {
           deltas.splice(1, 0, {delete: range.blockRange.end - range.blockRange.start})
+        }
         controller.transact(() => {
           controller.applyDeltaToEditableBlock(range.blockId, deltas)
         })
-
       }
+      return;
     } catch (e) {
       // data is plain text
       const deltas: DeltaOperation[] = [
         {retain: range.blockRange.start},
         {insert: text},
       ]
-      if (range.blockRange.start !== range.blockRange.end)
+      if (range.blockRange.start !== range.blockRange.end) {
         deltas.splice(1, 0, {delete: range.blockRange.end - range.blockRange.start})
+      }
       controller.transact(() => {
         controller.applyDeltaToEditableBlock(range.blockId, deltas)
       })

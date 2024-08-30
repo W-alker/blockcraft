@@ -7,11 +7,8 @@ import {
   IEditableBlockModel,
   ParagraphSchema,
   SchemaStore
-} from "../../../blockflow/src";
+} from "@blockflow";
 import {genUniqueID} from "@core/utils";
-import Y from '@core/yjs'
-import {WebrtcProvider} from 'y-webrtc'
-import {WebsocketProvider} from "y-websocket";
 
 const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema])
 
@@ -29,7 +26,41 @@ export class AppComponent {
   // @ts-ignore
   @ViewChild('editor') editor!: BlockFlowEditor<BlockSchemaMap>
 
-  model: IBlockModel[] = []
+  model: IBlockModel[] = [
+    {
+      flavour: 'paragraph',
+      nodeType: 'editable',
+      id: genUniqueID(),
+      children: [
+        {
+          insert: 'Hello, World!\n'
+        },
+        {
+          insert: 'This is a paragraph.',
+          attributes: {
+            'a:bold': true,
+          }
+        }
+      ],
+      meta: {},
+      props: {}
+    },
+    {
+      flavour: 'heading-one',
+      nodeType: 'editable',
+      id: genUniqueID(),
+      children: [
+        {
+          insert: 'Hello Again!'
+        }
+      ],
+      meta: {},
+      props: {
+        id: '0001',
+        hs: [1, 2, 3]
+      }
+    }
+  ]
 
   modelLength = 101
 
@@ -56,7 +87,6 @@ export class AppComponent {
   config: GlobalConfig = {
     rootId: 'root-demo',
     schemas: schemaStore,
-    initModel: this.model,
     // lazyload: {
     //   pageSize: 10,
     //   requester: async (page) => {
@@ -67,46 +97,21 @@ export class AppComponent {
     //         }
     //   }
     // }
-
-    //   [
-    //     {
-    //       flavour: 'paragraph',
-    //       nodeType: 'editable',
-    //       id: genUniqueID(),
-    //       children: [
-    //         {
-    //           insert: 'Hello, World!\n'
-    //         },
-    //         {
-    //           insert: 'This is a paragraph.',
-    //           attributes: {
-    //             'a:bold': true,
-    //           }
-    //         }
-    //       ],
-    //       meta: {},
-    //       props: {}
-    //     },
-    //     {
-    //       flavour: 'heading-one',
-    //       nodeType: 'editable',
-    //       id: genUniqueID(),
-    //       children: [
-    //         {
-    //           insert: 'Hello Again!'
-    //         }
-    //       ],
-    //       meta: {},
-    //       props: {
-    //         id: '0001',
-    //         hs: [1, 2, 3]
-    //       }
-    //     }
-    //   ]
   }
+
+  yBinding?: BlockflowBinding
 
   get controller() {
     return this.editor.controller
+  }
+
+  ngAfterViewInit() {
+    // this.editor.controller.transact(()=>{
+    // }, {name: 'init'})
+  }
+
+  onClickReadonly() {
+    this.editor.controller.toggleReadonly(!this.editor.controller.readonly$.value)
   }
 
   onClick1() {
@@ -124,6 +129,33 @@ export class AppComponent {
   }
 
   onClick4() {
+    this.yBinding =  new BlockflowBinding(this.controller)
+    this.yBinding.connect()
+  }
+
+  onClick5() {
+    const block = {
+      flavour: 'paragraph',
+      nodeType: 'editable',
+      id: genUniqueID(),
+      children: [
+        {
+          insert: 'This is a paragraph.',
+          attributes: {
+            'a:bold': true,
+          }
+        },
+        {
+          insert: 'Hello, World!\n'
+        },
+      ],
+      meta: {},
+      props: {}
+    } as IBlockModel
+    this.editor.controller.insertBlocks(0, [block], this.controller.rootId)
+  }
+
+  ngOnDestroy() {
   }
 
 }

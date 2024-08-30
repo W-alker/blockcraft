@@ -1,6 +1,6 @@
-import {Controller} from "@core";
+import {Controller, IKeyEventHandler} from "@core";
 
-export const onTab = (e: KeyboardEvent, controller: Controller) => {
+export const onTab: IKeyEventHandler = (e: KeyboardEvent, controller: Controller) => {
   e.preventDefault()
   const curRange = controller.getCurrentRange()!
   let from = 0, to = 0

@@ -1,2 +1,2 @@
 export * from './idCreator'
-export * from './selection'
+export * from './selection-range'
