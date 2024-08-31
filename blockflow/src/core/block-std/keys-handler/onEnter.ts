@@ -3,7 +3,7 @@ import {Controller, EditableBlock, IKeyEventHandler, sliceDelta} from "@core";
 export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Controller) => {
   event.preventDefault()
   event.stopImmediatePropagation()
-  const curRange = controller.getCurrentRange()!
+  const curRange = controller.getSelection()!
   if (curRange.isAtRoot) return
 
   const {blockRange: range} = curRange
@@ -20,7 +20,7 @@ export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Cont
 
     controller.insertBlocks(range.start === 0 ? index : index + 1, [newBlock], parentId).then(() => {
       if (range.start > 0)
-        controller.focusTo(controller.getBlockRef(newBlock.id) as EditableBlock, 'start')
+        controller.setSelection(newBlock.id as EditableBlock, 'start')
     })
   })
 }

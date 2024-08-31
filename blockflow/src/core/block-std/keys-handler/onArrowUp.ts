@@ -2,7 +2,7 @@ import {Controller, EditableBlock, IKeyEventHandler} from "@core";
 import {isCursorAtElStart} from "@core/utils";
 
 export const onArrowUp: IKeyEventHandler = (e: KeyboardEvent, controller: Controller) => {
-    const curRange = controller.getCurrentRange()!
+    const curRange = controller.getSelection()!
     if (curRange.isAtRoot) {
         e.preventDefault()
         const {rootRange} = curRange
@@ -11,9 +11,9 @@ export const onArrowUp: IKeyEventHandler = (e: KeyboardEvent, controller: Contro
         if (!controller.isEditableBlock(firstBlock)) {
             const prevEditableBlock = controller.findPrevEditableBlock(firstBlock.id)
             if (!prevEditableBlock) return
-            controller.focusTo(prevEditableBlock, 'start')
+            controller.setSelection(prevEditableBlock, 'start')
         } else {
-            controller.focusTo(firstBlock as EditableBlock, 'start')
+            controller.setSelection(firstBlock as EditableBlock, 'start')
         }
         return
     }
@@ -23,6 +23,6 @@ export const onArrowUp: IKeyEventHandler = (e: KeyboardEvent, controller: Contro
         const prevEditableBlock = controller.findPrevEditableBlock(curRange.blockId)
         if (!prevEditableBlock) return
         e.preventDefault()
-        controller.focusTo(prevEditableBlock, 'end')
+        controller.setSelection(prevEditableBlock, 'end')
     }
 }

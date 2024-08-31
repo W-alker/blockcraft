@@ -13,7 +13,7 @@ export interface ICharacterPosition {
 
 export type CharacterIndex = number | 'start' | 'end'
 
-const characterIndex2Number = (index: CharacterIndex, length: number) => {
+export const characterIndex2Number = (index: CharacterIndex, length: number) => {
   return typeof index === 'number' ? index : index === 'start' ? 0 : length
 }
 

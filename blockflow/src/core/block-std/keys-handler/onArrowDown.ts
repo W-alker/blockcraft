@@ -2,7 +2,7 @@ import {Controller, EditableBlock, IKeyEventHandler} from "@core";
 import {isCursorAtElEnd} from "@core/utils";
 
 export const onArrowDown: IKeyEventHandler = (e: KeyboardEvent, controller: Controller) => {
-  const curRange = controller.getCurrentRange()!
+  const curRange = controller.getSelection()!
   if (curRange.isAtRoot) {
     e.preventDefault()
     const {rootRange} = curRange
@@ -11,9 +11,9 @@ export const onArrowDown: IKeyEventHandler = (e: KeyboardEvent, controller: Cont
     if (!controller.isEditableBlock(lastBlock)) {
       const nextEditableBlock = controller.findNextEditableBlock(lastBlock.id)
       if (!nextEditableBlock) return
-      controller.focusTo(nextEditableBlock, 'end')
+      controller.setSelection(nextEditableBlock, 'end')
     } else {
-      controller.focusTo(lastBlock as EditableBlock, 'end')
+      controller.setSelection(lastBlock as EditableBlock, 'end')
     }
     return
   }
@@ -22,6 +22,6 @@ export const onArrowDown: IKeyEventHandler = (e: KeyboardEvent, controller: Cont
     const nextEditableBlock = controller.findNextEditableBlock(curRange.blockId)
     if (!nextEditableBlock) return
     e.preventDefault()
-    controller.focusTo(nextEditableBlock, 'start')
+    controller.setSelection(nextEditableBlock, 'start')
   }
 }

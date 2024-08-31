@@ -1,4 +1,4 @@
-import {ChangeDetectionStrategy, Component, HostBinding} from "@angular/core";
+import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {EditableBlock} from "@core";
 
 @Component({

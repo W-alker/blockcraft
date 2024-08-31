@@ -3,7 +3,7 @@ import {EditableBlock, IKeyEventHandler} from "@core";
 export const onBackspace: IKeyEventHandler = (e, controller) => {
   e.preventDefault()
 
-  const curRange = controller.getCurrentRange()!
+  const curRange = controller.getSelection()!
   if (curRange.isAtRoot) {
     controller.deleteSelectedBlocks()
     return
@@ -17,7 +17,7 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
     if (!bRef.textLength) {
       if (!prevBlock) return
       controller.deleteBlockById(bRef.id)
-      controller.focusTo(prevBlock, 'end')
+      controller.setSelection(prevBlock, 'end')
     } else if (prevBlock) {
       // concat with prev block at the end
       const deltas = [
@@ -25,7 +25,7 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
         ...bRef.getTextDelta(),
       ]
       controller.transact(() => {
-        controller.focusTo(prevBlock, 'end')
+        controller.setSelection(prevBlock, 'end')
         controller.applyDeltaToEditableBlock(prevBlock, deltas)
         controller.deleteBlockById(bRef.id)
       })

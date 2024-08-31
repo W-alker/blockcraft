@@ -5,7 +5,7 @@ import {Controller, EditableBlock, sliceDelta, writeDeltaToClipboard, writeModel
  * @param cut need to delete the selected content after copy
  */
 export const copyHandler = async (controller: Controller, cut = false) => {
-  const curRange = controller.getCurrentRange()
+  const curRange = controller.getSelection()
   if (!curRange) return Promise.reject()
   if (!curRange.isAtRoot) {
 

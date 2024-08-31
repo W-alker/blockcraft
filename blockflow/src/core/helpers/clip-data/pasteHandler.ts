@@ -6,7 +6,7 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
   const types = clipboardData.types!
   console.log('%cpaste========', 'background: yellow', event, types)
 
-  const range = controller.getCurrentRange()!
+  const range = controller.getSelection()!
   if (range.isAtRoot) return
 
   // only text/plain
@@ -25,7 +25,7 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
         controller.transact(() => {
           controller.insertBlocks(curIndex + 1, data.data)
             .then(() => {
-              controller.selectBlocks(curIndex + 1, curIndex + data.data.length)
+              controller.setSelection(controller.rootId, curIndex + 1, curIndex + data.data.length)
             })
         })
         return;

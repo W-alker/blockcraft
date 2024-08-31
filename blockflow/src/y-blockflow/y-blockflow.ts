@@ -1,5 +1,6 @@
-import {Controller, DeltaOperation, ICharacterRange} from "@core";
+import {Controller, ICharacterRange} from "@core";
 import {WebsocketProvider} from "y-websocket";
+import {Awareness} from "y-protocols/awareness";
 import Y from "@core/yjs";
 
 export class BlockflowBinding {
@@ -12,7 +13,7 @@ export class BlockflowBinding {
     return this.controller.docManager.doc
   }
 
-  _awareness = this.provider.awareness
+  _awareness: Awareness = this.provider.awareness
   _userName = 'user' + Date.now()
 
   constructor(
@@ -70,12 +71,10 @@ export class BlockflowBinding {
           alert(state?.['user'].name + ' 进入房间')
         }
       }
-
     })
   }
 
   destroy() {
   }
-
 
 }

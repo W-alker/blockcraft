@@ -7,6 +7,7 @@ import {
 } from "@angular/core";
 import {NgForOf, NgIf} from "@angular/common";
 import {
+  BlockSelection, CharacterIndex, characterIndex2Number,
   Controller, deleteContent,
   getCurrentCharacterRange,
   IBlockModel,
@@ -35,19 +36,6 @@ import {BehaviorSubject} from "rxjs";
 export class EditorRoot {
   @HostBinding('attr.tabindex') private readonly tabindex = '0'
 
-  @HostBinding('class.readonly')
-  get readonly() {
-    return this.controller?.readonly$.value
-  }
-
-  protected controller!: Controller
-
-  ready$ = new BehaviorSubject(false)
-
-  protected trackBy = (index: number, item: IBlockModel) => {
-    return `${item.flavour}-${item.id}`
-  }
-
   constructor(
     public readonly elementRef: ElementRef,
     protected cdr: ChangeDetectorRef,
@@ -56,82 +44,100 @@ export class EditorRoot {
   }
 
   ngAfterViewInit() {
+    this.initBlockSelection()
     this.ready$.next(true)
+  }
+
+  public readonly ready$ = new BehaviorSubject(false)
+
+  protected controller!: Controller
+
+  get rootElement() {
+    return this.elementRef.nativeElement as HTMLElement
+  }
+
+  private _activeElement: HTMLElement | null = null
+
+  get activeElement() {
+    return this._activeElement
+  }
+
+  protected trackBy = (index: number, item: IBlockModel) => {
+    return `${item.flavour}-${item.id}`
+  }
+
+  private blockSelection!: BlockSelection
+  private _selectedBlockRange: ICharacterRange | undefined = undefined
+  get selectedBlockRange() {
+    return this._selectedBlockRange
   }
 
   setController(controller: Controller) {
     this.controller = controller
-    this.elementRef.nativeElement.id = controller.rootId
+    this.rootElement.id = controller.rootId
   }
 
-  // insertBlocks(index: number, model: IBlockModel[]) {
-  //     const cprStore: ComponentRef<BaseBlock>[] = []
-  //     model.forEach(block => {
-  //         const cpr = this.createBlockView(block)
-  //         this.container.insert(cpr.hostView, index)
-  //         cprStore.push(cpr)
-  //     })
-  //     return cprStore
-  // }
-  //
-  // createBlockView(block: IBlockModel) {
-  //     const schema = this.schemaStore.get(block.flavour)
-  //     if (!schema) throw new Error(`Schema not found for flavour ${block.flavour}`)
-  //     const cpr = this.vcr.createComponent(schema.render)
-  //     cpr.setInput('model', block)
-  //     cpr.setInput('controller', this.controller)
-  //     return cpr
-  // }
-  //
-  // removeBlocks(index: number, count: number) {
-  //     for (let i = 0; i < count; i++) {
-  //         this.container.remove(index)
-  //     }
-  // }
-  //
-  // detachBlocksView(index: number, count: number) {
-  //     if (count <= 0) return []
-  //     const views: ViewRef[] = []
-  //     if (index < 0 && count > this.container.length) throw new Error('detachBlocksView error: index out of range')
-  //     if (count <= 0) return views
-  //     for (let i = 0; i < count; i++) {
-  //         views.push(this.container.detach(index)!)
-  //     }
-  //     return views
-  // }
-  //
-  // insertBlocksView(index: number, views: ViewRef[]) {
-  //     if (index < 0 || index > this.container.length) throw new Error('insertBlocksView error: index out of range')
-  //     views.forEach((view, i) => {
-  //         this.container.insert(view, index + i)
-  //     })
-  // }
+  private initBlockSelection() {
+    this.blockSelection = new BlockSelection({
+      host: this.rootElement,
+      document: document,
+      enable: false,
+      onlyLeftButton: true,
+      // selectable: "[bf-block-wrap]",
+      selectionAreaClass: "selection-area",
+      sensitivity: 40,
+      onItemSelect: (element) => {
+        element.classList.add('bf-block-selected')
+      },
+      onItemUnselect: (element) => {
+        element.classList.remove('bf-block-selected')
+      }
+    })
 
-  // @HostListener('focusin', ['$event'])
-  // private onFocus(event: FocusEvent) {
-  //     console.log('focus', event.target)
-  // }
-  //
-  // @HostListener('focusout', ['$event'])
-  // private onBlur(event: FocusEvent) {
-  //     console.log('blur', event.target)
-  // }
+    this.blockSelection.on('end', (blocks) => {
+      if (!blocks?.size) return
+      const blockIdxList = [...blocks].map(block => this.controller.rootModel.findIndex(b => b.id === block.getAttribute('data-block-id')!))
+      this._selectedBlockRange = {start: Math.min(...blockIdxList), end: Math.max(...blockIdxList)}
+      console.log('selectedBlockRange', this.selectedBlockRange, this.blockSelection.selectedElements)
+    })
+  }
 
-  @HostListener('document:selectionchange', ['$event'])
-  private onSelectionChange(event: Event) {
-    // console.log('selectionchange', event)
-    if (this.controller.selectedBlocksRange && document.activeElement !== this.elementRef.nativeElement) {
-      this.controller.clearSelectedBlocks()
+  selectBlocks(from: CharacterIndex, to: CharacterIndex) {
+    document.getSelection()!.removeAllRanges()
+    this.rootElement.focus()
+    this.clearSelectedBlocks()
+    const start = characterIndex2Number(from, this.controller.rootModel.length)
+    const end = characterIndex2Number(to, this.controller.rootModel.length)
+    this._selectedBlockRange = {start, end}
+    for (let i = start; i <= end; i++) {
+      const ele = this.rootElement.children[i] as HTMLElement
+      this.blockSelection.selectElement(ele)
     }
   }
 
-  // @HostListener('mousedown', ['$event'])
-  // private onMouseDown(event: MouseEvent) {
-  // }
-  //
-  // @HostListener('mouseup', ['$event'])
-  // private onMouseUp(event: MouseEvent) {
-  // }
+  clearSelectedBlocks() {
+    this.blockSelection.storeSize && this.blockSelection.selectedElements.forEach(ele => ele.classList.remove('bf-block-selected'))
+    this._selectedBlockRange = undefined
+  }
+
+  getActiveBlockId() {
+    if(!this.activeElement || this.activeElement === this.rootElement) return null
+    return this.activeElement.closest('[bf-node-type="editable"]')?.id
+  }
+
+  @HostListener('focusin', ['$event'])
+  private onFocusIn(event: FocusEvent) {
+    this._activeElement = event.target as HTMLElement
+  }
+
+  @HostListener('focusout', ['$event'])
+  private onFocusOut(event: FocusEvent) {
+    this._activeElement = null
+    const target = event.target as HTMLElement
+    if (target === this.rootElement) {
+      this.selectedBlockRange && this.clearSelectedBlocks()
+    }
+  }
 
   @HostListener('click', ['$event'])
   private onClick(event: MouseEvent) {

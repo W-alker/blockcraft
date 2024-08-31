@@ -125,7 +125,7 @@ export class AppComponent {
 
   onClick3(e: Event) {
     e.preventDefault()
-    console.log(this.controller.getCurrentRange())
+    console.log(this.controller.getSelection())
   }
 
   onClick4() {

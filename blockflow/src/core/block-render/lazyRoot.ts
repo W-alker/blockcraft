@@ -1,6 +1,6 @@
 import {Component, Input,} from "@angular/core";
 import {NgForOf, NgIf} from "@angular/common";
-import {Controller, EditorRoot, IBlockModel, IBlockModelMap} from "@core";
+import {Controller, EditorRoot, IBlockModel} from "@core";
 import {BlockWrap} from "@core/block-render/block-wrap";
 
 interface IRequester {
