@@ -1,12 +1,12 @@
 import {Component, ViewChild} from '@angular/core';
 import {
   BlockflowBinding,
-  BlockFlowEditor,
+  BlockFlowEditor, FloatTextToolbarPlugin,
   GlobalConfig,
   HeadingOneSchema, IBlockModel,
   IEditableBlockModel,
   ParagraphSchema,
-  SchemaStore
+  SchemaStore,
 } from "@blockflow";
 import {genUniqueID} from "@core/utils";
 
@@ -97,6 +97,7 @@ export class AppComponent {
     //         }
     //   }
     // }
+    plugins: [new FloatTextToolbarPlugin()]
   }
 
   yBinding?: BlockflowBinding

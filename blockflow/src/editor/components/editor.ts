@@ -1,4 +1,4 @@
-import {Component, Input, ViewChild} from "@angular/core";
+import {Component, inject, Injector, Input, ViewChild} from "@angular/core";
 import {Controller, EditorRoot, IBlockModelMap, LazyEditorRoot} from "@core";
 import {GlobalConfig} from "@editor/types";
 import {NgForOf, NgIf, NgSwitch} from "@angular/common";
@@ -22,7 +22,7 @@ import {NgForOf, NgIf, NgSwitch} from "@angular/common";
     NgSwitch
   ]
 })
-export class BlockFlowEditor<BMap extends IBlockModelMap = IBlockModelMap> {
+export class BlockFlowEditor {
 
   _globalConfig!: GlobalConfig
   @Input({required: true, alias: 'config'})
@@ -42,7 +42,9 @@ export class BlockFlowEditor<BMap extends IBlockModelMap = IBlockModelMap> {
     return this._controller
   }
 
-  constructor() {
+  constructor(
+    private injector: Injector
+  ) {
   }
 
   ngAfterViewInit() {
@@ -52,7 +54,7 @@ export class BlockFlowEditor<BMap extends IBlockModelMap = IBlockModelMap> {
   private createController(config: GlobalConfig) {
     if (!config || !this.root) return
     this._globalConfig = config
-    this._controller = new Controller(config)
+    this._controller = new Controller(config, this.injector)
     this._controller.attach(this.root)
   }
 

@@ -1,21 +1,21 @@
-import {compareAttributesWithEle, createInlineView, DeltaInsert, findTextNodeByIndex} from "@core";
+import {BlockflowInline, DeltaInsert, findTextNodeByIndex} from "@core";
 
 export const insertContent = (ele: HTMLElement, from: number, delta: DeltaInsert) => {
   // console.time('insertContent')
   if (!ele.textContent?.length) {
-    const span = createInlineView(delta as DeltaInsert)
+    const span = BlockflowInline.createView(delta as DeltaInsert)
     ele.innerHTML = span.outerHTML
     return
   }
 
   const {textNode, offset} = findTextNodeByIndex(ele, from)
   const parent = textNode.parentElement!
-  const isSame = compareAttributesWithEle(parent, delta.attributes)
+  const isSame = BlockflowInline.compareAttributesWithEle(parent, delta.attributes)
 
   if (isSame) {
     textNode.insertData(offset, delta.insert)
   } else {
-    const span = createInlineView(delta as DeltaInsert)
+    const span = BlockflowInline.createView(delta as DeltaInsert)
     if (offset === textNode.length) {
       if (!delta.attributes || !isSame) parent.after(span)
       else textNode.insertData(offset, delta.insert)

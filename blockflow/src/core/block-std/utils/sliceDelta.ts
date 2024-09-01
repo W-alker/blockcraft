@@ -35,7 +35,6 @@ export function sliceDelta(delta: DeltaInsert[], start = 0, end = Infinity) {
   return slicedOps;
 }
 
-
 export default sliceDelta
 
 

@@ -2,11 +2,7 @@ import {Component, HostBinding} from "@angular/core";
 import {BaseBlock} from "@core/block-std/components/base-block";
 import {DeltaInsert, DeltaOperation, IEditableBlockModel, IInlineAttrs} from "@core/types";
 import {NgForOf, NgTemplateOutlet} from "@angular/common";
-import {
-  createInlineView,
-  deleteContent,
-  insertContent
-} from "@core/block-std";
+import {BlockflowInline, deleteContent, insertContent} from "@core/block-std";
 import {ICharacterRange, setSelection} from "@core/utils";
 import Y from "@core/yjs";
 
@@ -63,7 +59,7 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
     if (delta.length) {
       for (const insert of delta) {
         if (!insert.insert) continue
-        this.containerEle.appendChild(createInlineView(insert))
+        this.containerEle.appendChild(BlockflowInline.createView(insert))
       }
       return
     }

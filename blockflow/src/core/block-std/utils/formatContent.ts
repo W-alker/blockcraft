@@ -1,5 +1,5 @@
 import {IInlineAttrs} from "@core/types";
-import {findTextNodeByIndex, ICharacterRange, setAttributes} from "@core";
+import {BlockflowInline, findTextNodeByIndex, ICharacterRange} from "@core";
 
 export const formatContent = (node: HTMLElement, range: ICharacterRange, attrs: IInlineAttrs) => {
   // console.time('formatContent')
@@ -12,7 +12,7 @@ export const formatContent = (node: HTMLElement, range: ICharacterRange, attrs: 
 
   if (first.eleOffset === last.eleOffset) {
     if (first.offset === 0 && last.offset === last.textNode.length) {
-      setAttributes(first.textNode.parentElement!, attrs)
+      BlockflowInline.setAttributes(first.textNode.parentElement!, attrs)
       return
     }
   } else {
@@ -35,38 +35,6 @@ export const formatContent = (node: HTMLElement, range: ICharacterRange, attrs: 
       } else if (ele instanceof HTMLElement) setAttributes(ele, attrs)
     }
     _range.insertNode(fragment)
-  }
-
-  const formatElement = (ele: HTMLElement, from: number, to: number, attrs: IInlineAttrs) => {
-    const text = ele.textContent!
-    const textLen = text.length
-    if (from === 0 && to === textLen) {
-      setAttributes(ele, attrs)
-      return;
-    }
-    const firstPart = text.slice(0, from)
-    const middle = text.slice(from, to)
-    const lastPart = text.slice(to, textLen)
-
-    const fragment = document.createDocumentFragment()
-
-    if (middle) {
-      const span = ele.cloneNode() as HTMLElement
-      span.textContent = middle
-      setAttributes(span, attrs)
-      fragment.appendChild(span)
-    }
-    if (lastPart) {
-      const span = ele.cloneNode() as HTMLElement
-      span.textContent = lastPart
-      fragment.appendChild(span)
-    }
-    if (firstPart) {
-      ele.textContent = firstPart
-      ele.after(fragment)
-    } else {
-      ele.replaceWith(fragment)
-    }
   }
 
   // console.timeEnd('formatContent')

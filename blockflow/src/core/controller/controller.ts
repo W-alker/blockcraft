@@ -8,12 +8,13 @@ import {
 } from "@core/utils";
 import {BaseBlock, EditableBlock, KeyEventBus} from "@core/block-std";
 import {BaseStore} from "@core/store";
-import {BehaviorSubject, take} from "rxjs";
+import {BehaviorSubject, fromEvent, take} from "rxjs";
 import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
 import Y from "@core/yjs";
 import {IPlugin} from "@core/plugins";
 import {EditorRoot} from "@core/block-render";
 import {SchemaStore} from "@core/schemas";
+import {Injector} from "@angular/core";
 
 export interface HistoryConfig {
   open: boolean
@@ -44,6 +45,7 @@ export class Controller {
 
   constructor(
     private readonly config: IControllerConfig,
+    public readonly injector: Injector
   ) {
     const {historyConfig = {open: true, duration: 500}} = config
     if (historyConfig.open) {
@@ -60,6 +62,8 @@ export class Controller {
   }
 
   attach(root: EditorRoot) {
+    // fromEvent(document, 'selectionchange').subscribe(() => {
+    // })
     return new Promise(resolve => {
       root.ready$.pipe(take(2)).subscribe(v => {
         if (!v) return
@@ -99,7 +103,7 @@ export class Controller {
   }
 
   get rootElement() {
-    return this.root.elementRef?.nativeElement as HTMLElement
+    return this.root.rootElement
   }
 
   get rootId() {
@@ -178,12 +182,12 @@ export class Controller {
 
   deleteBlocks(index: number, count: number, parentId: string = this.rootId) {
     this.docManager.deleteBlocks(index, count, parentId)
-    if (!this.rootModel.length) {
-      const p = this.schemaStore.createBlock('p')
-      this.insertBlocks(0, [p]).then(() => {
-        this.setSelection(p.id, 'start')
-      })
-    }
+    // if (!this.rootModel.length) {
+    //   const p = this.schemaStore.create('p')
+    //   this.insertBlocks(0, [p]).then(() => {
+    //     this.setSelection(p.id, 'start')
+    //   })
+    // }
   }
 
   deleteBlockById(id: string) {

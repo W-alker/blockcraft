@@ -15,7 +15,7 @@ export class SchemaStore<BMap extends IBlockModelMap = IBlockModelMap> extends B
     return schema.nodeType === "editable" && params.length > 0 && typeof params[0] === 'object' && 'insert' in params[0]
   }
 
-  createBlock = <Key extends keyof BMap>(flavour: Key, params?: any[]): BMap[Key] => {
+  create = <Key extends keyof BMap>(flavour: Key, params?: any[]): BMap[Key] => {
     console.log('createBlock', flavour, params)
     const schema = this.get(flavour as IBlockFlavour)!
     if (!schema) throw new Error(`schema ${flavour as string} not found`)
@@ -27,13 +27,13 @@ export class SchemaStore<BMap extends IBlockModelMap = IBlockModelMap> extends B
       if (this.isDeltaInsert(schema, createBefore.children)) {
         children = createBefore.children
       } else {
-        children = createBefore.children.map((c) => this.createBlock(c.flavour, ...(c.params || [])))
+        children = createBefore.children.map((c) => this.create(c.flavour, ...(c.params || [])))
       }
     } else {
       if (schema.nodeType === 'editable') {
         children = params || []
       } else {
-        children = schema.children?.map(c => this.createBlock(c))
+        children = schema.children?.map(c => this.create(c))
       }
     }
     return {

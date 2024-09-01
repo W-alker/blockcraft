@@ -5,7 +5,9 @@ import Y from "@core/yjs";
 
 export class BlockflowBinding {
 
-  provider = new WebsocketProvider('ws://196.168.1.52:1234', this.controller.rootId, this.controller.docManager.doc, {
+  provider = new WebsocketProvider('ws://196.168.1.52:1234',
+    this.controller.rootId,
+    this.controller.docManager.doc, {
     connect: false,
   });
 

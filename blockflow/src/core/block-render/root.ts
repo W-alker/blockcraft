@@ -155,6 +155,7 @@ export class EditorRoot {
 
   @HostListener('beforeinput', ['$event'])
   private onBeforeInput(event: InputEvent) {
+    console.log('beforeinput', event)
     const sel = document.getSelection()!
     this.prevRange = getCurrentCharacterRange()
     if (!sel.isCollapsed) {
@@ -202,6 +203,10 @@ export class EditorRoot {
       case 'deleteContentForward':
         start === end && ops.push(() => yText.delete(start, 1))
         break
+      case 'deleteByDrag':
+        break
+      case 'insertFromDrop':
+        break
       case 'formatBold':
       case 'formatItalic':
       case 'formatUnderline':
@@ -210,7 +215,6 @@ export class EditorRoot {
       case 'formatSubscript':
       case 'insertParagraph':
       case 'insertFromPaste':
-      case 'insertFromDrop':
       case 'insertLineBreak':
       case 'deleteByCut':
       default:
@@ -220,6 +224,12 @@ export class EditorRoot {
     this.controller.transact(() => {
       ops.forEach(op => op())
     })
+  }
+
+  @HostListener('drop', ['$event'])
+  private onDrop(event: ClipboardEvent) {
+    event.preventDefault()
+    console.log('ondrop', event)
   }
 
   @HostListener('paste', ['$event'])

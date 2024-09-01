@@ -1,7 +1,5 @@
-import {IBlockModel, SimpleRecord, SimpleValue} from "@core/types";
-import {syncChangeArray, syncChangeMap} from "@core/yjs/changeProxy";
-import Y from "@core/yjs";
-import {BehaviorSubject} from "rxjs";
+import {IBlockModel, IBlockProps, SimpleRecord, SimpleValue} from "@core/types";
+import Y from "./index";
 
 export type YBlockModel = Y.Map<unknown>
 
@@ -13,7 +11,7 @@ export class ModelSyncer {
     constructor() {
     }
 
-    blockModel2Y = (block: IBlockModel, cb?: (block: IBlockModel, yMap: Y.Map<any>) => void): YBlockModel => {
+    static blockModel2Y = (block: IBlockModel, cb?: (block: IBlockModel, yMap: Y.Map<any>) => void): YBlockModel => {
         let map: Y.Map<any>
 
         let children
@@ -48,7 +46,7 @@ export class ModelSyncer {
         return map
     }
 
-    proxy(obj: Object, yObj: Y.Map<any> | Y.Array<any>) {
+    static proxy(obj: Object, yObj: Y.Map<any> | Y.Array<any>) {
         if (typeof obj !== 'object') return obj
         if(isBlockModel(obj)) {
             // @ts-ignore
@@ -64,7 +62,7 @@ export class ModelSyncer {
         return this.proxyMap(obj, yObj as Y.Map<any>)
     }
 
-    proxyMap(obj: Record<string, any>, yMap: Y.Map<any>) {
+    static proxyMap(obj: Record<string, any>, yMap: Y.Map<any>) {
         // console.log('proxyMap', obj, yMap)
         for (const key in obj) {
             const v = obj[key]
@@ -74,7 +72,7 @@ export class ModelSyncer {
         return syncChangeMap(obj, yMap)
     }
 
-    proxyArray(arr: any[], yArr: Y.Array<any>) {
+    static proxyArray(arr: any[], yArr: Y.Array<any>) {
         for (let i = 0; i < arr.length; i++) {
             const v = arr[i]
             if (typeof v === 'object')
@@ -83,7 +81,7 @@ export class ModelSyncer {
         return syncChangeArray(arr, yArr)
     }
 
-    private obj2y = <T extends SimpleRecord | Array<SimpleValue>>(obj: T) => {
+    private static obj2y = <T extends SimpleRecord | Array<SimpleValue>>(obj: T) => {
         // console.log('obj2y', obj)
 
         if (obj instanceof Array) {
@@ -112,6 +110,73 @@ export class ModelSyncer {
         }
     }
 
+}
+
+const syncChangeMap = <T extends SimpleRecord>(obj: T, yObj: Y.Map<any>): T => {
+  return new Proxy(obj, {
+    set(target, prop, value) {
+      console.log('set', prop, value)
+      if (typeof prop === 'symbol') throw TypeError('key cannot be a symbol')
+      yObj.set(prop, value)
+      return Reflect.set(target, prop, value)
+    },
+    deleteProperty(target: IBlockProps, p): boolean {
+      if (typeof p === 'symbol') throw TypeError('You try to delete a symbol property, which is not allowed.')
+      yObj.delete(p)
+      return Reflect.deleteProperty(target, p)
+    }
+  })
+}
+
+/**
+ * @desc sync change of array, this method will return the input original array modified
+ * @desc but don`t use 'sort' or 'reverse' method, because it will cause the yjs array out of sync
+ */
+const syncChangeArray = (obj: any[], yObj: Y.Array<any>) => {
+  const yo = yObj as Y.Array<unknown>
+
+  Object.defineProperty(obj, 'push', {
+    value: function (value: any) {
+      yo.push([value])
+      return Array.prototype.push.call(obj, value)
+    },
+    enumerable: false
+  })
+
+  Object.defineProperty(obj, 'unshift', {
+    value: function (value: any) {
+      yo.unshift([value])
+      return Array.prototype.unshift.call(obj, value)
+    },
+    enumerable: false
+  })
+
+  Object.defineProperty(obj, 'splice', {
+    value: function (start: number, deleteCount: number, ...items: any[]) {
+      deleteCount && yo.delete(start, deleteCount)
+      items?.length && yo.insert(start, items)
+      return Array.prototype.splice.call(obj, start, deleteCount, ...items)
+    },
+    enumerable: false
+  })
+
+  Object.defineProperty(obj, 'shift', {
+    value: function () {
+      yo.delete(0, 1)
+      return Array.prototype.shift.call(obj)
+    },
+    enumerable: false
+  })
+
+  Object.defineProperty(obj, 'pop', {
+    value: function () {
+      yo.delete(obj.length - 1, 1)
+      return Array.prototype.pop.call(obj)
+    },
+    enumerable: false
+  })
+
+  return obj
 }
 
 

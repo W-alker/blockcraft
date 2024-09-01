@@ -11,7 +11,7 @@ export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Cont
   if (!bRef) throw new Error('No focusing block')
   const textContent = bRef.getTextContent()
   const {parentId, index} = controller.getBlockPosition(bRef.id)!
-  const newBlock = controller.schemaStore.createBlock(bRef.flavour, (range.start === 0 || range.end >= textContent.length) ? undefined : sliceDelta(bRef.getTextDelta(), range.end))
+  const newBlock = controller.schemaStore.create(bRef.flavour, (range.start === 0 || range.end >= textContent.length) ? undefined : sliceDelta(bRef.getTextDelta(), range.end))
 
   controller.transact(() => {
     if (range.start > 0 && range.end < textContent.length) {

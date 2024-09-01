@@ -1,9 +1,9 @@
 import {Controller, SchemaStore} from "@core";
 
 export interface IPlugin {
-  name: string;
+  readonly name: string;
 
-  version: number;
+  readonly version: number;
 
   init(controller: Controller): void;
 

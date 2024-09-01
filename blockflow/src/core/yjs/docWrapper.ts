@@ -25,8 +25,6 @@ export class BlockFlowDoc {
     public readonly rootYModel: Y.Array<Y.Map<any>> = this.doc.getArray(this.config.rootId)
     private readonly flatMapStore: Map<string, { m: IBlockModel, y: Y.Map<any> }> = new Map()
 
-    private readonly modelSyncer = new ModelSyncer()
-
     constructor(private config: InitConfig) {
     }
 
@@ -84,7 +82,7 @@ export class BlockFlowDoc {
      * @param blocks block model array
      */
     blocks2Y(blocks: IBlockModel[]) {
-        return blocks.map(block => this.modelSyncer.blockModel2Y(block,
+        return blocks.map(block => ModelSyncer.blockModel2Y(block,
             (block, yMap) => {
                 this.flatMapStore.set(block.id, {
                     m: block,
@@ -167,7 +165,7 @@ export class BlockFlowDoc {
                         bms.forEach((bm, idx) => {
                             this.flatMapStore.set(bm.id, {m: bm, y: insert[idx]})
                             // re-proxy block model
-                            bms[idx] = this.modelSyncer.proxy(bm, insert[idx]) as IBlockModel
+                            bms[idx] = ModelSyncer.proxy(bm, insert[idx]) as IBlockModel
                         })
                         Array.prototype.splice.call(array, retain, 0, ...bms)
                     } else {
