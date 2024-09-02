@@ -1,93 +1,110 @@
-import {Component, ElementRef, HostBinding, ViewChild} from "@angular/core";
+import {Component, HostBinding} from "@angular/core";
 import {BaseBlock} from "@core/block-std/components/base-block";
 import {DeltaInsert, DeltaOperation, IEditableBlockModel, IInlineAttrs} from "@core/types";
 import {NgForOf, NgTemplateOutlet} from "@angular/common";
-import {createInlineView} from "@core/block-std";
-import {ICharacterRange, replaceSelectionInView, setRange} from "@core/utils";
-import Delta from "quill-delta";
-import AttributeMap from "quill-delta/src/AttributeMap";
+import {BlockflowInline, deleteContent, insertContent} from "@core/block-std";
+import {ICharacterRange, setSelection} from "@core/utils";
+import Y from "@core/yjs";
 
 @Component({
-    selector: '[bf-editable-block]',
-    standalone: true,
-    template: ``,
-    imports: [
-        NgForOf,
-        NgTemplateOutlet
-    ]
+  selector: '.editable-container',
+  standalone: true,
+  template: ``,
+  imports: [
+    NgForOf,
+    NgTemplateOutlet
+  ],
 })
 export class EditableBlock extends BaseBlock<IEditableBlockModel> {
-    @ViewChild('editableContainer', {read: ElementRef}) container!: ElementRef
+  @HostBinding('attr.contenteditable')
+  get contentEditable() {
+    return !this.controller.readonly$.value
+  }
 
-    @HostBinding('attr.contenteditable')
-    get contenteditable() {
-        return !this.controller.readonly$.value
+  private yText!: Y.Text
+  private update = () => {
+    this.model.children = this.yText.toDelta()
+  }
+
+  public containerEle!: HTMLElement
+
+  override ngOnInit() {
+    super.ngOnInit()
+    this.yText = this.controller.getEditableBlockYText(this.model.id)
+    this.yText.observe(this.update)
+  }
+
+  override ngAfterViewInit() {
+    super.ngAfterViewInit()
+    this.containerEle = this.hostEl.nativeElement.querySelector('.editable-container') || this.hostEl.nativeElement
+    this.forceRender()
+  }
+
+  getTextDelta() {
+    return this.model.children = this.yText.toDelta()
+  }
+
+  getTextContent() {
+    return this.yText.toString()
+  }
+
+  get textLength() {
+    return this.yText.length
+  }
+
+  forceRender() {
+    const delta = this.getTextDelta()
+    this.model.children = delta
+    this.containerEle.innerHTML = ''
+    if (delta.length) {
+      for (const insert of delta) {
+        if (!insert.insert) continue
+        this.containerEle.appendChild(BlockflowInline.createView(insert))
+      }
+      return
     }
+  }
 
-    deltaText!: Delta
+  format(attrs: IInlineAttrs, range: ICharacterRange, withSelection = false) {
+    this.yText.format(range.start, range.end - range.start, attrs)
+    // formatContent(this.containerEle, range, attrs)
+    console.time('forceRender')
+    this.forceRender()
+    console.timeEnd('forceRender')
+    withSelection && setSelection(this.containerEle, range.start, range.end)
+  }
 
-    get containerEle() {
-        return this.container?.nativeElement || this.hostEl.nativeElement as HTMLElement
+  applyDeltaToModel(deltas: DeltaOperation[]) {
+    this.yText.applyDelta(deltas)
+  }
+
+  applyDeltaToView(deltas: DeltaOperation[], withSelection = false) {
+    console.time('applyDeltaToView')
+    // console.log('applyDeltaToView', deltas)
+    let _range: ICharacterRange | undefined
+    let retain = 0
+    for (const delta of deltas) {
+      if (delta.retain) {
+        if (delta.attributes)
+          this.format(delta.attributes, {start: retain, end: retain + delta.retain})
+        retain += delta.retain
+        withSelection && (_range = {start: retain, end: retain + delta.retain})
+      } else if (delta.insert) {
+        insertContent(this.containerEle, retain, delta as DeltaInsert)
+        retain += delta.insert.length
+        withSelection && (_range = {start: retain, end: retain})
+      } else if (delta.delete) {
+        deleteContent(this.containerEle, retain, delta.delete)
+        withSelection && (_range = {start: retain, end: retain})
+      }
     }
-
-    forceRender() {
-        this.containerEle.innerHTML = ''
-        const delta = this.children
-        if (delta.length) {
-            for (const insert of this.children) {
-                if (!insert.insert) continue
-                this.containerEle.appendChild(createInlineView(insert))
-            }
-            return
-        }
-        /**
-         * if there is no word
-         * <p> <span></span> </p>  --> write any word in p tag --> <p> word <span></span> </p> ; it`s not expected result because the word should be in span tag
-         * <p> <span>&#xFEFF;</span> </p>  --> write any word in p tag --> <p> <span>word&#xFEFF;</span> </p> ; it`s expected result
-         */
-        const span = this.DOCUMENT.createElement('span')
-        span.innerHTML = '&#xFEFF;'
-        this.containerEle.appendChild(span)
+    if (withSelection && _range) {
+      setSelection(this.containerEle, _range.start, _range.end)
     }
+    console.timeEnd('applyDeltaToView')
+  }
 
-    getTextContent() {
-        return this.containerEle.textContent
-    }
-
-    override ngAfterViewInit() {
-        this.forceRender()
-        super.ngAfterViewInit()
-    }
-
-    format(attrs: IInlineAttrs, range: ICharacterRange) {
-        this.deltaText.retain(range.start).retain(range.end - range.start, attrs as AttributeMap)
-        this.forceRender()
-        return setRange(range, this.containerEle)
-    }
-
-    applyDeltaToView(deltas: DeltaOperation[], withRange = false) {
-        console.log('applyDeltaToView', deltas)
-        let retain = 0
-        let _range: Range = this.DOCUMENT.createRange()
-
-        for (const delta of deltas) {
-            if (delta.retain) {
-                if (delta.attributes)
-                    _range = this.format(delta.attributes, {start: retain, end: retain + delta.retain})
-                retain += delta.retain
-            } else if (delta.insert) {
-                setRange({start: retain, end: retain}, this.containerEle, _range)
-                _range.insertNode(createInlineView(delta as DeltaInsert))
-                retain += delta.insert.length
-            } else if (delta.delete) {
-                setRange({start: retain, end: retain + delta.delete}, this.containerEle, _range)
-                _range.deleteContents()
-            }
-        }
-
-        requestAnimationFrame(() => {
-            withRange ? replaceSelectionInView(_range) : _range.detach()
-        })
-    }
-
+  ngOnDestroy() {
+    this.yText.unobserve(this.update)
+  }
 }

@@ -29,7 +29,7 @@ export interface IExpandedAttrs {
   [key: IInlineAttrKey | IInlineDataKey]: SimpleBasicType;
 }
 
-export interface IInlineAttr {
+interface IInlineAttr {
   'a:bold'?: boolean;
   'a:italic'?: boolean;
   'a:underline'?: boolean;

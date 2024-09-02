@@ -1,5 +1,5 @@
-import {Controller, formatKeyHandler} from "@core";
+import {Controller, formatKeyHandler, IKeyEventHandler} from "@core";
 
-export const onCtrlB = (e: KeyboardEvent, controller: Controller) => {
+export const onCtrlB: IKeyEventHandler = (e: KeyboardEvent, controller: Controller) => {
   formatKeyHandler({'a:bold': true}, e, controller)
 }

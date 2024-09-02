@@ -1,3 +1,3 @@
-import {onArrowUp} from "@core";
+import {IKeyEventHandler, onArrowUp} from "@core";
 
-export const onArrowLeft = onArrowUp
+export const onArrowLeft: IKeyEventHandler = onArrowUp

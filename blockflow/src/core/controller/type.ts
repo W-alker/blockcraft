@@ -1,7 +1,3 @@
-import {IBlockFlavour, IBlockModel} from "@core/types";
-
-export type IBlockModelMap = Record<IBlockFlavour, IBlockModel>
-
 export interface IRange {
   start: number
   end: number

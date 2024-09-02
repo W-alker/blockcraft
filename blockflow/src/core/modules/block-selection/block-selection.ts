@@ -15,21 +15,22 @@ export class BlockSelection {
   private store = new Set<Element>()
 
   private selectionAreaEle: HTMLElement | null = null
-
   private onSelectingSub!: Subscription | null
+
+  private selectableElements: NodeListOf<Element> | HTMLCollection | null = null
 
   get storeSize() {
     return this.store.size
   }
 
-  get storeElements() {
-    return Array.from(this.store)
+  get selectedElements() {
+    return this.store
   }
 
   private readonly eventListeners: {
-    start: ((elements: Element[]) => void)[]
-    move: ((elements: Element[]) => void)[]
-    end: ((elements: Element[]) => void)[]
+    start: ((elements: Set<Element>) => void)[]
+    move: ((elements: Set<Element>) => void)[]
+    end: ((elements: Set<Element>) => void)[]
   } = {} as any
 
   private isSelecting = false
@@ -38,7 +39,12 @@ export class BlockSelection {
     this.bindEvents()
   }
 
-  on(event: 'start' | 'move' | 'end', callback: (elements: Element[]) => void) {
+  selectElement(element: Element) {
+    this.store.add(element)
+    this.config.onItemSelect(element)
+  }
+
+  on(event: 'start' | 'move' | 'end', callback: (elements: Set<Element>) => void) {
     if (!this.eventListeners[event]) {
       this.eventListeners[event] = []
     }
@@ -53,6 +59,7 @@ export class BlockSelection {
     if (this.config.enable) return
     this.baseHostRect = this.host.getBoundingClientRect()
     // clear previous selection
+    this.store.forEach(element => this.config.onItemUnselect(element))
     this.store.clear()
     // if the button is not left button, return
     if (event.button !== 0 && this.config.onlyLeftButton) return
@@ -64,19 +71,11 @@ export class BlockSelection {
     if (target.isContentEditable) {
       this.triggerElement = target
       this.host.addEventListener('mousemove', this.onContentEditableMouseMove)
-
-      this.document.body.addEventListener('mouseup', this.onMouseup)
-
-      this.mouseStartPos = {x: event.clientX, y: event.clientY - this.baseHostRect.y}
-      return
     } else {
-      // this.document.getSelection()!.removeAllRanges()
-      // this.host.focus()
-      this.mouseStartPos = {x: event.clientX, y: event.clientY - this.baseHostRect.y}
       this.document.body.addEventListener('mousemove', this.onMousemove)
-      this.document.body.addEventListener('mouseup', this.onMouseup)
     }
-
+    this.document.body.addEventListener('mouseup', this.onMouseup)
+    this.mouseStartPos = {x: event.clientX, y: event.clientY - this.baseHostRect.y}
   }
 
   onContentEditableMouseMove = (event: MouseEvent) => {
@@ -86,10 +85,8 @@ export class BlockSelection {
     }
     const triggerRect = this.triggerElement.getBoundingClientRect()
 
-    if (event.clientY < triggerRect.top - 20 || event.clientY > triggerRect.bottom + 20) {
+    if (event.target !== this.triggerElement && (event.clientY < triggerRect.top - 20 || event.clientY > triggerRect.bottom + 20)) {
       this.host.removeEventListener('mousemove', this.onContentEditableMouseMove)
-      // this.document.getSelection()!.removeAllRanges();
-      // this.host.focus()
       this.startSelecting()
     }
   }
@@ -109,18 +106,17 @@ export class BlockSelection {
     this.createSelectionArea()
     this.document.getSelection()!.removeAllRanges()
     this.host.focus()
-
-    // this.document.body.addEventListener('mousemove', this.onMouseMovePicking)
-
     this.isSelecting = true
+
     this.onSelectingSub =
-      fromEvent(this.document.body, 'mousemove').pipe( throttleTime(20))
-        .subscribe( (event) => {
+      fromEvent(this.document.body, 'mousemove').pipe(throttleTime(20))
+        .subscribe((event) => {
           this.onMouseMovePicking(event as MouseEvent)
         })
 
-    if(this.eventListeners.start?.length) {
-      this.eventListeners.start.forEach(callback => callback(this.storeElements))
+    this.selectableElements = this.config.selectable ? this.host.querySelectorAll(this.config.selectable) : this.host.children
+    if (this.eventListeners.start?.length) {
+      this.eventListeners.start.forEach(callback => callback(this.selectedElements))
     }
   }
 
@@ -129,8 +125,8 @@ export class BlockSelection {
     this.mousePos = {x: event.clientX, y: event.clientY - eleRect.y}
     this.repaintSelectionArea()
     this.calculateSelectionAreaContain()
-    if(this.eventListeners.move?.length) {
-      this.eventListeners.move.forEach(callback => callback(this.storeElements))
+    if (this.eventListeners.move?.length) {
+      this.eventListeners.move.forEach(callback => callback(this.selectedElements))
     }
   }
 
@@ -143,22 +139,53 @@ export class BlockSelection {
       this.triggerElement = null
       this.host.removeEventListener('mousemove', this.onContentEditableMouseMove)
     }
-    if(this.isSelecting) this.endSelect()
+    if (this.isSelecting) this.endSelect()
   }
 
+  lastCalculateIndex = 0
+
   calculateSelectionAreaContain() {
-    this.host.querySelectorAll(this.config.selectable).forEach(element => {
+    // console.time('calculateSelectionAreaContain')
+    let flag = 2
+    let i = 0
+    this.store.clear()
+    while (flag > 0) {
+      const element = this.selectableElements![i]
+      i++
+      if(i >= this.selectableElements!.length) break
+      if (!element) continue
       const rect = (element as HTMLElement).getBoundingClientRect()
       if (isIntersect(this.selectionAreaEle!.getBoundingClientRect(), rect)) {
-        this.store.add(element)
         this.config.onItemSelect(element)
+        this.store.add(element)
+        if (flag === 2) flag--
       } else {
-        if(this.store.has(element)) {
-          this.store.delete(element)
-          this.config.onItemUnselect(element)
-        }
+        if (flag === 1) flag--
+        this.config.onItemUnselect(element)
       }
-    })
+    }
+    // unselect the elements that are selected before but not selected now
+    if(i < this.lastCalculateIndex) {
+      for(let j = i; j < this.lastCalculateIndex; j++) {
+        const element = this.selectableElements![j]
+        if (!element) continue
+        this.config.onItemUnselect(element)
+      }
+    }
+    this.lastCalculateIndex = i
+    // console.timeEnd('calculateSelectionAreaContain')
+  }
+
+  endSelect() {
+    // @ts-ignore
+    this.host.style.pointerEvents = null
+    this.onSelectingSub?.unsubscribe()
+    this.removeSelectionArea()
+    this.selectableElements = null
+
+    if (this.eventListeners.end?.length) {
+      this.eventListeners.end.forEach(callback => callback(this.selectedElements))
+    }
   }
 
   createSelectionArea() {
@@ -179,21 +206,9 @@ export class BlockSelection {
       top: ${Math.min(this.mousePos.y, this.mouseStartPos.y)}px;`
   }
 
-  endSelect() {
-    // @ts-ignore
-    this.host.style.pointerEvents = null
-    this.onSelectingSub?.unsubscribe()
-    // this.document.body.removeEventListener('mousemove', this.onMouseMovePicking)
-    this.removeSelectionArea()
-    if(this.eventListeners.end?.length) {
-      this.eventListeners.end.forEach(callback => callback(this.storeElements))
-    }
-  }
-
   removeSelectionArea() {
     this.selectionAreaEle?.remove()
   }
-
 }
 
 const isIntersect = (rect1: DOMRect, rect2: DOMRect) => {

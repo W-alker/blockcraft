@@ -1,5 +1,5 @@
-import {SIGN_CLIPBOARD_JSON_BLOCKS, SIGN_CLIPBOARD_JSON_DELTA} from "@core/modules";
 import {DeltaInsert, IBlockModel} from "@core/types";
+import {SIGN_CLIPBOARD_JSON_BLOCKS, SIGN_CLIPBOARD_JSON_DELTA} from "@core/helpers";
 
 export class ClipDataParser {
 

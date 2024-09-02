@@ -1,34 +1,38 @@
 import {DeltaInsert} from "@core";
 
-export const sliceDelta = (deltas: DeltaInsert[], from: number, to?: number) => {
-  const _delta = JSON.parse(JSON.stringify(deltas))
+export function sliceDelta(delta: DeltaInsert[], start = 0, end = Infinity) {
+  const slicedOps = [];
+  let offset = 0;
 
-  const findPath = (delta: DeltaInsert[], pos: number) => {
-    let i = 0, cnt = 0
-    if(delta[0].insert.length >= pos) return [0, pos]
-    for(let d of delta) {
-      cnt += d.insert.length
-      if (cnt >= pos) break
-      i++
+  for (const op of delta) {
+    const opLength = typeof op.insert === 'string' ? op.insert.length : 1;
+
+    if (offset + opLength <= start) {
+      // 跳过当前操作，因为它完全在开始位置之前
+      offset += opLength;
+      continue;
     }
-    return [i, pos - cnt]
+
+    if (offset >= end) {
+      // 如果已经达到结束位置，则停止处理
+      break;
+    }
+
+    let sliceStart = Math.max(start - offset, 0);
+    let sliceEnd = Math.min(end - offset, opLength);
+    const length = sliceEnd - sliceStart;
+
+    if (length > 0) {
+      const insert = typeof op.insert === 'string'
+        ? op.insert.slice(sliceStart, sliceEnd)
+        : op.insert;
+      slicedOps.push({ insert, ...(op.attributes && { attributes: op.attributes }) });
+    }
+
+    offset += opLength;
   }
 
-  const [fromPath, fromIndex] = findPath(_delta, from)
-  const [toPath, toIndex] = to ? findPath(_delta, to) : [_delta.length - 1, _delta[_delta.length - 1].insert.length]
-  console.log('fromPath', fromPath, 'fromIndex', fromIndex, 'toPath', toPath, 'toIndex', toIndex)
-  const _slice: DeltaInsert[] = []
-  for (let i = fromPath; i <= toPath; i++) {
-    const d = JSON.parse(JSON.stringify(_delta[i]))
-    if (i === fromPath) {
-      d.insert = d.insert.slice(fromIndex)
-    } else if (i === toPath) {
-      d.insert = d.insert.slice(0, toIndex)
-    }
-    _slice.push(d)
-  }
-
-  return _slice.filter(d => d.insert.length > 0)
+  return slicedOps;
 }
 
 export default sliceDelta

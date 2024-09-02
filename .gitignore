@@ -33,10 +33,11 @@ yarn-error.log
 .sass-cache/
 /connect.lock
 /coverage
-/libpeerconnection.log
+/libpeerconnection.logs
 testem.log
 /typings
 
 # System files
 .DS_Store
 Thumbs.db
+pnpm-lock.yaml

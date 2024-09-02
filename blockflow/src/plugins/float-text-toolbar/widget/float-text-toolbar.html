@@ -1,0 +1,10 @@
+<div class="float-text-toolbar__container">
+  <ng-container *ngFor="let menu of toolbarMenuList">
+    <div class="line" *ngIf="menu.name=='|' else item"></div>
+    <ng-template #item>
+      <div class="float-text-toolbar__item" [title]="menu.name" [attr.data-name]="menu.name">
+        <i [class]="['editor',menu.icon]"></i>
+      </div>
+    </ng-template>
+  </ng-container>
+</div>

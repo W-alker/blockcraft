@@ -7,8 +7,8 @@ export interface Config {
   document: Document
   // the class name of the block selection area
   selectionAreaClass: string
-  // the css selector of the block element
-  selectable: string
+  // the css selector of the block element. If this not set, the block selection will select the children of the host element
+  selectable?: string
   // the callback when the block selected
   onItemSelect: (element: Element) => void
   // the callback when the block unselected

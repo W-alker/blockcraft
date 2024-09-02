@@ -93,7 +93,7 @@ export class KeyEventBus {
     }
   ]
 
-  constructor(public readonly controller: Controller<any>) {
+  constructor(public readonly controller: Controller) {
   }
 
   addHandler(handler: IHandler) {
