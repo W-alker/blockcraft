@@ -8,7 +8,7 @@ import {
 } from "@core/utils";
 import {BaseBlock, EditableBlock, KeyEventBus} from "@core/block-std";
 import {BaseStore} from "@core/store";
-import {BehaviorSubject, fromEvent, take} from "rxjs";
+import {BehaviorSubject, take} from "rxjs";
 import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
 import Y from "@core/yjs";
 import {IPlugin} from "@core/plugins";
@@ -23,15 +23,17 @@ export interface HistoryConfig {
 
 export interface IControllerConfig {
   rootId: string
-  schemas: SchemaStore<any>
+  schemas: SchemaStore
   historyConfig?: HistoryConfig
   plugins?: IPlugin[],
 }
 
+export const USER_INPUT_ORIGIN = Symbol('user-input-origin')
+
 export class Controller {
   public readonly readonly$ = new BehaviorSubject(false)
 
-  private blockRefStore = new BaseStore<BaseBlock>()
+  private blockRefStore = new BaseStore<string, BaseBlock>()
   private blocksWaiting: Record<string, boolean> = {}
   private blocksReady$ = new BehaviorSubject(false)
 
@@ -50,21 +52,29 @@ export class Controller {
     const {historyConfig = {open: true, duration: 500}} = config
     if (historyConfig.open) {
       this.historyManager = new Y.UndoManager(this.docManager.rootYModel,
-        {captureTimeout: historyConfig.duration || 300, trackedOrigins: new Set([null])})
-
-      this.docManager.rootYModel.observeDeep((e) => {
-        // console.log('YEvent=============', e.map(ev => ev.target))
-        if (!this.undoRedo$.value) return
-        this.syncYEventUpdate(e, true)
-        this.undoRedo$.next(false)
-      })
+        {captureTimeout: historyConfig.duration || 300, trackedOrigins: new Set([null, USER_INPUT_ORIGIN])})
     }
+
+    this.docManager.rootYModel.observeDeep((e, tr) => {
+      // console.log('YEvent=============', e.map(ev => ev.target))
+      if (!this.undoRedo$.value) return
+      this.syncYEventUpdate(e, tr)
+      this.undoRedo$.next(false)
+
+      requestAnimationFrame(() => {
+        if (!this.activeElement || document.activeElement === document.body) this.rootElement.focus()
+      })
+    })
   }
 
   attach(root: EditorRoot) {
-    // fromEvent(document, 'selectionchange').subscribe(() => {
-    // })
     return new Promise(resolve => {
+      root.onDestroy.pipe(take(1)).subscribe(() => {
+        this.config.plugins?.forEach(plugin => {
+          plugin.destroy()
+        })
+      })
+
       root.ready$.pipe(take(2)).subscribe(v => {
         if (!v) return
         this._root = root
@@ -77,20 +87,24 @@ export class Controller {
     })
   }
 
+  private getBlockRefByYText(yText: Y.Text) {
+    const parentId = (yText.parent as Y.Map<any>).get('id')
+    return this.getBlockRef(parentId) as EditableBlock | undefined
+  }
+
   /**
    * special method for sync yjs change event to model
-   * @param e
-   * @param setSelection
+   * @param e YEvent
+   * @param tr Transaction
    */
-  syncYEventUpdate(e: Y.YEvent<any>[], setSelection = false) {
+  syncYEventUpdate(e: Y.YEvent<any>[], tr: Y.Transaction) {
     e.forEach(event => {
+      // editable-block is not view-model, need to update view manually
       if (event.target instanceof Y.Text) {
-        const parentId = (event.target.parent as Y.Map<any>).get('id')
-        const blockRef = this.getBlockRef(parentId) as EditableBlock
-        blockRef.applyDeltaToView(event.changes.delta as DeltaOperation[], setSelection)
-      } else {
-        this.docManager.applyYChangeToModel(event)
+        // if (tr.origin === USER_INPUT_ORIGIN) return  // user input
+        this.getBlockRefByYText(event.target)!.applyDeltaToView(event.changes.delta as DeltaOperation[], this.undoRedo$.value)  // Just set selection when undo/redo
       }
+      this.docManager.applyYChangeToModel(event)
     })
   }
 
@@ -158,14 +172,15 @@ export class Controller {
     this.undoRedo$.next(true)
     this.historyManager!.redo()
   }
+
   /** ---------------history---------------- end **/
 
   /** ---------------block operation---------------- end **/
   applyDeltaToEditableBlock(target: string | EditableBlock, delta: DeltaOperation[]) {
     const blockRef = typeof target === 'string' ? this.getBlockRef(target) : target
     if (!blockRef || !(blockRef instanceof EditableBlock)) return
-    blockRef.applyDeltaToView(delta)
     blockRef.applyDeltaToModel(delta)
+    blockRef.applyDeltaToView(delta, true)
   }
 
   insertBlocks(index: number, blocks: IBlockModel[], parentId: string = this.rootId) {
@@ -181,20 +196,25 @@ export class Controller {
   }
 
   deleteBlocks(index: number, count: number, parentId: string = this.rootId) {
-    this.docManager.deleteBlocks(index, count, parentId)
-    // if (!this.rootModel.length) {
-    //   const p = this.schemaStore.create('p')
-    //   this.insertBlocks(0, [p]).then(() => {
-    //     this.setSelection(p.id, 'start')
-    //   })
-    // }
+    return this.docManager.deleteBlocks(index, count, parentId)
   }
 
   deleteBlockById(id: string) {
     const path = this.getBlockPosition(id)
     if (!path) throw new Error(`Block ${id} not found`)
     const {index, parentId} = path
-    this.deleteBlocks(index, 1, parentId)
+    return this.deleteBlocks(index, 1, parentId)
+  }
+
+  replaceWith(id: string, newBlock: IBlockModel) {
+    const {index, parentId} = this.getBlockPosition(id)!
+    console.log('replaceWith', index, parentId, id, newBlock)
+    return new Promise((resolve) => {
+      this.transact(() => {
+        this.deleteBlocks(index, 1, parentId)
+        this.insertBlocks(index, [newBlock], parentId).then(resolve)
+      })
+    })
   }
 
   duplicateBlockById(id: string) {
@@ -204,6 +224,7 @@ export class Controller {
     // @ts-ignore
     return this.insertBlocks(index + 1, [bm], parentId)
   }
+
   /** ---------------block operation---------------- end **/
 
   /** ---------------query block---------------- start **/
@@ -278,16 +299,21 @@ export class Controller {
     if (!next) return null
     return this.getBlockRef(next.id) as EditableBlock
   }
+
   /** ---------------query block---------------- end **/
 
 
   /** ---------------focus , selection---------------- start **/
+  get activeElement() {
+    return this.root.activeElement
+  }
+
   isEditableBlock(b: string | IBlockModel | BaseBlock) {
     return typeof b === 'string' ? this.docManager.queryBlockModel(b)?.nodeType === 'editable' : b.nodeType === 'editable'
   }
 
   getSelection(): IBlockFlowRange | null {
-    if(!this.root.activeElement) return null
+    if (!this.root.activeElement) return null
     if (this.root.activeElement === this.rootElement) {
       return {
         rootRange: this.root.selectedBlockRange,
@@ -313,7 +339,7 @@ export class Controller {
   }
 
   setSelection(target: string | EditableBlock, from: CharacterIndex, to?: CharacterIndex) {
-    if(target === this.rootId) {
+    if (target === this.rootId) {
       this.root.selectBlocks(from, to ?? from)
     } else {
       const bRef = typeof target === 'string' ? this.getBlockRef(target) : target
@@ -332,6 +358,7 @@ export class Controller {
       this.root.clearSelectedBlocks()
     })
   }
+
   /** ---------------focus , selection---------------- end **/
 
 }

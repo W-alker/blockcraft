@@ -1,5 +1,5 @@
-import {Component, inject, Injector, Input, ViewChild} from "@angular/core";
-import {Controller, EditorRoot, IBlockModelMap, LazyEditorRoot} from "@core";
+import {Component, HostListener, Injector, Input, ViewChild} from "@angular/core";
+import {Controller, EditorRoot, LazyEditorRoot} from "@core";
 import {GlobalConfig} from "@editor/types";
 import {NgForOf, NgIf, NgSwitch} from "@angular/common";
 
@@ -19,12 +19,12 @@ import {NgForOf, NgIf, NgSwitch} from "@angular/common";
     NgForOf,
     EditorRoot,
     LazyEditorRoot,
-    NgSwitch
+    NgSwitch,
   ]
 })
 export class BlockFlowEditor {
 
-  _globalConfig!: GlobalConfig
+  private _globalConfig!: GlobalConfig
   @Input({required: true, alias: 'config'})
   set globalConfig(config: GlobalConfig) {
     this._globalConfig = config
@@ -56,6 +56,15 @@ export class BlockFlowEditor {
     this._globalConfig = config
     this._controller = new Controller(config, this.injector)
     this._controller.attach(this.root)
+  }
+
+  @HostListener('click', ['$event'])
+  onClick(event: MouseEvent) {
+    if(this.controller.rootModel.length || this.controller.readonly$.value) return
+    const p = this.controller.schemaStore.create('paragraph')
+    this.controller.insertBlocks(0, [p]).then(() => {
+      this.controller.setSelection(p.id, 'start')
+    })
   }
 
 }

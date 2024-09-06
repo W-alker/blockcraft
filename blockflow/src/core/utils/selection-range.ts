@@ -151,7 +151,7 @@ export const findTextNodeByIndex = (ele: HTMLElement, index: number, findFrom?: 
     textNode: ele.firstChild!.firstChild as Text,
     offset: 0,
     eleOffset: 0,
-    beforeEleOffset: -1
+    beforeEleOffset: 0
   }
   if (index === ele.textContent!.length) return {
     textNode: ele.lastChild!.lastChild as Text,

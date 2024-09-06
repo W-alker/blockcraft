@@ -5,5 +5,16 @@ export const formatKeyHandler = (format: IInlineAttrs, e: KeyboardEvent, control
   const range = controller.getSelection()!
   if (range.isAtRoot) return
   const block = controller.getBlockRef(range.blockId) as EditableBlock
-  block.format(format, range.blockRange, true)
+  // block.format(format, range.blockRange, true)
+  const {start, end} = range.blockRange
+  const deltas = [
+    {
+      retain: start,
+    },
+    {
+      retain: end - start,
+      attributes: format
+    }
+  ]
+  controller.applyDeltaToEditableBlock(block, deltas)
 }

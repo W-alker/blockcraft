@@ -1,5 +1,5 @@
-export class BaseStore<StoreItem = any> {
-  protected mapStore = new Map<string, StoreItem>()
+export class BaseStore<Key = any ,StoreItem = any> {
+  protected mapStore = new Map<Key, StoreItem>()
 
   constructor() {
   }
@@ -16,11 +16,11 @@ export class BaseStore<StoreItem = any> {
     return [...this.mapStore.values()];
   }
 
-  get(key: string) {
+  get(key: Key) {
     return this.mapStore.get(key);
   }
 
-  set(key: string, value: StoreItem) {
+  set(key: Key, value: StoreItem) {
     return this.mapStore.set(key, value)
   }
 }

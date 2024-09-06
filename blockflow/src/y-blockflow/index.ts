@@ -34,7 +34,7 @@ export class BlockflowBinding {
 
     this.controller.docManager.rootYModel.observeDeep((e, tr) => {
       if (!tr.local) {
-        this.controller.syncYEventUpdate(e)
+        this.controller.syncYEventUpdate(e, tr)
       } else {
         for (const event of e) {
           if (!(event.target instanceof Y.Text)) continue

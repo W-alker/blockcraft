@@ -13,7 +13,10 @@ export interface BlockSchema<T extends IBlockProps = IBlockProps> {
     props?: () => T,
     meta?: () => IMetadata,
     children: Array<DeltaInsert> | Array<{ flavour: IBlockFlavour, params?: any[] }>
-  }
+  },
+  icon: string;
+  label: string;
+  description?: string;
 }
 
 export type IBlockModelMap = Record<IBlockFlavour, IBlockModel>

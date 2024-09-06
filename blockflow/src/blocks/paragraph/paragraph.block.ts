@@ -7,7 +7,7 @@ import {EditableBlock} from "@core/block-std";
   standalone: true,
   imports: [CommonModule],
   template: '',
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ParagraphBlock extends EditableBlock {
 

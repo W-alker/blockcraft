@@ -1,9 +1,9 @@
-import {BlockSchema, IBlockModelMap} from "@core/schemas";
+import {BlockSchema} from "@core/schemas";
 import {BaseStore} from "@core/store";
-import {DeltaInsert, IBlockFlavour} from "@core/types";
+import {DeltaInsert, IBlockFlavour, IBlockModel} from "@core/types";
 import {genUniqueID} from "@core/utils";
 
-export class SchemaStore<BMap extends IBlockModelMap = IBlockModelMap> extends BaseStore<BlockSchema> {
+export class SchemaStore extends BaseStore<IBlockFlavour, BlockSchema> {
   constructor(schemaList: BlockSchema[]) {
     super()
     schemaList.forEach(schema => {
@@ -15,7 +15,7 @@ export class SchemaStore<BMap extends IBlockModelMap = IBlockModelMap> extends B
     return schema.nodeType === "editable" && params.length > 0 && typeof params[0] === 'object' && 'insert' in params[0]
   }
 
-  create = <Key extends keyof BMap>(flavour: Key, params?: any[]): BMap[Key] => {
+  create = (flavour: IBlockFlavour, params?: any[]): IBlockModel => {
     console.log('createBlock', flavour, params)
     const schema = this.get(flavour as IBlockFlavour)!
     if (!schema) throw new Error(`schema ${flavour as string} not found`)
@@ -43,6 +43,6 @@ export class SchemaStore<BMap extends IBlockModelMap = IBlockModelMap> extends B
       children: children,
       props: createBefore?.props?.() || schema.props?.() || {},
       meta: createBefore?.props?.() || schema.meta?.() || {}
-    } as BMap[Key]
+    }
   }
 }

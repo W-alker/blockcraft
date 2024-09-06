@@ -1,12 +1,30 @@
+@import "../../assets/iconfont/editor.css";
+
 bf-editor {
   display: block;
   width: 100%;
   height: 80vh;
   overflow-y: auto;
+  padding: 30px;
+
+  * {
+    margin: 0;
+    padding: 0;
+  }
+
+  [contenteditable="true"] {
+    outline: none;
+  }
+
+  [bf-block-wrap] {
+    position: relative;
+    margin-bottom: 16px;
+  }
 
   [bf-node-type="root"] {
     position: relative;
     display: block;
+    outline: none;
   }
 
   [bfi-bold="true"] {
@@ -29,13 +47,32 @@ bf-editor {
     text-decoration: underline line-through;
   }
 
+  [bfi-code="true"] {
+    background-color: #e9e9e9;
+    padding: 0 0.2em;
+    border-radius: 0.2em;
+  }
+
+  [bfi-link="true"] {
+    color: #4857E2;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  [bfi-mention="true"] {
+    padding: 0 .1em;
+    color: #4857E2;
+    cursor: pointer;
+  }
+
   ::selection {
     background: rgba(46, 115, 252, 0.2);
   }
 
 }
 
-.selection-area {
+// block-selection
+.blockflow-selection-area {
   z-index: 1060;
   background: rgba(46, 115, 252, 0.2);
   border: 1px solid rgba(98, 155, 255, 0.81);
@@ -45,3 +82,4 @@ bf-editor {
 .bf-block-selected {
   background: rgba(46, 115, 252, 0.2);
 }
+

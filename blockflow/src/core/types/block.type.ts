@@ -5,7 +5,6 @@ import {SimpleRecord} from "./currency.type";
 export type IBlockFlavour = string;
 
 export interface IBaseMetadata {
-  align?: 'left' | 'center' | 'right'
   folded?: boolean
   indent?: number
   selected?: boolean
@@ -21,7 +20,7 @@ export interface IBlockModel{
   nodeType: BlockNodeType
   meta: IMetadata
   props: IBlockProps
-  readonly children?: Array<IBlockModel | IInlineModel>
+  children?: Array<IBlockModel | IInlineModel>
 }
 
 export interface IEditableBlockModel extends IBlockModel{

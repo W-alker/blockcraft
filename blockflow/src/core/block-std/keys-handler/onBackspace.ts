@@ -1,4 +1,4 @@
-import {EditableBlock, IKeyEventHandler} from "@core";
+import {EditableBlock, IKeyEventHandler, USER_INPUT_ORIGIN} from "@core";
 
 export const onBackspace: IKeyEventHandler = (e, controller) => {
   e.preventDefault()
@@ -30,26 +30,34 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
         controller.deleteBlockById(bRef.id)
       })
     }
-  } else {
-    const yText = controller.getEditableBlockYText(blockId)
-    const selection = window.getSelection()!
-    if (selection.isCollapsed) {
-      if (!selection.focusNode!.textContent || selection.focusOffset === 0) {
-        const prevNode = selection.focusNode!.parentElement!.previousSibling;
-        !selection.focusNode!.textContent && selection.focusNode!.parentElement?.remove()
-        if (prevNode) {
-          selection.setPosition(prevNode.firstChild!, prevNode.textContent!.length)
-        }
-      }
-      (selection.focusNode as Text).deleteData(selection.focusOffset - 1, 1);
-      yText.delete(blockRange.start - 1, 1)
-    } else {
-      const deltas = [
-        {retain: blockRange.start},
-        {delete: blockRange.end - blockRange.start},
-      ]
-      controller.applyDeltaToEditableBlock(bRef, deltas)
-    }
+    return
   }
+
+  const yText = controller.getEditableBlockYText(blockId)
+  const selection = window.getSelection()!
+  if (selection.isCollapsed) {
+    if (selection.focusOffset === 0) {
+      const prevNode = selection.focusNode!.parentElement!.previousSibling;
+      // !selection.focusNode!.textContent && selection.focusNode!.parentElement?.remove()
+      prevNode && selection.setPosition(prevNode.firstChild!, prevNode.textContent!.length)
+    }
+    controller.transact(() => {
+      const {focusNode, focusOffset} = selection;
+      (focusNode as Text).deleteData(focusOffset - 1, 1);
+      if (!focusNode!.textContent) {
+        const prevNode = focusNode!.parentElement!.previousSibling;
+        focusNode!.parentElement?.remove()
+        prevNode && selection.setPosition(prevNode.firstChild!, prevNode.textContent!.length)
+      }
+      yText.delete(blockRange.start - 1, 1)
+    }, USER_INPUT_ORIGIN)
+    return
+  }
+
+  const deltas = [
+    {retain: blockRange.start},
+    {delete: blockRange.end - blockRange.start},
+  ]
+  controller.applyDeltaToEditableBlock(bRef, deltas)
 
 }

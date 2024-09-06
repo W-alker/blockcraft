@@ -1,4 +1,4 @@
-import {Controller, SchemaStore} from "@core";
+import {Controller} from "@core";
 
 export interface IPlugin {
   readonly name: string;

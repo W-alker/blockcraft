@@ -1,10 +1,11 @@
-import {Component, HostBinding} from "@angular/core";
+import {Component, DestroyRef, HostBinding, inject} from "@angular/core";
 import {BaseBlock} from "@core/block-std/components/base-block";
-import {DeltaInsert, DeltaOperation, IEditableBlockModel, IInlineAttrs} from "@core/types";
+import {DeltaInsert, DeltaOperation, IEditableBlockModel} from "@core/types";
 import {NgForOf, NgTemplateOutlet} from "@angular/common";
 import {BlockflowInline, deleteContent, insertContent} from "@core/block-std";
 import {ICharacterRange, setSelection} from "@core/utils";
 import Y from "@core/yjs";
+import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 
 @Component({
   selector: '.editable-container',
@@ -16,28 +17,34 @@ import Y from "@core/yjs";
   ],
 })
 export class EditableBlock extends BaseBlock<IEditableBlockModel> {
-  @HostBinding('attr.contenteditable')
-  get contentEditable() {
-    return !this.controller.readonly$.value
+  @HostBinding('style.text-align')
+  get textAlign() {
+    return this.model.props['textAlign']
   }
 
   private yText!: Y.Text
-  private update = () => {
-    this.model.children = this.yText.toDelta()
-  }
-
   public containerEle!: HTMLElement
+  protected destroyRef = inject(DestroyRef)
 
   override ngOnInit() {
     super.ngOnInit()
     this.yText = this.controller.getEditableBlockYText(this.model.id)
-    this.yText.observe(this.update)
+    this.yText.observe(event => {
+      Promise.resolve().then(() => {
+        this.model.children = this.yText.toDelta()
+      })
+    })
   }
 
   override ngAfterViewInit() {
     super.ngAfterViewInit()
     this.containerEle = this.hostEl.nativeElement.querySelector('.editable-container') || this.hostEl.nativeElement
     this.forceRender()
+
+    this.controller.readonly$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(readonly => {
+      if (readonly) this.containerEle.removeAttribute('contenteditable')
+      else this.containerEle.setAttribute('contenteditable', 'true')
+    })
   }
 
   getTextDelta() {
@@ -65,46 +72,44 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
     }
   }
 
-  format(attrs: IInlineAttrs, range: ICharacterRange, withSelection = false) {
-    this.yText.format(range.start, range.end - range.start, attrs)
-    // formatContent(this.containerEle, range, attrs)
-    console.time('forceRender')
-    this.forceRender()
-    console.timeEnd('forceRender')
-    withSelection && setSelection(this.containerEle, range.start, range.end)
-  }
-
   applyDeltaToModel(deltas: DeltaOperation[]) {
     this.yText.applyDelta(deltas)
   }
 
   applyDeltaToView(deltas: DeltaOperation[], withSelection = false) {
-    console.time('applyDeltaToView')
-    // console.log('applyDeltaToView', deltas)
-    let _range: ICharacterRange | undefined
+    // console.time('applyDeltaToView')
+    console.log('applyDeltaToView', deltas)
+    let _range: ICharacterRange | undefined = {
+      start: 0,
+      end: 0
+    }
+
     let retain = 0
     for (const delta of deltas) {
       if (delta.retain) {
-        if (delta.attributes)
-          this.format(delta.attributes, {start: retain, end: retain + delta.retain})
+        if (delta.attributes) {
+          this.forceRender()
+          // formatContent(this.containerEle, {start: retain, end: retain + delta.retain}, delta.attributes)
+        }
+        // this.format(delta.attributes, {start: retain, end: retain + delta.retain})
         retain += delta.retain
-        withSelection && (_range = {start: retain, end: retain + delta.retain})
       } else if (delta.insert) {
         insertContent(this.containerEle, retain, delta as DeltaInsert)
         retain += delta.insert.length
         withSelection && (_range = {start: retain, end: retain})
       } else if (delta.delete) {
         deleteContent(this.containerEle, retain, delta.delete)
-        withSelection && (_range = {start: retain, end: retain})
+        if (withSelection) {
+          _range = {start: retain, end: retain}
+        }
       }
     }
+
     if (withSelection && _range) {
-      setSelection(this.containerEle, _range.start, _range.end)
+      console.log('setSelection', _range)
+      setSelection(this.containerEle, _range!.start, _range!.end)
     }
-    console.timeEnd('applyDeltaToView')
+    // console.timeEnd('applyDeltaToView')
   }
 
-  ngOnDestroy() {
-    this.yText.unobserve(this.update)
-  }
 }

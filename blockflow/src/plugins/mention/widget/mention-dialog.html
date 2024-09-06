@@ -1,0 +1,15 @@
+<!--<div class="mention-dialog__header"></div>-->
+<div class="mention-dialog__content">
+  <ng-container *ngFor="let item of list; index as idx">
+    <div class="mention-dialog__content__item"
+         [class.active]="idx === selectIndex" (mouseenter)="selectIndex = idx"
+         (mousedown)="onItemClick($event, item)">{{ item.name }}</div>
+  </ng-container>
+
+  <ng-container *ngIf="!list.length">
+    <div class="mention-dialog__content__empty">No results found</div>
+  </ng-container>
+</div>
+<div class="mention-dialog__footer">
+  <div class="mention-dialog__footer__button" (click)="onSure()">确定</div>
+</div>

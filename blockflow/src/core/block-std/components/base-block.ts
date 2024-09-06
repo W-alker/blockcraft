@@ -1,9 +1,9 @@
 import {
   Component,
-  ElementRef,
+  ElementRef, EventEmitter,
   HostBinding,
   inject,
-  Input,
+  Input, Output,
 } from "@angular/core";
 import {DOCUMENT} from "@angular/common";
 import {IBlockModel} from "../../types";
@@ -16,7 +16,9 @@ import {Controller} from "@core/controller";
 })
 export class BaseBlock<Model extends IBlockModel = IBlockModel> {
   @Input({required: true}) readonly controller!: Controller
-  @Input({required: true}) model!: Model
+  @Input({required: true}) readonly model!: Model
+
+  @Output() onDestroy = new EventEmitter<void>()
 
   @HostBinding('id')
   get id() {
@@ -36,7 +38,7 @@ export class BaseBlock<Model extends IBlockModel = IBlockModel> {
     return this.model!.props as Model['props']
   }
 
-  public hostEl = inject(ElementRef)
+  public hostEl: ElementRef<HTMLElement> = inject(ElementRef)
   protected DOCUMENT = inject(DOCUMENT)
 
   ngOnInit() {
@@ -44,6 +46,10 @@ export class BaseBlock<Model extends IBlockModel = IBlockModel> {
 
   ngAfterViewInit() {
     this.controller.storeBlockRef(this)
+  }
+
+  ngOnDestroy() {
+    this.onDestroy.emit()
   }
 
 }

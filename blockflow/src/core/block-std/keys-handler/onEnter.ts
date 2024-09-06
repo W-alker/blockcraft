@@ -20,7 +20,7 @@ export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Cont
 
     controller.insertBlocks(range.start === 0 ? index : index + 1, [newBlock], parentId).then(() => {
       if (range.start > 0)
-        controller.setSelection(newBlock.id as EditableBlock, 'start')
+        controller.setSelection(newBlock.id, 'start')
     })
   })
 }

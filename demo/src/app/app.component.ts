@@ -1,16 +1,29 @@
 import {Component, ViewChild} from '@angular/core';
 import {
+  BlockControllerPlugin,
   BlockflowBinding,
   BlockFlowEditor, FloatTextToolbarPlugin,
-  GlobalConfig,
-  HeadingOneSchema, IBlockModel,
-  IEditableBlockModel,
+  GlobalConfig, HeadingFourSchema,
+  HeadingOneSchema, HeadingThreeSchema, HeadingTwoSchema, IBlockModel,
+  IEditableBlockModel, MentionPlugin,
   ParagraphSchema,
   SchemaStore,
 } from "@blockflow";
 import {genUniqueID} from "@core/utils";
 
-const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema])
+const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingTwoSchema, HeadingThreeSchema, HeadingFourSchema])
+
+const mentionRequest = async (keyword: string) => {
+  const len = Math.floor(Math.random() * 10)
+  const list = Array.from({length: len}).map(() => ({
+    id: genUniqueID(),
+    name: keyword + Math.random()
+  }))
+
+  return {
+    list
+  }
+}
 
 interface BlockSchemaMap {
   'paragraph': IEditableBlockModel,
@@ -97,7 +110,7 @@ export class AppComponent {
     //         }
     //   }
     // }
-    plugins: [new FloatTextToolbarPlugin()]
+    plugins: [new FloatTextToolbarPlugin(), new BlockControllerPlugin(), new MentionPlugin(mentionRequest)]
   }
 
   yBinding?: BlockflowBinding
@@ -130,7 +143,7 @@ export class AppComponent {
   }
 
   onClick4() {
-    this.yBinding =  new BlockflowBinding(this.controller)
+    this.yBinding = new BlockflowBinding(this.controller)
     this.yBinding.connect()
   }
 
@@ -153,7 +166,7 @@ export class AppComponent {
       meta: {},
       props: {}
     } as IBlockModel
-    this.editor.controller.insertBlocks(0, [block], this.controller.rootId)
+    this.editor.controller.insertBlocks(0, [block])
   }
 
   ngOnDestroy() {

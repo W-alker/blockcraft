@@ -1,4 +1,4 @@
-import {EditableBlock, IKeyEventHandler, isCursorAtElEnd, onBackspace} from "@core";
+import {EditableBlock, IKeyEventHandler, isCursorAtElEnd, onBackspace, USER_INPUT_ORIGIN} from "@core";
 
 export const onDelete: IKeyEventHandler = (e, controller) => {
   e.preventDefault()
@@ -48,8 +48,10 @@ export const onDelete: IKeyEventHandler = (e, controller) => {
           selection.setPosition(nextNode.firstChild!, 0)
         }
       }
-      (selection.focusNode as Text).deleteData(selection.focusOffset, 1);
-      yText.delete(blockRange.start, 1)
+      controller.transact(() => {
+        (selection.focusNode as Text).deleteData(selection.focusOffset, 1);
+        yText.delete(blockRange.start, 1)
+      }, USER_INPUT_ORIGIN)
     } else {
       const deltas = [
         {retain: blockRange.start},

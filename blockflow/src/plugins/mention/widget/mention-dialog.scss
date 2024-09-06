@@ -1,0 +1,51 @@
+:host {
+  z-index: 1000;
+  display: block;
+  position: absolute;
+  width: 400px;
+  border-radius: 4px;
+  border: 1px solid #E6E6E6;
+  background: #FFF;
+  box-shadow: 0px 0px 20px 0px rgba(0, 0, 0, 0.10);
+
+  &__header {
+    border-bottom: 1px solid #E6E6E6;
+  }
+
+  .mention-dialog {
+
+    &__content{
+      padding: 16px 0;
+      max-height: 400px;
+      overflow-y: auto;
+
+      &__item {
+        height: 43px;
+        padding: 0 16px;
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+
+        &.active {
+          background: #F9F9F9;
+        }
+      }
+    }
+
+    &__footer {
+      border-top: 1px solid #E6E6E6;
+
+      &__button {
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #4857E2;
+        text-align: center;
+
+        &:hover {
+          background: #F9F9F9;
+        }
+      }
+    }
+  }
+}

@@ -1,8 +1,8 @@
 import {
   ChangeDetectorRef,
-  Component, ElementRef,
+  Component, ElementRef, EventEmitter,
   HostBinding,
-  HostListener,
+  HostListener, Output,
   ViewContainerRef,
 } from "@angular/core";
 import {NgForOf, NgIf} from "@angular/common";
@@ -12,7 +12,7 @@ import {
   getCurrentCharacterRange,
   IBlockModel,
   ICharacterRange,
-  pasteHandler
+  pasteHandler, USER_INPUT_ORIGIN
 } from "@core";
 import {BlockWrap} from "./block-wrap";
 import {BehaviorSubject} from "rxjs";
@@ -34,10 +34,12 @@ import {BehaviorSubject} from "rxjs";
   ],
 })
 export class EditorRoot {
+  // @HostBinding('style.fontSize.px')
   @HostBinding('attr.tabindex') private readonly tabindex = '0'
+  @Output() onDestroy = new EventEmitter<void>()
 
   constructor(
-    public readonly elementRef: ElementRef,
+    public readonly elementRef: ElementRef<HTMLElement>,
     protected cdr: ChangeDetectorRef,
     private vcr: ViewContainerRef
   ) {
@@ -53,7 +55,7 @@ export class EditorRoot {
   protected controller!: Controller
 
   get rootElement() {
-    return this.elementRef.nativeElement as HTMLElement
+    return this.elementRef.nativeElement
   }
 
   private _activeElement: HTMLElement | null = null
@@ -83,8 +85,8 @@ export class EditorRoot {
       document: document,
       enable: false,
       onlyLeftButton: true,
-      // selectable: "[bf-block-wrap]",
-      selectionAreaClass: "selection-area",
+      selectable: "[bf-block-wrap]",
+      selectionAreaClass: "blockflow-selection-area",
       sensitivity: 40,
       onItemSelect: (element) => {
         element.classList.add('bf-block-selected')
@@ -121,7 +123,7 @@ export class EditorRoot {
   }
 
   getActiveBlockId() {
-    if(!this.activeElement || this.activeElement === this.rootElement) return null
+    if (!this.activeElement || this.activeElement === this.rootElement) return null
     return this.activeElement.closest('[bf-node-type="editable"]')?.id
   }
 
@@ -155,7 +157,7 @@ export class EditorRoot {
 
   @HostListener('beforeinput', ['$event'])
   private onBeforeInput(event: InputEvent) {
-    console.log('beforeinput', event)
+    // console.log('beforeinput', event)
     const sel = document.getSelection()!
     this.prevRange = getCurrentCharacterRange()
     if (!sel.isCollapsed) {
@@ -171,9 +173,10 @@ export class EditorRoot {
       span.textContent = '\u200B'
       document.activeElement!.prepend(span)
       sel.setPosition(span, 1)
-      requestAnimationFrame(() => {
-        (span.firstChild as Text).deleteData(0, 1)
-      })
+      // requestAnimationFrame(() => {
+      //   (span.firstChild as Text).deleteData(0, 1)
+      //   sel.modify('move', 'forward', 'character')
+      // })
     }
   }
 
@@ -181,10 +184,12 @@ export class EditorRoot {
   private onInput(event: InputEvent) {
     const sel = document.getSelection()!
     const {start, end} = this.prevRange!
-    // if (sel.focusNode instanceof Text && sel.isCollapsed && sel.focusOffset === 2 && sel.focusNode!.nodeValue!.charCodeAt(0) === 8203) {
-    //     console.log('delete zero width space')
-    //     sel.focusNode.deleteData(0, 1)
-    // }
+
+    if (sel.focusNode instanceof Text && sel.isCollapsed && sel.focusOffset === 2 && sel.focusNode!.nodeValue!.charCodeAt(0) === 8203) {
+      // console.log('delete zero width space')
+      sel.focusNode.deleteData(0, 1)
+    }
+
     const bid = this.controller.getFocusingBlockId()!
     const yText = this.controller.getEditableBlockYText(bid)
     const ops: Array<() => void> = []
@@ -223,7 +228,7 @@ export class EditorRoot {
     }
     this.controller.transact(() => {
       ops.forEach(op => op())
-    })
+    }, USER_INPUT_ORIGIN)
   }
 
   @HostListener('drop', ['$event'])
@@ -242,5 +247,9 @@ export class EditorRoot {
   @HostListener('copy', ['$event'])
   private onPreventDefault(event: ClipboardEvent) {
     event.preventDefault()
+  }
+
+  ngOnDestroy() {
+    this.onDestroy.emit()
   }
 }

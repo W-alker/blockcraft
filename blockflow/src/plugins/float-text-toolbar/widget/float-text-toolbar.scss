@@ -6,43 +6,148 @@
 
     &__container {
       display: flex;
-      flex-direction: row;
-      justify-content: flex-start;
+      justify-content: space-between;
       align-items: center;
+      gap: 8px;
+      padding: 0 8px;
+      height: 32px;
       border-radius: 4px;
-      padding-left:16px;
-      height: 40px;
-      background: #3C3C3C;
-      overflow: hidden;
+      background: #FFF;
+      box-shadow: 0px 0px 20px 0px rgba(0, 0, 0, 0.10);
+      animation: bf_expand 0.1s ease-in-out;
+
+      @keyframes bf_expand {
+        from {
+          height: 0;
+        }
+        to {
+          height: 32px;
+        }
+      }
     }
 
-    &__item{
-      margin-right: 16px;
-      cursor: pointer;
+    &__item {
       position: relative;
-      &:hover::before{
-        content: "";
-        background: rgba(0, 0, 0, 0.3);
-        width: 32px;
-        height: 24px;
-        position: absolute;
-        left: -8px;
-        top: 0px;
+      cursor: pointer;
+      padding: 4px;
+      height: 24px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+
+      &:hover {
+        background: #f5f5f5;
         border-radius: 4px;
       }
-      i{
-        color:#E3E3E3;
+
+      > i {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: #666;
         font-size: 16px;
-        width: 16px;
-        height: 16px;
+        line-height: 16px;
+
+        &.dropdown {
+          font-size: 10px;
+          line-height: 10px;
+        }
+      }
+
+      &[data-name="mark"] {
+        &::before {
+          content: '';
+          position: absolute;
+          bottom: 4px;
+          left: 10px;
+          width: 12px;
+          height: 2px;
+          background: var(--color);
+        }
       }
     }
-    .line{
-      height: 100%;
-      width: 1px;
-      margin-right: 16px;
-      background: #4D4D4D;
+
+    &__children {
+      position: absolute;
+
+      &__gap {
+        height: 8px;
+        background: transparent;
+      }
+
+      &__container {
+        border-radius: 4px;
+        background: #FFF;
+        padding: 2px;
+        box-shadow: 0px 0px 20px 0px rgba(0, 0, 0, 0.10);
+        color: #666;
+      }
     }
 
+    &__align {
+
+      @keyframes bf_expand {
+        from {
+          max-height: 0;
+        }
+        to {
+          max-height: 120px;
+        }
+      }
+      animation: bf_expand 0.15s ease-in-out;
+
+      &__container {
+        width: 100%;
+      }
+
+      &__item {
+        padding: 0 8px;
+        height: 24px;
+        border-radius: 4px;
+        cursor: pointer;
+
+        &:hover {
+          background: #F5F5F5;
+        }
+      }
+
+    }
+
+    &__mark {
+
+      &__title {
+        margin: 0 0 4px;
+        color: #999;
+        font-size: 14px;
+        font-style: normal;
+        font-weight: 600;
+        line-height: 20px;
+      }
+
+      &__list {
+        width: 224px;
+        display: flex;
+        justify-content: space-around;
+
+        &__item {
+          width: 20px;
+          height: 20px;
+          border-radius: 4px;
+          cursor: pointer;
+
+          &.active {
+            outline: 1px solid #4857E2;
+          }
+
+        }
+      }
+    }
+  }
+
+  .line {
+    height: 100%;
+    width: 1px;
+    background: #e6e6e6;
   }
 }

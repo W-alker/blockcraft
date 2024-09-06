@@ -142,7 +142,7 @@ export class BlockSelection {
     if (this.isSelecting) this.endSelect()
   }
 
-  lastCalculateIndex = 0
+  private lastCalculateIndex = 0
 
   calculateSelectionAreaContain() {
     // console.time('calculateSelectionAreaContain')
@@ -151,8 +151,8 @@ export class BlockSelection {
     this.store.clear()
     while (flag > 0) {
       const element = this.selectableElements![i]
-      i++
       if(i >= this.selectableElements!.length) break
+      i++
       if (!element) continue
       const rect = (element as HTMLElement).getBoundingClientRect()
       if (isIntersect(this.selectionAreaEle!.getBoundingClientRect(), rect)) {
