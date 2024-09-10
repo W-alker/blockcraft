@@ -96,12 +96,13 @@ export class KeyEventBus {
   constructor(public readonly controller: Controller) {
   }
 
-  addHandler(handler: IHandler) {
+  add(handler: IHandler) {
     this.handlers.push(handler)
   }
 
-  removeHandler(handler: IHandler) {
-    this.handlers.splice(this.handlers.indexOf(handler), 1)
+  remove(trigger: IKeyEventTrigger) {
+    const index = this.handlers.findIndex((handler) => handler.trigger === trigger)
+    if (index !== -1) this.handlers.splice(index, 1)
   }
 
   handle(event: KeyboardEvent) {

@@ -8,6 +8,7 @@ import {BaseBlock, BlockSchema, Controller, ClipDataWriter, EditableBlock} from 
 import {SparkPopover} from "./spark-popover";
 import {NgIf} from "@angular/common";
 import {ISparkEvent, ISparkItem} from "./spark-item.type";
+import {take} from "rxjs";
 
 const calcLineHeight = (wrap: HTMLElement) => {
   const computedStyle = window.getComputedStyle(wrap)
@@ -106,8 +107,12 @@ export class TriggerBtn {
       return
     }
 
-    this.activeBlock = this.controller.getBlockRef(val.getAttribute('data-block-id')!)
+    this.activeBlock = this.controller.getBlockRef(val.getAttribute('data-block-id')!)!
     this.hasContent = this.activeBlock instanceof EditableBlock ? !!this._activeBlockWrap.textContent : true
+
+    this.activeBlock.onDestroy.pipe(take(1)).subscribe(() => {
+        this.close()
+    })
 
     this.display = 'block'
     const {top, left} = this.calcPos()

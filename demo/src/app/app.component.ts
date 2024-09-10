@@ -2,7 +2,7 @@ import {Component, ViewChild} from '@angular/core';
 import {
   BlockControllerPlugin,
   BlockflowBinding,
-  BlockFlowEditor, FloatTextToolbarPlugin,
+  BlockFlowEditor, BlockTransformPlugin, FloatTextToolbarPlugin,
   GlobalConfig, HeadingFourSchema,
   HeadingOneSchema, HeadingThreeSchema, HeadingTwoSchema, IBlockModel,
   IEditableBlockModel, MentionPlugin,
@@ -110,7 +110,7 @@ export class AppComponent {
     //         }
     //   }
     // }
-    plugins: [new FloatTextToolbarPlugin(), new BlockControllerPlugin(), new MentionPlugin(mentionRequest)]
+    plugins: [new FloatTextToolbarPlugin(), new BlockControllerPlugin(), new MentionPlugin(mentionRequest), new BlockTransformPlugin()]
   }
 
   yBinding?: BlockflowBinding

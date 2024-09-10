@@ -141,10 +141,10 @@ export class EditorRoot {
     }
   }
 
-  @HostListener('click', ['$event'])
-  private onClick(event: MouseEvent) {
-    console.log('click', event.target)
-  }
+  // @HostListener('click', ['$event'])
+  // private onClick(event: MouseEvent) {
+  //   console.log('click', event.target)
+  // }
 
   @HostListener('keydown', ['$event'])
   private onKeyDown(event: KeyboardEvent) {
@@ -160,11 +160,12 @@ export class EditorRoot {
     // console.log('beforeinput', event)
     const sel = document.getSelection()!
     this.prevRange = getCurrentCharacterRange()
+    const activeElement = document.activeElement as HTMLElement
     if (!sel.isCollapsed) {
       sel.modify('move', 'forward', 'character')
-      deleteContent(document.activeElement as HTMLElement, this.prevRange!.start, this.prevRange!.end - this.prevRange!.start)
+      deleteContent(activeElement, this.prevRange!.start, this.prevRange!.end - this.prevRange!.start)
     }
-    if (!document.activeElement!.childElementCount || (this.prevRange.start === 0 && this.prevRange.end === 0)) {
+    if (sel.focusNode === activeElement && activeElement.getAttribute('bf-node-type') === 'editable') {
       /**
        * <p> <span></span> </p>  --> write any word in p tag --> <p> word <span></span> </p> ; it`s not expected result because the word should be in span tag
        * <p> <span>\u200B</span> </p>  --> write any word in p tag --> <p> <span>\u200Bword</span> </p> ; it`s expected result
@@ -172,6 +173,7 @@ export class EditorRoot {
       const span = document.createElement('span')
       span.textContent = '\u200B'
       document.activeElement!.prepend(span)
+      sel.getRangeAt(0).insertNode(span)
       sel.setPosition(span, 1)
       // requestAnimationFrame(() => {
       //   (span.firstChild as Text).deleteData(0, 1)
@@ -247,6 +249,12 @@ export class EditorRoot {
   @HostListener('copy', ['$event'])
   private onPreventDefault(event: ClipboardEvent) {
     event.preventDefault()
+  }
+
+  @HostListener('contextmenu', ['$event'])
+  private onContextMenu(event: ClipboardEvent) {
+    event.preventDefault()
+    console.log('contextmenu', event)
   }
 
   ngOnDestroy() {

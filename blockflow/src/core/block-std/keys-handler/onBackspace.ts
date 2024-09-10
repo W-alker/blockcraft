@@ -11,25 +11,18 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
 
   const {blockId, blockRange} = curRange
   const bRef = controller.getBlockRef(blockId) as EditableBlock
+
   if (blockRange.start === 0 && blockRange.end === 0) {
     const prevBlock = controller.findPrevEditableBlock(bRef.id)
+    if (!prevBlock) return
     // no content
-    if (!bRef.textLength) {
-      if (!prevBlock) return
-      controller.deleteBlockById(bRef.id)
+    controller.transact(() => {
       controller.setSelection(prevBlock, 'end')
-    } else if (prevBlock) {
-      // concat with prev block at the end
-      const deltas = [
-        {retain: prevBlock.textLength},
-        ...bRef.getTextDelta(),
-      ]
-      controller.transact(() => {
-        controller.setSelection(prevBlock, 'end')
-        controller.applyDeltaToEditableBlock(prevBlock, deltas)
-        controller.deleteBlockById(bRef.id)
-      })
-    }
+      bRef.textLength && controller.applyDeltaToEditableBlock(prevBlock,
+          [{retain: prevBlock.textLength}, ...bRef.getTextDelta()],
+          false)
+      controller.deleteBlockById(bRef.id)
+    })
     return
   }
 

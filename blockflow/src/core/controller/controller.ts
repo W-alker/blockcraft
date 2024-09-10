@@ -176,11 +176,11 @@ export class Controller {
   /** ---------------history---------------- end **/
 
   /** ---------------block operation---------------- end **/
-  applyDeltaToEditableBlock(target: string | EditableBlock, delta: DeltaOperation[]) {
+  applyDeltaToEditableBlock(target: string | EditableBlock, delta: DeltaOperation[], setSelection = true) {
     const blockRef = typeof target === 'string' ? this.getBlockRef(target) : target
     if (!blockRef || !(blockRef instanceof EditableBlock)) return
     blockRef.applyDeltaToModel(delta)
-    blockRef.applyDeltaToView(delta, true)
+    blockRef.applyDeltaToView(delta, setSelection)
   }
 
   insertBlocks(index: number, blocks: IBlockModel[], parentId: string = this.rootId) {
