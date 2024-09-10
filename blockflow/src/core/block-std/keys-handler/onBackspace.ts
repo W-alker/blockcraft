@@ -32,6 +32,13 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
     if (selection.focusOffset === 0) {
       const prevNode = selection.focusNode!.parentElement!.previousSibling;
       // !selection.focusNode!.textContent && selection.focusNode!.parentElement?.remove()
+
+      if(prevNode instanceof HTMLElement && prevNode.getAttribute('contenteditable') === 'false') {
+        controller.transact(() => {
+
+        }, USER_INPUT_ORIGIN)
+      }
+
       prevNode && selection.setPosition(prevNode.firstChild!, prevNode.textContent!.length)
     }
     controller.transact(() => {

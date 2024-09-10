@@ -16,6 +16,10 @@ bf-editor {
     outline: none;
   }
 
+  [contenteditable="false"] {
+    user-select: none;
+  }
+
   [bf-block-wrap] {
     position: relative;
     margin-bottom: 16px;
@@ -72,6 +76,10 @@ bf-editor {
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
+
+    //&::after {
+    //  content: attr(data-mention-name);
+    //}
   }
 
   ::selection {

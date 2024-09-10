@@ -178,13 +178,17 @@ export class MentionPlugin implements IPlugin {
         attributes: {
           ...getAttributesFrom(this._mentionElement!),
           'd:mentionId': item.id,
+          'd:mentionName': item.name,
           'a:mention': true,
         }
+      },
+      {
+        insert: ' '
       }
     ]
 
-    this.controller.applyDeltaToEditableBlock(block, deltas)
-    this.controller.setSelection(block, end - len + item.name.length)
+    this.controller.applyDeltaToEditableBlock(block, deltas, true)
+    // this.controller.setSelection(block, end - len + item.name.length + 1)
   }
 
   destroy() {
