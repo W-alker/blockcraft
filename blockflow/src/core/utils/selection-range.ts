@@ -1,11 +1,13 @@
 /* 纯文本索引的焦点选区范围 */
+import {isEmbedElement} from "@core/utils/isEmbedNode";
+
 export interface ICharacterRange {
   start: number,
   end: number,
 }
 
 export interface ICharacterPosition {
-  textNode: Text,
+  node: Element,
   offset: number,
   eleOffset: number,
   beforeEleOffset: number
@@ -94,79 +96,59 @@ export const setSelection = (el: HTMLElement, start: CharacterIndex, end: Charac
   const sel = document.getSelection()!
   if (!el.textContent) {
     sel.setPosition(el, 0)
-  } else if (start === end) {
-    start = characterIndex2Number(start, el.textContent!.length)
-    const pos = findTextNodeByIndex(el, start)
-    sel.setPosition(pos.textNode, pos.offset)
-  } else {
-    start = characterIndex2Number(start, el.textContent!.length)
-    end = characterIndex2Number(end, el.textContent!.length)
-    const startNode = findTextNodeByIndex(el, start)
-    const endNode = findTextNodeByIndex(el, end, startNode)
-    sel.setBaseAndExtent(startNode.textNode, startNode.offset, endNode.textNode, endNode.offset)
+    return
   }
+
+  const textLength = el.textContent.length
+  start = characterIndex2Number(start, textLength)
+  end = characterIndex2Number(end, textLength)
+
+  if (start === end) {
+    const {node, offset, eleOffset} = findNodeByIndex(el, start)
+    if (isEmbedElement(node)) sel.setPosition(el, eleOffset)
+    else sel.setPosition(node.firstChild!, offset)
+    return;
+  }
+
+  const startPos = findNodeByIndex(el, start)
+  const endPos = findNodeByIndex(el, end, startPos)
+  const startIsEmbed = startPos.node.getAttribute('contenteditable') === 'false'
+  const endIsEmbed = endPos.node.getAttribute('contenteditable') === 'false'
+  sel.setBaseAndExtent(
+    startIsEmbed ? el : startPos.node.firstChild!,
+    startIsEmbed ? startPos.eleOffset : startPos.offset,
+    endIsEmbed ? el : endPos.node.firstChild!,
+    endIsEmbed ? endPos.eleOffset : endPos.offset
+  )
+
 }
 
-/*
-* 根据纯文本的字符索引设置选区
-* @param {IRange} range - 纯文本索引的选区
-* @param {HTMLElement} el - 恢复选区的容器元素
-* @param {Range} rangeInstance - Range实例, 如果没有则默认使用document.createRange()
-*/
-export const setRange = (range: ICharacterRange, el: HTMLElement, rangeInstance: Range = document.createRange()) => {
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-    rangeInstance.setStart(el, range.start)
-    rangeInstance.setEnd(el, range.end)
-    return rangeInstance
-  }
-
-  if (!el.childElementCount) {
-    rangeInstance.setStart(el, 0)
-    rangeInstance.setEnd(el, 0)
-    return rangeInstance
-  }
-
-  const pos1 = findTextNodeByIndex(el, range.start)
-  rangeInstance.setStart(pos1.textNode, pos1.offset)
-  if (range.start === range.end) {
-    rangeInstance.setEnd(pos1.textNode, pos1.offset)
-  } else {
-    const pos2 = findTextNodeByIndex(el, range.end)
-    rangeInstance.setEnd(pos2.textNode, pos2.offset)
-  }
-  return rangeInstance
-}
-
-export const replaceRangeInView = (range: Range) => {
-  const sel = window.getSelection()!
-  sel.removeAllRanges()
-  sel.addRange(range)
-}
-
-export const findTextNodeByIndex = (ele: HTMLElement, index: number, findFrom?: ICharacterPosition): ICharacterPosition => {
+export const findNodeByIndex = (ele: HTMLElement, index: number, findFrom?: ICharacterPosition): ICharacterPosition => {
   if (!ele.children.length) throw new Error('no children')
+  console.log('findNodeByIndex', index, findFrom)
 
   let cnt = findFrom?.beforeEleOffset || 0
   if (index === 0) return {
-    textNode: ele.firstChild!.firstChild as Text,
+    node: ele.firstElementChild!,
     offset: 0,
     eleOffset: 0,
     beforeEleOffset: 0
   }
   if (index === ele.textContent!.length) return {
-    textNode: ele.lastChild!.lastChild as Text,
-    offset: ele.lastChild!.textContent!.length,
-    eleOffset: ele.children.length - 1,
+    node: ele.lastElementChild!,
+    offset: ele.lastElementChild!.textContent!.length,
+    eleOffset: ele.children.length,
     beforeEleOffset: ele.textContent!.length
   }
 
   const childElements = ele.children
   for (let i = findFrom?.eleOffset || 0; i < childElements.length; i++) {
     const child = childElements[i]
-    const childTextLength = child.textContent!.length
+
+    const childTextLength = child.textContent?.length || 1
     if (cnt + childTextLength >= index) {
       return {
-        textNode: child.firstChild as Text,
+        node: child,
         offset: index - cnt,
         eleOffset: i,
         beforeEleOffset: cnt

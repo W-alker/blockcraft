@@ -50,13 +50,12 @@ export class BlockTransformPlugin implements IPlugin {
   version = 1.0;
 
   private _controller!: Controller
+  private mdTransformList: { regex: RegExp, flavour: IBlockFlavour }[] = []
 
   constructor(
     readonly transformList: IBlockTransformConfig[] = blockTransforms
   ) {
   }
-
-  mdTransformList: { regex: RegExp, flavour: IBlockFlavour }[] = []
 
   init(controller: Controller) {
     this._controller = controller

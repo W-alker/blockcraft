@@ -7,8 +7,6 @@ export interface BlockSchema<T extends IBlockProps = IBlockProps> {
   nodeType: BlockNodeType;
   render: Type<BaseBlock>;
   children?: IBlockFlavour[];
-  meta?: () => IMetadata;
-  props?: () => T;
   onCreate?: (...params: any[]) => {
     props?: () => T,
     meta?: () => IMetadata,

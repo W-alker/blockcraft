@@ -15,8 +15,9 @@ import {Controller} from "@core/controller";
   template: ``,
 })
 export class BaseBlock<Model extends IBlockModel = IBlockModel> {
-  @Input({required: true}) readonly controller!: Controller
-  @Input({required: true}) readonly model!: Model
+  @Input({required: true}) controller!: Controller
+
+  @Input({required: true}) model!: Model
 
   @Output() onDestroy = new EventEmitter<void>()
 

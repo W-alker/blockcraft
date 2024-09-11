@@ -129,16 +129,19 @@ export class EditorRoot {
 
   @HostListener('focusin', ['$event'])
   private onFocusIn(event: FocusEvent) {
-    this._activeElement = event.target as HTMLElement
+    const target = event.target as HTMLElement
+    this._activeElement = target
+    if (target.getAttribute('placeholder') && !target.textContent) {
+      target.classList.add('placeholder-visible')
+    }
   }
 
   @HostListener('focusout', ['$event'])
   private onFocusOut(event: FocusEvent) {
     this._activeElement = null
     const target = event.target as HTMLElement
-    if (target === this.rootElement) {
-      this.selectedBlockRange && this.clearSelectedBlocks()
-    }
+    if (target === this.rootElement) this.selectedBlockRange && this.clearSelectedBlocks()
+    target.classList.remove('placeholder-visible')
   }
 
   // @HostListener('click', ['$event'])
@@ -175,10 +178,6 @@ export class EditorRoot {
       document.activeElement!.prepend(span)
       sel.getRangeAt(0).insertNode(span)
       sel.setPosition(span, 1)
-      // requestAnimationFrame(() => {
-      //   (span.firstChild as Text).deleteData(0, 1)
-      //   sel.modify('move', 'forward', 'character')
-      // })
     }
   }
 

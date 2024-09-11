@@ -1,6 +1,6 @@
 import {BlockNodeType} from "./node-type.type";
 import {IInlineModel} from "./inline.type";
-import {SimpleRecord} from "./currency.type";
+import {SimpleBasicType, SimpleRecord} from "./currency.type";
 
 export type IBlockFlavour = string;
 

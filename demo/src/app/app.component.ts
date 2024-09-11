@@ -5,19 +5,19 @@ import {
   BlockFlowEditor, BlockTransformPlugin, FloatTextToolbarPlugin,
   GlobalConfig, HeadingFourSchema,
   HeadingOneSchema, HeadingThreeSchema, HeadingTwoSchema, IBlockModel,
-  IEditableBlockModel, MentionPlugin,
+  IEditableBlockModel, ImageSchema, MentionPlugin,
   ParagraphSchema,
   SchemaStore,
 } from "@blockflow";
 import {genUniqueID} from "@core/utils";
 
-const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingTwoSchema, HeadingThreeSchema, HeadingFourSchema])
+const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingTwoSchema, HeadingThreeSchema, HeadingFourSchema, ImageSchema])
 
 const mentionRequest = async (keyword: string) => {
   const len = Math.floor(Math.random() * 10)
   const list = Array.from({length: len}).map(() => ({
     id: genUniqueID(),
-    name: keyword + Math.random()
+    name: keyword + Math.floor(Math.random() * 10000).toString().slice(0, 4)
   }))
 
   return {
@@ -167,6 +167,37 @@ export class AppComponent {
       props: {}
     } as IBlockModel
     this.editor.controller.insertBlocks(0, [block])
+  }
+
+  onClick6() {
+    const img = {
+      "flavour": "image",
+      "id": "1726043568107-d8792cbf-6b6b",
+      "nodeType": "block",
+      "props": {
+        "src": "https://v17.angular.io/generated/images/guide/start/fork-the-project.png",
+        "width": 400,
+        "height": 0,
+        "align": "center"
+      },
+      "meta": {
+      },
+      "children": [
+        {
+          "flavour": "paragraph",
+          "id": "1726043571963-03c23813-3fbf",
+          "nodeType": "editable",
+          "props": {},
+          "meta": {},
+          "children": [
+            {
+              "insert": "z这是一个图片测试"
+            }
+          ]
+        }
+      ]
+    }
+    this.editor.controller.insertBlocks(0, [img])
   }
 
   ngOnDestroy() {

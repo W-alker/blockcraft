@@ -1,4 +1,4 @@
-import {Component, DestroyRef, HostBinding, inject} from "@angular/core";
+import {Component, DestroyRef, HostBinding, inject, Input} from "@angular/core";
 import {BaseBlock} from "@core/block-std/components/base-block";
 import {DeltaInsert, DeltaOperation, IEditableBlockModel} from "@core/types";
 import {NgForOf, NgTemplateOutlet} from "@angular/common";
@@ -17,9 +17,11 @@ import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
   ],
 })
 export class EditableBlock extends BaseBlock<IEditableBlockModel> {
+  @Input() placeholder: string = ''
+
   @HostBinding('style.text-align')
   get textAlign() {
-    return this.model.props['textAlign']
+    return this.props['textAlign']
   }
 
   private yText!: Y.Text
@@ -33,7 +35,13 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
       Promise.resolve().then(() => {
         this.model.children = this.yText.toDelta()
       })
+      this.setPlaceholder()
     })
+  }
+
+  private setPlaceholder() {
+    if(!this.textLength && this.placeholder) return this.containerEle.setAttribute('placeholder', this.placeholder)
+    this.containerEle.removeAttribute('placeholder')
   }
 
   override ngAfterViewInit() {
@@ -41,6 +49,7 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
     this.containerEle = this.hostEl.nativeElement.querySelector('.editable-container') || this.hostEl.nativeElement
     this.forceRender()
 
+    this.setPlaceholder()
     this.controller.readonly$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(readonly => {
       if (readonly) this.containerEle.removeAttribute('contenteditable')
       else this.containerEle.setAttribute('contenteditable', 'true')
@@ -48,7 +57,7 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
   }
 
   getTextDelta() {
-    return this.model.children = this.yText.toDelta()
+    return this.model.children = this.yText.toDelta() as DeltaInsert[]
   }
 
   getTextContent() {
@@ -87,15 +96,12 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
     let retain = 0
     for (const delta of deltas) {
       if (delta.retain) {
-        if (delta.attributes) {
-          this.forceRender()
-          // formatContent(this.containerEle, {start: retain, end: retain + delta.retain}, delta.attributes)
-        }
-        // this.format(delta.attributes, {start: retain, end: retain + delta.retain})
+        if (delta.attributes) this.forceRender()
+        withSelection && (_range = {start: retain, end: retain + delta.retain})
         retain += delta.retain
       } else if (delta.insert) {
         insertContent(this.containerEle, retain, delta as DeltaInsert)
-        retain += delta.insert.length
+        retain += typeof delta.insert === 'string' ? delta.insert.length : 1
         withSelection && (_range = {start: retain, end: retain})
       } else if (delta.delete) {
         deleteContent(this.containerEle, retain, delta.delete)
@@ -106,7 +112,7 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
     }
 
     if (withSelection && _range) {
-      console.log('setSelection', _range)
+      // console.log('setSelection', _range)
       setSelection(this.containerEle, _range!.start, _range!.end)
     }
     // console.timeEnd('applyDeltaToView')

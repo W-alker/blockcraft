@@ -1,16 +1,23 @@
 import {IInlineAttrs} from "./inline.type";
 
-export interface DeltaInsert {
+export type DeltaInsert = {
+  insert: DeltaInsertEmbed["insert"] | DeltaInsertText["insert"]
+} & OptionalAttributes;
+
+export type DeltaInsertText = {
   insert: string
-  attributes?: IInlineAttrs
-}
+} & OptionalAttributes;
+
+export type DeltaInsertEmbed = {
+  insert: { [key: string]: any } & IInlineAttrs
+} & OptionalAttributes;
 
 export interface OptionalAttributes {
   attributes?: IInlineAttrs;
 }
 
 export type DeltaOperation = {
-  insert?: string;
+  insert?: DeltaInsert["insert"]
   delete?: number;
   retain?: number;
 } & OptionalAttributes;

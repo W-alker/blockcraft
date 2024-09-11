@@ -46,13 +46,22 @@ export class ModelSyncer {
     return map
   }
 
-  static proxy(obj: Object, yObj: Y.Map<any> | Y.Array<any>) {
+  static proxy(obj: Object, yObj: Y.Map<any> | Y.Array<any>, cb?: (obj: IBlockModel, yObj: Y.Map<any>) => void) {
     if (typeof obj !== 'object') return obj
     if (isBlockModel(obj)) {
       // @ts-ignore
       obj.meta = this.proxyMap(obj.meta, yObj.get('meta') as Y.Map<any>)
       // @ts-ignore
       obj.props = this.proxyMap(obj.props, yObj.get('props') as Y.Map<any>)
+      cb && cb(obj, yObj as Y.Map<any>)
+      if(obj.nodeType === 'block') {
+        const children = obj.children as IBlockModel[]
+        // @ts-ignore
+        const yChildren = yObj.get('children') as Y.Array<any>
+        children.forEach((child, i) => {
+          children[i] = this.proxy(child, yChildren.get(i) as Y.Map<any>, cb) as IBlockModel
+        })
+      }
       return obj
     }
 
@@ -60,6 +69,7 @@ export class ModelSyncer {
       return this.proxyArray(obj, yObj as Y.Array<any>)
     }
     return this.proxyMap(obj, yObj as Y.Map<any>)
+
   }
 
   static proxyMap(obj: Record<string, any>, yMap: Y.Map<any>) {
@@ -75,7 +85,7 @@ export class ModelSyncer {
   static proxyArray(arr: any[], yArr: Y.Array<any>) {
     for (let i = 0; i < arr.length; i++) {
       const v = arr[i]
-      if (typeof v === 'object')
+      if (isBlockModel(v))
         arr[i] = this.proxy(v, yArr.get(i))
     }
     return syncChangeArray(arr, yArr)

@@ -41,6 +41,9 @@ const getPath = (obj: Object) => {
     return obj['_path_'] as Path
 }
 
+/**
+ * @deprecated
+ */
 export class ModelController {
     blockModelStore = new Map<string, IBlockModel>()
     history: ITransaction[] = []

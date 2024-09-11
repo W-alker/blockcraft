@@ -12,6 +12,16 @@ bf-editor {
     padding: 0;
   }
 
+  .editable-container {
+    &.placeholder-visible {
+      &::after {
+        content: attr(placeholder);
+        opacity: .7;
+        pointer-events: none;
+      }
+    }
+  }
+
   [contenteditable="true"] {
     outline: none;
   }
@@ -63,8 +73,8 @@ bf-editor {
     cursor: pointer;
   }
 
-  [bfi-mention="true"] {
-    padding: 0 .1em;
+  [bf-embed="mention"] {
+    padding: 0 .15em;
     color: #4857E2;
     cursor: pointer;
 
@@ -77,13 +87,18 @@ bf-editor {
       -moz-osx-font-smoothing: grayscale;
     }
 
-    //&::after {
-    //  content: attr(data-mention-name);
-    //}
+    &::after {
+      content: attr(data-mention-name);
+    }
+
+    &:hover {
+      background-color: rgba(72, 87, 226, 0.1);
+      border-radius: 4px;
+    }
   }
 
   ::selection {
-    background: rgba(46, 115, 252, 0.2);
+    background: rgba(46, 115, 252, .4);
   }
 
 }

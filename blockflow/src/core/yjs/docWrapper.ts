@@ -1,5 +1,5 @@
 import Y, {ModelSyncer} from "@core/yjs";
-import {DeltaOperation, IBlockModel} from "@core/types";
+import {IBlockModel} from "@core/types";
 
 export interface InitConfig {
   rootId: string
@@ -94,7 +94,7 @@ export class BlockFlowDoc {
 
   insertBlocks(insertIndex: number, blocks: IBlockModel[], parentId: string) {
     const yBlocks = this.blocks2Y(blocks)
-    // console.log('insertBlocks', this.flatMapStore)
+    console.log('insertBlocks', this.flatMapStore)
     if (parentId === this.rootId) {
       this.rootYModel.insert(insertIndex, yBlocks)
       this.rootModel.splice(insertIndex, 0, ...blocks)
@@ -138,7 +138,7 @@ export class BlockFlowDoc {
       _t.children = target.toDelta()
     } else if (target instanceof Y.Array) {
       const _t = findByPath(path, this.rootModel)
-      this.applyYChangeDeltaToArray(changes.delta as DeltaOperation[], _t)
+      this.applyYChangeDeltaToArray(changes.delta as any[], _t)
     } else {
       const _t = findByPath(path, this.rootModel)
       event.changes.keys.forEach((change, key) => {
@@ -160,6 +160,7 @@ export class BlockFlowDoc {
     retain?: number;
   }>, array: Array<any>) {
     let retain = 0
+    console.log('applyYChangeDeltaToArray', deltas)
     deltas.forEach((d) => {
       const {retain: r, insert, delete: del} = d
       if (r) {
@@ -168,12 +169,11 @@ export class BlockFlowDoc {
         if (insert instanceof Array) {
           if (insert[0] instanceof Y.Map && insert[0].get('flavour')) {
             const bms = insert.map((v: Y.Map<any>) => v.toJSON()) as IBlockModel[]
-            console.log('restore  block model', insert)
             // restore to flatMapStore
             bms.forEach((bm, idx) => {
-              this.flatMapStore.set(bm.id, {m: bm, y: insert[idx]})
               // re-proxy block model
-              bms[idx] = ModelSyncer.proxy(bm, insert[idx]) as IBlockModel
+              bms[idx] = ModelSyncer.proxy(bm, insert[idx],
+                (bmo, ymo) => this.flatMapStore.set(bmo.id, {m: bmo, y: ymo})) as IBlockModel
             })
             Array.prototype.splice.call(array, retain, 0, ...bms)
           } else {

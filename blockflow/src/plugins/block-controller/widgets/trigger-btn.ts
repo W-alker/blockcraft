@@ -4,11 +4,10 @@ import {
   HostListener,
   Input,
 } from "@angular/core";
-import {BaseBlock, BlockSchema, Controller, ClipDataWriter, EditableBlock} from "@core";
-import {SparkPopover} from "./spark-popover";
+import {BaseBlock, Controller, EditableBlock} from "@core";
 import {NgIf} from "@angular/common";
-import {ISparkEvent, ISparkItem} from "./spark-item.type";
 import {take} from "rxjs";
+import {BlockFlowContextmenu} from "@editor";
 
 const calcLineHeight = (wrap: HTMLElement) => {
   const computedStyle = window.getComputedStyle(wrap)
@@ -23,9 +22,8 @@ const calcLineHeight = (wrap: HTMLElement) => {
     <div class="btn">
       <i [class]="['editor', hasContent ? 'editor-drag' : 'editor-add']"></i>
     </div>
-    <div class="spark-popover" [baseBlockList]="baseSparkList" [commonBlockList]="commonSparkList"
-         [toolList]="toolSparkList" [hasContent]="hasContent" [activeBlock]="activeBlock"
-         *ngIf="showPopover && activeBlock" (itemClick)="onItemClicked($event)"></div>
+    <div class="bf-contextmenu" [controller]="controller" [activeBlock]="activeBlock"
+         *ngIf="showPopover && activeBlock" (itemClick)="close()"></div>
   `,
   styles: [`
     :host {
@@ -61,24 +59,12 @@ const calcLineHeight = (wrap: HTMLElement) => {
       background-color: #E6E6E6;
     }
   `],
-  imports: [SparkPopover, NgIf],
+  imports: [BlockFlowContextmenu, NgIf],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class TriggerBtn {
 
-  protected _controller!: Controller
-  @Input()
-  set controller(val: Controller) {
-    if (!val) return
-    this._controller = val
-    const schemas = val.schemaStore.values()
-    this.baseSparkList = schemas.filter(schema => schema.nodeType === 'editable')
-    this.commonSparkList = schemas.filter(schema => schema.nodeType !== 'editable')
-  }
-
-  get controller() {
-    return this._controller
-  }
+  @Input() controller!: Controller
 
   constructor(
     public cdr: ChangeDetectorRef
@@ -148,25 +134,6 @@ export class TriggerBtn {
   }
 
   showPopover = false
-  protected baseSparkList: BlockSchema[] = []
-  protected commonSparkList: BlockSchema[] = []
-  protected toolSparkList: ISparkItem[] = [
-    {
-      flavour: 'cut',
-      icon: 'icon-cut',
-      label: '剪切',
-    },
-    {
-      flavour: 'copy',
-      icon: 'editor editor-xuqiuwendang_fuzhi',
-      label: '复制',
-    },
-    {
-      flavour: 'delete',
-      icon: 'editor editor-delete_01',
-      label: '删除',
-    }
-  ]
 
   @HostBinding('style.display')
   private display = 'none'
@@ -210,44 +177,4 @@ export class TriggerBtn {
     // this.mutationObserver.disconnect()
   }
 
-  onItemClicked(value: ISparkEvent) {
-    const {item, type} = value
-
-    if (type === 'tool') {
-      switch (item.flavour) {
-        case 'cut':
-        case 'copy':
-          const model = this.controller.docManager.queryBlockModel(this.activeBlock!.id)!
-          ClipDataWriter.writeModelToClipboard([model]).then(() => {
-            item.flavour === 'cut' && this.controller.deleteBlockById(this.activeBlock!.id)
-            this.close()
-          })
-          return
-        case 'delete':
-          this.controller.deleteBlockById(this.activeBlock!.id)
-          this.close()
-          return
-      }
-      return
-    }
-
-    const schema = item as BlockSchema
-    if (this.activeBlock instanceof EditableBlock && schema.nodeType === 'editable') {
-      const deltas = this.activeBlock.getTextDelta()
-      const newBlock = this.controller.schemaStore.create(schema.flavour, deltas)
-      this.controller.replaceWith(this.activeBlock.id, newBlock).then(() => {
-        this.close()
-        this.controller.setSelection(newBlock.id, 'start')
-      })
-    } else {
-      const position = this.controller.getBlockPosition(this.activeBlock!.id)
-      const newBlock = this.controller.schemaStore.create(schema.flavour)
-      this.controller.insertBlocks(position.index + 1, [newBlock], position.parentId).then(() => {
-        this.close()
-        newBlock.nodeType === 'editable' && this.controller.setSelection(newBlock.id, 'start')
-      })
-    }
-  }
-
-  protected readonly eval = eval;
 }

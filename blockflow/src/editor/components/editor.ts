@@ -20,7 +20,8 @@ import {NgForOf, NgIf, NgSwitch} from "@angular/common";
     EditorRoot,
     LazyEditorRoot,
     NgSwitch,
-  ]
+  ],
+  providers: []
 })
 export class BlockFlowEditor {
 
@@ -48,7 +49,7 @@ export class BlockFlowEditor {
   }
 
   ngAfterViewInit() {
-      !this.controller && this.createController(this.globalConfig)
+    !this.controller && this.createController(this.globalConfig)
   }
 
   private createController(config: GlobalConfig) {
@@ -58,13 +59,15 @@ export class BlockFlowEditor {
     this._controller.attach(this.root)
   }
 
-  @HostListener('click', ['$event'])
+  // @HostListener('click', ['$event'])
   onClick(event: MouseEvent) {
-    if(this.controller.rootModel.length || this.controller.readonly$.value) return
+    if (this.controller.rootModel.length || this.controller.readonly$.value) return
     const p = this.controller.schemaStore.create('paragraph')
-    this.controller.insertBlocks(0, [p]).then(() => {
-      this.controller.setSelection(p.id, 'start')
-    })
+    this.controller.transact(() => {
+      this.controller.insertBlocks(0, [p]).then(() => {
+        this.controller.setSelection(p.id, 'start')
+      })
+    }, 'start')
   }
 
 }

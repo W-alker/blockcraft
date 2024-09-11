@@ -80,7 +80,8 @@
             ],
             "styles": [
               "demo/src/styles.scss",
-              "blockflow/src/editor/styles/editor.scss"
+              "blockflow/src/editor/styles/editor.scss",
+              "node_modules/viewerjs/dist/viewer.min.css",
             ],
             "scripts": []
           },

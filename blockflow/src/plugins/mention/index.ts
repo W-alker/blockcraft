@@ -1,8 +1,7 @@
-import {Controller, DeltaOperation, IPlugin} from "@core";
+import {BlockflowInline, Controller, IPlugin} from "@core";
 import {debounceTime, fromEvent, fromEventPattern, Subscription, take} from "rxjs";
 import {MentionDialog} from "./widget/mention-dialog";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
-import {getAttributesFrom} from "@core/block-std/inline/getAttributes";
 
 export interface IMentionRequest {
   (keyword: string): Promise<IMentionResponse>
@@ -97,7 +96,6 @@ export class MentionPlugin implements IPlugin {
       handler => this._mentionInputObserver.disconnect()
     ).pipe(debounceTime(300)).subscribe(() => {
       this.request(node.textContent!.slice(1)).then((res) => {
-        console.log(res)
         this._dialog!.setInput('list', res.list)
       })
     })
@@ -165,30 +163,54 @@ export class MentionPlugin implements IPlugin {
     _range.setEndAfter(this._mentionElement!)
     const end = _range.toString().length
     const len = this._mentionElement!.textContent!.length
+    const start = end - len
 
-    const deltas: DeltaOperation[] = [
-      {
-        retain: end - len,
-      },
-      {
-        delete: len
-      },
-      {
-        insert: item.name,
-        attributes: {
-          ...getAttributesFrom(this._mentionElement!),
-          'd:mentionId': item.id,
-          'd:mentionName': item.name,
-          'a:mention': true,
+    const attributes = {
+      'd:mentionId': item.id,
+      'd:mentionName': item.name,
+      ...BlockflowInline.getAttributes(this._mentionElement!)
+    }
+
+    const yText = this.controller.getEditableBlockYText(block.id)
+    this.controller.transact(() => {
+      const mentionNode = BlockflowInline.createView(
+        {
+          insert: {
+            mention: item.name
+          },
+          attributes
         }
-      },
-      {
-        insert: ' '
-      }
-    ]
+      )
+      this._mentionElement!.replaceWith(mentionNode)
 
-    this.controller.applyDeltaToEditableBlock(block, deltas, true)
-    // this.controller.setSelection(block, end - len + item.name.length + 1)
+      yText.delete(start, len)
+      yText.insertEmbed(start, {mention: item.name}, attributes)
+
+      _range.setEndAfter(mentionNode)
+      _range.collapse(false)
+      document.getSelection()!.removeAllRanges()
+      document.getSelection()!.addRange(_range)
+    })
+
+    // const deltas = [
+    //   {
+    //     retain: start,
+    //   },
+    //   {
+    //     delete: len
+    //   },
+    //   {
+    //     insert: ' '
+    //   },
+    //   {
+    //     insert: {
+    //       mention: item.name
+    //     },
+    //     attributes
+    //   }
+    // ]
+    //
+    // this.controller.applyDeltaToEditableBlock(block, deltas, true)
   }
 
   destroy() {
