@@ -1,5 +1,5 @@
 import {
-  Component,
+  Component, ComponentRef,
   ElementRef, EventEmitter,
   HostBinding,
   inject,
@@ -16,7 +16,6 @@ import {Controller} from "@core/controller";
 })
 export class BaseBlock<Model extends IBlockModel = IBlockModel> {
   @Input({required: true}) controller!: Controller
-
   @Input({required: true}) model!: Model
 
   @Output() onDestroy = new EventEmitter<void>()
@@ -37,6 +36,10 @@ export class BaseBlock<Model extends IBlockModel = IBlockModel> {
 
   get props() {
     return this.model!.props as Model['props']
+  }
+
+  get children() {
+    return this.model.children as Model['children']
   }
 
   public hostEl: ElementRef<HTMLElement> = inject(ElementRef)

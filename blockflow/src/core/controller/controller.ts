@@ -1,6 +1,6 @@
-import {BlockFlowDoc} from "@core/yjs";
+import {BlockFlowDoc, ModelSyncer, YBlockModel} from "@core/yjs";
 import {IBlockFlowRange} from "@core/controller/type";
-import {DeltaOperation, IBlockModel} from "@core/types";
+import {DeltaOperation, IBlockFlavour, IBlockModel} from "@core/types";
 import {
   CharacterIndex,
   genUniqueID, getCurrentCharacterRange,
@@ -14,7 +14,7 @@ import Y from "@core/yjs";
 import {IPlugin} from "@core/plugins";
 import {EditorRoot} from "@core/block-render";
 import {SchemaStore} from "@core/schemas";
-import {Injector} from "@angular/core";
+import {ApplicationRef, ComponentFactoryResolver, Injector, ViewContainerRef} from "@angular/core";
 
 export interface HistoryConfig {
   open: boolean
@@ -44,6 +44,8 @@ export class Controller {
   public readonly keyEventBus: KeyEventBus = new KeyEventBus(this)
 
   private _root!: EditorRoot
+  private _componentFactory = this.injector.get(ComponentFactoryResolver)
+  private _appRef = this.injector.get(ApplicationRef)
 
   constructor(
     private readonly config: IControllerConfig,
@@ -57,7 +59,7 @@ export class Controller {
 
     this.docManager.rootYModel.observeDeep((e, tr) => {
       // console.log('YEvent=============', e.map(ev => ev.target))
-      console.log('YEvent=============', tr)
+      // console.log('YEvent=============', tr)
       if (!this.undoRedo$.value) return
       this.syncYEventUpdate(e, tr)
       this.undoRedo$.next(false)
@@ -115,6 +117,10 @@ export class Controller {
     this.readonly$.next(bol)
   }
 
+  get schemas() {
+    return this.config.schemas
+  }
+
   get root() {
     return this._root
   }
@@ -131,16 +137,11 @@ export class Controller {
     return this.docManager.rootModel
   }
 
-  get schemaStore() {
-    return this.config.schemas
-  }
-
   /**
    * Just store block instance when it rendered
    * @param blockRef block instance
    */
   storeBlockRef<B extends BaseBlock>(blockRef: B) {
-    console.log('storeBlockRef', blockRef.id)
     this.blockRefStore.set(blockRef.id, blockRef)
     for (const key in this.blocksWaiting) {
       if (key === blockRef.id) this.blocksWaiting[key] = true
@@ -187,6 +188,20 @@ export class Controller {
     blockRef.applyDeltaToView(delta, setSelection)
   }
 
+  createBlock(flavour: IBlockFlavour, params?: any[]) {
+    return this.config.schemas.create(flavour, params)
+  }
+
+  createBlockView(vcr: ViewContainerRef, block: IBlockModel) {
+    const schema = this.config.schemas.get(block.flavour)
+    if (!schema) throw new Error(`Schema not found for flavour ${block.flavour}`)
+    const cpr = vcr.createComponent(schema.render)
+    cpr.setInput('model', block)
+    cpr.setInput('controller', this)
+    cpr.changeDetectorRef.detectChanges()
+    return cpr
+  }
+
   insertBlocks(index: number, blocks: IBlockModel[], parentId: string = this.rootId) {
     this.blocksReady$.next(false)
     this.blocksWaiting = blocks.map(b => ({[b.id]: false})).reduce((a, b) => ({...a, ...b}), {})
@@ -219,6 +234,49 @@ export class Controller {
         this.insertBlocks(index, [newBlock], parentId).then(resolve)
       })
     })
+  }
+
+  moveBlock(origin: string, target: string, position: 'before' | 'after') {
+    const originPos = this.getBlockPosition(origin)!
+    const targetPos = this.getBlockPosition(target)!
+    console.log(targetPos, originPos)
+
+    // const originParentChildren = this.getBlockChildren(originPos.parentId)
+    // const targetParentChildren = this.getBlockChildren(targetPos.parentId)
+
+    const insertIndex = position === 'before'
+      ? (originPos.index < targetPos.index ? targetPos.index - 1 : targetPos.index)
+      : (originPos.index < targetPos.index ? targetPos.index : targetPos.index + 1)
+
+    this.transact(() => {
+      const m = this.docManager.queryYBlockModel(origin)!.toJSON() as IBlockModel
+      console.log(m)
+      this.deleteBlockById(origin)
+      this.insertBlocks(insertIndex, [m], targetPos.parentId).then(() => {
+        this.root.cdr.detectChanges()
+      })
+      // const originBlock = originParentChildren.m.slice(originPos.index, originPos.index + 1)[0]
+      // const yOriginBlock = originParentChildren.y.get(originPos.index).clone()
+      // console.log('originBlock+++++++++++', originBlock, yOriginBlock, targetParentChildren)
+      // originParentChildren.y.delete(originPos.index, 1)
+      // originParentChildren.m.splice(originPos.index, 1)
+      //
+      // targetParentChildren.y.insert(insertIndex, [yOriginBlock])
+      // targetParentChildren.m.splice(insertIndex, 0, originBlock)
+    })
+  }
+
+  private getBlockChildren(id: string) {
+    const res = {} as { m: IBlockModel[], y: Y.Array<YBlockModel> }
+    if (id === this.rootId) {
+      res.m = this.rootModel
+      res.y = this.docManager.rootYModel
+    } else {
+      const parent = this.docManager.queryModel(id)!
+      res.m = parent.m.children as IBlockModel[]
+      res.y = parent.y.get('children') as Y.Array<YBlockModel>
+    }
+    return res
   }
 
   duplicateBlockById(id: string) {

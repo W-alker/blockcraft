@@ -167,16 +167,7 @@ export class BlockControllerPlugin implements IPlugin {
     // console.log('sort block', targetBlockWrap, position)
     const activeBlockId = this._activeBlockWrap!.getAttribute('data-block-id')!
     const targetBlockId = targetBlockWrap.getAttribute('data-block-id')!
-    const activePos = this._controller.getBlockPosition(activeBlockId)
-    const targetPos = this._controller.getBlockPosition(targetBlockId)
-    this._controller.transact(() => {
-      const bm = this._controller.deleteBlockById(activeBlockId)
-      if (position === 'before')
-        this._controller.insertBlocks(activePos.index < targetPos.index ? targetPos.index - 1 : targetPos.index, bm, targetPos.parentId)
-      else
-        this._controller.insertBlocks(activePos.index < targetPos.index ? targetPos.index : targetPos.index + 1, bm, targetPos.parentId)
-    })
-
+    this._controller.moveBlock(activeBlockId, targetBlockId, position)
   }
 
   destroy() {

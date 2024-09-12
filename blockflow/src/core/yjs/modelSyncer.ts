@@ -1,7 +1,7 @@
 import {IBlockModel, IBlockProps, SimpleRecord, SimpleValue} from "@core/types";
 import Y from "./index";
 
-export type YBlockModel = Y.Map<unknown>
+export type YBlockModel = Y.Map<any>
 
 export const isBlockModel = (obj: any): obj is IBlockModel => {
   return obj.nodeType && obj.id && obj.flavour
@@ -11,19 +11,15 @@ export class ModelSyncer {
   constructor() {
   }
 
-  static blockModel2Y = (block: IBlockModel, cb?: (block: IBlockModel, yMap: Y.Map<any>) => void): YBlockModel => {
+  static blockModel2Y = (block: IBlockModel, cb?: (block: IBlockModel, yMap: YBlockModel) => void): YBlockModel => {
     let map: Y.Map<any>
 
     let children
-    if (block.children) {
-
-      if (block.nodeType === 'editable') {
-        children = new Y.Text()
-        block.children.length && children.applyDelta(block.children)
-      } else {
-        children = Y.Array.from( (block.children as IBlockModel[]).map(child => this.blockModel2Y(child, cb)) )
-      }
-
+    if (block.nodeType === 'editable') {
+      children = new Y.Text()
+      block.children.length && children.applyDelta(block.children)
+    } else {
+      children = Y.Array.from((block.children as IBlockModel[]).map(child => this.blockModel2Y(child, cb)))
     }
 
     const {obj: props, yObj: yProps} = this.obj2y(block.props)
@@ -50,11 +46,11 @@ export class ModelSyncer {
     if (typeof obj !== 'object') return obj
     if (isBlockModel(obj)) {
       // @ts-ignore
-      obj.meta = this.proxyMap(obj.meta, yObj.get('meta') as Y.Map<any>)
+      obj.meta = this.proxyMap(obj.meta, yObj.get('meta'))
       // @ts-ignore
       obj.props = this.proxyMap(obj.props, yObj.get('props') as Y.Map<any>)
       cb && cb(obj, yObj as Y.Map<any>)
-      if(obj.nodeType === 'block') {
+      if (obj.nodeType === 'block') {
         const children = obj.children as IBlockModel[]
         // @ts-ignore
         const yChildren = yObj.get('children') as Y.Array<any>
@@ -127,11 +123,13 @@ const syncChangeMap = <T extends SimpleRecord>(obj: T, yObj: Y.Map<any>): T => {
     set(target, prop, value) {
       console.log('set', prop, value)
       if (typeof prop === 'symbol') throw TypeError('key cannot be a symbol')
+      if (prop.startsWith('__')) return Reflect.set(target, prop.slice(2), value)
       yObj.set(prop, value)
       return Reflect.set(target, prop, value)
     },
     deleteProperty(target: IBlockProps, p): boolean {
       if (typeof p === 'symbol') throw TypeError('You try to delete a symbol property, which is not allowed.')
+      if (p.startsWith('__')) return Reflect.deleteProperty(target, p.slice(2))
       yObj.delete(p)
       return Reflect.deleteProperty(target, p)
     }

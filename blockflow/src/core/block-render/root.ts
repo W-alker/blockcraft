@@ -21,7 +21,7 @@ import {BehaviorSubject} from "rxjs";
   selector: 'div[bf-node-type="root"][lazy-load="false"]',
   template: `
     <ng-container *ngIf="controller">
-      <ng-container *ngFor="let block of controller.rootModel; trackBy:trackBy">
+      <ng-container *ngFor="let block of controller.rootModel; trackBy: trackBy">
         <div bf-block-wrap [controller]="controller" [model]="block"></div>
       </ng-container>
     </ng-container>
@@ -40,7 +40,7 @@ export class EditorRoot {
 
   constructor(
     public readonly elementRef: ElementRef<HTMLElement>,
-    protected cdr: ChangeDetectorRef,
+    public readonly cdr: ChangeDetectorRef,
     private vcr: ViewContainerRef
   ) {
   }

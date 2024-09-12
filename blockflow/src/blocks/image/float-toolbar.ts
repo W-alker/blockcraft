@@ -54,12 +54,12 @@ const TOOLBAR_LIST: IToolbarItem[] = [
 @Component({
   selector: 'div.img-block__toolbar',
   template: `
-    <div class="img-block__toolbar__item" title="添加图片标题" (click)="onItemClick('caption')">
+    <div class="img-block__toolbar__item" title="添加图片标题" (click)="onItemClick($event, 'caption')">
       <i class="editor editor-wenben"></i>
     </div>
     <ng-container *ngFor="let item of toolbarList">
       <ng-container *ngIf="item.name !== 'line'; else lineTpl">
-        <div class="img-block__toolbar__item" [title]="item.title" (click)="onItemClick(item.name, item.value)"
+        <div class="img-block__toolbar__item" [title]="item.title" (click)="onItemClick($event, item.name, item.value)"
              [class.active]="item.value && props[item.name] === item.value">
           <i [class]="item.icon"></i>
         </div>
@@ -122,7 +122,9 @@ export class ImageBlockFloatToolbar {
 
   @Output() itemClick = new EventEmitter<Pick<IToolbarItem, 'name' | 'value'>>
 
-  onItemClick(name: string, value?: string) {
+  onItemClick(event: Event,name: string, value?: string) {
+    event.stopPropagation()
+    event.preventDefault()
     this.itemClick.emit({name, value})
   }
 

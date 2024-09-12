@@ -161,7 +161,7 @@ export class BlockFlowContextmenu {
   set controller(val: Controller) {
     if (!val) throw new Error('Controller is required')
     this._controller = val
-    const schemas = val.schemaStore.values()
+    const schemas = val.schemas.values()
     this.baseBlockList = schemas.filter(schema => schema.nodeType === 'editable')
     this.commonBlockList = schemas.filter(schema => schema.nodeType !== 'editable')
   }
@@ -228,7 +228,7 @@ export class BlockFlowContextmenu {
     const schema = item as BlockSchema
     if (this.activeBlock instanceof EditableBlock && schema.nodeType === 'editable') {
       const deltas = this.activeBlock.getTextDelta()
-      const newBlock = this.controller.schemaStore.create(schema.flavour, deltas)
+      const newBlock = this.controller.createBlock(schema.flavour, deltas)
       this.controller.replaceWith(this.activeBlock.id, newBlock).then(() => {
         this.controller.setSelection(newBlock.id, 'start')
       })
@@ -250,7 +250,7 @@ export class BlockFlowContextmenu {
         const fileUploader = this.controller.injector.get(FILE_UPLOADER)
         if(!file) throw new Error('file is required')
         fileUploader.upload(file).then((fileUri) => {
-          const newBlock = this.controller.schemaStore.create(schema.flavour, [fileUri])
+          const newBlock = this.controller.createBlock(schema.flavour, [fileUri])
           this.controller.insertBlocks(position.index + 1, [newBlock], position.parentId).then(() => {
             newBlock.nodeType === 'editable' && this.controller.setSelection(newBlock.id, 'start')
           })
@@ -259,7 +259,7 @@ export class BlockFlowContextmenu {
       return
     }
 
-    const newBlock = this.controller.schemaStore.create(schema.flavour)
+    const newBlock = this.controller.createBlock(schema.flavour)
     if (!this.hasContent)
       this.controller.replaceWith(this.activeBlock.id, newBlock).then(() => {
         newBlock.nodeType === 'editable' && this.controller.setSelection(newBlock.id, 'start')

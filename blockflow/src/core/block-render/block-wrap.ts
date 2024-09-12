@@ -25,16 +25,7 @@ export class BlockWrap {
   }
 
   ngAfterViewInit() {
-    this.createBlockView(this.model)
+    this.controller.createBlockView(this.container, this.model)
   }
 
-  createBlockView(block: IBlockModel) {
-    const schema = this.controller.schemaStore.get(block.flavour)
-    if (!schema) throw new Error(`Schema not found for flavour ${block.flavour}`)
-    const cpr = this.container.createComponent(schema.render)
-    cpr.setInput('model', block)
-    cpr.setInput('controller', this.controller)
-    cpr.changeDetectorRef.detectChanges()
-    return cpr
-  }
 }

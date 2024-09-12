@@ -7,12 +7,11 @@ import {
   SimpleChanges,
   ViewChild
 } from "@angular/core";
-import {BaseBlock} from "@core";
+import {BaseBlock, ClipDataWriter} from "@core";
 import {IImageBlockProps, IImgBlockModel} from "@blocks/image/type";
-import {NgIf} from "@angular/common";
+import {NgForOf, NgIf} from "@angular/common";
 import {filter, fromEvent, Subscription, take, throttleTime} from "rxjs";
 import Viewer from 'viewerjs';
-import {OverlayModule} from "@angular/cdk/overlay";
 import {ImageBlockFloatToolbar, IToolbarItem} from "@blocks/image/float-toolbar";
 import {ParagraphBlock} from "@blocks/paragraph/paragraph.block";
 
@@ -22,14 +21,14 @@ import {ParagraphBlock} from "@blocks/paragraph/paragraph.block";
   template: `
     <div class="img-block__container" [style.width.px]="_showWidth" (click)="onImgClick($event)"
          (mouseenter)="onContainerMouseEnter($event)" (mouseleave)="onContainerMouseLeave($event)">
-      <img [src]="model.props.src" #img="cdkOverlayOrigin" cdkOverlayOrigin
-           [class.resize-mode]="resizeMode !== 'none'" draggable="false">
 
-      <p class="img-block__caption editable-container" *ngIf="model.children?.length" #caption
-         [controller]="controller" [model]="model.children[0]" [placeholder]="'添加标题'"
-         (blur)="onCaptionBlur()" (click)="$event.stopPropagation()" (mousemove)="$event.stopPropagation()">
+      <img [src]="model.props.src" [class.resize-mode]="resizeMode !== 'none'" draggable="false" #img>
 
-      <div class="img-resizer" *ngIf="resizeMode !== 'none'" (click)="$event.stopPropagation()">
+      <p class="img-block__caption editable-container" *ngFor="let item of children"
+         [controller]="controller" [model]="item" [placeholder]="'添加标题'"
+         (click)="$event.stopPropagation()" (mousemove)="$event.stopPropagation()">
+
+      <div class="img-resizer" *ngIf="resizeMode !== 'none'" (click)="$event.stopPropagation(); previewImg()">
         <div class="img-resizer__handle img-resizer__handle--tl"
              (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
         <div class="img-resizer__handle img-resizer__handle--tr"
@@ -39,22 +38,28 @@ import {ParagraphBlock} from "@blocks/paragraph/paragraph.block";
         <div class="img-resizer__handle img-resizer__handle--br"
              (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
       </div>
+
+      <div class="img-block__toolbar" *ngIf="showToolbar" [props]="props" (click)="$event.stopPropagation();"
+           (itemClick)="onToolbarItemClick($event)">
+      </div>
     </div>
 
-    <ng-template cdkConnectedOverlay
-                 [cdkConnectedOverlayPositions]="[{originX: 'center', originY: 'top', overlayX: 'center', overlayY: 'bottom'}]"
-                 [cdkConnectedOverlayOffsetY]="-8" [cdkConnectedOverlayPush]="true"
-                 [cdkConnectedOverlayOrigin]="img"
-                 [cdkConnectedOverlayOpen]="showToolbar"
-                 [cdkConnectedOverlayHasBackdrop]="false">
-      <div class="img-block__toolbar" [props]="props" (itemClick)="onToolbarItemClick($event)"
-           (mouseenter)="onContainerMouseEnter($event)" (mouseleave)="onContainerMouseLeave($event)">
-      </div>
-    </ng-template>
+    <!--    <ng-template cdkConnectedOverlay-->
+    <!--                 [cdkConnectedOverlayPositions]="[{originX: 'center', originY: 'top', overlayX: 'center', overlayY: 'bottom'}]"-->
+    <!--                 [cdkConnectedOverlayOffsetY]="-8" [cdkConnectedOverlayPush]="true"-->
+    <!--                 [cdkConnectedOverlayOrigin]="img"-->
+    <!--                 [cdkConnectedOverlayOpen]="showToolbar"-->
+    <!--                 [cdkConnectedOverlayHasBackdrop]="false">-->
+
+    <!--    </ng-template>-->
   `,
   styles: [`
-    ::ng-deep .cdk-overlay-pane {
+    .img-block__toolbar {
+      z-index: 100;
       position: absolute;
+      top: -10px;
+      right: 50%;
+      transform: translateX(50%);
     }
 
     :host {
@@ -131,7 +136,7 @@ import {ParagraphBlock} from "@blocks/paragraph/paragraph.block";
     }
   `],
   imports: [
-    NgIf, ImageBlockFloatToolbar, OverlayModule, ParagraphBlock
+    NgIf, ImageBlockFloatToolbar, ParagraphBlock, NgForOf
   ],
   // changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -145,7 +150,6 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
   }
 
   @ViewChild('img', {static: true, read: ElementRef}) img!: ElementRef<HTMLImageElement>
-  @ViewChild('caption') captionBlock!: ParagraphBlock
 
   constructor(private readonly _cdr: ChangeDetectorRef) {
     super();
@@ -226,33 +230,40 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
     })
   }
 
-  onCaptionBlur() {
-    if (!this.model.children.length) return
-    if (!this.captionBlock.textLength) {
-      this.controller.deleteBlocks(0, 1, this.id)
-    }
-  }
-
   onToolbarItemClick(item: Pick<IToolbarItem, 'name' | 'value'>) {
     switch (item.name) {
       case 'caption':
-        if (this.model.children.length) return
-        const paragraph = this.controller.schemaStore.create('paragraph')
-        this.controller.insertBlocks(0, [paragraph], this.id).then(() => {
-          this.captionBlock.containerEle.focus()
-        })
+        if (this.model.children.length) {
+          this.controller.deleteBlocks(0, 1, this.id)
+        } else {
+          const paragraph = this.controller.createBlock('paragraph')
+          this.controller.insertBlocks(0, [paragraph], this.id).then(() => {
+            this.controller.setSelection(paragraph.id, 0)
+          })
+        }
+        console.log('caption', this.model.children)
+        this._cdr.detectChanges()
         break
       case 'align':
         this.props.align !== item.value && (this.props.align = item.value as IImageBlockProps['align'])
         this.showToolbar = false
         break
-      case 'delete':
-        break
-      case 'copy':
+      case 'copy-link':
+        ClipDataWriter.writeClipData(this.props.src)
         break
       case 'download':
+        this.download(this.props.src)
         break
     }
+  }
+
+  download(src: string, caption?: string) {
+    let a: HTMLAnchorElement | null = document.createElement('a')
+    a.href = src
+    a.download = caption || src
+    a.target = '_blank'
+    a.dispatchEvent(new MouseEvent('click'))
+    a = null
   }
 
 }

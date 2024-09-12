@@ -62,7 +62,7 @@ export class BlockFlowEditor {
   // @HostListener('click', ['$event'])
   onClick(event: MouseEvent) {
     if (this.controller.rootModel.length || this.controller.readonly$.value) return
-    const p = this.controller.schemaStore.create('paragraph')
+    const p = this.controller.createBlock('paragraph')
     this.controller.transact(() => {
       this.controller.insertBlocks(0, [p]).then(() => {
         this.controller.setSelection(p.id, 'start')

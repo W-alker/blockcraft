@@ -1,6 +1,7 @@
 import {BlockNodeType} from "./node-type.type";
 import {IInlineModel} from "./inline.type";
 import {SimpleBasicType, SimpleRecord} from "./currency.type";
+import Y from "@core/yjs";
 
 export type IBlockFlavour = string;
 
@@ -20,11 +21,12 @@ export interface IBlockModel{
   nodeType: BlockNodeType
   meta: IMetadata
   props: IBlockProps
-  children?: Array<IBlockModel | IInlineModel>
+  children: Array<IBlockModel | IInlineModel>
 }
 
 export interface IEditableBlockModel extends IBlockModel{
   nodeType: 'editable'
   children: IInlineModel[]
 }
+
 

@@ -37,7 +37,7 @@ export const blockTransforms: IBlockTransformConfig[] = [
 
 const transformBlock = (controller: Controller, from: EditableBlock, to: IBlockFlavour) => {
   const deltas = from.getTextDelta()
-  const newBlock = controller.schemaStore.create(to, deltas)
+  const newBlock = controller.createBlock(to, deltas)
   controller.transact(() => {
     controller.replaceWith(from.id, newBlock).then(() => {
       controller.setSelection(newBlock.id, 'start')
@@ -61,7 +61,7 @@ export class BlockTransformPlugin implements IPlugin {
     this._controller = controller
 
     this.transformList.forEach((item) => {
-      const schema = controller.schemaStore.get(item.flavour)
+      const schema = controller.schemas.get(item.flavour)
       if (!schema) return
       schema.description = item.description
 

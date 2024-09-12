@@ -40,7 +40,7 @@ export class SchemaStore extends BaseStore<IBlockFlavour, BlockSchema> {
       id: genUniqueID(),
       flavour: schema.flavour,
       nodeType: schema.nodeType,
-      children: children,
+      children: children || [],
       props: createBefore?.props?.() || {},
       meta: createBefore?.meta?.() || {}
     }

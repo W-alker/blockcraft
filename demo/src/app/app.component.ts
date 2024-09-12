@@ -172,7 +172,7 @@ export class AppComponent {
   onClick6() {
     const img = {
       "flavour": "image",
-      "id": "1726043568107-d8792cbf-6b6b",
+      "id": genUniqueID(),
       "nodeType": "block",
       "props": {
         "src": "https://v17.angular.io/generated/images/guide/start/fork-the-project.png",

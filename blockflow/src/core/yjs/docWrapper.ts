@@ -1,4 +1,4 @@
-import Y, {ModelSyncer} from "@core/yjs";
+import Y, {ModelSyncer, YBlockModel} from "@core/yjs";
 import {IBlockModel} from "@core/types";
 
 export interface InitConfig {
@@ -22,8 +22,8 @@ export class BlockFlowDoc {
   public readonly rootModel: Array<IBlockModel> = []
 
   public readonly doc: Y.Doc = new Y.Doc({guid: this.config.rootId})
-  public readonly rootYModel: Y.Array<Y.Map<any>> = this.doc.getArray(this.config.rootId)
-  private readonly flatMapStore: Map<string, { m: IBlockModel, y: Y.Map<any> }> = new Map()
+  public readonly rootYModel: Y.Array<YBlockModel> = this.doc.getArray(this.config.rootId)
+  private readonly flatMapStore: Map<string, { m: IBlockModel, y: YBlockModel }> = new Map()
 
   constructor(private config: InitConfig) {
   }
@@ -42,6 +42,10 @@ export class BlockFlowDoc {
 
   transact(fn: () => void, origin: any = null) {
     this.doc.transact(fn, origin)
+  }
+
+  queryModel(id: string) {
+    return this.flatMapStore.get(id)
   }
 
   queryBlockModel(id: string) {
@@ -82,19 +86,19 @@ export class BlockFlowDoc {
    * @param blocks block model array
    */
   private blocks2Y(blocks: IBlockModel[]) {
-    return blocks.map(block => ModelSyncer.blockModel2Y(block,
-      (block, yMap) => {
+    return blocks.map(block =>
+      ModelSyncer.blockModel2Y(block, (block, yMap) => {
         this.flatMapStore.set(block.id, {
           m: block,
           y: yMap
         })
-      }
-    ))
+      })
+    )
   }
 
   insertBlocks(insertIndex: number, blocks: IBlockModel[], parentId: string) {
     const yBlocks = this.blocks2Y(blocks)
-    console.log('insertBlocks', this.flatMapStore)
+    console.log('insertBlocks', this.rootId, this.flatMapStore)
     if (parentId === this.rootId) {
       this.rootYModel.insert(insertIndex, yBlocks)
       this.rootModel.splice(insertIndex, 0, ...blocks)
@@ -116,7 +120,7 @@ export class BlockFlowDoc {
         this.flatMapStore.delete(id)
       }
       this.rootYModel.delete(deleteIndex, numBlocks)
-      return this.rootModel.splice(deleteIndex, numBlocks)
+      this.rootModel.splice(deleteIndex, numBlocks)
     } else {
       const bm = this.queryBlockModel(parentId)
       if (!bm) throw new Error(`Can not find block ${parentId}`)
@@ -126,8 +130,8 @@ export class BlockFlowDoc {
         const id = (bm.children as IBlockModel[])![deleteIndex + i].id
         this.flatMapStore.delete(id)
       }
-      yb.get('children').delete(deleteIndex, numBlocks)
-      return bm.children?.splice(deleteIndex, numBlocks) as IBlockModel[]
+      yb.get('children').delete(deleteIndex, numBlocks);
+      bm.children?.splice(deleteIndex, numBlocks)
     }
   }
 
@@ -144,10 +148,10 @@ export class BlockFlowDoc {
         switch (change.action) {
           case 'add':
           case 'update':
-            Reflect.set(_t, '_' + key, target.get(key))
+            Reflect.set(_t, '__' + key, target.get(key))
             break
           case 'delete':
-            Reflect.deleteProperty(_t, '_' + key)
+            Reflect.deleteProperty(_t, '__' + key)
         }
       })
     }
