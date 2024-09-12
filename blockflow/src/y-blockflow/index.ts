@@ -35,11 +35,6 @@ export class BlockflowBinding {
     this.controller.docManager.rootYModel.observeDeep((e, tr) => {
       if (!tr.local) {
         this.controller.syncYEventUpdate(e, tr)
-      } else {
-        for (const event of e) {
-          if (!(event.target instanceof Y.Text)) continue
-          // this.updateCursor(event.target, pos)
-        }
       }
     })
   }
@@ -64,7 +59,7 @@ export class BlockflowBinding {
       console.log('synced')
     })
     this._awareness.on('change', (t: any) => {
-      console.log('awareness-----change', t, this._awareness.getStates())
+      // console.log('awareness-----change', t, this._awareness.getStates())
       const {added, updated, removed} = t
       const states = this._awareness.getStates()
       if (added.length) {

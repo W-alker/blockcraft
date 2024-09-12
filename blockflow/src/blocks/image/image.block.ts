@@ -133,7 +133,7 @@ import {ParagraphBlock} from "@blocks/paragraph/paragraph.block";
   imports: [
     NgIf, ImageBlockFloatToolbar, OverlayModule, ParagraphBlock
   ],
-  changeDetection: ChangeDetectionStrategy.OnPush,
+  // changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.contenteditable]': 'false',
   }

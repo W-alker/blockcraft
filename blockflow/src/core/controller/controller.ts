@@ -57,6 +57,7 @@ export class Controller {
 
     this.docManager.rootYModel.observeDeep((e, tr) => {
       // console.log('YEvent=============', e.map(ev => ev.target))
+      console.log('YEvent=============', tr)
       if (!this.undoRedo$.value) return
       this.syncYEventUpdate(e, tr)
       this.undoRedo$.next(false)
@@ -89,6 +90,7 @@ export class Controller {
 
   private getBlockRefByYText(yText: Y.Text) {
     const parentId = (yText.parent as Y.Map<any>).get('id')
+    console.log('parentId', parentId, this.blockRefStore)
     return this.getBlockRef(parentId) as EditableBlock | undefined
   }
 
@@ -101,6 +103,7 @@ export class Controller {
     e.forEach(event => {
       // editable-block is not view-model, need to update view manually
       if (event.target instanceof Y.Text) {
+        console.log('event.target', event.target)
         // if (tr.origin === USER_INPUT_ORIGIN) return  // user input
         this.getBlockRefByYText(event.target)!.applyDeltaToView(event.changes.delta as DeltaOperation[], this.undoRedo$.value)  // Just set selection when undo/redo
       }
@@ -137,6 +140,7 @@ export class Controller {
    * @param blockRef block instance
    */
   storeBlockRef<B extends BaseBlock>(blockRef: B) {
+    console.log('storeBlockRef', blockRef.id)
     this.blockRefStore.set(blockRef.id, blockRef)
     for (const key in this.blocksWaiting) {
       if (key === blockRef.id) this.blocksWaiting[key] = true

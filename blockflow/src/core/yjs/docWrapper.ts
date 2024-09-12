@@ -133,22 +133,21 @@ export class BlockFlowDoc {
 
   applyYChangeToModel(event: Y.YEvent<any>) {
     const {path, target, changes} = event
+    const _t = findByPath(path, this.rootModel)
+
     if (target instanceof Y.Text) {
-      const _t = findByPath(path, this.rootModel)
       _t.children = target.toDelta()
     } else if (target instanceof Y.Array) {
-      const _t = findByPath(path, this.rootModel)
       this.applyYChangeDeltaToArray(changes.delta as any[], _t)
     } else {
-      const _t = findByPath(path, this.rootModel)
       event.changes.keys.forEach((change, key) => {
         switch (change.action) {
           case 'add':
           case 'update':
-            Reflect.set(_t, key, target.get(key))
+            Reflect.set(_t, '_' + key, target.get(key))
             break
           case 'delete':
-            Reflect.deleteProperty(_t, key)
+            Reflect.deleteProperty(_t, '_' + key)
         }
       })
     }
@@ -160,7 +159,7 @@ export class BlockFlowDoc {
     retain?: number;
   }>, array: Array<any>) {
     let retain = 0
-    console.log('applyYChangeDeltaToArray', deltas)
+    console.log('applyYChangeDeltaToArray', deltas, array)
     deltas.forEach((d) => {
       const {retain: r, insert, delete: del} = d
       if (r) {
@@ -176,6 +175,7 @@ export class BlockFlowDoc {
                 (bmo, ymo) => this.flatMapStore.set(bmo.id, {m: bmo, y: ymo})) as IBlockModel
             })
             Array.prototype.splice.call(array, retain, 0, ...bms)
+            retain += bms.length
           } else {
             Array.prototype.splice.call(array, retain, 0, ...insert)
           }
