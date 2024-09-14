@@ -1,21 +1,20 @@
 import {BlockNodeType} from "./node-type.type";
 import {IInlineModel} from "./inline.type";
 import {SimpleBasicType, SimpleRecord} from "./currency.type";
-import Y from "@core/yjs";
 
 export type IBlockFlavour = string;
 
 export interface IBaseMetadata {
   folded?: boolean
-  indent?: number
   selected?: boolean
+  createdTime?: number
 }
 
 export type IMetadata = IBaseMetadata & SimpleRecord
 
 export type IBlockProps = SimpleRecord
 
-export interface IBlockModel{
+export interface IBlockModel {
   id: string
   flavour: IBlockFlavour
   nodeType: BlockNodeType
@@ -24,9 +23,13 @@ export interface IBlockModel{
   children: Array<IBlockModel | IInlineModel>
 }
 
-export interface IEditableBlockModel extends IBlockModel{
+export interface IEditableBlockModel extends IBlockModel {
   nodeType: 'editable'
   children: IInlineModel[]
+  props: IBlockProps & {
+    indent?: number
+    textAlign?: 'left' | 'center' | 'right'
+  }
 }
 
 

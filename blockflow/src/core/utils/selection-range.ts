@@ -1,5 +1,6 @@
 /* 纯文本索引的焦点选区范围 */
 import {isEmbedElement} from "@core/utils/isEmbedNode";
+import {EditableBlock} from "@core/block-std";
 
 export interface ICharacterRange {
   start: number,
@@ -99,6 +100,11 @@ export const setSelection = (el: HTMLElement, start: CharacterIndex, end: Charac
     return
   }
 
+  if (start === 'start' && end === 'end') {
+    sel.selectAllChildren(el)
+    return
+  }
+
   const textLength = el.textContent.length
   start = characterIndex2Number(start, textLength)
   end = characterIndex2Number(end, textLength)
@@ -125,7 +131,6 @@ export const setSelection = (el: HTMLElement, start: CharacterIndex, end: Charac
 
 export const findNodeByIndex = (ele: HTMLElement, index: number, findFrom?: ICharacterPosition): ICharacterPosition => {
   if (!ele.children.length) throw new Error('no children')
-  console.log('findNodeByIndex', index, findFrom)
 
   let cnt = findFrom?.beforeEleOffset || 0
   if (index === 0) return {

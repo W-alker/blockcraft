@@ -1,4 +1,4 @@
-import {Controller, EditableBlock, sliceDelta, ClipDataWriter, IBlockModel} from "@core";
+import {Controller, EditableBlock, sliceDelta, ClipDataWriter} from "@core";
 
 /**
  * @param controller the controller instance
@@ -18,14 +18,14 @@ export const copyHandler = async (controller: Controller, cut = false) => {
     return ClipDataWriter.writeDeltaToClipboard(deltaConcat).then(() => {
       cut && controller.transact(() => {
         const deltas = [{retain: range.start}, {delete: range.end - range.start}]
-        controller.applyDeltaToEditableBlock(blockId, deltas)
+        bRef.applyDelta(deltas)
       })
     })
   }
 
   const {rootRange} = curRange
   if (!rootRange) return Promise.reject()
-  const blocks = controller.docManager.rootModel.slice(rootRange.start, rootRange.end + 1)
+  const blocks = controller.rootModel.slice(rootRange.start, rootRange.end + 1).map((block) => block.toJSON())
     // .rootYModel.slice(rootRange.start, rootRange.end + 1).map((yBlock) => yBlock.toJSON()) as IBlockModel[]
   return ClipDataWriter.writeModelToClipboard(blocks).then(() => {
     console.log('copy success', blocks)

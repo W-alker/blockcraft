@@ -1,4 +1,4 @@
-import {EditableBlock, IKeyEventHandler, isEmbedElement, USER_INPUT_ORIGIN} from "@core";
+import {EditableBlock, IKeyEventHandler, isEmbedElement, USER_CHANGE_SIGNAL} from "@core";
 
 export const onBackspace: IKeyEventHandler = (e, controller) => {
   e.preventDefault()
@@ -13,21 +13,28 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
   const bRef = controller.getBlockRef(blockId) as EditableBlock
 
   if (blockRange.start === 0 && blockRange.end === 0) {
+
+    if(bRef.flavour !== 'paragraph') {
+      const pBlock = controller.createBlock('paragraph', bRef.getTextDelta())
+      controller.replaceWith(bRef.id, pBlock).then(() => {
+        controller.setSelection(pBlock.id, 'start')
+      })
+      return;
+    }
+
     const prevBlock = controller.findPrevEditableBlock(bRef.id)
     if (!prevBlock) return
-    // no content
+    const deltas = bRef.textLength ? [{retain: prevBlock.textLength}, ...bRef.getTextDelta()] : []
     controller.transact(() => {
-      controller.setSelection(prevBlock, 'end')
-      bRef.textLength && controller.applyDeltaToEditableBlock(prevBlock,
-        [{retain: prevBlock.textLength}, ...bRef.getTextDelta()],
-        false)
+      prevBlock.setSelection('end')
+      deltas.length && prevBlock.applyDelta(deltas, false)
       controller.deleteBlockById(bRef.id)
-    })
+    }, USER_CHANGE_SIGNAL)
     return
   }
 
   const activeElement = bRef.containerEle
-  const yText = controller.getEditableBlockYText(blockId)
+  const yText = bRef.yText
   const selection = window.getSelection()!
 
   if (selection.isCollapsed) {
@@ -42,7 +49,7 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
           prevElement.remove()
           yText.delete(blockRange.start - 1, 1)
           beforeEle && !isEmbedElement(beforeEle as Element) && selection.setPosition(beforeEle.lastChild!, beforeEle.textContent!.length)
-        })
+        }, USER_CHANGE_SIGNAL)
         return
       }
 
@@ -63,7 +70,7 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
         prevNode && !isEmbedElement(prevNode as Element) && selection.setPosition(prevNode.firstChild!, prevNode.textContent!.length)
       }
       yText.delete(blockRange.start - 1, 1)
-    }, USER_INPUT_ORIGIN)
+    }, USER_CHANGE_SIGNAL)
     return
   }
 
@@ -71,6 +78,5 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
     {retain: blockRange.start},
     {delete: blockRange.end - blockRange.start},
   ]
-  controller.applyDeltaToEditableBlock(bRef, deltas)
-
+  bRef.applyDelta(deltas)
 }

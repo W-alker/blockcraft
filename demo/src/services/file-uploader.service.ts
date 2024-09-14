@@ -7,7 +7,7 @@ export class FileUploaderService {
   // ) {
   // }
 
-  upload(file: File): Promise<string> {
+  uploadImg(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       resolve('https://v17.angular.io/generated/images/guide/start/fork-the-project.png')
     })

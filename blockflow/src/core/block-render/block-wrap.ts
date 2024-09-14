@@ -1,5 +1,5 @@
 import {Component, HostBinding, Input, ViewChild, ViewContainerRef} from "@angular/core";
-import {Controller, IBlockModel} from "@core";
+import {BlockModel, Controller} from "@core";
 
 @Component({
   selector: 'div[bf-block-wrap]',
@@ -10,7 +10,7 @@ import {Controller, IBlockModel} from "@core";
 })
 export class BlockWrap {
   @Input({required: true}) controller!: Controller
-  @Input({required: true}) model!: IBlockModel
+  @Input({required: true}) model!: BlockModel
 
   @ViewChild('container', {read: ViewContainerRef, static: true}) container!: ViewContainerRef
 
@@ -19,13 +19,14 @@ export class BlockWrap {
     return this.model.id
   }
 
-  @HostBinding('style.margin-left')
-  get marginLeft() {
-    return `${(this.model.meta.indent || 0) * 2}em`
-  }
-
   ngAfterViewInit() {
-    this.controller.createBlockView(this.container, this.model)
+    const schema = this.controller.schemas.get(this.model.flavour)
+    if (!schema) throw new Error(`Schema not found for flavour: ${this.model.flavour}`)
+    const cpr = this.container.createComponent(schema.render)
+    cpr.instance.controller = this.controller
+    cpr.setInput('model', this.model)
+    cpr.changeDetectorRef.detectChanges()
+    cpr.instance.cdr.detectChanges()
   }
 
 }

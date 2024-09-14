@@ -56,28 +56,32 @@ export class FloatTextToolbarPlugin implements IPlugin {
     })
 
     this._cprSub = this._cpr.instance.itemClick.subscribe((item) => {
-      console.log('item click', item)
       const range = getCurrentCharacterRange()
       switch (item.name) {
         case 'align':
-          if (item.value === 'left' && !activeBlock.props['textAlign']) break
-          activeBlock.props['textAlign'] !== item.value && (activeBlock.props['textAlign'] = item.value)
+          // if (item.value === 'left' && !activeBlock.props['textAlign']) break
+          activeBlock.props['textAlign'] !== item.value && activeBlock.setProps('textAlign', item.value as any)
+          requestAnimationFrame(() => {
+            const rangeRect = window.getSelection()!.getRangeAt(0).getBoundingClientRect()
+            this.moveToolbar(rangeRect.bottom + 4, rangeRect.left)
+          })
           break
         case 'italic':
         case 'bold':
         case 'underline':
         case 'strike':
         case 'code':
-          controller.applyDeltaToEditableBlock(activeBlock, [
+          activeBlock.applyDelta([
             {retain: range.start},
             {retain: range.end - range.start, attributes: {[`a:${item.name}`]: true}}
           ])
           break
         case 'mark':
-          controller.applyDeltaToEditableBlock(activeBlock, [
+          activeBlock.applyDelta([
             {retain: range.start},
             {retain: range.end - range.start, attributes: {'s:bc': item.value + ''}}
           ])
+          break
       }
     })
   }

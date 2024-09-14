@@ -149,7 +149,7 @@ export class BlockFlowContextmenu {
   set activeBlock(val: BaseBlock) {
     if (!val) return
     this._activeBlock = val
-    this.hasContent = val instanceof EditableBlock ? !!val.textLength : false
+    this.hasContent = val instanceof EditableBlock ? !!val.textLength : true
   }
 
   get activeBlock() {
@@ -175,17 +175,17 @@ export class BlockFlowContextmenu {
   protected toolList: IContextMenuItem[] = [
     {
       flavour: 'cut',
-      icon: 'icon-cut',
+      icon: 'bf_icon bf_jianqie',
       label: '剪切',
     },
     {
       flavour: 'copy',
-      icon: 'editor editor-xuqiuwendang_fuzhi',
+      icon: 'bf_icon editor-xuqiuwendang_fuzhi',
       label: '复制',
     },
     {
       flavour: 'delete',
-      icon: 'editor editor-delete_01',
+      icon: 'bf_icon bf_shanchu-2',
       label: '删除',
     }
   ]
@@ -213,7 +213,7 @@ export class BlockFlowContextmenu {
       switch (item.flavour) {
         case 'cut':
         case 'copy':
-          const model = this.controller.docManager.queryBlockModel(this.activeBlock!.id)!
+          const model = this.controller.getBlockModel(this.activeBlock!.id)!
           ClipDataWriter.writeModelToClipboard([model]).then(() => {
             item.flavour === 'cut' && this.controller.deleteBlockById(this.activeBlock!.id)
           })
@@ -249,7 +249,7 @@ export class BlockFlowContextmenu {
         if(!file) return
         const fileUploader = this.controller.injector.get(FILE_UPLOADER)
         if(!file) throw new Error('file is required')
-        fileUploader.upload(file).then((fileUri) => {
+        fileUploader.uploadImg(file).then((fileUri) => {
           const newBlock = this.controller.createBlock(schema.flavour, [fileUri])
           this.controller.insertBlocks(position.index + 1, [newBlock], position.parentId).then(() => {
             newBlock.nodeType === 'editable' && this.controller.setSelection(newBlock.id, 'start')

@@ -1,6 +1,6 @@
 import {Component, Input,} from "@angular/core";
 import {NgForOf, NgIf} from "@angular/common";
-import {Controller, EditorRoot, IBlockModel} from "@core";
+import {BlockModel, Controller, EditorRoot, IBlockModel} from "@core";
 import {BlockWrap} from "@core/block-render/block-wrap";
 
 interface IRequester {
@@ -75,7 +75,7 @@ export class LazyEditorRoot extends EditorRoot {
             this.pagination.totalCount = totalCount
             this.pagination.pageNum++
             this.controller.transact(()=>{
-                this.controller.insertBlocks(this.model.length, data)
+                this.controller.insertBlocks(this.model.length, data.map(BlockModel.fromModel))
             }, Symbol('lazy-load'))
             this.cdr.detectChanges()
             console.log('res', res, this.pagination, this.model)

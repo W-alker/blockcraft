@@ -1,4 +1,4 @@
-@import "../../assets/iconfont/editor.css";
+@import "../../assets/iconfont/iconfont.css";
 
 bf-editor {
   display: block;
@@ -12,10 +12,22 @@ bf-editor {
     padding: 0;
   }
 
+  --bf-c: #000;
+  --bf-fs: 16px;
+  --bf-lh: 20px;
+  --bf-bg: #fff;
+  --bf-placeholder: #ccc;
+  --bf-anchor: #4857E2;
+  --bf-anchor-hover: #4857E2;
+
+  font-size: var(--bf-fs);
+  line-height: var(--bf-lh);
+  color: var(--bf-c);
+
   .editable-container {
     &.placeholder-visible {
       &::after {
-        content: attr(placeholder);
+        content: attr(ng-reflect-placeholder);
         opacity: .7;
         pointer-events: none;
       }
@@ -79,8 +91,8 @@ bf-editor {
     cursor: pointer;
 
     &::before {
-      content: "\e6b0";
-      font-family: "editor";
+      content: "\e6f2";
+      font-family: "bf_icon";
       font-size: 16px;
       font-style: normal;
       -webkit-font-smoothing: antialiased;

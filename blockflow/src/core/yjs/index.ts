@@ -4,7 +4,6 @@ import * as Y from 'yjs'
 Y.Text.prototype.toJSON = Y.Text.prototype.toDelta
 
 export default Y
-export * from './modelSyncer'
-export * from './docWrapper'
+export * from './block'
 
 

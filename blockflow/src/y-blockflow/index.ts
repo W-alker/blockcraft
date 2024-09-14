@@ -7,12 +7,12 @@ export class BlockflowBinding {
 
   provider = new WebsocketProvider('ws://196.168.1.52:1234',
     this.controller.rootId,
-    this.controller.docManager.doc, {
+    this.controller.yDoc, {
     connect: false,
   });
 
   get doc() {
-    return this.controller.docManager.doc
+    return this.controller.yDoc
   }
 
   _awareness: Awareness = this.provider.awareness
@@ -32,11 +32,6 @@ export class BlockflowBinding {
       name: this._userName,
     })
 
-    this.controller.docManager.rootYModel.observeDeep((e, tr) => {
-      if (!tr.local) {
-        this.controller.syncYEventUpdate(e, tr)
-      }
-    })
   }
 
   updateCursor(ytext: Y.Text, pos: ICharacterRange) {
@@ -65,7 +60,7 @@ export class BlockflowBinding {
       if (added.length) {
         for (const id of added) {
           const state = states.get(id)
-          alert(state?.['user'].name + ' 进入房间')
+          // alert(state?.['user'].name + ' 进入房间')
         }
       }
     })

@@ -1,11 +1,15 @@
 import {IInlineAttrs} from "@core";
 
 export const compareAttributesWithEle = (ele: HTMLElement, attrs?: IInlineAttrs): boolean => {
-  if (!ele.attributes && !attrs) return true
-  if ((attrs && !ele.attributes) || (!attrs && ele.attributes)) return false
-  for (const key in attrs) {
-    // @ts-ignore
-    const attr = attrs[key]
+  const eleAttrs = ele.attributes
+  if (!attrs) return true
+  if ((attrs && !eleAttrs.length) || (!attrs && eleAttrs.length)) return false
+
+  const attrsEntries = Object.entries(attrs)
+  if (!attrsEntries.length) return false  // {} is mean alone plain text element
+
+  for (const [key, attr] of attrsEntries) {
+
     if (key.startsWith('a:')) {
       if (ele.getAttribute(`bfi-${key.slice(2)}`) !== attr + '') return false
     }
@@ -25,7 +29,9 @@ export const compareAttributesWithEle = (ele: HTMLElement, attrs?: IInlineAttrs)
       case 's:ff':
         if (ele.style.fontFamily !== attr) return false
     }
+
   }
+
   return true
 }
 
@@ -35,5 +41,5 @@ export const compareAttributesBetweenElements = (ele1: HTMLElement, ele2: HTMLEl
   let attrs
 
 
-return true
+  return true
 }

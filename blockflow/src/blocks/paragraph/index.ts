@@ -5,6 +5,6 @@ export const ParagraphSchema: BlockSchema = {
   flavour: 'paragraph',
   nodeType: 'editable',
   render: ParagraphBlock,
-  icon: 'editor editor-wenben',
+  icon: 'bf_icon bf_wenben',
   label: '基础段落',
 }

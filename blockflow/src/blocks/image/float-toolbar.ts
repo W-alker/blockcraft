@@ -10,29 +10,24 @@ export interface IToolbarItem {
 }
 
 const TOOLBAR_LIST: IToolbarItem[] = [
-  // {
-  //   name: 'caption',
-  //   icon: 'editor editor-wenben',
-  //   title: '添加标题',
-  // },
   {
     name: 'line',
   },
   {
     name: 'align',
-    icon: 'editor editor-xuqiuwendang_wenzhongzuoduiqi',
+    icon: 'bf_icon bf_zuoduiqi',
     value: 'start',
     title: '居左'
   },
   {
     name: 'align',
-    icon: 'editor editor-xuqiuwendang_wenzhongyouduiqi',
+    icon: 'bf_icon bf_juzhongduiqi',
     value: 'center',
     title: '居中'
   },
   {
     name: 'align',
-    icon: 'editor editor-align_the_text_to_the_center',
+    icon: 'bf_icon bf_youduiqi',
     value: 'end',
     title: '居右'
   },
@@ -41,12 +36,12 @@ const TOOLBAR_LIST: IToolbarItem[] = [
   },
   {
     name: 'copy-link',
-    icon: 'editor editor-xuqiuwendang_fuzhi',
+    icon: 'bf_icon bf_tupianlianjie',
     title: '复制图片链接'
   },
   {
     name: 'download',
-    icon: 'editor editor-download_pictures',
+    icon: 'bf_icon bf_xiazai-2',
     title: '下载图片'
   }
 ]
@@ -55,7 +50,7 @@ const TOOLBAR_LIST: IToolbarItem[] = [
   selector: 'div.img-block__toolbar',
   template: `
     <div class="img-block__toolbar__item" title="添加图片标题" (click)="onItemClick($event, 'caption')">
-      <i class="editor editor-wenben"></i>
+      <i class="bf_icon bf_wenben"></i>
     </div>
     <ng-container *ngFor="let item of toolbarList">
       <ng-container *ngIf="item.name !== 'line'; else lineTpl">

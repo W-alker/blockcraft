@@ -6,8 +6,8 @@
            [title]="menu.intro" (mousedown)="onMousedown($event, menu)"
            (mouseenter)="onMouseEnter($event, menu)"
            (mouseleave)="onMouseLeave($event, menu)">
-        <i [class]="['editor', menu.icon]"></i>
-        <i class="editor editor-drop_down dropdown" *ngIf="menu.children"></i>
+        <i [class]="['bf_icon', menu.icon]"></i>
+        <i class="bf_icon bf_xiajaintou" *ngIf="menu.children"></i>
       </div>
     </ng-template>
   </ng-container>

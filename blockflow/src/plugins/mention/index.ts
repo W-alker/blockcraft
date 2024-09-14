@@ -1,4 +1,4 @@
-import {BlockflowInline, Controller, IPlugin} from "@core";
+import {BlockflowInline, Controller, IPlugin, USER_CHANGE_SIGNAL} from "@core";
 import {debounceTime, fromEvent, fromEventPattern, Subscription, take} from "rxjs";
 import {MentionDialog} from "./widget/mention-dialog";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
@@ -9,6 +9,7 @@ export interface IMentionRequest {
 
 export interface IMentionResponse {
   list: IMentionData[]
+
   [key: string]: any
 }
 
@@ -158,6 +159,9 @@ export class MentionPlugin implements IPlugin {
 
   setMention(item: IMentionData) {
     const block = this.controller.getFocusingBlockRef()!
+    const yText = block!.yText
+
+    const selection = document.getSelection()!
     const _range = document.createRange()
     _range.setStartBefore(block.containerEle)
     _range.setEndAfter(this._mentionElement!)
@@ -170,47 +174,28 @@ export class MentionPlugin implements IPlugin {
       'd:mentionName': item.name,
       ...BlockflowInline.getAttributes(this._mentionElement!)
     }
-
-    const yText = this.controller.getEditableBlockYText(block.id)
+    const mentionNode = BlockflowInline.createView(
+      {
+        insert: {
+          mention: item.name
+        },
+        attributes
+      }
+    )
     this.controller.transact(() => {
-      const mentionNode = BlockflowInline.createView(
-        {
-          insert: {
-            mention: item.name
-          },
-          attributes
-        }
-      )
+      // view update
       this._mentionElement!.replaceWith(mentionNode)
 
+      // sync yText
       yText.delete(start, len)
       yText.insertEmbed(start, {mention: item.name}, attributes)
 
+      // selection update
       _range.setEndAfter(mentionNode)
       _range.collapse(false)
-      document.getSelection()!.removeAllRanges()
-      document.getSelection()!.addRange(_range)
-    })
-
-    // const deltas = [
-    //   {
-    //     retain: start,
-    //   },
-    //   {
-    //     delete: len
-    //   },
-    //   {
-    //     insert: ' '
-    //   },
-    //   {
-    //     insert: {
-    //       mention: item.name
-    //     },
-    //     attributes
-    //   }
-    // ]
-    //
-    // this.controller.applyDeltaToEditableBlock(block, deltas, true)
+      selection.removeAllRanges()
+      selection.addRange(_range)
+    }, USER_CHANGE_SIGNAL)
   }
 
   destroy() {

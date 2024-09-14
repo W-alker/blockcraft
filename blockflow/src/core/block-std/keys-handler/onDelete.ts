@@ -1,4 +1,4 @@
-import {EditableBlock, IKeyEventHandler, isCursorAtElEnd, isEmbedElement, onBackspace, USER_INPUT_ORIGIN} from "@core";
+import {EditableBlock, IKeyEventHandler, isEmbedElement, onBackspace, USER_CHANGE_SIGNAL} from "@core";
 
 export const onDelete: IKeyEventHandler = (e, controller) => {
   e.preventDefault()
@@ -14,35 +14,34 @@ export const onDelete: IKeyEventHandler = (e, controller) => {
 
   if (blockRange.start === bRef.textLength && blockRange.end === bRef.textLength) {
     const position = controller.getBlockPosition(bRef.id)
-    if (position.parentId !== controller.rootId || position.index >= controller.rootModel.length - 1) return;
-    const nextBlockModel = controller.findNextBlockModel(bRef.id)
-    if (!nextBlockModel) return
+
+    if (position.parentId !== controller.rootId || position.index >= controller.rootModel.length - 1) return
+
+    const nextBlockModel = controller.findNextBlockModel(bRef.id)!
+
     if (!controller.isEditableBlock(nextBlockModel)) {
-      !bRef.textLength && controller.deleteBlockById(bRef.id)
-      controller.setSelection(controller.rootId, position.index, position.index + 1)
-      return
+      return controller.transact(() => {
+        !bRef.textLength && controller.deleteBlockById(bRef.id)
+        controller.setSelection(controller.rootId, position.index, position.index + 1)
+      }, USER_CHANGE_SIGNAL)
     }
 
     const nextBlock = controller.getBlockRef(nextBlockModel.id) as EditableBlock
     if (!bRef.textLength) {
       controller.deleteBlockById(bRef.id)
-      controller.setSelection(nextBlock, 'start')
+      bRef.setSelection('start')
       return;
     }
 
-    controller.transact(() => {
+    return controller.transact(() => {
+      bRef.applyDelta([{retain: bRef.textLength}, ...nextBlock.getTextDelta()], false)
       controller.deleteBlockById(nextBlock.id)
-      controller.applyDeltaToEditableBlock(bRef,
-        [{retain: bRef.textLength}, ...nextBlock.getTextDelta()],
-        false)
-    })
-    return;
+    }, USER_CHANGE_SIGNAL)
   }
 
-  const yText = controller.getEditableBlockYText(blockId)
+  const yText = bRef.yText
   const selection = window.getSelection()!
   if (selection.isCollapsed) {
-
     const {focusNode, focusOffset} = selection
 
     if (focusNode === activeElement) {
@@ -51,7 +50,7 @@ export const onDelete: IKeyEventHandler = (e, controller) => {
         return controller.transact(() => {
           nextElement.remove()
           yText.delete(blockRange.start, 1)
-        })
+        }, USER_CHANGE_SIGNAL)
       }
 
       selection.setPosition(nextElement.firstChild!, 0)
@@ -72,7 +71,7 @@ export const onDelete: IKeyEventHandler = (e, controller) => {
         nextNode && selection.setPosition(nextNode.firstChild!, 0)
       }
       yText.delete(blockRange.start, 1)
-    }, USER_INPUT_ORIGIN)
+    }, USER_CHANGE_SIGNAL)
     return;
   }
 
@@ -80,5 +79,5 @@ export const onDelete: IKeyEventHandler = (e, controller) => {
     {retain: blockRange.start},
     {delete: blockRange.end - blockRange.start},
   ]
-  controller.applyDeltaToEditableBlock(blockId, deltas)
+  bRef.applyDelta(deltas)
 }

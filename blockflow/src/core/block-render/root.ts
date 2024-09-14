@@ -7,12 +7,13 @@ import {
 } from "@angular/core";
 import {NgForOf, NgIf} from "@angular/common";
 import {
+  BlockModel,
   BlockSelection, CharacterIndex, characterIndex2Number,
-  Controller, deleteContent,
+  Controller, deleteContent, EditableBlock,
   getCurrentCharacterRange,
   IBlockModel,
   ICharacterRange,
-  pasteHandler, USER_INPUT_ORIGIN
+  pasteHandler, USER_CHANGE_SIGNAL
 } from "@core";
 import {BlockWrap} from "./block-wrap";
 import {BehaviorSubject} from "rxjs";
@@ -21,8 +22,8 @@ import {BehaviorSubject} from "rxjs";
   selector: 'div[bf-node-type="root"][lazy-load="false"]',
   template: `
     <ng-container *ngIf="controller">
-      <ng-container *ngFor="let block of controller.rootModel; trackBy: trackBy">
-        <div bf-block-wrap [controller]="controller" [model]="block"></div>
+      <ng-container *ngFor="let model of controller.rootModel; trackBy: trackBy">
+        <div bf-block-wrap [controller]="controller" [model]="model"></div>
       </ng-container>
     </ng-container>
   `,
@@ -64,8 +65,8 @@ export class EditorRoot {
     return this._activeElement
   }
 
-  protected trackBy = (index: number, item: IBlockModel) => {
-    return `${item.flavour}-${item.id}`
+  protected trackBy = (index: number, item: BlockModel) => {
+    return `${item.flavour}-${item.id}-${item.meta.createdTime}`
   }
 
   private blockSelection!: BlockSelection
@@ -131,7 +132,7 @@ export class EditorRoot {
   private onFocusIn(event: FocusEvent) {
     const target = event.target as HTMLElement
     this._activeElement = target
-    if (target.getAttribute('placeholder') && !target.textContent) {
+    if (target.getAttribute('ng-reflect-placeholder') && !target.textContent) {
       target.classList.add('placeholder-visible')
     }
   }
@@ -156,7 +157,7 @@ export class EditorRoot {
     this.controller.keyEventBus.handle(event)
   }
 
-  private prevRange: ICharacterRange | null = null
+  private prevRange: ICharacterRange & { afterEmbed?: boolean } | null = null
 
   @HostListener('beforeinput', ['$event'])
   private onBeforeInput(event: InputEvent) {
@@ -168,23 +169,26 @@ export class EditorRoot {
       sel.modify('move', 'forward', 'character')
       deleteContent(activeElement, this.prevRange!.start, this.prevRange!.end - this.prevRange!.start)
     }
-    if (sel.focusNode === activeElement && activeElement.getAttribute('bf-node-type') === 'editable') {
+    if (
+      (sel.focusNode instanceof Text && sel.focusOffset === 0) ||  // at zero width space
+      (sel.focusNode === activeElement && activeElement.getAttribute('bf-node-type') === 'editable')  // at embed element before or after
+    ) {
+      if(sel.focusNode === activeElement) this.prevRange!.afterEmbed = true
       /**
        * <p> <span></span> </p>  --> write any word in p tag --> <p> word <span></span> </p> ; it`s not expected result because the word should be in span tag
        * <p> <span>\u200B</span> </p>  --> write any word in p tag --> <p> <span>\u200Bword</span> </p> ; it`s expected result
        */
       const span = document.createElement('span')
       span.textContent = '\u200B'
-      document.activeElement!.prepend(span)
-      sel.getRangeAt(0).insertNode(span)
-      sel.setPosition(span, 1)
+      sel.focusNode instanceof Text ? sel.focusNode.parentElement!.before(span) : sel.getRangeAt(0).insertNode(span)
+      sel.setPosition(span.firstChild, 1)
     }
   }
 
   @HostListener('input', ['$event'])
   private onInput(event: InputEvent) {
     const sel = document.getSelection()!
-    const {start, end} = this.prevRange!
+    const {start, end, afterEmbed} = this.prevRange!
 
     if (sel.focusNode instanceof Text && sel.isCollapsed && sel.focusOffset === 2 && sel.focusNode!.nodeValue!.charCodeAt(0) === 8203) {
       // console.log('delete zero width space')
@@ -192,7 +196,7 @@ export class EditorRoot {
     }
 
     const bid = this.controller.getFocusingBlockId()!
-    const yText = this.controller.getEditableBlockYText(bid)
+    const yText = (this.controller.getBlockRef(bid) as EditableBlock).yText
     const ops: Array<() => void> = []
     start !== end && ops.push(() => yText.delete(start, end - start))
     const text = event.data === ' ' ? '\u00A0' : event.data!
@@ -201,7 +205,7 @@ export class EditorRoot {
       case 'insertReplacementText':
       case 'insertCompositionText':
       case 'insertText':
-        ops.push(() => yText.insert(start, text))
+        ops.push(() => yText.insert(start, text, afterEmbed ? {} : undefined))  // avoid new text extends the attributes of previous embed element
         break
       case 'deleteContentBackward':
         start === end && ops.push(() => yText.delete(start - 1, 1))
@@ -229,7 +233,7 @@ export class EditorRoot {
     }
     this.controller.transact(() => {
       ops.forEach(op => op())
-    }, USER_INPUT_ORIGIN)
+    }, USER_CHANGE_SIGNAL)
   }
 
   @HostListener('drop', ['$event'])

@@ -1,5 +1,6 @@
 import {IBlockModel, IBlockProps, IEditableBlockModel} from "@core";
 
+// @ts-ignore
 export interface IImageBlockProps extends IBlockProps {
   src: string,
   width: number,
@@ -13,5 +14,5 @@ export interface IImgBlockModel extends IBlockModel{
 }
 
 export type IFileUploader = {
-  upload(file: File): Promise<string>;
+  uploadImg(file: File): Promise<string>;
 }

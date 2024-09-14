@@ -12,7 +12,7 @@ import {CommonModule} from "@angular/common";
 
 const markList: IToolbarMenuItem = {
   name: "mark",
-  icon: "editor-marker_pen",
+  icon: "bf_jihaobi",
   intro: "高亮颜色",
   value: '#FFEFBA',
   children: [
@@ -54,25 +54,25 @@ const markList: IToolbarMenuItem = {
 const alignList: IToolbarMenuItem = {
   name: "align",
   value: "left",
-  icon: "editor-xuqiuwendang_wenzhongzuoduiqi",
+  icon: "bf_suojinheduiqi",
   intro: "文字方向",
   children: [
     {
       name: "align",
-      icon: "editor-xuqiuwendang_wenzhongzuoduiqi",
+      icon: "bf_zuoduiqi",
       intro: "左对齐",
       value: "left",
     },
     {
       name: "align",
       value: "center",
-      icon: "editor-xuqiuwendang_wenzhongyouduiqi",
+      icon: "bf_juzhongduiqi",
       intro: "居中",
     },
     {
       name: "align",
       value: "right",
-      icon: "editor-align_the_text_to_the_center",
+      icon: "bf_youduiqi",
       intro: "右对齐",
     }
   ],
@@ -110,61 +110,35 @@ export class FloatTextToolbar {
     },
     {
       name: "bold",
-      icon: "editor-bold01",
+      icon: "bf_jiacu",
       intro: "加粗",
       value: true,
     },
     {
       name: "strike",
-      icon: "editor-xuqiuwendang_shanchuxian",
+      icon: "bf_shanchuxian",
       intro: "删除线",
       value: true,
     },
     {
       name: "underline",
-      icon: "editor-xiahuaxian2",
+      icon: "bf_xiahuaxian",
       intro: "下划线",
       value: true,
     },
     {
       name: "italic",
-      icon: "editor-xieti",
+      icon: "bf_xieti",
       intro: "斜体",
       value: true,
     },
     {
       name: "code",
-      icon: "editor-code_block",
+      icon: "bf_daimakuai",
       intro: "代码",
       value: true,
     },
-    markList,
-    // {
-    //   name: "连接",
-    //   value: "link",
-    //   icon: "editor-link",
-    // },
-    // {
-    //   name: "|",
-    // },
-    // {
-    //   name: "主标题",
-    //   value: "h1",
-    //   icon: "editor-xuqiuwendang_zhubiaoti",
-    // },
-    // {
-    //   name: "次标题",
-    //   value: "h2",
-    //   icon: "editor-xuqiuwendang_cibiaoti",
-    // },
-    // {
-    //   name: "三级标题",
-    //   value: "h3",
-    //   icon: "editor-subtitle",
-    // },
-    // {
-    //   name: "|",
-    // },
+    markList
   ]
 
   protected readonly alignList = alignList

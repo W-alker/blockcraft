@@ -3,8 +3,8 @@ import {BaseBlock} from "@core/block-std/components/base-block";
 import {DeltaInsert, DeltaOperation, IEditableBlockModel} from "@core/types";
 import {NgForOf, NgTemplateOutlet} from "@angular/common";
 import {BlockflowInline, deleteContent, insertContent} from "@core/block-std";
-import {ICharacterRange, setSelection} from "@core/utils";
-import Y from "@core/yjs";
+import {CharacterIndex, ICharacterRange, setSelection} from "@core/utils";
+import Y, {USER_CHANGE_SIGNAL} from "@core/yjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 
 @Component({
@@ -21,27 +21,39 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
 
   @HostBinding('style.text-align')
   get textAlign() {
-    return this.props['textAlign']
+    return this.props['textAlign'] || 'left'
   }
 
-  private yText!: Y.Text
+  @HostBinding('style.text-indent')
+  get marginLeft() {
+    // @ts-ignore
+    return `${(this.model.props.indent || 0) * 2}em`
+  }
+
+  public yText!: Y.Text
   public containerEle!: HTMLElement
   protected destroyRef = inject(DestroyRef)
 
   override ngOnInit() {
     super.ngOnInit()
-    this.yText = this.controller.getEditableBlockYText(this.model.id)
-    this.yText.observe(event => {
-      Promise.resolve().then(() => {
-        this.model.children = this.yText.toDelta()
-      })
+    this.yText = this.model.getYText()
+    this.oldHasContent = !!this.textLength
+    this.yText.observe((ev, tr) => {
       this.setPlaceholder()
+      if (tr.origin === USER_CHANGE_SIGNAL) return
+      console.log('yText.observe', ev.changes.delta)
+      this.applyDeltaToView(ev.changes.delta as DeltaOperation[], this.controller.undoRedo$.value)
+      // this.model.children.splice(0, this.model.children.length, ...this.yText.toDelta())
     })
   }
 
+  private oldHasContent = false
+
   private setPlaceholder() {
-    if(!this.textLength && this.placeholder) return this.containerEle.setAttribute('placeholder', this.placeholder)
-    this.containerEle.removeAttribute('placeholder')
+    if (!this.placeholder || (this.textLength && this.oldHasContent) || (!this.textLength && !this.oldHasContent)) return
+    this.oldHasContent = !!this.textLength
+    if (this.textLength) this.containerEle.classList.remove('placeholder-visible')
+    else this.containerEle.classList.add('placeholder-visible')
   }
 
   override ngAfterViewInit() {
@@ -57,7 +69,7 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
   }
 
   getTextDelta() {
-    return this.model.children = this.yText.toDelta() as DeltaInsert[]
+    return this.yText.toDelta()
   }
 
   getTextContent() {
@@ -68,9 +80,12 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
     return this.yText.length
   }
 
+  setSelection(start: CharacterIndex, end?: CharacterIndex) {
+    setSelection(this.containerEle, start, end ?? start)
+  }
+
   forceRender() {
     const delta = this.getTextDelta()
-    this.model.children = delta
     this.containerEle.innerHTML = ''
     if (delta.length) {
       for (const insert of delta) {
@@ -81,13 +96,19 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
     }
   }
 
-  applyDeltaToModel(deltas: DeltaOperation[]) {
+  applyDelta(deltas: DeltaOperation[], setSelection = true) {
+    console.log('applyDeltaToView', deltas)
+    this.controller.transact(() => {
+      this.yText.applyDelta(deltas)
+      this.applyDeltaToView(deltas, setSelection)
+    }, USER_CHANGE_SIGNAL)
+  }
+
+  private applyDeltaToModel(deltas: DeltaOperation[]) {
     this.yText.applyDelta(deltas)
   }
 
-  applyDeltaToView(deltas: DeltaOperation[], withSelection = false) {
-    // console.time('applyDeltaToView')
-    console.log('applyDeltaToView', deltas)
+  private applyDeltaToView(deltas: DeltaOperation[], withSelection = false) {
     let _range: ICharacterRange | undefined = {
       start: 0,
       end: 0
@@ -115,7 +136,6 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
       // console.log('setSelection', _range)
       setSelection(this.containerEle, _range!.start, _range!.end)
     }
-    // console.timeEnd('applyDeltaToView')
   }
 
 }

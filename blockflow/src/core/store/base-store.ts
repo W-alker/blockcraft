@@ -12,6 +12,14 @@ export class BaseStore<Key = any ,StoreItem = any> {
     return [...this.mapStore.keys()];
   }
 
+  has(key: Key) {
+    return this.mapStore.has(key);
+  }
+
+  delete(key: Key) {
+    return this.mapStore.delete(key);
+  }
+
   values() {
     return [...this.mapStore.values()];
   }

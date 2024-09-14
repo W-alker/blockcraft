@@ -4,7 +4,7 @@ import {fromEvent} from "rxjs";
 export interface IBlockTransformConfig {
   flavour: string
   description: string
-  markdown?: string | string[]
+  markdown?: RegExp
   hotkey: (e: KeyboardEvent) => boolean
 }
 
@@ -12,27 +12,39 @@ export const blockTransforms: IBlockTransformConfig[] = [
   {
     flavour: 'heading-one',
     description: `一级标题(⌘/Ctrl + 1)\nMarkdown: # (空格)`,
-    markdown: '#',
+    markdown: /^#(\s+)?$/,
     hotkey: (e) => e.code === 'Digit1' && (e.ctrlKey || e.metaKey)
   },
   {
     flavour: 'heading-two',
     description: `二级标题(⌘/Ctrl + 2)\nMarkdown: ## (空格)`,
-    markdown: '##',
+    markdown: /^##(\s+)?$/,
     hotkey: (e) => e.code === 'Digit2' && (e.ctrlKey || e.metaKey)
   },
   {
     flavour: 'heading-three',
     description: `三级标题(⌘/Ctrl + 3)\nMarkdown: ### (空格)`,
-    markdown: '###',
+    markdown: /^###(\s+)?$/,
     hotkey: (e) => e.code === 'Digit3' && (e.ctrlKey || e.metaKey)
   },
   {
     flavour: 'heading-four',
     description: `四级标题(⌘/Ctrl + 4)\nMarkdown: #### (空格)`,
-    markdown: '####',
+    markdown: /^####(\s+)?$/,
     hotkey: (e) => e.code === 'Digit4' && (e.ctrlKey || e.metaKey)
   },
+  {
+    flavour: 'bullet-list',
+    description: `无序列表(⌘/Ctrl + Shift + L)\nMarkdown: -/+ (空格)`,
+    markdown: /^[-+](\s+)?$/,
+    hotkey: (e) => e.code === 'KeyL' && (e.ctrlKey || e.metaKey) && e.shiftKey
+  },
+  {
+    flavour: 'ordered-list',
+    description: `有序列表(⌘/Ctrl + Shift + O)\nMarkdown: (数字). (空格)`,
+    markdown: /^\d+(\.)?(\s+)?$/,
+    hotkey: (e) => e.code === 'KeyO' && (e.ctrlKey || e.metaKey) && e.shiftKey
+  }
 ]
 
 const transformBlock = (controller: Controller, from: EditableBlock, to: IBlockFlavour) => {
@@ -79,16 +91,15 @@ export class BlockTransformPlugin implements IPlugin {
       })
 
       if (item.markdown) {
-        item.markdown = Array.isArray(item.markdown) ? item.markdown : [item.markdown]
         this.mdTransformList.push({
-          regex: new RegExp(`^${item.markdown.join('|')}(\\s+)?$`),
+          regex: item.markdown,
           flavour: item.flavour
         })
       }
 
     })
-
     console.log(this.mdTransformList)
+
 
     fromEvent<InputEvent>(controller.rootElement, 'input')
       .subscribe(e => {
@@ -100,9 +111,8 @@ export class BlockTransformPlugin implements IPlugin {
         const {blockId, blockRange} = range
         const text = block.getTextContent().slice(0, blockRange.start)
         const matched = this.mdTransformList.find((item) => item.regex.test(text))
-        console.log(matched, text)
         if (!matched) return
-        controller.applyDeltaToEditableBlock(block, [{delete: text.length}], false)
+        block.applyDelta([{delete: text.length}], false)
 
         controller.transact(() => {
           transformBlock(controller, block, matched.flavour)

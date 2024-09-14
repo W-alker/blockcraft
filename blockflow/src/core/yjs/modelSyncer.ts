@@ -1,7 +1,6 @@
 import {IBlockModel, IBlockProps, SimpleRecord, SimpleValue} from "@core/types";
-import Y from "./index";
+import Y, {YBlockModel} from "./index";
 
-export type YBlockModel = Y.Map<any>
 
 export const isBlockModel = (obj: any): obj is IBlockModel => {
   return obj.nodeType && obj.id && obj.flavour

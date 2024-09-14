@@ -1,4 +1,4 @@
-import {Controller, EditableBlock, IInlineAttrs} from "@core";
+import {Controller, EditableBlock, IInlineAttrs, USER_CHANGE_SIGNAL} from "@core";
 
 export const formatKeyHandler = (format: IInlineAttrs, e: KeyboardEvent, controller: Controller) => {
   e.preventDefault()
@@ -16,5 +16,5 @@ export const formatKeyHandler = (format: IInlineAttrs, e: KeyboardEvent, control
       attributes: format
     }
   ]
-  controller.applyDeltaToEditableBlock(block, deltas)
+  block.applyDelta(deltas)
 }

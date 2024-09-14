@@ -1,4 +1,4 @@
-import {Controller, EditableBlock, IKeyEventHandler, sliceDelta} from "@core";
+import {Controller, EditableBlock, IKeyEventHandler, sliceDelta, USER_CHANGE_SIGNAL} from "@core";
 
 export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Controller) => {
   event.preventDefault()
@@ -11,16 +11,15 @@ export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Cont
   if (!bRef) throw new Error('No focusing block')
   const textContent = bRef.getTextContent()
   const {parentId, index} = controller.getBlockPosition(bRef.id)!
+  if(parentId !== controller.rootId) return
   const newBlock = controller.createBlock(bRef.flavour, (range.start === 0 || range.end >= textContent.length) ? undefined : sliceDelta(bRef.getTextDelta(), range.end))
 
   controller.transact(() => {
     if (range.start > 0 && range.end < textContent.length) {
-      controller.applyDeltaToEditableBlock(bRef.id, [{retain: range.start}, {delete: textContent.length - range.start}])
+      bRef.applyDelta([{retain: range.start}, {delete: textContent.length - range.start}])
     }
-
     controller.insertBlocks(range.start === 0 ? index : index + 1, [newBlock], parentId).then(() => {
-      if (range.start > 0)
-        controller.setSelection(newBlock.id, 'start')
+     range.start > 0 && controller.setSelection(newBlock.id, 'start')
     })
-  })
+  }, USER_CHANGE_SIGNAL)
 }

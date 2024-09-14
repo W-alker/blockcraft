@@ -7,7 +7,7 @@ export const ImageSchema: BlockSchema<IImageBlockProps> = {
   flavour: 'image',
   nodeType: 'block',
   render: ImageBlock,
-  icon: 'editor editor-picture',
+  icon: 'bf_icon bf_tupian',
   label: '图片',
   onCreate: (src: string) => {
     if(!src) throw new Error('src is required')

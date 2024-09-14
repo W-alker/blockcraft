@@ -20,7 +20,7 @@ const calcLineHeight = (wrap: HTMLElement) => {
   standalone: true,
   template: `
     <div class="btn">
-      <i [class]="['editor', hasContent ? 'editor-drag' : 'editor-add']"></i>
+      <i [class]="['bf_icon', hasContent ? 'bf_bianjizhongtoubu_juzhongduiqi' : 'bf_tianjia-2']"></i>
     </div>
     <div class="bf-contextmenu" [controller]="controller" [activeBlock]="activeBlock"
          *ngIf="showPopover && activeBlock" (itemClick)="close()"></div>
@@ -72,7 +72,7 @@ export class TriggerBtn {
   }
 
   protected hasContent = false
-  protected activeBlock?: BaseBlock
+  protected activeBlock?: BaseBlock<any>
   // protected mutationObserver = new MutationObserver(() => {
   //   if (!this.activeBlock) return
   //   const b = !!(this.activeBlock as EditableBlock).textLength

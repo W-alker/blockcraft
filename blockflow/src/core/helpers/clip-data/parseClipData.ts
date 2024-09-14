@@ -1,21 +1,23 @@
 import {DeltaInsert, IBlockModel} from "@core/types";
 import {SIGN_CLIPBOARD_JSON_BLOCKS, SIGN_CLIPBOARD_JSON_DELTA} from "@core/helpers";
 
+const urlPattern = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/;
 export class ClipDataParser {
 
-  static parseBFJSON(data: string): { type: 'blocks', data: IBlockModel[] } | { type: 'delta', data: DeltaInsert[] } {
-    if (!data) throw new Error('Invalid: no data.')
+  static parseBFJSON(data: string): { type: 'blocks', data: IBlockModel[] } | { type: 'delta', data: DeltaInsert[] } | { type: 'text', data: string } | { type: 'link', data: string } {
+    if (!data) return {type: 'text', data}
     if (data.startsWith(SIGN_CLIPBOARD_JSON_DELTA)) {
       const json = JSON.parse(data.slice(SIGN_CLIPBOARD_JSON_DELTA.length))
-      if (!Array.isArray(json) && !json[0].insert) throw new Error('Invalid: not a delta JSON data.')
+      if (!Array.isArray(json) && !json[0].insert) return {type: 'text', data}
       return {type: 'delta', data: json}
     }
     if (data.startsWith(SIGN_CLIPBOARD_JSON_BLOCKS)) {
       const json = JSON.parse(data.slice(SIGN_CLIPBOARD_JSON_BLOCKS.length))
-      if (!Array.isArray(json) && !json[0].flavour) throw new Error('Invalid: not a blockflow JSON data.')
+      if (!Array.isArray(json) && !json[0].flavour) return {type: 'text', data}
       return {type: 'blocks', data: json}
     }
-    throw new Error('Invalid: not a blockflow JSON data.')
+    if (urlPattern.test(data)) return {type: 'link', data}
+    return {type: 'text', data}
   }
 
   static parseHTML(data: string) {

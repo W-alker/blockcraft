@@ -2,16 +2,16 @@ import {Component, ViewChild} from '@angular/core';
 import {
   BlockControllerPlugin,
   BlockflowBinding,
-  BlockFlowEditor, BlockTransformPlugin, FloatTextToolbarPlugin,
+  BlockFlowEditor, BlockModel, BlockTransformPlugin, BulletListSchema, FloatTextToolbarPlugin,
   GlobalConfig, HeadingFourSchema,
   HeadingOneSchema, HeadingThreeSchema, HeadingTwoSchema, IBlockModel,
-  IEditableBlockModel, ImageSchema, MentionPlugin,
+  IEditableBlockModel, ImageSchema, MentionPlugin, OrderedListSchema,
   ParagraphSchema,
   SchemaStore,
 } from "@blockflow";
 import {genUniqueID} from "@core/utils";
 
-const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingTwoSchema, HeadingThreeSchema, HeadingFourSchema, ImageSchema])
+const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingTwoSchema, HeadingThreeSchema, HeadingFourSchema, ImageSchema, BulletListSchema, OrderedListSchema])
 
 const mentionRequest = async (keyword: string) => {
   const len = Math.floor(Math.random() * 10)
@@ -134,7 +134,7 @@ export class AppComponent {
   }
 
   onClick2() {
-    console.log(this.controller.rootModel, this.controller.docManager.rootYModel.toJSON())
+    console.log(this.controller.rootModel, this.controller.rootYModel, this.controller.rootYModel.toJSON())
   }
 
   onClick3(e: Event) {
@@ -166,11 +166,12 @@ export class AppComponent {
       meta: {},
       props: {}
     } as IBlockModel
-    this.editor.controller.insertBlocks(0, [block])
+    const bm = BlockModel.fromModel(block)
+    this.editor.controller.insertBlocks(0, [bm])
   }
 
   onClick6() {
-    const img = {
+    const img: IBlockModel = {
       "flavour": "image",
       "id": genUniqueID(),
       "nodeType": "block",
@@ -197,7 +198,8 @@ export class AppComponent {
         }
       ]
     }
-    this.editor.controller.insertBlocks(0, [img])
+    const bm = BlockModel.fromModel(img)
+    this.editor.controller.insertBlocks(0, [bm])
   }
 
   ngOnDestroy() {

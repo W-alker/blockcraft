@@ -1,11 +1,20 @@
-import {BlockNodeType, DeltaInsert, IBlockFlavour, IBlockModel, IBlockProps, IMetadata} from "../types";
+import {
+  BlockNodeType,
+  DeltaInsert,
+  IBlockFlavour,
+  IBlockModel,
+  IBlockProps,
+  IEditableBlockModel,
+  IMetadata
+} from "../types";
 import {Type} from "@angular/core";
 import {BaseBlock} from "@core/block-std";
+import {BlockModel} from "@core/yjs";
 
 export interface BlockSchema<T extends IBlockProps = IBlockProps> {
   flavour: IBlockFlavour;
   nodeType: BlockNodeType;
-  render: Type<BaseBlock>;
+  render: Type<BaseBlock<IBlockModel | IEditableBlockModel>>;
   children?: IBlockFlavour[];
   onCreate?: (...params: any[]) => {
     props?: () => T,
