@@ -1,7 +1,8 @@
 import {Controller, IPlugin} from "@core";
-import {fromEvent, Subscription} from "rxjs";
+import {fromEvent, Subscription, take} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {TriggerBtn} from "./widgets/trigger-btn";
+import {IContextMenuComponent} from "@editor";
 
 export class BlockControllerPlugin implements IPlugin {
   name = 'block-controller'
@@ -17,7 +18,7 @@ export class BlockControllerPlugin implements IPlugin {
 
   private eventSubs: Subscription[] = []
 
-  constructor() {
+  constructor(public readonly contextMenu: IContextMenuComponent) {
   }
 
   init(controller: Controller) {
@@ -27,6 +28,7 @@ export class BlockControllerPlugin implements IPlugin {
       injector: controller.injector
     })
     this._cpr.instance.controller = controller
+    this._cpr.setInput('contextmenu', this.contextMenu)
 
     controller.rootElement.appendChild(this._cpr.location.nativeElement)
 
@@ -78,9 +80,6 @@ export class BlockControllerPlugin implements IPlugin {
 
     this._cpr.location.nativeElement.setAttribute('draggable', 'true')
 
-    let prevBlockWrap: HTMLElement | null = null
-    let prevPosition: 'before' | 'after' | 'none' = 'none'
-    let dragMoveSub: Subscription | null
     const calcPosition = (e: DragEvent, blockWrap: HTMLElement) => {
       const rect = blockWrap.getBoundingClientRect()
       if (e.clientY > rect.top + rect.height / 2) return 'after'
@@ -95,11 +94,10 @@ export class BlockControllerPlugin implements IPlugin {
       return {top: rect.top - rootRect.top - 8, left: rect.left - rootRect.left, width: rect.width}
     }
 
-    const dragStartSub = fromEvent(this._cpr.location.nativeElement, 'dragstart')
-      // @ts-ignore
-      .subscribe((e: DragEvent) => {
-        // console.log('dragstart', this._activeBlockWrap)
-        this._cpr.instance.showPopover = false
+    const dragStartSub = fromEvent<DragEvent>(this._cpr.location.nativeElement, 'dragstart')
+      .subscribe((e) => {
+
+        this._cpr.instance.closeContextMenu()
         this._cpr.instance.cdr.detectChanges()
 
         if (this._controller.root.selectedBlockRange) this._controller.root.clearSelectedBlocks()
@@ -109,26 +107,30 @@ export class BlockControllerPlugin implements IPlugin {
         dataTransfer.clearData()
         dataTransfer.setDragImage(this._activeBlockWrap!, 0, 0);
 
-        const dragOverSub = fromEvent(document.body, 'dragover')
-          .subscribe((e: Event) => {
+        let prevPosition: 'before' | 'after' | 'none' = 'none'
+        let prevBlockWrap: HTMLElement | null = null
+        let dragMoveSub: Subscription | undefined = undefined
+
+        const dragOverSub = fromEvent<DragEvent>(document.body, 'dragover')
+          .subscribe((e) => {
             e.preventDefault()
             e.stopPropagation()
           })
 
-        const dragEnterSub = fromEvent(this._controller.rootElement, 'dragenter')
-          // @ts-ignore
-          .subscribe((e: DragEvent) => {
+        const dragEnterSub = fromEvent<DragEvent>(this._controller.rootElement, 'dragenter')
+          .subscribe((e) => {
             e.stopPropagation()
             e.preventDefault()
-            dragMoveSub?.unsubscribe()
-            dragMoveSub = null
+
             const target = e.target as HTMLElement
             const blockWrap = target.closest('[bf-block-wrap]') as HTMLElement
             if (!blockWrap || prevBlockWrap === blockWrap) return
             prevBlockWrap = blockWrap
-            dragMoveSub = fromEvent(blockWrap, 'dragover')
-              // @ts-ignore
-              .subscribe((e: DragEvent) => {
+            dragMoveSub?.unsubscribe()
+            dragMoveSub = undefined
+
+            dragMoveSub = fromEvent<DragEvent>(blockWrap, 'dragover')
+              .subscribe((e) => {
                 e.preventDefault()
                 e.stopPropagation()
                 const position = calcPosition(e, blockWrap)
@@ -140,17 +142,15 @@ export class BlockControllerPlugin implements IPlugin {
                 dragLine.style.left = rect.left + 'px'
                 dragLine.style.width = rect.width + 'px'
               })
+
           })
 
-        const dragEndSub = fromEvent(this._cpr.location.nativeElement, 'dragend')
-          // @ts-ignore
-          .subscribe((e: Event) => {
+        fromEvent<DragEvent>(this._cpr.location.nativeElement, 'dragend').pipe(take(1))
+          .subscribe((e) => {
             e.preventDefault()
             e.stopPropagation()
             dragLine.style.display = 'none'
-            dragMoveSub?.unsubscribe()
             dragEnterSub.unsubscribe()
-            dragEndSub.unsubscribe()
             dragOverSub.unsubscribe()
             prevBlockWrap && this.onSortBlock(prevBlockWrap, prevPosition)
           })

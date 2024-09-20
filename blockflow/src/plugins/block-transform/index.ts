@@ -44,12 +44,24 @@ export const blockTransforms: IBlockTransformConfig[] = [
     description: `有序列表(⌘/Ctrl + Shift + O)\nMarkdown: (数字). (空格)`,
     markdown: /^\d+(\.)?(\s+)?$/,
     hotkey: (e) => e.code === 'KeyO' && (e.ctrlKey || e.metaKey) && e.shiftKey
+  },
+  {
+    flavour: 'todo-list',
+    description: `待办事项(⌘/Ctrl + Shift + T)\nMarkdown: [] (空格)`,
+    markdown: /^\[\]\s$/,
+    hotkey: (e) => e.code === 'KeyT' && (e.ctrlKey || e.metaKey) && e.shiftKey
+  },
+  {
+    flavour: 'callout',
+    description: `高亮块(⌘/Ctrl + Shift + Q)\nMarkdown: ! (空格)`,
+    markdown: /^!\s$/,
+    hotkey: (e) => e.code === 'KeyQ' && (e.ctrlKey || e.metaKey) && e.shiftKey
   }
 ]
 
 const transformBlock = (controller: Controller, from: EditableBlock, to: IBlockFlavour) => {
   const deltas = from.getTextDelta()
-  const newBlock = controller.createBlock(to, deltas)
+  const newBlock = controller.createBlock(to, [deltas, from.props])
   controller.transact(() => {
     controller.replaceWith(from.id, newBlock).then(() => {
       controller.setSelection(newBlock.id, 'start')

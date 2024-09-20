@@ -16,19 +16,14 @@ import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
     NgTemplateOutlet
   ],
 })
-export class EditableBlock extends BaseBlock<IEditableBlockModel> {
+export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockModel> extends BaseBlock<Model> {
   @Input() placeholder: string = ''
 
   @HostBinding('style.text-align')
-  get textAlign() {
-    return this.props['textAlign'] || 'left'
-  }
+  protected _textAlign: string = 'left'
 
   @HostBinding('style.text-indent')
-  get marginLeft() {
-    // @ts-ignore
-    return `${(this.model.props.indent || 0) * 2}em`
-  }
+  protected _textIndent: string = '0'
 
   public yText!: Y.Text
   public containerEle!: HTMLElement
@@ -37,11 +32,21 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
   override ngOnInit() {
     super.ngOnInit()
     this.yText = this.model.getYText()
+
     this.oldHasContent = !!this.textLength
+
+    this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(v => {
+      if(v.type === 'props') {
+        console.log('EditableBlock.update$', v, this.props, this._textAlign)
+        // @ts-ignore
+        this._textAlign !== this.props.textAlign && (this._textAlign = this.props.textAlign)
+        parseInt(this._textIndent) !== this.props.indent && (this._textIndent = (this.props.indent || 0) * 2 + 'em')
+      }
+    })
     this.yText.observe((ev, tr) => {
       this.setPlaceholder()
       if (tr.origin === USER_CHANGE_SIGNAL) return
-      console.log('yText.observe', ev.changes.delta)
+      // console.log('yText.observe', ev.changes.delta)
       this.applyDeltaToView(ev.changes.delta as DeltaOperation[], this.controller.undoRedo$.value)
       // this.model.children.splice(0, this.model.children.length, ...this.yText.toDelta())
     })
@@ -59,6 +64,8 @@ export class EditableBlock extends BaseBlock<IEditableBlockModel> {
   override ngAfterViewInit() {
     super.ngAfterViewInit()
     this.containerEle = this.hostEl.nativeElement.querySelector('.editable-container') || this.hostEl.nativeElement
+    this.placeholder && this.containerEle.setAttribute('placeholder', this.placeholder)
+
     this.forceRender()
 
     this.setPlaceholder()

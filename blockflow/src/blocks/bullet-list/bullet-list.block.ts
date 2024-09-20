@@ -2,26 +2,22 @@ import {Component} from "@angular/core";
 import {EditableBlock} from "@core";
 
 @Component({
-  selector: 'div.bullet-list',
+  selector: 'div.bullet-list.editable-container',
   template: ``,
   styles: [`
       :host {
           position: relative;
-          padding-left: 1em;
+          padding-left: 1.2em;
       }
 
       :host::before {
           position: absolute;
-          top: 50%;
+          text-align: center;
+          padding-left: .5em;
           left: 0;
-          transform: translateY(-0.2em);
-          content: '';
-          width: .4em;
-          height: .4em;
-          border-radius: 50%;
-          background-color: var(--bf-anchor);
-          line-height: var(--bf-lh);
-          margin-right: .6em;
+          content: '●';
+          color: var(--bf-anchor);
+          font-size: .5em;
       }
   `],
   standalone: true,

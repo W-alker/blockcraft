@@ -1,5 +1,5 @@
 import {DeltaInsert, IBlockModel, IEditableBlockModel, IInlineModel} from "@core";
-import {BehaviorSubject, Subject} from "rxjs";
+import {Subject} from "rxjs";
 import Y from "@core/yjs";
 import {YMapEvent} from "yjs";
 
@@ -35,22 +35,30 @@ export const syncBlockModelChildren = (deltas: Array<{
 }
 
 export const syncMapUpdate = (event: YMapEvent<any>, map: Object, cb?: (e: YMapEvent<any>) => void) => {
-  const {path, target, changes} = event
-  event.changes.keys.forEach((change, key) => {
-    console.log(map, change, target.get(key), path)
-    switch (change.action) {
-      case 'add':
-      case 'update':
-        Reflect.set(map, key, target.get(key))
-        break
-      case 'delete':
-        Reflect.deleteProperty(map, key)
-    }
-    cb && cb(event)
-  })
+  const {path, target, changes, transaction} = event
+  if (transaction.origin !== USER_CHANGE_SIGNAL && transaction.origin !== NO_RECORD_CHANGE_SIGNAL) {
+
+    event.changes.keys.forEach((change, key) => {
+      console.log(map, change, target.get(key), path)
+      switch (change.action) {
+        case 'add':
+        case 'update':
+          Reflect.set(map, key, target.get(key))
+          break
+        case 'delete':
+          Reflect.deleteProperty(map, key)
+      }
+    })
+
+  }
+
+  cb && cb(event)
 }
 
+// It means the change is caused by user, the b-model has been synced with y-model
 export const USER_CHANGE_SIGNAL = Symbol('user-change')
+// Like {@link USER_CHANGE_SIGNAL}, but the change will not set history record
+export const NO_RECORD_CHANGE_SIGNAL = Symbol('user-change-no-signal')
 
 export type UpdateEvent = { type: 'children', event: Y.YArrayEvent<YBlockModel> }
   | { type: 'props', event: YMapEvent<any> }
@@ -60,10 +68,10 @@ export class BlockModel<Model extends IBlockModel = IBlockModel> {
   readonly update$ = new Subject<UpdateEvent>()
 
   private _yChildrenObserver = (event: Y.YArrayEvent<YBlockModel>, tr: Y.Transaction) => {
-    if (tr.origin === USER_CHANGE_SIGNAL) return
-    console.log(`${this._model.id} changed`, event)
-    const {path, target, changes} = event
-    syncBlockModelChildren(changes.delta as any[], this._childrenModel as BlockModel[])
+    if (tr.origin !== USER_CHANGE_SIGNAL && tr.origin !== NO_RECORD_CHANGE_SIGNAL) {
+      const {path, target, changes} = event
+      syncBlockModelChildren(changes.delta as any[], this._childrenModel as BlockModel[])
+    }
     this.update$.next({type: 'children', event})
   }
 
@@ -95,7 +103,6 @@ export class BlockModel<Model extends IBlockModel = IBlockModel> {
   }
 
   static fromModel<T extends IBlockModel | IEditableBlockModel = IBlockModel>(block: T) {
-    console.log('fromModel', block)
     let children: (BlockModel | IInlineModel)[]
 
     let yChildren
@@ -124,10 +131,10 @@ export class BlockModel<Model extends IBlockModel = IBlockModel> {
   }
 
   getParentId() {
-    return (this.yModel.parent?.parent as YBlockModel).get('id') as string
+    return (this.yModel.parent?.parent as YBlockModel)?.get('id') as string | undefined
   }
 
-  getPosition() {
+  getPosition(): { parentId: string | null, index: number } {
     const parentChildren = this.yModel.parent as Y.Array<YBlockModel>
     let i = 0
     for (const value of parentChildren) {
@@ -171,16 +178,28 @@ export class BlockModel<Model extends IBlockModel = IBlockModel> {
     return this.yModel.get('children') as Model extends IEditableBlockModel ? Y.Text : never
   }
 
-  setProps<T extends keyof Model['props']>(key: T, value: Model['props'][T]) {
+  setProp<T extends keyof Model['props']>(key: T, value: Model['props'][T]) {
     this.yModel.doc!.transact(() => {
+      // @ts-ignore
+      this._model.props[key] = value
       this.yModel.get('props').set(key, value)
-    })
+    }, USER_CHANGE_SIGNAL)
+  }
+
+  deleteProp<T extends keyof Model['props']>(key: T) {
+    this.yModel.doc!.transact(() => {
+      // @ts-ignore
+      delete this._model.props[key]
+      this.yModel.get('props').delete(key)
+    }, USER_CHANGE_SIGNAL)
   }
 
   setMeta<T extends keyof Model['meta']>(key: T, value: Model['meta'][T]) {
     this.yModel.doc!.transact(() => {
+      // @ts-ignore
+      this._model.meta[key] = value
       this.yModel.get('meta').set(key, value)
-    })
+    }, NO_RECORD_CHANGE_SIGNAL)
   }
 
   private getYChildren() {

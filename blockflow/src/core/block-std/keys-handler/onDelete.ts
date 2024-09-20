@@ -4,7 +4,7 @@ export const onDelete: IKeyEventHandler = (e, controller) => {
   e.preventDefault()
   const curRange = controller.getSelection()!
   if (curRange.isAtRoot) {
-    onBackspace(e, controller)
+    controller.deleteSelectedBlocks()
     return
   }
 

@@ -31,17 +31,23 @@ export class SchemaStore extends BaseStore<IBlockFlavour, BlockSchema> {
       }
     } else {
       if (schema.nodeType === 'editable') {
-        children = params || []
+        children = params?.[0] || []
       } else {
         children = schema.children?.map(c => this.create(c))
       }
+    }
+
+    let props = createBefore?.props?.() || {}
+    if (schema.nodeType === 'editable') {
+      props['indent'] ??= params?.[1]?.indent || 0
+      props['textAlign'] = 'left'
     }
     return {
       id: genUniqueID(),
       flavour: schema.flavour,
       nodeType: schema.nodeType,
       children: children || [],
-      props: createBefore?.props?.() || {},
+      props,
       meta: createBefore?.meta?.() || {}
     }
   }

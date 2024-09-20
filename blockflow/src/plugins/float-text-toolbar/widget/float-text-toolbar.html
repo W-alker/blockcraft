@@ -20,7 +20,7 @@
     <div class="float-text-toolbar__align float-text-toolbar__children__container">
       <div class="float-text-toolbar__align__item" *ngFor="let item of alignList.children" [title]="item.intro"
            (mousedown)="alignList.value = item.value; alignList.icon = item.icon; onMousedown($event, item)">
-        <i [class]="['editor', item.icon]"></i>
+        <i [class]="['bf_icon', item.icon]"></i>
       </div>
     </div>
     <div class="float-text-toolbar__children__gap"></div>

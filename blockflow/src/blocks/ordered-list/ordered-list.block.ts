@@ -1,17 +1,44 @@
-import {Component} from "@angular/core";
+import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {EditableBlock} from "@core";
+import {getNumberPrefix, IOrderedListBlockModel} from "@blocks";
+import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 
 @Component({
   selector: 'div.ordered-list',
-  template: ``,
+  template: `
+    <span class="order-list__num">{{_numPrefix}}.&nbsp;</span>
+    <div class="editable-container"></div>
+  `,
   styles: [`
-      :host {
-      }
-      :host::before {
-        color: var(--bf-anchor);
-      }
+    :host {
+      display: flex;
+    }
+
+    :host .editable-container {
+      flex: 1;
+    }
+    .order-list__num {
+      color: var(--bf-anchor);
+    }
   `],
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class OrderedListBlock extends EditableBlock {
+export class OrderedListBlock extends EditableBlock<IOrderedListBlockModel> {
+  protected _numPrefix: string = ''
+
+  override ngOnInit() {
+    super.ngOnInit()
+    this.setOrder()
+    this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => {
+      if (v.type === 'props') this.setOrder()
+    })
+  }
+
+  private setOrder() {
+    this._numPrefix = getNumberPrefix(this.props.order, this.props.indent)
+    this.cdr.markForCheck()
+    // this.hostEl.nativeElement.setAttribute('data-order', getNumberPrefix(this.props.order, this.props.indent))
+  }
+
 }

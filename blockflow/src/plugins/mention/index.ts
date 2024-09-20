@@ -125,6 +125,12 @@ export class MentionPlugin implements IPlugin {
             e.preventDefault()
             this._dialog?.instance.moveSelect('up')
             break
+          case 'Escape':
+            e.preventDefault()
+            this.closeMention()
+            break
+          default:
+            break
         }
       })
 

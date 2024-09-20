@@ -8,7 +8,8 @@ export class BlockflowInline {
   static createView(delta: DeltaInsert) {
     const {insert, attributes} = delta
     const span = document.createElement('span')
-    span.textContent = typeof insert === 'object' ? '\u200B' : insert.replace(/\s/g, '\u00a0')
+    span.textContent = typeof insert === 'object' ? '\u200B' : insert
+      // .replace(/\s/g, '\u00a0')
     typeof insert === 'object' && span.setAttribute('bf-embed', Object.keys(insert)[0])
     attributes && this.setAttributes(span, attributes, typeof insert === 'object')
     return span

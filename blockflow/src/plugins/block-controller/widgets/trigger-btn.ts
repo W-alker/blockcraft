@@ -1,20 +1,17 @@
 import {
   ChangeDetectionStrategy, ChangeDetectorRef,
-  Component, HostBinding,
+  Component, ElementRef, HostBinding,
   HostListener,
   Input,
 } from "@angular/core";
 import {BaseBlock, Controller, EditableBlock} from "@core";
-import {NgIf} from "@angular/common";
-import {take} from "rxjs";
-import {BlockFlowContextmenu} from "@editor";
+import {NgIf, NgTemplateOutlet} from "@angular/common";
+import {fromEvent, take} from "rxjs";
+import {BlockFlowContextmenu, IContextMenuComponent} from "@editor";
+import {Overlay, OverlayRef} from "@angular/cdk/overlay";
+import {ComponentPortal} from "@angular/cdk/portal";
 
-const calcLineHeight = (wrap: HTMLElement) => {
-  const computedStyle = window.getComputedStyle(wrap)
-  return computedStyle.lineHeight !== 'normal'
-    ? parseFloat(computedStyle.lineHeight)
-    : parseFloat(computedStyle.fontSize) * 1.5
-}
+
 @Component({
   selector: 'div.trigger-btn',
   standalone: true,
@@ -22,8 +19,6 @@ const calcLineHeight = (wrap: HTMLElement) => {
     <div class="btn">
       <i [class]="['bf_icon', hasContent ? 'bf_bianjizhongtoubu_juzhongduiqi' : 'bf_tianjia-2']"></i>
     </div>
-    <div class="bf-contextmenu" [controller]="controller" [activeBlock]="activeBlock"
-         *ngIf="showPopover && activeBlock" (itemClick)="close()"></div>
   `,
   styles: [`
     :host {
@@ -59,33 +54,30 @@ const calcLineHeight = (wrap: HTMLElement) => {
       background-color: #E6E6E6;
     }
   `],
-  imports: [BlockFlowContextmenu, NgIf],
+  imports: [NgIf, NgTemplateOutlet],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class TriggerBtn {
+  @Input({required: true})
+  set contextmenu(c: IContextMenuComponent) {
+    this.contextmenuPortal = new ComponentPortal(c)
+  }
 
   @Input() controller!: Controller
 
   constructor(
-    public cdr: ChangeDetectorRef
+    private host: ElementRef<HTMLElement>,
+    public cdr: ChangeDetectorRef,
+    private overlay: Overlay,
   ) {
   }
 
   protected hasContent = false
   protected activeBlock?: BaseBlock<any>
-  // protected mutationObserver = new MutationObserver(() => {
-  //   if (!this.activeBlock) return
-  //   const b = !!(this.activeBlock as EditableBlock).textLength
-  //   if (this.hasContent !== b) {
-  //     this.hasContent = b
-  //     this.cdr.detectChanges()
-  //   }
-  // })
 
   protected _activeBlockWrap?: HTMLElement
   @Input()
   set activeBlockWrap(val: HTMLElement) {
-    // console.log('set activeBlockWrap', val)
     if (this._activeBlockWrap === val) return
     this._activeBlockWrap = val
     if (!val) {
@@ -97,43 +89,48 @@ export class TriggerBtn {
     this.hasContent = this.activeBlock instanceof EditableBlock ? !!this._activeBlockWrap.textContent : true
 
     this.activeBlock.onDestroy.pipe(take(1)).subscribe(() => {
-        this.close()
+      this.close()
     })
 
     this.display = 'block'
     const {top, left} = this.calcPos()
     this.top = top
     this.left = left
-    // this.mutationObserver.disconnect()
-    // if (this.activeBlock instanceof EditableBlock) {
-    //   this.mutationObserver.observe(this.activeBlock.containerEle, {
-    //     childList: true,
-    //     subtree: true,
-    //     characterData: true
-    //   })
-    // }
   }
+
+  private contextmenuPortal!: ComponentPortal<BlockFlowContextmenu>
+  private ovr: OverlayRef | undefined
 
   private calcPos() {
     const rootRect = this.controller.rootElement.getBoundingClientRect()
+    const wrapRect = this._activeBlockWrap!.getBoundingClientRect()
+
+    const left = wrapRect.left - rootRect.left - 28
 
     if (this.activeBlock instanceof EditableBlock) {
       const container = this.activeBlock.containerEle
       const rect = container.getBoundingClientRect()
       return {
-        top: rect.top - rootRect.top + calcLineHeight(container) / 2 - 11,
-        left: rect.left - rootRect.left - 28
+        top: rect.top - rootRect.top + this.calcLineHeight(container) / 2 - 11,
+        left,
       }
     }
 
-    const rect = this._activeBlockWrap!.getBoundingClientRect()
     return {
-      top: rect.top - rootRect.top + rect.height / 2 - 11,
-      left: rect.left - rootRect.left - 28
+      top: wrapRect.top - rootRect.top + 4,
+      left
     }
   }
 
-  showPopover = false
+  calcLineHeight(ele: HTMLElement) {
+    const style = window.getComputedStyle(ele)
+    const lineHeight = style.lineHeight
+    if (lineHeight === 'normal') {
+      const fontSize = style.fontSize
+      return parseFloat(fontSize) * 1.2
+    }
+    return parseFloat(lineHeight)
+  }
 
   @HostBinding('style.display')
   private display = 'none'
@@ -152,7 +149,7 @@ export class TriggerBtn {
   @HostListener('mousedown', ['$event'])
   onMouse(event: MouseEvent) {
     event.stopPropagation()
-    // event.preventDefault()
+    // event.preventDefault()  // If open this line, the btn can't be dragged
   }
 
   @HostListener('mouseenter', ['$event'])
@@ -160,21 +157,64 @@ export class TriggerBtn {
     e.stopPropagation()
     this.hasContent = this.activeBlock instanceof EditableBlock ? !!this._activeBlockWrap!.textContent : true
     this.display = 'block'
-    this.showPopover = true
+    this.showContextMenu()
   }
+
+  private _closeTimer?: number
 
   @HostListener('mouseleave', ['$event'])
   onMouseLeave(e: Event) {
     e.stopPropagation()
-    this.close()
+    this._closeTimer = window.setTimeout(() => {
+      this.close()
+    }, 100)
+  }
+
+  showContextMenu() {
+    if (this.ovr) return
+    const positionStrategy = this.overlay.position().flexibleConnectedTo(this.host)
+      .withPositions([{originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'bottom'}])
+      .withPush(true)
+    this.ovr = this.overlay.create({positionStrategy})
+    const cpr = this.ovr.attach(this.contextmenuPortal)
+    cpr.setInput('activeBlock', this.activeBlock)
+    cpr.setInput('controller', this.controller)
+
+    cpr.instance.itemClick.pipe(take(1)).subscribe(() => {
+      this.close()
+    })
+
+    const sub = fromEvent(cpr.location.nativeElement, 'mouseenter')
+      .subscribe(() => {
+        this._closeTimer && clearTimeout(this._closeTimer)
+
+        fromEvent<MouseEvent>(cpr.location.nativeElement, 'mouseleave').pipe(take(1))
+          .subscribe((e) => {
+            if (this.host.nativeElement.contains(e.relatedTarget as HTMLElement)) return
+            this._closeTimer = window.setTimeout(() => {
+              this.close()
+              sub.unsubscribe()
+            }, 100)
+          })
+
+      })
+
+  }
+
+  closeContextMenu() {
+    if (!this.ovr) return
+    this.ovr?.dispose()
+    this.ovr = undefined
   }
 
   close() {
     this.display = 'none'
-    this.showPopover = false
     this.activeBlock = undefined
     this._activeBlockWrap = undefined
-    // this.mutationObserver.disconnect()
+    this.closeContextMenu()
+    this.cdr.detectChanges()
+    // check after NG100
+    requestAnimationFrame(() => {})
   }
 
 }

@@ -1,0 +1,163 @@
+:host {
+  display: block;
+  padding: 24px 24px 24px 12px;
+  height: 100%;
+  overflow-y: auto;
+
+  .btn-more {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color .15s ease-in-out;
+    text-align: center;
+    line-height: 20px;
+
+    &:hover {
+      background: #f5f5f5;
+    }
+  }
+}
+
+.home__header {
+  padding: 0 8px 0 20px;
+  margin-bottom: 24px;
+}
+
+.home__title {
+  margin: 0 8px 16px 20px;
+  color: #333;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: normal;
+}
+
+.home__card-list {
+  margin: 0 8px 40px 20px;
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+
+  &__item {
+    position: relative;
+    width: 368px;
+    height: 72px;
+    padding: 16px 16px 16px 56px;
+    border-radius: 8px;
+    border: 1px solid #E6E6E6;
+    background: #FFF;
+    transition: all 0.2s ease-in-out;
+
+    &:hover {
+      border-color: #4857E2;
+      box-shadow: 0px 0px 20px 0px rgba(0, 0, 0, 0.10);
+    }
+
+    > mat-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: absolute;
+      top: 20px;
+      left: 16px;
+      width: 32px;
+      height: 32px;
+      font-size: 32px;
+      color: #4857E2;
+    }
+
+    > .btn-more {
+      position: absolute;
+      top: 26.5px;
+      right: 16px;
+    }
+
+    &__title, &__desc {
+      margin: 0;
+      max-width: 268px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    &__title {
+      margin-bottom: 4px;
+      color: #333;
+      font-size: 14px;
+      font-weight: 400;
+      line-height: 20px;
+    }
+
+    &__desc {
+      color: #999;
+      font-size: 12px;
+      line-height: 17px;
+    }
+  }
+}
+
+.home__table-list {
+
+  td {
+    color: #999;
+
+    &:last-of-type {
+      position: relative;
+
+      .btn-more {
+        position: absolute;
+        right: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+      }
+    }
+  }
+
+  &__td__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    mat-icon {
+      width: 32px;
+      height: 32px;
+    }
+
+    .info {
+
+      > div {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+
+        > span {
+          color: #333;
+          font-size: 14px;
+        }
+
+        .tag {
+          border-radius: 4px;
+          font-size: 12px;
+          height: 18px;
+          line-height: 18px;
+          padding: 0 4px;
+          background: #E8D9FF;
+        }
+      }
+
+      .folder {
+        display: flex;
+        align-items: center;
+        height: 25px;
+        gap: 4px;
+        font-size: 12px;
+        color: #999;
+
+        > i {
+        }
+      }
+
+    }
+  }
+
+}

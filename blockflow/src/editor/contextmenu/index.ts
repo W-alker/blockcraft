@@ -1,8 +1,17 @@
-import {ChangeDetectionStrategy, Component, EventEmitter, HostListener, Input, Output,} from "@angular/core";
+import {
+  ChangeDetectionStrategy, ChangeDetectorRef,
+  Component,
+  EventEmitter,
+  HostListener,
+  Input,
+  Output,
+} from "@angular/core";
 import {NgForOf, NgIf} from "@angular/common";
 import {BaseBlock, BlockSchema, ClipDataWriter, Controller, EditableBlock} from "@core";
 import {IContextMenuEvent, IContextMenuItem} from "./type";
 import {FILE_UPLOADER} from "@blocks/image";
+
+export * from './type'
 
 @Component({
   selector: 'div.bf-contextmenu',
@@ -10,7 +19,7 @@ import {FILE_UPLOADER} from "@blocks/image";
   template: `
     <div class="spark-popover__gap"></div>
     <div class="spark-popover__container">
-      <ng-container *ngIf="activeBlock.nodeType === 'editable' ">
+      <ng-container *ngIf="activeBlock.nodeType === 'editable'">
         <h4 class="title">基础</h4>
         <ul class='base-list'>
           <li class="base-list__item" *ngFor="let item of baseBlockList" [title]="item.description"
@@ -18,10 +27,10 @@ import {FILE_UPLOADER} from "@blocks/image";
             <i [class]="item.icon"></i>
           </li>
         </ul>
+        <div class="line"></div>
       </ng-container>
 
       <ng-container *ngIf="hasContent">
-        <div class="line"></div>
         <ul class="common-list">
           <li class="common-list__item" *ngFor="let item of toolList"
               (mousedown)="onMouseDown($event, item, 'tool')">
@@ -32,15 +41,30 @@ import {FILE_UPLOADER} from "@blocks/image";
         <div class="line"></div>
       </ng-container>
 
-      <h4 class="title" *ngIf="commonBlockList.length">常用</h4>
       <ul class='common-list'>
-        <li class="common-list__item" *ngFor="let item of commonBlockList"
-            (mousedown)="onMouseDown($event, item, 'block')">
-          <i [class]="item.icon"></i>
-          <span>{{ item.label }}</span>
+        <li class="common-list__item add-block-btn" (mouseenter)="onShowMoreBlock($event)"
+            (mouseleave)="onCloseMoreBlock($event)">
+          <i class="bf_icon bf_tianjia"></i>
+          <span>在下方添加</span>
+          <i class="bf_icon bf_youjiantou"></i>
+
+          <ng-container *ngIf="_showMoreBlock">
+            <div class="spark-popover__container spark-popover__more-block"
+                 (mouseenter)="onMoreBlockMouseEnter($event)">
+              <h4 class="title" *ngIf="commonBlockList.length">常用</h4>
+              <ul class='common-list'>
+                <li class="common-list__item" *ngFor="let item of commonBlockList"
+                    (mousedown)="onMouseDown($event, item, 'block')">
+                  <i [class]="item.icon"></i>
+                  <span>{{ item.label }}</span>
+                </li>
+              </ul>
+            </div>
+          </ng-container>
         </li>
       </ul>
     </div>
+
     <div class="spark-popover__gap"></div>
   `,
   imports: [NgForOf, NgIf],
@@ -85,6 +109,10 @@ import {FILE_UPLOADER} from "@blocks/image";
       height: 1px;
       background: #f3f3f3;
       width: 100%;
+    }
+
+    .base-list, .common-list {
+      margin: 0;
     }
 
     .base-list {
@@ -138,7 +166,20 @@ import {FILE_UPLOADER} from "@blocks/image";
       color: #333;
       font-size: 14px;
       line-height: 20px;
+      flex: 1;
     }
+
+    .add-block-btn {
+      position: relative;
+    }
+
+    .spark-popover__more-block {
+      position: absolute;
+      right: -8px;
+      bottom: 0;
+      transform: translate(100%, 0);
+    }
+
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -149,7 +190,7 @@ export class BlockFlowContextmenu {
   set activeBlock(val: BaseBlock) {
     if (!val) return
     this._activeBlock = val
-    this.hasContent = val instanceof EditableBlock ? !!val.textLength : true
+    this.hasContent = val instanceof EditableBlock && val.flavour === 'paragraph' ? !!val.textLength : true
   }
 
   get activeBlock() {
@@ -170,6 +211,13 @@ export class BlockFlowContextmenu {
     return this._controller
   }
 
+  constructor(
+    private cdr: ChangeDetectorRef,
+  ) {
+  }
+
+  @Output() itemClick = new EventEmitter<IContextMenuEvent>()
+
   protected baseBlockList: IContextMenuItem[] = []
   protected commonBlockList: IContextMenuItem[] = []
   protected toolList: IContextMenuItem[] = [
@@ -180,7 +228,7 @@ export class BlockFlowContextmenu {
     },
     {
       flavour: 'copy',
-      icon: 'bf_icon editor-xuqiuwendang_fuzhi',
+      icon: 'bf_icon bf_a-fuzhi2',
       label: '复制',
     },
     {
@@ -190,9 +238,10 @@ export class BlockFlowContextmenu {
     }
   ]
 
-  @Output() itemClick = new EventEmitter<IContextMenuEvent>()
-
   protected hasContent = false
+
+  protected _moreBlockCloseTimer?: number
+  protected _showMoreBlock = false
 
   @HostListener('click', ['$event'])
   onClick(event: MouseEvent) {
@@ -202,7 +251,7 @@ export class BlockFlowContextmenu {
   onMouseDown(event: MouseEvent, item: IContextMenuItem, type: 'block' | 'tool') {
     event.preventDefault()
     event.stopPropagation()
-    if (type === 'block' && this.activeBlock.flavour === item.flavour) return
+    if (type === 'block' && this.activeBlock.nodeType === "editable" && this.activeBlock.flavour === item.flavour) return
     this.onItemClicked({item, type})
     this.itemClick.emit({item, type})
   }
@@ -228,7 +277,7 @@ export class BlockFlowContextmenu {
     const schema = item as BlockSchema
     if (this.activeBlock instanceof EditableBlock && schema.nodeType === 'editable') {
       const deltas = this.activeBlock.getTextDelta()
-      const newBlock = this.controller.createBlock(schema.flavour, deltas)
+      const newBlock = this.controller.createBlock(schema.flavour, [deltas, this.activeBlock.props])
       this.controller.replaceWith(this.activeBlock.id, newBlock).then(() => {
         this.controller.setSelection(newBlock.id, 'start')
       })
@@ -246,9 +295,9 @@ export class BlockFlowContextmenu {
       input.click()
       input.onchange = () => {
         const file = input.files![0]
-        if(!file) return
+        if (!file) return
         const fileUploader = this.controller.injector.get(FILE_UPLOADER)
-        if(!file) throw new Error('file is required')
+        if (!file) throw new Error('file is required')
         fileUploader.uploadImg(file).then((fileUri) => {
           const newBlock = this.controller.createBlock(schema.flavour, [fileUri])
           this.controller.insertBlocks(position.index + 1, [newBlock], position.parentId).then(() => {
@@ -270,4 +319,25 @@ export class BlockFlowContextmenu {
       })
   }
 
+  onShowMoreBlock(event: MouseEvent) {
+    event.preventDefault()
+    event.stopPropagation()
+    this._showMoreBlock = true
+  }
+
+  onCloseMoreBlock(event: MouseEvent) {
+    event.preventDefault()
+    event.stopPropagation()
+    this._moreBlockCloseTimer = setTimeout(() => {
+      this._showMoreBlock = false
+      this.cdr.markForCheck()
+      this._moreBlockCloseTimer = undefined
+    }, 100)
+  }
+
+  onMoreBlockMouseEnter(event: MouseEvent) {
+    event.preventDefault()
+    event.stopPropagation()
+    this._moreBlockCloseTimer && clearTimeout(this._moreBlockCloseTimer)
+  }
 }

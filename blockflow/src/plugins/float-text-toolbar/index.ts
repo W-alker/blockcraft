@@ -24,7 +24,7 @@ export class FloatTextToolbarPlugin implements IPlugin {
 
         if (controller.readonly$.value) return
         const sel = window.getSelection()
-        if (!sel || sel.isCollapsed || !controller.activeElement) {
+        if (!sel || sel.isCollapsed || !controller.activeElement || !controller.activeElement.isContentEditable) {
           this.timer && clearTimeout(this.timer)
           this._cpr && this.closeToolbar()
           return
@@ -60,7 +60,7 @@ export class FloatTextToolbarPlugin implements IPlugin {
       switch (item.name) {
         case 'align':
           // if (item.value === 'left' && !activeBlock.props['textAlign']) break
-          activeBlock.props['textAlign'] !== item.value && activeBlock.setProps('textAlign', item.value as any)
+          activeBlock.props['textAlign'] !== item.value && activeBlock.setProp('textAlign', item.value as any)
           requestAnimationFrame(() => {
             const rangeRect = window.getSelection()!.getRangeAt(0).getBoundingClientRect()
             this.moveToolbar(rangeRect.bottom + 4, rangeRect.left)

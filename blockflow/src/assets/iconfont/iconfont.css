@@ -1,17 +1,73 @@
 @font-face {
   font-family: "bf_icon"; /* Project id 4682833 */
-  src: url('//at.alicdn.com/t/c/font_4682833_39izc1ms18q.woff2?t=1726287404998') format('woff2'),
-  url('//at.alicdn.com/t/c/font_4682833_39izc1ms18q.woff?t=1726287404998') format('woff'),
-  url('//at.alicdn.com/t/c/font_4682833_39izc1ms18q.ttf?t=1726287404998') format('truetype'),
-  url('//at.alicdn.com/t/c/font_4682833_39izc1ms18q.svg?t=1726287404998#bf_icon') format('svg');
+  src: url('//at.alicdn.com/t/c/font_4682833_kuwhd8i4od.woff2?t=1726824169849') format('woff2'),
+  url('//at.alicdn.com/t/c/font_4682833_kuwhd8i4od.woff?t=1726824169849') format('woff'),
+  url('//at.alicdn.com/t/c/font_4682833_kuwhd8i4od.ttf?t=1726824169849') format('truetype'),
+  url('//at.alicdn.com/t/c/font_4682833_kuwhd8i4od.svg?t=1726824169849#bf_icon') format('svg');
 }
 
 .bf_icon {
   font-family: "bf_icon" !important;
-  font-size: 16px;
+  font-size: 1em;
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.bf_wenjianjia:before {
+  content: "\e7f6";
+}
+
+.bf_search:before {
+  content: "\e65f";
+}
+
+.bf_xuanzhong-fill:before {
+  content: "\e776";
+}
+
+.bf_weixuanzhong:before {
+  content: "\e689";
+}
+
+.bf_frame:before {
+  content: "\e71a";
+}
+
+.bf_column-vertical:before {
+  content: "\e71c";
+}
+
+.bf_a-Frame1000005755:before {
+  content: "\e6d8";
+}
+
+.bf_tupianjuzhong:before {
+  content: "\e6df";
+}
+
+.bf_a-Frame427321067:before {
+  content: "\e6fa";
+}
+
+.bf_a-Frame1000003574:before {
+  content: "\e706";
+}
+
+.bf_a-Frame1000003575:before {
+  content: "\e709";
+}
+
+.bf_tupianjuyou:before {
+  content: "\e712";
+}
+
+.bf_tupianjuzuo:before {
+  content: "\e716";
+}
+
+.bf_a-fuzhi2:before {
+  content: "\e6c2";
 }
 
 .bf_jiazai:before {
@@ -30,7 +86,7 @@
   content: "\e715";
 }
 
-.bf_wenzhongtupian_tianjiamiaoshu:before {
+.bf_tianjiamiaoshu:before {
   content: "\e717";
 }
 
@@ -158,10 +214,6 @@
   content: "\e73b";
 }
 
-.bf_xuanzeriqi:before {
-  content: "\e73c";
-}
-
 .bf_tianjia:before {
   content: "\e73d";
 }
@@ -172,10 +224,6 @@
 
 .bf_jianqie:before {
   content: "\e73f";
-}
-
-.bf_fenxiang:before {
-  content: "\e740";
 }
 
 .bf_youxuliebiao:before {
@@ -326,7 +374,7 @@
   content: "\e6c3";
 }
 
-.bf_bianjiwendangzhongdianjijiahao_xietong_richeng:before {
+.bf_shijian:before {
   content: "\e6c4";
 }
 
@@ -390,7 +438,7 @@
   content: "\e6d3";
 }
 
-.bf_bianjiwendangzhongdianjijiahao_wendangzujian_shijianzhou:before {
+.bf_shijianzhou:before {
   content: "\e6d4";
 }
 
@@ -438,7 +486,7 @@
   content: "\e6e1";
 }
 
-.bf_erjidaohang_huishouzhan:before {
+.bf_huishouzhan:before {
   content: "\e6e2";
 }
 
@@ -462,23 +510,15 @@
   content: "\e6e7";
 }
 
-.bf_bianjizhongtoubu_fengexian:before {
-  content: "\e6e8";
-}
-
 .bf_gongzuoyaodian:before {
   content: "\e6e9";
-}
-
-.bf_bianjizhongtoubu_juzhongduiqi:before {
-  content: "\e6ea";
 }
 
 .bf_tianjia-2:before {
   content: "\e6eb";
 }
 
-.bf_liebiaozhongzuiyoucegengduo_shoucang:before {
+.bf_shoucang:before {
   content: "\e6ec";
 }
 
@@ -510,7 +550,7 @@
   content: "\e6f3";
 }
 
-.bf_liebiaozhongzuiyoucegengduo_fenxiang:before {
+.bf_fenxiang:before {
   content: "\e6f4";
 }
 
@@ -534,7 +574,7 @@
   content: "\e6f9";
 }
 
-.bf_liebiaozuiyoucegengduo_wendangcaozuo_chazhaohetihuan:before {
+.bf_chazhaohetihuan:before {
   content: "\e6fb";
 }
 
@@ -542,11 +582,11 @@
   content: "\e6fc";
 }
 
-.bf_erjidaohang_wodekongjianhezidingyiku:before {
+.bf_wodekongjian:before {
   content: "\e6fd";
 }
 
-.bf_liebiaozuiyoucegengduo_wendangyangshi_gengduobeijingyanse:before {
+.bf_gengduo-3:before {
   content: "\e6fe";
 }
 
@@ -562,11 +602,11 @@
   content: "\e701";
 }
 
-.bf_liebiaozuiyoucegengduo_wendangcaozuo_dulichuangkou:before {
+.bf_dulichuangkou:before {
   content: "\e702";
 }
 
-.bf_liebiaozhongzuiyoucegengduo_tianjiabiaoqian:before {
+.bf_tianjiabiaoqian:before {
   content: "\e703";
 }
 
@@ -590,7 +630,7 @@
   content: "\e70a";
 }
 
-.bf_liebiaozuiyoucegengduo_wendangcaozuo_yidongdao:before {
+.bf_yidongdao:before {
   content: "\e70b";
 }
 

@@ -1,4 +1,4 @@
-import {Component, HostBinding, Input, ViewChild, ViewContainerRef} from "@angular/core";
+import {Component, ElementRef, Input, ViewChild, ViewContainerRef} from "@angular/core";
 import {BlockModel, Controller} from "@core";
 
 @Component({
@@ -14,9 +14,9 @@ export class BlockWrap {
 
   @ViewChild('container', {read: ViewContainerRef, static: true}) container!: ViewContainerRef
 
-  @HostBinding('attr.data-block-id')
-  get blockId() {
-    return this.model.id
+  constructor(
+    private hostEl: ElementRef<HTMLElement>
+  ) {
   }
 
   ngAfterViewInit() {
@@ -27,6 +27,8 @@ export class BlockWrap {
     cpr.setInput('model', this.model)
     cpr.changeDetectorRef.detectChanges()
     cpr.instance.cdr.detectChanges()
+
+    this.hostEl.nativeElement.setAttribute('data-block-id', this.model.id)
   }
 
 }

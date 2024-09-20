@@ -14,8 +14,8 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
 
   if (blockRange.start === 0 && blockRange.end === 0) {
 
-    if(bRef.flavour !== 'paragraph') {
-      const pBlock = controller.createBlock('paragraph', bRef.getTextDelta())
+    if (bRef.flavour !== 'paragraph') {
+      const pBlock = controller.createBlock('paragraph', [bRef.getTextDelta(), bRef.props])
       controller.replaceWith(bRef.id, pBlock).then(() => {
         controller.setSelection(pBlock.id, 'start')
       })

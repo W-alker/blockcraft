@@ -1,0 +1,64 @@
+<div class="home__header" style="margin-bottom: 24px">
+  <nz-input-group [nzPrefix]="prefixTemplateUser" style="height: 32px; width: 348px; background: #F7F7F7; border: none">
+    <input nz-input placeholder="请输入文件或文件名进行搜索" [(ngModel)]="searchValue" type="text"
+           style="background: transparent"/>
+    <ng-template #prefixTemplateUser><i class="bf_icon bf_search" style="color: #999"></i></ng-template>
+  </nz-input-group>
+</div>
+
+<h3 class="home__title">我关注的</h3>
+<div class="home__card-list">
+  <div class="home__card-list__item" *ngFor="let item of recentHistoryCards">
+    <mat-icon svgIcon="bf_shouye_wendang"></mat-icon>
+    <h4 class="home__card-list__item__title">{{ item.title }}</h4>
+    <p
+      class="home__card-list__item__desc">{{ item.user.name }}&nbsp;最近修改于 {{ item.lastModified | date: 'yyyy年MM月dd日' }}</p>
+    <i class="btn-more bf_icon bf_gengduo"></i>
+  </div>
+</div>
+
+<h3 class="home__title">最近</h3>
+<div class="home__table-list">
+  <nz-table #filterTable [nzData]="listOfData" nzTableLayout="fixed">
+    <thead>
+    <tr>
+      <!--      <th [nzChecked]="checked" [nzIndeterminate]="indeterminate" (nzCheckedChange)="onAllChecked($event)"></th>-->
+      <th [nzWidth]="'30px'"></th>
+      <th [nzWidth]="column.width || 'auto'"
+          *ngFor="let column of listOfColumns; trackBy: trackByName"
+          [(nzSortOrder)]="column.sortOrder"
+          [nzSortFn]="column.sortFn"
+          [nzFilters]="column.listOfFilter"
+          [nzFilterFn]="column.filterFn"
+      >
+        {{ column.name }}
+      </th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr *ngFor="let data of filterTable.data">
+      <td
+        [nzChecked]="setOfCheckedId.has(data.id)"
+        (nzCheckedChange)="onItemChecked(data.id, $event)"
+      ></td>
+      <td class="home__table-list__td__title">
+        <mat-icon svgIcon="bf_shouye_wendang"></mat-icon>
+        <div class="info">
+          <div>
+            <span>{{ data.title }}</span>
+            <span class="tag">模板</span>
+          </div>
+          <span *ngIf="data.folder" class="folder">
+            <i class="bf_icon bf_wenjianjia"></i>{{ data.folder.name }}
+          </span>
+        </div>
+      </td>
+      <td>{{ data.creator.name }}</td>
+      <td>
+        <span>{{ data.lastModified | date: 'yyyy年MM月dd日' }}</span>
+        <i class="btn-more bf_icon bf_gengduo" (click)="onItemClick($event, data)" ></i>
+      </td>
+    </tr>
+    </tbody>
+  </nz-table>
+</div>

@@ -1,4 +1,4 @@
-import {ChangeDetectionStrategy, Component, HostBinding} from "@angular/core";
+import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {EditableBlock} from "@core";
 
 @Component({
@@ -6,6 +6,12 @@ import {EditableBlock} from "@core";
   template: ``,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [`
+      :host {
+        font-size: 1.4em;
+        line-height: 1.4em;
+      }
+  `]
 })
 export class HeadingThreeBlock extends EditableBlock{
 

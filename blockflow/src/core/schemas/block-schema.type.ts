@@ -26,6 +26,15 @@ export interface BlockSchema<T extends IBlockProps = IBlockProps> {
   description?: string;
 }
 
+export interface EditableBlockSchema<Props extends IEditableBlockModel["props"]> extends BlockSchema<Props> {
+  nodeType: 'editable'
+  onCreate?: (deltas: DeltaInsert[], props: IEditableBlockModel["props"]) => {
+    props?: () => Props,
+    meta?: () => IMetadata,
+    children: Array<DeltaInsert>
+  }
+}
+
 export type IBlockModelMap = Record<IBlockFlavour, IBlockModel>
 
 

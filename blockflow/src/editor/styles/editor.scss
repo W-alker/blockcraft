@@ -6,8 +6,9 @@ bf-editor {
   height: 80vh;
   overflow-y: auto;
   padding: 30px;
+  box-sizing: border-box;
 
-  * {
+  p, div, span, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre, table, thead, tbody, tr, th, td, hr, figure, figcaption, img, a, strong, em, u, s, code, br, hr {
     margin: 0;
     padding: 0;
   }
@@ -25,10 +26,14 @@ bf-editor {
   color: var(--bf-c);
 
   .editable-container {
+    > span {
+      white-space: pre-wrap;
+    }
+
     &.placeholder-visible {
       &::after {
-        content: attr(ng-reflect-placeholder);
-        opacity: .7;
+        content: attr(placeholder);
+        opacity: .6;
         pointer-events: none;
       }
     }
@@ -83,6 +88,15 @@ bf-editor {
     color: #4857E2;
     text-decoration: underline;
     cursor: pointer;
+
+    //&:before {
+    //  content: '\e6af';
+    //  font-family: "bf_icon" !important;
+    //  font-size: 16px;
+    //  font-style: normal;
+    //  -webkit-font-smoothing: antialiased;
+    //  -moz-osx-font-smoothing: grayscale;
+    //}
   }
 
   [bf-embed="mention"] {
@@ -91,16 +105,7 @@ bf-editor {
     cursor: pointer;
 
     &::before {
-      content: "\e6f2";
-      font-family: "bf_icon";
-      font-size: 16px;
-      font-style: normal;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
-
-    &::after {
-      content: attr(data-mention-name);
+      content: '@' attr(data-mention-name);
     }
 
     &:hover {

@@ -3,4 +3,5 @@ export * from './blocks';
 export * from './editor';
 export * from './y-blockflow';
 export * from './plugins';
+export * from './components';
 

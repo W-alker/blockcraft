@@ -1,0 +1,12 @@
+<ng-container *ngFor="let item of items">
+  <ng-container *ngIf="!item.line else lineTpl">
+    <div class="contextmenu-item" (click)="onItemClick($event, item)">
+      <i [class]="['bf_icon', item.icon]"></i>
+      <span>{{ item.label }}</span>
+    </div>
+  </ng-container>
+
+  <ng-template #lineTpl>
+    <div class="contextmenu-line"></div>
+  </ng-template>
+</ng-container>

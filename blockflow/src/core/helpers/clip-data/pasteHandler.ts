@@ -12,14 +12,20 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
 
   const {blockId, blockRange} = range
   const {parentId, index} = controller.getBlockPosition(blockId)
+  console.log('range+++++')
 
   // only text/plain
   if (types.length === 1 && types[0] === 'text/plain') {
+    console.log('text/plain')
+
     const text = clipboardData.getData('text/plain')
     if (!text) return
     const blockRef = controller.getBlockRef(blockId) as EditableBlock
     // assume data is bf-json
     const {data: jsonData, type: jsonType} = ClipDataParser.parseBFJSON(text)
+
+    console.log(jsonType, jsonData)
+
     if (jsonType === 'blocks') {
       if (!jsonData.length) return
       if (parentId !== controller.rootId) return
@@ -47,6 +53,8 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
       applyPasteDeltaToBlock(blockRef, [{insert: jsonData}], blockRange)
       return;
     }
+
+    return;
   }
 
   // files

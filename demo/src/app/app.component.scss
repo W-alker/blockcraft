@@ -1,0 +1,105 @@
+:host {
+  display: flex;
+  height: 100%;
+
+  ::ng-deep mat-icon svg {
+    vertical-align: top;
+  }
+}
+
+.doc-library {
+  overflow: hidden;
+  height: 100%;
+
+  &__content {
+    flex: 1;
+  }
+
+  &__aside-bar {
+    width: 244px;
+    height: 100%;
+    padding-top: 24px;
+    overflow-y: auto;
+    border-right: 1px solid #E6E6E6;
+    background: #F9FAFB;
+
+    &__group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 8px 16px;
+      border-bottom: 1px solid #E6E6E6;
+      margin-bottom: 8px;
+
+      &:last-child {
+        margin-bottom: 0;
+        border-bottom: none;
+      }
+
+      &__title {
+        padding: 0 16px;
+        color: #999;
+        font-size: 14px;
+        font-weight: 400;
+        display: flex;
+        align-items: center;
+
+        > span {
+          flex: 1;
+        }
+
+        > i {
+          cursor: pointer;
+        }
+      }
+    }
+
+    &__menu-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 16px;
+      color: #333;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+      border-radius: 4px;
+      position: relative;
+
+      .btn-expand {
+        position: absolute;
+        left: -2px;
+        top: 50%;
+        margin-top: -7px;
+        width: 14px;
+        height: 14px;
+        font-size: 14px;
+        line-height: 14px;
+        transform: rotate(-90deg);
+        transform-origin: center center;
+      }
+
+      mat-icon {
+        width: 1em;
+        height: 1em;
+
+        ::ng-deep svg {
+          vertical-align: top;
+        }
+      }
+
+      > span {
+        font-weight: 600;
+      }
+
+      &:hover {
+        background: rgba(235, 236, 248, 0.8);
+      }
+
+      &.active {
+        background: #EBECF8;
+        color: #4857E2;
+      }
+    }
+  }
+}

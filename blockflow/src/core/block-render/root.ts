@@ -33,16 +33,16 @@ import {BehaviorSubject} from "rxjs";
     NgForOf,
     NgIf,
   ],
+  host: {
+    '[attr.tabindex]': '0'
+  }
 })
 export class EditorRoot {
-  // @HostBinding('style.fontSize.px')
-  @HostBinding('attr.tabindex') private readonly tabindex = '0'
   @Output() onDestroy = new EventEmitter<void>()
 
   constructor(
     public readonly elementRef: ElementRef<HTMLElement>,
-    public readonly cdr: ChangeDetectorRef,
-    private vcr: ViewContainerRef
+    public readonly cdr: ChangeDetectorRef
   ) {
   }
 
@@ -132,9 +132,7 @@ export class EditorRoot {
   private onFocusIn(event: FocusEvent) {
     const target = event.target as HTMLElement
     this._activeElement = target
-    if (target.getAttribute('ng-reflect-placeholder') && !target.textContent) {
-      target.classList.add('placeholder-visible')
-    }
+    if (target.getAttribute('placeholder') && !target.textContent) target.classList.add('placeholder-visible')
   }
 
   @HostListener('focusout', ['$event'])
@@ -171,7 +169,7 @@ export class EditorRoot {
     }
     if (
       (sel.focusNode instanceof Text && sel.focusOffset === 0) ||  // at zero width space
-      (sel.focusNode === activeElement && activeElement.getAttribute('bf-node-type') === 'editable')  // at embed element before or after
+      (sel.focusNode === activeElement && activeElement.className.includes('editable-container'))  // at embed element before or after
     ) {
       if(sel.focusNode === activeElement) this.prevRange!.afterEmbed = true
       /**

@@ -1,9 +1,14 @@
-import {BlockModel, syncBlockModelChildren, USER_CHANGE_SIGNAL, YBlockModel} from "@core/yjs";
+import {
+  BlockModel,
+  NO_RECORD_CHANGE_SIGNAL,
+  syncBlockModelChildren,
+  USER_CHANGE_SIGNAL,
+  YBlockModel
+} from "@core/yjs";
 import {IBlockFlowRange} from "@core/controller/type";
-import {DeltaOperation, IBlockFlavour} from "@core/types";
+import {IBlockFlavour} from "@core/types";
 import {
   CharacterIndex, getCurrentCharacterRange,
-  setSelection,
 } from "@core/utils";
 import {BaseBlock, EditableBlock, KeyEventBus} from "@core/block-std";
 import {BaseStore} from "@core/store";
@@ -14,6 +19,8 @@ import {IPlugin} from "@core/plugins";
 import {EditorRoot} from "@core/block-render";
 import {SchemaStore} from "@core/schemas";
 import {Injector} from "@angular/core";
+import {updateOrderAround} from "@blocks/ordered-list/utils/update-order-around";
+import {IOrderedListBlockModel} from "@blocks";
 
 export interface HistoryConfig {
   open: boolean
@@ -38,7 +45,7 @@ export class Controller {
   public readonly yDoc = new Y.Doc()
   public readonly rootYModel = this.yDoc.getArray<YBlockModel>(this.rootId)
   private _rootYModelObserver = (event: Y.YArrayEvent<YBlockModel>, tr: Y.Transaction) => {
-    if (tr.origin === USER_CHANGE_SIGNAL) return
+    if (tr.origin === USER_CHANGE_SIGNAL || tr.origin === NO_RECORD_CHANGE_SIGNAL) return
     const {path, target, changes} = event
     syncBlockModelChildren(changes.delta as any[], this.rootModel as BlockModel[])
   }
@@ -57,7 +64,7 @@ export class Controller {
     const {historyConfig = {open: true, duration: 500}} = config
     if (historyConfig.open) {
       this.historyManager = new Y.UndoManager(this.rootYModel,
-        {captureTimeout: historyConfig.duration || 300, trackedOrigins: new Set([null, USER_CHANGE_SIGNAL])})
+        {captureTimeout: historyConfig.duration || 200, trackedOrigins: new Set([null, USER_CHANGE_SIGNAL])})
     }
 
     this.rootYModel.observe(this._rootYModelObserver)
@@ -178,6 +185,10 @@ export class Controller {
         if (!parentModel) return reject(new Error(`Parent block ${parentId} not found`))
         parentModel.insertChildren(index, blocks)
       }
+
+      const olIndex = blocks.findIndex(b => b.flavour === 'ordered-list')
+      if (olIndex >= 0) this.updateOrderAround(blocks[olIndex] as any)
+
       this.blocksReady$.pipe(take(1)).subscribe(resolve)
     })
   }
@@ -186,8 +197,15 @@ export class Controller {
     if (count <= 0) return
     if (parentId === this.rootId) {
       this.transact(() => {
-        this.rootModel.splice(index, count)
+        const items = this.rootModel.splice(index, count)
+        console.log('deleteBlocks', index, count, items)
         this.rootYModel.delete(index, count)
+
+        if (items.some(b => b.flavour === 'ordered-list')) {
+          const olIndex = this.rootModel.findIndex((b, i) => i >= index && b.flavour === 'ordered-list')
+          if (olIndex >= 0) this.updateOrderAround(this.rootModel[olIndex] as any)
+        }
+
       }, USER_CHANGE_SIGNAL)
       return
     }
@@ -252,6 +270,7 @@ export class Controller {
   get lastBlock() {
     return this.rootModel[this.rootModel.length - 1]
   }
+
 
   getBlockPosition(id: string) {
     const bRef = this.getBlockRef(id)
@@ -350,7 +369,6 @@ export class Controller {
       this.root.selectBlocks(from, to ?? from)
     } else {
       const bRef = typeof target === 'string' ? this.getBlockRef(target) : target
-      console.log('setSelection', bRef, from)
       if (!bRef || !(bRef instanceof EditableBlock)) return
       bRef.setSelection(from, to ?? from)
     }
@@ -359,12 +377,18 @@ export class Controller {
   deleteSelectedBlocks() {
     if (!this.root.selectedBlockRange) return
     const {start, end} = this.root.selectedBlockRange
-    this.transact(() => {
-      this.deleteBlocks(start, end - start + 1)
-      this.root.clearSelectedBlocks()
-    })
+    this.deleteBlocks(start, end - start + 1)
+    this.root.clearSelectedBlocks()
   }
 
   /** ---------------focus , selection---------------- end **/
 
+  /** ---------------For ordered-list block---------------- start **/
+  updateOrderAround(block: BlockModel<IOrderedListBlockModel>) {
+    this.transact(() => {
+      updateOrderAround(block, this)
+    }, USER_CHANGE_SIGNAL)
+  }
+
+  /** ---------------For ordered-list block---------------- end **/
 }

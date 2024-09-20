@@ -1,34 +1,65 @@
 import {Component, ViewChild} from '@angular/core';
 import {
   BlockControllerPlugin,
-  BlockflowBinding,
-  BlockFlowEditor, BlockModel, BlockTransformPlugin, BulletListSchema, FloatTextToolbarPlugin,
+  BlockflowBinding, BlockFlowContextmenu,
+  BlockFlowEditor, BlockModel, BlockTransformPlugin, BulletListSchema, DividerSchema, FloatTextToolbarPlugin,
   GlobalConfig, HeadingFourSchema,
   HeadingOneSchema, HeadingThreeSchema, HeadingTwoSchema, IBlockModel,
   IEditableBlockModel, ImageSchema, MentionPlugin, OrderedListSchema,
   ParagraphSchema,
-  SchemaStore,
+  SchemaStore, TodoListSchema,
 } from "@blockflow";
 import {genUniqueID} from "@core/utils";
+import {CalloutSchema} from "@blocks/callout";
+import {MatIconRegistry} from "@angular/material/icon";
+import {DomSanitizer} from "@angular/platform-browser";
+import {Router} from "@angular/router";
 
-const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingTwoSchema, HeadingThreeSchema, HeadingFourSchema, ImageSchema, BulletListSchema, OrderedListSchema])
+interface MenuItem {
+  title: string;
+  icon: string;
+  iconType: 'icon' | 'svg';
+  type: 'page' | 'space' | 'doc' | 'folder';
+  children?: MenuItem[];
+  route?: string;
+}
 
-const mentionRequest = async (keyword: string) => {
-  const len = Math.floor(Math.random() * 10)
-  const list = Array.from({length: len}).map(() => ({
-    id: genUniqueID(),
-    name: keyword + Math.floor(Math.random() * 10000).toString().slice(0, 4)
-  }))
-
-  return {
-    list
+const defaultLibrary: MenuItem[] = [
+  {
+    title: '主页',
+    icon: 'bf_erjidaohang_shouye',
+    iconType: 'icon',
+    type: 'page',
+    route: 'home'
+  },
+  {
+    title: '我的空间',
+    icon: 'bf_wodekongjian',
+    iconType: 'icon',
+    type: 'space',
+    children: []
+  },
+  {
+    title: '共享空间',
+    icon: 'bf_gongxiangkongjian-color',
+    iconType: 'svg',
+    type: 'space',
+  },
+  {
+    title: '知识库',
+    icon: 'bf_zhishiku-color',
+    iconType: 'svg',
+    type: 'page',
+    route: 'knowledge'
+  },
+  {
+    title: '收藏',
+    icon: 'bf_shoucang',
+    iconType: 'icon',
+    type: 'page',
+    route: 'favourite'
   }
-}
-
-interface BlockSchemaMap {
-  'paragraph': IEditableBlockModel,
-  'heading-one': IEditableBlockModel
-}
+]
 
 @Component({
   selector: 'app-root',
@@ -36,173 +67,25 @@ interface BlockSchemaMap {
   styleUrls: ['./app.component.scss']
 })
 export class AppComponent {
-  // @ts-ignore
-  @ViewChild('editor') editor!: BlockFlowEditor<BlockSchemaMap>
 
-  model: IBlockModel[] = [
-    {
-      flavour: 'paragraph',
-      nodeType: 'editable',
-      id: genUniqueID(),
-      children: [
-        {
-          insert: 'Hello, World!\n'
-        },
-        {
-          insert: 'This is a paragraph.',
-          attributes: {
-            'a:bold': true,
-          }
-        }
-      ],
-      meta: {},
-      props: {}
-    },
-    {
-      flavour: 'heading-one',
-      nodeType: 'editable',
-      id: genUniqueID(),
-      children: [
-        {
-          insert: 'Hello Again!'
-        }
-      ],
-      meta: {},
-      props: {
-        id: '0001',
-        hs: [1, 2, 3]
-      }
-    }
-  ]
+  protected defaultLibrary = defaultLibrary;
+  protected customLibrary: MenuItem[] = [];
+  protected searchValue = '';
 
-  modelLength = 101
-
-  constructor() {
-    let i = 0
-    while (i < this.modelLength) {
-      i++
-      const id = genUniqueID()
-      this.model.push({
-        flavour: 'heading-one',
-        nodeType: 'editable',
-        id,
-        children: [
-          {
-            insert: 'Hello Again!' + id
-          }
-        ],
-        meta: {},
-        props: {}
-      })
-    }
-  }
-
-  config: GlobalConfig = {
-    rootId: 'root-demo',
-    schemas: schemaStore,
-    // lazyload: {
-    //   pageSize: 10,
-    //   requester: async (page) => {
-    //     const start = (page - 1) * this.config.lazyload!.pageSize
-    //         return {
-    //             totalCount: this.modelLength,
-    //             data: this.model.slice(start, start + this.config.lazyload!.pageSize)
-    //         }
-    //   }
-    // }
-    plugins: [new FloatTextToolbarPlugin(), new BlockControllerPlugin(), new MentionPlugin(mentionRequest), new BlockTransformPlugin()]
-  }
-
-  yBinding?: BlockflowBinding
-
-  get controller() {
-    return this.editor.controller
-  }
-
-  ngAfterViewInit() {
-    // this.editor.controller.transact(()=>{
-    // }, {name: 'init'})
-  }
-
-  onClickReadonly() {
-    this.editor.controller.toggleReadonly(!this.editor.controller.readonly$.value)
-  }
-
-  onClick1() {
-    console.log(this.controller.rootModel)
-    this.controller.deleteBlockById(this.controller.rootModel[1].id)
-  }
-
-  onClick2() {
-    console.log(this.controller.rootModel, this.controller.rootYModel, this.controller.rootYModel.toJSON())
-  }
-
-  onClick3(e: Event) {
-    e.preventDefault()
-    console.log(this.controller.getSelection())
-  }
-
-  onClick4() {
-    this.yBinding = new BlockflowBinding(this.controller)
-    this.yBinding.connect()
-  }
-
-  onClick5() {
-    const block = {
-      flavour: 'paragraph',
-      nodeType: 'editable',
-      id: genUniqueID(),
-      children: [
-        {
-          insert: 'This is a paragraph.',
-          attributes: {
-            'a:bold': true,
-          }
-        },
-        {
-          insert: 'Hello, World!\n'
-        },
-      ],
-      meta: {},
-      props: {}
-    } as IBlockModel
-    const bm = BlockModel.fromModel(block)
-    this.editor.controller.insertBlocks(0, [bm])
-  }
-
-  onClick6() {
-    const img: IBlockModel = {
-      "flavour": "image",
-      "id": genUniqueID(),
-      "nodeType": "block",
-      "props": {
-        "src": "https://v17.angular.io/generated/images/guide/start/fork-the-project.png",
-        "width": 400,
-        "height": 0,
-        "align": "center"
-      },
-      "meta": {
-      },
-      "children": [
-        {
-          "flavour": "paragraph",
-          "id": "1726043571963-03c23813-3fbf",
-          "nodeType": "editable",
-          "props": {},
-          "meta": {},
-          "children": [
-            {
-              "insert": "z这是一个图片测试"
-            }
-          ]
-        }
-      ]
-    }
-    const bm = BlockModel.fromModel(img)
-    this.editor.controller.insertBlocks(0, [bm])
+  constructor(
+    private router: Router,
+  ) {
   }
 
   ngOnDestroy() {
+  }
+
+  onMenuClick(item: MenuItem) {
+    switch (item.type) {
+      case 'page':
+        // this.router.navigate([item.route]);
+        break;
+    }
   }
 
 }

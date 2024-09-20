@@ -2,8 +2,8 @@ import {IInlineAttrs} from "@core";
 
 export const compareAttributesWithEle = (ele: HTMLElement, attrs?: IInlineAttrs): boolean => {
   const eleAttrs = ele.attributes
-  if (!attrs) return true
   if ((attrs && !eleAttrs.length) || (!attrs && eleAttrs.length)) return false
+  if (!attrs) return true
 
   const attrsEntries = Object.entries(attrs)
   if (!attrsEntries.length) return false  // {} is mean alone plain text element

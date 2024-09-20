@@ -22,12 +22,10 @@ export class BaseBlock<Model extends IBlockModel | IEditableBlockModel = IBlockM
 
   @Output() onDestroy = new EventEmitter<void>()
 
-  @HostBinding('id')
   get id() {
     return this.model.id
   }
 
-  @HostBinding('attr.bf-node-type')
   get nodeType() {
     return this.model.nodeType
   }
@@ -48,8 +46,12 @@ export class BaseBlock<Model extends IBlockModel | IEditableBlockModel = IBlockM
   public hostEl: ElementRef<HTMLElement> = inject(ElementRef)
   protected DOCUMENT = inject(DOCUMENT)
 
-  setProps<T extends keyof Model['props']>(key: T, value: Model['props'][T]) {
-    this.model.setProps(key, value)
+  setProp<T extends keyof Model['props']>(key: T, value: Model['props'][T]) {
+    this.model.setProp(key, value)
+  }
+
+  deleteProp<T extends keyof Model['props']>(key: T) {
+    this.model.deleteProp(key)
   }
 
   ngOnInit() {
@@ -57,6 +59,8 @@ export class BaseBlock<Model extends IBlockModel | IEditableBlockModel = IBlockM
 
   ngAfterViewInit() {
     this.controller.storeBlockRef(this)
+    this.hostEl.nativeElement.setAttribute('id', this.model.id)
+    this.hostEl.nativeElement.setAttribute('bf-node-type', this.model.nodeType)
   }
 
   ngOnDestroy() {

@@ -27,7 +27,7 @@ export interface IEditableBlockModel extends IBlockModel {
   nodeType: 'editable'
   children: IInlineModel[]
   props: IBlockProps & {
-    indent?: number
+    indent: number
     textAlign?: 'left' | 'center' | 'right'
   }
 }
