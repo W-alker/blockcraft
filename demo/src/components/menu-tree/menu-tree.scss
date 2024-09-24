@@ -1,0 +1,71 @@
+:host {
+
+  ::ng-deep .ant-tree {
+    .ant-tree-treenode {
+      width: 100%;
+      padding: 2px 0 ;
+    }
+
+    .ant-tree-switcher {
+      width: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: unset;
+      line-height: unset;
+    }
+  }
+
+  .menu-tree__node {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 16px 8px 4px;
+    color: #333;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    border-radius: 4px;
+    position: relative;
+
+    &.no-children {
+      margin-left: 12px;
+    }
+
+    mat-icon {
+      width: 1em;
+      height: 1em;
+    }
+
+    &__label {
+      font-weight: 600;
+      white-space: nowrap;
+      //overflow: hidden;
+      //text-overflow: ellipsis;
+    }
+
+    &:hover {
+      background: #eee;
+    }
+
+    &.active {
+      background: #EBECF8;
+      color: #4857E2;
+    }
+  }
+
+  ::ng-deep mat-icon svg {
+    vertical-align: top;
+  }
+
+  .icon-expand {
+    font-size: 12px;
+    transform: rotate(-90deg);
+    transition: transform 0.1s ease-in-out;
+
+    &.expanded {
+      transform: rotate(0deg);
+    }
+  }
+}

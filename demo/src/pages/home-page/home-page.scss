@@ -1,27 +1,12 @@
+@import "../../styles/doc-library.common";
+
 :host {
   display: block;
   padding: 24px 24px 24px 12px;
-  height: 100%;
   overflow-y: auto;
-
   .btn-more {
-    width: 20px;
-    height: 20px;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: background-color .15s ease-in-out;
-    text-align: center;
-    line-height: 20px;
-
-    &:hover {
-      background: #f5f5f5;
-    }
+    @include btn-more;
   }
-}
-
-.home__header {
-  padding: 0 8px 0 20px;
-  margin-bottom: 24px;
 }
 
 .home__title {
@@ -96,68 +81,3 @@
   }
 }
 
-.home__table-list {
-
-  td {
-    color: #999;
-
-    &:last-of-type {
-      position: relative;
-
-      .btn-more {
-        position: absolute;
-        right: 16px;
-        top: 50%;
-        transform: translateY(-50%);
-      }
-    }
-  }
-
-  &__td__title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-
-    mat-icon {
-      width: 32px;
-      height: 32px;
-    }
-
-    .info {
-
-      > div {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-
-        > span {
-          color: #333;
-          font-size: 14px;
-        }
-
-        .tag {
-          border-radius: 4px;
-          font-size: 12px;
-          height: 18px;
-          line-height: 18px;
-          padding: 0 4px;
-          background: #E8D9FF;
-        }
-      }
-
-      .folder {
-        display: flex;
-        align-items: center;
-        height: 25px;
-        gap: 4px;
-        font-size: 12px;
-        color: #999;
-
-        > i {
-        }
-      }
-
-    }
-  }
-
-}

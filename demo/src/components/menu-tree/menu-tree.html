@@ -1,0 +1,48 @@
+<nz-tree-view [nzTreeControl]="treeControl" [nzDataSource]="dataSource" *ngIf="dataSource">
+
+  <nz-tree-node *nzTreeNodeDef="let node" nzTreeNodePadding>
+    <ng-container *ngTemplateOutlet="nodeLineTpl; context: {node}"></ng-container>
+  </nz-tree-node>
+
+  <nz-tree-node *nzTreeNodeDef="let node; when: expandable" nzTreeNodePadding>
+    <nz-tree-node-toggle *ngIf="!node.loading">
+      <span class="bf_icon bf_xiajaintou icon-expand" [class.expanded]="treeControl.isExpanded(node)"></span>
+    </nz-tree-node-toggle>
+    <nz-tree-node-toggle *ngIf="node.loading" nzTreeNodeNoopToggle>
+      <span nz-icon nzType="loading" nzTreeNodeToggleActiveIcon></span>
+    </nz-tree-node-toggle>
+
+    <ng-container *ngTemplateOutlet="nodeLineTpl; context: {node}"></ng-container>
+  </nz-tree-node>
+
+</nz-tree-view>
+
+<ng-template #nodeLineTpl let-node='node'>
+  <div class="menu-tree__node" [class.no-children]="!node.expandable"
+       [routerLink]="node.route || null" routerLinkActive="active">
+    <ng-container *ngTemplateOutlet="iconTpl; context: {node}"></ng-container>
+    <span class="menu-tree__node__label">{{ node.name }}</span>
+  </div>
+</ng-template>
+
+<ng-template #iconTpl let-node='node'>
+  <ng-container *ngIf="node.icon else defaultIconTpl">
+    <ng-container *ngIf="node.iconType === 'icon' else svgIconTpl">
+      <i [class]="['bf_icon', node.icon]"></i>
+    </ng-container>
+    <ng-template #svgIconTpl>
+      <mat-icon [svgIcon]="node.icon"></mat-icon>
+    </ng-template>
+  </ng-container>
+
+  <ng-template #defaultIconTpl>
+    <ng-container *ngIf="node.type === 'doc' else folderIconTpl">
+      <mat-icon svgIcon="bf_shouye_wendang"></mat-icon>
+    </ng-container>
+
+    <ng-template #folderIconTpl>
+      <i class="bf_icon bf_wenjianjia"></i>
+    </ng-template>
+  </ng-template>
+</ng-template>
+

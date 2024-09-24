@@ -13,6 +13,7 @@
 
   &__content {
     flex: 1;
+    height: 100%;
   }
 
   &__aside-bar {
@@ -37,12 +38,12 @@
       }
 
       &__title {
-        padding: 0 16px;
         color: #999;
         font-size: 14px;
         font-weight: 400;
         display: flex;
         align-items: center;
+        margin: 0 16px;
 
         > span {
           flex: 1;
@@ -52,9 +53,11 @@
           cursor: pointer;
         }
       }
+
     }
 
     &__menu-item {
+      width: 100%;
       display: flex;
       align-items: center;
       gap: 4px;
@@ -66,26 +69,9 @@
       border-radius: 4px;
       position: relative;
 
-      .btn-expand {
-        position: absolute;
-        left: -2px;
-        top: 50%;
-        margin-top: -7px;
-        width: 14px;
-        height: 14px;
-        font-size: 14px;
-        line-height: 14px;
-        transform: rotate(-90deg);
-        transform-origin: center center;
-      }
-
       mat-icon {
         width: 1em;
         height: 1em;
-
-        ::ng-deep svg {
-          vertical-align: top;
-        }
       }
 
       > span {
@@ -93,7 +79,7 @@
       }
 
       &:hover {
-        background: rgba(235, 236, 248, 0.8);
+        background: #eee;
       }
 
       &.active {
@@ -102,4 +88,7 @@
       }
     }
   }
+
+
+
 }

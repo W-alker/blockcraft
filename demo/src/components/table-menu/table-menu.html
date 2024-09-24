@@ -1,0 +1,42 @@
+<nz-table #filterTable [nzData]="listOfData" nzTableLayout="fixed">
+  <thead>
+  <tr>
+    <!--      <th [nzChecked]="checked" [nzIndeterminate]="indeterminate" (nzCheckedChange)="onAllChecked($event)"></th>-->
+    <th [nzWidth]="'30px'"></th>
+    <th [nzWidth]="column.width || 'auto'"
+        *ngFor="let column of listOfColumns; trackBy: trackByName"
+        [(nzSortOrder)]="column.sortOrder"
+        [nzSortFn]="column.sortFn"
+        [nzFilters]="column.listOfFilter"
+        [nzFilterFn]="column.filterFn"
+    >
+      {{ column.name }}
+    </th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr *ngFor="let data of filterTable.data">
+    <td
+      [nzChecked]="setOfCheckedId.has(data.id)"
+      (nzCheckedChange)="onItemChecked(data.id, $event)"
+    ></td>
+    <td class="table-menu__td__title">
+      <mat-icon svgIcon="bf_shouye_wendang"></mat-icon>
+      <div class="info">
+        <div>
+          <span>{{ data.name }}</span>
+          <span class="tag">模板</span>
+        </div>
+        <span *ngIf="data.folder" class="folder">
+            <i class="bf_icon bf_wenjianjia"></i>{{ data.folder.name }}
+          </span>
+      </div>
+    </td>
+    <td>{{ data.creator.name }}</td>
+    <td>
+      <span>{{ data.lastModified | date: 'yyyy年MM月dd日' }}</span>
+      <i class="btn-more bf_icon bf_gengduo" (click)="onItemClick($event, data)"></i>
+    </td>
+  </tr>
+  </tbody>
+</nz-table>

@@ -11,6 +11,8 @@ import {NzInputModule} from "ng-zorro-antd/input";
 import {FormsModule} from "@angular/forms";
 import {MatIconModule, MatIconRegistry} from "@angular/material/icon";
 import {HttpClientModule} from "@angular/common/http";
+import {MenuTreeComponent} from "../components/menu-tree/menu-tree";
+import {DocApiService} from "../services/doc-api.service";
 
 registerLocaleData(zh);
 
@@ -25,17 +27,19 @@ registerLocaleData(zh);
     NzInputModule,
     FormsModule,
     MatIconModule,
-    HttpClientModule
+    HttpClientModule,
+    MenuTreeComponent
   ],
   providers: [
     {provide: FILE_UPLOADER, useClass: FileUploaderService},
+    DocApiService
   ],
   bootstrap: [AppComponent]
 })
 export class AppModule {
   constructor(
-     private iconRegistry: MatIconRegistry,
-     private sanitizer: DomSanitizer
+    private iconRegistry: MatIconRegistry,
+    private sanitizer: DomSanitizer
   ) {
     this.iconRegistry.addSvgIconSet(
       this.sanitizer.bypassSecurityTrustResourceUrl('https://at.alicdn.com/t/c/font_4682833_u94uq2b8q1.js')

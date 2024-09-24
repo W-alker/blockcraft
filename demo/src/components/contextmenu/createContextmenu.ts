@@ -1,15 +1,29 @@
-import {Overlay, OverlayRef} from "@angular/cdk/overlay";
+import {Overlay, OverlayRef, PositionStrategy} from "@angular/cdk/overlay";
 import {IContextMenuItem} from "./contextmenu.type";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {ContextMenuComponent} from "./contextmenu";
 import {take} from "rxjs";
 import {ComponentRef} from "@angular/core";
 
-interface config {
-  target: HTMLElement
+
+interface IContextMenuPosition {
+  x: number
+  y: number
+}
+
+/**
+ * Target and position are optional but one of them must be provided.
+ */
+type config =  {
+  target?: HTMLElement
+  position?: IContextMenuPosition
   items: IContextMenuItem[]
 }
 
+/**
+ * @param overlay - The OverlayRef.
+ * @param config - The configuration of the context menu. {@link config}
+ */
 export class ContextmenuCreator {
 
   public readonly overlayRef!: OverlayRef
@@ -20,11 +34,16 @@ export class ContextmenuCreator {
     public readonly config: config
   ) {
 
-    const {target, items} = config
+    const {target, items, position} = config
     const portal = new ComponentPortal(ContextMenuComponent)
-    const positionStrategy = this.overlay.position().flexibleConnectedTo(target)
-      .withPositions([{originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top'}])
-      .withPush(true)
+    let positionStrategy: PositionStrategy
+    if (position) {
+      positionStrategy = this.overlay.position().global().left(`${position.x}px`).top(`${position.y}px`)
+    } else {
+      positionStrategy = this.overlay.position().flexibleConnectedTo(target!)
+        .withPositions([{originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top'}])
+        .withPush(true)
+    }
     this.overlayRef = this.overlay.create({
       positionStrategy,
       hasBackdrop: true,

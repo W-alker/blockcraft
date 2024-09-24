@@ -1,7 +1,7 @@
 <div class="doc-library__aside-bar">
   <div class="doc-library__aside-bar__group" style="padding-top: 0">
-    <nz-input-group [nzPrefix]="prefixTemplateUser" style="height: 32px">
-      <input nz-input placeholder="内容或文件名进行搜索" [(ngModel)]="searchValue" type="text" />
+    <nz-input-group [nzPrefix]="prefixTemplateUser" style="height: 32px; width: unset">
+      <input nz-input placeholder="内容或文件名进行搜索" [(ngModel)]="searchValue" type="text" style="width: 100%"/>
     </nz-input-group>
     <ng-template #prefixTemplateUser><i class="bf_icon bf_search" style="color: #999"></i></ng-template>
 
@@ -12,29 +12,13 @@
 
   <div class="doc-library__aside-bar__group">
     <h2 class="doc-library__aside-bar__group__title"><span>系统库</span></h2>
-    <ng-container *ngTemplateOutlet="libraryMenuTpl; context: { library: defaultLibrary }"></ng-container>
+    <menu-tree [treeData]="defaultLibrary"></menu-tree>
   </div>
 
   <div class="doc-library__aside-bar__group">
-    <h2 class="doc-library__aside-bar__group__title"><span>自定义库</span> <i class="bf_icon bf_tianjia-2"></i> </h2>
-    <ng-container *ngTemplateOutlet="libraryMenuTpl; context: { library: customLibrary }"></ng-container>
+    <h2 class="doc-library__aside-bar__group__title"><span>自定义库</span> <i class="bf_icon bf_tianjia-2"></i></h2>
+    <menu-tree [treeData]="customLibrary"></menu-tree>
   </div>
-
-  <ng-template #libraryMenuTpl let-library='library'>
-    <div class="doc-library__aside-bar__menu-item" *ngFor="let menu of library" (click)="onMenuClick(menu)"
-         [routerLink]="menu.route" routerLinkActive="active">
-      <i class="btn-expand bf_icon bf_xiajaintou" *ngIf="menu.children"></i>
-
-      <ng-container *ngIf="menu.iconType === 'icon' else svgIconTpl">
-        <i [class]="['bf_icon', menu.icon]"></i>
-      </ng-container>
-      <ng-template #svgIconTpl>
-        <mat-icon [svgIcon]="menu.icon"></mat-icon>
-      </ng-template>
-
-      <span>{{ menu.title }}</span>
-    </div>
-  </ng-template>
 
 </div>
 

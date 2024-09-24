@@ -7,6 +7,14 @@ const routes: Routes = [
     loadComponent: () => import('../pages/home-page/home-page').then(m => m.HomePage)
   },
   {
+    path: 'space/:id',
+    loadComponent: () => import('../pages/space-page/space-page').then(m => m.SpacePageComponent)
+  },
+  {
+    path: 'doc/:id',
+    loadComponent: () => import('../pages/doc-page/doc-page').then(m => m.DocPageComponent)
+  },
+  {
     path: 'test',
     loadComponent: () => import('./test-page').then(m => m.TestPage)
   }
