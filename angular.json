@@ -80,7 +80,8 @@
             ],
             "styles": [
               "demo/src/styles.scss",
-              "blockflow/src/editor/styles/editor.scss",
+              "blockflow/src/assets/iconfont/bf-iconfont.css",
+              "blockflow/src/assets/styles/editor.scss",
               "node_modules/viewerjs/dist/viewer.min.css",
               "node_modules/ng-zorro-antd/ng-zorro-antd.min.css"
             ],

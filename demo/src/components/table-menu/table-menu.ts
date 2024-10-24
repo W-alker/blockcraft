@@ -1,10 +1,11 @@
-import {Component} from "@angular/core";
+import {Component, ElementRef, QueryList, ViewChild} from "@angular/core";
 import {ContextmenuCreator, IContextMenuItem} from "../contextmenu";
 import {take} from "rxjs";
 import {NzTableFilterFn, NzTableFilterList, NzTableModule, NzTableSortFn, NzTableSortOrder} from "ng-zorro-antd/table";
 import {Overlay} from "@angular/cdk/overlay";
 import {MatIconModule} from "@angular/material/icon";
 import {DatePipe, NgForOf, NgIf} from "@angular/common";
+import {NzDropDownModule} from "ng-zorro-antd/dropdown";
 
 interface DataItem {
   id: string;
@@ -40,7 +41,8 @@ interface ColumnItem {
     MatIconModule,
     DatePipe,
     NgForOf,
-    NgIf
+    NgIf,
+    NzDropDownModule
   ],
   standalone: true
 })
@@ -49,6 +51,10 @@ export class TableMenuComponent {
     private overlay: Overlay,
   ) {
   }
+
+  @ViewChild('th1', {read: ElementRef}) th1!: ElementRef;
+  @ViewChild('th2', {read: ElementRef}) th2!: ElementRef;
+  @ViewChild('th3', {read: ElementRef}) th3!: ElementRef;
 
   setOfCheckedId = new Set<string>();
 
@@ -64,58 +70,23 @@ export class TableMenuComponent {
     this.updateCheckedSet(id, checked);
   }
 
-  listOfColumns: ColumnItem[] = [
-    {
-      name: '标题',
-      sortOrder: null,
-      sortFn: (a: DataItem, b: DataItem) => a.name.localeCompare(b.name),
-      listOfFilter: [
-        {text: '文档', value: 'doc'},
-        {text: '表格', value: 'table'}
-      ],
-      filterFn: (list: string[], item: DataItem) => list.some(t => item.type.indexOf(t) !== -1)
-    },
-    {
-      name: '归属',
-      sortOrder: null,
-      sortFn: (a: DataItem, b: DataItem) => a.creator.name.localeCompare(b.creator.name),
-      listOfFilter: [
-        {text: '不限归属', value: 'doc'},
-        {text: '归属于我', value: 'table'}
-      ],
-      filterFn: (list: string[], item: DataItem) => list.some(t => item.type.indexOf(t) !== -1),
-      width: '200px'
-    },
-    {
-      name: '时间',
-      sortFn: null,
-      sortOrder: null,
-      listOfFilter: [
-        {text: 'London', value: 'London'},
-        {text: 'Sidney', value: 'Sidney'}
-      ],
-      filterFn: null,
-      width: '200px'
-    }
-  ];
-
-  listOfData: DataItem[] = [
-    {
-      id: '1',
-      name: '文档1',
-      lastModified: 1630512000000,
-      creator: {
-        name: '张三',
+  listOfData: DataItem[] =
+    new Array(100).fill(
+      {
         id: '1',
-      },
-      type: 'doc',
-      favourite: true,
-      folder: {
-        id: '1',
-        name: '文件夹1',
-      }
-    },
-  ];
+        name: '文档1',
+        lastModified: 1630512000000,
+        creator: {
+          name: '张三',
+          id: '1',
+        },
+        type: 'doc',
+        favourite: true,
+        folder: {
+          id: '1',
+          name: '文件夹1',
+        }
+      })
 
   tableItemContextmenu: IContextMenuItem[] = [
     {
@@ -149,5 +120,24 @@ export class TableMenuComponent {
     cr.contextmenu.instance.itemClick.pipe(take(1)).subscribe((item) => {
       cr.dispose()
     })
+  }
+
+  onTableChange(e: MouseEvent, type: 'type' | 'creator' | 'recentType', value: string) {
+    console.log(e, type, value)
+    const text = (e.target as HTMLElement).textContent
+    switch (type) {
+      case 'type':
+        this.th1.nativeElement.textContent = text
+        break;
+      case 'creator':
+        this.th2.nativeElement.textContent = text
+        break;
+      case 'recentType':
+        this.th3.nativeElement.textContent = text
+        break;
+    }
+  }
+
+  onFavourite(item: DataItem) {
   }
 }

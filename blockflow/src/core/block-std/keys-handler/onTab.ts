@@ -1,31 +1,51 @@
-import {BlockModel, Controller, EditableBlock, IEditableBlockModel, IKeyEventHandler, USER_CHANGE_SIGNAL} from "@core";
-import {OrderedListBlock, updateOrderAround} from "@blocks";
+import {IKeyEventHandler} from "./keyEventBus";
+import {Controller} from "../../controller";
+import {BlockModel} from "../../yjs";
+import {IEditableBlockModel} from "../../types";
+import {EditableBlock} from "../components";
+import {OrderedListBlock} from "../../../blocks";
 
 export const onTab: IKeyEventHandler = (e: KeyboardEvent, controller: Controller) => {
-  e.preventDefault()
-  const curRange = controller.getSelection()!
-  if (curRange.isAtRoot) {
-    const {rootRange} = curRange
-    if (!rootRange) return
-    let from = 0, to = 0
-    from = rootRange.start
-    to = rootRange.end
-    controller.transact(() => {
-      let ordered: BlockModel | null = null
-      for (let i = from; i <= to; i++) {
-        const bm = controller.rootModel[i] as BlockModel<IEditableBlockModel>
-        if (bm.nodeType !== 'editable') continue;
-        bm.flavour === 'ordered-list' && (ordered = bm)
-        e.shiftKey ? bm.setProp('indent', (bm.props.indent || 0) - 1)
-          : bm.setProp('indent', (bm.props.indent || 0) + 1)
-      }
-      ordered && controller.updateOrderAround(ordered as any)
-    }, USER_CHANGE_SIGNAL)
-  } else {
-    const {blockId} = curRange
-    const bRef = controller.getBlockRef(blockId) as EditableBlock
-    e.shiftKey ? bRef.setProp('indent', (bRef.props.indent || 0) - 1)
-      : bRef.setProp('indent', (bRef.props.indent || 0) + 1)
-    bRef instanceof OrderedListBlock && controller.updateOrderAround(bRef.model)
-  }
+    e.preventDefault()
+    const curRange = controller.getSelection()!
+    if (curRange.isAtRoot) {
+        const {rootRange} = curRange
+        if (!rootRange) return
+        let from = 0, to = 0
+        from = rootRange.start
+        to = rootRange.end
+        let ordered: BlockModel | null = null
+        for (let i = from; i <= to; i++) {
+            const bm = controller.rootModel[i] as BlockModel<IEditableBlockModel>
+            if (bm.nodeType !== 'editable') continue;
+            bm.flavour === 'ordered-list' && (ordered = bm)
+            if (e.shiftKey) {
+                if (bm.props.indent === 0) continue
+                bm.setProp('indent', (bm.props.indent || 1) - 1)
+            } else {
+                bm.setProp('indent', (bm.props.indent || 0) + 1)
+            }
+        }
+        ordered && controller.updateOrderAround(ordered as any)
+    } else {
+
+        const {blockId} = curRange
+        const bRef = controller.getBlockRef(blockId) as EditableBlock
+
+        if (controller.activeElement?.classList.contains('bf-multi-line')) {
+            bRef.applyDelta([
+                {retain: curRange.blockRange.start},
+                {insert: '\t'}
+            ])
+            return;
+        }
+
+        if (e.shiftKey) {
+            if (bRef.model.props.indent === 0) return
+            bRef.model.setProp('indent', (bRef.model.props.indent || 1) - 1)
+        } else {
+            bRef.model.setProp('indent', (bRef.model.props.indent || 0) + 1)
+        }
+        bRef instanceof OrderedListBlock && controller.updateOrderAround(bRef.model)
+    }
 }

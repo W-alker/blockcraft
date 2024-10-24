@@ -8,14 +8,6 @@
     "declarationMap": true,
     "inlineSources": true,
     "types": [],
-    "paths": {
-      "@blocks": ["src/blocks"],
-      "@blocks/*": ["src/blocks/*"],
-      "@core": ["src/core"],
-      "@core/*": ["src/core/*"],
-      "@editor": ["src/editor"],
-      "@editor/*": ["src/editor/*"]
-    }
   },
   "exclude": [
     "**/*.spec.ts"

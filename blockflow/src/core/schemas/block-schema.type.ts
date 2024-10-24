@@ -8,8 +8,7 @@ import {
   IMetadata
 } from "../types";
 import {Type} from "@angular/core";
-import {BaseBlock} from "@core/block-std";
-import {BlockModel} from "@core/yjs";
+import {BaseBlock} from "../block-std";
 
 export interface BlockSchema<T extends IBlockProps = IBlockProps> {
   flavour: IBlockFlavour;
@@ -22,6 +21,7 @@ export interface BlockSchema<T extends IBlockProps = IBlockProps> {
     children: Array<DeltaInsert> | Array<{ flavour: IBlockFlavour, params?: any[] }>
   },
   icon: string;
+  svgIcon?: string;
   label: string;
   description?: string;
 }

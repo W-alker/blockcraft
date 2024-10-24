@@ -1,5 +1,8 @@
-import {Controller, EditableBlock, IKeyEventHandler} from "@core";
-import {isCursorAtElStart} from "@core/utils";
+import {IKeyEventHandler} from "./keyEventBus";
+import {Controller} from "../../controller";
+import {EditableBlock} from "../components";
+import {isCursorAtElStart} from "../../utils";
+
 
 export const onArrowUp: IKeyEventHandler = (e: KeyboardEvent, controller: Controller) => {
     const curRange = controller.getSelection()!

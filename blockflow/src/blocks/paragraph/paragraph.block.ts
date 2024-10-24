@@ -1,6 +1,6 @@
-import {ChangeDetectionStrategy, Component, Input} from '@angular/core';
+import {ChangeDetectionStrategy, Component} from '@angular/core';
 import {CommonModule} from '@angular/common';
-import {EditableBlock} from "@core/block-std";
+import {EditableBlock} from "../../core";
 
 @Component({
   selector: 'p.editable-container',
@@ -10,5 +10,4 @@ import {EditableBlock} from "@core/block-std";
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ParagraphBlock extends EditableBlock {
-
 }

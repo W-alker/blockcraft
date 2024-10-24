@@ -5,3 +5,6 @@ export * from './ordered-list';
 export * from './todo-list';
 export * from './image';
 export * from './divider';
+export * from './callout';
+export * from './code';
+export * from './link'

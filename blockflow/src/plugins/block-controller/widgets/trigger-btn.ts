@@ -4,24 +4,24 @@ import {
   HostListener,
   Input,
 } from "@angular/core";
-import {BaseBlock, Controller, EditableBlock} from "@core";
 import {NgIf, NgTemplateOutlet} from "@angular/common";
 import {fromEvent, take} from "rxjs";
-import {BlockFlowContextmenu, IContextMenuComponent} from "@editor";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
-
+import {BlockFlowContextmenu, IContextMenuComponent} from "../../../editor";
+import {BaseBlock, Controller, EditableBlock} from "../../../core";
 
 @Component({
   selector: 'div.trigger-btn',
   standalone: true,
   template: `
     <div class="btn">
-      <i [class]="['bf_icon', hasContent ? 'bf_bianjizhongtoubu_juzhongduiqi' : 'bf_tianjia-2']"></i>
+      <i [class]="['bf_icon', hasContent ? 'bf_yidong' : 'bf_tianjia-2']"></i>
     </div>
   `,
   styles: [`
     :host {
+      display: none;
       z-index: 100;
       position: absolute;
       padding-right: 8px;
@@ -79,6 +79,7 @@ export class TriggerBtn {
   @Input()
   set activeBlockWrap(val: HTMLElement) {
     if (this._activeBlockWrap === val) return
+    this.closeContextMenu()
     this._activeBlockWrap = val
     if (!val) {
       this.close()
@@ -92,7 +93,7 @@ export class TriggerBtn {
       this.close()
     })
 
-    this.display = 'block'
+    this.host.nativeElement.style.display = 'block'
     const {top, left} = this.calcPos()
     this.top = top
     this.left = left
@@ -132,9 +133,6 @@ export class TriggerBtn {
     return parseFloat(lineHeight)
   }
 
-  @HostBinding('style.display')
-  private display = 'none'
-
   @HostBinding('style.top.px')
   private top = 0
 
@@ -156,7 +154,8 @@ export class TriggerBtn {
   onMouseEnter(e: Event) {
     e.stopPropagation()
     this.hasContent = this.activeBlock instanceof EditableBlock ? !!this._activeBlockWrap!.textContent : true
-    this.display = 'block'
+    this.host.nativeElement.style.display = 'block'
+
     this.showContextMenu()
   }
 
@@ -173,7 +172,10 @@ export class TriggerBtn {
   showContextMenu() {
     if (this.ovr) return
     const positionStrategy = this.overlay.position().flexibleConnectedTo(this.host)
-      .withPositions([{originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'bottom'}])
+      .withPositions([
+        {originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top'},
+        {originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom'},
+      ])
       .withPush(true)
     this.ovr = this.overlay.create({positionStrategy})
     const cpr = this.ovr.attach(this.contextmenuPortal)
@@ -184,19 +186,18 @@ export class TriggerBtn {
       this.close()
     })
 
-    const sub = fromEvent(cpr.location.nativeElement, 'mouseenter')
+    const sub = fromEvent(cpr.location.nativeElement, 'mouseenter').pipe(take(1))
       .subscribe(() => {
         this._closeTimer && clearTimeout(this._closeTimer)
 
-        fromEvent<MouseEvent>(cpr.location.nativeElement, 'mouseleave').pipe(take(1))
-          .subscribe((e) => {
-            if (this.host.nativeElement.contains(e.relatedTarget as HTMLElement)) return
-            this._closeTimer = window.setTimeout(() => {
-              this.close()
-              sub.unsubscribe()
-            }, 100)
-          })
-
+        // fromEvent<MouseEvent>(cpr.location.nativeElement, 'mouseleave').pipe(take(1))
+        //   .subscribe((e) => {
+        //     if (this.host.nativeElement.contains(e.relatedTarget as HTMLElement)) return
+        //     this._closeTimer = window.setTimeout(() => {
+        //       this.close()
+        //       sub.unsubscribe()
+        //     }, 500)
+        //   })
       })
 
   }
@@ -208,7 +209,7 @@ export class TriggerBtn {
   }
 
   close() {
-    this.display = 'none'
+    this.host.nativeElement.style.display = 'none'
     this.activeBlock = undefined
     this._activeBlockWrap = undefined
     this.closeContextMenu()

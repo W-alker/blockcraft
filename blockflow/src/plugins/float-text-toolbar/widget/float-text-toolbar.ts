@@ -1,6 +1,6 @@
 import {
   ChangeDetectionStrategy,
-  Component, DestroyRef, ElementRef, EmbeddedViewRef,
+  Component, ElementRef, EmbeddedViewRef,
   EventEmitter,
   HostBinding,
   HostListener,
@@ -14,7 +14,7 @@ const markList: IToolbarMenuItem = {
   name: "mark",
   icon: "bf_jihaobi",
   intro: "高亮颜色",
-  value: '#FFEFBA',
+  value: null,
   children: [
     {
       name: "mark",
@@ -86,8 +86,12 @@ const alignList: IToolbarMenuItem = {
   styleUrls: ['./float-text-toolbar.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-
 export class FloatTextToolbar {
+  @Input()
+  set expandToolbarList(val: IToolbarMenuItem[]) {
+    this.toolbarMenuList.push(...val)
+  }
+
   @HostBinding('style.top.px')
   @Input()
   top = 0
@@ -157,6 +161,7 @@ export class FloatTextToolbar {
   onMousedown(e: MouseEvent, item: IToolbarMenuItem) {
     e.stopPropagation()
     e.preventDefault()
+    if(!item) return
     this.itemClick.emit(item)
   }
 
@@ -170,16 +175,11 @@ export class FloatTextToolbar {
     const dom = this.elementRef.nativeElement.querySelector(`[data-name="${item.name}"]`) as HTMLElement
     switch (item.name) {
       case "align":
-        this.embedViewRef = this.vcr.createEmbeddedView(this.alignTpl, {
-          left: 0,
-          top: 24,
-        })
+        this.embedViewRef = this.vcr.createEmbeddedView(this.alignTpl, {$implicit: 'left: 0; top: 24px'})
         break
       case "mark":
-        this.embedViewRef = this.vcr.createEmbeddedView(this.markTpl, {
-          left: 0,
-          top: 24,
-        })
+        this.embedViewRef = this.vcr.createEmbeddedView(this.markTpl, {$implicit: 'right: 0; top: 24px; transform: translateX(50%);'})
+        break
     }
     dom.appendChild(this.embedViewRef?.rootNodes[0] as HTMLElement)
   }

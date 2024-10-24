@@ -1,4 +1,4 @@
-import {IEditableBlockModel} from "@core";
+import {IEditableBlockModel} from "../../core";
 
 export interface ITodoListBlockModel extends IEditableBlockModel {
   props: {

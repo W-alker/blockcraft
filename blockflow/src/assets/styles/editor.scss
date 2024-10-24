@@ -1,0 +1,220 @@
+//@import "../../assets/iconfont/iconfont.css";
+
+bf-editor {
+  display: block;
+  width: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+
+  p, div, span, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre, table, thead, tbody, tr, th, td, hr, figure, figcaption, img, a, strong, em, u, s, code, br, hr {
+    margin: 0;
+    padding: 0;
+  }
+
+  --bf-c: #000;
+  --bf-fs: 16px;
+  --bf-lh: 1.25;
+  --bf-bg: #fff;
+  --bf-placeholder: #ccc;
+  --bf-anchor: #4857E2;
+  --bf-anchor-hover: #4857E2;
+
+  font-size: var(--bf-fs);
+  line-height: var(--bf-lh);
+  color: var(--bf-c);
+
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: bold;
+  }
+
+  .editable-container {
+    min-height: 1em;
+
+    &.bf-multi-line > span {
+      white-space: pre-wrap;
+    }
+
+    &.placeholder-visible {
+      &::after {
+        content: attr(placeholder);
+        opacity: .6;
+        pointer-events: none;
+      }
+    }
+  }
+
+  [contenteditable="true"] {
+    outline: none;
+  }
+
+  [contenteditable="false"] {
+    user-select: none;
+  }
+
+  [bf-block-wrap] {
+    position: relative;
+    margin-bottom: 16px;
+  }
+
+  [bf-node-type="root"] {
+    position: relative;
+    display: block;
+    outline: none;
+  }
+
+  [bfi-bold="true"] {
+    font-weight: bold;
+  }
+
+  [bfi-italic="true"] {
+    font-style: italic;
+  }
+
+  [bfi-underline="true"] {
+    text-decoration: underline;
+  }
+
+  [bfi-strike="true"] {
+    text-decoration: line-through;
+  }
+
+  [bfi-underline="true"][bfi-strike="true"] {
+    text-decoration: underline line-through;
+  }
+
+  [bfi-code="true"] {
+    background-color: rgb(242, 243, 245);
+    border: 1px solid #dee0e3;
+    padding: 0 .1em;
+
+    + [bfi-code="true"] {
+      border-left: none;
+    }
+  }
+
+  [bf-embed="link"] {
+    color: #4857E2;
+    cursor: pointer;
+
+    &:before {
+      content: '\e6af';
+      font-family: "bf_icon" !important;
+      font-size: 1em;
+      font-style: normal;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    &::after {
+      content: attr(data-link-text);
+      text-decoration: underline;
+    }
+  }
+
+  [bf-embed="mention"] {
+    padding: 0 .15em;
+    color: #4857E2;
+    cursor: pointer;
+
+    &[data-mention-type="user"]::before {
+      content: '@' attr(data-mention-name);
+    }
+
+    &[data-mention-type="doc"] {
+      &::before {
+        content: "\e6ba";
+        font-family: "bf_icon" !important;
+        font-size: 1em;
+        font-style: normal;
+      }
+
+      &::after {
+        content: attr(data-mention-name);
+      }
+    }
+
+    &:hover {
+      background-color: rgba(72, 87, 226, 0.1);
+      border-radius: 4px;
+      text-decoration: underline;
+    }
+  }
+
+  ::selection {
+    background: rgba(46, 115, 252, .4);
+  }
+
+}
+
+.bf-float-toolbar {
+
+  &__container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+    height: 32px;
+    border-radius: 4px;
+    background: #FFF;
+    box-shadow: 0px 0px 20px 0px rgba(0, 0, 0, 0.10);
+    animation: bf_expand 0.2s ease-in-out;
+
+    @keyframes bf_expand {
+      from {
+        height: 0;
+      }
+      to {
+        height: 32px;
+      }
+    }
+  }
+
+  &__item {
+    position: relative;
+    cursor: pointer;
+    padding: 4px;
+    height: 24px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+
+    &:hover {
+      background: #f5f5f5;
+      border-radius: 4px;
+
+      > i.dropdown {
+        transform: rotate(180deg);
+      }
+    }
+
+    > i {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: #666;
+      font-size: 16px;
+      line-height: 16px;
+
+      &.dropdown {
+        font-size: 10px;
+        line-height: 10px;
+        transition: transform 0.15s;
+      }
+    }
+  }
+}
+
+// block-selection
+.blockflow-selection-area {
+  z-index: 1060;
+  background: rgba(46, 115, 252, 0.2);
+  border: 1px solid rgba(98, 155, 255, 0.81);
+  border-radius: 0.1em;
+}
+
+.bf-block-selected {
+  background: rgba(46, 115, 252, 0.2);
+}
+

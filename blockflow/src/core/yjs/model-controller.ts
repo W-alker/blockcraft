@@ -1,4 +1,4 @@
-import {DeltaInsert, DeltaOperation, IBlockModel} from "@core";
+import {DeltaInsert, DeltaOperation, IBlockModel} from "../types";
 
 type Path = (string | number)[]
 

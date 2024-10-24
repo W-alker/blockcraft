@@ -1,4 +1,5 @@
-import {EditableBlock, IKeyEventHandler} from "@core";
+import {IKeyEventHandler} from "./keyEventBus";
+import {EditableBlock} from "../components";
 
 export const onCtrlA: IKeyEventHandler = (e, controller) => {
   const focusingBlockId = controller.getFocusingBlockId()

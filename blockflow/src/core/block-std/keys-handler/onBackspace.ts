@@ -1,4 +1,7 @@
-import {EditableBlock, IKeyEventHandler, isEmbedElement, USER_CHANGE_SIGNAL} from "@core";
+import {IKeyEventHandler} from "./keyEventBus";
+import {EditableBlock} from "../components";
+import {USER_CHANGE_SIGNAL} from "../../yjs";
+import {isEmbedElement} from "../../utils";
 
 export const onBackspace: IKeyEventHandler = (e, controller) => {
   e.preventDefault()
@@ -20,6 +23,11 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
         controller.setSelection(pBlock.id, 'start')
       })
       return;
+    }
+
+    if (bRef.props.indent > 0) {
+      bRef.setProp('indent', bRef.props.indent - 1)
+      return
     }
 
     const prevBlock = controller.findPrevEditableBlock(bRef.id)

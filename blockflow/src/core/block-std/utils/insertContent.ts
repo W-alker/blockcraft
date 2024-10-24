@@ -1,4 +1,6 @@
-import {BlockflowInline, DeltaInsert, findNodeByIndex, isEmbedElement} from "@core";
+import {DeltaInsert} from "../../types";
+import {BlockflowInline} from "../inline";
+import {findNodeByIndex, isEmbedElement} from "../../utils";
 
 export const insertContent = (ele: HTMLElement, from: number, delta: DeltaInsert) => {
   // console.time('insertContent')

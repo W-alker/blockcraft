@@ -1,8 +1,8 @@
 import {Component, HostBinding} from "@angular/core";
-import {EditableBlock} from "@core";
-import {ICalloutBlockModel} from "@blocks/callout/type";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {IToolbarItem} from "../../components";
+import {ICalloutBlockModel} from "./type";
+import {EditableBlock} from "../../core";
 
 @Component({
   selector: 'div.callout-block',

@@ -1,8 +1,8 @@
-import {BlockSchema} from "@core";
 import {HeadingOneBlock} from "./heading-one.block";
 import {HeadingTwoBlock} from "./heading-two.block";
 import {HeadingThreeBlock} from "./heading-three.block";
 import {HeadingFourBlock} from "./heading-four.block";
+import {BlockSchema} from "../../core";
 
 export const HeadingOneSchema: BlockSchema = {
   flavour: 'heading-one',

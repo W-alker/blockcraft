@@ -1,15 +1,20 @@
 import {
   ChangeDetectionStrategy, ChangeDetectorRef,
-  Component,
+  Component, DestroyRef, EmbeddedViewRef,
   EventEmitter,
   HostListener,
   Input,
-  Output,
+  Output, TemplateRef, ViewChild, ViewContainerRef,
 } from "@angular/core";
-import {NgForOf, NgIf} from "@angular/common";
-import {BaseBlock, BlockSchema, ClipDataWriter, Controller, EditableBlock} from "@core";
+import {NgForOf, NgIf, NgTemplateOutlet} from "@angular/common";
 import {IContextMenuEvent, IContextMenuItem} from "./type";
-import {FILE_UPLOADER} from "@blocks/image";
+import {BaseBlock, BlockSchema, ClipDataWriter, Controller, EditableBlock} from "../../core";
+import {FILE_UPLOADER} from "../../blocks";
+import {Overlay} from "@angular/cdk/overlay";
+import {TemplatePortal} from "@angular/cdk/portal";
+import {fromEvent} from "rxjs";
+import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
+import {MatIconModule} from "@angular/material/icon";
 
 export * from './type'
 
@@ -17,6 +22,15 @@ export * from './type'
   selector: 'div.bf-contextmenu',
   standalone: true,
   template: `
+
+    <ng-template #icon let-item>
+      <i [class]="item.icon"></i>
+    </ng-template>
+
+    <ng-template #svgIcon let-item>
+      <mat-icon [svgIcon]="item.svgIcon" style="width: 1em; height: 1em"></mat-icon>
+    </ng-template>
+
     <div class="spark-popover__gap"></div>
     <div class="spark-popover__container">
       <ng-container *ngIf="activeBlock.nodeType === 'editable'">
@@ -24,7 +38,8 @@ export * from './type'
         <ul class='base-list'>
           <li class="base-list__item" *ngFor="let item of baseBlockList" [title]="item.description"
               (mousedown)="onMouseDown($event, item, 'block')" [class.active]="activeBlock.flavour === item.flavour">
-            <i [class]="item.icon"></i>
+            <ng-container *ngTemplateOutlet="item.svgIcon ? svgIcon : icon; context: {$implicit: item}">
+            </ng-container>
           </li>
         </ul>
         <div class="line"></div>
@@ -41,47 +56,64 @@ export * from './type'
         <div class="line"></div>
       </ng-container>
 
-      <ul class='common-list'>
-        <li class="common-list__item add-block-btn" (mouseenter)="onShowMoreBlock($event)"
-            (mouseleave)="onCloseMoreBlock($event)">
-          <i class="bf_icon bf_tianjia"></i>
-          <span>在下方添加</span>
-          <i class="bf_icon bf_youjiantou"></i>
+      <ng-container *ngIf="!hasContent else appendAfter">
+        <ng-container *ngTemplateOutlet="moreBlockList"></ng-container>
+      </ng-container>
 
-          <ng-container *ngIf="_showMoreBlock">
-            <div class="spark-popover__container spark-popover__more-block"
-                 (mouseenter)="onMoreBlockMouseEnter($event)">
-              <h4 class="title" *ngIf="commonBlockList.length">常用</h4>
-              <ul class='common-list'>
-                <li class="common-list__item" *ngFor="let item of commonBlockList"
-                    (mousedown)="onMouseDown($event, item, 'block')">
-                  <i [class]="item.icon"></i>
-                  <span>{{ item.label }}</span>
-                </li>
-              </ul>
-            </div>
+      <ng-template #appendAfter>
+        <ul class='common-list'>
+          <li class="common-list__item add-block-btn" (mouseenter)="onShowMoreBlock($event)" [class.active]="moreBlockTpr">
+            <i class="bf_icon bf_tianjia"></i>
+            <span>在下方添加</span>
+            <i class="bf_icon bf_youjiantou"></i>
+          </li>
+        </ul>
+      </ng-template>
+    </div>
+
+    <ng-template #moreBlockContainer>
+      <div class="spark-popover__container spark-popover__more-block" style="max-height: 500px; overflow-y: auto;">
+        <ng-container *ngTemplateOutlet="moreBlockList"></ng-container>
+      </div>
+    </ng-template>
+
+    <ng-template #moreBlockList>
+      <h4 class="title" *ngIf="commonBlockList.length">常用</h4>
+      <ul class='common-list'>
+        <ng-container *ngIf="activeBlock.nodeType !== 'editable'">
+          <li class="common-list__item" *ngFor="let item of baseBlockList" [title]="item.description"
+              (mousedown)="onMouseDown($event, item, 'block')">
+            <ng-container *ngTemplateOutlet="item.svgIcon ? svgIcon : icon; context: {$implicit: item}">
+            </ng-container>
+            <span>{{ item.label }}</span>
+          </li>
+        </ng-container>
+
+        <li class="common-list__item" *ngFor="let item of commonBlockList" [title]="item.description"
+            (mousedown)="onMouseDown($event, item, 'block')">
+          <ng-container *ngTemplateOutlet="item.svgIcon ? svgIcon : icon; context: {$implicit: item}">
           </ng-container>
+          <span>{{ item.label }}</span>
         </li>
       </ul>
-    </div>
+    </ng-template>
 
     <div class="spark-popover__gap"></div>
   `,
-  imports: [NgForOf, NgIf],
+  imports: [NgForOf, NgIf, NgTemplateOutlet, MatIconModule],
   styles: [`
-    @keyframes bf_scale {
-      from {
-        transform: scale(0.3);
-      }
-      to {
-        transform: scale(1);
-      }
+    :host {
+      display: block;
     }
 
-    :host {
-      position: absolute;
-      animation: bf_scale 0.2s;
-      transform-origin: top left;
+    ::ng-deep mat-icon {
+      width: 1em;
+      height: 1em;
+      font-size: 1em;
+    }
+
+    ::ng-deep mat-icon > svg {
+      vertical-align: top;
     }
 
     .spark-popover__gap {
@@ -154,7 +186,7 @@ export * from './type'
       cursor: pointer;
     }
 
-    .common-list__item:hover {
+    .common-list__item:hover, .common-list__item.active {
       background-color: #f5f5f5;
     }
 
@@ -174,10 +206,6 @@ export * from './type'
     }
 
     .spark-popover__more-block {
-      position: absolute;
-      right: -8px;
-      bottom: 0;
-      transform: translate(100%, 0);
     }
 
   `],
@@ -211,12 +239,16 @@ export class BlockFlowContextmenu {
     return this._controller
   }
 
+  @Output() itemClick = new EventEmitter<IContextMenuEvent>()
+
   constructor(
     private cdr: ChangeDetectorRef,
+    private vcr: ViewContainerRef,
+    private overlay: Overlay
   ) {
   }
 
-  @Output() itemClick = new EventEmitter<IContextMenuEvent>()
+  @ViewChild('moreBlockContainer') moreBlockContainer!: TemplateRef<any>
 
   protected baseBlockList: IContextMenuItem[] = []
   protected commonBlockList: IContextMenuItem[] = []
@@ -228,7 +260,7 @@ export class BlockFlowContextmenu {
     },
     {
       flavour: 'copy',
-      icon: 'bf_icon bf_a-fuzhi2',
+      icon: 'bf_icon bf_fuzhi',
       label: '复制',
     },
     {
@@ -240,8 +272,7 @@ export class BlockFlowContextmenu {
 
   protected hasContent = false
 
-  protected _moreBlockCloseTimer?: number
-  protected _showMoreBlock = false
+  protected moreBlockTpr?: EmbeddedViewRef<any>
 
   @HostListener('click', ['$event'])
   onClick(event: MouseEvent) {
@@ -284,7 +315,6 @@ export class BlockFlowContextmenu {
       return
     }
 
-
     const position = this.controller.getBlockPosition(this.activeBlock!.id)
 
     if (schema.flavour === 'image') {
@@ -322,22 +352,36 @@ export class BlockFlowContextmenu {
   onShowMoreBlock(event: MouseEvent) {
     event.preventDefault()
     event.stopPropagation()
-    this._showMoreBlock = true
+    const target = event.target as HTMLElement
+    const positionStrategy = this.overlay.position().flexibleConnectedTo(target)
+      .withPositions([
+        {originX: 'end', originY: 'top', overlayX: 'start', overlayY: 'top'},
+        {originX: 'end', originY: 'bottom', overlayX: 'start', overlayY: 'bottom'},
+      ]).withPush(true)
+    const ovr = this.overlay.create({
+      positionStrategy,
+      hasBackdrop: false
+    })
+    this.moreBlockTpr = ovr.attach(new TemplatePortal(this.moreBlockContainer, this.vcr))
+    const tprEl = this.moreBlockTpr.rootNodes[0] as HTMLElement
+
+    const leaveSub = fromEvent<MouseEvent>(target, 'mouseleave')
+      .subscribe(e => {
+        if (tprEl.contains(e.relatedTarget as HTMLElement)) return
+        ovr.dispose()
+      })
+    const leaveSub2 = fromEvent<MouseEvent>(tprEl, 'mouseleave')
+      .subscribe(e => {
+        if (target.contains(e.relatedTarget as HTMLElement)) return
+        ovr.dispose()
+      })
+
+    this.moreBlockTpr.onDestroy(() => {
+      leaveSub.unsubscribe()
+      leaveSub2.unsubscribe()
+      this.moreBlockTpr = undefined
+      this.cdr.detectChanges()
+    })
   }
 
-  onCloseMoreBlock(event: MouseEvent) {
-    event.preventDefault()
-    event.stopPropagation()
-    this._moreBlockCloseTimer = setTimeout(() => {
-      this._showMoreBlock = false
-      this.cdr.markForCheck()
-      this._moreBlockCloseTimer = undefined
-    }, 100)
-  }
-
-  onMoreBlockMouseEnter(event: MouseEvent) {
-    event.preventDefault()
-    event.stopPropagation()
-    this._moreBlockCloseTimer && clearTimeout(this._moreBlockCloseTimer)
-  }
 }

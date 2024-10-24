@@ -1,15 +1,15 @@
 import {
   ChangeDetectorRef,
-  Component,
+  Component, DestroyRef,
   ElementRef, EventEmitter,
-  HostBinding,
   inject,
   Input, Output,
 } from "@angular/core";
 import {DOCUMENT} from "@angular/common";
-import {IBlockModel, IEditableBlockModel} from "../../types";
-import {Controller} from "@core/controller";
-import {BlockModel} from "@core/yjs";
+import {IBaseMetadata, IBlockModel, IEditableBlockModel} from "../../types";
+import {Controller} from "../../controller";
+import {BlockModel} from "../../yjs";
+import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 
 @Component({
   selector: '[bf-base-block]',
@@ -42,8 +42,9 @@ export class BaseBlock<Model extends IBlockModel | IEditableBlockModel = IBlockM
     return this.model.children
   }
 
-  public cdr = inject(ChangeDetectorRef)
-  public hostEl: ElementRef<HTMLElement> = inject(ElementRef)
+  public readonly destroyRef = inject(DestroyRef)
+  public readonly cdr = inject(ChangeDetectorRef)
+  public readonly hostEl: ElementRef<HTMLElement> = inject(ElementRef)
   protected DOCUMENT = inject(DOCUMENT)
 
   setProp<T extends keyof Model['props']>(key: T, value: Model['props'][T]) {
@@ -55,7 +56,32 @@ export class BaseBlock<Model extends IBlockModel | IEditableBlockModel = IBlockM
   }
 
   ngOnInit() {
+    this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(t => {
+      // this.controller.blockUpdate$.next({
+      //   ...t,
+      //   block: this
+      // })
+      if(t.event.transaction.origin === this.controller.historyManager) return;
+      if (t.event.transaction.local) {
+        this.setModifyRecord()
+      }
+      const pid = this.model.getParentId()
+      if(!pid) return
+      const parentModel = this.controller.getBlockModel(pid)
+      if(!parentModel) return
+      // @ts-ignore
+      parentModel.update$.next({type: 'children', event: t.event})
+    })
   }
+
+  private setModifyRecord(time: number = Date.now()) {
+    const m: IBaseMetadata['lastModified'] = {
+      time,
+      ...this.controller.config.localUser
+    }
+    this.model.setMeta('lastModified', m)
+  }
+
 
   ngAfterViewInit() {
     this.controller.storeBlockRef(this)

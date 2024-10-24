@@ -1,8 +1,13 @@
-import {Controller, EditableBlock, getCurrentCharacterRange, IPlugin} from "@core";
 import {fromEvent, Subscription, take} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {FloatTextToolbar} from "./widget/float-text-toolbar";
+import {Controller, EditableBlock, getCurrentCharacterRange, IPlugin} from "../../core";
+import {IToolbarMenuItem} from "./widget/float-text-toolbar.type";
 
+export interface IExpandToolbarItem {
+  item: IToolbarMenuItem,
+  click?: (item: IToolbarMenuItem,  activeBlock: EditableBlock,  controller: Controller,) => void
+}
 export class FloatTextToolbarPlugin implements IPlugin {
   name = "float-text-toolbar";
   version = 1.0;
@@ -13,7 +18,9 @@ export class FloatTextToolbarPlugin implements IPlugin {
 
   private timer?: number
 
-  constructor() {
+  constructor(
+    private readonly expandToolbarList?: IExpandToolbarItem[],
+  ) {
   }
 
   init(controller: Controller) {
@@ -32,7 +39,7 @@ export class FloatTextToolbarPlugin implements IPlugin {
 
         this.timer = setTimeout(() => {
           const sel = window.getSelection()
-          if (!sel || sel.isCollapsed || !controller.activeElement) return
+          if (!sel || sel.isCollapsed || !controller.activeElement || !sel.toString().replace(/\u200B|\t|\n/g, '')) return
           const range = sel.getRangeAt(0)
           const rect = range.getBoundingClientRect()
           this._cpr ? this.moveToolbar(rect.bottom + 4, rect.left) : this.openToolbar(rect.bottom + 4, rect.left, controller)
@@ -42,14 +49,16 @@ export class FloatTextToolbarPlugin implements IPlugin {
   }
 
   openToolbar(top: number, left: number, controller: Controller) {
+    const activeBlock = controller.getBlockRef(controller.getFocusingBlockId()!) as EditableBlock
+    if(!activeBlock || activeBlock.flavour === 'code') return
+
     const cpr = this._vcr.createComponent(FloatTextToolbar)
     cpr.instance.top = top
     cpr.instance.left = left
+    this.expandToolbarList?.length && cpr.setInput('expandToolbarList', this.expandToolbarList?.map(item => item.item))
+
     document.body.appendChild(cpr.location.nativeElement)
     this._cpr = cpr
-
-    const activeBlock = controller.getBlockRef(controller.getFocusingBlockId()!) as EditableBlock
-    if(!activeBlock) return
 
     activeBlock.onDestroy.pipe(take(1)).subscribe(() => {
       this.closeToolbar()
@@ -79,8 +88,11 @@ export class FloatTextToolbarPlugin implements IPlugin {
         case 'mark':
           activeBlock.applyDelta([
             {retain: range.start},
-            {retain: range.end - range.start, attributes: {'s:bc': item.value + ''}}
+            {retain: range.end - range.start, attributes: {'s:bc': item.value ? `${item.value}` : null}}
           ])
+          break
+        default:
+          this.expandToolbarList?.find(expandItem => expandItem.item.name === item.name)?.click?.(item, activeBlock, controller)
           break
       }
     })

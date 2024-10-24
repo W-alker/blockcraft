@@ -1,4 +1,5 @@
-import {DeltaInsert, IBlockModel, SIGN_CLIPBOARD_JSON_BLOCKS, SIGN_CLIPBOARD_JSON_DELTA} from "@core";
+import {DeltaInsert, IBlockModel} from "../../types";
+import {SIGN_CLIPBOARD_JSON_BLOCKS, SIGN_CLIPBOARD_JSON_DELTA} from "./const";
 
 export class ClipDataWriter {
 

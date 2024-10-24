@@ -1,6 +1,5 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
-import {EditableBlock} from "@core";
-
+import {EditableBlock} from "../../core";
 @Component({
   selector: 'h1.editable-container',
   template: ``,

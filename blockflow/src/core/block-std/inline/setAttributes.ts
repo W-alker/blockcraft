@@ -1,4 +1,4 @@
-import {IInlineAttrs} from "@core";
+import {IInlineAttrs} from "../../types";
 
 export const setAttributes = (element: HTMLElement, attributes: IInlineAttrs) => {
   for (const key in attributes) {

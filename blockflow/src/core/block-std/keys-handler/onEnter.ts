@@ -1,4 +1,8 @@
-import {Controller, DeltaOperation, EditableBlock, IKeyEventHandler, sliceDelta, USER_CHANGE_SIGNAL} from "@core";
+import {IKeyEventHandler} from "./keyEventBus";
+import {Controller} from "../../controller";
+import {DeltaOperation} from "../../types";
+import {sliceDelta} from "../utils";
+import {USER_CHANGE_SIGNAL} from "../../yjs";
 
 export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Controller) => {
   event.preventDefault()

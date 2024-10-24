@@ -1,7 +1,7 @@
-import {DeltaInsert, IBlockModel} from "@core/types";
-import {SIGN_CLIPBOARD_JSON_BLOCKS, SIGN_CLIPBOARD_JSON_DELTA} from "@core/helpers";
+import {DeltaInsert, IBlockModel} from "../../types";
+import {SIGN_CLIPBOARD_JSON_BLOCKS, SIGN_CLIPBOARD_JSON_DELTA} from "./const";
+import {isUrl} from "../../utils";
 
-const urlPattern = /^https?:\/\/([a-zA-Z0-9]+\.)+[a-zA-Z0-9]+/;
 // url转码
 const urlEncode = (url: string) => {
   return encodeURIComponent(url);
@@ -21,7 +21,7 @@ export class ClipDataParser {
       if (!Array.isArray(json) && !json[0].flavour) return {type: 'text', data}
       return {type: 'blocks', data: json}
     }
-    if (urlPattern.test(data)) return {type: 'link', data: decodeURIComponent(data)}
+    if (isUrl(data)) return {type: 'link', data: decodeURIComponent(data)}
     return {type: 'text', data}
   }
 

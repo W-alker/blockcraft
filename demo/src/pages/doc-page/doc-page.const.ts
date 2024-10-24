@@ -10,8 +10,12 @@ import {
 } from "@blocks";
 import {CalloutSchema} from "@blocks/callout";
 import {BlockFlowContextmenu, GlobalConfig} from "@editor";
-import {BlockControllerPlugin, BlockTransformPlugin, FloatTextToolbarPlugin, MentionPlugin} from "@blockflow";
-
+import {
+  BlockControllerPlugin,
+  BlockTransformPlugin,
+  FloatTextToolbarPlugin,
+  MentionPlugin
+} from "../../../../blockflow/src/plugins";
 const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingTwoSchema, HeadingThreeSchema, HeadingFourSchema,
   ImageSchema, BulletListSchema, OrderedListSchema, TodoListSchema, CalloutSchema, DividerSchema])
 

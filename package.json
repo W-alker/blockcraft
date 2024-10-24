@@ -4,9 +4,11 @@
   "scripts": {
     "ng": "ng",
     "demo": "ng serve demo --open --configuration development --port 8081 --host 0.0.0.0",
-    "build": "ng build",
+    "build": "ng build blockflow && pnpm run copy-assets",
+    "copy-assets": "cpx 'blockflow/src/assets/**/*' dist/blockflow/assets",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "pub": "pnpm build && pnpm copy-assets && cd dist/blockflow && npm publish --registry https://npm.runtongqiuben.com"
   },
   "private": true,
   "dependencies": {
@@ -20,7 +22,18 @@
     "@angular/platform-browser": "^16.0.0",
     "@angular/platform-browser-dynamic": "^16.0.0",
     "@angular/router": "^16.0.0",
+    "@babel/core": "^7.25.2",
+    "@codemirror/commands": "^6.7.1",
+    "@codemirror/lang-javascript": "^6.2.2",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.34.1",
+    "@emoji-mart/data": "^1.2.1",
+    "@types/codemirror": "5.60.15",
     "@types/rangy": "^0.0.38",
+    "add": "^2.0.6",
+    "babel-plugin-module-resolver": "^5.0.2",
+    "cpx": "^1.5.0",
+    "highlight.js": "^11.10.0",
     "ng-zorro-antd": "16.2.0",
     "ngx-lightbox": "^3.0.0",
     "ngx-virtual-scroller": "^4.0.3",

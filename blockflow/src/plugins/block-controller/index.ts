@@ -1,8 +1,8 @@
-import {Controller, IPlugin} from "@core";
 import {fromEvent, Subscription, take} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {TriggerBtn} from "./widgets/trigger-btn";
-import {IContextMenuComponent} from "@editor";
+import {Controller, IPlugin} from "../../core";
+import {IContextMenuComponent} from "../../editor";
 
 export class BlockControllerPlugin implements IPlugin {
   name = 'block-controller'
@@ -44,7 +44,6 @@ export class BlockControllerPlugin implements IPlugin {
         if (target === controller.rootElement) return
 
         const blockWrap = target.closest('[bf-block-wrap]') as HTMLElement
-        // console.log('mouseover', blockWrap, target)
         if (!blockWrap || this._activeBlockWrap === blockWrap) return
         this._timer && clearTimeout(this._timer)
         this.mouseLeaveSub?.unsubscribe()

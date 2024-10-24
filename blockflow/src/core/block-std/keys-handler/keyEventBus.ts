@@ -1,15 +1,20 @@
-import {
-  Controller,
-  onArrowDown,
-  onArrowLeft,
-  onArrowRight,
-  onArrowUp, onBackspace, onCtrlA,
-  onCtrlB, onCtrlC, onCtrlI,
-  onCtrlU, onCtrlX,
-  onCtrlZ, onDelete,
-  onEnter,
-  onTab
-} from "@core";
+import {Controller} from "../../controller";
+import {onBackspace} from "./onBackspace";
+import {onDelete} from "./onDelete";
+import {onTab} from "./onTab";
+import {onCtrlZ} from "./onCtrlZ";
+import {onCtrlC} from "./onCtrlC";
+import {onCtrlX} from "./onCtrlX";
+import {onEnter} from "./onEnter";
+import {onCtrlA} from "./onCtrlA";
+import {onCtrlU} from "./onCtrlU";
+import {onCtrlI} from "./onCtrlI";
+import {onCtrlB} from "./onCtrlB";
+import {onArrowUp} from "./onArrowUp";
+import {onArrowDown} from "./onArrowDown";
+import {onArrowLeft} from "./onArrowLeft";
+import {onArrowRight} from "./onArrowRight";
+
 
 export interface IKeyEventTrigger {
   (event: KeyboardEvent): boolean

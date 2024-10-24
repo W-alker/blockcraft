@@ -1,5 +1,5 @@
-import {Config} from "@core/modules";
 import {fromEvent, Subscription, throttleTime} from "rxjs";
+import {Config} from "./config";
 
 export class BlockSelection {
 
@@ -105,7 +105,7 @@ export class BlockSelection {
     this.host.style.pointerEvents = 'none'
     this.createSelectionArea()
     this.document.getSelection()!.removeAllRanges()
-    this.host.focus()
+    this.host.focus({preventScroll: true})
     this.isSelecting = true
 
     this.onSelectingSub =

@@ -1,7 +1,7 @@
-import {DeltaInsert, IBlockModel, IEditableBlockModel, IInlineModel} from "@core";
 import {Subject} from "rxjs";
-import Y from "@core/yjs";
 import {YMapEvent} from "yjs";
+import Y from ".";
+import {DeltaInsert, IBlockModel, IEditableBlockModel, IInlineModel} from "../types";
 
 export type YBlockModel = Y.Map<any>
 
@@ -39,7 +39,7 @@ export const syncMapUpdate = (event: YMapEvent<any>, map: Object, cb?: (e: YMapE
   if (transaction.origin !== USER_CHANGE_SIGNAL && transaction.origin !== NO_RECORD_CHANGE_SIGNAL) {
 
     event.changes.keys.forEach((change, key) => {
-      console.log(map, change, target.get(key), path)
+      // console.log(map, change, target.get(key), path)
       switch (change.action) {
         case 'add':
         case 'update':
@@ -60,15 +60,15 @@ export const USER_CHANGE_SIGNAL = Symbol('user-change')
 // Like {@link USER_CHANGE_SIGNAL}, but the change will not set history record
 export const NO_RECORD_CHANGE_SIGNAL = Symbol('user-change-no-signal')
 
-export type UpdateEvent = { type: 'children', event: Y.YArrayEvent<YBlockModel> }
+export type UpdateEvent = { type: 'children', event: Y.YArrayEvent<YBlockModel> | Y.YTextEvent }
   | { type: 'props', event: YMapEvent<any> }
   | { type: 'meta', event: YMapEvent<any> }
 
 export class BlockModel<Model extends IBlockModel = IBlockModel> {
   readonly update$ = new Subject<UpdateEvent>()
 
-  private _yChildrenObserver = (event: Y.YArrayEvent<YBlockModel>, tr: Y.Transaction) => {
-    if (tr.origin !== USER_CHANGE_SIGNAL && tr.origin !== NO_RECORD_CHANGE_SIGNAL) {
+  private _yChildrenObserver = (event: Y.YArrayEvent<YBlockModel> | Y.YTextEvent, tr: Y.Transaction) => {
+    if (event.target instanceof Y.Array && tr.origin !== USER_CHANGE_SIGNAL && tr.origin !== NO_RECORD_CHANGE_SIGNAL) {
       const {path, target, changes} = event
       syncBlockModelChildren(changes.delta as any[], this._childrenModel as BlockModel[])
     }
@@ -79,13 +79,14 @@ export class BlockModel<Model extends IBlockModel = IBlockModel> {
               public readonly yModel: YBlockModel,
               private readonly _childrenModel?: (BlockModel | IInlineModel)[]) {
     Promise.resolve().then(() => {
-      this.setMeta('createdTime', Date.now())
-      this.nodeType === 'block' && (this.yModel.get('children') as Y.Array<YBlockModel>).observe(this._yChildrenObserver);
+      this.yModel.get('children').observe(this._yChildrenObserver);
       (this.yModel.get('props') as Y.Map<any>).observe(
         e => syncMapUpdate(e, this.props, e => this.update$.next({type: 'props', event: e}))
       );
       (this.yModel.get('meta') as Y.Map<any>).observe(
-        e => syncMapUpdate(e, this.meta, e => this.update$.next({type: 'meta', event: e}))
+        e => syncMapUpdate(e, this.meta
+          // , e => this.update$.next({type: 'meta', event: e})
+        )
       )
     })
   }
@@ -137,8 +138,9 @@ export class BlockModel<Model extends IBlockModel = IBlockModel> {
   getPosition(): { parentId: string | null, index: number } {
     const parentChildren = this.yModel.parent as Y.Array<YBlockModel>
     let i = 0
+
     for (const value of parentChildren) {
-      if (value === this.yModel) break
+      if (value.get('id') === this.id) break
       i++
     }
     if (i >= parentChildren.length) throw new Error('Block not found in parent children')

@@ -1,5 +1,10 @@
-import {BlockModel, ClipDataParser, Controller, DeltaInsert, DeltaOperation, EditableBlock, genUniqueID} from "@core";
-import {FILE_UPLOADER} from "@blocks";
+import {Controller} from "../../controller";
+import {EditableBlock} from "../../block-std";
+import {ClipDataParser} from "./parseClipData";
+import {genUniqueID} from "../../utils";
+import {BlockModel} from "../../yjs";
+import {DeltaInsert, DeltaOperation} from "../../types";
+import {FILE_UPLOADER} from "../../../blocks";
 
 export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
   event.preventDefault()
@@ -12,7 +17,6 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
 
   const {blockId, blockRange} = range
   const {parentId, index} = controller.getBlockPosition(blockId)
-  console.log('range+++++')
 
   // only text/plain
   if (types.length === 1 && types[0] === 'text/plain') {
@@ -44,7 +48,7 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
     }
     // data is link
     if (jsonType === 'link' && jsonData) {
-      const deltaInsert: DeltaInsert[] = [{insert: jsonData, attributes: {'a:link': true}}, { insert: '\u00A0', attributes: {} }]
+      const deltaInsert: DeltaInsert[] = [{insert: { link: jsonData }, attributes: { 'd:linkText': jsonData, 'd:linkHref': jsonData } }]
       applyPasteDeltaToBlock(blockRef, deltaInsert, blockRange)
       return;
     }
@@ -68,6 +72,15 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
       const block = controller.createBlock('image', [fileUri])
       controller.insertBlocks(index, [block], controller.rootId)
     })
+    return
+  }
+
+  if(types.includes('text/plain')) {
+    const text = clipboardData.getData('text/plain')
+    if (!text) return
+    const blockRef = controller.getBlockRef(blockId) as EditableBlock
+    const deltaInsert: DeltaInsert[] = [{insert: text}]
+    applyPasteDeltaToBlock(blockRef, deltaInsert, blockRange)
     return
   }
 

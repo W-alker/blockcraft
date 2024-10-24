@@ -4,6 +4,7 @@ import {BlockFlowContextmenu} from "./index";
 export interface IContextMenuItem {
   flavour: string;
   icon: string;
+  svgIcon?: string;
   label: string;
   description?: string;
 }

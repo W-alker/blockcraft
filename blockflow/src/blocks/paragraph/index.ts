@@ -1,5 +1,5 @@
-import {BlockSchema} from "@core";
 import {ParagraphBlock} from "./paragraph.block";
+import {BlockSchema} from "../../core";
 
 export const ParagraphSchema: BlockSchema = {
   flavour: 'paragraph',

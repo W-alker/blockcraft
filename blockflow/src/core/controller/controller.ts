@@ -1,26 +1,24 @@
+import {BehaviorSubject, Subject, take, takeWhile} from "rxjs";
+import {BaseStore} from "../store";
+import {SchemaStore} from "../schemas";
+import {IPlugin} from "../plugins";
+import {BaseBlock, EditableBlock, KeyEventBus} from "../block-std";
 import {
   BlockModel,
   NO_RECORD_CHANGE_SIGNAL,
   syncBlockModelChildren,
+  UpdateEvent,
   USER_CHANGE_SIGNAL,
   YBlockModel
-} from "@core/yjs";
-import {IBlockFlowRange} from "@core/controller/type";
-import {IBlockFlavour} from "@core/types";
-import {
-  CharacterIndex, getCurrentCharacterRange,
-} from "@core/utils";
-import {BaseBlock, EditableBlock, KeyEventBus} from "@core/block-std";
-import {BaseStore} from "@core/store";
-import {BehaviorSubject, Subject, take} from "rxjs";
-import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
-import Y from "@core/yjs";
-import {IPlugin} from "@core/plugins";
-import {EditorRoot} from "@core/block-render";
-import {SchemaStore} from "@core/schemas";
+} from "../yjs";
+import {EditorRoot} from "../block-render";
 import {Injector} from "@angular/core";
-import {updateOrderAround} from "@blocks/ordered-list/utils/update-order-around";
-import {IOrderedListBlockModel} from "@blocks";
+import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
+import {IBlockFlavour, IBlockModel} from "../types";
+import {IBlockFlowRange} from "./type";
+import {CharacterIndex, getCurrentCharacterRange} from "../utils";
+import {IOrderedListBlockModel, updateOrderAround} from "../../blocks";
+import Y from "../yjs";
 
 export interface HistoryConfig {
   open: boolean
@@ -30,13 +28,19 @@ export interface HistoryConfig {
 export interface IControllerConfig {
   rootId: string
   schemas: SchemaStore
+  readonly?: boolean
   historyConfig?: HistoryConfig
   plugins?: IPlugin[],
+  localUser?: {
+    userId: string
+    userName: string
+  }
 }
 
 export class Controller {
   public readonly readonly$ = new BehaviorSubject(false)
 
+  public readonly blockUpdate$ = new Subject<UpdateEvent & {block: BaseBlock}>()
   private blockRefStore = new BaseStore<string, BaseBlock | EditableBlock>()
   private blocksWaiting: Record<string, boolean> = {}
   private blocksReady$ = new Subject()
@@ -50,7 +54,7 @@ export class Controller {
     syncBlockModelChildren(changes.delta as any[], this.rootModel as BlockModel[])
   }
 
-  private readonly historyManager?: Y.UndoManager
+  public readonly historyManager?: Y.UndoManager
   public readonly undoRedo$ = new BehaviorSubject<boolean>(false)
 
   public readonly keyEventBus: KeyEventBus = new KeyEventBus(this)
@@ -58,10 +62,11 @@ export class Controller {
   private _root!: EditorRoot
 
   constructor(
-    private readonly config: IControllerConfig,
+    public readonly config: IControllerConfig,
     public readonly injector: Injector
   ) {
-    const {historyConfig = {open: true, duration: 500}} = config
+    const {historyConfig = {open: true, duration: 300}} = config
+    this.readonly$.next(config.readonly || false)
     if (historyConfig.open) {
       this.historyManager = new Y.UndoManager(this.rootYModel,
         {captureTimeout: historyConfig.duration || 200, trackedOrigins: new Set([null, USER_CHANGE_SIGNAL])})
@@ -72,20 +77,25 @@ export class Controller {
 
   attach(root: EditorRoot) {
     return new Promise(resolve => {
-      root.onDestroy.pipe(take(1)).subscribe(() => {
-        this.config.plugins?.forEach(plugin => {
-          plugin.destroy()
-        })
-      })
-
       root.ready$.pipe(take(2)).subscribe(v => {
         if (!v) return
         this._root = root
         root.setController(this)
-        this.config.plugins?.forEach(plugin => {
-          plugin.init(this)
-        })
+        this.addPlugins(this.config.plugins || [])
         resolve(true)
+      })
+    })
+  }
+
+  addPlugins(plugins: IPlugin[]) {
+    if (!plugins.length) return
+    this.root.ready$.pipe(takeWhile(v => v)).subscribe(v => {
+      if (!v) return
+      plugins.forEach(plugin => plugin.init(this))
+    })
+    this.root.onDestroy.pipe(take(1)).subscribe(() => {
+      plugins.forEach(plugin => {
+        plugin.destroy()
       })
     })
   }
@@ -108,6 +118,10 @@ export class Controller {
 
   get rootId() {
     return this.config.rootId
+  }
+
+  toJSON() {
+    return this.rootYModel.toJSON() as IBlockModel[]
   }
 
   /**
@@ -146,7 +160,7 @@ export class Controller {
       this.undoRedo$.next(false)
       // 临时方案，解决撤销后焦点丢失问题
       requestAnimationFrame(() => {
-        if (!this.activeElement || document.activeElement === document.body) this.rootElement.focus()
+        if (!this.activeElement || document.activeElement === document.body) this.rootElement.focus({preventScroll: true})
       })
     })
   }
@@ -161,16 +175,25 @@ export class Controller {
 
   /** ---------------history---------------- end **/
 
-  /** ---------------block operation---------------- end **/
+  /** ---------------block operation---------------- start **/
   getBlockModel(id: string) {
     return this.getBlockRef(id)?.model
   }
 
   createBlock(flavour: IBlockFlavour, params?: any[]) {
-    return BlockModel.fromModel(this.config.schemas.create(flavour, params))
+    const b = this.config.schemas.create(flavour, params)
+    b.meta = {
+      ...b.meta,
+      createdTime: Date.now(),
+      lastModified: {
+        time: Date.now(),
+        ...this.config.localUser
+      }
+    }
+    return BlockModel.fromModel(b)
   }
 
-  insertBlocks(index: number, blocks: BlockModel[], parentId: string = this.rootId) {
+  insertBlocks(index: number, blocks: BlockModel[], parentId: string = this.rootId, unRecord = false) {
     blocks.forEach(b => {
       this.blocksWaiting[b.id] = false
     })
@@ -179,7 +202,7 @@ export class Controller {
         this.transact(() => {
           this.rootModel.splice(index, 0, ...blocks)
           this.rootYModel.insert(index, blocks.map(b => b.yModel))
-        }, USER_CHANGE_SIGNAL)
+        }, unRecord ? NO_RECORD_CHANGE_SIGNAL : USER_CHANGE_SIGNAL)
       } else {
         const parentModel = this.getBlockRef(parentId)?.model
         if (!parentModel) return reject(new Error(`Parent block ${parentId} not found`))
@@ -189,7 +212,7 @@ export class Controller {
       const olIndex = blocks.findIndex(b => b.flavour === 'ordered-list')
       if (olIndex >= 0) this.updateOrderAround(blocks[olIndex] as any)
 
-      this.blocksReady$.pipe(take(1)).subscribe(resolve)
+      this.blocksReady$.pipe(take(1)).subscribe(v => requestAnimationFrame(resolve))
     })
   }
 

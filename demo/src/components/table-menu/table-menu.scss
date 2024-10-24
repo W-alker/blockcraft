@@ -1,9 +1,36 @@
 @import "../../styles/doc-library.common";
 
 :host {
+  display: block;
+  height: 100%;
 
   .btn-more {
     @include btn-more;
+  }
+
+  th {
+    background: none !important;
+
+    > span {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0 4px;
+      width: fit-content;
+      height: 28px;
+      color: #333;
+      font-weight: 400;
+      cursor: pointer;
+      border-radius: 4px;
+
+      &:hover {
+        background: #F5F5F5;
+      }
+
+      > i {
+        font-size: 14px;
+      }
+    }
   }
 
   td {
@@ -32,6 +59,7 @@
     }
 
     .info {
+      flex: 1;
 
       > div {
         display: flex;
@@ -51,6 +79,17 @@
           padding: 0 4px;
           background: #E8D9FF;
         }
+
+        .btn-favourite {
+          display: none;
+          cursor: pointer;
+        }
+      }
+
+      &:hover {
+        > div .btn-favourite {
+          display: block;
+        }
       }
 
       .folder {
@@ -61,8 +100,6 @@
         font-size: 12px;
         color: #999;
 
-        > i {
-        }
       }
 
     }

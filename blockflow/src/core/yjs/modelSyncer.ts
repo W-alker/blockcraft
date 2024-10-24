@@ -1,5 +1,5 @@
-import {IBlockModel, IBlockProps, SimpleRecord, SimpleValue} from "@core/types";
 import Y, {YBlockModel} from "./index";
+import {IBlockModel, IBlockProps, SimpleRecord, SimpleValue} from "../types";
 
 
 export const isBlockModel = (obj: any): obj is IBlockModel => {

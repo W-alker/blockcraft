@@ -1,7 +1,7 @@
-import {Component, HostListener, Injector, Input, ViewChild} from "@angular/core";
-import {Controller, EditorRoot, LazyEditorRoot} from "@core";
-import {GlobalConfig} from "@editor/types";
+import {Component, ElementRef, HostListener, Injector, Input, ViewChild} from "@angular/core";
 import {NgForOf, NgIf, NgSwitch} from "@angular/common";
+import {Controller, EditorRoot, LazyEditorRoot} from "../../core";
+import {GlobalConfig} from "../types";
 
 @Component({
   selector: 'bf-editor',
@@ -20,8 +20,7 @@ import {NgForOf, NgIf, NgSwitch} from "@angular/common";
     EditorRoot,
     LazyEditorRoot,
     NgSwitch,
-  ],
-  providers: []
+  ]
 })
 export class BlockFlowEditor {
 
@@ -44,6 +43,7 @@ export class BlockFlowEditor {
   }
 
   constructor(
+    private host: ElementRef<HTMLElement>,
     private injector: Injector
   ) {
   }
@@ -61,9 +61,14 @@ export class BlockFlowEditor {
 
   @HostListener('click', ['$event'])
   onClick(event: MouseEvent) {
-    if (this.controller.rootModel.length || this.controller.readonly$.value) return
+    if (this.controller.readonly$.value || event.target !== this.host.nativeElement || this.controller.root.selectedBlockRange) return
+    const lastBm = this.controller.rootModel.at(-1)
+    if (lastBm && lastBm.nodeType === 'editable') {
+      this.controller.setSelection(lastBm.id, 'end')
+      return
+    }
     const p = this.controller.createBlock('paragraph')
-    this.controller.insertBlocks(0, [p]).then(() => {
+    this.controller.insertBlocks(this.controller.rootModel.length, [p]).then(() => {
       this.controller.setSelection(p.id, 'start')
     })
   }

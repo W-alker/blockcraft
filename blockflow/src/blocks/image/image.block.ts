@@ -1,5 +1,4 @@
 import {
-  ChangeDetectionStrategy,
   ChangeDetectorRef,
   Component,
   ElementRef,
@@ -7,57 +6,53 @@ import {
   SimpleChanges,
   ViewChild
 } from "@angular/core";
-import {BaseBlock, ClipDataWriter} from "@core";
-import {IImageBlockProps, IImgBlockModel} from "@blocks/image/type";
 import {NgForOf, NgIf} from "@angular/common";
-import {filter, fromEvent, Subscription, take, throttleTime} from "rxjs";
+import {fromEvent, Subscription, take, throttleTime} from "rxjs";
 import Viewer from 'viewerjs';
-import {ParagraphBlock} from "@blocks/paragraph/paragraph.block";
 import {FloatToolbar, IToolbarItem} from "../../components";
+import {IImageBlockProps, IImgBlockModel} from "./type";
+import {BaseBlock, ClipDataWriter} from "../../core";
+import {ParagraphBlock} from "../paragraph/paragraph.block";
+import {OverlayModule} from "@angular/cdk/overlay";
 
 @Component({
   selector: 'div.image-block',
   standalone: true,
   template: `
-    <div class="img-block__container" [style.width.px]="_showWidth" (click)="onImgClick($event)">
-      <!--           (mouseenter)="onContainerMouseEnter($event)" (mouseleave)="onContainerMouseLeave($event)"-->
+      <div class="img-block__container" [style.width.px]="_showWidth" tabindex="0" (focus)="onImgFocus($event)"
+           (blur)="onImgBlur($event)">
+          <!--           (mouseenter)="onContainerMouseEnter($event)" (mouseleave)="onContainerMouseLeave($event)"-->
 
-      <div [class]="['img-default-skeleton', imgLoadState]" *ngIf="imgLoadState !== 'loaded'">
-        <span class="img-default-skeleton__icon bf_icon bf_jiazai" *ngIf="imgLoadState === 'loading'"></span>
-        <span class="img-default-skeleton__error" *ngIf="imgLoadState === 'error'">加载失败!</span>
+          <div [class]="['img-default-skeleton', imgLoadState]" *ngIf="imgLoadState !== 'loaded'">
+              <span class="img-default-skeleton__icon bf_icon bf_jiazai" *ngIf="imgLoadState === 'loading'"></span>
+              <span class="img-default-skeleton__error" *ngIf="imgLoadState === 'error'">加载失败!</span>
+          </div>
+
+          <div class="bf-float-toolbar img-block__toolbar" *ngIf="resizeMode !== 'none'"
+               [toolbarList]="TOOLBAR_LIST" (click)="$event.stopPropagation();"
+               (itemClick)="onToolbarItemClick($event)">
+          </div>
+
+          <img [src]="model.props.src" [class.resize-mode]="resizeMode !== 'none'" draggable="false" #img>
+
+          <ng-container *ngIf="imgLoadState === 'loaded'">
+              <p class="img-block__caption editable-container" *ngFor="let item of children"
+                 [controller]="controller" [model]="item" [placeholder]="'添加标题'"
+                 (click)="$event.stopPropagation()" (mousemove)="$event.stopPropagation()"></p>
+          </ng-container>
+
+          <div class="img-resizer" *ngIf="resizeMode !== 'none'" (mousedown)="onImgClick($event)">
+              <div class="img-resizer__handle img-resizer__handle--tl" (click)="$event.stopPropagation()"
+                   (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
+              <div class="img-resizer__handle img-resizer__handle--tr" (click)="$event.stopPropagation()"
+                   (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
+              <div class="img-resizer__handle img-resizer__handle--bl" (click)="$event.stopPropagation()"
+                   (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
+              <div class="img-resizer__handle img-resizer__handle--br" (click)="$event.stopPropagation()"
+                   (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
+          </div>
+
       </div>
-
-      <img [src]="model.props.src" [class.resize-mode]="resizeMode !== 'none'" draggable="false" #img>
-
-      <p class="img-block__caption editable-container" *ngFor="let item of children"
-         [controller]="controller" [model]="item" [placeholder]="'添加标题'"
-         (click)="$event.stopPropagation()" (mousemove)="$event.stopPropagation()">
-
-      <div class="img-resizer" *ngIf="resizeMode !== 'none'" (click)="$event.stopPropagation(); previewImg()">
-        <div class="img-resizer__handle img-resizer__handle--tl" (click)="$event.stopPropagation()"
-             (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
-        <div class="img-resizer__handle img-resizer__handle--tr" (click)="$event.stopPropagation()"
-             (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
-        <div class="img-resizer__handle img-resizer__handle--bl" (click)="$event.stopPropagation()"
-             (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
-        <div class="img-resizer__handle img-resizer__handle--br" (click)="$event.stopPropagation()"
-             (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
-      </div>
-
-      <div class="bf-float-toolbar img-block__toolbar" *ngIf="resizeMode !== 'none'"
-           [toolbarList]="TOOLBAR_LIST" (click)="$event.stopPropagation();"
-           (itemClick)="onToolbarItemClick($event)">
-      </div>
-    </div>
-
-    <!--    <ng-template cdkConnectedOverlay-->
-    <!--                 [cdkConnectedOverlayPositions]="[{originX: 'center', originY: 'top', overlayX: 'center', overlayY: 'bottom'}]"-->
-    <!--                 [cdkConnectedOverlayOffsetY]="-8" [cdkConnectedOverlayPush]="true"-->
-    <!--                 [cdkConnectedOverlayOrigin]="img"-->
-    <!--                 [cdkConnectedOverlayOpen]="showToolbar"-->
-    <!--                 [cdkConnectedOverlayHasBackdrop]="false">-->
-
-    <!--    </ng-template>-->
   `,
   styles: [`
     .img-block__toolbar {
@@ -79,6 +74,11 @@ import {FloatToolbar, IToolbarItem} from "../../components";
     }
 
     .img-default-skeleton {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       background-color: rgba(243, 243, 243, 0.5);
     }
 
@@ -173,9 +173,9 @@ import {FloatToolbar, IToolbarItem} from "../../components";
     }
   `],
   imports: [
-    NgIf, ParagraphBlock, NgForOf, FloatToolbar
+    NgIf, ParagraphBlock, NgForOf, FloatToolbar, OverlayModule
   ],
-  changeDetection: ChangeDetectionStrategy.OnPush,
+  // changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.contenteditable]': 'false',
   }
@@ -239,7 +239,6 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
   protected _showWidth = 100
 
   protected resizeMode: 'none' | 'resize' = 'none'
-  protected showToolbar = false
 
   private _viewer?: Viewer
 
@@ -274,20 +273,25 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
     })
   }
 
+  onImgFocus(event: FocusEvent) {
+    event.stopPropagation()
+    event.preventDefault()
+    this.resizeMode = 'resize'
+  }
+
+  onImgBlur(event: FocusEvent) {
+    event.stopPropagation()
+    this.resizeMode = 'none'
+    // this._viewer?.destroy()
+    // this._viewer = undefined
+    this._cdr.detectChanges()
+  }
+
   onImgClick(event: MouseEvent) {
     event.stopPropagation()
     event.preventDefault()
-    if (this.resizeMode === 'resize') return this.previewImg()
-
-    this.resizeMode = 'resize'
-    fromEvent<MouseEvent>(this.controller.rootElement, 'click')
-      .pipe(filter(e => e.target !== this.img.nativeElement), take(1))
-      .subscribe((e) => {
-        this.resizeMode = 'none'
-        this._viewer?.destroy()
-        this._viewer = undefined
-        this._cdr.detectChanges()
-      })
+    if (this.resizeMode !== 'resize') return
+    this.previewImg()
   }
 
   previewImg() {
@@ -325,7 +329,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
     switch (item.name) {
       case 'caption':
         if (this.model.children.length) {
-          this.controller.deleteBlocks(0, 1, this.id)
+          this.model.deleteChildren(0,1)
         } else {
           const paragraph = this.controller.createBlock('paragraph')
           this.controller.insertBlocks(0, [paragraph], this.id).then(() => {
@@ -340,7 +344,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
         delete this.TOOLBAR_LIST[['start', 'center', 'end'].indexOf(this.props.align) + 2].active
         this.setProp('align', item.value as IImageBlockProps['align'])
         this.TOOLBAR_LIST[['start', 'center', 'end'].indexOf(this.props.align) + 2].active = true
-        this.showToolbar = false
+        this.resizeMode = 'none'
         break
       case 'copy-link':
         ClipDataWriter.writeClipData(this.props.src)

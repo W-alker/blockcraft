@@ -1,4 +1,5 @@
-import {Controller, IKeyEventHandler} from "@core";
+import {IKeyEventHandler} from "./keyEventBus";
+import {Controller} from "../../controller";
 
 export const onCtrlZ: IKeyEventHandler = (e: KeyboardEvent, controller: Controller) => {
   e.preventDefault()

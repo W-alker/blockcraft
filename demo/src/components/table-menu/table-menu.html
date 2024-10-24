@@ -1,16 +1,44 @@
-<nz-table #filterTable [nzData]="listOfData" nzTableLayout="fixed">
+<nz-table #filterTable [nzData]="listOfData" nzTableLayout="fixed" [nzFrontPagination]="false"
+          [nzShowPagination]="false" [nzScroll]="{y: '60vh'}">
   <thead>
   <tr>
     <!--      <th [nzChecked]="checked" [nzIndeterminate]="indeterminate" (nzCheckedChange)="onAllChecked($event)"></th>-->
     <th [nzWidth]="'30px'"></th>
-    <th [nzWidth]="column.width || 'auto'"
-        *ngFor="let column of listOfColumns; trackBy: trackByName"
-        [(nzSortOrder)]="column.sortOrder"
-        [nzSortFn]="column.sortFn"
-        [nzFilters]="column.listOfFilter"
-        [nzFilterFn]="column.filterFn"
-    >
-      {{ column.name }}
+    <th [nzWidth]="'auto'">
+      <span nz-dropdown nzTrigger="click" [nzDropdownMenu]="menu1">
+        <span #th1>所有类型</span>
+        <i class="bf_icon bf_xiajaintou"></i>
+      </span>
+      <nz-dropdown-menu #menu1="nzDropdownMenu">
+        <ul nz-menu style="border-radius: 4px; width: 106px; padding: 4px">
+          <li nz-menu-item (click)="onTableChange($event, 'type', 'all')">所有类型</li>
+          <li nz-menu-item (click)="onTableChange($event, 'type', 'text')">文档</li>
+        </ul>
+      </nz-dropdown-menu>
+    </th>
+    <th [nzWidth]="'220px'">
+      <span nz-dropdown nzTrigger="click" [nzDropdownMenu]="menu2">
+        <span #th2>不限归属</span>
+        <i class="bf_icon bf_xiajaintou"></i>
+      </span>
+      <nz-dropdown-menu #menu2="nzDropdownMenu">
+        <ul nz-menu style="border-radius: 4px; width: 106px; padding: 4px">
+          <li nz-menu-item (click)="onTableChange($event, 'creator', 'all')">不限归属</li>
+          <li nz-menu-item (click)="onTableChange($event, 'creator', 'self')">归属于我</li>
+        </ul>
+      </nz-dropdown-menu>
+    </th>
+    <th [nzWidth]="'220px'">
+      <span nz-dropdown nzTrigger="click" [nzDropdownMenu]="menu3">
+        <span #th3>最近打开</span>
+        <i class="bf_icon bf_xiajaintou"></i>
+      </span>
+      <nz-dropdown-menu #menu3="nzDropdownMenu">
+        <ul nz-menu style="border-radius: 4px; width: 106px; padding: 4px">
+          <li nz-menu-item (click)="onTableChange($event, 'recentType', 'open')">最近打开</li>
+          <li nz-menu-item (click)="onTableChange($event, 'recentType', 'update')">最近修改</li>
+        </ul>
+      </nz-dropdown-menu>
     </th>
   </tr>
   </thead>
@@ -26,10 +54,11 @@
         <div>
           <span>{{ data.name }}</span>
           <span class="tag">模板</span>
+          <span class="bf_icon bf_shoucang btn-favourite"></span>
         </div>
-        <span *ngIf="data.folder" class="folder">
+        <span *ngIf="data.folder" class="folder" (click)="onFavourite(data)">
             <i class="bf_icon bf_wenjianjia"></i>{{ data.folder.name }}
-          </span>
+        </span>
       </div>
     </td>
     <td>{{ data.creator.name }}</td>

@@ -1,4 +1,4 @@
-import {DeltaInsert} from "@core";
+import {DeltaInsert} from "../../types";
 
 export function sliceDelta(delta: DeltaInsert[], start = 0, end = Infinity) {
   const slicedOps = [];

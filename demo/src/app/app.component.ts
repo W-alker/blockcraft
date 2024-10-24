@@ -1,4 +1,4 @@
-import {Component} from '@angular/core';
+import {Component, ElementRef, ViewChild} from '@angular/core';
 import {Router} from "@angular/router";
 import {MenuItemData} from "../types/menu.type";
 import {DocApiService} from "../services/doc-api.service";
@@ -39,7 +39,7 @@ const DEFAULT_MENU_TREE_DATA: MenuItemData[] = [
     icon: 'bf_zhishiku-color',
     iconType: 'svg',
     type: 'page',
-    route: 'knowledge',
+    route: 'test',
     level: 0
   },
   {
@@ -71,6 +71,8 @@ export class AppComponent {
     this.getSpaceList();
   }
 
+  @ViewChild('asideBar', {read: ElementRef}) asideBar!: ElementRef;
+
   ngOnDestroy() {
   }
 
@@ -97,6 +99,21 @@ export class AppComponent {
         // this.router.navigate([item.route]);
         break;
     }
+  }
+
+  onResizeHandlerMousedown(event: MouseEvent) {
+    const startX = event.clientX;
+    const startWidth = this.asideBar.nativeElement.offsetWidth;
+    const moveHandler = (e: MouseEvent) => {
+      const offset = e.clientX - startX;
+      this.asideBar.nativeElement.style.width = startWidth + offset + 'px';
+    }
+    const upHandler = () => {
+      document.removeEventListener('mousemove', moveHandler);
+      document.removeEventListener('mouseup', upHandler);
+    }
+    document.addEventListener('mousemove', moveHandler);
+    document.addEventListener('mouseup', upHandler)
   }
 
 }

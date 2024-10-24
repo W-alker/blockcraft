@@ -1,4 +1,4 @@
-import {IInlineAttrs} from "@core";
+import {IInlineAttrs} from "../../types";
 
 export const getAttributesFrom = (node: HTMLElement): IInlineAttrs => {
   const attrs: IInlineAttrs = {}

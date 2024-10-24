@@ -1,15 +1,47 @@
-<!--<div class="mention-dialog__header"></div>-->
-<div class="mention-dialog__content">
+<nz-tabset [nzSelectedIndex]="activeTabIndex" (nzSelectedIndexChange)="onTabChange($event)">
+  <nz-tab nzTitle="人员">
+    <ng-container *ngTemplateOutlet="content"></ng-container>
+  </nz-tab>
+  <nz-tab nzTitle="文档">
+    <ng-container *ngTemplateOutlet="content"></ng-container>
+  </nz-tab>
+</nz-tabset>
+
+<ng-template #content>
+  <ng-container *ngIf="!list.length">
+    <nz-empty nzNotFoundImage="simple"></nz-empty>
+  </ng-container>
+
   <ng-container *ngFor="let item of list; index as idx">
     <div class="mention-dialog__content__item"
          [class.active]="idx === selectIndex" (mouseenter)="selectIndex = idx"
-         (mousedown)="onItemClick($event, item)">{{ item.name }}</div>
+         (mousedown)="onItemClick($event, item)">
+      <ng-container *ngTemplateOutlet="template || simpleTpl; context: { $implicit: item, item, type: activeTabIndex === 0  ? 'user' : 'doc'}"></ng-container>
+      <ng-template #simpleTpl let-item let-type='type'>
+        {{ item.name + type }}
+      </ng-template>
+    </div>
   </ng-container>
+</ng-template>
 
-  <ng-container *ngIf="!list.length">
-    <div class="mention-dialog__content__empty">No results found</div>
-  </ng-container>
-</div>
+
+<!--<div class="mention-dialog__content">-->
+<!--  <ng-container *ngFor="let item of list; index as idx">-->
+<!--    <div class="mention-dialog__content__item"-->
+<!--         [class.active]="idx === selectIndex" (mouseenter)="selectIndex = idx"-->
+<!--         (mousedown)="onItemClick($event, item)">-->
+<!--      <ng-container *ngTemplateOutlet="template || simpleTpl; context: { $implicit: item}"></ng-container>-->
+
+<!--      <ng-template #simpleTpl let-item>-->
+<!--        {{ item.name }}-->
+<!--      </ng-template>-->
+<!--    </div>-->
+<!--  </ng-container>-->
+
+<!--  <ng-container *ngIf="!list.length">-->
+<!--    <nz-empty nzNotFoundImage="simple"></nz-empty>-->
+<!--  </ng-container>-->
+<!--</div>-->
 <div class="mention-dialog__footer">
   <div class="mention-dialog__footer__button" (click)="onSure()">确定</div>
 </div>

@@ -1,11 +1,13 @@
-import {Component, DestroyRef, HostBinding, inject, Input} from "@angular/core";
-import {BaseBlock} from "@core/block-std/components/base-block";
-import {DeltaInsert, DeltaOperation, IEditableBlockModel} from "@core/types";
+import {Component, HostBinding, Input} from "@angular/core";
 import {NgForOf, NgTemplateOutlet} from "@angular/common";
-import {BlockflowInline, deleteContent, insertContent} from "@core/block-std";
-import {CharacterIndex, ICharacterRange, setSelection} from "@core/utils";
-import Y, {USER_CHANGE_SIGNAL} from "@core/yjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
+import {DeltaInsert, DeltaOperation, IEditableBlockModel} from "../../types";
+import {BaseBlock} from "./base-block";
+import {USER_CHANGE_SIGNAL} from "../../yjs";
+import {CharacterIndex, ICharacterRange, setSelection} from "../../utils";
+import {deleteContent, insertContent} from "../utils";
+import Y from '../../yjs'
+import {BlockflowInline} from "../inline";
 
 @Component({
   selector: '.editable-container',
@@ -27,27 +29,24 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
 
   public yText!: Y.Text
   public containerEle!: HTMLElement
-  protected destroyRef = inject(DestroyRef)
 
   override ngOnInit() {
     super.ngOnInit()
     this.yText = this.model.getYText()
-
     this.oldHasContent = !!this.textLength
-
+    this._textIndent = (this.props.indent || 0) * 2 + 'em'
     this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(v => {
       if(v.type === 'props') {
-        console.log('EditableBlock.update$', v, this.props, this._textAlign)
         // @ts-ignore
         this._textAlign !== this.props.textAlign && (this._textAlign = this.props.textAlign)
-        parseInt(this._textIndent) !== this.props.indent && (this._textIndent = (this.props.indent || 0) * 2 + 'em')
+        parseInt(this._textIndent) / 2 !== this.props.indent && (this._textIndent = (this.props.indent || 0) * 2 + 'em')
       }
     })
-    this.yText.observe((ev, tr) => {
+    this.yText.observe((event, tr) => {
       this.setPlaceholder()
       if (tr.origin === USER_CHANGE_SIGNAL) return
       // console.log('yText.observe', ev.changes.delta)
-      this.applyDeltaToView(ev.changes.delta as DeltaOperation[], this.controller.undoRedo$.value)
+      this.applyDeltaToView(event.changes.delta as DeltaOperation[], this.controller.undoRedo$.value)
       // this.model.children.splice(0, this.model.children.length, ...this.yText.toDelta())
     })
   }
@@ -104,7 +103,7 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
   }
 
   applyDelta(deltas: DeltaOperation[], setSelection = true) {
-    console.log('applyDeltaToView', deltas)
+    // console.log('applyDeltaToView', deltas)
     this.controller.transact(() => {
       this.yText.applyDelta(deltas)
       this.applyDeltaToView(deltas, setSelection)

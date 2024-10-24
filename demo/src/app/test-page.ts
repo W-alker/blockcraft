@@ -1,17 +1,27 @@
-import {Component, ViewChild} from "@angular/core";
+import {Component, TemplateRef, ViewChild} from "@angular/core";
 import {BlockFlowContextmenu, BlockFlowEditor, GlobalConfig} from "@editor";
 import {BlockModel, genUniqueID, IBlockModel, IEditableBlockModel, SchemaStore} from "@core";
+import {CalloutSchema} from "@blocks/callout";
+import {
+  BulletListSchema, CodeBlockSchema, DividerSchema,
+  HeadingFourSchema,
+  HeadingOneSchema,
+  HeadingThreeSchema,
+  HeadingTwoSchema,
+  ImageSchema, OrderedListSchema,
+  ParagraphSchema, TodoListSchema
+} from "@blocks";
 import {
   BlockControllerPlugin,
-  BlockflowBinding,
-  BlockTransformPlugin, BulletListSchema, DividerSchema,
-  FloatTextToolbarPlugin, HeadingFourSchema, HeadingOneSchema, HeadingThreeSchema, HeadingTwoSchema, ImageSchema,
-  MentionPlugin, OrderedListSchema, ParagraphSchema, TodoListSchema
-} from "@blockflow";
-import {CalloutSchema} from "@blocks/callout";
+  BlockTransformPlugin,
+  FloatTextToolbarPlugin, InlineLinkPlugin,
+  MentionPlugin
+} from "../../../blockflow/src/plugins";
+import {BlockflowBinding} from "../../../blockflow/src/y-blockflow";
+import {LinkSchema} from "@blocks/link";
 
 const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingTwoSchema, HeadingThreeSchema, HeadingFourSchema,
-  ImageSchema, BulletListSchema, OrderedListSchema, TodoListSchema, CalloutSchema, DividerSchema])
+  ImageSchema, BulletListSchema, OrderedListSchema, TodoListSchema, CalloutSchema, DividerSchema, LinkSchema, CodeBlockSchema])
 
 const mentionRequest = async (keyword: string) => {
   const len = Math.floor(Math.random() * 10)
@@ -33,19 +43,25 @@ interface BlockSchemaMap {
 @Component({
   selector: 'test-page',
   template: `
-      <bf-editor [config]="config" #editor></bf-editor>
+    <bf-editor [config]="config" #editor style="padding: 30px; height: 80vh"></bf-editor>
 
-      <button (click)="onClickReadonly()">切换只读</button>
-      <button (click)="onClick1()">删除第二个</button>
-      <button (mousedown)="onClick3($event)">选中范围</button>
-      <button (click)="onClick2()">打印数据</button>
+    <button (click)="onClickReadonly()">切换只读</button>
+    <button (click)="onClick1()">删除第二个</button>
+    <button (mousedown)="onClick3($event)">选中范围</button>
+    <button (click)="onClick2()">打印数据</button>
 
-      <button (click)="onClick5()">新增数据</button>
-      <button (click)="onClick6()">新增图片</button>
+    <button (click)="onClick5()">新增数据</button>
+    <button (click)="onClick6()">新增图片</button>
 
-      <button (click)="onClick4()">开启协同</button>
+    <button (click)="onClick4()">开启协同</button>
+
+    <ng-template #mentionTpl let-item>
+      {{ item.name + item.id }}
+    </ng-template>
   `,
-  styles: [``],
+  styles: [`
+
+  `],
   imports: [
     BlockFlowEditor,
   ],
@@ -54,6 +70,7 @@ interface BlockSchemaMap {
 export class TestPage {
   // @ts-ignore
   @ViewChild('editor') editor!: BlockFlowEditor<BlockSchemaMap>
+  @ViewChild('mentionTpl', {read: TemplateRef}) mentionTpl!: TemplateRef<any>
 
   model: IBlockModel[] = [
     {
@@ -90,7 +107,6 @@ export class TestPage {
       }
     }
   ]
-
   modelLength = 101
 
   constructor() {
@@ -114,7 +130,7 @@ export class TestPage {
   }
 
   config: GlobalConfig = {
-    rootId: 'root-demo',
+    rootId: '67177d1e2c4cf755f81cabdb',
     schemas: schemaStore,
     // lazyload: {
     //   pageSize: 10,
@@ -126,7 +142,31 @@ export class TestPage {
     //         }
     //   }
     // }
-    plugins: [new FloatTextToolbarPlugin(), new BlockControllerPlugin(BlockFlowContextmenu), new MentionPlugin(mentionRequest), new BlockTransformPlugin()]
+    plugins: [new FloatTextToolbarPlugin(
+      [
+        {
+          item: {
+            name: "|",
+            value: "|",
+          },
+        },
+        {
+          item: {
+            name: "task",
+            icon: "bf_renwu",
+            intro: "任务",
+            value: true,
+          },
+          click: (item) => {
+            console.log(item)
+          }
+        }
+      ]
+    ), new BlockControllerPlugin(BlockFlowContextmenu), new BlockTransformPlugin(), new InlineLinkPlugin()],
+    localUser: {
+      userId: '123',
+      userName: 'chengxu'
+    }
   }
 
   yBinding?: BlockflowBinding
@@ -138,6 +178,9 @@ export class TestPage {
   ngAfterViewInit() {
     // this.editor.controller.transact(()=>{
     // }, {name: 'init'})
+    this.controller.addPlugins([
+      new MentionPlugin(mentionRequest),
+    ])
   }
 
   onClickReadonly() {
@@ -159,30 +202,22 @@ export class TestPage {
   }
 
   onClick4() {
-    this.yBinding = new BlockflowBinding(this.controller)
+    this.yBinding = new BlockflowBinding(this.controller, {serverUrl: 'ws://193.168.1.123:1234'})
     this.yBinding.connect()
   }
 
   onClick5() {
-    const block = {
-      flavour: 'paragraph',
-      nodeType: 'editable',
-      id: genUniqueID(),
-      children: [
-        {
-          insert: 'This is a paragraph.\t',
-          attributes: {
-            'a:bold': true,
-          }
-        },
+    const bm = this.editor.controller.createBlock('paragraph', [
+      [{
+        insert: 'This is a paragraph.\t',
+        attributes: {
+          'a:bold': true,
+        }
+      },
         {
           insert: `Hello, World!`
-        },
-      ],
-      meta: {},
-      props: {}
-    } as IBlockModel
-    const bm = BlockModel.fromModel(block)
+        }],
+    ])
     this.editor.controller.insertBlocks(0, [bm])
   }
 

@@ -1,5 +1,5 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
-import {BaseBlock} from "@core";
+import {BaseBlock} from "../../core";
 
 @Component({
   selector: 'div.bf-divider',

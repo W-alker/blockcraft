@@ -1,7 +1,8 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
-import {EditableBlock} from "@core";
-import {getNumberPrefix, IOrderedListBlockModel} from "@blocks";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
+import {EditableBlock} from "../../core";
+import {IOrderedListBlockModel} from "./type";
+import {getNumberPrefix} from "./utils";
 
 @Component({
   selector: 'div.ordered-list',
@@ -13,9 +14,9 @@ import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
     :host {
       display: flex;
     }
-
     :host .editable-container {
       flex: 1;
+      text-indent: 0;
     }
     .order-list__num {
       color: var(--bf-anchor);
@@ -31,7 +32,9 @@ export class OrderedListBlock extends EditableBlock<IOrderedListBlockModel> {
     super.ngOnInit()
     this.setOrder()
     this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => {
-      if (v.type === 'props') this.setOrder()
+      if (v.type === 'props') {
+        this.setOrder()
+      }
     })
   }
 

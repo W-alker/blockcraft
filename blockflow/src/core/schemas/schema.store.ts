@@ -1,7 +1,8 @@
-import {BlockSchema} from "@core/schemas";
-import {BaseStore} from "@core/store";
-import {DeltaInsert, IBlockFlavour, IBlockModel} from "@core/types";
-import {genUniqueID} from "@core/utils";
+import {BaseStore} from "../store";
+import {DeltaInsert, IBlockFlavour, IBlockModel} from "../types";
+import {BlockSchema} from "./block-schema.type";
+import {genUniqueID} from "../utils";
+
 
 export class SchemaStore extends BaseStore<IBlockFlavour, BlockSchema> {
   constructor(schemaList: BlockSchema[]) {
@@ -16,7 +17,6 @@ export class SchemaStore extends BaseStore<IBlockFlavour, BlockSchema> {
   }
 
   create = (flavour: IBlockFlavour, params?: any[]): IBlockModel => {
-    console.log('createBlock', flavour, params)
     const schema = this.get(flavour as IBlockFlavour)!
     if (!schema) throw new Error(`schema ${flavour as string} not found`)
 

@@ -1,4 +1,4 @@
-import {Controller} from "@core";
+import {Controller} from "../controller";
 
 export interface IPlugin {
   readonly name: string;

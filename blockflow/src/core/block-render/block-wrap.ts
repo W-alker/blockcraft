@@ -1,5 +1,8 @@
-import {Component, ElementRef, Input, ViewChild, ViewContainerRef} from "@angular/core";
-import {BlockModel, Controller} from "@core";
+import {Component, DestroyRef, ElementRef, Input, ViewChild, ViewContainerRef} from "@angular/core";
+import {Controller} from "../controller";
+import {BlockModel} from "../yjs";
+import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
+import {IBaseMetadata} from "../types";
 
 @Component({
   selector: 'div[bf-block-wrap]',
@@ -15,7 +18,8 @@ export class BlockWrap {
   @ViewChild('container', {read: ViewContainerRef, static: true}) container!: ViewContainerRef
 
   constructor(
-    private hostEl: ElementRef<HTMLElement>
+    private hostEl: ElementRef<HTMLElement>,
+    private destroyRef: DestroyRef
   ) {
   }
 
@@ -29,6 +33,7 @@ export class BlockWrap {
     cpr.instance.cdr.detectChanges()
 
     this.hostEl.nativeElement.setAttribute('data-block-id', this.model.id)
-  }
 
+
+  }
 }

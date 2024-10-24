@@ -1,4 +1,4 @@
-import {IInlineAttrs} from "@core";
+import {IInlineAttrs} from "../../types";
 
 export const compareAttributesWithEle = (ele: HTMLElement, attrs?: IInlineAttrs): boolean => {
   const eleAttrs = ele.attributes

@@ -1,7 +1,7 @@
-import {DeltaInsert, IInlineAttrs} from "@core/types";
 import setAttributes from "./setAttributes";
 import {getAttributesFrom} from "./getAttributes";
 import {compareAttributesWithEle} from "./compareAttributes";
+import {DeltaInsert, IInlineAttrs} from "../../types";
 
 export class BlockflowInline {
 
@@ -13,6 +13,13 @@ export class BlockflowInline {
     typeof insert === 'object' && span.setAttribute('bf-embed', Object.keys(insert)[0])
     attributes && this.setAttributes(span, attributes, typeof insert === 'object')
     return span
+  }
+
+  static elementToDelta(ele: HTMLElement): DeltaInsert {
+    const insert = ele.getAttribute('bf-embed') ? {[ele.getAttribute('bf-embed')!]: true} : ele.textContent
+    const attributes = this.getAttributes(ele)
+    // @ts-ignore
+    return {insert, attributes}
   }
 
   static setAttributes(element: HTMLElement, attributes: IInlineAttrs, embed = false) {

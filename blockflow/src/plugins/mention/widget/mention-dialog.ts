@@ -6,10 +6,12 @@ import {
   HostBinding,
   HostListener,
   Input,
-  Output
+  Output, TemplateRef
 } from "@angular/core";
-import {NgForOf, NgIf} from "@angular/common";
-import {IMentionData} from "../index";
+import {NgForOf, NgIf, NgTemplateOutlet} from "@angular/common";
+import {IMentionData, MentionType} from "../index";
+import {NzEmptyModule} from "ng-zorro-antd/empty";
+import {NzTabsModule} from "ng-zorro-antd/tabs";
 
 @Component({
   selector: 'mention-dialog',
@@ -18,7 +20,10 @@ import {IMentionData} from "../index";
   standalone: true,
   imports: [
     NgForOf,
-    NgIf
+    NgIf,
+    NgTemplateOutlet,
+    NzEmptyModule,
+    NzTabsModule
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -33,9 +38,14 @@ export class MentionDialog {
   left = 0
 
   @Input()
+  template?: TemplateRef<{item: IMentionData, type: MentionType}>
+
+  @Input()
   list: IMentionData[] = []
 
+  @Output() tabChange = new EventEmitter<MentionType>()
   @Output() itemSelect = new EventEmitter<IMentionData>()
+
 
   @HostListener('mousedown', ['$event'])
   mousedown(event: MouseEvent) {
@@ -49,6 +59,7 @@ export class MentionDialog {
   ) {
   }
 
+  activeTabIndex = 0
   protected selectIndex = 0
 
   moveSelect(direction: 'up' | 'down') {
@@ -73,12 +84,19 @@ export class MentionDialog {
   }
 
   onItemClick(e: Event, item: IMentionData) {
-    console.log(item)
+    e.preventDefault()
+    e.stopPropagation()
     this.itemSelect.emit(item)
   }
 
   onSure() {
     this.itemSelect.emit(this.list[this.selectIndex])
+  }
+
+  onTabChange(index: number) {
+    this.activeTabIndex = index
+    this.selectIndex = 0
+    this.tabChange.emit(index === 0 ? 'user' : 'doc')
   }
 
 

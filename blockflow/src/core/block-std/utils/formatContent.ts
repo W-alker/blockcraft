@@ -1,5 +1,6 @@
-import {IInlineAttrs} from "@core/types";
-import {BlockflowInline, findTextNodeByIndex, ICharacterRange} from "@core";
+import {ICharacterRange} from "../../utils";
+import {IInlineAttrs} from "../../types";
+import {BlockflowInline} from "../inline";
 
 export const formatContent = (node: HTMLElement, range: ICharacterRange, attrs: IInlineAttrs) => {
   console.time('formatContent')

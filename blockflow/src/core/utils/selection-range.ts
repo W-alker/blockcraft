@@ -1,7 +1,6 @@
-/* 纯文本索引的焦点选区范围 */
-import {isEmbedElement} from "@core/utils/isEmbedNode";
-import {EditableBlock} from "@core/block-std";
+import {isEmbedElement} from "./isEmbedNode";
 
+/* 纯文本索引的焦点选区范围 */
 export interface ICharacterRange {
   start: number,
   end: number,
@@ -100,7 +99,7 @@ export const setSelection = (el: HTMLElement, start: CharacterIndex, end: Charac
     return
   }
 
-  if (start === 'start' && end === 'end') {
+  if ((start === 'start' || start === 0) && end === 'end') {
     sel.selectAllChildren(el)
     return
   }

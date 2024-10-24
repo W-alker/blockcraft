@@ -1,11 +1,12 @@
-import {Controller, EditableBlock, IBlockFlavour, IPlugin} from "@core";
 import {fromEvent} from "rxjs";
+import {BlockModel, Controller, EditableBlock, IBlockFlavour, IPlugin} from "../../core";
 
 export interface IBlockTransformConfig {
   flavour: string
   description: string
   markdown?: RegExp
-  hotkey: (e: KeyboardEvent) => boolean
+  hotkey: (e: KeyboardEvent) => boolean,
+  onConvert?: (controller: Controller, from: EditableBlock, matchedString: string) => BlockModel
 }
 
 export const blockTransforms: IBlockTransformConfig[] = [
@@ -43,7 +44,14 @@ export const blockTransforms: IBlockTransformConfig[] = [
     flavour: 'ordered-list',
     description: `有序列表(⌘/Ctrl + Shift + O)\nMarkdown: (数字). (空格)`,
     markdown: /^\d+(\.)?(\s+)?$/,
-    hotkey: (e) => e.code === 'KeyO' && (e.ctrlKey || e.metaKey) && e.shiftKey
+    hotkey: (e) => e.code === 'KeyO' && (e.ctrlKey || e.metaKey) && e.shiftKey,
+    onConvert: (controller, from, matchedString) => {
+      const props = {
+        order: parseInt(matchedString, 10) - 1,
+        ...from.props
+      }
+      return controller.createBlock('ordered-list', [from.getTextDelta(), props])
+    }
   },
   {
     flavour: 'todo-list',
@@ -56,6 +64,18 @@ export const blockTransforms: IBlockTransformConfig[] = [
     description: `高亮块(⌘/Ctrl + Shift + Q)\nMarkdown: ! (空格)`,
     markdown: /^!\s$/,
     hotkey: (e) => e.code === 'KeyQ' && (e.ctrlKey || e.metaKey) && e.shiftKey
+  },
+  {
+    flavour: 'callout',
+    description: `高亮块(⌘/Ctrl + Shift + Q)\nMarkdown: ! (空格)`,
+    markdown: /^!\s$/,
+    hotkey: (e) => e.code === 'KeyQ' && (e.ctrlKey || e.metaKey) && e.shiftKey
+  },
+  {
+    flavour: 'divider',
+    description: `分割线(⌘/Ctrl + Shift + H)\nMarkdown: --- (空格)`,
+    markdown: /^---(\s+)?$/,
+    hotkey: (e) => e.code === 'KeyH' && (e.ctrlKey || e.metaKey) && e.shiftKey
   }
 ]
 
@@ -124,11 +144,21 @@ export class BlockTransformPlugin implements IPlugin {
         const text = block.getTextContent().slice(0, blockRange.start)
         const matched = this.mdTransformList.find((item) => item.regex.test(text))
         if (!matched) return
+        const config = this.transformList.find((item) => item.flavour === matched.flavour)!
         block.applyDelta([{delete: text.length}], false)
 
+        let newBlock: BlockModel
+        if(config.onConvert) {
+          newBlock = config.onConvert!(controller, block, text)
+        } else {
+          newBlock = controller.createBlock(matched.flavour, [block.getTextDelta(), block.props])
+        }
         controller.transact(() => {
-          transformBlock(controller, block, matched.flavour)
+          controller.replaceWith(block.id, newBlock).then(() => {
+            controller.setSelection(newBlock.id, 'start')
+          })
         })
+
       })
 
   }

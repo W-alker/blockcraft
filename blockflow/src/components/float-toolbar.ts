@@ -46,14 +46,19 @@ export interface IToolbarItem {
 
       .bf-float-toolbar__item {
           display: flex;
+          gap: 4px;
           align-items: center;
           justify-content: center;
-          width: 24px;
+          padding: 0 4px;
           height: 24px;
           cursor: pointer;
           border-radius: 4px;
           font-size: 16px;
           color: #333;
+      }
+
+      .bf-float-toolbar__item > span {
+          font-size: 14px;
       }
 
       .bf-float-toolbar__item:hover {

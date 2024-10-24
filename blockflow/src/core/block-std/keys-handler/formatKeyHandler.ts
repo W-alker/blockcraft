@@ -1,4 +1,6 @@
-import {Controller, EditableBlock, IInlineAttrs, USER_CHANGE_SIGNAL} from "@core";
+import {IInlineAttrs} from "../../types";
+import {Controller} from "../../controller";
+import {EditableBlock} from "../components";
 
 export const formatKeyHandler = (format: IInlineAttrs, e: KeyboardEvent, controller: Controller) => {
   e.preventDefault()

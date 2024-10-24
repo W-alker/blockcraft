@@ -1,7 +1,10 @@
 import {Component, Input,} from "@angular/core";
 import {NgForOf, NgIf} from "@angular/common";
-import {BlockModel, Controller, EditorRoot, IBlockModel} from "@core";
-import {BlockWrap} from "@core/block-render/block-wrap";
+import {IBlockModel} from "../types";
+import {BlockWrap} from "./block-wrap";
+import {EditorRoot} from "./root";
+import {BlockModel} from "../yjs";
+import {Controller} from "../controller";
 
 interface IRequester {
   (page: number): Promise<IResponse>

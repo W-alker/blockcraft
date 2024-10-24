@@ -17,7 +17,9 @@
   }
 
   &__aside-bar {
-    width: 244px;
+    position: relative;
+    min-width: 244px;
+    max-width: 50vw;
     height: 100%;
     padding-top: 24px;
     overflow-y: auto;
@@ -87,6 +89,33 @@
         color: #4857E2;
       }
     }
+
+    &__resize-handler {
+      z-index: 10;
+      position: absolute;
+      top: 50%;
+      right: -4px;
+      transform: translateY(-50%);
+      width: 8px;
+      height: 22px;
+      cursor: col-resize;
+      background: #fff;
+      border-radius: 47px;
+      box-shadow: 0 0 4px 0 rgba(0, 0, 0, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 4px;
+
+      > span {
+        width: 4px;
+        height: 2px;
+        background: #CFCFCF;
+        border-radius: 4px;
+      }
+    }
+
   }
 
 

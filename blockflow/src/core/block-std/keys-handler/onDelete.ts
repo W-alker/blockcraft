@@ -1,4 +1,7 @@
-import {EditableBlock, IKeyEventHandler, isEmbedElement, onBackspace, USER_CHANGE_SIGNAL} from "@core";
+import {IKeyEventHandler} from "./keyEventBus";
+import {EditableBlock} from "../components";
+import {USER_CHANGE_SIGNAL} from "../../yjs";
+import {isEmbedElement} from "../../utils";
 
 export const onDelete: IKeyEventHandler = (e, controller) => {
   e.preventDefault()

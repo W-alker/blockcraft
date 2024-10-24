@@ -1,6 +1,5 @@
-import {IBlockModel, IBlockProps, IEditableBlockModel} from "@core";
+import {IBlockModel, IBlockProps, IEditableBlockModel} from "../../core";
 
-// @ts-ignore
 export interface IImageBlockProps extends IBlockProps {
   src: string,
   width: number,

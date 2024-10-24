@@ -19,14 +19,14 @@ export type IInlineDataKey = `d:${string}`
  * inline text style
  */
 export interface ITextStyles {
-  's:c'?: string;
-  's:bc'?: string;
-  's:fs'?: number;
-  's:ff'?: string;
+  's:c'?: string | null;
+  's:bc'?: string | null;
+  's:fs'?: number | null;
+  's:ff'?: string | null;
 }
 
 export interface IExpandedAttrs {
-  [key: IInlineAttrKey | IInlineDataKey]: SimpleBasicType;
+  [key: IInlineAttrKey | IInlineDataKey]: SimpleBasicType | null
 }
 
 interface IInlineAttr {
