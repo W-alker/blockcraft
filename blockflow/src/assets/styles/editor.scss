@@ -13,7 +13,7 @@ bf-editor {
 
   --bf-c: #000;
   --bf-fs: 16px;
-  --bf-lh: 1.25;
+  --bf-lh: 20px;
   --bf-bg: #fff;
   --bf-placeholder: #ccc;
   --bf-anchor: #4857E2;
@@ -31,7 +31,7 @@ bf-editor {
     min-height: 1em;
 
     &.bf-multi-line > span {
-      white-space: pre-wrap;
+      white-space: pre;
     }
 
     &.placeholder-visible {

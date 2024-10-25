@@ -1,7 +1,7 @@
 import {IModeItem} from "./type";
 
 export const languageModeList: IModeItem[] = [
-  {value: 'text/x-java', name: 'Java'},
+  {value: 'java', name: 'Java'},
   {value: 'javascript', name: 'JavaScript'},
   {value: 'css', name: 'CSS'},
   {value: 'html', name: 'HTML'},

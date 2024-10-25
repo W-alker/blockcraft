@@ -1,24 +1,28 @@
-<div class="editable-container bf-multi-line">
+<div class="line-numbers">
+  <span *ngFor="let line of lines; let i = index">
+    {{i + 1}}
+  </span>
+</div>
+
+<div class="editable-container bf-multi-line bf-plain-text-only">
 <!--  <div class="copy-btn" (click)="copyAll()" >-->
 <!--    <i class="editor editor-xuqiuwendang_fuzhi"></i>-->
 <!--    <span>Copy</span>-->
 <!--  </div>-->
-<!--  <div class="xe-code-mode" #panel cdkOverlayOrigin #trigger="cdkOverlayOrigin" [attr.data-mode]="data.mode" [style.pointer-events]="(manager.readonly$ | async) ? 'none' :'auto'">-->
-<!--    <span (click)="toggleModePadOpen($event)">{{currentModeName}} <i class="editor editor-opt"></i> </span>-->
-<!--  </div>-->
+</div>
+<ng-container *ngIf="!(controller.readonly$ | async)">
+</ng-container>
+
+<div class="xe-code-mode" *ngFor="let item of languageModeList" #showModeBtn>
+  <span (click)="showModeList()">{{props.lang}} <i class="editor editor-opt"></i> </span>
 </div>
 
 <div class="highlight-container" #highlighter></div>
 
-<!--<ng-template cdkConnectedOverlay-->
-<!--             [cdkConnectedOverlayOrigin]="trigger"-->
-<!--             [cdkConnectedOverlayOpen]="isOpenModeListPad"-->
-<!--             cdkConnectedOverlayBackdropClass="cdk-overlay-transparent-backdrop"-->
-<!--             [cdkConnectedOverlayHasBackdrop]="true"-->
-<!--             (backdropClick)="isOpenModeListPad = false">-->
-<!--  <div class="code-mode-list">-->
-<!--    <div class="code-mode-list_item" *ngFor="let item of languageModeList" (click)="changeLanguageMode(item)">-->
-<!--      {{item.name}}-->
-<!--    </div>-->
-<!--  </div>-->
-<!--</ng-template>-->
+<ng-template #modeList>
+  <div class="code-mode-list">
+    <div class="code-mode-list_item" *ngFor="let item of languageModeList" (click)="changeLanguageMode(item.value)">
+      {{item.name}}
+    </div>
+  </div>
+</ng-template>

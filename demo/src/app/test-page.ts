@@ -207,16 +207,10 @@ export class TestPage {
   }
 
   onClick5() {
-    const bm = this.editor.controller.createBlock('paragraph', [
+    const bm = this.editor.controller.createBlock('code', [
       [{
-        insert: 'This is a paragraph.\t',
-        attributes: {
-          'a:bold': true,
-        }
-      },
-        {
-          insert: `Hello, World!`
-        }],
+        insert: 'const s = "Hello, World!";\nHello, World!',
+      }],
     ])
     this.editor.controller.insertBlocks(0, [bm])
   }

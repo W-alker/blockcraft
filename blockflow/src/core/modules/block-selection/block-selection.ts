@@ -69,7 +69,7 @@ export class BlockSelection {
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
     // if the target is content editable, bind the special mousemove event to the target
     if (target.isContentEditable) {
-      this.triggerElement = target
+      this.triggerElement = target.closest('.editable-container')
       this.host.addEventListener('mousemove', this.onContentEditableMouseMove)
     } else {
       this.document.body.addEventListener('mousemove', this.onMousemove)

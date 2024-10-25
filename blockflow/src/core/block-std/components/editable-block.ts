@@ -93,11 +93,13 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
   forceRender() {
     const delta = this.getTextDelta()
     this.containerEle.innerHTML = ''
+    const fragment = document.createDocumentFragment()
     if (delta.length) {
       for (const insert of delta) {
         if (!insert.insert) continue
-        this.containerEle.appendChild(BlockflowInline.createView(insert))
+        fragment.appendChild(BlockflowInline.createView(insert))
       }
+      this.containerEle.appendChild(fragment)
       return
     }
   }

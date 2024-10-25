@@ -17,12 +17,18 @@ export const copyHandler = async (controller: Controller, cut = false) => {
     const bRef = controller.getBlockRef(blockId) as EditableBlock
     const deltaConcat = sliceDelta(bRef.getTextDelta(), range.start, range.end)
 
-    return ClipDataWriter.writeDeltaToClipboard(deltaConcat).then(() => {
+    const cutText = () => {
       if (cut) {
         const deltas = [{retain: range.start}, {delete: range.end - range.start}]
         bRef.applyDelta(deltas)
       }
-    })
+    }
+
+    if(controller.activeElement?.classList.contains('bf-plain-text-only')) {
+      return ClipDataWriter.writeClipData(window.getSelection()!.getRangeAt(0).toString()).then(cutText)
+    }
+
+    return ClipDataWriter.writeDeltaToClipboard(deltaConcat).then(cutText)
   }
 
   const {rootRange} = curRange

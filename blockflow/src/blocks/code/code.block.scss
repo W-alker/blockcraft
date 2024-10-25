@@ -1,24 +1,59 @@
 :host {
-  padding: 0 10px;
-  line-height: var(--bf-lh);
+  --code-padding-left: 30px;
+  --code-padding-top: 20px;
+  padding: var(--code-padding-top) var(--code-padding-left);
+  border: 1px solid #dee0e3;
+  border-radius: 4px;
+
+  &:focus-within {
+    .line-numbers {
+      visibility: visible;
+    }
+  }
+
+  .line-numbers {
+    visibility: hidden;
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    top: var(--code-padding-top);
+    left: 0;
+    width: calc(var(--code-padding-left) * 0.8);
+    height: calc(100% - var(--code-padding-top) * 2);
+    color: #abb2bf;
+    font-size: calc(var(--bf-fs) * 0.9);
+    pointer-events: none;
+    user-select: none;
+    overflow: hidden;
+
+    > span {
+      width: 100%;
+      flex: 1;
+      line-height: var(--bf-lh);
+      text-align: end;
+    }
+  }
 
   .editable-container {
+    background: transparent !important;
+    color: transparent !important; /* 隐藏文本 */
+    caret-color: black !important; /* 让光标可见 */
+  }
+
+  .editable-container, .highlight-container {
+    font-size: var(--bf-fs);
+    line-height: var(--bf-lh);
     overflow-wrap: break-word;
-    -webkit-line-break: after-white-space;
-    color: transparent;      /* 隐藏文本 */
-    caret-color: black;      /* 让光标可见 */
+    font-family: "DM Mono", monospace;
   }
 
   ::ng-deep .highlight-container {
     position: absolute;
-    top: 0;
-    left: 10px;
+    top: var(--code-padding-top);
+    left: var(--code-padding-left);
     width: 100%;
     pointer-events: none;
-    font-size: inherit;
-    white-space: pre-wrap;
-    overflow-wrap: break-word;
-    -webkit-line-break: after-white-space;
+    white-space: pre;
 
     .variable {
       color: #d19a66;
@@ -102,6 +137,50 @@
 
     .literal {
       color: #d19a66;
+    }
+  }
+}
+
+.xe-code-mode {
+  user-select: none;
+  position: absolute;
+  top: .15em;
+  left: 1.5em;
+  font-size: calc(var(--xe-font-size) * .7);
+
+  > span {
+    display: flex;
+    align-items: center;
+    height: 2em;
+    line-height: 2em;
+    text-align: center;
+    color: #86acff;
+    cursor: pointer;
+
+    > i {
+      font-size: inherit;
+      transform: rotate(180deg);
+    }
+  }
+}
+
+.code-mode-list {
+  width: 80px;
+  background-color: #fff;
+  border: 1px solid #f5f2f0;
+  border-radius: 4px;
+
+  &_item {
+    border-bottom: 1px solid #f5f2f0;
+    height: 30px;
+    line-height: 30px;
+    text-align: center;
+    font-size: 14px;
+    color: #999;
+    cursor: pointer;
+
+    &:hover {
+      color: #86acff;
     }
   }
 }

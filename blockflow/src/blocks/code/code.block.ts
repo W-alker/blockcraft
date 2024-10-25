@@ -1,55 +1,144 @@
-import {ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewChild} from "@angular/core";
-import {BaseBlock, EditableBlock, getCurrentCharacterRange, setSelection} from "../../core";
-// import {EditorState} from "@codemirror/state"
-// import {EditorView, keymap} from "@codemirror/view"
-// import {defaultKeymap} from "@codemirror/commands"
-// import {javascript} from "@codemirror/lang-javascript"
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  inject,
+  TemplateRef,
+  ViewChild,
+  ViewContainerRef
+} from "@angular/core";
+import {EditableBlock} from "../../core";
 import {ICodeBlockModel} from "./type";
-import {CdkConnectedOverlay} from "@angular/cdk/overlay";
-import hljs from 'highlight.js';
+import {Overlay, OverlayModule} from "@angular/cdk/overlay";
+import {fromEventPattern} from "rxjs";
+import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
+import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
+import {format} from "prettier/standalone";
+import * as Prism from 'prismjs';
+// 可选：导入其他语言支持
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-markup';
+import 'prismjs/components/prism-php';
+import 'prismjs/components/prism-python';
+import 'prismjs/components/prism-sql';
+import 'prismjs/components/prism-java';
+import {languageModeList} from "./const";
+import {TemplatePortal} from "@angular/cdk/portal";
 
 @Component({
-    selector: 'div.code-block',
-    templateUrl: './code.block.html',
-    styleUrls: ['./code.block.scss'],
-    standalone: true,
-    imports: [
-        CdkConnectedOverlay
-    ],
-    changeDetection: ChangeDetectionStrategy.OnPush
+  selector: 'div.code-block',
+  templateUrl: './code.block.html',
+  styleUrls: ['./code.block.scss'],
+  standalone: true,
+  imports: [
+    NgForOf,
+    NgIf,
+    OverlayModule,
+    AsyncPipe
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class CodeBlock extends EditableBlock<ICodeBlockModel> {
 
-    @ViewChild('highlighter', {read: ElementRef}) highlighter!: ElementRef<HTMLDivElement>
+  @ViewChild('highlighter', {read: ElementRef}) highlighter!: ElementRef<HTMLDivElement>
+  @ViewChild('modeList', {read: TemplateRef}) modeList!: TemplateRef<any>
+  @ViewChild('showModeBtn', {read: ElementRef}) showModeBtn!: ElementRef<HTMLDivElement>
 
-    override ngAfterViewInit() {
-        super.ngAfterViewInit();
-        //
-        // let startState = EditorState.create({
-        //     doc: "Hello World",
-        //     extensions: [keymap.of(defaultKeymap), javascript()],
-        // })
-        // let view = new EditorView({
-        //     state: startState,
-        //     parent: this.hostEl.nativeElement,
-        // })
-        this.highlight()
-        this.yText.observe((e) => {
-            this.highlight()
-        })
-    }
+  protected lines: string[] = []
+  private resizeSub?: ResizeObserver
 
-    highlight() {
-        hljs.configure({
-            classPrefix: ''
-        })
-        const text = this.containerEle.textContent!
-        const token = hljs.highlight('javascript', text);
-        this.highlighter.nativeElement.innerHTML = token.value;
-    }
+  constructor(
+    private overlay: Overlay,
+    private vcr: ViewContainerRef,
+  ) {
+    super();
+  }
 
-    bindEvent() {
+  override ngAfterViewInit() {
+    super.ngAfterViewInit();
+    this.highlight()
+    this.yText.observe(() => {
+      this.highlight()
+    })
 
-    }
+    fromEventPattern(
+      (handler) => {
+        this.resizeSub = new ResizeObserver(handler)
+        this.resizeSub.observe(this.hostEl.nativeElement)
+      },
+      (handler) => {
+        this.resizeSub?.disconnect()
+      }
+    ).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      // 高度变化时
+      this.setLines()
+    })
 
+  }
+
+  highlight = (text: string = this.getTextContent()) => {
+    // const token = hljs.highlight('javascript', text.endsWith('\n') ? text.slice(0, -1) : text)
+    // console.log(token)
+    // this.highlighter.nativeElement.innerHTML = token.value;
+    const tokens = Prism.tokenize(text, Prism.languages[this.props.lang]);
+    this.highlighter.nativeElement.innerHTML = this.tokensToHTML(tokens);
+  }
+
+  tokensToHTML(tokens: Array<string | Prism.Token>): string {
+    return tokens
+      .map(token => {
+        if (typeof token === 'string') {
+          return token;
+        } else {
+          const className = `token ${token.type}`;
+          const content = Array.isArray(token.content)
+            ? this.tokensToHTML(token.content)
+            : token.content;
+          return `<span class="${className}">${content}</span>`;
+        }
+      })
+      .join('');
+  }
+
+  formatCode() {
+    // 使用 Prettier 格式化代码
+    format(this.getTextContent(), {
+      tabWidth: 2,
+      useTabs: false,
+    }).then((formattedCode) => {
+      this.yText.delete(0, this.yText.length)
+      this.yText.insert(0, formattedCode)
+      this.highlight(formattedCode)
+    })
+  }
+
+  setLines() {
+    this.lines = this.getTextContent().replace(/\n$/, '').split('\n')
+    this.cdr.markForCheck()
+  }
+
+  changeLanguageMode(mode: string) {
+    this.setProp('lang', mode)
+    this.highlight()
+  }
+
+  showModeList() {
+    const positionStrategy = this.overlay.position().flexibleConnectedTo(this.showModeBtn.nativeElement).withPositions([
+      {originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top'}
+    ])
+    const portal = new TemplatePortal(this.modeList, this.vcr)
+    const ovr = this.overlay.create({
+      positionStrategy,
+      hasBackdrop: true,
+      backdropClass: 'cdk-overlay-transparent-backdrop',
+    })
+    const cpr = ovr.attach(portal)
+    ovr.backdropClick().subscribe(() => {
+      ovr.dispose()
+    })
+  }
+
+  protected readonly languageModeList = languageModeList;
 }

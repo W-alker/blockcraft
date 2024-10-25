@@ -28,8 +28,8 @@ export class FloatTextToolbarPlugin implements IPlugin {
 
     fromEvent(document, 'selectionchange')
       .subscribe(() => {
+        if (controller.readonly$.value || controller.activeElement?.classList.contains('bf-plain-text-only')) return
 
-        if (controller.readonly$.value) return
         const sel = window.getSelection()
         if (!sel || sel.isCollapsed || !controller.activeElement || !controller.activeElement.isContentEditable) {
           this.timer && clearTimeout(this.timer)
@@ -39,7 +39,7 @@ export class FloatTextToolbarPlugin implements IPlugin {
 
         this.timer = setTimeout(() => {
           const sel = window.getSelection()
-          if (!sel || sel.isCollapsed || !controller.activeElement || !sel.toString().replace(/\u200B|\t|\n/g, '')) return
+          if (!sel || sel.isCollapsed || !controller.activeElement || !sel.toString().replace(/(\u200B\t\n\u3000)/g, '')) return
           const range = sel.getRangeAt(0)
           const rect = range.getBoundingClientRect()
           this._cpr ? this.moveToolbar(rect.bottom + 4, rect.left) : this.openToolbar(rect.bottom + 4, rect.left, controller)
@@ -50,7 +50,7 @@ export class FloatTextToolbarPlugin implements IPlugin {
 
   openToolbar(top: number, left: number, controller: Controller) {
     const activeBlock = controller.getBlockRef(controller.getFocusingBlockId()!) as EditableBlock
-    if(!activeBlock || activeBlock.flavour === 'code') return
+    if(!activeBlock) return
 
     const cpr = this._vcr.createComponent(FloatTextToolbar)
     cpr.instance.top = top

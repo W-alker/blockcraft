@@ -18,6 +18,20 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
   const {blockId, blockRange} = range
   const {parentId, index} = controller.getBlockPosition(blockId)
 
+  const pasteAsText = () => {
+    const text = clipboardData.getData('text/plain')
+    if (!text) return
+    const blockRef = controller.getBlockRef(blockId) as EditableBlock
+    const deltaInsert: DeltaInsert[] = [{insert: text}]
+    applyPasteDeltaToBlock(blockRef, deltaInsert, blockRange)
+  }
+
+  if(controller.activeElement?.classList.contains('bf-plain-text-only')) {
+    if(!types.includes('text/plain')) return
+    pasteAsText()
+    return
+  }
+
   // only text/plain
   if (types.length === 1 && types[0] === 'text/plain') {
     console.log('text/plain')
@@ -75,12 +89,9 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
     return
   }
 
+  // 保底方案
   if(types.includes('text/plain')) {
-    const text = clipboardData.getData('text/plain')
-    if (!text) return
-    const blockRef = controller.getBlockRef(blockId) as EditableBlock
-    const deltaInsert: DeltaInsert[] = [{insert: text}]
-    applyPasteDeltaToBlock(blockRef, deltaInsert, blockRange)
+    pasteAsText()
     return
   }
 
@@ -104,3 +115,6 @@ const applyPasteDeltaToBlock = (blockRef: EditableBlock, deltaInsert: DeltaInser
   blockRef.applyDelta(deltas, true)
   // blockRef.setSelection(range.start, range.start + blockRef.textLength - oldTextLength)
 }
+
+
+

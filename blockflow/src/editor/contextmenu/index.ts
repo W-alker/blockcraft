@@ -1,6 +1,6 @@
 import {
   ChangeDetectionStrategy, ChangeDetectorRef,
-  Component, DestroyRef, EmbeddedViewRef,
+  Component, EmbeddedViewRef,
   EventEmitter,
   HostListener,
   Input,
@@ -13,7 +13,6 @@ import {FILE_UPLOADER} from "../../blocks";
 import {Overlay} from "@angular/cdk/overlay";
 import {TemplatePortal} from "@angular/cdk/portal";
 import {fromEvent} from "rxjs";
-import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {MatIconModule} from "@angular/material/icon";
 
 export * from './type'
