@@ -1,9 +1,10 @@
 :host {
-  --code-padding-left: 30px;
-  --code-padding-top: 20px;
+  --code-padding-left: calc(var(--bf-fs) * 2);
+  --code-padding-top: var(--bf-lh);
   padding: var(--code-padding-top) var(--code-padding-left);
   border: 1px solid #dee0e3;
   border-radius: 4px;
+  background-color: var(--bf-bg);
 
   &:focus-within {
     .line-numbers {
@@ -26,7 +27,7 @@
     user-select: none;
     overflow: hidden;
 
-    > span {
+    >span {
       width: 100%;
       flex: 1;
       line-height: var(--bf-lh);
@@ -35,12 +36,16 @@
   }
 
   .editable-container {
+    font-weight: 0;
     background: transparent !important;
-    color: transparent !important; /* 隐藏文本 */
-    caret-color: black !important; /* 让光标可见 */
+    color: transparent !important;
+    /* 隐藏文本 */
+    caret-color: black !important;
+    /* 让光标可见 */
   }
 
-  .editable-container, .highlight-container {
+  .editable-container,
+  .highlight-container {
     font-size: var(--bf-fs);
     line-height: var(--bf-lh);
     overflow-wrap: break-word;
@@ -53,7 +58,10 @@
     left: var(--code-padding-left);
     width: 100%;
     pointer-events: none;
-    white-space: pre;
+
+    span {
+      white-space: pre-wrap;
+    }
 
     .variable {
       color: #d19a66;
@@ -141,14 +149,16 @@
   }
 }
 
-.xe-code-mode {
+.lang-btn {
   user-select: none;
   position: absolute;
-  top: .15em;
-  left: 1.5em;
-  font-size: calc(var(--xe-font-size) * .7);
+  top: 0;
+  left: var(--code-padding-left);
+  height: var(--code-padding-top);
+  line-height: var(--code-padding-top);
+  font-size: calc(var(--bf-fs) * .7);
 
-  > span {
+  >span {
     display: flex;
     align-items: center;
     height: 2em;
@@ -157,25 +167,25 @@
     color: #86acff;
     cursor: pointer;
 
-    > i {
+    >i {
       font-size: inherit;
       transform: rotate(180deg);
     }
   }
 }
 
-.code-mode-list {
-  width: 80px;
+.lang-list {
   background-color: #fff;
   border: 1px solid #f5f2f0;
   border-radius: 4px;
 
   &_item {
     border-bottom: 1px solid #f5f2f0;
-    height: 30px;
-    line-height: 30px;
+    padding: 0 4px;
+    height: calc(var(--bf-lh) * 1.5);
+    line-height: calc(var(--bf-lh) * 1.5);
     text-align: center;
-    font-size: 14px;
+    font-size: calc(var(--bf-fs) * .8);
     color: #999;
     cursor: pointer;
 

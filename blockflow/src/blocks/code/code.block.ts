@@ -7,13 +7,13 @@ import {
   ViewChild,
   ViewContainerRef
 } from "@angular/core";
-import {EditableBlock} from "../../core";
-import {ICodeBlockModel} from "./type";
-import {Overlay, OverlayModule} from "@angular/cdk/overlay";
-import {fromEventPattern} from "rxjs";
-import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
-import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
-import {format} from "prettier/standalone";
+import { EditableBlock } from "../../core";
+import { ICodeBlockModel } from "./type";
+import { Overlay, OverlayModule } from "@angular/cdk/overlay";
+import { fromEventPattern } from "rxjs";
+import { AsyncPipe, NgForOf, NgIf } from "@angular/common";
+import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
+import { format } from "prettier/standalone";
 import * as Prism from 'prismjs';
 // 可选：导入其他语言支持
 import 'prismjs/components/prism-javascript';
@@ -24,8 +24,9 @@ import 'prismjs/components/prism-php';
 import 'prismjs/components/prism-python';
 import 'prismjs/components/prism-sql';
 import 'prismjs/components/prism-java';
-import {languageModeList} from "./const";
-import {TemplatePortal} from "@angular/cdk/portal";
+import { languageList } from "./const";
+import { TemplatePortal } from "@angular/cdk/portal";
+import { LangNamePipe } from "./langName.pipe";
 
 @Component({
   selector: 'div.code-block',
@@ -36,15 +37,16 @@ import {TemplatePortal} from "@angular/cdk/portal";
     NgForOf,
     NgIf,
     OverlayModule,
-    AsyncPipe
+    AsyncPipe,
+    LangNamePipe
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class CodeBlock extends EditableBlock<ICodeBlockModel> {
 
-  @ViewChild('highlighter', {read: ElementRef}) highlighter!: ElementRef<HTMLDivElement>
-  @ViewChild('modeList', {read: TemplateRef}) modeList!: TemplateRef<any>
-  @ViewChild('showModeBtn', {read: ElementRef}) showModeBtn!: ElementRef<HTMLDivElement>
+  @ViewChild('highlighter', { read: ElementRef }) highlighter!: ElementRef<HTMLDivElement>
+  @ViewChild('modeList', { read: TemplateRef }) modeList!: TemplateRef<any>
+  @ViewChild('showModeBtn', { read: ElementRef }) showModeBtn!: ElementRef<HTMLDivElement>
 
   protected lines: string[] = []
   private resizeSub?: ResizeObserver
@@ -90,7 +92,7 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
     return tokens
       .map(token => {
         if (typeof token === 'string') {
-          return token;
+          return `<span>${token}</span>`;
         } else {
           const className = `token ${token.type}`;
           const content = Array.isArray(token.content)
@@ -119,14 +121,15 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
     this.cdr.markForCheck()
   }
 
-  changeLanguageMode(mode: string) {
+  changeLanguage(mode: string) {
     this.setProp('lang', mode)
     this.highlight()
+    this.cdr.markForCheck()
   }
 
-  showModeList() {
+  showLangList() {
     const positionStrategy = this.overlay.position().flexibleConnectedTo(this.showModeBtn.nativeElement).withPositions([
-      {originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top'}
+      { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' }
     ])
     const portal = new TemplatePortal(this.modeList, this.vcr)
     const ovr = this.overlay.create({
@@ -140,5 +143,5 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
     })
   }
 
-  protected readonly languageModeList = languageModeList;
+  protected readonly languageList = languageList;
 }

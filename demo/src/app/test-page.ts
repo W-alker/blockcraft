@@ -1,14 +1,14 @@
-import {Component, TemplateRef, ViewChild} from "@angular/core";
-import {BlockFlowContextmenu, BlockFlowEditor, GlobalConfig} from "@editor";
-import {BlockModel, genUniqueID, IBlockModel, IEditableBlockModel, SchemaStore} from "@core";
-import {CalloutSchema} from "@blocks/callout";
+import { Component, TemplateRef, ViewChild } from "@angular/core";
+import { BlockFlowContextmenu, BlockFlowEditor, GlobalConfig } from "@editor";
+import { BlockModel, genUniqueID, IBlockModel, IEditableBlockModel, SchemaStore } from "@core";
+import { CalloutSchema } from "@blocks/callout";
 import {
   BulletListSchema, CodeBlockSchema, DividerSchema,
   HeadingFourSchema,
   HeadingOneSchema,
   HeadingThreeSchema,
   HeadingTwoSchema,
-  ImageSchema, OrderedListSchema,
+  ImageSchema, MermaidBlockSchema, OrderedListSchema,
   ParagraphSchema, TodoListSchema
 } from "@blocks";
 import {
@@ -17,15 +17,15 @@ import {
   FloatTextToolbarPlugin, InlineLinkPlugin,
   MentionPlugin
 } from "../../../blockflow/src/plugins";
-import {BlockflowBinding} from "../../../blockflow/src/y-blockflow";
-import {LinkSchema} from "@blocks/link";
+import { BlockflowBinding } from "../../../blockflow/src/y-blockflow";
+import { LinkSchema } from "@blocks/link";
 
 const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingTwoSchema, HeadingThreeSchema, HeadingFourSchema,
-  ImageSchema, BulletListSchema, OrderedListSchema, TodoListSchema, CalloutSchema, DividerSchema, LinkSchema, CodeBlockSchema])
+  ImageSchema, BulletListSchema, OrderedListSchema, TodoListSchema, CalloutSchema, DividerSchema, LinkSchema, CodeBlockSchema, MermaidBlockSchema])
 
 const mentionRequest = async (keyword: string) => {
   const len = Math.floor(Math.random() * 10)
-  const list = Array.from({length: len}).map(() => ({
+  const list = Array.from({ length: len }).map(() => ({
     id: genUniqueID(),
     name: keyword + Math.floor(Math.random() * 10000).toString().slice(0, 4)
   }))
@@ -70,7 +70,7 @@ interface BlockSchemaMap {
 export class TestPage {
   // @ts-ignore
   @ViewChild('editor') editor!: BlockFlowEditor<BlockSchemaMap>
-  @ViewChild('mentionTpl', {read: TemplateRef}) mentionTpl!: TemplateRef<any>
+  @ViewChild('mentionTpl', { read: TemplateRef }) mentionTpl!: TemplateRef<any>
 
   model: IBlockModel[] = [
     {
@@ -202,7 +202,7 @@ export class TestPage {
   }
 
   onClick4() {
-    this.yBinding = new BlockflowBinding(this.controller, {serverUrl: 'ws://193.168.1.123:1234'})
+    this.yBinding = new BlockflowBinding(this.controller, { serverUrl: 'ws://193.168.1.123:1234' })
     this.yBinding.connect()
   }
 

@@ -1,16 +1,5 @@
 //@import "../../assets/iconfont/iconfont.css";
-
-bf-editor {
-  display: block;
-  width: 100%;
-  overflow-y: auto;
-  box-sizing: border-box;
-
-  p, div, span, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre, table, thead, tbody, tr, th, td, hr, figure, figcaption, img, a, strong, em, u, s, code, br, hr {
-    margin: 0;
-    padding: 0;
-  }
-
+:root {
   --bf-c: #000;
   --bf-fs: 16px;
   --bf-lh: 20px;
@@ -18,19 +7,67 @@ bf-editor {
   --bf-placeholder: #ccc;
   --bf-anchor: #4857E2;
   --bf-anchor-hover: #4857E2;
+}
+
+bf-editor {
+  display: block;
+  width: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+
+  p,
+  div,
+  span,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  ul,
+  ol,
+  li,
+  blockquote,
+  pre,
+  table,
+  thead,
+  tbody,
+  tr,
+  th,
+  td,
+  hr,
+  figure,
+  figcaption,
+  img,
+  a,
+  strong,
+  em,
+  u,
+  s,
+  code,
+  br,
+  hr {
+    margin: 0;
+    padding: 0;
+  }
 
   font-size: var(--bf-fs);
   line-height: var(--bf-lh);
   color: var(--bf-c);
 
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     font-weight: bold;
   }
 
   .editable-container {
     min-height: 1em;
 
-    &.bf-multi-line > span {
+    &.bf-multi-line>span {
       white-space: pre;
     }
 
@@ -87,7 +124,7 @@ bf-editor {
     border: 1px solid #dee0e3;
     padding: 0 .1em;
 
-    + [bfi-code="true"] {
+    +[bfi-code="true"] {
       border-left: none;
     }
   }
@@ -164,6 +201,7 @@ bf-editor {
       from {
         height: 0;
       }
+
       to {
         height: 32px;
       }
@@ -184,12 +222,12 @@ bf-editor {
       background: #f5f5f5;
       border-radius: 4px;
 
-      > i.dropdown {
+      >i.dropdown {
         transform: rotate(180deg);
       }
     }
 
-    > i {
+    >i {
       display: flex;
       justify-content: center;
       align-items: center;
@@ -217,4 +255,3 @@ bf-editor {
 .bf-block-selected {
   background: rgba(46, 115, 252, 0.2);
 }
-
