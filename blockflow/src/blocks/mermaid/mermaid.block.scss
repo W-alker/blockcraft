@@ -1,0 +1,43 @@
+:host {
+  display: block;
+  padding: var(--bf-lh);
+
+  .head {
+    display: flex;
+    align-items: center;
+    position: relative;
+
+    .switch-btn {
+      position: absolute;
+      top: 50%;
+      right: var(--bf-lh);
+      transform: translateY(-50%);
+    }
+  }
+
+  .editable-container {
+    background-color: var(--bf-bg);
+  }
+}
+
+::ng-deep .template-list {
+  background-color: #fff;
+  border: 1px solid #f5f2f0;
+  border-radius: 4px;
+  padding: 4px;
+
+  &_item {
+    padding: 0 4px;
+    height: calc(var(--bf-lh) * 1.5);
+    line-height: calc(var(--bf-lh) * 1.5);
+    text-align: center;
+    font-size: calc(var(--bf-fs) * .8);
+    color: #999;
+    cursor: pointer;
+    border-radius: 4px;
+
+    &:hover {
+      background-color: rgba(153, 153, 153, .1);
+    }
+  }
+}

@@ -1,2 +1,20 @@
+<div class="head">
+  <div class="template-btn" (click)="onShowTemplateList($event)">模板</div>
+  <div class="switch-btn" (click)="onSwitchView()">切换</div>
+</div>
+
+<!-- @if (props.viewMode === 'text') { -->
 <div class="editable-container bf-multi-line bf-plain-text-only"></div>
+<!-- } -->
+<!-- @else { -->
 <div class="graph-con" #graph></div>
+<!-- } -->
+
+<ng-template #templateListTpl>
+  <div class="template-list">
+    <div class="template-list_item" *ngFor="let item of templateList"
+      (click)="useTemplate(item)">
+      {{item.name}}
+    </div>
+  </div>
+</ng-template>

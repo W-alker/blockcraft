@@ -3,15 +3,16 @@ import { IMermaidBlockModel } from "./type";
 import { MermaidBlock } from "./mermaid.block";
 
 export const MermaidBlockSchema: EditableBlockSchema<IMermaidBlockModel['props']> = {
-  flavour: 'code',
+  flavour: 'mermaid',
   nodeType: 'editable',
   render: MermaidBlock,
   icon: 'bf_icon bf_daimakuai',
-  label: '图表',
+  label: '代码绘图',
   onCreate: (deltas) => {
     return {
       props: () => ({
         mode: 'javascript',
+        viewMode: 'text',
         indent: 0
       }),
       children: [{
