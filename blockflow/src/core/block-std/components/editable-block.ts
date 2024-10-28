@@ -40,6 +40,7 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
         // @ts-ignore
         this._textAlign !== this.props.textAlign && (this._textAlign = this.props.textAlign)
         parseInt(this._textIndent) / 2 !== this.props.indent && (this._textIndent = (this.props.indent || 0) * 2 + 'em')
+        this.cdr.markForCheck()
       }
     })
     this.yText.observe((event, tr) => {

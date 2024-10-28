@@ -1,15 +1,15 @@
-import { Overlay } from '@angular/cdk/overlay';
+import {Overlay, OverlayRef} from '@angular/cdk/overlay';
 import { NgForOf } from '@angular/common';
-import { Component, ElementRef, TemplateRef, ViewChild } from '@angular/core';
-import { EditableBlock } from '@core';
+import {ChangeDetectionStrategy, Component, ElementRef, HostBinding, TemplateRef, ViewChild} from '@angular/core';
+import { EditableBlock } from '../../core';
 import { TEMPLATE_LIST, ITemplate } from './const'
 import { TemplatePortal } from '@angular/cdk/portal';
 import { ViewContainerRef } from '@angular/core';
 import { IMermaidBlockModel } from './type';
 import mermaid from 'mermaid'
 import { take } from 'rxjs';
+import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 
-// mermaid.initialize({ startOnLoad: false });
 @Component({
   selector: 'div.mermaid',
   standalone: true,
@@ -17,7 +17,8 @@ import { take } from 'rxjs';
     NgForOf
   ],
   templateUrl: './mermaid.block.html',
-  styleUrl: './mermaid.block.scss'
+  styleUrl: './mermaid.block.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
 
@@ -26,6 +27,11 @@ export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
   @ViewChild('graph', { read: ElementRef }) graph!: ElementRef<HTMLElement>
   @ViewChild('templateListTpl', { read: TemplateRef }) templateListTpl!: TemplateRef<any>
 
+  @HostBinding('attr.data-view-mode')
+  protected _viewMode = 'text'
+
+  private modalRef?: OverlayRef
+
   constructor(
     private overlay: Overlay,
     private vcr: ViewContainerRef
@@ -33,24 +39,38 @@ export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
     super()
   }
 
+  override ngOnInit() {
+    super.ngOnInit();
+    this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
+      if(e.type === 'props') {
+        if (this._viewMode !== this.props.viewMode && this.props.viewMode === 'graph') {
+          this.renderGraph()
+        } else {
+          this.graph.nativeElement.innerHTML = ''
+        }
+        this._viewMode = this.props.viewMode
+      }
+    })
+  }
+
   override ngAfterViewInit(): void {
     super.ngAfterViewInit()
-    this.renderGraph()
-    this.yText.observe(this.renderGraph)
   }
 
   renderGraph = async () => {
     if (!this.textLength) return
-    const graphDefinition = 'graph TB\n' + this.getTextContent();
-    const { svg } = await mermaid.render('graphDiv', graphDefinition);
-    this.graph.nativeElement.innerHTML = svg
+    const graphDefinition = this.getTextContent();
+    const verify = await mermaid.parse(graphDefinition, {suppressErrors: true})
+    if (verify) {
+      const { svg } = await mermaid.render('graphDiv', graphDefinition);
+      this.graph.nativeElement.innerHTML = svg
+    } else {
+        this.graph.nativeElement.innerHTML = `<span style="color: red;">语法错误！</span>`
+    }
   }
 
   onSwitchView() {
     this.setProp('viewMode', this.props.viewMode === 'graph' ? 'text' : 'graph')
-    if (this.props.viewMode === 'graph') {
-      this.renderGraph()
-    }
   }
 
   onShowTemplateList(e: Event) {
@@ -59,21 +79,21 @@ export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
     const positionStrategy = this.overlay.position().flexibleConnectedTo(target).withPositions([
       { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' }
     ])
-    const ovr = this.overlay.create({
+    this.modalRef = this.overlay.create({
       positionStrategy,
       hasBackdrop: true,
       backdropClass: 'cdk-overlay-transparent-backdrop',
     })
-    ovr.backdropClick().pipe(take(1)).subscribe(() => {
-      ovr.dispose()
+    this.modalRef.backdropClick().pipe(take(1)).subscribe(() => {
+      this.modalRef?.dispose()
     })
-    const tcr = ovr.attach(portal)
+    this.modalRef.attach(portal)
   }
 
   useTemplate(item: ITemplate) {
     this.applyDelta([
-      { delete: this.textLength },
-      { insert: item.template }
+      { insert: item.prefix }
     ])
+    this.modalRef?.dispose()
   }
 }

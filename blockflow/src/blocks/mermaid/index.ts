@@ -11,7 +11,6 @@ export const MermaidBlockSchema: EditableBlockSchema<IMermaidBlockModel['props']
   onCreate: (deltas) => {
     return {
       props: () => ({
-        mode: 'javascript',
         viewMode: 'text',
         indent: 0
       }),

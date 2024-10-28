@@ -18,23 +18,15 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
   const {blockId, blockRange} = range
   const {parentId, index} = controller.getBlockPosition(blockId)
 
-  const pasteAsText = () => {
-    const text = clipboardData.getData('text/plain')
+  const pasteAsText = (text: string = clipboardData.getData('text/plain')) => {
     if (!text) return
     const blockRef = controller.getBlockRef(blockId) as EditableBlock
     const deltaInsert: DeltaInsert[] = [{insert: text}]
     applyPasteDeltaToBlock(blockRef, deltaInsert, blockRange)
   }
 
-  if(controller.activeElement?.classList.contains('bf-plain-text-only')) {
-    if(!types.includes('text/plain')) return
-    pasteAsText()
-    return
-  }
-
   // only text/plain
   if (types.length === 1 && types[0] === 'text/plain') {
-    console.log('text/plain')
 
     const text = clipboardData.getData('text/plain')
     if (!text) return
@@ -47,6 +39,7 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
     if (jsonType === 'blocks') {
       if (!jsonData.length) return
       if (parentId !== controller.rootId) return
+
       jsonData.forEach((block, i) => {
         block.id = genUniqueID()
       })
@@ -56,12 +49,26 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
         })
       return;
     }
+
     if (jsonType === 'delta') {
       applyPasteDeltaToBlock(blockRef, jsonData, blockRange)
+
+      if(controller.activeElement?.classList.contains('bf-plain-text-only')) {
+        const text = jsonData.map(d => d.insert).join('')
+        pasteAsText(text)
+        return;
+      }
+
       return;
     }
+
     // data is link
     if (jsonType === 'link' && jsonData) {
+      if(controller.activeElement?.classList.contains('bf-plain-text-only')) {
+        pasteAsText(jsonData)
+        return;
+      }
+
       const deltaInsert: DeltaInsert[] = [{insert: { link: jsonData }, attributes: { 'd:linkText': jsonData, 'd:linkHref': jsonData } }]
       applyPasteDeltaToBlock(blockRef, deltaInsert, blockRange)
       return;

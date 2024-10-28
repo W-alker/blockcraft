@@ -1,8 +1,8 @@
-<nz-tabset [nzSelectedIndex]="activeTabIndex" (nzSelectedIndexChange)="onTabChange($event)">
-  <nz-tab nzTitle="人员">
+<nz-tabset [nzSelectedIndex]="activeTabIndex" (nzSelectedIndexChange)="onTabChange($event)" (mousedown)="$event.preventDefault()">
+  <nz-tab nzTitle="人员" (mousedown)="$event.preventDefault()">
     <ng-container *ngTemplateOutlet="content"></ng-container>
   </nz-tab>
-  <nz-tab nzTitle="文档">
+  <nz-tab nzTitle="文档" (mousedown)="$event.preventDefault()">
     <ng-container *ngTemplateOutlet="content"></ng-container>
   </nz-tab>
 </nz-tabset>

@@ -1,14 +1,13 @@
 <div class="head">
-  <div class="template-btn" (click)="onShowTemplateList($event)">模板</div>
-  <div class="switch-btn" (click)="onSwitchView()">切换</div>
+  <div class="template-btn btn" (click)="onShowTemplateList($event)">类型 <i class="bf_icon bf_xiajaintou" style="font-size: .8em"></i></div>
+<!--  <div class="template-btn btn" (click)="onShowTemplateList($event)">模板 <i class="bf_icon bf_xiajaintou"></i></div>-->
+  <div class="switch-btn btn" (click)="onSwitchView()"><i class="bf_icon bf_qiehuan"></i></div>
 </div>
 
-<!-- @if (props.viewMode === 'text') { -->
-<div class="editable-container bf-multi-line bf-plain-text-only"></div>
-<!-- } -->
-<!-- @else { -->
-<div class="graph-con" #graph></div>
-<!-- } -->
+<div class="container">
+  <div class="editable-container bf-multi-line bf-plain-text-only"></div>
+  <div class="graph-con" #graph></div>
+</div>
 
 <ng-template #templateListTpl>
   <div class="template-list">

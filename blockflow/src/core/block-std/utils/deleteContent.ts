@@ -3,6 +3,8 @@ export const deleteContent = (ele: HTMLElement, from: number, count: number) => 
   let currentPos = 0;
   let end = from + count;
 
+  if(ele.childNodes.length === 0) return;
+
   for (let i = 0; i < ele.childNodes.length; i++) {
     const child = ele.children[i];
     const textNode = child.firstChild as Text;

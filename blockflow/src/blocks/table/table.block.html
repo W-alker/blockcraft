@@ -1,0 +1,15 @@
+<div class="table-col-resize-bar" *ngIf="!(controller.readonly$ | async)"
+     [hidden]="resizeColIdx < 0" [style.left.px]="resizeBarX" (mousedown)="onResizebarMouseDown($event)" ></div>
+
+<table tabindex="0" #tableElement (keydown)="onKeyDown($event)" (blur)="onBlur()" (mousedown)="onMouseDown($event)" (mouseover)="onMouseOver($event)">
+    <colgroup>
+        <col *ngFor="let column of _colWidths" [style.width.px]="column">
+    </colgroup>
+
+    <tbody>
+    <tr class="table-row" *ngFor="let row of model.children; index as rowIdx; trackBy: trackById" [rowIdx]="rowIdx"
+        [controller]="controller" [model]="$any(row)"></tr>
+    </tbody>
+</table>
+
+

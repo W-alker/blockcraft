@@ -1,10 +1,10 @@
 :host {
   --code-padding-left: calc(var(--bf-fs) * 2);
-  --code-padding-top: var(--bf-lh);
-  padding: var(--code-padding-top) var(--code-padding-left);
-  border: 1px solid #dee0e3;
+  --code-padding-top: calc(var(--bf-lh) * 1.5);
+  --code-padding-bottom: 20px;
+  padding: var(--code-padding-top) var(--code-padding-left) var(--code-padding-bottom);
+  border: 1px solid #e6e6e6;
   border-radius: 4px;
-  background-color: var(--bf-bg);
 
   &:focus-within {
     .line-numbers {
@@ -20,7 +20,7 @@
     top: var(--code-padding-top);
     left: 0;
     width: calc(var(--code-padding-left) * 0.8);
-    height: calc(100% - var(--code-padding-top) * 2);
+    height: calc(100% - var(--code-padding-top) - var(--code-padding-bottom));
     color: #abb2bf;
     font-size: calc(var(--bf-fs) * 0.9);
     pointer-events: none;
@@ -50,14 +50,17 @@
     line-height: var(--bf-lh);
     overflow-wrap: break-word;
     font-family: "DM Mono", monospace;
+    white-space: pre-wrap;
+    overflow: hidden;
   }
 
   ::ng-deep .highlight-container {
     position: absolute;
     top: var(--code-padding-top);
     left: var(--code-padding-left);
-    width: 100%;
+    width: calc(100% - var(--code-padding-left) * 2);
     pointer-events: none;
+    white-space: pre-wrap;
 
     span {
       white-space: pre-wrap;
@@ -153,24 +156,24 @@
   user-select: none;
   position: absolute;
   top: 0;
-  left: var(--code-padding-left);
-  height: var(--code-padding-top);
-  line-height: var(--code-padding-top);
+  right: var(--code-padding-left);
   font-size: calc(var(--bf-fs) * .7);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  color: #86acff;
 
-  >span {
-    display: flex;
-    align-items: center;
-    height: 2em;
-    line-height: 2em;
-    text-align: center;
-    color: #86acff;
-    cursor: pointer;
+  > span {
+    pointer-events: none;
+    height: var(--code-padding-top);
+    line-height: var(--code-padding-top);
+  }
 
-    >i {
-      font-size: inherit;
-      transform: rotate(180deg);
-    }
+  > i {
+    font-size: inherit;
+    pointer-events: none;
   }
 }
 
@@ -191,7 +194,7 @@
     border-radius: 4px;
 
     &:hover {
-      background-color: rgba(153, 153, 153, .3);
+      background-color: rgba(153, 153, 153, .1);
     }
   }
 }

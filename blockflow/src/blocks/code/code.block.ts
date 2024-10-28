@@ -2,7 +2,6 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
-  inject,
   TemplateRef,
   ViewChild,
   ViewContainerRef
@@ -45,9 +44,9 @@ import { LangNamePipe } from "./langName.pipe";
 export class CodeBlock extends EditableBlock<ICodeBlockModel> {
 
   @ViewChild('highlighter', { read: ElementRef }) highlighter!: ElementRef<HTMLDivElement>
-  @ViewChild('modeList', { read: TemplateRef }) modeList!: TemplateRef<any>
-  @ViewChild('showModeBtn', { read: ElementRef }) showModeBtn!: ElementRef<HTMLDivElement>
+  @ViewChild('langListTpl', { read: TemplateRef }) langListTpl!: TemplateRef<any>
 
+  protected readonly languageList = languageList;
   protected lines: string[] = []
   private resizeSub?: ResizeObserver
 
@@ -61,8 +60,15 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
   override ngAfterViewInit() {
     super.ngAfterViewInit();
     this.highlight()
+
     this.yText.observe(() => {
       this.highlight()
+    })
+
+    this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
+        if (e.type === 'props') {
+          this.highlight()
+        }
     })
 
     fromEventPattern(
@@ -123,25 +129,24 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
 
   changeLanguage(mode: string) {
     this.setProp('lang', mode)
-    this.highlight()
     this.cdr.markForCheck()
   }
 
-  showLangList() {
-    const positionStrategy = this.overlay.position().flexibleConnectedTo(this.showModeBtn.nativeElement).withPositions([
+  showLangList(e: Event) {
+    const positionStrategy = this.overlay.position().flexibleConnectedTo(e.target as HTMLElement).withPositions([
       { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' }
     ])
-    const portal = new TemplatePortal(this.modeList, this.vcr)
+    console.log(this.langListTpl, this.vcr)
+    const portal = new TemplatePortal(this.langListTpl, this.vcr)
     const ovr = this.overlay.create({
       positionStrategy,
       hasBackdrop: true,
       backdropClass: 'cdk-overlay-transparent-backdrop',
     })
-    const cpr = ovr.attach(portal)
+    ovr.attach(portal)
     ovr.backdropClick().subscribe(() => {
       ovr.dispose()
     })
   }
 
-  protected readonly languageList = languageList;
 }

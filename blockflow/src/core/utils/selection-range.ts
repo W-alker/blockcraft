@@ -72,6 +72,7 @@ export const getRange = (containerEl = document.activeElement as HTMLElement): I
   * @returns {number} - 纯文本的字符索引
  */
 const findCharacterIndexByCursor = (containerEl: HTMLElement, node: Node, offset: number) => {
+  if(!containerEl.isContentEditable) throw new Error('containerEl is not contentEditable')
   const range = document.createRange()
   range.setStart(containerEl, 0)
   range.setEnd(node, offset)

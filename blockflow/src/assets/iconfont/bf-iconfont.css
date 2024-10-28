@@ -1,9 +1,9 @@
 @font-face {
   font-family: "bf_icon"; /* Project id 4682833 */
-  src: url('//at.alicdn.com/t/c/font_4682833_f6134nag6rw.woff2?t=1729678963369') format('woff2'),
-  url('//at.alicdn.com/t/c/font_4682833_f6134nag6rw.woff?t=1729678963369') format('woff'),
-  url('//at.alicdn.com/t/c/font_4682833_f6134nag6rw.ttf?t=1729678963369') format('truetype'),
-  url('//at.alicdn.com/t/c/font_4682833_f6134nag6rw.svg?t=1729678963369#bf_icon') format('svg');
+  src: url('//at.alicdn.com/t/c/font_4682833_zv9dvp1def.woff2?t=1730082174148') format('woff2'),
+  url('//at.alicdn.com/t/c/font_4682833_zv9dvp1def.woff?t=1730082174148') format('woff'),
+  url('//at.alicdn.com/t/c/font_4682833_zv9dvp1def.ttf?t=1730082174148') format('truetype'),
+  url('//at.alicdn.com/t/c/font_4682833_zv9dvp1def.svg?t=1730082174148#bf_icon') format('svg');
 }
 
 .bf_icon {
@@ -12,6 +12,10 @@
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.bf_qiehuan:before {
+  content: "\e606";
 }
 
 .bf_dianzan1:before {

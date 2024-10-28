@@ -1,4 +1,4 @@
-import {debounceTime, fromEvent, fromEventPattern, Subscription, take} from "rxjs";
+import {debounceTime, fromEvent, fromEventPattern, Subscription, take, takeUntil, throttleTime} from "rxjs";
 import {MentionDialog} from "./widget/mention-dialog";
 import {ComponentRef, TemplateRef, ViewContainerRef} from "@angular/core";
 import {BlockflowInline, Controller, IPlugin, USER_CHANGE_SIGNAL} from "../../core";
@@ -70,7 +70,7 @@ export class MentionPlugin implements IPlugin {
   subRootInput() {
     this._rootInputSub = fromEvent<InputEvent>(this.controller.rootElement, 'input')
       .subscribe((e) => {
-        if (e.data !== '@' || this._mentionElement) return
+        if (e.data !== '@' || this._mentionElement || this.controller.activeElement?.classList.contains('bf-plain-text-only')) return
 
         const selection = document.getSelection()!
         const node = selection.focusNode! as Text
@@ -134,9 +134,10 @@ export class MentionPlugin implements IPlugin {
       handler => this._mentionInputObserver.disconnect()
     ).pipe(debounceTime(300)).subscribe(search)
 
-    this._dialog?.instance.tabChange.pipe(take(1)).subscribe((type: MentionType) => {
+    this._dialog?.instance.tabChange.pipe(takeUntil(this._dialog?.instance.close)).subscribe((type: MentionType) => {
       this._activeTab = type
     })
+
     this._dialog?.instance.itemSelect.pipe(take(1)).subscribe((item: IMentionData) => {
       this.setMention(item)
       this.closeMention()
@@ -179,9 +180,8 @@ export class MentionPlugin implements IPlugin {
         }
       })
 
-    const sub = fromEvent(document, 'selectionchange').pipe(debounceTime(100))
+    const sub = fromEvent(document, 'selectionchange')
       .subscribe(() => {
-        console.log('selectionchange')
         const selection = document.getSelection()
         if (!selection || selection.focusNode !== node) {
           this.closeMention()

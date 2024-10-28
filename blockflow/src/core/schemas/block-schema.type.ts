@@ -20,10 +20,11 @@ export interface BlockSchema<T extends IBlockProps = IBlockProps> {
     meta?: () => IMetadata,
     children: Array<DeltaInsert> | Array<{ flavour: IBlockFlavour, params?: any[] }>
   },
-  icon: string;
+  icon?: string;
   svgIcon?: string;
   label: string;
   description?: string;
+  isLeaf?: boolean;
 }
 
 export interface EditableBlockSchema<Props extends IEditableBlockModel["props"]> extends BlockSchema<Props> {

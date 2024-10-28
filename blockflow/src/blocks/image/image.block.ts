@@ -28,7 +28,7 @@ import {OverlayModule} from "@angular/cdk/overlay";
               <span class="img-default-skeleton__error" *ngIf="imgLoadState === 'error'">加载失败!</span>
           </div>
 
-          <div class="bf-float-toolbar img-block__toolbar" *ngIf="resizeMode !== 'none'"
+          <div class="bf-float-toolbar img-block__toolbar" *ngIf="imgLoadState === 'loaded' && resizeMode !== 'none'"
                [toolbarList]="TOOLBAR_LIST" (click)="$event.stopPropagation();"
                (itemClick)="onToolbarItemClick($event)">
           </div>

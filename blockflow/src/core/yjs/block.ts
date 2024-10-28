@@ -92,6 +92,7 @@ export class BlockModel<Model extends IBlockModel = IBlockModel> {
   }
 
   static fromYModel(yModel: YBlockModel) {
+    console.log(yModel)
     const model = yModel.toJSON() as IBlockModel
     let children: (BlockModel | IInlineModel)[]
     const yChildren = yModel.get('children')

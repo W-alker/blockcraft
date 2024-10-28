@@ -5,22 +5,14 @@
 </div>
 
 <div class="editable-container bf-multi-line bf-plain-text-only">
-  <!--  <div class="copy-btn" (click)="copyAll()" >-->
-  <!--    <i class="editor editor-xuqiuwendang_fuzhi"></i>-->
-  <!--    <span>Copy</span>-->
-  <!--  </div>-->
-</div>
-<ng-container *ngIf="!(controller.readonly$ | async)">
-</ng-container>
-
-<div class="lang-btn" #showModeBtn>
-  <span (click)="showLangList()">{{props.lang}} <i
-      class="editor editor-opt"></i> </span>
 </div>
 
 <div class="highlight-container" #highlighter></div>
 
-<ng-template #modeList>
+<div class="lang-btn" (click)="showLangList($event)">
+  <span>{{props.lang | lang}}</span> <i class="bf_icon bf_xiajaintou"></i>
+</div>
+<ng-template #langListTpl>
   <div class="lang-list">
     <div class="lang-list_item" *ngFor="let item of languageList"
       (click)="changeLanguage(item.value)">

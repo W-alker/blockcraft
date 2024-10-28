@@ -1,0 +1,52 @@
+:host {
+  display: block;
+  position: relative;
+
+  .table-col-resize-bar {
+    z-index: 1;
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 4px;
+    background-color: #4857E2;
+    cursor: col-resize;
+    opacity: 0;
+    transition: opacity .2s;
+
+    &:hover {
+      opacity: 1;
+    }
+  }
+
+  table {
+    position: relative;
+    border-top: 1px solid #ccc;
+    border-right: 1px solid #ccc;
+    outline: none;
+
+    $selectedBorder: 1px solid #1890ff;
+    $border: 1px solid #ccc;
+    $selectedBgColor: rgba(230, 247, 255, .6);
+
+    ::ng-deep td {
+      min-width: 50px;
+      padding: 10px;
+      border-left: 1px solid #ccc;
+      border-bottom: 1px solid #ccc;
+      position: relative;
+
+      &.selected {
+        background-color: $selectedBgColor;
+      }
+
+      .xe-text {
+        padding: 5px 10px;
+        min-height: calc(var(--xe-line-height) + 10px);
+        word-break: break-word;
+      }
+    }
+  }
+
+}
+

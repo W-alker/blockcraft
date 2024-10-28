@@ -9,3 +9,4 @@ export * from './callout';
 export * from './code';
 export * from './link'
 export * from './mermaid'
+export * from './table'

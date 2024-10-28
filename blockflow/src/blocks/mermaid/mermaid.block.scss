@@ -1,11 +1,51 @@
 :host {
   display: block;
-  padding: var(--bf-lh);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #e6e6e6;
+
+  &[data-view-mode="text"] {
+    .graph-con {
+      visibility: hidden;
+      height: 0;
+      overflow: hidden;
+    }
+  }
+
+  &[data-view-mode="graph"] {
+    .editable-container {
+      visibility: hidden;
+      height: 0;
+      overflow: hidden;
+      min-height: 0;
+    }
+  }
 
   .head {
+    background-color: var(--bf-bg);
     display: flex;
     align-items: center;
     position: relative;
+    padding: 8px 20px;
+    border-bottom: 1px solid #e6e6e6;
+
+    .btn {
+      padding: 4px 8px;
+      cursor: pointer;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: small;
+
+      &:hover {
+        background-color: rgba(153, 153, 153, .1);
+      }
+
+      > * {
+        pointer-events: none;
+      }
+    }
 
     .switch-btn {
       position: absolute;
@@ -15,8 +55,14 @@
     }
   }
 
-  .editable-container {
-    background-color: var(--bf-bg);
+  .container {
+    padding: 20px 20px;
+    font-family: "DM Mono", monospace;
+    color: #333;
+  }
+
+  .graph-con {
+    overflow-x: auto;
   }
 }
 

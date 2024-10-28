@@ -76,6 +76,18 @@ export const blockTransforms: IBlockTransformConfig[] = [
     description: `分割线(⌘/Ctrl + Shift + H)\nMarkdown: --- (空格)`,
     markdown: /^---(\s+)?$/,
     hotkey: (e) => e.code === 'KeyH' && (e.ctrlKey || e.metaKey) && e.shiftKey
+  },
+  {
+    flavour: 'divider',
+    description: `分割线(⌘/Ctrl + Shift + H)\nMarkdown: --- (空格)`,
+    markdown: /^---(\s+)?$/,
+    hotkey: (e) => e.code === 'KeyH' && (e.ctrlKey || e.metaKey) && e.shiftKey
+  },
+  {
+    flavour: 'code',
+    description: `代码块(⌘/Ctrl + Shift + C)\nMarkdown: \`\`\` (空格)`,
+    markdown: /^```(\s+)?$/,
+    hotkey: (e) => e.code === 'KeyC' && (e.ctrlKey || e.metaKey) && e.shiftKey
   }
 ]
 

@@ -45,7 +45,7 @@ export class MentionDialog {
 
   @Output() tabChange = new EventEmitter<MentionType>()
   @Output() itemSelect = new EventEmitter<IMentionData>()
-
+  @Output() close = new EventEmitter<boolean>()
 
   @HostListener('mousedown', ['$event'])
   mousedown(event: MouseEvent) {
@@ -99,5 +99,8 @@ export class MentionDialog {
     this.tabChange.emit(index === 0 ? 'user' : 'doc')
   }
 
+  ngOnDestroy() {
+    this.close.emit(true)
+  }
 
 }

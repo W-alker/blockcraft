@@ -16,7 +16,7 @@ import {Injector} from "@angular/core";
 import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
 import {IBlockFlavour, IBlockModel} from "../types";
 import {IBlockFlowRange} from "./type";
-import {CharacterIndex, getCurrentCharacterRange} from "../utils";
+import {CharacterIndex, genUniqueID, getCurrentCharacterRange} from "../utils";
 import {IOrderedListBlockModel, updateOrderAround} from "../../blocks";
 import Y from "../yjs";
 
@@ -46,7 +46,7 @@ export class Controller {
   private blocksReady$ = new Subject()
 
   public readonly rootModel: BlockModel[] = []
-  public readonly yDoc = new Y.Doc()
+  public readonly yDoc = new Y.Doc({gc: false, guid: this.config.rootId})
   public readonly rootYModel = this.yDoc.getArray<YBlockModel>(this.rootId)
   private _rootYModelObserver = (event: Y.YArrayEvent<YBlockModel>, tr: Y.Transaction) => {
     if (tr.origin === USER_CHANGE_SIGNAL || tr.origin === NO_RECORD_CHANGE_SIGNAL) return
@@ -206,7 +206,11 @@ export class Controller {
       } else {
         const parentModel = this.getBlockRef(parentId)?.model
         if (!parentModel) return reject(new Error(`Parent block ${parentId} not found`))
-        parentModel.insertChildren(index, blocks)
+
+        this.transact(() => {
+          parentModel.insertChildren(index, blocks)
+        }, unRecord ? NO_RECORD_CHANGE_SIGNAL : USER_CHANGE_SIGNAL)
+
       }
 
       const olIndex = blocks.findIndex(b => b.flavour === 'ordered-list')
@@ -221,7 +225,6 @@ export class Controller {
     if (parentId === this.rootId) {
       this.transact(() => {
         const items = this.rootModel.splice(index, count)
-        console.log('deleteBlocks', index, count, items)
         this.rootYModel.delete(index, count)
 
         if (items.some(b => b.flavour === 'ordered-list')) {
@@ -230,11 +233,13 @@ export class Controller {
         }
 
       }, USER_CHANGE_SIGNAL)
+
       return
     }
     const parentModel = this.getBlockModel(parentId)
     if (!parentModel) throw new Error(`Parent block ${parentId} not found`)
     parentModel.deleteChildren(index, count)
+
   }
 
   deleteBlockById(id: string) {
@@ -269,18 +274,19 @@ export class Controller {
 
     // console.log(originModel, targetModel)
 
-    const originParent = originModel.yModel.parent as Y.Array<YBlockModel>
-    const targetParent = targetModel.yModel.parent as Y.Array<YBlockModel>
+    // const originParent = originModel.yModel.parent as Y.Array<YBlockModel>
+    // const targetParent = targetModel.yModel.parent as Y.Array<YBlockModel>
 
     const insertIndex = position === 'before'
       ? (originPos.index < targetPos.index ? targetPos.index - 1 : targetPos.index)
       : (originPos.index < targetPos.index ? targetPos.index : targetPos.index + 1)
 
-    this.transact(() => {
-      const ym = originModel.yModel.clone()
-      originParent.delete(originPos.index, 1)
-      targetParent.insert(insertIndex, [ym])
-    })
+    const ym = originModel.toJSON() as IBlockModel
+    ym.id = genUniqueID()
+
+    // TODO: 优化，允许跨父级移动
+    this.deleteBlocks(originPos.index, 1)
+    this.insertBlocks(insertIndex, [BlockModel.fromModel(ym)])
   }
 
   /** ---------------block operation---------------- end **/

@@ -14,7 +14,6 @@ import {Overlay} from "@angular/cdk/overlay";
 import {TemplatePortal} from "@angular/cdk/portal";
 import {fromEvent} from "rxjs";
 import {MatIconModule} from "@angular/material/icon";
-
 export * from './type'
 
 @Component({
@@ -35,7 +34,7 @@ export * from './type'
       <ng-container *ngIf="activeBlock.nodeType === 'editable'">
         <h4 class="title">基础</h4>
         <ul class='base-list'>
-          <li class="base-list__item" *ngFor="let item of baseBlockList" [title]="item.description"
+          <li class="base-list__item" *ngFor="let item of baseBlockList" [title]="item.description || item.label"
               (mousedown)="onMouseDown($event, item, 'block')" [class.active]="activeBlock.flavour === item.flavour">
             <ng-container *ngTemplateOutlet="item.svgIcon ? svgIcon : icon; context: {$implicit: item}">
             </ng-container>
@@ -80,7 +79,7 @@ export * from './type'
       <h4 class="title" *ngIf="commonBlockList.length">常用</h4>
       <ul class='common-list'>
         <ng-container *ngIf="activeBlock.nodeType !== 'editable'">
-          <li class="common-list__item" *ngFor="let item of baseBlockList" [title]="item.description"
+          <li class="common-list__item" *ngFor="let item of baseBlockList" [title]="item.description || item.label"
               (mousedown)="onMouseDown($event, item, 'block')">
             <ng-container *ngTemplateOutlet="item.svgIcon ? svgIcon : icon; context: {$implicit: item}">
             </ng-container>
@@ -88,7 +87,7 @@ export * from './type'
           </li>
         </ng-container>
 
-        <li class="common-list__item" *ngFor="let item of commonBlockList" [title]="item.description"
+        <li class="common-list__item" *ngFor="let item of commonBlockList" [title]="item.description || item.label"
             (mousedown)="onMouseDown($event, item, 'block')">
           <ng-container *ngTemplateOutlet="item.svgIcon ? svgIcon : icon; context: {$implicit: item}">
           </ng-container>
@@ -229,7 +228,7 @@ export class BlockFlowContextmenu {
   set controller(val: Controller) {
     if (!val) throw new Error('Controller is required')
     this._controller = val
-    const schemas = val.schemas.values()
+    const schemas = val.schemas.values().filter(schema => !schema.isLeaf)
     this.baseBlockList = schemas.filter(schema => schema.nodeType === 'editable')
     this.commonBlockList = schemas.filter(schema => schema.nodeType !== 'editable')
   }
