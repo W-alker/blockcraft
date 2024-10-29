@@ -7,6 +7,11 @@ export const deleteContent = (ele: HTMLElement, from: number, count: number) => 
 
   for (let i = 0; i < ele.childNodes.length; i++) {
     const child = ele.children[i];
+    if(child.tagName === 'BR') {
+      child.remove();
+      i--;
+      continue;
+    }
     const textNode = child.firstChild as Text;
     const textLength = textNode.length;
 

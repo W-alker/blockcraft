@@ -6,7 +6,8 @@ export const MermaidBlockSchema: EditableBlockSchema<IMermaidBlockModel['props']
   flavour: 'mermaid',
   nodeType: 'editable',
   render: MermaidBlock,
-  icon: 'bf_icon bf_daimakuai',
+  icon: 'bf_icon bf_daimahuitu',
+  svgIcon: 'bf_daimahuitu',
   label: '代码绘图',
   onCreate: (deltas) => {
     return {

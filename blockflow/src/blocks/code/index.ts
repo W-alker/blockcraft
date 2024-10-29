@@ -7,6 +7,7 @@ export const CodeBlockSchema: EditableBlockSchema<ICodeBlockModel['props']> = {
   nodeType: 'editable',
   render: CodeBlock,
   icon: 'bf_icon bf_daimakuai',
+  svgIcon: 'bf_daimakuai1',
   label: '代码块',
   onCreate: (deltas) => {
     return {

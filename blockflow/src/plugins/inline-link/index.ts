@@ -55,7 +55,7 @@ export class InlineLinkPlugin implements IPlugin {
         hasBackdrop: true,
         backdropClass: 'cdk-overlay-transparent-backdrop',
       })
-      ref.backdropClick().subscribe(() => {
+      ref.backdropClick().pipe(take(1)).subscribe(() => {
         ref.dispose()
       })
       return ref

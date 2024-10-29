@@ -1,6 +1,18 @@
 :host {
   display: block;
   position: relative;
+  $selectedBgColor: rgba(95, 111, 255, 0.08);
+  padding: 0 2px 0 6px;
+
+  &:hover, &:focus-within {
+    .table-header_row-bar {
+      display: block;
+    }
+
+    .table-header_col-bar {
+      display: flex;
+    }
+  }
 
   .table-col-resize-bar {
     z-index: 1;
@@ -8,42 +20,132 @@
     top: 0;
     left: 0;
     height: 100%;
-    width: 4px;
+    width: 6px;
     background-color: #4857E2;
     cursor: col-resize;
     opacity: 0;
     transition: opacity .2s;
 
-    &:hover {
+    &.active, &:hover {
       opacity: 1;
+    }
+  }
+
+  colgroup {
+    col {
+      &.active {
+        background: $selectedBgColor !important;
+      }
+    }
+  }
+
+  .table-wrapper {
+    padding-top: 6px;
+    position: relative;
+    overflow-x: auto;
+    scrollbar-width: thin; /* Firefox滚动条样式 */
+    scrollbar-color: rgba(153, 153, 153, 0.5) transparent;
+
+    &.col-head {
+
+      ::ng-deep td:first-child {
+        font-weight: bold;
+      }
+
+      col:first-child {
+        background: #f2f3f5;
+      }
+    }
+
+    &.row-head {
+
+      tr:first-child {
+        font-weight: bold;
+        background: #f2f3f5;
+      }
+
+    }
+  }
+
+  .table-header_col-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: none;
+
+    &.active {
+      display: flex;
+    }
+
+    > span {
+      height: 6px;
+      background: #F1F1F1;
+      cursor: pointer;
+      position: relative;
+
+      &:hover {
+        background: #E0E0E0;
+      }
+
+      &.active {
+        background: rgba(72, 87, 226, 1);
+      }
+    }
+  }
+
+  .table-header_row-bar {
+    display: none;
+    position: absolute;
+    top: 6px;
+    left: 0;
+    height: 100%;
+    overflow: hidden;
+
+    &.active {
+      display: block;
+    }
+
+    > span {
+      display: block;
+      width: 6px;
+      background: #F1F1F1;
+      cursor: pointer;
+      position: relative;
+
+      &.active {
+        background: rgba(72, 87, 226, 1);
+      }
+
+      &:hover {
+        background: #E0E0E0;
+      }
     }
   }
 
   table {
     position: relative;
-    border-top: 1px solid #ccc;
-    border-right: 1px solid #ccc;
     outline: none;
-
+    table-layout: fixed;
+    border-collapse: collapse;
+    width: fit-content;
     $selectedBorder: 1px solid #1890ff;
     $border: 1px solid #ccc;
-    $selectedBgColor: rgba(230, 247, 255, .6);
 
-    ::ng-deep td {
-      min-width: 50px;
-      padding: 10px;
-      border-left: 1px solid #ccc;
-      border-bottom: 1px solid #ccc;
+    tr {
       position: relative;
+
+      &.active {
+        background: $selectedBgColor !important;
+      }
+    }
+
+    ::ng-deep .table-cell {
+      padding: 10px;
+      position: relative;
+      border: 1px solid #ccc;
 
       &.selected {
         background-color: $selectedBgColor;
-      }
-
-      .xe-text {
-        padding: 5px 10px;
-        min-height: calc(var(--xe-line-height) + 10px);
-        word-break: break-word;
       }
     }
   }

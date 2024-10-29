@@ -149,7 +149,11 @@ export const findNodeByIndex = (ele: HTMLElement, index: number, findFrom?: ICha
   const childElements = ele.children
   for (let i = findFrom?.eleOffset || 0; i < childElements.length; i++) {
     const child = childElements[i]
-
+    if(child.tagName === 'BR') {
+      child.remove()
+      i--
+      continue
+    }
     const childTextLength = child.textContent?.length || 1
     if (cnt + childTextLength >= index) {
       return {

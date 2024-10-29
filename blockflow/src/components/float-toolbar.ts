@@ -61,12 +61,18 @@ export interface IToolbarItem {
           font-size: 14px;
       }
 
+      .bf-float-toolbar__item > i {
+        font-size: inherit;
+        color: inherit;
+      }
+
       .bf-float-toolbar__item:hover {
           background: rgba(215, 215, 215, 0.6);
       }
 
       .bf-float-toolbar__item.active {
           background: rgba(95, 111, 255, 0.08);
+          color: #4857E2;
       }
 
   `],

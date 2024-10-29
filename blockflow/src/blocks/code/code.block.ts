@@ -9,7 +9,7 @@ import {
 import { EditableBlock } from "../../core";
 import { ICodeBlockModel } from "./type";
 import { Overlay, OverlayModule } from "@angular/cdk/overlay";
-import { fromEventPattern } from "rxjs";
+import {fromEventPattern, take} from "rxjs";
 import { AsyncPipe, NgForOf, NgIf } from "@angular/common";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { format } from "prettier/standalone";
@@ -144,7 +144,7 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
       backdropClass: 'cdk-overlay-transparent-backdrop',
     })
     ovr.attach(portal)
-    ovr.backdropClick().subscribe(() => {
+    ovr.backdropClick().pipe(take(1)).subscribe(() => {
       ovr.dispose()
     })
   }

@@ -43,7 +43,7 @@ interface BlockSchemaMap {
 @Component({
     selector: 'test-page',
     template: `
-        <bf-editor [config]="config" #editor style="padding: 30px; height: 80vh"></bf-editor>
+        <bf-editor [config]="config" #editor style="padding: 30px; height: 80vh; width: 70vw"></bf-editor>
 
         <button (click)="onClickReadonly()">切换只读</button>
         <button (click)="onClick1()">删除第二个</button>
