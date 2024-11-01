@@ -4,7 +4,6 @@ import {NgIf} from "@angular/common";
 import {NzDatePickerModule} from "ng-zorro-antd/date-picker";
 import {EditableBlock} from "../../core";
 import {ITodoListBlockModel} from "./type";
-import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 
 @Component({
   selector: 'div.todo-list',

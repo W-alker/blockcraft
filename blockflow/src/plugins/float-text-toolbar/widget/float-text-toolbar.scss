@@ -6,17 +6,21 @@
   .bf-float-toolbar {
 
     &__item {
-      &[data-name="mark"] {
-        &::before {
-          content: '';
-          position: absolute;
-          bottom: 5px;
-          left: 5px;
-          width: 14px;
-          height: 2px;
-          background: var(--color);
+
+      &.mark {
+        background-color: var(--background);
+        border-radius: 4px;
+
+        &:hover {
+          background: #F5F5F5;
         }
+
+        > i:first-child {
+          color: var(--color);
+        }
+
       }
+
     }
 
     &__children {
@@ -65,37 +69,6 @@
 
     }
 
-    &__mark {
-
-      &__title {
-        margin: 0 0 4px;
-        color: #999;
-        font-size: 14px;
-        font-style: normal;
-        font-weight: 600;
-        line-height: 20px;
-      }
-
-      &__list {
-        width: 224px;
-        display: flex;
-        justify-content: space-around;
-
-        &__item {
-          width: 20px;
-          height: 20px;
-          border-radius: 4px;
-          cursor: pointer;
-          text-align: center;
-          line-height: 20px;
-
-          &.active {
-            outline: 1px solid #4857E2;
-          }
-
-        }
-      }
-    }
   }
 
   .line {

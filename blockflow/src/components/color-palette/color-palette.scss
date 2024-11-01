@@ -1,0 +1,56 @@
+:host {
+
+  .gap {
+    height: 8px;
+    background: transparent;
+  }
+
+  .container {
+    background: var(--bf-bg);
+    box-shadow: 0px 0px 20px 0px rgba(0, 0, 0, 0.10);
+    overflow: hidden;
+
+    @keyframes bf_expand_color_picker {
+      from {
+        max-height: 0;
+      }
+      to {
+        max-height: 240px;
+      }
+    }
+
+    animation: bf_expand_color_picker 0.15s ease-in-out;
+
+    .title {
+      margin: 0 0 4px;
+      color: #999;
+      font-size: 14px;
+      font-style: normal;
+      font-weight: 600;
+      line-height: 20px;
+    }
+
+    .list {
+      width: 224px;
+      display: flex;
+      justify-content: space-around;
+
+      &__item {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        text-align: center;
+        line-height: 20px;
+
+        &:hover {
+          outline: 2px solid rgba(72, 87, 226, 0.6);
+        }
+
+        &.active {
+          outline: 2px solid #4857E2;
+        }
+      }
+    }
+  }
+}

@@ -71,6 +71,10 @@ export class MentionDialog {
     this.cdr.detectChanges()
   }
 
+  ngOnInit() {
+    this.onTabChange(0)
+  }
+
   ngAfterViewInit() {
     // 确保元素在视口内
     const rect = this.elementRef.nativeElement.getBoundingClientRect()

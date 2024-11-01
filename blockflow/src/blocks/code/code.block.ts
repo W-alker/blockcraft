@@ -6,13 +6,12 @@ import {
   ViewChild,
   ViewContainerRef
 } from "@angular/core";
-import { EditableBlock } from "../../core";
+import {DeltaOperation, EditableBlock} from "../../core";
 import { ICodeBlockModel } from "./type";
 import { Overlay, OverlayModule } from "@angular/cdk/overlay";
 import {fromEventPattern, take} from "rxjs";
 import { AsyncPipe, NgForOf, NgIf } from "@angular/common";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
-import { format } from "prettier/standalone";
 import * as Prism from 'prismjs';
 // 可选：导入其他语言支持
 import 'prismjs/components/prism-javascript';
@@ -61,8 +60,11 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
     super.ngAfterViewInit();
     this.highlight()
 
-    this.yText.observe(() => {
-      this.highlight()
+    this.yText.observe(e => {
+      this.applyDeltaToView(e.delta as DeltaOperation[], false, this.highlighter.nativeElement)
+      Promise.resolve().then(() => {
+        this.highlight()
+      })
     })
 
     this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
@@ -100,27 +102,26 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
         if (typeof token === 'string') {
           return `<span>${token}</span>`;
         } else {
-          const className = `token ${token.type}`;
           const content = Array.isArray(token.content)
             ? this.tokensToHTML(token.content)
             : token.content;
-          return `<span class="${className}">${content}</span>`;
+          return `<span class="${token.type}">${content}</span>`;
         }
       })
       .join('');
   }
 
-  formatCode() {
-    // 使用 Prettier 格式化代码
-    format(this.getTextContent(), {
-      tabWidth: 2,
-      useTabs: false,
-    }).then((formattedCode) => {
-      this.yText.delete(0, this.yText.length)
-      this.yText.insert(0, formattedCode)
-      this.highlight(formattedCode)
-    })
-  }
+  // formatCode() {
+  //   // 使用 Prettier 格式化代码
+  //   format(this.getTextContent(), {
+  //     tabWidth: 2,
+  //     useTabs: false,
+  //   }).then((formattedCode) => {
+  //     this.yText.delete(0, this.yText.length)
+  //     this.yText.insert(0, formattedCode)
+  //     this.highlight(formattedCode)
+  //   })
+  // }
 
   setLines() {
     this.lines = this.getTextContent().replace(/\n$/, '').split('\n')

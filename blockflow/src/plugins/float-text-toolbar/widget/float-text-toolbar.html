@@ -1,8 +1,8 @@
 <div class="bf-float-toolbar__container" #container>
   <ng-container *ngFor="let menu of toolbarMenuList">
-    <div class="line" *ngIf="menu.name=='|' else item"></div>
+    <div class="line" *ngIf="menu.name=='|' else item" [style.order]="menu.order"></div>
     <ng-template #item>
-      <div class="bf-float-toolbar__item" [attr.data-name]="menu.name" [style.--color]="menu.name === 'mark' ? menu.value : ''"
+      <div class="bf-float-toolbar__item" [attr.data-name]="menu.name" [style.order]="menu.order"
            [title]="menu.intro" (mousedown)="onMousedown($event, menu)"
            (mouseenter)="onMouseEnter($event, menu)"
            (mouseleave)="onMouseLeave($event, menu)">
@@ -11,6 +11,12 @@
       </div>
     </ng-template>
   </ng-container>
+  <div class="bf-float-toolbar__item mark" [style.--color]="markMenu.activeColor" [style.--background]="markMenu.activeBgColor "
+       title="高亮颜色" (mousedown)="onMark($event)" style="order: 7"
+       (mouseenter)="onMarkMouseEnter($event)">
+    <i [class]="['bf_icon', markMenu.icon]"></i>
+    <i class="bf_icon bf_xiajaintou dropdown"></i>
+  </div>
 </div>
 
 <ng-template #alignTpl let-style>
@@ -26,31 +32,3 @@
   </div>
 </ng-template>
 
-<ng-template #markTpl let-style>
-  <div class="bf-float-toolbar__mark__container bf-float-toolbar__children" [style]="style">
-    <div class="bf-float-toolbar__children__gap"></div>
-    <div class="bf-float-toolbar__mark bf-float-toolbar__children__container" style="padding: 8px">
-<!--      <p class="bf-float-toolbar__mark__title">字体颜色</p>-->
-<!--      <div class="bf-float-toolbar__mark__list" style="margin-bottom: 8px">-->
-<!--        <span class="bf-float-toolbar__mark__list__item" *ngFor="let item of markList.children"-->
-<!--             [class.active]="item.value === markList.value"-->
-<!--             (mousedown)="markList.value = item.value" [style.color]="item.value"-->
-<!--            style="border: 1px solid #eee;">-->
-<!--          A-->
-<!--        </span>-->
-<!--      </div>-->
-      <p class="bf-float-toolbar__mark__title">高亮颜色</p>
-      <div class="bf-float-toolbar__mark__list">
-        <span class="bf-float-toolbar__mark__list__item"
-             [class.active]="!markList.value" style="border: 1px solid #eee; background: linear-gradient(-45deg, transparent 49%, black 50%, transparent 51%);"
-             (mousedown)="$event.preventDefault(); markList.value = null">
-        </span>
-        <span class="bf-float-toolbar__mark__list__item" *ngFor="let item of markList.children"
-             [class.active]="item.value === markList.value" [style.background-color]="item.value"
-             (mousedown)="$event.preventDefault(); markList.value = item.value" >
-        </span>
-      </div>
-    </div>
-    <div class="bf-float-toolbar__children__gap"></div>
-  </div>
-</ng-template>

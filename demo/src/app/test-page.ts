@@ -209,7 +209,7 @@ export class TestPage {
     onClick5() {
         const bm = this.editor.controller.createBlock('code', [
             [{
-                insert: 'const s = "Hello, World!";\nHello, World!',
+                insert: 'const s = "Hello, World!";\nHello, World!\n\n',
             }],
         ])
         this.editor.controller.insertBlocks(0, [bm])

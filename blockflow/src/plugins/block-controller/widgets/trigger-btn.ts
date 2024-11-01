@@ -5,7 +5,7 @@ import {
   Input,
 } from "@angular/core";
 import {NgIf, NgTemplateOutlet} from "@angular/common";
-import {fromEvent, take} from "rxjs";
+import {filter, fromEvent, merge, mergeAll, take, takeUntil} from "rxjs";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {BlockFlowContextmenu, IContextMenuComponent} from "../../../editor";
@@ -155,18 +155,7 @@ export class TriggerBtn {
     e.stopPropagation()
     this.hasContent = this.activeBlock instanceof EditableBlock ? !!this._activeBlockWrap!.textContent : true
     this.host.nativeElement.style.display = 'block'
-
     this.showContextMenu()
-  }
-
-  private _closeTimer?: number
-
-  @HostListener('mouseleave', ['$event'])
-  onMouseLeave(e: Event) {
-    e.stopPropagation()
-    this._closeTimer = window.setTimeout(() => {
-      this.close()
-    }, 100)
   }
 
   showContextMenu() {
@@ -182,24 +171,15 @@ export class TriggerBtn {
     cpr.setInput('activeBlock', this.activeBlock)
     cpr.setInput('controller', this.controller)
 
-    cpr.instance.itemClick.pipe(take(1)).subscribe(() => {
-      this.close()
+    merge(
+      fromEvent(document, 'click').pipe(take(1)),
+      fromEvent(document, 'selectionchange').pipe(take(1)),
+      fromEvent<MouseEvent>(cpr.location.nativeElement, 'mouseleave').pipe(filter(e => !(e.relatedTarget as HTMLElement).closest('.cdk-overlay-pane'))),
+      fromEvent<MouseEvent>(this.host.nativeElement, 'mouseleave').pipe(filter(e => !(e.relatedTarget as HTMLElement).closest('.cdk-overlay-pane')))
+    ).pipe(takeUntil(cpr.instance.destroy)).subscribe(() => {
+      this.ovr?.dispose()
+      this.ovr = undefined
     })
-
-    const sub = fromEvent(cpr.location.nativeElement, 'mouseenter').pipe(take(1))
-      .subscribe(() => {
-        this._closeTimer && clearTimeout(this._closeTimer)
-
-        // fromEvent<MouseEvent>(cpr.location.nativeElement, 'mouseleave').pipe(take(1))
-        //   .subscribe((e) => {
-        //     if (this.host.nativeElement.contains(e.relatedTarget as HTMLElement)) return
-        //     this._closeTimer = window.setTimeout(() => {
-        //       this.close()
-        //       sub.unsubscribe()
-        //     }, 500)
-        //   })
-      })
-
   }
 
   closeContextMenu() {
@@ -215,7 +195,8 @@ export class TriggerBtn {
     this.closeContextMenu()
     this.cdr.detectChanges()
     // check after NG100
-    requestAnimationFrame(() => {})
+    requestAnimationFrame(() => {
+    })
   }
 
 }

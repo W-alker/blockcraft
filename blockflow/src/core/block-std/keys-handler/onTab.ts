@@ -52,7 +52,7 @@ export const onTab: IKeyEventHandler = (e: KeyboardEvent, controller: Controller
         }
         i++
       }
-      if (dividerPos[0] > curRange.blockRange.start) {
+      if (dividerPos[0] > curRange.blockRange.start || !dividerPos.length) {
         // 前一个换行符之后或者首个字符
         const prev = text.slice(0, dividerPos[0] - 1).lastIndexOf('\n')
         dividerPos.unshift(prev > 0 ? prev + 1 : 0)

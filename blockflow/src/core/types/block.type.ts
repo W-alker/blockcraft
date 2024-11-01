@@ -18,7 +18,7 @@ export type IMetadata = IBaseMetadata & SimpleRecord
 
 export type IBlockProps = {
   indent?: number
-  [key: string]: SimpleValue | undefined
+  [key: string]: SimpleValue | undefined | null
 }
 
 export interface IBlockModel {

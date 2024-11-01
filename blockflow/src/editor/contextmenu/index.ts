@@ -238,6 +238,7 @@ export class BlockFlowContextmenu {
   }
 
   @Output() itemClick = new EventEmitter<IContextMenuEvent>()
+  @Output() destroy = new EventEmitter<boolean>()
 
   constructor(
     private cdr: ChangeDetectorRef,
@@ -350,6 +351,7 @@ export class BlockFlowContextmenu {
   onShowMoreBlock(event: MouseEvent) {
     event.preventDefault()
     event.stopPropagation()
+    if (this.moreBlockTpr) return
     const target = event.target as HTMLElement
     const positionStrategy = this.overlay.position().flexibleConnectedTo(target)
       .withPositions([
@@ -380,6 +382,10 @@ export class BlockFlowContextmenu {
       this.moreBlockTpr = undefined
       this.cdr.detectChanges()
     })
+  }
+
+  ngOnDestroy() {
+    this.destroy.emit(true)
   }
 
 }

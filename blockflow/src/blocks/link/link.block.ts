@@ -174,8 +174,8 @@ export class LinkBlock extends BaseBlock<ILinkBlockModel> {
     const ovr = this.createOverlay()
     const cpr = ovr.attach(portal)
     cpr.setInput('toolbarList', TOOLBAR_LIST)
-    cpr.instance.itemClick.pipe(take(1)).subscribe(v => {
-      switch (v.name) {
+    cpr.instance.itemClick.pipe(take(1)).subscribe(({item, event}) => {
+      switch (item.name) {
         case 'open':
           this.props.href && window.open(this.props.href)
           break

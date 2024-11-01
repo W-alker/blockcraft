@@ -4,9 +4,9 @@ export interface ICalloutBlockModel extends IEditableBlockModel{
   flavour: 'callout'
   props: {
     indent: number
-    borderColor: string
-    backgroundColor: string
-    color: string
+    ec: string | null
+    bc: string | null
+    c: string | null
     emoji: string
   }
 }

@@ -325,7 +325,8 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
     })
   }
 
-  onToolbarItemClick(item: IToolbarItem) {
+  onToolbarItemClick(e: {item: IToolbarItem}) {
+    const item = e.item
     switch (item.name) {
       case 'caption':
         if (this.model.children.length) {

@@ -1,6 +1,6 @@
 import {
-  ChangeDetectionStrategy,
-  Component, ElementRef, EmbeddedViewRef,
+  ChangeDetectionStrategy, ChangeDetectorRef,
+  Component, ComponentRef, ElementRef, EmbeddedViewRef,
   EventEmitter,
   HostBinding,
   HostListener,
@@ -9,46 +9,17 @@ import {
 } from '@angular/core';
 import {IToolbarMenuItem} from "./float-text-toolbar.type";
 import {CommonModule} from "@angular/common";
+import {Overlay} from "@angular/cdk/overlay";
+import {ComponentPortal} from "@angular/cdk/portal";
+import {ColorPalette} from "../../../components/color-palette/color-palette";
+import {fromEvent, takeUntil} from "rxjs";
 
-const markList: IToolbarMenuItem = {
+const markMenu = {
   name: "mark",
   icon: "bf_jihaobi",
   intro: "高亮颜色",
-  value: null,
-  children: [
-    {
-      name: "mark",
-      value: '#F4F5F5',
-    },
-    {
-      name: "mark",
-      value: '#E0FEFE',
-    },
-    {
-      name: "mark",
-      value: '#FEDEDE',
-    },
-    {
-      name: "mark",
-      value: '#FFE6CD',
-    },
-    {
-      name: "mark",
-      value: '#FFEFBA',
-    },
-    {
-      name: "mark",
-      value: '#D3F3D2',
-    },
-    {
-      name: "mark",
-      value: '#DCE7FE',
-    },
-    {
-      name: "mark",
-      value: '#E9DFFC',
-    },
-  ]
+  activeColor: null,
+  activeBgColor: null,
 }
 
 const alignList: IToolbarMenuItem = {
@@ -76,6 +47,7 @@ const alignList: IToolbarMenuItem = {
       intro: "右对齐",
     }
   ],
+  order: 0
 }
 
 @Component({
@@ -111,49 +83,56 @@ export class FloatTextToolbar {
     {
       name: "|",
       value: "|",
+      order: 1
     },
     {
       name: "bold",
       icon: "bf_jiacu",
       intro: "加粗",
       value: true,
+      order: 2
     },
     {
       name: "strike",
       icon: "bf_shanchuxian",
       intro: "删除线",
       value: true,
+      order: 3
     },
     {
       name: "underline",
       icon: "bf_xiahuaxian",
       intro: "下划线",
       value: true,
+      order: 4
     },
     {
       name: "italic",
       icon: "bf_xieti",
       intro: "斜体",
       value: true,
+      order: 5
     },
     {
       name: "code",
       icon: "bf_daimakuai",
       intro: "代码",
       value: true,
-    },
-    markList
+      order: 6
+    }
   ]
 
   protected readonly alignList = alignList
-  protected readonly markList = markList
+  protected readonly markMenu = markMenu
 
   private prevOverItem = ''
   embedViewRef?: EmbeddedViewRef<any>
 
   constructor(
     private elementRef: ElementRef,
-    private vcr: ViewContainerRef
+    private overlay: Overlay,
+    private vcr: ViewContainerRef,
+    private cdRef: ChangeDetectorRef
   ) {
   }
 
@@ -161,7 +140,7 @@ export class FloatTextToolbar {
   onMousedown(e: MouseEvent, item: IToolbarMenuItem) {
     e.stopPropagation()
     e.preventDefault()
-    if(!item) return
+    if (!item) return
     this.itemClick.emit(item)
   }
 
@@ -176,12 +155,69 @@ export class FloatTextToolbar {
     switch (item.name) {
       case "align":
         this.embedViewRef = this.vcr.createEmbeddedView(this.alignTpl, {$implicit: 'left: 0; top: 24px'})
-        break
-      case "mark":
-        this.embedViewRef = this.vcr.createEmbeddedView(this.markTpl, {$implicit: 'right: 0; top: 24px; transform: translateX(50%);'})
+        dom.appendChild(this.embedViewRef?.rootNodes[0] as HTMLElement)
         break
     }
-    dom.appendChild(this.embedViewRef?.rootNodes[0] as HTMLElement)
+  }
+
+  onMark(e: MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    this.itemClick.emit({
+      name: 'bc',
+      value: this.markMenu.activeBgColor
+    })
+  }
+
+  onMarkMouseEnter(e: MouseEvent) {
+    const target = e.target as HTMLElement
+    this.showColorPicker(target)
+  }
+
+  private _colorPickerCpr?: ComponentRef<ColorPalette> | null
+
+  showColorPicker(target: HTMLElement) {
+    if(this._colorPickerCpr) return
+    const positionStrategy = this.overlay.position().flexibleConnectedTo(target).withPositions([
+      {originX: 'center', originY: 'bottom', overlayX: 'center', overlayY: 'top'},
+    ])
+    const portal = new ComponentPortal(ColorPalette)
+    const ovr = this.overlay.create({
+      positionStrategy,
+      // hasBackdrop: true,
+      // backdropClass: 'cdk-overlay-transparent-backdrop',
+    })
+    this._colorPickerCpr = ovr.attach(portal)
+    this._colorPickerCpr.setInput('activeColor', this.markMenu.activeColor)
+    this._colorPickerCpr.setInput('activeBgColor', this.markMenu.activeBgColor)
+    const cprNode = this._colorPickerCpr.location.nativeElement
+
+    fromEvent<MouseEvent>(target, 'mouseleave').pipe(takeUntil(this._colorPickerCpr.instance.close)).subscribe(e => {
+      if (cprNode.contains(e.relatedTarget as Node)) return
+      ovr.dispose()
+      this._colorPickerCpr = null
+    })
+
+    fromEvent<MouseEvent>(cprNode, 'mouseleave').pipe(takeUntil(this._colorPickerCpr.instance.close)).subscribe(e => {
+      if (target.contains(e.relatedTarget as Node)) return
+      ovr.dispose()
+      this._colorPickerCpr = null
+    })
+
+    this._colorPickerCpr.instance.colorChange.pipe(takeUntil(this._colorPickerCpr.instance.close)).subscribe((res) => {
+      if(res.type === 'c') {
+        this.markMenu.activeColor = <any>res.value
+      }
+      if(res.type === 'bc') {
+        this.markMenu.activeBgColor = <any>res.value
+      }
+      this.cdRef.detectChanges()
+      this.itemClick.emit({
+        name: res.type,
+        value: res.value
+      })
+    })
+
   }
 
   onMouseLeave(e: MouseEvent, item: IToolbarMenuItem) {

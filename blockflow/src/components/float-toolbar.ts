@@ -84,7 +84,7 @@ export interface IToolbarItem {
 })
 export class FloatToolbar {
   @Input({required: true}) toolbarList: IToolbarItem[] = []
-  @Output() itemClick = new EventEmitter<IToolbarItem>
+  @Output() itemClick = new EventEmitter<{item: IToolbarItem, event: MouseEvent}>
 
   @HostListener('mousedown', ['$event'])
   onMouseEvent(event: MouseEvent) {
@@ -94,6 +94,6 @@ export class FloatToolbar {
 
   onItemClick(event: MouseEvent, item: IToolbarItem) {
     event.stopPropagation()
-    this.itemClick.emit(item)
+    this.itemClick.emit({item, event})
   }
 }

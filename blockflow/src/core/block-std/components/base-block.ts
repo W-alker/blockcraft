@@ -35,7 +35,7 @@ export class BaseBlock<Model extends IBlockModel | IEditableBlockModel = IBlockM
   }
 
   get props() {
-    return this.model.props
+    return this.model.props as Readonly<Model['props']>
   }
 
   get children() {

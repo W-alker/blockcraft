@@ -48,7 +48,7 @@ export class MentionPlugin implements IPlugin {
                 mentionId: string,
                 mentionName: string,
                 mentionType: string
-              }, controller: Controller) => void
+              }, event: MouseEvent, controller: Controller) => void
   ) {
   }
 
@@ -62,7 +62,7 @@ export class MentionPlugin implements IPlugin {
         .subscribe((e) => {
           const target = e.target as HTMLElement
           if (!target.dataset['mentionId']) return
-          this.onMentionClick!(target.dataset as any, controller)
+          this.onMentionClick!(target.dataset as any, e, controller)
         })
     }
   }
@@ -106,33 +106,53 @@ export class MentionPlugin implements IPlugin {
   }
 
   openMention(element: HTMLElement) {
-    const node = element.firstChild!
+    this._activeTab = 'user'
+    this._mentionElement = element
+    const node = this._mentionElement.firstChild!
 
     this._rootInputSub?.unsubscribe()
     this._rootInputSub = null
-    this._mentionElement = element
 
-    this.showMentionDialog(element)
+    this.showMentionDialog()
 
     const search = () => {
       const keyword = node.textContent!.slice(1)
-      if (!keyword) {
-        this._dialog!.setInput('list', [])
-        return
-      }
+      if (!keyword) return this._dialog!.setInput('list', [])
       this.request(keyword, this._activeTab).then((res) => {
         this._dialog!.setInput('list', res.list)
       })
     }
 
     // MutationObserver is used to detect changes in the text node
-    const mutationSub = fromEventPattern(
+    fromEventPattern(
       handler => {
         this._mentionInputObserver = new MutationObserver(handler)
         this._mentionInputObserver.observe(node, {characterData: true})
       },
       handler => this._mentionInputObserver.disconnect()
-    ).pipe(debounceTime(300)).subscribe(search)
+    ).pipe(debounceTime(300), takeUntil(this._dialog!.instance.close)).subscribe(search)
+
+    // 监听元素销毁
+    const observer = new MutationObserver((mutationsList) => {
+      for (const mutation of mutationsList) {
+        if (mutation.type === 'childList' && Array.from(mutation.removedNodes).includes(element)) {
+          this.closeMention()
+          observer.disconnect()
+          break
+        }
+      }
+    });
+    observer.observe(element.parentElement!, {childList: true});
+
+    // 失焦关闭
+    const sub = fromEvent(document, 'selectionchange')
+      .subscribe(() => {
+        const selection = document.getSelection()
+        if (!selection || selection.focusNode?.parentElement !== this._mentionElement) {
+          this.closeMention()
+          sub.unsubscribe()
+        }
+      })
 
     this._dialog?.instance.tabChange.pipe(takeUntil(this._dialog?.instance.close)).subscribe((type: MentionType) => {
       this._activeTab = type
@@ -143,9 +163,8 @@ export class MentionPlugin implements IPlugin {
       this.closeMention()
     })
 
-    const keydownSub = fromEvent<KeyboardEvent>(element.parentElement!, 'keydown')
+    fromEvent<KeyboardEvent>(element.parentElement!, 'keydown').pipe(takeUntil(this._dialog!.instance.close))
       .subscribe((e) => {
-
         switch (e.key) {
           case 'Enter':
             e.preventDefault()
@@ -179,24 +198,14 @@ export class MentionPlugin implements IPlugin {
             break
         }
       })
-
-    const sub = fromEvent(document, 'selectionchange')
-      .subscribe(() => {
-        const selection = document.getSelection()
-        if (!selection || selection.focusNode !== node) {
-          this.closeMention()
-          mutationSub.unsubscribe()
-          keydownSub.unsubscribe()
-          sub.unsubscribe()
-        }
-      })
   }
 
-  showMentionDialog(element: Element) {
+  showMentionDialog() {
+    if (!this._mentionElement) return
     const overlay = this.controller.injector.get(Overlay)
     const portal = new ComponentPortal(MentionDialog, this._vcr)
     this.overlayRef = overlay.create({
-      positionStrategy: overlay.position().flexibleConnectedTo(element)
+      positionStrategy: overlay.position().flexibleConnectedTo(this._mentionElement).withPush(false)
         .withPositions([
           {originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 4},
           {originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -4},
@@ -206,6 +215,9 @@ export class MentionPlugin implements IPlugin {
     })
     this._dialog = this.overlayRef.attach(portal)
     this.tpl && this._dialog.setInput('template', this.tpl)
+    this.overlayRef.backdropClick().pipe(take(1)).subscribe(() => {
+      this.closeMention()
+    })
   }
 
   closeMention() {
@@ -216,6 +228,7 @@ export class MentionPlugin implements IPlugin {
   }
 
   setMention(item: IMentionData) {
+    if (!this._mentionElement) return
     const block = this.controller.getFocusingBlockRef()!
     const yText = block!.yText
 

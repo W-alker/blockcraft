@@ -13,15 +13,15 @@ export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Cont
   const {blockRange: range} = curRange
   const bRef = controller.getFocusingBlockRef()
   if (!bRef) throw new Error('No focusing block')
+
   const textContent = bRef.getTextContent()
   const {parentId, index} = controller.getBlockPosition(bRef.id)!
 
   if (controller.activeElement?.classList.contains('bf-multi-line')) {
+    const isAtEnd = range.start === textContent.length && textContent.at(-2) !== '\n'
     const deltas: DeltaOperation[] = [
       {retain: range.start},
-      {insert:
-          range.start === textContent.length ? textContent.endsWith('\n') ? '\n' : '\n\n'
-            : '\n'}
+      {insert: isAtEnd ?  '\n\u200B' : '\n'}
     ]
     if (range.end !== range.start) deltas.splice(1, 0, {delete: range.end - range.start})
     bRef.applyDelta(deltas, false)

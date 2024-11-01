@@ -121,7 +121,7 @@ export class InlineLinkPlugin implements IPlugin {
         const portal = new ComponentPortal(FloatToolbar)
         const cpr = ref.attach(portal)
         cpr.instance.toolbarList = TOOLBAR_LIST
-        cpr.instance.itemClick.subscribe((item) => {
+        cpr.instance.itemClick.subscribe(({item, event}) => {
           if (c.readonly$.value && item.name !== 'open') return
           switch (item.name) {
             case 'open':

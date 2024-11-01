@@ -154,7 +154,7 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
       }
     ])
     cpr.setInput('toolbarList', menu)
-    cpr.instance.itemClick.pipe(take(1)).subscribe((item) => {
+    cpr.instance.itemClick.pipe(take(1)).subscribe(({item, event}) => {
       switch (item.name) {
         case 'align':
           this.setColAlign(colIdx, <any>item.value)
@@ -256,7 +256,7 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
       }
     ])
     cpr.setInput('toolbarList', menu)
-    cpr.instance.itemClick.pipe(take(1)).subscribe((item) => {
+    cpr.instance.itemClick.pipe(take(1)).subscribe(({item, event}) => {
       switch (item.name) {
         case 'insert':
           this.addRow(item.value === 'top' ? rowIdx : rowIdx + 1)

@@ -8,7 +8,8 @@
     "copy-assets": "cpx 'blockflow/src/assets/**/*' dist/blockflow/assets",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "pub": "pnpm build && pnpm copy-assets && cd dist/blockflow && npm publish --registry https://npm.runtongqiuben.com"
+    "pub": "pnpm build && pnpm copy-assets && cd dist/blockflow && npm publish --registry https://npm.runtongqiuben.com",
+    "unpub": "npm unpublish blockflow-editor --force --registry https://npm.runtongqiuben.com"
   },
   "private": true,
   "dependencies": {
@@ -29,11 +30,8 @@
     "@types/rangy": "^0.0.38",
     "babel-plugin-module-resolver": "^5.0.2",
     "cpx": "^1.5.0",
-    "highlight.js": "^11.10.0",
     "mermaid": "^11.3.0",
     "ng-zorro-antd": "^17.4.1",
-    "ngx-lightbox": "^3.0.0",
-    "prettier": "^3.3.3",
     "prismjs": "^1.29.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
@@ -56,7 +54,7 @@
     "karma-coverage": "~2.2.1",
     "karma-jasmine": "~5.1.0",
     "karma-jasmine-html-reporter": "^2.1.0",
-    "ng-packagr": "^18.2.1",
+    "ng-packagr": "^17.3.0",
     "typescript": "5.4.5"
   }
 }

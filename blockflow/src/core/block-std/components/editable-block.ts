@@ -113,11 +113,11 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
     }, USER_CHANGE_SIGNAL)
   }
 
-  private applyDeltaToModel(deltas: DeltaOperation[]) {
+   applyDeltaToModel(deltas: DeltaOperation[]) {
     this.yText.applyDelta(deltas)
   }
 
-  private applyDeltaToView(deltas: DeltaOperation[], withSelection = false) {
+  applyDeltaToView(deltas: DeltaOperation[], withSelection = false, containerEle = this.containerEle) {
     let _range: ICharacterRange | undefined = {
       start: 0,
       end: 0
@@ -130,11 +130,11 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
         withSelection && (_range = {start: retain, end: retain + delta.retain})
         retain += delta.retain
       } else if (delta.insert) {
-        insertContent(this.containerEle, retain, delta as DeltaInsert)
+        insertContent(containerEle, retain, delta as DeltaInsert)
         retain += typeof delta.insert === 'string' ? delta.insert.length : 1
         withSelection && (_range = {start: retain, end: retain})
       } else if (delta.delete) {
-        deleteContent(this.containerEle, retain, delta.delete)
+        deleteContent(containerEle, retain, delta.delete)
         if (withSelection) {
           _range = {start: retain, end: retain}
         }
@@ -143,7 +143,7 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
 
     if (withSelection && _range) {
       // console.log('setSelection', _range)
-      setSelection(this.containerEle, _range!.start, _range!.end)
+      setSelection(containerEle, _range!.start, _range!.end)
     }
   }
 

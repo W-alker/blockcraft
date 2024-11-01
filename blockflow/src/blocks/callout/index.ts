@@ -13,10 +13,10 @@ export const CalloutSchema: EditableBlockSchema<ICalloutBlockModel['props']> = {
     return {
       props: () => ({
         indent: 0,
-        borderColor: '#FDB549',
-        backgroundColor: '#fcf2eb',
+        ec: '#dc9b9b',
+        bc: '#FFE6CD',
+        c: null,
         emoji: '🔥',
-        color: '#333'
       }),
       children: deltas
     }

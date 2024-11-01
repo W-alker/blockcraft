@@ -1,0 +1,35 @@
+<div class="gap"></div>
+<div class="container" style="padding: 8px">
+  <p class="title">字体颜色</p>
+  <div class="list" style="margin-bottom: 8px">
+          <span class="list__item" *ngFor="let item of colorList"
+                [class.active]="item.value === activeColor"
+                (mousedown)="pickColor('c', item.value)" [style.color]="item.value || '#333'"
+                style="border: 1px solid #eee;">A</span>
+  </div>
+  <ng-container *ngIf="showEdgeColor">
+    <p class="title">边框颜色</p>
+    <div class="list" style="margin-bottom: 8px">
+      <span class="list__item" [class.active]="activeEdgeColor === null"
+            style="border: 1px solid #eee; background: linear-gradient(-45deg, transparent 49%, black 50%, transparent 51%);"
+            (mousedown)="pickColor('ec', null)">
+       </span>
+      <span class="list__item" *ngFor="let item of edgeColorList"
+            [class.active]="item.value === activeEdgeColor"
+            (mousedown)="pickColor('ec', item.value)" [style.background-color]="item.value"
+            style="border: 1px solid #eee;"></span>
+    </div>
+  </ng-container>
+  <p class="title">填充颜色</p>
+  <div class="list">
+    <span class="list__item" [class.active]="activeBgColor === null"
+          style="border: 1px solid #eee; background: linear-gradient(-45deg, transparent 49%, black 50%, transparent 51%);"
+          (mousedown)="pickColor('bc', null)">
+    </span>
+    <span class="list__item" *ngFor="let item of bgColorList"
+          [class.active]="item.value === activeBgColor" [style.background-color]="item.value"
+          (mousedown)="pickColor('bc', item.value)">
+        </span>
+  </div>
+</div>
+<div class="gap"></div>
