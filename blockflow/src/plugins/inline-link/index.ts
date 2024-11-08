@@ -1,10 +1,9 @@
 import {filter, fromEvent, Subscription, take} from "rxjs";
 import {
-  BlockflowInline, ClipDataWriter,
-  Controller,
-  EditableBlock,
-  IInlineAttrs,
-  IPlugin
+  ClipDataWriter,
+  Controller, DeltaInsertEmbed, DeltaOperation,
+  EditableBlock, getCharacterOffset,
+  IPlugin, USER_CHANGE_SIGNAL
 } from "../../core";
 import {FloatToolbar, IToolbarItem} from "../../components";
 import {Overlay} from "@angular/cdk/overlay";
@@ -49,8 +48,9 @@ export class InlineLinkPlugin implements IPlugin {
 
     const createOverlay = (target: HTMLElement) => {
       const position = overlay.position().flexibleConnectedTo(target).withPositions([{
-        originX: 'center', originY: 'bottom', overlayX: 'center', overlayY: 'top',}])
-      const ref =  overlay.create({
+        originX: 'center', originY: 'bottom', overlayX: 'center', overlayY: 'top',
+      }])
+      const ref = overlay.create({
         positionStrategy: position,
         hasBackdrop: true,
         backdropClass: 'cdk-overlay-transparent-backdrop',
@@ -62,41 +62,34 @@ export class InlineLinkPlugin implements IPlugin {
     }
 
     const openDialog = (target: HTMLElement) => {
-      const attrs = BlockflowInline.getAttributes(target)
+      const text = target.textContent!
+      const href = target.getAttribute('data-href')!
 
       const ref = createOverlay(target)
       const portal = new ComponentPortal(InlineLinkBlockFloatDialog)
       const cpr = ref.attach(portal)
-      cpr.setInput('attrs', attrs)
+      cpr.setInput('text', text)
+      cpr.setInput('href', href)
 
-      cpr.instance.close
-        .pipe(take(1))
-        .subscribe(() => {
-          ref.dispose()
-        })
+      cpr.instance.close.pipe(take(1)).subscribe(() => {
+        ref.dispose()
+      })
 
       cpr.instance.update
         .pipe(take(1))
         .subscribe(v => {
-          const newAttrs: IInlineAttrs = {}
-          for(let key in v) {
-            // @ts-ignore
-            if(v[key] && attrs[key] !== v[key]) {
-              // @ts-ignore
-              newAttrs[key] = v[key]
-            }
+          const newDelta: DeltaInsertEmbed = {
+            insert: {link: v.text},
+            attributes: {'d:href': v.href}
           }
-          if(Object.keys(newAttrs).length === 0) return
           const {activeBlock, start} = getActiveBlockAndPos(target)
-          activeBlock.applyDelta([
-            {
-              retain: start,
-            },
-            {
-              retain: 1,
-              attributes: newAttrs
-            }
-          ])
+          const newNode = c.inlineManger.createView(newDelta)
+          const deltas: DeltaOperation[] = [{delete: 1}, newDelta]
+          start > 0 && deltas.unshift({retain: start})
+          c.transact(() => {
+            target.replaceWith(newNode)
+            activeBlock.applyDeltaToModel(deltas)
+          }, USER_CHANGE_SIGNAL)
           ref.dispose()
         })
     }
@@ -104,17 +97,13 @@ export class InlineLinkPlugin implements IPlugin {
     const getActiveBlockAndPos = (target: HTMLElement) => {
       const activeBlockId = target.closest('[bf-node-type]')!.id
       const activeBlock = c.getBlockRef(activeBlockId) as EditableBlock
-      const range = document.createRange()
-      range.setStart(activeBlock.containerEle, 0)
-      range.setEndBefore(target)
-      const len = range.toString().length
-      range.detach()
-      return {activeBlock, start: len}
+      return {activeBlock, start: getCharacterOffset(target, activeBlock.containerEle)}
     }
 
     this.subscribe = fromEvent<MouseEvent>(c.rootElement, 'click')
       .pipe(filter(e => (e.target as HTMLElement).getAttribute('bf-embed') === 'link'))
       .subscribe((e) => {
+        e.preventDefault()
         const target = e.target as HTMLElement
         const ref = createOverlay(target)
 
@@ -125,29 +114,19 @@ export class InlineLinkPlugin implements IPlugin {
           if (c.readonly$.value && item.name !== 'open') return
           switch (item.name) {
             case 'open':
-              window.open(target.getAttribute('data-link-href')!)
+              window.open(target.getAttribute('data-href')!)
               break
             case 'edit':
               openDialog(target)
               break
             case 'copy':
-              const delta = BlockflowInline.elementToDelta(target)
+              const delta = c.inlineManger.elementToDelta(target)
               ClipDataWriter.writeDeltaToClipboard([delta])
               break
             case 'unlink':
-              const text = target.getAttribute('data-link-text')!
+              const text = target.textContent!
               const {activeBlock, start} = getActiveBlockAndPos(target)
-              activeBlock.applyDelta([
-                {
-                  retain: start,
-                },
-                {
-                  delete: 1,
-                },
-                {
-                  insert: text,
-                }
-              ])
+              activeBlock.applyDelta([{retain: start}, {delete: 1}, {insert: text}])
               break
           }
 

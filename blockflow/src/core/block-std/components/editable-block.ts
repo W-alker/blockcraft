@@ -7,7 +7,6 @@ import {USER_CHANGE_SIGNAL} from "../../yjs";
 import {CharacterIndex, ICharacterRange, setSelection} from "../../utils";
 import {deleteContent, insertContent} from "../utils";
 import Y from '../../yjs'
-import {BlockflowInline} from "../inline";
 
 @Component({
   selector: '.editable-container',
@@ -36,7 +35,7 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
     this.oldHasContent = !!this.textLength
     this._textIndent = (this.props.indent || 0) * 2 + 'em'
     this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(v => {
-      if(v.type === 'props') {
+      if (v.type === 'props') {
         // @ts-ignore
         this._textAlign !== this.props.textAlign && (this._textAlign = this.props.textAlign)
         parseInt(this._textIndent) / 2 !== this.props.indent && (this._textIndent = (this.props.indent || 0) * 2 + 'em')
@@ -98,7 +97,7 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
     if (delta.length) {
       for (const insert of delta) {
         if (!insert.insert) continue
-        fragment.appendChild(BlockflowInline.createView(insert))
+        fragment.appendChild(this.controller.inlineManger.createView(insert))
       }
       this.containerEle.appendChild(fragment)
       return
@@ -113,15 +112,14 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
     }, USER_CHANGE_SIGNAL)
   }
 
-   applyDeltaToModel(deltas: DeltaOperation[]) {
+  applyDeltaToModel(deltas: DeltaOperation[]) {
+    console.log('applyDeltaToModel', deltas)
     this.yText.applyDelta(deltas)
   }
 
   applyDeltaToView(deltas: DeltaOperation[], withSelection = false, containerEle = this.containerEle) {
-    let _range: ICharacterRange | undefined = {
-      start: 0,
-      end: 0
-    }
+    let _range: ICharacterRange | undefined
+    console.log('applyDeltaToModel', deltas)
 
     let retain = 0
     for (const delta of deltas) {
@@ -130,20 +128,18 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
         withSelection && (_range = {start: retain, end: retain + delta.retain})
         retain += delta.retain
       } else if (delta.insert) {
-        insertContent(containerEle, retain, delta as DeltaInsert)
+        insertContent(containerEle, retain, delta as DeltaInsert, this.controller.inlineManger.createView.bind(this.controller.inlineManger))
         retain += typeof delta.insert === 'string' ? delta.insert.length : 1
         withSelection && (_range = {start: retain, end: retain})
       } else if (delta.delete) {
         deleteContent(containerEle, retain, delta.delete)
-        if (withSelection) {
-          _range = {start: retain, end: retain}
-        }
+        withSelection && (_range = {start: retain, end: retain})
       }
     }
 
     if (withSelection && _range) {
       // console.log('setSelection', _range)
-      setSelection(containerEle, _range!.start, _range!.end)
+      setSelection(containerEle, _range.start, _range.end)
     }
   }
 

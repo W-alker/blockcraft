@@ -2,7 +2,7 @@ import {BehaviorSubject, Subject, take, takeWhile} from "rxjs";
 import {BaseStore} from "../store";
 import {SchemaStore} from "../schemas";
 import {IPlugin} from "../plugins";
-import {BaseBlock, EditableBlock, KeyEventBus} from "../block-std";
+import {BaseBlock, BlockflowInline, EditableBlock, EmbedConverter, KeyEventBus} from "../block-std";
 import {
   BlockModel,
   NO_RECORD_CHANGE_SIGNAL,
@@ -28,6 +28,7 @@ export interface HistoryConfig {
 export interface IControllerConfig {
   rootId: string
   schemas: SchemaStore
+  embedConverter?: [string, EmbedConverter][] // [flavour, converter]
   readonly?: boolean
   historyConfig?: HistoryConfig
   plugins?: IPlugin[],
@@ -37,10 +38,27 @@ export interface IControllerConfig {
   }
 }
 
+const DEFAULT_EMBED_CONVERTER_LIST: [string, EmbedConverter][] = [
+  ['link', {
+    toView: (data) => {
+      const a = document.createElement('a')
+      a.textContent = data.insert['link'] as string
+      a.setAttribute('data-href', data.attributes!['d:href'] as string)
+      return a
+    },
+    toDelta: (ele) => {
+      return {
+        insert: {link: ele.textContent!},
+        attributes: {'d:href': ele.getAttribute('data-href')}
+      }
+    }
+  }]
+]
+
 export class Controller {
   public readonly readonly$ = new BehaviorSubject(false)
 
-  public readonly blockUpdate$ = new Subject<UpdateEvent & {block: BaseBlock}>()
+  public readonly blockUpdate$ = new Subject<UpdateEvent & { block: BaseBlock }>()
   private blockRefStore = new BaseStore<string, BaseBlock | EditableBlock>()
   private blocksWaiting: Record<string, boolean> = {}
   private blocksReady$ = new Subject()
@@ -59,6 +77,7 @@ export class Controller {
 
   public readonly keyEventBus: KeyEventBus = new KeyEventBus(this)
 
+  public readonly inlineManger = new BlockflowInline(new Map(DEFAULT_EMBED_CONVERTER_LIST.concat(this.config.embedConverter || [])))
   private _root!: EditorRoot
 
   constructor(
@@ -282,7 +301,6 @@ export class Controller {
       : (originPos.index < targetPos.index ? targetPos.index : targetPos.index + 1)
 
     const ym = originModel.toJSON() as IBlockModel
-    ym.id = genUniqueID()
 
     // TODO: 优化，允许跨父级移动
     this.deleteBlocks(originPos.index, 1)

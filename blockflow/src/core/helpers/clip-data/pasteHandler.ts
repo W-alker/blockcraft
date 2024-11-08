@@ -69,7 +69,7 @@ export const pasteHandler = (event: ClipboardEvent, controller: Controller) => {
         return;
       }
 
-      const deltaInsert: DeltaInsert[] = [{insert: { link: jsonData }, attributes: { 'd:linkText': jsonData, 'd:linkHref': jsonData } }]
+      const deltaInsert: DeltaInsert[] = [{insert: { link: jsonData }, attributes: { 'd:href' : jsonData } }]
       applyPasteDeltaToBlock(blockRef, deltaInsert, blockRange)
       return;
     }

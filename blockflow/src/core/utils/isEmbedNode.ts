@@ -1,4 +1,4 @@
 export const isEmbedElement = (node: Element) => {
-  if(!node) return false
-  return !!node.getAttribute('bf-embed')
+  if(!node || !(node instanceof HTMLElement)) return false
+  return !node.isContentEditable
 }

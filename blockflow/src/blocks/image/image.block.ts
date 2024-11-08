@@ -3,17 +3,17 @@ import {
   Component,
   ElementRef,
   HostBinding,
-  SimpleChanges,
   ViewChild
 } from "@angular/core";
-import {NgForOf, NgIf} from "@angular/common";
-import {fromEvent, Subscription, take, throttleTime} from "rxjs";
+import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
+import { BehaviorSubject, fromEvent, Subscription, take, throttleTime} from "rxjs";
 import Viewer from 'viewerjs';
 import {FloatToolbar, IToolbarItem} from "../../components";
 import {IImageBlockProps, IImgBlockModel} from "./type";
 import {BaseBlock, ClipDataWriter} from "../../core";
 import {ParagraphBlock} from "../paragraph/paragraph.block";
 import {OverlayModule} from "@angular/cdk/overlay";
+import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 
 @Component({
   selector: 'div.image-block',
@@ -28,12 +28,14 @@ import {OverlayModule} from "@angular/cdk/overlay";
               <span class="img-default-skeleton__error" *ngIf="imgLoadState === 'error'">加载失败!</span>
           </div>
 
-          <div class="bf-float-toolbar img-block__toolbar" *ngIf="imgLoadState === 'loaded' && resizeMode !== 'none'"
-               [toolbarList]="TOOLBAR_LIST" (click)="$event.stopPropagation();"
-               (itemClick)="onToolbarItemClick($event)">
-          </div>
+          <ng-container *ngIf="imgLoadState === 'loaded'">
+              <div class="bf-float-toolbar img-block__toolbar" *ngIf="isFocusing$ | async"
+                   [toolbarList]="TOOLBAR_LIST" (click)="$event.stopPropagation();"
+                   (itemClick)="onToolbarItemClick($event)">
+              </div>
+          </ng-container>
 
-          <img [src]="model.props.src" [class.resize-mode]="resizeMode !== 'none'" draggable="false" #img>
+          <img [src]="model.props.src" [class.resize-mode]="isFocusing$ | async" draggable="false" #img>
 
           <ng-container *ngIf="imgLoadState === 'loaded'">
               <p class="img-block__caption editable-container" *ngFor="let item of children"
@@ -41,7 +43,7 @@ import {OverlayModule} from "@angular/cdk/overlay";
                  (click)="$event.stopPropagation()" (mousemove)="$event.stopPropagation()"></p>
           </ng-container>
 
-          <div class="img-resizer" *ngIf="resizeMode !== 'none'" (mousedown)="onImgClick($event)">
+          <div class="img-resizer" [hidden]="!(isFocusing$ | async)" (mousedown)="onImgClick($event)">
               <div class="img-resizer__handle img-resizer__handle--tl" (click)="$event.stopPropagation()"
                    (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
               <div class="img-resizer__handle img-resizer__handle--tr" (click)="$event.stopPropagation()"
@@ -173,7 +175,7 @@ import {OverlayModule} from "@angular/cdk/overlay";
     }
   `],
   imports: [
-    NgIf, ParagraphBlock, NgForOf, FloatToolbar, OverlayModule
+    NgIf, ParagraphBlock, NgForOf, FloatToolbar, OverlayModule, AsyncPipe
   ],
   // changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -187,7 +189,6 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
   }
 
   @ViewChild('img', {static: true, read: ElementRef}) img!: ElementRef<HTMLImageElement>
-
 
   constructor(private readonly _cdr: ChangeDetectorRef) {
     super();
@@ -238,20 +239,18 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
   protected imgLoadState: 'loading' | 'loaded' | 'error' = 'loading'
   protected _showWidth = 100
 
-  protected resizeMode: 'none' | 'resize' = 'none'
+  protected isFocusing$ = new BehaviorSubject(false)
 
-  private _viewer?: Viewer
-
-  ngOnChanges(change: SimpleChanges) {
-    if (change["model"] && change["model"].firstChange) {
-      this._showWidth = this.model.props.width
-    }
-  }
+  private _viewer: Viewer | null = null
 
   override ngOnInit() {
     super.ngOnInit();
-    this.TOOLBAR_LIST[0].active = !!this.model.children.length
-    this.TOOLBAR_LIST[['start', 'center', 'end'].indexOf(this.props.align) + 2].active = true
+    this._showWidth = this.model.props.width
+    this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
+      if(e.type === 'props') {
+        this._showWidth !== this.props.width && (this._showWidth = this.props.width)
+      }
+    })
   }
 
   override ngAfterViewInit() {
@@ -276,21 +275,22 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
   onImgFocus(event: FocusEvent) {
     event.stopPropagation()
     event.preventDefault()
-    this.resizeMode = 'resize'
+    this.TOOLBAR_LIST = this.TOOLBAR_LIST.map((item) => ({...item, active: false}))
+    this.TOOLBAR_LIST[0].active = !!this.model.children.length
+    this.TOOLBAR_LIST[['start', 'center', 'end'].indexOf(this.props.align) + 2].active = true
+    this.isFocusing$.next(true)
   }
 
   onImgBlur(event: FocusEvent) {
     event.stopPropagation()
-    this.resizeMode = 'none'
+    this.isFocusing$.next(false)
     // this._viewer?.destroy()
-    // this._viewer = undefined
-    this._cdr.detectChanges()
+    // this._viewer = null
   }
 
   onImgClick(event: MouseEvent) {
-    event.stopPropagation()
     event.preventDefault()
-    if (this.resizeMode !== 'resize') return
+    if (!this.isFocusing$.value) return
     this.previewImg()
   }
 
@@ -315,7 +315,6 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
         if (this.startPoint!.direction === 'left') this._showWidth -= movePx
         else this._showWidth += movePx
         this.startPoint!.x = e.clientX
-        this._cdr.detectChanges()
       })
 
     fromEvent<MouseEvent>(document.body, 'mouseup').pipe(take(1)).subscribe((e) => {
@@ -338,14 +337,10 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
           })
         }
         this.TOOLBAR_LIST[0].active = !!this.model.children.length
-        this._cdr.detectChanges()
         break
       case 'align':
         if (this.props.align === item.value) return
-        delete this.TOOLBAR_LIST[['start', 'center', 'end'].indexOf(this.props.align) + 2].active
         this.setProp('align', item.value as IImageBlockProps['align'])
-        this.TOOLBAR_LIST[['start', 'center', 'end'].indexOf(this.props.align) + 2].active = true
-        this.resizeMode = 'none'
         break
       case 'copy-link':
         ClipDataWriter.writeClipData(this.props.src)
@@ -365,4 +360,8 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
     a = null
   }
 
+  override ngOnDestroy() {
+    super.ngOnDestroy();
+    this._viewer?.destroy()
+  }
 }

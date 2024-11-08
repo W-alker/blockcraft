@@ -227,9 +227,7 @@ export class LinkBlock extends BaseBlock<ILinkBlockModel> {
   }
 
   unLink() {
-    const deltas = [
-      {insert: this.props.text},
-    ]
+    const deltas = [{insert: this.props.text}]
     const block = this.controller.createBlock('paragraph', [deltas])
     this.controller.replaceWith(this.id, block).then(() => {
       this.controller.setSelection(block.id, 0)

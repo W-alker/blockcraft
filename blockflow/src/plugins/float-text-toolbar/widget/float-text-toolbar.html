@@ -3,7 +3,7 @@
     <div class="line" *ngIf="menu.name=='|' else item" [style.order]="menu.order"></div>
     <ng-template #item>
       <div class="bf-float-toolbar__item" [attr.data-name]="menu.name" [style.order]="menu.order"
-           [title]="menu.intro" (mousedown)="onMousedown($event, menu)"
+           [title]="menu.intro" (mousedown)="onMousedown($event, menu)" [class.active]="activeMenuSet?.has(menu.name)"
            (mouseenter)="onMouseEnter($event, menu)"
            (mouseleave)="onMouseLeave($event, menu)">
         <i [class]="['bf_icon', menu.icon]"></i>

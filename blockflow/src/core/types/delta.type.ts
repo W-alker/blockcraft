@@ -1,7 +1,8 @@
 import {IInlineAttrs} from "./inline.type";
+import {SimpleBasicType} from "./currency.type";
 
 export type DeltaInsert = {
-  insert: DeltaInsertEmbed["insert"] | DeltaInsertText["insert"]
+  insert: DeltaInsertText["insert"] | DeltaInsertEmbed["insert"]
 } & OptionalAttributes;
 
 export type DeltaInsertText = {
@@ -9,7 +10,7 @@ export type DeltaInsertText = {
 } & OptionalAttributes;
 
 export type DeltaInsertEmbed = {
-  insert: { [key: string]: any } & IInlineAttrs
+  insert: { [key: string]: SimpleBasicType }
 } & OptionalAttributes;
 
 export interface OptionalAttributes {

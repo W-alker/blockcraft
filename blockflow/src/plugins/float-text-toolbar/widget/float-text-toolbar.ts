@@ -60,6 +60,9 @@ const alignList: IToolbarMenuItem = {
 })
 export class FloatTextToolbar {
   @Input()
+  activeMenuSet?: Set<string>
+
+  @Input()
   set expandToolbarList(val: IToolbarMenuItem[]) {
     this.toolbarMenuList.push(...val)
   }

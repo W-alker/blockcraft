@@ -3,7 +3,7 @@ import {SimpleBasicType} from "./currency.type";
 
 export type IInlineModel = DeltaInsert
 
-export type IInlineAttrs = ITextStyles & IExpandedAttrs
+export type IInlineAttrs = ITextStyles & IInlineAttr & IExpandedAttrs
 
 /**
  * inline attr key, it will render as `[bfi-${key}=${value}]`

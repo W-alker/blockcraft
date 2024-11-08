@@ -1,28 +1,17 @@
 import {ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, Output, ViewChild} from "@angular/core";
 import {NzButtonModule} from "ng-zorro-antd/button";
-// import {NzRadioModule} from "ng-zorro-antd/radio";
 import {FormsModule} from "@angular/forms";
 import {isUrl} from "../../../core";
-
-interface IInlineLinkAttrs {
-  'd:linkHref': string
-  'd:linkText': string
-}
 
 @Component({
   selector: 'div.float-edit-dialog',
   template: `
     <p>标题</p>
-    <input type="text" placeholder="请输入标题" [value]="attrs?.['d:linkText']" (input)="onTextUpdate($event)"
+    <input type="text" placeholder="请输入标题" [(ngModel)]="updatedText"
            [class.error]="titleError" #titleInput>
     <p>地址</p>
-    <input type="text" placeholder="请输入地址" [value]="attrs?.['d:linkHref']" (input)="onHrefUpdate($event)"
+    <input type="text" placeholder="请输入地址"  [(ngModel)]="updatedHref"
            [class.error]="urlError" #urlInput>
-<!--    <p>展现</p>-->
-<!--    <nz-radio-group [(ngModel)]="radioValue">-->
-<!--      <label nz-radio nzValue="">链接</label>-->
-<!--      <label nz-radio nzValue="B">卡片</label>-->
-<!--    </nz-radio-group>-->
     <div style="width: 100%; display: flex; justify-content: flex-end; gap: 16px">
       <button nz-button (click)="onClose()">取消</button>
       <button nz-button nzType="primary" (click)="onUpdate()">确定</button>
@@ -68,17 +57,33 @@ interface IInlineLinkAttrs {
   standalone: true,
   imports: [
     NzButtonModule,
-    // NzRadioModule,
     FormsModule,
-    // NzRadioModule
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class InlineLinkBlockFloatDialog {
-  @Input({required: true}) attrs?: IInlineLinkAttrs
+  private _text: string = ''
+  @Input({required: true})
+  set text(v: string) {
+    this.updatedText = v
+    this._text = v
+  }
+  get text() {
+    return this._text
+  }
+
+  private _href: string = ''
+  @Input({required: true})
+  set href(v: string) {
+    this.updatedHref = v
+    this._href = v
+  }
+  get href() {
+    return this._href
+  }
 
   @Output() close = new EventEmitter<void>()
-  @Output() update = new EventEmitter<IInlineLinkAttrs>()
+  @Output() update = new EventEmitter<{text:string, href:string}>()
 
   constructor() {
   }
@@ -91,13 +96,11 @@ export class InlineLinkBlockFloatDialog {
   protected updatedText: string = ''
   protected updatedHref: string = ''
 
-  onTextUpdate(e: Event) {
-    this.updatedText = (e.target as HTMLInputElement).value
+  verifyText() {
     this.titleError = !this.updatedText
   }
 
-  onHrefUpdate(e: Event) {
-    this.updatedHref = (e.target as HTMLInputElement).value
+  verifyUrl() {
     this.urlError = !isUrl(this.updatedHref)
   }
 
@@ -106,11 +109,14 @@ export class InlineLinkBlockFloatDialog {
   }
 
   onUpdate() {
+    this.verifyUrl()
+    this.verifyText()
     if (this.titleError) return this.titleInput.nativeElement.focus()
     if (this.urlError) return this.urlInput.nativeElement.focus()
+    if(this.updatedText === this.text && this.updatedHref === this.href) return this.close.emit()
     this.update.emit({
-      'd:linkText': this.updatedText,
-      'd:linkHref': this.updatedHref
+      text: this.updatedText,
+      href: this.updatedHref
     })
   }
 

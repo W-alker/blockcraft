@@ -39,7 +39,7 @@ const POSITIONS: ConnectedPosition[] = [
   selector: 'div.callout-block',
   template: `
     <span class="callout-block__emoji">{{props.emoji}}</span>
-    <div class="editable-container bf-multi-line" [style.color]="props.c" contenteditable="true"></div>
+    <div class="editable-container bf-multi-line" [style.color]="props.c" contenteditable="true" (blur)="closeToolbar()"></div>
   `,
   styles: [`
     :host {

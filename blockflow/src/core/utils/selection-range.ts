@@ -20,76 +20,88 @@ export const characterIndex2Number = (index: CharacterIndex, length: number) => 
 }
 
 export const getCurrentCharacterRange = (): ICharacterRange => {
-  return getRange()
-  // const sel = document.getSelection()
-  // const activeElement = document.activeElement
-  // if (!sel || !activeElement) throw new Error('No selection or active element')
-  // if(!activeElement.childElementCount) return {start: 0, end: 0}
-  // let start = 0, end = 0, cnt = 0
-  // const children = activeElement.children
-  // for (let i = 0; i < children.length; i++) {
-  //   const child = children[i]
-  //   const textNode = child.firstChild as Text
-  //   if (textNode === sel.anchorNode) {
-  //     start = cnt + sel.anchorOffset
-  //   }
-  //   if (textNode === sel.focusNode) {
-  //     end = cnt + sel.focusOffset
-  //     break
-  //   }
-  //   cnt += textNode.data!.length
-  // }
-  // return {
-  //   start: Math.min(start, end),
-  //   end: Math.max(start, end)
-  // }
-}
+  const sel = document.getSelection()
+  const activeElement = document.activeElement
+  if (!sel || !activeElement) throw new Error('No selection or active element')
+  if (!activeElement.childElementCount) return {start: 0, end: 0}
+  const nativeRange = sel.getRangeAt(0)
+  let startNode = nativeRange.startContainer === activeElement ? activeElement.children[nativeRange.startOffset > 0 ? nativeRange.startOffset - 1 : 0] : nativeRange.startContainer
+  let endNode = nativeRange.collapsed ? startNode : nativeRange.endContainer === activeElement ? activeElement.children[nativeRange.endOffset > 0 ? nativeRange.endOffset - 1 : 0] : nativeRange.endContainer
+  startNode = startNode.parentElement === activeElement ? startNode : startNode.parentElement!
+  endNode = endNode.parentElement === activeElement ? endNode : endNode.parentElement!
+  const startOffset = nativeRange.startOffset > 0 ? isEmbedElement(<Element>startNode) ? 1 : nativeRange.startOffset : 0
+  const endOffset = nativeRange.collapsed ? startOffset : (nativeRange.endOffset > 0 ? isEmbedElement(<Element>endNode) ? 1 : nativeRange.endOffset : 0)
 
-export const getRange = (containerEl = document.activeElement as HTMLElement): ICharacterRange => {
-  const sel = document.getSelection()!
-  if (!containerEl.contentEditable) throw new Error('containerEl is not contentEditable')
-  if (containerEl.localName === 'input' || containerEl.localName === 'textarea') {
-    const inputEl = containerEl as HTMLInputElement
-    return {
-      start: inputEl.selectionStart!,
-      end: inputEl.selectionEnd!,
+  let pos1 = 0, pos2 = 0, cnt = 0
+  const children = activeElement.children
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i]
+    const isEmbed = isEmbedElement(child)
+    if(child === startNode) {
+      pos1 = cnt + startOffset
     }
+    if(child === endNode) {
+      pos2 = cnt + endOffset
+      break
+    }
+    cnt += isEmbed ? 1 : child.textContent!.length
   }
-
-  const start = findCharacterIndexByCursor(containerEl, sel.anchorNode!, sel.anchorOffset)
-  const end = sel.isCollapsed ? start : (sel.anchorNode === sel.focusNode ? sel.focusOffset - sel.anchorOffset + start : findCharacterIndexByCursor(containerEl, sel.focusNode!, sel.focusOffset))
   return {
-    // containerEl,
-    start: Math.min(start, end),
-    end: Math.max(start, end),
+    start: pos1,
+    end: pos2
   }
 }
 
-/* 根据光标所在节点及文本偏移量找到在ContainerEl上纯文本的字符索引
-  * @param {HTMLElement} containerEl - 光标所在的容器元素
-  * @param {Node} node - 光标所在的节点, 一般为文本节点
-  * @param {number} offset - 光标所在的文本偏移量
-  * @returns {number} - 纯文本的字符索引
- */
-const findCharacterIndexByCursor = (containerEl: HTMLElement, node: Node, offset: number) => {
-  if(!containerEl.isContentEditable) throw new Error('containerEl is not contentEditable')
-  const range = document.createRange()
-  range.setStart(containerEl, 0)
-  range.setEnd(node, offset)
-  const len = range.toString().length
-  range.detach()
-  return len
+export const getCharacterOffset = (ele: HTMLElement, container: HTMLElement) => {
+  let cnt = 0
+  for (let i = 0; i < container.children.length; i++) {
+    const child = container.children[i]
+    if (child === ele) return cnt
+    cnt += isEmbedElement(child) ? 1 : child.textContent!.length
+  }
+  return -1
 }
+
+
+// export const getRange = (containerEl = document.activeElement as HTMLElement): ICharacterRange => {
+//   const sel = document.getSelection()!
+//   if (!containerEl.contentEditable) throw new Error('containerEl is not contentEditable')
+//   if (containerEl.localName === 'input' || containerEl.localName === 'textarea') {
+//     const inputEl = containerEl as HTMLInputElement
+//     return {
+//       start: inputEl.selectionStart!,
+//       end: inputEl.selectionEnd!,
+//     }
+//   }
+//
+//   const start = findCharacterIndexByCursor(containerEl, sel.anchorNode!, sel.anchorOffset)
+//   const end = sel.isCollapsed ? start : (sel.anchorNode === sel.focusNode ? sel.focusOffset - sel.anchorOffset + start : findCharacterIndexByCursor(containerEl, sel.focusNode!, sel.focusOffset))
+//   return {
+//     // containerEl,
+//     start: Math.min(start, end),
+//     end: Math.max(start, end),
+//   }
+// }
+//
+// const findCharacterIndexByCursor = (containerEl: HTMLElement, node: Node, offset: number) => {
+//   if (!containerEl.isContentEditable) throw new Error('containerEl is not contentEditable')
+//   const range = document.createRange()
+//   range.setStart(containerEl, 0)
+//   range.setEnd(node, offset)
+//   const len = range.toString().length
+//   range.detach()
+//   return len
+// }
 
 export const isCursorAtElStart = (el: HTMLElement) => {
   const sel = document.getSelection()!
-  if (!el.firstElementChild || !el.textContent) return true
+  if (!el.firstElementChild) return true
   return sel.isCollapsed && el.firstElementChild!.contains(sel.anchorNode) && sel.anchorOffset === 0
 }
 
 export const isCursorAtElEnd = (el: HTMLElement) => {
   const sel = document.getSelection()!
-  if (!el.lastElementChild || !el.textContent) return true
+  if (!el.lastElementChild) return true
   return sel.isCollapsed && el.lastElementChild!.contains(sel.anchorNode) && sel.anchorOffset === sel.anchorNode!.textContent!.length
 }
 
@@ -105,28 +117,59 @@ export const setSelection = (el: HTMLElement, start: CharacterIndex, end: Charac
     return
   }
 
-  const textLength = el.textContent.length
-  start = characterIndex2Number(start, textLength)
-  end = characterIndex2Number(end, textLength)
-
   if (start === end) {
-    const {node, offset, eleOffset} = findNodeByIndex(el, start)
+    if(start === 'start' || start === 0) {
+      sel.setPosition(el, 0)
+      return
+    } else if (start === 'end') {
+      sel.setPosition(el, el.childElementCount)
+      return
+    }
+    const {node, offset, eleOffset} =  findNodeByIndex(el, start)
     if (isEmbedElement(node)) sel.setPosition(el, eleOffset)
     else sel.setPosition(node.firstChild!, offset)
     return;
   }
 
-  const startPos = findNodeByIndex(el, start)
-  const endPos = findNodeByIndex(el, end, startPos)
-  const startIsEmbed = startPos.node.getAttribute('contenteditable') === 'false'
-  const endIsEmbed = endPos.node.getAttribute('contenteditable') === 'false'
-  sel.setBaseAndExtent(
-    startIsEmbed ? el : startPos.node.firstChild!,
-    startIsEmbed ? startPos.eleOffset : startPos.offset,
-    endIsEmbed ? el : endPos.node.firstChild!,
-    endIsEmbed ? endPos.eleOffset : endPos.offset
-  )
+  const _range = document.createRange()
+  switch (start) {
+    case 0:
+    case 'start':
+      _range.setStart(el, 0)
+      break
+    case 'end':
+      _range.setStart(el, el.childElementCount)
+      break
+    default:
+      const startPos = findNodeByIndex(el, start)
+      _range.setStart(startPos.node.firstChild!, startPos.offset)
+  }
+  switch (end) {
+    case 0:
+    case 'start':
+      _range.setEnd(el, 0)
+      break
+    case 'end':
+      _range.setEnd(el, el.childElementCount)
+      break
+    default:
+      const endPos = findNodeByIndex(el, end)
+      _range.setEnd(endPos.node.firstChild!, endPos.offset)
+  }
+  sel.removeAllRanges()
+  sel.addRange(_range)
+}
 
+const findNodeByCharacterIndex = (index: CharacterIndex, container: HTMLElement) => {
+  if(index === 'start') return {
+    node: container.firstElementChild!,
+    offset: 0
+  }
+  if(index === 'end') return {
+    node: container.lastElementChild!,
+    offset: container.childElementCount
+  }
+  return findNodeByIndex(container, index)
 }
 
 export const findNodeByIndex = (ele: HTMLElement, index: number, findFrom?: ICharacterPosition): ICharacterPosition => {
@@ -139,22 +182,16 @@ export const findNodeByIndex = (ele: HTMLElement, index: number, findFrom?: ICha
     eleOffset: 0,
     beforeEleOffset: 0
   }
-  if (index === ele.textContent!.length) return {
-    node: ele.lastElementChild!,
-    offset: ele.lastElementChild!.textContent!.length,
-    eleOffset: ele.children.length,
-    beforeEleOffset: ele.textContent!.length
-  }
 
   const childElements = ele.children
   for (let i = findFrom?.eleOffset || 0; i < childElements.length; i++) {
     const child = childElements[i]
-    if(child.tagName === 'BR') {
+    if (child.tagName === 'BR') {
       child.remove()
       i--
       continue
     }
-    const childTextLength = child.textContent?.length || 1
+    const childTextLength = isEmbedElement(child) ? 1 : child.textContent?.length || 1
     if (cnt + childTextLength >= index) {
       return {
         node: child,

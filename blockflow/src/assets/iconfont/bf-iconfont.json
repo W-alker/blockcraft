@@ -6,6 +6,41 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "42338748",
+      "name": "overlap",
+      "font_class": "open-link",
+      "unicode": "e8de",
+      "unicode_decimal": 59614
+    },
+    {
+      "icon_id": "42338882",
+      "name": "下方任务",
+      "font_class": "renwu-color",
+      "unicode": "e8df",
+      "unicode_decimal": 59615
+    },
+    {
+      "icon_id": "42254489",
+      "name": "代码绘图",
+      "font_class": "daimahuitu",
+      "unicode": "e8dd",
+      "unicode_decimal": 59613
+    },
+    {
+      "icon_id": "42254515",
+      "name": "代码块",
+      "font_class": "daimakuai1",
+      "unicode": "e8dc",
+      "unicode_decimal": 59612
+    },
+    {
+      "icon_id": "5643521",
+      "name": "切换",
+      "font_class": "qiehuan",
+      "unicode": "e606",
+      "unicode_decimal": 58886
+    },
+    {
       "icon_id": "42197169",
       "name": "点赞",
       "font_class": "dianzan1",
@@ -25,13 +60,6 @@
       "font_class": "gongxiang1",
       "unicode": "e8d9",
       "unicode_decimal": 59609
-    },
-    {
-      "icon_id": "41980297",
-      "name": "106",
-      "font_class": "open-link",
-      "unicode": "e8d2",
-      "unicode_decimal": 59602
     },
     {
       "icon_id": "40242910",
@@ -197,7 +225,7 @@
     {
       "icon_id": "41874880",
       "name": "Frame 1000005756",
-      "font_class": "frame",
+      "font_class": "biaotihanglie",
       "unicode": "e71a",
       "unicode_decimal": 59162
     },
@@ -209,9 +237,23 @@
       "unicode_decimal": 59164
     },
     {
+      "icon_id": "42268287",
+      "name": "Frame 1000003574",
+      "font_class": "xiajiantou-jia",
+      "unicode": "221b",
+      "unicode_decimal": 8731
+    },
+    {
+      "icon_id": "42268328",
+      "name": "Frame 1000003574",
+      "font_class": "shangjiantou-jia",
+      "unicode": "221c",
+      "unicode_decimal": 8732
+    },
+    {
       "icon_id": "41874840",
       "name": "Frame 1000005755",
-      "font_class": "a-Frame1000005755",
+      "font_class": "biaotilie",
       "unicode": "e6d8",
       "unicode_decimal": 59096
     },
@@ -258,6 +300,13 @@
       "unicode_decimal": 59158
     },
     {
+      "icon_id": "42269357",
+      "name": "Frame 1000005755",
+      "font_class": "biaotihang",
+      "unicode": "221d",
+      "unicode_decimal": 8733
+    },
+    {
       "icon_id": "41874842",
       "name": "复制 2",
       "font_class": "fuzhi",
@@ -274,7 +323,7 @@
     {
       "icon_id": "41838960",
       "name": "文中快捷创建任务_添加人员",
-      "font_class": "wenzhongkuaijiechuangjianrenwu_tianjiarenyuan",
+      "font_class": "tianjiarenyuan",
       "unicode": "e713",
       "unicode_decimal": 59155
     },
@@ -386,7 +435,7 @@
     {
       "icon_id": "41838979",
       "name": "icon-kfckfc",
-      "font_class": "xuanfuzaixuanfukuangshang_fuzhilianjie",
+      "font_class": "fuzhilianjie",
       "unicode": "e725",
       "unicode_decimal": 59173
     },
@@ -566,13 +615,6 @@
       "unicode_decimal": 59204
     },
     {
-      "icon_id": "41839012",
-      "name": "悬浮在悬浮框上_修订",
-      "font_class": "xuanfuzaixuanfukuangshang_xiuding",
-      "unicode": "e745",
-      "unicode_decimal": 59205
-    },
-    {
       "icon_id": "41839013",
       "name": "信息收集_点赞",
       "font_class": "aixin",
@@ -736,14 +778,14 @@
     {
       "icon_id": "41838862",
       "name": "编辑文档中点击加号_常用_任务创建列表",
-      "font_class": "bianjiwendangzhongdianjijiahao_changyong_renwuchuangjianliebiao",
+      "font_class": "renwuchuangjian",
       "unicode": "e6ba",
       "unicode_decimal": 59066
     },
     {
       "icon_id": "41838863",
       "name": "编辑文档中点击加号_绘图_流程图",
-      "font_class": "bianjiwendangzhongdianjijiahao_huitu_liuchengtu",
+      "font_class": "liuchengtu-color",
       "unicode": "e6bb",
       "unicode_decimal": 59067
     },
@@ -785,7 +827,7 @@
     {
       "icon_id": "41838871",
       "name": "编辑文档中点击加号_绘图_思维导图",
-      "font_class": "bianjiwendangzhongdianjijiahao_huitu_siweidaotu",
+      "font_class": "siweidaotu-color",
       "unicode": "e6c1",
       "unicode_decimal": 59073
     },
@@ -799,7 +841,7 @@
     {
       "icon_id": "41838874",
       "name": "编辑文档中点击加号_协同_日程",
-      "font_class": "shijian",
+      "font_class": "shijian-color",
       "unicode": "e6c4",
       "unicode_decimal": 59076
     },
@@ -813,7 +855,7 @@
     {
       "icon_id": "41838876",
       "name": "编辑文档中点击加号_协同_会议议程",
-      "font_class": "bianjiwendangzhongdianjijiahao_xietong_huiyiyicheng",
+      "font_class": "xietonghuiyi-color",
       "unicode": "e6c6",
       "unicode_decimal": 59078
     },
@@ -827,7 +869,7 @@
     {
       "icon_id": "41838878",
       "name": "编辑文档中点击加号_协同_文档",
-      "font_class": "bianjiwendangzhongdianjijiahao_xietong_wendang",
+      "font_class": "wendang-color",
       "unicode": "e6c8",
       "unicode_decimal": 59080
     },
@@ -848,7 +890,7 @@
     {
       "icon_id": "41838882",
       "name": "编辑文档中点击加号_常用_视频及文件",
-      "font_class": "bianjiwendangzhongdianjijiahao_changyong_shipinjiwenjian",
+      "font_class": "wenjian-color",
       "unicode": "e6cb",
       "unicode_decimal": 59083
     },
@@ -862,7 +904,7 @@
     {
       "icon_id": "41838884",
       "name": "编辑文档中点击加号_常用_快速创建任务",
-      "font_class": "bianjiwendangzhongdianjijiahao_changyong_kuaisuchuangjianrenwu",
+      "font_class": "chuangjianrenwu-color",
       "unicode": "e6cd",
       "unicode_decimal": 59085
     },
@@ -883,7 +925,7 @@
     {
       "icon_id": "41838887",
       "name": "编辑中头部_工作事项",
-      "font_class": "bianjizhongtoubu_gongzuoshixiang",
+      "font_class": "gongzuoshixiang-color",
       "unicode": "e6d0",
       "unicode_decimal": 59088
     },
@@ -911,7 +953,7 @@
     {
       "icon_id": "41838893",
       "name": "编辑文档中点击加号_文档组件_时间轴",
-      "font_class": "shijianzhou",
+      "font_class": "shijianzhou-color",
       "unicode": "e6d4",
       "unicode_decimal": 59092
     },
@@ -953,7 +995,7 @@
     {
       "icon_id": "41838900",
       "name": "编辑文档中点击加号_协同_群名片",
-      "font_class": "bianjiwendangzhongdianjijiahao_xietong_qunmingpian",
+      "font_class": "qunminpian-color",
       "unicode": "e6db",
       "unicode_decimal": 59099
     },
@@ -1121,7 +1163,7 @@
     {
       "icon_id": "41838930",
       "name": "列表最右侧更多_文档操作_多人协作",
-      "font_class": "liebiaozuiyoucegengduo_wendangcaozuo_duorenxiezuo",
+      "font_class": "duorenxiezuo",
       "unicode": "e6f6",
       "unicode_decimal": 59126
     },

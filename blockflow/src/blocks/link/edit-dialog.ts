@@ -9,10 +9,10 @@ import {NzRadioModule} from "ng-zorro-antd/radio";
   selector: 'div.float-edit-dialog',
   template: `
     <p>标题</p>
-    <input type="text" placeholder="请输入标题" [value]="attrs?.href" (input)="onTextUpdate($event)"
+    <input type="text" placeholder="请输入标题" [value]="attrs?.text" (input)="onTextUpdate($event)"
            [class.error]="titleError" #titleInput>
     <p>地址</p>
-    <input type="text" placeholder="请输入地址" [value]="attrs?.text" (input)="onHrefUpdate($event)"
+    <input type="text" placeholder="请输入地址" [value]="attrs?.href" (input)="onHrefUpdate($event)"
            [class.error]="urlError" #urlInput>
     <p>展现</p>
     <nz-radio-group [ngModel]="attrs?.appearance" (ngModelChange)="onAppearanceUpdate($event)">

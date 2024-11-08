@@ -1,7 +1,7 @@
-import {fromEvent, Subscription, take} from "rxjs";
+import {debounceTime, fromEvent, Subscription, take, throttleTime} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {FloatTextToolbar} from "./widget/float-text-toolbar";
-import {Controller, EditableBlock, getCurrentCharacterRange, IPlugin} from "../../core";
+import {Controller, EditableBlock, getCurrentCharacterRange, IPlugin, sliceDelta} from "../../core";
 import {IToolbarMenuItem} from "./widget/float-text-toolbar.type";
 
 export interface IExpandToolbarItem {
@@ -15,16 +15,23 @@ export class FloatTextToolbarPlugin implements IPlugin {
 
   controller!: Controller;
 
-  private _oldRangePosition: { top: number, left: number, bottom: number } = {top: 0, left: 0, bottom: 0}
+  // private _oldRangePosition: { top: number, left: number, bottom: number } = {top: 0, left: 0, bottom: 0}
   private _vcr!: ViewContainerRef
   private _cpr?: ComponentRef<FloatTextToolbar>
   private _cprSub?: Subscription
 
   private timer?: number
+  private readonly expandToolbarMenuList?: IToolbarMenuItem[]
 
   constructor(
     private readonly expandToolbarList?: IExpandToolbarItem[],
   ) {
+    this.expandToolbarMenuList = this.expandToolbarList?.map((item, idx) => {
+      return {
+        ...item.item,
+        order: (item.item.order || 8) + idx
+      }
+    })
   }
 
   init(controller: Controller) {
@@ -37,14 +44,14 @@ export class FloatTextToolbarPlugin implements IPlugin {
       return sel
     }
 
-    fromEvent(document, 'selectionchange')
+    fromEvent(document, 'selectionchange').pipe(debounceTime(200))
       .subscribe(() => {
         if (controller.readonly$.value || controller.activeElement?.classList.contains('bf-plain-text-only')) return
+        this.timer && clearTimeout(this.timer)
 
         if (!isRange()) {
-          this.timer && clearTimeout(this.timer)
           this._cpr && this.closeToolbar()
-          return
+          return;
         }
 
         this.timer = setTimeout(() => {
@@ -62,13 +69,9 @@ export class FloatTextToolbarPlugin implements IPlugin {
     if (!activeBlock) return
 
     this._cpr = this._vcr.createComponent(FloatTextToolbar)
-    this.expandToolbarList?.length && this._cpr.setInput('expandToolbarList', this.expandToolbarList?.map((item, idx) => {
-      return {
-        ...item.item,
-        order: (item.item.order || 8) + idx
-      }
-    }))
-    this.moveToolbar(rect)
+    this.expandToolbarList?.length && this._cpr.setInput('expandToolbarList', this.expandToolbarMenuList)
+
+    this.moveToolbar(rect, activeBlock)
     this.controller.rootElement.appendChild(this._cpr.location.nativeElement)
 
     activeBlock.onDestroy.pipe(take(1)).subscribe(() => {
@@ -92,7 +95,7 @@ export class FloatTextToolbarPlugin implements IPlugin {
         case 'code':
           activeBlock.applyDelta([
             {retain: range.start},
-            {retain: range.end - range.start, attributes: {[`a:${item.name}`]: true}}
+            {retain: range.end - range.start, attributes: {[`a:${item.name}`]: this._cpr?.instance.activeMenuSet?.has(item.name) ? null : true}}
           ])
           break
         case 'c':
@@ -110,17 +113,32 @@ export class FloatTextToolbarPlugin implements IPlugin {
     })
   }
 
-  moveToolbar(rect: DOMRect = window.getSelection()!.getRangeAt(0).getBoundingClientRect()) {
-    if (!this._cpr) return
+  moveToolbar(rect: DOMRect | undefined = window.getSelection()?.getRangeAt(0)?.getBoundingClientRect(), activeBlock?: EditableBlock) {
+    if (!this._cpr || !rect) return
+    activeBlock ||= this.controller.getBlockRef(this.controller.getFocusingBlockId()!) as EditableBlock
+    if (!activeBlock) return
+    const range = getCurrentCharacterRange()
+    const deltas = sliceDelta(activeBlock.getTextDelta(), range.start, range.end)
+    // 获取选中文本的共有属性
+    const commonAttrs = deltas.map(d => {
+      // @ts-ignore
+      return Object.keys(d.attributes || {}).filter(k => k.startsWith('a:') && d.attributes[k]).map(k => {
+        return k.slice(2)
+      })
+    }).reduce((prev, cur) => {
+      return prev.filter(v => cur.includes(v))
+    })
+    this._cpr.setInput('activeMenuSet', new Set(commonAttrs))
+
     const rootElementRect = this.controller.rootElement.getBoundingClientRect()
     const {top, left, bottom, right} = rect
-    if(top > window.innerHeight / 2) {
+    if (top > window.innerHeight / 2) {
       this._cpr.instance.top = top - rootElementRect.top - this._cpr.location.nativeElement.clientHeight - 4
     } else {
       this._cpr.instance.top = bottom - rootElementRect.top + 4
     }
     const width = this._cpr.location.nativeElement.clientWidth
-    if(left + width > window.innerWidth) {
+    if (left + width > window.innerWidth) {
       this._cpr.setInput('left', right - rootElementRect.left - width)
     } else {
       this._cpr.setInput('left', left - rootElementRect.left)

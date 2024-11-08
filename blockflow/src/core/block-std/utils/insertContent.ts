@@ -2,10 +2,10 @@ import {DeltaInsert} from "../../types";
 import {BlockflowInline} from "../inline";
 import {findNodeByIndex, isEmbedElement} from "../../utils";
 
-export const insertContent = (ele: HTMLElement, from: number, delta: DeltaInsert) => {
+export const insertContent = (ele: HTMLElement, from: number, delta: DeltaInsert, viewCreator: (d: DeltaInsert) => HTMLElement) => {
   // console.time('insertContent')
   if (!ele.textContent?.length) {
-    const span = BlockflowInline.createView(delta as DeltaInsert)
+    const span = viewCreator(delta as DeltaInsert)
     ele.innerHTML = span.outerHTML
     return
   }
@@ -13,7 +13,7 @@ export const insertContent = (ele: HTMLElement, from: number, delta: DeltaInsert
   const {node, offset} = findNodeByIndex(ele, from)
 
   if (isEmbedElement(node)) {
-    const embed = BlockflowInline.createView(delta as DeltaInsert)
+    const embed = viewCreator(delta as DeltaInsert)
     offset === 0 ? node.before(embed) : node.after(embed)
     return
   }
@@ -22,7 +22,7 @@ export const insertContent = (ele: HTMLElement, from: number, delta: DeltaInsert
   const isSame = BlockflowInline.compareAttributesWithEle(node as HTMLElement, delta.attributes)
 
   if (typeof delta.insert === 'object') {
-    const embed = BlockflowInline.createView(delta as DeltaInsert)
+    const embed = viewCreator(delta as DeltaInsert)
     if (offset > 0 && offset < textNode.length) return splitBy(node, offset, embed)
     return offset === 0 ? node.before(embed) : node.after(embed)
   }
@@ -30,7 +30,7 @@ export const insertContent = (ele: HTMLElement, from: number, delta: DeltaInsert
   if (isSame) {
     textNode.insertData(offset, delta.insert)
   } else {
-    const span = BlockflowInline.createView(delta as DeltaInsert)
+    const span = viewCreator(delta as DeltaInsert)
     if (offset === textNode.length) {
       if (!delta.attributes || !isSame) node.after(span)
       else textNode.insertData(offset, delta.insert)

@@ -1,3 +1,5 @@
+import {isEmbedElement} from "../../utils";
+
 export const deleteContent = (ele: HTMLElement, from: number, count: number) => {
   // console.time('deleteContent')
   let currentPos = 0;
@@ -12,8 +14,9 @@ export const deleteContent = (ele: HTMLElement, from: number, count: number) => 
       i--;
       continue;
     }
-    const textNode = child.firstChild as Text;
-    const textLength = textNode.length;
+
+    const isEmbed = isEmbedElement(child);
+    const textLength = isEmbed ? 1 : child.textContent?.length || 1;
 
     if (currentPos + textLength >= from && currentPos <= end) {
       const rangeStart = Math.max(0, from - currentPos);
@@ -22,7 +25,7 @@ export const deleteContent = (ele: HTMLElement, from: number, count: number) => 
         child.remove();
         i--
       } else {
-        textNode.deleteData(rangeStart, rangeEnd - rangeStart);
+        (child.firstChild as Text).deleteData(rangeStart, rangeEnd - rangeStart);
       }
     }
     if(currentPos > end) break;

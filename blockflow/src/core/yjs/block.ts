@@ -2,6 +2,7 @@ import {Subject} from "rxjs";
 import {YMapEvent} from "yjs";
 import Y from ".";
 import {DeltaInsert, IBlockModel, IEditableBlockModel, IInlineModel} from "../types";
+import {genUniqueID} from "../utils";
 
 export type YBlockModel = Y.Map<any>
 
@@ -104,8 +105,9 @@ export class BlockModel<Model extends IBlockModel = IBlockModel> {
   }
 
   static fromModel<T extends IBlockModel | IEditableBlockModel = IBlockModel>(block: T) {
-    let children: (BlockModel | IInlineModel)[]
+    block.id = genUniqueID()
 
+    let children: (BlockModel | IInlineModel)[]
     let yChildren
     if (block.nodeType === 'editable') {
       yChildren = new Y.Text()
