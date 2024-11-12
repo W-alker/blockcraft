@@ -1,15 +1,15 @@
-import {Overlay, OverlayRef} from '@angular/cdk/overlay';
-import {NgForOf} from '@angular/common';
-import {ChangeDetectionStrategy, Component, ElementRef, HostBinding, TemplateRef, ViewChild} from '@angular/core';
-import {DeltaOperation, EditableBlock} from '../../core';
-import {TEMPLATE_LIST, ITemplate} from './const'
-import {TemplatePortal} from '@angular/cdk/portal';
-import {ViewContainerRef} from '@angular/core';
-import {IMermaidBlockModel} from './type';
+import { Overlay, OverlayRef } from '@angular/cdk/overlay';
+import { NgForOf } from '@angular/common';
+import { ChangeDetectionStrategy, Component, ElementRef, HostBinding, TemplateRef, ViewChild } from '@angular/core';
+import { DeltaOperation, EditableBlock } from '../../core';
+import { TEMPLATE_LIST, ITemplate } from './const'
+import { TemplatePortal } from '@angular/cdk/portal';
+import { ViewContainerRef } from '@angular/core';
+import { IMermaidBlockModel } from './type';
 import mermaid from 'mermaid'
-import {take} from 'rxjs';
-import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
+import { take } from 'rxjs';
 
+mermaid.initialize({ startOnLoad: false })
 @Component({
   selector: 'div.mermaid',
   standalone: true,
@@ -24,8 +24,8 @@ export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
 
   protected readonly templateList = TEMPLATE_LIST
 
-  @ViewChild('graph', {read: ElementRef}) graph!: ElementRef<HTMLElement>
-  @ViewChild('templateListTpl', {read: TemplateRef}) templateListTpl!: TemplateRef<any>
+  @ViewChild('graph', { read: ElementRef }) graph!: ElementRef<HTMLElement>
+  @ViewChild('templateListTpl', { read: TemplateRef }) templateListTpl!: TemplateRef<any>
 
   @HostBinding('attr.data-view-mode')
   protected _viewMode = 'text'
@@ -39,21 +39,6 @@ export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
     super()
   }
 
-  override ngOnInit() {
-    super.ngOnInit();
-    this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
-      if (e.type === 'props') {
-        console.log('------', this.id, this.graph.nativeElement)
-        if (this._viewMode !== this.props.viewMode && this.props.viewMode === 'graph') {
-          this.renderGraph()
-        } else {
-          this.graph.nativeElement.innerHTML = ''
-        }
-        this._viewMode = this.props.viewMode
-      }
-    })
-  }
-
   override ngAfterViewInit(): void {
     super.ngAfterViewInit()
   }
@@ -61,10 +46,9 @@ export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
   renderGraph = async () => {
     if (!this.textLength) return
     const graphDefinition = this.getTextContent();
-    const verify = await mermaid.parse(graphDefinition, {suppressErrors: true})
+    const verify = await mermaid.parse(graphDefinition, { suppressErrors: true })
     if (verify) {
-      const {svg} = await mermaid.render('graphDiv', graphDefinition);
-      console.log(svg)
+      const { svg } = await mermaid.render(this.id.replace(/\d/g, '') + 'graphDiv', graphDefinition);
       this.graph.nativeElement.innerHTML = svg
     } else {
       this.graph.nativeElement.innerHTML = `<span style="color: red;">语法错误！</span>`
@@ -72,7 +56,13 @@ export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
   }
 
   onSwitchView() {
-    this.setProp('viewMode', this.props.viewMode === 'graph' ? 'text' : 'graph')
+    this._viewMode = this._viewMode === 'graph' ? 'text' : 'graph'
+    this.cdr.markForCheck()
+    if (this._viewMode === 'graph') {
+      this.renderGraph();
+    } else {
+      this.graph.nativeElement.innerHTML = ''
+    }
   }
 
   private dialogFlag: 'template' | 'prefix' = 'template'
@@ -81,7 +71,7 @@ export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
     const target = e.target as HTMLElement
     const portal = new TemplatePortal(this.templateListTpl, this.vcr)
     const positionStrategy = this.overlay.position().flexibleConnectedTo(target).withPositions([
-      {originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top'}
+      { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' }
     ])
     this.modalRef = this.overlay.create({
       positionStrategy,
@@ -97,14 +87,14 @@ export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
 
   useTemplate(item: ITemplate) {
     if (this.dialogFlag === 'template') {
-      const deltas: DeltaOperation[] = [{insert: item.prefix + item.template}]
-      if(this.textLength) {
-        deltas.unshift({delete: this.textLength})
+      const deltas: DeltaOperation[] = [{ insert: item.prefix + item.template }]
+      if (this.textLength) {
+        deltas.unshift({ delete: this.textLength })
       }
       this.applyDelta(deltas)
     } else {
       this.applyDelta([
-        {insert: item.prefix}
+        { insert: item.prefix }
       ])
     }
     this.modalRef?.dispose()

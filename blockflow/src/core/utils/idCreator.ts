@@ -5,5 +5,5 @@ export const genUniqueID = () => {
       .substring(1);
   }
 
-  return Date.now() + '-' + s4() + s4() + '-' + s4()
+  return Date.now() + s4() + s4() + s4()
 }
