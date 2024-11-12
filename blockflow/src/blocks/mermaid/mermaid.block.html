@@ -1,6 +1,8 @@
 <div class="head">
-  <div class="template-btn btn" (click)="onShowTemplateList($event)">类型 <i class="bf_icon bf_xiajaintou" style="font-size: .8em"></i></div>
-<!--  <div class="template-btn btn" (click)="onShowTemplateList($event)">模板 <i class="bf_icon bf_xiajaintou"></i></div>-->
+  <div class="btn" style="color: #999;">Mermaid</div>
+  <div class="template-btn btn" (click)="onShowTemplateList($event, 'prefix')">类型 <i class="bf_icon bf_xiajaintou" style="font-size: .8em"></i></div>
+
+  <div class="template-btn btn" (click)="onShowTemplateList($event, 'template')">模板 <i class="bf_icon bf_xiajaintou"></i></div>
   <div class="switch-btn btn" (click)="onSwitchView()"><i class="bf_icon bf_qiehuan"></i></div>
 </div>
 

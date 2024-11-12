@@ -1,4 +1,4 @@
-import {EditableBlockSchema} from "../../core";
+import {DeltaInsert, EditableBlockSchema} from "../../core";
 import {ICodeBlockModel} from "./type";
 import {CodeBlock} from "./code.block";
 
@@ -9,18 +9,18 @@ export const CodeBlockSchema: EditableBlockSchema<ICodeBlockModel['props']> = {
   icon: 'bf_icon bf_daimakuai',
   svgIcon: 'bf_daimakuai1',
   label: '代码块',
-  onCreate: (deltas) => {
+  onCreate: (deltas: DeltaInsert[]) => {
     return {
       props: () => ({
         lang: 'javascript',
         indent: 0
       }),
-      children: [{
+      children: deltas?.length ? [{
         insert: deltas.reduce((acc, cur) => {
           acc += cur.insert
           return acc
         }, '')
-      }]
+      }] : []
     }
   }
 }

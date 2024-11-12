@@ -8,7 +8,14 @@ export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Cont
   event.preventDefault()
   event.stopImmediatePropagation()
   const curRange = controller.getSelection()!
-  if (curRange.isAtRoot) return
+  if (curRange.isAtRoot) {
+    controller.deleteSelectedBlocks()
+    const newBlock = controller.createBlock('paragraph')
+    controller.insertBlocks(curRange.rootRange!.start , [newBlock]).then(() => {
+      controller.setSelection(newBlock.id, 'start')
+    })
+    return
+  }
 
   const {blockRange: range} = curRange
   const bRef = controller.getFocusingBlockRef()
@@ -21,7 +28,7 @@ export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Cont
     const isAtEnd = range.start === textContent.length && textContent.at(-2) !== '\n'
     const deltas: DeltaOperation[] = [
       {retain: range.start},
-      {insert: isAtEnd ?  '\n\u200B' : '\n'}
+      {insert: isAtEnd ? '\n\u200B' : '\n'}
     ]
     if (range.end !== range.start) deltas.splice(1, 0, {delete: range.end - range.start})
     bRef.applyDelta(deltas, false)
@@ -30,15 +37,20 @@ export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Cont
   }
 
   if (parentId !== controller.rootId) return
-  const paramDeltas = (range.start === 0 || range.end >= textContent.length) ? undefined : sliceDelta(bRef.getTextDelta(), range.end)
-  const newBlock = controller.createBlock(bRef.flavour, [paramDeltas, bRef.props])
+
+  const isEmpty = !textContent.trim()
+  const isAtCenter = range.start > 0 && range.end < textContent.length
+
+  const paramDeltas = isAtCenter ? sliceDelta(bRef.getTextDelta(), range.end) : undefined
+  const newBlock = controller.createBlock(isEmpty ? 'paragraph' : bRef.flavour, [paramDeltas, bRef.props])
 
   controller.transact(() => {
-    if (range.start > 0 && range.end < textContent.length) {
+    if (isAtCenter) {
       bRef.applyDelta([{retain: range.start}, {delete: textContent.length - range.start}])
     }
-    controller.insertBlocks(range.start === 0 ? index : index + 1, [newBlock], parentId).then(() => {
-      range.start > 0 && controller.setSelection(newBlock.id, 'start')
+
+    controller.insertBlocks(range.start === 0 && !isEmpty ? index : index + 1, [newBlock], parentId).then(() => {
+      (range.start > 0 || isEmpty) && controller.setSelection(newBlock.id, 'start')
     })
   }, USER_CHANGE_SIGNAL)
 }
