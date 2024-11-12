@@ -1,8 +1,8 @@
 //@import "../../assets/iconfont/iconfont.css";
 :root {
   --bf-c: #000;
-  --bf-fs: 16px;
-  --bf-lh: 22px;
+  --bf-fs: 22px;
+  --bf-lh: 30px;
   --bf-bg: #fff;
   --bf-placeholder: #ccc;
   --bf-anchor: #4857E2;
@@ -93,7 +93,7 @@ bf-editor {
     &.bf-multi-line {
       white-space: pre-wrap;
 
-      > span {
+      >span {
         white-space: pre-wrap;
         overflow-wrap: break-word;
       }
@@ -152,7 +152,7 @@ bf-editor {
     border: 1px solid #dee0e3;
     padding: 0 .1em;
 
-    + [bfi-code="true"] {
+    +[bfi-code="true"] {
       border-left: none;
     }
   }
@@ -176,7 +176,7 @@ bf-editor {
 
     &[data-mention-type="user"] {
       &::before {
-        content: '@' ;
+        content: '@';
       }
     }
 
@@ -241,7 +241,7 @@ bf-editor {
     &:hover {
       background: #f5f5f5;
 
-      > i.dropdown {
+      >i.dropdown {
         transform: rotate(180deg);
       }
     }
@@ -250,7 +250,7 @@ bf-editor {
       background: #f5f5f5;
     }
 
-    > i {
+    >i {
       display: flex;
       justify-content: center;
       align-items: center;

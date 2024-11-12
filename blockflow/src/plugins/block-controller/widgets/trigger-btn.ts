@@ -4,12 +4,12 @@ import {
   HostListener,
   Input,
 } from "@angular/core";
-import {NgIf, NgTemplateOutlet} from "@angular/common";
-import {filter, fromEvent, merge, mergeAll, take, takeUntil} from "rxjs";
-import {Overlay, OverlayRef} from "@angular/cdk/overlay";
-import {ComponentPortal} from "@angular/cdk/portal";
-import {BlockFlowContextmenu, IContextMenuComponent} from "../../../editor";
-import {BaseBlock, Controller, EditableBlock} from "../../../core";
+import { NgIf, NgTemplateOutlet } from "@angular/common";
+import { filter, fromEvent, merge, mergeAll, take, takeUntil } from "rxjs";
+import { Overlay, OverlayRef } from "@angular/cdk/overlay";
+import { ComponentPortal } from "@angular/cdk/portal";
+import { BlockFlowContextmenu, IContextMenuComponent } from "../../../editor";
+import { BaseBlock, Controller, EditableBlock } from "../../../core";
 
 @Component({
   selector: 'div.trigger-btn',
@@ -38,16 +38,17 @@ import {BaseBlock, Controller, EditableBlock} from "../../../core";
     }
 
     .btn {
-      width: 22px;
-      height: 22px;
       background-color: #fff;
       box-shadow: 0 0 2px 0 #999;
       border-radius: 4px;
       overflow: hidden;
       cursor: pointer;
       text-align: center;
-      line-height: 22px;
       color: #999;
+      font-size: 16px;
+      width: 22px;
+      height: 22px;
+      line-height: 22px;
     }
 
     .btn:hover {
@@ -58,7 +59,7 @@ import {BaseBlock, Controller, EditableBlock} from "../../../core";
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class TriggerBtn {
-  @Input({required: true})
+  @Input({ required: true })
   set contextmenu(c: IContextMenuComponent) {
     this.contextmenuPortal = new ComponentPortal(c)
   }
@@ -94,7 +95,7 @@ export class TriggerBtn {
     })
 
     this.host.nativeElement.style.display = 'block'
-    const {top, left} = this.calcPos()
+    const { top, left } = this.calcPos()
     this.top = top
     this.left = left
   }
@@ -162,11 +163,11 @@ export class TriggerBtn {
     if (this.ovr) return
     const positionStrategy = this.overlay.position().flexibleConnectedTo(this.host)
       .withPositions([
-        {originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top'},
-        {originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom'},
+        { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' },
+        { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom' },
       ])
       .withPush(true)
-    this.ovr = this.overlay.create({positionStrategy})
+    this.ovr = this.overlay.create({ positionStrategy })
     const cpr = this.ovr.attach(this.contextmenuPortal)
     cpr.setInput('activeBlock', this.activeBlock)
     cpr.setInput('controller', this.controller)

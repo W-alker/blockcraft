@@ -6,10 +6,10 @@ import {
   ViewChild,
   ViewContainerRef
 } from "@angular/core";
-import {DeltaOperation, EditableBlock} from "../../core";
+import { DeltaOperation, EditableBlock } from "../../core";
 import { ICodeBlockModel } from "./type";
 import { Overlay, OverlayModule } from "@angular/cdk/overlay";
-import {fromEventPattern, take} from "rxjs";
+import { fromEventPattern, take } from "rxjs";
 import { AsyncPipe, NgForOf, NgIf } from "@angular/common";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import * as Prism from 'prismjs';
@@ -68,9 +68,9 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
     })
 
     this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
-        if (e.type === 'props') {
-          this.highlight()
-        }
+      if (e.type === 'props') {
+        this.highlight()
+      }
     })
 
     fromEventPattern(

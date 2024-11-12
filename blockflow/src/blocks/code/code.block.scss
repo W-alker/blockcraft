@@ -165,13 +165,13 @@
   gap: 4px;
   color: #86acff;
 
-  > span {
+  >span {
     pointer-events: none;
     height: var(--code-padding-top);
     line-height: var(--code-padding-top);
   }
 
-  > i {
+  >i {
     font-size: inherit;
     pointer-events: none;
   }
