@@ -19,6 +19,7 @@ import {IBlockFlowRange} from "./type";
 import {CharacterIndex, genUniqueID, getCurrentCharacterRange} from "../utils";
 import {IOrderedListBlockModel, updateOrderAround} from "../../blocks";
 import Y from "../yjs";
+import {BlockFlowClipboard} from "@core/modules";
 
 export interface HistoryConfig {
   open: boolean
@@ -75,6 +76,7 @@ export class Controller {
   public readonly historyManager?: Y.UndoManager
   public readonly undoRedo$ = new BehaviorSubject<boolean>(false)
 
+  public clipboard!: BlockFlowClipboard
   public readonly keyEventBus: KeyEventBus = new KeyEventBus(this)
 
   public readonly inlineManger = new BlockflowInline(new Map(DEFAULT_EMBED_CONVERTER_LIST.concat(this.config.embedConverter || [])))
@@ -100,6 +102,7 @@ export class Controller {
         if (!v) return
         this._root = root
         root.setController(this)
+        this.clipboard = new BlockFlowClipboard(this)
         this.addPlugins(this.config.plugins || [])
         resolve(true)
       })

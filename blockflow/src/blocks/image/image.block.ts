@@ -10,7 +10,7 @@ import { BehaviorSubject, fromEvent, Subscription, take, throttleTime} from "rxj
 import Viewer from 'viewerjs';
 import {FloatToolbar, IToolbarItem} from "../../components";
 import {IImageBlockProps, IImgBlockModel} from "./type";
-import {BaseBlock, ClipDataWriter} from "../../core";
+import {BaseBlock} from "../../core";
 import {ParagraphBlock} from "../paragraph/paragraph.block";
 import {OverlayModule} from "@angular/cdk/overlay";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
@@ -343,7 +343,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
         this.setProp('align', item.value as IImageBlockProps['align'])
         break
       case 'copy-link':
-        ClipDataWriter.writeClipData(this.props.src)
+        navigator.clipboard.writeText(this.props.src)
         break
       case 'download':
         this.download(this.props.src)

@@ -10,6 +10,9 @@ import {IBaseMetadata} from "../types";
     <ng-container #container></ng-container>
   `,
   standalone: true,
+  host: {
+    '[attr.contenteditable]': 'false',
+  }
 })
 export class BlockWrap {
   @Input({required: true}) controller!: Controller

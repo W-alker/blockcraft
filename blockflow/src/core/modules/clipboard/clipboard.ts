@@ -2,7 +2,7 @@ import {
   BlockModel,
   Controller,
   DeltaInsert, DeltaOperation, deltaToString,
-  EditableBlock, IBlockModel,
+  EditableBlock, IBlockFlowRange, IBlockModel,
   isUrl,
   sliceDelta
 } from "@core";
@@ -22,8 +22,11 @@ export class BlockFlowClipboard {
     fromEvent<ClipboardEvent>(controller.rootElement, 'paste').pipe(takeUntil(controller.root.onDestroy)).subscribe(this.onPaste)
   }
 
+  copy(range: IBlockFlowRange) {
+
+  }
+
   private onCopy = (event: ClipboardEvent) => {
-    console.log('copy')
     event.preventDefault()
     const curRange = this.controller.getSelection()
     if (!curRange) throw new Error('No range selected')
@@ -105,7 +108,7 @@ export class BlockFlowClipboard {
         console.log(json)
         let index: number
         if (curRange.isAtRoot) {
-          index = curRange.rootRange!.start
+          index = curRange.rootRange!.start + 1
         } else {
           index = this.controller.getBlockPosition(curRange.blockId)!.index
         }

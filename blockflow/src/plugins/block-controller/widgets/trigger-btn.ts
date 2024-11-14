@@ -56,7 +56,10 @@ import { BaseBlock, Controller, EditableBlock } from "../../../core";
     }
   `],
   imports: [NgIf, NgTemplateOutlet],
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '[attr.contenteditable]': 'false',
+  }
 })
 export class TriggerBtn {
   @Input({ required: true })

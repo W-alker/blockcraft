@@ -8,7 +8,7 @@ import {
 } from "@angular/core";
 import {NgForOf, NgIf, NgTemplateOutlet} from "@angular/common";
 import {IContextMenuEvent, IContextMenuItem} from "./type";
-import {BaseBlock, BlockSchema, ClipDataWriter, Controller, EditableBlock} from "../../core";
+import {BaseBlock, BlockSchema, Controller, EditableBlock} from "../../core";
 import {FILE_UPLOADER} from "../../blocks";
 import {Overlay} from "@angular/cdk/overlay";
 import {TemplatePortal} from "@angular/cdk/portal";
@@ -293,9 +293,10 @@ export class BlockFlowContextmenu {
         case 'cut':
         case 'copy':
           const model = this.controller.getBlockModel(this.activeBlock!.id)!
-          ClipDataWriter.writeModelToClipboard([model]).then(() => {
-            item.flavour === 'cut' && this.controller.deleteBlockById(this.activeBlock!.id)
-          })
+          // TODO: 复制到剪贴板
+          // ClipDataWriter.writeModelToClipboard([model]).then(() => {
+          //   item.flavour === 'cut' && this.controller.deleteBlockById(this.activeBlock!.id)
+          // })
           return
         case 'delete':
           this.controller.deleteBlockById(this.activeBlock!.id)

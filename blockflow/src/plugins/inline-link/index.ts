@@ -1,6 +1,5 @@
 import {filter, fromEvent, Subscription, take} from "rxjs";
 import {
-  ClipDataWriter,
   Controller, DeltaInsertEmbed, DeltaOperation,
   EditableBlock, getCharacterOffset,
   IPlugin, USER_CHANGE_SIGNAL
@@ -121,7 +120,8 @@ export class InlineLinkPlugin implements IPlugin {
               break
             case 'copy':
               const delta = c.inlineManger.elementToDelta(target)
-              ClipDataWriter.writeDeltaToClipboard([delta])
+              // TODO: Clipboard API
+              // ClipDataWriter.writeDeltaToClipboard([delta])
               break
             case 'unlink':
               const text = target.textContent!

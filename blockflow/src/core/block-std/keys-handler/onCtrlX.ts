@@ -1,7 +1,7 @@
 import {IKeyEventHandler} from "./keyEventBus";
-import {copyHandler} from "../../helpers";
+// import {copyHandler} from "../../helpers";
 
 export const onCtrlX: IKeyEventHandler = (e, controller) => {
-  e.preventDefault()
-  copyHandler(controller, true)
+  // e.preventDefault()
+  // copyHandler(controller, true)
 }
