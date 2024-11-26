@@ -4,7 +4,7 @@ import {ComponentRef, TemplateRef, ViewContainerRef} from "@angular/core";
 import {
   BlockflowInline, BlockFlowSelection,
   Controller,
-  EmbedConverter,
+  EmbedConverter, getCurrentCharacterRange,
   IPlugin,
   USER_CHANGE_SIGNAL
 } from "../../core";
@@ -257,7 +257,7 @@ export class MentionPlugin implements IPlugin {
     const selection = document.getSelection()!
     selection.setPosition(this._mentionElement.firstChild!, 0)
     const len = this._mentionElement.textContent!.length
-    const range = BlockFlowSelection.getCurrentCharacterRange(this.controller.activeElement!)
+    const range = getCurrentCharacterRange(this.controller.activeElement!)
 
     const attributes = {
       'd:mentionId': item.id,

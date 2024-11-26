@@ -1,6 +1,6 @@
 import {Component, ElementRef, ViewChild} from "@angular/core";
 import {ITableBlockModel, ITableRowBlockModel} from "./type";
-import {BaseBlock, BlockFlowSelection, EditableBlock, USER_CHANGE_SIGNAL} from "../../core";
+import {BaseBlock, BlockFlowSelection, EditableBlock, getCurrentCharacterRange, USER_CHANGE_SIGNAL} from "../../core";
 import {TableRowBlock} from "./table-row.block";
 import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
 import {BehaviorSubject, filter, fromEvent, take, takeUntil} from "rxjs";
@@ -87,7 +87,7 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
           return
         }
         const cell = e.target as HTMLElement
-        const range = BlockFlowSelection.getCurrentCharacterRange(cell)
+        const range = getCurrentCharacterRange(cell)
         if (range.start === range.end && range.start === 0) {
           this.moveSelection(e.target as HTMLElement, e.key === 'ArrowLeft' ? 'left' : 'up')
         }
@@ -101,7 +101,7 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
           return
         }
         const target = e.target as HTMLElement
-        const range = BlockFlowSelection.getCurrentCharacterRange(target)
+        const range = getCurrentCharacterRange(target)
         if (range.start === range.end && range.start === target.textContent!.length) {
           this.moveSelection(target, e.key === 'ArrowRight' ? 'right' : 'down')
         }
@@ -114,7 +114,7 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
           this.clearSelectingCellText()
         } else {
           const cell = e.target as HTMLElement
-          const range = BlockFlowSelection.getCurrentCharacterRange(cell)
+          const range = getCurrentCharacterRange(cell)
           if (range.start === range.end && range.start === 0) {
             e.stopPropagation()
           }

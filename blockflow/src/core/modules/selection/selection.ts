@@ -18,11 +18,11 @@ export type CharacterIndex = number | 'start' | 'end'
 export type IBlockFlowRange = { rootRange?: ICharacterRange, isAtRoot: true, rootId: string }
   | { blockRange: ICharacterRange, blockId: string, isAtRoot: false }
 
-export class BlockFlowSelection {
-  static characterIndex2Number = (index: CharacterIndex, length: number) => {
-    return typeof index === 'number' ? index : index === 'start' ? 0 : length
-  }
+export const characterIndex2Number = (index: CharacterIndex, length: number) => {
+  return typeof index === 'number' ? index : index === 'start' ? 0 : length
+}
 
+export class BlockFlowSelection {
   constructor(
     public readonly controller: Controller
   ) {
@@ -46,7 +46,7 @@ export class BlockFlowSelection {
       }
     }
     return {
-      blockRange: BlockFlowSelection.getCurrentCharacterRange(this.activeElement),
+      blockRange: getCurrentCharacterRange(this.activeElement),
       isAtRoot: false,
       blockId: this.root.getActiveBlockId()!,
     }
@@ -87,7 +87,53 @@ export class BlockFlowSelection {
     return el.lastElementChild!.contains(sel.anchorNode) && sel.anchorOffset === el.lastElementChild!.textContent!.length
   }
 
-  static getCurrentCharacterRange = (activeElement: HTMLElement): ICharacterRange => {
+
+  static findNodeByIndex = (ele: HTMLElement, index: number, findFrom?: ICharacterPosition): ICharacterPosition => {
+    if (!ele.children.length) throw new Error('no children')
+
+    let cnt = findFrom?.beforeEleOffset || 0
+    if (index === 0) return {
+      node: ele.firstElementChild!,
+      offset: 0,
+      eleOffset: 0,
+      beforeEleOffset: 0
+    }
+
+    const childElements = ele.children
+    for (let i = findFrom?.eleOffset || 0; i < childElements.length; i++) {
+      const child = childElements[i]
+      if (child.tagName === 'BR') {
+        child.remove()
+        i--
+        continue
+      }
+      const childTextLength = isEmbedElement(child) ? 1 : child.textContent?.length || 1
+      if (cnt + childTextLength >= index) {
+        return {
+          node: child,
+          offset: index - cnt,
+          eleOffset: i,
+          beforeEleOffset: cnt
+        }
+      }
+      cnt += childTextLength
+    }
+
+    throw new Error('index out of range')
+  }
+
+  static getElementCharacterOffset = (ele: HTMLElement, container: HTMLElement) => {
+    let cnt = 0
+    for (let i = 0; i < container.children.length; i++) {
+      const child = container.children[i]
+      if (child === ele) return cnt
+      cnt += isEmbedElement(child) ? 1 : child.textContent!.length
+    }
+    return -1
+  }
+}
+
+export const getCurrentCharacterRange = (activeElement: HTMLElement): ICharacterRange => {
     const sel = document.getSelection()
     if (!activeElement || !sel) throw new Error('No selection or active element')
 
@@ -153,51 +199,6 @@ export class BlockFlowSelection {
 
     return {start: startPos, end: endPos}
   }
-
-  static findNodeByIndex = (ele: HTMLElement, index: number, findFrom?: ICharacterPosition): ICharacterPosition => {
-    if (!ele.children.length) throw new Error('no children')
-
-    let cnt = findFrom?.beforeEleOffset || 0
-    if (index === 0) return {
-      node: ele.firstElementChild!,
-      offset: 0,
-      eleOffset: 0,
-      beforeEleOffset: 0
-    }
-
-    const childElements = ele.children
-    for (let i = findFrom?.eleOffset || 0; i < childElements.length; i++) {
-      const child = childElements[i]
-      if (child.tagName === 'BR') {
-        child.remove()
-        i--
-        continue
-      }
-      const childTextLength = isEmbedElement(child) ? 1 : child.textContent?.length || 1
-      if (cnt + childTextLength >= index) {
-        return {
-          node: child,
-          offset: index - cnt,
-          eleOffset: i,
-          beforeEleOffset: cnt
-        }
-      }
-      cnt += childTextLength
-    }
-
-    throw new Error('index out of range')
-  }
-
-  static getElementCharacterOffset = (ele: HTMLElement, container: HTMLElement) => {
-    let cnt = 0
-    for (let i = 0; i < container.children.length; i++) {
-      const child = container.children[i]
-      if (child === ele) return cnt
-      cnt += isEmbedElement(child) ? 1 : child.textContent!.length
-    }
-    return -1
-  }
-}
 
 export const setCharacterRange = (el: HTMLElement, start: CharacterIndex, end: CharacterIndex) => {
   const sel = document.getSelection()!

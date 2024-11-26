@@ -137,7 +137,7 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
     e.stopPropagation()
     e.preventDefault()
     const text = this.getTextContent()
-    this.controller.clipboard.writeText(text).then(v => {
+    this.controller.clipboard.writeText(text).then(() => {
       const el = e.target as HTMLElement
       el.childNodes[1].textContent = '已复制'
       setTimeout(() => {

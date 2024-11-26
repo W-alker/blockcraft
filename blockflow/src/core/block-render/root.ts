@@ -8,9 +8,15 @@ import {BlockWrap} from "./block-wrap";
 import {BehaviorSubject} from "rxjs";
 import {Controller} from "../controller";
 import {BlockModel, USER_CHANGE_SIGNAL} from "../yjs";
-import {BlockFlowSelection, BlockSelection, CharacterIndex, ICharacterRange} from "../modules";
+import {
+  BlockSelection,
+  CharacterIndex,
+  characterIndex2Number,
+  getCurrentCharacterRange,
+  ICharacterRange
+} from "../modules";
 import {isEmbedElement} from "../utils";
-import {deleteContent, EditableBlock} from "../block-std";
+import {deleteContent} from "../block-std";
 
 @Component({
   selector: 'div[bf-node-type="root"][lazy-load="false"]',
@@ -102,8 +108,8 @@ export class EditorRoot {
     document.getSelection()!.removeAllRanges()
     this.rootElement.focus({preventScroll: true})
     this.clearSelectedBlockRange()
-    const start = BlockFlowSelection.characterIndex2Number(from, this.controller.rootModel.length)
-    const end = BlockFlowSelection.characterIndex2Number(to, this.controller.rootModel.length)
+    const start = characterIndex2Number(from, this.controller.rootModel.length)
+    const end = characterIndex2Number(to, this.controller.rootModel.length)
     this._selectedBlockRange = {start, end}
     for (let i = start; i <= end; i++) {
       const ele = this.rootElement.children[i] as HTMLElement
@@ -171,7 +177,7 @@ export class EditorRoot {
     const sel = document.getSelection()!
     const activeElement = document.activeElement as HTMLElement
 
-    this.prevRange = BlockFlowSelection.getCurrentCharacterRange(activeElement)
+    this.prevRange = getCurrentCharacterRange(activeElement)
 
     if (!sel.isCollapsed && !event.isComposing) {
       sel.collapseToStart()
@@ -213,7 +219,8 @@ export class EditorRoot {
     const ops: Array<() => void> = []
 
     const bid = this.controller.getFocusingBlockId()!
-    const yText = (this.controller.getBlockRef(bid) as EditableBlock).yText
+    // @ts-ignore
+    const yText = this.controller.getBlockRef(bid).yText
     if (start !== end) {
       ops.push(() => yText.delete(start, end - start))
     }

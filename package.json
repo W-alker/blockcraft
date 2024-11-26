@@ -4,11 +4,11 @@
   "scripts": {
     "ng": "ng",
     "demo": "ng serve demo --open --configuration development --port 8081 --host 0.0.0.0",
-    "build": "ng build blockflow",
+    "build": "ng build blockflow && pnpm copy-assets",
     "copy-assets": "cpx 'blockflow/src/assets/**/*' dist/blockflow-editor/assets",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "pub": "pnpm build && pnpm copy-assets && cd dist/blockflow-editor && npm publish --registry http://npm.runtongqiuben.com",
+    "pub": "ng build blockflow && pnpm copy-assets && cd dist/blockflow-editor && npm publish --registry http://npm.runtongqiuben.com",
     "unpub": "npm unpublish blockflow-editor --force --registry http://npm.runtongqiuben.com"
   },
   "private": true,

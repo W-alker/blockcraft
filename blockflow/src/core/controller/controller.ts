@@ -11,12 +11,12 @@ import {
   USER_CHANGE_SIGNAL,
   YBlockModel
 } from "../yjs";
+import Y from "../yjs";
 import {EditorRoot} from "../block-render";
 import {Injector} from "@angular/core";
 import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
 import {IBlockFlavour, IBlockModel} from "../types";
 import {IOrderedListBlockModel, updateOrderAround} from "../../blocks";
-import Y from "../yjs";
 import {BlockFlowClipboard, BlockFlowSelection} from "../../core";
 
 export interface HistoryConfig {
@@ -363,7 +363,7 @@ export class Controller {
     let p = index - 1
     while (p >= 0) {
       const prev = mc[p]
-      if (this.isEditableBlock(prev)) return prev
+      if (this.isEditable(prev)) return prev
       p--
     }
     return null
@@ -388,7 +388,7 @@ export class Controller {
     let p = index + 1
     while (p <= mc.length - 1) {
       const next = mc[p]
-      if (this.isEditableBlock(next)) return next
+      if (this.isEditable(next)) return next
       p++
     }
     return null
@@ -407,7 +407,11 @@ export class Controller {
     return this.root.activeElement
   }
 
-  isEditableBlock(b: string | BlockModel | BaseBlock | EditableBlock) {
+  isEditableBlock(block: BaseBlock<any>): block is EditableBlock {
+    return block instanceof EditableBlock
+  }
+
+  isEditable(b: string | BlockModel | BaseBlock | EditableBlock) {
     return typeof b === 'string' ? this.getBlockModel(b)?.nodeType === 'editable' : b.nodeType === 'editable'
   }
 

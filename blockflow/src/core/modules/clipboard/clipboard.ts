@@ -1,8 +1,9 @@
 import {
   BlockModel,
   Controller,
-  DeltaInsert, DeltaOperation, deltaToString,
-  EditableBlock, IBlockFlowRange, IBlockModel,
+  DeltaInsert, DeltaOperation,
+  deltaToString,
+  IBlockFlowRange, IBlockModel,
   isUrl,
   sliceDelta
 } from "../../../core";
@@ -77,7 +78,8 @@ export class BlockFlowClipboard {
     if (!curRange.isAtRoot) {
       const {blockRange: range, blockId} = curRange
       if (range.start === range.end) throw new Error('The range is collapsed')
-      const bRef = this.controller.getBlockRef(blockId) as EditableBlock
+      const bRef = this.controller.getBlockRef(blockId)
+      if (!bRef || !this.controller.isEditableBlock(bRef)) throw new Error('The block is not editable')
 
       if (this.controller.activeElement?.classList.contains('bf-plain-text-only')) {
         clipboardData.setData('text/plain', bRef.getTextContent().slice(range.start, range.end))
@@ -103,7 +105,9 @@ export class BlockFlowClipboard {
     const {range} = res
     if (!range.isAtRoot) {
       const {blockRange, blockId} = range
-      const bRef = this.controller.getBlockRef(blockId) as EditableBlock
+      const bRef = this.controller.getBlockRef(blockId)
+      if (!bRef || !this.controller.isEditableBlock(bRef)) throw new Error('The block is not editable')
+
       const deltas = [{retain: blockRange.start}, {delete: blockRange.end - blockRange.start}]
       bRef.applyDelta(deltas)
       return;
@@ -120,7 +124,7 @@ export class BlockFlowClipboard {
   }
 
   private onPaste = async (event: ClipboardEvent) => {
-    if(this.controller.readonly$.value) return
+    if (this.controller.readonly$.value) return
     event.preventDefault()
     const clipboardData = event.clipboardData!
     console.log(clipboardData.types)
@@ -135,7 +139,9 @@ export class BlockFlowClipboard {
       if (!imgFiles.length) return
       const fileUri = await this.uploadImg(imgFiles[0])
 
-      const bRef = this.controller.getBlockRef(curRange.blockId) as EditableBlock
+      const bRef = this.controller.getBlockRef(curRange.blockId)
+      if (!bRef || !this.controller.isEditableBlock(bRef)) throw new Error('The block is not editable')
+
       const {parentId, index} = bRef.getPosition()
       if (bRef.containerEle.classList.contains('bf-plain-text-only')) return
       if (bRef.containerEle.classList.contains('bf-multi-line')) {
@@ -154,7 +160,8 @@ export class BlockFlowClipboard {
       if (data.startsWith(BlockFlowClipboard.SIGN_CLIPBOARD_JSON_DELTA)) {
         const deltas = JSON.parse(data.slice(BlockFlowClipboard.SIGN_CLIPBOARD_JSON_DELTA.length)) as DeltaInsert[]
         if (curRange.isAtRoot) return
-        const bRef = this.controller.getBlockRef(curRange.blockId) as EditableBlock
+        const bRef = this.controller.getBlockRef(curRange.blockId)
+        if (!bRef || !this.controller.isEditableBlock(bRef)) throw new Error('The block is not editable')
         applyPasteDeltaToBlock(bRef, deltas, curRange.blockRange)
         return;
       }
@@ -175,21 +182,22 @@ export class BlockFlowClipboard {
 
     if (!curRange.isAtRoot && clipboardData.types.includes('text/html')) {
 
-      if(!this.controller.activeElement?.classList.contains('bf-plain-text-only')) {
+      if (!this.controller.activeElement?.classList.contains('bf-plain-text-only')) {
         const html = clipboardData.getData('text/html')
         console.log(html)
         const position = this.controller.getBlockPosition(curRange.blockId)!
 
-        if(position.parentId === this.controller.rootId && !this.controller.activeElement?.classList.contains('bf-multi-line')) {
+        if (position.parentId === this.controller.rootId && !this.controller.activeElement?.classList.contains('bf-multi-line')) {
           const parseModels = this.htmlConverter.convertToBlocks(html)
-          if(parseModels.length) {
+          if (parseModels.length) {
             this.controller.insertBlocks(position.index + 1, parseModels.map(BlockModel.fromModel))
             return
           }
         } else {
           const deltas = this.htmlConverter.convertToDeltas(html)
-          if(deltas.length) {
-            const bRef = this.controller.getBlockRef(curRange.blockId) as EditableBlock
+          if (deltas.length) {
+            const bRef = this.controller.getBlockRef(curRange.blockId)
+            if (!bRef || !this.controller.isEditableBlock(bRef)) throw new Error('The block is not editable')
             applyPasteDeltaToBlock(bRef, deltas, curRange.blockRange)
           }
           return
@@ -202,7 +210,8 @@ export class BlockFlowClipboard {
     const text = clipboardData.getData('text/plain')
     if (!text) return;
     if (curRange.isAtRoot) return;
-    const bRef = this.controller.getBlockRef(curRange.blockId) as EditableBlock
+    const bRef = this.controller.getBlockRef(curRange.blockId)
+    if (!bRef || !this.controller.isEditableBlock(bRef)) throw new Error('The block is not editable')
     let deltaInsert: DeltaInsert[]
     if (isUrl(text) && !bRef.containerEle.classList.contains('bf-plain-text-only')) {
       deltaInsert = [{insert: {link: text}, attributes: {'d:href': text}}]
@@ -234,7 +243,7 @@ export class BlockFlowClipboard {
   }
 }
 
-const applyPasteDeltaToBlock = (blockRef: EditableBlock, deltaInsert: DeltaInsert[], range: {
+const applyPasteDeltaToBlock = (blockRef: any, deltaInsert: DeltaInsert[], range: {
   start: number,
   end: number
 }) => {

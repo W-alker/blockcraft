@@ -22,7 +22,7 @@ export const onDelete: IKeyEventHandler = (e, controller) => {
 
     const nextBlockModel = controller.findNextBlockModel(bRef.id)!
 
-    if (!controller.isEditableBlock(nextBlockModel)) {
+    if (!controller.isEditable(nextBlockModel)) {
       return controller.transact(() => {
         !bRef.textLength && controller.deleteBlockById(bRef.id)
         controller.selection.setSelection(controller.rootId, position.index, position.index + 1)

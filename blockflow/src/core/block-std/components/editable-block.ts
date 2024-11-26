@@ -9,9 +9,9 @@ import Y from '../../yjs'
 
 @Component({
   selector: '.editable-container',
-  standalone: true,
   template: ``,
   imports: [],
+  standalone: true,
 })
 export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockModel> extends BaseBlock<Model> {
   @Input() placeholder: string = ''

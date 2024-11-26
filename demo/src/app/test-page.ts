@@ -1,7 +1,7 @@
 import {Component, TemplateRef, ViewChild} from "@angular/core";
-import {BlockFlowContextmenu, BlockFlowEditor, GlobalConfig} from "blockflow-editor";
-import {BlockModel, genUniqueID, IBlockModel, IEditableBlockModel, SchemaStore} from "blockflow-editor";
 import {
+  BlockFlowContextmenu, BlockFlowEditor, GlobalConfig,
+  BlockModel, genUniqueID, IBlockModel, IEditableBlockModel, SchemaStore,
   BlockquoteSchema,
   BulletListSchema, CodeBlockSchema, DividerSchema,
   HeadingFourSchema,
@@ -17,6 +17,7 @@ import {
   BlockflowBinding,
   InlineImgPlugin
 } from "blockflow-editor";
+// } from "../../../blockflow/src/public-api";
 
 const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingTwoSchema, HeadingThreeSchema, HeadingFourSchema,
   ImageSchema, BulletListSchema, OrderedListSchema, TodoListSchema, CalloutSchema, BlockquoteSchema, DividerSchema, LinkSchema, CodeBlockSchema, MermaidBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema])
