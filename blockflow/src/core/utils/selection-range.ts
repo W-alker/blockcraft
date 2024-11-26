@@ -6,7 +6,7 @@ export const characterIndex2Number = (index: CharacterIndex, length: number) => 
 }
 
 export const findNodeByIndex = (ele: HTMLElement, index: number, findFrom?: ICharacterPosition): ICharacterPosition => {
-  if (!ele.children.length) throw new Error('no children')
+  if (!ele.childNodes.length) throw new Error('no children')
 
   let cnt = findFrom?.beforeEleOffset || 0
   if (index === 0) return {
@@ -41,7 +41,7 @@ export const findNodeByIndex = (ele: HTMLElement, index: number, findFrom?: ICha
 
 export const setCharacterRange = (el: HTMLElement, start: CharacterIndex, end: CharacterIndex) => {
   const sel = document.getSelection()!
-  if (document.activeElement !== el) el.focus({preventScroll: true})
+  if (document.activeElement !== el) el.focus()
 
   const textContent = el.textContent
   if (!textContent || !textContent.length) {

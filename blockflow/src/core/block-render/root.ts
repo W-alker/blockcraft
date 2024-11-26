@@ -170,10 +170,15 @@ export class EditorRoot {
 
     this.prevRange = this.controller.selection.getCurrentCharacterRange()
 
-    if (!sel.isCollapsed && !event.isComposing) {
-      sel.collapseToStart()
-      deleteContent(activeElement, this.prevRange!.start, this.prevRange!.end - this.prevRange!.start)
+    if (!sel.isCollapsed) {
+      if(event.isComposing){
+      } else {
+        sel.modify('move', 'forward')
+        deleteContent(activeElement, this.prevRange!.start, this.prevRange!.end - this.prevRange!.start)
+      }
     }
+
+    // console.log(sel.focusNode, sel.focusNode?.textContent?.length, sel.focusOffset, this.prevRange ,activeElement.childNodes.length)
 
     if (
       (sel.focusNode instanceof Text && sel.focusOffset === 0) ||  // at zero width space
@@ -206,6 +211,16 @@ export class EditorRoot {
   @HostListener('input', ['$event'])
   private onInput(event: InputEvent) {
     // const sel = document.getSelection()!
+    const text = event.data!.replaceAll(' ', '\u00A0')
+
+    const sel = document.getSelection()!
+    if(sel.focusNode instanceof Text && sel.focusNode.parentElement?.className.includes('editable-container')) {
+      const span = document.createElement('span')
+      span.textContent = text
+      sel.focusNode.replaceWith(span)
+      sel.setBaseAndExtent(span.firstChild!, 0, span.firstChild!, span.firstChild!.textContent!.length)
+    }
+
     const {start, end, afterEmbed} = this.prevRange!
     const ops: Array<() => void> = []
 
@@ -215,7 +230,6 @@ export class EditorRoot {
     if (start !== end) {
       ops.push(() => yText.delete(start, end - start))
     }
-    const text = event.data!.replaceAll(' ', '\u00A0')
 
     switch (event.inputType) {
       case 'insertReplacementText':
