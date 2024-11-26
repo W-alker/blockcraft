@@ -159,12 +159,21 @@ export const getCurrentCharacterRange = (activeElement: HTMLElement): ICharacter
       const isEmbed = isEmbedElement(child)
       const textNode = child.firstChild! as Text
 
-      if (child === startContainer || startContainer === textNode) {
-        startPos = cnt + (isEmbed ? startOffset : textNode.length)
+      if (child === startContainer) {
+        startPos = cnt + (isEmbed ? startOffset : (startOffset === 0 ? 0 : textNode.length))
       }
 
-      if (child === endContainer || endContainer === textNode) {
-        endPos = cnt + (isEmbed ? endOffset : textNode.length)
+      if (child === endContainer) {
+        endPos = cnt + (isEmbed ? endOffset : (endOffset === 0 ? 0 : textNode.length))
+        break
+      }
+
+      if (startContainer === textNode) {
+        startPos = cnt + startOffset
+      }
+
+      if (endContainer === textNode) {
+        endPos = cnt + endOffset
         break
       }
 
@@ -192,7 +201,7 @@ export const isCursorAtElStart = (el: HTMLElement) => {
   return el.firstElementChild!.contains(sel.anchorNode) && sel.anchorOffset === 0
 }
 
-export const  isCursorAtElEnd = (el: HTMLElement) => {
+export const isCursorAtElEnd = (el: HTMLElement) => {
   const sel = document.getSelection()!
   if (!sel.isCollapsed) return false
   if (!el.childNodes || el.childNodes[el.childNodes.length - 1] === sel.focusNode) return true
