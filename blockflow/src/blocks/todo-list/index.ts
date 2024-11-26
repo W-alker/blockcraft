@@ -13,7 +13,7 @@ export const TodoListSchema: EditableBlockSchema<ITodoListBlockModel['props']> =
     return {
       props: () => ({
         checked: false,
-        indent: props.indent || 0
+        indent: props?.indent || 0
       }),
       children: deltas
     }

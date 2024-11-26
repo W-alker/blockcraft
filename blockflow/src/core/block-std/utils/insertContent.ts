@@ -1,6 +1,7 @@
 import {DeltaInsert} from "../../types";
 import {BlockflowInline} from "../inline";
-import {findNodeByIndex, isEmbedElement} from "../../utils";
+import {isEmbedElement} from "../../utils";
+import {BlockFlowSelection} from "../../modules";
 
 export const insertContent = (ele: HTMLElement, from: number, delta: DeltaInsert, viewCreator: (d: DeltaInsert) => HTMLElement) => {
   // console.time('insertContent')
@@ -10,7 +11,7 @@ export const insertContent = (ele: HTMLElement, from: number, delta: DeltaInsert
     return
   }
 
-  const {node, offset} = findNodeByIndex(ele, from)
+  const {node, offset} = BlockFlowSelection.findNodeByIndex(ele, from)
 
   if (isEmbedElement(node)) {
     const embed = viewCreator(delta as DeltaInsert)

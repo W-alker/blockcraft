@@ -5,7 +5,7 @@ import {
   Input,
 } from "@angular/core";
 import { NgIf, NgTemplateOutlet } from "@angular/common";
-import { filter, fromEvent, merge, mergeAll, take, takeUntil } from "rxjs";
+import { filter, fromEvent, merge, take, takeUntil } from "rxjs";
 import { Overlay, OverlayRef } from "@angular/cdk/overlay";
 import { ComponentPortal } from "@angular/cdk/portal";
 import { BlockFlowContextmenu, IContextMenuComponent } from "../../../editor";

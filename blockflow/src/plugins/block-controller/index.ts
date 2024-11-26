@@ -99,7 +99,7 @@ export class BlockControllerPlugin implements IPlugin {
         this._cpr.instance.closeContextMenu()
         this._cpr.instance.cdr.detectChanges()
 
-        if (this._controller.root.selectedBlockRange) this._controller.root.clearSelectedBlocks()
+        if (this._controller.root.selectedBlockRange) this._controller.root.clearSelectedBlockRange()
 
         const dataTransfer = e.dataTransfer!
         dataTransfer.dropEffect = 'none';

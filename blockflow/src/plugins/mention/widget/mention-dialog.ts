@@ -12,7 +12,21 @@ import {NgForOf, NgIf, NgTemplateOutlet} from "@angular/common";
 import {IMentionData, MentionType} from "../index";
 import {NzEmptyModule} from "ng-zorro-antd/empty";
 import {NzTabsModule} from "ng-zorro-antd/tabs";
+import {NzButtonComponent} from "ng-zorro-antd/button";
 
+const MENTION_TABS: {
+  label: string,
+  type: MentionType
+}[] = [
+  {
+    label: '人员',
+    type: 'user'
+  },
+  {
+    label: '文档',
+    type: 'doc'
+  }
+]
 @Component({
   selector: 'mention-dialog',
   templateUrl: './mention-dialog.html',
@@ -23,7 +37,8 @@ import {NzTabsModule} from "ng-zorro-antd/tabs";
     NgIf,
     NgTemplateOutlet,
     NzEmptyModule,
-    NzTabsModule
+    NzTabsModule,
+    NzButtonComponent
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -47,6 +62,8 @@ export class MentionDialog {
   @Output() itemSelect = new EventEmitter<IMentionData>()
   @Output() close = new EventEmitter<boolean>()
 
+  protected readonly MENTION_TABS = MENTION_TABS
+
   @HostListener('mousedown', ['$event'])
   mousedown(event: MouseEvent) {
     event.stopPropagation()
@@ -54,7 +71,7 @@ export class MentionDialog {
   }
 
   constructor(
-    private elementRef: ElementRef,
+    private elementRef: ElementRef<HTMLElement>,
     private cdr: ChangeDetectorRef
   ) {
   }
@@ -68,6 +85,7 @@ export class MentionDialog {
     } else {
       this.selectIndex = Math.min(this.list.length - 1, this.selectIndex + 1)
     }
+    this.elementRef.nativeElement.querySelector('.mention-dialog__content__item.active')?.scrollIntoView({behavior: 'smooth', block: 'center'})
     this.cdr.detectChanges()
   }
 
@@ -100,7 +118,7 @@ export class MentionDialog {
   onTabChange(index: number) {
     this.activeTabIndex = index
     this.selectIndex = 0
-    this.tabChange.emit(index === 0 ? 'user' : 'doc')
+    this.tabChange.emit(MENTION_TABS[index].type)
   }
 
   ngOnDestroy() {

@@ -1,33 +1,33 @@
-<div style="position: relative">
-  <div class="doc-library__aside-bar__resize-handler" (mousedown)="onResizeHandlerMousedown($event)">
-    <span></span>
-    <span></span>
-    <span></span>
-  </div>
+<!--<div style="position: relative">-->
+<!--  <div class="doc-library__aside-bar__resize-handler" (mousedown)="onResizeHandlerMousedown($event)">-->
+<!--    <span></span>-->
+<!--    <span></span>-->
+<!--    <span></span>-->
+<!--  </div>-->
 
-  <div class="doc-library__aside-bar" #asideBar>
-    <div class="doc-library__aside-bar__group" style="padding-top: 0">
-      <nz-input-group [nzPrefix]="prefixTemplateUser" style="height: 32px; width: unset">
-        <input nz-input placeholder="内容或文件名进行搜索" [(ngModel)]="searchValue" type="text" style="width: 100%"/>
-      </nz-input-group>
-      <ng-template #prefixTemplateUser><i class="bf_icon bf_search" style="color: #999"></i></ng-template>
+<!--  <div class="doc-library__aside-bar" #asideBar>-->
+<!--    <div class="doc-library__aside-bar__group" style="padding-top: 0">-->
+<!--      <nz-input-group [nzPrefix]="prefixTemplateUser" style="height: 32px; width: unset">-->
+<!--        <input nz-input placeholder="内容或文件名进行搜索" [(ngModel)]="searchValue" type="text" style="width: 100%"/>-->
+<!--      </nz-input-group>-->
+<!--      <ng-template #prefixTemplateUser><i class="bf_icon bf_search" style="color: #999"></i></ng-template>-->
 
-      <div class="doc-library__aside-bar__menu-item">
-        <i class="bf_icon bf_huishouzhan"></i><span>回收站</span>
-      </div>
-    </div>
+<!--      <div class="doc-library__aside-bar__menu-item">-->
+<!--        <i class="bf_icon bf_huishouzhan"></i><span>回收站</span>-->
+<!--      </div>-->
+<!--    </div>-->
 
-    <div class="doc-library__aside-bar__group">
-      <h2 class="doc-library__aside-bar__group__title"><span>系统库</span></h2>
-      <menu-tree [treeData]="defaultLibrary"></menu-tree>
-    </div>
+<!--    <div class="doc-library__aside-bar__group">-->
+<!--      <h2 class="doc-library__aside-bar__group__title"><span>系统库</span></h2>-->
+<!--      <menu-tree [treeData]="defaultLibrary"></menu-tree>-->
+<!--    </div>-->
 
-    <div class="doc-library__aside-bar__group">
-      <h2 class="doc-library__aside-bar__group__title"><span>自定义库</span> <i class="bf_icon bf_tianjia-2"></i></h2>
-      <menu-tree [treeData]="customLibrary"></menu-tree>
-    </div>
-  </div>
-</div>
+<!--    <div class="doc-library__aside-bar__group">-->
+<!--      <h2 class="doc-library__aside-bar__group__title"><span>自定义库</span> <i class="bf_icon bf_tianjia-2"></i></h2>-->
+<!--      <menu-tree [treeData]="customLibrary"></menu-tree>-->
+<!--    </div>-->
+<!--  </div>-->
+<!--</div>-->
 
 <div class="doc-library__content">
   <router-outlet></router-outlet>

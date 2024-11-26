@@ -49,19 +49,15 @@ export class KeyEventBus {
       handler: onCtrlZ
     },
     {
-      trigger: (e) => (e.code === 'KeyC' && (e.ctrlKey || e.metaKey)),
+      trigger: (e) => (e.code === 'KeyC' && (e.ctrlKey || e.metaKey) && !e.shiftKey),
       handler: onCtrlC
     },
     {
-      trigger: (e) => (e.code === 'KeyX' && (e.ctrlKey || e.metaKey)),
+      trigger: (e) => (e.code === 'KeyX' && (e.ctrlKey || e.metaKey) && !e.shiftKey),
       handler: onCtrlX
     },
-    // {
-    //   trigger: (e) => (e.code === 'KeyV' && (e.ctrlKey || e.metaKey)),
-    //   handler: onCtrlV
-    // },
     {
-      trigger: (e) => (e.key === 'Enter' && !e.ctrlKey && !e.metaKey),
+      trigger: (e) => e.key === 'Enter',
       handler: onEnter
     },
     {

@@ -1,4 +1,4 @@
-import { DeltaInsert, EditableBlockSchema } from "../../core";
+import {DeltaInsert, deltaToString, EditableBlockSchema} from "../../core";
 import { IMermaidBlockModel } from "./type";
 import { MermaidBlock } from "./mermaid.block";
 
@@ -12,13 +12,11 @@ export const MermaidBlockSchema: EditableBlockSchema<IMermaidBlockModel['props']
   onCreate: (deltas: DeltaInsert[]) => {
     return {
       props: () => ({
+        view: 'text',
         indent: 0
       }),
       children: deltas?.length ? [{
-        insert: deltas.reduce((acc, cur) => {
-          acc += cur.insert
-          return acc
-        }, '')
+        insert: deltaToString(deltas),
       }] : []
     }
   }

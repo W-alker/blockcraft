@@ -5,7 +5,6 @@ export * from './onBackspace';
 export * from './onDelete';
 export * from './onCtrlC';
 export * from './onCtrlX';
-export * from './onCtrlV';
 export * from './onCtrlZ';
 export * from './onArrowUp';
 export * from './onArrowDown';

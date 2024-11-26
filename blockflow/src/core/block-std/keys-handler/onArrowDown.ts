@@ -1,30 +1,28 @@
 import {IKeyEventHandler} from "./keyEventBus";
 import {Controller} from "../../controller";
 import {EditableBlock} from "../components";
-import {isCursorAtElEnd} from "../../utils";
-
 
 export const onArrowDown: IKeyEventHandler = (e: KeyboardEvent, controller: Controller) => {
-  const curRange = controller.getSelection()!
+  const curRange = controller.selection.getSelection()!
   if (curRange.isAtRoot) {
     e.preventDefault()
     const {rootRange} = curRange
-    const lastBlock = rootRange ? controller.getBlockRef(controller.rootModel[rootRange.end].id) : controller.getBlockRef(controller.lastBlock.id)
+    const lastBlock = rootRange ? controller.getBlockRef(controller.rootModel[rootRange.end - 1].id) : controller.getBlockRef(controller.lastBlock.id)
     if (!lastBlock) return
     if (!controller.isEditableBlock(lastBlock)) {
       const nextEditableBlock = controller.findNextEditableBlock(lastBlock.id)
       if (!nextEditableBlock) return
-      controller.setSelection(nextEditableBlock, 'end')
+      nextEditableBlock.setSelection('end')
     } else {
-      controller.setSelection(lastBlock as EditableBlock, 'end')
+      (lastBlock as EditableBlock).setSelection('end')
     }
     return
   }
   const block = controller.getBlockRef(curRange.blockId) as EditableBlock
-  if (isCursorAtElEnd(block.containerEle)) {
+  if (curRange.blockRange.end === block.textLength && curRange.blockRange.start === curRange.blockRange.end) {
     const nextEditableBlock = controller.findNextEditableBlock(curRange.blockId)
     if (!nextEditableBlock) return
     e.preventDefault()
-    controller.setSelection(nextEditableBlock, 'start')
+    nextEditableBlock.setSelection('start')
   }
 }

@@ -1,21 +1,17 @@
 import {Component, HostBinding, Input} from "@angular/core";
-import {NgForOf, NgTemplateOutlet} from "@angular/common";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {DeltaInsert, DeltaOperation, IEditableBlockModel} from "../../types";
 import {BaseBlock} from "./base-block";
 import {USER_CHANGE_SIGNAL} from "../../yjs";
-import {CharacterIndex, ICharacterRange, setSelection} from "../../utils";
 import {deleteContent, insertContent} from "../utils";
+import {CharacterIndex, ICharacterRange, setCharacterRange} from "../../modules";
 import Y from '../../yjs'
 
 @Component({
   selector: '.editable-container',
   standalone: true,
   template: ``,
-  imports: [
-    NgForOf,
-    NgTemplateOutlet
-  ],
+  imports: [],
 })
 export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockModel> extends BaseBlock<Model> {
   @Input() placeholder: string = ''
@@ -34,6 +30,8 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
     this.yText = this.model.getYText()
     this.oldHasContent = !!this.textLength
     this._textIndent = (this.props.indent || 0) * 2 + 'em'
+    this.cdr.markForCheck()
+
     this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(v => {
       if (v.type === 'props') {
         // @ts-ignore
@@ -42,11 +40,14 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
         this.cdr.markForCheck()
       }
     })
+
     this.yText.observe((event, tr) => {
       this.setPlaceholder()
+
       if (tr.origin === USER_CHANGE_SIGNAL) return
-      // console.log('yText.observe', ev.changes.delta)
-      this.applyDeltaToView(event.changes.delta as DeltaOperation[], this.controller.undoRedo$.value)
+      this.applyDeltaToView(event.changes.delta as DeltaOperation[]
+        // , this.controller.undoRedo$.value
+      )
       // this.model.children.splice(0, this.model.children.length, ...this.yText.toDelta())
     })
   }
@@ -87,7 +88,7 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
   }
 
   setSelection(start: CharacterIndex, end?: CharacterIndex) {
-    setSelection(this.containerEle, start, end ?? start)
+    setCharacterRange(this.containerEle, start, end ?? start)
   }
 
   forceRender() {
@@ -100,7 +101,6 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
         fragment.appendChild(this.controller.inlineManger.createView(insert))
       }
       this.containerEle.appendChild(fragment)
-      return
     }
   }
 
@@ -113,13 +113,13 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
   }
 
   applyDeltaToModel(deltas: DeltaOperation[]) {
-    console.log('applyDeltaToModel', deltas)
+    // console.log('applyDeltaToModel', deltas)
     this.yText.applyDelta(deltas)
   }
 
   applyDeltaToView(deltas: DeltaOperation[], withSelection = false, containerEle = this.containerEle) {
     let _range: ICharacterRange | undefined
-    console.log('applyDeltaToModel', deltas)
+    // console.log('applyDeltaToModel', deltas)
 
     let retain = 0
     for (const delta of deltas) {
@@ -139,7 +139,7 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
 
     if (withSelection && _range) {
       // console.log('setSelection', _range)
-      setSelection(containerEle, _range.start, _range.end)
+      setCharacterRange(containerEle, _range.start, _range.end)
     }
   }
 

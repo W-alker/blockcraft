@@ -2,10 +2,9 @@ import {debounceTime, fromEvent, fromEventPattern, Subscription, take, takeUntil
 import {MentionDialog} from "./widget/mention-dialog";
 import {ComponentRef, TemplateRef, ViewContainerRef} from "@angular/core";
 import {
-  BlockflowInline,
+  BlockflowInline, BlockFlowSelection,
   Controller,
   EmbedConverter,
-  getCurrentCharacterRange,
   IPlugin,
   USER_CHANGE_SIGNAL
 } from "../../core";
@@ -45,6 +44,7 @@ const MENTION_EMBED_CONVERTER: EmbedConverter = {
     }
   }
 }
+
 export class MentionPlugin implements IPlugin {
   name = "mention";
   version = 1.0;
@@ -53,7 +53,7 @@ export class MentionPlugin implements IPlugin {
 
   private overlayRef?: OverlayRef
   private _dialog?: ComponentRef<MentionDialog>;
-  protected _activeTab: MentionType = 'user'
+  protected _activeTab: `${MentionType}` = 'user'
 
   private _vcr!: ViewContainerRef;
   private _mentionElement?: HTMLElement
@@ -139,12 +139,12 @@ export class MentionPlugin implements IPlugin {
 
     const search = () => {
       const keyword = node.textContent!.slice(1)
-      if (!keyword) return this._dialog!.setInput('list', [])
       this.request(keyword, this._activeTab).then((res) => {
         this._dialog!.setInput('list', res.list)
       })
     }
 
+    search()
     // MutationObserver is used to detect changes in the text node
     fromEventPattern(
       handler => {
@@ -257,7 +257,7 @@ export class MentionPlugin implements IPlugin {
     const selection = document.getSelection()!
     selection.setPosition(this._mentionElement.firstChild!, 0)
     const len = this._mentionElement.textContent!.length
-    const range = getCurrentCharacterRange()
+    const range = BlockFlowSelection.getCurrentCharacterRange(this.controller.activeElement!)
 
     const attributes = {
       'd:mentionId': item.id,
@@ -265,7 +265,7 @@ export class MentionPlugin implements IPlugin {
       ...BlockflowInline.getAttributes(this._mentionElement!)
     }
 
-    const delta = { insert: { mention: item.name }, attributes }
+    const delta = {insert: {mention: item.name}, attributes}
     const mentionNode = this.controller.inlineManger.createView(delta)
     this.controller.transact(() => {
       // view update

@@ -63,13 +63,13 @@ export class BlockFlowEditor {
   onClick(event: MouseEvent) {
     if (this.controller.readonly$.value || event.target !== this.host.nativeElement || this.controller.root.selectedBlockRange) return
     const lastBm = this.controller.rootModel.at(-1)
-    if (lastBm && lastBm.nodeType === 'editable' && !['code', 'mermaid', 'callout'].includes(lastBm.flavour)) {
-      this.controller.setSelection(lastBm.id, 'end')
+    if (lastBm && lastBm.nodeType === 'editable' && !['code', 'mermaid', 'callout', 'blockquote'].includes(lastBm.flavour)) {
+      this.controller.selection.setSelection(lastBm.id, 'end')
       return
     }
     const p = this.controller.createBlock('paragraph')
     this.controller.insertBlocks(this.controller.rootModel.length, [p]).then(() => {
-      this.controller.setSelection(p.id, 'start')
+      this.controller.selection.setSelection(p.id, 'start')
     })
   }
 

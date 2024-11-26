@@ -6,6 +6,27 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "26122376",
+      "name": "BlockQuote",
+      "font_class": "blockquote",
+      "unicode": "e637",
+      "unicode_decimal": 58935
+    },
+    {
+      "icon_id": "34198307",
+      "name": "下标2",
+      "font_class": "xiabiao",
+      "unicode": "e853",
+      "unicode_decimal": 59475
+    },
+    {
+      "icon_id": "37057267",
+      "name": "上标2",
+      "font_class": "shangbiao",
+      "unicode": "e600",
+      "unicode_decimal": 58880
+    },
+    {
       "icon_id": "42338748",
       "name": "overlap",
       "font_class": "open-link",

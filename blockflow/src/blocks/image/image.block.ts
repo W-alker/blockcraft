@@ -6,7 +6,7 @@ import {
   ViewChild
 } from "@angular/core";
 import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
-import { BehaviorSubject, fromEvent, Subscription, take, throttleTime} from "rxjs";
+import {BehaviorSubject, fromEvent, Subscription, take, throttleTime} from "rxjs";
 import Viewer from 'viewerjs';
 import {FloatToolbar, IToolbarItem} from "../../components";
 import {IImageBlockProps, IImgBlockModel} from "./type";
@@ -19,161 +19,54 @@ import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
   selector: 'div.image-block',
   standalone: true,
   template: `
-      <div class="img-block__container" [style.width.px]="_showWidth" tabindex="0" (focus)="onImgFocus($event)"
-           (blur)="onImgBlur($event)">
-          <!--           (mouseenter)="onContainerMouseEnter($event)" (mouseleave)="onContainerMouseLeave($event)"-->
+    <div class="img-block__container" [style.width.px]="_showWidth" tabindex="0" (keydown)="onKeydown($event)"
+         (focus)="onImgFocus($event)"
+         (blur)="onImgBlur($event)">
 
-          <div [class]="['img-default-skeleton', imgLoadState]" *ngIf="imgLoadState !== 'loaded'">
-              <span class="img-default-skeleton__icon bf_icon bf_jiazai" *ngIf="imgLoadState === 'loading'"></span>
-              <span class="img-default-skeleton__error" *ngIf="imgLoadState === 'error'">加载失败!</span>
-          </div>
-
-          <ng-container *ngIf="imgLoadState === 'loaded'">
-              <div class="bf-float-toolbar img-block__toolbar" *ngIf="isFocusing$ | async"
-                   [toolbarList]="TOOLBAR_LIST" (click)="$event.stopPropagation();"
-                   (itemClick)="onToolbarItemClick($event)">
-              </div>
-          </ng-container>
-
-          <img [src]="model.props.src" [class.resize-mode]="isFocusing$ | async" draggable="false" #img>
-
-          <ng-container *ngIf="imgLoadState === 'loaded'">
-              <p class="img-block__caption editable-container" *ngFor="let item of children"
-                 [controller]="controller" [model]="item" [placeholder]="'添加标题'"
-                 (click)="$event.stopPropagation()" (mousemove)="$event.stopPropagation()"></p>
-          </ng-container>
-
-          <div class="img-resizer" [hidden]="!(isFocusing$ | async)" (mousedown)="onImgClick($event)">
-              <div class="img-resizer__handle img-resizer__handle--tl" (click)="$event.stopPropagation()"
-                   (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
-              <div class="img-resizer__handle img-resizer__handle--tr" (click)="$event.stopPropagation()"
-                   (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
-              <div class="img-resizer__handle img-resizer__handle--bl" (click)="$event.stopPropagation()"
-                   (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
-              <div class="img-resizer__handle img-resizer__handle--br" (click)="$event.stopPropagation()"
-                   (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
-          </div>
-
+      <div [class]="['img-default-skeleton', imgLoadState]" *ngIf="imgLoadState !== 'loaded'">
+        <span class="img-default-skeleton__icon bf_icon bf_jiazai" *ngIf="imgLoadState === 'loading'"></span>
+        <span class="img-default-skeleton__error" *ngIf="imgLoadState === 'error'">加载失败!</span>
       </div>
+
+      <ng-container *ngIf="imgLoadState === 'loaded'">
+        <div class="bf-float-toolbar img-block__toolbar" *ngIf="isFocusing$ | async"
+             [toolbarList]="TOOLBAR_LIST" (click)="$event.stopPropagation();"
+             (itemClick)="onToolbarItemClick($event)">
+        </div>
+      </ng-container>
+
+      <img [src]="model.props.src" [class.resize-mode]="isFocusing$ | async" draggable="false" #img>
+
+      <ng-container *ngIf="imgLoadState === 'loaded'">
+        <p class="img-block__caption editable-container" *ngFor="let item of children"
+           [controller]="controller" [model]="item" [placeholder]="'添加标题'"
+           (click)="$event.stopPropagation()" (mousemove)="$event.stopPropagation()"></p>
+      </ng-container>
+
+      <div class="img-resizer" *ngIf="isFocusing$ | async" (mousedown)="onImgClick($event)">
+        <div class="img-resizer__handle img-resizer__handle__line img-resizer__handle--left"
+             (click)="$event.stopPropagation()"
+             (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
+        <div class="img-resizer__handle img-resizer__handle__line  img-resizer__handle--right"
+             (click)="$event.stopPropagation()"
+             (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
+        <div class="img-resizer__handle img-resizer__handle__point img-resizer__handle--tl"
+             (click)="$event.stopPropagation()"
+             (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
+        <div class="img-resizer__handle img-resizer__handle__point img-resizer__handle--tr"
+             (click)="$event.stopPropagation()"
+             (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
+        <div class="img-resizer__handle img-resizer__handle__point img-resizer__handle--bl"
+             (click)="$event.stopPropagation()"
+             (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
+        <div class="img-resizer__handle img-resizer__handle__point img-resizer__handle--br"
+             (click)="$event.stopPropagation()"
+             (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
+      </div>
+
+    </div>
   `,
-  styles: [`
-    .img-block__toolbar {
-      z-index: 100;
-      position: absolute;
-      top: -40px;
-      right: 50%;
-      transform: translateX(50%);
-    }
-
-    :host {
-      display: flex;
-    }
-
-    .img-block__container {
-      position: relative;
-      max-width: 100%;
-      min-width: 150px;
-    }
-
-    .img-default-skeleton {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(243, 243, 243, 0.5);
-    }
-
-    .img-default-skeleton.loading,
-    .img-default-skeleton.error {
-      min-height: 200px;
-      width: 100%;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .img-default-skeleton__icon {
-      font-size: 40px;
-      color: #5089b2;
-      transform-origin: center center;
-      @keyframes bf_img_loading {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-      animation: bf_img_loading 1s linear infinite;
-    }
-
-    .img-default-skeleton__error {
-      color: #f00;
-    }
-
-    .img-block__container img {
-      display: block;
-      width: 100%;
-    }
-
-    .img-block__caption {
-      z-index: 1;
-      position: absolute;
-      margin: 0;
-      width: 100%;
-      bottom: 0;
-      left: 0;
-      padding: 8px;
-      font-size: 14px;
-      color: #fff;
-      background: linear-gradient(180deg, rgba(0, 0, 0, 0.00) 0%, #000 100%);
-      box-sizing: border-box;
-    }
-
-    .img-resizer {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      outline: 2px solid #4857E2;
-      cursor: zoom-in;
-      box-shadow: 0 0 5px 2px #e8e8e8;
-    }
-
-    .img-resizer__handle {
-      z-index: 2;
-      position: absolute;
-      width: 10px;
-      height: 10px;
-      background-color: #4857E2;
-      border: 2px solid #fff;
-      border-radius: 50%;
-    }
-
-    .img-resizer__handle--tl {
-      top: -7px;
-      left: -7px;
-      cursor: nwse-resize;
-    }
-
-    .img-resizer__handle--tr {
-      top: -7px;
-      right: -7px;
-      cursor: nesw-resize;
-    }
-
-    .img-resizer__handle--bl {
-      bottom: -7px;
-      left: -7px;
-      cursor: nesw-resize;
-
-    }
-
-    .img-resizer__handle--br {
-      bottom: -7px;
-      right: -7px;
-      cursor: nwse-resize;
-    }
-  `],
+  styleUrls: ['image.block.scss'],
   imports: [
     NgIf, ParagraphBlock, NgForOf, FloatToolbar, OverlayModule, AsyncPipe
   ],
@@ -247,7 +140,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
     super.ngOnInit();
     this._showWidth = this.model.props.width
     this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
-      if(e.type === 'props') {
+      if (e.type === 'props') {
         this._showWidth !== this.props.width && (this._showWidth = this.props.width)
       }
     })
@@ -272,6 +165,26 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
     })
   }
 
+  onKeydown(e: KeyboardEvent) {
+    switch (e.key) {
+      case 'Delete':
+      case 'Backspace':
+        e.stopPropagation()
+        e.preventDefault()
+        this.deleteSelf()
+        break
+    }
+  }
+
+  deleteSelf() {
+    const{parentId, index} = this.getPosition()
+    if(parentId === this.controller.rootId && index > 0) {
+      const prevEditable = this.controller.findPrevEditableBlock(this.id)
+      prevEditable && prevEditable.setSelection('end')
+    }
+    this.controller.deleteBlocks(index, 1, parentId)
+  }
+
   onImgFocus(event: FocusEvent) {
     event.stopPropagation()
     event.preventDefault()
@@ -284,8 +197,6 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
   onImgBlur(event: FocusEvent) {
     event.stopPropagation()
     this.isFocusing$.next(false)
-    // this._viewer?.destroy()
-    // this._viewer = null
   }
 
   onImgClick(event: MouseEvent) {
@@ -320,20 +231,20 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
     fromEvent<MouseEvent>(document.body, 'mouseup').pipe(take(1)).subscribe((e) => {
       this.startPoint = undefined
       this.mouseMove$?.unsubscribe()
-      this.setProp('width', this._showWidth)
+      this._showWidth !== this.props.width && this.setProp('width', this._showWidth)
     })
   }
 
-  onToolbarItemClick(e: {item: IToolbarItem}) {
+  onToolbarItemClick(e: { item: IToolbarItem }) {
     const item = e.item
     switch (item.name) {
       case 'caption':
         if (this.model.children.length) {
-          this.model.deleteChildren(0,1)
+          this.model.deleteChildren(0, 1)
         } else {
           const paragraph = this.controller.createBlock('paragraph')
           this.controller.insertBlocks(0, [paragraph], this.id).then(() => {
-            this.controller.setSelection(paragraph.id, 0)
+            this.controller.selection.setSelection(paragraph.id, 0)
           })
         }
         this.TOOLBAR_LIST[0].active = !!this.model.children.length

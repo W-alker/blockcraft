@@ -5,5 +5,6 @@ export interface IMermaidBlockModel extends IEditableBlockModel {
   nodeType: 'editable'
   props: {
     indent: number
+    view: 'text' | 'graph'
   }
 }

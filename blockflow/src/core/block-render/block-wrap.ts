@@ -1,8 +1,6 @@
 import {Component, DestroyRef, ElementRef, Input, ViewChild, ViewContainerRef} from "@angular/core";
 import {Controller} from "../controller";
 import {BlockModel} from "../yjs";
-import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
-import {IBaseMetadata} from "../types";
 
 @Component({
   selector: 'div[bf-block-wrap]',
@@ -36,7 +34,5 @@ export class BlockWrap {
     cpr.instance.cdr.detectChanges()
 
     this.hostEl.nativeElement.setAttribute('data-block-id', this.model.id)
-
-
   }
 }

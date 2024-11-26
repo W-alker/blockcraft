@@ -1,4 +1,4 @@
-import { languageList } from './const'
+import { LANGUAGE_LIST } from './const'
 import { Pipe } from '@angular/core'
 
 @Pipe({
@@ -8,6 +8,6 @@ import { Pipe } from '@angular/core'
 export class LangNamePipe {
 
   transform(val: string) {
-    return languageList.find(v => v.value === val)?.name
+    return LANGUAGE_LIST.find(v => v.value === val)?.name
   }
 }

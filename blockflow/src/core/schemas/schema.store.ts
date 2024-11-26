@@ -20,7 +20,7 @@ export class SchemaStore extends BaseStore<IBlockFlavour, BlockSchema> {
     const schema = this.get(flavour as IBlockFlavour)!
     if (!schema) throw new Error(`schema ${flavour as string} not found`)
 
-    console.log('create', schema.flavour, params)
+    // console.log('create', schema.flavour, params)
     const createBefore = schema.onCreate?.(...(params || []))
 
     let children

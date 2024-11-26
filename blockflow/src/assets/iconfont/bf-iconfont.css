@@ -14,6 +14,18 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+.bf_blockquote:before {
+  content: "\e637";
+}
+
+.bf_xiabiao:before {
+  content: "\e853";
+}
+
+.bf_shangbiao:before {
+  content: "\e600";
+}
+
 .bf_open-link:before {
   content: "\e8de";
 }

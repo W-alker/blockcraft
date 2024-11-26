@@ -4,13 +4,6 @@
   "compilerOptions": {
     "baseUrl": "./",
     "paths": {
-      "@blockflow": ["blockflow/src"],
-      "@blocks": ["blockflow/src/blocks"],
-      "@blocks/*": ["blockflow/src/blocks/*"],
-      "@core": ["blockflow/src/core"],
-      "@core/*": ["blockflow/src/core/*"],
-      "@editor": ["blockflow/src/editor"],
-      "@editor/*": ["blockflow/src/editor/*"]
     },
     "outDir": "./dist/out-tsc",
     "forceConsistentCasingInFileNames": true,
@@ -31,7 +24,8 @@
     "lib": [
       "ES2022",
       "dom"
-    ]
+    ],
+    "esModuleInterop": true
   },
   "angularCompilerOptions": {
     "enableI18nLegacyMessageIdFormat": false,

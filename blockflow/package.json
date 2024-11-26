@@ -1,6 +1,6 @@
 {
   "name": "blockflow-editor",
-  "version": "0.1.10",
+  "version": "1.0.6",
   "peerDependencies": {
     "@angular/common": "^17.3.12",
     "@angular/core": "^17.3.12",
@@ -10,7 +10,8 @@
     "@types/prismjs": "^1.26.5",
     "@types/d3": "^7.4.3",
     "prismjs": "^1.29.0",
-    "mermaid": "^11.3.0"
+    "mermaid": "^11.3.0",
+    "quill-delta-from-html": "^1.0.5"
   },
   "dependencies": {
     "tslib": "^2.3.0"

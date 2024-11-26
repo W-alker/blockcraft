@@ -1,11 +1,14 @@
-import {fromEvent} from "rxjs";
+import {fromEvent, Subject, Subscription, take, takeUntil} from "rxjs";
 import {BlockModel, Controller, EditableBlock, IBlockFlavour, IPlugin} from "../../core";
+import {Overlay, OverlayRef} from "@angular/cdk/overlay";
+import {BlockTransformContextMenu} from "./widget/contextmenu";
+import {ComponentPortal} from "@angular/cdk/portal";
 
 export interface IBlockTransformConfig {
   flavour: string
   description: string
   markdown?: RegExp
-  hotkey: (e: KeyboardEvent) => boolean,
+  hotkey?: (e: KeyboardEvent) => boolean,
   onConvert?: (controller: Controller, from: EditableBlock, matchedString: string) => BlockModel
 }
 
@@ -66,16 +69,14 @@ export const blockTransforms: IBlockTransformConfig[] = [
     hotkey: (e) => e.code === 'KeyQ' && (e.ctrlKey || e.metaKey) && e.shiftKey
   },
   {
-    flavour: 'callout',
-    description: `高亮块(⌘/Ctrl + Shift + Q)\nMarkdown: ! (空格)`,
-    markdown: /^!\s$/,
-    hotkey: (e) => e.code === 'KeyQ' && (e.ctrlKey || e.metaKey) && e.shiftKey
+    flavour: 'blockquote',
+    description: `引用块\nMarkdown: > (空格)`,
+    markdown: /^>\s$/,
   },
   {
     flavour: 'divider',
     description: `分割线(⌘/Ctrl + Shift + H)\nMarkdown: --- (空格)`,
-    markdown: /^---(\s+)?$/,
-    hotkey: (e) => e.code === 'KeyH' && (e.ctrlKey || e.metaKey) && e.shiftKey
+    markdown: /^---(\s+)?$/
   },
   {
     flavour: 'divider',
@@ -94,12 +95,12 @@ export const blockTransforms: IBlockTransformConfig[] = [
 const transformBlock = (controller: Controller, from: EditableBlock, to: IBlockFlavour) => {
   const deltas = from.getTextDelta()
   const newBlock = controller.createBlock(to, [deltas, from.props])
-  controller.transact(() => {
-    controller.replaceWith(from.id, newBlock).then(() => {
-      controller.setSelection(newBlock.id, 'start')
-    })
+  controller.replaceWith(from.id, [newBlock]).then(() => {
+    controller.selection.setSelection(newBlock.id, 'start')
   })
 }
+
+const TransformReg = /^[\\、].*/
 
 export class BlockTransformPlugin implements IPlugin {
   name = 'block-transform';
@@ -113,6 +114,8 @@ export class BlockTransformPlugin implements IPlugin {
   ) {
   }
 
+  private sub = new Subscription()
+
   init(controller: Controller) {
     this._controller = controller
 
@@ -121,7 +124,7 @@ export class BlockTransformPlugin implements IPlugin {
       if (!schema) return
       schema.description = item.description
 
-      controller.keyEventBus.add({
+      item.hotkey && controller.keyEventBus.add({
         trigger: item.hotkey,
         handler: (e, controller) => {
           const block = controller.getFocusingBlockRef()
@@ -140,44 +143,133 @@ export class BlockTransformPlugin implements IPlugin {
           flavour: item.flavour
         })
       }
-
     })
-    console.log(this.mdTransformList)
 
+    this.sub.add(
+      fromEvent<InputEvent>(controller.rootElement, 'input')
+        .subscribe(e => {
+          if (e.data !== ' ') return
+          const block = controller.getFocusingBlockRef()
+          if (!block || block.flavour !== 'paragraph' || block.getParentId() !== controller.rootId) return
+          const range = controller.selection.getSelection()!
+          if (range.isAtRoot) return
+          const {blockId, blockRange} = range
+          const text = block.getTextContent().slice(0, blockRange.start)
+          const matched = this.mdTransformList.find((item) => item.regex.test(text))
+          if (!matched) return
 
-    fromEvent<InputEvent>(controller.rootElement, 'input')
-      .subscribe(e => {
-        if (e.data !== ' ') return
-        const block = controller.getFocusingBlockRef()
-        if (!block || block.flavour !== 'paragraph') return
-        const range = controller.getSelection()!
-        if (range.isAtRoot) return
-        const {blockId, blockRange} = range
-        const text = block.getTextContent().slice(0, blockRange.start)
-        const matched = this.mdTransformList.find((item) => item.regex.test(text))
-        if (!matched) return
-        const config = this.transformList.find((item) => item.flavour === matched.flavour)!
-        block.applyDelta([{delete: text.length}], false)
+          const config = this.transformList.find((item) => item.flavour === matched.flavour)!
+          block.applyDelta([{delete: text.length}], false)
 
-        let newBlock: BlockModel
-        if(config.onConvert) {
-          newBlock = config.onConvert!(controller, block, text)
-        } else {
-          newBlock = controller.createBlock(matched.flavour, [block.getTextDelta(), block.props])
-        }
-        controller.transact(() => {
-          controller.replaceWith(block.id, newBlock).then(() => {
-            controller.setSelection(newBlock.id, 'start')
+          let newBlock: BlockModel
+          if (config.onConvert) {
+            newBlock = config.onConvert!(controller, block, text)
+          } else {
+            newBlock = controller.createBlock(matched.flavour, [block.getTextDelta(), block.props])
+          }
+          const appendBlocks = [newBlock]
+          if (newBlock.nodeType === 'void') {
+            appendBlocks.push(controller.createBlock('paragraph'))
+          }
+          controller.replaceWith(block.id, appendBlocks).then(() => {
+            controller.selection.setSelection(appendBlocks[appendBlocks.length - 1].id, 'start')
           })
-        })
 
+        })
+    )
+
+    this.sub.add(
+      fromEvent<InputEvent>(controller.rootElement, 'input')
+        .subscribe(e => {
+          if (e.data !== '\\' && e.data !== '、') return
+          const block = controller.getFocusingBlockRef()
+          if (!block || block.flavour !== 'paragraph' || block.getParentId() !== controller.rootId || block.containerEle.textContent !== e.data) return
+          this.openContextMenu(block)
+        })
+    )
+  }
+
+  private contextOvr: OverlayRef | null = null
+  private closeMenu$ = new Subject()
+
+  openContextMenu(block: EditableBlock) {
+    const overlay = this._controller.injector.get(Overlay)
+    const positions = overlay.position().flexibleConnectedTo(block.containerEle).withPositions([
+      {originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top'},
+      {originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom'},
+    ])
+    this.contextOvr = overlay.create({positionStrategy: positions})
+    const cpr = this.contextOvr.attach(new ComponentPortal(BlockTransformContextMenu))
+
+    const blockSchemas = this._controller.schemas.values().filter(v => !v.isLeaf && v.flavour !== 'image' && v.flavour !== 'paragraph')
+    cpr.setInput('blocks', blockSchemas)
+
+    const textObserver = () => {
+      const text = block.getTextContent()
+      if (!text || !TransformReg.test(text)) {
+        this.closeMenu$.next(true)
+      }
+      const searchText = text.slice(1)
+      const matchedSchemas = blockSchemas.filter(v => v.label.startsWith(searchText) || v.flavour.startsWith(searchText))
+      if (!matchedSchemas.length) {
+        this.closeMenu$.next(true)
+        return
+      }
+      cpr.setInput('blocks', matchedSchemas)
+      cpr.instance.activeIdx = 0
+    }
+
+    block.yText.observe(textObserver)
+    this.closeMenu$.pipe(take(1)).subscribe(v => {
+      this.contextOvr!.dispose()
+      this.contextOvr = null
+      block.yText.unobserve(textObserver)
+    })
+
+    cpr.instance.blockSelected.pipe(takeUntil(this.closeMenu$)).subscribe(schema => {
+      this.contextOvr!.dispose()
+      const newBlock = this._controller.createBlock(schema.flavour)
+      this._controller.replaceWith(block.id, [newBlock]).then(() => {
+        newBlock.nodeType === 'editable' && this._controller.selection.setSelection(newBlock.id, 'start')
+      })
+    })
+
+    fromEvent(block.containerEle, 'blur').pipe(take(1))
+      .subscribe(() => {
+        this.closeMenu$.next(true)
       })
 
+    fromEvent<KeyboardEvent>(block.containerEle, 'keydown').pipe(takeUntil(this.closeMenu$))
+      .subscribe((e) => {
+        switch (e.key) {
+          case 'Escape':
+            e.preventDefault()
+            e.stopPropagation()
+            this.closeMenu$.next(true)
+            break
+          case 'Enter':
+            e.preventDefault()
+            e.stopPropagation()
+            cpr.instance.select();
+            break
+          case 'ArrowUp':
+            e.preventDefault()
+            e.stopPropagation()
+            cpr.instance.selectUp()
+            break
+          case 'ArrowDown':
+            e.stopPropagation()
+            e.preventDefault()
+            cpr.instance.selectDown()
+            break
+        }
+      })
   }
 
   destroy() {
+    this.sub.unsubscribe()
     this.transformList.forEach((item) => {
-      this._controller.keyEventBus.remove(item.hotkey)
+      item.hotkey && this._controller.keyEventBus.remove(item.hotkey)
     })
   }
 

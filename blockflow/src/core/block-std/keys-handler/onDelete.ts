@@ -5,7 +5,7 @@ import {isEmbedElement} from "../../utils";
 
 export const onDelete: IKeyEventHandler = (e, controller) => {
   e.preventDefault()
-  const curRange = controller.getSelection()!
+  const curRange = controller.selection.getSelection()!
   if (curRange.isAtRoot) {
     controller.deleteSelectedBlocks()
     return
@@ -25,7 +25,7 @@ export const onDelete: IKeyEventHandler = (e, controller) => {
     if (!controller.isEditableBlock(nextBlockModel)) {
       return controller.transact(() => {
         !bRef.textLength && controller.deleteBlockById(bRef.id)
-        controller.setSelection(controller.rootId, position.index, position.index + 1)
+        controller.selection.setSelection(controller.rootId, position.index, position.index + 1)
       }, USER_CHANGE_SIGNAL)
     }
 
@@ -47,21 +47,26 @@ export const onDelete: IKeyEventHandler = (e, controller) => {
   if (selection.isCollapsed) {
     const {focusNode, focusOffset} = selection
 
+    const deleteNextEle = (nextEle: HTMLElement) => {
+      controller.transact(() => {
+        nextEle.remove()
+        yText.delete(blockRange.start, 1)
+      }, USER_CHANGE_SIGNAL)
+    }
+
     if (focusNode === activeElement) {
       const nextElement = activeElement.children[focusOffset]
       if (nextElement instanceof HTMLElement && isEmbedElement(nextElement)) {
-        return controller.transact(() => {
-          nextElement.remove()
-          yText.delete(blockRange.start, 1)
-        }, USER_CHANGE_SIGNAL)
+        return deleteNextEle(nextElement)
       }
-
-      selection.setPosition(nextElement.firstChild!, 0)
+      nextElement && selection.setPosition(nextElement.firstChild!, 0)
     }
 
     if (selection.focusOffset === selection.focusNode!.textContent!.length || !selection.focusNode!.textContent) {
       const nextNode = selection.focusNode!.parentElement!.nextElementSibling
-      // !selection.focusNode!.textContent && selection.focusNode!.parentElement?.remove()
+      if(nextNode && isEmbedElement(nextNode)) {
+        return deleteNextEle(<HTMLElement>nextNode)
+      }
       nextNode && selection.setPosition(nextNode.firstChild!, 0)
     }
 

@@ -7,7 +7,7 @@ import {OrderedListBlock} from "../../../blocks";
 
 export const onTab: IKeyEventHandler = (e: KeyboardEvent, controller: Controller) => {
   e.preventDefault()
-  const curRange = controller.getSelection()!
+  const curRange = controller.selection.getSelection()!
   if (curRange.isAtRoot) {
     const {rootRange} = curRange
     if (!rootRange) return
@@ -15,10 +15,10 @@ export const onTab: IKeyEventHandler = (e: KeyboardEvent, controller: Controller
     from = rootRange.start
     to = rootRange.end
     let ordered: BlockModel | null = null
-    for (let i = from; i <= to; i++) {
+    for (let i = from; i < to; i++) {
       const bm = controller.rootModel[i] as BlockModel<IEditableBlockModel>
       if (bm.nodeType !== 'editable') continue;
-      bm.flavour === 'ordered-list' && (ordered = bm)
+      ordered === null && bm.flavour === 'ordered-list' && (ordered = bm)
       if (e.shiftKey) {
         if (bm.props.indent === 0) continue
         bm.setProp('indent', (bm.props.indent || 1) - 1)
@@ -37,7 +37,7 @@ export const onTab: IKeyEventHandler = (e: KeyboardEvent, controller: Controller
         if (e.shiftKey) return
         bRef.applyDelta([
           {retain: curRange.blockRange.start},
-          {insert: '\u3000'}
+          {insert: '  '}
         ])
         return
       }

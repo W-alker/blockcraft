@@ -15,11 +15,9 @@ import {EditorRoot} from "../block-render";
 import {Injector} from "@angular/core";
 import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
 import {IBlockFlavour, IBlockModel} from "../types";
-import {IBlockFlowRange} from "./type";
-import {CharacterIndex, genUniqueID, getCurrentCharacterRange} from "../utils";
 import {IOrderedListBlockModel, updateOrderAround} from "../../blocks";
 import Y from "../yjs";
-import {BlockFlowClipboard} from "@core/modules";
+import {BlockFlowClipboard, BlockFlowSelection} from "../../core";
 
 export interface HistoryConfig {
   open: boolean
@@ -29,7 +27,7 @@ export interface HistoryConfig {
 export interface IControllerConfig {
   rootId: string
   schemas: SchemaStore
-  embedConverter?: [string, EmbedConverter][] // [flavour, converter]
+  embeds?: [string, EmbedConverter][] // [flavour, converter]
   readonly?: boolean
   historyConfig?: HistoryConfig
   plugins?: IPlugin[],
@@ -51,6 +49,22 @@ const DEFAULT_EMBED_CONVERTER_LIST: [string, EmbedConverter][] = [
       return {
         insert: {link: ele.textContent!},
         attributes: {'d:href': ele.getAttribute('data-href')}
+      }
+    }
+  }],
+  ['image', {
+    toView: (data) => {
+      const span = document.createElement('span')
+      const img = document.createElement('img')
+      img.setAttribute('src', data.insert['image'] as string)
+      img.setAttribute('draggable', 'false')
+      span.style.width = data.attributes?.['d:width'] + 'px'
+      span.appendChild(img)
+      return span
+    },
+    toDelta: (ele) => {
+      return {
+        insert: {image: ele.getAttribute('src')!},
       }
     }
   }]
@@ -77,9 +91,10 @@ export class Controller {
   public readonly undoRedo$ = new BehaviorSubject<boolean>(false)
 
   public clipboard!: BlockFlowClipboard
+  public selection!: BlockFlowSelection
   public readonly keyEventBus: KeyEventBus = new KeyEventBus(this)
 
-  public readonly inlineManger = new BlockflowInline(new Map(DEFAULT_EMBED_CONVERTER_LIST.concat(this.config.embedConverter || [])))
+  public readonly inlineManger = new BlockflowInline(new Map(DEFAULT_EMBED_CONVERTER_LIST.concat(this.config.embeds || [])))
   private _root!: EditorRoot
 
   constructor(
@@ -91,6 +106,16 @@ export class Controller {
     if (historyConfig.open) {
       this.historyManager = new Y.UndoManager(this.rootYModel,
         {captureTimeout: historyConfig.duration || 200, trackedOrigins: new Set([null, USER_CHANGE_SIGNAL])})
+      this.historyManager.on('stack-item-added', (e) => {
+        if (e.type === 'undo') {
+          e.stackItem.meta.set('selection', this.selection.getSelection())
+        }
+      })
+      this.historyManager.on('stack-item-popped', (e) => {
+        requestAnimationFrame(() => {
+          this.selection.applyRange(e.stackItem.meta.get('selection') as any)
+        })
+      })
     }
 
     this.rootYModel.observe(this._rootYModelObserver)
@@ -103,6 +128,7 @@ export class Controller {
         this._root = root
         root.setController(this)
         this.clipboard = new BlockFlowClipboard(this)
+        this.selection = new BlockFlowSelection(this)
         this.addPlugins(this.config.plugins || [])
         resolve(true)
       })
@@ -236,7 +262,7 @@ export class Controller {
       }
 
       const olIndex = blocks.findIndex(b => b.flavour === 'ordered-list')
-      if (olIndex >= 0) this.updateOrderAround(blocks[olIndex] as any)
+      if (olIndex >= 0 && !unRecord) this.updateOrderAround(blocks[olIndex] as any)
 
       this.blocksReady$.pipe(take(1)).subscribe(v => requestAnimationFrame(resolve))
     })
@@ -270,13 +296,12 @@ export class Controller {
     return this.deleteBlocks(index, 1, parentId)
   }
 
-  replaceWith(id: string, newBlock: BlockModel) {
+  replaceWith(id: string, newBlocks: BlockModel[]) {
     const {index, parentId} = this.getBlockPosition(id)!
-    // console.log('replaceWith', index, parentId, id, newBlock)
     return new Promise((resolve) => {
       this.transact(() => {
         this.deleteBlocks(index, 1, parentId)
-        this.insertBlocks(index, [newBlock], parentId).then(resolve)
+        this.insertBlocks(index, newBlocks, parentId).then(resolve)
       }, USER_CHANGE_SIGNAL)
     })
   }
@@ -320,7 +345,6 @@ export class Controller {
   get lastBlock() {
     return this.rootModel[this.rootModel.length - 1]
   }
-
 
   getBlockPosition(id: string) {
     const bRef = this.getBlockRef(id)
@@ -378,7 +402,6 @@ export class Controller {
 
   /** ---------------query block---------------- end **/
 
-
   /** ---------------focus , selection---------------- start **/
   get activeElement() {
     return this.root.activeElement
@@ -386,22 +409,6 @@ export class Controller {
 
   isEditableBlock(b: string | BlockModel | BaseBlock | EditableBlock) {
     return typeof b === 'string' ? this.getBlockModel(b)?.nodeType === 'editable' : b.nodeType === 'editable'
-  }
-
-  getSelection(): IBlockFlowRange | null {
-    if (!this.root.activeElement) return null
-    if (this.root.activeElement === this.rootElement) {
-      return {
-        rootRange: this.root.selectedBlockRange,
-        isAtRoot: true,
-        rootId: this.rootId
-      }
-    }
-    return {
-      blockRange: getCurrentCharacterRange(),
-      isAtRoot: false,
-      blockId: this.getFocusingBlockId()!
-    }
   }
 
   getFocusingBlockId() {
@@ -414,23 +421,13 @@ export class Controller {
     return this.getBlockRef(id) as EditableBlock
   }
 
-  setSelection(target: string | EditableBlock, from: CharacterIndex, to?: CharacterIndex) {
-    if (target === this.rootId) {
-      this.root.selectBlocks(from, to ?? from)
-    } else {
-      const bRef = typeof target === 'string' ? this.getBlockRef(target) : target
-      if (!bRef || !(bRef instanceof EditableBlock)) return
-      bRef.setSelection(from, to ?? from)
-    }
-  }
-
   deleteSelectedBlocks() {
-    if (!this.root.selectedBlockRange) return
-    const {start, end} = this.root.selectedBlockRange
-    this.deleteBlocks(start, end - start + 1)
-    this.root.clearSelectedBlocks()
+    const rootRange = this.root.selectedBlockRange
+    if (!rootRange) return
+    const {start, end} = rootRange
+    this.deleteBlocks(start, end - start)
+    this.root.clearSelectedBlockRange()
   }
-
   /** ---------------focus , selection---------------- end **/
 
   /** ---------------For ordered-list block---------------- start **/

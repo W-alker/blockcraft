@@ -2,18 +2,15 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
-  TemplateRef,
   ViewChild,
-  ViewContainerRef
 } from "@angular/core";
-import { DeltaOperation, EditableBlock } from "../../core";
-import { ICodeBlockModel } from "./type";
-import { Overlay, OverlayModule } from "@angular/cdk/overlay";
-import { fromEventPattern, take } from "rxjs";
-import { AsyncPipe, NgForOf, NgIf } from "@angular/common";
-import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
+import {EditableBlock} from "../../core";
+import {ICodeBlockModel, IModeItem} from "./type";
+import {Overlay, OverlayModule} from "@angular/cdk/overlay";
+import {fromEventPattern} from "rxjs";
+import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
+import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import * as Prism from 'prismjs';
-// 可选：导入其他语言支持
 import 'prismjs/components/prism-javascript';
 import 'prismjs/components/prism-typescript';
 import 'prismjs/components/prism-css';
@@ -22,9 +19,17 @@ import 'prismjs/components/prism-php';
 import 'prismjs/components/prism-python';
 import 'prismjs/components/prism-sql';
 import 'prismjs/components/prism-java';
-import { languageList } from "./const";
-import { TemplatePortal } from "@angular/cdk/portal";
-import { LangNamePipe } from "./langName.pipe";
+import 'prismjs/components/prism-go';
+import 'prismjs/components/prism-c';
+import 'prismjs/components/prism-cpp';
+import 'prismjs/components/prism-csharp';
+import 'prismjs/components/prism-rust';
+import 'prismjs/components/prism-json';
+
+import {ComponentPortal} from "@angular/cdk/portal";
+import {LangNamePipe} from "./langName.pipe";
+import {LangListComponent} from "./lang-list.component";
+import {_Token, updateHighlightedTokens} from "./code-differ";
 
 @Component({
   selector: 'div.code-block',
@@ -42,16 +47,13 @@ import { LangNamePipe } from "./langName.pipe";
 })
 export class CodeBlock extends EditableBlock<ICodeBlockModel> {
 
-  @ViewChild('highlighter', { read: ElementRef }) highlighter!: ElementRef<HTMLDivElement>
-  @ViewChild('langListTpl', { read: TemplateRef }) langListTpl!: TemplateRef<any>
+  @ViewChild('highlighter', {read: ElementRef}) highlighter!: ElementRef<HTMLDivElement>
 
-  protected readonly languageList = languageList;
   protected lines: string[] = []
   private resizeSub?: ResizeObserver
 
   constructor(
-    private overlay: Overlay,
-    private vcr: ViewContainerRef,
+    private overlay: Overlay
   ) {
     super();
   }
@@ -61,10 +63,7 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
     this.highlight()
 
     this.yText.observe(e => {
-      this.applyDeltaToView(e.delta as DeltaOperation[], false, this.highlighter.nativeElement)
-      Promise.resolve().then(() => {
-        this.highlight()
-      })
+      this.highlight()
     })
 
     this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
@@ -85,43 +84,24 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
       // 高度变化时
       this.setLines()
     })
-
   }
 
+  protected oldTokens: _Token[] = []
   highlight = (text: string = this.getTextContent()) => {
-    // const token = hljs.highlight('javascript', text.endsWith('\n') ? text.slice(0, -1) : text)
-    // console.log(token)
-    // this.highlighter.nativeElement.innerHTML = token.value;
+    // console.time('highlight')
     const tokens = Prism.tokenize(text, Prism.languages[this.props.lang]);
-    this.highlighter.nativeElement.innerHTML = this.tokensToHTML(tokens);
+    updateHighlightedTokens(this.highlighter.nativeElement, this.oldTokens, tokens)
+    this.oldTokens = tokens
+    // console.timeEnd('highlight')
   }
 
-  tokensToHTML(tokens: Array<string | Prism.Token>): string {
-    return tokens
-      .map(token => {
-        if (typeof token === 'string') {
-          return `<span>${token}</span>`;
-        } else {
-          const content = Array.isArray(token.content)
-            ? this.tokensToHTML(token.content)
-            : token.content;
-          return `<span class="${token.type}">${content}</span>`;
-        }
-      })
-      .join('');
+  onKeydown(e: KeyboardEvent) {
+    // if((e.ctrlKey || e.metaKey) && e.code === 'KeyC') {
+    //   e.preventDefault()
+    //   e.stopPropagation()
+    //
+    // }
   }
-
-  // formatCode() {
-  //   // 使用 Prettier 格式化代码
-  //   format(this.getTextContent(), {
-  //     tabWidth: 2,
-  //     useTabs: false,
-  //   }).then((formattedCode) => {
-  //     this.yText.delete(0, this.yText.length)
-  //     this.yText.insert(0, formattedCode)
-  //     this.highlight(formattedCode)
-  //   })
-  // }
 
   setLines() {
     this.lines = this.getTextContent().replace(/\n$/, '').split('\n')
@@ -135,18 +115,34 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
 
   showLangList(e: Event) {
     const positionStrategy = this.overlay.position().flexibleConnectedTo(e.target as HTMLElement).withPositions([
-      { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' }
+      {originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top'}
     ])
-    console.log(this.langListTpl, this.vcr)
-    const portal = new TemplatePortal(this.langListTpl, this.vcr)
+    const portal = new ComponentPortal(LangListComponent)
     const ovr = this.overlay.create({
       positionStrategy,
       hasBackdrop: true,
       backdropClass: 'cdk-overlay-transparent-backdrop',
     })
-    ovr.attach(portal)
-    ovr.backdropClick().pipe(take(1)).subscribe(() => {
+    const cpr = ovr.attach(portal)
+    ovr.backdropClick().pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(() => {
       ovr.dispose()
+    })
+    cpr.instance.langChange.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe((lang: IModeItem) => {
+      this.changeLanguage(lang.value)
+      ovr.dispose()
+    })
+  }
+
+  onCopyText(e: Event) {
+    e.stopPropagation()
+    e.preventDefault()
+    const text = this.getTextContent()
+    this.controller.clipboard.writeText(text).then(v => {
+      const el = e.target as HTMLElement
+      el.childNodes[1].textContent = '已复制'
+      setTimeout(() => {
+        el.childNodes[1].textContent = '复制'
+      }, 2000)
     })
   }
 

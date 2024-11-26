@@ -32,7 +32,7 @@
           },
           "configurations": {
             "production": {
-              "tsConfig": "blockflow/tsconfig.lib.prod.json"
+              "tsConfig": "blockflow/tsconfig.lib.prod.json",
             },
             "development": {
               "tsConfig": "blockflow/tsconfig.lib.json"

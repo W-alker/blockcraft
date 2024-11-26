@@ -3,6 +3,7 @@ export * from './heading';
 export * from './bullet-list';
 export * from './ordered-list';
 export * from './todo-list';
+export * from './blockquote';
 export * from './image';
 export * from './divider';
 export * from './callout';

@@ -8,4 +8,5 @@ import { EditableBlock } from "../../core";
   styles: [``]
 })
 export class HeadingTwoBlock extends EditableBlock {
+  override placeholder = '二级标题'
 }

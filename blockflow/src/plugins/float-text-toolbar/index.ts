@@ -1,12 +1,12 @@
-import {debounceTime, fromEvent, Subscription, take, throttleTime} from "rxjs";
+import {debounceTime, fromEvent, Subscription, take} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {FloatTextToolbar} from "./widget/float-text-toolbar";
-import {Controller, EditableBlock, getCurrentCharacterRange, IPlugin, sliceDelta} from "../../core";
+import {BlockFlowSelection, Controller, EditableBlock, IPlugin, sliceDelta} from "../../core";
 import {IToolbarMenuItem} from "./widget/float-text-toolbar.type";
 
 export interface IExpandToolbarItem {
   item: IToolbarMenuItem,
-  click?: (item: IToolbarMenuItem, activeBlock: EditableBlock, controller: Controller,) => void
+  click?: (item: IToolbarMenuItem, activeBlock: EditableBlock, controller: Controller) => void
 }
 
 export class FloatTextToolbarPlugin implements IPlugin {
@@ -50,7 +50,7 @@ export class FloatTextToolbarPlugin implements IPlugin {
         this.timer && clearTimeout(this.timer)
 
         if (!isRange()) {
-          this._cpr && this.closeToolbar()
+          this.closeToolbar()
           return;
         }
 
@@ -79,7 +79,7 @@ export class FloatTextToolbarPlugin implements IPlugin {
     })
 
     this._cprSub = this._cpr.instance.itemClick.subscribe((item) => {
-      const range = getCurrentCharacterRange()
+      const range = BlockFlowSelection.getCurrentCharacterRange(this.controller.activeElement!)
       switch (item.name) {
         case 'align':
           // if (item.value === 'left' && !activeBlock.props['textAlign']) break
@@ -93,9 +93,14 @@ export class FloatTextToolbarPlugin implements IPlugin {
         case 'underline':
         case 'strike':
         case 'code':
+        case 'sub':
+        case 'sup':
           activeBlock.applyDelta([
             {retain: range.start},
-            {retain: range.end - range.start, attributes: {[`a:${item.name}`]: this._cpr?.instance.activeMenuSet?.has(item.name) ? null : true}}
+            {
+              retain: range.end - range.start,
+              attributes: {[`a:${item.name}`]: this._cpr?.instance.activeMenuSet?.has(item.name) ? null : true}
+            }
           ])
           break
         case 'c':
@@ -117,7 +122,7 @@ export class FloatTextToolbarPlugin implements IPlugin {
     if (!this._cpr || !rect) return
     activeBlock ||= this.controller.getBlockRef(this.controller.getFocusingBlockId()!) as EditableBlock
     if (!activeBlock) return
-    const range = getCurrentCharacterRange()
+    const range = BlockFlowSelection.getCurrentCharacterRange(this.controller.activeElement!)
     const deltas = sliceDelta(activeBlock.getTextDelta(), range.start, range.end)
     // 获取选中文本的共有属性
     const commonAttrs = deltas.map(d => {

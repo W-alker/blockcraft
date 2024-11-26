@@ -1,0 +1,133 @@
+.img-block__toolbar {
+  z-index: 100;
+  position: absolute;
+  top: -40px;
+  right: 50%;
+  transform: translateX(50%);
+}
+
+:host {
+  display: flex;
+}
+
+.img-block__container {
+  position: relative;
+  max-width: 100%;
+  min-width: 150px;
+
+  img {
+    display: block;
+    width: 100%;
+  }
+}
+
+.img-default-skeleton {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(243, 243, 243, 0.5);
+
+  &.loading, &.error {
+    min-height: 200px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  & __icon {
+    font-size: 40px;
+    color: #5089b2;
+    transform-origin: center center;
+    @keyframes bf_img_loading {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    animation: bf_img_loading 1s linear infinite;
+  }
+
+  & __error {
+    color: #f00;
+  }
+}
+
+.img-block__caption {
+  z-index: 1;
+  position: absolute;
+  margin: 0;
+  width: 100%;
+  bottom: 0;
+  left: 0;
+  padding: 8px;
+  font-size: 14px;
+  color: #fff;
+  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, .4) 100%);
+  box-sizing: border-box;
+}
+
+.img-resizer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: 2px solid #4857E2;
+  outline: 2px solid #B9C0FF;
+  cursor: zoom-in;
+  box-shadow: 0 0 5px 2px #e8e8e8;
+
+  &__handle {
+    z-index: 1;
+    position: absolute;
+
+    &__point {
+      width: 14px;
+      height: 14px;
+      background-color: #4857E2;
+      border: 2px solid #fff;
+      border-radius: 50%;
+    }
+
+    &--tl {
+      top: -7px;
+      left: -7px;
+      cursor: nwse-resize;
+    }
+
+    &--tr {
+      top: -7px;
+      right: -7px;
+      cursor: nesw-resize;
+    }
+
+    &--bl {
+      bottom: -7px;
+      left: -7px;
+      cursor: nesw-resize;
+    }
+
+    &--br {
+      bottom: -7px;
+      right: -7px;
+      cursor: nwse-resize;
+    }
+
+    &--left, &--right {
+      top: 0;
+      width: 4px;
+      height: 100%;
+      cursor: w-resize;
+    }
+
+    &--left {
+      left: -2px;
+    }
+
+    &--right {
+      right: -2px;
+    }
+  }
+}

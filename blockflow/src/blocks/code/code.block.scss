@@ -1,10 +1,11 @@
 :host {
-  --code-padding-left: calc(var(--bf-fs) * 2);
+  --code-padding-left: calc(var(--bf-fs) * 2.5);
   --code-padding-top: calc(var(--bf-lh) * 1.5);
   --code-padding-bottom: 20px;
   padding: var(--code-padding-top) var(--code-padding-left) var(--code-padding-bottom);
-  border: 1px solid #e6e6e6;
+  outline: 1px solid #e6e6e6;
   border-radius: 4px;
+  --code-font-family: "DM Mono", monospace;
 
   &:focus-within {
     .line-numbers {
@@ -15,8 +16,6 @@
   .line-numbers {
     visibility: hidden;
     position: absolute;
-    display: flex;
-    flex-direction: column;
     top: var(--code-padding-top);
     left: 0;
     width: calc(var(--code-padding-left) * 0.8);
@@ -27,16 +26,19 @@
     user-select: none;
     overflow: hidden;
 
-    >span {
+    > span {
+      display: block;
       width: 100%;
       flex: 1;
       line-height: var(--bf-lh);
+      //height: var(--bf-lh);
       text-align: end;
+      font-family: var(--code-font-family);
     }
   }
 
   .editable-container {
-    font-weight: 0;
+    font-weight: 100;
     background: transparent !important;
     color: transparent !important;
     /* 隐藏文本 */
@@ -49,22 +51,40 @@
     font-size: var(--bf-fs);
     line-height: var(--bf-lh);
     overflow-wrap: break-word;
-    font-family: "DM Mono", monospace;
+    font-family: var(--code-font-family);
     white-space: pre-wrap;
+  }
+
+  .editable-container {
     overflow: hidden;
   }
 
   ::ng-deep .highlight-container {
     position: absolute;
-    top: var(--code-padding-top);
-    left: var(--code-padding-left);
-    width: calc(100% - var(--code-padding-left) * 2);
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    padding: var(--code-padding-top) var(--code-padding-left) var(--code-padding-bottom);
     pointer-events: none;
-    white-space: pre-wrap;
+    //counter-reset: line-counter; /* 初始化计数器 */
 
     span {
       white-space: pre-wrap;
     }
+
+    //.line-break {
+    //  counter-increment: line-counter; /* 每个 li 增加计数器 */
+    //  color: #abb2bf;
+    //  font-size: calc(var(--bf-fs) * 0.9);
+    //
+    //  &::after {
+    //    content: counter(line-counter);
+    //    position: absolute;
+    //    left: 0;
+    //    transform: translate(100%, calc(var(--bf-lh) * -1));
+    //  }
+    //}
 
     .variable {
       color: #d19a66;
@@ -152,49 +172,42 @@
   }
 }
 
-.lang-btn {
-  user-select: none;
-  position: absolute;
-  top: 0;
-  right: var(--code-padding-left);
-  font-size: calc(var(--bf-fs) * .7);
+.head-btn {
   cursor: pointer;
   display: flex;
   align-items: center;
   text-align: center;
   gap: 4px;
-  color: #86acff;
+  color: #999;
+  border-radius: 4px;
+  padding: 0 4px;
+  height: calc(var(--code-padding-top) * 0.8);
 
-  >span {
+  &__group {
+    user-select: none;
+    position: absolute;
+    top: 0;
+    right: var(--code-padding-left);
+    font-size: calc(var(--bf-fs) * .7);
+    line-height: var(--code-padding-top);
+    height: var(--code-padding-top);
+    gap: 8px;
+    display: flex;
+    align-items: center;
+  }
+
+  > span {
     pointer-events: none;
     height: var(--code-padding-top);
     line-height: var(--code-padding-top);
   }
 
-  >i {
+  > i {
     font-size: inherit;
     pointer-events: none;
   }
-}
 
-.lang-list {
-  background-color: #fff;
-  border: 1px solid #f5f2f0;
-  border-radius: 4px;
-  padding: 4px;
-
-  &_item {
-    padding: 0 4px;
-    height: calc(var(--bf-lh) * 1.5);
-    line-height: calc(var(--bf-lh) * 1.5);
-    text-align: center;
-    font-size: calc(var(--bf-fs) * .8);
-    color: #999;
-    cursor: pointer;
-    border-radius: 4px;
-
-    &:hover {
-      background-color: rgba(153, 153, 153, .1);
-    }
+  &:hover {
+    background-color: rgba(153, 153, 153, .1);
   }
 }

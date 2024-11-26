@@ -74,15 +74,6 @@ export class BaseBlock<Model extends IBlockModel | IEditableBlockModel = IBlockM
     })
   }
 
-  private setModifyRecord(time: number = Date.now()) {
-    const m: IBaseMetadata['lastModified'] = {
-      time,
-      ...this.controller.config.localUser
-    }
-    this.model.setMeta('lastModified', m)
-  }
-
-
   ngAfterViewInit() {
     this.controller.storeBlockRef(this)
     this.hostEl.nativeElement.setAttribute('id', this.model.id)
@@ -91,6 +82,26 @@ export class BaseBlock<Model extends IBlockModel | IEditableBlockModel = IBlockM
 
   ngOnDestroy() {
     this.onDestroy.emit()
+  }
+
+  private setModifyRecord(time: number = Date.now()) {
+    const m: IBaseMetadata['lastModified'] = {
+      time,
+      ...this.controller.config.localUser
+    }
+    this.model.setMeta('lastModified', m)
+  }
+
+  getParentId() {
+    return this.model.getParentId() || this.controller.rootId
+  }
+
+  getPosition() {
+    const pos = this.model.getPosition()
+    return {
+      parentId: pos.parentId || this.controller.rootId,
+      index: pos.index
+    }
   }
 
 }

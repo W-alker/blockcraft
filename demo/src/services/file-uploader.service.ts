@@ -9,7 +9,11 @@ export class FileUploaderService {
 
   uploadImg(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
-      resolve('https://v17.angular.io/generated/images/guide/start/fork-the-project.png')
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.addEventListener('loadend', (v) => {
+        resolve(v.target!.result as string)
+      })
     })
     // return new Promise((resolve, reject) => {
     //   this.fileService.uploadFile(file, (e) => {

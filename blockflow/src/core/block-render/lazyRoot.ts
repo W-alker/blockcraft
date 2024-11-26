@@ -23,11 +23,11 @@ export interface LazyLoadConfig {
 @Component({
   selector: 'div[bf-node-type="root"][lazy-load="true"]',
   template: `
-    <ng-container *ngIf="controller">
-      <ng-container *ngFor="let block of controller.rootModel; trackBy:trackBy">
-        <div bf-block-wrap [controller]="controller" [model]="block"></div>
-      </ng-container>
-    </ng-container>
+    @if (controller) {
+      @for (model of controller.rootModel; track model.flavour + '-' + model.id + '-' + model.meta.createdTime) {
+        <div bf-block-wrap contenteditable="false" [controller]="controller" [model]="model"></div>
+      }
+    }
   `,
   standalone: true,
   imports: [

@@ -1,6 +1,6 @@
 import {Component, ElementRef, ViewChild} from "@angular/core";
-import {ITableBlockModel} from "./type";
-import {BaseBlock, getCurrentCharacterRange, USER_CHANGE_SIGNAL} from "../../core";
+import {ITableBlockModel, ITableRowBlockModel} from "./type";
+import {BaseBlock, BlockFlowSelection, EditableBlock, USER_CHANGE_SIGNAL} from "../../core";
 import {TableRowBlock} from "./table-row.block";
 import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
 import {BehaviorSubject, filter, fromEvent, take, takeUntil} from "rxjs";
@@ -28,6 +28,7 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
   protected activeRowIdx = -1
   protected _rowHeights: number[] = []
 
+  protected hoverCell: [number, number] = [-1, -1]
   protected _colWidths: number[] = []
   protected resizing$ = new BehaviorSubject(false)
   protected resizeColIdx = -1
@@ -39,6 +40,7 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
   private selecting$ = new BehaviorSubject<boolean>(false)
 
   @ViewChild('tableElement', {read: ElementRef}) table!: ElementRef<HTMLTableElement>
+  @ViewChild('wrapper', {read: ElementRef}) tableWrapper!: ElementRef<HTMLElement>
 
   trackById = (index: number, item: any) => item.id
   trackByValue = (index: number, w: number) => w
@@ -55,7 +57,7 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
 
     this.selecting$.pipe(takeUntilDestroyed(this.destroyRef), filter(e => e)).subscribe((selecting) => {
       window.getSelection()!.removeAllRanges()
-      this.hostEl.nativeElement.focus({preventScroll: true})
+      this.table.nativeElement.focus({preventScroll: true})
     })
 
     this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
@@ -68,6 +70,11 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
   }
 
   onKeyDown(e: KeyboardEvent) {
+    if (e.code === 'KeyC' && (e.ctrlKey || e.metaKey)) {
+      this.copyCells(e)
+      return;
+    }
+    if (this.controller.readonly$.value) return;
     switch (e.key) {
       case 'Enter':
         e.preventDefault();
@@ -79,8 +86,8 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
           this.focusCell(this.selectingCell[0][0], this.selectingCell[0][1], 'start')
           return
         }
-
-        const range = getCurrentCharacterRange()
+        const cell = e.target as HTMLElement
+        const range = BlockFlowSelection.getCurrentCharacterRange(cell)
         if (range.start === range.end && range.start === 0) {
           this.moveSelection(e.target as HTMLElement, e.key === 'ArrowLeft' ? 'left' : 'up')
         }
@@ -94,7 +101,7 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
           return
         }
         const target = e.target as HTMLElement
-        const range = getCurrentCharacterRange()
+        const range = BlockFlowSelection.getCurrentCharacterRange(target)
         if (range.start === range.end && range.start === target.textContent!.length) {
           this.moveSelection(target, e.key === 'ArrowRight' ? 'right' : 'down')
         }
@@ -106,13 +113,33 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
           e.preventDefault()
           this.clearSelectingCellText()
         } else {
-          const range = getCurrentCharacterRange()
+          const cell = e.target as HTMLElement
+          const range = BlockFlowSelection.getCurrentCharacterRange(cell)
           if (range.start === range.end && range.start === 0) {
             e.stopPropagation()
           }
         }
         break
     }
+  }
+
+  copyCells(e: Event) {
+    if (!this.selectingCell) return
+    e.stopPropagation()
+    e.preventDefault()
+    const json = this.model.toJSON() as ITableBlockModel
+    // 裁截选中的单元格
+    const [start, end] = this.selectingCell
+    json.children = json.children.slice(start[0], end[0] + 1);
+    (json.children as ITableRowBlockModel[]).forEach(row => {
+      row.children = row.children.slice(start[1], end[1] + 1)
+    })
+    json.props = {
+      colHead: false,
+      rowHead: false,
+      colWidths: new Array(end[1] - start[1] + 1).fill(200)
+    }
+    this.controller.clipboard.writeBlockFlowData([json], 'block')
   }
 
   /** 表格行列操作 **/
@@ -219,6 +246,18 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
     this._rowHeights[rowIdx] = height
   }
 
+  // onTableBarRightClick(e: MouseEvent) {
+  //   e.preventDefault()
+  //   e.stopPropagation()
+  //   this.addCol(this.children[0].children.length)
+  // }
+  //
+  // onTableBarBottomClick(e: MouseEvent) {
+  //   e.preventDefault()
+  //   e.stopPropagation()
+  //   this.addRow(this.children.length)
+  // }
+
   onShowRowBar(e: MouseEvent) {
     e.stopPropagation()
     const target = e.target as HTMLElement
@@ -280,7 +319,6 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
   }
 
   deleteRow(index: number) {
-    console.log('delete row', index)
     this.model.deleteChildren(index, 1)
     this._rowHeights.splice(index, 1)
   }
@@ -293,7 +331,10 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
   onMouseOver(e: MouseEvent) {
     const target = e.target as HTMLElement
     if (target.tagName !== 'TD' || this.resizing$.value) return
-    this.resizeColIdx = parseInt(target.getAttribute('data-col-idx')!)
+    const colIdx = parseInt(target.getAttribute('data-col-idx')!)
+    const rowIdx = parseInt(target.getAttribute('data-row-idx')!)
+    this.hoverCell = [rowIdx, colIdx]
+    this.resizeColIdx = colIdx
     this.resizeBarX = target.getBoundingClientRect().right - this.table.nativeElement.getBoundingClientRect().left
   }
 
@@ -304,7 +345,8 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
 
     fromEvent<MouseEvent>(document, 'mousemove').pipe(takeUntil(fromEvent(document, 'mouseup')))
       .subscribe((e) => {
-        const {width, left, right} = this.hostEl.nativeElement.getBoundingClientRect()
+        const {width, left, right} = this.tableWrapper.nativeElement.getBoundingClientRect()
+        const scrollLeft = this.tableWrapper.nativeElement.scrollLeft
         if (!this.resizing$.value || e.clientX > right || e.clientX < left) return
         const targetRect = this.table.nativeElement.querySelector(`td:nth-child(${this.resizeColIdx + 1})`)!.getBoundingClientRect()
         let newWidth = e.clientX - targetRect.left
@@ -317,7 +359,7 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
         //   return;
         // }
         // if (newWidth - this.props.colWidths[this.resizeColIdx] > width - this.props.colWidths.reduce((pre, cur) => pre + cur, 0)) return
-        this.resizeBarX = targetRect.right - left - 8
+        this.resizeBarX = targetRect.right + scrollLeft - left
         this._colWidths[this.resizeColIdx] = newWidth
       })
 
@@ -333,7 +375,7 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
   focusCell(rowIdx: number, colIdx: number, pos: 'start' | 'end') {
     const cell = this.model.children[rowIdx].children[colIdx]
     if (!cell) return
-    this.controller.setSelection(cell.id, pos)
+    (this.controller.getBlockRef(cell.id) as EditableBlock).setSelection(pos)
   }
 
   moveSelection(target: HTMLElement, direction: 'up' | 'down' | 'left' | 'right') {
@@ -384,11 +426,12 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
     })
 
     const firstCell = this.model.children[startRowIdx].children[startColIdx]
-    this.controller.setSelection(firstCell.id, 0)
+    this.controller.selection.setSelection(firstCell.id, 0)
     this.clearSelecting()
   }
 
   onBlur() {
+    console.log('blur', this.id)
     this.clearSelecting()
   }
 

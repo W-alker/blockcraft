@@ -61,10 +61,10 @@ export class BlockflowBinding {
 
   connect() {
     this.provider.connect()
-    this.provider.on('sync', (isSynced: boolean) => {
-      if (!isSynced) return
-      console.log('synced')
-    })
+    // this.provider.on('sync', (isSynced: boolean) => {
+    //   if (!isSynced) return
+      // console.log('synced')
+    // })
     this.awareness.on('change', this.onAwarenessChange)
     this.controller.root.onDestroy.pipe(first()).subscribe(() => {
       this.destroy()

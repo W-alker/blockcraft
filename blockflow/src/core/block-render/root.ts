@@ -8,26 +8,18 @@ import {BlockWrap} from "./block-wrap";
 import {BehaviorSubject} from "rxjs";
 import {Controller} from "../controller";
 import {BlockModel, USER_CHANGE_SIGNAL} from "../yjs";
-import {BlockSelection} from "../modules";
-import {
-  CharacterIndex,
-  characterIndex2Number,
-  getCurrentCharacterRange,
-  ICharacterRange,
-  isEmbedElement
-} from "../utils";
-import {EditableBlock} from "../block-std";
-import {pasteHandler} from "../helpers";
+import {BlockFlowSelection, BlockSelection, CharacterIndex, ICharacterRange} from "../modules";
+import {isEmbedElement} from "../utils";
+import {deleteContent, EditableBlock} from "../block-std";
 
 @Component({
   selector: 'div[bf-node-type="root"][lazy-load="false"]',
   template: `
     @if (controller) {
       @for (model of controller.rootModel; track model.flavour + '-' + model.id + '-' + model.meta.createdTime) {
-        <div bf-block-wrap [controller]="controller" [model]="model"></div>
+        <div bf-block-wrap contenteditable="false" [controller]="controller" [model]="model"></div>
       }
     }
-    <span style="font-size: 0; pointer-events: none;">&ZeroWidthSpace;</span>
   `,
   standalone: true,
   imports: [
@@ -37,7 +29,6 @@ import {pasteHandler} from "../helpers";
   ],
   host: {
     '[attr.tabindex]': '0',
-    '[attr.contenteditable]': 'true',
   }
 })
 export class EditorRoot {
@@ -103,17 +94,16 @@ export class EditorRoot {
     this.blockSelection.on('end', (blocks) => {
       if (!blocks?.size) return
       const blockIdxList = [...blocks].map(block => this.controller.rootModel.findIndex(b => b.id === block.getAttribute('data-block-id')!))
-      this._selectedBlockRange = {start: Math.min(...blockIdxList), end: Math.max(...blockIdxList)}
-      this.setRootSelectionRange(this._selectedBlockRange.start, this._selectedBlockRange.end)
+      this._selectedBlockRange = {start: Math.min(...blockIdxList), end: Math.max(...blockIdxList) + 1}
     })
   }
 
   selectBlocks(from: CharacterIndex, to: CharacterIndex) {
     document.getSelection()!.removeAllRanges()
     this.rootElement.focus({preventScroll: true})
-    this.clearSelectedBlocks()
-    const start = characterIndex2Number(from, this.controller.rootModel.length)
-    const end = characterIndex2Number(to, this.controller.rootModel.length)
+    this.clearSelectedBlockRange()
+    const start = BlockFlowSelection.characterIndex2Number(from, this.controller.rootModel.length)
+    const end = BlockFlowSelection.characterIndex2Number(to, this.controller.rootModel.length)
     this._selectedBlockRange = {start, end}
     for (let i = start; i <= end; i++) {
       const ele = this.rootElement.children[i] as HTMLElement
@@ -121,15 +111,7 @@ export class EditorRoot {
     }
   }
 
-  setRootSelectionRange(start: number, end: number) {
-    const _r = document.createRange()
-    _r.setStart(this.rootElement, start)
-    _r.setEnd(this.rootElement, end)
-    document.getSelection()!.removeAllRanges()
-    document.getSelection()!.addRange(_r)
-  }
-
-  clearSelectedBlocks() {
+  clearSelectedBlockRange() {
     this.blockSelection.storeSize && this.blockSelection.selectedElements.forEach(ele => ele.classList.remove('bf-block-selected'))
     this._selectedBlockRange = undefined
   }
@@ -150,7 +132,7 @@ export class EditorRoot {
   private onFocusOut(event: FocusEvent) {
     this._activeElement = null
     const target = event.target as HTMLElement
-    if (target === this.rootElement) this.selectedBlockRange && this.clearSelectedBlocks()
+    if (target === this.rootElement) this._selectedBlockRange && this.clearSelectedBlockRange()
     target.classList.remove('placeholder-visible')
   }
 
@@ -160,10 +142,20 @@ export class EditorRoot {
   //   if (target.getAttribute('bf-embed') !== 'link') return
   // }
 
+  // isComposing = true
+  // @HostListener('compositionstart', ['$event'])
+  // private onCompositionstart(event: ClipboardEvent) {
+  //   this.isComposing = true
+  // }
+  //
+  // @HostListener('compositionend', ['$event'])
+  // private onCompositionend(event: ClipboardEvent) {
+  //   this.isComposing = false
+  // }
+
   @HostListener('keydown', ['$event'])
   private onKeyDown(event: KeyboardEvent) {
-    if (event.isComposing || this.controller.readonly$.value) return
-    // console.log('keydown', event)
+    if (this.controller.readonly$.value || event.isComposing) return
     this.controller.keyEventBus.handle(event)
   }
 
@@ -171,14 +163,21 @@ export class EditorRoot {
 
   @HostListener('beforeinput', ['$event'])
   private onBeforeInput(event: InputEvent) {
-    // console.log('beforeinput', event)
+    if (event.target === this.rootElement) {
+      event.preventDefault()
+      return
+    }
+
     const sel = document.getSelection()!
     const activeElement = document.activeElement as HTMLElement
-    this.prevRange = getCurrentCharacterRange()
-    // if (!sel.isCollapsed) {
-    //   sel.modify('move', 'forward', 'character')
-    //   deleteContent(activeElement, this.prevRange!.start, this.prevRange!.end - this.prevRange!.start)
-    // }
+
+    this.prevRange = BlockFlowSelection.getCurrentCharacterRange(activeElement)
+
+    if (!sel.isCollapsed && !event.isComposing) {
+      sel.collapseToStart()
+      deleteContent(activeElement, this.prevRange!.start, this.prevRange!.end - this.prevRange!.start)
+    }
+
     if (
       (sel.focusNode instanceof Text && sel.focusOffset === 0) ||  // at zero width space
       (sel.focusNode === activeElement && activeElement.className.includes('editable-container'))  // at embed element before or after
@@ -191,9 +190,19 @@ export class EditorRoot {
        * <p> <span>\u200B</span> </p>  --> write any word in p tag --> <p> <span>\u200Bword</span> </p> ; it`s expected result
        */
       const span = document.createElement('span')
-      span.textContent = '\u200B'
+      span.textContent = event.data === ' ' ? '\u00A0' : '\u200B'
       sel.focusNode instanceof Text ? sel.focusNode.parentElement!.before(span) : sel.getRangeAt(0).insertNode(span)
-      sel.setBaseAndExtent(span.firstChild!, 0, span.firstChild!, 1)
+      // prevent block space default behavior
+      if(event.data === ' ') {
+        event.preventDefault()
+        sel.setBaseAndExtent(span.firstChild!, 1, span.firstChild!, 1)
+        this.rootElement.dispatchEvent(new InputEvent('input' ,{
+          inputType: 'insertText',
+          data: event.data
+        }))
+      } else {
+        sel.setBaseAndExtent(span.firstChild!, 0, span.firstChild!, 1)
+      }
     }
   }
 
@@ -202,13 +211,13 @@ export class EditorRoot {
     // const sel = document.getSelection()!
     const {start, end, afterEmbed} = this.prevRange!
     const ops: Array<() => void> = []
-    // if (sel.focusNode instanceof Text && sel.isCollapsed && sel.focusOffset === 2 && sel.focusNode!.nodeValue!.charCodeAt(0) === 8203) {
-    //     sel.focusNode.deleteData(0, 1)
-    // }
+
     const bid = this.controller.getFocusingBlockId()!
     const yText = (this.controller.getBlockRef(bid) as EditableBlock).yText
-    start !== end && ops.push(() => yText.delete(start, end - start))
-    const text = event.data === ' ' ? '\u00A0' : event.data!
+    if (start !== end) {
+      ops.push(() => yText.delete(start, end - start))
+    }
+    const text = event.data!.replaceAll(' ', '\u00A0')
 
     switch (event.inputType) {
       case 'insertReplacementText':
@@ -243,25 +252,6 @@ export class EditorRoot {
     this.controller.transact(() => {
       ops.forEach(op => op())
     }, USER_CHANGE_SIGNAL)
-  }
-
-  @HostListener('drop', ['$event'])
-  private onDrop(event: ClipboardEvent) {
-    event.preventDefault()
-    console.log('ondrop', event)
-  }
-
-  @HostListener('paste', ['$event'])
-  private onPaste(event: ClipboardEvent) {
-    event.preventDefault()
-    // pasteHandler(event, this.controller)
-  }
-
-  @HostListener('cut', ['$event'])
-  @HostListener('copy', ['$event'])
-  private onPreventDefault(event: ClipboardEvent) {
-    event.preventDefault()
-    console.log(event)
   }
 
   @HostListener('contextmenu', ['$event'])

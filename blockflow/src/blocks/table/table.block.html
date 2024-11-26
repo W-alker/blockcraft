@@ -1,22 +1,22 @@
 <div class="table-header_row-bar" (click)="onShowRowBar($event)" [class.active]="activeRowIdx >= 0">
     <span *ngFor="let row of _rowHeights; index as idx; trackBy: trackByValue" [attr.data-row-idx]="idx"
-          [class.active]="activeRowIdx === idx" [style.height.px]="row"></span>
+          [class.active]="activeRowIdx === idx" [class.hover]="hoverCell[0] === idx" [style.height.px]="row"></span>
 </div>
 
-<div class="table-wrapper" [class.col-head]="props.colHead" [class.row-head]="props.rowHead">
+<div class="table-wrapper" [class.col-head]="props.colHead" [class.row-head]="props.rowHead" #wrapper>
   <div class="table-col-resize-bar" *ngIf="!(controller.readonly$ | async)" [class.active]="resizing$ | async"
        [hidden]="resizeColIdx < 0" [style.left.px]="resizeBarX" (mousedown)="onResizebarMouseDown($event)"></div>
 
   <div class="table-header_col-bar" (click)="onShowColBar($event)" [class.active]="activeColIdx >= 0">
     <span *ngFor="let col of _colWidths; index as idx" [style.width.px]="col" [attr.data-col-idx]="idx"
-          [class.active]="activeColIdx === idx"></span>
+          [class.active]="activeColIdx === idx" [class.hover]="hoverCell[1] === idx"></span>
   </div>
 
   <table tabindex="0" #tableElement (keydown)="onKeyDown($event)" (blur)="onBlur()" (mousedown)="onMouseDown($event)"
          (mouseover)="onMouseOver($event)">
     <colgroup>
       <col *ngFor="let column of _colWidths; index as idx; trackBy: trackByValue" [width]="column"
-           [class.active]="activeColIdx === idx"  />
+           [class.active]="activeColIdx === idx"/>
     </colgroup>
 
     <tbody>
@@ -25,7 +25,12 @@
         (heightChange)="onRowHeightChange($event, rowIdx)">
     </tr>
     </tbody>
+
+<!--    <div class="table-bar table-bar-right" title="添加下一列" (mousedown)="onTableBarRightClick($event)" >+</div>-->
+<!--    <div class="table-bar table-bar-bottom" title="添加下一行" (mousedown)="onTableBarBottomClick($event)">+</div>-->
   </table>
+
+
 </div>
 
 

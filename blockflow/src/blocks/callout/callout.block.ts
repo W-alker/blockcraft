@@ -30,6 +30,7 @@ const COPYED_TOOLBAR_LIST: IToolbarItem[] = [...TOOLBAR_LIST].slice(0, TOOLBAR_L
   text: '已复制',
   active: true
 })
+
 const POSITIONS: ConnectedPosition[] = [
   {originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top'},
   {originX: 'end', originY: 'top', overlayX: 'end', overlayY: 'bottom'},
@@ -38,8 +39,9 @@ const POSITIONS: ConnectedPosition[] = [
 @Component({
   selector: 'div.callout-block',
   template: `
-    <span class="callout-block__emoji">{{props.emoji}}</span>
-    <div class="editable-container bf-multi-line" [style.color]="props.c" contenteditable="true" (blur)="closeToolbar()"></div>
+    <span class="callout-block__emoji">{{ props.emoji }}</span>
+    <div class="editable-container bf-multi-line" [style.color]="props.c" contenteditable="true"
+         (blur)="closeToolbar()"></div>
   `,
   styles: [`
     :host {
@@ -170,7 +172,7 @@ export class CalloutBlock extends EditableBlock<ICalloutBlockModel> {
 
   override ngOnDestroy() {
     super.ngOnDestroy();
-    this._toolbarDispose$.next(true);
+    this.closeToolbar()
   }
 
 }

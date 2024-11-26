@@ -3,7 +3,7 @@ import {BrowserModule, DomSanitizer} from '@angular/platform-browser';
 import {AppRoutingModule} from './app-routing.module';
 import {AppComponent} from './app.component';
 import {FileUploaderService} from "../services/file-uploader.service";
-import {FILE_UPLOADER} from "@blocks/image";
+import {FILE_UPLOADER} from "blockflow-editor";
 import {registerLocaleData} from '@angular/common';
 import zh from '@angular/common/locales/zh';
 import {NoopAnimationsModule} from "@angular/platform-browser/animations";

@@ -1,4 +1,4 @@
-import {DeltaInsert, EditableBlockSchema} from "../../core";
+import {DeltaInsert, deltaToString, EditableBlockSchema} from "../../core";
 import {ICodeBlockModel} from "./type";
 import {CodeBlock} from "./code.block";
 
@@ -16,10 +16,7 @@ export const CodeBlockSchema: EditableBlockSchema<ICodeBlockModel['props']> = {
         indent: 0
       }),
       children: deltas?.length ? [{
-        insert: deltas.reduce((acc, cur) => {
-          acc += cur.insert
-          return acc
-        }, '')
+        insert: deltaToString(deltas),
       }] : []
     }
   }

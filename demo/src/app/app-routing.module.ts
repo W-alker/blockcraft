@@ -11,11 +11,7 @@ const routes: Routes = [
     loadComponent: () => import('../pages/space-page/space-page').then(m => m.SpacePageComponent)
   },
   {
-    path: 'doc/:id',
-    loadComponent: () => import('../pages/doc-page/doc-page').then(m => m.DocPageComponent)
-  },
-  {
-    path: 'test',
+    path: '',
     loadComponent: () => import('./test-page').then(m => m.TestPage)
   }
 ];

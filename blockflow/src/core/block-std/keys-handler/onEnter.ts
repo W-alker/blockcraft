@@ -7,12 +7,13 @@ import {USER_CHANGE_SIGNAL} from "../../yjs";
 export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Controller) => {
   event.preventDefault()
   event.stopImmediatePropagation()
-  const curRange = controller.getSelection()!
+  const curRange = controller.selection.getSelection()
+  if(!curRange) return;
   if (curRange.isAtRoot) {
     controller.deleteSelectedBlocks()
     const newBlock = controller.createBlock('paragraph')
     controller.insertBlocks(curRange.rootRange!.start , [newBlock]).then(() => {
-      controller.setSelection(newBlock.id, 'start')
+      controller.selection.setSelection(newBlock.id, 'start')
     })
     return
   }
@@ -22,10 +23,10 @@ export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Cont
   if (!bRef) throw new Error('No focusing block')
 
   const textContent = bRef.getTextContent()
-  const {parentId, index} = controller.getBlockPosition(bRef.id)!
+  const {parentId, index} = bRef.getPosition()
 
-  if (controller.activeElement?.classList.contains('bf-multi-line')) {
-    const isAtEnd = range.start === textContent.length && textContent.at(-2) !== '\n'
+  if (bRef.containerEle.classList.contains('bf-multi-line') && !event.ctrlKey && !event.metaKey) {
+    const isAtEnd = range.start === textContent.length && textContent.at(-1) !== '\n'
     const deltas: DeltaOperation[] = [
       {retain: range.start},
       {insert: isAtEnd ? '\n\u200B' : '\n'}
@@ -37,20 +38,18 @@ export const onEnter: IKeyEventHandler = (event: KeyboardEvent, controller: Cont
   }
 
   if (parentId !== controller.rootId) return
-
   const isEmpty = !textContent.trim()
   const isAtCenter = range.start > 0 && range.end < textContent.length
 
   const paramDeltas = isAtCenter ? sliceDelta(bRef.getTextDelta(), range.end) : undefined
-  const newBlock = controller.createBlock(isEmpty ? 'paragraph' : bRef.flavour, [paramDeltas, bRef.props])
+  const newBlock = controller.createBlock((isEmpty || event.ctrlKey || event.metaKey) ? 'paragraph' : bRef.flavour, [paramDeltas, bRef.props])
 
   controller.transact(() => {
     if (isAtCenter) {
-      bRef.applyDelta([{retain: range.start}, {delete: textContent.length - range.start}])
+      bRef.applyDelta([{retain: range.start}, {delete: textContent.length - range.start + 1}])
     }
-
-    controller.insertBlocks(range.start === 0 && !isEmpty ? index : index + 1, [newBlock], parentId).then(() => {
-      (range.start > 0 || isEmpty) && controller.setSelection(newBlock.id, 'start')
+    controller.insertBlocks(range.start === 0 && !isEmpty ? index : index + 1, [newBlock]).then(() => {
+      (range.start > 0 || isEmpty) && controller.selection.setSelection(newBlock.id, 'start')
     })
   }, USER_CHANGE_SIGNAL)
 }

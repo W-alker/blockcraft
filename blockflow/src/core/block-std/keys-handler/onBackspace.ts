@@ -6,7 +6,7 @@ import {isEmbedElement} from "../../utils";
 export const onBackspace: IKeyEventHandler = (e, controller) => {
   e.preventDefault()
 
-  const curRange = controller.getSelection()!
+  const curRange = controller.selection.getSelection()!
   if (curRange.isAtRoot) {
     controller.deleteSelectedBlocks()
     return
@@ -19,8 +19,8 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
 
     if (bRef.flavour !== 'paragraph') {
       const pBlock = controller.createBlock('paragraph', [bRef.getTextDelta(), bRef.props])
-      controller.replaceWith(bRef.id, pBlock).then(() => {
-        controller.setSelection(pBlock.id, 'start')
+      controller.replaceWith(bRef.id, [pBlock]).then(() => {
+        controller.selection.setSelection(pBlock.id, 'start')
       })
       return;
     }
@@ -48,24 +48,31 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
   if (selection.isCollapsed) {
     const {focusNode, focusOffset} = selection
 
+    const deletePrevEle = (prevEle: HTMLElement) => {
+      const beforeEle = prevEle.previousElementSibling
+      controller.transact(() => {
+        prevEle.remove()
+        yText.delete(blockRange.start - 1, 1)
+        beforeEle && !isEmbedElement(beforeEle as Element) && selection.setPosition(beforeEle.lastChild!, beforeEle.textContent!.length)
+      }, USER_CHANGE_SIGNAL)
+    }
+
     if (focusNode === activeElement) {
       const prevElement = activeElement.children[focusOffset - 1]
 
       if (prevElement instanceof HTMLElement && isEmbedElement(prevElement)) {
-        const beforeEle = prevElement.previousElementSibling
-        controller.transact(() => {
-          prevElement.remove()
-          yText.delete(blockRange.start - 1, 1)
-          beforeEle && !isEmbedElement(beforeEle as Element) && selection.setPosition(beforeEle.lastChild!, beforeEle.textContent!.length)
-        }, USER_CHANGE_SIGNAL)
-        return
+        return deletePrevEle(prevElement)
       }
 
       selection.setPosition(prevElement.lastChild!, prevElement.textContent!.length)
     }
 
     if (focusOffset === 0) {
-      const prevNode = focusNode!.parentElement!.previousSibling;
+      const prevNode = focusNode!.parentElement!.previousSibling
+      if (prevNode && isEmbedElement(prevNode)) {
+        return deletePrevEle(<HTMLElement>prevNode)
+      }
+
       prevNode && selection.setPosition(prevNode.firstChild!, prevNode.textContent!.length)
     }
 

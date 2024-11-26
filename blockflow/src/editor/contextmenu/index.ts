@@ -14,6 +14,7 @@ import {Overlay} from "@angular/cdk/overlay";
 import {TemplatePortal} from "@angular/cdk/portal";
 import {fromEvent} from "rxjs";
 import {MatIconModule} from "@angular/material/icon";
+
 export * from './type'
 
 @Component({
@@ -60,7 +61,8 @@ export * from './type'
 
       <ng-template #appendAfter>
         <ul class='common-list'>
-          <li class="common-list__item add-block-btn" (mouseenter)="onShowMoreBlock($event)" [class.active]="moreBlockTpr">
+          <li class="common-list__item add-block-btn" (mouseenter)="onShowMoreBlock($event)"
+              [class.active]="moreBlockTpr">
             <i class="bf_icon bf_tianjia"></i>
             <span>在下方添加</span>
             <i class="bf_icon bf_youjiantou"></i>
@@ -292,11 +294,17 @@ export class BlockFlowContextmenu {
       switch (item.flavour) {
         case 'cut':
         case 'copy':
-          const model = this.controller.getBlockModel(this.activeBlock!.id)!
-          // TODO: 复制到剪贴板
-          // ClipDataWriter.writeModelToClipboard([model]).then(() => {
-          //   item.flavour === 'cut' && this.controller.deleteBlockById(this.activeBlock!.id)
-          // })
+          const selection = this.controller.selection.getSelection()
+          if (selection?.isAtRoot) {
+            this.controller.clipboard.execCommand(item.flavour)
+          } else {
+            const pos = this.controller.getBlockPosition(this.activeBlock!.id)
+            this.controller.clipboard.execCommand(item.flavour, {
+              isAtRoot: true,
+              rootId: this.controller.rootId,
+              rootRange: { start: pos.index, end: pos.index + 1 }
+            })
+          }
           return
         case 'delete':
           this.controller.deleteBlockById(this.activeBlock!.id)
@@ -309,8 +317,8 @@ export class BlockFlowContextmenu {
     if (this.activeBlock instanceof EditableBlock && schema.nodeType === 'editable') {
       const deltas = this.activeBlock.getTextDelta()
       const newBlock = this.controller.createBlock(schema.flavour, [deltas, this.activeBlock.props])
-      this.controller.replaceWith(this.activeBlock.id, newBlock).then(() => {
-        this.controller.setSelection(newBlock.id, 'start')
+      this.controller.replaceWith(this.activeBlock.id, [newBlock]).then(() => {
+        this.controller.selection.setSelection(newBlock.id, 'start')
       })
       return
     }
@@ -331,7 +339,7 @@ export class BlockFlowContextmenu {
         fileUploader.uploadImg(file).then((fileUri) => {
           const newBlock = this.controller.createBlock(schema.flavour, [fileUri])
           this.controller.insertBlocks(position.index + 1, [newBlock], position.parentId).then(() => {
-            newBlock.nodeType === 'editable' && this.controller.setSelection(newBlock.id, 'start')
+            newBlock.nodeType === 'editable' && this.controller.selection.setSelection(newBlock.id, 'start')
           })
         })
       }
@@ -340,12 +348,12 @@ export class BlockFlowContextmenu {
 
     const newBlock = this.controller.createBlock(schema.flavour)
     if (!this.hasContent)
-      this.controller.replaceWith(this.activeBlock.id, newBlock).then(() => {
-        newBlock.nodeType === 'editable' && this.controller.setSelection(newBlock.id, 'start')
+      this.controller.replaceWith(this.activeBlock.id, [newBlock]).then(() => {
+        newBlock.nodeType === 'editable' && this.controller.selection.setSelection(newBlock.id, 'start')
       })
     else
       this.controller.insertBlocks(position.index + 1, [newBlock], position.parentId).then(() => {
-        newBlock.nodeType === 'editable' && this.controller.setSelection(newBlock.id, 'start')
+        newBlock.nodeType === 'editable' && this.controller.selection.setSelection(newBlock.id, 'start')
       })
   }
 

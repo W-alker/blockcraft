@@ -10,12 +10,12 @@ export const ImageSchema: BlockSchema<IImageBlockProps> = {
   icon: 'bf_icon bf_tupian-color',
   svgIcon: 'bf_tupian-color',
   label: '图片',
-  onCreate: (src: string) => {
+  onCreate: (src: string, width?: number) => {
     if(!src) throw new Error('src is required')
     return {
       props: () => ({
         src,
-        width: 400,
+        width: width || 400,
         height: 0,
         align: 'center'
       }),

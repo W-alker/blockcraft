@@ -122,6 +122,20 @@ export class FloatTextToolbar {
       intro: "代码",
       value: true,
       order: 6
+    },
+    {
+      name: "sup",
+      icon: "bf_shangbiao",
+      intro: "上标",
+      value: true,
+      order: 6
+    },
+    {
+      name: "sub",
+      icon: "bf_xiabiao",
+      intro: "代码",
+      value: true,
+      order: 6
     }
   ]
 

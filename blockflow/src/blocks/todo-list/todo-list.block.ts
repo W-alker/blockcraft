@@ -68,7 +68,7 @@ import {ITodoListBlockModel} from "./type";
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class TodoListBlock extends EditableBlock<ITodoListBlockModel> {
-  override placeholder = '输入待办事项，使用@快速提及成员并设置截止日期'
+  override placeholder = '待办事项'
 
   protected _date: Date | null = null
 
