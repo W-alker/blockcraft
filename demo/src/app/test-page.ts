@@ -16,8 +16,8 @@ import {
   MentionPlugin,
   BlockflowBinding,
   InlineImgPlugin
-} from "blockflow-editor";
-// } from "../../../blockflow/src/public-api";
+// } from "blockflow-editor";
+} from "../../../blockflow/src/public-api";
 
 const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingTwoSchema, HeadingThreeSchema, HeadingFourSchema,
   ImageSchema, BulletListSchema, OrderedListSchema, TodoListSchema, CalloutSchema, BlockquoteSchema, DividerSchema, LinkSchema, CodeBlockSchema, MermaidBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema])

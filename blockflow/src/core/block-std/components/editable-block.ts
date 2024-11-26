@@ -1,11 +1,11 @@
 import {Component, HostBinding, Input} from "@angular/core";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
-import {DeltaInsert, DeltaOperation, IEditableBlockModel} from "../../types";
+import {CharacterIndex, DeltaInsert, DeltaOperation, ICharacterRange, IEditableBlockModel} from "../../types";
 import {BaseBlock} from "./base-block";
 import {USER_CHANGE_SIGNAL} from "../../yjs";
 import {deleteContent, insertContent} from "../utils";
-import {CharacterIndex, ICharacterRange, setCharacterRange} from "../../modules";
 import Y from '../../yjs'
+import {setCharacterRange} from "../../utils";
 
 @Component({
   selector: '.editable-container',
@@ -88,7 +88,7 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
   }
 
   setSelection(start: CharacterIndex, end?: CharacterIndex) {
-    setCharacterRange(this.containerEle, start, end ?? start)
+    setCharacterRange(this.containerEle, start, end ?? start);
   }
 
   forceRender() {

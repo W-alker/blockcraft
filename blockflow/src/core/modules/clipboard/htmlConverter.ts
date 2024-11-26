@@ -1,4 +1,4 @@
-import {CustomHtmlPart, HtmlToDelta} from 'quill-delta-from-html';
+import {HtmlToDelta} from 'quill-delta-from-html';
 import {DeltaInsert, IBlockModel, SchemaStore} from "../../../core";
 
 enum BlockType {

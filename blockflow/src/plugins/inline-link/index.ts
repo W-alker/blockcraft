@@ -2,7 +2,7 @@ import {filter, fromEvent, Subscription, take} from "rxjs";
 import {
   BlockFlowSelection,
   Controller, DeltaInsertEmbed, DeltaOperation,
-  EditableBlock,
+  EditableBlock, getElementCharacterOffset,
   IPlugin, USER_CHANGE_SIGNAL
 } from "../../core";
 import {FloatToolbar, IToolbarItem} from "../../components";
@@ -97,7 +97,7 @@ export class InlineLinkPlugin implements IPlugin {
     const getActiveBlockAndPos = (target: HTMLElement) => {
       const activeBlockId = target.closest('[bf-node-type]')!.id
       const activeBlock = c.getBlockRef(activeBlockId) as EditableBlock
-      return {activeBlock, start: BlockFlowSelection.getElementCharacterOffset(target, activeBlock.containerEle)}
+      return {activeBlock, start: getElementCharacterOffset(target, activeBlock.containerEle)}
     }
 
     this.subscribe = fromEvent<MouseEvent>(c.rootElement, 'click')

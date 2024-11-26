@@ -4,7 +4,7 @@
   "compilerOptions": {
     "baseUrl": "./",
     "paths": {
-      "@blockflow": ["blockflow/src"],
+      "blockflow-editor": ["dist/blockflow-editor"],
     },
     "outDir": "./dist/out-tsc",
     "forceConsistentCasingInFileNames": true,

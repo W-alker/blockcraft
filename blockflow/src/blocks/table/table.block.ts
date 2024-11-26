@@ -1,6 +1,6 @@
 import {Component, ElementRef, ViewChild} from "@angular/core";
 import {ITableBlockModel, ITableRowBlockModel} from "./type";
-import {BaseBlock, BlockFlowSelection, EditableBlock, getCurrentCharacterRange, USER_CHANGE_SIGNAL} from "../../core";
+import {BaseBlock, EditableBlock, getCurrentCharacterRange, USER_CHANGE_SIGNAL} from "../../core";
 import {TableRowBlock} from "./table-row.block";
 import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
 import {BehaviorSubject, filter, fromEvent, take, takeUntil} from "rxjs";

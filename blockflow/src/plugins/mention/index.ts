@@ -2,9 +2,9 @@ import {debounceTime, fromEvent, fromEventPattern, Subscription, take, takeUntil
 import {MentionDialog} from "./widget/mention-dialog";
 import {ComponentRef, TemplateRef, ViewContainerRef} from "@angular/core";
 import {
-  BlockflowInline, BlockFlowSelection,
+  BlockflowInline,
   Controller,
-  EmbedConverter, getCurrentCharacterRange,
+  EmbedConverter,
   IPlugin,
   USER_CHANGE_SIGNAL
 } from "../../core";
@@ -257,7 +257,7 @@ export class MentionPlugin implements IPlugin {
     const selection = document.getSelection()!
     selection.setPosition(this._mentionElement.firstChild!, 0)
     const len = this._mentionElement.textContent!.length
-    const range = getCurrentCharacterRange(this.controller.activeElement!)
+    const range = this.controller.selection.getCurrentCharacterRange()
 
     const attributes = {
       'd:mentionId': item.id,

@@ -1,22 +1,13 @@
-import {
-  ChangeDetectorRef,
-  Component, ElementRef, EventEmitter,
-  HostListener, Output,
-} from "@angular/core";
+import {ChangeDetectorRef, Component, ElementRef, EventEmitter, HostListener, Output} from "@angular/core";
 import {NgForOf, NgIf} from "@angular/common";
 import {BlockWrap} from "./block-wrap";
 import {BehaviorSubject} from "rxjs";
 import {Controller} from "../controller";
 import {BlockModel, USER_CHANGE_SIGNAL} from "../yjs";
-import {
-  BlockSelection,
-  CharacterIndex,
-  characterIndex2Number,
-  getCurrentCharacterRange,
-  ICharacterRange
-} from "../modules";
-import {isEmbedElement} from "../utils";
+import {BlockSelection,} from "../modules";
+import {characterIndex2Number, isEmbedElement} from "../utils";
 import {deleteContent} from "../block-std";
+import {CharacterIndex, ICharacterRange} from "../types";
 
 @Component({
   selector: 'div[bf-node-type="root"][lazy-load="false"]',
@@ -177,7 +168,7 @@ export class EditorRoot {
     const sel = document.getSelection()!
     const activeElement = document.activeElement as HTMLElement
 
-    this.prevRange = getCurrentCharacterRange(activeElement)
+    this.prevRange = this.controller.selection.getCurrentCharacterRange()
 
     if (!sel.isCollapsed && !event.isComposing) {
       sel.collapseToStart()
