@@ -90,6 +90,10 @@ bf-editor {
     min-height: 1em;
     overflow-wrap: break-word;
 
+    br {
+      display: none;
+    }
+
     &.bf-multi-line {
       white-space: pre-wrap;
 

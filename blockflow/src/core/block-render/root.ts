@@ -6,7 +6,6 @@ import {Controller} from "../controller";
 import {BlockModel, USER_CHANGE_SIGNAL} from "../yjs";
 import {BlockSelection,} from "../modules";
 import {characterIndex2Number, isEmbedElement} from "../utils";
-import {deleteContent} from "../block-std";
 import {CharacterIndex, ICharacterRange} from "../types";
 
 @Component({
@@ -102,7 +101,7 @@ export class EditorRoot {
     const start = characterIndex2Number(from, this.controller.rootModel.length)
     const end = characterIndex2Number(to, this.controller.rootModel.length)
     this._selectedBlockRange = {start, end}
-    for (let i = start; i <= end; i++) {
+    for (let i = start; i < end; i++) {
       const ele = this.rootElement.children[i] as HTMLElement
       this.blockSelection.selectElement(ele)
     }
@@ -121,6 +120,10 @@ export class EditorRoot {
   @HostListener('focusin', ['$event'])
   private onFocusIn(event: FocusEvent) {
     const target = event.target as HTMLElement
+    if(!target.isContentEditable && target !== this.rootElement) {
+      this._activeElement = null
+      return
+    }
     this._activeElement = target
     if (target.getAttribute('placeholder') && !target.textContent) target.classList.add('placeholder-visible')
   }
@@ -132,23 +135,6 @@ export class EditorRoot {
     if (target === this.rootElement) this._selectedBlockRange && this.clearSelectedBlockRange()
     target.classList.remove('placeholder-visible')
   }
-
-  // @HostListener('click', ['$event'])
-  // private onClick(event: MouseEvent) {
-  //   const target = event.target as HTMLElement
-  //   if (target.getAttribute('bf-embed') !== 'link') return
-  // }
-
-  // isComposing = true
-  // @HostListener('compositionstart', ['$event'])
-  // private onCompositionstart(event: ClipboardEvent) {
-  //   this.isComposing = true
-  // }
-  //
-  // @HostListener('compositionend', ['$event'])
-  // private onCompositionend(event: ClipboardEvent) {
-  //   this.isComposing = false
-  // }
 
   @HostListener('keydown', ['$event'])
   private onKeyDown(event: KeyboardEvent) {
@@ -165,23 +151,35 @@ export class EditorRoot {
       return
     }
 
+    if (event.inputType === 'insertParagraph') {
+      event.preventDefault()
+      return
+    }
+
     const sel = document.getSelection()!
     const activeElement = document.activeElement as HTMLElement
 
     this.prevRange = this.controller.selection.getCurrentCharacterRange()
 
-    if (!sel.isCollapsed) {
-      if(event.isComposing){
-      } else {
-        sel.modify('move', 'forward')
-        deleteContent(activeElement, this.prevRange!.start, this.prevRange!.end - this.prevRange!.start)
+    // prevent browser behavior
+    if(!sel.isCollapsed) {
+      const range = sel.getRangeAt(0)
+      const { startContainer, endContainer, startOffset, endOffset } = range
+      let flag = false
+      if(startContainer instanceof Text && startOffset === 0 && startContainer.parentElement !== activeElement) {
+        range.setStartBefore(startContainer.parentElement!)
+        flag = true
       }
+      if(endContainer instanceof Text && endOffset === endContainer.length && endContainer.parentElement !== activeElement) {
+        range.setEndAfter(endContainer.parentElement!)
+        flag = true
+      }
+      if(flag) range.deleteContents()
+      return
     }
 
-    // console.log(sel.focusNode, sel.focusNode?.textContent?.length, sel.focusOffset, this.prevRange ,activeElement.childNodes.length)
-
     if (
-      (sel.focusNode instanceof Text && sel.focusOffset === 0) ||  // at zero width space
+      (sel.focusNode instanceof Text && sel.focusOffset === 0 && sel.focusNode.parentElement !== activeElement) ||
       (sel.focusNode === activeElement && activeElement.className.includes('editable-container'))  // at embed element before or after
     ) {
       if (sel.focusNode === activeElement ||
@@ -192,34 +190,15 @@ export class EditorRoot {
        * <p> <span>\u200B</span> </p>  --> write any word in p tag --> <p> <span>\u200Bword</span> </p> ; it`s expected result
        */
       const span = document.createElement('span')
-      span.textContent = event.data === ' ' ? '\u00A0' : '\u200B'
+      span.textContent = '\u200B'
       sel.focusNode instanceof Text ? sel.focusNode.parentElement!.before(span) : sel.getRangeAt(0).insertNode(span)
-      // prevent block space default behavior
-      if(event.data === ' ') {
-        event.preventDefault()
-        sel.setBaseAndExtent(span.firstChild!, 1, span.firstChild!, 1)
-        this.rootElement.dispatchEvent(new InputEvent('input' ,{
-          inputType: 'insertText',
-          data: event.data
-        }))
-      } else {
-        sel.setBaseAndExtent(span.firstChild!, 0, span.firstChild!, 1)
-      }
+      sel.setBaseAndExtent(span.firstChild!, 0, span.firstChild!, 1)
     }
   }
 
   @HostListener('input', ['$event'])
   private onInput(event: InputEvent) {
-    // const sel = document.getSelection()!
-    const text = event.data!.replaceAll(' ', '\u00A0')
-
-    const sel = document.getSelection()!
-    if(sel.focusNode instanceof Text && sel.focusNode.parentElement?.className.includes('editable-container')) {
-      const span = document.createElement('span')
-      span.textContent = text
-      sel.focusNode.replaceWith(span)
-      sel.setBaseAndExtent(span.firstChild!, 0, span.firstChild!, span.firstChild!.textContent!.length)
-    }
+    console.log(event)
 
     const {start, end, afterEmbed} = this.prevRange!
     const ops: Array<() => void> = []
@@ -235,13 +214,24 @@ export class EditorRoot {
       case 'insertReplacementText':
       case 'insertCompositionText':
       case 'insertText':
+        const text = event.data!.replaceAll(' ', '\u00A0')
         ops.push(() => yText.insert(start, text, afterEmbed ? {} : undefined))  // avoid new text extends the attributes of previous embed element
         break
       case 'deleteContentBackward':
-        start === end && ops.push(() => yText.delete(start - 1, 1))
+        if (start === end) {
+          ops.push(() => yText.delete(start - 1, 1))
+        } else {
+          ops.push(() => yText.delete(start, end - start))
+        }
+        // start === end && ops.push(() => yText.delete(start - 1, 1))
         break
       case 'deleteContentForward':
-        start === end && ops.push(() => yText.delete(start, 1))
+        if (start === end) {
+          ops.push(() => yText.delete(start, 1))
+        } else {
+          ops.push(() => yText.delete(start, end - start))
+        }
+        // start === end && ops.push(() => yText.delete(start, 1))
         break
       case 'deleteByDrag':
         break

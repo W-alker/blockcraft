@@ -1,5 +1,4 @@
 import {IKeyEventHandler} from "./keyEventBus";
-import {EditableBlock} from "../components";
 
 export const onCtrlA: IKeyEventHandler = (e, controller) => {
   // e.preventDefault()

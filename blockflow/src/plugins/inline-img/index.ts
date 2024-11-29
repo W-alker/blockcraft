@@ -1,6 +1,7 @@
 import {Controller, EditableBlock, IPlugin, USER_CHANGE_SIGNAL} from "../../core";
 import {BehaviorSubject, filter, fromEvent, Subscription, take, takeUntil, throttleTime} from "rxjs";
 import Viewer from 'viewerjs';
+import {HTML} from "mermaid/dist/diagram-api/types";
 
 export class InlineImgPlugin implements IPlugin {
   public name = "inline-img";
@@ -33,6 +34,12 @@ export class InlineImgPlugin implements IPlugin {
         .subscribe((e: MouseEvent) => {
           if (e.target instanceof HTMLImageElement && e.target.parentElement?.getAttribute('bf-embed') === 'image') {
             const ele = e.target.parentElement
+
+            if(this._controller.readonly$.value) {
+              this.previewImg(e.target.parentElement)
+              return
+            }
+
             // 先设置焦点, 用于找到位置
             const sel = document.getSelection()!
             const range = document.createRange()
@@ -47,6 +54,12 @@ export class InlineImgPlugin implements IPlugin {
           }
         })
     )
+  }
+
+  previewImg(ele: HTMLElement) {
+    this._viewer?.destroy()
+    this._viewer = new Viewer(ele)
+    this._viewer?.show()
   }
 
   private wrapImg(ele: HTMLElement) {
@@ -72,9 +85,7 @@ export class InlineImgPlugin implements IPlugin {
       .pipe(takeUntil(this.inlineImg$.pipe(filter(v => v !== ele))))
       .subscribe((e) => {
         e.stopPropagation()
-        this._viewer?.destroy()
-        this._viewer = new Viewer(ele)
-        this._viewer?.show()
+        this.previewImg(ele)
       })
 
     fromEvent<MouseEvent>(tl, 'mousedown').pipe(takeUntil(fromEvent(document, 'mouseup'))).subscribe((e) => {

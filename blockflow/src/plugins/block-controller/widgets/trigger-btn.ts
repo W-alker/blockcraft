@@ -112,7 +112,7 @@ export class TriggerBtn {
 
     const left = wrapRect.left - rootRect.left - 28
 
-    if (this.activeBlock instanceof EditableBlock) {
+    if (this.activeBlock instanceof EditableBlock && this.activeBlock.containerEle === this.activeBlock.hostEl.nativeElement) {
       const container = this.activeBlock.containerEle
       const rect = container.getBoundingClientRect()
       return {

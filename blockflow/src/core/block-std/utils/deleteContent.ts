@@ -4,22 +4,26 @@ export const deleteContent = (ele: HTMLElement, from: number, count: number) => 
   // console.time('deleteContent')
   let currentPos = 0;
   let end = from + count;
-
   if (ele.childNodes.length === 0) return;
-
   for (let i = 0; i < ele.childNodes.length; i++) {
     const child = ele.childNodes[i];
 
     if (child instanceof Text) {
       const textLength = child.length
+
       if (currentPos + child.length >= from && currentPos <= end) {
         const rangeStart = Math.max(0, from - currentPos);
         const rangeEnd = Math.min(child.length, end - currentPos);
-        if (rangeStart === 0 && rangeEnd === child.length) child.remove();
-        else child.deleteData(rangeStart, rangeEnd - rangeStart);
+        if (rangeStart === 0 && rangeEnd === child.length) {
+          child.remove();
+          i--
+        } else {
+          child.deleteData(rangeStart, rangeEnd - rangeStart);
+        }
       }
-      if (currentPos > end) break;
+
       currentPos += textLength;
+      if (currentPos >= end) break;
       continue
     }
 
@@ -30,7 +34,7 @@ export const deleteContent = (ele: HTMLElement, from: number, count: number) => 
     }
 
     const isEmbed = isEmbedElement(child);
-    const textLength = isEmbed ? 1 : child.textContent?.length || 1;
+    const textLength = isEmbed ? 1 : child.textContent?.length || 0;
 
     if (currentPos + textLength >= from && currentPos <= end) {
       const rangeStart = Math.max(0, from - currentPos);
@@ -42,8 +46,9 @@ export const deleteContent = (ele: HTMLElement, from: number, count: number) => 
         (child.firstChild as Text).deleteData(rangeStart, rangeEnd - rangeStart);
       }
     }
-    if (currentPos > end) break;
+
     currentPos += textLength;
+    if (currentPos >= end) break;
   }
   // console.timeEnd('deleteContent')
 }

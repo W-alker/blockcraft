@@ -19,7 +19,6 @@ export const onArrowUp: IKeyEventHandler = (e: KeyboardEvent, controller: Contro
     return
   }
 
-  const block = controller.getBlockRef(curRange.blockId) as EditableBlock
   if (curRange.blockRange.start === curRange.blockRange.end && curRange.blockRange.start === 0) {
     const prevEditableBlock = controller.findPrevEditableBlock(curRange.blockId)
     if (!prevEditableBlock) return

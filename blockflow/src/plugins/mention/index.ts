@@ -92,20 +92,32 @@ export class MentionPlugin implements IPlugin {
   subRootInput() {
     this._rootInputSub = fromEvent<InputEvent>(this.controller.rootElement, 'input')
       .subscribe((e) => {
-        if (e.data !== '@' || this._mentionElement || this.controller.activeElement?.classList.contains('bf-plain-text-only')) return
+        if (e.data !== '@' || e.isComposing || this._mentionElement || this.controller.activeElement?.classList.contains('bf-plain-text-only')) return
 
         const selection = document.getSelection()!
         const node = selection.focusNode! as Text
         const offset = selection.focusOffset
         const parent = node.parentElement!
 
-        if (node.textContent === '@') {
+        const isEditableContainer = parent.classList.contains('editable-container')
+
+        if (node.textContent === '@' && !isEditableContainer) {
           this.openMention(parent)
           return;
         }
 
         // delete the '@' character that was just typed
         node.deleteData(offset - 1, 1)
+
+        if(isEditableContainer) {
+          node.splitText(offset - 1)
+          const span = document.createElement('span')
+          span.textContent = '@'
+          node.after(span)
+          this.openMention(span)
+          selection.setPosition(span.firstChild, 1)
+          return
+        }
 
         // create a new element to represent the mention
         const cloneParent = parent.cloneNode() as HTMLElement
@@ -140,6 +152,7 @@ export class MentionPlugin implements IPlugin {
     const search = () => {
       const keyword = node.textContent!.slice(1)
       this.request(keyword, this._activeTab).then((res) => {
+        if (!res.list?.length) return this.closeMention()
         this._dialog!.setInput('list', res.list)
       })
     }

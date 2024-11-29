@@ -1,90 +1,96 @@
-import {Component, EventEmitter, HostListener, Input, Output} from "@angular/core";
+import {ChangeDetectionStrategy, Component, EventEmitter, HostListener, Input, Output} from "@angular/core";
 import {NgForOf, NgIf} from "@angular/common";
 
 export interface IToolbarItem {
-  name: string | '|'
+  id: string
+  name: string
   icon?: string
   value?: string
   title?: string
   text?: string
-  active?: boolean
+  divide?: boolean
 }
 
 @Component({
   selector: 'div.bf-float-toolbar',
   template: `
-    <ng-container *ngFor="let item of toolbarList">
-      <ng-container *ngIf="item.name !== '|'; else lineTpl">
+    @for(item of toolbarList; track item.id) {
         <div class="bf-float-toolbar__item" [title]="item.title" (click)="onItemClick($event, item)"
-             [class.active]="item.active">
-          <i [class]="item.icon"></i><span *ngIf="item.text">{{item.text}}</span>
+             [class.active]="activeMenu?.has(item.id)" [class.divide]="item.divide">
+          <i [class]="item.icon"></i><span *ngIf="item.text">{{ item.text }}</span>
         </div>
-      </ng-container>
-
-      <ng-template #lineTpl>
-        <div class="bf-float-toolbar__line"></div>
-      </ng-template>
-    </ng-container>
+    }
   `,
   styles: [`
-      :host {
-          display: flex;
+    :host {
+      display: flex;
+      height: 32px;
+      padding: 0 8px;
+      align-items: center;
+      gap: 8px;
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.10);
+    }
+
+    .bf-float-toolbar__item {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      justify-content: center;
+      padding: 0 4px;
+      height: 24px;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 16px;
+      color: #333;
+      white-space: nowrap;
+
+      &.divide {
+        margin-right: 8px;
+        position: relative;
+
+        &::after {
+          position: absolute;
+          content: '';
           height: 32px;
-          padding: 0 8px;
-          align-items: center;
-          gap: 8px;
-          background: #fff;
-          border-radius: 4px;
-          box-shadow: 0px 0px 20px 0px rgba(0, 0, 0, 0.10);
-      }
-
-      .bf-float-toolbar__line {
           width: 1px;
-          height: 100%;
-          background: #E6E6E6;
+          background: #e6e6e6;
+          right: -8px;
+          top: -4px;
+        }
       }
 
-      .bf-float-toolbar__item {
-          display: flex;
-          gap: 4px;
-          align-items: center;
-          justify-content: center;
-          padding: 0 4px;
-          height: 24px;
-          cursor: pointer;
-          border-radius: 4px;
-          font-size: 16px;
-          color: #333;
+      &.active {
+        background: rgba(95, 111, 255, 0.08);
+        color: #4857E2;
       }
 
-      .bf-float-toolbar__item > span {
-          font-size: 14px;
+      &:hover {
+        background: rgba(215, 215, 215, 0.6);
       }
+    }
 
-      .bf-float-toolbar__item > i {
-        font-size: inherit;
-        color: inherit;
-      }
+    .bf-float-toolbar__item > span {
+      font-size: 14px;
+    }
 
-      .bf-float-toolbar__item:hover {
-          background: rgba(215, 215, 215, 0.6);
-      }
-
-      .bf-float-toolbar__item.active {
-          background: rgba(95, 111, 255, 0.08);
-          color: #4857E2;
-      }
-
+    .bf-float-toolbar__item > i {
+      font-size: inherit;
+      color: inherit;
+    }
   `],
   standalone: true,
   imports: [
     NgForOf,
     NgIf
-  ]
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FloatToolbar {
+  @Input() activeMenu?: Set<string>
   @Input({required: true}) toolbarList: IToolbarItem[] = []
-  @Output() itemClick = new EventEmitter<{item: IToolbarItem, event: MouseEvent}>
+  @Output() itemClick = new EventEmitter<{ item: IToolbarItem, event: MouseEvent }>
 
   @HostListener('mousedown', ['$event'])
   onMouseEvent(event: MouseEvent) {

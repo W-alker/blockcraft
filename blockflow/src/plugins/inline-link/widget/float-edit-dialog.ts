@@ -8,10 +8,10 @@ import {isUrl} from "../../../core";
   template: `
     <p>标题</p>
     <input type="text" placeholder="请输入标题" [(ngModel)]="updatedText"
-           [class.error]="titleError" #titleInput>
+           [class.error]="titleError" #titleInput (keyup.enter)="onUpdate()" (keydown.tab)="titleInput.focus()">
     <p>地址</p>
-    <input type="text" placeholder="请输入地址"  [(ngModel)]="updatedHref"
-           [class.error]="urlError" #urlInput>
+    <input type="text" placeholder="请输入地址" [(ngModel)]="updatedHref"
+           [class.error]="urlError" #urlInput (keyup.enter)="onUpdate()" (keydown.tab)="urlInput.focus()">
     <div style="width: 100%; display: flex; justify-content: flex-end; gap: 16px">
       <button nz-button (click)="onClose()">取消</button>
       <button nz-button nzType="primary" (click)="onUpdate()">确定</button>
@@ -95,6 +95,10 @@ export class InlineLinkBlockFloatDialog {
   protected urlError = false
   protected updatedText: string = ''
   protected updatedHref: string = ''
+
+  ngAfterViewInit() {
+    this.titleInput.nativeElement.focus()
+  }
 
   verifyText() {
     this.titleError = !this.updatedText

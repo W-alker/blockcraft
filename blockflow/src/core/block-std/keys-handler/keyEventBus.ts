@@ -15,7 +15,6 @@ import {onArrowDown} from "./onArrowDown";
 import {onArrowLeft} from "./onArrowLeft";
 import {onArrowRight} from "./onArrowRight";
 
-
 export interface IKeyEventTrigger {
   (event: KeyboardEvent): boolean
 }

@@ -2,15 +2,37 @@ import {DeltaInsert} from "../../types";
 import {BlockflowInline} from "../inline";
 import {findNodeByIndex, isEmbedElement} from "../../utils";
 
-export const insertContent = (ele: HTMLElement, from: number, delta: DeltaInsert, viewCreator: (d: DeltaInsert) => HTMLElement) => {
+export const insertContent = (ele: HTMLElement, from: number, delta: DeltaInsert, viewCreator: (d: DeltaInsert) => HTMLElement | Text) => {
   // console.time('insertContent')
-  if (!ele.textContent?.length) {
-    const span = viewCreator(delta as DeltaInsert)
-    ele.innerHTML = span.outerHTML
-    return
+  if (!ele.childNodes.length) {
+    return ele.appendChild(viewCreator(delta))
   }
 
   const {node, offset} = findNodeByIndex(ele, from)
+
+  if (node instanceof Text) {
+
+    if (typeof delta.insert === 'string' && (!delta.attributes || Object.keys(delta.attributes).length === 0)) {
+      node.insertData(offset, delta.insert)
+      return
+    }
+
+    const span = viewCreator(delta)
+    switch (offset) {
+      case 0:
+        node.before(span)
+        break
+      case node.length:
+        node.after(span)
+        break
+      default:
+        const newNode = node.splitText(offset)
+        newNode.before(span)
+        break
+    }
+
+    return
+  }
 
   if (isEmbedElement(node)) {
     const embed = viewCreator(delta as DeltaInsert)
@@ -44,7 +66,7 @@ export const insertContent = (ele: HTMLElement, from: number, delta: DeltaInsert
   // console.timeEnd('insertContent')
 }
 
-const splitBy = (ele: Element, index: number, insertEle: HTMLElement) => {
+const splitBy = (ele: Element, index: number, insertEle: HTMLElement | Text) => {
   const textNode = ele.firstChild as Text
   const fragment = document.createDocumentFragment()
   const clone = ele.cloneNode() as HTMLElement
@@ -52,5 +74,5 @@ const splitBy = (ele: Element, index: number, insertEle: HTMLElement) => {
   fragment.appendChild(insertEle)
   fragment.appendChild(clone)
   ele.after(fragment)
-  textNode.data = textNode.data!.slice(0, index)
+  textNode.deleteData(index, textNode.length - index)
 }

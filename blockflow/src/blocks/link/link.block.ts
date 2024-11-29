@@ -10,15 +10,15 @@ import {FloatToolbar, IToolbarItem} from "../../components";
 
 const TOOLBAR_LIST: IToolbarItem[] = [
   {
+    id: 'open',
     icon: 'bf_icon bf_open-link',
     text: '打开',
     title: '打开链接',
     name: 'open',
+    divide: true
   },
   {
-    name: '|',
-  },
-  {
+    id: 'edit',
     icon: 'bf_icon bf_bianji_1',
     title: '编辑',
     name: 'edit',
@@ -29,6 +29,7 @@ const TOOLBAR_LIST: IToolbarItem[] = [
   //   name: 'copy',
   // },
   {
+    id: 'unlink',
     icon: 'bf_icon bf_jiebang',
     title: '解除链接',
     name: 'unlink',

@@ -1,22 +1,68 @@
 import {IToolbarItem} from "../../components";
 
-export const TableRolControlMenu: IToolbarItem[] = [
+const ALIGN_MENUS: IToolbarItem[] = [
   {
+    id: 'align-left',
+    name: "align",
+    title: "左对齐",
+    value: "left",
+    icon: "bf_icon bf_zuoduiqi"
+  },
+  {
+    id: 'align-center',
+    name: "align",
+    title: "居中对齐",
+    value: "center",
+    icon: "bf_icon bf_juzhongduiqi"
+  },
+  {
+    id: 'align-right',
+    name: "align",
+    title: "右对齐",
+    value: "right",
+    icon: "bf_icon bf_youduiqi",
+    divide: true
+  },
+]
+
+export const SET_ROW_HEADER: IToolbarItem = {
+  id: 'setHeadRow',
+  name: "setHeadRow",
+  title: "设置为标题行",
+  value: "row",
+  icon: "bf_icon bf_biaotihang",
+  divide: true
+}
+
+export const SET_COL_HEADER: IToolbarItem = {
+  id: 'setHeadCol',
+  name: "setHeadCol",
+  title: "设置为标题列",
+  value: "col",
+  icon: "bf_icon bf_biaotilie",
+  divide: true
+}
+
+
+export const TableRolControlMenu: IToolbarItem[] = [
+  ...ALIGN_MENUS,
+  {
+    id: 'insert-top',
     name: "insert",
     title: "向上插入一行",
     value: "top",
     icon: "bf_icon bf_shangjiantou-jia"
   },
   {
+    id: 'insert-bottom',
     name: "insert",
     title: "向下插入一行",
     value: "bottom",
-    icon: "bf_icon bf_xiajiantou-jia"
+    icon: "bf_icon bf_xiajiantou-jia",
+    divide: true
   },
   {
-    name: '|'
-  },
-  {
+    id: 'delete',
     name: 'delete',
     title: '删除当前行',
     value: 'delete',
@@ -25,38 +71,21 @@ export const TableRolControlMenu: IToolbarItem[] = [
 ]
 
 export const TableColControlMenu: IToolbarItem[] = [
+  ...ALIGN_MENUS,
   {
-    name: "align",
-    title: "左对齐",
-    value: "left",
-    icon: "bf_icon bf_zuoduiqi"
-  },
-  {
-    name: "align",
-    title: "居中对齐",
-    value: "center",
-    icon: "bf_icon bf_juzhongduiqi"
-  },
-  {
-    name: "align",
-    title: "右对齐",
-    value: "right",
-    icon: "bf_icon bf_youduiqi"
-  },
-  {
-    name: '|'
-  },
-  {
+    id: 'insert-left',
     name: "insert",
     title: "向左插入一列",
     value: "left",
     icon: "bf_icon bf_zuojiantou-jia"
   },
   {
+    id: 'insert-right',
     name: "insert",
     title: "向右插入一列",
     value: "right",
-    icon: "bf_icon bf_youjiantou-jia"
+    icon: "bf_icon bf_youjiantou-jia",
+    divide: true
   },
   // {
   //   name: "复制当前列",
@@ -69,9 +98,7 @@ export const TableColControlMenu: IToolbarItem[] = [
   //   icon: "editor-delete_02"
   // },
   {
-    name: '|'
-  },
-  {
+    id: 'delete',
     name: 'delete',
     title: '删除当前列',
     value: 'delete',

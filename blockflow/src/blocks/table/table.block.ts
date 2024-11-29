@@ -9,7 +9,7 @@ import {TableCellBlock} from "./table-cell.block";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {FloatToolbar} from "../../components";
 import {Overlay} from "@angular/cdk/overlay";
-import {TableColControlMenu, TableRolControlMenu} from "./const";
+import {SET_COL_HEADER, SET_ROW_HEADER, TableColControlMenu, TableRolControlMenu} from "./const";
 
 @Component({
   selector: 'div.table-block',
@@ -168,18 +168,10 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
     overlayRef.backdropClick().pipe(take(1)).subscribe(close)
     const cpr = overlayRef.attach(portal)
     const menu = [...TableColControlMenu]
-    if (colIdx === 0) menu.unshift(...[
-      {
-        name: "setHeadCol",
-        title: "设置为标题列",
-        value: "col",
-        icon: "bf_icon bf_biaotilie",
-        active: this.props.colHead
-      },
-      {
-        name: '|'
-      }
-    ])
+    if (colIdx === 0) menu.unshift(SET_COL_HEADER)
+    if (this.props.colHead) {
+      cpr.setInput('activeMenu', new Set(['setHeadCol']))
+    }
     cpr.setInput('toolbarList', menu)
     cpr.instance.itemClick.pipe(take(1)).subscribe(({item, event}) => {
       switch (item.name) {
@@ -208,6 +200,15 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
         if (cell && cell.props['textAlign'] !== align) cell.setProp('textAlign', align)
       }
     }, USER_CHANGE_SIGNAL)
+  }
+
+  setRowAlign(rowIdx: number, align: 'left' | 'center' | 'right') {
+    const cells = this.model.children[rowIdx].children
+    this.controller.transact(() => {
+      cells.forEach(cell => {
+        if (cell.props['textAlign'] !== align) cell.setProp('textAlign', align)
+      })
+    })
   }
 
   addCol(index: number) {
@@ -282,21 +283,16 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
     overlayRef.backdropClick().pipe(take(1)).subscribe(close)
     const cpr = overlayRef.attach(portal)
     const menu = [...TableRolControlMenu]
-    if (rowIdx === 0) menu.unshift(...[
-      {
-        name: "setHeadRow",
-        title: "设置为标题行",
-        value: "row",
-        icon: "bf_icon bf_biaotihang",
-        active: this.props.rowHead
-      },
-      {
-        name: '|'
-      }
-    ])
+    if (rowIdx === 0) menu.unshift(SET_ROW_HEADER)
+    if (this.props.rowHead) {
+      cpr.setInput('activeMenu', new Set(['setHeadRow']))
+    }
     cpr.setInput('toolbarList', menu)
     cpr.instance.itemClick.pipe(take(1)).subscribe(({item, event}) => {
       switch (item.name) {
+        case 'align':
+          this.setRowAlign(rowIdx, <any>item.value)
+          break
         case 'insert':
           this.addRow(item.value === 'top' ? rowIdx : rowIdx + 1)
           break
@@ -306,6 +302,7 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
         case 'setHeadRow':
           this.setProp('rowHead', !this.props.rowHead)
           break
+
       }
       close()
     })

@@ -4,13 +4,6 @@ export interface ICharacterRange {
   end: number,
 }
 
-export interface ICharacterPosition {
-  node: Element,
-  offset: number,
-  eleOffset: number,
-  beforeEleOffset: number
-}
-
 export type CharacterIndex = number | 'start' | 'end'
 
 export type IBlockFlowRange = { rootRange?: ICharacterRange, isAtRoot: true, rootId: string }

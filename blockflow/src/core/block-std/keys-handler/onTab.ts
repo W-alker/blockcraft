@@ -63,7 +63,7 @@ export const onTab: IKeyEventHandler = (e: KeyboardEvent, controller: Controller
         deltas.push({insert: '\u3000'})
       })
 
-      bRef.applyDelta(deltas)
+      bRef.applyDelta(deltas, false)
       requestAnimationFrame(() => {
         bRef.setSelection(curRange.blockRange.start + 1, curRange.blockRange.end + dividerPos.length)
       })

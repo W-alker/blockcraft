@@ -7,7 +7,7 @@ import {
 import {EditableBlock} from "../../core";
 import {ICodeBlockModel, IModeItem} from "./type";
 import {Overlay, OverlayModule} from "@angular/cdk/overlay";
-import {fromEventPattern} from "rxjs";
+import {fromEventPattern, merge, take} from "rxjs";
 import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import * as Prism from 'prismjs';
@@ -124,7 +124,8 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
       backdropClass: 'cdk-overlay-transparent-backdrop',
     })
     const cpr = ovr.attach(portal)
-    ovr.backdropClick().pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(() => {
+    cpr.setInput('activeLang', this.props.lang)
+    merge(cpr.instance.destroy, ovr.backdropClick()).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(() => {
       ovr.dispose()
     })
     cpr.instance.langChange.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe((lang: IModeItem) => {

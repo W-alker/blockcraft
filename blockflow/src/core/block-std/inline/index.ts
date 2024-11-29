@@ -29,6 +29,10 @@ export class BlockflowInline {
       return node
     }
 
+    if(!delta.attributes || Object.keys(delta.attributes).length === 0) {
+      return document.createTextNode(insert)
+    }
+
     const span = document.createElement('span')
     span.textContent = insert
     attributes && setAttributes(span, attributes)

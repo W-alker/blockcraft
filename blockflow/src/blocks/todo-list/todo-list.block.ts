@@ -78,6 +78,7 @@ export class TodoListBlock extends EditableBlock<ITodoListBlockModel> {
   override ngOnInit() {
     super.ngOnInit()
     this._checked = this.props.checked
+    this.cdr.markForCheck()
 
     // this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
     //   if(e.type === 'props') {

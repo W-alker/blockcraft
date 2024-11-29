@@ -1,21 +1,39 @@
 import {Component, TemplateRef, ViewChild} from "@angular/core";
 import {
-  BlockFlowContextmenu, BlockFlowEditor, GlobalConfig,
-  BlockModel, genUniqueID, IBlockModel, IEditableBlockModel, SchemaStore,
+  BlockFlowContextmenu,
+  BlockFlowEditor,
+  GlobalConfig,
+  BlockModel,
+  genUniqueID,
+  IBlockModel,
+  IEditableBlockModel,
+  SchemaStore,
   BlockquoteSchema,
-  BulletListSchema, CodeBlockSchema, DividerSchema,
+  BulletListSchema,
+  CodeBlockSchema,
+  DividerSchema,
   HeadingFourSchema,
   HeadingOneSchema,
   HeadingThreeSchema,
   HeadingTwoSchema,
-  ImageSchema, MermaidBlockSchema, OrderedListSchema,
-  ParagraphSchema, TableBlockSchema, TableCellBlockSchema, TableRowBlockSchema, TodoListSchema, CalloutSchema,LinkSchema,
+  ImageSchema,
+  MermaidBlockSchema,
+  OrderedListSchema,
+  ParagraphSchema,
+  TableBlockSchema,
+  TableCellBlockSchema,
+  TableRowBlockSchema,
+  TodoListSchema,
+  CalloutSchema,
+  LinkSchema,
   BlockControllerPlugin,
   BlockTransformPlugin,
-  FloatTextToolbarPlugin, InlineLinkPlugin,
+  FloatTextToolbarPlugin,
+  InlineLinkPlugin,
   MentionPlugin,
   BlockflowBinding,
-  InlineImgPlugin
+  InlineImgPlugin,
+  deleteContent, EditableBlock
 // } from "blockflow-editor";
 } from "../../../blockflow/src/public-api";
 
@@ -23,6 +41,11 @@ const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingT
   ImageSchema, BulletListSchema, OrderedListSchema, TodoListSchema, CalloutSchema, BlockquoteSchema, DividerSchema, LinkSchema, CodeBlockSchema, MermaidBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema])
 
 const mentionRequest = async (keyword: string) => {
+  if(keyword === 'a') {
+    return {
+      list: []
+    }
+  }
   const len = Math.floor(Math.random() * 10)
   const list = Array.from({length: len}).map(() => ({
     id: genUniqueID(),
@@ -45,8 +68,8 @@ interface BlockSchemaMap {
     <bf-editor [config]="config" #editor style="padding: 30px; height: 80vh; width: 70vw"></bf-editor>
 
     <button (click)="onClickReadonly()">切换只读</button>
-    <button (click)="onClick1()">删除第二个</button>
     <button (mousedown)="onClick3($event)">选中范围</button>
+    <button (mousedown)="onClick1($event)">删除选中</button>
     <button (click)="onClick2()">打印数据</button>
 
     <button (click)="onClick5()">新增数据</button>
@@ -130,7 +153,7 @@ export class TestPage {
   }
 
   config: GlobalConfig = {
-    rootId: '67177d1e2c4cf755f81cabdb',
+    rootId: '20241127test',
     schemas: schemaStore,
     // lazyload: {
     //   pageSize: 10,
@@ -187,9 +210,14 @@ export class TestPage {
     this.editor.controller.toggleReadonly(!this.editor.controller.readonly$.value)
   }
 
-  onClick1() {
-    console.log(this.controller.rootModel)
-    this.controller.deleteBlockById(this.controller.rootModel[1].id)
+  onClick1(e: Event) {
+    e.preventDefault()
+    const selection = this.controller.selection.getSelection()
+    if(!selection || selection?.isAtRoot) return
+    const bRef = this.controller.getBlockRef(selection.blockId) as EditableBlock
+    if(!bRef) return
+    console.log('11')
+    deleteContent(bRef.containerEle, selection.blockRange.start, selection.blockRange.end)
   }
 
   onClick2() {
@@ -202,17 +230,51 @@ export class TestPage {
   }
 
   onClick4() {
-    this.yBinding = new BlockflowBinding(this.controller, {serverUrl: 'ws://193.168.1.123:1234'})
+    this.yBinding = new BlockflowBinding(this.controller, {serverUrl: 'ws://localhost:1234'})
     this.yBinding.connect()
   }
 
   onClick5() {
-    const bm = this.editor.controller.createBlock('code', [
-      [{
-        insert: 'const s = "Hello, World!";\nHello, World!\n\n',
-      }],
-    ])
-    this.editor.controller.insertBlocks(0, [bm])
+    const bm = {
+      "flavour": "paragraph",
+      "id": "1732785970232_98d68ec2_3d7c",
+      "nodeType": "editable",
+      "props": {
+        "indent": 0,
+        "textAlign": "left"
+      },
+      "meta": {
+        "createdTime": 1732785970232,
+        "lastModified": {
+          "time": 1732785982874,
+          "userId": "123",
+          "userName": "chengxu"
+        }
+      },
+      "children": [
+        {
+          "insert": "123"
+        },
+        {
+          "insert": {
+            "link": "https://fanyi.baidu.com/mtpe-individual/multimodal?query=decrement&lang=en2zh#/"
+          },
+          "attributes": {
+            "d:href": "https://fanyi.baidu.com/mtpe-individual/multimodal?query=decrement&lang=en2zh#/"
+          }
+        },
+        {
+          "insert": "45678",
+          "attributes": {
+            "s:c": "#ff0000"
+          }
+        },
+        {
+          "insert": "789",
+        }
+      ]
+    } as any
+    this.editor.controller.insertBlocks(0, [BlockModel.fromModel(bm)])
   }
 
   onClick6() {

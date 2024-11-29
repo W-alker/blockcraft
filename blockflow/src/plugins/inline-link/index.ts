@@ -12,25 +12,27 @@ import {InlineLinkBlockFloatDialog} from "./widget/float-edit-dialog";
 
 const TOOLBAR_LIST: IToolbarItem[] = [
   {
+    id: 'open',
     icon: 'bf_icon bf_open-link',
     text: '打开',
     title: '打开链接',
     name: 'open',
+    divide: true
   },
   {
-    name: '|',
-  },
-  {
+    id: 'edit',
     icon: 'bf_icon bf_bianji_1',
     title: '编辑',
     name: 'edit',
   },
   {
+    id: 'copy',
     icon: 'bf_icon bf_fuzhi',
     title: '复制',
     name: 'copy',
   },
   {
+    id: 'unlink',
     icon: 'bf_icon bf_jiebang',
     title: '解除链接',
     name: 'unlink',
@@ -89,6 +91,14 @@ export class InlineLinkPlugin implements IPlugin {
           c.transact(() => {
             target.replaceWith(newNode)
             activeBlock.applyDeltaToModel(deltas)
+
+            const selection = document.getSelection()!
+            const _r = document.createRange()
+            _r.setStartAfter(newNode)
+            _r.collapse(true)
+            selection.removeAllRanges()
+            selection.addRange(_r)
+
           }, USER_CHANGE_SIGNAL)
           ref.dispose()
         })
@@ -121,8 +131,7 @@ export class InlineLinkPlugin implements IPlugin {
               break
             case 'copy':
               const delta = c.inlineManger.elementToDelta(target)
-              // TODO: Clipboard API
-              // ClipDataWriter.writeDeltaToClipboard([delta])
+              c.clipboard.writeBlockFlowData([delta], "delta")
               break
             case 'unlink':
               const text = target.textContent!

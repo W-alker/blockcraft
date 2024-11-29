@@ -1,4 +1,12 @@
-import {ChangeDetectionStrategy, ChangeDetectorRef, Component, DestroyRef, EventEmitter, Output} from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  DestroyRef, ElementRef,
+  EventEmitter,
+  Input,
+  Output, ViewChild
+} from "@angular/core";
 import {LANGUAGE_LIST} from "./const";
 import {NgForOf} from "@angular/common";
 import {IModeItem} from "./type";
@@ -6,23 +14,26 @@ import {IModeItem} from "./type";
 @Component({
   selector: 'lang-list',
   template: `
-    <input (input)="onSearch($event)" />
-    @for (item of languageList; track item.name) {
-      <div class="lang-list_item"
-           (click)="langChange.emit(item)">
-        {{ item.name }}
-      </div>
-    }
+    <input (input)="onSearch($event)" #input (keydown)="onKeydown($event)" />
+    <div class="lang-list" (mouseover)="onMouseEnter($event)" (mousedown)="onMouseDown($event)" #langList>
+      @for (item of languageList; track item.name; let index = $index) {
+        <div class="lang-list_item" [class.active]="item.value === activeLang"
+             [attr.data-value]="item.value" [class.hover]="hoverIdx === index">
+          {{ item.name }}
+        </div>
+      }
+    </div>
   `,
   styles: [`
     :host {
       background-color: #fff;
       border: 1px solid #f5f2f0;
+      box-shadow: 0 0 4px rgba(0, 0, 0, .1);
       border-radius: 4px;
       padding: 4px;
 
       > input {
-        margin: 0 auto 4px;
+        margin: 0 auto;
         width: 120px;
         height: calc(var(--bf-lh) * 1.5);
         line-height: calc(var(--bf-lh) * 1.5);
@@ -32,7 +43,14 @@ import {IModeItem} from "./type";
         padding: 0 4px;
       }
 
+      .lang-list {
+        margin-top: 4px;
+        max-height: 40vh;
+        overflow-y: auto;
+      }
+
       .lang-list_item {
+        margin-top: 4px;
         padding: 0 4px;
         height: calc(var(--bf-lh) * 1.5);
         line-height: calc(var(--bf-lh) * 1.5);
@@ -42,22 +60,27 @@ import {IModeItem} from "./type";
         cursor: pointer;
         border-radius: 4px;
 
-        &:hover {
+        &.active, &.hover {
           background-color: rgba(153, 153, 153, .1);
         }
       }
     }
   `],
-  imports: [
-    NgForOf,
-  ],
+  imports: [NgForOf],
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class LangListComponent {
+  @Input() activeLang: string = 'javascript';
   @Output() langChange = new EventEmitter<IModeItem>();
+  @Output() destroy = new EventEmitter<void>()
+
+  @ViewChild('input', {read: ElementRef}) input!: ElementRef<HTMLInputElement>
+  @ViewChild('langList', {read: ElementRef}) langList!: ElementRef<HTMLElement>
 
   protected languageList = LANGUAGE_LIST;
+
+  protected hoverIdx = -1;
 
   constructor(
     private cdr: ChangeDetectorRef,
@@ -65,10 +88,71 @@ export class LangListComponent {
   ) {
   }
 
+  ngOnInit() {
+    this.setHoverIdx(this.activeLang)
+  }
+
+  ngAfterViewInit() {
+    this.input.nativeElement.focus();
+    this.viewHoverLang()
+  }
+
+  onMouseEnter(e: MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('lang-list_item')) {
+      this.setHoverIdx(target.dataset["value"]!)
+    }
+  }
+
+  onMouseDown(e: MouseEvent) {
+    e.stopPropagation()
+    e.preventDefault()
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('lang-list_item')) {
+      this.langChange.emit(LANGUAGE_LIST.find(item => item.value === target.dataset["value"])!)
+    }
+  }
+
+  setHoverIdx(v: string) {
+    this.hoverIdx = LANGUAGE_LIST.findIndex(item => item.value === v)
+  }
+
+  viewHoverLang() {
+    this.langList.nativeElement.children[this.hoverIdx].scrollIntoView({behavior: 'smooth', block: 'nearest'})
+  }
+
   onSearch(e: Event) {
     const v = (e.target as HTMLInputElement).value;
-    if(!v) this.languageList = LANGUAGE_LIST;
+    if (!v) this.languageList = LANGUAGE_LIST;
     else this.languageList = LANGUAGE_LIST.filter(item => item.value.includes(v) || item.name.includes(v));
+    this.hoverIdx = [0, this.hoverIdx, this.languageList.length].sort((a, b) => a - b)[1]
     this.cdr.markForCheck();
+  }
+
+  onKeydown($event: KeyboardEvent) {
+    switch ($event.key) {
+      case 'Escape':
+        $event.preventDefault()
+        this.destroy.emit();
+        break
+      case 'ArrowDown':
+        $event.preventDefault()
+        this.hoverIdx = this.hoverIdx < this.languageList.length - 1 ? this.hoverIdx + 1 : 0;
+        this.cdr.detectChanges();
+        this.viewHoverLang()
+        break;
+      case 'ArrowUp':
+        $event.preventDefault()
+        this.hoverIdx = this.hoverIdx > 0 ? this.hoverIdx - 1 : this.languageList.length - 1;
+        this.cdr.detectChanges();
+        this.viewHoverLang()
+        break;
+      case 'Enter':
+        if(!this.languageList.length || !this.languageList[this.hoverIdx]) return;
+        this.langChange.emit(this.languageList[this.hoverIdx]);
+        break;
+      default:
+        break;
+    }
   }
 }

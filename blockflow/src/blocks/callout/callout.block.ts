@@ -10,25 +10,25 @@ import {ColorPalette} from "../../components/color-palette/color-palette";
 
 const TOOLBAR_LIST: IToolbarItem[] = [
   {
+    id: 'color',
     icon: 'bf_icon bf_yanse',
     name: 'color',
-    title: '更换颜色'
+    title: '更换颜色',
+    divide: true
   },
   {
-    name: '|',
-  },
-  {
+    id: 'copy',
     icon: 'bf_icon bf_fuzhi',
     name: 'copy',
     title: '复制文本'
   }
 ]
-const COPYED_TOOLBAR_LIST: IToolbarItem[] = [...TOOLBAR_LIST].slice(0, TOOLBAR_LIST.length - 1).concat({
+const COPIED_TOOLBAR_LIST: IToolbarItem[] = [...TOOLBAR_LIST].slice(0, TOOLBAR_LIST.length - 1).concat({
+  id: 'copied',
   icon: 'bf_icon bf_fuzhi',
-  name: 'copyed',
+  name: 'copied',
   title: '复制文本',
   text: '已复制',
-  active: true
 })
 
 const POSITIONS: ConnectedPosition[] = [
@@ -125,7 +125,7 @@ export class CalloutBlock extends EditableBlock<ICalloutBlockModel> {
           break
         case 'copy':
           navigator.clipboard.writeText(this.getTextContent()).then(() => {
-            cpr.setInput('toolbarList', COPYED_TOOLBAR_LIST)
+            cpr.setInput('toolbarList', COPIED_TOOLBAR_LIST)
             setTimeout(() => {
               cpr.setInput('toolbarList', TOOLBAR_LIST)
             }, 2000)

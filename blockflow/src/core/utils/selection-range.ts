@@ -1,36 +1,59 @@
 import {isEmbedElement} from "./isEmbedNode";
-import {CharacterIndex, ICharacterPosition, ICharacterRange} from "../types";
+import {CharacterIndex, ICharacterRange} from "../types";
+
+export interface ICharacterPosition {
+  node: Text | Element,
+  offset: number,
+  nodeOffset: number,
+  beforeNodeCharacterCount: number
+}
 
 export const characterIndex2Number = (index: CharacterIndex, length: number) => {
   return typeof index === 'number' ? index : index === 'start' ? 0 : length
 }
 
 export const findNodeByIndex = (ele: HTMLElement, index: number, findFrom?: ICharacterPosition): ICharacterPosition => {
-  if (!ele.childNodes.length) throw new Error('no children')
+  if (!ele.childNodes.length) throw new Error('no childNodes')
 
-  let cnt = findFrom?.beforeEleOffset || 0
+  let cnt = findFrom?.beforeNodeCharacterCount || 0
   if (index === 0) return {
-    node: ele.firstElementChild!,
+    node: ele.firstChild as any,
     offset: 0,
-    eleOffset: 0,
-    beforeEleOffset: 0
+    nodeOffset: 0,
+    beforeNodeCharacterCount: 0
   }
 
-  const childElements = ele.children
-  for (let i = findFrom?.eleOffset || 0; i < childElements.length; i++) {
-    const child = childElements[i]
-    if (child.tagName === 'BR') {
+  const childNodes = ele.childNodes
+  for (let i = findFrom?.nodeOffset || 0; i < childNodes.length; i++) {
+    const child = childNodes[i]
+
+    if (child instanceof Text) {
+      const childTextLength = child.length || 1
+      if (cnt + childTextLength >= index) {
+        return {
+          node: child,
+          offset: index - cnt,
+          nodeOffset: i,
+          beforeNodeCharacterCount: cnt
+        }
+      }
+      cnt += childTextLength
+      continue
+    }
+
+    if ((child as HTMLElement).tagName === 'BR') {
       child.remove()
       i--
       continue
     }
+
     const childTextLength = isEmbedElement(child) ? 1 : child.textContent?.length || 1
     if (cnt + childTextLength >= index) {
       return {
-        node: child,
+        node: child as any,
         offset: index - cnt,
-        eleOffset: i,
-        beforeEleOffset: cnt
+        nodeOffset: i,
+        beforeNodeCharacterCount: cnt
       }
     }
     cnt += childTextLength
@@ -40,11 +63,11 @@ export const findNodeByIndex = (ele: HTMLElement, index: number, findFrom?: ICha
 }
 
 export const setCharacterRange = (el: HTMLElement, start: CharacterIndex, end: CharacterIndex) => {
+  if(!el.isContentEditable) return;
   const sel = document.getSelection()!
   if (document.activeElement !== el) el.focus()
 
-  const textContent = el.textContent
-  if (!textContent || !textContent.length) {
+  if (!el.childNodes.length) {
     sel.setPosition(el, 0)
     return
   }
@@ -54,25 +77,22 @@ export const setCharacterRange = (el: HTMLElement, start: CharacterIndex, end: C
     return
   }
 
-  if (typeof start === 'number' && start > textContent.length) {
-    start = textContent.length
-  }
-
-  if (typeof end === 'number' && end > textContent.length) {
-    end = textContent.length
-  }
-
   if (start === end) {
+
     if (start === 'start' || start === 0) {
-      sel.setPosition(el, 0)
+      setCursorBefore(el.firstChild!, sel)
       return
     } else if (start === 'end') {
-      sel.setPosition(el, el.childElementCount)
+      setCursorAfter(el.lastChild!, sel)
       return
     }
-    const {node, offset, eleOffset} = findNodeByIndex(el, start)
-    if (isEmbedElement(node)) sel.setPosition(el, eleOffset)
-    else sel.setPosition(node.firstChild!, offset)
+
+    const {node, offset, nodeOffset} = findNodeByIndex(el, start)
+    if (isEmbedElement(node)) {
+      sel.setPosition(el, nodeOffset)
+    } else {
+      sel.setPosition(node instanceof Text ? node : node.firstChild!, offset)
+    }
     return;
   }
 
@@ -87,7 +107,7 @@ export const setCharacterRange = (el: HTMLElement, start: CharacterIndex, end: C
       break
     default:
       const startPos = findNodeByIndex(el, start)
-      _range.setStart(startPos.node.firstChild!, startPos.offset)
+      _range.setStart(startPos.node instanceof Text ? startPos.node : startPos.node.firstChild!, startPos.offset)
       break
   }
   switch (end) {
@@ -100,7 +120,7 @@ export const setCharacterRange = (el: HTMLElement, start: CharacterIndex, end: C
       break
     default:
       const endPos = findNodeByIndex(el, end)
-      _range.setEnd(endPos.node.firstChild!, endPos.offset)
+      _range.setEnd(endPos.node instanceof Text ? endPos.node : endPos.node.firstChild!, endPos.offset)
       break
   }
   sel.removeAllRanges()
@@ -139,8 +159,10 @@ export const getCurrentCharacterRange = (activeElement: HTMLElement): ICharacter
   }
 
   let startPos = -1, endPos = -1, cnt = 0
-  for (let i = 0; i < children.length; i++) {
-    const child = children[i]
+
+  const childNodes = activeElement.childNodes
+  for (let i = 0; i < childNodes.length; i++) {
+    const child = childNodes[i]
 
     if (child instanceof Text) {
 
@@ -150,38 +172,47 @@ export const getCurrentCharacterRange = (activeElement: HTMLElement): ICharacter
 
       if (child === endContainer) {
         endPos = cnt + endOffset
-        break
+        return {start: startPos, end: endPos}
       }
 
       cnt += child.length
-    } else {
-
-      const isEmbed = isEmbedElement(child)
-      const textNode = child.firstChild! as Text
-
-      if (child === startContainer) {
-        startPos = cnt + (isEmbed ? startOffset : (startOffset === 0 ? 0 : textNode.length))
-      }
-
-      if (child === endContainer) {
-        endPos = cnt + (isEmbed ? endOffset : (endOffset === 0 ? 0 : textNode.length))
-        break
-      }
-
-      if (startContainer === textNode) {
-        startPos = cnt + startOffset
-      }
-
-      if (endContainer === textNode) {
-        endPos = cnt + endOffset
-        break
-      }
-
-      cnt += isEmbed ? 1 : textNode.length
+      continue
     }
+
+    const isEmbed = isEmbedElement(child)
+    const textLength = isEmbed ? 1 : child.textContent?.length || 0
+
+    if (child === startContainer) {
+      startPos = cnt + (isEmbed ? startOffset : (startOffset === 0 ? 0 : textLength))
+    }
+
+    if (child === endContainer) {
+      endPos = cnt + (isEmbed ? endOffset : (endOffset === 0 ? 0 : textLength))
+      return {start: startPos, end: endPos}
+    }
+
+    if (!isEmbed) {
+
+      for (let j = 0; j < child.childNodes.length; j++) {
+        const grandChild = child.childNodes[j] as Text
+
+        if (grandChild === startContainer) {
+          startPos = cnt + startOffset
+        }
+
+        if (grandChild === endContainer) {
+          endPos = cnt + endOffset
+          return {start: startPos, end: endPos}
+        }
+
+      }
+
+    }
+
+    cnt += textLength
   }
 
-  return {start: startPos, end: endPos}
+  throw new Error('Cannot find range')
 }
 
 export const getElementCharacterOffset = (ele: HTMLElement, container: HTMLElement) => {
@@ -192,6 +223,49 @@ export const getElementCharacterOffset = (ele: HTMLElement, container: HTMLEleme
     cnt += isEmbedElement(child) ? 1 : child.textContent!.length
   }
   return -1
+}
+
+export const setCursorAfter = (el: Node, sel = document.getSelection()!) => {
+  if (!el) return
+  if (el instanceof Text) {
+    sel.setPosition(el, el.length)
+    return
+  }
+
+  if (!(el instanceof Element)) return;
+
+  if (isEmbedElement(el)) {
+    const range = document.createRange()
+    range.setStartAfter(el)
+    range.collapse(true)
+    sel.removeAllRanges()
+    sel.addRange(range)
+    return
+  }
+
+  sel.setPosition(el.lastChild!, el.lastChild!.nodeValue!.length)
+}
+
+export const setCursorBefore = (el: Node, sel = document.getSelection()!) => {
+  if(!el) return
+  console.log(el)
+  if (el instanceof Text) {
+    sel.setPosition(el, 0)
+    return
+  }
+
+  if (!(el instanceof Element)) return;
+
+  if (isEmbedElement(el)) {
+    const range = document.createRange()
+    range.setStartBefore(el)
+    range.collapse(true)
+    sel.removeAllRanges()
+    sel.addRange(range)
+    return
+  }
+
+  sel.setPosition(el.firstChild!, 0)
 }
 
 export const isCursorAtElStart = (el: HTMLElement) => {

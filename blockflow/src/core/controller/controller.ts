@@ -129,7 +129,7 @@ export class Controller {
       })
       this.historyManager.on('stack-item-popped', (e) => {
         requestAnimationFrame(() => {
-          this.selection.applyRange(e.stackItem.meta.get('selection') as any)
+          if (!this.activeElement) this.selection.applyRange(e.stackItem.meta.get('selection') as any)
         })
       })
     }
@@ -303,7 +303,33 @@ export class Controller {
     const parentModel = this.getBlockModel(parentId)
     if (!parentModel) throw new Error(`Parent block ${parentId} not found`)
     parentModel.deleteChildren(index, count)
+  }
 
+  replaceBlocks(index: number, count: number, blocks: BlockModel[], parentId: string = this.rootId) {
+    if (count <= 0 || blocks.length <= 0) throw new Error(`Count or blocks must be greater than 0`)
+    blocks.forEach(b => {
+      this.blocksWaiting[b.id] = false
+    })
+    if (parentId === this.rootId) {
+
+      return new Promise((resolve, reject) => {
+        this.transact(() => {
+          this.rootYModel.delete(index, count)
+          this.rootYModel.insert(index, blocks.map(b => b.yModel))
+          this.rootModel.splice(index, count, ...blocks)
+
+          if (blocks.some(b => b.flavour === 'ordered-list')) {
+            const olIndex = this.rootModel.findIndex((b, i) => i >= index && b.flavour === 'ordered-list')
+            if (olIndex >= 0) this.updateOrderAround(this.rootModel[olIndex] as any)
+          }
+
+          this.blocksReady$.pipe(take(1)).subscribe(v => requestAnimationFrame(resolve))
+        }, USER_CHANGE_SIGNAL)
+      })
+
+    }
+
+    throw new Error(`Parent block ${parentId} not found`)
   }
 
   deleteBlockById(id: string) {
@@ -447,6 +473,7 @@ export class Controller {
     const {start, end} = rootRange
     this.deleteBlocks(start, end - start)
     this.root.clearSelectedBlockRange()
+    return [start, end]
   }
 
   /** ---------------focus , selection---------------- end **/
@@ -473,6 +500,19 @@ export class BlockFlowSelection {
 
   get root() {
     return this.controller.root
+  }
+
+  focusTo(id: string, from: CharacterIndex, to?: CharacterIndex) {
+    const block = this.controller.getBlockRef(id)
+    if (!block) return
+    if (this.controller.isEditableBlock(block)) {
+      block.setSelection(from, to)
+      return;
+    }
+
+    const pos = block.getPosition()
+    if (pos.parentId !== this.controller.rootId) return;
+    this.root.selectBlocks(pos.index, pos.index + 1)
   }
 
   getSelection(): IBlockFlowRange | null {
@@ -513,7 +553,7 @@ export class BlockFlowSelection {
   }
 
   getCurrentCharacterRange() {
-    if(!this.controller.activeElement || this.controller.activeElement === this.controller.rootElement) throw new Error('Unexpected active element')
+    if (!this.controller.activeElement || this.controller.activeElement === this.controller.rootElement) throw new Error('Unexpected active element')
     return getCurrentCharacterRange(this.controller.activeElement)
   }
 }

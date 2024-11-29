@@ -43,10 +43,11 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
 
     this.yText.observe((event, tr) => {
       this.setPlaceholder()
+      console.log(this.getTextContent(), this.containerEle.textContent, this.getTextDelta(), this.getTextContent() === this.containerEle.textContent!.replaceAll(' ', '\u00A0'), event.changes.delta)
 
       if (tr.origin === USER_CHANGE_SIGNAL) return
       this.applyDeltaToView(event.changes.delta as DeltaOperation[]
-        // , this.controller.undoRedo$.value
+        , this.controller.undoRedo$.value
       )
       // this.model.children.splice(0, this.model.children.length, ...this.yText.toDelta())
     })
@@ -94,13 +95,14 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
   forceRender() {
     const delta = this.getTextDelta()
     this.containerEle.innerHTML = ''
-    const fragment = document.createDocumentFragment()
     if (delta.length) {
+      const fragment = document.createDocumentFragment()
       for (const insert of delta) {
         if (!insert.insert) continue
         fragment.appendChild(this.controller.inlineManger.createView(insert))
       }
       this.containerEle.appendChild(fragment)
+      return
     }
   }
 
@@ -113,7 +115,7 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
   }
 
   applyDeltaToModel(deltas: DeltaOperation[]) {
-    // console.log('applyDeltaToModel', deltas)
+    console.log('applyDeltaToModel', deltas)
     this.yText.applyDelta(deltas)
   }
 

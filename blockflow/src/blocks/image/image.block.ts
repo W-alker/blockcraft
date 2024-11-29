@@ -15,25 +15,78 @@ import {ParagraphBlock} from "../paragraph/paragraph.block";
 import {OverlayModule} from "@angular/cdk/overlay";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 
+
+const COPIED_MENU: IToolbarItem = {
+  id: 'copied',
+  name: 'copied',
+  icon: 'bf_icon bf_xuanzhong',
+  title: '已复制',
+  text: '已复制'
+}
+
+const IMAGE_BLOCK_TOOLBAR_LIST: IToolbarItem[] = [
+  {
+    id: 'caption',
+    name: 'caption',
+    icon: 'bf_icon bf_tianjiamiaoshu',
+    title: '添加图片标题',
+    divide: true
+  },
+  {
+    id: 'align-start',
+    name: 'align',
+    icon: 'bf_icon bf_tupianjuzuo',
+    value: 'start',
+    title: '居左'
+  },
+  {
+    id: 'align-center',
+    name: 'align',
+    icon: 'bf_icon bf_tupianjuzhong',
+    value: 'center',
+    title: '居中'
+  },
+  {
+    id: 'align-end',
+    name: 'align',
+    icon: 'bf_icon bf_tupianjuyou',
+    value: 'end',
+    title: '居右',
+    divide: true
+  },
+  {
+    id: 'copy-link',
+    name: 'copy-link',
+    icon: 'bf_icon bf_tupianlianjie',
+    title: '复制图片链接'
+  },
+  {
+    id: 'download',
+    name: 'download',
+    icon: 'bf_icon bf_xiazai-2',
+    title: '下载图片'
+  }
+]
+
 @Component({
   selector: 'div.image-block',
   standalone: true,
   template: `
-    <div class="img-block__container" [style.width.px]="_showWidth" tabindex="0" (keydown)="onKeydown($event)"
-         (focus)="onImgFocus($event)"
-         (blur)="onImgBlur($event)">
+    <div class="img-block__container" [style.width.px]="_showWidth"
+         [attr.tabindex]=" (controller.readonly$ | async) ? null : 0 " (keydown)="onKeydown($event)"
+         (focus)="onImgFocus($event)" (blur)="onImgBlur($event)">
 
       <div [class]="['img-default-skeleton', imgLoadState]" *ngIf="imgLoadState !== 'loaded'">
         <span class="img-default-skeleton__icon bf_icon bf_jiazai" *ngIf="imgLoadState === 'loading'"></span>
         <span class="img-default-skeleton__error" *ngIf="imgLoadState === 'error'">加载失败!</span>
       </div>
 
-      <ng-container *ngIf="imgLoadState === 'loaded'">
+      @if (imgLoadState === 'loaded') {
         <div class="bf-float-toolbar img-block__toolbar" *ngIf="isFocusing$ | async"
-             [toolbarList]="TOOLBAR_LIST" (click)="$event.stopPropagation();"
+             [toolbarList]="TOOLBAR_LIST" [activeMenu]="activeMenu" (click)="$event.stopPropagation();"
              (itemClick)="onToolbarItemClick($event)">
         </div>
-      </ng-container>
+      }
 
       <img [src]="model.props.src" [class.resize-mode]="isFocusing$ | async" draggable="false" #img>
 
@@ -87,47 +140,8 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
     super();
   }
 
-  protected TOOLBAR_LIST: IToolbarItem[] = [
-    {
-      name: 'caption',
-      icon: 'bf_icon bf_tianjiamiaoshu',
-      title: '添加图片标题'
-    },
-    {
-      name: '|',
-    },
-    {
-      name: 'align',
-      icon: 'bf_icon bf_tupianjuzuo',
-      value: 'start',
-      title: '居左'
-    },
-    {
-      name: 'align',
-      icon: 'bf_icon bf_tupianjuzhong',
-      value: 'center',
-      title: '居中'
-    },
-    {
-      name: 'align',
-      icon: 'bf_icon bf_tupianjuyou',
-      value: 'end',
-      title: '居右'
-    },
-    {
-      name: '|',
-    },
-    {
-      name: 'copy-link',
-      icon: 'bf_icon bf_tupianlianjie',
-      title: '复制图片链接'
-    },
-    {
-      name: 'download',
-      icon: 'bf_icon bf_xiazai-2',
-      title: '下载图片'
-    }
-  ]
+  protected TOOLBAR_LIST = [...IMAGE_BLOCK_TOOLBAR_LIST]
+  protected activeMenu?: Set<string>
 
   protected imgLoadState: 'loading' | 'loaded' | 'error' = 'loading'
   protected _showWidth = 100
@@ -166,6 +180,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
   }
 
   onKeydown(e: KeyboardEvent) {
+    if (e.isComposing || e.eventPhase !== 2) return
     switch (e.key) {
       case 'Delete':
       case 'Backspace':
@@ -177,20 +192,25 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
   }
 
   deleteSelf() {
-    const{parentId, index} = this.getPosition()
-    if(parentId === this.controller.rootId && index > 0) {
+    const {parentId, index} = this.getPosition()
+    if (parentId === this.controller.rootId && index > 0) {
       const prevEditable = this.controller.findPrevEditableBlock(this.id)
       prevEditable && prevEditable.setSelection('end')
     }
     this.controller.deleteBlocks(index, 1, parentId)
   }
 
+  setToolbarActive() {
+    const set = new Set<string>()
+    if (this.model.children.length) set.add('caption')
+    set.add('align-' + this.props.align)
+    this.activeMenu = set
+  }
+
   onImgFocus(event: FocusEvent) {
     event.stopPropagation()
     event.preventDefault()
-    this.TOOLBAR_LIST = this.TOOLBAR_LIST.map((item) => ({...item, active: false}))
-    this.TOOLBAR_LIST[0].active = !!this.model.children.length
-    this.TOOLBAR_LIST[['start', 'center', 'end'].indexOf(this.props.align) + 2].active = true
+    this.setToolbarActive()
     this.isFocusing$.next(true)
   }
 
@@ -201,6 +221,11 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
 
   onImgClick(event: MouseEvent) {
     event.preventDefault()
+    event.stopPropagation()
+    if (this.controller.readonly$.value) {
+      this.previewImg()
+      return
+    }
     if (!this.isFocusing$.value) return
     this.previewImg()
   }
@@ -247,14 +272,24 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
             this.controller.selection.setSelection(paragraph.id, 0)
           })
         }
-        this.TOOLBAR_LIST[0].active = !!this.model.children.length
+        this.setToolbarActive()
         break
       case 'align':
         if (this.props.align === item.value) return
         this.setProp('align', item.value as IImageBlockProps['align'])
+        this.setToolbarActive()
         break
       case 'copy-link':
-        navigator.clipboard.writeText(this.props.src)
+        this.controller.clipboard.writeText(this.props.src).then(() => {
+          const idx = this.TOOLBAR_LIST.findIndex(item => item.name === 'copy-link')
+          this.TOOLBAR_LIST.splice(idx, 1, COPIED_MENU)
+          this.activeMenu?.add(COPIED_MENU.id)
+          this.TOOLBAR_LIST = [...this.TOOLBAR_LIST]
+          setTimeout(() => {
+            this.TOOLBAR_LIST.splice(idx, 1, item)
+            this.TOOLBAR_LIST = [...this.TOOLBAR_LIST]
+          }, 2000)
+        })
         break
       case 'download':
         this.download(this.props.src)

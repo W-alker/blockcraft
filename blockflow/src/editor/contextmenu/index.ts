@@ -8,7 +8,7 @@ import {
 } from "@angular/core";
 import {NgForOf, NgIf, NgTemplateOutlet} from "@angular/common";
 import {IContextMenuEvent, IContextMenuItem} from "./type";
-import {BaseBlock, BlockSchema, Controller, EditableBlock} from "../../core";
+import {BaseBlock, BlockSchema, Controller, EditableBlock, USER_CHANGE_SIGNAL} from "../../core";
 import {FILE_UPLOADER} from "../../blocks";
 import {Overlay} from "@angular/cdk/overlay";
 import {TemplatePortal} from "@angular/cdk/portal";
@@ -276,13 +276,13 @@ export class BlockFlowContextmenu {
   protected moreBlockTpr?: EmbeddedViewRef<any>
 
   @HostListener('click', ['$event'])
+  @HostListener('mousedown', ['$event'])
   onClick(event: MouseEvent) {
     event.stopPropagation()
+    event.preventDefault()
   }
 
   onMouseDown(event: MouseEvent, item: IContextMenuItem, type: 'block' | 'tool') {
-    event.preventDefault()
-    event.stopPropagation()
     if (type === 'block' && this.activeBlock.nodeType === "editable" && this.activeBlock.flavour === item.flavour) return
     this.onItemClicked({item, type})
     this.itemClick.emit({item, type})
@@ -290,6 +290,7 @@ export class BlockFlowContextmenu {
 
   onItemClicked(value: IContextMenuEvent) {
     const {item, type} = value
+
     if (type === 'tool') {
       switch (item.flavour) {
         case 'cut':
@@ -302,7 +303,7 @@ export class BlockFlowContextmenu {
             this.controller.clipboard.execCommand(item.flavour, {
               isAtRoot: true,
               rootId: this.controller.rootId,
-              rootRange: { start: pos.index, end: pos.index + 1 }
+              rootRange: {start: pos.index, end: pos.index + 1}
             })
           }
           return
@@ -314,6 +315,51 @@ export class BlockFlowContextmenu {
     }
 
     const schema = item as BlockSchema
+    const selection = this.controller.selection.getSelection()
+    console.log(selection, document.activeElement)
+
+    if (selection?.isAtRoot && selection.rootRange) {
+      const selectedBlockModels = this.controller.rootModel.slice(selection.rootRange.start, selection.rootRange.end)
+
+      if (selectedBlockModels.find(v => v.id === this.activeBlock.id)) {
+
+        const modelsArr = selectedBlockModels.map((v, i) => {
+          if (v.flavour === schema.flavour || v.nodeType !== 'editable') return -1
+          return selection.rootRange!.start + i
+        }).filter(v => v >= 0)
+
+        if (modelsArr.length > 1) {
+
+          const splitModelsArr: [number, number][] = modelsArr.reduce((acc, cur, i) => {
+            if(cur - acc[acc.length - 1][1] > 1) {
+              acc.push([cur, cur])
+            } else {
+              acc[acc.length - 1][1] = cur
+            }
+            return acc
+          }, [[modelsArr[0], modelsArr[0]]])
+
+          this.controller.transact(() => {
+            splitModelsArr.forEach(([start, end]) => {
+
+              const newBlocks = []
+              for(let i = start; i <= end; i++) {
+                const block = selectedBlockModels[i]
+                newBlocks.push(this.controller.createBlock(schema.flavour, [JSON.parse(JSON.stringify(block.children)), block.props]))
+              }
+              this.controller.replaceBlocks(start, newBlocks.length, newBlocks).then(() => {
+                this.controller.selection.applyRange(selection)
+              })
+            })
+          }, USER_CHANGE_SIGNAL)
+
+          return;
+        }
+
+      }
+
+    }
+
     if (this.activeBlock instanceof EditableBlock && schema.nodeType === 'editable') {
       const deltas = this.activeBlock.getTextDelta()
       const newBlock = this.controller.createBlock(schema.flavour, [deltas, this.activeBlock.props])

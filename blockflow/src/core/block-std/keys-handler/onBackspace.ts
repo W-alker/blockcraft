@@ -1,14 +1,18 @@
 import {IKeyEventHandler} from "./keyEventBus";
 import {EditableBlock} from "../components";
 import {USER_CHANGE_SIGNAL} from "../../yjs";
-import {isEmbedElement} from "../../utils";
+import {isEmbedElement, setCursorAfter} from "../../utils";
 
 export const onBackspace: IKeyEventHandler = (e, controller) => {
   e.preventDefault()
 
   const curRange = controller.selection.getSelection()!
   if (curRange.isAtRoot) {
-    controller.deleteSelectedBlocks()
+    const res = controller.deleteSelectedBlocks()
+    if (!res || res[0] === 0) return
+    // 聚焦上一个块
+    const prev = controller.rootModel[res[0] - 1]
+    controller.selection.focusTo(prev.id, 'end')
     return
   }
 
@@ -17,6 +21,7 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
 
   if (blockRange.start === 0 && blockRange.end === 0) {
 
+    // transform to paragraph
     if (bRef.flavour !== 'paragraph') {
       const pBlock = controller.createBlock('paragraph', [bRef.getTextDelta(), bRef.props])
       controller.replaceWith(bRef.id, [pBlock]).then(() => {
@@ -25,13 +30,22 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
       return;
     }
 
+    // decrement indent
     if (bRef.props.indent > 0) {
       bRef.setProp('indent', bRef.props.indent - 1)
       return
     }
 
-    const prevBlock = controller.findPrevEditableBlock(bRef.id)
-    if (!prevBlock) return
+    const position = bRef.getPosition()
+    if (position.parentId !== controller.rootId || position.index === 0) return
+    const prevBlock = controller.getBlockRef(controller.rootModel[position.index - 1].id)
+    if (!prevBlock) throw new Error(`Can not find prev block`)
+
+    if (!controller.isEditableBlock(prevBlock)) {
+      controller.selection.setSelection(controller.rootId, position.index - 1, position.index)
+      return
+    }
+
     const deltas = bRef.textLength ? [{retain: prevBlock.textLength}, ...bRef.getTextDelta()] : []
     controller.transact(() => {
       prevBlock.setSelection('end')
@@ -48,44 +62,60 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
   if (selection.isCollapsed) {
     const {focusNode, focusOffset} = selection
 
-    const deletePrevEle = (prevEle: HTMLElement) => {
-      const beforeEle = prevEle.previousElementSibling
+    // delete prev element and focus to prev node before it
+    const deletePrevEle = (prevEle: Element) => {
       controller.transact(() => {
         prevEle.remove()
         yText.delete(blockRange.start - 1, 1)
-        beforeEle && !isEmbedElement(beforeEle as Element) && selection.setPosition(beforeEle.lastChild!, beforeEle.textContent!.length)
       }, USER_CHANGE_SIGNAL)
     }
 
     if (focusNode === activeElement) {
-      const prevElement = activeElement.children[focusOffset - 1]
+      const prevNode = activeElement.childNodes[focusOffset - 1]
 
-      if (prevElement instanceof HTMLElement && isEmbedElement(prevElement)) {
-        return deletePrevEle(prevElement)
+      // if prev element is embed element, delete it
+      if (prevNode instanceof Element && isEmbedElement(prevNode)) {
+        return deletePrevEle(prevNode)
       }
 
-      selection.setPosition(prevElement.lastChild!, prevElement.textContent!.length)
+      // if prev element is not embed element, focus to it end
+      setCursorAfter(prevNode, selection)
     }
 
+    // if focusNode is text node
     if (focusOffset === 0) {
-      const prevNode = focusNode!.parentElement!.previousSibling
-      if (prevNode && isEmbedElement(prevNode)) {
+      const parentNode = focusNode!.parentElement!
+      const prevNode = parentNode === activeElement ? focusNode!.previousSibling! : parentNode.previousSibling!
+
+      if (isEmbedElement(prevNode)) {
         return deletePrevEle(<HTMLElement>prevNode)
       }
 
-      prevNode && selection.setPosition(prevNode.firstChild!, prevNode.textContent!.length)
+      setCursorAfter(prevNode, selection)
     }
 
+    // default, handle it as text node
     controller.transact(() => {
+      // TODO bug
       const {focusNode, focusOffset} = selection;
-      (focusNode as Text).deleteData(focusOffset - 1, 1);
-      if (!focusNode!.textContent) {
-        const prevNode = focusNode!.parentElement!.previousSibling
-        focusNode!.parentElement?.remove()
-        prevNode && !isEmbedElement(prevNode as Element) && selection.setPosition(prevNode.firstChild!, prevNode.textContent!.length)
-      }
+
+      const textNode = focusNode as Text
+      textNode.deleteData(focusOffset - 1, 1);
       yText.delete(blockRange.start - 1, 1)
+
+      if (textNode.length === 0) {
+        const parentNode = textNode.parentElement!
+        if (parentNode === activeElement) {
+          textNode.remove()
+          return
+        }
+        const prevNode = parentNode.previousSibling!
+        parentNode.remove()
+        setCursorAfter(prevNode, selection)
+      }
+
     }, USER_CHANGE_SIGNAL)
+
     return
   }
 
@@ -95,3 +125,6 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
   ]
   bRef.applyDelta(deltas)
 }
+
+
+
