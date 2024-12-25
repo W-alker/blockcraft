@@ -1,4 +1,4 @@
-import {Component, ElementRef, HostListener, Injector, Input, ViewChild} from "@angular/core";
+import {Component, EventEmitter, Injector, Input, Output, ViewChild} from "@angular/core";
 import {NgForOf, NgIf, NgSwitch} from "@angular/common";
 import {Controller, EditorRoot, LazyEditorRoot} from "../../core";
 import {GlobalConfig} from "../types";
@@ -7,13 +7,25 @@ import {GlobalConfig} from "../types";
   selector: 'bf-editor',
   standalone: true,
   template: `
-    <ng-container *ngIf="!globalConfig.lazyload else lazyloadTpl">
+    @if (!globalConfig.lazyload) {
       <div bf-node-type="root" lazy-load="false" #root></div>
-    </ng-container>
-    <ng-template #lazyloadTpl>
+    } @else {
       <div bf-node-type="root" lazy-load="true" [config]="globalConfig.lazyload!" #root></div>
-    </ng-template>
+    }
+    <div class="expand" (mousedown)="onMouseDown($event)" (mouseup)="onMouseUp($event)"></div>
   `,
+  styles: [`
+    :host {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+
+      > .expand {
+        flex: 1;
+        min-height: 60px;
+      }
+    }
+  `],
   imports: [
     NgIf,
     NgForOf,
@@ -35,6 +47,8 @@ export class BlockFlowEditor {
     return this._globalConfig
   }
 
+  @Output() onReady = new EventEmitter<Controller>()
+
   @ViewChild('root') root!: EditorRoot
 
   protected _controller!: Controller
@@ -43,7 +57,6 @@ export class BlockFlowEditor {
   }
 
   constructor(
-    private host: ElementRef<HTMLElement>,
     private injector: Injector
   ) {
   }
@@ -56,12 +69,21 @@ export class BlockFlowEditor {
     if (!config || !this.root) return
     this._globalConfig = config
     this._controller = new Controller(config, this.injector)
-    this._controller.attach(this.root)
+    this._controller.attach(this.root).then(() => {
+      this.onReady.emit(this._controller)
+    })
   }
 
-  @HostListener('click', ['$event'])
-  onClick(event: MouseEvent) {
-    if (this.controller.readonly$.value || event.target !== this.host.nativeElement || this.controller.root.selectedBlockRange) return
+  private mouseDownEventPhase = -1
+
+  onMouseDown(event: MouseEvent) {
+    this.mouseDownEventPhase = event.eventPhase
+  }
+
+  onMouseUp(event: MouseEvent) {
+    if (this.mouseDownEventPhase !== event.eventPhase) return
+    this.mouseDownEventPhase = -1
+    if (this.controller.readonly$.value || this.controller.root.selectedBlockRange) return
     const lastBm = this.controller.rootModel.at(-1)
     if (lastBm && lastBm.nodeType === 'editable' && !['code', 'mermaid', 'callout', 'blockquote'].includes(lastBm.flavour)) {
       this.controller.selection.setSelection(lastBm.id, 'end')

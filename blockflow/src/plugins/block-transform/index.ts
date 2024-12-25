@@ -1,8 +1,10 @@
-import {fromEvent, Subject, Subscription, take, takeUntil} from "rxjs";
+import {fromEvent, merge, Subject, Subscription, take, takeUntil} from "rxjs";
 import {BlockModel, Controller, EditableBlock, IBlockFlavour, IPlugin} from "../../core";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {BlockTransformContextMenu} from "./widget/contextmenu";
 import {ComponentPortal} from "@angular/cdk/portal";
+
+export {BlockTransformContextMenu} from "./widget/contextmenu";
 
 export interface IBlockTransformConfig {
   flavour: string
@@ -46,7 +48,7 @@ export const blockTransforms: IBlockTransformConfig[] = [
   {
     flavour: 'ordered-list',
     description: `有序列表(⌘/Ctrl + Shift + O)\nMarkdown: (数字). (空格)`,
-    markdown: /^\d+(\.)?(\s+)?$/,
+    markdown: /^\d+\.(\s+)?$/,
     hotkey: (e) => e.code === 'KeyO' && (e.ctrlKey || e.metaKey) && e.shiftKey,
     onConvert: (controller, from, matchedString) => {
       const props = {
@@ -92,14 +94,6 @@ export const blockTransforms: IBlockTransformConfig[] = [
   }
 ]
 
-const transformBlock = (controller: Controller, from: EditableBlock, to: IBlockFlavour) => {
-  const deltas = from.getTextDelta()
-  const newBlock = controller.createBlock(to, [deltas, from.props])
-  controller.replaceWith(from.id, [newBlock]).then(() => {
-    controller.selection.setSelection(newBlock.id, 'start')
-  })
-}
-
 const TransformReg = /^[\\、].*/
 
 export class BlockTransformPlugin implements IPlugin {
@@ -115,6 +109,14 @@ export class BlockTransformPlugin implements IPlugin {
   }
 
   private sub = new Subscription()
+
+  static transformEditableBlock = (controller: Controller, from: EditableBlock, to: IBlockFlavour) => {
+    const deltas = from.getTextDelta()
+    const newBlock = controller.createBlock(to, [deltas, from.props])
+    controller.replaceWith(from.id, [newBlock]).then(() => {
+      controller.selection.setSelection(newBlock.id, 'start')
+    })
+  }
 
   init(controller: Controller) {
     this._controller = controller
@@ -133,7 +135,7 @@ export class BlockTransformPlugin implements IPlugin {
           if (blockPos.parentId !== controller.rootId) return
           e.preventDefault()
           e.stopPropagation()
-          transformBlock(controller, block, item.flavour)
+          BlockTransformPlugin.transformEditableBlock(controller, block, item.flavour)
         }
       })
 
@@ -204,10 +206,20 @@ export class BlockTransformPlugin implements IPlugin {
     const blockSchemas = this._controller.schemas.values().filter(v => !v.isLeaf && v.flavour !== 'image' && v.flavour !== 'paragraph')
     cpr.setInput('blocks', blockSchemas)
 
+    let isComposing = false
+    fromEvent(block.containerEle, 'compositionstart').pipe(takeUntil(this.closeMenu$)).subscribe(() => {
+      isComposing = true
+    })
+    fromEvent(block.containerEle, 'compositionend').pipe(takeUntil(this.closeMenu$)).subscribe(() => {
+      isComposing = false
+    })
+
     const textObserver = () => {
+      if (isComposing) return;
       const text = block.getTextContent()
       if (!text || !TransformReg.test(text)) {
         this.closeMenu$.next(true)
+        return
       }
       const searchText = text.slice(1)
       const matchedSchemas = blockSchemas.filter(v => v.label.startsWith(searchText) || v.flavour.startsWith(searchText))
@@ -218,7 +230,6 @@ export class BlockTransformPlugin implements IPlugin {
       cpr.setInput('blocks', matchedSchemas)
       cpr.instance.activeIdx = 0
     }
-
     block.yText.observe(textObserver)
     this.closeMenu$.pipe(take(1)).subscribe(v => {
       this.contextOvr!.dispose()
@@ -234,10 +245,9 @@ export class BlockTransformPlugin implements IPlugin {
       })
     })
 
-    fromEvent(block.containerEle, 'blur').pipe(take(1))
-      .subscribe(() => {
-        this.closeMenu$.next(true)
-      })
+    merge(fromEvent(block.containerEle, 'blur'), block.onDestroy).pipe(takeUntil(this.closeMenu$)).subscribe(() => {
+      this.closeMenu$.next(true)
+    })
 
     fromEvent<KeyboardEvent>(block.containerEle, 'keydown').pipe(takeUntil(this.closeMenu$))
       .subscribe((e) => {

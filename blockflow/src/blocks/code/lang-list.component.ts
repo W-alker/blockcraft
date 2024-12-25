@@ -41,6 +41,10 @@ import {IModeItem} from "./type";
         border: 1px solid #f5f2f0;
         border-radius: 4px;
         padding: 0 4px;
+
+        &:focus {
+          outline: 1px solid #4857E2;
+        }
       }
 
       .lang-list {
@@ -109,12 +113,12 @@ export class LangListComponent {
     e.preventDefault()
     const target = e.target as HTMLElement;
     if (target.classList.contains('lang-list_item')) {
-      this.langChange.emit(LANGUAGE_LIST.find(item => item.value === target.dataset["value"])!)
+      this.langChange.emit(this.languageList.find(item => item.value === target.dataset["value"])!)
     }
   }
 
   setHoverIdx(v: string) {
-    this.hoverIdx = LANGUAGE_LIST.findIndex(item => item.value === v)
+    this.hoverIdx = this.languageList.findIndex(item => item.value === v)
   }
 
   viewHoverLang() {

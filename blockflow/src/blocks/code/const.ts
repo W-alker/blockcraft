@@ -3,6 +3,7 @@ import { IModeItem } from "./type";
 export const LANGUAGE_LIST: IModeItem[] = [
   { value: 'java', name: 'Java' },
   { value: 'javascript', name: 'JavaScript' },
+  { value: 'typescript', name: 'TypeScript' },
   { value: 'css', name: 'CSS' },
   { value: 'html', name: 'HTML' },
   { value: 'php', name: 'PHP' },
@@ -15,4 +16,14 @@ export const LANGUAGE_LIST: IModeItem[] = [
   { value: 'json', name: 'JSON' },
   { value: 'sql', name: 'SQL' },
   { value: 'xml', name: 'XML' },
+  { value: 'bash', name: 'Bash' },
+  { value: 'kotlin', name: 'Kotlin' },
+  { value: 'swift', name: 'Swift' },
+  { value: 'ruby', name: 'Ruby' },
+  { value: 'scala', name: 'Scala' },
+  { value: 'dart', name: 'Dart' },
+  { value: 'git', name: 'Git' },
+  { value: 'mongodb', name: 'MongoDB' },
+  { value: 'nginx', name: 'nginx' },
+  { value: 'markdown', name: 'Markdown' },
 ].sort((item1, item2) => item1.name.localeCompare(item2.name))

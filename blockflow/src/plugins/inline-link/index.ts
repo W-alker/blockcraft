@@ -1,6 +1,5 @@
 import {filter, fromEvent, Subscription, take} from "rxjs";
 import {
-  BlockFlowSelection,
   Controller, DeltaInsertEmbed, DeltaOperation,
   EditableBlock, getElementCharacterOffset,
   IPlugin, USER_CHANGE_SIGNAL
@@ -10,34 +9,43 @@ import {Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {InlineLinkBlockFloatDialog} from "./widget/float-edit-dialog";
 
-const TOOLBAR_LIST: IToolbarItem[] = [
-  {
-    id: 'open',
-    icon: 'bf_icon bf_open-link',
-    text: '打开',
-    title: '打开链接',
-    name: 'open',
-    divide: true
-  },
-  {
-    id: 'edit',
-    icon: 'bf_icon bf_bianji_1',
-    title: '编辑',
-    name: 'edit',
-  },
-  {
-    id: 'copy',
-    icon: 'bf_icon bf_fuzhi',
-    title: '复制',
-    name: 'copy',
-  },
-  {
-    id: 'unlink',
-    icon: 'bf_icon bf_jiebang',
-    title: '解除链接',
-    name: 'unlink',
-  },
-]
+const TOOLBAR_OPEN_LINK: IToolbarItem = {
+  id: 'open',
+  icon: 'bf_icon bf_open-link',
+  text: '打开',
+  title: '打开链接',
+  name: 'open',
+  divide: true
+}
+
+const TOOLBAR_EDIT_LINK: IToolbarItem = {
+  id: 'edit',
+  icon: 'bf_icon bf_bianji_1',
+  title: '编辑',
+  name: 'edit',
+}
+
+const TOOLBAR_COPY_LINK: IToolbarItem = {
+  id: 'copy',
+  icon: 'bf_icon bf_fuzhi',
+  title: '复制',
+  name: 'copy',
+}
+
+const TOOLBAR_COPIED_LINK: IToolbarItem = {
+  id: 'copied',
+  icon: 'bf_icon bf_fuzhi',
+  text: '已复制',
+  title: '已复制',
+  name: 'copied',
+}
+
+const TOOLBAR_UNBIND_LINK: IToolbarItem = {
+  id: 'unlink',
+  icon: 'bf_icon bf_jiebang',
+  title: '解除链接',
+  name: 'unlink',
+}
 
 export class InlineLinkPlugin implements IPlugin {
   name = 'inline-link';
@@ -119,7 +127,8 @@ export class InlineLinkPlugin implements IPlugin {
 
         const portal = new ComponentPortal(FloatToolbar)
         const cpr = ref.attach(portal)
-        cpr.instance.toolbarList = TOOLBAR_LIST
+
+        cpr.setInput('toolbarList', c.readonly$.value ? [TOOLBAR_OPEN_LINK, TOOLBAR_COPY_LINK] : [TOOLBAR_OPEN_LINK, TOOLBAR_EDIT_LINK, TOOLBAR_COPY_LINK, TOOLBAR_UNBIND_LINK])
         cpr.instance.itemClick.subscribe(({item, event}) => {
           if (c.readonly$.value && item.name !== 'open') return
           switch (item.name) {
@@ -131,7 +140,10 @@ export class InlineLinkPlugin implements IPlugin {
               break
             case 'copy':
               const delta = c.inlineManger.elementToDelta(target)
-              c.clipboard.writeBlockFlowData([delta], "delta")
+              c.clipboard.writeData([
+                {type: 'delta', data: [delta]},
+                {type: 'text', data: delta.insert['link'] as string}
+              ])
               break
             case 'unlink':
               const text = target.textContent!

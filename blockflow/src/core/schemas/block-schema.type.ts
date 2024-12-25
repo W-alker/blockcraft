@@ -37,5 +37,3 @@ export interface EditableBlockSchema<Props extends IEditableBlockModel["props"]>
 }
 
 export type IBlockModelMap = Record<IBlockFlavour, IBlockModel>
-
-

@@ -8,6 +8,21 @@
 
 :host {
   display: flex;
+  width: fit-content;
+  max-width: 100%;
+
+  &[data-align="left"] {
+    margin-left: 0;
+  }
+
+  &[data-align="right"] {
+    margin-left: 100%;
+    transform: translateX(-100%);
+  }
+
+  &[data-align="center"] {
+    margin: 0 auto;
+  }
 }
 
 .img-block__container {
@@ -37,7 +52,7 @@
     align-items: center;
   }
 
-  & __icon {
+  &__icon {
     font-size: 40px;
     color: #5089b2;
     transform-origin: center center;
@@ -49,7 +64,7 @@
     animation: bf_img_loading 1s linear infinite;
   }
 
-  & __error {
+  &__error {
     color: #f00;
   }
 }

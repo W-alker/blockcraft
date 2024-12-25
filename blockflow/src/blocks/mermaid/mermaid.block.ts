@@ -1,6 +1,6 @@
 import {Overlay, OverlayRef} from '@angular/cdk/overlay';
 import {NgForOf} from '@angular/common';
-import {ChangeDetectionStrategy, Component, ElementRef, HostBinding, TemplateRef, ViewChild} from '@angular/core';
+import {ChangeDetectionStrategy, Component, ElementRef, TemplateRef, ViewChild} from '@angular/core';
 import {DeltaOperation, EditableBlock} from '../../core';
 import {TEMPLATE_LIST, ITemplate} from './const'
 import {TemplatePortal} from '@angular/cdk/portal';
@@ -29,10 +29,11 @@ export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
   @ViewChild('graph', {read: ElementRef}) graph!: ElementRef<HTMLElement>
   @ViewChild('templateListTpl', {read: TemplateRef}) templateListTpl!: TemplateRef<any>
 
-  @HostBinding('attr.data-view-mode')
   protected _viewMode = 'text'
-
   private modalRef?: OverlayRef
+
+  protected isIntersecting = false
+  protected intersectionObserver!: IntersectionObserver
 
   constructor(
     private overlay: Overlay,
@@ -44,15 +45,21 @@ export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
   override ngAfterViewInit(): void {
     super.ngAfterViewInit()
 
+    this.setView(this.props.view)
+
+    this.intersectionObserver = new IntersectionObserver(([entry]) => {
+      this.isIntersecting = entry.isIntersecting
+      if (this.isIntersecting && this._viewMode !== this.props.view) {
+        this.setView(this.props.view)
+      }
+    }, {
+      threshold: [0, 1]
+    })
+    this.intersectionObserver.observe(this.hostEl.nativeElement)
+
     this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(v => {
       if (v.type === 'props' && this._viewMode !== this.props.view) {
-        this._viewMode = this.props.view
-        if (this.props.view === 'graph') {
-          this.renderGraph()
-        } else {
-          this.graph.nativeElement.innerHTML = ''
-        }
-        this.cdr.markForCheck()
+        this.setView(this.props.view)
       }
     })
   }
@@ -72,7 +79,18 @@ export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
   }
 
   onSwitchView() {
-    this.setProp('view',  this._viewMode === 'graph' ? 'text' : 'graph')
+    this.setProp('view', this._viewMode === 'graph' ? 'text' : 'graph')
+  }
+
+  setView(view: 'graph' | 'text') {
+    if(this._viewMode === view || !this.isIntersecting) return
+    // console.log('切换视图', view)
+    this.hostEl.nativeElement.setAttribute('data-view-mode', this._viewMode = view)
+    if (view === 'graph') {
+      this.renderGraph()
+    } else {
+      this.graph.nativeElement.innerHTML = ''
+    }
   }
 
   private dialogFlag: 'template' | 'prefix' = 'template'
@@ -108,5 +126,10 @@ export class MermaidBlock extends EditableBlock<IMermaidBlockModel> {
       ])
     }
     this.modalRef?.dispose()
+  }
+
+  override ngOnDestroy() {
+    super.ngOnDestroy();
+    this.intersectionObserver.disconnect()
   }
 }

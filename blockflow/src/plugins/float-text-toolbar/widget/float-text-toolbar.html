@@ -1,31 +1,30 @@
 <div class="bf-float-toolbar__container" #container>
-  <ng-container *ngFor="let menu of toolbarMenuList">
-    <div class="line" *ngIf="menu.name=='|' else item" [style.order]="menu.order"></div>
-    <ng-template #item>
+  <ng-container *ngFor="let menu of toolbarMenuList; index as idx">
       <div class="bf-float-toolbar__item" [attr.data-name]="menu.name" [style.order]="menu.order"
-           [title]="menu.intro" (mousedown)="onMousedown($event, menu)" [class.active]="activeMenuSet?.has(menu.name)"
+           [title]="menu.intro" (mousedown)="onMousedown($event, menu)"
+           [class.active]="activeMenuSet?.has(menu.name)" [class.divide]="menu.divide"
            (mouseenter)="onMouseEnter($event, menu)"
            (mouseleave)="onMouseLeave($event, menu)">
         <i [class]="['bf_icon', menu.icon]"></i>
         <i class="bf_icon bf_xiajaintou dropdown" *ngIf="menu.children"></i>
       </div>
-    </ng-template>
   </ng-container>
   <div class="bf-float-toolbar__item mark" [style.--color]="markMenu.activeColor" [style.--background]="markMenu.activeBgColor "
-       title="高亮颜色" (mousedown)="onMark($event)" style="order: 7"
+       title="高亮颜色" (mousedown)="onMark($event)" style="order: 1;"
        (mouseenter)="onMarkMouseEnter($event)">
     <i [class]="['bf_icon', markMenu.icon]"></i>
     <i class="bf_icon bf_xiajaintou dropdown"></i>
   </div>
 </div>
 
-<ng-template #alignTpl let-style>
-  <div class="bf-float-toolbar__align__container bf-float-toolbar__children" [style]="style">
+<ng-template #childrenTpl let-children="children" let-style="style">
+  <div class="bf-float-toolbar__children" [style]="style">
     <div class="bf-float-toolbar__children__gap"></div>
-    <div class="bf-float-toolbar__align bf-float-toolbar__children__container">
-      <div class="bf-float-toolbar__align__item" *ngFor="let item of alignList.children" [title]="item.intro"
-           (mousedown)="alignList.value = item.value; alignList.icon = item.icon; onMousedown($event, item)">
-        <i [class]="['bf_icon', item.icon]"></i>
+    <div class="bf-float-toolbar__children__container">
+      <div class="bf-float-toolbar__children__item" *ngFor="let item of children" [title]="item.intro"
+           (mousedown)="onMousedown($event, item)">
+        <i [class]="item.icon" *ngIf="item.icon"></i>
+        <span *ngIf="item.label">{{ item.label }}</span>
       </div>
     </div>
     <div class="bf-float-toolbar__children__gap"></div>

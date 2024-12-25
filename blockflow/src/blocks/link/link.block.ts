@@ -92,62 +92,66 @@ const TOOLBAR_LIST: IToolbarItem[] = [
     </ng-template>
   `,
   styles: [`
-      :host {
-          display: block;
-          cursor: pointer;
-          font-size: 16px;
-      }
+    :host {
+      display: block;
+      cursor: pointer;
+      font-size: 16px;
+    }
 
-      :host .text {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          height: 36px;
-          color: #4857E2;
-      }
+    :host .text {
+      display: flex;
+      align-items: flex-start;
+      gap: 4px;
+      height: 36px;
+      color: #4857E2;
 
-      :host .text:hover {
-          text-decoration: underline;
+      > span {
+        word-break: break-word;
       }
+    }
 
-      :host .card {
-          position: relative;
-          padding: 10px 8px 10px 50px;
-          border-radius: 8px;
-          background: #EAF3FE;
-      }
+    :host .text:hover {
+      text-decoration: underline;
+    }
 
-      :host .card > svg {
-          position: absolute;
-          left: 8px;
-          top: 50%;
-          transform: translateY(-50%);
-      }
+    :host .card {
+      position: relative;
+      padding: 10px 8px 10px 50px;
+      border-radius: 8px;
+      background: #EAF3FE;
+    }
 
-      :host .card .info > p {
-          margin: 0;
-          color: #999;
-          line-height: 20px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-      }
+    :host .card > svg {
+      position: absolute;
+      left: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
 
-      :host .card .info > p:first-child {
-          margin-bottom: 4px;
-          color: #333;
-          font-weight: bold;
-      }
+    :host .card .info > p {
+      margin: 0;
+      color: #999;
+      line-height: 20px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
 
-      :host .empty {
-          flex: 1;
-          padding: 0 8px;
-          line-height: 36px;
-          color: #999;
-          height: 36px;
-          border-radius: 4px;
-          border: 1px solid #4857E2;
-      }
+    :host .card .info > p:first-child {
+      margin-bottom: 4px;
+      color: #333;
+      font-weight: bold;
+    }
+
+    :host .empty {
+      flex: 1;
+      padding: 0 8px;
+      line-height: 36px;
+      color: #999;
+      height: 36px;
+      border-radius: 4px;
+      border: 1px solid #4857E2;
+    }
   `],
   standalone: true,
   imports: [
@@ -171,6 +175,10 @@ export class LinkBlock extends BaseBlock<ILinkBlockModel> {
   @HostListener('click', ['$event'])
   onClick(e: MouseEvent) {
     e.stopPropagation()
+    if(this.controller.readonly$.value) {
+      this.props.href && window.open(this.props.href)
+      return
+    }
     const portal = new ComponentPortal(FloatToolbar)
     const ovr = this.createOverlay()
     const cpr = ovr.attach(portal)

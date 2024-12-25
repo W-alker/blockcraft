@@ -49,7 +49,7 @@ export class TableRowBlock extends BaseBlock<ITableRowBlockModel> {
       if(e[0][0].contentRect.height === this._height) return
       this._height = e[0][0].contentRect.height
       this.heightChange.emit(this._height)
-      console.log('height change', this._height)
+      // console.log('height change', this._height)
     })
 
   }

@@ -3,7 +3,6 @@ import {DeltaInsert, IBlockFlavour, IBlockModel} from "../types";
 import {BlockSchema} from "./block-schema.type";
 import {genUniqueID} from "../utils";
 
-
 export class SchemaStore extends BaseStore<IBlockFlavour, BlockSchema> {
   constructor(schemaList: BlockSchema[]) {
     super()
@@ -41,7 +40,7 @@ export class SchemaStore extends BaseStore<IBlockFlavour, BlockSchema> {
     let props = createBefore?.props?.() || {}
     if (schema.nodeType === 'editable') {
       props['indent'] ??= params?.[1]?.indent || 0
-      props['textAlign'] = 'left'
+      props['textAlign'] = params?.[1]?.['textAlign'] || 'left'
     }
     return {
       id: genUniqueID(),

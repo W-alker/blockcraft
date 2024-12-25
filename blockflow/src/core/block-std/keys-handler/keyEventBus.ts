@@ -97,7 +97,7 @@ export class KeyEventBus {
   }
 
   add(handler: IHandler) {
-    this.handlers.push(handler)
+    this.handlers.unshift(handler)
   }
 
   remove(trigger: IKeyEventTrigger) {

@@ -29,7 +29,6 @@ export const updateOrderAround = (block: BlockModel<IOrderedListBlockModel>, con
     aroundOrderBlocks.push(nextBlock as BlockModel<IOrderedListBlockModel>)
   }
 
-  console.log('aroundOrderBlocks', aroundOrderBlocks)
   const orderMap: Record<number, number> = {}
   let prevIndent = aroundOrderBlocks[0].props.indent
   orderMap[aroundOrderBlocks[0].props.indent] = aroundOrderBlocks[0].props.order

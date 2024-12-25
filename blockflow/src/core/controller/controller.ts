@@ -1,4 +1,4 @@
-import {BehaviorSubject, fromEvent, Subject, take, takeUntil, takeWhile} from "rxjs";
+import {BehaviorSubject, fromEvent, lastValueFrom, Subject, take, takeUntil, takeWhile} from "rxjs";
 import {BaseStore} from "../store";
 import {SchemaStore} from "../schemas";
 import {IPlugin} from "../plugins";
@@ -15,14 +15,12 @@ import {
   BlockModel,
   NO_RECORD_CHANGE_SIGNAL,
   syncBlockModelChildren,
-  UpdateEvent,
   USER_CHANGE_SIGNAL,
   YBlockModel
 } from "../yjs";
 import Y from "../yjs";
 import {EditorRoot} from "../block-render";
 import {Injector} from "@angular/core";
-import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
 import {
   CharacterIndex,
   DeltaInsert,
@@ -32,7 +30,7 @@ import {
   IBlockModel,
 } from "../types";
 import {FILE_UPLOADER, IOrderedListBlockModel, updateOrderAround} from "../../blocks";
-import {getCurrentCharacterRange, isUrl} from "../../core";
+import {adjustRangeEdges, getCurrentCharacterRange, isUrl, normalizeStaticRange, purifyString} from "../../core";
 import {HtmlConverter} from "../modules/clipboard/htmlConverter";
 
 export interface HistoryConfig {
@@ -43,7 +41,8 @@ export interface HistoryConfig {
 export interface IControllerConfig {
   rootId: string
   schemas: SchemaStore
-  embeds?: [string, EmbedConverter][] // [flavour, converter]
+  // [flavour, converter]
+  embeds?: [string, EmbedConverter][]
   readonly?: boolean
   historyConfig?: HistoryConfig
   plugins?: IPlugin[],
@@ -76,6 +75,7 @@ const DEFAULT_EMBED_CONVERTER_LIST: [string, EmbedConverter][] = [
       img.setAttribute('draggable', 'false')
       span.style.width = data.attributes?.['d:width'] + 'px'
       span.appendChild(img)
+      span.setAttribute('tabindex', '0')
       return span
     },
     toDelta: (ele) => {
@@ -89,10 +89,9 @@ const DEFAULT_EMBED_CONVERTER_LIST: [string, EmbedConverter][] = [
 export class Controller {
   public readonly readonly$ = new BehaviorSubject(false)
 
-  public readonly blockUpdate$ = new Subject<UpdateEvent & { block: BaseBlock }>()
   private blockRefStore = new BaseStore<string, BaseBlock | EditableBlock>()
   private blocksWaiting: Record<string, boolean> = {}
-  private blocksReady$ = new Subject()
+  private readonly blocksReady$ = new Subject()
 
   public readonly rootModel: BlockModel[] = []
   public readonly yDoc = new Y.Doc({gc: false, guid: this.config.rootId})
@@ -111,6 +110,8 @@ export class Controller {
   public readonly keyEventBus: KeyEventBus = new KeyEventBus(this)
 
   public readonly inlineManger = new BlockflowInline(new Map(DEFAULT_EMBED_CONVERTER_LIST.concat(this.config.embeds || [])))
+
+  public readonly pluginStore = new BaseStore<string, IPlugin>()
   private _root!: EditorRoot
 
   constructor(
@@ -146,6 +147,12 @@ export class Controller {
         this.clipboard = new BlockFlowClipboard(this)
         this.selection = new BlockFlowSelection(this)
         this.addPlugins(this.config.plugins || [])
+
+        this.root.onDestroy.pipe(take(1)).subscribe(() => {
+          this.pluginStore.values().forEach(plugin => {
+            plugin.destroy()
+          })
+        })
         resolve(true)
       })
     })
@@ -153,13 +160,11 @@ export class Controller {
 
   addPlugins(plugins: IPlugin[]) {
     if (!plugins.length) return
-    this.root.ready$.pipe(takeWhile(v => v)).subscribe(v => {
+    this.root.ready$.pipe(takeWhile(Boolean)).subscribe(v => {
       if (!v) return
-      plugins.forEach(plugin => plugin.init(this))
-    })
-    this.root.onDestroy.pipe(take(1)).subscribe(() => {
       plugins.forEach(plugin => {
-        plugin.destroy()
+        plugin.init(this)
+        this.pluginStore.set(plugin.name, plugin)
       })
     })
   }
@@ -210,11 +215,6 @@ export class Controller {
     this.historyManager?.stopCapturing()
   }
 
-  observeUndoRedo(type: 'stack-item-added' | 'stack-item-popped', fn: (stackItem: StackItemEvent) => void) {
-    if (!this.historyManager) throw new Error('History manager not initialized')
-    this.historyManager.on(type, fn)
-  }
-
   undo() {
     if (!this.historyManager?.canUndo()) return
     if (this.undoRedo$.value) return
@@ -240,6 +240,10 @@ export class Controller {
   /** ---------------history---------------- end **/
 
   /** ---------------block operation---------------- start **/
+  get blockLength() {
+    return this.rootModel.length
+  }
+
   getBlockModel(id: string) {
     return this.getBlockRef(id)?.model
   }
@@ -462,9 +466,7 @@ export class Controller {
   }
 
   getFocusingBlockRef() {
-    const id = this.getFocusingBlockId()
-    if (!id) return null
-    return this.getBlockRef(id) as EditableBlock
+    return this.root.activeBlock
   }
 
   deleteSelectedBlocks() {
@@ -488,10 +490,23 @@ export class Controller {
   /** ---------------For ordered-list block---------------- end **/
 }
 
+export interface SelectionChangeEvent {
+  documentSelection: Selection,
+  blockFlowSelection: BlockFlowSelection,
+}
+
 export class BlockFlowSelection {
+  // public readonly selectionChange$ = new BehaviorSubject<IBlockFlowRange | null>(null)
+  public readonly activeBlock$ = this.controller.root.activeBlock$
+
   constructor(
     public readonly controller: Controller
   ) {
+    // fromEvent(document, 'selectionchange').pipe(takeUntil(this.root.onDestroy)).subscribe(v => {
+    //   console.time('getSelection')
+    //   this.selectionChange$.next(this.getSelection())
+    //   console.timeEnd('getSelection')
+    // })
   }
 
   get activeElement() {
@@ -500,6 +515,10 @@ export class BlockFlowSelection {
 
   get root() {
     return this.controller.root
+  }
+
+  normalizeStaticRange(element: HTMLElement, range: StaticRange) {
+    return normalizeStaticRange(element, range)
   }
 
   focusTo(id: string, from: CharacterIndex, to?: CharacterIndex) {
@@ -559,9 +578,9 @@ export class BlockFlowSelection {
 }
 
 class BlockFlowClipboard {
-  public static CLIPBOARD_DATA_TYPE = '@bf/json'
-  public static SIGN_CLIPBOARD_JSON_DELTA = '@bf-delta/json: '
-  public static SIGN_CLIPBOARD_JSON_BLOCKS = '@bf-blocks/json: '
+  public static readonly CLIPBOARD_DATA_TYPE = '@bf/json'
+  public static readonly SIGN_CLIPBOARD_JSON_DELTA = '@bf-delta/json: '
+  public static readonly SIGN_CLIPBOARD_JSON_BLOCKS = '@bf-blocks/json: '
 
   protected readonly htmlConverter = new HtmlConverter(this.controller.schemas)
 
@@ -574,47 +593,62 @@ class BlockFlowClipboard {
     fromEvent<ClipboardEvent>(controller.rootElement, 'paste').pipe(takeUntil(controller.root.onDestroy)).subscribe(this.onPaste)
   }
 
-  execCommand(command: 'cut' | 'copy', range?: IBlockFlowRange) {
-    if (range) {
-      const selection = this.controller.selection.getSelection()
-      this.controller.selection.applyRange(range)
-      document.execCommand(command)
-      selection && this.controller.selection.applyRange(selection)
-      return
-    }
+  execCommand(command: 'cut' | 'copy') {
     document.execCommand(command)
   }
 
-  copy(range?: IBlockFlowRange) {
-    this.execCommand('copy', range)
+  copy() {
+    this.execCommand('copy')
   }
 
-  cut(range?: IBlockFlowRange) {
-    this.execCommand('cut', range)
+  cut() {
+    this.execCommand('cut')
   }
 
   writeText(text: string) {
-    return navigator.clipboard.writeText(text)
+    return navigator.clipboard.writeText(purifyString(text))
   }
 
-  private _data_write: { data: DeltaInsert[] | IBlockModel[], type: 'delta' | 'block' } | null = null
+  private _data_write: Array<{ type: 'delta', data: DeltaInsert[] }
+      | { type: 'block', data: IBlockModel[] }
+      | { type: 'text', data: string }
+      | { type: 'text/uri-list', data: string }
+    >
+    | undefined = undefined
 
-  writeBlockFlowData(data: DeltaInsert[] | IBlockModel[], type: 'delta' | 'block') {
-    console.log()
-    this._data_write = {data, type}
+  private _data_write_ok = new Subject<boolean>()
+
+  writeData(data: typeof this._data_write) {
+    if (!data) return Promise.reject(new Error('data is empty'))
+    this._data_write = data
     document.execCommand('copy')
+    return lastValueFrom(this._data_write_ok.pipe(take(1)))
   }
 
   private onCopy = (event: ClipboardEvent) => {
     if (this._data_write) {
       event.preventDefault()
       const clipboardData = event.clipboardData!
-      const {data, type} = this._data_write
-      type === 'delta' && clipboardData.setData('text/plain', deltaToString(data as DeltaInsert[]))
-      clipboardData.setData(BlockFlowClipboard.CLIPBOARD_DATA_TYPE,
-        type === 'delta' ? BlockFlowClipboard.SIGN_CLIPBOARD_JSON_DELTA : BlockFlowClipboard.SIGN_CLIPBOARD_JSON_BLOCKS + JSON.stringify(data)
-      )
-      this._data_write = null
+
+      this._data_write.forEach(v => {
+        const {data, type} = v
+        switch (type) {
+          case 'text':
+            clipboardData.setData('text/plain', purifyString(data as string))
+            break
+          case 'block':
+          case 'delta':
+            clipboardData.setData(BlockFlowClipboard.CLIPBOARD_DATA_TYPE,
+              (type === 'delta' ? BlockFlowClipboard.SIGN_CLIPBOARD_JSON_DELTA : BlockFlowClipboard.SIGN_CLIPBOARD_JSON_BLOCKS) + JSON.stringify(data)
+            )
+            break
+          case 'text/uri-list':
+            clipboardData.setData('text/uri-list', data as string)
+            break
+        }
+      })
+      this._data_write = undefined
+      this._data_write_ok.next(true)
       return
     }
 
@@ -629,19 +663,19 @@ class BlockFlowClipboard {
       if (!bRef || !this.controller.isEditableBlock(bRef)) throw new Error('The block is not editable')
 
       if (this.controller.activeElement?.classList.contains('bf-plain-text-only')) {
-        clipboardData.setData('text/plain', bRef.getTextContent().slice(range.start, range.end))
+        clipboardData.setData('text/plain', purifyString(bRef.getTextContent().slice(range.start, range.end)))
         return {range: curRange, clipboardData}
       }
 
       const deltaConcat = sliceDelta(bRef.getTextDelta(), range.start, range.end)
-      clipboardData.setData('text/plain', deltaToString(deltaConcat))
+      clipboardData.setData('text/plain', purifyString(deltaToString(deltaConcat)))
       clipboardData.setData(BlockFlowClipboard.CLIPBOARD_DATA_TYPE, BlockFlowClipboard.SIGN_CLIPBOARD_JSON_DELTA + JSON.stringify(deltaConcat))
       return {range: curRange, clipboardData}
     }
 
     const {rootRange} = curRange
     if (!rootRange) throw new Error('No range selected')
-    const blocks = this.controller.rootModel.slice(rootRange.start, rootRange.end + 1).map((block) => block.toJSON())
+    const blocks = this.controller.rootModel.slice(rootRange.start, rootRange.end).map((block) => block.toJSON())
     clipboardData.setData(BlockFlowClipboard.CLIPBOARD_DATA_TYPE, BlockFlowClipboard.SIGN_CLIPBOARD_JSON_BLOCKS + JSON.stringify(blocks))
     return {range: curRange, clipboardData}
   }
@@ -656,7 +690,8 @@ class BlockFlowClipboard {
       if (!bRef || !this.controller.isEditableBlock(bRef)) throw new Error('The block is not editable')
 
       const deltas = [{retain: blockRange.start}, {delete: blockRange.end - blockRange.start}]
-      bRef.applyDelta(deltas)
+      document.getSelection()?.collapseToStart()
+      bRef.applyDelta(deltas, false)
       return;
     }
 
@@ -678,6 +713,28 @@ class BlockFlowClipboard {
     const curRange = this.controller.selection.getSelection()
     if (!curRange) return
 
+    // text/uri-list
+    if (clipboardData.types.includes('text/uri-list')) {
+      const uri = clipboardData.getData('text/uri-list').split('\n')[0]
+      if (curRange.isAtRoot) return
+      const bRef = this.controller.getBlockRef(curRange.blockId)
+      if (!bRef || !this.controller.isEditableBlock(bRef)) throw new Error('The block is not editable')
+      const {parentId, index} = bRef.getPosition()
+      if (bRef.containerEle.classList.contains('bf-plain-text-only')) {
+        bRef.applyDelta([{retain: curRange.blockRange.start}, {insert: uri}])
+        return
+      }
+      if (bRef.containerEle.classList.contains('bf-multi-line') && ['png', 'jpg', 'jpeg', 'gif'].lastIndexOf(uri)) {
+        bRef.applyDelta([{retain: curRange.blockRange.start}, {insert: {image: uri}}])
+        return
+      }
+      if (parentId === this.controller.rootId) {
+        const block = this.controller.createBlock('image', [uri])
+        this.controller.insertBlocks(index + 1, [block], this.controller.rootId)
+        return
+      }
+    }
+
     // files
     if (clipboardData.types.includes('Files')) {
       if (curRange.isAtRoot || !clipboardData.files.length) return;
@@ -697,7 +754,7 @@ class BlockFlowClipboard {
       }
       if (parentId === this.controller.rootId) {
         const block = this.controller.createBlock('image', [fileUri])
-        this.controller.insertBlocks(index, [block], this.controller.rootId)
+        this.controller.insertBlocks(index + 1, [block], this.controller.rootId)
         return
       }
     }
@@ -731,7 +788,7 @@ class BlockFlowClipboard {
 
       if (!this.controller.activeElement?.classList.contains('bf-plain-text-only')) {
         const html = clipboardData.getData('text/html')
-        console.log(html)
+        console.log('parse as html', html)
         const position = this.controller.getBlockPosition(curRange.blockId)!
 
         if (position.parentId === this.controller.rootId && !this.controller.activeElement?.classList.contains('bf-multi-line')) {
@@ -753,21 +810,33 @@ class BlockFlowClipboard {
     }
 
     const text = clipboardData.getData('text/plain')
-    if (!text) return;
-    if (curRange.isAtRoot) return;
+    if (!text || curRange.isAtRoot) return;
     const bRef = this.controller.getBlockRef(curRange.blockId)
     if (!bRef || !this.controller.isEditableBlock(bRef)) throw new Error('The block is not editable')
-    let deltaInsert: DeltaInsert[]
+    let deltas: DeltaOperation[]
     if (isUrl(text) && !bRef.containerEle.classList.contains('bf-plain-text-only')) {
-      deltaInsert = [{insert: {link: text}, attributes: {'d:href': text}}]
+      if (curRange.blockRange.start !== curRange.blockRange.end) {
+        // 直降将当前文本转化为链接
+        const string = deltaToString(sliceDelta(bRef.getTextDelta(), curRange.blockRange.start, curRange.blockRange.end))
+        deltas = [
+          {delete: curRange.blockRange.end - curRange.blockRange.start},
+          {insert: {link: string}, attributes: {'d:href': text}},
+        ]
+      } else {
+        deltas = [{insert: {link: text}, attributes: {'d:href': text}}]
+      }
     } else {
-      deltaInsert = [{insert: text}]
+      deltas = [{insert: text}]
     }
-    applyPasteDeltaToBlock(bRef, deltaInsert, curRange.blockRange)
+    if (curRange.blockRange.start > 0) {
+      deltas.unshift({retain: curRange.blockRange.start})
+    }
+    bRef.applyDelta(deltas)
   }
 
   private onDrop = async (event: DragEvent) => {
     event.preventDefault()
+    console.log('onDrop', event)
     if (!event.dataTransfer) return
 
     event.dataTransfer.types.forEach(type => console.log(type, event.dataTransfer!.getData(type)))
@@ -792,12 +861,14 @@ const applyPasteDeltaToBlock = (blockRef: any, deltaInsert: DeltaInsert[], range
   start: number,
   end: number
 }) => {
-  let deltas: DeltaOperation[]
-  if (blockRef.containerEle.classList.contains('bf-plain-text-only')) {
-    deltas = [{retain: range.start}, {insert: deltaToString(deltaInsert)}]
-  } else deltas = [{retain: range.start}, ...deltaInsert]
-  if (range.start !== range.end) {
-    deltas.splice(1, 0, {delete: range.end - range.start})
+  const deltas: DeltaOperation[] = []
+  if (range.start > 0) {
+    deltas.push({retain: range.start})
   }
+  if (range.start !== range.end) {
+    deltas.push({delete: range.end - range.start})
+  }
+  if (blockRef.containerEle.classList.contains('bf-plain-text-only')) deltas.push({insert: deltaToString(deltaInsert)})
+  else deltas.push(...deltaInsert)
   blockRef.applyDelta(deltas, true)
 }

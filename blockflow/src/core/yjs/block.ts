@@ -174,8 +174,8 @@ export class BlockModel<Model extends IBlockModel = IBlockModel> {
     return this._model.meta as Readonly<Model['meta']>
   }
 
-  get children() {
-    return this._childrenModel as Model extends IEditableBlockModel ? DeltaInsert[] : BlockModel<Model['children'] extends IEditableBlockModel[] ? IEditableBlockModel : IBlockModel>[]
+  get children(): Model extends IEditableBlockModel ? DeltaInsert[] : BlockModel<Model['children'] extends IEditableBlockModel[] ? IEditableBlockModel : IBlockModel>[] {
+    return this.nodeType === 'editable' ? this.getYText().toDelta() : this._childrenModel
   }
 
   getYText() {

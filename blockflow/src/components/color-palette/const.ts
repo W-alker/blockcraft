@@ -3,7 +3,7 @@ export interface IColorItem {
   value: string | null;
 }
 
-export const ColorPaletteList: IColorItem[] = [
+export const ColorPaletteList: readonly IColorItem[] = Object.freeze([
   {
     name: "mark",
     value: null,
@@ -40,9 +40,9 @@ export const ColorPaletteList: IColorItem[] = [
     name: "mark",
     value: '#a891d9',
   },
-]
+])
 
-export const BgColorPaletteList: IColorItem[] = [
+export const BgColorPaletteList: readonly IColorItem[] = Object.freeze([
   {
     name: "mark",
     value: '#F4F5F5',
@@ -75,4 +75,4 @@ export const BgColorPaletteList: IColorItem[] = [
     name: "mark",
     value: '#E9DFFC',
   },
-]
+])

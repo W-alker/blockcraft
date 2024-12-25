@@ -7,6 +7,7 @@ export const deleteContent = (ele: HTMLElement, from: number, count: number) => 
   if (ele.childNodes.length === 0) return;
   for (let i = 0; i < ele.childNodes.length; i++) {
     const child = ele.childNodes[i];
+    console.log(child)
 
     if (child instanceof Text) {
       const textLength = child.length
@@ -42,7 +43,7 @@ export const deleteContent = (ele: HTMLElement, from: number, count: number) => 
       if (rangeStart === 0 && rangeEnd === textLength) {
         child.remove();
         i--
-      } else {
+      } else if (rangeStart >= 0 && rangeEnd < textLength) {
         (child.firstChild as Text).deleteData(rangeStart, rangeEnd - rangeStart);
       }
     }

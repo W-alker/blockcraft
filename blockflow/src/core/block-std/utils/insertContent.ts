@@ -4,8 +4,8 @@ import {findNodeByIndex, isEmbedElement} from "../../utils";
 
 export const insertContent = (ele: HTMLElement, from: number, delta: DeltaInsert, viewCreator: (d: DeltaInsert) => HTMLElement | Text) => {
   // console.time('insertContent')
-  if (!ele.childNodes.length) {
-    return ele.appendChild(viewCreator(delta))
+  if (!ele.childNodes.length || from === 0) {
+    return ele.prepend(viewCreator(delta))
   }
 
   const {node, offset} = findNodeByIndex(ele, from)

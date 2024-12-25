@@ -1,7 +1,7 @@
 import {IKeyEventHandler} from "./keyEventBus";
 import {EditableBlock} from "../components";
 import {USER_CHANGE_SIGNAL} from "../../yjs";
-import {isEmbedElement, setCursorAfter} from "../../utils";
+import {adjustRangeEdges, isEmbedElement, setCursorAfter} from "../../utils";
 
 export const onBackspace: IKeyEventHandler = (e, controller) => {
   e.preventDefault()
@@ -42,6 +42,9 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
     if (!prevBlock) throw new Error(`Can not find prev block`)
 
     if (!controller.isEditableBlock(prevBlock)) {
+      if(!bRef.textLength) {
+        controller.deleteBlocks(position.index, 1)
+      }
       controller.selection.setSelection(controller.rootId, position.index - 1, position.index)
       return
     }
@@ -99,6 +102,7 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
       // TODO bug
       const {focusNode, focusOffset} = selection;
 
+      selection.modify('move', 'backward', 'character')
       const textNode = focusNode as Text
       textNode.deleteData(focusOffset - 1, 1);
       yText.delete(blockRange.start - 1, 1)
@@ -109,9 +113,9 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
           textNode.remove()
           return
         }
-        const prevNode = parentNode.previousSibling!
-        parentNode.remove()
-        setCursorAfter(prevNode, selection)
+        // const prevNode = parentNode.previousSibling!
+        // parentNode.remove()
+        // setCursorAfter(prevNode, selection)
       }
 
     }, USER_CHANGE_SIGNAL)
@@ -123,7 +127,9 @@ export const onBackspace: IKeyEventHandler = (e, controller) => {
     {retain: blockRange.start},
     {delete: blockRange.end - blockRange.start},
   ]
-  bRef.applyDelta(deltas)
+  adjustRangeEdges(bRef.containerEle, selection.getRangeAt(0))
+  selection.collapseToStart()
+  bRef.applyDelta(deltas, false)
 }
 
 

@@ -17,7 +17,7 @@ export const ImageSchema: BlockSchema<IImageBlockProps> = {
         src,
         width: width || 400,
         height: 0,
-        align: 'center'
+        align: 'left'
       }),
       children: []
     }

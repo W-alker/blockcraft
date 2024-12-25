@@ -12,18 +12,21 @@ import {getNumberPrefix} from "./utils";
   `,
   styles: [`
     :host {
+      position: relative;
       display: flex;
-    }
-    :host .editable-container {
-      flex: 1;
-      text-indent: 0;
-    }
-    .order-list__num {
-      color: var(--bf-anchor);
+
+      > .order-list__num {
+        color: var(--bf-anchor);
+      }
+
+      > .editable-container {
+        flex: 1;
+        text-indent: 0;
+      }
     }
   `],
   standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class OrderedListBlock extends EditableBlock<IOrderedListBlockModel> {
   protected _numPrefix: string = ''

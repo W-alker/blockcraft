@@ -1,20 +1,20 @@
 <div class="line-numbers">
   <span *ngFor="let line of lines; let i = index">
-    {{i + 1}}
+    {{ i + 1 }}
   </span>
 </div>
 
 <div class="editable-container bf-multi-line bf-plain-text-only" (keydown)="onKeydown($event)">
 </div>
 
-<div class="highlight-container" >
+<div class="highlight-container">
   <div #highlighter></div>
 </div>
 
 <div class="head-btn__group">
   <div class="head-btn" (click)="showLangList($event)">
-    <span>{{props.lang | lang}}</span> <i class="bf_icon bf_xiajaintou"></i>
+    <span>{{ props.lang | lang }}</span> <i class="bf_icon bf_xiajaintou" [hidden]="controller.readonly$ | async"></i>
   </div>
-  <div class="head-btn" (mousedown)="onCopyText($event)"> <i class="bf_icon bf_fuzhi"></i> 复制 </div>
+  <div class="head-btn" (mousedown)="onCopyText($event)"><i class="bf_icon bf_fuzhi"></i> 复制</div>
 </div>
 

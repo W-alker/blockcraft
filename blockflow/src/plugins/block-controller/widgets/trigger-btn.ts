@@ -4,12 +4,12 @@ import {
   HostListener,
   Input,
 } from "@angular/core";
-import { NgIf, NgTemplateOutlet } from "@angular/common";
-import { filter, fromEvent, merge, take, takeUntil } from "rxjs";
-import { Overlay, OverlayRef } from "@angular/cdk/overlay";
-import { ComponentPortal } from "@angular/cdk/portal";
-import { BlockFlowContextmenu, IContextMenuComponent } from "../../../editor";
-import { BaseBlock, Controller, EditableBlock } from "../../../core";
+import {NgIf, NgTemplateOutlet} from "@angular/common";
+import {filter, fromEvent, merge, Subscription, take, takeUntil} from "rxjs";
+import {Overlay, OverlayRef} from "@angular/cdk/overlay";
+import {ComponentPortal} from "@angular/cdk/portal";
+import {BlockFlowContextmenu, IContextMenuComponent} from "../../../editor";
+import {BaseBlock, Controller, EditableBlock} from "../../../core";
 
 @Component({
   selector: 'div.trigger-btn',
@@ -21,20 +21,9 @@ import { BaseBlock, Controller, EditableBlock } from "../../../core";
   `,
   styles: [`
     :host {
-      display: none;
       z-index: 100;
       position: absolute;
       padding-right: 8px;
-      animation: fadeIn 0.1s;
-    }
-
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-      }
-      to {
-        opacity: 1;
-      }
     }
 
     .btn {
@@ -59,10 +48,11 @@ import { BaseBlock, Controller, EditableBlock } from "../../../core";
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.contenteditable]': 'false',
+    '[style.display]': 'display',
   }
 })
 export class TriggerBtn {
-  @Input({ required: true })
+  @Input({required: true})
   set contextmenu(c: IContextMenuComponent) {
     this.contextmenuPortal = new ComponentPortal(c)
   }
@@ -76,8 +66,11 @@ export class TriggerBtn {
   ) {
   }
 
+  protected display = 'none'
   protected hasContent = false
   protected activeBlock?: BaseBlock<any>
+
+  private _onDestroySub?: Subscription
 
   protected _activeBlockWrap?: HTMLElement
   @Input()
@@ -85,6 +78,7 @@ export class TriggerBtn {
     if (this._activeBlockWrap === val) return
     this.closeContextMenu()
     this._activeBlockWrap = val
+    this._onDestroySub?.unsubscribe()
     if (!val) {
       this.close()
       return
@@ -93,14 +87,15 @@ export class TriggerBtn {
     this.activeBlock = this.controller.getBlockRef(val.getAttribute('data-block-id')!)!
     this.hasContent = this.activeBlock instanceof EditableBlock ? !!this._activeBlockWrap.textContent : true
 
-    this.activeBlock.onDestroy.pipe(take(1)).subscribe(() => {
+    this._onDestroySub = this.activeBlock.onDestroy.pipe(take(1)).subscribe(() => {
       this.close()
     })
 
-    this.host.nativeElement.style.display = 'block'
-    const { top, left } = this.calcPos()
+    const {top, left} = this.calcPos()
     this.top = top
     this.left = left
+    this.display = 'block'
+    this.cdr.markForCheck()
   }
 
   private contextmenuPortal!: ComponentPortal<BlockFlowContextmenu>
@@ -108,7 +103,7 @@ export class TriggerBtn {
 
   private calcPos() {
     const rootRect = this.controller.rootElement.getBoundingClientRect()
-    const wrapRect = this._activeBlockWrap!.getBoundingClientRect()
+    const wrapRect = this.activeBlock!.hostEl.nativeElement.getBoundingClientRect()
 
     const left = wrapRect.left - rootRect.left - 28
 
@@ -122,7 +117,7 @@ export class TriggerBtn {
     }
 
     return {
-      top: wrapRect.top - rootRect.top + 4,
+      top: wrapRect.top - rootRect.top,
       left
     }
   }
@@ -158,7 +153,8 @@ export class TriggerBtn {
   onMouseEnter(e: Event) {
     e.stopPropagation()
     this.hasContent = this.activeBlock instanceof EditableBlock ? !!this._activeBlockWrap!.textContent : true
-    this.host.nativeElement.style.display = 'block'
+    this.display = 'block'
+    this.cdr.markForCheck()
     this.showContextMenu()
   }
 
@@ -166,11 +162,11 @@ export class TriggerBtn {
     if (this.ovr) return
     const positionStrategy = this.overlay.position().flexibleConnectedTo(this.host)
       .withPositions([
-        { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' },
-        { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom' },
+        {originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top'},
+        {originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom'},
       ])
       .withPush(true)
-    this.ovr = this.overlay.create({ positionStrategy })
+    this.ovr = this.overlay.create({positionStrategy})
     const cpr = this.ovr.attach(this.contextmenuPortal)
     cpr.setInput('activeBlock', this.activeBlock)
     cpr.setInput('controller', this.controller)
@@ -187,17 +183,16 @@ export class TriggerBtn {
   }
 
   closeContextMenu() {
-    if (!this.ovr) return
     this.ovr?.dispose()
     this.ovr = undefined
   }
 
   close() {
-    this.host.nativeElement.style.display = 'none'
+    this.display = 'none'
     this.activeBlock = undefined
     this._activeBlockWrap = undefined
     this.closeContextMenu()
-    this.cdr.detectChanges()
+    this.cdr.markForCheck()
     // check after NG100
     requestAnimationFrame(() => {
     })

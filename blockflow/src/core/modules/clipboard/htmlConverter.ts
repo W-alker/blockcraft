@@ -83,8 +83,12 @@ export class HtmlConverter {
   }
 
   convertToBlocks(html: string): IBlockModel[] {
+    const div = document.createElement('div')
+    div.innerHTML = html
+    console.log(div)
+
     const delta = this.htmlToDelta.convert(html);
-    console.log('convert to delta', JSON.parse(JSON.stringify(delta.ops)))
+    console.log('parse deltas', delta)
     const models: IBlockModel[] = []
     const splitDelta: { delta: DeltaInsert[], type: `${BlockType}` }[] = [{delta: [], type: ''}]
     delta.ops.forEach((op) => {
@@ -161,6 +165,8 @@ export class HtmlConverter {
       }
       models.push(this.schemaStore.create(item.type, [item.delta]))
     })
+
+    console.log('parse as blocks', models)
     return models
   }
 
@@ -187,5 +193,9 @@ export class HtmlConverter {
       }
     }
     return attrs
+  }
+
+  convertWordDoc(html: string) {
+
   }
 }

@@ -1,17 +1,37 @@
 @font-face {
   font-family: "bf_icon"; /* Project id 4682833 */
-  src: url('bf-iconfont.woff2') format('woff2'),
-       url('bf-iconfont.woff') format('woff'),
-       url('bf-iconfont.ttf') format('truetype'),
-       url('bf-iconfont.svg') format('svg');
+  src: url('bf-iconfont.woff2?t=1733908686485') format('woff2'),
+       url('bf-iconfont.woff?t=1733908686485') format('woff'),
+       url('bf-iconfont.ttf?t=1733908686485') format('truetype'),
+       url('bf-iconfont.svg?t=1733908686485#bf_icon') format('svg');
 }
 
 .bf_icon {
   font-family: "bf_icon" !important;
-  font-size: 1em;
+  font-size: 16px;
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.bf_zhishiku-color:before {
+  content: "\e8ee";
+}
+
+.bf_wendangxinxi:before {
+  content: "\e8f1";
+}
+
+.bf_gonggao:before {
+  content: "\e8ef";
+}
+
+.bf_gonggao-fill:before {
+  content: "\e8f0";
+}
+
+.bf_zhishiku:before {
+  content: "\e8f2";
 }
 
 .bf_blockquote:before {
@@ -650,7 +670,7 @@
   content: "\e6ec";
 }
 
-.bf_lishijiluzhankai_fabu:before {
+.bf_fabu:before {
   content: "\e6ed";
 }
 
@@ -706,10 +726,6 @@
   content: "\e6fb";
 }
 
-.bf_zhishiku-color:before {
-  content: "\e6fc";
-}
-
 .bf_wodekongjian:before {
   content: "\e6fd";
 }
@@ -720,10 +736,6 @@
 
 .bf_guanxi:before {
   content: "\e6ff";
-}
-
-.bf_shouye_yidongerjidaohangdaxiaoanniu:before {
-  content: "\e700";
 }
 
 .bf_yichu:before {

@@ -1,7 +1,7 @@
 import {IKeyEventHandler} from "./keyEventBus";
 import {EditableBlock} from "../components";
 import {USER_CHANGE_SIGNAL} from "../../yjs";
-import {isEmbedElement, setCursorBefore} from "../../utils";
+import {adjustRangeEdges, isEmbedElement, setCursorBefore} from "../../utils";
 
 export const onDelete: IKeyEventHandler = (e, controller) => {
   e.preventDefault()
@@ -84,6 +84,8 @@ export const onDelete: IKeyEventHandler = (e, controller) => {
 
     controller.transact(() => {
       const {focusNode, focusOffset} = selection;
+
+      selection.modify('move', 'forward', 'character')
       const textNode = focusNode as Text
       textNode.deleteData(focusOffset, 1);
       yText.delete(blockRange.start, 1)
@@ -109,5 +111,7 @@ export const onDelete: IKeyEventHandler = (e, controller) => {
     {retain: blockRange.start},
     {delete: blockRange.end - blockRange.start},
   ]
+  adjustRangeEdges(bRef.containerEle, selection.getRangeAt(0))
+  selection.collapseToEnd()
   bRef.applyDelta(deltas)
 }

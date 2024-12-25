@@ -1,7 +1,13 @@
-import {Controller, EditableBlock, IPlugin, USER_CHANGE_SIGNAL} from "../../core";
+import {
+  Controller,
+  EditableBlock,
+  getElementCharacterOffset,
+  IPlugin, setCursorAfter,
+  setCursorBefore,
+  USER_CHANGE_SIGNAL
+} from "../../core";
 import {BehaviorSubject, filter, fromEvent, Subscription, take, takeUntil, throttleTime} from "rxjs";
 import Viewer from 'viewerjs';
-import {HTML} from "mermaid/dist/diagram-api/types";
 
 export class InlineImgPlugin implements IPlugin {
   public name = "inline-img";
@@ -19,38 +25,33 @@ export class InlineImgPlugin implements IPlugin {
 
     this.sub.add(
       this.inlineImg$.subscribe(ele => {
-        this._viewer?.destroy()
-        this._viewer = null
+        // this._viewer?.destroy()
+        // this._viewer = null
         if (ele) {
           this.wrapImg(this.prevImg = ele)
-        } else {
-          this.prevImg && this.unWrapImg(this.prevImg)
+        } else if (this.prevImg) {
+          this.unWrapImg(this.prevImg)
+          this.prevImg = undefined
         }
       })
     )
 
     this.sub.add(
-      fromEvent<MouseEvent>(controller.rootElement, 'click')
+      fromEvent<MouseEvent>(controller.rootElement, 'focusin')
         .subscribe((e: MouseEvent) => {
-          if (e.target instanceof HTMLImageElement && e.target.parentElement?.getAttribute('bf-embed') === 'image') {
-            const ele = e.target.parentElement
+          if (e.target instanceof HTMLElement && e.target.getAttribute('bf-embed') === 'image') {
+            const ele = e.target
 
-            if(this._controller.readonly$.value) {
-              this.previewImg(e.target.parentElement)
+            if (this._controller.readonly$.value) {
+              this.previewImg(ele)
               return
             }
 
-            // 先设置焦点, 用于找到位置
-            const sel = document.getSelection()!
-            const range = document.createRange()
-            range.setStartBefore(ele)
-            range.setEndBefore(ele)
-            sel.removeAllRanges()
-            sel.addRange(range)
-
             this.inlineImg$.value !== ele && this.inlineImg$.next(ele)
-          } else {
-            this.inlineImg$.value && !this.inlineImg$.value.contains(e.target as Node) && this.inlineImg$.next(null)
+
+            fromEvent(ele, 'blur').pipe(take(1)).subscribe(() => {
+              this.inlineImg$.next(null)
+            })
           }
         })
     )
@@ -81,13 +82,6 @@ export class InlineImgPlugin implements IPlugin {
     ele.classList.add('focused')
     ele.appendChild(fragment)
 
-    fromEvent<MouseEvent>(ele.firstChild!, 'click')
-      .pipe(takeUntil(this.inlineImg$.pipe(filter(v => v !== ele))))
-      .subscribe((e) => {
-        e.stopPropagation()
-        this.previewImg(ele)
-      })
-
     fromEvent<MouseEvent>(tl, 'mousedown').pipe(takeUntil(fromEvent(document, 'mouseup'))).subscribe((e) => {
       this.onResizeHandleMouseDown(ele, e, 'left')
     })
@@ -100,6 +94,61 @@ export class InlineImgPlugin implements IPlugin {
     fromEvent<MouseEvent>(tr, 'mousedown').pipe(takeUntil(fromEvent(document, 'mouseup'))).subscribe((e) => {
       this.onResizeHandleMouseDown(ele, e, 'right')
     })
+
+    fromEvent<MouseEvent>(fragment, 'click')
+      .pipe(takeUntil(this.inlineImg$.pipe(filter(v => v !== ele))))
+      .subscribe((e) => {
+        this.previewImg(ele)
+      })
+
+    fromEvent<KeyboardEvent>(ele, 'keydown')
+      .pipe(takeUntil(this.inlineImg$.pipe(filter(v => v !== ele))))
+      .subscribe((e) => {
+        const remove = () => {
+          const blockId = ele.closest('[bf-node-type]')?.id
+          if (!blockId) return
+          const bRef = this._controller.getBlockRef(blockId)
+          if (!bRef || !this._controller.isEditableBlock(bRef)) return
+          const characterOffset = getElementCharacterOffset(ele, bRef.containerEle)
+          setCursorBefore(ele)
+          ele.remove()
+          this._controller.transact(() => {
+            bRef.yText.delete(characterOffset, 1)
+          }, USER_CHANGE_SIGNAL)
+        }
+
+        if ((e.ctrlKey || e.metaKey)) {
+          e.stopPropagation()
+          e.preventDefault()
+          if (e.code === 'KeyX' || e.code === 'KeyC') {
+            this._controller.clipboard.writeData([{type: 'text/uri-list', data: ele.querySelector('img')?.src || ''}])
+          }
+          e.code === 'KeyX' && remove()
+          return
+        }
+
+        switch (e.key) {
+          case 'Backspace':
+          case 'Delete':
+            e.preventDefault()
+            e.stopPropagation()
+            remove()
+            break
+          case 'ArrowRight':
+            e.preventDefault()
+            e.stopPropagation()
+            setCursorAfter(ele)
+            break
+          case 'Enter':
+          case 'ArrowLeft':
+          case 'Escape':
+          default:
+            e.preventDefault()
+            e.stopPropagation()
+            setCursorBefore(ele)
+            break
+        }
+      })
   }
 
   unWrapImg(ele: HTMLElement) {

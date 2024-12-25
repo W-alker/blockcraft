@@ -67,12 +67,9 @@
 
       &__item {
         width: 100%;
-        //padding: 0 16px;
-        //display: flex;
-        //align-items: center;
         cursor: pointer;
 
-        &.active {
+        &.active, &:hover {
           background: #F9F9F9;
         }
       }

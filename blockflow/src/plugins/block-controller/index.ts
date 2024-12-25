@@ -1,4 +1,4 @@
-import {fromEvent, Subscription, take} from "rxjs";
+import {BehaviorSubject, filter, fromEvent, Subscription, take, takeUntil, throttleTime} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {TriggerBtn} from "./widgets/trigger-btn";
 import {Controller, IPlugin} from "../../core";
@@ -50,7 +50,7 @@ export class BlockControllerPlugin implements IPlugin {
         this._cpr.setInput('activeBlockWrap', blockWrap)
         this._activeBlockWrap = blockWrap
 
-        this.mouseLeaveSub = fromEvent(blockWrap, 'mouseleave').subscribe(() => {
+        this.mouseLeaveSub = fromEvent(blockWrap, 'mouseleave').pipe(take(1)).subscribe(() => {
           this._timer = setTimeout(this.onLeave, 200)
         })
 
@@ -66,18 +66,24 @@ export class BlockControllerPlugin implements IPlugin {
     this.mouseLeaveSub?.unsubscribe()
   }
 
+  private drag$!: BehaviorSubject<string>
+
   addDraggable() {
-    const dragLine = document.createElement('div')
-    dragLine.style.cssText = `
+    this.drag$ = new BehaviorSubject('end')
+    this._cpr.location.nativeElement.setAttribute('draggable', 'true')
+
+    const createDragLine = () => {
+      const dragLine = document.createElement('div')
+      dragLine.style.cssText = `
       display: none;
       position: absolute;
       height: 2px;
       background-color: #3a53d9;
       pointer-events: none;
     `
-    this._controller.rootElement.appendChild(dragLine)
-
-    this._cpr.location.nativeElement.setAttribute('draggable', 'true')
+      this._controller.rootElement.appendChild(dragLine)
+      return dragLine
+    }
 
     const calcPosition = (e: DragEvent, blockWrap: HTMLElement) => {
       const rect = blockWrap.getBoundingClientRect()
@@ -89,34 +95,38 @@ export class BlockControllerPlugin implements IPlugin {
       const rootRect = this._controller.rootElement.getBoundingClientRect()
       const rect = blockWrap.getBoundingClientRect()
       if (position === 'after')
-        return {top: rect.bottom - rootRect.top + 8, left: rect.left - rootRect.left, width: rect.width}
-      return {top: rect.top - rootRect.top - 8, left: rect.left - rootRect.left, width: rect.width}
+        return {top: rect.bottom - rootRect.top + 1, left: rect.left - rootRect.left, width: rect.width}
+      return {top: rect.top - rootRect.top - 1, left: rect.left - rootRect.left, width: rect.width}
     }
 
-    const dragStartSub = fromEvent<DragEvent>(this._cpr.location.nativeElement, 'dragstart')
+    fromEvent<DragEvent>(this._cpr.location.nativeElement, 'dragstart')
       .subscribe((e) => {
 
         this._cpr.instance.closeContextMenu()
         this._cpr.instance.cdr.detectChanges()
-
         if (this._controller.root.selectedBlockRange) this._controller.root.clearSelectedBlockRange()
 
+        if (!this._activeBlockWrap) return
         const dataTransfer = e.dataTransfer!
         dataTransfer.dropEffect = 'none';
         dataTransfer.clearData()
-        dataTransfer.setDragImage(this._activeBlockWrap!, 0, 0);
+        dataTransfer.setDragImage(this._activeBlockWrap, 0, 0);
 
         let prevPosition: 'before' | 'after' | 'none' = 'none'
         let prevBlockWrap: HTMLElement | null = null
         let dragMoveSub: Subscription | undefined = undefined
+        const dragLine = createDragLine()
+        this.drag$.next('start')
 
-        const dragOverSub = fromEvent<DragEvent>(document.body, 'dragover')
+        fromEvent<DragEvent>(document.body, 'dragover')
+          .pipe(takeUntil(this.drag$.pipe(filter((e) => e === 'end'))))
           .subscribe((e) => {
             e.preventDefault()
             e.stopPropagation()
           })
 
-        const dragEnterSub = fromEvent<DragEvent>(this._controller.rootElement, 'dragenter')
+        fromEvent<DragEvent>(this._controller.rootElement, 'dragenter')
+          .pipe(takeUntil(this.drag$.pipe(filter((e) => e === 'end'))))
           .subscribe((e) => {
             e.stopPropagation()
             e.preventDefault()
@@ -128,7 +138,7 @@ export class BlockControllerPlugin implements IPlugin {
             dragMoveSub?.unsubscribe()
             dragMoveSub = undefined
 
-            dragMoveSub = fromEvent<DragEvent>(blockWrap, 'dragover')
+            dragMoveSub = fromEvent<DragEvent>(blockWrap, 'dragover').pipe(throttleTime(60))
               .subscribe((e) => {
                 e.preventDefault()
                 e.stopPropagation()
@@ -148,14 +158,11 @@ export class BlockControllerPlugin implements IPlugin {
           .subscribe((e) => {
             e.preventDefault()
             e.stopPropagation()
-            dragLine.style.display = 'none'
-            dragEnterSub.unsubscribe()
-            dragOverSub.unsubscribe()
+            dragLine.remove()
+            this.drag$.next('end')
             prevBlockWrap && this.onSortBlock(prevBlockWrap, prevPosition)
           })
       })
-
-    this.eventSubs.push(dragStartSub)
   }
 
   onSortBlock(targetBlockWrap: HTMLElement, position: 'before' | 'after' | 'none') {

@@ -7,7 +7,7 @@ import {
 import {EditableBlock} from "../../core";
 import {ICodeBlockModel, IModeItem} from "./type";
 import {Overlay, OverlayModule} from "@angular/cdk/overlay";
-import {fromEventPattern, merge, take} from "rxjs";
+import {fromEventPattern, merge} from "rxjs";
 import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import * as Prism from 'prismjs';
@@ -25,6 +25,16 @@ import 'prismjs/components/prism-cpp';
 import 'prismjs/components/prism-csharp';
 import 'prismjs/components/prism-rust';
 import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-bash';
+import 'prismjs/components/prism-git';
+import 'prismjs/components/prism-kotlin';
+import 'prismjs/components/prism-ruby';
+import 'prismjs/components/prism-swift';
+import 'prismjs/components/prism-scala';
+import 'prismjs/components/prism-dart';
+import 'prismjs/components/prism-mongodb';
+import 'prismjs/components/prism-nginx';
+import 'prismjs/components/prism-markdown';
 
 import {ComponentPortal} from "@angular/cdk/portal";
 import {LangNamePipe} from "./langName.pipe";
@@ -47,7 +57,7 @@ import {_Token, updateHighlightedTokens} from "./code-differ";
 })
 export class CodeBlock extends EditableBlock<ICodeBlockModel> {
 
-  @ViewChild('highlighter', {read: ElementRef}) highlighter!: ElementRef<HTMLDivElement>
+  @ViewChild('highlighter', {read: ElementRef, static: true}) highlighter!: ElementRef<HTMLDivElement>
 
   protected lines: string[] = []
   private resizeSub?: ResizeObserver
@@ -125,12 +135,22 @@ export class CodeBlock extends EditableBlock<ICodeBlockModel> {
     })
     const cpr = ovr.attach(portal)
     cpr.setInput('activeLang', this.props.lang)
-    merge(cpr.instance.destroy, ovr.backdropClick()).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(() => {
+
+    const ls = this.destroyRef.onDestroy(() => {
       ovr.dispose()
+    })
+
+    const close = () => {
+      ovr.dispose()
+      this.setSelection(0)
+      ls()
+    }
+    merge(cpr.instance.destroy, ovr.backdropClick()).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(() => {
+      close()
     })
     cpr.instance.langChange.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe((lang: IModeItem) => {
       this.changeLanguage(lang.value)
-      ovr.dispose()
+      close()
     })
   }
 

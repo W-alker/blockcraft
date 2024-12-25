@@ -3,9 +3,10 @@
   --code-padding-top: calc(var(--bf-lh) * 1.5);
   --code-padding-bottom: 20px;
   padding: var(--code-padding-top) var(--code-padding-left) var(--code-padding-bottom);
-  outline: 1px solid #e6e6e6;
+  border: 1px solid #e6e6e6;
   border-radius: 4px;
   --code-font-family: "DM Mono", monospace;
+  position: relative;
 
   &:focus-within {
     .line-numbers {
@@ -52,7 +53,7 @@
     line-height: var(--bf-lh);
     overflow-wrap: break-word;
     font-family: var(--code-font-family);
-    white-space: pre-wrap;
+    white-space: break-spaces;
   }
 
   .editable-container {
@@ -67,24 +68,10 @@
     left: 0;
     padding: var(--code-padding-top) var(--code-padding-left) var(--code-padding-bottom);
     pointer-events: none;
-    //counter-reset: line-counter; /* 初始化计数器 */
 
     span {
-      white-space: pre-wrap;
+      white-space: break-spaces;
     }
-
-    //.line-break {
-    //  counter-increment: line-counter; /* 每个 li 增加计数器 */
-    //  color: #abb2bf;
-    //  font-size: calc(var(--bf-fs) * 0.9);
-    //
-    //  &::after {
-    //    content: counter(line-counter);
-    //    position: absolute;
-    //    left: 0;
-    //    transform: translate(100%, calc(var(--bf-lh) * -1));
-    //  }
-    //}
 
     .variable {
       color: #d19a66;

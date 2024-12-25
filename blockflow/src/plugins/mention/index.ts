@@ -1,11 +1,11 @@
-import {debounceTime, fromEvent, fromEventPattern, Subscription, take, takeUntil, throttleTime} from "rxjs";
+import {debounceTime, fromEvent, fromEventPattern, Subscription, take, takeUntil} from "rxjs";
 import {MentionDialog} from "./widget/mention-dialog";
 import {ComponentRef, TemplateRef, ViewContainerRef} from "@angular/core";
 import {
-  BlockflowInline,
+  BlockflowInline, characterAtDelta,
   Controller,
-  EmbedConverter,
-  IPlugin,
+  EmbedConverter, getElementCharacterOffset,
+  IPlugin, setCursorAfter,
   USER_CHANGE_SIGNAL
 } from "../../core";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
@@ -30,7 +30,7 @@ export interface IMentionData {
   [key: string]: string | number | boolean
 }
 
-const MENTION_EMBED_CONVERTER: EmbedConverter = {
+export const MENTION_EMBED_CONVERTER: EmbedConverter = {
   toView: (embed) => {
     const span = document.createElement('span')
     span.textContent = embed.insert['mention'] as string
@@ -80,10 +80,11 @@ export class MentionPlugin implements IPlugin {
     this._vcr = controller.injector.get(ViewContainerRef)
 
     if (this.onMentionClick) {
-      this._clickSub = fromEvent<MouseEvent>(controller.rootElement, 'click')
+      this._clickSub = fromEvent<MouseEvent>(controller.rootElement, 'mousedown')
         .subscribe((e) => {
-          const target = e.target as HTMLElement
-          if (!target.dataset['mentionId']) return
+          const target = e.target
+          if (!(target instanceof HTMLElement) || !target.dataset['mentionId']) return
+          e.preventDefault()
           this.onMentionClick!(target.dataset as any, e, controller)
         })
     }
@@ -94,9 +95,15 @@ export class MentionPlugin implements IPlugin {
       .subscribe((e) => {
         if (e.data !== '@' || e.isComposing || this._mentionElement || this.controller.activeElement?.classList.contains('bf-plain-text-only')) return
 
+        // @前字符为 空格 时触发
+        const activeBlock = this.controller.getFocusingBlockRef()!
+        const curRange = this.controller.selection.getCurrentCharacterRange()
+        if (curRange.start > 1 && characterAtDelta(activeBlock.getTextDelta(), curRange.start - 1) !== ' ') return
+
         const selection = document.getSelection()!
+        if (!selection.isCollapsed) return;
+
         const node = selection.focusNode! as Text
-        const offset = selection.focusOffset
         const parent = node.parentElement!
 
         const isEditableContainer = parent.classList.contains('editable-container')
@@ -107,10 +114,10 @@ export class MentionPlugin implements IPlugin {
         }
 
         // delete the '@' character that was just typed
-        node.deleteData(offset - 1, 1)
+        node.deleteData(selection.focusOffset - 1, 1)
 
-        if(isEditableContainer) {
-          node.splitText(offset - 1)
+        if (isEditableContainer) {
+          node.splitText(selection.focusOffset)
           const span = document.createElement('span')
           span.textContent = '@'
           node.after(span)
@@ -122,14 +129,15 @@ export class MentionPlugin implements IPlugin {
         // create a new element to represent the mention
         const cloneParent = parent.cloneNode() as HTMLElement
         cloneParent.textContent = '@'
-        if (offset === 0) {
+        if (selection.focusOffset === 0) {
           parent.before(cloneParent)
-        } else if (offset >= node.textContent!.length) {
+        } else if (selection.focusOffset >= node.length) {
           parent.after(cloneParent)
         } else {
           const cloneParent2 = parent.cloneNode()
-          cloneParent2.textContent = parent.textContent!.slice(offset - 1)
-          parent.textContent = parent.textContent!.slice(0, offset - 1)
+          const text = node.splitText(selection.focusOffset)
+          // console.log(selection.focusOffset, text)
+          cloneParent2.appendChild(text)
           parent.after(cloneParent)
           cloneParent.after(cloneParent2)
         }
@@ -144,19 +152,25 @@ export class MentionPlugin implements IPlugin {
     this._mentionElement = element
     const node = this._mentionElement.firstChild!
 
-    this._rootInputSub?.unsubscribe()
-    this._rootInputSub = null
-
     this.showMentionDialog()
 
+    let isComposing = false
+
+    fromEvent(element.parentElement!, 'compositionstart')
+      .pipe(takeUntil(this._dialog!.instance.close)).subscribe(() => isComposing = true)
+
+    fromEvent(element.parentElement!, 'compositionend')
+      .pipe(takeUntil(this._dialog!.instance.close)).subscribe(() => isComposing = false)
+
     const search = () => {
+      if (isComposing) return
       const keyword = node.textContent!.slice(1)
       this.request(keyword, this._activeTab).then((res) => {
-        if (!res.list?.length) return this.closeMention()
         this._dialog!.setInput('list', res.list)
       })
     }
 
+    // search immediately when the mention element is created
     search()
     // MutationObserver is used to detect changes in the text node
     fromEventPattern(
@@ -191,6 +205,7 @@ export class MentionPlugin implements IPlugin {
 
     this._dialog?.instance.tabChange.pipe(takeUntil(this._dialog?.instance.close)).subscribe((type: MentionType) => {
       this._activeTab = type
+      search()
     })
 
     this._dialog?.instance.itemSelect.pipe(take(1)).subscribe((item: IMentionData) => {
@@ -225,9 +240,7 @@ export class MentionPlugin implements IPlugin {
           case 'Tab':
             e.preventDefault()
             e.stopPropagation()
-            this._dialog?.setInput('list', [])
-            this._dialog?.instance.activeTabIndex === 0 ? this._dialog?.instance.onTabChange(1) : this._dialog?.instance.onTabChange(0)
-            search()
+            this._dialog?.instance.onTabChange(this._dialog?.instance.activeTabIndex === 0 ? 1 : 0)
             break
           default:
             break
@@ -259,7 +272,6 @@ export class MentionPlugin implements IPlugin {
     this.overlayRef?.dispose()
     this._dialog = this._mentionElement = this.overlayRef = undefined
     this._mentionInputObserver.disconnect()
-    this.subRootInput()
   }
 
   setMention(item: IMentionData) {
@@ -267,10 +279,8 @@ export class MentionPlugin implements IPlugin {
     const block = this.controller.getFocusingBlockRef()!
     const yText = block!.yText
 
-    const selection = document.getSelection()!
-    selection.setPosition(this._mentionElement.firstChild!, 0)
+    const offset = getElementCharacterOffset(this._mentionElement, block.containerEle)
     const len = this._mentionElement.textContent!.length
-    const range = this.controller.selection.getCurrentCharacterRange()
 
     const attributes = {
       'd:mentionId': item.id,
@@ -281,18 +291,18 @@ export class MentionPlugin implements IPlugin {
     const delta = {insert: {mention: item.name}, attributes}
     const mentionNode = this.controller.inlineManger.createView(delta)
     this.controller.transact(() => {
+      const bs = document.createTextNode(' ')
       // view update
-      this._mentionElement!.replaceWith(mentionNode)
+      this._mentionElement!.replaceWith(mentionNode, bs)
+      // selection update
+      setCursorAfter(bs)
 
       // sync yText
-      yText.delete(range.start, len)
-      yText.insertEmbed(range.start, delta.insert, attributes)
-
-      // selection update
-      const _range = selection.getRangeAt(0)
-      _range.setEndAfter(mentionNode)
-      _range.collapse(false)
+      yText.delete(offset, len)
+      yText.insertEmbed(offset, delta.insert, attributes)
+      yText.insert(offset + 1, ' ', {})
     }, USER_CHANGE_SIGNAL)
+    this.closeMention()
   }
 
   destroy() {

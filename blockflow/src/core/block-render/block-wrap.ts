@@ -1,4 +1,4 @@
-import {Component, DestroyRef, ElementRef, Input, ViewChild, ViewContainerRef} from "@angular/core";
+import {Component, ElementRef, Input, ViewChild, ViewContainerRef} from "@angular/core";
 import {Controller} from "../controller";
 import {BlockModel} from "../yjs";
 
@@ -6,11 +6,9 @@ import {BlockModel} from "../yjs";
   selector: 'div[bf-block-wrap]',
   template: `
     <ng-container #container></ng-container>
+<!--    <span style="display: block; cursor: text;" (mousedown)="onAppendAfter($event)">&ZeroWidthSpace;</span>-->
   `,
   standalone: true,
-  host: {
-    '[attr.contenteditable]': 'false',
-  }
 })
 export class BlockWrap {
   @Input({required: true}) controller!: Controller
@@ -19,8 +17,7 @@ export class BlockWrap {
   @ViewChild('container', {read: ViewContainerRef, static: true}) container!: ViewContainerRef
 
   constructor(
-    private hostEl: ElementRef<HTMLElement>,
-    private destroyRef: DestroyRef
+    private hostEl: ElementRef<HTMLElement>
   ) {
   }
 
@@ -34,5 +31,15 @@ export class BlockWrap {
     cpr.instance.cdr.detectChanges()
 
     this.hostEl.nativeElement.setAttribute('data-block-id', this.model.id)
+  }
+
+  onAppendAfter(e: Event) {
+    e.stopPropagation()
+    e.preventDefault()
+    const pos = this.controller.getBlockPosition(this.model.id)
+    const np = this.controller.createBlock('paragraph')
+    this.controller.insertBlocks(pos.index + 1, [np]).then(() => {
+      this.controller.selection.setSelection(np.id, 0)
+    })
   }
 }

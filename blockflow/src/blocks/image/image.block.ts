@@ -2,19 +2,17 @@ import {
   ChangeDetectorRef,
   Component,
   ElementRef,
-  HostBinding,
   ViewChild
 } from "@angular/core";
 import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
-import {BehaviorSubject, fromEvent, Subscription, take, throttleTime} from "rxjs";
+import {BehaviorSubject, fromEvent, Subscription, take, takeUntil, throttleTime} from "rxjs";
 import Viewer from 'viewerjs';
 import {FloatToolbar, IToolbarItem} from "../../components";
 import {IImageBlockProps, IImgBlockModel} from "./type";
-import {BaseBlock} from "../../core";
+import {BaseBlock, DeltaOperation, EditableBlock} from "../../core";
 import {ParagraphBlock} from "../paragraph/paragraph.block";
 import {OverlayModule} from "@angular/cdk/overlay";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
-
 
 const COPIED_MENU: IToolbarItem = {
   id: 'copied',
@@ -33,10 +31,10 @@ const IMAGE_BLOCK_TOOLBAR_LIST: IToolbarItem[] = [
     divide: true
   },
   {
-    id: 'align-start',
+    id: 'align-left',
     name: 'align',
     icon: 'bf_icon bf_tupianjuzuo',
-    value: 'start',
+    value: 'left',
     title: '居左'
   },
   {
@@ -47,10 +45,10 @@ const IMAGE_BLOCK_TOOLBAR_LIST: IToolbarItem[] = [
     title: '居中'
   },
   {
-    id: 'align-end',
+    id: 'align-right',
     name: 'align',
     icon: 'bf_icon bf_tupianjuyou',
-    value: 'end',
+    value: 'right',
     title: '居右',
     divide: true
   },
@@ -88,7 +86,8 @@ const IMAGE_BLOCK_TOOLBAR_LIST: IToolbarItem[] = [
         </div>
       }
 
-      <img [src]="model.props.src" [class.resize-mode]="isFocusing$ | async" draggable="false" #img>
+      <img [src]="model.props.src" [class.focusing]="isFocusing$ | async"
+           draggable="false" (click)="onImgClick($event)" #img>
 
       <ng-container *ngIf="imgLoadState === 'loaded'">
         <p class="img-block__caption editable-container" *ngFor="let item of children"
@@ -96,7 +95,8 @@ const IMAGE_BLOCK_TOOLBAR_LIST: IToolbarItem[] = [
            (click)="$event.stopPropagation()" (mousemove)="$event.stopPropagation()"></p>
       </ng-container>
 
-      <div class="img-resizer" *ngIf="isFocusing$ | async" (mousedown)="onImgClick($event)">
+      <div class="img-resizer" *ngIf="isFocusing$ | async" (click)="onImgClick($event)" draggable="true"
+           (dragstart)="onDragStart($event)">
         <div class="img-resizer__handle img-resizer__handle__line img-resizer__handle--left"
              (click)="$event.stopPropagation()"
              (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
@@ -129,11 +129,6 @@ const IMAGE_BLOCK_TOOLBAR_LIST: IToolbarItem[] = [
   }
 })
 export class ImageBlock extends BaseBlock<IImgBlockModel> {
-  @HostBinding('style.justify-content')
-  get align() {
-    return this.model.props.align
-  }
-
   @ViewChild('img', {static: true, read: ElementRef}) img!: ElementRef<HTMLImageElement>
 
   constructor(private readonly _cdr: ChangeDetectorRef) {
@@ -145,6 +140,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
 
   protected imgLoadState: 'loading' | 'loaded' | 'error' = 'loading'
   protected _showWidth = 100
+  protected _align = 'left'
 
   protected isFocusing$ = new BehaviorSubject(false)
 
@@ -155,6 +151,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
     this._showWidth = this.model.props.width
     this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
       if (e.type === 'props') {
+        this.setAlign()
         this._showWidth !== this.props.width && (this._showWidth = this.props.width)
       }
     })
@@ -162,6 +159,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
+    this.setAlign()
     const img = this.img.nativeElement
     if (img.complete && img.naturalHeight !== 0) {
       this.imgLoadState = 'loaded'
@@ -181,11 +179,35 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
 
   onKeydown(e: KeyboardEvent) {
     if (e.isComposing || e.eventPhase !== 2) return
+    console.log(e)
     switch (e.key) {
       case 'Delete':
       case 'Backspace':
         e.stopPropagation()
         e.preventDefault()
+        this.deleteSelf()
+        break
+      case 'Enter':
+        e.stopPropagation()
+        e.preventDefault()
+        const {parentId, index} = this.getPosition()
+        if (parentId !== this.controller.rootId) break
+        const np = this.controller.createBlock('paragraph')
+        this.controller.insertBlocks(index + 1, [np], parentId).then(() => {
+          this.controller.selection.setSelection(np.id, 'start')
+        })
+        break
+      case 'c':
+        if (!e.ctrlKey && !e.metaKey) break
+        e.stopPropagation()
+        e.preventDefault()
+        this.controller.clipboard.writeData([{type: 'text/uri-list', data: this.props.src}])
+        break
+      case 'x':
+        if (this.controller.readonly$.value || (!e.ctrlKey && !e.metaKey)) break
+        e.stopPropagation()
+        e.preventDefault()
+        this.controller.clipboard.writeData([{type: 'text/uri-list', data: this.props.src}])
         this.deleteSelf()
         break
     }
@@ -198,6 +220,12 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
       prevEditable && prevEditable.setSelection('end')
     }
     this.controller.deleteBlocks(index, 1, parentId)
+  }
+
+  setAlign() {
+    if (this._align === this.props.align) return
+    this._align = this.props.align
+    this.hostEl.nativeElement.setAttribute('data-align', this._align)
   }
 
   setToolbarActive() {
@@ -231,7 +259,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
   }
 
   previewImg() {
-    this._viewer ??= new Viewer(this.img.nativeElement, {inline: false,})
+    this._viewer ??= new Viewer(this.img.nativeElement, {inline: false})
     this._viewer.show()
   }
 
@@ -244,7 +272,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
     this.mouseMove$?.unsubscribe()
     this.startPoint = {x: event.clientX, y: event.clientY, direction}
 
-    this.mouseMove$ = fromEvent<MouseEvent>(document.body, 'mousemove')
+    this.mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove')
       .pipe(throttleTime(60))
       .subscribe((e) => {
         const movePx = e.clientX - this.startPoint!.x
@@ -253,7 +281,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
         this.startPoint!.x = e.clientX
       })
 
-    fromEvent<MouseEvent>(document.body, 'mouseup').pipe(take(1)).subscribe((e) => {
+    fromEvent<MouseEvent>(document, 'mouseup').pipe(take(1)).subscribe((e) => {
       this.startPoint = undefined
       this.mouseMove$?.unsubscribe()
       this._showWidth !== this.props.width && this.setProp('width', this._showWidth)
@@ -304,6 +332,49 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
     a.target = '_blank'
     a.dispatchEvent(new MouseEvent('click'))
     a = null
+  }
+
+  onDragStart(e: DragEvent) {
+    const target = e.target as HTMLElement
+    e.stopPropagation()
+    e.dataTransfer?.clearData()
+    e.dataTransfer?.setData('text/plain', this.props.src)
+    e.dataTransfer?.setData('@bf/image', this.props.src)
+    e.dataTransfer?.setDragImage(this.img.nativeElement, 0, 0)
+
+    fromEvent<DragEvent>(this.controller.rootElement, 'drop').pipe(takeUntil(fromEvent(target, 'dragend'))).subscribe(e => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (!e.dataTransfer?.getData('@bf/image')) return
+      const range = document.caretRangeFromPoint(e.clientX, e.clientY)!
+      if (!range) return;
+
+      const blockId = (range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement)?.closest('[bf-node-type="editable"]')?.id
+      if (!blockId || blockId === this.id) return
+      const bRef = this.controller.getBlockRef(blockId)
+      if (!bRef || !this.controller.isEditableBlock(bRef)) return
+
+      const parentId = bRef.getParentId()
+      // 根级直接移动block
+      if(parentId === this.controller.rootId) {
+        // 计算放置的位置在目标元素的上方还是下方
+        const target = e.target as HTMLElement
+        const rect = target.getBoundingClientRect()
+        const y = e.clientY - rect.top
+        this.controller.moveBlock(this.id, blockId, y < rect.height / 2 ? 'before' : 'after')
+        return
+      }
+
+      const nativeRange = this.controller.selection.normalizeStaticRange(bRef.containerEle, range)
+      if(bRef.containerEle.classList.contains('bf-plain-text-only') || !bRef.containerEle.classList.contains('bf-multi-line')) return;
+      const deltas: DeltaOperation[] = []
+      if(nativeRange.start > 0) {
+        deltas.push({retain: nativeRange.start})
+      }
+      deltas.push({insert: {image: this.props.src}})
+      bRef.applyDelta(deltas)
+      this.deleteSelf()
+    })
   }
 
   override ngOnDestroy() {

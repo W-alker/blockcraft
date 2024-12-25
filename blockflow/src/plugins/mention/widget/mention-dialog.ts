@@ -72,7 +72,7 @@ export class MentionDialog {
 
   constructor(
     private elementRef: ElementRef<HTMLElement>,
-    private cdr: ChangeDetectorRef
+    public readonly cdr: ChangeDetectorRef
   ) {
   }
 
@@ -85,7 +85,7 @@ export class MentionDialog {
     } else {
       this.selectIndex = Math.min(this.list.length - 1, this.selectIndex + 1)
     }
-    this.elementRef.nativeElement.querySelector('.mention-dialog__content__item.active')?.scrollIntoView({behavior: 'smooth', block: 'center'})
+    this.elementRef.nativeElement.querySelector('.mention-dialog__content__item.active')?.scrollIntoView({block: 'center'})
     this.cdr.detectChanges()
   }
 
@@ -112,6 +112,7 @@ export class MentionDialog {
   }
 
   onSure() {
+    if(!this.list.length) return
     this.itemSelect.emit(this.list[this.selectIndex])
   }
 

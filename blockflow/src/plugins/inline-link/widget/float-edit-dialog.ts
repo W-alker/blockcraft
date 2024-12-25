@@ -43,6 +43,7 @@ import {isUrl} from "../../../core";
         padding: 8px;
         border-radius: 4px;
         border: 1px solid #E6E6E6;
+        outline: none;
 
         &:focus {
           border-color: #4857E2;

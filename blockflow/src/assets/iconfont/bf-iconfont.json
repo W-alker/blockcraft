@@ -6,6 +6,41 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "42771440",
+      "name": "二级导航_知识库",
+      "font_class": "zhishiku-color",
+      "unicode": "e8ee",
+      "unicode_decimal": 59630
+    },
+    {
+      "icon_id": "42771476",
+      "name": "文档信息展示",
+      "font_class": "wendangxinxi",
+      "unicode": "e8f1",
+      "unicode_decimal": 59633
+    },
+    {
+      "icon_id": "42771477",
+      "name": "展开公告前",
+      "font_class": "gonggao",
+      "unicode": "e8ef",
+      "unicode_decimal": 59631
+    },
+    {
+      "icon_id": "42771478",
+      "name": "展开公告后",
+      "font_class": "gonggao-fill",
+      "unicode": "e8f0",
+      "unicode_decimal": 59632
+    },
+    {
+      "icon_id": "42771547",
+      "name": "知识库内",
+      "font_class": "zhishiku",
+      "unicode": "e8f2",
+      "unicode_decimal": 59634
+    },
+    {
       "icon_id": "26122376",
       "name": "BlockQuote",
       "font_class": "blockquote",
@@ -1121,7 +1156,7 @@
     {
       "icon_id": "41838921",
       "name": "历史记录展开_发布",
-      "font_class": "lishijiluzhankai_fabu",
+      "font_class": "fabu",
       "unicode": "e6ed",
       "unicode_decimal": 59117
     },
@@ -1217,13 +1252,6 @@
       "unicode_decimal": 59131
     },
     {
-      "icon_id": "41838936",
-      "name": "二级导航_知识库",
-      "font_class": "zhishiku-color",
-      "unicode": "e6fc",
-      "unicode_decimal": 59132
-    },
-    {
       "icon_id": "41838937",
       "name": "二级导航_我的空间和自定义库",
       "font_class": "wodekongjian",
@@ -1243,13 +1271,6 @@
       "font_class": "guanxi",
       "unicode": "e6ff",
       "unicode_decimal": 59135
-    },
-    {
-      "icon_id": "41838940",
-      "name": "首页_移动二级导航大小按钮",
-      "font_class": "shouye_yidongerjidaohangdaxiaoanniu",
-      "unicode": "e700",
-      "unicode_decimal": 59136
     },
     {
       "icon_id": "41838941",

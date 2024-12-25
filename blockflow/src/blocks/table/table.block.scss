@@ -9,7 +9,7 @@
       display: block;
     }
 
-    .table-header_col-bar {
+    .table-header_col-bar, .table-add-bar {
       display: flex;
     }
   }
@@ -43,6 +43,7 @@
     padding-top: 6px;
     position: relative;
     overflow-x: auto;
+    overflow-y: hidden;
     scrollbar-width: thin;
     scrollbar-color: rgba(153, 153, 153, 0.5) transparent;
 
@@ -162,52 +163,52 @@
     }
   }
 
-  //.table-bar {
-  //  position: absolute;
-  //  background-color: #f1f1f0;
-  //  color: #a5a5a2;
-  //  display: flex;
-  //  align-items: center;
-  //  justify-content: center;
-  //  border-radius: 4px;
-  //  cursor: pointer;
-  //  transition: all .2s;
-  //  font-size: 14px;
-  //
-  //  &:hover {
-  //    background-color: #e0e0de;
-  //  }
-  //
-  //  &-right {
-  //    top: 0;
-  //    right: -20px;
-  //    width: 16px;
-  //    height: 100%;
-  //  }
-  //
-  //  &-bottom {
-  //    bottom: -20px;
-  //    width: 100%;
-  //    left: 0;
-  //    height: 16px;
-  //  }
-  //
-  //  &-bottom-right {
-  //    position: absolute;
-  //    bottom: -20px;
-  //    right: -20px;
-  //    width: 16px;
-  //    height: 16px;
-  //    background-color: #f1f1f0;
-  //    color: #a5a5a2;
-  //    border-radius: 4px;
-  //    cursor: pointer;
-  //    display: flex;
-  //    align-items: center;
-  //    justify-content: center;
-  //  }
-  //
-  //}
+  .table-add-bar {
+    display: none;
+    position: absolute;
+    background-color: #f1f1f0;
+    color: #a5a5a2;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all .2s;
+    font-size: 14px;
+
+    &:hover {
+      background-color: #e0e0de;
+    }
+
+    &-right {
+      top: 0;
+      right: -20px;
+      width: 16px;
+      height: 100%;
+    }
+
+    &-bottom {
+      bottom: -20px;
+      width: 100%;
+      left: 0;
+      height: 16px;
+    }
+
+    &-bottom-right {
+      position: absolute;
+      bottom: -20px;
+      right: -20px;
+      width: 16px;
+      height: 16px;
+      background-color: #f1f1f0;
+      color: #a5a5a2;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+  }
 
 
   //.table-row-control {
@@ -249,7 +250,6 @@
   //    color: #999;
   //  }
   //}
-
 
 
 }

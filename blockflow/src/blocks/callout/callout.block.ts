@@ -23,6 +23,7 @@ const TOOLBAR_LIST: IToolbarItem[] = [
     title: '复制文本'
   }
 ]
+
 const COPIED_TOOLBAR_LIST: IToolbarItem[] = [...TOOLBAR_LIST].slice(0, TOOLBAR_LIST.length - 1).concat({
   id: 'copied',
   icon: 'bf_icon bf_fuzhi',

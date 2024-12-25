@@ -14,7 +14,7 @@ export const TableBlockSchema: BlockSchema<ITableBlockModel['props']> = {
   onCreate: (rowNum: number = 3, col: number = 3) => {
     return {
       props: () => ({
-        colWidths: new Array(col).fill(200),
+        colWidths: new Array(col).fill(100),
       }),
       children: Array.from({length: rowNum}, () => ({
         flavour: 'table-row',

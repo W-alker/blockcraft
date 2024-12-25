@@ -8,7 +8,15 @@ import {
 } from "@angular/core";
 import {NgForOf, NgIf, NgTemplateOutlet} from "@angular/common";
 import {IContextMenuEvent, IContextMenuItem} from "./type";
-import {BaseBlock, BlockSchema, Controller, EditableBlock, USER_CHANGE_SIGNAL} from "../../core";
+import {
+  BaseBlock,
+  BlockModel,
+  BlockSchema,
+  Controller,
+  EditableBlock,
+  IEditableBlockModel,
+  USER_CHANGE_SIGNAL
+} from "../../core";
 import {FILE_UPLOADER} from "../../blocks";
 import {Overlay} from "@angular/cdk/overlay";
 import {TemplatePortal} from "@angular/cdk/portal";
@@ -291,34 +299,31 @@ export class BlockFlowContextmenu {
   onItemClicked(value: IContextMenuEvent) {
     const {item, type} = value
 
+    const selection = this.controller.selection.getSelection()
+
     if (type === 'tool') {
       switch (item.flavour) {
         case 'cut':
         case 'copy':
-          const selection = this.controller.selection.getSelection()
-          if (selection?.isAtRoot) {
+          if (selection?.isAtRoot && selection.rootRange) {
             this.controller.clipboard.execCommand(item.flavour)
           } else {
-            const pos = this.controller.getBlockPosition(this.activeBlock!.id)
-            this.controller.clipboard.execCommand(item.flavour, {
-              isAtRoot: true,
-              rootId: this.controller.rootId,
-              rootRange: {start: pos.index, end: pos.index + 1}
-            })
+            this.controller.clipboard.writeData([
+              {type: 'block', data: [this.activeBlock.model.toJSON()]}
+            ])
           }
           return
         case 'delete':
-          this.controller.deleteBlockById(this.activeBlock!.id)
+          if (this.controller.root.selectedBlockRange) this.controller.deleteSelectedBlocks()
+          else this.controller.deleteBlockById(this.activeBlock!.id)
           return
       }
       return
     }
 
     const schema = item as BlockSchema
-    const selection = this.controller.selection.getSelection()
-    console.log(selection, document.activeElement)
 
-    if (selection?.isAtRoot && selection.rootRange) {
+    if (schema.nodeType === 'editable' && selection?.isAtRoot && selection.rootRange) {
       const selectedBlockModels = this.controller.rootModel.slice(selection.rootRange.start, selection.rootRange.end)
 
       if (selectedBlockModels.find(v => v.id === this.activeBlock.id)) {
@@ -331,7 +336,7 @@ export class BlockFlowContextmenu {
         if (modelsArr.length > 1) {
 
           const splitModelsArr: [number, number][] = modelsArr.reduce((acc, cur, i) => {
-            if(cur - acc[acc.length - 1][1] > 1) {
+            if (cur - acc[acc.length - 1][1] > 1) {
               acc.push([cur, cur])
             } else {
               acc[acc.length - 1][1] = cur
@@ -343,10 +348,11 @@ export class BlockFlowContextmenu {
             splitModelsArr.forEach(([start, end]) => {
 
               const newBlocks = []
-              for(let i = start; i <= end; i++) {
-                const block = selectedBlockModels[i]
+              for (let i = start; i <= end; i++) {
+                const block = this.controller.rootModel[i] as BlockModel<IEditableBlockModel>
                 newBlocks.push(this.controller.createBlock(schema.flavour, [JSON.parse(JSON.stringify(block.children)), block.props]))
               }
+
               this.controller.replaceBlocks(start, newBlocks.length, newBlocks).then(() => {
                 this.controller.selection.applyRange(selection)
               })

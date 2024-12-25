@@ -1,4 +1,3 @@
-//@import "../../assets/iconfont/bf-bf-iconfont.css";
 :root {
   --bf-c: #000;
   --bf-fs: 16px;
@@ -89,18 +88,24 @@ bf-editor {
   .editable-container {
     min-height: 1em;
     overflow-wrap: break-word;
+    white-space: break-spaces;
+    word-break: break-word; /* 确保长单词或链接能在容器内换行 */
+
+    [contenteditable="false"] {
+      user-select: none;
+    }
+
+    > span {
+      white-space: break-spaces;
+      overflow-wrap: break-word;
+    }
 
     br {
       display: none;
     }
 
     &.bf-multi-line {
-      white-space: pre-wrap;
 
-      > span {
-        white-space: pre-wrap;
-        overflow-wrap: break-word;
-      }
     }
 
     &.placeholder-visible {
@@ -116,13 +121,10 @@ bf-editor {
     outline: none;
   }
 
-  [contenteditable="false"] {
-    user-select: none;
-  }
-
   [bf-block-wrap] {
+    padding: 6px 0;
+    margin: 2px 0;
     position: relative;
-    margin-bottom: 16px;
   }
 
   [bf-node-type="root"] {
@@ -174,6 +176,7 @@ bf-editor {
   [bf-embed="link"] {
     color: #4857E2;
     cursor: pointer;
+    word-break: break-word;
 
     &:before {
       content: '\e6af';
@@ -233,14 +236,15 @@ bf-editor {
     }
 
     > .resize-container {
+      z-index: 1;
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
+      cursor: zoom-in;
 
       > .resize-point {
-        z-index: 1;
         position: absolute;
         background: #4857E2;
         border: 2px solid #fff;
@@ -279,6 +283,7 @@ bf-editor {
 
   ::selection {
     background: rgba(46, 115, 252, .4);
+    color: inherit;
   }
 
 }
@@ -358,4 +363,14 @@ bf-editor {
 
 .bf-block-selected {
   background: rgba(46, 115, 252, 0.2);
+}
+
+.blockflow-cursor {
+  pointer-events: none;
+
+  > span {
+    z-index: 100;
+    position: absolute;
+    background: rgba(46, 115, 252, .4);
+  }
 }

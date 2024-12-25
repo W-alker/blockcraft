@@ -41,7 +41,7 @@ const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingT
   ImageSchema, BulletListSchema, OrderedListSchema, TodoListSchema, CalloutSchema, BlockquoteSchema, DividerSchema, LinkSchema, CodeBlockSchema, MermaidBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema])
 
 const mentionRequest = async (keyword: string) => {
-  if(keyword === 'a') {
+  if (keyword === 'a') {
     return {
       list: []
     }
@@ -128,28 +128,52 @@ export class TestPage {
         id: '0001',
         hs: [1, 2, 3]
       }
+    },
+    {
+      "flavour": "mermaid",
+      "id": "1733137356861_99958dde_cc24",
+      "nodeType": "editable",
+      "props": {
+        "view": "graph",
+        "indent": 0,
+        "textAlign": "left"
+      },
+      "meta": {
+        "createdTime": 1733137356861,
+        "lastModified": {
+          "time": 1733137359067,
+          "userId": "123",
+          "userName": "chengxu"
+        }
+      },
+      "children": [
+        {
+          "insert": "sequenceDiagram\n    Alice->>John: Hello John, how are you?\n    John-->>Alice: Great!\n    Alice-)John: See you later!\n"
+        }
+      ]
     }
   ]
   modelLength = 101
 
   constructor() {
     let i = 0
-    while (i < this.modelLength) {
-      i++
-      const id = genUniqueID()
-      this.model.push({
-        flavour: 'heading-one',
-        nodeType: 'editable',
-        id,
-        children: [
-          {
-            insert: 'Hello Again!' + id
-          }
-        ],
-        meta: {},
-        props: {}
-      })
-    }
+    // this.model = []
+    // while (i < this.modelLength) {
+    //   i++
+    //   const id = genUniqueID()
+    //   this.model.push({
+    //     flavour: 'heading-one',
+    //     nodeType: 'editable',
+    //     id,
+    //     children: [
+    //       {
+    //         insert: 'Hello Again!' + id
+    //       }
+    //     ],
+    //     meta: {},
+    //     props: {}
+    //   })
+    // }
   }
 
   config: GlobalConfig = {
@@ -164,24 +188,36 @@ export class TestPage {
     //             data: this.model.slice(start, start + this.config.lazyload!.pageSize)
     //         }
     //   }
-    // }
+    // },
     plugins: [new FloatTextToolbarPlugin(
       [
         {
-          item: {
-            name: "|",
-            value: "|",
-          },
-        },
-        {
-          item: {
-            name: "task",
-            icon: "bf_renwu",
-            intro: "任务",
-            value: true,
-          },
+          name: "task",
+          icon: "bf_renwu",
+          intro: "任务",
+          value: true,
+          divide: true,
+          children: [
+            {
+              name: 'task',
+              label: '普通任务',
+              value: 'normal',
+              click: () => {
+                console.log('normal')
+              }
+            },
+            {
+              name: 'task',
+              label: '问题任务',
+              value: 'issue',
+              intro: '问题任务',
+              click: () => {
+                console.log('issue')
+              }
+            }
+          ],
           click: (item) => {
-            console.log(item)
+            console.log('')
           }
         }
       ]
@@ -204,6 +240,13 @@ export class TestPage {
     this.controller.addPlugins([
       new MentionPlugin(mentionRequest),
     ])
+
+    this.controller.selection.activeBlock$.subscribe((v: any) => {
+      console.log('activeBlock', v)
+    })
+    // this.controller.selection.selectionChange$.subscribe((v: any) => {
+    //   console.log('selectionChange', v?.blockRange)
+    // })
   }
 
   onClickReadonly() {
@@ -213,10 +256,9 @@ export class TestPage {
   onClick1(e: Event) {
     e.preventDefault()
     const selection = this.controller.selection.getSelection()
-    if(!selection || selection?.isAtRoot) return
+    if (!selection || selection?.isAtRoot) return
     const bRef = this.controller.getBlockRef(selection.blockId) as EditableBlock
-    if(!bRef) return
-    console.log('11')
+    if (!bRef) return
     deleteContent(bRef.containerEle, selection.blockRange.start, selection.blockRange.end)
   }
 
@@ -235,46 +277,47 @@ export class TestPage {
   }
 
   onClick5() {
-    const bm = {
-      "flavour": "paragraph",
-      "id": "1732785970232_98d68ec2_3d7c",
-      "nodeType": "editable",
-      "props": {
-        "indent": 0,
-        "textAlign": "left"
-      },
-      "meta": {
-        "createdTime": 1732785970232,
-        "lastModified": {
-          "time": 1732785982874,
-          "userId": "123",
-          "userName": "chengxu"
-        }
-      },
-      "children": [
-        {
-          "insert": "123"
-        },
-        {
-          "insert": {
-            "link": "https://fanyi.baidu.com/mtpe-individual/multimodal?query=decrement&lang=en2zh#/"
-          },
-          "attributes": {
-            "d:href": "https://fanyi.baidu.com/mtpe-individual/multimodal?query=decrement&lang=en2zh#/"
-          }
-        },
-        {
-          "insert": "45678",
-          "attributes": {
-            "s:c": "#ff0000"
-          }
-        },
-        {
-          "insert": "789",
-        }
-      ]
-    } as any
-    this.editor.controller.insertBlocks(0, [BlockModel.fromModel(bm)])
+    // const bm = {
+    //   "flavour": "paragraph",
+    //   "id": "1732785970232_98d68ec2_3d7c",
+    //   "nodeType": "editable",
+    //   "props": {
+    //     "indent": 0,
+    //     "textAlign": "left"
+    //   },
+    //   "meta": {
+    //     "createdTime": 1732785970232,
+    //     "lastModified": {
+    //       "time": 1732785982874,
+    //       "userId": "123",
+    //       "userName": "chengxu"
+    //     }
+    //   },
+    //   "children": [
+    //     {
+    //       "insert": "123"
+    //     },
+    //     {
+    //       "insert": {
+    //         "link": "https://fanyi.baidu.com/mtpe-individual/multimodal?query=decrement&lang=en2zh#/"
+    //       },
+    //       "attributes": {
+    //         "d:href": "https://fanyi.baidu.com/mtpe-individual/multimodal?query=decrement&lang=en2zh#/"
+    //       }
+    //     },
+    //     {
+    //       "insert": "45678",
+    //       "attributes": {
+    //         "s:c": "#ff0000"
+    //       }
+    //     },
+    //     {
+    //       "insert": "789",
+    //     }
+    //   ]
+    // } as any
+    // this.editor.controller.insertBlocks(0, [BlockModel.fromModel(bm)])
+    this.editor.controller.insertBlocks(0, this.model.map(BlockModel.fromModel))
   }
 
   onClick6() {

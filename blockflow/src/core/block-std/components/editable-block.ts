@@ -19,7 +19,7 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
   @HostBinding('style.text-align')
   protected _textAlign: string = 'left'
 
-  @HostBinding('style.text-indent')
+  @HostBinding('style.margin-left')
   protected _textIndent: string = '0'
 
   public yText!: Y.Text
@@ -29,13 +29,14 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
     super.ngOnInit()
     this.yText = this.model.getYText()
     this.oldHasContent = !!this.textLength
+
+    this._textAlign !== this.props.textAlign && (this._textAlign = this.props.textAlign || 'left')
     this._textIndent = (this.props.indent || 0) * 2 + 'em'
     this.cdr.markForCheck()
 
     this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(v => {
       if (v.type === 'props') {
-        // @ts-ignore
-        this._textAlign !== this.props.textAlign && (this._textAlign = this.props.textAlign)
+        this._textAlign !== this.props.textAlign && (this._textAlign = this.props.textAlign || 'left')
         parseInt(this._textIndent) / 2 !== this.props.indent && (this._textIndent = (this.props.indent || 0) * 2 + 'em')
         this.cdr.markForCheck()
       }
@@ -43,13 +44,12 @@ export class EditableBlock<Model extends IEditableBlockModel = IEditableBlockMod
 
     this.yText.observe((event, tr) => {
       this.setPlaceholder()
-      console.log(this.getTextContent(), this.containerEle.textContent, this.getTextDelta(), this.getTextContent() === this.containerEle.textContent!.replaceAll(' ', '\u00A0'), event.changes.delta)
+      // console.log(this.getTextContent(), '\n', this.containerEle.textContent, this.getTextDelta(), this.getTextContent() === this.containerEle.textContent)
 
       if (tr.origin === USER_CHANGE_SIGNAL) return
-      this.applyDeltaToView(event.changes.delta as DeltaOperation[]
-        , this.controller.undoRedo$.value
-      )
-      // this.model.children.splice(0, this.model.children.length, ...this.yText.toDelta())
+      this.applyDeltaToView(event.changes.delta as DeltaOperation[], this.controller.undoRedo$.value)
+      // console.log('再验证', this.getTextContent() === this.containerEle.textContent)
+      this.model.children.splice(0, this.model.children.length, ...this.yText.toDelta())
     })
   }
 

@@ -2,5 +2,6 @@ import {IKeyEventHandler} from "./keyEventBus";
 import {formatKeyHandler} from "./formatKeyHandler";
 
 export const onCtrlI: IKeyEventHandler = (e, controller) => {
-  formatKeyHandler({'a:italic': true}, e, controller)
+  e.preventDefault()
+  formatKeyHandler({'a:italic': true}, controller)
 }

@@ -1,4 +1,12 @@
-import {ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, Output} from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  ElementRef,
+  EventEmitter,
+  Input,
+  Output
+} from "@angular/core";
 import {BlockSchema} from "../../../core";
 import {NgForOf, NgTemplateOutlet} from "@angular/common";
 import {MatIcon} from "@angular/material/icon";
@@ -33,7 +41,8 @@ export class BlockTransformContextMenu {
   @Output() blockSelected = new EventEmitter<BlockSchema>()
 
   constructor(
-    public readonly cdr: ChangeDetectorRef
+    public readonly cdr: ChangeDetectorRef,
+    public readonly host: ElementRef<HTMLElement>
   ) {
   }
 
@@ -42,13 +51,15 @@ export class BlockTransformContextMenu {
   selectUp() {
     if (this.activeIdx > 0) this.activeIdx--
     else this.activeIdx = this.blocks.length - 1
-    this.cdr.markForCheck()
+    this.cdr.detectChanges()
+    this.host.nativeElement.querySelector('.list__item.active')?.scrollIntoView({behavior: 'smooth'})
   }
 
   selectDown() {
     if (this.activeIdx < this.blocks.length - 1) this.activeIdx++
     else this.activeIdx = 0
-    this.cdr.markForCheck()
+    this.cdr.detectChanges()
+    this.host.nativeElement.querySelector('.list__item.active')?.scrollIntoView({behavior: 'smooth'})
   }
 
   select() {

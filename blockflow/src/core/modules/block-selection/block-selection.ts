@@ -68,7 +68,8 @@ export class BlockSelection {
     // if the target is input or textarea, return
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
     // if the target is content editable, bind the special mousemove event to the target
-    if (target.isContentEditable) {
+    const closetEditableContainer: HTMLElement | null = target.closest('.editable-container')
+    if (target.isContentEditable || closetEditableContainer) {
       this.triggerElement = target.closest('.editable-container')
       this.host.addEventListener('mousemove', this.onContentEditableMouseMove)
     } else {
@@ -151,7 +152,7 @@ export class BlockSelection {
     this.store.clear()
     while (flag > 0) {
       const element = this.selectableElements![i]
-      if(i >= this.selectableElements!.length) break
+      if (i >= this.selectableElements!.length) break
       i++
       if (!element) continue
       const rect = (element as HTMLElement).getBoundingClientRect()
@@ -165,8 +166,8 @@ export class BlockSelection {
       }
     }
     // unselect the elements that are selected before but not selected now
-    if(i < this.lastCalculateIndex) {
-      for(let j = i; j < this.lastCalculateIndex; j++) {
+    if (i < this.lastCalculateIndex) {
+      for (let j = i; j < this.lastCalculateIndex; j++) {
         const element = this.selectableElements![j]
         if (!element) continue
         this.config.onItemUnselect(element)

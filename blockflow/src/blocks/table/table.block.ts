@@ -1,6 +1,13 @@
 import {Component, ElementRef, ViewChild} from "@angular/core";
 import {ITableBlockModel, ITableRowBlockModel} from "./type";
-import {BaseBlock, EditableBlock, getCurrentCharacterRange, USER_CHANGE_SIGNAL} from "../../core";
+import {
+  BaseBlock,
+  EditableBlock,
+  getCurrentCharacterRange,
+  isCursorAtElEnd,
+  isCursorAtElStart,
+  USER_CHANGE_SIGNAL
+} from "../../core";
 import {TableRowBlock} from "./table-row.block";
 import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
 import {BehaviorSubject, filter, fromEvent, take, takeUntil} from "rxjs";
@@ -83,12 +90,13 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
       case 'ArrowUp': {
         e.stopPropagation()
         if (this.selectingCell) {
+          e.preventDefault();
           this.focusCell(this.selectingCell[0][0], this.selectingCell[0][1], 'start')
           return
         }
         const cell = e.target as HTMLElement
-        const range = getCurrentCharacterRange(cell)
-        if (range.start === range.end && range.start === 0) {
+        if (isCursorAtElStart(cell)) {
+          e.preventDefault();
           this.moveSelection(e.target as HTMLElement, e.key === 'ArrowLeft' ? 'left' : 'up')
         }
       }
@@ -97,12 +105,13 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
       case 'ArrowDown': {
         e.stopPropagation()
         if (this.selectingCell) {
+          e.preventDefault();
           this.focusCell(this.selectingCell[1][0], this.selectingCell[1][1], 'end')
           return
         }
         const target = e.target as HTMLElement
-        const range = getCurrentCharacterRange(target)
-        if (range.start === range.end && range.start === target.textContent!.length) {
+        if (isCursorAtElEnd(target)) {
+          e.preventDefault();
           this.moveSelection(target, e.key === 'ArrowRight' ? 'right' : 'down')
         }
       }
@@ -114,8 +123,8 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
           this.clearSelectingCellText()
         } else {
           const cell = e.target as HTMLElement
-          const range = getCurrentCharacterRange(cell)
-          if (range.start === range.end && range.start === 0) {
+          if (isCursorAtElStart(cell)) {
+            e.preventDefault()
             e.stopPropagation()
           }
         }
@@ -137,9 +146,12 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
     json.props = {
       colHead: false,
       rowHead: false,
-      colWidths: new Array(end[1] - start[1] + 1).fill(200)
+      colWidths: this._colWidths.slice(start[1], end[1] + 1)
     }
-    this.controller.clipboard.writeBlockFlowData([json], 'block')
+    this.controller.clipboard.writeData([{
+      type: 'block',
+      data: [json]
+    }])
   }
 
   /** 表格行列操作 **/
@@ -320,6 +332,18 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
     this._rowHeights.splice(index, 1)
   }
 
+  onTableBarRightClick(e: MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    this.addCol(this.model.children[0].children.length)
+  }
+
+  onTableBarBottomClick(e: MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    this.addRow(this.model.children.length)
+  }
+
   /** 表格列宽调整 **/
   setColWidths() {
     this.model.yModel.get('props').set('colWidths', this._colWidths)
@@ -340,11 +364,11 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
     e.preventDefault()
     this.resizing$.next(true)
 
-    fromEvent<MouseEvent>(document, 'mousemove').pipe(takeUntil(fromEvent(document, 'mouseup')))
+    const resizeSub = fromEvent<MouseEvent>(document, 'mousemove').pipe(takeUntil(this.resizing$.pipe(filter(v => !v))))
       .subscribe((e) => {
-        const {width, left, right} = this.tableWrapper.nativeElement.getBoundingClientRect()
+        const {left} = this.tableWrapper.nativeElement.getBoundingClientRect()
         const scrollLeft = this.tableWrapper.nativeElement.scrollLeft
-        if (!this.resizing$.value || e.clientX > right || e.clientX < left) return
+        if (!this.resizing$.value || e.clientX < left) return
         const targetRect = this.table.nativeElement.querySelector(`td:nth-child(${this.resizeColIdx + 1})`)!.getBoundingClientRect()
         let newWidth = e.clientX - targetRect.left
         // 不得小于50，不得大于maxWidth - 其他列宽度之和

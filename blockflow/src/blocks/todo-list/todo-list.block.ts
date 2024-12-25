@@ -4,6 +4,7 @@ import {NgIf} from "@angular/common";
 import {NzDatePickerModule} from "ng-zorro-antd/date-picker";
 import {EditableBlock} from "../../core";
 import {ITodoListBlockModel} from "./type";
+import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 
 @Component({
   selector: 'div.todo-list',
@@ -11,23 +12,11 @@ import {ITodoListBlockModel} from "./type";
       <span [class]="['todo-list__icon', 'bf_icon', props.checked ? 'bf_xuanzhong-fill' : 'bf_weixuanzhong']"
             [class.checked]="props.checked" (click)="toggleCheck()"></span>
       <div class="editable-container"></div>
-<!--      <nz-date-picker *ngIf="_date" style="padding: 0"-->
-<!--                      #endDatePicker-->
-<!--                      nzShowTime nzBorderless-->
-<!--                      nzFormat="yyyy-MM-dd HH:mm:ss"-->
-<!--                      [(ngModel)]="_date"-->
-<!--                      (ngModelChange)="onDatePickerChange($event)"-->
-<!--                      nzPlaceHolder="选择截止日期"-->
-<!--      ></nz-date-picker>-->
-<!--      <span class="bf_icon bf_shijian todo-list__date-pick-icon" (click)="openDatePicker()" title="添加截止日期"-->
-<!--            *ngIf="!_date"></span>-->
   `,
   styles: [`
     :host {
       position: relative;
       padding-left: 1.2em;
-      display: flex;
-      align-items: flex-start;
     }
 
     .todo-list__icon {
@@ -36,6 +25,7 @@ import {ITodoListBlockModel} from "./type";
       cursor: pointer;
       color: var(--bf-anchor);
       font-size: 1.1em;
+      line-height: var(--bf-lh);
     }
 
     :host.checked .todo-list__icon {
@@ -77,18 +67,26 @@ export class TodoListBlock extends EditableBlock<ITodoListBlockModel> {
 
   override ngOnInit() {
     super.ngOnInit()
+    this.setCheck()
+  }
+
+  override ngAfterViewInit() {
+    super.ngAfterViewInit();
+
+    this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(v => {
+      if(v.type === 'props') {
+        this._checked !== this.props.checked && this.setCheck()
+      }
+    })
+  }
+
+  setCheck() {
     this._checked = this.props.checked
     this.cdr.markForCheck()
-
-    // this.model.update$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
-    //   if(e.type === 'props') {
-    //     this._date = this.props.endTime ? new Date(this.props.endTime) : null
-    //     this.cdr.markForCheck()
-    //   }
-    // })
   }
 
   toggleCheck() {
+    if(this.controller.readonly$.value) return
     this._checked = !this._checked
     this.setProp('checked', this._checked)
   }

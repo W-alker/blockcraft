@@ -1,6 +1,6 @@
 import {
   ChangeDetectionStrategy, ChangeDetectorRef,
-  Component, ComponentRef, ElementRef, EmbeddedViewRef,
+  Component, ComponentRef, DestroyRef, ElementRef, EmbeddedViewRef,
   EventEmitter,
   HostBinding,
   HostListener,
@@ -9,46 +9,15 @@ import {
 } from '@angular/core';
 import {IToolbarMenuItem} from "./float-text-toolbar.type";
 import {CommonModule} from "@angular/common";
-import {Overlay} from "@angular/cdk/overlay";
+import {ConnectedPosition, Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {ColorPalette} from "../../../components/color-palette/color-palette";
 import {fromEvent, takeUntil} from "rxjs";
 
-const markMenu = {
-  name: "mark",
-  icon: "bf_jihaobi",
-  intro: "高亮颜色",
-  activeColor: null,
-  activeBgColor: null,
-}
-
-const alignList: IToolbarMenuItem = {
-  name: "align",
-  value: "left",
-  icon: "bf_suojinheduiqi",
-  intro: "文字方向",
-  children: [
-    {
-      name: "align",
-      icon: "bf_zuoduiqi",
-      intro: "左对齐",
-      value: "left",
-    },
-    {
-      name: "align",
-      value: "center",
-      icon: "bf_juzhongduiqi",
-      intro: "居中",
-    },
-    {
-      name: "align",
-      value: "right",
-      icon: "bf_youduiqi",
-      intro: "右对齐",
-    }
-  ],
-  order: 0
-}
+const POSITIONS: ConnectedPosition[] = [
+  {originX: 'center', originY: 'bottom', overlayX: 'center', overlayY: 'top'},
+  {originX: 'center', originY: 'top', overlayX: 'center', overlayY: 'bottom'}
+]
 
 @Component({
   selector: 'bf-float-text-toolbar',
@@ -60,96 +29,32 @@ const alignList: IToolbarMenuItem = {
 })
 export class FloatTextToolbar {
   @Input()
+  markMenu: any
+
+  @Input()
   activeMenuSet?: Set<string>
 
-  @Input()
-  set expandToolbarList(val: IToolbarMenuItem[]) {
-    this.toolbarMenuList.push(...val)
-  }
+  @Input() toolbarMenuList: Array<IToolbarMenuItem> = []
 
-  @HostBinding('style.top.px')
+  @HostBinding('style')
   @Input()
-  top = 0
-
-  @HostBinding('style.left.px')
-  @Input()
-  left = 0
+  style: string = ''
 
   @Output('itemClick') itemClick = new EventEmitter<IToolbarMenuItem>()
 
-  @ViewChild('alignTpl', {read: TemplateRef}) alignTpl!: TemplateRef<any>
+  @ViewChild('childrenTpl', {read: TemplateRef}) childrenTpl!: TemplateRef<any>
   @ViewChild('markTpl', {read: TemplateRef}) markTpl!: TemplateRef<any>
   @ViewChild('container', {read: ViewContainerRef}) container!: ViewContainerRef
-
-  protected readonly toolbarMenuList: Array<IToolbarMenuItem> = [
-    alignList,
-    {
-      name: "|",
-      value: "|",
-      order: 1
-    },
-    {
-      name: "bold",
-      icon: "bf_jiacu",
-      intro: "加粗",
-      value: true,
-      order: 2
-    },
-    {
-      name: "strike",
-      icon: "bf_shanchuxian",
-      intro: "删除线",
-      value: true,
-      order: 3
-    },
-    {
-      name: "underline",
-      icon: "bf_xiahuaxian",
-      intro: "下划线",
-      value: true,
-      order: 4
-    },
-    {
-      name: "italic",
-      icon: "bf_xieti",
-      intro: "斜体",
-      value: true,
-      order: 5
-    },
-    {
-      name: "code",
-      icon: "bf_daimakuai",
-      intro: "代码",
-      value: true,
-      order: 6
-    },
-    {
-      name: "sup",
-      icon: "bf_shangbiao",
-      intro: "上标",
-      value: true,
-      order: 6
-    },
-    {
-      name: "sub",
-      icon: "bf_xiabiao",
-      intro: "代码",
-      value: true,
-      order: 6
-    }
-  ]
-
-  protected readonly alignList = alignList
-  protected readonly markMenu = markMenu
 
   private prevOverItem = ''
   embedViewRef?: EmbeddedViewRef<any>
 
   constructor(
-    private elementRef: ElementRef,
+    public readonly elementRef: ElementRef,
     private overlay: Overlay,
     private vcr: ViewContainerRef,
-    private cdRef: ChangeDetectorRef
+    public readonly cdRef: ChangeDetectorRef,
+    private readonly destroyRef: DestroyRef
   ) {
   }
 
@@ -169,12 +74,8 @@ export class FloatTextToolbar {
     this.prevOverItem = item.name
     if (!item.children) return
     const dom = this.elementRef.nativeElement.querySelector(`[data-name="${item.name}"]`) as HTMLElement
-    switch (item.name) {
-      case "align":
-        this.embedViewRef = this.vcr.createEmbeddedView(this.alignTpl, {$implicit: 'left: 0; top: 24px'})
-        dom.appendChild(this.embedViewRef?.rootNodes[0] as HTMLElement)
-        break
-    }
+    this.embedViewRef = this.vcr.createEmbeddedView(this.childrenTpl, {children: item.children, style: 'left: 0; top: 24px'})
+    dom.appendChild(this.embedViewRef?.rootNodes[0] as HTMLElement)
   }
 
   onMark(e: MouseEvent) {
@@ -195,9 +96,7 @@ export class FloatTextToolbar {
 
   showColorPicker(target: HTMLElement) {
     if(this._colorPickerCpr) return
-    const positionStrategy = this.overlay.position().flexibleConnectedTo(target).withPositions([
-      {originX: 'center', originY: 'bottom', overlayX: 'center', overlayY: 'top'},
-    ])
+    const positionStrategy = this.overlay.position().flexibleConnectedTo(target).withPositions(POSITIONS)
     const portal = new ComponentPortal(ColorPalette)
     const ovr = this.overlay.create({
       positionStrategy,
@@ -209,15 +108,22 @@ export class FloatTextToolbar {
     this._colorPickerCpr.setInput('activeBgColor', this.markMenu.activeBgColor)
     const cprNode = this._colorPickerCpr.location.nativeElement
 
+    const ovrDispose = this.destroyRef.onDestroy(() => {
+      ovr.dispose()
+      ovrDispose()
+    })
+
     fromEvent<MouseEvent>(target, 'mouseleave').pipe(takeUntil(this._colorPickerCpr.instance.close)).subscribe(e => {
       if (cprNode.contains(e.relatedTarget as Node)) return
       ovr.dispose()
+      ovrDispose()
       this._colorPickerCpr = null
     })
 
     fromEvent<MouseEvent>(cprNode, 'mouseleave').pipe(takeUntil(this._colorPickerCpr.instance.close)).subscribe(e => {
       if (target.contains(e.relatedTarget as Node)) return
       ovr.dispose()
+      ovrDispose()
       this._colorPickerCpr = null
     })
 

@@ -4,7 +4,7 @@ export interface IImageBlockProps extends IBlockProps {
   src: string,
   width: number,
   height: number,
-  align: 'start' | 'center' | 'end'
+  align: 'left' | 'center' | 'right'
 }
 
 export interface IImgBlockModel extends IBlockModel{

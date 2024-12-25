@@ -5,7 +5,24 @@
 
   .bf-float-toolbar {
 
+
+
     &__item {
+
+      &.divide {
+        margin-left: 8px;
+        position: relative;
+
+        &::after {
+          content: '';
+          position: absolute;
+          top: -4px;
+          left: -8px;
+          height: 32px;
+          width: 1px;
+          background: #e6e6e6;
+        }
+      }
 
       &.mark {
         background-color: var(--background);
@@ -38,9 +55,6 @@
         box-shadow: 0px 0px 20px 0px rgba(0, 0, 0, 0.10);
         color: #666;
       }
-    }
-
-    &__align {
 
       @keyframes bf_expand {
         from {
@@ -52,28 +66,24 @@
       }
       animation: bf_expand 0.15s ease-in-out;
 
-      &__container {
-        width: 100%;
-      }
-
       &__item {
+        white-space: nowrap;
+        display: flex;
+        gap: 4px;
         padding: 0 8px;
         height: 24px;
         border-radius: 4px;
         cursor: pointer;
 
+        > span {
+          font-size: 14px;
+        }
+
         &:hover {
           background: #F5F5F5;
         }
       }
-
     }
 
-  }
-
-  .line {
-    height: 100%;
-    width: 1px;
-    background: #e6e6e6;
   }
 }
