@@ -4,6 +4,14 @@
   $selectedBgColor: rgba(95, 111, 255, 0.08);
   padding: 0 2px 0 6px;
 
+  &.selected {
+
+    table {
+      border: 1px solid var(--bf-selected-border);
+      background: var(--bf-selected);
+    }
+  }
+
   &:hover, &:focus-within {
     .table-header_row-bar {
       display: block;

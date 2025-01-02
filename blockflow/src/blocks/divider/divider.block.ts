@@ -7,6 +7,10 @@ import {BaseBlock} from "../../core";
   styles: [`
       :host {
         padding: 8px 0 7px;
+
+        &.selected {
+          background-color: var(--bf-selected);
+        }
       }
       :host > div{
         height: 1px;

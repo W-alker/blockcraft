@@ -17,6 +17,10 @@ import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
     :host {
       position: relative;
       padding-left: 1.2em;
+
+      &.selected {
+        background-color: var(--bf-selected);
+      }
     }
 
     .todo-list__icon {

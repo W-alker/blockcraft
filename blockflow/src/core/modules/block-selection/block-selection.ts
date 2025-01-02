@@ -39,9 +39,18 @@ export class BlockSelection {
     this.bindEvents()
   }
 
+  clear() {
+    this.storeSize && this.selectedElements.forEach(ele => this.unselectElement(ele))
+  }
+
   selectElement(element: Element) {
     this.store.add(element)
     this.config.onItemSelect(element)
+  }
+
+  unselectElement(element: Element) {
+    this.store.delete(element)
+    this.config.onItemUnselect(element)
   }
 
   on(event: 'start' | 'move' | 'end', callback: (elements: Set<Element>) => void) {

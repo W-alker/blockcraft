@@ -23,6 +23,13 @@
   &[data-align="center"] {
     margin: 0 auto;
   }
+
+
+  &.selected {
+    .img-block__container {
+      outline: 2px solid var(--bf-selected-border);
+    }
+  }
 }
 
 .img-block__container {

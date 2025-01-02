@@ -100,7 +100,7 @@ export class HtmlConverter {
           if (typeof last.insert !== 'string') return;
 
           // code block
-          if (htmlTagFilterRegex.test(last.insert) && this.schemaStore.has('image')) {
+          if (htmlTagFilterRegex.test(last.insert) && /<br>/.test(last.insert) && this.schemaStore.has('image')) {
             const p = document.createElement('p')
             p.innerHTML = last.insert
             p.querySelectorAll('br').forEach(v => {
@@ -115,7 +115,7 @@ export class HtmlConverter {
           item.delta[item.delta.length - 1].attributes ||= {}
           item.delta[item.delta.length - 1].attributes!['a:code'] = true
           item.delta[item.delta.length - 1].insert = (item.delta[item.delta.length - 1].insert as string).replace(/<\/?[^>]+(>|$)/g, '')
-          item.type = 'paragraph'
+          // item.type = 'paragraph'
           return;
         }
 

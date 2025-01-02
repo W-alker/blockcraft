@@ -96,6 +96,10 @@ const TOOLBAR_LIST: IToolbarItem[] = [
       display: block;
       cursor: pointer;
       font-size: 16px;
+
+      &.selected {
+        background-color: var(--bf-selected);
+      }
     }
 
     :host .text {

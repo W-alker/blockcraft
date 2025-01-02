@@ -8,6 +8,10 @@ import {EditableBlock} from "../../core";
       :host {
           position: relative;
           padding-left: 1.2em;
+
+        &.selected {
+          background-color: var(--bf-selected);
+        }
       }
 
       :host::before {

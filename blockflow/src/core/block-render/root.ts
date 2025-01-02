@@ -86,10 +86,10 @@ export class EditorRoot {
       selectionAreaClass: "blockflow-selection-area",
       sensitivity: 40,
       onItemSelect: (element) => {
-        element.classList.add('bf-block-selected')
+        element.firstElementChild!.classList.add('selected')
       },
       onItemUnselect: (element) => {
-        element.classList.remove('bf-block-selected')
+        element.firstElementChild!.classList.remove('selected')
       }
     })
 
@@ -114,7 +114,7 @@ export class EditorRoot {
   }
 
   clearSelectedBlockRange() {
-    this.blockSelection.storeSize && this.blockSelection.selectedElements.forEach(ele => ele.classList.remove('bf-block-selected'))
+    this.blockSelection.clear()
     this._selectedBlockRange = undefined
   }
 

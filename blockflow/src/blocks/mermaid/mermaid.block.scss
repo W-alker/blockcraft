@@ -4,6 +4,11 @@
   overflow: hidden;
   border: 1px solid #e6e6e6;
 
+  &.selected {
+    border-color: var(--bf-selected-border);
+    background-color: var(--bf-selected);
+  }
+
   &[data-view-mode="text"] {
     .graph-con {
       visibility: hidden;

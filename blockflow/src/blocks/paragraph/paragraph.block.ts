@@ -7,6 +7,13 @@ import {EditableBlock} from "../../core";
   imports: [],
   template: '',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [`
+  :host {
+    &.selected {
+      background-color: var(--bf-selected);
+    }
+  }
+  `]
 })
 export class ParagraphBlock extends EditableBlock {
 }

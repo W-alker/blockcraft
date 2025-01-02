@@ -9,6 +9,10 @@ import {EditableBlock} from "../../core";
       padding: 6px 8px;
       border-left: 4px solid #ccc;
       background: #f9f9f9;
+
+      &.selected {
+        background-color: var(--bf-selected);
+      }
     }
   `],
   standalone: true,

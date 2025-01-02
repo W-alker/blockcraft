@@ -6,6 +6,8 @@
   --bf-placeholder: #ccc;
   --bf-anchor: #4857E2;
   --bf-anchor-hover: #4857E2;
+  --bf-selected: rgba(46, 115, 252, 0.2);
+  --bf-selected-border: rgba(46, 115, 252, .4);
 }
 
 bf-editor {
@@ -63,6 +65,10 @@ bf-editor {
   h5,
   h6 {
     font-weight: bold;
+
+    &.selected {
+      background-color: var(--bf-selected);
+    }
   }
 
   h2 {

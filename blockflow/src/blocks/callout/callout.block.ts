@@ -50,6 +50,11 @@ const POSITIONS: ConnectedPosition[] = [
       padding: 8px 8px 8px 42px;
       border-radius: 4px;
       position: relative;
+
+      &.selected {
+        background-color: var(--bf-selected) !important;
+        border: 1px solid var(--bf-selected-border) !important;
+      }
     }
 
     .callout-block__emoji {

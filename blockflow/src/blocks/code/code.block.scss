@@ -8,6 +8,11 @@
   --code-font-family: "DM Mono", monospace;
   position: relative;
 
+  &.selected {
+    border-color: var(--bf-selected-border);
+    background-color: var(--bf-selected);
+  }
+
   &:focus-within {
     .line-numbers {
       visibility: visible;

@@ -15,6 +15,10 @@ import {getNumberPrefix} from "./utils";
       position: relative;
       display: flex;
 
+      &.selected {
+        background-color: var(--bf-selected);
+      }
+
       > .order-list__num {
         color: var(--bf-anchor);
       }
