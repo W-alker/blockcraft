@@ -360,6 +360,7 @@ export const isCursorAtElStart = (el: HTMLElement) => {
   let node = startContainer
   while (node && node !== el) {
     if (node.previousSibling) return false;
+    if(node instanceof Text && node.length !== 0) return false
     node = node.parentNode!
   }
   return true;
@@ -378,6 +379,7 @@ export const isCursorAtElEnd = (el: HTMLElement) => {
   let node = range.endContainer;
   while (node && node !== el) {
     if (node.nextSibling) return false;
+    if(node instanceof Text && node.length !== range.endOffset) return false
     node = node.parentNode!
   }
   return true;
