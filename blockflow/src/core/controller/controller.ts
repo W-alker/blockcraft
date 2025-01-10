@@ -827,6 +827,9 @@ class BlockFlowClipboard {
       }
     } else {
       deltas = [{insert: text}]
+      if (curRange.blockRange.start !== curRange.blockRange.end) {
+        deltas.unshift({delete: curRange.blockRange.end - curRange.blockRange.start})
+      }
     }
     if (curRange.blockRange.start > 0) {
       deltas.unshift({retain: curRange.blockRange.start})

@@ -1,6 +1,6 @@
 <div class="table-header_row-bar" (click)="onShowRowBar($event)" [class.active]="activeRowIdx >= 0">
     <span *ngFor="let row of _rowHeights; index as idx; trackBy: trackByValue" [attr.data-row-idx]="idx"
-          [class.active]="activeRowIdx === idx" [class.hover]="hoverCell[0] === idx" [style.height.px]="row"></span>
+          [class.active]="activeRowIdx === idx" [class.hover]="hoverCell[0] === idx" [style.height.px]="row || 0"></span>
 </div>
 
 <div class="table-wrapper" [class.col-head]="props.colHead" [class.row-head]="props.rowHead" #wrapper>
