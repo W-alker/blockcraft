@@ -59,7 +59,7 @@ export class InlineImgPlugin implements IPlugin {
 
   previewImg(ele: HTMLElement) {
     this._viewer?.destroy()
-    this._viewer = new Viewer(ele)
+    this._viewer = new Viewer(ele, {zIndex: 999999})
     this._viewer?.show()
   }
 

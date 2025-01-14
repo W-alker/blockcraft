@@ -259,7 +259,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
   }
 
   previewImg() {
-    this._viewer ??= new Viewer(this.img.nativeElement, {inline: false})
+    this._viewer ??= new Viewer(this.img.nativeElement, {inline: false, zIndex: 999999})
     this._viewer.show()
   }
 
@@ -356,7 +356,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
 
       const parentId = bRef.getParentId()
       // 根级直接移动block
-      if(parentId === this.controller.rootId) {
+      if (parentId === this.controller.rootId) {
         // 计算放置的位置在目标元素的上方还是下方
         const target = e.target as HTMLElement
         const rect = target.getBoundingClientRect()
@@ -366,9 +366,9 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
       }
 
       const nativeRange = this.controller.selection.normalizeStaticRange(bRef.containerEle, range)
-      if(bRef.containerEle.classList.contains('bf-plain-text-only') || !bRef.containerEle.classList.contains('bf-multi-line')) return;
+      if (bRef.containerEle.classList.contains('bf-plain-text-only') || !bRef.containerEle.classList.contains('bf-multi-line')) return;
       const deltas: DeltaOperation[] = []
-      if(nativeRange.start > 0) {
+      if (nativeRange.start > 0) {
         deltas.push({retain: nativeRange.start})
       }
       deltas.push({insert: {image: this.props.src}})
