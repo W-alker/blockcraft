@@ -32,7 +32,6 @@
     background-color: #4857E2;
     cursor: col-resize;
     opacity: 0;
-    transition: opacity .2s;
 
     &.active, &:hover {
       opacity: 1;
