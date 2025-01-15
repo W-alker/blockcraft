@@ -1,4 +1,13 @@
-import {ChangeDetectionStrategy, Component, EventEmitter, HostListener, Input, Output} from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  DestroyRef,
+  EventEmitter,
+  HostListener,
+  Input,
+  Output
+} from "@angular/core";
 import {NgForOf, NgIf} from "@angular/common";
 
 export interface IToolbarItem {
@@ -91,6 +100,43 @@ export class FloatToolbar {
   @Input() activeMenu?: Set<string>
   @Input({required: true}) toolbarList: IToolbarItem[] = []
   @Output() itemClick = new EventEmitter<{ item: IToolbarItem, event: MouseEvent }>
+
+  constructor(
+    public readonly destroyRef: DestroyRef,
+    public readonly cdr: ChangeDetectorRef
+  ) {
+  }
+
+  addActive(id: string) {
+    this.activeMenu ??= new Set()
+    this.activeMenu?.add(id)
+    this.cdr.markForCheck()
+  }
+
+  removeActive(id: string) {
+    this.cdr.markForCheck()
+    this.activeMenu?.delete(id)
+  }
+
+  clearActive() {
+    this.cdr.markForCheck()
+    this.activeMenu?.clear()
+  }
+
+  clearActiveByName(name: string) {
+    this.toolbarList.forEach(item => {
+      if (item.name === name && this.activeMenu?.has(item.id)) {
+        this.activeMenu?.delete(item.id)
+      }
+    })
+    this.cdr.markForCheck()
+  }
+
+  replaceActiveGroupByName(name: string, id?: string) {
+    this.activeMenu ??= new Set()
+    this.clearActiveByName(name)
+    id && this.addActive(id)
+  }
 
   @HostListener('mousedown', ['$event'])
   onMouseEvent(event: MouseEvent) {

@@ -104,4 +104,13 @@ export class BaseBlock<Model extends IBlockModel | IEditableBlockModel = IBlockM
     }
   }
 
+  destroySelf() {
+    const {parentId, index} = this.getPosition()
+    if (parentId === this.controller.rootId && index > 0) {
+      const prevEditable = this.controller.findPrevEditableBlock(this.id)
+      prevEditable && prevEditable.setSelection('end')
+    }
+    this.controller.deleteBlocks(index, 1, parentId)
+  }
+
 }

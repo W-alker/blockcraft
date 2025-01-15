@@ -2,6 +2,7 @@ import {WebsocketProvider} from "y-websocket";
 import {Awareness, removeAwarenessStates} from "y-protocols/awareness";
 import {Controller} from "../core";
 import {first, Subject} from "rxjs";
+import Y from '../core/yjs/index'
 
 interface IConfig {
   serverUrl: string
@@ -61,10 +62,32 @@ export class BlockflowBinding {
 
   connect() {
     this.provider.connect()
-    // this.provider.on('sync', (isSynced: boolean) => {
-    //   if (!isSynced) return
-      // console.log('synced')
+
+    // this.yDoc.once('update', (u) => {
+    //   console.log('u', u)
+    //   // 将 Uint8Array 转换为 Base64 字符串
+    //   const base64String = btoa(String.fromCharCode(...u));
+    //   localStorage.setItem('update', base64String)
     // })
+    //
+    // const savedUpdate = localStorage.getItem('update');
+    // if (savedUpdate) {
+    //
+    //   // 从 localStorage 获取 Base64 字符串并转换回 Uint8Array
+    //   const savedBase64 = localStorage.getItem('update');
+    //   if (savedBase64) {
+    //     const decodedString = atob(savedBase64);
+    //     const savedUint8Array = new Uint8Array(decodedString.length);
+    //     for (let i = 0; i < decodedString.length; i++) {
+    //       savedUint8Array[i] = decodedString.charCodeAt(i);
+    //     }
+    //
+    //     // 将增量更新应用到 doc2
+    //     Y.applyUpdate(this.yDoc, savedUint8Array);
+    //
+    //   }
+    // }
+
     this.awareness.on('change', this.onAwarenessChange)
     this.controller.root.onDestroy.pipe(first()).subscribe(() => {
       this.destroy()

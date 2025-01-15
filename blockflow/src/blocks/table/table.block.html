@@ -15,8 +15,7 @@
   <table tabindex="0" #tableElement (keydown)="onKeyDown($event)" (blur)="onBlur()" (mousedown)="onMouseDown($event)"
          (mouseover)="onMouseOver($event)">
     <colgroup>
-      <col *ngFor="let column of _colWidths; index as idx; trackBy: trackByValue" [width]="column"
-           [class.active]="activeColIdx === idx"/>
+      <col *ngFor="let column of _colWidths; index as idx; trackBy: trackByValue" [width]="column"/>
     </colgroup>
 
     <tbody>

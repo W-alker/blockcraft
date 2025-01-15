@@ -1,8 +1,10 @@
 :host {
+  $selectedBgColor: rgba(95, 111, 255, 0.08);
+  $ctrlBarSize: 10px;
+
   display: block;
   position: relative;
-  $selectedBgColor: rgba(95, 111, 255, 0.08);
-  padding: 0 2px 0 6px;
+  padding: 0 2px 0 $ctrlBarSize;
 
   &.selected {
 
@@ -38,16 +40,8 @@
     }
   }
 
-  colgroup {
-    col {
-      &.active {
-        background: $selectedBgColor !important;
-      }
-    }
-  }
-
   .table-wrapper {
-    padding-top: 6px;
+    padding-top: $ctrlBarSize;
     position: relative;
     overflow-x: auto;
     overflow-y: hidden;
@@ -61,7 +55,7 @@
         background: #f2f3f5;
         position: sticky;
         left: 0;
-        z-index: 2;
+        z-index: 1;
       }
 
       .table-header_col-bar > span:first-child {
@@ -79,7 +73,7 @@
         background: #f2f3f5;
         position: sticky;
         top: 0;
-        z-index: 2;
+        z-index: 1;
       }
 
     }
@@ -90,13 +84,14 @@
     top: 0;
     left: 0;
     display: none;
+    height: 100%;
 
     &.active {
       display: flex;
     }
 
     > span {
-      height: 6px;
+      height: $ctrlBarSize;
       background: #F1F1F1;
       cursor: pointer;
       position: relative;
@@ -106,7 +101,28 @@
       }
 
       &.active {
-        background: rgba(72, 87, 226, 1);
+        height: 100%;
+        z-index: 2;
+        background: unset;
+
+        &::before, &::after {
+          z-index: 2;
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+        }
+
+        &::before {
+          height: $ctrlBarSize;
+          background: rgba(72, 87, 226, 1);
+        }
+
+        &::after {
+          height: 100%;
+          background: $selectedBgColor;
+        }
       }
     }
   }
@@ -114,7 +130,7 @@
   .table-header_row-bar {
     display: none;
     position: absolute;
-    top: 6px;
+    top: $ctrlBarSize;
     left: 0;
     height: 100%;
     overflow: hidden;
@@ -125,7 +141,7 @@
 
     > span {
       display: block;
-      width: 6px;
+      width: $ctrlBarSize;
       background: #F1F1F1;
       cursor: pointer;
       position: relative;
@@ -154,7 +170,17 @@
       position: relative;
 
       &.active {
-        background: $selectedBgColor !important;
+
+        &::after {
+          z-index: 2;
+          position: absolute;
+          content: '';
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: $selectedBgColor !important;
+        }
       }
     }
 
@@ -165,7 +191,18 @@
       min-height: calc(var(--bf-fs) + 20px);
 
       &.selected {
-        background-color: $selectedBgColor;
+
+        &::after {
+          z-index: 2;
+          position: absolute;
+          content: '';
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: $selectedBgColor !important;
+        }
+
       }
     }
   }

@@ -15,7 +15,7 @@ import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {TableCellBlock} from "./table-cell.block";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {FloatToolbar} from "../../components";
-import {Overlay} from "@angular/cdk/overlay";
+import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {SET_COL_HEADER, SET_ROW_HEADER, TableColControlMenu, TableRolControlMenu} from "./const";
 
 @Component({
@@ -52,6 +52,8 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
   trackById = (index: number, item: any) => item.id
   trackByValue = (index: number, w: number) => w
 
+  private overlayRef?: OverlayRef
+
   constructor(
     private overlay: Overlay,
   ) {
@@ -74,6 +76,11 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
         }
       }
     })
+  }
+
+  override ngOnDestroy() {
+    super.ngOnDestroy();
+    this.overlayRef?.dispose()
   }
 
   onKeyDown(e: KeyboardEvent) {
@@ -163,7 +170,7 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
     const colIdx = parseInt(dataColIdx)
     this.activeColIdx = colIdx
     const portal = new ComponentPortal(FloatToolbar)
-    const overlayRef = this.overlay.create({
+    this.overlayRef = this.overlay.create({
       positionStrategy: this.overlay.position().flexibleConnectedTo(target).withPositions([
         {originX: 'center', originY: 'top', overlayX: 'center', overlayY: 'bottom', offsetY: -4},
         {originX: 'center', originY: 'bottom', overlayX: 'center', overlayY: 'top', offsetY: 4},
@@ -173,34 +180,43 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
       backdropClass: 'cdk-overlay-transparent-backdrop',
     })
     const close = () => {
-      overlayRef.dispose()
+      this.overlayRef?.dispose()
       this.activeColIdx = -1
     }
 
-    overlayRef.backdropClick().pipe(take(1)).subscribe(close)
-    const cpr = overlayRef.attach(portal)
+    this.overlayRef.backdropClick().pipe(take(1)).subscribe(close)
+    const cpr = this.overlayRef.attach(portal)
     const menu = [...TableColControlMenu]
     if (colIdx === 0) menu.unshift(SET_COL_HEADER)
-    if (this.props.colHead) {
-      cpr.setInput('activeMenu', new Set(['setHeadCol']))
+
+    const colFirAlign = this.children[0].children[colIdx].props['textAlign']
+    const commonAlign = this.children.every(row => row.children[colIdx].props['textAlign'] === colFirAlign)
+    if (commonAlign) {
+      cpr.instance.addActive('align-' + colFirAlign)
     }
+    if (this.props.colHead) {
+      cpr.instance.addActive('setHeadCol')
+    }
+
     cpr.setInput('toolbarList', menu)
-    cpr.instance.itemClick.pipe(take(1)).subscribe(({item, event}) => {
+    cpr.instance.itemClick.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(({item, event}) => {
       switch (item.name) {
         case 'align':
           this.setColAlign(colIdx, <any>item.value)
+          cpr.instance.replaceActiveGroupByName(item.name, item.id)
           break
         case 'insert':
           this.addCol(item.value === 'left' ? colIdx : colIdx + 1);
           break
         case 'delete':
           this.deleteCol(colIdx)
+          close()
           break
         case 'setHeadCol':
           this.setProp('colHead', !this.props.colHead)
+          this.props.colHead ? cpr.instance.addActive('setHeadCol') : cpr.instance.removeActive('setHeadCol')
           break
       }
-      close()
     })
   }
 
@@ -245,7 +261,10 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
     this.setColWidths()
   }
 
-  deleteCol(index: number) {
+  deleteCol(index: number, len = 1) {
+    if (len === this.children[0].children.length) {
+      return this.destroySelf()
+    }
     this.controller.transact(() => {
       this.model.children.forEach(row => {
         row.deleteChildren(index, 1)
@@ -258,18 +277,6 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
   onRowHeightChange(height: number, rowIdx: number) {
     this._rowHeights[rowIdx] = height
   }
-
-  // onTableBarRightClick(e: MouseEvent) {
-  //   e.preventDefault()
-  //   e.stopPropagation()
-  //   this.addCol(this.children[0].children.length)
-  // }
-  //
-  // onTableBarBottomClick(e: MouseEvent) {
-  //   e.preventDefault()
-  //   e.stopPropagation()
-  //   this.addRow(this.children.length)
-  // }
 
   onShowRowBar(e: MouseEvent) {
     e.stopPropagation()
@@ -296,27 +303,35 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
     const cpr = overlayRef.attach(portal)
     const menu = [...TableRolControlMenu]
     if (rowIdx === 0) menu.unshift(SET_ROW_HEADER)
+
+    const rowFirAlign = this.children[rowIdx].children[0].props['textAlign']
+    const commonAlign = this.children[rowIdx].children.every(cell => cell.props['textAlign'] === rowFirAlign)
+    if (commonAlign) {
+      cpr.instance.addActive('align-' + rowFirAlign)
+    }
+
     if (this.props.rowHead) {
-      cpr.setInput('activeMenu', new Set(['setHeadRow']))
+      cpr.instance.addActive('setHeadRow')
     }
     cpr.setInput('toolbarList', menu)
-    cpr.instance.itemClick.pipe(take(1)).subscribe(({item, event}) => {
+    cpr.instance.itemClick.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(({item, event}) => {
       switch (item.name) {
         case 'align':
           this.setRowAlign(rowIdx, <any>item.value)
+          cpr.instance.replaceActiveGroupByName('align', item.id)
           break
         case 'insert':
           this.addRow(item.value === 'top' ? rowIdx : rowIdx + 1)
           break
         case 'delete':
           this.deleteRow(rowIdx)
+          close()
           break
         case 'setHeadRow':
           this.setProp('rowHead', !this.props.rowHead)
+          this.props.colHead ? cpr.instance.addActive('setHeadRow') : cpr.instance.removeActive('setHeadRow')
           break
-
       }
-      close()
     })
   }
 
@@ -327,7 +342,10 @@ export class TableBlock extends BaseBlock<ITableBlockModel> {
     this.model.insertChildren(index, [row])
   }
 
-  deleteRow(index: number) {
+  deleteRow(index: number, len = 1) {
+    if (len === this.children.length) {
+      return this.destroySelf()
+    }
     this.model.deleteChildren(index, 1)
     this._rowHeights.splice(index, 1)
   }

@@ -185,7 +185,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
       case 'Backspace':
         e.stopPropagation()
         e.preventDefault()
-        this.deleteSelf()
+        this.destroySelf()
         break
       case 'Enter':
         e.stopPropagation()
@@ -208,18 +208,9 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
         e.stopPropagation()
         e.preventDefault()
         this.controller.clipboard.writeData([{type: 'text/uri-list', data: this.props.src}])
-        this.deleteSelf()
+        this.destroySelf()
         break
     }
-  }
-
-  deleteSelf() {
-    const {parentId, index} = this.getPosition()
-    if (parentId === this.controller.rootId && index > 0) {
-      const prevEditable = this.controller.findPrevEditableBlock(this.id)
-      prevEditable && prevEditable.setSelection('end')
-    }
-    this.controller.deleteBlocks(index, 1, parentId)
   }
 
   setAlign() {
@@ -373,7 +364,7 @@ export class ImageBlock extends BaseBlock<IImgBlockModel> {
       }
       deltas.push({insert: {image: this.props.src}})
       bRef.applyDelta(deltas)
-      this.deleteSelf()
+      this.destroySelf()
     })
   }
 

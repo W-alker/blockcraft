@@ -184,6 +184,8 @@ export class EditorRoot {
       case 'insertReplacementText':
       case 'insertCompositionText':
       case 'insertText':
+      case 'deleteContentForward':
+      case 'deleteContentBackward':
         break
       default:
         event.preventDefault()
@@ -193,23 +195,31 @@ export class EditorRoot {
     const activeElement = this.activeElement!
 
     const sel = window.getSelection()!
-    const range = sel.getRangeAt(0)
+    const staticRange = event.getTargetRanges()[0]
 
-    this.prevInput = this.controller.selection.normalizeStaticRange(activeElement, range)
+    this.prevInput = this.controller.selection.normalizeStaticRange(activeElement, staticRange)
     this.prevInput.data = event.data
     this.prevInput.inputType = event.inputType
 
-    if (range.startContainer === activeElement ||
-      (range.startContainer instanceof Text && (range.startContainer.parentElement === activeElement || isEmbedElement(range.startContainer.parentElement?.previousElementSibling!)))
+    // console.log(staticRange,this.prevInput)
+
+    if (staticRange.startContainer === activeElement ||
+      (staticRange.startContainer instanceof Text && (staticRange.startContainer.parentElement === activeElement || isEmbedElement(staticRange.startContainer.parentElement?.previousElementSibling!)))
     ) this.prevInput.afterEmbed = true
 
-    // prevent browser behavior - hold any tags to insert into the text
-    if (!range.collapsed && this.compositionStatus !== 'start') {
-      const adjusted = adjustRangeEdges(activeElement, range)
+    // prevent browser behavior - hold unknown tag to insert into the text
+    if (!staticRange.collapsed && this.compositionStatus !== 'start') {
+      const _range = document.createRange()
+      _range.setStart(staticRange.startContainer, staticRange.startOffset)
+      _range.setEnd(staticRange.endContainer, staticRange.endOffset)
+      const adjusted = adjustRangeEdges(activeElement, _range)
       if (adjusted) {
-        range.deleteContents()
+        event.preventDefault()
+        _range.deleteContents()
         this.prevInput.afterEmbed = true
       }
+      _range.detach()
+      this.handleInput(event)
       return
     }
 
@@ -226,9 +236,10 @@ export class EditorRoot {
       sel.focusNode instanceof Text ? sel.focusNode.parentElement!.before(span) : sel.getRangeAt(0).insertNode(span)
       sel.setBaseAndExtent(span.firstChild!, 0, span.firstChild!, 1)
     }
+
+    this.handleInput(event)
   }
 
-  @HostListener('input', ['$event'])
   private handleInput(e: InputEvent) {
     // console.log('input', e, e.inputType, e.data)
     if (!this.prevInput) return
@@ -249,20 +260,16 @@ export class EditorRoot {
         data && ops.push(() => yText.insert(start, data, afterEmbed ? {} : undefined))  // avoid new text extends the attributes of previous embed element
         start === 0 && (needCheck = true)
         break
-      // case 'deleteContentBackward':
-      //   if (start === end) {
-      //     ops.push(() => yText.delete(start - 1, 1))
-      //   } else {
-      //     ops.push(() => yText.delete(start, end - start))
-      //   }
-      //   break
-      // case 'deleteContentForward':
-      //   if (start === end) {
-      //     ops.push(() => yText.delete(start, 1))
-      //   } else {
-      //     ops.push(() => yText.delete(start, end - start))
-      //   }
-      //   break
+      case 'deleteContentBackward':
+        if (start === end) {
+          ops.push(() => yText.delete(start - 1, 1))
+        }
+        break
+      case 'deleteContentForward':
+        if (start === end) {
+          ops.push(() => yText.delete(start, 1))
+        }
+        break
       default:
         break;
     }
