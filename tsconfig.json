@@ -4,6 +4,9 @@
   "compilerOptions": {
     "baseUrl": "./",
     "paths": {
+      "blockcraft": [
+        "./dist/blockcraft"
+      ],
       "blockflow-editor": ["dist/blockflow-editor"],
     },
     "outDir": "./dist/out-tsc",

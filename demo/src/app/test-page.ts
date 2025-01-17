@@ -1,4 +1,4 @@
-import {Component, TemplateRef, ViewChild} from "@angular/core";
+import {Component, ElementRef, TemplateRef, ViewChild} from "@angular/core";
 import {
   BlockFlowContextmenu,
   BlockFlowEditor,
@@ -36,6 +36,13 @@ import {
   deleteContent, EditableBlock
 // } from "blockflow-editor";
 } from "../../../blockflow/src/public-api";
+import {NzCheckboxComponent, NzCheckboxWrapperComponent} from "ng-zorro-antd/checkbox";
+import {NzColDirective, NzRowDirective} from "ng-zorro-antd/grid";
+import {FormsModule} from "@angular/forms";
+import {DatePipe, NgForOf} from "@angular/common";
+import {NzButtonComponent} from "ng-zorro-antd/button";
+import Y from '../../../blockflow/src/core/yjs'
+import {Transaction} from "yjs";
 
 const schemaStore = new SchemaStore([ParagraphSchema, HeadingOneSchema, HeadingTwoSchema, HeadingThreeSchema, HeadingFourSchema,
   ImageSchema, BulletListSchema, OrderedListSchema, TodoListSchema, CalloutSchema, BlockquoteSchema, DividerSchema, LinkSchema, CodeBlockSchema, MermaidBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema])
@@ -67,6 +74,20 @@ interface BlockSchemaMap {
   template: `
     <bf-editor [config]="config" #editor style="padding: 30px; height: 80vh; width: 70vw"></bf-editor>
 
+    <nz-checkbox-wrapper style="width: 100%;" (nzOnChange)="selectedData = $event">
+      <div>
+        <label nz-checkbox [nzValue]="item.time" *ngFor="let item of updateDataList">
+          {{ item.time | date:'HH:mm:ss' }}
+        </label>
+      </div>
+    </nz-checkbox-wrapper>
+    <div>
+      <button (click)="onClick7()">保存变化</button>
+      <button nz-button (click)="onClick8()">合并选中数据</button>
+
+      <pre #preElement style="width: 50vw;overflow-y: visible;"></pre>
+    </div>
+
     <button (click)="onClickReadonly()">切换只读</button>
     <button (mousedown)="onClick3($event)">选中范围</button>
     <button (mousedown)="onClick1($event)">删除选中</button>
@@ -74,7 +95,6 @@ interface BlockSchemaMap {
 
     <button (click)="onClick5()">新增数据</button>
     <button (click)="onClick6()">新增图片</button>
-    <button (click)="onClick7()">测试数据</button>
 
     <button (click)="onClick4()">开启协同</button>
 
@@ -87,6 +107,14 @@ interface BlockSchemaMap {
   `],
   imports: [
     BlockFlowEditor,
+    NzCheckboxWrapperComponent,
+    NzRowDirective,
+    NzColDirective,
+    NzCheckboxComponent,
+    FormsModule,
+    NgForOf,
+    NzButtonComponent,
+    DatePipe,
   ],
   standalone: true,
 })
@@ -94,6 +122,7 @@ export class TestPage {
   // @ts-ignore
   @ViewChild('editor') editor!: BlockFlowEditor<BlockSchemaMap>
   @ViewChild('mentionTpl', {read: TemplateRef}) mentionTpl!: TemplateRef<any>
+  @ViewChild('preElement') preElement!: ElementRef
 
   model: IBlockModel[] = [
     {
@@ -154,6 +183,9 @@ export class TestPage {
     }
   ]
   modelLength = 101
+
+  updateDataList: { data: Uint8Array, time: number }[] = []
+  selectedData: number[] = []
 
   constructor() {
     let i = 0
@@ -351,7 +383,44 @@ export class TestPage {
     this.editor.controller.insertBlocks(0, [bm])
   }
 
-  onClick7() {
 
+  resetFlag = false
+
+  onClick7() {
+    this.controller.yDoc.on('update', (u: Uint8Array, _: any, t: Transaction) => {
+      if (this.resetFlag) return
+      Y.logUpdate(u)
+      // 将 Uint8Array 转换为 Base64 字符串
+      // const base64String = btoa(String.fromCharCode(...u));
+      this.updateDataList.push({
+        time: Date.now(),
+        data: u,
+      })
+    })
   }
+
+  onClick8() {
+    const selected = this.selectedData.map(n => {
+      return this.updateDataList.find(v => n === v.time)!.data
+    })
+
+    const update = Y.mergeUpdates(selected)
+
+    // console.log(update)
+    // this.controller.deleteBlocks(0, this.controller.blockLength)
+    this.resetFlag = true
+    const yDocCombined = new Y.Doc();
+    yDocCombined.getArray(this.controller.rootId)
+    Y.applyUpdate(yDocCombined, update)
+    const json = yDocCombined.toJSON()
+    console.log(json)
+    const m = json[this.controller.rootId]
+    this.controller.deleteBlocks(0, this.controller.blockLength)
+    this.controller.insertBlocks(0, m.map(BlockModel.fromModel)).then(() => {
+      this.resetFlag = false
+    })
+    // this.preElement.nativeElement.innerHTML = JSON.stringify(yDocCombined.toJSON())
+  }
+
+
 }
