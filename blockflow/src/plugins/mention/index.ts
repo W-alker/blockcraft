@@ -80,7 +80,7 @@ export class MentionPlugin implements IPlugin {
     this._vcr = controller.injector.get(ViewContainerRef)
 
     if (this.onMentionClick) {
-      this._clickSub = fromEvent<MouseEvent>(controller.rootElement, 'mousedown')
+      this._clickSub = fromEvent<MouseEvent>(controller.rootElement, 'click')
         .subscribe((e) => {
           const target = e.target
           if (!(target instanceof HTMLElement) || !target.dataset['mentionId']) return
