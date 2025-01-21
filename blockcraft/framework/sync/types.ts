@@ -1,9 +1,8 @@
-export interface BlockSnapshot {
+import {SimpleRecord} from "../../global";
+
+export interface IBlockSnapshot {
   id: string
   flavour: string
-  props: {
-  }
-  meta: {
-    [key: string]: any
-  }
+  props: SimpleRecord
+  meta: SimpleRecord
 }

@@ -13,6 +13,10 @@ const routes: Routes = [
   {
     path: '',
     loadComponent: () => import('./test-page').then(m => m.TestPage)
+  },
+  {
+    path: 'test',
+    loadComponent: () => import('./playground.page').then(m => m.PlaygroundPage)
   }
 ];
 
