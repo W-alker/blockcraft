@@ -1,10 +1,16 @@
 import * as Y from 'yjs'
-import {BaseReactive} from "./base";
 
-export class ReactiveArray<T extends unknown[]> extends BaseReactive<T> {
-  private _yData!: Y.Array<T>
+interface IReactiveArray<T extends unknown[]> {
+  get(index: number): T[number]
+}
 
-  override _init() {
+export class ReactiveArray<T extends unknown[]> implements IReactiveArray<T> {
+
+  constructor(
+    protected _native: T,
+    protected_yData: Y.Array<T>,
+    public readonly controller: BlockCraft.Controller
+  ) {
     // @ts-ignore
     this._yData = Y.Array.from(this._native)
   }

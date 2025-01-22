@@ -1,4 +1,4 @@
-import {SimpleBasicType, SimpleRecord, SimpleValue} from "../../global";
+import {SimpleBasicType, SimpleRecord, SimpleValue, UnknownRecord} from "../../global";
 
 /**
  * block: 普通的块级节点，一般这代表它有children\
@@ -29,7 +29,7 @@ export type IBlockProps = {
   [key: string]: SimpleValue | undefined | null
 }
 
-export interface IBlockSnapshot {
+export interface IBlockSnapshot extends UnknownRecord{
   id: string
   flavour: BlockFlavour
   nodeType: BlockNodeType
