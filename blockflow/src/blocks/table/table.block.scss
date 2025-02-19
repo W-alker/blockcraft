@@ -190,6 +190,10 @@
       border: $border;
       min-height: calc(var(--bf-fs) + 20px);
 
+      &::after {
+        content: '';
+      }
+
       &.selected {
 
         &::after {

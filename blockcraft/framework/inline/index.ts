@@ -1,9 +1,412 @@
-import {DeltaInsertEmbed} from "../types";
+import {DeltaInsert, DeltaInsertEmbed, DeltaOperation, DeltaRetain, IInlineNodeAttrs, InlineModel} from "../types";
+import {
+  INLINE_ELEMENT_TAG,
+  INLINE_EMBED_NODE_TAG,
+  INLINE_TEXT_NODE_TAG,
+  INLINE_EMBED_GAP_TAG,
+  ZERO_WIDTH_SPACE
+} from "./const";
+import {BlockCraftError, ErrorCode} from "../../global";
+import setAttributes from "./setAttributes";
+import {compareAttributesWithEle} from "./compareAttributes";
 
 export type EmbedConverter = {
   toDelta: EmbedViewToDelta
   toView: CreateEmbedView
 }
-
 export type CreateEmbedView = (delta: DeltaInsertEmbed) => HTMLElement
 export type EmbedViewToDelta = (ele: HTMLElement) => DeltaInsertEmbed
+
+export class InlineManager {
+  private _embedConverterMap: Map<string, EmbedConverter>
+
+  constructor(
+    readonly doc: BlockCraft.Doc
+  ) {
+    this._embedConverterMap = new Map<string, EmbedConverter>(this.doc.config.embeds || [])
+  }
+
+  setAttrs(element: HTMLElement, attributes?: IInlineNodeAttrs) {
+    if (!attributes) return
+    setAttributes(element, attributes)
+  }
+
+  createInlineNode(delta: DeltaInsert): HTMLElement {
+    if (typeof delta.insert === 'string') {
+      const node = document.createElement(INLINE_ELEMENT_TAG)
+      const text = document.createElement(INLINE_TEXT_NODE_TAG)
+      node.appendChild(text)
+      text.innerText = delta.insert
+      this.setAttrs(node, delta.attributes)
+      return node
+    }
+    const converter = this._embedConverterMap.get(Object.keys(delta.insert)[0])
+    if (!converter) {
+      throw new BlockCraftError(ErrorCode.InlineEditorError, 'no embed registered for this type')
+    }
+    const node = document.createElement(INLINE_ELEMENT_TAG)
+    const span = document.createElement('span')
+    span.setAttribute('contenteditable', 'false')
+    node.appendChild(span)
+    node.appendChild(this.createInlineGapNode())
+    const embed = converter.toView(delta as DeltaInsertEmbed)
+    this.setAttrs(node, delta.attributes)
+    span.appendChild(embed)
+    return node
+  }
+
+  createInlineNodeGroup(deltas: DeltaInsert[]): HTMLElement[] {
+    return deltas.map(delta => this.createInlineNode(delta))
+  }
+
+  createInlineGapNode() {
+    const emptyNode = document.createElement(INLINE_EMBED_GAP_TAG)
+    emptyNode.innerText = ZERO_WIDTH_SPACE
+    return emptyNode
+  }
+
+  render(deltas: InlineModel, container: HTMLElement) {
+    container.replaceChildren(...[this.createInlineGapNode()].concat(this.createInlineNodeGroup(deltas)))
+  }
+
+  applyDeltaToView(deltas: DeltaOperation[], container: HTMLElement) {
+
+    const elementsNodes = Array.from(container.querySelectorAll(INLINE_ELEMENT_TAG)) as HTMLElement[]
+
+    let nodeStep = {
+      index: 0,
+      indexInNode: 0
+    }
+
+    const stepRetain = (op: DeltaRetain) => {
+      let len = op.retain
+
+      while (len > 0) {
+
+        const ele = elementsNodes[nodeStep.index]
+        const eleLength = ele.firstElementChild!.localName === INLINE_TEXT_NODE_TAG ? ele.textContent!.length : 1
+
+        // |AAAAAA?
+        if (nodeStep.indexInNode === 0) {
+          // |AAAAA|A
+          if (len < eleLength) {
+            if (op.attributes) {
+              const textNode = ele.firstElementChild!.firstChild as Text
+              const splitTextContent = textNode.wholeText.slice(0, len)
+              textNode.deleteData(0, len)
+
+              const beforeNode = this.createInlineNode({
+                insert: splitTextContent,
+                attributes: op.attributes
+              })
+              ele.before(beforeNode)
+            }
+
+            nodeStep.indexInNode += len
+            len = 0
+            break
+          }
+
+          // |AAAAAA|
+          op.attributes && this.setAttrs(ele, op.attributes)
+          len -= eleLength
+          nodeStep = {
+            index: nodeStep.index + 1,
+            indexInNode: 0
+          }
+          continue
+        }
+
+        // A|AAAAA?
+        if (nodeStep.indexInNode === eleLength) {
+          nodeStep = {
+            index: nodeStep.index + 1,
+            indexInNode: 0
+          }
+          continue
+        }
+
+        // A|AAAAAA|
+        if (len > eleLength - nodeStep.indexInNode) {
+          if (op.attributes) {
+            const textNode = ele.firstElementChild!.firstChild as Text
+            const splitTextContent = textNode.wholeText.slice(nodeStep.indexInNode, eleLength)
+            textNode.deleteData(nodeStep.indexInNode, splitTextContent.length)
+            const beforeNode = this.createInlineNode({
+              insert: splitTextContent,
+              attributes: op.attributes
+            })
+            ele.before(beforeNode)
+          }
+
+          len -= (eleLength - nodeStep.indexInNode)
+          nodeStep = {
+            index: nodeStep.index + 1,
+            indexInNode: 0
+          }
+          continue
+        }
+
+        // A|AAA|A
+        if (op.attributes) {
+          const textNode = ele.firstElementChild!.firstChild as Text
+          const wholeText = textNode.wholeText
+
+          const cloneNode = ele.cloneNode(true) as HTMLElement
+          const cloneNode2 = ele.cloneNode(true) as HTMLElement
+          this.setAttrs(cloneNode, op.attributes)
+          cloneNode.firstElementChild!.textContent = wholeText.slice(nodeStep.indexInNode, nodeStep.indexInNode + len)
+          cloneNode2.firstElementChild!.textContent = wholeText.slice(nodeStep.indexInNode + len)
+          textNode.deleteData(nodeStep.indexInNode, eleLength - nodeStep.indexInNode)
+          ele.after(cloneNode, cloneNode2)
+          elementsNodes.splice(nodeStep.index + 1, 0, cloneNode, cloneNode2)
+          nodeStep = {
+            index: nodeStep.index + 1,
+            indexInNode: len
+          }
+          continue
+        }
+
+        nodeStep.indexInNode += len
+        len = 0
+      }
+    }
+
+    const stepDelete = (len: number) => {
+      while (len > 0) {
+        const ele = elementsNodes[nodeStep.index]
+        const isElementEmbed = !(ele.firstElementChild as HTMLElement).isContentEditable
+        const eleLength = isElementEmbed ? 1 : ele.textContent!.length
+
+        if (nodeStep.indexInNode === 0 && len >= eleLength) {
+          ele.remove()
+          len -= eleLength
+          elementsNodes.splice(nodeStep.index, 1)
+
+          if (!elementsNodes.length) {
+            nodeStep = {
+              index: 0,
+              indexInNode: 0
+            }
+            return
+          }
+
+          nodeStep = {
+            index: nodeStep.index,
+            indexInNode: 0
+          }
+          // clear gap node around embed node
+          // if (isElementEmbed) {
+          //   const nextEle = elementsNodes[nodeStep.index]
+          //   const isNextElementEmbed = !(nextEle.firstElementChild as HTMLElement).isContentEditable
+          //   // gap-embed-text-... ==> text
+          //   if (nodeStep.index === 0 && !isNextElementEmbed) {
+          //     nextEle.previousElementSibling && nextEle.previousElementSibling.remove()
+          //   }
+          //   // text-embed-gap ==> text
+          //   if (nodeStep.index === elementsNodes.length - 1 && !isNextElementEmbed) {
+          //     nextEle.nextElementSibling && nextEle.nextElementSibling.remove()
+          //   }
+          // }
+          continue
+        }
+
+        const textNode = ele.firstElementChild?.firstChild as Text
+        if (!(textNode instanceof Text)) {
+          throw new BlockCraftError(ErrorCode.InlineEditorError, 'Error inline node match')
+        }
+        const maxDeleteLength = eleLength - nodeStep.indexInNode
+        if (len >= maxDeleteLength) {
+          textNode.deleteData(nodeStep.indexInNode, maxDeleteLength)
+          len -= maxDeleteLength
+          nodeStep = {
+            index: nodeStep.index + 1,
+            indexInNode: 0
+          }
+        } else {
+          textNode.deleteData(nodeStep.indexInNode, len)
+          len = 0
+        }
+      }
+    }
+
+    const stepInsert = (op: DeltaInsert) => {
+
+      const isOpElementEmbed = typeof op.insert === 'object'
+      const opLength = isOpElementEmbed ? 1 : (op.insert as string).length
+
+      if (!elementsNodes.length) {
+        const ele = this.createInlineNode(op)
+        container.appendChild(ele)
+        elementsNodes.push(ele)
+        nodeStep = {
+          index: 0,
+          indexInNode: opLength
+        }
+        return
+      }
+
+      let ele: HTMLElement
+      let isElementEmbed: boolean
+      let eleLength: number
+      if (nodeStep.indexInNode === 0 && nodeStep.index >= elementsNodes.length) {
+        ele = elementsNodes[elementsNodes.length - 1]
+        isElementEmbed = !(ele.firstElementChild as HTMLElement).isContentEditable
+        eleLength = isElementEmbed ? 1 : ele.textContent!.length
+        nodeStep = {
+          index: elementsNodes.length - 1,
+          indexInNode: eleLength
+        }
+      } else {
+        ele = elementsNodes[nodeStep.index]
+        isElementEmbed = !(ele.firstElementChild as HTMLElement).isContentEditable
+        eleLength = isElementEmbed ? 1 : ele.textContent!.length
+      }
+
+      // case 1 : embed node
+      if (isElementEmbed) {
+        const newNode = this.createInlineNode(op)
+        if (nodeStep.indexInNode === 0) {
+          ele.before(newNode)
+          // create a gap between two embed node
+          // isOpElementEmbed && ele.before(this.createInlineGapNode())
+          elementsNodes.splice(nodeStep.index, 0, newNode)
+          nodeStep = {
+            index: nodeStep.index,
+            indexInNode: opLength
+          }
+          return
+        }
+        ele.after(newNode)
+        // create a gap between two embed node
+        // isOpElementEmbed && ele.after(this.createInlineGapNode())
+        elementsNodes.splice(nodeStep.index + 1, 0, newNode)
+        nodeStep = {
+          index: nodeStep.index + 1,
+          indexInNode: 0
+        }
+        return
+      }
+
+      // case 2 : text node
+      // case 2.1: at text node begin
+      if (nodeStep.indexInNode === 0) {
+
+        // case 2.1.1: text node is first element
+        if (nodeStep.index === 0) {
+          const newNode = this.createInlineNode(op)
+          ele.before(newNode)
+          // gap-embed-text
+          // isOpElementEmbed && newNode.before(this.createInlineGapNode())
+          elementsNodes.splice(nodeStep.index, 0, newNode)
+          nodeStep = {
+            index: nodeStep.index,
+            indexInNode: opLength
+          }
+          return
+        }
+
+        // case 2.1.2: text node is not first element
+        const prevNode = elementsNodes[nodeStep.index - 1]
+        const isPrevEmbed = prevNode.firstElementChild!.localName === INLINE_EMBED_NODE_TAG
+        const isPrevEqual = compareAttributesWithEle(prevNode, op.attributes)
+        if (isPrevEmbed || !isPrevEqual || isOpElementEmbed) {
+
+          const newNode = this.createInlineNode(op)
+          ele.before(newNode)
+          // gap-embed
+          // isOpElementEmbed && newNode.before(this.createInlineGapNode())
+          elementsNodes.splice(nodeStep.index, 0, newNode)
+          nodeStep = {
+            index: nodeStep.index,
+            indexInNode: opLength
+          }
+
+          return
+        }
+
+        // case 2.1.3: text node is not first element and equal
+        if (typeof op.insert === 'string') {
+          const prevTextNode = prevNode.firstElementChild?.firstChild as Text
+          if (!(prevTextNode instanceof Text)) {
+            throw new BlockCraftError(ErrorCode.InlineEditorError, 'Error inline node match')
+          }
+          const prevLength = prevTextNode.length
+          prevTextNode.insertData(prevLength, op.insert)
+          nodeStep = {
+            index: nodeStep.index - 1,
+            indexInNode: prevLength + opLength
+          }
+          return
+        }
+      }
+
+      // case 2.2
+      const isEqual = compareAttributesWithEle(ele, op.attributes)
+      // case 2.2.1: insert equal text to text node
+      if (isEqual && typeof op.insert === 'string') {
+        const textNode = ele.firstElementChild?.firstChild as Text
+        if (!(textNode instanceof Text)) {
+          throw new BlockCraftError(ErrorCode.InlineEditorError, 'Error inline node match')
+        }
+        textNode.insertData(nodeStep.indexInNode, op.insert)
+        nodeStep.indexInNode += op.insert.length
+        return;
+      }
+
+      // case 2.2.2: insert embed node or not equal text to text node
+      const newNode = this.createInlineNode(op)
+
+      // case 2.2.2.1: at last of text node
+      if (nodeStep.indexInNode === eleLength) {
+        // text-embed-gap
+        ele.after(newNode)
+        elementsNodes.splice(nodeStep.index + 1, 0, newNode)
+        nodeStep = {
+          index: nodeStep.index + 1,
+          indexInNode: opLength
+        }
+        return
+      }
+
+      // case 2.2.2.2: at middle of text node
+      // text-embed-text or text-text-text
+      const textNode = ele.firstElementChild?.firstChild as Text
+      if (!(textNode instanceof Text)) {
+        throw new BlockCraftError(ErrorCode.InlineEditorError, 'Error inline node match')
+      }
+      const clonedNode = ele.cloneNode(true) as HTMLElement
+      textNode.deleteData(nodeStep.indexInNode, eleLength - nodeStep.indexInNode);
+      (clonedNode.firstElementChild?.firstChild as Text).deleteData(0, nodeStep.indexInNode)
+      ele.after(newNode, clonedNode)
+      elementsNodes.splice(nodeStep.index + 1, 0, newNode, clonedNode)
+      nodeStep = {
+        index: nodeStep.index + 1,
+        indexInNode: opLength
+      }
+    }
+
+    for (const delta of deltas) {
+      if (delta.retain) {
+        stepRetain(delta as DeltaRetain)
+        continue
+      }
+      if (delta.delete) {
+        stepDelete(delta.delete)
+        continue
+      }
+      if (delta.insert) {
+        stepInsert(delta as DeltaInsert)
+      }
+    }
+
+    if (!elementsNodes.length) {
+      container.replaceChildren(this.createInlineGapNode())
+      return
+    }
+  }
+
+}
+
+export * from './const'
+export * from './compareAttributes'

@@ -1,4 +1,5 @@
 import {SimpleBasicType, SimpleRecord, SimpleValue, UnknownRecord} from "../../global";
+import {InlineModel} from "./inline.type";
 
 /**
  * block: 普通的块级节点，一般这代表它有children\
@@ -10,8 +11,6 @@ export enum BlockNodeType {
   void = 'void',
   editable = 'editable'
 }
-
-export type BlockFlavour = string
 
 export interface IBaseMetadata {
   folded?: boolean
@@ -26,14 +25,24 @@ export interface IBaseMetadata {
 export type IMetadata = IBaseMetadata & SimpleRecord
 
 export type IBlockProps = {
-  [key: string]: SimpleValue | undefined | null
+  [key: string]: SimpleValue | null
 }
 
-export interface IBlockSnapshot extends UnknownRecord{
+export interface BaseBlockDesc {
   id: string
-  flavour: BlockFlavour
+  flavour: BlockCraft.BlockFlavour
   nodeType: BlockNodeType
   meta: IMetadata
   props: IBlockProps
-  children: Array<IBlockSnapshot>
 }
+
+export type IBlockSnapshot = UnknownRecord & Exclude<BaseBlockDesc, 'nodeType'> & ({
+  nodeType: BlockNodeType.block
+  children: IBlockSnapshot[]
+} | {
+  nodeType: BlockNodeType.void
+  children: []
+} | {
+  nodeType: BlockNodeType.editable
+  children: InlineModel
+})

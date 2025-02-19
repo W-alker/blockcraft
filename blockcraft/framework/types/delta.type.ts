@@ -1,5 +1,5 @@
 import {SimpleBasicType} from "../../global";
-import {IInlineNodeAttr} from "./inline.type";
+import {IInlineNodeAttrs} from "./inline.type";
 
 export type DeltaInsert = {
   insert: DeltaInsertText["insert"] | DeltaInsertEmbed["insert"]
@@ -14,7 +14,7 @@ export type DeltaInsertEmbed = {
 } & DeltaOptionalAttributes;
 
 export interface DeltaOptionalAttributes {
-  attributes?: IInlineNodeAttr;
+  attributes?: IInlineNodeAttrs;
 }
 
 export type DeltaOperation = {
@@ -22,6 +22,10 @@ export type DeltaOperation = {
   delete?: number;
   retain?: number;
 } & DeltaOptionalAttributes;
+
+export type DeltaRetain = {
+  retain: number
+} & DeltaOptionalAttributes
 
 
 

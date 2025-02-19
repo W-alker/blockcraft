@@ -3,6 +3,8 @@ export enum ErrorCode {
   ReactiveProxyError,
   DocCollectionError,
   ModelCRUDError,
+  SyncYEventError,
+  SyncInputError,
   ValueNotExists,
   ValueNotInstanceOf,
   ValueNotEqual,
@@ -24,7 +26,7 @@ export enum ErrorCode {
 
   // Fatal error should be greater than 10000
   DefaultFatalError = 10000,
-  NoRootModelError,
+  NoRootError,
   NoSurfaceModelError,
   NoneSupportedSSRError,
 }

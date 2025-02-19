@@ -1,8 +1,4 @@
-declare global {
-  namespace BlockCraft {
-    type Controller = typeof Controller;
-  }
-}
+
 
 export class Controller {
   constructor() {}

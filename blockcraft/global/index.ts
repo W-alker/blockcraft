@@ -1,2 +1,4 @@
 export * from './types'
 export * from './exceptions'
+export * from './logger'
+export * from './env'

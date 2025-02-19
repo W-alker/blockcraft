@@ -1,4 +1,5 @@
 import {SimpleBasicType} from "../../global";
+import {DeltaInsert} from "./delta.type";
 
 /**
  * @desc 最小的原子节点\
@@ -12,20 +13,43 @@ export enum InlineNodeType {
   text = 'text'
 }
 
-interface IBaseInlineNodeAttr {
-  bold?: boolean;
-  italic?: boolean;
-  underline?: boolean;
-  strike?: boolean;
-  code?: boolean;
-  color?: string;
-  bgColor?: string;
-  fontSize?: number;
-  fontFamily?: string;
+export type IInlineNodeAttrs = ITextStyles & IBaseInlineAttr & IExpandedAttrs
+
+/**
+ * inline attr key, it will render as `[bfi-${key}=${value}]`
+ */
+export type InlineAttrKey = `a:${string}`
+
+interface IBaseInlineAttr {
+  'a:bold'?: boolean;
+  'a:italic'?: boolean;
+  'a:underline'?: boolean;
+  'a:strike'?: boolean;
+  'a:code'?: boolean;
 }
 
-export interface IInlineNodeAttr extends IBaseInlineNodeAttr {
-  [key: string]: SimpleBasicType | undefined
+/**
+ * inline data key, it will render as `[data-${key}=${value}]`
+ */
+export type InlineDataKey = `d:${string}`
+
+export type InlineStyleKey = `s:${string}`
+/**
+ * inline text style
+ */
+export interface ITextStyles {
+  's:color'?: string | null;
+  's:backgroundColor'?: string | null;
+  's:fontSize'?: number | null;
+  's:fontFamily'?: string | null;
 }
+
+export interface IExpandedAttrs {
+  [key: InlineAttrKey | InlineDataKey]: SimpleBasicType | null
+}
+
+export type InlineModel = DeltaInsert[]
+
+
 
 

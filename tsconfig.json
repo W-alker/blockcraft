@@ -7,7 +7,7 @@
       "blockcraft": [
         "./dist/blockcraft"
       ],
-      "blockflow-editor": ["dist/blockflow-editor"],
+      "blockflow-editor": ["dist/blockflow-editor"]
     },
     "outDir": "./dist/out-tsc",
     "forceConsistentCasingInFileNames": true,
