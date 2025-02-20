@@ -39,7 +39,6 @@ const schemas = new SchemaManager([
           outline: none;
         }
 
-
         span[contenteditable='false'] {
           /*user-select: none;*/
           margin: 0 2px;
@@ -82,7 +81,6 @@ export class EditorComponent {
           const img = document.createElement('img')
           img.src = delta.insert['image'] as string
           img.style.width = '100px'
-          img.style.height = '100px'
           return img
         }
       }]
@@ -103,8 +101,12 @@ export class EditorComponent {
         insert: {image: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg'}
       }
     ]])
+    const p2 = this.doc.schemas.createSnapshot('paragraph', [
+      [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
+    ])
     this.pid = p.id
-    const snapshot = this.doc.schemas.createSnapshot('root', [this.rootId, [p]])
+    const snapshot = this.doc.schemas.createSnapshot('root', [this.rootId, [p, p2]])
+    console.log(snapshot)
     this.doc.init(snapshot, this.container)
   }
 

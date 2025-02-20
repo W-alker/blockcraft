@@ -1,4 +1,4 @@
-import {ChangeDetectionStrategy, Component} from "@angular/core";
+import {ChangeDetectionStrategy, Component, HostListener} from "@angular/core";
 import {BaseBlockComponent, EventName} from "../../framework";
 import {RootBlockModel} from "./index";
 
@@ -19,7 +19,15 @@ import {RootBlockModel} from "./index";
   },
 })
 export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
+  isActive = false
 
-  addEventListener(name: EventName, callback: (doc: BlockCraft.Doc) => {}) {
+  @HostListener('blur', ['$event'])
+  onBlur(event: FocusEvent) {
+    this.isActive = false
+  }
+
+  @HostListener('focus', ['$event'])
+  onFocus(event: FocusEvent) {
+    this.isActive = true
   }
 }

@@ -1,4 +1,5 @@
 import {UIEventHandler} from "./base";
+import {CompositionControl} from "./control/composition";
 
 const bypassEventNames = [
   'beforeInput',
@@ -63,7 +64,10 @@ export class UIEventDispatcher {
     eventNames.map((name): [EventName, Array<EventHandlerRunner>] => [name, []])
   ) as Record<EventName, Array<EventHandlerRunner>>;
 
+  public readonly composition = new CompositionControl(this)
+
   constructor(readonly doc: BlockCraft.Doc) {
+    this.doc.afterInit(this._bindEvents)
   }
 
   /**
@@ -85,6 +89,10 @@ export class UIEventDispatcher {
         this._handlersMap[name] = this._handlersMap[name].filter(x => x !== runner);
       }
     };
+  }
+
+  private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
+    this.composition.listen(root)
   }
 
 

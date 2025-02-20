@@ -2,7 +2,7 @@ import {Component} from "@angular/core";
 import {BaseBlockComponent} from "./base-block";
 import {EditableBlockNative} from "../../reactive";
 import * as Y from 'yjs'
-import {DeltaInsert, DeltaOperation} from "../../types";
+import {DeltaInsert, DeltaInsertEmbed, DeltaOperation} from "../../types";
 import {ORIGIN_SKIP_SYNC} from "../../doc";
 
 @Component({
@@ -41,7 +41,29 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     this.doc.inlineManager.render(this.textDeltas(), this.hostElement)
   }
 
+  deleteText(index: number, length: number) {
+    if(!length) return
+    this.applyDeltaOperation([{retain: index}, {delete: length}])
+  }
+
+  insertText(index: number, text: string) {
+    if(!text) return
+    this.applyDeltaOperation([{retain: index}, {insert: text}])
+  }
+
+  replaceText(index: number, length: number, text?: string | null) {
+    const delta: DeltaOperation[] = [{delete: length}]
+    index > 0 && delta.unshift({retain: index})
+    text && delta.push({insert: text})
+    this.applyDeltaOperation(delta)
+  }
+
+  insertEmbed(index: number, embed: DeltaInsertEmbed) {
+    this.applyDeltaOperation([{retain: index}, embed])
+  }
+
   applyDeltaOperation(delta: DeltaOperation[]) {
+    console.log('applyDeltaOperation', delta)
     this.doc.crud.transact(() => {
       this.yText.applyDelta(delta)
       this.doc.inlineManager.applyDeltaToView(delta, this.hostElement)

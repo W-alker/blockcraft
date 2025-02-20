@@ -2,7 +2,6 @@ import {fromEvent} from "rxjs";
 import {BlockCraftError, ErrorCode} from "../../../global";
 import {EditableBlockComponent} from "../../block";
 import {ORIGIN_SKIP_SYNC} from "../../doc";
-import {DeltaOperation} from "../../types";
 import {
   INLINE_ELEMENT_TAG,
   INLINE_EMBED_GAP_TAG,
@@ -10,6 +9,7 @@ import {
   INLINE_TEXT_NODE_TAG,
   ZERO_WIDTH_SPACE
 } from "../../inline";
+import {performanceTest} from "../../decorators";
 
 interface IInlineRange {
   index: number
@@ -27,13 +27,15 @@ interface INormalizedRange {
   collapsed: boolean
 }
 
+const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText'])
+
 export class InputTransformer {
 
   isComposing = false
   private _composeRange: INormalizedRange | null = null
 
   constructor(public readonly doc: BlockCraft.Doc) {
-    this.doc.afterInit(() => this._init(this.doc.root.hostElement))
+    this.doc.afterInit((root) => this._init(root.hostElement))
   }
 
   private _init(rootEl: HTMLElement) {
@@ -43,6 +45,7 @@ export class InputTransformer {
       this._composeRange = this.normalizeRange(range)
       if (!this._composeRange.collapsed) {
         this._replaceText(this._composeRange)
+        this.setSelection(this._composeRange.from.block.hostElement, this._composeRange.from.index)
       }
     })
     fromEvent<CompositionEvent>(rootEl, 'compositionend').subscribe(ev => {
@@ -61,35 +64,33 @@ export class InputTransformer {
     fromEvent<InputEvent>(rootEl, 'beforeinput').subscribe(this._handleBeforeInput)
     fromEvent<KeyboardEvent>(rootEl, 'keydown').subscribe(ev => {
       if (ev.isComposing) return
-      const start = performance.now()
       const selection = document.getSelection()!
       const anchorNode = selection.anchorNode
       if (selection.isCollapsed && anchorNode instanceof Text && anchorNode.parentElement?.localName === INLINE_EMBED_GAP_TAG) {
         switch (ev.key) {
           case 'Backspace':
           case 'ArrowLeft':
-            if(selection.anchorOffset > 0) {
+            if (selection.anchorOffset > 0) {
               selection.modify('move', 'backward', 'character')
             }
             break
           case 'ArrowRight':
           case 'Delete':
-            if(selection.anchorOffset === 0) {
+            if (selection.anchorOffset === 0) {
               selection.modify('move', 'forward', 'character')
             }
             break
         }
       }
-      console.log('getSelection', performance.now() - start)
     })
   }
 
-  private _closetEditableBlockId(node: Node) {
-    return node.parentElement?.closest('[node-type="editable"]')?.id
+  private _closetBlockId(node: Node) {
+    return (node instanceof HTMLElement ? node : node.parentElement)?.closest('[data-block-id]')?.getAttribute('data-block-id')
   }
 
   private _searchEditableBlockByNode(node: Node) {
-    const editableBlockId = this._closetEditableBlockId(node)
+    const editableBlockId = this._closetBlockId(node)
     if (!editableBlockId) {
       throw new BlockCraftError(ErrorCode.SyncInputError, 'Cannot find active block id when user input')
     }
@@ -104,6 +105,11 @@ export class InputTransformer {
     console.log('%cbeoforeinput', 'color: red; font-size: 20px', ev, this.isComposing)
 
     if (ev.isComposing || ev.defaultPrevented) {
+      return
+    }
+
+    if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {
+      ev.preventDefault()
       return
     }
 
@@ -179,38 +185,40 @@ export class InputTransformer {
   private _replaceText(range: INormalizedRange, text?: string | null) {
     const {from, to} = range
     if (!to) {
-      const delta: DeltaOperation[] = [{delete: from.length}]
-      from.index > 0 && delta.unshift({retain: from.index})
-      text && delta.push({insert: text})
-      from.block.applyDeltaOperation(delta)
+      from.block.replaceText(from.index, from.length, text)
       return
     }
 
     this.doc.crud.transact(() => {
+      from.block.replaceText(from.index, from.length, text)
+      to.block.deleteText(to.index, to.length)
     }, ORIGIN_SKIP_SYNC)
   }
 
+  @performanceTest()
   normalizeRange(range: StaticRange): INormalizedRange {
     const {startContainer, endContainer, startOffset, endOffset, collapsed} = range
-    console.log('normalizeRange', startContainer, startOffset, endContainer, endOffset, collapsed)
     const startBlock = this._searchEditableBlockByNode(startContainer)
 
     const getPosition = (block: EditableBlockComponent, node: Node, offset: number) => {
 
+      // if is element
+      const isContainer = node === block.hostElement
+
       const elements = block.hostElement.querySelectorAll(INLINE_ELEMENT_TAG)
-      if (elements.length === 0) {
+      if (elements.length === 0 || (isContainer && offset === 0)) {
         return 0
       }
 
-      const isCElement = node instanceof HTMLElement && node.localName === INLINE_ELEMENT_TAG
-      const isGap = node instanceof HTMLElement ? node.localName === INLINE_EMBED_GAP_TAG : node.parentElement!.localName === INLINE_EMBED_GAP_TAG
+      const isCElement = !isContainer && (node instanceof HTMLElement && node.localName === INLINE_ELEMENT_TAG)
+      const isGap = !isContainer && (node instanceof HTMLElement ? node.localName === INLINE_EMBED_GAP_TAG : node.parentElement!.localName === INLINE_EMBED_GAP_TAG)
 
       // if first zero text
       if (isGap && (node instanceof HTMLElement ? node.parentElement === block.hostElement : node.parentElement!.parentElement === block.hostElement)) {
         return 0
       }
 
-      const cElement = isCElement ? node : node.parentElement!.closest(INLINE_ELEMENT_TAG)!
+      const cElement = isContainer ? elements[offset - 1] : (isCElement ? node : node.parentElement!.closest(INLINE_ELEMENT_TAG)!)
 
       let pos = 0
       for (let i = 0; i < elements.length; i++) {

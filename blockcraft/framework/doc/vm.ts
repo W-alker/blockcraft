@@ -119,17 +119,18 @@ export class DocVM {
 
         this.set(id, cpr)
 
-        if (nodeType === BlockNodeType.block && children.length) {
-          cpr.instance.onViewInit$.pipe(take(1)).subscribe(async () => {
-            for(const childSnapshot of children) {
+        cpr.instance.onViewInit$.pipe(take(1)).subscribe(async () => {
+
+          if (nodeType === BlockNodeType.block && children.length) {
+            for (const childSnapshot of children) {
+              console.log(childSnapshot)
               const cmpr = await createComp(childSnapshot as IBlockSnapshot, id);
               (cpr.instance.childrenContainer as ViewContainerRef).insert(cmpr.hostView)
             }
-            resolve(cpr)
-          })
-        } else {
+          }
+
           resolve(cpr)
-        }
+        })
       })
 
     }

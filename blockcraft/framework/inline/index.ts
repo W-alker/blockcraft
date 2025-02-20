@@ -47,11 +47,10 @@ export class InlineManager {
     const node = document.createElement(INLINE_ELEMENT_TAG)
     const span = document.createElement('span')
     span.setAttribute('contenteditable', 'false')
-    node.appendChild(span)
-    node.appendChild(this.createInlineGapNode())
     const embed = converter.toView(delta as DeltaInsertEmbed)
     this.setAttrs(node, delta.attributes)
     span.appendChild(embed)
+    node.append(span, this.createInlineGapNode())
     return node
   }
 

@@ -82,7 +82,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     this.onDestroy$.next(true)
   }
 
-  @HostBinding('attr.id')
+  @HostBinding('attr.data-block-id')
   get id() {
     return this._native.id
   }

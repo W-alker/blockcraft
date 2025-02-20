@@ -6,6 +6,8 @@ import {IBlockSnapshot} from "../types";
 import {EmbedConverter, InlineManager} from "../inline";
 import {InputTransformer} from "../modules";
 import {BehaviorSubject, take} from "rxjs";
+import {UIEventDispatcher} from "../event";
+import {SelectionManager} from "../modules/selection";
 
 interface DocConfig {
   docId: string
@@ -18,13 +20,15 @@ interface DocConfig {
 
 export class BlockCraftDoc {
 
-  private afterInitFnStack = new Set<() => void>()
+  private afterInitFnStack = new Set<(root: BlockCraft.IBlockComponents['root']) => void>()
   public readonly afterInit$ = new BehaviorSubject<BlockCraft.IBlockComponents['root'] | null>(null)
   public readonly onDestroy$ = new BehaviorSubject(false)
 
   readonly crud = new DocCRUD(this)
   readonly vm = new DocVM(this)
   readonly inlineManager = new InlineManager(this)
+  readonly selectionManager = new SelectionManager(this)
+  readonly event = new UIEventDispatcher(this)
   private _inputManger = new InputTransformer(this)
 
   private _root!: BlockCraft.IBlockComponents['root']
@@ -53,6 +57,10 @@ export class BlockCraftDoc {
     return this.config.logger
   }
 
+  get isActive() {
+    return this._root.isActive
+  }
+
   constructor(
     public readonly config: DocConfig
   ) {
@@ -72,7 +80,7 @@ export class BlockCraftDoc {
     container.insert(comp.hostView)
 
     this.afterInit$.next(this._root = comp.instance as BlockCraft.IBlockComponents['root'])
-    this.afterInitFnStack.forEach(fn => fn())
+    this.afterInitFnStack.forEach(fn => fn(this.root))
     this.afterInitFnStack.clear()
 
     // listen root destroy, release all resources
@@ -81,8 +89,12 @@ export class BlockCraftDoc {
     })
   }
 
-  afterInit(fn: () => void) {
-    this.afterInit$.value ? fn() : this.afterInitFnStack.add(fn)
+  afterInit(fn: (root: BlockCraft.IBlockComponents['root']) => void) {
+    this.afterInit$.value ? fn(this.root) : this.afterInitFnStack.add(fn)
+  }
+
+  onDestroy(fn: () => void) {
+    this.onDestroy$.pipe(take(1)).subscribe(fn)
   }
 
   getBlockRef<T extends BlockCraft.BlockFlavour = BlockCraft.BlockFlavour>(id: string) {
