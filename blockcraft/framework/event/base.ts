@@ -8,11 +8,35 @@ export class UIEventState {
   /** when extends, override it with pattern `xxxState` */
   type = 'defaultState';
 
-  constructor(public event: Event) {}
+  constructor(public event: Event) {
+  }
 }
 
 export class UIEventStateContext {
   private _map: Record<string, UIEventState> = {};
+
+  private _isStopPropagation = false;
+
+  get isStopPropagation() {
+    return this._isStopPropagation;
+  }
+
+  get defaultPrevented() {
+    return this.getDefaultEvent().defaultPrevented;
+  }
+
+  getDefaultEvent<T extends Event = Event>() {
+    return this.get('defaultState').event as T;
+  }
+
+  preventDefault() {
+    this.getDefaultEvent().preventDefault();
+  }
+
+  stopPropagation() {
+    this._isStopPropagation = true;
+    this.getDefaultEvent().stopPropagation()
+  }
 
   add = <State extends UIEventState = UIEventState>(state: State) => {
     const name = state.type;
@@ -38,13 +62,21 @@ export class UIEventStateContext {
     return !!this._map[type];
   }
 
+  static from(...states: UIEventState[]) {
+    const context = new UIEventStateContext();
+    states.forEach(state => {
+      context.add(state);
+    });
+    return context;
+  }
 }
 
-export type UIEventHandler = (
-  context: UIEventStateContext
-) => boolean | null | undefined | void;
-
 declare global {
+  namespace BlockCraft {
+    type EventHandler = (context: UIEventStateContext) => boolean | null | undefined | void;
+    type EventStateContext = UIEventStateContext
+  }
+
   interface BlockCraftUIEventState {
     defaultState: UIEventState;
   }

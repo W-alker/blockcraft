@@ -2,7 +2,7 @@ import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {BaseBlock} from "../../core";
 
 @Component({
-  selector: 'div.bf-divider',
+  selector: 'div.bf-divider-block',
   template: `<div></div>`,
   styles: [`
       :host {

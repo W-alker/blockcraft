@@ -2,11 +2,13 @@ import {SimpleBasicType, SimpleRecord, SimpleValue, UnknownRecord} from "../../g
 import {InlineModel} from "./inline.type";
 
 /**
+ * root = 'root',
  * block: 普通的块级节点，一般这代表它有children\
- * void: 无children的block节点，且不可编辑，类似html的 <img /> 闭合标签类型 \
+ * void: 无children的block节点，且不可编辑，类似html的 \<img /> 闭合标签类型 \
  * editable: 可编辑的文本块节点，和void一样，是最底层的block节点\
  */
 export enum BlockNodeType {
+  root = 'root',
   block = 'block',
   void = 'void',
   editable = 'editable'
@@ -24,8 +26,12 @@ export interface IBaseMetadata {
 
 export type IMetadata = IBaseMetadata & SimpleRecord
 
-export type IBlockProps = {
-  [key: string]: SimpleValue | null
+export interface IBlockProps {
+  [key: string]: SimpleValue
+}
+
+export interface IEditableBlockProps extends IBlockProps {
+  depth: number
 }
 
 export interface BaseBlockDesc {
@@ -37,7 +43,7 @@ export interface BaseBlockDesc {
 }
 
 export type IBlockSnapshot = UnknownRecord & Exclude<BaseBlockDesc, 'nodeType'> & ({
-  nodeType: BlockNodeType.block
+  nodeType: BlockNodeType.block | BlockNodeType.root
   children: IBlockSnapshot[]
 } | {
   nodeType: BlockNodeType.void

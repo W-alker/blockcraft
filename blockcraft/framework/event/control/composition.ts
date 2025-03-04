@@ -1,16 +1,30 @@
-import {UIEventDispatcher} from "../dispatcher";
 import {fromEvent, takeUntil} from "rxjs";
+import {UIEventState, UIEventStateContext} from "../base";
+import {EventScopeSourceType, EventSourceState} from "../state";
 
 export class CompositionControl {
 
-  isComposing = false
+  constructor(private _dispatcher: BlockCraft.EventDispatcher) {
+  }
 
-  constructor(private _dispatcher: UIEventDispatcher) {
+  private _buildContext = (event: CompositionEvent) => {
+    return UIEventStateContext.from(
+      new UIEventState(event),
+      new EventSourceState({event, sourceType: EventScopeSourceType.Selection})
+    )
+  }
+
+  private _start = (event: CompositionEvent) => {
+    this._dispatcher.run('compositionStart', this._buildContext(event))
+  }
+
+  private _end = (event: CompositionEvent) => {
+    this._dispatcher.run('compositionEnd', this._buildContext(event))
   }
 
   listen(root: BlockCraft.IBlockComponents['root']) {
-    fromEvent(root.hostElement, 'compositionstart').pipe(takeUntil(root.onDestroy$)).subscribe(() => this.isComposing = true)
-    fromEvent(root.hostElement, 'compositionend').pipe(takeUntil(root.onDestroy$)).subscribe(() => this.isComposing = false)
+    fromEvent<CompositionEvent>(root.hostElement, 'compositionstart').pipe(takeUntil(root.onDestroy$)).subscribe(this._start)
+    fromEvent<CompositionEvent>(root.hostElement, 'compositionend').pipe(takeUntil(root.onDestroy$)).subscribe(this._end)
   }
 
 }

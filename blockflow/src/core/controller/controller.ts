@@ -480,14 +480,14 @@ export class Controller {
 
   /** ---------------focus , selection---------------- end **/
 
-  /** ---------------For ordered-list block---------------- start **/
+  /** ---------------For ordered-block block---------------- start **/
   updateOrderAround(block: BlockModel<IOrderedListBlockModel>) {
     this.transact(() => {
       updateOrderAround(block, this)
     }, USER_CHANGE_SIGNAL)
   }
 
-  /** ---------------For ordered-list block---------------- end **/
+  /** ---------------For ordered-block block---------------- end **/
 }
 
 export interface SelectionChangeEvent {

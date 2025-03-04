@@ -26,12 +26,12 @@ export class SchemaManager {
   }
 
   getSchemaList() {
-    return this.schema
+    return this.schema.values()
   }
 
   createSnapshot<T extends BlockCraft.BlockFlavour>(flavour: T, params: BlockCraft.BlockCreateParameters<T>) {
     const schema = this.get(flavour)
-    return schema.createSnapshot(...params)
+    return schema.createSnapshot(...(params as any))
   }
 
   /**
@@ -57,9 +57,9 @@ declare global {
     type SchemaManager = InstanceType<typeof SchemaManager>
 
     interface IBlockCreateParameters {
-      base: any[]
+      [K: string]: any[]
     }
 
-    type BlockCreateParameters<T extends keyof IBlockCreateParameters = 'base'> = IBlockCreateParameters[T]
+    type BlockCreateParameters<T extends keyof IBlockCreateParameters> = IBlockCreateParameters[T]
   }
 }

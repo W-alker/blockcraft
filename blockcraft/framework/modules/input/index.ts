@@ -1,142 +1,118 @@
-import {fromEvent} from "rxjs";
-import {BlockCraftError, ErrorCode} from "../../../global";
-import {EditableBlockComponent} from "../../block";
 import {ORIGIN_SKIP_SYNC} from "../../doc";
-import {
-  INLINE_ELEMENT_TAG,
-  INLINE_EMBED_GAP_TAG,
-  INLINE_EMBED_NODE_TAG,
-  INLINE_TEXT_NODE_TAG,
-  ZERO_WIDTH_SPACE
-} from "../../inline";
-import {performanceTest} from "../../decorators";
+import {INLINE_ELEMENT_TAG, INLINE_TEXT_NODE_TAG, STR_ZERO_WIDTH_SPACE} from "../../inline";
+import {IBlockRange, INormalizedRange} from "../selection";
+import {isZeroSpace, sliceDelta} from "../../utils";
+import {BlockNodeType, DeltaOperation} from "../../types";
+import {fromEvent, take, takeUntil} from "rxjs";
 
-interface IInlineRange {
-  index: number
-  length: number
-}
-
-interface IBlockInlineRange extends IInlineRange {
-  blockId: string
-  block: EditableBlockComponent
-}
-
-interface INormalizedRange {
-  from: IBlockInlineRange,
-  to: IBlockInlineRange | null,
-  collapsed: boolean
-}
-
-const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText'])
+const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
 export class InputTransformer {
 
-  isComposing = false
-  private _composeRange: INormalizedRange | null = null
+  private _composeRange: IBlockRange | null = null
+  private _preventCompositionText = false
 
   constructor(public readonly doc: BlockCraft.Doc) {
-    this.doc.afterInit((root) => this._init(root.hostElement))
+    this._init()
   }
 
-  private _init(rootEl: HTMLElement) {
-    fromEvent<CompositionEvent>(rootEl, 'compositionstart').subscribe(ev => {
-      this.isComposing = true
-      const range = document.getSelection()!.getRangeAt(0)
-      this._composeRange = this.normalizeRange(range)
-      if (!this._composeRange.collapsed) {
-        this._replaceText(this._composeRange)
-        this.setSelection(this._composeRange.from.block.hostElement, this._composeRange.from.index)
+  private _init() {
+    this.doc.event.add('compositionStart', (context) => {
+      const curSel = this.doc.selection.value!
+      this._composeRange = curSel.from.type === "text" ? curSel.from : curSel.to
+      if (!curSel.collapsed) {
+        this._replaceText(curSel)
       }
+      if (curSel.isAllSelected) {
+        // 防止此时不可选中，但是删除后浏览器自动跳转到合适的文本位置做输入操作，此时记录的输入位置丢失，导致视图数据不一致
+        const _sub = this.doc.selection.selectionChange$.pipe(takeUntil(fromEvent(document, 'compositionEnd').pipe(take(1)))).subscribe(sel => {
+          if (!sel) return
+          if (sel.from.type === 'text') {
+            this._composeRange = sel.from
+            _sub.unsubscribe()
+          }
+        })
+      }
+      return true
     })
-    fromEvent<CompositionEvent>(rootEl, 'compositionend').subscribe(ev => {
-      this.isComposing = false
+
+    this.doc.event.add('compositionEnd', (context) => {
+      const ev = context.get('defaultState').event as CompositionEvent
       ev.preventDefault()
       this.doc.crud.transact(() => {
-        this._composeRange!.from.block.yText.insert(this._composeRange!.from.index, ev.data)
+        if (this._composeRange?.type !== 'text') return
+        this._composeRange!.block.yText.insert(this._composeRange!.index, ev.data)
         // TODO: 更好的中文输入法反显渲染
-        // const start = performance.now()
-        this._composeRange!.from.block.rerender()
-        this.setSelection(this._composeRange!.from.block.hostElement, this._composeRange!.from.index + ev.data.length)
-        // console.log('input time', performance.now() - start)
+        this._composeRange!.block.rerender()
+        this._composeRange.block.setInlineRange(this._composeRange!.index + ev.data.length)
         this._composeRange = null
       }, ORIGIN_SKIP_SYNC)
     })
-    fromEvent<InputEvent>(rootEl, 'beforeinput').subscribe(this._handleBeforeInput)
-    fromEvent<KeyboardEvent>(rootEl, 'keydown').subscribe(ev => {
-      if (ev.isComposing) return
-      const selection = document.getSelection()!
-      const anchorNode = selection.anchorNode
-      if (selection.isCollapsed && anchorNode instanceof Text && anchorNode.parentElement?.localName === INLINE_EMBED_GAP_TAG) {
-        switch (ev.key) {
-          case 'Backspace':
-          case 'ArrowLeft':
-            if (selection.anchorOffset > 0) {
-              selection.modify('move', 'backward', 'character')
-            }
-            break
-          case 'ArrowRight':
-          case 'Delete':
-            if (selection.anchorOffset === 0) {
-              selection.modify('move', 'forward', 'character')
-            }
-            break
-        }
-      }
-    })
+    this.doc.event.add('beforeInput', this._handleBeforeInput)
+
+    this.doc.event.bindHotkey({
+      key: 'Backspace',
+      shiftKey: null,
+      shortKey: null,
+      metaKey: false
+    }, this._handleBackspace, {blockId: this.doc.rootId})
+
+    this.doc.event.bindHotkey({
+      key: 'Delete',
+      shiftKey: null,
+      shortKey: null,
+      metaKey: false
+    }, this._handleDelete, {blockId: this.doc.rootId})
+
+    this.doc.event.bindHotkey({
+      key: 'Tab',
+      shiftKey: null
+    }, this._handlerTab, {blockId: this.doc.rootId})
+
+    this.doc.event.bindHotkey({
+      key: 'Enter',
+      shiftKey: null
+    }, this._handlerEnter, {blockId: this.doc.rootId})
   }
 
-  private _closetBlockId(node: Node) {
-    return (node instanceof HTMLElement ? node : node.parentElement)?.closest('[data-block-id]')?.getAttribute('data-block-id')
-  }
-
-  private _searchEditableBlockByNode(node: Node) {
-    const editableBlockId = this._closetBlockId(node)
-    if (!editableBlockId) {
-      throw new BlockCraftError(ErrorCode.SyncInputError, 'Cannot find active block id when user input')
+  private _handleBeforeInput = (context: BlockCraft.EventStateContext) => {
+    const ev = context.get('defaultState').event as InputEvent
+    if (this._preventCompositionText || !ALLOW_INPUT_TYPES.has(ev.inputType)) {
+      ev.preventDefault()
+      return
     }
-    const block = this.doc.getBlockById(editableBlockId)
-    if (!block || !(block instanceof EditableBlockComponent)) {
-      throw new BlockCraftError(ErrorCode.SyncInputError, 'Fatal active editable block was found when user input')
-    }
-    return block
-  }
-
-  private _handleBeforeInput = (ev: InputEvent) => {
-    console.log('%cbeoforeinput', 'color: red; font-size: 20px', ev, this.isComposing)
 
     if (ev.isComposing || ev.defaultPrevented) {
       return
     }
 
-    if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {
-      ev.preventDefault()
-      return
-    }
-
-    const staticRange = ev.getTargetRanges
-      ? ev.getTargetRanges()[0]
-      : null;
+    const staticRange = ev.getTargetRanges ? ev.getTargetRanges()[0] : null;
     if (!staticRange) {
       return;
     }
 
-    const normalizeRange = this.normalizeRange(staticRange)
+    const normalizedRange = this.doc.selection.normalizeRange(staticRange)!
+    // TODO: clear console
+    console.log(staticRange, normalizedRange)
 
-    const {from, to} = normalizeRange
+    const {from, to, collapsed} = normalizedRange
     const text = getPlainTextFromInputEvent(ev)
 
-    if (!normalizeRange.collapsed) {
+    if (!collapsed) {
       ev.preventDefault()
-      this._replaceText(normalizeRange, text)
-      this.setSelection(from.block.hostElement, from.index + (text || '').length)
+      if (from.type === 'selected' && (!to || to.type === 'selected')) {
+        return ev.preventDefault()
+      }
+      this._replaceText(normalizedRange, text)
       return;
     }
+
     // in zero text
-    if (staticRange.startContainer instanceof Text && staticRange.startContainer.parentElement?.localName === INLINE_EMBED_GAP_TAG) {
-      const zeroTextEle = staticRange.startContainer.parentElement
+    if (staticRange.startContainer instanceof Text && isZeroSpace(staticRange.startContainer)) {
+      const zeroTextEle = staticRange.startContainer.parentElement!
       // <c-element><embed></embed><c-zero-text>ZWS;↓</c-zero-text></c-element>
       const textElement: HTMLElement = document.createElement(INLINE_TEXT_NODE_TAG)
-      textElement.textContent = ZERO_WIDTH_SPACE
+      textElement.textContent = STR_ZERO_WIDTH_SPACE
       if (zeroTextEle.parentElement?.localName === INLINE_ELEMENT_TAG) {
         const cloneElement = zeroTextEle.parentElement.cloneNode(false) as HTMLElement
         cloneElement.replaceChildren(textElement)
@@ -152,130 +128,240 @@ export class InputTransformer {
 
     if (!text) return;
     this.doc.crud.transact(() => {
+      if (from.type !== 'text') return
       from.block.yText.insert(from.index, text)
     }, ORIGIN_SKIP_SYNC)
   }
 
-  setSelection(container: HTMLElement, position: number) {
-    const selection = document.getSelection()!
-
-    if (position === 0) {
-      selection.setPosition(container.firstElementChild!.firstChild, 0)
-    }
-
-    const elements = Array.from(container.querySelectorAll(INLINE_ELEMENT_TAG)) as HTMLElement[]
-    for (let i = 0; i < elements.length; i++) {
-      const ele = elements[i]
-
-      const isEmbed = !(ele.firstElementChild as HTMLElement).isContentEditable
-      const eleLength = isEmbed ? 1 : ele.textContent!.length
-      if (position <= eleLength) {
-        if (isEmbed && position === 1) {
-          selection.setPosition(ele.querySelector(INLINE_EMBED_GAP_TAG)!.firstChild, 0)
-          return
-        }
-        const textNode = ele.firstElementChild!.firstChild as Text
-        selection.setPosition(textNode, position)
-        return
-      }
-      position -= eleLength
-    }
-  }
-
   private _replaceText(range: INormalizedRange, text?: string | null) {
-    const {from, to} = range
-    if (!to) {
-      from.block.replaceText(from.index, from.length, text)
-      return
-    }
+    const {from, to, collapsed} = range
+    if (collapsed) return
 
     this.doc.crud.transact(() => {
-      from.block.replaceText(from.index, from.length, text)
-      to.block.deleteText(to.index, to.length)
+      if (from.type === 'text') {
+        from.block.replaceText(from.index, from.length, text)
+        from.block.setInlineRange(from.index + (text?.length || 0))
+
+        // inline
+        if (!to) return;
+      }
+
+      if (to) {
+        const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
+        if (throughPath.length) {
+          this.doc.crud.deleteBlocks(throughPath[0].parent, throughPath[0].index, throughPath[0].length)
+        }
+      }
+      from.type === 'selected' && this.doc.crud.deleteBlockById(from.blockId)
+      to?.type === 'selected' && this.doc.crud.deleteBlockById(to.blockId)
+
+      if (to?.type === 'text') {
+        if (from.type !== "text") {
+          to.block.replaceText(to.index, to.length, text)
+          to.block.setInlineRange(to.index + (text?.length || 0))
+        } else {
+          to.block.deleteText(to.index, to.length)
+        }
+      }
+
     }, ORIGIN_SKIP_SYNC)
   }
 
-  @performanceTest()
-  normalizeRange(range: StaticRange): INormalizedRange {
-    const {startContainer, endContainer, startOffset, endOffset, collapsed} = range
-    const startBlock = this._searchEditableBlockByNode(startContainer)
+  private _handleBackspace: BlockCraft.EventHandler = (context) => {
+    const state = context.get('keyboardState')
 
-    const getPosition = (block: EditableBlockComponent, node: Node, offset: number) => {
+    const {from, isAllSelected, collapsed} = state.selection
+    if (isAllSelected) {
+      document.getSelection()!.modify('move', 'backward', 'character')
+      this._replaceText(state.selection)
+      context.preventDefault()
+      return true
+    }
 
-      // if is element
-      const isContainer = node === block.hostElement
+    if (!collapsed || from.type !== 'text' || from.index !== 0) return false
+    // 每一段的最前面
+    // 非paragraph块转化
+    if (from.block.flavour !== 'paragraph') {
+      const deltas = from.block.textDeltas()
+      const np = this.doc.schemas.createSnapshot('paragraph', [deltas])
+      context.preventDefault()
+      this.doc.crud.replaceWithSnapshots(from.block.id, [np])
+      return true
+    }
 
-      const elements = block.hostElement.querySelectorAll(INLINE_ELEMENT_TAG)
-      if (elements.length === 0 || (isContainer && offset === 0)) {
-        return 0
+    // paragraph块
+    const prevBlock = this.doc.prevSibling(from.block)
+    // 最前的block
+    if (!prevBlock) {
+      // 如果有非root父级
+      const parent = from.block.parentBlock
+      if (parent && parent.nodeType !== BlockNodeType.root) {
+        // 选中父级
+        this.doc.selection.selectBlock(parent)
+        context.preventDefault()
+        return true
       }
 
-      const isCElement = !isContainer && (node instanceof HTMLElement && node.localName === INLINE_ELEMENT_TAG)
-      const isGap = !isContainer && (node instanceof HTMLElement ? node.localName === INLINE_EMBED_GAP_TAG : node.parentElement!.localName === INLINE_EMBED_GAP_TAG)
-
-      // if first zero text
-      if (isGap && (node instanceof HTMLElement ? node.parentElement === block.hostElement : node.parentElement!.parentElement === block.hostElement)) {
-        return 0
+      // 如果是根节点下第一个空白的文本块，直接删除
+      if (!from.block.textLength && parent?.nodeType === BlockNodeType.root) {
+        this.doc.crud.deleteBlockById(from.block.id)
+        context.preventDefault()
+        return true
       }
+      return true
+    }
 
-      const cElement = isContainer ? elements[offset - 1] : (isCElement ? node : node.parentElement!.closest(INLINE_ELEMENT_TAG)!)
+    // 有前一个兄弟块
+    // 如果前一个兄弟块是可编辑块
+    if (this.doc.isEditable(prevBlock)) {
+      const deltas: DeltaOperation[] = from.block.textDeltas()
+      deltas.unshift({retain: prevBlock.textLength})
+      prevBlock.setInlineRange(prevBlock.textLength)
+      prevBlock.applyDeltaOperation(deltas)
+      this.doc.crud.deleteBlockById(from.block.id)
+      context.preventDefault()
+      return true
+    }
 
-      let pos = 0
-      for (let i = 0; i < elements.length; i++) {
-        const isEmbed = elements[i].firstElementChild!.localName === INLINE_EMBED_NODE_TAG
-        if (elements[i] === cElement) {
-          return pos + (isGap ? 1 : offset)
+    this.doc.selection.selectBlock(prevBlock)
+    context.preventDefault()
+    return true
+  }
+
+  private _handleDelete: BlockCraft.EventHandler = (context) => {
+    const state = context.get('keyboardState')
+
+    const {from, isAllSelected, collapsed} = state.selection
+    // 无法正常删除的情况
+    if (isAllSelected) {
+      document.getSelection()!.modify('move', 'forward', 'character')
+      this._replaceText(state.selection)
+      context.preventDefault()
+      return true
+    }
+
+    const nextBlock = this.doc.nextSibling(from.block)
+    if (!collapsed || from.type !== 'text' || from.index !== from.block.textLength) return false
+    // 每一段的最后面
+
+    if (nextBlock) {
+      // 有下一个兄弟块
+      // 如果下一个兄弟块是可编辑块
+      if (this.doc.isEditable(nextBlock)) {
+        const deltas: DeltaOperation[] = nextBlock.textDeltas()
+        deltas.unshift({retain: from.block.textLength})
+        from.block.setInlineRange(from.block.textLength)
+        from.block.applyDeltaOperation(deltas)
+        this.doc.crud.deleteBlockById(nextBlock.id)
+        context.preventDefault()
+        return true
+      } else {
+        this.doc.selection.selectBlock(nextBlock)
+        context.preventDefault()
+        return true
+      }
+    }
+
+    const parent = from.block.parentBlock
+    if (parent && parent.nodeType !== BlockNodeType.root) {
+      // 选中父级
+      this.doc.selection.selectBlock(parent)
+      context.preventDefault()
+      return true
+    }
+    return false
+  }
+
+  private _handlerTab: BlockCraft.EventHandler = (context) => {
+    const state = context.get('keyboardState')
+
+    context.preventDefault()
+    const fromBlock = state.selection.from.block
+    if (fromBlock.nodeType !== BlockNodeType.editable) {
+      this.doc.logger.warn('该类型块不可缩进')
+      return true
+    }
+
+    const prevBlock = this.doc.prevSibling(fromBlock)
+    // @ts-ignore
+    const _prevDepth: number = prevBlock ? (prevBlock.props['depth'] ?? 0) : 0
+    const _newDepth = fromBlock.props.depth + (state.raw.shiftKey ? -1 : 1)
+    if (!prevBlock || _newDepth > (_prevDepth + 1) || _newDepth < 0) {
+      this.doc.logger.warn('不可缩进')
+      return true
+    }
+
+    if (state.selection.to) {
+      const blocks = this.doc.queryBlocksBetween(fromBlock, state.selection.to.block, true)
+      this.doc.crud.transact(() => {
+        for (const id of blocks) {
+          const b = this.doc.getBlockById(id)
+          if (!b || !this.doc.isEditable(b)) return
+          const old = b.props['depth'] as number
+          if (state.raw.shiftKey && old === 0) return;
+          b.updateProps({
+            depth: old + (state.raw.shiftKey ? -1 : 1)
+          })
         }
-        pos += isEmbed ? 1 : elements[i].textContent!.length
+      }, ORIGIN_SKIP_SYNC)
+    } else {
+      fromBlock.updateProps({
+        depth: _newDepth
+      })
+    }
+    return true
+  }
+
+  private _handlerEnter: BlockCraft.EventHandler = (context) => {
+    const state = context.get('keyboardState')
+    const {from, to, collapsed, isAllSelected} = state.selection
+    const endBlock = to ? to.block : from.block
+    if (isAllSelected) {
+      const nextBlock = this.doc.nextSibling(endBlock)
+      if (nextBlock) {
+        this.doc.isEditable(nextBlock) ? nextBlock.setInlineRange(0) : this.doc.selection.selectBlock(nextBlock)
+      } else {
+        const p = this.doc.schemas.createSnapshot('paragraph', [])
+        this.doc.crud.insertBlocksAfter(endBlock, [p])
       }
-
-      throw new BlockCraftError(ErrorCode.InlineEditorError, 'Fatal range position')
+      context.preventDefault()
+      return true
     }
 
-    const startPos = getPosition(startBlock, startContainer, startOffset)
-    const from = {
-      blockId: startBlock.id,
-      block: startBlock,
-      length: 0,
-      index: startPos
+    if (!collapsed) {
+      this._replaceText(state.selection)
+      context.preventDefault()
+      return true
     }
 
-    if (collapsed) {
-      return {
-        from,
-        to: null,
-        collapsed: true
-      }
+    if (from.type !== 'text') return false
+
+    if (from.block.props.depth > 0 && from.block.textLength === 0) {
+      from.block.updateProps({
+        depth: from.block.props.depth - 1
+      })
+      context.preventDefault()
+      return true
     }
 
-    const endBlock = this._searchEditableBlockByNode(endContainer)
-    const endPos = getPosition(endBlock, endContainer, endOffset)
-
-    if (endBlock === startBlock) {
-      from.length = endPos - startPos
-      return {
-        from,
-        to: null,
-        collapsed: false
-      }
-    }
-
-    from.length = startBlock.textLength - startPos
-    return {
-      from,
-      to: {
-        blockId: endBlock.id,
-        block: endBlock,
-        index: 0,
-        length: endPos,
-      },
-      collapsed: false
-    }
-
+    const deltas = sliceDelta(from.block.textDeltas(), from.index)
+    const p = this.doc.schemas.createSnapshot(from.block.flavour, [deltas, from.block.props])
+    context.preventDefault()
+    this.doc.crud.transact(() => {
+      from.block.deleteText(from.index)
+      this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {
+        this.doc.selection.setSelection({
+          length: 0,
+          index: 0,
+          blockId: p.id,
+          type: 'text'
+        })
+      })
+    }, ORIGIN_SKIP_SYNC)
+    return true
   }
 
 }
-
 
 function getPlainTextFromInputEvent(event: InputEvent) {
   // When `inputType` is "insertText":

@@ -1,19 +1,18 @@
 import {ComponentRef, ViewContainerRef} from "@angular/core";
-import {BaseBlockComponent} from "../block";
 import {lastValueFrom, take} from "rxjs";
 import {BlockCraftError, ErrorCode} from "../../global";
 import {BlockNodeType, IBlockSnapshot} from "../types";
 import {YBlock} from "../reactive";
 import * as Y from "yjs";
+import {BlockActiveTracker} from "../block";
 
 export class DocVM {
 
   private _vcr = this.doc.injector.get(ViewContainerRef)
-
   private store: Map<string, BlockCraft.BlockComponentRef> = new Map()
-
   private _gcTags = new Set<string>()
 
+  private _tracker = new BlockActiveTracker(this)
   constructor(
     public readonly doc: BlockCraft.Doc
   ) {
@@ -38,7 +37,7 @@ export class DocVM {
     this._gcTags.add(id)
   }
 
-  get<T extends BlockCraft.BlockFlavour = 'base'>(id: string) {
+  get<T extends BlockCraft.BlockFlavour>(id: string) {
     return this.store.get(id) as BlockCraft.BlockComponentRef<T> | undefined
   }
 
@@ -62,7 +61,8 @@ export class DocVM {
 
       this.set(id, cpr)
 
-      if (yBlock.get('nodeType') === BlockNodeType.block && yBlock.get('children').length) {
+      const nodeType = yBlock.get('nodeType')
+      if ((nodeType === BlockNodeType.block || nodeType === BlockNodeType.root) && yBlock.get('children').length) {
         await lastValueFrom(cpr.instance.onViewInit$).then(() => {
           yBlock.get('children').forEach(async childId => {
             const cmpr = await createComp(yBlocks[childId]!, id);
@@ -113,7 +113,7 @@ export class DocVM {
           flavour,
           props,
           meta,
-          children: nodeType === BlockNodeType.block ? children.map(childSnapshot => childSnapshot.id) : children,
+          children: (nodeType === BlockNodeType.block || nodeType === BlockNodeType.root) ? children.map(childSnapshot => childSnapshot.id) : children,
         })
         cb && cb(cpr)
 
@@ -121,11 +121,10 @@ export class DocVM {
 
         cpr.instance.onViewInit$.pipe(take(1)).subscribe(async () => {
 
-          if (nodeType === BlockNodeType.block && children.length) {
+          if (children.length && cpr.instance.childrenContainer) {
             for (const childSnapshot of children) {
-              console.log(childSnapshot)
               const cmpr = await createComp(childSnapshot as IBlockSnapshot, id);
-              (cpr.instance.childrenContainer as ViewContainerRef).insert(cmpr.hostView)
+              cpr.instance.childrenContainer.insert(cmpr.hostView)
             }
           }
 
@@ -164,15 +163,16 @@ export class DocVM {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${parent} block has no children`)
     }
 
-    for (let i = 0; i < length; i++) {
-      const vr = instance.childrenContainer.detach(index)!
-      vr.detach()
+    const sliceIds = instance.childrenIds.slice(index, index + length)
+
+    while (length > 0) {
+      instance.childrenContainer.detach(index)?.detach()
+      length--
     }
 
-    const sliceIds = instance.childrenIds.slice(index, index + length)
     sliceIds.forEach(id => {
       this._gcTags.add(id)
-    });
+    })
 
     return sliceIds
   }
@@ -190,8 +190,9 @@ export class DocVM {
 
 declare global {
   namespace BlockCraft {
+    type ViewManager = DocVM
+
     interface IBlockComponents {
-      base: BaseBlockComponent
     }
 
     type BlockFlavour = keyof IBlockComponents

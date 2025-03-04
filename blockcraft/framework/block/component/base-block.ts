@@ -1,7 +1,9 @@
 import {
   ChangeDetectorRef,
-  Component, ElementRef,
-  EventEmitter, HostBinding,
+  Component,
+  ElementRef,
+  EventEmitter,
+  HostBinding,
   inject,
   Input,
   Output,
@@ -12,8 +14,10 @@ import {native2YBlock, NativeBlockModel, Obj2YMap, proxyMap, YBlock, yBlock2Nati
 import {BlockCraftError, ErrorCode} from "../../../global";
 import {ORIGIN_SKIP_SYNC} from "../../doc";
 import {BlockNodeType, IBlockSnapshot} from "../../types";
-import * as Y from 'yjs'
 import {Subject} from "rxjs";
+import {createBlockGapSpace} from "../../utils";
+import * as Y from 'yjs'
+import {STR_LINE_BREAK} from "../../inline";
 
 @Component({
   selector: 'base-block',
@@ -76,10 +80,31 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   ngAfterViewInit() {
     this.onViewInit$.next(true)
     this._init()
+    if (this.nodeType === BlockNodeType.void
+      // || this.nodeType === BlockNodeType.block
+    ) {
+      this.hostElement.prepend(createBlockGapSpace())
+      this.hostElement.appendChild(createBlockGapSpace())
+    }
+
   }
 
   ngOnDestroy() {
     this.onDestroy$.next(true)
+  }
+
+  bindEvent(name: BlockCraft.EventName, handler: BlockCraft.EventHandler, options?: {
+    global?: boolean;
+    flavour?: boolean
+  }) {
+    this.doc.event.add(name, handler, {
+      flavour: options?.global
+        ? undefined
+        : options?.flavour
+          ? this?.flavour
+          : undefined,
+      blockId: options?.global || options?.flavour ? undefined : this.id,
+    })
   }
 
   @HostBinding('attr.data-block-id')
@@ -91,7 +116,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return this._native.flavour
   }
 
-  @HostBinding('attr.node-type')
+  @HostBinding('attr.data-node-type')
   get nodeType() {
     return this._native.nodeType
   }
@@ -108,7 +133,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   get childrenIds() {
-    if (this._native.nodeType !== BlockNodeType.block) {
+    if (!this.childrenContainer) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
     }
     return (this.yBlock.get('children') as Y.Array<string>).toArray()
@@ -119,7 +144,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
     }
 
-    return this.childrenIds.map(id => this.doc.getBlockById(id))
+    return this.childrenIds.map(id => this.doc.getBlockById(id)) as BaseBlockComponent<any>[]
   }
 
   getFlatBlocks(): BlockCraft.IBlockComponents[] {
@@ -134,6 +159,14 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return children
   }
 
+  getPath() {
+    return this.doc.getBlockPath(this.id)
+  }
+
+  getIndexOfParent() {
+    return this.parentBlock?.childrenIds.indexOf(this.id) ?? -1
+  }
+
   updateProps(props: Partial<Model['props']>) {
     this.doc.crud.transact(() => {
       for (const key in props) {
@@ -142,8 +175,9 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
           this._yProps.delete(key)
           continue
         }
-        this._yProps.set(key, this._native.props[key] = props[key]!)
+        this.props[key] !== props[key] && this._yProps.set(key, this._native.props[key] = props[key]!)
       }
+      this.changeDetectorRef.markForCheck()
     }, ORIGIN_SKIP_SYNC)
   }
 
@@ -155,7 +189,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
           this._yMeta.delete(key)
           continue
         }
-        this._yMeta.set(key, this._native.meta[key] = meta[key]!)
+        this.meta[key] !== meta[key] && this._yMeta.set(key, this._native.meta[key] = meta[key]!)
       }
     }, ORIGIN_SKIP_SYNC)
   }
@@ -169,11 +203,24 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
       meta: JSON.parse(JSON.stringify(this._native.meta)),
       children: this.nodeType === BlockNodeType.editable
         ? (this._yBlock.get('children') as Y.Text).toDelta()
-        : this.childrenIds.map(v => {
-          const block = this.doc.getBlockById(v)
-          return block.toSnapshot()
-        }),
+        : this.nodeType === BlockNodeType.void
+          ? []
+          : this.childrenIds.map(v => {
+            const block = this.doc.getBlockById(v)
+            return block.toSnapshot()
+          }),
     }
+  }
+
+  textContent() {
+    let text = ''
+    if (this.nodeType === BlockNodeType.editable) {
+      text += (this._yBlock.get('children') as Y.Text).toJSON()
+    } else if (this.nodeType !== BlockNodeType.void) {
+      const blocks = this.getChildrenBlocks()
+      text += blocks.map(block => block.textContent()).join(STR_LINE_BREAK)
+    }
+    return text
   }
 
 }

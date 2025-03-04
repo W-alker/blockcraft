@@ -5,7 +5,7 @@ import {IOrderedListBlockModel} from "./type";
 import {getNumberPrefix} from "./utils";
 
 @Component({
-  selector: 'div.ordered-list',
+  selector: 'div.ordered-block',
   template: `
     <span class="order-list__num">{{_numPrefix}}.&nbsp;</span>
     <div class="editable-container"></div>

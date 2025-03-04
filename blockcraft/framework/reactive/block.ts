@@ -1,5 +1,5 @@
 import * as Y from 'yjs'
-import {BaseBlockDesc, BlockNodeType, InlineModel} from "../types";
+import {BaseBlockDesc, BlockNodeType, IBlockProps, IEditableBlockProps, InlineModel} from "../types";
 import {BlockCraftError, ErrorCode, UnknownRecord} from "../../global";
 import {ORIGIN_SKIP_SYNC} from "../doc";
 
@@ -49,13 +49,15 @@ export type YBlock<N extends NativeBlockModel = NativeBlockModel> = Y.Map<unknow
 }
 
 export interface NoEditableBlockNative extends BaseBlockDesc {
-  nodeType: BlockNodeType.void | BlockNodeType.block
+  nodeType: BlockNodeType.void | BlockNodeType.block | BlockNodeType.root
   children: string[];
+  props: IBlockProps
 }
 
 export interface EditableBlockNative extends BaseBlockDesc {
   nodeType: BlockNodeType.editable
   children: InlineModel
+  props: IEditableBlockProps
 }
 
 export type NativeBlockModel = NoEditableBlockNative | EditableBlockNative

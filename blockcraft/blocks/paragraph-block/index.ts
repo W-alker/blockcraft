@@ -1,13 +1,12 @@
-import {EditableBlockNative} from "../../framework";
+import {EditableBlockNative, generateId} from "../../framework";
 import {BlockNodeType} from "../../framework/types";
 import {BlockSchemaOptions, EditableBlockCreateSnapshotParams} from "../../framework/schema/block-schema";
 import {ParagraphBlockComponent} from "./paragraph.block";
 import {BlockCraftError, ErrorCode} from "../../global";
-import {nanoid} from "nanoid";
 
 export interface ParagraphBlockModel extends EditableBlockNative {
   flavour: 'paragraph',
-  nodeType: BlockNodeType.editable,
+  nodeType: BlockNodeType.editable
 }
 
 export const ParagraphBlockSchema: BlockSchemaOptions<ParagraphBlockModel> = {
@@ -26,10 +25,10 @@ export const ParagraphBlockSchema: BlockSchemaOptions<ParagraphBlockModel> = {
     }
 
     return {
-      id: nanoid(),
+      id: generateId(),
       flavour: 'paragraph',
       nodeType: BlockNodeType.editable,
-      props: {...props},
+      props: {depth: 0, ...props},
       meta: {},
       children: ch
     }

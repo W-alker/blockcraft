@@ -4,7 +4,7 @@ import {NativeBlockModel} from "../reactive";
 
 export type EditableBlockCreateSnapshotParams = [(InlineModel | string)?, IBlockProps?];
 
-type BlockCreateFn<T extends unknown[]> = T extends [infer A, infer B, infer C] ? (arg1: A, arg: B, arg3: C) => IBlockSnapshot : (...args: T) => IBlockSnapshot;
+type BlockCreateFn<T extends unknown[]> = T extends [infer A, infer B, infer C] ? (arg1: A, arg: B, arg3: C) => IBlockSnapshot : (...args: T) => IBlockSnapshot
 
 export interface BlockSchemaOptions<T extends NativeBlockModel = NativeBlockModel> {
   flavour: T['flavour'];

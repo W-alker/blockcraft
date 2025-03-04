@@ -1,11 +1,13 @@
 import {Component, Injector, ViewChild, ViewContainerRef} from "@angular/core";
 import {SchemaManager, BlockCraftDoc, EditableBlockComponent} from "../framework";
 import {RootBlockSchema} from "../blocks";
-import {ParagraphBlockSchema} from "../blocks/paragraph-block";
 import {ConsoleLogger} from "../global";
+import {DividerBlockSchema, CalloutBlockSchema, OrderedBlockSchema, ParagraphBlockSchema} from "../blocks";
+import {AutoUpdateOrderPlugin} from "../plugins/autoUpdateOrder";
 
 const schemas = new SchemaManager([
-  RootBlockSchema, ParagraphBlockSchema
+  RootBlockSchema, ParagraphBlockSchema, DividerBlockSchema, CalloutBlockSchema,
+  OrderedBlockSchema
 ])
 
 @Component({
@@ -13,45 +15,14 @@ const schemas = new SchemaManager([
   template: `
     <ng-container #container></ng-container>
 
+    <button (mousedown)="$event.preventDefault(); logSelection()">当前选择</button>
     <button (click)="insert()">增加文本</button>
     <button (click)="log()">打印数据</button>
     <button (click)="undo()">undo</button>
     <button (click)="redo()">redo</button>
+    <button (click)="addData()">增加数据</button>
   `,
-  styles: [`
-    :host {
-      ::ng-deep {
-        c-element {
-
-          &[bold="true"] {
-            font-weight: bold;
-          }
-
-          ::selection {
-            /*background-color: #f0f0f0;*/
-          }
-
-        }
-
-        c-zero-text {
-          user-select: text;
-          padding: 0 0.5px;
-          outline: none;
-        }
-
-        span[contenteditable='false'] {
-          /*user-select: none;*/
-          margin: 0 2px;
-        }
-
-        c-text {
-          word-break: break-word;
-          text-wrap: wrap;
-          white-space-collapse: break-spaces;
-        }
-      }
-    }
-  `],
+  styles: [``],
   standalone: true
 })
 export class EditorComponent {
@@ -84,28 +55,30 @@ export class EditorComponent {
           return img
         }
       }]
-    ]
+    ],
+    plugins: [new AutoUpdateOrderPlugin()]
   })
 
   pid = ''
 
   ngAfterViewInit() {
-    const p = this.doc.schemas.createSnapshot('paragraph', [[{insert: 'hello world '}, {
-      insert: 'This is a paragraph',
-      attributes: {'a:bold': true},
-    },
-      {
-        insert: {image: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg'}
-      },
-      {
-        insert: {image: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg'}
-      }
+    const p = this.doc.schemas.createSnapshot('paragraph', [[{insert: 'hello world '},
+      {insert: 'This is a paragraph', attributes: {'a:bold': true}},
+      {insert: {image: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg'}},
+      {insert: {image: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg'}}
     ]])
     const p2 = this.doc.schemas.createSnapshot('paragraph', [
       [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
     ])
+    const p4 = this.doc.schemas.createSnapshot('divider', [])
+    const p5 = this.doc.schemas.createSnapshot('divider', [])
+    const p6 = this.doc.schemas.createSnapshot('divider', [])
+    const p3 = this.doc.schemas.createSnapshot('ordered', [
+      [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
+    ])
+    const callout = this.doc.schemas.createSnapshot('callout', [])
     this.pid = p.id
-    const snapshot = this.doc.schemas.createSnapshot('root', [this.rootId, [p, p2]])
+    const snapshot = this.doc.schemas.createSnapshot('root', [this.rootId, [p, p2, callout, p4, p5, p6, p3]])
     console.log(snapshot)
     this.doc.init(snapshot, this.container)
   }
@@ -128,7 +101,26 @@ export class EditorComponent {
         retain: 6,
         attributes: {'s:color': 'red'}
       },
-      {insert: ' bb ', attributes: {'s:color': 'red'}}, {retain: 5}, {insert: ' cc.    ', attributes: {'a:bold': true}}
+      {insert: ' bb ', attributes: {'s:color': 'red'}}, {retain: 5}, {
+        insert: ' cc.    ',
+        attributes: {'a:bold': true}
+      }
     ])
+  }
+
+  logSelection() {
+    console.log(this.doc.selection.value, document.getSelection()!.getRangeAt(0))
+  }
+
+  addData() {
+    const _arr = []
+    for (let i = 0; i < 100; i++) {
+      _arr.push(
+        this.doc.schemas.createSnapshot('paragraph', [
+          [{insert: `hello {${i}}`}]
+        ])
+      )
+    }
+    this.doc.crud.insertBlocks(_arr, 0, this.doc.rootId)
   }
 }

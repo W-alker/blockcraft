@@ -14,8 +14,8 @@ export const updateOrderAround = (block: BlockModel<IOrderedListBlockModel>, con
       aroundOrderBlocks.unshift(prevBlock as BlockModel<IOrderedListBlockModel>)
       break
     }
-    // if (prevBlock.flavour !== 'ordered-list' && <number>prevBlock.props.indent <= block.props.indent) break
-    // if(prevBlock.flavour === 'ordered-list' && <number>prevBlock.props.indent < block.props.indent) {
+    // if (prevBlock.flavour !== 'ordered-block' && <number>prevBlock.props.indent <= block.props.indent) break
+    // if(prevBlock.flavour === 'ordered-block' && <number>prevBlock.props.indent < block.props.indent) {
     //   aroundOrderBlocks.unshift(prevBlock as BlockModel<IOrderedListBlockModel>)
     //   break
     // }
@@ -25,7 +25,7 @@ export const updateOrderAround = (block: BlockModel<IOrderedListBlockModel>, con
   for (let j = position.index; j < parentChildren.length; j++) {
     const nextBlock = parentChildren[j]
     if (nextBlock.flavour !== 'ordered-list' && (!nextBlock.props.indent || nextBlock.props.indent === 0)) break
-    // if(nextBlock.flavour !== 'ordered-list' && <number>nextBlock.props.indent >= block.props.indent) break
+    // if(nextBlock.flavour !== 'ordered-block' && <number>nextBlock.props.indent >= block.props.indent) break
     aroundOrderBlocks.push(nextBlock as BlockModel<IOrderedListBlockModel>)
   }
 

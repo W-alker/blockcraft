@@ -1,9 +1,9 @@
 import {ChangeDetectionStrategy, Component, HostListener} from "@angular/core";
-import {BaseBlockComponent, EventName} from "../../framework";
+import {BaseBlockComponent} from "../../framework";
 import {RootBlockModel} from "./index";
 
 @Component({
-  selector: 'div.root-block',
+  selector: 'div.root-block[data-blockcraft-root="true"]',
   template: `<ng-container #childrenContainer></ng-container>`,
   styles: [`
     :host {
@@ -14,9 +14,6 @@ import {RootBlockModel} from "./index";
   `],
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: {
-    '[attr.contenteditable]': 'true'
-  },
 })
 export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
   isActive = false
@@ -30,4 +27,10 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
   onFocus(event: FocusEvent) {
     this.isActive = true
   }
+
+  override ngAfterViewInit() {
+    super.ngAfterViewInit();
+    this.hostElement.setAttribute('contenteditable', 'true')
+  }
+
 }

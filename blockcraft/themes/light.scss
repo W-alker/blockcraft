@@ -1,0 +1,27 @@
+@import "base";
+
+[data-blockcraft-root="true"][data-theme="light"] {
+  color: #333;
+
+  c-element {
+
+    &[bold="true"] {
+      color: #000;
+    }
+
+  }
+
+  [data-block-id] {
+    &.selected {
+      background-color: #1890ff !important;
+    }
+  }
+
+  div.ordered-block {
+
+    .ordered-block-prefix {
+      color: #1890ff;
+    }
+  }
+
+}

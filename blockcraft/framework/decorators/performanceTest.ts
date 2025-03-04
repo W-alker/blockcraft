@@ -5,7 +5,7 @@ export function performanceTest(info = '') {
       const startTime = performance.now();
       const result = originalMethod.apply(this, args);
       const endTime = performance.now();
-      console.log(`${info || propertyKey}: ${propertyKey} took ${endTime - startTime} milliseconds.`);
+      console.log(`${propertyKey}: ${info} took ${endTime - startTime} milliseconds.`);
       return result;
     }
   }

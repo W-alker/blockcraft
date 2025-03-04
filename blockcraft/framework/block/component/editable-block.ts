@@ -1,15 +1,17 @@
-import {Component} from "@angular/core";
+import {ChangeDetectionStrategy, Component, HostBinding} from "@angular/core";
 import {BaseBlockComponent} from "./base-block";
 import {EditableBlockNative} from "../../reactive";
 import * as Y from 'yjs'
 import {DeltaInsert, DeltaInsertEmbed, DeltaOperation} from "../../types";
 import {ORIGIN_SKIP_SYNC} from "../../doc";
+import {INLINE_CONTAINER_CLASS} from "../../inline";
 
 @Component({
   selector: 'editable-block',
   template: ``,
   styles: [``],
-  standalone: true
+  standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class EditableBlockComponent<Model extends EditableBlockNative = EditableBlockNative> extends BaseBlockComponent<Model> {
 
@@ -17,7 +19,22 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
-    this.doc.inlineManager.render(this._native.children, this.hostElement)
+    this._containerElement = this.hostElement.classList.contains(INLINE_CONTAINER_CLASS) ? this.hostElement : this.hostElement.querySelector(`.${INLINE_CONTAINER_CLASS}`)!
+    this.doc.inlineManager.render(this._native.children, this.containerElement)
+  }
+
+  protected _containerElement!: HTMLElement
+
+  /**
+   * 编辑文本的容器
+   */
+  get containerElement() {
+    return this._containerElement
+  }
+
+  @HostBinding('style.margin-left')
+  get marginLeft() {
+    return `${(this._native.props.depth || 0) * 2}em`
   }
 
   protected override _init() {
@@ -29,8 +46,8 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     return this.yText.length
   }
 
-  textContent() {
-    return this.yText.toString()
+  override textContent() {
+    return this.yText.toJSON()
   }
 
   textDeltas(): DeltaInsert[] {
@@ -38,22 +55,23 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   rerender() {
-    this.doc.inlineManager.render(this.textDeltas(), this.hostElement)
+    this.doc.inlineManager.render(this.textDeltas(), this.containerElement)
   }
 
-  deleteText(index: number, length: number) {
-    if(!length) return
+  deleteText(index: number, length = this.textLength - index) {
+    if (!length) return
     this.applyDeltaOperation([{retain: index}, {delete: length}])
   }
 
   insertText(index: number, text: string) {
-    if(!text) return
+    if (!text) return
     this.applyDeltaOperation([{retain: index}, {insert: text}])
   }
 
   replaceText(index: number, length: number, text?: string | null) {
-    const delta: DeltaOperation[] = [{delete: length}]
-    index > 0 && delta.unshift({retain: index})
+    const delta: DeltaOperation[] = []
+    index > 0 && delta.push({retain: index})
+    length > 0 && delta.push({delete: length})
     text && delta.push({insert: text})
     this.applyDeltaOperation(delta)
   }
@@ -63,11 +81,19 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   applyDeltaOperation(delta: DeltaOperation[]) {
-    console.log('applyDeltaOperation', delta)
     this.doc.crud.transact(() => {
       this.yText.applyDelta(delta)
-      this.doc.inlineManager.applyDeltaToView(delta, this.hostElement)
+      this.doc.inlineManager.applyDeltaToView(delta, this.containerElement)
     }, ORIGIN_SKIP_SYNC)
+  }
+
+  setInlineRange(index: number, length = 0) {
+    this.doc.selection.setSelection({
+      index,
+      length,
+      type: 'text',
+      blockId: this.id
+    })
   }
 
 }

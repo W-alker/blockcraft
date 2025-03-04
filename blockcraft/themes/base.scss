@@ -1,0 +1,51 @@
+[data-blockcraft-root="true"] {
+
+  c-element {
+
+    &[bold="true"] {
+      font-weight: bold;
+    }
+
+  }
+
+  [data-node-type="root"] {
+    height: 80vh;
+    overflow-y: auto;
+  }
+
+  [data-block-id] {
+    position: relative;
+  }
+
+  /*[data-node-type="void"].selected {*/
+  /*  user-modify: read-only;*/
+  /*  -webkit-user-modify: read-only;*/
+  /*}*/
+
+  [data-zero-space="true"] {
+    user-select: text;
+    padding: 0 0.5px;
+    outline: none;
+  }
+
+  [contenteditable='false'] {
+    user-select: none;
+  }
+
+  [data-block-zero-space="true"] {
+    position: absolute;
+    cursor: text;
+    font-size: 0;
+  }
+
+  span[contenteditable='false'] {
+    /*user-select: none;*/
+    margin: 0 2px;
+  }
+
+  c-text {
+    word-break: break-word;
+    text-wrap: wrap;
+    white-space-collapse: break-spaces;
+  }
+}

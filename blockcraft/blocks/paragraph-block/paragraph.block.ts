@@ -4,24 +4,18 @@ import {EditableBlockComponent} from "../../framework";
 
 @Component({
   selector: 'p.paragraph-block',
-  template: `
-  `,
-  styles: [``],
+  template: ``,
+  styles: [`
+    :host {
+      margin: 0;
+    }
+  `],
   standalone: true,
   host: {
-    '[class.edit-container]': 'true',
-    '[attr.contenteditable]': 'true'
+    '[class.edit-container]': 'true'
   },
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ParagraphBlockComponent extends EditableBlockComponent<ParagraphBlockModel> {
-
-  onClick() {
-    this.props['content'] = 'this is a paragraph block'
-  }
-
-  delete() {
-    this.doc.crud.deleteBlocks(this.parentId!, 0)
-  }
 
 }

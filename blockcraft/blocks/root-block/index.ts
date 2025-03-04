@@ -5,18 +5,18 @@ import {BlockNodeType, IBlockSnapshot} from "../../framework/types";
 
 export interface RootBlockModel extends NoEditableBlockNative {
   flavour: "root",
-  nodeType: BlockNodeType.block
+  nodeType: BlockNodeType.root
 }
 
 export const RootBlockSchema: BlockSchemaOptions<RootBlockModel> = {
   flavour: "root",
-  nodeType: BlockNodeType.block,
+  nodeType: BlockNodeType.root,
   component: RootBlockComponent,
   createSnapshot: (id, children) => {
     return {
       id,
       flavour: "root",
-      nodeType: BlockNodeType.block,
+      nodeType: BlockNodeType.root,
       meta: {
         createdTime: Date.now(),
         lastModified: {

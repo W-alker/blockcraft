@@ -2,13 +2,12 @@ import {DeltaInsert, DeltaInsertEmbed, DeltaOperation, DeltaRetain, IInlineNodeA
 import {
   INLINE_ELEMENT_TAG,
   INLINE_EMBED_NODE_TAG,
-  INLINE_TEXT_NODE_TAG,
-  INLINE_EMBED_GAP_TAG,
-  ZERO_WIDTH_SPACE
+  INLINE_TEXT_NODE_TAG
 } from "./const";
 import {BlockCraftError, ErrorCode} from "../../global";
 import setAttributes from "./setAttributes";
 import {compareAttributesWithEle} from "./compareAttributes";
+import {createZeroSpace} from "../utils";
 
 export type EmbedConverter = {
   toDelta: EmbedViewToDelta
@@ -20,9 +19,7 @@ export type EmbedViewToDelta = (ele: HTMLElement) => DeltaInsertEmbed
 export class InlineManager {
   private _embedConverterMap: Map<string, EmbedConverter>
 
-  constructor(
-    readonly doc: BlockCraft.Doc
-  ) {
+  constructor(readonly doc: BlockCraft.Doc) {
     this._embedConverterMap = new Map<string, EmbedConverter>(this.doc.config.embeds || [])
   }
 
@@ -50,7 +47,7 @@ export class InlineManager {
     const embed = converter.toView(delta as DeltaInsertEmbed)
     this.setAttrs(node, delta.attributes)
     span.appendChild(embed)
-    node.append(span, this.createInlineGapNode())
+    node.append(span, createZeroSpace())
     return node
   }
 
@@ -58,14 +55,8 @@ export class InlineManager {
     return deltas.map(delta => this.createInlineNode(delta))
   }
 
-  createInlineGapNode() {
-    const emptyNode = document.createElement(INLINE_EMBED_GAP_TAG)
-    emptyNode.innerText = ZERO_WIDTH_SPACE
-    return emptyNode
-  }
-
   render(deltas: InlineModel, container: HTMLElement) {
-    container.replaceChildren(...[this.createInlineGapNode()].concat(this.createInlineNodeGroup(deltas)))
+    container.replaceChildren(...[createZeroSpace()].concat(this.createInlineNodeGroup(deltas)))
   }
 
   applyDeltaToView(deltas: DeltaOperation[], container: HTMLElement) {
@@ -83,7 +74,7 @@ export class InlineManager {
       while (len > 0) {
 
         const ele = elementsNodes[nodeStep.index]
-        const eleLength = ele.firstElementChild!.localName === INLINE_TEXT_NODE_TAG ? ele.textContent!.length : 1
+        const eleLength = (ele.firstElementChild as HTMLElement).isContentEditable ? ele.textContent!.length : 1
 
         // |AAAAAA?
         if (nodeStep.indexInNode === 0) {
@@ -172,10 +163,19 @@ export class InlineManager {
     }
 
     const stepDelete = (len: number) => {
+      if (!len) return;
       while (len > 0) {
         const ele = elementsNodes[nodeStep.index]
         const isElementEmbed = !(ele.firstElementChild as HTMLElement).isContentEditable
         const eleLength = isElementEmbed ? 1 : ele.textContent!.length
+
+        if(nodeStep.indexInNode === eleLength) {
+          nodeStep = {
+            index: nodeStep.index + 1,
+            indexInNode: 0
+          }
+          continue
+        }
 
         if (nodeStep.indexInNode === 0 && len >= eleLength) {
           ele.remove()
@@ -194,19 +194,6 @@ export class InlineManager {
             index: nodeStep.index,
             indexInNode: 0
           }
-          // clear gap node around embed node
-          // if (isElementEmbed) {
-          //   const nextEle = elementsNodes[nodeStep.index]
-          //   const isNextElementEmbed = !(nextEle.firstElementChild as HTMLElement).isContentEditable
-          //   // gap-embed-text-... ==> text
-          //   if (nodeStep.index === 0 && !isNextElementEmbed) {
-          //     nextEle.previousElementSibling && nextEle.previousElementSibling.remove()
-          //   }
-          //   // text-embed-gap ==> text
-          //   if (nodeStep.index === elementsNodes.length - 1 && !isNextElementEmbed) {
-          //     nextEle.nextElementSibling && nextEle.nextElementSibling.remove()
-          //   }
-          // }
           continue
         }
 
@@ -282,7 +269,7 @@ export class InlineManager {
         elementsNodes.splice(nodeStep.index + 1, 0, newNode)
         nodeStep = {
           index: nodeStep.index + 1,
-          indexInNode: 0
+          indexInNode: opLength
         }
         return
       }
@@ -400,8 +387,67 @@ export class InlineManager {
     }
 
     if (!elementsNodes.length) {
-      container.replaceChildren(this.createInlineGapNode())
+      container.replaceChildren(createZeroSpace())
       return
+    }
+  }
+
+  queryNodePositionInlineByOffset(container: HTMLElement, offset: number): {
+    node: HTMLElement | Text,
+    offset: number
+  } {
+    if (offset === 0) {
+      return {
+        node: container.firstElementChild?.firstChild as Text,
+        offset: 0
+      }
+    }
+
+    const elementsNodes = Array.from(container.querySelectorAll(INLINE_ELEMENT_TAG)) as HTMLElement[]
+    for (const ele of elementsNodes) {
+      const isEmbed = !(ele.firstElementChild as HTMLElement).isContentEditable
+      const eleLength = isEmbed ? 1 : ele.textContent!.length
+      if (offset <= eleLength) {
+        if (isEmbed && offset === 1) {
+          return {
+            node: ele.querySelector('[data-zero-space="true"]')!.firstChild as Text,
+            offset: 0
+          }
+        }
+
+        return {
+          node: ele.firstElementChild!.firstChild as Text,
+          offset: offset
+        }
+      }
+      offset -= eleLength
+    }
+    throw new BlockCraftError(ErrorCode.InlineEditorError, 'Error inline node match')
+  }
+
+  private _setSelection(container: HTMLElement, position: number) {
+    const selection = document.getSelection()!
+
+    if (position === 0) {
+      selection.setPosition(container.firstElementChild!.firstChild, 0)
+    }
+
+    const elements = Array.from(container.querySelectorAll(INLINE_ELEMENT_TAG)) as HTMLElement[]
+    for (let i = 0; i < elements.length; i++) {
+      const ele = elements[i]
+
+      const isEmbed = !(ele.firstElementChild as HTMLElement).isContentEditable
+      const eleLength = isEmbed ? 1 : ele.textContent!.length
+      if (position <= eleLength) {
+        if (isEmbed && position === 1) {
+          selection.setPosition(ele.querySelector('[data-zero-space="true"]')!.firstChild, 0)
+          return
+        }
+        const textNode = ele.firstElementChild!.firstChild as Text
+        selection.setPosition(textNode, position)
+        return
+      }
+      position -= eleLength
     }
   }
 

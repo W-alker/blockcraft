@@ -38,7 +38,7 @@ const POSITIONS: ConnectedPosition[] = [
 ]
 
 @Component({
-  selector: 'div.callout-block',
+  selector: 'div.callout-block-block',
   template: `
     <span class="callout-block__emoji">{{ props.emoji }}</span>
     <div class="editable-container bf-multi-line" [style.color]="props.c" contenteditable="true"
