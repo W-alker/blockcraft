@@ -1,23 +1,35 @@
 import {BaseBlockComponent, DocPlugin} from "../framework";
 import {Subscription} from "rxjs";
 import {OrderedBlockModel} from "../blocks";
+import {BlockNodeType} from "../framework/types";
 
 export class AutoUpdateOrderPlugin extends DocPlugin {
   private _sub = new Subscription()
 
   onInit() {
-    // this._sub = this.doc.onChildrenUpdate$.subscribe(event => {
-    //   if (event.inserted) {
-    //     return
-    //   }
-    // })
+    this._sub = this.doc.onChildrenUpdate$.subscribe(event => {
+      const {inserted, deleted, block} = event
+      if (inserted) {
+        const b = inserted.find(v => v.flavour === 'ordered')
+        if (!b) return
+        updateOrderAround(b as any)
+        return
+      }
+
+      if (deleted) {
+        const ids = block.childrenIds
+        const start = this.doc.getBlockById(ids[Math.max(deleted.index - 1, 0)])
+        if(start.flavour !== 'ordered') return;
+        updateOrderAround(start as any)
+      }
+    })
 
     this._sub.add(
-      this.doc.onPropsUpdate$.subscribe((events) => {
-        const ev = events[0]
-        if (ev.block.flavour !== 'ordered' || !ev.changes.has('depth')) return
-        console.log(ev)
-        updateOrderAround(ev.block as any)
+      this.doc.onPropsUpdate$.subscribe((event) => {
+        if(event.isUndoRedo) return;
+        const tr = event.transactions[0]
+        if (tr.block.flavour !== 'ordered' || !tr.changes.has('depth')) return
+        updateOrderAround(tr.block as any)
       })
     )
   }
@@ -27,7 +39,7 @@ export class AutoUpdateOrderPlugin extends DocPlugin {
   }
 }
 
-export const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
+const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
   if (block.flavour !== 'ordered') return
   const parent = block.parentBlock
   if (!parent) return

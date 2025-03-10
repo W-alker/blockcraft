@@ -3,7 +3,7 @@ import {YBlock} from "../reactive";
 import * as Y from "yjs";
 import {BlockCraftError, ErrorCode} from "../../global";
 import {IBlockSelectionJSON} from "../modules";
-import {EditableBlockComponent} from "../block";
+import {BaseBlockComponent, EditableBlockComponent} from "../block";
 import {Subject} from "rxjs";
 
 // This origin will skip Y.Event sync (to model)
@@ -12,20 +12,24 @@ export const ORIGIN_SKIP_SYNC = Symbol('skip_sync')
 export const ORIGIN_NO_RECORD = Symbol('no_record')
 
 export interface IChildrenChangeEvent {
-  inserted?: string[]
+  inserted?: BlockCraft.BlockComponent[]
   deleted?: {
     index: number,
     length: number
   }
-  block: BlockCraft.BlockComponent
+  block: BlockCraft.BlockComponent,
+  isUndoRedo: boolean
 }
 
 export interface IPropsChangeEvent {
-  block: BlockCraft.BlockComponent
-  changes: Map<string, {
-    oldValue: any
-    action: "add" | "update" | "delete"
-  }>
+  isUndoRedo: boolean
+  transactions: {
+    block: BlockCraft.BlockComponent
+    changes: Map<string, {
+      oldValue: any
+      action: "add" | "update" | "delete"
+    }>
+  }[]
 }
 
 export class DocCRUD {
@@ -42,7 +46,7 @@ export class DocCRUD {
   private _redoSelectionStack: Array<IBlockSelectionJSON | null> = []
 
   readonly onChildrenUpdate$ = new Subject<IChildrenChangeEvent>()
-  readonly onPropsUpdate$ = new Subject<IPropsChangeEvent[]>()
+  readonly onPropsUpdate$ = new Subject<IPropsChangeEvent>()
 
   constructor(
     public readonly doc: BlockCraft.Doc
@@ -73,13 +77,11 @@ export class DocCRUD {
     // local change with skip
     if (tr.origin === ORIGIN_NO_RECORD) return
 
-    // undo/redo
-    if (tr.origin instanceof Y.UndoManager) {
-    }
+    const isUndoRedo = tr.origin instanceof Y.UndoManager
 
     const _bms: Record<string, YBlock> = {}
 
-    const propsChangeEvents: IPropsChangeEvent[] = []
+    const propsChanges: IPropsChangeEvent['transactions'] = []
     // sync to model
     event.forEach(ev => {
       const {path, changes, target} = ev
@@ -109,7 +111,7 @@ export class DocCRUD {
       if (keyProp === "children") {
         if (tr.origin !== ORIGIN_SKIP_SYNC) {
           if (target instanceof Y.Array) {
-            this._syncYBlockChildrenUpdate(_bms, ev)
+            this._syncYBlockChildrenUpdate(_bms, ev, isUndoRedo)
           } else {
             const bm = this.vm.get(blockId)
             if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
@@ -144,23 +146,27 @@ export class DocCRUD {
         })
       }
 
-      propKey === 'props' && propsChangeEvents.push({
+      propKey === 'props' && propsChanges.push({
         block: bm.instance,
         changes: changes.keys
       })
     })
 
-    propsChangeEvents.length && this.onPropsUpdate$.next(propsChangeEvents)
+    propsChanges.length && this.onPropsUpdate$.next({
+      isUndoRedo,
+      transactions: propsChanges
+    })
   }
 
-  private _syncYBlockChildrenUpdate = (collect: Record<string, YBlock>, event: Y.YEvent<Y.Array<string>>) => {
+  private _syncYBlockChildrenUpdate = (collect: Record<string, YBlock>, event: Y.YEvent<Y.Array<string>>, isUndoRedo = false) => {
     const {path, changes, target} = event
     let r = 0
     const bm = this.vm.get(path[0] as string)
     if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${path[0]} not found`)
 
     const map: IChildrenChangeEvent = {
-      block: bm.instance
+      block: bm.instance,
+      isUndoRedo
     }
     changes.delta.forEach(async (d) => {
       const {retain, insert, delete: del} = d
@@ -172,7 +178,7 @@ export class DocCRUD {
         this.vm.insert(bm.instance.id, r, _insertComps)
         r += insert.length
         map.inserted ||= []
-        map.inserted.push(...insert)
+        map.inserted = _insertComps.map(v => v.instance)
       } else {
         this.vm.remove(bm, r, del)
         map.deleted = {
@@ -204,6 +210,12 @@ export class DocCRUD {
     this.transact(() => {
       this.vm.insert(parentId, index, comps);
       (parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, comps.map(c => c.instance.id))
+      // emit
+      this.onChildrenUpdate$.next({
+        inserted: comps.map(v => v.instance),
+        block: parentComp.instance,
+        isUndoRedo: false
+      })
     }, ORIGIN_SKIP_SYNC)
   }
 
@@ -214,11 +226,21 @@ export class DocCRUD {
   }
 
   async deleteBlocks(parent: string, index: number, count = 1) {
+    console.log(parent, index)
     const parentComp = this.vm.get(parent)!
     this.transact(() => {
       const ids = this.vm.remove(parentComp, index, count);
       (parentComp.instance.yBlock.get('children') as Y.Array<string>).delete(index, count)
       ids.forEach(id => this.yBlockMap.delete(id))
+      // emit
+      this.onChildrenUpdate$.next({
+        block: parentComp.instance,
+        deleted: {
+          index,
+          length: count
+        },
+        isUndoRedo: false
+      })
     }, ORIGIN_SKIP_SYNC)
   }
 
@@ -231,9 +253,10 @@ export class DocCRUD {
   async replaceWithSnapshots(blockId: string, snapshots?: IBlockSnapshot[]) {
     const block = this.doc.getBlockById(blockId)
     const index = block.getIndexOfParent()
-    this.deleteBlocks(block.parentId!, index, 1)
+    const parentId = block.parentId!
+    await this.deleteBlocks(parentId, index, 1)
     if (!snapshots?.length) return
-    await this.insertBlocks(snapshots, index, block.parentId!)
+    await this.insertBlocks(snapshots, index, parentId)
   }
 
   isCanUndo() {

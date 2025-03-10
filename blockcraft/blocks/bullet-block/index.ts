@@ -5,24 +5,23 @@ import {
   editableBlockCreateSnapShotFn,
   EditableBlockCreateSnapshotParams
 } from "../../framework/schema/block-schema";
-import {OrderedBlockComponent} from "./ordered.block";
+import {BulletBlockComponent} from "./bullet.block";
 
-export interface OrderedBlockModel extends EditableBlockNative {
-  flavour: 'ordered',
+export interface BulletBlockModel extends EditableBlockNative {
+  flavour: 'bullet',
   props: {
-    order: number
     depth: number
   }
 }
 
-export const OrderedBlockSchema: BlockSchemaOptions<OrderedBlockModel> = {
-  flavour: 'ordered',
+export const BulletBlockSchema: BlockSchemaOptions<BulletBlockModel> = {
+  flavour: 'bullet',
   nodeType: BlockNodeType.editable,
-  component: OrderedBlockComponent,
-  createSnapshot: editableBlockCreateSnapShotFn('ordered', {order: 0, depth: 0}),
+  component: BulletBlockComponent,
+  createSnapshot: editableBlockCreateSnapShotFn('bullet'),
   metadata: {
     version: 1,
-    label: "有序列表",
+    label: "无序列表",
     isLeaf: true
   }
 }
@@ -30,11 +29,11 @@ export const OrderedBlockSchema: BlockSchemaOptions<OrderedBlockModel> = {
 declare global {
   namespace BlockCraft {
     interface IBlockComponents {
-      'ordered': OrderedBlockComponent
+      'bullet': BulletBlockComponent
     }
 
     interface IBlockCreateParameters {
-      'ordered': EditableBlockCreateSnapshotParams
+      'bullet': EditableBlockCreateSnapshotParams
     }
   }
 }

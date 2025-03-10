@@ -1,13 +1,13 @@
 import {Component, Injector, ViewChild, ViewContainerRef} from "@angular/core";
 import {SchemaManager, BlockCraftDoc, EditableBlockComponent} from "../framework";
-import {RootBlockSchema} from "../blocks";
+import {BulletBlockSchema, HeadingOneBlockSchema, ImageBlockSchema, RootBlockSchema} from "../blocks";
 import {ConsoleLogger} from "../global";
 import {DividerBlockSchema, CalloutBlockSchema, OrderedBlockSchema, ParagraphBlockSchema} from "../blocks";
 import {AutoUpdateOrderPlugin} from "../plugins/autoUpdateOrder";
 
 const schemas = new SchemaManager([
   RootBlockSchema, ParagraphBlockSchema, DividerBlockSchema, CalloutBlockSchema,
-  OrderedBlockSchema
+  OrderedBlockSchema, BulletBlockSchema,HeadingOneBlockSchema, ImageBlockSchema
 ])
 
 @Component({
@@ -76,9 +76,19 @@ export class EditorComponent {
     const p3 = this.doc.schemas.createSnapshot('ordered', [
       [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
     ])
+    const p7 = this.doc.schemas.createSnapshot('bullet', [
+      [{insert: 'This is a bullet'}]
+    ])
+    const p8 = this.doc.schemas.createSnapshot('heading-one', [
+      [{insert: 'Root demo'}]
+    ])
+    const img = this.doc.schemas.createSnapshot('image', [
+      'https://prismjs.com/assets/img/logo-react.png'
+    ])
+
     const callout = this.doc.schemas.createSnapshot('callout', [])
     this.pid = p.id
-    const snapshot = this.doc.schemas.createSnapshot('root', [this.rootId, [p, p2, callout, p4, p5, p6, p3]])
+    const snapshot = this.doc.schemas.createSnapshot('root', [this.rootId, [p8,p, p2, callout, p4, p5, p6, p3, p7, img]])
     console.log(snapshot)
     this.doc.init(snapshot, this.container)
   }
