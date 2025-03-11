@@ -34,15 +34,15 @@ export interface IEditableBlockProps extends IBlockProps {
   depth: number
 }
 
-export interface BaseBlockDesc {
+export interface BaseBlockDesc<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord> {
   id: string
   flavour: BlockCraft.BlockFlavour
   nodeType: BlockNodeType
-  meta: IMetadata
-  props: IBlockProps
+  meta: IMetadata & M
+  props: IBlockProps & P
 }
 
-export type IBlockSnapshot = UnknownRecord & Exclude<BaseBlockDesc, 'nodeType'> & ({
+export type IBlockSnapshot<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord> = UnknownRecord & Exclude<BaseBlockDesc<P, M>, 'nodeType'> & ({
   nodeType: BlockNodeType.block | BlockNodeType.root
   children: IBlockSnapshot[]
 } | {

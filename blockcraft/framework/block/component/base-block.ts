@@ -86,7 +86,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
       this.hostElement.prepend(createBlockGapSpace())
       this.hostElement.appendChild(createBlockGapSpace())
     }
-
+    this.changeDetectorRef.detectChanges()
   }
 
   ngOnDestroy() {

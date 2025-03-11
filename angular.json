@@ -84,7 +84,8 @@
               "blockflow/src/assets/styles/editor.scss",
               "node_modules/viewerjs/dist/viewer.min.css",
               "node_modules/ng-zorro-antd/ng-zorro-antd.min.css",
-              "blockcraft/themes/light.scss"
+              "blockcraft/themes/light.scss",
+              "blockcraft/assets/iconfont/bc-iconfont.css"
             ],
             "scripts": []
           },

@@ -20,9 +20,4 @@ export class OrderedBlockComponent extends EditableBlockComponent<OrderedBlockMo
   get order() {
     return getNumberPrefix(this.props.order || 0, this.props.depth || 0);
   }
-
-  override ngAfterViewInit() {
-    super.ngAfterViewInit();
-    this.changeDetectorRef.detectChanges()
-  }
 }

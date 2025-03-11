@@ -1,0 +1,13 @@
+@mixin todo-block {
+  div.todo-block {
+    display: flex;
+
+    .todo-block-button {
+      cursor: pointer;
+
+      > i {
+        pointer-events: none;
+      }
+    }
+  }
+}

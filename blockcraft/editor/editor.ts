@@ -1,13 +1,13 @@
 import {Component, Injector, ViewChild, ViewContainerRef} from "@angular/core";
 import {SchemaManager, BlockCraftDoc, EditableBlockComponent} from "../framework";
-import {RootBlockSchema} from "../blocks";
+import {RootBlockSchema, TodoBlockSchema} from "../blocks";
 import {ConsoleLogger} from "../global";
 import {DividerBlockSchema, CalloutBlockSchema, OrderedBlockSchema, ParagraphBlockSchema} from "../blocks";
 import {AutoUpdateOrderPlugin} from "../plugins/autoUpdateOrder";
 
 const schemas = new SchemaManager([
   RootBlockSchema, ParagraphBlockSchema, DividerBlockSchema, CalloutBlockSchema,
-  OrderedBlockSchema
+  OrderedBlockSchema, TodoBlockSchema
 ])
 
 @Component({
@@ -76,9 +76,12 @@ export class EditorComponent {
     const p3 = this.doc.schemas.createSnapshot('ordered', [
       [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
     ])
+    const todo1 = this.doc.schemas.createSnapshot('todo', [
+      [{insert: 'Todo '}]
+    ])
     const callout = this.doc.schemas.createSnapshot('callout', [])
     this.pid = p.id
-    const snapshot = this.doc.schemas.createSnapshot('root', [this.rootId, [p, p2, callout, p4, p5, p6, p3]])
+    const snapshot = this.doc.schemas.createSnapshot('root', [this.rootId, [p, p2, callout, p4, p5, p6, p3, todo1]])
     console.log(snapshot)
     this.doc.init(snapshot, this.container)
   }

@@ -1,7 +1,7 @@
 import {UIEventState, UIEventStateContext} from "./base";
 import {EventScopeSourceType, EventSourceState} from "./state";
 import {BlockCraftError, ErrorCode} from "../../global";
-import {KeyboardControl, CompositionControl, PointerControl, ClipboardControl} from "./control";
+import {KeyboardControl, CompositionControl, ClipboardControl, PointerControl} from "./control";
 import {fromEvent, takeUntil} from "rxjs";
 import {performanceTest} from "../decorators";
 

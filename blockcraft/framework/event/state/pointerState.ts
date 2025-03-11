@@ -1,4 +1,4 @@
-import { UIEventState } from '../base';
+import {UIEventState} from '../base';
 
 type PointerEventStateOptions = {
   event: PointerEvent;
@@ -76,7 +76,7 @@ export class MultiPointerEventState extends UIEventState {
 }
 
 declare global {
-  interface BlockSuiteUIEventState {
+  interface BlockCraftUIEventState {
     pointerState: PointerEventState;
     multiPointerState: MultiPointerEventState;
   }

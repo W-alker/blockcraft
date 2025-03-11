@@ -1,3 +1,4 @@
+@import "./blocks/todo-block.scss";
 [data-blockcraft-root="true"] {
 
   c-element {
@@ -28,7 +29,7 @@
     outline: none;
   }
 
-  [contenteditable='false'] {
+  div[contenteditable='false'] {
     user-select: none;
   }
 
@@ -48,4 +49,7 @@
     text-wrap: wrap;
     white-space-collapse: break-spaces;
   }
+
+
+  @include todo-block();
 }

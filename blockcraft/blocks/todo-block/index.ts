@@ -1,28 +1,29 @@
 import {EditableBlockNative, generateId} from "../../framework";
-import {BlockNodeType} from "../../framework/types";
+import {BlockNodeType, IEditableBlockProps} from "../../framework/types";
 import {BlockSchemaOptions, EditableBlockCreateSnapshotParams} from "../../framework/schema/block-schema";
-import {OrderedBlockComponent} from "./ordered.block";
+import {TodoBlockComponent} from "./todo.block";
 
-export interface OrderedBlockModel extends EditableBlockNative {
-  flavour: 'ordered',
+export interface TodoBlockModel extends EditableBlockNative {
+  flavour: 'todo'
   props: {
-    order: number
-    depth: number
-  }
+    created: number
+    completed: number
+  } & IEditableBlockProps
 }
 
-export const OrderedBlockSchema: BlockSchemaOptions<OrderedBlockModel> = {
-  flavour: 'ordered',
+export const TodoBlockSchema: BlockSchemaOptions<TodoBlockModel> = {
+  flavour: 'todo',
   nodeType: BlockNodeType.editable,
-  component: OrderedBlockComponent,
+  component: TodoBlockComponent,
   createSnapshot: (deltas, props) => {
     return {
       id: generateId(),
-      flavour: 'ordered',
+      flavour: 'todo',
       nodeType: BlockNodeType.editable,
       props: {
-        order: 0,
         depth: 0,
+        created: Date.now(),
+        completed: 0,
         ...props
       },
       meta: {},
@@ -31,18 +32,18 @@ export const OrderedBlockSchema: BlockSchemaOptions<OrderedBlockModel> = {
   },
   metadata: {
     version: 1,
-    label: "有序列表"
+    label: "待办事项"
   }
 }
 
 declare global {
   namespace BlockCraft {
     interface IBlockComponents {
-      'ordered': OrderedBlockComponent
+      'todo': TodoBlockComponent
     }
 
     interface IBlockCreateParameters {
-      'ordered': EditableBlockCreateSnapshotParams
+      'todo': EditableBlockCreateSnapshotParams
     }
   }
 }
