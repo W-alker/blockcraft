@@ -64,6 +64,10 @@ export type NativeBlockModel = NoEditableBlockNative | EditableBlockNative
 
 export function proxyMap<T extends UnknownRecord>(obj: T, yObj: Obj2YMap<T>): T {
   return new Proxy(obj, {
+    get(target, key) {
+      console.log('++++++++++++++, target[key]', target, key, target[key as string])
+      return target[key as string]
+    },
     set(target, prop: string, value) {
       yObj.doc?.transact(() => {
         yObj.set(prop, value)

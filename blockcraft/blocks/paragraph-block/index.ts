@@ -1,6 +1,10 @@
 import {EditableBlockNative, generateId} from "../../framework";
 import {BlockNodeType} from "../../framework/types";
-import {BlockSchemaOptions, EditableBlockCreateSnapshotParams} from "../../framework/schema/block-schema";
+import {
+  BlockSchemaOptions,
+  editableBlockCreateSnapShotFn,
+  EditableBlockCreateSnapshotParams
+} from "../../framework/schema/block-schema";
 import {ParagraphBlockComponent} from "./paragraph.block";
 import {BlockCraftError, ErrorCode} from "../../global";
 
@@ -13,26 +17,7 @@ export const ParagraphBlockSchema: BlockSchemaOptions<ParagraphBlockModel> = {
   flavour: 'paragraph',
   nodeType: BlockNodeType.editable,
   component: ParagraphBlockComponent,
-  createSnapshot: (deltas, props) => {
-    const ch = []
-    if (!deltas) {
-    } else if (typeof deltas === 'string') {
-      ch.push({insert: deltas})
-    } else if (Array.isArray(deltas)) {
-      ch.push(...deltas)
-    } else {
-      throw new BlockCraftError(ErrorCode.ModelCRUDError, 'Paragraph block createSnapshot error: deltas must be string or deltas')
-    }
-
-    return {
-      id: generateId(),
-      flavour: 'paragraph',
-      nodeType: BlockNodeType.editable,
-      props: {depth: 0, ...props},
-      meta: {},
-      children: ch
-    }
-  },
+  createSnapshot: editableBlockCreateSnapShotFn('paragraph'),
   metadata: {
     version: 1,
     label: "基础段落"

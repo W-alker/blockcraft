@@ -185,7 +185,15 @@ export class InputTransformer {
       const deltas = from.block.textDeltas()
       const np = this.doc.schemas.createSnapshot('paragraph', [deltas])
       context.preventDefault()
-      this.doc.crud.replaceWithSnapshots(from.block.id, [np])
+      this.doc.crud.replaceWithSnapshots(from.block.id, [np]).then(() => {
+        // 强制触发selectionChange
+        this.doc.selection.setSelection({
+          index: 0,
+          length: 0,
+          type: 'text',
+          blockId: np.id
+        })
+      })
       return true
     }
 
@@ -224,6 +232,7 @@ export class InputTransformer {
     }
 
     this.doc.selection.selectBlock(prevBlock)
+    this.doc.crud.deleteBlockById(from.block.id)
     context.preventDefault()
     return true
   }
@@ -322,7 +331,14 @@ export class InputTransformer {
         this.doc.isEditable(nextBlock) ? nextBlock.setInlineRange(0) : this.doc.selection.selectBlock(nextBlock)
       } else {
         const p = this.doc.schemas.createSnapshot('paragraph', [])
-        this.doc.crud.insertBlocksAfter(endBlock, [p])
+        this.doc.crud.insertBlocksAfter(endBlock, [p]).then(() => {
+          this.doc.selection.setSelection({
+            type: 'text',
+            index: 0,
+            length: 0,
+            blockId: p.id
+          })
+        })
       }
       context.preventDefault()
       return true

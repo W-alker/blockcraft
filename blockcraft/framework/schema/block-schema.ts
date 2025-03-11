@@ -1,6 +1,8 @@
 import {Type} from "@angular/core";
-import {IBlockProps, IBlockSnapshot, InlineModel} from "../types";
+import {BlockNodeType, IBlockProps, IBlockSnapshot, IEditableBlockProps, InlineModel} from "../types";
 import {NativeBlockModel} from "../reactive";
+import {BlockCraftError, ErrorCode} from "../../global";
+import {generateId} from "../utils";
 
 export type EditableBlockCreateSnapshotParams = [(InlineModel | string)?, IBlockProps?];
 
@@ -24,5 +26,33 @@ export interface BlockSchemaOptions<T extends NativeBlockModel = NativeBlockMode
      * ['*'] means that this block can contain any blocks
      */
     children?: string[]
+  }
+}
+
+export const editableBlockCreateSnapShotFn = <T extends BlockCraft.BlockFlavour>(flavour: T, defaultProps?: IEditableBlockProps): BlockCreateFn<unknown[]> => {
+  return (...args: unknown[]) => {
+    const [deltas, props] = args
+    const ch = []
+    if (!deltas) {
+    } else if (typeof deltas === 'string') {
+      ch.push({insert: deltas})
+    } else if (Array.isArray(deltas)) {
+      ch.push(...deltas)
+    } else {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `${flavour} block createSnapshot error: deltas must be string or deltas`)
+    }
+
+    if (props !== undefined && typeof props !== 'object') {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `${flavour} block createSnapshot error: props must be undefined or object`)
+    }
+
+    return {
+      id: generateId(),
+      flavour: flavour,
+      nodeType: BlockNodeType.editable,
+      props: {depth: 0, ...defaultProps, ...props},
+      meta: {},
+      children: ch
+    }
   }
 }

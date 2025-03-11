@@ -68,8 +68,13 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   protected _yProps!: Obj2YMap<Model['props']>
   protected _yMeta!: Obj2YMap<Model['meta']>
 
-  props: Model['props'] = {}
-  meta: Model['meta'] = {}
+  get props() {
+    return this._native.props as Model['props']
+  }
+
+  get meta() {
+    return this._native.meta as Model['meta']
+  }
 
   constructor() {
   }
@@ -128,8 +133,8 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   protected _init() {
     this._yProps = this._yBlock.get('props')
     this._yMeta = this._yBlock.get('meta')
-    this.props = proxyMap(this._native.props, this._yProps)
-    this.meta = proxyMap(this._native.meta, this._yMeta)
+    this._native.props = proxyMap(this._native.props, this._yProps)
+    this._native.meta = proxyMap(this._native.meta, this._yMeta)
   }
 
   get childrenIds() {

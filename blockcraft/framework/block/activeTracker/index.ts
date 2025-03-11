@@ -23,7 +23,9 @@ export class BlockActiveTracker {
 
   private _activeBlockIds: string[] = []
   private _ids: string[] = []
-  private _heightArray: { id: string, height: number }[] = []
+  private topIndex = 0
+  private _heightArray: number[] = []
+  private _heightMap: Record<string, number> = {}
 
   private _mutationObserver = new MutationObserver(records => {
   })
@@ -71,7 +73,7 @@ export class BlockActiveTracker {
   private _handlerResize(entries: ResizeObserverEntry[]) {
     entries.forEach(entry => {
       const id = entry.target.getAttribute('data-block-id')!
-      this._heightArray[this._ids.indexOf(id)] = {id, height: entry.borderBoxSize[0].blockSize}
+      this._heightMap[id] = entry.borderBoxSize[0].blockSize
       // console.log(id, entry.borderBoxSize[0])
     })
   }
@@ -79,6 +81,7 @@ export class BlockActiveTracker {
   @performanceTest()
   private _handlerScroll() {
     const top = this.rootElement.scrollTop
+
   }
 
 
