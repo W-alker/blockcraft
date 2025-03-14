@@ -1,0 +1,12 @@
+@mixin divider-block {
+  .divider-block {
+    margin: 8px 0;
+    padding: 1em 0;
+
+    hr {
+      height: 1px;
+      background-color: #000;
+      font-size: 0;
+    }
+  }
+}

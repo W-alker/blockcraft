@@ -1,6 +1,10 @@
-import {EditableBlockNative, generateId} from "../../framework";
+import {EditableBlockNative} from "../../framework";
 import {BlockNodeType, IEditableBlockProps} from "../../framework/types";
-import {BlockSchemaOptions, EditableBlockCreateSnapshotParams} from "../../framework/schema/block-schema";
+import {
+  BlockSchemaOptions,
+  editableBlockCreateSnapShotFn,
+  EditableBlockCreateSnapshotParams
+} from "../../framework/schema/block-schema";
 import {TodoBlockComponent} from "./todo.block";
 
 export interface TodoBlockModel extends EditableBlockNative {
@@ -15,21 +19,7 @@ export const TodoBlockSchema: BlockSchemaOptions<TodoBlockModel> = {
   flavour: 'todo',
   nodeType: BlockNodeType.editable,
   component: TodoBlockComponent,
-  createSnapshot: (deltas, props) => {
-    return {
-      id: generateId(),
-      flavour: 'todo',
-      nodeType: BlockNodeType.editable,
-      props: {
-        depth: 0,
-        created: Date.now(),
-        completed: 0,
-        ...props
-      },
-      meta: {},
-      children: deltas ? typeof deltas === 'string' ? [{insert: deltas}] : deltas : []
-    }
-  },
+  createSnapshot: editableBlockCreateSnapShotFn<TodoBlockModel>('todo', {created: Date.now(), completed: 0}),
   metadata: {
     version: 1,
     label: "待办事项"

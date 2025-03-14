@@ -1,10 +1,10 @@
 import {BaseBlockComponent, EditableBlockComponent} from "../../block";
-import {INLINE_ELEMENT_TAG} from "../../inline";
+import {INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS} from "../../inline";
 import {BlockCraftError, ErrorCode} from "../../../global";
 import {BehaviorSubject, fromEvent, takeUntil} from "rxjs";
 import {BlockNodeType} from "../../types";
 import {isBlockGapSpace, isZeroSpace} from "../../utils";
-import {KeyboardEventState} from "../../event";
+import {EventNames, KeyboardEventState} from "../../event";
 
 export interface IInlineRange {
   index: number
@@ -113,7 +113,7 @@ export class SelectionManager {
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
     fromEvent(document, 'selectionchange').pipe(takeUntil(root.onDestroy$)).subscribe(() => {
       const selection = document.getSelection()
-      if (!selection || !this.doc.isActive) {
+      if (!selection || !this.doc.isActive || !selection.rangeCount) {
         this.selectionChange$.next(null)
         return
       }
@@ -128,7 +128,7 @@ export class SelectionManager {
       this._setSelected()
     })
 
-    this.doc.event.add('keyDown', context => {
+    this.doc.event.add(EventNames.keyDown, context => {
       const state = context.get('keyboardState')
       if (state.composing) return
       this._handlerNoEditable(state)
@@ -197,7 +197,7 @@ export class SelectionManager {
         case 'ArrowRight':
         case 'Delete':
           if (nodeType === BlockNodeType.editable) {
-            selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'forward', 'character')
+            selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'forward', 'line')
           } else {
             selection.isCollapsed ? selection.setPosition(activeNode, activeNode.childElementCount) : selection.extend(activeNode, activeNode.childElementCount)
           }
@@ -264,6 +264,17 @@ export class SelectionManager {
     return block as BaseBlockComponent<any>
   }
 
+  /**
+   * 对于行内delta操作后，可能需要重新计算当前范围
+   */
+  recalculate() {
+    const selection = document.getSelection()!
+    if (!selection.rangeCount) return
+    const range = selection.getRangeAt(0)
+    selection.removeAllRanges()
+    selection.addRange(range.cloneRange())
+  }
+
   transformBy(range: StaticRange): BlockSelection {
     return new BlockSelection(this.normalizeRange(range), range)
   }
@@ -321,8 +332,7 @@ export class SelectionManager {
 
       const isHost = node === block.hostElement
       if (isHost) {
-        const pos = block.containerElement.compareDocumentPosition(block.hostElement.children[0])
-        return pos === Node.DOCUMENT_POSITION_FOLLOWING ? 0 : block.textLength
+        return offset > 0 ? block.textLength : 0
       }
 
       // if is element
@@ -334,10 +344,11 @@ export class SelectionManager {
       }
 
       const isCElement = !isContainer && (node instanceof HTMLElement && node.localName === INLINE_ELEMENT_TAG)
-      const isGap = !isContainer && isZeroSpace(node)
+      const zeroNode = isZeroSpace(node)
+      const isGap = !isContainer && !!zeroNode
 
-      // if first zero text
-      if (isGap && (node instanceof HTMLElement ? node.parentElement === block.containerElement : node.parentElement!.parentElement === block.containerElement)) {
+      // if zero text at start or end
+      if (isGap && zeroNode.parentElement === block.containerElement) {
         return 0
       }
 
@@ -358,6 +369,16 @@ export class SelectionManager {
 
     const getBlockRange = (block: BaseBlockComponent<any>, node: Node, offset: number): IBlockRange => {
       if (block instanceof EditableBlockComponent) {
+        if (startContainer instanceof HTMLElement && startContainer.classList.contains(INLINE_END_BREAK_CLASS)) {
+          return {
+            blockId: block.id,
+            block: block,
+            type: 'text',
+            index: block.textLength,
+            length: 0
+          }
+        }
+
         return {
           blockId: block.id,
           block: block,
@@ -393,12 +414,13 @@ export class SelectionManager {
       if (endBlock === startBlock && to.type === 'text') {
         from.length = to.index - from.index
         return {from, to: null, collapsed: false}
-      }
+      }1
 
       from.length = from.block.textLength - from.index
     }
 
     if (to.type === 'text') {
+
       to.length = to.index
       to.index = 0
     }
@@ -461,7 +483,8 @@ export class SelectionManager {
     selection.addRange(range)
   }
 
-  replay(json: IBlockSelectionJSON) {
+  replay(json: IBlockSelectionJSON | null) {
+    if (!json) return
     this.setSelection(json.from, json.to)
   }
 

@@ -1,19 +1,23 @@
 import {UIEventState, UIEventStateContext} from "../../event/base";
-import {EventScopeSourceType, EventSourceState} from "../../event";
+import {EventNames, EventScopeSourceType, EventSourceState} from "../../event";
 
 export class ClipboardManager {
 
   constructor(public readonly doc: BlockCraft.Doc) {
-    this.doc.event.add('copy', this.copy, {blockId: this.doc.rootId})
+    this.doc.event.add(EventNames.copy, this.copy, {blockId: this.doc.rootId})
 
-    this.doc.event.add('cut', this.cut, {blockId: this.doc.rootId})
+    this.doc.event.add(EventNames.cut, this.cut, {blockId: this.doc.rootId})
 
-    this.doc.event.add('paste', context => {
+    this.doc.event.add(EventNames.paste, context => {
       const state = context.get('clipboardState')
       state.dataTypes.forEach(v => {
         console.log(`%c${v}`, 'color: red; font-size: large;', state.clipboardData?.getData(v))
       })
     }, {blockId: this.doc.rootId})
+  }
+
+  writeText(text: string) {
+    return navigator.clipboard.writeText(text)
   }
 
   copy: BlockCraft.EventHandler = (context) => {
@@ -37,7 +41,7 @@ export class ClipboardManager {
       targetRanges: [new StaticRange(state.selection.raw)]
     })
     this.doc.event.run(
-      'beforeInput',
+      EventNames.beforeInput,
       UIEventStateContext.from(
         new UIEventState(event),
         new EventSourceState({event, sourceType: EventScopeSourceType.Selection})

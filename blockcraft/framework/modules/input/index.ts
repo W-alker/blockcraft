@@ -1,9 +1,17 @@
 import {ORIGIN_SKIP_SYNC} from "../../doc";
-import {INLINE_ELEMENT_TAG, INLINE_TEXT_NODE_TAG, STR_ZERO_WIDTH_SPACE} from "../../inline";
+import {
+  INLINE_ELEMENT_TAG,
+  INLINE_END_BREAK_CLASS,
+  INLINE_TEXT_NODE_TAG,
+  STR_LINE_BREAK,
+  STR_ZERO_WIDTH_SPACE
+} from "../../inline";
 import {IBlockRange, INormalizedRange} from "../selection";
-import {isZeroSpace, sliceDelta} from "../../utils";
+import {isZeroSpace} from "../../utils";
 import {BlockNodeType, DeltaOperation} from "../../types";
 import {fromEvent, take, takeUntil} from "rxjs";
+import {sliceDelta} from "../../../global";
+import {EventNames} from "../../event";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
@@ -17,7 +25,7 @@ export class InputTransformer {
   }
 
   private _init() {
-    this.doc.event.add('compositionStart', (context) => {
+    this.doc.event.add(EventNames.compositionStart, (context) => {
       const curSel = this.doc.selection.value!
       this._composeRange = curSel.from.type === "text" ? curSel.from : curSel.to
       if (!curSel.collapsed) {
@@ -36,7 +44,7 @@ export class InputTransformer {
       return true
     })
 
-    this.doc.event.add('compositionEnd', (context) => {
+    this.doc.event.add(EventNames.compositionEnd, (context) => {
       const ev = context.get('defaultState').event as CompositionEvent
       ev.preventDefault()
       this.doc.crud.transact(() => {
@@ -48,7 +56,7 @@ export class InputTransformer {
         this._composeRange = null
       }, ORIGIN_SKIP_SYNC)
     })
-    this.doc.event.add('beforeInput', this._handleBeforeInput)
+    this.doc.event.add(EventNames.beforeInput, this._handleBeforeInput)
 
     this.doc.event.bindHotkey({
       key: 'Backspace',
@@ -100,15 +108,15 @@ export class InputTransformer {
 
     if (!collapsed) {
       ev.preventDefault()
-      if (from.type === 'selected' && (!to || to.type === 'selected')) {
-        return ev.preventDefault()
-      }
+      if (from.type === 'selected' && (!to || to.type === 'selected')) return
       this._replaceText(normalizedRange, text)
       return;
     }
 
+    if (!text) return;
+
     // in zero text
-    if (staticRange.startContainer instanceof Text && isZeroSpace(staticRange.startContainer)) {
+    if (collapsed && staticRange.startContainer instanceof Text && isZeroSpace(staticRange.startContainer)) {
       const zeroTextEle = staticRange.startContainer.parentElement!
       // <c-element><embed></embed><c-zero-text>ZWS;↓</c-zero-text></c-element>
       const textElement: HTMLElement = document.createElement(INLINE_TEXT_NODE_TAG)
@@ -126,7 +134,26 @@ export class InputTransformer {
       document.getSelection()!.selectAllChildren(textElement)
     }
 
-    if (!text) return;
+    // in inline end break
+    if (collapsed && staticRange.startContainer instanceof HTMLElement && staticRange.startContainer.classList.contains(INLINE_END_BREAK_CLASS)) {
+      const prevElement = staticRange.startContainer.previousElementSibling!
+      const child = prevElement.firstElementChild
+      if (prevElement.localName === INLINE_ELEMENT_TAG && child?.localName === INLINE_TEXT_NODE_TAG) {
+        const len = child.textContent!.length;
+        (child.firstChild as Text).insertData(len, text)
+        document.getSelection()!.setPosition(child.firstChild!, len + text.length)
+        ev.preventDefault()
+      } else {
+        const cElement = document.createElement(INLINE_ELEMENT_TAG)
+        const textElement: HTMLElement = document.createElement(INLINE_TEXT_NODE_TAG)
+        textElement.textContent = text
+        cElement.appendChild(textElement)
+        staticRange.startContainer.before(cElement)
+        document.getSelection()!.setPosition(textElement.firstChild!, text.length)
+        ev.preventDefault()
+      }
+    }
+
     this.doc.crud.transact(() => {
       if (from.type !== 'text') return
       from.block.yText.insert(from.index, text)
@@ -352,10 +379,19 @@ export class InputTransformer {
 
     if (from.type !== 'text') return false
 
+    // 空段落减少缩进
     if (from.block.props.depth > 0 && from.block.textLength === 0) {
       from.block.updateProps({
         depth: from.block.props.depth - 1
       })
+      context.preventDefault()
+      return true
+    }
+
+    // 强制同段换行
+    if (state.raw.shiftKey) {
+      from.block.insertText(from.index, STR_LINE_BREAK)
+      from.block.setInlineRange(from.index + 1)
       context.preventDefault()
       return true
     }

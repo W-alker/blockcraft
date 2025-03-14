@@ -18,6 +18,7 @@ import {Subject} from "rxjs";
 import {createBlockGapSpace} from "../../utils";
 import * as Y from 'yjs'
 import {STR_LINE_BREAK} from "../../inline";
+import {EventNames} from "../../event";
 
 @Component({
   selector: 'base-block',
@@ -91,14 +92,24 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
       this.hostElement.prepend(createBlockGapSpace())
       this.hostElement.appendChild(createBlockGapSpace())
     }
-    this.changeDetectorRef.detectChanges()
+    this.changeDetectorRef.markForCheck()
   }
 
   ngOnDestroy() {
     this.onDestroy$.next(true)
   }
 
-  bindEvent(name: BlockCraft.EventName, handler: BlockCraft.EventHandler, options?: {
+  detach() {
+    this.changeDetectorRef.detach()
+    this.onDestroy$.next(true)
+  }
+
+  reattach() {
+    this.changeDetectorRef.reattach()
+    this.yBlock = this.doc.crud.getYBlock(this.id)!
+  }
+
+  bindEvent(name: EventNames, handler: BlockCraft.EventHandler, options?: {
     global?: boolean;
     flavour?: boolean
   }) {

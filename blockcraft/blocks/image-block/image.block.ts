@@ -5,7 +5,10 @@ import {ImageBlockModel} from "./index";
 @Component({
   selector: "div.image-block",
   template: `
-    <img [src]="props.src" contenteditable="false" />
+<!--    <div class="img-block-wrapper" contenteditable="false">-->
+      <img [src]="props.src" [style.width.px]="props.size.width" contenteditable="false"
+           [style.height.px]="props.size.height"/>
+<!--    </div>-->
     <ng-container #childrenContainer></ng-container>
   `,
   styles: [],

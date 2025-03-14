@@ -29,7 +29,7 @@ export interface BlockSchemaOptions<T extends NativeBlockModel = NativeBlockMode
   }
 }
 
-export const editableBlockCreateSnapShotFn = <T extends BlockCraft.BlockFlavour>(flavour: T, defaultProps?: IEditableBlockProps): BlockCreateFn<unknown[]> => {
+export const editableBlockCreateSnapShotFn = <M extends NativeBlockModel = NativeBlockModel>(flavour: M['flavour'], defaultProps?: Omit<IEditableBlockProps, 'depth'>): BlockCreateFn<unknown[], M> => {
   return (...args: unknown[]) => {
     const [deltas, props] = args
     const ch = []

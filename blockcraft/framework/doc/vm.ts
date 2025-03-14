@@ -13,6 +13,7 @@ export class DocVM {
   private _gcTags = new Set<string>()
 
   private _tracker = new BlockActiveTracker(this)
+
   constructor(
     public readonly doc: BlockCraft.Doc
   ) {
@@ -30,15 +31,14 @@ export class DocVM {
     this.store.set(id, component)
   }
 
-  delete(id: string) {
-    const cpr = this.store.get(id)
-    if (!cpr) return
-    cpr.changeDetectorRef.detach()
-    this._gcTags.add(id)
-  }
-
   get<T extends BlockCraft.BlockFlavour>(id: string) {
     return this.store.get(id) as BlockCraft.BlockComponentRef<T> | undefined
+  }
+
+  private _restoreCachedComp(id: string) {
+    const cpr = this.store.get(id)!
+    cpr.instance.reattach()
+    return cpr
   }
 
   async createComponentByYBlocks(yBlocks: Record<string, YBlock>) {
@@ -48,9 +48,7 @@ export class DocVM {
       const id = yBlock.get('id')
       // try get it from cache
       if (this.has(id)) {
-        const cpr = this.get(id)!
-        cpr.changeDetectorRef.reattach()
-        return cpr
+        return this._restoreCachedComp(id)
       }
 
       const schema = this.schemas.get(yBlock.get('flavour'))
@@ -94,8 +92,7 @@ export class DocVM {
 
         // try get it from cache
         if (this.has(snapshot.id)) {
-          const cpr = this.get<T['flavour']>(snapshot.id)!
-          cpr.changeDetectorRef.reattach()
+          const cpr = this._restoreCachedComp(snapshot.id)
           resolve(cpr)
           return
         }
@@ -163,18 +160,17 @@ export class DocVM {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${parent} block has no children`)
     }
 
-    const sliceIds = instance.childrenIds.slice(index, index + length)
-
     while (length > 0) {
-      instance.childrenContainer.detach(index)?.detach()
+      instance.childrenContainer.detach(index)
       length--
     }
+  }
 
-    sliceIds.forEach(id => {
+  detach(ids: string[]) {
+    ids.forEach(id => {
       this._gcTags.add(id)
+      this.get(id)?.instance.detach()
     })
-
-    return sliceIds
   }
 
   async gc() {

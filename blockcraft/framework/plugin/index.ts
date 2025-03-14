@@ -6,7 +6,7 @@ export abstract class DocPlugin {
 
   loadDoc(doc: BlockCraft.Doc) {
     this.doc = doc
-      this.onInit()
+    this.onInit()
   }
 
   abstract onInit(): void

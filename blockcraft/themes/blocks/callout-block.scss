@@ -1,0 +1,30 @@
+@mixin callout-block() {
+  .callout-block {
+    position: relative;
+    padding: 0.5em 1em .5em 3em;
+    margin-bottom: 1em;
+    border-radius: 4px;
+
+    &.selected {
+      //border: 1px solid #0070f3;
+      background-color: rgba(24, 144, 255, 0.3) !important;
+    }
+
+    .callout-title {
+      margin-top: 0;
+      margin-bottom: 0.5em;
+      font-weight: bold;
+    }
+
+    .callout-content {
+      margin-bottom: 0;
+    }
+
+    .callout-block-prefix {
+      position: absolute;
+      left: 0.5em;
+      top: 1em;
+      font-size: 1em;
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import {EditableBlockNative, generateId} from "../../framework";
+import {EditableBlockNative} from "../../framework";
 import {BlockNodeType} from "../../framework/types";
 import {
   BlockSchemaOptions,
@@ -6,7 +6,6 @@ import {
   EditableBlockCreateSnapshotParams
 } from "../../framework/schema/block-schema";
 import {ParagraphBlockComponent} from "./paragraph.block";
-import {BlockCraftError, ErrorCode} from "../../global";
 
 export interface ParagraphBlockModel extends EditableBlockNative {
   flavour: 'paragraph',
@@ -17,7 +16,7 @@ export const ParagraphBlockSchema: BlockSchemaOptions<ParagraphBlockModel> = {
   flavour: 'paragraph',
   nodeType: BlockNodeType.editable,
   component: ParagraphBlockComponent,
-  createSnapshot: editableBlockCreateSnapShotFn('paragraph'),
+  createSnapshot: editableBlockCreateSnapShotFn<ParagraphBlockModel>('paragraph'),
   metadata: {
     version: 1,
     label: "基础段落"

@@ -30,7 +30,7 @@ export const HeadingOneBlockSchema: BlockSchemaOptions<HeadingOneBlockModel> = {
   flavour: 'heading-one',
   nodeType: BlockNodeType.editable,
   component: HeadingOneBlockComponent,
-  createSnapshot: editableBlockCreateSnapShotFn('heading-one'),
+  createSnapshot: editableBlockCreateSnapShotFn<HeadingOneBlockModel>('heading-one'),
   metadata: {
     version: 1,
     label: "一级标题"
@@ -41,31 +41,29 @@ export const HeadingTwoBlockSchema: BlockSchemaOptions<HeadingTwoBlockModel> = {
   flavour: 'heading-two',
   nodeType: BlockNodeType.editable,
   component: HeadingTwoBlockComponent,
-  createSnapshot: editableBlockCreateSnapShotFn('heading-two'),
+  createSnapshot: editableBlockCreateSnapShotFn<HeadingTwoBlockModel>('heading-two'),
   metadata: {
     version: 1,
     label: "二级标题"
   }
 }
 
-
 export const HeadingThreeBlockSchema: BlockSchemaOptions<HeadingThreeBlockModel> = {
   flavour: 'heading-three',
   nodeType: BlockNodeType.editable,
   component: HeadingThreeBlockComponent,
-  createSnapshot: editableBlockCreateSnapShotFn('heading-three'),
+  createSnapshot: editableBlockCreateSnapShotFn<HeadingThreeBlockModel>('heading-three'),
   metadata: {
     version: 1,
     label: "三级标题"
   }
 }
 
-
 export const HeadingFourBlockSchema: BlockSchemaOptions<HeadingFourBlockModel> = {
   flavour: 'heading-four',
   nodeType: BlockNodeType.editable,
   component: HeadingFourBlockComponent,
-  createSnapshot: editableBlockCreateSnapShotFn('heading-four'),
+  createSnapshot: editableBlockCreateSnapShotFn<HeadingFourBlockModel>('heading-four'),
   metadata: {
     version: 1,
     label: "四"

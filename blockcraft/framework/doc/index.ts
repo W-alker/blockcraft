@@ -1,11 +1,11 @@
-import {DocCRUD, IChildrenChangeEvent, IPropsChangeEvent, ORIGIN_NO_RECORD} from "./crud";
+import {DocCRUD, ORIGIN_NO_RECORD} from "./crud";
 import {ComponentRef, Injector, ViewContainerRef} from "@angular/core";
 import {BlockCraftError, ErrorCode, Logger} from "../../global";
 import {DocVM} from "./vm";
 import {IBlockSnapshot} from "../types";
 import {EmbedConverter, InlineManager} from "../inline";
 import {ClipboardManager, InputTransformer, SelectionManager} from "../modules";
-import {BehaviorSubject, Subject, take} from "rxjs";
+import {BehaviorSubject, take} from "rxjs";
 import {UIEventDispatcher} from "../event";
 import {getCommonPath} from "../utils";
 import {EditableBlockComponent} from "../block";

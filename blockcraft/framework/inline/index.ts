@@ -1,7 +1,6 @@
 import {DeltaInsert, DeltaInsertEmbed, DeltaOperation, DeltaRetain, IInlineNodeAttrs, InlineModel} from "../types";
 import {
-  INLINE_ELEMENT_TAG,
-  INLINE_EMBED_NODE_TAG,
+  INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS,
   INLINE_TEXT_NODE_TAG
 } from "./const";
 import {BlockCraftError, ErrorCode} from "../../global";
@@ -33,7 +32,7 @@ export class InlineManager {
       const node = document.createElement(INLINE_ELEMENT_TAG)
       const text = document.createElement(INLINE_TEXT_NODE_TAG)
       node.appendChild(text)
-      text.innerText = delta.insert
+      text.textContent = delta.insert
       this.setAttrs(node, delta.attributes)
       return node
     }
@@ -51,12 +50,19 @@ export class InlineManager {
     return node
   }
 
+  private _createEndBreak(): HTMLElement {
+    const node = document.createElement(INLINE_ELEMENT_TAG)
+    node.classList.add(INLINE_END_BREAK_CLASS)
+    node.appendChild(document.createElement('br'))
+    return node
+  }
+
   createInlineNodeGroup(deltas: DeltaInsert[]): HTMLElement[] {
     return deltas.map(delta => this.createInlineNode(delta))
   }
 
   render(deltas: InlineModel, container: HTMLElement) {
-    container.replaceChildren(...[createZeroSpace()].concat(this.createInlineNodeGroup(deltas)))
+    container.replaceChildren(...[createZeroSpace()], ...this.createInlineNodeGroup(deltas), this._createEndBreak())
   }
 
   applyDeltaToView(deltas: DeltaOperation[], container: HTMLElement) {
@@ -254,8 +260,6 @@ export class InlineManager {
         const newNode = this.createInlineNode(op)
         if (nodeStep.indexInNode === 0) {
           ele.before(newNode)
-          // create a gap between two embed node
-          // isOpElementEmbed && ele.before(this.createInlineGapNode())
           elementsNodes.splice(nodeStep.index, 0, newNode)
           nodeStep = {
             index: nodeStep.index,
@@ -264,8 +268,6 @@ export class InlineManager {
           return
         }
         ele.after(newNode)
-        // create a gap between two embed node
-        // isOpElementEmbed && ele.after(this.createInlineGapNode())
         elementsNodes.splice(nodeStep.index + 1, 0, newNode)
         nodeStep = {
           index: nodeStep.index + 1,
@@ -282,8 +284,6 @@ export class InlineManager {
         if (nodeStep.index === 0) {
           const newNode = this.createInlineNode(op)
           ele.before(newNode)
-          // gap-embed-text
-          // isOpElementEmbed && newNode.before(this.createInlineGapNode())
           elementsNodes.splice(nodeStep.index, 0, newNode)
           nodeStep = {
             index: nodeStep.index,
@@ -294,14 +294,13 @@ export class InlineManager {
 
         // case 2.1.2: text node is not first element
         const prevNode = elementsNodes[nodeStep.index - 1]
-        const isPrevEmbed = prevNode.firstElementChild!.localName === INLINE_EMBED_NODE_TAG
+        const isPrevEmbed = !(prevNode.firstElementChild as HTMLElement).isContentEditable
         const isPrevEqual = compareAttributesWithEle(prevNode, op.attributes)
+
         if (isPrevEmbed || !isPrevEqual || isOpElementEmbed) {
 
           const newNode = this.createInlineNode(op)
           ele.before(newNode)
-          // gap-embed
-          // isOpElementEmbed && newNode.before(this.createInlineGapNode())
           elementsNodes.splice(nodeStep.index, 0, newNode)
           nodeStep = {
             index: nodeStep.index,
@@ -422,7 +421,7 @@ export class InlineManager {
       }
       offset -= eleLength
     }
-    throw new BlockCraftError(ErrorCode.InlineEditorError, 'Error inline node match')
+    throw new BlockCraftError(ErrorCode.InlineEditorError, 'Error inline node position queried')
   }
 
   private _setSelection(container: HTMLElement, position: number) {

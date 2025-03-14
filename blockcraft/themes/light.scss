@@ -3,6 +3,10 @@
 [data-blockcraft-root="true"][data-theme="light"] {
   color: #333;
 
+  ::selection {
+    background-color: rgba(24, 144, 255, 0.3);
+  }
+
   c-element {
 
     &[bold="true"] {
@@ -13,7 +17,7 @@
 
   [data-block-id] {
     &.selected {
-      background-color: #1890ff !important;
+      background-color: rgba(24, 144, 255, 0.3);
     }
   }
 

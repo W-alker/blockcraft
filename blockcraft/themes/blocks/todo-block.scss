@@ -1,9 +1,13 @@
 @mixin todo-block {
   div.todo-block {
     display: flex;
+    gap: 4px;
 
     .todo-block-button {
       cursor: pointer;
+      outline: none;
+      border: none;
+      background: none;
 
       > i {
         pointer-events: none;

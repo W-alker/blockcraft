@@ -1,4 +1,13 @@
 @import "./blocks/todo-block.scss";
+@import "./blocks/code-block.scss";
+@import "./blocks/divider-block.scss";
+@import "./blocks/callout-block.scss";
+
+:root {
+  --bc-fs: 16px;
+  --bc-lh: 22px;
+}
+
 [data-blockcraft-root="true"] {
 
   c-element {
@@ -16,6 +25,14 @@
 
   [data-block-id] {
     position: relative;
+    margin: .5em 0;
+
+    > [contenteditable='false'] {
+      user-select: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+    }
   }
 
   /*[data-node-type="void"].selected {*/
@@ -29,27 +46,27 @@
     outline: none;
   }
 
-  div[contenteditable='false'] {
-    user-select: none;
-  }
-
   [data-block-zero-space="true"] {
     position: absolute;
     cursor: text;
     font-size: 0;
   }
 
-  span[contenteditable='false'] {
-    /*user-select: none;*/
-    margin: 0 2px;
-  }
+  .edit-container {
+    white-space: break-spaces;
 
-  c-text {
-    word-break: break-word;
-    text-wrap: wrap;
-    white-space-collapse: break-spaces;
-  }
+    span[contenteditable='false'] {
+      margin: 0 2px;
+    }
 
+    c-text {
+      word-break: break-word;
+      text-wrap: wrap;
+    }
+  }
 
   @include todo-block();
+  @include code-block();
+  @include divider-block();
+  @include callout-block();
 }

@@ -2,9 +2,9 @@ import {fromEvent, takeUntil} from "rxjs";
 import {MultiPointerEventState, PointerEventState} from "../state/pointerState";
 import {UIEventState, UIEventStateContext} from "../base";
 import {EventScopeSourceType, EventSourceState} from "../state";
-import {performanceTest} from "../../decorators";
 import {isFarEnough} from "../utils";
 import {nextTick, throttle} from "../../../global";
+import {EventNames} from "../dispatcher";
 
 type PointerId = typeof PointerEvent.prototype.pointerId;
 
@@ -47,7 +47,7 @@ class PointerEventForward extends PointerControllerBase {
     });
     this._startStates.set(pointerId, pointerState);
     this._lastStates.set(pointerId, pointerState);
-    this._dispatcher.run('pointerDown', createContext(event, pointerState));
+    this._dispatcher.run(EventNames.pointerDown, createContext(event, pointerState));
   };
 
   private _lastStates = new Map<PointerId, PointerEventState>();
@@ -67,7 +67,7 @@ class PointerEventForward extends PointerControllerBase {
     });
     this._lastStates.set(pointerId, state);
 
-    this._dispatcher.run('pointerMove', createContext(event, state));
+    this._dispatcher.run(EventNames.pointerMove, createContext(event, state));
   };
 
   private _startStates = new Map<PointerId, PointerEventState>();
@@ -89,7 +89,7 @@ class PointerEventForward extends PointerControllerBase {
     this._startStates.delete(pointerId);
     this._lastStates.delete(pointerId);
 
-    this._dispatcher.run(up ? 'pointerUp' : 'pointerOut', createContext(event, state));
+    this._dispatcher.run(up ? EventNames.pointerUp: EventNames.pointerOut, createContext(event, state));
   };
 
   listen(root: BlockCraft.IBlockComponents['root']) {
@@ -148,12 +148,12 @@ class ClickController extends PointerControllerBase {
     const context = createContext(event, state);
 
     const run = () => {
-      this._dispatcher.run('click', context);
+      this._dispatcher.run(EventNames.click, context);
       if (this._pointerDownCount === 2) {
-        this._dispatcher.run('doubleClick', context);
+        this._dispatcher.run(EventNames.doubleClick, context);
       }
       if (this._pointerDownCount === 3) {
-        this._dispatcher.run('tripleClick', context);
+        this._dispatcher.run(EventNames.tripleClick, context);
       }
     };
 

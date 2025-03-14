@@ -1,4 +1,4 @@
-import {EditableBlockNative, generateId} from "../../framework";
+import {EditableBlockNative} from "../../framework";
 import {BlockNodeType} from "../../framework/types";
 import {
   BlockSchemaOptions,
@@ -8,17 +8,14 @@ import {
 import {BulletBlockComponent} from "./bullet.block";
 
 export interface BulletBlockModel extends EditableBlockNative {
-  flavour: 'bullet',
-  props: {
-    depth: number
-  }
+  flavour: 'bullet'
 }
 
 export const BulletBlockSchema: BlockSchemaOptions<BulletBlockModel> = {
   flavour: 'bullet',
   nodeType: BlockNodeType.editable,
   component: BulletBlockComponent,
-  createSnapshot: editableBlockCreateSnapShotFn('bullet'),
+  createSnapshot: editableBlockCreateSnapShotFn<BulletBlockModel>('bullet'),
   metadata: {
     version: 1,
     label: "无序列表",

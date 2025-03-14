@@ -1,7 +1,6 @@
 import {BaseBlockComponent, DocPlugin} from "../framework";
 import {Subscription} from "rxjs";
 import {OrderedBlockModel} from "../blocks";
-import {BlockNodeType} from "../framework/types";
 
 export class AutoUpdateOrderPlugin extends DocPlugin {
   private _sub = new Subscription()

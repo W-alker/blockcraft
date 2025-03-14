@@ -6,25 +6,7 @@ import {BaseBlockComponent} from "../../framework";
   template: `
     <hr contenteditable="false" />
   `,
-  styles: [`
-    :host {
-      padding: 1em 0;
-      cursor: text;
-    }
-    hr {
-      height: 1px;
-      background-color: #000;
-      user-select: none;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      font-size: 0;
-    }
-  `],
-  standalone: true,
-  host: {
-    // '[attr.contenteditable]': 'false'
-  }
+  standalone: true
 })
 export class DividerBlockComponent extends BaseBlockComponent {
 }

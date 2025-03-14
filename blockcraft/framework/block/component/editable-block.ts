@@ -47,7 +47,9 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   override textContent() {
-    return this.yText.toJSON()
+    return (this.yText.toDelta() as DeltaInsert[]).reduce((acc, cur) => {
+      return acc + (typeof cur.insert === 'string' ? cur.insert : cur.insert['break'] ? '\n' : '')
+    }, '')
   }
 
   textDeltas(): DeltaInsert[] {
@@ -73,7 +75,11 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     index > 0 && delta.push({retain: index})
     length > 0 && delta.push({delete: length})
     text && delta.push({insert: text})
-    this.applyDeltaOperation(delta)
+    this.doc.crud.transact(() => {
+      length > 0 && this.yText.delete(index, length)
+      text && this.yText.insert(index, text)
+      this.doc.inlineManager.applyDeltaToView(delta, this.containerElement)
+    }, ORIGIN_SKIP_SYNC)
   }
 
   insertEmbed(index: number, embed: DeltaInsertEmbed) {

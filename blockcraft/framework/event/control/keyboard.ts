@@ -2,7 +2,7 @@ import {fromEvent, takeUntil} from "rxjs";
 import {IS_MAC, IS_SAFARI} from "../../../global";
 import {EventScopeSourceType, EventSourceState, KeyboardEventState} from "../state";
 import {UIEventState, UIEventStateContext} from "../base";
-import {EventOptions} from "../dispatcher";
+import {EventNames, EventOptions} from "../dispatcher";
 
 /**
  * @description Keyboard event trigger\
@@ -25,7 +25,7 @@ export class KeyboardControl {
 
   private _down = (event: KeyboardEvent) => {
     if (!this._shouldTrigger(event)) return;
-    this._dispatcher.run('keyDown', this._createContext(event, new KeyboardEventState({
+    this._dispatcher.run(EventNames.keyDown, this._createContext(event, new KeyboardEventState({
       event,
       selection: this._dispatcher.currentSelection!
     })));
@@ -33,7 +33,7 @@ export class KeyboardControl {
 
   private _up = (event: KeyboardEvent) => {
     if (!this._shouldTrigger(event)) return;
-    this._dispatcher.run('keyUp', this._createContext(event, new KeyboardEventState({
+    this._dispatcher.run(EventNames.keyUp, this._createContext(event, new KeyboardEventState({
       event,
       selection: this._dispatcher.currentSelection!
     })))
@@ -73,25 +73,18 @@ export class KeyboardControl {
     return true
   }
 
-  private _keyMap: Record<string, { binding: HotKeyTrigger, handler: BlockCraft.EventHandler, options?: EventOptions }> = {}
 
   bindHotKey(binding: HotKeyTrigger, handler: BlockCraft.EventHandler, options?: EventOptions) {
-    const keys = typeof binding.key === 'string' ? [binding.key] : binding.key
-    for (const key of keys) {
-      if(binding.shortKey) {
-        binding[SHORT_KEY] = binding.shortKey
-        delete binding.shortKey
-      }
-      this._keyMap[key] = {binding, handler, options}
+    const _binding = {...binding}
+    if (binding.shortKey) {
+      _binding[SHORT_KEY] = binding.shortKey
+      delete _binding.shortKey
     }
-    return this._dispatcher.add('keyDown', (context) => {
+    return this._dispatcher.add(EventNames.keyDown, (context) => {
       const state = context.get('keyboardState')
-      const key = state.raw.key
-      if(!this._keyMap[key]) return
-      const {binding, handler} = this._keyMap[key]
-      if (!this._isHotKeyMatch(binding, context.getDefaultEvent())) return false
+      if (!this._isHotKeyMatch(_binding, state.raw)) return false
       return handler(context)
-    })
+    }, options)
   }
 
   listen(root: BlockCraft.IBlockComponents['root']) {

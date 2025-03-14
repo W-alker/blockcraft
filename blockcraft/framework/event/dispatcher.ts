@@ -5,51 +5,49 @@ import {KeyboardControl, CompositionControl, ClipboardControl, PointerControl} f
 import {fromEvent, takeUntil} from "rxjs";
 import {performanceTest} from "../decorators";
 
-const bypassEventNames = [
-  'beforeInput',
+const bypassEventNames = ['beforeInput', 'focusOut', 'focusIn', 'contextMenu', 'wheel'] as Array<EventNames>
 
-  'focusOut',
-  'focusIn',
-  'contextMenu',
-  'wheel',
-] as const;
+export enum EventNames {
+  'beforeInput' = 'beforeInput',
 
-const eventNames = [
-  'click',
-  'doubleClick',
-  'tripleClick',
+  'focusOut' = 'focusOut',
+  'focusIn' = 'focusIn',
+  'contextMenu' = 'contextMenu',
+  'wheel' = 'wheel',
 
-  'pointerDown',
-  'pointerMove',
-  'pointerUp',
-  'pointerOut',
+  'click' = 'click',
+  'doubleClick' = 'doubleClick',
+  'tripleClick' = 'tripleClick',
 
-  'dragStart',
-  'dragMove',
-  'dragEnd',
+  'pointerDown' = 'pointerDown',
+  'pointerMove' = 'pointerMove',
+  'pointerUp' = 'pointerUp',
+  'pointerOut' = 'pointerOut',
 
-  'pinch',
-  'pan',
+  'dragStart' = 'dragStart',
+  'dragMove' = 'dragMove',
+  'dragEnd' = 'dragEnd',
 
-  'keyDown',
-  'keyUp',
+  'pinch' = 'pinch',
+  'pan' = 'pan',
 
-  'selectionChange',
-  'compositionStart',
-  'compositionUpdate',
-  'compositionEnd',
+  'keyDown' = 'keyDown',
+  'keyUp' = 'keyUp',
 
-  'cut',
-  'copy',
-  'paste',
+  'selectionChange' = 'selectionChange',
+  'compositionStart' = 'compositionStart',
+  'compositionUpdate' = 'compositionUpdate',
+  'compositionEnd' = 'compositionEnd',
 
-  'nativeDragStart',
-  'nativeDragMove',
-  'nativeDragEnd',
-  'nativeDrop',
+  'cut' = 'cut',
+  'copy' = 'copy',
+  'paste' = 'paste',
 
-  ...bypassEventNames,
-] as const;
+  'nativeDragStart' = 'nativeDragStart',
+  'nativeDragMove' = 'nativeDragMove',
+  'nativeDragEnd' = 'nativeDragEnd',
+  'nativeDrop' = 'nativeDrop',
+}
 
 export type EventOptions = {
   flavour?: BlockCraft.BlockFlavour
@@ -63,9 +61,7 @@ export type EventHandlerRunner = {
 
 export class UIEventDispatcher {
 
-  private _handlersMap = Object.fromEntries(
-    eventNames.map((name): [BlockCraft.EventName, Array<EventHandlerRunner>] => [name, []])
-  ) as Record<BlockCraft.EventName, Array<EventHandlerRunner>>;
+  private _handlersMap = {} as Record<EventNames, Array<EventHandlerRunner>>;
 
   private readonly composition = new CompositionControl(this)
   private keyboardControl = new KeyboardControl(this)
@@ -90,13 +86,14 @@ export class UIEventDispatcher {
    * @param options
    * @return remove handler function
    */
-  add(name: BlockCraft.EventName, handler: BlockCraft.EventHandler, options?: EventOptions) {
+  add(name: EventNames, handler: BlockCraft.EventHandler, options?: EventOptions) {
     const runner: EventHandlerRunner = {
       fn: handler,
       flavour: options?.flavour,
       blockId: options?.blockId,
     };
-    this._handlersMap[name].unshift(runner);
+    this._handlersMap[name] ||= []
+    this._handlersMap[name].push(runner);
     return () => {
       if (this._handlersMap[name].includes(runner)) {
         this._handlersMap[name] = this._handlersMap[name].filter(x => x !== runner);
@@ -128,7 +125,7 @@ export class UIEventDispatcher {
     this.clipboardControl.listen(root)
   }
 
-  hasHandler(name: BlockCraft.EventName) {
+  hasHandler(name: EventNames) {
     return this._handlersMap[name].length > 0
   }
 
@@ -136,7 +133,7 @@ export class UIEventDispatcher {
     return this.doc.selection.value
   }
 
-  private _runEventsBySelection(name: BlockCraft.EventName, context: UIEventStateContext) {
+  private _runEventsBySelection(name: EventNames, context: UIEventStateContext) {
     const handlers = this._handlersMap[name];
     if (!handlers) return;
 
@@ -145,7 +142,7 @@ export class UIEventDispatcher {
     this._runEvents(name, [selection.from.blockId], context)
   }
 
-  private _runEventsByTarget(name: BlockCraft.EventName, context: UIEventStateContext) {
+  private _runEventsByTarget(name: EventNames, context: UIEventStateContext) {
     const handlers = this._handlersMap[name];
     if (!handlers) return;
 
@@ -170,7 +167,7 @@ export class UIEventDispatcher {
   }
 
   @performanceTest('event dispatcher')
-  private _runEvents(name: BlockCraft.EventName, blocks: string[], context: UIEventStateContext) {
+  private _runEvents(name: EventNames, blocks: string[], context: UIEventStateContext) {
     const handlers = this._handlersMap[name];
     if (!handlers?.length) return;
 
@@ -181,7 +178,6 @@ export class UIEventDispatcher {
       const idHandlers = handlers.filter(h => h.blockId && blockIds.includes(h.blockId));
       const flavourHandlers = handlers.filter(h => h.flavour && _blocks.some(block => block.flavour === h.flavour));
 
-      // console.log(name, context, idHandlers, flavourHandlers, blockIds)
       const res = this._runEventScope(idHandlers.concat(flavourHandlers), context)
       if (res) return;
 
@@ -195,7 +191,7 @@ export class UIEventDispatcher {
   }
 
   run(
-    name: BlockCraft.EventName,
+    name: EventNames,
     context: UIEventStateContext,
     runners?: EventHandlerRunner[]
   ) {
@@ -220,8 +216,6 @@ export class UIEventDispatcher {
 
 declare global {
   namespace BlockCraft {
-    type EventName = (typeof eventNames)[number];
-
     type EventDispatcher = UIEventDispatcher
   }
 }

@@ -1,13 +1,23 @@
 import {Component, Injector, ViewChild, ViewContainerRef} from "@angular/core";
 import {SchemaManager, BlockCraftDoc, EditableBlockComponent} from "../framework";
-import {RootBlockSchema} from "../blocks";
+import {
+  HeadingFourBlockSchema,
+  HeadingOneBlockSchema,
+  HeadingTwoBlockSchema,
+  ImageBlockSchema,
+  RootBlockSchema, TodoBlockSchema
+} from "../blocks";
 import {ConsoleLogger} from "../global";
 import {DividerBlockSchema, CalloutBlockSchema, OrderedBlockSchema, ParagraphBlockSchema} from "../blocks";
 import {AutoUpdateOrderPlugin} from "../plugins/autoUpdateOrder";
+import {BulletBlockSchema} from "../blocks/bullet-block";
+import {CodeBlockSchema} from "../blocks/code-block";
+import {CodeBlockHotKeys} from "../plugins/codeBlockHotKeys";
 
 const schemas = new SchemaManager([
-  RootBlockSchema, ParagraphBlockSchema, DividerBlockSchema, CalloutBlockSchema,
-  OrderedBlockSchema
+  RootBlockSchema, ParagraphBlockSchema, DividerBlockSchema, CalloutBlockSchema, BulletBlockSchema,
+  OrderedBlockSchema, ImageBlockSchema, HeadingOneBlockSchema, HeadingTwoBlockSchema, HeadingFourBlockSchema, TodoBlockSchema,
+  CodeBlockSchema
 ])
 
 @Component({
@@ -54,20 +64,28 @@ export class EditorComponent {
           img.style.width = '100px'
           return img
         }
-      }]
+      }],
+      // ['break', {
+      //   toDelta: () => ({insert: {break: '\n'}}),
+      //   toView: () => {
+      //     const div = document.createElement('span')
+      //     div.classList.add('line-break')
+      //     div.appendChild(document.createElement('br'))
+      //     return div
+      //   }
+      // }]
     ],
-    plugins: [new AutoUpdateOrderPlugin()]
+    plugins: [new AutoUpdateOrderPlugin(), new CodeBlockHotKeys()]
   })
 
   pid = ''
 
   ngAfterViewInit() {
-    const p = this.doc.schemas.createSnapshot('paragraph', [[{insert: 'hello world '},
-      {insert: 'This is a paragraph', attributes: {'a:bold': true}},
-      {insert: {image: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg'}},
+    const p = this.doc.schemas.createSnapshot('paragraph', [[{insert: 'hello\n'},
+      {insert: 'world', attributes: {'a:bold': true}},
       {insert: {image: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg'}}
     ]])
-    const p2 = this.doc.schemas.createSnapshot('paragraph', [
+    const p2 = this.doc.schemas.createSnapshot('heading-two', [
       [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
     ])
     const p4 = this.doc.schemas.createSnapshot('divider', [])
@@ -77,14 +95,19 @@ export class EditorComponent {
       [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
     ])
     const callout = this.doc.schemas.createSnapshot('callout', [])
+    const img = this.doc.schemas.createSnapshot('image', ['https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg', 200, 100])
+    const todo = this.doc.schemas.createSnapshot('todo', ['this is a todo'])
+    const code = this.doc.schemas.createSnapshot('code', ['const c = 1;\nfunction a()\n{ console.log(c) }'])
     this.pid = p.id
-    const snapshot = this.doc.schemas.createSnapshot('root', [this.rootId, [p, p2, callout, p4, p5, p6, p3]])
+    const snapshot = this.doc.schemas.createSnapshot('root', [this.rootId, [p, p2, callout, p4, p5, p6, p3, img, todo, code]])
     console.log(snapshot)
     this.doc.init(snapshot, this.container)
   }
 
   log() {
-    console.log(this.doc.crud.yBlockMap, this.doc.exportSnapshot())
+    // @ts-ignore
+    console.log(this.doc.crud.yBlockMap.toJSON(), this.doc.vm.store)
+    console.log(this.doc.exportSnapshot())
   }
 
   undo() {
@@ -121,6 +144,6 @@ export class EditorComponent {
         ])
       )
     }
-    this.doc.crud.insertBlocks(_arr, 0, this.doc.rootId)
+    this.doc.crud.insertBlocks(this.doc.rootId, 0 ,_arr)
   }
 }

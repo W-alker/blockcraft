@@ -1,4 +1,4 @@
-import {DeltaInsert} from "../types";
+import {DeltaInsert} from "../../framework/types";
 
 export const characterAtDelta = (deltas: DeltaInsert[], position: number): string | object | null => {
   let currentPosition = 1;
