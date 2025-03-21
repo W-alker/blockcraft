@@ -1,8 +1,7 @@
 import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from "@angular/core";
-import {EditableBlockComponent} from "../../framework";
+import {EditableBlockComponent, STR_LINE_BREAK} from "../../framework";
 import {CodeBlockModel} from "./index";
 import * as Prism from "prismjs";
-import {_Token, updateHighlightedTokens} from "./code-differ";
 import {AsyncPipe, NgForOf} from "@angular/common";
 import {merge, take} from "rxjs";
 import {ComponentPortal} from "@angular/cdk/portal";
@@ -11,20 +10,15 @@ import {Overlay} from "@angular/cdk/overlay";
 import {LangListComponent} from "./lang-list.component";
 import {PRISM_LANGUAGE_MAP} from "./const";
 import {performanceTest} from "../../framework/decorators";
+import {DeltaInsertText} from "../../framework/types";
+import * as Y from 'yjs'
+import {Token} from "prismjs";
+import {nextTick} from "../../global";
 
 @Component({
   selector: 'div.code-block',
   template: `
-    <div class="code-block-line-numbers" contenteditable="false">
-      <div>
-        <span *ngFor="let line of lines; let i = index">
-          {{ i + 1 }}
-        </span>
-      </div>
-    </div>
-
     <div class="edit-container"></div>
-    <div class="code-block-highlighter" #highlighter contenteditable="false"></div>
 
     <div class="head-btn__group" contenteditable="false">
       <div class="head-btn" (mousedown)="showLangList($event)">
@@ -41,8 +35,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   @ViewChild('highlighter', {read: ElementRef}) highlighter!: ElementRef<HTMLPreElement>
 
-  protected lines: string[] = []
-  private resizeSub?: ResizeObserver
+  private lines: string[] = []
 
   constructor(private overlay: Overlay) {
     super();
@@ -50,25 +43,17 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   override ngAfterViewInit() {
     super.ngAfterViewInit()
-    this.highlight()
-
-    this.resizeSub = new ResizeObserver(() => {
-      this.lines = this.textContent().split('\n')
-      this.changeDetectorRef.markForCheck()
-    })
     this._observer()
   }
 
   private _observer() {
-    this.resizeSub?.observe(this.hostElement)
     this.yText.observe(this.highlight)
-    this._yProps.observe(this.highlight)
+    this._yProps.observe(this._obsProp)
   }
 
   private _unObserver() {
-    this.resizeSub?.disconnect()
     this.yText.unobserve(this.highlight)
-    this._yProps.unobserve(this.highlight)
+    this._yProps.unobserve(this._obsProp)
   }
 
   override detach() {
@@ -81,24 +66,94 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     this._observer()
   }
 
-  override ngOnDestroy() {
-    super.ngOnDestroy();
-    this.resizeSub?.disconnect()
-    // @ts-expect-error
-    this.resizeSub = null
+  private _setLines() {
+    this.lines = this.textContent().split('\n').map(line => line += '\n')
   }
 
-  protected oldTokens: _Token[] = []
+  private _obsProp = (ev: Y.YMapEvent<unknown>) => {
+    if (ev.keysChanged.has('lang')) {
+      this.rerender()
+    }
+  }
 
-  private highlight = () => {
-    this._diffHighlight()
+  private highlight = (ev: Y.YEvent<Y.Text>, tr: Y.Transaction) => {
+    nextTick().then(() => {
+      this.diffHighlight()
+    })
   }
 
   @performanceTest()
-  private _diffHighlight() {
-    const tokens = Prism.tokenize(this.textContent(), Prism.languages[PRISM_LANGUAGE_MAP[this.props.lang]]);
-    updateHighlightedTokens(this.highlighter.nativeElement, this.oldTokens, tokens)
-    this.oldTokens = tokens
+  diffHighlight() {
+    const isHere = this.doc.selection.value?.from.blockId === this.id
+    let pos = 0
+    if (isHere) {
+      const sel = this.doc.selection.normalizeRange(document.getSelection()!.getRangeAt(0))
+      pos = sel?.from.type === 'text' ? sel.from.index : 0
+    }
+    this.rerender()
+    isHere && this.setInlineRange(pos)
+  }
+
+  private _flatTokens(tokens: Array<string | Token>, res: DeltaInsertText[] = [], parentType?: string) {
+    for (const token of tokens) {
+      if (typeof token === 'string') {
+        const attrs: Record<string, any> | undefined = parentType ? {'a:type': parentType} : undefined
+        if (token.includes(STR_LINE_BREAK)) {
+          let i = 0, j = 0
+          while (i < token.length) {
+            if (token[i] === STR_LINE_BREAK) {
+              res.push({
+                attributes: {...attrs, 'd:lineBreak': true}, insert: token.slice(j, i + 1)
+              })
+              j = i + 1
+            }
+            i++
+          }
+          const rest = token.slice(j)
+          rest && res.push({attributes: {...attrs}, insert: rest})
+          continue
+        } else {
+          res.push({attributes: attrs, insert: token})
+        }
+        continue
+      }
+      if (typeof token.content === 'string') {
+        res.push({
+          attributes: {'a:type': token.type || parentType || 'text'},
+          insert: token.content
+        })
+      } else {
+        this._flatTokens(Array.isArray(token.content) ? token.content : [token.content], res, token.type)
+      }
+    }
+    return res
+  }
+
+  @performanceTest('code block render')
+  override rerender() {
+    const tokens = Prism.tokenize(this.textContent(), Prism.languages[PRISM_LANGUAGE_MAP[this.props.lang]])
+    this.doc.inlineManager.render(this._flatTokens(tokens), this.containerElement)
+  }
+
+  getLineRangeByCharacter(start: number, end: number) {
+    this._setLines()
+    let startLine = 0, endLine = 0
+    let i = 0
+    while (i < end) {
+      i += this.lines[startLine].length
+      if (i > start) {
+        break
+      }
+      startLine++
+    }
+    endLine = startLine
+    while (i < end) {
+      i += this.lines[endLine].length
+      if (i > end) {
+        break
+      }
+    }
+    return [startLine, endLine]
   }
 
   getLinesByRange(from: number, to: number) {

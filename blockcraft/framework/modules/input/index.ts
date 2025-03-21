@@ -9,81 +9,58 @@ import {
 import {IBlockRange, INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
 import {BlockNodeType, DeltaOperation} from "../../types";
-import {fromEvent, take, takeUntil} from "rxjs";
 import {sliceDelta} from "../../../global";
-import {EventNames} from "../../event";
+import {BindHotKey, DocEventRegister, EventListen, EventNames} from "../../event";
+import {UIEventStateContext} from "../../event/base";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
+@DocEventRegister
 export class InputTransformer {
 
   private _composeRange: IBlockRange | null = null
   private _preventCompositionText = false
 
   constructor(public readonly doc: BlockCraft.Doc) {
-    this._init()
   }
 
-  private _init() {
-    this.doc.event.add(EventNames.compositionStart, (context) => {
-      const curSel = this.doc.selection.value!
-      this._composeRange = curSel.from.type === "text" ? curSel.from : curSel.to
-      if (!curSel.collapsed) {
-        this._replaceText(curSel)
-      }
-      if (curSel.isAllSelected) {
-        // 防止此时不可选中，但是删除后浏览器自动跳转到合适的文本位置做输入操作，此时记录的输入位置丢失，导致视图数据不一致
-        const _sub = this.doc.selection.selectionChange$.pipe(takeUntil(fromEvent(document, 'compositionEnd').pipe(take(1)))).subscribe(sel => {
-          if (!sel) return
-          if (sel.from.type === 'text') {
-            this._composeRange = sel.from
-            _sub.unsubscribe()
-          }
-        })
-      }
-      return true
-    })
-
-    this.doc.event.add(EventNames.compositionEnd, (context) => {
-      const ev = context.get('defaultState').event as CompositionEvent
-      ev.preventDefault()
-      this.doc.crud.transact(() => {
-        if (this._composeRange?.type !== 'text') return
-        this._composeRange!.block.yText.insert(this._composeRange!.index, ev.data)
-        // TODO: 更好的中文输入法反显渲染
-        this._composeRange!.block.rerender()
-        this._composeRange.block.setInlineRange(this._composeRange!.index + ev.data.length)
-        this._composeRange = null
-      }, ORIGIN_SKIP_SYNC)
-    })
-    this.doc.event.add(EventNames.beforeInput, this._handleBeforeInput)
-
-    this.doc.event.bindHotkey({
-      key: 'Backspace',
-      shiftKey: null,
-      shortKey: null,
-      metaKey: false
-    }, this._handleBackspace, {blockId: this.doc.rootId})
-
-    this.doc.event.bindHotkey({
-      key: 'Delete',
-      shiftKey: null,
-      shortKey: null,
-      metaKey: false
-    }, this._handleDelete, {blockId: this.doc.rootId})
-
-    this.doc.event.bindHotkey({
-      key: 'Tab',
-      shiftKey: null
-    }, this._handlerTab, {blockId: this.doc.rootId})
-
-    this.doc.event.bindHotkey({
-      key: 'Enter',
-      shiftKey: null
-    }, this._handlerEnter, {blockId: this.doc.rootId})
+  @EventListen(EventNames.compositionStart)
+  private _handleCompositionStart(context: UIEventStateContext) {
+    const curSel = this.doc.selection.value!
+    this._composeRange = curSel.from.type === "text" ? curSel.from : curSel.to
+    if (!curSel.collapsed) {
+      document.getSelection()!.getRangeAt(0).collapse(curSel.from.type === 'text')
+      this._replaceText(curSel)
+    }
+    // if (curSel.isAllSelected) {
+    //   // 防止此时不可选中，但是删除后浏览器自动跳转到合适的文本位置做输入操作，此时记录的输入位置丢失，导致视图数据不一致
+    //   const _sub = this.doc.selection.selectionChange$.pipe(takeUntil(fromEvent(document, 'compositionEnd').pipe(take(1)))).subscribe(sel => {
+    //     if (!sel) return
+    //     if (sel.from.type === 'text') {
+    //       this._composeRange = sel.from
+    //       _sub.unsubscribe()
+    //     }
+    //   })
+    // }
+    return true
   }
 
-  private _handleBeforeInput = (context: BlockCraft.EventStateContext) => {
+  @EventListen(EventNames.compositionEnd)
+  private _handleCompositionEnd(context: UIEventStateContext) {
+    const ev = context.get('defaultState').event as CompositionEvent
+    ev.preventDefault()
+    this.doc.crud.transact(() => {
+      if (this._composeRange?.type !== 'text') return
+      this._composeRange!.block.yText.insert(this._composeRange!.index, ev.data)
+      // TODO: 更好的中文输入法反显渲染
+      this._composeRange!.block.rerender()
+      this._composeRange.block.setInlineRange(this._composeRange!.index + ev.data.length)
+      this._composeRange = null
+    }, ORIGIN_SKIP_SYNC)
+  }
+
+  @EventListen(EventNames.beforeInput)
+  private _handleBeforeInput(context: BlockCraft.EventStateContext) {
     const ev = context.get('defaultState').event as InputEvent
     if (this._preventCompositionText || !ALLOW_INPUT_TYPES.has(ev.inputType)) {
       ev.preventDefault()
@@ -106,57 +83,58 @@ export class InputTransformer {
     const {from, to, collapsed} = normalizedRange
     const text = getPlainTextFromInputEvent(ev)
 
-    if (!collapsed) {
-      ev.preventDefault()
-      if (from.type === 'selected' && (!to || to.type === 'selected')) return
-      this._replaceText(normalizedRange, text)
-      return;
-    }
-
-    if (!text) return;
-
-    // in zero text
-    if (collapsed && staticRange.startContainer instanceof Text && isZeroSpace(staticRange.startContainer)) {
-      const zeroTextEle = staticRange.startContainer.parentElement!
-      // <c-element><embed></embed><c-zero-text>ZWS;↓</c-zero-text></c-element>
-      const textElement: HTMLElement = document.createElement(INLINE_TEXT_NODE_TAG)
-      textElement.textContent = STR_ZERO_WIDTH_SPACE
-      if (zeroTextEle.parentElement?.localName === INLINE_ELEMENT_TAG) {
-        const cloneElement = zeroTextEle.parentElement.cloneNode(false) as HTMLElement
-        cloneElement.replaceChildren(textElement)
-        zeroTextEle.parentElement.after(cloneElement)
-      } else {
-        // <paragraph><c-zero-text>ZWS;↓</c-zero-text></paragraph>
-        const cElement = document.createElement(INLINE_ELEMENT_TAG)
-        cElement.replaceChildren(textElement)
-        zeroTextEle.after(cElement)
-      }
-      document.getSelection()!.selectAllChildren(textElement)
-    }
-
-    // in inline end break
-    if (collapsed && staticRange.startContainer instanceof HTMLElement && staticRange.startContainer.classList.contains(INLINE_END_BREAK_CLASS)) {
-      const prevElement = staticRange.startContainer.previousElementSibling!
-      const child = prevElement.firstElementChild
-      if (prevElement.localName === INLINE_ELEMENT_TAG && child?.localName === INLINE_TEXT_NODE_TAG) {
-        const len = child.textContent!.length;
-        (child.firstChild as Text).insertData(len, text)
-        document.getSelection()!.setPosition(child.firstChild!, len + text.length)
-        ev.preventDefault()
-      } else {
-        const cElement = document.createElement(INLINE_ELEMENT_TAG)
-        const textElement: HTMLElement = document.createElement(INLINE_TEXT_NODE_TAG)
-        textElement.textContent = text
-        cElement.appendChild(textElement)
-        staticRange.startContainer.before(cElement)
-        document.getSelection()!.setPosition(textElement.firstChild!, text.length)
-        ev.preventDefault()
-      }
-    }
-
     this.doc.crud.transact(() => {
+      if (!collapsed) {
+        ev.preventDefault()
+        this._replaceText(normalizedRange, text)
+        document.getSelection()!.getRangeAt(0).collapse(from.type === 'text')
+        return;
+      }
+
+      if (!text) return;
+
+      // in zero text
+      if (collapsed && staticRange.startContainer instanceof Text && isZeroSpace(staticRange.startContainer)) {
+        const zeroTextEle = staticRange.startContainer.parentElement!
+        // <c-element><embed></embed><c-zero-text>ZWS;↓</c-zero-text></c-element>
+        const textElement: HTMLElement = document.createElement(INLINE_TEXT_NODE_TAG)
+        textElement.textContent = STR_ZERO_WIDTH_SPACE
+        if (zeroTextEle.parentElement?.localName === INLINE_ELEMENT_TAG) {
+          const cloneElement = zeroTextEle.parentElement.cloneNode(false) as HTMLElement
+          cloneElement.replaceChildren(textElement)
+          zeroTextEle.parentElement.after(cloneElement)
+        } else {
+          // <paragraph><c-zero-text>ZWS;↓</c-zero-text></paragraph>
+          const cElement = document.createElement(INLINE_ELEMENT_TAG)
+          cElement.replaceChildren(textElement)
+          zeroTextEle.after(cElement)
+        }
+        document.getSelection()!.selectAllChildren(textElement)
+      }
+
+      // in inline end break
+      if (collapsed && staticRange.startContainer instanceof HTMLElement && staticRange.startContainer.classList.contains(INLINE_END_BREAK_CLASS)) {
+        const prevElement = staticRange.startContainer.previousElementSibling!
+        const child = prevElement.firstElementChild
+        if (prevElement.localName === INLINE_ELEMENT_TAG && child?.localName === INLINE_TEXT_NODE_TAG) {
+          const len = child.textContent!.length;
+          (child.firstChild as Text).insertData(len, text)
+          document.getSelection()!.setPosition(child.firstChild!, len + text.length)
+          ev.preventDefault()
+        } else {
+          const cElement = document.createElement(INLINE_ELEMENT_TAG)
+          const textElement: HTMLElement = document.createElement(INLINE_TEXT_NODE_TAG)
+          textElement.textContent = text
+          cElement.appendChild(textElement)
+          staticRange.startContainer.before(cElement)
+          document.getSelection()!.setPosition(textElement.firstChild!, text.length)
+          ev.preventDefault()
+        }
+      }
+
       if (from.type !== 'text') return
       from.block.yText.insert(from.index, text)
+
     }, ORIGIN_SKIP_SYNC)
   }
 
@@ -167,8 +145,6 @@ export class InputTransformer {
     this.doc.crud.transact(() => {
       if (from.type === 'text') {
         from.block.replaceText(from.index, from.length, text)
-        from.block.setInlineRange(from.index + (text?.length || 0))
-
         // inline
         if (!to) return;
       }
@@ -176,7 +152,9 @@ export class InputTransformer {
       if (to) {
         const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
         if (throughPath.length) {
-          this.doc.crud.deleteBlocks(throughPath[0].parent, throughPath[0].index, throughPath[0].length)
+          throughPath.forEach(through => {
+            this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
+          })
         }
       }
       from.type === 'selected' && this.doc.crud.deleteBlockById(from.blockId)
@@ -185,7 +163,6 @@ export class InputTransformer {
       if (to?.type === 'text') {
         if (from.type !== "text") {
           to.block.replaceText(to.index, to.length, text)
-          to.block.setInlineRange(to.index + (text?.length || 0))
         } else {
           to.block.deleteText(to.index, to.length)
         }
@@ -194,7 +171,8 @@ export class InputTransformer {
     }, ORIGIN_SKIP_SYNC)
   }
 
-  private _handleBackspace: BlockCraft.EventHandler = (context) => {
+  @BindHotKey({key: 'Backspace', shiftKey: null, shortKey: null, metaKey: false})
+  private _handleBackspace(context: UIEventStateContext) {
     const state = context.get('keyboardState')
 
     const {from, isAllSelected, collapsed} = state.selection
@@ -264,7 +242,8 @@ export class InputTransformer {
     return true
   }
 
-  private _handleDelete: BlockCraft.EventHandler = (context) => {
+  @BindHotKey({key: 'Delete', shiftKey: null, shortKey: null, metaKey: false})
+  private _handleDelete(context: UIEventStateContext) {
     const state = context.get('keyboardState')
 
     const {from, isAllSelected, collapsed} = state.selection
@@ -308,7 +287,8 @@ export class InputTransformer {
     return false
   }
 
-  private _handlerTab: BlockCraft.EventHandler = (context) => {
+  @BindHotKey({key: 'Tab', shiftKey: null})
+  private _handlerTab(context: UIEventStateContext) {
     const state = context.get('keyboardState')
 
     context.preventDefault()
@@ -348,7 +328,8 @@ export class InputTransformer {
     return true
   }
 
-  private _handlerEnter: BlockCraft.EventHandler = (context) => {
+  @BindHotKey({key: 'Enter', shiftKey: null})
+  private _handlerEnter(context: UIEventStateContext) {
     const state = context.get('keyboardState')
     const {from, to, collapsed, isAllSelected} = state.selection
     const endBlock = to ? to.block : from.block

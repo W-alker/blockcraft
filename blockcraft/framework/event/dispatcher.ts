@@ -4,6 +4,7 @@ import {BlockCraftError, ErrorCode} from "../../global";
 import {KeyboardControl, CompositionControl, ClipboardControl, PointerControl} from "./control";
 import {fromEvent, takeUntil} from "rxjs";
 import {performanceTest} from "../decorators";
+import {closetBlockId} from "../utils";
 
 const bypassEventNames = ['beforeInput', 'focusOut', 'focusIn', 'contextMenu', 'wheel'] as Array<EventNames>
 
@@ -118,6 +119,17 @@ export class UIEventDispatcher {
           );
         })
     })
+    // fromEvent(document, 'selectionchange').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
+    //   this.run(
+    //     EventNames.selectionChange,
+    //     UIEventStateContext.from(
+    //       new UIEventState(ev),
+    //       new EventSourceState({
+    //         sourceType: EventScopeSourceType.Selection,
+    //         event: ev,
+    //       })
+    //     ))
+    // })
 
     this.composition.listen(root)
     this.keyboardControl.listen(root)
@@ -139,7 +151,7 @@ export class UIEventDispatcher {
 
     const selection = this.currentSelection!
     if (!selection) return;
-    this._runEvents(name, [selection.from.blockId], context)
+    this._runEvents(name, [selection.commonParent], context)
   }
 
   private _runEventsByTarget(name: EventNames, context: UIEventStateContext) {
@@ -147,7 +159,7 @@ export class UIEventDispatcher {
     if (!handlers) return;
 
     const target = context.get('defaultState').event.target as HTMLElement
-    const blockId = this.doc.closetBlockId(target)
+    const blockId = closetBlockId(target)
     if (!blockId) throw new BlockCraftError(ErrorCode.EventDispatcherError, `cannot find blockId for target ${target}`)
     this._runEvents(name, [blockId], context)
   }

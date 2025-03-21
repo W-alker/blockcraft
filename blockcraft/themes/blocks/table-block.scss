@@ -1,0 +1,62 @@
+@mixin table-block {
+
+  .table-block {
+    border-collapse: collapse;
+    border-spacing: 0;
+
+    &.is-selecting-cell {
+      -webkit-user-modify: read-only;
+      //user-select: none;
+      //-webkit-user-select: none;
+
+      * {
+        user-select: none;
+        -webkit-user-select: none;
+      }
+    }
+
+    &.selected {
+      user-select: none;
+      -webkit-user-select: none;
+
+      > table {
+        -webkit-user-modify: read-only;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      * {
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+    }
+
+    table {
+
+      tr {
+        min-height: 100px;
+
+        &.selected {
+          //background: unset !important;
+        }
+      }
+
+      td {
+        padding: 10px;
+        min-width: 100px;
+        min-height: 100px;
+        border: 1px solid #ddd;
+
+        &.selected {
+          -webkit-user-modify: read-only;
+
+          .editable-container {
+            user-select: none;
+            -webkit-user-select: none;
+          }
+        }
+      }
+    }
+  }
+}

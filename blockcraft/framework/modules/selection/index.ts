@@ -3,8 +3,9 @@ import {INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS} from "../../inline";
 import {BlockCraftError, ErrorCode} from "../../../global";
 import {BehaviorSubject, fromEvent, takeUntil} from "rxjs";
 import {BlockNodeType} from "../../types";
-import {isBlockGapSpace, isZeroSpace} from "../../utils";
-import {EventNames, KeyboardEventState} from "../../event";
+import {closetBlockId, isZeroSpace} from "../../utils";
+import {BindHotKey, DocEventRegister, EventListen, EventNames} from "../../event";
+import {UIEventStateContext} from "../../event/base";
 
 export interface IInlineRange {
   index: number
@@ -41,12 +42,20 @@ export interface IBlockSelectionJSON {
   from: IBlockInlineRangeJSON,
   to: IBlockInlineRangeJSON | null
   collapsed: boolean
+  commonParent: string
 }
 
 export class BlockSelection implements INormalizedRange {
 
   constructor(private readonly normalizedRange: INormalizedRange,
-              readonly raw: AbstractRange) {
+              readonly raw: Range) {
+    this._commonParent = this.isInSameBlock ? this.from.blockId : closetBlockId(raw.commonAncestorContainer)!
+  }
+
+  private readonly _commonParent: string
+
+  get commonParent() {
+    return this._commonParent
   }
 
   get from() {
@@ -55,6 +64,14 @@ export class BlockSelection implements INormalizedRange {
 
   get to() {
     return this.normalizedRange.to
+  }
+
+  get firstBlock() {
+    return this.from.block
+  }
+
+  get lastBlock() {
+    return this.to?.block || this.from.block
   }
 
   get collapsed() {
@@ -90,15 +107,17 @@ export class BlockSelection implements INormalizedRange {
         ...this.to,
         block: undefined
       } : null,
-      collapsed: this.collapsed
+      collapsed: this.collapsed,
+      commonParent: this.commonParent
     }))
   }
-
 }
 
+@DocEventRegister
 export class SelectionManager {
 
   public readonly selectionChange$ = new BehaviorSubject<BlockSelection | null>(null)
+  public readonly update$ = this.selectionChange$.asObservable()
 
   private _stack: (IBlockSelectionJSON | null)[] = []
 
@@ -110,32 +129,199 @@ export class SelectionManager {
     return this.selectionChange$.value
   }
 
+  get current() {
+    return this._stack[this._stack.length - 1]
+  }
+
+  get previous() {
+    return this._stack[this._stack.length - 2]
+  }
+
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
     fromEvent(document, 'selectionchange').pipe(takeUntil(root.onDestroy$)).subscribe(() => {
       const selection = document.getSelection()
       if (!selection || !this.doc.isActive || !selection.rangeCount) {
         this.selectionChange$.next(null)
+        this.doc.root.hostElement.blur()
         return
       }
+      if (selection.focusNode instanceof HTMLElement) {
+        // if (selection.focusNode === this.doc.root.hostElement) {
+        //   selection.modify('move', 'backward', 'character')
+        //   return
+        // }
+
+        // if (selection.focusNode.contains(selection.anchorNode)) {
+        // }
+      }
+
       const range = selection.getRangeAt(0)
-      if (range.startContainer instanceof HTMLElement && range.startContainer.getAttribute('data-node-type') === BlockNodeType.root) {
-        selection.modify('move', 'backward', 'character')
-        return
-      }
       const r = new BlockSelection(this.normalizeRange(range), range)
+
       this.selectionChange$.next(r)
       this._stack.push(r ? r.toJSON() : null)
       this._setSelected()
     })
-
-    this.doc.event.add(EventNames.keyDown, context => {
-      const state = context.get('keyboardState')
-      if (state.composing) return
-      this._handlerNoEditable(state)
-    })
   }
 
-  private _handlerNoEditable(state: KeyboardEventState) {
+  @BindHotKey({key: ['ArrowUp', "ArrowDown", 'ArrowLeft', 'ArrowRight'], shiftKey: false})
+  private _handlerUpOrDown(ctx: UIEventStateContext) {
+    const state = ctx.get('keyboardState')
+    const {isAllSelected, to, from} = state.selection
+    if (!isAllSelected) return
+    ctx.preventDefault()
+
+    const docSelection = document.getSelection()!
+    const focusBlockId = closetBlockId(docSelection.focusNode!)!
+    const focusBlock = this.doc.getBlockById(focusBlockId)
+
+    const opObj = from.block === focusBlock ? from : to!
+    const isBackward = state.raw.key === "ArrowUp" || state.raw.key === "ArrowLeft"
+
+    const extendStartOrEnd = (block: EditableBlockComponent, isStart: boolean) => {
+      const nodeAndOffset = this.doc.inlineManager.queryNodePositionInlineByOffset(block.containerElement, isStart ? 0 : block.textLength)
+      docSelection.setPosition(nodeAndOffset.node, nodeAndOffset.offset)
+    }
+
+    const focusSibling = () => {
+      const opBlock = isBackward ? this.doc.prevSibling(focusBlock) : this.doc.nextSibling(focusBlock)
+      if (!opBlock) return
+      this.doc.isEditable(opBlock) ? extendStartOrEnd(opBlock, !isBackward) : this.selectBlock(opBlock)
+      opBlock.hostElement.scrollIntoView({block: 'nearest', behavior: 'smooth'})
+    }
+
+    if (opObj.block.nodeType === BlockNodeType.void) {
+      focusSibling()
+      return true
+    }
+
+    const searchEditableDescendant = (block: BlockCraft.BlockComponent, isStart: boolean): EditableBlockComponent | null => {
+      if (this.doc.isEditable(block)) return block
+      const child = isBackward ? block.firstChildren : block.lastChildren
+      if (!child || child.nodeType === BlockNodeType.void) return null
+      return searchEditableDescendant(child, isStart)
+    }
+
+    const editableBlock = searchEditableDescendant(focusBlock, isBackward)
+    editableBlock ? extendStartOrEnd(editableBlock, isBackward) : focusSibling()
+    return true
+  }
+
+  @BindHotKey({key: ['ArrowUp', "ArrowDown"], shiftKey: true}, {flavour: 'root'})
+  private _handleShiftUpOrDown(ctx: UIEventStateContext) {
+    ctx.preventDefault()
+    const state = ctx.get('keyboardState')
+    const docSelection = document.getSelection()!
+    const focusBlockId = closetBlockId(docSelection.focusNode!)
+    if (!focusBlockId) {
+      return true
+    }
+
+    const isBackward = state.raw.key === "ArrowUp"
+
+    const focusBlock = this.doc.getBlockById(focusBlockId)
+
+    const extendStartOrEnd = (block: EditableBlockComponent, isStart: boolean) => {
+      const nodeAndOffset = this.doc.inlineManager.queryNodePositionInlineByOffset(block.containerElement, isStart ? 0 : block.textLength)
+      docSelection.extend(nodeAndOffset.node, nodeAndOffset.offset)
+    }
+
+    if (docSelection.isCollapsed && this.doc.isEditable(focusBlock) &&
+      (isBackward ? !state.selection.isStartOfBlock : !state.selection.isEndOfBlock)
+    ) {
+      extendStartOrEnd(focusBlock, isBackward)
+      return true
+    }
+
+    const opBlock = isBackward ? this.doc.prevSibling(focusBlockId) : this.doc.nextSibling(focusBlockId)
+    if (!opBlock) {
+      const parent = this.doc.getBlockById(focusBlockId).parentBlock
+      if (parent && parent.nodeType !== BlockNodeType.root) {
+        // 选中父级, 一定是非editable块
+        docSelection.setBaseAndExtent(
+          parent.hostElement, isBackward ? 0 : parent.hostElement.childElementCount,
+          parent.hostElement, isBackward ? parent.hostElement.childElementCount : 0
+        )
+      }
+      return true
+    }
+
+    this.doc.isEditable(opBlock)
+      ? extendStartOrEnd(opBlock, isBackward) : docSelection.extend(opBlock.hostElement, isBackward ? 0 : opBlock.hostElement.childElementCount)
+    opBlock.hostElement.scrollIntoView({block: 'nearest', behavior: 'smooth'})
+    return true
+  }
+
+  @BindHotKey({key: ['ArrowLeft', "ArrowRight"], shiftKey: true}, {flavour: 'root'})
+  private _handleShiftLeftOrRight(ctx: UIEventStateContext) {
+    const state = ctx.get('keyboardState')
+    const {to, from, isStartOfBlock, isEndOfBlock} = state.selection
+    const docSelection = document.getSelection()!
+
+    const focusBlockId = closetBlockId(docSelection.focusNode!)
+    if (!focusBlockId) {
+      ctx.preventDefault()
+      return true
+    }
+
+    const isBackward = state.raw.key === "ArrowLeft"
+
+    if (!to && ((isBackward && !isStartOfBlock) || (!isBackward && !isEndOfBlock))
+    ) {
+      return true
+    }
+
+    const focusBlock = this.doc.getBlockById(focusBlockId)
+    const opObj = from.block === focusBlock ? from : to!
+
+    if (
+      (isBackward && (opObj.type === 'selected' ? false : (opObj.index > 0))) ||
+      (!isBackward && (opObj.type === 'selected' ? false : (opObj.index + opObj.length < opObj.block.textLength)))
+    ) {
+      return true
+    }
+
+    const opBlock = isBackward ? this.doc.prevSibling(focusBlockId) : this.doc.nextSibling(focusBlockId)
+    if (!opBlock) {
+      ctx.preventDefault()
+      const parent = this.doc.getBlockById(focusBlockId).parentBlock
+      if (parent && parent.nodeType !== BlockNodeType.root) {
+        // 选中父级, 一定是非editable块
+        docSelection.setBaseAndExtent(
+          parent.hostElement, isBackward ? parent.hostElement.childElementCount : 0,
+          parent.hostElement, isBackward ? 0 : parent.hostElement.childElementCount
+        )
+      }
+      return true
+    }
+
+    ctx.preventDefault()
+
+    const extendStartOrEnd = (block: EditableBlockComponent, isStart: boolean) => {
+      const nodeAndOffset = this.doc.inlineManager.queryNodePositionInlineByOffset(block.containerElement, isStart ? 0 : block.textLength)
+      docSelection.extend(nodeAndOffset.node, nodeAndOffset.offset)
+    }
+
+    this.doc.isEditable(opBlock)
+      ? extendStartOrEnd(opBlock, !isBackward) : docSelection.extend(opBlock.hostElement, isBackward ? 0 : opBlock.hostElement.childElementCount)
+    opBlock.hostElement.scrollIntoView({block: 'nearest', behavior: 'smooth'})
+    return true
+  }
+
+  @BindHotKey({key: ['a', 'A'], shortKey: true}, {flavour: 'table-cell'})
+  handleCtrlA(context: UIEventStateContext) {
+    const state = context.get('keyboardState')
+    const {raw: evt, selection} = state
+    evt.preventDefault()
+    this.doc.selection.selectAllChildren(selection.commonParent)
+    return true
+  }
+
+  @EventListen(EventNames.keyDown)
+  private _handlerNoEditable(ctx: UIEventStateContext) {
+    const state = ctx.get('keyboardState')
+    if (state.composing || !state.selection.raw.collapsed) return;
+
     const selection = document.getSelection()!
     const activeNode = selection.focusNode
     const zero = isZeroSpace(activeNode!)
@@ -144,10 +330,10 @@ export class SelectionManager {
         case 'Backspace':
         case 'ArrowLeft':
           // the block zero space
-          if (isBlockGapSpace(zero)) {
-            selection.isCollapsed ? selection.setPosition(zero.closest('[data-block-id]')!, 0) : selection.extend(zero.closest('[data-block-id]')!, 0)
-            return
-          }
+          // if (isBlockGapSpace(zero)) {
+          //   selection.isCollapsed ? selection.setPosition(zero.closest('[data-block-id]')!, 0) : selection.extend(zero.closest('[data-block-id]')!, 0)
+          //   return
+          // }
           // inline zero space
           if (selection.anchorOffset > 0) {
             selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'backward', 'character')
@@ -157,67 +343,56 @@ export class SelectionManager {
         case 'ArrowRight':
         case 'Delete':
           // the block zero space
-          if (isBlockGapSpace(zero)) {
-            const blockElement = zero.closest('[data-block-id]')!
-            selection.isCollapsed ? selection.setPosition(blockElement.lastElementChild, 1) : selection.extend(blockElement.lastElementChild!, 1)
-            return
-          }
+          // if (isBlockGapSpace(zero)) {
+          //   const blockElement = zero.closest('[data-block-id]')!
+          //   selection.isCollapsed ? selection.setPosition(blockElement.lastElementChild, 1) : selection.extend(blockElement.lastElementChild!, 1)
+          //   return
+          // }
           if (selection.anchorOffset === 0) {
             selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'forward', 'character')
             return;
           }
           break
         case 'ArrowDown':
-          if (isBlockGapSpace(zero)) {
-            selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'forward', 'line')
-            return
-          }
+          // if (isBlockGapSpace(zero)) {
+          //   const blockElement = zero.closest('[data-block-id]')!
+          //   selection.isCollapsed ? selection.setPosition(blockElement.lastElementChild, 1) : selection.extend(blockElement.lastElementChild!, 1)
+          //   return
+          // }
           break
         case 'ArrowUp':
-          if (isBlockGapSpace(zero)) {
-            selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'backward', 'line')
-            return
-          }
+          // if (isBlockGapSpace(zero)) {
+          //   selection.isCollapsed ? selection.setPosition(zero.closest('[data-block-id]')!, 0) : selection.extend(zero.closest('[data-block-id]')!, 0)
+          //   return
+          // }
           break
       }
       return
     }
 
-    if (activeNode instanceof HTMLElement && activeNode.getAttribute('data-block-id')) {
-      const nodeType = activeNode.getAttribute('data-node-type')
-      switch (state.raw.key) {
-        case 'Backspace':
-        case 'ArrowLeft':
-          if (nodeType === BlockNodeType.editable) {
-            selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'backward', 'character')
-          } else {
-            selection.isCollapsed ? selection.setPosition(activeNode, 0) : selection.extend(activeNode, 0)
-          }
-          break
-        case 'ArrowRight':
-        case 'Delete':
-          if (nodeType === BlockNodeType.editable) {
-            selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'forward', 'line')
-          } else {
-            selection.isCollapsed ? selection.setPosition(activeNode, activeNode.childElementCount) : selection.extend(activeNode, activeNode.childElementCount)
-          }
-          break
-        // case 'ArrowDown':
-        //   if (nodeType === BlockNodeType.editable) {
-        //     selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'forward', 'line')
-        //   } else {
-        //     selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'forward', 'line')
-        //   }
-        //   break
-        // case 'ArrowUp':
-        //   if (nodeType === BlockNodeType.editable) {
-        //     selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'backward', 'line')
-        //   } else {
-        //     selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'backward', 'line')
-        //   }
-        //   break
-      }
-    }
+    // if (activeNode instanceof HTMLElement && activeNode.getAttribute('data-block-id')) {
+    //   const nodeType = activeNode.getAttribute('data-node-type')
+    //   switch (state.raw.key) {
+    //     case 'ArrowUp':
+    //     case 'Backspace':
+    //     case 'ArrowLeft':
+    //       if (nodeType === BlockNodeType.editable) {
+    //         selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'backward', 'character')
+    //       } else {
+    //         selection.isCollapsed ? selection.setPosition(activeNode, 0) : selection.extend(activeNode, 0)
+    //       }
+    //       break
+    //     case 'ArrowDown':
+    //     case 'ArrowRight':
+    //     case 'Delete':
+    //       if (nodeType === BlockNodeType.editable) {
+    //         selection.modify(selection.type === 'Range' ? 'extend' : 'move', 'forward', 'line')
+    //       } else {
+    //         selection.isCollapsed ? selection.setPosition(activeNode, activeNode.childElementCount) : selection.extend(activeNode, activeNode.childElementCount)
+    //       }
+    //       break
+    //   }
+    // }
   }
 
   private _selectedSet = new Set<BaseBlockComponent<any>>()
@@ -234,13 +409,26 @@ export class SelectionManager {
     this._selectedSet.clear()
     if (!this.value) return;
 
-    const {from, to} = this.value!
+    const {from, to, isAllSelected} = this.value!
+
+    // 控制不可输入
+    isAllSelected ? this.doc.root.hostElement.classList.add('all-selected') : this.doc.root.hostElement.classList.remove('all-selected')
 
     from.type === 'selected' && this._setSelectedClass(from.block)
 
     if (!to) return;
     to.type === 'selected' && this._setSelectedClass(to.block)
 
+    // const between = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
+    // if (!between?.length) return
+    // between.forEach(through => {
+    //   through.group.forEach(v => {
+    //     const b = this.doc.getBlockById(v)
+    //     if (b.nodeType !== BlockNodeType.editable) {
+    //       this._setSelectedClass(b as any)
+    //     }
+    //   })
+    // })
     const between = this.doc.queryBlocksBetween(from.block, to.block)
     if (!between?.length) return
     between.forEach(v => {
@@ -249,18 +437,14 @@ export class SelectionManager {
         this._setSelectedClass(b as any)
       }
     })
-
   }
 
   private _searchClosetBlockByNode(node: Node) {
-    const editableBlockId = this.doc.closetBlockId(node)
-    if (!editableBlockId) {
-      throw new BlockCraftError(ErrorCode.SyncInputError, 'Cannot find active block id when user input')
+    const id = closetBlockId(node)
+    if (!id) {
+      throw new BlockCraftError(ErrorCode.SelectionError, `Cannot find active block by node: ${node}`)
     }
-    const block = this.doc.getBlockById(editableBlockId)
-    if (!block) {
-      throw new BlockCraftError(ErrorCode.SyncInputError, 'Fatal active editable block was found when user input')
-    }
+    const block = this.doc.getBlockById(id)
     return block as BaseBlockComponent<any>
   }
 
@@ -275,63 +459,13 @@ export class SelectionManager {
     selection.addRange(range.cloneRange())
   }
 
-  transformBy(range: StaticRange): BlockSelection {
-    return new BlockSelection(this.normalizeRange(range), range)
-  }
-
-  modify(alter: 'move' | 'extend', direction: 'forward' | 'backward', granularity: 'character' | 'block') {
-    const curSelection = this.value
-    if (!curSelection) return
-    const {from, to} = curSelection
-    const range = document.getSelection()!.getRangeAt(0)
-
-    const setBefore = (block: BlockCraft.BlockComponent) => {
-      if (block instanceof EditableBlockComponent) {
-        range.setStart(block.hostElement.firstElementChild!.firstChild!, 0)
-      } else {
-        range.setStart(block.hostElement, 0)
-      }
-    }
-
-    const setAfter = (block: BlockCraft.BlockComponent) => {
-      if (block instanceof EditableBlockComponent) {
-        range.setEndAfter(block.hostElement.lastElementChild!)
-      } else {
-        range.setEnd(block.hostElement, 1)
-      }
-    }
-
-    if (granularity === 'block') {
-
-      if (direction === 'forward') {
-
-        const end = to ?? from
-
-        const nextBlock = this.doc.nextSibling(end.block)
-        // if next block is null, set after parent
-        if (!nextBlock) {
-          const parent = end.block.parentBlock
-          if (!parent || parent?.nodeType === BlockNodeType.root) return
-          setAfter(parent)
-        } else {
-          setAfter(nextBlock)
-        }
-
-        if (alter === 'move') range.collapse(false)
-
-      }
-
-    }
-  }
-
   normalizeRange(range: StaticRange): INormalizedRange {
     const {startContainer, endContainer, startOffset, endOffset, collapsed} = range
     const startBlock = this._searchClosetBlockByNode(startContainer)
 
     const getInlineOffset = (block: EditableBlockComponent<any>, node: Node, offset: number) => {
 
-      const isHost = node === block.hostElement
-      if (isHost) {
+      if (node === block.hostElement) {
         return offset > 0 ? block.textLength : 0
       }
 
@@ -347,7 +481,7 @@ export class SelectionManager {
       const zeroNode = isZeroSpace(node)
       const isGap = !isContainer && !!zeroNode
 
-      // if zero text at start or end
+      // if zero text at end
       if (isGap && zeroNode.parentElement === block.containerElement) {
         return 0
       }
@@ -369,7 +503,7 @@ export class SelectionManager {
 
     const getBlockRange = (block: BaseBlockComponent<any>, node: Node, offset: number): IBlockRange => {
       if (block instanceof EditableBlockComponent) {
-        if (startContainer instanceof HTMLElement && startContainer.classList.contains(INLINE_END_BREAK_CLASS)) {
+        if (node instanceof HTMLElement && node.classList.contains(INLINE_END_BREAK_CLASS)) {
           return {
             blockId: block.id,
             block: block,
@@ -386,12 +520,12 @@ export class SelectionManager {
           index: getInlineOffset(block, node, offset),
           length: 0
         }
-      } else {
-        return {
-          blockId: block.id,
-          block: block,
-          type: 'selected'
-        }
+      }
+
+      return {
+        blockId: block.id,
+        block: block,
+        type: 'selected'
       }
     }
 
@@ -414,13 +548,12 @@ export class SelectionManager {
       if (endBlock === startBlock && to.type === 'text') {
         from.length = to.index - from.index
         return {from, to: null, collapsed: false}
-      }1
+      }
 
       from.length = from.block.textLength - from.index
     }
 
     if (to.type === 'text') {
-
       to.length = to.index
       to.index = 0
     }
@@ -481,6 +614,20 @@ export class SelectionManager {
     const selection = document.getSelection()!
     selection.removeAllRanges()
     selection.addRange(range)
+  }
+
+  selectAllChildren(block: string | BlockCraft.BlockComponent) {
+    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    if (block instanceof EditableBlockComponent) {
+      this.setSelection({
+        blockId: block.id,
+        type: 'text',
+        index: 0,
+        length: block.textLength
+      })
+    } else {
+      this.selectBlock(block)
+    }
   }
 
   replay(json: IBlockSelectionJSON | null) {

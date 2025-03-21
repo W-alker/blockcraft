@@ -31,6 +31,7 @@ export class SchemaManager {
 
   createSnapshot<T extends BlockCraft.BlockFlavour>(flavour: T, params: BlockCraft.BlockCreateParameters<T>) {
     const schema = this.get(flavour)
+    // @ts-ignore
     return schema.createSnapshot(...(params as any))
   }
 

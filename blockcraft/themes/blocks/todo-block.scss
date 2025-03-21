@@ -1,6 +1,7 @@
 @mixin todo-block {
   div.todo-block {
     display: flex;
+    align-items: flex-start;
     gap: 4px;
 
     .todo-block-button {

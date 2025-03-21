@@ -1,17 +1,21 @@
-export abstract class DocPlugin {
+import {DocEventRegister} from "../event";
+
+@DocEventRegister
+export class DocPlugin {
   name = 'custom'
   version = 1.0
 
-  doc!: BlockCraft.Doc
-
-  loadDoc(doc: BlockCraft.Doc) {
-    this.doc = doc
-    this.onInit()
+  constructor(
+    public readonly doc: BlockCraft.Doc
+  ) {
+    this.doc.afterInit(() => this.onInit())
   }
 
-  abstract onInit(): void
+  onInit() {
+  }
 
-  abstract destroy(): void
+  destroy() {
+  }
 }
 
 declare global {

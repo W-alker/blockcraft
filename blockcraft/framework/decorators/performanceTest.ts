@@ -5,7 +5,8 @@ export function performanceTest(info = '') {
       const startTime = performance.now();
       const result = originalMethod.apply(this, args);
       const endTime = performance.now();
-      console.log(`${propertyKey}: ${info} took ${endTime - startTime} milliseconds.`);
+      const usedTime = endTime - startTime;
+      console.log(`%c${propertyKey}: ${info} took ${usedTime} milliseconds.`, usedTime > 2 ? 'color: red; ' : '');
       return result;
     }
   }

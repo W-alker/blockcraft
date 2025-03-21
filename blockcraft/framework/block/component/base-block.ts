@@ -105,8 +105,9 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   reattach() {
-    this.changeDetectorRef.reattach()
     this.yBlock = this.doc.crud.getYBlock(this.id)!
+    this._init()
+    this.changeDetectorRef.reattach()
   }
 
   bindEvent(name: EventNames, handler: BlockCraft.EventHandler, options?: {
@@ -148,6 +149,10 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     this._native.meta = proxyMap(this._native.meta, this._yMeta)
   }
 
+  get childrenLength() {
+    return (this.yBlock.get('children') as Y.Array<string>).length
+  }
+
   get childrenIds() {
     if (!this.childrenContainer) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
@@ -161,6 +166,28 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     }
 
     return this.childrenIds.map(id => this.doc.getBlockById(id)) as BaseBlockComponent<any>[]
+  }
+
+  get firstChildren(): BaseBlockComponent<any> | null {
+    if (this.nodeType === 'block') {
+      const yChildren = this.yBlock.get('children') as Y.Array<string>
+      if (!yChildren.length) return null
+      const id = yChildren.get(0)
+      if (!id) return null
+      return this.doc.getBlockById(id) as any
+    }
+    return null
+  }
+
+  get lastChildren(): BaseBlockComponent<any> | null {
+    if (this.nodeType === 'block') {
+      const yChildren = this.yBlock.get('children') as Y.Array<string>
+      if (!yChildren.length) return null
+      const id = yChildren.get(yChildren.length - 1)
+      if (!id) return null
+      return this.doc.getBlockById(id) as any
+    }
+    return null
   }
 
   getFlatBlocks(): BlockCraft.IBlockComponents[] {

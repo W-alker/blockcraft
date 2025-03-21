@@ -3,7 +3,7 @@ import {YBlock} from "../reactive";
 import * as Y from "yjs";
 import {BlockCraftError, ErrorCode, nextTick} from "../../global";
 import {IBlockSelectionJSON} from "../modules";
-import {BaseBlockComponent, EditableBlockComponent} from "../block";
+import {EditableBlockComponent} from "../block";
 import {Subject} from "rxjs";
 
 // This origin will skip Y.Event sync (to model)
@@ -52,13 +52,6 @@ export class DocCRUD {
     public readonly doc: BlockCraft.Doc
   ) {
     this.yBlockMap.observeDeep(this._syncYEvent)
-
-    this.yUndoManager.on('stack-item-added', (e) => {
-      // console.log('undo/redo stack', e, e.origin)
-      if (e.type === 'undo') {
-        this._undoSelectionStack.push(this.doc.selection.value ? this.doc.selection.value.toJSON() : null)
-      }
-    })
   }
 
   get schemas() {
@@ -156,10 +149,15 @@ export class DocCRUD {
       })
     })
 
-    propsChanges.length && this.onPropsUpdate$.next({
-      isUndoRedo,
-      transactions: propsChanges
-    })
+    if (propsChanges.length) {
+      this.onPropsUpdate$.next({
+        isUndoRedo,
+        transactions: propsChanges
+      })
+      // propsChanges.forEach(tr => {
+      //   tr.block.onPropsChange.emit(tr.changes as any)
+      // })
+    }
   }
 
   private _syncYBlockChildrenUpdate = (added: Record<string, YBlock>, deleted: string[], event: Y.YEvent<Y.Array<string>>, isUndoRedo = false) => {
@@ -281,7 +279,10 @@ export class DocCRUD {
     if (last === undefined) return
     this._redoSelectionStack.push(last)
     nextTick().then(() => {
-      this.doc.selection.replay(last)
+      try {
+        this.doc.selection.replay(last)
+      } catch (e) {
+      }
     })
   }
 
@@ -293,7 +294,10 @@ export class DocCRUD {
     if (last === undefined) return
     this._undoSelectionStack.push(last)
     nextTick().then(() => {
-      this.doc.selection.replay(last)
+      try {
+        this.doc.selection.replay(last)
+      } catch (e) {
+      }
     })
   }
 

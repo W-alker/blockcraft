@@ -10,6 +10,7 @@ import {UIEventDispatcher} from "../event";
 import {getCommonPath} from "../utils";
 import {EditableBlockComponent} from "../block";
 import {DocPlugin} from "../plugin";
+import {performanceTest} from "../decorators";
 
 interface DocConfig {
   docId: string
@@ -19,7 +20,7 @@ interface DocConfig {
   injector: Injector
   theme?: string
   embeds?: [string, EmbedConverter][]
-  plugins?: DocPlugin[]
+  plugins?: (typeof DocPlugin)[]
 }
 
 export class BlockCraftDoc {
@@ -30,14 +31,16 @@ export class BlockCraftDoc {
 
   readonly crud = new DocCRUD(this)
   readonly vm = new DocVM(this)
+  readonly event = new UIEventDispatcher(this)
   readonly inlineManager = new InlineManager(this)
   readonly selection = new SelectionManager(this)
-  readonly event = new UIEventDispatcher(this)
   private _inputManger = new InputTransformer(this)
   readonly clipboard = new ClipboardManager(this)
 
   public readonly onChildrenUpdate$ = this.crud.onChildrenUpdate$
   readonly onPropsUpdate$ = this.crud.onPropsUpdate$
+
+  private _plugins: DocPlugin[] = []
 
   private _root!: BlockCraft.IBlockComponents['root']
 
@@ -66,7 +69,7 @@ export class BlockCraftDoc {
   }
 
   get plugins() {
-    return this.config.plugins || []
+    return this._plugins
   }
 
   get isActive() {
@@ -76,6 +79,7 @@ export class BlockCraftDoc {
   constructor(
     public readonly config: DocConfig
   ) {
+    this._plugins = this.config.plugins?.map(plugin => new plugin(this)) || []
   }
 
   // init from a snapshot as root
@@ -94,8 +98,6 @@ export class BlockCraftDoc {
     this.afterInit$.next(this._root = comp.instance as BlockCraft.IBlockComponents['root'])
     this.afterInitFnStack.forEach(fn => fn(this.root))
     this.afterInitFnStack.clear()
-
-    this.plugins.forEach(plugin => plugin.loadDoc(this))
 
     // listen root destroy, release all resources
     comp.instance.onDestroy$.pipe(take(1)).subscribe(() => {
@@ -216,8 +218,8 @@ export class BlockCraftDoc {
     const commonPath = getCommonPath(fromPath, toPath)
     if (!commonPath.length) return []
     const childrenPath = this.getBlockById(commonPath.at(-1)!).childrenIds
-    const index1 = childrenPath.indexOf(fromComp.id)
-    const index2 = childrenPath.indexOf(toComp.id)
+    const index1 = childrenPath.indexOf(fromPath.slice(commonPath.length)[0])
+    const index2 = childrenPath.indexOf(toPath.slice(commonPath.length)[0])
     return childrenPath.slice(Math.min(index1, index2) + (contain ? 0 : 1), Math.max(index1, index2) + (contain ? 1 : 0))
   }
 
@@ -226,37 +228,55 @@ export class BlockCraftDoc {
     const fromComp = typeof from === 'string' ? this.getBlockById(from) : from
     const toComp = typeof to === 'string' ? this.getBlockById(to) : to
 
-    const list: { parent: string, index: number, length: number }[] = []
+    const list: { parent: string, parentBlock: BlockCraft.BlockComponent, index: number, length: number, group: string[] }[] = []
 
     const fromPath = this.getBlockPath(fromComp)
     const toPath = this.getBlockPath(toComp)
 
-    // 递归查找
-    const collect = (path1: string[], path2: string[]) => {
-      if (path1.length === 0 || path2.length === 0) return
-      const commonPath = getCommonPath(path1, path2)
-      if (commonPath.length === 0) return
-      const commonPathElement = commonPath[commonPath.length - 1]
-      const childrenPath = this.getBlockById(commonPathElement).childrenIds
-      if (childrenPath.length === 0) return
-      const path1Index = childrenPath.indexOf(path1[commonPath.length])
-      const path2Index = childrenPath.indexOf(path2[commonPath.length])
-      const len = Math.abs(path1Index - path2Index)
-      if (len <= 1) return
-      list.push({
-        parent: commonPathElement,
-        index: Math.min(path1Index, path2Index) + 1,
-        length: len - 1
-      })
-      collect(path1.slice(commonPath.length), path2.slice(commonPath.length))
+    const commonPath = getCommonPath(fromPath, toPath)
+    const endId = commonPath.at(-1)!
+
+    const collect = (comp: BlockCraft.BlockComponent, isFrom: boolean) => {
+      const parentId = comp.parentId
+      if (!parentId || parentId === endId) return
+      const parentComp = this.getBlockById(parentId)
+      const childrenIds = parentComp.childrenIds
+      const index = childrenIds.indexOf(comp.id)
+      if (isFrom && index < childrenIds.length - 1) {
+        list.push({
+          parentBlock: parentComp,
+          parent: parentId,
+          index: index + 1,
+          length: childrenIds.length - index - 1,
+          group: childrenIds.slice(index + 1)
+        })
+      } else if (!isFrom && index > 0) {
+        list.push({
+          parent: parentId,
+          index: 0,
+          length: index - 1,
+          parentBlock: parentComp,
+          group: childrenIds.slice(0, index)
+        })
+      }
+      collect(parentComp, isFrom)
     }
 
-    collect(fromPath, toPath)
-    return list
-  }
+    collect(fromComp, true)
+    collect(toComp, false)
 
-  closetBlockId(node: Node) {
-    return (node instanceof HTMLElement ? node : node.parentElement)?.closest('[data-block-id]')?.getAttribute('data-block-id')
+    const childrenPath = this.getBlockById(commonPath.at(-1)!).childrenIds
+    const index1 = childrenPath.indexOf(fromPath.slice(commonPath.length)[0])
+    const index2 = childrenPath.indexOf(toPath.slice(commonPath.length)[0])
+    list.push({
+      parent: endId,
+      index: index1 + 1,
+      length: index2 - index1 - 1,
+      parentBlock: this.getBlockById(endId),
+      group: childrenPath.slice(index1 + 1, index2)
+    })
+
+    return list
   }
 
   exportSnapshot() {

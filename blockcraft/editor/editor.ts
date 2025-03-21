@@ -5,19 +5,24 @@ import {
   HeadingOneBlockSchema,
   HeadingTwoBlockSchema,
   ImageBlockSchema,
-  RootBlockSchema, TodoBlockSchema
+  RootBlockSchema, TodoBlockSchema, CodeBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema
 } from "../blocks";
 import {ConsoleLogger} from "../global";
 import {DividerBlockSchema, CalloutBlockSchema, OrderedBlockSchema, ParagraphBlockSchema} from "../blocks";
 import {AutoUpdateOrderPlugin} from "../plugins/autoUpdateOrder";
 import {BulletBlockSchema} from "../blocks/bullet-block";
-import {CodeBlockSchema} from "../blocks/code-block";
-import {CodeBlockHotKeys} from "../plugins/codeBlockHotKeys";
+import {CodeBlocKeyBinding} from "../plugins/codeBlocKeyBinding";
+import {TableBlockBinding} from "../plugins/tableBlockBinding";
+import {BcFloatToolbarComponent} from "../components/float-toolbar/float-toolbar";
+import {BcFloatToolbarItemComponent} from "../components/float-toolbar/float-toolbar-item";
+import {
+  BcOverlayTriggerDirective
+} from "../components/float-toolbar/float-binding.directive";
 
 const schemas = new SchemaManager([
   RootBlockSchema, ParagraphBlockSchema, DividerBlockSchema, CalloutBlockSchema, BulletBlockSchema,
   OrderedBlockSchema, ImageBlockSchema, HeadingOneBlockSchema, HeadingTwoBlockSchema, HeadingFourBlockSchema, TodoBlockSchema,
-  CodeBlockSchema
+  CodeBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema
 ])
 
 @Component({
@@ -31,8 +36,55 @@ const schemas = new SchemaManager([
     <button (click)="undo()">undo</button>
     <button (click)="redo()">redo</button>
     <button (click)="addData()">增加数据</button>
+
+    <ng-template #overlayContent>
+      <!-- 浮动层内容 -->
+      <bc-float-toolbar>
+        <bc-float-toolbar-item>
+          Item 1
+          <ng-template>
+            <!-- 子工具栏内容 -->
+          </ng-template>
+        </bc-float-toolbar-item>
+        <bc-float-toolbar-item [bcOverlayTrigger]="childContent" [position]="'right-center'">
+          Item 2
+        </bc-float-toolbar-item>
+      </bc-float-toolbar>
+    </ng-template>
+
+    <ng-template #childContent2>
+      <bc-float-toolbar>
+        <bc-float-toolbar-item>
+          Item children
+          <ng-template>
+            <!-- 子工具栏内容 -->
+          </ng-template>
+        </bc-float-toolbar-item>
+      </bc-float-toolbar>
+    </ng-template>
+
+    <ng-template #childContent>
+      <bc-float-toolbar>
+        <bc-float-toolbar-item>
+          Item children
+            <!-- 子工具栏内容 -->
+            <button [bcOverlayTrigger]="childContent2" [position]="'right-center'">hover me</button>
+        </bc-float-toolbar-item>
+      </bc-float-toolbar>
+    </ng-template>
+
+    <div [bcOverlayTrigger]="overlayContent">
+      <!-- 触发元素内容 -->
+      <button>鼠标悬停显示浮动层</button>
+    </div>
   `,
   styles: [``],
+  imports: [
+    BcFloatToolbarComponent,
+    BcFloatToolbarComponent,
+    BcFloatToolbarItemComponent,
+    BcOverlayTriggerDirective
+  ],
   standalone: true
 })
 export class EditorComponent {
@@ -64,18 +116,9 @@ export class EditorComponent {
           img.style.width = '100px'
           return img
         }
-      }],
-      // ['break', {
-      //   toDelta: () => ({insert: {break: '\n'}}),
-      //   toView: () => {
-      //     const div = document.createElement('span')
-      //     div.classList.add('line-break')
-      //     div.appendChild(document.createElement('br'))
-      //     return div
-      //   }
-      // }]
+      }]
     ],
-    plugins: [new AutoUpdateOrderPlugin(), new CodeBlockHotKeys()]
+    plugins: [AutoUpdateOrderPlugin, CodeBlocKeyBinding, TableBlockBinding]
   })
 
   pid = ''
@@ -97,9 +140,10 @@ export class EditorComponent {
     const callout = this.doc.schemas.createSnapshot('callout', [])
     const img = this.doc.schemas.createSnapshot('image', ['https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg', 200, 100])
     const todo = this.doc.schemas.createSnapshot('todo', ['this is a todo'])
-    const code = this.doc.schemas.createSnapshot('code', ['const c = 1;\nfunction a()\n{ console.log(c) }'])
+    const code = this.doc.schemas.createSnapshot('code', ['const c = 1;\n\nfunction a()\n{ console.log(c) }'])
+    const table = this.doc.schemas.createSnapshot('table', [6, 6])
     this.pid = p.id
-    const snapshot = this.doc.schemas.createSnapshot('root', [this.rootId, [p, p2, callout, p4, p5, p6, p3, img, todo, code]])
+    const snapshot = this.doc.schemas.createSnapshot('root', [this.rootId, [p, p2, callout, p4, p5, p6, p3, img, todo, code, table]])
     console.log(snapshot)
     this.doc.init(snapshot, this.container)
   }
@@ -144,6 +188,6 @@ export class EditorComponent {
         ])
       )
     }
-    this.doc.crud.insertBlocks(this.doc.rootId, 0 ,_arr)
+    this.doc.crud.insertBlocks(this.doc.rootId, 0, _arr)
   }
 }

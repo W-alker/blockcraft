@@ -4,7 +4,7 @@ import {BlockCraftError, ErrorCode} from "../../global";
 import {BlockNodeType, IBlockSnapshot} from "../types";
 import {YBlock} from "../reactive";
 import * as Y from "yjs";
-import {BlockActiveTracker} from "../block";
+import {BaseBlockComponent, BlockActiveTracker} from "../block";
 
 export class DocVM {
 
@@ -192,7 +192,7 @@ declare global {
     }
 
     type BlockFlavour = keyof IBlockComponents
-    type BlockComponent<T extends BlockFlavour = BlockFlavour> = IBlockComponents[T]
+    type BlockComponent<T extends BlockFlavour = BlockFlavour> = IBlockComponents[T] | BaseBlockComponent
     type BlockComponentRef<T extends BlockFlavour = BlockFlavour> = ComponentRef<BlockComponent<T>>
   }
 }

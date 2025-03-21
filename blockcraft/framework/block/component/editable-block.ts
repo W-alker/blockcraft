@@ -20,7 +20,12 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   override ngAfterViewInit() {
     super.ngAfterViewInit();
     this._containerElement = this.hostElement.classList.contains(INLINE_CONTAINER_CLASS) ? this.hostElement : this.hostElement.querySelector(`.${INLINE_CONTAINER_CLASS}`)!
-    this.doc.inlineManager.render(this._native.children, this.containerElement)
+    this.rerender()
+  }
+
+  override reattach() {
+    super.reattach();
+    this.rerender()
   }
 
   protected _containerElement!: HTMLElement

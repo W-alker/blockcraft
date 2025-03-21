@@ -1,4 +1,12 @@
-import {DeltaInsert, DeltaInsertEmbed, DeltaOperation, DeltaRetain, IInlineNodeAttrs, InlineModel} from "../types";
+import {
+  DeltaInsert,
+  DeltaInsertEmbed,
+  DeltaInsertText,
+  DeltaOperation,
+  DeltaRetain,
+  IInlineNodeAttrs,
+  InlineModel
+} from "../types";
 import {
   INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS,
   INLINE_TEXT_NODE_TAG
@@ -22,20 +30,25 @@ export class InlineManager {
     this._embedConverterMap = new Map<string, EmbedConverter>(this.doc.config.embeds || [])
   }
 
-  setAttrs(element: HTMLElement, attributes?: IInlineNodeAttrs) {
+  static setAttrs(element: HTMLElement, attributes?: IInlineNodeAttrs) {
     if (!attributes) return
     setAttributes(element, attributes)
   }
 
+  static createTextNode(delta: DeltaInsertText): HTMLElement {
+    const node = document.createElement(INLINE_ELEMENT_TAG)
+    const text = document.createElement(INLINE_TEXT_NODE_TAG)
+    node.appendChild(text)
+    text.textContent = delta.insert
+    delta.attributes && setAttributes(node, delta.attributes)
+    return node
+  }
+
   createInlineNode(delta: DeltaInsert): HTMLElement {
     if (typeof delta.insert === 'string') {
-      const node = document.createElement(INLINE_ELEMENT_TAG)
-      const text = document.createElement(INLINE_TEXT_NODE_TAG)
-      node.appendChild(text)
-      text.textContent = delta.insert
-      this.setAttrs(node, delta.attributes)
-      return node
+      return InlineManager.createTextNode(delta as DeltaInsertText)
     }
+
     const converter = this._embedConverterMap.get(Object.keys(delta.insert)[0])
     if (!converter) {
       throw new BlockCraftError(ErrorCode.InlineEditorError, 'no embed registered for this type')
@@ -44,7 +57,7 @@ export class InlineManager {
     const span = document.createElement('span')
     span.setAttribute('contenteditable', 'false')
     const embed = converter.toView(delta as DeltaInsertEmbed)
-    this.setAttrs(node, delta.attributes)
+    InlineManager.setAttrs(node, delta.attributes)
     span.appendChild(embed)
     node.append(span, createZeroSpace())
     return node
@@ -104,7 +117,7 @@ export class InlineManager {
           }
 
           // |AAAAAA|
-          op.attributes && this.setAttrs(ele, op.attributes)
+          op.attributes && setAttributes(ele, op.attributes)
           len -= eleLength
           nodeStep = {
             index: nodeStep.index + 1,
@@ -150,7 +163,7 @@ export class InlineManager {
 
           const cloneNode = ele.cloneNode(true) as HTMLElement
           const cloneNode2 = ele.cloneNode(true) as HTMLElement
-          this.setAttrs(cloneNode, op.attributes)
+          setAttributes(cloneNode, op.attributes)
           cloneNode.firstElementChild!.textContent = wholeText.slice(nodeStep.indexInNode, nodeStep.indexInNode + len)
           cloneNode2.firstElementChild!.textContent = wholeText.slice(nodeStep.indexInNode + len)
           textNode.deleteData(nodeStep.indexInNode, eleLength - nodeStep.indexInNode)
@@ -175,7 +188,7 @@ export class InlineManager {
         const isElementEmbed = !(ele.firstElementChild as HTMLElement).isContentEditable
         const eleLength = isElementEmbed ? 1 : ele.textContent!.length
 
-        if(nodeStep.indexInNode === eleLength) {
+        if (nodeStep.indexInNode === eleLength) {
           nodeStep = {
             index: nodeStep.index + 1,
             indexInNode: 0
@@ -421,7 +434,7 @@ export class InlineManager {
       }
       offset -= eleLength
     }
-    throw new BlockCraftError(ErrorCode.InlineEditorError, 'Error inline node position queried')
+    throw new BlockCraftError(ErrorCode.InlineEditorError, `Error inline node position queried: character offset: ${offset}`)
   }
 
   private _setSelection(container: HTMLElement, position: number) {

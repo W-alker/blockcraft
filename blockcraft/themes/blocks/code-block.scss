@@ -11,28 +11,29 @@
     border-radius: 4px;
     caret-color: #000;
 
-    &-line-numbers {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: var(--code-padding-left);
-      height: 100%;
-      padding: var(--code-padding-top) .5em var(--code-padding-bottom);
-      color: #5c6370;
+    counter-set: line;
 
-      > div {
-        height: 100%;
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-        align-items: baseline;
+    [data-line-break="true"], c-element:first-of-type {
+      &::before {
+        position: absolute;
+        left: .5em;
+        content: counter(line);
+        counter-increment: line;
+        line-height: 1.8em;
+        font-size: 1em;
+        opacity: .6;
       }
     }
 
-    .edit-container, .code-block-highlighter {
+    [data-line-break="true"]::before {
+      transform: translateY(100%);
+    }
+
+    .edit-container {
       background: none;
       font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
       font-size: 1em;
+      line-height: 1.8em;
       text-align: left;
       word-spacing: normal;
       word-break: normal;
@@ -43,110 +44,92 @@
       white-space-collapse: break-spaces;
     }
 
-    .edit-container {
-      font-weight: lighter;
-      background: transparent !important;
-      color: transparent !important;
-
-      ::selection {
-        color: transparent !important;
-      }
+    [type="variable"] {
+      color: #d19a66;
     }
 
-    .code-block-highlighter {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      top: 0;
-      left: 0;
-      padding: var(--code-padding-top) var(--code-padding-left) var(--code-padding-bottom);
-      pointer-events: none;
-      //text-shadow: 0 1px white;
-      margin-left: 1px;
+    [type="keyword"] {
+      color: #c678dd;
+    }
 
-      .variable {
-        color: #d19a66;
-      }
+    [type="title"] {
+      color: #61afef;
+    }
 
-      .keyword {
-        color: #c678dd;
-      }
+    [type="number"] {
+      color: #d19a66;
+    }
 
-      .title {
-        color: #61afef;
-      }
+    [type="string"] {
+      color: #98c379;
+    }
 
-      .number {
-        color: #d19a66;
-      }
+    [type="comment"] {
+      color: #5c6370;
+    }
 
-      .string {
-        color: #98c379;
-      }
+    [type="function"] {
+      color: #e06c75;
+    }
 
-      .comment {
-        color: #5c6370;
-      }
+    [type="operator"] {
+      color: #56b6c2;
+    }
 
-      .function {
-        color: #e06c75;
-      }
+    [type="punctuation"] {
+      color: #abb2bf;
+    }
 
-      .operator {
-        color: #56b6c2;
-      }
+    [type="tag"] {
+      color: #e06c75;
+    }
 
-      .punctuation {
-        color: #abb2bf;
-      }
+    [type="attr"] {
+      color: #e06c75;
+    }
 
-      .tag {
-        color: #e06c75;
-      }
+    [type="attr-value"] {
+      color: #98c379;
+    }
 
-      .attr {
-        color: #e06c75;
-      }
+    [type="attr-name"] {
+      color: #e06c75;
+    }
 
-      .attr-value {
-        color: #98c379;
-      }
+    [type="property"] {
+      color: #e06c75;
+    }
 
-      .attr-name {
-        color: #e06c75;
-      }
+    [type="selector"] {
+      color: #e06c75;
+    }
 
-      .property {
-        color: #e06c75;
-      }
+    [type="builtin"] {
+      color: #e06c75;
+    }
 
-      .selector {
-        color: #e06c75;
-      }
+    [type="class"] {
+      color: #e06c75;
+    }
 
-      .builtin {
-        color: #e06c75;
-      }
+    [type="constant"] {
+      color: #d19a66;
+    }
 
-      .class {
-        color: #e06c75;
-      }
+    [type="regex"] {
+      color: #98c379;
+    }
 
-      .constant {
-        color: #d19a66;
-      }
+    [type="important"] {
+      color: #e06c75;
+    }
 
-      .regex {
-        color: #98c379;
-      }
+    [type="literal"] {
+      color: #d19a66;
+    }
 
-      .important {
-        color: #e06c75;
-      }
-
-      .literal {
-        color: #d19a66;
-      }
+    [type="tag"] {
+      color: #e067c5;
     }
 
     .head-btn {

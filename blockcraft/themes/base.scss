@@ -2,6 +2,7 @@
 @import "./blocks/code-block.scss";
 @import "./blocks/divider-block.scss";
 @import "./blocks/callout-block.scss";
+@import "./blocks/table-block.scss";
 
 :root {
   --bc-fs: 16px;
@@ -9,6 +10,18 @@
 }
 
 [data-blockcraft-root="true"] {
+  height: 80vh;
+  overflow-y: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+
+  &.all-selected {
+    [data-block-id].selected {
+      -webkit-user-modify: read-only !important;
+    }
+  }
 
   c-element {
 
@@ -18,14 +31,10 @@
 
   }
 
-  [data-node-type="root"] {
-    height: 80vh;
-    overflow-y: auto;
-  }
-
   [data-block-id] {
     position: relative;
     margin: .5em 0;
+    caret-color: transparent;
 
     > [contenteditable='false'] {
       user-select: none;
@@ -33,12 +42,16 @@
       -moz-user-select: none;
       -ms-user-select: none;
     }
-  }
 
-  /*[data-node-type="void"].selected {*/
-  /*  user-modify: read-only;*/
-  /*  -webkit-user-modify: read-only;*/
-  /*}*/
+    &.selected {
+      user-select: text;
+
+      ::selection {
+        background: transparent;
+        color: inherit;
+      }
+    }
+  }
 
   [data-zero-space="true"] {
     user-select: text;
@@ -50,6 +63,15 @@
     position: absolute;
     cursor: text;
     font-size: 0;
+  }
+
+  [data-node-type="block"] {
+    &.selected {
+      .edit-container {
+        user-select: none;
+        -webkit-user-select: none;
+      }
+    }
   }
 
   .edit-container {
@@ -69,4 +91,5 @@
   @include code-block();
   @include divider-block();
   @include callout-block();
+  @include table-block()
 }

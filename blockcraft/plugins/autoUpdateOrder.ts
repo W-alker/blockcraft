@@ -5,7 +5,7 @@ import {OrderedBlockModel} from "../blocks";
 export class AutoUpdateOrderPlugin extends DocPlugin {
   private _sub = new Subscription()
 
-  onInit() {
+  override onInit() {
     this._sub = this.doc.onChildrenUpdate$.subscribe(event => {
       const {inserted, deleted, block} = event
       if (inserted) {
@@ -17,15 +17,16 @@ export class AutoUpdateOrderPlugin extends DocPlugin {
 
       if (deleted) {
         const ids = block.childrenIds
+        if (!ids.length) return;
         const start = this.doc.getBlockById(ids[Math.max(deleted.index - 1, 0)])
-        if(start.flavour !== 'ordered') return;
+        if (start.flavour !== 'ordered') return;
         updateOrderAround(start as any)
       }
     })
 
     this._sub.add(
       this.doc.onPropsUpdate$.subscribe((event) => {
-        if(event.isUndoRedo) return;
+        if (event.isUndoRedo) return;
         const tr = event.transactions[0]
         if (tr.block.flavour !== 'ordered' || !tr.changes.has('depth')) return
         updateOrderAround(tr.block as any)
@@ -33,7 +34,7 @@ export class AutoUpdateOrderPlugin extends DocPlugin {
     )
   }
 
-  destroy() {
+  override destroy() {
     this._sub.unsubscribe()
   }
 }

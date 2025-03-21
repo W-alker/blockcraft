@@ -4,7 +4,8 @@ import {RootBlockModel} from "./index";
 
 @Component({
   selector: 'div.root-block[data-blockcraft-root="true"]',
-  template: `<ng-container #childrenContainer></ng-container>`,
+  template: `
+    <ng-container #childrenContainer></ng-container>`,
   styles: [`
     :host {
       margin: 20px;
@@ -13,7 +14,7 @@ import {RootBlockModel} from "./index";
     }
   `],
   standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
   isActive = false
@@ -26,6 +27,11 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
   @HostListener('focus', ['$event'])
   onFocus(event: FocusEvent) {
     this.isActive = true
+  }
+
+  @HostListener('contextmenu', ['$event'])
+  onContextMenu(event: MouseEvent) {
+    event.preventDefault()
   }
 
   override ngAfterViewInit() {
