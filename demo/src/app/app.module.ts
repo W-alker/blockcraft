@@ -42,8 +42,12 @@ export class AppModule {
     private sanitizer: DomSanitizer
   ) {
     this.iconRegistry.addSvgIconSet(
-      this.sanitizer.bypassSecurityTrustResourceUrl('https://at.alicdn.com/t/c/font_4682833_e6jfaqdxsv9.js')
+      this.sanitizer.bypassSecurityTrustResourceUrl('https://at.alicdn.com/t/c/font_4682833_e6jfaqdxsv9.js'),
     )
+    this.iconRegistry.addSvgIconSet(
+      this.sanitizer.bypassSecurityTrustResourceUrl('https://at.alicdn.com/t/c/font_4682833_uyakt0wwaya.js')
+    )
+
   }
 
 }

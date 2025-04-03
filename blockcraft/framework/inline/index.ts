@@ -35,18 +35,22 @@ export class InlineManager {
     setAttributes(element, attributes)
   }
 
-  static createTextNode(delta: DeltaInsertText): HTMLElement {
+  static createTextNode(text: string): HTMLElement {
+    const node = document.createElement(INLINE_TEXT_NODE_TAG)
+    node.textContent = text
+    return node
+  }
+
+  static createTextElement(delta: DeltaInsertText): HTMLElement {
     const node = document.createElement(INLINE_ELEMENT_TAG)
-    const text = document.createElement(INLINE_TEXT_NODE_TAG)
-    node.appendChild(text)
-    text.textContent = delta.insert
+    node.appendChild(InlineManager.createTextNode(delta.insert))
     delta.attributes && setAttributes(node, delta.attributes)
     return node
   }
 
   createInlineNode(delta: DeltaInsert): HTMLElement {
     if (typeof delta.insert === 'string') {
-      return InlineManager.createTextNode(delta as DeltaInsertText)
+      return InlineManager.createTextElement(delta as DeltaInsertText)
     }
 
     const converter = this._embedConverterMap.get(Object.keys(delta.insert)[0])
@@ -79,12 +83,21 @@ export class InlineManager {
   }
 
   applyDeltaToView(deltas: DeltaOperation[], container: HTMLElement) {
-
     const elementsNodes = Array.from(container.querySelectorAll(INLINE_ELEMENT_TAG)) as HTMLElement[]
 
     let nodeStep = {
       index: 0,
       indexInNode: 0
+    }
+
+    const sliceInlineElement = (ele: HTMLElement, index: number, len: number, attrs: IInlineNodeAttrs) => {
+      const textNode = ele.firstElementChild!.firstChild as Text
+      const splitTextContent = textNode.wholeText.slice(index, len + index)
+      const clonedNode = ele.cloneNode(true) as HTMLElement
+      setAttributes(clonedNode, attrs)
+      textNode.deleteData(index, len)
+      ;(clonedNode.firstElementChild?.firstChild as Text).textContent = splitTextContent
+      return clonedNode
     }
 
     const stepRetain = (op: DeltaRetain) => {
@@ -95,38 +108,7 @@ export class InlineManager {
         const ele = elementsNodes[nodeStep.index]
         const eleLength = (ele.firstElementChild as HTMLElement).isContentEditable ? ele.textContent!.length : 1
 
-        // |AAAAAA?
-        if (nodeStep.indexInNode === 0) {
-          // |AAAAA|A
-          if (len < eleLength) {
-            if (op.attributes) {
-              const textNode = ele.firstElementChild!.firstChild as Text
-              const splitTextContent = textNode.wholeText.slice(0, len)
-              textNode.deleteData(0, len)
-
-              const beforeNode = this.createInlineNode({
-                insert: splitTextContent,
-                attributes: op.attributes
-              })
-              ele.before(beforeNode)
-            }
-
-            nodeStep.indexInNode += len
-            len = 0
-            break
-          }
-
-          // |AAAAAA|
-          op.attributes && setAttributes(ele, op.attributes)
-          len -= eleLength
-          nodeStep = {
-            index: nodeStep.index + 1,
-            indexInNode: 0
-          }
-          continue
-        }
-
-        // A|AAAAA?
+        // AAAAAA|
         if (nodeStep.indexInNode === eleLength) {
           nodeStep = {
             index: nodeStep.index + 1,
@@ -135,20 +117,54 @@ export class InlineManager {
           continue
         }
 
-        // A|AAAAAA|
-        if (len > eleLength - nodeStep.indexInNode) {
-          if (op.attributes) {
-            const textNode = ele.firstElementChild!.firstChild as Text
-            const splitTextContent = textNode.wholeText.slice(nodeStep.indexInNode, eleLength)
-            textNode.deleteData(nodeStep.indexInNode, splitTextContent.length)
-            const beforeNode = this.createInlineNode({
-              insert: splitTextContent,
-              attributes: op.attributes
-            })
-            ele.before(beforeNode)
+        // |AAAAAA?
+        if (nodeStep.indexInNode === 0) {
+          // |AAAAA|A
+          if (len < eleLength) {
+
+            if (op.attributes) {
+              const beforeNode = sliceInlineElement(ele, 0, len, op.attributes)
+              ele.before(beforeNode)
+              elementsNodes.splice(nodeStep.index, 0, beforeNode)
+              nodeStep = {
+                index: nodeStep.index + 1,
+                indexInNode: eleLength - len
+              }
+              len = 0
+              break
+            }
+
+            nodeStep.indexInNode = len
+            len = 0
+            break
           }
 
-          len -= (eleLength - nodeStep.indexInNode)
+          // |AAAAAA|
+          op.attributes && setAttributes(ele, op.attributes)
+          len -= eleLength
+          nodeStep = {
+            index: nodeStep.index,
+            indexInNode: eleLength
+          }
+          continue
+        }
+
+        // A|AAAAAA|
+        if (len >= eleLength - nodeStep.indexInNode) {
+          const restLen = eleLength - nodeStep.indexInNode
+          if (op.attributes) {
+            const node = sliceInlineElement(ele, nodeStep.indexInNode, restLen, op.attributes)
+            ele.after(node)
+            elementsNodes.splice(nodeStep.index + 1, 0, node)
+            nodeStep = {
+              index: nodeStep.index + 1,
+              indexInNode: restLen
+            }
+            len -= restLen
+            continue
+          }
+
+          len -= restLen
           nodeStep = {
             index: nodeStep.index + 1,
             indexInNode: 0
@@ -161,14 +177,21 @@ export class InlineManager {
           const textNode = ele.firstElementChild!.firstChild as Text
           const wholeText = textNode.wholeText
 
-          const cloneNode = ele.cloneNode(true) as HTMLElement
-          const cloneNode2 = ele.cloneNode(true) as HTMLElement
-          setAttributes(cloneNode, op.attributes)
-          cloneNode.firstElementChild!.textContent = wholeText.slice(nodeStep.indexInNode, nodeStep.indexInNode + len)
-          cloneNode2.firstElementChild!.textContent = wholeText.slice(nodeStep.indexInNode + len)
-          textNode.deleteData(nodeStep.indexInNode, eleLength - nodeStep.indexInNode)
-          ele.after(cloneNode, cloneNode2)
-          elementsNodes.splice(nodeStep.index + 1, 0, cloneNode, cloneNode2)
+          const beforeNode = ele.cloneNode(false) as HTMLElement
+          const afterNode = ele.cloneNode(false) as HTMLElement
+          beforeNode.appendChild(InlineManager.createTextNode(wholeText.slice(0, nodeStep.indexInNode)))
+          afterNode.appendChild(InlineManager.createTextNode(wholeText.slice(nodeStep.indexInNode + len)))
+
+          textNode.deleteData(nodeStep.indexInNode + len, wholeText.length - nodeStep.indexInNode - len)
+          textNode.deleteData(0, nodeStep.indexInNode)
+
+          ele.before(beforeNode)
+          ele.after(afterNode)
+          setAttributes(ele, op.attributes)
+
+          elementsNodes.splice(nodeStep.index, 0, beforeNode)
+          elementsNodes.splice(nodeStep.index + 2, 0, afterNode)
+          len = 0
           nodeStep = {
             index: nodeStep.index + 1,
             indexInNode: len
@@ -178,6 +201,7 @@ export class InlineManager {
 
         nodeStep.indexInNode += len
         len = 0
+        break
       }
     }
 

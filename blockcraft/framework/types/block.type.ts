@@ -27,6 +27,8 @@ export interface IBaseMetadata {
 export type IMetadata = IBaseMetadata & SimpleRecord
 
 export interface IBlockProps {
+  textAlign?: 'center' | 'right'
+
   [key: string]: SimpleValue
 }
 
@@ -42,7 +44,10 @@ export interface BaseBlockDesc<P extends SimpleRecord = SimpleRecord, M extends 
   props: IBlockProps & P
 }
 
-export type IBlockSnapshot<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord> = UnknownRecord & Exclude<BaseBlockDesc<P, M>, 'nodeType'> & ({
+export type IBlockSnapshot<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord> =
+  UnknownRecord
+  & Exclude<BaseBlockDesc<P, M>, 'nodeType'>
+  & ({
   nodeType: BlockNodeType.block | BlockNodeType.root
   children: IBlockSnapshot[]
 } | {

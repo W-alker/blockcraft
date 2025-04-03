@@ -1,8 +1,7 @@
-import {BaseBlockComponent, BindHotKey, DocPlugin, EventListen, EventNames, ORIGIN_SKIP_SYNC} from "../framework";
+import {BindHotKey, DocPlugin, ORIGIN_SKIP_SYNC} from "../framework";
 import {UIEventStateContext} from "../framework/event/base";
 import {TableBlockComponent} from "../blocks/table-block/table.block";
 import {BlockCraftError, ErrorCode} from "../global";
-import {performanceTest} from "../framework/decorators";
 
 export class TableBlockBinding extends DocPlugin {
 
@@ -33,61 +32,57 @@ export class TableBlockBinding extends DocPlugin {
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
     if (!selection.isAllSelected) return
-
-    evt.preventDefault()
+    if(selection.from.block.flavour === 'table') return false
     const table = this._getTable(selection)
-    // 是否有选择块
-    if (table.selectedCellSet.size) {
-      this.clearCellContent(Array.from(table.selectedCellSet))
-      return true
-    }
+    evt.preventDefault()
+    const selectedCells = table.getSelectedCells()
+    this.clearCellContent(selectedCells)
 
-    const block = this.doc.getBlockById(selection.commonParent)
-    if (block.flavour === 'table-cell') {
-      this.clearCellContent([block])
-      return true
-    }
-
-    const {firstBlock, lastBlock} = selection
-
-    if (block.flavour === 'table-row') {
-      const childrenIds = block.childrenIds
-      const start = childrenIds.indexOf(firstBlock.id)
-      const end = childrenIds.indexOf(lastBlock.id)
-      this.clearCellContent(childrenIds.slice(start, end + 1).map(id => this.doc.getBlockById(id) as BaseBlockComponent))
-      return true
-    }
-
-    if (block.flavour === 'table') {
-      const childrenIds = block.childrenIds
-      const start = childrenIds.indexOf(firstBlock.id)
-      const end = childrenIds.indexOf(lastBlock.id)
-      // 删除行
-      this.doc.crud.deleteBlocks(block.id, start, end + 1 - start)
-    }
+    // // 是否有选择块
+    // if (table.selectedCellSet.size) {
+    //   this.clearCellContent(Array.from(table.selectedCellSet))
+    //   return true
+    // }
+    //
+    // const block = this.doc.getBlockById(selection.commonParent)
+    // if (block.flavour === 'table-cell') {
+    //   this.clearCellContent([block])
+    //   return true
+    // }
+    //
+    // const {firstBlock, lastBlock} = selection
+    //
+    // if (block.flavour === 'table-row') {
+    //   const childrenIds = block.childrenIds
+    //   const start = childrenIds.indexOf(firstBlock.id)
+    //   const end = childrenIds.indexOf(lastBlock.id)
+    //   this.clearCellContent(childrenIds.slice(start, end + 1).map(id => this.doc.getBlockById(id) as BaseBlockComponent))
+    //   return true
+    // }
+    //
+    // if (block.flavour === 'table') {
+    //   const childrenIds = block.childrenIds
+    //   const start = childrenIds.indexOf(firstBlock.id)
+    //   const end = childrenIds.indexOf(lastBlock.id)
+    //   // 删除行
+    //   this.doc.crud.deleteBlocks(block.id, start, end + 1 - start)
+    // }
 
     return true
   }
 
-  clearCellContent(cells: BlockCraft.BlockComponent[]) {
+  clearCellContent(cells: BlockCraft.IBlockComponents['table-cell'][]) {
     this.doc.crud.transact(() => {
       cells.forEach(cell => {
-        if (!cell.textContent()) return
-        const np = this.doc.schemas.createSnapshot('paragraph', [])
-        this.doc.crud.deleteBlocks(cell.id, 0, cell.childrenLength)
-        this.doc.crud.insertBlocks(cell.id, 0, [np])
+        cell.clearContent()
       })
     }, ORIGIN_SKIP_SYNC)
   }
 
-  // @EventListen(EventNames.contextMenu, {flavour: 'table'})
-  // handleContextMenu(context: UIEventStateContext) {
-  //   const evt = context.get('defaultState').event as PointerEvent
-  //   console.log('handleContextMenu', evt)
-  //
-  //   const selection = this.doc.selection.value!
-  //   const table = this._getTable(selection)
-  //   if (!table.selectedCellSet.size) return
-  // }
+  destroy(): void {
+  }
+
+  init(): void {
+  }
 
 }

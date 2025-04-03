@@ -5,7 +5,13 @@ import {
   HeadingOneBlockSchema,
   HeadingTwoBlockSchema,
   ImageBlockSchema,
-  RootBlockSchema, TodoBlockSchema, CodeBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema
+  RootBlockSchema,
+  TodoBlockSchema,
+  CodeBlockSchema,
+  TableBlockSchema,
+  TableRowBlockSchema,
+  TableCellBlockSchema,
+  HeadingThreeBlockSchema
 } from "../blocks";
 import {ConsoleLogger} from "../global";
 import {DividerBlockSchema, CalloutBlockSchema, OrderedBlockSchema, ParagraphBlockSchema} from "../blocks";
@@ -13,15 +19,15 @@ import {AutoUpdateOrderPlugin} from "../plugins/autoUpdateOrder";
 import {BulletBlockSchema} from "../blocks/bullet-block";
 import {CodeBlocKeyBinding} from "../plugins/codeBlocKeyBinding";
 import {TableBlockBinding} from "../plugins/tableBlockBinding";
-import {BcFloatToolbarComponent} from "../components/float-toolbar/float-toolbar";
-import {BcFloatToolbarItemComponent} from "../components/float-toolbar/float-toolbar-item";
-import {
-  BcOverlayTriggerDirective
-} from "../components/float-toolbar/float-binding.directive";
+import {FloatTextToolbarPlugin} from "../plugins/float-text-toolbar";
+import {BlockTransformerPlugin} from "../plugins/block-transformer";
+import {BlockControllerPlugin} from "../plugins/block-controller";
 
 const schemas = new SchemaManager([
   RootBlockSchema, ParagraphBlockSchema, DividerBlockSchema, CalloutBlockSchema, BulletBlockSchema,
-  OrderedBlockSchema, ImageBlockSchema, HeadingOneBlockSchema, HeadingTwoBlockSchema, HeadingFourBlockSchema, TodoBlockSchema,
+  OrderedBlockSchema, ImageBlockSchema,
+  HeadingOneBlockSchema, HeadingTwoBlockSchema, HeadingThreeBlockSchema, HeadingFourBlockSchema,
+  TodoBlockSchema,
   CodeBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema
 ])
 
@@ -36,55 +42,12 @@ const schemas = new SchemaManager([
     <button (click)="undo()">undo</button>
     <button (click)="redo()">redo</button>
     <button (click)="addData()">增加数据</button>
-
-    <ng-template #overlayContent>
-      <!-- 浮动层内容 -->
-      <bc-float-toolbar>
-        <bc-float-toolbar-item>
-          Item 1
-          <ng-template>
-            <!-- 子工具栏内容 -->
-          </ng-template>
-        </bc-float-toolbar-item>
-        <bc-float-toolbar-item [bcOverlayTrigger]="childContent" [position]="'right-center'">
-          Item 2
-        </bc-float-toolbar-item>
-      </bc-float-toolbar>
-    </ng-template>
-
-    <ng-template #childContent2>
-      <bc-float-toolbar>
-        <bc-float-toolbar-item>
-          Item children
-          <ng-template>
-            <!-- 子工具栏内容 -->
-          </ng-template>
-        </bc-float-toolbar-item>
-      </bc-float-toolbar>
-    </ng-template>
-
-    <ng-template #childContent>
-      <bc-float-toolbar>
-        <bc-float-toolbar-item>
-          Item children
-            <!-- 子工具栏内容 -->
-            <button [bcOverlayTrigger]="childContent2" [position]="'right-center'">hover me</button>
-        </bc-float-toolbar-item>
-      </bc-float-toolbar>
-    </ng-template>
-
-    <div [bcOverlayTrigger]="overlayContent">
-      <!-- 触发元素内容 -->
-      <button>鼠标悬停显示浮动层</button>
-    </div>
   `,
-  styles: [``],
-  imports: [
-    BcFloatToolbarComponent,
-    BcFloatToolbarComponent,
-    BcFloatToolbarItemComponent,
-    BcOverlayTriggerDirective
-  ],
+  styles: [`:host {
+    margin: 20px;
+    display: block;
+  }`],
+  imports: [],
   standalone: true
 })
 export class EditorComponent {
@@ -118,7 +81,8 @@ export class EditorComponent {
         }
       }]
     ],
-    plugins: [AutoUpdateOrderPlugin, CodeBlocKeyBinding, TableBlockBinding]
+    plugins: [new AutoUpdateOrderPlugin(), new CodeBlocKeyBinding(), new TableBlockBinding(),
+      new FloatTextToolbarPlugin(), new BlockTransformerPlugin(), new BlockControllerPlugin()]
   })
 
   pid = ''

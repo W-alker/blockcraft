@@ -1,17 +1,37 @@
 @font-face {
   font-family: "bc_icon"; /* Project id 4682833 */
-  src: url('bc-iconfont.woff2') format('woff2'),
-       url('bc-iconfont.woff') format('woff'),
-       url('bc-iconfont.ttf') format('truetype'),
-       url('bc-iconfont.svg') format('svg');
+  src: url('//at.alicdn.com/t/c/font_4682833_uyakt0wwaya.woff2?t=1742867425837') format('woff2'),
+  url('//at.alicdn.com/t/c/font_4682833_uyakt0wwaya.woff?t=1742867425837') format('woff'),
+  url('//at.alicdn.com/t/c/font_4682833_uyakt0wwaya.ttf?t=1742867425837') format('truetype'),
+  url('//at.alicdn.com/t/c/font_4682833_uyakt0wwaya.svg?t=1742867425837#bc_icon') format('svg');
 }
 
 .bc_icon {
   font-family: "bc_icon" !important;
-  font-size: 1em;
+  font-size: 16px;
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.bc_hebingdanyuange1:before {
+  content: "\e619";
+}
+
+.bc_dibuduiqi:before {
+  content: "\e681";
+}
+
+.bc_dingbuduiqi:before {
+  content: "\e683";
+}
+
+.bc_juzhongduiqi1:before {
+  content: "\e670";
+}
+
+.bc_hebingdanyuange:before {
+  content: "\e69a";
 }
 
 .bc_zhishiku-color:before {
@@ -797,4 +817,3 @@
 .bc_xiazai:before {
   content: "\e711";
 }
-

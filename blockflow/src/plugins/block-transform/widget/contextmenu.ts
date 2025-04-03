@@ -12,7 +12,7 @@ import {NgForOf, NgTemplateOutlet} from "@angular/common";
 import {MatIcon} from "@angular/material/icon";
 
 @Component({
-  selector: 'block-transform-contextmenu',
+  selector: 'block-transformer-contextmenu',
   template: `
     <ul class="list">
       <li class="list__item" *ngFor="let item of blocks; index as idx" [title]="item.description || item.label"

@@ -24,7 +24,9 @@ export const DividerBlockSchema: BlockSchemaOptions<DividerBlockModel> = {
   },
   metadata: {
     version: 1,
-    label: "分割线"
+    label: "分割线",
+    svgIcon: "bc_fengexian-color",
+    icon: "bc_icon bc_fengexian-color"
   }
 }
 

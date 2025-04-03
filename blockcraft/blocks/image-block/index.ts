@@ -38,7 +38,9 @@ export const ImageBlockSchema: BlockSchemaOptions<ImageBlockModel> = {
   metadata: {
     version: 1,
     label: "图片",
-    children: ['*']
+    children: ['*'],
+    icon: 'bc_icon bc_tupian-color',
+    svgIcon: 'bc_tupian-color'
   }
 }
 

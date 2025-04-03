@@ -24,7 +24,7 @@ export class InputTransformer {
   constructor(public readonly doc: BlockCraft.Doc) {
   }
 
-  @EventListen(EventNames.compositionStart)
+  @EventListen(EventNames.compositionStart, {flavour: 'root'})
   private _handleCompositionStart(context: UIEventStateContext) {
     const curSel = this.doc.selection.value!
     this._composeRange = curSel.from.type === "text" ? curSel.from : curSel.to
@@ -45,7 +45,7 @@ export class InputTransformer {
     return true
   }
 
-  @EventListen(EventNames.compositionEnd)
+  @EventListen(EventNames.compositionEnd, {flavour: 'root'})
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.get('defaultState').event as CompositionEvent
     ev.preventDefault()
@@ -59,7 +59,7 @@ export class InputTransformer {
     }, ORIGIN_SKIP_SYNC)
   }
 
-  @EventListen(EventNames.beforeInput)
+  @EventListen(EventNames.beforeInput, {flavour: 'root'})
   private _handleBeforeInput(context: BlockCraft.EventStateContext) {
     const ev = context.get('defaultState').event as InputEvent
     if (this._preventCompositionText || !ALLOW_INPUT_TYPES.has(ev.inputType)) {
@@ -78,16 +78,24 @@ export class InputTransformer {
 
     const normalizedRange = this.doc.selection.normalizeRange(staticRange)!
     // TODO: clear console
-    console.log(staticRange, normalizedRange)
+    // console.log(staticRange, normalizedRange)
 
     const {from, to, collapsed} = normalizedRange
     const text = getPlainTextFromInputEvent(ev)
 
     this.doc.crud.transact(() => {
-      if (!collapsed) {
+      if (to) {
         ev.preventDefault()
+        const docSel = document.getSelection()!
         this._replaceText(normalizedRange, text)
-        document.getSelection()!.getRangeAt(0).collapse(from.type === 'text')
+        docSel.getRangeAt(0).collapse(from.type === 'text')
+        from.type === 'text' && docSel.modify('move', 'forward', 'character')
+        return;
+      }
+
+      // delete content
+      if (from.type === 'text' && ev.inputType.startsWith('delete')) {
+        from.block.yText.delete(from.index, from.length)
         return;
       }
 
@@ -175,11 +183,12 @@ export class InputTransformer {
   private _handleBackspace(context: UIEventStateContext) {
     const state = context.get('keyboardState')
 
-    const {from, isAllSelected, collapsed} = state.selection
+    const {from, isAllSelected, collapsed, to} = state.selection
+
     if (isAllSelected) {
-      document.getSelection()!.modify('move', 'backward', 'character')
-      this._replaceText(state.selection)
       context.preventDefault()
+      document.getSelection()!.modify('move', 'character', 'backward')
+      this._replaceText(state.selection)
       return true
     }
 
@@ -216,7 +225,7 @@ export class InputTransformer {
       }
 
       // 如果是根节点下第一个空白的文本块，直接删除
-      if (!from.block.textLength && parent?.nodeType === BlockNodeType.root) {
+      if (!from.block.textLength && parent?.nodeType === BlockNodeType.root && this.doc.root.childrenLength > 1) {
         this.doc.crud.deleteBlockById(from.block.id)
         context.preventDefault()
         return true
@@ -236,8 +245,9 @@ export class InputTransformer {
       return true
     }
 
+
     this.doc.selection.selectBlock(prevBlock)
-    this.doc.crud.deleteBlockById(from.block.id)
+    // this.doc.crud.deleteBlockById(from.block.id)
     context.preventDefault()
     return true
   }

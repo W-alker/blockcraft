@@ -1,10 +1,17 @@
 {
   "id": "4682833",
-  "name": "block-craft-editor",
+  "name": "block-flow-editor",
   "font_family": "bc_icon",
-  "css_prefix_text": "bc_",
+  "css_prefix_text": "bc",
   "description": "文档库2.0",
   "glyphs": [
+    {
+      "icon_id": "28719557",
+      "name": "合并单元格",
+      "font_class": "hebingdanyuange",
+      "unicode": "e69a",
+      "unicode_decimal": 59034
+    },
     {
       "icon_id": "42771440",
       "name": "二级导航_知识库",

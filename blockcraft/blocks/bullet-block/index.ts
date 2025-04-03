@@ -19,7 +19,8 @@ export const BulletBlockSchema: BlockSchemaOptions<BulletBlockModel> = {
   metadata: {
     version: 1,
     label: "无序列表",
-    isLeaf: true
+    icon: 'bc_icon bc_wuxuliebiao-color',
+    svgIcon: 'bc_wuxuliebiao-color'
   }
 }
 

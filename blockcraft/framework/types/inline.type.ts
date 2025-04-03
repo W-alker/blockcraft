@@ -39,7 +39,7 @@ export type InlineStyleKey = `s:${string}`
  */
 export interface ITextStyles {
   's:color'?: string | null;
-  's:backgroundColor'?: string | null;
+  's:background'?: string | null;
   's:fontSize'?: number | null;
   's:fontFamily'?: string | null;
 }

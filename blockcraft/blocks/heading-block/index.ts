@@ -33,7 +33,8 @@ export const HeadingOneBlockSchema: BlockSchemaOptions<HeadingOneBlockModel> = {
   createSnapshot: editableBlockCreateSnapShotFn<HeadingOneBlockModel>('heading-one'),
   metadata: {
     version: 1,
-    label: "一级标题"
+    label: "一级标题",
+    icon: "bc_icon bc_biaoti_1"
   }
 }
 
@@ -44,7 +45,8 @@ export const HeadingTwoBlockSchema: BlockSchemaOptions<HeadingTwoBlockModel> = {
   createSnapshot: editableBlockCreateSnapShotFn<HeadingTwoBlockModel>('heading-two'),
   metadata: {
     version: 1,
-    label: "二级标题"
+    label: "二级标题",
+    icon: "bc_icon bc_biaoti_2"
   }
 }
 
@@ -55,7 +57,8 @@ export const HeadingThreeBlockSchema: BlockSchemaOptions<HeadingThreeBlockModel>
   createSnapshot: editableBlockCreateSnapShotFn<HeadingThreeBlockModel>('heading-three'),
   metadata: {
     version: 1,
-    label: "三级标题"
+    label: "三级标题",
+    icon: "bc_icon bc_biaoti_3"
   }
 }
 
@@ -66,7 +69,8 @@ export const HeadingFourBlockSchema: BlockSchemaOptions<HeadingFourBlockModel> =
   createSnapshot: editableBlockCreateSnapShotFn<HeadingFourBlockModel>('heading-four'),
   metadata: {
     version: 1,
-    label: "四"
+    label: "四级标题",
+    icon: "bc_icon bc_biaoti_4"
   }
 }
 

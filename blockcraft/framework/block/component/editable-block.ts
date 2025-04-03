@@ -37,6 +37,11 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     return this._containerElement
   }
 
+  @HostBinding('style.text-align')
+  get textAlign() {
+    return this._native.props['textAlign'] || 'left'
+  }
+
   @HostBinding('style.margin-left')
   get marginLeft() {
     return `${(this._native.props.depth || 0) * 2}em`
@@ -89,6 +94,13 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
   insertEmbed(index: number, embed: DeltaInsertEmbed) {
     this.applyDeltaOperation([{retain: index}, embed])
+  }
+
+  formatText(index: number, length: number, attributes: Record<string, any>) {
+    this.doc.crud.transact(() => {
+      this.yText.format(index, length, attributes)
+      this.doc.inlineManager.applyDeltaToView([{retain: index}, {retain: length, attributes}], this.containerElement)
+    }, ORIGIN_SKIP_SYNC)
   }
 
   applyDeltaOperation(delta: DeltaOperation[]) {

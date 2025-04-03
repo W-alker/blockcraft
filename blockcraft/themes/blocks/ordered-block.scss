@@ -1,0 +1,11 @@
+@mixin ordered-block {
+  div.ordered-block {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+
+    .edit-container {
+      flex: 1;
+    }
+  }
+}

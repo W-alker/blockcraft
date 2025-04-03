@@ -5,7 +5,7 @@ import {OrderedBlockModel} from "../blocks";
 export class AutoUpdateOrderPlugin extends DocPlugin {
   private _sub = new Subscription()
 
-  override onInit() {
+  init() {
     this._sub = this.doc.onChildrenUpdate$.subscribe(event => {
       const {inserted, deleted, block} = event
       if (inserted) {

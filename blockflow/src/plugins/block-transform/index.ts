@@ -97,7 +97,7 @@ export const blockTransforms: IBlockTransformConfig[] = [
 const TransformReg = /^[\\、].*/
 
 export class BlockTransformPlugin implements IPlugin {
-  name = 'block-transform';
+  name = 'block-transformer';
   version = 1.0;
 
   private _controller!: Controller

@@ -1,4 +1,4 @@
-import {ComponentRef, ViewContainerRef} from "@angular/core";
+import {ComponentRef, ViewContainerRef, ViewRef} from "@angular/core";
 import {lastValueFrom, take} from "rxjs";
 import {BlockCraftError, ErrorCode} from "../../global";
 import {BlockNodeType, IBlockSnapshot} from "../types";

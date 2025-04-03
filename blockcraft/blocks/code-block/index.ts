@@ -22,7 +22,9 @@ export const CodeBlockSchema: BlockSchemaOptions<CodeBlockModel> = {
   createSnapshot: editableBlockCreateSnapShotFn<CodeBlockModel>('code', {lang: 'JavaScript'}),
   metadata: {
     version: 1,
-    label: "代码块"
+    label: "代码块",
+    svgIcon: "bc_daimakuai1",
+    icon: "bc_icon bc_daimakuai1"
   }
 }
 

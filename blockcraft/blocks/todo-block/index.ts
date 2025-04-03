@@ -22,7 +22,9 @@ export const TodoBlockSchema: BlockSchemaOptions<TodoBlockModel> = {
   createSnapshot: editableBlockCreateSnapShotFn<TodoBlockModel>('todo', {created: Date.now(), completed: 0}),
   metadata: {
     version: 1,
-    label: "待办事项"
+    label: "待办事项",
+    icon: 'bc_icon bc_gongzuoshixiang-color',
+    svgIcon: 'bc_gongzuoshixiang-color'
   }
 }
 

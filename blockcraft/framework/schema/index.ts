@@ -26,7 +26,7 @@ export class SchemaManager {
   }
 
   getSchemaList() {
-    return this.schema.values()
+    return [...this.schema.values()]
   }
 
   createSnapshot<T extends BlockCraft.BlockFlavour>(flavour: T, params: BlockCraft.BlockCreateParameters<T>) {

@@ -10,6 +10,7 @@ export interface CalloutBlockModel extends NoEditableBlockNative {
   props: {
     backColor: string
     color: string
+    borderColor: string
     prefix: string
   },
 }
@@ -26,6 +27,7 @@ export const CalloutBlockSchema: BlockSchemaOptions<CalloutBlockModel> = {
       props: {
         backColor: '#f6f8fa',
         color: '#000',
+        borderColor: '#dfe2e5',
         prefix: '📢'
       },
       meta: {},
@@ -35,7 +37,9 @@ export const CalloutBlockSchema: BlockSchemaOptions<CalloutBlockModel> = {
   metadata: {
     version: 1,
     label: "高亮块",
-    children: ['paragraph', 'divider']
+    children: ['paragraph', 'divider'],
+    icon: 'bc_icon bc_gaoliangkuai-color',
+    svgIcon: 'bc_gaoliangkuai-color'
   }
 }
 

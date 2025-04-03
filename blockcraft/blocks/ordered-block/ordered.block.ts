@@ -9,9 +9,6 @@ import {getNumberPrefix} from "./utils";
     <span class="ordered-block-prefix" contenteditable="false">{{ order }}.</span>
     <div class="edit-container"></div>
   `,
-  host: {
-    '[style.display]': '"flex"',
-  },
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush
 })

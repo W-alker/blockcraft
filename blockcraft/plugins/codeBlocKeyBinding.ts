@@ -123,6 +123,9 @@ export class CodeBlocKeyBinding extends DocPlugin {
     return true
   }
 
-  override destroy() {
+  init() {
+  }
+
+  destroy() {
   }
 }

@@ -16,13 +16,15 @@ export interface OrderedBlockModel extends EditableBlockNative {
 }
 
 export const OrderedBlockSchema: BlockSchemaOptions<OrderedBlockModel> = {
-    flavour: 'ordered',
-    nodeType: BlockNodeType.editable,
-    component: OrderedBlockComponent,
-    createSnapshot: editableBlockCreateSnapShotFn<OrderedBlockModel>('ordered', {order: 0}),
+  flavour: 'ordered',
+  nodeType: BlockNodeType.editable,
+  component: OrderedBlockComponent,
+  createSnapshot: editableBlockCreateSnapShotFn<OrderedBlockModel>('ordered', {order: 0}),
   metadata: {
     version: 1,
-    label: "有序列表"
+    label: "有序列表",
+    icon: 'bc_icon bc_youxuliebiao-color',
+    svgIcon: 'bc_youxuliebiao-color'
   }
 }
 

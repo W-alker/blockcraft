@@ -1,6 +1,6 @@
 import {
   ChangeDetectorRef,
-  Component,
+  Component, DestroyRef,
   ElementRef,
   EventEmitter,
   HostBinding,
@@ -63,29 +63,32 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   hostElement: HTMLElement = inject(ElementRef).nativeElement
   changeDetectorRef = inject(ChangeDetectorRef)
+  destroyRef = inject(DestroyRef)
 
   parentId: string | null = null
 
   protected _yProps!: Obj2YMap<Model['props']>
   protected _yMeta!: Obj2YMap<Model['meta']>
 
+  private _props!: Model['props']
   get props() {
-    return this._native.props as Model['props']
+    return this._props as Model['props']
   }
 
+  private _meta!: Model['meta']
   get meta() {
-    return this._native.meta as Model['meta']
+    return this._meta as Model['meta']
   }
 
   constructor() {
   }
 
   ngOnInit() {
+    this._init()
   }
 
   ngAfterViewInit() {
     this.onViewInit$.next(true)
-    this._init()
     if (this.nodeType === BlockNodeType.void
       // || this.nodeType === BlockNodeType.block
     ) {
@@ -145,23 +148,31 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   protected _init() {
     this._yProps = this._yBlock.get('props')
     this._yMeta = this._yBlock.get('meta')
-    this._native.props = proxyMap(this._native.props, this._yProps)
-    this._native.meta = proxyMap(this._native.meta, this._yMeta)
+    this._props = proxyMap(this._native.props, this._yProps)
+    this._meta = proxyMap(this._native.meta, this._yMeta)
+    this.nodeType !== BlockNodeType.editable &&
+    (this._childrenIds = (this._yBlock.get('children') as Y.Array<string>).toArray())
   }
 
   get childrenLength() {
     return (this.yBlock.get('children') as Y.Array<string>).length
   }
 
+  /**
+   * 这个childrenIds带缓存
+   * @protected
+   */
+  protected _childrenIds: string[] = []
+
   get childrenIds() {
-    if (!this.childrenContainer) {
+    if (this.nodeType === BlockNodeType.editable) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
     }
     return (this.yBlock.get('children') as Y.Array<string>).toArray()
   }
 
   getChildrenBlocks() {
-    if (!this.childrenContainer) {
+    if (this.nodeType === BlockNodeType.editable) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
     }
 
@@ -188,6 +199,13 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
       return this.doc.getBlockById(id) as any
     }
     return null
+  }
+
+  getChildrenByIndex(index: number) {
+    if (this.nodeType === BlockNodeType.editable) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
+    }
+    return this.doc.getBlockById(this.childrenIds[index])
   }
 
   getFlatBlocks(): BlockCraft.IBlockComponents[] {

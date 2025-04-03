@@ -1,4 +1,4 @@
-import {DeltaInsert} from "../../framework/types";
+import {DeltaInsert, IInlineNodeAttrs} from "../../framework/types";
 
 export const characterAtDelta = (deltas: DeltaInsert[], position: number): string | object | null => {
   let currentPosition = 1;
@@ -64,4 +64,24 @@ export function sliceDelta(delta: DeltaInsert[], start = 0, end = Infinity) {
   }
 
   return slicedOps;
+}
+
+export const getCommonAttributesFromDeltas = (delta: DeltaInsert[]) => {
+  if(!delta.length) return {}
+  let commonAttrs: IInlineNodeAttrs | undefined
+  for (const op of delta) {
+    if(!op.attributes) return {}
+    if (!commonAttrs) {
+      commonAttrs = {...op.attributes}
+      continue
+    }
+    for (const key in commonAttrs) {
+      // @ts-ignore
+      if (commonAttrs[key] !== op.attributes[key]) {
+        // @ts-ignore
+        delete commonAttrs[key]
+      }
+    }
+  }
+  return commonAttrs || {}
 }

@@ -3,32 +3,55 @@
 @import "./blocks/divider-block.scss";
 @import "./blocks/callout-block.scss";
 @import "./blocks/table-block.scss";
+@import "blocks/ordered-block";
+@import "blocks/heading-block";
 
 :root {
-  --bc-fs: 16px;
-  --bc-lh: 22px;
+  --bc-fs: 14px;
+  --bc-lh: 20px;
+  --bc-color: #333;
+  --bc-warning-color: #f5a623;
+  --bc-error-color: #e03131;
+  --bc-active-color: #4857E2;
+  --bc-error-background-color: rgba(224, 49, 49, 0.1);
+  --bc-select-background-color: rgba(24, 144, 255, 0.3);
 }
 
 [data-blockcraft-root="true"] {
+  position: relative;
   height: 80vh;
   overflow-y: auto;
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+  outline: none;
+  padding: 0 20px;
+  width: 70vw;
+  font-size: var(--bc-fs);
+  line-height: var(--bc-lh);
+
+  &.selecting, [data-node-type="block"].selecting {
+    > [data-node-type="block"],
+    > [data-node-type="void"] {
+      -webkit-user-modify: read-only;
+
+      * {
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      [data-block-zero-space="true"] {
+        user-select: text;
+        -webkit-user-select: text;
+      }
+    }
+  }
 
   &.all-selected {
     [data-block-id].selected {
       -webkit-user-modify: read-only !important;
     }
-  }
-
-  c-element {
-
-    &[bold="true"] {
-      font-weight: bold;
-    }
-
   }
 
   [data-block-id] {
@@ -44,7 +67,8 @@
     }
 
     &.selected {
-      user-select: text;
+      //user-select: text;
+      -webkit-user-modify: read-only;
 
       ::selection {
         background: transparent;
@@ -66,19 +90,76 @@
   }
 
   [data-node-type="block"] {
-    &.selected {
-      .edit-container {
-        user-select: none;
-        -webkit-user-select: none;
-      }
-    }
+    //user-select: none;
+    //-webkit-user-select: none;
   }
 
   .edit-container {
     white-space: break-spaces;
+    user-select: text;
 
     span[contenteditable='false'] {
       margin: 0 2px;
+    }
+
+    c-element {
+
+      &[bold="true"] {
+        font-weight: bold;
+      }
+
+      &[italic="true"] {
+        font-style: italic;
+      }
+
+      &[underline="true"] {
+        text-decoration: underline;
+      }
+
+      &[strike="true"] {
+        text-decoration: line-through;
+      }
+
+      &[underline="true"][strike="true"] {
+        text-decoration: underline line-through;
+      }
+
+      &[sub="true"] {
+        vertical-align: sub;
+        font-size: small;
+      }
+
+      &[sup="true"] {
+        vertical-align: super;
+        font-size: small;
+      }
+
+      &:not([code]) + [code="true"] {
+        padding-left: 0.2em;
+        border-left: 1px solid rgb(234, 236, 239);
+      }
+
+      &[code="true"]:has(+ c-element:not([code])) {
+        padding-right: 0.2em;
+        border-right: 1px solid rgb(234, 236, 239);
+      }
+
+      &[code="true"] {
+        font-family: monospace;
+        background-color: rgb(242, 243, 245);
+        border-top: 1px solid rgb(234, 236, 239);
+        border-bottom: 1px solid rgb(234, 236, 239);
+      }
+
+      &[link] {
+        color: #1890ff;
+        text-decoration: underline;
+        cursor: pointer;
+
+        &:hover {
+          color: #40a9ff !important;
+        }
+      }
     }
 
     c-text {
@@ -88,8 +169,20 @@
   }
 
   @include todo-block();
+  @include ordered-block();
   @include code-block();
   @include divider-block();
   @include callout-block();
-  @include table-block()
+  @include table-block();
+  @include heading-block();
+}
+
+.blockcraft-cursor {
+  pointer-events: none;
+
+  > span {
+    z-index: 100;
+    position: absolute;
+    background-color: var(--bc-select-background-color);
+  }
 }

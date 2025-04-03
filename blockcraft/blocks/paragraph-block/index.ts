@@ -19,7 +19,8 @@ export const ParagraphBlockSchema: BlockSchemaOptions<ParagraphBlockModel> = {
   createSnapshot: editableBlockCreateSnapShotFn<ParagraphBlockModel>('paragraph'),
   metadata: {
     version: 1,
-    label: "基础段落"
+    label: "基础段落",
+    icon: "bc_icon bc_wenben",
   }
 }
 

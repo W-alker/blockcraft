@@ -1,7 +1,7 @@
 import {BaseBlockComponent, EditableBlockComponent} from "../../block";
 import {INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS} from "../../inline";
-import {BlockCraftError, ErrorCode} from "../../../global";
-import {BehaviorSubject, fromEvent, takeUntil} from "rxjs";
+import {BlockCraftError, ErrorCode, nextTick} from "../../../global";
+import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
 import {BlockNodeType} from "../../types";
 import {closetBlockId, isZeroSpace} from "../../utils";
 import {BindHotKey, DocEventRegister, EventListen, EventNames} from "../../event";
@@ -48,7 +48,8 @@ export interface IBlockSelectionJSON {
 export class BlockSelection implements INormalizedRange {
 
   constructor(private readonly normalizedRange: INormalizedRange,
-              readonly raw: Range) {
+              readonly raw: Range,
+              readonly isByUser = false) {
     this._commonParent = this.isInSameBlock ? this.from.blockId : closetBlockId(raw.commonAncestorContainer)!
   }
 
@@ -117,9 +118,10 @@ export class BlockSelection implements INormalizedRange {
 export class SelectionManager {
 
   public readonly selectionChange$ = new BehaviorSubject<BlockSelection | null>(null)
-  public readonly update$ = this.selectionChange$.asObservable()
 
   private _stack: (IBlockSelectionJSON | null)[] = []
+
+  private isByUser = false
 
   constructor(public readonly doc: BlockCraft.Doc) {
     this.doc.afterInit(this._bindEvents)
@@ -135,6 +137,26 @@ export class SelectionManager {
 
   get previous() {
     return this._stack[this._stack.length - 2]
+  }
+
+  blur() {
+    document.getSelection()?.removeAllRanges()
+  }
+
+  nextChangeObserve() {
+    return this.selectionChange$.pipe(skip(1), take(1))
+  }
+
+  /**
+   * 一般用于手动触发变化后对下一次的selectionChange变化后触发事件（框架内部事件执行后）
+   * @param fn
+   */
+  afterNextChange(fn: (selection: BlockSelection | null) => void) {
+    this.nextChangeObserve().subscribe(v => {
+      nextTick().then(() => {
+        fn(v)
+      })
+    })
   }
 
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
@@ -156,11 +178,16 @@ export class SelectionManager {
       }
 
       const range = selection.getRangeAt(0)
-      const r = new BlockSelection(this.normalizeRange(range), range)
+      const r = new BlockSelection(this.normalizeRange(range), range, this.isByUser)
+      this.isByUser = false
 
       this.selectionChange$.next(r)
       this._stack.push(r ? r.toJSON() : null)
       this._setSelected()
+    })
+
+    this.selectionChange$.subscribe(v => {
+      console.log('%c[selectionChange]', 'color: #00bfa5', v)
     })
   }
 
@@ -168,6 +195,7 @@ export class SelectionManager {
   private _handlerUpOrDown(ctx: UIEventStateContext) {
     const state = ctx.get('keyboardState')
     const {isAllSelected, to, from} = state.selection
+
     if (!isAllSelected) return
     ctx.preventDefault()
 
@@ -178,16 +206,12 @@ export class SelectionManager {
     const opObj = from.block === focusBlock ? from : to!
     const isBackward = state.raw.key === "ArrowUp" || state.raw.key === "ArrowLeft"
 
-    const extendStartOrEnd = (block: EditableBlockComponent, isStart: boolean) => {
-      const nodeAndOffset = this.doc.inlineManager.queryNodePositionInlineByOffset(block.containerElement, isStart ? 0 : block.textLength)
-      docSelection.setPosition(nodeAndOffset.node, nodeAndOffset.offset)
-    }
-
     const focusSibling = () => {
       const opBlock = isBackward ? this.doc.prevSibling(focusBlock) : this.doc.nextSibling(focusBlock)
-      if (!opBlock) return
-      this.doc.isEditable(opBlock) ? extendStartOrEnd(opBlock, !isBackward) : this.selectBlock(opBlock)
+      if (!opBlock) return false
+      this.setBlockPosition(opBlock, !isBackward)
       opBlock.hostElement.scrollIntoView({block: 'nearest', behavior: 'smooth'})
+      return true
     }
 
     if (opObj.block.nodeType === BlockNodeType.void) {
@@ -202,8 +226,13 @@ export class SelectionManager {
       return searchEditableDescendant(child, isStart)
     }
 
-    const editableBlock = searchEditableDescendant(focusBlock, isBackward)
-    editableBlock ? extendStartOrEnd(editableBlock, isBackward) : focusSibling()
+    if (opObj.block.nodeType === BlockNodeType.block) {
+      const res = focusSibling()
+      if (!res) {
+        const editableBlock = searchEditableDescendant(focusBlock, isBackward)
+        editableBlock && this.setBlockPosition(editableBlock, isBackward)
+      }
+    }
     return true
   }
 
@@ -522,6 +551,27 @@ export class SelectionManager {
         }
       }
 
+      // if (offset === 0) {
+      //   const prevBlock = this.doc.prevSibling(block) as BaseBlockComponent<any>
+      //   if (prevBlock) {
+      //     if (prevBlock instanceof EditableBlockComponent) {
+      //       return {
+      //         blockId: prevBlock.id,
+      //         block: prevBlock,
+      //         type: 'text',
+      //         index: prevBlock.textLength,
+      //         length: 0
+      //       }
+      //     }
+      //
+      //     return {
+      //       blockId: prevBlock.id,
+      //       block: prevBlock,
+      //       type: 'selected'
+      //     }
+      //   }
+      // }
+
       return {
         blockId: block.id,
         block: block,
@@ -565,10 +615,10 @@ export class SelectionManager {
     const selection = document.getSelection()!
     const range = document.createRange()
     range.setStart(block.hostElement, 0)
-    // range.collapse(true)
     range.setEnd(block.hostElement, block.hostElement.childElementCount)
     selection.removeAllRanges()
     selection.addRange(range)
+    this.isByUser = true
   }
 
   private _setRange(from: IBlockInlineRangeJSON, to: IBlockInlineRangeJSON | null = null) {
@@ -614,6 +664,20 @@ export class SelectionManager {
     const selection = document.getSelection()!
     selection.removeAllRanges()
     selection.addRange(range)
+    this.isByUser = true
+  }
+
+  setBlockPosition(block: string | BlockCraft.BlockComponent, atStart: boolean) {
+    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+
+    const docSelection = document.getSelection()!
+
+    const extendStartOrEnd = (block: EditableBlockComponent) => {
+      const nodeAndOffset = this.doc.inlineManager.queryNodePositionInlineByOffset(block.containerElement, atStart ? 0 : block.textLength)
+      docSelection.setPosition(nodeAndOffset.node, nodeAndOffset.offset)
+    }
+
+    this.doc.isEditable(block) ? extendStartOrEnd(block) : this.selectBlock(block)
   }
 
   selectAllChildren(block: string | BlockCraft.BlockComponent) {
@@ -656,6 +720,31 @@ export class SelectionManager {
   }
 
   toJSON(selection: BlockCraft.Selection) {
+  }
+
+  createFakeRange(json: IBlockSelectionJSON) {
+    const wrap = this.doc.root.hostElement
+    const cursorEle = document.createElement('span')
+    cursorEle.className = 'blockcraft-cursor'
+    const _r = this._setRange(json.from, json.to)
+    const _rRects = _r.getClientRects();
+    const wrapRect = wrap.getBoundingClientRect();
+
+    for (let i = 0; i < _rRects.length; i++) {
+      const rect = _rRects[i];
+      if (rect.width <= 0) continue;
+      rect.width = Math.max(1, rect.width)
+      const span = document.createElement('span');
+      span.style.cssText = `
+        left: ${rect.left - wrapRect.left}px;
+        top: ${rect.top - wrapRect.top}px;
+        width: ${rect.width}px;
+        height: ${rect.height}px;
+      `
+      cursorEle.appendChild(span)
+    }
+    wrap.appendChild(cursorEle);
+    return cursorEle;
   }
 
 }

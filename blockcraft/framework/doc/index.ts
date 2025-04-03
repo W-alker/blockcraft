@@ -5,12 +5,11 @@ import {DocVM} from "./vm";
 import {IBlockSnapshot} from "../types";
 import {EmbedConverter, InlineManager} from "../inline";
 import {ClipboardManager, InputTransformer, SelectionManager} from "../modules";
-import {BehaviorSubject, take} from "rxjs";
+import {BehaviorSubject, Subject, take} from "rxjs";
 import {UIEventDispatcher} from "../event";
 import {getCommonPath} from "../utils";
 import {EditableBlockComponent} from "../block";
 import {DocPlugin} from "../plugin";
-import {performanceTest} from "../decorators";
 
 interface DocConfig {
   docId: string
@@ -20,14 +19,20 @@ interface DocConfig {
   injector: Injector
   theme?: string
   embeds?: [string, EmbedConverter][]
-  plugins?: (typeof DocPlugin)[]
+  plugins?: DocPlugin[]
+  readonly?: false
 }
 
 export class BlockCraftDoc {
 
   private afterInitFnStack = new Set<(root: BlockCraft.IBlockComponents['root']) => void>()
   public readonly afterInit$ = new BehaviorSubject<BlockCraft.IBlockComponents['root'] | null>(null)
-  public readonly onDestroy$ = new BehaviorSubject(false)
+  public readonly onDestroy$ = new Subject()
+
+  /**
+   * If true, doc is readonly
+   */
+  public readonly readonlySwitch$= new BehaviorSubject<boolean>(true)
 
   readonly crud = new DocCRUD(this)
   readonly vm = new DocVM(this)
@@ -79,7 +84,7 @@ export class BlockCraftDoc {
   constructor(
     public readonly config: DocConfig
   ) {
-    this._plugins = this.config.plugins?.map(plugin => new plugin(this)) || []
+    this._plugins = this.config.plugins || []
   }
 
   // init from a snapshot as root
@@ -95,9 +100,13 @@ export class BlockCraftDoc {
     })
     container.insert(comp.hostView)
 
+    // exec after init functions
     this.afterInit$.next(this._root = comp.instance as BlockCraft.IBlockComponents['root'])
     this.afterInitFnStack.forEach(fn => fn(this.root))
     this.afterInitFnStack.clear()
+
+    // init plugins
+    this._plugins.forEach(plugin => plugin.register(this))
 
     // listen root destroy, release all resources
     comp.instance.onDestroy$.pipe(take(1)).subscribe(() => {
@@ -105,8 +114,13 @@ export class BlockCraftDoc {
       this.plugins.forEach(plugin => plugin.destroy())
     })
 
+    // init theme
     this.toggleTheme(this.config.theme || 'light')
 
+    // init readonly
+    this.readonlySwitch$.next(this.config.readonly || false)
+
+    // init hotkeys
     this.event.bindHotkey({
       key: 'z',
       shortKey: true,
@@ -151,11 +165,15 @@ export class BlockCraftDoc {
 
   prevSibling(id: string | BlockCraft.BlockComponent) {
     const comp = typeof id === 'string' ? this.getBlockById(id) : id
+    // const prevElement = comp.hostElement.previousElementSibling
+    // if (!prevElement) return null
+    // return this.getBlockRef(prevElement.getAttribute('block-id')!).instance
     const parent = this.getBlockById(comp.parentId!)
-    const index = parent.childrenIds.indexOf(comp.id)
+    const childrenIds = parent.childrenIds
+    const index = childrenIds.indexOf(comp.id)
     if (index === -1) throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${id}`)
     if (index === 0) return null
-    return this.getBlockById(parent.childrenIds[index - 1])
+    return this.getBlockById(childrenIds[index - 1])
   }
 
   getBlockSiblingIds<T extends BlockCraft.BlockFlavour = BlockCraft.BlockFlavour>(id: string) {
@@ -213,6 +231,8 @@ export class BlockCraftDoc {
   queryBlocksBetween(from: string | BlockCraft.BlockComponent, to: string | BlockCraft.BlockComponent, contain = false) {
     const fromComp = typeof from === 'string' ? this.getBlockById(from) : from
     const toComp = typeof to === 'string' ? this.getBlockById(to) : to
+    if(fromComp === toComp && contain) return [fromComp.id]
+
     const fromPath = this.getBlockPath(fromComp)
     const toPath = this.getBlockPath(toComp)
     const commonPath = getCommonPath(fromPath, toPath)
@@ -285,6 +305,10 @@ export class BlockCraftDoc {
 
   toggleTheme(name: string) {
     this.root.hostElement.setAttribute('data-theme', name)
+  }
+
+  toggleReadonly(readonly: boolean) {
+    this.readonlySwitch$.next(readonly)
   }
 
 }

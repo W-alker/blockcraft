@@ -4,7 +4,7 @@
   color: #333;
 
   ::selection {
-    background-color: rgba(24, 144, 255, 0.3);
+    background-color: var(--bc-select-background-color);
     color: #333;
   }
 
@@ -22,7 +22,7 @@
 
   [data-block-id] {
     &.selected {
-      background-color: rgba(24, 144, 255, 0.3);
+      background-color: var(--bc-select-background-color);
     }
   }
 
@@ -32,10 +32,6 @@
       color: #1890ff;
     }
 
-  }
-
-  .todo-block-button {
-    color: #1890ff;
   }
 
   div.bullet-block {

@@ -52,6 +52,10 @@ export class DocCRUD {
     public readonly doc: BlockCraft.Doc
   ) {
     this.yBlockMap.observeDeep(this._syncYEvent)
+
+    this.yUndoManager.on('stack-item-added', (evt) => {
+      console.log('undo stack', this.yUndoManager.undoStack)
+    })
   }
 
   get schemas() {
@@ -104,22 +108,38 @@ export class DocCRUD {
 
       const blockId = path[0] as string
       const keyProp = path[1]
+      const bm = this.vm.get(blockId)
+      if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
 
       if (keyProp === "children") {
-        if (tr.origin !== ORIGIN_SKIP_SYNC) {
-          if (target instanceof Y.Array) {
+        if (target instanceof Y.Array) {
+          if (tr.origin !== ORIGIN_SKIP_SYNC) {
+            // added 在上一次操作是move的情况下数据为空, 因为没有对yBlockMap进行操作
+            changes.delta.forEach(delta => {
+              if (delta.insert) {
+                (delta.insert as string[]).forEach(id => {
+                  if (!added[id]) added[id] = this.yBlockMap.get(id)!
+                })
+              }
+            })
+
             this._syncYBlockChildrenUpdate(added, deleted, ev, isUndoRedo)
-          } else {
-            const bm = this.vm.get(blockId)
-            if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
-            this.doc.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], (bm.instance as EditableBlockComponent).containerElement)
           }
+
+          // @ts-expect-error
+          bm.instance._childrenIds = target.toArray()
+          return
+        }
+
+        // Y.Text
+        if (tr.origin !== ORIGIN_SKIP_SYNC) {
+          const bm = this.vm.get(blockId)
+          if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
+          this.doc.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], (bm.instance as EditableBlockComponent).containerElement)
         }
         return
       }
 
-      const bm = this.vm.get(blockId)
-      if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
       const propKey = path[1] as 'props' | 'meta'
 
       if (tr.origin !== ORIGIN_SKIP_SYNC) {
@@ -128,11 +148,11 @@ export class DocCRUD {
             case 'add':
             case "update":
               // @ts-expect-error
-              bm.instance._native[propKey][key] = target.get(key)
+              Reflect.set(bm.instance._native[propKey], key, target.get(key))
               break;
             case 'delete':
               // @ts-expect-error
-              delete bm.instance._native[propKey][key]
+              Reflect.deleteProperty(bm.instance._native[propKey], key)
               break;
           }
         })
@@ -154,8 +174,9 @@ export class DocCRUD {
         isUndoRedo,
         transactions: propsChanges
       })
-      // propsChanges.forEach(tr => {
-      //   tr.block.onPropsChange.emit(tr.changes as any)
+
+      // propsChanges.forEach(v => {
+      //   v.block.onPropsChange.next(v.changes as any)
       // })
     }
   }
@@ -261,6 +282,19 @@ export class DocCRUD {
     await this.deleteBlocks(parentId, index, 1)
     if (!snapshots?.length) return
     await this.insertBlocks(parentId, index, snapshots)
+  }
+
+  async moveBlocks(parentId: string, index: number, count: number, targetId: string, targetIndex: number) {
+    const parentComp = this.vm.get(parentId)!
+    const targetComp = this.vm.get(targetId)!
+    this.transact(() => {
+      const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
+      const sliceComps = sliceIds.map(id => this.vm.get(id)!)
+      this.vm.remove(parentComp, index, count)
+      this.vm.insert(targetComp, targetIndex, sliceComps)
+      parentComp.instance.yBlock.get('children').delete(index, count)
+      ;(targetComp.instance.yBlock.get('children') as Y.Array<string>).insert(targetIndex, sliceIds)
+    }, ORIGIN_SKIP_SYNC)
   }
 
   isCanUndo() {
