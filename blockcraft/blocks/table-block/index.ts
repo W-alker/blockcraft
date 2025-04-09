@@ -1,6 +1,6 @@
 import {generateId, NoEditableBlockNative} from "../../framework";
 import {TableBlockComponent} from "./table.block";
-import {BlockSchemaOptions} from "../../framework/schema/block-schema";
+import {IBlockSchemaOptions} from "../../framework/schema/block-schema";
 import {BlockNodeType, IBlockProps} from "../../framework/types";
 import {TableRowBlockComponent} from "./table-row.block";
 import {TableCellBlockComponent} from "./table-cell.block";
@@ -34,7 +34,7 @@ export interface TableCellBlockModel extends NoEditableBlockNative {
   } & IBlockProps
 }
 
-export const TableBlockSchema: BlockSchemaOptions<TableBlockModel> = {
+export const TableBlockSchema: IBlockSchemaOptions<TableBlockModel> = {
   flavour: 'table',
   nodeType: BlockNodeType.block,
   component: TableBlockComponent,
@@ -65,7 +65,7 @@ export const TableBlockSchema: BlockSchemaOptions<TableBlockModel> = {
   }
 }
 
-export const TableRowBlockSchema: BlockSchemaOptions<TableRowBlockModel> = {
+export const TableRowBlockSchema: IBlockSchemaOptions<TableRowBlockModel> = {
   flavour: 'table-row',
   nodeType: BlockNodeType.block,
   component: TableRowBlockComponent,
@@ -93,7 +93,7 @@ export const TableRowBlockSchema: BlockSchemaOptions<TableRowBlockModel> = {
   }
 }
 
-export const TableCellBlockSchema: BlockSchemaOptions<TableCellBlockModel> = {
+export const TableCellBlockSchema: IBlockSchemaOptions<TableCellBlockModel> = {
   flavour: 'table-cell',
   nodeType: BlockNodeType.block,
   component: TableCellBlockComponent,

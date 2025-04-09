@@ -8,7 +8,7 @@ export type EditableBlockCreateSnapshotParams = [(InlineModel | string)?, IBlock
 
 type BlockCreateFn<T extends unknown[], M extends NativeBlockModel> = T extends [infer A, infer B, infer C] ? (arg1: A, arg: B, arg3: C) => IBlockSnapshot<M['props'], M['meta']> : (...args: T) => IBlockSnapshot<M['props'], M['meta']>
 
-export interface BlockSchemaOptions<T extends NativeBlockModel = NativeBlockModel> {
+export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockModel> {
   flavour: T['flavour'];
   nodeType: T['nodeType'];
   component: Type<BlockCraft.IBlockComponents[T['flavour']]>;

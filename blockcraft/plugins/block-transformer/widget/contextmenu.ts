@@ -9,7 +9,7 @@ import {
 } from "@angular/core";
 import {NgForOf, NgTemplateOutlet} from "@angular/common";
 import {MatIcon} from "@angular/material/icon";
-import {BlockSchemaOptions} from "../../../framework/schema/block-schema";
+import {IBlockSchemaOptions} from "../../../framework/schema/block-schema";
 
 @Component({
   selector: 'block-transformer-contextmenu',
@@ -36,9 +36,9 @@ import {BlockSchemaOptions} from "../../../framework/schema/block-schema";
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class BlockTransformContextMenu {
-  @Input() blocks: BlockSchemaOptions[] = []
+  @Input() blocks: IBlockSchemaOptions[] = []
 
-  @Output() blockSelected = new EventEmitter<BlockSchemaOptions>()
+  @Output() blockSelected = new EventEmitter<IBlockSchemaOptions>()
 
   constructor(
     public readonly cdr: ChangeDetectorRef,
@@ -66,7 +66,7 @@ export class BlockTransformContextMenu {
     this.blockSelected.emit(this.blocks[this.activeIdx])
   }
 
-  onMouseDown(event: MouseEvent, item: BlockSchemaOptions) {
+  onMouseDown(event: MouseEvent, item: IBlockSchemaOptions) {
     event.preventDefault()
     event.stopPropagation()
     this.blockSelected.emit(item)

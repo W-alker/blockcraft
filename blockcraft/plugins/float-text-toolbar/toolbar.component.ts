@@ -98,11 +98,11 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
   template: `
     <bc-float-toolbar (onItemClick)="onItemClicked($event)">
       <bc-float-toolbar-item icon="bc_zuoduiqi" [expandable]="true"
-                             [bcOverlayTrigger]="alignFloatBar" position="bottom-left" [offsetY]="8"/>
+                             [bcOverlayTrigger]="alignFloatBar" [positions]="['bottom-left']" [offsetY]="8"/>
 
       @for (item of defaultMenuList; track item.name + item.value) {
         @if (item.divide) {
-          <span class="bf-float-toolbar__divider"></span>
+          <span class="bc-float-toolbar__divider"></span>
         }
 
         <bc-float-toolbar-item [name]="item.name" [value]="activeAttrs.has(item.name) ? null : true"
@@ -114,7 +114,7 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
       </bc-float-toolbar-item>
 
       <span class="bf-float-toolbar__divider"></span>
-      <bc-float-toolbar-item icon="bc_sepan" [bcOverlayTrigger]="colorPicker" position="bottom-left" [offsetY]="8"/>
+      <bc-float-toolbar-item icon="bc_sepan" [bcOverlayTrigger]="colorPicker" [positions]="['bottom-left']" [offsetY]="8"/>
 
     </bc-float-toolbar>
 

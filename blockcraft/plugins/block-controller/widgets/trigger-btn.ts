@@ -1,29 +1,117 @@
 import {
   ChangeDetectionStrategy, ChangeDetectorRef,
-  Component, ElementRef, HostBinding,
+  Component, ElementRef, EventEmitter, HostBinding,
   HostListener,
-  Input,
+  Input, Output,
 } from "@angular/core";
-import {NgIf, NgTemplateOutlet} from "@angular/common";
-import {filter, fromEvent, merge, Subscription, take, takeUntil} from "rxjs";
-import {Overlay, OverlayRef} from "@angular/cdk/overlay";
-import {ComponentPortal} from "@angular/cdk/portal";
+import {NgComponentOutlet, NgForOf, NgIf, NgTemplateOutlet} from "@angular/common";
+import {Subscription, take} from "rxjs";
+import {Overlay} from "@angular/cdk/overlay";
+import {BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective} from "../../../components";
+import {BlockNodeType} from "../../../framework/types";
+import {IBlockSchemaOptions} from "../../../framework/schema/block-schema";
+import {MatIcon} from "@angular/material/icon";
+import {SimpleValue} from "../../../global";
+
+interface IContextMenuItem {
+  type: 'tool'
+  name: string
+  value: SimpleValue
+  icon: string
+  label: string
+}
 
 @Component({
   selector: 'div.trigger-btn',
   standalone: true,
   template: `
-    <div class="btn">
-      <i [class]="['bf_icon', hasContent ? 'bf_yidong' : 'bf_tianjia-2']"></i>
+    <div class="btn" [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left']" [disabled]="menuDisabled"
+         [offsetY]="4" [withBackdrop]="true" activeClass="active" [draggable]="draggable">
+      <i [class]="['bf_icon', isEmpty ? 'bf_tianjia-2' : 'bf_yidong' ]"></i>
     </div>
+
+    <ng-template #icon let-item>
+      <i [class]="item.icon"></i>
+    </ng-template>
+
+    <ng-template #svgIcon let-item>
+      <mat-icon [svgIcon]="item.svgIcon" style="width: 1em; height: 1em"></mat-icon>
+    </ng-template>
+
+    <ng-template #contextMenuTpl>
+      <bc-float-toolbar style="display: block; width: 224px;" direction="column">
+        @if (activeBlock?.nodeType === BlockNodeType.editable) {
+          <h4 class="title">基础</h4>
+          <ul class='base-list'>
+            <li class="base-list__item" *ngFor="let item of baseBlockList" (mousedown)="handleBlockItemClick(item)"
+                [title]="item.metadata.description || item.metadata.label"
+                [class.active]="activeBlock?.flavour === item.flavour">
+              <ng-container
+                *ngTemplateOutlet="item.metadata.svgIcon ? svgIcon : icon; context: {$implicit: item.metadata}">
+              </ng-container>
+            </li>
+          </ul>
+          <span class="bc-float-toolbar__divider"></span>
+        }
+
+        @if (isEmpty) {
+          <ng-container *ngTemplateOutlet="moreBlocksTpl"></ng-container>
+        } @else {
+          @for (item of toolList; track item.name) {
+            <bc-float-toolbar-item class="append-more-btn" (mousedown)="handleToolItemClick(item)">
+              <i [class]="['bc_icon', item.icon]"></i>
+              <span>{{ item.label }}</span>
+            </bc-float-toolbar-item>
+          }
+
+          <span class="bc-float-toolbar__divider"></span>
+
+          <bc-float-toolbar-item class="append-more-btn" [bcOverlayTrigger]="blockAddList" [disabled]="menuDisabled"
+                                 [positions]="['right-top']" [offsetX]="8" activeClass="active">
+            <i class="bf_icon bf_tianjia"></i>
+            <span>在下方添加</span>
+            <i class="bf_icon bf_youjiantou"></i>
+          </bc-float-toolbar-item>
+        }
+      </bc-float-toolbar>
+    </ng-template>
+
+    <ng-template #blockAddList>
+      <bc-float-toolbar direction="column" style="display: block; width: 224px;">
+        <h4 class="title">常用</h4>
+        <ng-container *ngTemplateOutlet="moreBlocksTpl"></ng-container>
+      </bc-float-toolbar>
+    </ng-template>
+
+    <ng-template #moreBlocksTpl>
+      @for (item of otherBlockList; track item.flavour) {
+        <bc-float-toolbar-item [title]="item.metadata.description || item.metadata.label"
+                               (mousedown)="handleBlockItemClick(item)">
+          <ng-container
+            *ngTemplateOutlet="item.metadata.svgIcon ? svgIcon : icon; context: {$implicit: item.metadata}">
+          </ng-container>
+          <span>{{ item.metadata.label }}</span>
+        </bc-float-toolbar-item>
+      }
+    </ng-template>
   `,
   styles: [`
     :host {
-      z-index: 100;
+      z-index: 10000;
       position: absolute;
       padding-right: 8px;
       user-select: none;
       -webkit-user-select: none;
+    }
+
+    ::ng-deep mat-icon {
+      width: 1em;
+      height: 1em;
+      font-size: 1em;
+
+      > svg {
+        vertical-align: top;
+      }
     }
 
     .btn {
@@ -38,13 +126,72 @@ import {ComponentPortal} from "@angular/cdk/portal";
       width: 22px;
       height: 22px;
       line-height: 22px;
+
+      &:hover, &.active {
+        background-color: #E6E6E6;
+      }
     }
 
-    .btn:hover {
-      background-color: #E6E6E6;
+    .title {
+      margin: 8px;
+      color: #999;
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 140%; /* 19.6px */
+    }
+
+    .base-list, .common-list {
+      margin: 0;
+    }
+
+    .base-list {
+      display: flex;
+      flex-wrap: wrap;
+      padding: 8px;
+      gap: 8px;
+
+      .base-list__item {
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+
+        &:hover, &.active {
+          background: #f3f3f3;
+        }
+
+        > i {
+          font-size: 1em;
+        }
+      }
+    }
+
+    bc-float-toolbar-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 36px;
+      padding: 0 8px;
+      border-radius: 4px;
+      cursor: pointer;
+
+      &:hover, &.active {
+        background-color: #f5f5f5;
+        color: inherit;
+      }
+
+      > span {
+        color: #333;
+        font-size: 14px;
+        line-height: 20px;
+        flex: 1;
+      }
     }
   `],
-  imports: [NgIf, NgTemplateOutlet],
+  imports: [NgIf, NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, NgForOf, MatIcon, BcOverlayTriggerDirective, NgComponentOutlet],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.contenteditable]': 'false',
@@ -58,17 +205,6 @@ export class TriggerBtn {
   @HostBinding()
   hidden: boolean = false
 
-  constructor(
-    private host: ElementRef<HTMLElement>,
-    public cdr: ChangeDetectorRef,
-    private overlay: Overlay,
-  ) {
-  }
-
-  protected display = 'none'
-  protected hasContent = false
-  private _onDestroySub?: Subscription
-
   private _activeBlock: BlockCraft.BlockComponent | null = null
   @Input()
   set activeBlock(val: BlockCraft.BlockComponent | null) {
@@ -78,12 +214,17 @@ export class TriggerBtn {
     this._onDestroySub?.unsubscribe()
     if (!this._activeBlock) {
       this.close()
+      this.draggable = false
       return
     }
 
     const schema = this.doc.schemas.get(this._activeBlock.flavour)
     if (schema.metadata.isLeaf) return
-    this.hasContent = this.doc.isEditable(this._activeBlock) ? !!this._activeBlock.textLength : true
+
+    this.setIsEmpty()
+
+    const parentBlock = this._activeBlock.parentBlock
+    this.draggable = !!parentBlock?.childrenLength && parentBlock.childrenLength > 1
 
     this._onDestroySub = this._activeBlock?.onDestroy$.pipe(take(1)).subscribe(() => {
       this.close()
@@ -100,8 +241,57 @@ export class TriggerBtn {
     return this._activeBlock
   }
 
-  // private contextmenuPortal!: ComponentPortal<BlockFlowContextmenu>
-  // private ovr: OverlayRef | undefined
+  @Output()
+  itemClicked = new EventEmitter<{ item: IBlockSchemaOptions, type: 'block' } | {
+    type: 'tool',
+    item: IContextMenuItem
+  }>()
+
+  constructor(
+    private host: ElementRef<HTMLElement>,
+    public cdr: ChangeDetectorRef,
+    private overlay: Overlay,
+  ) {
+  }
+
+  menuDisabled = false
+  draggable = true
+
+  ngOnInit() {
+    const schemas = this.doc.schemas.getSchemaList()
+    this.baseBlockList = schemas.filter(item => item.nodeType === BlockNodeType.editable && !item.metadata.isLeaf)
+    this.otherBlockList = schemas.filter(item => item.nodeType === BlockNodeType.block && !item.metadata.isLeaf)
+  }
+
+  protected baseBlockList: IBlockSchemaOptions[] = []
+  protected otherBlockList: IBlockSchemaOptions[] = []
+  protected toolList: IContextMenuItem[] = [
+    {
+      type: 'tool',
+      name: 'cut',
+      value: true,
+      icon: 'bc_jianqie',
+      label: '剪切',
+    },
+    {
+      type: 'tool',
+      name: 'copy',
+      icon: 'bc_fuzhi',
+      value: true,
+      label: '复制',
+    },
+    {
+      type: 'tool',
+      name: 'delete',
+      icon: 'bc_shanchu-2',
+      value: true,
+      label: '删除'
+    }
+  ]
+
+  protected display = 'none'
+  protected isEmpty = false
+  private _onDestroySub?: Subscription
 
   private calcPos() {
     const rootRect = this.doc.root.hostElement.getBoundingClientRect()
@@ -154,10 +344,15 @@ export class TriggerBtn {
   @HostListener('mouseenter', ['$event'])
   onMouseEnter(e: Event) {
     e.stopPropagation()
-    this.hasContent = this.doc.isEditable(this.activeBlock!) ? !!this.activeBlock!.textLength : true
+    this.setIsEmpty()
     this.display = 'block'
     this.cdr.markForCheck()
     // this.showContextMenu()
+  }
+
+  setIsEmpty() {
+    // @ts-expect-error
+    this.isEmpty = this._activeBlock.flavour === 'paragraph' ? !this._activeBlock.textLength : false
   }
 
   // showContextMenu() {
@@ -199,4 +394,34 @@ export class TriggerBtn {
     })
   }
 
+  handleBlockItemClick(item: IBlockSchemaOptions) {
+    if (!this.activeBlock) return
+    if (this.isEmpty) {
+      const newBlock = this.doc.schemas.createSnapshot(item.flavour, [])
+      if (newBlock.nodeType !== BlockNodeType.editable) {
+        this.doc.crud.insertBlocksAfter(this.activeBlock, [newBlock])
+      } else {
+        this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [newBlock]).then(() => {
+          // this.doc.selection.setBlockPosition(this.doc.getBlockById(newBlock.id), true)
+        })
+      }
+      return;
+    }
+
+    if (this.doc.isEditable(this.activeBlock) && item.nodeType === BlockNodeType.editable) {
+      const newBlock = this.doc.schemas.createSnapshot(item.flavour, [this.activeBlock.textDeltas(), this.activeBlock.props])
+      this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [newBlock]).then(() => {
+      })
+    } else {
+      const newBlock = this.doc.schemas.createSnapshot(item.flavour, [])
+      this.doc.crud.insertBlocksAfter(this.activeBlock, [newBlock])
+    }
+
+  }
+
+  handleToolItemClick(item: IContextMenuItem) {
+
+  }
+
+  protected readonly BlockNodeType = BlockNodeType;
 }

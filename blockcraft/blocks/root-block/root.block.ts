@@ -53,6 +53,10 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
         fromEvent(block.hostElement, 'mouseleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1)))).subscribe(() => {
           this.doc.selection.selectBlock(block)
           block.hostElement.classList.add('selected')
+
+          fromEvent(this.hostElement, 'selectstart').pipe(take(1)).subscribe(evt => {
+            if(!evt.defaultPrevented) block.hostElement.classList.remove('selected')
+          })
           // block.hostElement.classList.remove('selecting')
           // document.getSelection()!.setPosition(block.hostElement, 0)
 

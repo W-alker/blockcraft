@@ -5,6 +5,7 @@ import {KeyboardControl, CompositionControl, ClipboardControl, PointerControl} f
 import {fromEvent, takeUntil} from "rxjs";
 import {performanceTest} from "../decorators";
 import {closetBlockId} from "../utils";
+import {DndControl} from "./control/dnd";
 
 const bypassEventNames = ['beforeInput', 'focusOut', 'focusIn', 'contextMenu', 'wheel'] as Array<EventNames>
 
@@ -68,6 +69,7 @@ export class UIEventDispatcher {
   private keyboardControl = new KeyboardControl(this)
   private pointerControl = new PointerControl(this)
   private clipboardControl = new ClipboardControl(this)
+  private dndControl = new DndControl(this)
 
   constructor(private doc: BlockCraft.Doc) {
     this.doc.afterInit(this._bindEvents)
@@ -135,6 +137,7 @@ export class UIEventDispatcher {
     this.keyboardControl.listen(root)
     this.pointerControl.listen(root)
     this.clipboardControl.listen(root)
+    this.dndControl.listen(root)
   }
 
   hasHandler(name: EventNames) {

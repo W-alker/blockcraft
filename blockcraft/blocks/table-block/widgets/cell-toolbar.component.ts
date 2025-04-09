@@ -41,7 +41,7 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
       <bc-float-toolbar-item *ngIf="showOptions.showColHead" title="设置标题列" [active]="table.props.colHead"
                              icon="bc_biaotilie" name="colHead" value="true"/>
 
-      <span class="bf-float-toolbar__divider"></span>
+      <span class="bc-float-toolbar__divider"></span>
 
       <bc-float-toolbar-item icon="bc_sepan" [bcOverlayTrigger]="colorPicker" position="bottom-left" [offsetY]="8"/>
 
@@ -70,7 +70,7 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
                                [active]="textAlign === item.value"
                                [value]="item.value" [icon]="item.icon">{{ item.text }}
         </bc-float-toolbar-item>
-        <span class="bf-float-toolbar__divider"></span>
+        <span class="bc-float-toolbar__divider"></span>
         <bc-float-toolbar-item *ngFor="let item of VERTICAL_ALIGN_LIST" [name]="item.name"
                                [active]="verticalAlign === item.value"
                                [value]="item.value" [icon]="item.icon">{{ item.text }}

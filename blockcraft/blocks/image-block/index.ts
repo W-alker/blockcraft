@@ -1,7 +1,7 @@
 import {generateId, NoEditableBlockNative} from "../../framework";
 import {BlockNodeType} from "../../framework/types";
 import {ImageBlockComponent} from "./image.block";
-import {BlockSchemaOptions} from "../../framework/schema/block-schema";
+import {IBlockSchemaOptions} from "../../framework/schema/block-schema";
 import {ParagraphBlockSchema} from "../paragraph-block";
 
 export interface ImageBlockModel extends NoEditableBlockNative {
@@ -15,7 +15,7 @@ export interface ImageBlockModel extends NoEditableBlockNative {
   }
 }
 
-export const ImageBlockSchema: BlockSchemaOptions<ImageBlockModel> = {
+export const ImageBlockSchema: IBlockSchemaOptions<ImageBlockModel> = {
   flavour: "image",
   nodeType: BlockNodeType.block,
   component: ImageBlockComponent,

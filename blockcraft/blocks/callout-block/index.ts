@@ -1,6 +1,6 @@
 import {generateId, NoEditableBlockNative} from "../../framework";
 import {BlockNodeType} from "../../framework/types";
-import {BlockSchemaOptions} from "../../framework/schema/block-schema";
+import {IBlockSchemaOptions} from "../../framework/schema/block-schema";
 import {CalloutBlockComponent} from "./callout.block";
 import {ParagraphBlockSchema} from "../paragraph-block";
 
@@ -15,7 +15,7 @@ export interface CalloutBlockModel extends NoEditableBlockNative {
   },
 }
 
-export const CalloutBlockSchema: BlockSchemaOptions<CalloutBlockModel> = {
+export const CalloutBlockSchema: IBlockSchemaOptions<CalloutBlockModel> = {
   flavour: 'callout',
   nodeType: BlockNodeType.block,
   component: CalloutBlockComponent,

@@ -145,8 +145,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       return
     }
 
+    event.stopPropagation()
     const cell = this.doc.getBlockById(id) as TableCellBlockComponent
-    const sub = fromEvent<MouseEvent>(cell.hostElement, 'mouseleave').pipe(take(1)).subscribe(() => {
+    const sub = fromEvent<MouseEvent>(cell.hostElement, 'mouseleave').pipe(take(1)).subscribe(evt => {
       this._startSelectingCell = cell
       this.hostElement.classList.add('is-selecting-cell')
       this.selectedCellSet.add(this._startSelectingCell!)

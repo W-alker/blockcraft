@@ -1,7 +1,7 @@
 import {EditableBlockNative} from "../../framework";
 import {BlockNodeType} from "../../framework/types";
 import {
-  BlockSchemaOptions,
+  IBlockSchemaOptions,
   editableBlockCreateSnapShotFn,
   EditableBlockCreateSnapshotParams
 } from "../../framework/schema/block-schema";
@@ -26,7 +26,7 @@ export interface HeadingFourBlockModel extends EditableBlockNative {
   flavour: 'heading-four'
 }
 
-export const HeadingOneBlockSchema: BlockSchemaOptions<HeadingOneBlockModel> = {
+export const HeadingOneBlockSchema: IBlockSchemaOptions<HeadingOneBlockModel> = {
   flavour: 'heading-one',
   nodeType: BlockNodeType.editable,
   component: HeadingOneBlockComponent,
@@ -38,7 +38,7 @@ export const HeadingOneBlockSchema: BlockSchemaOptions<HeadingOneBlockModel> = {
   }
 }
 
-export const HeadingTwoBlockSchema: BlockSchemaOptions<HeadingTwoBlockModel> = {
+export const HeadingTwoBlockSchema: IBlockSchemaOptions<HeadingTwoBlockModel> = {
   flavour: 'heading-two',
   nodeType: BlockNodeType.editable,
   component: HeadingTwoBlockComponent,
@@ -50,7 +50,7 @@ export const HeadingTwoBlockSchema: BlockSchemaOptions<HeadingTwoBlockModel> = {
   }
 }
 
-export const HeadingThreeBlockSchema: BlockSchemaOptions<HeadingThreeBlockModel> = {
+export const HeadingThreeBlockSchema: IBlockSchemaOptions<HeadingThreeBlockModel> = {
   flavour: 'heading-three',
   nodeType: BlockNodeType.editable,
   component: HeadingThreeBlockComponent,
@@ -62,7 +62,7 @@ export const HeadingThreeBlockSchema: BlockSchemaOptions<HeadingThreeBlockModel>
   }
 }
 
-export const HeadingFourBlockSchema: BlockSchemaOptions<HeadingFourBlockModel> = {
+export const HeadingFourBlockSchema: IBlockSchemaOptions<HeadingFourBlockModel> = {
   flavour: 'heading-four',
   nodeType: BlockNodeType.editable,
   component: HeadingFourBlockComponent,

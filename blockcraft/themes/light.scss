@@ -3,11 +3,6 @@
 [data-blockcraft-root="true"][data-theme="light"] {
   color: #333;
 
-  ::selection {
-    background-color: var(--bc-select-background-color);
-    color: #333;
-  }
-
   c-element {
 
     &[bold="true"] {
@@ -18,12 +13,6 @@
 
   .edit-container {
     caret-color: #000;
-  }
-
-  [data-block-id] {
-    &.selected {
-      background-color: var(--bc-select-background-color);
-    }
   }
 
   div.ordered-block {

@@ -1,7 +1,7 @@
 import {EditableBlockNative} from "../../framework";
 import {BlockNodeType, IEditableBlockProps} from "../../framework/types";
 import {
-  BlockSchemaOptions,
+  IBlockSchemaOptions,
   editableBlockCreateSnapShotFn,
   EditableBlockCreateSnapshotParams
 } from "../../framework/schema/block-schema";
@@ -15,7 +15,7 @@ export interface TodoBlockModel extends EditableBlockNative {
   } & IEditableBlockProps
 }
 
-export const TodoBlockSchema: BlockSchemaOptions<TodoBlockModel> = {
+export const TodoBlockSchema: IBlockSchemaOptions<TodoBlockModel> = {
   flavour: 'todo',
   nodeType: BlockNodeType.editable,
   component: TodoBlockComponent,

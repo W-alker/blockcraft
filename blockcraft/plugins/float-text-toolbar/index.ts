@@ -28,9 +28,9 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     //     })
     //   }))
 
-    this._sub = this.doc.selection.selectionChange$.pipe(debounceTime(300)).subscribe(sel => {
+    this._sub = this.doc.selection.selectionChange$.pipe(debounceTime(500)).subscribe(sel => {
       if (this.toolbarOvr) this.closeToolbar()
-      if (!sel || sel.collapsed) return
+      if (!sel || sel.collapsed || sel.isAllSelected) return
 
       this.openToolbar()
     })

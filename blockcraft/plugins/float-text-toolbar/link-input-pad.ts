@@ -13,12 +13,11 @@ import {isUrl} from "../../global";
 @Component({
   selector: 'link-input-pad',
   template: `
-    <input type="text" (input)="onInput($event)" [class.error]="!isValid" #inputElement/>
+    <input type="text" (input)="onInput($event)" [class.error]="!isValid" placeholder="输入链接地址" #inputElement/>
     <div style="display: flex; justify-content: flex-end; gap: 8px; width: 100%;">
       <button nz-button nzType="default" (mousedown)="$event.preventDefault(); onCancel.emit()">取消</button>
       <button nz-button nzType="primary" (mousedown)="$event.preventDefault(); submitValue()">确定</button>
     </div>
-
   `,
   styles: [`
     :host {

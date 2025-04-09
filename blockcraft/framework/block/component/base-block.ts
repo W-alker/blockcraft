@@ -168,7 +168,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     if (this.nodeType === BlockNodeType.editable) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
     }
-    return (this.yBlock.get('children') as Y.Array<string>).toArray()
+    return this._childrenIds = (this.yBlock.get('children') as Y.Array<string>).toArray()
   }
 
   getChildrenBlocks() {

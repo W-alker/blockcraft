@@ -7,21 +7,30 @@ export class AutoUpdateOrderPlugin extends DocPlugin {
 
   init() {
     this._sub = this.doc.onChildrenUpdate$.subscribe(event => {
-      const {inserted, deleted, block} = event
-      if (inserted) {
-        const b = inserted.find(v => v.flavour === 'ordered')
-        if (!b) return
-        updateOrderAround(b as any)
-        return
-      }
+      if (event.isUndoRedo) return;
 
-      if (deleted) {
-        const ids = block.childrenIds
-        if (!ids.length) return;
-        const start = this.doc.getBlockById(ids[Math.max(deleted.index - 1, 0)])
-        if (start.flavour !== 'ordered') return;
-        updateOrderAround(start as any)
-      }
+      event.transactions.forEach(tr => {
+        const {inserted, deleted, block} = tr
+        if (inserted) {
+          const b = inserted.find(v => v.flavour === 'ordered')
+          if (!b) return
+          updateOrderAround(b as any)
+          return
+        }
+
+        if (deleted) {
+          const ids = block.childrenIds
+          if (!ids.length) return;
+
+          deleted.forEach(del => {
+            const start = this.doc.getBlockById(ids[Math.max(del.index - 1, 0)])
+            if (start.flavour !== 'ordered') return;
+            updateOrderAround(start as any)
+          })
+
+        }
+      })
+
     })
 
     this._sub.add(

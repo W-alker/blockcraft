@@ -44,7 +44,8 @@ export * from './type'
         <h4 class="title">基础</h4>
         <ul class='base-list'>
           <li class="base-list__item" *ngFor="let item of baseBlockList" [title]="item.description || item.label"
-              (mousedown)="onMouseDown($event, item, 'block')" [class.active]="activeBlock.flavour === item.flavour">
+              (mousedown)="onMouseDown($event, item, 'block')"
+              [class.active]="activeBlock.flavour === item.flavour">
             <ng-container *ngTemplateOutlet="item.svgIcon ? svgIcon : icon; context: {$implicit: item}">
             </ng-container>
           </li>

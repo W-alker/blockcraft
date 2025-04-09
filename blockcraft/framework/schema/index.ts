@@ -1,17 +1,17 @@
-import {BlockSchemaOptions} from "./block-schema";
+import {IBlockSchemaOptions} from "./block-schema";
 import {BlockCraftError, ErrorCode} from "../../global";
 
 export class SchemaManager {
 
   constructor(
-    private readonly blockSchema: BlockSchemaOptions[]
+    private readonly blockSchema: IBlockSchemaOptions[]
   ) {
     this.blockSchema.forEach(schema => this.register(schema))
   }
 
-  private schema: Map<string, BlockSchemaOptions> = new Map()
+  private schema: Map<string, IBlockSchemaOptions> = new Map()
 
-  register(schema: BlockSchemaOptions) {
+  register(schema: IBlockSchemaOptions) {
     this.schema.set(schema.flavour, schema)
   }
 
@@ -40,7 +40,7 @@ export class SchemaManager {
    * @param flavour
    * @param parentSchema
    */
-  isValidChildren(flavour: string, parentSchema: BlockSchemaOptions) {
+  isValidChildren(flavour: string, parentSchema: IBlockSchemaOptions) {
     const childrenSchema = parentSchema.metadata.children
     if (!childrenSchema?.length) return false
     for (const child of childrenSchema) {

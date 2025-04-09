@@ -161,6 +161,7 @@ export class DocVM {
     }
 
     while (length > 0) {
+      if (index > instance.childrenContainer.length) return
       instance.childrenContainer.detach(index)
       length--
     }

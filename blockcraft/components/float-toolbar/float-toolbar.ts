@@ -36,7 +36,7 @@ import {BcFloatToolbarItemComponent} from "./float-toolbar-item";
             justify-content: flex-start;
           }
 
-          > span.bf-float-toolbar__divider {
+          > span.bc-float-toolbar__divider {
             margin: 4px 0;
             display: block;
             flex: 1;
@@ -60,7 +60,7 @@ import {BcFloatToolbarItemComponent} from "./float-toolbar-item";
             padding: 0 4px;
           }
 
-          > span.bf-float-toolbar__divider {
+          > span.bc-float-toolbar__divider {
             flex-shrink: 0;
             height: 32px;
             width: 1px;

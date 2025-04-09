@@ -1,4 +1,4 @@
-import {BlockSchemaOptions} from "../../framework/schema/block-schema";
+import {IBlockSchemaOptions} from "../../framework/schema/block-schema";
 import {RootBlockComponent} from "./root.block";
 import {NoEditableBlockNative} from "../../framework";
 import {BlockNodeType, IBlockSnapshot} from "../../framework/types";
@@ -8,7 +8,7 @@ export interface RootBlockModel extends NoEditableBlockNative {
   nodeType: BlockNodeType.root
 }
 
-export const RootBlockSchema: BlockSchemaOptions<RootBlockModel> = {
+export const RootBlockSchema: IBlockSchemaOptions<RootBlockModel> = {
   flavour: "root",
   nodeType: BlockNodeType.root,
   component: RootBlockComponent,

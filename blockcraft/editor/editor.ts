@@ -34,7 +34,9 @@ const schemas = new SchemaManager([
 @Component({
   selector: 'block-craft-editor',
   template: `
-    <ng-container #container></ng-container>
+    <div style="width: 90vw; height: 80vh; overflow-y: auto;">
+      <ng-container #container></ng-container>
+    </div>
 
     <button (mousedown)="$event.preventDefault(); logSelection()">当前选择</button>
     <button (click)="insert()">增加文本</button>
@@ -95,9 +97,9 @@ export class EditorComponent {
     const p2 = this.doc.schemas.createSnapshot('heading-two', [
       [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
     ])
-    const p4 = this.doc.schemas.createSnapshot('divider', [])
-    const p5 = this.doc.schemas.createSnapshot('divider', [])
-    const p6 = this.doc.schemas.createSnapshot('divider', [])
+    const d1 = this.doc.schemas.createSnapshot('divider', [])
+    const d2 = this.doc.schemas.createSnapshot('divider', [])
+    const d3 = this.doc.schemas.createSnapshot('divider', [])
     const p3 = this.doc.schemas.createSnapshot('ordered', [
       [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
     ])
@@ -107,7 +109,8 @@ export class EditorComponent {
     const code = this.doc.schemas.createSnapshot('code', ['const c = 1;\n\nfunction a()\n{ console.log(c) }'])
     const table = this.doc.schemas.createSnapshot('table', [6, 6])
     this.pid = p.id
-    const snapshot = this.doc.schemas.createSnapshot('root', [this.rootId, [p, p2, callout, p4, p5, p6, p3, img, todo, code, table]])
+    const snapshot = this.doc.schemas.createSnapshot('root',
+      [this.rootId, [p, d1, p2, callout, d2, d3, p3, img, code, table, todo]])
     console.log(snapshot)
     this.doc.init(snapshot, this.container)
   }

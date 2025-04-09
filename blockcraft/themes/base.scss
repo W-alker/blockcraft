@@ -19,15 +19,12 @@
 
 [data-blockcraft-root="true"] {
   position: relative;
-  height: 80vh;
-  overflow-y: auto;
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
   outline: none;
   padding: 0 20px;
-  width: 70vw;
   font-size: var(--bc-fs);
   line-height: var(--bc-lh);
 
@@ -51,6 +48,19 @@
   &.all-selected {
     [data-block-id].selected {
       -webkit-user-modify: read-only !important;
+    }
+  }
+
+  ::selection {
+    background-color: var(--bc-select-background-color);
+    color: #333;
+    transition: background-color 0.15s ease-in-out;
+  }
+
+  [data-block-id] {
+    &.selected {
+      background-color: var(--bc-select-background-color);
+      transition: background-color 0.15s ease-in-out;
     }
   }
 

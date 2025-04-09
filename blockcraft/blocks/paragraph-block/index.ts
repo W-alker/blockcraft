@@ -1,7 +1,7 @@
 import {EditableBlockNative} from "../../framework";
 import {BlockNodeType} from "../../framework/types";
 import {
-  BlockSchemaOptions,
+  IBlockSchemaOptions,
   editableBlockCreateSnapShotFn,
   EditableBlockCreateSnapshotParams
 } from "../../framework/schema/block-schema";
@@ -12,7 +12,7 @@ export interface ParagraphBlockModel extends EditableBlockNative {
   nodeType: BlockNodeType.editable
 }
 
-export const ParagraphBlockSchema: BlockSchemaOptions<ParagraphBlockModel> = {
+export const ParagraphBlockSchema: IBlockSchemaOptions<ParagraphBlockModel> = {
   flavour: 'paragraph',
   nodeType: BlockNodeType.editable,
   component: ParagraphBlockComponent,

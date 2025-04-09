@@ -12,13 +12,15 @@ export const ORIGIN_SKIP_SYNC = Symbol('skip_sync')
 export const ORIGIN_NO_RECORD = Symbol('no_record')
 
 export interface IChildrenChangeEvent {
-  inserted?: BlockCraft.BlockComponent[]
-  deleted?: {
-    index: number,
-    length: number
-  }
-  block: BlockCraft.BlockComponent,
-  isUndoRedo: boolean
+  isUndoRedo: boolean,
+  transactions: {
+    inserted?: BlockCraft.BlockComponent[]
+    deleted?: {
+      index: number,
+      length: number
+    }[]
+    block: BlockCraft.BlockComponent,
+  }[]
 }
 
 export interface IPropsChangeEvent {
@@ -84,6 +86,9 @@ export class DocCRUD {
     const deleted: string[] = []
 
     const propsChanges: IPropsChangeEvent['transactions'] = []
+
+    const delay_childrenEvent_handlers: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][] = []
+
     // sync to model
     event.forEach(ev => {
       const {path, changes, target} = ev
@@ -92,14 +97,8 @@ export class DocCRUD {
       // No need handle ORIGIN_SKIP_SYNC
       if (!path.length) {
         tr.origin !== ORIGIN_SKIP_SYNC && changes.keys.forEach((change, key) => {
-          switch (change.action) {
-            case 'add':
-            case "update":
-              added[key] = this.yBlockMap.get(key)!
-              break;
-            case 'delete':
-              deleted.push(key)
-              break;
+          if (change.action === 'delete') {
+            deleted.push(key)
           }
         })
 
@@ -114,16 +113,15 @@ export class DocCRUD {
       if (keyProp === "children") {
         if (target instanceof Y.Array) {
           if (tr.origin !== ORIGIN_SKIP_SYNC) {
-            // added 在上一次操作是move的情况下数据为空, 因为没有对yBlockMap进行操作
-            changes.delta.forEach(delta => {
-              if (delta.insert) {
-                (delta.insert as string[]).forEach(id => {
-                  if (!added[id]) added[id] = this.yBlockMap.get(id)!
+            changes.delta.forEach(change => {
+              if (change.insert) {
+                (change.insert as string[]).forEach(id => {
+                  added[id] = this.getYBlock(id)!
                 })
               }
             })
 
-            this._syncYBlockChildrenUpdate(added, deleted, ev, isUndoRedo)
+            delay_childrenEvent_handlers.push([bm, changes.delta])
           }
 
           // @ts-expect-error
@@ -179,40 +177,59 @@ export class DocCRUD {
       //   v.block.onPropsChange.next(v.changes as any)
       // })
     }
+
+    if (delay_childrenEvent_handlers.length) {
+      this._syncYBlockChildrenUpdate(added, deleted, delay_childrenEvent_handlers, isUndoRedo)
+    }
   }
 
-  private _syncYBlockChildrenUpdate = (added: Record<string, YBlock>, deleted: string[], event: Y.YEvent<Y.Array<string>>, isUndoRedo = false) => {
-    const {path, changes, target} = event
-    const bm = this.vm.get(path[0] as string)
-    if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${path[0]} not found`)
+  private _syncYBlockChildrenUpdate = async (added: Record<string, YBlock>,
+                                             deleted: string[],
+                                             events: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][],
+                                             isUndoRedo = false) => {
 
-    const map: IChildrenChangeEvent = {
-      block: bm.instance,
-      isUndoRedo
-    }
+    const emitEvents: IChildrenChangeEvent = {isUndoRedo, transactions: []}
 
-    let r = 0
-    changes.delta.forEach(async (d) => {
-      const {retain, insert, delete: del} = d
-      if (retain) {
-        r += retain
-      } else if (insert) {
-        const childComps = await this.vm.createComponentByYBlocks(added)
-        const _insertComps = (insert as string[]).map(id => childComps[id])
-        this.vm.insert(bm, r, _insertComps)
-        r += insert.length
-        map.inserted = _insertComps.map(v => v.instance)
-      } else if (del) {
-        this.vm.remove(bm, r, del)
-        map.deleted = {
-          index: r,
-          length: <number>del
+    const childComps = await this.vm.createComponentByYBlocks(added)
+    const insertDelay: Map<BlockCraft.BlockComponentRef, [number, BlockCraft.BlockComponentRef[]][]> = new Map()
+
+    events.forEach(([bm, deltas]) => {
+      const _delay_inserts: [number, BlockCraft.BlockComponentRef[]][] = []
+      const deletedMap: { index: number, length: number }[] = []
+
+      let r = 0
+      deltas.forEach(d => {
+        if (d.retain) {
+          r += d.retain
+        } else if (d.insert) {
+          // 所有的插入操作需要延迟执行
+          const _insertComps = (d.insert as string[]).map(id => childComps[id])
+          _delay_inserts.push([r, _insertComps])
+        } else if (d.delete) {
+          this.vm.remove(bm, r, d.delete)
+          deletedMap.push({index: r, length: <number>d.delete})
         }
-      }
+      })
+
+      insertDelay.set(bm, _delay_inserts)
+      emitEvents.transactions.push({
+        block: bm.instance,
+        deleted: deletedMap.length ? deletedMap : undefined,
+        inserted: _delay_inserts.map(v => v[1].map(v => v.instance)).flat()
+      })
+    })
+
+    ;[...insertDelay.keys()].forEach(bm => {
+      let _ir = 0
+      const item = insertDelay.get(bm)!
+      item.forEach(([r, comps]) => {
+        this.vm.insert(bm, r, comps)
+        _ir += comps.length
+      })
     })
 
     this.vm.detach(deleted)
-    this.onChildrenUpdate$.next(map)
+    this.onChildrenUpdate$.next(emitEvents)
   }
 
   async insertNewParagraph(parentId: string, index: number, content: string | InlineModel = '') {
@@ -236,11 +253,19 @@ export class DocCRUD {
       (parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, comps.map(c => c.instance.id))
       // emit
       this.onChildrenUpdate$.next({
-        inserted: comps.map(v => v.instance),
-        block: parentComp.instance,
-        isUndoRedo: false
+        isUndoRedo: false,
+        transactions: [{
+          block: parentComp.instance,
+          inserted: comps.map(v => v.instance),
+        }]
       })
     }, ORIGIN_SKIP_SYNC)
+  }
+
+  async insertBlocksBefore(block: string | BlockCraft.BlockComponent, snapshots: IBlockSnapshot[]) {
+    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    const index = block.getIndexOfParent()
+    await this.insertBlocks(block.parentId!, index, snapshots)
   }
 
   async insertBlocksAfter(block: string | BlockCraft.BlockComponent, snapshots: IBlockSnapshot[]) {
@@ -259,12 +284,14 @@ export class DocCRUD {
       sliceIds.forEach(id => this.yBlockMap.delete(id))
       // emit
       this.onChildrenUpdate$.next({
-        block: parentComp.instance,
-        deleted: {
-          index,
-          length: count
-        },
-        isUndoRedo: false
+        isUndoRedo: false,
+        transactions: [{
+          block: parentComp.instance,
+          deleted: [{
+            index,
+            length: count
+          }],
+        }]
       })
     }, ORIGIN_SKIP_SYNC)
   }
@@ -285,8 +312,9 @@ export class DocCRUD {
   }
 
   async moveBlocks(parentId: string, index: number, count: number, targetId: string, targetIndex: number) {
-    const parentComp = this.vm.get(parentId)!
-    const targetComp = this.vm.get(targetId)!
+    const parentComp = this.vm.get(parentId)
+    const targetComp = this.vm.get(targetId)
+    if (!parentComp || !targetComp) return
     this.transact(() => {
       const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
       const sliceComps = sliceIds.map(id => this.vm.get(id)!)

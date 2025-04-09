@@ -2,7 +2,7 @@
 
   .table-block {
     $ctrlBarSize: 8px;
-    $selectedBgColor: rgba(95, 111, 255, 0.08);
+    $selectedBgColor: #B2DBFD;
     //margin-left: $ctrlBarSize * -1;
     padding-left: $ctrlBarSize;
 
@@ -26,7 +26,7 @@
     }
 
     &.selected {
-      background-color: unset !important;
+      background: unset !important;
 
       table-col-bar, table-row-bar {
         display: none;

@@ -1,7 +1,7 @@
 import {EditableBlockNative} from "../../framework";
 import {BlockNodeType} from "../../framework/types";
 import {
-  BlockSchemaOptions,
+  IBlockSchemaOptions,
   editableBlockCreateSnapShotFn,
   EditableBlockCreateSnapshotParams
 } from "../../framework/schema/block-schema";
@@ -15,7 +15,7 @@ export interface OrderedBlockModel extends EditableBlockNative {
   }
 }
 
-export const OrderedBlockSchema: BlockSchemaOptions<OrderedBlockModel> = {
+export const OrderedBlockSchema: IBlockSchemaOptions<OrderedBlockModel> = {
   flavour: 'ordered',
   nodeType: BlockNodeType.editable,
   component: OrderedBlockComponent,

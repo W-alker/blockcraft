@@ -8,7 +8,7 @@ import {UIEventStateContext} from "../../framework/event/base";
 import {nextTick, sliceDelta} from "../../global";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {BlockTransformContextMenu} from "./widget/contextmenu";
-import {BlockSchemaOptions} from "../../framework/schema/block-schema";
+import {IBlockSchemaOptions} from "../../framework/schema/block-schema";
 
 // export {BlockTransformContextMenu} from "./widget/contextmenu";
 
