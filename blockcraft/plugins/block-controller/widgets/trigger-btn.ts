@@ -21,6 +21,30 @@ interface IContextMenuItem {
   label: string
 }
 
+const ALIGN_LIST: IContextMenuItem[] = [
+  {
+    name: "align",
+    icon: "bc_zuoduiqi",
+    label: "左对齐",
+    value: undefined,
+    type: 'tool'
+  },
+  {
+    name: "align",
+    value: "center",
+    icon: "bc_juzhongduiqi",
+    label: "居中",
+    type: 'tool'
+  },
+  {
+    name: "align",
+    value: "right",
+    icon: "bc_youduiqi",
+    label: "右对齐",
+    type: 'tool'
+  }
+]
+
 @Component({
   selector: 'div.trigger-btn',
   standalone: true,
@@ -57,6 +81,18 @@ interface IContextMenuItem {
         @if (isEmpty) {
           <ng-container *ngTemplateOutlet="moreBlocksTpl"></ng-container>
         } @else {
+
+          @if (activeBlock?.nodeType === BlockNodeType.editable) {
+            <bc-float-toolbar-item class="append-more-btn" [bcOverlayTrigger]="alignList" [disabled]="menuDisabled"
+                                   [positions]="['right-top']" [offsetX]="8" activeClass="active">
+              <i [class]="['bc_icon', 'bc_zuoduiqi']"></i>
+              <span>对齐方式</span>
+              <i class="bf_icon bf_youjiantou"></i>
+            </bc-float-toolbar-item>
+
+            <span class="bc-float-toolbar__divider"></span>
+          }
+
           @for (item of toolList; track item.name) {
             <bc-float-toolbar-item class="append-more-btn" (mousedown)="handleToolItemClick(item)">
               <i [class]="['bc_icon', item.icon]"></i>
@@ -80,6 +116,18 @@ interface IContextMenuItem {
       <bc-float-toolbar direction="column" style="display: block; width: 224px;">
         <h4 class="title">常用</h4>
         <ng-container *ngTemplateOutlet="moreBlocksTpl"></ng-container>
+      </bc-float-toolbar>
+    </ng-template>
+
+    <ng-template #alignList>
+      <bc-float-toolbar direction="column" style="display: block; width: 224px;">
+        @for (item of ALIGN_LIST; track item.name) {
+          <bc-float-toolbar-item class="align-item" (mousedown)="handleToolItemClick(item)"
+                                 [icon]="item.icon" [title]="item.label"
+                                 [active]="$any(activeBlock?.props)['textAlign'] === item.value">
+            {{ item.label }}
+          </bc-float-toolbar-item>
+        }
       </bc-float-toolbar>
     </ng-template>
 
@@ -190,6 +238,12 @@ interface IContextMenuItem {
         flex: 1;
       }
     }
+
+    .align-item {
+      &.active {
+        color: var(--bc-active-color);
+      }
+    }
   `],
   imports: [NgIf, NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, NgForOf, MatIcon, BcOverlayTriggerDirective, NgComponentOutlet],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -202,8 +256,12 @@ export class TriggerBtn {
   @Input() doc!: BlockCraft.Doc
 
   @Input()
+  set hidden(val: boolean) {
+    this.menuDisabled = this._hidden = val
+  }
+
   @HostBinding()
-  hidden: boolean = false
+  protected _hidden = false
 
   private _activeBlock: BlockCraft.BlockComponent | null = null
   @Input()
@@ -263,6 +321,8 @@ export class TriggerBtn {
     this.otherBlockList = schemas.filter(item => item.nodeType === BlockNodeType.block && !item.metadata.isLeaf)
   }
 
+  protected readonly BlockNodeType = BlockNodeType;
+  protected readonly ALIGN_LIST = ALIGN_LIST;
   protected baseBlockList: IBlockSchemaOptions[] = []
   protected otherBlockList: IBlockSchemaOptions[] = []
   protected toolList: IContextMenuItem[] = [
@@ -420,8 +480,15 @@ export class TriggerBtn {
   }
 
   handleToolItemClick(item: IContextMenuItem) {
-
+    switch (item.name) {
+      case 'align':
+        if (!this.activeBlock || !this.doc.isEditable(this.activeBlock)) return
+        this.activeBlock.updateProps({textAlign: item.value as any})
+        break
+      case 'delete':
+        this.activeBlock && this.doc.crud.deleteBlockById(this.activeBlock.id)
+        break
+    }
   }
 
-  protected readonly BlockNodeType = BlockNodeType;
 }

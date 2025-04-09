@@ -45,6 +45,9 @@ export class CodeBlocKeyBinding extends DocPlugin {
   handleEnterKey(context: UIEventStateContext) {
     const state = context.get('keyboardState')
     const {from, to, raw} = state.selection
+    if (state.raw.shiftKey) {
+
+    }
     if (to || from.type !== 'text') return false
     context.preventDefault()
     const block = from.block

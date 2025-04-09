@@ -55,10 +55,6 @@ export class BlockControllerPlugin extends DocPlugin {
     this.addDraggable()
   }
 
-  onLeave = () => {
-    this._cpr.setInput('activeBlockWrap', null)
-  }
-
   private drag$!: BehaviorSubject<string>
 
   addDraggable() {

@@ -46,9 +46,9 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this.toolbarOvr = overlay.create({
       positionStrategy: overlay.position().flexibleConnectedTo(sel.firstBlock.hostElement).withPositions([
         {...POSITION_MAP['top-left'], offsetY: -48 + y, offsetX: x},
+        {...POSITION_MAP['top-right'], offsetY: -48 + y},
         {...POSITION_MAP['bottom-left'], offsetY: 44, offsetX: x},
         {...POSITION_MAP['bottom-right'], offsetY: 44},
-        {...POSITION_MAP['top-right'], offsetY: -48 + y},
       ]),
       scrollStrategy: overlay.scrollStrategies.close(),
     })

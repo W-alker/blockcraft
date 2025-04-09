@@ -38,7 +38,7 @@ export const TableBlockSchema: IBlockSchemaOptions<TableBlockModel> = {
   flavour: 'table',
   nodeType: BlockNodeType.block,
   component: TableBlockComponent,
-  createSnapshot: (rows = 3, cells= 3) => {
+  createSnapshot: (rows = 3, cells = 3) => {
     const children = []
     for (let i = 0; i < rows; i++) {
       children.push(TableRowBlockSchema.createSnapshot(cells))
@@ -69,9 +69,9 @@ export const TableRowBlockSchema: IBlockSchemaOptions<TableRowBlockModel> = {
   flavour: 'table-row',
   nodeType: BlockNodeType.block,
   component: TableRowBlockComponent,
-  createSnapshot: (cells) => {
+  createSnapshot: (cellCount) => {
     const children = []
-    for (let i = 0; i < cells; i++) {
+    for (let i = 0; i < cellCount; i++) {
       children.push(TableCellBlockSchema.createSnapshot())
     }
     return {
@@ -97,7 +97,7 @@ export const TableCellBlockSchema: IBlockSchemaOptions<TableCellBlockModel> = {
   flavour: 'table-cell',
   nodeType: BlockNodeType.block,
   component: TableCellBlockComponent,
-  createSnapshot: (idx) => ({
+  createSnapshot: () => ({
     id: generateId(),
     flavour: 'table-cell',
     nodeType: BlockNodeType.block,

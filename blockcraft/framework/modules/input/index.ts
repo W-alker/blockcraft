@@ -344,10 +344,10 @@ export class InputTransformer {
     const {from, to, collapsed, isAllSelected} = state.selection
     const endBlock = to ? to.block : from.block
     if (isAllSelected) {
-      const nextBlock = this.doc.nextSibling(endBlock)
-      if (nextBlock) {
-        this.doc.isEditable(nextBlock) ? nextBlock.setInlineRange(0) : this.doc.selection.selectBlock(nextBlock)
-      } else {
+      // const nextBlock = this.doc.nextSibling(endBlock)
+      // if (nextBlock) {
+      //   this.doc.isEditable(nextBlock) ? nextBlock.setInlineRange(0) : this.doc.selection.selectBlock(nextBlock)
+      // } else {
         const p = this.doc.schemas.createSnapshot('paragraph', [])
         this.doc.crud.insertBlocksAfter(endBlock, [p]).then(() => {
           this.doc.selection.setSelection({
@@ -357,7 +357,7 @@ export class InputTransformer {
             blockId: p.id
           })
         })
-      }
+      // }
       context.preventDefault()
       return true
     }
