@@ -31,7 +31,7 @@ export const RootBlockSchema: IBlockSchemaOptions<RootBlockModel> = {
   metadata: {
     version: 1,
     label: "Root",
-    children: ['*']
+    includeChildren: ['*']
   }
 }
 

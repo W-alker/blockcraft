@@ -32,7 +32,7 @@ export class BlockCraftDoc {
   /**
    * If true, doc is readonly
    */
-  public readonly readonlySwitch$= new BehaviorSubject<boolean>(true)
+  public readonly readonlySwitch$ = new BehaviorSubject<boolean>(true)
 
   readonly crud = new DocCRUD(this)
   readonly vm = new DocVM(this)
@@ -231,7 +231,7 @@ export class BlockCraftDoc {
   queryBlocksBetween(from: string | BlockCraft.BlockComponent, to: string | BlockCraft.BlockComponent, contain = false) {
     const fromComp = typeof from === 'string' ? this.getBlockById(from) : from
     const toComp = typeof to === 'string' ? this.getBlockById(to) : to
-    if(fromComp === toComp && contain) return [fromComp.id]
+    if (fromComp === toComp && contain) return [fromComp.id]
 
     const fromPath = this.getBlockPath(fromComp)
     const toPath = this.getBlockPath(toComp)
@@ -248,7 +248,13 @@ export class BlockCraftDoc {
     const fromComp = typeof from === 'string' ? this.getBlockById(from) : from
     const toComp = typeof to === 'string' ? this.getBlockById(to) : to
 
-    const list: { parent: string, parentBlock: BlockCraft.BlockComponent, index: number, length: number, group: string[] }[] = []
+    const list: {
+      parent: string,
+      parentBlock: BlockCraft.BlockComponent,
+      index: number,
+      length: number,
+      group: string[]
+    }[] = []
 
     const fromPath = this.getBlockPath(fromComp)
     const toPath = this.getBlockPath(toComp)

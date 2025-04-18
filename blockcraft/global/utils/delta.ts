@@ -32,7 +32,7 @@ export const characterAtDelta = (deltas: DeltaInsert[], position: number): strin
 }
 
 export function sliceDelta(delta: DeltaInsert[], start = 0, end = Infinity) {
-  const slicedOps = [];
+  const slicedOps: DeltaInsert[] = [];
   let offset = 0;
 
   for (const op of delta) {
@@ -84,4 +84,8 @@ export const getCommonAttributesFromDeltas = (delta: DeltaInsert[]) => {
     }
   }
   return commonAttrs || {}
+}
+
+export const deltaToString = (delta: DeltaInsert[]) => {
+  return delta.reduce((acc, cur) => acc + (typeof cur.insert === "string" ? cur.insert : ''), '')
 }

@@ -16,4 +16,5 @@ export class ConsoleLogger implements Logger {
   warn(message: string, ...args: unknown[]) {
     console.warn(message, ...args);
   }
+
 }

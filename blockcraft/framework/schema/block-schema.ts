@@ -25,7 +25,11 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
      * ['table-*'] contains 'table-row', 'table-cell' blocks\
      * ['*'] means that this block can contain any blocks
      */
-    children?: string[]
+    includeChildren?: string[]
+    /**
+     * This block cannot contain the specified block. It is priority over 'includeChildren'
+     */
+    excludeChildren?: string[]
   }
 }
 

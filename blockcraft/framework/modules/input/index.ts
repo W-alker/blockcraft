@@ -86,10 +86,14 @@ export class InputTransformer {
     this.doc.crud.transact(() => {
       if (to) {
         ev.preventDefault()
-        const docSel = document.getSelection()!
         this._replaceText(normalizedRange, text)
-        docSel.getRangeAt(0).collapse(from.type === 'text')
-        from.type === 'text' && docSel.modify('move', 'forward', 'character')
+        if(from.type=== 'text') {
+          this.doc.selection.setSelection({
+            ...from,
+            index: from.index + (text?.length || 0),
+            length: 0
+          })
+        }
         return;
       }
 
@@ -141,6 +145,16 @@ export class InputTransformer {
       }
 
       if (from.type !== 'text') return
+      if(!collapsed) {
+        ev.preventDefault()
+        from.block.replaceText(from.index, from.length, text)
+        this.doc.selection.setSelection({
+          ...from,
+          index: from.index + (text?.length || 0),
+          length: 0
+        })
+        return
+      }
       from.block.yText.insert(from.index, text)
 
     }, ORIGIN_SKIP_SYNC)
@@ -187,7 +201,9 @@ export class InputTransformer {
 
     if (isAllSelected) {
       context.preventDefault()
-      document.getSelection()!.modify('move', 'character', 'backward')
+      const prevBlock = this.doc.prevSibling(from.block)
+      if (!prevBlock) return true
+      this.doc.selection.setBlockPosition(prevBlock, false)
       this._replaceText(state.selection)
       return true
     }
@@ -245,9 +261,8 @@ export class InputTransformer {
       return true
     }
 
-
     this.doc.selection.selectBlock(prevBlock)
-    // this.doc.crud.deleteBlockById(from.block.id)
+    !from.block.textLength && this.doc.crud.deleteBlockById(from.block.id)
     context.preventDefault()
     return true
   }
@@ -348,15 +363,15 @@ export class InputTransformer {
       // if (nextBlock) {
       //   this.doc.isEditable(nextBlock) ? nextBlock.setInlineRange(0) : this.doc.selection.selectBlock(nextBlock)
       // } else {
-        const p = this.doc.schemas.createSnapshot('paragraph', [])
-        this.doc.crud.insertBlocksAfter(endBlock, [p]).then(() => {
-          this.doc.selection.setSelection({
-            type: 'text',
-            index: 0,
-            length: 0,
-            blockId: p.id
-          })
+      const p = this.doc.schemas.createSnapshot('paragraph', [])
+      this.doc.crud.insertBlocksAfter(endBlock, [p]).then(() => {
+        this.doc.selection.setSelection({
+          type: 'text',
+          index: 0,
+          length: 0,
+          blockId: p.id
         })
+      })
       // }
       context.preventDefault()
       return true
@@ -388,7 +403,7 @@ export class InputTransformer {
     }
 
     const deltas = sliceDelta(from.block.textDeltas(), from.index)
-    const p = this.doc.schemas.createSnapshot(from.block.flavour, [deltas, from.block.props])
+    const p = this.doc.schemas.createSnapshot(from.block.textLength ? from.block.flavour : 'paragraph', [deltas, from.block.props])
     context.preventDefault()
     this.doc.crud.transact(() => {
       from.block.deleteText(from.index)

@@ -49,9 +49,11 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
 
     const leaveListen = (block: BlockCraft.BlockComponent) => {
       block.hostElement.classList.add('selecting')
+
       if (block.nodeType !== BlockNodeType.root) {
         fromEvent(block.hostElement, 'mouseleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1)))).subscribe(() => {
-          this.doc.selection.selectBlock(block)
+          // this.doc.selection.selectBlock(block)
+          document.getSelection()!.selectAllChildren(block.hostElement)
           block.hostElement.classList.add('selected')
 
           fromEvent(this.hostElement, 'selectstart').pipe(take(1)).subscribe(evt => {

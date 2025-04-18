@@ -185,10 +185,6 @@ export class SelectionManager {
       this._stack.push(r ? r.toJSON() : null)
       this._setSelected()
     })
-
-    this.selectionChange$.subscribe(v => {
-      console.log('%c[selectionChange]', 'color: #00bfa5', v)
-    })
   }
 
   @BindHotKey({key: ['ArrowUp', "ArrowDown", 'ArrowLeft', 'ArrowRight'], shiftKey: false})
@@ -307,6 +303,8 @@ export class SelectionManager {
       (isBackward && (opObj.type === 'selected' ? false : (opObj.index > 0))) ||
       (!isBackward && (opObj.type === 'selected' ? false : (opObj.index + opObj.length < opObj.block.textLength)))
     ) {
+      // ctx.preventDefault()
+      // docSelection.modify('extend', isBackward ? 'left' : 'right', 'character')
       return true
     }
 

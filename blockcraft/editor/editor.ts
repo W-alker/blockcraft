@@ -1,5 +1,11 @@
 import {Component, Injector, ViewChild, ViewContainerRef} from "@angular/core";
-import {SchemaManager, BlockCraftDoc, EditableBlockComponent} from "../framework";
+import {
+  SchemaManager,
+  BlockCraftDoc,
+  EditableBlockComponent,
+  DOC_FILE_SERVICE_TOKEN,
+  DOC_MESSAGE_SERVICE_TOKEN, DocMessageService
+} from "../framework";
 import {
   HeadingFourBlockSchema,
   HeadingOneBlockSchema,
@@ -11,7 +17,7 @@ import {
   TableBlockSchema,
   TableRowBlockSchema,
   TableCellBlockSchema,
-  HeadingThreeBlockSchema
+  HeadingThreeBlockSchema, ImageTitleBlockSchema, AttachmentBlockSchema
 } from "../blocks";
 import {ConsoleLogger} from "../global";
 import {DividerBlockSchema, CalloutBlockSchema, OrderedBlockSchema, ParagraphBlockSchema} from "../blocks";
@@ -22,13 +28,17 @@ import {TableBlockBinding} from "../plugins/tableBlockBinding";
 import {FloatTextToolbarPlugin} from "../plugins/float-text-toolbar";
 import {BlockTransformerPlugin} from "../plugins/block-transformer";
 import {BlockControllerPlugin} from "../plugins/block-controller";
+import {ImgToolbarPlugin} from "../plugins/img-toolbar";
+import {MyDocFileService} from "./doc-file-service";
+import {MyDocMessageService} from "./doc-message.service";
+import {CalloutToolbarPlugin} from "../plugins/callout-toolbar";
 
 const schemas = new SchemaManager([
   RootBlockSchema, ParagraphBlockSchema, DividerBlockSchema, CalloutBlockSchema, BulletBlockSchema,
-  OrderedBlockSchema, ImageBlockSchema,
+  OrderedBlockSchema, ImageBlockSchema, ImageTitleBlockSchema,
   HeadingOneBlockSchema, HeadingTwoBlockSchema, HeadingThreeBlockSchema, HeadingFourBlockSchema,
   TodoBlockSchema,
-  CodeBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema
+  CodeBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, AttachmentBlockSchema
 ])
 
 @Component({
@@ -50,13 +60,19 @@ const schemas = new SchemaManager([
     display: block;
   }`],
   imports: [],
-  standalone: true
+  standalone: true,
+  providers: [
+    {provide: DOC_FILE_SERVICE_TOKEN, useClass: MyDocFileService},
+    {provide: DOC_MESSAGE_SERVICE_TOKEN, useClass: MyDocMessageService},
+    ConsoleLogger
+  ]
 })
 export class EditorComponent {
   @ViewChild('container', {static: true, read: ViewContainerRef}) container!: ViewContainerRef
 
   constructor(
-    private injector: Injector
+    private injector: Injector,
+    private logger: ConsoleLogger
   ) {
   }
 
@@ -66,7 +82,7 @@ export class EditorComponent {
     rootId: this.rootId,
     docId: 'our-doc',
     schemas: schemas,
-    logger: new ConsoleLogger(),
+    logger: this.logger,
     injector: this.injector,
     embeds: [
       ['image', {
@@ -84,7 +100,8 @@ export class EditorComponent {
       }]
     ],
     plugins: [new AutoUpdateOrderPlugin(), new CodeBlocKeyBinding(), new TableBlockBinding(),
-      new FloatTextToolbarPlugin(), new BlockTransformerPlugin(), new BlockControllerPlugin()]
+      new FloatTextToolbarPlugin(), new BlockTransformerPlugin(), new BlockControllerPlugin(),
+    new ImgToolbarPlugin(), new CalloutToolbarPlugin()]
   })
 
   pid = ''
@@ -104,13 +121,15 @@ export class EditorComponent {
       [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
     ])
     const callout = this.doc.schemas.createSnapshot('callout', [])
-    const img = this.doc.schemas.createSnapshot('image', ['https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg', 200, 100])
+    const img = this.doc.schemas.createSnapshot('image', ['https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg', 200, undefined, 'Image'])
     const todo = this.doc.schemas.createSnapshot('todo', ['this is a todo'])
     const code = this.doc.schemas.createSnapshot('code', ['const c = 1;\n\nfunction a()\n{ console.log(c) }'])
     const table = this.doc.schemas.createSnapshot('table', [6, 6])
+    const attachment = this.doc.schemas.createSnapshot('attachment', ['this is a file','https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg', 'txt'])
+
     this.pid = p.id
     const snapshot = this.doc.schemas.createSnapshot('root',
-      [this.rootId, [p, d1, p2, callout, d2, d3, p3, img, code, table, todo]])
+      [this.rootId, [p, d1, p2, callout, d2, attachment, d3, p3, img, code, table, todo]])
     console.log(snapshot)
     this.doc.init(snapshot, this.container)
   }

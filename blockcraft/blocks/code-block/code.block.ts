@@ -32,6 +32,7 @@ import {nextTick} from "../../global";
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
+  override plainTextOnly = true
 
   @ViewChild('highlighter', {read: ElementRef}) highlighter!: ElementRef<HTMLPreElement>
 
@@ -217,7 +218,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   onCopyText(e: Event) {
     e.stopPropagation()
     e.preventDefault()
-    this.doc.clipboard.writeText(this.textContent()).then(() => {
+    this.doc.clipboard.copyText(this.textContent()).then(() => {
       const el = e.target as HTMLElement
       el.childNodes[1].textContent = '已复制'
       setTimeout(() => {

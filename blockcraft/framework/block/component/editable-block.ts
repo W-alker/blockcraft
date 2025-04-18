@@ -14,6 +14,7 @@ import {INLINE_CONTAINER_CLASS} from "../../inline";
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class EditableBlockComponent<Model extends EditableBlockNative = EditableBlockNative> extends BaseBlockComponent<Model> {
+  plainTextOnly = false
 
   yText!: Y.Text
 
@@ -88,7 +89,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     this.doc.crud.transact(() => {
       length > 0 && this.yText.delete(index, length)
       text && this.yText.insert(index, text)
-      this.doc.inlineManager.applyDeltaToView(delta, this.containerElement)
+      this._applyDeltaToView(delta)
     }, ORIGIN_SKIP_SYNC)
   }
 
@@ -99,15 +100,24 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   formatText(index: number, length: number, attributes: Record<string, any>) {
     this.doc.crud.transact(() => {
       this.yText.format(index, length, attributes)
-      this.doc.inlineManager.applyDeltaToView([{retain: index}, {retain: length, attributes}], this.containerElement)
+      this._applyDeltaToView([{retain: index}, {retain: length, attributes}])
     }, ORIGIN_SKIP_SYNC)
   }
 
   applyDeltaOperation(delta: DeltaOperation[]) {
     this.doc.crud.transact(() => {
       this.yText.applyDelta(delta)
-      this.doc.inlineManager.applyDeltaToView(delta, this.containerElement)
+      this._applyDeltaToView(delta)
     }, ORIGIN_SKIP_SYNC)
+  }
+
+  private _applyDeltaToView(deltas: DeltaOperation[]) {
+    try {
+      this.doc.inlineManager.applyDeltaToView(deltas, this.containerElement)
+    } catch (e) {
+      console.error(`Error throw when apply delta to view. Block: `, this, e)
+      this.rerender()
+    }
   }
 
   setInlineRange(index: number, length = 0) {

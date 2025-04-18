@@ -1,0 +1,39 @@
+@mixin attachment-block() {
+  div.attachment-block {
+    padding: 6px;
+    border: 1px solid var(--bc-border-color);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+
+    &__info {
+      padding: 8px 16px;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    &__name {
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      word-break: break-all;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--bc-color);
+      font-size: calc(var(--bc-fs) + 4px);
+      font-style: normal;
+      font-weight: 600;
+    }
+
+    &__size {
+      margin-top: 10px;
+      font-size: small;
+      color: var(--bc-color-light);
+    }
+
+    &__icon-wrapper {
+      width: 50px;
+    }
+  }
+}

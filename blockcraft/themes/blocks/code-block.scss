@@ -11,24 +11,6 @@
     border-radius: 4px;
     caret-color: #000;
 
-    counter-set: line;
-
-    [data-line-break="true"], c-element:first-of-type {
-      &::before {
-        position: absolute;
-        left: .5em;
-        content: counter(line);
-        counter-increment: line;
-        line-height: 1.8em;
-        font-size: 1em;
-        opacity: .6;
-      }
-    }
-
-    [data-line-break="true"]::before {
-      transform: translateY(100%);
-    }
-
     .edit-container {
       background: none;
       font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
@@ -42,6 +24,29 @@
       -o-tab-size: 2;
       tab-size: 2;
       white-space-collapse: break-spaces;
+
+      counter-set: line;
+
+      [data-line-break="true"]::before,
+      c-element:first-of-type::before,
+      c-element[data-line-break]:first-of-type::after {
+        position: absolute;
+        left: .5em;
+        content: counter(line);
+        counter-increment: line;
+        line-height: 1.8em;
+        font-size: 1em;
+        opacity: .6;
+        color: var(--bc-color-light);
+      }
+
+      [data-line-break="true"]::before {
+        transform: translateY(100%);
+      }
+
+      c-element:first-of-type::before {
+        transform: unset;
+      }
     }
 
     [type="variable"] {
@@ -142,6 +147,7 @@
       border-radius: 4px;
       padding: 0 4px;
       height: calc(var(--code-padding-top) * 0.8);
+      white-space: nowrap;
 
       &__group {
         user-select: none;

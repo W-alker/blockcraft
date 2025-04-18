@@ -21,6 +21,10 @@ export class ClipboardEventState extends UIEventState {
     return this.clipboardData?.types ?? []
   }
 
+  getData(type: string) {
+    return this.clipboardData?.getData(type) ?? null
+  }
+
 }
 
 declare global {

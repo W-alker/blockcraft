@@ -47,6 +47,8 @@ export interface ColorGroup {
         </div>
       </div>
     }
+
+    <ng-content></ng-content>
   `,
   styles: [`
     :host {

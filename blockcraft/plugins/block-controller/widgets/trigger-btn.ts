@@ -11,7 +11,7 @@ import {BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDi
 import {BlockNodeType} from "../../../framework/types";
 import {IBlockSchemaOptions} from "../../../framework/schema/block-schema";
 import {MatIcon} from "@angular/material/icon";
-import {SimpleValue} from "../../../global";
+import {nextTick, SimpleValue} from "../../../global";
 
 interface IContextMenuItem {
   type: 'tool'
@@ -84,7 +84,7 @@ const ALIGN_LIST: IContextMenuItem[] = [
 
           @if (activeBlock?.nodeType === BlockNodeType.editable) {
             <bc-float-toolbar-item class="append-more-btn" [bcOverlayTrigger]="alignList" [disabled]="menuDisabled"
-                                   [positions]="['right-top']" [offsetX]="8" activeClass="active">
+                                   [positions]="['right-center']" [offsetX]="8" activeClass="active">
               <i [class]="['bc_icon', 'bc_zuoduiqi']"></i>
               <span>对齐方式</span>
               <i class="bf_icon bf_youjiantou"></i>
@@ -103,7 +103,7 @@ const ALIGN_LIST: IContextMenuItem[] = [
           <span class="bc-float-toolbar__divider"></span>
 
           <bc-float-toolbar-item class="append-more-btn" [bcOverlayTrigger]="blockAddList" [disabled]="menuDisabled"
-                                 [positions]="['right-top']" [offsetX]="8" activeClass="active">
+                                 [positions]="['right-center']" [offsetX]="8" activeClass="active">
             <i class="bf_icon bf_tianjia"></i>
             <span>在下方添加</span>
             <i class="bf_icon bf_youjiantou"></i>
@@ -465,18 +465,29 @@ export class TriggerBtn {
           // this.doc.selection.setBlockPosition(this.doc.getBlockById(newBlock.id), true)
         })
       }
+
+      this.menuDisabled = true
+      nextTick().then(() => {
+        this.menuDisabled = false
+      })
       return;
     }
 
     if (this.doc.isEditable(this.activeBlock) && item.nodeType === BlockNodeType.editable) {
       const newBlock = this.doc.schemas.createSnapshot(item.flavour, [this.activeBlock.textDeltas(), this.activeBlock.props])
       this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [newBlock]).then(() => {
+        this.doc.selection.setBlockPosition(this.doc.getBlockById(newBlock.id), true)
       })
     } else {
       const newBlock = this.doc.schemas.createSnapshot(item.flavour, [])
       this.doc.crud.insertBlocksAfter(this.activeBlock, [newBlock])
     }
 
+    this.menuDisabled = true
+
+    nextTick().then(() => {
+      this.menuDisabled = false
+    })
   }
 
   handleToolItemClick(item: IContextMenuItem) {

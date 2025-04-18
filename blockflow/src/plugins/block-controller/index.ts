@@ -80,6 +80,11 @@ export class BlockControllerPlugin implements IPlugin {
       height: 2px;
       background-color: #3a53d9;
       pointer-events: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      transation: all 0.2s ease;
     `
       this._controller.rootElement.appendChild(dragLine)
       return dragLine

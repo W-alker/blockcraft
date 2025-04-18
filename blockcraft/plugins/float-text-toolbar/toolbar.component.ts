@@ -1,19 +1,29 @@
-import {Component, EventEmitter, HostBinding, HostListener, Input, Output} from "@angular/core";
+import {
+  ChangeDetectionStrategy, ChangeDetectorRef,
+  Component,
+  EventEmitter,
+  HostBinding,
+  HostListener,
+  Input,
+  Output
+} from "@angular/core";
 import {
   BcFloatToolbarComponent,
   BcFloatToolbarItemComponent,
-  BcOverlayTriggerDirective, ColorGroup,
+  BcOverlayTriggerDirective,
+  ColorGroup,
   ColorPickerComponent
 } from "../../components";
-import {getCommonAttributesFromDeltas, SimpleValue, sliceDelta} from "../../global";
+import {SimpleValue} from "../../global";
 import {NgForOf, NgIf} from "@angular/common";
 import {ORIGIN_SKIP_SYNC} from "../../framework";
-import {DeltaInsert, IInlineNodeAttrs} from "../../framework/types";
+import {IInlineNodeAttrs} from "../../framework/types";
 import {Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {merge} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {LinkInputPad} from "./link-input-pad";
+import {TextToolbarUtils} from "./utils";
 
 export interface IToolbarMenuItem {
   label?: string
@@ -113,7 +123,7 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
       <bc-float-toolbar-item name="link" value="true" icon="bc_lianjie" title="链接" *ngIf="isLinkAble">
       </bc-float-toolbar-item>
 
-      <span class="bf-float-toolbar__divider"></span>
+      <span class="bc-float-toolbar__divider"></span>
       <bc-float-toolbar-item icon="bc_sepan" [bcOverlayTrigger]="colorPicker" [positions]="['bottom-left']" [offsetY]="8"/>
 
     </bc-float-toolbar>
@@ -156,18 +166,22 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
   standalone: true,
   host: {
     'contenteditable': 'false',
-  }
+  },
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FloatTextToolbarComponent {
   @Input({required: true})
   doc!: BlockCraft.Doc
 
-  @Output()
-  onDestroy: EventEmitter<void> = new EventEmitter<void>()
+  @Input({required: true})
+  utils!: TextToolbarUtils
 
   @HostBinding('style')
   @Input()
   style: string = ''
+
+  @Output()
+  onDestroy: EventEmitter<void> = new EventEmitter<void>()
 
   @HostListener('mouseenter', ['$event'])
   onMouseEnter(e: MouseEvent) {
@@ -184,9 +198,15 @@ export class FloatTextToolbarComponent {
   defaultMenuList: IToolbarMenuItem[] = DEFAULT_MENU_LIST
   alignList: IToolbarMenuItem[] = ALIGN_LIST
 
+  @Input({required: true})
   activeAttrs = new Set<string>()
+
+  @Input({required: true})
   activeColors: Record<string, string | null> = {}
+
+  @Input({required: true})
   activeTextAlign: string | undefined | null = undefined
+
   isLinkAble = false
 
   constructor() {
@@ -195,37 +215,6 @@ export class FloatTextToolbarComponent {
   ngOnInit() {
     const selection = this.doc.selection.value!
     this.isLinkAble = selection.isInSameBlock && selection.from.type === 'text'
-
-    this.activeTextAlign = selection.firstBlock.props['textAlign']
-    const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true).map(id => this.doc.getBlockById(id))
-
-    const allDeltas: DeltaInsert[] = []
-    if (selection.from.type === 'text') {
-      allDeltas.push(...sliceDelta(selection.from.block.textDeltas(), selection.from.index, selection.from.index + selection.from.length))
-    }
-
-    between.slice(1).forEach((block, i) => {
-      if (!this.doc.isEditable(block) || block.flavour === 'code') return;
-      if (this.activeTextAlign !== null && block.props.textAlign !== this.activeTextAlign) {
-        this.activeTextAlign = null
-      }
-      if (i === between.length - 2 && selection.to?.type === 'text') {
-        allDeltas.push(...sliceDelta(block.textDeltas(), 0, selection.to.index))
-      } else {
-        allDeltas.push(...block.textDeltas())
-      }
-    })
-
-    const commonAttrs = getCommonAttributesFromDeltas(allDeltas)
-    this.activeColors = {
-      color: commonAttrs['s:color'] ?? null,
-      backColor: commonAttrs['s:background'] ?? null
-    }
-    Object.keys(commonAttrs).forEach(key => {
-      if (key.startsWith('a:')) {
-        this.activeAttrs.add(key.slice(2))
-      }
-    })
   }
 
   ngOnDestroy() {
@@ -269,26 +258,7 @@ export class FloatTextToolbarComponent {
   }
 
   formatText(attrs: IInlineNodeAttrs) {
-    const selection = this.doc.selection.value
-    if (!selection) return
-
-    const {from, to} = selection
-    this.doc.crud.transact(() => {
-      if (from.type === 'text' && from.block.flavour !== 'code') {
-        from.block.formatText(from.index, from.length, attrs)
-      }
-      if (!to) return
-      if (to.type === 'text' && to.block.flavour !== 'code') {
-        to.block.formatText(to.index, to.length, attrs)
-      }
-
-      const between = this.doc.queryBlocksBetween(from.block, to.block)
-      for (const id of between) {
-        const block = this.doc.getBlockById(id)
-        if (!this.doc.isEditable(block) || block.flavour === 'code') continue;
-        block.formatText(0, block.textLength, attrs)
-      }
-    }, ORIGIN_SKIP_SYNC)
+    this.utils.formatText(attrs)
   }
 
   onColorPicked(evt: { type: string; color: string | null; group: ColorGroup }) {

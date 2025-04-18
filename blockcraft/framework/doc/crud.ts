@@ -4,7 +4,7 @@ import * as Y from "yjs";
 import {BlockCraftError, ErrorCode, nextTick} from "../../global";
 import {IBlockSelectionJSON} from "../modules";
 import {EditableBlockComponent} from "../block";
-import {Subject} from "rxjs";
+import {BehaviorSubject, skip, Subject, take} from "rxjs";
 
 // This origin will skip Y.Event sync (to model)
 export const ORIGIN_SKIP_SYNC = Symbol('skip_sync')
@@ -18,7 +18,7 @@ export interface IChildrenChangeEvent {
     deleted?: {
       index: number,
       length: number
-    }[]
+    }[],
     block: BlockCraft.BlockComponent,
   }[]
 }
@@ -41,11 +41,13 @@ export class DocCRUD {
   })
   readonly yBlockMap = this.yDoc.getMap<YBlock>()
   readonly yUndoManager = new Y.UndoManager(this.yBlockMap, {
+    captureTimeout: 200,
     trackedOrigins: new Set([ORIGIN_SKIP_SYNC, null])
   })
 
   private _undoSelectionStack: Array<IBlockSelectionJSON | null> = []
   private _redoSelectionStack: Array<IBlockSelectionJSON | null> = []
+  private _undoRedoing$ = new BehaviorSubject(false)
 
   readonly onChildrenUpdate$ = new Subject<IChildrenChangeEvent>()
   readonly onPropsUpdate$ = new Subject<IPropsChangeEvent>()
@@ -53,10 +55,15 @@ export class DocCRUD {
   constructor(
     public readonly doc: BlockCraft.Doc
   ) {
-    this.yBlockMap.observeDeep(this._syncYEvent)
+    this.doc.afterInit(() => {
+      this.yBlockMap.observeDeep(this._syncYEvent)
 
-    this.yUndoManager.on('stack-item-added', (evt) => {
-      console.log('undo stack', this.yUndoManager.undoStack)
+      this.yUndoManager.on('stack-item-added', (evt) => {
+        if (evt.type === 'undo') {
+          console.log('%cundo stack', 'background: #444;', this.yUndoManager.undoStack, this.doc.selection)
+          this._undoSelectionStack.push(this.doc.selection.value!.toJSON())
+        }
+      })
     })
   }
 
@@ -77,9 +84,8 @@ export class DocCRUD {
   }
 
   private _syncYEvent = (event: Y.YEvent<any>[], tr: Y.Transaction) => {
+    console.log(tr.origin)
     // local change with skip
-    if (tr.origin === ORIGIN_NO_RECORD) return
-
     const isUndoRedo = tr.origin instanceof Y.UndoManager
 
     const added: Record<string, YBlock> = {}
@@ -173,14 +179,21 @@ export class DocCRUD {
         transactions: propsChanges
       })
 
-      // propsChanges.forEach(v => {
-      //   v.block.onPropsChange.next(v.changes as any)
-      // })
+      propsChanges.forEach(v => {
+        v.block.onPropsChange.emit(v.changes as any)
+      })
     }
 
     if (delay_childrenEvent_handlers.length) {
-      this._syncYBlockChildrenUpdate(added, deleted, delay_childrenEvent_handlers, isUndoRedo)
+      this._syncYBlockChildrenUpdate(added, deleted, delay_childrenEvent_handlers, isUndoRedo).then(() => {
+        console.log('%cundo redo ok', 'color: blue;')
+        this._undoRedoing$.value && this._undoRedoing$.next(false)
+      })
+      return
     }
+
+    console.log('%cundo redo ok', 'color: blue;')
+    this._undoRedoing$.value && this._undoRedoing$.next(false)
   }
 
   private _syncYBlockChildrenUpdate = async (added: Record<string, YBlock>,
@@ -315,6 +328,7 @@ export class DocCRUD {
     const parentComp = this.vm.get(parentId)
     const targetComp = this.vm.get(targetId)
     if (!parentComp || !targetComp) return
+
     this.transact(() => {
       const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
       const sliceComps = sliceIds.map(id => this.vm.get(id)!)
@@ -334,32 +348,39 @@ export class DocCRUD {
   }
 
   undo() {
-    if (!this.isCanUndo) return
+    if (!this.isCanUndo() || this._undoRedoing$.value) return
+    this._undoRedoing$.next(true)
     this.yUndoManager.undo()
 
     const last = this._undoSelectionStack.pop()
     if (last === undefined) return
     this._redoSelectionStack.push(last)
-    nextTick().then(() => {
-      try {
-        this.doc.selection.replay(last)
-      } catch (e) {
-      }
-    })
+
+    this._replaySelectionAfterUndoRedo(last)
   }
 
   redo() {
-    if (!this.isCanRedo) return
+    if (!this.isCanRedo() || this._undoRedoing$.value) return
+    this._undoRedoing$.next(true)
     this.yUndoManager.redo()
 
     const last = this._redoSelectionStack.pop()
     if (last === undefined) return
     this._undoSelectionStack.push(last)
-    nextTick().then(() => {
-      try {
-        this.doc.selection.replay(last)
-      } catch (e) {
-      }
+
+   this._replaySelectionAfterUndoRedo(last)
+  }
+
+  private _replaySelectionAfterUndoRedo(selection: IBlockSelectionJSON | null) {
+    this._undoRedoing$.pipe(take(1)).subscribe(() => {
+      nextTick().then(() => {
+        try {
+          this.doc.selection.replay(selection)
+        } catch (e) {
+          this.doc.selection.recalculate()
+          this.doc.logger.warn('UNDO时选区出现问题')
+        }
+      })
     })
   }
 

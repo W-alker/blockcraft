@@ -8,11 +8,11 @@ export interface CalloutBlockModel extends NoEditableBlockNative {
   flavour: 'callout',
   nodeType: BlockNodeType.block,
   props: {
-    backColor: string
     color: string
+    backColor: string
     borderColor: string
     prefix: string
-  },
+  }
 }
 
 export const CalloutBlockSchema: IBlockSchemaOptions<CalloutBlockModel> = {
@@ -25,9 +25,9 @@ export const CalloutBlockSchema: IBlockSchemaOptions<CalloutBlockModel> = {
       flavour: 'callout',
       nodeType: BlockNodeType.block,
       props: {
-        backColor: '#f6f8fa',
-        color: '#000',
-        borderColor: '#dfe2e5',
+        backColor: '#FFE6CD',
+        color: '#333',
+        borderColor: 'transparent',
         prefix: '📢'
       },
       meta: {},
@@ -37,9 +37,9 @@ export const CalloutBlockSchema: IBlockSchemaOptions<CalloutBlockModel> = {
   metadata: {
     version: 1,
     label: "高亮块",
-    children: ['paragraph', 'divider'],
     icon: 'bc_icon bc_gaoliangkuai-color',
-    svgIcon: 'bc_gaoliangkuai-color'
+    svgIcon: 'bc_gaoliangkuai-color',
+    excludeChildren: ['callout', 'table']
   }
 }
 

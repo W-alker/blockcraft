@@ -5,14 +5,19 @@
 @import "./blocks/table-block.scss";
 @import "blocks/ordered-block";
 @import "blocks/heading-block";
+@import "blocks/image-block";
+@import "blocks/attachment-block";
 
 :root {
   --bc-fs: 14px;
   --bc-lh: 20px;
   --bc-color: #333;
+  --bc-color-light: #999;
+  --bc-border-color: #ddd;
   --bc-warning-color: #f5a623;
   --bc-error-color: #e03131;
   --bc-active-color: #4857E2;
+  --bc-active-color-light: #1890ff;
   --bc-error-background-color: rgba(224, 49, 49, 0.1);
   --bc-select-background-color: rgba(24, 144, 255, 0.3);
 }
@@ -27,6 +32,10 @@
   padding: 0 20px;
   font-size: var(--bc-fs);
   line-height: var(--bc-lh);
+
+  svg {
+    vertical-align: top;
+  }
 
   &.selecting, [data-node-type="block"].selecting {
     > [data-node-type="block"],
@@ -58,16 +67,10 @@
   }
 
   [data-block-id] {
-    &.selected {
-      background-color: var(--bc-select-background-color);
-      transition: background-color 0.15s ease-in-out;
-    }
-  }
-
-  [data-block-id] {
     position: relative;
     margin: .5em 0;
     caret-color: transparent;
+    content-visibility: auto;
 
     > [contenteditable='false'] {
       user-select: none;
@@ -77,12 +80,14 @@
     }
 
     &.selected {
-      //user-select: text;
       -webkit-user-modify: read-only;
+      background-color: var(--bc-select-background-color);
+      transition: background-color 0.15s ease-in-out;
 
+      // TODO
       ::selection {
-        background: transparent;
-        color: inherit;
+        //background: transparent;
+        //color: inherit;
       }
     }
   }
@@ -162,13 +167,21 @@
       }
 
       &[link] {
-        color: #1890ff;
+        color: var(--bc-active-color-light) !important;
         text-decoration: underline;
         cursor: pointer;
 
-        &:hover {
-          color: #40a9ff !important;
-        }
+        //&:hover {
+        //  color: var(--bc-active-color) !important;
+        //
+        //  + c-element[link] {
+        //    color: var(--bc-active-color) !important;
+        //  }
+        //}
+        //
+        //&:has(+ c-element[link]:hover) {
+        //  color: var(--bc-active-color) !important;
+        //}
       }
     }
 
@@ -185,6 +198,8 @@
   @include callout-block();
   @include table-block();
   @include heading-block();
+  @include image-block();
+  @include attachment-block();
 }
 
 .blockcraft-cursor {

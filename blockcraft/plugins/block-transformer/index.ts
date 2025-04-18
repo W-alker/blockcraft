@@ -1,16 +1,11 @@
 import {filter, fromEvent, merge, skip, Subject, Subscription, take, takeUntil} from "rxjs";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
-// import {BlockTransformContextMenu} from "./widget/contextmenu";
-// import {ComponentPortal} from "@angular/cdk/portal";
 import {DocPlugin, EditableBlockComponent, EventListen, EventNames, HotKeyTrigger} from "../../framework";
 import {IBlockSnapshot} from "../../framework/types";
 import {UIEventStateContext} from "../../framework/event/base";
 import {nextTick, sliceDelta} from "../../global";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {BlockTransformContextMenu} from "./widget/contextmenu";
-import {IBlockSchemaOptions} from "../../framework/schema/block-schema";
-
-// export {BlockTransformContextMenu} from "./widget/contextmenu";
 
 export interface IBlockTransformConfig {
   flavour: BlockCraft.BlockFlavour
@@ -162,7 +157,7 @@ export class BlockTransformerPlugin extends DocPlugin {
         this._mdTransform()
       })
     }
-    if (e.data === '\\' || e.data === '、') {
+    if (e.data === '\/' || e.data === '、') {
       nextTick().then(() => {
         const selection = this.doc.selection.value
         if (!selection || !selection.collapsed || selection.from.type !== 'text' || selection.from.block.flavour !== 'paragraph') return
@@ -192,6 +187,11 @@ export class BlockTransformerPlugin extends DocPlugin {
     } else {
       newBlock = this.doc.schemas.createSnapshot(matched.flavour, [sliceDelta(block.textDeltas(), text.length), block.props])
     }
+
+    if (!this.doc.schemas.isValidChildren(newBlock.flavour, block.parentBlock!.flavour)) {
+      return
+    }
+
     const appendBlocks = [newBlock]
     if (newBlock.nodeType === 'void') {
       appendBlocks.push(this.doc.schemas.createSnapshot('paragraph', []))
@@ -219,8 +219,10 @@ export class BlockTransformerPlugin extends DocPlugin {
     this.contextOvr = overlay.create({positionStrategy: positions})
     const cpr = this.contextOvr.attach(new ComponentPortal(BlockTransformContextMenu))
 
+    const parentBlockSchema = this.doc.schemas.get(block.parentBlock!.flavour)
     const blockSchemas = this.doc.schemas.getSchemaList()
-      .filter(v => !v.metadata.isLeaf && !['image', 'paragraph', 'root'].includes(v.flavour))
+      .filter(v => !v.metadata.isLeaf && !['image', 'paragraph', 'root'].includes(v.flavour)
+        && this.doc.schemas.isValidChildren(v.flavour, parentBlockSchema))
     cpr.setInput('blocks', blockSchemas)
 
     let isComposing = false
@@ -229,6 +231,11 @@ export class BlockTransformerPlugin extends DocPlugin {
     })
     fromEvent(block.hostElement, 'compositionend').pipe(takeUntil(this.closeMenu$)).subscribe(() => {
       isComposing = false
+    })
+
+    // TODO 位置改变，弹窗更新位置
+    fromEvent(this.doc.root.hostElement.parentElement!, 'scroll').pipe(takeUntil(this.closeMenu$)).subscribe(() => {
+      this.contextOvr?.updatePosition()
     })
 
     const textObserver = () => {
@@ -250,6 +257,37 @@ export class BlockTransformerPlugin extends DocPlugin {
 
     block.yText.observe(textObserver)
 
+    cpr.instance.blockSelected.pipe(takeUntil(this.closeMenu$)).subscribe(schema => {
+      this.contextOvr!.dispose()
+      const newBlock = this.doc.schemas.createSnapshot(schema.flavour, [])
+      this.doc.crud.replaceWithSnapshots(block.id, [newBlock]).then(() => {
+        newBlock.nodeType === 'editable' && this.doc.selection.setBlockPosition(newBlock.id, true)
+      })
+    })
+
+    const hotKeyEvents = [
+      this.doc.event.bindHotkey({key: 'Escape',}, evt => {
+        evt.preventDefault()
+        this.closeMenu$.next(true)
+        return true
+      }, {blockId: block.id}),
+      this.doc.event.bindHotkey({key: 'Enter',}, evt => {
+        evt.preventDefault()
+        cpr.instance.select()
+        return true
+      }, {blockId: block.id}),
+      this.doc.event.bindHotkey({key: 'ArrowUp',}, evt => {
+        evt.preventDefault()
+        cpr.instance.selectUp()
+        return true
+      }, {blockId: block.id}),
+      this.doc.event.bindHotkey({key: 'ArrowDown'}, evt => {
+        evt.preventDefault()
+        cpr.instance.selectDown()
+        return true
+      }, {blockId: block.id})
+    ]
+
     merge(
       this.doc.selection.selectionChange$.pipe(skip(1), filter(v => !v || !!v.to || !v.collapsed || (v.firstBlock.id !== block.id))),
       block.onDestroy$).pipe(takeUntil(this.closeMenu$)).subscribe(() => {
@@ -260,36 +298,8 @@ export class BlockTransformerPlugin extends DocPlugin {
       this.contextOvr!.dispose()
       this.contextOvr = null
       block.yText.unobserve(textObserver)
+      hotKeyEvents.forEach(v => v())
     })
-
-    cpr.instance.blockSelected.pipe(takeUntil(this.closeMenu$)).subscribe(schema => {
-      this.contextOvr!.dispose()
-      const newBlock = this.doc.schemas.createSnapshot(schema.flavour, [])
-      this.doc.crud.replaceWithSnapshots(block.id, [newBlock]).then(() => {
-        newBlock.nodeType === 'editable' && this.doc.selection.setBlockPosition(newBlock.id, true)
-      })
-    })
-
-    this.doc.event.bindHotkey({key: 'Escape',}, evt => {
-      evt.preventDefault()
-      this.closeMenu$.next(true)
-      return true
-    }, {blockId: block.id})
-    this.doc.event.bindHotkey({key: 'Enter',}, evt => {
-      evt.preventDefault()
-      cpr.instance.select()
-      return true
-    }, {blockId: block.id})
-    this.doc.event.bindHotkey({key: 'ArrowUp',}, evt => {
-      evt.preventDefault()
-      cpr.instance.selectUp()
-      return true
-    }, {blockId: block.id})
-    this.doc.event.bindHotkey({key: 'ArrowDown'}, evt => {
-      evt.preventDefault()
-      cpr.instance.selectDown()
-      return true
-    }, {blockId: block.id})
   }
 
   destroy() {

@@ -18,9 +18,9 @@ import {CalloutBlockModel} from "./index";
 })
 export class CalloutBlockComponent extends BaseBlockComponent<CalloutBlockModel> {
 
-  override ngAfterViewInit() {
-    super.ngAfterViewInit();
+  // override ngAfterViewInit() {
+  //   super.ngAfterViewInit();
     // this.hostElement.prepend(createBlockGapSpace())
     // this.hostElement.appendChild(createBlockGapSpace())
-  }
+  // }
 }

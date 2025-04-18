@@ -1,8 +1,16 @@
-import {BehaviorSubject, filter, fromEvent, Subscription, take, takeUntil, throttleTime} from "rxjs";
+import {fromEvent, Subscription, throttleTime} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {TriggerBtn} from "./widgets/trigger-btn";
-import {BLOCK_POSITION, closetBlockId, DocPlugin} from "../../framework";
+import {
+  BLOCK_POSITION,
+  closetBlockId,
+  DOC_MESSAGE_SERVICE_TOKEN,
+  DocPlugin,
+  EventListen,
+  EventNames
+} from "../../framework";
 import {BlockNodeType} from "../../framework/types";
+import {UIEventStateContext} from "../../framework/event/base";
 
 export class BlockControllerPlugin extends DocPlugin {
   override name = 'block-controller'
@@ -55,30 +63,25 @@ export class BlockControllerPlugin extends DocPlugin {
     this.addDraggable()
   }
 
-  private drag$!: BehaviorSubject<string>
+  private dragLine?: HTMLElement
 
-  addDraggable() {
-    this.drag$ = new BehaviorSubject('end')
-    // this._cpr.location.nativeElement.setAttribute('draggable', 'true')
-
-    const createDragLine = () => {
-      const dragLine = document.createElement('div')
-      dragLine.style.cssText = `
+  private createDragLine = () => {
+    const dragLine = document.createElement('div')
+    dragLine.style.cssText = `
       display: none;
       position: absolute;
       height: 2px;
       background-color: #3a53d9;
       pointer-events: none;
+      transition: all 0.08s;
+      box-shadow: 0 0 2px var(--bc-active-color-light);
     `
-      this.doc.root.hostElement.appendChild(dragLine)
-      return dragLine
-    }
+    this.doc.root.hostElement.appendChild(dragLine)
+    this.dragLine = dragLine
+  }
 
-    const calcPosition = (e: DragEvent, blockWrap: HTMLElement) => {
-      const rect = blockWrap.getBoundingClientRect()
-      if (e.clientY > rect.top + rect.height / 2) return 'after'
-      return 'before'
-    }
+  private moveDragLine = (host: HTMLElement, position: 'after' | 'before') => {
+    if (!this.dragLine) return
 
     const calcLineRect = (blockWrap: HTMLElement, position: 'after' | 'before') => {
       const rootRect = this.doc.root.hostElement.getBoundingClientRect()
@@ -88,91 +91,146 @@ export class BlockControllerPlugin extends DocPlugin {
       return {top: rect.top - rootRect.top - 1, left: rect.left - rootRect.left, width: rect.width}
     }
 
-    fromEvent<DragEvent>(this._cpr.location.nativeElement, 'dragstart')
+    const rect = calcLineRect(host, position)
+    this.dragLine.style.display = 'block'
+    this.dragLine.style.top = rect.top + 'px'
+    this.dragLine.style.left = rect.left + 'px'
+    this.dragLine.style.width = rect.width + 'px'
+  }
+
+  private removeDragLine = () => {
+    if (!this.dragLine) return
+    this.dragLine.remove()
+    this.dragLine = undefined
+  }
+
+  private prevDragPosition: 'before' | 'after' | 'none' = 'none'
+  private prevBlock: BlockCraft.BlockComponent | null = null
+  private dragMoveSub: Subscription | undefined = undefined
+  private dragPreventListener: Subscription | undefined = undefined
+
+  private onDragStart = (evt: DragEvent) => {
+    const dataTransfer = evt.dataTransfer
+    if (dataTransfer) {
+      dataTransfer.clearData()
+      dataTransfer.dropEffect = 'none'
+    }
+
+    this.createDragLine()
+    // 防止释放时会有个返回的动画
+    this.dragPreventListener = fromEvent<DragEvent>(document.body, 'dragover')
       .subscribe((e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      })
+  }
+
+  private onDragEnter = (ctx: UIEventStateContext) => {
+    const evt: DragEvent = ctx.getDefaultEvent()
+    evt.preventDefault()
+    evt.stopPropagation()
+
+    const blockId = closetBlockId(evt.target as Node)
+    if (!blockId || this.prevBlock?.id === blockId) return
+    const block = this.doc.getBlockById(blockId)
+    if (block.nodeType === BlockNodeType.root) return
+    const schema = this.doc.schemas.get(block.flavour)
+    if (schema.metadata.isLeaf) return;
+
+    this.prevBlock = block
+    this.dragMoveSub?.unsubscribe()
+    this.dragMoveSub = undefined
+
+    this.dragMoveSub = fromEvent<DragEvent>(block.hostElement, 'dragover').pipe(throttleTime(30))
+      .subscribe((e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        const position = calcPosition(e, block.hostElement)
+        if (this.prevDragPosition === position) return
+        this.moveDragLine(block.hostElement, this.prevDragPosition = position)
+      })
+  }
+
+  private onDragEnd = (dragBlock?: BlockCraft.BlockComponent | null) => {
+    this.removeDragLine()
+    this.dragMoveSub?.unsubscribe()
+    this.dragPreventListener?.unsubscribe()
+    this.dragPreventListener = undefined
+    this.prevBlock && dragBlock && this.onSortBlock(dragBlock, this.prevBlock, this.prevDragPosition)
+  }
+
+  addDraggable() {
+    this.doc.event.createDndChains(this._cpr.location.nativeElement, {
+      onDragStart: (ctx) => {
         if (!this._activeBlock) return
-        // this.doc.selection.selectAllChildren(this._activeBlock)
+        const evt: DragEvent = ctx.getDefaultEvent()
 
         this._cpr.instance.menuDisabled = true
         this._cpr.instance.cdr.detectChanges()
 
-        const dataTransfer = e.dataTransfer!
-        dataTransfer.dropEffect = 'none';
-        dataTransfer.clearData()
-        dataTransfer.setDragImage(this._activeBlock.hostElement, 0, 0);
+        evt.dataTransfer?.setDragImage(this._activeBlock.hostElement, 0, 0);
 
-        let prevPosition: 'before' | 'after' | 'none' = 'none'
-        let prevBlock: BlockCraft.BlockComponent
-        let dragMoveSub: Subscription | undefined = undefined
-        const dragLine = createDragLine()
-        this.drag$.next('start')
-
-        fromEvent<DragEvent>(document.body, 'dragover')
-          .pipe(takeUntil(this.drag$.pipe(filter((e) => e === 'end'))))
-          .subscribe((e) => {
-            e.preventDefault()
-            e.stopPropagation()
-          })
-
-        fromEvent<DragEvent>(this.doc.root.hostElement, 'dragenter')
-          .pipe(takeUntil(this.drag$.pipe(filter((e) => e === 'end'))))
-          .subscribe((e) => {
-            e.stopPropagation()
-            e.preventDefault()
-
-            const blockId = closetBlockId(e.target as Node)
-            if (!blockId || prevBlock?.id === blockId) return
-            const block = this.doc.getBlockById(blockId)
-            if (block.nodeType === BlockNodeType.root) return
-            const schema = this.doc.schemas.get(block.flavour)
-            if (schema.metadata.isLeaf) return;
-
-            prevBlock = block
-            dragMoveSub?.unsubscribe()
-            dragMoveSub = undefined
-
-            dragMoveSub = fromEvent<DragEvent>(block.hostElement, 'dragover').pipe(throttleTime(60))
-              .subscribe((e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                const position = calcPosition(e, block.hostElement)
-                if (prevPosition === position) return
-                prevPosition = position
-                const rect = calcLineRect(block.hostElement, position)
-                dragLine.style.display = 'block'
-                dragLine.style.top = rect.top + 'px'
-                dragLine.style.left = rect.left + 'px'
-                dragLine.style.width = rect.width + 'px'
-              })
-          })
-
-        fromEvent<DragEvent>(this._cpr.location.nativeElement, 'dragend').pipe(take(1))
-          .subscribe((e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            dragLine.remove()
-            this.drag$.next('end')
-            this._cpr.instance.menuDisabled = false
-            prevBlock && this.onSortBlock(prevBlock, prevPosition)
-          })
-      })
+        this.onDragStart(evt)
+      },
+      onDragEnter: this.onDragEnter,
+      onDragEnd: (ctx) => {
+        const e: DragEvent = ctx.getDefaultEvent()
+        e.preventDefault()
+        e.stopPropagation()
+        this._cpr.instance.menuDisabled = false
+        this.onDragEnd(this._activeBlock)
+      }
+    })
   }
 
-  onSortBlock(targetBlock: BlockCraft.BlockComponent, position: 'before' | 'after' | 'none') {
-    if (!this._activeBlock || position === 'none' || targetBlock === this._activeBlock
-      || (this._activeBlock?.hostElement.nextElementSibling === targetBlock.hostElement && position === 'before')
-      || (this._activeBlock?.hostElement.previousElementSibling === targetBlock.hostElement && position === 'after')
+  @EventListen(EventNames.dragStart, {flavour: "image"})
+  onImageDragStart(ctx: UIEventStateContext) {
+    ctx.stopPropagation()
+
+    if(this.doc.selection.value?.to) {
+      ctx.preventDefault()
+      return
+    }
+
+    const evt: DragEvent = ctx.getDefaultEvent()
+
+    const target = evt.target
+    if (!target || !(target instanceof HTMLImageElement)) return
+    const blockId = closetBlockId(target)
+    if (!blockId) return
+
+    this.onDragStart(evt)
+    const imgBlock = this.doc.getBlockById(blockId)
+
+    const events = [
+      this.doc.event.add(EventNames.dragEnter, this.onDragEnter),
+      this.doc.event.add(EventNames.dragEnd, () => {
+        this.onDragEnd(imgBlock)
+        events.forEach(v => v())
+      }, {blockId})
+    ]
+  }
+
+  onSortBlock(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: 'before' | 'after' | 'none') {
+    if (!block || position === 'none' || targetBlock === block
+      || (block.hostElement.nextElementSibling === targetBlock.hostElement && position === 'before')
+      || (block.hostElement.previousElementSibling === targetBlock.hostElement && position === 'after')
     ) return
 
+    if (!this.doc.schemas.isValidChildren(block.flavour, this.doc.schemas.get(targetBlock.parentBlock!.flavour))) {
+      this.doc.injector.get(DOC_MESSAGE_SERVICE_TOKEN).warn(`不允许的移动`)
+      return
+    }
+
     let targetIdx = targetBlock.getIndexOfParent()
-    const posRelationship = this.doc.compareBlockPosition(this._activeBlock, targetBlock)
+    const posRelationship = this.doc.compareBlockPosition(block, targetBlock)
     if (position === 'before' && posRelationship === BLOCK_POSITION.AFTER) {
       targetIdx = Math.max(0, targetIdx - 1)
     }
-    if (position === 'after' && (targetBlock.parentId !== this._activeBlock.parentId || posRelationship === BLOCK_POSITION.BEFORE)) {
+    if (position === 'after' && (targetBlock.parentId !== block.parentId || posRelationship === BLOCK_POSITION.BEFORE)) {
       targetIdx += 1
     }
-    this.doc.crud.moveBlocks(this._activeBlock.parentId!, this._activeBlock.getIndexOfParent(), 1,
+    this.doc.crud.moveBlocks(block.parentId!, block.getIndexOfParent(), 1,
       targetBlock.parentId!, targetIdx)
   }
 
@@ -181,4 +239,10 @@ export class BlockControllerPlugin extends DocPlugin {
     this.eventSubs.unsubscribe()
   }
 
+}
+
+const calcPosition = (e: DragEvent, blockWrap: HTMLElement) => {
+  const rect = blockWrap.getBoundingClientRect()
+  if (e.clientY > rect.top + rect.height / 2) return 'after'
+  return 'before'
 }
