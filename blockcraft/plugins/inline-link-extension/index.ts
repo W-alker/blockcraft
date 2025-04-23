@@ -2,28 +2,26 @@ import {
   closetBlockId,
   DocPlugin,
   EventListen,
-  EventNames, IBlockRange,
-  IBlockTextRange,
-  INLINE_TEXT_NODE_TAG
+  EventNames, getPositionWithOffset, IBlockRange,
+  INLINE_TEXT_NODE_TAG, ORIGIN_SKIP_SYNC
 } from "../../framework";
-import {fromEvent, Subject, Subscription, take, takeUntil} from "rxjs";
-import {Overlay, OverlayRef} from "@angular/cdk/overlay";
-import {ComponentPortal} from "@angular/cdk/portal";
-import {getPositionWithOffset, POSITION_MAP} from "../../components";
+import {merge, Subject, takeUntil} from "rxjs";
 import {InlineLinkToolbar} from "./widgets/inline-link-toolbar";
-import {getFirstSameAttrsTextRange} from "../../global";
+import {getFirstSameAttrsTextRange, nextTick, sliceDelta} from "../../global";
 import {UIEventStateContext} from "../../framework/event/base";
+import {ComponentRef} from "@angular/core";
+import {LinkEditFloatDialog} from "./widgets/link-edit-dialog";
+import {IBlockSnapshot} from "../../framework/types";
 
 export class InlineLinkExtension extends DocPlugin {
   override name = 'inline-link-extension'
 
-  private _sub?: Subscription
   private _timer: number | null = null
-  private _toolbarRef?: OverlayRef
 
+  private _cpr: ComponentRef<InlineLinkToolbar> | null = null
   private _closeToolbar$ = new Subject<void>()
 
-  private _anchorLink: string | null = null
+  private _linkInfo: { text: string, link: string } | null = null
   private _anchorTextRange: { blockId: string, start: number, end: number } | null = null
 
   init() {
@@ -45,7 +43,7 @@ export class InlineLinkExtension extends DocPlugin {
 
     const link = this.tryGetLink(target)
     if (!link) return
-    if (this._anchorLink === link) return true
+    if (this._linkInfo?.link === link) return true
 
     const bid = closetBlockId(target)
     if (!bid) return
@@ -58,7 +56,10 @@ export class InlineLinkExtension extends DocPlugin {
       start: sameLinkRange[0],
       end: sameLinkRange[1]
     }
-    this._anchorLink = link
+    this._linkInfo = {
+      text: block.textContent().slice(sameLinkRange[0], sameLinkRange[1]),
+      link
+    }
 
     this._timer = setTimeout(() => {
       this.openToolbar(target as HTMLElement)
@@ -80,28 +81,25 @@ export class InlineLinkExtension extends DocPlugin {
   }
 
   openToolbar(target: HTMLElement) {
-    if (this._toolbarRef) return
-    const overlay = this.doc.injector.get(Overlay)
-    const portal = new ComponentPortal(InlineLinkToolbar)
+    if (this._cpr) return
 
-    this._toolbarRef = overlay.create({
-      positionStrategy: overlay.position().flexibleConnectedTo(target).withPositions([
-        getPositionWithOffset('top-center', 0, 0),
-        getPositionWithOffset('bottom-center', 0, 0),
-      ]),
-      scrollStrategy: overlay.scrollStrategies.close(),
-    })
+    this._cpr = this.doc.overlayService.createConnectedOverlay<InlineLinkToolbar>({
+      target,
+      component: InlineLinkToolbar,
+    }, this._closeToolbar$, this.closeToolbar).componentRef
 
-    const cpr = this._toolbarRef.attach(portal)
+    this._cpr.setInput('link', this._linkInfo?.link ?? '')
 
-    cpr.instance.itemClicked.pipe(takeUntil(this._closeToolbar$)).subscribe(item => {
-      if (!this._anchorTextRange || !this._anchorLink) return this.closeToolbar()
+    this._cpr.instance.itemClicked.pipe(takeUntil(this._closeToolbar$)).subscribe(item => {
+      if (!this._anchorTextRange || !this._linkInfo) return this.closeToolbar()
 
       switch (item.name) {
         case 'open-link':
-          window.open(this._anchorLink, '_blank')
+          window.open(this._linkInfo.link, '_blank')
           break
         case 'edit-link':
+          this.onEditLink(target, {...this._linkInfo}, {...this._anchorTextRange})
+          this.closeToolbar()
           break
         case 'unbind-link':
           const block = this.doc.getBlockById(this._anchorTextRange.blockId, () => this.closeToolbar())
@@ -109,15 +107,14 @@ export class InlineLinkExtension extends DocPlugin {
           block.formatText(this._anchorTextRange.start, this._anchorTextRange.end - this._anchorTextRange.start, {'a:link': null})
           this.closeToolbar()
           break
+        case 'switch-view':
+          if (item.value === 'card') {
+            this.switchView()
+          }
+          this.closeToolbar()
+          return
       }
     })
-
-    fromEvent(this.doc.root.hostElement.parentElement!, 'scroll').pipe(takeUntil(this._closeToolbar$))
-      .subscribe(() => {
-        if (this._toolbarRef) {
-          this._toolbarRef.updatePosition()
-        }
-      })
 
     this.doc.selection.selectionChange$.pipe(takeUntil(this._closeToolbar$)).subscribe(sel => {
       if (!sel || sel.to || !sel.collapsed || sel.from.type !== 'text' ||
@@ -137,12 +134,93 @@ export class InlineLinkExtension extends DocPlugin {
   }
 
   closeToolbar = () => {
-    this._closeToolbar$.next()
     this.clearTimer()
-    this._toolbarRef?.dispose()
-    this._toolbarRef = undefined
-    this._anchorTextRange = null
-    this._anchorLink = null
+    this._closeToolbar$.next()
+    this._anchorTextRange = this._linkInfo = this._cpr = null
+  }
+
+  onEditLink(target: HTMLElement, linkInfo: typeof this._linkInfo, range: typeof this._anchorTextRange) {
+    if (!linkInfo || !range) return
+
+    const close$ = new Subject<void>()
+
+    let fakeRange: HTMLElement
+
+    const close = () => {
+      close$.next()
+      fakeRange?.remove()
+      nextTick().then(() => {
+        this.doc.selection.setSelection({
+          index: range.end,
+          length: 0,
+          blockId: range.blockId,
+          type: 'text'
+        })
+      })
+    }
+
+    const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<LinkEditFloatDialog>({
+      target: target,
+      component: LinkEditFloatDialog,
+      positions: [
+        getPositionWithOffset('top-left', 0, 4),
+        getPositionWithOffset('bottom-left', 0, 4),
+      ],
+      backdrop: true
+    }, close$, close)
+
+    // componentRef.setInput('text', this._linkInfo?.text)
+    componentRef.setInput('href', linkInfo?.link)
+
+    // 伪造选中
+    requestAnimationFrame(() => {
+      componentRef.instance.focus()
+      fakeRange = this.doc.selection.createFakeRange({
+        from: {
+          index: range.start,
+          length: range.end - range.start,
+          blockId: range.blockId,
+          type: 'text'
+        },
+        to: null,
+        collapsed: false,
+        commonParent: range.blockId
+      })
+    })
+
+    merge(overlayRef.backdropClick(), componentRef.instance.close).pipe(takeUntil(close$)).subscribe(close)
+
+    componentRef.instance.update.pipe(takeUntil(close$)).subscribe(v => {
+      close()
+      if (!range || !linkInfo) return
+      const block = this.doc.getBlockById(range.blockId)
+      if (!this.doc.isEditable(block)) return
+      if (v.href !== linkInfo.link) {
+        block.formatText(range.start, range.end - range.start, {'a:link': v.href})
+      }
+    })
+
+  }
+
+  switchView() {
+    if (!this._linkInfo || !this._anchorTextRange) return
+    const block = this.doc.getBlockById(this._anchorTextRange.blockId)
+    if (!this.doc.isEditable(block)) return this.closeToolbar()
+
+    const bookmark = this.doc.schemas.createSnapshot('bookmark', [this._linkInfo.link])
+    const insertBlocks: IBlockSnapshot[] = [bookmark]
+
+    if (this._anchorTextRange.end < block.textLength) {
+      const splitRightDeltas = sliceDelta(block.textDeltas(), this._anchorTextRange.end)
+      insertBlocks.push(this.doc.schemas.createSnapshot(block.flavour, [splitRightDeltas, block.props]))
+    }
+
+    this.doc.crud.transact(() => {
+      block.deleteText(this._anchorTextRange!.start, block.textLength - this._anchorTextRange!.start)
+      this.doc.crud.insertBlocksAfter(block, insertBlocks).then(() => {
+        this.doc.selection.selectBlock(bookmark.id)
+      })
+    }, ORIGIN_SKIP_SYNC)
   }
 
   destroy() {

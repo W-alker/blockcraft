@@ -4,7 +4,7 @@ import {BaseBlockComponent} from "../../framework";
 @Component({
   selector: 'div.divider-block',
   template: `
-    <hr contenteditable="false" />
+    <div class="divide-line" contenteditable="false"></div>
   `,
   standalone: true
 })

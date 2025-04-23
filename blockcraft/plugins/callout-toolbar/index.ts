@@ -1,8 +1,7 @@
-import {DocPlugin} from "../../framework";
+import {DocPlugin, getPositionWithOffset} from "../../framework";
 import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
-import {getPositionWithOffset} from "../../components";
 import {CalloutBlockToolbar} from "./widgets/callout.toolbar";
 
 export class CalloutToolbarPlugin extends DocPlugin {
@@ -34,25 +33,16 @@ export class CalloutToolbarPlugin extends DocPlugin {
 
         this._activeCalloutBlock = calloutBlock
 
-        const overlay = this.doc.injector.get(Overlay)
-        const portal = new ComponentPortal(CalloutBlockToolbar, null, this.doc.injector)
-        this._overlayRef = overlay.create({
-          positionStrategy: overlay.position().flexibleConnectedTo(calloutBlock.hostElement).withPositions([
+        const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay({
+          target: calloutBlock.hostElement,
+          component: CalloutBlockToolbar,
+          positions: [
             getPositionWithOffset("top-center", 0, 8),
             getPositionWithOffset("bottom-center", 0, 8),
-          ])
-        })
-        const cpr = this._overlayRef.attach(portal)
-
-        cpr.setInput('calloutBlock', calloutBlock)
-
-        fromEvent<MouseEvent>(this.doc.root.hostElement.parentElement!, 'scroll').pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
-          this._overlayRef?.updatePosition()
-        })
-
-        calloutBlock.onDestroy$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
-          this.closeToolbar()
-        })
+          ]
+        }, this._closeToolbar$, this.closeToolbar)
+        componentRef.setInput('calloutBlock', calloutBlock)
+        this._overlayRef = overlayRef
       }, 200)
 
     })

@@ -279,7 +279,7 @@ export class InlineManager {
 
       if (!elementsNodes.length) {
         const ele = this.createInlineNode(op)
-        container.appendChild(ele)
+        container.firstElementChild!.after(ele)
         elementsNodes.push(ele)
         nodeStep = {
           index: 0,
@@ -334,9 +334,9 @@ export class InlineManager {
         if (nodeStep.index === 0) {
           const newNode = this.createInlineNode(op)
           ele.before(newNode)
-          elementsNodes.splice(nodeStep.index, 0, newNode)
+          elementsNodes.splice(0, 0, newNode)
           nodeStep = {
-            index: nodeStep.index,
+            index: 0,
             indexInNode: opLength
           }
           return

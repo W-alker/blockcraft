@@ -72,7 +72,8 @@ const ALIGN_LIST: IContextMenuItem[] = [
         @if (activeBlock?.nodeType === BlockNodeType.editable) {
           <h4 class="title">基础</h4>
           <ul class='base-list'>
-            <li class="base-list__item" *ngFor="let item of _validBaseBlockList" (mousedown)="handleBlockItemClick(item)"
+            <li class="base-list__item" *ngFor="let item of _validBaseBlockList"
+                (mousedown)="handleBlockItemClick(item)"
                 [title]="item.metadata.description || item.metadata.label"
                 [class.active]="activeBlock?.flavour === item.flavour">
               <ng-container
@@ -119,7 +120,6 @@ const ALIGN_LIST: IContextMenuItem[] = [
 
     <ng-template #blockAddList>
       <bc-float-toolbar direction="column" style="display: block; width: 224px;">
-        <h4 class="title">常用</h4>
         <ng-container *ngTemplateOutlet="moreBlocksTpl"></ng-container>
       </bc-float-toolbar>
     </ng-template>
@@ -137,7 +137,17 @@ const ALIGN_LIST: IContextMenuItem[] = [
     </ng-template>
 
     <ng-template #moreBlocksTpl>
-      @for (item of _validOtherBlockList; track item.flavour) {
+      <h4 class="title">常用</h4>
+      <ng-container *ngTemplateOutlet="otherBlockListTpl; context: { $implicit: _validOtherBlockList }"></ng-container>
+      @if (_validEmbeddedBlockList.length) {
+        <h4 class="title">内嵌网页</h4>
+        <ng-container
+          *ngTemplateOutlet="otherBlockListTpl; context: { $implicit: _validEmbeddedBlockList }"></ng-container>
+      }
+    </ng-template>
+
+    <ng-template let-items #otherBlockListTpl>
+      @for (item of items; track item.flavour) {
         <bc-float-toolbar-item [title]="item.metadata.description || item.metadata.label"
                                (mousedown)="handleBlockItemClick(item)">
           <ng-container
@@ -275,11 +285,15 @@ export class TriggerBtn {
     // this.closeContextMenu()
     this._activeBlock = val
     this._onDestroySub?.unsubscribe()
+    this.menuDisabled = true
+
     if (!this._activeBlock) {
       this.close()
       this.draggable = false
       return
     }
+
+    this.menuDisabled = false
 
     const schema = this.doc.schemas.get(this._activeBlock.flavour)
     if (schema.metadata.isLeaf) return
@@ -322,13 +336,16 @@ export class TriggerBtn {
     const schemas = this.doc.schemas.getSchemaList()
     this.baseBlockList = schemas.filter(item => item.nodeType === BlockNodeType.editable && !item.metadata.isLeaf)
     this.otherBlockList = schemas.filter(item =>
-      (item.nodeType === BlockNodeType.void || item.nodeType === BlockNodeType.block) && !item.metadata.isLeaf)
+      (item.nodeType === BlockNodeType.void || item.nodeType === BlockNodeType.block) && !item.metadata.isLeaf && !item.flavour.endsWith('-embed'))
+    this.embeddedBlockList = schemas.filter(item => item.flavour.endsWith('-embed'))
   }
 
   protected readonly BlockNodeType = BlockNodeType;
   protected readonly ALIGN_LIST = ALIGN_LIST;
   protected baseBlockList: IBlockSchemaOptions[] = []
   protected otherBlockList: IBlockSchemaOptions[] = []
+  protected embeddedBlockList: IBlockSchemaOptions[] = []
+
   protected toolList: IContextMenuItem[] = [
     {
       type: 'tool',
@@ -359,6 +376,7 @@ export class TriggerBtn {
 
   protected _validBaseBlockList: IBlockSchemaOptions[] = []
   protected _validOtherBlockList: IBlockSchemaOptions[] = []
+  protected _validEmbeddedBlockList: IBlockSchemaOptions[] = []
 
   private calcPos() {
     const rootRect = this.doc.root.hostElement.getBoundingClientRect()
@@ -426,6 +444,7 @@ export class TriggerBtn {
     const parentBlockSchema = this.doc.schemas.get(this.activeBlock!.parentBlock!.flavour)
     this._validOtherBlockList = this.otherBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
     this._validBaseBlockList = this.baseBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
+    this._validEmbeddedBlockList = this.embeddedBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
   }
 
   // showContextMenu() {

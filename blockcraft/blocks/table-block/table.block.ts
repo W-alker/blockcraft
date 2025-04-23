@@ -1,5 +1,5 @@
 import {ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewChild} from "@angular/core";
-import {BaseBlockComponent, BLOCK_POSITION, createBlockGapSpace, ORIGIN_SKIP_SYNC} from "../../framework";
+import {BaseBlockComponent, BLOCK_POSITION, createBlockGapSpace, ORIGIN_SKIP_SYNC, POSITION_MAP} from "../../framework";
 import {TableBlockModel} from "./index";
 import {TableCellBlockComponent} from "./table-cell.block";
 import {TableRowBlockComponent} from "./table-row.block";
@@ -7,10 +7,11 @@ import {BehaviorSubject, filter, fromEvent, merge, skip, take, takeUntil} from "
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {CellToolbarComponent} from "./widgets/cell-toolbar.component";
-import {POSITION_MAP} from "../../components";
 import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
 import {TableColBarComponent} from "./widgets/table-col-bar.component";
 import {TableRowBarComponent} from "./widgets/table-row-bar.component";
+import {performanceTest} from "../../global";
+import {confirmSelection, RectangleSelection} from "./utils";
 
 @Component({
   selector: 'div.table-block',
@@ -206,9 +207,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     cell.hostElement.classList.remove('selected')
   }
 
+  selectedCells = new Set<TableCellBlockComponent>()
+
   // 根据上下坐标设置矩形区间选中
   // TODO 修复
   private _setRectangleSelected() {
+
     if (!this._startSelectingCell || !this._lastSelectingCell) return
     this._clearSelected()
 
@@ -221,81 +225,37 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
 
     const rowIds = this.childrenIds
-    // const startRowId = startCell.parentId!
-    // const endRowId = endCell.parentId!
-    //
-    // const startRowIndex = rowIds.indexOf(startRowId)
-    // const endRowIndex = rowIds.indexOf(endRowId)
-    //
-    // const startRow = this.doc.getBlockById(startRowId) as TableRowBlockComponent
-    // const endRow = this.doc.getBlockById(endRowId) as TableRowBlockComponent
-    //
-    // const startRowChildrenIds = startRow.childrenIds
-    // const endRowChildrenIds = endRow.childrenIds
-    //
-    // const startColIndex = startRowChildrenIds.indexOf(startCell.id)
-    // const endColIndex = endRowChildrenIds.indexOf(endCell.id)
-    //
-    // const startCoordinate = [Math.min(startRowIndex, endRowIndex), Math.min(startColIndex, endColIndex)]
-    // const endCoordinate = [Math.max(startRowIndex, endRowIndex), Math.max(startColIndex, endColIndex)]
-    //
-    //
-    // let mergedCell
-    // // 是否有被合并的单元格
-    // for (let i = startCoordinate[0]; i <= endCoordinate[0]; i++) {
-    //   const row = this.doc.getBlockById(rowIds[i]) as TableRowBlockComponent
-    //   const rowChildrenIds = row.childrenIds
-    //
-    //   for (let j = startCoordinate[1]; j <= endCoordinate[1]; j++) {
-    //     const cid = rowChildrenIds[j]
-    //     if (!cid) continue;
-    //     const cell = this.doc.getBlockById(cid) as TableCellBlockComponent
-    //
-    //     // 需要向左上方寻找到合并单元格
-    //     if(cell.props.display === 'none') {
-    //
-    //     }
-    //
-    //   }
+
+    // const positionRelation = this.doc.compareBlockPosition(this._startSelectingCell, this._lastSelectingCell)
+    // if (positionRelation === BLOCK_POSITION.BEFORE) {
+    //   startCell = this._lastSelectingCell
+    //   endCell = this._startSelectingCell
     // }
 
-    const positionRelation = this.doc.compareBlockPosition(this._startSelectingCell, this._lastSelectingCell)
-    if (positionRelation === BLOCK_POSITION.BEFORE) {
-      startCell = this._lastSelectingCell
-      endCell = this._startSelectingCell
-    }
+    const startCoordinate = [startCell.getIndexOfParent(), rowIds.indexOf(startCell.parentId!)]
+    const endCoordinate = [endCell.getIndexOfParent(), rowIds.indexOf(endCell.parentId!)]
 
-    const startCoordinate = [rowIds.indexOf(startCell.parentId!), startCell.getIndexOfParent()]
-    const endCoordinate = [rowIds.indexOf(endCell.parentId!), endCell.getIndexOfParent()]
+    console.log('%cconfirmselection', 'color: red;', this.confirmSelection(startCoordinate, endCoordinate))
 
-    const expandStartCoordinate = [...startCoordinate]
-    const expandEndCoordinate = [...endCoordinate]
+    this.selectedCells.forEach(cell => {
+      this.unselectCell(cell)
+    })
 
-    endCell.props.rowspan && (expandEndCoordinate[0] = expandEndCoordinate[0] + endCell.props.rowspan - 1)
-    endCell.props.colspan && (expandEndCoordinate[1] = expandEndCoordinate[1] + endCell.props.colspan - 1)
-    startCell.props.rowspan && (expandStartCoordinate[0] = expandStartCoordinate[0] + startCell.props.rowspan - 1)
-    startCell.props.colspan && (expandStartCoordinate[1] = expandStartCoordinate[1] + startCell.props.colspan - 1)
-
-    const minCoordinate = [
-      Math.min(startCoordinate[0], endCoordinate[0], expandStartCoordinate[0], expandEndCoordinate[0]),
-      Math.min(startCoordinate[1], endCoordinate[1], expandStartCoordinate[1], expandEndCoordinate[1])
-    ]
-    const maxCoordinate = [
-      Math.max(startCoordinate[0], endCoordinate[0], expandStartCoordinate[0], expandEndCoordinate[0]),
-      Math.max(startCoordinate[1], endCoordinate[1], expandStartCoordinate[1], expandEndCoordinate[1])
-    ]
-
-    for (let i = minCoordinate[0]; i <= maxCoordinate[0]; i++) {
+    const {start, end} = this.confirmSelection(startCoordinate, endCoordinate)
+    // const startRow = this.doc.getBlockById(rowIds[start[0]]) as TableRowBlockComponent
+    // const endRow = this.doc.getBlockById(rowIds[end[0]]) as TableRowBlockComponent
+    for (let i = start[1]; i <= end[1]; i++) {
       const row = this.doc.getBlockById(rowIds[i]) as TableRowBlockComponent
-      const rowChildrenIds = row.childrenIds
-      for (let j = minCoordinate[1]; j <= maxCoordinate[1]; j++) {
-        const cid = rowChildrenIds[j]
-        if (!cid) continue;
-        const cell = this.doc.getBlockById(cid) as TableCellBlockComponent
-        if (cell.props.display === 'none') continue;
+      for (let j = start[0]; j <= end[0]; j++) {
+        const cell = row.getChildrenBlocks()[j] as TableCellBlockComponent
         this.selectCell(cell)
       }
     }
+  }
+
+  @performanceTest()
+  confirmSelection(c1: number[], c2: number[]) {
+    return confirmSelection(new RectangleSelection(c1, c2), this)
   }
 
   getSelectedCells() {
@@ -344,8 +304,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         POSITION_MAP['bottom-left']
       ]),
       scrollStrategy: this.overlay.scrollStrategies.close(),
-      // hasBackdrop: true,
-      // backdropClass: 'cdk-overlay-transparent-backdrop',
+      hasBackdrop: true,
+      backdropClass: 'cdk-overlay-transparent-backdrop',
     })
 
     const cpr = this.toolbarOvr.attach(portal)
@@ -358,19 +318,16 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     merge(this.toolbarOvr.backdropClick(),
       this.doc.selection.nextChangeObserve(),
       this.onDestroy$, selectedCells[0]?.onDestroy$,
-      fromEvent(this.doc.root.hostElement, 'scroll').pipe(take(1)))
+      fromEvent(this.doc.root.hostElement.parentElement!, 'scroll').pipe(take(1)))
       .pipe(takeUntil(cpr.instance.onDestroy)).subscribe(() => {
       closeFn?.()
-      this.closeToolbar()
+
+      // close toolbar
+      this.hostElement.classList.remove('active')
+      this.toolbarOvr?.dispose()
+      this.toolbarOvr = undefined
+      this._clearSelected()
     })
-
-  }
-
-  closeToolbar = () => {
-    this.hostElement.classList.remove('active')
-    this.toolbarOvr?.dispose()
-    this.toolbarOvr = undefined
-    this._clearSelected()
   }
 
   onColBarSelected(range: [number, number]) {
@@ -416,7 +373,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     if (!this.hoveringCell) return
     this.resizingCol$.next(true)
 
-    const resizingColIdx = this.hoveringCell.getIndexOfParent()
+    const resizingColIdx = this.hoveringCell.getIndexOfParent() + (this.hoveringCell.props.colspan || 1) - 1
     const curCol = this.hostElement.querySelector(`col:nth-child(${resizingColIdx + 1})`) as HTMLElement
 
     let newWidth = this.props.colWidths[resizingColIdx]
@@ -432,7 +389,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         const {left} = this.tableBody.nativeElement.getBoundingClientRect()
         const scrollLeft = this.tableBody.nativeElement.scrollLeft
         if (!this.resizingCol$.value || e.clientX < left) return
-        const targetRect = this.hoveringCell.hostElement.getBoundingClientRect()
+        const targetRect = curCol.getBoundingClientRect()
         newWidth = e.clientX - targetRect.left
         // 不得小于50
         if (newWidth < 50) return

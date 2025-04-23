@@ -1,9 +1,8 @@
-import {BindHotKey, DocPlugin} from "../../framework";
+import {BindHotKey, DocPlugin, POSITION_MAP} from "../../framework";
 import {debounceTime, fromEvent, Subscription, takeUntil} from "rxjs";
 import {ComponentRef} from "@angular/core";
 import {FloatTextToolbarComponent} from "./toolbar.component";
 import {ComponentPortal} from "@angular/cdk/portal";
-import {POSITION_MAP} from "../../components";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
 import {UIEventStateContext} from "../../framework/event/base";

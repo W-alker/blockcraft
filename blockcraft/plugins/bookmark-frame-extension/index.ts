@@ -1,8 +1,7 @@
-import {DocPlugin} from "../../framework";
+import {DocPlugin, getPositionWithOffset} from "../../framework";
 import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
-import {getPositionWithOffset} from "../../components";
 import {BookmarkBlockToolbar} from "./widgets/bookmark-toolbar";
 
 export class BookmarkBlockExtensionPlugin extends DocPlugin {
@@ -34,27 +33,18 @@ export class BookmarkBlockExtensionPlugin extends DocPlugin {
 
         this._activeBlock = bookmarkBlock as any
 
-        const overlay = this.doc.injector.get(Overlay)
-        const portal = new ComponentPortal(BookmarkBlockToolbar, null, this.doc.injector)
-        this._toolbarRef = overlay.create({
-          positionStrategy: overlay.position().flexibleConnectedTo(bookmarkBlock.hostElement).withPositions([
+        const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay({
+          target: bookmarkBlock.hostElement,
+          component: BookmarkBlockToolbar,
+          positions: [
             getPositionWithOffset("top-left", 0, 8),
             getPositionWithOffset("bottom-left", 0, 8),
-          ])
-        })
-        const cpr = this._toolbarRef.attach(portal)
+          ]
+        }, this._closeToolbar$, this.closeToolbar)
 
-        cpr.setInput('block', bookmarkBlock)
-        cpr.setInput('doc', this.doc)
-
-        fromEvent<MouseEvent>(this.doc.root.hostElement.parentElement!, 'scroll').pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
-          this._toolbarRef?.updatePosition()
-        })
-
-        bookmarkBlock.onDestroy$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
-          this.closeToolbar()
-        })
-
+        componentRef.setInput('block', bookmarkBlock)
+        componentRef.setInput('doc', this.doc)
+        this._toolbarRef = overlayRef
       }, 200)
 
     })

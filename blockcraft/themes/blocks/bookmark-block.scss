@@ -27,6 +27,7 @@
       display: flex;
       gap: 4px;
       flex-direction: column;
+      //user-select: text;
 
       .bookmark-icon {
         width: var(--bc-fs-xl);

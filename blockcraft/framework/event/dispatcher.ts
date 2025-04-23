@@ -3,7 +3,7 @@ import {EventScopeSourceType, EventSourceState} from "./state";
 import {BlockCraftError, ErrorCode} from "../../global";
 import {KeyboardControl, CompositionControl, ClipboardControl, DndControl, MouseControl} from "./control";
 import {fromEvent, takeUntil} from "rxjs";
-import {performanceTest} from "../decorators";
+import {performanceTest} from "../../global/decorators";
 import {closetBlockId} from "../utils";
 
 const bypassEventNames = ['beforeInput', 'focusOut', 'focusIn', 'contextMenu', 'wheel'] as Array<EventNames>

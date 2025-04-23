@@ -1,10 +1,13 @@
 import {IInlineNodeAttrs} from "../types";
 
 export const compareAttributesWithEle = (ele: HTMLElement, attrs?: IInlineNodeAttrs): boolean => {
-  if (!attrs) return true
+  const eleAttrKeys = ele.getAttributeNames()
+  if (!attrs) {
+    return eleAttrKeys.length === 0
+  }
 
   const attrsEntries = Object.entries(attrs)
-  if (!attrsEntries.length) return false  // {} is mean alone plain text element
+  if (attrsEntries.length !== eleAttrKeys.length) return false  // {} is mean alone plain text element
 
   for (const [key, attr] of attrsEntries) {
 

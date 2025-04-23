@@ -617,7 +617,8 @@ export class SelectionManager {
     return {from, to, collapsed: false}
   }
 
-  selectBlock(block: BlockCraft.BlockComponent) {
+  selectBlock(block: BlockCraft.BlockComponent | string) {
+    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
     const selection = document.getSelection()!
     const range = document.createRange()
     range.setStart(block.hostElement, 0)

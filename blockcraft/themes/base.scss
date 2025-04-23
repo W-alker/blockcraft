@@ -31,7 +31,7 @@
   --bc-active-color-light: #1890ff;
   --bc-error-background-color: rgba(224, 49, 49, 0.1);
   --bc-select-background-color: rgba(24, 144, 255, 0.3);
-  --bc-segments-gap: 12px;
+  --bc-segments-gap: 8px;
 }
 
 [data-blockcraft-root="true"] {
@@ -98,8 +98,8 @@
 
       // TODO
       ::selection {
-        //background: transparent;
-        //color: inherit;
+        background: transparent;
+        color: inherit;
       }
     }
   }

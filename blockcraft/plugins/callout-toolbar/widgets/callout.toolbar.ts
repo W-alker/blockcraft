@@ -20,7 +20,6 @@ import {
       <color-picker (colorPicked)="onColorPicked($event)" [activeColors]="activeColors" [colorGroups]="colorGroups"></color-picker>
     </ng-template>
   `,
-  styles: [``],
   imports: [
     ColorPickerComponent,
     BcFloatToolbarItemComponent,

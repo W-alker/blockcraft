@@ -13,7 +13,7 @@ import {isFigmaUrl, isJueJinUrl} from "../../../global";
       <span class="bc-float-toolbar__divider"></span>
       <bc-float-toolbar-item [expandable]="true" [bcOverlayTrigger]="viewModeTpl"
                              [positions]="['bottom-left', 'bottom-right', 'top-right', 'top-left']" [offsetY]="8">
-        {{ '卡片视图' }}
+        卡片视图
       </bc-float-toolbar-item>
     </bc-float-toolbar>
 

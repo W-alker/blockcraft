@@ -11,6 +11,7 @@ import {getCommonPath} from "../utils";
 import {EditableBlockComponent} from "../block";
 import {DocPlugin} from "../plugin";
 import {DOC_MESSAGE_SERVICE_TOKEN} from "../services";
+import {DocOverlayService} from "../services";
 
 interface DocConfig {
   docId: string
@@ -51,6 +52,7 @@ export class BlockCraftDoc {
   private _root!: BlockCraft.IBlockComponents['root']
 
   public readonly messageService = this.injector.get(DOC_MESSAGE_SERVICE_TOKEN)
+  public readonly overlayService = new DocOverlayService(this)
 
   get rootId() {
     return this.config.rootId
@@ -83,7 +85,6 @@ export class BlockCraftDoc {
   get isActive() {
     return this._root.isActive
   }
-
 
   constructor(
     public readonly config: DocConfig

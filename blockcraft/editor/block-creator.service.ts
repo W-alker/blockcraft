@@ -63,6 +63,11 @@ export class MyBlockCreatorService extends BlockCreatorService {
         ovr.dispose()
         resolve(url)
       })
+
+      cpr.instance.onCancel.pipe(takeUntilDestroyed(cpr.instance.destroyer)).subscribe(() => {
+        ovr.dispose()
+        reject()
+      })
     })
   }
 

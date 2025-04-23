@@ -280,8 +280,8 @@ export class CellToolbarComponent {
 
         sliceIds.forEach(id => {
           const cell = this.doc.getBlockById(id) as TableCellBlockComponent
-          if (cell.props.display === 'none') return
-          cell.updateProps({display: 'none'})
+          if (cell.props.display === 'none' && cell.props.mergedBy === firstCell.id) return
+          cell.updateProps({display: 'none', mergedBy: firstCell.id})
           if (cell.hasContent) {
             this.doc.crud.moveBlocks(cell.id, 0, cell.childrenLength, firstCell.id, firstCell.childrenLength)
           }

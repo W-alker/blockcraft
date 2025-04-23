@@ -226,6 +226,10 @@
           background: unset;
           -webkit-user-modify: read-only;
 
+          > * {
+            pointer-events: none;
+          }
+
           &::after {
             z-index: 1;
             content: '';

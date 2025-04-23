@@ -4,15 +4,13 @@ import {
   DocFileService,
   DocPlugin,
   EventListen,
-  EventNames
+  EventNames, getPositionWithOffset
 } from "../../framework";
 import {UIEventStateContext} from "../../framework/event/base";
 import {BlockCraftError, ErrorCode, nextTick} from "../../global";
 import {IBlockSnapshot} from "../../framework/types";
-import {fromEvent, merge, Subject, Subscription, take, takeUntil} from "rxjs";
-import {Overlay, OverlayRef} from "@angular/cdk/overlay";
-import {ComponentPortal} from "@angular/cdk/portal";
-import {getPositionWithOffset} from "../../components";
+import {merge, Subject, Subscription, takeUntil} from "rxjs";
+import {OverlayRef} from "@angular/cdk/overlay";
 import {AttachmentBlockToolbar} from "./widgets/attachment-toolbar";
 import {RenameInputPad} from "./widgets/rename-input-pad";
 
@@ -25,7 +23,6 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   private _timer: number | null = null
   private _toolbarRef?: OverlayRef
 
-  private _renameInputRef?: OverlayRef
   private _closeToolbar$ = new Subject<void>()
 
   private _activeBlock: BlockCraft.IBlockComponents['attachment'] | null = null
@@ -53,25 +50,19 @@ export class AttachmentExtensionPlugin extends DocPlugin {
 
         this._activeBlock = attachmentBlock as any
 
-        const overlay = this.doc.injector.get(Overlay)
-        const portal = new ComponentPortal(AttachmentBlockToolbar, null, this.doc.injector)
-        this._toolbarRef = overlay.create({
-          positionStrategy: overlay.position().flexibleConnectedTo(attachmentBlock.hostElement).withPositions([
+
+        const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<AttachmentBlockToolbar>({
+          target: attachmentBlock.hostElement,
+          component: AttachmentBlockToolbar,
+          positions: [
             getPositionWithOffset("top-left", 0, 8),
             getPositionWithOffset("bottom-left", 0, 8),
-          ])
-        })
-        const cpr = this._toolbarRef.attach(portal)
+          ]
+        }, this._closeToolbar$, this.closeToolbar)
 
-        fromEvent<MouseEvent>(this.doc.root.hostElement.parentElement!, 'scroll').pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
-          this._toolbarRef?.updatePosition()
-        })
+        this._toolbarRef = overlayRef
 
-        attachmentBlock.onDestroy$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
-          this.closeToolbar()
-        })
-
-        cpr.instance.onItemClick.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
+        componentRef.instance.onItemClick.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
           switch (v.name) {
             case 'rename':
               this.onRename(attachmentBlock as BlockCraft.IBlockComponents['attachment'])
@@ -79,9 +70,9 @@ export class AttachmentExtensionPlugin extends DocPlugin {
             case 'download':
               this.fileService.downloadAttachment(attachmentBlock.props)
               break
-            // case 'delete':
-            //   this.doc.crud.deleteBlockById(attachmentBlock.id)
-            //   break
+            case 'delete':
+              this.doc.crud.deleteBlockById(attachmentBlock.id)
+              break
           }
         })
 
@@ -106,43 +97,39 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   }
 
   onRename(block: BlockCraft.IBlockComponents['attachment']) {
-    const overlay = this.doc.injector.get(Overlay)
-
-    const positionStrategy = overlay.position().flexibleConnectedTo(block.hostElement).withPositions([
-      getPositionWithOffset('top-left', 0, 4),
-      getPositionWithOffset('bottom-left', 0, 4),
-    ])
-    const portal = new ComponentPortal(RenameInputPad)
-    this._renameInputRef = overlay.create({
-      positionStrategy,
-      hasBackdrop: true,
-      backdropClass: 'cdk-overlay-transparent-backdrop',
-    })
-    const cpr = this._renameInputRef.attach(portal)
-
-    cpr.setInput('value', block.props.name)
-
-    // 伪造选中
-    requestAnimationFrame(() => {
-      cpr.instance.focus()
-      block.hostElement.classList.add('selected')
-    })
+    const close$ = new Subject<void>()
 
     const close = () => {
-      this._renameInputRef?.dispose()
-
+      close$.next()
       nextTick().then(() => {
         block.hostElement.classList.remove('selected')
         this.doc.selection.selectBlock(block)
       })
-
     }
 
-    merge(this._renameInputRef.backdropClick(), cpr.instance.cancel).pipe(take(1)).subscribe(() => {
+    const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<RenameInputPad>({
+      target: block.hostElement,
+      component: RenameInputPad,
+      positions: [
+        getPositionWithOffset('top-left', 0, 4),
+        getPositionWithOffset('bottom-left', 0, 4),
+      ],
+      backdrop: true
+    }, close$, close)
+
+    componentRef.setInput('value', block.props.name)
+
+    // 伪造选中
+    requestAnimationFrame(() => {
+      componentRef.instance.focus()
+      block.hostElement.classList.add('selected')
+    })
+
+    merge(overlayRef.backdropClick(), componentRef.instance.cancel).pipe(takeUntil(close$)).subscribe(() => {
       close()
     })
 
-    cpr.instance.valueChange.pipe(take(1)).subscribe(v => {
+    componentRef.instance.valueChange.pipe(takeUntil(close$)).subscribe(v => {
       close()
       block.updateProps({
         name: v

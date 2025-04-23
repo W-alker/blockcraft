@@ -1,18 +1,16 @@
-import {BindHotKey, DOC_FILE_SERVICE_TOKEN, DocPlugin, EventNames} from "../../framework";
+import {BindHotKey, DOC_FILE_SERVICE_TOKEN, DocPlugin, EventNames, getPositionWithOffset} from "../../framework";
 import {UIEventStateContext} from "../../framework/event/base";
 import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
-import {Overlay, OverlayRef} from "@angular/cdk/overlay";
-import {ComponentPortal} from "@angular/cdk/portal";
 import {ImageToolbar} from "./widgets/image.toolbar";
-import {getPositionWithOffset} from "../../components";
 import {nextTick} from "../../global";
+import {ComponentRef} from "@angular/core";
 
 export class ImgToolbarPlugin extends DocPlugin {
   override name = 'img-toolbar';
 
   private _sub?: Subscription
   private _timer: number | null = null
-  private _overlayRef?: OverlayRef
+  private _toolbarRef?: ComponentRef<ImageToolbar>
 
   private _closeToolbar$ = new Subject<void>()
 
@@ -33,42 +31,37 @@ export class ImgToolbarPlugin extends DocPlugin {
 
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
-      if (!selection || selection.to || selection.firstBlock.flavour !== 'image' || this._overlayRef) return
+      if (!selection || selection.to || selection.firstBlock.flavour !== 'image' || this._toolbarRef) return
 
       this.clearTimer()
       setTimeout(() => {
-        if (this._overlayRef) return
+        if (this._toolbarRef) return
 
         const imgEle = selection.firstBlock.hostElement.querySelector('img')!
-
-        const overlay = this.doc.injector.get(Overlay)
-        const portal = new ComponentPortal(ImageToolbar, null, this.doc.injector)
-        this._overlayRef = overlay.create({
-          positionStrategy: overlay.position().flexibleConnectedTo(imgEle).withPositions([
+        const {overlayRef, componentRef} = this.doc.overlayService.createConnectedOverlay<ImageToolbar>({
+          target: imgEle,
+          positions: [
             getPositionWithOffset("top-center", 0, 8),
             getPositionWithOffset("bottom-center", 0, -8),
-          ])
-        })
-        const cpr = this._overlayRef.attach(portal)
+          ],
+          component: ImageToolbar
+        }, this._closeToolbar$, this.closeToolbar)
 
-        cpr.setInput('imgBlock', selection.firstBlock)
+        this._toolbarRef = componentRef
+        this._toolbarRef.setInput('imgBlock', selection.firstBlock)
 
         fromEvent<MouseEvent>(imgEle, 'mousedown').pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
           this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg(imgEle)
         })
 
-        fromEvent<MouseEvent>(this.doc.root.hostElement.parentElement!, 'scroll').pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
-          this._overlayRef?.updatePosition()
-        })
-
         selection.firstBlock.onPropsChange.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
-          cpr.instance.cdr.markForCheck()
+          this._toolbarRef?.instance.cdr.markForCheck()
           nextTick().then(() => {
-            this._overlayRef?.updatePosition()
+            overlayRef?.updatePosition()
           })
         })
 
-        cpr.instance.onItemClicked.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
+        this._toolbarRef.instance.onItemClicked.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
           switch (v.name) {
             case 'align':
               selection.firstBlock.updateProps({
@@ -104,10 +97,6 @@ export class ImgToolbarPlugin extends DocPlugin {
           ls()
         }, {blockId: selection.firstBlock.id})
 
-        selection.firstBlock.onDestroy$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
-          this.closeToolbar()
-        })
-
         this.doc.selection.afterNextChange(() => {
           this.closeToolbar()
         })
@@ -126,8 +115,8 @@ export class ImgToolbarPlugin extends DocPlugin {
   closeToolbar = () => {
     this._closeToolbar$.next()
     this.clearTimer()
-    this._overlayRef?.dispose()
-    this._overlayRef = undefined
+    this._toolbarRef?.destroy()
+    this._toolbarRef = undefined
   }
 
   destroy() {
