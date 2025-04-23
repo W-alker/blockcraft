@@ -64,6 +64,7 @@ export class DocCRUD {
           this._undoSelectionStack.push(this.doc.selection.value ? this.doc.selection.value.toJSON() : null)
           if (this._undoSelectionStack.length > 200) {
             this.yUndoManager.undoStack.shift()
+            this.yUndoManager.redoStack.shift()
             this._undoSelectionStack.shift()
           }
         }
@@ -254,6 +255,11 @@ export class DocCRUD {
   }
 
   async insertBlocks(parentId: string, index: number, snapshots: IBlockSnapshot[]) {
+    const parentComp = this.vm.get(parentId)
+    if(!parentComp) {
+      this.doc.logger.warn(`parentComp ${parentId} not found`)
+      return
+    }
     const comps = await Promise.all(
       snapshots.map(s => this.vm.createComponentBySnapshot(s, (m) => {
         this.transact(() => {
@@ -261,7 +267,6 @@ export class DocCRUD {
         }, ORIGIN_SKIP_SYNC)
       }))
     )
-    const parentComp = this.vm.get(parentId)!
     this.transact(() => {
       this.vm.insert(parentId, index, comps);
       (parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, comps.map(c => c.instance.id))

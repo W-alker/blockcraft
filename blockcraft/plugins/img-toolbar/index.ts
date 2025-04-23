@@ -1,4 +1,11 @@
-import {BindHotKey, DOC_FILE_SERVICE_TOKEN, DocPlugin, EventNames, getPositionWithOffset} from "../../framework";
+import {
+  BindHotKey, closetBlockId,
+  DOC_FILE_SERVICE_TOKEN,
+  DocPlugin,
+  EventListen,
+  EventNames,
+  getPositionWithOffset
+} from "../../framework";
 import {UIEventStateContext} from "../../framework/event/base";
 import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
 import {ImageToolbar} from "./widgets/image.toolbar";
@@ -13,6 +20,26 @@ export class ImgToolbarPlugin extends DocPlugin {
   private _toolbarRef?: ComponentRef<ImageToolbar>
 
   private _closeToolbar$ = new Subject<void>()
+
+  // img 拖拽响应
+  @EventListen(EventNames.dragStart, {flavour: "image"})
+  onImageDragStart(ctx: UIEventStateContext) {
+    ctx.stopPropagation()
+
+    if (this.doc.selection.value?.to) {
+      ctx.preventDefault()
+      return
+    }
+
+    const evt: DragEvent = ctx.getDefaultEvent()
+
+    const target = evt.target
+    if (!target || !(target instanceof HTMLImageElement)) return
+    const blockId = closetBlockId(target)
+    if (!blockId) return
+
+    this.doc.dndService.startDrag(evt, 'origin-block', blockId)
+  }
 
   @BindHotKey({key: 'Enter', shortKey: null, shiftKey: null, ctrlKey: null, altKey: null}, {flavour: "image"})
   onImageTitleEnter(ctx: UIEventStateContext) {

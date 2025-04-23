@@ -1,92 +1,87 @@
+/**
+ * Powered by 庄建齐 Mr.zhuang
+ */
 import {TableBlockComponent} from "./table.block";
 import {TableCellBlockComponent} from "./table-cell.block";
 
-export class RectangleSelection {
-  constructor(
-    public start: number[],
-    public end: number[]
-  ) {
-  }
-
-  getMinX() {
-    return Math.min(this.start[0], this.end[0]);
-  }
-
-  getMinY() {
-    return Math.min(this.start[1], this.end[1]);
-  }
-
-  getMaxX() {
-    return Math.max(this.start[0], this.end[0]);
-  }
-
-  getMaxY() {
-    return Math.max(this.start[1], this.end[1]);
-  }
-
-  setStart(x: number, y: number) {
-    this.start = [x, y];
-  }
-
-  setEnd(x: number, y: number) {
-    this.end = [x, y];
+const getCellCoordinates = (cell: TableCellBlockComponent) => {
+  const rowIdx = cell.parentBlock!.getIndexOfParent()
+  const colIdx = cell.getIndexOfParent()
+  const rowspan = cell.props.rowspan || 1
+  const colspan = cell.props.colspan || 1
+  return {
+    min: [rowIdx, colIdx],
+    max: [rowIdx + rowspan - 1, colIdx + colspan - 1]
   }
 }
 
-export function confirmSelection(selection: RectangleSelection, table: TableBlockComponent) {
-  let startX = selection.getMinX();
-  let startY = selection.getMinY();
-  let endX = selection.getMaxX();
-  let endY = selection.getMaxY();
-
-  const minX = startX;
-  const minY = startY;
-  const maxX = endX;
-  const maxY = endY;
-
-  // const xLength = table.childrenLength
-  // const yLength = table.firstChildren!.childrenLength
-  //
-  // if (startX < 0 || startY < 0) {
-  //   throw new Error("x or y is out of bounds");
-  // }
-  //
-  // if (maxX >= xLength || maxY >= yLength) {
-  //   throw new Error("x or y is out of bounds");
-  // }
-
-  const getCell = (colIdx: number, rowIdx: number) => {
-    return table.getChildrenByIndex(rowIdx).getChildrenByIndex(colIdx) as TableCellBlockComponent
+export class RectangleSelection {
+  constructor(
+    public startRow: number,
+    public startCol: number,
+    public endRow: number,
+    public endCol: number,
+  ) {
   }
 
-  const getCellCoordinates = (cell: TableCellBlockComponent) => {
-    const rowIdx = cell.parentBlock!.getIndexOfParent()
-    const colIdx = cell.getIndexOfParent()
-    const rowspan = cell.props.rowspan || 1
-    const colspan = cell.props.colspan || 1
-    return {
-      min: [colIdx, rowIdx],
-      max: [colIdx + colspan - 1, rowIdx + rowspan - 1]
-    }
+  normalize(){
+    let minRow = Math.min(this.startRow, this.endRow);
+    let maxRow = Math.max(this.startRow, this.endRow);
+    let minCol = Math.min(this.startCol, this.endCol);
+    let maxCol = Math.max(this.startCol, this.endCol);
+    this.startRow =minRow
+    this.startCol =minCol
+    this.endRow =maxRow
+    this.endCol =maxCol
   }
 
-  for (let i = minX; i <= maxX; i++) {
-    for (let j = minY; j <= maxY; j++) {
-      const cell = getCell(i, j)
-      if (cell.props.display === 'none') {
-        const mergedByRoot = cell.props.mergedBy
-        if (mergedByRoot) {
-          const coordinates = getCellCoordinates(table.doc.getBlockById(mergedByRoot) as TableCellBlockComponent)
-          startX = Math.min(startX, coordinates.min[0])
-          startY = Math.min(startY, coordinates.min[1]);
-          endX = Math.max(endX, coordinates.max[0]);
-          endY = Math.max(endY, coordinates.max[1]);
+  adjust(row: number, col: number) {
+    this.startRow = Math.min(this.startRow, row);
+    this.startCol = Math.min(this.startCol, col);
+    this.endRow = Math.max(this.endRow, row);
+    this.endCol = Math.max(this.endCol, col);
+  }
+
+  containsMerge(cor: {min: number[], max: number[]}) {
+    return this.startRow <= cor.min[0] &&
+      this.startCol <= cor.min[1] &&
+      this.endRow >= cor.max[0] &&
+      this.endCol >= cor.max[1]
+  }
+}
+
+export function adjustSelection(selection: RectangleSelection, table: TableBlockComponent) {
+
+  let changed = false
+
+  do {
+    changed = false
+    selection.normalize()
+
+    for(let i = selection.startRow; i <= selection.endRow; i++) {
+      const row = table.getChildrenByIndex(i)
+      for (let j = selection.startCol; j <= selection.endCol; j++) {
+        const cell = row.getChildrenByIndex(j) as TableCellBlockComponent
+
+        if (cell.props.display === 'none' || cell.props.rowspan || cell.props.colspan) {
+          const mergeByCellId = cell.props.mergedBy
+          const mergeByCell = mergeByCellId ? table.doc.getBlockById(mergeByCellId!) as TableCellBlockComponent : cell
+
+          const cor = getCellCoordinates(mergeByCell)
+
+          if (!selection.containsMerge(cor)) {
+            selection.adjust(cor.min[0], cor.min[1])
+            selection.adjust(cor.max[0], cor.max[1])
+            changed = true
+          }
         }
+
       }
     }
-  }
+  } while (changed)
 
-  selection.setStart(startX, startY);
-  selection.setEnd(endX, endY);
-  return selection
+  return {
+    start: [selection.startRow, selection.startCol],
+    end: [selection.endRow, selection.endCol],
+  }
 }

@@ -59,13 +59,12 @@ export class BcOverlayTriggerDirective {
 
     nextTick().then(() => {
       const closetBind = this.elementRef.nativeElement.parentElement?.closest('[data-float-binding]')
-      if (!closetBind) {
-        this.elementRef.nativeElement.setAttribute('data-float-index', this._dataFloatIndex + '')
-        this.elementRef.nativeElement.setAttribute('data-float-id', this._dataFloatBindingId + '')
-      } else {
+      if(closetBind) {
         this._dataFloatIndex = Number(closetBind.getAttribute('data-float-index')!) + 1
         this._dataFloatBindingId = closetBind.getAttribute('data-float-id')!
       }
+      this.elementRef.nativeElement.setAttribute('data-float-index', this._dataFloatIndex + '')
+      this.elementRef.nativeElement.setAttribute('data-float-id', this._dataFloatBindingId)
     })
 
   }
@@ -96,34 +95,38 @@ export class BcOverlayTriggerDirective {
     this.overlayRef.overlayElement.setAttribute('data-float-id', this._dataFloatBindingId)
     this.overlayRef.overlayElement.setAttribute('data-float-index', this._dataFloatIndex + '')
 
-    this.overlayRef.overlayElement.addEventListener('mouseleave', this.hideOverlay);
+    this.overlayRef.overlayElement.addEventListener('mouseleave', this.hideOverlay, {once: true});
 
     this.open.emit(true)
     this.elementRef.nativeElement.classList.add(this.activeClass)
   }
 
-  @HostListener('mouseleave', ['$event'])
-  hideOverlay = () => {
+  private _timer?:number
+  @HostListener('document:pointerover', ['$event'])
+  hideOverlay = (evt: MouseEvent) => {
     if (!this.overlayRef) return
 
-    let curTarget: HTMLElement
-    const sub = fromEvent<MouseEvent>(document, 'mouseover').subscribe(evt => {
-      const target = evt.target as Node
-      curTarget = target instanceof HTMLElement ? target : target?.parentElement as HTMLElement
-    })
+    if(this._timer) {
+      clearTimeout(this._timer)
+      this._timer = undefined
+    }
 
-    setTimeout(() => {
-      sub.unsubscribe()
+    let curTarget = evt.target as Node | null
+
+    this._timer = setTimeout(() => {
       if (!curTarget) {
         this.closeOverlay();
         return;
       }
 
-      const closetBinding = curTarget.closest('[data-float-binding]')
+      const targetEle = curTarget instanceof HTMLElement ? curTarget : curTarget.parentElement!
+      const closetBinding = targetEle.closest('[data-float-binding]')
+
       if (!closetBinding) {
         this.closeOverlay();
         return;
       }
+
       const bid = closetBinding?.getAttribute('data-float-id')
       const curIndex = Number(closetBinding.getAttribute('data-float-index')!)
 

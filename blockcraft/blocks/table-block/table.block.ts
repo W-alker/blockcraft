@@ -11,7 +11,7 @@ import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
 import {TableColBarComponent} from "./widgets/table-col-bar.component";
 import {TableRowBarComponent} from "./widgets/table-row-bar.component";
 import {performanceTest} from "../../global";
-import {confirmSelection, RectangleSelection} from "./utils";
+import {adjustSelection, RectangleSelection} from "./utils";
 
 @Component({
   selector: 'div.table-block',
@@ -209,8 +209,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   selectedCells = new Set<TableCellBlockComponent>()
 
-  // 根据上下坐标设置矩形区间选中
-  // TODO 修复
+  // TODO 根据上下坐标设置矩形区间选中  性能优化
   private _setRectangleSelected() {
 
     if (!this._startSelectingCell || !this._lastSelectingCell) return
@@ -226,27 +225,19 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     const rowIds = this.childrenIds
 
-    // const positionRelation = this.doc.compareBlockPosition(this._startSelectingCell, this._lastSelectingCell)
-    // if (positionRelation === BLOCK_POSITION.BEFORE) {
-    //   startCell = this._lastSelectingCell
-    //   endCell = this._startSelectingCell
-    // }
+    const startCoordinate = [rowIds.indexOf(startCell.parentId!), startCell.getIndexOfParent()]
+    const endCoordinate = [ rowIds.indexOf(endCell.parentId!), endCell.getIndexOfParent()]
 
-    const startCoordinate = [startCell.getIndexOfParent(), rowIds.indexOf(startCell.parentId!)]
-    const endCoordinate = [endCell.getIndexOfParent(), rowIds.indexOf(endCell.parentId!)]
-
-    console.log('%cconfirmselection', 'color: red;', this.confirmSelection(startCoordinate, endCoordinate))
+    // console.log('%cconfirmselection', 'color: red;', startCoordinate, endCoordinate,  this.confirmSelection(startCoordinate, endCoordinate))
 
     this.selectedCells.forEach(cell => {
       this.unselectCell(cell)
     })
 
     const {start, end} = this.confirmSelection(startCoordinate, endCoordinate)
-    // const startRow = this.doc.getBlockById(rowIds[start[0]]) as TableRowBlockComponent
-    // const endRow = this.doc.getBlockById(rowIds[end[0]]) as TableRowBlockComponent
-    for (let i = start[1]; i <= end[1]; i++) {
+    for (let i = start[0]; i <= end[0]; i++) {
       const row = this.doc.getBlockById(rowIds[i]) as TableRowBlockComponent
-      for (let j = start[0]; j <= end[0]; j++) {
+      for (let j = start[1]; j <= end[1]; j++) {
         const cell = row.getChildrenBlocks()[j] as TableCellBlockComponent
         this.selectCell(cell)
       }
@@ -254,8 +245,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   @performanceTest()
-  confirmSelection(c1: number[], c2: number[]) {
-    return confirmSelection(new RectangleSelection(c1, c2), this)
+  confirmSelection(cor1: number[], col2: number[]) {
+    return adjustSelection(new RectangleSelection(cor1[0], cor1[1], col2[0], col2[1]), this)
   }
 
   getSelectedCells() {

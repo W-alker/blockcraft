@@ -40,6 +40,7 @@ import {MyBlockCreatorService} from "./block-creator.service";
 import {EmbedFrameExtensionPlugin} from "../plugins/embed-frame-extension";
 import {BookmarkBlockExtensionPlugin} from "../plugins/bookmark-frame-extension";
 import {InlineLinkExtension} from "../plugins/inline-link-extension";
+import {MatIcon} from "@angular/material/icon";
 // import {Code2BlockSchema, CodeLineBlockSchema} from "../blocks/code2-block";
 
 const schemas = new SchemaManager([
@@ -66,12 +67,58 @@ const schemas = new SchemaManager([
     <button (click)="undo()">undo</button>
     <button (click)="redo()">redo</button>
     <button (click)="addData()">增加数据</button>
+
+    <div class="block-area">
+      <div draggable="true" (dragstart)="onDragStart($event, 'heading-one')">
+        <i class="bc_icon bc_biaoti_1"></i>
+      </div>
+      <div draggable="true" (dragstart)="onDragStart($event, 'divider')">
+        <mat-icon svgIcon="bc_fengexian"></mat-icon>
+      </div>
+      <div draggable="true" (dragstart)="onDragStart($event, 'attachment')">
+        <mat-icon svgIcon="bc_wenjian-color"></mat-icon>
+      </div>
+      <div draggable="true" (dragstart)="onDragStart($event, 'figma-embed')">
+        <mat-icon svgIcon="bc_Figma"></mat-icon>
+      </div>
+    </div>
   `,
   styles: [`:host {
     margin: 20px;
     display: block;
-  }`],
-  imports: [],
+  }
+  .block-area {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+
+    > div {
+      min-width: 120px;
+      height: 120px;
+      font-size: 80px;
+      border: 2px solid #ddd;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+
+      > mat-icon, i {
+        width: 80px;
+        height: 80px;
+      }
+
+      >i {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: inherit;
+      }
+    }
+  }
+
+  `],
+  imports: [
+    MatIcon
+  ],
   standalone: true,
   providers: [
     {provide: DOC_FILE_SERVICE_TOKEN, useClass: MyDocFileService},
@@ -198,5 +245,9 @@ export class EditorComponent {
       )
     }
     this.doc.crud.insertBlocks(this.doc.rootId, 0, _arr)
+  }
+
+  onDragStart(evt: DragEvent, flavour: string) {
+    this.doc.dndService.startDrag(evt, 'new-block', flavour)
   }
 }

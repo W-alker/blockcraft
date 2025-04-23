@@ -1,7 +1,6 @@
 import {editableBlockCreateSnapShotFn, IBlockSchemaOptions} from "../../framework/schema/block-schema";
-import {BlockNodeType} from "../../framework/types";
+import {BlockNodeType, DeltaInsert} from "../../framework/types";
 import {EditableBlockNative} from "../../framework";
-import {DeltaInsert} from "blockflow-editor";
 import {CaptionBlockComponent} from "./caption.block";
 
 export interface CaptionBlockModel extends EditableBlockNative {

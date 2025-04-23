@@ -53,7 +53,7 @@ const ALIGN_LIST: IContextMenuItem[] = [
   selector: 'div.trigger-btn',
   standalone: true,
   template: `
-    <div class="btn" [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left']"
+    <div class="btn" [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
          [disabled]="menuDisabled" (open)="setValidBlockList()"
          [offsetY]="4" [withBackdrop]="false" activeClass="active" [draggable]="draggable">
       <i [class]="['bf_icon', isEmpty ? 'bf_tianjia-2' : 'bf_yidong' ]"></i>
@@ -165,6 +165,7 @@ const ALIGN_LIST: IContextMenuItem[] = [
       padding-right: 8px;
       user-select: none;
       -webkit-user-select: none;
+      transition: all ease .2s;
     }
 
     ::ng-deep mat-icon {
@@ -260,7 +261,7 @@ const ALIGN_LIST: IContextMenuItem[] = [
       }
     }
   `],
-  imports: [NgIf, NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, NgForOf, MatIcon, BcOverlayTriggerDirective, NgComponentOutlet],
+  imports: [NgIf, NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, NgForOf, MatIcon, BcOverlayTriggerDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.contenteditable]': 'false',
@@ -283,6 +284,7 @@ export class TriggerBtn {
   set activeBlock(val: BlockCraft.BlockComponent | null) {
     if (this._activeBlock === val) return
     // this.closeContextMenu()
+
     this._activeBlock = val
     this._onDestroySub?.unsubscribe()
     this.menuDisabled = true
@@ -446,35 +448,6 @@ export class TriggerBtn {
     this._validBaseBlockList = this.baseBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
     this._validEmbeddedBlockList = this.embeddedBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
   }
-
-  // showContextMenu() {
-  //   if (this.ovr) return
-  //   const positionStrategy = this.overlay.position().flexibleConnectedTo(this.host)
-  //     .withPositions([
-  //       {originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top'},
-  //       {originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom'},
-  //     ])
-  //     .withPush(true)
-  //   this.ovr = this.overlay.create({positionStrategy})
-  //   const cpr = this.ovr.attach(this.contextmenuPortal)
-  //   cpr.setInput('activeBlock', this.activeBlock)
-  //   cpr.setInput('controller', this.controller)
-  //
-  //   merge(
-  //     fromEvent(document, 'click').pipe(take(1)),
-  //     fromEvent(document, 'selectionchange').pipe(take(1)),
-  //     fromEvent<MouseEvent>(cpr.location.nativeElement, 'mouseleave').pipe(filter(e => !(e.relatedTarget as HTMLElement).closest('.cdk-overlay-pane'))),
-  //     fromEvent<MouseEvent>(this.host.nativeElement, 'mouseleave').pipe(filter(e => !(e.relatedTarget as HTMLElement).closest('.cdk-overlay-pane')))
-  //   ).pipe(takeUntil(cpr.instance.destroy)).subscribe(() => {
-  //     this.ovr?.dispose()
-  //     this.ovr = undefined
-  //   })
-  // }
-  //
-  // closeContextMenu() {
-  //   this.ovr?.dispose()
-  //   this.ovr = undefined
-  // }
 
   close() {
     this.display = 'none'

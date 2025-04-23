@@ -1,8 +1,7 @@
 import {generateId, NoEditableBlockNative} from "../../framework";
-import {BlockNodeType} from "../../framework/types";
+import {BlockNodeType, DeltaInsert} from "../../framework/types";
 import {ImageBlockComponent} from "./image.block";
 import {IBlockSchemaOptions} from "../../framework/schema/block-schema";
-import {DeltaInsert} from "blockflow-editor";
 import {CaptionBlockSchema} from "../caption-block";
 
 export interface ImageBlockModel extends NoEditableBlockNative {

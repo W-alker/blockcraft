@@ -1,17 +1,23 @@
 import {fromEvent, Subscription, throttleTime} from "rxjs";
 import {UIEventStateContext} from "../event/base";
 import {closetBlockId} from "../utils";
-import {BlockNodeType} from "../types";
-import {DocEventRegister} from "../event";
+import {BlockNodeType, IBlockSnapshot} from "../types";
+import {DocEventRegister, EventListen, EventNames} from "../event";
+import {BLOCK_POSITION} from "../doc";
+import {DOC_FILE_SERVICE_TOKEN} from "./file.service";
+import {ClipboardDataType} from "../modules";
+import {BLOCK_CREATOR_SERVICE_TOKEN} from "./block-creator.service";
 
-export enum DocDndDataTypes {
+enum DocDndDataTypes {
   // 已有的block
-  originBlock = 'originBlock',
+  originBlock = 'origin-block',
   // 新的block
-  newBlock = 'newBlock',
+  newBlock = 'new-block',
   // 文件
   file = 'Files',
 }
+
+export type DocDndDataType = `${DocDndDataTypes}`
 
 const calcPosition = (e: DragEvent, blockWrap: HTMLElement) => {
   const rect = blockWrap.getBoundingClientRect()
@@ -20,12 +26,6 @@ const calcPosition = (e: DragEvent, blockWrap: HTMLElement) => {
 }
 
 @DocEventRegister
-export interface DocDndEventDataTransfer {
-  getData<T extends DocDndDataTypes>(type: T): string
-
-  types: DocDndDataTypes[]
-}
-
 export class DocDndService {
   constructor(
     private readonly doc: BlockCraft.Doc
@@ -73,27 +73,25 @@ export class DocDndService {
   }
 
   private prevDragPosition: 'before' | 'after' | 'none' = 'none'
+
+  private _prevTargetElement: HTMLElement | null = null
   private prevBlock: BlockCraft.BlockComponent | null = null
-  private dragMoveSub: Subscription | undefined = undefined
   private dragPreventListener: Subscription | undefined = undefined
 
-  private onDragStart = (evt: DragEvent) => {
-    const dataTransfer = evt.dataTransfer
-    if (dataTransfer) {
-      dataTransfer.clearData()
-      dataTransfer.dropEffect = 'none'
-    }
+  private dragMoveListener: (() => void) | null = null
 
-    this.createDragLine()
-    // 防止释放时会有个返回的动画
-    this.dragPreventListener = fromEvent<DragEvent>(document.body, 'dragover')
-      .subscribe((e) => {
-        e.preventDefault()
-        e.stopPropagation()
-      })
+  // 外部文件 拖拽响应
+  @EventListen(EventNames.dragEnter, {flavour: 'root'})
+  onRootDragEnter(ctx: UIEventStateContext) {
+    if (this.dragLine) return false
+    const evt: DragEvent = ctx.getDefaultEvent()
+    if (!evt.dataTransfer?.types.includes(ClipboardDataType.FILES)) return false
+    evt.preventDefault()
+    this.onDragStart(evt)
+    return true
   }
 
-  startDrag(evt: DragEvent, dragDataType: DocDndDataTypes, dragData: string) {
+  startDrag(evt: DragEvent, dragDataType: DocDndDataType, dragData: string) {
     const dataTransfer = evt.dataTransfer
     if (dataTransfer) {
       dataTransfer.clearData()
@@ -101,6 +99,10 @@ export class DocDndService {
       dataTransfer.setData(dragDataType, dragData)
     }
 
+    this.onDragStart(evt)
+  }
+
+  private onDragStart(evt: DragEvent) {
     this.createDragLine()
     // 防止释放时会有个返回的动画
     this.dragPreventListener = fromEvent<DragEvent>(document.body, 'dragover')
@@ -108,6 +110,8 @@ export class DocDndService {
         e.preventDefault()
         e.stopPropagation()
       })
+
+    this.dragMoveListener = this.doc.event.add(EventNames.dragMove, this.onDragMove)
   }
 
   private onDragMove = (ctx: UIEventStateContext) => {
@@ -115,32 +119,160 @@ export class DocDndService {
     evt.preventDefault()
     ctx.stopPropagation()
 
+    const evtTarget = evt.target as Node
+    if(evtTarget === this._prevTargetElement) return true
+
     const blockId = closetBlockId(evt.target as Node)
-    if (!blockId || this.prevBlock?.id === blockId) return
-    const block = this.doc.getBlockById(blockId)
-    if (block.nodeType === BlockNodeType.root) return
-    const schema = this.doc.schemas.get(block.flavour)
-    if (schema.metadata.isLeaf) return;
+    if (!blockId) return
+    if(this.prevBlock?.id !== blockId) {
+      const block = this.doc.getBlockById(blockId)
+      if (block.nodeType === BlockNodeType.root) return
+      const schema = this.doc.schemas.get(block.flavour)
+      if (schema.metadata.isLeaf) return;
+      this.prevBlock = block
+    }
 
-    this.prevBlock = block
-    this.dragMoveSub?.unsubscribe()
-    this.dragMoveSub = undefined
-
-    this.dragMoveSub = fromEvent<DragEvent>(block.hostElement, 'dragover').pipe(throttleTime(30))
-      .subscribe((e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        const position = calcPosition(e, block.hostElement)
-        if (this.prevDragPosition === position) return
-        this.moveDragLine(block.hostElement, this.prevDragPosition = position)
-      })
+    const position = calcPosition(evt, this.prevBlock.hostElement)
+    if (this.prevDragPosition === position) return
+    this.moveDragLine(this.prevBlock.hostElement, this.prevDragPosition = position)
+    return true
   }
 
   private onDragEnd = () => {
     this.removeDragLine()
-    this.dragMoveSub?.unsubscribe()
     this.dragPreventListener?.unsubscribe()
     this.dragPreventListener = undefined
     this.prevDragPosition = 'none'
+    this.dragMoveListener?.()
+    this.dragMoveListener = null
+  }
+
+  onSortBlock(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
+    // @ts-expect-error
+    const isDepthEqual = block.props['depth'] === targetBlock.props['depth']
+    if (!block || position === 'none' || targetBlock === block) return
+
+    if (block.hostElement.nextElementSibling === targetBlock.hostElement && position === 'before') {
+      // @ts-expect-error
+      !isDepthEqual && block.updateProps({depth: targetBlock.props['depth']})
+      return
+    }
+
+    if (block.hostElement.previousElementSibling === targetBlock.hostElement && position === 'after') {
+      // @ts-expect-error
+      !isDepthEqual && block.updateProps({depth: targetBlock.props['depth']})
+      return
+    }
+
+    if (!this.doc.schemas.isValidChildren(block.flavour, this.doc.schemas.get(targetBlock.parentBlock!.flavour))) {
+      this.doc.messageService.warn(`不允许的移动`)
+      return
+    }
+
+    let targetIdx = targetBlock.getIndexOfParent()
+    const posRelationship = this.doc.compareBlockPosition(block, targetBlock)
+    if (position === 'before' && posRelationship === BLOCK_POSITION.AFTER) {
+      targetIdx = Math.max(0, targetIdx - 1)
+    }
+    if (position === 'after' && (targetBlock.parentId !== block.parentId || posRelationship === BLOCK_POSITION.BEFORE)) {
+      targetIdx += 1
+    }
+
+    this.doc.crud.moveBlocks(block.parentId!, block.getIndexOfParent(), 1,
+      targetBlock.parentId!, targetIdx).then(() => {
+      // @ts-expect-error
+      !isDepthEqual && block.updateProps({depth: targetBlock.props['depth']})
+    })
+  }
+
+  // TODO 文件处理应该交由插件
+  onInsertFiles(files: FileList, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
+    if (!files?.length || position === 'none') return
+    const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
+    if (!files.length) return
+    if (files.length === 1 && files[0].type.startsWith('image/')) {
+      if (!this.doc.schemas.isValidChildren('image', this.doc.schemas.get(targetBlock.parentBlock!.flavour))) {
+        this.doc.messageService.warn(`此处不能添加图片`)
+        return
+      }
+
+      fileService.uploadImg(files[0]).then(v => {
+        this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0),
+          [this.doc.schemas.createSnapshot('image', [v])])
+      }).catch(err => {
+        this.doc.messageService.error(`上传失败: ${err.message}`)
+      })
+      return
+    }
+
+    if (!this.doc.schemas.isValidChildren('attachment', this.doc.schemas.get(targetBlock.parentBlock!.flavour))) {
+      this.doc.messageService.warn(`此处不能添加文件`)
+      return
+    }
+
+    const _files = Array.from(files).filter(v => !v.type.startsWith('image/'))
+    Promise.allSettled(_files.map(v => fileService.uploadAttachment(v))).then(v => {
+      const _blocks: IBlockSnapshot[] = []
+      v.forEach((r, i) => {
+        if (r.status !== 'fulfilled') {
+          this.doc.messageService.error(`${r.reason}`)
+          return
+        }
+        _blocks.push(this.doc.schemas.createSnapshot('attachment', [(r.value as any)]))
+      })
+
+      if (!_blocks.length) return
+      // TAG: Depth
+      // @ts-expect-error
+      _blocks.forEach(b => b.props.depth = targetBlock.props['depth'])
+      this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), _blocks)
+    })
+  }
+
+  onInsertNewBlock(flavour: BlockCraft.BlockFlavour, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
+    if (!this.doc.schemas.isValidChildren(flavour, this.doc.schemas.get(targetBlock.parentBlock!.flavour))) {
+      this.doc.messageService.warn(`此处不能添加图片`)
+      return
+    }
+
+    const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
+    if(!this.doc.schemas.has(flavour)) return
+    blockCreator.getParamsByScheme(this.doc.schemas.get(flavour)).then(params => {
+      if(!params) return
+      const snapshot = this.doc.schemas.createSnapshot(flavour, <any>params)
+      this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), [snapshot]).then(() => {
+        this.doc.selection.setBlockPosition(snapshot.id, true)
+      })
+    })
+  }
+
+  @EventListen(EventNames.drop, {flavour: 'root'})
+  onDrop(ctx: UIEventStateContext) {
+    ctx.preventDefault()
+    if(!this.prevBlock || !this.prevDragPosition) return
+
+    const evt: DragEvent = ctx.getDefaultEvent()
+    if(!evt.dataTransfer) return
+    console.log('----------drop', evt.dataTransfer.types)
+
+    // 从原始块拖拽的
+    if(evt.dataTransfer.types.includes(DocDndDataTypes.originBlock)) {
+      const bid = evt.dataTransfer.getData(DocDndDataTypes.originBlock)
+      console.log('----------case1', bid)
+      if(!bid) return
+      this.onSortBlock(this.doc.getBlockById(bid), this.prevBlock, this.prevDragPosition)
+    }
+
+    else if(evt.dataTransfer.types.includes(DocDndDataTypes.newBlock)) {
+      const flavour = evt.dataTransfer.getData(DocDndDataTypes.newBlock)
+      this.onInsertNewBlock(<any>flavour, this.prevBlock, this.prevDragPosition)
+    }
+
+    else if(evt.dataTransfer.files) {
+      this.onInsertFiles(evt.dataTransfer.files!, this.prevBlock!, this.prevDragPosition)
+    }
+
+    this.onDragEnd()
+    return true
   }
 }

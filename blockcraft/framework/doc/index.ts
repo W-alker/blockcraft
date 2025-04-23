@@ -12,6 +12,7 @@ import {EditableBlockComponent} from "../block";
 import {DocPlugin} from "../plugin";
 import {DOC_MESSAGE_SERVICE_TOKEN} from "../services";
 import {DocOverlayService} from "../services";
+import {DocDndService} from "../services/dnd.service";
 
 interface DocConfig {
   docId: string
@@ -53,6 +54,7 @@ export class BlockCraftDoc {
 
   public readonly messageService = this.injector.get(DOC_MESSAGE_SERVICE_TOKEN)
   public readonly overlayService = new DocOverlayService(this)
+  public readonly dndService = new DocDndService(this)
 
   get rootId() {
     return this.config.rootId

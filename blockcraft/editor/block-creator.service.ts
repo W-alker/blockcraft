@@ -17,6 +17,8 @@ export class MyBlockCreatorService extends BlockCreatorService {
   }
 
   async getParamsByScheme<T extends IBlockSchemaOptions>(schema: T): Promise<BlockCraft.BlockCreateParameters<T['flavour']> | null> {
+    console.log('--------------------++++++++++++++', schema)
+
     const params: any = []
     switch (schema.flavour) {
       case 'attachment':

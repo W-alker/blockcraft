@@ -107,6 +107,11 @@ export class InlineLinkExtension extends DocPlugin {
           block.formatText(this._anchorTextRange.start, this._anchorTextRange.end - this._anchorTextRange.start, {'a:link': null})
           this.closeToolbar()
           break
+        case 'copy-link':
+          this.doc.clipboard.copyText(this._linkInfo.link).then(() => {
+            this.doc.messageService.success('链接已复制')
+          })
+          return
         case 'switch-view':
           if (item.value === 'card') {
             this.switchView()

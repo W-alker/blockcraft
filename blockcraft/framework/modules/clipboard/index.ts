@@ -39,22 +39,26 @@ export class ClipboardManager {
       plainText += this.doc.getBlockById(bid).textContent()
     }
     if (from.type === 'text') {
-      const sliceDeltas = sliceDelta(from.block.textDeltas(), from.index, from.length + from.index)
-      const snapshot = from.block.toSnapshot()
-      snapshot.children = sliceDeltas
-      snapshots.unshift(snapshot)
-      plainText = deltaToString(sliceDeltas) + plainText
+      if(from.index < from.block.textLength) {
+        const sliceDeltas = sliceDelta(from.block.textDeltas(), from.index, from.length + from.index)
+        const snapshot = from.block.toSnapshot()
+        snapshot.children = sliceDeltas
+        snapshots.unshift(snapshot)
+        plainText = deltaToString(sliceDeltas) + plainText
+      }
     } else {
       snapshots.unshift(from.block.toSnapshot())
       plainText = from.block.textContent() + plainText
     }
 
     if (to.type === 'text') {
-      const sliceDeltas = sliceDelta(to.block.textDeltas(), to.index, to.length + to.index)
-      const snapshot = to.block.toSnapshot()
-      snapshot.children = sliceDeltas
-      snapshots.push(snapshot)
-      plainText += deltaToString(sliceDeltas)
+      if(to.index > 0 ) {
+        const sliceDeltas = sliceDelta(to.block.textDeltas(), to.index, to.length + to.index)
+        const snapshot = to.block.toSnapshot()
+        snapshot.children = sliceDeltas
+        snapshots.push(snapshot)
+        plainText += deltaToString(sliceDeltas)
+      }
     } else {
       snapshots.push(to.block.toSnapshot())
       plainText = to.block.textContent() + plainText
