@@ -1,6 +1,6 @@
-import {BindHotKey, DOC_FILE_SERVICE_TOKEN, DOC_MESSAGE_SERVICE_TOKEN, DocPlugin, EventNames} from "../../framework";
+import {BindHotKey, DOC_FILE_SERVICE_TOKEN, DocPlugin, EventNames} from "../../framework";
 import {UIEventStateContext} from "../../framework/event/base";
-import {fromEvent, merge, Subject, Subscription, takeUntil} from "rxjs";
+import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {ImageToolbar} from "./widgets/image.toolbar";
@@ -25,7 +25,7 @@ export class ImgToolbarPlugin extends DocPlugin {
     const block = this.doc.getBlockById(blockId)
 
     const np = this.doc.schemas.createSnapshot('paragraph', [])
-    this.doc.crud.insertBlocksAfter(block.flavour === 'image-title' ? block.parentId! : block.id, [np]).then(() => {
+    this.doc.crud.insertBlocksAfter(block.flavour === 'caption' ? block.parentId! : block.id, [np]).then(() => {
       this.doc.selection.setBlockPosition(np.id, true)
     })
     return true
@@ -79,7 +79,7 @@ export class ImgToolbarPlugin extends DocPlugin {
               if (selection.firstBlock.childrenLength) {
                 this.doc.crud.deleteBlocks(selection.firstBlock.id, 0)
               } else {
-                const title = this.doc.schemas.createSnapshot('image-title', [])
+                const title = this.doc.schemas.createSnapshot('caption', [])
                 this.doc.crud.insertBlocks(selection.firstBlock.id, 0, [title]).then(() => {
                   this.doc.selection.setBlockPosition(title.id, true)
                 })
@@ -93,7 +93,7 @@ export class ImgToolbarPlugin extends DocPlugin {
               break
             case 'copy-url':
               this.doc.clipboard.copyText(selection.firstBlock.props.src).then(() => {
-                this.doc.injector.get(DOC_MESSAGE_SERVICE_TOKEN).success('图片链接已复制到剪贴板')
+                this.doc.messageService.success('图片链接已复制到剪贴板')
               })
               break
           }

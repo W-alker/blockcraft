@@ -9,3 +9,7 @@ export * from './heading-block'
 export * from './code-block'
 export * from './table-block'
 export * from './attachment-block'
+export * from './embed-blocks'
+export * from './bookmark-block'
+
+export * from './caption-block'

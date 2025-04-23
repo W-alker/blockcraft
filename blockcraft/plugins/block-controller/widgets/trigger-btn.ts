@@ -1,17 +1,21 @@
 import {
-  ChangeDetectionStrategy, ChangeDetectorRef,
-  Component, ElementRef, EventEmitter, HostBinding,
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  EventEmitter,
+  HostBinding,
   HostListener,
-  Input, Output,
+  Input,
+  Output,
 } from "@angular/core";
 import {NgComponentOutlet, NgForOf, NgIf, NgTemplateOutlet} from "@angular/common";
 import {Subscription, take} from "rxjs";
-import {Overlay} from "@angular/cdk/overlay";
 import {BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective} from "../../../components";
 import {BlockNodeType} from "../../../framework/types";
 import {IBlockSchemaOptions} from "../../../framework/schema/block-schema";
 import {MatIcon} from "@angular/material/icon";
 import {nextTick, SimpleValue} from "../../../global";
+import {BLOCK_CREATOR_SERVICE_TOKEN} from "../../../framework";
 
 interface IContextMenuItem {
   type: 'tool'
@@ -49,8 +53,9 @@ const ALIGN_LIST: IContextMenuItem[] = [
   selector: 'div.trigger-btn',
   standalone: true,
   template: `
-    <div class="btn" [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left']" [disabled]="menuDisabled"
-         [offsetY]="4" [withBackdrop]="true" activeClass="active" [draggable]="draggable">
+    <div class="btn" [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left']"
+         [disabled]="menuDisabled" (open)="setValidBlockList()"
+         [offsetY]="4" [withBackdrop]="false" activeClass="active" [draggable]="draggable">
       <i [class]="['bf_icon', isEmpty ? 'bf_tianjia-2' : 'bf_yidong' ]"></i>
     </div>
 
@@ -67,7 +72,7 @@ const ALIGN_LIST: IContextMenuItem[] = [
         @if (activeBlock?.nodeType === BlockNodeType.editable) {
           <h4 class="title">基础</h4>
           <ul class='base-list'>
-            <li class="base-list__item" *ngFor="let item of baseBlockList" (mousedown)="handleBlockItemClick(item)"
+            <li class="base-list__item" *ngFor="let item of _validBaseBlockList" (mousedown)="handleBlockItemClick(item)"
                 [title]="item.metadata.description || item.metadata.label"
                 [class.active]="activeBlock?.flavour === item.flavour">
               <ng-container
@@ -84,7 +89,7 @@ const ALIGN_LIST: IContextMenuItem[] = [
 
           @if (activeBlock?.nodeType === BlockNodeType.editable) {
             <bc-float-toolbar-item class="append-more-btn" [bcOverlayTrigger]="alignList" [disabled]="menuDisabled"
-                                   [positions]="['right-center']" [offsetX]="8" activeClass="active">
+                                   [positions]="['right-center']" [offsetX]="2" activeClass="active">
               <i [class]="['bc_icon', 'bc_zuoduiqi']"></i>
               <span>对齐方式</span>
               <i class="bf_icon bf_youjiantou"></i>
@@ -103,7 +108,7 @@ const ALIGN_LIST: IContextMenuItem[] = [
           <span class="bc-float-toolbar__divider"></span>
 
           <bc-float-toolbar-item class="append-more-btn" [bcOverlayTrigger]="blockAddList" [disabled]="menuDisabled"
-                                 [positions]="['right-center']" [offsetX]="8" activeClass="active">
+                                 [positions]="['right-center']" [offsetX]="2" activeClass="active">
             <i class="bf_icon bf_tianjia"></i>
             <span>在下方添加</span>
             <i class="bf_icon bf_youjiantou"></i>
@@ -132,7 +137,7 @@ const ALIGN_LIST: IContextMenuItem[] = [
     </ng-template>
 
     <ng-template #moreBlocksTpl>
-      @for (item of otherBlockList; track item.flavour) {
+      @for (item of _validOtherBlockList; track item.flavour) {
         <bc-float-toolbar-item [title]="item.metadata.description || item.metadata.label"
                                (mousedown)="handleBlockItemClick(item)">
           <ng-container
@@ -306,9 +311,7 @@ export class TriggerBtn {
   }>()
 
   constructor(
-    private host: ElementRef<HTMLElement>,
     public cdr: ChangeDetectorRef,
-    private overlay: Overlay,
   ) {
   }
 
@@ -318,7 +321,8 @@ export class TriggerBtn {
   ngOnInit() {
     const schemas = this.doc.schemas.getSchemaList()
     this.baseBlockList = schemas.filter(item => item.nodeType === BlockNodeType.editable && !item.metadata.isLeaf)
-    this.otherBlockList = schemas.filter(item => item.nodeType === BlockNodeType.block && !item.metadata.isLeaf)
+    this.otherBlockList = schemas.filter(item =>
+      (item.nodeType === BlockNodeType.void || item.nodeType === BlockNodeType.block) && !item.metadata.isLeaf)
   }
 
   protected readonly BlockNodeType = BlockNodeType;
@@ -352,6 +356,9 @@ export class TriggerBtn {
   protected display = 'none'
   protected isEmpty = false
   private _onDestroySub?: Subscription
+
+  protected _validBaseBlockList: IBlockSchemaOptions[] = []
+  protected _validOtherBlockList: IBlockSchemaOptions[] = []
 
   private calcPos() {
     const rootRect = this.doc.root.hostElement.getBoundingClientRect()
@@ -415,6 +422,12 @@ export class TriggerBtn {
     this.isEmpty = this._activeBlock.flavour === 'paragraph' ? !this._activeBlock.textLength : false
   }
 
+  setValidBlockList() {
+    const parentBlockSchema = this.doc.schemas.get(this.activeBlock!.parentBlock!.flavour)
+    this._validOtherBlockList = this.otherBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
+    this._validBaseBlockList = this.baseBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
+  }
+
   // showContextMenu() {
   //   if (this.ovr) return
   //   const positionStrategy = this.overlay.position().flexibleConnectedTo(this.host)
@@ -456,14 +469,33 @@ export class TriggerBtn {
 
   handleBlockItemClick(item: IBlockSchemaOptions) {
     if (!this.activeBlock) return
-    if (this.isEmpty) {
-      const newBlock = this.doc.schemas.createSnapshot(item.flavour, [])
-      if (newBlock.nodeType !== BlockNodeType.editable) {
-        this.doc.crud.insertBlocksAfter(this.activeBlock, [newBlock])
-      } else {
-        this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [newBlock]).then(() => {
-          // this.doc.selection.setBlockPosition(this.doc.getBlockById(newBlock.id), true)
+
+    const insertAfter = () => {
+      const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
+      const targetBlock = this.activeBlock
+      blockCreator.getParamsByScheme(item).then(params => {
+        if (!targetBlock) return
+        const newBlock = this.doc.schemas.createSnapshot(item.flavour, params as any)
+        this.doc.crud.insertBlocksAfter(targetBlock, [newBlock])
+      })
+    }
+
+    const replace = () => {
+      const block = this.activeBlock
+      if (!block || !this.doc.isEditable(block) || block.flavour === item.flavour) return
+      const newBlock = this.doc.schemas.createSnapshot(item.flavour, [block.textDeltas(), block.props])
+      this.doc.crud.replaceWithSnapshots(this.activeBlock!.id, [newBlock]).then(() => {
+        nextTick().then(() => {
+          this.doc.selection.setBlockPosition(newBlock.id, true)
         })
+      })
+    }
+
+    if (this.isEmpty) {
+      if (item.nodeType !== BlockNodeType.editable) {
+        insertAfter()
+      } else {
+        replace()
       }
 
       this.menuDisabled = true
@@ -474,13 +506,9 @@ export class TriggerBtn {
     }
 
     if (this.doc.isEditable(this.activeBlock) && item.nodeType === BlockNodeType.editable) {
-      const newBlock = this.doc.schemas.createSnapshot(item.flavour, [this.activeBlock.textDeltas(), this.activeBlock.props])
-      this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [newBlock]).then(() => {
-        this.doc.selection.setBlockPosition(this.doc.getBlockById(newBlock.id), true)
-      })
+      replace()
     } else {
-      const newBlock = this.doc.schemas.createSnapshot(item.flavour, [])
-      this.doc.crud.insertBlocksAfter(this.activeBlock, [newBlock])
+      insertAfter()
     }
 
     this.menuDisabled = true

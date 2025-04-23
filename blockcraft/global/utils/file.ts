@@ -48,6 +48,7 @@ export enum MimeTypes {
   'text/plain' = 'txt',
   'text/html' = 'html',
   'text/css' = 'css',
+  'text/javascript' = 'css',
   'application/javascript' = 'js',
   'application/json' = 'json',
   'image/png' = 'png',

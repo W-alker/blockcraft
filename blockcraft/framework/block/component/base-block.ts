@@ -12,7 +12,7 @@ import {
 } from "@angular/core";
 import {native2YBlock, NativeBlockModel, Obj2YMap, proxyMap, YBlock, yBlock2Native} from "../../reactive";
 import {BlockCraftError, ErrorCode} from "../../../global";
-import {ORIGIN_SKIP_SYNC} from "../../doc";
+import {ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC} from "../../doc";
 import {BlockNodeType, IBlockSnapshot} from "../../types";
 import {Subject} from "rxjs";
 import {createBlockGapSpace} from "../../utils";
@@ -58,6 +58,11 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     oldValue: Model["props"][keyof Model['props']]
   }>>();
 
+  @HostBinding('style.margin-left')
+  get marginLeft() {
+    return `${(this._native.props.depth || 0) * 2 * 16}px`
+  }
+
   @ViewChild('childrenContainer', {read: ViewContainerRef})
   childrenContainer?: ViewContainerRef
 
@@ -100,6 +105,20 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   ngOnDestroy() {
     this.onDestroy$.next(true)
+  }
+
+  /**
+   * 设置初始化数据，不会产生历史数据
+   * @param props
+   * @protected
+   */
+  protected setInitProps(props: Partial<Model['props']>) {
+    this.doc.crud.transact(() => {
+      for (const [key, value] of Object.entries(props)) {
+        this._yProps.set(key, value)
+        Reflect.set(this._native.props, key, value)
+      }
+    }, ORIGIN_NO_RECORD)
   }
 
   detach() {

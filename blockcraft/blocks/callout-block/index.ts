@@ -39,7 +39,8 @@ export const CalloutBlockSchema: IBlockSchemaOptions<CalloutBlockModel> = {
     label: "高亮块",
     icon: 'bc_icon bc_gaoliangkuai-color',
     svgIcon: 'bc_gaoliangkuai-color',
-    excludeChildren: ['callout', 'table']
+    includeChildren: ['paragraph', 'divider', 'todo', 'bullet', 'ordered', 'heading-*'],
+    // excludeChildren: ['callout', 'table*', 'image', 'code', 'attachment', '*-embed', 'bookmark']
   }
 }
 

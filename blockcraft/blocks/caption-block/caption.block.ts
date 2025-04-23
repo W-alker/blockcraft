@@ -1,14 +1,14 @@
 import {Component} from "@angular/core";
 import {EditableBlockComponent} from "../../framework";
-import {ImageTitleBlockModel} from "./index";
+import {CaptionBlockModel} from "./index";
 
 @Component({
-  selector: 'p.image-title-block',
+  selector: 'p.caption-block',
   template: ``,
   standalone: true,
   host: {
     '[class.edit-container]': 'true'
   },
 })
-export class ImageTitleBlockComponent extends EditableBlockComponent<ImageTitleBlockModel> {
+export class CaptionBlockComponent extends EditableBlockComponent<CaptionBlockModel> {
 }

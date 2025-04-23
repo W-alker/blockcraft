@@ -14,25 +14,32 @@ export class CalloutToolbarPlugin extends DocPlugin {
 
   private _closeToolbar$ = new Subject<void>()
 
+  private _activeCalloutBlock: BlockCraft.BlockComponent | null = null
+
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
       if (!selection || selection.to || selection.firstBlock.parentBlock?.flavour !== 'callout') {
         this._overlayRef && this.closeToolbar()
         return
       }
-      if (this._overlayRef) return
-      this.clearTimer()
 
+      this.clearTimer()
       const calloutBlock = selection.firstBlock.parentBlock
+
+      if (this._overlayRef && this._activeCalloutBlock === calloutBlock) return;
+      this.closeToolbar()
+
       setTimeout(() => {
-        if (this._overlayRef) return
+        if (this._overlayRef && this._activeCalloutBlock === calloutBlock) return;
+
+        this._activeCalloutBlock = calloutBlock
 
         const overlay = this.doc.injector.get(Overlay)
         const portal = new ComponentPortal(CalloutBlockToolbar, null, this.doc.injector)
         this._overlayRef = overlay.create({
           positionStrategy: overlay.position().flexibleConnectedTo(calloutBlock.hostElement).withPositions([
             getPositionWithOffset("top-center", 0, 8),
-            getPositionWithOffset("bottom-center", 0, -8),
+            getPositionWithOffset("bottom-center", 0, 8),
           ])
         })
         const cpr = this._overlayRef.attach(portal)
@@ -63,6 +70,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
     this.clearTimer()
     this._overlayRef?.dispose()
     this._overlayRef = undefined
+    this._activeCalloutBlock = null
   }
 
   destroy() {

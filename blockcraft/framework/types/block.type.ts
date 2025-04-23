@@ -28,6 +28,7 @@ export type IMetadata = IBaseMetadata & SimpleRecord
 
 export interface IBlockProps {
   textAlign?: 'center' | 'right'
+  depth?: number
 
   [key: string]: SimpleValue
 }

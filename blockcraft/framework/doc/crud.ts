@@ -60,8 +60,12 @@ export class DocCRUD {
 
       this.yUndoManager.on('stack-item-added', (evt) => {
         if (evt.type === 'undo') {
-          console.log('%cundo stack', 'background: #444;', this.yUndoManager.undoStack, this.doc.selection)
-          this._undoSelectionStack.push(this.doc.selection.value!.toJSON())
+          // console.log('%cundo stack', 'background: #444;', this.yUndoManager.undoStack, this.doc.selection)
+          this._undoSelectionStack.push(this.doc.selection.value ? this.doc.selection.value.toJSON() : null)
+          if (this._undoSelectionStack.length > 200) {
+            this.yUndoManager.undoStack.shift()
+            this._undoSelectionStack.shift()
+          }
         }
       })
     })
@@ -84,7 +88,6 @@ export class DocCRUD {
   }
 
   private _syncYEvent = (event: Y.YEvent<any>[], tr: Y.Transaction) => {
-    console.log(tr.origin)
     // local change with skip
     const isUndoRedo = tr.origin instanceof Y.UndoManager
 
@@ -186,13 +189,11 @@ export class DocCRUD {
 
     if (delay_childrenEvent_handlers.length) {
       this._syncYBlockChildrenUpdate(added, deleted, delay_childrenEvent_handlers, isUndoRedo).then(() => {
-        console.log('%cundo redo ok', 'color: blue;')
         this._undoRedoing$.value && this._undoRedoing$.next(false)
       })
       return
     }
 
-    console.log('%cundo redo ok', 'color: blue;')
     this._undoRedoing$.value && this._undoRedoing$.next(false)
   }
 
@@ -368,7 +369,7 @@ export class DocCRUD {
     if (last === undefined) return
     this._undoSelectionStack.push(last)
 
-   this._replaySelectionAfterUndoRedo(last)
+    this._replaySelectionAfterUndoRedo(last)
   }
 
   private _replaySelectionAfterUndoRedo(selection: IBlockSelectionJSON | null) {

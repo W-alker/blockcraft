@@ -43,11 +43,6 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     return this._native.props['textAlign'] || 'left'
   }
 
-  @HostBinding('style.margin-left')
-  get marginLeft() {
-    return `${(this._native.props.depth || 0) * 2}em`
-  }
-
   protected override _init() {
     super._init();
     this.yText = this.yBlock.get('children') as Y.Text

@@ -1,9 +1,9 @@
-import {EditableBlockNative, generateId, NoEditableBlockNative} from "../../framework";
+import {generateId, NoEditableBlockNative} from "../../framework";
 import {BlockNodeType} from "../../framework/types";
 import {ImageBlockComponent} from "./image.block";
-import {editableBlockCreateSnapShotFn, IBlockSchemaOptions} from "../../framework/schema/block-schema";
-import {ImageTitleBlockComponent} from "./image-title.block";
+import {IBlockSchemaOptions} from "../../framework/schema/block-schema";
 import {DeltaInsert} from "blockflow-editor";
+import {CaptionBlockSchema} from "../caption-block";
 
 export interface ImageBlockModel extends NoEditableBlockNative {
   flavour: 'image',
@@ -15,10 +15,6 @@ export interface ImageBlockModel extends NoEditableBlockNative {
     },
     align?: 'center' | 'right'
   }
-}
-
-export interface ImageTitleBlockModel extends EditableBlockNative {
-  flavour: 'image-title'
 }
 
 export const ImageBlockSchema: IBlockSchemaOptions<ImageBlockModel> = {
@@ -38,23 +34,9 @@ export const ImageBlockSchema: IBlockSchemaOptions<ImageBlockModel> = {
           height: h || undefined
         }
       },
-      children: title ? [ImageTitleBlockSchema.createSnapshot(title)] : []
+      children: title ? [CaptionBlockSchema.createSnapshot(title)] : []
     }
   },
-  metadata: {
-    version: 1,
-    label: "图片",
-    includeChildren: ['image-title'],
-    icon: 'bc_icon bc_tupian-color',
-    svgIcon: 'bc_tupian-color'
-  }
-}
-
-export const ImageTitleBlockSchema: IBlockSchemaOptions<ImageTitleBlockModel> = {
-  flavour: "image-title",
-  nodeType: BlockNodeType.editable,
-  component: ImageTitleBlockComponent,
-  createSnapshot: editableBlockCreateSnapShotFn<ImageTitleBlockModel>('image-title', {textAlign: 'center'}),
   metadata: {
     version: 1,
     label: "图片",
@@ -68,12 +50,10 @@ declare global {
   namespace BlockCraft {
     interface IBlockComponents {
       image: ImageBlockComponent
-      'image-title': ImageTitleBlockComponent
     }
 
     interface IBlockCreateParameters {
       image: [string, number?, number?, (string | DeltaInsert[])?]
-      imageTitle: [(string | DeltaInsert[])?]
     }
   }
 }

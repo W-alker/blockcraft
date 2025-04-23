@@ -6,6 +6,7 @@ import {UIEventStateContext} from "../../framework/event/base";
 import {nextTick, sliceDelta} from "../../global";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {BlockTransformContextMenu} from "./widget/contextmenu";
+import {BLOCK_CREATOR_SERVICE_TOKEN} from "../../framework/services/block-creator.service";
 
 export interface IBlockTransformConfig {
   flavour: BlockCraft.BlockFlavour
@@ -95,7 +96,7 @@ export const blockTransforms: IBlockTransformConfig[] = [
   }
 ]
 
-const TransformReg = /^[\\、].*/
+const TransformReg = /^[\/、].*/
 
 export class BlockTransformerPlugin extends DocPlugin {
   override name = 'block-transformer';
@@ -163,6 +164,8 @@ export class BlockTransformerPlugin extends DocPlugin {
         if (!selection || !selection.collapsed || selection.from.type !== 'text' || selection.from.block.flavour !== 'paragraph') return
         const block = selection.from.block
         if (block.textContent() !== e.data) return
+        const schema = this.doc.schemas.get(block.flavour)
+        if(schema.metadata.isLeaf) return;
         this.openContextMenu(block)
       })
     }
@@ -246,7 +249,7 @@ export class BlockTransformerPlugin extends DocPlugin {
         return
       }
       const searchText = text.slice(1)
-      const matchedSchemas = blockSchemas.filter(v => v.metadata.label.startsWith(searchText) || v.flavour.startsWith(searchText))
+      const matchedSchemas = blockSchemas.filter(v => v.metadata.label.startsWith(searchText) || v.flavour.toLowerCase().startsWith(searchText.toLowerCase()))
       if (!matchedSchemas.length) {
         this.closeMenu$.next(true)
         return
@@ -259,9 +262,12 @@ export class BlockTransformerPlugin extends DocPlugin {
 
     cpr.instance.blockSelected.pipe(takeUntil(this.closeMenu$)).subscribe(schema => {
       this.contextOvr!.dispose()
-      const newBlock = this.doc.schemas.createSnapshot(schema.flavour, [])
-      this.doc.crud.replaceWithSnapshots(block.id, [newBlock]).then(() => {
-        newBlock.nodeType === 'editable' && this.doc.selection.setBlockPosition(newBlock.id, true)
+      const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
+      blockCreator.getParamsByScheme(schema).then(params => {
+        const newBlock = this.doc.schemas.createSnapshot(schema.flavour, params as any)
+        this.doc.crud.replaceWithSnapshots(block.id, [newBlock]).then(() => {
+          newBlock.nodeType === 'editable' && this.doc.selection.setBlockPosition(newBlock.id, true)
+        })
       })
     })
 

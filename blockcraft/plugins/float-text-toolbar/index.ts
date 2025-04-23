@@ -85,7 +85,6 @@ export class FloatTextToolbarPlugin extends DocPlugin {
       .subscribe(() => {
         if (this.toolbarOvr) {
           this.toolbarOvr.updatePosition()
-          return
         }
       })
   }

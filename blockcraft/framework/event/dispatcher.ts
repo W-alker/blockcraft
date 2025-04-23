@@ -1,7 +1,7 @@
 import {UIEventState, UIEventStateContext} from "./base";
 import {EventScopeSourceType, EventSourceState} from "./state";
 import {BlockCraftError, ErrorCode} from "../../global";
-import {KeyboardControl, CompositionControl, ClipboardControl, PointerControl, DndControl} from "./control";
+import {KeyboardControl, CompositionControl, ClipboardControl, DndControl, MouseControl} from "./control";
 import {fromEvent, takeUntil} from "rxjs";
 import {performanceTest} from "../decorators";
 import {closetBlockId} from "../utils";
@@ -20,10 +20,16 @@ export enum EventNames {
   'doubleClick' = 'doubleClick',
   'tripleClick' = 'tripleClick',
 
-  'pointerDown' = 'pointerDown',
-  'pointerMove' = 'pointerMove',
-  'pointerUp' = 'pointerUp',
-  'pointerOut' = 'pointerOut',
+  // 'pointerDown' = 'pointerDown',
+  // 'pointerMove' = 'pointerMove',
+  // 'pointerUp' = 'pointerUp',
+  // 'pointerOut' = 'pointerOut',
+
+  'mouseDown' = 'mouseDown',
+  'mouseMove' = 'mouseMove',
+  'mouseUp' = 'mouseUp',
+  'mouseEnter' = 'mouseEnter',
+  'mouseLeave' = 'mouseLeave',
 
   'dragStart' = 'dragStart',
   'dragEnter' = 'dragEnter',
@@ -69,9 +75,10 @@ export class UIEventDispatcher {
 
   private readonly composition = new CompositionControl(this)
   private keyboardControl = new KeyboardControl(this)
-  private pointerControl = new PointerControl(this)
+  // private pointerControl = new PointerControl(this)
   private clipboardControl = new ClipboardControl(this)
   private dndControl = new DndControl(this)
+  private mouseControl = new MouseControl(this)
 
   constructor(private doc: BlockCraft.Doc) {
     this.doc.afterInit(this._bindEvents)
@@ -140,9 +147,10 @@ export class UIEventDispatcher {
 
     this.composition.listen(root)
     this.keyboardControl.listen(root)
-    this.pointerControl.listen(root)
+    // this.pointerControl.listen(root)
     this.clipboardControl.listen(root)
     this.dndControl.listen(root)
+    this.mouseControl.listen(root)
   }
 
   hasHandler(name: EventNames) {

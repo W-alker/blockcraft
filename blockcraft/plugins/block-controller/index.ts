@@ -2,14 +2,13 @@ import {fromEvent, Subscription, throttleTime} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {TriggerBtn} from "./widgets/trigger-btn";
 import {
-  BLOCK_POSITION,
-  closetBlockId,
-  DOC_MESSAGE_SERVICE_TOKEN,
+  BLOCK_POSITION, ClipboardDataType,
+  closetBlockId, DOC_FILE_SERVICE_TOKEN,
   DocPlugin,
   EventListen,
   EventNames
 } from "../../framework";
-import {BlockNodeType} from "../../framework/types";
+import {BlockNodeType, IBlockSnapshot} from "../../framework/types";
 import {UIEventStateContext} from "../../framework/event/base";
 
 export class BlockControllerPlugin extends DocPlugin {
@@ -51,7 +50,7 @@ export class BlockControllerPlugin extends DocPlugin {
 
     this.eventSubs.add(
       this.doc.selection.selectionChange$.subscribe(v => {
-        if (!v?.collapsed) {
+        if (v?.to) {
           this._cpr.setInput('activeBlock', this._activeBlock = null)
           this._cpr.setInput('hidden', this.isHidden = true)
         } else {
@@ -68,7 +67,6 @@ export class BlockControllerPlugin extends DocPlugin {
   private createDragLine = () => {
     const dragLine = document.createElement('div')
     dragLine.style.cssText = `
-      display: none;
       position: absolute;
       height: 2px;
       background-color: #3a53d9;
@@ -128,7 +126,7 @@ export class BlockControllerPlugin extends DocPlugin {
   private onDragEnter = (ctx: UIEventStateContext) => {
     const evt: DragEvent = ctx.getDefaultEvent()
     evt.preventDefault()
-    evt.stopPropagation()
+    ctx.stopPropagation()
 
     const blockId = closetBlockId(evt.target as Node)
     if (!blockId || this.prevBlock?.id === blockId) return
@@ -151,14 +149,15 @@ export class BlockControllerPlugin extends DocPlugin {
       })
   }
 
-  private onDragEnd = (dragBlock?: BlockCraft.BlockComponent | null) => {
+  private onDragEnd = () => {
     this.removeDragLine()
     this.dragMoveSub?.unsubscribe()
     this.dragPreventListener?.unsubscribe()
     this.dragPreventListener = undefined
-    this.prevBlock && dragBlock && this.onSortBlock(dragBlock, this.prevBlock, this.prevDragPosition)
+    this.prevDragPosition = 'none'
   }
 
+  // drag handle 拖拽响应
   addDraggable() {
     this.doc.event.createDndChains(this._cpr.location.nativeElement, {
       onDragStart: (ctx) => {
@@ -178,16 +177,18 @@ export class BlockControllerPlugin extends DocPlugin {
         e.preventDefault()
         e.stopPropagation()
         this._cpr.instance.menuDisabled = false
-        this.onDragEnd(this._activeBlock)
+        this.prevBlock && this._activeBlock && this.onSortBlock(this._activeBlock, this.prevBlock, this.prevDragPosition)
+        this.onDragEnd()
       }
     })
   }
 
+  // img 拖拽响应
   @EventListen(EventNames.dragStart, {flavour: "image"})
   onImageDragStart(ctx: UIEventStateContext) {
     ctx.stopPropagation()
 
-    if(this.doc.selection.value?.to) {
+    if (this.doc.selection.value?.to) {
       ctx.preventDefault()
       return
     }
@@ -205,20 +206,53 @@ export class BlockControllerPlugin extends DocPlugin {
     const events = [
       this.doc.event.add(EventNames.dragEnter, this.onDragEnter),
       this.doc.event.add(EventNames.dragEnd, () => {
-        this.onDragEnd(imgBlock)
+        this.prevBlock && imgBlock && this.onSortBlock(imgBlock, this.prevBlock, this.prevDragPosition)
+        this.onDragEnd()
         events.forEach(v => v())
       }, {blockId})
     ]
   }
 
-  onSortBlock(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: 'before' | 'after' | 'none') {
-    if (!block || position === 'none' || targetBlock === block
-      || (block.hostElement.nextElementSibling === targetBlock.hostElement && position === 'before')
-      || (block.hostElement.previousElementSibling === targetBlock.hostElement && position === 'after')
-    ) return
+  // 外部文件 拖拽响应
+  @EventListen(EventNames.dragEnter, {flavour: 'root'})
+  onRootDragEnter(ctx: UIEventStateContext) {
+    if (this.dragLine) return false
+    const evt: DragEvent = ctx.getDefaultEvent()
+    if (!evt.dataTransfer?.types.includes(ClipboardDataType.FILES)) return false
+    evt.preventDefault()
+    this.onDragStart(evt)
+
+    const events = [
+      this.doc.event.add(EventNames.dragMove, this.onDragEnter),
+      this.doc.event.add(EventNames.drop, ctx => {
+        ctx.preventDefault()
+        this.onInsertFiles((ctx.getDefaultEvent() as DragEvent).dataTransfer?.files!, this.prevBlock!, this.prevDragPosition)
+        this.onDragEnd()
+        events.forEach(v => v())
+      })
+    ]
+    return true
+  }
+
+  onSortBlock(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
+    // @ts-expect-error
+    const isDepthEqual = block.props['depth'] === targetBlock.props['depth']
+    if (!block || position === 'none' || targetBlock === block) return
+
+    if (block.hostElement.nextElementSibling === targetBlock.hostElement && position === 'before') {
+      // @ts-expect-error
+      !isDepthEqual && block.updateProps({depth: targetBlock.props['depth']})
+      return
+    }
+
+    if (block.hostElement.previousElementSibling === targetBlock.hostElement && position === 'after') {
+      // @ts-expect-error
+      !isDepthEqual && block.updateProps({depth: targetBlock.props['depth']})
+      return
+    }
 
     if (!this.doc.schemas.isValidChildren(block.flavour, this.doc.schemas.get(targetBlock.parentBlock!.flavour))) {
-      this.doc.injector.get(DOC_MESSAGE_SERVICE_TOKEN).warn(`不允许的移动`)
+      this.doc.messageService.warn(`不允许的移动`)
       return
     }
 
@@ -230,8 +264,55 @@ export class BlockControllerPlugin extends DocPlugin {
     if (position === 'after' && (targetBlock.parentId !== block.parentId || posRelationship === BLOCK_POSITION.BEFORE)) {
       targetIdx += 1
     }
+
     this.doc.crud.moveBlocks(block.parentId!, block.getIndexOfParent(), 1,
-      targetBlock.parentId!, targetIdx)
+      targetBlock.parentId!, targetIdx).then(() => {
+      // @ts-expect-error
+      !isDepthEqual && block.updateProps({depth: targetBlock.props['depth']})
+    })
+  }
+
+  onInsertFiles(files: FileList, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
+    if (!files?.length || position === 'none') return
+    const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
+    if (!files.length) return
+    if (files.length === 1 && files[0].type.startsWith('image/')) {
+      if (!this.doc.schemas.isValidChildren('image', this.doc.schemas.get(targetBlock.parentBlock!.flavour))) {
+        this.doc.messageService.warn(`不允许的移动`)
+        return
+      }
+
+      fileService.uploadImg(files[0]).then(v => {
+        this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0),
+          [this.doc.schemas.createSnapshot('image', [v])])
+      }).catch(err => {
+        this.doc.messageService.error(`上传失败: ${err.message}`)
+      })
+      return
+    }
+
+    if (!this.doc.schemas.isValidChildren('attachment', this.doc.schemas.get(targetBlock.parentBlock!.flavour))) {
+      this.doc.messageService.warn(`不允许的移动`)
+      return
+    }
+
+    const _files = Array.from(files).filter(v => !v.type.startsWith('image/'))
+    Promise.allSettled(_files.map(v => fileService.uploadAttachment(v))).then(v => {
+      const _blocks: IBlockSnapshot[] = []
+      v.forEach((r, i) => {
+        if (r.status !== 'fulfilled') {
+          this.doc.messageService.error(`${r.reason}`)
+          return
+        }
+        _blocks.push(this.doc.schemas.createSnapshot('attachment', [(r.value as any)]))
+      })
+
+      if (!_blocks.length) return
+      // TAG: Depth
+      // @ts-expect-error
+      _blocks.forEach(b => b.props.depth = targetBlock.props['depth'])
+      this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), _blocks)
+    })
   }
 
   destroy() {

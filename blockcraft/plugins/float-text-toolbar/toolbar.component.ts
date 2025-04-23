@@ -120,11 +120,16 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
         </bc-float-toolbar-item>
       }
 
-      <bc-float-toolbar-item name="link" value="true" icon="bc_lianjie" title="链接" *ngIf="isLinkAble">
+      <bc-float-toolbar-item name="link" [value]="activeAttrs.has('link') ? null : true"
+                             [active]="activeAttrs.has('link')"
+                             icon="bc_lianjie" title="链接" *ngIf="isLinkAble">
       </bc-float-toolbar-item>
 
       <span class="bc-float-toolbar__divider"></span>
-      <bc-float-toolbar-item icon="bc_sepan" [bcOverlayTrigger]="colorPicker" [positions]="['bottom-left']" [offsetY]="8"/>
+      <bc-float-toolbar-item icon="bc_bianji" [bcOverlayTrigger]="colorPicker" [positions]="['bottom-left']"
+                             [offsetY]="8"
+                             [style.color]="activeColors['color']"
+                             [style.background-color]="activeColors['backColor']"/>
 
     </bc-float-toolbar>
 
@@ -237,7 +242,7 @@ export class FloatTextToolbarComponent {
         evt.value === true ? this.activeAttrs.add(evt.name) : this.activeAttrs.delete(evt.name)
         break
       case 'link':
-        this.onLink()
+        evt.value ? this.onLink() : this.formatText({['a:' + evt.name]: null})
         break
     }
   }

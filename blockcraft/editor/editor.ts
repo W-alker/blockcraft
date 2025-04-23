@@ -4,7 +4,9 @@ import {
   BlockCraftDoc,
   EditableBlockComponent,
   DOC_FILE_SERVICE_TOKEN,
-  DOC_MESSAGE_SERVICE_TOKEN, DocMessageService
+  DOC_MESSAGE_SERVICE_TOKEN,
+  BLOCK_CREATOR_SERVICE_TOKEN,
+  DOC_LINK_PREVIEWER_SERVICE_TOKEN, DocLinkPreviewerService
 } from "../framework";
 import {
   HeadingFourBlockSchema,
@@ -17,7 +19,8 @@ import {
   TableBlockSchema,
   TableRowBlockSchema,
   TableCellBlockSchema,
-  HeadingThreeBlockSchema, ImageTitleBlockSchema, AttachmentBlockSchema
+  HeadingThreeBlockSchema, AttachmentBlockSchema, CaptionBlockSchema,
+  FigmaEmbedBlockSchema, BookmarkBlockSchema, JuejinEmbedBlockSchema
 } from "../blocks";
 import {ConsoleLogger} from "../global";
 import {DividerBlockSchema, CalloutBlockSchema, OrderedBlockSchema, ParagraphBlockSchema} from "../blocks";
@@ -32,13 +35,19 @@ import {ImgToolbarPlugin} from "../plugins/img-toolbar";
 import {MyDocFileService} from "./doc-file-service";
 import {MyDocMessageService} from "./doc-message.service";
 import {CalloutToolbarPlugin} from "../plugins/callout-toolbar";
+import {AttachmentExtensionPlugin} from "../plugins/attachment-extension";
+import {MyBlockCreatorService} from "./block-creator.service";
+import {EmbedFrameExtensionPlugin} from "../plugins/embed-frame-extension";
+import {BookmarkBlockExtensionPlugin} from "../plugins/bookmark-frame-extension";
+import {InlineLinkExtension} from "../plugins/inline-link-extension";
 
 const schemas = new SchemaManager([
   RootBlockSchema, ParagraphBlockSchema, DividerBlockSchema, CalloutBlockSchema, BulletBlockSchema,
-  OrderedBlockSchema, ImageBlockSchema, ImageTitleBlockSchema,
+  OrderedBlockSchema, ImageBlockSchema, CaptionBlockSchema,
   HeadingOneBlockSchema, HeadingTwoBlockSchema, HeadingThreeBlockSchema, HeadingFourBlockSchema,
   TodoBlockSchema,
-  CodeBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, AttachmentBlockSchema
+  CodeBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, AttachmentBlockSchema,
+  FigmaEmbedBlockSchema, BookmarkBlockSchema, JuejinEmbedBlockSchema
 ])
 
 @Component({
@@ -64,6 +73,8 @@ const schemas = new SchemaManager([
   providers: [
     {provide: DOC_FILE_SERVICE_TOKEN, useClass: MyDocFileService},
     {provide: DOC_MESSAGE_SERVICE_TOKEN, useClass: MyDocMessageService},
+    {provide: BLOCK_CREATOR_SERVICE_TOKEN, useClass: MyBlockCreatorService},
+    {provide: DOC_LINK_PREVIEWER_SERVICE_TOKEN, useClass: DocLinkPreviewerService},
     ConsoleLogger
   ]
 })
@@ -101,7 +112,9 @@ export class EditorComponent {
     ],
     plugins: [new AutoUpdateOrderPlugin(), new CodeBlocKeyBinding(), new TableBlockBinding(),
       new FloatTextToolbarPlugin(), new BlockTransformerPlugin(), new BlockControllerPlugin(),
-    new ImgToolbarPlugin(), new CalloutToolbarPlugin()]
+      new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
+      new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(), new InlineLinkExtension()
+    ]
   })
 
   pid = ''
@@ -109,7 +122,8 @@ export class EditorComponent {
   ngAfterViewInit() {
     const p = this.doc.schemas.createSnapshot('paragraph', [[{insert: 'hello\n'},
       {insert: 'world', attributes: {'a:bold': true}},
-      {insert: {image: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg'}}
+      {insert: {image: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg'}},
+      {insert: 'This is a paragraph', attributes: {'a:link': 'https://zhuanlan.zhihu.com/p/617505961'}}
     ]])
     const p2 = this.doc.schemas.createSnapshot('heading-two', [
       [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
@@ -125,11 +139,17 @@ export class EditorComponent {
     const todo = this.doc.schemas.createSnapshot('todo', ['this is a todo'])
     const code = this.doc.schemas.createSnapshot('code', ['const c = 1;\n\nfunction a()\n{ console.log(c) }'])
     const table = this.doc.schemas.createSnapshot('table', [6, 6])
-    const attachment = this.doc.schemas.createSnapshot('attachment', ['this is a file','https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg', 'txt'])
+    const attachment = this.doc.schemas.createSnapshot('attachment', [{
+      url: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg',
+      name: 'template.zip',
+      type: 'zip',
+      size: 553409,
+    }])
+    const figma = this.doc.schemas.createSnapshot('figma-embed', ['https://www.figma.com/design/zaZvxd72WGI6jKitm2IL6g/%E5%AE%9A%E7%A8%BF2?node-id=755-15316&p=f&t=U9xZyjY1GwAjzTXy-0'])
 
     this.pid = p.id
     const snapshot = this.doc.schemas.createSnapshot('root',
-      [this.rootId, [p, d1, p2, callout, d2, attachment, d3, p3, img, code, table, todo]])
+      [this.rootId, [p, figma, d1, p2, callout, d2, attachment, d3, p3, img, code, table, todo]])
     console.log(snapshot)
     this.doc.init(snapshot, this.container)
   }

@@ -1,0 +1,30 @@
+@mixin bullet-block {
+  div.bullet-block {
+    .bullet-block-prefix {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: var(--bc-fs);
+
+      .square {
+        width: calc(var(--bc-fs) * 0.5);
+        height: calc(var(--bc-fs) * 0.5);
+        background-color: var(--bc-active-color-light);
+      }
+
+      .circle {
+        width: calc(var(--bc-fs) * 0.5);
+        height: calc(var(--bc-fs) * 0.5);
+        border-radius: 50%;
+        border: 1px solid var(--bc-active-color-light);
+      }
+
+      .point {
+        width: calc(var(--bc-fs) * 0.5);
+        height:calc(var(--bc-fs) * 0.5);
+        border-radius: 50%;
+        background-color: var(--bc-active-color-light);
+      }
+    }
+  }
+}

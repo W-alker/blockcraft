@@ -12,11 +12,19 @@ export interface IInlineRange {
   length: number
 }
 
-export type IBlockRange = ({
+/**
+ * {@link IBlockTextRange} 的 JSON 格式\
+ * {@link IBlockSelectedRange} 的 JSON 格式
+ */
+export type IBlockRange = IBlockTextRange | IBlockSelectedRange
+
+export interface IBlockTextRange extends IInlineRange{
   block: EditableBlockComponent<any>
   blockId: string
   type: 'text'
-} & IInlineRange) | {
+}
+
+export interface IBlockSelectedRange {
   block: BaseBlockComponent<any>
   blockId: string
   type: 'selected'
@@ -28,7 +36,7 @@ export interface INormalizedRange {
   collapsed: boolean
 }
 
-type IBlockInlineRangeJSON = {
+export type IBlockInlineRangeJSON = {
   index: number,
   length: number,
   blockId: string,

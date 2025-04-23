@@ -6,8 +6,6 @@ export interface DocAttachmentInfo {
   type: FileExtensionType
   url: string
   size: number
-  width?: number
-  height?: number
 }
 
 /**
@@ -18,9 +16,9 @@ export const DOC_FILE_SERVICE_TOKEN = new InjectionToken<DocFileService>('IFileU
 export abstract class DocFileService {
   abstract uploadImg(file: File): Promise<string>
 
-  abstract uploadFile(file: File): Promise<DocAttachmentInfo>
+  abstract uploadAttachment(file: File): Promise<DocAttachmentInfo>
 
-  abstract preview(): void
+  abstract previewAttachment(): void
 
   abstract previewImg(element: HTMLImageElement, title?: string): void
 
@@ -32,4 +30,22 @@ export abstract class DocFileService {
     a.dispatchEvent(new MouseEvent('click'))
     a = null
   }
+
+  inputFiles(accept = '', multiple = false): Promise<FileList> {
+    return new Promise((resolve, reject) => {
+      let input: HTMLInputElement | null = document.createElement('input')
+      input.type = 'file'
+      input.accept = accept
+      input.multiple = multiple
+      input.click()
+      input.onchange = () => {
+        const inputFiles = input!.files
+        if (!inputFiles) reject('no files selected')
+        resolve(inputFiles!)
+        input = null
+      }
+    })
+  }
+
+  abstract downloadAttachment(attachment: DocAttachmentInfo): void
 }

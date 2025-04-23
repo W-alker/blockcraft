@@ -48,8 +48,21 @@ export class InlineManager {
     return node
   }
 
+  static createAnchorElement(delta: DeltaInsertText): HTMLElement {
+    const node = document.createElement(INLINE_ELEMENT_TAG)
+    const anchor = document.createElement('a')
+    anchor.textContent = delta.insert
+    anchor.href = delta.attributes?.['a:link'] || ''
+    node.appendChild(anchor)
+    delta.attributes && setAttributes(node, delta.attributes)
+    return node
+  }
+
   createInlineNode(delta: DeltaInsert): HTMLElement {
     if (typeof delta.insert === 'string') {
+      // if(delta.attributes?.['a:link']) {
+      //   return InlineManager.createAnchorElement(delta as DeltaInsertText)
+      // }
       return InlineManager.createTextElement(delta as DeltaInsertText)
     }
 

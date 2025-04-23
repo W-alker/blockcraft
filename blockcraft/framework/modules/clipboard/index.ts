@@ -5,7 +5,6 @@ import {ClipboardDataType} from "./types";
 import {BlockNodeType, DeltaOperation, IBlockSnapshot} from "../../types";
 import {generateId} from "../../utils";
 import {ORIGIN_SKIP_SYNC} from "../../doc";
-import {DOC_FILE_SERVICE_TOKEN} from "../../services";
 
 @DocEventRegister
 export class ClipboardManager {
@@ -17,7 +16,7 @@ export class ClipboardManager {
     return navigator.clipboard.writeText(text)
   }
 
-  private _copyFromSelection = (selection: BlockCraft.Selection, clipboardData: DataTransfer) => {
+  copyFromSelection = (selection: BlockCraft.Selection, clipboardData: DataTransfer) => {
     const {from, to} = selection
     if (!to) {
       if (from.type === 'text') {
@@ -65,7 +64,7 @@ export class ClipboardManager {
     clipboardData.setData(ClipboardDataType.BLOCK_SNAPSHOTS, JSON.stringify(snapshots))
   }
 
-  private _deleteFromSelection = (selection: BlockCraft.Selection) => {
+  deleteContentFromSelection = (selection: BlockCraft.Selection) => {
     const event = new InputEvent('beforeinput', {
       inputType: 'deleteByCut',
       targetRanges: [new StaticRange(selection.raw)]
@@ -83,7 +82,7 @@ export class ClipboardManager {
   onCopy(context: UIEventStateContext) {
     const state = context.get('clipboardState')
     context.preventDefault()
-    this._copyFromSelection(state.selection, state.clipboardData!)
+    this.copyFromSelection(state.selection, state.clipboardData!)
     return true
   }
 
@@ -92,10 +91,10 @@ export class ClipboardManager {
     const state = context.get('clipboardState')
     context.preventDefault()
 
-    this._copyFromSelection(state.selection, state.clipboardData!)
+    this.copyFromSelection(state.selection, state.clipboardData!)
 
     // 继续触发deleteByCut input事件, 让默认处理程序删除选区内容
-    this._deleteFromSelection(state.selection)
+    this.deleteContentFromSelection(state.selection)
   }
 
   @EventListen(EventNames.paste, {flavour: 'root'})
@@ -162,7 +161,7 @@ export class ClipboardManager {
         }
 
         // 删除区间内容
-        this._deleteFromSelection(state.selection)
+        this.deleteContentFromSelection(state.selection)
 
         // 是否需要和本段合并
         if (snapshots[0].nodeType === BlockNodeType.editable) {
@@ -191,7 +190,7 @@ export class ClipboardManager {
         return;
       }
 
-      this._deleteFromSelection(state.selection)
+      this.deleteContentFromSelection(state.selection)
       selection.from.block.applyDeltaOperation([{retain: selection.from.index}, ...deltas])
       return;
     }
@@ -228,7 +227,7 @@ export class ClipboardManager {
         return true
       }
 
-      this._deleteFromSelection(state.selection)
+      this.deleteContentFromSelection(state.selection)
       selection.from.block.applyDeltaOperation([{retain: selection.from.index}, {insert: text}])
       return true
     }

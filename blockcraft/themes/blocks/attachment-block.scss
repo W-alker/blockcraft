@@ -1,10 +1,18 @@
 @mixin attachment-block() {
   div.attachment-block {
-    padding: 6px;
+    padding: 6px 18px;
     border: 1px solid var(--bc-border-color);
     border-radius: 4px;
     display: flex;
     align-items: center;
+    position: relative;
+
+    &__prefix {
+      position: absolute;
+      top: var(--bc-fs);
+      left: 10px;
+      font-size: var(--bc-fs);
+    }
 
     &__info {
       padding: 8px 16px;
@@ -21,7 +29,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       color: var(--bc-color);
-      font-size: calc(var(--bc-fs) + 4px);
+      font-size: calc(var(--bc-fs) + 2px);
       font-style: normal;
       font-weight: 600;
     }
@@ -34,6 +42,15 @@
 
     &__icon-wrapper {
       width: 50px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+
+      mat-icon {
+        font-size: 40px;
+        height: 40px;
+        width: 40px;
+      }
     }
   }
 }

@@ -26,6 +26,7 @@ interface IBaseInlineAttr {
   'a:underline'?: boolean;
   'a:strike'?: boolean;
   'a:code'?: boolean;
+  'a:link'?: string | null;
 }
 
 /**
@@ -34,6 +35,7 @@ interface IBaseInlineAttr {
 export type InlineDataKey = `d:${string}`
 
 export type InlineStyleKey = `s:${string}`
+
 /**
  * inline text style
  */

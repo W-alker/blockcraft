@@ -2,12 +2,15 @@ import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from "@angula
 import {BaseBlockComponent, ORIGIN_NO_RECORD} from "../../framework";
 import {ImageBlockModel} from "./index";
 import {fromEvent, Subscription, take, throttleTime} from "rxjs";
+import {AsyncPipe} from "@angular/common";
 
 @Component({
   selector: "div.image-block",
   template: `
     <div class="img-wrapper">
-      <img [src]="props.src" [style.width.px]="props.size.width" [style.height.px]="props.size.height" #imgEle/>
+      <img [src]="props.src" [style.width.px]="props.size.width"
+           [style.height.px]="props.size.height" loading="lazy"
+           [draggable]="!(doc.readonlySwitch$ | async)" #imgEle/>
 
       <div class="img-resizer__handle img-resizer__handle__point img-resizer__handle--tl"
            (click)="$event.stopPropagation()" contenteditable="false"
@@ -27,6 +30,9 @@ import {fromEvent, Subscription, take, throttleTime} from "rxjs";
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    AsyncPipe
+  ],
   host: {
     '[attr.data-align]': 'props.align',
   }
@@ -40,15 +46,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
 
     // 第一次出现在页面上时自动更新尺寸数据
     if (!this.props.size.height) {
-      const rect = this.imgEle.nativeElement.getBoundingClientRect()
-      const size = {
-        width: Math.max(rect.width, 50),
-        height: Math.max(rect.height, 50)
-      }
-      this.doc.crud.transact(() => {
-        this._yProps.set('size', size)
-        Reflect.set(this._native.props, 'size', size)
-      }, ORIGIN_NO_RECORD)
+      this._setInitSize()
     }
 
   }
@@ -57,12 +55,26 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
   private mouseMove$?: Subscription
   private _showSize = {width: 0, height: 0}
 
+  private _setInitSize() {
+    const rect = this.imgEle.nativeElement.getBoundingClientRect()
+    const size = {
+      width: rect.width,
+      height: rect.height
+    }
+    this.setInitProps({size})
+  }
+
   onResizeHandleMouseDown(event: MouseEvent, direction: 'left' | 'right') {
     event.stopPropagation()
     event.preventDefault()
 
     this.mouseMove$?.unsubscribe()
     this.startPoint = {x: event.clientX, y: event.clientY, direction}
+
+    if (!this.props.size.height) {
+      this._setInitSize()
+    }
+
     this._showSize = {width: this.props.size.width, height: this.props.size.height!}
 
     this.mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove')

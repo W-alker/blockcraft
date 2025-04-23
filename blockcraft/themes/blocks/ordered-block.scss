@@ -4,6 +4,10 @@
     align-items: flex-start;
     gap: 4px;
 
+    .ordered-block-prefix {
+      color: var(--bc-active-color-light);
+    }
+
     .edit-container {
       flex: 1;
     }

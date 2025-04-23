@@ -67,7 +67,7 @@ export class DndControl {
 
     const {onDragStart, onDragEnter, onDragMove, onDragLeave, onDragEnd} = events
 
-    fromEvent<DragEvent>(target, 'dragstart').subscribe(evt => {
+    return fromEvent<DragEvent>(target, 'dragstart').subscribe(evt => {
       this._startEvent = evt
       this.dragState$.next('start');
       onDragStart?.(this._createContext(evt))

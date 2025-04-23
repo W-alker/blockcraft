@@ -87,7 +87,7 @@ export class InputTransformer {
       if (to) {
         ev.preventDefault()
         this._replaceText(normalizedRange, text)
-        if(from.type=== 'text') {
+        if (from.type === 'text') {
           this.doc.selection.setSelection({
             ...from,
             index: from.index + (text?.length || 0),
@@ -127,8 +127,8 @@ export class InputTransformer {
       // in inline end break
       if (collapsed && staticRange.startContainer instanceof HTMLElement && staticRange.startContainer.classList.contains(INLINE_END_BREAK_CLASS)) {
         const prevElement = staticRange.startContainer.previousElementSibling!
-        const child = prevElement.firstElementChild
-        if (prevElement.localName === INLINE_ELEMENT_TAG && child?.localName === INLINE_TEXT_NODE_TAG) {
+        const child = prevElement.firstElementChild as HTMLElement | null
+        if (prevElement.localName === INLINE_ELEMENT_TAG && child?.isContentEditable) {
           const len = child.textContent!.length;
           (child.firstChild as Text).insertData(len, text)
           document.getSelection()!.setPosition(child.firstChild!, len + text.length)
@@ -145,7 +145,7 @@ export class InputTransformer {
       }
 
       if (from.type !== 'text') return
-      if(!collapsed) {
+      if (!collapsed) {
         ev.preventDefault()
         from.block.replaceText(from.index, from.length, text)
         this.doc.selection.setSelection({
@@ -212,9 +212,11 @@ export class InputTransformer {
     // 每一段的最前面
     // 非paragraph块转化
     if (from.block.flavour !== 'paragraph') {
+      context.preventDefault()
+      const schema = this.doc.schemas.get(from.block.flavour)
+      if (schema.metadata.isLeaf) return true
       const deltas = from.block.textDeltas()
       const np = this.doc.schemas.createSnapshot('paragraph', [deltas])
-      context.preventDefault()
       this.doc.crud.replaceWithSnapshots(from.block.id, [np]).then(() => {
         // 强制触发selectionChange
         this.doc.selection.setSelection({
@@ -318,17 +320,17 @@ export class InputTransformer {
 
     context.preventDefault()
     const fromBlock = state.selection.from.block
-    if (fromBlock.nodeType !== BlockNodeType.editable) {
-      this.doc.logger.warn('该类型块不可缩进')
-      return true
-    }
+    // if (fromBlock.nodeType !== BlockNodeType.editable) {
+    //   this.doc.messageService.warn('该类型块不可缩进')
+    //   return true
+    // }
 
     const prevBlock = this.doc.prevSibling(fromBlock)
     // @ts-ignore
     const _prevDepth: number = prevBlock ? (prevBlock.props['depth'] ?? 0) : 0
     const _newDepth = fromBlock.props.depth + (state.raw.shiftKey ? -1 : 1)
     if (!prevBlock || _newDepth > (_prevDepth + 1) || _newDepth < 0) {
-      this.doc.logger.warn('不可缩进')
+      this.doc.messageService.warn('不可缩进')
       return true
     }
 
@@ -337,8 +339,11 @@ export class InputTransformer {
       this.doc.crud.transact(() => {
         for (const id of blocks) {
           const b = this.doc.getBlockById(id)
-          if (!b || !this.doc.isEditable(b)) return
-          const old = b.props['depth'] as number
+          if (!b
+            // || !this.doc.isEditable(b)
+          ) return
+          // @ts-ignore
+          const old = (b.props['depth'] || 0) as number
           if (state.raw.shiftKey && old === 0) return;
           b.updateProps({
             depth: old + (state.raw.shiftKey ? -1 : 1)

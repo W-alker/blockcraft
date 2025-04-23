@@ -1,10 +1,10 @@
-import {ComponentRef, ViewContainerRef, ViewRef} from "@angular/core";
+import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {lastValueFrom, take} from "rxjs";
 import {BlockCraftError, ErrorCode} from "../../global";
 import {BlockNodeType, IBlockSnapshot} from "../types";
 import {YBlock} from "../reactive";
 import * as Y from "yjs";
-import {BaseBlockComponent, BlockActiveTracker} from "../block";
+import {BaseBlockComponent} from "../block";
 
 export class DocVM {
 
@@ -12,11 +12,14 @@ export class DocVM {
   private store: Map<string, BlockCraft.BlockComponentRef> = new Map()
   private _gcTags = new Set<string>()
 
-  private _tracker = new BlockActiveTracker(this)
+  // private _tracker = new BlockActiveTracker(this)
 
   constructor(
     public readonly doc: BlockCraft.Doc
   ) {
+    this.doc.onDestroy(() => {
+      this.gc()
+    })
   }
 
   get schemas() {

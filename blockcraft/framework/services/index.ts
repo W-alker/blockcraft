@@ -1,2 +1,4 @@
 export * from './file.service'
 export * from './message.service'
+export * from './block-creator.service'
+export * from './link-previewer.service'

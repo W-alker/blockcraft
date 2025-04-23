@@ -57,7 +57,7 @@ export function sliceDelta(delta: DeltaInsert[], start = 0, end = Infinity) {
       const insert = typeof op.insert === 'string'
         ? op.insert.slice(sliceStart, sliceEnd)
         : op.insert;
-      slicedOps.push({ insert, ...(op.attributes && { attributes: op.attributes }) });
+      slicedOps.push({insert, ...(op.attributes && {attributes: op.attributes})});
     }
 
     offset += opLength;
@@ -67,10 +67,10 @@ export function sliceDelta(delta: DeltaInsert[], start = 0, end = Infinity) {
 }
 
 export const getCommonAttributesFromDeltas = (delta: DeltaInsert[]) => {
-  if(!delta.length) return {}
+  if (!delta.length) return {}
   let commonAttrs: IInlineNodeAttrs | undefined
   for (const op of delta) {
-    if(!op.attributes) return {}
+    if (!op.attributes) return {}
     if (!commonAttrs) {
       commonAttrs = {...op.attributes}
       continue
@@ -88,4 +88,28 @@ export const getCommonAttributesFromDeltas = (delta: DeltaInsert[]) => {
 
 export const deltaToString = (delta: DeltaInsert[]) => {
   return delta.reduce((acc, cur) => acc + (typeof cur.insert === "string" ? cur.insert : ''), '')
+}
+
+const isAttrsContain = (attrs: Record<string, any>, attrs2: Record<string, any>) => {
+  for (const key in attrs2) {
+    if (attrs2[key] !== attrs[key]) return false
+  }
+  return true
+}
+
+export const getFirstSameAttrsTextRange = (delta: DeltaInsert[], attrs: IInlineNodeAttrs): [number, number] => {
+  let start = -1
+  let end = -1
+
+  let cnt = 0
+  for (let i = 0; i < delta.length; i++) {
+    const deltaItem = delta[i]
+    const deltaLength = typeof deltaItem.insert === 'string' ? deltaItem.insert.length : 1
+    if (deltaItem.attributes && isAttrsContain(deltaItem.attributes, attrs)) {
+      if (start === -1) start = cnt
+      end = cnt + deltaLength
+    }
+    cnt += deltaLength
+  }
+  return [start, end]
 }

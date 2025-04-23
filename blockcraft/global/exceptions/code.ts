@@ -17,12 +17,12 @@ export enum ErrorCode {
   CommandError,
   EventDispatcherError,
   SelectionError,
-  GfxBlockElementError,
   MissingViewModelError,
   DatabaseBlockError,
   ParsingError,
   UserAbortError,
   ExecutionError,
+  PluginError,
 
   // Fatal error should be greater than 10000
   DefaultFatalError = 10000,

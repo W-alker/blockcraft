@@ -1,7 +1,7 @@
 import {DocAttachmentInfo, DocFileService} from "../framework";
 import {Injectable} from "@angular/core";
 import Viewer from "viewerjs";
-import {FileExtensions, getFileExtensionType, getMimeType, MimeType} from "../global";
+import {FileExtensions, getFileExtensionType, MimeType} from "../global";
 
 @Injectable()
 export class MyDocFileService extends DocFileService {
@@ -16,10 +16,10 @@ export class MyDocFileService extends DocFileService {
     })
   }
 
-  uploadFile(file: File): Promise<DocAttachmentInfo> {
+  uploadAttachment(file: File): Promise<DocAttachmentInfo> {
     return new Promise((resolve, reject) => {
-      // 最大10mb
-      if (file.size > 10 * 1024 * 1024) {
+      // 最大500kb
+      if (file.size > 1024 * 500) {
         reject('文件过大')
       }
 
@@ -36,7 +36,11 @@ export class MyDocFileService extends DocFileService {
     })
   }
 
-  preview() {
+  downloadAttachment(attachment: DocAttachmentInfo): void {
+    this.downloadSource(attachment.url, attachment.name)
+  }
+
+  previewAttachment() {
   }
 
   previewImg(arg1: unknown, arg2: unknown): void {

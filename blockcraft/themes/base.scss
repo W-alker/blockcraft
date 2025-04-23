@@ -4,22 +4,34 @@
 @import "./blocks/callout-block.scss";
 @import "./blocks/table-block.scss";
 @import "blocks/ordered-block";
+@import "blocks/bullet-block";
 @import "blocks/heading-block";
 @import "blocks/image-block";
 @import "blocks/attachment-block";
+@import "blocks/embed-frame-block";
+@import "blocks/bookmark-block";
+@import "blocks/caption-block";
 
 :root {
   --bc-fs: 14px;
+  --bc-fs-xs: calc(var(--bc-fs) - 2px);
+  --bc-fs-sm: calc(var(--bc-fs) - 1px);
+  --bc-fs-lg: calc(var(--bc-fs) + 2px);
+  --bc-fs-xl: calc(var(--bc-fs) + 4px);
+  --bc-fs-2xl: calc(var(--bc-fs) + 6px);
+  --bc-fs-3xl: calc(var(--bc-fs) + 8px);
   --bc-lh: 20px;
   --bc-color: #333;
   --bc-color-light: #999;
   --bc-border-color: #ddd;
+  --bc-border-color-light: #eee;
   --bc-warning-color: #f5a623;
   --bc-error-color: #e03131;
   --bc-active-color: #4857E2;
   --bc-active-color-light: #1890ff;
   --bc-error-background-color: rgba(224, 49, 49, 0.1);
   --bc-select-background-color: rgba(24, 144, 255, 0.3);
+  --bc-segments-gap: 12px;
 }
 
 [data-blockcraft-root="true"] {
@@ -68,7 +80,7 @@
 
   [data-block-id] {
     position: relative;
-    margin: .5em 0;
+    margin: var(--bc-segments-gap) 0;
     caret-color: transparent;
     content-visibility: auto;
 
@@ -167,25 +179,22 @@
       }
 
       &[link] {
-        color: var(--bc-active-color-light) !important;
+        color: var(--bc-active-color) !important;
         text-decoration: underline;
         cursor: pointer;
 
-        //&:hover {
-        //  color: var(--bc-active-color) !important;
-        //
-        //  + c-element[link] {
-        //    color: var(--bc-active-color) !important;
-        //  }
-        //}
-        //
-        //&:has(+ c-element[link]:hover) {
-        //  color: var(--bc-active-color) !important;
-        //}
+        a {
+          color: inherit !important;
+          text-decoration: none;
+        }
+      }
+
+      &[strike="true"][link] {
+        text-decoration: underline line-through;
       }
     }
 
-    c-text {
+    c-text, a {
       word-break: break-word;
       text-wrap: wrap;
     }
@@ -193,6 +202,7 @@
 
   @include todo-block();
   @include ordered-block();
+  @include bullet-block();
   @include code-block();
   @include divider-block();
   @include callout-block();
@@ -200,6 +210,10 @@
   @include heading-block();
   @include image-block();
   @include attachment-block();
+  @include embed-frame-block();
+  @include bookmark-block();
+
+  @include caption-block();
 }
 
 .blockcraft-cursor {

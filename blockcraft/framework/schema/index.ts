@@ -16,6 +16,10 @@ export class SchemaManager {
     this.schema.set(schema.flavour, schema)
   }
 
+  has(flavour: string) {
+    return this.schema.has(flavour)
+  }
+
   get(flavour: string) {
     const schema = this.schema.get(flavour)
     if (!schema) {

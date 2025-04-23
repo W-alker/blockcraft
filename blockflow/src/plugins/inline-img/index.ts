@@ -66,7 +66,7 @@ export class InlineImgPlugin implements IPlugin {
   private wrapImg(ele: HTMLElement) {
     if (!ele) return
     const fragment = document.createElement('span')
-    fragment.className = 'resize-container'
+    fragment.className = 'block-resizer'
     const tl = document.createElement('span')
     tl.className = 'resize-point top-left'
     const tr = document.createElement('span')

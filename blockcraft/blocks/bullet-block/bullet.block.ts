@@ -8,13 +8,13 @@ import {BulletBlockModel} from "./index";
     <span class="bullet-block-prefix" contenteditable="false">
       @switch (bulletType) {
         @case (2) {
-          ○
+          <span class="square"></span>
         }
         @case (1) {
-          □
+          <span class="circle"></span>
         }
         @default {
-          ◇
+          <span class="point"></span>
         }
       }
     </span>

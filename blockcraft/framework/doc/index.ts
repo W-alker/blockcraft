@@ -10,6 +10,7 @@ import {UIEventDispatcher} from "../event";
 import {getCommonPath} from "../utils";
 import {EditableBlockComponent} from "../block";
 import {DocPlugin} from "../plugin";
+import {DOC_MESSAGE_SERVICE_TOKEN} from "../services";
 
 interface DocConfig {
   docId: string
@@ -49,6 +50,8 @@ export class BlockCraftDoc {
 
   private _root!: BlockCraft.IBlockComponents['root']
 
+  public readonly messageService = this.injector.get(DOC_MESSAGE_SERVICE_TOKEN)
+
   get rootId() {
     return this.config.rootId
   }
@@ -80,6 +83,7 @@ export class BlockCraftDoc {
   get isActive() {
     return this._root.isActive
   }
+
 
   constructor(
     public readonly config: DocConfig
@@ -140,14 +144,17 @@ export class BlockCraftDoc {
     this.onDestroy$.pipe(take(1)).subscribe(fn)
   }
 
-  getBlockRef<T extends BlockCraft.BlockFlavour = BlockCraft.BlockFlavour>(id: string) {
+  getBlockRef<T extends BlockCraft.BlockFlavour = BlockCraft.BlockFlavour>(id: string, onError?: () => void) {
     const block = this.vm.get(id)
-    if (!block) throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${id}`)
+    if (!block) {
+      onError?.()
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${id}`)
+    }
     return block as ComponentRef<BlockCraft.IBlockComponents[T]>
   }
 
-  getBlockById<T extends BlockCraft.BlockFlavour = BlockCraft.BlockFlavour>(id: string) {
-    return this.getBlockRef<T>(id).instance
+  getBlockById<T extends BlockCraft.BlockFlavour = BlockCraft.BlockFlavour>(id: string, onError?: () => void) {
+    return this.getBlockRef<T>(id, onError).instance
   }
 
   isEditable(block: BlockCraft.BlockComponent): block is EditableBlockComponent {
