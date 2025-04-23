@@ -21,7 +21,7 @@ export class BaseEmbedBlockComponent<Model extends NativeBlockModel & {
 
   override ngOnInit() {
     super.ngOnInit();
-    this.reloadIframe()
+    this._iframeUrl = this.getValidUrl()
   }
 
   override ngAfterViewInit() {
@@ -33,7 +33,7 @@ export class BaseEmbedBlockComponent<Model extends NativeBlockModel & {
   }
 
   reloadIframe() {
-    this._iframeUrl = this.getValidUrl()
+    this.hostElement.querySelector('iframe')!.src = this._iframeUrl
   }
 
 }

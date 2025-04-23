@@ -9,6 +9,7 @@ import {
   QueryList
 } from '@angular/core';
 import {BcFloatToolbarItemComponent} from "./float-toolbar-item";
+import {debounceTime, fromEvent, throttleTime} from "rxjs";
 
 @Component({
   selector: 'bc-float-toolbar',
@@ -91,10 +92,16 @@ export class BcFloatToolbarComponent {
   ngAfterViewInit() {
   }
 
+  timestamp: number = 0
+
   @HostListener('mousedown', ['$event'])
   onMouseDown(event: MouseEvent) {
     event.stopPropagation()
     event.preventDefault()
+
+    if(event.timeStamp - this.timestamp < 500) return;
+    this.timestamp = event.timeStamp
+
     const target = event.target as Node | null
     if (!target) return
     const targetEle = target instanceof HTMLElement ? target : target.parentElement!

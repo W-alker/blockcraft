@@ -40,6 +40,7 @@ export class IframeCardComponent implements AfterViewInit {
   private _url = ''
   @Input()
   set url(value: string) {
+    console.log('------reload src', value)
     this._url = value
     if (!value || !this.isViewInit) return
     this.iframe.nativeElement.src = value

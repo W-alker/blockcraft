@@ -40,14 +40,17 @@ import {MyBlockCreatorService} from "./block-creator.service";
 import {EmbedFrameExtensionPlugin} from "../plugins/embed-frame-extension";
 import {BookmarkBlockExtensionPlugin} from "../plugins/bookmark-frame-extension";
 import {InlineLinkExtension} from "../plugins/inline-link-extension";
+// import {Code2BlockSchema, CodeLineBlockSchema} from "../blocks/code2-block";
 
 const schemas = new SchemaManager([
-  RootBlockSchema, ParagraphBlockSchema, DividerBlockSchema, CalloutBlockSchema, BulletBlockSchema,
-  OrderedBlockSchema, ImageBlockSchema, CaptionBlockSchema,
+  ParagraphBlockSchema,
   HeadingOneBlockSchema, HeadingTwoBlockSchema, HeadingThreeBlockSchema, HeadingFourBlockSchema,
-  TodoBlockSchema,
-  CodeBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, AttachmentBlockSchema,
-  FigmaEmbedBlockSchema, BookmarkBlockSchema, JuejinEmbedBlockSchema
+  OrderedBlockSchema, BulletBlockSchema, TodoBlockSchema, CalloutBlockSchema, CodeBlockSchema,
+  CalloutBlockSchema,
+  DividerBlockSchema, ImageBlockSchema,
+  TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, AttachmentBlockSchema, BookmarkBlockSchema,
+  FigmaEmbedBlockSchema, JuejinEmbedBlockSchema,
+  CaptionBlockSchema, RootBlockSchema,
 ])
 
 @Component({

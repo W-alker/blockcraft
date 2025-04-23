@@ -10,7 +10,7 @@ import {Overlay} from "@angular/cdk/overlay";
 import {LangListComponent} from "./lang-list.component";
 import {PRISM_LANGUAGE_MAP} from "./const";
 import {performanceTest} from "../../global";
-import {DeltaInsertText} from "../../framework/types";
+import {DeltaInsertText, DeltaOperation} from "../../framework/types";
 import * as Y from 'yjs'
 import {Token} from "prismjs";
 import {nextTick} from "../../global";

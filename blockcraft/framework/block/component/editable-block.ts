@@ -106,7 +106,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     }, ORIGIN_SKIP_SYNC)
   }
 
-  private _applyDeltaToView(deltas: DeltaOperation[]) {
+  protected _applyDeltaToView(deltas: DeltaOperation[]) {
     try {
       this.doc.inlineManager.applyDeltaToView(deltas, this.containerElement)
     } catch (e) {
