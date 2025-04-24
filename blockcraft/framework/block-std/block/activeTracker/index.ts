@@ -1,4 +1,4 @@
-import {performanceTest} from "../../../global";
+import {performanceTest} from "../../../../global";
 import {fromEvent} from "rxjs";
 
 export class BlockActiveTracker {

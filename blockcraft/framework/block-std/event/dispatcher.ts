@@ -1,10 +1,9 @@
 import {UIEventState, UIEventStateContext} from "./base";
 import {EventScopeSourceType, EventSourceState} from "./state";
-import {BlockCraftError, ErrorCode} from "../../global";
+import {BlockCraftError, ErrorCode, performanceTest} from "../../../global";
 import {KeyboardControl, CompositionControl, ClipboardControl, DndControl, MouseControl} from "./control";
 import {fromEvent, takeUntil} from "rxjs";
-import {performanceTest} from "../../global/decorators";
-import {closetBlockId} from "../utils";
+import {closetBlockId} from "../../utils";
 
 const bypassEventNames = ['beforeInput', 'focusOut', 'focusIn', 'contextMenu', 'wheel'] as Array<EventNames>
 
@@ -52,11 +51,6 @@ export enum EventNames {
   'cut' = 'cut',
   'copy' = 'copy',
   'paste' = 'paste',
-
-  'nativeDragStart' = 'nativeDragStart',
-  'nativeDragMove' = 'nativeDragMove',
-  'nativeDragEnd' = 'nativeDragEnd',
-  'nativeDrop' = 'nativeDrop',
 }
 
 export type EventOptions = {
@@ -90,9 +84,6 @@ export class UIEventDispatcher {
 
   bindHotkey = (...args: Parameters<KeyboardControl['bindHotKey']>) =>
     this.keyboardControl.bindHotKey(...args);
-
-  createDndChains = (...args: Parameters<DndControl['createChains']>) =>
-    this.dndControl.createChains(...args);
 
   /**
    * add event handler

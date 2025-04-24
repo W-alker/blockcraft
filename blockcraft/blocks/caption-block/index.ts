@@ -1,5 +1,5 @@
-import {editableBlockCreateSnapShotFn, IBlockSchemaOptions} from "../../framework/schema/block-schema";
-import {BlockNodeType, DeltaInsert} from "../../framework/types";
+import {editableBlockCreateSnapShotFn, IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
+import {BlockNodeType, DeltaInsert} from "../../framework/block-std/types";
 import {EditableBlockNative} from "../../framework";
 import {CaptionBlockComponent} from "./caption.block";
 

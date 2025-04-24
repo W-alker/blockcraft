@@ -1,7 +1,7 @@
-import {IBlockSchemaOptions} from "../../framework/schema/block-schema";
+import {IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
 import {RootBlockComponent} from "./root.block";
 import {NoEditableBlockNative} from "../../framework";
-import {BlockNodeType, IBlockSnapshot} from "../../framework/types";
+import {BlockNodeType, IBlockSnapshot} from "../../framework/block-std/types";
 
 export interface RootBlockModel extends NoEditableBlockNative {
   flavour: "root",

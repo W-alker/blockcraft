@@ -1,8 +1,8 @@
 import {Type} from "@angular/core";
 import {BlockNodeType, IBlockProps, IBlockSnapshot, IEditableBlockProps, InlineModel} from "../types";
-import {NativeBlockModel} from "../reactive";
-import {BlockCraftError, ErrorCode} from "../../global";
-import {generateId} from "../utils";
+import {NativeBlockModel} from "../index";
+import {BlockCraftError, ErrorCode} from "../../../global";
+import {generateId} from "../../utils";
 
 export type EditableBlockCreateSnapshotParams = [(InlineModel | string)?, IBlockProps?];
 

@@ -3,7 +3,7 @@ import {BaseBlockComponent} from "./base-block";
 import {EditableBlockNative} from "../../reactive";
 import * as Y from 'yjs'
 import {DeltaInsert, DeltaInsertEmbed, DeltaOperation} from "../../types";
-import {ORIGIN_SKIP_SYNC} from "../../doc";
+import {ORIGIN_SKIP_SYNC} from "../../../doc";
 import {INLINE_CONTAINER_CLASS} from "../../inline";
 
 @Component({

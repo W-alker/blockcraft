@@ -17,7 +17,7 @@ import {
 import {SimpleValue} from "../../global";
 import {NgForOf, NgIf} from "@angular/common";
 import {ORIGIN_SKIP_SYNC} from "../../framework";
-import {IInlineNodeAttrs} from "../../framework/types";
+import {IInlineNodeAttrs} from "../../framework/block-std/types";
 import {Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {merge} from "rxjs";

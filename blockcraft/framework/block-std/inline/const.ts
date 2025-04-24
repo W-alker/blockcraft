@@ -1,4 +1,4 @@
-import {IS_SAFARI} from "../../global";
+import {IS_SAFARI} from "../../../global";
 
 export const INLINE_CONTAINER_CLASS = 'edit-container'
 export const INLINE_ELEMENT_TAG = 'c-element'

@@ -1,4 +1,4 @@
-import {DeltaInsertText} from "../../framework/types";
+import {DeltaInsertText} from "../../framework/block-std/types";
 import {INLINE_ELEMENT_TAG, InlineManager} from "../../framework";
 
 export function updateHighlightedTokens(container: HTMLElement, newTokens: DeltaInsertText[]) {

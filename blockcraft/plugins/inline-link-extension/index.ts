@@ -8,10 +8,9 @@ import {
 import {merge, Subject, takeUntil} from "rxjs";
 import {InlineLinkToolbar} from "./widgets/inline-link-toolbar";
 import {getFirstSameAttrsTextRange, nextTick, sliceDelta} from "../../global";
-import {UIEventStateContext} from "../../framework/event/base";
+import {UIEventStateContext, IBlockSnapshot} from "../../framework";
 import {ComponentRef} from "@angular/core";
 import {LinkEditFloatDialog} from "./widgets/link-edit-dialog";
-import {IBlockSnapshot} from "../../framework/types";
 
 export class InlineLinkExtension extends DocPlugin {
   override name = 'inline-link-extension'

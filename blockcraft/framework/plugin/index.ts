@@ -1,4 +1,4 @@
-import {registerClassEvents} from "../event";
+import {registerClassEvents} from "../block-std";
 
 export abstract class DocPlugin {
   name = 'custom'

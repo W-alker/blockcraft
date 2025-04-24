@@ -1,14 +1,14 @@
-import {fromEvent, Subscription, throttleTime} from "rxjs";
-import {UIEventStateContext} from "../event/base";
+import {filter, fromEvent, Subject, Subscription, takeUntil} from "rxjs";
+import {UIEventStateContext} from "../block-std";
 import {closetBlockId} from "../utils";
-import {BlockNodeType, IBlockSnapshot} from "../types";
-import {DocEventRegister, EventListen, EventNames} from "../event";
+import {BlockNodeType, IBlockSnapshot} from "../block-std";
+import {DocEventRegister, EventListen, EventNames} from "../block-std";
 import {BLOCK_POSITION} from "../doc";
 import {DOC_FILE_SERVICE_TOKEN} from "./file.service";
 import {ClipboardDataType} from "../modules";
 import {BLOCK_CREATOR_SERVICE_TOKEN} from "./block-creator.service";
 
-enum DocDndDataTypes {
+export enum DocDndDataTypes {
   // 已有的block
   originBlock = 'origin-block',
   // 新的block
@@ -18,6 +18,12 @@ enum DocDndDataTypes {
 }
 
 export type DocDndDataType = `${DocDndDataTypes}`
+
+export enum DocDndStatus {
+  start = 'start',
+  moving = 'moving',
+  end = 'end',
+}
 
 const calcPosition = (e: DragEvent, blockWrap: HTMLElement) => {
   const rect = blockWrap.getBoundingClientRect()
@@ -30,11 +36,13 @@ export class DocDndService {
   constructor(
     private readonly doc: BlockCraft.Doc
   ) {
+    this.dragStatus$.pipe(filter(v => v === DocDndStatus.end), takeUntil(doc.onDestroy$)).subscribe(this.onDragEnd)
   }
 
   private dragLine?: HTMLElement
 
   private createDragLine = () => {
+    if(this.dragLine) return
     const dragLine = document.createElement('div')
     dragLine.style.cssText = `
       position: absolute;
@@ -80,6 +88,8 @@ export class DocDndService {
 
   private dragMoveListener: (() => void) | null = null
 
+  private dragStatus$ = new Subject<DocDndStatus>()
+
   // 外部文件 拖拽响应
   @EventListen(EventNames.dragEnter, {flavour: 'root'})
   onRootDragEnter(ctx: UIEventStateContext) {
@@ -88,6 +98,12 @@ export class DocDndService {
     if (!evt.dataTransfer?.types.includes(ClipboardDataType.FILES)) return false
     evt.preventDefault()
     this.onDragStart(evt)
+
+    fromEvent(document, 'drop').pipe(takeUntil(this.dragStatus$.pipe(filter(v => v === DocDndStatus.end))))
+      .subscribe(evt => {
+        evt.preventDefault()
+        this.dragStatus$.next(DocDndStatus.end)
+      })
     return true
   }
 
@@ -112,6 +128,7 @@ export class DocDndService {
       })
 
     this.dragMoveListener = this.doc.event.add(EventNames.dragMove, this.onDragMove)
+    this.dragStatus$.next(DocDndStatus.start)
   }
 
   private onDragMove = (ctx: UIEventStateContext) => {
@@ -120,11 +137,11 @@ export class DocDndService {
     ctx.stopPropagation()
 
     const evtTarget = evt.target as Node
-    if(evtTarget === this._prevTargetElement) return true
+    if (evtTarget === this._prevTargetElement) return true
 
     const blockId = closetBlockId(evt.target as Node)
     if (!blockId) return
-    if(this.prevBlock?.id !== blockId) {
+    if (this.prevBlock?.id !== blockId) {
       const block = this.doc.getBlockById(blockId)
       if (block.nodeType === BlockNodeType.root) return
       const schema = this.doc.schemas.get(block.flavour)
@@ -236,9 +253,9 @@ export class DocDndService {
     }
 
     const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
-    if(!this.doc.schemas.has(flavour)) return
+    if (!this.doc.schemas.has(flavour)) return
     blockCreator.getParamsByScheme(this.doc.schemas.get(flavour)).then(params => {
-      if(!params) return
+      if (!params) return
       const snapshot = this.doc.schemas.createSnapshot(flavour, <any>params)
       this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), [snapshot]).then(() => {
         this.doc.selection.setBlockPosition(snapshot.id, true)
@@ -246,33 +263,28 @@ export class DocDndService {
     })
   }
 
+  // TODO drop不在root内触发时会导致dragLine不消失
   @EventListen(EventNames.drop, {flavour: 'root'})
   onDrop(ctx: UIEventStateContext) {
     ctx.preventDefault()
-    if(!this.prevBlock || !this.prevDragPosition) return
+    if (!this.prevBlock || !this.prevDragPosition) return
 
     const evt: DragEvent = ctx.getDefaultEvent()
-    if(!evt.dataTransfer) return
-    console.log('----------drop', evt.dataTransfer.types)
+    if (!evt.dataTransfer) return
 
     // 从原始块拖拽的
-    if(evt.dataTransfer.types.includes(DocDndDataTypes.originBlock)) {
+    if (evt.dataTransfer.types.includes(DocDndDataTypes.originBlock)) {
       const bid = evt.dataTransfer.getData(DocDndDataTypes.originBlock)
-      console.log('----------case1', bid)
-      if(!bid) return
+      if (!bid) return
       this.onSortBlock(this.doc.getBlockById(bid), this.prevBlock, this.prevDragPosition)
-    }
-
-    else if(evt.dataTransfer.types.includes(DocDndDataTypes.newBlock)) {
+    } else if (evt.dataTransfer.types.includes(DocDndDataTypes.newBlock)) {
       const flavour = evt.dataTransfer.getData(DocDndDataTypes.newBlock)
       this.onInsertNewBlock(<any>flavour, this.prevBlock, this.prevDragPosition)
-    }
-
-    else if(evt.dataTransfer.files) {
+    } else if (evt.dataTransfer.files) {
       this.onInsertFiles(evt.dataTransfer.files!, this.prevBlock!, this.prevDragPosition)
     }
 
-    this.onDragEnd()
+    this.dragStatus$.next(DocDndStatus.end)
     return true
   }
 }

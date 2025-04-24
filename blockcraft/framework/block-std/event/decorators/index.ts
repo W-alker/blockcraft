@@ -1,6 +1,7 @@
 import {EventNames, EventOptions} from "../dispatcher";
 import {HotKeyTrigger} from "../control";
 import "reflect-metadata"
+import {BlockCraftError, ErrorCode} from "../../../../global";
 
 type IDocModuleConstructor<T = {}> = new (...args: any[]) => T;
 
@@ -46,7 +47,7 @@ export function DocEventRegister<T extends IDocModuleConstructor>(ctor: T) {
 
       const doc = args[0];
       if (!doc || typeof doc !== 'object' || !doc.event) {
-        throw new Error('Invalid doc parameter.');
+        throw new BlockCraftError(ErrorCode.EventDispatcherError, 'Error threw when register doc events: Invalid doc parameter.');
       }
 
       registerClassEvents.call(this, doc)

@@ -6,18 +6,19 @@ import {
   EventNames,
   getPositionWithOffset
 } from "../../framework";
-import {UIEventStateContext} from "../../framework/event/base";
+import {UIEventStateContext} from "../../framework/block-std/event/base";
 import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
 import {ImageToolbar} from "./widgets/image.toolbar";
 import {nextTick} from "../../global";
 import {ComponentRef} from "@angular/core";
+import {OverlayRef} from "@angular/cdk/overlay";
 
 export class ImgToolbarPlugin extends DocPlugin {
   override name = 'img-toolbar';
 
   private _sub?: Subscription
   private _timer: number | null = null
-  private _toolbarRef?: ComponentRef<ImageToolbar>
+  private _toolbarRef?: OverlayRef
 
   private _closeToolbar$ = new Subject<void>()
 
@@ -37,6 +38,8 @@ export class ImgToolbarPlugin extends DocPlugin {
     if (!target || !(target instanceof HTMLImageElement)) return
     const blockId = closetBlockId(target)
     if (!blockId) return
+
+    evt.dataTransfer?.setDragImage(target, 0, 0)
 
     this.doc.dndService.startDrag(evt, 'origin-block', blockId)
   }
@@ -58,7 +61,10 @@ export class ImgToolbarPlugin extends DocPlugin {
 
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
-      if (!selection || selection.to || selection.firstBlock.flavour !== 'image' || this._toolbarRef) return
+      if (!selection || selection.to || selection.firstBlock.flavour !== 'image') {
+        this._toolbarRef && this.closeToolbar()
+        return
+      }
 
       this.clearTimer()
       setTimeout(() => {
@@ -69,26 +75,26 @@ export class ImgToolbarPlugin extends DocPlugin {
           target: imgEle,
           positions: [
             getPositionWithOffset("top-center", 0, 8),
-            getPositionWithOffset("bottom-center", 0, -8),
+            getPositionWithOffset("bottom-center", 0, 8),
           ],
           component: ImageToolbar
         }, this._closeToolbar$, this.closeToolbar)
 
-        this._toolbarRef = componentRef
-        this._toolbarRef.setInput('imgBlock', selection.firstBlock)
+        this._toolbarRef = overlayRef
+        componentRef.setInput('imgBlock', selection.firstBlock)
 
         fromEvent<MouseEvent>(imgEle, 'mousedown').pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
           this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg(imgEle)
         })
 
         selection.firstBlock.onPropsChange.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
-          this._toolbarRef?.instance.cdr.markForCheck()
+          componentRef?.instance.cdr.markForCheck()
           nextTick().then(() => {
             overlayRef?.updatePosition()
           })
         })
 
-        this._toolbarRef.instance.onItemClicked.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
+        componentRef.instance.onItemClicked.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
           switch (v.name) {
             case 'align':
               selection.firstBlock.updateProps({
@@ -142,7 +148,7 @@ export class ImgToolbarPlugin extends DocPlugin {
   closeToolbar = () => {
     this._closeToolbar$.next()
     this.clearTimer()
-    this._toolbarRef?.destroy()
+    this._toolbarRef?.dispose()
     this._toolbarRef = undefined
   }
 

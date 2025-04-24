@@ -1,6 +1,6 @@
 import {generateId, NoEditableBlockNative} from "../../../framework";
-import {BlockNodeType} from "../../../framework/types";
-import {IBlockSchemaOptions} from "../../../framework/schema/block-schema";
+import {BlockNodeType} from "../../../framework/block-std/types";
+import {IBlockSchemaOptions} from "../../../framework/block-std/schema/block-schema";
 import {JuejinEmbedBlockComponent} from "./juejin-embed.block";
 
 export interface JuejinEmbedBlockModel extends NoEditableBlockNative {

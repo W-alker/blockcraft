@@ -1,4 +1,4 @@
-import {STR_ZERO_WIDTH_SPACE} from "../inline";
+import {STR_ZERO_WIDTH_SPACE} from "../block-std/inline";
 
 export function createZeroSpace() {
   const emptyNode = document.createElement('span')

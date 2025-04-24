@@ -1,10 +1,10 @@
 import {EditableBlockNative, generateId, NoEditableBlockNative} from "../../framework";
 import {CodeBlockComponent} from "./code.block";
-import {BlockNodeType, IBlockProps, IEditableBlockProps} from "../../framework/types";
+import {BlockNodeType, IBlockProps, IEditableBlockProps} from "../../framework/block-std/types";
 import {
   IBlockSchemaOptions,
   EditableBlockCreateSnapshotParams, editableBlockCreateSnapShotFn
-} from "../../framework/schema/block-schema";
+} from "../../framework/block-std/schema/block-schema";
 import {CodeLineBlockComponent} from "./code-line.block";
 
 export interface CodeBlockModel extends NoEditableBlockNative {

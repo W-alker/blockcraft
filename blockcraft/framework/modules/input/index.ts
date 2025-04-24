@@ -4,14 +4,14 @@ import {
   INLINE_END_BREAK_CLASS,
   INLINE_TEXT_NODE_TAG,
   STR_LINE_BREAK,
-  STR_ZERO_WIDTH_SPACE
-} from "../../inline";
+  STR_ZERO_WIDTH_SPACE,
+  BlockNodeType, DeltaOperation,
+  BindHotKey, DocEventRegister, EventListen, EventNames,
+  UIEventStateContext
+} from "../../block-std";
 import {IBlockRange, INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
-import {BlockNodeType, DeltaOperation} from "../../types";
 import {sliceDelta} from "../../../global";
-import {BindHotKey, DocEventRegister, EventListen, EventNames} from "../../event";
-import {UIEventStateContext} from "../../event/base";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
@@ -368,17 +368,13 @@ export class InputTransformer {
       // if (nextBlock) {
       //   this.doc.isEditable(nextBlock) ? nextBlock.setInlineRange(0) : this.doc.selection.selectBlock(nextBlock)
       // } else {
+      context.preventDefault()
+
       const p = this.doc.schemas.createSnapshot('paragraph', [])
       this.doc.crud.insertBlocksAfter(endBlock, [p]).then(() => {
-        this.doc.selection.setSelection({
-          type: 'text',
-          index: 0,
-          length: 0,
-          blockId: p.id
-        })
+        this.doc.selection.setBlockPosition(p.id, true)
       })
       // }
-      context.preventDefault()
       return true
     }
 
@@ -413,12 +409,7 @@ export class InputTransformer {
     this.doc.crud.transact(() => {
       from.block.deleteText(from.index)
       this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {
-        this.doc.selection.setSelection({
-          length: 0,
-          index: 0,
-          blockId: p.id,
-          type: 'text'
-        })
+        this.doc.selection.setBlockPosition(p.id, true)
       })
     }, ORIGIN_SKIP_SYNC)
     return true

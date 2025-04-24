@@ -1,5 +1,5 @@
 import {IBlockSchemaOptions} from "./block-schema";
-import {BlockCraftError, ErrorCode} from "../../global";
+import {BlockCraftError, ErrorCode} from "../../../global";
 import {BlockNodeType} from "../types";
 
 export class SchemaManager {

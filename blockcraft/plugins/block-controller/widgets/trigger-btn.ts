@@ -8,11 +8,11 @@ import {
   Input,
   Output,
 } from "@angular/core";
-import {NgComponentOutlet, NgForOf, NgIf, NgTemplateOutlet} from "@angular/common";
+import {NgForOf, NgIf, NgTemplateOutlet} from "@angular/common";
 import {Subscription, take} from "rxjs";
 import {BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective} from "../../../components";
-import {BlockNodeType} from "../../../framework/types";
-import {IBlockSchemaOptions} from "../../../framework/schema/block-schema";
+import {BlockNodeType} from "../../../framework";
+import {IBlockSchemaOptions} from "../../../framework/block-std/schema/block-schema";
 import {MatIcon} from "@angular/material/icon";
 import {nextTick, SimpleValue} from "../../../global";
 import {BLOCK_CREATOR_SERVICE_TOKEN} from "../../../framework";

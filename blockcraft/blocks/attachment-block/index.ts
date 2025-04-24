@@ -1,8 +1,8 @@
 import {DocAttachmentInfo, generateId, NoEditableBlockNative} from "../../framework";
-import {BlockNodeType} from "../../framework/types";
+import {BlockNodeType} from "../../framework/block-std/types";
 import {AttachmentBlockComponent} from "./attachment.block";
 import {FileExtensionType} from "../../global";
-import {IBlockSchemaOptions} from "../../framework/schema/block-schema";
+import {IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
 import {getAttachmentIcon} from "./icons";
 
 export interface AttachmentBlockModel extends NoEditableBlockNative {

@@ -1,8 +1,8 @@
 import {BindHotKey, DocPlugin, STR_LINE_BREAK, STR_TAB} from "../framework";
 import {CodeBlockComponent} from "../blocks/code-block/code.block";
 import {BlockCraftError, ErrorCode} from "../global";
-import {DeltaOperation} from "../framework/types";
-import {UIEventStateContext} from "../framework/event/base";
+import {DeltaOperation} from "../framework/block-std/types";
+import {UIEventStateContext} from "../framework/block-std/event/base";
 // import {format} from "prettier";
 // import * as prettierPluginBabel from 'prettier/plugins/babel'
 // import * as prettierPluginEstree from "prettier/plugins/estree";

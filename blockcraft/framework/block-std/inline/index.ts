@@ -11,10 +11,10 @@ import {
   INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS,
   INLINE_TEXT_NODE_TAG
 } from "./const";
-import {BlockCraftError, ErrorCode} from "../../global";
+import {BlockCraftError, ErrorCode} from "../../../global";
 import setAttributes from "./setAttributes";
 import {compareAttributesWithEle} from "./compareAttributes";
-import {createZeroSpace} from "../utils";
+import {createZeroSpace} from "../../utils";
 
 export type EmbedConverter = {
   toDelta: EmbedViewToDelta
@@ -48,15 +48,15 @@ export class InlineManager {
     return node
   }
 
-  static createAnchorElement(delta: DeltaInsertText): HTMLElement {
-    const node = document.createElement(INLINE_ELEMENT_TAG)
-    const anchor = document.createElement('a')
-    anchor.textContent = delta.insert
-    anchor.href = delta.attributes?.['a:link'] || ''
-    node.appendChild(anchor)
-    delta.attributes && setAttributes(node, delta.attributes)
-    return node
-  }
+  // static createAnchorElement(delta: DeltaInsertText): HTMLElement {
+  //   const node = document.createElement(INLINE_ELEMENT_TAG)
+  //   const anchor = document.createElement('a')
+  //   anchor.textContent = delta.insert
+  //   anchor.href = delta.attributes?.['a:link'] || ''
+  //   node.appendChild(anchor)
+  //   delta.attributes && setAttributes(node, delta.attributes)
+  //   return node
+  // }
 
   createInlineNode(delta: DeltaInsert): HTMLElement {
     if (typeof delta.insert === 'string') {

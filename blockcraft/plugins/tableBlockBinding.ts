@@ -1,5 +1,5 @@
 import {BindHotKey, DocPlugin, ORIGIN_SKIP_SYNC} from "../framework";
-import {UIEventStateContext} from "../framework/event/base";
+import {UIEventStateContext} from "../framework";
 import {TableBlockComponent} from "../blocks/table-block/table.block";
 import {BlockCraftError, ErrorCode} from "../global";
 

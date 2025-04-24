@@ -5,8 +5,8 @@ import {FloatTextToolbarComponent} from "./toolbar.component";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
-import {UIEventStateContext} from "../../framework/event/base";
-import {BlockNodeType} from "../../framework/types";
+import {UIEventStateContext} from "../../framework/block-std/event/base";
+import {BlockNodeType} from "../../framework/block-std/types";
 
 export class FloatTextToolbarPlugin extends DocPlugin {
   override name = "float-text-toolbar";
@@ -42,7 +42,8 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this._sub = this.doc.selection.selectionChange$.pipe(debounceTime(500)).subscribe(sel => {
       if (this.toolbarOvr) this.closeToolbar()
       if (!sel || sel.collapsed || sel.isAllSelected) return
-      if (sel.firstBlock.flavour === 'code' && sel.lastBlock.flavour === 'code') return;
+      // @ts-expect-error
+      if (sel.firstBlock['plainTextOnly'] && sel.lastBlock['plainTextOnly']) return;
       this.openToolbar()
     })
   }

@@ -1,4 +1,4 @@
-import {DeltaInsert, IInlineNodeAttrs} from "../../framework/types";
+import {DeltaInsert, IInlineNodeAttrs} from "../../framework/block-std/types";
 
 export const characterAtDelta = (deltas: DeltaInsert[], position: number): string | object | null => {
   let currentPosition = 1;

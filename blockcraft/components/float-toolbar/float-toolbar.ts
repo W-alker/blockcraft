@@ -9,7 +9,6 @@ import {
   QueryList
 } from '@angular/core';
 import {BcFloatToolbarItemComponent} from "./float-toolbar-item";
-import {debounceTime, fromEvent, throttleTime} from "rxjs";
 
 @Component({
   selector: 'bc-float-toolbar',
@@ -99,7 +98,7 @@ export class BcFloatToolbarComponent {
     event.stopPropagation()
     event.preventDefault()
 
-    if(event.timeStamp - this.timestamp < 500) return;
+    if(event.timeStamp - this.timestamp < 100) return;
     this.timestamp = event.timeStamp
 
     const target = event.target as Node | null

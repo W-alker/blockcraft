@@ -1,5 +1,5 @@
 import {InjectionToken} from "@angular/core";
-import {IBlockSchemaOptions} from "../schema/block-schema";
+import {IBlockSchemaOptions} from "../block-std/schema/block-schema";
 
 /**
  * {@link DocFileService}

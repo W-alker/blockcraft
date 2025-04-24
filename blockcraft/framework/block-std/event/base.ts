@@ -1,4 +1,4 @@
-import {BlockCraftError, ErrorCode} from "../../global";
+import {BlockCraftError, ErrorCode} from "../../../global";
 
 type MatchEvent<T extends string> = T extends BlockCraftUIEventStateType
   ? BlockCraftUIEventState[T]

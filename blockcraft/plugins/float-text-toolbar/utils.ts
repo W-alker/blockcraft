@@ -1,4 +1,4 @@
-import {DeltaInsert, IInlineNodeAttrs} from "../../framework/types";
+import {DeltaInsert, IInlineNodeAttrs} from "../../framework/block-std/types";
 import {ORIGIN_SKIP_SYNC} from "../../framework";
 import {getCommonAttributesFromDeltas, sliceDelta} from "../../global";
 

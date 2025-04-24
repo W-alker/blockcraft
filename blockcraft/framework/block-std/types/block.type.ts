@@ -1,4 +1,4 @@
-import {SimpleBasicType, SimpleRecord, SimpleValue, UnknownRecord} from "../../global";
+import {SimpleBasicType, SimpleRecord, SimpleValue, UnknownRecord} from "../../../global";
 import {InlineModel} from "./inline.type";
 
 /**

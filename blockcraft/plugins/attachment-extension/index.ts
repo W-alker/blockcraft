@@ -6,9 +6,8 @@ import {
   EventListen,
   EventNames, getPositionWithOffset
 } from "../../framework";
-import {UIEventStateContext} from "../../framework/event/base";
+import {UIEventStateContext, IBlockSnapshot} from "../../framework";
 import {BlockCraftError, ErrorCode, nextTick} from "../../global";
-import {IBlockSnapshot} from "../../framework/types";
 import {merge, Subject, Subscription, takeUntil} from "rxjs";
 import {OverlayRef} from "@angular/cdk/overlay";
 import {AttachmentBlockToolbar} from "./widgets/attachment-toolbar";
@@ -49,7 +48,6 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         if (this._toolbarRef && this._activeBlock === attachmentBlock) return;
 
         this._activeBlock = attachmentBlock as any
-
 
         const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<AttachmentBlockToolbar>({
           target: attachmentBlock.hostElement,

@@ -1,8 +1,8 @@
 import {filter, fromEvent, merge, skip, Subject, Subscription, take, takeUntil} from "rxjs";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {DocPlugin, EditableBlockComponent, EventListen, EventNames, HotKeyTrigger} from "../../framework";
-import {IBlockSnapshot} from "../../framework/types";
-import {UIEventStateContext} from "../../framework/event/base";
+import {IBlockSnapshot} from "../../framework/block-std/types";
+import {UIEventStateContext} from "../../framework/block-std/event/base";
 import {nextTick, sliceDelta} from "../../global";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {BlockTransformContextMenu} from "./widget/contextmenu";

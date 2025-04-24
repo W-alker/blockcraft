@@ -1,24 +1,41 @@
-# Blockcraft
+# BlockCraft
 
-This library was generated with [Angular CLI](https://github.com/angular/angular-cli) version 17.3.0.
+- [ ] doc 的生命周期
+---
 
-## Code scaffolding
+- [ ] `剪切版数据适配`
+  - [ ] delta to html
+  - [ ] html to delta
+  - [ ] html to block snapshot 
+  - [ ] block snapshot to html
+  - [ ] markdown to snapshot
+> 使用 blocksuite 的adapter机制，ASTWalker等。
 
-Run `ng generate component component-name --project blockcraft` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module --project blockcraft`.
-> Note: Don't forget to add `--project blockcraft` or else it will be added to the default project in your `angular.json` file. 
+---
 
-## Build
+- [ ] code block 优化
+  - [ ] 优化代码高亮性能
+  - [ ] 使用shiki及懒请求
+  - [ ] 优化代码块编辑体验
 
-Run `ng build blockcraft` to build the project. The build artifacts will be stored in the `dist/` directory.
+- [ ] mermaid block 迁移及优化
 
-## Publishing
+--- 
 
-After building your library with `ng build blockcraft`, go to the dist folder `cd dist/blockcraft` and run `npm publish`.
+- [ ] 导出
+  - [ ] to PDF
+  - [ ] to html
+  - [ ] to markdown
+  - [ ] to png
+> 参考 blocksuite 的导出
 
-## Running unit tests
+- [ ] 多人协同
+  - [ ] 自由灵活的数据协同和合并机制
+  - [ ] FakeRange渲染优化
+  - [ ] 基于数据驱动的实时多端选择渲染同步
 
-Run `ng test blockcraft` to execute the unit tests via [Karma](https://karma-runner.github.io).
+--- 
+- [ ] 剪切板
+- [ ] 右键菜单
 
-## Further help
-
-To get more help on the Angular CLI use `ng help` or go check out the [Angular CLI Overview and Command Reference](https://angular.io/cli) page.
+  

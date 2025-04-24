@@ -1,7 +1,7 @@
 import * as Y from 'yjs'
 import {BaseBlockDesc, BlockNodeType, IBlockProps, IEditableBlockProps, InlineModel} from "../types";
-import {BlockCraftError, ErrorCode, UnknownRecord} from "../../global";
-import {ORIGIN_SKIP_SYNC} from "../doc";
+import {BlockCraftError, ErrorCode, UnknownRecord} from "../../../global";
+import {ORIGIN_SKIP_SYNC} from "../../doc";
 
 const native2Y = function (native: Object): Y.Map<any> | Y.Array<any> {
   if (typeof native !== 'object')

@@ -1,8 +1,13 @@
 @mixin table-block {
 
+  @keyframes bc_ani_table_selected {
+    to {
+      background-color: var(--bc-select-background-color);
+    }
+  }
+
   .table-block {
     $ctrlBarSize: 8px;
-    $selectedBgColor: rgba(95, 111, 255, 0.08);
     //margin-left: $ctrlBarSize * -1;
     padding-left: $ctrlBarSize;
 
@@ -43,8 +48,9 @@
           left: 0;
           width: 100%;
           height: 100%;
-          background: $selectedBgColor;
           z-index: 3;
+
+          animation: bc_ani_table_selected 0.15s ease forwards;
         }
 
       }
@@ -235,13 +241,7 @@
             right: 0;
             bottom: 0;
 
-            @keyframes bc_ani_table_cell_selected {
-              to {
-                background-color: var(--bc-select-background-color);
-              }
-            }
-
-            animation: bc_ani_table_cell_selected .15s ease forwards;
+            animation: bc_ani_table_selected 0.15s ease forwards;
           }
         }
       }

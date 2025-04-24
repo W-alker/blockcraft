@@ -1,4 +1,4 @@
-import {SimpleBasicType} from "../../global";
+import {SimpleBasicType} from "../../../global";
 import {IInlineNodeAttrs} from "./inline.type";
 
 export type DeltaInsert = {

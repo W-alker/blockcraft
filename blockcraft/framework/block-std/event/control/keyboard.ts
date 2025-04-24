@@ -1,5 +1,5 @@
 import {fromEvent, takeUntil} from "rxjs";
-import {IS_MAC, IS_SAFARI} from "../../../global";
+import {IS_MAC, IS_SAFARI} from "../../../../global";
 import {EventScopeSourceType, EventSourceState, KeyboardEventState} from "../state";
 import {UIEventState, UIEventStateContext} from "../base";
 import {EventNames, EventOptions} from "../dispatcher";

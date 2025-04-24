@@ -1,11 +1,11 @@
-import {BaseBlockComponent, EditableBlockComponent} from "../../block";
-import {INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS} from "../../inline";
+import {BaseBlockComponent, EditableBlockComponent} from "../../block-std/block";
+import {INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS} from "../../block-std/inline";
 import {BlockCraftError, ErrorCode, nextTick} from "../../../global";
 import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
-import {BlockNodeType} from "../../types";
+import {BlockNodeType} from "../../block-std/types";
 import {closetBlockId, isZeroSpace} from "../../utils";
-import {BindHotKey, DocEventRegister, EventListen, EventNames} from "../../event";
-import {UIEventStateContext} from "../../event/base";
+import {BindHotKey, DocEventRegister, EventListen, EventNames} from "../../block-std/event";
+import {UIEventStateContext} from "../../block-std/event/base";
 
 export interface IInlineRange {
   index: number
@@ -685,6 +685,8 @@ export class SelectionManager {
     }
 
     this.doc.isEditable(block) ? extendStartOrEnd(block) : this.selectBlock(block)
+
+    block.hostElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }
 
   selectAllChildren(block: string | BlockCraft.BlockComponent) {

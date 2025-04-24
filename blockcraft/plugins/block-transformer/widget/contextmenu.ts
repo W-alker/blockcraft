@@ -9,7 +9,7 @@ import {
 } from "@angular/core";
 import {NgForOf, NgTemplateOutlet} from "@angular/common";
 import {MatIcon} from "@angular/material/icon";
-import {IBlockSchemaOptions} from "../../../framework/schema/block-schema";
+import {IBlockSchemaOptions} from "../../../framework/block-std/schema/block-schema";
 
 @Component({
   selector: 'block-transformer-contextmenu',

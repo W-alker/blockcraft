@@ -1,7 +1,7 @@
 import {generateId, LinkPreviewData, NoEditableBlockNative} from "../../framework";
-import {BlockNodeType} from "../../framework/types";
+import {BlockNodeType} from "../../framework/block-std/types";
 import {BookMarkBlockComponent} from "./book-mark.block";
-import {IBlockSchemaOptions} from "../../framework/schema/block-schema";
+import {IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
 
 export interface BookmarkBlockModel extends NoEditableBlockNative {
   flavour: 'bookmark',

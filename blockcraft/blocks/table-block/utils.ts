@@ -24,15 +24,15 @@ export class RectangleSelection {
   ) {
   }
 
-  normalize(){
+  normalize() {
     let minRow = Math.min(this.startRow, this.endRow);
     let maxRow = Math.max(this.startRow, this.endRow);
     let minCol = Math.min(this.startCol, this.endCol);
     let maxCol = Math.max(this.startCol, this.endCol);
-    this.startRow =minRow
-    this.startCol =minCol
-    this.endRow =maxRow
-    this.endCol =maxCol
+    this.startRow = minRow
+    this.startCol = minCol
+    this.endRow = maxRow
+    this.endCol = maxCol
   }
 
   adjust(row: number, col: number) {
@@ -42,7 +42,7 @@ export class RectangleSelection {
     this.endCol = Math.max(this.endCol, col);
   }
 
-  containsMerge(cor: {min: number[], max: number[]}) {
+  containsMerge(cor: { min: number[], max: number[] }) {
     return this.startRow <= cor.min[0] &&
       this.startCol <= cor.min[1] &&
       this.endRow >= cor.max[0] &&
@@ -58,7 +58,7 @@ export function adjustSelection(selection: RectangleSelection, table: TableBlock
     changed = false
     selection.normalize()
 
-    for(let i = selection.startRow; i <= selection.endRow; i++) {
+    for (let i = selection.startRow; i <= selection.endRow; i++) {
       const row = table.getChildrenByIndex(i)
       for (let j = selection.startCol; j <= selection.endCol; j++) {
         const cell = row.getChildrenByIndex(j) as TableCellBlockComponent

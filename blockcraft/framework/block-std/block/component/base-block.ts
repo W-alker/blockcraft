@@ -11,11 +11,11 @@ import {
   ViewContainerRef
 } from "@angular/core";
 import {native2YBlock, NativeBlockModel, Obj2YMap, proxyMap, YBlock, yBlock2Native} from "../../reactive";
-import {BlockCraftError, ErrorCode} from "../../../global";
-import {ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC} from "../../doc";
+import {BlockCraftError, ErrorCode} from "../../../../global";
+import {ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC} from "../../../doc";
 import {BlockNodeType, IBlockSnapshot} from "../../types";
 import {Subject} from "rxjs";
-import {createBlockGapSpace} from "../../utils";
+import {createBlockGapSpace} from "../../../utils";
 import * as Y from 'yjs'
 import {STR_LINE_BREAK} from "../../inline";
 import {EventNames} from "../../event";

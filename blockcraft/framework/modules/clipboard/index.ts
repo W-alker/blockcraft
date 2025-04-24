@@ -1,8 +1,8 @@
-import {UIEventState, UIEventStateContext} from "../../event/base";
-import {DocEventRegister, EventListen, EventNames, EventScopeSourceType, EventSourceState} from "../../event";
+import {UIEventState, UIEventStateContext} from "../../block-std";
+import {DocEventRegister, EventListen, EventNames, EventScopeSourceType, EventSourceState} from "../../block-std";
 import {deltaToString, isUrl, sliceDelta} from "../../../global";
 import {ClipboardDataType} from "./types";
-import {BlockNodeType, DeltaOperation, IBlockSnapshot} from "../../types";
+import {BlockNodeType, DeltaOperation, IBlockSnapshot} from "../../block-std";
 import {generateId} from "../../utils";
 import {ORIGIN_SKIP_SYNC} from "../../doc";
 

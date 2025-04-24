@@ -22,7 +22,7 @@ import {
   HeadingThreeBlockSchema, AttachmentBlockSchema, CaptionBlockSchema,
   FigmaEmbedBlockSchema, BookmarkBlockSchema, JuejinEmbedBlockSchema
 } from "../blocks";
-import {ConsoleLogger} from "../global";
+import {ConsoleLogger, printToPdf} from "../global";
 import {DividerBlockSchema, CalloutBlockSchema, OrderedBlockSchema, ParagraphBlockSchema} from "../blocks";
 import {AutoUpdateOrderPlugin} from "../plugins/autoUpdateOrder";
 import {BulletBlockSchema} from "../blocks/bullet-block";
@@ -41,6 +41,7 @@ import {EmbedFrameExtensionPlugin} from "../plugins/embed-frame-extension";
 import {BookmarkBlockExtensionPlugin} from "../plugins/bookmark-frame-extension";
 import {InlineLinkExtension} from "../plugins/inline-link-extension";
 import {MatIcon} from "@angular/material/icon";
+import {DocDndDataTypes} from "../framework/services/dnd.service";
 // import {Code2BlockSchema, CodeLineBlockSchema} from "../blocks/code2-block";
 
 const schemas = new SchemaManager([
@@ -67,6 +68,8 @@ const schemas = new SchemaManager([
     <button (click)="undo()">undo</button>
     <button (click)="redo()">redo</button>
     <button (click)="addData()">增加数据</button>
+    <button (click)="printPdf()">打印PDF</button>
+    <button (click)="exportPdf()">导出PDF</button>
 
     <div class="block-area">
       <div draggable="true" (dragstart)="onDragStart($event, 'heading-one')">
@@ -114,7 +117,6 @@ const schemas = new SchemaManager([
       }
     }
   }
-
   `],
   imports: [
     MatIcon
@@ -185,7 +187,7 @@ export class EditorComponent {
       [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
     ])
     const callout = this.doc.schemas.createSnapshot('callout', [])
-    const img = this.doc.schemas.createSnapshot('image', ['https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg', 200, undefined, 'Image'])
+    const img = this.doc.schemas.createSnapshot('image', ['https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg', undefined, undefined, 'Image'])
     const todo = this.doc.schemas.createSnapshot('todo', ['this is a todo'])
     const code = this.doc.schemas.createSnapshot('code', ['const c = 1;\n\nfunction a()\n{ console.log(c) }'])
     const table = this.doc.schemas.createSnapshot('table', [6, 6])
@@ -248,6 +250,14 @@ export class EditorComponent {
   }
 
   onDragStart(evt: DragEvent, flavour: string) {
-    this.doc.dndService.startDrag(evt, 'new-block', flavour)
+    this.doc.dndService.startDrag(evt, DocDndDataTypes.newBlock, flavour)
+  }
+
+  printPdf() {
+    printToPdf(this.doc.root.hostElement)
+  }
+
+  exportPdf() {
+
   }
 }

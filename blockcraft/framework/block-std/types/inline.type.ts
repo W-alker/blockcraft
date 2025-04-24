@@ -1,4 +1,4 @@
-import {SimpleBasicType} from "../../global";
+import {SimpleBasicType} from "../../../global";
 import {DeltaInsert} from "./delta.type";
 
 /**

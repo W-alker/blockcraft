@@ -1,10 +1,10 @@
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {lastValueFrom, take} from "rxjs";
 import {BlockCraftError, ErrorCode} from "../../global";
-import {BlockNodeType, IBlockSnapshot} from "../types";
-import {YBlock} from "../reactive";
+import {BlockNodeType, IBlockSnapshot} from "../block-std/types";
+import {YBlock} from "../block-std/reactive";
 import * as Y from "yjs";
-import {BaseBlockComponent} from "../block";
+import {BaseBlockComponent} from "../block-std/block";
 
 export class DocVM {
 

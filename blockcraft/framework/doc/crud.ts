@@ -1,9 +1,9 @@
-import {DeltaOperation, IBlockSnapshot, InlineModel} from "../types";
-import {YBlock} from "../reactive";
+import {DeltaOperation, IBlockSnapshot, InlineModel} from "../block-std/types";
+import {YBlock} from "../block-std/reactive";
 import * as Y from "yjs";
 import {BlockCraftError, ErrorCode, nextTick} from "../../global";
 import {IBlockSelectionJSON} from "../modules";
-import {EditableBlockComponent} from "../block";
+import {EditableBlockComponent} from "../block-std/block";
 import {BehaviorSubject, skip, Subject, take} from "rxjs";
 
 // This origin will skip Y.Event sync (to model)

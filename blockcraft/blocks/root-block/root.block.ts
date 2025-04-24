@@ -2,7 +2,7 @@ import {ChangeDetectionStrategy, Component, HostListener} from "@angular/core";
 import {BaseBlockComponent, closetBlockId} from "../../framework";
 import {RootBlockModel} from "./index";
 import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
-import {BlockNodeType} from "../../framework/types";
+import {BlockNodeType} from "../../framework/block-std/types";
 
 @Component({
   selector: 'div.root-block[data-blockcraft-root="true"]',

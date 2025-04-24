@@ -1,6 +1,6 @@
 import {NoEditableBlockNative} from "../../framework";
-import {BlockNodeType} from "../../framework/types";
-import {BlockSchemaOptions} from "../../framework/schema/block-schema";
+import {BlockNodeType} from "../../framework/block-std/types";
+import {BlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
 import {nanoid} from "nanoid";
 import {FrameBlockComponent} from "./frame.block";
 

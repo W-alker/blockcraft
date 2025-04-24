@@ -1,16 +1,7 @@
 @mixin image-block {
   div.image-block {
     padding: 8px;
-    width: fit-content;
-    max-width: 100%;
-
-    &[data-align='center'] {
-      margin: auto;
-    }
-
-    &[data-align='right'] {
-      margin-left: auto;
-    }
+    width: 100%;
 
     &.selected {
       background: unset;
@@ -29,6 +20,22 @@
       }
     }
 
+    .image-block__container {
+      width: fit-content;
+
+      &[data-align='center'] {
+        margin: 0 auto;
+      }
+
+      &[data-align='right'] {
+        margin-left: auto;
+      }
+
+      &[data-align='left'] {
+        margin-right: auto;
+      }
+    }
+
     .img-wrapper {
       //display: inline-block;
       position: relative;
@@ -37,8 +44,8 @@
     img {
       z-index: 2;
       pointer-events: none;
-      min-width: 50px;
-      min-height: 50px;
+      min-width: 80px;
+      max-width: 100%;
     }
 
     .img-resizer {

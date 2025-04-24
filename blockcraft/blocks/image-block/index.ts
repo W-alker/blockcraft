@@ -1,17 +1,15 @@
 import {generateId, NoEditableBlockNative} from "../../framework";
-import {BlockNodeType, DeltaInsert} from "../../framework/types";
+import {BlockNodeType, DeltaInsert} from "../../framework";
 import {ImageBlockComponent} from "./image.block";
-import {IBlockSchemaOptions} from "../../framework/schema/block-schema";
+import {IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
 import {CaptionBlockSchema} from "../caption-block";
 
 export interface ImageBlockModel extends NoEditableBlockNative {
   flavour: 'image',
   props: {
     src: string;
-    size: {
-      width: number
-      height?: number
-    },
+    width?: number;
+    height?: number;
     align?: 'center' | 'right'
   }
 }
@@ -28,10 +26,8 @@ export const ImageBlockSchema: IBlockSchemaOptions<ImageBlockModel> = {
       meta: {},
       props: {
         src,
-        size: {
-          width: w || 200,
-          height: h || undefined
-        }
+        width: w,
+        height: h,
       },
       children: title ? [CaptionBlockSchema.createSnapshot(title)] : []
     }

@@ -1,10 +1,10 @@
 import {EditableBlockNative} from "../../framework";
-import {BlockNodeType} from "../../framework/types";
+import {BlockNodeType} from "../../framework/block-std/types";
 import {
   IBlockSchemaOptions,
   editableBlockCreateSnapShotFn,
   EditableBlockCreateSnapshotParams
-} from "../../framework/schema/block-schema";
+} from "../../framework/block-std/schema/block-schema";
 import {BulletBlockComponent} from "./bullet.block";
 
 export interface BulletBlockModel extends EditableBlockNative {

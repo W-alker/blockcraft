@@ -3,7 +3,7 @@ import {MultiPointerEventState, PointerEventState} from "../state/pointerState";
 import {UIEventState, UIEventStateContext} from "../base";
 import {EventScopeSourceType, EventSourceState} from "../state";
 import {isFarEnough} from "../utils";
-import {nextTick, throttle} from "../../../global";
+import {nextTick, throttle} from "../../../../global";
 import {EventNames} from "../dispatcher";
 
 type PointerId = typeof PointerEvent.prototype.pointerId;

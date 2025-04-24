@@ -1,6 +1,6 @@
 import {Injectable, Injector} from "@angular/core";
 import {BlockCreatorService} from "../framework";
-import {IBlockSchemaOptions} from "../framework/schema/block-schema";
+import {IBlockSchemaOptions} from "../framework/block-std/schema/block-schema";
 import {DOC_FILE_SERVICE_TOKEN} from "../framework";
 import {Overlay} from "@angular/cdk/overlay";
 import {EmbedFrameCreator} from "./embed-frame-creator";
@@ -17,8 +17,6 @@ export class MyBlockCreatorService extends BlockCreatorService {
   }
 
   async getParamsByScheme<T extends IBlockSchemaOptions>(schema: T): Promise<BlockCraft.BlockCreateParameters<T['flavour']> | null> {
-    console.log('--------------------++++++++++++++', schema)
-
     const params: any = []
     switch (schema.flavour) {
       case 'attachment':

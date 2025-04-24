@@ -14,7 +14,7 @@ export class AutoUpdateOrderPlugin extends DocPlugin {
         if (inserted) {
           const b = inserted.find(v => v.flavour === 'ordered')
           if (!b) return
-          updateOrderAround(b as any)
+          updateOrderAround(<any>b)
           return
         }
 
@@ -25,7 +25,7 @@ export class AutoUpdateOrderPlugin extends DocPlugin {
           deleted.forEach(del => {
             const start = this.doc.getBlockById(ids[Math.max(del.index - 1, 0)])
             if (start.flavour !== 'ordered') return;
-            updateOrderAround(start as any)
+            updateOrderAround(<any>start)
           })
 
         }

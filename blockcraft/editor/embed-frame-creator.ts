@@ -8,7 +8,7 @@ import {
   Output,
   ViewChild
 } from "@angular/core";
-import {IBlockSchemaOptions} from "../framework/schema/block-schema";
+import {IBlockSchemaOptions} from "../framework/block-std/schema/block-schema";
 import {figmaUrlRegex, jueJinUrlRegex, urlRegex} from "../global";
 
 @Component({

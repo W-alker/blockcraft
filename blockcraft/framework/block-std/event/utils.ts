@@ -1,4 +1,4 @@
-import {IPoint} from "../../global";
+import {IPoint} from "../../../global";
 
 export function isFarEnough(a: IPoint, b: IPoint) {
   const dx = a.x - b.x;

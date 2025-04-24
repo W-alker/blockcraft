@@ -295,8 +295,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         POSITION_MAP['bottom-left']
       ]),
       scrollStrategy: this.overlay.scrollStrategies.close(),
-      hasBackdrop: true,
-      backdropClass: 'cdk-overlay-transparent-backdrop',
+      // hasBackdrop: true,
+      // backdropClass: 'cdk-overlay-transparent-backdrop',
     })
 
     const cpr = this.toolbarOvr.attach(portal)
@@ -306,10 +306,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     cpr.setInput('doc', this.doc)
     cpr.setInput('table', this)
 
+    const sub = fromEvent(this.doc.root.hostElement.parentElement!, 'scroll').subscribe(() => {
+      this.toolbarOvr?.updatePosition()
+    })
+
     merge(this.toolbarOvr.backdropClick(),
       this.doc.selection.nextChangeObserve(),
-      this.onDestroy$, selectedCells[0]?.onDestroy$,
-      fromEvent(this.doc.root.hostElement.parentElement!, 'scroll').pipe(take(1)))
+      this.onDestroy$, selectedCells[0]?.onDestroy$)
       .pipe(takeUntil(cpr.instance.onDestroy)).subscribe(() => {
       closeFn?.()
 
@@ -318,6 +321,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.toolbarOvr?.dispose()
       this.toolbarOvr = undefined
       this._clearSelected()
+      sub.unsubscribe()
     })
   }
 
