@@ -36,10 +36,6 @@ export class MyDocFileService extends DocFileService {
     })
   }
 
-  downloadAttachment(attachment: DocAttachmentInfo): void {
-    this.downloadSource(attachment.url, attachment.name)
-  }
-
   previewAttachment() {
   }
 

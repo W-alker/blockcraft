@@ -7,7 +7,7 @@ import {
   EventNames, getPositionWithOffset
 } from "../../framework";
 import {UIEventStateContext, IBlockSnapshot} from "../../framework";
-import {BlockCraftError, ErrorCode, nextTick} from "../../global";
+import {BlockCraftError, downloadFile, ErrorCode, nextTick} from "../../global";
 import {merge, Subject, Subscription, takeUntil} from "rxjs";
 import {OverlayRef} from "@angular/cdk/overlay";
 import {AttachmentBlockToolbar} from "./widgets/attachment-toolbar";
@@ -66,7 +66,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
               this.onRename(attachmentBlock as BlockCraft.IBlockComponents['attachment'])
               break
             case 'download':
-              this.fileService.downloadSource(attachmentBlock.props.url, attachmentBlock.props.name)
+              downloadFile(attachmentBlock.props.url, attachmentBlock.props.name)
               break
             case 'delete':
               this.doc.crud.deleteBlockById(attachmentBlock.id)

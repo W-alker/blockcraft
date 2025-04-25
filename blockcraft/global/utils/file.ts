@@ -1,20 +1,3 @@
-// export async function getFileExtensionType(file: File): FileExtensionType {
-//   const ext = await getFileMimeType(file);
-//   return FileExtensions[ext as FileExtensionType] || FileExtensions.OTHER;
-// }
-
-// export async function getFileMimeType(file: File) {
-//   if (file.type) {
-//     return file.type;
-//   }
-//
-//   // If the file type is not available, try to get it from the buffer.
-//   const buffer = await file.arrayBuffer();
-//   const FileType = await import('file-type');
-//   const fileType = await FileType.fileTypeFromBuffer(buffer);
-//   return (fileType ? fileType.mime : '') as MimeType
-// }
-
 export enum FileExtensions {
   TXT = 'txt',
   HTML = 'html',
@@ -85,7 +68,7 @@ export function getMimeType(type: FileExtensionType): MimeType | undefined {
   return MIME_TYPES_MAP.find(([ext, mime]) => ext === type)?.[1] as unknown as MimeType
 }
 
-export const downloadFile = async (url: string, filename: string) => {
+export const downloadFile = async (url: string, filename = '未命名') => {
   const response = await fetch(url);
 
   const blob = await response.blob();
@@ -93,10 +76,45 @@ export const downloadFile = async (url: string, filename: string) => {
 
   const link = document.createElement('a');
   link.href = blobUrl;
-  link.download = filename;
+  link.download = getSafeFileName(filename)
   link.click();
   link.remove();
 
   // Clean up the blob URL
   window.URL.revokeObjectURL(blobUrl);
 };
+
+function getSafeFileName(string: string) {
+  const replacement = ' ';
+  const filenameReservedRegex = /[<>:"/\\|?*\u0000-\u001F]/g;
+  const windowsReservedNameRegex = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
+  const reControlChars = /[\u0000-\u001F\u0080-\u009F]/g;
+  const reTrailingPeriods = /\.+$/;
+  const allowedLength = 50;
+
+  function trimRepeated(string: string, target: string) {
+    const escapeStringRegexp = target
+      .replace(/[|\\{}()[\]^$+*?.]/g, '\\$&')
+      .replace(/-/g, '\\x2d');
+    const regex = new RegExp(`(?:${escapeStringRegexp}){2,}`, 'g');
+    return string.replace(regex, target);
+  }
+
+  string = string
+    .normalize('NFD')
+    .replace(filenameReservedRegex, replacement)
+    .replace(reControlChars, replacement)
+    .replace(reTrailingPeriods, '');
+
+  string = trimRepeated(string, replacement);
+  string = windowsReservedNameRegex.test(string)
+    ? string + replacement
+    : string;
+  const extIndex = string.lastIndexOf('.');
+  const filename = string.slice(0, extIndex).trim();
+  const extension = string.slice(extIndex);
+  string =
+    filename.slice(0, Math.max(1, allowedLength - extension.length)) +
+    extension;
+  return string;
+}

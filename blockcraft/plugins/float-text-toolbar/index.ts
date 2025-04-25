@@ -3,9 +3,9 @@ import {debounceTime, fromEvent, Subscription, takeUntil} from "rxjs";
 import {ComponentRef} from "@angular/core";
 import {FloatTextToolbarComponent} from "./toolbar.component";
 import {ComponentPortal} from "@angular/cdk/portal";
-import {Overlay, OverlayRef} from "@angular/cdk/overlay";
+import {ConnectedPosition, Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
-import {UIEventStateContext, BlockNodeType} from "../../framework";
+import {UIEventStateContext} from "../../framework";
 
 export class FloatTextToolbarPlugin extends DocPlugin {
   override name = "float-text-toolbar";
@@ -53,18 +53,9 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     const overlay = this.doc.injector.get(Overlay)
     const portal = new ComponentPortal(FloatTextToolbarComponent)
 
-    const {x, y} = this.calcOffset(sel)
-
-    const relativeBlock = sel.firstBlock.nodeType === BlockNodeType.editable ? sel.firstBlock : sel.lastBlock
+    const {connectElement, connectPositions} = this._calcPosition(sel)
     this.toolbarOvr = overlay.create({
-      positionStrategy: overlay.position().flexibleConnectedTo(relativeBlock.hostElement).withPositions(
-        relativeBlock === sel.firstBlock ?
-          [{...POSITION_MAP['top-left'], offsetY: -48 + y, offsetX: x},
-            {...POSITION_MAP['top-right'], offsetY: -48 + y}]
-          :
-          [{...POSITION_MAP['bottom-left'], offsetY: 4, offsetX: x},
-            {...POSITION_MAP['bottom-right'], offsetY: 4}]
-      ),
+      positionStrategy: overlay.position().flexibleConnectedTo(connectElement).withPositions(connectPositions),
       scrollStrategy: overlay.scrollStrategies.close(),
     })
 
@@ -88,46 +79,25 @@ export class FloatTextToolbarPlugin extends DocPlugin {
       })
   }
 
-  calcOffset(selection: BlockCraft.Selection) {
+  private _calcPosition(selection: BlockCraft.Selection): {
+    connectElement: HTMLElement,
+    connectPositions: ConnectedPosition[]
+  } {
+    const isBackward = selection.getDirection() === 'backward'
     const rect = selection.raw.getBoundingClientRect()
-    const blockRect = selection.firstBlock.hostElement.getBoundingClientRect()
-    // const rootElementRect = this.doc.root.hostElement.getBoundingClientRect()
+    const relativeBlock = isBackward ? selection.lastBlock : selection.firstBlock
+
+    const blockRect = relativeBlock.hostElement.getBoundingClientRect()
+    const offsetX =  rect.left - blockRect.left
+    const offsetY =  isBackward ? rect.top - blockRect.top : rect.bottom - blockRect.bottom
+
     return {
-      x: rect.left - blockRect.left,
-      y: rect.top - blockRect.top
-    }
-
-    // const {top, left, bottom, right, width} = rect
-    // const _top = top > window.innerHeight / 2 ? top - rootElementRect.top - 36 : bottom - rootElementRect.top + 4
-    // if (left - rootElementRect.left > rootElementRect.width / 2) {
-    //   return `top: ${_top}px; left: ${left - rootElementRect.left + width}px; `
-    // }
-  }
-
-  moveToolbar() {
-    if (!this._cpr) return
-    const selection = this.doc.selection.value!
-    const rect = selection.raw.getBoundingClientRect()
-    // if (!activeBlock) return
-    // const range = this.controller.selection.getCurrentCharacterRange()
-    // const commonAttrs = getCommonAttributesFromDelta(sliceDelta(activeBlock.getTextDelta(), range.start, range.end))
-    // console.log(commonAttrs)
-    // const activeFormat = Object.keys(commonAttrs).filter(key => key.startsWith('a:')).map(key => key.slice(2))
-    // const activeMark = {
-    //   ...markMenu,
-    //   activeColor: commonAttrs['s:c'] ?? null,
-    //   activeBgColor: commonAttrs['s:bc'] ?? null
-    // }
-    // this._cpr.setInput('activeMenuSet', new Set(activeFormat))
-    // this._cpr.setInput('markMenu', activeMark)
-
-    const rootElementRect = this.doc.root.hostElement.getBoundingClientRect()
-    const {top, left, bottom, right, width} = rect
-    const _top = top > window.innerHeight / 2 ? top - rootElementRect.top - 36 : bottom - rootElementRect.top + 4
-    if (left - rootElementRect.left > rootElementRect.width / 2) {
-      this._cpr.setInput('style', `top: ${_top}px; left: ${left - rootElementRect.left + width}px; `)
-    } else {
-      this._cpr.setInput('style', `top: ${_top}px; left: ${left - rootElementRect.left}px;`)
+      connectElement: relativeBlock.hostElement,
+      connectPositions: isBackward ?
+        [{...POSITION_MAP['top-left'], offsetY: -48 + offsetY, offsetX},
+          {...POSITION_MAP['top-right'], offsetY: -48 + offsetY, offsetX}] :
+        [{...POSITION_MAP['bottom-left'], offsetY: offsetY + 8, offsetX},
+          {...POSITION_MAP['bottom-right'], offsetY: offsetY + 8, offsetX}]
     }
   }
 

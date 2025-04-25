@@ -22,7 +22,7 @@ import {
   HeadingThreeBlockSchema, AttachmentBlockSchema, CaptionBlockSchema,
   FigmaEmbedBlockSchema, BookmarkBlockSchema, JuejinEmbedBlockSchema
 } from "../blocks";
-import {ConsoleLogger, printToPdf} from "../global";
+import {ConsoleLogger} from "../global";
 import {DividerBlockSchema, CalloutBlockSchema, OrderedBlockSchema, ParagraphBlockSchema} from "../blocks";
 import {AutoUpdateOrderPlugin} from "../plugins/autoUpdateOrder";
 import {BulletBlockSchema} from "../blocks/bullet-block";
@@ -42,7 +42,7 @@ import {BookmarkBlockExtensionPlugin} from "../plugins/bookmark-frame-extension"
 import {InlineLinkExtension} from "../plugins/inline-link-extension";
 import {MatIcon} from "@angular/material/icon";
 import {DocDndDataTypes} from "../framework/services/dnd.service";
-import {exportToPdf} from "../export-utils";
+import {exportToImage, exportToPdf} from "../tools";
 // import {Code2BlockSchema, CodeLineBlockSchema} from "../blocks/code2-block";
 
 const schemas = new SchemaManager([
@@ -69,8 +69,8 @@ const schemas = new SchemaManager([
     <button (click)="undo()">undo</button>
     <button (click)="redo()">redo</button>
     <button (click)="addData()">增加数据</button>
-    <button (click)="printPdf()">打印PDF</button>
     <button (click)="exportPdf()">导出PDF</button>
+    <button (click)="exportImg()">导出图片</button>
 
     <div class="block-area">
       <div draggable="true" (dragstart)="onDragStart($event, 'heading-one')">
@@ -254,11 +254,11 @@ export class EditorComponent {
     this.doc.dndService.startDrag(evt, DocDndDataTypes.newBlock, flavour)
   }
 
-  printPdf() {
-    printToPdf(this.doc.root.hostElement)
-  }
-
   exportPdf() {
     exportToPdf(this.doc.root.hostElement)
+  }
+
+  exportImg() {
+    exportToImage(this.doc.root.hostElement)
   }
 }

@@ -1,11 +1,12 @@
 import {BaseBlockComponent, EditableBlockComponent} from "../../block-std/block";
 import {INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS} from "../../block-std/inline";
-import {BlockCraftError, ErrorCode, nextTick} from "../../../global";
+import {BlockCraftError, ErrorCode, nextTick, performanceTest} from "../../../global";
 import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
 import {BlockNodeType} from "../../block-std/types";
 import {closetBlockId, isZeroSpace} from "../../utils";
 import {BindHotKey, DocEventRegister, EventListen, EventNames} from "../../block-std/event";
 import {UIEventStateContext} from "../../block-std/event/base";
+import {SelectionSelectedManager} from "./selected-manager";
 
 export interface IInlineRange {
   index: number
@@ -18,7 +19,7 @@ export interface IInlineRange {
  */
 export type IBlockRange = IBlockTextRange | IBlockSelectedRange
 
-export interface IBlockTextRange extends IInlineRange{
+export interface IBlockTextRange extends IInlineRange {
   block: EditableBlockComponent<any>
   blockId: string
   type: 'text'
@@ -57,7 +58,8 @@ export class BlockSelection implements INormalizedRange {
 
   constructor(private readonly normalizedRange: INormalizedRange,
               readonly raw: Range,
-              readonly isByUser = false) {
+              readonly isByUser = false,
+              private selection: Selection) {
     this._commonParent = this.isInSameBlock ? this.from.blockId : closetBlockId(raw.commonAncestorContainer)!
   }
 
@@ -106,6 +108,14 @@ export class BlockSelection implements INormalizedRange {
     return this.from.type === 'text' ? (this.from.index + this.from.length) === this.from.block.textLength : true
   }
 
+  getDirection() {
+    if (this.selection.anchorNode === this.selection.focusNode) {
+      return this.raw.startOffset < this.raw.endOffset ? 'forward' : 'backward'
+    }
+    const position = this.selection.anchorNode!.compareDocumentPosition(this.selection.focusNode!)
+    return position === Node.DOCUMENT_POSITION_PRECEDING ? 'backward' : 'forward'
+  }
+
   toJSON(): IBlockSelectionJSON {
     return JSON.parse(JSON.stringify({
       from: {
@@ -127,9 +137,10 @@ export class SelectionManager {
 
   public readonly selectionChange$ = new BehaviorSubject<BlockSelection | null>(null)
 
-  private _stack: (IBlockSelectionJSON | null)[] = []
+  // private _stack: (IBlockSelectionJSON | null)[] = []
 
   private isByUser = false
+  private selectedManager = new SelectionSelectedManager(this.doc)
 
   constructor(public readonly doc: BlockCraft.Doc) {
     this.doc.afterInit(this._bindEvents)
@@ -139,13 +150,13 @@ export class SelectionManager {
     return this.selectionChange$.value
   }
 
-  get current() {
-    return this._stack[this._stack.length - 1]
-  }
-
-  get previous() {
-    return this._stack[this._stack.length - 2]
-  }
+  // get current() {
+  //   return this._stack[this._stack.length - 1]
+  // }
+  //
+  // get previous() {
+  //   return this._stack[this._stack.length - 2]
+  // }
 
   blur() {
     document.getSelection()?.removeAllRanges()
@@ -172,26 +183,17 @@ export class SelectionManager {
       const selection = document.getSelection()
       if (!selection || !this.doc.isActive || !selection.rangeCount) {
         this.selectionChange$.next(null)
-        this.doc.root.hostElement.blur()
+        this.selectedManager.setSelected(null)
         return
-      }
-      if (selection.focusNode instanceof HTMLElement) {
-        // if (selection.focusNode === this.doc.root.hostElement) {
-        //   selection.modify('move', 'backward', 'character')
-        //   return
-        // }
-
-        // if (selection.focusNode.contains(selection.anchorNode)) {
-        // }
       }
 
       const range = selection.getRangeAt(0)
-      const r = new BlockSelection(this.normalizeRange(range), range, this.isByUser)
+      const r = new BlockSelection(this.normalizeRange(range), range, this.isByUser, selection)
       this.isByUser = false
 
       this.selectionChange$.next(r)
-      this._stack.push(r ? r.toJSON() : null)
-      this._setSelected()
+      // this._stack.push(r ? r.toJSON() : null)
+      this.selectedManager.setSelected(this.value)
     })
   }
 
@@ -430,50 +432,6 @@ export class SelectionManager {
     // }
   }
 
-  private _selectedSet = new Set<BaseBlockComponent<any>>()
-
-  private _setSelectedClass(block: BaseBlockComponent<any>) {
-    block.hostElement.classList.add('selected')
-    this._selectedSet.add(block)
-  }
-
-  private _setSelected() {
-    this._selectedSet.forEach(v => {
-      v.hostElement.classList.remove('selected')
-    })
-    this._selectedSet.clear()
-    if (!this.value) return;
-
-    const {from, to, isAllSelected} = this.value!
-
-    // 控制不可输入
-    isAllSelected ? this.doc.root.hostElement.classList.add('all-selected') : this.doc.root.hostElement.classList.remove('all-selected')
-
-    from.type === 'selected' && this._setSelectedClass(from.block)
-
-    if (!to) return;
-    to.type === 'selected' && this._setSelectedClass(to.block)
-
-    // const between = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
-    // if (!between?.length) return
-    // between.forEach(through => {
-    //   through.group.forEach(v => {
-    //     const b = this.doc.getBlockById(v)
-    //     if (b.nodeType !== BlockNodeType.editable) {
-    //       this._setSelectedClass(b as any)
-    //     }
-    //   })
-    // })
-    const between = this.doc.queryBlocksBetween(from.block, to.block)
-    if (!between?.length) return
-    between.forEach(v => {
-      const b = this.doc.getBlockById(v)
-      if (b.nodeType !== BlockNodeType.editable) {
-        this._setSelectedClass(b as any)
-      }
-    })
-  }
-
   private _searchClosetBlockByNode(node: Node) {
     const id = closetBlockId(node)
     if (!id) {
@@ -686,7 +644,7 @@ export class SelectionManager {
 
     this.doc.isEditable(block) ? extendStartOrEnd(block) : this.selectBlock(block)
 
-    block.hostElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    block.hostElement.scrollIntoView({behavior: 'smooth', block: 'nearest'})
   }
 
   selectAllChildren(block: string | BlockCraft.BlockComponent) {

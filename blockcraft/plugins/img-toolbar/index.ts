@@ -9,7 +9,7 @@ import {
 import {UIEventStateContext} from "../../framework/block-std/event/base";
 import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
 import {ImageToolbar} from "./widgets/image.toolbar";
-import {nextTick} from "../../global";
+import {downloadFile, nextTick} from "../../global";
 import {ComponentRef} from "@angular/core";
 import {OverlayRef} from "@angular/cdk/overlay";
 
@@ -114,8 +114,7 @@ export class ImgToolbarPlugin extends DocPlugin {
             case 'change':
               break
             case 'download':
-              const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
-              fileService.downloadSource(selection.firstBlock.props.src, selection.firstBlock.firstChildren?.textContent())
+              downloadFile(selection.firstBlock.props.src, selection.firstBlock.firstChildren?.textContent())
               break
             case 'copy-url':
               console.log(selection.firstBlock.props.src)

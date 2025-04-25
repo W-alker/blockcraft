@@ -13,6 +13,7 @@
 @import "blocks/caption-block";
 
 :root {
+  --bc-root-background-color: #fff;
   --bc-fs: 14px;
   --bc-fs-xs: calc(var(--bc-fs) - 2px);
   --bc-fs-sm: calc(var(--bc-fs) - 1px);
@@ -41,9 +42,10 @@
   -moz-user-select: none;
   -ms-user-select: none;
   outline: none;
-  padding: 0 30px var(--bc-fs);
+  padding: 1px 30px var(--bc-fs);
   font-size: var(--bc-fs);
   line-height: var(--bc-lh);
+  background-color: var(--bc-root-background-color);
 
   svg {
     vertical-align: top;
