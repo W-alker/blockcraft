@@ -1,5 +1,5 @@
 import {InjectionToken} from "@angular/core";
-import {FileExtensionType} from "../../global";
+import {downloadFile, FileExtensionType} from "../../global";
 
 export interface DocAttachmentInfo {
   name: string
@@ -22,13 +22,8 @@ export abstract class DocFileService {
 
   abstract previewImg(element: HTMLImageElement, title?: string): void
 
-  downloadSource(src: string, fileName?: string) {
-    let a: HTMLAnchorElement | null = document.createElement('a')
-    a.href = src
-    a.download = fileName || src
-    a.target = '_blank'
-    a.dispatchEvent(new MouseEvent('click'))
-    a = null
+  async downloadSource(url: string, fileName = 'Untiled') {
+    return downloadFile(url, fileName)
   }
 
   inputFiles(accept = '', multiple = false): Promise<FileList> {
@@ -42,10 +37,10 @@ export abstract class DocFileService {
         const inputFiles = input!.files
         if (!inputFiles) reject('no files selected')
         resolve(inputFiles!)
+
+        input?.remove()
         input = null
       }
     })
   }
-
-  abstract downloadAttachment(attachment: DocAttachmentInfo): void
 }

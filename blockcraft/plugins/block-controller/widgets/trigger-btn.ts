@@ -50,13 +50,15 @@ const ALIGN_LIST: IContextMenuItem[] = [
 ]
 
 @Component({
-  selector: 'div.trigger-btn',
+  selector: 'bc-drag-handle',
   standalone: true,
   template: `
-    <div class="btn" [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
+    <div class="drag-handle" [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
          [disabled]="menuDisabled" (open)="setValidBlockList()"
-         [offsetY]="4" [withBackdrop]="false" activeClass="active" [draggable]="draggable">
-      <i [class]="['bf_icon', isEmpty ? 'bf_tianjia-2' : 'bf_yidong' ]"></i>
+         [offsetY]="0" [withBackdrop]="false" activeClass="active" [draggable]="draggable">
+      <div class="btn">
+        <i [class]="['bf_icon', isEmpty ? 'bf_tianjia-2' : 'bf_yidong' ]"></i>
+      </div>
     </div>
 
     <ng-template #icon let-item>
@@ -160,7 +162,8 @@ const ALIGN_LIST: IContextMenuItem[] = [
   `,
   styles: [`
     :host {
-      z-index: 10000;
+      display: block;
+      z-index: 100;
       position: absolute;
       padding-right: 8px;
       user-select: none;
@@ -178,21 +181,25 @@ const ALIGN_LIST: IContextMenuItem[] = [
       }
     }
 
-    .btn {
-      background-color: #fff;
-      box-shadow: 0 0 2px 0 #999;
-      border-radius: 4px;
-      overflow: hidden;
-      cursor: pointer;
-      text-align: center;
-      color: #999;
-      font-size: 16px;
-      width: 22px;
-      height: 22px;
-      line-height: 22px;
+    .drag-handle {
+      padding: 0 4px 4px 0;
 
-      &:hover, &.active {
-        background-color: #E6E6E6;
+      .btn {
+        background-color: #fff;
+        box-shadow: 0 0 2px 0 #999;
+        border-radius: 4px;
+        overflow: hidden;
+        cursor: pointer;
+        text-align: center;
+        color: #999;
+        font-size: 16px;
+        width: 22px;
+        height: 22px;
+        line-height: 22px;
+
+        &:hover, &.active {
+          background-color: #E6E6E6;
+        }
       }
     }
 
@@ -390,7 +397,9 @@ export class TriggerBtn {
       const container = this.activeBlock.containerElement
       const rect = container.getBoundingClientRect()
       return {
-        top: rect.top - rootRect.top + this.calcLineHeight(container) / 2 - 11 + this.doc.root.hostElement.scrollTop,
+        top: rect.top - rootRect.top
+          // + this.calcLineHeight(container) / 2 - 11
+          + this.doc.root.hostElement.scrollTop ,
         left,
       }
     }
@@ -401,15 +410,15 @@ export class TriggerBtn {
     }
   }
 
-  calcLineHeight(ele: HTMLElement) {
-    const style = window.getComputedStyle(ele)
-    const lineHeight = style.lineHeight
-    if (lineHeight === 'normal') {
-      const fontSize = style.fontSize
-      return parseFloat(fontSize) * 1.2
-    }
-    return parseFloat(lineHeight)
-  }
+  // calcLineHeight(ele: HTMLElement) {
+  //   const style = window.getComputedStyle(ele)
+  //   const lineHeight = style.lineHeight
+  //   if (lineHeight === 'normal') {
+  //     const fontSize = style.fontSize
+  //     return parseFloat(fontSize) * 1.2
+  //   }
+  //   return parseFloat(lineHeight)
+  // }
 
   @HostBinding('style.top.px')
   private top = 0

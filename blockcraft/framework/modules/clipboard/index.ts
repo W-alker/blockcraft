@@ -39,7 +39,7 @@ export class ClipboardManager {
       plainText += this.doc.getBlockById(bid).textContent()
     }
     if (from.type === 'text') {
-      if(from.index < from.block.textLength) {
+      if (from.index < from.block.textLength) {
         const sliceDeltas = sliceDelta(from.block.textDeltas(), from.index, from.length + from.index)
         const snapshot = from.block.toSnapshot()
         snapshot.children = sliceDeltas
@@ -52,7 +52,7 @@ export class ClipboardManager {
     }
 
     if (to.type === 'text') {
-      if(to.index > 0 ) {
+      if (to.index > 0) {
         const sliceDeltas = sliceDelta(to.block.textDeltas(), to.index, to.length + to.index)
         const snapshot = to.block.toSnapshot()
         snapshot.children = sliceDeltas
@@ -118,7 +118,7 @@ export class ClipboardManager {
     if (selection.from.block.plainTextOnly) {
       const text = state.clipboardData?.getData(ClipboardDataType.TEXT)
       if (!text) return false
-      selection.from.block.applyDeltaOperation([{retain: selection.from.index}, {delete: selection.from.length}, {insert: text}])
+      selection.from.block.replaceText(selection.from.index, selection.from.length, text)
       return true
     }
 
@@ -183,20 +183,18 @@ export class ClipboardManager {
 
     // 行内delta
     if (state.dataTypes.includes(ClipboardDataType.DELTAS)) {
-      const deltas = JSON.parse(state.getData(ClipboardDataType.DELTAS)!)
+      const deltas: DeltaOperation[] = JSON.parse(state.getData(ClipboardDataType.DELTAS)!)
 
       if (isSameTextBlock) {
-        selection.from.block.applyDeltaOperation([
-          {retain: selection.from.index},
-          {delete: selection.from.length},
-          ...deltas
-        ])
-        return;
+        selection.from.index && deltas.unshift({retain: selection.from.index})
+        selection.from.length && deltas.unshift({delete: selection.from.length})
+        selection.from.block.applyDeltaOperation(deltas)
+        return true
       }
 
       this.deleteContentFromSelection(state.selection)
       selection.from.block.applyDeltaOperation([{retain: selection.from.index}, ...deltas])
-      return;
+      return true
     }
 
     // uri
@@ -227,7 +225,7 @@ export class ClipboardManager {
       }
 
       if (isSameTextBlock) {
-        selection.from.block.applyDeltaOperation([{retain: selection.from.index}, {delete: selection.from.length}, {insert: text}])
+        selection.from.block.replaceText(selection.from.index, selection.from.length, text)
         return true
       }
 

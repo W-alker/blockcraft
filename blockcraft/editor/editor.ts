@@ -42,6 +42,7 @@ import {BookmarkBlockExtensionPlugin} from "../plugins/bookmark-frame-extension"
 import {InlineLinkExtension} from "../plugins/inline-link-extension";
 import {MatIcon} from "@angular/material/icon";
 import {DocDndDataTypes} from "../framework/services/dnd.service";
+import {exportToPdf} from "../export-utils";
 // import {Code2BlockSchema, CodeLineBlockSchema} from "../blocks/code2-block";
 
 const schemas = new SchemaManager([
@@ -201,7 +202,7 @@ export class EditorComponent {
 
     this.pid = p.id
     const snapshot = this.doc.schemas.createSnapshot('root',
-      [this.rootId, [p, figma, d1, p2, callout, d2, attachment, d3, p3, img, code, table, todo]])
+      [this.rootId, [p, d1, p2, callout, d2, attachment, d3, p3, img, code, table, todo]])
     console.log(snapshot)
     this.doc.init(snapshot, this.container)
   }
@@ -258,6 +259,6 @@ export class EditorComponent {
   }
 
   exportPdf() {
-
+    exportToPdf(this.doc.root.hostElement)
   }
 }

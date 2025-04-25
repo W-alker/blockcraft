@@ -135,7 +135,7 @@ export class BcOverlayTriggerDirective {
       }
 
       return;
-    }, 100)
+    }, 10)
   }
 
   private closeOverlay() {

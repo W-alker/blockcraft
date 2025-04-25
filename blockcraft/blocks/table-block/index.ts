@@ -60,7 +60,7 @@ export const TableBlockSchema: IBlockSchemaOptions<TableBlockModel> = {
   metadata: {
     version: 1.0,
     label: '表格',
-    includeChildren: ['table*'],
+    excludeChildren: ['table*'],
     icon: "bf_icn bf_column-vertical",
     svgIcon: "bf_column-vertical",
   }
@@ -89,7 +89,7 @@ export const TableRowBlockSchema: IBlockSchemaOptions<TableRowBlockModel> = {
   metadata: {
     version: 1.0,
     label: '表格行',
-    includeChildren: ['table*'],
+    excludeChildren: ['table*'],
     isLeaf: true,
   }
 }

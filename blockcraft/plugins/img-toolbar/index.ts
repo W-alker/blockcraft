@@ -118,6 +118,7 @@ export class ImgToolbarPlugin extends DocPlugin {
               fileService.downloadSource(selection.firstBlock.props.src, selection.firstBlock.firstChildren?.textContent())
               break
             case 'copy-url':
+              console.log(selection.firstBlock.props.src)
               this.doc.clipboard.copyText(selection.firstBlock.props.src).then(() => {
                 this.doc.messageService.success('图片链接已复制到剪贴板')
               })

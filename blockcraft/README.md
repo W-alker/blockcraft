@@ -12,6 +12,7 @@
 > 使用 blocksuite 的adapter机制，ASTWalker等。
 
 ---
+- [ ] mention plugin
 
 - [ ] code block 优化
   - [ ] 优化代码高亮性能

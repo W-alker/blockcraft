@@ -5,8 +5,7 @@ import {FloatTextToolbarComponent} from "./toolbar.component";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
-import {UIEventStateContext} from "../../framework/block-std/event/base";
-import {BlockNodeType} from "../../framework/block-std/types";
+import {UIEventStateContext, BlockNodeType} from "../../framework";
 
 export class FloatTextToolbarPlugin extends DocPlugin {
   override name = "float-text-toolbar";

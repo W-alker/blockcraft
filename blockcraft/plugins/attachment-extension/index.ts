@@ -40,7 +40,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
 
       this.clearTimer()
 
-      const attachmentBlock = selection.firstBlock
+      const attachmentBlock = selection.firstBlock as BlockCraft.IBlockComponents['attachment']
       if (this._toolbarRef && this._activeBlock === attachmentBlock) return;
       this.closeToolbar()
 
@@ -66,7 +66,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
               this.onRename(attachmentBlock as BlockCraft.IBlockComponents['attachment'])
               break
             case 'download':
-              this.fileService.downloadAttachment(attachmentBlock.props)
+              this.fileService.downloadSource(attachmentBlock.props.url, attachmentBlock.props.name)
               break
             case 'delete':
               this.doc.crud.deleteBlockById(attachmentBlock.id)

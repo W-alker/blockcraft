@@ -1,4 +1,4 @@
-import {filter, fromEvent, Subject, Subscription, takeUntil} from "rxjs";
+import {fromEvent, Subscription, take} from "rxjs";
 import {UIEventStateContext} from "../block-std";
 import {closetBlockId} from "../utils";
 import {BlockNodeType, IBlockSnapshot} from "../block-std";
@@ -17,7 +17,7 @@ export enum DocDndDataTypes {
   file = 'Files',
 }
 
-export type DocDndDataType = `${DocDndDataTypes}`
+export type DocDndDataType = `${DocDndDataTypes}` | string
 
 export enum DocDndStatus {
   start = 'start',
@@ -36,7 +36,6 @@ export class DocDndService {
   constructor(
     private readonly doc: BlockCraft.Doc
   ) {
-    this.dragStatus$.pipe(filter(v => v === DocDndStatus.end), takeUntil(doc.onDestroy$)).subscribe(this.onDragEnd)
   }
 
   private dragLine?: HTMLElement
@@ -88,26 +87,19 @@ export class DocDndService {
 
   private dragMoveListener: (() => void) | null = null
 
-  private dragStatus$ = new Subject<DocDndStatus>()
-
   // 外部文件 拖拽响应
   @EventListen(EventNames.dragEnter, {flavour: 'root'})
   onRootDragEnter(ctx: UIEventStateContext) {
-    if (this.dragLine) return false
     const evt: DragEvent = ctx.getDefaultEvent()
     if (!evt.dataTransfer?.types.includes(ClipboardDataType.FILES)) return false
     evt.preventDefault()
-    this.onDragStart(evt)
+    this._onDragStart(evt)
 
-    fromEvent(document, 'drop').pipe(takeUntil(this.dragStatus$.pipe(filter(v => v === DocDndStatus.end))))
-      .subscribe(evt => {
-        evt.preventDefault()
-        this.dragStatus$.next(DocDndStatus.end)
-      })
     return true
   }
 
   startDrag(evt: DragEvent, dragDataType: DocDndDataType, dragData: string) {
+    if(evt.type !== 'dragstart') return
     const dataTransfer = evt.dataTransfer
     if (dataTransfer) {
       dataTransfer.clearData()
@@ -115,10 +107,16 @@ export class DocDndService {
       dataTransfer.setData(dragDataType, dragData)
     }
 
-    this.onDragStart(evt)
+    this._onDragStart(evt)
+
+    fromEvent<DragEvent>(evt.target!, 'dragEnd').pipe(take(1))
+      .subscribe(evt => {
+        this._parseDragData(evt)
+        this.clearDrag()
+      })
   }
 
-  private onDragStart(evt: DragEvent) {
+  private _onDragStart(evt: DragEvent) {
     this.createDragLine()
     // 防止释放时会有个返回的动画
     this.dragPreventListener = fromEvent<DragEvent>(document.body, 'dragover')
@@ -128,7 +126,6 @@ export class DocDndService {
       })
 
     this.dragMoveListener = this.doc.event.add(EventNames.dragMove, this.onDragMove)
-    this.dragStatus$.next(DocDndStatus.start)
   }
 
   private onDragMove = (ctx: UIEventStateContext) => {
@@ -155,7 +152,7 @@ export class DocDndService {
     return true
   }
 
-  private onDragEnd = () => {
+  private clearDrag = () => {
     this.removeDragLine()
     this.dragPreventListener?.unsubscribe()
     this.dragPreventListener = undefined
@@ -263,14 +260,19 @@ export class DocDndService {
     })
   }
 
-  // TODO drop不在root内触发时会导致dragLine不消失
   @EventListen(EventNames.drop, {flavour: 'root'})
   onDrop(ctx: UIEventStateContext) {
     ctx.preventDefault()
-    if (!this.prevBlock || !this.prevDragPosition) return
-
     const evt: DragEvent = ctx.getDefaultEvent()
-    if (!evt.dataTransfer) return
+
+    this._parseDragData(evt)
+    this.clearDrag()
+
+    return true
+  }
+
+  protected _parseDragData(evt: DragEvent) {
+    if (!this.prevBlock || !this.prevDragPosition || !evt.dataTransfer) return
 
     // 从原始块拖拽的
     if (evt.dataTransfer.types.includes(DocDndDataTypes.originBlock)) {
@@ -283,8 +285,5 @@ export class DocDndService {
     } else if (evt.dataTransfer.files) {
       this.onInsertFiles(evt.dataTransfer.files!, this.prevBlock!, this.prevDragPosition)
     }
-
-    this.dragStatus$.next(DocDndStatus.end)
-    return true
   }
 }

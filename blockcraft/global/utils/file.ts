@@ -84,3 +84,19 @@ export function getFileExtensionType(mime: MimeType): FileExtensionType | undefi
 export function getMimeType(type: FileExtensionType): MimeType | undefined {
   return MIME_TYPES_MAP.find(([ext, mime]) => ext === type)?.[1] as unknown as MimeType
 }
+
+export const downloadFile = async (url: string, filename: string) => {
+  const response = await fetch(url);
+
+  const blob = await response.blob();
+  const blobUrl = window.URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = filename;
+  link.click();
+  link.remove();
+
+  // Clean up the blob URL
+  window.URL.revokeObjectURL(blobUrl);
+};
