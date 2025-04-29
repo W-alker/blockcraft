@@ -11,6 +11,14 @@
     border-radius: 4px;
     caret-color: #000;
 
+    &.focused .edit-container {
+      [data-line-break="true"]::before,
+      c-element:first-of-type::before,
+      c-element[data-line-break]:first-of-type::after {
+        visibility: visible;
+      }
+    }
+
     .edit-container {
       background: none;
       font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
@@ -30,6 +38,7 @@
       [data-line-break="true"]::before,
       c-element:first-of-type::before,
       c-element[data-line-break]:first-of-type::after {
+        visibility: hidden;
         position: absolute;
         left: .5em;
         content: counter(line);
@@ -137,6 +146,10 @@
       color: #e067c5;
     }
 
+    &.focused .head-btn__group {
+      visibility: visible;
+    }
+
     .head-btn {
       cursor: pointer;
       display: flex;
@@ -150,6 +163,7 @@
       white-space: nowrap;
 
       &__group {
+        visibility: hidden;
         user-select: none;
         position: absolute;
         top: 0;

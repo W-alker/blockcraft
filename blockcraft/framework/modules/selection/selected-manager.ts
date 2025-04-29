@@ -1,4 +1,4 @@
-import {BaseBlockComponent, BlockNodeType} from "../../block-std";
+import {BaseBlockComponent, BlockNodeType, EditableBlockComponent} from "../../block-std";
 
 export class SelectionSelectedManager {
 
@@ -6,21 +6,35 @@ export class SelectionSelectedManager {
   }
 
   private _selectedSet = new Set<BaseBlockComponent<any>>()
+  private _focusedSet = new Set<EditableBlockComponent<any>>()
 
   private _setSelectedClass(block: BaseBlockComponent<any>) {
     block.hostElement.classList.add('selected')
     this._selectedSet.add(block)
   }
 
-  private _clearAllSelected() {
+  private _setFocusedClass(block: EditableBlockComponent<any>) {
+    block.hostElement.classList.add('focused')
+    this._focusedSet.add(block)
+  }
+
+  private _setClass(block: BaseBlockComponent<any>) {
+    block.nodeType === BlockNodeType.editable ? this._setFocusedClass(block as any) : this._setSelectedClass(block)
+  }
+
+  private _clearAllClass() {
     this._selectedSet.forEach(v => {
       v.hostElement.classList.remove('selected')
     })
+    this._focusedSet.forEach(v => {
+      v.hostElement.classList.remove('focused')
+    })
     this._selectedSet.clear()
+    this._focusedSet.clear()
   }
 
   setSelected(selection: BlockCraft.Selection | null) {
-    this._clearAllSelected()
+    this._clearAllClass()
     if (!selection) return;
 
     const {from, to, isAllSelected} = selection
@@ -28,10 +42,10 @@ export class SelectionSelectedManager {
     // 控制不可输入
     isAllSelected ? this.doc.root.hostElement.classList.add('all-selected') : this.doc.root.hostElement.classList.remove('all-selected')
 
-    from.type === 'selected' && this._setSelectedClass(from.block)
+    this._setClass(from.block)
 
     if (!to) return;
-    to.type === 'selected' && this._setSelectedClass(to.block)
+    this._setClass(to.block)
 
     // const between = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
     // if (!between?.length) return
@@ -47,9 +61,7 @@ export class SelectionSelectedManager {
     if (!between?.length) return
     between.forEach(v => {
       const b = this.doc.getBlockById(v)
-      if (b.nodeType !== BlockNodeType.editable) {
-        this._setSelectedClass(b as any)
-      }
+      this._setClass(<any>b)
     })
   }
 }

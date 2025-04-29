@@ -1,12 +1,6 @@
-export * from './block-std/reactive'
 export * from './utils'
-export * from './block-std/block'
-export * from './block-std/schema'
 export * from './doc'
 export * from './modules'
-export * from './block-std/inline'
-export * from './block-std/event'
 export * from './plugin'
 export * from './services'
-
 export * from './block-std'

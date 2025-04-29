@@ -216,7 +216,7 @@ export class InputTransformer {
       const schema = this.doc.schemas.get(from.block.flavour)
       if (schema.metadata.isLeaf) return true
       const deltas = from.block.textDeltas()
-      const np = this.doc.schemas.createSnapshot('paragraph', [deltas])
+      const np = this.doc.schemas.createSnapshot('paragraph', [deltas, from.block.props])
       this.doc.crud.replaceWithSnapshots(from.block.id, [np]).then(() => {
         // 强制触发selectionChange
         this.doc.selection.setSelection({

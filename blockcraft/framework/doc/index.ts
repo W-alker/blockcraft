@@ -1,14 +1,12 @@
 import {DocCRUD, ORIGIN_NO_RECORD} from "./crud";
 import {ComponentRef, Injector, ViewContainerRef} from "@angular/core";
-import {BlockCraftError, ErrorCode, Logger} from "../../global";
+import {BlockCraftError, ErrorCode, getScrollContainer, Logger} from "../../global";
 import {DocVM} from "./vm";
-import {IBlockSnapshot} from "../block-std/types";
-import {EmbedConverter, InlineManager} from "../block-std/inline";
+import {IBlockSnapshot, EmbedConverter, InlineManager, UIEventDispatcher, EditableBlockComponent} from "../block-std";
 import {ClipboardManager, InputTransformer, SelectionManager} from "../modules";
 import {BehaviorSubject, Subject, take} from "rxjs";
-import {UIEventDispatcher} from "../block-std/event";
 import {getCommonPath} from "../utils";
-import {EditableBlockComponent} from "../block-std/block";
+import {} from "../block-std/block";
 import {DocPlugin} from "../plugin";
 import {DOC_MESSAGE_SERVICE_TOKEN} from "../services";
 import {DocOverlayService} from "../services";
@@ -48,13 +46,19 @@ export class BlockCraftDoc {
   public readonly onChildrenUpdate$ = this.crud.onChildrenUpdate$
   readonly onPropsUpdate$ = this.crud.onPropsUpdate$
 
-  private _plugins: DocPlugin[] = []
+  private readonly _plugins: DocPlugin[] = []
 
   private _root!: BlockCraft.IBlockComponents['root']
 
   public readonly messageService = this.injector.get(DOC_MESSAGE_SERVICE_TOKEN)
   public readonly overlayService = new DocOverlayService(this)
   public readonly dndService = new DocDndService(this)
+
+  private _scrollContainer: HTMLElement | null = null
+
+  get scrollContainer() {
+    return this._scrollContainer
+  }
 
   get rootId() {
     return this.config.rootId
@@ -137,6 +141,9 @@ export class BlockCraftDoc {
       context.preventDefault()
       return true
     }, {blockId: this.rootId})
+
+    // init scroll container
+    this._scrollContainer = getScrollContainer(comp.instance.hostElement)
   }
 
   afterInit(fn: (root: BlockCraft.IBlockComponents['root']) => void) {

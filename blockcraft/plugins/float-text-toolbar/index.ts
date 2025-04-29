@@ -71,7 +71,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
       this.closeToolbar()
     })
 
-    fromEvent(this.doc.root.hostElement.parentElement!, 'scroll').pipe(takeUntil(this._cpr.instance.onDestroy))
+    fromEvent(this.doc.scrollContainer!, 'scroll').pipe(takeUntil(this._cpr.instance.onDestroy))
       .subscribe(() => {
         if (this.toolbarOvr) {
           this.toolbarOvr.updatePosition()

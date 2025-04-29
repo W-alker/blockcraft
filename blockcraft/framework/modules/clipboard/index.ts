@@ -5,6 +5,7 @@ import {ClipboardDataType} from "./types";
 import {BlockNodeType, DeltaOperation, IBlockSnapshot} from "../../block-std";
 import {generateId} from "../../utils";
 import {ORIGIN_SKIP_SYNC} from "../../doc";
+import {HtmlAdapter} from "../../adapters";
 
 @DocEventRegister
 export class ClipboardManager {
@@ -210,8 +211,9 @@ export class ClipboardManager {
     if (state.dataTypes.includes(ClipboardDataType.HTML)) {
       const htmlString = state.getData(ClipboardDataType.HTML)
       if (htmlString) {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlString, 'text/html');
+        // const parser = new DOMParser();
+        // const doc = parser.parseFromString(htmlString, 'text/html');
+        console.log(new HtmlAdapter().toBlockSnapshot(htmlString))
         return true
       }
     }

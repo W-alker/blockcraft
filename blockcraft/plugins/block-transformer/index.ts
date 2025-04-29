@@ -237,7 +237,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     })
 
     // TODO 位置改变，弹窗更新位置
-    fromEvent(this.doc.root.hostElement.parentElement!, 'scroll').pipe(takeUntil(this.closeMenu$)).subscribe(() => {
+    fromEvent(this.doc.scrollContainer!, 'scroll').pipe(takeUntil(this.closeMenu$)).subscribe(() => {
       this.contextOvr?.updatePosition()
     })
 

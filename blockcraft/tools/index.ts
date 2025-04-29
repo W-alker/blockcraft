@@ -1,2 +1,2 @@
 export * from './print-to-pdf'
-export * from './export-pdf'
+export * from './export-manager'

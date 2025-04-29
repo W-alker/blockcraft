@@ -306,7 +306,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     cpr.setInput('doc', this.doc)
     cpr.setInput('table', this)
 
-    const sub = fromEvent(this.doc.root.hostElement.parentElement!, 'scroll').subscribe(() => {
+    const sub = fromEvent(this.doc.scrollContainer!, 'scroll').subscribe(() => {
       this.toolbarOvr?.updatePosition()
     })
 

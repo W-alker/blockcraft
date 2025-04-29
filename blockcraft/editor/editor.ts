@@ -42,7 +42,7 @@ import {BookmarkBlockExtensionPlugin} from "../plugins/bookmark-frame-extension"
 import {InlineLinkExtension} from "../plugins/inline-link-extension";
 import {MatIcon} from "@angular/material/icon";
 import {DocDndDataTypes} from "../framework/services/dnd.service";
-import {exportToImage, exportToPdf} from "../tools";
+import {DocExportManager} from "../tools";
 // import {Code2BlockSchema, CodeLineBlockSchema} from "../blocks/code2-block";
 
 const schemas = new SchemaManager([
@@ -71,6 +71,7 @@ const schemas = new SchemaManager([
     <button (click)="addData()">增加数据</button>
     <button (click)="exportPdf()">导出PDF</button>
     <button (click)="exportImg()">导出图片</button>
+    <button (click)="ast()">HTML AST</button>
 
     <div class="block-area">
       <div draggable="true" (dragstart)="onDragStart($event, 'heading-one')">
@@ -255,10 +256,19 @@ export class EditorComponent {
   }
 
   exportPdf() {
-    exportToPdf(this.doc.root.hostElement)
+    new DocExportManager(this.doc).exportToPdf('blockcraft-export-test.pdf', {bgcolor: '#fff', scale: 1, pdfPageSize: 'A2'})
   }
 
   exportImg() {
-    exportToImage(this.doc.root.hostElement)
+    new DocExportManager(this.doc).exportToJpeg('blockcraft-export-test.png',{bgcolor: '#fff', scale: 2.0})
+  }
+
+  ast() {
+    const treeWalker = document.createTreeWalker(this.doc.root.hostElement, NodeFilter.SHOW_ELEMENT, (node) => {
+      return (node instanceof HTMLElement && node.getAttribute('data-block-id')) ? NodeFilter.SHOW_ELEMENT : NodeFilter.FILTER_REJECT
+    })
+    console.log(treeWalker)
+    treeWalker.nextNode()
+    console.log(treeWalker)
   }
 }

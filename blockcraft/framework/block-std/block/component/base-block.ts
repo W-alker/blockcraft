@@ -97,7 +97,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     if (this.nodeType === BlockNodeType.void
       // || this.nodeType === BlockNodeType.block
     ) {
-      this.hostElement.prepend(createBlockGapSpace())
+      // this.hostElement.prepend(createBlockGapSpace())
       this.hostElement.appendChild(createBlockGapSpace())
     }
     this.changeDetectorRef.markForCheck()
@@ -105,6 +105,19 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   ngOnDestroy() {
     this.onDestroy$.next(true)
+  }
+
+  /**
+   * 组件内部数据初始化
+   * @protected
+   */
+  protected _init() {
+    this._yProps = this._yBlock.get('props')
+    this._yMeta = this._yBlock.get('meta')
+    this._props = proxyMap(this._native.props, this._yProps)
+    this._meta = proxyMap(this._native.meta, this._yMeta)
+    this.nodeType !== BlockNodeType.editable &&
+    (this._childrenIds = (this._yBlock.get('children') as Y.Array<string>).toArray())
   }
 
   /**
@@ -121,11 +134,17 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     }, ORIGIN_NO_RECORD)
   }
 
+  /**
+   * 从页面卸载，但不会即时销毁
+   */
   detach() {
     this.changeDetectorRef.detach()
     this.onDestroy$.next(true)
   }
 
+  /**
+   * 重新挂载，会重新初始化
+   */
   reattach() {
     this.yBlock = this.doc.crud.getYBlock(this.id)!
     this._init()
@@ -162,15 +181,6 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   get parentBlock(): BlockCraft.BlockComponent | null {
     return this.parentId ? this.doc.getBlockById(this.parentId) : null
-  }
-
-  protected _init() {
-    this._yProps = this._yBlock.get('props')
-    this._yMeta = this._yBlock.get('meta')
-    this._props = proxyMap(this._native.props, this._yProps)
-    this._meta = proxyMap(this._native.meta, this._yMeta)
-    this.nodeType !== BlockNodeType.editable &&
-    (this._childrenIds = (this._yBlock.get('children') as Y.Array<string>).toArray())
   }
 
   get childrenLength() {
@@ -283,12 +293,10 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
       meta: JSON.parse(JSON.stringify(this._native.meta)),
       children: this.nodeType === BlockNodeType.editable
         ? (this._yBlock.get('children') as Y.Text).toDelta()
-        : this.nodeType === BlockNodeType.void
-          ? []
-          : this.childrenIds.map(v => {
-            const block = this.doc.getBlockById(v)
-            return block.toSnapshot()
-          }),
+        : this.childrenIds.map(v => {
+          const block = this.doc.getBlockById(v)
+          return block.toSnapshot()
+        }),
     }
   }
 
