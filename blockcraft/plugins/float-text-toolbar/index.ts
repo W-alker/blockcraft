@@ -1,11 +1,17 @@
 import {BindHotKey, DocPlugin, POSITION_MAP} from "../../framework";
 import {debounceTime, fromEvent, Subscription, takeUntil} from "rxjs";
-import {ComponentRef} from "@angular/core";
-import {FloatTextToolbarComponent} from "./toolbar.component";
+import {Component, ComponentRef, Type} from "@angular/core";
+import {FloatTextToolbarComponent} from "./widgets/toolbar.component";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {ConnectedPosition, Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
 import {UIEventStateContext} from "../../framework";
+import {CommentPad} from "./widgets/comment-pad";
+
+export interface IToolbarConfig {
+  withComment?: boolean
+  commentComponent?: Type<CommentPad>
+}
 
 export class FloatTextToolbarPlugin extends DocPlugin {
   override name = "float-text-toolbar";
@@ -18,24 +24,18 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
   protected utils!: TextToolbarUtils
   private activeCommonAttrs: ITextCommonAttrs = {
-    attrs: new Set(),
+    attrs: new Map(),
     colors: {},
     textAlign: undefined
   }
 
-  init() {
-    // this._sub.add(fromEvent(this.doc.root.hostElement, 'selectstart').pipe(takeUntil(this.doc.root.onDestroy$))
-    //   .subscribe(() => {
-    //     this.closeToolbar()
-    //
-    //     fromEvent(document, 'mouseup').pipe(take(1)).subscribe(() => {
-    //       const sel = this.doc.selection.value
-    //       if (sel && !sel.collapsed) this.openToolbar()
-    //
-    //
-    //     })
-    //   }))
+  constructor(
+    private config: IToolbarConfig = {}
+  ) {
+    super();
+  }
 
+  init() {
     this.utils = new TextToolbarUtils(this.doc)
 
     this._sub = this.doc.selection.selectionChange$.pipe(debounceTime(500)).subscribe(sel => {
@@ -62,6 +62,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this._cpr = this.toolbarOvr.attach(portal)
     this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(this.doc.selection.value!)
     this._cpr.setInput('doc', this.doc)
+    this._cpr.setInput('config', this.config)
     this._cpr.setInput('utils', this.utils)
     this._cpr.setInput('activeAttrs', this.activeCommonAttrs.attrs)
     this._cpr.setInput('activeColors', this.activeCommonAttrs.colors)
@@ -132,7 +133,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     const value = this.activeCommonAttrs.attrs.has(attrName)
     this.utils.formatText({[`a:${attrName}`]: value ? null : true})
     if (this._cpr) {
-      value ? this.activeCommonAttrs.attrs.delete(attrName) : this.activeCommonAttrs.attrs.add(attrName)
+      value ? this.activeCommonAttrs.attrs.delete(attrName) : this.activeCommonAttrs.attrs.set(attrName, value)
       this._cpr.setInput('activeAttrs', new Set(this.activeCommonAttrs.attrs))
       this._cpr.changeDetectorRef.markForCheck()
     }
@@ -143,3 +144,5 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this._sub?.unsubscribe()
   }
 }
+
+export * from './widgets/comment-pad'

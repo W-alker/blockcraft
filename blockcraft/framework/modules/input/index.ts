@@ -358,8 +358,8 @@ export class InputTransformer {
     return true
   }
 
-  @BindHotKey({key: 'Enter', shiftKey: null})
-  private _handlerEnter(context: UIEventStateContext) {
+  @BindHotKey({key: 'Enter', shiftKey: null, ctrlKey: null})
+  private async _handlerEnter(context: UIEventStateContext) {
     const state = context.get('keyboardState')
     const {from, to, collapsed, isAllSelected} = state.selection
     const endBlock = to ? to.block : from.block
@@ -371,9 +371,8 @@ export class InputTransformer {
       context.preventDefault()
 
       const p = this.doc.schemas.createSnapshot('paragraph', [])
-      this.doc.crud.insertBlocksAfter(endBlock, [p]).then(() => {
-        this.doc.selection.setBlockPosition(p.id, true)
-      })
+      await (state.raw.ctrlKey ? this.doc.crud.insertBlocksBefore(endBlock, [p]) : this.doc.crud.insertBlocksAfter(endBlock, [p]))
+      this.doc.selection.setBlockPosition(p.id, true)
       // }
       return true
     }

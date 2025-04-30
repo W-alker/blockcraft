@@ -8,7 +8,7 @@ import {
   ViewChild
 } from "@angular/core";
 import {NzButtonComponent} from "ng-zorro-antd/button";
-import {isUrl} from "../../global";
+import {isUrl} from "../../../global";
 
 @Component({
   selector: 'link-input-pad',

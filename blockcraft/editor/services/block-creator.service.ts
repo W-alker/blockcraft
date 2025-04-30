@@ -1,7 +1,7 @@
 import {Injectable, Injector} from "@angular/core";
-import {BlockCreatorService} from "../framework";
-import {IBlockSchemaOptions} from "../framework/block-std/schema/block-schema";
-import {DOC_FILE_SERVICE_TOKEN} from "../framework";
+import {BlockCreatorService} from "../../framework";
+import {IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
+import {DOC_FILE_SERVICE_TOKEN} from "../../framework";
 import {Overlay} from "@angular/cdk/overlay";
 import {EmbedFrameCreator} from "./embed-frame-creator";
 import {ComponentPortal} from "@angular/cdk/portal";

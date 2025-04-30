@@ -1,5 +1,5 @@
 import {Injectable} from "@angular/core";
-import {DocMessageService} from "../framework";
+import {DocMessageService} from "../../framework";
 import {NzMessageService} from "ng-zorro-antd/message";
 
 @Injectable()

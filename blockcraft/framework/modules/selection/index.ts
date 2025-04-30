@@ -689,7 +689,7 @@ export class SelectionManager {
   toJSON(selection: BlockCraft.Selection) {
   }
 
-  createFakeRange(json: IBlockSelectionJSON) {
+  createFakeRange(json: IBlockSelectionJSON, config: {bgColor?: string, borderColor?: string} = {}) {
     const wrap = this.doc.root.hostElement
     const cursorEle = document.createElement('span')
     cursorEle.className = 'blockcraft-cursor'
@@ -703,6 +703,7 @@ export class SelectionManager {
       rect.width = Math.max(1, rect.width)
       const span = document.createElement('span');
       span.style.cssText = `
+        background: ${config.bgColor || 'unset'};
         left: ${rect.left - wrapRect.left}px;
         top: ${rect.top - wrapRect.top}px;
         width: ${rect.width}px;

@@ -3,7 +3,7 @@ import {ORIGIN_SKIP_SYNC} from "../../framework";
 import {getCommonAttributesFromDeltas, sliceDelta} from "../../global";
 
 export interface ITextCommonAttrs {
-  attrs: Set<string>
+  attrs: Map<string, any>
   colors: Record<string, string | null>
   textAlign: string | undefined | null
 }
@@ -12,8 +12,8 @@ export class TextToolbarUtils {
   constructor(public readonly doc: BlockCraft.Doc) {
   }
 
-  getCurrentCommonAttrs(selection: BlockCraft.Selection): ITextCommonAttrs{
-    const attrs = new Set<string>()
+  getCurrentCommonAttrs(selection: BlockCraft.Selection): ITextCommonAttrs {
+    const attrs = new Map<string, any>()
     let colors: Record<string, string | null>
     let textAlign: string | undefined | null = selection.firstBlock.props['textAlign']
 
@@ -41,10 +41,8 @@ export class TextToolbarUtils {
       color: commonAttrs['s:color'] ?? null,
       backColor: commonAttrs['s:background'] ?? null
     }
-    Object.keys(commonAttrs).forEach(key => {
-      if (key.startsWith('a:')) {
-        attrs.add(key.slice(2))
-      }
+    Object.entries(commonAttrs).forEach(([key, value]) => {
+      attrs.set(key.slice(2), value)
     })
     return {
       attrs,

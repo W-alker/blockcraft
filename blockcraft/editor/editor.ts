@@ -32,17 +32,19 @@ import {FloatTextToolbarPlugin} from "../plugins/float-text-toolbar";
 import {BlockTransformerPlugin} from "../plugins/block-transformer";
 import {BlockControllerPlugin} from "../plugins/block-controller";
 import {ImgToolbarPlugin} from "../plugins/img-toolbar";
-import {MyDocFileService} from "./doc-file-service";
-import {MyDocMessageService} from "./doc-message.service";
+import {MyDocFileService} from "./services/doc-file-service";
+import {MyDocMessageService} from "./services/doc-message.service";
 import {CalloutToolbarPlugin} from "../plugins/callout-toolbar";
 import {AttachmentExtensionPlugin} from "../plugins/attachment-extension";
-import {MyBlockCreatorService} from "./block-creator.service";
+import {MyBlockCreatorService} from "./services/block-creator.service";
 import {EmbedFrameExtensionPlugin} from "../plugins/embed-frame-extension";
 import {BookmarkBlockExtensionPlugin} from "../plugins/bookmark-frame-extension";
 import {InlineLinkExtension} from "../plugins/inline-link-extension";
 import {MatIcon} from "@angular/material/icon";
 import {DocDndDataTypes} from "../framework/services/dnd.service";
 import {DocExportManager} from "../tools";
+import {EditorCommentPad} from "./components/comment-pad";
+import {MyCommentService} from "./services/comment.service";
 // import {Code2BlockSchema, CodeLineBlockSchema} from "../blocks/code2-block";
 
 const schemas = new SchemaManager([
@@ -129,7 +131,8 @@ const schemas = new SchemaManager([
     {provide: DOC_MESSAGE_SERVICE_TOKEN, useClass: MyDocMessageService},
     {provide: BLOCK_CREATOR_SERVICE_TOKEN, useClass: MyBlockCreatorService},
     {provide: DOC_LINK_PREVIEWER_SERVICE_TOKEN, useClass: DocLinkPreviewerService},
-    ConsoleLogger
+    ConsoleLogger,
+    MyCommentService
   ]
 })
 export class EditorComponent {
@@ -165,7 +168,7 @@ export class EditorComponent {
       }]
     ],
     plugins: [new AutoUpdateOrderPlugin(), new CodeBlocKeyBinding(), new TableBlockBinding(),
-      new FloatTextToolbarPlugin(), new BlockTransformerPlugin(), new BlockControllerPlugin(),
+      new FloatTextToolbarPlugin({withComment: true, commentComponent: EditorCommentPad}), new BlockTransformerPlugin(), new BlockControllerPlugin(),
       new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
       new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(), new InlineLinkExtension()
     ]

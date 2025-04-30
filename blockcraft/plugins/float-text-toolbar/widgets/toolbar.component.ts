@@ -1,5 +1,5 @@
 import {
-  ChangeDetectionStrategy, ChangeDetectorRef,
+  ChangeDetectionStrategy,
   Component,
   EventEmitter,
   HostBinding,
@@ -13,17 +13,18 @@ import {
   BcOverlayTriggerDirective,
   ColorGroup,
   ColorPickerComponent
-} from "../../components";
-import {SimpleValue} from "../../global";
+} from "../../../components";
+import {BlockCraftError, ErrorCode, SimpleValue} from "../../../global";
 import {NgForOf, NgIf} from "@angular/common";
-import {ORIGIN_SKIP_SYNC} from "../../framework";
-import {IInlineNodeAttrs} from "../../framework/block-std/types";
+import {ORIGIN_SKIP_SYNC} from "../../../framework";
+import {IInlineNodeAttrs} from "../../../framework/block-std/types";
 import {Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {merge} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {LinkInputPad} from "./link-input-pad";
-import {TextToolbarUtils} from "./utils";
+import {TextToolbarUtils} from "../utils";
+import {IToolbarConfig} from "../index";
 
 export interface IToolbarMenuItem {
   label?: string
@@ -131,6 +132,13 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
                              [style.color]="activeColors['color']"
                              [style.background-color]="activeColors['backColor']"/>
 
+      @if (config.withComment && isLinkAble && !activeAttrs.has('comment')) {
+        <span class="bc-float-toolbar__divider"></span>
+        <bc-float-toolbar-item name="comment" [value]="activeAttrs.get('comment')"
+                               icon="bc_pinglun" title="评论" [active]="activeAttrs.has('comment')">
+        </bc-float-toolbar-item>
+      }
+
     </bc-float-toolbar>
 
     <ng-template #colorPicker>
@@ -181,6 +189,9 @@ export class FloatTextToolbarComponent {
   @Input({required: true})
   utils!: TextToolbarUtils
 
+  @Input({required: true})
+  config: IToolbarConfig = {}
+
   @HostBinding('style')
   @Input()
   style: string = ''
@@ -204,7 +215,7 @@ export class FloatTextToolbarComponent {
   alignList: IToolbarMenuItem[] = ALIGN_LIST
 
   @Input({required: true})
-  activeAttrs = new Set<string>()
+  activeAttrs = new Map<string, any>()
 
   @Input({required: true})
   activeColors: Record<string, string | null> = {}
@@ -239,10 +250,13 @@ export class FloatTextToolbarComponent {
       case 'sub':
       case 'sup':
         this.formatText({['a:' + evt.name]: evt.value})
-        evt.value === true ? this.activeAttrs.add(evt.name) : this.activeAttrs.delete(evt.name)
+        evt.value === true ? this.activeAttrs.set(evt.name, evt.value) : this.activeAttrs.delete(evt.name)
         break
       case 'link':
         evt.value ? this.onLink() : this.formatText({['a:' + evt.name]: null})
+        break
+      case 'comment':
+        this.onComment();
         break
     }
   }
@@ -316,5 +330,40 @@ export class FloatTextToolbarComponent {
       // })
       selection.from.block.formatText(index, length, {'a:link': url})
     })
+  }
+
+  onComment() {
+    const commentComponent = this.config.commentComponent
+    if (!commentComponent) {
+      throw new BlockCraftError(ErrorCode.DefaultRuntimeError, 'commentComponent is not defined')
+    }
+
+    const selection = this.doc.selection.value!
+    const selectionJSON = selection.toJSON()
+
+    const rect = selection.raw.getBoundingClientRect()
+    const fake = this.doc.selection.createFakeRange(selection, {bgColor: 'rgba(255, 239, 186, .6)'})
+    const overlay = this.doc.injector.get(Overlay)
+
+    const positionStrategy = overlay.position().global().top(rect.bottom + 'px').left(rect.left + 'px')
+    const portal = new ComponentPortal(commentComponent, null, this.doc.injector)
+    const ovr = overlay.create({
+      positionStrategy,
+      hasBackdrop: true,
+      backdropClass: 'cdk-overlay-transparent-backdrop',
+    })
+
+    const close = () => {
+      ovr.dispose()
+      fake.remove()
+      this.doc.selection.replay(selectionJSON)
+    }
+    const cpr = ovr.attach(portal)
+    cpr.setInput('selection', selectionJSON)
+    cpr.setInput('doc', this.doc)
+    cpr.setInput('commentId', this.activeAttrs.get('commentId'))
+    cpr.setInput('close', close)
+
+    merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
   }
 }
