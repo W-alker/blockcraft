@@ -1,11 +1,20 @@
-import {UIEventState, UIEventStateContext} from "../../block-std";
-import {DocEventRegister, EventListen, EventNames, EventScopeSourceType, EventSourceState} from "../../block-std";
+import {
+  BlockNodeType,
+  DeltaOperation,
+  DocEventRegister,
+  EventListen,
+  EventNames,
+  EventScopeSourceType,
+  EventSourceState,
+  IBlockSnapshot,
+  UIEventState,
+  UIEventStateContext
+} from "../../block-std";
 import {deltaToString, isUrl, sliceDelta} from "../../../global";
 import {ClipboardDataType} from "./types";
-import {BlockNodeType, DeltaOperation, IBlockSnapshot} from "../../block-std";
 import {generateId} from "../../utils";
 import {ORIGIN_SKIP_SYNC} from "../../doc";
-import {HtmlAdapter} from "../../adapters";
+import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
 
 @DocEventRegister
 export class ClipboardManager {
@@ -210,10 +219,17 @@ export class ClipboardManager {
     // html
     if (state.dataTypes.includes(ClipboardDataType.HTML)) {
       const htmlString = state.getData(ClipboardDataType.HTML)
+      const adapter = this.doc.injector.get(DOC_ADAPTER_SERVICE_TOKEN)
+      if (!adapter) return
       if (htmlString) {
         // const parser = new DOMParser();
         // const doc = parser.parseFromString(htmlString, 'text/html');
-        console.log(new HtmlAdapter().toBlockSnapshot(htmlString))
+        adapter.html2snapshot(htmlString).then(snapshot => {
+          console.log(snapshot)
+          if (snapshot.children?.length && snapshot.nodeType === BlockNodeType.root) {
+            this.doc.crud.insertBlocksAfter(selection.from.block, snapshot.children)
+          }
+        })
         return true
       }
     }

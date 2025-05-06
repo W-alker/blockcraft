@@ -6,7 +6,7 @@ import {
   DOC_FILE_SERVICE_TOKEN,
   DOC_MESSAGE_SERVICE_TOKEN,
   BLOCK_CREATOR_SERVICE_TOKEN,
-  DOC_LINK_PREVIEWER_SERVICE_TOKEN, DocLinkPreviewerService
+  DOC_LINK_PREVIEWER_SERVICE_TOKEN, DocLinkPreviewerService, DOC_ADAPTER_SERVICE_TOKEN
 } from "../framework";
 import {
   HeadingFourBlockSchema,
@@ -45,6 +45,7 @@ import {DocDndDataTypes} from "../framework/services/dnd.service";
 import {DocExportManager} from "../tools";
 import {EditorCommentPad} from "./components/comment-pad";
 import {MyCommentService} from "./services/comment.service";
+import {AdapterService} from "../adapters";
 // import {Code2BlockSchema, CodeLineBlockSchema} from "../blocks/code2-block";
 
 const schemas = new SchemaManager([
@@ -131,6 +132,7 @@ const schemas = new SchemaManager([
     {provide: DOC_MESSAGE_SERVICE_TOKEN, useClass: MyDocMessageService},
     {provide: BLOCK_CREATOR_SERVICE_TOKEN, useClass: MyBlockCreatorService},
     {provide: DOC_LINK_PREVIEWER_SERVICE_TOKEN, useClass: DocLinkPreviewerService},
+    {provide: DOC_ADAPTER_SERVICE_TOKEN, useClass: AdapterService},
     ConsoleLogger,
     MyCommentService
   ]

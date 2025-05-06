@@ -1,7 +1,7 @@
 import {generateId, NoEditableBlockNative} from "../../framework";
 import {TableBlockComponent} from "./table.block";
 import {IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
-import {BlockNodeType, IBlockProps} from "../../framework/block-std/types";
+import {BlockNodeType, IBlockProps} from "../../framework";
 import {TableRowBlockComponent} from "./table-row.block";
 import {TableCellBlockComponent} from "./table-cell.block";
 import {ParagraphBlockSchema} from "../paragraph-block";

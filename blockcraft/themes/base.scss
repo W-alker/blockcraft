@@ -104,6 +104,10 @@
         color: inherit;
       }
     }
+
+    &:last-child {
+      margin-bottom: 0;
+    }
   }
 
   [data-zero-space="true"] {

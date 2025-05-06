@@ -703,7 +703,7 @@ export class SelectionManager {
       rect.width = Math.max(1, rect.width)
       const span = document.createElement('span');
       span.style.cssText = `
-        background: ${config.bgColor || 'unset'};
+        background: ${config.bgColor || 'var(--bc-select-background-color)'};
         left: ${rect.left - wrapRect.left}px;
         top: ${rect.top - wrapRect.top}px;
         width: ${rect.width}px;

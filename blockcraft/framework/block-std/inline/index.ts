@@ -474,32 +474,6 @@ export class InlineManager {
     throw new BlockCraftError(ErrorCode.InlineEditorError, `Error inline node position queried: character offset: ${offset}`)
   }
 
-  private _setSelection(container: HTMLElement, position: number) {
-    const selection = document.getSelection()!
-
-    if (position === 0) {
-      selection.setPosition(container.firstElementChild!.firstChild, 0)
-    }
-
-    const elements = Array.from(container.querySelectorAll(INLINE_ELEMENT_TAG)) as HTMLElement[]
-    for (let i = 0; i < elements.length; i++) {
-      const ele = elements[i]
-
-      const isEmbed = !(ele.firstElementChild as HTMLElement).isContentEditable
-      const eleLength = isEmbed ? 1 : ele.textContent!.length
-      if (position <= eleLength) {
-        if (isEmbed && position === 1) {
-          selection.setPosition(ele.querySelector('[data-zero-space="true"]')!.firstChild, 0)
-          return
-        }
-        const textNode = ele.firstElementChild!.firstChild as Text
-        selection.setPosition(textNode, position)
-        return
-      }
-      position -= eleLength
-    }
-  }
-
 }
 
 export * from './const'

@@ -26,4 +26,17 @@ export const compareAttributesWithEle = (ele: HTMLElement, attrs?: IInlineNodeAt
   return true
 }
 
+export const compareAttributes = (attrs1?: IInlineNodeAttrs, attrs2?: IInlineNodeAttrs): boolean => {
+  if(!attrs1 && !attrs2) return true
+  if(!attrs1 || !attrs2) return false
+  const attrs1Entries = Object.entries(attrs1)
+  const attrs2Entries = Object.entries(attrs2)
+  if (attrs1Entries.length !== attrs2Entries.length) return false
+  for (const [key, attr] of attrs1Entries) {
+    // @ts-ignore
+    if (attrs2[key] !== attr) return false
+  }
+  return true
+}
+
 

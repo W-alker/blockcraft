@@ -1,5 +1,8 @@
 @mixin bullet-block {
   div.bullet-block {
+    display: flex;
+    align-items: flex-start;
+
     .edit-container {
       flex: 1;
     }
@@ -9,6 +12,7 @@
       align-items: center;
       justify-content: center;
       width: var(--bc-fs);
+      height: var(--bc-lh);
 
       .square {
         width: calc(var(--bc-fs) * 0.5);

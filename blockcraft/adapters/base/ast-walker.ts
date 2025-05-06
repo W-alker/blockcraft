@@ -1,5 +1,5 @@
 import {ASTWalkerContext} from "./context";
-import {BlockCraftError, ErrorCode} from "../../../global";
+import {BlockCraftError, ErrorCode} from "../../global";
 
 type Keyof<T> = T extends unknown ? keyof T : never;
 

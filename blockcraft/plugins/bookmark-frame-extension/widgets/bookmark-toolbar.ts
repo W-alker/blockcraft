@@ -7,7 +7,7 @@ import {isFigmaUrl, isJueJinUrl} from "../../../global";
 @Component({
   selector: "div.iframe-toolbar",
   template: `
-    <bc-float-toolbar (onItemClick)="onItemClick($event)">
+    <bc-float-toolbar (onItemClick)="onItemClick($event)" direction="row">
       <a class="link" [href]="block.props.url"
          target="_blank">{{ block.props.url | hostUrl }}</a>
       <span class="bc-float-toolbar__divider"></span>
@@ -29,8 +29,13 @@ import {isFigmaUrl, isJueJinUrl} from "../../../global";
   `,
   styles: [`
     .link {
+      display: block;
       color: var(--bc-active-color);
       line-height: 32px;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   `],
   standalone: true,

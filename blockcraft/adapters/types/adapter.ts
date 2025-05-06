@@ -1,4 +1,4 @@
-import {DeltaInsert, IBlockSnapshot, IInlineNodeAttrs} from "../../block-std";
+import {DeltaInsert, IBlockSnapshot, IInlineNodeAttrs} from "../../framework/block-std";
 import {ASTWalker, NodeProps} from "../base/ast-walker";
 import {ASTWalkerContext} from "../base/context";
 
@@ -50,9 +50,6 @@ export type BlockAdapterMatcher<
   TNode extends object = never,
   TConverter extends DeltaASTConverter = DeltaASTConverter,
 > = {
-  /** The block flavour identifier */
-  flavour: string;
-
   /**
    * Function to check if a target node matches this adapter
    * @param o - The target node properties to check

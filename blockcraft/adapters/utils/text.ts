@@ -1,4 +1,4 @@
-import {DeltaInsert} from "../../block-std";
+import {compareAttributes, DeltaInsert} from "../../framework";
 
 const mergeDeltas = (
   acc: DeltaInsert[],
@@ -8,20 +8,21 @@ const mergeDeltas = (
   if (acc.length === 0) {
     return [cur];
   }
-  // const last = acc[acc.length - 1];
-  // if (options?.force) {
-  //   last.insert = last.insert + cur.insert;
-  //   last.attributes = Object.create(null);
-  //   return acc;
-  // } else if (
-  //   typeof last.insert === 'string' &&
-  //   typeof cur.insert === 'string' &&
-  //   (isEqual(last.attributes, cur.attributes) ||
-  //     (last.attributes === undefined && cur.attributes === undefined))
-  // ) {
-  //   last.insert += cur.insert;
-  //   return acc;
-  // }
+  const last = acc[acc.length - 1];
+  if (options?.force) {
+    // @ts-ignore
+    last.insert = last.insert + cur.insert;
+    last.attributes = Object.create(null);
+    return acc;
+  } else if (
+    typeof last.insert === 'string' &&
+    typeof cur.insert === 'string' &&
+    (compareAttributes(last.attributes, cur.attributes) ||
+      (last.attributes === undefined && cur.attributes === undefined))
+  ) {
+    last.insert += cur.insert;
+    return acc;
+  }
   return [...acc, cur];
 };
 

@@ -55,7 +55,6 @@ import {BcFloatToolbarItemComponent} from "./float-toolbar-item";
 
         ::ng-deep {
           bc-float-toolbar-item {
-            width: 100%;
             justify-content: center;
             padding: 0 4px;
           }

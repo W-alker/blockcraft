@@ -1,6 +1,6 @@
-import {ASTToDeltaMatcher, DeltaASTConverter, DeltaASTConverterOptions} from "../types/adapter";
-import {DeltaInsert, IInlineNodeAttrs} from "../../block-std";
-import {HtmlAST, InlineHtmlAST} from "../types/hast";
+import {ASTToDeltaMatcher, DeltaASTConverter, DeltaASTConverterOptions} from "../types";
+import {DeltaInsert, IInlineNodeAttrs} from "../../framework";
+import {HtmlAST, InlineHtmlAST} from "../types";
 import {TextUtils} from "../utils";
 
 export type InlineDeltaToHtmlAdapterMatcher = InlineDeltaMatcher<InlineHtmlAST>;
@@ -81,7 +81,7 @@ export class HtmlDeltaConverter extends DeltaASTConverter<
     options: DeltaASTConverterOptions = Object.create(null)
   ): DeltaInsert[] {
     return this._spreadAstToDelta(ast, options).reduce((acc, cur) => {
-      return TextUtils.mergeDeltas(acc, cur);
+      return TextUtils.mergeDeltas(acc, cur)
     }, [] as DeltaInsert[]);
   }
 
