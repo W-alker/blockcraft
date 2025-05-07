@@ -179,6 +179,7 @@ export class DocDndService {
     }
 
     if (!this.doc.schemas.isValidChildren(block.flavour, this.doc.schemas.get(targetBlock.parentBlock!.flavour))) {
+      console.log(block.flavour, targetBlock.parentBlock!.flavour)
       this.doc.messageService.warn(`不允许的移动`)
       return
     }

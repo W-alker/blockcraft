@@ -25,14 +25,14 @@ export interface TableRowBlockModel extends NoEditableBlockNative {
 export interface TableCellBlockModel extends NoEditableBlockNative {
   flavour: 'table-cell',
   props: {
-    backColor: string | null
-    color: string | null
+    backColor?: string | null
+    color?: string | null
     verticalAlign: 'top' | 'middle' | 'bottom'
     rowspan: number | null
     colspan: number | null
     display: null | 'none'
     mergedBy?: string
-  } & IBlockProps
+  } & IBlockProps,
 }
 
 export const TableBlockSchema: IBlockSchemaOptions<TableBlockModel> = {
@@ -60,7 +60,7 @@ export const TableBlockSchema: IBlockSchemaOptions<TableBlockModel> = {
   metadata: {
     version: 1.0,
     label: '表格',
-    excludeChildren: ['table*'],
+    includeChildren: ['table-row'],
     icon: "bf_icn bf_column-vertical",
     svgIcon: "bf_column-vertical",
   }
@@ -89,7 +89,7 @@ export const TableRowBlockSchema: IBlockSchemaOptions<TableRowBlockModel> = {
   metadata: {
     version: 1.0,
     label: '表格行',
-    excludeChildren: ['table*'],
+    includeChildren: ['table-cell'],
     isLeaf: true,
   }
 }
@@ -103,8 +103,6 @@ export const TableCellBlockSchema: IBlockSchemaOptions<TableCellBlockModel> = {
     flavour: 'table-cell',
     nodeType: BlockNodeType.block,
     props: {
-      backColor: null,
-      color: null,
       verticalAlign: 'top',
       rowspan: null,
       colspan: null,

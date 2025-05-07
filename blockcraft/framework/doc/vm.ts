@@ -41,11 +41,17 @@ export class DocVM {
   private _restoreCachedComp(id: string) {
     const cpr = this.store.get(id)!
     cpr.instance.reattach()
+    // 子孙元素依次触发reattach
+    if (cpr.instance.childrenLength > 0) {
+      cpr.instance.getChildrenBlocks().forEach(b => {
+        this._restoreCachedComp(b.id)
+      })
+    }
     return cpr
   }
 
   async createComponentByYBlocks(yBlocks: Record<string, YBlock>) {
-
+    console.log('--------- createComponentByYBlocks', yBlocks)
     // 乱序的，要根据children中的Id顺序组合
     const createComp = async (yBlock: YBlock, parentId: string | null = null) => {
       const id = yBlock.get('id')
@@ -62,10 +68,10 @@ export class DocVM {
 
       this.set(id, cpr)
 
-      const nodeType = yBlock.get('nodeType')
-      if ((nodeType === BlockNodeType.block || nodeType === BlockNodeType.root) && yBlock.get('children').length) {
+      const yChildren = yBlock.get('children')
+      if (yChildren instanceof Y.Array && yChildren.length) {
         await lastValueFrom(cpr.instance.onViewInit$).then(() => {
-          yBlock.get('children').forEach(async childId => {
+          yChildren.forEach(async childId => {
             const cmpr = await createComp(yBlocks[childId]!, id);
             (cpr.instance.childrenContainer as ViewContainerRef).insert(cmpr.hostView)
           })
@@ -75,12 +81,8 @@ export class DocVM {
       return cpr
     }
 
-    const citedBlocks = new Set(
-      Object.values(yBlocks).flatMap(item => item.get('children') instanceof Y.Array ? item.get('children').toArray() : [])
-    )
     const res: Record<string, BlockCraft.BlockComponentRef> = {}
     for (const id in yBlocks) {
-      if (citedBlocks.has(id)) continue
       res[id] = await createComp(yBlocks[id]!)
     }
 

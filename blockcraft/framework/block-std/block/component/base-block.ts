@@ -184,6 +184,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   get childrenLength() {
+    if (this.nodeType === BlockNodeType.editable) return -1
     return (this.yBlock.get('children') as Y.Array<string>).length
   }
 
@@ -237,17 +238,16 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return this.doc.getBlockById(this.childrenIds[index])
   }
 
-  getFlatBlocks(): BlockCraft.IBlockComponents[] {
-    const children: any[] = [this.doc.getBlockById(this.id)]
-    if (this.nodeType !== BlockNodeType.block) {
-      return children
-    }
-    for (const child of this.childrenIds) {
-      const ref = this.doc.getBlockById(child)
-      children.push(...ref.getFlatBlocks())
-    }
-    return children
-  }
+  // getFlatBlocks(): BlockCraft.BlockComponent[] {
+  //   const children: any[] = [this.doc.getBlockById(this.id)]
+  //   if (this.nodeType !== BlockNodeType.block) {
+  //     return children
+  //   }
+  //   for (const child of this.getChildrenBlocks()) {
+  //     children.push(...child.getFlatBlocks())
+  //   }
+  //   return children
+  // }
 
   getPath() {
     return this.doc.getBlockPath(this.id)

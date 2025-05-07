@@ -1,7 +1,7 @@
 import {IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
 import {RootBlockComponent} from "./root.block";
-import {NoEditableBlockNative} from "../../framework";
-import {BlockNodeType, IBlockSnapshot} from "../../framework/block-std/types";
+import {BlockNodeType, IBlockSnapshot, NoEditableBlockNative} from "../../framework";
+import {ParagraphBlockSchema} from "../paragraph-block";
 
 export interface RootBlockModel extends NoEditableBlockNative {
   flavour: "root",
@@ -25,7 +25,7 @@ export const RootBlockSchema: IBlockSchemaOptions<RootBlockModel> = {
         }
       },
       props: {},
-      children: children || []
+      children: children?.length ? children : [ParagraphBlockSchema.createSnapshot()]
     }
   },
   metadata: {

@@ -1,5 +1,5 @@
 import {InlineDeltaToHtmlAdapterMatcher} from "../delta-converter";
-import {InlineHtmlAST} from "../../types/hast";
+import {InlineHtmlAST} from "../../types";
 
 
 export const boldDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {

@@ -151,8 +151,8 @@ export class CellToolbarComponent {
     this.isMerged = this.selectedCells.length === 1 && !!(firstCell.props.colspan || firstCell.props.rowspan)
 
     // 比对颜色
-    let commonColor = firstCell.props.color
-    let commonBackColor = firstCell.props.backColor
+    let commonColor = firstCell.props.color ?? null
+    let commonBackColor = firstCell.props.backColor ?? null
     // 比对居中
     let commonVerticalAlign = firstCell.props.verticalAlign
     let commonTextAlign = firstCell.props.textAlign

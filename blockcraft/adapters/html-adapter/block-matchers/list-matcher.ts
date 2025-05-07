@@ -3,9 +3,11 @@ import {HastUtils, TextUtils} from "../../utils";
 import {BlockNodeType, DeltaInsert, generateId} from "../../../framework";
 import {Element} from 'hast'
 
+const listBlockFlavour = ['bullet', 'ordered', 'todo']
+
 export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
   toMatch: o => HastUtils.isElement(o.node) && o.node.tagName === 'li',
-  fromMatch: o => o.node.flavour === 'bullet' || o.node.flavour === 'ordered',
+  fromMatch: o => listBlockFlavour.includes(o.node.flavour),
   toBlockSnapshot: {
     enter: (o, context) => {
       if (!HastUtils.isElement(o.node)) {
@@ -18,7 +20,7 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
         listType = 'ordered';
       }
 
-      const { walkerContext, deltaConverter } = context;
+      const {walkerContext, deltaConverter} = context;
       walkerContext.openNode(
         {
           id: generateId(),
@@ -29,23 +31,19 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
           children: deltaConverter.astToDelta(o.node)
         },
         'children'
-      );
+      )
+        .closeNode()
       walkerContext.skipAllChildren();
-    },
-    leave: (_, context) => {
-      const { walkerContext } = context;
-      walkerContext.closeNode();
     },
   },
   fromBlockSnapshot: {
     enter: (o, context) => {
-      const text = (o.node.props["text"] ?? { delta: [] }) as {
-        delta: DeltaInsert[];
-      };
-      const { deltaConverter, walkerContext } = context;
+      const delta = o.node.children as DeltaInsert[]
+      const {deltaConverter, walkerContext} = context;
       const currentTNode = walkerContext.currentNode();
-      const liChildren = deltaConverter.deltaToAST(text.delta);
-      if (o.node.props["type"] === 'todo') {
+      const liChildren = deltaConverter.deltaToAST(delta);
+
+      if (o.node.flavour === 'todo') {
         liChildren.unshift({
           type: 'element',
           tagName: 'input',
@@ -59,6 +57,7 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
               tagName: 'label',
               properties: {
                 style: 'margin-right: 3px;',
+                className: 'todo-list'
               },
               children: [],
             },
@@ -67,16 +66,15 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
       }
       // check if the list is of the same type
       if (
-        walkerContext.getNodeContext('affine:list:parent') === o.parent &&
+        walkerContext.getNodeContext('list:parent') === o.parent &&
         currentTNode.type === 'element' &&
-        currentTNode.tagName ===
-        (o.node.props["type"] === 'numbered' ? 'ol' : 'ul') &&
+        currentTNode.tagName === (o.node.flavour === 'ordered' ? 'ol' : 'ul') &&
         !(
           Array.isArray(currentTNode.properties["className"]) &&
           currentTNode.properties["className"].includes('todo-list')
         ) ===
         TextUtils.isNullish(
-          o.node.props["type"] === 'todo'
+          o.node.flavour === 'todo'
             ? (o.node.props["checked"] as boolean)
             : undefined
         )
@@ -87,57 +85,53 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
         walkerContext.openNode(
           {
             type: 'element',
-            tagName: o.node.props["type"] === 'numbered' ? 'ol' : 'ul',
+            tagName: o.node.flavour === 'ordered' ? 'ol' : 'ul',
             properties: {
               style:
                 o.node.props["type"] === 'todo'
                   ? 'list-style-type: none; padding-inline-start: 18px;'
                   : null,
-              className: [o.node.props["type"] + '-list'],
             },
             children: [],
           },
           'children'
         );
-        walkerContext.setNodeContext('affine:list:parent', o.parent);
+        walkerContext.setNodeContext('list:parent', o.parent);
       }
 
       walkerContext.openNode(
         {
           type: 'element',
           tagName: 'li',
-          properties: {
-            className: ['affine-list-block-container'],
-          },
+          properties: {},
           children: liChildren,
         },
         'children'
       );
     },
     leave: (o, context) => {
-      const { walkerContext } = context;
+      const {walkerContext} = context;
       const currentTNode = walkerContext.currentNode() as unknown as Element;
       const previousTNode = walkerContext.previousNode() as unknown as Element;
       if (
-        walkerContext.getPreviousNodeContext('affine:list:parent') ===
+        walkerContext.getPreviousNodeContext('list:parent') ===
         o.parent &&
         currentTNode.tagName === 'li' &&
         previousTNode.tagName ===
-        (o.node.props["type"] === 'numbered' ? 'ol' : 'ul') &&
+        (o.node.flavour === 'ordered' ? 'ol' : 'ul') &&
         !(
           Array.isArray(previousTNode.properties["className"]) &&
           previousTNode.properties["className"].includes('todo-list')
         ) ===
         TextUtils.isNullish(
-          o.node.props["type"] === 'todo'
+          o.node.flavour === 'todo'
             ? (o.node.props["checked"] as boolean)
             : undefined
         )
       ) {
         walkerContext.closeNode();
         if (
-          (o.next?.flavour !== 'bullet' && o.next?.flavour !== 'ordered') ||
-          o.next.props["type"] !== o.node.props["type"]
+          (o.next?.flavour !== 'bullet' && o.next?.flavour !== 'ordered')
         ) {
           // If the next node is not a list or different type of list, close the list
           walkerContext.closeNode();

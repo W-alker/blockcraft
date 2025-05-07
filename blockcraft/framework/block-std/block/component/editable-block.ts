@@ -101,9 +101,30 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
   applyDeltaOperation(delta: DeltaOperation[]) {
     this.doc.crud.transact(() => {
-      this.yText.applyDelta(delta)
+      this._applyDeltaToYText(delta)
       this._applyDeltaToView(delta)
     }, ORIGIN_SKIP_SYNC)
+  }
+
+  protected _applyDeltaToYText(deltas: DeltaOperation[]) {
+    let r = 0
+    for(const delta of deltas) {
+      if (delta.insert) {
+        if (typeof delta.insert === 'string') {
+          this.yText.insert(r, delta.insert, delta.attributes)
+          r += delta.insert.length
+        } else {
+          this.yText.insertEmbed(r, delta.insert, delta.attributes)
+          r += 1
+        }
+      }
+      else if (delta.delete) {
+        this.yText.delete(r, delta.delete)
+      }
+      else if (delta.retain) {
+        r += delta.retain
+      }
+    }
   }
 
   protected _applyDeltaToView(deltas: DeltaOperation[]) {

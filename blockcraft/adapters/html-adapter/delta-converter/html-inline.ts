@@ -1,5 +1,5 @@
 import {HtmlASTToDeltaMatcher} from "../delta-converter";
-import {HtmlAST} from "../../types/hast";
+import {HtmlAST} from "../../types";
 import type { Element } from 'hast';
 import { collapseWhiteSpace } from 'collapse-white-space';
 

@@ -3,7 +3,7 @@ import {EditableBlockComponent} from "../../framework";
 import {CaptionBlockModel} from "./index";
 
 @Component({
-  selector: 'p.caption-block',
+  selector: 'figcaption.caption-block',
   template: ``,
   standalone: true,
   host: {

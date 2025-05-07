@@ -6,7 +6,7 @@ import {TodoBlockModel} from "./index";
   selector: 'div.todo-block',
   template: `
     <button class="todo-block-button" contenteditable="false" (mousedown)="toggleCompleted($event)">
-      <i [class]="['bc_icon', props.completed ? 'bf_xuanzhong-fill' : 'bf_weixuanzhong']"></i>
+      <i [class]="['bc_icon', props.checked ? 'bf_xuanzhong-fill' : 'bf_weixuanzhong']"></i>
     </button>
     <div class="edit-container"></div>
   `,
@@ -17,7 +17,7 @@ export class TodoBlockComponent extends EditableBlockComponent<TodoBlockModel> {
 
   toggleCompleted(e: Event) {
     e.preventDefault()
-    this.props.completed = this.props.completed ? 0 : Date.now()
+    this.props.checked = this.props.checked ? 0 : Date.now()
     this.changeDetectorRef.detectChanges()
   }
 }

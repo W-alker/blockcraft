@@ -37,6 +37,8 @@ export class BlockControllerPlugin extends DocPlugin {
       const blockId = closetBlockId(target)
       if (!blockId || this._activeBlock?.id === blockId) return
       const block = this.doc.getBlockById(blockId)
+      const schema = this.doc.schemas.get(block.flavour)
+      if (!schema || schema.metadata.isLeaf) return
 
       this._timer = setTimeout(() => {
         this._cpr.setInput('activeBlock', this._activeBlock = block)
@@ -77,7 +79,7 @@ export class BlockControllerPlugin extends DocPlugin {
   }
 
   clearTimer() {
-    if(!this._timer) return
+    if (!this._timer) return
     clearTimeout(this._timer)
     this._timer = undefined
   }

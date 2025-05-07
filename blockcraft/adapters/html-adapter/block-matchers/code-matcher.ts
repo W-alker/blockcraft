@@ -3,6 +3,8 @@ import {BlockHtmlAdapterMatcher} from "../block-adapter";
 import {CodeBlockSchema} from "../../../blocks";
 import {HastUtils} from "../../utils";
 import {DeltaInsert} from "blockflow-editor";
+import {HtmlAST} from "../../types";
+import {deltaToString} from "../../../global";
 
 export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   toMatch: o => HastUtils.isElement(o.node) && o.node.tagName === 'pre',
@@ -20,7 +22,7 @@ export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       const codeText =
         code.children.length === 1 && code.children[0].type === 'text'
           ? code.children[0]
-          : { ...code, tagName: 'div' };
+          : {...code, tagName: 'div'};
       let codeLang = Array.isArray(code.properties?.["className"])
         ? code.properties["className"].find(
           className =>
@@ -32,7 +34,7 @@ export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           ? codeLang.replace('code-', '')
           : undefined;
 
-      const { walkerContext, deltaConverter } = context;
+      const {walkerContext, deltaConverter} = context;
       walkerContext
         .openNode(
           CodeBlockSchema.createSnapshot(deltaConverter.astToDelta(codeText, {
@@ -47,26 +49,26 @@ export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   },
   fromBlockSnapshot: {
     enter: async (o, context) => {
-      const { walkerContext } = context;
-      const rawLang = o.node.props["language"] as string | null;
-      // const matchedLang = rawLang
-      //   ? (bundledLanguagesInfo.find(
-      //     info =>
-      //       info.id === rawLang ||
-      //       info.name === rawLang ||
-      //       info.aliases?.includes(rawLang)
-      //   )?.id ?? 'text')
-      //   : 'text';
-
-      const text = o.node.children as DeltaInsert[];
-      const code = text.map(delta => delta.insert).join('');
-      // const hast = await codeToHast(code, {
-      //   lang: matchedLang,
-      //   theme: 'light-plus',
-      // });
-
-      // @ts-ignore
-      walkerContext.openNode(hast, 'children').closeNode();
+      const {walkerContext} = context;
+      const delta = o.node.children as DeltaInsert[];
+      walkerContext.openNode({
+        type: 'element',
+        tagName: 'pre',
+        properties: {},
+        children: [
+          {
+            type: 'element',
+            tagName: 'span',
+            properties: {},
+            children: [
+              {
+                type: 'text',
+                value: deltaToString(delta),
+              }
+            ]
+          }
+        ],
+      }, 'children').closeNode();
     },
   },
 };

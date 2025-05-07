@@ -6,5 +6,5 @@ export const DOC_ADAPTER_SERVICE_TOKEN = new InjectionToken<DocAdapterService>("
 export abstract class DocAdapterService {
   abstract html2snapshot(html: string): Promise<IBlockSnapshot>
 
-  abstract snapshot2html(snapshot: IBlockSnapshot): string
+  abstract snapshot2html(snapshot: IBlockSnapshot): Promise<string>
 }

@@ -18,13 +18,17 @@ const paragraphBlockMatchTags = [
   'footer',
 ];
 
-const headingBlockMatchTagsMap: Record<string, BlockCraft.BlockFlavour> = {
+const headingBlockMatchTagsMap: Record<string, string> = {
   h1: 'heading-one',
   h2: 'heading-one',
   h3: 'heading-two',
   h4: 'heading-three',
   h5: 'heading-four',
   h6: 'heading-four',
+  'heading-one': 'h1',
+  'heading-two': 'h2',
+  'heading-three': 'h3',
+  'heading-four': 'h4',
 }
 
 export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
@@ -37,11 +41,11 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       if (!HastUtils.isElement(o.node)) {
         return;
       }
-      const { walkerContext, deltaConverter } = context;
+      const {walkerContext, deltaConverter} = context;
       switch (o.node.tagName) {
+        case 'span':
         case 'body':
         case 'div':
-        case 'span':
         case 'footer': {
           if (
             o.parent?.node.type === 'element' &&
@@ -56,7 +60,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
                   flavour: 'paragraph',
                   props: {},
                   meta: {},
-                  children:  deltaConverter.astToDelta(o.node),
+                  children: deltaConverter.astToDelta(o.node),
                 },
                 'children'
               )
@@ -94,7 +98,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
               {
                 nodeType: BlockNodeType.editable,
                 id: generateId(),
-                flavour: headingBlockMatchTagsMap[o.node.tagName] || 'heading-four',
+                flavour: headingBlockMatchTagsMap[o.node.tagName] as BlockCraft.BlockFlavour || 'heading-four',
                 props: {},
                 meta: {},
                 children: deltaConverter.astToDelta(o.node),
@@ -112,7 +116,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       if (!HastUtils.isElement(o.node)) {
         return;
       }
-      const { walkerContext } = context;
+      const {walkerContext} = context;
       walkerContext.closeNode();
 
       // switch (o.node.tagName) {
@@ -147,147 +151,99 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       //     break;
       //   }
       // }
+
     },
   },
   fromBlockSnapshot: {
     enter: (o, context) => {
-      const text = (o.node.props["text"] ?? { delta: [] }) as {
-        delta: DeltaInsert[];
-      };
-      const { walkerContext, deltaConverter } = context;
-      switch (o.node.props["type"]) {
-        case 'text': {
+      const delta = o.node.children as DeltaInsert[]
+      const {walkerContext, deltaConverter} = context;
+      switch (o.node.flavour) {
+        case 'paragraph':
           walkerContext
-            .openNode(
-              {
-                type: 'element',
-                tagName: 'div',
-                properties: {
-                  className: ['affine-paragraph-block-container'],
-                },
-                children: [],
-              },
-              'children'
-            )
             .openNode(
               {
                 type: 'element',
                 tagName: 'p',
                 properties: {},
-                children: deltaConverter.deltaToAST(text.delta),
+                children: deltaConverter.deltaToAST(delta),
               },
               'children'
             )
             .closeNode()
-            .openNode(
-              {
-                type: 'element',
-                tagName: 'div',
-                properties: {
-                  className: ['affine-block-children-container'],
-                  style: 'padding-left: 26px;',
-                },
-                children: [],
-              },
-              'children'
-            );
+          walkerContext.skipAllChildren()
           break;
-        }
-        case 'h1':
-        case 'h2':
-        case 'h3':
-        case 'h4':
-        case 'h5':
-        case 'h6': {
+        case 'heading-one':
+        case 'heading-two':
+        case 'heading-three':
+        case 'heading-four': {
           walkerContext
             .openNode(
               {
                 type: 'element',
-                tagName: 'div',
-                properties: {
-                  className: ['affine-paragraph-block-container'],
-                },
-                children: [],
-              },
-              'children'
-            )
-            .openNode(
-              {
-                type: 'element',
-                tagName: o.node.props["type"],
+                tagName: headingBlockMatchTagsMap[o.node.flavour],
                 properties: {},
-                children: deltaConverter.deltaToAST(text.delta),
+                children: deltaConverter.deltaToAST(delta),
               },
               'children'
             )
             .closeNode()
-            .openNode(
-              {
-                type: 'element',
-                tagName: 'div',
-                properties: {
-                  className: ['affine-block-children-container'],
-                  style: 'padding-left: 26px;',
-                },
-                children: [],
-              },
-              'children'
-            );
+          walkerContext.skipAllChildren()
           break;
         }
-        case 'quote': {
-          walkerContext
-            .openNode(
-              {
-                type: 'element',
-                tagName: 'div',
-                properties: {
-                  className: ['affine-paragraph-block-container'],
-                },
-                children: [],
-              },
-              'children'
-            )
-            .openNode(
-              {
-                type: 'element',
-                tagName: 'blockquote',
-                properties: {
-                  className: ['quote'],
-                },
-                children: [],
-              },
-              'children'
-            )
-            .openNode(
-              {
-                type: 'element',
-                tagName: 'p',
-                properties: {},
-                children: deltaConverter.deltaToAST(text.delta),
-              },
-              'children'
-            )
-            .closeNode()
-            .closeNode()
-            .openNode(
-              {
-                type: 'element',
-                tagName: 'div',
-                properties: {
-                  className: ['affine-block-children-container'],
-                  style: 'padding-left: 26px;',
-                },
-                children: [],
-              },
-              'children'
-            );
-          break;
-        }
+        // case 'quote': {
+        //   walkerContext
+        //     .openNode(
+        //       {
+        //         type: 'element',
+        //         tagName: 'div',
+        //         properties: {
+        //           className: ['affine-paragraph-block-container'],
+        //         },
+        //         children: [],
+        //       },
+        //       'children'
+        //     )
+        //     .openNode(
+        //       {
+        //         type: 'element',
+        //         tagName: 'blockquote',
+        //         properties: {
+        //           className: ['quote'],
+        //         },
+        //         children: [],
+        //       },
+        //       'children'
+        //     )
+        //     .openNode(
+        //       {
+        //         type: 'element',
+        //         tagName: 'p',
+        //         properties: {},
+        //         children: deltaConverter.deltaToAST(text.delta),
+        //       },
+        //       'children'
+        //     )
+        //     .closeNode()
+        //     .closeNode()
+        //     .openNode(
+        //       {
+        //         type: 'element',
+        //         tagName: 'div',
+        //         properties: {
+        //           className: ['affine-block-children-container'],
+        //           style: 'padding-left: 26px;',
+        //         },
+        //         children: [],
+        //       },
+        //       'children'
+        //     );
+        //   break;
+        // }
       }
     },
     leave: (_, context) => {
-      const { walkerContext } = context;
+      const {walkerContext} = context;
       walkerContext.closeNode().closeNode();
     },
   },

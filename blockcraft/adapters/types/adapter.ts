@@ -1,6 +1,7 @@
-import {DeltaInsert, IBlockSnapshot, IInlineNodeAttrs} from "../../framework/block-std";
+import {DeltaInsert, IBlockSnapshot, IInlineNodeAttrs} from "../../framework";
 import {ASTWalker, NodeProps} from "../base/ast-walker";
 import {ASTWalkerContext} from "../base/context";
+import {DocFileService} from "../../framework";
 
 export type AdapterContext<
   ONode extends object,
@@ -9,6 +10,7 @@ export type AdapterContext<
 > = {
   walker: ASTWalker<ONode, TNode>;
   walkerContext: ASTWalkerContext<TNode>;
+  fileManager: DocFileService
   // configs: Map<string, string>;
   // job: Job;
   deltaConverter: TConverter;

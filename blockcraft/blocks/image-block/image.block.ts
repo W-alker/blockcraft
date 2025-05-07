@@ -8,7 +8,7 @@ import {nextTick} from "../../global";
 @Component({
   selector: "div.image-block",
   template: `
-    <div class="image-block__container" [attr.data-align]="props.align">
+    <figure class="image-block__container" [attr.data-align]="props.align">
       <div class="img-wrapper">
         <img [src]="props.src" [style.width.px]="props.width" loading="lazy"
              [draggable]="!(doc.readonlySwitch$ | async)" #imgEle/>
@@ -27,8 +27,10 @@ import {nextTick} from "../../global";
              (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
       </div>
 
-      <ng-container #childrenContainer></ng-container>
-    </div>
+      <figcaption>
+        <ng-container #childrenContainer></ng-container>
+      </figcaption>
+    </figure>
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,

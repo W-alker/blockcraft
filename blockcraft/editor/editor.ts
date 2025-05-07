@@ -45,7 +45,7 @@ import {DocDndDataTypes} from "../framework/services/dnd.service";
 import {DocExportManager} from "../tools";
 import {EditorCommentPad} from "./components/comment-pad";
 import {MyCommentService} from "./services/comment.service";
-import {AdapterService} from "../adapters";
+import {AdapterService} from "./services/adapter.service";
 // import {Code2BlockSchema, CodeLineBlockSchema} from "../blocks/code2-block";
 
 const schemas = new SchemaManager([
@@ -208,7 +208,9 @@ export class EditorComponent {
 
     this.pid = p.id
     const snapshot = this.doc.schemas.createSnapshot('root',
-      [this.rootId, [p, d1, p2, callout, d2, attachment, d3, p3, img, code, table, todo]])
+      [this.rootId,
+        // [p, d1, p2, callout, d2, attachment, d3, p3, img, code, table, todo]
+      ])
     console.log(snapshot)
     this.doc.init(snapshot, this.container)
   }

@@ -1,5 +1,5 @@
 import {
-  BlockNodeType,
+  BlockNodeType, DeltaInsert,
   DeltaOperation,
   DocEventRegister,
   EventListen,
@@ -12,32 +12,101 @@ import {
 } from "../../block-std";
 import {deltaToString, isUrl, sliceDelta} from "../../../global";
 import {ClipboardDataType} from "./types";
-import {generateId} from "../../utils";
+import {generateId, replaceSnapshotsIdDeeply, snapshots2Text} from "../../utils";
 import {ORIGIN_SKIP_SYNC} from "../../doc";
 import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
+import {fromEvent, Subject, take, takeUntil} from "rxjs";
+
+export * from './types'
 
 @DocEventRegister
 export class ClipboardManager {
+  adapter = this.doc.injector.get(DOC_ADAPTER_SERVICE_TOKEN)
+
+  private readonly onCopied$ = new Subject<boolean>()
 
   constructor(public readonly doc: BlockCraft.Doc) {
+    fromEvent<ClipboardEvent>(document, 'copy').pipe(takeUntil(this.doc.onDestroy$)).subscribe(async e => {
+      console.log('-------on copy')
+      if (!this._tempData) return this.onCopied$.next(false)
+      e.preventDefault()
+      const clipboardData = e.clipboardData
+      if (!clipboardData) return this.onCopied$.next(false)
+      if (this._tempData[ClipboardDataType.DELTAS]) {
+        const delta = this._tempData[ClipboardDataType.DELTAS]
+        const html = await this._delta2Html(delta)
+        clipboardData.setData(ClipboardDataType.TEXT, deltaToString(delta))
+        clipboardData.setData(ClipboardDataType.DELTAS, JSON.stringify(delta))
+        clipboardData.setData(ClipboardDataType.HTML, html)
+        this._tempData = null
+        return this.onCopied$.next(true)
+      }
+
+      if (this._tempData[ClipboardDataType.BLOCK_SNAPSHOTS]) {
+        const snapshots = this._tempData[ClipboardDataType.BLOCK_SNAPSHOTS]
+        const html = await this._snapshots2Html(snapshots)
+        clipboardData.setData(ClipboardDataType.TEXT, snapshots2Text(snapshots))
+        clipboardData.setData(ClipboardDataType.BLOCK_SNAPSHOTS, JSON.stringify(snapshots))
+        clipboardData.setData(ClipboardDataType.HTML, html)
+        this._tempData = null
+        return this.onCopied$.next(true)
+      }
+    })
   }
+
+  private _tempData: { [K in `${ClipboardDataType}`]: any } | null = null
 
   copyText(text: string) {
     return navigator.clipboard.writeText(text)
   }
 
-  copyFromSelection = (selection: BlockCraft.Selection, clipboardData: DataTransfer) => {
+  copyDeltas(deltas: DeltaOperation[]) {
+    // @ts-ignore
+    this._tempData = {[ClipboardDataType.DELTAS]: deltas}
+    document.execCommand('copy')
+    return this.onCopied$.toPromise()
+  }
+
+  // TODO
+  copyBlocksModel = async (snapshots: IBlockSnapshot[]): Promise<boolean> => {
+    // @ts-ignore
+    this._tempData = {[ClipboardDataType.BLOCK_SNAPSHOTS]: snapshots}
+    document.execCommand('copy')
+    console.log(this._tempData)
+    return new Promise((resolve, reject) => {
+      this.onCopied$.pipe(take(1)).subscribe(v => {
+        v && resolve(v)
+      })
+    })
+  }
+
+  private async _delta2Html(deltas: DeltaInsert[]) {
+    const p = this.doc.schemas.createSnapshot('paragraph', [deltas])
+    const root = this.doc.schemas.createSnapshot('root', [generateId(), [p]])
+    return await this.adapter.snapshot2html(root)
+  }
+
+  private async _snapshots2Html(snapshots: IBlockSnapshot[]) {
+    const root = this.doc.schemas.createSnapshot('root', [generateId(), snapshots])
+    return await this.adapter.snapshot2html(root)
+  }
+
+  private copyFromSelection = async (selection: BlockCraft.Selection, clipboardData: DataTransfer) => {
     const {from, to} = selection
     if (!to) {
       if (from.type === 'text') {
         const sliceDeltas = sliceDelta(from.block.textDeltas(), from.index, from.length + from.index)
+        const html = await this._delta2Html(sliceDeltas)
         clipboardData.setData(ClipboardDataType.TEXT, deltaToString(sliceDeltas))
         clipboardData.setData(ClipboardDataType.DELTAS, JSON.stringify(sliceDeltas))
+        clipboardData.setData(ClipboardDataType.HTML, html)
         return;
       }
 
+      const html = await this._snapshots2Html([from.block.toSnapshot()])
       clipboardData.setData(ClipboardDataType.TEXT, from.block.textContent())
       clipboardData.setData(ClipboardDataType.BLOCK_SNAPSHOTS, JSON.stringify(from.block.toSnapshot()))
+      clipboardData.setData(ClipboardDataType.HTML, html)
       return
     }
 
@@ -48,6 +117,7 @@ export class ClipboardManager {
       snapshots.push(this.doc.getBlockById(bid).toSnapshot())
       plainText += this.doc.getBlockById(bid).textContent()
     }
+
     if (from.type === 'text') {
       if (from.index < from.block.textLength) {
         const sliceDeltas = sliceDelta(from.block.textDeltas(), from.index, from.length + from.index)
@@ -62,7 +132,7 @@ export class ClipboardManager {
     }
 
     if (to.type === 'text') {
-      if (to.index > 0) {
+      if (to.length > 0) {
         const sliceDeltas = sliceDelta(to.block.textDeltas(), to.index, to.length + to.index)
         const snapshot = to.block.toSnapshot()
         snapshot.children = sliceDeltas
@@ -74,8 +144,10 @@ export class ClipboardManager {
       plainText = to.block.textContent() + plainText
     }
 
+    const html = await this._snapshots2Html(snapshots)
     clipboardData.setData(ClipboardDataType.TEXT, plainText)
     clipboardData.setData(ClipboardDataType.BLOCK_SNAPSHOTS, JSON.stringify(snapshots))
+    clipboardData.setData(ClipboardDataType.HTML, html)
   }
 
   deleteContentFromSelection = (selection: BlockCraft.Selection) => {
@@ -145,7 +217,7 @@ export class ClipboardManager {
       const textLength = selection.from.block.textLength
       const editableBlock = selection.from.block
 
-      replaceIdDeeply(snapshots)
+      replaceSnapshotsIdDeeply(snapshots)
 
       this.doc.crud.transact(() => {
 
@@ -219,16 +291,20 @@ export class ClipboardManager {
     // html
     if (state.dataTypes.includes(ClipboardDataType.HTML)) {
       const htmlString = state.getData(ClipboardDataType.HTML)
-      const adapter = this.doc.injector.get(DOC_ADAPTER_SERVICE_TOKEN)
-      if (!adapter) return
+      if (!this.adapter) return
       if (htmlString) {
-        // const parser = new DOMParser();
-        // const doc = parser.parseFromString(htmlString, 'text/html');
-        adapter.html2snapshot(htmlString).then(snapshot => {
-          console.log(snapshot)
-          if (snapshot.children?.length && snapshot.nodeType === BlockNodeType.root) {
-            this.doc.crud.insertBlocksAfter(selection.from.block, snapshot.children)
+        this.adapter.html2snapshot(htmlString).then(snapshot => {
+          if (!snapshot.children.length || snapshot.nodeType !== BlockNodeType.root) return
+          const first = snapshot.children[0]
+          if (first.nodeType === BlockNodeType.editable && selection.from.type === 'text') {
+            const deltas: DeltaOperation[] = first.children
+            if (selection.from.index > 0) {
+              deltas.unshift({retain: selection.from.index})
+            }
+            selection.from.block.applyDeltaOperation(deltas)
+            snapshot.children.shift()
           }
+          snapshot.children.length > 0 && this.doc.crud.insertBlocksAfter(selection.from.block, snapshot.children)
         })
         return true
       }
@@ -256,14 +332,5 @@ export class ClipboardManager {
   }
 }
 
-const replaceIdDeeply = (snapshots: IBlockSnapshot[]) => {
-  snapshots.forEach(v => {
-    v.id = generateId()
-
-    if ((v.nodeType === BlockNodeType.root || v.nodeType === BlockNodeType.block) && v.children.length) {
-      replaceIdDeeply(v.children)
-    }
-  })
-}
 
 export * from './types'

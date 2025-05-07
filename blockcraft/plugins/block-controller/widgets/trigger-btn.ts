@@ -528,6 +528,10 @@ export class TriggerBtn {
       case 'delete':
         this.activeBlock && this.doc.crud.deleteBlockById(this.activeBlock.id)
         break
+      case 'copy':
+        this.activeBlock && this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(r => {
+          r && this.doc.messageService.success('复制成功')
+        })
     }
   }
 

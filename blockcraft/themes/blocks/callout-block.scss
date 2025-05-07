@@ -1,7 +1,7 @@
 @mixin callout-block() {
   .callout-block {
     position: relative;
-    padding: 0.5em 1em .5em 3em;
+    padding: 14px 1em 14px 3em;
     margin-bottom: 1em;
     border-radius: 4px;
     border: 1px solid transparent;
@@ -24,7 +24,7 @@
     .callout-block-prefix {
       position: absolute;
       left: 0.5em;
-      top: .5em;
+      top: 14px;
       font-size: 1em;
     }
   }
