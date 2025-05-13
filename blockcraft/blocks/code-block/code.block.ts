@@ -1,5 +1,5 @@
-import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from "@angular/core";
-import {EditableBlockComponent, STR_LINE_BREAK} from "../../framework";
+import {ChangeDetectionStrategy, Component} from "@angular/core";
+import {EditableBlockComponent, getPositionWithOffset, STR_LINE_BREAK} from "../../framework";
 import {CodeBlockModel} from "./index";
 import * as Prism from "prismjs";
 import {AsyncPipe, NgForOf} from "@angular/common";
@@ -8,9 +8,9 @@ import {ComponentPortal} from "@angular/cdk/portal";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {Overlay} from "@angular/cdk/overlay";
 import {LangListComponent} from "./lang-list.component";
-import {PRISM_LANGUAGE_MAP} from "./const";
+import {CodeBlockLanguage, PRISM_LANGUAGE_MAP} from "./const";
 import {performanceTest} from "../../global";
-import {DeltaInsertText, DeltaOperation} from "../../framework/block-std/types";
+import {DeltaInsertText} from "../../framework";
 import * as Y from 'yjs'
 import {Token} from "prismjs";
 import {nextTick} from "../../global";
@@ -20,9 +20,10 @@ import {nextTick} from "../../global";
   template: `
     <div class="edit-container"></div>
 
-    <div class="head-btn__group" contenteditable="false">
+    <div class="head-btn__group" contenteditable="false" [class.active]="isHoldHeader">
       <div class="head-btn" (mousedown)="showLangList($event)">
-        <span>{{ props.lang }}</span> <i class="bf_icon bf_xiajaintou"></i>
+        <span>{{ props.lang }}</span>
+        <i class="bf_icon bf_xiajaintou" [hidden]="doc.readonlySwitch$ | async"></i>
       </div>
       <div class="head-btn" (mousedown)="onCopyText($event)"><i class="bf_icon bf_fuzhi"></i> 复制</div>
     </div>
@@ -34,8 +35,7 @@ import {nextTick} from "../../global";
 export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   override plainTextOnly = true
 
-  @ViewChild('highlighter', {read: ElementRef}) highlighter!: ElementRef<HTMLPreElement>
-
+  protected isHoldHeader = false
   private lines: string[] = []
 
   constructor(private overlay: Overlay) {
@@ -132,6 +132,11 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   @performanceTest('code block render')
   override rerender() {
+    // const codeText = this.textContent()
+    // if(this.props.lang === 'PlainText') {
+    //   this.doc.inlineManager.render([{insert: codeText}], this.containerElement)
+    //   return
+    // }
     const tokens = Prism.tokenize(this.textContent(), Prism.languages[PRISM_LANGUAGE_MAP[this.props.lang]])
     this.doc.inlineManager.render(this._flatTokens(tokens), this.containerElement)
   }
@@ -185,17 +190,19 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     return res
   }
 
-  changeLanguage(lang: string) {
+  changeLanguage(lang: CodeBlockLanguage) {
     if (this.props.lang === lang) return
     this.props.lang = lang
     this.changeDetectorRef.markForCheck()
   }
 
   showLangList(e: Event) {
+    if(this.doc.isReadonly) return
     e.preventDefault()
     e.stopPropagation()
+    this.isHoldHeader = true
     const positionStrategy = this.overlay.position().flexibleConnectedTo(e.target as HTMLElement).withPositions([
-      {originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top'}
+      getPositionWithOffset('bottom-center'), getPositionWithOffset('top-center')
     ])
     const portal = new ComponentPortal(LangListComponent)
     const ovr = this.overlay.create({
@@ -208,8 +215,10 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
     merge(cpr.instance.destroy, ovr.backdropClick(), this.onDestroy$).pipe(take(1)).subscribe(() => {
       ovr.dispose()
+      this.isHoldHeader = false
+      this.changeDetectorRef.markForCheck()
     })
-    cpr.instance.langChange.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe((lang: string) => {
+    cpr.instance.langChange.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(lang => {
       this.changeLanguage(lang)
       ovr.dispose()
     })

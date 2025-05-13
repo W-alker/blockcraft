@@ -5,12 +5,10 @@ import {
   TemplateRef,
   ViewContainerRef,
   HostListener,
-  HostBinding,
   Output, EventEmitter
 } from '@angular/core';
-import {Overlay, OverlayRef, ConnectedPosition} from '@angular/cdk/overlay';
+import {Overlay, OverlayRef} from '@angular/cdk/overlay';
 import {TemplatePortal} from '@angular/cdk/portal';
-import {fromEvent} from "rxjs";
 import {generateId, getPositionWithOffset, OverlayPosition} from "../../framework";
 import {nextTick} from "../../global";
 

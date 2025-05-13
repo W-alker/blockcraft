@@ -4,7 +4,7 @@ import {BlockCraftError, ErrorCode, getScrollContainer, Logger} from "../../glob
 import {DocVM} from "./vm";
 import {IBlockSnapshot, EmbedConverter, InlineManager, UIEventDispatcher, EditableBlockComponent} from "../block-std";
 import {ClipboardManager, InputTransformer, SelectionManager} from "../modules";
-import {BehaviorSubject, Subject, take} from "rxjs";
+import {BehaviorSubject, Subject, Subscription, take} from "rxjs";
 import {getCommonPath} from "../utils";
 import {} from "../block-std/block";
 import {DocPlugin} from "../plugin";
@@ -56,6 +56,8 @@ export class BlockCraftDoc {
 
   private _scrollContainer: HTMLElement | null = null
 
+  private _subscriptions: Subscription = new Subscription()
+
   get scrollContainer() {
     return this._scrollContainer
   }
@@ -88,14 +90,15 @@ export class BlockCraftDoc {
     return this._plugins
   }
 
-  get isActive() {
-    return this._root.isActive
+  get isReadonly() {
+    return this.readonlySwitch$.value
   }
 
   constructor(
     public readonly config: DocConfig
   ) {
     this._plugins = this.config.plugins || []
+    this.onDestroy(this._subscriptions.unsubscribe)
   }
 
   // init from a snapshot as root
@@ -152,6 +155,22 @@ export class BlockCraftDoc {
 
   onDestroy(fn: () => void) {
     this.onDestroy$.pipe(take(1)).subscribe(fn)
+  }
+
+  /**
+   * 新增订阅，会在文档销毁时自动解除监听
+   * @param sub
+   */
+  addSubscription(sub: Subscription) {
+    this._subscriptions.add(sub)
+  }
+
+  /**
+   * 移除订阅
+   * @param sub
+   */
+  removeSubscription(sub: Subscription) {
+    this._subscriptions.remove(sub)
   }
 
   getBlockRef<T extends BlockCraft.BlockFlavour = BlockCraft.BlockFlavour>(id: string, onError?: () => void) {
@@ -332,6 +351,12 @@ export class BlockCraftDoc {
 
   toggleReadonly(readonly: boolean) {
     this.readonlySwitch$.next(readonly)
+  }
+
+  subscribeReadonlyChange(fn: (readonly: boolean) => void) {
+    const sub = this.readonlySwitch$.subscribe(fn)
+    this.addSubscription(sub)
+    return sub
   }
 
 }

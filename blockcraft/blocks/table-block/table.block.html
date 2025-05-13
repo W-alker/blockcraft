@@ -1,14 +1,18 @@
-<table-row-bar [rowIds]="_childrenIds" [rowHeightsRecord]="_rowHeightsRecord"
-               [selectedRange]="_activeRowRange" (selectedRangeChange)="onRowBarSelected($event)"
-               #rowBarComponent></table-row-bar>
+@if(!(doc.readonlySwitch$ | async)) {
+  <table-row-bar [rowIds]="_childrenIds" [rowHeightsRecord]="_rowHeightsRecord"
+                 [selectedRange]="_activeRowRange" (selectedRangeChange)="onRowBarSelected($event)"
+                 #rowBarComponent></table-row-bar>
+}
 
 <div class="table-wrapper">
-  <div class="table-col-resize-bar" contenteditable="false" (mousedown)="onResizerMousedown($event)" #colResizeBar>
-    <div class="bar"></div>
-  </div>
+  @if(!(doc.readonlySwitch$ | async)) {
+    <div class="table-col-resize-bar" contenteditable="false" (mousedown)="onResizerMousedown($event)" #colResizeBar>
+      <div class="bar"></div>
+    </div>
 
-  <table-col-bar [colWidths]="props.colWidths" [selectedRange]="_activeColRange"
-                 (selectedRangeChange)="onColBarSelected($event)" #colBarComponent/>
+    <table-col-bar [colWidths]="props.colWidths" [selectedRange]="_activeColRange"
+                   (selectedRangeChange)="onColBarSelected($event)" #colBarComponent/>
+  }
 
   <table>
     <colgroup>

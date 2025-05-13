@@ -1,12 +1,17 @@
 import {filter, fromEvent, merge, skip, Subject, Subscription, take, takeUntil} from "rxjs";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
-import {DocPlugin, EditableBlockComponent, EventListen, EventNames, HotKeyTrigger} from "../../framework";
-import {IBlockSnapshot} from "../../framework/block-std/types";
-import {UIEventStateContext} from "../../framework/block-std/event/base";
+import {
+  BlockNodeType,
+  DocPlugin,
+  EditableBlockComponent,
+  EventListen,
+  EventNames,
+  HotKeyTrigger
+} from "../../framework";
+import {IBlockSnapshot, UIEventStateContext, BLOCK_CREATOR_SERVICE_TOKEN} from "../../framework";
 import {nextTick, sliceDelta} from "../../global";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {BlockTransformContextMenu} from "./widget/contextmenu";
-import {BLOCK_CREATOR_SERVICE_TOKEN} from "../../framework/services/block-creator.service";
 
 export interface IBlockTransformConfig {
   flavour: BlockCraft.BlockFlavour
@@ -116,12 +121,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     const deltas = from.textDeltas()
     const newBlock = doc.schemas.createSnapshot(to, [deltas, from.props])
     doc.crud.replaceWithSnapshots(from.id, [newBlock]).then(() => {
-      doc.selection.setSelection({
-        blockId: newBlock.id,
-        index: 0,
-        length: 0,
-        type: 'text'
-      })
+      doc.selection.selectOrSetCursorAtBlock(newBlock.id, true)
     })
   }
 
@@ -165,7 +165,7 @@ export class BlockTransformerPlugin extends DocPlugin {
         const block = selection.from.block
         if (block.textContent() !== e.data) return
         const schema = this.doc.schemas.get(block.flavour)
-        if(schema.metadata.isLeaf) return;
+        if (schema.metadata.isLeaf) return;
         this.openContextMenu(block)
       })
     }
@@ -197,15 +197,10 @@ export class BlockTransformerPlugin extends DocPlugin {
 
     const appendBlocks = [newBlock]
     if (newBlock.nodeType === 'void') {
-      appendBlocks.push(this.doc.schemas.createSnapshot('paragraph', []))
+      appendBlocks.push(this.doc.schemas.createSnapshot('paragraph', [[], block.props]))
     }
     this.doc.crud.replaceWithSnapshots(block.id, appendBlocks).then(() => {
-      this.doc.selection.setSelection({
-        blockId: appendBlocks[appendBlocks.length - 1].id,
-        index: 0,
-        length: 0,
-        type: 'text'
-      })
+      this.doc.selection.setCursorAtBlock(appendBlocks[0].id, true)
     })
     return true
   }
@@ -262,11 +257,21 @@ export class BlockTransformerPlugin extends DocPlugin {
 
     cpr.instance.blockSelected.pipe(takeUntil(this.closeMenu$)).subscribe(schema => {
       this.contextOvr!.dispose()
+
+      if (schema.nodeType === BlockNodeType.editable) {
+        const snapshot = this.doc.schemas.createSnapshot(schema.flavour, [[], block.props])
+        this.doc.crud.insertBlocksAfter(block, [snapshot]).then(() => {
+          this.doc.selection.setCursorAtBlock(snapshot.id, true)
+        })
+        return
+      }
+
       const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
       blockCreator.getParamsByScheme(schema).then(params => {
         const newBlock = this.doc.schemas.createSnapshot(schema.flavour, params as any)
+        newBlock.props.depth = block.props.depth
         this.doc.crud.replaceWithSnapshots(block.id, [newBlock]).then(() => {
-          newBlock.nodeType === 'editable' && this.doc.selection.setBlockPosition(newBlock.id, true)
+          this.doc.selection.setCursorAtBlock(newBlock.id, true)
         })
       })
     })

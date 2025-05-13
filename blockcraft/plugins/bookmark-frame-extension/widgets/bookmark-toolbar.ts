@@ -88,7 +88,7 @@ export class BookmarkBlockToolbar {
           [{insert: this.block.props.url, attributes: {'a:link': this.block.props.url}}]]
         )
         this.doc.crud.replaceWithSnapshots(this.block.id, [paragraph]).then(() => {
-          this.doc.selection.setBlockPosition(paragraph.id, false)
+          this.doc.selection.selectOrSetCursorAtBlock(paragraph.id, false)
         })
         break
     }

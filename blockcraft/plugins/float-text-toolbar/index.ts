@@ -1,11 +1,10 @@
-import {BindHotKey, DocPlugin, POSITION_MAP} from "../../framework";
+import {BindHotKey, BlockNodeType, DocPlugin, POSITION_MAP, UIEventStateContext} from "../../framework";
 import {debounceTime, fromEvent, Subscription, takeUntil} from "rxjs";
-import {Component, ComponentRef, Type} from "@angular/core";
+import {ComponentRef, Type} from "@angular/core";
 import {FloatTextToolbarComponent} from "./widgets/toolbar.component";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {ConnectedPosition, Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
-import {UIEventStateContext} from "../../framework";
 import {CommentPad} from "./widgets/comment-pad";
 
 export interface IToolbarConfig {
@@ -39,11 +38,15 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this.utils = new TextToolbarUtils(this.doc)
 
     this._sub = this.doc.selection.selectionChange$.pipe(debounceTime(500)).subscribe(sel => {
+      if (this.doc.isReadonly || !sel || sel.collapsed || sel.isAllSelected) return
       if (this.toolbarOvr) this.closeToolbar()
-      if (!sel || sel.collapsed || sel.isAllSelected) return
       // @ts-expect-error
       if (sel.firstBlock['plainTextOnly'] && sel.lastBlock['plainTextOnly']) return;
       this.openToolbar()
+    })
+
+    this.doc.subscribeReadonlyChange(() => {
+      this.toolbarOvr && this.closeToolbar()
     })
   }
 
@@ -85,12 +88,24 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     connectPositions: ConnectedPosition[]
   } {
     const isBackward = selection.getDirection() === 'backward'
-    const rect = selection.raw.getBoundingClientRect()
     const relativeBlock = isBackward ? selection.lastBlock : selection.firstBlock
 
+    const rect = selection.raw.getBoundingClientRect()
     const blockRect = relativeBlock.hostElement.getBoundingClientRect()
-    const offsetX =  rect.left - blockRect.left
-    const offsetY =  isBackward ? rect.top - blockRect.top : rect.bottom - blockRect.bottom
+    const offsetX = rect.left - blockRect.left
+
+    if (relativeBlock.nodeType !== BlockNodeType.editable) {
+      return {
+        connectElement: relativeBlock.hostElement,
+        connectPositions: isBackward
+          ? [{...POSITION_MAP['top-left'], offsetX},
+            {...POSITION_MAP['top-right'], offsetX}]
+          : [{...POSITION_MAP['bottom-left'], offsetY: 48,},
+            {...POSITION_MAP['bottom-right'], offsetY: 48,}]
+      }
+    }
+
+    const offsetY = isBackward ? rect.top - blockRect.top : rect.bottom - blockRect.bottom
 
     return {
       connectElement: relativeBlock.hostElement,

@@ -4,10 +4,11 @@
 ---
 
 - [ ] `剪切版数据适配`
-  - [ ] delta to html
-  - [ ] html to delta
-  - [ ] html to block snapshot 
-  - [ ] block snapshot to html
+  - [X] 剪切板
+  - [X] delta to html
+  - [X] html to delta
+  - [X] html to block snapshot 
+  - [X] block snapshot to html
   - [ ] markdown to snapshot
 > 使用 blocksuite 的adapter机制，ASTWalker等。
 
@@ -24,10 +25,11 @@
 --- 
 
 - [ ] 导出
-  - [ ] to PDF
+  - [X] to PDF
   - [ ] to html
   - [ ] to markdown
-  - [ ] to png
+  - [X] to png
+  - [X] to snapshot
 > 参考 blocksuite 的导出
 
 - [ ] 多人协同
@@ -36,7 +38,7 @@
   - [ ] 基于数据驱动的实时多端选择渲染同步
 
 --- 
-- [ ] 剪切板
+
 - [ ] 右键菜单
 
   

@@ -91,8 +91,8 @@ export class DocDndService {
   @EventListen(EventNames.dragEnter, {flavour: 'root'})
   onRootDragEnter(ctx: UIEventStateContext) {
     const evt: DragEvent = ctx.getDefaultEvent()
-    if (!evt.dataTransfer?.types.includes(ClipboardDataType.FILES)) return false
     evt.preventDefault()
+    if (!evt.dataTransfer?.types.includes(ClipboardDataType.FILES)) return false
     this._onDragStart(evt)
 
     return true
@@ -109,7 +109,7 @@ export class DocDndService {
 
     this._onDragStart(evt)
 
-    fromEvent<DragEvent>(evt.target!, 'dragEnd').pipe(take(1))
+    fromEvent<DragEvent>(evt.target!, 'dragend').pipe(take(1))
       .subscribe(evt => {
         this._parseDragData(evt)
         this.clearDrag()
@@ -256,7 +256,7 @@ export class DocDndService {
       if (!params) return
       const snapshot = this.doc.schemas.createSnapshot(flavour, <any>params)
       this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), [snapshot]).then(() => {
-        this.doc.selection.setBlockPosition(snapshot.id, true)
+        this.doc.selection.selectOrSetCursorAtBlock(snapshot.id, true)
       })
     })
   }

@@ -35,6 +35,7 @@ export interface IBlockProps {
 
 export interface IEditableBlockProps extends IBlockProps {
   depth: number
+  heading?: number
 }
 
 export interface BaseBlockDesc<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord> {

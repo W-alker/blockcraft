@@ -1,9 +1,7 @@
-// import { bundledLanguagesInfo, codeToHast } from 'shiki';
 import {BlockHtmlAdapterMatcher} from "../block-adapter";
 import {CodeBlockSchema} from "../../../blocks";
 import {HastUtils} from "../../utils";
 import {DeltaInsert} from "blockflow-editor";
-import {HtmlAST} from "../../types";
 import {deltaToString} from "../../../global";
 
 export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
@@ -14,30 +12,25 @@ export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       if (!HastUtils.isElement(o.node)) {
         return;
       }
-      const code = HastUtils.querySelector(o.node, 'code');
-      if (!code) {
-        return;
-      }
-
-      const codeText =
-        code.children.length === 1 && code.children[0].type === 'text'
-          ? code.children[0]
-          : {...code, tagName: 'div'};
-      let codeLang = Array.isArray(code.properties?.["className"])
-        ? code.properties["className"].find(
-          className =>
-            typeof className === 'string' && className.startsWith('code-')
-        )
-        : undefined;
-      codeLang =
-        typeof codeLang === 'string'
-          ? codeLang.replace('code-', '')
-          : undefined;
+      // const code = HastUtils.querySelector(o.node, 'code');
+      // if (!code) {
+      //   return;
+      // }
 
       const {walkerContext, deltaConverter} = context;
+      if (o.parent?.node.type === 'element' &&
+        !['td'].includes(o.parent.node.tagName)) {
+        walkerContext.closeNode()
+      }
+
+      // const codeText =
+      //   code.children.length === 1 && code.children[0].type === 'text'
+      //     ? code.children[0]
+      //     : {...code, tagName: 'div'};
+
       walkerContext
         .openNode(
-          CodeBlockSchema.createSnapshot(deltaConverter.astToDelta(codeText, {
+          CodeBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node, {
             trim: false,
             pre: true,
           })),

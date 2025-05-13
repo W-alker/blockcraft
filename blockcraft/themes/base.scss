@@ -11,6 +11,7 @@
 @import "blocks/embed-frame-block";
 @import "blocks/bookmark-block";
 @import "blocks/caption-block";
+@import "blocks/mermaid-block";
 
 :root {
   //--bc-root-background-color: #fff;
@@ -47,11 +48,16 @@
   line-height: var(--bc-lh);
   //background-color: var(--bc-root-background-color);
 
+  &.readonly {
+    -webkit-user-modify: read-only !important;
+  }
+
   svg {
     vertical-align: top;
   }
 
-  &.selecting, [data-node-type="block"].selecting {
+  &.selecting,
+  [data-node-type="block"].selecting {
     > [data-node-type="block"],
     > [data-node-type="void"] {
       -webkit-user-modify: read-only;
@@ -125,6 +131,32 @@
   [data-node-type="block"] {
     //user-select: none;
     //-webkit-user-select: none;
+  }
+
+  [data-node-type="editable"] {
+    &[data-heading="1"] {
+      font-size: var(--bc-fs-3xl);
+    }
+
+    &[data-heading="2"] {
+      font-size: var(--bc-fs-2xl);
+    }
+
+    &[data-heading="3"] {
+      font-size: var(--bc-fs-xl);
+    }
+
+    &[data-heading="4"] {
+      font-size: var(--bc-fs-lg);
+    }
+
+    &[data-heading="5"] {
+      font-size: var(--bc-fs-lg);
+    }
+
+    &[data-heading="6"] {
+      font-size: var(--bc-fs-lg);
+    }
   }
 
   .edit-container {
@@ -223,6 +255,7 @@
   @include attachment-block();
   @include embed-frame-block();
   @include bookmark-block();
+  @include mermaid-block();
 
   @include caption-block();
 }

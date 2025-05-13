@@ -280,11 +280,10 @@ export class TriggerBtn {
 
   @Input()
   set hidden(val: boolean) {
-    this.menuDisabled = this._hidden = val
+    this.menuDisabled = val
+    this.display = val ?  'none' : 'block'
+    this.cdr.markForCheck()
   }
-
-  @HostBinding()
-  protected _hidden = false
 
   private _activeBlock: BlockCraft.BlockComponent | null = null
   @Input()
@@ -441,7 +440,6 @@ export class TriggerBtn {
   onMouseEnter(e: Event) {
     e.stopPropagation()
     this.setIsEmpty()
-    this.display = 'block'
     this.cdr.markForCheck()
     // this.showContextMenu()
   }
@@ -477,7 +475,9 @@ export class TriggerBtn {
       blockCreator.getParamsByScheme(item).then(params => {
         if (!targetBlock) return
         const newBlock = this.doc.schemas.createSnapshot(item.flavour, params as any)
-        this.doc.crud.insertBlocksAfter(targetBlock, [newBlock])
+        this.doc.crud.insertBlocksAfter(targetBlock, [newBlock]).then(() => {
+          this.doc.selection.setCursorAtBlock(newBlock.id, true)
+        })
       })
     }
 
@@ -487,7 +487,7 @@ export class TriggerBtn {
       const newBlock = this.doc.schemas.createSnapshot(item.flavour, [block.textDeltas(), block.props])
       this.doc.crud.replaceWithSnapshots(this.activeBlock!.id, [newBlock]).then(() => {
         nextTick().then(() => {
-          this.doc.selection.setBlockPosition(newBlock.id, true)
+          this.doc.selection.setCursorAtBlock(newBlock.id, true)
         })
       })
     }
@@ -529,8 +529,9 @@ export class TriggerBtn {
         this.activeBlock && this.doc.crud.deleteBlockById(this.activeBlock.id)
         break
       case 'copy':
-        this.activeBlock && this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(r => {
-          r && this.doc.messageService.success('复制成功')
+        this.activeBlock && this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
+          this.doc.messageService.success('已复制')
+          this.close()
         })
     }
   }

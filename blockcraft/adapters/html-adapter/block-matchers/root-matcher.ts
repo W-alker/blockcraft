@@ -9,7 +9,7 @@ export const rootBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       if (!HastUtils.isElement(o.node)) {
         return;
       }
-      const { walkerContext } = context;
+      const {walkerContext} = context;
       if (o.node.tagName === 'header') {
         walkerContext.skipAllChildren();
       }
@@ -17,7 +17,7 @@ export const rootBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   },
   fromBlockSnapshot: {
     enter: (_, context) => {
-      const { walkerContext } = context;
+      const {walkerContext} = context;
       const htmlRootDocContext =
         walkerContext.getGlobalContext('hast:html-root-doc');
       const isRootDoc = htmlRootDocContext ?? true;
@@ -85,7 +85,6 @@ export const rootBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         // )
         // .closeNode()
         .closeNode()
-        .closeNode()
         .openNode(
           {
             type: 'element',
@@ -108,7 +107,7 @@ export const rootBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         )
     },
     leave: (_, context) => {
-      const { walkerContext } = context;
+      const {walkerContext} = context;
       const htmlRootDocContext =
         walkerContext.getGlobalContext('hast:html-root-doc');
       const isRootDoc = htmlRootDocContext ?? true;

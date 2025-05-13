@@ -1,29 +1,40 @@
 import {Component, Injector, ViewChild, ViewContainerRef} from "@angular/core";
 import {
-  SchemaManager,
-  BlockCraftDoc,
-  EditableBlockComponent,
-  DOC_FILE_SERVICE_TOKEN,
-  DOC_MESSAGE_SERVICE_TOKEN,
   BLOCK_CREATOR_SERVICE_TOKEN,
-  DOC_LINK_PREVIEWER_SERVICE_TOKEN, DocLinkPreviewerService, DOC_ADAPTER_SERVICE_TOKEN
+  BlockCraftDoc,
+  BlockNodeType,
+  DOC_ADAPTER_SERVICE_TOKEN,
+  DOC_FILE_SERVICE_TOKEN,
+  DOC_LINK_PREVIEWER_SERVICE_TOKEN,
+  DOC_MESSAGE_SERVICE_TOKEN,
+  DocLinkPreviewerService,
+  EditableBlockComponent,
+  native2YBlock,
+  SchemaManager
 } from "../framework";
 import {
+  AttachmentBlockSchema,
+  BookmarkBlockSchema,
+  CalloutBlockSchema,
+  CaptionBlockSchema,
+  CodeBlockSchema,
+  DividerBlockSchema,
+  FigmaEmbedBlockSchema,
   HeadingFourBlockSchema,
   HeadingOneBlockSchema,
+  HeadingThreeBlockSchema,
   HeadingTwoBlockSchema,
   ImageBlockSchema,
+  JuejinEmbedBlockSchema,
+  OrderedBlockSchema,
+  ParagraphBlockSchema,
   RootBlockSchema,
-  TodoBlockSchema,
-  CodeBlockSchema,
   TableBlockSchema,
-  TableRowBlockSchema,
   TableCellBlockSchema,
-  HeadingThreeBlockSchema, AttachmentBlockSchema, CaptionBlockSchema,
-  FigmaEmbedBlockSchema, BookmarkBlockSchema, JuejinEmbedBlockSchema
+  TableRowBlockSchema,
+  TodoBlockSchema
 } from "../blocks";
 import {ConsoleLogger} from "../global";
-import {DividerBlockSchema, CalloutBlockSchema, OrderedBlockSchema, ParagraphBlockSchema} from "../blocks";
 import {AutoUpdateOrderPlugin} from "../plugins/autoUpdateOrder";
 import {BulletBlockSchema} from "../blocks/bullet-block";
 import {CodeBlocKeyBinding} from "../plugins/codeBlocKeyBinding";
@@ -46,7 +57,8 @@ import {DocExportManager} from "../tools";
 import {EditorCommentPad} from "./components/comment-pad";
 import {MyCommentService} from "./services/comment.service";
 import {AdapterService} from "./services/adapter.service";
-// import {Code2BlockSchema, CodeLineBlockSchema} from "../blocks/code2-block";
+import {MermaidBlockSchema, MermaidTextareaBlockSchema} from "../blocks/mermaid-block";
+import {applyUpdate, Doc, mergeUpdates} from "yjs";
 
 const schemas = new SchemaManager([
   ParagraphBlockSchema,
@@ -57,24 +69,28 @@ const schemas = new SchemaManager([
   TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, AttachmentBlockSchema, BookmarkBlockSchema,
   FigmaEmbedBlockSchema, JuejinEmbedBlockSchema,
   CaptionBlockSchema, RootBlockSchema,
+  MermaidTextareaBlockSchema, MermaidBlockSchema
 ])
 
 @Component({
   selector: 'block-craft-editor',
   template: `
-    <div style="width: 90vw; height: 80vh; overflow-y: auto;">
+    <div style="width: 90vw; height: 80vh; overflow-y: auto;" (mousedown)="onContainerMousedown($event)">
       <ng-container #container></ng-container>
     </div>
 
     <button (mousedown)="$event.preventDefault(); logSelection()">当前选择</button>
     <button (click)="insert()">增加文本</button>
+    <button (click)="doc.toggleReadonly(!doc.isReadonly)">切换只读</button>
     <button (click)="log()">打印数据</button>
     <button (click)="undo()">undo</button>
     <button (click)="redo()">redo</button>
     <button (click)="addData()">增加数据</button>
     <button (click)="exportPdf()">导出PDF</button>
     <button (click)="exportImg()">导出图片</button>
-    <button (click)="ast()">HTML AST</button>
+
+    <button (click)="listenUpdate()">监听数据变化</button>
+    <button (click)="test()">测试</button>
 
     <div class="block-area">
       <div draggable="true" (dragstart)="onDragStart($event, 'heading-one')">
@@ -95,6 +111,7 @@ const schemas = new SchemaManager([
     margin: 20px;
     display: block;
   }
+
   .block-area {
     margin-top: 10px;
     display: flex;
@@ -114,7 +131,7 @@ const schemas = new SchemaManager([
         height: 80px;
       }
 
-      >i {
+      > i {
         display: flex;
         justify-content: center;
         align-items: center;
@@ -170,7 +187,10 @@ export class EditorComponent {
       }]
     ],
     plugins: [new AutoUpdateOrderPlugin(), new CodeBlocKeyBinding(), new TableBlockBinding(),
-      new FloatTextToolbarPlugin({withComment: true, commentComponent: EditorCommentPad}), new BlockTransformerPlugin(), new BlockControllerPlugin(),
+      new FloatTextToolbarPlugin({
+        withComment: true,
+        commentComponent: EditorCommentPad
+      }), new BlockTransformerPlugin(), new BlockControllerPlugin(),
       new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
       new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(), new InlineLinkExtension()
     ]
@@ -179,6 +199,8 @@ export class EditorComponent {
   pid = ''
 
   ngAfterViewInit() {
+    this.listenUpdate()
+
     const p = this.doc.schemas.createSnapshot('paragraph', [[{insert: 'hello\n'},
       {insert: 'world', attributes: {'a:bold': true}},
       {insert: {image: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg'}},
@@ -209,9 +231,8 @@ export class EditorComponent {
     this.pid = p.id
     const snapshot = this.doc.schemas.createSnapshot('root',
       [this.rootId,
-        // [p, d1, p2, callout, d2, attachment, d3, p3, img, code, table, todo]
+        [p, d1, p2, callout, d2, attachment, d3, p3, img, code, table, todo]
       ])
-    console.log(snapshot)
     this.doc.init(snapshot, this.container)
   }
 
@@ -242,6 +263,16 @@ export class EditorComponent {
     ])
   }
 
+  appendParagraph() {
+    if (this.doc.root.lastChildren?.flavour === 'paragraph') {
+      this.doc.selection.setCursorAtBlock(this.doc.root.lastChildren, false)
+      return
+    }
+    this.doc.crud.insertNewParagraph(this.doc.rootId, this.doc.root.childrenLength, '').then(p => {
+      this.doc.selection.setCursorAtBlock(p, true)
+    })
+  }
+
   logSelection() {
     console.log(this.doc.selection.value, document.getSelection()!.getRangeAt(0))
   }
@@ -263,19 +294,53 @@ export class EditorComponent {
   }
 
   exportPdf() {
-    new DocExportManager(this.doc).exportToPdf('blockcraft-export-test.pdf', {bgcolor: '#fff', scale: 1, pdfPageSize: 'A2'})
+    new DocExportManager(this.doc).exportToPdf('blockcraft-export-test.pdf', {
+      bgcolor: '#fff',
+      scale: 1,
+      pdfPageSize: 'A2'
+    })
   }
 
   exportImg() {
-    new DocExportManager(this.doc).exportToJpeg('blockcraft-export-test.png',{bgcolor: '#fff', scale: 2.0})
+    new DocExportManager(this.doc).exportToJpeg('blockcraft-export-test.png', {bgcolor: '#fff', scale: 2.0})
   }
 
-  ast() {
-    const treeWalker = document.createTreeWalker(this.doc.root.hostElement, NodeFilter.SHOW_ELEMENT, (node) => {
-      return (node instanceof HTMLElement && node.getAttribute('data-block-id')) ? NodeFilter.SHOW_ELEMENT : NodeFilter.FILTER_REJECT
+
+  onContainerMousedown(evt: MouseEvent) {
+    if (evt.target === evt.currentTarget && evt.eventPhase === evt.AT_TARGET) {
+      evt.preventDefault()
+      evt.stopPropagation()
+      this.appendParagraph()
+    }
+  }
+
+  test() {
+    const m = mergeUpdates(this.updateList)
+    console.log(this.updateList, m)
+    const ydoc = new Doc()
+    const ymap = ydoc.getMap()
+    // ymap.set(this.rootId, native2YBlock({
+    //   id: this.rootId,
+    //   flavour: 'root',
+    //   nodeType: BlockNodeType.root,
+    //   props: {},
+    //   meta: {},
+    //   children: []
+    // }))
+    applyUpdate(ydoc, m)
+    applyUpdate(ydoc, this.updateList[0])
+    this.updateList.forEach(u => {
+      applyUpdate(ydoc, u)
     })
-    console.log(treeWalker)
-    treeWalker.nextNode()
-    console.log(treeWalker)
+    console.log(ydoc.toJSON())
+  }
+
+  updateList: Uint8Array[] = []
+
+  listenUpdate() {
+    this.doc.crud.yDoc.on('update', (u: Uint8Array, _: any) => {
+      this.updateList.push(u)
+      console.log(this.updateList.length)
+    })
   }
 }

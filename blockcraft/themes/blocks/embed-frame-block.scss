@@ -1,4 +1,10 @@
 @mixin embed-frame-block {
+  @at-root #{selector-unify(&, '.readonly')} {
+    .embed-frame-block .iframe-wrapper .iframe-mask {
+      pointer-events: none;
+    }
+  }
+
   .embed-frame-block {
 
     &.selected {
@@ -31,7 +37,6 @@
       position: relative;
       border: 1px solid var(--bc-border-color);
       transition: border 0.2s ease-in-out, box-shadow 0.2s ease-in-out, background 0.2s ease-in-out;
-
     }
 
     .iframe-wrapper {

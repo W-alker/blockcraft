@@ -25,7 +25,7 @@ export class BlockControllerPlugin extends DocPlugin {
     this.doc.root.hostElement.appendChild(this._cpr.location.nativeElement)
 
     fromEvent<MouseEvent>(this.doc.root.hostElement, 'mouseover').pipe(takeUntil(this.doc.onDestroy$)).subscribe(e => {
-      if (this.doc.readonlySwitch$.value || this.isHidden) return
+      if (this.doc.isReadonly || this.isHidden) return
       this.clearTimer()
 
       const target = e.target as HTMLElement
@@ -47,6 +47,7 @@ export class BlockControllerPlugin extends DocPlugin {
     })
 
     this.doc.selection.selectionChange$.pipe(takeUntil(this.doc.onDestroy$)).subscribe(v => {
+      if (this.doc.isReadonly) return
       if (v?.to) {
         this._cpr.setInput('activeBlock', this._activeBlock = null)
         this._cpr.setInput('hidden', this.isHidden = true)
@@ -55,6 +56,9 @@ export class BlockControllerPlugin extends DocPlugin {
       }
     })
 
+    this.doc.subscribeReadonlyChange(v => {
+      this._cpr.setInput('hidden', this.isHidden = v)
+    })
     this.addDraggable()
   }
 

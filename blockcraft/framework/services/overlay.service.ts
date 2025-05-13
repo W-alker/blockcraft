@@ -21,7 +21,7 @@ export const POSITION_MAP: Record<OverlayPosition, ConnectedPosition> = {
 }
 
 // 根据位置和offset计算位置，确保offset合适
-export const getPositionWithOffset = (position: OverlayPosition, offsetX: number, offsetY: number): ConnectedPosition => {
+export const getPositionWithOffset = (position: OverlayPosition, offsetX = 0, offsetY = 0): ConnectedPosition => {
   const pos = POSITION_MAP[position];
   if (position.includes('top')) {
     offsetY = -offsetY;

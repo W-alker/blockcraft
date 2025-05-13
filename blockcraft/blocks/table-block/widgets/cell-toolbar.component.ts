@@ -136,6 +136,9 @@ export class CellToolbarComponent {
   table!: BlockCraft.IBlockComponents['table']
 
   @Output()
+  onClose$ = new EventEmitter<void>()
+
+  @Output()
   onDestroy = new EventEmitter<void>()
 
   @Output()
@@ -200,11 +203,10 @@ export class CellToolbarComponent {
             this.table.deleteColumn(this._options.index!, this._options.count)
             break
           case 'row':
-            this.table.deleteColumn(this.options.index!, this.options.count)
+            this.table.deleteRow(this._options.index!, this._options.count)
             break
-          default:
-            return
         }
+        this.onClose$.emit()
         break
       case 'colHead':
         this.table.updateProps({colHead: !this.table.props.colHead})
@@ -333,7 +335,6 @@ export class CellToolbarComponent {
       this.selectedCells = this.table.getSelectedCells()
     }, ORIGIN_SKIP_SYNC)
   }
-
 
   protected readonly HORIZON_ALIGN_LIST = HORIZON_ALIGN_LIST
   protected readonly VERTICAL_ALIGN_LIST = VERTICAL_ALIGN_LIST

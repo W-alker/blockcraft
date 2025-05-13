@@ -24,6 +24,9 @@ export class InlineLinkExtension extends DocPlugin {
   private _anchorTextRange: { blockId: string, start: number, end: number } | null = null
 
   init() {
+    this.doc.subscribeReadonlyChange(() => {
+      this._cpr?.setInput('isReadOnly', this.doc.isReadonly)
+    })
   }
 
   @EventListen(EventNames.doubleClick)
@@ -88,6 +91,7 @@ export class InlineLinkExtension extends DocPlugin {
     }, this._closeToolbar$, this.closeToolbar).componentRef
 
     this._cpr.setInput('link', this._linkInfo?.link ?? '')
+    this._cpr.setInput('isReadOnly', this.doc.isReadonly)
 
     this._cpr.instance.itemClicked.pipe(takeUntil(this._closeToolbar$)).subscribe(item => {
       if (!this._anchorTextRange || !this._linkInfo) return this.closeToolbar()

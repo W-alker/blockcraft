@@ -27,7 +27,7 @@ export class ImgToolbarPlugin extends DocPlugin {
   onImageDragStart(ctx: UIEventStateContext) {
     ctx.stopPropagation()
 
-    if (this.doc.selection.value?.to) {
+    if (this.doc.isReadonly || this.doc.selection.value?.to) {
       ctx.preventDefault()
       return
     }
@@ -54,7 +54,7 @@ export class ImgToolbarPlugin extends DocPlugin {
 
     const np = this.doc.schemas.createSnapshot('paragraph', [])
     this.doc.crud.insertBlocksAfter(block.flavour === 'caption' ? block.parentId! : block.id, [np]).then(() => {
-      this.doc.selection.setBlockPosition(np.id, true)
+      this.doc.selection.selectOrSetCursorAtBlock(np.id, true)
     })
     return true
   }
@@ -107,7 +107,7 @@ export class ImgToolbarPlugin extends DocPlugin {
               } else {
                 const title = this.doc.schemas.createSnapshot('caption', [])
                 this.doc.crud.insertBlocks(selection.firstBlock.id, 0, [title]).then(() => {
-                  this.doc.selection.setBlockPosition(title.id, true)
+                  this.doc.selection.selectOrSetCursorAtBlock(title.id, true)
                 })
               }
               break

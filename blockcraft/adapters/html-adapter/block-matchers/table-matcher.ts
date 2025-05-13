@@ -2,7 +2,7 @@ import {BlockHtmlAdapterMatcher} from "../block-adapter";
 import {HastUtils} from "../../utils";
 import {BlockNodeType, generateId, IBlockSnapshot} from "../../../framework";
 import {ParagraphBlockSchema, TableCellBlockModel, TableCellBlockSchema} from "../../../blocks";
-import {BlockCraftError, ErrorCode} from "../../../global";
+import {BlockCraftError, ErrorCode, splitDeltaByLineBreak} from "../../../global";
 
 export const tableBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   toMatch: o => HastUtils.isElement(o.node) && o.node.tagName === 'table',
@@ -26,63 +26,78 @@ export const tableBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       )
     },
     leave: async (o, context) => {
-      if (!HastUtils.isElement(o.node) || o.node.tagName !== 'table') {
+      if (!HastUtils.isElement(o.node)) {
         return;
       }
       const {walkerContext} = context;
 
       const currentNode = walkerContext.currentNode()!
-      if (currentNode?.flavour === 'table' && !currentNode.props['colWidths']) {
-        const firstTr = currentNode.children[0] as IBlockSnapshot
-        const colWidths = firstTr.children.reduce((prev, acc) => {
-          return prev + 1 + ((((acc as IBlockSnapshot).props['colspan'] as number) || 1) - 1)
-        }, 0)
-        currentNode.props['colWidths'] = new Array(colWidths).fill(120)
-      }
 
-      const createHiddenCell = (mergedBy: string) => {
-        const snapshot = TableCellBlockSchema.createSnapshot()
-        snapshot.props.display = 'none'
-        snapshot.props.mergedBy = mergedBy
-        return snapshot
-      }
+      // const createHiddenCell = (mergedBy: string) => {
+      //   const snapshot = TableCellBlockSchema.createSnapshot()
+      //   snapshot.props.display = 'none'
+      //   snapshot.props.mergedBy = mergedBy
+      //   return snapshot
+      // }
 
-      // 出栈时遍历单元格，补全colspan和rowspan大于1时缺少的隐藏单元格
+      let maxTdLen = 0
       for (let rowIdx = 0; rowIdx < currentNode.children.length; rowIdx++) {
         const row = currentNode.children[rowIdx] as IBlockSnapshot
+        // if (!row.children.length) {
+        //   throw new BlockCraftError(ErrorCode.DefaultRuntimeError, `No td block parsed in table row`)
+        // }
         if (row.flavour !== 'table-row') {
-          throw new BlockCraftError(ErrorCode.DefaultRuntimeError, `Unexpected block type in table`)
+          throw new BlockCraftError(ErrorCode.DefaultRuntimeError, `Unexpected block type: ${row.flavour} in table`)
         }
 
-        for (let colIdx = 0; colIdx < row.children.length; colIdx++) {
-          const cell = row.children[colIdx] as IBlockSnapshot<TableCellBlockModel['props']>
-          if (cell.flavour !== 'table-cell') {
-            throw new BlockCraftError(ErrorCode.DefaultRuntimeError, `Unexpected block type in table-row`)
-          }
+        maxTdLen = Math.max(maxTdLen, row.children.length)
 
-          if (!cell.children.length) {
-            // @ts-ignore
-            cell.children.push(ParagraphBlockSchema.createSnapshot())
-          }
+        // 出栈时遍历单元格，补全colspan和rowspan大于1时缺少的隐藏单元格
+        // for (let colIdx = 0; colIdx < row.children.length; colIdx++) {
+        //   const cell = row.children[colIdx] as IBlockSnapshot<TableCellBlockModel['props']>
+        //   if (cell.flavour !== 'table-cell') {
+        //     throw new BlockCraftError(ErrorCode.DefaultRuntimeError, `Unexpected block type in table-row`)
+        //   }
+        //
+        //   if (!cell.children.length) {
+        //     // @ts-ignore
+        //     cell.children.push(ParagraphBlockSchema.createSnapshot())
+        //   }
+        //
+        //   if (cell.props.colspan && cell.props.colspan > 1) {
+        //     // 添加隐藏单元格
+        //     for (let k = 1; k < cell.props.colspan; k++) {
+        //       row.children.splice(colIdx + k, 0, createHiddenCell(cell.id))
+        //     }
+        //   }
+        //
+        //   if (cell.props.rowspan && cell.props.rowspan > 1) {
+        //     // 添加隐藏单元格
+        //     for (let k = 1; k < cell.props.rowspan; k++) {
+        //       const row = currentNode.children[k + rowIdx] as IBlockSnapshot
+        //       row.children.splice(colIdx, 0, ...new Array(cell.props.colspan || 1).fill(0).map(() => createHiddenCell(cell.id)))
+        //     }
+        //   }
+        // }
+      }
 
-          if (cell.props.colspan && cell.props.colspan > 1) {
-            // 添加隐藏单元格
-            for (let k = 1; k < cell.props.colspan; k++) {
-              row.children.splice(colIdx + k, 0, createHiddenCell(cell.id))
-            }
-          }
+      // 再遍历一遍，补齐可能残缺的td
+      for (let rowIdx = 0; rowIdx < currentNode.children.length; rowIdx++) {
+        const row = currentNode.children[rowIdx] as IBlockSnapshot
 
-          if (cell.props.rowspan && cell.props.rowspan > 1) {
-            // 添加隐藏单元格
-            for (let k = 1; k < cell.props.rowspan; k++) {
-              const row = currentNode.children[k + rowIdx] as IBlockSnapshot
-              row.children.splice(colIdx, 0, ...new Array(cell.props.colspan || 1).fill(0).map(() => createHiddenCell(cell.id)))
-            }
-          }
+        if (row.children.length < maxTdLen) {
+          // @ts-ignore
+          row.children.push(...new Array(maxTdLen - row.children.length).fill(0).map(() => TableCellBlockSchema.createSnapshot()))
         }
       }
 
-      walkerContext.closeNode();
+      //补齐colWidths
+      if (currentNode?.flavour === 'table' && !currentNode.props['colWidths']) {
+        const firstTr = currentNode.children[0] as IBlockSnapshot
+        currentNode.props['colWidths'] = new Array(firstTr.children.length).fill(120)
+      }
+
+      // walkerContext.closeNode();
     }
   },
   fromBlockSnapshot: {
@@ -136,7 +151,7 @@ export const tableRowBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       )
     },
     leave: async (o, context) => {
-      if (!HastUtils.isElement(o.node) || o.node.tagName !== 'tr') {
+      if (!HastUtils.isElement(o.node)) {
         return;
       }
       const {walkerContext} = context;
@@ -167,31 +182,42 @@ export const tableRowBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 };
 
 export const tableCellBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
-  toMatch: o => HastUtils.isElement(o.node) && o.node.tagName === 'td',
+  toMatch: o => HastUtils.isElement(o.node) && (o.node.tagName === 'td' || o.node.tagName === 'th'),
   fromMatch: o => o.node.flavour === 'table-cell',
   toBlockSnapshot: {
     enter: async (o, context) => {
       if (!HastUtils.isElement(o.node)) {
         return;
       }
-      const {walkerContext} = context;
-      const colspan = Number(o.node.properties["colSpan"])
-      const rowspan = Number(o.node.properties["rowSpan"])
+      const {walkerContext, deltaConverter} = context;
+      // const colspan = Number(o.node.properties["colSpan"])
+      // const rowspan = Number(o.node.properties["rowSpan"])
+
+      // const delta = deltaConverter.astToDelta(o.node)
+      // const deltas = splitDeltaByLineBreak(delta)
+      // const paragraphs = deltas.map(d => ParagraphBlockSchema.createSnapshot(d))
 
       walkerContext.openNode({
         id: generateId(),
         nodeType: BlockNodeType.block,
         flavour: 'table-cell',
-        props: {
-          colspan: colspan > 1 ? colspan : null,
-          rowspan: rowspan > 1 ? rowspan : null,
-        },
+        props: {},
         meta: {},
         children: [],
       }, 'children')
+        // .closeNode()
+      // walkerContext.skipAllChildren()
+      if(!o.node.children?.length) {
+        walkerContext.closeNode()
+        return
+      }
+      if(o.node.children[0].type === 'text' || (o.node.children[0].type === 'element' && HastUtils.isTagInline(o.node.children[0].tagName))) {
+        walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node))).closeNode().closeNode()
+        walkerContext.skipAllChildren()
+      }
     },
     leave: async (o, context) => {
-      if (!HastUtils.isElement(o.node) || o.node.tagName !== 'td') {
+      if (!HastUtils.isElement(o.node)) {
         return;
       }
       const {walkerContext} = context;
@@ -202,19 +228,17 @@ export const tableCellBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
     enter: async (o, context) => {
       const {walkerContext} = context;
 
-      walkerContext
-        .openNode(
-          {
-            type: 'element',
-            tagName: 'td',
-            properties: {},
-            children: [],
-          },
-          'children'
-        )
+      walkerContext.openNode(
+        {
+          type: 'element',
+          tagName: 'td',
+          properties: {},
+          children: [],
+        },
+        'children'
+      )
     },
     leave: async (o, context) => {
-      if (o.node.flavour !== 'table-cell') return
       const {walkerContext} = context;
       walkerContext.closeNode();
     }

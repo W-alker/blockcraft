@@ -1,5 +1,5 @@
 import {ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewChild} from "@angular/core";
-import {BaseBlockComponent, BLOCK_POSITION, createBlockGapSpace, ORIGIN_SKIP_SYNC, POSITION_MAP} from "../../framework";
+import {BaseBlockComponent, ORIGIN_SKIP_SYNC, POSITION_MAP} from "../../framework";
 import {TableBlockModel} from "./index";
 import {TableCellBlockComponent} from "./table-cell.block";
 import {TableRowBlockComponent} from "./table-row.block";
@@ -10,7 +10,6 @@ import {CellToolbarComponent} from "./widgets/cell-toolbar.component";
 import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
 import {TableColBarComponent} from "./widgets/table-col-bar.component";
 import {TableRowBarComponent} from "./widgets/table-row-bar.component";
-import {performanceTest} from "../../global";
 import {adjustSelection, RectangleSelection} from "./utils";
 
 @Component({
@@ -124,8 +123,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }, ORIGIN_SKIP_SYNC)
   }
 
-  deleteRow(index: number) {
-    this.doc.crud.deleteBlocks(this.id, index, 1)
+  deleteRow(index: number, count = 1) {
+    this.doc.crud.deleteBlocks(this.id, index, count).then(() => {
+      this._activeRowRange = [-1, -1]
+    })
   }
 
   private _closetCell(event: Event) {
@@ -168,7 +169,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const id = target.getAttribute('data-block-id')
     if (!id) return
 
-    if (!this.resizingCol$.value) {
+    if (!this.resizingCol$.value && !this.doc.isReadonly) {
       // hovering bar
       this.hoveringCell = this.doc.getBlockById(id) as TableCellBlockComponent
       const offsetX = this.hoveringCell.hostElement.getBoundingClientRect().right
@@ -192,6 +193,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.showToolbar(this.selectedCellSet[Symbol.iterator]().next().value.hostElement)
   }
 
+  protected selectedCells = new Set<TableCellBlockComponent>()
+  protected selectedCoordinates: { start: number[], end: number[] } | null = null
+
   private _clearSelected() {
     this.selectedCellSet.forEach(cell => cell.hostElement.classList.remove('selected'))
     this.selectedCellSet.clear()
@@ -207,17 +211,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     cell.hostElement.classList.remove('selected')
   }
 
-  selectedCells = new Set<TableCellBlockComponent>()
-
-  // TODO 根据上下坐标设置矩形区间选中  性能优化
+  // 根据上下坐标设置矩形区间选中
   private _setRectangleSelected() {
-
     if (!this._startSelectingCell || !this._lastSelectingCell) return
     this._clearSelected()
-
     let startCell = this._startSelectingCell
     let endCell = this._lastSelectingCell
-
     if (startCell === endCell) {
       this.selectCell(startCell)
       return
@@ -226,27 +225,27 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const rowIds = this.childrenIds
 
     const startCoordinate = [rowIds.indexOf(startCell.parentId!), startCell.getIndexOfParent()]
-    const endCoordinate = [ rowIds.indexOf(endCell.parentId!), endCell.getIndexOfParent()]
-
-    // console.log('%cconfirmselection', 'color: red;', startCoordinate, endCoordinate,  this.confirmSelection(startCoordinate, endCoordinate))
+    const endCoordinate = [rowIds.indexOf(endCell.parentId!), endCell.getIndexOfParent()]
 
     this.selectedCells.forEach(cell => {
       this.unselectCell(cell)
     })
 
-    const {start, end} = this.confirmSelection(startCoordinate, endCoordinate)
-    for (let i = start[0]; i <= end[0]; i++) {
-      const row = this.doc.getBlockById(rowIds[i]) as TableRowBlockComponent
-      for (let j = start[1]; j <= end[1]; j++) {
-        const cell = row.getChildrenBlocks()[j] as TableCellBlockComponent
-        this.selectCell(cell)
-      }
-    }
+    const {start, end} = this.selectedCoordinates = this.confirmSelection(startCoordinate, endCoordinate)
+    this.getMatrixByCoordinates(start, end).flat(1).forEach(cell => this.selectCell(cell))
   }
 
-  @performanceTest()
-  confirmSelection(cor1: number[], col2: number[]) {
+  private confirmSelection(cor1: number[], col2: number[]) {
     return adjustSelection(new RectangleSelection(cor1[0], cor1[1], col2[0], col2[1]), this)
+  }
+
+  getSelectedCellsCoordinates() {
+    return this.selectedCoordinates
+  }
+
+  getMatrixByCoordinates(start: number[], end: number[]) {
+    return this.childrenIds.slice(start[0], end[0] + 1)
+      .map(rowId => this.doc.getBlockById(rowId).getChildrenBlocks().slice(start[1], end[1] + 1) as TableCellBlockComponent[])
   }
 
   getSelectedCells() {
@@ -287,6 +286,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   showToolbar(target: HTMLElement, type: 'col' | 'row' | 'cells' = 'cells', index?: number, count = 1, closeFn?: () => void) {
+    if (this.doc.isReadonly) {
+      this.doc.selection.afterNextChange(() => this._clearSelected())
+      return
+    }
+
     this.hostElement.classList.add('active')
     const portal = new ComponentPortal(CellToolbarComponent)
     this.toolbarOvr = this.overlay.create({
@@ -312,7 +316,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     merge(this.toolbarOvr.backdropClick(),
       this.doc.selection.nextChangeObserve(),
-      this.onDestroy$, selectedCells[0]?.onDestroy$)
+      this.onDestroy$, selectedCells[0]?.onDestroy$, cpr.instance.onClose$)
       .pipe(takeUntil(cpr.instance.onDestroy)).subscribe(() => {
       closeFn?.()
 

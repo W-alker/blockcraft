@@ -1,6 +1,7 @@
 import {
   ChangeDetectorRef,
-  Component, DestroyRef,
+  Component,
+  DestroyRef,
   ElementRef,
   EventEmitter,
   HostBinding,
@@ -210,25 +211,21 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   get firstChildren(): BaseBlockComponent<any> | null {
-    if (this.nodeType === 'block') {
-      const yChildren = this.yBlock.get('children') as Y.Array<string>
-      if (!yChildren.length) return null
-      const id = yChildren.get(0)
-      if (!id) return null
-      return this.doc.getBlockById(id) as any
-    }
-    return null
+    if (this.nodeType === BlockNodeType.editable) return null
+    const yChildren = this.yBlock.get('children') as Y.Array<string>
+    if (!yChildren.length) return null
+    const id = yChildren.get(0)
+    if (!id) return null
+    return this.doc.getBlockById(id) as any
   }
 
   get lastChildren(): BaseBlockComponent<any> | null {
-    if (this.nodeType === 'block') {
-      const yChildren = this.yBlock.get('children') as Y.Array<string>
-      if (!yChildren.length) return null
-      const id = yChildren.get(yChildren.length - 1)
-      if (!id) return null
-      return this.doc.getBlockById(id) as any
-    }
-    return null
+    if (this.nodeType === BlockNodeType.editable) return null
+    const yChildren = this.yBlock.get('children') as Y.Array<string>
+    if (!yChildren.length) return null
+    const id = yChildren.get(yChildren.length - 1)
+    if (!id) return null
+    return this.doc.getBlockById(id) as any
   }
 
   getChildrenByIndex(index: number) {
@@ -284,7 +281,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     }, ORIGIN_SKIP_SYNC)
   }
 
-  toSnapshot(): IBlockSnapshot {
+  toSnapshot(deep = true): IBlockSnapshot {
     return {
       id: this.id,
       flavour: this.flavour,
@@ -293,10 +290,10 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
       meta: JSON.parse(JSON.stringify(this._native.meta)),
       children: this.nodeType === BlockNodeType.editable
         ? (this._yBlock.get('children') as Y.Text).toDelta()
-        : this.childrenIds.map(v => {
+        : (deep ? this.childrenIds.map(v => {
           const block = this.doc.getBlockById(v)
           return block.toSnapshot()
-        }),
+        }) : []),
     }
   }
 

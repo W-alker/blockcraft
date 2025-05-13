@@ -1,4 +1,4 @@
-import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from "@angular/core";
+import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {BaseBlockComponent, NativeBlockModel} from "../../framework";
 
 export interface IBaseEmbedBlockProps {
@@ -33,7 +33,7 @@ export class BaseEmbedBlockComponent<Model extends NativeBlockModel & {
   }
 
   reloadIframe() {
-    this.hostElement.querySelector('iframe')!.src = this._iframeUrl
+    this.hostElement.querySelector('iframe')!.src = this._iframeUrl = this.getValidUrl()
   }
 
 }

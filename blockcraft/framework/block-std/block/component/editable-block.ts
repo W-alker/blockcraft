@@ -2,7 +2,7 @@ import {ChangeDetectionStrategy, Component, HostBinding} from "@angular/core";
 import {BaseBlockComponent} from "./base-block";
 import {EditableBlockNative} from "../../reactive";
 import * as Y from 'yjs'
-import {DeltaInsert, DeltaInsertEmbed, DeltaOperation} from "../../types";
+import {DeltaInsert, DeltaInsertEmbed, DeltaOperation, InlineModel} from "../../types";
 import {ORIGIN_SKIP_SYNC} from "../../../doc";
 import {INLINE_CONTAINER_CLASS} from "../../inline";
 
@@ -42,6 +42,11 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   get textAlign() {
     return this._native.props['textAlign'] || 'left'
   }
+  //
+  // @HostBinding('attr.data-heading')
+  // get heading() {
+  //   return this._native.props['heading']
+  // }
 
   protected override _init() {
     super._init();
@@ -71,9 +76,9 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     this.applyDeltaOperation([{retain: index}, {delete: length}])
   }
 
-  insertText(index: number, text: string) {
+  insertText(index: number, text: string, attributes?: DeltaInsert['attributes']) {
     if (!text) return
-    this.applyDeltaOperation([{retain: index}, {insert: text}])
+    this.applyDeltaOperation([{retain: index}, {insert: text, attributes}])
   }
 
   replaceText(index: number, length: number, text?: string | null) {
@@ -100,6 +105,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   applyDeltaOperation(delta: DeltaOperation[]) {
+    if (this.doc.isReadonly) return
     this.doc.crud.transact(() => {
       this._applyDeltaToYText(delta)
       this._applyDeltaToView(delta)
@@ -108,7 +114,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
   protected _applyDeltaToYText(deltas: DeltaOperation[]) {
     let r = 0
-    for(const delta of deltas) {
+    for (const delta of deltas) {
       if (delta.insert) {
         if (typeof delta.insert === 'string') {
           this.yText.insert(r, delta.insert, delta.attributes)
@@ -117,17 +123,16 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
           this.yText.insertEmbed(r, delta.insert, delta.attributes)
           r += 1
         }
-      }
-      else if (delta.delete) {
+      } else if (delta.delete) {
         this.yText.delete(r, delta.delete)
-      }
-      else if (delta.retain) {
+      } else if (delta.retain) {
         r += delta.retain
       }
     }
   }
 
   protected _applyDeltaToView(deltas: DeltaOperation[]) {
+    if (this.doc.isReadonly) return
     try {
       this.doc.inlineManager.applyDeltaToView(deltas, this.containerElement)
     } catch (e) {

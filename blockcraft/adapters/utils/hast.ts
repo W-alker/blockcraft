@@ -264,4 +264,6 @@ export const HastUtils = {
   querySelector,
   flatNodes,
   isParagraphLike,
+  isElementInline,
+  isTagInline
 };

@@ -1,8 +1,8 @@
 import {DocPlugin, getPositionWithOffset} from "../../framework";
-import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
-import {Overlay, OverlayRef} from "@angular/cdk/overlay";
-import {ComponentPortal} from "@angular/cdk/portal";
+import {Subject, Subscription} from "rxjs";
+import {OverlayRef} from "@angular/cdk/overlay";
 import {CalloutBlockToolbar} from "./widgets/callout.toolbar";
+import {throttle} from "../../global";
 
 export class CalloutToolbarPlugin extends DocPlugin {
   override name = 'callout-toolbar';
@@ -29,20 +29,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
       this.closeToolbar()
 
       setTimeout(() => {
-        if (this._overlayRef && this._activeCalloutBlock === calloutBlock) return;
-
-        this._activeCalloutBlock = calloutBlock
-
-        const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay({
-          target: calloutBlock.hostElement,
-          component: CalloutBlockToolbar,
-          positions: [
-            getPositionWithOffset("top-center", 0, 8),
-            getPositionWithOffset("bottom-center", 0, 8),
-          ]
-        }, this._closeToolbar$, this.closeToolbar)
-        componentRef.setInput('calloutBlock', calloutBlock)
-        this._overlayRef = overlayRef
+        this.openToolbar(calloutBlock)
       }, 200)
 
     })
@@ -53,6 +40,33 @@ export class CalloutToolbarPlugin extends DocPlugin {
       clearTimeout(this._timer)
       this._timer = null
     }
+  }
+
+  openToolbar = (calloutBlock: BlockCraft.BlockComponent) => {
+    if (this._overlayRef && this._activeCalloutBlock === calloutBlock) return;
+
+    this._activeCalloutBlock = calloutBlock
+
+    const resizeObs = new ResizeObserver(throttle(() => {
+      this._overlayRef?.updatePosition()
+    }, 100))
+    resizeObs.observe(calloutBlock.hostElement)
+
+    const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay({
+      target: calloutBlock.hostElement,
+      component: CalloutBlockToolbar,
+      positions: [
+        getPositionWithOffset("top-center", 0, 8),
+        getPositionWithOffset("bottom-center", 0, 8),
+      ]
+    }, this._closeToolbar$, () => {
+      this.closeToolbar()
+      resizeObs.disconnect()
+    })
+    componentRef.setInput('calloutBlock', calloutBlock)
+    this._overlayRef = overlayRef
+
+
   }
 
   closeToolbar = () => {

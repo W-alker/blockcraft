@@ -4,7 +4,7 @@ import * as Y from "yjs";
 import {BlockCraftError, ErrorCode, nextTick} from "../../global";
 import {IBlockSelectionJSON} from "../modules";
 import {EditableBlockComponent} from "../block-std";
-import {BehaviorSubject, skip, Subject, take} from "rxjs";
+import {BehaviorSubject, Subject, take} from "rxjs";
 
 // This origin will skip Y.Event sync (to model)
 export const ORIGIN_SKIP_SYNC = Symbol('skip_sync')
@@ -256,10 +256,16 @@ export class DocCRUD {
 
   async insertBlocks(parentId: string, index: number, snapshots: IBlockSnapshot[]) {
     const parentComp = this.vm.get(parentId)
-    if(!parentComp) {
+    if (!parentComp) {
       this.doc.logger.warn(`parentComp ${parentId} not found`)
       return
     }
+
+    // 过滤不允许的blocks
+    const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)
+    snapshots = snapshots.filter(s => this.doc.schemas.isValidChildren(s.flavour, parentSchema))
+    if (!snapshots.length) return
+
     const comps = await Promise.all(
       snapshots.map(s => this.vm.createComponentBySnapshot(s, (m) => {
         this.transact(() => {
@@ -294,7 +300,19 @@ export class DocCRUD {
   }
 
   async deleteBlocks(parent: string, index: number, count = 1) {
+    if (count === 0) return
     const parentComp = this.vm.get(parent)!
+    if (index >= parentComp.instance.childrenLength) {
+      this.doc.logger.warn(`deleteBlocks: index ${index} out of range`)
+      return
+    }
+    if (index === 0 && count >= parentComp.instance.childrenLength) {
+      this.doc.logger.warn(`deleteBlocks: delete all children`)
+      return
+    }
+    if (index + count > parentComp.instance.childrenLength) {
+      count = parentComp.instance.childrenLength - index
+    }
     this.transact(() => {
       const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
       this.vm.remove(parentComp, index, count)

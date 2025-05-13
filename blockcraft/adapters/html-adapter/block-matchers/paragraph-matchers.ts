@@ -31,6 +31,7 @@ const headingBlockMatchTagsMap: Record<string, string> = {
   'heading-four': 'h4',
 }
 
+// TODO 优化paragraph matcher
 export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   toMatch: o =>
     HastUtils.isElement(o.node) &&
@@ -75,16 +76,12 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
               nodeType: BlockNodeType.editable,
               id: generateId(),
               flavour: 'paragraph',
-              props: {
-                // type: walkerContext.getGlobalContext('hast:blockquote')
-                //   ? 'quote'
-                //   : 'text',
-              },
+              props: {},
               meta: {},
               children: deltaConverter.astToDelta(o.node),
             },
             'children'
-          );
+          )
           break;
         }
         case 'h1':
@@ -117,40 +114,33 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         return;
       }
       const {walkerContext} = context;
-      walkerContext.closeNode();
+      // walkerContext.closeNode();
+      if(!o.node.children.length) {
+        // walkerContext.closeNode();
+      }
 
-      // switch (o.node.tagName) {
-      //   case 'div': {
-      //     if (
-      //       o.parent?.node.type === 'element' &&
-      //       o.parent.node.tagName !== 'li' &&
-      //       Array.isArray(o.node.properties?.["className"])
-      //     ) {
-      //       if (
-      //         o.node.properties["className"].includes(
-      //           'paragraph-block'
-      //         ) ) {
-      //         walkerContext.closeNode();
-      //       }
-      //     }
-      //     break;
-      //   }
-      //   case 'p': {
-      //     if (
-      //       o.next?.type === 'element' &&
-      //       o.next.tagName === 'div' &&
-      //       Array.isArray(o.next.properties?.['className']) &&
-      //       (o.next.properties?.['className'].includes(
-      //           'affine-block-children-container'
-      //         ) ||
-      //         o.next.properties?.['className'].includes('indented'))
-      //     ) {
-      //       // Close the node when leaving div indented
-      //       break;
-      //     }
-      //     break;
-      //   }
-      // }
+      switch (o.node.tagName) {
+        case 'div': {
+          if (
+            o.parent?.node.type === 'element' &&
+            o.parent.node.tagName !== 'li'
+          ) {
+            walkerContext.closeNode();
+          }
+          break;
+        }
+        case 'p': {
+          if (
+            o.next?.type === 'element'&&
+            o.next.tagName === 'div'
+          ) {
+            // Close the node when leaving div indented
+            break;
+          }
+          walkerContext.closeNode();
+          break;
+        }
+      }
 
     },
   },

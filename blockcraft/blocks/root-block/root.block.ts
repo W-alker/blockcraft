@@ -2,7 +2,7 @@ import {ChangeDetectionStrategy, Component, HostListener} from "@angular/core";
 import {BaseBlockComponent, closetBlockId} from "../../framework";
 import {RootBlockModel} from "./index";
 import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
-import {BlockNodeType} from "../../framework/block-std/types";
+import {BlockNodeType} from "../../framework";
 
 @Component({
   selector: 'div.root-block[data-blockcraft-root="true"]',
@@ -10,21 +10,9 @@ import {BlockNodeType} from "../../framework/block-std/types";
     <ng-container #childrenContainer></ng-container>
   `,
   standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
-  isActive = false
-
-  @HostListener('blur', ['$event'])
-  onBlur(event: FocusEvent) {
-    this.isActive = false
-  }
-
-  @HostListener('focus', ['$event'])
-  onFocus(event: FocusEvent) {
-    this.isActive = true
-  }
-
   @HostListener('contextmenu', ['$event'])
   onContextMenu(event: MouseEvent) {
     event.preventDefault()
@@ -97,6 +85,7 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
 
     this.doc.readonlySwitch$.pipe(takeUntil(this.onDestroy$)).subscribe(v => {
       this.hostElement.setAttribute('contenteditable', v ? 'false' : 'true')
+      v ? this.hostElement.classList.add('readonly') : this.hostElement.classList.remove('readonly')
     })
   }
 

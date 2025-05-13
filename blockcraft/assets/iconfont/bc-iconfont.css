@@ -1,17 +1,25 @@
 @font-face {
   font-family: "bc_icon"; /* Project id 4682833 */
-  src: url('//at.alicdn.com/t/c/font_4682833_82woeygbq0d.woff2?t=1745304096486') format('woff2'),
-  url('//at.alicdn.com/t/c/font_4682833_82woeygbq0d.woff?t=1745304096486') format('woff'),
-  url('//at.alicdn.com/t/c/font_4682833_82woeygbq0d.ttf?t=1745304096486') format('truetype'),
-  url('//at.alicdn.com/t/c/font_4682833_82woeygbq0d.svg?t=1745304096486#bc_icon') format('svg');
+  src: url('//at.alicdn.com/t/c/font_4682833_8ld07gu48oy.woff2?t=1746783249450') format('woff2'),
+  url('//at.alicdn.com/t/c/font_4682833_8ld07gu48oy.woff?t=1746783249450') format('woff'),
+  url('//at.alicdn.com/t/c/font_4682833_8ld07gu48oy.ttf?t=1746783249450') format('truetype'),
+  url('//at.alicdn.com/t/c/font_4682833_8ld07gu48oy.svg?t=1746783249450#bc_icon') format('svg');
 }
 
 .bc_icon {
   font-family: "bc_icon" !important;
-  font-size: 16px;
+  font-size: inherit;
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.bc_mermaid:before {
+  content: "\e675";
+}
+
+.bc_juejin:before {
+  content: "\e602";
 }
 
 .bc_shuqian:before {

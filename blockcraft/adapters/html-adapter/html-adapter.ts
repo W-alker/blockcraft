@@ -1,6 +1,6 @@
 import rehypeParse from 'rehype-parse';
 import rehypeStringify from 'rehype-stringify';
-import { unified } from 'unified';
+import {unified} from 'unified';
 import {HtmlAST, AdapterContext} from "../types";
 import {ASTWalker} from "../base/ast-walker";
 import {BlockNodeType, IBlockSnapshot, generateId, DocFileService} from "../../framework";
@@ -9,16 +9,18 @@ import {HtmlDeltaConverter} from "./delta-converter";
 import {inlineDeltaToHtmlAdapterMatchers} from "./delta-converter/inline-delta";
 import {htmlInlineToDeltaMatchers} from "./delta-converter/html-inline";
 import {DEFAULT_BLOCK_MATCHERS} from "./block-matchers";
-import type { Root } from 'hast';
+import type {Root} from 'hast';
 
-export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot>{
+export const SIGN_BLOCK_CRAFT_JSON = 'blockcraft-json';
+
+export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
   deltaConverter = new HtmlDeltaConverter(this.adapterConfigs, inlineDeltaToHtmlAdapterMatchers, htmlInlineToDeltaMatchers)
 
   constructor(
     readonly fileService: DocFileService,
     readonly adapterConfigs = new Map<string, string>(),
     readonly blockMatchers: BlockHtmlAdapterMatcher[] = DEFAULT_BLOCK_MATCHERS,
-  ){
+  ) {
     super();
   }
 
@@ -35,7 +37,17 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot>{
     snapshot: IBlockSnapshot,
     // assets?: AssetsManager
   ) => {
+    // TODO 删除log
     console.log('----------------html ast', html)
+
+    if (html.type === 'root') {
+      const children = html.children[0]
+      if (children.type === 'element' && children.tagName === 'html' && children.properties && children.properties[SIGN_BLOCK_CRAFT_JSON]) {
+        const json = JSON.parse(children.properties[SIGN_BLOCK_CRAFT_JSON] as string)
+        // TODO 验证数据完整性
+        return json
+      }
+    }
 
     const walker = new ASTWalker<HtmlAST, IBlockSnapshot>();
     walker.setONodeTypeGuard(
@@ -95,7 +107,7 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot>{
     walker.setONodeTypeGuard(
       (node): node is IBlockSnapshot => typeof node === 'object' && node !== null && 'flavour' in node && 'id' in node
     );
-    walker.setEnter(async (o, context) => {
+    walker.setEnter((o, context) => {
       for (const matcher of this.blockMatchers) {
         if (matcher.fromMatch(o)) {
           const adapterContext: AdapterContext<
@@ -115,7 +127,7 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot>{
             //   assetsIds.push(assetsId);
             // },
           };
-          await matcher.fromBlockSnapshot.enter?.(o, adapterContext);
+          matcher.fromBlockSnapshot.enter?.(o, adapterContext);
         }
       }
     });
@@ -136,7 +148,7 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot>{
             // textBuffer: { content: '' },
             // assets,
           };
-          await matcher.fromBlockSnapshot.leave?.(o, adapterContext);
+          matcher.fromBlockSnapshot.leave?.(o, adapterContext);
         }
       }
     });
@@ -148,8 +160,7 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot>{
       id: generateId(),
       flavour: 'root',
       nodeType: BlockNodeType.root,
-      props: {
-      },
+      props: {},
       meta: {},
       children: [],
     };
@@ -166,6 +177,10 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot>{
       ],
     };
     const ast = await this._traverseSnapshot(blockSnapshot, root);
+    const htmlElement = ast.children.find(v => v.type === 'element' && v.tagName === 'html')
+    if (htmlElement && htmlElement.type === 'element') {
+      htmlElement.properties[SIGN_BLOCK_CRAFT_JSON] = JSON.stringify(blockSnapshot)
+    }
     return this._astToHtml(ast);
   }
 }

@@ -7,7 +7,7 @@ import {
   Input,
   Output, ViewChild
 } from "@angular/core";
-import {LANGUAGE_LIST} from "./const";
+import {CodeBlockLanguage, LANGUAGE_LIST} from "./const";
 import {NgForOf} from "@angular/common";
 
 @Component({
@@ -75,7 +75,7 @@ import {NgForOf} from "@angular/common";
 })
 export class LangListComponent {
   @Input() activeLang: string = 'JavaScript';
-  @Output() langChange = new EventEmitter<string>();
+  @Output() langChange = new EventEmitter<CodeBlockLanguage>();
   @Output() destroy = new EventEmitter<void>()
 
   @ViewChild('input', {read: ElementRef}) input!: ElementRef<HTMLInputElement>
@@ -112,7 +112,7 @@ export class LangListComponent {
     e.preventDefault()
     const target = e.target as HTMLElement;
     if (target.classList.contains('lang-list_item')) {
-      this.langChange.emit(this.languageList.find(item => item === target.dataset["value"])!)
+      this.emitLang(this.languageList.find(item => item === target.dataset["value"])!)
     }
   }
 
@@ -152,10 +152,15 @@ export class LangListComponent {
         break;
       case 'Enter':
         if(!this.languageList.length || !this.languageList[this.hoverIdx]) return;
-        this.langChange.emit(this.languageList[this.hoverIdx]);
+        $event.preventDefault()
+        this.emitLang(this.languageList[this.hoverIdx])
         break;
       default:
         break;
     }
+  }
+
+  async emitLang(lang: CodeBlockLanguage) {
+    this.langChange.emit(lang)
   }
 }

@@ -1,4 +1,7 @@
 @mixin code-block {
+  @at-root #{selector-unify(&, '.readonly')} {
+
+  }
 
   div.code-block {
     --code-padding-left: calc(var(--bc-fs) * 2.5);
@@ -146,8 +149,10 @@
       color: #e067c5;
     }
 
-    &.focused .head-btn__group {
-      visibility: visible;
+    &.focused, &:hover {
+      .head-btn__group {
+        visibility: visible;
+      }
     }
 
     .head-btn {
@@ -174,6 +179,10 @@
         gap: 8px;
         display: flex;
         align-items: center;
+
+        &.active {
+          visibility: visible;
+        }
       }
 
       > span {

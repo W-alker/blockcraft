@@ -1,4 +1,44 @@
-import {DeltaInsert, IInlineNodeAttrs} from "../../framework/block-std/types";
+import {DeltaInsert, IInlineNodeAttrs} from "../../framework";
+
+// 将DeltaInsert[]根据其中的\n拆分成多个DeltaInsert[]
+export const splitDeltaByLineBreak = (delta: DeltaInsert[]): DeltaInsert[][] => {
+  const result: DeltaInsert[][] = [];
+  let currentParagraph: DeltaInsert[] = [];
+
+  for (const op of delta) {
+    const { insert, attributes } = op;
+
+    if (typeof insert !== 'string') {
+      // embed 类型：直接加入当前段落
+      currentParagraph.push(op);
+      continue;
+    }
+
+    const lines = insert.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const isLast = i === lines.length - 1;
+
+      if (line.length > 0) {
+        currentParagraph.push({ insert: line, attributes });
+      }
+
+      if (!isLast) {
+        // \n 代表段落结束（可以选择保留它或省略）
+        currentParagraph.push({ insert: '\n', attributes });
+        result.push(currentParagraph);
+        currentParagraph = [];
+      }
+    }
+  }
+
+  if (currentParagraph.length > 0) {
+    result.push(currentParagraph);
+  }
+
+  return result;
+}
 
 export const characterAtDelta = (deltas: DeltaInsert[], position: number): string | object | null => {
   let currentPosition = 1;

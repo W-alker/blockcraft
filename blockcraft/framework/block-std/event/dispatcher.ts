@@ -82,6 +82,10 @@ export class UIEventDispatcher {
     return this.doc.root.hostElement
   }
 
+  get isReadOnly() {
+    return this.doc.isReadonly
+  }
+
   bindHotkey = (...args: Parameters<KeyboardControl['bindHotKey']>) =>
     this.keyboardControl.bindHotKey(...args);
 

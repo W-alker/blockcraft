@@ -1,10 +1,8 @@
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {lastValueFrom, take} from "rxjs";
 import {BlockCraftError, ErrorCode} from "../../global";
-import {BlockNodeType, IBlockSnapshot} from "../block-std/types";
-import {YBlock} from "../block-std/reactive";
+import {BlockNodeType, IBlockSnapshot, BaseBlockComponent, YBlock} from "../block-std";
 import * as Y from "yjs";
-import {BaseBlockComponent} from "../block-std/block";
 
 export class DocVM {
 
@@ -51,7 +49,7 @@ export class DocVM {
   }
 
   async createComponentByYBlocks(yBlocks: Record<string, YBlock>) {
-    console.log('--------- createComponentByYBlocks', yBlocks)
+    // console.log('--------- createComponentByYBlocks', yBlocks)
     // 乱序的，要根据children中的Id顺序组合
     const createComp = async (yBlock: YBlock, parentId: string | null = null) => {
       const id = yBlock.get('id')

@@ -29,7 +29,7 @@ export const htmlTextToDeltaMatcher: HtmlASTToDeltaMatcher = {
     const value = options.trim
       ? collapseWhiteSpace(ast.value, { trim: options.trim })
       : collapseWhiteSpace(ast.value);
-    return value ? [{ insert: value }] : [];
+    return value ? [{ insert: value , attributes: {}}] : [];
   },
 };
 

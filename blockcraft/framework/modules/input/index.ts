@@ -203,7 +203,7 @@ export class InputTransformer {
       context.preventDefault()
       const prevBlock = this.doc.prevSibling(from.block)
       if (!prevBlock) return true
-      this.doc.selection.setBlockPosition(prevBlock, false)
+      this.doc.selection.setCursorAtBlock(prevBlock, false)
       this._replaceText(state.selection)
       return true
     }
@@ -370,9 +370,9 @@ export class InputTransformer {
       // } else {
       context.preventDefault()
 
-      const p = this.doc.schemas.createSnapshot('paragraph', [])
+      const p = this.doc.schemas.createSnapshot('paragraph', [[], from.block.props])
       await (state.raw.ctrlKey ? this.doc.crud.insertBlocksBefore(endBlock, [p]) : this.doc.crud.insertBlocksAfter(endBlock, [p]))
-      this.doc.selection.setBlockPosition(p.id, true)
+      this.doc.selection.setCursorAtBlock(p.id, true)
       // }
       return true
     }
@@ -408,7 +408,7 @@ export class InputTransformer {
     this.doc.crud.transact(() => {
       from.block.deleteText(from.index)
       this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {
-        this.doc.selection.setBlockPosition(p.id, true)
+        this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
       })
     }, ORIGIN_SKIP_SYNC)
     return true

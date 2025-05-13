@@ -24,12 +24,16 @@ import 'prismjs/components/prism-nginx';
 import 'prismjs/components/prism-markdown';
 
 export const LANGUAGE_LIST = [
+  'PlainText',
   'Java', 'JavaScript', 'TypeScript', 'CSS', 'HTML', 'PHP', 'Python', 'Go',
   'C', 'C#', 'C++', 'Rust', 'JSON', 'SQL', 'XML', 'Bash', 'Kotlin', 'Swift',
   'Ruby', 'Scala', 'Dart', 'Git', 'MongoDB', 'nginx', 'Markdown'
-].sort((item1, item2) => item1.localeCompare(item2))
+].sort((item1, item2) => item1.localeCompare(item2)) as CodeBlockLanguage[]
 
-export const PRISM_LANGUAGE_MAP: Record<string, string> = {
+export type CodeBlockLanguage = keyof typeof PRISM_LANGUAGE_MAP
+
+export const PRISM_LANGUAGE_MAP = {
+  PlainText: 'plaintext',
   Java: 'java',
   JavaScript: 'javascript',
   TypeScript: 'typescript',
@@ -58,3 +62,6 @@ export const PRISM_LANGUAGE_MAP: Record<string, string> = {
   nginx: 'nginx',
   Markdown: 'markdown'
 }
+
+const loadedLanguages = new Set<CodeBlockLanguage>()
+

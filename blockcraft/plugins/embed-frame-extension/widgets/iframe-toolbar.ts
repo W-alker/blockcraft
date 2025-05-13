@@ -73,7 +73,7 @@ export class EmbedFrameBlockToolbar {
           [{insert: this.frameBlock.props.url, attributes: {'a:link': this.frameBlock.props.url}}]]
         )
         this.doc.crud.replaceWithSnapshots(this.frameBlock.id, [paragraph]).then(() => {
-          this.doc.selection.setBlockPosition(paragraph.id, false)
+          this.doc.selection.selectOrSetCursorAtBlock(paragraph.id, false)
         })
         break
     }

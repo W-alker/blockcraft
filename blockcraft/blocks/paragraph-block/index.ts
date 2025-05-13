@@ -1,5 +1,4 @@
-import {EditableBlockNative} from "../../framework";
-import {BlockNodeType} from "../../framework/block-std/types";
+import {EditableBlockNative, BlockNodeType} from "../../framework";
 import {
   IBlockSchemaOptions,
   editableBlockCreateSnapShotFn,

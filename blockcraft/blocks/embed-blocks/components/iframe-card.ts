@@ -9,7 +9,7 @@ import {HostUrlPipe} from "../pipes";
       <iframe loading="lazy" allowfullscreen #iframeEle
               sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-popups allow-downloads allow-storage-access-by-user-activation"
               draggable="false"
-              allow="encrypted-media;" referrerpolicy=""
+              allow="encrypted-media;clipboard-read *;clipboard-write *;" referrerpolicy=""
               data-iframe-will-auto-focus="1"
               frameborder="0" data-aha-samesite=""></iframe>
 
@@ -40,7 +40,6 @@ export class IframeCardComponent implements AfterViewInit {
   private _url = ''
   @Input()
   set url(value: string) {
-    console.log('------reload src', value)
     this._url = value
     if (!value || !this.isViewInit) return
     this.iframe.nativeElement.src = value

@@ -181,13 +181,19 @@ export class SelectionManager {
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
     fromEvent(document, 'selectionchange').pipe(takeUntil(root.onDestroy$)).subscribe(() => {
       const selection = document.getSelection()
-      if (!selection || !this.doc.isActive || !selection.rangeCount) {
+      if (!selection || !selection.rangeCount) {
         this.selectionChange$.next(null)
         this.selectedManager.setSelected(null)
         return
       }
 
       const range = selection.getRangeAt(0)
+      if (document.activeElement !== this.doc.root.hostElement && !this.doc.root.hostElement.contains(range.commonAncestorContainer)) {
+        this.selectionChange$.next(null)
+        this.selectedManager.setSelected(null)
+        return
+      }
+
       const r = new BlockSelection(this.normalizeRange(range), range, this.isByUser, selection)
       this.isByUser = false
 
@@ -215,7 +221,7 @@ export class SelectionManager {
     const focusSibling = () => {
       const opBlock = isBackward ? this.doc.prevSibling(focusBlock) : this.doc.nextSibling(focusBlock)
       if (!opBlock) return false
-      this.setBlockPosition(opBlock, !isBackward)
+      this.selectOrSetCursorAtBlock(opBlock, !isBackward)
       opBlock.hostElement.scrollIntoView({block: 'nearest', behavior: 'smooth'})
       return true
     }
@@ -225,18 +231,10 @@ export class SelectionManager {
       return true
     }
 
-    const searchEditableDescendant = (block: BlockCraft.BlockComponent, isStart: boolean): EditableBlockComponent | null => {
-      if (this.doc.isEditable(block)) return block
-      const child = isBackward ? block.firstChildren : block.lastChildren
-      if (!child || child.nodeType === BlockNodeType.void) return null
-      return searchEditableDescendant(child, isStart)
-    }
-
     if (opObj.block.nodeType === BlockNodeType.block) {
       const res = focusSibling()
       if (!res) {
-        const editableBlock = searchEditableDescendant(focusBlock, isBackward)
-        editableBlock && this.setBlockPosition(editableBlock, isBackward)
+        this.setCursorAtBlock(focusBlock, isBackward)
       }
     }
     return true
@@ -575,17 +573,6 @@ export class SelectionManager {
     return {from, to, collapsed: false}
   }
 
-  selectBlock(block: BlockCraft.BlockComponent | string) {
-    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
-    const selection = document.getSelection()!
-    const range = document.createRange()
-    range.setStart(block.hostElement, 0)
-    range.setEnd(block.hostElement, block.hostElement.childElementCount)
-    selection.removeAllRanges()
-    selection.addRange(range)
-    this.isByUser = true
-  }
-
   private _setRange(from: IBlockInlineRangeJSON, to: IBlockInlineRangeJSON | null = null) {
     const fromBlock = this.doc.getBlockById(from.blockId)
     const range = document.createRange()
@@ -624,6 +611,17 @@ export class SelectionManager {
     return range
   }
 
+  selectBlock(block: BlockCraft.BlockComponent | string) {
+    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    const selection = document.getSelection()!
+    const range = document.createRange()
+    range.setStart(block.hostElement, 0)
+    range.setEnd(block.hostElement, block.hostElement.childElementCount)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    this.isByUser = true
+  }
+
   setSelection(...args: Parameters<typeof this._setRange>) {
     const range = this._setRange(...args)
     const selection = document.getSelection()!
@@ -632,19 +630,65 @@ export class SelectionManager {
     this.isByUser = true
   }
 
-  setBlockPosition(block: string | BlockCraft.BlockComponent, atStart: boolean) {
+  /**
+   * set cursor at the position of the editable block
+   * @param block the block to set cursor at
+   * @param index the index of the cursor
+   */
+  setCursorAt(block: EditableBlockComponent, index: number) {
+    const startNodePos = this.doc.inlineManager.queryNodePositionInlineByOffset(block.containerElement, index)
+    const selection = document.getSelection()!
+    selection.setPosition(startNodePos.node, startNodePos.offset)
+  }
+
+  /**
+   * 1. If the block is editable, set the cursor at the start or end of the block. \
+   * 2. If the block is not editable, select the block.
+   * @param block
+   * @param atStart
+   */
+  selectOrSetCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean) {
     block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    if (this.doc.isEditable(block)) {
+      this.setCursorAt(block, atStart ? 0 : block.textLength)
+      return
+    }
+    this.selectBlock(block)
+    block.hostElement.scrollIntoView({behavior: 'smooth', block: 'nearest'})
+  }
 
-    const docSelection = document.getSelection()!
-
-    const extendStartOrEnd = (block: EditableBlockComponent) => {
-      const nodeAndOffset = this.doc.inlineManager.queryNodePositionInlineByOffset(block.containerElement, atStart ? 0 : block.textLength)
-      docSelection.setPosition(nodeAndOffset.node, nodeAndOffset.offset)
+  /**
+   * 1. If the block is editable, set the cursor at the start or end of the block. \
+   * 2. If the block is void, select the block.\
+   * 3. If the block has children, try to find an editable descendant and set the cursor at the start or end of it. If no editable descendant is found, select the block.
+   * @param block
+   * @param atStart
+   */
+  setCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean) {
+    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    if (this.doc.isEditable(block)) {
+      this.setCursorAt(block, atStart ? 0 : block.textLength)
+      return
     }
 
-    this.doc.isEditable(block) ? extendStartOrEnd(block) : this.selectBlock(block)
+    if (block.nodeType === BlockNodeType.void) {
+      this.selectBlock(block)
+      return
+    }
 
-    block.hostElement.scrollIntoView({behavior: 'smooth', block: 'nearest'})
+    const searchEditableDescendant = (block: BlockCraft.BlockComponent, isStart: boolean): EditableBlockComponent | null => {
+      if (this.doc.isEditable(block)) return block
+      const child = atStart ? block.firstChildren : block.lastChildren
+      if (!child || child.nodeType === BlockNodeType.void) return null
+      return searchEditableDescendant(child, isStart)
+    }
+
+    const children = searchEditableDescendant(block, atStart)
+    if (!children) {
+      this.selectBlock(block)
+      return
+    }
+    this.selectOrSetCursorAtBlock(children, atStart)
   }
 
   selectAllChildren(block: string | BlockCraft.BlockComponent) {
@@ -689,7 +733,7 @@ export class SelectionManager {
   toJSON(selection: BlockCraft.Selection) {
   }
 
-  createFakeRange(json: IBlockSelectionJSON, config: {bgColor?: string, borderColor?: string} = {}) {
+  createFakeRange(json: IBlockSelectionJSON, config: { bgColor?: string, borderColor?: string } = {}) {
     const wrap = this.doc.root.hostElement
     const cursorEle = document.createElement('span')
     cursorEle.className = 'blockcraft-cursor'

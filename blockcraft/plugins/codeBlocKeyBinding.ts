@@ -42,6 +42,7 @@ export class CodeBlocKeyBinding extends DocPlugin {
 
   @BindHotKey({key: 'Enter', shiftKey: null}, {flavour: 'code'})
   handleEnterKey(context: UIEventStateContext) {
+    if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const {from, to, raw} = state.selection
     if (state.raw.shiftKey) {
@@ -66,6 +67,7 @@ export class CodeBlocKeyBinding extends DocPlugin {
 
   @BindHotKey({key: 'Tab', shiftKey: null}, {flavour: 'code'})
   handleTabKey(context: UIEventStateContext) {
+    if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const {from, to, raw} = state.selection
     if (to || from.type !== 'text') return false

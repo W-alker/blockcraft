@@ -1,16 +1,17 @@
 import {EditableBlockNative} from "../../framework";
 import {CodeBlockComponent} from "./code.block";
-import {BlockNodeType, IEditableBlockProps} from "../../framework/block-std/types";
+import {BlockNodeType, IEditableBlockProps} from "../../framework";
 import {
   IBlockSchemaOptions,
   editableBlockCreateSnapShotFn,
   EditableBlockCreateSnapshotParams
 } from "../../framework/block-std/schema/block-schema";
+import {CodeBlockLanguage} from "./const";
 
 export interface CodeBlockModel extends EditableBlockNative {
   flavour: 'code',
   props: {
-    lang: string
+    lang: CodeBlockLanguage
     mode: string
   } & IEditableBlockProps
 }
@@ -19,7 +20,7 @@ export const CodeBlockSchema: IBlockSchemaOptions<CodeBlockModel> = {
   flavour: 'code',
   nodeType: BlockNodeType.editable,
   component: CodeBlockComponent,
-  createSnapshot: editableBlockCreateSnapShotFn<CodeBlockModel>('code', {lang: 'JavaScript'}),
+  createSnapshot: editableBlockCreateSnapShotFn<CodeBlockModel>('code', {lang: 'PlainText'}),
   metadata: {
     version: 1,
     label: "代码块",

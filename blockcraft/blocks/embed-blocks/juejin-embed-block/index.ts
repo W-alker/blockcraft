@@ -1,5 +1,5 @@
 import {generateId, NoEditableBlockNative} from "../../../framework";
-import {BlockNodeType} from "../../../framework/block-std/types";
+import {BlockNodeType} from "../../../framework";
 import {IBlockSchemaOptions} from "../../../framework/block-std/schema/block-schema";
 import {JuejinEmbedBlockComponent} from "./juejin-embed.block";
 
