@@ -1,5 +1,5 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
-import {EditableBlockComponent, getPositionWithOffset, STR_LINE_BREAK} from "../../framework";
+import {EditableBlockComponent, getPositionWithOffset, ORIGIN_SKIP_SYNC, STR_LINE_BREAK} from "../../framework";
 import {CodeBlockModel} from "./index";
 import * as Prism from "prismjs";
 import {AsyncPipe, NgForOf} from "@angular/common";
@@ -78,6 +78,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   private highlight = (ev: Y.YEvent<Y.Text>, tr: Y.Transaction) => {
+    console.log(ev.delta)
     nextTick().then(() => {
       this.diffHighlight()
     })
@@ -130,13 +131,8 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     return res
   }
 
-  @performanceTest('code block render')
+  // @performanceTest('code block render')
   override rerender() {
-    // const codeText = this.textContent()
-    // if(this.props.lang === 'PlainText') {
-    //   this.doc.inlineManager.render([{insert: codeText}], this.containerElement)
-    //   return
-    // }
     const tokens = Prism.tokenize(this.textContent(), Prism.languages[PRISM_LANGUAGE_MAP[this.props.lang]])
     this.doc.inlineManager.render(this._flatTokens(tokens), this.containerElement)
   }

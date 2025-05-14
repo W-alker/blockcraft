@@ -100,7 +100,7 @@
     }
 
     &.selected {
-      -webkit-user-modify: read-only;
+      //-webkit-user-modify: read-only;
       background-color: var(--bc-select-background-color);
       transition: background-color 0.15s ease-in-out;
 

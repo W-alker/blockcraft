@@ -5,7 +5,7 @@ import {
   EventNames, getPositionWithOffset, IBlockRange,
   INLINE_TEXT_NODE_TAG, ORIGIN_SKIP_SYNC
 } from "../../framework";
-import {merge, Subject, takeUntil} from "rxjs";
+import {Subject, takeUntil} from "rxjs";
 import {InlineLinkToolbar} from "./widgets/inline-link-toolbar";
 import {getFirstSameAttrsTextRange, nextTick, sliceDelta} from "../../global";
 import {UIEventStateContext, IBlockSnapshot} from "../../framework";
@@ -88,6 +88,7 @@ export class InlineLinkExtension extends DocPlugin {
     this._cpr = this.doc.overlayService.createConnectedOverlay<InlineLinkToolbar>({
       target,
       component: InlineLinkToolbar,
+      backdrop: true
     }, this._closeToolbar$, this.closeToolbar).componentRef
 
     this._cpr.setInput('link', this._linkInfo?.link ?? '')
@@ -127,11 +128,10 @@ export class InlineLinkExtension extends DocPlugin {
     this.doc.selection.selectionChange$.pipe(takeUntil(this._closeToolbar$)).subscribe(sel => {
       if (!sel || sel.to || !sel.collapsed || sel.from.type !== 'text' ||
         (this._anchorTextRange && !this.isInRange(sel.from))) {
-        this.closeToolbar()
+        this._closeToolbar$.next()
         return
       }
     })
-
   }
 
   clearTimer() {
@@ -154,7 +154,15 @@ export class InlineLinkExtension extends DocPlugin {
 
     let fakeRange: HTMLElement
 
-    const close = () => {
+    const {componentRef} = this.doc.overlayService.createConnectedOverlay<LinkEditFloatDialog>({
+      target: target,
+      component: LinkEditFloatDialog,
+      positions: [
+        getPositionWithOffset('top-left', 0, 4),
+        getPositionWithOffset('bottom-left', 0, 4),
+      ],
+      backdrop: true
+    }, close$, () => {
       close$.next()
       fakeRange?.remove()
       nextTick().then(() => {
@@ -165,17 +173,7 @@ export class InlineLinkExtension extends DocPlugin {
           type: 'text'
         })
       })
-    }
-
-    const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<LinkEditFloatDialog>({
-      target: target,
-      component: LinkEditFloatDialog,
-      positions: [
-        getPositionWithOffset('top-left', 0, 4),
-        getPositionWithOffset('bottom-left', 0, 4),
-      ],
-      backdrop: true
-    }, close$, close)
+    })
 
     // componentRef.setInput('text', this._linkInfo?.text)
     componentRef.setInput('href', linkInfo?.link)
@@ -196,8 +194,7 @@ export class InlineLinkExtension extends DocPlugin {
       })
     })
 
-    merge(overlayRef.backdropClick(), componentRef.instance.close).pipe(takeUntil(close$)).subscribe(close)
-
+    componentRef.instance.close.pipe(takeUntil(close$)).subscribe(() => close$.next())
     componentRef.instance.update.pipe(takeUntil(close$)).subscribe(v => {
       close()
       if (!range || !linkInfo) return
@@ -207,7 +204,6 @@ export class InlineLinkExtension extends DocPlugin {
         block.formatText(range.start, range.end - range.start, {'a:link': v.href})
       }
     })
-
   }
 
   switchView() {

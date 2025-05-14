@@ -38,7 +38,7 @@ export class ClipboardManager {
         items[adapter1.type] = await adapter1.fromSnapshot(rootSnapshot)
       }
       const item = new ClipboardItem({
-        [ClipboardDataType.TEXT]: new Blob([snapshots2Text(snapshots)], {type: ClipboardDataType.TEXT}),
+        [ClipboardDataType.TEXT]: snapshots2Text(snapshots),
         ...items
       })
       return navigator.clipboard.write([item])
@@ -65,6 +65,7 @@ export class ClipboardManager {
         snapshot = await this._wrapDeltaByRoot(sliceDeltas)
         clipboardData.setData(ClipboardDataType.TEXT, deltaToString(sliceDeltas))
       }
+
       snapshot = await this._wrapSnapshotsByRoot([from.block.toSnapshot()])
       clipboardData.setData(ClipboardDataType.TEXT, from.block.textContent())
 

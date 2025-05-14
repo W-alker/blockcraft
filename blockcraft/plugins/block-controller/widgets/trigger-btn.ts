@@ -54,7 +54,7 @@ const ALIGN_LIST: IContextMenuItem[] = [
   standalone: true,
   template: `
     <div class="drag-handle" [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
-         [disabled]="menuDisabled" (open)="setValidBlockList()" [activeClass]="'active'"
+         [disabled]="menuDisabled" (open)="setValidBlockList()" [activeClass]="'active'" [delay]="300"
          [offsetY]="0" [withBackdrop]="false" activeClass="active" [draggable]="draggable">
       <div class="btn">
         <i [class]="['bf_icon', isEmpty ? 'bf_tianjia-2' : 'bf_yidong' ]"></i>

@@ -1,7 +1,7 @@
 import {Component, ComponentRef, InjectionToken} from "@angular/core";
 import {ComponentType, ConnectedPosition, Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
-import {fromEvent, Observable, Subject, take, takeUntil} from "rxjs";
+import {BehaviorSubject, fromEvent, Observable, Subject, take, takeUntil} from "rxjs";
 
 // export const DOC_OVERLAY_SERVICE_TOKEN = new InjectionToken<OverlayService>('DOC_OVERLAY_SERVICE');
 
@@ -60,7 +60,7 @@ export class DocOverlayService {
   constructor(private readonly doc: BlockCraft.Doc) {
   }
 
-  createConnectedOverlay<T>(params: IOverlayCreateOptions, close$: Subject<any> | Observable<any>, onDestroy: () => void) {
+  createConnectedOverlay<T>(params: IOverlayCreateOptions, close$: Subject<any>, onDestroy: () => void) {
     const portal = new ComponentPortal(params.component, null, this.doc.injector)
 
     const overlayRef = this.overlay.create({
@@ -84,17 +84,23 @@ export class DocOverlayService {
       for (const mutation of mutationsList) {
         mutation.removedNodes.forEach((node) => {
           if (node === params.target) {
-            observer.disconnect(); // 停止观察
-            overlayRef.dispose()
-            onDestroy?.()
+            close$.next(true)
           }
         })
       }
     })
+    observer.observe(params.target.parentElement!, {childList: true})
 
-    observer.observe(params.target.parentElement!, { childList: true });
+    this.doc.readonlySwitch$.pipe(takeUntil(close$)).subscribe(v => {
+      v && close$.next(true)
+    })
+
+    params.backdrop && overlayRef.backdropClick().pipe(takeUntil(close$)).subscribe(() => {
+      close$.next(true)
+    })
 
     close$.pipe(take(1)).subscribe(() => {
+      onDestroy?.()
       overlayRef.dispose()
       observer.disconnect()
     })

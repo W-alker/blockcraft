@@ -1,7 +1,6 @@
 import {DocPlugin, getPositionWithOffset} from "../../framework";
-import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
-import {Overlay, OverlayRef} from "@angular/cdk/overlay";
-import {ComponentPortal} from "@angular/cdk/portal";
+import {Subject, Subscription} from "rxjs";
+import {OverlayRef} from "@angular/cdk/overlay";
 import {BookmarkBlockToolbar} from "./widgets/bookmark-toolbar";
 
 export class BookmarkBlockExtensionPlugin extends DocPlugin {

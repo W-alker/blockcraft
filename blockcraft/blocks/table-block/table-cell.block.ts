@@ -25,10 +25,10 @@ export class TableCellBlockComponent extends BaseBlockComponent<TableCellBlockMo
 
   clearContent() {
     if (this.props.display === 'none' || !this.hasContent) return
-    this.doc.crud.transact(() => {
+    this.doc.crud.transact(async () => {
       const np = this.doc.schemas.createSnapshot('paragraph', [])
-      this.doc.crud.deleteBlocks(this.id, 0, this.childrenLength)
-      this.doc.crud.insertBlocks(this.id, 0, [np])
+      await this.doc.crud.insertBlocks(this.id, 0, [np])
+      this.doc.crud.deleteBlocks(this.id, 1, this.childrenLength)
     }, ORIGIN_SKIP_SYNC)
   }
 

@@ -340,7 +340,6 @@ export class EditorComponent {
   listenUpdate() {
     this.doc.crud.yDoc.on('update', (u: Uint8Array, _: any) => {
       this.updateList.push(u)
-      console.log(this.updateList.length)
     })
   }
 }

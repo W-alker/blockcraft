@@ -1,4 +1,4 @@
-import {BindHotKey, DocPlugin, STR_LINE_BREAK, STR_TAB} from "../framework";
+import {BindHotKey, DocPlugin, EventListen, ORIGIN_SKIP_SYNC, STR_LINE_BREAK, STR_TAB} from "../framework";
 import {CodeBlockComponent} from "../blocks/code-block/code.block";
 import {BlockCraftError, ErrorCode} from "../global";
 import {DeltaOperation, UIEventStateContext} from "../framework";
@@ -39,6 +39,23 @@ export class CodeBlocKeyBinding extends DocPlugin {
   //   },
   //   {flavour: 'code'}
   // )
+
+  @EventListen('compositionEnd', {flavour: 'code'})
+  handleCompositionEnd(context: UIEventStateContext) {
+    const ev = context.get('defaultState').event as CompositionEvent
+    ev.preventDefault()
+    const curSel = this.doc.selection.value!
+    console.log(curSel)
+
+    // this.doc.crud.transact(() => {
+    //   if (this._composeRange?.type !== 'text') return
+    //   this._composeRange!.block.yText.insert(this._composeRange!.index, ev.data)
+    //   // TODO: 更好的中文输入法反显渲染
+    //   this._composeRange!.block.rerender()
+    //   this._composeRange.block.setInlineRange(this._composeRange!.index + ev.data.length)
+    //   this._composeRange = null
+    // }, ORIGIN_SKIP_SYNC)
+  }
 
   @BindHotKey({key: 'Enter', shiftKey: null}, {flavour: 'code'})
   handleEnterKey(context: UIEventStateContext) {

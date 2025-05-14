@@ -5,7 +5,7 @@ import {
   DocPlugin,
   EditableBlockComponent,
   EventListen,
-  EventNames,
+  EventNames, getPositionWithOffset,
   HotKeyTrigger
 } from "../../framework";
 import {IBlockSnapshot, UIEventStateContext, BLOCK_CREATOR_SERVICE_TOKEN} from "../../framework";
@@ -209,13 +209,13 @@ export class BlockTransformerPlugin extends DocPlugin {
   private closeMenu$ = new Subject()
 
   openContextMenu(block: EditableBlockComponent) {
-    const overlay = this.doc.injector.get(Overlay)
-    const positions = overlay.position().flexibleConnectedTo(block.containerElement).withPositions([
-      {originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top'},
-      {originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom'},
-    ])
-    this.contextOvr = overlay.create({positionStrategy: positions})
-    const cpr = this.contextOvr.attach(new ComponentPortal(BlockTransformContextMenu))
+
+    const {componentRef: cpr, overlayRef} = this.doc.overlayService.createConnectedOverlay<BlockTransformContextMenu>({
+      target: block.hostElement,
+      component: BlockTransformContextMenu,
+      positions: [getPositionWithOffset("bottom-left"), getPositionWithOffset("top-left")],
+    }, this.closeMenu$, () => {})
+    this.contextOvr = overlayRef
 
     const parentBlockSchema = this.doc.schemas.get(block.parentBlock!.flavour)
     const blockSchemas = this.doc.schemas.getSchemaList()
@@ -229,11 +229,6 @@ export class BlockTransformerPlugin extends DocPlugin {
     })
     fromEvent(block.hostElement, 'compositionend').pipe(takeUntil(this.closeMenu$)).subscribe(() => {
       isComposing = false
-    })
-
-    // TODO 位置改变，弹窗更新位置
-    fromEvent(this.doc.scrollContainer!, 'scroll').pipe(takeUntil(this.closeMenu$)).subscribe(() => {
-      this.contextOvr?.updatePosition()
     })
 
     const textObserver = () => {
@@ -252,7 +247,6 @@ export class BlockTransformerPlugin extends DocPlugin {
       cpr.setInput('blocks', matchedSchemas)
       cpr.instance.activeIdx = 0
     }
-
     block.yText.observe(textObserver)
 
     cpr.instance.blockSelected.pipe(takeUntil(this.closeMenu$)).subscribe(schema => {
@@ -301,12 +295,12 @@ export class BlockTransformerPlugin extends DocPlugin {
 
     merge(
       this.doc.selection.selectionChange$.pipe(skip(1), filter(v => !v || !!v.to || !v.collapsed || (v.firstBlock.id !== block.id))),
-      block.onDestroy$).pipe(takeUntil(this.closeMenu$)).subscribe(() => {
+      block.onDestroy$, this.doc.readonlySwitch$.pipe(filter(v => v))).pipe(takeUntil(this.closeMenu$)).subscribe(() => {
       this.closeMenu$.next(true)
     })
 
     this.closeMenu$.pipe(take(1)).subscribe(v => {
-      this.contextOvr!.dispose()
+      this.contextOvr?.dispose()
       this.contextOvr = null
       block.yText.unobserve(textObserver)
       hotKeyEvents.forEach(v => v())

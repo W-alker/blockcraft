@@ -17,7 +17,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
 
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
-      if (!selection || selection.to || selection.firstBlock.parentBlock?.flavour !== 'callout') {
+      if (this.doc.isReadonly || !selection || selection.to || selection.firstBlock.parentBlock?.flavour !== 'callout') {
         this._overlayRef && this.closeToolbar()
         return
       }
@@ -31,7 +31,6 @@ export class CalloutToolbarPlugin extends DocPlugin {
       setTimeout(() => {
         this.openToolbar(calloutBlock)
       }, 200)
-
     })
   }
 

@@ -1,47 +1,57 @@
 import {ORIGIN_SKIP_SYNC} from "../../doc";
 import {
+  BaseBlockComponent,
+  BindHotKey,
+  BlockNodeType,
+  DeltaOperation,
+  DocEventRegister, EditableBlockComponent,
+  EventListen,
+  EventNames,
   INLINE_ELEMENT_TAG,
   INLINE_END_BREAK_CLASS,
   INLINE_TEXT_NODE_TAG,
   STR_LINE_BREAK,
   STR_ZERO_WIDTH_SPACE,
-  BlockNodeType, DeltaOperation,
-  BindHotKey, DocEventRegister, EventListen, EventNames,
   UIEventStateContext
 } from "../../block-std";
-import {IBlockRange, INormalizedRange} from "../selection";
+import {INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
-import {sliceDelta} from "../../../global";
+import {BlockCraftError, ErrorCode, sliceDelta} from "../../../global";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
 @DocEventRegister
 export class InputTransformer {
-
-  private _composeRange: IBlockRange | null = null
-  private _preventCompositionText = false
-
   constructor(public readonly doc: BlockCraft.Doc) {
   }
+
+  private _compositionPos: { block: EditableBlockComponent, index: number } | null = null
 
   @EventListen(EventNames.compositionStart, {flavour: 'root'})
   private _handleCompositionStart(context: UIEventStateContext) {
     const curSel = this.doc.selection.value!
-    this._composeRange = curSel.from.type === "text" ? curSel.from : curSel.to
+    context.preventDefault()
+    if (curSel.from.type !== 'text') {
+      const clone = curSel.raw.cloneRange()
+      clone.collapse(false)
+      let sel = window.getSelection()!
+      this.doc.root.hostElement.blur()
+      sel.removeAllRanges();
+      setTimeout(() => {
+        sel.addRange(clone);
+      }, 0);
+
+      if (!curSel.to || curSel.to.type !== 'text') {
+        throw new BlockCraftError(ErrorCode.InlineEditorError, 'compositionStart: last block is not editable')
+      }
+      this._compositionPos = {block: curSel.to.block, index: curSel.to.index}
+    } else {
+      this._compositionPos = {block: curSel.from.block, index: curSel.from.index}
+    }
+
     if (!curSel.collapsed) {
-      document.getSelection()!.getRangeAt(0).collapse(curSel.from.type === 'text')
       this._replaceText(curSel)
     }
-    // if (curSel.isAllSelected) {
-    //   // 防止此时不可选中，但是删除后浏览器自动跳转到合适的文本位置做输入操作，此时记录的输入位置丢失，导致视图数据不一致
-    //   const _sub = this.doc.selection.selectionChange$.pipe(takeUntil(fromEvent(document, 'compositionEnd').pipe(take(1)))).subscribe(sel => {
-    //     if (!sel) return
-    //     if (sel.from.type === 'text') {
-    //       this._composeRange = sel.from
-    //       _sub.unsubscribe()
-    //     }
-    //   })
-    // }
     return true
   }
 
@@ -49,20 +59,23 @@ export class InputTransformer {
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.get('defaultState').event as CompositionEvent
     ev.preventDefault()
+    if (!this._compositionPos) {
+      throw new BlockCraftError(ErrorCode.InlineEditorError, `inputRange is not text`)
+    }
+    const text = ev.data
+    const {block, index} = this._compositionPos
     this.doc.crud.transact(() => {
-      if (this._composeRange?.type !== 'text') return
-      this._composeRange!.block.yText.insert(this._composeRange!.index, ev.data)
+      block.yText.insert(index, text)
       // TODO: 更好的中文输入法反显渲染
-      this._composeRange!.block.rerender()
-      this._composeRange.block.setInlineRange(this._composeRange!.index + ev.data.length)
-      this._composeRange = null
+      block.rerender()
+      block.setInlineRange(index + text.length)
     }, ORIGIN_SKIP_SYNC)
   }
 
   @EventListen(EventNames.beforeInput, {flavour: 'root'})
   private _handleBeforeInput(context: BlockCraft.EventStateContext) {
     const ev = context.get('defaultState').event as InputEvent
-    if (this._preventCompositionText || !ALLOW_INPUT_TYPES.has(ev.inputType)) {
+    if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {
       ev.preventDefault()
       return
     }
@@ -362,7 +375,6 @@ export class InputTransformer {
   private async _handlerEnter(context: UIEventStateContext) {
     const state = context.get('keyboardState')
     const {from, to, collapsed, isAllSelected} = state.selection
-    const endBlock = to ? to.block : from.block
     if (isAllSelected) {
       // const nextBlock = this.doc.nextSibling(endBlock)
       // if (nextBlock) {
@@ -371,7 +383,7 @@ export class InputTransformer {
       context.preventDefault()
 
       const p = this.doc.schemas.createSnapshot('paragraph', [[], from.block.props])
-      await (state.raw.ctrlKey ? this.doc.crud.insertBlocksBefore(endBlock, [p]) : this.doc.crud.insertBlocksAfter(endBlock, [p]))
+      await (state.raw.ctrlKey ? this.doc.crud.insertBlocksBefore(state.selection.firstBlock, [p]) : this.doc.crud.insertBlocksAfter(state.selection.lastBlock, [p]))
       this.doc.selection.setCursorAtBlock(p.id, true)
       // }
       return true

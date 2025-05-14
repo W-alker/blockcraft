@@ -6,11 +6,10 @@ import {
   EventNames,
   getPositionWithOffset
 } from "../../framework";
-import {UIEventStateContext} from "../../framework/block-std/event/base";
+import {UIEventStateContext} from "../../framework";
 import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
 import {ImageToolbar} from "./widgets/image.toolbar";
 import {downloadFile, nextTick} from "../../global";
-import {ComponentRef} from "@angular/core";
 import {OverlayRef} from "@angular/cdk/overlay";
 
 export class ImgToolbarPlugin extends DocPlugin {
@@ -53,7 +52,8 @@ export class ImgToolbarPlugin extends DocPlugin {
     const block = this.doc.getBlockById(blockId)
 
     const np = this.doc.schemas.createSnapshot('paragraph', [])
-    this.doc.crud.insertBlocksAfter(block.flavour === 'caption' ? block.parentId! : block.id, [np]).then(() => {
+    const imgBlock = block.flavour === 'caption' ? block.parentBlock! : block
+    this.doc.crud.insertBlocks(imgBlock.parentId!, imgBlock.getIndexOfParent() + (state.raw.ctrlKey ? 0 : 1), [np]).then(() => {
       this.doc.selection.selectOrSetCursorAtBlock(np.id, true)
     })
     return true
@@ -126,12 +126,12 @@ export class ImgToolbarPlugin extends DocPlugin {
         })
 
         const ls = this.doc.event.add(EventNames.dragStart, () => {
-          this.closeToolbar()
+          this._closeToolbar$.next()
           ls()
         }, {blockId: selection.firstBlock.id})
 
         this.doc.selection.afterNextChange(() => {
-          this.closeToolbar()
+          this._closeToolbar$.next()
         })
       }, 200)
 
@@ -146,7 +146,6 @@ export class ImgToolbarPlugin extends DocPlugin {
   }
 
   closeToolbar = () => {
-    this._closeToolbar$.next()
     this.clearTimer()
     this._toolbarRef?.dispose()
     this._toolbarRef = undefined

@@ -1,8 +1,4 @@
 @mixin code-block {
-  @at-root #{selector-unify(&, '.readonly')} {
-
-  }
-
   div.code-block {
     --code-padding-left: calc(var(--bc-fs) * 2.5);
     --code-padding-top: calc(var(--bc-lh) * 1.5);

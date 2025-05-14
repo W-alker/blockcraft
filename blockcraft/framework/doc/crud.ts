@@ -1,9 +1,7 @@
-import {DeltaOperation, IBlockSnapshot, InlineModel} from "../block-std";
-import {YBlock} from "../block-std";
+import {DeltaOperation, EditableBlockComponent, IBlockSnapshot, InlineModel, YBlock} from "../block-std";
 import * as Y from "yjs";
 import {BlockCraftError, ErrorCode, nextTick} from "../../global";
 import {IBlockSelectionJSON} from "../modules";
-import {EditableBlockComponent} from "../block-std";
 import {BehaviorSubject, Subject, take} from "rxjs";
 
 // This origin will skip Y.Event sync (to model)
@@ -343,9 +341,8 @@ export class DocCRUD {
     const block = this.doc.getBlockById(blockId)
     const index = block.getIndexOfParent()
     const parentId = block.parentId!
-    await this.deleteBlocks(parentId, index, 1)
-    if (!snapshots?.length) return
-    await this.insertBlocks(parentId, index, snapshots)
+    if (snapshots?.length) await this.insertBlocks(parentId, index, snapshots)
+    await this.deleteBlocks(parentId, index + (snapshots?.length || 0), 1)
   }
 
   async moveBlocks(parentId: string, index: number, count: number, targetId: string, targetIndex: number) {

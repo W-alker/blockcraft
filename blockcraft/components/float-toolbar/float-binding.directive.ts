@@ -26,6 +26,7 @@ export class BcOverlayTriggerDirective {
   @Input() offsetY: number = 0;
   @Input() activeClass = 'float-children-opened';
   @Input() withBackdrop = false;
+  @Input() delay = 0;
 
   private _disabled = false;
   @Input()
@@ -57,7 +58,7 @@ export class BcOverlayTriggerDirective {
 
     nextTick().then(() => {
       const closetBind = this.elementRef.nativeElement.parentElement?.closest('[data-float-binding]')
-      if(closetBind) {
+      if (closetBind) {
         this._dataFloatIndex = Number(closetBind.getAttribute('data-float-index')!) + 1
         this._dataFloatBindingId = closetBind.getAttribute('data-float-id')!
       }
@@ -76,6 +77,23 @@ export class BcOverlayTriggerDirective {
       return;
     }
 
+    this._openDelayTimer = setTimeout(() => {
+      this.openOverlay()
+      this._openDelayTimer = undefined
+    }, this.delay)
+
+    this.elementRef.nativeElement.addEventListener('mouseleave', () => {
+      if (this._openDelayTimer) {
+        clearTimeout(this._openDelayTimer)
+        this._openDelayTimer = undefined
+      }
+    }, {once: true})
+  }
+
+  private _openDelayTimer?: number
+
+  openOverlay() {
+    if(this.disabled) return
     const positionStrategy = this.overlay.position()
       .flexibleConnectedTo(this.elementRef)
       .withPositions(this.positions.map(position => getPositionWithOffset(position, this.offsetX, this.offsetY)))
@@ -91,20 +109,18 @@ export class BcOverlayTriggerDirective {
 
     this.overlayRef.overlayElement.setAttribute('data-float-binding', 'true')
     this.overlayRef.overlayElement.setAttribute('data-float-id', this._dataFloatBindingId)
-    this.overlayRef.overlayElement.setAttribute('data-float-index', this._dataFloatIndex + '')
-
-    this.overlayRef.overlayElement.addEventListener('mouseleave', this.hideOverlay, {once: true});
+    this.overlayRef.overlayElement.setAttribute('data-float-index', this._dataFloatIndex + 1 + '')
 
     this.open.emit(true)
     this.elementRef.nativeElement.classList.add(this.activeClass)
   }
 
-  private _timer?:number
+  private _timer?: number
   @HostListener('document:pointerover', ['$event'])
   hideOverlay = (evt: MouseEvent) => {
     if (!this.overlayRef) return
 
-    if(this._timer) {
+    if (this._timer) {
       clearTimeout(this._timer)
       this._timer = undefined
     }
@@ -132,8 +148,12 @@ export class BcOverlayTriggerDirective {
         this.closeOverlay();
       }
 
+      if (bid === this._dataFloatBindingId && this._dataFloatIndex === curIndex && closetBinding !== this.elementRef.nativeElement) {
+        this.closeOverlay();
+      }
+
       return;
-    }, 10)
+    }, 20)
   }
 
   private closeOverlay() {
