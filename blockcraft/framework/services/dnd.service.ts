@@ -141,7 +141,7 @@ export class DocDndService {
     if (this.prevBlock?.id !== blockId) {
       const block = this.doc.getBlockById(blockId)
       if (block.nodeType === BlockNodeType.root) return
-      const schema = this.doc.schemas.get(block.flavour)
+      const schema = this.doc.schemas.get(block.flavour)!
       if (schema.metadata.isLeaf) return;
       this.prevBlock = block
     }
@@ -162,23 +162,20 @@ export class DocDndService {
   }
 
   onSortBlock(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
-    // @ts-expect-error
     const isDepthEqual = block.props['depth'] === targetBlock.props['depth']
     if (!block || position === 'none' || targetBlock === block) return
 
     if (block.hostElement.nextElementSibling === targetBlock.hostElement && position === 'before') {
-      // @ts-expect-error
-      !isDepthEqual && block.updateProps({depth: targetBlock.props['depth']})
+      !isDepthEqual && block.updateProps({depth: targetBlock.props.depth})
       return
     }
 
     if (block.hostElement.previousElementSibling === targetBlock.hostElement && position === 'after') {
-      // @ts-expect-error
-      !isDepthEqual && block.updateProps({depth: targetBlock.props['depth']})
+      !isDepthEqual && block.updateProps({depth: targetBlock.props.depth})
       return
     }
 
-    if (!this.doc.schemas.isValidChildren(block.flavour, this.doc.schemas.get(targetBlock.parentBlock!.flavour))) {
+    if (!this.doc.schemas.isValidChildren(block.flavour, this.doc.schemas.get(targetBlock.parentBlock!.flavour)!)) {
       console.log(block.flavour, targetBlock.parentBlock!.flavour)
       this.doc.messageService.warn(`不允许的移动`)
       return
@@ -195,7 +192,6 @@ export class DocDndService {
 
     this.doc.crud.moveBlocks(block.parentId!, block.getIndexOfParent(), 1,
       targetBlock.parentId!, targetIdx).then(() => {
-      // @ts-expect-error
       !isDepthEqual && block.updateProps({depth: targetBlock.props['depth']})
     })
   }
@@ -206,7 +202,7 @@ export class DocDndService {
     const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
     if (!files.length) return
     if (files.length === 1 && files[0].type.startsWith('image/')) {
-      if (!this.doc.schemas.isValidChildren('image', this.doc.schemas.get(targetBlock.parentBlock!.flavour))) {
+      if (!this.doc.schemas.isValidChildren('image', this.doc.schemas.get(targetBlock.parentBlock!.flavour)!)) {
         this.doc.messageService.warn(`此处不能添加图片`)
         return
       }
@@ -220,7 +216,7 @@ export class DocDndService {
       return
     }
 
-    if (!this.doc.schemas.isValidChildren('attachment', this.doc.schemas.get(targetBlock.parentBlock!.flavour))) {
+    if (!this.doc.schemas.isValidChildren('attachment', this.doc.schemas.get(targetBlock.parentBlock!.flavour)!)) {
       this.doc.messageService.warn(`此处不能添加文件`)
       return
     }
@@ -238,21 +234,20 @@ export class DocDndService {
 
       if (!_blocks.length) return
       // TAG: Depth
-      // @ts-expect-error
       _blocks.forEach(b => b.props.depth = targetBlock.props['depth'])
       this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), _blocks)
     })
   }
 
   onInsertNewBlock(flavour: BlockCraft.BlockFlavour, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
-    if (!this.doc.schemas.isValidChildren(flavour, this.doc.schemas.get(targetBlock.parentBlock!.flavour))) {
+    if (!this.doc.schemas.isValidChildren(flavour, this.doc.schemas.get(targetBlock.parentBlock!.flavour)!)) {
       this.doc.messageService.warn(`此处不能添加图片`)
       return
     }
 
     const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
     if (!this.doc.schemas.has(flavour)) return
-    blockCreator.getParamsByScheme(this.doc.schemas.get(flavour)).then(params => {
+    blockCreator.getParamsByScheme(this.doc.schemas.get(flavour)!).then(params => {
       if (!params) return
       const snapshot = this.doc.schemas.createSnapshot(flavour, <any>params)
       this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), [snapshot]).then(() => {

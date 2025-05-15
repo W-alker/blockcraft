@@ -20,10 +20,6 @@ import {
   CodeBlockSchema,
   DividerBlockSchema,
   FigmaEmbedBlockSchema,
-  HeadingFourBlockSchema,
-  HeadingOneBlockSchema,
-  HeadingThreeBlockSchema,
-  HeadingTwoBlockSchema,
   ImageBlockSchema,
   JuejinEmbedBlockSchema,
   OrderedBlockSchema,
@@ -63,7 +59,6 @@ import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
 
 const schemas = new SchemaManager([
   ParagraphBlockSchema,
-  // HeadingOneBlockSchema, HeadingTwoBlockSchema, HeadingThreeBlockSchema, HeadingFourBlockSchema,
   OrderedBlockSchema, BulletBlockSchema, TodoBlockSchema, CalloutBlockSchema, CodeBlockSchema,
   CalloutBlockSchema,
   DividerBlockSchema, ImageBlockSchema,

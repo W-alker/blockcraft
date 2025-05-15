@@ -19,16 +19,12 @@ const paragraphBlockMatchTags = [
 ];
 
 const headingBlockMatchTagsMap: Record<string, string> = {
-  h1: 'heading-one',
-  h2: 'heading-one',
-  h3: 'heading-two',
-  h4: 'heading-three',
-  h5: 'heading-four',
-  h6: 'heading-four',
-  'heading-one': 'h1',
-  'heading-two': 'h2',
-  'heading-three': 'h3',
-  'heading-four': 'h4',
+  h1: '1',
+  h2: '1',
+  h3: '2',
+  h4: '3',
+  h5: '4',
+  h6: '4',
 }
 
 // TODO 优化paragraph matcher
@@ -95,8 +91,10 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
               {
                 nodeType: BlockNodeType.editable,
                 id: generateId(),
-                flavour: headingBlockMatchTagsMap[o.node.tagName] as BlockCraft.BlockFlavour || 'heading-four',
-                props: {},
+                flavour: 'paragraph',
+                props: {
+                  heading: headingBlockMatchTagsMap[o.node.tagName],
+                },
                 meta: {},
                 children: deltaConverter.astToDelta(o.node),
               },
@@ -115,7 +113,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       }
       const {walkerContext} = context;
       // walkerContext.closeNode();
-      if(!o.node.children.length) {
+      if (!o.node.children.length) {
         // walkerContext.closeNode();
       }
 
@@ -131,7 +129,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         }
         case 'p': {
           if (
-            o.next?.type === 'element'&&
+            o.next?.type === 'element' &&
             o.next.tagName === 'div'
           ) {
             // Close the node when leaving div indented
@@ -150,37 +148,30 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       const {walkerContext, deltaConverter} = context;
       switch (o.node.flavour) {
         case 'paragraph':
-          walkerContext
-            .openNode(
-              {
+          if (o.node.props['heading']) {
+            walkerContext
+              .openNode({
                 type: 'element',
-                tagName: 'p',
+                tagName: 'h' + o.node.props['heading'],
                 properties: {},
                 children: deltaConverter.deltaToAST(delta),
-              },
-              'children'
-            )
-            .closeNode()
+              }, 'children')
+              .closeNode()
+          } else {
+            walkerContext
+              .openNode(
+                {
+                  type: 'element',
+                  tagName: 'p',
+                  properties: {},
+                  children: deltaConverter.deltaToAST(delta),
+                },
+                'children'
+              )
+              .closeNode()
+          }
           walkerContext.skipAllChildren()
           break;
-        case 'heading-one':
-        case 'heading-two':
-        case 'heading-three':
-        case 'heading-four': {
-          walkerContext
-            .openNode(
-              {
-                type: 'element',
-                tagName: headingBlockMatchTagsMap[o.node.flavour],
-                properties: {},
-                children: deltaConverter.deltaToAST(delta),
-              },
-              'children'
-            )
-            .closeNode()
-          walkerContext.skipAllChildren()
-          break;
-        }
         // case 'quote': {
         //   walkerContext
         //     .openNode(

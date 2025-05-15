@@ -49,6 +49,44 @@ const ALIGN_LIST: IContextMenuItem[] = [
   }
 ]
 
+const HEADING_LIST: IContextMenuItem[] = [
+  {
+    name: "heading",
+    value: undefined,
+    icon: "bc_icon bc_wenben",
+    label: "普通文本",
+    type: 'tool'
+  },
+  {
+    name: "heading",
+    value: 1,
+    icon: "bc_icon bc_biaoti_1",
+    label: "一级标题",
+    type: 'tool'
+  },
+  {
+    name: "heading",
+    value: 2,
+    icon: "bc_icon bc_biaoti_2",
+    label: "二级标题",
+    type: 'tool'
+  },
+  {
+    name: "heading",
+    value: 3,
+    icon: "bc_icon bc_biaoti_3",
+    label: "三级标题",
+    type: 'tool'
+  },
+  {
+    name: "heading",
+    value: 4,
+    icon: "bc_icon bc_biaoti_4",
+    label: "四级标题",
+    type: 'tool'
+  }
+]
+
 @Component({
   selector: 'bc-drag-handle',
   standalone: true,
@@ -73,15 +111,24 @@ const ALIGN_LIST: IContextMenuItem[] = [
       <bc-float-toolbar style="display: block; width: 224px;" direction="column">
         @if (activeBlock?.nodeType === BlockNodeType.editable) {
           <h4 class="title">基础</h4>
-          <ul class='base-list'>
-            <li class="base-list__item" *ngFor="let item of _validBaseBlockList"
-                (mousedown)="handleBlockItemClick(item)"
-                [title]="item.metadata.description || item.metadata.label"
-                [class.active]="activeBlock?.flavour === item.flavour">
-              <ng-container
-                *ngTemplateOutlet="item.metadata.svgIcon ? svgIcon : icon; context: {$implicit: item.metadata}">
-              </ng-container>
-            </li>
+          <ul class='base-list' (mousedown)="$event.preventDefault()">
+            @for (item of HEADING_LIST; track item.value) {
+              <li class="base-list__item" [title]="item.label" (mousedown)="handleToolItemClick(item)"
+                  [class.active]="activeBlock?.flavour === 'paragraph' && activeBlock?.props?.['heading'] === item.value">
+                <i [class]="item.icon"></i>
+              </li>
+            }
+
+            @for (item of _validBaseBlockList; track item.flavour) {
+              <li class="base-list__item"
+                  (mousedown)="handleBlockItemClick(item)"
+                  [title]="item.metadata.description || item.metadata.label"
+                  [class.active]="activeBlock?.flavour === item.flavour">
+                <ng-container
+                  *ngTemplateOutlet="item.metadata.svgIcon ? svgIcon : icon; context: {$implicit: item.metadata}">
+                </ng-container>
+              </li>
+            }
           </ul>
           <span class="bc-float-toolbar__divider"></span>
         }
@@ -281,7 +328,7 @@ export class TriggerBtn {
   @Input()
   set hidden(val: boolean) {
     this.menuDisabled = val
-    this.display = val ?  'none' : 'block'
+    this.display = val ? 'none' : 'block'
     this.cdr.markForCheck()
   }
 
@@ -303,7 +350,7 @@ export class TriggerBtn {
 
     this.menuDisabled = false
 
-    const schema = this.doc.schemas.get(this._activeBlock.flavour)
+    const schema = this.doc.schemas.get(this._activeBlock.flavour)!
     if (schema.metadata.isLeaf) return
 
     this.setIsEmpty()
@@ -341,7 +388,7 @@ export class TriggerBtn {
   draggable = true
 
   ngOnInit() {
-    const schemas = this.doc.schemas.getSchemaList()
+    const schemas = this.doc.schemas.getSchemaList().filter(v => v.flavour !== 'paragraph')
     this.baseBlockList = schemas.filter(item => item.nodeType === BlockNodeType.editable && !item.metadata.isLeaf)
     this.otherBlockList = schemas.filter(item =>
       (item.nodeType === BlockNodeType.void || item.nodeType === BlockNodeType.block) && !item.metadata.isLeaf && !item.flavour.endsWith('-embed'))
@@ -350,6 +397,7 @@ export class TriggerBtn {
 
   protected readonly BlockNodeType = BlockNodeType;
   protected readonly ALIGN_LIST = ALIGN_LIST;
+  protected readonly HEADING_LIST = HEADING_LIST;
   protected baseBlockList: IBlockSchemaOptions[] = []
   protected otherBlockList: IBlockSchemaOptions[] = []
   protected embeddedBlockList: IBlockSchemaOptions[] = []
@@ -398,7 +446,7 @@ export class TriggerBtn {
       return {
         top: rect.top - rootRect.top
           // + this.calcLineHeight(container) / 2 - 11
-          + this.doc.root.hostElement.scrollTop ,
+          + this.doc.root.hostElement.scrollTop,
         left,
       }
     }
@@ -450,7 +498,7 @@ export class TriggerBtn {
   }
 
   setValidBlockList() {
-    const parentBlockSchema = this.doc.schemas.get(this.activeBlock!.parentBlock!.flavour)
+    const parentBlockSchema = this.doc.schemas.get(this.activeBlock!.parentBlock!.flavour)!
     this._validOtherBlockList = this.otherBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
     this._validBaseBlockList = this.baseBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
     this._validEmbeddedBlockList = this.embeddedBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
@@ -533,7 +581,21 @@ export class TriggerBtn {
           this.doc.messageService.success('已复制')
           this.close()
         })
+        break
+      case 'heading':
+        if (!this.activeBlock || !this.doc.isEditable(this.activeBlock)) return
+        if(!ALLOWED_HEADING_FLAVOURS.includes(this.activeBlock.flavour)) {
+          const p = this.doc.schemas.createSnapshot('paragraph', [this.activeBlock.textDeltas(), {...this.activeBlock.props, heading: item.value}])
+          this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [p]).then(() => {
+              this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+          })
+        } else {
+          this.activeBlock.updateProps({heading: item.value as any})
+        }
+        break
     }
   }
 
 }
+
+const ALLOWED_HEADING_FLAVOURS: BlockCraft.BlockFlavour[] = ['paragraph', 'todo', 'ordered', 'bullet']

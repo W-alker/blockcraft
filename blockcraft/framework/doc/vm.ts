@@ -58,7 +58,7 @@ export class DocVM {
         return this._restoreCachedComp(id)
       }
 
-      const schema = this.schemas.get(yBlock.get('flavour'))
+      const schema = this.schemas.get(yBlock.get('flavour'))!
       const cpr = this._vcr.createComponent(schema.component)
       cpr.setInput('yBlock', yBlock)
       cpr.setInput('doc', this.doc)
@@ -102,7 +102,7 @@ export class DocVM {
 
         const {id, nodeType, flavour, props, meta, children} = snapshot
 
-        const schema = this.schemas.get(flavour)
+        const schema = this.schemas.get(flavour)!
         const cpr = this._vcr.createComponent(schema.component)
 
         cpr.instance.parentId = parentId

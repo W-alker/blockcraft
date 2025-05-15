@@ -260,7 +260,7 @@ export class DocCRUD {
     }
 
     // 过滤不允许的blocks
-    const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)
+    const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)!
     snapshots = snapshots.filter(s => this.doc.schemas.isValidChildren(s.flavour, parentSchema))
     if (!snapshots.length) return
 

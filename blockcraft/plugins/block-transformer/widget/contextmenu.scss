@@ -30,6 +30,10 @@
         font-size: 1em;
       }
 
+      > * {
+        pointer-events: none;
+      }
+
       &.active {
         background: #f3f3f3;
       }

@@ -20,12 +20,13 @@ export class SchemaManager {
     return this.schema.has(flavour)
   }
 
-  get(flavour: string) {
+  get(flavour: string, throwError = true) {
     const schema = this.schema.get(flavour)
     if (!schema) {
-      throw new BlockCraftError(
-        ErrorCode.SchemaValidateError,
-        `Block schema ${flavour} not found`)
+      if (throwError) {
+        throw new BlockCraftError(ErrorCode.SchemaValidateError, `Schema not found for ${flavour}`)
+      }
+      return null
     }
     return schema
   }
@@ -46,7 +47,7 @@ export class SchemaManager {
    * @param parentSchema
    */
   isValidChildren(flavour: BlockCraft.BlockFlavour, parentSchema: BlockCraft.BlockFlavour | IBlockSchemaOptions) {
-    parentSchema = typeof parentSchema === 'string' ? this.get(parentSchema) : parentSchema
+    parentSchema = typeof parentSchema === 'string' ? this.get(parentSchema)! : parentSchema
     if (flavour === parentSchema.flavour ||
       parentSchema.nodeType === BlockNodeType.editable || parentSchema.nodeType === BlockNodeType.void) return false
     const excludeChildren = parentSchema.metadata.excludeChildren

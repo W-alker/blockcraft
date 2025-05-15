@@ -226,7 +226,7 @@ export class InputTransformer {
     // 非paragraph块转化
     if (from.block.flavour !== 'paragraph') {
       context.preventDefault()
-      const schema = this.doc.schemas.get(from.block.flavour)
+      const schema = this.doc.schemas.get(from.block.flavour)!
       if (schema.metadata.isLeaf) return true
       const deltas = from.block.textDeltas()
       const np = this.doc.schemas.createSnapshot('paragraph', [deltas, from.block.props])
@@ -238,6 +238,14 @@ export class InputTransformer {
           type: 'text',
           blockId: np.id
         })
+      })
+      return true
+    }
+
+    if (from.block.props['heading']) {
+      context.preventDefault()
+      from.block.updateProps({
+        heading: null
       })
       return true
     }
@@ -397,21 +405,40 @@ export class InputTransformer {
 
     if (from.type !== 'text') return false
 
-    // 空段落减少缩进
-    if (from.block.props.depth > 0 && from.block.textLength === 0) {
-      from.block.updateProps({
-        depth: from.block.props.depth - 1
-      })
-      context.preventDefault()
-      return true
-    }
-
     // 强制同段换行
     if (state.raw.shiftKey) {
       from.block.insertText(from.index, STR_LINE_BREAK)
       from.block.setInlineRange(from.index + 1)
       context.preventDefault()
       return true
+    }
+
+    // 空段落
+    if (!from.block.textLength) {
+      if (from.block.props.heading) {
+        context.preventDefault()
+        from.block.updateProps({
+          heading: null
+        })
+        return true
+      }
+
+      if (from.block.props.depth > 0) {
+        context.preventDefault()
+        from.block.updateProps({
+          depth: from.block.props.depth - 1
+        })
+        return true
+      }
+
+      if(from.block.props['flavour'] !== 'paragraph'){
+        context.preventDefault()
+        const p = this.doc.schemas.createSnapshot('paragraph', [[], from.block.props])
+        this.doc.crud.replaceWithSnapshots(from.blockId, [p]).then(() => {
+          this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+        })
+        return true
+      }
     }
 
     const deltas = sliceDelta(from.block.textDeltas(), from.index)

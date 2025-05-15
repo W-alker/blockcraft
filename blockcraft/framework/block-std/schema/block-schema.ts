@@ -58,7 +58,9 @@ export const editableBlockCreateSnapShotFn = <M extends NativeBlockModel = Nativ
         // @ts-ignore
         depth: props?.['depth'] || 0, ...defaultProps,
         // @ts-ignore
-        textAlign: defaultProps?.['textAlign'] || props?.['textAlign']
+        textAlign: defaultProps?.['textAlign'] || props?.['textAlign'],
+        // @ts-ignore
+        heading: defaultProps?.['heading'] || props?.['heading'] ,
       },
       meta: {},
       children: ch

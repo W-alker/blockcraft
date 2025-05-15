@@ -14,7 +14,7 @@ import {
 import {native2YBlock, NativeBlockModel, Obj2YMap, proxyMap, YBlock, yBlock2Native} from "../../reactive";
 import {BlockCraftError, ErrorCode} from "../../../../global";
 import {ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC} from "../../../doc";
-import {BlockNodeType, IBlockSnapshot} from "../../types";
+import {BlockNodeType, IBlockProps, IBlockSnapshot} from "../../types";
 import {Subject} from "rxjs";
 import {createBlockGapSpace} from "../../../utils";
 import * as Y from 'yjs'
@@ -78,7 +78,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   private _props!: Model['props']
   get props() {
-    return this._props as Model['props']
+    return this._props as Model['props'] & IBlockProps
   }
 
   private _meta!: Model['meta']

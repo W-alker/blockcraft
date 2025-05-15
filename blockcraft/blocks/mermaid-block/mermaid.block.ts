@@ -1,5 +1,5 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
-import {BaseBlockComponent, ORIGIN_SKIP_SYNC} from "../../framework";
+import {BaseBlockComponent, getPositionWithOffset, ORIGIN_SKIP_SYNC} from "../../framework";
 import {MermaidBlockModel, MermaidViewMode} from "./index";
 import mermaid from "mermaid";
 import {Subject, Subscription, takeUntil} from "rxjs";
@@ -21,8 +21,8 @@ import {nextTick} from "../../global";
       </div>
 
       <div class="control-btns" [hidden]="props.mode === 'text' ">
-        <span class="btn" (mousedown)="scaleGraph(-25)"><i class="bc_icon bc_suoxiao"></i></span>
-        <span class="btn" (mousedown)="scaleGraph(25)"><i class="bc_icon bc_fangda"></i></span>
+        <span class="btn" (mousedown)="scaleGraph(-0.25)"><i class="bc_icon bc_suoxiao"></i></span>
+        <span class="btn" (mousedown)="scaleGraph(0.25)"><i class="bc_icon bc_fangda"></i></span>
 <!--        <span class="text">缩放： {{ graphScale | scaleRatio }}</span>-->
       </div>
 
@@ -48,7 +48,9 @@ import {nextTick} from "../../global";
 })
 export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel> {
 
-  protected graphScale = 100
+  protected graphScale = 1
+  protected graphMaxWidth = 0
+
   protected graphContainer!: HTMLDivElement
   protected isIntersecting = false
   protected intersectionObserver = new IntersectionObserver(([entry]) => {
@@ -64,11 +66,11 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   override ngAfterViewInit() {
     super.ngAfterViewInit();
     this.graphContainer = this.hostElement.querySelector('.graph-con') as HTMLDivElement;
-    nextTick().then(() =>{
+    nextTick().then(() => {
       this.intersectionObserver.observe(this.hostElement)
     })
     this._propsChangeSubscription = this.onPropsChange.subscribe(map => {
-      if(map.has('mode')) {
+      if (map.has('mode')) {
         this.setView(this.props.mode)
       }
     })
@@ -85,7 +87,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     this.isIntersecting = false
   }
 
-  async renderGraph(){
+  async renderGraph() {
     const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
     if (!textarea.textLength) return
     const graphDefinition = textarea.textContent();
@@ -93,14 +95,15 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     if (verify) {
       const {svg} = await mermaid.render('graph' + this.id, graphDefinition);
       this.graphContainer.innerHTML = svg
-      ;(this.graphContainer.firstElementChild! as SVGAElement).style.maxWidth = 'unset'
+      this.graphMaxWidth = parseInt((this.graphContainer.firstElementChild! as SVGAElement).style.maxWidth)
+      this.setGraphWidth(this.graphScale)
     } else {
-      this.graphContainer.innerHTML = `<span style="color: var(--bc-error-color);">语法错误！</span>`
+      this.graphContainer.innerHTML = `<div style="color: var(--bc-error-color);">语法错误！</div>`
     }
   }
 
   setView(view: MermaidViewMode) {
-    if(!this.isIntersecting) return
+    if (!this.isIntersecting) return
     if (view === 'graph') {
       !this.graphContainer.childElementCount && this.renderGraph()
     } else {
@@ -121,7 +124,8 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     const {componentRef} = this.doc.overlayService.createConnectedOverlay<MermaidTypeListComponent>({
       target: $event.target as HTMLElement,
       component: MermaidTypeListComponent,
-      backdrop: true
+      backdrop: true,
+      positions: [getPositionWithOffset('top-center', 0, 6), getPositionWithOffset('bottom-center', 0, 6)]
     }, close$, () => {
       btn.classList.remove('active')
     })
@@ -144,11 +148,11 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   }
 
   useTemplate(item: IMermaidType) {
-    this.doc.crud.transact(() =>{
+    this.doc.crud.transact(() => {
       const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
       textarea.textLength && textarea.deleteText(0, textarea.textLength)
       textarea.insertText(0, item.prefix + item.template)
-    },ORIGIN_SKIP_SYNC)
+    }, ORIGIN_SKIP_SYNC)
   }
 
   override ngOnDestroy() {
@@ -159,13 +163,20 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
 
   scaleGraph(number: number) {
     let ratio = this.graphScale + number
-    if(number < 0) {
-      ratio = Math.max(50, ratio)
+    if (number < 0) {
+      ratio = Math.max(0.5, ratio)
     } else {
-      ratio = Math.min(300, ratio)
+      ratio = Math.min(3, ratio)
     }
-    if(ratio === this.graphScale) return
+    if (ratio === this.graphScale) return
     this.graphScale = ratio
-    this.graphContainer.style.width = ratio + '%'
+    this.graphContainer.style.width = ratio * 100 + '%'
+    this.setGraphWidth(ratio)
+  }
+
+  private setGraphWidth(ratio: number) {
+    const svg = this.graphContainer.firstElementChild! as SVGAElement
+    if (!svg) return;
+    svg.style.maxWidth = this.graphMaxWidth * ratio + 'px'
   }
 }

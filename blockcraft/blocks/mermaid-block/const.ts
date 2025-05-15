@@ -33,7 +33,7 @@ export const MERMAID_TYPE_LIST = [
   {
     name: '思维导图',
     prefix: 'mindmap\n',
-    template: '  Root\n' +
+    template: 'Root\n' +
       '  A[A]\n' +
       '  :::urgent large\n' +
       '  B(B)\n' +
