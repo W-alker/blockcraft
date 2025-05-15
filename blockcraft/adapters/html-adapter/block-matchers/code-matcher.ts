@@ -1,8 +1,8 @@
 import {BlockHtmlAdapterMatcher} from "../block-adapter";
 import {CodeBlockSchema} from "../../../blocks";
 import {HastUtils} from "../../utils";
-import {DeltaInsert} from "blockflow-editor";
 import {deltaToString} from "../../../global";
+import {DeltaInsert} from "../../../framework";
 
 export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   toMatch: o => HastUtils.isElement(o.node) && o.node.tagName === 'pre',

@@ -1,4 +1,4 @@
-import {BlockNodeType, EditableBlockNative, generateId, NoEditableBlockNative} from "../../framework";
+import {BlockNodeType, EditableBlockNative, generateId, IBlockProps, NoEditableBlockNative} from "../../framework";
 import {
   editableBlockCreateSnapShotFn,
   EditableBlockCreateSnapshotParams,
@@ -7,9 +7,14 @@ import {
 import {MermaidTextareaBlockComponent} from "./mermaid-textarea.block";
 import {MermaidBlockComponent} from "./mermaid.block";
 
+export type MermaidViewMode = 'text' | 'graph';
 export interface MermaidBlockModel extends NoEditableBlockNative {
   flavour: 'mermaid',
-  nodeType: BlockNodeType.block
+  nodeType: BlockNodeType.block,
+  props: {
+    mode: MermaidViewMode,
+    // graphScale: number
+  } & IBlockProps
 }
 
 export interface MermaidTextareaBlockModel extends EditableBlockNative {
@@ -20,14 +25,17 @@ export const MermaidBlockSchema: IBlockSchemaOptions<MermaidBlockModel> = {
   flavour: 'mermaid',
   nodeType: BlockNodeType.block,
   component: MermaidBlockComponent,
-  createSnapshot: () => {
+  createSnapshot: (mode, text) => {
     return {
       id: generateId(),
       flavour: 'mermaid',
       nodeType: BlockNodeType.block,
-      props: {},
+      props: {
+        mode: mode ||'text',
+        // graphScale: 1.00
+      },
       meta: {},
-      children: [MermaidTextareaBlockSchema.createSnapshot()]
+      children: [MermaidTextareaBlockSchema.createSnapshot(text)]
     }
   },
   metadata: {
@@ -59,7 +67,7 @@ declare global {
     }
 
     interface IBlockCreateParameters {
-      mermaid: EditableBlockCreateSnapshotParams
+      mermaid: [MermaidViewMode?,string?]
       'mermaid-textarea': EditableBlockCreateSnapshotParams
     }
   }

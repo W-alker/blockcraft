@@ -75,6 +75,10 @@ export class DocOverlayService {
 
     const componentRef: ComponentRef<T> = overlayRef.attach(portal)
 
+    params.backdrop && overlayRef.backdropClick().pipe(takeUntil(close$)).subscribe(() => {
+      close$.next(true)
+    })
+
     fromEvent(this.doc.scrollContainer!, 'scroll').pipe(takeUntil(close$))
       .subscribe(() => {
         overlayRef && overlayRef.updatePosition()

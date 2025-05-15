@@ -42,11 +42,11 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   get textAlign() {
     return this._native.props['textAlign'] || 'left'
   }
-  //
-  // @HostBinding('attr.data-heading')
-  // get heading() {
-  //   return this._native.props['heading']
-  // }
+
+  @HostBinding('attr.data-heading')
+  get heading() {
+    return this._native.props['heading']
+  }
 
   protected override _init() {
     super._init();
