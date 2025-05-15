@@ -60,7 +60,7 @@ export class DocOverlayService {
   constructor(private readonly doc: BlockCraft.Doc) {
   }
 
-  createConnectedOverlay<T>(params: IOverlayCreateOptions, close$: Subject<any> | Observable<any>, onDestroy: () => void) {
+  createConnectedOverlay<T>(params: IOverlayCreateOptions, close$: Subject<any>, onDestroy: () => void) {
     const portal = new ComponentPortal(params.component, null, this.doc.injector)
 
     const overlayRef = this.overlay.create({
@@ -74,6 +74,10 @@ export class DocOverlayService {
     })
 
     const componentRef: ComponentRef<T> = overlayRef.attach(portal)
+
+    params.backdrop && overlayRef.backdropClick().pipe(takeUntil(close$)).subscribe(() => {
+      close$.next(true)
+    })
 
     fromEvent(this.doc.scrollContainer!, 'scroll').pipe(takeUntil(close$))
       .subscribe(() => {

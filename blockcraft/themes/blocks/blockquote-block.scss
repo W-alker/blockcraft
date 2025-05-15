@@ -1,0 +1,30 @@
+@mixin blockquote-block {
+
+  .blockquote-block {
+    position: relative;
+    padding: 10px 0 10px 10px;
+    content-visibility: unset;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--bc-border-color);
+    }
+
+    &:has(+ .blockquote-block) {
+      padding-bottom: 0;
+    }
+
+    + .blockquote-block {
+      padding-top: 0;
+      &::before {
+        top: calc(-1 * var(--bc-segments-gap));
+        height: calc(100% + var(--bc-segments-gap));
+      }
+    }
+  }
+}

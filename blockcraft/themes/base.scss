@@ -12,6 +12,7 @@
 @import "blocks/bookmark-block";
 @import "blocks/caption-block";
 @import "blocks/mermaid-block";
+@import "blocks/blockquote-block";
 
 :root {
   //--bc-root-background-color: #fff;
@@ -258,6 +259,7 @@
   @include mermaid-block();
 
   @include caption-block();
+  @include blockquote-block();
 }
 
 .blockcraft-cursor {

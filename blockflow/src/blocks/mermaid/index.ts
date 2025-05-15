@@ -1,6 +1,13 @@
-import {DeltaInsert, deltaToString, EditableBlockSchema} from "../../core";
-import { IMermaidBlockModel } from "./type";
+import {DeltaInsert, deltaToString, EditableBlockSchema, IEditableBlockModel} from "../../core";
 import { MermaidBlock } from "./mermaid.block";
+export interface IMermaidBlockModel extends IEditableBlockModel {
+  flavour: 'mermaid'
+  nodeType: 'editable'
+  props: {
+    indent: number
+    view: 'text' | 'graph'
+  }
+}
 
 export const MermaidBlockSchema: EditableBlockSchema<IMermaidBlockModel['props']> = {
   flavour: 'mermaid',

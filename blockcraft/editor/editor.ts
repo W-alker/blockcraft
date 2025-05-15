@@ -59,17 +59,18 @@ import {MyCommentService} from "./services/comment.service";
 import {AdapterService} from "./services/adapter.service";
 import {MermaidBlockSchema, MermaidTextareaBlockSchema} from "../blocks/mermaid-block";
 import {applyUpdate, Doc, mergeUpdates} from "yjs";
+import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
 
 const schemas = new SchemaManager([
   ParagraphBlockSchema,
-  HeadingOneBlockSchema, HeadingTwoBlockSchema, HeadingThreeBlockSchema, HeadingFourBlockSchema,
+  // HeadingOneBlockSchema, HeadingTwoBlockSchema, HeadingThreeBlockSchema, HeadingFourBlockSchema,
   OrderedBlockSchema, BulletBlockSchema, TodoBlockSchema, CalloutBlockSchema, CodeBlockSchema,
   CalloutBlockSchema,
   DividerBlockSchema, ImageBlockSchema,
   TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, AttachmentBlockSchema, BookmarkBlockSchema,
   FigmaEmbedBlockSchema, JuejinEmbedBlockSchema,
   CaptionBlockSchema, RootBlockSchema,
-  MermaidTextareaBlockSchema, MermaidBlockSchema
+  MermaidTextareaBlockSchema, MermaidBlockSchema, BlockquoteBlockSchema
 ])
 
 @Component({
@@ -206,9 +207,6 @@ export class EditorComponent {
       {insert: {image: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg'}},
       {insert: 'This is a paragraph', attributes: {'a:link': 'https://zhuanlan.zhihu.com/p/617505961'}}
     ]])
-    const p2 = this.doc.schemas.createSnapshot('heading-two', [
-      [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
-    ])
     const d1 = this.doc.schemas.createSnapshot('divider', [])
     const d2 = this.doc.schemas.createSnapshot('divider', [])
     const d3 = this.doc.schemas.createSnapshot('divider', [])
@@ -227,11 +225,19 @@ export class EditorComponent {
       size: 553409,
     }])
     const figma = this.doc.schemas.createSnapshot('figma-embed', ['https://www.figma.com/design/zaZvxd72WGI6jKitm2IL6g/%E5%AE%9A%E7%A8%BF2?node-id=755-15316&p=f&t=U9xZyjY1GwAjzTXy-0'])
+    const mermaid = this.doc.schemas.createSnapshot('mermaid', ['graph', 'timeline\n' +
+    '  title History of Social Media Platform\n' +
+    '  2002 : LinkedIn\n' +
+    '  2004 : Facebook\n' +
+    '         : Google\n' +
+    '    2005 : Youtube\n' +
+    '    2006 : Twitter'])
+    const blockquote = this.doc.schemas.createSnapshot('blockquote', [])
 
     this.pid = p.id
     const snapshot = this.doc.schemas.createSnapshot('root',
       [this.rootId,
-        [p, d1, p2, callout, d2, attachment, d3, p3, img, code, table, todo]
+        [p, d1, callout,blockquote,mermaid, d2,attachment, d3, p3, img, code, table, todo]
       ])
     this.doc.init(snapshot, this.container)
   }

@@ -6,7 +6,7 @@ import {
   EditableBlockComponent,
   EventListen,
   EventNames,
-  HotKeyTrigger
+  HotKeyTrigger, ORIGIN_SKIP_SYNC
 } from "../../framework";
 import {IBlockSnapshot, UIEventStateContext, BLOCK_CREATOR_SERVICE_TOKEN} from "../../framework";
 import {nextTick, sliceDelta} from "../../global";
@@ -18,34 +18,58 @@ export interface IBlockTransformConfig {
   description: string
   markdown?: RegExp
   hotkey?: HotKeyTrigger,
-  onConvert?: (doc: BlockCraft.Doc, from: EditableBlockComponent, matchedString: string) => IBlockSnapshot
+  onConvert?: (doc: BlockCraft.Doc, from: EditableBlockComponent, matchedString: string) => void
 }
 
-export const blockTransforms: IBlockTransformConfig[] = [
+const formatHeading = (doc: BlockCraft.Doc, block: EditableBlockComponent, heading: number) => {
+  doc.crud.transact(() => {
+    block.deleteText(0, block.textLength)
+    block.updateProps({
+      heading
+    })
+  }, ORIGIN_SKIP_SYNC)
+}
+
+const headingTransform: IBlockTransformConfig[] = [
   {
     flavour: 'heading-one',
     description: `一级标题(⌘/Ctrl + 1)\nMarkdown: # (空格)`,
     markdown: /^#\s$/,
-    hotkey: {key: '1', shortKey: true}
+    hotkey: {key: '1', shortKey: true},
+    onConvert: (doc, block) => {
+      formatHeading(doc, block, 1)
+    }
   },
   {
     flavour: 'heading-two',
     description: `二级标题(⌘/Ctrl + 2)\nMarkdown: ## (空格)`,
     markdown: /^##\s$/,
-    hotkey: {key: '2', shortKey: true}
+    hotkey: {key: '2', shortKey: true},
+    onConvert: (doc, block) => {
+      formatHeading(doc, block, 2)
+    }
   },
   {
     flavour: 'heading-three',
     description: `三级标题(⌘/Ctrl + 3)\nMarkdown: ### (空格)`,
     markdown: /^###\s$/,
-    hotkey: {key: '3', shortKey: true}
+    hotkey: {key: '3', shortKey: true},
+    onConvert: (doc, block) => {
+      formatHeading(doc, block, 3)
+    }
   },
   {
     flavour: 'heading-four',
     description: `四级标题(⌘/Ctrl + 4)\nMarkdown: #### (空格)`,
     markdown: /^####\s$/,
-    hotkey: {key: '4', shortKey: true}
+    hotkey: {key: '4', shortKey: true},
+    onConvert: (doc, block) => {
+      formatHeading(doc, block, 4)
+    }
   },
+]
+
+export const blockTransforms: IBlockTransformConfig[] = [
   {
     flavour: 'bullet',
     description: `无序列表(⌘/Ctrl + Shift + L)\nMarkdown: -/+ (空格)`,
@@ -62,7 +86,10 @@ export const blockTransforms: IBlockTransformConfig[] = [
         order: parseInt(matchedString, 10) - 1,
         ...from.props
       }
-      return doc.schemas.createSnapshot('ordered', [sliceDelta(from.textDeltas(), matchedString.length), props])
+      const o =  doc.schemas.createSnapshot('ordered', [sliceDelta(from.textDeltas(), matchedString.length), props])
+      doc.crud.replaceWithSnapshots(from.id, [o]).then(() => {
+        doc.selection.setCursorAtBlock(o.id, true)
+      })
     }
   },
   {
@@ -77,15 +104,10 @@ export const blockTransforms: IBlockTransformConfig[] = [
     markdown: /^!\s$/,
     hotkey: {key: ['q', 'Q'], shortKey: true, shiftKey: true}
   },
-  // {
-  //   flavour: 'blockquote',
-  //   description: `引用块\nMarkdown: > (空格)`,
-  //   markdown: /^>\s$/,
-  // },
   {
-    flavour: 'divider',
-    description: `分割线(⌘/Ctrl + Shift + H)\nMarkdown: --- (空格)`,
-    markdown: /^---\s$/
+    flavour: 'blockquote',
+    description: `引用块\nMarkdown: > (空格)`,
+    markdown: /^>\s$/,
   },
   {
     flavour: 'divider',
@@ -184,13 +206,11 @@ export class BlockTransformerPlugin extends DocPlugin {
     // block.deleteText(text.length)
     // block.applyDelta([{delete: text.length}], false)
 
-    let newBlock: IBlockSnapshot
     if (config.onConvert) {
-      newBlock = config.onConvert!(this.doc, block, text)
-    } else {
-      newBlock = this.doc.schemas.createSnapshot(matched.flavour, [sliceDelta(block.textDeltas(), text.length), block.props])
+      config.onConvert!(this.doc, block, text)
+      return
     }
-
+    const newBlock = this.doc.schemas.createSnapshot(matched.flavour, [sliceDelta(block.textDeltas(), text.length), block.props])
     if (!this.doc.schemas.isValidChildren(newBlock.flavour, block.parentBlock!.flavour)) {
       return
     }

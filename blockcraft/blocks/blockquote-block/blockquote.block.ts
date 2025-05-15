@@ -1,9 +1,9 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
-import {ParagraphBlockModel} from "./index";
 import {EditableBlockComponent} from "../../framework";
+import {BlockquoteBlockModel} from "./index";
 
 @Component({
-  selector: 'p.paragraph-block',
+  selector: 'blockquote.blockquote-block',
   template: ``,
   standalone: true,
   host: {
@@ -11,6 +11,6 @@ import {EditableBlockComponent} from "../../framework";
   },
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class ParagraphBlockComponent extends EditableBlockComponent<ParagraphBlockModel> {
+export class BlockQuoteBlockComponent extends EditableBlockComponent<BlockquoteBlockModel> {
 
 }

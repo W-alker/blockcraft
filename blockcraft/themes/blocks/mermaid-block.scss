@@ -6,29 +6,39 @@
     border: 1px solid #e6e6e6;
 
     &.selected {
-      //border-color: var(--bc-active-color);
-      //background-color: var(--bc-select-background-color);
+      border-color: var(--bc-active-color);
+      background-color: unset;
     }
 
-    &[data-view-mode="text"] {
-      .graph-con {
+    &[data-mode="text"] {
+      .graph-container {
         visibility: hidden;
         height: 0;
         overflow: hidden;
       }
     }
 
-    &[data-view-mode="graph"] {
-      .editable-container {
+    &[data-mode="graph"] {
+      .text-container {
         visibility: hidden;
         height: 0;
         overflow: hidden;
-        min-height: 0;
+        padding: 0;
       }
+    }
+
+    .graph-container {
+      overflow: auto;
+      scroll-behavior: smooth;
+      scrollbar-width: thin;
+      max-height: 60vh;
+    }
+
+    .graph-con {
+      margin: auto;
     }
 
     .head {
-      background-color: var(--bf-bg);
       display: flex;
       align-items: center;
       position: relative;
@@ -43,8 +53,9 @@
         align-items: center;
         gap: 4px;
         font-size: small;
+        color: var(--bc-color-light);
 
-        &:hover {
+        &:hover, &.active {
           background-color: rgba(153, 153, 153, .1);
         }
 
@@ -61,36 +72,28 @@
       }
     }
 
-    .container {
-      padding: 20px 20px;
+    .control-btns {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 8px 40px 8px 16px;
+
+      .btn {
+        font-size: var(--bc-fs-xl);
+      }
+
+      .text {
+        color: var(--bc-color-light);
+      }
+    }
+
+    .text-container {
+      padding: 16px;
       font-family: "DM Mono", monospace;
       color: #333;
-    }
-
-    .graph-con {
-      overflow-x: auto;
-    }
-  }
-}
-
-::ng-deep .template-list {
-  background-color: #fff;
-  border: 1px solid #f5f2f0;
-  border-radius: 4px;
-  padding: 4px;
-
-  &_item {
-    padding: 0 4px;
-    height: calc(var(--bf-lh) * 1.5);
-    line-height: calc(var(--bf-lh) * 1.5);
-    text-align: center;
-    font-size: calc(var(--bf-fs) * .8);
-    color: #999;
-    cursor: pointer;
-    border-radius: 4px;
-
-    &:hover {
-      background-color: rgba(153, 153, 153, .1);
+      font-size: var(--bc-fs-sm);
     }
   }
 }

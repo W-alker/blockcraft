@@ -5,7 +5,7 @@ import {DeltaOperation, EditableBlock} from '../../core';
 import {TEMPLATE_LIST, ITemplate} from './const'
 import {TemplatePortal} from '@angular/cdk/portal';
 import {ViewContainerRef} from '@angular/core';
-import {IMermaidBlockModel} from './type';
+import {IMermaidBlockModel} from './index';
 import mermaid from 'mermaid'
 import {take} from 'rxjs';
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
