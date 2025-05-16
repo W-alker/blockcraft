@@ -1,5 +1,5 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
-import {BaseBlockComponent, getPositionWithOffset, ORIGIN_SKIP_SYNC} from "../../framework";
+import {BaseBlockComponent, generateId, getPositionWithOffset, ORIGIN_SKIP_SYNC} from "../../framework";
 import {MermaidBlockModel, MermaidViewMode} from "./index";
 import mermaid from "mermaid";
 import {Subject, Subscription, takeUntil} from "rxjs";
@@ -66,9 +66,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   override ngAfterViewInit() {
     super.ngAfterViewInit();
     this.graphContainer = this.hostElement.querySelector('.graph-con') as HTMLDivElement;
-    nextTick().then(() => {
-      this.intersectionObserver.observe(this.hostElement)
-    })
+
     this._propsChangeSubscription = this.onPropsChange.subscribe(map => {
       if (map.has('mode')) {
         this.setView(this.props.mode)
@@ -76,9 +74,11 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     })
   }
 
-  override reattach() {
-    super.reattach();
-    this.intersectionObserver.observe(this.hostElement)
+  override _init() {
+    super._init()
+    nextTick().then(() => {
+      this.intersectionObserver.observe(this.hostElement)
+    })
   }
 
   override detach() {
@@ -91,14 +91,13 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
     if (!textarea.textLength) return
     const graphDefinition = textarea.textContent();
-    const verify = await mermaid.parse(graphDefinition, {suppressErrors: true})
-    if (verify) {
-      const {svg} = await mermaid.render('graph' + this.id, graphDefinition);
+    try {
+      const {svg} = await mermaid.render('graph' + generateId(11), graphDefinition);
       this.graphContainer.innerHTML = svg
       this.graphMaxWidth = parseInt((this.graphContainer.firstElementChild! as SVGAElement).style.maxWidth)
       this.setGraphWidth(this.graphScale)
-    } else {
-      this.graphContainer.innerHTML = `<div style="color: var(--bc-error-color);">语法错误！</div>`
+    } catch (err) {
+      this.graphContainer.innerHTML = `<div style="color: var(--bc-error-color);">${err}</div>`
     }
   }
 

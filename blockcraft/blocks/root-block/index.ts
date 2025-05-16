@@ -25,7 +25,7 @@ export const RootBlockSchema: IBlockSchemaOptions<RootBlockModel> = {
         }
       },
       props: {},
-      children: children?.length ? children : [ParagraphBlockSchema.createSnapshot()]
+      children: children?.length ? children : []
     }
   },
   metadata: {

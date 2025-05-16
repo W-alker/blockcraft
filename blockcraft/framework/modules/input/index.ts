@@ -1,6 +1,5 @@
 import {ORIGIN_SKIP_SYNC} from "../../doc";
 import {
-  BaseBlockComponent,
   BindHotKey,
   BlockNodeType,
   DeltaOperation,

@@ -97,6 +97,7 @@ export class DocCRUD {
 
     const delay_childrenEvent_handlers: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][] = []
 
+    console.log('----sync ', event)
     // sync to model
     event.forEach(ev => {
       const {path, changes, target} = ev

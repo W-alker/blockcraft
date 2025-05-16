@@ -56,6 +56,8 @@ import {AdapterService} from "./services/adapter.service";
 import {MermaidBlockSchema, MermaidTextareaBlockSchema} from "../blocks/mermaid-block";
 import {applyUpdate, Doc, mergeUpdates} from "yjs";
 import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
+import { WebsocketProvider } from 'y-websocket'
+
 
 const schemas = new SchemaManager([
   ParagraphBlockSchema,
@@ -87,6 +89,8 @@ const schemas = new SchemaManager([
 
     <button (click)="listenUpdate()">监听数据变化</button>
     <button (click)="test()">测试</button>
+
+    <button (click)="enterRoom()">进入协同</button>
 
     <div class="block-area">
       <div draggable="true" (dragstart)="onDragStart($event, 'heading-one')">
@@ -232,7 +236,7 @@ export class EditorComponent {
     this.pid = p.id
     const snapshot = this.doc.schemas.createSnapshot('root',
       [this.rootId,
-        [p, d1, callout,blockquote,mermaid, d2,attachment, d3, p3, img, code, table, todo]
+        // [p, d1, callout,blockquote,mermaid, d2,attachment, d3, p3, img, code, table, todo]
       ])
     this.doc.init(snapshot, this.container)
   }
@@ -342,5 +346,9 @@ export class EditorComponent {
     this.doc.crud.yDoc.on('update', (u: Uint8Array, _: any) => {
       this.updateList.push(u)
     })
+  }
+
+  enterRoom() {
+    const provider = new WebsocketProvider('ws://localhost:1234', this.rootId, this.doc.crud.yDoc)
   }
 }
