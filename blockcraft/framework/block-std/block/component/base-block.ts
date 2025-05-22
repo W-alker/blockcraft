@@ -94,7 +94,8 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   ngAfterViewInit() {
-    this.onViewInit$.next(true)
+    this.hostElement.setAttribute('data-block-id', this.id)
+    this.hostElement.setAttribute('data-node-type', this.nodeType)
     if (this.nodeType === BlockNodeType.void
       // || this.nodeType === BlockNodeType.block
     ) {
@@ -102,6 +103,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
       this.hostElement.appendChild(createBlockGapSpace())
     }
     this.changeDetectorRef.markForCheck()
+    this.onViewInit$.next(true)
   }
 
   ngOnDestroy() {
@@ -166,7 +168,6 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     })
   }
 
-  @HostBinding('attr.data-block-id')
   get id() {
     return this._native.id
   }
@@ -175,7 +176,6 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return this._native.flavour
   }
 
-  @HostBinding('attr.data-node-type')
   get nodeType() {
     return this._native.nodeType
   }

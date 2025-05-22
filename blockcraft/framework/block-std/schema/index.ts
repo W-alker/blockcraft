@@ -83,3 +83,5 @@ declare global {
     type BlockCreateParameters<T extends keyof IBlockCreateParameters> = IBlockCreateParameters[T]
   }
 }
+
+export * from "./block-schema"

@@ -1,6 +1,7 @@
 import {ChangeDetectionStrategy, Component, EventEmitter, Output} from "@angular/core";
 import {BcFloatToolbarComponent, BcFloatToolbarItemComponent} from "../../../components";
-import {IMermaidType, MERMAID_TYPE_LIST} from "../const";
+import {MERMAID_TYPE_LIST} from "../const";
+import {IMermaidType} from "../types";
 
 @Component({
   selector: 'mermaid-type-list',

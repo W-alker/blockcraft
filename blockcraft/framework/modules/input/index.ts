@@ -26,7 +26,7 @@ export class InputTransformer {
 
   private _compositionPos: { block: EditableBlockComponent, index: number } | null = null
 
-  @EventListen(EventNames.compositionStart, {flavour: 'root'})
+  @EventListen(EventNames.compositionStart)
   private _handleCompositionStart(context: UIEventStateContext) {
     const curSel = this.doc.selection.value!
     context.preventDefault()
@@ -54,7 +54,7 @@ export class InputTransformer {
     return true
   }
 
-  @EventListen(EventNames.compositionEnd, {flavour: 'root'})
+  @EventListen(EventNames.compositionEnd)
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.get('defaultState').event as CompositionEvent
     ev.preventDefault()
@@ -71,7 +71,7 @@ export class InputTransformer {
     }, ORIGIN_SKIP_SYNC)
   }
 
-  @EventListen(EventNames.beforeInput, {flavour: 'root'})
+  @EventListen(EventNames.beforeInput)
   private _handleBeforeInput(context: BlockCraft.EventStateContext) {
     const ev = context.get('defaultState').event as InputEvent
     if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {
@@ -89,8 +89,6 @@ export class InputTransformer {
     }
 
     const normalizedRange = this.doc.selection.normalizeRange(staticRange)!
-    // TODO: clear console
-    // console.log(staticRange, normalizedRange)
 
     const {from, to, collapsed} = normalizedRange
     const text = getPlainTextFromInputEvent(ev)
@@ -177,12 +175,6 @@ export class InputTransformer {
     if (collapsed) return
 
     this.doc.crud.transact(() => {
-      if (from.type === 'text') {
-        from.block.replaceText(from.index, from.length, text)
-        // inline
-        if (!to) return;
-      }
-
       if (to) {
         const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
         if (throughPath.length) {
@@ -191,15 +183,24 @@ export class InputTransformer {
           })
         }
       }
-      from.type === 'selected' && this.doc.crud.deleteBlockById(from.blockId)
-      to?.type === 'selected' && this.doc.crud.deleteBlockById(to.blockId)
 
-      if (to?.type === 'text') {
-        if (from.type !== "text") {
-          to.block.replaceText(to.index, to.length, text)
-        } else {
-          to.block.deleteText(to.index, to.length)
+      if (from.type === 'text') {
+        const deltas: DeltaOperation[] = [{retain: from.index}]
+        from.length > 0 && deltas.push({delete: from.length})
+        text && deltas.push({insert: text})
+
+        if (to && to.type === 'text' && to.length > 0) {
+          deltas.push(...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength))
+          this.doc.crud.deleteBlockById(to.blockId)
         }
+        from.block.applyDeltaOperation(deltas)
+        to?.type === 'selected' && this.doc.crud.deleteBlockById(to.blockId)
+      } else {
+        from.type === 'selected' && this.doc.crud.deleteBlockById(from.blockId)
+        // 无法输入的情况
+        if (to?.type !== 'text') return
+        this.doc.crud.deleteBlockById(from.blockId)
+        to.block.replaceText(to.index, to.length, text)
       }
 
     }, ORIGIN_SKIP_SYNC)
@@ -414,8 +415,9 @@ export class InputTransformer {
 
     // 空段落
     if (!from.block.textLength) {
+      context.preventDefault()
+
       if (from.block.props.heading) {
-        context.preventDefault()
         from.block.updateProps({
           heading: null
         })
@@ -423,21 +425,23 @@ export class InputTransformer {
       }
 
       if (from.block.props.depth > 0) {
-        context.preventDefault()
         from.block.updateProps({
           depth: from.block.props.depth - 1
         })
         return true
       }
 
-      if(from.block.props['flavour'] !== 'paragraph'){
-        context.preventDefault()
-        const p = this.doc.schemas.createSnapshot('paragraph', [[], from.block.props])
+      const p = this.doc.schemas.createSnapshot('paragraph', [[], from.block.props])
+      if (from.block.flavour !== 'paragraph') {
         this.doc.crud.replaceWithSnapshots(from.blockId, [p]).then(() => {
           this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
         })
-        return true
+      } else {
+        this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {
+          this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+        })
       }
+      return true
     }
 
     const deltas = sliceDelta(from.block.textDeltas(), from.index)

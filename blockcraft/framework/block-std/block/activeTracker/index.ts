@@ -5,13 +5,10 @@ export class BlockActiveTracker {
   constructor(
     public readonly vm: BlockCraft.ViewManager
   ) {
-    this.vm.doc.afterInit(() => {
-      this._init()
-    })
   }
 
   get root() {
-    return this.vm.doc.root
+    return this.vm.root
   }
 
   get rootElement() {

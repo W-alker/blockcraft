@@ -2,7 +2,7 @@
   @if ($lines == 1) {
     overflow: hidden;
     text-overflow: ellipsis;
-    flex-direction: column;
+    white-space: nowrap;
   } @else {
     word-break: break-word;
     display: -webkit-box;
@@ -12,4 +12,17 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+}
+
+@mixin user-select($state: none) {
+  -webkit-user-select: $state;
+  -moz-user-select: $state;
+  -ms-user-select: $state;
+  user-select: $state;
+}
+
+@mixin user-modify($state: none) {
+  -webkit-user-modify: $state;
+  -moz-user-modify: $state;
+  user-modify: $state;
 }

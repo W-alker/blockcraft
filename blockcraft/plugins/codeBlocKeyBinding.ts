@@ -1,51 +1,15 @@
-import {BindHotKey, DocPlugin, EventListen, ORIGIN_SKIP_SYNC, STR_LINE_BREAK, STR_TAB} from "../framework";
+import {BindHotKey, DocPlugin, EventListen, STR_LINE_BREAK, STR_TAB} from "../framework";
 import {CodeBlockComponent} from "../blocks/code-block/code.block";
 import {BlockCraftError, ErrorCode} from "../global";
 import {DeltaOperation, UIEventStateContext} from "../framework";
-// import {format} from "prettier";
-// import * as prettierPluginBabel from 'prettier/plugins/babel'
-// import * as prettierPluginEstree from "prettier/plugins/estree";
-// import * as prettierPluginHtml from "prettier/plugins/html";
-//
-// const formatCode = async (text: string, rangeStart = 0, rangeEnd = text.length) => {
-//   if (rangeStart === rangeEnd) return
-//   let code = await format(text, {
-//     rangeEnd, rangeStart,
-//     parser: "babel",
-//     plugins: [prettierPluginBabel, prettierPluginEstree, prettierPluginHtml],
-//     endOfLine: "lf",
-//     useTabs: true
-//   })
-//   code = code.replace(/\n$/, '')
-//   return code
-// }
 
 export class CodeBlocKeyBinding extends DocPlugin {
-
-  // 格式化热键
-  // this.doc.event.bindHotkey(
-  //   {key: ['F', 'f'], shiftKey: true, shortKey: true},
-  //   context => {
-  //     const state = context.get('keyboardState')
-  //     const {from, to, raw} = state.selection
-  //     if (from.type !== 'text' || !(from.block instanceof CodeBlockComponent)) return false
-  //     context.preventDefault()
-  //     const text = from.block.textContent()
-  //     formatCode(text, from.index, from.index + from.length).then(code => {
-  //       if (code === text) return
-  //       from.block.applyDeltaOperation([{delete: text.length}, {insert: code}])
-  //     })
-  //     return true
-  //   },
-  //   {flavour: 'code'}
-  // )
 
   @EventListen('compositionEnd', {flavour: 'code'})
   handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.get('defaultState').event as CompositionEvent
     ev.preventDefault()
-    const curSel = this.doc.selection.value!
-    console.log(curSel)
+    // const curSel = this.doc.selection.value!
 
     // this.doc.crud.transact(() => {
     //   if (this._composeRange?.type !== 'text') return

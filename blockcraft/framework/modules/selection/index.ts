@@ -7,6 +7,7 @@ import {closetBlockId, isZeroSpace} from "../../utils";
 import {BindHotKey, DocEventRegister, EventListen, EventNames} from "../../block-std/event";
 import {UIEventStateContext} from "../../block-std/event/base";
 import {SelectionSelectedManager} from "./selected-manager";
+import {FakeRange, IFakeRangeConfig} from "./createFakeRange";
 
 export interface IInlineRange {
   index: number
@@ -58,7 +59,6 @@ export class BlockSelection implements INormalizedRange {
 
   constructor(private readonly normalizedRange: INormalizedRange,
               readonly raw: Range,
-              readonly isByUser = false,
               private selection: Selection) {
     this._commonParent = this.isInSameBlock ? this.from.blockId : closetBlockId(raw.commonAncestorContainer)!
   }
@@ -139,7 +139,6 @@ export class SelectionManager {
 
   // private _stack: (IBlockSelectionJSON | null)[] = []
 
-  private isByUser = false
   private selectedManager = new SelectionSelectedManager(this.doc)
 
   constructor(public readonly doc: BlockCraft.Doc) {
@@ -178,28 +177,28 @@ export class SelectionManager {
     })
   }
 
+  private _stopCalculate = false
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
-    fromEvent(document, 'selectionchange').pipe(takeUntil(root.onDestroy$)).subscribe(() => {
-      const selection = document.getSelection()
-      if (!selection || !selection.rangeCount) {
-        this.selectionChange$.next(null)
-        this.selectedManager.setSelected(null)
-        return
+    this.doc.event.customListen(document, 'selectstart').subscribe(e => {
+      this._stopCalculate = true
+      this.recalculate()
+    })
+
+    this.doc.event.customListen<PointerEvent>(document, 'pointerup').subscribe(e => {
+      if (e.pointerType === 'mouse' && this._stopCalculate) {
+        this._stopCalculate = false
+        this.recalculate()
       }
+    })
 
-      const range = selection.getRangeAt(0)
-      if (document.activeElement !== this.doc.root.hostElement && !this.doc.root.hostElement.contains(range.commonAncestorContainer)) {
-        this.selectionChange$.next(null)
-        this.selectedManager.setSelected(null)
-        return
-      }
+    this.doc.event.customListen(this.doc.root.hostElement, 'blur').subscribe(() => {
+      this._stopCalculate = false
+      this.recalculate()
+    })
 
-      const r = new BlockSelection(this.normalizeRange(range), range, this.isByUser, selection)
-      this.isByUser = false
-
-      this.selectionChange$.next(r)
-      // this._stack.push(r ? r.toJSON() : null)
-      this.selectedManager.setSelected(this.value)
+    this.doc.event.customListen(document, 'selectionchange').subscribe(() => {
+      if (this._stopCalculate || this.doc.event.isComposing) return
+      this.recalculate()
     })
   }
 
@@ -240,7 +239,7 @@ export class SelectionManager {
     return true
   }
 
-  @BindHotKey({key: ['ArrowUp', "ArrowDown"], shiftKey: true}, {flavour: 'root'})
+  @BindHotKey({key: ['ArrowUp', "ArrowDown"], shiftKey: true})
   private _handleShiftUpOrDown(ctx: UIEventStateContext) {
     ctx.preventDefault()
     const state = ctx.get('keyboardState')
@@ -285,7 +284,7 @@ export class SelectionManager {
     return true
   }
 
-  @BindHotKey({key: ['ArrowLeft', "ArrowRight"], shiftKey: true}, {flavour: 'root'})
+  @BindHotKey({key: ['ArrowLeft', "ArrowRight"], shiftKey: true})
   private _handleShiftLeftOrRight(ctx: UIEventStateContext) {
     const state = ctx.get('keyboardState')
     const {to, from, isStartOfBlock, isEndOfBlock} = state.selection
@@ -301,6 +300,10 @@ export class SelectionManager {
 
     if (!to && ((isBackward && !isStartOfBlock) || (!isBackward && !isEndOfBlock))
     ) {
+      // 解除第一次多选时的selectstart导致的副作用
+      nextTick().then(() => {
+        this._stopCalculate = false
+      })
       return true
     }
 
@@ -343,11 +346,26 @@ export class SelectionManager {
     return true
   }
 
-  @BindHotKey({key: ['a', 'A'], shortKey: true}, {flavour: 'table-cell'})
+  @BindHotKey({key: ['a', 'A'], shortKey: true})
   handleCtrlA(context: UIEventStateContext) {
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
     evt.preventDefault()
+    const common = this.doc.getBlockById(selection.commonParent)
+    if (this.doc.isEditable(common)) {
+      if (selection.from.type !== 'text') return
+      if (selection.from.index === 0 && selection.from.length === common.textLength) {
+        this.doc.selection.selectAllChildren(common.parentBlock!)
+      } else {
+        this.doc.selection.selectAllChildren(common)
+      }
+      return true
+    }
+    if (selection.from.blockId === common.id && selection.from.block.flavour !== 'root') {
+      this.doc.selection.selectAllChildren(common.parentBlock!)
+      return true
+    }
+
     this.doc.selection.selectAllChildren(selection.commonParent)
     return true
   }
@@ -443,11 +461,34 @@ export class SelectionManager {
    * 对于行内delta操作后，可能需要重新计算当前范围
    */
   recalculate() {
-    const selection = document.getSelection()!
-    if (!selection.rangeCount) return
+    const selection = document.getSelection()
+    if (!selection || !selection.rangeCount) {
+      this.selectionChange$.next(null)
+      this.selectedManager.setSelected(null)
+      return
+    }
+
     const range = selection.getRangeAt(0)
-    selection.removeAllRanges()
-    selection.addRange(range.cloneRange())
+    if (document.activeElement !== this.doc.root.hostElement && !this.doc.root.hostElement.contains(range.commonAncestorContainer)) {
+      this.selectionChange$.next(null)
+      this.selectedManager.setSelected(null)
+      return
+    }
+
+    if(range.startContainer === this.doc.root.hostElement || range.endContainer === this.doc.root.hostElement) {
+      this.selectionChange$.next(null)
+      this.selectedManager.setSelected(null)
+      return
+    }
+
+    try {
+      const r = new BlockSelection(this.normalizeRange(range), range, selection)
+      this.selectionChange$.next(r)
+      this.selectedManager.setSelected(this.value)
+    } catch (e) {
+      this.doc.logger.warn('normalizeRangeError: ', e)
+    }
+
   }
 
   normalizeRange(range: StaticRange): INormalizedRange {
@@ -613,13 +654,20 @@ export class SelectionManager {
 
   selectBlock(block: BlockCraft.BlockComponent | string) {
     block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+
     const selection = document.getSelection()!
     const range = document.createRange()
-    range.setStart(block.hostElement, 0)
-    range.setEnd(block.hostElement, block.hostElement.childElementCount)
+
+    if (block.nodeType === 'root') {
+      range.setStart(block.firstChildren!.hostElement, 0)
+      range.setEnd(block.lastChildren!.hostElement, block.lastChildren!.hostElement.childElementCount)
+    } else {
+      range.setStart(block.hostElement, 0)
+      range.setEnd(block.hostElement, block.hostElement.childElementCount)
+    }
+
     selection.removeAllRanges()
     selection.addRange(range)
-    this.isByUser = true
   }
 
   setSelection(...args: Parameters<typeof this._setRange>) {
@@ -627,7 +675,6 @@ export class SelectionManager {
     const selection = document.getSelection()!
     selection.removeAllRanges()
     selection.addRange(range)
-    this.isByUser = true
   }
 
   /**
@@ -693,7 +740,7 @@ export class SelectionManager {
 
   selectAllChildren(block: string | BlockCraft.BlockComponent) {
     block = typeof block === 'string' ? this.doc.getBlockById(block) : block
-    if (block instanceof EditableBlockComponent) {
+    if (this.doc.isEditable(block)) {
       this.setSelection({
         blockId: block.id,
         type: 'text',
@@ -730,33 +777,9 @@ export class SelectionManager {
     return text
   }
 
-  toJSON(selection: BlockCraft.Selection) {
-  }
-
-  createFakeRange(json: IBlockSelectionJSON, config: { bgColor?: string, borderColor?: string } = {}) {
-    const wrap = this.doc.root.hostElement
-    const cursorEle = document.createElement('span')
-    cursorEle.className = 'blockcraft-cursor'
-    const _r = this._setRange(json.from, json.to)
-    const _rRects = _r.getClientRects();
-    const wrapRect = wrap.getBoundingClientRect();
-
-    for (let i = 0; i < _rRects.length; i++) {
-      const rect = _rRects[i];
-      if (rect.width <= 0) continue;
-      rect.width = Math.max(1, rect.width)
-      const span = document.createElement('span');
-      span.style.cssText = `
-        background: ${config.bgColor || 'var(--bc-select-background-color)'};
-        left: ${rect.left - wrapRect.left}px;
-        top: ${rect.top - wrapRect.top}px;
-        width: ${rect.width}px;
-        height: ${rect.height}px;
-      `
-      cursorEle.appendChild(span)
-    }
-    wrap.appendChild(cursorEle);
-    return cursorEle;
+  @performanceTest()
+  createFakeRange(json: IBlockSelectionJSON, config: IFakeRangeConfig = {}) {
+    return new FakeRange(this.doc, json, config)
   }
 
 }
@@ -766,3 +789,5 @@ declare global {
     type Selection = BlockSelection
   }
 }
+
+export * from './createFakeRange'

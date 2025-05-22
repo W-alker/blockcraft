@@ -11,7 +11,6 @@ export interface IToolbarConfig {
   withComment?: boolean
   commentComponent?: Type<CommentPad>
 }
-
 export class FloatTextToolbarPlugin extends DocPlugin {
   override name = "float-text-toolbar";
   override version = 1.0

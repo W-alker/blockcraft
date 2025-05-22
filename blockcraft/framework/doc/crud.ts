@@ -2,7 +2,8 @@ import {DeltaOperation, EditableBlockComponent, IBlockSnapshot, InlineModel, YBl
 import * as Y from "yjs";
 import {BlockCraftError, ErrorCode, nextTick} from "../../global";
 import {IBlockSelectionJSON} from "../modules";
-import {BehaviorSubject, Subject, take} from "rxjs";
+import {BehaviorSubject, skip, Subject, take} from "rxjs";
+import {NgZone} from "@angular/core";
 
 // This origin will skip Y.Event sync (to model)
 export const ORIGIN_SKIP_SYNC = Symbol('skip_sync')
@@ -51,10 +52,18 @@ export class DocCRUD {
   readonly onPropsUpdate$ = new Subject<IPropsChangeEvent>()
 
   constructor(
-    public readonly doc: BlockCraft.Doc
+    private readonly doc: BlockCraft.Doc
   ) {
+    const zone = this.doc.injector.get(NgZone)
     this.doc.afterInit(() => {
-      this.yBlockMap.observeDeep(this._syncYEvent)
+      this.yBlockMap.observeDeep((evt, tr) => {
+        zone.run(async () => {
+          await this._syncYEvent(evt, tr)
+          nextTick().then(() => {
+            this.doc.selection.recalculate()
+          })
+        })
+      })
 
       this.yUndoManager.on('stack-item-added', (evt) => {
         if (evt.type === 'undo') {
@@ -70,10 +79,6 @@ export class DocCRUD {
     })
   }
 
-  get schemas() {
-    return this.doc.schemas
-  }
-
   get vm() {
     return this.doc.vm
   }
@@ -86,7 +91,7 @@ export class DocCRUD {
     return this.yDoc.transact(fn, origin)
   }
 
-  private _syncYEvent = (event: Y.YEvent<any>[], tr: Y.Transaction) => {
+  private _syncYEvent = async (event: Y.YEvent<any>[], tr: Y.Transaction) => {
     // local change with skip
     const isUndoRedo = tr.origin instanceof Y.UndoManager
 
@@ -96,8 +101,6 @@ export class DocCRUD {
     const propsChanges: IPropsChangeEvent['transactions'] = []
 
     const delay_childrenEvent_handlers: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][] = []
-
-    console.log('----sync ', event)
     // sync to model
     event.forEach(ev => {
       const {path, changes, target} = ev
@@ -108,6 +111,12 @@ export class DocCRUD {
         tr.origin !== ORIGIN_SKIP_SYNC && changes.keys.forEach((change, key) => {
           if (change.action === 'delete') {
             deleted.push(key)
+          }
+
+          const v = this.vm.get(key)
+          const yBlock = this.getYBlock(key)
+          if (v && yBlock) {
+            v.setInput('yBlock', yBlock)
           }
         })
 
@@ -142,7 +151,9 @@ export class DocCRUD {
         if (tr.origin !== ORIGIN_SKIP_SYNC) {
           const bm = this.vm.get(blockId)
           if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
-          this.doc.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], (bm.instance as EditableBlockComponent).containerElement)
+          Promise.resolve().then(() => {
+            this.doc.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], (bm.instance as EditableBlockComponent).containerElement)
+          })
         }
         return
       }
@@ -188,10 +199,7 @@ export class DocCRUD {
     }
 
     if (delay_childrenEvent_handlers.length) {
-      this._syncYBlockChildrenUpdate(added, deleted, delay_childrenEvent_handlers, isUndoRedo).then(() => {
-        this._undoRedoing$.value && this._undoRedoing$.next(false)
-      })
-      return
+      await this._syncYBlockChildrenUpdate(added, deleted, delay_childrenEvent_handlers, isUndoRedo)
     }
 
     this._undoRedoing$.value && this._undoRedoing$.next(false)
@@ -201,7 +209,6 @@ export class DocCRUD {
                                              deleted: string[],
                                              events: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][],
                                              isUndoRedo = false) => {
-
     const emitEvents: IChildrenChangeEvent = {isUndoRedo, transactions: []}
 
     const childComps = await this.vm.createComponentByYBlocks(added)

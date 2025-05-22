@@ -1,4 +1,4 @@
-import {ChangeDetectorRef, Component, EventEmitter, Input, Output} from "@angular/core";
+import {ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, Output} from "@angular/core";
 import {
   BcFloatToolbarComponent,
   BcFloatToolbarItemComponent,
@@ -97,7 +97,7 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
       background: var(--bc-error-background-color);
     }
   `],
-  standalone: true
+  standalone: true,
 })
 export class CellToolbarComponent {
   private _options: { type: 'col' | 'row' | 'cells', index?: number, count?: number } = {type: 'cells'}
@@ -228,6 +228,7 @@ export class CellToolbarComponent {
         // @ts-expect-error
         this.table._activeRowRange = [this._options.index!, this._options.index! + (this._options.count || 0) - 1]
         this.table.rowBarComponent.changeDetectionRef.markForCheck()
+        this.onPositionChanged.emit()
         break
     }
 
@@ -310,27 +311,17 @@ export class CellToolbarComponent {
         for (let j = colIdx; j < colIdx + colspan; j++) {
           const cell = row.childrenIds[j]
           const cellBlock = this.doc.getBlockById(cell) as TableCellBlockComponent
-          if (cellBlock.props.display !== 'none') continue
 
           if (!cellBlock.childrenLength) {
             const p = this.doc.schemas.createSnapshot('paragraph', [])
             this.doc.crud.insertBlocks(cellBlock.id, 0, [p])
           }
-
-          if (cellBlock.props.colspan) {
-            cellBlock.updateProps({colspan: null})
-          }
-          if (cellBlock.props.rowspan) {
-            cellBlock.updateProps({rowspan: null})
-          }
-
-          cellBlock.updateProps({display: null})
+          cellBlock.updateProps({colspan: null, rowspan: null, mergedBy: undefined, display: null})
 
           this.table.selectCell(cellBlock)
         }
       }
 
-      firstCell.updateProps({colspan: null, rowspan: null})
       this.isMerged = false
       this.selectedCells = this.table.getSelectedCells()
     }, ORIGIN_SKIP_SYNC)

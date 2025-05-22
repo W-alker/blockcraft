@@ -19,7 +19,7 @@
     }
 
     &[data-mode="graph"] {
-      .text-container {
+      .mermaid-textarea {
         visibility: hidden;
         height: 0;
         overflow: hidden;
@@ -88,12 +88,12 @@
         color: var(--bc-color-light);
       }
     }
+  }
 
-    .text-container {
-      padding: 16px;
-      font-family: "DM Mono", monospace;
-      color: #333;
-      font-size: var(--bc-fs-sm);
-    }
+  .mermaid-textarea {
+    padding: 16px;
+    font-family: "DM Mono", monospace;
+    color: #333;
+    font-size: var(--bc-fs-sm);
   }
 }

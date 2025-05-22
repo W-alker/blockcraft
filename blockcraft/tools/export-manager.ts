@@ -1,6 +1,6 @@
 import {downloadFile} from "../global";
 // @ts-ignore
-import domtoimage from './dom-to-image.js';
+import domtoimage from 'dom-to-image-more'
 
 interface CorsImgOptions {
   url: string; // eg: https://cors-anywhere.herokuapp.com/
@@ -218,52 +218,4 @@ export class DocExportManager {
 
 }
 
-export const getCanvas = async (dom: HTMLElement) => {
-
-  const dataUrl = await domtoimage.toPng(dom)
-  const img = document.createElement('img')
-  img.src = dataUrl;
-
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')!
-  canvas.width = img.width
-  canvas.height = img.height
-  ctx.drawImage(img, 0, 0)
-
-  // const {default: html2canvas} = await import('html2canvas-pro');
-  //
-  // const style = document.createElement('style');
-  // document.head.append(style);
-  //
-  // const canvas = await html2canvas(dom, {
-  //   ignoreElements: (element) => {
-  //     if (element.localName === 'bc-context-handle') {
-  //       return true;
-  //     }
-  //     return false;
-  //   },
-  //   onclone: async (document: Document, element) => {
-  //     const editorElement = document.querySelector(
-  //       '[contenteditable="true"]'
-  //     );
-  //     if (editorElement) {
-  //       Array.from(editorElement.querySelectorAll('*')).forEach((element) => {
-  //         const existingStyle = element.getAttribute('style') || '';
-  //         element.setAttribute(
-  //           'style',
-  //           `${existingStyle}; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important`
-  //         );
-  //       });
-  //     }
-  //
-  //     await replaceImgSrcWithSvg(element)
-  //   },
-  //   allowTaint: true,
-  //   useCORS: true
-  // })
-  //
-  // style.remove();
-
-  return canvas;
-}
 

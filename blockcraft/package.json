@@ -1,12 +1,27 @@
 {
   "name": "@w/blockcraft",
-  "version": "0.0.1",
+  "version": "0.0.16",
   "peerDependencies": {
     "@angular/common": "^17.3.0",
-    "@angular/core": "^17.3.0"
+    "@angular/core": "^17.3.0",
+    "dom-to-image-more": "^3.5.0",
+    "hast": "^1.0.0",
+    "mermaid": "^11.4.0",
+    "nanoid": "^5.1.2",
+    "ng-zorro-antd": "^17.4.1",
+    "pdf-lib": "^1.17.1",
+    "prismjs": "^1.29.0",
+    "reflect-metadata": "^0.2.2",
+    "rehype": "^13.0.2",
+    "rehype-parse": "^9.0.1",
+    "rehype-stringify": "^10.0.1",
+    "unified": "^11.0.5",
+    "viewerjs": "^1.11.6",
+    "y-protocols": "^1.0.6",
+    "y-websocket": "^2.1.0",
+    "yjs": "^13.6.18"
   },
-  "dependencies": {
-    "tslib": "^2.3.0"
+  "devDependencies": {
   },
   "sideEffects": false
 }

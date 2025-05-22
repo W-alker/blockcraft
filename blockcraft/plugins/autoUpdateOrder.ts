@@ -1,6 +1,7 @@
 import {BaseBlockComponent, DocPlugin} from "../framework";
 import {Subscription} from "rxjs";
 import {OrderedBlockModel} from "../blocks";
+import {nextTick} from "../global";
 
 export class AutoUpdateOrderPlugin extends DocPlugin {
   private _sub = new Subscription()
@@ -9,26 +10,29 @@ export class AutoUpdateOrderPlugin extends DocPlugin {
     this._sub = this.doc.onChildrenUpdate$.subscribe(event => {
       if (event.isUndoRedo) return;
 
-      event.transactions.forEach(tr => {
-        const {inserted, deleted, block} = tr
-        if (inserted) {
-          const b = inserted.find(v => v.flavour === 'ordered')
-          if (!b) return
-          updateOrderAround(<any>b)
-          return
-        }
+      nextTick().then(() => {
 
-        if (deleted) {
-          const ids = block.childrenIds
-          if (!ids.length) return;
+        event.transactions.forEach(tr => {
+          const {inserted, deleted, block} = tr
+          if (inserted) {
+            const b = inserted.find(v => v.flavour === 'ordered')
+            if (!b) return
+            updateOrderAround(<any>b)
+            return
+          }
 
-          deleted.forEach(del => {
-            const start = this.doc.getBlockById(ids[Math.max(del.index - 1, 0)])
-            if (start.flavour !== 'ordered') return;
-            updateOrderAround(<any>start)
-          })
+          if (deleted) {
+            const ids = block.childrenIds
+            if (!ids.length) return;
 
-        }
+            deleted.forEach(del => {
+              const start = this.doc.getBlockById(ids[Math.max(del.index - 1, 0)])
+              if (start.flavour !== 'ordered') return;
+              updateOrderAround(<any>start)
+            })
+          }
+        })
+
       })
 
     })
@@ -38,7 +42,9 @@ export class AutoUpdateOrderPlugin extends DocPlugin {
         if (event.isUndoRedo) return;
         const tr = event.transactions[0]
         if (tr.block.flavour !== 'ordered' || !tr.changes.has('depth')) return
-        updateOrderAround(tr.block as any)
+        nextTick().then(() => {
+          updateOrderAround(tr.block as any)
+        })
       })
     )
   }

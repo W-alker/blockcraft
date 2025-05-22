@@ -2,11 +2,17 @@ import {DocCRUD, ORIGIN_NO_RECORD} from "./crud";
 import {ComponentRef, Injector, ViewContainerRef} from "@angular/core";
 import {BlockCraftError, ErrorCode, getScrollContainer, Logger} from "../../global";
 import {DocVM} from "./vm";
-import {IBlockSnapshot, EmbedConverter, InlineManager, UIEventDispatcher, EditableBlockComponent} from "../block-std";
+import {
+  IBlockSnapshot,
+  EmbedConverter,
+  InlineManager,
+  UIEventDispatcher,
+  EditableBlockComponent,
+  YBlock
+} from "../block-std";
 import {ClipboardManager, InputTransformer, SelectionManager} from "../modules";
 import {BehaviorSubject, Subject, Subscription, take} from "rxjs";
 import {getCommonPath} from "../utils";
-import {} from "../block-std/block";
 import {DocPlugin} from "../plugin";
 import {DOC_MESSAGE_SERVICE_TOKEN} from "../services";
 import {DocOverlayService} from "../services";
@@ -14,7 +20,6 @@ import {DocDndService} from "../services/dnd.service";
 
 interface DocConfig {
   docId: string
-  rootId: string
   schemas: BlockCraft.SchemaManager
   logger: Logger
   injector: Injector
@@ -40,8 +45,8 @@ export class BlockCraftDoc {
   readonly event = new UIEventDispatcher(this)
   readonly inlineManager = new InlineManager(this)
   readonly selection = new SelectionManager(this)
-  private _inputManger = new InputTransformer(this)
   readonly clipboard = new ClipboardManager(this)
+  private _inputManger = new InputTransformer(this)
 
   public readonly onChildrenUpdate$ = this.crud.onChildrenUpdate$
   readonly onPropsUpdate$ = this.crud.onPropsUpdate$
@@ -63,7 +68,7 @@ export class BlockCraftDoc {
   }
 
   get rootId() {
-    return this.config.rootId
+    return this.root.id
   }
 
   // If after init, return root, otherwise throw error
@@ -102,8 +107,10 @@ export class BlockCraftDoc {
   }
 
   // init from a snapshot as root
-  async init(snapShot: IBlockSnapshot, container: ViewContainerRef) {
-    if (snapShot.id !== this.rootId || snapShot.flavour !== 'root') {
+  async initBySnapshot(snapShot: IBlockSnapshot, container: ViewContainerRef) {
+    if(this._root) return
+
+    if (snapShot.flavour !== 'root') {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `Invalid root snapshot`)
     }
 
@@ -113,9 +120,27 @@ export class BlockCraftDoc {
       }, ORIGIN_NO_RECORD)
     })
     container.insert(comp.hostView)
+    this._initEditor(comp.instance as any)
+  }
 
+  // init from a yBlock as root
+  async initByYBlock(yBlock: YBlock, container: ViewContainerRef) {
+    if(this._root) return
+
+    const flavour = yBlock.get('flavour')
+    if (flavour !== 'root') {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Invalid root yBlock`)
+    }
+    const id = yBlock.get('id')
+    const comp = await this.vm.createComponentByYBlocks({[id]: yBlock})
+    const root = comp[id]
+    container.insert(root.hostView)
+    this._initEditor(root.instance as any)
+  }
+
+  private _initEditor(comp: BlockCraft.IBlockComponents['root']) {
     // exec after init functions
-    this.afterInit$.next(this._root = comp.instance as BlockCraft.IBlockComponents['root'])
+    this.afterInit$.next(this._root = comp)
     this.afterInitFnStack.forEach(fn => fn(this.root))
     this.afterInitFnStack.clear()
 
@@ -123,7 +148,7 @@ export class BlockCraftDoc {
     this._plugins.forEach(plugin => plugin.register(this))
 
     // listen root destroy, release all resources
-    comp.instance.onDestroy$.pipe(take(1)).subscribe(() => {
+    comp.onDestroy$.pipe(take(1)).subscribe(() => {
       this.onDestroy$.next(true)
       this.plugins.forEach(plugin => plugin.destroy())
     })
@@ -146,7 +171,7 @@ export class BlockCraftDoc {
     }, {blockId: this.rootId})
 
     // init scroll container
-    this._scrollContainer = getScrollContainer(comp.instance.hostElement)
+    this._scrollContainer = getScrollContainer(comp.hostElement)
   }
 
   afterInit(fn: (root: BlockCraft.IBlockComponents['root']) => void) {

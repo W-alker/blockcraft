@@ -5,7 +5,7 @@ import {
   IBlockSchemaOptions,
   editableBlockCreateSnapShotFn,
   EditableBlockCreateSnapshotParams
-} from "../../framework/block-std/schema/block-schema";
+} from "../../framework";
 import {CodeBlockLanguage} from "./const";
 
 export interface CodeBlockModel extends EditableBlockNative {

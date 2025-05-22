@@ -1,10 +1,6 @@
-export interface IMermaidType {
-  name: string
-  template: string
-  prefix: string
-}
+import {IMermaidType} from "./types";
 
-export const MERMAID_TYPE_LIST = [
+export const MERMAID_TYPE_LIST: IMermaidType[] = [
   {
     name: '时序图',
     prefix: 'sequenceDiagram\n',

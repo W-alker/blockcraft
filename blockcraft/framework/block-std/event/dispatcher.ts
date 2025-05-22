@@ -2,8 +2,9 @@ import {UIEventState, UIEventStateContext} from "./base";
 import {EventScopeSourceType, EventSourceState} from "./state";
 import {BlockCraftError, ErrorCode, performanceTest} from "../../../global";
 import {KeyboardControl, CompositionControl, ClipboardControl, DndControl, MouseControl} from "./control";
-import {fromEvent, takeUntil} from "rxjs";
+import {fromEvent, take, takeUntil} from "rxjs";
 import {closetBlockId} from "../../utils";
+import {HasEventTargetAddRemove} from "rxjs/internal/observable/fromEvent";
 
 const bypassEventNames = ['beforeInput', 'focusOut', 'focusIn', 'contextMenu', 'wheel'] as Array<EventNames>
 
@@ -67,7 +68,7 @@ export class UIEventDispatcher {
 
   private _handlersMap = {} as Record<EventNames, Array<EventHandlerRunner>>;
 
-  private readonly composition = new CompositionControl(this)
+  private readonly compositionControl = new CompositionControl(this)
   private keyboardControl = new KeyboardControl(this)
   // private pointerControl = new PointerControl(this)
   private clipboardControl = new ClipboardControl(this)
@@ -84,6 +85,20 @@ export class UIEventDispatcher {
 
   get isReadOnly() {
     return this.doc.isReadonly
+  }
+
+  get isComposing() {
+    return this.compositionControl.isComposing
+  }
+
+  customListen<T extends Event = Event>(target: HasEventTargetAddRemove<unknown> | ArrayLike<HasEventTargetAddRemove<unknown>>,
+                                             eventName: string,
+                                             config?: { once?: true }) {
+    const s = fromEvent<T>(target, eventName).pipe(takeUntil(this.doc.onDestroy$))
+    if (config?.once) {
+      s.pipe(take(1))
+    }
+    return s
   }
 
   bindHotkey = (...args: Parameters<KeyboardControl['bindHotKey']>) =>
@@ -140,7 +155,7 @@ export class UIEventDispatcher {
     //     ))
     // })
 
-    this.composition.listen(root)
+    this.compositionControl.listen(root)
     this.keyboardControl.listen(root)
     // this.pointerControl.listen(root)
     this.clipboardControl.listen(root)

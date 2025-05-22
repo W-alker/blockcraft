@@ -39,15 +39,10 @@
 
 [data-blockcraft-root="true"] {
   position: relative;
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
   outline: none;
-  padding: 0 30px var(--bc-fs);
   font-size: var(--bc-fs);
   line-height: var(--bc-lh);
-  //background-color: var(--bc-root-background-color);
+  @include user-select(none);
 
   &.readonly {
     -webkit-user-modify: read-only !important;
@@ -61,11 +56,10 @@
   [data-node-type="block"].selecting {
     > [data-node-type="block"],
     > [data-node-type="void"] {
-      -webkit-user-modify: read-only;
+      @include user-modify(read-only);
 
       * {
-        user-select: none;
-        -webkit-user-select: none;
+        @include user-select(none);
       }
 
       [data-block-zero-space="true"] {
@@ -94,10 +88,7 @@
     content-visibility: auto;
 
     > [contenteditable='false'] {
-      user-select: none;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
+      @include user-select(none);
     }
 
     &.selected {
@@ -161,7 +152,7 @@
   }
 
   .edit-container {
-    white-space: break-spaces;
+    white-space: pre;
     user-select: text;
 
     span[contenteditable='false'] {
@@ -263,11 +254,40 @@
 }
 
 .blockcraft-cursor {
+  z-index: 100;
+  position: absolute;
+  top: 0;
+  left: 0;
   pointer-events: none;
+  @include user-select(none);
+  @include user-modify(read-only);
+
+  > * {
+    @include user-select(none);
+    @include user-modify(read-only);
+  }
 
   > span {
-    z-index: 100;
     position: absolute;
-    background-color: var(--bc-select-background-color);
+  }
+
+  &-tag {
+    position: absolute;
+    top: -100%;
+    left: 50%;
+    transform: translate(-50%, -8px);
+    max-width: 100px;
+    @include text-ellipsis(1);
+    @include user-select(none);
+    font-size: 12px;
+    color: #fff;
+    border-radius: 4px;
+    padding: 2px 4px;
+  }
+}
+
+[data-blockcraft-root="true"] {
+  [data-block-id]:has(> .blockcraft-cursor) {
+    content-visibility: visible;
   }
 }

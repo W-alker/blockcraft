@@ -89,15 +89,13 @@ export class BlockTransformerPlugin extends DocPlugin {
       })
     }
     if (e.data === '\/' || e.data === '、') {
-      nextTick().then(() => {
-        const selection = this.doc.selection.value
-        if (!selection || !selection.collapsed || selection.from.type !== 'text' || selection.from.block.flavour !== 'paragraph') return
-        const block = selection.from.block
-        if (block.textContent() !== e.data) return
-        const schema = this.doc.schemas.get(block.flavour)!
-        if (schema.metadata.isLeaf) return;
-        this.openContextMenu(block)
-      })
+      const selection = this.doc.selection.value
+      if (!selection || !selection.collapsed || selection.from.type !== 'text' || selection.from.block.flavour !== 'paragraph') return
+      const block = selection.from.block
+      if (block.textContent() !== e.data) return
+      const schema = this.doc.schemas.get(block.flavour)!
+      if (schema.metadata.isLeaf) return;
+      this.openContextMenu(block)
     }
   }
 

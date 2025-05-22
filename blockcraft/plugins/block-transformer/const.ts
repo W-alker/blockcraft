@@ -65,7 +65,15 @@ export const blockTransforms: IBlockTransformConfig[] = [
     flavour: 'callout',
     description: `高亮块(⌘/Ctrl + Shift + Q)\nMarkdown: ! (空格)`,
     markdown: /^!\s$/,
-    hotkey: {key: ['q', 'Q'], shortKey: true, shiftKey: true}
+    hotkey: {key: ['q', 'Q'], shortKey: true, shiftKey: true},
+    onConvert: (doc, from, matchedString) => {
+      const callout = doc.schemas.createSnapshot('callout', [])
+      const p = doc.schemas.createSnapshot('paragraph', [sliceDelta(from.textDeltas(), matchedString.length), from.props])
+      callout.children = [p]
+      doc.crud.replaceWithSnapshots(from.id, [callout]).then(() => {
+        doc.selection.selectOrSetCursorAtBlock(p.id, true)
+      })
+    }
   },
   {
     flavour: 'blockquote',

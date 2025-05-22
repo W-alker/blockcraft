@@ -57,11 +57,11 @@ export class TextToolbarUtils {
 
     const {from, to} = selection
     this.doc.crud.transact(() => {
-      if (from.type === 'text' && from.block.flavour !== 'code') {
+      if (from.type === 'text' && !from.block.plainTextOnly) {
         from.block.formatText(from.index, from.length, attrs)
       }
       if (!to) return
-      if (to.type === 'text' && to.block.flavour !== 'code') {
+      if (to.type === 'text' && !to.block.plainTextOnly) {
         to.block.formatText(to.index, to.length, attrs)
       }
 

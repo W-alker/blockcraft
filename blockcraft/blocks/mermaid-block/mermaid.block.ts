@@ -1,17 +1,17 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {BaseBlockComponent, generateId, getPositionWithOffset, ORIGIN_SKIP_SYNC} from "../../framework";
-import {MermaidBlockModel, MermaidViewMode} from "./index";
+import {MermaidBlockModel} from "./index";
 import mermaid from "mermaid";
 import {Subject, Subscription, takeUntil} from "rxjs";
 import {MermaidTypeListComponent} from "./widgets/mermaid-type-list.component";
-import {IMermaidType} from "./const";
+import {IMermaidType, MermaidViewMode} from "./types";
 import {nextTick} from "../../global";
 // import {ScaleRatioPipe} from "./ratio.pipe";
 
 @Component({
   selector: 'div.mermaid-block',
   template: `
-    <div class="head" contenteditable="false">
+    <div class="head">
       <div class="btn">Mermaid</div>
       <div class="template-btn btn" (click)="onShowList($event, 'prefix')" [hidden]="props.mode === 'graph'">类型
         <i class="bf_icon bf_xiajaintou" style="font-size: .8em"></i>
@@ -23,24 +23,19 @@ import {nextTick} from "../../global";
       <div class="control-btns" [hidden]="props.mode === 'text' ">
         <span class="btn" (mousedown)="scaleGraph(-0.25)"><i class="bc_icon bc_suoxiao"></i></span>
         <span class="btn" (mousedown)="scaleGraph(0.25)"><i class="bc_icon bc_fangda"></i></span>
-<!--        <span class="text">缩放： {{ graphScale | scaleRatio }}</span>-->
+        <!--        <span class="text">缩放： {{ graphScale | scaleRatio }}</span>-->
       </div>
 
       <div class="switch-btn btn" (click)="onSwitchView()"><i class="bc_icon bf_qiehuan"></i></div>
     </div>
 
-    <div class="text-container">
-      <ng-container #childrenContainer></ng-container>
-    </div>
+    <ng-container #childrenContainer></ng-container>
 
     <div class="graph-container">
       <div class="graph-con"></div>
     </div>
   `,
   standalone: true,
-  host: {
-    '[attr.data-mode]': 'props.mode',
-  },
   imports: [
     // ScaleRatioPipe
   ],
@@ -55,13 +50,15 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   protected isIntersecting = false
   protected intersectionObserver = new IntersectionObserver(([entry]) => {
     this.isIntersecting = entry.isIntersecting
-    if (this.isIntersecting && this.props.mode === 'graph') {
+    if (this.isIntersecting && this.props.mode !== this._viewMode) {
       this.setView(this.props.mode)
     }
   }, {
     threshold: [0, 1]
   })
+
   private _propsChangeSubscription!: Subscription;
+  protected _viewMode: MermaidViewMode = 'text'
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
@@ -97,12 +94,13 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
       this.graphMaxWidth = parseInt((this.graphContainer.firstElementChild! as SVGAElement).style.maxWidth)
       this.setGraphWidth(this.graphScale)
     } catch (err) {
-      this.graphContainer.innerHTML = `<div style="color: var(--bc-error-color);">${err}</div>`
+      // this.graphContainer.innerHTML = `<div style="color: var(--bc-error-color);">${err}</div>`
     }
   }
 
   setView(view: MermaidViewMode) {
-    if (!this.isIntersecting) return
+    if (!this.isIntersecting || this._viewMode === view) return
+    this.hostElement.setAttribute('data-mode', this._viewMode = view)
     if (view === 'graph') {
       !this.graphContainer.childElementCount && this.renderGraph()
     } else {

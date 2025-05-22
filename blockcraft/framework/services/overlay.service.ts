@@ -1,7 +1,7 @@
-import {Component, ComponentRef, InjectionToken} from "@angular/core";
+import {ComponentRef} from "@angular/core";
 import {ComponentType, ConnectedPosition, Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
-import {BehaviorSubject, fromEvent, Observable, Subject, take, takeUntil} from "rxjs";
+import {fromEvent, Subject, take, takeUntil} from "rxjs";
 
 // export const DOC_OVERLAY_SERVICE_TOKEN = new InjectionToken<OverlayService>('DOC_OVERLAY_SERVICE');
 
@@ -93,10 +93,14 @@ export class DocOverlayService {
         })
       }
     })
-    observer.observe(params.target.parentElement!, {childList: true})
+    observer.observe(this.doc.root.hostElement, {subtree: true, childList: true})
 
     this.doc.readonlySwitch$.pipe(takeUntil(close$)).subscribe(v => {
       v && close$.next(true)
+    })
+
+    this.doc.onDestroy$.pipe(takeUntil(close$)).subscribe(() => {
+      close$.next(true)
     })
 
     params.backdrop && overlayRef.backdropClick().pipe(takeUntil(close$)).subscribe(() => {

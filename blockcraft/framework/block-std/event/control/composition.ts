@@ -8,6 +8,12 @@ export class CompositionControl {
   constructor(private _dispatcher: BlockCraft.EventDispatcher) {
   }
 
+  private _isComposing = false
+
+  get isComposing() {
+    return this._isComposing
+  }
+
   private _buildContext = (event: CompositionEvent) => {
     return UIEventStateContext.from(
       new UIEventState(event),
@@ -16,10 +22,12 @@ export class CompositionControl {
   }
 
   private _start = (event: CompositionEvent) => {
+    this._isComposing = true
     this._dispatcher.run(EventNames.compositionStart, this._buildContext(event))
   }
 
   private _end = (event: CompositionEvent) => {
+    this._isComposing = false
     this._dispatcher.run(EventNames.compositionEnd, this._buildContext(event))
   }
 

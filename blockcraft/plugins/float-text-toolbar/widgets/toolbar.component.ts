@@ -16,8 +16,7 @@ import {
 } from "../../../components";
 import {BlockCraftError, ErrorCode, SimpleValue} from "../../../global";
 import {NgForOf, NgIf} from "@angular/common";
-import {ORIGIN_SKIP_SYNC} from "../../../framework";
-import {IInlineNodeAttrs} from "../../../framework/block-std/types";
+import {ORIGIN_SKIP_SYNC, IInlineNodeAttrs} from "../../../framework";
 import {Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {merge} from "rxjs";
@@ -310,7 +309,7 @@ export class FloatTextToolbarComponent {
 
     const close = () => {
       ovr.dispose()
-      fake.remove()
+      fake.destroy()
       this.doc.selection.replay(selectionJSON)
     }
     const cpr = ovr.attach(portal)
@@ -355,7 +354,7 @@ export class FloatTextToolbarComponent {
 
     const close = () => {
       ovr.dispose()
-      fake.remove()
+      fake.destroy()
       this.doc.selection.replay(selectionJSON)
     }
     const cpr = ovr.attach(portal)

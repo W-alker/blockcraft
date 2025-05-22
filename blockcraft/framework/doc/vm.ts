@@ -1,5 +1,5 @@
 import {ComponentRef, ViewContainerRef} from "@angular/core";
-import {lastValueFrom, take} from "rxjs";
+import {take} from "rxjs";
 import {BlockCraftError, ErrorCode} from "../../global";
 import {BlockNodeType, IBlockSnapshot, BaseBlockComponent, YBlock} from "../block-std";
 import * as Y from "yjs";
@@ -13,11 +13,15 @@ export class DocVM {
   // private _tracker = new BlockActiveTracker(this)
 
   constructor(
-    public readonly doc: BlockCraft.Doc
+    private readonly doc: BlockCraft.Doc
   ) {
     this.doc.onDestroy(() => {
       this.gc()
     })
+  }
+
+  get root() {
+    return this.doc.root
   }
 
   get schemas() {
@@ -45,38 +49,49 @@ export class DocVM {
         this._restoreCachedComp(b.id)
       })
     }
+    if (this._gcTags.has(id)) {
+      this._gcTags.delete(id)
+    }
     return cpr
   }
 
   async createComponentByYBlocks(yBlocks: Record<string, YBlock>) {
-    // console.log('--------- createComponentByYBlocks', yBlocks)
     // 乱序的，要根据children中的Id顺序组合
-    const createComp = async (yBlock: YBlock, parentId: string | null = null) => {
-      const id = yBlock.get('id')
-      // try get it from cache
-      if (this.has(id)) {
-        return this._restoreCachedComp(id)
-      }
+    const createComp = (yBlock: YBlock, parentId: string | null = null) => {
+      return new Promise<BlockCraft.BlockComponentRef>((resolve, reject) => {
+        const id = yBlock.get('id')
+        // try get it from cache
+        if (this.has(id)) {
+          resolve(this._restoreCachedComp(id))
+          return
+        }
 
-      const schema = this.schemas.get(yBlock.get('flavour'))!
-      const cpr = this._vcr.createComponent(schema.component)
-      cpr.setInput('yBlock', yBlock)
-      cpr.setInput('doc', this.doc)
-      cpr.instance.parentId = parentId
-
-      this.set(id, cpr)
-
-      const yChildren = yBlock.get('children')
-      if (yChildren instanceof Y.Array && yChildren.length) {
-        await lastValueFrom(cpr.instance.onViewInit$).then(() => {
-          yChildren.forEach(async childId => {
-            const cmpr = await createComp(yBlocks[childId]!, id);
-            (cpr.instance.childrenContainer as ViewContainerRef).insert(cmpr.hostView)
-          })
+        const schema = this.schemas.get(yBlock.get('flavour'))!
+        const cpr = this._vcr.createComponent(schema.component, {
+          injector: this.doc.injector
         })
-      }
+        cpr.setInput('yBlock', yBlock)
+        cpr.setInput('doc', this.doc)
+        cpr.instance.parentId = parentId
+        // cpr.changeDetectorRef.detectChanges()
 
-      return cpr
+        this.set(id, cpr)
+
+        cpr.instance.onViewInit$.pipe(take(1)).subscribe(async () => {
+          const yChildren = yBlock.get('children')
+          if (yChildren instanceof Y.Array && yChildren.length) {
+            for (const childId of yChildren.toArray()) {
+              const cmpr = await createComp(yBlocks[childId] || this.doc.crud.getYBlock(childId), id);
+              cmpr.changeDetectorRef.detectChanges()
+              ;(cpr.instance.childrenContainer as ViewContainerRef).insert(cmpr.hostView)
+            }
+            resolve(cpr)
+            return
+          }
+
+          resolve(cpr)
+        })
+      })
     }
 
     const res: Record<string, BlockCraft.BlockComponentRef> = {}
@@ -103,16 +118,14 @@ export class DocVM {
         const {id, nodeType, flavour, props, meta, children} = snapshot
 
         const schema = this.schemas.get(flavour)!
-        const cpr = this._vcr.createComponent(schema.component)
+        const cpr = this._vcr.createComponent(schema.component, {
+          injector: this.doc.injector
+        })
 
         cpr.instance.parentId = parentId
         cpr.setInput('doc', this.doc)
         cpr.setInput('model', {
-          id,
-          nodeType,
-          flavour,
-          props,
-          meta,
+          id, nodeType, flavour, props, meta,
           children: (nodeType === BlockNodeType.block || nodeType === BlockNodeType.root) ? children.map(childSnapshot => childSnapshot.id) : children,
         })
         cb && cb(cpr)
@@ -120,7 +133,6 @@ export class DocVM {
         this.set(id, cpr)
 
         cpr.instance.onViewInit$.pipe(take(1)).subscribe(async () => {
-
           if (children.length && cpr.instance.childrenContainer) {
             for (const childSnapshot of children) {
               const cmpr = await createComp(childSnapshot as IBlockSnapshot, id);

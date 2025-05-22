@@ -8,7 +8,7 @@ import {
   DOC_LINK_PREVIEWER_SERVICE_TOKEN,
   DOC_MESSAGE_SERVICE_TOKEN,
   DocLinkPreviewerService,
-  EditableBlockComponent,
+  EditableBlockComponent, generateId, IBlockSelectionJSON,
   native2YBlock,
   SchemaManager
 } from "../framework";
@@ -30,7 +30,7 @@ import {
   TableRowBlockSchema,
   TodoBlockSchema
 } from "../blocks";
-import {ConsoleLogger} from "../global";
+import {ConsoleLogger, getRandomDarkColor, randomColor, throttle} from "../global";
 import {AutoUpdateOrderPlugin} from "../plugins/autoUpdateOrder";
 import {BulletBlockSchema} from "../blocks/bullet-block";
 import {CodeBlocKeyBinding} from "../plugins/codeBlocKeyBinding";
@@ -56,8 +56,8 @@ import {AdapterService} from "./services/adapter.service";
 import {MermaidBlockSchema, MermaidTextareaBlockSchema} from "../blocks/mermaid-block";
 import {applyUpdate, Doc, mergeUpdates} from "yjs";
 import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
-import { WebsocketProvider } from 'y-websocket'
-
+import {WebsocketProvider} from 'y-websocket'
+import {BlockCraftCursors} from "../blockcraft-cursors";
 
 const schemas = new SchemaManager([
   ParagraphBlockSchema,
@@ -73,10 +73,11 @@ const schemas = new SchemaManager([
 @Component({
   selector: 'block-craft-editor',
   template: `
-    <div style="width: 90vw; height: 80vh; overflow-y: auto;" (mousedown)="onContainerMousedown($event)">
+    <div style="width: 90vw; height: 80vh; overflow-y: auto; padding: 30px;" (mousedown)="onContainerMousedown($event)">
       <ng-container #container></ng-container>
     </div>
 
+    <button (click)="initBySnapshot()">初始化</button>
     <button (mousedown)="$event.preventDefault(); logSelection()">当前选择</button>
     <button (click)="insert()">增加文本</button>
     <button (click)="doc.toggleReadonly(!doc.isReadonly)">切换只读</button>
@@ -166,7 +167,6 @@ export class EditorComponent {
   rootId = 'root-demo'
 
   doc = new BlockCraftDoc({
-    rootId: this.rootId,
     docId: 'our-doc',
     schemas: schemas,
     logger: this.logger,
@@ -200,6 +200,10 @@ export class EditorComponent {
 
   ngAfterViewInit() {
     this.listenUpdate()
+  }
+
+  initBySnapshot() {
+
 
     const p = this.doc.schemas.createSnapshot('paragraph', [[{insert: 'hello\n'},
       {insert: 'world', attributes: {'a:bold': true}},
@@ -236,9 +240,9 @@ export class EditorComponent {
     this.pid = p.id
     const snapshot = this.doc.schemas.createSnapshot('root',
       [this.rootId,
-        // [p, d1, callout,blockquote,mermaid, d2,attachment, d3, p3, img, code, table, todo]
+        // [p, d1, callout, blockquote, mermaid, d2, attachment, d3, p3, img, code, table, todo]
       ])
-    this.doc.init(snapshot, this.container)
+    this.doc.initBySnapshot(snapshot, this.container)
   }
 
   log() {
@@ -310,7 +314,6 @@ export class EditorComponent {
     new DocExportManager(this.doc).exportToJpeg('blockcraft-export-test.png', {bgcolor: '#fff', scale: 2.0})
   }
 
-
   onContainerMousedown(evt: MouseEvent) {
     if (evt.target === evt.currentTarget && evt.eventPhase === evt.AT_TARGET) {
       evt.preventDefault()
@@ -350,5 +353,27 @@ export class EditorComponent {
 
   enterRoom() {
     const provider = new WebsocketProvider('ws://localhost:1234', this.rootId, this.doc.crud.yDoc)
+    provider.on('sync', (v: boolean) => {
+      console.log('sync', v)
+
+      const root = this.doc.crud.getYBlock(this.rootId)
+      if (!root) {
+        this.initBySnapshot()
+      } else {
+        this.doc.initByYBlock(root, this.container)
+      }
+    })
+
+    const uid = generateId()
+    provider.awareness.setLocalState({
+      user: {
+        id: uid,
+        name: 'user-' + uid,
+      }
+    })
+
+    new BlockCraftCursors(this.doc, provider.awareness)
+
   }
+
 }

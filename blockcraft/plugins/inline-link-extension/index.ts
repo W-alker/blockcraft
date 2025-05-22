@@ -2,7 +2,7 @@ import {
   closetBlockId,
   DocPlugin,
   EventListen,
-  EventNames, getPositionWithOffset, IBlockRange,
+  EventNames, FakeRange, getPositionWithOffset, IBlockRange,
   INLINE_TEXT_NODE_TAG, ORIGIN_SKIP_SYNC
 } from "../../framework";
 import {Subject, takeUntil} from "rxjs";
@@ -152,7 +152,7 @@ export class InlineLinkExtension extends DocPlugin {
 
     const close$ = new Subject<void>()
 
-    let fakeRange: HTMLElement
+    let fakeRange: FakeRange
 
     const {componentRef} = this.doc.overlayService.createConnectedOverlay<LinkEditFloatDialog>({
       target: target,
@@ -164,7 +164,7 @@ export class InlineLinkExtension extends DocPlugin {
       backdrop: true
     }, close$, () => {
       close$.next()
-      fakeRange?.remove()
+      fakeRange?.destroy()
       nextTick().then(() => {
         this.doc.selection.setSelection({
           index: range.end,

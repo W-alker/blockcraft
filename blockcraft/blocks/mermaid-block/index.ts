@@ -3,11 +3,11 @@ import {
   editableBlockCreateSnapShotFn,
   EditableBlockCreateSnapshotParams,
   IBlockSchemaOptions
-} from "../../framework/block-std/schema/block-schema";
+} from "../../framework";
 import {MermaidTextareaBlockComponent} from "./mermaid-textarea.block";
 import {MermaidBlockComponent} from "./mermaid.block";
+import {MermaidViewMode} from "./types";
 
-export type MermaidViewMode = 'text' | 'graph';
 export interface MermaidBlockModel extends NoEditableBlockNative {
   flavour: 'mermaid',
   nodeType: BlockNodeType.block,

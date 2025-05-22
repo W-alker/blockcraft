@@ -131,6 +131,7 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
       ) {
         walkerContext.closeNode();
         if (
+          // @ts-ignore
           (o.next?.flavour !== 'bullet' && o.next?.flavour !== 'ordered')
         ) {
           // If the next node is not a list or different type of list, close the list

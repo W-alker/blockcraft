@@ -114,7 +114,7 @@ export const TableCellBlockSchema: IBlockSchemaOptions<TableCellBlockModel> = {
   metadata: {
     version: 1.0,
     label: '表格单元格',
-    excludeChildren: ['table*', '*-embed'],
+    excludeChildren: ['table*', '*-embed', 'mermaid'],
     isLeaf: true
   }
 }

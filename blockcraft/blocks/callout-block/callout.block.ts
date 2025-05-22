@@ -6,7 +6,9 @@ import {CalloutBlockModel} from "./index";
   selector: 'div.callout-block',
   template: `
     <span class="callout-block-prefix" contenteditable="false">{{ props.prefix }}</span>
-    <ng-container #childrenContainer></ng-container>
+    <div>
+      <ng-container #childrenContainer></ng-container>
+    </div>
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
