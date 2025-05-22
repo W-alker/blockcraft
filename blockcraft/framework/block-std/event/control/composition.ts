@@ -1,7 +1,6 @@
 import {fromEvent, takeUntil} from "rxjs";
 import {UIEventState, UIEventStateContext} from "../base";
 import {EventScopeSourceType, EventSourceState} from "../state";
-import {EventNames} from "../dispatcher";
 
 export class CompositionControl {
 
@@ -23,12 +22,12 @@ export class CompositionControl {
 
   private _start = (event: CompositionEvent) => {
     this._isComposing = true
-    this._dispatcher.run(EventNames.compositionStart, this._buildContext(event))
+    this._dispatcher.run('compositionStart', this._buildContext(event))
   }
 
   private _end = (event: CompositionEvent) => {
     this._isComposing = false
-    this._dispatcher.run(EventNames.compositionEnd, this._buildContext(event))
+    this._dispatcher.run('compositionEnd', this._buildContext(event))
   }
 
   listen(root: BlockCraft.IBlockComponents['root']) {

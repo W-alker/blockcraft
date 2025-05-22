@@ -2,7 +2,7 @@ import {fromEvent, takeUntil} from "rxjs";
 import {IS_MAC, IS_SAFARI} from "../../../../global";
 import {EventScopeSourceType, EventSourceState, KeyboardEventState} from "../state";
 import {UIEventState, UIEventStateContext} from "../base";
-import {EventNames, EventOptions} from "../dispatcher";
+import {EventOptions} from "../dispatcher";
 
 /**
  * @description Keyboard event trigger\
@@ -25,7 +25,7 @@ export class KeyboardControl {
 
   private _down = (event: KeyboardEvent) => {
     if (!this._shouldTrigger(event)) return;
-    this._dispatcher.run(EventNames.keyDown, this._createContext(event, new KeyboardEventState({
+    this._dispatcher.run('keyDown', this._createContext(event, new KeyboardEventState({
       event,
       selection: this._dispatcher.currentSelection!
     })));
@@ -33,7 +33,7 @@ export class KeyboardControl {
 
   private _up = (event: KeyboardEvent) => {
     if (!this._shouldTrigger(event)) return;
-    this._dispatcher.run(EventNames.keyUp, this._createContext(event, new KeyboardEventState({
+    this._dispatcher.run('keyUp', this._createContext(event, new KeyboardEventState({
       event,
       selection: this._dispatcher.currentSelection!
     })))
@@ -80,7 +80,7 @@ export class KeyboardControl {
       _binding[SHORT_KEY] = binding.shortKey
       delete _binding.shortKey
     }
-    return this._dispatcher.add(EventNames.keyDown, (context) => {
+    return this._dispatcher.add('keyDown', (context) => {
       const state = context.get('keyboardState')
       if (!this._isHotKeyMatch(_binding, state.raw)) return false
       return handler(context)

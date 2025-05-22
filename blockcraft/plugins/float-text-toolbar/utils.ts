@@ -25,7 +25,7 @@ export class TextToolbarUtils {
     }
 
     between.slice(1).forEach((block, i) => {
-      if (!this.doc.isEditable(block) || block.flavour === 'code') return;
+      if (!this.doc.isEditable(block) || block.plainTextOnly) return;
       if (textAlign !== null && block.props.textAlign !== textAlign) {
         textAlign = null
       }
@@ -68,7 +68,7 @@ export class TextToolbarUtils {
       const between = this.doc.queryBlocksBetween(from.block, to.block)
       for (const id of between) {
         const block = this.doc.getBlockById(id)
-        if (!this.doc.isEditable(block) || block.flavour === 'code') continue;
+        if (!this.doc.isEditable(block) || block.plainTextOnly) continue;
         block.formatText(0, block.textLength, attrs)
       }
     }, ORIGIN_SKIP_SYNC)

@@ -4,7 +4,7 @@ import {BlockCraftError, ErrorCode, nextTick, performanceTest} from "../../../gl
 import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
 import {BlockNodeType} from "../../block-std/types";
 import {closetBlockId, isZeroSpace} from "../../utils";
-import {BindHotKey, DocEventRegister, EventListen, EventNames} from "../../block-std/event";
+import {BindHotKey, DocEventRegister, EventListen} from "../../block-std/event";
 import {UIEventStateContext} from "../../block-std/event/base";
 import {SelectionSelectedManager} from "./selected-manager";
 import {FakeRange, IFakeRangeConfig} from "./createFakeRange";
@@ -370,7 +370,7 @@ export class SelectionManager {
     return true
   }
 
-  @EventListen(EventNames.keyDown)
+  @EventListen('keyDown')
   private _handlerNoEditable(ctx: UIEventStateContext) {
     const state = ctx.get('keyboardState')
     if (state.composing || !state.selection.raw.collapsed) return;

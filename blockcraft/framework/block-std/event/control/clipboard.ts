@@ -1,7 +1,6 @@
 import {fromEvent, takeUntil} from "rxjs";
 import {UIEventState, UIEventStateContext} from "../base";
 import {ClipboardEventState, EventScopeSourceType, EventSourceState} from "../state";
-import {EventNames} from "../dispatcher";
 
 export class ClipboardControl {
   constructor(private _dispatcher: BlockCraft.EventDispatcher) {
@@ -10,7 +9,7 @@ export class ClipboardControl {
   listen(root: BlockCraft.IBlockComponents['root']) {
     fromEvent<ClipboardEvent>(root.hostElement, 'copy').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
       this._dispatcher.run(
-        EventNames.copy,
+        'copy',
         this._createContext(ev)
       )
     })
@@ -20,7 +19,7 @@ export class ClipboardControl {
         return
       }
       this._dispatcher.run(
-        EventNames.cut,
+        'cut',
         this._createContext(ev)
       )
     })
@@ -30,7 +29,7 @@ export class ClipboardControl {
         return
       }
       this._dispatcher.run(
-        EventNames.paste,
+        'paste',
         this._createContext(ev)
       )
     })

@@ -3,7 +3,6 @@ import {
   DOC_FILE_SERVICE_TOKEN,
   DocPlugin,
   EventListen,
-  EventNames,
   getPositionWithOffset
 } from "../../framework";
 import {UIEventStateContext} from "../../framework";
@@ -22,7 +21,7 @@ export class ImgToolbarPlugin extends DocPlugin {
   private _closeToolbar$ = new Subject<void>()
 
   // img 拖拽响应
-  @EventListen(EventNames.dragStart, {flavour: "image"})
+  @EventListen('dragStart', {flavour: "image"})
   onImageDragStart(ctx: UIEventStateContext) {
     ctx.stopPropagation()
 
@@ -125,7 +124,7 @@ export class ImgToolbarPlugin extends DocPlugin {
           }
         })
 
-        const ls = this.doc.event.add(EventNames.dragStart, () => {
+        const ls = this.doc.event.add('dragStart', () => {
           this._closeToolbar$.next()
           ls()
         }, {blockId: selection.firstBlock.id})

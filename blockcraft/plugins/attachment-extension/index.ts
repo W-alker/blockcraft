@@ -3,8 +3,7 @@ import {
   DOC_FILE_SERVICE_TOKEN,
   DocFileService,
   DocPlugin,
-  EventListen,
-  EventNames, getPositionWithOffset
+  EventListen,getPositionWithOffset
 } from "../../framework";
 import {UIEventStateContext, IBlockSnapshot} from "../../framework";
 import {BlockCraftError, downloadFile, ErrorCode, nextTick} from "../../global";
@@ -136,7 +135,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
 
   }
 
-  @EventListen(EventNames.paste, {flavour: "root"})
+  @EventListen('paste', {flavour: "root"})
   onPaste(ctx: UIEventStateContext) {
     const state = ctx.get('clipboardState')
     if (!state.dataTypes.includes(ClipboardDataType.FILES)) return false

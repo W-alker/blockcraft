@@ -268,7 +268,7 @@ export class FloatTextToolbarComponent {
       const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
       for (const id of between) {
         const block = this.doc.getBlockById(id)
-        if (!this.doc.isEditable(block) || block.flavour === 'code') continue;
+        if (!this.doc.isEditable(block) || block.plainTextOnly) continue;
         block.updateProps({'textAlign': textAlign as any})
       }
       this.activeTextAlign = textAlign

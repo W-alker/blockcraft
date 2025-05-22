@@ -1,8 +1,7 @@
 import {
   closetBlockId,
   DocPlugin,
-  EventListen,
-  EventNames, FakeRange, getPositionWithOffset, IBlockRange,
+  EventListen, FakeRange, getPositionWithOffset, IBlockRange,
   INLINE_TEXT_NODE_TAG, ORIGIN_SKIP_SYNC
 } from "../../framework";
 import {Subject, takeUntil} from "rxjs";
@@ -29,7 +28,7 @@ export class InlineLinkExtension extends DocPlugin {
     })
   }
 
-  @EventListen(EventNames.doubleClick)
+  @EventListen('doubleClick')
   onDoubleClick(ctx: UIEventStateContext) {
     const target = ctx.getDefaultEvent().target as Node | null
     if (!target) return
@@ -38,7 +37,7 @@ export class InlineLinkExtension extends DocPlugin {
     window.open(link, '_blank')
   }
 
-  @EventListen(EventNames.mouseDown)
+  @EventListen('mouseDown')
   onMouseDown(ctx: UIEventStateContext) {
     const target = ctx.getDefaultEvent().target as Node | null
     if (!target) return

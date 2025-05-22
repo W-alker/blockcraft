@@ -1,7 +1,6 @@
 import {fromEvent, Subject, take, takeUntil, throttleTime} from "rxjs";
 import {EventScopeSourceType, EventSourceState} from "../state";
 import {UIEventState, UIEventStateContext} from "../base";
-import {EventNames} from "../dispatcher";
 
 export class DndControl {
   constructor(private _dispatcher: BlockCraft.EventDispatcher) {
@@ -14,28 +13,28 @@ export class DndControl {
 
   onDragStart(evt: DragEvent) {
     this._startEvent = evt;
-    this._dispatcher.run(EventNames.dragStart, this._createContext(evt))
+    this._dispatcher.run('dragStart', this._createContext(evt))
   }
 
   onDragEnter(evt: DragEvent) {
-    this._dispatcher.run(EventNames.dragEnter, this._createContext(evt))
+    this._dispatcher.run('dragEnter', this._createContext(evt))
   }
 
   onDragMove(evt: DragEvent) {
-    this._dispatcher.run(EventNames.dragMove, this._createContext(evt))
+    this._dispatcher.run('dragMove', this._createContext(evt))
   }
 
   onDragLeave(evt: DragEvent) {
-    this._dispatcher.run(EventNames.dragLeave, this._createContext(evt))
+    this._dispatcher.run('dragLeave', this._createContext(evt))
   }
 
   onDragEnd(evt: DragEvent) {
-    this._dispatcher.run(EventNames.dragEnd, this._createContext(evt))
+    this._dispatcher.run('dragEnd', this._createContext(evt))
     this._startEvent = null
   }
 
   onDrop(evt: DragEvent) {
-    this._dispatcher.run(EventNames.drop, this._createContext(evt))
+    this._dispatcher.run('drop', this._createContext(evt))
   }
 
   private _createContext(event: DragEvent) {

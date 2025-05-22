@@ -19,7 +19,7 @@ import {Subject} from "rxjs";
 import {createBlockGapSpace} from "../../../utils";
 import * as Y from 'yjs'
 import {STR_LINE_BREAK} from "../../inline";
-import {EventNames} from "../../event";
+import {EditorEventName} from "../../event";
 
 @Component({
   selector: 'base-block',
@@ -154,7 +154,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     this.changeDetectorRef.reattach()
   }
 
-  bindEvent(name: EventNames, handler: BlockCraft.EventHandler, options?: {
+  bindEvent(name: EditorEventName, handler: BlockCraft.EventHandler, options?: {
     global?: boolean;
     flavour?: boolean
   }) {

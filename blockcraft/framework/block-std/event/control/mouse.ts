@@ -1,7 +1,6 @@
 import {fromEvent, takeUntil} from "rxjs";
 import {UIEventState, UIEventStateContext} from "../base";
 import {EventScopeSourceType, EventSourceState} from "../state";
-import {EventNames} from "../dispatcher";
 
 function createContext(
   event: MouseEvent,
@@ -20,23 +19,23 @@ export class MouseControl {
   }
 
   private _down = (event: MouseEvent) => {
-    this._dispatcher.run(EventNames.mouseDown, createContext(event))
+    this._dispatcher.run('mouseDown', createContext(event))
   }
 
   private _up = (event: MouseEvent) => {
-    this._dispatcher.run(EventNames.mouseUp, createContext(event));
+    this._dispatcher.run('mouseUp', createContext(event));
   }
 
   private _enter = (event: MouseEvent) => {
-    this._dispatcher.run(EventNames.mouseEnter, createContext(event));
+    this._dispatcher.run('mouseEnter', createContext(event));
   }
 
   private _leave = (event: MouseEvent) => {
-    this._dispatcher.run(EventNames.mouseLeave, createContext(event));
+    this._dispatcher.run('mouseLeave', createContext(event));
   }
 
   private _dblclick = (event: MouseEvent) => {
-    this._dispatcher.run(EventNames.doubleClick, createContext(event));
+    this._dispatcher.run('doubleClick', createContext(event));
   }
 
   listen(root: BlockCraft.IBlockComponents['root']) {

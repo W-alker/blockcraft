@@ -5,7 +5,6 @@ import {
   DeltaOperation,
   DocEventRegister, EditableBlockComponent,
   EventListen,
-  EventNames,
   INLINE_ELEMENT_TAG,
   INLINE_END_BREAK_CLASS,
   INLINE_TEXT_NODE_TAG,
@@ -26,7 +25,7 @@ export class InputTransformer {
 
   private _compositionPos: { block: EditableBlockComponent, index: number } | null = null
 
-  @EventListen(EventNames.compositionStart)
+  @EventListen('compositionStart')
   private _handleCompositionStart(context: UIEventStateContext) {
     const curSel = this.doc.selection.value!
     context.preventDefault()
@@ -54,7 +53,7 @@ export class InputTransformer {
     return true
   }
 
-  @EventListen(EventNames.compositionEnd)
+  @EventListen('compositionEnd')
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.get('defaultState').event as CompositionEvent
     ev.preventDefault()
@@ -71,7 +70,7 @@ export class InputTransformer {
     }, ORIGIN_SKIP_SYNC)
   }
 
-  @EventListen(EventNames.beforeInput)
+  @EventListen('beforeInput')
   private _handleBeforeInput(context: BlockCraft.EventStateContext) {
     const ev = context.get('defaultState').event as InputEvent
     if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {

@@ -4,8 +4,7 @@ import {
   BindHotKey,
   DocPlugin,
   EditableBlockComponent,
-  EventListen,
-  EventNames, ORIGIN_SKIP_SYNC,
+  EventListen, ORIGIN_SKIP_SYNC,
 } from "../../framework";
 import {UIEventStateContext} from "../../framework";
 import {nextTick, sliceDelta} from "../../global";
@@ -80,7 +79,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     return true
   }
 
-  @EventListen(EventNames.beforeInput)
+  @EventListen('beforeInput')
   onBeforeInput(evt: UIEventStateContext) {
     const e = evt.getDefaultEvent() as InputEvent
     if (e.data === ' ') {

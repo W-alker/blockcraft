@@ -1,4 +1,4 @@
-import {EventNames, EventOptions} from "../dispatcher";
+import {EditorEventName, EventOptions} from "../dispatcher";
 import {HotKeyTrigger} from "../control";
 import "reflect-metadata"
 import {BlockCraftError, ErrorCode} from "../../../../global";
@@ -55,7 +55,7 @@ export function DocEventRegister<T extends IDocModuleConstructor>(ctor: T) {
   }
 }
 
-export function EventListen(name: `${EventNames}`, options?: EventOptions) {
+export function EventListen(name: EditorEventName, options?: EventOptions) {
   return function (origin: any, propertyKey: string, descriptor: PropertyDescriptor) {
     const originalMethod = descriptor.value;
     const oldEvents = Reflect.getMetadata("eventOptions", origin, propertyKey) || []

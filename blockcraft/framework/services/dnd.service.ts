@@ -2,7 +2,7 @@ import {fromEvent, Subscription, take} from "rxjs";
 import {UIEventStateContext} from "../block-std";
 import {closetBlockId} from "../utils";
 import {BlockNodeType, IBlockSnapshot} from "../block-std";
-import {DocEventRegister, EventListen, EventNames} from "../block-std";
+import {DocEventRegister, EventListen} from "../block-std";
 import {BLOCK_POSITION} from "../doc";
 import {DOC_FILE_SERVICE_TOKEN} from "./file.service";
 import {ClipboardDataType} from "../modules";
@@ -88,7 +88,7 @@ export class DocDndService {
   private dragMoveListener: (() => void) | null = null
 
   // 外部文件 拖拽响应
-  @EventListen(EventNames.dragEnter, {flavour: 'root'})
+  @EventListen('dragEnter', {flavour: 'root'})
   onRootDragEnter(ctx: UIEventStateContext) {
     const evt: DragEvent = ctx.getDefaultEvent()
     evt.preventDefault()
@@ -125,7 +125,7 @@ export class DocDndService {
         e.stopPropagation()
       })
 
-    this.dragMoveListener = this.doc.event.add(EventNames.dragMove, this.onDragMove)
+    this.dragMoveListener = this.doc.event.add('dragMove', this.onDragMove)
   }
 
   private onDragMove = (ctx: UIEventStateContext) => {
@@ -256,7 +256,7 @@ export class DocDndService {
     })
   }
 
-  @EventListen(EventNames.drop, {flavour: 'root'})
+  @EventListen('drop', {flavour: 'root'})
   onDrop(ctx: UIEventStateContext) {
     ctx.preventDefault()
     const evt: DragEvent = ctx.getDefaultEvent()

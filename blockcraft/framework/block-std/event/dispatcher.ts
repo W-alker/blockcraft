@@ -6,53 +6,7 @@ import {fromEvent, take, takeUntil} from "rxjs";
 import {closetBlockId} from "../../utils";
 import {HasEventTargetAddRemove} from "rxjs/internal/observable/fromEvent";
 
-const bypassEventNames = ['beforeInput', 'focusOut', 'focusIn', 'contextMenu', 'wheel'] as Array<EventNames>
-
-export enum EventNames {
-  'beforeInput' = 'beforeInput',
-
-  'focusOut' = 'focusOut',
-  'focusIn' = 'focusIn',
-  'contextMenu' = 'contextMenu',
-  'wheel' = 'wheel',
-
-  'click' = 'click',
-  'doubleClick' = 'doubleClick',
-  'tripleClick' = 'tripleClick',
-
-  // 'pointerDown' = 'pointerDown',
-  // 'pointerMove' = 'pointerMove',
-  // 'pointerUp' = 'pointerUp',
-  // 'pointerOut' = 'pointerOut',
-
-  'mouseDown' = 'mouseDown',
-  'mouseMove' = 'mouseMove',
-  'mouseUp' = 'mouseUp',
-  'mouseEnter' = 'mouseEnter',
-  'mouseLeave' = 'mouseLeave',
-
-  'dragStart' = 'dragStart',
-  'dragEnter' = 'dragEnter',
-  'dragMove' = 'dragMove',
-  'dragLeave' = 'dragLeave',
-  'dragEnd' = 'dragEnd',
-  'drop' = 'drop',
-
-  'pinch' = 'pinch',
-  'pan' = 'pan',
-
-  'keyDown' = 'keyDown',
-  'keyUp' = 'keyUp',
-
-  'selectionChange' = 'selectionChange',
-  'compositionStart' = 'compositionStart',
-  'compositionUpdate' = 'compositionUpdate',
-  'compositionEnd' = 'compositionEnd',
-
-  'cut' = 'cut',
-  'copy' = 'copy',
-  'paste' = 'paste',
-}
+const bypassEditorEventName = ['beforeInput', 'focusOut', 'focusIn', 'contextMenu', 'wheel'] as Array<EditorEventName>
 
 export type EventOptions = {
   flavour?: BlockCraft.BlockFlavour
@@ -64,9 +18,46 @@ export type EventHandlerRunner = {
   blockId?: string;
 };
 
+export type EditorEventName =
+  | 'beforeInput'
+  | 'focusOut'
+  | 'focusIn'
+  | 'contextMenu'
+  | 'wheel'
+  | 'click'
+  | 'doubleClick'
+  | 'tripleClick'
+  // | 'pointerDown'
+  // | 'pointerMove'
+  // | 'pointerUp'
+  // | 'pointerOut'
+  | 'mouseDown'
+  | 'mouseMove'
+  | 'mouseUp'
+  | 'mouseEnter'
+  | 'mouseLeave'
+  | 'dragStart'
+  | 'dragEnter'
+  | 'dragMove'
+  | 'dragLeave'
+  | 'dragEnd'
+  | 'drop'
+  | 'pinch'
+  | 'pan'
+  | 'keyDown'
+  | 'keyUp'
+  | 'selectionChange'
+  | 'compositionStart'
+  | 'compositionUpdate'
+  | 'compositionEnd'
+  | 'cut'
+  | 'copy'
+  | 'paste';
+
+
 export class UIEventDispatcher {
 
-  private _handlersMap = {} as Record<EventNames, Array<EventHandlerRunner>>;
+  private _handlersMap = {} as Record<EditorEventName, Array<EventHandlerRunner>>;
 
   private readonly compositionControl = new CompositionControl(this)
   private keyboardControl = new KeyboardControl(this)
@@ -111,7 +102,7 @@ export class UIEventDispatcher {
    * @param options
    * @return remove handler function
    */
-  add(name: EventNames, handler: BlockCraft.EventHandler, options?: EventOptions) {
+  add(name: EditorEventName, handler: BlockCraft.EventHandler, options?: EventOptions) {
     const runner: EventHandlerRunner = {
       fn: handler,
       flavour: options?.flavour,
@@ -127,7 +118,7 @@ export class UIEventDispatcher {
   }
 
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
-    bypassEventNames.forEach(eventName => {
+    bypassEditorEventName.forEach(eventName => {
       fromEvent(root.hostElement, eventName.toLowerCase(), {passive: eventName === 'wheel' ? false : undefined})
         .pipe(takeUntil(root.onDestroy$))
         .subscribe(event => {
@@ -145,7 +136,7 @@ export class UIEventDispatcher {
     })
     // fromEvent(document, 'selectionchange').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
     //   this.run(
-    //     EventNames.selectionChange,
+    //     EditorEventName.selectionChange,
     //     UIEventStateContext.from(
     //       new UIEventState(ev),
     //       new EventSourceState({
@@ -163,7 +154,7 @@ export class UIEventDispatcher {
     this.mouseControl.listen(root)
   }
 
-  hasHandler(name: EventNames) {
+  hasHandler(name: EditorEventName) {
     return this._handlersMap[name].length > 0
   }
 
@@ -171,7 +162,7 @@ export class UIEventDispatcher {
     return this.doc.selection.value
   }
 
-  private _runEventsBySelection(name: EventNames, context: UIEventStateContext) {
+  private _runEventsBySelection(name: EditorEventName, context: UIEventStateContext) {
     const handlers = this._handlersMap[name];
     if (!handlers) return;
 
@@ -180,7 +171,7 @@ export class UIEventDispatcher {
     this._runEvents(name, [selection.commonParent], context)
   }
 
-  private _runEventsByTarget(name: EventNames, context: UIEventStateContext) {
+  private _runEventsByTarget(name: EditorEventName, context: UIEventStateContext) {
     const handlers = this._handlersMap[name];
     if (!handlers) return;
 
@@ -205,7 +196,7 @@ export class UIEventDispatcher {
   }
 
   @performanceTest('event dispatcher')
-  private _runEvents(name: EventNames, blocks: string[], context: UIEventStateContext) {
+  private _runEvents(name: EditorEventName, blocks: string[], context: UIEventStateContext) {
     const handlers = this._handlersMap[name];
     if (!handlers?.length) return;
 
@@ -229,7 +220,7 @@ export class UIEventDispatcher {
   }
 
   run(
-    name: EventNames,
+    name: EditorEventName,
     context: UIEventStateContext,
     runners?: EventHandlerRunner[]
   ) {

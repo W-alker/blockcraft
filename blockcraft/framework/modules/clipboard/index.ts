@@ -4,7 +4,6 @@ import {
   DeltaOperation,
   DocEventRegister,
   EventListen,
-  EventNames,
   EventScopeSourceType,
   EventSourceState,
   IBlockSnapshot,
@@ -123,7 +122,7 @@ export class ClipboardManager {
       targetRanges: [new StaticRange(selection.raw)]
     })
     this.doc.event.run(
-      EventNames.beforeInput,
+      'beforeInput',
       UIEventStateContext.from(
         new UIEventState(event),
         new EventSourceState({event, sourceType: EventScopeSourceType.Selection})
@@ -131,7 +130,7 @@ export class ClipboardManager {
     )
   }
 
-  @EventListen(EventNames.copy, {flavour: 'root'})
+  @EventListen('copy', {flavour: 'root'})
   async onCopy(context: UIEventStateContext) {
     const state = context.get('clipboardState')
     state.raw.preventDefault()
@@ -139,7 +138,7 @@ export class ClipboardManager {
     return true
   }
 
-  @EventListen(EventNames.cut, {flavour: 'root'})
+  @EventListen('cut', {flavour: 'root'})
   onCut(context: UIEventStateContext) {
     const state = context.get('clipboardState')
     context.preventDefault()
@@ -150,7 +149,7 @@ export class ClipboardManager {
     this.deleteContentFromSelection(state.selection)
   }
 
-  @EventListen(EventNames.paste, {flavour: 'root'})
+  @EventListen('paste', {flavour: 'root'})
   async onPaste(context: UIEventStateContext) {
     context.preventDefault()
     const state = context.get('clipboardState')
