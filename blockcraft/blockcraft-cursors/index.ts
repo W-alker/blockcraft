@@ -64,7 +64,7 @@ export class BlockCraftCursors {
         if (origin === 'local') return
 
         const states = this.awareness.getStates()
-        if (changes.added) {
+        if (changes.added.length) {
           changes.added.forEach((id: number) => {
             const state = states.get(id)!
             if (!('user' in state)) return

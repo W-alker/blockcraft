@@ -19,44 +19,6 @@ import {NgIf, NgTemplateOutlet} from "@angular/common";
     NgTemplateOutlet,
     NgIf
   ],
-  styles: [`
-    :host {
-      display: flex;
-      gap: 4px;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      border-radius: 4px;
-      color: #333;
-      white-space: nowrap;
-
-      &.active {
-        background: rgba(95, 111, 255, 0.08);
-        color: var(--bc-active-color);
-      }
-
-      &:hover {
-        background: rgba(215, 215, 215, 0.6);
-      }
-
-      > i {
-        font-size: inherit;
-        color: inherit;
-      }
-
-      i.dropdown {
-        transition: transform 0.2s ease-in-out;
-      }
-
-      &.float-children-opened {
-        background: rgba(215, 215, 215, 0.6);
-
-        i.dropdown {
-          transform: rotate(180deg);
-        }
-      }
-    }
-  `]
   // changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class BcFloatToolbarItemComponent {

@@ -3,7 +3,7 @@ import {BaseBlockComponent, ORIGIN_SKIP_SYNC, POSITION_MAP} from "../../framewor
 import {TableBlockModel} from "./index";
 import {TableCellBlockComponent} from "./table-cell.block";
 import {TableRowBlockComponent} from "./table-row.block";
-import {BehaviorSubject, filter, fromEvent, merge, take, takeUntil} from "rxjs";
+import {BehaviorSubject, filter, fromEvent, merge, skip, Subject, take, takeUntil} from "rxjs";
 import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {CellToolbarComponent} from "./widgets/cell-toolbar.component";
@@ -11,6 +11,7 @@ import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
 import {TableColBarComponent} from "./widgets/table-col-bar.component";
 import {TableRowBarComponent} from "./widgets/table-row-bar.component";
 import {adjustSelection, RectangleSelection} from "./utils";
+import {nextTick} from "../../global";
 
 @Component({
   selector: 'div.table-block',
@@ -34,6 +35,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   selectedCellSet = new Set<TableCellBlockComponent>()
 
   private toolbarOvr?: OverlayRef
+  private _closeToolbar$ = new Subject()
 
   @ViewChild('tableBody', {read: ElementRef}) tableBody!: ElementRef<HTMLElement>
   @ViewChild('colResizeBar', {read: ElementRef}) colResizeBar!: ElementRef<HTMLElement>
@@ -66,6 +68,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         })
       }
     }
+    this.rowBarComponent.changeDetectionRef.markForCheck()
   })
 
   constructor(
@@ -78,6 +81,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     super.ngAfterViewInit();
 
     this.mutationObserver.observe(this.tableBody.nativeElement, {childList: true})
+    nextTick().then(() => {
+      this.rowBarComponent.changeDetectionRef.markForCheck()
+    })
     // this.hostElement.prepend(createBlockGapSpace())
     // this.hostElement.appendChild(createBlockGapSpace())
   }
@@ -208,7 +214,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     event.stopPropagation()
     this._lastSelectingCell = this._startSelectingCell = null
     this.hostElement.classList.remove('is-selecting-cell')
-    this.showToolbar(this.selectedCellSet[Symbol.iterator]().next().value.hostElement)
+    this.showToolbar(this.selectedCellSet[Symbol.iterator]().next().value)
   }
 
   protected selectedCells = new Set<TableCellBlockComponent>()
@@ -302,7 +308,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     return []
   }
 
-  showToolbar(target: HTMLElement, type: 'col' | 'row' | 'cells' = 'cells', index?: number, count = 1, closeFn?: () => void) {
+  showToolbar(target: TableCellBlockComponent, type: 'col' | 'row' | 'cells' = 'cells', index?: number, count = 1, closeFn?: () => void) {
+    if(this.toolbarOvr) {
+      this.toolbarOvr.dispose()
+      this.toolbarOvr = undefined
+      this._closeToolbar$.next(true)
+    }
+
     if (this.doc.isReadonly) {
       this.doc.selection.afterNextChange(() => this._clearSelected())
       return
@@ -311,18 +323,17 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.hostElement.classList.add('active')
     const portal = new ComponentPortal(CellToolbarComponent)
     this.toolbarOvr = this.overlay.create({
-      positionStrategy: this.overlay.position().flexibleConnectedTo(target).withPositions([
+      positionStrategy: this.overlay.position().flexibleConnectedTo(target.hostElement).withPositions([
         {...POSITION_MAP['top-left'], offsetY: -8},
         POSITION_MAP['bottom-left']
       ]),
       scrollStrategy: this.overlay.scrollStrategies.close(),
-      // hasBackdrop: true,
-      // backdropClass: 'cdk-overlay-transparent-backdrop',
+      hasBackdrop: true,
+      backdropClass: 'cdk-overlay-transparent-backdrop',
     })
 
     const cpr = this.toolbarOvr.attach(portal)
-    const selectedCells = this.getSelectedCells()
-    cpr.setInput('selectedCells', selectedCells)
+    cpr.setInput('selectedCells', this.getSelectedCells())
     cpr.setInput('options', {type, index, count})
     cpr.setInput('doc', this.doc)
     cpr.setInput('table', this)
@@ -332,9 +343,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.toolbarOvr?.updatePosition()
     })
 
-    merge(this.toolbarOvr.backdropClick(),
-      this.doc.selection.nextChangeObserve(),
-      this.onDestroy$, selectedCells[0]?.onDestroy$, cpr.instance.onClose$)
+    merge(this.toolbarOvr.backdropClick(), this._closeToolbar$,
+      this.doc.selection.selectionChange$.pipe(skip(1), filter(v => v?.from.blockId !== target.id)),
+      this.onDestroy$, target?.onDestroy$, cpr.instance.onClose$)
       .pipe(takeUntil(cpr.instance.onDestroy)).subscribe(() => {
       closeFn?.()
 
@@ -343,6 +354,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.toolbarOvr?.dispose()
       this.toolbarOvr = undefined
       this._clearSelected()
+      this._closeToolbar$.next(true)
     })
   }
 
@@ -350,7 +362,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const {start, end} = adjustSelection(new RectangleSelection(0, range[0], this.rowLength - 1, range[1]), this)
     range = [start[1], end[1]]
 
-    const firstCell = this.firstChildren!.getChildrenByIndex(range[0])
+    const firstCell = this.firstChildren!.getChildrenByIndex(range[0]) as TableCellBlockComponent
     this.doc.selection.selectBlock(firstCell)
 
     this.doc.selection.afterNextChange(() => {
@@ -360,7 +372,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
       // TODO 监听过程中col增加或减少了，调整选区或者关闭
 
-      this.showToolbar(firstCell.hostElement, 'col', range[0], range[1] - range[0] + 1, () => {
+      this.showToolbar(firstCell, 'col', range[0], range[1] - range[0] + 1, () => {
         this._activeColRange = [-1, -1]
         this.colBarComponent.changeDetectionRef.markForCheck()
       })
@@ -372,7 +384,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const {start, end} = adjustSelection(new RectangleSelection(range[0], 0, range[1], this.colLength - 1), this)
     range = [start[0], end[0]]
 
-    const firstCell = this.getChildrenByIndex(range[0]).getChildrenByIndex(0)
+    const firstCell = this.getChildrenByIndex(range[0]).getChildrenByIndex(0) as TableCellBlockComponent
     this.doc.selection.selectBlock(firstCell)
 
     this.doc.selection.afterNextChange(() => {
@@ -382,7 +394,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
       // TODO 监听过程中row增加或减少了，调整选区或者关闭
 
-      this.showToolbar(firstCell.hostElement, 'row', range[0], range[1] - range[0] + 1, () => {
+      this.showToolbar(firstCell, 'row', range[0], range[1] - range[0] + 1, () => {
         this._activeRowRange = [-1, -1]
         this.rowBarComponent.changeDetectionRef.markForCheck()
       })

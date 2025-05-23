@@ -58,6 +58,7 @@ import {applyUpdate, Doc, mergeUpdates} from "yjs";
 import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
 import {WebsocketProvider} from 'y-websocket'
 import {BlockCraftCursors} from "../blockcraft-cursors";
+import {MermaidBlocKeyBinding} from "../plugins";
 
 const schemas = new SchemaManager([
   ParagraphBlockSchema,
@@ -186,7 +187,7 @@ export class EditorComponent {
         }
       }]
     ],
-    plugins: [new AutoUpdateOrderPlugin(), new CodeBlocKeyBinding(), new TableBlockBinding(),
+    plugins: [new AutoUpdateOrderPlugin(), new CodeBlocKeyBinding(), new TableBlockBinding(), new MermaidBlocKeyBinding(),
       new FloatTextToolbarPlugin({
         withComment: true,
         commentComponent: EditorCommentPad

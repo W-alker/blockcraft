@@ -20,55 +20,6 @@ import {BcFloatToolbarItemComponent} from "./float-toolbar-item";
   `,
   standalone: true,
   styles: [`
-    .bc-float-toolbar__wrapper {
-      background-color: #fff;
-      padding: 4px;
-      border-radius: 4px;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-
-      &[data-direction="column"] {
-        flex-direction: column;
-
-        ::ng-deep {
-          bc-float-toolbar-item {
-            padding: 4px 8px;
-            width: 100%;
-            justify-content: flex-start;
-          }
-
-          > span.bc-float-toolbar__divider {
-            margin: 4px 0;
-            display: block;
-            flex: 1;
-            height: 1px;
-            background-color: #e0e0e0;
-          }
-        }
-      }
-
-      &[data-direction="row"] {
-        display: flex;
-        justify-content: space-between;
-        align-items: stretch;
-        height: 40px;
-        gap: 8px;
-
-        ::ng-deep {
-          bc-float-toolbar-item {
-            justify-content: center;
-            padding: 0 4px;
-          }
-
-          > span.bc-float-toolbar__divider {
-            flex-shrink: 0;
-            height: 32px;
-            width: 1px;
-            background-color: #e0e0e0;
-          }
-        }
-      }
-
-    }
   `]
 })
 export class BcFloatToolbarComponent {

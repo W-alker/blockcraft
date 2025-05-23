@@ -14,6 +14,9 @@
 @import "blocks/mermaid-block";
 @import "blocks/blockquote-block";
 
+@import "components/color-picker";
+@import "components/float-toolbar";
+
 :root {
   //--bc-root-background-color: #fff;
   --bc-fs: 14px;
@@ -273,9 +276,9 @@
 
   &-tag {
     position: absolute;
-    top: -100%;
-    left: 50%;
-    transform: translate(-50%, -8px);
+    top: 0;
+    left: 0;
+    transform: translate(0, calc(-100% - 8px));
     max-width: 100px;
     @include text-ellipsis(1);
     @include user-select(none);
@@ -287,7 +290,7 @@
 }
 
 [data-blockcraft-root="true"] {
-  [data-block-id]:has(> .blockcraft-cursor) {
+  [data-block-id]:has(.blockcraft-cursor) {
     content-visibility: visible;
   }
 }

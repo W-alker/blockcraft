@@ -68,11 +68,17 @@ export function getMimeType(type: FileExtensionType): MimeType | undefined {
   return MIME_TYPES_MAP.find(([ext, mime]) => ext === type)?.[1] as unknown as MimeType
 }
 
-export const downloadFile = async (url: string, filename = '未命名') => {
-  const response = await fetch(url);
+export const downloadFile = async (url: string | Blob, filename = '未命名') => {
 
-  const blob = await response.blob();
-  const blobUrl = window.URL.createObjectURL(blob);
+  let blobUrl
+  // 如果已经是blob
+  if (url instanceof Blob) {
+    blobUrl = window.URL.createObjectURL(url)
+  } else {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    blobUrl = window.URL.createObjectURL(blob)
+  }
 
   const link = document.createElement('a');
   link.href = blobUrl;

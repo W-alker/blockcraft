@@ -26,7 +26,7 @@ interface DocConfig {
   theme?: string
   embeds?: [string, EmbedConverter][]
   plugins?: DocPlugin[]
-  readonly?: false
+  readonly?: boolean
 }
 
 export class BlockCraftDoc {
@@ -97,6 +97,10 @@ export class BlockCraftDoc {
 
   get isReadonly() {
     return this.readonlySwitch$.value
+  }
+
+  get isReady() {
+    return !!this._root
   }
 
   constructor(

@@ -17,19 +17,26 @@ import {NgForOf} from "@angular/common";
             [class.active]="idx >= selectedRange[0] && idx <= selectedRange[1]"></span>
     }
   `,
-  styles: [``],
   imports: [
     NgForOf
   ],
   standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
+  // changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     'contenteditable': 'false',
   }
 })
 export class TableRowBarComponent {
+
+  private _rowIds: string[] = []
   @Input({required: true})
-  rowIds: string[] = []
+  set rowIds(v: string[]) {
+    this._rowIds = v
+    this.changeDetectionRef.markForCheck()
+  }
+  get rowIds() {
+    return this._rowIds
+  }
 
   @Input({required: true})
   rowHeightsRecord: {[key: string]: number} = {}

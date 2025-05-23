@@ -2,7 +2,7 @@ import {DeltaOperation, EditableBlockComponent, IBlockSnapshot, InlineModel, YBl
 import * as Y from "yjs";
 import {BlockCraftError, ErrorCode, nextTick} from "../../global";
 import {IBlockSelectionJSON} from "../modules";
-import {BehaviorSubject, skip, Subject, take} from "rxjs";
+import {BehaviorSubject, Subject, take} from "rxjs";
 import {NgZone} from "@angular/core";
 
 // This origin will skip Y.Event sync (to model)
@@ -59,9 +59,6 @@ export class DocCRUD {
       this.yBlockMap.observeDeep((evt, tr) => {
         zone.run(async () => {
           await this._syncYEvent(evt, tr)
-          nextTick().then(() => {
-            this.doc.selection.recalculate()
-          })
         })
       })
 

@@ -26,8 +26,9 @@ export class FakeRange {
     const between = this.doc.queryBlocksBetween(from.blockId, to.blockId)
     between.forEach(id => {
       const block = this.doc.getBlockById(id)
-      this._fakeSpans.push(this.doc.isEditable(block) ?
-        this._createTextFakeSpan(block, 0, block.textLength) :
+      this._fakeSpans.push(
+        // this.doc.isEditable(block) ?
+        // this._createTextFakeSpan(block, 0, block.textLength) :
         this._createBlockFakeSpan(block)
       )
     })

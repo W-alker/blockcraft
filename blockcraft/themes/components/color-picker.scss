@@ -1,0 +1,50 @@
+bc-color-picker {
+  display: block;
+  background: var(--bf-bg);
+  box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.10);
+  overflow: hidden;
+  padding: 8px;
+  border-radius: 4px;
+
+  .bc-color-group {
+    margin-bottom: 8px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+
+    &-title {
+      margin: 0 0 4px;
+      color: #999;
+      font-size: 14px;
+      font-style: normal;
+      font-weight: 600;
+      line-height: 20px;
+    }
+
+    &-list {
+      width: 224px;
+      display: flex;
+      justify-content: space-around;
+      flex-wrap: wrap;
+
+      &__item {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        text-align: center;
+        line-height: 20px;
+
+        &:hover {
+          outline: 2px solid rgba(72, 87, 226, 0.6);
+        }
+
+        &.active {
+          outline: 2px solid #4857E2;
+        }
+      }
+    }
+  }
+}
+

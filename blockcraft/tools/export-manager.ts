@@ -95,6 +95,13 @@ export class DocExportManager {
   constructor(private doc: BlockCraft.Doc, private exportOptions: RenderOptions = DOC_EXPORT_OPTIONS) {
   }
 
+  async exportToJson(name: string) {
+    const json = this.doc.root.toSnapshot()
+    const jsonStr = JSON.stringify(json, null, 2); // 格式化输出
+    const blob = new Blob([jsonStr], {type: 'application/json'})
+    await downloadFile(blob, name)
+  }
+
   async exportToJpeg(name: string, options?: Pick<RenderOptions, 'scale' | 'bgcolor'>) {
     const canvas = await this._toCanvas(options);
     const dataUrl = canvas.toDataURL('image/jpeg');
@@ -123,12 +130,14 @@ export class DocExportManager {
    * @param name
    * @param options
    */
-  async exportToPdf(name: string, options?: Pick<RenderOptions, 'scale' | 'bgcolor'> & { pdfPageSize?: PdfSizeName}, blockMargin= 8) {
+  async exportToPdf(name: string, options?: Pick<RenderOptions, 'scale' | 'bgcolor'> & {
+    pdfPageSize?: PdfSizeName
+  }, blockMargin = 8) {
     const rootDom = this.doc.root.hostElement;
     const PDFLib = await import('pdf-lib');
     const pdfDoc = await PDFLib.PDFDocument.create();
 
-    const { width: pageWidthPt, height: pageHeightPt } = pdfSizes[options?.pdfPageSize || 'A4'];
+    const {width: pageWidthPt, height: pageHeightPt} = pdfSizes[options?.pdfPageSize || 'A4'];
     const scale = options?.scale || 1;
 
     const canvas = await this._toCanvas(options);
@@ -152,20 +161,20 @@ export class DocExportManager {
       if (blockHeight > pageHeightPx) {
         // 单个块比一页高，允许硬切
         if (accumulatedHeight > 0) {
-          slices.push({ start: currentStartY, height: accumulatedHeight });
+          slices.push({start: currentStartY, height: accumulatedHeight});
           currentStartY += accumulatedHeight;
           accumulatedHeight = 0;
         }
         let remaining = blockHeight;
         while (remaining > 0) {
-          slices.push({ start: currentStartY, height: Math.min(pageHeightPx, remaining) });
+          slices.push({start: currentStartY, height: Math.min(pageHeightPx, remaining)});
           currentStartY += Math.min(pageHeightPx, remaining);
           remaining -= pageHeightPx;
         }
       } else {
         if (accumulatedHeight + blockHeight > pageHeightPx) {
           // 填不下了，分页
-          slices.push({ start: currentStartY, height: accumulatedHeight });
+          slices.push({start: currentStartY, height: accumulatedHeight});
           currentStartY += accumulatedHeight;
           accumulatedHeight = blockHeight;
         } else {
@@ -175,7 +184,7 @@ export class DocExportManager {
     }
     // 最后一页
     if (accumulatedHeight > 0) {
-      slices.push({ start: currentStartY, height: accumulatedHeight });
+      slices.push({start: currentStartY, height: accumulatedHeight});
     }
 
     for (const slice of slices) {
@@ -211,7 +220,7 @@ export class DocExportManager {
       tempCanvas.remove();
     }
 
-    const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
+    const pdfBase64 = await pdfDoc.saveAsBase64({dataUri: true});
     await downloadFile(pdfBase64, name);
   }
 

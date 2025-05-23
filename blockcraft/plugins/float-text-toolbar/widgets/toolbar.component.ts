@@ -141,7 +141,7 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
     </bc-float-toolbar>
 
     <ng-template #colorPicker>
-      <color-picker (colorPicked)="onColorPicked($event)" [activeColors]="activeColors"></color-picker>
+      <bc-color-picker (colorPicked)="onColorPicked($event)" [activeColors]="activeColors"></bc-color-picker>
     </ng-template>
 
     <ng-template #alignFloatBar>

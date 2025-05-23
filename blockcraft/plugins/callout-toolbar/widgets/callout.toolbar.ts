@@ -17,7 +17,7 @@ import {
     </bc-float-toolbar>
 
     <ng-template #colorPicker>
-      <color-picker (colorPicked)="onColorPicked($event)" [activeColors]="activeColors" [colorGroups]="colorGroups"></color-picker>
+      <bc-color-picker (colorPicked)="onColorPicked($event)" [activeColors]="activeColors" [colorGroups]="colorGroups"></bc-color-picker>
     </ng-template>
   `,
   imports: [

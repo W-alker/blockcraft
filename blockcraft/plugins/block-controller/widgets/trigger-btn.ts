@@ -568,10 +568,18 @@ export class TriggerBtn {
   }
 
   handleToolItemClick(item: IContextMenuItem) {
+    console.log('--------tool item click', item)
     switch (item.name) {
       case 'align':
         if (!this.activeBlock || !this.doc.isEditable(this.activeBlock)) return
         this.activeBlock.updateProps({textAlign: item.value as any})
+        break
+      case 'cut':
+        this.activeBlock && this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
+          this.activeBlock && this.doc.crud.deleteBlockById(this.activeBlock.id)
+          this.doc.messageService.success('已剪切')
+          this.close()
+        })
         break
       case 'delete':
         this.activeBlock && this.doc.crud.deleteBlockById(this.activeBlock.id)

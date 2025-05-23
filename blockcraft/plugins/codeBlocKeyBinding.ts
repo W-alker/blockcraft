@@ -1,7 +1,7 @@
 import {BindHotKey, DocPlugin, EventListen, STR_LINE_BREAK, STR_TAB} from "../framework";
-import {CodeBlockComponent} from "../blocks/code-block/code.block";
 import {BlockCraftError, ErrorCode} from "../global";
 import {DeltaOperation, UIEventStateContext} from "../framework";
+import {CodeBlockComponent} from "../blocks/code-block/code.block";
 
 export class CodeBlocKeyBinding extends DocPlugin {
 
@@ -95,16 +95,6 @@ export class CodeBlocKeyBinding extends DocPlugin {
     if (!deltas.length) return true
     block.applyDeltaOperation(deltas)
     this.doc.selection.recalculate()
-    return true
-  }
-
-  @BindHotKey({key: ['a', 'A'], shortKey: true}, {flavour: 'code'})
-  handleCtrlA(context: UIEventStateContext) {
-    const state = context.get('keyboardState')
-    const {from, to, raw} = state.selection
-    if (from.type !== 'text') return
-    context.preventDefault()
-    from.block.setInlineRange(0, from.block.textLength)
     return true
   }
 

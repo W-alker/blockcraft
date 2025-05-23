@@ -80,7 +80,7 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
     </ng-template>
 
     <ng-template #colorPicker>
-      <color-picker (colorPicked)="onColorPicked($event)" [activeColors]="activeColors"></color-picker>
+      <bc-color-picker (colorPicked)="onColorPicked($event)" [activeColors]="activeColors"></bc-color-picker>
     </ng-template>
   `,
   imports: [

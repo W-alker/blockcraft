@@ -1,5 +1,6 @@
 export * from './autoUpdateOrder'
 export * from './codeBlocKeyBinding'
+export * from './mermaidBinding'
 export * from './tableBlockBinding'
 export * from './inline-link-extension'
 export * from './img-toolbar'
