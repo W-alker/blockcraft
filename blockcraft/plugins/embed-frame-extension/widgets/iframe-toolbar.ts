@@ -6,7 +6,7 @@ import {HostUrlPipe} from "../../../blocks";
 const EMBED_BLOCK_VIEW_MODE_MAP: Record<string, string> = {
   inline: '链接视图',
   card: "卡片视图",
-  embed: "预览视图"
+  embed: "嵌入视图"
 }
 
 @Component({

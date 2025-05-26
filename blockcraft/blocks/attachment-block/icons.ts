@@ -1,34 +1,49 @@
-import {FileExtensionType} from "../../global";
+import {mimeExtMap} from "../../global";
 
-export const ATTACHMENT_ICONS: Record<FileExtensionType, string> = {
-  txt: "bc_file-txt",
-  html: "bc_file-txt",
-  css: "bc_file-txt",
-  js: "bc_file-txt",
-  json: "bc_file-txt",
-  png: "bc_file-img",
-  jpg: "bc_file-img",
-  jpeg: "bc_file-img",
-  gif: "bc_file-img",
-  svg: "bc_file-img",
-  pdf: "bc_file-pdf",
-  doc: "bc_file-doc",
-  docx: "bc_file-doc",
+export const ATTACHMENT_ICONS: Record<string, string> = {
+  img: "bc_file-img",
+  video: "bc_file-video",
+  audio: "bc_file-mp3",
   xls: "c_file-xlsx",
-  xlsx: "c_file-xlsx",
+  doc: "bc_file-doc",
+  pdf: "bc_file-pdf",
   ppt: "bc_file-ppt",
-  pptx: "bc_file-ppt",
-  mp3: "bc_file-mp3",
-  wav: "bc_file-mp3",
-  mp4: "bc_file-mp3",
-  avi: "bc_file-video",
   zip: "bc_file-zip",
-  tar: "c_file-zip",
-  gz: "c_file-zip",
-  csv: "c_file-zip",
   other: "bc_file-unknown"
 }
 
-export const getAttachmentIcon = (fileExtension: FileExtensionType): string => {
-  return ATTACHMENT_ICONS[fileExtension] || ATTACHMENT_ICONS["other"];
+export const getAttachmentIcon = (fileType: string): string => {
+  if (fileType.startsWith('image')) return ATTACHMENT_ICONS['img']
+  if (fileType.startsWith('video')) return ATTACHMENT_ICONS['avi']
+  if (fileType.startsWith('audio')) return ATTACHMENT_ICONS['audio']
+  if (fileType.startsWith('text')) return ATTACHMENT_ICONS['txt']
+  const ext = mimeExtMap.get(fileType)
+  if (!ext) return ATTACHMENT_ICONS['other']
+  switch (ext) {
+    case 'xls':
+    case 'xlsx':
+      return ATTACHMENT_ICONS['xls']
+    case 'doc':
+    case 'docx':
+      return ATTACHMENT_ICONS['doc']
+    case 'pdf':
+      return ATTACHMENT_ICONS['pdf']
+    case 'ppt':
+    case 'pptx':
+      return ATTACHMENT_ICONS['ppt']
+    case 'epub':
+    case 'gzip':
+    case 'rar':
+    case '7z':
+    case 'tar':
+    case 'bz2':
+    case 'java-archive':
+    case 'zip':
+    case 'tar.gz':
+    case 'tar.bz2':
+    case 'tar.xz':
+      return ATTACHMENT_ICONS['zip']
+    default:
+      return ATTACHMENT_ICONS['other']
+  }
 }

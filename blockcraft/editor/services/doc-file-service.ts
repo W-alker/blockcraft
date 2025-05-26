@@ -1,7 +1,6 @@
 import {DocAttachmentInfo, DocFileService} from "../../framework";
 import {Injectable} from "@angular/core";
 import Viewer from "viewerjs";
-import {FileExtensions, getFileExtensionType, MimeType} from "../../global";
 
 @Injectable()
 export class MyDocFileService extends DocFileService {
@@ -29,7 +28,7 @@ export class MyDocFileService extends DocFileService {
         resolve({
           name: file.name,
           size: file.size,
-          type: getFileExtensionType(file.type as MimeType) || FileExtensions.OTHER,
+          type: file.type,
           url: v.target!.result as string,
         })
       })

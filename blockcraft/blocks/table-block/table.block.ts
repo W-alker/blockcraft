@@ -343,7 +343,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.toolbarOvr?.updatePosition()
     })
 
-    merge(this.toolbarOvr.backdropClick(), this._closeToolbar$,
+    merge(this.toolbarOvr.backdropClick(), this._closeToolbar$, this.doc.onDestroy$,
       this.doc.selection.selectionChange$.pipe(skip(1), filter(v => v?.from.blockId !== target.id)),
       this.onDestroy$, target?.onDestroy$, cpr.instance.onClose$)
       .pipe(takeUntil(cpr.instance.onDestroy)).subscribe(() => {

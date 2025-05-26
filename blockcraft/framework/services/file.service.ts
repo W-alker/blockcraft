@@ -1,9 +1,8 @@
 import {InjectionToken} from "@angular/core";
-import {FileExtensionType} from "../../global";
 
 export interface DocAttachmentInfo {
   name: string
-  type: FileExtensionType
+  type: string
   url: string
   size: number
 }

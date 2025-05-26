@@ -1,6 +1,5 @@
 import {DocAttachmentInfo, generateId, NoEditableBlockNative, BlockNodeType, IBlockSchemaOptions} from "../../framework";
 import {AttachmentBlockComponent} from "./attachment.block";
-import {FileExtensionType} from "../../global";
 import {getAttachmentIcon} from "./icons";
 
 export interface AttachmentBlockModel extends NoEditableBlockNative {
@@ -9,7 +8,7 @@ export interface AttachmentBlockModel extends NoEditableBlockNative {
   props: {
     name: string
     url: string
-    type: FileExtensionType
+    type: string
     size: number
     icon: string
   }

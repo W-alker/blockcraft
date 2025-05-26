@@ -3,7 +3,7 @@ import {
   DOC_FILE_SERVICE_TOKEN,
   DocFileService,
   DocPlugin,
-  EventListen,getPositionWithOffset
+  EventListen, getPositionWithOffset
 } from "../../framework";
 import {UIEventStateContext, IBlockSnapshot} from "../../framework";
 import {BlockCraftError, downloadFile, ErrorCode, nextTick} from "../../global";
@@ -141,22 +141,27 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     if (!state.dataTypes.includes(ClipboardDataType.FILES)) return false
     this.doc.clipboard.deleteContentFromSelection(state.selection)
     const files = state.clipboardData?.files
-    if (!files) return false
+    if (!files?.length) return false
     ctx.preventDefault()
-    Promise.allSettled(Array.from(files).filter(file => !file.type.startsWith('image'))
+    Promise.allSettled(Array.from(files)
       .map(file => this.fileService.uploadAttachment(file)))
       .then(res => {
-        const attachmentSnapshots: IBlockSnapshot[] = []
+        const snapshots: IBlockSnapshot[] = []
 
         res.forEach(r => {
           if (r.status !== 'fulfilled') {
             this.doc.messageService.error(r.reason)
             return
           }
-          attachmentSnapshots.push(this.doc.schemas.createSnapshot('attachment', [(r.value as any)]))
+          if (r.value.type.startsWith('image/')) {
+            snapshots.push(this.doc.schemas.createSnapshot('image', [r.value.url]))
+          } else {
+            snapshots.push(this.doc.schemas.createSnapshot('attachment', [(r.value as any)]))
+          }
         })
-        if (!attachmentSnapshots.length) return
-        this.doc.crud.insertBlocksAfter(state.selection.firstBlock, attachmentSnapshots)
+
+        if (!snapshots.length) return
+        this.doc.crud.insertBlocksAfter(state.selection.firstBlock, snapshots)
       })
     return true
   }

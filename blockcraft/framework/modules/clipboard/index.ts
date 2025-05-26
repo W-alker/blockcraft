@@ -63,10 +63,10 @@ export class ClipboardManager {
         const sliceDeltas = sliceDelta(from.block.textDeltas(), from.index, from.length + from.index)
         snapshot = await this._wrapDeltaByRoot(sliceDeltas)
         clipboardData.setData(ClipboardDataType.TEXT, deltaToString(sliceDeltas))
+      } else {
+        clipboardData.setData(ClipboardDataType.TEXT, from.block.textContent())
+        snapshot = await this._wrapSnapshotsByRoot([from.block.toSnapshot()])
       }
-
-      snapshot = await this._wrapSnapshotsByRoot([from.block.toSnapshot()])
-      clipboardData.setData(ClipboardDataType.TEXT, from.block.textContent())
 
       for (const adapter1 of this.adapter.supportedAdapters) {
         clipboardData.setData(adapter1.type, await adapter1.fromSnapshot(snapshot))
@@ -130,7 +130,7 @@ export class ClipboardManager {
     )
   }
 
-  @EventListen('copy', {flavour: 'root'})
+  @EventListen('copy')
   async onCopy(context: UIEventStateContext) {
     const state = context.get('clipboardState')
     state.raw.preventDefault()
@@ -138,7 +138,7 @@ export class ClipboardManager {
     return true
   }
 
-  @EventListen('cut', {flavour: 'root'})
+  @EventListen('cut')
   onCut(context: UIEventStateContext) {
     const state = context.get('clipboardState')
     context.preventDefault()
@@ -149,7 +149,7 @@ export class ClipboardManager {
     this.deleteContentFromSelection(state.selection)
   }
 
-  @EventListen('paste', {flavour: 'root'})
+  @EventListen('paste',)
   async onPaste(context: UIEventStateContext) {
     context.preventDefault()
     const state = context.get('clipboardState')

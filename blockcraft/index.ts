@@ -5,5 +5,3 @@ export * from './global'
 export * from './tools'
 export * from './plugins'
 export * from './blocks'
-
-export * from './blockcraft-cursors'

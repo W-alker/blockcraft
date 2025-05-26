@@ -57,7 +57,6 @@ import {MermaidBlockSchema, MermaidTextareaBlockSchema} from "../blocks/mermaid-
 import {applyUpdate, Doc, mergeUpdates} from "yjs";
 import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
 import {WebsocketProvider} from 'y-websocket'
-import {BlockCraftCursors} from "../blockcraft-cursors";
 import {MermaidBlocKeyBinding} from "../plugins";
 
 const schemas = new SchemaManager([
@@ -372,8 +371,6 @@ export class EditorComponent {
         name: 'user-' + uid,
       }
     })
-
-    new BlockCraftCursors(this.doc, provider.awareness)
 
   }
 

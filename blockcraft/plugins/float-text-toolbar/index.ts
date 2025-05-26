@@ -1,8 +1,7 @@
 import {BindHotKey, BlockNodeType, DocPlugin, POSITION_MAP, UIEventStateContext} from "../../framework";
-import {debounceTime, fromEvent, Subscription, takeUntil} from "rxjs";
+import {debounceTime, Subject, Subscription, takeUntil} from "rxjs";
 import {ComponentRef, Type} from "@angular/core";
 import {FloatTextToolbarComponent} from "./widgets/toolbar.component";
-import {ComponentPortal} from "@angular/cdk/portal";
 import {ConnectedPosition, Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
 import {CommentPad} from "./widgets/comment-pad";
@@ -18,7 +17,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   private _sub: Subscription = new Subscription()
   private toolbarOvr?: OverlayRef
   private _cpr?: ComponentRef<FloatTextToolbarComponent>
-  private _cprSub?: Subscription
+  private _closeCpr$ = new Subject()
 
   protected utils!: TextToolbarUtils
   private activeCommonAttrs: ITextCommonAttrs = {
@@ -52,16 +51,16 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   openToolbar() {
     const sel = this.doc.selection.value!
 
-    const overlay = this.doc.injector.get(Overlay)
-    const portal = new ComponentPortal(FloatTextToolbarComponent)
-
     const {connectElement, connectPositions} = this._calcPosition(sel)
-    this.toolbarOvr = overlay.create({
-      positionStrategy: overlay.position().flexibleConnectedTo(connectElement).withPositions(connectPositions),
-      scrollStrategy: overlay.scrollStrategies.close(),
-    })
 
-    this._cpr = this.toolbarOvr.attach(portal)
+    const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<FloatTextToolbarComponent>({
+      target: connectElement,
+      component: FloatTextToolbarComponent,
+      positions: connectPositions,
+    }, this._closeCpr$, () => {
+
+    })
+    this._cpr = componentRef
     this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(this.doc.selection.value!)
     this._cpr.setInput('doc', this.doc)
     this._cpr.setInput('config', this.config)
@@ -70,16 +69,10 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this._cpr.setInput('activeColors', this.activeCommonAttrs.colors)
     this._cpr.setInput('activeTextAlign', this.activeCommonAttrs.textAlign)
 
-    this.doc.selection.nextChangeObserve().pipe(takeUntil(this._cpr.instance.onDestroy)).subscribe(() => {
+    this.doc.selection.nextChangeObserve().pipe(takeUntil(this._closeCpr$)).subscribe(() => {
       this.closeToolbar()
     })
 
-    fromEvent(this.doc.scrollContainer!, 'scroll').pipe(takeUntil(this._cpr.instance.onDestroy))
-      .subscribe(() => {
-        if (this.toolbarOvr) {
-          this.toolbarOvr.updatePosition()
-        }
-      })
   }
 
   private _calcPosition(selection: BlockCraft.Selection): {
@@ -117,9 +110,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   }
 
   closeToolbar() {
-    this._cpr?.destroy()
-    this._cpr = undefined
-    this._cprSub?.unsubscribe()
+    this._closeCpr$.next(true)
   }
 
   @BindHotKey({key: 'b', shortKey: true})

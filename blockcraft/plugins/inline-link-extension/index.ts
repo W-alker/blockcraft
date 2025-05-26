@@ -195,7 +195,7 @@ export class InlineLinkExtension extends DocPlugin {
 
     componentRef.instance.close.pipe(takeUntil(close$)).subscribe(() => close$.next())
     componentRef.instance.update.pipe(takeUntil(close$)).subscribe(v => {
-      close()
+      close$.next()
       if (!range || !linkInfo) return
       const block = this.doc.getBlockById(range.blockId)
       if (!this.doc.isEditable(block)) return

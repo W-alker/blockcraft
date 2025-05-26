@@ -11,7 +11,7 @@ const paragraphBlockMatchTags = [
   'h4',
   'h5',
   'h6',
-  // 'blockquote',
+  'blockquote',
   'body',
   'div',
   'span',
@@ -60,8 +60,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
                   children: deltaConverter.astToDelta(o.node),
                 },
                 'children'
-              )
-              .closeNode();
+              ).closeNode();
             walkerContext.skipAllChildren();
           }
           break;
@@ -80,6 +79,21 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           )
           break;
         }
+        case 'blockquote': {
+          walkerContext.openNode(
+            {
+              nodeType: BlockNodeType.editable,
+              id: generateId(),
+              flavour: 'blockquote',
+              props: {},
+              meta: {},
+              children: deltaConverter.astToDelta(o.node),
+            },
+            'children'
+          ).closeNode()
+          walkerContext.skipAllChildren();
+        }
+        break
         case 'h1':
         case 'h2':
         case 'h3':
@@ -112,10 +126,6 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         return;
       }
       const {walkerContext} = context;
-      // walkerContext.closeNode();
-      if (!o.node.children.length) {
-        // walkerContext.closeNode();
-      }
 
       switch (o.node.tagName) {
         case 'div': {

@@ -1,7 +1,5 @@
-import {generateId, NoEditableBlockNative} from "../../../framework";
-import {BlockNodeType} from "../../../framework";
+import {generateId, NoEditableBlockNative, IBlockSchemaOptions, BlockNodeType} from "../../../framework";
 import {FigmaEmbedBlockComponent} from "./figma-embed.block";
-import {IBlockSchemaOptions} from "../../../framework/block-std/schema/block-schema";
 import {BlockCraftError, ErrorCode, isFigmaUrl} from "../../../global";
 
 export interface FigmaEmbedBlockModel extends NoEditableBlockNative {

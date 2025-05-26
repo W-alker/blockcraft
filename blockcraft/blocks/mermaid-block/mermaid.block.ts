@@ -11,7 +11,7 @@ import {nextTick} from "../../global";
 @Component({
   selector: 'div.mermaid-block',
   template: `
-    <div class="head">
+    <div class="head" contenteditable="false">
       <div class="btn">Mermaid</div>
       <div class="template-btn btn" (click)="onShowList($event, 'prefix')" [hidden]="props.mode === 'graph'">类型
         <i class="bf_icon bf_xiajaintou" style="font-size: .8em"></i>

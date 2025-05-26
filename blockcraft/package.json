@@ -1,6 +1,6 @@
 {
   "name": "@w/blockcraft",
-  "version": "0.0.27",
+  "version": "0.0.30",
   "peerDependencies": {
     "@angular/common": "^17.3.0",
     "@angular/core": "^17.3.0",

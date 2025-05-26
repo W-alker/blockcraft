@@ -40,7 +40,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
   @HostBinding('style.text-align')
   get textAlign() {
-    return this._native.props['textAlign'] || 'left'
+    return this._native.props['textAlign']
   }
 
   @HostBinding('attr.data-heading')

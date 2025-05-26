@@ -1,5 +1,16 @@
 # BlockCraft
 
+## 已优化
+1. 多行选择模型
+2. 链接、书签、嵌入视图
+3. 拖拽
+4. 复制粘贴
+5. mermaid优化
+6. 附件
+7. 表格
+
+
+## 待优化
 - [ ] doc 的生命周期
 ---
 
@@ -13,14 +24,14 @@
 > 使用 blocksuite 的adapter机制，ASTWalker等。
 
 ---
-- [ ] mention plugin
+- [ ] mention plugin !!!!!!!!!
 
 - [ ] code block 优化
   - [ ] 优化代码高亮性能
   - [ ] 使用shiki及懒请求
   - [ ] 优化代码块编辑体验
 
-- [ ] mermaid block 迁移及优化
+- [X] mermaid block 迁移及优化
 
 --- 
 
@@ -39,6 +50,7 @@
 
 --- 
 
+## 未来计划
 - [ ] 右键菜单
 - [ ] 分屏
 

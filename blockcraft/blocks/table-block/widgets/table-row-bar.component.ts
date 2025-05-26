@@ -21,7 +21,7 @@ import {NgForOf} from "@angular/common";
     NgForOf
   ],
   standalone: true,
-  // changeDetection: ChangeDetectionStrategy.OnPush,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     'contenteditable': 'false',
   }
