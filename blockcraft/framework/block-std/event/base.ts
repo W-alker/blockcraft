@@ -18,7 +18,7 @@ export class UIEventStateContext {
   private _isStopPropagation = false;
 
   get isStopPropagation() {
-    return this._isStopPropagation;
+    return this._isStopPropagation
   }
 
   get defaultPrevented() {

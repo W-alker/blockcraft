@@ -160,6 +160,7 @@
 
     span[contenteditable='false'] {
       margin: 0 2px;
+      @include user-select(none);
     }
 
     c-element {
@@ -230,6 +231,10 @@
         background-color: rgba(255, 239, 186, .6);
         border-bottom: 4px solid rgba(255, 239, 186, 1);
       }
+
+      &[mention-placeholder="true"] {
+        color: var(--bc-color-light)
+      }
     }
 
     c-text, a {
@@ -254,6 +259,33 @@
 
   @include caption-block();
   @include blockquote-block();
+
+  span[data-mention-id] {
+    padding: 0 .15em;
+    color: #4857E2;
+    cursor: pointer;
+
+    &[data-mention-type="user"] {
+      &::before {
+        content: '@';
+      }
+    }
+
+    &[data-mention-type="doc"] {
+      &::before {
+        content: "\e6c8";
+        font-family: "bc_icon" !important;
+        font-size: 1em;
+        font-style: normal;
+      }
+    }
+
+    &:hover {
+      background-color: rgba(72, 87, 226, 0.1);
+      border-radius: 4px;
+      text-decoration: underline;
+    }
+  }
 }
 
 .blockcraft-cursor {

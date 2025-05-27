@@ -99,7 +99,7 @@ export class BlockCraftDoc {
     return this.readonlySwitch$.value
   }
 
-  get isReady() {
+  get isInitialized() {
     return !!this._root
   }
 

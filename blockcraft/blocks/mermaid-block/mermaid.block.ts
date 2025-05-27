@@ -58,12 +58,13 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   })
 
   private _propsChangeSubscription!: Subscription;
-  protected _viewMode: MermaidViewMode = 'text'
+  protected _viewMode: MermaidViewMode | null = null
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
     this.graphContainer = this.hostElement.querySelector('.graph-con') as HTMLDivElement;
 
+    this.setView(this.props.mode)
     this._propsChangeSubscription = this.onPropsChange.subscribe(map => {
       if (map.has('mode')) {
         this.setView(this.props.mode)
@@ -89,7 +90,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     if (!textarea.textLength) return
     const graphDefinition = textarea.textContent();
     try {
-      const {svg} = await mermaid.render('graph' + generateId(11), graphDefinition);
+      const {svg} = await mermaid.render('graph' + generateId(11), graphDefinition, this.graphContainer);
       this.graphContainer.innerHTML = svg
       this.graphMaxWidth = parseInt((this.graphContainer.firstElementChild! as SVGAElement).style.maxWidth)
       this.setGraphWidth(this.graphScale)

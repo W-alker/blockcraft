@@ -15,6 +15,7 @@ import {BlockCraftError, ErrorCode} from "../../../global";
 import setAttributes from "./setAttributes";
 import {compareAttributesWithEle} from "./compareAttributes";
 import {createZeroSpace} from "../../utils";
+import {getAttributesFrom} from "./getAttributes";
 
 export type EmbedConverter = {
   toDelta: EmbedViewToDelta
@@ -33,6 +34,10 @@ export class InlineManager {
   static setAttrs(element: HTMLElement, attributes?: IInlineNodeAttrs) {
     if (!attributes) return
     setAttributes(element, attributes)
+  }
+
+  static getAttrs(element: HTMLElement): IInlineNodeAttrs {
+    return getAttributesFrom(element)
   }
 
   static createTextNode(text: string): HTMLElement {
@@ -74,7 +79,6 @@ export class InlineManager {
     const span = document.createElement('span')
     span.setAttribute('contenteditable', 'false')
     const embed = converter.toView(delta as DeltaInsertEmbed)
-    InlineManager.setAttrs(node, delta.attributes)
     span.appendChild(embed)
     node.append(span, createZeroSpace())
     return node

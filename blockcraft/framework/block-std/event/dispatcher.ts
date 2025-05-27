@@ -208,7 +208,7 @@ export class UIEventDispatcher {
       const flavourHandlers = handlers.filter(h => h.flavour && _blocks.some(block => block.flavour === h.flavour));
 
       const res = this._runEventScope(idHandlers.concat(flavourHandlers), context)
-      if (res) return;
+      if (res) return
 
       blockIds = _blocks.map(b => b.parentId).filter(Boolean) as string[]
     }

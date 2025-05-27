@@ -72,6 +72,7 @@ export class InputTransformer {
 
   @EventListen('beforeInput')
   private _handleBeforeInput(context: BlockCraft.EventStateContext) {
+    console.log('--------beforeInput--------')
     const ev = context.get('defaultState').event as InputEvent
     if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {
       ev.preventDefault()

@@ -44,6 +44,7 @@ export interface ITextStyles {
   's:background'?: string | null;
   's:fontSize'?: string | null;
   's:fontFamily'?: string | null;
+  [key: InlineStyleKey]: string | null | undefined
 }
 
 export interface IExpandedAttrs {

@@ -1,11 +1,16 @@
-import {BaseBlockComponent, EditableBlockComponent} from "../../block-std/block";
-import {INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS} from "../../block-std/inline";
+import {
+  BaseBlockComponent,
+  EditableBlockComponent,
+  BlockNodeType,
+  UIEventStateContext,
+  BindHotKey,
+  DocEventRegister,
+  EventListen,
+  INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS
+} from "../../block-std";
 import {BlockCraftError, ErrorCode, nextTick, performanceTest} from "../../../global";
-import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
-import {BlockNodeType} from "../../block-std/types";
+import {BehaviorSubject, skip, take, takeUntil} from "rxjs";
 import {closetBlockId, isZeroSpace} from "../../utils";
-import {BindHotKey, DocEventRegister, EventListen} from "../../block-std/event";
-import {UIEventStateContext} from "../../block-std/event/base";
 import {SelectionSelectedManager} from "./selected-manager";
 import {FakeRange, IFakeRangeConfig} from "./createFakeRange";
 
@@ -161,8 +166,12 @@ export class SelectionManager {
     document.getSelection()?.removeAllRanges()
   }
 
+  changeObserve() {
+    return this.selectionChange$.pipe(takeUntil(this.doc.onDestroy$))
+  }
+
   nextChangeObserve() {
-    return this.selectionChange$.pipe(skip(1), take(1))
+    return this.selectionChange$.pipe(skip(1), take(1), takeUntil(this.doc.onDestroy$))
   }
 
   /**
@@ -177,27 +186,29 @@ export class SelectionManager {
     })
   }
 
-  private _stopCalculate = false
+  // private _stopCalculate = false
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
-    this.doc.event.customListen(document, 'selectstart').subscribe(e => {
-      this._stopCalculate = true
-      this.recalculate()
-    })
+    // this.doc.event.customListen(document, 'selectstart').subscribe(e => {
+    //   this._stopCalculate = true
+    //   this.recalculate()
+    // })
+    //
+    // this.doc.event.customListen<PointerEvent>(document, 'pointerup').subscribe(e => {
+    //   if (e.pointerType === 'mouse' && this._stopCalculate) {
+    //     this._stopCalculate = false
+    //     this.recalculate()
+    //   }
+    // })
 
-    this.doc.event.customListen<PointerEvent>(document, 'pointerup').subscribe(e => {
-      if (e.pointerType === 'mouse' && this._stopCalculate) {
-        this._stopCalculate = false
-        this.recalculate()
-      }
-    })
-
-    this.doc.event.customListen(this.doc.root.hostElement, 'blur').subscribe(() => {
-      this._stopCalculate = false
-      this.recalculate()
-    })
+    // this.doc.event.customListen(this.doc.root.hostElement, 'blur').subscribe(() => {
+    //   this._stopCalculate = false
+    //   this.recalculate()
+    // })
 
     this.doc.event.customListen(document, 'selectionchange').subscribe(() => {
-      if (this._stopCalculate || this.doc.event.isComposing) return
+      if (
+        // this._stopCalculate ||
+        this.doc.event.isComposing) return
       this.recalculate()
     })
   }
@@ -301,9 +312,9 @@ export class SelectionManager {
     if (!to && ((isBackward && !isStartOfBlock) || (!isBackward && !isEndOfBlock))
     ) {
       // 解除第一次多选时的selectstart导致的副作用
-      nextTick().then(() => {
-        this._stopCalculate = false
-      })
+      // nextTick().then(() => {
+      //   this._stopCalculate = false
+      // })
       return true
     }
 
@@ -475,7 +486,7 @@ export class SelectionManager {
       return
     }
 
-    if(range.startContainer === this.doc.root.hostElement || range.endContainer === this.doc.root.hostElement) {
+    if (range.startContainer === this.doc.root.hostElement || range.endContainer === this.doc.root.hostElement) {
       this.selectionChange$.next(null)
       this.selectedManager.setSelected(null)
       return
@@ -522,7 +533,7 @@ export class SelectionManager {
 
       let pos = 0
       for (let i = 0; i < elements.length; i++) {
-        const isEmbed = !(elements[i] as HTMLElement).isContentEditable
+        const isEmbed = !(elements[i].firstElementChild as HTMLElement).isContentEditable
         const elementLength = isEmbed ? 1 : elements[i].textContent!.length
         if (elements[i] === cElement) {
           return pos + (isGap ? 1 : (isContainer ? elementLength : offset))

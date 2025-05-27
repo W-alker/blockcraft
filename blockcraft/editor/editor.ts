@@ -8,7 +8,7 @@ import {
   DOC_LINK_PREVIEWER_SERVICE_TOKEN,
   DOC_MESSAGE_SERVICE_TOKEN,
   DocLinkPreviewerService,
-  EditableBlockComponent, generateId, IBlockSelectionJSON,
+  EditableBlockComponent, generateId, IBlockSelectionJSON, IBlockSnapshot, InlineManager,
   native2YBlock,
   SchemaManager
 } from "../framework";
@@ -58,6 +58,24 @@ import {applyUpdate, Doc, mergeUpdates} from "yjs";
 import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
 import {WebsocketProvider} from 'y-websocket'
 import {MermaidBlocKeyBinding} from "../plugins";
+import {MentionPlugin} from "./plugins/mention";
+
+const mentionRequest = async (keyword: string) => {
+  if (keyword === 'a') {
+    return {
+      list: []
+    }
+  }
+  const len = Math.floor(Math.random() * 10)
+  const list = Array.from({length: len}).map(() => ({
+    id: generateId(),
+    name: keyword + Math.floor(Math.random() * 10000).toString().slice(0, 4)
+  }))
+
+  return {
+    list
+  }
+}
 
 const schemas = new SchemaManager([
   ParagraphBlockSchema,
@@ -172,19 +190,23 @@ export class EditorComponent {
     logger: this.logger,
     injector: this.injector,
     embeds: [
-      ['image', {
-        toDelta: (ele) => ({
-          // @ts-ignore
-          insert: {image: ele['src']},
-          attributes: {}
-        }),
-        toView: (delta) => {
-          const img = document.createElement('img')
-          img.src = delta.insert['image'] as string
-          img.style.width = '100px'
-          return img
+      [
+        'mention',
+        {
+          toView: (embed) => {
+            const span = document.createElement('span')
+            span.textContent = embed.insert['mention'] as string
+            InlineManager.setAttrs(span, embed.attributes!)
+            return span
+          },
+          toDelta: (ele) => {
+            return {
+              insert: {mention: ele.textContent!},
+              attributes: InlineManager.getAttrs(ele)
+            }
+          }
         }
-      }]
+      ]
     ],
     plugins: [new AutoUpdateOrderPlugin(), new CodeBlocKeyBinding(), new TableBlockBinding(), new MermaidBlocKeyBinding(),
       new FloatTextToolbarPlugin({
@@ -192,7 +214,8 @@ export class EditorComponent {
         commentComponent: EditorCommentPad
       }), new BlockTransformerPlugin(), new BlockControllerPlugin(),
       new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
-      new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(), new InlineLinkExtension()
+      new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(), new InlineLinkExtension(),
+      new MentionPlugin(mentionRequest)
     ]
   })
 
@@ -202,47 +225,9 @@ export class EditorComponent {
     this.listenUpdate()
   }
 
-  initBySnapshot() {
-
-
-    const p = this.doc.schemas.createSnapshot('paragraph', [[{insert: 'hello\n'},
-      {insert: 'world', attributes: {'a:bold': true}},
-      {insert: {image: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg'}},
-      {insert: 'This is a paragraph', attributes: {'a:link': 'https://zhuanlan.zhihu.com/p/617505961'}}
-    ]])
-    const d1 = this.doc.schemas.createSnapshot('divider', [])
-    const d2 = this.doc.schemas.createSnapshot('divider', [])
-    const d3 = this.doc.schemas.createSnapshot('divider', [])
-    const p3 = this.doc.schemas.createSnapshot('ordered', [
-      [{insert: 'hello world again'}, {insert: 'This is a paragraph', attributes: {'s:color': 'red'}}]
-    ])
-    const callout = this.doc.schemas.createSnapshot('callout', [])
-    const img = this.doc.schemas.createSnapshot('image', ['https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg', undefined, undefined, 'Image'])
-    const todo = this.doc.schemas.createSnapshot('todo', ['this is a todo'])
-    const code = this.doc.schemas.createSnapshot('code', ['const c = 1;\n\nfunction a()\n{ console.log(c) }'])
-    const table = this.doc.schemas.createSnapshot('table', [6, 6])
-    const attachment = this.doc.schemas.createSnapshot('attachment', [{
-      url: 'https://raw.githubusercontent.com/toeverything/blocksuite/master/assets/logo-and-name-h.svg',
-      name: 'template.zip',
-      type: 'zip',
-      size: 553409,
-    }])
-    const figma = this.doc.schemas.createSnapshot('figma-embed', ['https://www.figma.com/design/zaZvxd72WGI6jKitm2IL6g/%E5%AE%9A%E7%A8%BF2?node-id=755-15316&p=f&t=U9xZyjY1GwAjzTXy-0'])
-    const mermaid = this.doc.schemas.createSnapshot('mermaid', ['graph', 'timeline\n' +
-    '  title History of Social Media Platform\n' +
-    '  2002 : LinkedIn\n' +
-    '  2004 : Facebook\n' +
-    '         : Google\n' +
-    '    2005 : Youtube\n' +
-    '    2006 : Twitter'])
-    const blockquote = this.doc.schemas.createSnapshot('blockquote', [])
-
-    this.pid = p.id
-    const snapshot = this.doc.schemas.createSnapshot('root',
-      [this.rootId,
-        // [p, d1, callout, blockquote, mermaid, d2, attachment, d3, p3, img, code, table, todo]
-      ])
-    this.doc.initBySnapshot(snapshot, this.container)
+  initBySnapshot(snapshots: IBlockSnapshot[] = []) {
+    const rootSp = this.doc.schemas.createSnapshot('root', [this.rootId, snapshots])
+    this.doc.initBySnapshot(rootSp, this.container)
   }
 
   log() {

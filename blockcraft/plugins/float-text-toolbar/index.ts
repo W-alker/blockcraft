@@ -2,7 +2,7 @@ import {BindHotKey, BlockNodeType, DocPlugin, POSITION_MAP, UIEventStateContext}
 import {debounceTime, Subject, Subscription, takeUntil} from "rxjs";
 import {ComponentRef, Type} from "@angular/core";
 import {FloatTextToolbarComponent} from "./widgets/toolbar.component";
-import {ConnectedPosition, Overlay, OverlayRef} from "@angular/cdk/overlay";
+import {ConnectedPosition, OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
 import {CommentPad} from "./widgets/comment-pad";
 
@@ -136,6 +136,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   toggleFormatAttr = (ctx: UIEventStateContext, attrName: string) => {
     ctx.preventDefault()
     const value = this.activeCommonAttrs.attrs.has(attrName)
+    // @ts-ignore
     this.utils.formatText({[`a:${attrName}`]: value ? null : true})
     if (this._cpr) {
       value ? this.activeCommonAttrs.attrs.delete(attrName) : this.activeCommonAttrs.attrs.set(attrName, value)
