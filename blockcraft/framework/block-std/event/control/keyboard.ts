@@ -46,7 +46,7 @@ export class KeyboardControl {
     return !(['c', 'v', 'x'].includes(event.key) &&
       mod &&
       !event.shiftKey &&
-      !event.altKey);
+      !event.altKey) && this._dispatcher.currentSelection
   };
 
   private _createContext(event: Event, keyboardState: KeyboardEventState) {

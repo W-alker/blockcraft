@@ -12,7 +12,7 @@ import {NgForOf, NgIf, NgTemplateOutlet} from "@angular/common";
 import {Subscription, take} from "rxjs";
 import {BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective} from "../../../components";
 import {BlockNodeType} from "../../../framework";
-import {IBlockSchemaOptions} from "../../../framework/block-std/schema/block-schema";
+import {IBlockSchemaOptions} from "../../../framework";
 import {MatIcon} from "@angular/material/icon";
 import {nextTick, SimpleValue} from "../../../global";
 import {BLOCK_CREATOR_SERVICE_TOKEN} from "../../../framework";
@@ -169,6 +169,11 @@ const HEADING_LIST: IContextMenuItem[] = [
 
     <ng-template #blockAddList>
       <bc-float-toolbar direction="column" style="display: block; width: 224px;">
+        @if (activeBlock?.nodeType !== BlockNodeType.editable) {
+          <h4 class="title">基础</h4>
+          <ng-container
+            *ngTemplateOutlet="otherBlockListTpl; context: { $implicit: _validBaseBlockList }"></ng-container>
+        }
         <ng-container *ngTemplateOutlet="moreBlocksTpl"></ng-container>
       </bc-float-toolbar>
     </ng-template>
@@ -216,6 +221,12 @@ const HEADING_LIST: IContextMenuItem[] = [
       user-select: none;
       -webkit-user-select: none;
       transition: all ease .2s;
+      transform: translateX(-100%);
+
+      > * {
+        user-select: none;
+        -webkit-user-select: none;
+      }
     }
 
     ::ng-deep mat-icon {
@@ -438,7 +449,7 @@ export class TriggerBtn {
     const rootRect = this.doc.root.hostElement.getBoundingClientRect()
     const wrapRect = this.activeBlock!.hostElement.getBoundingClientRect()
 
-    const left = wrapRect.left - rootRect.left - 28
+    const left = wrapRect.left - rootRect.left
 
     if (this.doc.isEditable(this.activeBlock!) && this.activeBlock.containerElement === this.activeBlock.hostElement) {
       const container = this.activeBlock.containerElement
@@ -507,11 +518,7 @@ export class TriggerBtn {
   close() {
     this.display = 'none'
     this.activeBlock = null
-    // this.closeContextMenu()
     this.cdr.markForCheck()
-    // check after NG100
-    requestAnimationFrame(() => {
-    })
   }
 
   handleBlockItemClick(item: IBlockSchemaOptions) {
@@ -568,34 +575,41 @@ export class TriggerBtn {
   }
 
   handleToolItemClick(item: IContextMenuItem) {
-    console.log('--------tool item click', item)
+    console.log('--------tool item click', item, this.activeBlock)
     switch (item.name) {
       case 'align':
         if (!this.activeBlock || !this.doc.isEditable(this.activeBlock)) return
         this.activeBlock.updateProps({textAlign: item.value as any})
         break
-      case 'cut':
-        this.activeBlock && this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
+      case 'cut': {
+        if (!this.activeBlock) return;
+        this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
           this.activeBlock && this.doc.crud.deleteBlockById(this.activeBlock.id)
           this.doc.messageService.success('已剪切')
           this.close()
         })
+      }
         break
       case 'delete':
         this.activeBlock && this.doc.crud.deleteBlockById(this.activeBlock.id)
         break
-      case 'copy':
-        this.activeBlock && this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
+      case 'copy': {
+        if (!this.activeBlock) return;
+        this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
           this.doc.messageService.success('已复制')
           this.close()
         })
+      }
         break
       case 'heading':
         if (!this.activeBlock || !this.doc.isEditable(this.activeBlock)) return
-        if(!ALLOWED_HEADING_FLAVOURS.includes(this.activeBlock.flavour)) {
-          const p = this.doc.schemas.createSnapshot('paragraph', [this.activeBlock.textDeltas(), {...this.activeBlock.props, heading: item.value}])
+        if (!ALLOWED_HEADING_FLAVOURS.includes(this.activeBlock.flavour)) {
+          const p = this.doc.schemas.createSnapshot('paragraph', [this.activeBlock.textDeltas(), {
+            ...this.activeBlock.props,
+            heading: item.value
+          }])
           this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [p]).then(() => {
-              this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+            this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
           })
         } else {
           this.activeBlock.updateProps({heading: item.value as any})

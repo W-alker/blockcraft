@@ -1,3 +1,5 @@
+@import "../function";
+
 @mixin mermaid-block {
   div.mermaid-block {
     display: block;
@@ -54,6 +56,7 @@
         gap: 4px;
         font-size: small;
         color: var(--bc-color-light);
+        @include user-select(none);
 
         &:hover, &.active {
           background-color: rgba(153, 153, 153, .1);
@@ -93,8 +96,9 @@
   .mermaid-textarea {
     margin-bottom: 0;
     padding: 16px;
-    font-family: "DM Mono", monospace;
+    font-family: Menlo, Monaco, "Courier New", monospace;
     color: #333;
     font-size: var(--bc-fs-sm);
+    tab-size: 1em;
   }
 }

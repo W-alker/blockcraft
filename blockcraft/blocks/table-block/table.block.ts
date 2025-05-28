@@ -327,7 +327,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         {...POSITION_MAP['top-left'], offsetY: -8},
         POSITION_MAP['bottom-left']
       ]),
-      scrollStrategy: this.overlay.scrollStrategies.close(),
+      // scrollStrategy: this.overlay.scrollStrategies.close(),
       hasBackdrop: true,
       backdropClass: 'cdk-overlay-transparent-backdrop',
     })
@@ -375,6 +375,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.showToolbar(firstCell, 'col', range[0], range[1] - range[0] + 1, () => {
         this._activeColRange = [-1, -1]
         this.colBarComponent.changeDetectionRef.markForCheck()
+        this._clearSelected()
       })
     })
 
@@ -397,6 +398,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.showToolbar(firstCell, 'row', range[0], range[1] - range[0] + 1, () => {
         this._activeRowRange = [-1, -1]
         this.rowBarComponent.changeDetectionRef.markForCheck()
+        this._clearSelected()
       })
     })
   }

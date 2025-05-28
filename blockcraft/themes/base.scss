@@ -129,6 +129,8 @@
   }
 
   [data-node-type="editable"] {
+    transition: all .1s ease;
+
     &[data-heading="1"] {
       font-size: var(--bc-fs-3xl);
     }

@@ -15,7 +15,6 @@ export class ImgToolbarPlugin extends DocPlugin {
   override name = 'img-toolbar';
 
   private _sub?: Subscription
-  private _timer: number | null = null
   private _toolbarRef?: OverlayRef
 
   private _closeToolbar$ = new Subject<void>()
@@ -65,11 +64,12 @@ export class ImgToolbarPlugin extends DocPlugin {
         return
       }
 
-      this.clearTimer()
+      const imgBlock = selection.firstBlock
       setTimeout(() => {
         if (this._toolbarRef) return
 
-        const imgEle = selection.firstBlock.hostElement.querySelector('img')!
+        const imgEle = imgBlock.hostElement.querySelector('img')
+        if(!imgEle || !imgEle.isConnected) return
         const {overlayRef, componentRef} = this.doc.overlayService.createConnectedOverlay<ImageToolbar>({
           target: imgEle,
           positions: [
@@ -86,7 +86,7 @@ export class ImgToolbarPlugin extends DocPlugin {
           this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg(imgEle)
         })
 
-        selection.firstBlock.onPropsChange.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
+        imgBlock.onPropsChange.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
           componentRef?.instance.cdr.markForCheck()
           nextTick().then(() => {
             overlayRef?.updatePosition()
@@ -96,16 +96,16 @@ export class ImgToolbarPlugin extends DocPlugin {
         componentRef.instance.onItemClicked.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
           switch (v.name) {
             case 'align':
-              selection.firstBlock.updateProps({
+              imgBlock.updateProps({
                 align: v.value
               })
               break
             case 'caption':
-              if (selection.firstBlock.childrenLength) {
-                this.doc.crud.deleteBlocks(selection.firstBlock.id, 0)
+              if (imgBlock.childrenLength) {
+                this.doc.crud.deleteBlocks(imgBlock.id, 0)
               } else {
                 const title = this.doc.schemas.createSnapshot('caption', [])
-                this.doc.crud.insertBlocks(selection.firstBlock.id, 0, [title]).then(() => {
+                this.doc.crud.insertBlocks(imgBlock.id, 0, [title]).then(() => {
                   this.doc.selection.selectOrSetCursorAtBlock(title.id, true)
                 })
               }
@@ -113,7 +113,7 @@ export class ImgToolbarPlugin extends DocPlugin {
             case 'change':
               break
             case 'download':
-              downloadFile(selection.firstBlock.props.src, selection.firstBlock.firstChildren?.textContent())
+              downloadFile(imgBlock.props.src, imgBlock.firstChildren?.textContent())
               break
             case 'copy-url':
               console.log(selection.firstBlock.props.src)
@@ -137,15 +137,8 @@ export class ImgToolbarPlugin extends DocPlugin {
     })
   }
 
-  clearTimer() {
-    if (this._timer) {
-      clearTimeout(this._timer)
-      this._timer = null
-    }
-  }
-
   closeToolbar = () => {
-    this.clearTimer()
+    this._closeToolbar$.next()
     this._toolbarRef?.dispose()
     this._toolbarRef = undefined
   }

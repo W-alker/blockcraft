@@ -1,4 +1,4 @@
-import {DeltaOperation, EditableBlockComponent, IBlockSnapshot, InlineModel, YBlock} from "../block-std";
+import {DeltaOperation, IBlockSnapshot, InlineModel, YBlock} from "../block-std";
 import * as Y from "yjs";
 import {BlockCraftError, ErrorCode, nextTick} from "../../global";
 import {IBlockSelectionJSON} from "../modules";
@@ -35,14 +35,7 @@ export interface IPropsChangeEvent {
 
 export class DocCRUD {
 
-  readonly yDoc = new Y.Doc({
-    guid: this.doc.config.docId
-  })
-  readonly yBlockMap = this.yDoc.getMap<YBlock>()
-  readonly yUndoManager = new Y.UndoManager(this.yBlockMap, {
-    captureTimeout: 200,
-    trackedOrigins: new Set([ORIGIN_SKIP_SYNC, null])
-  })
+  private _yUndoManager!: Y.UndoManager
 
   private _undoSelectionStack: Array<IBlockSelectionJSON | null> = []
   private _redoSelectionStack: Array<IBlockSelectionJSON | null> = []
@@ -51,15 +44,36 @@ export class DocCRUD {
   readonly onChildrenUpdate$ = new Subject<IChildrenChangeEvent>()
   readonly onPropsUpdate$ = new Subject<IPropsChangeEvent>()
 
+  get yDoc() {
+    return this.doc.yDoc
+  }
+
+  get yBlockMap() {
+    return this.doc.yBlockMap
+  }
+
+  get yUndoManager() {
+    return this._yUndoManager
+  }
+
   constructor(
     private readonly doc: BlockCraft.Doc
   ) {
     const zone = this.doc.injector.get(NgZone)
     this.doc.afterInit(() => {
+
+      this._yUndoManager = new Y.UndoManager(this.yBlockMap, {
+        captureTimeout: 200,
+        trackedOrigins: new Set([ORIGIN_SKIP_SYNC, null])
+      })
+
       this.yBlockMap.observeDeep((evt, tr) => {
         zone.run(async () => {
           await this._syncYEvent(evt, tr)
         })
+        // .then(() => {
+        // this.doc.selection.recalculate()
+        // })
       })
 
       this.yUndoManager.on('stack-item-added', (evt) => {
@@ -148,9 +162,14 @@ export class DocCRUD {
         if (tr.origin !== ORIGIN_SKIP_SYNC) {
           const bm = this.vm.get(blockId)
           if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
-          Promise.resolve().then(() => {
-            this.doc.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], (bm.instance as EditableBlockComponent).containerElement)
-          })
+          if (!this.doc.isEditable(bm.instance))
+            throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} is not editable`)
+          try {
+            this.doc.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], bm.instance.containerElement)
+          } catch (e) {
+            this.doc.logger.warn('applyDeltaToView error', e)
+            bm.instance.rerender()
+          }
         }
         return
       }
@@ -258,6 +277,10 @@ export class DocCRUD {
   }
 
   async insertBlocks(parentId: string, index: number, snapshots: IBlockSnapshot[]) {
+    if (index < 0) {
+      this.doc.logger.warn(`insertBlocks: index ${index} out of range`)
+      return
+    }
     const parentComp = this.vm.get(parentId)
     if (!parentComp) {
       this.doc.logger.warn(`parentComp ${parentId} not found`)
@@ -303,6 +326,11 @@ export class DocCRUD {
   }
 
   async deleteBlocks(parent: string, index: number, count = 1) {
+    if (index < 0) {
+      this.doc.logger.warn(`insertBlocks: index ${index} out of range`)
+      return
+    }
+
     if (count === 0) return
     const parentComp = this.vm.get(parent)!
     if (index >= parentComp.instance.childrenLength) {

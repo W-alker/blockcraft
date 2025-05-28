@@ -1,4 +1,4 @@
-import {DocCRUD, ORIGIN_NO_RECORD} from "./crud";
+import {DocCRUD} from "./crud";
 import {ComponentRef, Injector, ViewContainerRef} from "@angular/core";
 import {BlockCraftError, ErrorCode, getScrollContainer, Logger} from "../../global";
 import {DocVM} from "./vm";
@@ -17,17 +17,21 @@ import {DocPlugin} from "../plugin";
 import {DOC_MESSAGE_SERVICE_TOKEN} from "../services";
 import {DocOverlayService} from "../services";
 import {DocDndService} from "../services/dnd.service";
+import * as Y from "yjs";
 
 interface DocConfig {
   docId: string
   schemas: BlockCraft.SchemaManager
   logger: Logger
   injector: Injector
+  yDoc: Y.Doc
   theme?: string
   embeds?: [string, EmbedConverter][]
   plugins?: DocPlugin[]
   readonly?: boolean
 }
+
+export const Y_BLOCK_MAP_NAME = 'blocks'
 
 export class BlockCraftDoc {
 
@@ -53,15 +57,21 @@ export class BlockCraftDoc {
 
   private readonly _plugins: DocPlugin[] = []
 
-  private _root!: BlockCraft.IBlockComponents['root']
-
   public readonly messageService = this.injector.get(DOC_MESSAGE_SERVICE_TOKEN)
   public readonly overlayService = new DocOverlayService(this)
   public readonly dndService = new DocDndService(this)
 
   private _scrollContainer: HTMLElement | null = null
+  private _viewContainer: ViewContainerRef | null = null
 
   private _subscriptions: Subscription = new Subscription()
+
+  private _root: BlockCraft.IBlockComponents['root'] | null = null
+  private _yBlockMap!: Y.Map<YBlock>
+
+  get viewContainer() {
+    return this._viewContainer
+  }
 
   get scrollContainer() {
     return this._scrollContainer
@@ -71,9 +81,20 @@ export class BlockCraftDoc {
     return this.root.id
   }
 
+  get yDoc() {
+    if(!this.config.yDoc) {
+      throw new BlockCraftError(ErrorCode.DefaultFatalError, `yDoc not init yet`)
+    }
+    return this.config.yDoc
+  }
+
+  get yBlockMap() {
+    return this._yBlockMap
+  }
+
   // If after init, return root, otherwise throw error
   get root() {
-    if (!this.afterInit$.value) {
+    if (!this._root) {
       throw new BlockCraftError(ErrorCode.NoRootError, `Doc not init yet`)
     }
     return this._root
@@ -108,37 +129,36 @@ export class BlockCraftDoc {
   ) {
     this._plugins = this.config.plugins || []
     this.onDestroy(this._subscriptions.unsubscribe)
+    this._yBlockMap = this.yDoc.getMap<YBlock>(Y_BLOCK_MAP_NAME)
   }
 
   // init from a snapshot as root
   async initBySnapshot(snapShot: IBlockSnapshot, container: ViewContainerRef) {
-    if(this._root) return
+    if (this._root) return
 
     if (snapShot.flavour !== 'root') {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `Invalid root snapshot`)
     }
 
     const comp = await this.vm.createComponentBySnapshot(snapShot, (b) => {
-      this.crud.transact(async () => {
-        this.crud.yBlockMap.set(b.instance.id, b.instance.yBlock)
-      }, ORIGIN_NO_RECORD)
+      this.yBlockMap.set(b.instance.id, b.instance.yBlock)
     })
+    this._viewContainer = container
     container.insert(comp.hostView)
     this._initEditor(comp.instance as any)
   }
 
-  // init from a yBlock as root
-  async initByYBlock(yBlock: YBlock, container: ViewContainerRef) {
-    if(this._root) return
-
-    const flavour = yBlock.get('flavour')
-    if (flavour !== 'root') {
-      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Invalid root yBlock`)
+  async initByYBlock(yRoot: YBlock, container: ViewContainerRef) {
+    if (this._root) return
+    if (yRoot.get('flavour') !== 'root') {
+      throw new BlockCraftError(ErrorCode.DefaultFatalError, `Invalid root yBlock`)
     }
-    const id = yBlock.get('id')
-    const comp = await this.vm.createComponentByYBlocks({[id]: yBlock})
+
+    const id = yRoot.get('id')
+    const comp = await this.vm.createComponentByYBlocks({[id]: yRoot})
     const root = comp[id]
     container.insert(root.hostView)
+    this._viewContainer = container
     this._initEditor(root.instance as any)
   }
 
@@ -146,7 +166,7 @@ export class BlockCraftDoc {
     // exec after init functions
     this.afterInit$.next(this._root = comp)
     this.afterInitFnStack.forEach(fn => fn(this.root))
-    this.afterInitFnStack.clear()
+    // this.afterInitFnStack.clear()
 
     // init plugins
     this._plugins.forEach(plugin => plugin.register(this))
@@ -155,6 +175,7 @@ export class BlockCraftDoc {
     comp.onDestroy$.pipe(take(1)).subscribe(() => {
       this.onDestroy$.next(true)
       this.plugins.forEach(plugin => plugin.destroy())
+      this.vm.gc()
     })
 
     // init theme
@@ -176,6 +197,12 @@ export class BlockCraftDoc {
 
     // init scroll container
     this._scrollContainer = getScrollContainer(comp.hostElement)
+  }
+
+  destroy() {
+    if (!this._root) return
+    this.viewContainer?.clear()
+    this.afterInit$.next(this._root = null)
   }
 
   afterInit(fn: (root: BlockCraft.IBlockComponents['root']) => void) {

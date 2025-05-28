@@ -1,11 +1,13 @@
 import {Component, ElementRef, ViewChild} from "@angular/core";
 import * as Y from 'yjs'
+import {DOC_IDS} from "./const";
+import {EditorMigrate, schemas} from "../version-adapter/transformer";
 
 @Component({
   selector: 'app-test2',
   template: `
-    <button #btn>撤回</button>
-    <button #btn2>打印Model</button>
+    <input type="file" id="csvFile" accept=".csv" (change)="onCsv($event)"/>
+    <button (click)="onFlush()">(刷数据)</button>
   `,
   styles: [``],
   standalone: true
@@ -22,123 +24,99 @@ export class Test2Page {
   constructor() {
   }
 
-  ngAfterViewInit() {
-    const collect = this.doc.getMap('collect')
+  async onFlush() {
 
-    const rootModel: any = {
-      type: 'root',
-      id: 'root',
-    }
-    const root = new Y.Map(Object.entries(rootModel))
+    let cnt = 0
+    const request = async (docId: string) => {
+      var myHeaders = new Headers();
+      myHeaders.append("appType", "bct");
+      myHeaders.append("device", "IOS");
+      myHeaders.append("language", "zh");
+      myHeaders.append("deviceId", "ED380414932542BAB4993E5AC3E07C64");
+      myHeaders.append("appVersion", "1.0.120");
+      // myHeaders.append("timeZone", "Asia/Shanghai");
+      myHeaders.append("osVersion", "16.5.1");
+      myHeaders.append("cookieId", "6835bb53551ee570db0575c8");
+      myHeaders.append("siteName", "b");
+      myHeaders.append("envType", "pre");
+      myHeaders.append("User-Agent", "Apifox/1.0.0 (https://apifox.com)");
+      myHeaders.append("Content-Type", "application/json");
+      myHeaders.append("Accept", "*/*");
+      myHeaders.append("Host", "196.168.1.81:3399");
+      myHeaders.append("Connection", "keep-alive");
 
-    rootModel.children = ['1-1', '1-2']
-    rootModel.props = {}
-    const rootChildren = Y.Array.from(rootModel.children)
-    const rootProps = new Y.Map()
-    root.set('children', rootChildren)
-    root.set('props', rootProps)
-
-    const block1Model = {
-      type: 'paragraph',
-      id: '1-1',
-      text: 'Hello World'
-    }
-    const block2 = new Y.Map(Object.entries(block1Model))
-    block2.set('props', new Y.Map())
-    block2.set('children', Y.Array.from([]))
-
-    const block2Model = {
-      type: 'paragraph',
-      id: '1-2',
-      text: 'Hello World - children2'
-    }
-    const block3 = new Y.Map(Object.entries(block2Model))
-
-    collect.set('root', root)
-    collect.set('1-1', block2)
-    collect.set('1-2', block3)
-    this.model['root'] = rootModel
-    this.model['1-1'] = block2
-    this.model['1-2'] = block3
-
-    const his = new Y.UndoManager(collect)
-
-    collect.observeDeep((e, t) => {
-      console.log(e.map(ev => {
-        return {
-          path: ev.path,
-          changes: ev.changes,
-          target: ev.target
-        }
-      }), t)
-
-      e.forEach(ev => {
-        const {path, changes, target} = ev
-        if (!path.length) {
-          changes.keys.forEach((change, key) => {
-            switch (change.action) {
-              case 'add':
-              case "update":
-                this.model[key] = (collect.get(key) as Y.Array<any>).toJSON();
-                break;
-              case 'delete':
-                delete this.model[key]
-            }
-          })
+      await (await fetch("http://196.168.1.81:3399/doc/flush/article", {
+        method: 'POST',
+        headers: myHeaders,
+        body: JSON.stringify({
+          id: docId,
+        }),
+        redirect: 'follow'
+      })).json().then(async docDetail => {
+        if (!docDetail.isSuccess) {
+          console.log(`%c第${cnt}条查询详情失败: ${docId}`, 'color: red')
           return
         }
 
-        const targetBlock = this.model[path[0]]
-        if (!targetBlock) return
-        const data = targetBlock[path[1]]
+        await (await fetch("http://196.168.1.81:3399/doc/section/list", {
+          method: 'POST',
+          headers: myHeaders,
+          body: JSON.stringify({
+            docId,
+            ids: docDetail.sections
+          }),
+          redirect: 'follow'
+        })).json().then(async sectionList => {
+          if (!sectionList.isSuccess) {
+            console.log(`%c第${cnt}条查询SectionList失败: ${docId}`, 'color: red')
+            return
+          }
 
-        if (Array.isArray(data)) {
-          let r = 0
-          changes.delta.forEach((d, index) => {
-            const {retain, insert, delete: del} = d
-            if (retain) {
-              r += retain
-            } else if (insert) {
-              data.splice(r, 0, ...insert)
-              r += insert.length
-            } else {
-              data.splice(r, del)
-            }
-          })
-          return
-        }
+          const selections = docDetail.sections.map((id: string) => sectionList[id].content);
+          const miratedSections = EditorMigrate.transform(selections)
+          const root = schemas.createSnapshot('root', [docDetail.id, miratedSections])
+          const storeRes = await (await fetch("http://196.168.1.81:3399/doc/article/store", {
+            method: 'POST',
+            headers: myHeaders,
+            body: JSON.stringify({
+              id: docId,
+              data: root
+            }),
+            redirect: 'follow'
+          })).json()
 
-        if(typeof data === 'object') {
-          changes.keys.forEach((change, key) => {
-            switch (change.action) {
-              case 'add':
-              case "update":
-                data[key] = target.get(key)
-                break;
-              case 'delete':
-                delete data[key]
-            }
-          })
-        }
+          console.log(`第${cnt}条成功`)
 
+        }).catch(e => {
+          console.log(`%c第${cnt}条查询SectionList失败: ${docId}`, 'color: red')
+        })
+
+      }).catch(e => {
+        console.log(`%c第${cnt}条查询详情失败: ${docId}`, 'color: red')
       })
-    })
+    }
 
-    this.doc.transact(() => {
-      (block2.get('props') as Y.Map<any>).set('empty', true);
-      (block2.get('children') as Y.Array<any>).insert(0, [new Y.Map<unknown>()])
-      // rootChildren.delete(1, 1)
-      // collect.delete('1-1')
-      // collect.delete('1-2')
-    })
-
-    this.btn.nativeElement.addEventListener('click', () => {
-      his.undo()
-    })
-    this.btn2.nativeElement.addEventListener('click', () => {
-      console.log(this.model)
-    })
+    for (let docId of DOC_IDS) {
+      try {
+        await request(docId)
+      } catch (e) {
+        console.log(e, docId)
+      } finally {
+        cnt++
+      }
+    }
 
   }
 
+  async onCsv(e: any) {
+    const file = e.target.files[0];
+    const text = await file.text();
+
+    // 自定义解析逻辑（基础版）
+    const rows = text.split('\n').filter((row: any) => row.trim() !== '');
+    const headers = rows[0].split(',').map((h: any) => h.trim());
+    const data = rows.slice(1)
+
+    console.log('解析结果:', data);
+  }
 }

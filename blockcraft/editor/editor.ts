@@ -10,7 +10,7 @@ import {
   DocLinkPreviewerService,
   EditableBlockComponent, generateId, IBlockSelectionJSON, IBlockSnapshot, InlineManager,
   native2YBlock,
-  SchemaManager
+  SchemaManager, Y_BLOCK_MAP_NAME
 } from "../framework";
 import {
   AttachmentBlockSchema,
@@ -59,6 +59,7 @@ import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
 import {WebsocketProvider} from 'y-websocket'
 import {MermaidBlocKeyBinding} from "../plugins";
 import {MentionPlugin} from "./plugins/mention";
+import * as Y from 'yjs'
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -182,10 +183,14 @@ export class EditorComponent {
   ) {
   }
 
-  rootId = 'root-demo'
+  docId = 'our-doc'
+  rootId = 'root-test'
 
   doc = new BlockCraftDoc({
-    docId: 'our-doc',
+    yDoc: new Y.Doc({
+      guid: this.docId
+    }),
+    docId: this.docId,
     schemas: schemas,
     logger: this.logger,
     injector: this.injector,
@@ -225,9 +230,9 @@ export class EditorComponent {
     this.listenUpdate()
   }
 
-  initBySnapshot(snapshots: IBlockSnapshot[] = []) {
-    const rootSp = this.doc.schemas.createSnapshot('root', [this.rootId, snapshots])
-    this.doc.initBySnapshot(rootSp, this.container)
+  initBySnapshot(snapshot?: IBlockSnapshot) {
+    snapshot ??= this.doc.schemas.createSnapshot('root', [this.rootId])
+    this.doc.initBySnapshot(snapshot, this.container)
   }
 
   log() {
@@ -291,7 +296,8 @@ export class EditorComponent {
     new DocExportManager(this.doc).exportToPdf('blockcraft-export-test.pdf', {
       bgcolor: '#fff',
       scale: 1,
-      pdfPageSize: 'A2'
+      pdfPageSize: 'A2',
+      paging: true
     })
   }
 
@@ -337,15 +343,14 @@ export class EditorComponent {
   }
 
   enterRoom() {
-    const provider = new WebsocketProvider('ws://localhost:1234', this.rootId, this.doc.crud.yDoc)
+    const provider = new WebsocketProvider('ws://localhost:1234', this.rootId, this.doc.yDoc)
     provider.on('sync', (v: boolean) => {
-      console.log('sync', v)
-
-      const root = this.doc.crud.getYBlock(this.rootId)
-      if (!root) {
+      const yRoot = this.doc.yBlockMap.get(this.rootId)
+      console.log('sync', v, yRoot)
+      if (!yRoot) {
         this.initBySnapshot()
       } else {
-        this.doc.initByYBlock(root, this.container)
+        this.doc.initByYBlock(yRoot, this.container)
       }
     })
 

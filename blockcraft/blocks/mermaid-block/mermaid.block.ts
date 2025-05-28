@@ -164,7 +164,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     if (number < 0) {
       ratio = Math.max(0.5, ratio)
     } else {
-      ratio = Math.min(3, ratio)
+      ratio = Math.min(5, ratio)
     }
     if (ratio === this.graphScale) return
     this.graphScale = ratio

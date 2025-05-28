@@ -34,7 +34,7 @@ export const ImageBlockSchema: IBlockSchemaOptions<ImageBlockModel> = {
   metadata: {
     version: 1,
     label: "图片",
-    includeChildren: ['image-title'],
+    includeChildren: ['caption'],
     icon: 'bc_icon bc_tupian-color',
     svgIcon: 'bc_tupian-color'
   }

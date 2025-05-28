@@ -10,7 +10,7 @@ import {nextTick} from "../../global";
   template: `
     <figure class="image-block__container" [attr.data-align]="props.align">
       <div class="img-wrapper">
-        <img [src]="props.src" [style.width.px]="props.width" loading="lazy"
+        <img [src]="props.src" [style.width.px]="props.width" loading="lazy" contenteditable="false"
              [draggable]="!(doc.readonlySwitch$ | async)" #imgEle/>
 
         <div class="img-resizer__handle img-resizer__handle__point img-resizer__handle--tl"

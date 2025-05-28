@@ -131,14 +131,17 @@ export class DocExportManager {
    * @param options
    */
   async exportToPdf(name: string, options?: Pick<RenderOptions, 'scale' | 'bgcolor'> & {
+    paging?: boolean
     pdfPageSize?: PdfSizeName
-  }, blockMargin = 8) {
+    blockMargin?: number
+  },) {
     const rootDom = this.doc.root.hostElement;
     const PDFLib = await import('pdf-lib');
     const pdfDoc = await PDFLib.PDFDocument.create();
 
     const {width: pageWidthPt, height: pageHeightPt} = pdfSizes[options?.pdfPageSize || 'A4'];
-    const scale = options?.scale || 1;
+
+    const {scale = 1, blockMargin = 8, paging = false} = options || {}
 
     const canvas = await this._toCanvas(options);
     const canvasWidth = canvas.width;
@@ -148,43 +151,62 @@ export class DocExportManager {
 
     const pageHeightPx = Math.floor(canvasWidth * (pageHeightPt / pageWidthPt));
 
-    // 计算所有子元素的高度（按 canvas 像素比例缩放）
-    const blockHeights = Array.from(rootDom.children).map(
-      child => (child.clientHeight + blockMargin) * scale * (canvasWidth / rootDom.clientWidth)
-    );
-
     const slices: { start: number; height: number }[] = [];
-    let currentStartY = 0;
-    let accumulatedHeight = 0;
 
-    for (const blockHeight of blockHeights) {
-      if (blockHeight > pageHeightPx) {
-        // 单个块比一页高，允许硬切
-        if (accumulatedHeight > 0) {
-          slices.push({start: currentStartY, height: accumulatedHeight});
-          currentStartY += accumulatedHeight;
-          accumulatedHeight = 0;
-        }
-        let remaining = blockHeight;
-        while (remaining > 0) {
-          slices.push({start: currentStartY, height: Math.min(pageHeightPx, remaining)});
-          currentStartY += Math.min(pageHeightPx, remaining);
-          remaining -= pageHeightPx;
-        }
-      } else {
-        if (accumulatedHeight + blockHeight > pageHeightPx) {
-          // 填不下了，分页
-          slices.push({start: currentStartY, height: accumulatedHeight});
-          currentStartY += accumulatedHeight;
-          accumulatedHeight = blockHeight;
+    if (paging) {
+      // 处理padding
+      const scrollContainerStyles = window.getComputedStyle(this.doc.scrollContainer!)
+
+      const paddingTop = parseInt(scrollContainerStyles.paddingTop)
+
+      // 计算所有子元素的高度（按canvas像素比例缩放）
+      const blockHeights = Array.from(rootDom.children).map(
+        child => (child.clientHeight + blockMargin) * scale
+      );
+      blockHeights.unshift(paddingTop * scale)
+
+      let currentStartY = 0;
+      let accumulatedHeight = 0;
+
+      for (const blockHeight of blockHeights) {
+        // 单个块比一页高，硬切直至一页能容纳，存留剩余高度
+        if (blockHeight > pageHeightPx) {
+          if (accumulatedHeight > 0) {
+            slices.push({start: currentStartY, height: accumulatedHeight});
+            currentStartY += accumulatedHeight;
+            accumulatedHeight = 0;
+          }
+          let remaining = blockHeight;
+          while (remaining > 0) {
+            slices.push({start: currentStartY, height: Math.min(pageHeightPx, remaining)});
+            currentStartY += Math.min(pageHeightPx, remaining);
+            remaining -= pageHeightPx;
+          }
         } else {
-          accumulatedHeight += blockHeight;
+          if (accumulatedHeight + blockHeight > pageHeightPx) {
+            // 填不下了，分页
+            slices.push({start: currentStartY, height: accumulatedHeight});
+            currentStartY += accumulatedHeight;
+            accumulatedHeight = blockHeight;
+          } else {
+            accumulatedHeight += blockHeight;
+          }
         }
       }
-    }
-    // 最后一页
-    if (accumulatedHeight > 0) {
-      slices.push({start: currentStartY, height: accumulatedHeight});
+      // 最后一页
+      if (accumulatedHeight > 0) {
+        slices.push({start: currentStartY, height: accumulatedHeight});
+      }
+
+    } else {
+      // 每页高度分隔
+      let currentStartY = 0;
+      let accumulatedHeight = 0;
+      while (accumulatedHeight < canvasHeight) {
+        slices.push({start: currentStartY, height: Math.min(pageHeightPx, canvasHeight - accumulatedHeight)});
+        currentStartY += Math.min(pageHeightPx, canvasHeight - accumulatedHeight);
+        accumulatedHeight += Math.min(pageHeightPx, canvasHeight - accumulatedHeight);
+      }
     }
 
     for (const slice of slices) {

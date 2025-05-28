@@ -23,27 +23,24 @@ export function createEmbedBlockHtmlAdapterMatcher(
               type: 'element',
               tagName: 'div',
               properties: {},
-              children: [],
-            },
-            'children'
-          )
-          .openNode(
-            {
-              type: 'element',
-              tagName: 'a',
-              properties: {
-                href: o.node.props["url"],
-              },
               children: [
                 {
-                  type: 'text',
-                  value: o.node.props["title"],
-                },
+                  type: 'element',
+                  tagName: 'a',
+                  properties: {
+                    href: o.node.props["url"],
+                  },
+                  children: [
+                    {
+                      type: 'text',
+                      value: o.node.props["title"],
+                    },
+                  ],
+                }
               ],
             },
             'children'
           )
-          .closeNode()
           .closeNode();
       },
     },

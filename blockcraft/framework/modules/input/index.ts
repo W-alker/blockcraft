@@ -23,32 +23,35 @@ export class InputTransformer {
   constructor(public readonly doc: BlockCraft.Doc) {
   }
 
-  private _compositionPos: { block: EditableBlockComponent, index: number } | null = null
-
   @EventListen('compositionStart')
   private _handleCompositionStart(context: UIEventStateContext) {
     const curSel = this.doc.selection.value!
     context.preventDefault()
     if (curSel.from.type !== 'text') {
-      const clone = curSel.raw.cloneRange()
-      clone.collapse(false)
-      let sel = window.getSelection()!
-      this.doc.root.hostElement.blur()
-      sel.removeAllRanges();
-      setTimeout(() => {
-        sel.addRange(clone);
-      }, 0);
+      // const clone = curSel.raw.cloneRange()
+      // clone.collapse(false)
+      // let sel = window.getSelection()!
+      // this.doc.root.hostElement.blur()
+      // sel.removeAllRanges();
+      // setTimeout(() => {
+      //   sel.addRange(clone);
+      //   clone.detach()
+      // }, 0);
 
       if (!curSel.to || curSel.to.type !== 'text') {
         throw new BlockCraftError(ErrorCode.InlineEditorError, 'compositionStart: last block is not editable')
       }
-      this._compositionPos = {block: curSel.to.block, index: curSel.to.index}
-    } else {
-      this._compositionPos = {block: curSel.from.block, index: curSel.from.index}
     }
 
     if (!curSel.collapsed) {
+      const winSel = window.getSelection()!
+      if (curSel.from.type === 'text') {
+        winSel.setPosition(curSel.raw.startContainer, curSel.raw.startOffset)
+      } else {
+        winSel.setPosition(curSel.raw.endContainer, curSel.raw.endOffset)
+      }
       this._replaceText(curSel)
+      this.doc.selection.recalculate()
     }
     return true
   }
@@ -57,13 +60,18 @@ export class InputTransformer {
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.get('defaultState').event as CompositionEvent
     ev.preventDefault()
-    if (!this._compositionPos) {
-      throw new BlockCraftError(ErrorCode.InlineEditorError, `inputRange is not text`)
+    const sel = this.doc.selection.value!
+    if (sel.from.type !== 'text') {
+      throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
     }
     const text = ev.data
-    const {block, index} = this._compositionPos
+    const {block, index} = sel.from
     this.doc.crud.transact(() => {
-      block.yText.insert(index, text)
+      if (index === 0) {
+        block.yText.insert(0, text)
+      } else {
+        block.yText.insert(index, text)
+      }
       // TODO: 更好的中文输入法反显渲染
       block.rerender()
       block.setInlineRange(index + text.length)
@@ -72,7 +80,6 @@ export class InputTransformer {
 
   @EventListen('beforeInput')
   private _handleBeforeInput(context: BlockCraft.EventStateContext) {
-    console.log('--------beforeInput--------')
     const ev = context.get('defaultState').event as InputEvent
     if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {
       ev.preventDefault()
@@ -174,6 +181,7 @@ export class InputTransformer {
     const {from, to, collapsed} = range
     if (collapsed) return
 
+    console.log('%c[replaceText]', 'color: #f00', from, to, text)
     this.doc.crud.transact(() => {
       if (to) {
         const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
@@ -185,38 +193,45 @@ export class InputTransformer {
       }
 
       if (from.type === 'text') {
-        const deltas: DeltaOperation[] = [{retain: from.index}]
+        const deltas: DeltaOperation[] = []
+        from.index > 0 && deltas.push({retain: from.index})
         from.length > 0 && deltas.push({delete: from.length})
         text && deltas.push({insert: text})
 
-        if (to && to.type === 'text' && to.length > 0) {
+        if (to?.type === 'text') {
           deltas.push(...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength))
-          this.doc.crud.deleteBlockById(to.blockId)
         }
+        to && this.doc.crud.deleteBlockById(to.blockId)
         from.block.applyDeltaOperation(deltas)
-        to?.type === 'selected' && this.doc.crud.deleteBlockById(to.blockId)
-      } else {
-        from.type === 'selected' && this.doc.crud.deleteBlockById(from.blockId)
-        // 无法输入的情况
-        if (to?.type !== 'text') return
-        this.doc.crud.deleteBlockById(from.blockId)
-        to.block.replaceText(to.index, to.length, text)
+        return
       }
 
+      from.type === 'selected' && this.doc.crud.deleteBlockById(from.blockId)
+      // 无法输入的情况
+      if (to?.type !== 'text') return
+      this.doc.crud.deleteBlockById(from.blockId)
+      to.block.replaceText(to.index, to.length, text)
     }, ORIGIN_SKIP_SYNC)
   }
 
   @BindHotKey({key: 'Backspace', shiftKey: null, shortKey: null, metaKey: false})
   private _handleBackspace(context: UIEventStateContext) {
     const state = context.get('keyboardState')
-
     const {from, isAllSelected, collapsed, to} = state.selection
 
     if (isAllSelected) {
       context.preventDefault()
       const prevBlock = this.doc.prevSibling(from.block)
-      if (!prevBlock) return true
-      this.doc.selection.setCursorAtBlock(prevBlock, false)
+      if (prevBlock) {
+        this.doc.selection.setCursorAtBlock(prevBlock, false)
+      } else {
+        const nextBlock = this.doc.nextSibling(from.block)
+        if (nextBlock) {
+          this.doc.selection.setCursorAtBlock(nextBlock, true)
+        } else {
+          return true
+        }
+      }
       this._replaceText(state.selection)
       return true
     }
@@ -297,7 +312,17 @@ export class InputTransformer {
     const {from, isAllSelected, collapsed} = state.selection
     // 无法正常删除的情况
     if (isAllSelected) {
-      document.getSelection()!.modify('move', 'forward', 'character')
+      const nextBlock = this.doc.nextSibling(from.block)
+      if (nextBlock) {
+        this.doc.selection.setCursorAtBlock(nextBlock, true)
+      } else {
+        const prevBlock = this.doc.prevSibling(from.block)
+        if (prevBlock) {
+          this.doc.selection.setCursorAtBlock(prevBlock, false)
+        } else {
+          return true
+        }
+      }
       this._replaceText(state.selection)
       context.preventDefault()
       return true

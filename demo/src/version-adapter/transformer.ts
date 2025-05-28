@@ -1,4 +1,3 @@
-import {IBlockModel, IInlineAttrs} from "../../../blockflow/src/core";
 import {
   AttachmentBlockSchema, BlockNodeType,
   BlockquoteBlockSchema,
@@ -23,9 +22,10 @@ import {
   TableCellBlockSchema,
   TableRowBlockSchema,
   TodoBlockSchema
-} from "../../../blockcraft";
+} from '../../../blockcraft';
+import {IBlockModel, IInlineAttrs} from "../../../blockflow/src/core";
 
-const schemas = new SchemaManager([
+export const schemas = new SchemaManager([
   ParagraphBlockSchema,
   OrderedBlockSchema, BulletBlockSchema, TodoBlockSchema, CalloutBlockSchema, CodeBlockSchema,
   CalloutBlockSchema,
@@ -34,105 +34,106 @@ const schemas = new SchemaManager([
   FigmaEmbedBlockSchema, JuejinEmbedBlockSchema,
   CaptionBlockSchema, RootBlockSchema,
   MermaidTextareaBlockSchema, MermaidBlockSchema, BlockquoteBlockSchema
-])
+]);
 
 const HEADING_MAP = {
   'heading-one': 1,
   'heading-two': 2,
   'heading-three': 3,
   'heading-four': 4,
-  'heading-five': 5,
-}
+  'heading-five': 5
+};
 
 const toNewEditable = (data: IBlockModel, flavour: BlockCraft.BlockFlavour) => {
-  const res: IBlockSnapshot[] = []
-  const children = data.children as DeltaInsert[]
-  const pChildren: DeltaInsert[] = []
+  const res: IBlockSnapshot[] = [];
+  const children = data.children as DeltaInsert[];
+  const pChildren: DeltaInsert[] = [];
 
   const transformAttrs = (attrs: IInlineAttrs) => {
-    const res: IInlineNodeAttrs = {}
+    const res: IInlineNodeAttrs = {};
     for (const key in attrs) {
       switch (key) {
         case 's:c':
-          res['s:color'] = attrs[key]
-          break
+          res['s:color'] = attrs[key];
+          break;
         case 's:bc':
-          res['s:background'] = attrs[key]
-          break
+          res['s:background'] = attrs[key];
+          break;
         case 's:fs':
         case 's:ff':
-          break
+          break;
         default:
-          // @ts-ignore
-          res[key] = attrs[key]
+          break;
       }
     }
-    return res
-  }
+    return res;
+  };
 
   for (const delta of children) {
     if (typeof delta.insert === 'string') {
       const d: DeltaInsert = {
         insert: delta.insert
+      };
+      if (delta.attributes) {
+        d.attributes = transformAttrs(delta.attributes as any);
       }
-      if(delta.attributes) {
-        d.attributes = transformAttrs(delta.attributes as any)
-      }
-      pChildren.push(d)
-      continue
+      pChildren.push(d);
+      continue;
     }
 
-    try {
-      if (delta.insert['image']) {
-        const img = schemas.createSnapshot('image', [delta.insert['image'] as string])
-        res.push(img)
-        continue
-      }
-    } catch (e) {
-      console.log(delta)
-      console.warn(e)
+    if(typeof delta.insert !== 'object') continue
+    const keys = Object.keys(delta.insert)
+    if(!keys.length) continue
+
+    if (delta.insert?.['image']) {
+      const img = schemas.createSnapshot('image', [delta.insert['image'] as string]);
+      res.push(img);
+      continue;
     }
 
-
-    if (delta.insert['link']) {
+    if (delta.insert?.['link']) {
       pChildren.push({
         insert: delta.insert['link'] as string,
         attributes: {
           'a:link': delta.attributes?.['d:href'] as string,
           ...transformAttrs(delta.attributes as any)
         }
-      })
-      continue
+      });
+      continue;
     }
 
-    if (delta.insert['mention']) {
-      pChildren.push(delta)
-      continue
+    if (delta.insert?.['mention']) {
+      pChildren.push(delta);
+      continue;
     }
 
-    pChildren.push(delta)
+    pChildren.push(delta);
   }
 
-  res.unshift(<any>{
+  const p: IBlockSnapshot = {
     id: generateId(),
     flavour,
     nodeType: BlockNodeType.editable,
     props: {
-      depth: data.props.indent,
+      depth: data.props.indent
     },
     meta: {},
     children: pChildren
-  })
-  return res
-}
+  };
+  if (data.props['order']) {
+    p.props['order'] = data.props['order'];
+  }
+  res.unshift();
+  return res;
+};
 
-export class Transformer {
-  transform(data: IBlockModel[]): IBlockSnapshot[] {
-    const res: IBlockSnapshot[] = []
+export class EditorMigrate {
+  static transform(data: IBlockModel[]): IBlockSnapshot[] {
+    const res: IBlockSnapshot[] = [];
     data.forEach((item) => {
       switch (item.flavour) {
         case 'paragraph':
-          res.push(...toNewEditable(item, "paragraph"))
+          res.push(...toNewEditable(item, 'paragraph'));
           break;
         case 'heading-one':
         case 'heading-two':
@@ -145,22 +146,22 @@ export class Transformer {
               depth: item.props.indent,
               heading: HEADING_MAP[item.flavour]
             }
-          })
+          });
           break;
         case 'bullet-list':
-          res.push(...toNewEditable(item, "bullet"))
+          res.push(...toNewEditable(item, 'bullet'));
           break;
         case 'ordered-list':
-          res.push(...toNewEditable(item, "ordered"))
+          res.push(...toNewEditable(item, 'ordered'));
           break;
         case 'todo-list':
-          res.push(...toNewEditable(item, "todo"))
+          res.push(...toNewEditable(item, 'todo'));
           break;
         case 'callout': {
-          const deltas = item.children as DeltaInsert[]
-          const p = schemas.createSnapshot('paragraph', [deltas])
-          res.push(<any>{
-            ...item,
+          const deltas = item.children as DeltaInsert[];
+          const p = schemas.createSnapshot('paragraph', [deltas]);
+          res.push(<IBlockSnapshot>{
+            id: item.id,
             flavour: 'callout',
             nodeType: BlockNodeType.block,
             props: {
@@ -169,40 +170,42 @@ export class Transformer {
               borderColor: item.props['ec'],
               prefix: item.props['emoji']
             },
+            meta: {},
             children: [p]
-          })
+          });
         }
           break;
         case 'blockquote':
-          res.push(...toNewEditable(item, "blockquote"))
+          res.push(...toNewEditable(item, 'blockquote'));
           break;
         case 'divider':
           res.push(<any>{
             ...item,
             flavour: 'divider',
-            props: {},
-          })
+            props: {}
+          });
           break;
         case 'code':
           res.push(<any>{
             ...item,
             flavour: 'code',
             props: {
-              lang: 'PlainText',
-            },
-          })
+              lang: 'PlainText'
+            }
+          });
           break;
         case 'mermaid': {
-          const textArea = schemas.createSnapshot('mermaid-textarea', [item.children as DeltaInsert[]])
-          res.push(<any>{
-            ...item,
+          const textArea = schemas.createSnapshot('mermaid-textarea', [item.children as DeltaInsert[]]);
+          res.push(<IBlockSnapshot>{
+            id: item.id,
             flavour: 'mermaid',
             nodeType: BlockNodeType.block,
             props: {
               mode: item.props['view']
             },
+            meta: {},
             children: [textArea]
-          })
+          });
         }
           break;
         case 'image': {
@@ -213,8 +216,9 @@ export class Transformer {
               src: item.props['src'],
               width: item.props['width'],
               align: item.props['align'] === 'left' ? undefined : item.props
-            }
-          })
+            },
+            meta: {}
+          });
         }
           break;
         case 'link': {
@@ -223,31 +227,31 @@ export class Transformer {
             flavour: 'paragraph',
             nodeType: BlockNodeType.editable,
             props: {
-              depth: 0,
+              depth: 0
             },
-            meta: item.meta,
+            meta: {},
             children: [
               {
                 insert: item.props['text'],
                 attributes: {
-                  'a:link': item.props['href'],
+                  'a:link': item.props['href']
                 }
               }
             ] as DeltaInsert[]
-          }
-          res.push(p)
+          };
+          res.push(p);
         }
           break;
         case 'table': {
-          res.push(this._transformTable(item))
+          res.push(EditorMigrate.transformTable(item));
         }
           break;
       }
-    })
-    return res
+    });
+    return res;
   }
 
-  private _transformTable(data: IBlockModel): IBlockSnapshot {
+  static transformTable(data: IBlockModel): IBlockSnapshot {
     const table: IBlockSnapshot = {
       id: data.id,
       flavour: 'table',
@@ -255,7 +259,7 @@ export class Transformer {
       props: {
         colWidths: data.props['colWidths'],
         colHead: data.props['colHead'],
-        rowHead: data.props['rowHead'],
+        rowHead: data.props['rowHead']
       },
       meta: data.meta,
       children: (data.children as IBlockModel[]).map((dataRow) => {
@@ -266,7 +270,7 @@ export class Transformer {
           props: {},
           meta: dataRow.meta,
           children: (dataRow.children as IBlockModel[]).map((dataCell) => {
-            const p = toNewEditable(dataCell, 'paragraph')
+            const p = toNewEditable(dataCell, 'paragraph');
             return {
               id: dataCell.id,
               flavour: 'table-cell',
@@ -274,12 +278,12 @@ export class Transformer {
               props: {},
               meta: {},
               children: p
-            } as IBlockSnapshot
+            } as IBlockSnapshot;
           })
-        } as IBlockSnapshot
+        } as IBlockSnapshot;
       })
-    }
-    return table
+    };
+    return table;
   }
 
 }

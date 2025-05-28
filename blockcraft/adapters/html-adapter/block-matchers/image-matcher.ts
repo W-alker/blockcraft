@@ -64,23 +64,18 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
             type: 'element',
             tagName: 'figure',
             properties: {},
-            children: [],
+            children: [{
+              type: 'element',
+              tagName: 'img',
+              properties: {
+                src: o.node.props['src'] as string,
+                ...widthStyle,
+              },
+              children: [],
+            }],
           },
           'children'
         )
-        .openNode(
-          {
-            type: 'element',
-            tagName: 'img',
-            properties: {
-              src: o.node.props['src'] as string,
-              ...widthStyle,
-            },
-            children: [],
-          },
-          'children'
-        )
-        .closeNode()
         .closeNode();
     },
   },

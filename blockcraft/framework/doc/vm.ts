@@ -15,9 +15,6 @@ export class DocVM {
   constructor(
     private readonly doc: BlockCraft.Doc
   ) {
-    this.doc.onDestroy(() => {
-      this.gc()
-    })
   }
 
   get root() {

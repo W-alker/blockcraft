@@ -180,62 +180,16 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
               )
               .closeNode()
           }
-          walkerContext.skipAllChildren()
           break;
-        // case 'quote': {
-        //   walkerContext
-        //     .openNode(
-        //       {
-        //         type: 'element',
-        //         tagName: 'div',
-        //         properties: {
-        //           className: ['affine-paragraph-block-container'],
-        //         },
-        //         children: [],
-        //       },
-        //       'children'
-        //     )
-        //     .openNode(
-        //       {
-        //         type: 'element',
-        //         tagName: 'blockquote',
-        //         properties: {
-        //           className: ['quote'],
-        //         },
-        //         children: [],
-        //       },
-        //       'children'
-        //     )
-        //     .openNode(
-        //       {
-        //         type: 'element',
-        //         tagName: 'p',
-        //         properties: {},
-        //         children: deltaConverter.deltaToAST(text.delta),
-        //       },
-        //       'children'
-        //     )
-        //     .closeNode()
-        //     .closeNode()
-        //     .openNode(
-        //       {
-        //         type: 'element',
-        //         tagName: 'div',
-        //         properties: {
-        //           className: ['affine-block-children-container'],
-        //           style: 'padding-left: 26px;',
-        //         },
-        //         children: [],
-        //       },
-        //       'children'
-        //     );
-        //   break;
-        // }
+        case 'blockquote':
+          walkerContext.openNode({
+            type: 'element',
+            tagName: 'blockquote',
+            properties: {},
+            children: deltaConverter.deltaToAST(delta),
+          }, 'children').closeNode()
+          break;
       }
-    },
-    leave: (_, context) => {
-      const {walkerContext} = context;
-      walkerContext.closeNode().closeNode();
     },
   },
 };

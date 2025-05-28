@@ -239,6 +239,7 @@ export const tableCellBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       )
     },
     leave: async (o, context) => {
+      if (o.node.flavour !== 'table-cell') return
       const {walkerContext} = context;
       walkerContext.closeNode();
     }
