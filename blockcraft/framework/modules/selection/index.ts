@@ -62,7 +62,8 @@ export interface IBlockSelectionJSON {
 
 export class BlockSelection implements INormalizedRange {
 
-  constructor(private readonly normalizedRange: INormalizedRange,
+  constructor(private _doc: BlockCraft.Doc,
+              private readonly normalizedRange: INormalizedRange,
               readonly raw: Range,
               private selection: Selection) {
     this._commonParent = this.isInSameBlock ? this.from.blockId : closetBlockId(raw.commonAncestorContainer)!
@@ -493,7 +494,7 @@ export class SelectionManager {
     }
 
     try {
-      const r = new BlockSelection(this.normalizeRange(range), range, selection)
+      const r = new BlockSelection(this.doc, this.normalizeRange(range), range, selection)
       this.selectionChange$.next(r)
       this.selectedManager.setSelected(this.value)
     } catch (e) {

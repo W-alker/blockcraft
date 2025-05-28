@@ -57,12 +57,13 @@
         font-size: small;
         color: var(--bc-color-light);
         @include user-select(none);
+        @include user-modify(read-only);
 
         &:hover, &.active {
           background-color: rgba(153, 153, 153, .1);
         }
 
-        >* {
+        > * {
           pointer-events: none;
         }
       }
@@ -94,11 +95,14 @@
   }
 
   .mermaid-textarea {
+    overflow-y: auto;
+    max-height: 60vh;
     margin-bottom: 0;
     padding: 16px;
     font-family: Menlo, Monaco, "Courier New", monospace;
     color: #333;
     font-size: var(--bc-fs-sm);
     tab-size: 1em;
+    scrollbar-width: thin;
   }
 }

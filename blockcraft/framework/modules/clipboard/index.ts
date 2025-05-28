@@ -116,7 +116,7 @@ export class ClipboardManager {
   deleteContentFromSelection = (selection: BlockCraft.Selection) => {
     const event = new InputEvent('beforeinput', {
       inputType: 'deleteByCut',
-      targetRanges: [new StaticRange(selection.raw)]
+      targetRanges: [new StaticRange(selection.raw)],
     })
     this.doc.event.run(
       'beforeInput',
@@ -140,10 +140,11 @@ export class ClipboardManager {
     const state = context.get('clipboardState')
     context.preventDefault()
 
-    this.copyFromSelection(state.selection, state.clipboardData!)
+    this.copyFromSelection(state.selection, state.clipboardData!).then(() => {
+      // 继续触发deleteByCut input事件, 让默认处理程序删除选区内容
+      this.deleteContentFromSelection(state.selection)
+    })
 
-    // 继续触发deleteByCut input事件, 让默认处理程序删除选区内容
-    this.deleteContentFromSelection(state.selection)
   }
 
   @EventListen('paste',)

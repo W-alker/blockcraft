@@ -1,5 +1,6 @@
 import {BindHotKey, DocPlugin, STR_LINE_BREAK, STR_TAB} from "../framework";
 import {UIEventStateContext} from "../framework";
+import {nextTick} from "../global";
 
 export class MermaidBlocKeyBinding extends DocPlugin {
 
@@ -15,7 +16,11 @@ export class MermaidBlocKeyBinding extends DocPlugin {
       block.deleteText(sel.from.index, sel.from.length)
     }
     block.insertText(sel.from.index, STR_LINE_BREAK)
-    block.setInlineRange(sel.from.index + STR_LINE_BREAK.length)
+    window.getSelection()!.modify('move', 'forward', 'character')
+    // const index = sel.from.index + STR_LINE_BREAK.length
+    // nextTick().then(() => {
+    //   block.setInlineRange(index)
+    // })
     return true
   }
 

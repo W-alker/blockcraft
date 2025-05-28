@@ -45,7 +45,7 @@ export class Test2Page {
       myHeaders.append("Host", "196.168.1.81:3399");
       myHeaders.append("Connection", "keep-alive");
 
-      await (await fetch("http://196.168.1.81:3399/doc/flush/article", {
+      await (await fetch("http://api-pre.jinqidongli.com/doc/flush/article", {
         method: 'POST',
         headers: myHeaders,
         body: JSON.stringify({
@@ -58,7 +58,7 @@ export class Test2Page {
           return
         }
 
-        await (await fetch("http://196.168.1.81:3399/doc/section/list", {
+        await (await fetch("http://api-pre.jinqidongli.com/doc/section/list", {
           method: 'POST',
           headers: myHeaders,
           body: JSON.stringify({
@@ -74,8 +74,14 @@ export class Test2Page {
 
           const selections = docDetail.sections.map((id: string) => sectionList[id].content);
           const miratedSections = EditorMigrate.transform(selections)
+          console.log('----', selections, miratedSections)
+
+          if(selections.length !== miratedSections.length) {
+            console.warn('selections patch invalild', docId)
+          }
+
           const root = schemas.createSnapshot('root', [docDetail.id, miratedSections])
-          const storeRes = await (await fetch("http://196.168.1.81:3399/doc/article/store", {
+          const storeRes = await (await fetch("http://api-pre.jinqidongli.com/doc/article/store", {
             method: 'POST',
             headers: myHeaders,
             body: JSON.stringify({
@@ -96,7 +102,7 @@ export class Test2Page {
       })
     }
 
-    for (let docId of DOC_IDS) {
+    for (let docId of ['6821820a69a81e64675b11f8']) {
       try {
         await request(docId)
       } catch (e) {

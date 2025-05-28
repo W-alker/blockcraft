@@ -88,7 +88,6 @@
     position: relative;
     margin-bottom: var(--bc-segments-gap);
     caret-color: transparent;
-    content-visibility: auto;
 
     > [contenteditable='false'] {
       @include user-select(none);
@@ -320,11 +319,5 @@
     color: #fff;
     border-radius: 4px;
     padding: 2px 4px;
-  }
-}
-
-[data-blockcraft-root="true"] {
-  [data-block-id]:has(.blockcraft-cursor) {
-    content-visibility: visible;
   }
 }

@@ -3,7 +3,7 @@ import {
   BindHotKey,
   BlockNodeType,
   DeltaOperation,
-  DocEventRegister, EditableBlockComponent,
+  DocEventRegister,
   EventListen,
   INLINE_ELEMENT_TAG,
   INLINE_END_BREAK_CLASS,
@@ -14,7 +14,7 @@ import {
 } from "../../block-std";
 import {INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
-import {BlockCraftError, ErrorCode, sliceDelta} from "../../../global";
+import {BlockCraftError, ErrorCode, nextTick, sliceDelta} from "../../../global";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
@@ -74,7 +74,9 @@ export class InputTransformer {
       }
       // TODO: 更好的中文输入法反显渲染
       block.rerender()
-      block.setInlineRange(index + text.length)
+      nextTick().then(() => {
+        block.setInlineRange(index + text.length)
+      })
     }, ORIGIN_SKIP_SYNC)
   }
 
@@ -116,7 +118,10 @@ export class InputTransformer {
 
       // delete content
       if (from.type === 'text' && ev.inputType.startsWith('delete')) {
-        from.block.yText.delete(from.index, from.length)
+        ev.preventDefault()
+        this._replaceText(normalizedRange)
+        this.doc.selection.recalculate()
+        // from.block.yText.delete(from.index, from.length)
         return;
       }
 
@@ -181,7 +186,6 @@ export class InputTransformer {
     const {from, to, collapsed} = range
     if (collapsed) return
 
-    console.log('%c[replaceText]', 'color: #f00', from, to, text)
     this.doc.crud.transact(() => {
       if (to) {
         const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)

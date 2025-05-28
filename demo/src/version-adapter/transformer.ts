@@ -123,7 +123,7 @@ const toNewEditable = (data: IBlockModel, flavour: BlockCraft.BlockFlavour) => {
   if (data.props['order']) {
     p.props['order'] = data.props['order'];
   }
-  res.unshift();
+  res.unshift(p);
   return res;
 };
 

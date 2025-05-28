@@ -60,6 +60,7 @@ import {WebsocketProvider} from 'y-websocket'
 import {MermaidBlocKeyBinding} from "../plugins";
 import {MentionPlugin} from "./plugins/mention";
 import * as Y from 'yjs'
+import {BlockCraftAwareness} from "./awa";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -111,6 +112,7 @@ const schemas = new SchemaManager([
     <button (click)="test()">测试</button>
 
     <button (click)="enterRoom()">进入协同</button>
+    <button (click)="quitRoom()">退出协同</button>
 
     <div class="block-area">
       <div draggable="true" (dragstart)="onDragStart($event, 'heading-one')">
@@ -342,9 +344,10 @@ export class EditorComponent {
     })
   }
 
+  provider!: WebsocketProvider
   enterRoom() {
-    const provider = new WebsocketProvider('ws://localhost:1234', this.rootId, this.doc.yDoc)
-    provider.on('sync', (v: boolean) => {
+    this.provider = new WebsocketProvider('ws://localhost:1234', this.rootId, this.doc.yDoc)
+    this.provider.on('sync', (v: boolean) => {
       const yRoot = this.doc.yBlockMap.get(this.rootId)
       console.log('sync', v, yRoot)
       if (!yRoot) {
@@ -354,14 +357,16 @@ export class EditorComponent {
       }
     })
 
-    const uid = generateId()
-    provider.awareness.setLocalState({
-      user: {
-        id: uid,
-        name: 'user-' + uid,
-      }
+    const uid = generateId(11)
+    const awa = new BlockCraftAwareness(this.doc, this.provider.awareness)
+    awa.setLocalUser({
+      id: uid,
+      name: uid,
     })
 
   }
 
+  quitRoom() {
+    this.provider.destroy()
+  }
 }
