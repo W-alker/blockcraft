@@ -31,16 +31,26 @@ export class ClipboardManager {
 
   copyBlocksModel = async (snapshots: IBlockSnapshot[]): Promise<void> => {
     const rootSnapshot = await this._wrapSnapshotsByRoot(snapshots)
-    const items: Partial<Record<ClipboardDataType, Blob>> = {}
-    for (const adp of this.adapter.supportedAdapters) {
-      const str = await adp.fromSnapshot(rootSnapshot)
-      items[adp.type] = new Blob([str], {type: adp.type})
+
+    let clipboardItem: ClipboardItem
+    try {
+      const items: Partial<Record<ClipboardDataType, Blob>> = {}
+      for (const adp of this.adapter.supportedAdapters) {
+        const str = await adp.fromSnapshot(rootSnapshot)
+        items[adp.type] = new Blob([str], {type: adp.type})
+      }
+      clipboardItem = new ClipboardItem({
+        [ClipboardDataType.TEXT]: snapshots2Text(snapshots),
+        ...items
+      })
+    } catch (e) {
+      this.doc.logger.error('copyBlocksModel', e)
+      clipboardItem = new ClipboardItem({
+        [ClipboardDataType.TEXT]: snapshots2Text(snapshots),
+      })
     }
-    const item = new ClipboardItem({
-      [ClipboardDataType.TEXT]: snapshots2Text(snapshots),
-      ...items
-    })
-    return navigator.clipboard.write([item])
+
+    return navigator.clipboard.write([clipboardItem])
   }
 
   private async _wrapDeltaByRoot(deltas: DeltaInsert[]) {

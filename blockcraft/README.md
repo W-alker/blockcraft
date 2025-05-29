@@ -50,6 +50,10 @@
 
 --- 
 
+## bug
+- [ ] mermaid textarea 双击选中
+- [ ] 拖拽block时无法滚动
+
 ## 未来计划
 - [ ] 搜索和替换
 - [ ] header收起

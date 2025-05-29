@@ -131,8 +131,23 @@ export const linkDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
   },
 };
 
+export const mentionDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher =
+  {
+    name: 'mention',
+    match: delta => typeof delta === 'object',
+    toAST: (_, context) => {
+      return {
+        type: 'element',
+        tagName: 'span',
+        properties: {},
+        children: [context.current],
+      };
+    },
+  };
+
 export const inlineDeltaToHtmlAdapterMatchers: InlineDeltaToHtmlAdapterMatcher[] =
   [
+    mentionDeltaToHtmlAdapterMatcher,
     boldDeltaToHtmlAdapterMatcher,
     italicDeltaToHtmlAdapterMatcher,
     strikeDeltaToHtmlAdapterMatcher,

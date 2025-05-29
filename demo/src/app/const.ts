@@ -1897,3 +1897,3936 @@ export const DOC_IDS = [
   "683676e5ccc4c77b626a5cbc",
   "6836aee2bccc43771128be6c"
 ]
+
+
+export const TEST_DATA = [
+  {
+    "id": "1746688500119_a8a5382b_0ecb",
+    "flavour": "callout",
+    "nodeType": "block",
+    "props": {
+      "color": null,
+      "backColor": "#FFE6CD",
+      "borderColor": "#dc9b9b",
+      "prefix": "🔥"
+    },
+    "meta": {},
+    "children": [
+      {
+        "id": "Bfr10VKMtuS335--v4w1-",
+        "flavour": "paragraph",
+        "nodeType": "editable",
+        "props": {
+          "depth": 0
+        },
+        "meta": {},
+        "children": [
+          {
+            "insert": {
+              "link": "https://www.figma.com/design/YPoQI6zbiJFIZx13azpttL/%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%9C%88%E5%BA%A6%E5%AF%BC%E5%90%91%E9%87%8D%E6%9E%84?node-id=13-5353&t=owQkMC6bV6ktqw2T-1"
+            },
+            "attributes": {
+              "d:href": "https://www.figma.com/design/YPoQI6zbiJFIZx13azpttL/%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%9C%88%E5%BA%A6%E5%AF%BC%E5%90%91%E9%87%8D%E6%9E%84?node-id=13-5353&t=owQkMC6bV6ktqw2T-1"
+            }
+          },
+          {
+            "insert": " figma链接 \n"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "FDgQk6KdNW9zc8sLo8IFj",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "日、周、月"
+      }
+    ]
+  },
+  {
+    "id": "3y92DzotfGSEoVHBNURMt",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "日导向不需要发布填写，只需在一个固定的地方去修改模版，可以选择立即生效以及下次生效"
+      }
+    ]
+  },
+  {
+    "id": "RDxvxXb4VUeiehUAlF4sT",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "月导向还是正常每月去创建，上月20号到本月20号算作当月。"
+      }
+    ]
+  },
+  {
+    "id": "MPD-FTsIL2pDZ-qPvmFq-",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "周导向只能在月导向下创建，只是叫做周导向，但是和周没有任何关系，时长可以设置三天，也可以设置两周，作为月的一个子任务创建"
+      }
+    ]
+  },
+  {
+    "id": "HNLuAGx9khKRPxNVoFnkI",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "周导向的时长不能超过当月20号，必须在月的范围内创建"
+      }
+    ]
+  },
+  {
+    "id": "1747966640648_65b5489a_fa44",
+    "flavour": "callout",
+    "nodeType": "block",
+    "props": {
+      "color": null,
+      "backColor": "#FFE6CD",
+      "borderColor": "#dc9b9b",
+      "prefix": "🔥"
+    },
+    "meta": {},
+    "children": [
+      {
+        "id": "KTc7ko6F3feFdcoImC0jj",
+        "flavour": "paragraph",
+        "nodeType": "editable",
+        "props": {
+          "depth": 0
+        },
+        "meta": {},
+        "children": [
+          {
+            "insert": "time计算：每月一号0点0分 代表当月"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "kvyENTcqTt-AYc85lsYtu",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "增加导向设置功能"
+      }
+    ]
+  },
+  {
+    "id": "DOpQ-Fb8OZ241y8cDQx1b",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "给组织架构中任意层级设置导向"
+      }
+    ]
+  },
+  {
+    "id": "QbL5x9aFqxBqb5d79B14Y",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "权限由上到下，例如：boss可以给所有组织设置导向，部分负责人可以给部门或小组设置导向"
+      }
+    ]
+  },
+  {
+    "id": "oh4vovMXlElmLf7TtV7fZ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "自定义用户组"
+      }
+    ]
+  },
+  {
+    "id": "BABAZ8AZa96fVFCz4sPfc",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "下级设置导向，需要上级审批"
+      }
+    ]
+  },
+  {
+    "flavour": "paragraph",
+    "id": "1746687292070_05f7d4b1_bc3d",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "heading": 1
+    },
+    "meta": {
+      "createdTime": 1746687292070,
+      "lastModified": {
+        "time": 1746687292070,
+        "userId": "652df8d682f0120e0449f8be",
+        "userName": "庄建齐"
+      }
+    },
+    "children": [
+      {
+        "insert": "case"
+      }
+    ]
+  },
+  {
+    "id": "CkxLfGFouEa4khA9q454e",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "模板库"
+      }
+    ]
+  },
+  {
+    "id": "YKue8zI8By3eOU_Nfi5hh",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "发布模板"
+      }
+    ]
+  },
+  {
+    "id": "OUlZNvVkppMe5knC59vqC",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "发布类型有"
+      }
+    ]
+  },
+  {
+    "id": "7RMnGfs5eRXIoiQB74KlP",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "发布为通用模板：入驻cses企业的用户都可以看到，可以基于通用模板二次创作。"
+      }
+    ]
+  },
+  {
+    "id": "6rn7f6_-54wehNt6RM85H",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "发布为普通模板：仅用户所在公司可以看到，用于发布导向选取模板。"
+      }
+    ]
+  },
+  {
+    "id": "pSNxfeC_G04L758JOjK4o",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "模板类型有三种"
+      }
+    ]
+  },
+  {
+    "id": "MqzeolER9RjWjPtrpY6Yc",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "日：仅用于修改日导向所使用。"
+      }
+    ]
+  },
+  {
+    "id": "2lCrdEupTFh2oa6aY8GUY",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "周：仅用于创建周导向所使用。"
+      }
+    ]
+  },
+  {
+    "id": "BtY49FpUiKHwXac1EUQb9",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "月：仅用于创建月导向所使用。"
+      }
+    ]
+  },
+  {
+    "id": "7TqpNkd3BymGjFqujr6Vk",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "模板状态"
+      }
+    ]
+  },
+  {
+    "id": "so24MbrlLGuWzHrqueUsz",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "open:默认状态。"
+      }
+    ]
+  },
+  {
+    "id": "Hj4qjTmj1aMp0jud3cAue",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "archived:归档状态，对于模板进行修改，修改模板会进行版本升级，旧版本的状态变为该状态。"
+      }
+    ]
+  },
+  {
+    "id": "blHdFfUx8AO9chx19n6Hv",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "deleted:已删除状态，模板被删除之后的状态。"
+      }
+    ]
+  },
+  {
+    "id": "rLifuuXQT4K_PvLn9LS0c",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "模版尺寸可以选择规定的几种比例（16:9、4:3、1:1）"
+      }
+    ]
+  },
+  {
+    "id": "dcu2U5DFtoyMLRpeW79qP",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "日、周、月分别使用单独专属的元素字段类型用作导入导出"
+      }
+    ]
+  },
+  {
+    "id": "evO-Ya3SLm3gc8p8f3EPV",
+    "flavour": "paragraph",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "\"ref\": {"
+      }
+    ]
+  },
+  {
+    "id": "HwqExRQGdbzCE4rCsTMHr",
+    "flavour": "paragraph",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "    \"type\":\"month\"\n    \"time\": \"1746028800000\",\n  },"
+      }
+    ]
+  },
+  {
+    "id": "ceUnqv19H4yzyME-nEUpX",
+    "flavour": "paragraph",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": " \"key\": \"orient\""
+      }
+    ]
+  },
+  {
+    "id": "gVA258p9Zf0FDBuaPk7aY",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 5
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "模板创建者：定义PPT填写页的结构和字段，设置字段是否引用其他期的指定字段。"
+      }
+    ]
+  },
+  {
+    "id": "amrNrA6Zag2sr2XyQY-zQ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "先选择导入元数据类型（type:‘day’|‘month’｜‘week’），选择时间（例如: time：“上月”，“上周”，“上上周”），再选择导入字段名称（例如：key:\"orient\"）"
+      }
+    ]
+  },
+  {
+    "id": "fsKr5fD64DdtGFPLvdGuI",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "字段名称有内置的，也可以自定义设置"
+      }
+    ]
+  },
+  {
+    "id": "Zn7EWOY-eNoGlXtejdJuR",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "导入时会根据类型、时间、同名字段导入  "
+      }
+    ]
+  },
+  {
+    "id": "OfnqO_2wBA18RLiI_4xDu",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "关联组件：一个组件依托于单个模版之外，可以将多个模版之间的数据关联，可以添加关联策略"
+      },
+      {
+        "insert": "（下次开发）",
+        "attributes": {
+          "s:background": "#FFEFBA"
+        }
+      }
+    ]
+  },
+  {
+    "id": "RpV8p9vBR7TUExOXJ_CFY",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 6
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "可以自定义设置字体 颜色、大小、行高、字数限制、填充颜色、边框、透明度、阴影、对齐方式"
+      }
+    ]
+  },
+  {
+    "id": "qCTWoS8tDY9FBMlnZWRjr",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 7
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "可以添加字体、填写框、导入框、视频、音频、形状、图片等"
+      }
+    ]
+  },
+  {
+    "id": "CeBPjP05JA47WOICGUM91",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 8
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "填写者（普通用户）：每月填写PPT，可选择需要制定导入的期次（包含导入的日周月，可以多选，实现可以同时导入多份不同元数据），预填已有数据。"
+      }
+    ]
+  },
+  {
+    "id": "3tOxoUpePM2TWvLic7jnh",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 9
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "填写者（普通用户）：可以导入除ppt外的所有内容（头脑风暴、文档、任务），作为插件手动导入"
+      }
+    ]
+  },
+  {
+    "id": "v022j-kvCovfiK9FZ8FuT",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 10
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "打开填写页时预加载选中期次数据"
+      }
+    ]
+  },
+  {
+    "id": "_8PpxhreyGl87hk-jpszc",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "修改模板"
+      }
+    ]
+  },
+  {
+    "id": "XRkt8IaH7fDy6EIeA17uf",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "如果模版正在使用，会同步更新未填写的人ppt。"
+      }
+    ]
+  },
+  {
+    "id": "bsbPOxPnyj-_nC3mrZ1Ra",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "修改选择生效方式"
+      }
+    ]
+  },
+  {
+    "id": "qLagNCand4qX35PErZ9YX",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "下次生效，已经使用模板创建的导向，模板内容不变。新创建的导向，模板内容会使用最新的。"
+      }
+    ]
+  },
+  {
+    "id": "5pEEO7SLlgzRqxeAFlCz6",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "立即生效："
+      }
+    ]
+  },
+  {
+    "id": "X7YAF2lxWTthqQkJuYzVc",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "已经使用模板创建的导向，模板内容也会使用最新的。"
+      }
+    ]
+  },
+  {
+    "id": "48LkbIZ3Coq9JZYzyxVpZ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 4,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "对于已经通过旧模板填写内容的用户，会提示用户是否使用新模板。"
+      }
+    ]
+  },
+  {
+    "id": "mdLJGguJfeKlMGbWwRagA",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "模版被修改后,通知所有人模版已被修改,是否需要重新导入,如果重制会有note文件"
+      }
+    ]
+  },
+  {
+    "id": "LsqTfTuGTngxQaGS33WrD",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "如果模板已经被使用在月度导向中，此时修改模板。"
+      }
+    ]
+  },
+  {
+    "id": "gQ1T8lmokR96xU1T7thH3",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "修改模板之后会对于模板做版本号升级，保证历史导向详情查看的模板是历史模板。"
+      }
+    ]
+  },
+  {
+    "id": "Z2FXFPTUG9jTSAIW9Axpb",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "删除模版"
+      }
+    ]
+  },
+  {
+    "id": "NJMwv_vEiMxu6ePCyTiG0",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "模板一经使用，无法删除 。"
+      }
+    ]
+  },
+  {
+    "id": "AOgdpwku4KRiMO7h-BtwL",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "当月创建的导向，使用了某一个模板，该模板在这个月不可以删除。"
+      }
+    ]
+  },
+  {
+    "id": "c7WhFsBIVDy2my-bihqy2",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "下个月之后，模板可以删除，但是查询历史导向详情的时候，从中还是可以查看到模板预览，只是不可以继续使用。"
+      }
+    ]
+  },
+  {
+    "id": "vty1nYvzff8sHGoc5HOIU",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查询模板列表"
+      }
+    ]
+  },
+  {
+    "id": "a0sCHeMuoePV_sxJJ2juo",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "通过type来查询模板"
+      }
+    ]
+  },
+  {
+    "id": "y375QeSqRhHOFy_gZmiji",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "通用类型：查询所有通用的模板。"
+      }
+    ]
+  },
+  {
+    "id": "wVl8YrUYAZUWJgWRHMLUo",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "已发布类型：查询当前用户所在公司已发布的模板。"
+      }
+    ]
+  },
+  {
+    "id": "SHOxG0VvPwBeLyWhBVOgf",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "通过type+name模糊搜索查询"
+      }
+    ]
+  },
+  {
+    "id": "Ts5-5JZa7vVbJ-Ag4NtBH",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "通用类型：查询通用类型并且名称包含name的模板。"
+      }
+    ]
+  },
+  {
+    "id": "PKsBQBzNaNvM1eAitvjvs",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "已发布类型：查询当前用户所在公司已发布并且名称包含name的模板"
+      }
+    ]
+  },
+  {
+    "id": "M40qpn1LVHA8HB40ithnl",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "通用、草稿箱、已发布"
+      }
+    ]
+  },
+  {
+    "id": "UOVfbfpmh7p0FzmY9NwYD",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "预览模板"
+      }
+    ]
+  },
+  {
+    "id": "LJy5Hx3JvPsz4l5nisrDQ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "当用户需要基于某一个模板继续二次创作，会打开选定的模板详细信息。"
+      }
+    ]
+  },
+  {
+    "id": "wo1v0h5-f9Y7dH49WRv4C",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 5
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "创建组件"
+      }
+    ]
+  },
+  {
+    "id": "2HruYtJMrcNKEbrwDeqiF",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "在ppt中直接选中多个内容，保存为组件。"
+      }
+    ]
+  },
+  {
+    "id": "gvCeZN5beKjFfnn166SKT",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "只有负责人能创建"
+      }
+    ]
+  },
+  {
+    "id": "VCaCrPDkWcCZNYW8vw6KT",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "创建数据视图"
+      }
+    ]
+  },
+  {
+    "id": "tgB76ikbaspZI_zMcOsno",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 6
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "修改组件"
+      }
+    ]
+  },
+  {
+    "id": "_yh6mvjOxuPEcUBvPk9YT",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "只有组件创建人可以修改组件。"
+      }
+    ]
+  },
+  {
+    "id": "WWrc7iPXZCLJzbPaDauuQ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 7
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "删除组件"
+      }
+    ]
+  },
+  {
+    "id": "SRwBZ2_g1LloK7vwVRKUj",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "只有创建者可以删除组件。"
+      }
+    ]
+  },
+  {
+    "id": "t7tATVjK1-H8gPUvwvjJg",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 8
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查看组件列表"
+      }
+    ]
+  },
+  {
+    "id": "2HnkiuDyCOlZPx0RkiyiU",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "用户可以查看公司范围内的所有组件列表，用于在ppt中直接使用。"
+      }
+    ]
+  },
+  {
+    "id": "LPlk3psbpsnxn-NnXCLQV",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 9
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "组件预览"
+      }
+    ]
+  },
+  {
+    "id": "Bq2G6f34CO8q8acSgAi0k",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "导向模块"
+      }
+    ]
+  },
+  {
+    "id": "YNqX5pbMN7r3aTy5AWGzJ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "发布导向"
+      }
+    ]
+  },
+  {
+    "id": "b-dCLtElvdUVxlfSPA8SZ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "月导向：（标题、描述、所属月份）"
+      }
+    ]
+  },
+  {
+    "id": "2EdVOqSTK6jhoGPSPtacW",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "设置开始填写时间、结束填写时间：用来规范成员填写时间范围，不能跨月(当月20号到下月20号为一个月)。"
+      }
+    ]
+  },
+  {
+    "id": "YibStuE6A83qg128cgOSg",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "类型：月度导向类型。"
+      }
+    ]
+  },
+  {
+    "id": "kTlsC-42TGR0HadO3SzRk",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "持续时长范围：发布导向，直到持续时长范围之内，都会每月自动发布。"
+      }
+    ]
+  },
+  {
+    "id": "mVAChKHQutDhQ0NIEbJAZ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "企业发展核心导向：用于成员填写ppt时展示，引发成员填写靠近核心发展导向。"
+      }
+    ]
+  },
+  {
+    "id": "S3IvCnXwRsATO1VfqL438",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "选择部门：该导向设置为该部门的部门导向，与参与人无关（参与人可为该部门人也可以是部门之外的）。"
+      }
+    ]
+  },
+  {
+    "id": "KKB4vUFXVL5hLryKsIRHC",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 5
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员列表：只有在人员列表中的成员，才会收到导向填写信息。"
+      }
+    ]
+  },
+  {
+    "id": "ARUQbncJeT3LHDWbulLYf",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 6
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "会议预计总时长：用于在分享是提示会议整体进度时长与预计时长之间的偏差。"
+      }
+    ]
+  },
+  {
+    "id": "snQitKXf0oNEq_XYkjKCS",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 7
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "个人分享时长：用于在月度导向分享是作时间提醒。"
+      }
+    ]
+  },
+  {
+    "id": "iTWhtoh23hWyrSABvAZ8w",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 8
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "选择使用的模板：只能选择发布的模板。"
+      }
+    ]
+  },
+  {
+    "id": "XroUBLvXAZs5DuuQm-rQ7",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "选择模板之后，默认是当前模板的latest版本。"
+      }
+    ]
+  },
+  {
+    "id": "gSctUeIYfunGc_bMz7Ect",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 4,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "如果已经选择的模板内容被修改，模板会使用修改之后的模板，但是当发布的导向成为历史之后，引用相同模板的内容不会变更。"
+      }
+    ]
+  },
+  {
+    "id": "2AJ1qimoCAYbmJvMB5ss8",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 9
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "用户在发布导向时可以选择是否填写ppt示例"
+      }
+    ]
+  },
+  {
+    "id": "Yib-6EoEtNZjoXzkdjKty",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "填写ppt示例：当成员填写ppt模板的时候，模板中会显示填写的ppt示例内容。"
+      }
+    ]
+  },
+  {
+    "id": "hlGUaFc7KrThmU-a-C2bV",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 4,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "不填写：则是空白模板。"
+      }
+    ]
+  },
+  {
+    "id": "AcQWXBYuicGzH706vdUkB",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "周导向：是一种虚拟的周。（标题、描述，持续时长范围，企业发展核心导向）"
+      }
+    ]
+  },
+  {
+    "id": "fAPYItTRhllOcw0y_5d6I",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "类型：周导向。"
+      }
+    ]
+  },
+  {
+    "id": "PYb5l6SltgDgjCo20k-xS",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "来源：某一个月导向，用于展示是归类属于哪个月导向之下。"
+      }
+    ]
+  },
+  {
+    "id": "EYs14-yQ_C0PvljOHnwzp",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "开始时间、结束时间。在这个时间范围内成员都可以填写。"
+      }
+    ]
+  },
+  {
+    "id": "aZi5pNZCMQ7u3lDZmYvQC",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "第几周是一种虚拟的用语，本质是次数。通过结束时间顺序排列。"
+      }
+    ]
+  },
+  {
+    "id": "k62Y-U3dIJGHettfJF1-h",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员列表"
+      }
+    ]
+  },
+  {
+    "id": "7bbbGZcVvNurERqFBjaCU",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "日导向："
+      }
+    ]
+  },
+  {
+    "id": "4mlZJfhzRpBKSW3v1zNWJ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "修改导向"
+      }
+    ]
+  },
+  {
+    "id": "MCSMrfNBQMdJ7Ok1xlr0A",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "修改导向时间"
+      }
+    ]
+  },
+  {
+    "id": "SJ-mkBMWyvn__TLKtkkGX",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "修改完成之后通过socket通知成员，更新导向填写时间范围信息。"
+      }
+    ]
+  },
+  {
+    "id": "85yQingvDaCa_2FdwdW5H",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "重新选择模板"
+      }
+    ]
+  },
+  {
+    "id": "llNW3ejZon100AgcDRv4l",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "未填写的用户会使用新模板。"
+      }
+    ]
+  },
+  {
+    "id": "NIL6ef5yTB_ctsZ_UvNVh",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "已经填写的用户可以支持重置模板，并且可以将数据导入到新模板中。由用户自己控制。"
+      }
+    ]
+  },
+  {
+    "id": "3EiB-CHWNaXcX8v1MWwbq",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "修改人员列表。"
+      }
+    ]
+  },
+  {
+    "id": "kn2tnk6sBX9AWnQkPySD7",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "添加成员：添加的成员可以填写月度导向。"
+      }
+    ]
+  },
+  {
+    "id": "KMrFSr1iMmiBQkDhFXoU6",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "删除成员："
+      }
+    ]
+  },
+  {
+    "id": "SVz4lfzwk3fF1Ro7DrYO-",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员未填写：直接删除，无影响。"
+      }
+    ]
+  },
+  {
+    "id": "AKJlBL7KeAVvQm-Gq87X1",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 4,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员已填写：逻辑删除，保留成员填写内容，用于下次用户可以直接导入数据。"
+      }
+    ]
+  },
+  {
+    "id": "1A816U59gsqHcbzSsAUMj",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "导向成为历史之后，不可以修改。"
+      }
+    ]
+  },
+  {
+    "id": "ZT1V4_ZTu99MqNHvGhGjF",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "例如本月修改上月导向内容，这是不可以的。"
+      }
+    ]
+  },
+  {
+    "id": "8VFYjGLqSG_S4BMUy27lv",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "如果历史导向的模板被修改，查看历史导向模板的时候，模板内容应该是所对应的当时模板内容。"
+      }
+    ]
+  },
+  {
+    "id": "iHrDVA7HXq_CPMxv9Qgy4",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "删除导向"
+      }
+    ]
+  },
+  {
+    "id": "pqFCchtqL1bD0kzx8EI5Y",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "删除月导向：月导向逻辑删除"
+      }
+    ]
+  },
+  {
+    "id": "m9V8RjAaL3tXe4hSOMtZh",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "如果下面有周导向，需要将所有周导向全部删除，才可以删除月导向。"
+      }
+    ]
+  },
+  {
+    "id": "Km9FFQx90vrxDd9ZrPYDE",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员也逻辑删除，留存数据记录。"
+      }
+    ]
+  },
+  {
+    "id": "oQZjdQSlACjDsNqCqMhsT",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "删除周导向：周导向逻辑删除"
+      }
+    ]
+  },
+  {
+    "id": "wfrywo5O2ccV1prGNWT78",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "周导向成员填写数据页逻辑删除。"
+      }
+    ]
+  },
+  {
+    "id": "FQ_D-5VoUtzXXfBnkQPwD",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查看导向详情"
+      }
+    ]
+  },
+  {
+    "id": "3SBpXiCNqtpSl5n7ntwhD",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "导向详情会列出导向成员已填写的成员和未填写的成员。"
+      }
+    ]
+  },
+  {
+    "id": "SAstIgWa4M53yc6GKtMhB",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "未填写的人员可以提醒填写（弹窗形式）"
+      }
+    ]
+  },
+  {
+    "id": "vj7J_iZXMi_cVZHJOl3CG",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查看我创建的导向列表"
+      }
+    ]
+  },
+  {
+    "id": "kle4P2r4Aj7Aq6t-5STAl",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "组织架构同级别的管理者可以互相看到，但是可以指定属于哪个部门或者组织"
+      }
+    ]
+  },
+  {
+    "id": "HafZ0lNuTefVIDTjeWDYD",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "包含已填写数、未填写数"
+      }
+    ]
+  },
+  {
+    "id": "MFYRsdf4dHnu26PwDtVXJ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "月导向要列出与月相关的周导向列表"
+      }
+    ]
+  },
+  {
+    "id": "QmxkaeYkXNzDQXE_US-ux",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "周导向要列出与周相关的日导向列表"
+      }
+    ]
+  },
+  {
+    "id": "AM9wWrF55ldfnidqrqEPS",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "在周和月导向的列表中如何加入组织结构，老板要打穿各个部门浏览月和周"
+      }
+    ]
+  },
+  {
+    "id": "tvYTtyyAj6SofUlyo8Cs0",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员模块"
+      }
+    ]
+  },
+  {
+    "id": "6O2e99pWaRpYrKoFMxr_-",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查询我的日/周/月导向填写时间"
+      }
+    ]
+  },
+  {
+    "id": "2fV1JU_RNsnjXrMTBFTo4",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "有多个导向成员中邀请到用户，该用户需要填写多份导向内容，既每一个导向成员对应该导向有一份ppt。"
+      }
+    ]
+  },
+  {
+    "id": "WSnxrFLKuOgTmYbi-dDsp",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "填写的时候可以辅助提示是否需要导入某个已经填写的导向ppt内容。"
+      }
+    ]
+  },
+  {
+    "id": "_qKl_3pxVD1wPA5cIOCYo",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "点击按钮展开所有需要填写的列表"
+      }
+    ]
+  },
+  {
+    "id": "wYVfsFg72zTcXDq0rf40G",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "在填写时如果有需要导入的部分，会提示导入，点击选择导入的ppt，导入之后，会有显示引用ppt列表查看详情。"
+      }
+    ]
+  },
+  {
+    "id": "KwM2KnUOvz4obAWY6ybBI",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "不允许同时打开两个相同的填写任务，防止保存互相覆盖，提示哪个电脑在踢人"
+      }
+    ]
+  },
+  {
+    "id": "xKPsWdlAhqjJx5z-x9_lx",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "已提交的ppt，可以撤回以及删除"
+      }
+    ]
+  },
+  {
+    "id": "Uj9idpvNmELk8DmP01wDc",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 5
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "填写周、月的时候，可以在右侧看到自己本月、本周填过的所有内容（日周月）"
+      }
+    ]
+  },
+  {
+    "id": "t8-a4I2CfpvYuVoYtX9B1",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 6
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "填写完之后可以分享给别人，可以返回修改建议，类似批注"
+      }
+    ]
+  },
+  {
+    "id": "rGgEzrVXttMz-XssV26Y6",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查看我填写的日/周/月成果导向列表"
+      }
+    ]
+  },
+  {
+    "id": "JbVixH6lnlsmWxbEVmbga",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "以不同的时间维度查看已填写的列表（type: ‘day’ | ‘week’ | ‘month’）"
+      }
+    ]
+  },
+  {
+    "id": "1kuo5pMSSGTuhnu_eu0Bq",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "关联日、周、月，月浏览时月吸顶看周，周浏览时周吸顶看日"
+      }
+    ]
+  },
+  {
+    "id": "j1bUYQVHHyoaNseeB7rNC",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "列表中附带已经创建的线上以及线下会议 "
+      }
+    ]
+  },
+  {
+    "id": "nbIDYaUVptYNFPNRyqNGX",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "并且可以选中任何一个ppt的导向、要点、匹配条件去创建头脑风暴等功能"
+      }
+    ]
+  },
+  {
+    "id": "kIEyMKwcq22rwbOKAxLxq",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查看我创建的日/周/月成果导向列表"
+      }
+    ]
+  },
+  {
+    "id": "0_hlnHpvgYjbASUJezPWr",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "列表中展示未完成人数"
+      }
+    ]
+  },
+  {
+    "id": "sbraYD-SF80QNJWQoLs1z",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "可以一键提醒未填写的人"
+      }
+    ]
+  },
+  {
+    "id": "WEndXs83sGUZJzx_sn2hE",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "在操作中创建线上会议与线下会议"
+      }
+    ]
+  },
+  {
+    "id": "u1zsn4r1zYdfx3aBde3to",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "可以删除创建的月度导向"
+      }
+    ]
+  },
+  {
+    "id": "7404hrSjtt7y1B-eP8D-P",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查询成员某种导向的填写情况列表。"
+      }
+    ]
+  },
+  {
+    "id": "VetIokJEmy2n8p1tbCYEj",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "例如 xxx用户填写过的4月月度成果导向列表。"
+      }
+    ]
+  },
+  {
+    "id": "JSrvEKmrBB6eebm-NWJIN",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "xxx用户填写过的4月第一周填写过的成果导向列表。"
+      }
+    ]
+  },
+  {
+    "id": "GkUSsXDOsNwkF_Zqoj775",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "打开周/月ppt "
+      }
+    ]
+  },
+  {
+    "id": "KGPbrQb80gnYy_UwNSM3Z",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "如果第一次填写，打开初始模板；如果填写过，打开上次保存的。"
+      }
+    ]
+  },
+  {
+    "id": "edseENPHEZIgRFaBaax6D",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "如果删掉ppt之后，再打开是初始模版"
+      }
+    ]
+  },
+  {
+    "id": "2IfMGNV86FHyvgzAScknS",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "增加一键布局，自动排列布局，感知周围元素的位置"
+      }
+    ]
+  },
+  {
+    "id": "q6P-V6haXzXaF_9OLmyrh",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 5
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "保存周/月ppt"
+      }
+    ]
+  },
+  {
+    "id": "Tu-l9M4gZl216fThq70S0",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "用户第一次保存"
+      }
+    ]
+  },
+  {
+    "id": "id3Pv9A6IL5DBdF2xywOE",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "创建成员保存记录，里面包括成员基本信息，ppt文件，记录状态(保存、提交)"
+      }
+    ]
+  },
+  {
+    "id": "unLPezjbPF1M5-Fdx4DdO",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "第二次保存，只会修改ppt文件信息。"
+      }
+    ]
+  },
+  {
+    "id": "wGvBiBUiGcRf82uSOlcUE",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "网络正常情况下会保存到线上"
+      }
+    ]
+  },
+  {
+    "id": "XXd0ApxVIrA4BcgYisuHt",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "网络波动的时候会保存到电脑本地"
+      }
+    ]
+  },
+  {
+    "id": "Lq4jGtzHQCLKjDLxDphdo",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "当下次网络连接上之后会和云端同步数据。"
+      }
+    ]
+  },
+  {
+    "id": "WYYrb7iKBpcEuLQ1CsXLL",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 6
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "提交周/月ppt"
+      }
+    ]
+  },
+  {
+    "id": "rVMvdXqQ5lILUhk4iJP1W",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "用户直接提交"
+      }
+    ]
+  },
+  {
+    "id": "IUeq4lxYYSVXigGoLC1zB",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "创建用户记录，记录状态是已提交。"
+      }
+    ]
+  },
+  {
+    "id": "j2lsOATF7TDlVaUJAbiSC",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "保存 ppt文件，同步ppt文件内容到提交ppt中。"
+      }
+    ]
+  },
+  {
+    "id": "X9HaYsBIJ7VPUVbV5xcVZ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "用户保存过，然后提交"
+      }
+    ]
+  },
+  {
+    "id": "ySydZnhVIiXolt6XnU5EV",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "保存ppt文件，同步ppt文件到提交ppt中。"
+      }
+    ]
+  },
+  {
+    "id": "_JJ_0xtoIW4ies65UD_rY",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "用户提交之后数据处理。"
+      }
+    ]
+  },
+  {
+    "id": "ltlq9FP92r4Au4fVqHeOl",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "提交之后会在本月数据中更新 导向、领航员事件、都来帮事件的数据内容。"
+      }
+    ]
+  },
+  {
+    "id": "WqRwd1mfmvI2CYAhjGWCb",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "如果该成员上月提交过导向ppt，则会在上月数据中补充 成果、感悟等数据。"
+      }
+    ]
+  },
+  {
+    "id": "-IM8uQXEmncSAO8eDPSP9",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "提交ppt会提炼所有填写的字段用作统计。"
+      }
+    ]
+  },
+  {
+    "id": "HG3siHHGEeVPIP0YAiFFQ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 7
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "预览成员ppt"
+      }
+    ]
+  },
+  {
+    "id": "YjtggQhE9lJUKcKKLz-Vi",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "可以在多个位置预览成员填写的ppt文件，例如会议过程中、通过组织架构层级来查看等方式。"
+      }
+    ]
+  },
+  {
+    "id": "4OM7pHrZmevIgijVEGhXA",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "这里预览的ppt文件是成员正式提交的ppt文件，如果没有提交过，则不能看到。"
+      }
+    ]
+  },
+  {
+    "id": "QzSobzmvaRsF8nZk7jWUx",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "在播放ppt时可以增加一键布局，自动排列布局，感知周围元素的位置"
+      }
+    ]
+  },
+  {
+    "id": "zNgIug74xm6R8gQBvTYKm",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 8
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查询部门/公司 日/周/月成果导向列表"
+      }
+    ]
+  },
+  {
+    "id": "goWMX7TzhTFOFB-AvYprm",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "层层下钻，可以点开查看部门详情，填写情况以及填写内容"
+      }
+    ]
+  },
+  {
+    "id": "mAi4hf1KUfNwsEXVmSZB1",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "以不同的时间维度查看列表（type: ‘day’ | ‘week’ | ‘month’）"
+      }
+    ]
+  },
+  {
+    "id": "4GHZmvrS3cUxasNHd1zYj",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "直观查看填写率，低于50%报警"
+      }
+    ]
+  },
+  {
+    "id": "xK2Lpmt9aWzW1w1sMO5aM",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "统计模块"
+      }
+    ]
+  },
+  {
+    "id": "O5Z0Y2gBFPn3asGycXYeo",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查看导向填写率：通过组织架构的视角来查看人员填写情况"
+      }
+    ]
+  },
+  {
+    "id": "Duf0DuL9mC4jlpAkT5X77",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "月：时间域、组织总人数、组织填写人数。"
+      }
+    ]
+  },
+  {
+    "id": "KsTBo3FWPBkIeYb1SgZqo",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "按照组织结构来查看该组织下所有人的填写情况"
+      }
+    ]
+  },
+  {
+    "id": "RHICZFFhPvHSaKS_T9ghv",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "同一个用户同一月只会统计一次。"
+      }
+    ]
+  },
+  {
+    "id": "NAo1-0wMoRITlqifyhuTe",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "周：时间域、组织总人数、组织填写人数。"
+      }
+    ]
+  },
+  {
+    "id": "RnXoFfq2K7sC5epRgyXFJ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "时间域：通过月的时间域+周的次数来限定。例如 4月第1周"
+      }
+    ]
+  },
+  {
+    "id": "sC_CaGhcKRrQbciOs1uLk",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "按照组织结构来查看该组织的 周 所有人的填写情况。"
+      }
+    ]
+  },
+  {
+    "id": "X3xQMUV7MTB_b8rakPW30",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "例如 xxx组织第x周填写情况。"
+      }
+    ]
+  },
+  {
+    "id": "Ty-3nVVdeeN6s_FQNJ_pE",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "同一个用户同一周只会统计一次。"
+      }
+    ]
+  },
+  {
+    "id": "CLREFSknVSMFkou4Zpy82",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "日：待定。"
+      }
+    ]
+  },
+  {
+    "id": "-JDoul7-LWmcUESLPHnyq",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "点击单个部门的填写率会有抽屉显示详情，并且可以下钻，直到展示人的同级ppt列表"
+      }
+    ]
+  },
+  {
+    "id": "OGHMChhShbIzr_rVhTfXK",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "我的统计"
+      }
+    ]
+  },
+  {
+    "id": "6mJ2UbDlg6JmwDZ6uiJLJ",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "光荣榜（分享获赞之星、KR之星、领航之星）"
+      }
+    ]
+  },
+  {
+    "id": "_2FAsEMZyN8uqLacidTyz",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "参会数据（参会数量、收获点赞、有效KR）"
+      }
+    ]
+  },
+  {
+    "id": "ywDsvzKr3cIJt5o1Uluut",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "本人勋章"
+      }
+    ]
+  },
+  {
+    "id": "1V72Greh2OFYopIn4gKh0",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "本人通过导向引发（任务、头脑风暴）"
+      }
+    ]
+  },
+  {
+    "id": "5cCv5i7GetI-3aQX6klDy",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "order": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "会议室模块"
+      }
+    ]
+  },
+  {
+    "id": "ANFBVVnwcoJSO5C6_Vki_",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "创建线下会议（会议室id，月度导向id，会议开始时间、会议结束时间）"
+      }
+    ]
+  },
+  {
+    "id": "ZRdBeiwVI1-oVCbID9MF-",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "初始化会议室成员列表。（roomId,user,成员T度导向文件,分享开始时间，分享结束时间，导向分享时长，成果分享时长）"
+      }
+    ]
+  },
+  {
+    "id": "BBX_EnSu3yL7noxdzsGEt",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "seq（如果成员填写T度导向，成员seq是提交时间；如果没有提交，seq相对靠后）。"
+      }
+    ]
+  },
+  {
+    "id": "JoRDte2gyfuuPZCSUFa8-",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "音频录制、屏幕录制、分享开始结束切片"
+      }
+    ]
+  },
+  {
+    "id": "FYO-EVIEZtqOHVCuaUuDP",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "创建线上会议(头脑风暴)"
+      }
+    ]
+  },
+  {
+    "id": "SwojRnptc41SBBvs6P032",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "月度导向模块这边需要记录一套会议室信息。"
+      }
+    ]
+  },
+  {
+    "id": "WwWLvO82l1NEa-BLcoAcH",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "主要的会议信息记录在头脑风暴模块。"
+      }
+    ]
+  },
+  {
+    "id": "gh8zpbTx-6g5GUClWWWuN",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "会议室成员排序"
+      }
+    ]
+  },
+  {
+    "id": "RhzI8_Ia2R8FsxoYQu1Eg",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "拖动修改seq（手动排序）"
+      }
+    ]
+  },
+  {
+    "id": "PgR_85kO2Xb7o-1pr0LEI",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "分享前随机摇号（随机分享）"
+      }
+    ]
+  },
+  {
+    "id": "vvOF1wgRjjaxkI-lFZCLB",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "记录会议时长：(startTime,pauseTime,stopTime) 记录整体会议的实际时长，stopTime-startTime可以是正确的时长"
+      }
+    ]
+  },
+  {
+    "id": "602je4PeXegf3Us-qLZ9A",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "会议进行到一半，可以进行暂停，下次继续会议，最终展示会议进行总时长。"
+      }
+    ]
+  },
+  {
+    "id": "Z5CyphjbyNDUzDJIlfEbN",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "手动暂停，创建kr暂停（线上)"
+      }
+    ]
+  },
+  {
+    "id": "te_Nb1vShUbu_0XOORIxT",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "记录成员分享时长：(startTime,pauseTime,stopTime)"
+      }
+    ]
+  },
+  {
+    "id": "qj5X_gmqNpMnzXsROeUco",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员分享个人导向内容时，需要记录整体分享时长。"
+      }
+    ]
+  },
+  {
+    "id": "i0IEcDhYda_8R_9lVS-ax",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员开始分享。"
+      }
+    ]
+  },
+  {
+    "id": "_ee09M_SCav8OJ8Wgw95F",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员暂定分享。"
+      }
+    ]
+  },
+  {
+    "id": "G2jP8u3VX4RViP9mmaTDo",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员继续分享。"
+      }
+    ]
+  },
+  {
+    "id": "eJy3l90iNBQF9GQdmmPrs",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 5
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "打开线下会议室"
+      }
+    ]
+  },
+  {
+    "id": "cPS-s3ksZov-zjjUSdAtg",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "展示会议状态"
+      }
+    ]
+  },
+  {
+    "id": "Yhw5xzi6JfimYOhLCfHh_",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "展示会议持续时长"
+      }
+    ]
+  },
+  {
+    "id": "m0ecOjgVA9fIK3uEni50V",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "展示会议室成员列表"
+      }
+    ]
+  },
+  {
+    "id": "8KO0Rtc9DCN8jwAeg8IUy",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员基本信息（userId,userName,orgId,orgName,deptId,deptName）"
+      }
+    ]
+  },
+  {
+    "id": "C36GlIXvFQqrn0UGkJAF4",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员分享信息"
+      }
+    ]
+  },
+  {
+    "id": "noOv9NN2axcWZjiLRmkZo",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "分享状态"
+      }
+    ]
+  },
+  {
+    "id": "X-kuQU9Uy3oFmc0ddca8J",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 4,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "分享时长"
+      }
+    ]
+  },
+  {
+    "id": "pKIxyoC1ZXnklAp8jttOU",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 3,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员填写T度导向ppt文件"
+      }
+    ]
+  },
+  {
+    "id": "FsA-Y2XP9W6safEW_RWIE",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 6
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查询会议状态"
+      }
+    ]
+  },
+  {
+    "id": "m-QCp6dVubeXCUnK4E9dF",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "当新用户进入会议时，用于正确展示当前会议进行状态。"
+      }
+    ]
+  },
+  {
+    "id": "Xcg0ycBlGdMqObQU_vy_H",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 7
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查询成员分享状态"
+      }
+    ]
+  },
+  {
+    "id": "y-mD54cToOgyA3SUFdLSm",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "当新用户进入会议，此时用户正在分享ppt，需要正确展示成员会议分享状态。"
+      }
+    ]
+  },
+  {
+    "id": "3t3put4Agxw0dgpnDbUUt",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 8
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查询会议室成员列表"
+      }
+    ]
+  },
+  {
+    "id": "SzyJMW7PGrDSbNjaRnZKn",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "成员基本信息、成员填写情况、成员分享情况"
+      }
+    ]
+  },
+  {
+    "id": "U1z6kmIlWk80GvCbtpgpn",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "order": 5
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "权限模块"
+      }
+    ]
+  },
+  {
+    "id": "accQHdzg3llEGlTHTiyzj",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "分配组织权限：只有拥有Manager角色的人员才可以分配权限，分配的是最小组织信息"
+      }
+    ]
+  },
+  {
+    "id": "hS4qYK-HcGKbn6V4_qtVs",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "分配给普通用户：普通用户可以创建T度导向，也可以看到之前的所有组织内的T度导向"
+      }
+    ]
+  },
+  {
+    "id": "kzwExbIs7uU9MBUtlQSiF",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "分配给Manager：权限不变，只会对T度导向的查看范围做并集"
+      }
+    ]
+  },
+  {
+    "id": "OAmsUAuNVREKALr5P-X_j",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "取消组织权限："
+      }
+    ]
+  },
+  {
+    "id": "nk3r_tssth1swQq3D_ggT",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "普通人：取消创建权限和查看权限"
+      }
+    ]
+  },
+  {
+    "id": "r_wqS5Or0G2-npsZMy26I",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "Manager：取消一个查看范围"
+      }
+    ]
+  },
+  {
+    "id": "BIgU13g_6Xi3QsFXJAU2D",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "查询已分配成员列表"
+      }
+    ]
+  },
+  {
+    "id": "na8de_90mAdvpNYX92YDI",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "用户需要重新分配权限时查看已分配权限的列表。"
+      }
+    ]
+  },
+  {
+    "id": "xBXrxKE9-7FGcNXaX4q9j",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "order": 6
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "AI模块"
+      }
+    ]
+  },
+  {
+    "id": "w0BD-Qe8_-ys22GfTBmKI",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "概要生成（time维度+organize 维度），以后要通过自定义字段来分析ai维度"
+      }
+    ]
+  },
+  {
+    "id": "zRmPl_-Mj5vGHDJXh4FXF",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "日"
+      }
+    ]
+  },
+  {
+    "id": "5XP8ncqAEhNOwUY-wv-9f",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "周：过程中产生了那些不足、如何让此类事件不在发生、感悟共识、工作共识"
+      }
+    ]
+  },
+  {
+    "id": "WGaoVVnzogXtgss29yB-s",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 2,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "月：领航员、上月不足、当月工作共识、感悟共识"
+      }
+    ]
+  },
+  {
+    "id": "XsxBz40Nn-D0GFanSj13J",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "普通用户只能通过给定平级organize维度的AI概要生成"
+      }
+    ]
+  },
+  {
+    "id": "h9r--VWNQ-cpuS3DdjrOw",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "CEO可以看到任意organize维度的AI概要生成"
+      }
+    ]
+  },
+  {
+    "id": "mDA1j3soba56lkrOuWo_K",
+    "flavour": "paragraph",
+    "nodeType": "editable",
+    "props": {
+      "depth": 1,
+      "order": 3
+    },
+    "meta": {},
+    "children": []
+  },
+  {
+    "id": "SPqk6u93LVrki1kVN1sKw",
+    "flavour": "paragraph",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0
+    },
+    "meta": {},
+    "children": []
+  },
+  {
+    "flavour": "paragraph",
+    "id": "1746760355918_91fec00f_1706",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "heading": 1
+    },
+    "meta": {
+      "createdTime": 1746760355918,
+      "lastModified": {
+        "time": 1746760365045,
+        "userId": "6411306cd2b665246b78719a",
+        "userName": "李炜鹏"
+      }
+    },
+    "children": [
+      {
+        "insert": "设计"
+      }
+    ]
+  },
+  {
+    "id": "OvMdzU8hEhgMh0-1pWo88",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "每人可以填写多个月导向，当填写完成一个，其他可以直接复制过来提交"
+      }
+    ]
+  },
+  {
+    "id": "5khitRRWLRjUwCygeu7RA",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "order": 1
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "已提交的ppt，可以删除提交"
+      }
+    ]
+  },
+  {
+    "id": "cPcXQCb6o23MXkv6dl1mV",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "order": 2
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "在统计中可以看到个人填写的所有ppt"
+      }
+    ]
+  },
+  {
+    "id": "V_HJeeDxvWTrNVwe9bOjf",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "order": 3
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "填写多个ppt，填写率不会被多次计算"
+      }
+    ]
+  },
+  {
+    "id": "CVbLA53l-unBIZDND6foT",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "order": 4
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "如果填写的月度导向被删除，那他在此月度导向下填写的ppt也会被删除"
+      }
+    ]
+  },
+  {
+    "id": "jLrlnyPbPBpR29GQSQd6m",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "order": 5
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "在下月填写ppt时，可选择导入上月某个ppt的内容回顾"
+      }
+    ]
+  },
+  {
+    "id": "mJCpNOpiRZ4f5oaqKiaQX",
+    "flavour": "ordered",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0,
+      "order": 6
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "权限分配，同一权限层级的可以互相查看创建的月度导向并修改"
+      }
+    ]
+  },
+  {
+    "id": "UN7g2btMGyitp96IR0aMw",
+    "flavour": "paragraph",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0
+    },
+    "meta": {},
+    "children": []
+  },
+  {
+    "id": "wETozgWuYLSqrRSLjLacu",
+    "flavour": "paragraph",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "前端设计 "
+      },
+      {
+        "insert": {
+          "mention": "T度导向前端设计"
+        },
+        "attributes": {
+          "d:mentionId": "682c682f64879e6b331ae2ef",
+          "d:mentionType": "doc"
+        }
+      },
+      {
+        "insert": " "
+      }
+    ]
+  },
+  {
+    "id": "iRiHBGOWDsaYRxXeHMD3W",
+    "flavour": "paragraph",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "使用操作 "
+      },
+      {
+        "insert": {
+          "mention": "123"
+        },
+        "attributes": {
+          "d:mentionId": "6832d6fb320972154c21ce22",
+          "d:mentionType": "doc"
+        }
+      },
+      {
+        "insert": " "
+      }
+    ]
+  },
+  {
+    "id": "Ea51lhMJw647902kLeSyj",
+    "flavour": "paragraph",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0
+    },
+    "meta": {},
+    "children": [
+      {
+        "insert": "case时序图 "
+      },
+      {
+        "insert": {
+          "mention": "case 时序图"
+        },
+        "attributes": {
+          "d:mentionId": "6807172f71f863398dc4d4fd",
+          "d:mentionType": "doc"
+        }
+      },
+      {
+        "insert": " "
+      }
+    ]
+  },
+  {
+    "id": "gPrJDclqFXSSFrO5pbb4G",
+    "flavour": "paragraph",
+    "nodeType": "editable",
+    "props": {
+      "depth": 0
+    },
+    "meta": {},
+    "children": []
+  }
+]

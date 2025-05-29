@@ -90,7 +90,6 @@ export class Test2Page {
             }),
             redirect: 'follow'
           })).json()
-
           console.log(`第${cnt}条成功`)
 
         }).catch(e => {
@@ -102,7 +101,7 @@ export class Test2Page {
       })
     }
 
-    for (let docId of ['6821820a69a81e64675b11f8']) {
+    for (let docId of ['681c337d29428c5ddf34548e']) {
       try {
         await request(docId)
       } catch (e) {

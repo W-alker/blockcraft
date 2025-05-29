@@ -1,5 +1,11 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
-import {BaseBlockComponent, generateId, getPositionWithOffset, ORIGIN_SKIP_SYNC} from "../../framework";
+import {
+  BaseBlockComponent,
+  createBlockGapSpace,
+  generateId,
+  getPositionWithOffset,
+  ORIGIN_SKIP_SYNC
+} from "../../framework";
 import {MermaidBlockModel} from "./index";
 import mermaid from "mermaid";
 import {Subject, Subscription, takeUntil} from "rxjs";
@@ -11,7 +17,7 @@ import {nextTick} from "../../global";
 @Component({
   selector: 'div.mermaid-block',
   template: `
-    <div class="head">
+    <div class="head" (mousedown)="$event.preventDefault(); $event.stopPropagation(); doc.selection.selectBlock(id)">
       <div class="btn">Mermaid</div>
       <div class="template-btn btn" (click)="onShowList($event, 'prefix')" [hidden]="props.mode === 'graph'">类型
         <i class="bf_icon bf_xiajaintou" style="font-size: .8em"></i>
@@ -29,7 +35,9 @@ import {nextTick} from "../../global";
       <div class="switch-btn btn" (click)="onSwitchView()"><i class="bc_icon bf_qiehuan"></i></div>
     </div>
 
-    <ng-container #childrenContainer></ng-container>
+    <div class="text-container">
+      <ng-container #childrenContainer></ng-container>
+    </div>
 
     <div class="graph-container">
       <div class="graph-con"></div>
@@ -62,6 +70,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
+
     this.graphContainer = this.hostElement.querySelector('.graph-con') as HTMLDivElement;
 
     this.setView(this.props.mode)

@@ -29,11 +29,16 @@
       }
     }
 
-    .graph-container {
+
+    .text-container, .graph-container {
       overflow: auto;
       scroll-behavior: smooth;
       scrollbar-width: thin;
       max-height: 60vh;
+    }
+
+    .text-container {
+      padding: 10px;
     }
 
     .graph-con {
@@ -98,7 +103,7 @@
     overflow-y: auto;
     max-height: 60vh;
     margin-bottom: 0;
-    padding: 16px;
+    //padding: 16px;
     font-family: Menlo, Monaco, "Courier New", monospace;
     color: #333;
     font-size: var(--bc-fs-sm);

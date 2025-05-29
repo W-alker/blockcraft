@@ -16,11 +16,10 @@ export class MermaidBlocKeyBinding extends DocPlugin {
       block.deleteText(sel.from.index, sel.from.length)
     }
     block.insertText(sel.from.index, STR_LINE_BREAK)
-    window.getSelection()!.modify('move', 'forward', 'character')
-    // const index = sel.from.index + STR_LINE_BREAK.length
-    // nextTick().then(() => {
-    //   block.setInlineRange(index)
-    // })
+    const index = sel.from.index + STR_LINE_BREAK.length
+    nextTick().then(() => {
+      block.setInlineRange(index)
+    })
     return true
   }
 

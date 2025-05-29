@@ -73,7 +73,7 @@ export class InlineManager {
 
     const converter = this._embedConverterMap.get(Object.keys(delta.insert)[0])
     if (!converter) {
-      throw new BlockCraftError(ErrorCode.InlineEditorError, 'no embed registered for this type')
+      throw new BlockCraftError(ErrorCode.InlineEditorError, 'no embed registered for this type: ' + Object.keys(delta.insert)[0])
     }
     const node = document.createElement(INLINE_ELEMENT_TAG)
     const span = document.createElement('span')

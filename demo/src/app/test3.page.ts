@@ -2,7 +2,7 @@ import {Component, ViewChild} from "@angular/core";
 import {EditorComponent} from '../../../blockcraft/editor'
 import {performanceTest} from "../../../blockcraft";
 import {OLD_JSON} from "../version-adapter";
-import {DOC_IDS} from "./const";
+import {DOC_IDS, TEST_DATA} from "./const";
 
 @Component({
   selector: 'app-test3',
@@ -53,7 +53,7 @@ export class Test3Page {
       method: 'POST',
       headers: myHeaders,
       body: JSON.stringify({
-        id: DOC_IDS[Math.floor(Math.random() * DOC_IDS.length)],
+        id: '681c337d29428c5ddf34548e',
       }),
       redirect: 'follow'
     })).json())

@@ -26,7 +26,6 @@ export class InputTransformer {
   @EventListen('compositionStart')
   private _handleCompositionStart(context: UIEventStateContext) {
     const curSel = this.doc.selection.value!
-    context.preventDefault()
     if (curSel.from.type !== 'text') {
       // const clone = curSel.raw.cloneRange()
       // clone.collapse(false)
@@ -67,16 +66,15 @@ export class InputTransformer {
     const text = ev.data
     const {block, index} = sel.from
     this.doc.crud.transact(() => {
-      if (index === 0) {
-        block.yText.insert(0, text)
-      } else {
-        block.yText.insert(index, text)
-      }
+      block.yText.insert(index, text)
       // TODO: 更好的中文输入法反显渲染
-      block.rerender()
-      nextTick().then(() => {
-        block.setInlineRange(index + text.length)
-      })
+      if (index === 0 || sel.raw.startContainer.parentElement?.localName !== INLINE_TEXT_NODE_TAG) {
+        block.rerender()
+
+        requestAnimationFrame(() => {
+          block.setInlineRange(index + text.length)
+        })
+      }
     }, ORIGIN_SKIP_SYNC)
   }
 
