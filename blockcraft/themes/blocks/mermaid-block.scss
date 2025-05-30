@@ -101,9 +101,8 @@
 
   .mermaid-textarea {
     overflow-y: auto;
-    max-height: 60vh;
     margin-bottom: 0;
-    //padding: 16px;
+    padding: 6px;
     font-family: Menlo, Monaco, "Courier New", monospace;
     color: #333;
     font-size: var(--bc-fs-sm);

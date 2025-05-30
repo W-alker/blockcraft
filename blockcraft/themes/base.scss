@@ -265,6 +265,8 @@
     padding: 0 .15em;
     color: #4857E2;
     cursor: pointer;
+    white-space: pre-wrap;
+    word-break: break-all;
 
     &[data-mention-type="user"] {
       &::before {
