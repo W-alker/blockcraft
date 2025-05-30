@@ -23,9 +23,14 @@
 
     .callout-block-prefix {
       position: absolute;
-      left: 0.5em;
+      left: 0.6em;
       top: 14px;
-      font-size: 1em;
+      font-size: 1.2em;
+      cursor: pointer;
+
+      &:hover {
+        background-color: var(--bc-select-background-color);
+      }
     }
   }
 }

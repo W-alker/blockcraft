@@ -66,7 +66,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
   const aroundOrderBlocks: BaseBlockComponent<OrderedBlockModel>[] = []
   for (let i = index - 1; i >= 0; i--) {
     const prevBlock = parentChildren[i]
-    if (prevBlock.flavour !== 'ordered' && (!prevBlock.props.depth || prevBlock.props.depth === 0)) break
+    if (prevBlock.flavour !== 'ordered' && !prevBlock.props.depth) break
     if (prevBlock.flavour === 'ordered' && prevBlock.props.depth === 0) {
       aroundOrderBlocks.unshift(prevBlock)
       break

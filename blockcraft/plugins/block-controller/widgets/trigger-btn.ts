@@ -406,6 +406,10 @@ export class TriggerBtn {
     this.embeddedBlockList = schemas.filter(item => item.flavour.endsWith('-embed'))
   }
 
+  ngOnDestroy() {
+    this.close()
+  }
+
   protected readonly BlockNodeType = BlockNodeType;
   protected readonly ALIGN_LIST = ALIGN_LIST;
   protected readonly HEADING_LIST = HEADING_LIST;

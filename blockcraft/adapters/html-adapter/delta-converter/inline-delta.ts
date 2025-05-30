@@ -134,20 +134,20 @@ export const linkDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
 export const mentionDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher =
   {
     name: 'mention',
-    match: delta => typeof delta === 'object',
+    // @ts-expect-error
+    match: delta => typeof delta === 'object' && !!delta.insert?.['mention'],
     toAST: (_, context) => {
       return {
         type: 'element',
         tagName: 'span',
         properties: {},
-        children: [context.current],
+        children: [],
       };
     },
   };
 
 export const inlineDeltaToHtmlAdapterMatchers: InlineDeltaToHtmlAdapterMatcher[] =
   [
-    mentionDeltaToHtmlAdapterMatcher,
     boldDeltaToHtmlAdapterMatcher,
     italicDeltaToHtmlAdapterMatcher,
     strikeDeltaToHtmlAdapterMatcher,
@@ -155,4 +155,5 @@ export const inlineDeltaToHtmlAdapterMatchers: InlineDeltaToHtmlAdapterMatcher[]
     inlineCodeDeltaToMarkdownAdapterMatcher,
     // referenceDeltaToHtmlAdapterMatcher,
     linkDeltaToHtmlAdapterMatcher,
+    mentionDeltaToHtmlAdapterMatcher,
   ];

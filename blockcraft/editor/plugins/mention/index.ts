@@ -167,17 +167,21 @@ export class MentionPlugin extends DocPlugin {
     dialog.instance.confirm.pipe(takeUntil(this._closeDialog$)).subscribe(({id, name}) => {
       this.doc.crud.transact(() => {
         const {block, index, length} = calcPos()
-        block.deleteText(index, length)
-        block.insertEmbed(index, {
-          insert: {mention: name},
-          attributes: {
-            'd:mentionId': id,
-            'd:mentionType': _tab,
-          }
-        })
+        block.applyDeltaOperation([
+          { retain: index },
+          { delete: length },
+          {
+            insert: { mention: name },
+            attributes: {
+              'd:mentionId': id,
+              'd:mentionType': _tab
+            }
+          },
+          { insert: ' ' }
+        ]);
         nextTick().then(() => {
-          this.doc.selection.setCursorAt(block, index + 1)
-        })
+          this.doc.selection.setCursorAt(block, index + 2);
+        });
       }, ORIGIN_SKIP_SYNC)
       this._closeDialog$.next(true)
     })

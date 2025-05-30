@@ -91,11 +91,13 @@ export class BlockTransformerPlugin extends DocPlugin {
       const selection = this.doc.selection.value
       if (!selection || !selection.collapsed || selection.from.type !== 'text' || selection.from.block.flavour !== 'paragraph') return
       const block = selection.from.block
-      if (block.textContent() !== e.data) return
+      if (block.textContent() !== e.data) return false
       const schema = this.doc.schemas.get(block.flavour)!
-      if (schema.metadata.isLeaf) return;
+      if (schema.metadata.isLeaf) return false
       this.openContextMenu(block)
+      return true
     }
+    return false
   }
 
   private _mdTransform = () => {

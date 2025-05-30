@@ -16,7 +16,7 @@
       @for (item of list; track item.id; let idx = $index) {
         <div class="mention-dialog__content__item" [attr.data-id]="item.id"
              [class.active]="selectIndex === idx">
-          'doc' ---> {{item.name}}
+          'user' ---> {{item.name}}
         </div>
       }
 
@@ -25,7 +25,7 @@
       @for (item of list; track item.id; let idx = $index) {
         <div class="mention-dialog__content__item" [attr.data-id]="item.id"
              [class.active]="selectIndex === idx">
-          'user' ---> {{item.name}}
+          'doc' ---> {{item.name}}
         </div>
       }
     }

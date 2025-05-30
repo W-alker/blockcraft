@@ -509,7 +509,7 @@ export class SelectionManager {
 
     const getInlineOffset = (block: EditableBlockComponent<any>, node: Node, offset: number) => {
 
-      if (node === block.hostElement) {
+      if (node === block.hostElement && block.hostElement !== block.containerElement) {
         return offset > 0 ? block.textLength : 0
       }
 

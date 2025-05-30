@@ -130,6 +130,10 @@ export const deltaToString = (delta: DeltaInsert[]) => {
   return delta.reduce((acc, cur) => acc + (typeof cur.insert === "string" ? cur.insert : ''), '')
 }
 
+export const deltaStrLength = (delta: DeltaInsert[]) => {
+  return delta.reduce((acc, cur) => acc + (typeof cur.insert === "string" ? cur.insert.length : 1), 0)
+}
+
 const isAttrsContain = (attrs: Record<string, any>, attrs2: Record<string, any>) => {
   for (const key in attrs2) {
     if (attrs2[key] !== attrs[key]) return false

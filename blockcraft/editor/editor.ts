@@ -8,7 +8,7 @@ import {
   DOC_LINK_PREVIEWER_SERVICE_TOKEN,
   DOC_MESSAGE_SERVICE_TOKEN,
   DocLinkPreviewerService,
-  EditableBlockComponent, generateId, IBlockSelectionJSON, IBlockSnapshot, InlineManager,
+  EditableBlockComponent, EmbedConverter, generateId, IBlockSelectionJSON, IBlockSnapshot, InlineManager,
   native2YBlock,
   SchemaManager, Y_BLOCK_MAP_NAME
 } from "../framework";
@@ -89,6 +89,22 @@ const schemas = new SchemaManager([
   CaptionBlockSchema, RootBlockSchema,
   MermaidTextareaBlockSchema, MermaidBlockSchema, BlockquoteBlockSchema
 ])
+
+export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
+  toView: (embed) => {
+    const a = document.createElement('a');
+    a.textContent = embed.insert['link'] as string;
+    a.target = '_blank';
+    a.href = embed.attributes?.['d:href'] as string;
+    return a;
+  },
+  toDelta: (ele) => {
+    return {
+      insert: { link: ele.textContent! },
+      attributes: InlineManager.getAttrs(ele)
+    };
+  }
+};
 
 @Component({
   selector: 'block-craft-editor',
@@ -213,6 +229,9 @@ export class EditorComponent {
             }
           }
         }
+      ],
+      [
+        'link', OLD_LINK_EMBED_CONVERTER
       ]
     ],
     plugins: [new AutoUpdateOrderPlugin(), new CodeBlocKeyBinding(), new TableBlockBinding(), new MermaidBlocKeyBinding(),

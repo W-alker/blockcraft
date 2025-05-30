@@ -117,6 +117,11 @@ export class InputTransformer {
       // delete content
       if (from.type === 'text' && ev.inputType.startsWith('delete')) {
         ev.preventDefault()
+        // 要删除的可能是embed节点
+        if (staticRange.startContainer === staticRange.endContainer && isZeroSpace(staticRange.startContainer) && normalizedRange.from.type === 'text') {
+          normalizedRange.from.index = normalizedRange.from.index - 1
+          normalizedRange.from.length = 1
+        }
         this._replaceText(normalizedRange)
         this.doc.selection.recalculate()
         // from.block.yText.delete(from.index, from.length)
@@ -126,22 +131,23 @@ export class InputTransformer {
       if (!text) return;
 
       // in zero text
-      if (collapsed && staticRange.startContainer instanceof Text && isZeroSpace(staticRange.startContainer)) {
+      if (collapsed && isZeroSpace(staticRange.startContainer)) {
+        ev.preventDefault()
         const zeroTextEle = staticRange.startContainer.parentElement!
-        // <c-element><embed></embed><c-zero-text>ZWS;↓</c-zero-text></c-element>
         const textElement: HTMLElement = document.createElement(INLINE_TEXT_NODE_TAG)
-        textElement.textContent = STR_ZERO_WIDTH_SPACE
+        textElement.textContent = text
+        // <c-element><embed></embed><c-zero-text>ZWS;↓</c-zero-text></c-element>
         if (zeroTextEle.parentElement?.localName === INLINE_ELEMENT_TAG) {
           const cloneElement = zeroTextEle.parentElement.cloneNode(false) as HTMLElement
-          cloneElement.replaceChildren(textElement)
+          cloneElement.appendChild(textElement)
           zeroTextEle.parentElement.after(cloneElement)
         } else {
           // <paragraph><c-zero-text>ZWS;↓</c-zero-text></paragraph>
           const cElement = document.createElement(INLINE_ELEMENT_TAG)
-          cElement.replaceChildren(textElement)
+          cElement.appendChild(textElement)
           zeroTextEle.after(cElement)
         }
-        document.getSelection()!.selectAllChildren(textElement)
+        document.getSelection()!.setPosition(textElement.firstChild!, text.length)
       }
 
       // in inline end break
@@ -368,10 +374,6 @@ export class InputTransformer {
 
     context.preventDefault()
     const fromBlock = state.selection.from.block
-    // if (fromBlock.nodeType !== BlockNodeType.editable) {
-    //   this.doc.messageService.warn('该类型块不可缩进')
-    //   return true
-    // }
 
     const prevBlock = this.doc.prevSibling(fromBlock)
     // @ts-ignore

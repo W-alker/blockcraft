@@ -12,15 +12,21 @@ export const replaceSnapshotsIdDeeply = (snapshots: IBlockSnapshot[]) => {
   })
 }
 
+export const replaceSnapshotsDepths = (snapshots: IBlockSnapshot[], startDepth: number) => {
+  snapshots.forEach(v => {
+    v.props.depth = startDepth
+  })
+}
+
 export const snapshots2Text = (snapshots: IBlockSnapshot[]) => {
   let str = ''
 
   const append = (snapshot: IBlockSnapshot) => {
-    if(snapshot.nodeType === 'editable') {
+    if (snapshot.nodeType === 'editable') {
       str += deltaToString(snapshot.children)
     }
 
-    if(snapshot.nodeType === 'block' || snapshot.nodeType === 'root') {
+    if (snapshot.nodeType === 'block' || snapshot.nodeType === 'root') {
       snapshot.children.forEach(append)
     }
   }

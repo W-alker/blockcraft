@@ -97,8 +97,9 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     this.applyDeltaOperation([{retain: index}, embed])
   }
 
-  formatText(index: number, length: number, attributes: Record<string, any>) {
+  formatText(index: number, length: number, attributes: DeltaInsert['attributes']) {
     this.doc.crud.transact(() => {
+      // @ts-expect-error
       this.yText.format(index, length, attributes)
       this._applyDeltaToView([{retain: index}, {retain: length, attributes}])
     }, ORIGIN_SKIP_SYNC)
