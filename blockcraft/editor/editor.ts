@@ -61,6 +61,7 @@ import {MermaidBlocKeyBinding} from "../plugins";
 import {MentionPlugin} from "./plugins/mention";
 import * as Y from 'yjs'
 import {BlockCraftAwareness} from "./awa";
+import {IndexeddbPersistence} from "y-indexeddb";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -100,7 +101,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
   },
   toDelta: (ele) => {
     return {
-      insert: { link: ele.textContent! },
+      insert: {link: ele.textContent!},
       attributes: InlineManager.getAttrs(ele)
     };
   }
@@ -364,16 +365,30 @@ export class EditorComponent {
   }
 
   provider!: WebsocketProvider
+
   enterRoom() {
-    this.provider = new WebsocketProvider('ws://localhost:1234', this.rootId, this.doc.yDoc)
-    this.provider.on('sync', (v: boolean) => {
+    const persistence = new IndexeddbPersistence(this.rootId, this.doc.yDoc)
+    persistence.once('synced', () => {
       const yRoot = this.doc.yBlockMap.get(this.rootId)
-      console.log('sync', v, yRoot)
-      if (!yRoot) {
-        this.initBySnapshot()
-      } else {
+      if (yRoot) {
         this.doc.initByYBlock(yRoot, this.container)
       }
+
+
+      this.provider = new WebsocketProvider('ws://127.0.0.1:1234', this.rootId, this.doc.yDoc, {
+        disableBc: true
+      })
+      this.provider.on('sync', (v: boolean) => {
+        const yRoot = this.doc.yBlockMap.get(this.rootId)
+        console.log('sync', v, yRoot)
+        if (!yRoot) {
+          this.initBySnapshot()
+        } else {
+          this.doc.initByYBlock(yRoot, this.container)
+        }
+      })
+
+
     })
 
     const uid = generateId(11)

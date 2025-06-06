@@ -3,8 +3,7 @@ import {EditableBlockComponent, getPositionWithOffset, ORIGIN_SKIP_SYNC, STR_LIN
 import {CodeBlockModel} from "./index";
 import * as Prism from "prismjs";
 import {AsyncPipe, NgForOf} from "@angular/common";
-import {merge, take} from "rxjs";
-import {ComponentPortal} from "@angular/cdk/portal";
+import {merge, Subject, take} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {Overlay} from "@angular/cdk/overlay";
 import {LangListComponent} from "./lang-list.component";
@@ -193,30 +192,27 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   showLangList(e: Event) {
-    if(this.doc.isReadonly) return
+    if (this.doc.isReadonly) return
     e.preventDefault()
     e.stopPropagation()
+
     this.isHoldHeader = true
-    const positionStrategy = this.overlay.position().flexibleConnectedTo(e.target as HTMLElement).withPositions([
-      getPositionWithOffset('bottom-center'), getPositionWithOffset('top-center')
-    ])
-    const portal = new ComponentPortal(LangListComponent)
-    const ovr = this.overlay.create({
-      positionStrategy,
-      hasBackdrop: true,
-      backdropClass: 'cdk-overlay-transparent-backdrop',
+
+    const closeList$ = new Subject()
+    const {componentRef: cpr} = this.doc.overlayService.createConnectedOverlay<LangListComponent>({
+      target: e.target as HTMLElement,
+      component: LangListComponent,
+      positions: [getPositionWithOffset('bottom-center'), getPositionWithOffset('top-center')],
+      backdrop: true
+    }, closeList$, () => {
+      this.isHoldHeader = false
     })
-    const cpr = ovr.attach(portal)
     cpr.setInput('activeLang', this.props.lang)
 
-    merge(cpr.instance.destroy, ovr.backdropClick(), this.onDestroy$).pipe(take(1)).subscribe(() => {
-      ovr.dispose()
-      this.isHoldHeader = false
-      this.changeDetectorRef.markForCheck()
-    })
     cpr.instance.langChange.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(lang => {
+      closeList$.next(true)
+      this.setInlineRange(0)
       this.changeLanguage(lang)
-      ovr.dispose()
     })
   }
 

@@ -1,4 +1,4 @@
-import {ChangeDetectionStrategy, Component} from "@angular/core";
+import {ChangeDetectionStrategy, Component, HostBinding} from "@angular/core";
 import {EditableBlockComponent} from "../../framework";
 import {TodoBlockModel} from "./index";
 
@@ -14,6 +14,11 @@ import {TodoBlockModel} from "./index";
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class TodoBlockComponent extends EditableBlockComponent<TodoBlockModel> {
+
+  @HostBinding('class.is-checked')
+  get checked() {
+    return this._native.props.checked
+  }
 
   toggleCompleted(e: Event) {
     e.preventDefault()

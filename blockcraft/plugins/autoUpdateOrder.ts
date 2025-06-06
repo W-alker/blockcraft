@@ -64,27 +64,25 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
   if (index === -1) return
 
   const aroundOrderBlocks: BaseBlockComponent<OrderedBlockModel>[] = []
+
   for (let i = index - 1; i >= 0; i--) {
     const prevBlock = parentChildren[i]
-    if (prevBlock.flavour !== 'ordered' && !prevBlock.props.depth) break
-    if (prevBlock.flavour === 'ordered' && prevBlock.props.depth === 0) {
+    if (prevBlock.flavour === 'ordered') {
       aroundOrderBlocks.unshift(prevBlock)
-      break
     }
-    // if (prevBlock.flavour !== 'ordered-block' && <number>prevBlock.props.indent <= block.props.indent) break
-    // if(prevBlock.flavour === 'ordered-block' && <number>prevBlock.props.indent < block.props.indent) {
-    //   aroundOrderBlocks.unshift(prevBlock as BlockModel<IOrderedListBlockModel>)
-    //   break
-    // }
-    prevBlock.flavour === 'ordered' && aroundOrderBlocks.unshift(prevBlock)
+    if (!prevBlock.props.depth) break
   }
 
   for (let j = index; j < parentChildren.length; j++) {
     const nextBlock = parentChildren[j]
-    if (nextBlock.flavour !== 'ordered' && (!nextBlock.props.depth || nextBlock.props.depth === 0)) break
+    if (nextBlock.flavour === 'ordered') {
+      aroundOrderBlocks.push(nextBlock)
+    }
+    if (nextBlock.flavour !== 'ordered' && !nextBlock.props.depth) break
     // if(nextBlock.flavour !== 'ordered-block' && <number>nextBlock.props.indent >= block.props.indent) break
-    aroundOrderBlocks.push(nextBlock)
   }
+
+  if (!aroundOrderBlocks.length) return
 
   const orderMap: Record<number, number> = {}
   let prevIndent = aroundOrderBlocks[0].props.depth

@@ -1,7 +1,7 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {
   BaseBlockComponent,
-  createBlockGapSpace,
+  createBlockGapSpace, DOC_FILE_SERVICE_TOKEN,
   generateId,
   getPositionWithOffset,
   ORIGIN_SKIP_SYNC
@@ -11,7 +11,8 @@ import mermaid from "mermaid";
 import {Subject, Subscription, takeUntil} from "rxjs";
 import {MermaidTypeListComponent} from "./widgets/mermaid-type-list.component";
 import {IMermaidType, MermaidViewMode} from "./types";
-import {nextTick} from "../../global";
+import {nextTick, svgToImageElement} from "../../global";
+
 // import {ScaleRatioPipe} from "./ratio.pipe";
 
 @Component({
@@ -182,8 +183,19 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   }
 
   private setGraphWidth(ratio: number) {
-    const svg = this.graphContainer.firstElementChild! as SVGAElement
+    const svg = this.graphContainer.firstElementChild! as SVGElement
     if (!svg) return;
     svg.style.maxWidth = this.graphMaxWidth * ratio + 'px'
+  }
+
+  onPreviewGraph(evt: MouseEvent) {
+    evt.stopPropagation()
+    evt.preventDefault()
+    const svg = this.graphContainer.firstElementChild
+    if (!svg || !(svg instanceof SVGElement)) return
+    //svg转图片
+    const img = svgToImageElement(svg)
+    const div = document.createElement('div')
+    this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg(img, 'mermaid')
   }
 }

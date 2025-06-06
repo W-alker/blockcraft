@@ -28,6 +28,7 @@ export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       //     ? code.children[0]
       //     : {...code, tagName: 'div'};
 
+      // TODO 优化代码语句分行
       walkerContext
         .openNode(
           CodeBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node, {

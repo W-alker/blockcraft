@@ -80,12 +80,12 @@ export class BookmarkBlockToolbar {
     switch ($event.value) {
       case 'embed':
         if(!this.embedType) return
-        const embed = this.doc.schemas.createSnapshot(this.embedType, [this.block.props.url])
+        const embed = this.doc.schemas.createSnapshot(this.embedType, [this.block.props.url, this.block.props])
         this.doc.crud.replaceWithSnapshots(this.block.id, [embed]).then(() => {})
         break
       case 'inline':
         const paragraph = this.doc.schemas.createSnapshot('paragraph', [
-          [{insert: this.block.props.url, attributes: {'a:link': this.block.props.url}}]]
+          [{insert: this.block.props.url, attributes: {'a:link': this.block.props.url}}], this.block.props]
         )
         this.doc.crud.replaceWithSnapshots(this.block.id, [paragraph]).then(() => {
           this.doc.selection.selectOrSetCursorAtBlock(paragraph.id, false)

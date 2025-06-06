@@ -6,7 +6,7 @@ import {
   EventListen,
   EventScopeSourceType,
   EventSourceState,
-  IBlockSnapshot,
+  IBlockSnapshot, STR_LINE_BREAK,
   UIEventState,
   UIEventStateContext
 } from "../../block-std";
@@ -91,7 +91,7 @@ export class ClipboardManager {
     const betweenBlocks = this.doc.queryBlocksBetween(from.block, to.block)
     for (const bid of betweenBlocks) {
       snapshots.push(this.doc.getBlockById(bid).toSnapshot())
-      plainText += this.doc.getBlockById(bid).textContent()
+      plainText += (this.doc.getBlockById(bid).textContent() + STR_LINE_BREAK)
     }
 
     if (from.type === 'text') {
@@ -100,7 +100,7 @@ export class ClipboardManager {
         const snapshot = from.block.toSnapshot()
         snapshot.children = sliceDeltas
         snapshots.unshift(snapshot)
-        plainText = deltaToString(sliceDeltas) + plainText
+        plainText = deltaToString(sliceDeltas) + STR_LINE_BREAK + plainText
       }
     } else {
       snapshots.unshift(from.block.toSnapshot())

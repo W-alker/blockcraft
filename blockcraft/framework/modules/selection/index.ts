@@ -1,142 +1,21 @@
 import {
   BaseBlockComponent,
-  EditableBlockComponent,
-  BlockNodeType,
-  UIEventStateContext,
   BindHotKey,
+  BlockNodeType,
   DocEventRegister,
+  EditableBlockComponent,
   EventListen,
-  INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS
+  INLINE_ELEMENT_TAG,
+  INLINE_END_BREAK_CLASS,
+  UIEventStateContext
 } from "../../block-std";
 import {BlockCraftError, ErrorCode, nextTick, performanceTest} from "../../../global";
 import {BehaviorSubject, skip, take, takeUntil} from "rxjs";
 import {closetBlockId, isZeroSpace} from "../../utils";
 import {SelectionSelectedManager} from "./selected-manager";
 import {FakeRange, IFakeRangeConfig} from "./createFakeRange";
-
-export interface IInlineRange {
-  index: number
-  length: number
-}
-
-/**
- * {@link IBlockTextRange} 的 JSON 格式\
- * {@link IBlockSelectedRange} 的 JSON 格式
- */
-export type IBlockRange = IBlockTextRange | IBlockSelectedRange
-
-export interface IBlockTextRange extends IInlineRange {
-  block: EditableBlockComponent<any>
-  blockId: string
-  type: 'text'
-}
-
-export interface IBlockSelectedRange {
-  block: BaseBlockComponent<any>
-  blockId: string
-  type: 'selected'
-}
-
-export interface INormalizedRange {
-  from: IBlockRange,
-  to: IBlockRange | null,
-  collapsed: boolean
-}
-
-export type IBlockInlineRangeJSON = {
-  index: number,
-  length: number,
-  blockId: string,
-  type: 'text'
-} | {
-  blockId: string,
-  type: 'selected'
-}
-
-export interface IBlockSelectionJSON {
-  from: IBlockInlineRangeJSON,
-  to: IBlockInlineRangeJSON | null
-  collapsed: boolean
-  commonParent: string
-}
-
-export class BlockSelection implements INormalizedRange {
-
-  constructor(private _doc: BlockCraft.Doc,
-              private readonly normalizedRange: INormalizedRange,
-              readonly raw: Range,
-              private selection: Selection) {
-    this._commonParent = this.isInSameBlock ? this.from.blockId : closetBlockId(raw.commonAncestorContainer)!
-  }
-
-  private readonly _commonParent: string
-
-  get commonParent() {
-    return this._commonParent
-  }
-
-  get from() {
-    return this.normalizedRange.from
-  }
-
-  get to() {
-    return this.normalizedRange.to
-  }
-
-  get firstBlock() {
-    return this.from.block
-  }
-
-  get lastBlock() {
-    return this.to?.block || this.from.block
-  }
-
-  get collapsed() {
-    return this.normalizedRange.collapsed
-  }
-
-  get isInSameBlock() {
-    return !this.to
-  }
-
-  get isStartOfBlock() {
-    return this.from.type === 'selected' ? true : this.from.index === 0
-  }
-
-  get isAllSelected() {
-    return this.from.type === 'selected' ? (this.to ? this.to.type === 'selected' : true) : false
-  }
-
-  get isEndOfBlock() {
-    if (this.to) {
-      return this.to.type === 'selected' ? true : (this.to.index + this.to.length) >= this.to.block.textLength
-    }
-    return this.from.type === 'text' ? (this.from.index + this.from.length) === this.from.block.textLength : true
-  }
-
-  getDirection() {
-    if (this.selection.anchorNode === this.selection.focusNode) {
-      return this.raw.startOffset < this.raw.endOffset ? 'forward' : 'backward'
-    }
-    const position = this.selection.anchorNode!.compareDocumentPosition(this.selection.focusNode!)
-    return position === Node.DOCUMENT_POSITION_PRECEDING ? 'backward' : 'forward'
-  }
-
-  toJSON(): IBlockSelectionJSON {
-    return JSON.parse(JSON.stringify({
-      from: {
-        ...this.from,
-        block: undefined
-      },
-      to: this.to ? {
-        ...this.to,
-        block: undefined
-      } : null,
-      collapsed: this.collapsed,
-      commonParent: this.commonParent
-    }))
-  }
-}
+import {BlockSelection} from "./blockSelection";
+import {IBlockInlineRangeJSON, IBlockRange, IBlockSelectionJSON, INormalizedRange} from "./types";
 
 @DocEventRegister
 export class SelectionManager {
@@ -380,6 +259,24 @@ export class SelectionManager {
 
     this.doc.selection.selectAllChildren(selection.commonParent)
     return true
+  }
+
+  @BindHotKey({key: 'Home', shortKey: null})
+  handleHome(context: UIEventStateContext) {
+    const state = context.get('keyboardState')
+    const {selection} = state
+    if (!selection.collapsed || selection.from.type !== 'text') return
+    context.preventDefault()
+    selection.from.block.setInlineRange(0)
+  }
+
+  @BindHotKey({key: 'End', shortKey: null})
+  handleEnd(context: UIEventStateContext) {
+    const state = context.get('keyboardState')
+    const {selection} = state
+    if (!selection.collapsed || selection.from.type !== 'text') return
+    context.preventDefault()
+    selection.from.block.setInlineRange(selection.from.block.textLength)
   }
 
   @EventListen('keyDown')
@@ -705,15 +602,16 @@ export class SelectionManager {
    * 2. If the block is not editable, select the block.
    * @param block
    * @param atStart
+   * @param scrollIntoView
    */
-  selectOrSetCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean) {
+  selectOrSetCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean, scrollIntoView = true) {
     block = typeof block === 'string' ? this.doc.getBlockById(block) : block
     if (this.doc.isEditable(block)) {
       this.setCursorAt(block, atStart ? 0 : block.textLength)
-      return
+    } else {
+      this.selectBlock(block)
     }
-    this.selectBlock(block)
-    block.hostElement.scrollIntoView({behavior: 'smooth', block: 'nearest'})
+    scrollIntoView && block.hostElement.scrollIntoView({block: 'nearest'})
   }
 
   /**
@@ -722,32 +620,20 @@ export class SelectionManager {
    * 3. If the block has children, try to find an editable descendant and set the cursor at the start or end of it. If no editable descendant is found, select the block.
    * @param block
    * @param atStart
+   * @param scrollIntoView
    */
-  setCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean) {
+  setCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean, scrollIntoView = true) {
     block = typeof block === 'string' ? this.doc.getBlockById(block) : block
     if (this.doc.isEditable(block)) {
       this.setCursorAt(block, atStart ? 0 : block.textLength)
-      return
-    }
-
-    if (block.nodeType === BlockNodeType.void) {
+    } else if (block.nodeType === BlockNodeType.void) {
       this.selectBlock(block)
-      return
+    } else {
+      const children = searchEditableDescendant(block, atStart)
+      if (!children) this.selectBlock(block)
+      else this.selectOrSetCursorAtBlock(children, atStart)
     }
-
-    const searchEditableDescendant = (block: BlockCraft.BlockComponent, isStart: boolean): EditableBlockComponent | null => {
-      if (this.doc.isEditable(block)) return block
-      const child = atStart ? block.firstChildren : block.lastChildren
-      if (!child || child.nodeType === BlockNodeType.void) return null
-      return searchEditableDescendant(child, isStart)
-    }
-
-    const children = searchEditableDescendant(block, atStart)
-    if (!children) {
-      this.selectBlock(block)
-      return
-    }
-    this.selectOrSetCursorAtBlock(children, atStart)
+    scrollIntoView && block.hostElement.scrollIntoView({block: 'nearest'})
   }
 
   selectAllChildren(block: string | BlockCraft.BlockComponent) {
@@ -769,31 +655,18 @@ export class SelectionManager {
     this.setSelection(json.from, json.to)
   }
 
-  toString(selection: BlockCraft.Selection) {
-    let text = ''
-    if (selection.collapsed) return text
-    if (selection.from.type === 'text') {
-      text = selection.from.block.textContent().slice(selection.from.index, selection.from.index + selection.from.length)
-    }
-    if (!selection.to) {
-      return text
-    }
-
-    const between = this.doc.queryBlocksBetween(selection.from.block, selection.to.block)
-    between.forEach(block => {
-      text += this.doc.getBlockById(block).textContent()
-    })
-    if (selection.to.type === 'text') {
-      text += selection.to.block.textContent().slice(0, selection.to.index)
-    }
-    return text
-  }
-
   @performanceTest()
   createFakeRange(json: IBlockSelectionJSON, config: IFakeRangeConfig = {}) {
     return new FakeRange(this.doc, json, config)
   }
 
+}
+
+const searchEditableDescendant = (block: BlockCraft.BlockComponent, isStart: boolean): EditableBlockComponent | null => {
+  if (block.nodeType === BlockNodeType.editable) return <EditableBlockComponent>block
+  const child = isStart ? block.firstChildren : block.lastChildren
+  if (!child || child.nodeType === BlockNodeType.void) return null
+  return searchEditableDescendant(child, isStart)
 }
 
 declare global {
@@ -802,4 +675,6 @@ declare global {
   }
 }
 
+export * from './types'
 export * from './createFakeRange'
+export * from './blockSelection'

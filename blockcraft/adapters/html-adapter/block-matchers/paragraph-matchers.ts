@@ -76,7 +76,8 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
               children: deltaConverter.astToDelta(o.node),
             },
             'children'
-          )
+          ).closeNode()
+          walkerContext.skipAllChildren();
           break;
         }
         case 'blockquote': {
@@ -137,17 +138,17 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           }
           break;
         }
-        case 'p': {
-          if (
-            o.next?.type === 'element' &&
-            o.next.tagName === 'div'
-          ) {
-            // Close the node when leaving div indented
-            break;
-          }
-          walkerContext.closeNode();
-          break;
-        }
+        // case 'p': {
+        //   if (
+        //     o.next?.type === 'element' &&
+        //     o.next.tagName === 'div'
+        //   ) {
+        //     // Close the node when leaving div indented
+        //     break;
+        //   }
+        //   walkerContext.closeNode();
+        //   break;
+        // }
       }
 
     },

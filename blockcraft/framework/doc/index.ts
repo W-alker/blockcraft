@@ -1,6 +1,6 @@
 import {DocCRUD} from "./crud";
 import {ComponentRef, Injector, ViewContainerRef} from "@angular/core";
-import {BlockCraftError, ErrorCode, getScrollContainer, Logger} from "../../global";
+import {BlockCraftError, ErrorCode, getScrollContainer, Logger, performanceTest} from "../../global";
 import {DocVM} from "./vm";
 import {
   IBlockSnapshot,
@@ -132,6 +132,7 @@ export class BlockCraftDoc {
     this._yBlockMap = this.yDoc.getMap<YBlock>(Y_BLOCK_MAP_NAME)
   }
 
+  @performanceTest('Doc init', 300)
   // init from a snapshot as root
   async initBySnapshot(snapShot: IBlockSnapshot, container: ViewContainerRef) {
     if (this._root) return
@@ -148,6 +149,7 @@ export class BlockCraftDoc {
     this._initEditor(comp.instance as any)
   }
 
+  @performanceTest('Doc init', 300)
   async initByYBlock(yRoot: YBlock, container: ViewContainerRef) {
     if (this._root) return
     if (yRoot.get('flavour') !== 'root') {

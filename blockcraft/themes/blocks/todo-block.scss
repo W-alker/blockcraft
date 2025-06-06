@@ -4,6 +4,13 @@
     align-items: flex-start;
     gap: 4px;
 
+    &.is-checked {
+      .edit-container {
+        text-decoration: line-through;
+        opacity: .8;
+      }
+    }
+
     .todo-block-button {
       cursor: pointer;
       outline: none;

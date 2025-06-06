@@ -156,6 +156,7 @@ export class BlockTransformerPlugin extends DocPlugin {
       {originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom'},
     ])
     this.contextOvr = overlay.create({positionStrategy: positions})
+
     const cpr = this.contextOvr.attach(new ComponentPortal(BlockTransformContextMenu))
     cpr.setInput('activeBlock', block)
     cpr.setInput('doc', this.doc)

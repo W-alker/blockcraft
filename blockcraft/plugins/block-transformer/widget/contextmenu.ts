@@ -199,6 +199,7 @@ export class BlockTransformContextMenu {
 
     const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
     blockCreator.getParamsByScheme(schema).then(params => {
+      if (!params) return
       const newBlock = this.doc.schemas.createSnapshot(schema.flavour, params as any)
       newBlock.props.depth = this.activeBlock.props.depth
       this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [newBlock]).then(() => {

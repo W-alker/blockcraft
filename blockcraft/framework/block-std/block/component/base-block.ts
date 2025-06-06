@@ -305,7 +305,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
       const blocks = this.getChildrenBlocks()
       text += blocks.map(block => block.textContent()).join(STR_LINE_BREAK)
     }
-    return text + STR_LINE_BREAK
+    return text
   }
 
 }

@@ -50,7 +50,6 @@ export class InputTransformer {
         winSel.setPosition(curSel.raw.endContainer, curSel.raw.endOffset)
       }
       this._replaceText(curSel)
-      this.doc.selection.recalculate()
     }
     return true
   }
@@ -59,6 +58,7 @@ export class InputTransformer {
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.get('defaultState').event as CompositionEvent
     ev.preventDefault()
+    this.doc.selection.recalculate()
     const sel = this.doc.selection.value!
     if (sel.from.type !== 'text') {
       throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
@@ -206,10 +206,15 @@ export class InputTransformer {
         from.length > 0 && deltas.push({delete: from.length})
         text && deltas.push({insert: text})
 
-        if (to?.type === 'text') {
-          deltas.push(...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength))
+        if (to) {
+          if (to.type === 'text' && (to.index > 0 || to.length > 0)) {
+            deltas.push(...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength))
+            this.doc.crud.deleteBlockById(to.blockId)
+          } else if (to.type === 'selected') {
+            to && this.doc.crud.deleteBlockById(to.blockId)
+          }
         }
-        to && this.doc.crud.deleteBlockById(to.blockId)
+
         from.block.applyDeltaOperation(deltas)
         return
       }
@@ -246,6 +251,14 @@ export class InputTransformer {
 
     if (!collapsed || from.type !== 'text' || from.index !== 0) return false
     // 每一段的最前面
+    if (from.block.props['heading']) {
+      context.preventDefault()
+      from.block.updateProps({
+        heading: null
+      })
+      return true
+    }
+
     // 非paragraph块转化
     if (from.block.flavour !== 'paragraph') {
       context.preventDefault()
@@ -261,14 +274,6 @@ export class InputTransformer {
           type: 'text',
           blockId: np.id
         })
-      })
-      return true
-    }
-
-    if (from.block.props['heading']) {
-      context.preventDefault()
-      from.block.updateProps({
-        heading: null
       })
       return true
     }
@@ -376,10 +381,14 @@ export class InputTransformer {
     const fromBlock = state.selection.from.block
 
     const prevBlock = this.doc.prevSibling(fromBlock)
-    // @ts-ignore
-    const _prevDepth: number = prevBlock ? (prevBlock.props['depth'] ?? 0) : 0
+    const _prevDepth = prevBlock ? (prevBlock.props.depth ?? 0) : 0
     const _newDepth = fromBlock.props.depth + (state.raw.shiftKey ? -1 : 1)
-    if (!prevBlock || _newDepth > (_prevDepth + 1) || _newDepth < 0) {
+    if (!prevBlock || _newDepth < 0) {
+      this.doc.messageService.warn('不可缩进')
+      return true
+    }
+
+    if (!state.raw.shiftKey && _newDepth > _prevDepth + 1) {
       this.doc.messageService.warn('不可缩进')
       return true
     }
@@ -462,14 +471,11 @@ export class InputTransformer {
 
       const p = this.doc.schemas.createSnapshot('paragraph', [[], from.block.props])
       if (from.block.flavour !== 'paragraph') {
-        this.doc.crud.replaceWithSnapshots(from.blockId, [p]).then(() => {
-          this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
-        })
+        await this.doc.crud.replaceWithSnapshots(from.blockId, [p])
       } else {
-        this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {
-          this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
-        })
+        await this.doc.crud.insertBlocksAfter(from.block, [p])
       }
+      this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
       return true
     }
 

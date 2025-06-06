@@ -1,4 +1,4 @@
-import {BlockNodeType, IBlockSnapshot} from "../block-std";
+import {BlockNodeType, IBlockSnapshot, STR_LINE_BREAK} from "../block-std";
 import {generateId} from "./id";
 import {deltaToString} from "../../global";
 
@@ -23,7 +23,7 @@ export const snapshots2Text = (snapshots: IBlockSnapshot[]) => {
 
   const append = (snapshot: IBlockSnapshot) => {
     if (snapshot.nodeType === 'editable') {
-      str += deltaToString(snapshot.children)
+      str += (deltaToString(snapshot.children) + STR_LINE_BREAK)
     }
 
     if (snapshot.nodeType === 'block' || snapshot.nodeType === 'root') {

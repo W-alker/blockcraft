@@ -89,7 +89,7 @@
     margin-bottom: var(--bc-segments-gap);
     caret-color: transparent;
 
-    > [contenteditable='false'] {
+    [contenteditable='false'] {
       @include user-select(none);
     }
 

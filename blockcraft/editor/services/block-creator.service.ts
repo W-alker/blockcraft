@@ -22,7 +22,7 @@ export class MyBlockCreatorService extends BlockCreatorService {
       case 'attachment':
         const fileList = await this.fileService.inputFiles()
         const file = fileList[0]
-        if (file.type.startsWith('image/')) return null
+        // if (file.type.startsWith('image/')) return null
         const attachmentInfo = await this.fileService.uploadAttachment(file)
         params.push(attachmentInfo)
         break

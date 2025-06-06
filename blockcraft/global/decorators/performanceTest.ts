@@ -1,13 +1,21 @@
-export function performanceTest(info = '') {
+export function performanceTest(info = '', alarm = 2) {
   return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-    const originalMethod = descriptor.value;
+    const original = descriptor.value;
     descriptor.value = function (...args: any[]) {
-      const startTime = performance.now();
-      const result = originalMethod.apply(this, args);
-      const endTime = performance.now();
-      const usedTime = endTime - startTime;
-      console.log(`%c${propertyKey}: ${info} took ${usedTime} milliseconds.`, usedTime > 2 ? 'color: red; ' : '');
-      return result;
+      const start = performance.now();
+      const result = original.apply(this, args);
+
+      if (result instanceof Promise) {
+        return result.then((res) => {
+          const end = performance.now();
+          console.log(`%c[Async] ${propertyKey}: ${info} took ${(end - start)}ms`, end - start > alarm ? 'color: red; ' : '');
+          return res;
+        });
+      } else {
+        const end = performance.now();
+        console.log(`%c[Sync] ${propertyKey}: ${info} took ${(end - start)}ms`, end - start > alarm ? 'color: red; ' : '');
+        return result;
+      }
     }
   }
 }

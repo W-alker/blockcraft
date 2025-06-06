@@ -137,7 +137,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     try {
       this.doc.inlineManager.applyDeltaToView(deltas, this.containerElement)
     } catch (e) {
-      console.error(`Error throw when apply delta to view. Block: `, this, e)
+      this.doc.logger.error(`Error throw when apply delta to view. Block: `, this, e)
       this.rerender()
     }
   }

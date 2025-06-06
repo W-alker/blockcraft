@@ -385,12 +385,14 @@ export class DocCRUD {
 
     this.transact(() => {
       const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
-      const sliceComps = sliceIds.map(id => this.vm.get(id)!)
-      this.vm.remove(parentComp, index, count)
-      this.vm.insert(targetComp, targetIndex, sliceComps)
+      // const sliceComps = sliceIds.map(id => this.vm.get(id)!)
+      // this.vm.remove(parentComp, index, count)
+      // this.vm.insert(targetComp, targetIndex, sliceComps)
       parentComp.instance.yBlock.get('children').delete(index, count)
       ;(targetComp.instance.yBlock.get('children') as Y.Array<string>).insert(targetIndex, sliceIds)
-    }, ORIGIN_SKIP_SYNC)
+    },
+      // ORIGIN_SKIP_SYNC
+    )
   }
 
   isCanUndo() {

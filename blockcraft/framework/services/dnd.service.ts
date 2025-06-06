@@ -267,6 +267,7 @@ export class DocDndService {
     return true
   }
 
+  // TODO 代码优化： 应该允许自定义拖拽源类型并且使用服务处理dragEnd或者drop
   protected _parseDragData(evt: DragEvent) {
     if (!this.prevBlock || !this.prevDragPosition || !evt.dataTransfer) return
 

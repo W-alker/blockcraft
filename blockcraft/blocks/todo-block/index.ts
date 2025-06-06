@@ -1,10 +1,8 @@
-import {EditableBlockNative} from "../../framework";
-import {BlockNodeType, IEditableBlockProps} from "../../framework";
 import {
-  IBlockSchemaOptions,
+  EditableBlockNative, BlockNodeType, IEditableBlockProps, IBlockSchemaOptions,
   editableBlockCreateSnapShotFn,
   EditableBlockCreateSnapshotParams
-} from "../../framework/block-std/schema/block-schema";
+} from "../../framework";
 import {TodoBlockComponent} from "./todo.block";
 
 export interface TodoBlockModel extends EditableBlockNative {

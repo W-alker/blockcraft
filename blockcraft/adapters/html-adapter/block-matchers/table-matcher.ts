@@ -33,13 +33,6 @@ export const tableBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 
       const currentNode = walkerContext.currentNode()!
 
-      // const createHiddenCell = (mergedBy: string) => {
-      //   const snapshot = TableCellBlockSchema.createSnapshot()
-      //   snapshot.props.display = 'none'
-      //   snapshot.props.mergedBy = mergedBy
-      //   return snapshot
-      // }
-
       let maxTdLen = 0
       for (let rowIdx = 0; rowIdx < currentNode.children.length; rowIdx++) {
         const row = currentNode.children[rowIdx] as IBlockSnapshot
@@ -97,7 +90,7 @@ export const tableBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         currentNode.props['colWidths'] = new Array(firstTr.children.length).fill(120)
       }
 
-      // walkerContext.closeNode();
+      walkerContext.closeNode();
     }
   },
   fromBlockSnapshot: {
@@ -205,13 +198,13 @@ export const tableCellBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         meta: {},
         children: [],
       }, 'children')
-        // .closeNode()
+      // .closeNode()
       // walkerContext.skipAllChildren()
-      if(!o.node.children?.length) {
+      if (!o.node.children?.length) {
         walkerContext.closeNode()
         return
       }
-      if(o.node.children[0].type === 'text' || (o.node.children[0].type === 'element' && HastUtils.isTagInline(o.node.children[0].tagName))) {
+      if (o.node.children[0].type === 'text' || (o.node.children[0].type === 'element' && HastUtils.isTagInline(o.node.children[0].tagName))) {
         walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node))).closeNode().closeNode()
         walkerContext.skipAllChildren()
       }

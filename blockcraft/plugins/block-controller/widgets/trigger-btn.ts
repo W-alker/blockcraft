@@ -532,7 +532,7 @@ export class TriggerBtn {
       const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
       const targetBlock = this.activeBlock
       blockCreator.getParamsByScheme(item).then(params => {
-        if (!targetBlock) return
+        if (!targetBlock || !params) return
         const newBlock = this.doc.schemas.createSnapshot(item.flavour, params as any)
         this.doc.crud.insertBlocksAfter(targetBlock, [newBlock]).then(() => {
           this.doc.selection.setCursorAtBlock(newBlock.id, true)

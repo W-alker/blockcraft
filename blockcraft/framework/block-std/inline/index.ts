@@ -96,7 +96,9 @@ export class InlineManager {
   }
 
   render(deltas: InlineModel, container: HTMLElement) {
-    container.replaceChildren(createZeroSpace(), ...this.createInlineNodeGroup(deltas), this._createEndBreak())
+    container.replaceChildren(createZeroSpace(), ...this.createInlineNodeGroup(deltas),
+      this._createEndBreak()
+    )
   }
 
   applyDeltaToView(deltas: DeltaOperation[], container: HTMLElement) {
