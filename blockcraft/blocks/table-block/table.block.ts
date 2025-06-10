@@ -114,7 +114,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       if (this._activeColRange[0] > -1) {
         this._activeColRange = [this._activeColRange[0] + count, this._activeColRange[1] + count]
       }
-    }, ORIGIN_SKIP_SYNC)
+    })
   }
 
   addRows(index: number, count: number = 1) {
@@ -133,13 +133,14 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.getChildrenBlocks().forEach(row => {
         this.doc.crud.deleteBlocks(row.id, index, count)
       })
-      const _colWidths: number[] = JSON.parse(JSON.stringify(this.props.colWidths))
-      _colWidths.splice(index, count)
-      this.updateProps({
-        colWidths: _colWidths
-      })
-      this._activeColRange = [-1, -1]
     }, ORIGIN_SKIP_SYNC)
+
+    const _colWidths: number[] = JSON.parse(JSON.stringify(this.props.colWidths))
+    _colWidths.splice(index, count)
+    this._activeColRange = [-1, -1]
+    this.updateProps({
+      colWidths: _colWidths
+    })
   }
 
   deleteRow(index: number, count = 1) {
@@ -309,7 +310,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   showToolbar(target: TableCellBlockComponent, type: 'col' | 'row' | 'cells' = 'cells', index?: number, count = 1, closeFn?: () => void) {
-    if(this.toolbarOvr) {
+    if (this.toolbarOvr) {
       this.toolbarOvr.dispose()
       this.toolbarOvr = undefined
       this._closeToolbar$.next(true)
@@ -338,15 +339,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     cpr.setInput('doc', this.doc)
     cpr.setInput('table', this)
 
-    merge(fromEvent(this.doc.scrollContainer!, 'scroll'), cpr.instance.onPositionChanged)
-      .pipe(takeUntil(cpr.instance.onDestroy)).subscribe(() => {
-      this.toolbarOvr?.updatePosition()
-    })
-
-    merge(this.toolbarOvr.backdropClick(), this._closeToolbar$, this.doc.onDestroy$,
-      this.doc.selection.selectionChange$.pipe(skip(1), filter(v => v?.from.blockId !== target.id)),
-      this.onDestroy$, target?.onDestroy$, cpr.instance.onClose$)
-      .pipe(takeUntil(cpr.instance.onDestroy)).subscribe(() => {
+    const closeCb = () => {
       closeFn?.()
 
       // close toolbar
@@ -355,7 +348,17 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.toolbarOvr = undefined
       this._clearSelected()
       this._closeToolbar$.next(true)
+    }
+
+    merge(fromEvent(this.doc.scrollContainer!, 'scroll'), cpr.instance.onPositionChanged)
+      .pipe(takeUntil(cpr.instance.onDestroy)).subscribe(() => {
+      this.toolbarOvr?.updatePosition()
     })
+
+    merge(this.toolbarOvr.backdropClick(), this._closeToolbar$, this.doc.onDestroy$,
+      this.doc.selection.selectionChange$.pipe(skip(1), filter(v => v?.from.blockId !== target.id)),
+      this.onDestroy$, target?.onDestroy$, cpr.instance.onClose$)
+      .pipe(takeUntil(cpr.instance.onDestroy)).subscribe(closeCb)
   }
 
   onColBarSelected(range: [number, number]) {
@@ -441,7 +444,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       if (!this.resizingCol$.value) return
       this.resizingCol$.next(false)
       const widths = [...this.props.colWidths]
-      widths[resizingColIdx] = newWidth
+      widths[resizingColIdx] = Math.max(50, newWidth)
       this.updateProps({
         colWidths: widths
       })

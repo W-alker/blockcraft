@@ -41,7 +41,7 @@ import {nextTick, svgToImageElement} from "../../global";
     </div>
 
     <div class="graph-container">
-      <div class="graph-con"></div>
+      <div class="graph-con" (mousedown)="onPreviewGraph($event)"></div>
     </div>
   `,
   standalone: true,
@@ -126,6 +126,9 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   }
 
   onShowList($event: MouseEvent, prefix: string) {
+    $event.preventDefault()
+    $event.stopPropagation()
+
     const close$ = new Subject()
     const btn = $event.target as HTMLElement
     btn.classList.add('active')
@@ -195,7 +198,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     if (!svg || !(svg instanceof SVGElement)) return
     //svg转图片
     const img = svgToImageElement(svg)
-    const div = document.createElement('div')
+    this.graphContainer.replaceChildren(img)
     this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg(img, 'mermaid')
   }
 }

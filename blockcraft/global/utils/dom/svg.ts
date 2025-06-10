@@ -9,7 +9,7 @@ export function svgToImageElement(svgElement: SVGElement) {
   const svgString = new XMLSerializer().serializeToString(svgElement);
 
   // 2. 编码为 Data URL
-  const svgBase64 = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
+  const svgBase64 = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)))
 
   // 3. 创建 <img> 元素
   const img = document.createElement('img');

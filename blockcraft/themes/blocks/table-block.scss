@@ -74,11 +74,8 @@
     }
 
     &.row-head {
-
-      > table {
-        //position: sticky;
-        //top: 0;
-      }
+      //position: sticky;
+      //top: 0;
 
       > table-row-bar {
         //padding-top: $ctrlBarSize;
@@ -251,6 +248,8 @@
           flex-direction: column;
           align-items: stretch;
           height: 100%;
+          overflow-x: auto;
+          scrollbar-width: thin;
         }
       }
     }

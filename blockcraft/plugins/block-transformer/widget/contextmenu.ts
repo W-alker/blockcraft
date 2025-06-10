@@ -175,12 +175,10 @@ export class BlockTransformContextMenu {
         this.transform2Block(item.flavour as any);
         break;
       case 'heading':
-        this.doc.crud.transact(() => {
-          this.activeBlock.deleteText(0, this.activeBlock.textLength)
-          this.activeBlock.updateProps({
-            heading: item.metadata['heading']
-          })
-        }, ORIGIN_SKIP_SYNC)
+        this.activeBlock.deleteText(0, this.activeBlock.textLength)
+        this.activeBlock.updateProps({
+          heading: item.metadata['heading']
+        })
         break;
     }
 

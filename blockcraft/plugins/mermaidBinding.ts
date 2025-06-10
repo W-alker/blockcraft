@@ -17,9 +17,7 @@ export class MermaidBlocKeyBinding extends DocPlugin {
     }
     block.insertText(sel.from.index, STR_LINE_BREAK)
     const index = sel.from.index + STR_LINE_BREAK.length
-    nextTick().then(() => {
-      block.setInlineRange(index)
-    })
+    block.setInlineRange(index)
     return true
   }
 

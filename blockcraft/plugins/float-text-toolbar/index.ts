@@ -61,6 +61,8 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
     })
     this._cpr = componentRef
+    this.toolbarOvr = overlayRef
+
     this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(this.doc.selection.value!)
     this._cpr.setInput('doc', this.doc)
     this._cpr.setInput('config', this.config)
@@ -111,6 +113,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
   closeToolbar() {
     this._closeCpr$.next(true)
+    this.toolbarOvr?.dispose()
   }
 
   @BindHotKey({key: 'b', shortKey: true})

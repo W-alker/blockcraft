@@ -6,7 +6,7 @@ import {
   EditableBlockComponent,
   EventListen,
   INLINE_ELEMENT_TAG,
-  INLINE_END_BREAK_CLASS,
+  INLINE_END_BREAK_CLASS, STR_LINE_BREAK,
   UIEventStateContext
 } from "../../block-std";
 import {BlockCraftError, ErrorCode, nextTick, performanceTest} from "../../../global";
@@ -267,7 +267,17 @@ export class SelectionManager {
     const {selection} = state
     if (!selection.collapsed || selection.from.type !== 'text') return
     context.preventDefault()
+
+    // 如果是plainTextOnly
+    if (selection.from.block.plainTextOnly) {
+      // 找到前一个\n
+      const index = selection.from.block.textContent().slice(0, selection.from.index).lastIndexOf(STR_LINE_BREAK)
+      if (index === -1) selection.from.block.setInlineRange(0)
+      else selection.from.block.setInlineRange(index + 1)
+      return true
+    }
     selection.from.block.setInlineRange(0)
+    return true
   }
 
   @BindHotKey({key: 'End', shortKey: null})
@@ -276,7 +286,19 @@ export class SelectionManager {
     const {selection} = state
     if (!selection.collapsed || selection.from.type !== 'text') return
     context.preventDefault()
+
+    // 如果是plainTextOnly
+    if (selection.from.block.plainTextOnly) {
+      // 找到后一个\n
+      const {index: fromIndex, block} = selection.from
+      const linBreakIndex = block.textContent().slice(fromIndex, block.textLength).indexOf(STR_LINE_BREAK)
+      if (linBreakIndex === -1) block.setInlineRange(block.textLength)
+      else block.setInlineRange(fromIndex + linBreakIndex)
+      return true
+    }
+
     selection.from.block.setInlineRange(selection.from.block.textLength)
+    return true
   }
 
   @EventListen('keyDown')
@@ -368,38 +390,57 @@ export class SelectionManager {
 
   /**
    * 对于行内delta操作后，可能需要重新计算当前范围
+   * @param execNext 是否立即执行发送事件
    */
-  recalculate() {
+  recalculate(execNext = true): {
+    value: BlockSelection | null
+    next?: () => void
+  } {
     const selection = document.getSelection()
-    if (!selection || !selection.rangeCount) {
-      this.selectionChange$.next(null)
-      this.selectedManager.setSelected(null)
-      return
-    }
 
-    const range = selection.getRangeAt(0)
-    if (document.activeElement !== this.doc.root.hostElement && !this.doc.root.hostElement.contains(range.commonAncestorContainer)) {
-      this.selectionChange$.next(null)
-      this.selectedManager.setSelected(null)
-      return
-    }
+    const range = selection?.getRangeAt(0)
+    if (
+      !selection || !range ||
+      (document.activeElement !== this.doc.root.hostElement && !this.doc.root.hostElement.contains(range.commonAncestorContainer)) ||
+      (range.startContainer === this.doc.root.hostElement && range.endContainer === this.doc.root.hostElement)
+    ) {
+      const next = () => {
+        this.selectionChange$.next(null)
+        this.selectedManager.setSelected(null)
+      }
 
-    if (range.startContainer === this.doc.root.hostElement || range.endContainer === this.doc.root.hostElement) {
-      this.selectionChange$.next(null)
-      this.selectedManager.setSelected(null)
-      return
+      execNext && next()
+      return {
+        value: null,
+        next: execNext ? undefined : next
+      }
     }
 
     try {
       const r = new BlockSelection(this.doc, this.normalizeRange(range), range, selection)
-      this.selectionChange$.next(r)
-      this.selectedManager.setSelected(this.value)
+      const next = () => {
+        this.selectionChange$.next(r)
+        this.selectedManager.setSelected(r)
+      }
+
+      execNext && next()
+      return {
+        value: r,
+        next: execNext ? undefined : next
+      }
     } catch (e) {
       this.doc.logger.warn('normalizeRangeError: ', e)
+      const next = () => {
+      }
+      execNext && next()
+      return {
+        value: null,
+        next: execNext ? undefined : next
+      }
     }
-
   }
 
+  @performanceTest()
   normalizeRange(range: StaticRange): INormalizedRange {
     const {startContainer, endContainer, startOffset, endOffset, collapsed} = range
     const startBlock = this._searchClosetBlockByNode(startContainer)
@@ -491,7 +532,7 @@ export class SelectionManager {
       }
     }
 
-    const from = getBlockRange(startBlock, startContainer, startOffset)
+    let from = getBlockRange(startBlock, startContainer, startOffset)
 
     if (collapsed) {
       return {from, to: null, collapsed: from.type === 'text'}
@@ -503,7 +544,7 @@ export class SelectionManager {
       return {from, to: null, collapsed: false}
     }
 
-    const to = getBlockRange(endBlock, endContainer, endOffset)
+    let to = getBlockRange(endBlock, endContainer, endOffset)
 
     if (from.type === 'text') {
 
@@ -520,6 +561,31 @@ export class SelectionManager {
       to.index = 0
     }
 
+    // 是否不同级（可能是子可编辑元素鼠标选中向外滑动）
+    if (from.block.parentId !== to.block.parentId) {
+      // 找到同级
+      const path1 = from.block.getPath()
+      const path2 = to.block.getPath()
+      // 路径较长的说明是某个block元素内的子元素
+      if (path1.length > path2.length) {
+        const fromAncestor = path1[path2.length - 1]
+        from = {
+          blockId: fromAncestor,
+          // @ts-expect-error
+          block: this.doc.getBlockById(fromAncestor),
+          type: 'selected'
+        }
+      } else {
+        const toAncestor = path2[path1.length - 1]
+        to = {
+          blockId: toAncestor,
+          // @ts-expect-error
+          block: this.doc.getBlockById(toAncestor),
+          type: 'selected'
+        }
+      }
+
+    }
     return {from, to, collapsed: false}
   }
 

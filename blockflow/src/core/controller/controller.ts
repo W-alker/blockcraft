@@ -376,7 +376,6 @@ export class Controller {
 
     const ym = originModel.toJSON() as IBlockModel
 
-    // TODO: 优化，允许跨父级移动
     this.deleteBlocks(originPos.index, 1)
     this.insertBlocks(insertIndex, [BlockModel.fromModel(ym)])
   }

@@ -64,10 +64,10 @@ export class BookmarkBlockToolbar {
   }
 
   ngOnInit() {
-    if(isFigmaUrl(this.block.props.url) && this.doc.schemas.has('figma-embed')) {
+    if (isFigmaUrl(this.block.props.url) && this.doc.schemas.has('figma-embed')) {
       this.embedType = 'figma-embed'
     }
-    if(isJueJinUrl(this.block.props.url) && this.doc.schemas.has('juejin-embed')) {
+    if (isJueJinUrl(this.block.props.url) && this.doc.schemas.has('juejin-embed')) {
       this.embedType = 'juejin-embed'
     }
     if (this.embedType) {
@@ -79,9 +79,15 @@ export class BookmarkBlockToolbar {
   switchViewMode($event: BcFloatToolbarItemComponent) {
     switch ($event.value) {
       case 'embed':
-        if(!this.embedType) return
+        if (!this.embedType) return
+        const blockParent = this.block.parentBlock!
+        if (!this.doc.schemas.isValidChildren(blockParent.flavour, this.embedType)) {
+          this.doc.messageService.warn(`当前位置无法插入嵌入视图`)
+          return
+        }
         const embed = this.doc.schemas.createSnapshot(this.embedType, [this.block.props.url, this.block.props])
-        this.doc.crud.replaceWithSnapshots(this.block.id, [embed]).then(() => {})
+        this.doc.crud.replaceWithSnapshots(this.block.id, [embed]).then(() => {
+        })
         break
       case 'inline':
         const paragraph = this.doc.schemas.createSnapshot('paragraph', [

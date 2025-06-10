@@ -50,32 +50,51 @@ export class InputTransformer {
         winSel.setPosition(curSel.raw.endContainer, curSel.raw.endOffset)
       }
       this._replaceText(curSel)
+      this.doc.selection.recalculate()
     }
     return true
   }
 
   @EventListen('compositionEnd')
   private _handleCompositionEnd(context: UIEventStateContext) {
-    const ev = context.get('defaultState').event as CompositionEvent
+    const ev = context.getDefaultEvent<CompositionEvent>()
     ev.preventDefault()
-    this.doc.selection.recalculate()
-    const sel = this.doc.selection.value!
-    if (sel.from.type !== 'text') {
+    // const sel = this.doc.selection.value!
+    // if (sel.from.type !== 'text') {
+    //   throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
+    // }
+    // const text = ev.data
+    // const {block, index} = sel.from
+    // this.doc.crud.transact(() => {
+    //   block.yText.insert(index, text)
+    //   // TODO: 更好的中文输入法反显渲染
+    //   if (index === 0 || sel.raw.startContainer.parentElement?.localName !== INLINE_TEXT_NODE_TAG) {
+    //     block.rerender()
+    //
+    //     requestAnimationFrame(() => {
+    //       block.setInlineRange(index + text.length)
+    //     })
+    //   }
+    // }, ORIGIN_SKIP_SYNC)
+
+    const {value: sel, next} = this.doc.selection.recalculate(false)
+    if (!sel || sel.from.type !== 'text') {
       throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
     }
     const text = ev.data
     const {block, index} = sel.from
     this.doc.crud.transact(() => {
-      block.yText.insert(index, text)
+      block.yText.insert(index === 0 ? 0 : index - text.length, text)
       // TODO: 更好的中文输入法反显渲染
       if (index === 0 || sel.raw.startContainer.parentElement?.localName !== INLINE_TEXT_NODE_TAG) {
         block.rerender()
 
         requestAnimationFrame(() => {
-          block.setInlineRange(index + text.length)
+          block.setInlineRange(index === 0 ? text.length : index)
         })
       }
     }, ORIGIN_SKIP_SYNC)
+    next?.()
   }
 
   @EventListen('beforeInput')
@@ -104,13 +123,16 @@ export class InputTransformer {
       if (to) {
         ev.preventDefault()
         this._replaceText(normalizedRange, text)
-        if (from.type === 'text') {
-          this.doc.selection.setSelection({
-            ...from,
-            index: from.index + (text?.length || 0),
-            length: 0
-          })
+        const cursorPos = from.type === 'text' ? from : (to.type === 'text' ? to : null)
+        if (!cursorPos) {
+          this.doc.selection.recalculate()
+          return;
         }
+        this.doc.selection.setSelection({
+          ...cursorPos,
+          index: cursorPos.index + (text?.length || 0),
+          length: 0
+        })
         return;
       }
 
@@ -181,6 +203,7 @@ export class InputTransformer {
         })
         return
       }
+
       from.block.yText.insert(from.index, text)
 
     }, ORIGIN_SKIP_SYNC)
@@ -219,7 +242,6 @@ export class InputTransformer {
         return
       }
 
-      from.type === 'selected' && this.doc.crud.deleteBlockById(from.blockId)
       // 无法输入的情况
       if (to?.type !== 'text') return
       this.doc.crud.deleteBlockById(from.blockId)
@@ -255,6 +277,14 @@ export class InputTransformer {
       context.preventDefault()
       from.block.updateProps({
         heading: null
+      })
+      return true
+    }
+
+    if (from.block.props.depth) {
+      context.preventDefault()
+      from.block.updateProps({
+        depth: from.block.props.depth - 1
       })
       return true
     }
@@ -303,12 +333,13 @@ export class InputTransformer {
     // 有前一个兄弟块
     // 如果前一个兄弟块是可编辑块
     if (this.doc.isEditable(prevBlock)) {
+      context.preventDefault()
       const deltas: DeltaOperation[] = from.block.textDeltas()
       deltas.unshift({retain: prevBlock.textLength})
       prevBlock.setInlineRange(prevBlock.textLength)
       prevBlock.applyDeltaOperation(deltas)
       this.doc.crud.deleteBlockById(from.block.id)
-      context.preventDefault()
+      this.doc.selection.recalculate()
       return true
     }
 
@@ -325,6 +356,7 @@ export class InputTransformer {
     const {from, isAllSelected, collapsed} = state.selection
     // 无法正常删除的情况
     if (isAllSelected) {
+      context.preventDefault()
       const nextBlock = this.doc.nextSibling(from.block)
       if (nextBlock) {
         this.doc.selection.setCursorAtBlock(nextBlock, true)
@@ -337,7 +369,6 @@ export class InputTransformer {
         }
       }
       this._replaceText(state.selection)
-      context.preventDefault()
       return true
     }
 
@@ -408,7 +439,7 @@ export class InputTransformer {
             depth: old + (state.raw.shiftKey ? -1 : 1)
           })
         }
-      }, ORIGIN_SKIP_SYNC)
+      })
     } else {
       fromBlock.updateProps({
         depth: _newDepth

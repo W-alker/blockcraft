@@ -290,7 +290,9 @@ export class DocCRUD {
     // 过滤不允许的blocks
     const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)!
     snapshots = snapshots.filter(s => this.doc.schemas.isValidChildren(s.flavour, parentSchema))
-    if (!snapshots.length) return
+    if (!snapshots.length) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `insertBlocks: no valid children`)
+    }
 
     const comps = await Promise.all(
       snapshots.map(s => this.vm.createComponentBySnapshot(s, (m) => {
@@ -384,13 +386,13 @@ export class DocCRUD {
     if (!parentComp || !targetComp) return
 
     this.transact(() => {
-      const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
-      // const sliceComps = sliceIds.map(id => this.vm.get(id)!)
-      // this.vm.remove(parentComp, index, count)
-      // this.vm.insert(targetComp, targetIndex, sliceComps)
-      parentComp.instance.yBlock.get('children').delete(index, count)
-      ;(targetComp.instance.yBlock.get('children') as Y.Array<string>).insert(targetIndex, sliceIds)
-    },
+        const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
+        // const sliceComps = sliceIds.map(id => this.vm.get(id)!)
+        // this.vm.remove(parentComp, index, count)
+        // this.vm.insert(targetComp, targetIndex, sliceComps)
+        parentComp.instance.yBlock.get('children').delete(index, count)
+        ;(targetComp.instance.yBlock.get('children') as Y.Array<string>).insert(targetIndex, sliceIds)
+      },
       // ORIGIN_SKIP_SYNC
     )
   }

@@ -67,7 +67,7 @@ interface RenderOptions {
 
 const DOC_EXPORT_OPTIONS = {
   filter: (node: Node) => {
-    if (node instanceof HTMLElement && node.localName === 'bc-drag-handle') {
+    if (node instanceof HTMLElement && ['bc-drag-handle', 'blockcraft-cursor'].includes(node.localName)) {
       return false;
     }
     return true;

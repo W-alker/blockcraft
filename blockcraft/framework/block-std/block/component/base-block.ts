@@ -256,16 +256,20 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   updateProps(props: Partial<Model['props']>) {
     this.doc.crud.transact(() => {
-      for (const key in props) {
-        if (props[key] === null) {
-          delete this._native.props[key]
-          this._yProps.delete(key)
-          continue
+        for (const key in props) {
+          if (props[key] === null) {
+            // delete this._native.props[key]
+            this._yProps.delete(key)
+            continue
+          }
+          this.props[key] !== props[key] && this._yProps.set(key,
+            // this._native.props[key] =
+            props[key]!)
         }
-        this.props[key] !== props[key] && this._yProps.set(key, this._native.props[key] = props[key]!)
-      }
-      this.changeDetectorRef.markForCheck()
-    }, ORIGIN_SKIP_SYNC)
+        // this.changeDetectorRef.markForCheck()
+      },
+      // ORIGIN_SKIP_SYNC
+    )
   }
 
   updateMeta(meta: Partial<Model['meta']>) {

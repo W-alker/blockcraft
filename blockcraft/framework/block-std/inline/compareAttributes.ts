@@ -3,7 +3,7 @@ import {IInlineNodeAttrs} from "../types";
 export const compareAttributesWithEle = (ele: HTMLElement, attrs?: IInlineNodeAttrs): boolean => {
   const eleAttrKeys = ele.getAttributeNames()
   if (!attrs) {
-    return true
+    return !eleAttrKeys.length
   }
 
   const attrsEntries = Object.entries(attrs)
