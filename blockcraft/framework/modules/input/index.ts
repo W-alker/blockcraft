@@ -119,7 +119,7 @@ export class InputTransformer {
     const {from, to, collapsed} = normalizedRange
     const text = getPlainTextFromInputEvent(ev)
 
-    this.doc.crud.transact(() => {
+    // this.doc.crud.transact(() => {
       if (to) {
         ev.preventDefault()
         this._replaceText(normalizedRange, text)
@@ -206,14 +206,14 @@ export class InputTransformer {
 
       from.block.yText.insert(from.index, text)
 
-    }, ORIGIN_SKIP_SYNC)
+    // }, ORIGIN_SKIP_SYNC)
   }
 
   private _replaceText(range: INormalizedRange, text?: string | null) {
     const {from, to, collapsed} = range
     if (collapsed) return
 
-    this.doc.crud.transact(() => {
+    // this.doc.crud.transact(() => {
       if (to) {
         const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
         if (throughPath.length) {
@@ -246,7 +246,7 @@ export class InputTransformer {
       if (to?.type !== 'text') return
       this.doc.crud.deleteBlockById(from.blockId)
       to.block.replaceText(to.index, to.length, text)
-    }, ORIGIN_SKIP_SYNC)
+    // }, ORIGIN_SKIP_SYNC)
   }
 
   @BindHotKey({key: 'Backspace', shiftKey: null, shortKey: null, metaKey: false})
@@ -513,12 +513,12 @@ export class InputTransformer {
     const deltas = sliceDelta(from.block.textDeltas(), from.index)
     const p = this.doc.schemas.createSnapshot(from.block.textLength ? from.block.flavour : 'paragraph', [deltas, from.block.props])
     context.preventDefault()
-    this.doc.crud.transact(() => {
+    // this.doc.crud.transact(() => {
       from.block.deleteText(from.index)
       this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {
         this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
       })
-    }, ORIGIN_SKIP_SYNC)
+    // }, ORIGIN_SKIP_SYNC)
     return true
   }
 

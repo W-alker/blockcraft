@@ -23,13 +23,13 @@ import {TableCellBlockModel} from "./index";
 })
 export class TableCellBlockComponent extends BaseBlockComponent<TableCellBlockModel> {
 
-  clearContent() {
+  async clearContent() {
     if (this.props.display === 'none' || !this.hasContent) return
-    this.doc.crud.transact(async () => {
+    // this.doc.crud.transact(async () => {
       const np = this.doc.schemas.createSnapshot('paragraph', [])
       await this.doc.crud.insertBlocks(this.id, 0, [np])
       this.doc.crud.deleteBlocks(this.id, 1, this.childrenLength)
-    }, ORIGIN_SKIP_SYNC)
+    // }, ORIGIN_SKIP_SYNC)
   }
 
   get hasContent() {

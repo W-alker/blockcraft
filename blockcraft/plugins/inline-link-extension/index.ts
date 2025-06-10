@@ -218,12 +218,12 @@ export class InlineLinkExtension extends DocPlugin {
       insertBlocks.push(this.doc.schemas.createSnapshot(block.flavour, [splitRightDeltas, block.props]))
     }
 
-    this.doc.crud.transact(() => {
+    // this.doc.crud.transact(() => {
       this.doc.crud.insertBlocksAfter(block, insertBlocks).then(() => {
         this.doc.selection.selectBlock(bookmark.id)
         block.deleteText(this._anchorTextRange!.start, block.textLength - this._anchorTextRange!.start)
       })
-    }, ORIGIN_SKIP_SYNC)
+    // }, ORIGIN_SKIP_SYNC)
   }
 
   destroy() {

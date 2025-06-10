@@ -224,7 +224,7 @@ export class ClipboardManager {
           replaceSnapshotsIdDeeply(snapshots)
           replaceSnapshotsDepths(snapshots, editableBlock.props.depth)
 
-          this.doc.crud.transact(() => {
+          // this.doc.crud.transact(() => {
 
             // 同一文本块
             if (isSameTextBlock) {
@@ -293,7 +293,7 @@ export class ClipboardManager {
                 type: 'selected'
               })
             })
-          }, ORIGIN_SKIP_SYNC)
+          // }, ORIGIN_SKIP_SYNC)
 
           return true
         } catch (e) {

@@ -159,11 +159,11 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   }
 
   useTemplate(item: IMermaidType) {
-    this.doc.crud.transact(() => {
+    // this.doc.crud.transact(() => {
       const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
       textarea.textLength && textarea.deleteText(0, textarea.textLength)
       textarea.insertText(0, item.prefix + item.template)
-    }, ORIGIN_SKIP_SYNC)
+    // }, ORIGIN_SKIP_SYNC)
   }
 
   override ngOnDestroy() {

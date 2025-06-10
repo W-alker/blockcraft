@@ -59,11 +59,11 @@ export class TableBlockBinding extends DocPlugin {
   }
 
   clearCellContent(cells: BlockCraft.IBlockComponents['table-cell'][]) {
-    this.doc.crud.transact(() => {
+    // this.doc.crud.transact(() => {
       cells.forEach(cell => {
         cell.clearContent()
       })
-    }, ORIGIN_SKIP_SYNC)
+    // }, ORIGIN_SKIP_SYNC)
   }
 
   destroy(): void {

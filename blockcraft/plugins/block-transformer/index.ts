@@ -114,12 +114,12 @@ export class BlockTransformerPlugin extends DocPlugin {
       const heading = headingTransforms.findIndex(item => item.flavour === matched.flavour)
       if (heading < 0) return false
       const selIdx = selection.from.index
-      this.doc.crud.transact(() => {
+      // this.doc.crud.transact(() => {
         block.deleteText(0, selIdx + 1)
         block.updateProps({
           heading: heading + 1
         })
-      }, ORIGIN_SKIP_SYNC)
+      // }, ORIGIN_SKIP_SYNC)
       return true
     }
 

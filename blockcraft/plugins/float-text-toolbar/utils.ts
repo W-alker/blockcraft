@@ -56,7 +56,7 @@ export class TextToolbarUtils {
     if (!selection) return
 
     const {from, to} = selection
-    this.doc.crud.transact(() => {
+    // this.doc.crud.transact(() => {
       if (from.type === 'text' && !from.block.plainTextOnly) {
         from.block.formatText(from.index, from.length, attrs)
       }
@@ -71,7 +71,7 @@ export class TextToolbarUtils {
         if (!this.doc.isEditable(block) || block.plainTextOnly) continue;
         block.formatText(0, block.textLength, attrs)
       }
-    }, ORIGIN_SKIP_SYNC)
+    // }, ORIGIN_SKIP_SYNC)
   }
 
 

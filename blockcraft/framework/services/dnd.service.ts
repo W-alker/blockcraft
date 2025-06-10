@@ -41,7 +41,7 @@ export class DocDndService {
   private dragLine?: HTMLElement
 
   private createDragLine = () => {
-    if(this.dragLine) return
+    if (this.dragLine) return
     const dragLine = document.createElement('div')
     dragLine.style.cssText = `
       position: absolute;
@@ -99,7 +99,7 @@ export class DocDndService {
   }
 
   startDrag(evt: DragEvent, dragDataType: DocDndDataType, dragData: string) {
-    if(evt.type !== 'dragstart') return
+    if (evt.type !== 'dragstart') return
     const dataTransfer = evt.dataTransfer
     if (dataTransfer) {
       dataTransfer.clearData()
@@ -190,10 +190,12 @@ export class DocDndService {
       targetIdx += 1
     }
 
+    if (!isDepthEqual) {
+      block.updateProps({depth: targetBlock.props['depth']})
+    }
     this.doc.crud.moveBlocks(block.parentId!, block.getIndexOfParent(), 1,
-      targetBlock.parentId!, targetIdx).then(() => {
-      !isDepthEqual && block.updateProps({depth: targetBlock.props['depth']})
-    })
+      targetBlock.parentId!, targetIdx)
+
   }
 
   // TODO 文件处理应该交由插件

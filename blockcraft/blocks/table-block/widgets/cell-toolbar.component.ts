@@ -301,7 +301,7 @@ export class CellToolbarComponent {
     const firstCell = this.selectedCells[0]
     const rowIdx = this.table.childrenIds.indexOf(firstCell.parentBlock!.id)
     const colIdx = firstCell.getIndexOfParent()
-    this.doc.crud.transact(() => {
+    // this.doc.crud.transact(() => {
 
       const rowspan = firstCell.props.rowspan!
       const colspan = firstCell.props.colspan!
@@ -324,7 +324,7 @@ export class CellToolbarComponent {
 
       this.isMerged = false
       this.selectedCells = this.table.getSelectedCells()
-    }, ORIGIN_SKIP_SYNC)
+    // }, ORIGIN_SKIP_SYNC)
   }
 
   protected readonly HORIZON_ALIGN_LIST = HORIZON_ALIGN_LIST

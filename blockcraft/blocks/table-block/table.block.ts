@@ -129,11 +129,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       return
     }
 
-    this.doc.crud.transact(() => {
+    // this.doc.crud.transact(() => {
       this.getChildrenBlocks().forEach(row => {
         this.doc.crud.deleteBlocks(row.id, index, count)
       })
-    }, ORIGIN_SKIP_SYNC)
+    // }, ORIGIN_SKIP_SYNC)
 
     const _colWidths: number[] = JSON.parse(JSON.stringify(this.props.colWidths))
     _colWidths.splice(index, count)
