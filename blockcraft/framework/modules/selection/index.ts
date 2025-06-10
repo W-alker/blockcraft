@@ -564,27 +564,29 @@ export class SelectionManager {
     // 是否不同级（可能是子可编辑元素鼠标选中向外滑动）
     if (from.block.parentId !== to.block.parentId) {
       // 找到同级
-      const path1 = from.block.getPath()
-      const path2 = to.block.getPath()
-      // 路径较长的说明是某个block元素内的子元素
-      if (path1.length > path2.length) {
-        const fromAncestor = path1[path2.length - 1]
-        from = {
-          blockId: fromAncestor,
-          // @ts-expect-error
-          block: this.doc.getBlockById(fromAncestor),
-          type: 'selected'
-        }
-      } else {
-        const toAncestor = path2[path1.length - 1]
-        to = {
-          blockId: toAncestor,
-          // @ts-expect-error
-          block: this.doc.getBlockById(toAncestor),
-          type: 'selected'
-        }
-      }
-
+      // const path1 = from.block.getPath()
+      // const path2 = to.block.getPath()
+      // let i = 0
+      // while (path1[i] === path2[i]) i++
+      //
+      // const path1Ancestor = path1[i]
+      // const path2Ancestor = path2[i]
+      // if(path1Ancestor !== from.blockId) {
+      //   from = {
+      //     blockId: path1Ancestor,
+      //     // @ts-expect-error
+      //     block: this.doc.getBlockById(path1Ancestor),
+      //     type: 'selected'
+      //   }
+      // }
+      // if(path2Ancestor !== to.blockId) {
+      //   to = {
+      //     blockId: path2Ancestor,
+      //     // @ts-expect-error
+      //     block: this.doc.getBlockById(path2Ancestor),
+      //     type: 'selected'
+      //   }
+      // }
     }
     return {from, to, collapsed: false}
   }

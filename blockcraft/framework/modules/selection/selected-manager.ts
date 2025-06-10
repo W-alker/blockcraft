@@ -42,7 +42,7 @@ export class SelectionSelectedManager {
     // 控制不可输入
     isAllSelected ? this.doc.root.hostElement.classList.add('all-selected') : this.doc.root.hostElement.classList.remove('all-selected')
 
-    if(!to) {
+    if (!to) {
       this._setClass(from.block)
       return;
     }
@@ -56,7 +56,13 @@ export class SelectionSelectedManager {
     //     }
     //   })
     // })
-    const between = this.doc.queryBlocksBetween(from.block, to.block, true)
+    if(from.type === "selected") {
+      this._setClass(from.block)
+    }
+    if(to.type === "selected") {
+      this._setClass(to.block)
+    }
+    const between = this.doc.queryBlocksBetween(from.block, to.block, false)
     if (!between?.length) return
     between.forEach(v => {
       const b = this.doc.getBlockById(v)

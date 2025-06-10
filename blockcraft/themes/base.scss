@@ -127,6 +127,18 @@
     //-webkit-user-select: none;
   }
 
+  [data-node-type="void"] {
+    @include user-select(none);
+
+    * {
+      @include user-select(none);
+    }
+
+    [data-block-zero-space="true"] {
+      @include user-select(text);
+    }
+  }
+
   [data-node-type="editable"] {
     transition: all .1s ease;
 

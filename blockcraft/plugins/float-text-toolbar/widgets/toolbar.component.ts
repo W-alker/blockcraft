@@ -272,7 +272,7 @@ export class FloatTextToolbarComponent {
         block.updateProps({'textAlign': textAlign as any})
       }
       this.activeTextAlign = textAlign
-    }, ORIGIN_SKIP_SYNC)
+    })
   }
 
   formatText(attrs: IInlineNodeAttrs) {

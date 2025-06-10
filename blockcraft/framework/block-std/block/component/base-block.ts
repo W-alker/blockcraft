@@ -99,7 +99,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     if (this.nodeType === BlockNodeType.void
       // || this.nodeType === BlockNodeType.block
     ) {
-      // this.hostElement.prepend(createBlockGapSpace())
+      this.hostElement.prepend(createBlockGapSpace())
       this.hostElement.appendChild(createBlockGapSpace())
     }
     this.changeDetectorRef.markForCheck()
@@ -255,6 +255,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   updateProps(props: Partial<Model['props']>) {
+    if (this.doc.isReadonly) return
     this.doc.crud.transact(() => {
         for (const key in props) {
           if (props[key] === null) {

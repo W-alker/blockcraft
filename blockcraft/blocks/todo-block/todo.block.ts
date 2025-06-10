@@ -22,7 +22,9 @@ export class TodoBlockComponent extends EditableBlockComponent<TodoBlockModel> {
 
   toggleCompleted(e: Event) {
     e.preventDefault()
-    this.props.checked = this.props.checked ? 0 : Date.now()
+    this.updateProps({
+      checked: this.props.checked ? 0 : Date.now()
+    })
     this.changeDetectorRef.detectChanges()
   }
 }

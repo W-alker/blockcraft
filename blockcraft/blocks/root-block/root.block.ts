@@ -26,62 +26,44 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
   }
 
   private selecting$ = new BehaviorSubject<'end' | 'start' | 'moving'>("end")
-  private selectStartBlock: BlockCraft.BlockComponent | null = null
+  private selectingBlock: BlockCraft.BlockComponent | null = null
 
   @HostListener('selectstart', ['$event'])
   onSelectstart(event: Event) {
     const id = closetBlockId(event.target as HTMLElement)
     if (!id) return
-    this.selectStartBlock = this.doc.getBlockById(id)
+    const selectStartBlock = this.doc.getBlockById(id)
     this.selecting$.next('start')
 
     const leaveListen = (block: BlockCraft.BlockComponent) => {
+      this.selectingBlock = block
       block.hostElement.classList.add('selecting')
 
       if (block.nodeType !== BlockNodeType.root) {
-        fromEvent(block.hostElement, 'mouseleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1)))).subscribe(() => {
-          // this.doc.selection.selectBlock(block)
-          // block.hostElement.classList.add('selected')
+        fromEvent(block.hostElement, 'mouseleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1)))).subscribe(e => {
           document.getSelection()!.selectAllChildren(block.hostElement)
-
-          fromEvent(this.hostElement, 'selectstart').pipe(take(1)).subscribe(evt => {
-            if (!evt.defaultPrevented) block.hostElement.classList.remove('selected')
-          })
-
-          // this.doc.selection.nextChangeObserve().subscribe(() => {
-          //   block.hostElement.classList.remove('selected')
-          // })
-          // block.hostElement.classList.remove('selecting')
-          // document.getSelection()!.setPosition(block.hostElement, 0)
-
-          // const parentBlock = block.parentBlock!
-          // parentBlock.hostElement.classList.add('selecting')
-          //
-          // if (parentBlock.nodeType !== BlockNodeType.root) {
-          //   fromEvent(parentBlock.hostElement, 'mouseleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1)))).subscribe(() => {
-          //     leaveListen(parentBlock)
-          //   })
-          // }
+          const parentBlock = block.parentBlock!
+          leaveListen(parentBlock)
         })
       }
     }
 
     // TODO
-    fromEvent(this.selectStartBlock.hostElement, 'mouseleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1))))
+    fromEvent(selectStartBlock.hostElement, 'mouseleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1))))
       .subscribe(() => {
         if (this.selecting$.value !== 'start') return
         this.selecting$.next('moving')
 
-        leaveListen(this.selectStartBlock!.parentBlock!)
+        leaveListen(selectStartBlock!.parentBlock!)
       })
   }
 
-  @HostListener('document:mouseup', ['$event'])
+  @HostListener('document:pointerup', ['$event'])
   onSelectEnd(event: MouseEvent) {
     this.selecting$.next('end')
-    if (!this.selectStartBlock) return
-    this.selectStartBlock!.parentBlock?.hostElement.classList.remove('selecting')
-    this.selectStartBlock = null
+    if (!this.selectingBlock) return
+    this.selectingBlock.hostElement.classList.remove('selecting')
+    this.selectingBlock = null
   }
 
   override ngAfterViewInit() {
@@ -91,6 +73,14 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
       this.hostElement.setAttribute('contenteditable', v ? 'false' : 'true')
       v ? this.hostElement.classList.add('readonly') : this.hostElement.classList.remove('readonly')
     })
+
+    this.doc.event.add('keyDown', ctx => {
+      if (!this.selectingBlock) return
+      const evt = ctx.getDefaultEvent<KeyboardEvent>()
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(evt.key)) {
+        this.selectingBlock.hostElement.classList.remove('selecting')
+      }
+    }, {flavour: "root"})
   }
 
 }
