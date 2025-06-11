@@ -78,7 +78,7 @@ export class DocCRUD {
 
       this.yUndoManager.on('stack-item-added', (evt) => {
         if (evt.type === 'undo') {
-          console.log('%cundo stack', 'background: #444;', this.yUndoManager.undoStack, this.doc.selection)
+          // console.log('%cundo stack', 'background: #444;', this.yUndoManager.undoStack, this.doc.selection)
           this._undoSelectionStack.push(this.doc.selection.value ? this.doc.selection.value.toJSON() : null)
           if (this._undoSelectionStack.length > 200) {
             this.yUndoManager.undoStack.shift()
@@ -302,17 +302,17 @@ export class DocCRUD {
       }))
     )
     this.transact(() => {
-      // this.vm.insert(parentId, index, comps);
-      (parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, comps.map(c => c.instance.id))
-      // emit
-      // this.onChildrenUpdate$.next({
-      //   isUndoRedo: false,
-      //   transactions: [{
-      //     block: parentComp.instance,
-      //     inserted: comps.map(v => v.instance),
-      //   }]
-      // })
-    },
+        // this.vm.insert(parentId, index, comps);
+        (parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, comps.map(c => c.instance.id))
+        // emit
+        // this.onChildrenUpdate$.next({
+        //   isUndoRedo: false,
+        //   transactions: [{
+        //     block: parentComp.instance,
+        //     inserted: comps.map(v => v.instance),
+        //   }]
+        // })
+      },
       // ORIGIN_SKIP_SYNC
     )
 
@@ -352,30 +352,32 @@ export class DocCRUD {
       return
     }
     if (index === 0 && count >= parentComp.instance.childrenLength) {
+      // 确保有可输入元素
+      await this.insertNewParagraph(parentComp.instance.id, parentComp.instance.childrenLength)
       this.doc.logger.warn(`deleteBlocks: delete all children`)
-      return
+      // return
     }
     if (index + count > parentComp.instance.childrenLength) {
       count = parentComp.instance.childrenLength - index
     }
     this.transact(() => {
-      const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
-      // this.vm.remove(parentComp, index, count)
-      // this.vm.detach(sliceIds)
-      ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).delete(index, count)
-      sliceIds.forEach(id => this.yBlockMap.delete(id))
-      // emit
-      // this.onChildrenUpdate$.next({
-      //   isUndoRedo: false,
-      //   transactions: [{
-      //     block: parentComp.instance,
-      //     deleted: [{
-      //       index,
-      //       length: count
-      //     }],
-      //   }]
-      // })
-    },
+        const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
+          // this.vm.remove(parentComp, index, count)
+          // this.vm.detach(sliceIds)
+        ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).delete(index, count)
+        sliceIds.forEach(id => this.yBlockMap.delete(id))
+        // emit
+        // this.onChildrenUpdate$.next({
+        //   isUndoRedo: false,
+        //   transactions: [{
+        //     block: parentComp.instance,
+        //     deleted: [{
+        //       index,
+        //       length: count
+        //     }],
+        //   }]
+        // })
+      },
       // ORIGIN_SKIP_SYNC
     )
     return new Promise((resolve => {

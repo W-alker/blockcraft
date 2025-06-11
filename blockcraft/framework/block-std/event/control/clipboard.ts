@@ -14,7 +14,7 @@ export class ClipboardControl {
       )
     })
     fromEvent<ClipboardEvent>(root.hostElement, 'cut').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
-      if (this._dispatcher.isReadOnly) {
+      if (this._dispatcher.status.isReadOnly) {
         ev.preventDefault()
         return
       }
@@ -24,7 +24,7 @@ export class ClipboardControl {
       )
     })
     fromEvent<ClipboardEvent>(root.hostElement, 'paste').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
-      if (this._dispatcher.isReadOnly) {
+      if (this._dispatcher.status.isReadOnly) {
         ev.preventDefault()
         return
       }

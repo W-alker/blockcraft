@@ -39,9 +39,11 @@ export class MyDocFileService extends DocFileService {
   }
 
   previewImg(arg1: unknown, arg2: unknown): void {
-    if (arg1 instanceof HTMLImageElement) {
+    if (arg1 instanceof HTMLElement) {
+      const img = arg1 instanceof HTMLImageElement ? arg1 : arg1.querySelector('img')
+      if (!img) return
       const viewer = new Viewer(arg1, {
-        title: [0, () => (typeof arg2 === 'string') ? arg2 : arg1.src],
+        title: [0, () => (typeof arg2 === 'string') ? arg2 : img.src],
         inline: false,
         zIndex: 2000,
         ready: () => {

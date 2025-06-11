@@ -41,7 +41,7 @@ export class CodeBlocKeyBinding extends DocPlugin {
       {retain: from.index},
       {insert: STR_LINE_BREAK + (tabs ? STR_TAB.repeat(tabs) : '')},
     ]
-    block.applyDeltaOperation(deltas)
+    block.applyDeltaOperations(deltas)
     block.setInlineRange(from.index + 1 + tabs)
     return true
   }
@@ -93,7 +93,7 @@ export class CodeBlocKeyBinding extends DocPlugin {
     }
 
     if (!deltas.length) return true
-    block.applyDeltaOperation(deltas)
+    block.applyDeltaOperations(deltas)
     this.doc.selection.recalculate()
     return true
   }

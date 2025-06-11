@@ -66,29 +66,10 @@ export class SelectionManager {
     })
   }
 
-  // private _stopCalculate = false
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
-    // this.doc.event.customListen(document, 'selectstart').subscribe(e => {
-    //   this._stopCalculate = true
-    //   this.recalculate()
-    // })
-    //
-    // this.doc.event.customListen<PointerEvent>(document, 'pointerup').subscribe(e => {
-    //   if (e.pointerType === 'mouse' && this._stopCalculate) {
-    //     this._stopCalculate = false
-    //     this.recalculate()
-    //   }
-    // })
-
-    // this.doc.event.customListen(this.doc.root.hostElement, 'blur').subscribe(() => {
-    //   this._stopCalculate = false
-    //   this.recalculate()
-    // })
 
     this.doc.event.customListen(document, 'selectionchange').subscribe(() => {
-      if (
-        // this._stopCalculate ||
-        this.doc.event.isComposing) return
+      if (this.doc.event.status.isComposing) return
       this.recalculate()
     })
   }
@@ -401,8 +382,7 @@ export class SelectionManager {
     const range = selection?.getRangeAt(0)
     if (
       !selection || !range ||
-      (document.activeElement !== this.doc.root.hostElement && !this.doc.root.hostElement.contains(range.commonAncestorContainer)) ||
-      (range.startContainer === this.doc.root.hostElement && range.endContainer === this.doc.root.hostElement)
+      (document.activeElement !== this.doc.root.hostElement && !this.doc.root.hostElement.contains(range.commonAncestorContainer))
     ) {
       const next = () => {
         this.selectionChange$.next(null)
@@ -414,6 +394,12 @@ export class SelectionManager {
         value: null,
         next: execNext ? undefined : next
       }
+    }
+
+    // 如果选区在根元素上，则移动选择并重新计算。这种情况多发生于删除选中元素的情况
+    if (range.startContainer === this.doc.root.hostElement || range.endContainer === this.doc.root.hostElement) {
+      selection.modify('move', range.endOffset >= this.doc.root.childrenLength ? 'backward' : 'forward', 'character')
+      return this.recalculate()
     }
 
     try {

@@ -375,7 +375,7 @@ export class EditorComponent {
       }
 
 
-      this.provider = new WebsocketProvider('ws://127.0.0.1:1234', this.rootId, this.doc.yDoc, {
+      this.provider = new WebsocketProvider('ws://196.168.1.58:1234', this.rootId, this.doc.yDoc, {
         disableBc: true
       })
       this.provider.on('sync', (v: boolean) => {

@@ -11,7 +11,7 @@ import mermaid from "mermaid";
 import {Subject, Subscription, takeUntil} from "rxjs";
 import {MermaidTypeListComponent} from "./widgets/mermaid-type-list.component";
 import {IMermaidType, MermaidViewMode} from "./types";
-import {nextTick, svgToImageElement} from "../../global";
+import {nextTick, svg2ImageElement} from "../../global";
 
 // import {ScaleRatioPipe} from "./ratio.pipe";
 
@@ -161,7 +161,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   useTemplate(item: IMermaidType) {
     // this.doc.crud.transact(() => {
       const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
-      textarea.textLength && textarea.deleteText(0, textarea.textLength)
+      textarea.textLength && textarea.yText.delete(0, textarea.textLength)
       textarea.insertText(0, item.prefix + item.template)
     // }, ORIGIN_SKIP_SYNC)
   }
@@ -191,13 +191,14 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     svg.style.maxWidth = this.graphMaxWidth * ratio + 'px'
   }
 
-  onPreviewGraph(evt: MouseEvent) {
+  async onPreviewGraph(evt: MouseEvent) {
     evt.stopPropagation()
     evt.preventDefault()
     const svg = this.graphContainer.firstElementChild
     if (!svg || !(svg instanceof SVGElement)) return
-    //svg转图片
-    const img = svgToImageElement(svg)
+    //svg转canvas
+    const img = svg2ImageElement(svg)
+
     this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg(img, 'mermaid')
     img.dispatchEvent(new MouseEvent('click', {bubbles: false, cancelable: true, view: window}))
   }

@@ -12,7 +12,7 @@ import {
   STR_ZERO_WIDTH_SPACE,
   UIEventStateContext
 } from "../../block-std";
-import {INormalizedRange} from "../selection";
+import {BlockSelection, INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
 import {BlockCraftError, ErrorCode, nextTick, sliceDelta} from "../../../global";
 
@@ -27,16 +27,6 @@ export class InputTransformer {
   private _handleCompositionStart(context: UIEventStateContext) {
     const curSel = this.doc.selection.value!
     if (curSel.from.type !== 'text') {
-      // const clone = curSel.raw.cloneRange()
-      // clone.collapse(false)
-      // let sel = window.getSelection()!
-      // this.doc.root.hostElement.blur()
-      // sel.removeAllRanges();
-      // setTimeout(() => {
-      //   sel.addRange(clone);
-      //   clone.detach()
-      // }, 0);
-
       if (!curSel.to || curSel.to.type !== 'text') {
         throw new BlockCraftError(ErrorCode.InlineEditorError, 'compositionStart: last block is not editable')
       }
@@ -50,7 +40,6 @@ export class InputTransformer {
         winSel.setPosition(curSel.raw.endContainer, curSel.raw.endOffset)
       }
       this._replaceText(curSel)
-      this.doc.selection.recalculate()
     }
     return true
   }
@@ -59,24 +48,6 @@ export class InputTransformer {
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.getDefaultEvent<CompositionEvent>()
     ev.preventDefault()
-    // const sel = this.doc.selection.value!
-    // if (sel.from.type !== 'text') {
-    //   throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
-    // }
-    // const text = ev.data
-    // const {block, index} = sel.from
-    // this.doc.crud.transact(() => {
-    //   block.yText.insert(index, text)
-    //   // TODO: 更好的中文输入法反显渲染
-    //   if (index === 0 || sel.raw.startContainer.parentElement?.localName !== INLINE_TEXT_NODE_TAG) {
-    //     block.rerender()
-    //
-    //     requestAnimationFrame(() => {
-    //       block.setInlineRange(index + text.length)
-    //     })
-    //   }
-    // }, ORIGIN_SKIP_SYNC)
-
     const {value: sel, next} = this.doc.selection.recalculate(false)
     if (!sel || sel.from.type !== 'text') {
       throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
@@ -85,14 +56,12 @@ export class InputTransformer {
     const {block, index} = sel.from
     this.doc.crud.transact(() => {
       block.yText.insert(index === 0 ? 0 : index - text.length, text)
-      // TODO: 更好的中文输入法反显渲染
-      if (index === 0 || sel.raw.startContainer.parentElement?.localName !== INLINE_TEXT_NODE_TAG) {
-        block.rerender()
+      // TODO: 更好的中文输入法反显渲染. 目前看必须重新渲染，否则涉及到协同的情况很容易出错
+      block.rerender()
 
-        requestAnimationFrame(() => {
-          block.setInlineRange(index === 0 ? text.length : index)
-        })
-      }
+      requestAnimationFrame(() => {
+        block.setInlineRange(index === 0 ? text.length : index)
+      })
     }, ORIGIN_SKIP_SYNC)
     next?.()
   }
@@ -120,91 +89,93 @@ export class InputTransformer {
     const text = getPlainTextFromInputEvent(ev)
 
     // this.doc.crud.transact(() => {
-      if (to) {
-        ev.preventDefault()
-        this._replaceText(normalizedRange, text)
-        const cursorPos = from.type === 'text' ? from : (to.type === 'text' ? to : null)
-        if (!cursorPos) {
-          this.doc.selection.recalculate()
-          return;
-        }
-        this.doc.selection.setSelection({
-          ...cursorPos,
-          index: cursorPos.index + (text?.length || 0),
-          length: 0
-        })
-        return;
-      }
-
-      // delete content
-      if (from.type === 'text' && ev.inputType.startsWith('delete')) {
-        ev.preventDefault()
-        // 要删除的可能是embed节点
-        if (staticRange.startContainer === staticRange.endContainer && isZeroSpace(staticRange.startContainer) && normalizedRange.from.type === 'text') {
-          normalizedRange.from.index = normalizedRange.from.index - 1
-          normalizedRange.from.length = 1
-        }
-        this._replaceText(normalizedRange)
+    if (to) {
+      ev.preventDefault()
+      this._replaceText(normalizedRange, text)
+      const cursorPos = from.type === 'text' ? from : (to.type === 'text' ? to : null)
+      if (!cursorPos) {
         this.doc.selection.recalculate()
-        // from.block.yText.delete(from.index, from.length)
         return;
       }
+      this.doc.selection.setSelection({
+        ...cursorPos,
+        index: cursorPos.index + (text?.length || 0),
+        length: 0
+      })
+      return;
+    }
 
-      if (!text) return;
+    // delete content
+    if (from.type === 'text' && ev.inputType.startsWith('delete')) {
+      ev.preventDefault()
+      // 要删除的可能是embed节点
+      if (staticRange.startContainer === staticRange.endContainer && isZeroSpace(staticRange.startContainer) && normalizedRange.from.type === 'text') {
+        normalizedRange.from.index = normalizedRange.from.index - 1
+        normalizedRange.from.length = 1
+      }
+      this._replaceText(normalizedRange)
+      this.doc.selection.recalculate()
+      // from.block.yText.delete(from.index, from.length)
+      return;
+    }
 
-      // in zero text
-      if (collapsed && isZeroSpace(staticRange.startContainer)) {
+    if (!text) return;
+
+    // in zero text
+    if (collapsed && isZeroSpace(staticRange.startContainer)) {
+      ev.preventDefault()
+      const zeroTextEle = staticRange.startContainer.parentElement!
+      const textElement: HTMLElement = document.createElement(INLINE_TEXT_NODE_TAG)
+      textElement.textContent = text
+      // <c-element><embed></embed><c-zero-text>ZWS;↓</c-zero-text></c-element>
+      if (zeroTextEle.parentElement?.localName === INLINE_ELEMENT_TAG) {
+        const cloneElement = zeroTextEle.parentElement.cloneNode(false) as HTMLElement
+        cloneElement.appendChild(textElement)
+        zeroTextEle.parentElement.after(cloneElement)
+      } else {
+        // <paragraph><c-zero-text>ZWS;↓</c-zero-text></paragraph>
+        const cElement = document.createElement(INLINE_ELEMENT_TAG)
+        cElement.appendChild(textElement)
+        zeroTextEle.after(cElement)
+      }
+      document.getSelection()!.setPosition(textElement.firstChild!, text.length)
+    }
+
+    // in inline end break
+    if (collapsed && staticRange.startContainer instanceof HTMLElement && staticRange.startContainer.classList.contains(INLINE_END_BREAK_CLASS)) {
+      const prevElement = staticRange.startContainer.previousElementSibling!
+      const child = prevElement.firstElementChild as HTMLElement | null
+      if (prevElement.localName === INLINE_ELEMENT_TAG && child?.isContentEditable) {
+        const len = child.textContent!.length;
+        (child.firstChild as Text).insertData(len, text)
+        document.getSelection()!.setPosition(child.firstChild!, len + text.length)
         ev.preventDefault()
-        const zeroTextEle = staticRange.startContainer.parentElement!
+      } else {
+        const cElement = document.createElement(INLINE_ELEMENT_TAG)
         const textElement: HTMLElement = document.createElement(INLINE_TEXT_NODE_TAG)
         textElement.textContent = text
-        // <c-element><embed></embed><c-zero-text>ZWS;↓</c-zero-text></c-element>
-        if (zeroTextEle.parentElement?.localName === INLINE_ELEMENT_TAG) {
-          const cloneElement = zeroTextEle.parentElement.cloneNode(false) as HTMLElement
-          cloneElement.appendChild(textElement)
-          zeroTextEle.parentElement.after(cloneElement)
-        } else {
-          // <paragraph><c-zero-text>ZWS;↓</c-zero-text></paragraph>
-          const cElement = document.createElement(INLINE_ELEMENT_TAG)
-          cElement.appendChild(textElement)
-          zeroTextEle.after(cElement)
-        }
+        cElement.appendChild(textElement)
+        staticRange.startContainer.before(cElement)
         document.getSelection()!.setPosition(textElement.firstChild!, text.length)
-      }
-
-      // in inline end break
-      if (collapsed && staticRange.startContainer instanceof HTMLElement && staticRange.startContainer.classList.contains(INLINE_END_BREAK_CLASS)) {
-        const prevElement = staticRange.startContainer.previousElementSibling!
-        const child = prevElement.firstElementChild as HTMLElement | null
-        if (prevElement.localName === INLINE_ELEMENT_TAG && child?.isContentEditable) {
-          const len = child.textContent!.length;
-          (child.firstChild as Text).insertData(len, text)
-          document.getSelection()!.setPosition(child.firstChild!, len + text.length)
-          ev.preventDefault()
-        } else {
-          const cElement = document.createElement(INLINE_ELEMENT_TAG)
-          const textElement: HTMLElement = document.createElement(INLINE_TEXT_NODE_TAG)
-          textElement.textContent = text
-          cElement.appendChild(textElement)
-          staticRange.startContainer.before(cElement)
-          document.getSelection()!.setPosition(textElement.firstChild!, text.length)
-          ev.preventDefault()
-        }
-      }
-
-      if (from.type !== 'text') return
-      if (!collapsed) {
         ev.preventDefault()
-        from.block.replaceText(from.index, from.length, text)
-        this.doc.selection.setSelection({
-          ...from,
-          index: from.index + (text?.length || 0),
-          length: 0
-        })
-        return
       }
+    }
 
+    if (from.type !== 'text') return
+    if (!collapsed) {
+      ev.preventDefault()
+      from.block.replaceText(from.index, from.length, text)
+      this.doc.selection.setSelection({
+        ...from,
+        index: from.index + (text?.length || 0),
+        length: 0
+      })
+      return
+    }
+
+    this.doc.crud.transact(() => {
       from.block.yText.insert(from.index, text)
+    }, ORIGIN_SKIP_SYNC)
 
     // }, ORIGIN_SKIP_SYNC)
   }
@@ -214,39 +185,63 @@ export class InputTransformer {
     if (collapsed) return
 
     // this.doc.crud.transact(() => {
+    if (to) {
+      const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
+      if (throughPath.length) {
+        throughPath.forEach(through => {
+          this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
+        })
+      }
+    }
+
+    if (from.type === 'text') {
+      const deltas: DeltaOperation[] = []
+      from.index > 0 && deltas.push({retain: from.index})
+      from.length > 0 && deltas.push({delete: from.length})
+      text && deltas.push({insert: text})
+
       if (to) {
-        const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
-        if (throughPath.length) {
-          throughPath.forEach(through => {
-            this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
-          })
+        if (to.type === 'text' && (to.index > 0 || to.length > 0)) {
+          deltas.push(...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength))
+          this.doc.crud.deleteBlockById(to.blockId)
+        } else if (to.type === 'selected') {
+          this.doc.crud.deleteBlockById(to.blockId)
         }
       }
 
-      if (from.type === 'text') {
-        const deltas: DeltaOperation[] = []
-        from.index > 0 && deltas.push({retain: from.index})
-        from.length > 0 && deltas.push({delete: from.length})
-        text && deltas.push({insert: text})
+      from.block.applyDeltaOperations(deltas)
+      return
+    }
 
-        if (to) {
-          if (to.type === 'text' && (to.index > 0 || to.length > 0)) {
-            deltas.push(...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength))
-            this.doc.crud.deleteBlockById(to.blockId)
-          } else if (to.type === 'selected') {
-            to && this.doc.crud.deleteBlockById(to.blockId)
-          }
-        }
-
-        from.block.applyDeltaOperation(deltas)
-        return
-      }
-
-      // 无法输入的情况
-      if (to?.type !== 'text') return
-      this.doc.crud.deleteBlockById(from.blockId)
-      to.block.replaceText(to.index, to.length, text)
+    // 无法输入的情况
+    if (to?.type !== 'text') return
+    this.doc.crud.deleteBlockById(from.blockId)
+    to.block.replaceText(to.index, to.length, text)
     // }, ORIGIN_SKIP_SYNC)
+  }
+
+  private _deleteAllSelected(selection: BlockSelection) {
+    const {from, to, isAllSelected} = selection
+    if (!isAllSelected) return
+    const prevBlock = this.doc.prevSibling(selection.firstBlock)
+    if (prevBlock) {
+      this.doc.selection.setCursorAtBlock(prevBlock, false)
+    } else {
+      const nextBlock = this.doc.nextSibling(selection.lastBlock)
+      if (nextBlock) this.doc.selection.setCursorAtBlock(nextBlock, true)
+      else return true
+    }
+    if (!to) {
+      this.doc.crud.deleteBlockById(from.blockId)
+      return true
+    }
+    const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
+    if (throughPath.length) {
+      throughPath.forEach(through => {
+        this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
+      })
+    }
+    return true
   }
 
   @BindHotKey({key: 'Backspace', shiftKey: null, shortKey: null, metaKey: false})
@@ -256,19 +251,7 @@ export class InputTransformer {
 
     if (isAllSelected) {
       context.preventDefault()
-      const prevBlock = this.doc.prevSibling(from.block)
-      if (prevBlock) {
-        this.doc.selection.setCursorAtBlock(prevBlock, false)
-      } else {
-        const nextBlock = this.doc.nextSibling(from.block)
-        if (nextBlock) {
-          this.doc.selection.setCursorAtBlock(nextBlock, true)
-        } else {
-          return true
-        }
-      }
-      this._replaceText(state.selection)
-      return true
+      return this._deleteAllSelected(state.selection)
     }
 
     if (!collapsed || from.type !== 'text' || from.index !== 0) return false
@@ -337,7 +320,7 @@ export class InputTransformer {
       const deltas: DeltaOperation[] = from.block.textDeltas()
       deltas.unshift({retain: prevBlock.textLength})
       prevBlock.setInlineRange(prevBlock.textLength)
-      prevBlock.applyDeltaOperation(deltas)
+      prevBlock.applyDeltaOperations(deltas)
       this.doc.crud.deleteBlockById(from.block.id)
       this.doc.selection.recalculate()
       return true
@@ -357,19 +340,7 @@ export class InputTransformer {
     // 无法正常删除的情况
     if (isAllSelected) {
       context.preventDefault()
-      const nextBlock = this.doc.nextSibling(from.block)
-      if (nextBlock) {
-        this.doc.selection.setCursorAtBlock(nextBlock, true)
-      } else {
-        const prevBlock = this.doc.prevSibling(from.block)
-        if (prevBlock) {
-          this.doc.selection.setCursorAtBlock(prevBlock, false)
-        } else {
-          return true
-        }
-      }
-      this._replaceText(state.selection)
-      return true
+      return this._deleteAllSelected(state.selection)
     }
 
     const nextBlock = this.doc.nextSibling(from.block)
@@ -383,7 +354,7 @@ export class InputTransformer {
         const deltas: DeltaOperation[] = nextBlock.textDeltas()
         deltas.unshift({retain: from.block.textLength})
         from.block.setInlineRange(from.block.textLength)
-        from.block.applyDeltaOperation(deltas)
+        from.block.applyDeltaOperations(deltas)
         this.doc.crud.deleteBlockById(nextBlock.id)
         context.preventDefault()
         return true
@@ -514,10 +485,10 @@ export class InputTransformer {
     const p = this.doc.schemas.createSnapshot(from.block.textLength ? from.block.flavour : 'paragraph', [deltas, from.block.props])
     context.preventDefault()
     // this.doc.crud.transact(() => {
-      from.block.deleteText(from.index)
-      this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {
-        this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
-      })
+    from.block.deleteText(from.index)
+    this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {
+      this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+    })
     // }, ORIGIN_SKIP_SYNC)
     return true
   }

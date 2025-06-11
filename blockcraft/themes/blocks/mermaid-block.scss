@@ -29,7 +29,6 @@
       }
     }
 
-
     .text-container, .graph-container {
       overflow: auto;
       scroll-behavior: smooth;
@@ -43,6 +42,7 @@
 
     .graph-con {
       padding: 10px;
+      cursor: zoom-in;
     }
 
     .head {

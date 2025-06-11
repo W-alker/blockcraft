@@ -71,14 +71,14 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     this.doc.inlineManager.render(this.textDeltas(), this.containerElement)
   }
 
-  deleteText(index: number, length = this.textLength - index) {
-    if (!length) return
-    this.applyDeltaOperation([{retain: index}, {delete: length}])
-  }
-
   insertText(index: number, text: string, attributes?: DeltaInsert['attributes']) {
     if (!text) return
-    this.applyDeltaOperation([{retain: index}, {insert: text, attributes}])
+    this.yText.insert(index, text, attributes)
+  }
+
+  deleteText(index: number, length = this.textLength - index) {
+    if (!length) return
+    this.yText.delete(index, length)
   }
 
   replaceText(index: number, length: number, text?: string | null) {
@@ -86,32 +86,58 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     index > 0 && delta.push({retain: index})
     length > 0 && delta.push({delete: length})
     text && delta.push({insert: text})
-    this.doc.crud.transact(() => {
-      length > 0 && this.yText.delete(index, length)
-      text && this.yText.insert(index, text)
-      this._applyDeltaToView(delta)
-    }, ORIGIN_SKIP_SYNC)
-  }
-
-  insertEmbed(index: number, embed: DeltaInsertEmbed) {
-    this.applyDeltaOperation([{retain: index}, embed])
+    this.yText.applyDelta(delta)
   }
 
   formatText(index: number, length: number, attributes: DeltaInsert['attributes']) {
-    this.doc.crud.transact(() => {
-      // @ts-expect-error
-      this.yText.format(index, length, attributes)
-      this._applyDeltaToView([{retain: index}, {retain: length, attributes}])
-    }, ORIGIN_SKIP_SYNC)
+    this.yText.format(index, length, attributes as any)
   }
 
-  applyDeltaOperation(delta: DeltaOperation[]) {
-    if (this.doc.isReadonly) return
-    this.doc.crud.transact(() => {
-      this._applyDeltaToYText(delta)
-      this._applyDeltaToView(delta)
-    }, ORIGIN_SKIP_SYNC)
+  applyDeltaOperations(delta: DeltaOperation[]) {
+    this.yText.applyDelta(delta)
   }
+
+  // deleteText(index: number, length = this.textLength - index) {
+  //   if (!length) return
+  //   this.applyDeltaOperation([{retain: index}, {delete: length}])
+  // }
+  //
+  // insertText(index: number, text: string, attributes?: DeltaInsert['attributes']) {
+  //   if (!text) return
+  //   this.applyDeltaOperation([{retain: index}, {insert: text, attributes}])
+  // }
+  //
+  // replaceText(index: number, length: number, text?: string | null) {
+  //   const delta: DeltaOperation[] = []
+  //   index > 0 && delta.push({retain: index})
+  //   length > 0 && delta.push({delete: length})
+  //   text && delta.push({insert: text})
+  //   this.doc.crud.transact(() => {
+  //     length > 0 && this.yText.delete(index, length)
+  //     text && this.yText.insert(index, text)
+  //     this._applyDeltaToView(delta)
+  //   }, ORIGIN_SKIP_SYNC)
+  // }
+  //
+  // insertEmbed(index: number, embed: DeltaInsertEmbed) {
+  //   this.applyDeltaOperation([{retain: index}, embed])
+  // }
+  //
+  // formatText(index: number, length: number, attributes: DeltaInsert['attributes']) {
+  //   this.doc.crud.transact(() => {
+  //     // @ts-expect-error
+  //     this.yText.format(index, length, attributes)
+  //     this._applyDeltaToView([{retain: index}, {retain: length, attributes}])
+  //   }, ORIGIN_SKIP_SYNC)
+  // }
+
+  // applyDeltaOperation(delta: DeltaOperation[]) {
+  //   if (this.doc.isReadonly) return
+  //   this.doc.crud.transact(() => {
+  //     this._applyDeltaToYText(delta)
+  //     this._applyDeltaToView(delta)
+  //   }, ORIGIN_SKIP_SYNC)
+  // }
 
   protected _applyDeltaToYText(deltas: DeltaOperation[]) {
     this.yText.applyDelta(deltas)

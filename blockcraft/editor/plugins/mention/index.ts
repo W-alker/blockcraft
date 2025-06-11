@@ -89,7 +89,7 @@ export class MentionPlugin extends DocPlugin {
     const keyBindings = [
       this.doc.event.bindHotkey({key: 'Escape'}, ctx => {
         ctx.preventDefault()
-        if (this.doc.event.isComposing) return
+        if (this.doc.event.status.isComposing) return
         this._closeDialog$.next(true)
         return true
       }, {blockId: block.id}),
@@ -110,7 +110,7 @@ export class MentionPlugin extends DocPlugin {
       }, {blockId: block.id}),
       this.doc.event.bindHotkey({key: 'Enter'}, ctx => {
         ctx.preventDefault()
-        if (this.doc.event.isComposing) return
+        if (this.doc.event.status.isComposing) return
         dialog.instance.onSure()
         dialog.instance.onTabChange(dialog.instance.activeTabIndex === 0 ? 1 : 0)
         return true
@@ -130,7 +130,7 @@ export class MentionPlugin extends DocPlugin {
     let _tab: MentionType = 'user'
 
     const searchList = () => {
-      if (this.doc.event.isComposing) return
+      if (this.doc.event.status.isComposing) return
       if (!textNode.textContent) return this._closeDialog$.next(true)
       const keyword = textNode.textContent?.trim().slice(1) || ''
       this.request(keyword, _tab).then(res => {
@@ -165,24 +165,22 @@ export class MentionPlugin extends DocPlugin {
 
     // 确定输入
     dialog.instance.confirm.pipe(takeUntil(this._closeDialog$)).subscribe(({id, name}) => {
-      this.doc.crud.transact(() => {
-        const {block, index, length} = calcPos()
-        block.applyDeltaOperation([
-          { retain: index },
-          { delete: length },
-          {
-            insert: { mention: name },
-            attributes: {
-              'd:mentionId': id,
-              'd:mentionType': _tab
-            }
-          },
-          { insert: ' ' }
-        ]);
-        nextTick().then(() => {
-          this.doc.selection.setCursorAt(block, index + 2);
-        });
-      }, ORIGIN_SKIP_SYNC)
+      const {block, index, length} = calcPos()
+      block.applyDeltaOperations([
+        {retain: index},
+        {delete: length},
+        {
+          insert: {mention: name},
+          attributes: {
+            'd:mentionId': id,
+            'd:mentionType': _tab
+          }
+        },
+        {insert: ' '}
+      ]);
+      nextTick().then(() => {
+        this.doc.selection.setCursorAt(block, index + 2);
+      });
       this._closeDialog$.next(true)
     })
 

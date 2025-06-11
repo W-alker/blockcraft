@@ -588,18 +588,27 @@ export class TriggerBtn {
       case 'cut': {
         if (!this.activeBlock) return;
         this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
-          this.activeBlock && this.doc.crud.deleteBlockById(this.activeBlock.id)
-          this.doc.messageService.success('已剪切')
+          this.activeBlock && this.doc.crud.deleteBlockById(this.activeBlock.id).then(() => {
+            requestAnimationFrame(() => {
+              this.doc.selection.recalculate()
+            })
+            this.doc.messageService.success('已剪切')
+          })
           this.close()
         })
       }
         break
       case 'delete':
-        this.activeBlock && this.doc.crud.deleteBlockById(this.activeBlock.id)
+        this.activeBlock && this.doc.crud.deleteBlockById(this.activeBlock.id).then(() => {
+          requestAnimationFrame(() => {
+            this.doc.selection.recalculate()
+          })
+        })
         break
       case 'copy': {
         if (!this.activeBlock) return;
         this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
+
           this.doc.messageService.success('已复制')
           this.close()
         })

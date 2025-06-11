@@ -25,3 +25,6 @@ export const IS_IPAD =
 export const IS_WINDOWS = /Win/.test(platform);
 
 export const IS_MOBILE = IS_IOS || IS_IPAD || IS_ANDROID;
+
+// @ts-ignore
+export const IS_ELECTRON = !!(window && window.process && window.process.type)

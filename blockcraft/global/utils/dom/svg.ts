@@ -1,17 +1,35 @@
 export function svg2Base64(svgElement: SVGElement) {
   const svgString = new XMLSerializer().serializeToString(svgElement);
-  const svgBase64 = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
-  return svgBase64;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
 }
 
-export function svgToImageElement(svgElement: SVGElement) {
-  // 1. 获取 SVG 的 XML 内容
-  const svgString = new XMLSerializer().serializeToString(svgElement);
+interface Svg2CanvasOptions {
+  backgroundColor?: string;
+}
 
-  // 2. 编码为 Data URL
-  const svgBase64 = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)))
+export function svg2Canvas(svgElement: SVGElement, options: Svg2CanvasOptions = {}): Promise<HTMLCanvasElement> {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d')!
 
-  // 3. 创建 <img> 元素
+  if (options.backgroundColor) {
+    ctx.fillStyle = options.backgroundColor
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+  }
+
+  const img = new Image();
+  return new Promise((resolve) => {
+    img.src = svg2Base64(svgElement);
+
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas)
+    }
+  })
+}
+
+export function svg2ImageElement(svgElement: SVGElement) {
+  const svgBase64 = svg2Base64(svgElement)
+
   const img = document.createElement('img');
   img.src = svgBase64;
   img.width = svgElement.clientWidth;

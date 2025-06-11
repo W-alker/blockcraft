@@ -10,6 +10,7 @@ export interface IToolbarConfig {
   withComment?: boolean
   commentComponent?: Type<CommentPad>
 }
+
 export class FloatTextToolbarPlugin extends DocPlugin {
   override name = "float-text-toolbar";
   override version = 1.0
@@ -36,7 +37,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this.utils = new TextToolbarUtils(this.doc)
 
     this._sub = this.doc.selection.selectionChange$.pipe(debounceTime(500)).subscribe(sel => {
-      if (this.doc.isReadonly || !sel || sel.collapsed || sel.isAllSelected || sel.isEmpty) return
+      if (this.doc.isReadonly || !sel || sel.collapsed || sel.isAllSelected || sel.isEmpty || this.doc.event.status.isSelecting) return
       if (this.toolbarOvr) this.closeToolbar()
       // @ts-expect-error
       if (sel.firstBlock['plainTextOnly'] && sel.lastBlock['plainTextOnly']) return;

@@ -15,14 +15,22 @@ function createContext(
 }
 
 export class MouseControl {
+  private _isMouseReleased = true;
+
+  get isMouseReleased() {
+    return this._isMouseReleased;
+  }
+
   constructor(private _dispatcher: BlockCraft.EventDispatcher) {
   }
 
   private _down = (event: MouseEvent) => {
+    this._isMouseReleased = false;
     this._dispatcher.run('mouseDown', createContext(event))
   }
 
   private _up = (event: MouseEvent) => {
+    this._isMouseReleased = true;
     this._dispatcher.run('mouseUp', createContext(event));
   }
 

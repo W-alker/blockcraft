@@ -10,7 +10,7 @@ import {
   UIEventState,
   UIEventStateContext
 } from "../../block-std";
-import {deltaStrLength, deltaToString, isUrl, nextTick, sliceDelta} from "../../../global";
+import {deltaStrLength, deltaToString, IS_ELECTRON, isUrl, nextTick, sliceDelta} from "../../../global";
 import {ClipboardDataType} from "./types";
 import {
   generateId,
@@ -20,6 +20,7 @@ import {
 } from "../../utils";
 import {ORIGIN_SKIP_SYNC} from "../../doc";
 import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
+import {copyBlocks} from "./copyBlocks";
 
 export * from './types'
 
@@ -34,36 +35,18 @@ export class ClipboardManager {
     return navigator.clipboard.writeText(text)
   }
 
-  copyBlocksModel = async (snapshots: IBlockSnapshot[]): Promise<void> => {
-    const rootSnapshot = await this._wrapSnapshotsByRoot(snapshots)
-
-    let clipboardItem: ClipboardItem
-    try {
-      const items: Partial<Record<ClipboardDataType, Blob>> = {}
-      for (const adp of this.adapter.supportedAdapters) {
-        const str = await adp.fromSnapshot(rootSnapshot)
-        items[adp.type] = new Blob([str], {type: adp.type})
-      }
-      clipboardItem = new ClipboardItem({
-        [ClipboardDataType.TEXT]: snapshots2Text(snapshots),
-        ...items
-      })
-    } catch (e) {
-      this.doc.logger.error('copyBlocksModel', e)
-      clipboardItem = new ClipboardItem({
-        [ClipboardDataType.TEXT]: snapshots2Text(snapshots),
-      })
-    }
-
-    return navigator.clipboard.write([clipboardItem])
+  copyBlocksModel = (snapshots: IBlockSnapshot[]): Promise<void> => {
+    if (!snapshots?.length) return Promise.reject('no blocks to copy')
+    const rootSnapshot = this._wrapSnapshotsByRoot(snapshots)
+    return copyBlocks.call(this, rootSnapshot)
   }
 
-  private async _wrapDeltaByRoot(deltas: DeltaInsert[]) {
+  private _wrapDeltaByRoot(deltas: DeltaInsert[]) {
     const p = this.doc.schemas.createSnapshot('paragraph', [deltas])
     return this.doc.schemas.createSnapshot('root', [generateId(), [p]])
   }
 
-  private async _wrapSnapshotsByRoot(snapshots: IBlockSnapshot[]) {
+  private _wrapSnapshotsByRoot(snapshots: IBlockSnapshot[]) {
     return this.doc.schemas.createSnapshot('root', [generateId(), snapshots])
   }
 
@@ -226,73 +209,73 @@ export class ClipboardManager {
 
           // this.doc.crud.transact(() => {
 
-            // 同一文本块
-            if (isSameTextBlock) {
-              const ops: DeltaOperation[] = [{retain: fromIndex}]
+          // 同一文本块
+          if (isSameTextBlock) {
+            const ops: DeltaOperation[] = [{retain: fromIndex}]
 
-              let insertLength = 0
-              // 是否需要和本段合并
-              if (snapshots[0].nodeType === BlockNodeType.editable
-                && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
-                && snapshots[0].children.length) {
-                insertLength = deltaStrLength(snapshots[0].children)
-                ops.push(...snapshots[0].children)
-                snapshots.shift()
-              }
-              // 不需要拆分
-              if (!snapshots.length) {
-                fromLength > 0 && ops.splice(1, 0, {delete: fromLength - fromIndex})
-                editableBlock.applyDeltaOperation(ops)
-                insertLength > 0 && selFrom.block.setInlineRange(fromIndex, insertLength)
-                return;
-              }
-
-              // 文本中间位置
-              if (fromIndex + fromLength < textLength) {
-                ops.push({delete: textLength - fromIndex})
-                // 拆分
-                const sliceDeltas = sliceDelta(editableBlock.textDeltas(), fromIndex + fromLength, textLength)
-                const splitSnapshot = this.doc.schemas.createSnapshot('paragraph', [sliceDeltas, editableBlock.props])
-                this.doc.crud.insertBlocksAfter(editableBlock, [splitSnapshot])
-              }
-              editableBlock.applyDeltaOperation(ops)
-            } else {
-              // 删除区间内容
-              this.deleteContentFromSelection(state.selection)
-
-              // 是否需要和本段合并
-              if (snapshots[0].nodeType === BlockNodeType.editable
-                && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
-                && snapshots[0].children.length) {
-                const insertLength = deltaStrLength(snapshots[0].children)
-                editableBlock.applyDeltaOperation([{retain: fromIndex}, ...snapshots[0].children])
-                snapshots.shift()
-
-                if (!snapshots.length) {
-                  insertLength > 0 && selFrom.block.setInlineRange(fromIndex, insertLength)
-                  return
-                }
-              }
+            let insertLength = 0
+            // 是否需要和本段合并
+            if (snapshots[0].nodeType === BlockNodeType.editable
+              && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
+              && snapshots[0].children.length) {
+              insertLength = deltaStrLength(snapshots[0].children)
+              ops.push(...snapshots[0].children)
+              snapshots.shift()
+            }
+            // 不需要拆分
+            if (!snapshots.length) {
+              fromLength > 0 && ops.splice(1, 0, {delete: fromLength - fromIndex})
+              editableBlock.applyDeltaOperations(ops)
+              insertLength > 0 && selFrom.block.setInlineRange(fromIndex, insertLength)
+              return;
             }
 
-            // 新增blocks
-            this.doc.crud.insertBlocksAfter(editableBlock, snapshots).then(() => {
-              const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
-              this.doc.selection.setSelection({
-                blockId: editableBlock.id,
-                index: fromIndex,
-                length: editableBlock.textLength,
-                type: 'text'
-              }, this.doc.isEditable(endBlock) ? {
-                blockId: endBlock.id,
-                index: 0,
-                length: endBlock.textLength,
-                type: 'text'
-              } : {
-                blockId: endBlock.id,
-                type: 'selected'
-              })
+            // 文本中间位置
+            if (fromIndex + fromLength < textLength) {
+              ops.push({delete: textLength - fromIndex})
+              // 拆分
+              const sliceDeltas = sliceDelta(editableBlock.textDeltas(), fromIndex + fromLength, textLength)
+              const splitSnapshot = this.doc.schemas.createSnapshot('paragraph', [sliceDeltas, editableBlock.props])
+              this.doc.crud.insertBlocksAfter(editableBlock, [splitSnapshot])
+            }
+            editableBlock.applyDeltaOperations(ops)
+          } else {
+            // 删除区间内容
+            this.deleteContentFromSelection(state.selection)
+
+            // 是否需要和本段合并
+            if (snapshots[0].nodeType === BlockNodeType.editable
+              && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
+              && snapshots[0].children.length) {
+              const insertLength = deltaStrLength(snapshots[0].children)
+              editableBlock.applyDeltaOperations([{retain: fromIndex}, ...snapshots[0].children])
+              snapshots.shift()
+
+              if (!snapshots.length) {
+                insertLength > 0 && selFrom.block.setInlineRange(fromIndex, insertLength)
+                return
+              }
+            }
+          }
+
+          // 新增blocks
+          this.doc.crud.insertBlocksAfter(editableBlock, snapshots).then(() => {
+            const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
+            this.doc.selection.setSelection({
+              blockId: editableBlock.id,
+              index: fromIndex,
+              length: editableBlock.textLength,
+              type: 'text'
+            }, this.doc.isEditable(endBlock) ? {
+              blockId: endBlock.id,
+              index: 0,
+              length: endBlock.textLength,
+              type: 'text'
+            } : {
+              blockId: endBlock.id,
+              type: 'selected'
             })
+          })
           // }, ORIGIN_SKIP_SYNC)
 
           return true
@@ -320,7 +303,7 @@ export class ClipboardManager {
         selFrom.block.replaceText(selFrom.index, selFrom.length, text)
       } else {
         this.deleteContentFromSelection(state.selection)
-        selFrom.block.applyDeltaOperation([{retain: selFrom.index}, {insert: text}])
+        selFrom.block.applyDeltaOperations([{retain: selFrom.index}, {insert: text}])
       }
       nextTick().then(() => {
         selFrom.block.setInlineRange(selFrom.index, text.length)

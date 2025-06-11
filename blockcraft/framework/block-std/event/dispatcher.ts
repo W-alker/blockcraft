@@ -5,6 +5,7 @@ import {KeyboardControl, CompositionControl, ClipboardControl, DndControl, Mouse
 import {fromEvent, take, takeUntil} from "rxjs";
 import {closetBlockId} from "../../utils";
 import {HasEventTargetAddRemove} from "rxjs/internal/observable/fromEvent";
+import {SelectionControl} from "./control/selection";
 
 const bypassEditorEventName = ['beforeInput', 'focusOut', 'focusIn', 'contextMenu', 'wheel'] as Array<EditorEventName>
 
@@ -52,7 +53,10 @@ export type EditorEventName =
   | 'compositionEnd'
   | 'cut'
   | 'copy'
-  | 'paste';
+  | 'paste'
+  | 'selectStart'
+  // | 'selectMove'
+  | 'selectEnd';
 
 
 export class UIEventDispatcher {
@@ -65,6 +69,7 @@ export class UIEventDispatcher {
   private clipboardControl = new ClipboardControl(this)
   private dndControl = new DndControl(this)
   private mouseControl = new MouseControl(this)
+  private _selectionControl = new SelectionControl(this)
 
   constructor(private doc: BlockCraft.Doc) {
     this.doc.afterInit(this._bindEvents)
@@ -74,20 +79,21 @@ export class UIEventDispatcher {
     return this.doc.root.hostElement
   }
 
-  get isReadOnly() {
-    return this.doc.isReadonly
-  }
-
-  get isComposing() {
-    return this.compositionControl.isComposing
+  get status() {
+    return {
+      isReadOnly: this.doc.isReadonly,
+      isComposing: this.compositionControl.isComposing,
+      isMouseReleased: this.mouseControl.isMouseReleased,
+      isSelecting: this._selectionControl.isSelecting,
+    }
   }
 
   customListen<T extends Event = Event>(target: HasEventTargetAddRemove<unknown> | ArrayLike<HasEventTargetAddRemove<unknown>>,
-                                             eventName: string,
-                                             config?: { once?: true }) {
+                                        eventName: string,
+                                        config?: { once?: true }) {
     const s = fromEvent<T>(target, eventName).pipe(takeUntil(this.doc.onDestroy$))
     if (config?.once) {
-      s.pipe(take(1))
+      return s.pipe(take(1))
     }
     return s
   }
@@ -152,6 +158,7 @@ export class UIEventDispatcher {
     this.clipboardControl.listen(root)
     this.dndControl.listen(root)
     this.mouseControl.listen(root)
+    this._selectionControl.listen(root)
   }
 
   hasHandler(name: EditorEventName) {

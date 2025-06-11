@@ -1,7 +1,7 @@
 import {fromEvent, take, takeUntil} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {TriggerBtn} from "./widgets/trigger-btn";
-import {closetBlockId, DocPlugin} from "../../framework";
+import {closetBlockId, DocPlugin, EventListen} from "../../framework";
 
 export class BlockControllerPlugin extends DocPlugin {
   override name = 'block-controller'
@@ -80,6 +80,17 @@ export class BlockControllerPlugin extends DocPlugin {
           this._cpr.instance.menuDisabled = false
         })
       })
+  }
+
+  // TODO 第一次selectstart没执行
+  @EventListen('selectStart', {flavour: "root"})
+  onSelectStart() {
+    this._cpr.location.nativeElement.style.pointerEvents = 'none'
+  }
+
+  @EventListen('selectEnd', {flavour: "root"})
+  onSelectEnd() {
+    this._cpr.location.nativeElement.style.pointerEvents = 'auto'
   }
 
   clearTimer() {

@@ -127,7 +127,7 @@ export class EditorCommentPad extends CommentPad {
     if (!this.doc.isEditable(block)) return;
     this.commentService.addComment(this.value, this.commentId).then(c => {
       if(this.selection.from.type !== 'text') return
-      block.formatText(this.selection.from.index, this.selection.from.length, {'d:comment': c.id})
+      block.yText.format(this.selection.from.index, this.selection.from.length, {'d:comment': c.id})
       this.close()
     })
   }
