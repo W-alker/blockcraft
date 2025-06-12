@@ -15,7 +15,6 @@ export class SelectionControl {
   }
 
   onSelectstart = (e: Event) => {
-    console.log('----------onSelectstart----------', e, this._shiftKeyPressing, this._mouseDown)
     this._isSelecting = true;
     this._dispatcher.run('selectStart', this._buildContext(e))
     // 键盘多选

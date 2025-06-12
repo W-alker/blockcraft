@@ -10,6 +10,10 @@
     &.selected {
       border-color: var(--bc-active-color);
       background-color: unset;
+
+      .graph-con {
+        cursor: zoom-in;
+      }
     }
 
     &[data-mode="text"] {
@@ -42,7 +46,6 @@
 
     .graph-con {
       padding: 10px;
-      cursor: zoom-in;
     }
 
     .head {

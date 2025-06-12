@@ -168,6 +168,7 @@ export class DocExportManager {
       let currentStartY = 0;
       let accumulatedHeight = 0;
 
+      // TODO: 优化分页算法
       for (const blockHeight of blockHeights) {
         // 单个块比一页高，硬切直至一页能容纳，存留剩余高度
         if (blockHeight > pageHeightPx) {

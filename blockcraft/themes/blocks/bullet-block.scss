@@ -1,7 +1,7 @@
 @mixin bullet-block {
   div.bullet-block {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
 
     .edit-container {
       flex: 1;

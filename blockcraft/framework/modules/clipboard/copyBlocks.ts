@@ -57,8 +57,8 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
 }
 
 export function copyBlocks(this: ClipboardManager, snapshot: IBlockSnapshot) {
-  if (window.navigator.clipboard) {
-    return tryNavigator.call(this, snapshot)
-  }
+  // if (window.navigator.clipboard) {
+  //   return tryNavigator.call(this, snapshot)
+  // }
   return tryCommand.call(this, snapshot)
 }

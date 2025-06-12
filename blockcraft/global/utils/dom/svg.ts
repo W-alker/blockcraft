@@ -1,39 +1,44 @@
-export function svg2Base64(svgElement: SVGElement) {
-  const svgString = new XMLSerializer().serializeToString(svgElement);
-  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
-}
-
-interface Svg2CanvasOptions {
+export interface Svg2CanvasOptions {
+  width?: number;
+  height?: number;
   backgroundColor?: string;
 }
 
 export function svg2Canvas(svgElement: SVGElement, options: Svg2CanvasOptions = {}): Promise<HTMLCanvasElement> {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d')!
+  const svgString = new XMLSerializer().serializeToString(svgElement);
+  const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+  const url = URL.createObjectURL(svgBlob);
 
-  if (options.backgroundColor) {
-    ctx.fillStyle = options.backgroundColor
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-  }
-
-  const img = new Image();
   return new Promise((resolve) => {
-    img.src = svg2Base64(svgElement);
+    const img = new Image();
 
     img.onload = () => {
-      ctx.drawImage(img, 0, 0);
-      resolve(canvas)
-    }
-  })
+      // 真实尺寸优先：传入的尺寸 > svg 的 viewBox 或宽高 > 图片自然尺寸
+      const width = options.width || img.width;
+      const height = options.height || img.height;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d')!;
+      if (options.backgroundColor) {
+        ctx.fillStyle = options.backgroundColor;
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      URL.revokeObjectURL(url); // 清理资源
+      resolve(canvas);
+    };
+
+    img.src = url;
+  });
 }
 
-export function svg2ImageElement(svgElement: SVGElement) {
-  const svgBase64 = svg2Base64(svgElement)
-
-  const img = document.createElement('img');
-  img.src = svgBase64;
-  img.width = svgElement.clientWidth;
-  img.height = svgElement.clientHeight;
-
-  return img;
+export const svg2Png = async (svgElement: SVGElement, options: Svg2CanvasOptions = {}) => {
+  const canvas = await svg2Canvas(svgElement, options);
+  return canvas.toDataURL('image/png');
 }
+

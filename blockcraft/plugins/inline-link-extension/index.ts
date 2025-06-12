@@ -219,10 +219,10 @@ export class InlineLinkExtension extends DocPlugin {
     }
 
     // this.doc.crud.transact(() => {
-      this.doc.crud.insertBlocksAfter(block, insertBlocks).then(() => {
-        this.doc.selection.selectBlock(bookmark.id)
-        block.deleteText(this._anchorTextRange!.start, block.textLength - this._anchorTextRange!.start)
-      })
+    block.deleteText(this._anchorTextRange!.start, block.textLength - this._anchorTextRange!.start)
+    this.doc.crud.insertBlocksAfter(block, insertBlocks).then(() => {
+      this.doc.selection.selectBlock(bookmark.id)
+    })
     // }, ORIGIN_SKIP_SYNC)
   }
 

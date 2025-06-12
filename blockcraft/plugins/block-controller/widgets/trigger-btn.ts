@@ -114,7 +114,7 @@ const HEADING_LIST: IContextMenuItem[] = [
           <ul class='base-list' (mousedown)="$event.preventDefault()">
             @for (item of HEADING_LIST; track item.value) {
               <li class="base-list__item" [title]="item.label" (mousedown)="handleToolItemClick(item)"
-                  [class.active]="activeBlock?.flavour === 'paragraph' && activeBlock?.props?.['heading'] === item.value">
+                  [class.active]="activeBlock?.props?.['heading'] === item.value">
                 <i [class]="item.icon"></i>
               </li>
             }

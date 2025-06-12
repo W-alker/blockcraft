@@ -58,10 +58,10 @@ export class DocVM {
       return new Promise<BlockCraft.BlockComponentRef>((resolve, reject) => {
         const id = yBlock.get('id')
         // try get it from cache
-        if (this.has(id)) {
-          resolve(this._restoreCachedComp(id))
-          return
-        }
+        // if (this.has(id)) {
+        //   resolve(this._restoreCachedComp(id))
+        //   return
+        // }
 
         const schema = this.schemas.get(yBlock.get('flavour'))!
         const cpr = this._vcr.createComponent(schema.component, {
@@ -174,7 +174,8 @@ export class DocVM {
 
     while (length > 0) {
       if (index > instance.childrenContainer.length) return
-      instance.childrenContainer.detach(index)
+      // instance.childrenContainer.detach(index)
+      instance.childrenContainer.remove(index)
       length--
     }
   }

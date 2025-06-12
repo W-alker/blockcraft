@@ -24,7 +24,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   private activeCommonAttrs: ITextCommonAttrs = {
     attrs: new Map(),
     colors: {},
-    textAlign: undefined
+    props: {}
   }
 
   constructor(
@@ -70,7 +70,8 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this._cpr.setInput('utils', this.utils)
     this._cpr.setInput('activeAttrs', this.activeCommonAttrs.attrs)
     this._cpr.setInput('activeColors', this.activeCommonAttrs.colors)
-    this._cpr.setInput('activeTextAlign', this.activeCommonAttrs.textAlign)
+    this._cpr.setInput('activeProps', this.activeCommonAttrs.props)
+    this._cpr.setInput('activeFlavour', this.activeCommonAttrs.flavour)
 
     this.doc.selection.nextChangeObserve().pipe(takeUntil(this._closeCpr$)).subscribe(() => {
       this.closeToolbar()

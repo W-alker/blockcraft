@@ -1,17 +1,15 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {
-  BaseBlockComponent,
-  createBlockGapSpace, DOC_FILE_SERVICE_TOKEN,
+  BaseBlockComponent,DOC_FILE_SERVICE_TOKEN,
   generateId,
   getPositionWithOffset,
-  ORIGIN_SKIP_SYNC
 } from "../../framework";
 import {MermaidBlockModel} from "./index";
 import mermaid from "mermaid";
 import {Subject, Subscription, takeUntil} from "rxjs";
 import {MermaidTypeListComponent} from "./widgets/mermaid-type-list.component";
 import {IMermaidType, MermaidViewMode} from "./types";
-import {nextTick, svg2ImageElement} from "../../global";
+import {nextTick, svg2Png} from "../../global";
 
 // import {ScaleRatioPipe} from "./ratio.pipe";
 
@@ -160,9 +158,9 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
 
   useTemplate(item: IMermaidType) {
     // this.doc.crud.transact(() => {
-      const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
-      textarea.textLength && textarea.yText.delete(0, textarea.textLength)
-      textarea.insertText(0, item.prefix + item.template)
+    const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
+    textarea.textLength && textarea.yText.delete(0, textarea.textLength)
+    textarea.insertText(0, item.prefix + item.template)
     // }, ORIGIN_SKIP_SYNC)
   }
 
@@ -192,12 +190,16 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   }
 
   async onPreviewGraph(evt: MouseEvent) {
+    const sel = this.doc.selection.value
+    if (!sel || sel.to || sel.from.blockId !== this.id) return
     evt.stopPropagation()
     evt.preventDefault()
     const svg = this.graphContainer.firstElementChild
     if (!svg || !(svg instanceof SVGElement)) return
     //svg转canvas
-    const img = svg2ImageElement(svg)
+    const uri = await svg2Png(svg, {backgroundColor: '#fff', width: svg.clientWidth, height: svg.clientHeight})
+    const img = new Image()
+    img.src = uri
 
     this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg(img, 'mermaid')
     img.dispatchEvent(new MouseEvent('click', {bubbles: false, cancelable: true, view: window}))

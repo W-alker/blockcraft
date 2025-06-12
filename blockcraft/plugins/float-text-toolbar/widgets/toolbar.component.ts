@@ -16,7 +16,7 @@ import {
 } from "../../../components";
 import {BlockCraftError, ErrorCode, SimpleValue} from "../../../global";
 import {NgForOf, NgIf} from "@angular/common";
-import {ORIGIN_SKIP_SYNC, IInlineNodeAttrs} from "../../../framework";
+import {ORIGIN_SKIP_SYNC, IInlineNodeAttrs, IEditableBlockProps} from "../../../framework";
 import {Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {merge} from "rxjs";
@@ -34,6 +34,60 @@ export interface IToolbarMenuItem {
   intro?: string
   divide?: boolean
 }
+
+const HEADING_LIST: IToolbarMenuItem[] = [
+  {
+    name: "heading",
+    icon: "bc_wenben",
+    intro: "普通文本",
+    value: null,
+  },
+  {
+    name: "heading",
+    value: 1,
+    icon: "bc_biaoti_1",
+    intro: "一级标题",
+  },
+  {
+    name: "heading",
+    value: 2,
+    icon: "bc_biaoti_2",
+    intro: "二级标题",
+  },
+  {
+    name: "heading",
+    value: 3,
+    icon: "bc_biaoti_3",
+    intro: "三级标题",
+  },
+  {
+    name: "heading",
+    value: 4,
+    icon: "bc_biaoti_4",
+    intro: "四级标题",
+  }
+]
+
+export const LIST_LIST: IToolbarMenuItem[] = [
+  {
+    name: "list",
+    icon: "bc_youxuliebiao",
+    intro: "有序列表",
+    value: "ordered",
+  },
+  {
+    name: "list",
+    icon: "bc_wuxuliebiao",
+    intro: "无序列表",
+    value: "bullet",
+  },
+  {
+    name: "list",
+    icon: "bc_gongzuoshixiang",
+    intro: "待办事项",
+    value: "todo",
+  }
+]
 
 const ALIGN_LIST: IToolbarMenuItem[] = [
   {
@@ -107,6 +161,11 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
   selector: "div.float-text-toolbar",
   template: `
     <bc-float-toolbar (onItemClick)="onItemClicked($event)">
+      <bc-float-toolbar-item icon="bc_wenben" [expandable]="true"
+                             [bcOverlayTrigger]="formatFloatBar" [positions]="['bottom-left']" [offsetY]="8"/>
+
+      <span class="bc-float-toolbar__divider"></span>
+
       <bc-float-toolbar-item icon="bc_zuoduiqi" [expandable]="true"
                              [bcOverlayTrigger]="alignFloatBar" [positions]="['bottom-left']" [offsetY]="8"/>
 
@@ -119,6 +178,7 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
                                [icon]="item.icon" [title]="item.intro" [active]="activeAttrs.has(item.name)">
         </bc-float-toolbar-item>
       }
+
 
       <bc-float-toolbar-item name="link" [value]="activeAttrs.has('link') ? null : true"
                              [active]="activeAttrs.has('link')"
@@ -140,6 +200,20 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
 
     </bc-float-toolbar>
 
+    <ng-template #formatFloatBar>
+      <bc-float-toolbar [direction]="'column'" (onItemClick)="onItemClicked($event)">
+        <bc-float-toolbar-item *ngFor="let item of headingList" [name]="item.name"
+                               [active]="activeProps.heading == item.value"
+                               [value]="item.value" [icon]="item.icon">{{ item.intro }}
+        </bc-float-toolbar-item>
+        <span class="bc-float-toolbar__divider"></span>
+        <bc-float-toolbar-item *ngFor="let item of listList" [name]="item.name"
+                               [active]="activeFlavour == item.value"
+                               [value]="item.value" [icon]="item.icon">{{ item.intro }}
+        </bc-float-toolbar-item>
+      </bc-float-toolbar>
+    </ng-template>
+
     <ng-template #colorPicker>
       <bc-color-picker (colorPicked)="onColorPicked($event)" [activeColors]="activeColors"></bc-color-picker>
     </ng-template>
@@ -147,7 +221,7 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
     <ng-template #alignFloatBar>
       <bc-float-toolbar [direction]="'column'" (onItemClick)="onItemClicked($event)">
         <bc-float-toolbar-item *ngFor="let item of alignList" [name]="item.name"
-                               [active]="activeTextAlign === item.value"
+                               [active]="activeProps.textAlign == item.value"
                                [value]="item.value" [icon]="item.icon">{{ item.intro }}
         </bc-float-toolbar-item>
       </bc-float-toolbar>
@@ -212,6 +286,8 @@ export class FloatTextToolbarComponent {
 
   defaultMenuList: IToolbarMenuItem[] = DEFAULT_MENU_LIST
   alignList: IToolbarMenuItem[] = ALIGN_LIST
+  headingList: IToolbarMenuItem[] = HEADING_LIST
+  listList: IToolbarMenuItem[] = LIST_LIST
 
   @Input({required: true})
   activeAttrs = new Map<string, any>()
@@ -220,7 +296,10 @@ export class FloatTextToolbarComponent {
   activeColors: Record<string, string | null> = {}
 
   @Input({required: true})
-  activeTextAlign: string | undefined | null = undefined
+  activeProps: Partial<IEditableBlockProps> = {}
+
+  @Input()
+  activeFlavour: BlockCraft.BlockFlavour = 'paragraph'
 
   isLinkAble = false
 
@@ -238,8 +317,14 @@ export class FloatTextToolbarComponent {
 
   onItemClicked(evt: BcFloatToolbarItemComponent) {
     switch (evt.name) {
+      case 'heading':
+        this.setProps({heading: evt.value as any})
+        break
       case 'align':
-        this.setTextAlign(evt.value as string)
+        this.setProps({textAlign: evt.value as any})
+        break
+      case 'list':
+        this.transformList(evt.value as any)
         break
       case 'italic':
       case 'bold':
@@ -260,7 +345,7 @@ export class FloatTextToolbarComponent {
     }
   }
 
-  setTextAlign(textAlign: string) {
+  setProps(props: Partial<IEditableBlockProps>) {
     const selection = this.doc.selection.value
     if (!selection) return
 
@@ -269,9 +354,26 @@ export class FloatTextToolbarComponent {
       for (const id of between) {
         const block = this.doc.getBlockById(id)
         if (!this.doc.isEditable(block) || block.plainTextOnly) continue;
-        block.updateProps({'textAlign': textAlign as any})
+        block.updateProps({...props})
       }
-      this.activeTextAlign = textAlign
+      this.activeProps = {...this.activeProps, ...props}
+    })
+  }
+
+  transformList(flavour: BlockCraft.BlockFlavour) {
+    const selection = this.doc.selection.value
+    if (!selection) return
+
+    // TODO 优化替换后的选区
+    this.doc.crud.transact(async () => {
+      const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
+      for (const i in between) {
+        const id = between[i]
+        const block = this.doc.getBlockById(id)
+        if (!this.doc.isEditable(block) || block.plainTextOnly || block.flavour === flavour) continue;
+        const newBlock = this.doc.schemas.createSnapshot(flavour, [block.textDeltas(), block.props])
+        await this.doc.crud.replaceWithSnapshots(id, [newBlock])
+      }
     })
   }
 

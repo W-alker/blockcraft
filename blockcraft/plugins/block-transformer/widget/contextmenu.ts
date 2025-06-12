@@ -76,23 +76,15 @@ export class BlockTransformContextMenu {
   ngOnInit() {
     const parentBlockSchema = this.doc.schemas.get(this.activeBlock.parentBlock!.flavour)!
     const blocks: IContextMenuOption[] = this.doc.schemas.getSchemaList()
-      .filter(v => !v.metadata.isLeaf && !['image', 'paragraph', 'root'].includes(v.flavour)
+      .filter(v => !v.metadata.isLeaf && !['paragraph', 'root'].includes(v.flavour)
         && this.doc.schemas.isValidChildren(v.flavour, parentBlockSchema))
       .map(v => ({flavour: v.flavour, metadata: v.metadata, type: 'block'}))
     const listAll = HEADING_LIST.concat(blocks)
 
     this.list = listAll
 
-    let isComposing = false
-    fromEvent(this.activeBlock.hostElement, 'compositionstart').pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-      isComposing = true
-    })
-    fromEvent(this.activeBlock.hostElement, 'compositionend').pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-      isComposing = false
-    })
-
     const textObserver = () => {
-      if (isComposing) return;
+      if (this.doc.event.status.isComposing) return;
       const text = this.activeBlock.textContent()
       if (!text || !TransformReg.test(text)) {
         this.close$.next(true)
@@ -140,7 +132,7 @@ export class BlockTransformContextMenu {
     })
   }
 
-  activeIdx = 0
+  protected activeIdx = 0
 
   onMouseDown(evt: MouseEvent) {
     evt.preventDefault()

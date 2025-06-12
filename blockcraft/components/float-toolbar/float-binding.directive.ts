@@ -101,7 +101,8 @@ export class BcOverlayTriggerDirective {
     this.overlayRef = this.overlay.create({
       positionStrategy,
       hasBackdrop: this.withBackdrop,
-      backdropClass: 'cdk-overlay-transparent-backdrop'
+      backdropClass: 'cdk-overlay-transparent-backdrop',
+      scrollStrategy: this.overlay.scrollStrategies.reposition()
     });
 
     const templatePortal = new TemplatePortal(this.contentTemplate, this.viewContainerRef);

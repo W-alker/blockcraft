@@ -115,10 +115,10 @@ export class BlockTransformerPlugin extends DocPlugin {
       if (heading < 0) return false
       const selIdx = selection.from.index
       // this.doc.crud.transact(() => {
-        block.deleteText(0, selIdx + 1)
-        block.updateProps({
-          heading: heading + 1
-        })
+      block.deleteText(0, selIdx + 1)
+      block.updateProps({
+        heading: heading + 1
+      })
       // }, ORIGIN_SKIP_SYNC)
       return true
     }
@@ -155,7 +155,10 @@ export class BlockTransformerPlugin extends DocPlugin {
       {originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top'},
       {originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom'},
     ])
-    this.contextOvr = overlay.create({positionStrategy: positions})
+    this.contextOvr = overlay.create({
+      positionStrategy: positions,
+      scrollStrategy: overlay.scrollStrategies.reposition()
+    })
 
     const cpr = this.contextOvr.attach(new ComponentPortal(BlockTransformContextMenu))
     cpr.setInput('activeBlock', block)

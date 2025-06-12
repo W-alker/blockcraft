@@ -10,13 +10,12 @@ import {
   UIEventState,
   UIEventStateContext
 } from "../../block-std";
-import {deltaStrLength, deltaToString, IS_ELECTRON, isUrl, nextTick, sliceDelta} from "../../../global";
+import {deltaStrLength, deltaToString, isUrl, nextTick, sliceDelta} from "../../../global";
 import {ClipboardDataType} from "./types";
 import {
   generateId,
   replaceSnapshotsDepths,
   replaceSnapshotsIdDeeply,
-  snapshots2Text
 } from "../../utils";
 import {ORIGIN_SKIP_SYNC} from "../../doc";
 import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";

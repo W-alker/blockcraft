@@ -1,11 +1,12 @@
-import {DeltaInsert, IInlineNodeAttrs} from "../../framework";
-import {ORIGIN_SKIP_SYNC} from "../../framework";
+import {BlockNodeType, DeltaInsert, IEditableBlockProps, IInlineNodeAttrs} from "../../framework";
 import {getCommonAttributesFromDeltas, sliceDelta} from "../../global";
 
 export interface ITextCommonAttrs {
   attrs: Map<string, any>
   colors: Record<string, string | null>
-  textAlign: string | undefined | null
+  props: Partial<IEditableBlockProps>,
+  flavour?: BlockCraft.BlockFlavour,
+  allEditable?: boolean
 }
 
 export class TextToolbarUtils {
@@ -15,7 +16,9 @@ export class TextToolbarUtils {
   getCurrentCommonAttrs(selection: BlockCraft.Selection): ITextCommonAttrs {
     const attrs = new Map<string, any>()
     let colors: Record<string, string | null>
-    let textAlign: string | undefined | null = selection.firstBlock.props['textAlign']
+    let props: Partial<IEditableBlockProps> = JSON.parse(JSON.stringify(selection.firstBlock.props))
+    let flavour: BlockCraft.BlockFlavour | undefined = selection.firstBlock.flavour
+    let allEditable = selection.firstBlock.nodeType === BlockNodeType.editable
 
     const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true).map(id => this.doc.getBlockById(id))
 
@@ -25,9 +28,18 @@ export class TextToolbarUtils {
     }
 
     between.slice(1).forEach((block, i) => {
-      if (!this.doc.isEditable(block) || block.plainTextOnly) return;
-      if (textAlign !== null && block.props.textAlign !== textAlign) {
-        textAlign = null
+      if (!this.doc.isEditable(block) || block.plainTextOnly) {
+        allEditable = false
+        return
+      }
+      if (props.textAlign !== null && block.props.textAlign !== props.textAlign) {
+        props.textAlign = undefined
+      }
+      if (props.heading !== null && block.props.heading !== props.heading) {
+        props.heading = undefined
+      }
+      if (block.flavour !== null && block.flavour !== flavour) {
+        flavour = undefined
       }
       if (i === between.length - 2 && selection.to?.type === 'text') {
         allDeltas.push(...sliceDelta(block.textDeltas(), 0, selection.to.index))
@@ -47,7 +59,9 @@ export class TextToolbarUtils {
     return {
       attrs,
       colors,
-      textAlign
+      props,
+      flavour,
+      allEditable
     }
   }
 
@@ -57,20 +71,20 @@ export class TextToolbarUtils {
 
     const {from, to} = selection
     // this.doc.crud.transact(() => {
-      if (from.type === 'text' && !from.block.plainTextOnly) {
-        from.block.formatText(from.index, from.length, attrs)
-      }
-      if (!to) return
-      if (to.type === 'text' && !to.block.plainTextOnly) {
-        to.block.formatText(to.index, to.length, attrs)
-      }
+    if (from.type === 'text' && !from.block.plainTextOnly) {
+      from.block.formatText(from.index, from.length, attrs)
+    }
+    if (!to) return
+    if (to.type === 'text' && !to.block.plainTextOnly) {
+      to.block.formatText(to.index, to.length, attrs)
+    }
 
-      const between = this.doc.queryBlocksBetween(from.block, to.block)
-      for (const id of between) {
-        const block = this.doc.getBlockById(id)
-        if (!this.doc.isEditable(block) || block.plainTextOnly) continue;
-        block.formatText(0, block.textLength, attrs)
-      }
+    const between = this.doc.queryBlocksBetween(from.block, to.block)
+    for (const id of between) {
+      const block = this.doc.getBlockById(id)
+      if (!this.doc.isEditable(block) || block.plainTextOnly) continue;
+      block.formatText(0, block.textLength, attrs)
+    }
     // }, ORIGIN_SKIP_SYNC)
   }
 

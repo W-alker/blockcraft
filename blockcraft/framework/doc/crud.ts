@@ -71,9 +71,14 @@ export class DocCRUD {
         zone.run(async () => {
           await this._syncYEvent(evt, tr)
         })
-        // .then(() => {
-        // this.doc.selection.recalculate()
-        // })
+          .then(() => {
+            if (!tr.local) {
+              nextTick().then(() => {
+                this.doc.selection.recalculate()
+              })
+            }
+
+          })
       })
 
       this.yUndoManager.on('stack-item-added', (evt) => {
@@ -230,6 +235,7 @@ export class DocCRUD {
     const childComps = await this.vm.createComponentByYBlocks(added)
     const insertDelay: Map<BlockCraft.BlockComponentRef, [number, BlockCraft.BlockComponentRef[]][]> = new Map()
 
+    // TODO 对于已经做缓存的元素，在增加和删除的时候会有重复的情况，比如移动。这是VM的问题。可以尝试解决move行为
     events.forEach(([bm, deltas]) => {
       const _delay_inserts: [number, BlockCraft.BlockComponentRef[]][] = []
       const deletedMap: { index: number, length: number }[] = []
@@ -242,6 +248,8 @@ export class DocCRUD {
           // 所有的插入操作需要延迟执行
           const _insertComps = (d.insert as string[]).map(id => childComps[id])
           _delay_inserts.push([r, _insertComps])
+          this.vm.insert(bm, r, _insertComps)
+          r += _insertComps.length
         } else if (d.delete) {
           this.vm.remove(bm, r, d.delete)
           deletedMap.push({index: r, length: <number>d.delete})
@@ -253,15 +261,6 @@ export class DocCRUD {
         block: bm.instance,
         deleted: deletedMap.length ? deletedMap : undefined,
         inserted: _delay_inserts.map(v => v[1].map(v => v.instance)).flat()
-      })
-    })
-
-    ;[...insertDelay.keys()].forEach(bm => {
-      let _ir = 0
-      const item = insertDelay.get(bm)!
-      item.forEach(([r, comps]) => {
-        this.vm.insert(bm, r, comps)
-        _ir += comps.length
       })
     })
 
