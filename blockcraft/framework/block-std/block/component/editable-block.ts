@@ -45,7 +45,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
   @HostBinding('attr.data-heading')
   get heading() {
-    return this._native.props['heading']
+    return this.plainTextOnly ? undefined : this._native.props['heading']
   }
 
   protected override _init() {

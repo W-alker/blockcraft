@@ -1,11 +1,14 @@
 import {generateId, NoEditableBlockNative} from "../../framework";
-import {BlockNodeType} from "../../framework/block-std/types";
+import {BlockNodeType, IBlockSchemaOptions} from "../../framework";
 import {DividerBlockComponent} from "./divider.block";
-import {IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
 
 export interface DividerBlockModel extends NoEditableBlockNative {
   flavour: 'divider',
-  nodeType: BlockNodeType.void
+  nodeType: BlockNodeType.void,
+  props: {
+    style?: string
+    size?: string
+  }
 }
 
 export const DividerBlockSchema: IBlockSchemaOptions<DividerBlockModel> = {

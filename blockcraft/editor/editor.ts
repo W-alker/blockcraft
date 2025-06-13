@@ -62,6 +62,8 @@ import {MentionPlugin} from "./plugins/mention";
 import * as Y from 'yjs'
 import {BlockCraftAwareness} from "./awa";
 import {IndexeddbPersistence} from "y-indexeddb";
+import {DividerExtensionPlugin} from "../plugins/divider-toolbar";
+import {DividerStylePopupComponent} from "../plugins/divider-toolbar/widgets/divider-style-popup.component";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -110,9 +112,13 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 @Component({
   selector: 'block-craft-editor',
   template: `
+    <app-divider-style-popup></app-divider-style-popup>
+
+
     <div style="width: 90vw; height: 80vh; overflow-y: auto; padding: 30px;" (mousedown)="onContainerMousedown($event)">
       <ng-container #container></ng-container>
     </div>
+
 
     <button (click)="initBySnapshot()">初始化</button>
     <button (mousedown)="$event.preventDefault(); logSelection()">当前选择</button>
@@ -180,7 +186,8 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
   }
   `],
   imports: [
-    MatIcon
+    MatIcon,
+    DividerStylePopupComponent
   ],
   standalone: true,
   providers: [
@@ -242,7 +249,7 @@ export class EditorComponent {
       }), new BlockTransformerPlugin(), new BlockControllerPlugin(),
       new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
       new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(), new InlineLinkExtension(),
-      new MentionPlugin(mentionRequest)
+      new MentionPlugin(mentionRequest), new DividerExtensionPlugin()
     ]
   })
 

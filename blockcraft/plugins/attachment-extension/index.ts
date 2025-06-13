@@ -32,18 +32,19 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     }
 
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
+      this.clearTimer()
+
       if (!selection || selection.to || selection.firstBlock?.flavour !== 'attachment') {
         this._toolbarRef && this.closeToolbar()
         return
       }
 
-      this.clearTimer()
-
       const attachmentBlock = selection.firstBlock as BlockCraft.IBlockComponents['attachment']
       if (this._toolbarRef && this._activeBlock === attachmentBlock) return;
       this.closeToolbar()
 
-      setTimeout(() => {
+      this._timer = setTimeout(() => {
+        this._timer = null
         if (this._toolbarRef && this._activeBlock === attachmentBlock) return;
 
         this._activeBlock = attachmentBlock as any
@@ -88,8 +89,6 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   closeToolbar = () => {
     this._closeToolbar$.next()
     this.clearTimer()
-    this._toolbarRef?.dispose()
-    this._toolbarRef = undefined
     this._activeBlock = null
   }
 

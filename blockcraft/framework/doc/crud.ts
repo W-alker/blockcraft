@@ -1,4 +1,12 @@
-import {DeltaOperation, IBlockSnapshot, InlineModel, YBlock} from "../block-std";
+import {
+  BlockNodeType,
+  DeltaOperation,
+  IBlockSnapshot,
+  InlineModel,
+  native2YBlock,
+  NativeBlockModel,
+  YBlock
+} from "../block-std";
 import * as Y from "yjs";
 import {BlockCraftError, ErrorCode, nextTick} from "../../global";
 import {IBlockSelectionJSON} from "../modules";
@@ -293,16 +301,27 @@ export class DocCRUD {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `insertBlocks: no valid children`)
     }
 
-    const comps = await Promise.all(
-      snapshots.map(s => this.vm.createComponentBySnapshot(s, (m) => {
-        this.transact(() => {
-          this.yBlockMap.set(m.instance.id, m.instance.yBlock)
-        }, ORIGIN_SKIP_SYNC)
-      }))
-    )
+    // const comps = await Promise.all(
+    //   snapshots.map(s => this.vm.createComponentBySnapshot(s, (m) => {
+    //     this.transact(() => {
+    //       this.yBlockMap.set(m.instance.id, m.instance.yBlock)
+    //     }, ORIGIN_SKIP_SYNC)
+    //   }))
+    // )
+
     this.transact(() => {
         // this.vm.insert(parentId, index, comps);
-        (parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, comps.map(c => c.instance.id))
+        const snapshot2YBlock = (snapshot: IBlockSnapshot) => {
+          const _children = snapshot.nodeType === BlockNodeType.editable ? snapshot.children : snapshot.children.map(childSnapshot => childSnapshot.id)
+          const yBlock = native2YBlock({...snapshot, children: _children} as NativeBlockModel)
+          this.yBlockMap.set(snapshot.id, yBlock)
+          if (snapshot.nodeType !== BlockNodeType.editable && snapshot.children.length) {
+            snapshot.children.forEach(childSnapshot => snapshot2YBlock(childSnapshot))
+          }
+        }
+        snapshots.forEach(snapshot => snapshot2YBlock(snapshot))
+
+        ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, snapshots.map(v => v.id))
         // emit
         // this.onChildrenUpdate$.next({
         //   isUndoRedo: false,

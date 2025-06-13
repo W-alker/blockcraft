@@ -184,40 +184,40 @@ export class InputTransformer {
     const {from, to, collapsed} = range
     if (collapsed) return
 
-    // this.doc.crud.transact(() => {
-    if (to) {
-      const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
-      if (throughPath.length) {
-        throughPath.forEach(through => {
-          this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
-        })
-      }
-    }
-
-    if (from.type === 'text') {
-      const deltas: DeltaOperation[] = []
-      from.index > 0 && deltas.push({retain: from.index})
-      from.length > 0 && deltas.push({delete: from.length})
-      text && deltas.push({insert: text})
-
+    this.doc.crud.transact(() => {
       if (to) {
-        if (to.type === 'text' && (to.index > 0 || to.length > 0)) {
-          deltas.push(...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength))
-          this.doc.crud.deleteBlockById(to.blockId)
-        } else if (to.type === 'selected') {
-          this.doc.crud.deleteBlockById(to.blockId)
+        const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
+        if (throughPath.length) {
+          throughPath.forEach(through => {
+            this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
+          })
         }
       }
 
-      from.block.applyDeltaOperations(deltas)
-      return
-    }
+      if (from.type === 'text') {
+        const deltas: DeltaOperation[] = []
+        from.index > 0 && deltas.push({retain: from.index})
+        from.length > 0 && deltas.push({delete: from.length})
+        text && deltas.push({insert: text})
 
-    // 无法输入的情况
-    if (to?.type !== 'text') return
-    this.doc.crud.deleteBlockById(from.blockId)
-    to.block.replaceText(to.index, to.length, text)
-    // }, ORIGIN_SKIP_SYNC)
+        if (to) {
+          if (to.type === 'text' && (to.index > 0 || to.length > 0)) {
+            deltas.push(...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength))
+            this.doc.crud.deleteBlockById(to.blockId)
+          } else if (to.type === 'selected') {
+            this.doc.crud.deleteBlockById(to.blockId)
+          }
+        }
+
+        from.block.applyDeltaOperations(deltas)
+        return
+      }
+
+      // 无法输入的情况
+      if (to?.type !== 'text') return
+      this.doc.crud.deleteBlockById(from.blockId)
+      to.block.replaceText(to.index, to.length, text)
+    })
   }
 
   private _deleteAllSelected(selection: BlockSelection) {
@@ -422,24 +422,25 @@ export class InputTransformer {
   @BindHotKey({key: 'Enter', shiftKey: null, ctrlKey: null})
   private async _handlerEnter(context: UIEventStateContext) {
     const state = context.get('keyboardState')
-    const {from, to, collapsed, isAllSelected} = state.selection
-    if (isAllSelected) {
-      // const nextBlock = this.doc.nextSibling(endBlock)
-      // if (nextBlock) {
-      //   this.doc.isEditable(nextBlock) ? nextBlock.setInlineRange(0) : this.doc.selection.selectBlock(nextBlock)
-      // } else {
-      context.preventDefault()
+    const {from, to, collapsed, isAllSelected, raw} = state.selection
 
+    context.preventDefault()
+
+    if (isAllSelected) {
       const p = this.doc.schemas.createSnapshot('paragraph', [[], from.block.props])
       await (state.raw.ctrlKey ? this.doc.crud.insertBlocksBefore(state.selection.firstBlock, [p]) : this.doc.crud.insertBlocksAfter(state.selection.lastBlock, [p]))
       this.doc.selection.setCursorAtBlock(p.id, true)
-      // }
       return true
     }
 
     if (!collapsed) {
+      const winSel = window.getSelection()!
+      if (from.type === 'text') {
+        winSel.setPosition(raw.startContainer, raw.startOffset)
+      } else {
+        winSel.setPosition(raw.endContainer, raw.endOffset)
+      }
       this._replaceText(state.selection)
-      context.preventDefault()
       return true
     }
 
@@ -449,13 +450,11 @@ export class InputTransformer {
     if (state.raw.shiftKey) {
       from.block.insertText(from.index, STR_LINE_BREAK)
       from.block.setInlineRange(from.index + 1)
-      context.preventDefault()
       return true
     }
 
     // 空段落
     if (!from.block.textLength) {
-      context.preventDefault()
 
       if (from.block.props.heading) {
         from.block.updateProps({
@@ -483,13 +482,12 @@ export class InputTransformer {
 
     const deltas = sliceDelta(from.block.textDeltas(), from.index)
     const p = this.doc.schemas.createSnapshot(from.block.textLength ? from.block.flavour : 'paragraph', [deltas, from.block.props])
-    context.preventDefault()
-    // this.doc.crud.transact(() => {
-    from.block.deleteText(from.index)
-    this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {
-      this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+    this.doc.crud.transact(() => {
+      from.block.deleteText(from.index)
+      this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {
+        this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+      })
     })
-    // }, ORIGIN_SKIP_SYNC)
     return true
   }
 

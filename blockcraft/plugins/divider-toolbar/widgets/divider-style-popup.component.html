@@ -1,0 +1,42 @@
+<!-- divider-style-popup.component.html -->
+<div class="popup">
+  <!-- Style Type Tabs -->
+  <div class="tabs">
+    <button *ngFor="let tab of styleTabs"
+            [class.active]="activeTab === tab.key"
+            (click)="setTab(tab.key)">
+      <i [ngClass]="tab.icon"></i>
+      {{ tab.label }}
+    </button>
+  </div>
+
+  <!-- Line Type Selection -->
+  <div class="line-options" *ngIf="activeTab === 'line'">
+    <div *ngFor="let style of lineStyles"
+         class="line-style-item"
+         [class.selected]="selectedStyle === style"
+         [ngClass]="style"
+         (mousedown)="selectStyle(style)">
+    </div>
+  </div>
+
+  <!-- Pattern or Texture Selection -->
+  <div class="patterns" *ngIf="activeTab === 'tape'">
+    <div class="pattern-grid">
+      <div *ngFor="let p of tapePatterns"
+           class="pattern-box" [ngClass]="p"
+           [class.selected]="selectedStyle === p"
+           (click)="selectStyle(p)">
+      </div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button *ngFor="let tab of sizeList"
+            [class.active]="tab.key === activeSize">
+      <i [ngClass]="tab.label"></i>
+      {{ tab.label }}
+    </button>
+  </div>
+
+</div>
