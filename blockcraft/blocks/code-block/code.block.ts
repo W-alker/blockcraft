@@ -77,7 +77,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   private highlight = (ev: Y.YEvent<Y.Text>, tr: Y.Transaction) => {
-    console.log(ev.delta)
+    // console.log(ev.delta)
     nextTick().then(() => {
       this.diffHighlight()
     })

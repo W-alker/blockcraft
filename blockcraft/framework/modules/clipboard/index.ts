@@ -17,7 +17,6 @@ import {
   replaceSnapshotsDepths,
   replaceSnapshotsIdDeeply,
 } from "../../utils";
-import {ORIGIN_SKIP_SYNC} from "../../doc";
 import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
 import {copyBlocks} from "./copyBlocks";
 
@@ -187,101 +186,112 @@ export class ClipboardManager {
       }
     }
 
+    let rootSnapshot: IBlockSnapshot | undefined
+    // rtf
+    // if (state.dataTypes.includes(ClipboardDataType.RTF)) {
+    //   const rtfString = state.getData(ClipboardDataType.RTF)
+    //   const rtfAdapter = this.adapter?.getAdapter(ClipboardDataType.RTF)
+    //   if (rtfAdapter && rtfString) {
+    //     try {
+    //       rootSnapshot = await rtfAdapter.toSnapshot(rtfString)
+    //       console.log(`%crtf2snapshot`, 'color: red; font-size: large;', rootSnapshot)
+    //     } catch (e) {
+    //       this.doc.logger.warn('rtf2snapshot error', e)
+    //     }
+    //   }
+    // }
+
     // html
-    if (state.dataTypes.includes(ClipboardDataType.HTML)) {
+    if (!rootSnapshot && state.dataTypes.includes(ClipboardDataType.HTML)) {
       const htmlString = state.getData(ClipboardDataType.HTML)
       const htmlAdapter = this.adapter?.getAdapter(ClipboardDataType.HTML)
       if (htmlAdapter && htmlString) {
-
         try {
-          const rootSnapshot = await htmlAdapter.toSnapshot(htmlString)
-          if (!rootSnapshot.children?.length || rootSnapshot.nodeType !== BlockNodeType.root) return
-
-          const snapshots: IBlockSnapshot[] = rootSnapshot.children
-          const fromIndex = selection.from.index
-          const fromLength = selection.from.length
-          const textLength = selection.from.block.textLength
-          const editableBlock = selection.from.block
-
-          replaceSnapshotsIdDeeply(snapshots)
-          replaceSnapshotsDepths(snapshots, editableBlock.props.depth)
-
-          // this.doc.crud.transact(() => {
-
-          // 同一文本块
-          if (isSameTextBlock) {
-            const ops: DeltaOperation[] = [{retain: fromIndex}]
-
-            let insertLength = 0
-            // 是否需要和本段合并
-            if (snapshots[0].nodeType === BlockNodeType.editable
-              && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
-              && snapshots[0].children.length) {
-              insertLength = deltaStrLength(snapshots[0].children)
-              ops.push(...snapshots[0].children)
-              snapshots.shift()
-            }
-            // 不需要拆分
-            if (!snapshots.length) {
-              fromLength > 0 && ops.splice(1, 0, {delete: fromLength - fromIndex})
-              editableBlock.applyDeltaOperations(ops)
-              insertLength > 0 && selFrom.block.setInlineRange(fromIndex, insertLength)
-              return;
-            }
-
-            // 文本中间位置
-            if (fromIndex + fromLength < textLength) {
-              ops.push({delete: textLength - fromIndex})
-              // 拆分
-              const sliceDeltas = sliceDelta(editableBlock.textDeltas(), fromIndex + fromLength, textLength)
-              const splitSnapshot = this.doc.schemas.createSnapshot('paragraph', [sliceDeltas, editableBlock.props])
-              this.doc.crud.insertBlocksAfter(editableBlock, [splitSnapshot])
-            }
-            editableBlock.applyDeltaOperations(ops)
-          } else {
-            // 删除区间内容
-            this.deleteContentFromSelection(state.selection)
-
-            // 是否需要和本段合并
-            if (snapshots[0].nodeType === BlockNodeType.editable
-              && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
-              && snapshots[0].children.length) {
-              const insertLength = deltaStrLength(snapshots[0].children)
-              editableBlock.applyDeltaOperations([{retain: fromIndex}, ...snapshots[0].children])
-              snapshots.shift()
-
-              if (!snapshots.length) {
-                insertLength > 0 && selFrom.block.setInlineRange(fromIndex, insertLength)
-                return
-              }
-            }
-          }
-
-          // 新增blocks
-          this.doc.crud.insertBlocksAfter(editableBlock, snapshots).then(() => {
-            const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
-            this.doc.selection.setSelection({
-              blockId: editableBlock.id,
-              index: fromIndex,
-              length: editableBlock.textLength,
-              type: 'text'
-            }, this.doc.isEditable(endBlock) ? {
-              blockId: endBlock.id,
-              index: 0,
-              length: endBlock.textLength,
-              type: 'text'
-            } : {
-              blockId: endBlock.id,
-              type: 'selected'
-            })
-          })
-          // }, ORIGIN_SKIP_SYNC)
-
-          return true
+          rootSnapshot = await htmlAdapter.toSnapshot(htmlString)
         } catch (e) {
           this.doc.logger.warn('html2snapshot error', e)
         }
       }
+    }
+
+    if (rootSnapshot && rootSnapshot.children.length && rootSnapshot.nodeType === BlockNodeType.root) {
+      const snapshots: IBlockSnapshot[] = rootSnapshot.children as IBlockSnapshot[]
+      const fromIndex = selection.from.index
+      const fromLength = selection.from.length
+      const textLength = selection.from.block.textLength
+      const editableBlock = selection.from.block
+
+      replaceSnapshotsIdDeeply(snapshots)
+      replaceSnapshotsDepths(snapshots, editableBlock.props.depth)
+
+      // 同一文本块
+      if (isSameTextBlock) {
+        const ops: DeltaOperation[] = [{retain: fromIndex}]
+
+        let insertLength = 0
+        // 是否需要和本段合并
+        if (snapshots[0].nodeType === BlockNodeType.editable
+          && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
+          && snapshots[0].children.length) {
+          insertLength = deltaStrLength(snapshots[0].children)
+          ops.push(...snapshots[0].children)
+          snapshots.shift()
+        }
+        // 不需要拆分
+        if (!snapshots.length) {
+          fromLength > 0 && ops.splice(1, 0, {delete: fromLength - fromIndex})
+          editableBlock.applyDeltaOperations(ops)
+          insertLength > 0 && selFrom.block.setInlineRange(fromIndex, insertLength)
+          return;
+        }
+
+        // 文本中间位置
+        if (fromIndex + fromLength < textLength) {
+          ops.push({delete: textLength - fromIndex})
+          // 拆分
+          const sliceDeltas = sliceDelta(editableBlock.textDeltas(), fromIndex + fromLength, textLength)
+          const splitSnapshot = this.doc.schemas.createSnapshot('paragraph', [sliceDeltas, editableBlock.props])
+          this.doc.crud.insertBlocksAfter(editableBlock, [splitSnapshot])
+        }
+        editableBlock.applyDeltaOperations(ops)
+      } else {
+        // 删除区间内容
+        this.deleteContentFromSelection(state.selection)
+
+        // 是否需要和本段合并
+        if (snapshots[0].nodeType === BlockNodeType.editable
+          && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
+          && snapshots[0].children.length) {
+          const insertLength = deltaStrLength(snapshots[0].children)
+          editableBlock.applyDeltaOperations([{retain: fromIndex}, ...snapshots[0].children])
+          snapshots.shift()
+
+          if (!snapshots.length) {
+            insertLength > 0 && selFrom.block.setInlineRange(fromIndex, insertLength)
+            return
+          }
+        }
+      }
+
+      // 新增blocks
+      this.doc.crud.insertBlocksAfter(editableBlock, snapshots).then(() => {
+        const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
+        this.doc.selection.setSelection({
+          blockId: editableBlock.id,
+          index: fromIndex,
+          length: editableBlock.textLength,
+          type: 'text'
+        }, this.doc.isEditable(endBlock) ? {
+          blockId: endBlock.id,
+          index: 0,
+          length: endBlock.textLength,
+          type: 'text'
+        } : {
+          blockId: endBlock.id,
+          type: 'selected'
+        })
+      })
+      return true
     }
 
     // plain-text

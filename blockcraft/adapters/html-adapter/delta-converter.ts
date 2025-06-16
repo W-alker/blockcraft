@@ -1,4 +1,4 @@
-import {ASTToDeltaMatcher, DeltaASTConverter, DeltaASTConverterOptions} from "../types";
+import {ASTToDeltaMatcher, DeltaASTConverter, DeltaASTConverterOptions, InlineDeltaMatcher} from "../types";
 import {DeltaInsert, IInlineNodeAttrs} from "../../framework";
 import {HtmlAST, InlineHtmlAST} from "../types";
 import {TextUtils} from "../utils";
@@ -6,18 +6,6 @@ import {TextUtils} from "../utils";
 export type InlineDeltaToHtmlAdapterMatcher = InlineDeltaMatcher<InlineHtmlAST>;
 
 export type HtmlASTToDeltaMatcher = ASTToDeltaMatcher<HtmlAST>;
-
-export type InlineDeltaMatcher<TNode extends object = never> = {
-  name: keyof IInlineNodeAttrs | string;
-  match: (delta: DeltaInsert) => boolean;
-  toAST: (
-    delta: DeltaInsert,
-    context: {
-      configs: Map<string, string>;
-      current: TNode;
-    }
-  ) => TNode;
-};
 
 export class HtmlDeltaConverter extends DeltaASTConverter<
   IInlineNodeAttrs,

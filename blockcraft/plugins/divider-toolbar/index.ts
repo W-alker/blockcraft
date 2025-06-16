@@ -46,8 +46,7 @@ export class DividerExtensionPlugin extends DocPlugin {
         }, this._closeToolbar$, this.closeToolbar)
 
         this._toolbarRef = overlayRef
-
-
+        componentRef.setInput('dividerBlock', dividerBlock)
 
       }, 200)
 

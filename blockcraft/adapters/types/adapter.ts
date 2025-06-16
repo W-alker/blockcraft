@@ -1,7 +1,6 @@
-import {DeltaInsert, IBlockSnapshot, IInlineNodeAttrs} from "../../framework";
+import {DeltaInsert, DocFileService, IBlockSnapshot, IInlineNodeAttrs} from "../../framework";
 import {ASTWalker, NodeProps} from "../base/ast-walker";
 import {ASTWalkerContext} from "../base/context";
-import {DocFileService} from "../../framework";
 
 export type AdapterContext<
   ONode extends object,
@@ -138,4 +137,16 @@ export type ASTToDeltaMatcher<AST> = {
       ) => DeltaInsert[];
     }
   ) => DeltaInsert[];
+};
+
+export type InlineDeltaMatcher<TNode extends object = never> = {
+  name: keyof IInlineNodeAttrs | string;
+  match: (delta: DeltaInsert) => boolean;
+  toAST: (
+    delta: DeltaInsert,
+    context: {
+      configs: Map<string, string>;
+      current: TNode;
+    }
+  ) => TNode;
 };

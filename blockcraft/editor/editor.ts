@@ -2,7 +2,7 @@ import {Component, Injector, ViewChild, ViewContainerRef} from "@angular/core";
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
   BlockCraftDoc,
-  BlockNodeType,
+  BlockNodeType, ClipboardDataType,
   DOC_ADAPTER_SERVICE_TOKEN,
   DOC_FILE_SERVICE_TOKEN,
   DOC_LINK_PREVIEWER_SERVICE_TOKEN,
@@ -112,9 +112,6 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 @Component({
   selector: 'block-craft-editor',
   template: `
-    <app-divider-style-popup></app-divider-style-popup>
-
-
     <div style="width: 90vw; height: 80vh; overflow-y: auto; padding: 30px;" (mousedown)="onContainerMousedown($event)">
       <ng-container #container></ng-container>
     </div>
@@ -130,6 +127,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
     <button (click)="addData()">增加数据</button>
     <button (click)="exportPdf()">导出PDF</button>
     <button (click)="exportImg()">导出图片</button>
+    <button (click)="importMarkdown()">从Markdown导入</button>
 
     <button (click)="listenUpdate()">监听数据变化</button>
     <button (click)="test()">测试</button>
@@ -409,5 +407,17 @@ export class EditorComponent {
 
   quitRoom() {
     this.provider.destroy()
+  }
+
+  async importMarkdown() {
+    const files = await this.injector.get(DOC_FILE_SERVICE_TOKEN).inputFiles('.md', false)
+    if (!files?.length) return
+    const file = files[0]
+    const text = await file.text()
+    const mdAdapter = this.injector.get(DOC_ADAPTER_SERVICE_TOKEN).getAdapter(ClipboardDataType.RTF)
+    if (!mdAdapter) return
+    const snapshot = await mdAdapter.toSnapshot(text)
+    if (!snapshot) return
+    this.doc.crud.insertBlocks(this.doc.rootId, 0, snapshot.children as IBlockSnapshot[])
   }
 }

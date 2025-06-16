@@ -11,19 +11,19 @@
   </div>
 
   <!-- Line Type Selection -->
-  <div class="line-options" *ngIf="activeTab === 'line'">
+  <div class="line-options" *ngIf="activeTab === 'line'" >
     <div *ngFor="let style of lineStyles"
          class="line-style-item"
          [class.selected]="selectedStyle === style"
-         [ngClass]="style"
          (mousedown)="selectStyle(style)">
+      <span class="line" [ngClass]="style" [attr.data-tab-size]="activeSize"></span>
     </div>
   </div>
 
   <!-- Pattern or Texture Selection -->
   <div class="patterns" *ngIf="activeTab === 'tape'">
     <div class="pattern-grid">
-      <div *ngFor="let p of tapePatterns"
+      <div *ngFor="let p of tapePatterns" [attr.data-tab-size]="activeSize"
            class="pattern-box" [ngClass]="p"
            [class.selected]="selectedStyle === p"
            (click)="selectStyle(p)">
@@ -32,7 +32,7 @@
   </div>
 
   <div class="tabs">
-    <button *ngFor="let tab of sizeList"
+    <button *ngFor="let tab of sizeList" (mousedown)="selectSize(tab.key)"
             [class.active]="tab.key === activeSize">
       <i [ngClass]="tab.label"></i>
       {{ tab.label }}

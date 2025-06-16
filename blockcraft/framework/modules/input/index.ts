@@ -14,7 +14,7 @@ import {
 } from "../../block-std";
 import {BlockSelection, INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
-import {BlockCraftError, ErrorCode, nextTick, sliceDelta} from "../../../global";
+import {BlockCraftError, ErrorCode, sliceDelta} from "../../../global";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
@@ -48,7 +48,8 @@ export class InputTransformer {
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.getDefaultEvent<CompositionEvent>()
     ev.preventDefault()
-    const {value: sel, next} = this.doc.selection.recalculate(false)
+
+    const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
     if (!sel || sel.from.type !== 'text') {
       throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
     }
@@ -384,7 +385,7 @@ export class InputTransformer {
 
     const prevBlock = this.doc.prevSibling(fromBlock)
     const _prevDepth = prevBlock ? (prevBlock.props.depth ?? 0) : 0
-    const _newDepth = fromBlock.props.depth + (state.raw.shiftKey ? -1 : 1)
+    const _newDepth = (fromBlock.props.depth || 0) + (state.raw.shiftKey ? -1 : 1)
     if (!prevBlock || _newDepth < 0) {
       this.doc.messageService.warn('不可缩进')
       return true

@@ -36,8 +36,18 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
       items[ClipboardDataType.TEXT] = snapshots2Text([rootSnapshot])
     }
 
-    const fn = (e: ClipboardEvent) => {
-      document.removeEventListener('copy', fn)
+    let range: Range
+    const selection = window.getSelection()
+    if (selection && selection.rangeCount) {
+      range = selection.getRangeAt(0)?.cloneRange()
+      selection.removeAllRanges()
+    }
+
+    document.addEventListener('copy', (e) => {
+      if(range) {
+        window.getSelection()?.removeAllRanges()
+        window.getSelection()?.addRange(range)
+      }
 
       e.preventDefault()
       if (!e.clipboardData) {
@@ -49,9 +59,7 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
         e.clipboardData?.setData(itemsKey, items[itemsKey])
       }
       resolve()
-    }
-
-    document.addEventListener('copy', fn)
+    }, {once: true})
     document.execCommand('copy')
   })
 }

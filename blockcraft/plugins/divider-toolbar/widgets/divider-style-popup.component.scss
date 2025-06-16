@@ -1,5 +1,5 @@
 .popup {
-  background: #f7f8f9;
+  background: #fff;
   border-radius: 8px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
   width: 300px;
@@ -13,13 +13,14 @@
   border-radius: 4px;
   margin-bottom: 12px;
   overflow: hidden;
+  border: 1px solid #eaeef2;
 
   button {
     flex: 1;
-    padding: 4px 0;
+    padding: 2px 0;
     background: none;
     border: none;
-    font-size: 14px;
+    font-size: 12px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -37,27 +38,61 @@
 
 .pattern-grid {
   display: flex;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
 .pattern-box {
   margin-bottom: 6px;
-  width: 48%;
-  height: 50px;
+  height: 40px;
   border-radius: 6px;
-  border: 2px solid transparent;
+  border: 3px solid transparent;
   cursor: pointer;
   transition: all 0.2s ease;
+  /* 轻微斜切的锯齿边缘，用伪元素模拟 */
   clip-path: polygon(
-      0% 0%, 4% 12%, 1.5% 28%, 5% 42%, 2% 58%, 6% 72%, 0% 100%,
-      98% 100%, 93% 84%, 98% 68%, 94% 54%, 97% 36%, 95% 18%, 100% 0%,
+      5px 0px,
+      0px 4.4px,
+      6px 10.4px,
+      0px 14.4px,
+      4px 19.6px,
+      0px 26.4px,
+      4px 34.8px,
+      1px 40px,
+      97% 40px,
+      100% 35.2px,
+      97% 29.6px,
+      100% 24px,
+      98% 20px,
+      100% 11.2px,
+      98% 5.2px,
+      99% 0px
   );
   background-size: 100% 100%;
 
+  &[data-tab-size="thin"] {
+    min-width: 100px;
+    width: 30%;
+    transform: rotate(1.5deg);
+  }
+
+  &[data-tab-size="small"] {
+    width: 50%;
+    transform: rotate(-1deg);
+  }
+
+  &[data-tab-size="medium"] {
+    width: 70%;
+    transform: rotate(1deg);
+  }
+
+  &[data-tab-size="large"] {
+    width: 100%;
+  }
+
   &.tape-dot-black {
-    background-image: repeating-linear-gradient(135deg, rgb(0,0,0) 0px, rgb(0,0,0) 10px,transparent 10px, transparent 11px),repeating-linear-gradient(22.5deg, rgb(0,0,0) 0px, rgb(0,0,0) 10px,transparent 10px, transparent 11px),linear-gradient(90deg, hsl(194,74%,56%),hsl(266,74%,56%),hsl(338,74%,56%),hsl(50,74%,56%),hsl(122,74%,56%));
+    background-image: repeating-linear-gradient(135deg, rgb(0, 0, 0) 0px, rgb(0, 0, 0) 10px, transparent 10px, transparent 11px), repeating-linear-gradient(22.5deg, rgb(0, 0, 0) 0px, rgb(0, 0, 0) 10px, transparent 10px, transparent 11px), linear-gradient(90deg, hsl(194, 74%, 56%), hsl(266, 74%, 56%), hsl(338, 74%, 56%), hsl(50, 74%, 56%), hsl(122, 74%, 56%));
   }
 
   &.tape-grid-pattern {
@@ -95,29 +130,144 @@
 .line-style-item {
   width: 100%;
   height: 10px;
-  border-bottom-color: #000;
-  border-bottom-width: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all ease .2s;
+
+  &:hover {
+    border-color: #f5f5f5;
+  }
+
+  &.selected {
+    border-color: #2196f3;
+  }
+
+  .line {
+
+    &.solid {
+      background-color: #ddd;
+      height: 1px;
+
+      &[data-tab-size="thin"] {
+        width: 30%;
+        height: 1px;
+      }
+
+      &[data-tab-size="small"] {
+        width: 50%;
+        height: 1px;
+      }
+
+      &[data-tab-size="medium"] {
+        width: 100%;
+        height: 1px;
+      }
+
+      &[data-tab-size="large"] {
+        background-color: #333;
+        width: 100%;
+        height: 2px;
+      }
+    }
+
+    &.dashed {
+      background-image: repeating-linear-gradient(
+          to right,
+          #ccc,
+          #ccc 8px,
+          transparent 8px,
+          transparent 16px
+      );
+
+      &[data-tab-size="thin"] {
+        width: 30%;
+        height: 1px;
+      }
+
+      &[data-tab-size="small"] {
+        width: 50%;
+        height: 1px;
+      }
+
+      &[data-tab-size="medium"] {
+        width: 100%;
+        height: 1px;
+      }
+
+
+      &[data-tab-size="large"] {
+        background-image: repeating-linear-gradient(
+            to right,
+            #333,
+            #333 8px,
+            transparent 8px,
+            transparent 16px
+        );
+        width: 100%;
+        height: 2px;
+      }
+    }
+
+    &.dotted {
+      background-image: radial-gradient(circle, #ddd 2px, transparent 2px);
+      background-size: 20px 4px;
+      background-repeat: repeat-x;
+      height: 4px;
+
+      &[data-tab-size="thin"] {
+        width: 30%;
+      }
+
+      &[data-tab-size="small"] {
+        width: 50%;
+      }
+
+      &[data-tab-size="medium"] {
+        width: 100%;
+      }
+
+      &[data-tab-size="large"] {
+        background-image: radial-gradient(circle, #333 2px, transparent 2px);
+        height: 6px;
+        width: 100%;
+      }
+    }
+
+    &.double {
+      border-color: #ddd;
+      border-bottom-style: double;
+      border-width: 4px;
+
+      &[data-tab-size="thin"] {
+        width: 30%;
+      }
+
+      &[data-tab-size="small"] {
+        width: 50%;
+      }
+
+      &[data-tab-size="medium"] {
+        border-width: 6px;
+        border-color: #ddd;
+        width: 100%;
+      }
+
+      &[data-tab-size="large"] {
+        border-width: 6px;
+        border-color: #333;
+        width: 100%;
+      }
+    }
+
+
+  }
 }
 
-.line-style-item.solid {
-  border-bottom-style: solid;
-}
-
-.line-style-item.dashed {
-  border-bottom-style: dashed;
-}
-
-.line-style-item.dotted {
-  border-bottom-style: dotted;
-}
-
-.line-style-item.wavy {
-  border-bottom-style: wave;
-}
-
-.line-style-item.selected {
-  outline: 2px solid #2196f3;
-}
 
 
 

@@ -13,9 +13,9 @@ export const replaceSnapshotsIdDeeply = (snapshots: IBlockSnapshot[]) => {
 }
 
 export const replaceSnapshotsDepths = (snapshots: IBlockSnapshot[], startDepth: number) => {
-  snapshots.forEach(v => {
-    v.props.depth = startDepth
-  })
+  // snapshots.forEach(v => {
+    // v.props.depth = startDepth
+  // })
 }
 
 export const snapshots2Text = (snapshots: IBlockSnapshot[]) => {

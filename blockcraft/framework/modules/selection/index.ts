@@ -372,8 +372,9 @@ export class SelectionManager {
   /**
    * 对于行内delta操作后，可能需要重新计算当前范围
    * @param execNext 是否立即执行发送事件
+   * @param options
    */
-  recalculate(execNext = true): {
+  recalculate(execNext = true, options?: { isComposing?: boolean }): {
     value: BlockSelection | null
     next?: () => void
   } {
@@ -403,7 +404,7 @@ export class SelectionManager {
     }
 
     try {
-      const r = new BlockSelection(this.doc, this.normalizeRange(range), range, selection)
+      const r = new BlockSelection(this.doc, this.normalizeRange(range, options), range, selection)
       const next = () => {
         this.selectionChange$.next(r)
         this.selectedManager.setSelected(r)
@@ -426,8 +427,7 @@ export class SelectionManager {
     }
   }
 
-  @performanceTest()
-  normalizeRange(range: StaticRange): INormalizedRange {
+  normalizeRange(range: StaticRange, options?: { isComposing?: boolean }): INormalizedRange {
     const {startContainer, endContainer, startOffset, endOffset, collapsed} = range
     const startBlock = this._searchClosetBlockByNode(startContainer)
 
@@ -458,7 +458,8 @@ export class SelectionManager {
 
       let pos = 0
       for (let i = 0; i < elements.length; i++) {
-        const isEmbed = !(elements[i].firstElementChild as HTMLElement).isContentEditable
+        const firstChild = elements[i].firstElementChild
+        const isEmbed = !(firstChild instanceof HTMLElement ? firstChild.isContentEditable : (options?.isComposing ? firstChild instanceof Text : false))
         const elementLength = isEmbed ? 1 : elements[i].textContent!.length
         if (elements[i] === cElement) {
           return pos + (isGap ? 1 : (isContainer ? elementLength : offset))

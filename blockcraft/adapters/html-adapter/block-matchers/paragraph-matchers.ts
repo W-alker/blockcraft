@@ -32,7 +32,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   toMatch: o =>
     HastUtils.isElement(o.node) &&
     paragraphBlockMatchTags.includes(o.node.tagName),
-  fromMatch: o => o.node.flavour === ParagraphBlockSchema.flavour || o.node.flavour.startsWith('heading'),
+  fromMatch: o => o.node.flavour === 'paragraph' || o.node.flavour === 'blockquote',
   toBlockSnapshot: {
     enter: (o, context) => {
       if (!HastUtils.isElement(o.node)) {
