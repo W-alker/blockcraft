@@ -3,7 +3,7 @@ import {EditableBlockComponent, getPositionWithOffset, ORIGIN_SKIP_SYNC, STR_LIN
 import {CodeBlockModel} from "./index";
 import * as Prism from "prismjs";
 import {AsyncPipe, NgForOf} from "@angular/common";
-import {merge, Subject, take} from "rxjs";
+import {Subject} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {Overlay} from "@angular/cdk/overlay";
 import {LangListComponent} from "./lang-list.component";
@@ -67,7 +67,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   private _setLines() {
-    this.lines = this.textContent().split('\n').map(line => line += '\n')
+    this.lines = this.textContent().split(STR_LINE_BREAK).map(line => line += STR_LINE_BREAK)
   }
 
   private _obsProp = (ev: Y.YMapEvent<unknown>) => {
@@ -155,34 +155,6 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
       }
     }
     return [startLine, endLine]
-  }
-
-  getLinesByRange(from: number, to: number) {
-    const text = this.textContent()
-    to > text.length && (to = text.length)
-    this.lines = text.split('\n').map(line => line += '\n')
-    const res: {
-      before: string[]
-      current: string[]
-      after: string[]
-    } = {
-      before: [],
-      current: [],
-      after: []
-    }
-    let i = 0
-    let lineCnt = 0
-    while (i < to) {
-      i += this.lines[lineCnt].length
-      if (i > from) {
-        res.current.push(this.lines[lineCnt])
-      } else {
-        res.before.push(this.lines[lineCnt])
-      }
-      lineCnt++
-    }
-    res.after = this.lines.slice(lineCnt)
-    return res
   }
 
   changeLanguage(lang: CodeBlockLanguage) {

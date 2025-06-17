@@ -1,0 +1,48 @@
+import { ChangeDetectorRef, ElementRef, EventEmitter } from "@angular/core";
+import { BehaviorSubject } from "rxjs";
+import { Controller } from "../controller";
+import { CharacterIndex, ICharacterRange } from "../types";
+import { EditableBlock } from "../block-std";
+import * as i0 from "@angular/core";
+export declare class EditorRoot {
+    readonly elementRef: ElementRef<HTMLElement>;
+    readonly cdr: ChangeDetectorRef;
+    onDestroy: EventEmitter<void>;
+    constructor(elementRef: ElementRef<HTMLElement>, cdr: ChangeDetectorRef);
+    ngAfterViewInit(): void;
+    readonly activeBlock$: BehaviorSubject<EditableBlock<import("../types").IEditableBlockModel> | null>;
+    readonly ready$: BehaviorSubject<boolean>;
+    protected controller: Controller;
+    get rootElement(): HTMLElement;
+    private _activeElement;
+    get activeElement(): HTMLElement | null;
+    private _activeBlock;
+    get activeBlock(): EditableBlock<import("../types").IEditableBlockModel> | null;
+    private blockSelection;
+    private _selectedBlockRange;
+    get selectedBlockRange(): ICharacterRange | undefined;
+    setController(controller: Controller): void;
+    private initBlockSelection;
+    selectBlocks(from: CharacterIndex, to: CharacterIndex): void;
+    clearSelectedBlockRange(): void;
+    getActiveBlockId(): string | null | undefined;
+    getActiveBlockRef(): EditableBlock<import("../types").IEditableBlockModel> | null;
+    private onFocusIn;
+    private onFocusOut;
+    private onKeyDown;
+    prevInput: ICharacterRange & {
+        afterEmbed?: boolean;
+        data?: string | null;
+        inputType?: string;
+    } | null;
+    private compositionStatus;
+    private onCompositionStart;
+    private onCompositionEnd;
+    private onCompositionUpdate;
+    private onBeforeInput;
+    private handleInput;
+    private onContextMenu;
+    ngOnDestroy(): void;
+    static ɵfac: i0.ɵɵFactoryDeclaration<EditorRoot, never>;
+    static ɵcmp: i0.ɵɵComponentDeclaration<EditorRoot, "div[bf-node-type=\"root\"][lazy-load=\"false\"]", never, {}, { "onDestroy": "onDestroy"; }, never, never, true, never>;
+}

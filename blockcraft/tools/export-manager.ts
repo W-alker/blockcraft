@@ -1,6 +1,7 @@
 import {downloadFile} from "../global";
 // @ts-ignore
 import domtoimage from 'dom-to-image-more'
+import {ClipboardDataType, DOC_ADAPTER_SERVICE_TOKEN} from "../framework";
 
 interface CorsImgOptions {
   url: string; // eg: https://cors-anywhere.herokuapp.com/
@@ -100,6 +101,18 @@ export class DocExportManager {
     const jsonStr = JSON.stringify(json, null, 2); // 格式化输出
     const blob = new Blob([jsonStr], {type: 'application/json'})
     await downloadFile(blob, name)
+  }
+
+  async exportToMarkdown(name: string) {
+    try {
+      const mdAdapter = this.doc.injector.get(DOC_ADAPTER_SERVICE_TOKEN)?.getAdapter(ClipboardDataType.RTF)
+      if (!mdAdapter) return
+      const text = await mdAdapter.fromSnapshot(this.doc.root.toSnapshot())
+      const blob = new Blob([text], {type: 'text/markdown'})
+      await downloadFile(blob, name)
+    } catch (e) {
+      this.doc.logger.error('export to markdown failed', e)
+    }
   }
 
   async exportToJpeg(name: string, options?: Pick<RenderOptions, 'scale' | 'bgcolor'>) {

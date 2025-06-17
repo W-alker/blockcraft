@@ -6,6 +6,27 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "19596221",
+      "name": "图标_线段-类型",
+      "font_class": "tubiao_xianduan-leixing",
+      "unicode": "e64f",
+      "unicode_decimal": 58959
+    },
+    {
+      "icon_id": "34041360",
+      "name": "线段粗细",
+      "font_class": "xianduancuxi",
+      "unicode": "e65b",
+      "unicode_decimal": 58971
+    },
+    {
+      "icon_id": "4350015",
+      "name": "胶带",
+      "font_class": "jiaodai",
+      "unicode": "e62e",
+      "unicode_decimal": 58926
+    },
+    {
       "icon_id": "7789613",
       "name": "缩放大",
       "font_class": "fangda",

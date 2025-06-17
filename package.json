@@ -9,7 +9,7 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "pub": "ng build blockcraft && pnpm copy-assets && cd dist/blockcraft && npm publish --registry http://npm.runtongqiuben.com",
-    "unpub": "npm unpublish @w/blockflow-editor --force --registry http://npm.runtongqiuben.com"
+    "unpub": "npm unpublish @ccc/blockcraft --force --registry http://npm.runtongqiuben.com"
   },
   "private": true,
   "dependencies": {

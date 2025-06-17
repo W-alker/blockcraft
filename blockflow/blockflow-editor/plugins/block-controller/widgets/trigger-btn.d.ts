@@ -1,0 +1,33 @@
+import { ChangeDetectorRef, ElementRef } from "@angular/core";
+import { Overlay } from "@angular/cdk/overlay";
+import { IContextMenuComponent } from "../../../editor";
+import { BaseBlock, Controller } from "../../../core";
+import * as i0 from "@angular/core";
+export declare class TriggerBtn {
+    private host;
+    cdr: ChangeDetectorRef;
+    private overlay;
+    set contextmenu(c: IContextMenuComponent);
+    controller: Controller;
+    constructor(host: ElementRef<HTMLElement>, cdr: ChangeDetectorRef, overlay: Overlay);
+    protected display: string;
+    protected hasContent: boolean;
+    protected activeBlock?: BaseBlock<any>;
+    private _onDestroySub?;
+    protected _activeBlockWrap?: HTMLElement;
+    set activeBlockWrap(val: HTMLElement);
+    private contextmenuPortal;
+    private ovr;
+    private calcPos;
+    calcLineHeight(ele: HTMLElement): number;
+    private top;
+    private left;
+    onClick(event: MouseEvent): void;
+    onMouse(event: MouseEvent): void;
+    onMouseEnter(e: Event): void;
+    showContextMenu(): void;
+    closeContextMenu(): void;
+    close(): void;
+    static ɵfac: i0.ɵɵFactoryDeclaration<TriggerBtn, never>;
+    static ɵcmp: i0.ɵɵComponentDeclaration<TriggerBtn, "div.trigger-btn", never, { "contextmenu": { "alias": "contextmenu"; "required": true; }; "controller": { "alias": "controller"; "required": false; }; "activeBlockWrap": { "alias": "activeBlockWrap"; "required": false; }; }, {}, never, never, true, never>;
+}

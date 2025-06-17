@@ -33,7 +33,6 @@ import {
 import {ConsoleLogger, getRandomDarkColor, randomColor, throttle} from "../global";
 import {AutoUpdateOrderPlugin} from "../plugins/autoUpdateOrder";
 import {BulletBlockSchema} from "../blocks/bullet-block";
-import {CodeBlocKeyBinding} from "../plugins/codeBlocKeyBinding";
 import {TableBlockBinding} from "../plugins/tableBlockBinding";
 import {FloatTextToolbarPlugin} from "../plugins/float-text-toolbar";
 import {BlockTransformerPlugin} from "../plugins/block-transformer";
@@ -57,13 +56,13 @@ import {MermaidBlockSchema, MermaidTextareaBlockSchema} from "../blocks/mermaid-
 import {applyUpdate, Doc, mergeUpdates} from "yjs";
 import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
 import {WebsocketProvider} from 'y-websocket'
-import {MermaidBlocKeyBinding} from "../plugins";
 import {MentionPlugin} from "./plugins/mention";
 import * as Y from 'yjs'
 import {BlockCraftAwareness} from "./awa";
 import {IndexeddbPersistence} from "y-indexeddb";
 import {DividerExtensionPlugin} from "../plugins/divider-toolbar";
 import {DividerStylePopupComponent} from "../plugins/divider-toolbar/widgets/divider-style-popup.component";
+import {CodeInlineEditorBinding} from "../plugins";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -128,6 +127,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
     <button (click)="exportPdf()">导出PDF</button>
     <button (click)="exportImg()">导出图片</button>
     <button (click)="importMarkdown()">从Markdown导入</button>
+    <button (click)="exportMd()">导出Markdown</button>
 
     <button (click)="listenUpdate()">监听数据变化</button>
     <button (click)="test()">测试</button>
@@ -240,7 +240,7 @@ export class EditorComponent {
         'link', OLD_LINK_EMBED_CONVERTER
       ]
     ],
-    plugins: [new AutoUpdateOrderPlugin(), new CodeBlocKeyBinding(), new TableBlockBinding(), new MermaidBlocKeyBinding(),
+    plugins: [new AutoUpdateOrderPlugin(), new CodeInlineEditorBinding(),
       new FloatTextToolbarPlugin({
         withComment: true,
         commentComponent: EditorCommentPad
@@ -419,5 +419,9 @@ export class EditorComponent {
     const snapshot = await mdAdapter.toSnapshot(text)
     if (!snapshot) return
     this.doc.crud.insertBlocks(this.doc.rootId, 0, snapshot.children as IBlockSnapshot[])
+  }
+
+  exportMd() {
+    new DocExportManager(this.doc).exportToMarkdown('blockcraft-export-test.md')
   }
 }

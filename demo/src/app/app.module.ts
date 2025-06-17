@@ -45,7 +45,7 @@ export class AppModule {
       this.sanitizer.bypassSecurityTrustResourceUrl('https://at.alicdn.com/t/c/font_4682833_e6jfaqdxsv9.js'),
     )
     this.iconRegistry.addSvgIconSet(
-      this.sanitizer.bypassSecurityTrustResourceUrl('https://at.alicdn.com/t/c/font_4682833_8ld07gu48oy.js')
+      this.sanitizer.bypassSecurityTrustResourceUrl('https://at.alicdn.com/t/c/font_4682833_iqt0udqp6cf.js')
     )
 
   }

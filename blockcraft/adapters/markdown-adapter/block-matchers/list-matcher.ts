@@ -19,7 +19,7 @@ export const listBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher = {
       if (o.node.type === 'listItem') {
         const parentList = o.parent?.node as List;
         const listNumber = parentList.start
-          ? parentList.start + parentList.children.indexOf(o.node)
+          ? parentList.start + parentList.children.indexOf(o.node) - 1
           : null;
         walkerContext.openNode(
           {
@@ -58,6 +58,7 @@ export const listBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher = {
       const {walkerContext, deltaConverter} = context;
       const delta = o.node.children as DeltaInsert[];
       const currentTNode = walkerContext.currentNode();
+
       // check if the list is of the same type
       if (
         walkerContext.getNodeContext('list:parent') === o.parent &&
@@ -80,10 +81,11 @@ export const listBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher = {
               ordered: o.node.flavour === 'ordered',
               spread: false,
               children: [],
+              start: (o.node.props['order'] as number) || 1,
             },
             'children'
           )
-          .setNodeContext('list:parent', o.parent);
+          .setNodeContext('list:parent', o.parent)
       }
       walkerContext
         .openNode(

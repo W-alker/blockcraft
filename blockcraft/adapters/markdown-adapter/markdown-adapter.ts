@@ -50,7 +50,12 @@ export class MarkdownAdapter extends ASTWalker<MarkdownAST, IBlockSnapshot> {
   }
 
   async toMarkdown(snapshot: IBlockSnapshot) {
-    return ''
+    const root: Root = {
+      type: 'root',
+      children: [],
+    };
+    const ast = await this._traverseSnapshot(snapshot, root);
+    return this._astToMarkdown(ast);
   }
 
   async toBlockSnapshot(markdown: Markdown) {
@@ -121,4 +126,59 @@ export class MarkdownAdapter extends ASTWalker<MarkdownAST, IBlockSnapshot> {
     });
     return walker.walk(markdown, snapshot);
   };
+
+  private _traverseSnapshot = async (
+    snapshot: IBlockSnapshot,
+    markdown: MarkdownAST,
+    // assets?: AssetsManager
+  ) => {
+    const walker = new ASTWalker<IBlockSnapshot, MarkdownAST>();
+    walker.setONodeTypeGuard(
+      (node): node is IBlockSnapshot => typeof node === 'object' && node !== null && 'flavour' in node && 'id' in node
+    );
+    walker.setEnter(async (o, context) => {
+      for (const matcher of this.blockMatchers) {
+        if (matcher.fromMatch(o)) {
+          const adapterContext: AdapterContext<
+            IBlockSnapshot,
+            MarkdownAST,
+            MarkdownDeltaConverter
+          > = {
+            walker,
+            walkerContext: context,
+            // configs: this.adapterConfigs,
+            // job: this.job,
+            deltaConverter: this.deltaConverter,
+            fileManager: this.fileService,
+            // textBuffer: { content: '' },
+            // assets,
+          };
+          await matcher.fromBlockSnapshot.enter?.(o, adapterContext);
+        }
+      }
+    });
+    walker.setLeave(async (o, context) => {
+      for (const matcher of this.blockMatchers) {
+        if (matcher.fromMatch(o)) {
+          const adapterContext: AdapterContext<
+            IBlockSnapshot,
+            MarkdownAST,
+            MarkdownDeltaConverter
+          > = {
+            walker,
+            walkerContext: context,
+            // configs: this.configs,
+            // job: this.job,
+            deltaConverter: this.deltaConverter,
+            fileManager: this.fileService,
+            // textBuffer: { content: '' },
+            // assets,
+          };
+          await matcher.fromBlockSnapshot.leave?.(o, adapterContext);
+        }
+      }
+    });
+    return(await walker.walk(snapshot, markdown)) as Root
+  };
+
 }

@@ -1,11 +1,10 @@
-import {BindHotKey, DocPlugin, EventListen, STR_LINE_BREAK, STR_TAB} from "../framework";
-import {BlockCraftError, ErrorCode} from "../global";
-import {DeltaOperation, UIEventStateContext} from "../framework";
-import {CodeBlockComponent} from "../blocks/code-block/code.block";
+import {BindHotKey, DeltaOperation, DocPlugin, STR_LINE_BREAK, STR_TAB, UIEventStateContext} from "../framework";
+import {getLinesByRange} from "../global";
 
-export class CodeBlocKeyBinding extends DocPlugin {
+export class CodeInlineEditorBinding extends DocPlugin {
 
   @BindHotKey({key: 'Enter', shiftKey: null}, {flavour: 'code'})
+  @BindHotKey({key: 'Enter', shiftKey: null}, {flavour: 'mermaid-textarea'})
   handleEnterKey(context: UIEventStateContext) {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
@@ -31,6 +30,7 @@ export class CodeBlocKeyBinding extends DocPlugin {
   }
 
   @BindHotKey({key: 'Tab', shiftKey: null}, {flavour: 'code'})
+  @BindHotKey({key: 'Tab', shiftKey: null}, {flavour: 'mermaid-textarea'})
   handleTabKey(context: UIEventStateContext) {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
@@ -38,8 +38,6 @@ export class CodeBlocKeyBinding extends DocPlugin {
     if (to || from.type !== 'text') return false
     context.preventDefault()
     const block = from.block
-    if (!(block instanceof CodeBlockComponent))
-      throw new BlockCraftError(ErrorCode.EventDispatcherError, 'Tab key pressed but block is not a code block')
 
     // collapsed
     if (from.length === 0) {
@@ -55,7 +53,7 @@ export class CodeBlocKeyBinding extends DocPlugin {
       return true
     }
 
-    const lines = block.getLinesByRange(from.index, from.index + from.length)
+    const lines = getLinesByRange(block.textContent(), from.index, from.index + from.length)
     let before = lines.before.reduce((prev, curr) => prev + curr.length, 0)
     const deltas: DeltaOperation[] = []
 
@@ -82,9 +80,10 @@ export class CodeBlocKeyBinding extends DocPlugin {
     return true
   }
 
-  init() {
+  init(): void {
   }
 
-  destroy() {
+  destroy(): void {
   }
+
 }

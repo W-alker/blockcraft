@@ -1,14 +1,14 @@
 @font-face {
   font-family: "bc_icon"; /* Project id 4682833 */
-  src: url('//at.alicdn.com/t/c/font_4682833_iqt0udqp6cf.woff2?t=1749808351018') format('woff2'),
-  url('//at.alicdn.com/t/c/font_4682833_iqt0udqp6cf.woff?t=1749808351018') format('woff'),
-  url('//at.alicdn.com/t/c/font_4682833_iqt0udqp6cf.ttf?t=1749808351018') format('truetype'),
-  url('//at.alicdn.com/t/c/font_4682833_iqt0udqp6cf.svg?t=1749808351018#bc_icon') format('svg');
+  src: url('bc-iconfont.woff2?t=1750123508748') format('woff2'),
+       url('bc-iconfont.woff?t=1750123508748') format('woff'),
+       url('bc-iconfont.ttf?t=1750123508748') format('truetype'),
+       url('bc-iconfont.svg?t=1750123508748#bc_icon') format('svg');
 }
 
 .bc_icon {
   font-family: "bc_icon" !important;
-  font-size: inherit;
+  font-size: 16px;
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -905,3 +905,4 @@
 .bc_xiazai:before {
   content: "\e711";
 }
+
