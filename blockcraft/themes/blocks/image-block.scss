@@ -1,7 +1,6 @@
 @mixin image-block {
   div.image-block {
     padding: 8px;
-    width: 100%;
 
     &.selected {
       background: unset;

@@ -126,6 +126,8 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
     <button (click)="addData()">增加数据</button>
     <button (click)="exportPdf()">导出PDF</button>
     <button (click)="exportImg()">导出图片</button>
+
+    <button (click)="importHTML()">从HTML导入</button>
     <button (click)="importMarkdown()">从Markdown导入</button>
     <button (click)="exportMd()">导出Markdown</button>
 
@@ -423,5 +425,17 @@ export class EditorComponent {
 
   exportMd() {
     new DocExportManager(this.doc).exportToMarkdown('blockcraft-export-test.md')
+  }
+
+  async importHTML() {
+    const files = await this.injector.get(DOC_FILE_SERVICE_TOKEN).inputFiles('.html', false)
+    if (!files?.length) return
+    const file = files[0]
+    const text = await file.text()
+    const mdAdapter = this.injector.get(DOC_ADAPTER_SERVICE_TOKEN).getAdapter(ClipboardDataType.HTML)
+    if (!mdAdapter) return
+    const snapshot = await mdAdapter.toSnapshot(text)
+    if (!snapshot) return
+    this.doc.crud.insertBlocks(this.doc.rootId, 0, snapshot.children as IBlockSnapshot[])
   }
 }

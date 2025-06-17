@@ -26,3 +26,10 @@ export const IS_WINDOWS = /Win/.test(platform);
 
 export const IS_MOBILE = IS_IOS || IS_IPAD || IS_ANDROID;
 
+export const IS_ELECTRON = typeof window !== 'undefined' &&
+  // @ts-expect-error
+  typeof window.process === 'object' &&
+  // @ts-expect-error
+  window.process.type === 'renderer' &&
+  // @ts-expect-error
+  typeof window.process.versions === 'object'
