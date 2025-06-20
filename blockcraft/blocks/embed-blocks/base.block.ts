@@ -11,7 +11,6 @@ export interface IBaseEmbedBlockProps {
   selector: "div.embed-block",
   template: ``,
   standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class BaseEmbedBlockComponent<Model extends NativeBlockModel & {
   props: IBaseEmbedBlockProps
@@ -26,6 +25,7 @@ export class BaseEmbedBlockComponent<Model extends NativeBlockModel & {
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
+    this.changeDetectorRef.markForCheck()
   }
 
   getValidUrl() {

@@ -13,11 +13,11 @@ import {
   selector: "callout-block-toolbar",
   template: `
     <bc-float-toolbar>
-      <bc-float-toolbar-item icon="bc_sepan" [bcOverlayTrigger]="colorPicker" [positions]="['bottom-left']" [offsetY]="8"/>
+      <bc-float-toolbar-item icon="bc_sepan" [bcOverlayTrigger]="colorPicker" />
     </bc-float-toolbar>
 
     <ng-template #colorPicker>
-      <bc-color-picker (colorPicked)="onColorPicked($event)" [activeColors]="activeColors" [colorGroups]="colorGroups"></bc-color-picker>
+      <bc-color-picker (colorPicked)="onColorPicked($event)" [gapAround]="8" [activeColors]="activeColors" [colorGroups]="colorGroups"></bc-color-picker>
     </ng-template>
   `,
   imports: [

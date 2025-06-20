@@ -1,7 +1,9 @@
 import {
+  ChangeDetectionStrategy,
   Component,
   ContentChildren,
-  ElementRef, EventEmitter,
+  ElementRef,
+  EventEmitter,
   HostBinding,
   HostListener,
   Input,
@@ -19,10 +21,15 @@ import {BcFloatToolbarItemComponent} from "./float-toolbar-item";
     </div>
   `,
   standalone: true,
-  styles: [`
-  `]
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '[style.padding.px]': 'gapAround'
+  }
 })
 export class BcFloatToolbarComponent {
+  @Input()
+  gapAround = 0
+
   @Input()
   @HostBinding('attr.data-direction')
   direction: 'row' | 'column' = 'row'

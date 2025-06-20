@@ -3,15 +3,14 @@ import {
   ChangeDetectorRef,
   Component, DestroyRef,
   ElementRef,
-  EventEmitter, HostListener,
+  EventEmitter,
   Input,
   Output
 } from "@angular/core";
 import {NgForOf, NgTemplateOutlet} from "@angular/common";
 import {MatIcon} from "@angular/material/icon";
-import {BLOCK_CREATOR_SERVICE_TOKEN, BlockNodeType, EditableBlockComponent, ORIGIN_SKIP_SYNC} from "../../../framework";
-import {fromEvent, takeUntil} from "rxjs";
-import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
+import {BLOCK_CREATOR_SERVICE_TOKEN, BlockNodeType, EditableBlockComponent} from "../../../framework";
+import {debounce} from "../../../global";
 
 interface IContextMenuOption {
   flavour: string
@@ -35,10 +34,9 @@ const TransformReg = /^[\/、].*/
 @Component({
   selector: 'block-transformer-contextmenu',
   template: `
-    <ul class="list" (mousedown)="onMouseDown($event)">
+    <ul class="list" (mousedown)="onMouseDown($event)" (mousemove)="onMouseMove()" (mouseover)="onMouseOver($event)">
       @for (item of list; track item.flavour; let idx = $index) {
-        <li class="list__item" [class.active]="activeIdx === idx"
-            (mouseenter)="activeIdx = idx">
+        <li class="list__item" [class.active]="activeIdx === idx" [attr.data-index]="idx">
           @if (item.metadata.svgIcon) {
             <mat-icon [svgIcon]="item.metadata.svgIcon" style="width: 1em; height: 1em"></mat-icon>
           } @else {
@@ -65,6 +63,8 @@ export class BlockTransformContextMenu {
   @Output() close$ = new EventEmitter<boolean>()
 
   list: IContextMenuOption[] = []
+  protected activeIdx = 0;
+  private isKeyboardNavigating = false;
 
   constructor(
     public readonly cdr: ChangeDetectorRef,
@@ -101,7 +101,7 @@ export class BlockTransformContextMenu {
       this.cdr.markForCheck()
     }
 
-    this.activeBlock.yText.observe(textObserver)
+    this.activeBlock.yText.observe(debounce(textObserver, 300))
 
     const hotKeyEvents = [
       this.doc.event.bindHotkey({key: 'Escape',}, evt => {
@@ -132,8 +132,6 @@ export class BlockTransformContextMenu {
     })
   }
 
-  protected activeIdx = 0
-
   onMouseDown(evt: MouseEvent) {
     evt.preventDefault()
     if (evt.eventPhase === Event.AT_TARGET) {
@@ -143,18 +141,50 @@ export class BlockTransformContextMenu {
     this.select()
   }
 
+  onMouseOver(event: MouseEvent) {
+    if (this.isKeyboardNavigating) return;
+
+    const li = (event.target as HTMLElement).closest('.list__item');
+    if (!li) return;
+
+    const dataIdx = li.getAttribute('data-index');
+    if (!dataIdx) return;
+    const idx = parseInt(dataIdx, 10);
+    if (idx === -1 || idx === this.activeIdx) return;
+
+    this.activeIdx = idx;
+  }
+
+  onMouseMove() {
+    // 一旦鼠标真的移动，说明用户正在用鼠标导航
+    if (this.isKeyboardNavigating) {
+      this.isKeyboardNavigating = false;
+    }
+  }
+
   selectUp() {
-    if (this.activeIdx > 0) this.activeIdx--
-    else this.activeIdx = this.list.length - 1
-    this.cdr.detectChanges()
-    this.host.nativeElement.querySelector('.list__item.active')?.scrollIntoView({behavior: 'smooth'})
+    this.enterKeyboardNavigation();
+    this.activeIdx = (this.activeIdx - 1 + this.list.length) % this.list.length;
+    this.cdr.detectChanges();
+    this.scrollToActive();
   }
 
   selectDown() {
-    if (this.activeIdx < this.list.length - 1) this.activeIdx++
-    else this.activeIdx = 0
-    this.cdr.detectChanges()
-    this.host.nativeElement.querySelector('.list__item.active')?.scrollIntoView({behavior: 'smooth'})
+    this.enterKeyboardNavigation();
+    this.activeIdx = (this.activeIdx + 1) % this.list.length;
+    this.cdr.detectChanges();
+    this.scrollToActive();
+  }
+
+  enterKeyboardNavigation() {
+    this.isKeyboardNavigating = true;
+  }
+
+  scrollToActive() {
+    this.host.nativeElement.querySelector('.list__item.active')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest'
+    })
   }
 
   select() {

@@ -18,7 +18,3 @@ export function createBlockGapSpace() {
   emptyNode.setAttribute('data-block-zero-space', 'true')
   return emptyNode
 }
-
-export function isBlockGapSpace(ele: HTMLElement) {
-  return ele.getAttribute('data-block-zero-space') === 'true'
-}

@@ -29,6 +29,8 @@ export const CodeBlockSchema: IBlockSchemaOptions<CodeBlockModel> = {
   }
 }
 
+export * from './const'
+
 declare global {
   namespace BlockCraft {
     interface IBlockComponents {

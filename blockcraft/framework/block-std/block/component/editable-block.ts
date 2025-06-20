@@ -2,8 +2,7 @@ import {ChangeDetectionStrategy, Component, HostBinding} from "@angular/core";
 import {BaseBlockComponent} from "./base-block";
 import {EditableBlockNative} from "../../reactive";
 import * as Y from 'yjs'
-import {DeltaInsert, DeltaInsertEmbed, DeltaOperation, InlineModel} from "../../types";
-import {ORIGIN_SKIP_SYNC} from "../../../doc";
+import {DeltaInsert, DeltaOperation} from "../../types";
 import {INLINE_CONTAINER_CLASS} from "../../inline";
 
 @Component({
@@ -17,6 +16,10 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   plainTextOnly = false
 
   yText!: Y.Text
+
+  get inlineManager() {
+    return this.doc.inlineManager
+  }
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
@@ -68,7 +71,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   rerender() {
-    this.doc.inlineManager.render(this.textDeltas(), this.containerElement)
+    this.inlineManager.render(this.textDeltas(), this.containerElement)
   }
 
   insertText(index: number, text: string, attributes?: DeltaInsert['attributes']) {

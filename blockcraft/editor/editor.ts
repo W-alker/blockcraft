@@ -33,7 +33,6 @@ import {
 import {ConsoleLogger, getRandomDarkColor, randomColor, throttle} from "../global";
 import {AutoUpdateOrderPlugin} from "../plugins/autoUpdateOrder";
 import {BulletBlockSchema} from "../blocks/bullet-block";
-import {TableBlockBinding} from "../plugins/tableBlockBinding";
 import {FloatTextToolbarPlugin} from "../plugins/float-text-toolbar";
 import {BlockTransformerPlugin} from "../plugins/block-transformer";
 import {BlockControllerPlugin} from "../plugins/block-controller";

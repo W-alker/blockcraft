@@ -1,5 +1,12 @@
-import {BindHotKey, DeltaOperation, DocPlugin, STR_LINE_BREAK, STR_TAB, UIEventStateContext} from "../framework";
-import {getLinesByRange} from "../global";
+import {
+  BindHotKey,
+  DeltaOperation,
+  DocPlugin,
+  STR_LINE_BREAK,
+  STR_TAB,
+  UIEventStateContext
+} from "../framework";
+import {getLinesByRange, nextTick} from "../global";
 
 export class CodeInlineEditorBinding extends DocPlugin {
 
@@ -9,15 +16,27 @@ export class CodeInlineEditorBinding extends DocPlugin {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const {from, to, raw} = state.selection
-    if (state.raw.shiftKey) {
-
-    }
     if (to || from.type !== 'text') return false
     context.preventDefault()
     const block = from.block
+
+    // 代码块强制换新行
+    if (state.raw.shiftKey && from.block.flavour === 'code') {
+      const splitText = block.textContent().slice(from.index + from.length)
+      block.deleteText(from.index, block.textLength - from.index)
+      const np = this.doc.schemas.createSnapshot('paragraph', [splitText, block.props])
+      this.doc.crud.insertBlocksAfter(block, [np]).then(() => {
+        nextTick().then(() => {
+          this.doc.selection.setCursorAtBlock(np.id, true)
+        })
+      })
+      return true
+    }
+
     if (from.length !== 0) {
       block.deleteText(from.index, from.length)
     }
+
     const currLine = block.textContent().slice(0, from.index).split(STR_LINE_BREAK).at(-1)
     const tabs = (currLine?.split(STR_TAB).length || 1) - 1
     const deltas: DeltaOperation[] = [

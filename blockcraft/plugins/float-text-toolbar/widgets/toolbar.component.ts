@@ -16,7 +16,7 @@ import {
 } from "../../../components";
 import {BlockCraftError, ErrorCode, SimpleValue} from "../../../global";
 import {NgForOf, NgIf} from "@angular/common";
-import {ORIGIN_SKIP_SYNC, IInlineNodeAttrs, IEditableBlockProps} from "../../../framework";
+import {IInlineNodeAttrs, IEditableBlockProps} from "../../../framework";
 import {Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {merge} from "rxjs";
@@ -162,12 +162,12 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
   template: `
     <bc-float-toolbar (onItemClick)="onItemClicked($event)">
       <bc-float-toolbar-item icon="bc_wenben" [expandable]="true"
-                             [bcOverlayTrigger]="formatFloatBar" [positions]="['bottom-left']" [offsetY]="8"/>
+                             [bcOverlayTrigger]="formatFloatBar" [offsetX]="8"/>
 
       <span class="bc-float-toolbar__divider"></span>
 
       <bc-float-toolbar-item icon="bc_zuoduiqi" [expandable]="true"
-                             [bcOverlayTrigger]="alignFloatBar" [positions]="['bottom-left']" [offsetY]="8"/>
+                             [bcOverlayTrigger]="alignFloatBar" [offsetX]="8"/>
 
       @for (item of defaultMenuList; track item.name + item.value) {
         @if (item.divide) {
@@ -186,8 +186,7 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
       </bc-float-toolbar-item>
 
       <span class="bc-float-toolbar__divider"></span>
-      <bc-float-toolbar-item icon="bc_bianji" [bcOverlayTrigger]="colorPicker" [positions]="['bottom-left']"
-                             [offsetY]="8"
+      <bc-float-toolbar-item icon="bc_bianji" [bcOverlayTrigger]="colorPicker"
                              [style.color]="activeColors['color']"
                              [style.background-color]="activeColors['backColor']"/>
 
@@ -201,7 +200,7 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
     </bc-float-toolbar>
 
     <ng-template #formatFloatBar>
-      <bc-float-toolbar [direction]="'column'" (onItemClick)="onItemClicked($event)">
+      <bc-float-toolbar [direction]="'column'" (onItemClick)="onItemClicked($event)" [gapAround]="8">
         <bc-float-toolbar-item *ngFor="let item of headingList" [name]="item.name"
                                [active]="activeProps.heading == item.value"
                                [value]="item.value" [icon]="item.icon">{{ item.intro }}
@@ -215,11 +214,12 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
     </ng-template>
 
     <ng-template #colorPicker>
-      <bc-color-picker (colorPicked)="onColorPicked($event)" [activeColors]="activeColors"></bc-color-picker>
+      <bc-color-picker (colorPicked)="onColorPicked($event)" [gapAround]="8"
+                       [activeColors]="activeColors"></bc-color-picker>
     </ng-template>
 
     <ng-template #alignFloatBar>
-      <bc-float-toolbar [direction]="'column'" (onItemClick)="onItemClicked($event)">
+      <bc-float-toolbar [direction]="'column'" (onItemClick)="onItemClicked($event)" [gapAround]="8">
         <bc-float-toolbar-item *ngFor="let item of alignList" [name]="item.name"
                                [active]="activeProps.textAlign == item.value"
                                [value]="item.value" [icon]="item.icon">{{ item.intro }}

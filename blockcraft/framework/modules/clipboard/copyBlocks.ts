@@ -33,6 +33,8 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
         items[adp.type] = await adp.fromSnapshot(rootSnapshot)
       }
     } catch (e) {
+      console.error(e)
+    } finally {
       items[ClipboardDataType.TEXT] = snapshots2Text([rootSnapshot])
     }
 
@@ -44,7 +46,7 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
     }
 
     document.addEventListener('copy', (e) => {
-      if(range) {
+      if (range) {
         window.getSelection()?.removeAllRanges()
         window.getSelection()?.addRange(range)
       }

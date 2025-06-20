@@ -167,12 +167,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const id = this._closetCell(event)
 
     if (!id) {
-      event.stopPropagation()
       event.preventDefault()
       return
     }
 
-    event.stopPropagation()
     const cell = this.doc.getBlockById(id) as TableCellBlockComponent
     const sub = fromEvent<MouseEvent>(cell.hostElement, 'mouseleave').pipe(take(1)).subscribe(evt => {
       this._startSelectingCell = cell
@@ -205,7 +203,6 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // select cells
     if (!this._startSelectingCell || evt.buttons < 1) return;
     if ((!this._lastSelectingCell && id === this._startSelectingCell.id) || id === this._lastSelectingCell?.id) return
-    evt.stopPropagation()
     this._lastSelectingCell = this.doc.getBlockById(id) as TableCellBlockComponent
     this._setRectangleSelected()
   }

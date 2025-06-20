@@ -178,7 +178,7 @@ export class DocCRUD {
           if (!this.doc.isEditable(bm.instance))
             throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} is not editable`)
           try {
-            this.doc.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], bm.instance.containerElement)
+            bm.instance.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], bm.instance.containerElement)
           } catch (e) {
             this.doc.logger.warn('applyDeltaToView error', e)
             bm.instance.rerender()
@@ -301,16 +301,7 @@ export class DocCRUD {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `insertBlocks: no valid children`)
     }
 
-    // const comps = await Promise.all(
-    //   snapshots.map(s => this.vm.createComponentBySnapshot(s, (m) => {
-    //     this.transact(() => {
-    //       this.yBlockMap.set(m.instance.id, m.instance.yBlock)
-    //     }, ORIGIN_SKIP_SYNC)
-    //   }))
-    // )
-
     this.transact(() => {
-        // this.vm.insert(parentId, index, comps);
         const snapshot2YBlock = (snapshot: IBlockSnapshot) => {
           const _children = snapshot.nodeType === BlockNodeType.editable ? snapshot.children : snapshot.children.map(childSnapshot => childSnapshot.id)
           const yBlock = native2YBlock({...snapshot, children: _children} as NativeBlockModel)
@@ -322,22 +313,13 @@ export class DocCRUD {
         snapshots.forEach(snapshot => snapshot2YBlock(snapshot))
 
         ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, snapshots.map(v => v.id))
-        // emit
-        // this.onChildrenUpdate$.next({
-        //   isUndoRedo: false,
-        //   transactions: [{
-        //     block: parentComp.instance,
-        //     inserted: comps.map(v => v.instance),
-        //   }]
-        // })
       },
-      // ORIGIN_SKIP_SYNC
     )
 
     return new Promise((resolve => {
       const sub = this.onChildrenUpdate$.subscribe(v => {
         const inserted = v.transactions.find(v => v.block.id === parentComp.instance.id)?.inserted
-        if (inserted) {
+        if (inserted && inserted.find(v => v.id === snapshots[snapshots.length - 1].id)) {
           sub.unsubscribe()
           resolve(inserted)
         }
@@ -345,16 +327,16 @@ export class DocCRUD {
     }))
   }
 
-  async insertBlocksBefore(block: string | BlockCraft.BlockComponent, snapshots: IBlockSnapshot[]) {
+  insertBlocksBefore(block: string | BlockCraft.BlockComponent, snapshots: IBlockSnapshot[]) {
     block = typeof block === 'string' ? this.doc.getBlockById(block) : block
     const index = block.getIndexOfParent()
-    await this.insertBlocks(block.parentId!, index, snapshots)
+    return this.insertBlocks(block.parentId!, index, snapshots)
   }
 
-  async insertBlocksAfter(block: string | BlockCraft.BlockComponent, snapshots: IBlockSnapshot[]) {
+  insertBlocksAfter(block: string | BlockCraft.BlockComponent, snapshots: IBlockSnapshot[]) {
     block = typeof block === 'string' ? this.doc.getBlockById(block) : block
     const index = block.getIndexOfParent() + 1
-    await this.insertBlocks(block.parentId!, index, snapshots)
+    return this.insertBlocks(block.parentId!, index, snapshots)
   }
 
   async deleteBlocks(parent: string, index: number, count = 1) {
@@ -409,10 +391,10 @@ export class DocCRUD {
     }))
   }
 
-  async deleteBlockById(blockId: string) {
+  deleteBlockById(blockId: string) {
     const block = this.doc.getBlockById(blockId)
     const index = block.getIndexOfParent()
-    await this.deleteBlocks(block.parentId!, index, 1)
+    return this.deleteBlocks(block.parentId!, index, 1)
   }
 
   async replaceWithSnapshots(blockId: string, snapshots?: IBlockSnapshot[]) {

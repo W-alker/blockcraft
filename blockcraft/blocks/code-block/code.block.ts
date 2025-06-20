@@ -1,18 +1,19 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
-import {EditableBlockComponent, getPositionWithOffset, ORIGIN_SKIP_SYNC, STR_LINE_BREAK} from "../../framework";
+import {
+  EditableBlockComponent,
+  getPositionWithOffset,
+  STR_LINE_BREAK
+} from "../../framework";
 import {CodeBlockModel} from "./index";
-import * as Prism from "prismjs";
 import {AsyncPipe, NgForOf} from "@angular/common";
 import {Subject} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
-import {Overlay} from "@angular/cdk/overlay";
 import {LangListComponent} from "./lang-list.component";
-import {CodeBlockLanguage, PRISM_LANGUAGE_MAP} from "./const";
+import {CodeBlockLanguage} from "./const";
 import {performanceTest} from "../../global";
-import {DeltaInsertText} from "../../framework";
 import * as Y from 'yjs'
-import {Token} from "prismjs";
 import {nextTick} from "../../global";
+import {CodeInlineManagerService} from "./code-inlineManager.service";
 
 @Component({
   selector: 'div.code-block',
@@ -37,8 +38,15 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   protected isHoldHeader = false
   private lines: string[] = []
 
-  constructor(private overlay: Overlay) {
-    super();
+  private _inlineManager!: CodeInlineManagerService
+
+  override get inlineManager() {
+    return this._inlineManager
+  }
+
+  override _init() {
+    super._init();
+    this._inlineManager = new CodeInlineManagerService(this.doc)
   }
 
   override ngAfterViewInit() {
@@ -95,45 +103,10 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     isHere && this.setInlineRange(pos)
   }
 
-  private _flatTokens(tokens: Array<string | Token>, res: DeltaInsertText[] = [], parentType?: string) {
-    for (const token of tokens) {
-      if (typeof token === 'string') {
-        const attrs: Record<string, any> | undefined = parentType ? {'a:type': parentType} : undefined
-        if (token.includes(STR_LINE_BREAK)) {
-          let i = 0, j = 0
-          while (i < token.length) {
-            if (token[i] === STR_LINE_BREAK) {
-              res.push({
-                attributes: {...attrs, 'd:lineBreak': true}, insert: token.slice(j, i + 1)
-              })
-              j = i + 1
-            }
-            i++
-          }
-          const rest = token.slice(j)
-          rest && res.push({attributes: {...attrs}, insert: rest})
-          continue
-        } else {
-          res.push({attributes: attrs, insert: token})
-        }
-        continue
-      }
-      if (typeof token.content === 'string') {
-        res.push({
-          attributes: {'a:type': token.type || parentType || 'text'},
-          insert: token.content
-        })
-      } else {
-        this._flatTokens(Array.isArray(token.content) ? token.content : [token.content], res, token.type)
-      }
-    }
-    return res
-  }
 
-  // @performanceTest('code block render')
+  @performanceTest('code block render')
   override rerender() {
-    const tokens = Prism.tokenize(this.textContent(), Prism.languages[PRISM_LANGUAGE_MAP[this.props.lang]])
-    this.doc.inlineManager.render(this._flatTokens(tokens), this.containerElement)
+    this.inlineManager.renderCode(this.containerElement, this.textContent(), this.props.lang)
   }
 
   getLineRangeByCharacter(start: number, end: number) {

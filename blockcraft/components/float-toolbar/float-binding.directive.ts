@@ -21,7 +21,8 @@ import {nextTick} from "../../global";
 })
 export class BcOverlayTriggerDirective {
   @Input('bcOverlayTrigger') contentTemplate!: TemplateRef<any>;
-  @Input() positions: OverlayPosition[] = ['bottom-center'];
+  // 默认值： ['bottom-center', 'top-center']
+  @Input() positions: OverlayPosition[] = ['bottom-center', 'top-center'];
   @Input() offsetX: number = 0;
   @Input() offsetY: number = 0;
   @Input() activeClass = 'float-children-opened';
@@ -93,7 +94,7 @@ export class BcOverlayTriggerDirective {
   private _openDelayTimer?: number
 
   openOverlay() {
-    if(this.disabled) return
+    if(this.disabled || !this.elementRef.nativeElement.isConnected) return
     const positionStrategy = this.overlay.position()
       .flexibleConnectedTo(this.elementRef)
       .withPositions(this.positions.map(position => getPositionWithOffset(position, this.offsetX, this.offsetY)))

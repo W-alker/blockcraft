@@ -162,7 +162,7 @@ export class DocExportManager {
 
     const ctx = canvas.getContext('2d')!;
 
-    const pageHeightPx = Math.floor(canvasWidth * (pageHeightPt / pageWidthPt));
+    const pageHeightPx = Math.floor(canvasWidth * (pageHeightPt / pageWidthPt) * scale);
 
     const slices: { start: number; height: number }[] = [];
 

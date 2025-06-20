@@ -1,10 +1,13 @@
 bc-color-picker {
   display: block;
-  background: var(--bf-bg);
-  box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.10);
-  overflow: hidden;
-  padding: 8px;
-  border-radius: 4px;
+
+  .bc-color-group__wrapper {
+    background: var(--bf-bg);
+    box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.10);
+    overflow: hidden;
+    padding: 8px;
+    border-radius: 4px;
+  }
 
   .bc-color-group {
     margin-bottom: 8px;

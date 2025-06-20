@@ -145,7 +145,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this.utils.formatText({[`a:${attrName}`]: value ? null : true})
     if (this._cpr) {
       value ? this.activeCommonAttrs.attrs.delete(attrName) : this.activeCommonAttrs.attrs.set(attrName, value)
-      this._cpr.setInput('activeAttrs', new Set(this.activeCommonAttrs.attrs))
+      this._cpr.setInput('activeAttrs', this.activeCommonAttrs.attrs)
       this._cpr.changeDetectorRef.markForCheck()
     }
     return true

@@ -2,7 +2,7 @@ import {
   BlockNodeType,
   DeltaInsert,
   DeltaOperation,
-  DocEventRegister,
+  DocEventRegister, EditableBlockComponent,
   EventListen,
   EventScopeSourceType,
   EventSourceState,
@@ -110,17 +110,30 @@ export class ClipboardManager {
   }
 
   deleteContentFromSelection = (selection: BlockCraft.Selection) => {
-    const event = new InputEvent('beforeinput', {
-      inputType: 'deleteByCut',
-      targetRanges: [new StaticRange(selection.raw)],
+    const {from, to} = selection
+
+    this.doc.crud.transact(() => {
+
+      if (to) {
+        const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
+        if (throughPath.length) {
+          throughPath.forEach(through => {
+            this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
+          })
+        }
+      }
+
+      from.type === 'text' ?
+        from.block.deleteText(from.index, from.length) :
+        this.doc.crud.deleteBlockById(from.blockId)
+
+      if (to) {
+        to.type === 'text' ?
+          to.block.deleteText(to.index, to.length) :
+          this.doc.crud.deleteBlockById(to.blockId)
+      }
+
     })
-    this.doc.event.run(
-      'beforeInput',
-      UIEventStateContext.from(
-        new UIEventState(event),
-        new EventSourceState({event, sourceType: EventScopeSourceType.Selection})
-      )
-    )
   }
 
   @EventListen('copy')
@@ -154,8 +167,7 @@ export class ClipboardManager {
     const selection = state.selection
     if (selection.from.type !== 'text') return
 
-    const isSameTextBlock = selection.isInSameBlock
-    const selFrom = selection.from
+    const {from: selFrom, isInSameBlock, collapsed} = selection
 
     // 纯文本块
     if (selFrom.block.plainTextOnly) {
@@ -174,7 +186,7 @@ export class ClipboardManager {
     }
 
     // uri ---- 似乎可以删除
-    if (isSameTextBlock && state.dataTypes.includes(ClipboardDataType.URI)) {
+    if (isInSameBlock && state.dataTypes.includes(ClipboardDataType.URI)) {
       const uri = state.getData(ClipboardDataType.URI)?.split('\n')[0]
       if (uri && isUrl(uri)) {
         selFrom.length ? selFrom.block.formatText(selFrom.index, selFrom.length, {'a:link': uri})
@@ -216,32 +228,30 @@ export class ClipboardManager {
 
     if (rootSnapshot && rootSnapshot.children.length && rootSnapshot.nodeType === BlockNodeType.root) {
       const snapshots: IBlockSnapshot[] = rootSnapshot.children as IBlockSnapshot[]
-      const fromIndex = selection.from.index
-      const fromLength = selection.from.length
-      const textLength = selection.from.block.textLength
-      const editableBlock = selection.from.block
+      const {index: fromIndex, length: fromLength, block: editableBlock} = selFrom
+      const textLength = editableBlock.textLength
 
       replaceSnapshotsIdDeeply(snapshots)
-      replaceSnapshotsDepths(snapshots, editableBlock.props.depth)
 
       // 同一文本块
-      if (isSameTextBlock) {
+      if (isInSameBlock) {
         const ops: DeltaOperation[] = [{retain: fromIndex}]
 
         let insertLength = 0
         // 是否需要和本段合并
-        if (snapshots[0].nodeType === BlockNodeType.editable
-          && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
-          && snapshots[0].children.length) {
+        if (snapshots[0].nodeType === BlockNodeType.editable && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)) {
           insertLength = deltaStrLength(snapshots[0].children)
           ops.push(...snapshots[0].children)
           snapshots.shift()
         }
-        // 不需要拆分
+
+        // 不需要拆分, 代表这是一个行内操作
         if (!snapshots.length) {
-          fromLength > 0 && ops.splice(1, 0, {delete: fromLength - fromIndex})
+          editableBlock.deleteText(fromIndex, fromLength)
           editableBlock.applyDeltaOperations(ops)
-          insertLength > 0 && selFrom.block.setInlineRange(fromIndex, insertLength)
+          insertLength > 0 && nextTick().then(() => {
+            collapsed ? editableBlock.setInlineRange(fromIndex + insertLength) : editableBlock.setInlineRange(fromIndex, insertLength)
+          })
           return;
         }
 
@@ -252,6 +262,8 @@ export class ClipboardManager {
           const sliceDeltas = sliceDelta(editableBlock.textDeltas(), fromIndex + fromLength, textLength)
           const splitSnapshot = this.doc.schemas.createSnapshot('paragraph', [sliceDeltas, editableBlock.props])
           this.doc.crud.insertBlocksAfter(editableBlock, [splitSnapshot])
+        } else {
+          editableBlock.deleteText(fromIndex, fromLength)
         }
         editableBlock.applyDeltaOperations(ops)
       } else {
@@ -259,15 +271,15 @@ export class ClipboardManager {
         this.deleteContentFromSelection(state.selection)
 
         // 是否需要和本段合并
-        if (snapshots[0].nodeType === BlockNodeType.editable
-          && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
-          && snapshots[0].children.length) {
+        if (snapshots[0].nodeType === BlockNodeType.editable && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)) {
           const insertLength = deltaStrLength(snapshots[0].children)
           editableBlock.applyDeltaOperations([{retain: fromIndex}, ...snapshots[0].children])
           snapshots.shift()
 
           if (!snapshots.length) {
-            insertLength > 0 && selFrom.block.setInlineRange(fromIndex, insertLength)
+            insertLength > 0 && nextTick().then(() => {
+              collapsed ? editableBlock.setInlineRange(fromIndex + insertLength) : editableBlock.setInlineRange(fromIndex, insertLength)
+            })
             return
           }
         }
@@ -275,6 +287,7 @@ export class ClipboardManager {
 
       // 新增blocks
       this.doc.crud.insertBlocksAfter(editableBlock, snapshots).then(() => {
+        if (collapsed) return
         const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
         this.doc.selection.setSelection({
           blockId: editableBlock.id,
@@ -298,7 +311,7 @@ export class ClipboardManager {
     if (state.dataTypes.includes(ClipboardDataType.TEXT)) {
       const text = state.getData(ClipboardDataType.TEXT)
       if (!text) return false
-      if (isUrl(text) && isSameTextBlock) {
+      if (isUrl(text) && isInSameBlock) {
         selection.collapsed ?
           selFrom.block.insertText(selFrom.index, text, {'a:link': text})
           : selFrom.block.formatText(selFrom.index, selFrom.length, {'a:link': text})
@@ -308,7 +321,7 @@ export class ClipboardManager {
         return true
       }
 
-      if (isSameTextBlock) {
+      if (isInSameBlock) {
         selFrom.block.replaceText(selFrom.index, selFrom.length, text)
       } else {
         this.deleteContentFromSelection(state.selection)
@@ -323,6 +336,5 @@ export class ClipboardManager {
     return false
   }
 }
-
 
 export * from './types'
