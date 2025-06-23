@@ -83,7 +83,7 @@ export class ImgToolbarPlugin extends DocPlugin {
         componentRef.setInput('imgBlock', selection.firstBlock)
 
         fromEvent<MouseEvent>(imgEle, 'mousedown').pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
-          this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg(imgEle)
+          this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({el: imgEle})
         })
 
         imgBlock.onPropsChange.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {

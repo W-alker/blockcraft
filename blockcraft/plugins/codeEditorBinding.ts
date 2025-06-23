@@ -1,14 +1,35 @@
 import {
   BindHotKey,
   DeltaOperation,
-  DocPlugin,
+  DocPlugin, EventListen, ORIGIN_SKIP_SYNC,
   STR_LINE_BREAK,
   STR_TAB,
   UIEventStateContext
 } from "../framework";
-import {getLinesByRange, nextTick} from "../global";
+import {BlockCraftError, ErrorCode, getLinesByRange, nextTick} from "../global";
 
 export class CodeInlineEditorBinding extends DocPlugin {
+
+  @EventListen('compositionEnd', {flavour: 'code'})
+  private _handleCompositionEnd(context: UIEventStateContext) {
+    const ev = context.getDefaultEvent<CompositionEvent>()
+    ev.preventDefault()
+
+    const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
+    if (!sel || sel.from.type !== 'text') {
+      throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
+    }
+    const text = ev.data
+    const {block, index} = sel.from
+    block.yText.insert(index === 0 ? 0 : index - text.length, text)
+    // TODO: 更好的中文输入法反显渲染. 目前看必须重新渲染，否则涉及到协同的情况很容易出错
+
+    requestAnimationFrame(() => {
+      block.setInlineRange(index === 0 ? text.length : index)
+    })
+    next?.()
+    return true
+  }
 
   @BindHotKey({key: 'Enter', shiftKey: null}, {flavour: 'code'})
   @BindHotKey({key: 'Enter', shiftKey: null}, {flavour: 'mermaid-textarea'})
@@ -44,7 +65,7 @@ export class CodeInlineEditorBinding extends DocPlugin {
       {insert: STR_LINE_BREAK + (tabs ? STR_TAB.repeat(tabs) : '')},
     ]
     block.applyDeltaOperations(deltas)
-    block.setInlineRange(from.index + 1 + tabs)
+    block.setInlineRange(from.index + STR_LINE_BREAK.length + tabs * STR_TAB.length)
     return true
   }
 

@@ -61,7 +61,7 @@ import {BlockCraftAwareness} from "./awa";
 import {IndexeddbPersistence} from "y-indexeddb";
 import {DividerExtensionPlugin} from "../plugins/divider-toolbar";
 import {DividerStylePopupComponent} from "../plugins/divider-toolbar/widgets/divider-style-popup.component";
-import {CodeInlineEditorBinding} from "../plugins";
+import {CodeInlineEditorBinding, TableBlockBinding} from "../plugins";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -245,7 +245,7 @@ export class EditorComponent {
       new FloatTextToolbarPlugin({
         withComment: true,
         commentComponent: EditorCommentPad
-      }), new BlockTransformerPlugin(), new BlockControllerPlugin(),
+      }), new BlockTransformerPlugin(), new BlockControllerPlugin(), new TableBlockBinding(),
       new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
       new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(), new InlineLinkExtension(),
       new MentionPlugin(mentionRequest), new DividerExtensionPlugin()

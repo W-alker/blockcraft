@@ -38,12 +38,14 @@ export class MyDocFileService extends DocFileService {
   previewAttachment() {
   }
 
-  previewImg(arg1: unknown, arg2: unknown): void {
-    if (arg1 instanceof HTMLElement) {
-      const img = arg1 instanceof HTMLImageElement ? arg1 : arg1.querySelector('img')
+  previewImg(options: Record<string, unknown>): void {
+    const el = options['el']
+    const title = options['title']
+    if (el instanceof HTMLElement) {
+      const img = el instanceof HTMLImageElement ? el : el.querySelector('img')
       if (!img) return
-      const viewer = new Viewer(arg1, {
-        title: [0, () => (typeof arg2 === 'string') ? arg2 : img.src],
+      const viewer = new Viewer(el, {
+        title: [0, () => (typeof title === 'string') ? title : img.src],
         inline: false,
         zIndex: 2000,
         ready: () => {

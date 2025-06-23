@@ -89,7 +89,6 @@ export class InputTransformer {
     const {from, to, collapsed} = normalizedRange
     const text = getPlainTextFromInputEvent(ev)
 
-    // this.doc.crud.transact(() => {
     if (to) {
       ev.preventDefault()
       this._replaceText(normalizedRange, text)
@@ -178,7 +177,6 @@ export class InputTransformer {
       from.block.yText.insert(from.index, text)
     }, ORIGIN_SKIP_SYNC)
 
-    // }, ORIGIN_SKIP_SYNC)
   }
 
   private _replaceText(range: INormalizedRange, text?: string | null) {

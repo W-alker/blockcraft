@@ -197,11 +197,24 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     const svg = this.graphContainer.firstElementChild
     if (!svg || !(svg instanceof SVGElement)) return
     //svg转canvas
+    // const svgString = new XMLSerializer().serializeToString(svg);
+    // const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+    // const url = URL.createObjectURL(svgBlob);
+    // const img = new Image()
+    // img.src = url
+    // img.onload = () => {
+    //   this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({
+    //     el: img,
+    //     title: 'mermaid',
+    //   })
+    //   img.dispatchEvent(new MouseEvent('click', {bubbles: false, cancelable: true, view: window}))
+    // }
+
     const uri = await svg2Png(svg, {backgroundColor: '#fff', width: svg.clientWidth, height: svg.clientHeight})
     const img = new Image()
     img.src = uri
 
-    this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg(img, 'mermaid')
+    this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({el: img, title: 'mermaid'})
     img.dispatchEvent(new MouseEvent('click', {bubbles: false, cancelable: true, view: window}))
   }
 }

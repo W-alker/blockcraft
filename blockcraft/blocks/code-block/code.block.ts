@@ -10,9 +10,8 @@ import {Subject} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {LangListComponent} from "./lang-list.component";
 import {CodeBlockLanguage} from "./const";
-import {performanceTest} from "../../global";
+import {debounce, nextTick, performanceTest} from "../../global";
 import * as Y from 'yjs'
-import {nextTick} from "../../global";
 import {CodeInlineManagerService} from "./code-inlineManager.service";
 
 @Component({
@@ -46,7 +45,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   override _init() {
     super._init();
-    this._inlineManager = new CodeInlineManagerService(this.doc)
+    this._inlineManager = new CodeInlineManagerService(this.doc, this)
   }
 
   override ngAfterViewInit() {
@@ -55,12 +54,12 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   private _observer() {
-    this.yText.observe(this.highlight)
+    this.yText.observe(this._debounce_highlight)
     this._yProps.observe(this._obsProp)
   }
 
   private _unObserver() {
-    this.yText.unobserve(this.highlight)
+    this.yText.unobserve(this._debounce_highlight)
     this._yProps.unobserve(this._obsProp)
   }
 
@@ -84,14 +83,12 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     }
   }
 
-  private highlight = (ev: Y.YEvent<Y.Text>, tr: Y.Transaction) => {
-    // console.log(ev.delta)
+  private _debounce_highlight = debounce(() => {
     nextTick().then(() => {
       this.diffHighlight()
     })
-  }
+  }, 100)
 
-  @performanceTest()
   diffHighlight() {
     const isHere = this.doc.selection.value?.from.blockId === this.id
     let pos = 0
@@ -99,14 +96,14 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
       const sel = this.doc.selection.normalizeRange(document.getSelection()!.getRangeAt(0))
       pos = sel?.from.type === 'text' ? sel.from.index : 0
     }
-    this.rerender()
+    this.inlineManager.diffHighLight()
     isHere && this.setInlineRange(pos)
   }
 
 
   @performanceTest('code block render')
   override rerender() {
-    this.inlineManager.renderCode(this.containerElement, this.textContent(), this.props.lang)
+    this.inlineManager.renderCode()
   }
 
   getLineRangeByCharacter(start: number, end: number) {

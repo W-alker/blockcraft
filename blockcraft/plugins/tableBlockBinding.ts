@@ -49,6 +49,9 @@ export class TableBlockBinding extends DocPlugin {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
+
+    console.log('handleDelete', selection)
+
     if (!selection.isAllSelected) return
     if (selection.from.block.flavour === 'table') return false
     const table = this._getTable(selection)

@@ -19,7 +19,7 @@ export abstract class DocFileService {
 
   abstract previewAttachment(): void
 
-  abstract previewImg(element: HTMLElement, title?: string): void
+  abstract previewImg(options: Record<string, unknown>): void
 
   inputFiles(accept = '', multiple = false): Promise<FileList> {
     return new Promise((resolve, reject) => {

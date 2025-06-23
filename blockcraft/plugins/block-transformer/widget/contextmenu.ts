@@ -11,6 +11,8 @@ import {NgForOf, NgTemplateOutlet} from "@angular/common";
 import {MatIcon} from "@angular/material/icon";
 import {BLOCK_CREATOR_SERVICE_TOKEN, BlockNodeType, EditableBlockComponent} from "../../../framework";
 import {debounce} from "../../../global";
+import {take, takeUntil} from "rxjs";
+import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 
 interface IContextMenuOption {
   flavour: string
@@ -126,9 +128,14 @@ export class BlockTransformContextMenu {
       }, {blockId: this.activeBlock.id})
     ]
 
-    this.destroyRef.onDestroy(() => {
-      this.activeBlock.yText.unobserve(textObserver)
+    this.activeBlock.onDestroy$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       hotKeyEvents.forEach(v => v())
+      this.activeBlock.yText?.unobserve(textObserver)
+    })
+
+    this.destroyRef.onDestroy(() => {
+      hotKeyEvents.forEach(v => v())
+      this.activeBlock.yText?.unobserve(textObserver)
     })
   }
 

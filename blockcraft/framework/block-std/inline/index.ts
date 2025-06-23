@@ -84,7 +84,7 @@ export class InlineManager {
     return node
   }
 
-  private _createEndBreak(): HTMLElement {
+  protected _createEndBreak(): HTMLElement {
     const node = document.createElement(INLINE_ELEMENT_TAG)
     node.classList.add(INLINE_END_BREAK_CLASS)
     node.appendChild(document.createElement('br'))
@@ -428,7 +428,7 @@ export class InlineManager {
     }
 
     for (const delta of deltas) {
-      if (delta.retain) {
+      if ('retain' in delta) {
         stepRetain(delta as DeltaRetain)
         continue
       }

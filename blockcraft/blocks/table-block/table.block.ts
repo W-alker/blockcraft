@@ -130,9 +130,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
 
     // this.doc.crud.transact(() => {
-      this.getChildrenBlocks().forEach(row => {
-        this.doc.crud.deleteBlocks(row.id, index, count)
-      })
+    this.getChildrenBlocks().forEach(row => {
+      this.doc.crud.deleteBlocks(row.id, index, count)
+    })
     // }, ORIGIN_SKIP_SYNC)
 
     const _colWidths: number[] = JSON.parse(JSON.stringify(this.props.colWidths))
@@ -161,15 +161,20 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     return closetCell?.getAttribute('data-block-id')
   }
 
+  // TODO 优化单元格内的选择
   @HostListener('selectstart', ['$event'])
-  onSelectstart(event: Event) {
+  onSelectstart(evt: Event) {
     this._clearSelected()
-    const id = this._closetCell(event)
+    const id = this._closetCell(evt)
 
     if (!id) {
-      event.preventDefault()
+      evt.stopPropagation()
+
+      evt.preventDefault()
       return
     }
+
+    evt.stopPropagation()
 
     const cell = this.doc.getBlockById(id) as TableCellBlockComponent
     const sub = fromEvent<MouseEvent>(cell.hostElement, 'mouseleave').pipe(take(1)).subscribe(evt => {
@@ -203,6 +208,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // select cells
     if (!this._startSelectingCell || evt.buttons < 1) return;
     if ((!this._lastSelectingCell && id === this._startSelectingCell.id) || id === this._lastSelectingCell?.id) return
+    evt.stopPropagation()
     this._lastSelectingCell = this.doc.getBlockById(id) as TableCellBlockComponent
     this._setRectangleSelected()
   }

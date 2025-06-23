@@ -57,8 +57,8 @@
 
   &.selecting,
   [data-node-type="block"].selecting {
-    > [data-node-type="block"],
-    > [data-node-type="void"] {
+    [data-node-type="block"],
+    [data-node-type="void"] {
       @include user-modify(read-only);
 
       * {

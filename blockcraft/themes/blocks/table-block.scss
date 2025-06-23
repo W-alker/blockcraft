@@ -57,6 +57,20 @@
 
     }
 
+    &:not(.selected) {
+      td.table-cell-block.selected::after {
+        z-index: 1;
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+
+        animation: bc_ani_table_selected 0.15s ease forwards;
+      }
+    }
+
     &.col-head {
       td:first-child {
         position: sticky;
@@ -221,18 +235,6 @@
         &.selected {
           background: unset;
           -webkit-user-modify: read-only;
-
-          &::after {
-            z-index: 1;
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-
-            animation: bc_ani_table_selected 0.15s ease forwards;
-          }
         }
       }
 
