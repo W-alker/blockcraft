@@ -18,7 +18,6 @@ import {SimpleValue} from "../../../global";
 import {NgForOf, NgIf} from "@angular/common";
 import {IInlineNodeAttrs} from "../../../framework";
 import {TextToolbarUtils} from "../utils";
-import {IToolbarConfig} from "../rich-text-toolbar";
 
 export interface IToolbarMenuItem {
   label?: string
