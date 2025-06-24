@@ -1,6 +1,6 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {
-  BaseBlockComponent,DOC_FILE_SERVICE_TOKEN,
+  BaseBlockComponent, DOC_FILE_SERVICE_TOKEN,
   generateId,
   getPositionWithOffset,
 } from "../../framework";
@@ -9,7 +9,8 @@ import mermaid from "mermaid";
 import {Subject, Subscription, takeUntil} from "rxjs";
 import {MermaidTypeListComponent} from "./widgets/mermaid-type-list.component";
 import {IMermaidType, MermaidViewMode} from "./types";
-import {nextTick, svg2Png} from "../../global";
+import {debounce, nextTick, performanceTest} from "../../global";
+import {MermaidViewSwitchComponent} from "./widgets/mermaid-view-switch.component";
 
 // import {ScaleRatioPipe} from "./ratio.pipe";
 
@@ -31,15 +32,18 @@ import {nextTick, svg2Png} from "../../global";
         <!--        <span class="text">缩放： {{ graphScale | scaleRatio }}</span>-->
       </div>
 
-      <div class="switch-btn btn" (click)="onSwitchView()"><i class="bc_icon bf_qiehuan"></i></div>
+      <div class="switch-btn btn" (mousedown)="onSwitchView($event)"><i class="bc_icon bf_qiehuan"></i></div>
     </div>
 
-    <div class="text-container">
-      <ng-container #childrenContainer></ng-container>
-    </div>
+    <div class="content">
+      <div class="text-container">
+        <ng-container #childrenContainer></ng-container>
+      </div>
 
-    <div class="graph-container">
-      <div class="graph-con" (mousedown)="onPreviewGraph($event)"></div>
+      <div class="graph-container">
+        <div class="graph-con" (mousedown)="onPreviewGraph($event)"></div>
+      </div>
+
     </div>
   `,
   standalone: true,
@@ -78,6 +82,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
         this.setView(this.props.mode)
       }
     })
+
   }
 
   override _init() {
@@ -93,10 +98,21 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     this.isIntersecting = false
   }
 
+  private _onPreviewObserver = debounce(() => {
+    nextTick().then(() => {
+      this.renderGraph()
+    })
+  }, 500)
+
+  private _prevTextContent = ''
+
   async renderGraph() {
+    if (!this.isIntersecting) return
     const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
     if (!textarea.textLength) return
     const graphDefinition = textarea.textContent();
+    if (graphDefinition === this._prevTextContent && this.graphContainer.childElementCount) return
+    this._prevTextContent = graphDefinition
     try {
       const {svg} = await mermaid.render('graph' + generateId(11), graphDefinition, this.graphContainer);
       this.graphContainer.innerHTML = svg
@@ -110,17 +126,43 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   setView(view: MermaidViewMode) {
     if (!this.isIntersecting || this._viewMode === view) return
     this.hostElement.setAttribute('data-mode', this._viewMode = view)
-    if (view === 'graph') {
+    if (view !== 'text') {
       !this.graphContainer.childElementCount && this.renderGraph()
     } else {
       this.graphContainer.childElementCount && this.graphContainer.replaceChildren()
     }
+
+    const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
+    if (this._viewMode === 'default') {
+      textarea.yText.observe(this._onPreviewObserver)
+    } else {
+      textarea.yText.unobserve(this._onPreviewObserver)
+    }
   }
 
-  onSwitchView() {
-    this.updateProps({
-      mode: this._native.props.mode === 'graph' ? 'text' : 'graph'
+  onSwitchView($event: MouseEvent) {
+    $event.preventDefault()
+    $event.stopPropagation()
+
+    const close$ = new Subject()
+    const btn = $event.target as HTMLElement
+    btn.classList.add('active')
+    const {componentRef} = this.doc.overlayService.createConnectedOverlay<MermaidViewSwitchComponent>({
+      target: $event.target as HTMLElement,
+      component: MermaidViewSwitchComponent,
+      backdrop: true,
+      positions: [getPositionWithOffset('top-right', 0, 6), getPositionWithOffset('bottom-right', 0, 6)]
+    }, close$, () => {
+      btn.classList.remove('active')
     })
+
+    componentRef.instance.itemClicked.pipe(takeUntil(close$)).subscribe(v => {
+      close$.next(true)
+      this.updateProps({
+        mode: v
+      })
+    })
+
   }
 
   onShowList($event: MouseEvent, prefix: string) {
@@ -157,11 +199,9 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   }
 
   useTemplate(item: IMermaidType) {
-    // this.doc.crud.transact(() => {
     const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
-    textarea.textLength && textarea.yText.delete(0, textarea.textLength)
+    textarea.textLength && textarea.deleteText(0, textarea.textLength)
     textarea.insertText(0, item.prefix + item.template)
-    // }, ORIGIN_SKIP_SYNC)
   }
 
   override ngOnDestroy() {
@@ -175,7 +215,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     if (number < 0) {
       ratio = Math.max(0.5, ratio)
     } else {
-      ratio = Math.min(5, ratio)
+      ratio = Math.min(8, ratio)
     }
     if (ratio === this.graphScale) return
     this.graphScale = ratio
@@ -197,24 +237,19 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     const svg = this.graphContainer.firstElementChild
     if (!svg || !(svg instanceof SVGElement)) return
     //svg转canvas
-    // const svgString = new XMLSerializer().serializeToString(svg);
-    // const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
-    // const url = URL.createObjectURL(svgBlob);
-    // const img = new Image()
-    // img.src = url
-    // img.onload = () => {
-    //   this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({
-    //     el: img,
-    //     title: 'mermaid',
-    //   })
-    //   img.dispatchEvent(new MouseEvent('click', {bubbles: false, cancelable: true, view: window}))
-    // }
-
-    const uri = await svg2Png(svg, {backgroundColor: '#fff', width: svg.clientWidth, height: svg.clientHeight})
+    const svgString = new XMLSerializer().serializeToString(svg);
+    const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+    const url = URL.createObjectURL(svgBlob);
     const img = new Image()
-    img.src = uri
-
-    this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({el: img, title: 'mermaid'})
+    img.src = url
+    this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({
+      el: img,
+      title: 'mermaid',
+      className: 'blockcraft-mermaid-preview-graph',
+      stop: () => {
+        url && URL.revokeObjectURL(url)
+      }
+    })
     img.dispatchEvent(new MouseEvent('click', {bubbles: false, cancelable: true, view: window}))
   }
 }

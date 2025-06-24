@@ -5,7 +5,17 @@
     gap: 4px;
 
     .ordered-block-prefix {
+      cursor: pointer;
       color: var(--bc-active-color-light);
+      border-radius: 4px;
+      padding: 0 2px;
+      border: none;
+      background: none;
+
+      &:hover {
+        background-color: var(--bc-select-background-color);
+      }
+
     }
 
     .edit-container {

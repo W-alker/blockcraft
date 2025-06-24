@@ -31,9 +31,8 @@ import {
   TodoBlockSchema
 } from "../blocks";
 import {ConsoleLogger, getRandomDarkColor, randomColor, throttle} from "../global";
-import {AutoUpdateOrderPlugin} from "../plugins/autoUpdateOrder";
 import {BulletBlockSchema} from "../blocks/bullet-block";
-import {FloatTextToolbarPlugin} from "../plugins/float-text-toolbar";
+import {FloatTextToolbarPlugin} from "../plugins/float-text-toolbar/rich-text-toolbar";
 import {BlockTransformerPlugin} from "../plugins/block-transformer";
 import {BlockControllerPlugin} from "../plugins/block-controller";
 import {ImgToolbarPlugin} from "../plugins/img-toolbar";
@@ -61,7 +60,7 @@ import {BlockCraftAwareness} from "./awa";
 import {IndexeddbPersistence} from "y-indexeddb";
 import {DividerExtensionPlugin} from "../plugins/divider-toolbar";
 import {DividerStylePopupComponent} from "../plugins/divider-toolbar/widgets/divider-style-popup.component";
-import {CodeInlineEditorBinding, TableBlockBinding} from "../plugins";
+import {CodeInlineEditorBinding, TableBlockBinding, TextMarkerPlugin, OrderedBlockPlugin} from "../plugins";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -241,7 +240,7 @@ export class EditorComponent {
         'link', OLD_LINK_EMBED_CONVERTER
       ]
     ],
-    plugins: [new AutoUpdateOrderPlugin(), new CodeInlineEditorBinding(),
+    plugins: [new OrderedBlockPlugin(), new CodeInlineEditorBinding(), new TextMarkerPlugin(['mermaid-textarea']),
       new FloatTextToolbarPlugin({
         withComment: true,
         commentComponent: EditorCommentPad

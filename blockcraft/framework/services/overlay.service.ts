@@ -60,7 +60,7 @@ export class DocOverlayService {
   constructor(private readonly doc: BlockCraft.Doc) {
   }
 
-  createConnectedOverlay<T>(params: IOverlayCreateOptions, close$: Subject<any>, onDestroy: () => void) {
+  createConnectedOverlay<T>(params: IOverlayCreateOptions, close$: Subject<any>, onDestroy?: () => void) {
     const portal = new ComponentPortal(params.component, null, this.doc.injector)
 
     const overlayRef = this.overlay.create({

@@ -1,6 +1,16 @@
 @import "../function";
 
 @mixin mermaid-block {
+  @at-root {
+    @at-root  {
+      .blockcraft-mermaid-preview-graph {
+        img {
+          background: #fff;
+        }
+      }
+    }
+  }
+
   div.mermaid-block {
     display: block;
     border-radius: 4px;
@@ -16,6 +26,17 @@
       }
     }
 
+    &[data-mode="default"] {
+
+      .content {
+        display: flex;
+      }
+
+      .graph-container {
+        border-left: 1px solid var(--bc-border-color);
+      }
+    }
+
     &[data-mode="text"] {
       .graph-container {
         visibility: hidden;
@@ -25,7 +46,7 @@
     }
 
     &[data-mode="graph"] {
-      .mermaid-textarea {
+      .text-container {
         visibility: hidden;
         height: 0;
         overflow: hidden;
@@ -34,6 +55,7 @@
     }
 
     .text-container, .graph-container {
+      flex: 1;
       overflow: auto;
       scroll-behavior: smooth;
       scrollbar-width: thin;
@@ -52,8 +74,9 @@
       display: flex;
       align-items: center;
       position: relative;
-      padding: 8px 20px;
+      padding: 0 20px;
       border-bottom: 1px solid #e6e6e6;
+      height: 45px;
 
       .btn {
         padding: 4px 8px;
@@ -103,13 +126,11 @@
   }
 
   .mermaid-textarea {
-    overflow-y: auto;
     margin-bottom: 0;
     padding: 6px;
     font-family: Menlo, Monaco, "Courier New", monospace;
     color: #333;
     font-size: var(--bc-fs-sm);
     tab-size: 1em;
-    scrollbar-width: thin;
   }
 }

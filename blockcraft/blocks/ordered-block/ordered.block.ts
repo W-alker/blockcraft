@@ -6,11 +6,15 @@ import {getNumberPrefix} from "./utils";
 @Component({
   selector: 'div.ordered-block',
   template: `
-    <span class="ordered-block-prefix" contenteditable="false">{{ order }}.</span>
+    <button class="ordered-block-prefix" contenteditable="false">{{ order }}.</button>
     <div class="edit-container"></div>
   `,
   standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '[attr.start]': 'props.start',
+    '[attr.order]': 'props.order',
+  }
 })
 export class OrderedBlockComponent extends EditableBlockComponent<OrderedBlockModel> {
 

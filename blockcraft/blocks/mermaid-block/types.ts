@@ -4,4 +4,4 @@ export interface IMermaidType {
   prefix: string
 }
 
-export type MermaidViewMode = 'text' | 'graph';
+export type MermaidViewMode = 'text' | 'graph' | 'default';

@@ -23,7 +23,7 @@ import {merge} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {LinkInputPad} from "./link-input-pad";
 import {TextToolbarUtils} from "../utils";
-import {IToolbarConfig} from "../index";
+import {IToolbarConfig} from "../rich-text-toolbar";
 
 export interface IToolbarMenuItem {
   label?: string
@@ -152,7 +152,7 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
   {
     name: "sub",
     icon: "bc_xiabiao",
-    intro: "代码",
+    intro: "下标",
     value: true,
   }
 ]
@@ -271,18 +271,6 @@ export class FloatTextToolbarComponent {
 
   @Output()
   onDestroy: EventEmitter<void> = new EventEmitter<void>()
-
-  @HostListener('mouseenter', ['$event'])
-  onMouseEnter(e: MouseEvent) {
-    e.stopPropagation()
-    e.preventDefault()
-  }
-
-  @HostListener('mousemove', ['$event'])
-  onMouseMove(e: MouseEvent) {
-    e.stopPropagation()
-    e.preventDefault()
-  }
 
   defaultMenuList: IToolbarMenuItem[] = DEFAULT_MENU_LIST
   alignList: IToolbarMenuItem[] = ALIGN_LIST

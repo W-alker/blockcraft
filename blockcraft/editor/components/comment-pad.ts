@@ -9,7 +9,7 @@ import {
   ViewChild
 } from "@angular/core";
 import {FormsModule} from "@angular/forms";
-import {CommentPad} from "../../plugins/float-text-toolbar";
+import {CommentPad} from "../../plugins/float-text-toolbar/rich-text-toolbar";
 import {MyCommentService} from "../services/comment.service";
 
 @Component({

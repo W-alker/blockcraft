@@ -69,7 +69,8 @@ export class MyDocFileService extends DocFileService {
           rotateRight: 4,
           flipHorizontal: 4,
           flipVertical: 4,
-        }
+        },
+        ...options
       })
     }
   }

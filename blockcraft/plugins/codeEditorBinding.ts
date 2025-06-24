@@ -1,7 +1,7 @@
 import {
   BindHotKey,
   DeltaOperation,
-  DocPlugin, EventListen, ORIGIN_SKIP_SYNC,
+  DocPlugin, EventListen,
   STR_LINE_BREAK,
   STR_TAB,
   UIEventStateContext
@@ -22,7 +22,6 @@ export class CodeInlineEditorBinding extends DocPlugin {
     const text = ev.data
     const {block, index} = sel.from
     block.yText.insert(index === 0 ? 0 : index - text.length, text)
-    // TODO: 更好的中文输入法反显渲染. 目前看必须重新渲染，否则涉及到协同的情况很容易出错
 
     requestAnimationFrame(() => {
       block.setInlineRange(index === 0 ? text.length : index)

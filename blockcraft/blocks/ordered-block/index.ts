@@ -1,18 +1,18 @@
-import {EditableBlockNative} from "../../framework";
-import {BlockNodeType} from "../../framework/block-std/types";
+import {EditableBlockNative, IEditableBlockProps} from "../../framework";
 import {
+  BlockNodeType,
   IBlockSchemaOptions,
   editableBlockCreateSnapShotFn,
   EditableBlockCreateSnapshotParams
-} from "../../framework/block-std/schema/block-schema";
+} from "../../framework";
 import {OrderedBlockComponent} from "./ordered.block";
 
 export interface OrderedBlockModel extends EditableBlockNative {
   flavour: 'ordered',
   props: {
     order: number
-    depth: number
-  }
+    start?: number | null
+  } & IEditableBlockProps
 }
 
 export const OrderedBlockSchema: IBlockSchemaOptions<OrderedBlockModel> = {
