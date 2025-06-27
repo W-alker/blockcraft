@@ -2,7 +2,7 @@ import {Component, Injector, ViewChild, ViewContainerRef} from "@angular/core";
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
   BlockCraftDoc,
-  BlockNodeType, ClipboardDataType,
+  BlockNodeType, ClipboardDataType, DeltaInsert,
   DOC_ADAPTER_SERVICE_TOKEN,
   DOC_FILE_SERVICE_TOKEN,
   DOC_LINK_PREVIEWER_SERVICE_TOKEN,
@@ -241,17 +241,46 @@ export class EditorComponent {
       ]
     ],
     plugins: [new OrderedBlockPlugin(), new CodeInlineEditorBinding(), new TextMarkerPlugin(['mermaid-textarea']),
-      new FloatTextToolbarPlugin({
-        withComment: true,
-        commentComponent: EditorCommentPad
-      }), new BlockTransformerPlugin(), new BlockControllerPlugin(), new TableBlockBinding(),
+      new FloatTextToolbarPlugin(), new BlockTransformerPlugin(),
+      new BlockControllerPlugin(
+        [
+          {
+            type: 'tool',
+            name: 'copyBlockLink',
+            value: true,
+            icon: 'bc_fuzhilianjie',
+            label: '复制段落链接',
+          },
+        ],
+        (item, block, doc) => {
+          switch (item.name) {
+            case 'copyBlockLink':
+              this.copyBlockLink(block)
+              return true
+          }
+          return false
+        }
+      ),
+      new TableBlockBinding(),
       new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
-      new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(), new InlineLinkExtension(),
+      new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(),
+      new InlineLinkExtension((link) => {
+        if (link.startsWith('http://doc-pre.com')) {
+          window.open(link.replace('http://doc-pre.com', 'http://localhost:8081/test3'), '_blank')
+        }
+      }),
       new MentionPlugin(mentionRequest), new DividerExtensionPlugin()
     ]
   })
 
   pid = ''
+
+  copyBlockLink(block: BlockCraft.BlockComponent) {
+    const url = 'http://doc-pre.com' + '?blockId=' + block.id
+    this.doc.clipboard.copyText(url).then(() => {
+      this.doc.messageService.success('已复制链接')
+    })
+  }
 
   ngAfterViewInit() {
     this.listenUpdate()
@@ -380,7 +409,7 @@ export class EditorComponent {
       }
 
 
-      this.provider = new WebsocketProvider('ws://196.168.1.58:1234', this.rootId, this.doc.yDoc, {
+      this.provider = new WebsocketProvider('ws://196.168.1.69:1234', this.rootId, this.doc.yDoc, {
         disableBc: true
       })
       this.provider.on('sync', (v: boolean) => {

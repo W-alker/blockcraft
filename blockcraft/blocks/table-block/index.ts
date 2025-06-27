@@ -31,7 +31,6 @@ export interface TableCellBlockModel extends NoEditableBlockNative {
     rowspan: number | null
     colspan: number | null
     display: null | 'none'
-    mergedBy?: string
   } & IBlockProps,
 }
 

@@ -2,19 +2,15 @@ import {
   BlockNodeType,
   DeltaInsert,
   DeltaOperation,
-  DocEventRegister, EditableBlockComponent,
+  DocEventRegister,
   EventListen,
-  EventScopeSourceType,
-  EventSourceState,
   IBlockSnapshot, STR_LINE_BREAK,
-  UIEventState,
   UIEventStateContext
 } from "../../block-std";
 import {deltaStrLength, deltaToString, isUrl, nextTick, sliceDelta} from "../../../global";
 import {ClipboardDataType} from "./types";
 import {
   generateId,
-  replaceSnapshotsDepths,
   replaceSnapshotsIdDeeply,
 } from "../../utils";
 import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
@@ -175,7 +171,8 @@ export class ClipboardManager {
       if (!text) return false
       selFrom.block.replaceText(selection.from.index, selection.from.length, text)
       nextTick().then(() => {
-        selFrom.block.setInlineRange(selFrom.index, text.length)
+        collapsed ? selFrom.block.setInlineRange(selFrom.index + text.length)
+          : selFrom.block.setInlineRange(selFrom.index, text.length)
       })
       return true
     }
@@ -183,19 +180,6 @@ export class ClipboardManager {
     // file
     if (state.dataTypes.includes(ClipboardDataType.FILES)) {
       return false
-    }
-
-    // uri ---- 似乎可以删除
-    if (isInSameBlock && state.dataTypes.includes(ClipboardDataType.URI)) {
-      const uri = state.getData(ClipboardDataType.URI)?.split('\n')[0]
-      if (uri && isUrl(uri)) {
-        selFrom.length ? selFrom.block.formatText(selFrom.index, selFrom.length, {'a:link': uri})
-          : selFrom.block.insertText(selFrom.index, uri, {'a:link': uri})
-        nextTick().then(() => {
-          selFrom.block.setInlineRange(selFrom.index + uri.length, 0)
-        })
-        return true
-      }
     }
 
     let rootSnapshot: IBlockSnapshot | undefined
@@ -225,6 +209,8 @@ export class ClipboardManager {
         }
       }
     }
+
+    console.log('---------------html2snapshot', rootSnapshot)
 
     if (rootSnapshot && rootSnapshot.children.length && rootSnapshot.nodeType === BlockNodeType.root) {
       const snapshots: IBlockSnapshot[] = rootSnapshot.children as IBlockSnapshot[]
@@ -315,8 +301,9 @@ export class ClipboardManager {
         selection.collapsed ?
           selFrom.block.insertText(selFrom.index, text, {'a:link': text})
           : selFrom.block.formatText(selFrom.index, selFrom.length, {'a:link': text})
-        selection.collapsed && nextTick().then(() => {
-          selFrom.block.setInlineRange(selFrom.index, text.length)
+        nextTick().then(() => {
+          collapsed ? selFrom.block.setInlineRange(selFrom.index + text.length)
+            : selFrom.block.setInlineRange(selFrom.index, selFrom.length)
         })
         return true
       }
@@ -328,7 +315,8 @@ export class ClipboardManager {
         selFrom.block.applyDeltaOperations([{retain: selFrom.index}, {insert: text}])
       }
       nextTick().then(() => {
-        selFrom.block.setInlineRange(selFrom.index, text.length)
+        collapsed ? selFrom.block.setInlineRange(selFrom.index + text.length)
+          : selFrom.block.setInlineRange(selFrom.index, text.length)
       })
       return true
     }

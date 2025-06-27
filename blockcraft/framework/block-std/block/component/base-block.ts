@@ -31,16 +31,17 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   protected _native!: Model
 
+  // Model更新，刷新视图
   @Input()
   set model(native: Model) {
-    this._yBlock = native2YBlock(this._native = native)
+    this._native = native
   }
 
   private _yBlock!: YBlock<Model>
 
   @Input()
   set yBlock(yBlock: YBlock<Model>) {
-    this._native = yBlock2Native(this._yBlock = yBlock)
+    this._yBlock = yBlock
   }
 
   get yBlock() {

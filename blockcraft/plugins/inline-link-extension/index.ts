@@ -22,6 +22,14 @@ export class InlineLinkExtension extends DocPlugin {
   private _linkInfo: { text: string, link: string } | null = null
   private _anchorTextRange: { blockId: string, start: number, end: number } | null = null
 
+  constructor(
+    private openLink = (link: string) => {
+      window.open(link, '_blank')
+    }
+  ) {
+    super();
+  }
+
   init() {
     this.doc.subscribeReadonlyChange(() => {
       this._cpr?.setInput('isReadOnly', this.doc.isReadonly)
@@ -34,7 +42,7 @@ export class InlineLinkExtension extends DocPlugin {
     if (!target) return
     const link = this.tryGetLink(target)
     if (!link) return
-    window.open(link, '_blank')
+    this.openLink(link)
   }
 
   @EventListen('mouseDown')
@@ -98,7 +106,7 @@ export class InlineLinkExtension extends DocPlugin {
 
       switch (item.name) {
         case 'open-link':
-          window.open(this._linkInfo.link, '_blank')
+          this.openLink(this._linkInfo.link)
           break
         case 'edit-link':
           this.onEditLink(target, {...this._linkInfo}, {...this._anchorTextRange})

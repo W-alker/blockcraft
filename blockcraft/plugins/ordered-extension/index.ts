@@ -79,7 +79,9 @@ export class OrderedBlockPlugin extends DocPlugin {
         const tr = event.transactions[0]
         if (tr.block.flavour !== 'ordered' || !tr.changes.has('depth')) return
         nextTick().then(() => {
-          updateOrderAround(tr.block as any)
+          updateOrderAround(<any>tr.block)
+          const nextBlock = this.doc.nextSibling(tr.block)
+          nextBlock && nextBlock.flavour === 'ordered' && (nextBlock.props.depth || 0) < (tr.block.props.depth || 0) && updateOrderAround(<any>nextBlock)
         })
       })
     )
@@ -108,7 +110,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
       if ((prevBlock.props.depth || 0) < block.props.depth) {
         break
       }
-      if (prevBlock.props.depth === block.props.depth) {
+      if ((prevBlock.props.depth || 0) === block.props.depth) {
         aroundOrderBlocks.unshift(prevBlock)
 
         if (prevBlock.props.start) break
@@ -124,7 +126,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
     if ((nextBlock.props.depth || 0) < block.props.depth) {
       break
     }
-    if (nextBlock.props.depth === block.props.depth) {
+    if ((nextBlock.props.depth || 0) === block.props.depth) {
       if (nextBlock.props.start) break
 
       aroundOrderBlocks.push(nextBlock)

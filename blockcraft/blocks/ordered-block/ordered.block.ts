@@ -10,11 +10,7 @@ import {getNumberPrefix} from "./utils";
     <div class="edit-container"></div>
   `,
   standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  host: {
-    '[attr.start]': 'props.start',
-    '[attr.order]': 'props.order',
-  }
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class OrderedBlockComponent extends EditableBlockComponent<OrderedBlockModel> {
 

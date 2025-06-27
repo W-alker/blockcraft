@@ -14,16 +14,9 @@ import {BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDi
 import {BlockNodeType} from "../../../framework";
 import {IBlockSchemaOptions} from "../../../framework";
 import {MatIcon} from "@angular/material/icon";
-import {nextTick, SimpleValue} from "../../../global";
+import {nextTick} from "../../../global";
 import {BLOCK_CREATOR_SERVICE_TOKEN} from "../../../framework";
-
-interface IContextMenuItem {
-  type: 'tool'
-  name: string
-  value: SimpleValue
-  icon: string
-  label: string
-}
+import {customToolHandler, IContextMenuItem} from "../types";
 
 const ALIGN_LIST: IContextMenuItem[] = [
   {
@@ -92,11 +85,12 @@ const HEADING_LIST: IContextMenuItem[] = [
   standalone: true,
   template: `
     <div class="drag-handle" [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
-         [disabled]="menuDisabled" (open)="setValidBlockList()" [activeClass]="'active'" [delay]="300"
-         [offsetY]="0" [withBackdrop]="false" activeClass="active" [draggable]="draggable">
+         [disabled]="menuDisabled" (open)="setValidBlockList()" [delay]="300"
+          [withBackdrop]="false" activeClass="active" [draggable]="draggable">
       <div class="btn">
         <i [class]="['bf_icon', isEmpty ? 'bf_tianjia-2' : 'bf_yidong' ]"></i>
       </div>
+      <div class="virtual-hover-area"></div>
     </div>
 
     <ng-template #icon let-item>
@@ -108,7 +102,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     </ng-template>
 
     <ng-template #contextMenuTpl>
-      <bc-float-toolbar style="display: block; width: 224px;" direction="column">
+      <bc-float-toolbar style="display: block; width: 224px; padding-top: 4px;" direction="column">
         @if (activeBlock?.nodeType === BlockNodeType.editable) {
           <h4 class="title">基础</h4>
           <ul class='base-list' (mousedown)="$event.preventDefault()">
@@ -240,7 +234,27 @@ const HEADING_LIST: IContextMenuItem[] = [
     }
 
     .drag-handle {
+      display: flex;
       padding: 0 4px 4px 0;
+
+      &.active {
+        .btn {
+          background-color: #E6E6E6;
+        }
+
+        .virtual-hover-area {
+          display: block;
+        }
+      }
+
+      .virtual-hover-area {
+        display: none;
+        position: absolute;
+        top: 0;
+        left: 22px;
+        width: 200px;
+        height: 100%;
+      }
 
       .btn {
         background-color: #fff;
@@ -255,7 +269,7 @@ const HEADING_LIST: IContextMenuItem[] = [
         height: 22px;
         line-height: 22px;
 
-        &:hover, &.active {
+        &:hover {
           background-color: #E6E6E6;
         }
       }
@@ -384,6 +398,12 @@ export class TriggerBtn {
     return this._activeBlock
   }
 
+  @Input()
+  customTools: IContextMenuItem[] = []
+
+  @Input()
+  customToolHandler?: customToolHandler
+
   @Output()
   itemClicked = new EventEmitter<{ item: IBlockSchemaOptions, type: 'block' } | {
     type: 'tool',
@@ -399,6 +419,8 @@ export class TriggerBtn {
   draggable = true
 
   ngOnInit() {
+    this.toolList = this.toolList.concat(this.customTools)
+
     const schemas = this.doc.schemas.getSchemaList().filter(v => v.flavour !== 'paragraph')
     this.baseBlockList = schemas.filter(item => item.nodeType === BlockNodeType.editable && !item.metadata.isLeaf)
     this.otherBlockList = schemas.filter(item =>
@@ -471,16 +493,6 @@ export class TriggerBtn {
       left
     }
   }
-
-  // calcLineHeight(ele: HTMLElement) {
-  //   const style = window.getComputedStyle(ele)
-  //   const lineHeight = style.lineHeight
-  //   if (lineHeight === 'normal') {
-  //     const fontSize = style.fontSize
-  //     return parseFloat(fontSize) * 1.2
-  //   }
-  //   return parseFloat(lineHeight)
-  // }
 
   @HostBinding('style.top.px')
   private top = 0
@@ -580,6 +592,14 @@ export class TriggerBtn {
 
   handleToolItemClick(item: IContextMenuItem) {
     console.log('--------tool item click', item, this.activeBlock)
+    if (this.customToolHandler) {
+      const res = this.customToolHandler(item, this.activeBlock, this.doc)
+      if (res) {
+        this.close()
+        return;
+      }
+    }
+
     switch (item.name) {
       case 'align':
         if (!this.activeBlock || !this.doc.isEditable(this.activeBlock)) return

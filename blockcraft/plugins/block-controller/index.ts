@@ -2,6 +2,7 @@ import {fromEvent, take, takeUntil} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {TriggerBtn} from "./widgets/trigger-btn";
 import {closetBlockId, DocPlugin, EventListen} from "../../framework";
+import {IContextMenuItem, customToolHandler} from "./types";
 
 export class BlockControllerPlugin extends DocPlugin {
   override name = 'block-controller'
@@ -16,12 +17,21 @@ export class BlockControllerPlugin extends DocPlugin {
 
   private _timer?: number
 
+  constructor(
+    public readonly customTools: IContextMenuItem[] = [],
+    private readonly customToolHandler?: customToolHandler
+  ) {
+    super();
+  }
+
   init() {
     this._vcr = this.doc.injector.get(ViewContainerRef)
     this._cpr = this._vcr.createComponent(TriggerBtn, {
       injector: this.doc.injector
     })
     this._cpr.setInput('doc', this.doc)
+    this._cpr.setInput('customTools', this.customTools)
+    this._cpr.setInput('customToolHandler', this.customToolHandler)
     this.doc.root.hostElement.appendChild(this._cpr.location.nativeElement)
 
     fromEvent<MouseEvent>(this.doc.root.hostElement, 'mouseover').pipe(takeUntil(this.doc.onDestroy$)).subscribe(e => {

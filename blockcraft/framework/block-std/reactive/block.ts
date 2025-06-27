@@ -87,20 +87,29 @@ export const native2YBlock = <T extends NativeBlockModel = NativeBlockModel>(nat
     yChildren = new Y.Text()
     native.children.length && yChildren.applyDelta(native.children)
   } else {
-    yChildren = Y.Array.from(native.children)
+    yChildren = new Y.Array()
+    yChildren.insert(0, native.children)
   }
 
   const yProps = new Y.Map(Object.entries(native.props))
   const yMeta = new Y.Map(Object.entries(native.meta))
 
-  return new Y.Map<any>([
-    ['id', native.id],
-    ['flavour', native.flavour],
-    ['nodeType', native.nodeType],
-    ['props', yProps],
-    ['meta', yMeta],
-    ['children', yChildren]
-  ]) as YBlock<T>
+  for (let propsKey in native.props) {
+    yProps.set(propsKey, native.props[propsKey])
+  }
+  for (let metaKey in native.meta) {
+    yMeta.set(metaKey, native.meta[metaKey])
+  }
+
+  const yBlock = new Y.Map<any>()
+  yBlock.set('id', native.id)
+  yBlock.set('flavour', native.flavour)
+  yBlock.set('nodeType', native.nodeType)
+  yBlock.set('props', yProps)
+  yBlock.set('meta', yMeta)
+  yBlock.set('children', yChildren)
+
+  return yBlock as YBlock<T>
 }
 
 export const yBlock2Native = <T extends NativeBlockModel = NativeBlockModel>(yBlock: YBlock<T>): T => {

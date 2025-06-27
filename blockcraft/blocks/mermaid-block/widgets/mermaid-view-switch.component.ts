@@ -1,4 +1,4 @@
-import {ChangeDetectionStrategy, Component, EventEmitter, Output} from "@angular/core";
+import {ChangeDetectionStrategy, Component, EventEmitter, Input, Output} from "@angular/core";
 import {BcFloatToolbarComponent, BcFloatToolbarItemComponent} from "../../../components";
 import {IMermaidType, MermaidViewMode} from "../types";
 
@@ -7,7 +7,7 @@ import {IMermaidType, MermaidViewMode} from "../types";
   template: `
     <bc-float-toolbar (onItemClick)="onItemClicked($event)" direction="column">
       @for (item of viewModes; track item) {
-        <bc-float-toolbar-item [name]="item">{{ viewModeMap[item] }}</bc-float-toolbar-item>
+        <bc-float-toolbar-item [name]="item" [active]="viewMode===item">{{ viewModeMap[item] }}</bc-float-toolbar-item>
       }
     </bc-float-toolbar>
   `,
@@ -19,6 +19,9 @@ import {IMermaidType, MermaidViewMode} from "../types";
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MermaidViewSwitchComponent {
+  @Input()
+  viewMode?: MermaidViewMode
+
   @Output()
   itemClicked = new EventEmitter<MermaidViewMode>()
 

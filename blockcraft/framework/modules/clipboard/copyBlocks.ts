@@ -1,7 +1,6 @@
 import {IBlockSnapshot} from "../../block-std";
 import {ClipboardDataType, ClipboardManager} from "./index";
 import {snapshots2Text} from "../../utils";
-import {nextTick} from "../../../global";
 
 async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
   let clipboardItem: ClipboardItem

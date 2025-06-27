@@ -9,7 +9,7 @@ import {isUrl} from "../../../global";
     <!--    <p>标题</p>-->
     <!--    <input type="text" placeholder="请输入标题" [(ngModel)]="updatedText"-->
     <!--           [class.error]="titleError" #titleInput (keyup.enter)="onUpdate()" (keydown.tab)="titleInput.focus()">-->
-    <div class="input-group" >
+    <div class="input-group">
       <span>地址</span>
       <input type="text" placeholder="请输入地址" [(ngModel)]="updatedHref" [class.error]="urlError"
               #urlInput (keyup.enter)="onUpdate()" (keydown.escape)="close.emit()">

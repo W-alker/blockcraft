@@ -1,7 +1,6 @@
 import {ClipboardDataType, DOC_FILE_SERVICE_TOKEN, DocAdapterService, IAdapter, IBlockSnapshot} from "../../framework";
-import {HtmlAdapter} from "../../adapters";
+import {HtmlAdapter, MarkdownAdapter} from "../../adapters";
 import {inject, Injectable} from "@angular/core";
-import {MarkdownAdapter} from "../../adapters/markdown-adapter";
 
 @Injectable()
 export class AdapterService extends DocAdapterService {

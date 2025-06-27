@@ -17,7 +17,7 @@ export class TableBlockBinding extends DocPlugin {
     const selection = this.doc.selection.value!
     const table = this._getTable(selection)
     const coordinates = table.getSelectedCellsCoordinates()
-    if(!coordinates) return
+    if (!coordinates) return
     const {start, end} = coordinates
     const matrix = table.getMatrixByCoordinates(start, end)
     const tableSnapshot = table.toSnapshot(false)
@@ -28,6 +28,7 @@ export class TableBlockBinding extends DocPlugin {
     })
     tableSnapshot.props['colWidths'] = table.props['colWidths'].slice(start[1], end[1] + 1)
     this.doc.clipboard.copyBlocksModel([tableSnapshot])
+    return true
   }
 
   @BindHotKey({key: ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'], shiftKey: null}, {flavour: 'table'})
@@ -50,8 +51,6 @@ export class TableBlockBinding extends DocPlugin {
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
 
-    console.log('handleDelete', selection)
-
     if (!selection.isAllSelected) return
     if (selection.from.block.flavour === 'table') return false
     const table = this._getTable(selection)
@@ -61,12 +60,26 @@ export class TableBlockBinding extends DocPlugin {
     return true
   }
 
+  @BindHotKey({key: ['A', 'a'], ctrlKey: null}, {flavour: 'table-cell'})
+  handleCtrlA(context: UIEventStateContext) {
+    if (this.doc.isReadonly) return
+    const state = context.get('keyboardState')
+    const {raw: evt, selection} = state
+    if (!selection.isAllSelected) return
+    if (selection.from.block.flavour !== 'table-cell') return false
+    evt.preventDefault()
+    const table = this._getTable(selection)
+    this.doc.selection.selectBlock(table)
+    return true
+  }
+
+
   clearCellContent(cells: BlockCraft.IBlockComponents['table-cell'][]) {
-    // this.doc.crud.transact(() => {
+    this.doc.crud.transact(() => {
       cells.forEach(cell => {
         cell.clearContent()
       })
-    // }, ORIGIN_SKIP_SYNC)
+    })
   }
 
   destroy(): void {

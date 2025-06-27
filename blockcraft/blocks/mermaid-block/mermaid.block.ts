@@ -9,22 +9,26 @@ import mermaid from "mermaid";
 import {Subject, Subscription, takeUntil} from "rxjs";
 import {MermaidTypeListComponent} from "./widgets/mermaid-type-list.component";
 import {IMermaidType, MermaidViewMode} from "./types";
-import {debounce, nextTick, performanceTest} from "../../global";
+import {debounce, nextTick} from "../../global";
 import {MermaidViewSwitchComponent} from "./widgets/mermaid-view-switch.component";
+import {AsyncPipe} from "@angular/common";
 
 // import {ScaleRatioPipe} from "./ratio.pipe";
 
 @Component({
   selector: 'div.mermaid-block',
   template: `
-    <div class="head" (mousedown)="$event.preventDefault(); $event.stopPropagation(); doc.selection.selectBlock(id)">
+    <div class="head" (mousedown)="onFocus($event)">
       <div class="btn">Mermaid</div>
-      <div class="template-btn btn" (click)="onShowList($event, 'prefix')" [hidden]="props.mode === 'graph'">类型
-        <i class="bf_icon bf_xiajaintou" style="font-size: .8em"></i>
-      </div>
-      <div class="template-btn btn" (click)="onShowList($event, 'template')" [hidden]="props.mode === 'graph'">模板
-        <i class="bf_icon bf_xiajaintou"></i>
-      </div>
+
+      @if (!(doc.readonlySwitch$ | async)) {
+        <div class="template-btn btn" (click)="onShowList($event, 'prefix')" [hidden]="props.mode === 'graph'">类型
+          <i class="bf_icon bf_xiajaintou" style="font-size: .8em"></i>
+        </div>
+        <div class="template-btn btn" (click)="onShowList($event, 'template')" [hidden]="props.mode === 'graph'">模板
+          <i class="bf_icon bf_xiajaintou"></i>
+        </div>
+      }
 
       <div class="control-btns" [hidden]="props.mode === 'text' ">
         <span class="btn" (mousedown)="scaleGraph(-0.25)"><i class="bc_icon bc_suoxiao"></i></span>
@@ -32,7 +36,10 @@ import {MermaidViewSwitchComponent} from "./widgets/mermaid-view-switch.componen
         <!--        <span class="text">缩放： {{ graphScale | scaleRatio }}</span>-->
       </div>
 
-      <div class="switch-btn btn" (mousedown)="onSwitchView($event)"><i class="bc_icon bf_qiehuan"></i></div>
+      <div class="switch-btn btn" [hidden]="doc.readonlySwitch$ | async" (mousedown)="onSwitchView($event)">
+        <i class="bc_icon bf_qiehuan"></i>
+      </div>
+
     </div>
 
     <div class="content">
@@ -40,7 +47,7 @@ import {MermaidViewSwitchComponent} from "./widgets/mermaid-view-switch.componen
         <ng-container #childrenContainer></ng-container>
       </div>
 
-      <div class="graph-container">
+      <div class="graph-container" (mousedown)="onFocus($event)">
         <div class="graph-con" (mousedown)="onPreviewGraph($event)"></div>
       </div>
 
@@ -48,6 +55,7 @@ import {MermaidViewSwitchComponent} from "./widgets/mermaid-view-switch.componen
   `,
   standalone: true,
   imports: [
+    AsyncPipe,
     // ScaleRatioPipe
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -106,6 +114,12 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
 
   private _prevTextContent = ''
 
+  protected onFocus($event: MouseEvent) {
+    $event.stopPropagation()
+    $event.preventDefault()
+    this.doc.selection.selectBlock(this.id)
+  }
+
   async renderGraph() {
     if (!this.isIntersecting) return
     const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
@@ -155,6 +169,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     }, close$, () => {
       btn.classList.remove('active')
     })
+    componentRef.setInput('viewMode', this.props.mode)
 
     componentRef.instance.itemClicked.pipe(takeUntil(close$)).subscribe(v => {
       close$.next(true)
@@ -236,7 +251,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     evt.preventDefault()
     const svg = this.graphContainer.firstElementChild
     if (!svg || !(svg instanceof SVGElement)) return
-    //svg转canvas
+    //svg转img
     const svgString = new XMLSerializer().serializeToString(svg);
     const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
     const url = URL.createObjectURL(svgBlob);

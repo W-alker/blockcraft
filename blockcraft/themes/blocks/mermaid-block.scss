@@ -57,7 +57,6 @@
     .text-container, .graph-container {
       flex: 1;
       overflow: auto;
-      scroll-behavior: smooth;
       scrollbar-width: thin;
       max-height: 60vh;
     }

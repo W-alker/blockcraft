@@ -11,7 +11,7 @@ import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
 import {TableColBarComponent} from "./widgets/table-col-bar.component";
 import {TableRowBarComponent} from "./widgets/table-row-bar.component";
 import {adjustSelection, RectangleSelection} from "./utils";
-import {nextTick} from "../../global";
+import {nextTick, performanceTest} from "../../global";
 
 @Component({
   selector: 'div.table-block',
@@ -166,15 +166,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   onSelectstart(evt: Event) {
     this._clearSelected()
     const id = this._closetCell(evt)
+    evt.stopPropagation()
 
     if (!id) {
-      evt.stopPropagation()
-
       evt.preventDefault()
       return
     }
-
-    evt.stopPropagation()
 
     const cell = this.doc.getBlockById(id) as TableCellBlockComponent
     const sub = fromEvent<MouseEvent>(cell.hostElement, 'mouseleave').pipe(take(1)).subscribe(evt => {

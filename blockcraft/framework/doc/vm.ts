@@ -1,7 +1,15 @@
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {take} from "rxjs";
 import {BlockCraftError, ErrorCode} from "../../global";
-import {BlockNodeType, IBlockSnapshot, BaseBlockComponent, YBlock} from "../block-std";
+import {
+  BlockNodeType,
+  IBlockSnapshot,
+  BaseBlockComponent,
+  YBlock,
+  native2YBlock,
+  NativeBlockModel,
+  yBlock2Native
+} from "../block-std";
 import * as Y from "yjs";
 
 export class DocVM {
@@ -67,6 +75,7 @@ export class DocVM {
         const cpr = this._vcr.createComponent(schema.component, {
           injector: this.doc.injector
         })
+        cpr.setInput('model', yBlock2Native(yBlock))
         cpr.setInput('yBlock', yBlock)
         cpr.setInput('doc', this.doc)
         cpr.instance.parentId = parentId
@@ -106,11 +115,11 @@ export class DocVM {
       return new Promise<BlockCraft.BlockComponentRef>((resolve, reject) => {
 
         // try get it from cache
-        if (this.has(snapshot.id)) {
-          const cpr = this._restoreCachedComp(snapshot.id)
-          resolve(cpr)
-          return
-        }
+        // if (this.has(snapshot.id)) {
+        //   const cpr = this._restoreCachedComp(snapshot.id)
+        //   resolve(cpr)
+        //   return
+        // }
 
         const {id, nodeType, flavour, props, meta, children} = snapshot
 
@@ -119,12 +128,15 @@ export class DocVM {
           injector: this.doc.injector
         })
 
-        cpr.instance.parentId = parentId
-        cpr.setInput('doc', this.doc)
-        cpr.setInput('model', {
+        const model = {
           id, nodeType, flavour, props, meta,
           children: (nodeType === BlockNodeType.block || nodeType === BlockNodeType.root) ? children.map(childSnapshot => childSnapshot.id) : children,
-        })
+        } as NativeBlockModel
+
+        cpr.instance.parentId = parentId
+        cpr.setInput('doc', this.doc)
+        cpr.setInput('model', model)
+        cpr.setInput('yBlock', native2YBlock(model))
         cb && cb(cpr)
 
         this.set(id, cpr)

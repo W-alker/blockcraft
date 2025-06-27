@@ -1,6 +1,5 @@
 import {Component, ElementRef, ViewChild} from "@angular/core";
 import * as Y from 'yjs'
-import {DOC_IDS} from "./const";
 import {EditorMigrate, schemas} from "../version-adapter/transformer";
 
 @Component({

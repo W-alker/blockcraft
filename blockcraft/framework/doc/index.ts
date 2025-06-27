@@ -248,11 +248,11 @@ export class BlockCraftDoc {
     return block instanceof EditableBlockComponent
   }
 
-  nextSibling(id: string | BlockCraft.BlockComponent) {
-    const comp = typeof id === 'string' ? this.getBlockById(id) : id
+  nextSibling(block: string | BlockCraft.BlockComponent) {
+    const comp = typeof block === 'string' ? this.getBlockById(block) : block
     const parent = this.getBlockById(comp.parentId!)
     const index = parent.childrenIds.indexOf(comp.id)
-    if (index === -1) throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${id}`)
+    if (index === -1) throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${comp.id}`)
     if (index === parent.childrenIds.length - 1) return null
     return this.getBlockById(parent.childrenIds[index + 1])
   }

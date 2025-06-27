@@ -23,7 +23,6 @@ import {merge} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {LinkInputPad} from "./link-input-pad";
 import {TextToolbarUtils} from "../utils";
-import {IToolbarConfig} from "../rich-text-toolbar";
 
 export interface IToolbarMenuItem {
   label?: string
@@ -190,12 +189,12 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
                              [style.color]="activeColors['color']"
                              [style.background-color]="activeColors['backColor']"/>
 
-      @if (config.withComment && isLinkAble && !activeAttrs.has('comment')) {
-        <span class="bc-float-toolbar__divider"></span>
-        <bc-float-toolbar-item name="comment" [value]="activeAttrs.get('comment')"
-                               icon="bc_pinglun" title="评论" [active]="activeAttrs.has('comment')">
-        </bc-float-toolbar-item>
-      }
+<!--      @if (config.withComment && isLinkAble && !activeAttrs.has('comment')) {-->
+<!--        <span class="bc-float-toolbar__divider"></span>-->
+<!--        <bc-float-toolbar-item name="comment" [value]="activeAttrs.get('comment')"-->
+<!--                               icon="bc_pinglun" title="评论" [active]="activeAttrs.has('comment')">-->
+<!--        </bc-float-toolbar-item>-->
+<!--      }-->
 
     </bc-float-toolbar>
 
@@ -262,9 +261,6 @@ export class FloatTextToolbarComponent {
   @Input({required: true})
   utils!: TextToolbarUtils
 
-  @Input({required: true})
-  config: IToolbarConfig = {}
-
   @HostBinding('style')
   @Input()
   style: string = ''
@@ -325,10 +321,8 @@ export class FloatTextToolbarComponent {
         evt.value === true ? this.activeAttrs.set(evt.name, evt.value) : this.activeAttrs.delete(evt.name)
         break
       case 'link':
-        evt.value ? this.onLink() : this.formatText({['a:' + evt.name]: null})
-        break
-      case 'comment':
-        this.onComment();
+        evt.value ? this.onLink() : this.formatText({['a:link']: null})
+        evt.value === false && this.activeAttrs.delete(evt.name)
         break
     }
   }
@@ -421,38 +415,38 @@ export class FloatTextToolbarComponent {
     })
   }
 
-  onComment() {
-    const commentComponent = this.config.commentComponent
-    if (!commentComponent) {
-      throw new BlockCraftError(ErrorCode.DefaultRuntimeError, 'commentComponent is not defined')
-    }
-
-    const selection = this.doc.selection.value!
-    const selectionJSON = selection.toJSON()
-
-    const rect = selection.raw.getBoundingClientRect()
-    const fake = this.doc.selection.createFakeRange(selection, {bgColor: 'rgba(255, 239, 186, .6)'})
-    const overlay = this.doc.injector.get(Overlay)
-
-    const positionStrategy = overlay.position().global().top(rect.bottom + 'px').left(rect.left + 'px')
-    const portal = new ComponentPortal(commentComponent, null, this.doc.injector)
-    const ovr = overlay.create({
-      positionStrategy,
-      hasBackdrop: true,
-      backdropClass: 'cdk-overlay-transparent-backdrop',
-    })
-
-    const close = () => {
-      ovr.dispose()
-      fake.destroy()
-      this.doc.selection.replay(selectionJSON)
-    }
-    const cpr = ovr.attach(portal)
-    cpr.setInput('selection', selectionJSON)
-    cpr.setInput('doc', this.doc)
-    cpr.setInput('commentId', this.activeAttrs.get('commentId'))
-    cpr.setInput('close', close)
-
-    merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
-  }
+  // onComment() {
+  //   const commentComponent = this.config.commentComponent
+  //   if (!commentComponent) {
+  //     throw new BlockCraftError(ErrorCode.DefaultRuntimeError, 'commentComponent is not defined')
+  //   }
+  //
+  //   const selection = this.doc.selection.value!
+  //   const selectionJSON = selection.toJSON()
+  //
+  //   const rect = selection.raw.getBoundingClientRect()
+  //   const fake = this.doc.selection.createFakeRange(selection, {bgColor: 'rgba(255, 239, 186, .6)'})
+  //   const overlay = this.doc.injector.get(Overlay)
+  //
+  //   const positionStrategy = overlay.position().global().top(rect.bottom + 'px').left(rect.left + 'px')
+  //   const portal = new ComponentPortal(commentComponent, null, this.doc.injector)
+  //   const ovr = overlay.create({
+  //     positionStrategy,
+  //     hasBackdrop: true,
+  //     backdropClass: 'cdk-overlay-transparent-backdrop',
+  //   })
+  //
+  //   const close = () => {
+  //     ovr.dispose()
+  //     fake.destroy()
+  //     this.doc.selection.replay(selectionJSON)
+  //   }
+  //   const cpr = ovr.attach(portal)
+  //   cpr.setInput('selection', selectionJSON)
+  //   cpr.setInput('doc', this.doc)
+  //   cpr.setInput('commentId', this.activeAttrs.get('commentId'))
+  //   cpr.setInput('close', close)
+  //
+  //   merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
+  // }
 }

@@ -1,8 +1,17 @@
 import {Component, ViewChild} from "@angular/core";
 import {EditorComponent} from '../../../blockcraft/editor'
-import {performanceTest} from "../../../blockcraft";
+import {
+  BlockNodeType,
+  IBlockSnapshot,
+  native2YBlock,
+  NativeBlockModel,
+  performanceTest, Y_BLOCK_MAP_NAME,
+  YBlock
+} from "../../../blockcraft";
 import {OLD_JSON} from "../version-adapter";
 import {DOC_IDS, TEST_DATA} from "./const";
+import * as Y from 'yjs'
+import {encodeStateAsUpdate, encodeStateVectorFromUpdate} from "yjs";
 
 @Component({
   selector: 'app-test3',
@@ -10,6 +19,7 @@ import {DOC_IDS, TEST_DATA} from "./const";
     <block-craft-editor #editor></block-craft-editor>
 
     <button (click)="onTest()">迁移测试</button>
+    <button (click)="onTest2()">Yjs测试</button>
   `,
   styles: [``],
   imports: [
@@ -57,5 +67,42 @@ export class Test3Page {
       }),
       redirect: 'follow'
     })).json())
+  }
+
+  onTest2() {
+    const json = this.editor.doc.exportSnapshot()
+
+    const doc1 = new Y.Doc({
+      guid: this.editor.docId
+    })
+    const yBlockMap = doc1.getMap<YBlock>(Y_BLOCK_MAP_NAME)
+
+    const snapshot2YBlock = (snapshot: IBlockSnapshot) => {
+      const _children = snapshot.nodeType === BlockNodeType.editable ? snapshot.children : snapshot.children.map(childSnapshot => childSnapshot.id)
+      const yBlock = native2YBlock({...snapshot, children: _children} as NativeBlockModel)
+      yBlockMap.set(snapshot.id, yBlock)
+      if (snapshot.nodeType !== BlockNodeType.editable && snapshot.children.length) {
+        snapshot.children.forEach(childSnapshot => snapshot2YBlock(childSnapshot))
+      }
+    }
+    snapshot2YBlock(json!)
+
+    const doc1Vc = encodeStateAsUpdate(doc1)
+    const doc2Vc = encodeStateAsUpdate(this.editor.doc.yDoc)
+
+    // ;(this.editor.doc.root.firstChildren?.yBlock.get('children') as Y.Text).insert(0, 'hello world')
+
+    const stateVc1 = encodeStateVectorFromUpdate(doc1Vc)
+    const stateVc2 = encodeStateVectorFromUpdate(doc2Vc)
+
+    const diff = Y.encodeStateAsUpdate(doc1, stateVc2)
+
+    console.log(yBlockMap, doc1.toJSON())
+
+    Y.applyUpdate(this.editor.doc.yDoc, diff)
+
+    // Y.applyUpdate(doc1, doc2Vc)
+
+
   }
 }

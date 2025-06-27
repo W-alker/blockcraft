@@ -4,12 +4,6 @@ import {ComponentRef, Type} from "@angular/core";
 import {FloatTextToolbarComponent} from "./widgets/toolbar.component";
 import {ConnectedPosition, OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
-import {CommentPad} from "./widgets/comment-pad";
-
-export interface IToolbarConfig {
-  withComment?: boolean
-  commentComponent?: Type<CommentPad>
-}
 
 export class FloatTextToolbarPlugin extends DocPlugin {
   override name = "float-text-toolbar";
@@ -28,7 +22,6 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   }
 
   constructor(
-    private config: IToolbarConfig = {}
   ) {
     super();
   }
@@ -64,7 +57,6 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
     this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(this.doc.selection.value!)
     this._cpr.setInput('doc', this.doc)
-    this._cpr.setInput('config', this.config)
     this._cpr.setInput('utils', this.utils)
     this._cpr.setInput('activeAttrs', this.activeCommonAttrs.attrs)
     this._cpr.setInput('activeColors', this.activeCommonAttrs.colors)

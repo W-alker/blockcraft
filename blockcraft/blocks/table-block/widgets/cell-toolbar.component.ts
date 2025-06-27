@@ -283,11 +283,11 @@ export class CellToolbarComponent {
 
         sliceIds.forEach(id => {
           const cell = this.doc.getBlockById(id) as TableCellBlockComponent
-          if (cell.props.display === 'none' && cell.props.mergedBy === firstCell.id) return
+          if (cell.props.display === 'none') return
           if (cell.hasContent) {
             this.doc.crud.moveBlocks(cell.id, 0, cell.childrenLength, firstCell.id, firstCell.childrenLength)
           }
-          cell.updateProps({display: 'none', mergedBy: firstCell.id})
+          cell.updateProps({display: 'none'})
         })
       }
 
@@ -316,7 +316,7 @@ export class CellToolbarComponent {
             const p = this.doc.schemas.createSnapshot('paragraph', [])
             this.doc.crud.insertBlocks(cellBlock.id, 0, [p])
           }
-          cellBlock.updateProps({colspan: null, rowspan: null, mergedBy: undefined, display: null})
+          cellBlock.updateProps({colspan: null, rowspan: null, display: null})
 
           this.table.selectCell(cellBlock)
         }

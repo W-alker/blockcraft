@@ -1,5 +1,5 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
-import {BaseBlockComponent, ORIGIN_SKIP_SYNC} from "../../framework";
+import {BaseBlockComponent} from "../../framework";
 import {TableCellBlockModel} from "./index";
 
 @Component({
@@ -25,11 +25,9 @@ export class TableCellBlockComponent extends BaseBlockComponent<TableCellBlockMo
 
   async clearContent() {
     if (this.props.display === 'none' || !this.hasContent) return
-    // this.doc.crud.transact(async () => {
-      const np = this.doc.schemas.createSnapshot('paragraph', [])
-      await this.doc.crud.insertBlocks(this.id, 0, [np])
-      this.doc.crud.deleteBlocks(this.id, 1, this.childrenLength)
-    // }, ORIGIN_SKIP_SYNC)
+    const np = this.doc.schemas.createSnapshot('paragraph', [])
+    this.doc.crud.insertBlocks(this.id, 0, [np])
+    this.doc.crud.deleteBlocks(this.id, 1, this.childrenLength)
   }
 
   get hasContent() {

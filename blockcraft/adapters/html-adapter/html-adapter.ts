@@ -41,9 +41,9 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
     console.log('----------------html ast', html)
 
     if (html.type === 'root') {
-      const children = html.children[0]
-      if (children.type === 'element' && children.tagName === 'html' && children.properties && children.properties[SIGN_BLOCK_CRAFT_JSON]) {
-        const json = JSON.parse(children.properties[SIGN_BLOCK_CRAFT_JSON] as string)
+      const htmlNode = html.children.find(node => node.type === 'element' && node.tagName === 'html')
+      if (htmlNode && htmlNode.type === 'element' && htmlNode.properties && htmlNode.properties[SIGN_BLOCK_CRAFT_JSON]) {
+        const json = JSON.parse(htmlNode.properties[SIGN_BLOCK_CRAFT_JSON] as string)
         // TODO 验证数据完整性
         return json
       }

@@ -5,7 +5,7 @@ import {
   InlineModel,
   native2YBlock,
   NativeBlockModel,
-  YBlock
+  YBlock, yBlock2Native
 } from "../block-std";
 import * as Y from "yjs";
 import {BlockCraftError, ErrorCode, nextTick} from "../../global";
@@ -115,7 +115,7 @@ export class DocCRUD {
     return this.yDoc.transact(fn, origin)
   }
 
-  private _syncYEvent = async (event: Y.YEvent<any>[], tr: Y.Transaction) => {
+  private _syncYEvent = async (events: Y.YEvent<any>[], tr: Y.Transaction) => {
     // local change with skip
     const isUndoRedo = tr.origin instanceof Y.UndoManager
 
@@ -125,8 +125,11 @@ export class DocCRUD {
     const propsChanges: IPropsChangeEvent['transactions'] = []
 
     const delay_childrenEvent_handlers: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][] = []
+
+    console.log('%cYEvent', 'background: #444;', events)
+
     // sync to model
-    event.forEach(ev => {
+    events.forEach(ev => {
       const {path, changes, target} = ev
 
       // at top level, it`s mean that block is created or deleted
@@ -137,10 +140,12 @@ export class DocCRUD {
             deleted.push(key)
           }
 
+          // 重新设置yBlock，因为之前的被替换了
           const v = this.vm.get(key)
           const yBlock = this.getYBlock(key)
           if (v && yBlock) {
             v.setInput('yBlock', yBlock)
+            v.setInput('model', yBlock2Native(yBlock))
           }
         })
 
@@ -238,6 +243,8 @@ export class DocCRUD {
                                              deleted: string[],
                                              events: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][],
                                              isUndoRedo = false) => {
+    console.log('--------events', events)
+
     const emitEvents: IChildrenChangeEvent = {isUndoRedo, transactions: []}
 
     const childComps = await this.vm.createComponentByYBlocks(added)
@@ -302,19 +309,18 @@ export class DocCRUD {
     }
 
     this.transact(() => {
-        const snapshot2YBlock = (snapshot: IBlockSnapshot) => {
-          const _children = snapshot.nodeType === BlockNodeType.editable ? snapshot.children : snapshot.children.map(childSnapshot => childSnapshot.id)
-          const yBlock = native2YBlock({...snapshot, children: _children} as NativeBlockModel)
-          this.yBlockMap.set(snapshot.id, yBlock)
-          if (snapshot.nodeType !== BlockNodeType.editable && snapshot.children.length) {
-            snapshot.children.forEach(childSnapshot => snapshot2YBlock(childSnapshot))
-          }
+      const snapshot2YBlock = (snapshot: IBlockSnapshot) => {
+        const _children = snapshot.nodeType === BlockNodeType.editable ? snapshot.children : snapshot.children.map(childSnapshot => childSnapshot.id)
+        const yBlock = native2YBlock({...snapshot, children: _children} as NativeBlockModel)
+        this.yBlockMap.set(snapshot.id, yBlock)
+        if (snapshot.nodeType !== BlockNodeType.editable && snapshot.children.length) {
+          snapshot.children.forEach(childSnapshot => snapshot2YBlock(childSnapshot))
         }
-        snapshots.forEach(snapshot => snapshot2YBlock(snapshot))
+      }
+      snapshots.forEach(snapshot => snapshot2YBlock(snapshot))
 
-        ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, snapshots.map(v => v.id))
-      },
-    )
+      ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, snapshots.map(v => v.id))
+    })
 
     return new Promise((resolve => {
       const sub = this.onChildrenUpdate$.subscribe(v => {
@@ -361,25 +367,10 @@ export class DocCRUD {
       count = parentComp.instance.childrenLength - index
     }
     this.transact(() => {
-        const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
-          // this.vm.remove(parentComp, index, count)
-          // this.vm.detach(sliceIds)
-        ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).delete(index, count)
-        sliceIds.forEach(id => this.yBlockMap.delete(id))
-        // emit
-        // this.onChildrenUpdate$.next({
-        //   isUndoRedo: false,
-        //   transactions: [{
-        //     block: parentComp.instance,
-        //     deleted: [{
-        //       index,
-        //       length: count
-        //     }],
-        //   }]
-        // })
-      },
-      // ORIGIN_SKIP_SYNC
-    )
+      const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
+      ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).delete(index, count)
+      sliceIds.forEach(id => this.yBlockMap.delete(id))
+    })
     return new Promise((resolve => {
       const sub = this.onChildrenUpdate$.subscribe(v => {
         const deleted = v.transactions.find(v => v.block.id === parentComp.instance.id)?.deleted
