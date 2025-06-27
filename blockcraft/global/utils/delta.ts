@@ -1,12 +1,12 @@
 import {DeltaInsert, IInlineNodeAttrs} from "../../framework";
 
 // 将DeltaInsert[]根据其中的\n拆分成多个DeltaInsert[]
-export const splitDeltaByLineBreak = (delta: DeltaInsert[]): DeltaInsert[][] => {
+export const splitDeltaByLineBreak = (delta: DeltaInsert[], str_break = '\n'): DeltaInsert[][] => {
   const result: DeltaInsert[][] = [];
   let currentParagraph: DeltaInsert[] = [];
 
   for (const op of delta) {
-    const { insert, attributes } = op;
+    const {insert, attributes} = op;
 
     if (typeof insert !== 'string') {
       // embed 类型：直接加入当前段落
@@ -14,19 +14,19 @@ export const splitDeltaByLineBreak = (delta: DeltaInsert[]): DeltaInsert[][] => 
       continue;
     }
 
-    const lines = insert.split('\n');
+    const lines = insert.split(str_break);
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const isLast = i === lines.length - 1;
 
       if (line.length > 0) {
-        currentParagraph.push({ insert: line, attributes });
+        currentParagraph.push({insert: line, attributes});
       }
 
       if (!isLast) {
         // \n 代表段落结束（可以选择保留它或省略）
-        currentParagraph.push({ insert: '\n', attributes });
+        currentParagraph.push({insert: str_break, attributes});
         result.push(currentParagraph);
         currentParagraph = [];
       }
@@ -141,19 +141,50 @@ const isAttrsContain = (attrs: Record<string, any>, attrs2: Record<string, any>)
   return true
 }
 
-export const getFirstSameAttrsTextRange = (delta: DeltaInsert[], attrs: IInlineNodeAttrs): [number, number] => {
-  let start = -1
-  let end = -1
+export function getSameAttributeRange(delta: DeltaInsert[], index: number, targetAttr: any): [number, number] {
+  let pos = 0;
+  let start = index;
+  let end = index;
 
-  let cnt = 0
+  // 一轮扫描，找到包含该 index 的 op 以及其属性
   for (let i = 0; i < delta.length; i++) {
-    const deltaItem = delta[i]
-    const deltaLength = typeof deltaItem.insert === 'string' ? deltaItem.insert.length : 1
-    if (deltaItem.attributes && isAttrsContain(deltaItem.attributes, attrs)) {
-      if (start === -1) start = cnt
-      end = cnt + deltaLength
+    const op = delta[i];
+    const text = typeof op.insert === 'string' ? op.insert : '';
+    const length = text.length;
+
+    if (index >= pos && index < pos + length) {
+      const attr = op.attributes || {};
+      if (!isAttrsContain(attr, targetAttr)) return [index, index]; // 属性不一致
+      start = pos;
+      end = pos + length;
+
+      // 向前合并
+      for (let j = i - 1; j >= 0; j--) {
+        const prev = delta[j];
+        const prevText = typeof prev.insert === 'string' ? prev.insert : '';
+        if (isAttrsContain(prev.attributes || {}, targetAttr)) {
+          start -= prevText.length;
+        } else {
+          break;
+        }
+      }
+
+      // 向后合并
+      for (let j = i + 1; j < delta.length; j++) {
+        const next = delta[j];
+        const nextText = typeof next.insert === 'string' ? next.insert : '';
+        if (isAttrsContain(next.attributes || {}, targetAttr)) {
+          end += nextText.length;
+        } else {
+          break;
+        }
+      }
+
+      break;
     }
-    cnt += deltaLength
+
+    pos += length;
   }
-  return [start, end]
+
+  return [start, end];
 }

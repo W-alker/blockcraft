@@ -91,8 +91,8 @@ export const native2YBlock = <T extends NativeBlockModel = NativeBlockModel>(nat
     yChildren.insert(0, native.children)
   }
 
-  const yProps = new Y.Map(Object.entries(native.props))
-  const yMeta = new Y.Map(Object.entries(native.meta))
+  const yProps = new Y.Map()
+  const yMeta = new Y.Map()
 
   for (let propsKey in native.props) {
     yProps.set(propsKey, native.props[propsKey])

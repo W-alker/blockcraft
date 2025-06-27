@@ -31,7 +31,6 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   protected _native!: Model
 
-  // Model更新，刷新视图
   @Input()
   set model(native: Model) {
     this._native = native
@@ -57,7 +56,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   @Output()
   readonly onPropsChange = new EventEmitter<Map<keyof Model['props'], {
     action: "add" | "update" | "delete",
-    oldValue: Model["props"][keyof Model['props']]
+    oldValue: Partial<Model["props"]>
   }>>();
 
   @HostBinding('style.margin-left')

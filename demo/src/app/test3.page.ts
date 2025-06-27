@@ -90,7 +90,6 @@ export class Test3Page {
     const doc1Vc = encodeStateAsUpdate(doc1)
     const doc2Vc = encodeStateAsUpdate(this.editor.doc.yDoc)
 
-    // ;(this.editor.doc.root.firstChildren?.yBlock.get('children') as Y.Text).insert(0, 'hello world')
 
     const stateVc1 = encodeStateVectorFromUpdate(doc1Vc)
     const stateVc2 = encodeStateVectorFromUpdate(doc2Vc)
@@ -98,6 +97,7 @@ export class Test3Page {
     const diff = Y.encodeStateAsUpdate(doc1, stateVc2)
 
     console.log(yBlockMap, doc1.toJSON())
+    // ;(this.editor.doc.root.firstChildren?.yBlock.get('children') as Y.Text).insert(0, 'hello world')
 
     Y.applyUpdate(this.editor.doc.yDoc, diff)
 

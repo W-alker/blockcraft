@@ -6,7 +6,7 @@ import {
 } from "../../framework";
 import {Subject, takeUntil} from "rxjs";
 import {InlineLinkToolbar} from "./widgets/inline-link-toolbar";
-import {getFirstSameAttrsTextRange, nextTick, sliceDelta} from "../../global";
+import {getSameAttributeRange, nextTick, sliceDelta} from "../../global";
 import {UIEventStateContext, IBlockSnapshot} from "../../framework";
 import {ComponentRef} from "@angular/core";
 import {LinkEditFloatDialog} from "./widgets/link-edit-dialog";
@@ -36,13 +36,14 @@ export class InlineLinkExtension extends DocPlugin {
     })
   }
 
-  @EventListen('doubleClick')
+  @EventListen('doubleClick', {flavour: "root"})
   onDoubleClick(ctx: UIEventStateContext) {
     const target = ctx.getDefaultEvent().target as Node | null
     if (!target) return
     const link = this.tryGetLink(target)
     if (!link) return
     this.openLink(link)
+    return true
   }
 
   @EventListen('mouseDown')
@@ -59,19 +60,8 @@ export class InlineLinkExtension extends DocPlugin {
     const block = this.doc.getBlockById(bid)
     if (!this.doc.isEditable(block)) return;
 
-    const sameLinkRange = getFirstSameAttrsTextRange(block.textDeltas(), {'a:link': link})
-    this._anchorTextRange = {
-      blockId: block.id,
-      start: sameLinkRange[0],
-      end: sameLinkRange[1]
-    }
-    this._linkInfo = {
-      text: block.textContent().slice(sameLinkRange[0], sameLinkRange[1]),
-      link
-    }
-
     this._timer = setTimeout(() => {
-      this.openToolbar(target as HTMLElement)
+      this.openToolbar(target as HTMLElement, link)
     }, 200)
     return true
   }
@@ -89,8 +79,29 @@ export class InlineLinkExtension extends DocPlugin {
     return range.index > this._anchorTextRange.start && (range.index + range.length) < this._anchorTextRange.end
   }
 
-  openToolbar(target: HTMLElement) {
+  // TODO important!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  openToolbar(target: HTMLElement, link: string) {
     if (this._cpr) return
+
+    const curSel = this.doc.selection.value
+    if (!curSel || !curSel.collapsed || curSel.from.type !== 'text') return
+    const {index, block} = curSel.from
+    const node = curSel.raw.startContainer instanceof HTMLElement ? curSel.raw.startContainer : curSel.raw.startContainer.parentElement
+    if (!node) return
+
+    // 寻找附近相同link的节点
+    const sameLinkRange = getSameAttributeRange(block.textDeltas(), index, {'a:link': link})
+
+    this._anchorTextRange = {
+      blockId: block.id,
+      start: sameLinkRange[0],
+      end: sameLinkRange[1]
+    }
+    this._linkInfo = {
+      text: block.textContent().slice(sameLinkRange[0], sameLinkRange[1]),
+      link
+    }
 
     this._cpr = this.doc.overlayService.createConnectedOverlay<InlineLinkToolbar>({
       target,
@@ -237,3 +248,17 @@ export class InlineLinkExtension extends DocPlugin {
   destroy() {
   }
 }
+
+//
+// const searchSameLinkElementRange = (link: string, standardElement: HTMLElement) => {
+//   let start: HTMLElement = standardElement
+//   let end: HTMLElement = standardElement
+//
+//   while (start.previousElementSibling && start.previousElementSibling.getAttribute('link') === link) {
+//     start = start.previousElementSibling as HTMLElement
+//   }
+//   while (end.nextElementSibling && end.nextElementSibling.getAttribute('link') === link) {
+//     end = end.nextElementSibling as HTMLElement
+//   }
+//   return [start, end]
+// }
