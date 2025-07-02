@@ -30,6 +30,7 @@ export class ClipboardManager {
   }
 
   copyBlocksModel = (snapshots: IBlockSnapshot[]): Promise<void> => {
+    console.log('snapshots', snapshots)
     if (!snapshots?.length) return Promise.reject('no blocks to copy')
     const rootSnapshot = this._wrapSnapshotsByRoot(snapshots)
     return copyBlocks.call(this, rootSnapshot)

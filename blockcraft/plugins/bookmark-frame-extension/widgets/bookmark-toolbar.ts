@@ -81,7 +81,8 @@ export class BookmarkBlockToolbar {
       case 'embed':
         if (!this.embedType) return
         const blockParent = this.block.parentBlock!
-        if (!this.doc.schemas.isValidChildren(blockParent.flavour, this.embedType)) {
+        console.log(blockParent)
+        if (!this.doc.schemas.isValidChildren(this.embedType, blockParent.flavour)) {
           this.doc.messageService.warn(`当前位置无法插入嵌入视图`)
           return
         }

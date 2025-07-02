@@ -1,12 +1,12 @@
 import {
   closetBlockId,
   DocPlugin,
-  EventListen, FakeRange, getPositionWithOffset, IBlockRange,
-  INLINE_TEXT_NODE_TAG, ORIGIN_SKIP_SYNC
+  EventListen, FakeRange, getPositionWithOffset,
+  INLINE_TEXT_NODE_TAG,
 } from "../../framework";
-import {Subject, takeUntil} from "rxjs";
+import {skip, Subject, takeUntil} from "rxjs";
 import {InlineLinkToolbar} from "./widgets/inline-link-toolbar";
-import {getSameAttributeRange, nextTick, sliceDelta} from "../../global";
+import {nextTick, sliceDelta} from "../../global";
 import {UIEventStateContext, IBlockSnapshot} from "../../framework";
 import {ComponentRef} from "@angular/core";
 import {LinkEditFloatDialog} from "./widgets/link-edit-dialog";
@@ -14,13 +14,10 @@ import {LinkEditFloatDialog} from "./widgets/link-edit-dialog";
 export class InlineLinkExtension extends DocPlugin {
   override name = 'inline-link-extension'
 
-  private _timer: number | null = null
-
   private _cpr: ComponentRef<InlineLinkToolbar> | null = null
   private _closeToolbar$ = new Subject<void>()
 
-  private _linkInfo: { text: string, link: string } | null = null
-  private _anchorTextRange: { blockId: string, start: number, end: number } | null = null
+  private _linkNode: HTMLElement | null = null
 
   constructor(
     private openLink = (link: string) => {
@@ -46,24 +43,17 @@ export class InlineLinkExtension extends DocPlugin {
     return true
   }
 
-  @EventListen('mouseDown')
-  onMouseDown(ctx: UIEventStateContext) {
+  @EventListen('mouseDown', {flavour: "root"})
+  onClick(ctx: UIEventStateContext) {
     const target = ctx.getDefaultEvent().target as Node | null
-    if (!target) return
-
+    if (!target || target === this._linkNode) return
     const link = this.tryGetLink(target)
     if (!link) return
-    if (this._linkInfo?.link === link) return true
 
-    const bid = closetBlockId(target)
-    if (!bid) return
-    const block = this.doc.getBlockById(bid)
-    if (!this.doc.isEditable(block)) return;
+    const blockId = closetBlockId(target)
+    if (!blockId) return
 
-    this._timer = setTimeout(() => {
-      this.openToolbar(target as HTMLElement, link)
-    }, 200)
-    return true
+    this.openToolbar(target as HTMLElement, link, this.doc.getBlockById(blockId))
   }
 
   tryGetLink(target: Node) {
@@ -73,35 +63,23 @@ export class InlineLinkExtension extends DocPlugin {
     return link
   }
 
-  isInRange(range: IBlockRange) {
-    if (!this._anchorTextRange) return false
-    if (range.blockId !== this._anchorTextRange.blockId || range.type !== 'text') return false
-    return range.index > this._anchorTextRange.start && (range.index + range.length) < this._anchorTextRange.end
+  getLinkInfo(target: HTMLElement) {
+    const nodeRange = adjustRangeByLinkNode(target)
+    const range = document.createRange()
+    range.setStartBefore(nodeRange.start)
+    range.setEndAfter(nodeRange.end)
+    const normalizedRange = this.doc.selection.normalizeRange(range)
+    const text = range.toString()
+    range.detach()
+    return {
+      textRange: normalizedRange,
+      text
+    }
   }
 
-  // TODO important!!!!!!!!!!!!!!!!!!!!!!!!!
-
-  openToolbar(target: HTMLElement, link: string) {
-    if (this._cpr) return
-
-    const curSel = this.doc.selection.value
-    if (!curSel || !curSel.collapsed || curSel.from.type !== 'text') return
-    const {index, block} = curSel.from
-    const node = curSel.raw.startContainer instanceof HTMLElement ? curSel.raw.startContainer : curSel.raw.startContainer.parentElement
-    if (!node) return
-
-    // 寻找附近相同link的节点
-    const sameLinkRange = getSameAttributeRange(block.textDeltas(), index, {'a:link': link})
-
-    this._anchorTextRange = {
-      blockId: block.id,
-      start: sameLinkRange[0],
-      end: sameLinkRange[1]
-    }
-    this._linkInfo = {
-      text: block.textContent().slice(sameLinkRange[0], sameLinkRange[1]),
-      link
-    }
+  openToolbar(target: HTMLElement, link: string, block: BlockCraft.BlockComponent) {
+    if (this._cpr || !this.doc.isEditable(block)) return
+    this._linkNode = target
 
     this._cpr = this.doc.overlayService.createConnectedOverlay<InlineLinkToolbar>({
       target,
@@ -109,28 +87,30 @@ export class InlineLinkExtension extends DocPlugin {
       backdrop: true
     }, this._closeToolbar$, this.closeToolbar).componentRef
 
-    this._cpr.setInput('link', this._linkInfo?.link ?? '')
-    this._cpr.setInput('isReadOnly', this.doc.isReadonly)
+    this._cpr.setInput('doc', this.doc)
+    this._cpr.setInput('link', link ?? '')
 
     this._cpr.instance.itemClicked.pipe(takeUntil(this._closeToolbar$)).subscribe(item => {
-      if (!this._anchorTextRange || !this._linkInfo) return this.closeToolbar()
 
       switch (item.name) {
-        case 'open-link':
-          this.openLink(this._linkInfo.link)
+        case 'open-link': {
+          const link = this.tryGetLink(target)
+          link && this.openLink(link)
+        }
           break
         case 'edit-link':
-          this.onEditLink(target, {...this._linkInfo}, {...this._anchorTextRange})
+          this.onEditLink(target, block)
           this.closeToolbar()
           break
-        case 'unbind-link':
-          const block = this.doc.getBlockById(this._anchorTextRange.blockId, () => this.closeToolbar())
-          if (!this.doc.isEditable(block)) return this.closeToolbar()
-          block.formatText(this._anchorTextRange.start, this._anchorTextRange.end - this._anchorTextRange.start, {'a:link': null})
+        case 'unbind-link': {
+          const range = this.getLinkInfo(target).textRange
+          if (range.from.type !== 'text' || range.from.block !== block) return;
+          block.formatText(range.from.index, range.from.length, {'a:link': null})
           this.closeToolbar()
+        }
           break
         case 'copy-link':
-          this.doc.clipboard.copyText(this._linkInfo.link).then(() => {
+          this.doc.clipboard.copyText(link).then(() => {
             this.doc.messageService.success('链接已复制')
           })
           return
@@ -143,34 +123,35 @@ export class InlineLinkExtension extends DocPlugin {
       }
     })
 
-    this.doc.selection.selectionChange$.pipe(takeUntil(this._closeToolbar$)).subscribe(sel => {
-      if (!sel || sel.to || !sel.collapsed || sel.from.type !== 'text' ||
-        (this._anchorTextRange && !this.isInRange(sel.from))) {
+    this.doc.selection.selectionChange$.pipe(skip(1), takeUntil(this._closeToolbar$)).subscribe(sel => {
+      if (!sel || sel.to || !sel.collapsed || sel.from.type !== 'text' || !this._linkNode?.contains(sel.raw.startContainer)) {
         this._closeToolbar$.next()
         return
       }
     })
-  }
 
-  clearTimer() {
-    if (this._timer) {
-      clearTimeout(this._timer)
-      this._timer = null
-    }
   }
 
   closeToolbar = () => {
-    this.clearTimer()
     this._closeToolbar$.next()
-    this._anchorTextRange = this._linkInfo = this._cpr = null
+    this._linkNode = this._cpr = null
   }
 
-  onEditLink(target: HTMLElement, linkInfo: typeof this._linkInfo, range: typeof this._anchorTextRange) {
-    if (!linkInfo || !range) return
-
+  onEditLink(target: HTMLElement, block: BlockCraft.BlockComponent) {
+    if (!this.doc.isEditable(block)) return
     const close$ = new Subject<void>()
 
     let fakeRange: FakeRange
+
+    const setFakeRange = () => {
+      nextTick().then(() => {
+        fakeRange?.destroy()
+        const _range = this.getLinkInfo(target).textRange
+        fakeRange = this.doc.selection.createFakeRange(_range)
+      })
+    }
+
+    const linkInfo = this.getLinkInfo(target)
 
     const {componentRef} = this.doc.overlayService.createConnectedOverlay<LinkEditFloatDialog>({
       target: target,
@@ -181,84 +162,91 @@ export class InlineLinkExtension extends DocPlugin {
       ],
       backdrop: true
     }, close$, () => {
+      block.yText.unobserve(setFakeRange)
       close$.next()
       fakeRange?.destroy()
-      nextTick().then(() => {
-        this.doc.selection.setSelection({
-          index: range.end,
-          length: 0,
-          blockId: range.blockId,
-          type: 'text'
-        })
-      })
     })
 
-    // componentRef.setInput('text', this._linkInfo?.text)
-    componentRef.setInput('href', linkInfo?.link)
+    componentRef.setInput('text', linkInfo.text)
+    componentRef.setInput('href', this.tryGetLink(target))
 
     // 伪造选中
     requestAnimationFrame(() => {
       componentRef.instance.focus()
-      fakeRange = this.doc.selection.createFakeRange({
-        from: {
-          index: range.start,
-          length: range.end - range.start,
-          blockId: range.blockId,
-          type: 'text'
-        },
-        to: null,
-        collapsed: false,
-        commonParent: range.blockId
-      })
+      setFakeRange()
     })
+
+    block.yText.observe(setFakeRange)
 
     componentRef.instance.close.pipe(takeUntil(close$)).subscribe(() => close$.next())
     componentRef.instance.update.pipe(takeUntil(close$)).subscribe(v => {
       close$.next()
-      if (!range || !linkInfo) return
-      const block = this.doc.getBlockById(range.blockId)
-      if (!this.doc.isEditable(block)) return
-      if (v.href !== linkInfo.link) {
-        block.formatText(range.start, range.end - range.start, {'a:link': v.href})
+      const {textRange, text} = this.getLinkInfo(target)
+      const link = this.tryGetLink(target)
+      if (textRange.from.type !== 'text') return
+      if (text !== v.text) {
+        textRange.from.block.replaceText(textRange.from.index, textRange.from.length, v.text, {'a:link': v.href})
+      } else if (link !== v.href) {
+        textRange.from.block.formatText(textRange.from.index, textRange.from.length, {'a:link': v.href})
       }
+      textRange.from.block.setInlineRange(textRange.from.index, v.text.length)
     })
   }
 
   switchView() {
-    if (!this._linkInfo || !this._anchorTextRange) return
-    const block = this.doc.getBlockById(this._anchorTextRange.blockId)
-    if (!this.doc.isEditable(block)) return this.closeToolbar()
+    if (!this._linkNode) return
+    const link = this.tryGetLink(this._linkNode)
+    if (!link) return
 
-    const bookmark = this.doc.schemas.createSnapshot('bookmark', [this._linkInfo.link])
+    const _range = this.getLinkInfo(this._linkNode).textRange
+    if (_range.from.type !== 'text') return
+    const {block, index, length} = _range.from
+
+    const bookmark = this.doc.schemas.createSnapshot('bookmark', [link])
     const insertBlocks: IBlockSnapshot[] = [bookmark]
 
-    if (this._anchorTextRange.end < block.textLength) {
-      const splitRightDeltas = sliceDelta(block.textDeltas(), this._anchorTextRange.end)
+    if (index + length < block.textLength) {
+      const splitRightDeltas = sliceDelta(block.textDeltas(), index + length)
       insertBlocks.push(this.doc.schemas.createSnapshot(block.flavour, [splitRightDeltas, block.props]))
     }
 
-    // this.doc.crud.transact(() => {
-    block.deleteText(this._anchorTextRange!.start, block.textLength - this._anchorTextRange!.start)
-    this.doc.crud.insertBlocksAfter(block, insertBlocks).then(() => {
-      this.doc.selection.selectBlock(bookmark.id)
+    this.doc.crud.transact(() => {
+      block.deleteText(index, block.textLength - index)
+      this.doc.crud.insertBlocksAfter(block, insertBlocks).then(() => {
+        this.doc.selection.selectBlock(bookmark.id)
+      })
     })
-    // }, ORIGIN_SKIP_SYNC)
   }
 
   destroy() {
   }
 }
 
-//
-// const searchSameLinkElementRange = (link: string, standardElement: HTMLElement) => {
-//   let start: HTMLElement = standardElement
-//   let end: HTMLElement = standardElement
-//
-//   while (start.previousElementSibling && start.previousElementSibling.getAttribute('link') === link) {
-//     start = start.previousElementSibling as HTMLElement
-//   }
-//   while (end.nextElementSibling && end.nextElementSibling.getAttribute('link') === link) {
-//     end = end.nextElementSibling as HTMLElement
-//   }
-//   return [start, end]
-// }
+const adjustRangeByLinkNode = (node: HTMLElement) => {
+  node.localName === INLINE_TEXT_NODE_TAG && (node = node.parentElement!)
+
+  let start = node
+  let end = node
+
+  const link = node.getAttribute('link')
+
+  while (start.previousElementSibling) {
+    if (start.previousElementSibling.getAttribute('link') === link) {
+      start = start.previousElementSibling as HTMLElement
+      continue
+    }
+    break
+  }
+
+  while (end.nextElementSibling) {
+    if (end.nextElementSibling.getAttribute('link') === link) {
+      end = end.nextElementSibling as HTMLElement
+      continue
+    }
+    break
+  }
+  return {
+    start,
+    end
+  }
+}

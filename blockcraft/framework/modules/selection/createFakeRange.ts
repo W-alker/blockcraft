@@ -12,7 +12,7 @@ export class FakeRange {
 
   private _fakeSpans: HTMLElement[] = []
 
-  constructor(private readonly doc: BlockCraft.Doc, private readonly json: IBlockSelectionJSON, private readonly config: IFakeRangeConfig = {}) {
+  constructor(private readonly doc: BlockCraft.Doc, private readonly json: Pick<IBlockSelectionJSON, 'from' | 'to'>, private readonly config: IFakeRangeConfig = {}) {
     const {from, to} = json
     const fromBlock = this.doc.getBlockById(from.blockId)
     this._fakeSpans.push(from.type === 'selected' ? this._createBlockFakeSpan(fromBlock) : this._createTextFakeSpan(fromBlock, from.index, from.length))

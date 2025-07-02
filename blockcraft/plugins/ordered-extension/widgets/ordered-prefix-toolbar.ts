@@ -65,7 +65,7 @@ export class OrderedPrefixToolbar {
   }
 
   checkMode() {
-    this.activeMode = typeof this.orderedBlock.props.start === 'number' ? 'reset' : 'continue'
+    this.activeMode = this.orderedBlock.props.start ? 'reset' : 'continue'
     this.cdr.markForCheck()
   }
 
@@ -83,7 +83,7 @@ export class OrderedPrefixToolbar {
         break
       case 'continue':
         this.orderedBlock.updateProps({
-          start: null
+          start: 0
         })
         break
     }

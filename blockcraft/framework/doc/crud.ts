@@ -126,8 +126,6 @@ export class DocCRUD {
 
     const delay_childrenEvent_handlers: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][] = []
 
-    console.log('%cYEvent', 'background: #444;', events)
-
     // sync to model
     events.forEach(ev => {
       const {path, changes, target} = ev
@@ -243,8 +241,6 @@ export class DocCRUD {
                                              deleted: string[],
                                              events: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][],
                                              isUndoRedo = false) => {
-    console.log('--------events', events)
-
     const emitEvents: IChildrenChangeEvent = {isUndoRedo, transactions: []}
 
     const childComps = await this.vm.createComponentByYBlocks(added)

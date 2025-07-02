@@ -1,5 +1,5 @@
 import {ChangeDetectionStrategy, Component, HostListener} from "@angular/core";
-import {BaseBlockComponent, closetBlockId} from "../../framework";
+import {BaseBlockComponent, closetBlockId, UIEventStateContext} from "../../framework";
 import {RootBlockModel} from "./index";
 import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
 import {BlockNodeType} from "../../framework";
@@ -28,8 +28,20 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
   private selecting$ = new BehaviorSubject<'end' | 'start' | 'moving'>("end")
   private selectingBlock: BlockCraft.BlockComponent | null = null
 
-  @HostListener('selectstart', ['$event'])
-  onSelectstart(event: Event) {
+  override ngAfterViewInit() {
+    super.ngAfterViewInit();
+
+    this.doc.readonlySwitch$.pipe(takeUntil(this.onDestroy$)).subscribe(v => {
+      this.hostElement.setAttribute('contenteditable', v ? 'false' : 'true')
+      v ? this.hostElement.classList.add('readonly') : this.hostElement.classList.remove('readonly')
+    })
+
+    this.doc.event.add('selectStart', this.onSelectstart)
+    this.doc.event.add('selectEnd', this.onSelectEnd)
+  }
+
+  onSelectstart = (ctx: UIEventStateContext) => {
+    const event = ctx.getDefaultEvent<Event>()
     const id = closetBlockId(event.target as HTMLElement)
     if (!id) return
     const selectStartBlock = this.doc.getBlockById(id)
@@ -41,6 +53,7 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
 
       if (block.nodeType !== BlockNodeType.root) {
         fromEvent(block.hostElement, 'pointerleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1)))).subscribe(e => {
+          block.hostElement.classList.remove('selecting')
           document.getSelection()!.selectAllChildren(block.hostElement)
           const parentBlock = block.parentBlock!
           leaveListen(parentBlock)
@@ -58,29 +71,11 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
       })
   }
 
-  @HostListener('document:pointerup', ['$event'])
-  onSelectEnd(event: MouseEvent) {
+  onSelectEnd = ()  => {
     this.selecting$.next('end')
     if (!this.selectingBlock) return
     this.selectingBlock.hostElement.classList.remove('selecting')
     this.selectingBlock = null
-  }
-
-  override ngAfterViewInit() {
-    super.ngAfterViewInit();
-
-    this.doc.readonlySwitch$.pipe(takeUntil(this.onDestroy$)).subscribe(v => {
-      this.hostElement.setAttribute('contenteditable', v ? 'false' : 'true')
-      v ? this.hostElement.classList.add('readonly') : this.hostElement.classList.remove('readonly')
-    })
-
-    this.doc.event.add('keyDown', ctx => {
-      if (!this.selectingBlock) return
-      const evt = ctx.getDefaultEvent<KeyboardEvent>()
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(evt.key)) {
-        this.selectingBlock.hostElement.classList.remove('selecting')
-      }
-    }, {flavour: "root"})
   }
 
 }

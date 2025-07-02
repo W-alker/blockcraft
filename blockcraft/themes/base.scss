@@ -72,11 +72,11 @@
     }
   }
 
-  &.all-selected {
-    [data-block-id].selected {
-      -webkit-user-modify: read-only !important;
-    }
-  }
+  //&.all-selected {
+  //  [data-block-id].selected {
+  //    -webkit-user-modify: read-only !important;
+  //  }
+  //}
 
   ::selection {
     background-color: var(--bc-select-background-color);
@@ -94,7 +94,8 @@
     }
 
     &.selected {
-      //-webkit-user-modify: read-only;
+      @include user-modify(read-only);
+
       background-color: var(--bc-select-background-color);
       transition: background-color 0.15s ease-in-out;
 

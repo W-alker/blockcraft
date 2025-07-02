@@ -22,7 +22,8 @@ export class SelectionControl {
 
     } else if (this._mouseDown) {
       // 鼠标滑动选择
-      document.body.addEventListener('mouseup', e => {
+      document.body.addEventListener('pointerup', e => {
+        if (e.pointerType !== 'mouse') return;
         this._isSelecting = false;
         this._dispatcher.run('selectEnd', this._buildContext(e))
       }, {once: true})
@@ -37,7 +38,11 @@ export class SelectionControl {
   }
 
   listen(root: BlockCraft.IBlockComponents['root']) {
-    fromEvent<MouseEvent>(root.hostElement, 'selectstart').pipe(takeUntil(root.onDestroy$)).subscribe(this.onSelectstart);
+    fromEvent<MouseEvent>(root.hostElement, 'selectstart').pipe(takeUntil(root.onDestroy$)).subscribe(e => {
+      this._dispatcher.doc.selection.afterNextChange(() => {
+        this.onSelectstart(e)
+      })
+    });
     fromEvent<KeyboardEvent>(root.hostElement, 'keydown').pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       if (evt.shiftKey) {
         this._shiftKeyPressing = true;
@@ -53,7 +58,8 @@ export class SelectionControl {
         }
       }
     })
-    fromEvent<MouseEvent>(root.hostElement, 'mousedown').pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+    fromEvent<PointerEvent>(root.hostElement, 'pointerdown').pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+      if (evt.pointerType !== 'mouse') return;
       if (evt.button === 0) this._mouseDown = true;
     })
   }

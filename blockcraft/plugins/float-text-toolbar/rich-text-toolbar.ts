@@ -1,4 +1,4 @@
-import {BindHotKey, BlockNodeType, DocPlugin, POSITION_MAP, UIEventStateContext} from "../../framework";
+import {BindHotKey, BlockNodeType, DocPlugin, EventListen, POSITION_MAP, UIEventStateContext} from "../../framework";
 import {debounceTime, Subject, Subscription, takeUntil} from "rxjs";
 import {ComponentRef, Type} from "@angular/core";
 import {FloatTextToolbarComponent} from "./widgets/toolbar.component";
@@ -29,17 +29,19 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   init() {
     this.utils = new TextToolbarUtils(this.doc)
 
-    this._sub = this.doc.selection.selectionChange$.pipe(debounceTime(500)).subscribe(sel => {
-      if (this.doc.isReadonly || !sel || sel.collapsed || sel.isAllSelected || sel.isEmpty || this.doc.event.status.isSelecting) return
-      if (this.toolbarOvr) this.closeToolbar()
-      // @ts-expect-error
-      if (sel.firstBlock['plainTextOnly'] && sel.lastBlock['plainTextOnly']) return;
-      this.openToolbar()
-    })
-
     this.doc.subscribeReadonlyChange(() => {
       this.toolbarOvr && this.closeToolbar()
     })
+  }
+
+  @EventListen('selectEnd', {flavour: "root"})
+  onSelectedEnd() {
+    const sel = this.doc.selection.value!
+    if (this.doc.isReadonly || !sel || sel.collapsed || sel.isAllSelected || sel.isEmpty) return
+    if (this.toolbarOvr) this.closeToolbar()
+    // @ts-expect-error
+    if (sel.firstBlock['plainTextOnly'] && sel.lastBlock['plainTextOnly']) return;
+    this.openToolbar()
   }
 
   openToolbar() {

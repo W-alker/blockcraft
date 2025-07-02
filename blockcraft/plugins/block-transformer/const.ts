@@ -1,4 +1,4 @@
-import {EditableBlockComponent, HotKeyTrigger, ORIGIN_SKIP_SYNC} from "../../framework";
+import {EditableBlockComponent, HotKeyTrigger, IBlockProps, ORIGIN_SKIP_SYNC} from "../../framework";
 import {sliceDelta} from "../../global";
 
 export interface IBlockTransformConfig {
@@ -45,10 +45,16 @@ export const blockTransforms: IBlockTransformConfig[] = [
     markdown: /^\d+\.\s$/,
     hotkey: {key: ['o', 'O'], shortKey: true, shiftKey: true},
     onConvert: (doc, from, matchedString) => {
-      const props = {
+      // const prevBlock = doc.prevSibling(from)
+      const props: IBlockProps = {
         order: parseInt(matchedString, 10) - 1,
         ...from.props
       }
+      // props.order = prevBlock?.flavour === 'ordered' ? (prevBlock.props['order'] || 0) + 1 : 1
+      // if(!prevBlock || (!prevBlock.props.depth && prevBlock.flavour != 'ordered')) {
+      //   props['start'] = 1
+      // }
+
       const o = doc.schemas.createSnapshot('ordered', [sliceDelta(from.textDeltas(), matchedString.length), props])
       doc.crud.replaceWithSnapshots(from.id, [o]).then(() => {
         doc.selection.selectOrSetCursorAtBlock(o.id, true)

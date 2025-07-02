@@ -103,10 +103,20 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
 
   const aroundOrderBlocks: BaseBlockComponent<OrderedBlockModel>[] = []
 
-  if (typeof block.props.start !== 'number') {
+  aroundOrderBlocks.push(block)
+
+  if (!block.props.start) {
     for (let i = index - 1; i >= 0; i--) {
       const prevBlock = parentChildren[i]
-      if (prevBlock.flavour !== 'ordered') continue
+      if (prevBlock.flavour !== 'ordered') {
+        if ((prevBlock.props.depth || 0) === block.props.depth && typeof aroundOrderBlocks[0].props.start !== 'number') {
+          aroundOrderBlocks[0].updateProps({
+            start: 1
+          })
+          break
+        }
+        continue
+      }
       if ((prevBlock.props.depth || 0) < block.props.depth) {
         break
       }
@@ -117,8 +127,6 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
       }
     }
   }
-
-  aroundOrderBlocks.push(block)
 
   for (let j = index + 1; j < parentChildren.length; j++) {
     const nextBlock = parentChildren[j]
@@ -133,7 +141,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
     }
   }
 
-  let order = typeof aroundOrderBlocks[0].props.start === 'number' ? aroundOrderBlocks[0].props.start - 1 : 0
+  let order = aroundOrderBlocks[0].props.start ? aroundOrderBlocks[0].props.start - 1 : 0
   for (let b of aroundOrderBlocks) {
     if (b.props.order !== order) {
       b.updateProps({order})

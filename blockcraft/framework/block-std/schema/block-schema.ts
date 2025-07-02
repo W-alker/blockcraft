@@ -56,7 +56,8 @@ export const editableBlockCreateSnapShotFn = <M extends NativeBlockModel = Nativ
       nodeType: BlockNodeType.editable,
       props: {
         // @ts-ignore
-        depth: props?.['depth'] || 0, ...defaultProps,
+        depth: props?.['depth'] || 0,
+        ...defaultProps,
         // @ts-ignore
         textAlign: defaultProps?.['textAlign'] || props?.['textAlign'],
         // @ts-ignore

@@ -84,11 +84,11 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     this.yText.delete(index, length)
   }
 
-  replaceText(index: number, length: number, text?: string | null) {
+  replaceText(index: number, length: number, text?: string | null, attributes?: DeltaInsert['attributes']) {
     const delta: DeltaOperation[] = []
     index > 0 && delta.push({retain: index})
     length > 0 && delta.push({delete: length})
-    text && delta.push({insert: text})
+    text && delta.push({insert: text, attributes})
     this.yText.applyDelta(delta)
   }
 

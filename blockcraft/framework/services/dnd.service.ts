@@ -175,8 +175,7 @@ export class DocDndService {
       return
     }
 
-    if (!this.doc.schemas.isValidChildren(block.flavour, this.doc.schemas.get(targetBlock.parentBlock!.flavour)!)) {
-      console.log(block.flavour, targetBlock.parentBlock!.flavour)
+    if (!this.doc.schemas.isValidChildren(block.flavour, targetBlock.parentBlock!.flavour)) {
       this.doc.messageService.warn(`不允许的移动`)
       return
     }
@@ -204,7 +203,7 @@ export class DocDndService {
     const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
     if (!files.length) return
     if (files.length === 1 && files[0].type.startsWith('image/')) {
-      if (!this.doc.schemas.isValidChildren('image', this.doc.schemas.get(targetBlock.parentBlock!.flavour)!)) {
+      if (!this.doc.schemas.isValidChildren('image', targetBlock.parentBlock!.flavour)) {
         this.doc.messageService.warn(`此处不能添加图片`)
         return
       }
@@ -218,7 +217,7 @@ export class DocDndService {
       return
     }
 
-    if (!this.doc.schemas.isValidChildren('attachment', this.doc.schemas.get(targetBlock.parentBlock!.flavour)!)) {
+    if (!this.doc.schemas.isValidChildren('attachment', targetBlock.parentBlock!.flavour)) {
       this.doc.messageService.warn(`此处不能添加文件`)
       return
     }
@@ -242,7 +241,7 @@ export class DocDndService {
   }
 
   onInsertNewBlock(flavour: BlockCraft.BlockFlavour, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
-    if (!this.doc.schemas.isValidChildren(flavour, this.doc.schemas.get(targetBlock.parentBlock!.flavour)!)) {
+    if (!this.doc.schemas.isValidChildren(flavour, targetBlock.parentBlock!.flavour)) {
       this.doc.messageService.warn(`此处不能添加图片`)
       return
     }

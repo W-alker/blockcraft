@@ -149,8 +149,7 @@ export function getSameAttributeRange(delta: DeltaInsert[], index: number, targe
   // 一轮扫描，找到包含该 index 的 op 以及其属性
   for (let i = 0; i < delta.length; i++) {
     const op = delta[i];
-    const text = typeof op.insert === 'string' ? op.insert : '';
-    const length = text.length;
+    const length = typeof op.insert === 'string' ? op.insert.length : 1
 
     if (index >= pos && index < pos + length) {
       const attr = op.attributes || {};

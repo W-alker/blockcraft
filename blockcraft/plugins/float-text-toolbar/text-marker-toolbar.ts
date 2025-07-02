@@ -1,4 +1,4 @@
-import {BindHotKey, BlockNodeType, DocPlugin, POSITION_MAP, UIEventStateContext} from "../../framework";
+import {BindHotKey, BlockNodeType, DocPlugin, EventListen, POSITION_MAP, UIEventStateContext} from "../../framework";
 import {debounceTime, Subject, Subscription, takeUntil} from "rxjs";
 import {ComponentRef, Type} from "@angular/core";
 import {ConnectedPosition, OverlayRef} from "@angular/cdk/overlay";
@@ -30,18 +30,25 @@ export class TextMarkerPlugin extends DocPlugin {
   init() {
     this.utils = new TextToolbarUtils(this.doc)
 
-    this._sub = this.doc.selection.selectionChange$.pipe(debounceTime(500)).subscribe(sel => {
-      if (this.doc.isReadonly || !sel || sel.collapsed || sel.isAllSelected || sel.isEmpty || this.doc.event.status.isSelecting || !sel.isInSameBlock) {
-        if (this.toolbarOvr) this.closeToolbar()
-        return;
-      }
-      if (!this.markTextBlockFlavours.includes(sel.firstBlock.flavour)) return;
-      this.openToolbar()
+    this.markTextBlockFlavours.forEach(flavour => {
+      this.doc.event.add('selectEnd', this.onSelectEnd, {flavour})
     })
 
     this.doc.subscribeReadonlyChange(() => {
       this.toolbarOvr && this.closeToolbar()
     })
+  }
+
+  onSelectEnd = () => {
+    const sel = this.doc.selection.value!
+    if (this.doc.isReadonly || !sel || sel.collapsed || sel.isAllSelected || sel.isEmpty  || !sel.isInSameBlock
+      // || this.doc.event.status.isSelecting
+    ) {
+      if (this.toolbarOvr) this.closeToolbar()
+      return;
+    }
+    // if (!this.markTextBlockFlavours.includes(sel.firstBlock.flavour)) return;
+    this.openToolbar()
   }
 
   openToolbar() {

@@ -69,9 +69,9 @@ export class UIEventDispatcher {
   private clipboardControl = new ClipboardControl(this)
   private dndControl = new DndControl(this)
   private mouseControl = new MouseControl(this)
-  private _selectionControl = new SelectionControl(this)
+  private selectionControl = new SelectionControl(this)
 
-  constructor(private doc: BlockCraft.Doc) {
+  constructor(readonly doc: BlockCraft.Doc) {
     this.doc.afterInit(this._bindEvents)
   }
 
@@ -84,7 +84,7 @@ export class UIEventDispatcher {
       isReadOnly: this.doc.isReadonly,
       isComposing: this.compositionControl.isComposing,
       isMouseReleased: this.mouseControl.isMouseReleased,
-      isSelecting: this._selectionControl.isSelecting,
+      isSelecting: this.selectionControl.isSelecting,
     }
   }
 
@@ -123,6 +123,20 @@ export class UIEventDispatcher {
     };
   }
 
+  remove(name: EditorEventName, handler: BlockCraft.EventHandler) {
+    if (this._handlersMap[name]) {
+      this._handlersMap[name] = this._handlersMap[name].filter(x => x.fn !== handler);
+    }
+  }
+
+  once(name: EditorEventName, handler: BlockCraft.EventHandler, options?: EventOptions) {
+    const fn = (ctx: UIEventStateContext) => {
+      handler(ctx)
+      this.remove(name, fn)
+    }
+    return this.add(name, fn, options)
+  }
+
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
     bypassEditorEventName.forEach(eventName => {
       fromEvent(root.hostElement, eventName.toLowerCase(), {passive: eventName === 'wheel' ? false : undefined})
@@ -158,7 +172,7 @@ export class UIEventDispatcher {
     this.clipboardControl.listen(root)
     this.dndControl.listen(root)
     this.mouseControl.listen(root)
-    this._selectionControl.listen(root)
+    this.selectionControl.listen(root)
   }
 
   hasHandler(name: EditorEventName) {
@@ -202,7 +216,7 @@ export class UIEventDispatcher {
     return false
   }
 
-  @performanceTest('event dispatcher')
+  // @performanceTest('event dispatcher')
   private _runEvents(name: EditorEventName, blocks: string[], context: UIEventStateContext) {
     const handlers = this._handlersMap[name];
     if (!handlers?.length) return;

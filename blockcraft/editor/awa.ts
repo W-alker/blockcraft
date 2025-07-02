@@ -1,7 +1,7 @@
-import {Awareness} from 'y-protocols/awareness';
-import {IBlockSelectionJSON, FakeRange} from '../framework';
-import {Subject, takeUntil} from 'rxjs';
+import { Awareness } from 'y-protocols/awareness';
+import { Subject, takeUntil } from 'rxjs';
 import {debounce, getRandomDarkColor} from "../global";
+import {FakeRange, IBlockSelectionJSON} from "../framework";
 
 interface Config {
   throttleTime?: number;
@@ -84,7 +84,7 @@ export class BlockCraftAwareness {
     this._states = this.awareness.getStates() as Map<clientId, IAwarenessState>;
 
     this.awareness.on('change', (changes: any, origin: any) => {
-        console.log('%c----------states change-------', 'color: #ff0000', this._states, changes);
+        // console.log('%c----------states change-------', 'color: #ff0000', this._states, changes);
         if (changes.added.length) {
           changes.added.forEach((id: number) => {
             const state = this._states.get(id)!;

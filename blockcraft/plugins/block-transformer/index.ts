@@ -86,18 +86,17 @@ export class BlockTransformerPlugin extends DocPlugin {
       nextTick().then(() => {
         this._mdTransform()
       })
+      return
     }
     if (e.data === '\/' || e.data === '、') {
       const selection = this.doc.selection.value
       if (!selection || !selection.collapsed || selection.from.type !== 'text' || selection.from.block.flavour !== 'paragraph') return
       const block = selection.from.block
-      if (block.textContent() !== e.data) return false
+      if (block.textContent() !== e.data) return
       const schema = this.doc.schemas.get(block.flavour)!
-      if (schema.metadata.isLeaf) return false
+      if (schema.metadata.isLeaf) return
       this.openContextMenu(block)
-      return true
     }
-    return false
   }
 
   private _mdTransform = () => {
@@ -114,12 +113,12 @@ export class BlockTransformerPlugin extends DocPlugin {
       const heading = headingTransforms.findIndex(item => item.flavour === matched.flavour)
       if (heading < 0) return false
       const selIdx = selection.from.index
-      // this.doc.crud.transact(() => {
-      block.deleteText(0, selIdx + 1)
-      block.updateProps({
-        heading: heading + 1
+      this.doc.crud.transact(() => {
+        block.deleteText(0, selIdx + 1)
+        block.updateProps({
+          heading: heading + 1
+        })
       })
-      // }, ORIGIN_SKIP_SYNC)
       return true
     }
 

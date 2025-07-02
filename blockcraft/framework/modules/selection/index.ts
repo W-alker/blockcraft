@@ -60,9 +60,9 @@ export class SelectionManager {
    */
   afterNextChange(fn: (selection: BlockSelection | null) => void) {
     this.nextChangeObserve().subscribe(v => {
-      nextTick().then(() => {
+      // nextTick().then(() => {
         fn(v)
-      })
+      // })
     })
   }
 
@@ -172,10 +172,6 @@ export class SelectionManager {
 
     if (!to && ((isBackward && !isStartOfBlock) || (!isBackward && !isEndOfBlock))
     ) {
-      // 解除第一次多选时的selectstart导致的副作用
-      // nextTick().then(() => {
-      //   this._stopCalculate = false
-      // })
       return true
     }
 
@@ -369,6 +365,8 @@ export class SelectionManager {
     return block as BaseBlockComponent<any>
   }
 
+  private _prevRange: Range | null = null
+
   /**
    * 对于行内delta操作后，可能需要重新计算当前范围
    * @param execNext 是否立即执行发送事件
@@ -379,10 +377,21 @@ export class SelectionManager {
     next?: () => void
   } {
     const selection = document.getSelection()
+    if (!selection || !selection.rangeCount) {
+      const next = () => {
+        this.selectionChange$.next(null)
+        this.selectedManager.setSelected(null)
+      }
+
+      execNext && next()
+      return {
+        value: null,
+        next: execNext ? undefined : next
+      }
+    }
 
     const range = selection?.getRangeAt(0)
-    if (
-      !selection || !range ||
+    if (!range ||
       (document.activeElement !== this.doc.root.hostElement && !this.doc.root.hostElement.contains(range.commonAncestorContainer))
     ) {
       const next = () => {
@@ -549,7 +558,7 @@ export class SelectionManager {
     }
 
     // 是否不同级（可能是子可编辑元素鼠标选中向外滑动）
-    if (from.block.parentId !== to.block.parentId) {
+    // if (from.block.parentId !== to.block.parentId) {
       // 找到同级
       // const path1 = from.block.getPath()
       // const path2 = to.block.getPath()
@@ -574,7 +583,7 @@ export class SelectionManager {
       //     type: 'selected'
       //   }
       // }
-    }
+    // }
     return {from, to, collapsed: false}
   }
 
@@ -711,7 +720,7 @@ export class SelectionManager {
   }
 
   @performanceTest()
-  createFakeRange(json: IBlockSelectionJSON, config: IFakeRangeConfig = {}) {
+  createFakeRange(json: Pick<IBlockSelectionJSON, 'from' | 'to'>, config: IFakeRangeConfig = {}) {
     return new FakeRange(this.doc, json, config)
   }
 

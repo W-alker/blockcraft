@@ -6,9 +6,12 @@ import {isUrl} from "../../../global";
 @Component({
   selector: 'div.float-edit-dialog',
   template: `
-    <!--    <p>标题</p>-->
-    <!--    <input type="text" placeholder="请输入标题" [(ngModel)]="updatedText"-->
-    <!--           [class.error]="titleError" #titleInput (keyup.enter)="onUpdate()" (keydown.tab)="titleInput.focus()">-->
+    <div class="input-group" style="margin-bottom: 8px">
+      <span>文本</span>
+      <input type="text" placeholder="请输入标题" [(ngModel)]="updatedText"
+             [class.error]="titleError" #titleInput (keyup.enter)="onUpdate()"
+             (keydown.tab)="titleInput.focus()" (keydown.escape)="close.emit()">
+    </div>
     <div class="input-group">
       <span>地址</span>
       <input type="text" placeholder="请输入地址" [(ngModel)]="updatedHref" [class.error]="urlError"
@@ -16,9 +19,9 @@ import {isUrl} from "../../../global";
       <button nz-button nzType="primary" (click)="onUpdate()">确定</button>
     </div>
 
-    <div style="width: 100%; display: flex; justify-content: flex-end; gap: 16px">
+<!--    <div style="width: 100%; display: flex; justify-content: flex-end; gap: 16px">-->
       <!--      <button nz-button (click)="onClose()">取消</button>-->
-    </div>
+<!--    </div>-->
   `,
   styles: [`
     :host {
@@ -63,15 +66,15 @@ import {isUrl} from "../../../global";
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class LinkEditFloatDialog {
-  // private _text: string = ''
-  // @Input({required: true})
-  // set text(v: string) {
-  //   this.updatedText = v
-  //   this._text = v
-  // }
-  // get text() {
-  //   return this._text
-  // }
+  private _text: string = ''
+  @Input({required: true})
+  set text(v: string) {
+    this.updatedText = v
+    this._text = v
+  }
+  get text() {
+    return this._text
+  }
 
   private _href: string = ''
   @Input({required: true})
@@ -89,21 +92,21 @@ export class LinkEditFloatDialog {
   constructor() {
   }
 
-  // @ViewChild('titleInput', {read: ElementRef}) titleInput!: ElementRef<HTMLInputElement>
+  @ViewChild('titleInput', {read: ElementRef}) titleInput!: ElementRef<HTMLInputElement>
   @ViewChild('urlInput', {read: ElementRef}) urlInput!: ElementRef<HTMLInputElement>
 
-  // protected titleError = false
+  protected titleError = false
   protected urlError = false
   protected updatedText: string = ''
   protected updatedHref: string = ''
 
   focus() {
-    this.urlInput.nativeElement.focus()
+    this.titleInput.nativeElement.focus()
   }
 
-  // verifyText() {
-  //   this.titleError = !this.updatedText
-  // }
+  verifyText() {
+    this.titleError = !this.updatedText
+  }
 
   verifyUrl() {
     this.urlError = !isUrl(this.updatedHref)
@@ -115,8 +118,8 @@ export class LinkEditFloatDialog {
 
   onUpdate() {
     this.verifyUrl()
-    // this.verifyText()
-    // if (this.titleError) return this.titleInput.nativeElement.focus()
+    this.verifyText()
+    if (this.titleError) return this.titleInput.nativeElement.focus()
     if (this.urlError) return this.urlInput.nativeElement.focus()
     // if(this.updatedText === this.text && this.updatedHref === this.href) return this.close.emit()
     this.update.emit({

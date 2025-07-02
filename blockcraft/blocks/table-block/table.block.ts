@@ -1,5 +1,5 @@
 import {ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewChild} from "@angular/core";
-import {BaseBlockComponent, ORIGIN_SKIP_SYNC, POSITION_MAP} from "../../framework";
+import {BaseBlockComponent, ORIGIN_SKIP_SYNC, POSITION_MAP, UIEventStateContext} from "../../framework";
 import {TableBlockModel} from "./index";
 import {TableCellBlockComponent} from "./table-cell.block";
 import {TableRowBlockComponent} from "./table-row.block";
@@ -84,8 +84,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     nextTick().then(() => {
       this.rowBarComponent.changeDetectionRef.markForCheck()
     })
-    // this.hostElement.prepend(createBlockGapSpace())
-    // this.hostElement.appendChild(createBlockGapSpace())
+
+    this.doc.event.add('selectStart', this.onSelectstart, {blockId: this.id})
+    this.doc.event.add('mouseEnter', this.onMouseEnter, {blockId: this.id})
   }
 
   override ngOnDestroy() {
@@ -161,34 +162,34 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     return closetCell?.getAttribute('data-block-id')
   }
 
-  // TODO 优化单元格内的选择
-  @HostListener('selectstart', ['$event'])
-  onSelectstart(evt: Event) {
+  onSelectstart = (ctx: UIEventStateContext) => {
+    const evt = ctx.getDefaultEvent()
     this._clearSelected()
     const id = this._closetCell(evt)
-    evt.stopPropagation()
+    // evt.stopPropagation()
 
-    if (!id) {
-      evt.preventDefault()
-      return
-    }
+    if (!id) return evt.preventDefault()
+
+    this.selectedCoordinates = null
 
     const cell = this.doc.getBlockById(id) as TableCellBlockComponent
+
     const sub = fromEvent<MouseEvent>(cell.hostElement, 'mouseleave').pipe(take(1)).subscribe(evt => {
       this._startSelectingCell = cell
-      this.hostElement.classList.add('is-selecting-cell')
-      this.selectedCellSet.add(this._startSelectingCell!)
+      // this.hostElement.classList.add('is-selecting-cell')
+      // this.selectedCellSet.add(this._startSelectingCell!)
       this.doc.selection.selectBlock(this._startSelectingCell!)
     })
 
-    fromEvent<MouseEvent>(document, 'mouseup').pipe(take(1)).subscribe(e => {
+    this.doc.event.once('selectEnd', () => {
       sub.unsubscribe()
-      this.onEndSelect(e)
+      this.onEndSelect()
     })
+
   }
 
-  @HostListener('mouseover', ['$event'])
-  onMouseEnter(evt: MouseEvent) {
+  onMouseEnter = (ctx: UIEventStateContext) => {
+    const evt = ctx.getDefaultEvent<MouseEvent>()
     const target = evt.target
     if (!(target instanceof HTMLElement) || target.tagName !== 'TD') return
     const id = target.getAttribute('data-block-id')
@@ -205,14 +206,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // select cells
     if (!this._startSelectingCell || evt.buttons < 1) return;
     if ((!this._lastSelectingCell && id === this._startSelectingCell.id) || id === this._lastSelectingCell?.id) return
-    evt.stopPropagation()
     this._lastSelectingCell = this.doc.getBlockById(id) as TableCellBlockComponent
     this._setRectangleSelected()
   }
 
-  private onEndSelect = (event: MouseEvent) => {
+  private onEndSelect = () => {
     if (!this._startSelectingCell) return;
-    event.stopPropagation()
     this._lastSelectingCell = this._startSelectingCell = null
     this.hostElement.classList.remove('is-selecting-cell')
     this.showToolbar(this.selectedCellSet[Symbol.iterator]().next().value)
@@ -242,19 +241,24 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this._clearSelected()
     let startCell = this._startSelectingCell
     let endCell = this._lastSelectingCell
+
+    const rowIds = this.childrenIds
+    const startCoordinate = [rowIds.indexOf(startCell.parentId!), startCell.getIndexOfParent()]
+
+    // 初始位置和结束位置相等
     if (startCell === endCell) {
+      this.selectedCoordinates = {start: startCoordinate, end: startCoordinate}
       this.selectCell(startCell)
       return
     }
 
-    const rowIds = this.childrenIds
-    const startCoordinate = [rowIds.indexOf(startCell.parentId!), startCell.getIndexOfParent()]
     const endCoordinate = [rowIds.indexOf(endCell.parentId!), endCell.getIndexOfParent()]
 
     this.selectedCells.forEach(cell => {
       this.unselectCell(cell)
     })
 
+    // 调整矩形区域
     const {start, end} = this.selectedCoordinates = this.confirmSelection(startCoordinate, endCoordinate)
     this.getMatrixByCoordinates(start, end).flat(1).forEach(cell => this.selectCell(cell))
   }

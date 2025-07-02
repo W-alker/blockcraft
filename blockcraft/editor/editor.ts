@@ -410,7 +410,7 @@ export class EditorComponent {
 
 
       this.provider = new WebsocketProvider('ws://196.168.1.69:1234', this.rootId, this.doc.yDoc, {
-        disableBc: true
+        disableBc: false
       })
       this.provider.on('sync', (v: boolean) => {
         const yRoot = this.doc.yBlockMap.get(this.rootId)
@@ -422,15 +422,16 @@ export class EditorComponent {
         }
       })
 
+      const uid = generateId(11)
+      const awa = new BlockCraftAwareness(this.doc, this.provider.awareness)
+      awa.setLocalUser({
+        id: uid,
+        name: uid,
+      })
 
     })
 
-    const uid = generateId(11)
-    const awa = new BlockCraftAwareness(this.doc, this.provider.awareness)
-    awa.setLocalUser({
-      id: uid,
-      name: uid,
-    })
+
 
   }
 
