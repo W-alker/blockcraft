@@ -226,11 +226,12 @@
         }
       }
 
-      tr {
+      tr.table-row-block {
         height: 40px;
         margin: 0;
       }
 
+      tr.table-row-block,
       td.table-cell-block {
         &.selected {
           background: unset;

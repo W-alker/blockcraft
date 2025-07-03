@@ -1,4 +1,10 @@
 @mixin image-block {
+  @at-root #{selector-unify(&, '.readonly')} {
+    .image-block .img-wrapper {
+      cursor: zoom-in;
+    }
+  }
+
   div.image-block {
     padding: 8px;
 

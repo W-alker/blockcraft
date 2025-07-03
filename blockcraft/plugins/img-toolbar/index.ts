@@ -57,6 +57,18 @@ export class ImgToolbarPlugin extends DocPlugin {
     return true
   }
 
+  @EventListen('doubleClick', {flavour: "image"})
+  onImageMouseDown(ctx: UIEventStateContext) {
+    if (!this.doc.isReadonly) return
+    const evt: MouseEvent = ctx.getDefaultEvent()
+    const target = evt.target
+    if (!target || !(target instanceof HTMLElement) || !target.classList.contains('img-wrapper')) return
+    const img = target.querySelector('img')!
+    this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({el: img})
+    img.dispatchEvent(new MouseEvent('click', {bubbles: false, cancelable: true, view: window}))
+    return true
+  }
+
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
       if (!selection || selection.to || selection.firstBlock.flavour !== 'image') {
@@ -69,7 +81,7 @@ export class ImgToolbarPlugin extends DocPlugin {
         if (this._toolbarRef) return
 
         const imgEle = imgBlock.hostElement.querySelector('img')
-        if(!imgEle || !imgEle.isConnected) return
+        if (!imgEle || !imgEle.isConnected) return
         const {overlayRef, componentRef} = this.doc.overlayService.createConnectedOverlay<ImageToolbar>({
           target: imgEle,
           positions: [

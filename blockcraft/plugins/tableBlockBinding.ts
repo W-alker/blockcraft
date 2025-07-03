@@ -15,19 +15,19 @@ export class TableBlockBinding extends DocPlugin {
 
   @EventListen('copy', { flavour: 'table' })
   handleCopy(context: UIEventStateContext) {
-    return this._handleCopyOrCut(false)
+    return this._handleCopyOrCut(context, false)
   }
 
   @EventListen('cut', { flavour: 'table' })
   handleCut(context: UIEventStateContext) {
     if(this.doc.isReadonly) return
-    return this._handleCopyOrCut(true)
+    return this._handleCopyOrCut(context, true)
   }
 
-  private _handleCopyOrCut(isCut: boolean): boolean {
+  private _handleCopyOrCut(context: UIEventStateContext, isCut: boolean): boolean {
     const selection = this.doc.selection.value
     if (!selection || !selection.from.block.flavour.startsWith('table')) return false
-
+    context.preventDefault()
     const table = this._getTable(selection)
     const coordinates = table.getSelectedCellsCoordinates()
     if (!coordinates) return false

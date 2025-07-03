@@ -52,7 +52,7 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
       block.hostElement.classList.add('selecting')
 
       if (block.nodeType !== BlockNodeType.root) {
-        fromEvent(block.hostElement, 'pointerleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1)))).subscribe(e => {
+        fromEvent(block.hostElement, 'mouseleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1)))).subscribe(e => {
           block.hostElement.classList.remove('selecting')
           document.getSelection()!.selectAllChildren(block.hostElement)
           const parentBlock = block.parentBlock!
@@ -62,7 +62,7 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
     }
 
     // TODO
-    fromEvent(selectStartBlock.hostElement, 'pointerleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1))))
+    fromEvent(selectStartBlock.hostElement, 'mouseleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1))))
       .subscribe(() => {
         if (this.selecting$.value !== 'start') return
         this.selecting$.next('moving')

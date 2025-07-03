@@ -175,9 +175,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const cell = this.doc.getBlockById(id) as TableCellBlockComponent
 
     const sub = fromEvent<MouseEvent>(cell.hostElement, 'mouseleave').pipe(take(1)).subscribe(evt => {
+      evt.preventDefault()
+      evt.stopPropagation()
       this._startSelectingCell = cell
-      // this.hostElement.classList.add('is-selecting-cell')
-      // this.selectedCellSet.add(this._startSelectingCell!)
+      this.hostElement.classList.add('is-selecting-cell')
+      this.selectCell(cell)
       this.doc.selection.selectBlock(this._startSelectingCell!)
     })
 
@@ -245,6 +247,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const rowIds = this.childrenIds
     const startCoordinate = [rowIds.indexOf(startCell.parentId!), startCell.getIndexOfParent()]
 
+    // this.selectedCells.forEach(cell => {
+    //   this.unselectCell(cell)
+    // })
+
     // 初始位置和结束位置相等
     if (startCell === endCell) {
       this.selectedCoordinates = {start: startCoordinate, end: startCoordinate}
@@ -253,10 +259,6 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
 
     const endCoordinate = [rowIds.indexOf(endCell.parentId!), endCell.getIndexOfParent()]
-
-    this.selectedCells.forEach(cell => {
-      this.unselectCell(cell)
-    })
 
     // 调整矩形区域
     const {start, end} = this.selectedCoordinates = this.confirmSelection(startCoordinate, endCoordinate)
@@ -421,7 +423,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const curCol = this.hostElement.querySelector(`col:nth-child(${resizingColIdx + 1})`) as HTMLElement
 
     let newWidth = this.props.colWidths[resizingColIdx]
-    const resizeSub = fromEvent<MouseEvent>(document, 'mousemove')
+    const resizeSub = fromEvent<MouseEvent>(document, 'pointermove')
       .pipe(takeUntil(this.resizingCol$.pipe(filter(v => !v))))
       .subscribe((e) => {
 
@@ -444,7 +446,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         curCol.style.width = newWidth + 'px'
       })
 
-    fromEvent(document, 'mouseup').pipe(take(1)).subscribe(() => {
+    fromEvent(document, 'pointerup').pipe(take(1)).subscribe(() => {
       if (!this.resizingCol$.value) return
       this.resizingCol$.next(false)
       const widths = [...this.props.colWidths]
