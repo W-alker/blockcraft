@@ -31,7 +31,7 @@ export class TableCellBlockComponent extends BaseBlockComponent<TableCellBlockMo
   }
 
   get hasContent() {
-    return this.childrenLength > 1 || this.firstChildren?.textContent()
+    return this.childrenLength > 1 || this.firstChildren?.flavour !== 'paragraph' || this.firstChildren?.textContent()
   }
 
 }

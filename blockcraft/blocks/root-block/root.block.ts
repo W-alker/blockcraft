@@ -41,6 +41,9 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
   }
 
   onSelectstart = (ctx: UIEventStateContext) => {
+    const selectState = ctx.get('selectState')
+    if (selectState.trigger !== 'mouse') return;
+
     const event = ctx.getDefaultEvent<Event>()
     const id = closetBlockId(event.target as HTMLElement)
     if (!id) return
@@ -52,9 +55,12 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
       block.hostElement.classList.add('selecting')
 
       if (block.nodeType !== BlockNodeType.root) {
-        fromEvent(block.hostElement, 'mouseleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1)))).subscribe(e => {
+        fromEvent(block.hostElement, 'pointerleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1)))).subscribe(e => {
           block.hostElement.classList.remove('selecting')
           document.getSelection()!.selectAllChildren(block.hostElement)
+
+          // TODO 这样实现不太好
+          if(block.flavour === 'table-cell') return
           const parentBlock = block.parentBlock!
           leaveListen(parentBlock)
         })
@@ -62,16 +68,15 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
     }
 
     // TODO
-    fromEvent(selectStartBlock.hostElement, 'mouseleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1))))
+    fromEvent(selectStartBlock.hostElement, 'pointerleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1))))
       .subscribe(() => {
         if (this.selecting$.value !== 'start') return
-        this.selecting$.next('moving')
 
         leaveListen(selectStartBlock!.parentBlock!)
       })
   }
 
-  onSelectEnd = ()  => {
+  onSelectEnd = () => {
     this.selecting$.next('end')
     if (!this.selectingBlock) return
     this.selectingBlock.hostElement.classList.remove('selecting')

@@ -163,13 +163,16 @@ export class DocVM {
     if (!parentComp) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, 'Cannot find parent component with id: ' + parent)
     }
-    if (!parentComp.instance.childrenContainer) {
+
+    const instance = parentComp.instance
+    const childrenContainer = instance.childrenContainer
+    if (!childrenContainer) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${parentComp.instance.id} block has no children`)
     }
 
     comps.forEach((comp, i) => {
-      (parentComp.instance.childrenContainer as ViewContainerRef).insert(comp.hostView, index + i);
-      comp.instance.parentId = parentComp.instance.id;
+      comp.instance.parentId = instance.id;
+      childrenContainer.insert(comp.hostView, index + i);
     });
   }
 

@@ -55,7 +55,7 @@ export class MentionPlugin extends DocPlugin {
   }
 
   openMention(selection: IBlockTextRange) {
-    const {index, block} = selection
+    let {index, block} = selection
 
     this.doc.crud.transact(() => {
       // 伪造mention-placeholder输入
@@ -85,8 +85,26 @@ export class MentionPlugin extends DocPlugin {
       return sel.from
     }
 
-    // 键盘绑定
-    const keyBindings = [
+    const tempBindings = [
+      // !!!!!!!!! 阻止默认输入法关闭事件
+      this.doc.event.add('compositionEnd', ctx => {
+        const ev = ctx.getDefaultEvent<CompositionEvent>()
+        ev.preventDefault()
+
+        const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
+        if (!sel || sel.from.type !== 'text') {
+          throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
+        }
+        const text = ev.data
+        // 实时更新光标位置, 同时解决协同时位置不符的问题
+        index = sel.from.index
+        this.doc.crud.transact(() => {
+          block.yText.insert(index === 0 ? 0 : index - text.length, text)
+        }, ORIGIN_SKIP_SYNC)
+        next?.()
+        return true
+      }, {blockId: block.id}),
+      // 键盘绑定
       this.doc.event.bindHotkey({key: 'Escape'}, ctx => {
         ctx.preventDefault()
         if (this.doc.event.status.isComposing) return
@@ -121,7 +139,7 @@ export class MentionPlugin extends DocPlugin {
       target,
       component: MentionDialog,
     }, this._closeDialog$, () => {
-      keyBindings.forEach(v => v())
+      tempBindings.forEach(v => v())
       if (!textNode || !textNode.isConnected) return
       const {block, index, length} = calcPos()
       block.formatText(index, length, {'a:mention-placeholder': null})

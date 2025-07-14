@@ -1,17 +1,20 @@
-import {ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewChild} from "@angular/core";
-import {BaseBlockComponent, ORIGIN_SKIP_SYNC, POSITION_MAP, UIEventStateContext} from "../../framework";
+import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from "@angular/core";
+import {
+  BaseBlockComponent, getPositionWithOffset,
+  UIEventStateContext
+} from "../../framework";
 import {TableBlockModel} from "./index";
 import {TableCellBlockComponent} from "./table-cell.block";
-import {TableRowBlockComponent} from "./table-row.block";
 import {BehaviorSubject, filter, fromEvent, merge, skip, Subject, take, takeUntil} from "rxjs";
-import {Overlay, OverlayRef} from "@angular/cdk/overlay";
-import {ComponentPortal} from "@angular/cdk/portal";
 import {CellToolbarComponent} from "./widgets/cell-toolbar.component";
 import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
 import {TableColBarComponent} from "./widgets/table-col-bar.component";
 import {TableRowBarComponent} from "./widgets/table-row-bar.component";
 import {adjustSelection, RectangleSelection} from "./utils";
-import {nextTick, performanceTest} from "../../global";
+import {nextTick} from "../../global";
+import {addTableCol, addTableRow, deleteTableCols, deleteTableRows} from "./callback";
+import {OverlayRef} from "@angular/cdk/overlay";
+import {TableCellsSelection} from "./types";
 
 @Component({
   selector: 'div.table-block',
@@ -29,16 +32,19 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   protected hoveringCell: TableCellBlockComponent | null = null
   protected resizingCol$ = new BehaviorSubject(false)
 
-  private _startSelectingCell: TableCellBlockComponent | null = null
-  private _lastSelectingCell: TableCellBlockComponent | null = null
+  protected _startSelectingCell: TableCellBlockComponent | null = null
+  protected _lastSelectingCell: TableCellBlockComponent | null = null
 
-  selectedCellSet = new Set<TableCellBlockComponent>()
+  private _selectedCellSet = new Set<TableCellBlockComponent>()
 
   private toolbarOvr?: OverlayRef
   private _closeToolbar$ = new Subject()
 
-  @ViewChild('tableBody', {read: ElementRef}) tableBody!: ElementRef<HTMLElement>
+  private tableBody!: HTMLElement
+
+  @ViewChild('tableScrollable', {read: ElementRef}) tableScrollable!: ElementRef<HTMLElement>
   @ViewChild('colResizeBar', {read: ElementRef}) colResizeBar!: ElementRef<HTMLElement>
+  @ViewChild('rowResizeBar', {read: ElementRef}) rowResizeBar!: ElementRef<HTMLElement>
   @ViewChild('colBarComponent') colBarComponent!: TableColBarComponent
   @ViewChild('rowBarComponent') rowBarComponent!: TableRowBarComponent
 
@@ -46,6 +52,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   protected _activeColRange: [number, number] = [-1, -1]
   protected _activeRowRange: [number, number] = [-1, -1]
+
+  private _prevAdjustedSelection: TableCellsSelection | null = null
 
   private resizeObserver = new ResizeObserver(entries => {
     for (const entry of entries) {
@@ -71,16 +79,15 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.rowBarComponent.changeDetectionRef.markForCheck()
   })
 
-  constructor(
-    private overlay: Overlay,
-  ) {
+  constructor() {
     super();
   }
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
+    this.tableBody = this.tableScrollable.nativeElement.querySelector('tbody')!
 
-    this.mutationObserver.observe(this.tableBody.nativeElement, {childList: true})
+    this.mutationObserver.observe(this.tableBody, {childList: true})
     nextTick().then(() => {
       this.rowBarComponent.changeDetectionRef.markForCheck()
     })
@@ -103,55 +110,48 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     return this.childrenLength
   }
 
-  addColumns(index: number, count: number = 1) {
-    this.doc.crud.transact(() => {
-      this.getChildrenBlocks().forEach(row => {
-        (row as TableRowBlockComponent).addColumn(index, count)
-      })
-      const _colWidths: number[] = [...this.props.colWidths]
-      _colWidths.splice(index, 0, ...new Array(count).fill(100))
-      this.updateProps({colWidths: _colWidths})
+  getCellByCoordinate(rowIdx: number, colIdx: number) {
+    return this.getChildrenByIndex(rowIdx).getChildrenByIndex(colIdx) as TableCellBlockComponent
+  }
 
-      if (this._activeColRange[0] > -1) {
-        this._activeColRange = [this._activeColRange[0] + count, this._activeColRange[1] + count]
-      }
+  addColumn(index: number) {
+    this.doc.crud.transact(() => {
+      addTableCol.call(this, index)
     })
   }
 
-  addRows(index: number, count: number = 1) {
-    const cellCount = this.firstChildren!.childrenLength
-    const newRows = new Array(count).fill(0).map(() => this.doc.schemas.createSnapshot('table-row', [cellCount]))
-    this.doc.crud.insertBlocks(this.id, index, newRows)
+  addRow(index: number) {
+    this.doc.crud.transact(() => {
+      addTableRow.call(this, index)
+    })
   }
 
-  deleteColumn(index: number, count: number = 1) {
+  deleteColumns(index: number, count: number = 1) {
     if (index === 0 && this.colLength <= count) {
       this.doc.crud.deleteBlockById(this.id)
       return
     }
 
-    // this.doc.crud.transact(() => {
-    this.getChildrenBlocks().forEach(row => {
-      this.doc.crud.deleteBlocks(row.id, index, count)
-    })
-    // }, ORIGIN_SKIP_SYNC)
+    this.doc.crud.transact(() => {
+      deleteTableCols.call(this, index, count)
 
-    const _colWidths: number[] = JSON.parse(JSON.stringify(this.props.colWidths))
-    _colWidths.splice(index, count)
-    this._activeColRange = [-1, -1]
-    this.updateProps({
-      colWidths: _colWidths
+      const _colWidths: number[] = JSON.parse(JSON.stringify(this.props.colWidths))
+      _colWidths.splice(index, count)
+      this._activeColRange = [-1, -1]
+      this.updateProps({
+        colWidths: _colWidths
+      })
     })
   }
 
-  deleteRow(index: number, count = 1) {
+  deleteRows(index: number, count = 1) {
     if (index === 0 && this.rowLength <= count) {
       this.doc.crud.deleteBlockById(this.id)
       return
     }
 
-    this.doc.crud.deleteBlocks(this.id, index, count).then(() => {
-      this._activeRowRange = [-1, -1]
+    this.doc.crud.transact(() => {
+      deleteTableRows.call(this, index, count)
     })
   }
 
@@ -163,31 +163,43 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   onSelectstart = (ctx: UIEventStateContext) => {
-    const evt = ctx.getDefaultEvent()
     this._clearSelected()
+    this._startSelectingCell = this._lastSelectingCell = null
+
+    const evt = ctx.getDefaultEvent()
     const id = this._closetCell(evt)
-    // evt.stopPropagation()
 
-    if (!id) return evt.preventDefault()
-
-    this.selectedCoordinates = null
+    if (!id) return
 
     const cell = this.doc.getBlockById(id) as TableCellBlockComponent
 
-    const sub = fromEvent<MouseEvent>(cell.hostElement, 'mouseleave').pipe(take(1)).subscribe(evt => {
-      evt.preventDefault()
-      evt.stopPropagation()
+    const startSelectCell = () => {
       this._startSelectingCell = cell
       this.hostElement.classList.add('is-selecting-cell')
       this.selectCell(cell)
       this.doc.selection.selectBlock(this._startSelectingCell!)
+    }
+
+    const sub1 = this.doc.event.customListen(document, 'selectionchange').pipe(skip(1)).subscribe(() => {
+      const selection = window.getSelection()!
+      if (!cell.hostElement.contains(selection.focusNode)) {
+        startSelectCell()
+        sub1.unsubscribe()
+      }
+    })
+
+    const sub2 = this.doc.event.customListen(cell.hostElement, 'mouseleave', {once: true}).subscribe(() => {
+      evt.preventDefault()
+      evt.stopPropagation()
+
+      startSelectCell()
     })
 
     this.doc.event.once('selectEnd', () => {
-      sub.unsubscribe()
+      sub1.unsubscribe()
+      sub2.unsubscribe()
       this.onEndSelect()
     })
-
   }
 
   onMouseEnter = (ctx: UIEventStateContext) => {
@@ -201,7 +213,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       // hovering bar
       this.hoveringCell = this.doc.getBlockById(id) as TableCellBlockComponent
       const offsetX = this.hoveringCell.hostElement.getBoundingClientRect().right
-        - this.tableBody.nativeElement.getBoundingClientRect().left - 4
+        - this.tableScrollable.nativeElement.getBoundingClientRect().left + 10
       this.colResizeBar.nativeElement.style.left = `${offsetX}px`
     }
 
@@ -214,108 +226,100 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private onEndSelect = () => {
     if (!this._startSelectingCell) return;
-    this._lastSelectingCell = this._startSelectingCell = null
     this.hostElement.classList.remove('is-selecting-cell')
-    this.showToolbar(this.selectedCellSet[Symbol.iterator]().next().value)
+    this.showToolbar(this._selectedCellSet[Symbol.iterator]().next().value.hostElement)
+    this._prevAdjustedSelection = null
   }
 
-  protected selectedCells = new Set<TableCellBlockComponent>()
-  protected selectedCoordinates: { start: number[], end: number[] } | null = null
-
-  private _clearSelected() {
-    this.selectedCellSet.forEach(cell => cell.hostElement.classList.remove('selected'))
-    this.selectedCellSet.clear()
-  }
-
-  selectCell = (cell: TableCellBlockComponent) => {
-    this.selectedCellSet.add(cell)
+  protected selectCell = (cell: TableCellBlockComponent) => {
+    if (this._selectedCellSet.has(cell)) return
+    this._selectedCellSet.add(cell)
     cell.hostElement.classList.add('selected')
   }
 
-  unselectCell = (cell: TableCellBlockComponent) => {
-    this.selectedCellSet.delete(cell)
-    cell.hostElement.classList.remove('selected')
+  protected _clearSelected() {
+    this._selectedCellSet.forEach(cell => cell.hostElement.classList.remove('selected'))
+    this._selectedCellSet.clear()
   }
 
   // 根据上下坐标设置矩形区间选中
-  private _setRectangleSelected() {
-    if (!this._startSelectingCell || !this._lastSelectingCell) return
+  protected _setRectangleSelected() {
+    const coordinates = this._getSelectedCellsCoordinates()
+    if (!coordinates) {
+      this._clearSelected()
+      this._prevAdjustedSelection = null
+      return;
+    }
+    const selection = this.confirmSelection(coordinates.start, coordinates.end)
+    const {start, end} = selection
+    if (this._prevAdjustedSelection?.start[0] === start[0]
+      && this._prevAdjustedSelection?.end[0] === end[0]
+      && this._prevAdjustedSelection?.start[1] === start[1]
+      && this._prevAdjustedSelection?.end[1] === end[1]) return
+
     this._clearSelected()
+    // 初始位置和结束位置相等
+    if (start[0] === end[0] && start[1] === end[1]) {
+      this.selectCell(this._startSelectingCell!)
+      return
+    }
+
+    this._prevAdjustedSelection = selection
+
+    this.getCellsMatrixByCoordinates(start, end).flat(1).forEach(cell => this.selectCell(cell))
+  }
+
+  protected _getSelectedCellsCoordinates() {
+    if (!this._startSelectingCell || !this._lastSelectingCell) {
+      const docSelection = this.doc.selection.value
+      if (!docSelection || docSelection.firstBlock.flavour !== 'table-cell') return null
+      this._startSelectingCell = this._lastSelectingCell = docSelection.firstBlock as TableCellBlockComponent
+    }
     let startCell = this._startSelectingCell
     let endCell = this._lastSelectingCell
 
     const rowIds = this.childrenIds
     const startCoordinate = [rowIds.indexOf(startCell.parentId!), startCell.getIndexOfParent()]
 
-    // this.selectedCells.forEach(cell => {
-    //   this.unselectCell(cell)
-    // })
-
-    // 初始位置和结束位置相等
     if (startCell === endCell) {
-      this.selectedCoordinates = {start: startCoordinate, end: startCoordinate}
-      this.selectCell(startCell)
-      return
+      return {start: startCoordinate, end: startCoordinate}
     }
 
     const endCoordinate = [rowIds.indexOf(endCell.parentId!), endCell.getIndexOfParent()]
-
-    // 调整矩形区域
-    const {start, end} = this.selectedCoordinates = this.confirmSelection(startCoordinate, endCoordinate)
-    this.getMatrixByCoordinates(start, end).flat(1).forEach(cell => this.selectCell(cell))
+    return {
+      start: [Math.min(startCoordinate[0], endCoordinate[0]), Math.min(startCoordinate[1], endCoordinate[1])],
+      end: [Math.max(startCoordinate[0], endCoordinate[0]), Math.max(startCoordinate[1], endCoordinate[1])]
+    }
   }
 
-  private confirmSelection(cor1: number[], col2: number[]) {
-    return adjustSelection(new RectangleSelection(cor1[0], cor1[1], col2[0], col2[1]), this)
-  }
-
-  getSelectedCellsCoordinates() {
-    return this.selectedCoordinates
-  }
-
-  getMatrixByCoordinates(start: number[], end: number[]) {
+  getCellsMatrixByCoordinates(start: number[], end: number[]) {
     return this.childrenIds.slice(start[0], end[0] + 1)
-      .map(rowId => this.doc.getBlockById(rowId).getChildrenBlocks().slice(start[1], end[1] + 1) as TableCellBlockComponent[])
+      .map(rowId => this.doc.getBlockById(rowId).childrenIds.slice(start[1], end[1] + 1).map(cid => this.doc.getBlockById(cid)) as TableCellBlockComponent[])
   }
 
-  getSelectedCells() {
-    if (this.selectedCellSet.size) {
-      return Array.from(this.selectedCellSet)
-    }
+  confirmSelection(start: number[], end: number[]) {
+    return adjustSelection(new RectangleSelection(start[0], start[1], end[0], end[1]), this)
+  }
 
-    const selection = this.doc.selection.value
-    if (!selection) return []
-
-    const block = this.doc.getBlockById(selection.commonParent)
-    if (block.flavour === 'table-cell') {
-      return [block] as TableCellBlockComponent[]
-    }
-
-    const {firstBlock, lastBlock} = selection
-
-    if (block.flavour === 'table-row') {
-      if (block === firstBlock) {
-        return block.getChildrenBlocks() as TableCellBlockComponent[]
+  getSelectedCoordinates() {
+    if (this._activeColRange[0] > -1 && this._activeColRange[1] > -1) {
+      return {
+        start: [0, this._activeColRange[0]],
+        end: [this.rowLength - 1, this._activeColRange[1]]
       }
-
-      const childrenIds = block.childrenIds
-      const start = childrenIds.indexOf(firstBlock.id)
-      const end = childrenIds.indexOf(lastBlock.id)
-      return childrenIds.slice(start, end + 1).map(id => this.doc.getBlockById(id) as TableCellBlockComponent)
     }
-
-    if (block.flavour === 'table') {
-      const childrenIds = block.childrenIds
-      const start = childrenIds.indexOf(firstBlock.id)
-      const end = childrenIds.indexOf(lastBlock.id)
-      return childrenIds.slice(start, end + 1).map(id => this.doc.getBlockById(id) as TableRowBlockComponent)
-        .flatMap(row => row.getChildrenBlocks() as TableCellBlockComponent[])
+    if (this._activeRowRange[0] > -1 && this._activeRowRange[1] > -1) {
+      return {
+        start: [this._activeRowRange[0], 0],
+        end: [this._activeRowRange[1], this.colLength - 1]
+      }
     }
-
-    return []
+    const cellsSelection = this._getSelectedCellsCoordinates()
+    if (!cellsSelection) return null
+    return this.confirmSelection(cellsSelection.start, cellsSelection.end)
   }
 
-  showToolbar(target: TableCellBlockComponent, type: 'col' | 'row' | 'cells' = 'cells', index?: number, count = 1, closeFn?: () => void) {
+  showToolbar(target: HTMLElement, type: 'col' | 'row' | 'cells' = 'cells', index?: number, count = 1, closeFn?: () => void) {
     if (this.toolbarOvr) {
       this.toolbarOvr.dispose()
       this.toolbarOvr = undefined
@@ -328,95 +332,98 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
 
     this.hostElement.classList.add('active')
-    const portal = new ComponentPortal(CellToolbarComponent)
-    this.toolbarOvr = this.overlay.create({
-      positionStrategy: this.overlay.position().flexibleConnectedTo(target.hostElement).withPositions([
-        {...POSITION_MAP['top-left'], offsetY: -8},
-        POSITION_MAP['bottom-left']
-      ]),
-      // scrollStrategy: this.overlay.scrollStrategies.close(),
-      hasBackdrop: true,
-      backdropClass: 'cdk-overlay-transparent-backdrop',
-    })
-
-    const cpr = this.toolbarOvr.attach(portal)
-    cpr.setInput('selectedCells', this.getSelectedCells())
-    cpr.setInput('options', {type, index, count})
-    cpr.setInput('doc', this.doc)
-    cpr.setInput('table', this)
-
     const closeCb = () => {
       closeFn?.()
 
       // close toolbar
       this.hostElement.classList.remove('active')
-      this.toolbarOvr?.dispose()
-      this.toolbarOvr = undefined
       this._clearSelected()
       this._closeToolbar$.next(true)
+      this._startSelectingCell = this._lastSelectingCell = null
     }
 
-    merge(fromEvent(this.doc.scrollContainer!, 'scroll'), cpr.instance.onPositionChanged)
-      .pipe(takeUntil(cpr.instance.onDestroy)).subscribe(() => {
-      this.toolbarOvr?.updatePosition()
-    })
+    const {componentRef: cpr, overlayRef} = this.doc.overlayService.createConnectedOverlay<CellToolbarComponent>({
+      target,
+      component: CellToolbarComponent,
+      positions: [
+        getPositionWithOffset('top-left', 0, 8),
+        getPositionWithOffset('bottom-left', 0, 8),
+        getPositionWithOffset('top-right', 0, 8),
+        getPositionWithOffset('bottom-right', 0, 8),
+      ],
+      backdrop: true
+    }, this._closeToolbar$, closeCb)
+    this.toolbarOvr = overlayRef
 
-    merge(this.toolbarOvr.backdropClick(), this._closeToolbar$, this.doc.onDestroy$,
-      this.doc.selection.selectionChange$.pipe(skip(1), filter(v => v?.from.blockId !== target.id)),
-      this.onDestroy$, target?.onDestroy$, cpr.instance.onClose$)
+    cpr.setInput('options', {type, index, count})
+    cpr.setInput('doc', this.doc)
+    cpr.setInput('table', this)
+
+    const selectedCell = this.doc.selection.value!.firstBlock
+
+    merge(
+      this.doc.selection.selectionChange$.pipe(skip(1), filter(v => v?.from.blockId !== selectedCell.id)),
+      this.onDestroy$, cpr.instance.onClose$)
       .pipe(takeUntil(cpr.instance.onDestroy)).subscribe(closeCb)
   }
 
   onColBarSelected(range: [number, number]) {
-    const {start, end} = adjustSelection(new RectangleSelection(0, range[0], this.rowLength - 1, range[1]), this)
-    range = [start[1], end[1]]
-
     const firstCell = this.firstChildren!.getChildrenByIndex(range[0]) as TableCellBlockComponent
     this.doc.selection.selectBlock(firstCell)
+
+    const col = this.hostElement.querySelector(`col:nth-child(${range[0] + 1})`) as HTMLElement
+    const len = range[1] - range[0] + 1
 
     this.doc.selection.afterNextChange(() => {
       this._activeColRange = range
       this.rowBarComponent.changeDetectionRef.markForCheck()
-      this.getMatrixByCoordinates(start, end).flat(1).forEach(cell => this.selectCell(cell))
+      this.getCellsMatrixByCoordinates([0, range[0]], [this.rowLength - 1, range[1]])
+        .map(row => row.filter((cell, cellAddIdx) => !cell.props.colspan || cell.props.colspan + cellAddIdx <= len))
+        .flat(1).forEach(cell => this.selectCell(cell))
 
-      // TODO 监听过程中col增加或减少了，调整选区或者关闭
+      // TODO 监听过程中col增加或减少了，调整选区
 
-      this.showToolbar(firstCell, 'col', range[0], range[1] - range[0] + 1, () => {
+      this.showToolbar(col, 'col', range[0], range[1] - range[0] + 1, () => {
         this._activeColRange = [-1, -1]
         this.colBarComponent.changeDetectionRef.markForCheck()
-        this._clearSelected()
       })
     })
 
   }
 
   onRowBarSelected(range: [number, number]) {
-    const {start, end} = adjustSelection(new RectangleSelection(range[0], 0, range[1], this.colLength - 1), this)
-    range = [start[0], end[0]]
-
     const firstCell = this.getChildrenByIndex(range[0]).getChildrenByIndex(0) as TableCellBlockComponent
     this.doc.selection.selectBlock(firstCell)
+
+    const len = range[1] - range[0] + 1
+    const row = this.hostElement.querySelector(`tr:nth-child(${range[0] + 1})`) as HTMLElement
 
     this.doc.selection.afterNextChange(() => {
       this._activeRowRange = range
       this.rowBarComponent.changeDetectionRef.markForCheck()
-      this.getMatrixByCoordinates(start, end).flat(1).forEach(cell => this.selectCell(cell))
+      this.getCellsMatrixByCoordinates([range[0], 0], [range[1], this.colLength - 1])
+        .map(
+          (row, rowAddIdx) =>
+            row.filter(cell => !cell.props.rowspan || cell.props.rowspan + rowAddIdx <= len)
+        ).flat(1)
+        .forEach(cell => this.selectCell(cell))
 
       // TODO 监听过程中row增加或减少了，调整选区或者关闭
 
-      this.showToolbar(firstCell, 'row', range[0], range[1] - range[0] + 1, () => {
+      this.showToolbar(row, 'row', range[0], range[1] - range[0] + 1, () => {
         this._activeRowRange = [-1, -1]
         this.rowBarComponent.changeDetectionRef.markForCheck()
-        this._clearSelected()
       })
     })
   }
 
-  onResizerMousedown(evt: Event) {
+  private _disableColResize = false
+
+  onColResizerMousedown(evt: Event) {
     evt.preventDefault()
     evt.stopPropagation()
 
-    if (!this.hoveringCell) return
+    if (!this.hoveringCell || this._disableColResize) return
     this.resizingCol$.next(true)
 
     const resizingColIdx = this.hoveringCell.getIndexOfParent() + (this.hoveringCell.props.colspan || 1) - 1
@@ -432,14 +439,14 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
           return
         }
 
-        const {left} = this.tableBody.nativeElement.getBoundingClientRect()
-        const scrollLeft = this.tableBody.nativeElement.scrollLeft
+        const {left} = this.tableScrollable.nativeElement.getBoundingClientRect()
+        const scrollLeft = this.tableScrollable.nativeElement.scrollLeft
         if (!this.resizingCol$.value || e.clientX < left) return
         const targetRect = curCol.getBoundingClientRect()
         newWidth = e.clientX - targetRect.left
         // 不得小于50
         if (newWidth < 50) return
-        const offsetX = targetRect.right + scrollLeft - left - 4
+        const offsetX = targetRect.right + scrollLeft - left + 10
         this.colBarComponent.colWidths[resizingColIdx] = newWidth
         this.colBarComponent.changeDetectionRef.markForCheck()
         this.colResizeBar.nativeElement.style.left = `${offsetX}px`
@@ -456,4 +463,84 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       })
     })
   }
+
+  private _colAdderHandler: ((e: Event) => void) | null = null
+
+  onColAdderActive(colIdx: number) {
+    const offsetLeft = this.props.colWidths.slice(0, colIdx).reduce((a, b) => a + b, 0)
+      - this.tableScrollable.nativeElement.scrollLeft
+
+    const bar = this.colResizeBar.nativeElement
+    bar.style.left = `${offsetLeft + 12}px`
+    bar.classList.add('active')
+    this._disableColResize = true
+
+    // 移除上一个 addCol handler（如有）
+    if (this._colAdderHandler) {
+      bar.removeEventListener('mousedown', this._colAdderHandler)
+    }
+
+    // 创建新的 handler 并缓存引用
+    this._colAdderHandler = (e: Event) => {
+      e.stopPropagation()
+      e.preventDefault()
+      this.addColumn(colIdx)
+    }
+
+    bar.addEventListener('mousedown', this._colAdderHandler)
+
+    // 一次性 pointerleave 事件
+    bar.addEventListener('pointerleave', (e) => {
+      e.stopPropagation()
+      e.preventDefault()
+      bar.classList.remove('active')
+      this._disableColResize = false
+
+      // 移除当前 handler
+      if (this._colAdderHandler) {
+        bar.removeEventListener('mousedown', this._colAdderHandler)
+        this._colAdderHandler = null
+      }
+    }, {once: true})
+  }
+
+  private _rowAdderHandler: ((e: Event) => void) | null = null
+
+  onRowAdderActive(rowIdx: number) {
+    const offsetTop = this.childrenIds.slice(0, rowIdx).reduce((a, b) => a + this._rowHeightsRecord[b], 0)
+    const el = this.rowResizeBar.nativeElement
+
+    el.style.transform = `translateY(${offsetTop - 6 + 16}px)`
+    el.classList.add('active')
+
+    // 如果之前已经绑定了 handler，先解绑
+    if (this._rowAdderHandler) {
+      el.removeEventListener('mousedown', this._rowAdderHandler)
+    }
+
+    // 创建新的 handler，并存入字段
+    this._rowAdderHandler = (e: Event) => {
+      e.stopPropagation()
+      e.preventDefault()
+      this.addRow(rowIdx)
+    }
+
+    el.addEventListener('mousedown', this._rowAdderHandler)
+
+    el.addEventListener('pointerleave', (e) => {
+      e.stopPropagation()
+      e.preventDefault()
+
+      setTimeout(() => {
+        el.classList.remove('active')
+
+        // 解绑当前 handler
+        if (this._rowAdderHandler) {
+          el.removeEventListener('mousedown', this._rowAdderHandler)
+          this._rowAdderHandler = null
+        }
+      })
+    }, {once: true})
+  }
+
 }

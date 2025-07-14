@@ -1,30 +1,36 @@
-@if (!(doc.readonlySwitch$ | async)) {
+<div class="table-scrollable" #tableScrollable>
   <table-row-bar [rowIds]="_childrenIds" [rowHeightsRecord]="_rowHeightsRecord"
                  [selectedRange]="_activeRowRange" (selectedRangeChange)="onRowBarSelected($event)"
+                 (onAdderActive)="onRowAdderActive($event)"
                  #rowBarComponent></table-row-bar>
-}
 
-<div class="table-wrapper">
-  @if (!(doc.readonlySwitch$ | async)) {
-    <div class="table-col-resize-bar" contenteditable="false" (mousedown)="onResizerMousedown($event)" #colResizeBar>
-      <div class="bar"></div>
-    </div>
-
+  <div class="table-wrapper">
     <table-col-bar [colWidths]="props.colWidths" [selectedRange]="_activeColRange"
-                   (selectedRangeChange)="onColBarSelected($event)" #colBarComponent/>
-  }
+                   (selectedRangeChange)="onColBarSelected($event)" (onAdderActive)="onColAdderActive($event)"
+                   #colBarComponent/>
 
-  <table>
-    <colgroup>
-      @for (w of props.colWidths; track w) {
-        <col [width]="w"/>
-      }
-    </colgroup>
+    <table>
+      <colgroup>
+        @for (w of props.colWidths; track w) {
+          <col [width]="w"/>
+        }
+      </colgroup>
 
-    <tbody #tableBody>
-      <ng-container #childrenContainer></ng-container>
-    </tbody>
-  </table>
+      <tbody>
+        <ng-container #childrenContainer></ng-container>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="table-col-resize-bar" contenteditable="false" #colResizeBar (mousedown)="onColResizerMousedown($event)">
+  <span class="add">+</span>
+  <div class="bar" ></div>
+</div>
+
+<div class="table-row-resize-bar" contenteditable="false" #rowResizeBar>
+  <span class="add">+</span>
+  <div class="bar" ></div>
 </div>
 
 

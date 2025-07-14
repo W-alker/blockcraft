@@ -15,9 +15,4 @@ import {TableRowBlockModel} from "./index";
 })
 export class TableRowBlockComponent extends BaseBlockComponent<TableRowBlockModel> {
 
-  addColumn(index: number, count: number = 1) {
-    const newCols = new Array(count).fill(0).map(() => this.doc.schemas.createSnapshot('table-cell', []))
-    this.doc.crud.insertBlocks(this.id, index, newCols)
-  }
-
 }

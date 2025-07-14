@@ -235,7 +235,7 @@ const HEADING_LIST: IContextMenuItem[] = [
 
     .drag-handle {
       display: flex;
-      padding: 0 4px 4px 0;
+      padding: 0 8px 4px 0;
 
       &.active {
         .btn {

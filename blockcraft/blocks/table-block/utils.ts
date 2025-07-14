@@ -1,7 +1,8 @@
 import { TableBlockComponent } from "./table.block";
 import { TableCellBlockComponent } from "./table-cell.block";
+import {TableCellsSelection} from "./types";
 
-const getCellCoordinates = (cell: TableCellBlockComponent) => {
+export const getCellCoordinates = (cell: TableCellBlockComponent) => {
   const rowIdx = cell.parentBlock!.getIndexOfParent();
   const colIdx = cell.getIndexOfParent();
   const rowspan = cell.props.rowspan || 1;
@@ -35,7 +36,7 @@ export class RectangleSelection {
 export function adjustSelection(
   selection: RectangleSelection,
   table: TableBlockComponent
-) {
+): TableCellsSelection {
   const masterMap = new Map<string, TableCellBlockComponent>();
 
   // Step 1: 构建 masterMap

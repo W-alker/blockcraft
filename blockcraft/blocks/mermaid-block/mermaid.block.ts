@@ -39,7 +39,6 @@ import {AsyncPipe} from "@angular/common";
       <div class="switch-btn btn" [hidden]="doc.readonlySwitch$ | async" (mousedown)="onSwitchView($event)">
         <i class="bc_icon bf_qiehuan"></i>
       </div>
-
     </div>
 
     <div class="content">

@@ -228,7 +228,13 @@ export class InputTransformer {
     } else {
       const nextBlock = this.doc.nextSibling(selection.lastBlock)
       if (nextBlock) this.doc.selection.setCursorAtBlock(nextBlock, true)
-      else return true
+      else {
+        const parent = selection.firstBlock.parentBlock
+        if (parent) {
+          this.doc.selection.setCursorAtBlock(parent, true)
+        }
+        return true
+      }
     }
     if (!to) {
       this.doc.crud.deleteBlockById(from.blockId)
@@ -294,21 +300,25 @@ export class InputTransformer {
     const prevBlock = this.doc.prevSibling(from.block)
     // 最前的block
     if (!prevBlock) {
-      // 如果有非root父级
       const parent = from.block.parentBlock
-      if (parent && parent.nodeType !== BlockNodeType.root) {
-        // 选中父级
-        this.doc.selection.selectBlock(parent)
+
+      if(parent) {
         context.preventDefault()
-        return true
+
+        // 如果是第一个空白的文本块，直接删除
+        if (!from.block.textLength && parent.childrenLength > 1) {
+          this.doc.selection.selectOrSetCursorAtBlock(parent.getChildrenByIndex(1), true)
+          this.doc.crud.deleteBlockById(from.block.id)
+          return true
+        }
+
+        if (parent.nodeType !== BlockNodeType.root) {
+          // 选中父级
+          this.doc.selection.selectBlock(parent)
+        }
+
       }
 
-      // 如果是根节点下第一个空白的文本块，直接删除
-      if (!from.block.textLength && parent?.nodeType === BlockNodeType.root && this.doc.root.childrenLength > 1) {
-        this.doc.crud.deleteBlockById(from.block.id)
-        context.preventDefault()
-        return true
-      }
       return true
     }
 

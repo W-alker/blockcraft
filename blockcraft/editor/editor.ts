@@ -47,7 +47,6 @@ import {InlineLinkExtension} from "../plugins/inline-link-extension";
 import {MatIcon} from "@angular/material/icon";
 import {DocDndDataTypes} from "../framework/services/dnd.service";
 import {DocExportManager} from "../tools";
-import {EditorCommentPad} from "./components/comment-pad";
 import {MyCommentService} from "./services/comment.service";
 import {AdapterService} from "./services/adapter.service";
 import {MermaidBlockSchema, MermaidTextareaBlockSchema} from "../blocks/mermaid-block";
@@ -268,6 +267,7 @@ export class EditorComponent {
         if (link.startsWith('http://doc-pre.com')) {
           window.open(link.replace('http://doc-pre.com', 'http://localhost:8081/test3'), '_blank')
         }
+        else window.open(link, '_blank')
       }),
       new MentionPlugin(mentionRequest), new DividerExtensionPlugin()
     ]

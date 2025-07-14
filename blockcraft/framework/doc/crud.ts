@@ -355,9 +355,9 @@ export class DocCRUD {
     }
     if (index === 0 && count >= parentComp.instance.childrenLength) {
       // 确保有可输入元素
-      await this.insertNewParagraph(parentComp.instance.id, parentComp.instance.childrenLength)
+      // this.deleteBlockById(parentComp.instance.id)
       this.doc.logger.warn(`deleteBlocks: delete all children`)
-      // return
+      return
     }
     if (index + count > parentComp.instance.childrenLength) {
       count = parentComp.instance.childrenLength - index

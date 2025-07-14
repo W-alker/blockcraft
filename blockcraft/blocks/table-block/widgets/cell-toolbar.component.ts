@@ -11,6 +11,7 @@ import {TableCellBlockComponent} from "../table-cell.block";
 import {TableRowBlockComponent} from "../table-row.block";
 import {TableCellBlockModel} from "../index";
 import {ORIGIN_SKIP_SYNC} from "../../../framework";
+import {mergeTableCells, unMergeTableCell} from "../callback";
 
 interface CellToolbarItem {
   name: string,
@@ -47,18 +48,6 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
 
       <bc-float-toolbar-item icon="bc_zuoduiqi" [expandable]="true"
                              [bcOverlayTrigger]="alignFloatBar" position="bottom-left" [offsetY]="8"/>
-
-      @if (showOptions.showColAdder) {
-        <span class="bf-float-toolbar__divider"></span>
-        <bc-float-toolbar-item icon="bc_zuojiantou-jia" name="addCol" value="before"/>
-        <bc-float-toolbar-item icon="bc_youjiantou-jia" name="addCol" value="after"/>
-      }
-
-      @if (showOptions.showRowAdder) {
-        <span class="bf-float-toolbar__divider"></span>
-        <bc-float-toolbar-item icon="bc_shangjiantou-jia" name="addRow" value="before"/>
-        <bc-float-toolbar-item icon="bc_xiajiantou-jia" name="addRow" value="after"/>
-      }
 
       <bc-float-toolbar-item *ngIf="showOptions.showDelete" icon="bc_shanchu-2" name="delete" value="true"/>
     </bc-float-toolbar>
@@ -107,8 +96,6 @@ export class CellToolbarComponent {
       showDelete: options.type !== 'cells',
       showRowHead: options.type === 'row' && options.index === 0,
       showColHead: options.type === 'col' && options.index === 0,
-      showColAdder: options.type === 'col',
-      showRowAdder: options.type === 'row'
     }
     this._options = options
   }
@@ -116,18 +103,13 @@ export class CellToolbarComponent {
   protected showOptions = {
     showDelete: false,
     showRowHead: false,
-    showColHead: false,
-    showColAdder: false,
-    showRowAdder: false
+    showColHead: false
   }
 
   protected activeColors: Record<string, string | null> = {}
 
   protected verticalAlign: string | null = null
   protected textAlign?: string
-
-  @Input({required: true})
-  selectedCells: BlockCraft.IBlockComponents['table-cell'][] = []
 
   @Input({required: true})
   doc!: BlockCraft.Doc
@@ -149,18 +131,27 @@ export class CellToolbarComponent {
   constructor(private changeDetectorRef: ChangeDetectorRef) {
   }
 
-  ngOnInit() {
-    const firstCell = this.selectedCells[0]
-    this.isMerged = this.selectedCells.length === 1 && !!(firstCell.props.colspan || firstCell.props.rowspan)
+  private _selectedCells: BlockCraft.IBlockComponents['table-cell'][] = []
 
+  ngOnInit() {
+    const coordinates = this.table.getSelectedCoordinates()
+    if (!coordinates) {
+      this.onClose$.emit()
+      return
+    }
+    const cells = this.table.getCellsMatrixByCoordinates(coordinates.start, coordinates.end).flat(1)
+    this._selectedCells = cells
+    this._setIsMerged()
+
+    const firstCell = cells[0]
     // 比对颜色
     let commonColor = firstCell.props.color ?? null
     let commonBackColor = firstCell.props.backColor ?? null
     // 比对居中
     let commonVerticalAlign = firstCell.props.verticalAlign
     let commonTextAlign = firstCell.props.textAlign
-    for (let i = 1; i < this.selectedCells.length; i++) {
-      const cell = this.selectedCells[i]
+    for (let i = 1; i < cells.length; i++) {
+      const cell = cells[i]
       if (cell.props.color !== commonColor) commonColor = null
       if (cell.props.backColor !== commonBackColor) commonBackColor = null
       // @ts-expect-error
@@ -176,8 +167,22 @@ export class CellToolbarComponent {
     this.textAlign = commonTextAlign
   }
 
+  private _setIsMerged() {
+    if (this._options.type === 'cells') {
+      let cnt = 0
+      for (const cell of this._selectedCells) {
+        if (cell.props.display === 'none') continue
+        cnt++
+        if (cnt > 1) break
+      }
+      this.isMerged = cnt === 1
+    } else {
+      this.isMerged = this._selectedCells.some(v => v.props.colspan || v.props.rowspan || v.props.display === 'none')
+    }
+  }
+
   onColorPicked(obj: { type: string, color: string | null, group: ColorGroup }) {
-    this.setSelectedDescendants(this.selectedCells, obj.type, obj.color)
+    this.setSelectedDescendantsProps(obj.type, obj.color)
     this.activeColors = {
       ...this.activeColors,
       [obj.type]: obj.color
@@ -187,11 +192,11 @@ export class CellToolbarComponent {
   onItemClicked(item: BcFloatToolbarItemComponent) {
     switch (item.name) {
       case 'textAlign':
-        this.setSelectedDescendants(this.selectedCells, 'textAlign', item.value)
+        this.setSelectedDescendantsProps('textAlign', item.value)
         this.textAlign = item.value
         break
       case 'verticalAlign':
-        this.setSelectedDescendants(this.selectedCells, 'verticalAlign', item.value)
+        this.setSelectedDescendantsProps('verticalAlign', item.value)
         this.verticalAlign = item.value
         break
       case 'merge':
@@ -200,10 +205,10 @@ export class CellToolbarComponent {
       case 'delete':
         switch (this._options.type) {
           case 'col':
-            this.table.deleteColumn(this._options.index!, this._options.count)
+            this.table.deleteColumns(this._options.index!, this._options.count)
             break
           case 'row':
-            this.table.deleteRow(this._options.index!, this._options.count)
+            this.table.deleteRows(this._options.index!, this._options.count)
             break
         }
         this.onClose$.emit()
@@ -214,22 +219,6 @@ export class CellToolbarComponent {
       case 'rowHead':
         this.table.updateProps({rowHead: !this.table.props.rowHead})
         break
-      case 'addCol':
-        this.table.addColumns(this._options.index! + (item.value === 'after' ? (this._options.count || 0) : 0))
-        item.value === 'before' && (this._options.index! += 1)
-        // @ts-expect-error
-        this.table._activeColRange = [this._options.index!, this._options.index! + (this._options.count || 0) - 1]
-        this.table.colBarComponent.changeDetectionRef.markForCheck()
-        this.onPositionChanged.emit()
-        break
-      case 'addRow':
-        this.table.addRows(this._options.index! + (item.value === 'after' ? (this._options.count || 0) : 0))
-        item.value === 'before' && (this._options.index! += 1)
-        // @ts-expect-error
-        this.table._activeRowRange = [this._options.index!, this._options.index! + (this._options.count || 0) - 1]
-        this.table.rowBarComponent.changeDetectionRef.markForCheck()
-        this.onPositionChanged.emit()
-        break
     }
 
   }
@@ -238,93 +227,54 @@ export class CellToolbarComponent {
     this.onDestroy.emit()
   }
 
-  setSelectedDescendants(blocks: Array<TableCellBlockComponent | TableRowBlockComponent>, prop: keyof TableCellBlockModel['props'], value: any) {
-    blocks.forEach(block => {
+  setSelectedDescendantsProps(prop: keyof TableCellBlockModel['props'], value: any) {
+    this._selectedCells.forEach(block => {
       block.updateProps({[prop]: value})
     })
   }
 
   private mergeCells() {
-    const cells = this.selectedCells
-    if (cells.length < 2) return
-    const firstCell = cells[0]
-    const lastCell = cells[cells.length - 1]
-    const tableChildrenIds = this.table.childrenIds
-    const firstRow = firstCell.parentBlock as TableRowBlockComponent
-    const lastRow = lastCell.parentBlock as TableRowBlockComponent
-
-    let firstCellIndex = firstCell.getIndexOfParent()
-    let lastCellIndex = lastCell.getIndexOfParent()
-
-    let firstRowIndex = tableChildrenIds.indexOf(firstRow.id)
-    let lastRowIndex = tableChildrenIds.indexOf(lastRow.id)
-
-    if (lastCell.props.colspan) {
-      lastCellIndex += lastCell.props.colspan - 1
-    }
-    if (lastCell.props.rowspan) {
-      lastRowIndex += lastCell.props.rowspan - 1
-    }
-
-    // console.log([firstRowIndex, firstCellIndex], [lastRowIndex, lastCellIndex], firstCell, lastCell )
-
-    this.doc.crud.transact(() => {
-
-      firstCell.updateProps({
-        rowspan: lastRowIndex - firstRowIndex + 1,
-        colspan: lastCellIndex - firstCellIndex + 1
-      })
-
-      for (let i = firstRowIndex; i <= lastRowIndex; i++) {
-        const row = this.doc.getBlockById(tableChildrenIds[i]) as TableRowBlockComponent
-        const rowCellIds = row.childrenIds
-
-        const sliceIds = rowCellIds.slice(i == firstRowIndex ? firstCellIndex + 1 : firstCellIndex, lastCellIndex + 1)
-
-        sliceIds.forEach(id => {
-          const cell = this.doc.getBlockById(id) as TableCellBlockComponent
-          if (cell.props.display === 'none') return
-          if (cell.hasContent) {
-            this.doc.crud.moveBlocks(cell.id, 0, cell.childrenLength, firstCell.id, firstCell.childrenLength)
-          }
-          cell.updateProps({display: 'none'})
-        })
-      }
-
-      this.isMerged = true
-      this.doc.selection.selectBlock(firstCell)
-    })
-
+    if (this.isMerged) return
+    const coordinates = this.table.getSelectedCoordinates()
+    if (!coordinates) return
+    mergeTableCells.call(this.table, coordinates.start, coordinates.end)
+    this.isMerged = true
+    this.onClose$.emit()
   }
 
   private unMergeCell() {
-    const firstCell = this.selectedCells[0]
-    const rowIdx = this.table.childrenIds.indexOf(firstCell.parentBlock!.id)
-    const colIdx = firstCell.getIndexOfParent()
-    // this.doc.crud.transact(() => {
+    if (this._options.type === 'cells') {
+      this._setIsMerged()
+      if (!this.isMerged) return
+      unMergeTableCell.call(this.table, this._selectedCells[0])
+    } else {
+      // 调整后的范围内全部设置非合并状态
+      const coordinates = this.table.getSelectedCoordinates()
+      if (!coordinates) return
+      const adjustedSelection = this.table.confirmSelection(coordinates.start, coordinates.end)
+      const cells = this.table.getCellsMatrixByCoordinates(adjustedSelection.start, adjustedSelection.end).flat(1)
+      this.doc.crud.transact(() => {
 
-      const rowspan = firstCell.props.rowspan!
-      const colspan = firstCell.props.colspan!
+        cells.forEach(block => {
 
-      for (let i = rowIdx; i < rowIdx + rowspan; i++) {
-        const row = this.doc.getBlockById(this.table.childrenIds[i]) as TableRowBlockComponent
-        for (let j = colIdx; j < colIdx + colspan; j++) {
-          const cell = row.childrenIds[j]
-          const cellBlock = this.doc.getBlockById(cell) as TableCellBlockComponent
-
-          if (!cellBlock.childrenLength) {
+          if (!block.childrenLength) {
             const p = this.doc.schemas.createSnapshot('paragraph', [])
-            this.doc.crud.insertBlocks(cellBlock.id, 0, [p])
+            this.doc.crud.insertBlocks(block.id, 0, [p])
           }
-          cellBlock.updateProps({colspan: null, rowspan: null, display: null})
 
-          this.table.selectCell(cellBlock)
-        }
-      }
+          block.updateProps({
+            colspan: null,
+            rowspan: null,
+            display: null
+          })
+        })
 
-      this.isMerged = false
-      this.selectedCells = this.table.getSelectedCells()
-    // }, ORIGIN_SKIP_SYNC)
+      })
+
+    }
+
+    this.isMerged = false
+    this.onClose$.emit()
   }
 
   protected readonly HORIZON_ALIGN_LIST = HORIZON_ALIGN_LIST

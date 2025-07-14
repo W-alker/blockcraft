@@ -2,7 +2,7 @@ import {
   closetBlockId,
   DocPlugin,
   EventListen, FakeRange, getPositionWithOffset,
-  INLINE_TEXT_NODE_TAG,
+  INLINE_TEXT_NODE_TAG, INLINE_ELEMENT_TAG
 } from "../../framework";
 import {skip, Subject, takeUntil} from "rxjs";
 import {InlineLinkToolbar} from "./widgets/inline-link-toolbar";
@@ -36,7 +36,7 @@ export class InlineLinkExtension extends DocPlugin {
   @EventListen('doubleClick', {flavour: "root"})
   onDoubleClick(ctx: UIEventStateContext) {
     const target = ctx.getDefaultEvent().target as Node | null
-    if (!target) return
+    if (!target || !(target instanceof HTMLElement)) return
     const link = this.tryGetLink(target)
     if (!link) return
     this.openLink(link)
@@ -46,7 +46,7 @@ export class InlineLinkExtension extends DocPlugin {
   @EventListen('mouseDown', {flavour: "root"})
   onClick(ctx: UIEventStateContext) {
     const target = ctx.getDefaultEvent().target as Node | null
-    if (!target || target === this._linkNode) return
+    if (!target || !(target instanceof HTMLElement)) return
     const link = this.tryGetLink(target)
     if (!link) return
 
@@ -54,11 +54,11 @@ export class InlineLinkExtension extends DocPlugin {
     if (!blockId) return
 
     this.openToolbar(target as HTMLElement, link, this.doc.getBlockById(blockId))
+    return true
   }
 
-  tryGetLink(target: Node) {
-    if (!(target instanceof HTMLElement)) return null
-    const link = target.localName === INLINE_TEXT_NODE_TAG ? target.parentElement?.getAttribute('link') : target.getAttribute('link')
+  tryGetLink(target: HTMLElement) {
+    const link = target.localName === INLINE_TEXT_NODE_TAG ? target.parentElement?.getAttribute('link') : null
     if (!link) return null
     return link
   }
@@ -66,8 +66,11 @@ export class InlineLinkExtension extends DocPlugin {
   getLinkInfo(target: HTMLElement) {
     const nodeRange = adjustRangeByLinkNode(target)
     const range = document.createRange()
-    range.setStartBefore(nodeRange.start)
-    range.setEndAfter(nodeRange.end)
+
+    const startTextNode = nodeRange.start.firstElementChild!.firstChild as Text
+    const endTextNode = nodeRange.end.firstElementChild!.firstChild as Text
+    range.setStart(startTextNode, 0)
+    range.setEnd(endTextNode, endTextNode.wholeText.length)
     const normalizedRange = this.doc.selection.normalizeRange(range)
     const text = range.toString()
     range.detach()
@@ -81,12 +84,12 @@ export class InlineLinkExtension extends DocPlugin {
     if (this._cpr || !this.doc.isEditable(block)) return
     this._linkNode = target
 
-    this._cpr = this.doc.overlayService.createConnectedOverlay<InlineLinkToolbar>({
+    const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<InlineLinkToolbar>({
       target,
       component: InlineLinkToolbar,
-      backdrop: true
-    }, this._closeToolbar$, this.closeToolbar).componentRef
+    }, this._closeToolbar$, this.closeToolbar)
 
+    this._cpr = componentRef
     this._cpr.setInput('doc', this.doc)
     this._cpr.setInput('link', link ?? '')
 
@@ -231,16 +234,20 @@ const adjustRangeByLinkNode = (node: HTMLElement) => {
   const link = node.getAttribute('link')
 
   while (start.previousElementSibling) {
-    if (start.previousElementSibling.getAttribute('link') === link) {
-      start = start.previousElementSibling as HTMLElement
+    const prevSibling = start.previousElementSibling
+    if (prevSibling.localName === INLINE_ELEMENT_TAG && prevSibling.getAttribute('link') === link) {
+      if ((prevSibling.firstElementChild as HTMLElement).localName !== INLINE_TEXT_NODE_TAG) break
+      start = prevSibling as HTMLElement
       continue
     }
     break
   }
 
   while (end.nextElementSibling) {
-    if (end.nextElementSibling.getAttribute('link') === link) {
-      end = end.nextElementSibling as HTMLElement
+    const nextSibling = end.nextElementSibling
+    if (nextSibling.localName === INLINE_ELEMENT_TAG && nextSibling.getAttribute('link') === link) {
+      if ((nextSibling.firstElementChild as HTMLElement).localName !== INLINE_TEXT_NODE_TAG) break
+      end = nextSibling as HTMLElement
       continue
     }
     break

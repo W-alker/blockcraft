@@ -185,7 +185,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   get childrenLength() {
-    if (this.nodeType === BlockNodeType.editable) return -1
+    if (this.nodeType === BlockNodeType.editable) return 0
     return (this.yBlock.get('children') as Y.Array<string>).length
   }
 
@@ -258,18 +258,14 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     if (this.doc.isReadonly) return
     this.doc.crud.transact(() => {
         for (const key in props) {
+          if (this._native.props[key] == props[key]) continue
           if (props[key] === null) {
-            // delete this._native.props[key]
             this._yProps.delete(key)
             continue
           }
-          this.props[key] !== props[key] && this._yProps.set(key,
-            // this._native.props[key] =
-            props[key]!)
+          this._yProps.set(key, props[key]!)
         }
-        // this.changeDetectorRef.markForCheck()
-      },
-      // ORIGIN_SKIP_SYNC
+      }
     )
   }
 
