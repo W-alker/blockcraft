@@ -50,7 +50,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         this._activeBlock = attachmentBlock as any
 
         const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<AttachmentBlockToolbar>({
-          target: attachmentBlock.hostElement,
+          target: attachmentBlock,
           component: AttachmentBlockToolbar,
           positions: [
             getPositionWithOffset("top-left", 0, 8),
@@ -59,6 +59,10 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         }, this._closeToolbar$, this.closeToolbar)
 
         this._toolbarRef = overlayRef
+
+        attachmentBlock.onDestroy$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
+          this._closeToolbar$.next()
+        })
 
         componentRef.instance.onItemClick.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
           switch (v.name) {
@@ -104,7 +108,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     }
 
     const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<RenameInputPad>({
-      target: block.hostElement,
+      target: block,
       component: RenameInputPad,
       positions: [
         getPositionWithOffset('top-left', 0, 4),

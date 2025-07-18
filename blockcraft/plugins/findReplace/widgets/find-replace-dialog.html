@@ -1,0 +1,22 @@
+<div class="find-replace" (mousedown)="onMouseDown($event)" #wrapper>
+  <label>查找：</label>
+  <div class="field">
+    <input [(ngModel)]="findText" (ngModelChange)="onFindTextChange()" (keydown.shift.enter)="findPrev()"
+           (keydown.enter)="findNext()" (keydown.escape)="onClose.emit()" #findInput/>
+    @if (matchedList.length) {
+      <span>{{ matchIndex + 1 }} / {{ matchedList.length }}</span>
+    } @else {
+      <span>0 / 0</span>
+    }
+  </div>
+  <label>替换为：</label>
+  <div class="field">
+    <input [(ngModel)]="replaceText" (keydown.escape)="onClose.emit()"/>
+  </div>
+  <div class="actions">
+    <button (click)="findPrev()">上一个</button>
+    <button (click)="findNext()">下一个</button>
+    <button (click)="replaceOne()">替换当前</button>
+    <button (click)="replaceAll()">全部替换</button>
+  </div>
+</div>

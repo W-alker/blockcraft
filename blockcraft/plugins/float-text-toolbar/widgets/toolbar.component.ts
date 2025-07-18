@@ -14,7 +14,7 @@ import {
   ColorGroup,
   ColorPickerComponent
 } from "../../../components";
-import {BlockCraftError, ErrorCode, SimpleValue} from "../../../global";
+import {BlockCraftError, ErrorCode, nextTick, SimpleValue} from "../../../global";
 import {NgForOf, NgIf} from "@angular/common";
 import {IInlineNodeAttrs, IEditableBlockProps} from "../../../framework";
 import {Overlay} from "@angular/cdk/overlay";
@@ -394,7 +394,9 @@ export class FloatTextToolbarComponent {
     const close = () => {
       ovr.dispose()
       fake.destroy()
-      this.doc.selection.replay(selectionJSON)
+      nextTick().then(() => {
+        this.doc.selection.replay(selectionJSON)
+      })
     }
     const cpr = ovr.attach(portal)
     merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)

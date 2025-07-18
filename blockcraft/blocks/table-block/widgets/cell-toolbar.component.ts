@@ -35,7 +35,7 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
   selector: 'cell-toolbar',
   template: `
     <bc-float-toolbar (onItemClick)="onItemClicked($event)">
-      <bc-float-toolbar-item icon="bc_hebingdanyuange1" name="merge" value="true" title="合并单元格"
+      <bc-float-toolbar-item icon="bc_hebingdanyuange1" name="merge" value="true" [title]="isMerged ? '解除合并' : '合并单元格'"
                              [active]="isMerged"/>
       <bc-float-toolbar-item *ngIf="showOptions.showRowHead" title="设置标题行" [active]="table.props.rowHead"
                              icon="bc_biaotihang" name="rowHead" value="true"/>

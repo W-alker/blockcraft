@@ -52,8 +52,9 @@ export class BlockCraftDoc {
   readonly clipboard = new ClipboardManager(this)
   private _inputManger = new InputTransformer(this)
 
-  public readonly onChildrenUpdate$ = this.crud.onChildrenUpdate$
+  readonly onChildrenUpdate$ = this.crud.onChildrenUpdate$
   readonly onPropsUpdate$ = this.crud.onPropsUpdate$
+  readonly onTextUpdate$ = this.crud.onTextUpdate$
 
   private readonly _plugins: DocPlugin[] = []
 

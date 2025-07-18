@@ -60,6 +60,7 @@ import {IndexeddbPersistence} from "y-indexeddb";
 import {DividerExtensionPlugin} from "../plugins/divider-toolbar";
 import {DividerStylePopupComponent} from "../plugins/divider-toolbar/widgets/divider-style-popup.component";
 import {CodeInlineEditorBinding, TableBlockBinding, TextMarkerPlugin, OrderedBlockPlugin} from "../plugins";
+import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -269,7 +270,8 @@ export class EditorComponent {
         }
         else window.open(link, '_blank')
       }),
-      new MentionPlugin(mentionRequest), new DividerExtensionPlugin()
+      new MentionPlugin(mentionRequest), new DividerExtensionPlugin(),
+      new FindReplacePlugin()
     ]
   })
 

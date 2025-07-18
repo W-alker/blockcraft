@@ -32,7 +32,7 @@ export class EmbedFrameExtensionPlugin extends DocPlugin {
         this._activeBlock = frameBlock as any
 
         const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay({
-          target: frameBlock.hostElement,
+          target: frameBlock,
           positions: [
             getPositionWithOffset("top-left", 0, 8),
             getPositionWithOffset("bottom-left", 0, 8),

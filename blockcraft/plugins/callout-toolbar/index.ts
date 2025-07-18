@@ -52,7 +52,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
     resizeObs.observe(calloutBlock.hostElement)
 
     const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay({
-      target: calloutBlock.hostElement,
+      target: calloutBlock,
       component: CalloutBlockToolbar,
       positions: [
         getPositionWithOffset("top-center", 0, 8),

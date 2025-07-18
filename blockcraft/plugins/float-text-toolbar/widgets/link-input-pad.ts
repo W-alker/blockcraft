@@ -13,10 +13,11 @@ import {isUrl} from "../../../global";
 @Component({
   selector: 'link-input-pad',
   template: `
-    <input type="text" (input)="onInput($event)" [class.error]="!isValid" (keydown.enter)="submitValue()" placeholder="输入链接地址" #inputElement/>
+    <input type="text" (input)="onInput($event)" [class.error]="!isValid" placeholder="输入链接地址" #inputElement
+           (keydown.enter)="submitValue($event)" (keydown.escape)="closePad($event)"    />
     <div style="display: flex; justify-content: flex-end; gap: 8px; width: 100%;">
-      <button nz-button nzType="default" (mousedown)="$event.preventDefault(); onCancel.emit()">取消</button>
-      <button nz-button nzType="primary" (mousedown)="$event.preventDefault(); submitValue()">确定</button>
+      <button nz-button nzType="default" (mousedown)="closePad($event)">取消</button>
+      <button nz-button nzType="primary" (mousedown)="submitValue($event)">确定</button>
     </div>
   `,
   styles: [`
@@ -88,8 +89,16 @@ export class LinkInputPad {
     this.cdr.markForCheck()
   }
 
-  submitValue() {
+  submitValue(e: Event) {
+    e.preventDefault()
+    e.stopPropagation()
     if (!this.isValid) return
     this.onConfirm.emit(this.inputElement.nativeElement.value)
+  }
+
+  closePad(e: Event) {
+    e.preventDefault()
+    e.stopPropagation()
+    this.onCancel.emit()
   }
 }

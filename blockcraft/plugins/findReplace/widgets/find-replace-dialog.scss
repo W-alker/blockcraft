@@ -1,0 +1,74 @@
+.find-replace {
+  background: #fff;
+  border: 1px solid #dcdcdc;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  font-size: 13px;
+  z-index: 1000;
+  cursor: move;
+
+  label {
+    margin-bottom: 4px;
+    color: #444;
+    font-size: 12px;
+  }
+
+  .field {
+    width: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    padding: 4px 4px;
+    font-size: 13px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+
+    input {
+      flex: 1;
+      box-sizing: border-box;
+      outline: none;
+      border: none;
+    }
+
+    > span {
+      white-space: nowrap;
+      color: #999;
+    }
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 4px;
+
+    button {
+      font-size: 12px;
+      padding: 6px 0;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background-color: #f5f5f5;
+      cursor: pointer;
+      transition: background-color 0.2s, border-color 0.2s;
+
+      &:hover {
+        background-color: #eaeaea;
+        border-color: #aaa;
+      }
+
+      &:active {
+        background-color: #ddd;
+      }
+    }
+
+    .status {
+      grid-column: 1 / span 2;
+      text-align: right;
+      font-size: 11px;
+      color: #777;
+      margin-top: 4px;
+    }
+  }
+}

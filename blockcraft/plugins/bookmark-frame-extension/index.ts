@@ -33,7 +33,7 @@ export class BookmarkBlockExtensionPlugin extends DocPlugin {
         this._activeBlock = bookmarkBlock as any
 
         const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay({
-          target: bookmarkBlock.hostElement,
+          target: bookmarkBlock,
           component: BookmarkBlockToolbar,
           positions: [
             getPositionWithOffset("top-left", 0, 8),

@@ -18,8 +18,8 @@ import {figmaUrlRegex, jueJinUrlRegex, urlRegex} from "../../global";
     <div class="desc">{{ schema.metadata.description }}</div>
 
     <input type="text" [placeholder]="EMBED_FRAME_URL_START_MAP[schema.flavour] + '/...'" (input)="verifyUrl()"
-           (keydown.enter)="trySubmit()" (keydown.escape)="onCancel.emit()" #inputElement/>
-    <button [disabled]="isDisabled" (mousedown)="trySubmit()">确定</button>
+           (keydown.enter)="trySubmit($event)" (keydown.escape)="onCancel.emit()" #inputElement/>
+    <button [disabled]="isDisabled" (mousedown)="trySubmit($event)">确定</button>
   `,
   styles: [`
     :host {
@@ -103,7 +103,9 @@ export class EmbedFrameCreator {
     this.isDisabled = !EMBED_FRAME_URL_REG_MAP[this.schema.flavour].test(this.inputElement.nativeElement.value)
   }
 
-  trySubmit() {
+  trySubmit(e: Event) {
+    e.preventDefault()
+    e.stopPropagation()
     this.verifyUrl()
     if (this.isDisabled) return
     this.onSubmit.emit(this.inputElement.nativeElement.value)

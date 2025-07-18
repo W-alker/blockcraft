@@ -719,7 +719,6 @@ export class SelectionManager {
     this.setSelection(json.from, json.to)
   }
 
-  @performanceTest()
   createFakeRange(json: Pick<IBlockSelectionJSON, 'from' | 'to'>, config: IFakeRangeConfig = {}) {
     return new FakeRange(this.doc, json, config)
   }

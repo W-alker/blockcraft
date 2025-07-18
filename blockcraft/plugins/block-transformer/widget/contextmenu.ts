@@ -85,7 +85,7 @@ export class BlockTransformContextMenu {
 
     this.list = listAll
 
-    const textObserver = () => {
+    const textObserver = debounce(() => {
       if (this.doc.event.status.isComposing) return;
       const text = this.activeBlock.textContent()
       if (!text || !TransformReg.test(text)) {
@@ -101,9 +101,9 @@ export class BlockTransformContextMenu {
       this.list = matchedItems
       this.activeIdx = 0
       this.cdr.markForCheck()
-    }
+    }, 300)
 
-    this.activeBlock.yText.observe(debounce(textObserver, 300))
+    this.activeBlock.yText.observe(textObserver)
 
     const hotKeyEvents = [
       this.doc.event.bindHotkey({key: 'Escape',}, evt => {
@@ -127,11 +127,6 @@ export class BlockTransformContextMenu {
         return true
       }, {blockId: this.activeBlock.id})
     ]
-
-    this.activeBlock.onDestroy$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-      hotKeyEvents.forEach(v => v())
-      this.activeBlock.yText?.unobserve(textObserver)
-    })
 
     this.destroyRef.onDestroy(() => {
       hotKeyEvents.forEach(v => v())
@@ -218,18 +213,21 @@ export class BlockTransformContextMenu {
     const schema = this.doc.schemas.get(flavour)!
     if (schema.nodeType === BlockNodeType.editable) {
       const snapshot = this.doc.schemas.createSnapshot(schema.flavour, [[], this.activeBlock.props])
-      this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [snapshot]).then(() => {
+      this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [snapshot])
+        .then(() => {
         this.doc.selection.setCursorAtBlock(snapshot.id, true)
       })
       return
     }
 
+    // TODO
     const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
     blockCreator.getParamsByScheme(schema).then(params => {
       if (!params) return
       const newBlock = this.doc.schemas.createSnapshot(schema.flavour, params as any)
       newBlock.props.depth = this.activeBlock.props.depth
-      this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [newBlock]).then(() => {
+      this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [newBlock])
+        .then(() => {
         this.doc.selection.setCursorAtBlock(newBlock.id, true)
       })
     })

@@ -1,7 +1,8 @@
 import {ComponentRef} from "@angular/core";
-import {ComponentType, ConnectedPosition, Overlay} from "@angular/cdk/overlay";
+import {ComponentType, ConnectedPosition, Overlay, PositionStrategy} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
-import {fromEvent, Subject, take, takeUntil} from "rxjs";
+import {filter, fromEvent, merge, Subject, take, takeUntil} from "rxjs";
+import {throttle} from "../../global";
 
 // export const DOC_OVERLAY_SERVICE_TOKEN = new InjectionToken<OverlayService>('DOC_OVERLAY_SERVICE');
 
@@ -46,11 +47,36 @@ export type OverlayPosition =
   | 'right-center'
   | 'right-bottom';
 
-export interface IOverlayCreateOptions {
-  target: HTMLElement
+export interface IConnectOverlayCreateOptions {
+  target: HTMLElement | BlockCraft.BlockComponent
   component: ComponentType<any>
   positions?: ConnectedPosition[]
   backdrop?: boolean
+}
+
+export type IGlobalOverlayCreateOptions = {
+  component: ComponentType<any>
+  backdrop?: boolean
+} & {
+  // 水平居中显示覆盖层，并可选偏移量。清除之前设置的任何水平位置。
+  centerHorizontally?: string
+  // 垂直居中叠加层，并可选偏移量。清除之前设置的垂直位置。
+  centerVertically?: string
+  // 垂直中心偏移量。
+  offset?: string
+} & {
+  // 设置遮罩的左位置。清除之前设置的任何水平位置。
+  left?: string
+  // 设置遮罩的顶部位置。清除之前设置的任何垂直位置。
+  top?: string
+  // 设置覆盖层的右侧位置。清除之前设置的任何水平位置。
+  right?: string
+  // 设置遮罩的底部位置。清除之前设置的任何垂直位置。
+  bottom?: string
+  // 将覆盖层设置在视口的开始位置，具体取决于覆盖层方向。在从左到右的布局中，这将位于左侧，在从右到左的布局中，这将位于右侧。
+  start?: string
+  // 根据覆盖层方向将覆盖层设置在视口的末尾。在从左到右的布局中，这将位于右侧，在从右到左的布局中，这将位于左侧。
+  end?: string
 }
 
 export class DocOverlayService {
@@ -60,15 +86,74 @@ export class DocOverlayService {
   constructor(private readonly doc: BlockCraft.Doc) {
   }
 
-  createConnectedOverlay<T>(params: IOverlayCreateOptions, close$: Subject<any>, onDestroy?: () => void) {
+  private _createOverlayPosition(params: IGlobalOverlayCreateOptions | IConnectOverlayCreateOptions): PositionStrategy {
+    if ('target' in params) {
+      const el = params.target instanceof HTMLElement ? params.target : params.target.hostElement
+      return this.overlay.position().flexibleConnectedTo(el).withPositions(params.positions || [
+        getPositionWithOffset('top-center', 0, 0),
+        getPositionWithOffset('bottom-center', 0, 0),
+      ])
+    }
+
+    const positionStrategy = this.overlay.position().global()
+    if (params.centerHorizontally) {
+      positionStrategy.centerHorizontally(params.centerHorizontally).centerVertically(params.centerVertically)
+    }
+    if (params.top) {
+      positionStrategy.top(params.top)
+    }
+    if (params.left) {
+      positionStrategy.left(params.left)
+    }
+    if (params.bottom) {
+      positionStrategy.bottom(params.bottom)
+    }
+    if (params.right) {
+      positionStrategy.right(params.right)
+    }
+    if (params.start) {
+      positionStrategy.start(params.start)
+    }
+    if (params.end) {
+      positionStrategy.end(params.end)
+    }
+    return positionStrategy
+  }
+
+  createConnectedOverlay<T>(params: IConnectOverlayCreateOptions, close$: Subject<any>, onDestroy?: () => void) {
+    if (params.target instanceof HTMLElement) {
+      const observer = new MutationObserver((mutationsList) => {
+        for (const mutation of mutationsList) {
+          mutation.removedNodes.forEach((node) => {
+            if (node === params.target) {
+              close$.next(true)
+            }
+          })
+        }
+      })
+      observer.observe(this.doc.root.hostElement, {subtree: true, childList: true})
+      close$.pipe(take(1)).subscribe(() => {
+        observer.disconnect()
+      })
+    } else {
+      params.target.onDestroy$.pipe(takeUntil(close$)).subscribe(() => {
+        close$.next(true)
+      })
+    }
+
+    return this._createOverlay<T>(params, close$, onDestroy)
+  }
+
+  createGlobalOverlay<T>(params: IGlobalOverlayCreateOptions, close$: Subject<any>, onDestroy?: () => void) {
+    return this._createOverlay<T>(params, close$, onDestroy)
+  }
+
+  private _createOverlay<T>(params: IGlobalOverlayCreateOptions | IConnectOverlayCreateOptions, close$: Subject<any>, onDestroy?: () => void) {
+    // 根据情况设置
     const portal = new ComponentPortal(params.component, null, this.doc.injector)
 
     const overlayRef = this.overlay.create({
-      positionStrategy: this.overlay.position().flexibleConnectedTo(params.target).withPositions(params.positions || [
-        getPositionWithOffset('top-center', 0, 0),
-        getPositionWithOffset('bottom-center', 0, 0),
-      ]),
-      scrollStrategy: this.overlay.scrollStrategies.close(),
+      positionStrategy: this._createOverlayPosition(params),
       hasBackdrop: params.backdrop,
       backdropClass: 'cdk-overlay-transparent-backdrop',
     })
@@ -80,37 +165,19 @@ export class DocOverlayService {
     })
 
     fromEvent(this.doc.scrollContainer!, 'scroll').pipe(takeUntil(close$))
-      .subscribe(() => {
+      .subscribe(throttle(() => {
         overlayRef && overlayRef.updatePosition()
-      })
+      }, 200))
 
-    const observer = new MutationObserver((mutationsList) => {
-      for (const mutation of mutationsList) {
-        mutation.removedNodes.forEach((node) => {
-          if (node === params.target) {
-            close$.next(true)
-          }
-        })
-      }
-    })
-    observer.observe(this.doc.root.hostElement, {subtree: true, childList: true})
-
-    this.doc.readonlySwitch$.pipe(takeUntil(close$)).subscribe(v => {
-      v && close$.next(true)
-    })
-
-    this.doc.onDestroy$.pipe(takeUntil(close$)).subscribe(() => {
-      close$.next(true)
-    })
-
-    params.backdrop && overlayRef.backdropClick().pipe(takeUntil(close$)).subscribe(() => {
+    merge(
+      this.doc.readonlySwitch$.pipe(filter(v => v)), this.doc.onDestroy$
+    ).pipe(takeUntil(close$)).subscribe(() => {
       close$.next(true)
     })
 
     close$.pipe(take(1)).subscribe(() => {
       onDestroy?.()
       overlayRef.dispose()
-      observer.disconnect()
     })
 
     return {

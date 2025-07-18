@@ -4,7 +4,7 @@ import {BlockCraftError, ErrorCode} from "../../../global";
 
 export interface IFakeRangeConfig {
   bgColor?: string,
-  borderColor?: string,
+  // borderColor?: string,
   minCursorWidth?: number
 }
 
@@ -36,6 +36,12 @@ export class FakeRange {
 
   get fakeSpans() {
     return this._fakeSpans
+  }
+
+  setColor(options: { bgColor?: string, borderColor?: string }) {
+    this._fakeSpans.forEach(span => {
+      options.bgColor && span.style.setProperty('--bgColor', options.bgColor)
+    })
   }
 
   private _createBlockFakeSpan(block: BlockCraft.BlockComponent) {
@@ -72,12 +78,12 @@ export class FakeRange {
     const wrapRect = block.hostElement.getBoundingClientRect()
     const span = document.createElement('span');
     span.classList.add('blockcraft-cursor')
+    span.style.setProperty('--bgColor', this.config.bgColor || 'var(--bc-select-background-color)')
     const _rRects = range.getClientRects();
 
     const createPart = (rect: DOMRect) => {
       const span = document.createElement('span');
       span.style.cssText = `
-        background: ${this.config.bgColor || 'var(--bc-select-background-color)'};
         left: ${rect.left - wrapRect.left}px;
         top: ${rect.top - wrapRect.top}px;
         width: ${Math.max(rect.width, this.config.minCursorWidth || 2)}px;

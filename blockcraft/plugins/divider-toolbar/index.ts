@@ -37,7 +37,7 @@ export class DividerExtensionPlugin extends DocPlugin {
         this._activeBlock = dividerBlock as any
 
         const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<DividerStylePopupComponent>({
-          target: dividerBlock.hostElement,
+          target: dividerBlock,
           component: DividerStylePopupComponent,
           positions: [
             getPositionWithOffset("top-left", 0, 8),

@@ -126,8 +126,8 @@ export const getCommonAttributesFromDeltas = (delta: DeltaInsert[]) => {
   return commonAttrs || {}
 }
 
-export const deltaToString = (delta: DeltaInsert[]) => {
-  return delta.reduce((acc, cur) => acc + (typeof cur.insert === "string" ? cur.insert : ''), '')
+export const deltaToString = (delta: DeltaInsert[], replaceEmbed = '') => {
+  return delta.reduce((acc, cur) => acc + (typeof cur.insert === "string" ? cur.insert : replaceEmbed), '')
 }
 
 export const deltaStrLength = (delta: DeltaInsert[]) => {

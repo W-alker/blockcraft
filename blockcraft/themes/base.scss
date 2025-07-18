@@ -320,6 +320,7 @@
 
   > span {
     position: absolute;
+    background-color: var(--bgColor, --bc-select-background-color);
   }
 
   &-tag {

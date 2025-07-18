@@ -4,7 +4,7 @@ import {
   BindHotKey,
   DocPlugin,
   EditableBlockComponent,
-  EventListen, ORIGIN_SKIP_SYNC,
+  EventListen, getPositionWithOffset, ORIGIN_SKIP_SYNC,
 } from "../../framework";
 import {UIEventStateContext} from "../../framework";
 import {nextTick, sliceDelta} from "../../global";
@@ -145,38 +145,27 @@ export class BlockTransformerPlugin extends DocPlugin {
     return true
   }
 
-  private contextOvr: OverlayRef | null = null
   private closeMenu$ = new Subject()
 
   openContextMenu(block: EditableBlockComponent) {
-    const overlay = this.doc.injector.get(Overlay)
-    const positions = overlay.position().flexibleConnectedTo(block.containerElement).withPositions([
-      {originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top'},
-      {originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom'},
-    ])
-    this.contextOvr = overlay.create({
-      positionStrategy: positions,
-      scrollStrategy: overlay.scrollStrategies.reposition()
-    })
+    const {componentRef: cpr} = this.doc.overlayService.createConnectedOverlay<BlockTransformContextMenu>({
+      target: block.containerElement,
+      positions: [
+        getPositionWithOffset('top-left'),
+        getPositionWithOffset('bottom-left'),
+      ],
+      component: BlockTransformContextMenu
+    }, this.closeMenu$, () => {
 
-    const cpr = this.contextOvr.attach(new ComponentPortal(BlockTransformContextMenu))
+    })
     cpr.setInput('activeBlock', block)
     cpr.setInput('doc', this.doc)
-
-    fromEvent(this.doc.scrollContainer!, 'scroll').pipe(takeUntil(this.closeMenu$)).subscribe(() => {
-      this.contextOvr?.updatePosition()
-    })
 
     merge(
       cpr.instance.close$,
       this.doc.selection.selectionChange$.pipe(skip(1), filter(v => !v || !!v.to || !v.collapsed || (v.firstBlock.id !== block.id))),
       block.onDestroy$).pipe(takeUntil(this.closeMenu$)).subscribe(() => {
       this.closeMenu$.next(true)
-    })
-
-    this.closeMenu$.pipe(take(1)).subscribe(v => {
-      this.contextOvr?.dispose()
-      this.contextOvr = null
     })
   }
 
