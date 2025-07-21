@@ -54,40 +54,45 @@ export class FindReplaceDialog {
   ngOnInit() {
     // 检测新增和删除节点变化
     this.doc.onChildrenUpdate$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(evt => {
-      if(!this.findText) return
+      if (!this.findText) return
       this.cancelHighlight()
 
-      evt.transactions.forEach(t => {
-        if (t.deleted) {
-          const parentBlock = t.block
-          const childIds = parentBlock.childrenIds
-          // 如果有已匹配的block的父block是有删除操作的block, 需要删除已匹配的
-          for (const m of this.matchedBlockMap.values()) {
-            if (m[0].block.parentId === parentBlock.id && !childIds.includes(m[0].block.id)) {
-              this.clearOldMatchesMark(m[0].block.id)
+      nextTick().then(() => {
+
+        evt.transactions.forEach(t => {
+          if (t.deleted) {
+            const parentBlock = t.block
+            const childIds = parentBlock.childrenIds
+            // 如果有已匹配的block的父block是有删除操作的block, 需要删除已匹配的
+            for (const m of this.matchedBlockMap.values()) {
+              if (m[0].block.parentId === parentBlock.id && !childIds.includes(m[0].block.id)) {
+                this.clearOldMatchesMark(m[0].block.id)
+              }
             }
           }
-        }
 
-        if (t.inserted) {
-          t.inserted.forEach(block => {
-            if (!this.doc.isEditable(block)) return;
+          if (t.inserted) {
+            t.inserted.forEach(block => {
+              if (!this.doc.isEditable(block)) return;
 
-            // 如果是新增的元素，需要重新查找
-            const matches = this._matchBlockText(block)
-            if (!matches?.length) return
-            this.matchedBlockMap.set(block.id, matches)
-          })
-        }
+              // 如果是新增的元素，需要重新查找
+              const matches = this._matchBlockText(block)
+              if (!matches?.length) return
+              this.matchedBlockMap.set(block.id, matches)
+            })
+          }
+        })
+
+        this.resortMatches()
+        this.highlightCurrent(false)
+
       })
 
-      this.resortMatches()
-      this.highlightCurrent(false)
     })
 
     // 检测文本变化
     this.doc.onTextUpdate$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(evt => {
-      if(!this.findText) return
+      if (!this.findText) return
 
       if (!this.matchedList.length && !this.matchedBlockMap.size) {
         this.findAll()
@@ -99,10 +104,7 @@ export class FindReplaceDialog {
         evt.transactions.forEach(t => {
           const block = t.block
           this.clearOldMatchesMark(block.id)
-          const matches = this._matchBlockText(block)
-          if (matches?.length) {
-            this.matchedBlockMap.set(block.id, matches)
-          }
+          this._matchBlockText(block)
         })
         this.resortMatches()
         this.highlightCurrent(false)
@@ -300,6 +302,7 @@ export class FindReplaceDialog {
 
   private _x = 0
   private _y = 0
+
   @HostListener('mousedown', ['$event'])
   onMouseDown(e: MouseEvent) {
     if (e.target !== this.wrapper.nativeElement) return
@@ -324,6 +327,4 @@ export class FindReplaceDialog {
     document.removeEventListener('mouseup', this.onMouseUp)
   }
 
-
-  protected readonly close = close;
 }
