@@ -18,7 +18,6 @@ export class DocVM {
   private store: Map<string, BlockCraft.BlockComponentRef> = new Map()
   private _gcTags = new Set<string>()
 
-  // private _tracker = new BlockActiveTracker(this)
 
   constructor(
     private readonly doc: BlockCraft.Doc

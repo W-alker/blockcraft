@@ -166,6 +166,9 @@ export class BlockCraftDoc {
   }
 
   private _initEditor(comp: BlockCraft.IBlockComponents['root']) {
+    // init scroll container
+    this._scrollContainer = getScrollContainer(comp.hostElement)
+
     // exec after init functions
     this.afterInit$.next(this._root = comp)
     this.afterInitFnStack.forEach(fn => fn(this.root))
@@ -198,8 +201,6 @@ export class BlockCraftDoc {
       return true
     }, {blockId: this.rootId})
 
-    // init scroll container
-    this._scrollContainer = getScrollContainer(comp.hostElement)
   }
 
   destroy() {
