@@ -1,48 +1,49 @@
 import {IMermaidType} from "./types";
+import 'prismjs/components/prism-mermaid';
 
 export const MERMAID_TYPE_LIST: IMermaidType[] = [
   {
     name: '时序图',
     prefix: 'sequenceDiagram\n',
-    template: '  Alice->>John: Hello John, how are you?\n' +
-      '  John-->>Alice: Great!\n' +
-      '  Alice-)John: See you later!\n'
+    template: '\tAlice->>John: Hello John, how are you?\n' +
+      '\tJohn-->>Alice: Great!\n' +
+      '\tAlice-)John: See you later!\n'
   },
   {
     name: '流程图',
     prefix: 'flowchart LR\n',
-    template: '  A[Start] --> B{Is it?}\n' +
-      '  B -- Yes --> C[OK]\n' +
-      '  C --> D[Rethink]\n' +
-      '  D --> B\n' +
-      '  B -- No ----> E[End]'
+    template: '\tA[Start] --> B{Is it?}\n' +
+      '\tB -- Yes --> C[OK]\n' +
+      '\tC --> D[Rethink]\n' +
+      '\tD --> B\n' +
+      '\tB -- No ----> E[End]'
   },
   {
     name: '类图',
     prefix: 'classDiagram\n',
-    template: '  class BankAccount\n' +
-      '  BankAccount : +String owner\n' +
-      '  BankAccount : +Bigdecimal balance\n' +
-      '  BankAccount : +deposit(amount)\n' +
-      '  BankAccount : +withdrawal(amount)'
+    template: '\tclass BankAccount\n' +
+      '\tBankAccount : +String owner\n' +
+      '\tBankAccount : +Bigdecimal balance\n' +
+      '\tBankAccount : +deposit(amount)\n' +
+      '\tBankAccount : +withdrawal(amount)'
   },
   {
     name: '思维导图',
     prefix: 'mindmap\n',
     template: 'Root\n' +
-      '  A[A]\n' +
-      '  :::urgent large\n' +
-      '  B(B)\n' +
-      '  C'
+      '\tA[A]\n' +
+      '\t:::urgent large\n' +
+      '\tB(B)\n' +
+      '\tC'
   },
   {
     name: '时间线图',
     prefix: 'timeline\n',
-    template: '  title History of Social Media Platform\n' +
-      '  2002 : LinkedIn\n' +
-      '  2004 : Facebook\n' +
-      '         : Google\n' +
-      '    2005 : Youtube\n' +
-      '    2006 : Twitter'
+    template: '\ttitle History of Social Media Platform\n' +
+      '\t2002 : LinkedIn\n' +
+      '\t2004 : Facebook\n' +
+      '\t     : Google\n' +
+      '\t2005 : Youtube\n' +
+      '\t2006 : Twitter'
   }
 ]

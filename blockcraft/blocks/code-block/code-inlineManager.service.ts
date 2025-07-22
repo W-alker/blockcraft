@@ -1,23 +1,21 @@
 import {
-  DeltaInsertText,
+  DeltaInsertText, DeltaOperation, EditableBlockComponent,
   InlineManager,
   STR_LINE_BREAK
 } from "../../framework";
-import {PRISM_LANGUAGE_MAP} from "./const";
 import * as Prism from "prismjs";
 import {performanceTest} from "../../global";
 
-export class CodeInlineManagerService extends InlineManager {
+const flatPrismTokens = (tokens: Array<string | Prism.Token>, withLineBreak = true) => {
+  const res: DeltaInsertText[] = []
+  // 状态记录
+  let parentType: string | undefined = undefined
 
-  constructor(doc: BlockCraft.Doc, protected codeBlock: BlockCraft.IBlockComponents['code']) {
-    super(doc)
-  }
-
-  private _flatTokens(tokens: Array<string | Prism.Token>, res: DeltaInsertText[] = [], parentType?: string): DeltaInsertText[] {
+  const flat = (tokens: Array<string | Prism.Token>) => {
     for (const token of tokens) {
       if (typeof token === 'string') {
         const baseAttrs = parentType ? {'a:type': parentType} : undefined
-        if (token.includes(STR_LINE_BREAK)) {
+        if (withLineBreak && token.includes(STR_LINE_BREAK)) {
           let start = 0
           while (true) {
             const idx = token.indexOf(STR_LINE_BREAK, start)
@@ -47,26 +45,54 @@ export class CodeInlineManagerService extends InlineManager {
       if (typeof token.content === 'string') {
         res.push({insert: token.content, attributes: attrs})
       } else {
-        this._flatTokens(Array.isArray(token.content) ? token.content : [token.content], res, type)
+        flat(Array.isArray(token.content) ? token.content : [token.content])
       }
     }
+  }
+  flat(tokens)
 
-    return res
+  return res
+}
+
+interface IRenderOptions {
+  lang?: string
+  withLineBreak?: boolean
+}
+
+export class CodeInlineManagerService extends InlineManager {
+
+  constructor(doc: BlockCraft.Doc, protected block: EditableBlockComponent, protected options: IRenderOptions = {}) {
+    super(doc)
+  }
+
+  setLang(lang: string) {
+    this.options.lang = lang
   }
 
   // @performanceTest()
-  diffHighLight() {
-    const tokens = Prism.tokenize(this.codeBlock.textContent(), Prism.languages[PRISM_LANGUAGE_MAP[this.codeBlock.props.lang]])
-    const deltas = this._flatTokens(tokens)
+  diffHighLight(ops: DeltaOperation[]) {
+
+    const isHere = this.doc.selection.value?.from.blockId === this.block.id
+    let pos = 0
+    if (isHere) {
+      const sel = this.doc.selection.normalizeRange(document.getSelection()!.getRangeAt(0))
+      pos = sel?.from.type === 'text' ? sel.from.index : 0
+    }
+
+    const tokens = Prism.tokenize(this.block.textContent(), Prism.languages[this.options.lang || 'plaintext'])
+    const deltas = flatPrismTokens(tokens, this.options.withLineBreak)
+
     // 比对deltas，找到不同的deltas
-    this.render(deltas, this.codeBlock.containerElement)
+    this.render(deltas, this.block.containerElement)
+
+    isHere && this.block.setInlineRange(pos)
   }
 
   renderCode() {
-    const text = this.codeBlock.textContent()
-    const tokens = Prism.tokenize(text, Prism.languages[PRISM_LANGUAGE_MAP[this.codeBlock.props.lang]])
-    const deltas = this._flatTokens(tokens)
-    this.render(deltas, this.codeBlock.containerElement)
+    const text = this.block.textContent()
+    const tokens = Prism.tokenize(text, Prism.languages[this.options.lang || 'plaintext'])
+    const deltas = flatPrismTokens(tokens, this.options.withLineBreak)
+    this.render(deltas, this.block.containerElement)
   }
 }
 

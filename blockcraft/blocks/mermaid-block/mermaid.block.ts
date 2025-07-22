@@ -42,7 +42,7 @@ import {AsyncPipe} from "@angular/common";
     </div>
 
     <div class="content">
-      <div class="text-container">
+      <div class="text-container" spellcheck="false">
         <ng-container #childrenContainer></ng-container>
       </div>
 

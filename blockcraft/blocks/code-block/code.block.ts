@@ -1,10 +1,11 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {
+  DeltaOperation,
   EditableBlockComponent,
   getPositionWithOffset,
   STR_LINE_BREAK
 } from "../../framework";
-import {CodeBlockModel} from "./index";
+import {CodeBlockModel, PRISM_LANGUAGE_MAP} from "./index";
 import {AsyncPipe, NgForOf} from "@angular/common";
 import {Subject} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
@@ -45,7 +46,10 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   override _init() {
     super._init();
-    this._inlineManager = new CodeInlineManagerService(this.doc, this)
+    this._inlineManager = new CodeInlineManagerService(this.doc, this, {
+      lang: PRISM_LANGUAGE_MAP[this.props.lang],
+      withLineBreak: true
+    })
   }
 
   override ngAfterViewInit() {
@@ -79,27 +83,16 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   private _obsProp = (ev: Y.YMapEvent<unknown>) => {
     if (ev.keysChanged.has('lang')) {
+      this.inlineManager.setLang(PRISM_LANGUAGE_MAP[this.props.lang])
       this.rerender()
     }
   }
 
-  private _debounce_highlight = debounce(() => {
+  private _debounce_highlight = debounce((e: Y.YTextEvent) => {
     nextTick().then(() => {
-      this.diffHighlight()
+      this.inlineManager.diffHighLight(e.delta as DeltaOperation[])
     })
-  }, 100)
-
-  diffHighlight() {
-    const isHere = this.doc.selection.value?.from.blockId === this.id
-    let pos = 0
-    if (isHere) {
-      const sel = this.doc.selection.normalizeRange(document.getSelection()!.getRangeAt(0))
-      pos = sel?.from.type === 'text' ? sel.from.index : 0
-    }
-    this.inlineManager.diffHighLight()
-    isHere && this.setInlineRange(pos)
-  }
-
+  }, 200)
 
   @performanceTest('code block render')
   override rerender() {

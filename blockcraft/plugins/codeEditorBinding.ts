@@ -11,6 +11,7 @@ import {BlockCraftError, ErrorCode, getLinesByRange, nextTick} from "../global";
 export class CodeInlineEditorBinding extends DocPlugin {
 
   @EventListen('compositionEnd', {flavour: 'code'})
+  @EventListen('compositionEnd', {flavour: 'mermaid-textarea'})
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.getDefaultEvent<CompositionEvent>()
     ev.preventDefault()
@@ -20,6 +21,7 @@ export class CodeInlineEditorBinding extends DocPlugin {
       throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
     }
     const text = ev.data
+    ev.preventDefault()
     const {block, index} = sel.from
     block.yText.insert(index === 0 ? 0 : index - text.length, text)
 

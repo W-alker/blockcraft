@@ -60,7 +60,7 @@ export const PRISM_LANGUAGE_MAP = {
   Git: 'git',
   MongoDB: 'mongodb',
   nginx: 'nginx',
-  Markdown: 'markdown'
+  Markdown: 'markdown',
 }
 
 const loadedLanguages = new Set<CodeBlockLanguage>()

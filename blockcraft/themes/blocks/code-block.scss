@@ -55,94 +55,8 @@
       c-element:first-of-type::before {
         transform: unset;
       }
-    }
 
-    [type="variable"] {
-      color: #d19a66;
-    }
-
-    [type="keyword"] {
-      color: #c678dd;
-    }
-
-    [type="title"] {
-      color: #61afef;
-    }
-
-    [type="number"] {
-      color: #d19a66;
-    }
-
-    [type="string"] {
-      color: #98c379;
-    }
-
-    [type="comment"] {
-      color: #5c6370;
-    }
-
-    [type="function"] {
-      color: #e06c75;
-    }
-
-    [type="operator"] {
-      color: #56b6c2;
-    }
-
-    [type="punctuation"] {
-      color: #abb2bf;
-    }
-
-    [type="tag"] {
-      color: #e06c75;
-    }
-
-    [type="attr"] {
-      color: #e06c75;
-    }
-
-    [type="attr-value"] {
-      color: #98c379;
-    }
-
-    [type="attr-name"] {
-      color: #e06c75;
-    }
-
-    [type="property"] {
-      color: #e06c75;
-    }
-
-    [type="selector"] {
-      color: #e06c75;
-    }
-
-    [type="builtin"] {
-      color: #e06c75;
-    }
-
-    [type="class"] {
-      color: #e06c75;
-    }
-
-    [type="constant"] {
-      color: #d19a66;
-    }
-
-    [type="regex"] {
-      color: #98c379;
-    }
-
-    [type="important"] {
-      color: #e06c75;
-    }
-
-    [type="literal"] {
-      color: #d19a66;
-    }
-
-    [type="tag"] {
-      color: #e067c5;
+      @include code-highlight;
     }
 
     &.focused, &:hover {
@@ -200,3 +114,98 @@
   }
 
 }
+
+@mixin code-highlight {
+  [type="variable"] {
+    color: #005f87; // 深蓝青
+  }
+
+  [type="keyword"] {
+    color: #d12f1b; // 鲜红
+  }
+
+  [type="title"] {
+    color: #8e44ad; // 紫色，常用于 class/function 名
+  }
+
+  [type="number"] {
+    color: #c25e00; // 暗橘色
+  }
+
+  [type="string"] {
+    color: #2a7b00; // 深绿色
+  }
+
+  [type="comment"] {
+    color: #999999; // 灰色
+    font-style: italic;
+  }
+
+  [type="function"] {
+    color: #0066cc; // 亮蓝色
+  }
+
+  [type="operator"] {
+    color: #aa00aa; // 品红
+  }
+
+  [type="punctuation"] {
+    color: #555555; // 深灰
+  }
+
+  [type="tag"] {
+    color: #aa3731; // 红棕色
+  }
+
+  [type="attr"] {
+    color: #6c71c4; // 柔紫色
+  }
+
+  [type="attr-name"] {
+    color: #2980b9; // 蓝色
+  }
+
+  [type="attr-value"] {
+    color: #27ae60; // 草绿色
+  }
+
+  [type="property"] {
+    color: #d35400; // 烧橙
+  }
+
+  [type="selector"] {
+    color: #b58900; // 黄棕色
+  }
+
+  [type="builtin"] {
+    color: #1c00cf; // 深蓝紫
+  }
+
+  [type="class"] {
+    color: #9b59b6; // 淡紫色
+  }
+
+  [type="constant"] {
+    color: #cb4b16; // 橘棕
+  }
+
+  [type="regex"] {
+    color: #008000; // 标准绿色
+    font-style: italic;
+  }
+
+  [type="important"] {
+    color: #d33682; // 品红偏紫
+    font-weight: bold;
+  }
+
+  [type="literal"] {
+    color: #795548; // 棕色
+  }
+
+  [type="arrow"] {
+    color: #afc2cc; // 亮蓝青
+  }
+}
+
+

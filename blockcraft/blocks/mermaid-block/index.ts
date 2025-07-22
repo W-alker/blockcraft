@@ -13,6 +13,7 @@ export interface MermaidBlockModel extends NoEditableBlockNative {
   nodeType: BlockNodeType.block,
   props: {
     mode: MermaidViewMode,
+    spellcheck?: boolean,
     // graphScale: number
   } & IBlockProps
 }

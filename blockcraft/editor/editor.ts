@@ -240,7 +240,7 @@ export class EditorComponent {
         'link', OLD_LINK_EMBED_CONVERTER
       ]
     ],
-    plugins: [new OrderedBlockPlugin(), new CodeInlineEditorBinding(), new TextMarkerPlugin(['mermaid-textarea']),
+    plugins: [new OrderedBlockPlugin(), new CodeInlineEditorBinding(),
       new FloatTextToolbarPlugin(), new BlockTransformerPlugin(),
       new BlockControllerPlugin(
         [
