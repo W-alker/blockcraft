@@ -1,9 +1,9 @@
 @font-face {
   font-family: "bc_icon"; /* Project id 4682833 */
-  src: url('bc-iconfont.woff2?t=1750123508748') format('woff2'),
-       url('bc-iconfont.woff?t=1750123508748') format('woff'),
-       url('bc-iconfont.ttf?t=1750123508748') format('truetype'),
-       url('bc-iconfont.svg?t=1750123508748#bc_icon') format('svg');
+  src: url('bc-iconfont.woff2?t=1756354250007') format('woff2'),
+       url('bc-iconfont.woff?t=1756354250007') format('woff'),
+       url('bc-iconfont.ttf?t=1756354250007') format('truetype'),
+       url('bc-iconfont.svg?t=1756354250007#bc_icon') format('svg');
 }
 
 .bc_icon {
@@ -12,6 +12,242 @@
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.bc_fanhui:before {
+  content: "\e616";
+}
+
+.bc_morenkapian:before {
+  content: "\e615";
+}
+
+.bc_yekuanshezhi1:before {
+  content: "\e613";
+}
+
+.bc_daohangshouqi:before {
+  content: "\e614";
+}
+
+.bc_plus:before {
+  content: "\e611";
+}
+
+.bc_daohangzhankai:before {
+  content: "\e612";
+}
+
+.bc_zhishiku:before {
+  content: "\e605";
+}
+
+.bc_xinjianwenjian:before {
+  content: "\e607";
+}
+
+.bc_bianjimoshi:before {
+  content: "\e608";
+}
+
+.bc_shouye:before {
+  content: "\e60a";
+}
+
+.bc_yekuanshezhi:before {
+  content: "\e60b";
+}
+
+.bc_minus:before {
+  content: "\e60c";
+}
+
+.bc_liebiao:before {
+  content: "\e60d";
+}
+
+.bc_jianhualiebiao:before {
+  content: "\e60e";
+}
+
+.bc_kongjian:before {
+  content: "\e60f";
+}
+
+.bc_gongxiang:before {
+  content: "\e610";
+}
+
+.bc_folder-open:before {
+  content: "\e777";
+}
+
+.bc_marker:before {
+  content: "\e778";
+}
+
+.bc_wendang0102:before {
+  content: "\e77a";
+}
+
+.bc_chevron-down:before {
+  content: "\e77b";
+}
+
+.bc_check-ok:before {
+  content: "\e77c";
+}
+
+.bc_zhuanyi:before {
+  content: "\e77e";
+}
+
+.bc_minus-circle:before {
+  content: "\e77f";
+}
+
+.bc_add-circle:before {
+  content: "\e780";
+}
+
+.bc_settings:before {
+  content: "\e781";
+}
+
+.bc_a-sanjiao-jinru6:before {
+  content: "\e782";
+}
+
+.bc_arrow-rotate-left:before {
+  content: "\e783";
+}
+
+.bc_info-circle:before {
+  content: "\e784";
+}
+
+.bc_media-strip:before {
+  content: "\e785";
+}
+
+.bc_chevron-left:before {
+  content: "\e766";
+}
+
+.bc_chevron-left-1:before {
+  content: "\e767";
+}
+
+.bc_file-multiple:before {
+  content: "\e768";
+}
+
+.bc_share:before {
+  content: "\e769";
+}
+
+.bc_link-angled:before {
+  content: "\e76a";
+}
+
+.bc_duoxuan-2:before {
+  content: "\e76b";
+}
+
+.bc_check-square-broken:before {
+  content: "\e76c";
+}
+
+.bc_a-shuqian:before {
+  content: "\e76d";
+}
+
+.bc_file-up:before {
+  content: "\e76e";
+}
+
+.bc_message-square-typing:before {
+  content: "\e76f";
+}
+
+.bc_user-profile-add:before {
+  content: "\e770";
+}
+
+.bc_folder-plus:before {
+  content: "\e771";
+}
+
+.bc_erweima:before {
+  content: "\e772";
+}
+
+.bc_folder-close-color:before {
+  content: "\e773";
+}
+
+.bc_a-lianjie:before {
+  content: "\e774";
+}
+
+.bc_guanzhu:before {
+  content: "\e764";
+}
+
+.bc_folder-open-01:before {
+  content: "\e765";
+}
+
+.bc_grid:before {
+  content: "\e761";
+}
+
+.bc_indent-increase:before {
+  content: "\e762";
+}
+
+.bc_x-01:before {
+  content: "\e763";
+}
+
+.bc_data-01:before {
+  content: "\e700";
+}
+
+.bc_eye-open:before {
+  content: "\e754";
+}
+
+.bc_edit-03:before {
+  content: "\e755";
+}
+
+.bc_x-circle-contained:before {
+  content: "\e756";
+}
+
+.bc_folder-open-03:before {
+  content: "\e757";
+}
+
+.bc_calendar-01:before {
+  content: "\e759";
+}
+
+.bc_user-profile-01:before {
+  content: "\e75a";
+}
+
+.bc_inbox:before {
+  content: "\e75c";
+}
+
+.bc_calendar-minus:before {
+  content: "\e75d";
+}
+
+.bc_arrow-expand:before {
+  content: "\e75e";
 }
 
 .bc_tubiao_xianduan-leixing:before {
@@ -122,10 +358,6 @@
   content: "\e69a";
 }
 
-.bc_zhishiku-color:before {
-  content: "\e8ee";
-}
-
 .bc_wendangxinxi:before {
   content: "\e8f1";
 }
@@ -136,10 +368,6 @@
 
 .bc_gonggao-fill:before {
   content: "\e8f0";
-}
-
-.bc_zhishiku:before {
-  content: "\e8f2";
 }
 
 .bc_blockquote:before {

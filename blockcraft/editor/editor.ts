@@ -109,7 +109,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 @Component({
   selector: 'block-craft-editor',
   template: `
-    <div style="width: 90vw; height: 80vh; overflow-y: auto; padding: 30px;" (mousedown)="onContainerMousedown($event)">
+    <div style="height: 80vh; overflow-y: auto; padding: 30px;" (mousedown)="onContainerMousedown($event)">
       <ng-container #container></ng-container>
     </div>
 

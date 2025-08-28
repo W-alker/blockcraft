@@ -80,7 +80,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
     const rect = selection.raw.getBoundingClientRect()
     const blockRect = relativeBlock.hostElement.getBoundingClientRect()
-    const offsetX = rect.left - blockRect.left
+    let offsetX = rect.left - blockRect.left
 
     if (relativeBlock.nodeType !== BlockNodeType.editable) {
       return {
