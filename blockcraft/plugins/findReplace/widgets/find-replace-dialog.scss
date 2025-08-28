@@ -8,6 +8,22 @@
   z-index: 1000;
   cursor: move;
 
+  .btn-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 20px;
+    cursor: pointer;
+    color: #999;
+    transition: color 0.2s;
+    width: 28px;
+    height: 28px;
+
+    &:hover {
+      color: #666;
+    }
+  }
+
   label {
     margin-bottom: 4px;
     color: #444;

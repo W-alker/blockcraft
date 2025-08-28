@@ -1,4 +1,5 @@
 <div class="find-replace" (mousedown)="onMouseDown($event)" #wrapper>
+  <i class="bc_icon bc_guanbi btn-close" (click)="onClose.emit()"></i>
   <label>查找：</label>
   <div class="field">
     <input [(ngModel)]="findText" (ngModelChange)="onFindTextChange()" (keydown.shift.enter)="findPrev()"

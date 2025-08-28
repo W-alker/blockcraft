@@ -47,10 +47,12 @@ export class FakeRange {
   private _createBlockFakeSpan(block: BlockCraft.BlockComponent) {
     const span = document.createElement('span');
     span.classList.add('blockcraft-cursor')
-    span.style.position = 'unset'
+    span.style.cssText = `
+    position: unset;
+    --bgColor: ${this.config.bgColor || 'var(--bc-select-background-color)'};
+    `
     const child = document.createElement('span');
     child.style.cssText = `
-        background: ${this.config.bgColor || 'var(--bc-select-background-color)'};
         left: 0;
         top: 0;
         bottom: 0;

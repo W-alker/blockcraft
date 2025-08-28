@@ -302,41 +302,55 @@
       text-decoration: underline;
     }
   }
-}
 
-.blockcraft-cursor {
-  z-index: 100;
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-  @include user-select(none);
-  @include user-modify(read-only);
-
-  > * {
-    @include user-select(none);
-    @include user-modify(read-only);
+  [data-node-type='block'], [data-node-type='void'] {
+    > .blockcraft-cursor > span {
+      box-shadow: 0 0 1px 1px var(--bgColor, --bc-select-background-color);
+    }
   }
 
-  > span {
-    position: absolute;
-    background-color: var(--bgColor, --bc-select-background-color);
+  [data-node-type='editable'] {
+    > .blockcraft-cursor > span {
+      background-color: var(--bgColor, --bc-select-background-color);
+    }
   }
 
-  &-tag {
+  .blockcraft-cursor {
     z-index: 100;
     position: absolute;
     top: 0;
     left: 0;
-    transform: translate(0, calc(-100% - 2px));
-    max-width: 100px;
-    @include text-ellipsis(1);
+    pointer-events: none;
     @include user-select(none);
-    font-size: 10px;
-    color: #fff;
-    border-radius: 4px;
-    padding: 0 2px;
+    @include user-modify(read-only);
+
+    > * {
+      @include user-select(none);
+      @include user-modify(read-only);
+    }
+
+    > span {
+      position: absolute;
+    }
+
+    &-tag {
+      z-index: 100;
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform: translate(0, calc(-100% - 2px));
+      max-width: 100px;
+      @include text-ellipsis(1);
+      @include user-select(none);
+      font-size: 10px;
+      color: #fff;
+      border-radius: 4px;
+      padding: 0 2px;
+    }
   }
+
 }
+
+
 
 
