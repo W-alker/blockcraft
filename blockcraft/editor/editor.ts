@@ -109,10 +109,9 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 @Component({
   selector: 'block-craft-editor',
   template: `
-    <div style="height: 80vh; overflow-y: auto; padding: 30px;" (mousedown)="onContainerMousedown($event)">
+    <div style="padding: 30px;" (mousedown)="onContainerMousedown($event)">
       <ng-container #container></ng-container>
     </div>
-
 
     <button (click)="initBySnapshot()">初始化</button>
     <button (mousedown)="$event.preventDefault(); logSelection()">当前选择</button>
@@ -285,6 +284,8 @@ export class EditorComponent {
   }
 
   ngAfterViewInit() {
+    this.enterRoom()
+
     this.listenUpdate()
   }
 
