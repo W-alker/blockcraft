@@ -2,12 +2,12 @@ import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {take} from "rxjs";
 import {BlockCraftError, ErrorCode} from "../../global";
 import {
+  BaseBlockComponent,
   BlockNodeType,
   IBlockSnapshot,
-  BaseBlockComponent,
-  YBlock,
   native2YBlock,
   NativeBlockModel,
+  YBlock,
   yBlock2Native
 } from "../block-std";
 import * as Y from "yjs";
@@ -84,14 +84,12 @@ export class DocVM {
 
         cpr.instance.onViewInit$.pipe(take(1)).subscribe(async () => {
           const yChildren = yBlock.get('children')
-          if (yChildren instanceof Y.Array && yChildren.length) {
+          if (yBlock.get('nodeType') !== BlockNodeType.editable && yChildren.length) {
             for (const childId of yChildren.toArray()) {
               const cmpr = await createComp(yBlocks[childId] || this.doc.crud.getYBlock(childId), id);
               cmpr.changeDetectorRef.detectChanges()
               ;(cpr.instance.childrenContainer as ViewContainerRef).insert(cmpr.hostView)
             }
-            resolve(cpr)
-            return
           }
 
           resolve(cpr)

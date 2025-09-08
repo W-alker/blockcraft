@@ -52,7 +52,8 @@ import {AdapterService} from "./services/adapter.service";
 import {MermaidBlockSchema, MermaidTextareaBlockSchema} from "../blocks/mermaid-block";
 import {applyUpdate, Doc, mergeUpdates} from "yjs";
 import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
-import {WebsocketProvider} from 'y-websocket'
+// @ts-ignore
+import {WebsocketProvider} from './ws'
 import {MentionPlugin} from "./plugins/mention";
 import * as Y from 'yjs'
 import {BlockCraftAwareness} from "./awa";
@@ -206,8 +207,8 @@ export class EditorComponent {
   ) {
   }
 
-  docId = 'our-doc'
-  rootId = 'root-test'
+  docId = '68b6908282fe5c765591ad41'
+  rootId = '68b6908282fe5c765591ad41'
 
   doc = new BlockCraftDoc({
     yDoc: new Y.Doc({
@@ -266,8 +267,7 @@ export class EditorComponent {
       new InlineLinkExtension((link) => {
         if (link.startsWith('http://doc-pre.com')) {
           window.open(link.replace('http://doc-pre.com', 'http://localhost:8081/test3'), '_blank')
-        }
-        else window.open(link, '_blank')
+        } else window.open(link, '_blank')
       }),
       new MentionPlugin(mentionRequest), new DividerExtensionPlugin(),
       new FindReplacePlugin()
@@ -284,13 +284,13 @@ export class EditorComponent {
   }
 
   ngAfterViewInit() {
-    this.enterRoom()
+    // this.enterRoom()
 
     this.listenUpdate()
   }
 
   initBySnapshot(snapshot?: IBlockSnapshot) {
-    snapshot ??= this.doc.schemas.createSnapshot('root', [this.rootId])
+    snapshot ??= this.doc.schemas.createSnapshot('root', [this.rootId, [this.doc.schemas.createSnapshot('paragraph', [])]])
     this.doc.initBySnapshot(snapshot, this.container)
   }
 
@@ -404,39 +404,77 @@ export class EditorComponent {
   provider!: WebsocketProvider
 
   enterRoom() {
-    const persistence = new IndexeddbPersistence(this.rootId, this.doc.yDoc)
-    persistence.once('synced', () => {
-      const yRoot = this.doc.yBlockMap.get(this.rootId)
-      if (yRoot) {
-        this.doc.initByYBlock(yRoot, this.container)
-      }
+    // const persistence = new IndexeddbPersistence(this.rootId, this.doc.yDoc)
+    // persistence.once('synced', () => {
+    //   const yRoot = this.doc.yBlockMap.get(this.rootId)
+    //   if (yRoot) {
+    //     this.doc.initByYBlock(yRoot, this.container)
+    //   }
 
-
-      this.provider = new WebsocketProvider('ws://196.168.1.69:1234', this.rootId, this.doc.yDoc, {
+    this.provider = new WebsocketProvider(
+      'ws://196.168.1.69:1234',
+      // 'ws://ws-doc.cses7.com',
+      // 'ws://192.168.6.199:3234',
+      this.rootId, this.doc.yDoc, {
         disableBc: false
       })
-      this.provider.on('sync', (v: boolean) => {
-        const yRoot = this.doc.yBlockMap.get(this.rootId)
-        console.log('sync', v, yRoot)
-        if (!yRoot) {
-          this.initBySnapshot()
-        } else {
-          this.doc.initByYBlock(yRoot, this.container)
-        }
-      })
 
-      const uid = generateId(11)
-      const awa = new BlockCraftAwareness(this.doc, this.provider.awareness)
-      awa.setLocalUser({
-        id: uid,
-        name: uid,
-      })
+    this.doc.yBlockMap.observe(async () => {
+      const yRoot = this.doc.yBlockMap.get(this.rootId)
+      console.log('------yRoot', this.doc.yBlockMap?.toJSON())
 
+      if (!yRoot) {
+        // this.initBySnapshot()
+      } else {
+        await this.doc.initByYBlock(yRoot, this.container)
+
+        // let map = new Map()
+        // const childrenIds = new Set<string>()
+        // this.doc.yBlockMap.forEach((v, k) => {
+        //   map.set(k, v)
+        //   if (v.get('nodeType') !== BlockNodeType.editable) {
+        //     v.get('children').forEach(id => {
+        //       childrenIds.add(id)
+        //     })
+        //   }
+        // })
+        //
+        // const rootLevelBlock = [...map.values()].filter(v => {
+        //   return !childrenIds.has(v.get('id')) && (v.get('id') !== this.rootId)
+        // })
+        // const yRootChildren = this.doc.yBlockMap.get(this.rootId)!.get('children')
+        // yRootChildren.delete(0, yRootChildren.length)
+        // yRootChildren.insert(0, rootLevelBlock.map(v => v.get('id')))
+
+      }
     })
 
+    this.provider.on('initSynced', async (v: boolean, len: number) => {
+      if(len > 100) {
+        const yRoot = this.doc.yBlockMap.get(this.rootId)
+        if(yRoot) {
+          await this.doc.initByYBlock(yRoot, this.container)
+        }
+        // else {
+        //   this.initBySnapshot()
+        // }
+      }
+      // else {
+      //   this.initBySnapshot()
+      // }
+    })
 
+    const uid = generateId(11)
+    const awa = new BlockCraftAwareness(this.doc, this.provider.awareness)
+    awa.setLocalUser({
+      id: uid,
+      name: uid,
+    })
+
+    // })
 
   }
+
 
   quitRoom() {
     this.provider.destroy()

@@ -53,8 +53,10 @@ export class SchemaManager {
     const excludeChildren = parentSchema.metadata.excludeChildren
     if (excludeChildren?.length) {
       for (const f of excludeChildren) {
-        if (flavour.includes(f.replace('*', ''))) {
-          return false
+        if (f.includes('*')) {
+          if (flavour.includes(f.replaceAll('*', ''))) return false
+        } else {
+          if (flavour === f) return false
         }
       }
       return true
@@ -63,8 +65,10 @@ export class SchemaManager {
     const includeChildren = parentSchema.metadata.includeChildren
     if (!includeChildren?.length) return false
     for (const f of includeChildren) {
-      if (flavour.includes(f.replace('*', ''))) {
-        return true
+      if (f.includes('*')) {
+        if (flavour.includes(f.replaceAll('*', ''))) return true
+      } else {
+        if (flavour === f) return true
       }
     }
     return false
