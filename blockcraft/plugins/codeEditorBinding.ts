@@ -10,6 +10,7 @@ import {BlockCraftError, ErrorCode, getLinesByRange, nextTick} from "../global";
 
 export class CodeInlineEditorBinding extends DocPlugin {
 
+  // TODO 迁移  compositionStart事件
   private _compositionStartDeleteRange: IInlineRange | null = null
 
   @EventListen('compositionStart', {flavour: 'code'})
