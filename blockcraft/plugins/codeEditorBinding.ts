@@ -1,7 +1,7 @@
 import {
   BindHotKey,
   DeltaOperation,
-  DocPlugin, EventListen,
+  DocPlugin, EventListen, IInlineRange,
   STR_LINE_BREAK,
   STR_TAB,
   UIEventStateContext
@@ -9,6 +9,24 @@ import {
 import {BlockCraftError, ErrorCode, getLinesByRange, nextTick} from "../global";
 
 export class CodeInlineEditorBinding extends DocPlugin {
+
+  private _compositionStartDeleteRange: IInlineRange | null = null
+
+  @EventListen('compositionStart', {flavour: 'code'})
+  @EventListen('compositionStart', {flavour: 'mermaid-textarea'})
+  private _handleCompositionStart(context: UIEventStateContext) {
+    const ev = context.getDefaultEvent<CompositionEvent>()
+    if (!ev.data) return true
+    const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
+    if (!sel || sel.from.type !== 'text') {
+      throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
+    }
+    this._compositionStartDeleteRange = {
+      index: sel.from.index,
+      length: sel.from.length
+    }
+    return true
+  }
 
   @EventListen('compositionEnd', {flavour: 'code'})
   @EventListen('compositionEnd', {flavour: 'mermaid-textarea'})
@@ -21,9 +39,15 @@ export class CodeInlineEditorBinding extends DocPlugin {
       throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
     }
     const text = ev.data
-    ev.preventDefault()
     const {block, index} = sel.from
-    block.yText.insert(index === 0 ? 0 : index - text.length, text)
+
+    this.doc.crud.transact(() => {
+      if (this._compositionStartDeleteRange) {
+        block.deleteText(this._compositionStartDeleteRange.index, this._compositionStartDeleteRange.length)
+        this._compositionStartDeleteRange = null
+      }
+      block.yText.insert(index === 0 ? 0 : index - text.length, text)
+    })
 
     requestAnimationFrame(() => {
       block.setInlineRange(index === 0 ? text.length : index)

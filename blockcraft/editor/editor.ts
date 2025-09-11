@@ -212,7 +212,8 @@ export class EditorComponent {
 
   doc = new BlockCraftDoc({
     yDoc: new Y.Doc({
-      guid: this.docId
+      guid: this.docId,
+      gc: false,
     }),
     docId: this.docId,
     schemas: schemas,

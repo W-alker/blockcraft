@@ -193,22 +193,20 @@ export class InputTransformer {
         }
       }
 
+      // TODO 迁移 这段处理连续文本需要迁移
       if (from.type === 'text') {
-        const deltas: DeltaOperation[] = []
-        from.index > 0 && deltas.push({retain: from.index})
-        from.length > 0 && deltas.push({delete: from.length})
-        text && deltas.push({insert: text})
+        const yText = from.block.yText
+        yText.delete(from.index, from.length)
+        text && yText.insert(from.index, text)
 
         if (to) {
           if (to.type === 'text' && (to.index > 0 || to.length > 0)) {
-            deltas.push(...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength))
-            this.doc.crud.deleteBlockById(to.blockId)
-          } else if (to.type === 'selected') {
-            this.doc.crud.deleteBlockById(to.blockId)
+            const deltas: DeltaOperation[] = [...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength)]
+            deltas.unshift({retain: yText.length})
+            yText.applyDelta(deltas)
           }
+          this.doc.crud.deleteBlockById(to.blockId)
         }
-
-        from.block.applyDeltaOperations(deltas)
         return
       }
 
@@ -302,7 +300,7 @@ export class InputTransformer {
     if (!prevBlock) {
       const parent = from.block.parentBlock
 
-      if(parent) {
+      if (parent) {
         context.preventDefault()
 
         // 如果是第一个空白的文本块，直接删除

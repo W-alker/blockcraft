@@ -51,6 +51,7 @@ export class SchemaManager {
     if (flavour === parentSchema.flavour ||
       parentSchema.nodeType === BlockNodeType.editable || parentSchema.nodeType === BlockNodeType.void) return false
     const excludeChildren = parentSchema.metadata.excludeChildren
+    // TODO 迁移 这里子元素验证需要迁移
     if (excludeChildren?.length) {
       for (const f of excludeChildren) {
         if (f.includes('*')) {
