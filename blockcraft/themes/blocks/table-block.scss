@@ -313,7 +313,7 @@
             content: '';
             height: 4px;
             width: 4px;
-            background: #f1f1f1;
+            background: #bbbfc4;
             border-radius: 50%;
           }
 
@@ -323,6 +323,7 @@
 
     table-col-bar {
       height: $ctrlBarSize;
+      margin-left: 1px;
 
       .insert-bar {
         display: flex;

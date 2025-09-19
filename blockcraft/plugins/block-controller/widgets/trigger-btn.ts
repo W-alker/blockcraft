@@ -85,7 +85,7 @@ const HEADING_LIST: IContextMenuItem[] = [
   standalone: true,
   template: `
     <div class="drag-handle" [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
-         [disabled]="menuDisabled" (open)="setValidBlockList()" [delay]="300"
+         [disabled]="menuDisabled" (open)="setValidBlockList()" [delay]="400"
           [withBackdrop]="false" activeClass="active" [draggable]="draggable">
       <div class="btn">
         <i [class]="['bf_icon', isEmpty ? 'bf_tianjia-2' : 'bf_yidong' ]"></i>
@@ -235,7 +235,7 @@ const HEADING_LIST: IContextMenuItem[] = [
 
     .drag-handle {
       display: flex;
-      padding: 0 8px 4px 0;
+      padding: 0 14px 4px 0;
 
       &.active {
         .btn {

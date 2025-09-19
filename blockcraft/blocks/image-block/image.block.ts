@@ -46,23 +46,17 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
   override ngAfterViewInit() {
     super.ngAfterViewInit();
 
-    nextTick().then(() => {
-      // 第一次出现在页面上时自动更新尺寸数据
-      if (!this.props.width) {
-        this._setInitSize()
-      }
-    })
-
+    if (!this.props.width) {
+      const img = this.imgEle.nativeElement
+      img.addEventListener('load', () => {
+        this.setInitProps({width: img.naturalWidth, height: img.naturalHeight})
+      }, {once: true})
+    }
   }
 
   private startPoint?: { x: number, y: number, direction: 'left' | 'right' }
   private mouseMove$?: Subscription
   private _showSize = {width: 0, height: 0}
-
-  private _setInitSize() {
-    const rect = this.imgEle.nativeElement.getBoundingClientRect()
-    this.setInitProps({width: rect.width, height: rect.height})
-  }
 
   onResizeHandleMouseDown(event: MouseEvent, direction: 'left' | 'right') {
     event.stopPropagation()
@@ -72,7 +66,8 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     this.startPoint = {x: event.clientX, y: event.clientY, direction}
 
     if (!this.props.width) {
-      this._setInitSize()
+      const rect = this.imgEle.nativeElement.getBoundingClientRect()
+      this.setInitProps({width: rect.width, height: rect.height})
     }
 
     const maxWidth = this.hostElement.clientWidth
