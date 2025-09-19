@@ -44,6 +44,17 @@ export const rootBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           },
           'children'
         )
+        .openNode(
+          {
+            type: 'element',
+            tagName: 'meta',
+            properties: {
+              charset: 'UTF-8',
+            },
+            children: [],
+          }
+        )
+        .closeNode()
         // .openNode(
         //   {
         //     type: 'element',

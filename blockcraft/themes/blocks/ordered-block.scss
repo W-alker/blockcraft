@@ -1,4 +1,15 @@
 @mixin ordered-block {
+
+  @at-root #{selector-unify(&, '.readonly')} {
+    .ordered-block .ordered-block-prefix {
+      cursor: unset;
+
+      &:hover {
+        background-color: unset;
+      }
+    }
+  }
+
   div.ordered-block {
     display: flex;
     align-items: flex-start;

@@ -133,6 +133,10 @@ export class InlineLinkExtension extends DocPlugin {
       }
     })
 
+    this.doc.onDestroy$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
+      this._closeToolbar$.next()
+    })
+
   }
 
   closeToolbar = () => {

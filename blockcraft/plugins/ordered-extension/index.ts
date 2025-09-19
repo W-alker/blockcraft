@@ -18,6 +18,7 @@ export class OrderedBlockPlugin extends DocPlugin {
 
   @EventListen('mouseDown', {flavour: "ordered"})
   onMouseDown(ctx: UIEventStateContext) {
+    if (this.doc.isReadonly) return
     const evt = ctx.getDefaultEvent<MouseEvent>()
     if (evt.button !== 0 || !(evt.target instanceof HTMLButtonElement) || !evt.target.classList.contains('ordered-block-prefix')) return
 

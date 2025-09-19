@@ -25,6 +25,10 @@ const routes: Routes = [
   {
     path: 'test3',
     loadComponent: () => import('./test3.page').then(m => m.Test3Page)
+  },
+  {
+    path: 'test4',
+    loadComponent: () => import('./test4.page').then(m => m.Test4Page)
   }
 ];
 

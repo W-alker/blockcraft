@@ -11,13 +11,13 @@ async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
       items[adp.type] = new Blob([str], {type: adp.type})
     }
     clipboardItem = new ClipboardItem({
-      [ClipboardDataType.TEXT]: snapshots2Text([snapshot]),
+      [ClipboardDataType.TEXT]: new Blob([snapshots2Text([snapshot])], {type: 'text/plain'}),
       ...items
     })
 
   } catch (e) {
     clipboardItem = new ClipboardItem({
-      [ClipboardDataType.TEXT]: snapshots2Text([snapshot]),
+      [ClipboardDataType.TEXT]: new Blob([snapshots2Text([snapshot])], {type: 'text/plain'}),
     })
   }
 
@@ -26,7 +26,7 @@ async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
 
 async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) {
   return new Promise<void>(async (resolve, reject) => {
-    const items: Partial<Record<ClipboardDataType, string>> = {}
+    const items: Partial<Record<ClipboardDataType, string | Blob>> = {}
     try {
       for (const adp of this.adapter.supportedAdapters) {
         items[adp.type] = await adp.fromSnapshot(rootSnapshot)
@@ -34,7 +34,7 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
     } catch (e) {
       console.error(e)
     } finally {
-      items[ClipboardDataType.TEXT] = snapshots2Text([rootSnapshot])
+      items[ClipboardDataType.TEXT] = new Blob([snapshots2Text([rootSnapshot])], {type: 'text/plain'})
     }
 
     let range: Range

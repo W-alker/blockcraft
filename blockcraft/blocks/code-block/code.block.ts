@@ -89,6 +89,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   private _debounce_highlight = debounce((e: Y.YTextEvent) => {
+    if (this.props.lang === 'PlainText') return
     nextTick().then(() => {
       this.inlineManager.diffHighLight(e.delta as DeltaOperation[])
     })

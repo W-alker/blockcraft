@@ -25,6 +25,11 @@
     "@angular/router": "^17.3.12",
     "@babel/core": "^7.25.2",
     "@ctrl/tinycolor": "^4.1.0",
+    "@tiptap/extension-document": "^3.4.4",
+    "@tiptap/extension-highlight": "^3.4.4",
+    "@tiptap/extension-paragraph": "^3.4.4",
+    "@tiptap/extension-text": "^3.4.4",
+    "@tiptap/starter-kit": "^3.4.4",
     "@types/dom-to-image": "^2.6.7",
     "@types/hast": "^3.0.4",
     "@types/mdast": "^4.0.4",
@@ -55,6 +60,9 @@
     "pdf-lib": "^1.17.1",
     "prettier": "^3.5.3",
     "prismjs": "^1.29.0",
+    "prosemirror-model": "^1.25.3",
+    "prosemirror-state": "^1.4.3",
+    "prosemirror-view": "^1.41.0",
     "quill-delta": "^5.1.0",
     "quill-delta-from-html": "^1.0.6",
     "reflect-metadata": "^0.2.2",
@@ -79,6 +87,7 @@
     "@angular-devkit/build-angular": "^17.3.11",
     "@angular/cli": "~17.3.11",
     "@angular/compiler-cli": "^17.3.12",
+    "@tiptap/core": "^3.4.4",
     "@types/jasmine": "~5.1.4",
     "jasmine-core": "~4.6.0",
     "karma": "~6.4.4",
@@ -88,6 +97,7 @@
     "karma-jasmine-html-reporter": "^2.1.0",
     "madge": "^8.0.0",
     "ng-packagr": "^17.3.0",
+    "tiptap-pagination-breaks": "^1.0.3",
     "typescript": "5.4.5"
   }
 }
