@@ -40,6 +40,7 @@ export class CodeInlineEditorBinding extends DocPlugin {
       throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
     }
     const text = ev.data
+
     const {block, index} = sel.from
 
     this.doc.crud.transact(() => {
@@ -49,6 +50,10 @@ export class CodeInlineEditorBinding extends DocPlugin {
       }
       block.yText.insert(index === 0 ? 0 : index - text.length, text)
     })
+
+    if (block.flavour === 'code' && block.props.lang === 'PlainText') {
+      block.rerender()
+    }
 
     requestAnimationFrame(() => {
       block.setInlineRange(index === 0 ? text.length : index)
