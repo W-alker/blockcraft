@@ -207,8 +207,8 @@ export class EditorComponent {
   ) {
   }
 
-  docId = '68b6908282fe5c765591ad41'
-  rootId = '68b6908282fe5c765591ad41'
+  docId = '68d348f116d06e2cb3171571'
+  rootId = '68d348f116d06e2cb3171571'
 
   doc = new BlockCraftDoc({
     yDoc: new Y.Doc({
@@ -412,22 +412,13 @@ export class EditorComponent {
     //     this.doc.initByYBlock(yRoot, this.container)
     //   }
 
-    this.provider = new WebsocketProvider(
-      'ws://196.168.1.69:1234',
-      // 'ws://ws-doc.cses7.com',
-      // 'ws://192.168.6.199:3234',
-      this.rootId, this.doc.yDoc, {
-        disableBc: false
-      })
+    const initFn = () => {
+      const yRoot = this.doc.yBlockMap?.get(this.docId)
+      if(yRoot) {
+        this.doc.initByYBlock(yRoot, this.container)
+        this.doc.yDoc.off('update', initFn)
 
-    this.doc.yBlockMap.observe(async () => {
-      const yRoot = this.doc.yBlockMap.get(this.rootId)
-      console.log('------yRoot', this.doc.yBlockMap?.toJSON())
-
-      if (!yRoot) {
-        // this.initBySnapshot()
-      } else {
-        await this.doc.initByYBlock(yRoot, this.container)
+        console.log('-------', this.doc.yBlockMap.toJSON())
 
         // let map = new Map()
         // const childrenIds = new Set<string>()
@@ -446,24 +437,21 @@ export class EditorComponent {
         // const yRootChildren = this.doc.yBlockMap.get(this.rootId)!.get('children')
         // yRootChildren.delete(0, yRootChildren.length)
         // yRootChildren.insert(0, rootLevelBlock.map(v => v.get('id')))
-
       }
-    })
 
-    this.provider.on('initSynced', async (v: boolean, len: number) => {
-      if(len > 100) {
-        const yRoot = this.doc.yBlockMap.get(this.rootId)
-        if(yRoot) {
-          await this.doc.initByYBlock(yRoot, this.container)
-        }
-        // else {
-        //   this.initBySnapshot()
-        // }
-      }
-      // else {
-      //   this.initBySnapshot()
-      // }
-    })
+
+    }
+
+    this.doc.yDoc.on('update', initFn)
+
+    this.provider = new WebsocketProvider(
+      'ws://196.168.1.69:1234',
+      // 'ws://ws-doc.cses7.com',
+      // 'ws://193.168.2.100:30204/collaborate',
+      this.docId,
+      this.doc.yDoc, {
+        disableBc: false
+      })
 
     const uid = generateId(11)
     const awa = new BlockCraftAwareness(this.doc, this.provider.awareness)

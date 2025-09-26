@@ -1,5 +1,5 @@
 import {
-  ClipboardDataType,
+  ClipboardDataType, closetBlockId,
   DOC_FILE_SERVICE_TOKEN,
   DocFileService,
   DocPlugin,
@@ -24,6 +24,15 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   private _closeToolbar$ = new Subject<void>()
 
   private _activeBlock: BlockCraft.IBlockComponents['attachment'] | null = null
+
+  @EventListen('mouseDown', {flavour: 'attachment'})
+  onClick(state: UIEventStateContext) {
+    if (!this.doc.isReadonly) return
+    const blockId = closetBlockId(state.getDefaultEvent().target as Node)
+    console.log(blockId)
+    blockId && this.doc.selection.selectBlock(blockId)
+    return true
+  }
 
   init() {
     this.fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
@@ -59,6 +68,8 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         }, this._closeToolbar$, this.closeToolbar)
 
         this._toolbarRef = overlayRef
+
+        componentRef.setInput('doc', this.doc)
 
         attachmentBlock.onDestroy$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
           this._closeToolbar$.next()
