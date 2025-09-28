@@ -1,17 +1,39 @@
 import {BlockHtmlAdapterMatcher} from "../block-adapter";
 import {HastUtils, TextUtils} from "../../utils";
-import {BlockNodeType, DeltaInsert, generateId} from "../../../framework";
+import {BlockNodeType, DeltaInsert, generateId, STR_LINE_BREAK} from "../../../framework";
 import {Element} from 'hast'
 
 const listBlockFlavour = ['bullet', 'ordered', 'todo']
 
 export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
-  toMatch: o => HastUtils.isElement(o.node) && o.node.tagName === 'li',
+  toMatch: o => HastUtils.isElement(o.node) && (['ul', 'ol', 'li'].includes(o.node.tagName)),
   fromMatch: o => listBlockFlavour.includes(o.node.flavour),
   toBlockSnapshot: {
     enter: (o, context) => {
       if (!HastUtils.isElement(o.node)) {
         return;
+      }
+
+      if (o.node.tagName !== 'li') {
+        o.node.children = o.node.children.filter(c => c.type !== 'text' || c.value !== STR_LINE_BREAK)
+        return;
+      }
+
+      const {walkerContext, deltaConverter} = context;
+      const curr = walkerContext.currentNode()
+
+      let depth = 0
+      if (listBlockFlavour.includes(curr?.flavour)) {
+        depth = (curr.props.depth || 0) + 1
+        walkerContext.closeNode()
+      }
+
+      if (typeof o.node.properties['bc:depth'] === 'number') {
+        depth = o.node.properties['bc:depth']
+      }
+
+      if (o.next && HastUtils.isElement(o.next) && o.next.tagName === 'li') {
+        o.next.properties['bc:depth'] = depth
       }
 
       const parentList = o.parent?.node as unknown as Element;
@@ -20,21 +42,29 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
         listType = 'ordered';
       }
 
-      const {walkerContext, deltaConverter} = context;
       walkerContext.openNode(
         {
           id: generateId(),
           flavour: <any>listType,
           nodeType: BlockNodeType.editable,
-          props: {},
+          props: {
+            depth,
+            order: listType === 'ordered' ? o.index : undefined
+          },
           meta: {},
-          children: deltaConverter.astToDelta(o.node)
+          children: deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node))
         },
         'children'
       )
-        .closeNode()
-      walkerContext.skipAllChildren();
+      walkerContext.setNodeContext('list:parent', o.node)
     },
+    leave: (o, context) => {
+      if (!HastUtils.isElement(o.node) || o.node.tagName !== 'li') {
+        return;
+      }
+      const {walkerContext} = context;
+      walkerContext.closeNode()
+    }
   },
   fromBlockSnapshot: {
     enter: (o, context) => {

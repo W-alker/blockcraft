@@ -3,6 +3,7 @@ import {CodeBlockSchema} from "../../../blocks";
 import {HastUtils} from "../../utils";
 import {deltaToString} from "../../../global";
 import {DeltaInsert} from "../../../framework";
+import {Text} from "hast";
 
 export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   toMatch: o => HastUtils.isElement(o.node) && o.node.tagName === 'pre',
@@ -12,33 +13,28 @@ export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       if (!HastUtils.isElement(o.node)) {
         return;
       }
-      // const code = HastUtils.querySelector(o.node, 'code');
-      // if (!code) {
-      //   return;
-      // }
 
-      const {walkerContext, deltaConverter} = context;
-      if (o.parent?.node.type === 'element' &&
-        !['td'].includes(o.parent.node.tagName)) {
+      const {walkerContext} = context;
+
+      const depth = (walkerContext.currentNode()?.props.depth || -1) + 1
+
+      if (o.parent?.node.type === 'element' && !['td'].includes(o.parent.node.tagName)) {
         walkerContext.closeNode()
       }
 
-      // const codeText =
-      //   code.children.length === 1 && code.children[0].type === 'text'
-      //     ? code.children[0]
-      //     : {...code, tagName: 'div'};
+      const codeSpans = HastUtils.flatNodes(o.node, () => true);
+
+      // @ts-ignore
+      const text = (codeSpans['children'] as Array<Text>).reduce((text, span) => text + span.value, '')
+
+      const codeBlock = CodeBlockSchema.createSnapshot(text)
+      codeBlock.props.depth = depth
 
       // TODO 优化代码语句分行
       walkerContext
-        .openNode(
-          CodeBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node, {
-            trim: false,
-            pre: true,
-          })),
-          'children'
-        )
-        .closeNode();
-      walkerContext.skipAllChildren();
+        .openNode(codeBlock, 'children')
+        .closeNode()
+      walkerContext.skipAllChildren()
     },
   },
   fromBlockSnapshot: {

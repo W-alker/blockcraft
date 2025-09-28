@@ -10,6 +10,7 @@ import {inlineDeltaToHtmlAdapterMatchers} from "./delta-converter/inline-delta";
 import {htmlInlineToDeltaMatchers} from "./delta-converter/html-inline";
 import {DEFAULT_BLOCK_MATCHERS} from "./block-matchers";
 import type {Root} from 'hast';
+import {HastUtils} from "../utils";
 
 export const SIGN_BLOCK_CRAFT_JSON = 'blockcraft-json';
 

@@ -33,6 +33,8 @@ export const tableBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 
       const currentNode = walkerContext.currentNode()!
 
+      console.log('---------', currentNode)
+
       let maxTdLen = 0
       for (let rowIdx = 0; rowIdx < currentNode.children.length; rowIdx++) {
         const row = currentNode.children[rowIdx] as IBlockSnapshot
@@ -144,10 +146,10 @@ export const tableRowBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       )
     },
     leave: async (o, context) => {
-      if (!HastUtils.isElement(o.node)) {
+      const {walkerContext} = context;
+      if (!HastUtils.isElement(o.node) || walkerContext.currentNode()?.flavour !== 'table-row') {
         return;
       }
-      const {walkerContext} = context;
       walkerContext.closeNode();
     }
   },
@@ -198,22 +200,26 @@ export const tableCellBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         meta: {},
         children: [],
       }, 'children')
-      // .closeNode()
-      // walkerContext.skipAllChildren()
-      if (!o.node.children?.length) {
-        walkerContext.closeNode()
-        return
-      }
-      if (o.node.children[0].type === 'text' || (o.node.children[0].type === 'element' && HastUtils.isTagInline(o.node.children[0].tagName))) {
-        walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node))).closeNode().closeNode()
-        walkerContext.skipAllChildren()
-      }
+
+      // if (!o.node.children.length) {
+      //   walkerContext.openNode(ParagraphBlockSchema.createSnapshot()).closeNode()
+      //   walkerContext.skipAllChildren()
+      //   return
+      // }
+      // if (o.node.children[0].type === 'text') {
+      //   walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node))).closeNode()
+      //   walkerContext.skipAllChildren()
+      // }
     },
     leave: async (o, context) => {
-      if (!HastUtils.isElement(o.node)) {
+      const {walkerContext} = context;
+      const currentNode = walkerContext.currentNode()
+      if (!HastUtils.isElement(o.node) || currentNode?.flavour !== 'table-cell') {
         return;
       }
-      const {walkerContext} = context;
+      if(!currentNode?.children.length) {
+        walkerContext.openNode(ParagraphBlockSchema.createSnapshot()).closeNode()
+      }
       walkerContext.closeNode();
     }
   },

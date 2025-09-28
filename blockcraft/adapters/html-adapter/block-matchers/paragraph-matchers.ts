@@ -35,19 +35,25 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   fromMatch: o => o.node.flavour === 'paragraph' || o.node.flavour === 'blockquote',
   toBlockSnapshot: {
     enter: (o, context) => {
+
       if (!HastUtils.isElement(o.node)) {
         return;
       }
       const {walkerContext, deltaConverter} = context;
+
+      const currentNode = walkerContext.currentNode()
+
       switch (o.node.tagName) {
         case 'span':
         case 'body':
         case 'div':
         case 'footer': {
-          if (
-            o.parent?.node.type === 'element' &&
-            !['li', 'p'].includes(o.parent.node.tagName) &&
-            HastUtils.isParagraphLike(o.node)
+          if (currentNode?.nodeType === 'editable' && HastUtils.isParagraphLike(o.node)) {
+            (currentNode?.children as DeltaInsert[]).push(...deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))
+            walkerContext.skipAllChildren()
+            return;
+          } else if (
+            o.parent?.node.type === 'element' && !['li', 'p'].includes(o.parent.node.tagName) && HastUtils.isParagraphLike(o.node)
           ) {
             walkerContext
               .openNode(
@@ -57,27 +63,47 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
                   flavour: 'paragraph',
                   props: {},
                   meta: {},
-                  children: deltaConverter.astToDelta(o.node),
+                  children: [],
                 },
                 'children'
-              ).closeNode();
-            walkerContext.skipAllChildren();
+              )
           }
           break;
         }
         case 'p': {
-          walkerContext.openNode(
-            {
-              nodeType: BlockNodeType.editable,
-              id: generateId(),
-              flavour: 'paragraph',
-              props: {},
-              meta: {},
-              children: deltaConverter.astToDelta(o.node),
-            },
-            'children'
-          ).closeNode()
-          walkerContext.skipAllChildren();
+          if (['ordered', 'bullet', 'todo'].includes(currentNode?.flavour) && HastUtils.isParagraphLike(o.node)) {
+            // @ts-ignore
+            currentNode?.children.push(...deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))
+            walkerContext.skipAllChildren()
+          } else {
+            // 如果是子节点
+            if(currentNode?.flavour !== 'root') {
+              walkerContext.openNode(
+                {
+                  nodeType: BlockNodeType.editable,
+                  id: generateId(),
+                  flavour: 'paragraph',
+                  props: {},
+                  meta: {},
+                  children: deltaConverter.astToDelta(o.node),
+                },
+                'children'
+              ).closeNode()
+              walkerContext.skipAllChildren()
+            } else {
+              walkerContext.openNode(
+                {
+                  nodeType: BlockNodeType.editable,
+                  id: generateId(),
+                  flavour: 'paragraph',
+                  props: {},
+                  meta: {},
+                  children: [],
+                },
+                'children'
+              )
+            }
+          }
           break;
         }
         case 'blockquote': {
@@ -94,7 +120,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           ).closeNode()
           walkerContext.skipAllChildren();
         }
-        break
+          break
         case 'h1':
         case 'h2':
         case 'h3':
@@ -128,16 +154,22 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       }
       const {walkerContext} = context;
 
+      if (walkerContext.currentNode()?.flavour !== 'paragraph') {
+        return;
+      }
+
+      walkerContext.closeNode();
+
       switch (o.node.tagName) {
-        case 'div': {
-          if (
-            o.parent?.node.type === 'element' &&
-            o.parent.node.tagName !== 'li'
-          ) {
-            walkerContext.closeNode();
-          }
-          break;
-        }
+        // case 'div': {
+        //   if (
+        //     o.parent?.node.type === 'element' &&
+        //     o.parent.node.tagName !== 'li'
+        //   ) {
+        //     walkerContext.closeNode();
+        //   }
+        //   break;
+        // }
         // case 'p': {
         //   if (
         //     o.next?.type === 'element' &&
