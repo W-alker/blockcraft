@@ -5,7 +5,7 @@ import {
   getPositionWithOffset,
   STR_LINE_BREAK
 } from "../../framework";
-import {CodeBlockModel, PRISM_LANGUAGE_MAP} from "./index";
+import {CodeBlockModel, isLanguageSupported, loadPrismLangComponent, PRISM_LANGUAGE_MAP} from "./index";
 import {AsyncPipe, NgForOf} from "@angular/common";
 import {Subject} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
@@ -44,7 +44,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     return this._inlineManager
   }
 
-  override _init() {
+  override async _init() {
     super._init();
     this._inlineManager = new CodeInlineManagerService(this.doc, this, {
       lang: PRISM_LANGUAGE_MAP[this.props.lang],
@@ -97,7 +97,13 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   @performanceTest('code block render')
   override rerender() {
-    this.inlineManager.renderCode()
+    if(!isLanguageSupported(PRISM_LANGUAGE_MAP[this.props.lang])){
+      loadPrismLangComponent(this.props.lang).then(() => {
+        this.inlineManager.renderCode()
+      })
+    } else {
+      this.inlineManager.renderCode()
+    }
   }
 
   getLineRangeByCharacter(start: number, end: number) {

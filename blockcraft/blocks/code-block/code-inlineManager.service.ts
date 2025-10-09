@@ -5,6 +5,7 @@ import {
 } from "../../framework";
 import * as Prism from "prismjs";
 import {performanceTest} from "../../global";
+import {isLanguageSupported, loadPrismLangComponent} from "./const";
 
 const flatPrismTokens = (tokens: Array<string | Prism.Token>, withLineBreak = true) => {
   const res: DeltaInsertText[] = []
@@ -55,13 +56,15 @@ const flatPrismTokens = (tokens: Array<string | Prism.Token>, withLineBreak = tr
 }
 
 interface IRenderOptions {
-  lang?: string
+  lang: string
   withLineBreak?: boolean
 }
 
 export class CodeInlineManagerService extends InlineManager {
 
-  constructor(doc: BlockCraft.Doc, protected block: EditableBlockComponent, protected options: IRenderOptions = {}) {
+  constructor(doc: BlockCraft.Doc, protected block: EditableBlockComponent, protected options: IRenderOptions = {
+    lang: 'plaintext',
+  }) {
     super(doc)
   }
 

@@ -23,16 +23,54 @@
 // import 'prismjs/components/prism-nginx';
 // import 'prismjs/components/prism-markdown';
 
+// import 'prismjs/components/prism-basic';
+// import 'prismjs/components/prism-http';
+// import 'prismjs/components/prism-javadoc';
+// import 'prismjs/components/prism-jq';
+// import 'prismjs/components/prism-jsdoc';
+
 export const LANGUAGE_LIST = [
+  'BASIC', 'EJS', 'HTTP',
+  // 'JavaDoc', 'JSDoc', 'Objective-C', 'Scala', 'VB.Net',
+  'JQ',
+  'JSONP', 'Julia',
+  'LaTeX', 'Less', 'Sass', 'SCSS', 'LiveScript', 'N4JS', 'Perl',
+  'PlantUML', 'PowerShell', 'R', 'Tcl', 'vim', 'Visual Basic', 'WebAssembly', 'YAML', 'Zig',
   'PlainText',
   'Java', 'JavaScript', 'TypeScript', 'CSS', 'HTML', 'PHP', 'Python', 'Go',
   'C', 'C#', 'C++', 'Rust', 'JSON', 'SQL', 'XML', 'Bash', 'Kotlin', 'Swift',
-  'Ruby', 'Scala', 'Dart', 'Git', 'MongoDB', 'nginx', 'Markdown'
+  'Ruby', 'Dart', 'Git', 'MongoDB', 'nginx', 'Markdown'
 ].sort((item1, item2) => item1.localeCompare(item2)) as CodeBlockLanguage[]
 
 export type CodeBlockLanguage = keyof typeof PRISM_LANGUAGE_MAP
 
 export const PRISM_LANGUAGE_MAP = {
+  BASIC: 'basic',
+  EJS: 'ejs',
+  HTTP: 'http',
+  // JavaDoc: 'javadoc',
+  JQ: 'jq',
+  // JSDoc: 'jsdoc',
+  JSONP: 'jsonp',
+  Julia: 'julia',
+  LaTeX: 'latex',
+  Less: 'less',
+  Sass: 'sass',
+  SCSS: 'scss',
+  LiveScript: 'livescript',
+  N4JS: 'n4js',
+  // 'Objective-C': 'objectivec',
+  // Perl: 'perl',
+  PlantUML: 'plant-uml',
+  PowerShell: 'powershell',
+  R: 'r',
+  Tcl: 'tcl',
+  // 'VB.Net': 'vbnet',
+  'vim': 'vim',
+  'Visual Basic': 'visual-basic',
+  WebAssembly: 'wasm',
+  YAML: 'yaml',
+  Zig: 'zig',
   PlainText: 'plaintext',
   Java: 'java',
   JavaScript: 'javascript',
@@ -63,5 +101,69 @@ export const PRISM_LANGUAGE_MAP = {
   Markdown: 'markdown',
 }
 
-const loadedLanguages = new Set<CodeBlockLanguage>()
+export const PRISM_LANGUAGE_IMPORT_MAP = {
+  BASIC: 'basic',
+  EJS: 'ejs',
+  HTTP: 'http',
+  JavaDoc: 'javadoc',
+  JQ: 'jq',
+  JSDoc: 'jsdoc',
+  JSONP: 'jsonp',
+  Julia: 'julia',
+  LaTeX: 'latex',
+  Less: 'less',
+  Sass: 'sass',
+  SCSS: 'scss',
+  LiveScript: 'livescript',
+  N4JS: 'n4js',
+  'Objective-C': 'objectivec',
+  Perl: 'perl',
+  PlantUML: 'plant-uml',
+  PowerShell: 'powershell',
+  R: 'r',
+  Tcl: 'tcl',
+  'VB.Net': 'vbnet',
+  'vim': 'vim',
+  'Visual Basic': 'visual-basic',
+  WebAssembly: 'wasm',
+  YAML: 'yaml',
+  Zig: 'zig',
+  PlainText: 'plaintext',
+  Java: 'java',
+  JavaScript: 'javascript',
+  TypeScript: 'typescript',
+  CSS: 'css',
+  HTML: 'markup',
+  PHP: 'php',
+  Python: 'python',
+  Go: 'go',
+  C: 'c',
+  CSharp: 'csharp',
+  CPlusPlus: 'cpp',
+  Rust: 'rust',
+  JSON: 'json',
+  'C++': 'cpp',
+  'C#': 'csharp',
+  SQL: 'sql',
+  XML: 'xml',
+  Bash: 'bash',
+  Kotlin: 'kotlin',
+  Swift: 'swift',
+  Ruby: 'ruby',
+  Scala: 'scala',
+  Dart: 'dart',
+  Git: 'git',
+  MongoDB: 'mongodb',
+  nginx: 'nginx',
+  Markdown: 'markdown',
+}
 
+export function isLanguageSupported(lang: string) {
+  if (lang === 'PlainText') return true
+  return (window as any).Prism?.languages?.[lang]
+}
+
+export async function loadPrismLangComponent(lang: CodeBlockLanguage) {
+  if (lang === 'PlainText' || isLanguageSupported(PRISM_LANGUAGE_MAP[lang])) return
+  await import(`prismjs/components/prism-${PRISM_LANGUAGE_IMPORT_MAP[lang]}.js`);
+}

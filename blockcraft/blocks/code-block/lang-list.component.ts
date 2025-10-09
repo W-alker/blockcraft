@@ -7,7 +7,7 @@ import {
   Input,
   Output, ViewChild
 } from "@angular/core";
-import {CodeBlockLanguage, LANGUAGE_LIST} from "./const";
+import {CodeBlockLanguage, LANGUAGE_LIST, loadPrismLangComponent} from "./const";
 import {NgForOf} from "@angular/common";
 
 @Component({
@@ -161,6 +161,7 @@ export class LangListComponent {
   }
 
   async emitLang(lang: CodeBlockLanguage) {
+    await loadPrismLangComponent(lang)
     this.langChange.emit(lang)
   }
 }
