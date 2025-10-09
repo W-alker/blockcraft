@@ -33,8 +33,6 @@ export const tableBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 
       const currentNode = walkerContext.currentNode()!
 
-      console.log('---------', currentNode)
-
       let maxTdLen = 0
       for (let rowIdx = 0; rowIdx < currentNode.children.length; rowIdx++) {
         const row = currentNode.children[rowIdx] as IBlockSnapshot
@@ -206,8 +204,14 @@ export const tableCellBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       //   walkerContext.skipAllChildren()
       //   return
       // }
-      // if (o.node.children[0].type === 'text') {
-      //   walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node))).closeNode()
+      const firChild = o.node.children[0]
+      if (firChild?.type === 'text') {
+        walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node))).closeNode()
+        walkerContext.skipAllChildren()
+        walkerContext.closeNode()
+      }
+      // if((HastUtils.isElement(firChild) && HastUtils.isTagInline(firChild.tagName))) {
+      //   walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))).closeNode()
       //   walkerContext.skipAllChildren()
       // }
     },

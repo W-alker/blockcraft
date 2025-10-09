@@ -30,7 +30,6 @@ export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       const codeBlock = CodeBlockSchema.createSnapshot(text)
       codeBlock.props.depth = depth
 
-      // TODO 优化代码语句分行
       walkerContext
         .openNode(codeBlock, 'children')
         .closeNode()

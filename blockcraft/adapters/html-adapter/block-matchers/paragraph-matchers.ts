@@ -55,18 +55,13 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           } else if (
             o.parent?.node.type === 'element' && !['li', 'p'].includes(o.parent.node.tagName) && HastUtils.isParagraphLike(o.node)
           ) {
-            walkerContext
-              .openNode(
-                {
-                  nodeType: BlockNodeType.editable,
-                  id: generateId(),
-                  flavour: 'paragraph',
-                  props: {},
-                  meta: {},
-                  children: [],
-                },
-                'children'
-              )
+            const p = ParagraphBlockSchema.createSnapshot()
+            walkerContext.openNode(p, 'children')
+            if (o.node.children[0]?.type === 'text') {
+              (p.children as DeltaInsert[]).push(...deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))
+              walkerContext.skipAllChildren()
+              walkerContext.closeNode()
+            }
           }
           break;
         }
@@ -77,31 +72,11 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
             walkerContext.skipAllChildren()
           } else {
             // 如果是子节点
-            if(currentNode?.flavour !== 'root') {
-              walkerContext.openNode(
-                {
-                  nodeType: BlockNodeType.editable,
-                  id: generateId(),
-                  flavour: 'paragraph',
-                  props: {},
-                  meta: {},
-                  children: deltaConverter.astToDelta(o.node),
-                },
-                'children'
-              ).closeNode()
+            if (currentNode?.flavour !== 'root' || o.node.children[0]?.type === 'text') {
+              walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node)), 'children').closeNode()
               walkerContext.skipAllChildren()
             } else {
-              walkerContext.openNode(
-                {
-                  nodeType: BlockNodeType.editable,
-                  id: generateId(),
-                  flavour: 'paragraph',
-                  props: {},
-                  meta: {},
-                  children: [],
-                },
-                'children'
-              )
+              walkerContext.openNode(ParagraphBlockSchema.createSnapshot(), 'children')
             }
           }
           break;

@@ -59,10 +59,10 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
       walkerContext.setNodeContext('list:parent', o.node)
     },
     leave: (o, context) => {
-      if (!HastUtils.isElement(o.node) || o.node.tagName !== 'li') {
+      const {walkerContext} = context;
+      if (!HastUtils.isElement(o.node) || !listBlockFlavour.includes(walkerContext.currentNode()?.flavour)) {
         return;
       }
-      const {walkerContext} = context;
       walkerContext.closeNode()
     }
   },
