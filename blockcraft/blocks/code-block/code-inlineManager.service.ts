@@ -4,8 +4,6 @@ import {
   STR_LINE_BREAK
 } from "../../framework";
 import * as Prism from "prismjs";
-import {performanceTest} from "../../global";
-import {isLanguageSupported, loadPrismLangComponent} from "./const";
 
 const flatPrismTokens = (tokens: Array<string | Prism.Token>, withLineBreak = true) => {
   const res: DeltaInsertText[] = []

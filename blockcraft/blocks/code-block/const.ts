@@ -23,19 +23,35 @@
 // import 'prismjs/components/prism-nginx';
 // import 'prismjs/components/prism-markdown';
 
-// import 'prismjs/components/prism-basic';
-// import 'prismjs/components/prism-http';
-// import 'prismjs/components/prism-javadoc';
-// import 'prismjs/components/prism-jq';
-// import 'prismjs/components/prism-jsdoc';
+import 'prismjs/components/prism-basic';
+import 'prismjs/components/prism-http';
+import 'prismjs/components/prism-jq';
+import 'prismjs/components/prism-jsonp';
+import 'prismjs/components/prism-julia';
+import 'prismjs/components/prism-latex';
+import 'prismjs/components/prism-less';
+import 'prismjs/components/prism-sass';
+import 'prismjs/components/prism-scss';
+import 'prismjs/components/prism-livescript';
+import 'prismjs/components/prism-n4js';
+import 'prismjs/components/prism-objectivec';
+import 'prismjs/components/prism-plant-uml';
+import 'prismjs/components/prism-powershell';
+import 'prismjs/components/prism-r';
+import 'prismjs/components/prism-tcl';
+import 'prismjs/components/prism-vim';
+import 'prismjs/components/prism-yaml';
+import 'prismjs/components/prism-zig';
 
 export const LANGUAGE_LIST = [
-  'BASIC', 'EJS', 'HTTP',
+  'BASIC',  'HTTP',
   // 'JavaDoc', 'JSDoc', 'Objective-C', 'Scala', 'VB.Net',
   'JQ',
   'JSONP', 'Julia',
-  'LaTeX', 'Less', 'Sass', 'SCSS', 'LiveScript', 'N4JS', 'Perl',
-  'PlantUML', 'PowerShell', 'R', 'Tcl', 'vim', 'Visual Basic', 'WebAssembly', 'YAML', 'Zig',
+  'LaTeX', 'Less', 'Sass', 'SCSS', 'LiveScript', 'N4JS',
+  'PlantUML', 'PowerShell', 'R', 'Tcl', 'vim',
+  // 'Perl', 'EJS', 'Visual Basic', 'WebAssembly',
+  'YAML', 'Zig',
   'PlainText',
   'Java', 'JavaScript', 'TypeScript', 'CSS', 'HTML', 'PHP', 'Python', 'Go',
   'C', 'C#', 'C++', 'Rust', 'JSON', 'SQL', 'XML', 'Bash', 'Kotlin', 'Swift',
