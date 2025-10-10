@@ -173,7 +173,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   setInlineRange(index: number, length = 0) {
-    this.doc.selection.setSelection({
+    return this.doc.selection.setSelection({
       index,
       length,
       type: 'text',

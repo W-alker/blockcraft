@@ -6,7 +6,7 @@ import {
   STR_TAB,
   UIEventStateContext
 } from "../framework";
-import {BlockCraftError, ErrorCode, getLinesByRange, nextTick} from "../global";
+import {BlockCraftError, ErrorCode, getLinesByRange, getScrollContainer, nextTick} from "../global";
 
 export class CodeInlineEditorBinding extends DocPlugin {
 
@@ -69,11 +69,11 @@ export class CodeInlineEditorBinding extends DocPlugin {
     const state = context.get('keyboardState')
     const {from, to, raw} = state.selection
     if (to || from.type !== 'text') return false
-    context.preventDefault()
     const block = from.block
 
     // 代码块强制换新行
     if (state.raw.shiftKey && from.block.flavour === 'code') {
+      context.preventDefault()
       const splitText = block.textContent().slice(from.index + from.length)
       block.deleteText(from.index, block.textLength - from.index)
       const np = this.doc.schemas.createSnapshot('paragraph', [splitText, block.props])
@@ -88,7 +88,6 @@ export class CodeInlineEditorBinding extends DocPlugin {
     if (from.length !== 0) {
       block.deleteText(from.index, from.length)
     }
-
     const currLine = block.textContent().slice(0, from.index).split(STR_LINE_BREAK).at(-1)
     const tabs = (currLine?.split(STR_TAB).length || 1) - 1
     const deltas: DeltaOperation[] = [
@@ -96,7 +95,8 @@ export class CodeInlineEditorBinding extends DocPlugin {
       {insert: STR_LINE_BREAK + (tabs ? STR_TAB.repeat(tabs) : '')},
     ]
     block.applyDeltaOperations(deltas)
-    block.setInlineRange(from.index + STR_LINE_BREAK.length + tabs * STR_TAB.length)
+    const range = block.setInlineRange(from.index + STR_LINE_BREAK.length + tabs * STR_TAB.length)
+    block.flavour === 'code' && block.props.h && scrollIntoNearestParentY(range.startContainer.parentElement!)
     return true
   }
 
@@ -158,3 +158,53 @@ export class CodeInlineEditorBinding extends DocPlugin {
   }
 
 }
+
+/**
+ * 滚动目标元素或光标所在行到最近可滚动父级可视区
+ * @param {HTMLElement} target - 元素或选区
+ * @param {object} [opts]
+ * @param {'auto'|'smooth'} [opts.behavior='auto']
+ */
+function scrollIntoNearestParentY(target: HTMLElement, { behavior = 'auto' } = {}) {
+  if (!target) return;
+
+  // 找到最近可滚动父级
+  const parent = getScrollContainer(target);
+  const rect = target.getBoundingClientRect()
+  const elHeight = rect.height;
+  const offset = elHeight
+
+  // 计算在父容器中的位置
+  const parentRect = parent.getBoundingClientRect();
+  const topInParent = rect.top - parentRect.top + parent.scrollTop;
+  const bottomInParent = rect.bottom - parentRect.top + parent.scrollTop;
+  const visibleTop = parent.scrollTop + offset;
+  const visibleBottom = parent.scrollTop + parent.clientHeight - offset;
+
+  let targetScrollTop = parent.scrollTop;
+
+  if (elHeight <= parent.clientHeight - 2 * offset) {
+    // 元素能完整显示时：只在超出可视区才滚
+    if (topInParent < visibleTop) {
+      targetScrollTop = topInParent - offset + rect.height;
+    } else if (bottomInParent > visibleBottom) {
+      targetScrollTop = bottomInParent - parent.clientHeight + offset;
+    }
+  } else {
+    // 元素太高：尽量让顶部可见
+    if (topInParent < visibleTop || bottomInParent > visibleBottom) {
+      targetScrollTop = topInParent - offset + rect.height;
+    }
+  }
+
+  // 限制范围
+  targetScrollTop = Math.max(0, Math.min(targetScrollTop, parent.scrollHeight - parent.clientHeight));
+  if (Math.abs(targetScrollTop - parent.scrollTop) < 1) return;
+
+  if (behavior === 'smooth' && parent.scrollTo) {
+    parent.scrollTo({ top: targetScrollTop + rect.height, behavior });
+  } else {
+    parent.scrollTop = targetScrollTop + rect.height
+  }
+}
+
