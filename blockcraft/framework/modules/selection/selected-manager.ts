@@ -56,12 +56,12 @@ export class SelectionSelectedManager {
     //     }
     //   })
     // })
-    if(from.type === "selected") {
+    // if(from.type === "selected") {
       this._setClass(from.block)
-    }
-    if(to.type === "selected") {
+    // }
+    // if(to.type === "selected") {
       this._setClass(to.block)
-    }
+    // }
     const between = this.doc.queryBlocksBetween(from.block, to.block, false)
     if (!between?.length) return
     between.forEach(v => {

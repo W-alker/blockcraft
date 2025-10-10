@@ -648,6 +648,7 @@ export class SelectionManager {
     const selection = document.getSelection()!
     selection.removeAllRanges()
     selection.addRange(range)
+    return range
   }
 
   /**
