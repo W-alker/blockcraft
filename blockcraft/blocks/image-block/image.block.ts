@@ -74,7 +74,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
 
     this._showSize = {width: this.props.width!, height: this.props.height!}
 
-    this.mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove')
+    this.mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove', {capture: true})
       .pipe(throttleTime(60))
       .subscribe((e) => {
         const movePx = e.clientX - this.startPoint!.x
@@ -93,7 +93,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
         this.imgEle.nativeElement.style.width = `${this._showSize.width}px`
       })
 
-    fromEvent<MouseEvent>(document, 'mouseup').pipe(take(1)).subscribe((e) => {
+    fromEvent<MouseEvent>(document, 'mouseup', {capture: true}).pipe(take(1)).subscribe((e) => {
       this.startPoint = undefined
       this.mouseMove$?.unsubscribe()
       const rect = this.imgEle.nativeElement.getBoundingClientRect()

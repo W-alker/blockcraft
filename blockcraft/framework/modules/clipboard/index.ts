@@ -225,7 +225,9 @@ export class ClipboardManager {
 
         let insertLength = 0
         // 是否需要和本段合并
-        if (snapshots[0].nodeType === BlockNodeType.editable && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)) {
+        if (snapshots[0].nodeType === BlockNodeType.editable
+          && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
+          && snapshots[0].props['heading'] === editableBlock.props['heading']) {
           insertLength = deltaStrLength(snapshots[0].children)
           ops.push(...snapshots[0].children)
           snapshots.shift()

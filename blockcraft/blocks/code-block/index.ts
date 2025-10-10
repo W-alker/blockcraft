@@ -13,6 +13,7 @@ export interface CodeBlockModel extends EditableBlockNative {
   props: {
     lang: CodeBlockLanguage
     mode: string
+    h?: number
   } & IEditableBlockProps
 }
 

@@ -199,21 +199,14 @@ export const tableCellBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         children: [],
       }, 'children')
 
-      // if (!o.node.children.length) {
-      //   walkerContext.openNode(ParagraphBlockSchema.createSnapshot()).closeNode()
-      //   walkerContext.skipAllChildren()
-      //   return
-      // }
+      if (!o.node.children.length) return
+
       const firChild = o.node.children[0]
-      if (firChild?.type === 'text') {
-        walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node))).closeNode()
+      if (firChild?.type === 'text' || (HastUtils.isElement(firChild) && HastUtils.isTagInline(firChild.tagName)) ) {
+        walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))).closeNode()
         walkerContext.skipAllChildren()
         walkerContext.closeNode()
       }
-      // if((HastUtils.isElement(firChild) && HastUtils.isTagInline(firChild.tagName))) {
-      //   walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))).closeNode()
-      //   walkerContext.skipAllChildren()
-      // }
     },
     leave: async (o, context) => {
       const {walkerContext} = context;

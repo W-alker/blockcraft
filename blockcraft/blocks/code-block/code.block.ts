@@ -7,7 +7,7 @@ import {
 } from "../../framework";
 import {CodeBlockModel, isLanguageSupported, loadPrismLangComponent, PRISM_LANGUAGE_MAP} from "./index";
 import {AsyncPipe, NgForOf} from "@angular/common";
-import {Subject} from "rxjs";
+import {fromEvent, Subject, Subscription, take, throttleTime} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {LangListComponent} from "./lang-list.component";
 import {CodeBlockLanguage} from "./const";
@@ -18,15 +18,25 @@ import {CodeInlineManagerService} from "./code-inlineManager.service";
 @Component({
   selector: 'div.code-block',
   template: `
-    <div class="edit-container"></div>
-
-    <div class="head-btn__group" contenteditable="false" [class.active]="isHoldHeader">
-      <div class="head-btn" (mousedown)="showLangList($event)">
-        <span>{{ props.lang }}</span>
-        <i class="bf_icon bf_xiajaintou" [hidden]="doc.readonlySwitch$ | async"></i>
+    <div class="code-block__head" contenteditable="false">
+      <div class="head-btn__group">
+        <div class="head-btn" (mousedown)="showLangList($event)">
+          <span class="lang">{{ props.lang }}</span>
+          <i class="bf_icon bf_xiajaintou" [hidden]="doc.readonlySwitch$ | async"></i>
+        </div>
+        <div class="head-btn" (mousedown)="onCopyText($event)"><i class="bf_icon bf_fuzhi"></i> 复制</div>
       </div>
-      <div class="head-btn" (mousedown)="onCopyText($event)"><i class="bf_icon bf_fuzhi"></i> 复制</div>
     </div>
+
+    <div class="edit-container-wrapper">
+      <div class="edit-container"></div>
+    </div>
+
+    @if(!(doc.readonlySwitch$ | async)) {
+      <div class="resize-bar-btm" contenteditable="false" (mousedown)="onResizeMouseDown($event)">
+        <div class="bar-drag"></div>
+      </div>
+    }
   `,
   standalone: true,
   imports: [NgForOf, AsyncPipe],
@@ -35,7 +45,6 @@ import {CodeInlineManagerService} from "./code-inlineManager.service";
 export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   override plainTextOnly = true
 
-  protected isHoldHeader = false
   private lines: string[] = []
 
   private _inlineManager!: CodeInlineManagerService
@@ -55,6 +64,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   override ngAfterViewInit() {
     super.ngAfterViewInit()
     this._observer()
+    this.containerElement.style.height = `${this.props.h}px`
   }
 
   private _observer() {
@@ -70,6 +80,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   override detach() {
     super.detach();
     this._unObserver()
+    this.mouseMove$?.unsubscribe()
   }
 
   override reattach() {
@@ -86,10 +97,15 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
       this.inlineManager.setLang(PRISM_LANGUAGE_MAP[this.props.lang])
       this.rerender()
     }
+    if (ev.keysChanged.has('h')) {
+      nextTick().then(() => {
+        this.containerElement.style.height = `${this.props.h}px`
+      })
+    }
   }
 
   private _debounce_highlight = debounce((e: Y.YTextEvent) => {
-    if (this.props.lang === 'PlainText') return
+    // if (this.props.lang === 'PlainText') return
     nextTick().then(() => {
       this.inlineManager.diffHighLight(e.delta as DeltaOperation[])
     })
@@ -97,7 +113,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   @performanceTest('code block render')
   override rerender() {
-    if(!isLanguageSupported(PRISM_LANGUAGE_MAP[this.props.lang])){
+    if (!isLanguageSupported(PRISM_LANGUAGE_MAP[this.props.lang])) {
       loadPrismLangComponent(this.props.lang).then(() => {
         this.inlineManager.renderCode()
       })
@@ -138,8 +154,6 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     e.preventDefault()
     e.stopPropagation()
 
-    this.isHoldHeader = true
-
     const closeList$ = new Subject()
     const {componentRef: cpr} = this.doc.overlayService.createConnectedOverlay<LangListComponent>({
       target: e.target as HTMLElement,
@@ -147,7 +161,6 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
       positions: [getPositionWithOffset('bottom-center'), getPositionWithOffset('top-center')],
       backdrop: true
     }, closeList$, () => {
-      this.isHoldHeader = false
     })
     cpr.setInput('activeLang', this.props.lang)
 
@@ -169,4 +182,33 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
       }, 2000)
     })
   }
+
+  private startPoint?: { y: number }
+  private mouseMove$?: Subscription
+
+  onResizeMouseDown(evt: MouseEvent) {
+    evt.stopPropagation()
+    evt.preventDefault()
+
+    let h = this.props.h ?? this.containerElement.getBoundingClientRect().height
+
+    this.mouseMove$?.unsubscribe()
+    this.startPoint = {y: evt.clientY}
+
+    this.mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove', {capture: true})
+      .pipe(throttleTime(30))
+      .subscribe((e) => {
+        const movePx = e.clientY - this.startPoint!.y
+        this.startPoint!.y = e.clientY
+        h = Math.max(h + movePx, 30)
+        this.containerElement.style.height = `${h}px`
+      })
+
+    fromEvent<MouseEvent>(document, 'mouseup', {capture: true}).pipe(take(1)).subscribe((e) => {
+      this.startPoint = undefined
+      this.mouseMove$?.unsubscribe()
+      this.updateProps({h})
+    })
+  }
+
 }
