@@ -468,7 +468,7 @@ export class SelectionManager {
       let pos = 0
       for (let i = 0; i < elements.length; i++) {
         const firstChild = elements[i].firstElementChild
-        const isEmbed = !(firstChild instanceof HTMLElement ? firstChild.isContentEditable : (options?.isComposing ? firstChild instanceof Text : false))
+        const isEmbed = !(firstChild instanceof HTMLElement ? firstChild.contentEditable !== 'false' : (options?.isComposing ? firstChild instanceof Text : false))
         const elementLength = isEmbed ? 1 : elements[i].textContent!.length
         if (elements[i] === cElement) {
           return pos + (isGap ? 1 : (isContainer ? elementLength : offset))

@@ -125,7 +125,7 @@ export class InlineManager {
       while (len > 0) {
 
         const ele = elementsNodes[nodeStep.index]
-        const eleLength = (ele.firstElementChild as HTMLElement).isContentEditable ? ele.textContent!.length : 1
+        const eleLength = (ele.firstElementChild as HTMLElement).contentEditable === 'false' ? 1 : ele.textContent!.length
 
         // AAAAAA|
         if (nodeStep.indexInNode === eleLength) {
@@ -228,7 +228,7 @@ export class InlineManager {
       if (!len) return;
       while (len > 0) {
         const ele = elementsNodes[nodeStep.index]
-        const isElementEmbed = !(ele.firstElementChild as HTMLElement).isContentEditable
+        const isElementEmbed = (ele.firstElementChild as HTMLElement).contentEditable === 'false'
         const eleLength = isElementEmbed ? 1 : ele.textContent!.length
 
         if (nodeStep.indexInNode === eleLength) {
@@ -299,7 +299,7 @@ export class InlineManager {
       let eleLength: number
       if (nodeStep.indexInNode === 0 && nodeStep.index >= elementsNodes.length) {
         ele = elementsNodes[elementsNodes.length - 1]
-        isElementEmbed = !(ele.firstElementChild as HTMLElement).isContentEditable
+        isElementEmbed = (ele.firstElementChild as HTMLElement).contentEditable === 'false'
         eleLength = isElementEmbed ? 1 : ele.textContent!.length
         nodeStep = {
           index: elementsNodes.length - 1,
@@ -307,7 +307,7 @@ export class InlineManager {
         }
       } else {
         ele = elementsNodes[nodeStep.index]
-        isElementEmbed = !(ele.firstElementChild as HTMLElement).isContentEditable
+        isElementEmbed = (ele.firstElementChild as HTMLElement).contentEditable === 'false'
         eleLength = isElementEmbed ? 1 : ele.textContent!.length
       }
 
@@ -350,7 +350,7 @@ export class InlineManager {
 
         // case 2.1.2: text node is not first element
         const prevNode = elementsNodes[nodeStep.index - 1]
-        const isPrevEmbed = !(prevNode.firstElementChild as HTMLElement).isContentEditable
+        const isPrevEmbed = (prevNode.firstElementChild as HTMLElement).contentEditable === 'false'
         const isPrevEqual = compareAttributesWithEle(prevNode, op.attributes)
 
         if (isPrevEmbed || !isPrevEqual || isOpElementEmbed) {
@@ -460,7 +460,7 @@ export class InlineManager {
 
     const elementsNodes = Array.from(container.querySelectorAll(INLINE_ELEMENT_TAG)) as HTMLElement[]
     for (const ele of elementsNodes) {
-      const isEmbed = !(ele.firstElementChild as HTMLElement).isContentEditable
+      const isEmbed = (ele.firstElementChild as HTMLElement).contentEditable === 'false'
       const eleLength = isEmbed ? 1 : ele.textContent!.length
       if (offset <= eleLength) {
         if (isEmbed && offset === 1) {
