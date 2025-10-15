@@ -198,7 +198,7 @@ export class DocCRUD {
       if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
 
       if (keyProp === "children") {
-        if (target.constructor.name === 'YArray') {
+        if (target.constructor.name === 'YArray' || target.constructor.name === '_YArray' || typeof target.toArray === 'function') {
           if (tr.origin !== ORIGIN_SKIP_SYNC) {
             changes.delta.forEach(change => {
               if (change.insert) {
@@ -213,7 +213,7 @@ export class DocCRUD {
 
           // @ts-expect-error
           bm.instance._childrenIds = target.toArray()
-        } else if (target.constructor.name === 'YText') {
+        } else if (target.constructor.name === 'YText' || target.constructor.name === '_YText' || typeof target.toDelta === 'function') {
 
           if (!this.doc.isEditable(bm.instance))
             throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} is not editable`)
