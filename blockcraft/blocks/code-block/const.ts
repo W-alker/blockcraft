@@ -23,25 +23,25 @@
 // import 'prismjs/components/prism-nginx';
 // import 'prismjs/components/prism-markdown';
 
-// import 'prismjs/components/prism-basic';
-// import 'prismjs/components/prism-http';
-// import 'prismjs/components/prism-jq';
-// import 'prismjs/components/prism-jsonp';
-// import 'prismjs/components/prism-julia';
-// import 'prismjs/components/prism-latex';
-// import 'prismjs/components/prism-less';
-// import 'prismjs/components/prism-sass';
-// import 'prismjs/components/prism-scss';
-// import 'prismjs/components/prism-livescript';
-// import 'prismjs/components/prism-n4js';
-// import 'prismjs/components/prism-objectivec';
-// import 'prismjs/components/prism-plant-uml';
-// import 'prismjs/components/prism-powershell';
-// import 'prismjs/components/prism-r';
-// import 'prismjs/components/prism-tcl';
-// import 'prismjs/components/prism-vim';
-// import 'prismjs/components/prism-yaml';
-// import 'prismjs/components/prism-zig';
+import 'prismjs/components/prism-basic';
+import 'prismjs/components/prism-http';
+import 'prismjs/components/prism-jq';
+import 'prismjs/components/prism-jsonp';
+import 'prismjs/components/prism-julia';
+import 'prismjs/components/prism-latex';
+import 'prismjs/components/prism-less';
+import 'prismjs/components/prism-sass';
+import 'prismjs/components/prism-scss';
+import 'prismjs/components/prism-livescript';
+import 'prismjs/components/prism-n4js';
+import 'prismjs/components/prism-objectivec';
+import 'prismjs/components/prism-plant-uml';
+import 'prismjs/components/prism-powershell';
+import 'prismjs/components/prism-r';
+import 'prismjs/components/prism-tcl';
+import 'prismjs/components/prism-vim';
+import 'prismjs/components/prism-yaml';
+import 'prismjs/components/prism-zig';
 
 export const LANGUAGE_LIST = [
   'BASIC',  'HTTP',

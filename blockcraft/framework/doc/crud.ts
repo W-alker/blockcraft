@@ -198,7 +198,7 @@ export class DocCRUD {
       if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
 
       if (keyProp === "children") {
-        if (target instanceof Y.Array) {
+        if (target.constructor.name === 'YArray') {
           if (tr.origin !== ORIGIN_SKIP_SYNC) {
             changes.delta.forEach(change => {
               if (change.insert) {
@@ -213,25 +213,25 @@ export class DocCRUD {
 
           // @ts-expect-error
           bm.instance._childrenIds = target.toArray()
-          return
-        }
+        } else if (target.constructor.name === 'YText') {
 
-        if (!this.doc.isEditable(bm.instance))
-          throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} is not editable`)
-        // Y.Text
-        if (tr.origin !== ORIGIN_SKIP_SYNC) {
-          try {
-            bm.instance.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], bm.instance.containerElement)
-          } catch (e) {
-            this.doc.logger.warn('applyDeltaToView error', e)
-            bm.instance.rerender()
+          if (!this.doc.isEditable(bm.instance))
+            throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} is not editable`)
+          // Y.Text
+          if (tr.origin !== ORIGIN_SKIP_SYNC) {
+            try {
+              bm.instance.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], bm.instance.containerElement)
+            } catch (e) {
+              this.doc.logger.warn('applyDeltaToView error', e)
+              bm.instance.rerender()
+            }
           }
+          textChanges.push({
+            block: bm.instance,
+            delta: changes.delta as DeltaOperation[]
+          })
+
         }
-        textChanges.push({
-          block: bm.instance,
-          delta: changes.delta as DeltaOperation[]
-        })
-        return
       }
 
       const propKey = path[1] as 'props' | 'meta'
