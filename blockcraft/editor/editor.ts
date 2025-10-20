@@ -207,8 +207,8 @@ export class EditorComponent {
   ) {
   }
 
-  docId = '68d348f116d06e2cb3171571'
-  rootId = '68d348f116d06e2cb3171571'
+  docId = '68d0b15cee2b8233bf5b79c8'
+  rootId = '68d0b15cee2b8233bf5b79c8'
 
   doc = new BlockCraftDoc({
     yDoc: new Y.Doc({
@@ -447,6 +447,7 @@ export class EditorComponent {
     this.provider = new WebsocketProvider(
       'ws://196.168.1.69:1234',
       // 'ws://ws-doc.cses7.com',
+      // 'ws://ws-doc-pre.cses7.com',
       // 'ws://193.168.2.100:30204/collaborate',
       this.docId,
       this.doc.yDoc, {

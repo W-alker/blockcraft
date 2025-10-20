@@ -3,5 +3,8 @@
   "dest": "../dist/blockcraft",
   "lib": {
     "entryFile": "index.ts"
-  }
+  },
+  "assets": [
+    "assets/**/*"
+  ]
 }

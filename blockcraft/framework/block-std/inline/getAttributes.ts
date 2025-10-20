@@ -11,8 +11,9 @@ export const getAttributesFrom = (ele: HTMLElement): IInlineNodeAttrs => {
     attributes[`a:${name}`] = ele.getAttribute(name)
   }
   const css = ele.style
-  for (const key in css) {
-    attributes[`s:${key}`] = css[key]
+  for (let i = 0; i < css.length; i++) {
+    const key = css[i];
+    attributes[`s:${key}`] = css.getPropertyValue(key);
   }
   return attributes
 }

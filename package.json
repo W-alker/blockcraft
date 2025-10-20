@@ -4,11 +4,11 @@
   "scripts": {
     "ng": "ng",
     "demo": "ng serve demo --open --configuration development --port 8081 --host 0.0.0.0",
-    "build": "ng build blockcraft && pnpm copy-assets",
+    "build": "ng build blockcraft",
     "copy-assets": "cpx 'blockcraft/assets/**/*' dist/blockcraft/assets && cpx 'blockcraft/themes/**/*' dist/blockcraft/themes",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "pub": "ng build blockcraft && pnpm copy-assets && cd dist/blockcraft && npm publish --registry http://npm.runtongqiuben.com",
+    "pub": "ng build blockcraft && cd dist/blockcraft && npm publish --registry http://npm.runtongqiuben.com",
     "unpub": "npm unpublish @ccc/blockcraft --force --registry http://npm.runtongqiuben.com"
   },
   "private": true,
@@ -37,7 +37,6 @@
     "@types/prismjs": "^1.26.5",
     "babel-plugin-module-resolver": "^5.0.2",
     "collapse-white-space": "^2.1.0",
-    "cpx": "^1.5.0",
     "dom-to-image-more": "^3.5.0",
     "dompurify": "^3.2.5",
     "hast": "^1.0.0",

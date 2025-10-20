@@ -32,7 +32,7 @@ import {CodeInlineManagerService} from "./code-inlineManager.service";
       <div class="edit-container"></div>
     </div>
 
-    @if(!(doc.readonlySwitch$ | async)) {
+    @if (!(doc.readonlySwitch$ | async)) {
       <div class="resize-bar-btm" contenteditable="false" (mousedown)="onResizeMouseDown($event)">
         <div class="bar-drag"></div>
       </div>
@@ -105,8 +105,8 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   private _debounce_highlight = debounce((e: Y.YTextEvent) => {
-    // if (this.props.lang === 'PlainText') return
     nextTick().then(() => {
+      // if (this.doc.event.status.isComposing) return
       this.inlineManager.diffHighLight(e.delta as DeltaOperation[])
     })
   }, 200)
