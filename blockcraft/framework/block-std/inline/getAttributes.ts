@@ -1,11 +1,12 @@
 import {IInlineNodeAttrs} from "../types";
+import {toCamelCase} from "../../../global";
 
 export const getAttributesFrom = (ele: HTMLElement): IInlineNodeAttrs => {
   const attributeNames = ele.getAttributeNames()
   const attributes: IInlineNodeAttrs = {};
   for (const name of attributeNames) {
     if (name.startsWith("data-")) {
-      attributes[`d:${name.slice(5)}`] = ele.getAttribute(name)
+      attributes[`d:${toCamelCase(name.slice(5))}`] = ele.getAttribute(name)
       continue
     }
     attributes[`a:${name}`] = ele.getAttribute(name)

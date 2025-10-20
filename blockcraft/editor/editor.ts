@@ -153,6 +153,8 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
   styles: [`:host {
     margin: 20px;
     display: block;
+    overflow-y: auto;
+    height: 90vh;
   }
 
   .block-area {

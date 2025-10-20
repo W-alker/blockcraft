@@ -124,3 +124,8 @@ export async function nextTick() {
     return new Promise(resolve => setTimeout(resolve, 0));
   }
 }
+
+
+export function toCamelCase(str: string) {
+  return str.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+}

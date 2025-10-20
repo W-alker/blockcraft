@@ -1,9 +1,7 @@
 @mixin code-block {
   div.code-block {
     --code-padding-left: calc(var(--bc-fs) * 2.8);
-    --code-padding-top: calc(var(--bc-lh) * 2);
-    --code-padding-bottom: 20px;
-    padding: var(--code-padding-top) 0 var(--code-padding-bottom);
+    --code-padding-bottom: ;
     position: relative;
     border: 1px solid #e6e6e6;
     --code-font-family: "DM Mono", monospace;
@@ -30,7 +28,7 @@
     .edit-container-wrapper {
       position: relative;
       overflow-y: auto;
-      padding: 0 var(--code-padding-left);
+      padding: var(--bc-lh) var(--code-padding-left) var(--bc-lh);
     }
 
     .edit-container {
@@ -76,20 +74,39 @@
     }
 
     &.focused, &:hover {
-      .head-btn__group {
+      .head-btn__group, .head-btn.btn-collapse {
         visibility: visible;
+      }
+    }
+
+    &.is-collapse {
+      .head-btn.btn-collapse {
+        > i {
+          transform: rotate(0);
+        }
+      }
+
+      .code-block__head {
+        border-bottom: 0;
+        border-radius: 8px;
+      }
+
+      .edit-container-wrapper {
+        max-height: 0;
+        overflow: hidden;
+        padding: 0;
+      }
+
+      .resize-bar-btm {
+        display: none !important;
       }
     }
 
     .code-block__head {
       overflow: hidden;
-      position: absolute;
-      top: 0;
-      left: 0;
       width: 100%;
-      height: calc(var(--bc-lh) * 1.6);
       display: flex;
-      padding: 0 8px;
+      padding: 4px 8px;
       align-items: center;
       background: #F7F9FE;
       border-bottom: 1px solid #e6e6e6;
@@ -103,20 +120,24 @@
       text-align: center;
       gap: 4px;
       border-radius: 4px;
-      padding: 0 4px;
-      height: calc(var(--code-padding-top) * 0.6);
+      padding: 2px 4px;
       white-space: nowrap;
+      color: var(--bc-color-light);
+      font-size: calc(var(--bf-fs) * .8);
 
-      > .lang {
-        color: var(--bc-color-light);
+      &.btn-collapse {
+        visibility: hidden;
+        font-size: calc(var(--bc-fs) * .6);
+
+        > i {
+          transform: rotate(90deg);
+          transition: transform .2s ease;
+        }
       }
 
       &__group {
         flex: 1;
         user-select: none;
-        font-size: calc(var(--bf-fs) * .8);
-        line-height: var(--code-padding-top);
-        height: var(--code-padding-top);
         gap: 8px;
         display: flex;
         align-items: center;
@@ -125,8 +146,6 @@
 
       > span {
         pointer-events: none;
-        height: var(--code-padding-top);
-        line-height: var(--code-padding-top);
       }
 
       > i {

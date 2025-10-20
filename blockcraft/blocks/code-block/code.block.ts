@@ -19,6 +19,9 @@ import {CodeInlineManagerService} from "./code-inlineManager.service";
   selector: 'div.code-block',
   template: `
     <div class="code-block__head" contenteditable="false">
+      <span class="head-btn btn-collapse" (mousedown)="onToggleCollapse($event)">
+        <i class="bc_icon bc_a-sanjiao-jinru6"></i>
+      </span>
       <div class="head-btn__group">
         <div class="head-btn" (mousedown)="showLangList($event)">
           <span class="lang">{{ props.lang }}</span>
@@ -29,10 +32,10 @@ import {CodeInlineManagerService} from "./code-inlineManager.service";
     </div>
 
     <div class="edit-container-wrapper">
-      <div class="edit-container"></div>
+      <div class="edit-container" [style.height.px]="props.h"></div>
     </div>
 
-    @if (!(doc.readonlySwitch$ | async)) {
+    @if (!(doc.readonlySwitch$ | async) && !props.collapse) {
       <div class="resize-bar-btm" contenteditable="false" (mousedown)="onResizeMouseDown($event)">
         <div class="bar-drag"></div>
       </div>
@@ -40,7 +43,10 @@ import {CodeInlineManagerService} from "./code-inlineManager.service";
   `,
   standalone: true,
   imports: [NgForOf, AsyncPipe],
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '[class.is-collapse]': 'props.collapse'
+  }
 })
 export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   override plainTextOnly = true
@@ -64,7 +70,6 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   override ngAfterViewInit() {
     super.ngAfterViewInit()
     this._observer()
-    this.containerElement.style.height = `${this.props.h}px`
   }
 
   private _observer() {
@@ -96,12 +101,9 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     if (ev.keysChanged.has('lang')) {
       this.inlineManager.setLang(PRISM_LANGUAGE_MAP[this.props.lang])
       this.rerender()
+      return
     }
-    if (ev.keysChanged.has('h')) {
-      nextTick().then(() => {
-        this.containerElement.style.height = `${this.props.h}px`
-      })
-    }
+    this.changeDetectorRef.markForCheck()
   }
 
   private _debounce_highlight = debounce((e: Y.YTextEvent) => {
@@ -193,13 +195,14 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     let h = this.props.h ?? this.containerElement.getBoundingClientRect().height
 
     this.mouseMove$?.unsubscribe()
-    this.startPoint = {y: evt.clientY}
+    this.startPoint = {y: evt.pageY}
 
     this.mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove', {capture: true})
       .pipe(throttleTime(30))
       .subscribe((e) => {
-        const movePx = e.clientY - this.startPoint!.y
-        this.startPoint!.y = e.clientY
+        const currentY =  e.pageY
+        const movePx = currentY - this.startPoint!.y
+        this.startPoint!.y = currentY
         h = Math.max(h + movePx, 30)
         this.containerElement.style.height = `${h}px`
       })
@@ -211,4 +214,10 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     })
   }
 
+  onToggleCollapse($event: MouseEvent) {
+    $event.stopPropagation()
+    this.updateProps({
+      collapse: this.props.collapse ? null : true
+    })
+  }
 }
