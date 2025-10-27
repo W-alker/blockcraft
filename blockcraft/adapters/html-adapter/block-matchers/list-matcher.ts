@@ -1,7 +1,8 @@
 import {BlockHtmlAdapterMatcher} from "../block-adapter";
 import {HastUtils, TextUtils} from "../../utils";
-import {BlockNodeType, DeltaInsert, generateId, STR_LINE_BREAK} from "../../../framework";
+import {BlockNodeType, DeltaInsert, generateId, IBlockSnapshot, STR_LINE_BREAK} from "../../../framework";
 import {Element} from 'hast'
+import {ParagraphBlockSchema} from "../../../blocks";
 
 const listBlockFlavour = ['bullet', 'ordered', 'todo']
 
@@ -42,20 +43,26 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
         listType = 'ordered';
       }
 
-      walkerContext.openNode(
-        {
-          id: generateId(),
-          flavour: <any>listType,
-          nodeType: BlockNodeType.editable,
-          props: {
-            depth,
-            order: listType === 'ordered' ? o.index : undefined
-          },
-          meta: {},
-          children: deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node))
+      const openNode = {
+        id: generateId(),
+        flavour: <any>listType,
+        nodeType: BlockNodeType.editable,
+        props: {
+          depth,
+          order: listType === 'ordered' ? o.index : undefined
         },
-        'children'
-      )
+        meta: {},
+        children: deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node))
+      } as IBlockSnapshot
+      walkerContext.openNode(openNode, 'children')
+
+      if (!o.node.children?.length) return
+
+      const firChild = o.node.children[0]
+      if (HastUtils.isElement(firChild) && HastUtils.isTagInline(firChild.tagName)) {
+        walkerContext.skipAllChildren()
+      }
+
       walkerContext.setNodeContext('list:parent', o.node)
     },
     leave: (o, context) => {
