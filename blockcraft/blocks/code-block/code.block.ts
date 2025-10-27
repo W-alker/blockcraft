@@ -19,11 +19,9 @@ import {CodeInlineManagerService} from "./code-inlineManager.service";
   selector: 'div.code-block',
   template: `
     <div class="code-block__head" contenteditable="false">
-      @if (!(doc.readonlySwitch$ | async)) {
         <span class="head-btn btn-collapse" (mousedown)="onToggleCollapse($event)">
             <i class="bc_icon bc_a-sanjiao-jinru6"></i>
         </span>
-      }
 
       <div class="head-btn__group">
         <div class="head-btn" (mousedown)="showLangList($event)">
@@ -219,7 +217,10 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   onToggleCollapse($event: MouseEvent) {
     $event.stopPropagation()
-    if (this.doc.isReadonly) return
+    if (this.doc.isReadonly) {
+      this.hostElement.classList.toggle('is-collapse')
+      return
+    }
     this.updateProps({
       collapse: this.props.collapse ? null : true
     })
