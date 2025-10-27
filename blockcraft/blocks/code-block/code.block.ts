@@ -19,9 +19,12 @@ import {CodeInlineManagerService} from "./code-inlineManager.service";
   selector: 'div.code-block',
   template: `
     <div class="code-block__head" contenteditable="false">
-      <span class="head-btn btn-collapse" (mousedown)="onToggleCollapse($event)">
-        <i class="bc_icon bc_a-sanjiao-jinru6"></i>
-      </span>
+      @if (!(doc.readonlySwitch$ | async)) {
+        <span class="head-btn btn-collapse" (mousedown)="onToggleCollapse($event)">
+            <i class="bc_icon bc_a-sanjiao-jinru6"></i>
+        </span>
+      }
+
       <div class="head-btn__group">
         <div class="head-btn" (mousedown)="showLangList($event)">
           <span class="lang">{{ props.lang }}</span>
@@ -200,7 +203,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     this.mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove', {capture: true})
       .pipe(throttleTime(30))
       .subscribe((e) => {
-        const currentY =  e.pageY
+        const currentY = e.pageY
         const movePx = currentY - this.startPoint!.y
         this.startPoint!.y = currentY
         h = Math.max(h + movePx, 30)
@@ -216,6 +219,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   onToggleCollapse($event: MouseEvent) {
     $event.stopPropagation()
+    if (this.doc.isReadonly) return
     this.updateProps({
       collapse: this.props.collapse ? null : true
     })

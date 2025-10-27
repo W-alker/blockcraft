@@ -424,6 +424,17 @@ export function deleteTableRows(this: TableBlockComponent, index: number, count:
   this.doc.crud.deleteBlocks(this.id, index, count)
 }
 
+// 修复有可能出现的
+export function fixTable(this: TableBlockComponent) {
+  const rows = this.getChildrenBlocks()
+  const masterCells = rows.map(row => row.getChildrenBlocks())
+  const handledCells = new Set<string>()
+
+  for (let rowIdx = 0; rowIdx < masterCells.length; rowIdx++) {
+    for (let colIdx = 0; colIdx < masterCells[0].length; colIdx++) {
+
+    }
+  }
 
 
-
+}
