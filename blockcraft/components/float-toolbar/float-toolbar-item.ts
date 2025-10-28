@@ -32,7 +32,7 @@ export class BcFloatToolbarItemComponent {
 
   @Input()
   @HostBinding('class.active')
-  active = false
+  active?: boolean = false
 
   @Input()
   expandable = false

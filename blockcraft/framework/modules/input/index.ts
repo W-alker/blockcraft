@@ -488,7 +488,11 @@ export class InputTransformer {
     }
 
     const deltas = sliceDelta(from.block.textDeltas(), from.index)
-    const p = this.doc.schemas.createSnapshot(from.block.textLength ? from.block.flavour : 'paragraph', [deltas, from.block.props])
+    const p = this.doc.schemas.createSnapshot(
+      (from.block.textLength && !from.block.heading) ? from.block.flavour : 'paragraph', [deltas, {
+        ...from.block.props,
+        heading: null,
+      }])
     this.doc.crud.transact(() => {
       from.block.deleteText(from.index)
       this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {

@@ -9,8 +9,8 @@ import {ParagraphBlockSchema} from "../paragraph-block";
 export interface TableBlockModel extends NoEditableBlockNative {
   flavour: 'table',
   props: {
-    colHead: boolean
-    rowHead: boolean
+    colHead?: boolean
+    rowHead?: boolean
     colWidths: number[]
   }
 }
@@ -28,9 +28,9 @@ export interface TableCellBlockModel extends NoEditableBlockNative {
     backColor?: string | null
     color?: string | null
     verticalAlign: 'top' | 'middle' | 'bottom'
-    rowspan: number | null
-    colspan: number | null
-    display: null | 'none'
+    rowspan?: number | null
+    colspan?: number | null
+    display?: null | 'none'
   } & IBlockProps,
 }
 
@@ -48,8 +48,6 @@ export const TableBlockSchema: IBlockSchemaOptions<TableBlockModel> = {
       flavour: 'table',
       nodeType: BlockNodeType.block,
       props: {
-        colHead: false,
-        rowHead: false,
         colWidths: Array.from({length: cells}, () => 100)
       },
       meta: {},
@@ -103,9 +101,6 @@ export const TableCellBlockSchema: IBlockSchemaOptions<TableCellBlockModel> = {
     nodeType: BlockNodeType.block,
     props: {
       verticalAlign: 'top',
-      rowspan: null,
-      colspan: null,
-      display: null,
     },
     meta: {},
     children: [ParagraphBlockSchema.createSnapshot()]
