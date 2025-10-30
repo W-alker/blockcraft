@@ -26,13 +26,13 @@ export class SelectionControl {
         if (!this._isSelecting) return;
         this._isSelecting = false;
         this._dispatcher.run('selectEnd', this._buildContext(e))
-      }, {once: true})
+      }, {once: true, capture: true})
       // 鼠标滑动选择
       document.body.addEventListener('pointerup', e => {
         if (e.pointerType !== 'mouse' || !this._isSelecting) return;
         this._isSelecting = false;
         this._dispatcher.run('selectEnd', this._buildContext(e))
-      }, {once: true})
+      }, {once: true, capture: true})
     }
   }
 
@@ -53,9 +53,13 @@ export class SelectionControl {
 
   listen(root: BlockCraft.IBlockComponents['root']) {
     fromEvent<MouseEvent>(root.hostElement, 'selectstart').pipe(takeUntil(root.onDestroy$)).subscribe(e => {
+      if (this._shiftKeyPressing) {
+        this._dispatcher.run('selectEnd', this._buildContext(e))
+        return
+      }
       this.onSelectstart(e)
     });
-    fromEvent<KeyboardEvent>(root.hostElement, 'keydown').pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+    fromEvent<KeyboardEvent>(root.hostElement, 'keydown', {capture: true}).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       if (evt.shiftKey) {
         this._shiftKeyPressing = true;
       }
@@ -68,7 +72,7 @@ export class SelectionControl {
         })
       }
     })
-    fromEvent<KeyboardEvent>(root.hostElement, 'keyup').pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+    fromEvent<KeyboardEvent>(root.hostElement, 'keyup', {capture: true}).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       if (!evt.shiftKey) {
         this._shiftKeyPressing = false;
 
@@ -78,7 +82,7 @@ export class SelectionControl {
         }
       }
     })
-    fromEvent<PointerEvent>(root.hostElement, 'pointerdown').pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+    fromEvent<PointerEvent>(root.hostElement, 'pointerdown', {capture: true}).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       if (evt.pointerType !== 'mouse') return;
       if (evt.button === 0) this._mouseDown = true;
     })

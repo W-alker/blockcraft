@@ -114,7 +114,7 @@ export class ImgToolbarPlugin extends DocPlugin {
               break
             case 'caption':
               if (imgBlock.childrenLength) {
-                this.doc.crud.deleteBlocks(imgBlock.id, 0)
+                this.doc.crud.deleteBlocks(imgBlock.id, 0, 1, true)
               } else {
                 const title = this.doc.schemas.createSnapshot('caption', [])
                 this.doc.crud.insertBlocks(imgBlock.id, 0, [title]).then(() => {
@@ -142,6 +142,10 @@ export class ImgToolbarPlugin extends DocPlugin {
         }, {blockId: selection.firstBlock.id})
 
         this.doc.selection.afterNextChange(() => {
+          this._closeToolbar$.next()
+        })
+
+        imgBlock.onDestroy$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
           this._closeToolbar$.next()
         })
       }, 200)

@@ -398,7 +398,7 @@ export class DocCRUD {
     return this.insertBlocks(block.parentId!, index, snapshots)
   }
 
-  async deleteBlocks(parent: string, index: number, count = 1) {
+  async deleteBlocks(parent: string, index: number, count = 1, force = false) {
     if (index < 0) {
       this.doc.logger.warn(`insertBlocks: index ${index} out of range`)
       return
@@ -410,7 +410,7 @@ export class DocCRUD {
       this.doc.logger.warn(`deleteBlocks: index ${index} out of range`)
       return
     }
-    if (index === 0 && count >= parentComp.instance.childrenLength) {
+    if (index === 0 && count >= parentComp.instance.childrenLength && !force) {
       // 确保有可输入元素
       // this.deleteBlockById(parentComp.instance.id)
       this.doc.logger.warn(`deleteBlocks: delete all children`)

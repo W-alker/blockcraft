@@ -292,6 +292,12 @@ export class EditorComponent {
     // this.enterRoom()
 
     this.listenUpdate()
+    this.doc.event.add('selectEnd', e => {
+      console.log('selectEnd', e)
+    })
+    this.doc.event.add('selectionChange', e => {
+      console.log('selectionChange', e)
+    })
   }
 
   initBySnapshot(snapshot?: IBlockSnapshot) {
@@ -378,24 +384,12 @@ export class EditorComponent {
   }
 
   test() {
-    const m = mergeUpdates(this.updateList)
-    console.log(this.updateList, m)
-    const ydoc = new Doc()
-    const ymap = ydoc.getMap()
-    // ymap.set(this.rootId, native2YBlock({
-    //   id: this.rootId,
-    //   flavour: 'root',
-    //   nodeType: BlockNodeType.root,
-    //   props: {},
-    //   meta: {},
-    //   children: []
-    // }))
-    applyUpdate(ydoc, m)
-    applyUpdate(ydoc, this.updateList[0])
-    this.updateList.forEach(u => {
-      applyUpdate(ydoc, u)
-    })
-    console.log(ydoc.toJSON())
+    const snapshot = Y.snapshot(this.doc.yDoc)
+    const encodedSnapshot = Y.encodeSnapshot(snapshot)
+
+    // 转成buffer
+    const buffer = Array.from(encodedSnapshot)
+    console.log(buffer)
   }
 
   updateList: Uint8Array[] = []

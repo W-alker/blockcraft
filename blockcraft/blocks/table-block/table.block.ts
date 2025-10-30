@@ -430,7 +430,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const curCol = this.hostElement.querySelector(`col:nth-child(${resizingColIdx + 1})`) as HTMLElement
 
     let newWidth = this.props.colWidths[resizingColIdx]
-    const resizeSub = fromEvent<MouseEvent>(document, 'pointermove')
+    const resizeSub = fromEvent<MouseEvent>(document, 'mousemove', {capture: true})
       .pipe(takeUntil(this.resizingCol$.pipe(filter(v => !v))))
       .subscribe((e) => {
 
@@ -453,7 +453,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         curCol.style.width = newWidth + 'px'
       })
 
-    fromEvent(document, 'pointerup').pipe(take(1)).subscribe(() => {
+    fromEvent(document, 'mouseup', {capture: true}).pipe(take(1)).subscribe(() => {
       if (!this.resizingCol$.value) return
       this.resizingCol$.next(false)
       const widths = [...this.props.colWidths]
@@ -490,7 +490,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     bar.addEventListener('mousedown', this._colAdderHandler)
 
     // 一次性 pointerleave 事件
-    bar.addEventListener('pointerleave', (e) => {
+    bar.addEventListener('mouseleave', (e) => {
       e.stopPropagation()
       e.preventDefault()
       bar.classList.remove('active')
@@ -527,7 +527,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     el.addEventListener('mousedown', this._rowAdderHandler)
 
-    el.addEventListener('pointerleave', (e) => {
+    el.addEventListener('mouseleave', (e) => {
       e.stopPropagation()
       e.preventDefault()
 

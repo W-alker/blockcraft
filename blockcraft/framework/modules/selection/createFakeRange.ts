@@ -49,7 +49,7 @@ export class FakeRange {
     span.classList.add('blockcraft-cursor')
     span.style.cssText = `
     position: unset;
-    --bgColor: ${this.config.bgColor || 'var(--bc-select-background-color)'};
+    --bgColor: ${this.config.bgColor || 'var(--bc-mark-bg-color)'};
     `
     const child = document.createElement('span');
     child.style.cssText = `
@@ -77,19 +77,21 @@ export class FakeRange {
       range.setEnd(endNodePos.node, endNodePos.offset)
     }
 
-    const wrapRect = block.hostElement.getBoundingClientRect()
+    const wrapper = block.containerElement
+    const wrapRect = wrapper.getBoundingClientRect()
+    const blockHostRect = block.hostElement.getBoundingClientRect()
     const span = document.createElement('span');
     span.classList.add('blockcraft-cursor')
-    span.style.setProperty('--bgColor', this.config.bgColor || 'var(--bc-select-background-color)')
+    // span.style.setProperty('--bgColor', this.config.bgColor || 'var(--bc-select-background-color)')
     const _rRects = range.getClientRects();
 
     const createPart = (rect: DOMRect) => {
       const span = document.createElement('span');
       span.style.cssText = `
-        left: ${rect.left - wrapRect.left}px;
-        top: ${rect.top - wrapRect.top}px;
         width: ${Math.max(rect.width, this.config.minCursorWidth || 2)}px;
         height: ${rect.height}px;
+        left: ${rect.left - blockHostRect.left}px;
+        top: ${rect.top - wrapRect.top}px;
       `
       return span
     }
@@ -110,7 +112,7 @@ export class FakeRange {
       }
     }
 
-    block.hostElement.appendChild(span)
+    wrapper.appendChild(span)
     return span
   }
 

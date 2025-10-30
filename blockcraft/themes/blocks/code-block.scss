@@ -28,10 +28,12 @@
     .edit-container-wrapper {
       position: relative;
       overflow-y: auto;
-      padding: var(--bc-lh) var(--code-padding-left) var(--bc-lh);
+      scrollbar-width: thin;
+      min-height: 60px;
     }
 
     .edit-container {
+      padding: var(--bc-lh) var(--code-padding-left);
       background: none;
       font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
       font-size: 1em;
@@ -93,8 +95,12 @@
 
       .edit-container-wrapper {
         max-height: 0;
+        min-height: 0;
         overflow: hidden;
-        padding: 0;
+
+        > .edit-container {
+          padding: 0;
+        }
       }
 
       .resize-bar-btm {

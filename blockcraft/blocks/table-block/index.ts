@@ -109,7 +109,7 @@ export const TableCellBlockSchema: IBlockSchemaOptions<TableCellBlockModel> = {
     version: 1.0,
     label: '表格单元格',
     excludeChildren: ['table*', '*-embed', 'mermaid*'],
-    isLeaf: true
+    isLeaf: true,
   }
 }
 

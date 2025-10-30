@@ -32,8 +32,8 @@ import {CodeInlineManagerService} from "./code-inlineManager.service";
       </div>
     </div>
 
-    <div class="edit-container-wrapper">
-      <div class="edit-container" [style.height.px]="props.h"></div>
+    <div class="edit-container-wrapper" [style.height.px]="props.h">
+      <div class="edit-container"></div>
     </div>
 
     @if (!(doc.readonlySwitch$ | async) && !props.collapse) {
@@ -108,8 +108,8 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   private _debounce_highlight = debounce((e: Y.YTextEvent) => {
+    if(this.doc.event.status.isComposing) return
     nextTick().then(() => {
-      // if (this.doc.event.status.isComposing) return
       this.inlineManager.diffHighLight(e.delta as DeltaOperation[])
     })
   }, 200)
@@ -204,8 +204,8 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
         const currentY = e.pageY
         const movePx = currentY - this.startPoint!.y
         this.startPoint!.y = currentY
-        h = Math.max(h + movePx, 30)
-        this.containerElement.style.height = `${h}px`
+        h = Math.max(h + movePx, 60)
+        this.containerElement.parentElement!.style.height = `${h}px`
       })
 
     fromEvent<MouseEvent>(document, 'mouseup', {capture: true}).pipe(take(1)).subscribe((e) => {

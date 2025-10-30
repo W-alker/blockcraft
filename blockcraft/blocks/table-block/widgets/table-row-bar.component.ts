@@ -95,7 +95,7 @@ export class TableRowBarComponent {
       this.changeDetectionRef.markForCheck()
     })
 
-    fromEvent<MouseEvent>(document.documentElement, 'pointerup').pipe(take(1)).subscribe(v => {
+    fromEvent<MouseEvent>(document.documentElement, 'pointerup', {capture: true}).pipe(take(1)).subscribe(v => {
       sub.unsubscribe()
       this.selectedRangeChange.emit(this._selectedRange)
       this.host.nativeElement.classList.remove('selecting')

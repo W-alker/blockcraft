@@ -38,6 +38,7 @@
   --bc-error-background-color: rgba(224, 49, 49, 0.1);
   --bc-select-background-color: rgba(24, 144, 255, 0.3);
   --bc-segments-gap: 8px;
+  --bc-mark-bg-color: rgba(255, 198, 10, 0.4);
 }
 
 [data-blockcraft-root="true"] {
@@ -304,14 +305,14 @@
   }
 
   [data-node-type='block'], [data-node-type='void'] {
-    > .blockcraft-cursor > span {
-      box-shadow: 0 0 1px 1px var(--bgColor, --bc-select-background-color);
+    .blockcraft-cursor > span {
+      box-shadow: 0 0 1px 1px var(--bgColor, var(--bc-mark-bg-color));
     }
   }
 
   [data-node-type='editable'] {
-    > .blockcraft-cursor > span {
-      background-color: var(--bgColor, --bc-select-background-color);
+    .blockcraft-cursor > span {
+      background-color: var(--bgColor, var(--bc-mark-bg-color));
     }
   }
 
@@ -329,7 +330,7 @@
       @include user-modify(read-only);
     }
 
-    > span {
+    span {
       position: absolute;
     }
 

@@ -4,9 +4,9 @@ import {
   BlockNodeType,
   DocEventRegister,
   EditableBlockComponent,
-  EventListen,
+  EventListen, EventScopeSourceType, EventSourceState,
   INLINE_ELEMENT_TAG,
-  INLINE_END_BREAK_CLASS, STR_LINE_BREAK,
+  INLINE_END_BREAK_CLASS, STR_LINE_BREAK, UIEventState,
   UIEventStateContext
 } from "../../block-std";
 import {BlockCraftError, ErrorCode, nextTick, performanceTest} from "../../../global";
@@ -61,15 +61,19 @@ export class SelectionManager {
   afterNextChange(fn: (selection: BlockSelection | null) => void) {
     this.nextChangeObserve().subscribe(v => {
       // nextTick().then(() => {
-        fn(v)
+      fn(v)
       // })
     })
   }
 
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
 
-    this.doc.event.customListen(document, 'selectionchange').subscribe(() => {
+    this.doc.event.customListen(document, 'selectionchange').subscribe(e => {
       if (this.doc.event.status.isComposing) return
+      // this.doc.event.run('selectionChange', UIEventStateContext.from(new UIEventState(e), new EventSourceState({
+      //   event: e,
+      //   sourceType: EventScopeSourceType.Selection
+      // })))
       this.recalculate()
     })
   }
@@ -413,7 +417,17 @@ export class SelectionManager {
     }
 
     try {
-      const r = new BlockSelection(this.doc, this.normalizeRange(range, options), range, selection)
+      const _nr = this.normalizeRange(range, options)
+      if (_nr.to && _nr.to.block.parentId !== _nr.from.block.parentId) {
+        range.collapse()
+        return {
+          value: null,
+          next: () => {
+          }
+        }
+      }
+
+      const r = new BlockSelection(this.doc, _nr, range, selection)
       const next = () => {
         this.selectionChange$.next(r)
         this.selectedManager.setSelected(r)
@@ -559,30 +573,30 @@ export class SelectionManager {
 
     // 是否不同级（可能是子可编辑元素鼠标选中向外滑动）
     // if (from.block.parentId !== to.block.parentId) {
-      // 找到同级
-      // const path1 = from.block.getPath()
-      // const path2 = to.block.getPath()
-      // let i = 0
-      // while (path1[i] === path2[i]) i++
-      //
-      // const path1Ancestor = path1[i]
-      // const path2Ancestor = path2[i]
-      // if(path1Ancestor !== from.blockId) {
-      //   from = {
-      //     blockId: path1Ancestor,
-      //     // @ts-expect-error
-      //     block: this.doc.getBlockById(path1Ancestor),
-      //     type: 'selected'
-      //   }
-      // }
-      // if(path2Ancestor !== to.blockId) {
-      //   to = {
-      //     blockId: path2Ancestor,
-      //     // @ts-expect-error
-      //     block: this.doc.getBlockById(path2Ancestor),
-      //     type: 'selected'
-      //   }
-      // }
+    // 找到同级
+    // const path1 = from.block.getPath()
+    // const path2 = to.block.getPath()
+    // let i = 0
+    // while (path1[i] === path2[i]) i++
+    //
+    // const path1Ancestor = path1[i]
+    // const path2Ancestor = path2[i]
+    // if(path1Ancestor !== from.blockId) {
+    //   from = {
+    //     blockId: path1Ancestor,
+    //     // @ts-expect-error
+    //     block: this.doc.getBlockById(path1Ancestor),
+    //     type: 'selected'
+    //   }
+    // }
+    // if(path2Ancestor !== to.blockId) {
+    //   to = {
+    //     blockId: path2Ancestor,
+    //     // @ts-expect-error
+    //     block: this.doc.getBlockById(path2Ancestor),
+    //     type: 'selected'
+    //   }
+    // }
     // }
     return {from, to, collapsed: false}
   }

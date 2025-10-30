@@ -1,7 +1,7 @@
 import {
   BindHotKey,
   DeltaOperation,
-  DocPlugin, EventListen, IInlineRange,
+  DocPlugin, EventListen, IInlineRange, ORIGIN_SKIP_SYNC,
   STR_LINE_BREAK,
   STR_TAB,
   UIEventStateContext
@@ -11,23 +11,27 @@ import {BlockCraftError, ErrorCode, getLinesByRange, getScrollContainer, nextTic
 export class CodeInlineEditorBinding extends DocPlugin {
 
   // TODO 迁移  compositionStart事件
-  private _compositionStartDeleteRange: IInlineRange | null = null
+  // private _compositionStartDeleteRange: IInlineRange | null = null
 
-  @EventListen('compositionStart', {flavour: 'code'})
-  @EventListen('compositionStart', {flavour: 'mermaid-textarea'})
-  private _handleCompositionStart(context: UIEventStateContext) {
-    const ev = context.getDefaultEvent<CompositionEvent>()
-    if (!ev.data) return true
-    const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
-    if (!sel || sel.from.type !== 'text') {
-      throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
-    }
-    this._compositionStartDeleteRange = {
-      index: sel.from.index,
-      length: sel.from.length
-    }
-    return true
-  }
+  // @EventListen('compositionStart', {flavour: 'code'})
+  // @EventListen('compositionStart', {flavour: 'mermaid-textarea'})
+  // private _handleCompositionStart(context: UIEventStateContext) {
+  //   const ev = context.getDefaultEvent<CompositionEvent>()
+  //   if (!ev.data) return true
+  //   const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
+  //   if (!sel || sel.from.type !== 'text') {
+  //     throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
+  //   }
+  //   const {block, index, length} = sel.from
+  //   this.doc.crud.transact(() => {
+  //     block.deleteText(index, length)
+  //   })
+  //   // this._compositionStartDeleteRange = {
+  //   //   index: sel.from.index,
+  //   //   length: sel.from.length
+  //   // }
+  //   return true
+  // }
 
   @EventListen('compositionEnd', {flavour: 'code'})
   @EventListen('compositionEnd', {flavour: 'mermaid-textarea'})
@@ -44,12 +48,12 @@ export class CodeInlineEditorBinding extends DocPlugin {
     const {block, index} = sel.from
 
     this.doc.crud.transact(() => {
-      if (this._compositionStartDeleteRange) {
-        block.deleteText(this._compositionStartDeleteRange.index, this._compositionStartDeleteRange.length)
-        this._compositionStartDeleteRange = null
-      }
+      // if (this._compositionStartDeleteRange) {
+      //   block.deleteText(this._compositionStartDeleteRange.index, this._compositionStartDeleteRange.length)
+      //   this._compositionStartDeleteRange = null
+      // }
       block.yText.insert(index === 0 ? 0 : index - text.length, text)
-    })
+    }, ORIGIN_SKIP_SYNC)
 
     if (block.flavour === 'code' && block.props.lang === 'PlainText') {
       block.rerender()
@@ -165,7 +169,7 @@ export class CodeInlineEditorBinding extends DocPlugin {
  * @param {object} [opts]
  * @param {'auto'|'smooth'} [opts.behavior='auto']
  */
-function scrollIntoNearestParentY(target: HTMLElement, { behavior = 'auto' } = {}) {
+function scrollIntoNearestParentY(target: HTMLElement, {behavior = 'auto'} = {}) {
   if (!target) return;
 
   // 找到最近可滚动父级
@@ -202,7 +206,7 @@ function scrollIntoNearestParentY(target: HTMLElement, { behavior = 'auto' } = {
   if (Math.abs(targetScrollTop - parent.scrollTop) < 1) return;
 
   if (behavior === 'smooth' && parent.scrollTo) {
-    parent.scrollTo({ top: targetScrollTop + rect.height, behavior });
+    parent.scrollTo({top: targetScrollTop + rect.height, behavior});
   } else {
     parent.scrollTop = targetScrollTop + rect.height
   }

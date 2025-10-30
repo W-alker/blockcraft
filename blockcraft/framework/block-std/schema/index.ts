@@ -48,6 +48,8 @@ export class SchemaManager {
    */
   isValidChildren(flavour: BlockCraft.BlockFlavour, parentSchema: BlockCraft.BlockFlavour | IBlockSchemaOptions) {
     parentSchema = typeof parentSchema === 'string' ? this.get(parentSchema)! : parentSchema
+    const currentSchema = this.get(flavour)
+    if (!currentSchema || (currentSchema.metadata.isLeaf && parentSchema.flavour === 'root')) return false
     if (flavour === parentSchema.flavour ||
       parentSchema.nodeType === BlockNodeType.editable || parentSchema.nodeType === BlockNodeType.void) return false
     const excludeChildren = parentSchema.metadata.excludeChildren
