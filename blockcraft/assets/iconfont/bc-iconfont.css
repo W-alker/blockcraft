@@ -1,17 +1,53 @@
 @font-face {
   font-family: "bc_icon"; /* Project id 4682833 */
-  src: url('bc-iconfont.woff2?t=1756354250007') format('woff2'),
-       url('bc-iconfont.woff?t=1756354250007') format('woff'),
-       url('bc-iconfont.ttf?t=1756354250007') format('truetype'),
-       url('bc-iconfont.svg?t=1756354250007#bc_icon') format('svg');
+  src: url('iconfont.woff2?t=1762159176487') format('woff2'),
+       url('iconfont.woff?t=1762159176487') format('woff'),
+       url('iconfont.ttf?t=1762159176487') format('truetype'),
+       url('iconfont.svg?t=1762159176487#bc_icon') format('svg');
 }
 
 .bc_icon {
   font-family: "bc_icon" !important;
-  font-size: 1em;
+  font-size: 16px;
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.bc_lishijilu1:before {
+  content: "\e61e";
+}
+
+.bc_lingcunweixinbanben:before {
+  content: "\e61f";
+}
+
+.bc_dulichuangkou1:before {
+  content: "\e620";
+}
+
+.bc_biaoqianguanli:before {
+  content: "\e617";
+}
+
+.bc_huidaoyuanwendang:before {
+  content: "\e618";
+}
+
+.bc_lishibanben:before {
+  content: "\e61a";
+}
+
+.bc_dayin:before {
+  content: "\e61b";
+}
+
+.bc_wendangquanxian:before {
+  content: "\e61c";
+}
+
+.bc_huifu1:before {
+  content: "\e61d";
 }
 
 .bc_fanhui:before {
