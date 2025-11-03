@@ -1,14 +1,14 @@
 @font-face {
   font-family: "bc_icon"; /* Project id 4682833 */
-  src: url('iconfont.woff2?t=1762159176487') format('woff2'),
-       url('iconfont.woff?t=1762159176487') format('woff'),
-       url('iconfont.ttf?t=1762159176487') format('truetype'),
-       url('iconfont.svg?t=1762159176487#bc_icon') format('svg');
+  src: url('bc-iconfont.woff2?t=1762159176487') format('woff2'),
+       url('bc-iconfont.woff?t=1762159176487') format('woff'),
+       url('bc-iconfont.ttf?t=1762159176487') format('truetype'),
+       url('bc-iconfont.svg?t=1762159176487#bc_icon') format('svg');
 }
 
 .bc_icon {
   font-family: "bc_icon" !important;
-  font-size: 16px;
+  font-size: inherit;
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
