@@ -222,7 +222,7 @@ export class DocCRUD {
             try {
               bm.instance.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], bm.instance.containerElement)
             } catch (e) {
-              this.doc.logger.warn('applyDeltaToView error', e)
+              this.doc.logger.warn('applyDeltaToView error;blockId:' + blockId, e)
               bm.instance.rerender()
             }
           }

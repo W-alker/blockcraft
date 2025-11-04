@@ -15,7 +15,10 @@ import {INLINE_CONTAINER_CLASS} from "../../inline";
 export class EditableBlockComponent<Model extends EditableBlockNative = EditableBlockNative> extends BaseBlockComponent<Model> {
   plainTextOnly = false
 
-  yText!: Y.Text
+  private _yText!: Y.Text
+  get yText() {
+    return this._yText ||= this.yBlock.get('children') as Y.Text
+  }
 
   get inlineManager() {
     return this.doc.inlineManager
@@ -49,11 +52,6 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   @HostBinding('attr.data-heading')
   get heading() {
     return this.plainTextOnly ? undefined : this._native.props['heading']
-  }
-
-  protected override _init() {
-    super._init();
-    this.yText = this.yBlock.get('children') as Y.Text
   }
 
   get textLength() {

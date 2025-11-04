@@ -422,8 +422,7 @@ export class SelectionManager {
         range.collapse()
         return {
           value: null,
-          next: () => {
-          }
+          next: () => {}
         }
       }
 
