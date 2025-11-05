@@ -2,7 +2,6 @@ import {BlockHtmlAdapterMatcher} from "../block-adapter";
 import {HastUtils, TextUtils} from "../../utils";
 import {BlockNodeType, DeltaInsert, generateId, IBlockSnapshot, STR_LINE_BREAK} from "../../../framework";
 import {Element} from 'hast'
-import {ParagraphBlockSchema} from "../../../blocks";
 
 const listBlockFlavour = ['bullet', 'ordered', 'todo']
 
@@ -54,6 +53,16 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
         meta: {},
         children: deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node))
       } as IBlockSnapshot
+
+      if (listType === 'ordered') {
+        //   if (o.index === 0) {
+        //     openNode.props['start'] = 1
+        //     openNode.props['order'] = 0
+        //   } else {
+        //     openNode.props['order'] = (o.index || 0)
+        //   }
+      }
+
       walkerContext.openNode(openNode, 'children')
 
       if (!o.node.children?.length) return

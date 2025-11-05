@@ -13,9 +13,15 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       }
       const {walkerContext, fileManager} = context;
 
+      const curNode = walkerContext.currentNode()
+      if (curNode?.nodeType === 'editable' || curNode?.nodeType === 'void') {
+        walkerContext.closeNode();
+      }
+
       const image = o.node;
       const imageURL =
         typeof image?.properties["src"] === 'string' ? image.properties["src"] : '';
+
       if (!imageURL || !FetchUtils.fetchable(imageURL)) return
       try {
         const res = await FetchUtils.fetchImage(imageURL, undefined);
@@ -36,12 +42,7 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 
         const url = await fileManager.uploadImg(file)
 
-        walkerContext
-          .openNode(
-            ImageBlockSchema.createSnapshot(url),
-            'children'
-          )
-          .closeNode();
+        walkerContext.openNode(ImageBlockSchema.createSnapshot(url)).closeNode();
         walkerContext.skipAllChildren();
       } catch (e) {
 
@@ -53,10 +54,10 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
     enter: async (o, context) => {
       const {walkerContext} = context;
 
-      const widthStyle =  {
-          width: `${o.node.props["width"]}px`,
-          height: `${o.node.props["height"]}px`,
-        }
+      const widthStyle = {
+        width: `${o.node.props["width"]}px`,
+        height: `${o.node.props["height"]}px`,
+      }
 
       walkerContext
         .openNode(
