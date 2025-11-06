@@ -17,21 +17,21 @@
       .square {
         width: calc(var(--bc-fs) * 0.5);
         height: calc(var(--bc-fs) * 0.5);
-        background-color: var(--bc-active-color-light);
+        background-color: var(--bc-active-color);
       }
 
       .circle {
         width: calc(var(--bc-fs) * 0.5);
         height: calc(var(--bc-fs) * 0.5);
         border-radius: 50%;
-        border: 1px solid var(--bc-active-color-light);
+        border: 1px solid var(--bc-active-color);
       }
 
       .point {
         width: calc(var(--bc-fs) * 0.5);
         height:calc(var(--bc-fs) * 0.5);
         border-radius: 50%;
-        background-color: var(--bc-active-color-light);
+        background-color: var(--bc-active-color);
       }
     }
   }

@@ -32,7 +32,7 @@ const calcPosition = (e: DragEvent, blockWrap: HTMLElement) => {
 }
 
 const edgeSize = 40;
-const scrollSpeed = 5;
+const scrollSpeed = 6;
 
 @DocEventRegister
 export class DocDndService {
@@ -127,14 +127,14 @@ export class DocDndService {
         e.preventDefault()
         e.stopPropagation()
 
-        // const container = this.doc.scrollContainer!
-        // const rect = container.getBoundingClientRect();
-        //
-        // if (e.clientY < rect.top + edgeSize) {
-        //   container.scrollTop -= scrollSpeed;
-        // } else if (e.clientY > rect.bottom - edgeSize) {
-        //   container.scrollTop += scrollSpeed;
-        // }
+        const container = this.doc.scrollContainer!
+        const rect = container.getBoundingClientRect();
+
+        if (e.clientY < rect.top + edgeSize) {
+          container.scrollTop -= scrollSpeed;
+        } else if (e.clientY > rect.bottom - edgeSize) {
+          container.scrollTop += scrollSpeed;
+        }
         //
         // if (e.clientX < rect.left + edgeSize) {
         //   container.scrollBy(-scrollSpeed, 0);
