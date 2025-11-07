@@ -1,11 +1,12 @@
-import {AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, Input, ViewChild} from "@angular/core";
-import {IBaseEmbedBlockProps} from "../base.block";
+import {Component, ElementRef, Input, ViewChild} from "@angular/core";
+import {BaseBlockComponent} from "../../../framework";
 import {HostUrlPipe} from "../pipes";
-import {NgIf} from "@angular/common";
 import {MatIcon} from "@angular/material/icon";
+import {NgIf} from "@angular/common";
+import {EmbedBlockModel} from "./index";
 
 @Component({
-  selector: 'embed-frame-card',
+  selector: "div.embed-block",
   template: `
     <div class="iframe-wrapper">
       <iframe loading="lazy" allowfullscreen #iframeEle
@@ -28,18 +29,11 @@ import {MatIcon} from "@angular/material/icon";
   standalone: true,
   imports: [
     HostUrlPipe,
-    NgIf,
-    MatIcon
-  ],
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  host: {
-    '[style.width]': 'props.width ? props.width + "px" : "100%"',
-    '[style.height]': 'props.height ? props.height + "px" : "100%"',
-  }
+    MatIcon,
+    NgIf
+  ]
 })
-export class IframeCardComponent implements AfterViewInit {
-  @Input({required: true})
-  props!: IBaseEmbedBlockProps
+export class EmbedBlockComponent extends BaseBlockComponent<EmbedBlockModel> {
 
   private _url = ''
   @Input()
@@ -64,9 +58,27 @@ export class IframeCardComponent implements AfterViewInit {
     title: string
   }
 
-  ngAfterViewInit() {
-    this.isViewInit = true
-    if(!this.url) return
-    this.iframe.nativeElement.src = this._url
+  protected _iframeUrl: string = ''
+
+  override ngOnInit() {
+    super.ngOnInit();
+    this._iframeUrl = this.getValidUrl()
   }
+
+  override ngAfterViewInit() {
+    super.ngAfterViewInit();
+    this.isViewInit = true
+    if (!this.url) return
+    this.iframe.nativeElement.src = this._url
+    this.changeDetectorRef.markForCheck()
+  }
+
+  getValidUrl() {
+    return this.props.url
+  }
+
+  reloadIframe() {
+    this.hostElement.querySelector('iframe')!.src = this._iframeUrl = this.getValidUrl()
+  }
+
 }

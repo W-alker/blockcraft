@@ -7,9 +7,7 @@ import {IframeCardComponent} from "../components/iframe-card";
 @Component({
   selector: 'div.figma-embed-block.embed-frame-block',
   template: `
-    <embed-frame-card [props]="props" [url]="_iframeUrl">
-      <mat-icon svgIcon="bc_Figma"></mat-icon>
-      <span spellcheck="false">Figma</span>
+    <embed-frame-card [props]="props" [url]="_iframeUrl" [brand]="{ icon: 'bc_Figma',  title: 'Figma' }">
     </embed-frame-card>
   `,
   standalone: true,

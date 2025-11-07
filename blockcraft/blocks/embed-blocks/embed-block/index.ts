@@ -1,27 +1,28 @@
 import {generateId, NoEditableBlockNative, IBlockSchemaOptions, BlockNodeType} from "../../../framework";
-import {JuejinEmbedBlockComponent} from "./juejin-embed.block";
+import {EmbedBlockComponent} from "./embed.block";
 
-export interface JuejinEmbedBlockModel extends NoEditableBlockNative {
-  flavour: 'juejin-embed',
+export interface EmbedBlockModel extends NoEditableBlockNative {
+  flavour: 'embed',
   nodeType: BlockNodeType.void,
   props: {
     url: string
-    width?: number
+    width: number | null
     height: number
   }
 }
 
-export const JuejinEmbedBlockSchema: IBlockSchemaOptions<JuejinEmbedBlockModel> = {
-  flavour: 'juejin-embed',
+export const EmbedBlockSchema: IBlockSchemaOptions<EmbedBlockModel> = {
+  flavour: 'embed',
   nodeType: BlockNodeType.void,
-  component: JuejinEmbedBlockComponent,
+  component: EmbedBlockComponent,
   createSnapshot: (url) => {
     return {
       id: generateId(),
-      flavour: 'juejin-embed',
+      flavour: 'embed',
       nodeType: BlockNodeType.void,
       props: {
         url,
+        width: null,
         height: 424
       },
       meta: {},
@@ -30,20 +31,20 @@ export const JuejinEmbedBlockSchema: IBlockSchemaOptions<JuejinEmbedBlockModel> 
   },
   metadata: {
     version: 1,
-    label: "掘金",
-    svgIcon: "bc_juejin",
-    icon: "bc_icon bc_juejin"
+    label: "网页嵌入",
+    svgIcon: "bc_Figma",
+    icon: "bc_icon bc_Figma"
   }
 }
 
 declare global {
   namespace BlockCraft {
     interface IBlockComponents {
-      'juejin-embed': JuejinEmbedBlockComponent
+      'embed': EmbedBlockComponent
     }
 
     interface IBlockCreateParameters {
-      'juejin-embed': [string]
+      'embed': [string]
     }
   }
 }

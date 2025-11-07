@@ -2,10 +2,10 @@
 
 @mixin bookmark-block {
   div.bookmark-block {
-    height: 116px;
+    //height: 116px;
     border: 1px solid var(--bc-border-color);
     border-radius: 4px;
-    padding: 12px;
+    padding: 12px 12px 0 12px;
     display: flex;
     gap: 12px;
     transition: border 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
@@ -27,7 +27,6 @@
       display: flex;
       gap: 4px;
       flex-direction: column;
-      //user-select: text;
 
       .bookmark-icon {
         width: var(--bc-fs-xl);
@@ -62,6 +61,7 @@
 
       .bookmark-description {
         margin: 0;
+        font-size: small;
         @include text-ellipsis(2);
       }
     }
@@ -69,7 +69,7 @@
     .bookmark-link {
       color: var(--bc-color-light);
       text-decoration: none;
-      font-size: var(--bc-fs-xs);
+      font-size: smaller;
       display: flex;
       align-items: center;
       gap: 4px;

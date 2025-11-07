@@ -211,8 +211,8 @@ export class EditorComponent {
   ) {
   }
 
-  docId = '68d0b15cee2b8233bf5b79c8'
-  rootId = '68d0b15cee2b8233bf5b79c8'
+  docId = '689ac2b31a9abe3ae8a6788d'
+  rootId = '689ac2b31a9abe3ae8a6788d'
 
   doc = new BlockCraftDoc({
     yDoc: new Y.Doc({
@@ -384,12 +384,14 @@ export class EditorComponent {
   }
 
   test() {
-    const snapshot = Y.snapshot(this.doc.yDoc)
-    const encodedSnapshot = Y.encodeSnapshot(snapshot)
-
-    // 转成buffer
-    const buffer = Array.from(encodedSnapshot)
-    console.log(buffer)
+    fetch('https://api.microlink.io/?url=https://www.wenxiaobai.com/4a7f14c5-2e81-4d63-8469-9a1c6c5b587b', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    }).then(res => {
+      return res.json()
+    })
   }
 
   updateList: Uint8Array[] = []
@@ -411,13 +413,12 @@ export class EditorComponent {
     //   }
 
     const initFn = () => {
+      console.log('initFn', this.doc.yBlockMap)
       const yRoot = this.doc.yBlockMap?.get(this.docId)
-      if(yRoot) {
+      if (yRoot) {
         this.doc.initByYBlock(yRoot, this.container)
         this.doc.yDoc.off('update', initFn)
-
         console.log('-------', this.doc.yBlockMap.toJSON())
-
         // let map = new Map()
         // const childrenIds = new Set<string>()
         // this.doc.yBlockMap.forEach((v, k) => {
@@ -443,9 +444,10 @@ export class EditorComponent {
     this.doc.yDoc.on('update', initFn)
 
     this.provider = new WebsocketProvider(
-      'ws://196.168.1.69:1234',
+      // 'ws://196.168.1.69:1234',
+      // 'ws://196.168.6.199:1234',
       // 'ws://ws-doc.cses7.com',
-      // 'ws://ws-doc-pre.cses7.com',
+      'ws://ws-doc-pre.cses7.com',
       // 'ws://193.168.2.100:30204/collaborate',
       this.docId,
       this.doc.yDoc, {

@@ -130,7 +130,7 @@
     padding: 6px;
     font-family: Menlo, Monaco, "Courier New", monospace;
     color: #333;
-    font-size: var(--bc-fs-sm);
+    font-size: small;
     tab-size: 1em;
 
     @include code-highlight;
