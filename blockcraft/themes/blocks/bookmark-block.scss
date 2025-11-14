@@ -27,6 +27,7 @@
       display: flex;
       gap: 4px;
       flex-direction: column;
+      padding-bottom: 8px;
 
       .bookmark-icon {
         width: var(--bc-fs-xl);
@@ -61,7 +62,8 @@
 
       .bookmark-description {
         margin: 0;
-        font-size: small;
+        font-size: var(--bc-fs-sm);
+        line-height: calc(var(--bc-fs-sm) + 6px);
         @include text-ellipsis(2);
       }
     }
@@ -69,7 +71,8 @@
     .bookmark-link {
       color: var(--bc-color-light);
       text-decoration: none;
-      font-size: smaller;
+      font-size: var(--bc-fs-sm);
+      line-height: calc(var(--bc-fs-sm) + 6px);
       display: flex;
       align-items: center;
       gap: 4px;
