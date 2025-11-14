@@ -258,23 +258,6 @@ export class InputTransformer {
     }
 
     if (!collapsed || from.type !== 'text' || from.index !== 0) return false
-    // 每一段的最前面
-    if (from.block.props['heading']) {
-      context.preventDefault()
-      from.block.updateProps({
-        heading: null
-      })
-      return true
-    }
-
-    if (from.block.props.depth) {
-      context.preventDefault()
-      from.block.updateProps({
-        depth: from.block.props.depth - 1
-      })
-      return true
-    }
-
     // 非paragraph块转化
     if (from.block.flavour !== 'paragraph') {
       context.preventDefault()
@@ -290,6 +273,23 @@ export class InputTransformer {
           type: 'text',
           blockId: np.id
         })
+      })
+      return true
+    }
+
+    // 每一段的最前面
+    if (from.block.props['heading']) {
+      context.preventDefault()
+      from.block.updateProps({
+        heading: null
+      })
+      return true
+    }
+
+    if (from.block.props.depth) {
+      context.preventDefault()
+      from.block.updateProps({
+        depth: from.block.props.depth - 1
       })
       return true
     }

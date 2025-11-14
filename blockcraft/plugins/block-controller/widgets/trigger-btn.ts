@@ -47,7 +47,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     name: "heading",
     value: undefined,
     icon: "bc_icon bc_wenben",
-    label: "普通文本",
+    label: "正文",
     type: 'tool'
   },
   {
@@ -86,7 +86,7 @@ const HEADING_LIST: IContextMenuItem[] = [
   template: `
     <div class="drag-handle" [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
          [disabled]="menuDisabled" (open)="setValidBlockList()" [delay]="400"
-          [withBackdrop]="false" activeClass="active" [draggable]="draggable">
+         [withBackdrop]="false" activeClass="active" [draggable]="draggable">
       <div class="btn">
         <i [class]="['bf_icon', isEmpty ? 'bf_tianjia-2' : 'bf_yidong' ]"></i>
       </div>
@@ -108,7 +108,7 @@ const HEADING_LIST: IContextMenuItem[] = [
           <ul class='base-list' (mousedown)="$event.preventDefault()">
             @for (item of HEADING_LIST; track item.value) {
               <li class="base-list__item" [title]="item.label" (mousedown)="handleToolItemClick(item)"
-                  [class.active]="activeBlock?.props?.['heading'] === item.value">
+                  [class.active]="!item.value ? (activeBlock?.flavour === 'paragraph' && !activeBlock?.props?.['heading']) : (activeBlock?.props?.['heading'] || '') + '' === (item.value || '') + ''">
                 <i [class]="item.icon"></i>
               </li>
             }
@@ -552,10 +552,13 @@ export class TriggerBtn {
       })
     }
 
-    const replace = () => {
+    const replace = (flavour: BlockCraft.BlockFlavour) => {
       const block = this.activeBlock
-      if (!block || !this.doc.isEditable(block) || block.flavour === item.flavour) return
-      const newBlock = this.doc.schemas.createSnapshot(item.flavour, [block.textDeltas(), block.props])
+      if (!block || !this.doc.isEditable(block) || block.flavour === flavour) return
+      const newBlock = this.doc.schemas.createSnapshot(flavour, [block.textDeltas(), {
+        ...block.props,
+        heading: undefined
+      }])
       this.doc.crud.replaceWithSnapshots(this.activeBlock!.id, [newBlock]).then(() => {
         nextTick().then(() => {
           this.doc.selection.setCursorAtBlock(newBlock.id, true)
@@ -567,7 +570,7 @@ export class TriggerBtn {
       if (item.nodeType !== BlockNodeType.editable) {
         insertAfter()
       } else {
-        replace()
+        replace(item.flavour)
       }
 
       this.menuDisabled = true
@@ -578,7 +581,7 @@ export class TriggerBtn {
     }
 
     if (this.doc.isEditable(this.activeBlock) && item.nodeType === BlockNodeType.editable) {
-      replace()
+      replace(this.activeBlock.flavour === item.flavour ? 'paragraph' : item.flavour)
     } else {
       insertAfter()
     }
@@ -636,16 +639,20 @@ export class TriggerBtn {
         break
       case 'heading':
         if (!this.activeBlock || !this.doc.isEditable(this.activeBlock)) return
-        if (!ALLOWED_HEADING_FLAVOURS.includes(this.activeBlock.flavour)) {
-          const p = this.doc.schemas.createSnapshot('paragraph', [this.activeBlock.textDeltas(), {
-            ...this.activeBlock.props,
-            heading: item.value
-          }])
-          this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [p]).then(() => {
-            this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
-          })
-        } else {
+        if (this.activeBlock.flavour === 'ordered' && item.value) {
           this.activeBlock.updateProps({heading: item.value as any})
+        } else {
+          if (this.activeBlock.flavour !== 'paragraph') {
+            const p = this.doc.schemas.createSnapshot('paragraph', [this.activeBlock.textDeltas(), {
+              ...this.activeBlock.props,
+              heading: item.value
+            }])
+            this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [p]).then(() => {
+              this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+            })
+          } else {
+            this.activeBlock.updateProps({heading: item.value as any})
+          }
         }
         break
     }
@@ -653,4 +660,3 @@ export class TriggerBtn {
 
 }
 
-const ALLOWED_HEADING_FLAVOURS: BlockCraft.BlockFlavour[] = ['paragraph', 'todo', 'ordered', 'bullet']

@@ -12,7 +12,7 @@ import {ComponentPortal} from "@angular/cdk/portal";
 import {BlockTransformContextMenu} from "./widget/contextmenu";
 import {blockTransforms, headingTransforms, IBlockTransformConfig,} from "./const";
 
-const ALLOWED_HEADING_FLAVOURS: BlockCraft.BlockFlavour[] = ['paragraph', 'todo', 'ordered', 'bullet']
+const ALLOWED_HEADING_FLAVOURS: BlockCraft.BlockFlavour[] = ['paragraph', 'ordered']
 
 export class BlockTransformerPlugin extends DocPlugin {
   override name = 'block-transformer';
@@ -129,7 +129,9 @@ export class BlockTransformerPlugin extends DocPlugin {
       return
     }
 
-    const newBlock = this.doc.schemas.createSnapshot(matched.flavour as any, [sliceDelta(block.textDeltas(), text.length), block.props])
+    const newBlock = this.doc.schemas.createSnapshot(matched.flavour as any, [sliceDelta(block.textDeltas(), text.length), {
+      ...block.props, heading: undefined
+    }])
 
     if (!this.doc.schemas.isValidChildren(newBlock.flavour, block.parentBlock!.flavour)) {
       return

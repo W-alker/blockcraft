@@ -48,7 +48,7 @@ export const blockTransforms: IBlockTransformConfig[] = [
       // const prevBlock = doc.prevSibling(from)
       const props: IBlockProps = {
         order: parseInt(matchedString, 10) - 1,
-        ...from.props
+        ...from.props,
       }
       // props.order = prevBlock?.flavour === 'ordered' ? (prevBlock.props['order'] || 0) + 1 : 1
       // if(!prevBlock || (!prevBlock.props.depth && prevBlock.flavour != 'ordered')) {

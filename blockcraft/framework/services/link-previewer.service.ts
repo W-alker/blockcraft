@@ -98,11 +98,7 @@ export class DocLinkPreviewerService {
     }
   };
 
-  setEndpoint = (endpoint: string) => {
-    this._endpoint = endpoint;
-  };
-
-  private _getStringFromHTML(html: string) {
+  protected _getStringFromHTML(html: string) {
     const div = document.createElement('div');
     div.innerHTML = html;
     return div.textContent;
