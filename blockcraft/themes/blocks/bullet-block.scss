@@ -1,11 +1,8 @@
 @mixin bullet-block {
   div.bullet-block {
+    width: 100%;
     display: flex;
     align-items: flex-start;
-
-    .edit-container {
-      flex: 1;
-    }
 
     .bullet-block-prefix {
       display: flex;

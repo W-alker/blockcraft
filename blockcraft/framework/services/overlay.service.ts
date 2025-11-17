@@ -121,16 +121,9 @@ export class DocOverlayService {
   }
 
   createConnectedOverlay<T>(params: IConnectOverlayCreateOptions, close$: Subject<any>, onDestroy?: () => void) {
-    if (params.target instanceof Node) {
+    if (params.target instanceof HTMLElement) {
       const observer = new MutationObserver((mutationsList) => {
-        // for (const mutation of mutationsList) {
-        //   mutation.removedNodes.forEach((node) => {
-        //     if (node === params.target) {
-        //       close$.next(true)
-        //     }
-        //   })
-        // }
-        if (!document.body.contains(params.target as Node)) {
+        if (!(params.target as HTMLElement).isConnected) {
           close$.next(true)
         }
       })

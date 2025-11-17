@@ -15,6 +15,11 @@ import {TodoBlockModel} from "./index";
 })
 export class TodoBlockComponent extends EditableBlockComponent<TodoBlockModel> {
 
+  @HostBinding('style.justify-content')
+  override get textAlign() {
+    return this._native.props['textAlign']
+  }
+
   @HostBinding('class.is-checked')
   get checked() {
     return this._native.props.checked
