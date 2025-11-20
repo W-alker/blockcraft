@@ -1,6 +1,6 @@
 @mixin todo-block {
   div.todo-block {
-    width: 100%;
+    max-width: 100%;
     display: flex;
     align-items: flex-start;
     gap: 4px;

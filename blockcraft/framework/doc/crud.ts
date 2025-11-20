@@ -354,6 +354,7 @@ export class DocCRUD {
   }
 
   async insertBlocks(parentId: string, index: number, snapshots: IBlockSnapshot[]) {
+    if (!snapshots.length) return
     if (index < 0) {
       this.doc.logger.warn(`insertBlocks: index ${index} out of range`)
       return
@@ -366,13 +367,23 @@ export class DocCRUD {
 
     // 过滤不允许的blocks
     const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)!
-    snapshots = snapshots.filter(s => this.doc.schemas.isValidChildren(s.flavour, parentSchema))
-    if (!snapshots.length) {
+    const validSnapshots = snapshots.filter(s => this.doc.schemas.isValidChildren(s.flavour, parentSchema))
+    if (!validSnapshots.length) {
+      if(snapshots.length === 1) {
+        const snapshot = snapshots[0]
+        const schema = this.doc.schemas.get(snapshot.flavour)
+        if (schema) {
+          this.doc.messageService.warn(`不允许将 ${schema.metadata.label} 插入到 ${parentSchema.metadata.label} 中`)
+        }
+      }
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `insertBlocks: no valid children`)
+    }
+    if (snapshots.length > validSnapshots.length) {
+      this.doc.messageService.warn(`已过滤该位置不允许的内容块`)
     }
 
     this.transact(() => {
-      this._insertBySnapshots(parentComp, index, snapshots)
+      this._insertBySnapshots(parentComp, index, validSnapshots)
     })
 
     return new Promise((resolve => {

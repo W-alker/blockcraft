@@ -15,6 +15,10 @@ export class SelectionControl {
     return this._isSelecting;
   }
 
+  get shiftKeyPressing() {
+    return this._shiftKeyPressing;
+  }
+
   onSelectstart = (e: Event) => {
     this._isSelecting = true;
     this._dispatcher.run('selectStart', this._buildContext(e))
@@ -53,13 +57,13 @@ export class SelectionControl {
 
   listen(root: BlockCraft.IBlockComponents['root']) {
     fromEvent<MouseEvent>(root.hostElement, 'selectstart').pipe(takeUntil(root.onDestroy$)).subscribe(e => {
-      if (this._shiftKeyPressing) {
-        this._dispatcher.run('selectEnd', this._buildContext(e))
-        return
-      }
+      // if (this._shiftKeyPressing && this._mouseDown) {
+      //   this._dispatcher.run('selectEnd', this._buildContext(e))
+      //   return
+      // }
       this.onSelectstart(e)
     });
-    fromEvent<KeyboardEvent>(root.hostElement, 'keydown', {capture: true}).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+    fromEvent<KeyboardEvent>(window, 'keydown', {capture: true}).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       if (evt.shiftKey) {
         this._shiftKeyPressing = true;
       }
@@ -72,11 +76,11 @@ export class SelectionControl {
         })
       }
     })
-    fromEvent<KeyboardEvent>(root.hostElement, 'keyup', {capture: true}).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+    fromEvent<KeyboardEvent>(window, 'keyup', {capture: true}).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       if (!evt.shiftKey) {
         this._shiftKeyPressing = false;
 
-        if (this._isSelecting) {
+        if (this._isSelecting || !this._dispatcher.doc.selection.value?.collapsed) {
           this._isSelecting = false;
           this._dispatcher.run('selectEnd', this._buildContext(evt))
         }

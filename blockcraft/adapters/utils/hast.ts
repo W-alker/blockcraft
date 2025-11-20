@@ -254,6 +254,10 @@ const isParagraphLike = (node: Element): boolean => {
   );
 };
 
+const hasTextContent = (node: Element) => {
+  return node.children.length && (node.children[0]?.type === 'text' || (node.children[0]?.type == 'element' && HastUtils.isTagInline(node.children[0]?.tagName) ))
+}
+
 export const HastUtils = {
   isElement,
   getTextContent,
@@ -265,5 +269,6 @@ export const HastUtils = {
   flatNodes,
   isParagraphLike,
   isElementInline,
-  isTagInline
+  isTagInline,
+  hasTextContent
 };

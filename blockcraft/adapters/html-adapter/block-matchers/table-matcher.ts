@@ -216,8 +216,7 @@ export const tableCellBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 
       if (!o.node.children.length) return
 
-      const firChild = o.node.children[0]
-      if (firChild?.type === 'text' || (HastUtils.isElement(firChild) && HastUtils.isTagInline(firChild.tagName))) {
+      if (HastUtils.hasTextContent(o.node)) {
         walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))).closeNode()
         walkerContext.skipAllChildren()
         walkerContext.closeNode()

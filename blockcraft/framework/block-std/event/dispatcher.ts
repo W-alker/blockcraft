@@ -85,6 +85,7 @@ export class UIEventDispatcher {
       isComposing: this.compositionControl.isComposing,
       isMouseReleased: this.mouseControl.isMouseReleased,
       isSelecting: this.selectionControl.isSelecting,
+      isShiftKeyPressing: this.selectionControl.shiftKeyPressing
     }
   }
 

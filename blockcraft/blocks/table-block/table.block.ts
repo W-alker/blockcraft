@@ -11,7 +11,7 @@ import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
 import {TableColBarComponent} from "./widgets/table-col-bar.component";
 import {TableRowBarComponent} from "./widgets/table-row-bar.component";
 import {adjustSelection, RectangleSelection} from "./utils";
-import {nextTick} from "../../global";
+import {debounce, nextTick, throttle} from "../../global";
 import {addTableCol, addTableRow, deleteTableCols, deleteTableRows} from "./callback";
 import {OverlayRef} from "@angular/cdk/overlay";
 import {TableCellsSelection} from "./types";
@@ -467,6 +467,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _colAdderHandler: ((e: Event) => void) | null = null
 
   onColAdderActive(colIdx: number) {
+    if (this._disableColResize) return
+
     const offsetLeft = this.props.colWidths.slice(0, colIdx).reduce((a, b) => a + b, 0)
       - this.tableScrollable.nativeElement.scrollLeft
 
@@ -493,8 +495,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     bar.addEventListener('mouseleave', (e) => {
       e.stopPropagation()
       e.preventDefault()
-      bar.classList.remove('active')
-      this._disableColResize = false
+
+      setTimeout(() => {
+        bar.classList.remove('active')
+        this._disableColResize = false
+      }, 10)
 
       // 移除当前 handler
       if (this._colAdderHandler) {
@@ -507,6 +512,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _rowAdderHandler: ((e: Event) => void) | null = null
 
   onRowAdderActive(rowIdx: number) {
+    if (this._rowAdderHandler) return
     const offsetTop = this.childrenIds.slice(0, rowIdx).reduce((a, b) => a + this._rowHeightsRecord[b], 0)
     const el = this.rowResizeBar.nativeElement
 
@@ -539,8 +545,25 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
           el.removeEventListener('mousedown', this._rowAdderHandler)
           this._rowAdderHandler = null
         }
-      })
+      }, 10)
     }, {once: true})
   }
 
+  private _prevScrollLeft = 0
+  private _isShiftScroll = false
+
+  onScrollEnd = debounce(() => {
+    const scroller = this.tableScrollable.nativeElement
+    if (!this._isShiftScroll && scroller.scrollLeft !== this._prevScrollLeft) {
+      this.doc.messageService.info('按住 shift 键加滚轮可快速横向滚动')
+      this._prevScrollLeft = scroller.scrollLeft
+    }
+    this._isShiftScroll = false
+  }, 1000)
+
+  onScroll = throttle((evt: Event) => {
+    if (this.doc.event.status.isShiftKeyPressing) {
+      this._isShiftScroll = true
+    }
+  }, 50)
 }

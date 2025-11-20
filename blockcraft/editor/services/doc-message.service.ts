@@ -15,7 +15,7 @@ export class MyDocMessageService implements DocMessageService{
   }
 
   info(message: string): void {
-    this.message.info('This is a normal message');
+    this.message.info(message);
   }
 
   warn(message: string): void {

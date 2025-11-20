@@ -47,6 +47,7 @@ export class DocDndService {
     if (this.dragLine) return
     const dragLine = document.createElement('div')
     dragLine.style.cssText = `
+      z-index: 10;
       position: absolute;
       height: 2px;
       background-color: #3a53d9;
@@ -125,16 +126,15 @@ export class DocDndService {
     this.dragPreventListener = fromEvent<DragEvent>(document.body, 'dragover')
       .subscribe((e) => {
         e.preventDefault()
-        e.stopPropagation()
 
-        const container = this.doc.scrollContainer!
-        const rect = container.getBoundingClientRect();
-
-        if (e.clientY < rect.top + edgeSize) {
-          container.scrollTop -= scrollSpeed;
-        } else if (e.clientY > rect.bottom - edgeSize) {
-          container.scrollTop += scrollSpeed;
-        }
+        // const container = this.doc.scrollContainer!
+        // const rect = container.getBoundingClientRect();
+        //
+        // if (e.clientY < rect.top + edgeSize) {
+        //   container.scrollTop -= scrollSpeed;
+        // } else if (e.clientY > rect.bottom - edgeSize) {
+        //   container.scrollTop += scrollSpeed;
+        // }
         //
         // if (e.clientX < rect.left + edgeSize) {
         //   container.scrollBy(-scrollSpeed, 0);

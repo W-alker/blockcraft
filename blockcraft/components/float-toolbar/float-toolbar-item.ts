@@ -19,6 +19,11 @@ import {NgIf, NgTemplateOutlet} from "@angular/common";
     NgTemplateOutlet,
     NgIf
   ],
+  styles: [`
+    :host {
+      transition: all ease-in-out .15s;
+    }
+  `]
   // changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class BcFloatToolbarItemComponent {

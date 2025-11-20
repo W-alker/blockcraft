@@ -18,20 +18,20 @@ const paragraphBlockMatchTags = [
   'footer',
 ];
 
-const headingBlockMatchTagsMap: Record<string, string> = {
-  h1: '1',
-  h2: '1',
-  h3: '2',
-  h4: '3',
-  h5: '4',
-  h6: '4',
+const headingBlockMatchTagsMap: Record<string, number> = {
+  h1: 1,
+  h2: 1,
+  h3: 2,
+  h4: 3,
+  h5: 4,
+  h6: 4,
 }
 
 // TODO 优化paragraph matcher
 export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   toMatch: o =>
-    HastUtils.isElement(o.node) &&
-    paragraphBlockMatchTags.includes(o.node.tagName),
+    (o.node.type === 'text' && o.node.value !== '\n') ||
+    (HastUtils.isElement(o.node) && paragraphBlockMatchTags.includes(o.node.tagName)),
   fromMatch: o => o.node.flavour === 'paragraph' || o.node.flavour === 'blockquote',
   toBlockSnapshot: {
     enter: (o, context) => {
@@ -43,21 +43,22 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 
       const currentNode = walkerContext.currentNode()
 
+      if (currentNode?.nodeType === 'editable' && HastUtils.isParagraphLike(o.node)) {
+        // @ts-ignore
+        currentNode?.children.push(...deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))
+        walkerContext.skipAllChildren()
+      }
+
       switch (o.node.tagName) {
         case 'span':
         case 'body':
         case 'div':
         case 'footer': {
-          if (currentNode?.nodeType === 'editable' && HastUtils.isParagraphLike(o.node)) {
-            (currentNode?.children as DeltaInsert[]).push(...deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))
-            walkerContext.skipAllChildren()
-            return;
-          } else if (
-            o.parent?.node.type === 'element' && !['li', 'p'].includes(o.parent.node.tagName) && HastUtils.isParagraphLike(o.node)
-          ) {
+          if (!HastUtils.isParagraphLike(o.node)) return;
+          if (o.parent?.node.type === 'element' && !['li', 'p'].includes(o.parent.node.tagName)) {
             const p = ParagraphBlockSchema.createSnapshot()
             walkerContext.openNode(p, 'children')
-            if (o.node.children[0]?.type === 'text') {
+            if (HastUtils.hasTextContent(o.node)) {
               (p.children as DeltaInsert[]).push(...deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))
               walkerContext.skipAllChildren()
               walkerContext.closeNode()
@@ -66,18 +67,11 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           break;
         }
         case 'p': {
-          if (['ordered', 'bullet', 'todo'].includes(currentNode?.flavour) && HastUtils.isParagraphLike(o.node)) {
-            // @ts-ignore
-            currentNode?.children.push(...deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))
+          if (HastUtils.hasTextContent(o.node)) {
+            walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node)), 'children').closeNode()
             walkerContext.skipAllChildren()
           } else {
-            // 如果是子节点
-            if (currentNode?.flavour !== 'root' || o.node.children[0]?.type === 'text') {
-              walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node)), 'children').closeNode()
-              walkerContext.skipAllChildren()
-            } else {
-              walkerContext.openNode(ParagraphBlockSchema.createSnapshot(), 'children')
-            }
+            walkerContext.openNode(ParagraphBlockSchema.createSnapshot(), 'children')
           }
           break;
         }

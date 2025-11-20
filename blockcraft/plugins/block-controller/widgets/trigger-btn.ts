@@ -17,6 +17,8 @@ import {MatIcon} from "@angular/material/icon";
 import {nextTick} from "../../../global";
 import {BLOCK_CREATOR_SERVICE_TOKEN} from "../../../framework";
 import {customToolHandler, IContextMenuItem} from "../types";
+import {NzDropDownDirective, NzDropdownMenuComponent} from "ng-zorro-antd/dropdown";
+import {parseInt} from "lib0/number";
 
 const ALIGN_LIST: IContextMenuItem[] = [
   {
@@ -47,36 +49,41 @@ const HEADING_LIST: IContextMenuItem[] = [
     name: "heading",
     value: undefined,
     icon: "bc_icon bc_wenben",
-    label: "正文",
-    type: 'tool'
+    label: "普通段落",
+    type: 'tool',
+    desc: `普通段落`,
   },
   {
     name: "heading",
     value: 1,
     icon: "bc_icon bc_biaoti_1",
     label: "一级标题",
-    type: 'tool'
+    type: 'tool',
+    desc: `一级标题(⌘/Ctrl + 1)\nMarkdown: # (空格)`,
   },
   {
     name: "heading",
     value: 2,
     icon: "bc_icon bc_biaoti_2",
     label: "二级标题",
-    type: 'tool'
+    type: 'tool',
+    desc: `二级标题(⌘/Ctrl + 2)\nMarkdown: ## (空格)`,
   },
   {
     name: "heading",
     value: 3,
     icon: "bc_icon bc_biaoti_3",
     label: "三级标题",
-    type: 'tool'
+    type: 'tool',
+    desc: `三级标题(⌘/Ctrl + 3)\nMarkdown: ### (空格)`,
   },
   {
     name: "heading",
     value: 4,
     icon: "bc_icon bc_biaoti_4",
     label: "四级标题",
-    type: 'tool'
+    type: 'tool',
+    desc: `四级标题(⌘/Ctrl + 4)\nMarkdown: #### (空格)`,
   }
 ]
 
@@ -84,21 +91,24 @@ const HEADING_LIST: IContextMenuItem[] = [
   selector: 'bc-drag-handle',
   standalone: true,
   template: `
-    <div class="drag-handle" [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
-         [disabled]="menuDisabled" (open)="setValidBlockList()" [delay]="400"
-         [withBackdrop]="false" activeClass="active" [draggable]="draggable">
+    <div class="drag-handle"
+         [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
+         [disabled]="menuDisabled" (open)="setValidBlockList()" [delay]="500"
+         [withBackdrop]="false" activeClass="active"
+         [draggable]="draggable">
       <div class="btn">
+        <ng-container *ngTemplateOutlet="icon; context: {$implicit: activeBlockIcon}"></ng-container>
         <i [class]="['bf_icon', isEmpty ? 'bf_tianjia-2' : 'bf_yidong' ]"></i>
       </div>
       <div class="virtual-hover-area"></div>
     </div>
 
     <ng-template #icon let-item>
-      <i [class]="item.icon"></i>
-    </ng-template>
-
-    <ng-template #svgIcon let-item>
-      <mat-icon [svgIcon]="item.svgIcon" style="width: 1em; height: 1em"></mat-icon>
+      @if (item?.svgIcon) {
+        <mat-icon [svgIcon]="item.svgIcon" style="width: 1em; height: 1em"></mat-icon>
+      } @else {
+        <i [class]="item?.icon" style="color: var(--bc-active-color);"></i>
+      }
     </ng-template>
 
     <ng-template #contextMenuTpl>
@@ -107,7 +117,7 @@ const HEADING_LIST: IContextMenuItem[] = [
           <h4 class="title">基础</h4>
           <ul class='base-list' (mousedown)="$event.preventDefault()">
             @for (item of HEADING_LIST; track item.value) {
-              <li class="base-list__item" [title]="item.label" (mousedown)="handleToolItemClick(item)"
+              <li class="base-list__item" [title]="item.desc" (mousedown)="handleToolItemClick(item)"
                   [class.active]="!item.value ? (activeBlock?.flavour === 'paragraph' && !activeBlock?.props?.['heading']) : (activeBlock?.props?.['heading'] || '') + '' === (item.value || '') + ''">
                 <i [class]="item.icon"></i>
               </li>
@@ -118,8 +128,7 @@ const HEADING_LIST: IContextMenuItem[] = [
                   (mousedown)="handleBlockItemClick(item)"
                   [title]="item.metadata.description || item.metadata.label"
                   [class.active]="activeBlock?.flavour === item.flavour">
-                <ng-container
-                  *ngTemplateOutlet="item.metadata.svgIcon ? svgIcon : icon; context: {$implicit: item.metadata}">
+                <ng-container *ngTemplateOutlet="icon; context: {$implicit: item.metadata}">
                 </ng-container>
               </li>
             }
@@ -162,9 +171,17 @@ const HEADING_LIST: IContextMenuItem[] = [
     </ng-template>
 
     <ng-template #blockAddList>
-      <bc-float-toolbar direction="column" style="display: block; width: 224px;">
+      <bc-float-toolbar direction="column" styles="width: 224px; max-height: 70vh; overflow-y: auto;">
         @if (activeBlock?.nodeType !== BlockNodeType.editable) {
           <h4 class="title">基础</h4>
+          @for (item of HEADING_LIST; track item.value) {
+            <bc-float-toolbar-item [title]="item.desc || item.label"
+                                   (mousedown)="handleToolItemClick(item)">
+              <ng-container *ngTemplateOutlet="icon; context: {$implicit: item}">
+              </ng-container>
+              <span>{{ item.label }}</span>
+            </bc-float-toolbar-item>
+          }
           <ng-container
             *ngTemplateOutlet="otherBlockListTpl; context: { $implicit: _validBaseBlockList }"></ng-container>
         }
@@ -198,8 +215,7 @@ const HEADING_LIST: IContextMenuItem[] = [
       @for (item of items; track item.flavour) {
         <bc-float-toolbar-item [title]="item.metadata.description || item.metadata.label"
                                (mousedown)="handleBlockItemClick(item)">
-          <ng-container
-            *ngTemplateOutlet="item.metadata.svgIcon ? svgIcon : icon; context: {$implicit: item.metadata}">
+          <ng-container *ngTemplateOutlet="icon; context: {$implicit: item.metadata}">
           </ng-container>
           <span>{{ item.metadata.label }}</span>
         </bc-float-toolbar-item>
@@ -235,7 +251,7 @@ const HEADING_LIST: IContextMenuItem[] = [
 
     .drag-handle {
       display: flex;
-      padding: 0 14px 4px 0;
+      padding: 0 18px 4px 0;
 
       &.active {
         .btn {
@@ -257,6 +273,10 @@ const HEADING_LIST: IContextMenuItem[] = [
       }
 
       .btn {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        padding: 0 4px;
         background-color: #fff;
         box-shadow: 0 0 2px 0 #999;
         border-radius: 4px;
@@ -265,7 +285,6 @@ const HEADING_LIST: IContextMenuItem[] = [
         text-align: center;
         color: #999;
         font-size: 16px;
-        width: 22px;
         height: 22px;
         line-height: 22px;
 
@@ -301,6 +320,7 @@ const HEADING_LIST: IContextMenuItem[] = [
         justify-content: center;
         align-items: center;
         cursor: pointer;
+        transition: all .15s ease-in-out;
 
         &:hover, &.active {
           background: #f3f3f3;
@@ -340,7 +360,7 @@ const HEADING_LIST: IContextMenuItem[] = [
       }
     }
   `],
-  imports: [NgIf, NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, NgForOf, MatIcon, BcOverlayTriggerDirective],
+  imports: [NgIf, NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, NgForOf, MatIcon, BcOverlayTriggerDirective, NzDropdownMenuComponent, NzDropDownDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.contenteditable]': 'false',
@@ -366,6 +386,7 @@ export class TriggerBtn {
     this._activeBlock = val
     this._onDestroySub?.unsubscribe()
     this.menuDisabled = true
+    this.activeBlockIcon = undefined
 
     if (!this._activeBlock) {
       this.close()
@@ -377,6 +398,11 @@ export class TriggerBtn {
 
     const schema = this.doc.schemas.get(this._activeBlock.flavour)!
     if (schema.metadata.isLeaf) return
+    const heading = this._activeBlock.props.heading
+    this.activeBlockIcon = {
+      svgIcon: heading ? undefined : schema.metadata.svgIcon,
+      icon: heading ? HEADING_LIST.find(v => v.value === (typeof heading === 'string' ? parseInt(heading) : heading))?.icon : schema.metadata.icon
+    }
 
     this.setIsEmpty()
 
@@ -417,6 +443,11 @@ export class TriggerBtn {
 
   menuDisabled = false
   draggable = true
+  activeBlockIcon?: {
+    icon?: string
+    svgIcon?: string
+    color?: string
+  }
 
   ngOnInit() {
     this.toolList = this.toolList.concat(this.customTools)
@@ -594,7 +625,6 @@ export class TriggerBtn {
   }
 
   handleToolItemClick(item: IContextMenuItem) {
-    console.log('--------tool item click', item, this.activeBlock)
     if (this.customToolHandler) {
       const res = this.customToolHandler(item, this.activeBlock, this.doc)
       if (res) {
@@ -638,21 +668,32 @@ export class TriggerBtn {
       }
         break
       case 'heading':
-        if (!this.activeBlock || !this.doc.isEditable(this.activeBlock)) return
+        if (!this.activeBlock) return
+        if (!this.doc.isEditable(this.activeBlock)) {
+          const p = this.doc.schemas.createSnapshot('paragraph', [[], {
+            depth: this.activeBlock.props.depth,
+            heading: item.value
+          }])
+          this.doc.crud.insertBlocksAfter(this.activeBlock, [p]).then(() => {
+            this.menuDisabled = true
+            this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+          })
+          return;
+        }
         if (this.activeBlock.flavour === 'ordered' && item.value) {
           this.activeBlock.updateProps({heading: item.value as any})
+          return;
+        }
+        if (this.activeBlock.flavour !== 'paragraph') {
+          const p = this.doc.schemas.createSnapshot('paragraph', [this.activeBlock.textDeltas(), {
+            ...this.activeBlock.props,
+            heading: item.value
+          }])
+          this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [p]).then(() => {
+            this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+          })
         } else {
-          if (this.activeBlock.flavour !== 'paragraph') {
-            const p = this.doc.schemas.createSnapshot('paragraph', [this.activeBlock.textDeltas(), {
-              ...this.activeBlock.props,
-              heading: item.value
-            }])
-            this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [p]).then(() => {
-              this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
-            })
-          } else {
-            this.activeBlock.updateProps({heading: item.value as any})
-          }
+          this.activeBlock.updateProps({heading: item.value as any})
         }
         break
     }

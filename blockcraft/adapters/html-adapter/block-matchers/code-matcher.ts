@@ -25,7 +25,8 @@ export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       const codeSpans = HastUtils.flatNodes(o.node, () => true);
 
       // @ts-ignore
-      const text = (codeSpans['children'] as Array<Text>).reduce((text, span) => text + span.value, '')
+      const text = (codeSpans['children'] as Array<Text>).reduce((text, span) => text + span.value, '').replace(/\n+$/g, '')
+      if(!text) return;
 
       const codeBlock = CodeBlockSchema.createSnapshot(text)
       codeBlock.props.depth = depth

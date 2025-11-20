@@ -5,7 +5,7 @@ import {TableCellBlockModel} from "./index";
 @Component({
   selector: 'td.table-cell-block',
   template: `
-    <div class="table-cell__children-wrapper">
+    <div class="table-cell__children-wrapper" [style.align-items]="props.textAlign" [style.text-align]="props.textAlign">
       <ng-container #childrenContainer></ng-container>
     </div>
   `,
@@ -13,7 +13,6 @@ import {TableCellBlockModel} from "./index";
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[style.vertical-align]': 'props.verticalAlign',
-    '[style.text-align]': 'props.textAlign',
     '[style.color]': 'props.color',
     '[style.background-color]': 'props.backColor',
     '[attr.rowspan]': 'props.rowspan',

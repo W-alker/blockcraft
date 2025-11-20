@@ -204,8 +204,11 @@ export class InputTransformer {
             const deltas: DeltaOperation[] = [...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength)]
             deltas.unshift({retain: yText.length})
             yText.applyDelta(deltas)
+            this.doc.crud.deleteBlockById(to.blockId)
           }
-          this.doc.crud.deleteBlockById(to.blockId)
+          if((to.type === 'text' && !to.block.textLength) || to.type === 'selected') {
+            this.doc.crud.deleteBlockById(to.blockId)
+          }
         }
         return
       }
@@ -393,12 +396,12 @@ export class InputTransformer {
     const _prevDepth = prevBlock ? (prevBlock.props.depth ?? 0) : 0
     const _newDepth = (fromBlock.props.depth || 0) + (state.raw.shiftKey ? -1 : 1)
     if (!prevBlock || _newDepth < 0) {
-      this.doc.messageService.warn('不可缩进')
+      this.doc.messageService.warn('此处不可缩进')
       return true
     }
 
     if (!state.raw.shiftKey && _newDepth > _prevDepth + 1) {
-      this.doc.messageService.warn('不可缩进')
+      this.doc.messageService.warn('当前内容块已到最大缩进层级')
       return true
     }
 

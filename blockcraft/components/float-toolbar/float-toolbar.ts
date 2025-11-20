@@ -15,7 +15,7 @@ import {BcFloatToolbarItemComponent} from "./float-toolbar-item";
 @Component({
   selector: 'bc-float-toolbar',
   template: `
-    <div class="bc-float-toolbar__wrapper"
+    <div class="bc-float-toolbar__wrapper" [style]="styles"
          [attr.data-direction]="direction">
       <ng-content></ng-content>
     </div>
@@ -33,6 +33,9 @@ export class BcFloatToolbarComponent {
   @Input()
   @HostBinding('attr.data-direction')
   direction: 'row' | 'column' = 'row'
+
+  @Input()
+  styles: string = ''
 
   @Output()
   onItemClick = new EventEmitter<BcFloatToolbarItemComponent>()

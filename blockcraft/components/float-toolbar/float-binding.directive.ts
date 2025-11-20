@@ -11,6 +11,7 @@ import {Overlay, OverlayRef} from '@angular/cdk/overlay';
 import {TemplatePortal} from '@angular/cdk/portal';
 import {generateId, getPositionWithOffset, OverlayPosition} from "../../framework";
 import {nextTick} from "../../global";
+import {fromEvent, takeUntil} from "rxjs";
 
 @Directive({
   selector: '[bcOverlayTrigger]',
@@ -115,11 +116,12 @@ export class BcOverlayTriggerDirective {
 
     this.open.emit(true)
     this.elementRef.nativeElement.classList.add(this.activeClass)
+
+    fromEvent(document, 'pointerover', {capture: true}).pipe(takeUntil(this.close)).subscribe(this.hideOverlay)
   }
 
   private _timer?: number
-  @HostListener('document:pointerover', ['$event'])
-  hideOverlay = (evt: MouseEvent) => {
+  hideOverlay = (evt: Event) => {
     if (!this.overlayRef) return
 
     if (this._timer) {

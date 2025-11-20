@@ -32,7 +32,7 @@ export interface ColorGroup {
 
               @for (item of colorGroup.list; track item.value) {
                 @if (item.value == 'transparent') {
-                  <span class="bc-color-group-list__item" [class.active]="activeList[colorGroup.type] === 'transparent'"
+                  <span class="bc-color-group-list__item" [class.active]="!activeList[colorGroup.type] || activeList[colorGroup.type] === 'transparent'"
                         style="border: 1px solid #eee; background: linear-gradient(-45deg, transparent 49%, black 50%, transparent 51%);"
                         (mousedown)="pickColor(colorGroup.type, item.value, colorGroup)">
                 </span>
