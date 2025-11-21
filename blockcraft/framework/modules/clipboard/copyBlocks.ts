@@ -34,7 +34,7 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
     } catch (e) {
       console.error(e)
     } finally {
-      items[ClipboardDataType.TEXT] = new Blob([snapshots2Text([rootSnapshot])], {type: 'text/plain'})
+      items[ClipboardDataType.TEXT] = snapshots2Text([rootSnapshot])
     }
 
     let range: Range
