@@ -19,6 +19,7 @@ import {BLOCK_CREATOR_SERVICE_TOKEN} from "../../../framework";
 import {customToolHandler, IContextMenuItem} from "../types";
 import {NzDropDownDirective, NzDropdownMenuComponent} from "ng-zorro-antd/dropdown";
 import {parseInt} from "lib0/number";
+import {NzTooltipDirective} from "ng-zorro-antd/tooltip";
 
 const ALIGN_LIST: IContextMenuItem[] = [
   {
@@ -114,7 +115,9 @@ const HEADING_LIST: IContextMenuItem[] = [
     <ng-template #contextMenuTpl>
       <bc-float-toolbar style="display: block; width: 224px; padding-top: 4px;" direction="column">
         @if (activeBlock?.nodeType === BlockNodeType.editable) {
-          <h4 class="title">基础</h4>
+          <h4 class="title">基础
+            <i class="bc_icon bc_xinxi" style="cursor: pointer;" nz-tooltip="鼠标停留在内容块选项上一段时间以查看对应快捷键和快速转化语法" [nzTooltipPlacement]="'top'"></i>
+          </h4>
           <ul class='base-list' (mousedown)="$event.preventDefault()">
             @for (item of HEADING_LIST; track item.value) {
               <li class="base-list__item" [title]="item.desc" (mousedown)="handleToolItemClick(item)"
@@ -299,7 +302,9 @@ const HEADING_LIST: IContextMenuItem[] = [
       color: #999;
       font-size: 14px;
       font-weight: 600;
-      line-height: 140%; /* 19.6px */
+      display: flex;
+      gap: 8px;
+      align-items: center;
     }
 
     .base-list, .common-list {
@@ -360,7 +365,7 @@ const HEADING_LIST: IContextMenuItem[] = [
       }
     }
   `],
-  imports: [NgIf, NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, NgForOf, MatIcon, BcOverlayTriggerDirective, NzDropdownMenuComponent, NzDropDownDirective],
+  imports: [NgIf, NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, NgForOf, MatIcon, BcOverlayTriggerDirective, NzDropdownMenuComponent, NzDropDownDirective, NzTooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.contenteditable]': 'false',

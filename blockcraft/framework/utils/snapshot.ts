@@ -34,3 +34,4 @@ export const snapshots2Text = (snapshots: IBlockSnapshot[]) => {
   snapshots.forEach(append)
   return str
 }
+
