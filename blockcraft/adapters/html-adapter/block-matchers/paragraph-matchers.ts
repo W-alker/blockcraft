@@ -45,8 +45,9 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 
       if (currentNode?.nodeType === 'editable' && HastUtils.isParagraphLike(o.node)) {
         // @ts-ignore
-        currentNode?.children.push(...deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))
+        currentNode?.children.push(...deltaConverter.astToDelta(o.node))
         walkerContext.skipAllChildren()
+        return
       }
 
       switch (o.node.tagName) {
@@ -59,7 +60,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
             const p = ParagraphBlockSchema.createSnapshot()
             walkerContext.openNode(p, 'children')
             if (HastUtils.hasTextContent(o.node)) {
-              (p.children as DeltaInsert[]).push(...deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))
+              (p.children as DeltaInsert[]).push(...deltaConverter.astToDelta(o.node))
               walkerContext.skipAllChildren()
               walkerContext.closeNode()
             }

@@ -123,7 +123,7 @@ export class DocOverlayService {
   createConnectedOverlay<T>(params: IConnectOverlayCreateOptions, close$: Subject<any>, onDestroy?: () => void) {
     if (params.target instanceof HTMLElement) {
       const observer = new MutationObserver((mutationsList) => {
-        if (!(params.target as HTMLElement).isConnected) {
+        if (!(params.target as HTMLElement).isConnected || !document.contains(params.target as HTMLElement)) {
           close$.next(true)
         }
       })

@@ -396,7 +396,7 @@ export class InputTransformer {
     const _prevDepth = prevBlock ? (prevBlock.props.depth ?? 0) : 0
     const _newDepth = (fromBlock.props.depth || 0) + (state.raw.shiftKey ? -1 : 1)
     if (!prevBlock || _newDepth < 0) {
-      this.doc.messageService.warn('此处不可缩进')
+      this.doc.messageService.warn('当前内容块已到最小缩进层级')
       return true
     }
 

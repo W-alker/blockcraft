@@ -204,10 +204,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   onMouseEnter = (ctx: UIEventStateContext) => {
     const evt = ctx.getDefaultEvent<MouseEvent>()
-    const target = evt.target
-    if (!(target instanceof HTMLElement) || target.tagName !== 'TD') return
-    const id = target.getAttribute('data-block-id')
-    if (!id) return
+    const id = this._closetCell(evt)
+    if (!id || this.hoveringCell?.id === id) return
 
     if (!this.resizingCol$.value && !this.doc.isReadonly) {
       // hovering bar

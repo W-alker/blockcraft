@@ -47,10 +47,10 @@ export class MouseControl {
   }
 
   listen(root: BlockCraft.IBlockComponents['root']) {
-    fromEvent<MouseEvent>(root.hostElement, 'mousedown').pipe(takeUntil(root.onDestroy$)).subscribe(this._down);
-    fromEvent<MouseEvent>(root.hostElement, 'mouseup').pipe(takeUntil(root.onDestroy$)).subscribe(this._up);
-    fromEvent<MouseEvent>(root.hostElement, 'mouseover').pipe(takeUntil(root.onDestroy$)).subscribe(this._enter);
-    fromEvent<MouseEvent>(root.hostElement, 'mouseout').pipe(takeUntil(root.onDestroy$)).subscribe(this._leave);
-    fromEvent<MouseEvent>(root.hostElement, 'dblclick').pipe(takeUntil(root.onDestroy$)).subscribe(this._dblclick);
+    fromEvent<MouseEvent>(root.hostElement, 'mousedown', {capture: true}).pipe(takeUntil(root.onDestroy$)).subscribe(this._down);
+    fromEvent<MouseEvent>(root.hostElement, 'mouseup', {capture: true}).pipe(takeUntil(root.onDestroy$)).subscribe(this._up);
+    fromEvent<MouseEvent>(root.hostElement, 'mouseover', {capture: true}).pipe(takeUntil(root.onDestroy$)).subscribe(this._enter);
+    fromEvent<MouseEvent>(root.hostElement, 'mouseout', {capture: true}).pipe(takeUntil(root.onDestroy$)).subscribe(this._leave);
+    fromEvent<MouseEvent>(root.hostElement, 'dblclick', {capture: true}).pipe(takeUntil(root.onDestroy$)).subscribe(this._dblclick);
   }
 }

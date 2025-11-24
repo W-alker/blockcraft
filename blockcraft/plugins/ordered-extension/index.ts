@@ -8,7 +8,7 @@ import {
 } from "../../framework";
 import {Subject, Subscription, takeUntil} from "rxjs";
 import {OrderedBlockModel} from "../../blocks";
-import {nextTick} from "../../global";
+import {isSimpleTypeEqual, nextTick} from "../../global";
 import {OrderedPrefixToolbar} from "./widgets/ordered-prefix-toolbar";
 
 export class OrderedBlockPlugin extends DocPlugin {
@@ -110,7 +110,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
     for (let i = index - 1; i >= 0; i--) {
       const prevBlock = parentChildren[i]
       if (prevBlock.flavour !== 'ordered') {
-        if ((prevBlock.props.depth || 0) === block.props.depth && typeof aroundOrderBlocks[0].props.start !== 'number') {
+        if (isSimpleTypeEqual(prevBlock.props.depth, block.props.depth) && typeof aroundOrderBlocks[0].props.start !== 'number') {
           aroundOrderBlocks[0].updateProps({
             start: 1
           })
@@ -121,7 +121,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
       if ((prevBlock.props.depth || 0) < block.props.depth) {
         break
       }
-      if ((prevBlock.props.depth || 0) === block.props.depth) {
+      if (isSimpleTypeEqual(prevBlock.props.depth, block.props.depth)) {
         aroundOrderBlocks.unshift(prevBlock)
 
         if (prevBlock.props.start) break

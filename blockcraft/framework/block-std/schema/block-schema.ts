@@ -50,19 +50,23 @@ export const editableBlockCreateSnapShotFn = <M extends NativeBlockModel = Nativ
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${flavour} block createSnapshot error: props must be undefined or object`)
     }
 
+    const _props = {
+      ...defaultProps,
+    }
+    // @ts-ignore
+    _props['depth'] = props?.['depth'] || 0
+    // @ts-ignore
+    const _textAlign = props?.['textAlign'] || defaultProps?.['textAlign']
+    if (_textAlign) _props['textAlign'] = _textAlign
+    // @ts-ignore
+    const _heading = props?.['heading'] || defaultProps?.['heading'] || undefined
+    if (_heading) _props['heading'] = _heading
+
     return {
       id: generateId(),
       flavour: flavour,
       nodeType: BlockNodeType.editable,
-      props: {
-        // @ts-ignore
-        depth: props?.['depth'] || undefined,
-        ...defaultProps,
-        // @ts-ignore
-        textAlign: defaultProps?.['textAlign'] || props?.['textAlign'],
-        // @ts-ignore
-        heading: defaultProps?.['heading'] || props?.['heading'] ,
-      },
+      props: _props,
       meta: {},
       children: ch
     }

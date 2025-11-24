@@ -86,7 +86,7 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
     enter: (o, context) => {
       const delta = o.node.children as DeltaInsert[]
       const {deltaConverter, walkerContext} = context;
-      const currentTNode = walkerContext.currentNode();
+      // const currentTNode = walkerContext.currentNode()
       const liChildren = deltaConverter.deltaToAST(delta);
 
       if (o.node.flavour === 'todo') {
@@ -110,42 +110,16 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
           ],
         });
       }
-      // check if the list is of the same type
-      if (
-        walkerContext.getNodeContext('list:parent') === o.parent &&
-        currentTNode.type === 'element' &&
-        currentTNode.tagName === (o.node.flavour === 'ordered' ? 'ol' : 'ul') &&
-        !(
-          Array.isArray(currentTNode.properties["className"]) &&
-          currentTNode.properties["className"].includes('todo-list')
-        ) ===
-        TextUtils.isNullish(
-          o.node.flavour === 'todo'
-            ? (o.node.props["checked"] as boolean)
-            : undefined
-        )
-      ) {
-        // if true, add the list item to the list
-      } else {
-        // if false, create a new list
-        walkerContext.openNode(
-          {
-            type: 'element',
-            tagName: o.node.flavour === 'ordered' ? 'ol' : 'ul',
-            properties: {
-              style:
-                o.node.props["type"] === 'todo'
-                  ? 'list-style-type: none; padding-inline-start: 18px;'
-                  : null,
-            },
-            children: [],
-          },
-          'children'
-        );
-        walkerContext.setNodeContext('list:parent', o.parent);
-      }
 
       walkerContext.openNode(
+        {
+          type: 'element',
+          tagName: o.node.flavour === 'ordered' ? 'ol' : 'ul',
+          properties: {},
+          children: [],
+        },
+        'children'
+      ).openNode(
         {
           type: 'element',
           tagName: 'li',
@@ -153,39 +127,84 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
           children: liChildren,
         },
         'children'
-      );
+      ).closeNode()
+        .closeNode()
+
+      // if (
+      //   walkerContext.getNodeContext('list:parent') === o.parent &&
+      //   currentTNode.type === 'element' &&
+      //   currentTNode.tagName === (o.node.flavour === 'ordered' ? 'ol' : 'ul') &&
+      //   !(
+      //     Array.isArray(currentTNode.properties["className"]) &&
+      //     currentTNode.properties["className"].includes('todo-list')
+      //   ) ===
+      //   TextUtils.isNullish(
+      //     o.node.flavour === 'todo'
+      //       ? (o.node.props["checked"] as boolean)
+      //       : undefined
+      //   )
+      // ) {
+      //   // if true, add the list item to the list
+      // } else {
+      //   // if false, create a new list
+      //   walkerContext.openNode(
+      //     {
+      //       type: 'element',
+      //       tagName: o.node.flavour === 'ordered' ? 'ol' : 'ul',
+      //       properties: {
+      //         style:
+      //           o.node.props["type"] === 'todo'
+      //             ? 'list-style-type: none;'
+      //             : null,
+      //       },
+      //       children: [],
+      //     },
+      //     'children'
+      //   );
+      //   walkerContext.setNodeContext('list:parent', o.parent);
+      // }
+      //
+      // walkerContext.openNode(
+      //   {
+      //     type: 'element',
+      //     tagName: 'li',
+      //     properties: {},
+      //     children: liChildren,
+      //   },
+      //   'children'
+      // );
     },
     leave: (o, context) => {
-      const {walkerContext} = context;
-      const currentTNode = walkerContext.currentNode() as unknown as Element;
-      const previousTNode = walkerContext.previousNode() as unknown as Element;
-      if (
-        walkerContext.getPreviousNodeContext('list:parent') ===
-        o.parent &&
-        currentTNode.tagName === 'li' &&
-        previousTNode.tagName ===
-        (o.node.flavour === 'ordered' ? 'ol' : 'ul') &&
-        !(
-          Array.isArray(previousTNode.properties["className"]) &&
-          previousTNode.properties["className"].includes('todo-list')
-        ) ===
-        TextUtils.isNullish(
-          o.node.flavour === 'todo'
-            ? (o.node.props["checked"] as boolean)
-            : undefined
-        )
-      ) {
-        walkerContext.closeNode();
-        if (
-          // @ts-ignore
-          (o.next?.flavour !== 'bullet' && o.next?.flavour !== 'ordered')
-        ) {
-          // If the next node is not a list or different type of list, close the list
-          walkerContext.closeNode();
-        }
-      } else {
-        walkerContext.closeNode().closeNode();
-      }
+      // const {walkerContext} = context;
+      // const currentTNode = walkerContext.currentNode() as unknown as Element;
+      // const previousTNode = walkerContext.previousNode() as unknown as Element;
+      // if (
+      //   walkerContext.getPreviousNodeContext('list:parent') ===
+      //   o.parent &&
+      //   currentTNode.tagName === 'li' &&
+      //   previousTNode.tagName ===
+      //   (o.node.flavour === 'ordered' ? 'ol' : 'ul') &&
+      //   !(
+      //     Array.isArray(previousTNode.properties["className"]) &&
+      //     previousTNode.properties["className"].includes('todo-list')
+      //   ) ===
+      //   TextUtils.isNullish(
+      //     o.node.flavour === 'todo'
+      //       ? (o.node.props["checked"] as boolean)
+      //       : undefined
+      //   )
+      // ) {
+      //   walkerContext.closeNode();
+      //   if (
+      //     // @ts-ignore
+      //     (o.next?.flavour !== 'bullet' && o.next?.flavour !== 'ordered')
+      //   ) {
+      //     // If the next node is not a list or different type of list, close the list
+      //     walkerContext.closeNode();
+      //   }
+      // } else {
+      //   walkerContext.closeNode().closeNode();
+      // }
     },
   }
 }

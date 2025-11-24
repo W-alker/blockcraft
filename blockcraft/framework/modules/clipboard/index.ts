@@ -7,7 +7,15 @@ import {
   IBlockSnapshot, STR_LINE_BREAK,
   UIEventStateContext
 } from "../../block-std";
-import {deltaStrLength, deltaToString, isUrl, nextTick, SimpleValue, sliceDelta} from "../../../global";
+import {
+  deltaStrLength,
+  deltaToString,
+  isSimpleTypeEqual,
+  isUrl,
+  nextTick, SimpleBasicType,
+  SimpleValue,
+  sliceDelta
+} from "../../../global";
 import {ClipboardDataType} from "./types";
 import {
   generateId,
@@ -17,13 +25,6 @@ import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
 import {copyBlocks} from "./copyBlocks";
 
 export * from './types'
-
-export const isHeadingEqual = (p1: SimpleValue, p2: SimpleValue) => {
-  if ((!p1 || p1 === '0') && (!p2 || p2 === '0')) {
-    return true
-  }
-  return p1 + '' === p2 + ''
-}
 
 @DocEventRegister
 export class ClipboardManager {
@@ -234,7 +235,7 @@ export class ClipboardManager {
         // 是否需要和本段合并
         if (snapshots[0].nodeType === BlockNodeType.editable
           && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
-          && isHeadingEqual(snapshots[0].props['heading'], editableBlock.props['heading'])
+          && isSimpleTypeEqual(snapshots[0].props['heading'] as SimpleBasicType, editableBlock.props['heading'])
         ) {
           insertLength = deltaStrLength(snapshots[0].children)
           ops.push(...snapshots[0].children)
