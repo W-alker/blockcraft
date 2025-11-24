@@ -14,7 +14,7 @@ import {
 } from "../../block-std";
 import {BlockSelection, INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
-import {BlockCraftError, ErrorCode, sliceDelta} from "../../../global";
+import {BlockCraftError, ErrorCode, nextTick, sliceDelta} from "../../../global";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
@@ -206,7 +206,7 @@ export class InputTransformer {
             yText.applyDelta(deltas)
             this.doc.crud.deleteBlockById(to.blockId)
           }
-          if((to.type === 'text' && !to.block.textLength) || to.type === 'selected') {
+          if ((to.type === 'text' && !to.block.textLength) || to.type === 'selected') {
             this.doc.crud.deleteBlockById(to.blockId)
           }
         }

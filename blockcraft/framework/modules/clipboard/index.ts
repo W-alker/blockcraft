@@ -154,13 +154,13 @@ export class ClipboardManager {
     context.preventDefault()
 
     this.copyFromSelection(state.selection, state.clipboardData!).then(() => {
-      // 继续触发deleteByCut input事件, 让默认处理程序删除选区内容
       this.deleteContentFromSelection(state.selection)
+      state.selection.raw.collapse()
     })
 
   }
 
-  @EventListen('paste',)
+  @EventListen('paste')
   async onPaste(context: UIEventStateContext) {
     context.preventDefault()
     const state = context.get('clipboardState')

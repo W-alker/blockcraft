@@ -17,7 +17,7 @@ export abstract class DocFileService {
 
   abstract uploadAttachment(file: File): Promise<DocAttachmentInfo>
 
-  abstract previewAttachment(): void
+  abstract previewAttachment(options: any): void
 
   abstract previewImg(options: Record<string, unknown>): void
 
