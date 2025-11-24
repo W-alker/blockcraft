@@ -29,7 +29,6 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   onClick(state: UIEventStateContext) {
     if (!this.doc.isReadonly) return
     const blockId = closetBlockId(state.getDefaultEvent().target as Node)
-    console.log(blockId)
     blockId && this.doc.selection.selectBlock(blockId)
     return true
   }
@@ -78,9 +77,17 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         componentRef.instance.onItemClick.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
           switch (v.name) {
             case 'rename':
+              if (!attachmentBlock.props.url) {
+                this.doc.messageService.warn("无法重命名未上传的附件")
+                return
+              }
               this.onRename(attachmentBlock as BlockCraft.IBlockComponents['attachment'])
               break
             case 'download':
+              if (!attachmentBlock.props.url) {
+                this.doc.messageService.warn("没有上传的附件")
+                return
+              }
               downloadFile(attachmentBlock.props.url, attachmentBlock.props.name)
               break
             case 'delete':

@@ -7,8 +7,8 @@ export interface ImageBlockModel extends NoEditableBlockNative {
   flavour: 'image',
   props: {
     src: string;
-    width?: number;
-    height?: number;
+    width?: number | null;
+    height?: number | null;
     align?: 'center' | 'right'
   }
 }

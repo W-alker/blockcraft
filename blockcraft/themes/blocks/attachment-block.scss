@@ -1,19 +1,21 @@
 @mixin attachment-block() {
 
   div.attachment-block {
-    padding: 6px 18px;
+    padding: 6px 12px 6px var(--bc-fs);
     border: 1px solid var(--bc-border-color);
     border-radius: 4px;
     display: flex;
     align-items: center;
+    gap: 8px;
     position: relative;
-    max-width: 480px;
+    max-width: 400px;
 
     &__prefix {
       position: absolute;
-      top: var(--bc-fs);
+      top: 16px;
       left: 10px;
       font-size: var(--bc-fs);
+      height: var(--bc-lh);
     }
 
     &__info {
@@ -31,14 +33,14 @@
       overflow: hidden;
       text-overflow: ellipsis;
       color: var(--bc-color);
-      font-size: calc(var(--bc-fs) + 2px);
       font-style: normal;
       font-weight: 600;
     }
 
     &__size {
-      margin-top: 10px;
+      margin-top: 4px;
       font-size: small;
+      line-height: .8lh;
       color: var(--bc-color-light);
     }
 

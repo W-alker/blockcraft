@@ -23,9 +23,12 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         typeof image?.properties["src"] === 'string' ? image.properties["src"] : '';
 
       if (!imageURL || !FetchUtils.fetchable(imageURL)) return
+
+      const width = image.properties['width'] || image.properties['dataWidth']
+
       try {
         const res = await FetchUtils.fetchImage(imageURL, undefined);
-        if (!res) {
+        if (!res || res.status !== 200) {
           return;
         }
 
@@ -42,7 +45,7 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 
         const url = await fileManager.uploadImg(file)
 
-        walkerContext.openNode(ImageBlockSchema.createSnapshot(url)).closeNode();
+        walkerContext.openNode(ImageBlockSchema.createSnapshot(url, typeof width === 'string' ? Number(width) : (typeof width === 'number' ? width : undefined))).closeNode();
         walkerContext.skipAllChildren();
       } catch (e) {
 
