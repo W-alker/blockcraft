@@ -1,10 +1,10 @@
 @mixin bullet-block {
   div.bullet-block {
-    max-width: 100%;
     display: flex;
     align-items: flex-start;
 
     .bullet-block-prefix {
+      margin-right: .25em;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -30,6 +30,10 @@
         border-radius: 50%;
         background-color: var(--bc-active-color);
       }
+    }
+
+    .edit-container {
+      width: fit-content;
     }
   }
 }

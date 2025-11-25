@@ -14,20 +14,24 @@
     max-width: 100%;
     display: flex;
     align-items: flex-start;
-    gap: 4px;
 
     .ordered-block-prefix {
+      margin-right: .25em;
       cursor: pointer;
       color: var(--bc-active-color);
       border-radius: 4px;
       padding: 0 2px;
       border: none;
       background: none;
+      font-size: 1em;
 
       &:hover {
         background-color: var(--bc-select-background-color);
       }
+    }
 
+    .edit-container {
+      width: fit-content;
     }
   }
 }

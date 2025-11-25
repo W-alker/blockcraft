@@ -13,6 +13,7 @@
     }
 
     .todo-block-button {
+      margin-right: .25em;
       cursor: pointer;
       outline: none;
       border: none;
@@ -25,6 +26,10 @@
       > i {
         pointer-events: none;
       }
+    }
+
+    .edit-container {
+      width: fit-content;
     }
 
   }

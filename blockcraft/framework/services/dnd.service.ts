@@ -1,4 +1,4 @@
-import {fromEvent, Subscription, take} from "rxjs";
+import {BehaviorSubject, filter, fromEvent, Subject, Subscription, take, takeUntil} from "rxjs";
 import {UIEventStateContext} from "../block-std";
 import {closetBlockId} from "../utils";
 import {BlockNodeType, IBlockSnapshot} from "../block-std";
@@ -7,6 +7,7 @@ import {BLOCK_POSITION} from "../doc";
 import {DOC_FILE_SERVICE_TOKEN} from "./file.service";
 import {ClipboardDataType} from "../modules";
 import {BLOCK_CREATOR_SERVICE_TOKEN} from "./block-creator.service";
+import {throttle} from "../../global";
 
 export enum DocDndDataTypes {
   // 已有的block
@@ -39,7 +40,18 @@ export class DocDndService {
   constructor(
     private readonly doc: BlockCraft.Doc
   ) {
+    this.dragEnd$.subscribe(() => {
+      console.log('end')
+    })
   }
+
+  private prevDragPosition: 'before' | 'after' | 'none' = 'none'
+
+  private _prevTargetElement: Node | null = null
+  private prevBlock: BlockCraft.BlockComponent | null = null
+
+  dragStatus$ = new BehaviorSubject(DocDndStatus.end)
+  dragEnd$ = this.dragStatus$.asObservable().pipe(filter(v => v === DocDndStatus.end))
 
   private dragLine?: HTMLElement
 
@@ -83,16 +95,8 @@ export class DocDndService {
     this.dragLine = undefined
   }
 
-  private prevDragPosition: 'before' | 'after' | 'none' = 'none'
-
-  private _prevTargetElement: HTMLElement | null = null
-  private prevBlock: BlockCraft.BlockComponent | null = null
-  private dragPreventListener: Subscription | undefined = undefined
-
-  private dragMoveListener: (() => void) | null = null
-
   // 外部文件 拖拽响应
-  @EventListen('dragEnter', {flavour: 'root'})
+  @EventListen('dragEnter')
   onRootDragEnter(ctx: UIEventStateContext) {
     const evt: DragEvent = ctx.getDefaultEvent()
     evt.preventDefault()
@@ -102,57 +106,45 @@ export class DocDndService {
     return true
   }
 
+  // 手动触发drag
   startDrag(evt: DragEvent, dragDataType: DocDndDataType, dragData: string) {
     if (evt.type !== 'dragstart') return
     const dataTransfer = evt.dataTransfer
     if (dataTransfer) {
       dataTransfer.clearData()
-      dataTransfer.dropEffect = 'none'
+      dataTransfer.dropEffect = 'move'
       dataTransfer.setData(dragDataType, dragData)
     }
 
     this._onDragStart(evt)
-
-    fromEvent<DragEvent>(evt.target!, 'dragend').pipe(take(1))
-      .subscribe(evt => {
-        this._parseDragData(evt)
-        this.clearDrag()
-      })
   }
 
   private _onDragStart(evt: DragEvent) {
+    this.dragStatus$.next(DocDndStatus.start)
     this.createDragLine()
     // 防止释放时会有个返回的动画
-    this.dragPreventListener = fromEvent<DragEvent>(document.body, 'dragover')
+    fromEvent<DragEvent>(document.body, 'dragover').pipe(takeUntil(this.dragEnd$))
       .subscribe((e) => {
         e.preventDefault()
-
-        // const container = this.doc.scrollContainer!
-        // const rect = container.getBoundingClientRect();
-        //
-        // if (e.clientY < rect.top + edgeSize) {
-        //   container.scrollTop -= scrollSpeed;
-        // } else if (e.clientY > rect.bottom - edgeSize) {
-        //   container.scrollTop += scrollSpeed;
-        // }
-        //
-        // if (e.clientX < rect.left + edgeSize) {
-        //   container.scrollBy(-scrollSpeed, 0);
-        // } else if (e.clientX > rect.right - edgeSize) {
-        //   container.scrollBy(scrollSpeed, 0);
-        // }
       })
 
-    this.dragMoveListener = this.doc.event.add('dragMove', this.onDragMove)
+    // dragMove处理
+    this.doc.event.add('dragMove', this.onDragMove)
+    window.addEventListener('dragend', () => {
+      this.clearDrag()
+    }, {once: true})
   }
 
-  private onDragMove = (ctx: UIEventStateContext) => {
+  private onDragMove = throttle((ctx: UIEventStateContext) => {
     const evt: DragEvent = ctx.getDefaultEvent()
     evt.preventDefault()
     ctx.stopPropagation()
 
     const evtTarget = evt.target as Node
     if (evtTarget === this._prevTargetElement) return true
+    this._prevTargetElement = evtTarget
+
+    this.dragStatus$.next(DocDndStatus.moving)
 
     const blockId = closetBlockId(evt.target as Node)
     if (!blockId) return
@@ -168,15 +160,14 @@ export class DocDndService {
     if (this.prevDragPosition === position) return
     this.moveDragLine(this.prevBlock.hostElement, this.prevDragPosition = position)
     return true
-  }
+  }, 16)
 
   private clearDrag = () => {
+    if(this.dragStatus$.value === DocDndStatus.end) return
     this.removeDragLine()
-    this.dragPreventListener?.unsubscribe()
-    this.dragPreventListener = undefined
+    this.dragStatus$.next(DocDndStatus.end)
     this.prevDragPosition = 'none'
-    this.dragMoveListener?.()
-    this.dragMoveListener = null
+    this.doc.event.remove('dragMove', this.onDragMove)
   }
 
   onSortBlock(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
