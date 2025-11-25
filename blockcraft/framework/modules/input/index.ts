@@ -9,12 +9,11 @@ import {
   INLINE_END_BREAK_CLASS,
   INLINE_TEXT_NODE_TAG,
   STR_LINE_BREAK,
-  STR_ZERO_WIDTH_SPACE,
   UIEventStateContext
 } from "../../block-std";
 import {BlockSelection, INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
-import {BlockCraftError, ErrorCode, nextTick, sliceDelta} from "../../../global";
+import {BlockCraftError, ErrorCode,  sliceDelta} from "../../../global";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
