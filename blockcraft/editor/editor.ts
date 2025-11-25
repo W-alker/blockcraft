@@ -384,14 +384,51 @@ export class EditorComponent {
   }
 
   test() {
-    fetch('https://api.microlink.io/?url=https://www.wenxiaobai.com/4a7f14c5-2e81-4d63-8469-9a1c6c5b587b', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      }
-    }).then(res => {
-      return res.json()
-    })
+// --------------------------
+// 1. 创建文档并写入数据
+// --------------------------
+    const doc = new Y.Doc({
+      gc: false
+    });
+    const text = doc.getText('t');
+    text.insert(0, 'Hello');
+
+// 做一个 snapshot
+    const snapshot = Y.snapshot(doc);
+
+// 再写点新内容（干扰用）
+    text.insert(5, ' World');
+
+// --------------------------
+// 2. 保存“完整更新”（模拟你存 DB）
+// --------------------------
+    const fullUpdate = Y.encodeStateAsUpdate(doc);
+
+// --------------------------
+// 3. 恢复：重新创建 ydoc
+// --------------------------
+    const restoredBase = new Y.Doc({
+      gc: false
+    });
+    Y.applyUpdate(restoredBase, fullUpdate);
+
+// 根据 snapshot 截取当时的文档状态
+    const restoredSnapshotDoc = Y.createDocFromSnapshot(restoredBase, snapshot);
+
+// --------------------------
+// 4. 验证内容
+// --------------------------
+    console.log('当前文档完整内容:', doc.getText('t').toString());
+    console.log(
+      '从 snapshot 恢复内容:',
+      restoredSnapshotDoc.getText('t').toString()
+    );
+
+// --------------------------
+// 应有输出：
+// 当前文档完整内容: Hello World
+// 从 snapshot 恢复内容: Hello
+// --------------------------
   }
 
   updateList: Uint8Array[] = []
@@ -444,7 +481,7 @@ export class EditorComponent {
     this.doc.yDoc.on('update', initFn)
 
     this.provider = new WebsocketProvider(
-      'ws://196.168.1.153:1234',
+      'ws://localhost:1234',
       // 'ws://196.168.6.199:1234',
       // 'ws://ws-doc.cses7.com',
       // 'ws://ws-doc-pre.cses7.com',
