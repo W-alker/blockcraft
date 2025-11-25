@@ -131,10 +131,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   protected setInitProps(props: Partial<Model['props']>) {
     this.doc.crud.transact(() => {
       for (const [key, value] of Object.entries(props)) {
-        if (value === props[key]) {
-          continue
-        }
-        if (!value) {
+        if (value == null) {
           this._yProps.delete(key)
           Reflect.deleteProperty(this._native.props, key)
         } else {
