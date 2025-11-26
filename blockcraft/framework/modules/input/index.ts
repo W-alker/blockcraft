@@ -13,7 +13,7 @@ import {
 } from "../../block-std";
 import {BlockSelection, INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
-import {BlockCraftError, ErrorCode,  sliceDelta} from "../../../global";
+import {BlockCraftError, ErrorCode, sliceDelta} from "../../../global";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
@@ -199,13 +199,13 @@ export class InputTransformer {
         text && yText.insert(from.index, text)
 
         if (to) {
-          if (to.type === 'text' && (to.index > 0 || to.length > 0)) {
+          if ((to.type === 'text' && from.length >= to.block.textLength) || to.type === 'selected') {
+            this.doc.crud.deleteBlockById(to.blockId)
+          }
+          else if (to.type === 'text' && (to.index > 0 || to.length > 0)) {
             const deltas: DeltaOperation[] = [...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength)]
             deltas.unshift({retain: yText.length})
             yText.applyDelta(deltas)
-            this.doc.crud.deleteBlockById(to.blockId)
-          }
-          if ((to.type === 'text' && !to.block.textLength) || to.type === 'selected') {
             this.doc.crud.deleteBlockById(to.blockId)
           }
         }
@@ -247,6 +247,10 @@ export class InputTransformer {
       })
     }
     return true
+  }
+
+  deleteByRange(range: INormalizedRange) {
+    return this._replaceText(range)
   }
 
   @BindHotKey({key: 'Backspace', shiftKey: null, shortKey: null, metaKey: false})

@@ -50,7 +50,7 @@ export class BlockCraftDoc {
   readonly inlineManager = new InlineManager(this)
   readonly selection = new SelectionManager(this)
   readonly clipboard = new ClipboardManager(this)
-  private _inputManger = new InputTransformer(this)
+  readonly inputManger = new InputTransformer(this)
 
   readonly onChildrenUpdate$ = this.crud.onChildrenUpdate$
   readonly onPropsUpdate$ = this.crud.onPropsUpdate$

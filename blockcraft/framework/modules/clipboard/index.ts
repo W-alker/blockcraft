@@ -114,30 +114,7 @@ export class ClipboardManager {
   }
 
   deleteContentFromSelection = (selection: BlockCraft.Selection) => {
-    const {from, to} = selection
-
-    this.doc.crud.transact(() => {
-
-      if (to) {
-        const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
-        if (throughPath.length) {
-          throughPath.forEach(through => {
-            this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
-          })
-        }
-      }
-
-      from.type === 'text' ?
-        from.block.deleteText(from.index, from.length) :
-        this.doc.crud.deleteBlockById(from.blockId)
-
-      if (to) {
-        to.type === 'text' ?
-          to.block.deleteText(to.index, to.length) :
-          this.doc.crud.deleteBlockById(to.blockId)
-      }
-
-    })
+    this.doc.inputManger.deleteByRange(selection)
   }
 
   @EventListen('copy')
@@ -154,8 +131,8 @@ export class ClipboardManager {
     context.preventDefault()
 
     this.copyFromSelection(state.selection, state.clipboardData!).then(() => {
+      state.selection.raw.collapse(true)
       this.deleteContentFromSelection(state.selection)
-      state.selection.raw.collapse()
     })
 
   }
