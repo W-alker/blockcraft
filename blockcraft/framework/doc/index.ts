@@ -1,6 +1,6 @@
 import {DocCRUD} from "./crud";
 import {ComponentRef, Injector, ViewContainerRef} from "@angular/core";
-import {BlockCraftError, ErrorCode, getScrollContainer, Logger, performanceTest} from "../../global";
+import {BlockCraftError, ErrorCode, getScrollContainer, Logger, nextTick, performanceTest} from "../../global";
 import {DocVM} from "./vm";
 import {
   IBlockSnapshot,
@@ -166,8 +166,6 @@ export class BlockCraftDoc {
   }
 
   private _initEditor(comp: BlockCraft.IBlockComponents['root']) {
-    // init scroll container
-    this._scrollContainer = getScrollContainer(comp.hostElement)
 
     // exec after init functions
     this.afterInit$.next(this._root = comp)
@@ -187,8 +185,13 @@ export class BlockCraftDoc {
     // init theme
     this.toggleTheme(this.config.theme || 'light')
 
-    // init readonly
-    this.readonlySwitch$.next(this.config.readonly || false)
+    // 这两行代码会造成严重延迟
+    nextTick().then(() => {
+      // init scroll container
+      this._scrollContainer = getScrollContainer(comp.hostElement)
+      // init readonly
+      this.readonlySwitch$.next(this.config.readonly || false)
+    })
 
     // init hotkeys
     this.event.bindHotkey({
