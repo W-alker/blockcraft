@@ -113,6 +113,7 @@ export class InputTransformer {
         normalizedRange.from.length = 1
       }
       this._replaceText(normalizedRange)
+      document.getSelection()?.collapseToStart()
       this.doc.selection.recalculate()
       // from.block.yText.delete(from.index, from.length)
       return;

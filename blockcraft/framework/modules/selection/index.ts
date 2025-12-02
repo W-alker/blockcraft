@@ -227,18 +227,18 @@ export class SelectionManager {
     if (this.doc.isEditable(common)) {
       if (selection.from.type !== 'text') return
       if (selection.from.index === 0 && selection.from.length === common.textLength) {
-        this.doc.selection.selectAllChildren(common.parentBlock!)
+        this.selectAllChildren(common.parentBlock!)
       } else {
-        this.doc.selection.selectAllChildren(common)
+        this.selectAllChildren(common)
       }
       return true
     }
     if (selection.from.blockId === common.id && selection.from.block.flavour !== 'root') {
-      this.doc.selection.selectAllChildren(common.parentBlock!)
+      this.selectAllChildren(common.parentBlock!)
       return true
     }
 
-    this.doc.selection.selectAllChildren(selection.commonParent)
+    this.selectAllChildren(selection.commonParent)
     return true
   }
 
