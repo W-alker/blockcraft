@@ -508,24 +508,21 @@ export class DocCRUD {
   undo() {
     if (!this.isCanUndo() || this._undoRedoing$.value) return
     this._undoRedoing$.next(true)
-    this.yUndoManager.undo()
+    this._redoSelectionStack.push(this.doc.selection.value)
 
+    this.yUndoManager.undo()
     const last = this._undoSelectionStack.pop()
     if (last === undefined) return
-    this._redoSelectionStack.push(last)
-
     this._replaySelectionAfterUndoRedo(last)
   }
 
   redo() {
     if (!this.isCanRedo() || this._undoRedoing$.value) return
     this._undoRedoing$.next(true)
-    this.yUndoManager.redo()
 
+    this.yUndoManager.redo()
     const last = this._redoSelectionStack.pop()
     if (last === undefined) return
-    this._undoSelectionStack.push(last)
-
     this._replaySelectionAfterUndoRedo(last)
   }
 
