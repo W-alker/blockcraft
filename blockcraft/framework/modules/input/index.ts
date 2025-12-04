@@ -38,6 +38,7 @@ export class InputTransformer {
       } else {
         winSel.setPosition(curSel.raw.endContainer, curSel.raw.endOffset)
       }
+      this.doc.selection.recalculate()
       this._replaceText(curSel)
     }
     return true
@@ -86,6 +87,11 @@ export class InputTransformer {
     const normalizedRange = this.doc.selection.normalizeRange(staticRange)!
 
     const {from, to, collapsed} = normalizedRange
+    if(from.type === 'selected' && (!to || to.type === 'selected')) {
+      ev.preventDefault()
+      return
+    }
+
     const text = getPlainTextFromInputEvent(ev)
 
     if (to) {
