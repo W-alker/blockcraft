@@ -1,4 +1,12 @@
 @mixin callout-block() {
+  @at-root #{selector-unify(&, '.dragging')} {
+    .callout-block {
+      > * {
+        pointer-events: unset;
+      }
+    }
+  }
+
   .callout-block {
     position: relative;
     padding: 14px 1em 14px 3em;

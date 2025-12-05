@@ -1,5 +1,5 @@
 import {DocCRUD} from "./crud";
-import {ComponentRef, Injector, ViewContainerRef} from "@angular/core";
+import {ComponentRef, Injector, NgZone, ViewContainerRef} from "@angular/core";
 import {BlockCraftError, ErrorCode, getScrollContainer, Logger, nextTick, performanceTest} from "../../global";
 import {DocVM} from "./vm";
 import {
@@ -29,11 +29,15 @@ interface DocConfig {
   embeds?: [string, EmbedConverter][]
   plugins?: DocPlugin[]
   readonly?: boolean
+  // 如果不传递，会尝试向上遍历获取
+  scrollContainer?: HTMLElement
 }
 
 export const Y_BLOCK_MAP_NAME = 'blocks'
 
 export class BlockCraftDoc {
+
+  readonly ngZone = this.injector.get(NgZone)
 
   private afterInitFnStack = new Set<(root: BlockCraft.IBlockComponents['root']) => void>()
   public readonly afterInit$ = new BehaviorSubject<BlockCraft.IBlockComponents['root'] | null>(null)
@@ -188,9 +192,10 @@ export class BlockCraftDoc {
     // 这两行代码会造成严重延迟
     nextTick().then(() => {
       // init scroll container
-      this._scrollContainer = getScrollContainer(comp.hostElement)
+      this._scrollContainer = this.config.scrollContainer ?? getScrollContainer(comp.hostElement)
       // init readonly
       this.readonlySwitch$.next(this.config.readonly || false)
+      console.log(this.scrollContainer)
     })
 
     // init hotkeys

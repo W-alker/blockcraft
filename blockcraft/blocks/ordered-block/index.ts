@@ -6,6 +6,7 @@ import {
   EditableBlockCreateSnapshotParams
 } from "../../framework";
 import {OrderedBlockComponent} from "./ordered.block";
+export * from './utils'
 
 export interface OrderedBlockModel extends EditableBlockNative {
   flavour: 'ordered',
@@ -27,6 +28,7 @@ export const OrderedBlockSchema: IBlockSchemaOptions<OrderedBlockModel> = {
     svgIcon: 'bc_youxuliebiao-color'
   }
 }
+
 
 declare global {
   namespace BlockCraft {

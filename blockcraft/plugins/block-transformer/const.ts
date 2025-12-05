@@ -45,17 +45,23 @@ export const blockTransforms: IBlockTransformConfig[] = [
     markdown: /^(\d|[a-zA-Z])+\.\s$/,
     hotkey: {key: ['o', 'O'], shortKey: true, shiftKey: true},
     onConvert: (doc, from, matchedString) => {
-      // const prevBlock = doc.prevSibling(from)
-      const props: IBlockProps = {
-        order: parseInt(matchedString, 10) - 1,
-        ...from.props,
-      }
+      const prevBlock = doc.prevSibling(from)
       // props.order = prevBlock?.flavour === 'ordered' ? (prevBlock.props['order'] || 0) + 1 : 1
       // if(!prevBlock || (!prevBlock.props.depth && prevBlock.flavour != 'ordered')) {
       //   props['start'] = 1
       // }
 
-      const o = doc.schemas.createSnapshot('ordered', [sliceDelta(from.textDeltas(), matchedString.length), props])
+      const o = doc.schemas.createSnapshot('ordered', [sliceDelta(from.textDeltas(), matchedString.length), from.props])
+      if (prevBlock?.flavour === 'ordered') {
+        o.props['order'] = prevBlock.props['order'] || 0
+      } else {
+        let parsedNum = parseInt(matchedString, 10)
+        if (isNaN(parsedNum)) {
+          parsedNum = 1
+        }
+        o.props['order'] = parsedNum - 1
+        o.props['start'] = parsedNum
+      }
       doc.crud.replaceWithSnapshots(from.id, [o]).then(() => {
         doc.selection.selectOrSetCursorAtBlock(o.id, true)
       })

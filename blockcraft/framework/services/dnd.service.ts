@@ -40,9 +40,6 @@ export class DocDndService {
   constructor(
     private readonly doc: BlockCraft.Doc
   ) {
-    this.dragEnd$.subscribe(() => {
-      console.log('end')
-    })
   }
 
   private prevDragPosition: 'before' | 'after' | 'none' = 'none'
@@ -61,10 +58,11 @@ export class DocDndService {
     dragLine.style.cssText = `
       z-index: 10;
       position: absolute;
+      top: 0;
+      left: 0;
       height: 2px;
       background-color: #3a53d9;
       pointer-events: none;
-      transition: all 0.08s;
       box-shadow: 0 0 2px var(--bc-active-color-light);
     `
     this.doc.root.hostElement.appendChild(dragLine)
@@ -83,10 +81,14 @@ export class DocDndService {
     }
 
     const rect = calcLineRect(host, position)
-    this.dragLine.style.display = 'block'
-    this.dragLine.style.top = rect.top + 'px'
-    this.dragLine.style.left = rect.left + 'px'
-    this.dragLine.style.width = rect.width + 'px'
+    this.dragLine.style.transform = `translate(${rect.left}px, ${rect.top}px)`;
+    if (!this.dragLine.style.transition) {
+      requestAnimationFrame(() => {
+        if (!this.dragLine) return
+        this.dragLine.style.transition = 'transform .08s'
+      })
+    }
+    this.dragLine.style.width = rect.width + 'px';
   }
 
   private removeDragLine = () => {
@@ -98,9 +100,10 @@ export class DocDndService {
   // 外部文件 拖拽响应
   @EventListen('dragEnter')
   onRootDragEnter(ctx: UIEventStateContext) {
+    if (this.dragStatus$.value !== DocDndStatus.end) return
     const evt: DragEvent = ctx.getDefaultEvent()
-    evt.preventDefault()
     if (!evt.dataTransfer?.types.includes(ClipboardDataType.FILES)) return false
+    evt.preventDefault()
     this._onDragStart(evt)
 
     return true
@@ -109,10 +112,12 @@ export class DocDndService {
   // 手动触发drag
   startDrag(evt: DragEvent, dragDataType: DocDndDataType, dragData: string) {
     if (evt.type !== 'dragstart') return
+    evt.stopPropagation()
     const dataTransfer = evt.dataTransfer
     if (dataTransfer) {
       dataTransfer.clearData()
       dataTransfer.dropEffect = 'move'
+      dataTransfer.effectAllowed = 'move';
       dataTransfer.setData(dragDataType, dragData)
     }
 
@@ -120,50 +125,57 @@ export class DocDndService {
   }
 
   private _onDragStart(evt: DragEvent) {
-    this.dragStatus$.next(DocDndStatus.start)
-    this.createDragLine()
-    // 防止释放时会有个返回的动画
-    fromEvent<DragEvent>(document.body, 'dragover').pipe(takeUntil(this.dragEnd$))
-      .subscribe((e) => {
-        e.preventDefault()
-      })
-
-    // dragMove处理
-    this.doc.event.add('dragMove', this.onDragMove)
-    window.addEventListener('dragend', () => {
+    this.doc.ngZone.runOutsideAngular(() => {
       this.clearDrag()
-    }, {once: true})
+      this.dragStatus$.next(DocDndStatus.start)
+      // this.doc.root.hostElement.classList.add('dragging')
+      this.createDragLine()
+      // 防止释放时会有个返回的动画
+      fromEvent<DragEvent>(document, 'dragover').pipe(takeUntil(this.dragEnd$))
+        .subscribe((e) => {
+          e.preventDefault()
+        })
+
+      // dragMove处理
+      this.doc.event.add('dragMove', this.onDragMove)
+      window.addEventListener('dragend', () => {
+        this.clearDrag()
+      }, {once: true})
+    })
   }
 
   private onDragMove = throttle((ctx: UIEventStateContext) => {
     const evt: DragEvent = ctx.getDefaultEvent()
     evt.preventDefault()
     ctx.stopPropagation()
-
-    const evtTarget = evt.target as Node
-    if (evtTarget === this._prevTargetElement) return true
-    this._prevTargetElement = evtTarget
-
     this.dragStatus$.next(DocDndStatus.moving)
 
-    const blockId = closetBlockId(evt.target as Node)
-    if (!blockId) return
-    if (this.prevBlock?.id !== blockId) {
-      const block = this.doc.getBlockById(blockId)
-      if (block.nodeType === BlockNodeType.root) return
-      const schema = this.doc.schemas.get(block.flavour)!
+    const evtTarget = evt.target as Node
+    if (evtTarget === this.doc.root.hostElement) return
+    let activeBlock = null
+    if (evtTarget === this._prevTargetElement) activeBlock = this.prevBlock
+    else {
+      const blockId = closetBlockId(evt.target as Node)
+      if (!blockId) return
+      activeBlock = this.doc.getBlockById(blockId)
+    }
+    if (!activeBlock || activeBlock.flavour === 'root') return
+    if (this.prevBlock !== activeBlock) {
+      if (activeBlock.nodeType === BlockNodeType.root) return
+      const schema = this.doc.schemas.get(activeBlock.flavour)!
       if (schema.metadata.isLeaf) return;
-      this.prevBlock = block
+      this.prevBlock = activeBlock
     }
 
     const position = calcPosition(evt, this.prevBlock.hostElement)
     if (this.prevDragPosition === position) return
     this.moveDragLine(this.prevBlock.hostElement, this.prevDragPosition = position)
     return true
-  }, 16)
+  }, 32)
 
   private clearDrag = () => {
-    if(this.dragStatus$.value === DocDndStatus.end) return
+    // this.doc.root.hostElement.classList.remove('dragging')
+    if (this.dragStatus$.value === DocDndStatus.end) return
     this.removeDragLine()
     this.dragStatus$.next(DocDndStatus.end)
     this.prevDragPosition = 'none'

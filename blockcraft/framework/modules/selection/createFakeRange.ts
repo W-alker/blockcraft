@@ -45,11 +45,14 @@ export class FakeRange {
   }
 
   private _createBlockFakeSpan(block: BlockCraft.BlockComponent) {
+    if (this.doc.isEditable(block)) {
+      return this._createTextFakeSpan(block, 0, block.textLength)
+    }
     const span = document.createElement('span');
     span.classList.add('blockcraft-cursor')
     span.style.cssText = `
     position: unset;
-    --bgColor: ${this.config.bgColor || 'var(--bc-mark-bg-color)'};
+    --bgColor: ${this.config.bgColor || 'var(--bc-select-background-color)'};
     `
     const child = document.createElement('span');
     child.style.cssText = `
@@ -82,7 +85,7 @@ export class FakeRange {
     const blockHostRect = block.hostElement.getBoundingClientRect()
     const span = document.createElement('span');
     span.classList.add('blockcraft-cursor')
-    // span.style.setProperty('--bgColor', this.config.bgColor || 'var(--bc-select-background-color)')
+    span.style.setProperty('--bgColor', this.config.bgColor || 'var(--bc-select-background-color)')
     const _rRects = range.getClientRects();
 
     const createPart = (rect: DOMRect) => {

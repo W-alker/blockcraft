@@ -25,7 +25,8 @@ const ORDER_MODE_LIST = [
   template: `
     <bc-float-toolbar direction="column" (onItemClick)="onItemClicked($event)">
       @for (item of ORDER_MODE_LIST; track item.value) {
-        <bc-float-toolbar-item [name]="item.name" [active]="item.value === activeMode">{{ item.label }}
+        <bc-float-toolbar-item [name]="item.name" [active]="item.value === activeMode">
+          {{ item.label }}
         </bc-float-toolbar-item>
       }
     </bc-float-toolbar>

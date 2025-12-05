@@ -25,6 +25,16 @@ export class InputTransformer {
   @EventListen('compositionStart')
   private _handleCompositionStart(context: UIEventStateContext) {
     const curSel = this.doc.selection.value!
+    if (curSel.isAllSelected) {
+      context.preventDefault();
+      const p = this.doc.schemas.createSnapshot('paragraph', [])
+      this.doc.crud.insertBlocksBefore(curSel.from.block.id, [p])
+      this.doc.selection.setCursorAtBlock(p.id, true)
+      this.doc.selection.recalculate()
+      this._deleteAllSelected(curSel)
+      return true
+    }
+
     if (curSel.from.type !== 'text') {
       if (!curSel.to || curSel.to.type !== 'text') {
         throw new BlockCraftError(ErrorCode.InlineEditorError, 'compositionStart: last block is not editable')
@@ -120,7 +130,7 @@ export class InputTransformer {
       }
       document.getSelection()?.collapseToStart()
       this._replaceText(normalizedRange)
-      // from.block.yText.delete(from.index, from.length)
+      this.doc.selection.recalculate()
       return;
     }
 

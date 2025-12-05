@@ -114,7 +114,6 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     })
   }, 200)
 
-  @performanceTest('code block render')
   override rerender() {
     if (!isLanguageSupported(PRISM_LANGUAGE_MAP[this.props.lang])) {
       loadPrismLangComponent(this.props.lang).then(() => {

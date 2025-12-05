@@ -6,6 +6,14 @@
     }
   }
 
+  @at-root #{selector-unify(&, '.dragging')} {
+    .table-block, .table-row-block, .table-cell-block {
+      > * {
+        pointer-events: unset;
+      }
+    }
+  }
+
   .table-block {
     $ctrlBarSize: 16px;
     padding-left: $ctrlBarSize;
@@ -25,6 +33,10 @@
 
       table {
         position: relative;
+
+        td {
+          -webkit-user-modify: read-write;
+        }
 
         &::after {
           content: '';
@@ -156,16 +168,16 @@
         margin: 0;
         min-width: 50px;
         border: 1px solid #ddd;
+        overflow-x: hidden;
 
         .table-cell__children-wrapper {
-          padding: 8px;
+          padding: 12px 8px;
           display: flex;
           flex-direction: column;
           align-items: stretch;
           height: 100%;
           user-select: none;
           -webkit-user-select: none;
-          overflow-x: auto;
         }
       }
     }

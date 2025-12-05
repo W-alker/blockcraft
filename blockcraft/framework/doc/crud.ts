@@ -80,7 +80,6 @@ export class DocCRUD {
   constructor(
     private readonly doc: BlockCraft.Doc
   ) {
-    const zone = this.doc.injector.get(NgZone)
     this.doc.afterInit(() => {
 
       this._yUndoManager = new Y.UndoManager(this.yBlockMap, {
@@ -89,7 +88,8 @@ export class DocCRUD {
       })
 
       this.yBlockMap.observeDeep((evt, tr) => {
-        zone.run(async () => {
+        console.log('%cyjs event', 'background: #444;', evt, tr)
+        this.doc.ngZone.run(async () => {
           await this._syncYEvent(evt, tr)
         })
           .then(() => {

@@ -9,7 +9,7 @@ import {
   INLINE_END_BREAK_CLASS, STR_LINE_BREAK, UIEventState,
   UIEventStateContext
 } from "../../block-std";
-import {BlockCraftError, ErrorCode, nextTick, performanceTest} from "../../../global";
+import {BlockCraftError, ErrorCode, IS_MAC, nextTick, performanceTest} from "../../../global";
 import {BehaviorSubject, skip, take, takeUntil} from "rxjs";
 import {closetBlockId, isZeroSpace} from "../../utils";
 import {SelectionSelectedManager} from "./selected-manager";
@@ -230,6 +230,7 @@ export class SelectionManager {
         this.selectAllChildren(common.parentBlock!)
       } else {
         this.selectAllChildren(common)
+        this.doc.messageService.info(`连续按下${IS_MAC ? '⌘' : 'ctrl'} + A以选中全文`)
       }
       return true
     }
@@ -422,7 +423,8 @@ export class SelectionManager {
         range.collapse()
         return {
           value: null,
-          next: () => {}
+          next: () => {
+          }
         }
       }
 
@@ -472,7 +474,7 @@ export class SelectionManager {
       const isGap = !isContainer && !!zeroNode
 
       // if zero text at end
-      if (isGap && zeroNode.parentElement === block.containerElement) {
+      if (isGap && zeroNode?.parentElement === block.containerElement) {
         return 0
       }
 
@@ -547,7 +549,7 @@ export class SelectionManager {
       return {from, to: null, collapsed: from.type === 'text'}
     }
 
-    const endBlock = this._searchClosetBlockByNode(endContainer)
+    const endBlock = startContainer === endContainer ? startBlock : this._searchClosetBlockByNode(endContainer)
 
     if (startBlock === endBlock && from.type === 'selected') {
       return {from, to: null, collapsed: false}

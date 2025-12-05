@@ -283,8 +283,9 @@ export class ClipboardManager {
 
     // plain-text
     if (state.dataTypes.includes(ClipboardDataType.TEXT)) {
-      const text = state.getData(ClipboardDataType.TEXT)
+      let text = state.getData(ClipboardDataType.TEXT)
       if (!text) return false
+      text = text.replace(/\n$/g, '')
       if (isUrl(text) && isInSameBlock) {
         selection.collapsed ?
           selFrom.block.insertText(selFrom.index, text, {'a:link': text})
@@ -296,12 +297,14 @@ export class ClipboardManager {
         return true
       }
 
-      if (isInSameBlock) {
-        selFrom.block.replaceText(selFrom.index, selFrom.length, text)
-      } else {
-        this.deleteContentFromSelection(state.selection)
-        selFrom.block.applyDeltaOperations([{retain: selFrom.index}, {insert: text}])
-      }
+      this.doc.crud.transact(() => {
+        if (isInSameBlock) {
+          selFrom.block.replaceText(selFrom.index, selFrom.length, text)
+        } else {
+          this.deleteContentFromSelection(state.selection)
+          selFrom.block.applyDeltaOperations([{retain: selFrom.index}, {insert: text}])
+        }
+      })
       nextTick().then(() => {
         collapsed ? selFrom.block.setInlineRange(selFrom.index + text.length)
           : selFrom.block.setInlineRange(selFrom.index, text.length)

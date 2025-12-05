@@ -62,47 +62,54 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     event.stopPropagation()
     event.preventDefault()
 
-    this.mouseMove$?.unsubscribe()
-    this.startPoint = {x: event.clientX, y: event.clientY, direction}
+    this.doc.ngZone.runOutsideAngular(() => {
 
-    if (!this.props.width) {
-      const rect = this.imgEle.nativeElement.getBoundingClientRect()
-      this.setInitProps({width: rect.width, height: rect.height})
-    }
-
-    const maxWidth = this.hostElement.clientWidth
-
-    this._showSize = {width: this.props.width!, height: this.props.height!}
-
-    this.mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove', {capture: true})
-      .pipe(throttleTime(60))
-      .subscribe((e) => {
-        const movePx = e.clientX - this.startPoint!.x
-        this.startPoint!.x = e.clientX
-
-        const _resizeWidth = this._showSize.width + (this.startPoint!.direction === 'left' ? -movePx : movePx)
-        if (_resizeWidth > maxWidth) {
-          return
-        }
-
-        const resizeHeight = this._showSize.height + (this.startPoint!.direction === 'left' ? -movePx : movePx)
-
-        this._showSize.width = _resizeWidth
-        this._showSize.height = resizeHeight
-
-        this.imgEle.nativeElement.style.width = `${this._showSize.width}px`
-      })
-
-    fromEvent<MouseEvent>(document, 'mouseup', {capture: true}).pipe(take(1)).subscribe((e) => {
-      this.startPoint = undefined
       this.mouseMove$?.unsubscribe()
-      const rect = this.imgEle.nativeElement.getBoundingClientRect()
-      this._showSize = {width: rect.width, height: rect.height}
-      this.updateProps({
-        width: this._showSize.width,
-        height: this._showSize.height
+      this.startPoint = {x: event.clientX, y: event.clientY, direction}
+
+      if (!this.props.width) {
+        const rect = this.imgEle.nativeElement.getBoundingClientRect()
+        this.setInitProps({width: rect.width, height: rect.height})
+      }
+
+      const maxWidth = this.hostElement.clientWidth
+      const minWidth = 26
+
+      this._showSize = {width: this.props.width!, height: this.props.height!}
+
+      this.mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove', {capture: true})
+        .pipe(throttleTime(26))
+        .subscribe((e) => {
+          const movePx = e.clientX - this.startPoint!.x
+          this.startPoint!.x = e.clientX
+
+          const _resizeWidth = this._showSize.width + (this.startPoint!.direction === 'left' ? -movePx : movePx)
+          if (_resizeWidth > maxWidth || _resizeWidth < minWidth) {
+            return
+          }
+
+          const resizeHeight = this._showSize.height + (this.startPoint!.direction === 'left' ? -movePx : movePx)
+
+          this._showSize.width = _resizeWidth
+          this._showSize.height = resizeHeight
+
+          this.imgEle.nativeElement.style.width = `${this._showSize.width}px`
+        })
+
+      fromEvent<MouseEvent>(document, 'mouseup', {capture: true}).pipe(take(1)).subscribe((e) => {
+        this.startPoint = undefined
+        this.mouseMove$?.unsubscribe()
+        const rect = this.imgEle.nativeElement.getBoundingClientRect()
+        this._showSize = {width: rect.width, height: rect.height}
+        this.updateProps({
+          width: this._showSize.width,
+          height: this._showSize.height
+        })
+        this.changeDetectorRef.markForCheck()
       })
-      this.changeDetectorRef.markForCheck()
+
     })
+
+
   }
 }

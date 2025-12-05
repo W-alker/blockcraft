@@ -52,6 +52,12 @@
     -webkit-user-modify: read-only !important;
   }
 
+  //&.dragging {
+  //  [data-block-id] > * {
+  //    pointer-events: none;
+  //  }
+  //}
+
   svg {
     vertical-align: top;
   }
@@ -344,8 +350,9 @@
       @include text-ellipsis(1);
       @include user-select(none);
       font-size: 10px;
+      line-height: 14px;
       color: #fff;
-      border-radius: 4px;
+      border-radius: 2px;
       padding: 0 2px;
     }
   }

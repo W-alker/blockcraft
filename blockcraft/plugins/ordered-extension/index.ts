@@ -53,25 +53,20 @@ export class OrderedBlockPlugin extends DocPlugin {
           const {inserted, deleted, block} = tr
           if (inserted) {
             const b = inserted.find(v => v.flavour === 'ordered')
-            if (!b) return
-            updateOrderAround(<any>b)
-            return
+            if (b) {
+              updateOrderAround(<any>b)
+            }
           }
 
           if (deleted) {
-            const ids = block.childrenIds
-            if (!ids.length) return;
-
             deleted.forEach(del => {
-              const start = this.doc.getBlockById(ids[Math.max(del.index - 1, 0)])
+              const start = block.getChildrenByIndex(del.index)
               if (start.flavour !== 'ordered') return;
               updateOrderAround(<any>start)
             })
           }
         })
-
       })
-
     })
 
     this._sub.add(
@@ -106,20 +101,20 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
 
   aroundOrderBlocks.push(block)
 
-  if (!block.props.start) {
+  if (!block.props.start) {  // 本身就是起始编号就没必要往上找了
     for (let i = index - 1; i >= 0; i--) {
       const prevBlock = parentChildren[i]
-      if (prevBlock.flavour !== 'ordered') {
-        if (isSimpleTypeEqual(prevBlock.props.depth, block.props.depth) && typeof aroundOrderBlocks[0].props.start !== 'number') {
-          aroundOrderBlocks[0].updateProps({
-            start: 1
-          })
-          break
-        }
-        continue
-      }
-      if ((prevBlock.props.depth || 0) < block.props.depth) {
+      if ((prevBlock.props.depth || 0) < (block.props.depth || 0)) {
         break
+      }
+      if (prevBlock.flavour !== 'ordered') {
+        // if (isSimpleTypeEqual(prevBlock.props.depth, block.props.depth) && typeof aroundOrderBlocks[0].props.start !== 'number') {
+        //   aroundOrderBlocks[0].updateProps({
+        //     start: 1
+        //   })
+        //   break
+        // }
+        continue
       }
       if (isSimpleTypeEqual(prevBlock.props.depth, block.props.depth)) {
         aroundOrderBlocks.unshift(prevBlock)
@@ -132,10 +127,10 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
   for (let j = index + 1; j < parentChildren.length; j++) {
     const nextBlock = parentChildren[j]
     if (nextBlock.flavour !== 'ordered') continue
-    if ((nextBlock.props.depth || 0) < block.props.depth) {
+    if ((nextBlock.props.depth || 0) < (block.props.depth || 0)) {
       break
     }
-    if ((nextBlock.props.depth || 0) === block.props.depth) {
+    if (isSimpleTypeEqual(nextBlock.props.depth, block.props.depth)) {
       if (nextBlock.props.start) break
 
       aroundOrderBlocks.push(nextBlock)
