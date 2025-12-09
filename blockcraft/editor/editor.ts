@@ -186,6 +186,42 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
       }
     }
   }
+
+  ::ng-deep {
+    [data-blockcraft-root="true"] {
+
+      span[data-mention-id] {
+        padding: 0 .15em;
+        color: #4857E2;
+        cursor: pointer;
+        white-space: pre-wrap;
+        word-break: break-all;
+
+        &[data-mention-type="user"] {
+          &::before {
+            content: '@';
+          }
+        }
+
+        &[data-mention-type="doc"] {
+          &::before {
+            content: "\\e6c8";
+            font-family: "bc_icon" !important;
+            font-size: 1em;
+            font-style: normal;
+          }
+        }
+
+        &:hover {
+          background-color: rgba(72, 87, 226, 0.1);
+          border-radius: 4px;
+          text-decoration: underline;
+        }
+      }
+
+    }
+
+  }
   `],
   imports: [
     MatIcon,

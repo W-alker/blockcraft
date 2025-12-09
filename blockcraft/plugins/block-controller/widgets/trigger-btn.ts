@@ -14,7 +14,7 @@ import {BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDi
 import {BlockNodeType} from "../../../framework";
 import {IBlockSchemaOptions} from "../../../framework";
 import {MatIcon} from "@angular/material/icon";
-import {nextTick} from "../../../global";
+import {IS_MAC, nextTick} from "../../../global";
 import {BLOCK_CREATOR_SERVICE_TOKEN} from "../../../framework";
 import {customToolHandler, IContextMenuItem} from "../types";
 import {NzDropDownDirective, NzDropdownMenuComponent} from "ng-zorro-antd/dropdown";
@@ -60,7 +60,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     icon: "bc_icon bc_biaoti_1",
     label: "一级标题",
     type: 'tool',
-    desc: `一级标题(⌘/Ctrl + 1)\nMarkdown: # (空格)`,
+    desc: `一级标题(${IS_MAC ? '⌘' : 'Ctrl'} + 1)\nMarkdown: # (空格)`,
   },
   {
     name: "heading",
@@ -68,7 +68,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     icon: "bc_icon bc_biaoti_2",
     label: "二级标题",
     type: 'tool',
-    desc: `二级标题(⌘/Ctrl + 2)\nMarkdown: ## (空格)`,
+    desc: `二级标题(${IS_MAC ? '⌘' : 'Ctrl'} + 2)\nMarkdown: ## (空格)`,
   },
   {
     name: "heading",
@@ -76,7 +76,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     icon: "bc_icon bc_biaoti_3",
     label: "三级标题",
     type: 'tool',
-    desc: `三级标题(⌘/Ctrl + 3)\nMarkdown: ### (空格)`,
+    desc: `三级标题(${IS_MAC ? '⌘' : 'Ctrl'} + 3)\nMarkdown: ### (空格)`,
   },
   {
     name: "heading",
@@ -84,7 +84,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     icon: "bc_icon bc_biaoti_4",
     label: "四级标题",
     type: 'tool',
-    desc: `四级标题(⌘/Ctrl + 4)\nMarkdown: #### (空格)`,
+    desc: `四级标题(${IS_MAC ? '⌘' : 'Ctrl'} + 4)\nMarkdown: #### (空格)`,
   }
 ]
 

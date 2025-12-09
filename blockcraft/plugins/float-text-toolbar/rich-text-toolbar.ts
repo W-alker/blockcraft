@@ -130,6 +130,11 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     return this.toggleFormatAttr(ctx, 'strike')
   }
 
+  @BindHotKey({key: 'e', shortKey: true})
+  formatCode(ctx: UIEventStateContext) {
+    return this.toggleFormatAttr(ctx, 'code')
+  }
+
   toggleFormatAttr = (ctx: UIEventStateContext, attrName: string) => {
     ctx.preventDefault()
     const value = this.activeCommonAttrs.attrs.has(attrName)

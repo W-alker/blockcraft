@@ -14,7 +14,7 @@ import {
   ColorGroup,
   ColorPickerComponent
 } from "../../../components";
-import {BlockCraftError, ErrorCode, nextTick, SimpleValue} from "../../../global";
+import {BlockCraftError, ErrorCode, IS_MAC, nextTick, SimpleValue} from "../../../global";
 import {NgForOf, NgIf} from "@angular/common";
 import {IInlineNodeAttrs, IEditableBlockProps} from "../../../framework";
 import {Overlay} from "@angular/cdk/overlay";
@@ -23,6 +23,7 @@ import {merge} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {LinkInputPad} from "./link-input-pad";
 import {TextToolbarUtils} from "../utils";
+import {NzTooltipDirective} from "ng-zorro-antd/tooltip";
 
 export interface IToolbarMenuItem {
   label?: string
@@ -32,13 +33,14 @@ export interface IToolbarMenuItem {
   icon?: string
   intro?: string
   divide?: boolean
+  tip?: string
 }
 
 const HEADING_LIST: IToolbarMenuItem[] = [
   {
     name: "heading",
     icon: "bc_wenben",
-    intro: "普通文本",
+    intro: "正文",
     value: null,
   },
   {
@@ -116,43 +118,50 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
     icon: "bc_jiacu",
     intro: "加粗",
     value: true,
-    divide: true
+    divide: true,
+    tip: `加粗：${IS_MAC ? '⌘' : 'Ctrl'}+b`
   },
   {
     name: "strike",
     icon: "bc_shanchuxian",
     intro: "删除线",
     value: true,
+    tip: `删除线：${IS_MAC ? '⌘' : 'Ctrl'}+d`
   },
   {
     name: "underline",
     icon: "bc_xiahuaxian",
     intro: "下划线",
     value: true,
+    tip: `下划线：${IS_MAC ? '⌘' : 'Ctrl'}+u`
   },
   {
     name: "italic",
     icon: "bc_xieti",
     intro: "斜体",
     value: true,
+    tip: `斜体：${IS_MAC ? '⌘' : 'Ctrl'}+i`
   },
   {
     name: "code",
     icon: "bc_daimakuai",
-    intro: "代码",
+    intro: "行内代码",
     value: true,
+    tip: `行内代码：${IS_MAC ? '⌘' : 'Ctrl'}+e`
   },
   {
     name: "sup",
     icon: "bc_shangbiao",
     intro: "上标",
     value: true,
+    tip: `上标`
   },
   {
     name: "sub",
     icon: "bc_xiabiao",
     intro: "下标",
     value: true,
+    tip: `下标`
   }
 ]
 
@@ -161,7 +170,9 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
   template: `
     <bc-float-toolbar (onItemClick)="onItemClicked($event)">
       <bc-float-toolbar-item icon="bc_wenben" [expandable]="true"
-                             [bcOverlayTrigger]="formatFloatBar" [offsetX]="8"/>
+                             [bcOverlayTrigger]="formatFloatBar" [offsetX]="8">
+        {{ activeHeading.intro }}
+      </bc-float-toolbar-item>
 
       <span class="bc-float-toolbar__divider"></span>
 
@@ -174,7 +185,8 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
         }
 
         <bc-float-toolbar-item [name]="item.name" [value]="activeAttrs.has(item.name) ? null : true"
-                               [icon]="item.icon" [title]="item.intro" [active]="activeAttrs.has(item.name)">
+                               [icon]="item.icon" [title]="item.intro" [active]="activeAttrs.has(item.name)"
+                               [nz-tooltip]="item.tip">
         </bc-float-toolbar-item>
       }
 
@@ -189,19 +201,19 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
                              [style.color]="activeColors['color']"
                              [style.background-color]="activeColors['backColor']"/>
 
-<!--      @if (config.withComment && isLinkAble && !activeAttrs.has('comment')) {-->
-<!--        <span class="bc-float-toolbar__divider"></span>-->
-<!--        <bc-float-toolbar-item name="comment" [value]="activeAttrs.get('comment')"-->
-<!--                               icon="bc_pinglun" title="评论" [active]="activeAttrs.has('comment')">-->
-<!--        </bc-float-toolbar-item>-->
-<!--      }-->
+      <!--      @if (config.withComment && isLinkAble && !activeAttrs.has('comment')) {-->
+      <!--        <span class="bc-float-toolbar__divider"></span>-->
+      <!--        <bc-float-toolbar-item name="comment" [value]="activeAttrs.get('comment')"-->
+      <!--                               icon="bc_pinglun" title="评论" [active]="activeAttrs.has('comment')">-->
+      <!--        </bc-float-toolbar-item>-->
+      <!--      }-->
 
     </bc-float-toolbar>
 
     <ng-template #formatFloatBar>
       <bc-float-toolbar [direction]="'column'" (onItemClick)="onItemClicked($event)" [gapAround]="8">
         <bc-float-toolbar-item *ngFor="let item of headingList" [name]="item.name"
-                               [active]="activeProps.heading == item.value"
+                               [active]="activeHeading.value == item.value"
                                [value]="item.value" [icon]="item.icon">{{ item.intro }}
         </bc-float-toolbar-item>
         <span class="bc-float-toolbar__divider"></span>
@@ -246,7 +258,8 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
     BcOverlayTriggerDirective,
     NgForOf,
     ColorPickerComponent,
-    NgIf
+    NgIf,
+    NzTooltipDirective
   ],
   standalone: true,
   host: {
@@ -285,6 +298,8 @@ export class FloatTextToolbarComponent {
   @Input()
   activeFlavour: BlockCraft.BlockFlavour = 'paragraph'
 
+  protected activeHeading = HEADING_LIST[0]
+
   isLinkAble = false
 
   constructor() {
@@ -293,6 +308,7 @@ export class FloatTextToolbarComponent {
   ngOnInit() {
     const selection = this.doc.selection.value!
     this.isLinkAble = selection.isInSameBlock && selection.from.type === 'text'
+    this.activeHeading = HEADING_LIST.find(v => v.value === this.activeProps.heading) || HEADING_LIST[0]
   }
 
   ngOnDestroy() {
@@ -303,6 +319,7 @@ export class FloatTextToolbarComponent {
     switch (evt.name) {
       case 'heading':
         this.setProps({heading: evt.value as any})
+        this.activeHeading = HEADING_LIST.find(v => v.value === this.activeProps.heading) || HEADING_LIST[0]
         break
       case 'align':
         this.setProps({textAlign: evt.value as any})
@@ -353,7 +370,10 @@ export class FloatTextToolbarComponent {
         const id = between[i]
         const block = this.doc.getBlockById(id)
         if (!this.doc.isEditable(block) || block.plainTextOnly || block.flavour === flavour) continue;
-        const newBlock = this.doc.schemas.createSnapshot(flavour, [block.textDeltas(), block.props])
+        const newBlock = this.doc.schemas.createSnapshot(flavour, [block.textDeltas(), {
+          ...block.props,
+          heading: flavour === 'ordered' ? block.props.heading : null
+        }])
         await this.doc.crud.replaceWithSnapshots(id, [newBlock])
       }
     })
