@@ -311,6 +311,7 @@
       }
     }
 
+
     &:hover, &.active {
       table-col-bar, table-row-bar {
         visibility: visible;
@@ -319,55 +320,19 @@
 
     table-col-bar, table-row-bar {
       visibility: hidden;
-      display: block;
-      z-index: 2;
+      display: flex;
 
       &.selecting {
-        .insert-bar {
+        .pt {
           pointer-events: none;
         }
       }
 
-      .insert-bar {
-        align-items: center;
+      .item {
+        position: relative;
 
-        > span {
-          z-index: 3;
-          cursor: pointer;
-          position: relative;
-
-          &::before {
-            display: block;
-            content: '';
-            height: 4px;
-            width: 4px;
-            background: #bbbfc4;
-            border-radius: 50%;
-          }
-
-        }
-      }
-    }
-
-    table-col-bar {
-      height: $ctrlBarSize;
-      margin-left: 1px;
-
-      .insert-bar {
-        display: flex;
-        height: 8px;
-
-        span {
-          width: 14px;
-          transform: translateX(-50%);
-        }
-      }
-
-      .ctrl-bar {
-        display: flex;
-
-        > span {
-          height: $ctrlBarSize / 2;
+        > .bar {
+          display: block;
           background-color: #f1f1f1;
           position: relative;
           cursor: pointer;
@@ -382,48 +347,71 @@
           }
         }
 
+        > .pt {
+          z-index: 3;
+          cursor: pointer;
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+
+          &::before {
+            display: block;
+            content: '';
+            height: 4px;
+            width: 4px;
+            background: #bbbfc4;
+            border-radius: 50%;
+          }
+        }
+
+      }
+
+    }
+
+    table-col-bar {
+      height: $ctrlBarSize / 2;
+      margin-left: 1px;
+      margin-top: $ctrlBarSize / 2;
+
+      .item {
+
+        > .bar {
+          height: $ctrlBarSize / 2;
+        }
+
+        > .pt {
+          position: absolute;
+          top: -8px;
+          right: -8px;
+          content: '';
+          height: 8px;
+          width: 14px;
+        }
       }
 
     }
 
     table-row-bar {
-      display: flex;
       position: absolute;
       top: $ctrlBarSize + 1px;
-      left: 0;
-      height: 100%;
-      width: $ctrlBarSize;
+      left: $ctrlBarSize / 2;
+      width: $ctrlBarSize / 2;
+      flex-direction: column;
 
-      &.active {
-        display: block;
-      }
+      .item {
 
-      .insert-bar {
-        width: 50%;
-
-        > span {
-          display: block;
-          height: 14px;
-        }
-      }
-
-      .ctrl-bar {
-        width: 50%;
-
-        > span {
-          display: block;
+        > .bar {
           width: $ctrlBarSize / 2;
-          background: #F1F1F1;
-          cursor: pointer;
-          position: relative;
+        }
 
-          &:hover, &.hover {
-            background: #E0E0E0;
-          }
-
-          &.active {
-            background: rgba(72, 87, 226, 1);
-          }
+        > .pt {
+          position: absolute;
+          left: -8px;
+          bottom: -7px;
+          content: '';
+          height: 14px;
+          width: 8px;
         }
 
       }

@@ -12,18 +12,18 @@ import {fromEvent, take} from "rxjs";
 @Component({
   selector: "table-row-bar",
   template: `
-    <div class="insert-bar" (mouseover)="onAddRowBtnEnter($event)">
-      <span style="margin-top: -1px;" data-index="0"></span>
-      @for (rowId of rowIds; let idx = $index; track rowId) {
-        <span [style.margin-top.px]="rowHeightsRecord[rowId] - 14" [attr.data-index]="idx + 1"></span>
-      }
+    <div class="item">
+      <span class="pt" (mouseenter)="onAddRowBtnEnter(0)"></span>
     </div>
-    <div class="ctrl-bar" (mousedown)="onMouseDown($event)">
-      @for (rowId of rowIds; let idx = $index; track rowId) {
-        <span [style.height.px]="rowHeightsRecord[rowId]" [attr.data-index]="idx"
+    @for (rowId of rowIds; let idx = $index; track rowId) {
+      <div class="item">
+        <span class="bar" (mousedown)="onMouseDown(idx)"
+              [style.height.px]="rowHeightsRecord[rowId]"
+              [attr.data-index]="idx"
               [class.active]="idx >= _selectedRange[0] && idx <= _selectedRange[1]"></span>
-      }
-    </div>
+        <div class="pt" (mouseenter)="onAddRowBtnEnter(idx + 1)"></div>
+      </div>
+    }
   `,
   imports: [
     NgForOf
@@ -35,7 +35,6 @@ import {fromEvent, take} from "rxjs";
   }
 })
 export class TableRowBarComponent {
-
   private _rowIds: string[] = []
   @Input({required: true})
   set rowIds(v: string[]) {
@@ -76,14 +75,11 @@ export class TableRowBarComponent {
     return parseInt(dataIndex)
   }
 
-  onMouseDown(evt: MouseEvent) {
-    const idx = this._getIdx(evt)
-    if (idx === null) return
-    const target = evt.target as HTMLElement
+  onMouseDown(idx: number) {
     this._selectedRange = [idx, idx]
     this.host.nativeElement.classList.add('selecting')
 
-    const sub = fromEvent<MouseEvent>(target.parentElement!, 'mouseover').subscribe(v => {
+    const sub = fromEvent<MouseEvent>(this.host.nativeElement, 'mouseover').subscribe(v => {
       v.preventDefault()
       v.stopPropagation()
       const _oIdx = this._getIdx(v)
@@ -95,16 +91,14 @@ export class TableRowBarComponent {
       this.changeDetectionRef.markForCheck()
     })
 
-    fromEvent<MouseEvent>(document.documentElement, 'pointerup', {capture: true}).pipe(take(1)).subscribe(v => {
+    fromEvent<MouseEvent>(document.documentElement, 'mouseup', {capture: true}).pipe(take(1)).subscribe(v => {
       sub.unsubscribe()
       this.selectedRangeChange.emit(this._selectedRange)
       this.host.nativeElement.classList.remove('selecting')
     })
   }
 
-  onAddRowBtnEnter($event: MouseEvent) {
-    const idx = this._getIdx($event)
-    if (idx === null) return
+  onAddRowBtnEnter(idx: number) {
     this.onAdderActive.emit(idx)
   }
 }

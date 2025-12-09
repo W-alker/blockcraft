@@ -12,20 +12,17 @@ import {fromEvent, take} from "rxjs";
 @Component({
   selector: 'table-col-bar',
   template: `
-    <div class="insert-bar" (mouseover)="onAddColBtnEnter($event)">
-      <span style="margin-left: 6px" data-index="0"></span>
-      @for (w of colWidths; track w; let idx = $index) {
-        <span [style.margin-left.px]="w - 14" [attr.data-index]="idx + 1">
-          </span>
-      }
+    <div class="item">
+      <span class="pt" (mouseenter)="onAddColBtnEnter(0)"></span>
     </div>
-    <div class="ctrl-bar" (mousedown)="onMouseDown($event)">
-      @for (w of colWidths; track w; let idx = $index) {
-        <span [style.width.px]="w"
-              [attr.data-index]="idx" [class.active]="idx >= _selectedRange[0] && idx <= _selectedRange[1]">
+    @for (w of colWidths; track w; let idx = $index) {
+      <div class="item">
+          <span class="bar" (mousedown)="onMouseDown(idx)" [style.width.px]="w"
+                [attr.data-index]="idx" [class.active]="idx >= _selectedRange[0] && idx <= _selectedRange[1]">
           </span>
-      }
-    </div>
+        <span class="pt" (mouseenter)="onAddColBtnEnter(idx + 1)"></span>
+      </div>
+    }
   `,
   standalone: true,
   imports: [NgForOf],
@@ -73,14 +70,13 @@ export class TableColBarComponent {
     return parseInt(dataIndex)
   }
 
-  onMouseDown(evt: MouseEvent) {
-    const idx = this._getIdx(evt)
-    if (idx == null) return
-    const target = evt.target as HTMLElement
+  onMouseDown(idx: number) {
+    // const idx = this._getIdx(evt)
+    // if (idx == null) return
     this._selectedRange = [idx, idx]
     this.host.nativeElement.classList.add('selecting')
 
-    const sub = fromEvent<MouseEvent>(target.parentElement!, 'mouseover').subscribe(v => {
+    const sub = fromEvent<MouseEvent>(this.host.nativeElement, 'mouseover').subscribe(v => {
       v.preventDefault()
       v.stopPropagation()
       const _oIdx = this._getIdx(v)
@@ -99,9 +95,9 @@ export class TableColBarComponent {
     })
   }
 
-  onAddColBtnEnter(evt: MouseEvent) {
-    const idx = this._getIdx(evt)
-    if (idx == null) return
+  onAddColBtnEnter(idx: number) {
+    // const idx = this._getIdx(evt)
+    // if (idx == null) return
     this.onAdderActive.emit(idx)
   }
 }

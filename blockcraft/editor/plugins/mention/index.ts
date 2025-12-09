@@ -1,7 +1,7 @@
 import {
   DocPlugin,
   EventListen,
-  generateId,
+  generateId, getPositionWithOffset,
   IBlockTextRange,
   ORIGIN_SKIP_SYNC,
   UIEventStateContext
@@ -138,6 +138,8 @@ export class MentionPlugin extends DocPlugin {
     const {componentRef: dialog} = this.doc.overlayService.createConnectedOverlay<MentionDialog>({
       target,
       component: MentionDialog,
+      positions: [getPositionWithOffset('bottom-left'), getPositionWithOffset('top-left'),
+        getPositionWithOffset('bottom-right'), getPositionWithOffset('top-right')]
     }, this._closeDialog$, () => {
       tempBindings.forEach(v => v())
       if (!textNode || !textNode.isConnected) return

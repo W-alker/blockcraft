@@ -15,12 +15,13 @@ import {debounce, nextTick, throttle} from "../../global";
 import {addTableCol, addTableRow, deleteTableCols, deleteTableRows} from "./callback";
 import {OverlayRef} from "@angular/cdk/overlay";
 import {TableCellsSelection} from "./types";
+import {NzTooltipDirective} from "ng-zorro-antd/tooltip";
 
 @Component({
   selector: 'div.table-block',
   templateUrl: './table.block.html',
   standalone: true,
-  imports: [NgForOf, TableColBarComponent, TableRowBarComponent, AsyncPipe, NgIf],
+  imports: [NgForOf, TableColBarComponent, TableRowBarComponent, AsyncPipe, NgIf, NzTooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class.row-head]': 'props.rowHead',
