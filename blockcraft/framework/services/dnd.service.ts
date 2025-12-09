@@ -32,8 +32,7 @@ const calcPosition = (e: DragEvent, blockWrap: HTMLElement) => {
   return 'before'
 }
 
-const edgeSize = 40;
-const scrollSpeed = 6;
+const scrollSpeed = 32;
 
 @DocEventRegister
 export class DocDndService {
@@ -50,7 +49,8 @@ export class DocDndService {
   dragStatus$ = new BehaviorSubject(DocDndStatus.end)
   dragEnd$ = this.dragStatus$.asObservable().pipe(filter(v => v === DocDndStatus.end))
 
-  private dragLine?: HTMLElement
+  private dragLine: HTMLElement | null = null
+  private virtualScroller: HTMLElement[] | null = null
 
   private createDragLine = () => {
     if (this.dragLine) return
@@ -94,7 +94,7 @@ export class DocDndService {
   private removeDragLine = () => {
     if (!this.dragLine) return
     this.dragLine.remove()
-    this.dragLine = undefined
+    this.dragLine = null
   }
 
   // 外部文件 拖拽响应
@@ -102,7 +102,7 @@ export class DocDndService {
   onRootDragEnter(ctx: UIEventStateContext) {
     if (this.dragStatus$.value !== DocDndStatus.end) return
     const evt: DragEvent = ctx.getDefaultEvent()
-    if (!evt.dataTransfer?.types.includes(ClipboardDataType.FILES)) return false
+    if (!evt.dataTransfer?.files?.length) return false
     evt.preventDefault()
     this._onDragStart(evt)
 
@@ -120,6 +120,39 @@ export class DocDndService {
       dataTransfer.effectAllowed = 'move';
       dataTransfer.setData(dragDataType, dragData)
     }
+
+    // requestAnimationFrame(() => {
+    //   const d1 = document.createElement('div')
+    //   d1.style.cssText = `
+    //   position: absolute;
+    //   top: 0;
+    //   left: 0;
+    //   width: 100%;
+    //   height: 100px;
+    //   z-index: 1060;
+    // `
+    //   const d2 = document.createElement('div')
+    //   d2.style.cssText = `
+    //   position: absolute;
+    //   left: 0;
+    //   bottom: 0;
+    //   width: 100%;
+    //   height: 100px;
+    //   z-index: 1060;
+    // `
+    //   d1.addEventListener('dragover', throttle((e) => {
+    //     e.preventDefault()
+    //     e.stopPropagation()
+    //     this.doc.scrollContainer!.scrollTop -= scrollSpeed
+    //   }, 32))
+    //   d2.addEventListener('dragover', throttle((e) => {
+    //     e.preventDefault()
+    //     e.stopPropagation()
+    //     this.doc.scrollContainer!.scrollTop += scrollSpeed
+    //   }, 32))
+    //   this.doc.scrollContainer!.append(d1, d2);
+    //   this.virtualScroller = [d1, d2]
+    // })
 
     this._onDragStart(evt)
   }
@@ -176,6 +209,8 @@ export class DocDndService {
   private clearDrag = () => {
     // this.doc.root.hostElement.classList.remove('dragging')
     if (this.dragStatus$.value === DocDndStatus.end) return
+    // this.virtualScroller?.forEach(e => e.remove())
+    // this.virtualScroller = null
     this.removeDragLine()
     this.dragStatus$.next(DocDndStatus.end)
     this.prevDragPosition = 'none'

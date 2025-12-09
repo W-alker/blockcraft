@@ -195,7 +195,6 @@ export class BlockCraftDoc {
       this._scrollContainer = this.config.scrollContainer ?? getScrollContainer(comp.hostElement)
       // init readonly
       this.readonlySwitch$.next(this.config.readonly || false)
-      console.log(this.scrollContainer)
     })
 
     // init hotkeys

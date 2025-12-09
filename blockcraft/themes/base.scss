@@ -173,6 +173,13 @@
     &[data-heading="6"] {
       font-size: var(--bc-fs-lg);
     }
+
+    &.empty {
+      .edit-container::before {
+        content: attr(data-placeholder);
+        color: var(--bc-color-light);
+      }
+    }
   }
 
   .edit-container {

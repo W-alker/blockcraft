@@ -79,8 +79,12 @@ export class BlockControllerPlugin extends DocPlugin {
       .subscribe(evt => {
         if (!this._activeBlock) return
 
+        const hostElement = this._activeBlock.hostElement
+
         this._cpr.instance.menuDisabled = true
         this._cpr.instance.cdr.detectChanges()
+        hostElement.style.opacity = '0.5'
+        hostElement.style.pointerEvents = 'none'
 
         evt.dataTransfer?.setDragImage(this._activeBlock.hostElement, 0, 0);
 
@@ -88,6 +92,8 @@ export class BlockControllerPlugin extends DocPlugin {
 
         fromEvent(this._cpr.location.nativeElement, 'dragend').pipe(take(1)).subscribe(() => {
           this._cpr.instance.menuDisabled = false
+          hostElement.style.opacity = ''
+          hostElement.style.pointerEvents = ''
         })
       })
   }

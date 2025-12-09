@@ -509,6 +509,18 @@ export class InputTransformer {
       return true
     }
 
+    // 在前面换行
+    if(from.index === 0) {
+      const p = this.doc.schemas.createSnapshot('paragraph', [[], {
+        ...from.block.props,
+        heading: null
+      }])
+      this.doc.crud.insertBlocksBefore(from.block, [p]).then(() => {
+        this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+      })
+      return true
+    }
+
     const deltas = sliceDelta(from.block.textDeltas(), from.index)
     const p = this.doc.schemas.createSnapshot(
       (from.block.textLength && !from.block.heading) ? from.block.flavour : 'paragraph', [deltas, {

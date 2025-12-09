@@ -88,7 +88,6 @@ export class DocCRUD {
       })
 
       this.yBlockMap.observeDeep((evt, tr) => {
-        console.log('%cyjs event', 'background: #444;', evt, tr)
         this.doc.ngZone.run(async () => {
           await this._syncYEvent(evt, tr)
         })

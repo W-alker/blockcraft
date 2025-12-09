@@ -8,12 +8,11 @@ import {
   UIEventStateContext
 } from "../../block-std";
 import {
+  compareSimpleValue,
   deltaStrLength,
   deltaToString,
-  isSimpleTypeEqual,
   isUrl,
   nextTick, SimpleBasicType,
-  SimpleValue,
   sliceDelta
 } from "../../../global";
 import {ClipboardDataType} from "./types";
@@ -212,7 +211,7 @@ export class ClipboardManager {
         // 是否需要和本段合并
         if (snapshots[0].nodeType === BlockNodeType.editable
           && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
-          && isSimpleTypeEqual(snapshots[0].props['heading'] as SimpleBasicType, editableBlock.props['heading'])
+          && compareSimpleValue(snapshots[0].props['heading'] as SimpleBasicType, editableBlock.props['heading']) <= 0
         ) {
           insertLength = deltaStrLength(snapshots[0].children)
           ops.push(...snapshots[0].children)

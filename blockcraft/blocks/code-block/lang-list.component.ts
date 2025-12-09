@@ -9,11 +9,12 @@ import {
 } from "@angular/core";
 import {CodeBlockLanguage, LANGUAGE_LIST, loadPrismLangComponent} from "./const";
 import {NgForOf} from "@angular/common";
+import {debounce} from "../../global";
 
 @Component({
   selector: 'lang-list',
   template: `
-    <input (input)="onSearch($event)" #input (keydown)="onKeydown($event)"/>
+    <input (compositionstart)="isComposing = true" (compositionend)="isComposing = false" (input)="onSearch($event)" #input (keydown)="onKeydown($event)"/>
     <div class="lang-list" (mouseover)="onMouseEnter($event)" (mousedown)="onMouseDown($event)" #langList>
       @for (item of languageList; track item; let index = $index) {
         <div class="lang-list_item" [class.active]="item === activeLang"
@@ -85,6 +86,8 @@ export class LangListComponent {
 
   protected hoverIdx = -1;
 
+  protected isComposing = false
+
   constructor(
     private cdr: ChangeDetectorRef,
     public readonly destroyRef: DestroyRef
@@ -124,15 +127,17 @@ export class LangListComponent {
     this.langList.nativeElement.children[this.hoverIdx]?.scrollIntoView({behavior: 'smooth', block: 'nearest'})
   }
 
-  onSearch(e: Event) {
+  onSearch = debounce((e: Event) => {
+    if(this.isComposing) return
     const v = (e.target as HTMLInputElement).value;
     if (!v) this.languageList = LANGUAGE_LIST;
     else this.languageList = LANGUAGE_LIST.filter(item => item.toLowerCase().includes(v.toLowerCase()));
     this.hoverIdx = [0, this.hoverIdx, this.languageList.length].sort((a, b) => a - b)[1]
     this.cdr.markForCheck();
-  }
+  }, 300)
 
   onKeydown($event: KeyboardEvent) {
+    if(this.isComposing) return;
     switch ($event.key) {
       case 'Escape':
         $event.preventDefault()

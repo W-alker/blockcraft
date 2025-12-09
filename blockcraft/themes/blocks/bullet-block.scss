@@ -12,21 +12,21 @@
       height: 1lh;
 
       .square {
-        width: calc(var(--bc-fs) * 0.5);
-        height: calc(var(--bc-fs) * 0.5);
+        width: calc(var(--bc-fs) * 0.4);
+        height: calc(var(--bc-fs) * 0.4);
         background-color: var(--bc-active-color);
       }
 
       .circle {
-        width: calc(var(--bc-fs) * 0.5);
-        height: calc(var(--bc-fs) * 0.5);
+        width: calc(var(--bc-fs) * 0.4);
+        height: calc(var(--bc-fs) * 0.4);
         border-radius: 50%;
         border: 1px solid var(--bc-active-color);
       }
 
       .point {
-        width: calc(var(--bc-fs) * 0.5);
-        height:calc(var(--bc-fs) * 0.5);
+        width: calc(var(--bc-fs) * 0.4);
+        height:calc(var(--bc-fs) * 0.4);
         border-radius: 50%;
         background-color: var(--bc-active-color);
       }

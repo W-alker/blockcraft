@@ -95,8 +95,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     <div class="drag-handle"
          [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
          [disabled]="menuDisabled" (open)="setValidBlockList()" [delay]="500"
-         [withBackdrop]="false" activeClass="active"
-         [draggable]="draggable">
+         [withBackdrop]="false" activeClass="active" [draggable]="draggable">
       <div class="btn">
         <ng-container *ngTemplateOutlet="icon; context: {$implicit: activeBlockIcon}"></ng-container>
         <i [class]="['bf_icon', isEmpty ? 'bf_tianjia-2' : 'bf_yidong' ]"></i>
