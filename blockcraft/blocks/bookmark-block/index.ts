@@ -29,7 +29,7 @@ export const BookmarkBlockSchema: IBlockSchemaOptions<BookmarkBlockModel> = {
   },
   metadata: {
     version: 1,
-    label: "书签",
+    label: "网页卡片",
     svgIcon: "bc_shuqian",
     icon: "bc_icon bc_shuqian"
   }

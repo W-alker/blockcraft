@@ -26,6 +26,12 @@
         -webkit-user-select: none;
       }
 
+      .table-cell-block {
+        > * {
+          pointer-events: none;
+        }
+      }
+
     }
 
     &.selected {

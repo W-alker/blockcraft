@@ -511,7 +511,7 @@ export class InputTransformer {
 
     // 在前面换行
     if(from.index === 0) {
-      const p = this.doc.schemas.createSnapshot('paragraph', [[], {
+      const p = this.doc.schemas.createSnapshot(from.block.flavour, [[], {
         ...from.block.props,
         heading: null
       }])

@@ -75,34 +75,45 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     connectElement: HTMLElement,
     connectPositions: ConnectedPosition[]
   } {
-    const isBackward = selection.getDirection() === 'backward'
-    const relativeBlock = isBackward ? selection.lastBlock : selection.firstBlock
+    // 光标是向前还是向后
+    const isForward = selection.getDirection() === 'forward';
+    const relativeBlock = isForward ? selection.lastBlock : selection.firstBlock;
 
-    const rect = selection.raw.getBoundingClientRect()
-    const blockRect = relativeBlock.hostElement.getBoundingClientRect()
-    let offsetX = rect.left - blockRect.left
+    let rect: DOMRect
+    if(relativeBlock.nodeType !== 'editable') {
+      rect = relativeBlock.hostElement.getBoundingClientRect();
+    } else {
+      const selRect = selection.raw.getClientRects();
+      rect = selection.isInSameBlock ? selRect[0] : (isForward ? selRect[selRect.length - 1] : selRect[0]);
+    }
+    const blockRect = relativeBlock.hostElement.getBoundingClientRect();
 
-    if (relativeBlock.nodeType !== BlockNodeType.editable) {
-      return {
-        connectElement: relativeBlock.hostElement,
-        connectPositions: isBackward
-          ? [{...POSITION_MAP['top-left'], offsetX},
-            {...POSITION_MAP['top-right'], offsetX}]
-          : [{...POSITION_MAP['bottom-left'], offsetY: 48,},
-            {...POSITION_MAP['bottom-right'], offsetY: 48,}]
-      }
+    let relativeXPos = 'left';
+    let offsetX = 0;
+    if (rect.left + 420 > blockRect.right) {
+      relativeXPos = 'right';
+      offsetX = rect.right - blockRect.right - 420;
+    } else {
+      offsetX = rect.left - blockRect.left;
     }
 
-    const offsetY = isBackward ? rect.top - blockRect.top : rect.bottom - blockRect.bottom
+    let relativeYPos = 'top';
+    let offsetY = 0;
+    if ((!selection.isInSameBlock && isForward)
+      ? rect.bottom + 48 < this.doc.scrollContainer!.getBoundingClientRect().bottom
+      : rect.top - 48 < this.doc.scrollContainer!.getBoundingClientRect().top) {
+      relativeYPos = 'bottom';
+      offsetY = 8 + rect.bottom - blockRect.bottom;
+    } else {
+      offsetY = -48 + rect.top - blockRect.top;
+    }
 
     return {
       connectElement: relativeBlock.hostElement,
-      connectPositions: isBackward ?
-        [{...POSITION_MAP['top-left'], offsetY: -48 + offsetY, offsetX},
-          {...POSITION_MAP['top-right'], offsetY: -48 + offsetY, offsetX}] :
-        [{...POSITION_MAP['bottom-left'], offsetY: offsetY + 8, offsetX},
-          {...POSITION_MAP['bottom-right'], offsetY: offsetY + 8, offsetX}]
-    }
+      connectPositions:
+      // @ts-ignore
+        [{ ...POSITION_MAP[relativeYPos + '-' + relativeXPos], offsetX: offsetX, offsetY: offsetY }]
+    };
   }
 
   closeToolbar() {

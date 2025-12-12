@@ -86,7 +86,6 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   override detach() {
     super.detach();
     this._unObserver()
-    this.mouseMove$?.unsubscribe()
   }
 
   override reattach() {
@@ -108,7 +107,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   private _debounce_highlight = debounce((e: Y.YTextEvent) => {
-    if(this.doc.event.status.isComposing) return
+    if (this.doc.event.status.isComposing) return
     nextTick().then(() => {
       this.inlineManager.diffHighLight(e.delta as DeltaOperation[])
     })
@@ -185,32 +184,33 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     })
   }
 
-  private startPoint?: { y: number }
-  private mouseMove$?: Subscription
-
   onResizeMouseDown(evt: MouseEvent) {
     evt.stopPropagation()
     evt.preventDefault()
+    let startY = evt.clientY;
+    let startHeight = this.props.h ?? this.containerElement.getBoundingClientRect().height
+    let newHeight = startHeight
 
-    let h = this.props.h ?? this.containerElement.getBoundingClientRect().height
+    this.doc.ngZone.runOutsideAngular(() => {
+      const mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove')
+        .pipe(throttleTime(32))
+        .subscribe((e) => {
+          let dy = 0
+          dy = e.clientY - startY
+          // 如果是向上滚动，更快点
+          if (dy < 0) {
+            dy *= 2
+          }
 
-    this.mouseMove$?.unsubscribe()
-    this.startPoint = {y: evt.pageY}
+          newHeight = Math.max(50, startHeight + dy);
+          this.containerElement.parentElement!.style.height = newHeight + 'px';
+        })
 
-    this.mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove', {capture: true})
-      .pipe(throttleTime(30))
-      .subscribe((e) => {
-        const currentY = e.pageY
-        const movePx = currentY - this.startPoint!.y
-        this.startPoint!.y = currentY
-        h = Math.max(h + movePx, 60)
-        this.containerElement.parentElement!.style.height = `${h}px`
+      fromEvent<MouseEvent>(document, 'mouseup', {capture: true}).pipe(take(1)).subscribe((e) => {
+        mouseMove$.unsubscribe()
+        this.updateProps({h: newHeight})
       })
 
-    fromEvent<MouseEvent>(document, 'mouseup', {capture: true}).pipe(take(1)).subscribe((e) => {
-      this.startPoint = undefined
-      this.mouseMove$?.unsubscribe()
-      this.updateProps({h})
     })
   }
 

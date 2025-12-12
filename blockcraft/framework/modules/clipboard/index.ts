@@ -1,4 +1,5 @@
 import {
+  BindHotKey,
   BlockNodeType,
   DeltaInsert,
   DeltaOperation,
@@ -57,11 +58,11 @@ export class ClipboardManager {
       let snapshot: IBlockSnapshot
       if (from.type === 'text') {
         const sliceDeltas = sliceDelta(from.block.textDeltas(), from.index, from.length + from.index)
-        snapshot = await this._wrapDeltaByRoot(sliceDeltas)
+        snapshot = this._wrapDeltaByRoot(sliceDeltas)
         clipboardData.setData(ClipboardDataType.TEXT, deltaToString(sliceDeltas))
       } else {
         clipboardData.setData(ClipboardDataType.TEXT, from.block.textContent())
-        snapshot = await this._wrapSnapshotsByRoot([from.block.toSnapshot()])
+        snapshot = this._wrapSnapshotsByRoot([from.block.toSnapshot()])
       }
 
       for (const adapter1 of this.adapter.supportedAdapters) {
@@ -297,12 +298,17 @@ export class ClipboardManager {
       }
 
       this.doc.crud.transact(() => {
+        // const text_lines = text.split('\n')
         if (isInSameBlock) {
           selFrom.block.replaceText(selFrom.index, selFrom.length, text)
         } else {
           this.deleteContentFromSelection(state.selection)
           selFrom.block.applyDeltaOperations([{retain: selFrom.index}, {insert: text}])
         }
+        // if(text_lines.length > 1) {
+        //   const snapshots = text_lines.slice(1).map(line => this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {}]))
+        //   this.doc.crud.insertBlocksAfter(selFrom.block, snapshots)
+        // }
       })
       nextTick().then(() => {
         collapsed ? selFrom.block.setInlineRange(selFrom.index + text.length)

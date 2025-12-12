@@ -102,8 +102,8 @@ export class DocDndService {
   onRootDragEnter(ctx: UIEventStateContext) {
     if (this.dragStatus$.value !== DocDndStatus.end) return
     const evt: DragEvent = ctx.getDefaultEvent()
-    if (!evt.dataTransfer?.files?.length) return false
-    evt.preventDefault()
+    if (!evt.dataTransfer?.types.includes(DocDndDataTypes.file)) return false
+    // evt.preventDefault()
     this._onDragStart(evt)
 
     return true

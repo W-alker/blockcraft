@@ -517,8 +517,8 @@ export class EditorComponent {
     this.doc.yDoc.on('update', initFn)
 
     this.provider = new WebsocketProvider(
-      'ws://localhost:1234',
-      // 'ws://196.168.6.199:1234',
+      // 'ws://localhost:1234',
+      'ws://196.168.1.153:1234',
       // 'ws://ws-doc.cses7.com',
       // 'ws://ws-doc-pre.cses7.com',
       // 'ws://193.168.2.100:30204/collaborate',
