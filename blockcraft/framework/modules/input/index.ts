@@ -235,17 +235,16 @@ export class InputTransformer {
     })
   }
 
-  private _deleteAllSelected(selection: BlockSelection) {
-    const {from, to, isAllSelected} = selection
-    if (!isAllSelected) return
-    const prevBlock = this.doc.prevSibling(selection.firstBlock)
+  private _deleteAllSelected(range: INormalizedRange) {
+    const {from, to} = range
+    const prevBlock = this.doc.prevSibling(range.from.block)
     if (prevBlock) {
       this.doc.selection.setCursorAtBlock(prevBlock, false)
     } else {
-      const nextBlock = this.doc.nextSibling(selection.lastBlock)
+      const nextBlock = this.doc.nextSibling(range.to?.block || range.from.block)
       if (nextBlock) this.doc.selection.setCursorAtBlock(nextBlock, true)
       else {
-        const parent = selection.firstBlock.parentBlock
+        const parent = range.from.block.parentBlock
         if (parent) {
           this.doc.selection.setCursorAtBlock(parent, true)
         }
@@ -266,6 +265,9 @@ export class InputTransformer {
   }
 
   deleteByRange(range: INormalizedRange) {
+    if(range.from.type === 'selected' && (!range.to || range.to.type === 'selected')) {
+      return this._deleteAllSelected(range)
+    }
     return this._replaceText(range)
   }
 

@@ -16,8 +16,6 @@ export class DocVM {
 
   private _vcr = this.doc.injector.get(ViewContainerRef)
   private store: Map<string, BlockCraft.BlockComponentRef> = new Map()
-  private _gcTags = new Set<string>()
-
 
   constructor(
     private readonly doc: BlockCraft.Doc
@@ -52,9 +50,6 @@ export class DocVM {
       cpr.instance.getChildrenBlocks().forEach(b => {
         this._restoreCachedComp(b.id)
       })
-    }
-    if (this._gcTags.has(id)) {
-      this._gcTags.delete(id)
     }
     return cpr
   }
@@ -192,19 +187,17 @@ export class DocVM {
     }
   }
 
-  detach(ids: string[]) {
+  delete(ids: string[]) {
     ids.forEach(id => {
-      this._gcTags.add(id)
-      this.get(id)?.instance.detach()
+      const cpr = this.store.get(id)
+      cpr && cpr.destroy()
+      this.store.delete(id)
     })
   }
 
-  async gc() {
-    this._gcTags.forEach(i => {
-      const cpr = this.store.get(i)
-      cpr && cpr.destroy()
-      this.store.delete(i)
-      this._gcTags.delete(i)
+  clear() {
+    this.store.forEach((cpr, id) => {
+      cpr?.destroy()
     })
   }
 

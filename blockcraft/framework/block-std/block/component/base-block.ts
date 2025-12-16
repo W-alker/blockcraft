@@ -237,7 +237,14 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     if (this.nodeType === BlockNodeType.editable) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
     }
-    return this.doc.getBlockById(this.childrenIds[index])
+    return this.doc.getBlockById(this.getChildrenIdByIndex(index))
+  }
+
+  getChildrenIdByIndex(index: number) {
+    if (this.nodeType === BlockNodeType.editable) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
+    }
+    return (this.yBlock.get('children') as Y.Array<string>).get(index)
   }
 
   // getFlatBlocks(): BlockCraft.BlockComponent[] {

@@ -45,7 +45,7 @@ export class OrderedBlockPlugin extends DocPlugin {
 
   init() {
     this._sub = this.doc.onChildrenUpdate$.subscribe(event => {
-      if (event.isUndoRedo) return;
+      if (event.isUndoRedo || !event.local) return;
 
       nextTick().then(() => {
 
@@ -60,9 +60,11 @@ export class OrderedBlockPlugin extends DocPlugin {
 
           if (deleted) {
             deleted.forEach(del => {
-              const start = block.getChildrenByIndex(del.index)
-              if (start.flavour !== 'ordered') return;
-              updateOrderAround(<any>start)
+              nextTick().then(() => {
+                const start = block.getChildrenByIndex(Math.min(del.index, block.childrenLength - 1))
+                if (start.flavour !== 'ordered') return;
+                updateOrderAround(<any>start)
+              })
             })
           }
         })

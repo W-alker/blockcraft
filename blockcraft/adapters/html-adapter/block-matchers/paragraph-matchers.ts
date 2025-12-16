@@ -43,7 +43,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 
       const currentNode = walkerContext.currentNode()
 
-      if (currentNode?.nodeType === 'editable' && HastUtils.isParagraphLike(o.node)) {
+      if (currentNode?.nodeType === 'editable') {
         // @ts-ignore
         currentNode?.children.push(...deltaConverter.astToDelta(o.node))
         walkerContext.skipAllChildren()

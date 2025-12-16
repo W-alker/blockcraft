@@ -20,7 +20,8 @@ export const ORIGIN_NO_RECORD = Symbol('no_record')
 
 export interface ITextChangeEvent {
   isUndoRedo: boolean,
-  origin: any
+  origin: any,
+  local: boolean
   transactions: {
     block: EditableBlockComponent
     delta: DeltaOperation[]
@@ -30,6 +31,7 @@ export interface ITextChangeEvent {
 export interface IChildrenChangeEvent {
   isUndoRedo: boolean,
   origin: any
+  local: boolean
   transactions: {
     inserted?: BlockCraft.BlockComponent[]
     deleted?: {
@@ -42,7 +44,8 @@ export interface IChildrenChangeEvent {
 
 export interface IPropsChangeEvent {
   isUndoRedo: boolean
-  origin: any
+  origin: any,
+  local: boolean
   transactions: {
     block: BlockCraft.BlockComponent
     changes: Map<string, {
@@ -129,26 +132,6 @@ export class DocCRUD {
 
   removeTrackedOrigin(origin: any) {
     this._trackedOrigins.delete(origin)
-  }
-
-  getAllBlocks(filter?: (block: BlockCraft.BlockComponent) => boolean) {
-    const blocks: BlockCraft.BlockComponent[] = []
-    const ids = this.yBlockMap.keys()
-    for (const id of ids) {
-      // TODO ！！！！！！！！！！！！！！ 临时解决上个版本的巨坑
-      try {
-        const block = this.doc.getBlockById(id, () => {
-          this.doc.yBlockMap.delete(id)
-        })
-        if (filter) {
-          filter(block) && blocks.push(block)
-        } else {
-          blocks.push(block)
-        }
-      } catch (e) {
-      }
-    }
-    return blocks
   }
 
   transact(fn: () => void, origin: any = null) {
@@ -266,7 +249,8 @@ export class DocCRUD {
       this.onPropsUpdate$.next({
         isUndoRedo,
         origin: tr.origin,
-        transactions: propsChanges
+        transactions: propsChanges,
+        local: tr.local
       })
 
       propsChanges.forEach(v => {
@@ -278,12 +262,13 @@ export class DocCRUD {
       this.onTextUpdate$.next({
         isUndoRedo,
         origin: tr.origin,
-        transactions: textChanges
+        transactions: textChanges,
+        local: tr.local
       })
     }
 
     if (delay_childrenEvent_handlers.length) {
-      await this._syncYBlockChildrenUpdate(added, deleted, delay_childrenEvent_handlers, isUndoRedo, tr.origin)
+      await this._syncYBlockChildrenUpdate(added, deleted, delay_childrenEvent_handlers, tr)
     }
 
     this._undoRedoing$.value && this._undoRedoing$.next(false)
@@ -292,8 +277,13 @@ export class DocCRUD {
   private _syncYBlockChildrenUpdate = async (added: Record<string, YBlock>,
                                              deleted: string[],
                                              events: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][],
-                                             isUndoRedo = false, origin: any) => {
-    const emitEvents: IChildrenChangeEvent = {isUndoRedo, transactions: [], origin}
+                                             tr: Y.Transaction) => {
+    const emitEvents: IChildrenChangeEvent = {
+      isUndoRedo: tr.origin instanceof Y.UndoManager,
+      local: tr.local,
+      origin: tr.origin,
+      transactions: [],
+    }
 
     const childComps = await this.vm.createComponentByYBlocks(added)
     const insertDelay: Map<BlockCraft.BlockComponentRef, [number, BlockCraft.BlockComponentRef[]][]> = new Map()
@@ -327,8 +317,24 @@ export class DocCRUD {
       })
     })
 
-    this.vm.detach(deleted)
+    this.vm.delete(deleted)
     this.onChildrenUpdate$.next(emitEvents)
+  }
+
+  getFlatIds = (blockIds: string[]) => {
+    const flatIds: string[] = blockIds.slice()
+    const flat = (ids: string[]) => {
+      ids.forEach(id => {
+        const target = this.yBlockMap.get(id)?.get('children')
+        if (target && (target.constructor.name === 'YArray' || target.constructor.name === '_YArray' || typeof target['toArray'] === 'function')) {
+          const _bIds = target.toArray()
+          flatIds.push(..._bIds)
+          flat(_bIds)
+        }
+      })
+    }
+    flat(blockIds)
+    return flatIds
   }
 
   async insertNewParagraph(parentId: string, index: number, content: string | InlineModel = '') {
@@ -368,7 +374,7 @@ export class DocCRUD {
     const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)!
     const validSnapshots = snapshots.filter(s => this.doc.schemas.isValidChildren(s.flavour, parentSchema))
     if (!validSnapshots.length) {
-      if(snapshots.length === 1) {
+      if (snapshots.length === 1) {
         const snapshot = snapshots[0]
         const schema = this.doc.schemas.get(snapshot.flavour)
         if (schema) {
@@ -429,10 +435,12 @@ export class DocCRUD {
     if (index + count > parentComp.instance.childrenLength) {
       count = parentComp.instance.childrenLength - index
     }
+
     this.transact(() => {
       const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
+      const flatIds = this.getFlatIds(sliceIds)
+      flatIds.forEach(id => this.yBlockMap.delete(id))
       ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).delete(index, count)
-      sliceIds.forEach(id => this.yBlockMap.delete(id))
     })
     return new Promise((resolve => {
       const sub = this.onChildrenUpdate$.subscribe(v => {
@@ -461,8 +469,9 @@ export class DocCRUD {
     }
     this.transact(() => {
       const yChildren = parentComp.instance.yBlock.get('children') as Y.Array<string>
+      const flatIds = this.getFlatIds([blockId])
+      flatIds.forEach(id => this.yBlockMap.delete(id))
       yChildren.delete(index, 1)
-      this.yBlockMap.delete(blockId)
       if (snapshots?.length) {
         this._insertBySnapshots(parentComp, index, snapshots)
       }

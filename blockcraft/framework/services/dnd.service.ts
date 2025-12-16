@@ -1,11 +1,8 @@
-import {BehaviorSubject, filter, fromEvent, Subject, Subscription, take, takeUntil} from "rxjs";
-import {UIEventStateContext} from "../block-std";
+import {BehaviorSubject, filter, fromEvent, takeUntil} from "rxjs";
+import {BlockNodeType, DocEventRegister, EventListen, IBlockSnapshot, UIEventStateContext} from "../block-std";
 import {closetBlockId} from "../utils";
-import {BlockNodeType, IBlockSnapshot} from "../block-std";
-import {DocEventRegister, EventListen} from "../block-std";
 import {BLOCK_POSITION} from "../doc";
 import {DOC_FILE_SERVICE_TOKEN} from "./file.service";
-import {ClipboardDataType} from "../modules";
 import {BLOCK_CREATOR_SERVICE_TOKEN} from "./block-creator.service";
 import {throttle} from "../../global";
 
@@ -50,7 +47,7 @@ export class DocDndService {
   dragEnd$ = this.dragStatus$.asObservable().pipe(filter(v => v === DocDndStatus.end))
 
   private dragLine: HTMLElement | null = null
-  private virtualScroller: HTMLElement[] | null = null
+  // private rootRect: Pick<DOMRect, 'top' | 'left' | 'width' | 'height'> = {top: 0, left: 0, width: 0, height: 0}
 
   private createDragLine = () => {
     if (this.dragLine) return
@@ -177,6 +174,9 @@ export class DocDndService {
     })
   }
 
+  // 所在的nodeType为block的块内部
+  private _inBlock: BlockCraft.BlockComponent | null = null
+
   private onDragMove = throttle((ctx: UIEventStateContext) => {
     const evt: DragEvent = ctx.getDefaultEvent()
     evt.preventDefault()
@@ -194,7 +194,28 @@ export class DocDndService {
     }
     if (!activeBlock || activeBlock.flavour === 'root') return
     if (this.prevBlock !== activeBlock) {
-      if (activeBlock.nodeType === BlockNodeType.root) return
+
+      if (activeBlock === this._inBlock) return
+
+      // 对于在特殊block块内部特殊处理
+      if (['table-cell', 'callout'].includes(activeBlock.flavour)) {
+        this._inBlock = activeBlock
+        const position = calcPosition(evt, activeBlock.hostElement)
+        if (position === 'before') {
+          activeBlock = this._inBlock!.firstChildren!
+        } else {
+          activeBlock = this._inBlock!.lastChildren!
+        }
+        this.prevBlock = activeBlock
+        this.moveDragLine(this.prevBlock.hostElement, this.prevDragPosition = position)
+        return
+      }
+
+      // 跳出所在的特殊block块后，清除所在block块记录
+      if(activeBlock.nodeType === 'block') {
+        this._inBlock = null
+      }
+
       const schema = this.doc.schemas.get(activeBlock.flavour)!
       if (schema.metadata.isLeaf) return;
       this.prevBlock = activeBlock
@@ -215,6 +236,7 @@ export class DocDndService {
     this.dragStatus$.next(DocDndStatus.end)
     this.prevDragPosition = 'none'
     this.doc.event.remove('dragMove', this.onDragMove)
+    this._inBlock = null
   }
 
   onSortBlock(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {

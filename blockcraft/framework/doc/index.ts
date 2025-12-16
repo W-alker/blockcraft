@@ -183,7 +183,7 @@ export class BlockCraftDoc {
     comp.onDestroy$.pipe(take(1)).subscribe(() => {
       this.onDestroy$.next(true)
       this.plugins.forEach(plugin => plugin.destroy())
-      this.vm.gc()
+      this.vm.clear()
     })
 
     // init theme
