@@ -61,6 +61,7 @@ export class OrderedBlockPlugin extends DocPlugin {
           if (deleted) {
             deleted.forEach(del => {
               nextTick().then(() => {
+                if (['table', 'table-row'].includes(block.flavour) || !block.childrenLength) return;
                 const start = block.getChildrenByIndex(Math.min(del.index, block.childrenLength - 1))
                 if (start.flavour !== 'ordered') return;
                 updateOrderAround(<any>start)
