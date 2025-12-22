@@ -556,7 +556,7 @@ export class TriggerBtn {
 
   setIsEmpty() {
     // @ts-expect-error
-    this.isEmpty = this._activeBlock.flavour === 'paragraph' ? !this._activeBlock.textLength : false
+    this.isEmpty = this._activeBlock.flavour === 'paragraph' ? !this._activeBlock.textLength && !this.activeBlock?.props.heading : false
   }
 
   setValidBlockList() {

@@ -36,6 +36,7 @@ export class TableBlockBinding extends DocPlugin {
     const selection = this.doc.selection.value
     if (!selection || !selection.from.block.flavour.startsWith('table')) return false
     context.preventDefault()
+    context.stopPropagation()
     const table = this._getTable(selection)
     const coordinates = table.getSelectedCoordinates()
     if (!coordinates) return false

@@ -73,7 +73,6 @@ export class DocVM {
         cpr.setInput('yBlock', yBlock)
         cpr.setInput('doc', this.doc)
         cpr.instance.parentId = parentId
-        // cpr.changeDetectorRef.detectChanges()
 
         this.set(id, cpr)
 
@@ -184,6 +183,14 @@ export class DocVM {
       // instance.childrenContainer.detach(index)
       instance.childrenContainer.remove(index)
       length--
+    }
+  }
+
+  destroy(id: string) {
+    const cpr = this.store.get(id)
+    if(cpr) {
+      cpr.destroy()
+      this.store.delete(id)
     }
   }
 

@@ -208,7 +208,6 @@ export class InputTransformer {
         }
       }
 
-      // TODO 迁移 这段处理连续文本需要迁移
       if (from.type === 'text') {
         const yText = from.block.yText
         yText.delete(from.index, from.length)

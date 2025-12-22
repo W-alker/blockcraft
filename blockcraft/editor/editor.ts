@@ -247,8 +247,8 @@ export class EditorComponent {
   ) {
   }
 
-  docId = '689ac2b31a9abe3ae8a6788d'
-  rootId = '689ac2b31a9abe3ae8a6788d'
+  docId = '69476deb4635244a87e8ffbb'
+  rootId = '69476deb4635244a87e8ffbb'
 
   doc = new BlockCraftDoc({
     yDoc: new Y.Doc({

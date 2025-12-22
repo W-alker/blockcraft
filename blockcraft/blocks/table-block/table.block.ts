@@ -101,6 +101,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     super.ngOnDestroy();
     this.mutationObserver.disconnect()
     this.resizeObserver.disconnect()
+    this.doc.event.remove('selectStart', this.onSelectstart)
+    this.doc.event.remove('mouseEnter', this.onMouseEnter)
   }
 
   get colLength() {

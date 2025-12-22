@@ -163,12 +163,12 @@ export class DocCRUD {
           }
 
           // 重新设置yBlock，因为之前的被替换了
-          const v = this.vm.get(key)
-          const yBlock = this.getYBlock(key)
-          if (v && yBlock) {
-            v.setInput('yBlock', yBlock)
-            v.setInput('model', yBlock2Native(yBlock))
-          }
+          // const v = this.vm.get(key)
+          // const yBlock = this.getYBlock(key)
+          // if (v && yBlock) {
+          //   v.setInput('yBlock', yBlock)
+          //   v.setInput('model', yBlock2Native(yBlock))
+          // }
         })
 
         return
@@ -317,7 +317,9 @@ export class DocCRUD {
       })
     })
 
-    this.vm.delete(deleted)
+    deleted.forEach(id => {
+      this.vm.destroy(id)
+    })
     this.onChildrenUpdate$.next(emitEvents)
   }
 
@@ -439,8 +441,8 @@ export class DocCRUD {
     this.transact(() => {
       const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
       const flatIds = this.getFlatIds(sliceIds)
-      flatIds.forEach(id => this.yBlockMap.delete(id))
       ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).delete(index, count)
+      flatIds.forEach(id => this.yBlockMap.delete(id))
     })
     return new Promise((resolve => {
       const sub = this.onChildrenUpdate$.subscribe(v => {
@@ -470,8 +472,8 @@ export class DocCRUD {
     this.transact(() => {
       const yChildren = parentComp.instance.yBlock.get('children') as Y.Array<string>
       const flatIds = this.getFlatIds([blockId])
-      flatIds.forEach(id => this.yBlockMap.delete(id))
       yChildren.delete(index, 1)
+      flatIds.forEach(id => this.yBlockMap.delete(id))
       if (snapshots?.length) {
         this._insertBySnapshots(parentComp, index, snapshots)
       }
