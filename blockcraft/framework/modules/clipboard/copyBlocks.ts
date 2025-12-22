@@ -44,13 +44,14 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
       selection.removeAllRanges()
     }
 
-    document.addEventListener('copy', (e) => {
+    document.body.addEventListener('copy', (e) => {
       if (range) {
         window.getSelection()?.removeAllRanges()
         window.getSelection()?.addRange(range)
       }
 
       e.preventDefault()
+      e.stopPropagation()
       if (!e.clipboardData) {
         reject('clipboardData is null')
       }
