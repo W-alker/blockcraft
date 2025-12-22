@@ -11,6 +11,7 @@ import {
   yBlock2Native
 } from "../block-std";
 import * as Y from "yjs";
+import {ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC} from "./crud";
 
 export class DocVM {
 
@@ -42,28 +43,11 @@ export class DocVM {
     return this.store.get(id) as BlockCraft.BlockComponentRef<T> | undefined
   }
 
-  private _restoreCachedComp(id: string) {
-    const cpr = this.store.get(id)!
-    cpr.instance.reattach()
-    // 子孙元素依次触发reattach
-    if (cpr.instance.childrenLength > 0) {
-      cpr.instance.getChildrenBlocks().forEach(b => {
-        this._restoreCachedComp(b.id)
-      })
-    }
-    return cpr
-  }
-
   async createComponentByYBlocks(yBlocks: Record<string, YBlock>) {
     // 乱序的，要根据children中的Id顺序组合
     const createComp = (yBlock: YBlock, parentId: string | null = null) => {
       return new Promise<BlockCraft.BlockComponentRef>((resolve, reject) => {
         const id = yBlock.get('id')
-        // try get it from cache
-        // if (this.has(id)) {
-        //   resolve(this._restoreCachedComp(id))
-        //   return
-        // }
 
         const schema = this.schemas.get(yBlock.get('flavour'))!
         const cpr = this._vcr.createComponent(schema.component, {
@@ -79,8 +63,23 @@ export class DocVM {
         cpr.instance.onViewInit$.pipe(take(1)).subscribe(async () => {
           const yChildren = yBlock.get('children')
           if (yBlock.get('nodeType') !== BlockNodeType.editable && yChildren.length) {
-            for (const childId of yChildren.toArray()) {
-              const cmpr = await createComp(yBlocks[childId] || this.doc.crud.getYBlock(childId), id);
+
+            const yArray = yChildren.toArray()
+            for (const childId of yArray) {
+              let yBlock = yBlocks[childId] || this.doc.crud.getYBlock(childId)
+              if (!yBlock) {
+                this.doc.logger.warn('有丢失段落: ' + childId)
+                yBlock = native2YBlock({
+                  id: childId,
+                  nodeType: BlockNodeType.editable,
+                  flavour: 'paragraph',
+                  props: {depth: 0},
+                  meta: {},
+                  children: []
+                })
+                this.doc.yBlockMap.set(childId, yBlock)
+              }
+              const cmpr = await createComp(yBlock, id);
               cmpr.changeDetectorRef.detectChanges()
               ;(cpr.instance.childrenContainer as ViewContainerRef).insert(cmpr.hostView)
             }
@@ -188,7 +187,7 @@ export class DocVM {
 
   destroy(id: string) {
     const cpr = this.store.get(id)
-    if(cpr) {
+    if (cpr) {
       cpr.destroy()
       this.store.delete(id)
     }

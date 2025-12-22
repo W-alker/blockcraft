@@ -1,7 +1,7 @@
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
-  Component,
+  Component, ElementRef,
   EventEmitter,
   HostBinding,
   HostListener,
@@ -226,14 +226,13 @@ const HEADING_LIST: IContextMenuItem[] = [
   `,
   styles: [`
     :host {
-      display: block;
-      z-index: 100;
+      z-index: 10;
       position: absolute;
-      /*padding-right: 8px;*/
       user-select: none;
       -webkit-user-select: none;
       transition: all ease .2s;
-      transform: translateX(-100%);
+      top: 0;
+      left: 0;
 
       > * {
         user-select: none;
@@ -253,25 +252,18 @@ const HEADING_LIST: IContextMenuItem[] = [
 
     .drag-handle {
       display: flex;
-      padding: 0 18px 4px 0;
+      padding: 4px 18px 4px 0;
 
       &.active {
+        padding-right: 18px;
+      }
+
+      &.active {
+
         .btn {
           background-color: #E6E6E6;
         }
 
-        .virtual-hover-area {
-          display: block;
-        }
-      }
-
-      .virtual-hover-area {
-        display: none;
-        position: absolute;
-        top: 0;
-        left: 22px;
-        width: 200px;
-        height: 100%;
       }
 
       .btn {
@@ -418,9 +410,10 @@ export class TriggerBtn {
     })
 
     const {top, left} = this.calcPos()
-    this.top = top
-    this.left = left
     this.display = 'block'
+    this.host.nativeElement.style.transform = `
+      translate(${left - 44 - 18}px, ${top - 4}px)
+    `
     this.cdr.markForCheck()
   }
 
@@ -442,6 +435,7 @@ export class TriggerBtn {
 
   constructor(
     public cdr: ChangeDetectorRef,
+    private host: ElementRef<HTMLElement>,
   ) {
   }
 
@@ -528,12 +522,6 @@ export class TriggerBtn {
       left
     }
   }
-
-  @HostBinding('style.top.px')
-  private top = 0
-
-  @HostBinding('style.left.px')
-  private left = 0
 
   @HostListener('click', ['$event'])
   onClick(event: MouseEvent) {
