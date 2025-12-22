@@ -1,4 +1,4 @@
-import {Component, Injector, ViewChild, ViewContainerRef} from "@angular/core";
+import {Component, ElementRef, Injector, ViewChild, ViewContainerRef} from "@angular/core";
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
   BlockCraftDoc,
@@ -111,8 +111,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 @Component({
   selector: 'block-craft-editor',
   template: `
-    <div style="padding: 60px; max-width: 90vw; height: 80vh; overflow-x: hidden; overflow-y: auto;" (mousedown)="onContainerMousedown($event)">
-      <ng-container #container></ng-container>
+    <div style="padding: 60px; max-width: 90vw; height: 80vh; overflow-x: hidden; overflow-y: auto;" #container (mousedown)="onContainerMousedown($event)">
     </div>
 
     <button (click)="initBySnapshot()">初始化</button>
@@ -239,7 +238,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
   ]
 })
 export class EditorComponent {
-  @ViewChild('container', {static: true, read: ViewContainerRef}) container!: ViewContainerRef
+  @ViewChild('container', {read: ElementRef}) container!: ElementRef;
 
   constructor(
     private injector: Injector,
@@ -338,7 +337,7 @@ export class EditorComponent {
 
   initBySnapshot(snapshot?: IBlockSnapshot) {
     snapshot ??= this.doc.schemas.createSnapshot('root', [this.rootId, [this.doc.schemas.createSnapshot('paragraph', [])]])
-    this.doc.initBySnapshot(snapshot, this.container)
+    this.doc.initBySnapshot(snapshot, this.container.nativeElement)
   }
 
   log() {
@@ -348,11 +347,11 @@ export class EditorComponent {
   }
 
   undo() {
-    this.doc.crud.undo()
+    this.doc.crud.undoManager.undo()
   }
 
   redo() {
-    this.doc.crud.redo()
+    this.doc.crud.undoManager.redo()
   }
 
   insert() {
@@ -489,7 +488,7 @@ export class EditorComponent {
       console.log('initFn', this.doc.yBlockMap)
       const yRoot = this.doc.yBlockMap?.get(this.docId)
       if (yRoot) {
-        this.doc.initByYBlock(yRoot, this.container)
+        this.doc.initByYBlock(yRoot, this.container.nativeElement)
         this.doc.yDoc.off('update', initFn)
         console.log('-------', this.doc.yBlockMap.toJSON())
         // let map = new Map()

@@ -9,9 +9,9 @@ import {
 } from "../block-std";
 import * as Y from "yjs";
 import {BlockCraftError, ErrorCode, nextTick} from "../../global";
-import {IBlockSelectionJSON} from "../modules";
-import {BehaviorSubject, Subject, take} from "rxjs";
-import {NgZone} from "@angular/core";
+import {Subject} from "rxjs";
+import {isYArray, isYText} from "../utils/yAbstractType";
+import {DocUndoManger} from "./undoManger";
 
 // This origin will skip Y.Event sync (to model)
 export const ORIGIN_SKIP_SYNC = Symbol('skip_sync')
@@ -57,13 +57,7 @@ export interface IPropsChangeEvent {
 
 export class DocCRUD {
 
-  private _yUndoManager!: Y.UndoManager
-  private _trackedOrigins = new Set<any>([ORIGIN_SKIP_SYNC, null])
-
-  private _undoSelectionStack: Array<IBlockSelectionJSON | null> = []
-  private _redoSelectionStack: Array<IBlockSelectionJSON | null> = []
-  private _undoRedoing$ = new BehaviorSubject(false)
-
+  undoManager!: DocUndoManger
   readonly onChildrenUpdate$ = new Subject<IChildrenChangeEvent>()
   readonly onPropsUpdate$ = new Subject<IPropsChangeEvent>()
   readonly onTextUpdate$ = new Subject<ITextChangeEvent>()
@@ -76,44 +70,22 @@ export class DocCRUD {
     return this.doc.yBlockMap
   }
 
-  get yUndoManager() {
-    return this._yUndoManager
-  }
-
   constructor(
     private readonly doc: BlockCraft.Doc
   ) {
     this.doc.afterInit(() => {
 
-      this._yUndoManager = new Y.UndoManager(this.yBlockMap, {
-        captureTimeout: 200,
-        trackedOrigins: this._trackedOrigins
-      })
+      this.undoManager = new DocUndoManger(this.doc, this.yBlockMap)
 
       this.yBlockMap.observeDeep((evt, tr) => {
-        this.doc.ngZone.run(async () => {
-          await this._syncYEvent(evt, tr)
-        })
-          .then(() => {
-            if (!tr.local) {
-              nextTick().then(() => {
-                this.doc.selection.recalculate()
-              })
-            }
-
-          })
-      })
-
-      this.yUndoManager.on('stack-item-added', (evt) => {
-        if (evt.type === 'undo') {
-          // console.log('%cundo stack', 'background: #444;', this.yUndoManager.undoStack, this.doc.selection)
-          this._undoSelectionStack.push(this.doc.selection.value ? this.doc.selection.value.toJSON() : null)
-          if (this._undoSelectionStack.length > 200) {
-            this.yUndoManager.undoStack.shift()
-            this.yUndoManager.redoStack.shift()
-            this._undoSelectionStack.shift()
+        this.doc.ngZone.run(() => {
+          this._syncYEvent(evt, tr)
+          if (!tr.local) {
+            requestAnimationFrame(() => {
+              this.doc.selection.recalculate()
+            })
           }
-        }
+        })
       })
     })
   }
@@ -126,24 +98,16 @@ export class DocCRUD {
     return this.yBlockMap.get(id)
   }
 
-  addTrackedOrigin(origin: any) {
-    this._trackedOrigins.add(origin)
-  }
-
-  removeTrackedOrigin(origin: any) {
-    this._trackedOrigins.delete(origin)
-  }
-
   transact(fn: () => void, origin: any = null) {
     return this.yDoc.transact(fn, origin)
   }
 
-  private _syncYEvent = async (events: Y.YEvent<any>[], tr: Y.Transaction) => {
+  private _syncYEvent = (events: Y.YEvent<any>[], tr: Y.Transaction) => {
     // local change with skip
     const isUndoRedo = tr.origin instanceof Y.UndoManager
 
     const added: Record<string, YBlock> = {}
-    const deleted: string[] = []
+    const deleted = new Set<string>()
 
     const propsChanges: IPropsChangeEvent['transactions'] = []
     const textChanges: ITextChangeEvent['transactions'] = []
@@ -159,7 +123,8 @@ export class DocCRUD {
       if (!path.length) {
         tr.origin !== ORIGIN_SKIP_SYNC && changes.keys.forEach((change, key) => {
           if (change.action === 'delete') {
-            deleted.push(key)
+            deleted.add(key)
+            return
           }
 
           // 重新设置yBlock，因为之前的被替换了
@@ -180,7 +145,7 @@ export class DocCRUD {
       if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
 
       if (keyProp === "children") {
-        if (target.constructor.name === 'YArray' || target.constructor.name === '_YArray' || typeof target.toArray === 'function') {
+        if (isYArray(target)) {
           if (tr.origin !== ORIGIN_SKIP_SYNC) {
             changes.delta.forEach(change => {
               if (change.insert) {
@@ -195,7 +160,7 @@ export class DocCRUD {
 
           // @ts-expect-error
           bm.instance._childrenIds = target.toArray()
-        } else if (target.constructor.name === 'YText' || target.constructor.name === '_YText' || typeof target.toDelta === 'function') {
+        } else if (isYText(target)) {
 
           if (!this.doc.isEditable(bm.instance))
             throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} is not editable`)
@@ -268,16 +233,16 @@ export class DocCRUD {
     }
 
     if (delay_childrenEvent_handlers.length) {
-      await this._syncYBlockChildrenUpdate(added, deleted, delay_childrenEvent_handlers, tr)
+      this._syncYBlockChildrenUpdate(added, deleted, delay_childrenEvent_handlers, tr)
     }
 
-    this._undoRedoing$.value && this._undoRedoing$.next(false)
+    this.undoManager.undoRedoing$.value && this.undoManager.undoRedoing$.next(false)
   }
 
-  private _syncYBlockChildrenUpdate = async (added: Record<string, YBlock>,
-                                             deleted: string[],
-                                             events: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][],
-                                             tr: Y.Transaction) => {
+  private _syncYBlockChildrenUpdate = (added: Record<string, YBlock>,
+                                       deleted: Set<string>,
+                                       events: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][],
+                                       tr: Y.Transaction) => {
     const emitEvents: IChildrenChangeEvent = {
       isUndoRedo: tr.origin instanceof Y.UndoManager,
       local: tr.local,
@@ -285,10 +250,9 @@ export class DocCRUD {
       transactions: [],
     }
 
-    const childComps = await this.vm.createComponentByYBlocks(added)
+    const childComps = this.vm.createComponentByYBlocks(added)
     const insertDelay: Map<BlockCraft.BlockComponentRef, [number, BlockCraft.BlockComponentRef[]][]> = new Map()
 
-    // TODO 对于已经做缓存的元素，在增加和删除的时候会有重复的情况，比如移动。这是VM的问题。可以尝试解决move行为
     events.forEach(([bm, deltas]) => {
       const _delay_inserts: [number, BlockCraft.BlockComponentRef[]][] = []
       const deletedMap: { index: number, length: number }[] = []
@@ -304,7 +268,13 @@ export class DocCRUD {
           this.vm.insert(bm, r, _insertComps)
           r += _insertComps.length
         } else if (d.delete) {
-          this.vm.remove(bm, r, d.delete)
+          // 有可能是被移动的元素，此时是不需要销毁再重建的
+          const cps = bm.instance.childrenRenderRef!.splice(r, d.delete)
+          cps.forEach(c => {
+            if (deleted.has(c.instance.id)) {
+              this.vm.destroy(c.instance.id)
+            }
+          })
           deletedMap.push({index: r, length: <number>d.delete})
         }
       })
@@ -317,8 +287,10 @@ export class DocCRUD {
       })
     })
 
-    this.vm.delete(deleted)
-    this.onChildrenUpdate$.next(emitEvents)
+    this.vm.deleteByIds([...deleted])
+    nextTick().then(() => {
+      this.onChildrenUpdate$.next(emitEvents)
+    })
   }
 
   getFlatIds = (blockIds: string[]) => {
@@ -326,7 +298,7 @@ export class DocCRUD {
     const flat = (ids: string[]) => {
       ids.forEach(id => {
         const target = this.yBlockMap.get(id)?.get('children')
-        if (target && (target.constructor.name === 'YArray' || target.constructor.name === '_YArray' || typeof target['toArray'] === 'function')) {
+        if (target && isYArray(target)) {
           const _bIds = target.toArray()
           flatIds.push(..._bIds)
           flat(_bIds)
@@ -503,54 +475,6 @@ export class DocCRUD {
       },
       // ORIGIN_SKIP_SYNC
     )
-  }
-
-  isCanUndo() {
-    return this.yUndoManager.canUndo()
-  }
-
-  isCanRedo() {
-    return this.yUndoManager.canRedo()
-  }
-
-  undo() {
-    if (!this.isCanUndo() || this._undoRedoing$.value) return
-    this._undoRedoing$.next(true)
-    this._redoSelectionStack.push(this.doc.selection.value)
-
-    this.yUndoManager.undo()
-    const last = this._undoSelectionStack.pop()
-    if (last === undefined) return
-    this._replaySelectionAfterUndoRedo(last)
-  }
-
-  redo() {
-    if (!this.isCanRedo() || this._undoRedoing$.value) return
-    this._undoRedoing$.next(true)
-
-    this.yUndoManager.redo()
-    const last = this._redoSelectionStack.pop()
-    if (last === undefined) return
-    this._replaySelectionAfterUndoRedo(last)
-  }
-
-  private _replaySelectionAfterUndoRedo(selection: IBlockSelectionJSON | null) {
-    this._undoRedoing$.pipe(take(1)).subscribe(() => {
-      nextTick().then(() => {
-        try {
-          this.doc.selection.replay(selection)
-        } catch (e) {
-          this.doc.selection.recalculate()
-          this.doc.logger.warn('UNDO时选区出现问题')
-        }
-      })
-    })
-  }
-
-  clearHistory() {
-    this.yUndoManager.clear()
-    this._undoSelectionStack = []
-    this._redoSelectionStack = []
   }
 
 }

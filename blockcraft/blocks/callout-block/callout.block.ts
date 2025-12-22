@@ -10,8 +10,9 @@ import {Subject, takeUntil} from "rxjs";
     <span class="callout-block-prefix" (mousedown)="onPickEmoji($event)"
           contenteditable="false">{{ props.prefix }}</span>
     <div>
-      <ng-container #childrenContainer></ng-container>
-    </div>
+<!--    <div class="children-render-container"></div>-->
+<!--      <ng-container #childrenContainer></ng-container>-->
+<!--    </div>-->
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,

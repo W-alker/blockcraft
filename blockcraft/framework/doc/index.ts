@@ -67,16 +67,11 @@ export class BlockCraftDoc {
   public readonly dndService = new DocDndService(this)
 
   private _scrollContainer: HTMLElement | null = null
-  private _viewContainer: ViewContainerRef | null = null
 
   private _subscriptions: Subscription = new Subscription()
 
   private _root: BlockCraft.IBlockComponents['root'] | null = null
   private _yBlockMap!: Y.Map<YBlock>
-
-  get viewContainer() {
-    return this._viewContainer
-  }
 
   get scrollContainer() {
     return this._scrollContainer
@@ -139,33 +134,31 @@ export class BlockCraftDoc {
 
   @performanceTest('Doc init', 300)
   // init from a snapshot as root
-  async initBySnapshot(snapShot: IBlockSnapshot, container: ViewContainerRef) {
+  initBySnapshot(snapShot: IBlockSnapshot, container: HTMLElement) {
     if (this._root) return
 
     if (snapShot.flavour !== 'root') {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `Invalid root snapshot`)
     }
 
-    const comp = await this.vm.createComponentBySnapshot(snapShot, (b) => {
+    const comp = this.vm.createComponentBySnapshot(snapShot, (b) => {
       this.yBlockMap.set(b.instance.id, b.instance.yBlock)
     })
-    this._viewContainer = container
-    container.insert(comp.hostView)
+    container.append(comp.location.nativeElement)
     this._initEditor(comp.instance as any)
   }
 
   @performanceTest('Doc init', 300)
-  async initByYBlock(yRoot: YBlock, container: ViewContainerRef) {
+  initByYBlock(yRoot: YBlock, container: HTMLElement) {
     if (this._root) return
     if (yRoot.get('flavour') !== 'root') {
       throw new BlockCraftError(ErrorCode.DefaultFatalError, `Invalid root yBlock`)
     }
 
     const id = yRoot.get('id')
-    const comp = await this.vm.createComponentByYBlocks({[id]: yRoot})
+    const comp = this.vm.createComponentByYBlocks({[id]: yRoot})
     const root = comp[id]
-    container.insert(root.hostView)
-    this._viewContainer = container
+    container.append(root.location.nativeElement)
     this._initEditor(root.instance as any)
   }
 
@@ -203,7 +196,7 @@ export class BlockCraftDoc {
       shortKey: true,
       shiftKey: null
     }, context => {
-      context.get('keyboardState').raw.shiftKey ? this.crud.redo() : this.crud.undo()
+      context.get('keyboardState').raw.shiftKey ? this.crud.undoManager.redo() : this.crud.undoManager.undo()
       context.preventDefault()
       return true
     }, {blockId: this.rootId})
@@ -212,7 +205,7 @@ export class BlockCraftDoc {
 
   destroy() {
     if (!this._root) return
-    this.viewContainer?.clear()
+    this.vm.clear()
     this.afterInit$.next(this._root = null)
   }
 

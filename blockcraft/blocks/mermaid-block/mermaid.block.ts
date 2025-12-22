@@ -42,8 +42,7 @@ import {AsyncPipe} from "@angular/common";
     </div>
 
     <div class="content">
-      <div class="text-container" spellcheck="false">
-        <ng-container #childrenContainer></ng-container>
+      <div class="text-container children-render-container" spellcheck="false">
       </div>
 
       <div class="graph-container" (mousedown)="onFocus($event)">

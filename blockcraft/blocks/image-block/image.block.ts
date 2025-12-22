@@ -27,7 +27,8 @@ import {nextTick} from "../../global";
              (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
       </div>
 
-      <ng-container #childrenContainer></ng-container>
+      <div class="children-render-container"></div>
+<!--      <ng-container #childrenContainer></ng-container>-->
     </figure>
   `,
   standalone: true,

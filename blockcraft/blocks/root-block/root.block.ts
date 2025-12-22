@@ -7,7 +7,8 @@ import {BlockNodeType} from "../../framework";
 @Component({
   selector: 'div.root-block[data-blockcraft-root="true"]',
   template: `
-    <ng-container #childrenContainer></ng-container>
+<!--    <ng-container #childrenContainer></ng-container>-->
+    <div class="children-render-container"></div>
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,

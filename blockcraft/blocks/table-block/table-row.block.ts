@@ -5,7 +5,6 @@ import {TableRowBlockModel} from "./index";
 @Component({
   selector: 'tr.table-row-block',
   template: `
-    <ng-container #childrenContainer></ng-container>
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,

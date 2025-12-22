@@ -8,12 +8,10 @@ import {
   inject,
   Input,
   Output,
-  ViewChild,
-  ViewContainerRef
 } from "@angular/core";
-import {native2YBlock, NativeBlockModel, Obj2YMap, proxyMap, YBlock, yBlock2Native} from "../../reactive";
+import {NativeBlockModel, Obj2YMap, proxyMap, YBlock, yBlock2Native} from "../../reactive";
 import {BlockCraftError, ErrorCode} from "../../../../global";
-import {ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC} from "../../../doc";
+import {BlockChildrenRenderRef, ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC} from "../../../doc";
 import {BlockNodeType, IBlockProps, IBlockSnapshot} from "../../types";
 import {Subject} from "rxjs";
 import {createBlockGapSpace} from "../../../utils";
@@ -64,8 +62,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return `${(this._native.props.depth || 0) * 2 * 16}px`
   }
 
-  @ViewChild('childrenContainer', {read: ViewContainerRef})
-  childrenContainer?: ViewContainerRef
+  childrenRenderRef?: BlockChildrenRenderRef
 
   hostElement: HTMLElement = inject(ElementRef).nativeElement
   changeDetectorRef = inject(ChangeDetectorRef)
