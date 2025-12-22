@@ -48,7 +48,7 @@ export class BlockControllerPlugin extends DocPlugin {
       if (!blockId || this._activeBlock?.id === blockId) return
       const block = this.doc.getBlockById(blockId)
       const schema = this.doc.schemas.get(block.flavour)
-      if (!schema || schema.metadata.isLeaf) return
+      if (!schema || schema.metadata.isLeaf || (block.nodeType === 'block' && !target.isContentEditable)) return
 
       this._timer = setTimeout(() => {
         this._cpr.setInput('activeBlock', this._activeBlock = block)

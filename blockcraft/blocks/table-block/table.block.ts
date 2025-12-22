@@ -507,7 +507,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         bar.removeEventListener('mousedown', this._colAdderHandler)
         this._colAdderHandler = null
       }
-    }, {once: true})
+    }, {once: true, capture: true})
   }
 
   private _rowAdderHandler: ((e: Event) => void) | null = null
@@ -547,7 +547,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
           this._rowAdderHandler = null
         }
       }, 10)
-    }, {once: true})
+    }, {once: true, capture: true})
   }
 
   private _prevScrollLeft = 0

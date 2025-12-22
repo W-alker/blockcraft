@@ -73,7 +73,23 @@ export class DocVM {
       const yChildren = yBlock.get('children')
       if (yBlock.get('nodeType') !== BlockNodeType.editable && yChildren.length) {
         const childrenComps = yChildren.toArray().map(
-          childId => createComp(yBlocks[childId] || this.doc.crud.getYBlock(childId), cpr)
+          childId => {
+            let yBlock = yBlocks[childId] || this.doc.crud.getYBlock(childId)
+            // 兜底代码
+            if (!yBlock) {
+              this.doc.logger.warn('有丢失段落: ' + childId)
+              yBlock = native2YBlock({
+                id: childId,
+                nodeType: BlockNodeType.editable,
+                flavour: 'paragraph',
+                props: {depth: 0},
+                meta: {},
+                children: []
+              })
+              this.doc.yBlockMap.set(childId, yBlock)
+            }
+            return createComp(yBlock, cpr)
+          }
         )
         cpr.instance.childrenRenderRef?.insert(0, childrenComps)
       }
