@@ -244,6 +244,7 @@ export class InputTransformer {
       else {
         const parent = range.from.block.parentBlock
         if (parent) this.doc.selection.setCursorAtBlock(parent, true)
+        return true
       }
     }
 
