@@ -251,16 +251,20 @@ export class InputTransformer {
         return true
       }
     }
-    if (!to) {
+    this.doc.yDoc.transact(() => {
+      if (!to) {
+        this.doc.crud.deleteBlockById(from.blockId)
+        return
+      }
+      const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
+      if (throughPath.length) {
+        throughPath.forEach(through => {
+          this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
+        })
+      }
       this.doc.crud.deleteBlockById(from.blockId)
-      return true
-    }
-    const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
-    if (throughPath.length) {
-      throughPath.forEach(through => {
-        this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
-      })
-    }
+      this.doc.crud.deleteBlockById(to.blockId)
+    })
     return true
   }
 

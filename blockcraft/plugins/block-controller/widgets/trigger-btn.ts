@@ -233,6 +233,7 @@ const HEADING_LIST: IContextMenuItem[] = [
       transition: all ease .2s;
       top: 0;
       left: 0;
+      transform: translateX(-62px);
 
       > * {
         user-select: none;
