@@ -431,6 +431,7 @@ export class DocCRUD {
     if (index === 0 && count >= parentComp.instance.childrenLength && !force) {
       // 确保有可输入元素
       // this.deleteBlockById(parentComp.instance.id)
+      this.doc.messageService.warn('请确保此处至少有一个元素')
       this.doc.logger.warn(`deleteBlocks: delete all children`)
       return
     }

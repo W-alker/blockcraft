@@ -12,6 +12,8 @@ import {TableRowBlockComponent} from "../table-row.block";
 import {TableCellBlockModel} from "../index";
 import {ORIGIN_SKIP_SYNC} from "../../../framework";
 import {mergeTableCells, unMergeTableCell} from "../callback";
+import {NzDropDownDirective, NzDropdownMenuComponent} from "ng-zorro-antd/dropdown";
+import {NzTooltipDirective} from "ng-zorro-antd/tooltip";
 
 interface CellToolbarItem {
   name: string,
@@ -35,7 +37,8 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
   selector: 'cell-toolbar',
   template: `
     <bc-float-toolbar (onItemClick)="onItemClicked($event)">
-      <bc-float-toolbar-item icon="bc_hebingdanyuange1" name="merge" value="true" [title]="isMerged ? '解除合并' : '合并单元格'"
+      <bc-float-toolbar-item icon="bc_hebingdanyuange1" name="merge" value="true"
+                             [nz-tooltip]="isMerged ? '解除合并' : '合并单元格'"
                              [active]="isMerged"/>
       <bc-float-toolbar-item *ngIf="showOptions.showRowHead" title="设置标题行" [active]="table.props.rowHead"
                              icon="bc_biaotihang" name="rowHead" value="true"/>
@@ -44,15 +47,16 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
 
       <span class="bc-float-toolbar__divider"></span>
 
-      <bc-float-toolbar-item icon="bc_sepan" [bcOverlayTrigger]="colorPicker" position="bottom-left" [offsetY]="8"/>
+      <bc-float-toolbar-item icon="bc_sepan" nz-dropdown [nzDropdownMenu]="alignFloatBar" [(nzVisible)]="dropdownVisibleMap.alignFloatBar"
+                             nzPlacement="bottomCenter" [class.active]="dropdownVisibleMap.alignFloatBar"/>
 
-      <bc-float-toolbar-item icon="bc_zuoduiqi" [expandable]="true"
-                             [bcOverlayTrigger]="alignFloatBar" position="bottom-left" [offsetY]="8"/>
+      <bc-float-toolbar-item icon="bc_zuoduiqi" [expandable]="true" nz-dropdown [nzDropdownMenu]="colorPicker" [(nzVisible)]="dropdownVisibleMap.colorPicker"
+                             nzPlacement="bottomCenter" [class.active]="dropdownVisibleMap.colorPicker"/>
 
       <bc-float-toolbar-item *ngIf="showOptions.showDelete" icon="bc_shanchu-2" name="delete" value="true"/>
     </bc-float-toolbar>
 
-    <ng-template #alignFloatBar>
+    <nz-dropdown-menu #alignFloatBar="nzDropdownMenu">
       <bc-float-toolbar [direction]="'column'" (onItemClick)="onItemClicked($event)">
 
         <bc-float-toolbar-item *ngFor="let item of HORIZON_ALIGN_LIST" [name]="item.name"
@@ -66,11 +70,17 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
         </bc-float-toolbar-item>
 
       </bc-float-toolbar>
-    </ng-template>
+    </nz-dropdown-menu>
+    <!--    <ng-template #alignFloatBar>-->
 
-    <ng-template #colorPicker>
+    <!--    </ng-template>-->
+
+    <nz-dropdown-menu #colorPicker="nzDropdownMenu">
       <bc-color-picker (colorPicked)="onColorPicked($event)" [activeColors]="activeColors"></bc-color-picker>
-    </ng-template>
+    </nz-dropdown-menu>
+
+    <!--    <ng-template #colorPicker>-->
+    <!--    </ng-template>-->
   `,
   imports: [
     BcFloatToolbarComponent,
@@ -78,7 +88,10 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
     BcOverlayTriggerDirective,
     ColorPickerComponent,
     NgForOf,
-    NgIf
+    NgIf,
+    NzDropdownMenuComponent,
+    NzDropDownDirective,
+    NzTooltipDirective
   ],
   styles: [`
     bc-float-toolbar-item[name="delete"]:hover {
@@ -110,6 +123,11 @@ export class CellToolbarComponent {
 
   protected verticalAlign: string | null = null
   protected textAlign?: string
+
+  dropdownVisibleMap = {
+    alignFloatBar: false,
+    colorPicker: false
+  }
 
   @Input({required: true})
   doc!: BlockCraft.Doc

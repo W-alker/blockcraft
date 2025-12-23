@@ -42,7 +42,7 @@ export const blockTransforms: IBlockTransformConfig[] = [
   {
     flavour: 'ordered',
     description: `有序列表(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + O)\nMarkdown: (数字/字母). (空格)`,
-    markdown: /^(\d|[a-zA-Z])+\.\s$/,
+    markdown: /^(\d|[a-z])+\.\s$/,
     hotkey: {key: ['o', 'O'], shortKey: true, shiftKey: true},
     onConvert: (doc, from, matchedString) => {
       const prevBlock = doc.prevSibling(from)

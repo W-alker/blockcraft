@@ -97,7 +97,7 @@ export class InputTransformer {
     const normalizedRange = this.doc.selection.normalizeRange(staticRange)!
 
     const {from, to, collapsed} = normalizedRange
-    if(from.type === 'selected' && (!to || to.type === 'selected')) {
+    if (from.type === 'selected' && (!to || to.type === 'selected')) {
       ev.preventDefault()
       return
     }
@@ -216,8 +216,7 @@ export class InputTransformer {
         if (to) {
           if ((to.type === 'text' && from.length >= to.block.textLength) || to.type === 'selected') {
             this.doc.crud.deleteBlockById(to.blockId)
-          }
-          else if (to.type === 'text' && (to.index > 0 || to.length > 0)) {
+          } else if (to.type === 'text' && (to.index > 0 || to.length > 0)) {
             const deltas: DeltaOperation[] = [...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength)]
             deltas.unshift({retain: yText.length})
             yText.applyDelta(deltas)
@@ -244,27 +243,29 @@ export class InputTransformer {
       if (nextBlock) this.doc.selection.setCursorAtBlock(nextBlock, true)
       else {
         const parent = range.from.block.parentBlock
-        if (parent) {
-          this.doc.selection.setCursorAtBlock(parent, true)
-        }
-        return true
+        if (parent) this.doc.selection.setCursorAtBlock(parent, true)
       }
     }
-    if (!to) {
+
+    this.doc.yDoc.transact(() => {
+      if (!to) {
+        this.doc.crud.deleteBlockById(from.blockId)
+        return
+      }
+      const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
+      if (throughPath.length) {
+        throughPath.forEach(through => {
+          this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
+        })
+      }
       this.doc.crud.deleteBlockById(from.blockId)
-      return true
-    }
-    const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
-    if (throughPath.length) {
-      throughPath.forEach(through => {
-        this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
-      })
-    }
+      this.doc.crud.deleteBlockById(to.blockId)
+    })
     return true
   }
 
   deleteByRange(range: INormalizedRange) {
-    if(range.from.type === 'selected' && (!range.to || range.to.type === 'selected')) {
+    if (range.from.type === 'selected' && (!range.to || range.to.type === 'selected')) {
       return this._deleteAllSelected(range)
     }
     return this._replaceText(range)
@@ -511,7 +512,7 @@ export class InputTransformer {
     }
 
     // 在前面换行
-    if(from.index === 0) {
+    if (from.index === 0) {
       const p = this.doc.schemas.createSnapshot(from.block.flavour, [[], {
         ...from.block.props,
         heading: null
