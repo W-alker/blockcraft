@@ -10,7 +10,7 @@ import {
   DocLinkPreviewerService,
   EditableBlockComponent, EmbedConverter, generateId, IBlockSelectionJSON, IBlockSnapshot, InlineManager,
   native2YBlock,
-  SchemaManager, Y_BLOCK_MAP_NAME
+  SchemaManager, Y_BLOCK_MAP_NAME, YBlock
 } from "../framework";
 import {
   AttachmentBlockSchema,
@@ -63,6 +63,7 @@ import {DividerStylePopupComponent} from "../plugins/divider-toolbar/widgets/div
 import {CodeInlineEditorBinding, TableBlockBinding, TextMarkerPlugin, OrderedBlockPlugin} from "../plugins";
 import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
 import {fixTable} from "../blocks/table-block/callback";
+import {NgIf} from "@angular/common";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -136,6 +137,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 
     <button (click)="enterRoom()">进入协同</button>
     <button (click)="quitRoom()">退出协同</button>
+    <button (click)="demo()">测试演示</button>
 
     <div class="block-area">
       <div draggable="true" (dragstart)="onDragStart($event, 'heading-one')">
@@ -151,6 +153,9 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
         <mat-icon svgIcon="bc_Figma"></mat-icon>
       </div>
     </div>
+
+
+    <div class="demo-page" style="position: fixed; inset: 0; background: #fff" *ngIf="showDemo"></div>
   `,
   styles: [`:host {
     margin: 20px;
@@ -225,7 +230,8 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
   `],
   imports: [
     MatIcon,
-    DividerStylePopupComponent
+    DividerStylePopupComponent,
+    NgIf
   ],
   standalone: true,
   providers: [
@@ -578,5 +584,27 @@ export class EditorComponent {
       const table = this.doc.getBlockById(id)!
       fixTable.call(table as any)
     }
+  }
+
+  showDemo = false
+
+  demo() {
+    const doc = new Y.Doc({gc: false});
+    const fullUpdate = Y.encodeStateAsUpdate(this.doc.yDoc);
+
+    Y.applyUpdate(doc, fullUpdate);
+
+    const yMap = doc.getMap('blocks');
+    const yRoot = yMap.get(this.rootId) as YBlock
+
+    // 第一步就拿到了全文数据
+    if (yMap.size && yRoot) {
+      const idList = yRoot.get('children').toArray()
+      console.log(idList)
+    }
+
+
+
+
   }
 }
