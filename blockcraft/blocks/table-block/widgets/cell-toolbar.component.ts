@@ -47,10 +47,10 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
 
       <span class="bc-float-toolbar__divider"></span>
 
-      <bc-float-toolbar-item icon="bc_sepan" nz-dropdown [nzDropdownMenu]="alignFloatBar" [(nzVisible)]="dropdownVisibleMap.alignFloatBar"
+      <bc-float-toolbar-item icon="bc_zuoduiqi" [expandable]="true" nz-dropdown [nzDropdownMenu]="alignFloatBar" [(nzVisible)]="dropdownVisibleMap.alignFloatBar"
                              nzPlacement="bottomCenter" [class.active]="dropdownVisibleMap.alignFloatBar"/>
 
-      <bc-float-toolbar-item icon="bc_zuoduiqi" [expandable]="true" nz-dropdown [nzDropdownMenu]="colorPicker" [(nzVisible)]="dropdownVisibleMap.colorPicker"
+      <bc-float-toolbar-item icon="bc_sepan" nz-dropdown [nzDropdownMenu]="colorPicker" [(nzVisible)]="dropdownVisibleMap.colorPicker"
                              nzPlacement="bottomCenter" [class.active]="dropdownVisibleMap.colorPicker"/>
 
       <bc-float-toolbar-item *ngIf="showOptions.showDelete" icon="bc_shanchu-2" name="delete" value="true"/>
