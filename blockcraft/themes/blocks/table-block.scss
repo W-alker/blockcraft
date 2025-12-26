@@ -7,8 +7,11 @@
   }
 
   @at-root #{selector-unify(&, '.dragging')} {
-    .table-block, .table-row-block, .table-cell-block {
-      > * {
+
+    .table-block,
+    .table-row-block,
+    .table-cell-block {
+      >* {
         pointer-events: unset;
       }
     }
@@ -21,13 +24,18 @@
     &.is-selecting-cell {
       -webkit-user-modify: read-only;
 
+      table-row-bar,
+      table-col-bar {
+        pointer-events: none;
+      }
+
       * {
         user-select: none;
         -webkit-user-select: none;
       }
 
       .table-cell-block {
-        > * {
+        >* {
           pointer-events: none;
         }
       }
@@ -91,16 +99,14 @@
           right: -4px;
           width: 4px;
           height: 100%;
-          background: linear-gradient(
-              to left,
+          background: linear-gradient(to left,
               rgba(0, 0, 0, 0) 0%,
-              rgba(0, 0, 0, 0.1) 100%
-          );
+              rgba(0, 0, 0, 0.1) 100%);
           pointer-events: none;
         }
       }
 
-      table-col-bar > span:first-child {
+      table-col-bar>span:first-child {
         position: sticky;
         left: 0;
         z-index: 2;
@@ -111,11 +117,11 @@
       //position: sticky;
       //top: 0;
 
-      > table-row-bar {
+      >table-row-bar {
         //padding-top: $ctrlBarSize;
       }
 
-      > table-col-bar {
+      >table-col-bar {
         //position: sticky;
         //top: 0;
         //z-index: 1;
@@ -191,8 +197,11 @@
 
   @at-root #{selector-unify(&, '.readonly')} {
     .table-block {
-      .table-col-resize-bar, .table-row-resize-bar,
-      table-col-bar, table-row-bar {
+
+      .table-col-resize-bar,
+      .table-row-resize-bar,
+      table-col-bar,
+      table-row-bar {
         display: none;
       }
     }
@@ -201,7 +210,10 @@
   .table-block {
     $ctrlBarSize: 16px;
 
-    .table-col-resize-bar, .table-row-resize-bar, table-col-bar, table-row-bar {
+    .table-col-resize-bar,
+    .table-row-resize-bar,
+    table-col-bar,
+    table-row-bar {
       user-select: none;
       -webkit-user-select: none;
 
@@ -212,6 +224,7 @@
     }
 
     &.is-selecting-cell {
+
       .table-col-resize-bar,
       .table-row-resize-bar {
         display: none;
@@ -219,8 +232,11 @@
     }
 
     &.selected {
-      table-col-bar, table-row-bar {
-        visibility: hidden !important;;
+
+      table-col-bar,
+      table-row-bar {
+        visibility: hidden !important;
+        ;
       }
     }
 
@@ -243,7 +259,7 @@
         }
       }
 
-      > .add {
+      >.add {
         display: none;
         position: absolute;
         width: 20px;
@@ -256,8 +272,7 @@
         justify-content: center;
       }
 
-      > .bar {
-      }
+      >.bar {}
     }
 
     .table-col-resize-bar {
@@ -267,17 +282,17 @@
       height: calc(100% - $ctrlBarSize);
 
       &:hover {
-        > .bar {
+        >.bar {
           opacity: 1;
         }
       }
 
-      > .add {
+      >.add {
         top: -20px;
         left: -4px;
       }
 
-      > .bar {
+      >.bar {
         opacity: 0;
         position: absolute;
         top: 0;
@@ -299,12 +314,12 @@
         display: block;
       }
 
-      > .add {
+      >.add {
         top: -4px;
         left: -20px;
       }
 
-      > .bar {
+      >.bar {
         opacity: 0;
         position: absolute;
         top: 5px;
@@ -315,13 +330,19 @@
       }
     }
 
-    &:hover, &.active, &:has(.selected), &:has(.focused) {
-      table-col-bar, table-row-bar {
+    &:hover,
+    &.active,
+    &:has(.selected),
+    &:has(.focused) {
+
+      table-col-bar,
+      table-row-bar {
         visibility: visible;
       }
     }
 
-    table-col-bar, table-row-bar {
+    table-col-bar,
+    table-row-bar {
       visibility: hidden;
       display: flex;
       z-index: 100;
@@ -336,14 +357,15 @@
       .item {
         position: relative;
 
-        > .bar {
+        >.bar {
           display: block;
           background-color: #f1f1f1;
           position: relative;
           cursor: pointer;
           z-index: 1;
 
-          &:hover, &.hover {
+          &:hover,
+          &.hover {
             background: #E0E0E0;
           }
 
@@ -352,7 +374,7 @@
           }
         }
 
-        > .pt {
+        >.pt {
           z-index: 3;
           cursor: pointer;
           position: relative;
@@ -382,11 +404,11 @@
 
       .item {
 
-        > .bar {
+        >.bar {
           height: $ctrlBarSize / 2;
         }
 
-        > .pt {
+        >.pt {
           position: absolute;
           top: -8px;
           right: -8px;
@@ -407,11 +429,11 @@
 
       .item {
 
-        > .bar {
+        >.bar {
           width: $ctrlBarSize / 2;
         }
 
-        > .pt {
+        >.pt {
           position: absolute;
           left: -8px;
           bottom: -7px;

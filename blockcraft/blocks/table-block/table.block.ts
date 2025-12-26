@@ -1,21 +1,21 @@
-import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from "@angular/core";
+import { ChangeDetectionStrategy, Component, ElementRef, ViewChild } from "@angular/core";
 import {
   BaseBlockComponent, getPositionWithOffset,
   UIEventStateContext
 } from "../../framework";
-import {TableBlockModel} from "./index";
-import {TableCellBlockComponent} from "./table-cell.block";
-import {BehaviorSubject, filter, fromEvent, merge, skip, Subject, take, takeUntil} from "rxjs";
-import {CellToolbarComponent} from "./widgets/cell-toolbar.component";
-import {AsyncPipe, NgForOf, NgIf} from "@angular/common";
-import {TableColBarComponent} from "./widgets/table-col-bar.component";
-import {TableRowBarComponent} from "./widgets/table-row-bar.component";
-import {adjustSelection, RectangleSelection} from "./utils";
-import {debounce, nextTick, throttle} from "../../global";
-import {addTableCol, addTableRow, deleteTableCols, deleteTableRows} from "./callback";
-import {OverlayRef} from "@angular/cdk/overlay";
-import {TableCellsSelection} from "./types";
-import {NzTooltipDirective} from "ng-zorro-antd/tooltip";
+import { TableBlockModel } from "./index";
+import { TableCellBlockComponent } from "./table-cell.block";
+import { BehaviorSubject, filter, fromEvent, merge, skip, Subject, take, takeUntil } from "rxjs";
+import { CellToolbarComponent } from "./widgets/cell-toolbar.component";
+import { AsyncPipe, NgForOf, NgIf } from "@angular/common";
+import { TableColBarComponent } from "./widgets/table-col-bar.component";
+import { TableRowBarComponent } from "./widgets/table-row-bar.component";
+import { adjustSelection, RectangleSelection } from "./utils";
+import { debounce, nextTick, throttle } from "../../global";
+import { addTableCol, addTableRow, deleteTableCols, deleteTableRows } from "./callback";
+import { OverlayRef } from "@angular/cdk/overlay";
+import { TableCellsSelection } from "./types";
+import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 
 @Component({
   selector: 'div.table-block',
@@ -43,9 +43,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private tableBody!: HTMLElement
 
-  @ViewChild('tableScrollable', {read: ElementRef}) tableScrollable!: ElementRef<HTMLElement>
-  @ViewChild('colResizeBar', {read: ElementRef}) colResizeBar!: ElementRef<HTMLElement>
-  @ViewChild('rowResizeBar', {read: ElementRef}) rowResizeBar!: ElementRef<HTMLElement>
+  @ViewChild('tableScrollable', { read: ElementRef }) tableScrollable!: ElementRef<HTMLElement>
+  @ViewChild('colResizeBar', { read: ElementRef }) colResizeBar!: ElementRef<HTMLElement>
+  @ViewChild('rowResizeBar', { read: ElementRef }) rowResizeBar!: ElementRef<HTMLElement>
   @ViewChild('colBarComponent') colBarComponent!: TableColBarComponent
   @ViewChild('rowBarComponent') rowBarComponent!: TableRowBarComponent
 
@@ -68,7 +68,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     for (const record of records) {
       if (record.addedNodes.length) {
         record.addedNodes.forEach(row => {
-          this.resizeObserver.observe(row as HTMLElement, {box: "border-box"})
+          this.resizeObserver.observe(row as HTMLElement, { box: "border-box" })
         })
       }
       if (record.removedNodes.length) {
@@ -88,13 +88,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     super.ngAfterViewInit();
     this.tableBody = this.tableScrollable.nativeElement.querySelector('tbody')!
 
-    this.mutationObserver.observe(this.tableBody, {childList: true})
+    this.mutationObserver.observe(this.tableBody, { childList: true })
     nextTick().then(() => {
       this.rowBarComponent.changeDetectionRef.markForCheck()
     })
 
-    this.doc.event.add('selectStart', this.onSelectstart, {blockId: this.id})
-    this.doc.event.add('mouseEnter', this.onMouseEnter, {blockId: this.id})
+    this.doc.event.add('selectStart', this.onSelectstart, { blockId: this.id })
+    this.doc.event.add('mouseEnter', this.onMouseEnter, { blockId: this.id })
   }
 
   override ngOnDestroy() {
@@ -103,6 +103,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.resizeObserver.disconnect()
     this.doc.event.remove('selectStart', this.onSelectstart)
     this.doc.event.remove('mouseEnter', this.onMouseEnter)
+
+    // 清理列和行添加器的状态，避免事件监听器泄漏
+    this._clearColAdderState()
+    this._clearRowAdderState()
   }
 
   get colLength() {
@@ -191,7 +195,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       }
     })
 
-    const sub2 = this.doc.event.customListen(cell.hostElement, 'mouseleave', {once: true}).subscribe(() => {
+    const sub2 = this.doc.event.customListen(cell.hostElement, 'mouseleave', { once: true }).subscribe(() => {
       evt.preventDefault()
       evt.stopPropagation()
 
@@ -252,7 +256,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       return;
     }
     const selection = this.confirmSelection(coordinates.start, coordinates.end)
-    const {start, end} = selection
+    const { start, end } = selection
     if (this._prevAdjustedSelection?.start[0] === start[0]
       && this._prevAdjustedSelection?.end[0] === end[0]
       && this._prevAdjustedSelection?.start[1] === start[1]
@@ -283,7 +287,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const startCoordinate = [rowIds.indexOf(startCell.parentId!), startCell.getIndexOfParent()]
 
     if (startCell === endCell) {
-      return {start: startCoordinate, end: startCoordinate}
+      return { start: startCoordinate, end: startCoordinate }
     }
 
     const endCoordinate = [rowIds.indexOf(endCell.parentId!), endCell.getIndexOfParent()]
@@ -343,7 +347,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this._startSelectingCell = this._lastSelectingCell = null
     }
 
-    const {componentRef: cpr, overlayRef} = this.doc.overlayService.createConnectedOverlay<CellToolbarComponent>({
+    const { componentRef: cpr, overlayRef } = this.doc.overlayService.createConnectedOverlay<CellToolbarComponent>({
       target,
       component: CellToolbarComponent,
       positions: [
@@ -356,7 +360,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }, this._closeToolbar$, closeCb)
     this.toolbarOvr = overlayRef
 
-    cpr.setInput('options', {type, index, count})
+    cpr.setInput('options', { type, index, count })
     cpr.setInput('doc', this.doc)
     cpr.setInput('table', this)
 
@@ -431,7 +435,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const curCol = this.hostElement.querySelector(`col:nth-child(${resizingColIdx + 1})`) as HTMLElement
 
     let newWidth = this.props.colWidths[resizingColIdx]
-    const resizeSub = fromEvent<MouseEvent>(document, 'mousemove', {capture: true})
+    const resizeSub = fromEvent<MouseEvent>(document, 'mousemove', { capture: true })
       .pipe(takeUntil(this.resizingCol$.pipe(filter(v => !v))))
       .subscribe((e) => {
 
@@ -440,7 +444,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
           return
         }
 
-        const {left} = this.tableScrollable.nativeElement.getBoundingClientRect()
+        const { left } = this.tableScrollable.nativeElement.getBoundingClientRect()
         const scrollLeft = this.tableScrollable.nativeElement.scrollLeft
         if (!this.resizingCol$.value || e.clientX < left) return
         const targetRect = curCol.getBoundingClientRect()
@@ -454,7 +458,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         curCol.style.width = newWidth + 'px'
       })
 
-    fromEvent(document, 'mouseup', {capture: true}).pipe(take(1)).subscribe(() => {
+    fromEvent(document, 'mouseup', { capture: true }).pipe(take(1)).subscribe(() => {
       if (!this.resizingCol$.value) return
       this.resizingCol$.next(false)
       const widths = [...this.props.colWidths]
@@ -466,9 +470,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   private _colAdderHandler: ((e: Event) => void) | null = null
+  private _colLeaveHandler: ((e: Event) => void) | null = null  // 新增：追踪 mouseleave 监听器
 
   onColAdderActive(colIdx: number) {
     if (this._disableColResize) return
+
+    // 先清理之前可能残留的状态
+    this._clearColAdderState()
 
     const offsetLeft = this.props.colWidths.slice(0, colIdx).reduce((a, b) => a + b, 0)
       - this.tableScrollable.nativeElement.scrollLeft
@@ -478,76 +486,104 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     bar.classList.add('active')
     this._disableColResize = true
 
-    // 移除上一个 addCol handler（如有）
-    if (this._colAdderHandler) {
-      bar.removeEventListener('mousedown', this._colAdderHandler)
-    }
-
     // 创建新的 handler 并缓存引用
     this._colAdderHandler = (e: Event) => {
       e.stopPropagation()
       e.preventDefault()
       this.addColumn(colIdx)
+      // 添加列后立即清理状态
+      this._clearColAdderState()
     }
 
     bar.addEventListener('mousedown', this._colAdderHandler)
 
-    // 一次性 pointerleave 事件
-    bar.addEventListener('mouseleave', (e) => {
+    // 创建并缓存 mouseleave handler
+    this._colLeaveHandler = (e: Event) => {
       e.stopPropagation()
       e.preventDefault()
+      this._clearColAdderState()
+    }
 
-      setTimeout(() => {
-        bar.classList.remove('active')
-        this._disableColResize = false
-      }, 10)
+    bar.addEventListener('mouseleave', this._colLeaveHandler, { once: true, capture: true })
+  }
 
-      // 移除当前 handler
-      if (this._colAdderHandler) {
-        bar.removeEventListener('mousedown', this._colAdderHandler)
-        this._colAdderHandler = null
-      }
-    }, {once: true, capture: true})
+  /**
+   * 清理列添加器状态
+   */
+  private _clearColAdderState() {
+    const bar = this.colResizeBar?.nativeElement
+    if (!bar) return
+
+    // 移除 active 类
+    bar.classList.remove('active')
+    this._disableColResize = false
+
+    // 移除事件监听器
+    if (this._colAdderHandler) {
+      bar.removeEventListener('mousedown', this._colAdderHandler)
+      this._colAdderHandler = null
+    }
+
+    if (this._colLeaveHandler) {
+      bar.removeEventListener('mouseleave', this._colLeaveHandler)
+      this._colLeaveHandler = null
+    }
   }
 
   private _rowAdderHandler: ((e: Event) => void) | null = null
+  private _rowLeaveHandler: ((e: Event) => void) | null = null  // 新增：追踪 mouseleave 监听器
 
   onRowAdderActive(rowIdx: number) {
-    if (this._rowAdderHandler) return
+    // 先清理之前可能残留的状态
+    this._clearRowAdderState()
+
     const offsetTop = this.childrenIds.slice(0, rowIdx).reduce((a, b) => a + this._rowHeightsRecord[b], 0)
     const el = this.rowResizeBar.nativeElement
 
     el.style.transform = `translateY(${offsetTop - 6 + 16}px)`
     el.classList.add('active')
 
-    // 如果之前已经绑定了 handler，先解绑
-    if (this._rowAdderHandler) {
-      el.removeEventListener('mousedown', this._rowAdderHandler)
-    }
-
     // 创建新的 handler，并存入字段
     this._rowAdderHandler = (e: Event) => {
       e.stopPropagation()
       e.preventDefault()
       this.addRow(rowIdx)
+      // 添加行后立即清理状态
+      this._clearRowAdderState()
     }
 
     el.addEventListener('mousedown', this._rowAdderHandler)
 
-    el.addEventListener('mouseleave', (e) => {
+    // 创建并缓存 mouseleave handler
+    this._rowLeaveHandler = (e: Event) => {
       e.stopPropagation()
       e.preventDefault()
+      this._clearRowAdderState()
+    }
 
-      setTimeout(() => {
-        el.classList.remove('active')
+    el.addEventListener('mouseleave', this._rowLeaveHandler, { once: true, capture: true })
+  }
 
-        // 解绑当前 handler
-        if (this._rowAdderHandler) {
-          el.removeEventListener('mousedown', this._rowAdderHandler)
-          this._rowAdderHandler = null
-        }
-      }, 10)
-    }, {once: true, capture: true})
+  /**
+   * 清理行添加器状态
+   */
+  private _clearRowAdderState() {
+    const el = this.rowResizeBar?.nativeElement
+    if (!el) return
+
+    // 移除 active 类
+    el.classList.remove('active')
+
+    // 移除事件监听器
+    if (this._rowAdderHandler) {
+      el.removeEventListener('mousedown', this._rowAdderHandler)
+      this._rowAdderHandler = null
+    }
+
+    if (this._rowLeaveHandler) {
+      el.removeEventListener('mouseleave', this._rowLeaveHandler)
+      this._rowLeaveHandler = null
+    }
   }
 
   private _prevScrollLeft = 0

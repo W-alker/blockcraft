@@ -1,8 +1,8 @@
-import {TableBlockComponent} from "./table.block";
-import {TableCellBlockComponent} from "./table-cell.block";
-import {IBlockSnapshot} from "../../framework";
-import {BlockCraftError, ErrorCode} from "../../global";
-import {TableRowBlockComponent} from "./table-row.block";
+import { TableBlockComponent } from "./table.block";
+import { TableCellBlockComponent } from "./table-cell.block";
+import { IBlockSnapshot } from "../../framework";
+import { BlockCraftError, ErrorCode } from "../../global";
+import { TableRowBlockComponent } from "./table-row.block";
 
 const isSourceMergeCell = (cell: BlockCraft.BlockComponent) => cell.props.display !== 'none' && (cell.props.rowspan || cell.props.colspan)
 
@@ -16,57 +16,64 @@ const calcIntersectionLength = (start1: number, length1: number, start2: number,
 };
 
 /**
- * 核心修复：二维查找某个位置的真实源单元格
+ * 核心工具：构建表格的虚拟矩阵，记录每个逻辑位置被哪个源单元格占据
  * @param rows 所有行的 Block 对象数组
- * @param targetRowIdx 目标行索引
- * @param targetColIdx 目标列索引
- * @returns 源单元格及其位置，如果不存在则返回 null
+ * @param rowCount 表格行数
+ * @param colCount 表格列数
+ * @returns 二维数组，每个位置存储占据该位置的源单元格信息
  */
-const findSourceCell = (
+const buildCellMatrix = (
   rows: BlockCraft.BlockComponent[],
-  targetRowIdx: number,
-  targetColIdx: number
-): { cell: TableCellBlockComponent; rowIdx: number; colIdx: number } | null => {
-  if (targetRowIdx < 0 || targetColIdx < 0) return null;
-  
-  const targetCell = rows[targetRowIdx]?.getChildrenByIndex(targetColIdx) as TableCellBlockComponent;
-  if (!targetCell) return null;
-  
-  // 如果当前单元格不是隐藏的，检查它是否是源单元格
-  if (targetCell.props.display !== 'none') {
-    return isSourceMergeCell(targetCell) 
-      ? { cell: targetCell, rowIdx: targetRowIdx, colIdx: targetColIdx }
-      : null;
+  rowCount: number,
+  colCount: number
+): Array<Array<{ cell: TableCellBlockComponent; sourceRow: number; sourceCol: number } | null>> => {
+  // 初始化虚拟矩阵
+  const matrix: Array<Array<{ cell: TableCellBlockComponent; sourceRow: number; sourceCol: number } | null>> = [];
+  for (let i = 0; i < rowCount; i++) {
+    matrix[i] = new Array(colCount).fill(null);
   }
-  
-  // 当前单元格是隐藏的，需要找到覆盖它的源单元格
-  // 向左上方搜索
-  for (let r = targetRowIdx; r >= 0; r--) {
-    for (let c = targetColIdx; c >= 0; c--) {
-      const cell = rows[r]?.getChildrenByIndex(c) as TableCellBlockComponent;
+
+  // 遍历所有实际单元格，填充虚拟矩阵
+  for (let r = 0; r < rowCount; r++) {
+    const row = rows[r];
+    if (!row) continue;
+
+    for (let c = 0; c < colCount; c++) {
+      const cell = row.getChildrenByIndex(c) as TableCellBlockComponent;
       if (!cell || cell.props.display === 'none') continue;
-      
-      // 检查这个单元格是否覆盖了目标位置
+
+      // 该单元格是源单元格，计算它占据的范围
       const rowspan = cell.props.rowspan || 1;
       const colspan = cell.props.colspan || 1;
-      
-      const coverRowRange = r + rowspan > targetRowIdx;
-      const coverColRange = c + colspan > targetColIdx;
-      
-      if (coverRowRange && coverColRange) {
-        return { cell, rowIdx: r, colIdx: c };
+
+      // 填充该单元格占据的所有逻辑位置
+      for (let rr = r; rr < r + rowspan && rr < rowCount; rr++) {
+        for (let cc = c; cc < c + colspan && cc < colCount; cc++) {
+          matrix[rr][cc] = { cell, sourceRow: r, sourceCol: c };
+        }
       }
-      
-      // 如果当前单元格的列范围已经不可能覆盖目标列，停止向左搜索
-      if (c + (cell.props.colspan || 1) <= targetColIdx) break;
     }
-    
-    // 如果当前行的任何单元格的行范围已经不可能覆盖目标行，停止向上搜索
-    const firstCell = rows[r]?.getChildrenByIndex(0) as TableCellBlockComponent;
-    if (firstCell && r + (firstCell.props.rowspan || 1) <= targetRowIdx) break;
   }
-  
-  return null;
+
+  return matrix;
+};
+
+/**
+ * 查找某个逻辑位置的源单元格
+ * @param matrix 虚拟矩阵
+ * @param rowIdx 目标行索引
+ * @param colIdx 目标列索引
+ * @returns 源单元格信息，如果不存在则返回 null
+ */
+const getCellAt = (
+  matrix: Array<Array<{ cell: TableCellBlockComponent; sourceRow: number; sourceCol: number } | null>>,
+  rowIdx: number,
+  colIdx: number
+) => {
+  if (rowIdx < 0 || colIdx < 0 || rowIdx >= matrix.length || colIdx >= matrix[0]?.length) {
+    return null;
+  }
+  return matrix[rowIdx][colIdx];
 };
 
 export function mergeTableCells(this: TableBlockComponent, start: number[], end: number[]) {
@@ -153,41 +160,49 @@ export function addTableRow(this: TableBlockComponent, index: number) {
   const cellCount = this.firstChildren!.childrenLength;
   const newRow = this.doc.schemas.createSnapshot('table-row', [cellCount]);
 
+  // 如果插入到第一行，直接插入即可
   if (index === 0) {
     this.doc.crud.insertBlocks(this.id, index, [newRow]);
     return;
   }
 
   const rows = this.getChildrenBlocks();
-  const newRowChildren = newRow.children as IBlockSnapshot[];
-  const handledCols = new Set<number>();
+  const rowCount = rows.length;
 
+  // 构建虚拟矩阵
+  const matrix = buildCellMatrix(rows, rowCount, cellCount);
+
+  const newRowChildren = newRow.children as IBlockSnapshot[];
+
+  // 遍历新行的每一列
   for (let colIdx = 0; colIdx < cellCount; colIdx++) {
-    if (handledCols.has(colIdx)) {
-      newRowChildren[colIdx].props["display"] = 'none';
+    // 查找上一行该列的占据情况
+    const cellInfo = getCellAt(matrix, index - 1, colIdx);
+
+    if (!cellInfo) {
+      // 上一行该位置没有单元格，保持默认
       continue;
     }
 
-    // 使用二维查找算法定位上一行该位置的真实源单元格
-    const sourceInfo = findSourceCell(rows, index - 1, colIdx);
+    const { cell: sourceCell, sourceRow, sourceCol } = cellInfo;
+    const rowspan = sourceCell.props.rowspan || 1;
+    const colspan = sourceCell.props.colspan || 1;
 
-    if (sourceInfo) {
-      const { cell: sourceCell, rowIdx: sourceRowIdx } = sourceInfo;
-      const rowspan = sourceCell.props.rowspan || 1;
-      const colspan = sourceCell.props.colspan || 1;
+    // 检查源单元格是否纵向跨越了插入位置
+    // 如果 sourceRow + rowspan > index，说明源单元格还要继续向下延伸
+    if (sourceRow + rowspan > index) {
+      // 需要扩展该源单元格的 rowspan
+      sourceCell.updateProps({ rowspan: rowspan + 1 });
 
-      // 如果源单元格的垂直范围覆盖了新插入行的位置
-      if (sourceRowIdx + rowspan > index) {
-        // 扩展源单元格的 rowspan
-        sourceCell.updateProps({ rowspan: rowspan + 1 });
-        
-        // 标记当前列及后续被 colspan 覆盖的列为隐藏
-        for (let c = colIdx; c < colIdx + colspan && c < cellCount; c++) {
-          newRowChildren[c].props["display"] = 'none';
-          handledCols.add(c);
-        }
+      // 将新行中被该源单元格覆盖的所有列设置为隐藏
+      for (let c = colIdx; c < colIdx + colspan && c < cellCount; c++) {
+        newRowChildren[c].props["display"] = 'none';
       }
+
+      // 跳过已处理的列
+      colIdx += colspan - 1;
     }
+    // 否则，该源单元格在插入位置之上结束，不需要特殊处理
   }
 
   return this.doc.crud.insertBlocks(this.id, index, [newRow]);
@@ -195,29 +210,38 @@ export function addTableRow(this: TableBlockComponent, index: number) {
 
 export function addTableCol(this: TableBlockComponent, index: number) {
   const rows = this.getChildrenBlocks();
+  const rowCount = rows.length;
+  const currentColCount = rows[0]?.childrenLength || 0;
+
+  // 构建虚拟矩阵
+  const matrix = buildCellMatrix(rows, rowCount, currentColCount);
 
   this.doc.crud.transact(() => {
-    for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+    for (let rowIdx = 0; rowIdx < rowCount; rowIdx++) {
       const row = rows[rowIdx];
       const newCol = this.doc.schemas.createSnapshot('table-cell', []);
 
+      // 如果插入到第一列，直接插入即可
       if (index === 0) {
         this.doc.crud.insertBlocks(row.id, index, [newCol]);
         continue;
       }
 
-      // 使用二维查找算法定位前一列的真实源单元格
-      const sourceInfo = findSourceCell(rows, rowIdx, index - 1);
+      // 查找前一列该位置的占据情况
+      const cellInfo = getCellAt(matrix, rowIdx, index - 1);
 
-      if (sourceInfo) {
-        const { cell: sourceCell, rowIdx: sourceRowIdx, colIdx: sourceColIdx } = sourceInfo;
+      if (cellInfo) {
+        const { cell: sourceCell, sourceRow, sourceCol } = cellInfo;
         const colspan = sourceCell.props.colspan || 1;
         const rowspan = sourceCell.props.rowspan || 1;
 
-        // 如果源单元格的水平范围覆盖了新插入列的位置
-        if (sourceColIdx + colspan > index) {
-          // 扩展源单元格的 colspan
-          sourceCell.updateProps({ colspan: colspan + 1 });
+        // 检查源单元格是否横向跨越了插入位置
+        if (sourceCol + colspan > index) {
+          // 需要扩展该源单元格的 colspan
+          // 但是只需要更新一次，所以判断是否是第一次遇到这个源单元格
+          if (rowIdx === sourceRow) {
+            sourceCell.updateProps({ colspan: colspan + 1 });
+          }
           newCol.props["display"] = 'none';
         }
       }
@@ -233,7 +257,7 @@ export function addTableCol(this: TableBlockComponent, index: number) {
     const totalWidth = oldWidths.reduce((a, b) => a + b, 0);
     newWidth = Math.floor(totalWidth / oldWidths.length);
   } else {
-    newWidth = Math.floor(100 / (rows[0]?.childrenLength + 1 || 1));
+    newWidth = Math.floor(100 / (currentColCount + 1 || 1));
   }
 
   const _colWidths = [...oldWidths];
@@ -246,103 +270,84 @@ export function addTableCol(this: TableBlockComponent, index: number) {
  */
 export function deleteTableCols(this: TableBlockComponent, index: number, count: number) {
   const rows = this.getChildrenBlocks();
-  const masterCells = rows.map(row => row.getChildrenBlocks() as TableCellBlockComponent[]);
+  const rowCount = rows.length;
+  const currentColCount = rows[0]?.childrenLength || 0;
 
-  const handledSourceIds = new Set<string>(); // 记录已处理过的源单元格，避免重复计算
+  // 构建虚拟矩阵
+  const matrix = buildCellMatrix(rows, rowCount, currentColCount);
 
-  // 1. 先进行属性修复 (Pre-process)
-  for (let rowIdx = 0; rowIdx < masterCells.length; rowIdx++) {
-    // 遍历被删除范围内的每一列
-    for (let c = 0; c < count; c++) {
-      const colIdx = index + c;
-      const cell = masterCells[rowIdx][colIdx];
+  // 记录已处理的源单元格，避免重复处理
+  const processedCells = new Set<string>();
 
-      // 如果遇到了合并源单元格
-      if (isSourceMergeCell(cell)) {
-        if (handledSourceIds.has(cell.id)) continue;
-        handledSourceIds.add(cell.id);
+  this.doc.crud.transact(() => {
+    // 1. 预处理：修复合并关系
+    for (let rowIdx = 0; rowIdx < rowCount; rowIdx++) {
+      for (let colIdx = index; colIdx < index + count && colIdx < currentColCount; colIdx++) {
+        const cellInfo = getCellAt(matrix, rowIdx, colIdx);
+        if (!cellInfo) continue;
 
-        const oldColspan = cell.props.colspan || 1;
-        const intersection = calcIntersectionLength(colIdx, oldColspan, index, count);
-        const remainingSpan = oldColspan - intersection;
+        const { cell: sourceCell, sourceRow, sourceCol } = cellInfo;
 
-        // 如果合并单元格只是部分被切除（还有剩余部分）
+        // 如果已经处理过这个源单元格，跳过
+        if (processedCells.has(sourceCell.id)) continue;
+
+        const colspan = sourceCell.props.colspan || 1;
+        const rowspan = sourceCell.props.rowspan || 1;
+
+        // 计算源单元格与删除范围的交集
+        const intersection = calcIntersectionLength(sourceCol, colspan, index, count);
+        const remainingSpan = colspan - intersection;
+
         if (remainingSpan > 0) {
-          // 判断源单元格是否被删除了（即头部被切）
-          const isHeadDeleted = colIdx >= index && colIdx < index + count;
+          // 部分被删除，还有剩余部分
+          const isHeadDeleted = sourceCol >= index && sourceCol < index + count;
 
           if (isHeadDeleted) {
-            // 核心逻辑：源头被删，需要寻找新的“头部”
-            // 新头部的位置应该是删除范围之后的第一列
-            const newHeadColIdx = index + count;
-            // 注意：这里我们假设剩余部分一定在右侧。
-            // 如果删除的是中间，造成左右分裂，这在Excel里通常不支持，
-            // 这里我们假设删除行为是连续的，剩余部分只会在一侧。
+            // 源头被删，需要寻找新的头部（删除范围后的第一列）
+            const newHeadCol = index; // 删除后，原来的 index+count 位置会移动到 index
 
-            const newHeadCell = masterCells[rowIdx][newHeadColIdx];
-            if (newHeadCell) {
-              // 将属性转移给新头部
-              newHeadCell.updateProps({
-                display: null, // 恢复显示
-                rowspan: cell.props.rowspan, // 保持垂直合并
-                colspan: remainingSpan
-              });
+            // 查找新头部单元格（在每一行中）
+            for (let r = sourceRow; r < sourceRow + rowspan && r < rowCount; r++) {
+              // 在删除后，新头部的位置将是 index + count
+              const newHeadCellInfo = getCellAt(matrix, r, index + count);
+              if (newHeadCellInfo && newHeadCellInfo.sourceRow === sourceRow && newHeadCellInfo.sourceCol === sourceCol) {
+                const newHeadCell = newHeadCellInfo.cell;
+                // 只需要更新一次（在源行）
+                if (r === sourceRow) {
+                  newHeadCell.updateProps({
+                    display: null,
+                    rowspan: rowspan,
+                    colspan: remainingSpan
+                  });
+                  processedCells.add(sourceCell.id);
+                }
+                break;
+              }
             }
           } else {
-            // 头部没被删（比如删的是尾部），直接修改源头属性
-            cell.updateProps({
-              colspan: remainingSpan
+            // 头部未被删，直接修改源头属性
+            sourceCell.updateProps({
+              colspan: remainingSpan > 1 ? remainingSpan : null
             });
+            processedCells.add(sourceCell.id);
           }
         }
-        // 如果 remainingSpan <= 0，说明整个被删了，不需要做额外操作，deleteBlocks 会处理
-      }
-
-      // 如果遇到了被合并的隐藏单元格 (display: none)
-      else if (cell.props.display === 'none') {
-        // 向左找源头
-        let l = colIdx - 1;
-        while(l >= 0) {
-          const leftCell = masterCells[rowIdx][l];
-          if (isSourceMergeCell(leftCell)) {
-            if (handledSourceIds.has(leftCell.id)) break;
-
-            // 这里的逻辑稍微复杂，源头可能在删除范围外，也可能在范围内（上面if已处理）
-            // 如果源头在删除范围外（左侧），我们需要缩减它的 colspan
-            if (l < index) {
-              handledSourceIds.add(leftCell.id);
-              const oldSpan = leftCell.props.colspan || 1;
-              const intersection = calcIntersectionLength(l, oldSpan, index, count);
-              const newSpan = oldSpan - intersection;
-
-              leftCell.updateProps({
-                colspan: newSpan <= 1 ? null : newSpan
-              });
-            }
-            break;
-          }
-          if(leftCell.props.display !== 'none') break; // 没找到
-          l--;
-        }
+        // 如果 remainingSpan <= 0，整个被删了，deleteBlocks 会处理
       }
     }
-  }
 
-  // 2. 执行物理删除
-  // 注意：某些情况下列宽数组也需要同步删除
+    // 2. 执行物理删除
+    rows.forEach(row => {
+      this.doc.crud.deleteBlocks(row.id, index, count);
+    });
+  });
+
+  // 3. 更新列宽数组
   const _colWidths = [...(this.props.colWidths || [])];
   if (_colWidths.length >= index + count) {
     _colWidths.splice(index, count);
     this.updateProps({ colWidths: _colWidths });
   }
-
-  this.doc.crud.deleteBlocks(rows[0].parentBlock!.id, index, count); // 这里可能有误，deleteTableCols 应该是删除每行的子元素
-  // 修正：删除列通常意味着遍历每行删除对应的子 Block
-  this.doc.crud.transact(() => {
-    rows.forEach(row => {
-      this.doc.crud.deleteBlocks(row.id, index, count);
-    });
-  });
 }
 
 /**
@@ -350,80 +355,74 @@ export function deleteTableCols(this: TableBlockComponent, index: number, count:
  */
 export function deleteTableRows(this: TableBlockComponent, index: number, count: number) {
   const rows = this.getChildrenBlocks();
-  const masterCells = rows.map(row => row.getChildrenBlocks() as TableCellBlockComponent[]);
-  const handledSourceIds = new Set<string>();
+  const rowCount = rows.length;
+  const colCount = rows[0]?.childrenLength || 0;
 
-  // 1. 预处理：修复合并关系
-  // 我们不仅要遍历删除范围内的行，还要检查可能跨越这些行的外部合并单元格
-  // 但为了性能，我们主要关注删除范围内的格子引发的变更，以及上方跨下来的格子
+  // 构建虚拟矩阵
+  const matrix = buildCellMatrix(rows, rowCount, colCount);
 
-  // 策略：遍历所有列
-  const colCount = masterCells[0]?.length || 0;
+  // 记录已处理的源单元格
+  const processedCells = new Set<string>();
 
-  for (let c = 0; c < colCount; c++) {
-    // 检查被删除区域内的格子
-    for (let r = index; r < index + count; r++) {
-      // 防止越界（虽然 deleteBlocks 会处理，但我们读属性需要安全）
-      if (r >= masterCells.length) break;
+  this.doc.crud.transact(() => {
+    // 1. 预处理：修复合并关系
+    for (let colIdx = 0; colIdx < colCount; colIdx++) {
+      for (let rowIdx = index; rowIdx < index + count && rowIdx < rowCount; rowIdx++) {
+        const cellInfo = getCellAt(matrix, rowIdx, colIdx);
+        if (!cellInfo) continue;
 
-      const cell = masterCells[r][c];
+        const { cell: sourceCell, sourceRow, sourceCol } = cellInfo;
 
-      if (isSourceMergeCell(cell)) {
-        if (handledSourceIds.has(cell.id)) continue;
-        handledSourceIds.add(cell.id);
+        // 如果已经处理过这个源单元格，跳过
+        if (processedCells.has(sourceCell.id)) continue;
 
-        const oldRowspan = cell.props.rowspan || 1;
-        const intersection = calcIntersectionLength(r, oldRowspan, index, count);
-        const remainingSpan = oldRowspan - intersection;
+        const rowspan = sourceCell.props.rowspan || 1;
+        const colspan = sourceCell.props.colspan || 1;
+
+        // 计算源单元格与删除范围的交集
+        const intersection = calcIntersectionLength(sourceRow, rowspan, index, count);
+        const remainingSpan = rowspan - intersection;
 
         if (remainingSpan > 0) {
-          // 源头被删了吗？
-          // 源头是 cell (rowIndex = r)，既然我们在遍历删除区域，r 肯定在 [index, index+count) 之间
-          // 所以源头一定被删了。
+          // 部分被删除，还有剩余部分
+          const isHeadDeleted = sourceRow >= index && sourceRow < index + count;
 
-          // 新的头部应该在删除区域的下方： index + count
-          const newHeadRowIdx = index + count;
-          if (newHeadRowIdx < masterCells.length) {
-            const newHeadCell = masterCells[newHeadRowIdx][c];
-            // 转移属性
-            newHeadCell.updateProps({
-              display: null,
-              colspan: cell.props.colspan, // 保持水平合并
-              rowspan: remainingSpan
-            });
-          }
-        }
-      }
-      else if (cell.props.display === 'none') {
-        // 向上找源头
-        let u = r - 1;
-        while (u >= 0) {
-          const upCell = masterCells[u][c];
-          if (isSourceMergeCell(upCell)) {
-            if (handledSourceIds.has(upCell.id)) break;
+          if (isHeadDeleted) {
+            // 源头被删，需要寻找新的头部（删除范围后的第一行）
+            const newHeadRow = index; // 删除后，原来的 index+count 位置会移动到 index
 
-            // 如果源头在删除区域上方（未被删）
-            if (u < index) {
-              handledSourceIds.add(upCell.id);
-              const oldSpan = upCell.props.rowspan || 1;
-              const intersection = calcIntersectionLength(u, oldSpan, index, count);
-              const newSpan = oldSpan - intersection;
-
-              upCell.updateProps({
-                rowspan: newSpan <= 1 ? null : newSpan
-              });
+            // 查找新头部单元格（在每一列中）
+            for (let c = sourceCol; c < sourceCol + colspan && c < colCount; c++) {
+              const newHeadCellInfo = getCellAt(matrix, index + count, c);
+              if (newHeadCellInfo && newHeadCellInfo.sourceRow === sourceRow && newHeadCellInfo.sourceCol === sourceCol) {
+                const newHeadCell = newHeadCellInfo.cell;
+                // 只需要更新一次（在源列）
+                if (c === sourceCol) {
+                  newHeadCell.updateProps({
+                    display: null,
+                    colspan: colspan,
+                    rowspan: remainingSpan
+                  });
+                  processedCells.add(sourceCell.id);
+                }
+                break;
+              }
             }
-            break;
+          } else {
+            // 头部未被删，直接修改源头属性
+            sourceCell.updateProps({
+              rowspan: remainingSpan > 1 ? remainingSpan : null
+            });
+            processedCells.add(sourceCell.id);
           }
-          if (upCell.props.display !== 'none') break;
-          u--;
         }
+        // 如果 remainingSpan <= 0，整个被删了，deleteBlocks 会处理
       }
     }
-  }
 
-  // 2. 执行物理删除
-  this.doc.crud.deleteBlocks(this.id, index, count);
+    // 2. 执行物理删除
+    this.doc.crud.deleteBlocks(this.id, index, count);
+  });
 }
 
 export function fixTable() {
