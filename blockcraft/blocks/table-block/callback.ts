@@ -15,6 +15,60 @@ const calcIntersectionLength = (start1: number, length1: number, start2: number,
   return Math.max(0, intersectionEnd - intersectionStart);
 };
 
+/**
+ * 核心修复：二维查找某个位置的真实源单元格
+ * @param rows 所有行的 Block 对象数组
+ * @param targetRowIdx 目标行索引
+ * @param targetColIdx 目标列索引
+ * @returns 源单元格及其位置，如果不存在则返回 null
+ */
+const findSourceCell = (
+  rows: BlockCraft.BlockComponent[],
+  targetRowIdx: number,
+  targetColIdx: number
+): { cell: TableCellBlockComponent; rowIdx: number; colIdx: number } | null => {
+  if (targetRowIdx < 0 || targetColIdx < 0) return null;
+  
+  const targetCell = rows[targetRowIdx]?.getChildrenByIndex(targetColIdx) as TableCellBlockComponent;
+  if (!targetCell) return null;
+  
+  // 如果当前单元格不是隐藏的，检查它是否是源单元格
+  if (targetCell.props.display !== 'none') {
+    return isSourceMergeCell(targetCell) 
+      ? { cell: targetCell, rowIdx: targetRowIdx, colIdx: targetColIdx }
+      : null;
+  }
+  
+  // 当前单元格是隐藏的，需要找到覆盖它的源单元格
+  // 向左上方搜索
+  for (let r = targetRowIdx; r >= 0; r--) {
+    for (let c = targetColIdx; c >= 0; c--) {
+      const cell = rows[r]?.getChildrenByIndex(c) as TableCellBlockComponent;
+      if (!cell || cell.props.display === 'none') continue;
+      
+      // 检查这个单元格是否覆盖了目标位置
+      const rowspan = cell.props.rowspan || 1;
+      const colspan = cell.props.colspan || 1;
+      
+      const coverRowRange = r + rowspan > targetRowIdx;
+      const coverColRange = c + colspan > targetColIdx;
+      
+      if (coverRowRange && coverColRange) {
+        return { cell, rowIdx: r, colIdx: c };
+      }
+      
+      // 如果当前单元格的列范围已经不可能覆盖目标列，停止向左搜索
+      if (c + (cell.props.colspan || 1) <= targetColIdx) break;
+    }
+    
+    // 如果当前行的任何单元格的行范围已经不可能覆盖目标行，停止向上搜索
+    const firstCell = rows[r]?.getChildrenByIndex(0) as TableCellBlockComponent;
+    if (firstCell && r + (firstCell.props.rowspan || 1) <= targetRowIdx) break;
+  }
+  
+  return null;
+};
+
 export function mergeTableCells(this: TableBlockComponent, start: number[], end: number[]) {
   const adjustedSelection = this.confirmSelection(start, end);
   const cells = this.getCellsMatrixByCoordinates(adjustedSelection.start, adjustedSelection.end);
@@ -99,77 +153,38 @@ export function addTableRow(this: TableBlockComponent, index: number) {
   const cellCount = this.firstChildren!.childrenLength;
   const newRow = this.doc.schemas.createSnapshot('table-row', [cellCount]);
 
-  // 修复：移除对 index === length 的特殊跳过逻辑，确保追加行也能继承合并状态
   if (index === 0) {
     this.doc.crud.insertBlocks(this.id, index, [newRow]);
     return;
   }
 
   const rows = this.getChildrenBlocks();
-  // 获取上一行作为参考
-  const prevRowIdx = index - 1;
-  const prevRowCells = rows[prevRowIdx].getChildrenBlocks();
-
-  // 递归查找合并源的辅助函数
-  const findMergeSource = (colIdx: number, currRowIdx: number): { cell: TableCellBlockComponent, rowIdx: number } | null => {
-    if (currRowIdx < 0) return null;
-    const cell = rows[currRowIdx].getChildrenByIndex(colIdx) as TableCellBlockComponent;
-    if (isSourceMergeCell(cell)) {
-      return { cell, rowIdx: currRowIdx };
-    }
-    // 只有当当前单元格是 hidden 时才向上找
-    if (cell.props.display === 'none') {
-      return findMergeSource(colIdx, currRowIdx - 1);
-    }
-    return null;
-  };
-
   const newRowChildren = newRow.children as IBlockSnapshot[];
-  let skipCols = 0;
+  const handledCols = new Set<number>();
 
-  for (let i = 0; i < cellCount; i++) {
-    if (skipCols > 0) {
-      newRowChildren[i].props["display"] = 'none';
-      skipCols--;
+  for (let colIdx = 0; colIdx < cellCount; colIdx++) {
+    if (handledCols.has(colIdx)) {
+      newRowChildren[colIdx].props["display"] = 'none';
       continue;
     }
 
-    const prevCell = prevRowCells[i];
-    let sourceCell: TableCellBlockComponent | null = null;
-    let sourceRowIdx = -1;
+    // 使用二维查找算法定位上一行该位置的真实源单元格
+    const sourceInfo = findSourceCell(rows, index - 1, colIdx);
 
-    // 情况1: 上方单元格本身就是合并源
-    if (isSourceMergeCell(prevCell)) {
-      // @ts-ignore
-      sourceCell = prevCell;
-      sourceRowIdx = prevRowIdx;
-    }
-    // 情况2: 上方单元格是被合并的隐藏格
-    else if (prevCell.props.display === 'none') {
-      const res = findMergeSource(i, prevRowIdx);
-      if (res) {
-        sourceCell = res.cell;
-        sourceRowIdx = res.rowIdx;
-      }
-    }
+    if (sourceInfo) {
+      const { cell: sourceCell, rowIdx: sourceRowIdx } = sourceInfo;
+      const rowspan = sourceCell.props.rowspan || 1;
+      const colspan = sourceCell.props.colspan || 1;
 
-    // 处理合并逻辑
-    if (sourceCell) {
-      const span = sourceCell.props.rowspan || 1;
-      // 如果合并范围覆盖到了新插入行的位置
-      // (源行号 + 跨度) > 插入行号
-      if (sourceRowIdx + span > index) {
-        // 增加源单元格的 rowspan
-        sourceCell.updateProps({
-          rowspan: span + 1
-        });
-        // 隐藏当前新单元格
-        newRowChildren[i].props["display"] = 'none';
-
-        // 如果该合并单元格还跨列，需要跳过后续列的处理
-        const colSpan = sourceCell.props.colspan || 1;
-        if (colSpan > 1) {
-          skipCols = colSpan - 1;
+      // 如果源单元格的垂直范围覆盖了新插入行的位置
+      if (sourceRowIdx + rowspan > index) {
+        // 扩展源单元格的 rowspan
+        sourceCell.updateProps({ rowspan: rowspan + 1 });
+        
+        // 标记当前列及后续被 colspan 覆盖的列为隐藏
+        for (let c = colIdx; c < colIdx + colspan && c < cellCount; c++) {
+          newRowChildren[c].props["display"] = 'none';
+          handledCols.add(c);
         }
       }
     }
@@ -181,64 +196,40 @@ export function addTableRow(this: TableBlockComponent, index: number) {
 export function addTableCol(this: TableBlockComponent, index: number) {
   const rows = this.getChildrenBlocks();
 
-  for (const row of rows) {
-    const newCol = this.doc.schemas.createSnapshot('table-cell', []);
+  this.doc.crud.transact(() => {
+    for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+      const row = rows[rowIdx];
+      const newCol = this.doc.schemas.createSnapshot('table-cell', []);
 
-    // 修复：移除 index === length 的跳过逻辑
-    if (index === 0) {
-      this.doc.crud.insertBlocks(row.id, index, [newCol]);
-      continue;
-    }
+      if (index === 0) {
+        this.doc.crud.insertBlocks(row.id, index, [newCol]);
+        continue;
+      }
 
-    // 向左查找前一个单元格
-    const prevColIdx = index - 1;
-    const prevCell = row.getChildrenByIndex(prevColIdx) as TableCellBlockComponent;
+      // 使用二维查找算法定位前一列的真实源单元格
+      const sourceInfo = findSourceCell(rows, rowIdx, index - 1);
 
-    // 查找逻辑：
-    // 如果前一个单元格是被合并的（display: none），我们需要找到它的源头，看是否 colspan 跨越了插入点
-    // 如果前一个单元格是源头且 colspan > 1，则肯定跨越了插入点（因为我们是在它内部插入）
+      if (sourceInfo) {
+        const { cell: sourceCell, rowIdx: sourceRowIdx, colIdx: sourceColIdx } = sourceInfo;
+        const colspan = sourceCell.props.colspan || 1;
+        const rowspan = sourceCell.props.rowspan || 1;
 
-    let sourceCell: TableCellBlockComponent | null = null;
-
-    if (isSourceMergeCell(prevCell)) {
-      sourceCell = prevCell;
-    } else if (prevCell.props.display === 'none') {
-      // 向左寻找源头
-      let currIdx = prevColIdx;
-      while(currIdx >= 0) {
-        const cell = row.getChildrenByIndex(currIdx) as TableCellBlockComponent;
-        if (isSourceMergeCell(cell)) {
-          sourceCell = cell;
-          break;
+        // 如果源单元格的水平范围覆盖了新插入列的位置
+        if (sourceColIdx + colspan > index) {
+          // 扩展源单元格的 colspan
+          sourceCell.updateProps({ colspan: colspan + 1 });
+          newCol.props["display"] = 'none';
         }
-        // 如果遇到非 none 且非 source (即普通单元格)，说明没有跨越
-        if (cell.props.display !== 'none') break;
-        currIdx--;
       }
+
+      this.doc.crud.insertBlocks(row.id, index, [newCol]);
     }
+  });
 
-    if (sourceCell) {
-      const sourceColIdx = sourceCell.getIndexOfParent();
-      const colspan = sourceCell.props.colspan || 1;
-
-      // 只有当插入点位于合并单元格的中间时，才扩展合并
-      // (源列索引 + 跨度) > 插入索引
-      if (sourceColIdx + colspan > index) {
-        sourceCell.updateProps({
-          colspan: colspan + 1
-        });
-        newCol.props["display"] = 'none';
-      }
-    }
-
-    this.doc.crud.insertBlocks(row.id, index, [newCol]);
-  }
-
-  // 优化：动态计算新列宽，避免硬编码 100 导致布局错乱
+  // 动态计算新列宽
   const oldWidths = this.props.colWidths || [];
   let newWidth = 100;
   if (oldWidths.length > 0) {
-    // 取平均值或者最小值
     const totalWidth = oldWidths.reduce((a, b) => a + b, 0);
     newWidth = Math.floor(totalWidth / oldWidths.length);
   } else {
@@ -247,8 +238,6 @@ export function addTableCol(this: TableBlockComponent, index: number) {
 
   const _colWidths = [...oldWidths];
   _colWidths.splice(index, 0, newWidth);
-
-  // 建议：此处最好做一个归一化（Normalize），确保总宽度为 100% 或固定值
   this.updateProps({ colWidths: _colWidths });
 }
 
