@@ -1,6 +1,6 @@
 import {ChangeDetectionStrategy, ChangeDetectorRef, Component, Input} from "@angular/core";
 import {BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective} from "../../../components";
-import {NgForOf} from "@angular/common";
+import {AsyncPipe, NgForOf} from "@angular/common";
 import {HostUrlPipe} from "../../../blocks";
 import {isFigmaUrl, isJueJinUrl} from "../../../global";
 
@@ -10,11 +10,13 @@ import {isFigmaUrl, isJueJinUrl} from "../../../global";
     <bc-float-toolbar (onItemClick)="onItemClick($event)" direction="row">
       <a class="link" [href]="block.props.url"
          target="_blank">{{ block.props.url | hostUrl }}</a>
-      <span class="bc-float-toolbar__divider"></span>
-      <bc-float-toolbar-item [expandable]="true" [bcOverlayTrigger]="viewModeTpl"
-                             [positions]="['bottom-left', 'bottom-right', 'top-right', 'top-left']" [offsetY]="8">
-        卡片视图
-      </bc-float-toolbar-item>
+      @if (!(doc.readonlySwitch$ | async)) {
+        <span class="bc-float-toolbar__divider"></span>
+        <bc-float-toolbar-item [expandable]="true" [bcOverlayTrigger]="viewModeTpl"
+                               [positions]="['bottom-left', 'bottom-right', 'top-right', 'top-left']" [offsetY]="8">
+          卡片视图
+        </bc-float-toolbar-item>
+      }
     </bc-float-toolbar>
 
     <ng-template #viewModeTpl>
@@ -44,7 +46,8 @@ import {isFigmaUrl, isJueJinUrl} from "../../../global";
     BcFloatToolbarItemComponent,
     NgForOf,
     BcOverlayTriggerDirective,
-    HostUrlPipe
+    HostUrlPipe,
+    AsyncPipe
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
