@@ -1,6 +1,6 @@
-import {ChangeDetectionStrategy, Component, EventEmitter, HostListener, Input, Output} from "@angular/core";
-import {BUILTIN_BG_COLOR_LIST, BUILTIN_COLOR_LIST, IColorItem} from "./const";
-import {NgForOf} from "@angular/common";
+import { ChangeDetectionStrategy, Component, EventEmitter, HostBinding, HostListener, Input, Output } from "@angular/core";
+import { BUILTIN_BG_COLOR_LIST, BUILTIN_COLOR_LIST, IColorItem } from "./const";
+import { NgForOf } from "@angular/common";
 
 export interface ColorGroup {
   title: string
@@ -89,11 +89,15 @@ export class ColorPickerComponent {
     this.activeList = list
   }
 
+  @Input()
+  @HostBinding('class')
+  theme: string = 'light'
+
   @Output()
   colorPicked = new EventEmitter<{ type: string, color: string | null, group: ColorGroup }>()
 
   pickColor(type: string, color: string | null, group: ColorGroup) {
-    this.colorPicked.emit({type, color, group})
+    this.colorPicked.emit({ type, color, group })
   }
 
   @HostListener('mousedown', ['$event'])

@@ -569,41 +569,8 @@
 
   // 分栏块
   .columns-block {
-    .column-divider {
-      &:hover .divider-line {
-        background: rgba(255, 255, 255, 0.3);
-      }
-
-      &:active .divider-line {
-        background: rgba(255, 255, 255, 0.5);
-      }
-    }
-
     .divider-line {
       background: rgba(255, 255, 255, 0.15);
-    }
-
-    .columns-controls {
-      background: rgba(32, 32, 32, 0.95);
-      border-color: rgba(255, 255, 255, 0.1);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    }
-
-    .control-btn {
-      color: rgba(255, 255, 255, 0.65);
-
-      &:hover:not(:disabled) {
-        background: rgba(255, 255, 255, 0.08);
-        color: rgba(255, 255, 255, 0.9);
-      }
-
-      &:active:not(:disabled) {
-        background: rgba(255, 255, 255, 0.12);
-      }
-    }
-
-    .columns-count {
-      color: rgba(255, 255, 255, 0.5);
     }
   }
 

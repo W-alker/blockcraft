@@ -80,14 +80,14 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.rowBarComponent.changeDetectionRef.markForCheck()
   })
 
-  constructor() {
-    super();
-  }
-
   override ngAfterViewInit() {
     super.ngAfterViewInit();
     this.tableBody = this.tableScrollable.nativeElement.querySelector('tbody')!
-
+    // 刚初始化的时候对row进行高度记录
+    const rows = this.tableBody.querySelectorAll('tr')
+    rows.forEach(row => {
+      this.resizeObserver.observe(row as HTMLElement, { box: "border-box" })
+    })
     this.mutationObserver.observe(this.tableBody, { childList: true })
     nextTick().then(() => {
       this.rowBarComponent.changeDetectionRef.markForCheck()

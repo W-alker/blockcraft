@@ -1,4 +1,4 @@
-import {ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, Output} from "@angular/core";
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, Output } from "@angular/core";
 import {
   BcFloatToolbarComponent,
   BcFloatToolbarItemComponent,
@@ -6,14 +6,14 @@ import {
   ColorGroup,
   ColorPickerComponent
 } from "../../../components";
-import {NgForOf, NgIf} from "@angular/common";
-import {TableCellBlockComponent} from "../table-cell.block";
-import {TableRowBlockComponent} from "../table-row.block";
-import {TableCellBlockModel} from "../index";
-import {ORIGIN_SKIP_SYNC} from "../../../framework";
-import {mergeTableCells, unMergeTableCell} from "../callback";
-import {NzDropDownDirective, NzDropdownMenuComponent} from "ng-zorro-antd/dropdown";
-import {NzTooltipDirective} from "ng-zorro-antd/tooltip";
+import { NgForOf, NgIf } from "@angular/common";
+import { TableCellBlockComponent } from "../table-cell.block";
+import { TableRowBlockComponent } from "../table-row.block";
+import { TableCellBlockModel } from "../index";
+import { ORIGIN_SKIP_SYNC } from "../../../framework";
+import { mergeTableCells, unMergeTableCell } from "../callback";
+import { NzDropDownDirective, NzDropdownMenuComponent } from "ng-zorro-antd/dropdown";
+import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 
 interface CellToolbarItem {
   name: string,
@@ -23,20 +23,20 @@ interface CellToolbarItem {
 }
 
 const HORIZON_ALIGN_LIST: CellToolbarItem[] = [
-  {name: 'textAlign', value: undefined, icon: 'bc_zuoduiqi', text: '左对齐'},
-  {name: 'textAlign', value: 'center', icon: 'bc_juzhongduiqi', text: '居中对齐'},
-  {name: 'textAlign', value: 'right', icon: 'bc_youduiqi', text: '右对齐'}
+  { name: 'textAlign', value: undefined, icon: 'bc_zuoduiqi', text: '左对齐' },
+  { name: 'textAlign', value: 'center', icon: 'bc_juzhongduiqi', text: '居中对齐' },
+  { name: 'textAlign', value: 'right', icon: 'bc_youduiqi', text: '右对齐' }
 ]
 const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
-  {name: 'verticalAlign', value: 'top', icon: 'bc_dingbuduiqi', text: '顶部对齐'},
-  {name: 'verticalAlign', value: 'middle', icon: 'bc_juzhongduiqi1', text: '垂直对齐'},
-  {name: 'verticalAlign', value: 'bottom', icon: 'bc_dibuduiqi', text: '底部对齐'}
+  { name: 'verticalAlign', value: 'top', icon: 'bc_dingbuduiqi', text: '顶部对齐' },
+  { name: 'verticalAlign', value: 'middle', icon: 'bc_juzhongduiqi1', text: '垂直对齐' },
+  { name: 'verticalAlign', value: 'bottom', icon: 'bc_dibuduiqi', text: '底部对齐' }
 ]
 
 @Component({
   selector: 'cell-toolbar',
   template: `
-    <bc-float-toolbar (onItemClick)="onItemClicked($event)">
+    <bc-float-toolbar [theme]="doc.theme" (onItemClick)="onItemClicked($event)">
       <bc-float-toolbar-item icon="bc_hebingdanyuange1" name="merge" value="true"
                              [nz-tooltip]="isMerged ? '解除合并' : '合并单元格'"
                              [active]="isMerged"/>
@@ -57,7 +57,7 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
     </bc-float-toolbar>
 
     <nz-dropdown-menu #alignFloatBar="nzDropdownMenu">
-      <bc-float-toolbar [direction]="'column'" (onItemClick)="onItemClicked($event)">
+      <bc-float-toolbar [theme]="doc.theme" [direction]="'column'" (onItemClick)="onItemClicked($event)">
 
         <bc-float-toolbar-item *ngFor="let item of HORIZON_ALIGN_LIST" [name]="item.name"
                                [active]="textAlign === item.value"
@@ -76,7 +76,7 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
     <!--    </ng-template>-->
 
     <nz-dropdown-menu #colorPicker="nzDropdownMenu">
-      <bc-color-picker (colorPicked)="onColorPicked($event)" [activeColors]="activeColors"></bc-color-picker>
+      <bc-color-picker [theme]="doc.theme" (colorPicked)="onColorPicked($event)" [activeColors]="activeColors"></bc-color-picker>
     </nz-dropdown-menu>
 
     <!--    <ng-template #colorPicker>-->
@@ -102,7 +102,7 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
   standalone: true,
 })
 export class CellToolbarComponent {
-  private _options: { type: 'col' | 'row' | 'cells', index?: number, count?: number } = {type: 'cells'}
+  private _options: { type: 'col' | 'row' | 'cells', index?: number, count?: number } = { type: 'cells' }
   @Input()
   set options(options: typeof this._options) {
     this.showOptions = {
@@ -129,10 +129,10 @@ export class CellToolbarComponent {
     colorPicker: false
   }
 
-  @Input({required: true})
+  @Input({ required: true })
   doc!: BlockCraft.Doc
 
-  @Input({required: true})
+  @Input({ required: true })
   table!: BlockCraft.IBlockComponents['table']
 
   @Output()
@@ -232,10 +232,10 @@ export class CellToolbarComponent {
         this.onClose$.emit()
         break
       case 'colHead':
-        this.table.updateProps({colHead: !this.table.props.colHead})
+        this.table.updateProps({ colHead: !this.table.props.colHead })
         break
       case 'rowHead':
-        this.table.updateProps({rowHead: !this.table.props.rowHead})
+        this.table.updateProps({ rowHead: !this.table.props.rowHead })
         break
     }
 
@@ -247,7 +247,7 @@ export class CellToolbarComponent {
 
   setSelectedDescendantsProps(prop: keyof TableCellBlockModel['props'], value: any) {
     this._selectedCells.forEach(block => {
-      block.updateProps({[prop]: value})
+      block.updateProps({ [prop]: value })
     })
   }
 
