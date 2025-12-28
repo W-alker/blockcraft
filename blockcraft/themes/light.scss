@@ -1,20 +1,126 @@
 @import "base";
 
 [data-blockcraft-root="true"][data-theme="light"] {
-  color: #333;
+  // Craft 风格浅色主题优化
+  background-color: #ffffff;
+  color: #37352F; // Craft 默认文字色（更温和的深灰）
 
-  c-element {
+  // 覆盖部分变量以贴近 Craft 风格
+  --bc-color: #37352F;
+  --bc-color-light: #787774; // Craft 次要文字
+  --bc-color-lighter: #9B9A97; // Craft 更浅文字
 
-    &[bold="true"] {
-      color: #000;
-    }
+  --bc-border-color: #E9E9E7; // Craft 边框色
+  --bc-border-color-light: #F1F1EF; // Craft 浅边框
 
+  --bc-bg-secondary: #F7F6F3; // Craft 二级背景
+  --bc-bg-elevated: #FFFFFF; // Craft 浮起元素
+  --bc-bg-hover: #F1F1EF; // Craft 悬停背景
+
+  ::selection {
+    background-color: var(--bc-select-background-color);
+    color: #37352F;
   }
 
   .edit-container {
-    caret-color: #000;
+    caret-color: var(--bc-caret-color);
+
+    c-element {}
   }
 
-  .code-block {
+  // Craft 风格占位符
+  [data-node-type="editable"].empty .edit-container::before {
+    color: #9B9A97;
   }
+
+  // 代码块 - Craft 风格
+  .code-block {
+    background-color: #F7F6F3;
+    border-color: #E9E9E7;
+
+    .code-block__head {
+      background: #FFFFFF;
+      border-bottom-color: #E9E9E7;
+    }
+
+    .head-btn {
+      color: #787774;
+
+      &:hover {
+        background-color: #F1F1EF;
+      }
+    }
+  }
+
+  // 表格 - Craft 风格
+  .table-block {
+    td.table-cell-block {
+      border-color: #E9E9E7;
+    }
+
+    &.col-head td:first-child,
+    &.row-head tr:first-child {
+      background: #F7F6F3 !important;
+    }
+
+    table-col-bar,
+    table-row-bar {
+      .item>.bar {
+        background-color: #F1F1EF;
+
+        &:hover {
+          background: #E9E9E7;
+        }
+      }
+    }
+  }
+
+  // 引用块 - Craft 风格
+  .blockquote-block {
+    color: #37352F;
+    border-left-color: #37352F;
+  }
+
+  // Callout 块 - Craft 风格
+  .callout-block {
+    background-color: #F7F6F3;
+    border-color: #E9E9E7;
+  }
+
+  // 附件块 - Craft 风格
+  .attachment-block {
+    background-color: #F7F6F3;
+    border-color: #E9E9E7;
+
+    &:hover {
+      background-color: #F1F1EF;
+    }
+  }
+
+  // 浮动工具栏 - Craft 风格
+  bc-float-toolbar {
+    .bc-float-toolbar__wrapper {
+      background-color: #FFFFFF;
+      box-shadow: 0 2px 8px rgba(15, 15, 15, 0.05),
+        0 0 0 1px rgba(15, 15, 15, 0.1);
+
+      bc-float-toolbar-item {
+        color: #37352F;
+
+        &:hover {
+          background: #F1F1EF;
+        }
+
+        &.active {
+          background: rgba(72, 87, 226, 0.1);
+          color: var(--bc-active-color);
+        }
+      }
+
+      >span.bc-float-toolbar__divider {
+        background-color: #E9E9E7;
+      }
+    }
+  }
+
 }

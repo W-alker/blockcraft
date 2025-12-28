@@ -1,11 +1,11 @@
-import {ChangeDetectionStrategy, Component, EventEmitter, Input, Output} from "@angular/core";
-import {BcFloatToolbarComponent, BcFloatToolbarItemComponent} from "../../../components";
-import {AsyncPipe} from "@angular/common";
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from "@angular/core";
+import { BcFloatToolbarComponent, BcFloatToolbarItemComponent } from "../../../components";
+import { AsyncPipe } from "@angular/common";
 
 @Component({
   selector: "div.attachment-toolbar",
   template: `
-    <bc-float-toolbar (onItemClick)="onItemClick.emit($event)">
+    <bc-float-toolbar [theme]="doc.theme" (onItemClick)="onItemClick.emit($event)">
       @if(!(doc.readonlySwitch$ | async)) {
         <bc-float-toolbar-item icon="bc_bianji_1" name="rename" title="重命名"></bc-float-toolbar-item>
       }
@@ -25,7 +25,7 @@ import {AsyncPipe} from "@angular/common";
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class AttachmentBlockToolbar {
-  @Input({required: true})
+  @Input({ required: true })
   doc!: BlockCraft.Doc
 
   @Output()

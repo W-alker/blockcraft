@@ -1,4 +1,4 @@
-import {ChangeDetectionStrategy, Component, Input} from "@angular/core";
+import { ChangeDetectionStrategy, Component, Input } from "@angular/core";
 import {
   BcFloatToolbarComponent,
   BcFloatToolbarItemComponent,
@@ -12,7 +12,7 @@ import {
 @Component({
   selector: "callout-block-toolbar",
   template: `
-    <bc-float-toolbar>
+    <bc-float-toolbar [theme]="theme">
       <bc-float-toolbar-item icon="bc_sepan" [bcOverlayTrigger]="colorPicker" />
     </bc-float-toolbar>
 
@@ -32,6 +32,9 @@ import {
 export class CalloutBlockToolbar {
   @Input()
   calloutBlock!: BlockCraft.IBlockComponents['callout']
+
+  @Input()
+  theme!: string
 
   colorGroups: ColorGroup[] = [
     {
@@ -63,7 +66,7 @@ export class CalloutBlockToolbar {
     }
   }
 
-  onColorPicked($event: { type: string; color: string | null}) {
+  onColorPicked($event: { type: string; color: string | null }) {
     this.calloutBlock.updateProps({
       [`${$event.type}`]: $event.color
     })

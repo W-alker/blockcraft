@@ -3,7 +3,6 @@
   .blockquote-block {
     position: relative;
     padding: 10px 0 10px 10px;
-    content-visibility: unset;
 
     &::before {
       content: '';
@@ -19,8 +18,9 @@
       padding-bottom: 0;
     }
 
-    + .blockquote-block {
+    +.blockquote-block {
       padding-top: 0;
+
       &::before {
         top: calc(-1 * var(--bc-segments-gap));
         height: calc(100% + var(--bc-segments-gap));

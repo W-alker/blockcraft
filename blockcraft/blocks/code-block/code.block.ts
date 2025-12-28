@@ -1,19 +1,18 @@
-import {ChangeDetectionStrategy, Component} from "@angular/core";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import {
   DeltaOperation,
   EditableBlockComponent,
   getPositionWithOffset,
   STR_LINE_BREAK
 } from "../../framework";
-import {CodeBlockModel, isLanguageSupported, loadPrismLangComponent, PRISM_LANGUAGE_MAP} from "./index";
-import {AsyncPipe, NgForOf} from "@angular/common";
-import {fromEvent, Subject, Subscription, take, throttleTime} from "rxjs";
-import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
-import {LangListComponent} from "./lang-list.component";
-import {CodeBlockLanguage} from "./const";
-import {debounce, nextTick, performanceTest} from "../../global";
-import * as Y from 'yjs'
-import {CodeInlineManagerService} from "./code-inlineManager.service";
+import { CodeBlockModel, isLanguageSupported, loadPrismLangComponent, PRISM_LANGUAGE_MAP } from "./index";
+import { AsyncPipe, NgForOf } from "@angular/common";
+import { fromEvent, Subject, take, throttleTime } from "rxjs";
+import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
+import { LangListComponent } from "./lang-list.component";
+import { CodeBlockLanguage } from "./const";
+import { debounce, nextTick } from "../../global";
+import { CodeInlineManagerService } from "./code-inlineManager.service";
 
 @Component({
   selector: 'div.code-block',
@@ -70,46 +69,27 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   override ngAfterViewInit() {
     super.ngAfterViewInit()
-    this._observer()
-  }
-
-  private _observer() {
-    this.yText.observe(this._debounce_highlight)
-    this._yProps.observe(this._obsProp)
-  }
-
-  private _unObserver() {
-    this.yText.unobserve(this._debounce_highlight)
-    this._yProps.unobserve(this._obsProp)
-  }
-
-  override detach() {
-    super.detach();
-    this._unObserver()
-  }
-
-  override reattach() {
-    super.reattach();
-    this._observer()
+    this.onPropsChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
+      if (e.has('lang')) {
+        this.inlineManager.setLang(PRISM_LANGUAGE_MAP[this.props.lang])
+        this.rerender()
+        return
+      }
+      this.changeDetectorRef.markForCheck()
+    })
+    this.onTextChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
+      this._debounce_highlight(e.op)
+    })
   }
 
   private _setLines() {
     this.lines = this.textContent().split(STR_LINE_BREAK).map(line => line += STR_LINE_BREAK)
   }
 
-  private _obsProp = (ev: Y.YMapEvent<unknown>) => {
-    if (ev.keysChanged.has('lang')) {
-      this.inlineManager.setLang(PRISM_LANGUAGE_MAP[this.props.lang])
-      this.rerender()
-      return
-    }
-    this.changeDetectorRef.markForCheck()
-  }
-
-  private _debounce_highlight = debounce((e: Y.YTextEvent) => {
+  private _debounce_highlight = debounce((e: DeltaOperation[]) => {
     if (this.doc.event.status.isComposing) return
     nextTick().then(() => {
-      this.inlineManager.diffHighLight(e.delta as DeltaOperation[])
+      this.inlineManager.diffHighLight(e)
     })
   }, 200)
 
@@ -156,7 +136,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     e.stopPropagation()
 
     const closeList$ = new Subject()
-    const {componentRef: cpr} = this.doc.overlayService.createConnectedOverlay<LangListComponent>({
+    const { componentRef: cpr } = this.doc.overlayService.createConnectedOverlay<LangListComponent>({
       target: e.target as HTMLElement,
       component: LangListComponent,
       positions: [getPositionWithOffset('bottom-center'), getPositionWithOffset('top-center')],
@@ -164,6 +144,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     }, closeList$, () => {
     })
     cpr.setInput('activeLang', this.props.lang)
+    cpr.setInput('theme', this.doc.theme)
 
     cpr.instance.langChange.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(lang => {
       closeList$.next(true)
@@ -206,9 +187,9 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
           this.containerElement.parentElement!.style.height = newHeight + 'px';
         })
 
-      fromEvent<MouseEvent>(document, 'mouseup', {capture: true}).pipe(take(1)).subscribe((e) => {
+      fromEvent<MouseEvent>(document, 'mouseup', { capture: true }).pipe(take(1)).subscribe((e) => {
         mouseMove$.unsubscribe()
-        this.updateProps({h: newHeight})
+        this.updateProps({ h: newHeight })
       })
 
     })

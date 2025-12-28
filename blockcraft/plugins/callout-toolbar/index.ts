@@ -1,8 +1,8 @@
-import {DocPlugin, getPositionWithOffset} from "../../framework";
-import {Subject, Subscription} from "rxjs";
-import {OverlayRef} from "@angular/cdk/overlay";
-import {CalloutBlockToolbar} from "./widgets/callout.toolbar";
-import {throttle} from "../../global";
+import { DocPlugin, getPositionWithOffset } from "../../framework";
+import { Subject, Subscription } from "rxjs";
+import { OverlayRef } from "@angular/cdk/overlay";
+import { CalloutBlockToolbar } from "./widgets/callout.toolbar";
+import { throttle } from "../../global";
 
 export class CalloutToolbarPlugin extends DocPlugin {
   override name = 'callout-toolbar';
@@ -51,7 +51,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
     }, 100))
     resizeObs.observe(calloutBlock.hostElement)
 
-    const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay({
+    const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay({
       target: calloutBlock,
       component: CalloutBlockToolbar,
       positions: [
@@ -63,6 +63,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
       resizeObs.disconnect()
     })
     componentRef.setInput('calloutBlock', calloutBlock)
+    componentRef.setInput('theme', this.doc.theme)
     this._overlayRef = overlayRef
 
 

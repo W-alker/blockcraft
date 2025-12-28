@@ -9,15 +9,15 @@ import {
   Input,
   Output,
 } from "@angular/core";
-import {NativeBlockModel, Obj2YMap, proxyMap, YBlock, yBlock2Native} from "../../reactive";
-import {BlockCraftError, ErrorCode} from "../../../../global";
-import {BlockChildrenRenderRef, ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC} from "../../../doc";
-import {BlockNodeType, IBlockProps, IBlockSnapshot} from "../../types";
-import {Subject} from "rxjs";
-import {createBlockGapSpace} from "../../../utils";
+import { NativeBlockModel, Obj2YMap, proxyMap, YBlock, yBlock2Native } from "../../reactive";
+import { BlockCraftError, ErrorCode } from "../../../../global";
+import { BlockChildrenRenderRef, ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC } from "../../../doc";
+import { BlockNodeType, IBlockProps, IBlockSnapshot } from "../../types";
+import { Subject } from "rxjs";
+import { createBlockGapSpace } from "../../../utils";
 import * as Y from 'yjs'
-import {STR_LINE_BREAK} from "../../inline";
-import {EditorEventName} from "../../event";
+import { STR_LINE_BREAK } from "../../inline";
+import { EditorEventName } from "../../event";
 
 @Component({
   selector: 'base-block',
@@ -45,7 +45,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return this._yBlock
   }
 
-  @Input({required: true})
+  @Input({ required: true })
   readonly doc!: BlockCraft.Doc
 
   readonly onViewInit$ = new Subject<boolean>();
@@ -117,7 +117,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     this._props = proxyMap(this._native.props, this._yProps)
     this._meta = proxyMap(this._native.meta, this._yMeta)
     this.nodeType !== BlockNodeType.editable &&
-    (this._childrenIds = (this._yBlock.get('children') as Y.Array<string>).toArray())
+      (this._childrenIds = (this._yBlock.get('children') as Y.Array<string>).toArray())
   }
 
   /**
@@ -169,6 +169,9 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
       blockId: options?.global || options?.flavour ? undefined : this.id,
     })
   }
+
+  // 当子块变化时会触发。可以选择是否提供该方法
+  onChildrenChange?: (event: Y.YEvent<Y.Array<string>>['changes']['delta']) => void
 
   get id() {
     return this._native.id
@@ -266,15 +269,15 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   updateProps(props: Partial<Model['props']>) {
     if (this.doc.isReadonly) return
     this.doc.crud.transact(() => {
-        for (const key in props) {
-          if (this._native.props[key] == props[key]) continue
-          if (props[key] === null) {
-            this._yProps.delete(key)
-            continue
-          }
-          this._yProps.set(key, props[key]!)
+      for (const key in props) {
+        if (this._native.props[key] == props[key]) continue
+        if (props[key] === null) {
+          this._yProps.delete(key)
+          continue
         }
+        this._yProps.set(key, props[key]!)
       }
+    }
     )
   }
 

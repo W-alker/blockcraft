@@ -1,4 +1,5 @@
-bc-float-toolbar {
+bc-float-toolbar,
+bc-virtual-float-toolbar {
   .bc-float-toolbar__wrapper {
     background-color: #fff;
     padding: 4px;
@@ -24,7 +25,7 @@ bc-float-toolbar {
         background: rgba(215, 215, 215, 0.6);
       }
 
-      > i {
+      >i {
         font-size: inherit;
         color: inherit;
       }
@@ -51,7 +52,7 @@ bc-float-toolbar {
         justify-content: flex-start;
       }
 
-      > span.bc-float-toolbar__divider {
+      >span.bc-float-toolbar__divider {
         margin: 4px 0;
         display: block;
         flex: 1;
@@ -72,7 +73,7 @@ bc-float-toolbar {
         padding: 0 4px;
       }
 
-      > span.bc-float-toolbar__divider {
+      >span.bc-float-toolbar__divider {
         flex-shrink: 0;
         height: 32px;
         width: 1px;
@@ -84,3 +85,33 @@ bc-float-toolbar {
 
 }
 
+bc-float-toolbar.dark,
+bc-virtual-float-toolbar.dark {
+
+  .bc-float-toolbar__wrapper,
+  .bc-virtual-float-toolbar__wrapper {
+    background-color: #2a2a2a;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+
+    bc-float-toolbar-item {
+      color: #e3e3e3;
+
+      &.active {
+        background: rgba(107, 122, 255, 0.2);
+        color: var(--bc-active-color);
+      }
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      &.float-children-opened {
+        background: rgba(255, 255, 255, 0.08);
+      }
+    }
+
+    >span.bc-float-toolbar__divider {
+      background-color: #3a3a3a;
+    }
+  }
+}

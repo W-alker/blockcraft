@@ -1,4 +1,4 @@
-import {ORIGIN_SKIP_SYNC} from "../../doc";
+import { ORIGIN_SKIP_SYNC } from "../../doc";
 import {
   BindHotKey,
   BlockNodeType,
@@ -11,9 +11,9 @@ import {
   STR_LINE_BREAK,
   UIEventStateContext
 } from "../../block-std";
-import {BlockSelection, INormalizedRange} from "../selection";
-import {isZeroSpace} from "../../utils";
-import {BlockCraftError, ErrorCode, sliceDelta} from "../../../global";
+import { BlockSelection, INormalizedRange } from "../selection";
+import { isZeroSpace } from "../../utils";
+import { BlockCraftError, ErrorCode, sliceDelta } from "../../../global";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
@@ -59,12 +59,12 @@ export class InputTransformer {
     const ev = context.getDefaultEvent<CompositionEvent>()
     ev.preventDefault()
 
-    const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
+    const { value: sel, next } = this.doc.selection.recalculate(false, { isComposing: true })
     if (!sel || sel.from.type !== 'text') {
       throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
     }
     const text = ev.data
-    const {block, index} = sel.from
+    const { block, index } = sel.from
     this.doc.crud.transact(() => {
       block.yText.insert(index === 0 ? 0 : index - text.length, text)
       // TODO: 更好的中文输入法反显渲染. 目前看必须重新渲染，否则涉及到协同的情况很容易出错
@@ -96,8 +96,8 @@ export class InputTransformer {
 
     const normalizedRange = this.doc.selection.normalizeRange(staticRange)!
 
-    const {from, to, collapsed} = normalizedRange
-    if(from.type === 'selected' && (!to || to.type === 'selected')) {
+    const { from, to, collapsed } = normalizedRange
+    if (from.type === 'selected' && (!to || to.type === 'selected')) {
       ev.preventDefault()
       return
     }
@@ -195,7 +195,7 @@ export class InputTransformer {
   }
 
   private _replaceText(range: INormalizedRange, text?: string | null) {
-    const {from, to, collapsed} = range
+    const { from, to, collapsed } = range
     if (collapsed) return
 
     this.doc.crud.transact(() => {
@@ -220,7 +220,7 @@ export class InputTransformer {
           }
           else if (to.type === 'text' && (to.index > 0 || to.length > 0)) {
             const deltas: DeltaOperation[] = [...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength)]
-            deltas.unshift({retain: yText.length})
+            deltas.unshift({ retain: yText.length })
             yText.applyDelta(deltas)
             this.doc.crud.deleteBlockById(to.blockId)
           }
@@ -236,7 +236,7 @@ export class InputTransformer {
   }
 
   private _deleteAllSelected(range: INormalizedRange) {
-    const {from, to} = range
+    const { from, to } = range
     const prevBlock = this.doc.prevSibling(range.from.block)
     if (prevBlock) {
       this.doc.selection.setCursorAtBlock(prevBlock, false)
@@ -246,7 +246,7 @@ export class InputTransformer {
       else {
         const parent = range.from.block.parentBlock
         if (parent) {
-          this.doc.selection.setCursorAtBlock(parent, true)
+          this.doc.selection.selectAllChildren(parent)
         }
         return true
       }
@@ -269,16 +269,16 @@ export class InputTransformer {
   }
 
   deleteByRange(range: INormalizedRange) {
-    if(range.from.type === 'selected' && (!range.to || range.to.type === 'selected')) {
+    if (range.from.type === 'selected' && (!range.to || range.to.type === 'selected')) {
       return this._deleteAllSelected(range)
     }
     return this._replaceText(range)
   }
 
-  @BindHotKey({key: 'Backspace', shiftKey: null, shortKey: null, metaKey: false})
+  @BindHotKey({ key: 'Backspace', shiftKey: null, shortKey: null, metaKey: false })
   private _handleBackspace(context: UIEventStateContext) {
     const state = context.get('keyboardState')
-    const {from, isAllSelected, collapsed, to} = state.selection
+    const { from, isAllSelected, collapsed, to } = state.selection
 
     if (isAllSelected) {
       context.preventDefault()
@@ -353,7 +353,7 @@ export class InputTransformer {
     if (this.doc.isEditable(prevBlock)) {
       context.preventDefault()
       const deltas: DeltaOperation[] = from.block.textDeltas()
-      deltas.unshift({retain: prevBlock.textLength})
+      deltas.unshift({ retain: prevBlock.textLength })
       prevBlock.setInlineRange(prevBlock.textLength)
       prevBlock.applyDeltaOperations(deltas)
       this.doc.crud.deleteBlockById(from.block.id)
@@ -367,11 +367,11 @@ export class InputTransformer {
     return true
   }
 
-  @BindHotKey({key: 'Delete', shiftKey: null, shortKey: null, metaKey: false})
+  @BindHotKey({ key: 'Delete', shiftKey: null, shortKey: null, metaKey: false })
   private _handleDelete(context: UIEventStateContext) {
     const state = context.get('keyboardState')
 
-    const {from, isAllSelected, collapsed} = state.selection
+    const { from, isAllSelected, collapsed } = state.selection
     // 无法正常删除的情况
     if (isAllSelected) {
       context.preventDefault()
@@ -387,7 +387,7 @@ export class InputTransformer {
       // 如果下一个兄弟块是可编辑块
       if (this.doc.isEditable(nextBlock)) {
         const deltas: DeltaOperation[] = nextBlock.textDeltas()
-        deltas.unshift({retain: from.block.textLength})
+        deltas.unshift({ retain: from.block.textLength })
         from.block.setInlineRange(from.block.textLength)
         from.block.applyDeltaOperations(deltas)
         this.doc.crud.deleteBlockById(nextBlock.id)
@@ -410,7 +410,7 @@ export class InputTransformer {
     return false
   }
 
-  @BindHotKey({key: 'Tab', shiftKey: null})
+  @BindHotKey({ key: 'Tab', shiftKey: null })
   private _handlerTab(context: UIEventStateContext) {
     const state = context.get('keyboardState')
 
@@ -454,10 +454,10 @@ export class InputTransformer {
     return true
   }
 
-  @BindHotKey({key: 'Enter', shiftKey: null, ctrlKey: null})
+  @BindHotKey({ key: 'Enter', shiftKey: null, ctrlKey: null })
   private async _handlerEnter(context: UIEventStateContext) {
     const state = context.get('keyboardState')
-    const {from, to, collapsed, isAllSelected, raw} = state.selection
+    const { from, to, collapsed, isAllSelected, raw } = state.selection
 
     context.preventDefault()
 
@@ -516,7 +516,7 @@ export class InputTransformer {
     }
 
     // 在前面换行
-    if(from.index === 0) {
+    if (from.index === 0) {
       const p = this.doc.schemas.createSnapshot(from.block.flavour, [[], {
         ...from.block.props,
         heading: null

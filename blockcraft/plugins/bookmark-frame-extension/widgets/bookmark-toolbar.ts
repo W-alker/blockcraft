@@ -1,13 +1,13 @@
-import {ChangeDetectionStrategy, ChangeDetectorRef, Component, Input} from "@angular/core";
-import {BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective} from "../../../components";
-import {AsyncPipe, NgForOf} from "@angular/common";
-import {HostUrlPipe} from "../../../blocks";
-import {isFigmaUrl, isJueJinUrl} from "../../../global";
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Input } from "@angular/core";
+import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective } from "../../../components";
+import { AsyncPipe, NgForOf } from "@angular/common";
+import { HostUrlPipe } from "../../../blocks";
+import { isFigmaUrl, isJueJinUrl } from "../../../global";
 
 @Component({
   selector: "div.iframe-toolbar",
   template: `
-    <bc-float-toolbar (onItemClick)="onItemClick($event)" direction="row">
+    <bc-float-toolbar [theme]="doc.theme" (onItemClick)="onItemClick($event)" direction="row">
       <a class="link" [href]="block.props.url"
          target="_blank">{{ block.props.url | hostUrl }}</a>
       @if (!(doc.readonlySwitch$ | async)) {
@@ -20,7 +20,7 @@ import {isFigmaUrl, isJueJinUrl} from "../../../global";
     </bc-float-toolbar>
 
     <ng-template #viewModeTpl>
-      <bc-float-toolbar direction="column" (onItemClick)="switchViewMode($event)">
+      <bc-float-toolbar [theme]="doc.theme" direction="column" (onItemClick)="switchViewMode($event)">
         @for (mode of BOOKMARK_BLOCK_VIEW_MODE_MAP; track mode[0]) {
           <bc-float-toolbar-item [value]="mode[0]" [name]="mode[0]" [active]="mode[0] === 'card'">
             {{ mode[1] }}
@@ -95,7 +95,7 @@ export class BookmarkBlockToolbar {
         break
       case 'inline':
         const paragraph = this.doc.schemas.createSnapshot('paragraph', [
-          [{insert: this.block.props.url, attributes: {'a:link': this.block.props.url}}], this.block.props]
+          [{ insert: this.block.props.url, attributes: { 'a:link': this.block.props.url } }], this.block.props]
         )
         this.doc.crud.replaceWithSnapshots(this.block.id, [paragraph]).then(() => {
           this.doc.selection.selectOrSetCursorAtBlock(paragraph.id, false)

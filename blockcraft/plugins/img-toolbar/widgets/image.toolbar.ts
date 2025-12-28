@@ -1,6 +1,6 @@
-import {ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, Output} from "@angular/core";
-import {BcFloatToolbarComponent, BcFloatToolbarItemComponent} from "../../../components";
-import {NzTooltipDirective} from "ng-zorro-antd/tooltip";
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, Output } from "@angular/core";
+import { BcFloatToolbarComponent, BcFloatToolbarItemComponent } from "../../../components";
+import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 
 const ALIGN_LIST = [
   {
@@ -25,7 +25,7 @@ const ALIGN_LIST = [
 @Component({
   selector: 'bc-image-toolbar',
   template: `
-    <bc-float-toolbar (onItemClick)="onItemClicked.emit($event)">
+    <bc-float-toolbar [theme]="theme" (onItemClick)="onItemClicked.emit($event)">
       <bc-float-toolbar-item icon="bc_tianjiamiaoshu" name="caption" [nz-tooltip]="imgBlock.childrenLength > 0 ? '取消图片标题' : '添加图片标题'"  [active]="imgBlock.childrenLength > 0">
       </bc-float-toolbar-item>
 
@@ -37,10 +37,8 @@ const ALIGN_LIST = [
       }
 
       <span class="bc-float-toolbar__divider"></span>
-      <!--      <bc-float-toolbar-item icon="bc_huanyige" name="change" title="更换图片"></bc-float-toolbar-item>-->
       <bc-float-toolbar-item icon="bc_xiazai-2" name="download" nz-tooltip="下载图片"></bc-float-toolbar-item>
       <bc-float-toolbar-item icon="bc_tupianlianjie" name="copy-url" nz-tooltip="复制图片链接"></bc-float-toolbar-item>
-      <!--      <bc-float-toolbar-item icon="bc_huanyige" name="delete"></bc-float-toolbar-item>-->
     </bc-float-toolbar>
   `,
   styles: [``],
@@ -55,7 +53,7 @@ const ALIGN_LIST = [
 export class ImageToolbar {
 
   private _imgBlock!: BlockCraft.IBlockComponents['image'];
-  @Input({required: true})
+  @Input({ required: true })
   set imgBlock(val: BlockCraft.IBlockComponents['image']) {
     this._imgBlock = val;
   }
@@ -63,6 +61,9 @@ export class ImageToolbar {
   get imgBlock() {
     return this._imgBlock;
   }
+
+  @Input()
+  theme!: string
 
   @Output()
   readonly onItemClicked = new EventEmitter<BcFloatToolbarItemComponent>();

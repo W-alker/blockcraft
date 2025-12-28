@@ -1,9 +1,10 @@
-import {ChangeDetectionStrategy, Component, HostBinding} from "@angular/core";
-import {BaseBlockComponent} from "./base-block";
-import {EditableBlockNative} from "../../reactive";
+import { ChangeDetectionStrategy, Component, HostBinding } from "@angular/core";
+import { BaseBlockComponent } from "./base-block";
+import { EditableBlockNative } from "../../reactive";
 import * as Y from 'yjs'
-import {DeltaInsert, DeltaOperation} from "../../types";
-import {INLINE_CONTAINER_CLASS} from "../../inline";
+import { DeltaInsert, DeltaOperation } from "../../types";
+import { INLINE_CONTAINER_CLASS } from "../../inline";
+import { Subject } from "rxjs";
 
 @Component({
   selector: 'editable-block',
@@ -23,6 +24,8 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   get inlineManager() {
     return this.doc.inlineManager
   }
+
+  onTextChange = new Subject<{ op: DeltaOperation[]; tr: Y.Transaction; }>();
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
@@ -84,9 +87,9 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
   replaceText(index: number, length: number, text?: string | null, attributes?: DeltaInsert['attributes']) {
     const delta: DeltaOperation[] = []
-    index > 0 && delta.push({retain: index})
-    length > 0 && delta.push({delete: length})
-    text && delta.push({insert: text, attributes})
+    index > 0 && delta.push({ retain: index })
+    length > 0 && delta.push({ delete: length })
+    text && delta.push({ insert: text, attributes })
     this.yText.applyDelta(delta)
   }
 

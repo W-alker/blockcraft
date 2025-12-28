@@ -36,6 +36,30 @@
   }
 }
 
+:host {
+  &[data-theme="dark"] {
+    .popup {
+      background: #333;
+      color: #fff;
+    }
+
+    .tabs {
+      background: #444;
+      border: 1px solid #444;
+    }
+
+    .tabs button {
+      color: #999;
+    }
+
+    .tabs button.active {
+      background: #555;
+      color: #fff;
+    }
+
+  }
+}
+
 .pattern-grid {
   display: flex;
   flex-direction: column;
@@ -51,8 +75,7 @@
   cursor: pointer;
   transition: all 0.2s ease;
   /* 轻微斜切的锯齿边缘，用伪元素模拟 */
-  clip-path: polygon(
-      5px 0px,
+  clip-path: polygon(5px 0px,
       0px 4.4px,
       6px 10.4px,
       0px 14.4px,
@@ -67,8 +90,7 @@
       98% 20px,
       100% 11.2px,
       98% 5.2px,
-      99% 0px
-  );
+      99% 0px);
   background-size: 100% 100%;
 
   &[data-tab-size="thin"] {
@@ -169,20 +191,17 @@
       }
 
       &[data-tab-size="large"] {
-        background-color: #333;
         width: 100%;
         height: 2px;
       }
     }
 
     &.dashed {
-      background-image: repeating-linear-gradient(
-          to right,
+      background-image: repeating-linear-gradient(to right,
           #ccc,
           #ccc 8px,
           transparent 8px,
-          transparent 16px
-      );
+          transparent 16px);
 
       &[data-tab-size="thin"] {
         width: 30%;
@@ -199,15 +218,7 @@
         height: 1px;
       }
 
-
       &[data-tab-size="large"] {
-        background-image: repeating-linear-gradient(
-            to right,
-            #333,
-            #333 8px,
-            transparent 8px,
-            transparent 16px
-        );
         width: 100%;
         height: 2px;
       }
@@ -232,7 +243,6 @@
       }
 
       &[data-tab-size="large"] {
-        background-image: radial-gradient(circle, #333 2px, transparent 2px);
         height: 6px;
         width: 100%;
       }
@@ -259,7 +269,6 @@
 
       &[data-tab-size="large"] {
         border-width: 6px;
-        border-color: #333;
         width: 100%;
       }
     }
@@ -267,7 +276,3 @@
 
   }
 }
-
-
-
-

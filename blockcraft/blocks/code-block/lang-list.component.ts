@@ -4,12 +4,13 @@ import {
   Component,
   DestroyRef, ElementRef,
   EventEmitter,
+  HostBinding,
   Input,
   Output, ViewChild
 } from "@angular/core";
-import {CodeBlockLanguage, LANGUAGE_LIST, loadPrismLangComponent} from "./const";
-import {NgForOf} from "@angular/common";
-import {debounce} from "../../global";
+import { CodeBlockLanguage, LANGUAGE_LIST, loadPrismLangComponent } from "./const";
+import { NgForOf } from "@angular/common";
+import { debounce } from "../../global";
 
 @Component({
   selector: 'lang-list',
@@ -68,6 +69,30 @@ import {debounce} from "../../global";
           background-color: rgba(153, 153, 153, .1);
         }
       }
+
+      &[data-theme="dark"] {
+        background-color: #333;
+        border: 1px solid #555;
+        color: #ccc;
+
+        > input {
+          border: 1px solid #555;
+          color: #ccc;
+          background-color: #2a2a2a;
+        }
+
+        .lang-list_item {
+          color: #ccc;
+            &.active {
+              background: rgba(107, 122, 255, 0.2);
+              color: var(--bc-active-color);
+            }
+
+            &:hover {
+              background: rgba(255, 255, 255, 0.08);
+            }
+        }
+      }
     }
   `],
   imports: [NgForOf],
@@ -76,11 +101,14 @@ import {debounce} from "../../global";
 })
 export class LangListComponent {
   @Input() activeLang: string = 'JavaScript';
+  @Input()
+  @HostBinding('attr.data-theme')
+  theme = ''
   @Output() langChange = new EventEmitter<CodeBlockLanguage>();
   @Output() destroy = new EventEmitter<void>()
 
-  @ViewChild('input', {read: ElementRef}) input!: ElementRef<HTMLInputElement>
-  @ViewChild('langList', {read: ElementRef}) langList!: ElementRef<HTMLElement>
+  @ViewChild('input', { read: ElementRef }) input!: ElementRef<HTMLInputElement>
+  @ViewChild('langList', { read: ElementRef }) langList!: ElementRef<HTMLElement>
 
   protected languageList = LANGUAGE_LIST;
 
@@ -124,11 +152,11 @@ export class LangListComponent {
   }
 
   viewHoverLang() {
-    this.langList.nativeElement.children[this.hoverIdx]?.scrollIntoView({behavior: 'smooth', block: 'nearest'})
+    this.langList.nativeElement.children[this.hoverIdx]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }
 
   onSearch = debounce((e: Event) => {
-    if(this.isComposing) return
+    if (this.isComposing) return
     const v = (e.target as HTMLInputElement).value;
     if (!v) this.languageList = LANGUAGE_LIST;
     else this.languageList = LANGUAGE_LIST.filter(item => item.toLowerCase().includes(v.toLowerCase()));
@@ -137,7 +165,7 @@ export class LangListComponent {
   }, 300)
 
   onKeydown($event: KeyboardEvent) {
-    if(this.isComposing) return;
+    if (this.isComposing) return;
     switch ($event.key) {
       case 'Escape':
         $event.preventDefault()
@@ -156,7 +184,7 @@ export class LangListComponent {
         this.viewHoverLang()
         break;
       case 'Enter':
-        if(!this.languageList.length || !this.languageList[this.hoverIdx]) return;
+        if (!this.languageList.length || !this.languageList[this.hoverIdx]) return;
         $event.preventDefault()
         this.emitLang(this.languageList[this.hoverIdx])
         break;

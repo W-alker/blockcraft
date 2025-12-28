@@ -1,8 +1,8 @@
-import {generateId, NoEditableBlockNative} from "../../framework";
-import {BlockNodeType} from "../../framework/block-std/types";
-import {IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
-import {CalloutBlockComponent} from "./callout.block";
-import {ParagraphBlockSchema} from "../paragraph-block";
+import { generateId, NoEditableBlockNative } from "../../framework";
+import { BlockNodeType } from "../../framework/block-std/types";
+import { IBlockSchemaOptions } from "../../framework/block-std/schema/block-schema";
+import { CalloutBlockComponent } from "./callout.block";
+import { ParagraphBlockSchema } from "../paragraph-block";
 
 export interface CalloutBlockModel extends NoEditableBlockNative {
   flavour: 'callout',
@@ -39,6 +39,7 @@ export const CalloutBlockSchema: IBlockSchemaOptions<CalloutBlockModel> = {
     label: "高亮块",
     icon: 'bc_icon bc_gaoliangkuai-color',
     svgIcon: 'bc_gaoliangkuai-color',
+    renderUnit: true,
     includeChildren: ['paragraph', 'divider', 'todo', 'bullet', 'ordered', 'heading-*'],
     // excludeChildren: ['callout', 'table*', 'image', 'code', 'attachment', '*-embed', 'bookmark']
   }

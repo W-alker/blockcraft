@@ -29,7 +29,6 @@
         }
 
         &[data-size="large"] {
-          background-color: #333;
           width: 100%;
           height: 2px;
         }
@@ -38,13 +37,11 @@
       &.dashed {
         width: 100%;
         height: 1px;
-        background: repeating-linear-gradient(
-            to right,
+        background: repeating-linear-gradient(to right,
             #ddd,
             #ddd 8px,
             transparent 8px,
-            transparent 16px
-        );
+            transparent 16px);
 
         &[data-size="thin"] {
           width: 20%;
@@ -57,13 +54,6 @@
         }
 
         &[data-size="large"] {
-          background: repeating-linear-gradient(
-              to right,
-              #333,
-              #333 8px,
-              transparent 8px,
-              transparent 16px
-          );
           width: 100%;
           height: 2px;
         }
@@ -85,7 +75,6 @@
         }
 
         &[data-size="large"] {
-          background-image: radial-gradient(circle, #333 2px, transparent 2px);
           height: 6px;
           width: 100%;
         }
@@ -109,7 +98,6 @@
         }
 
         &[data-size="large"] {
-          border-color: #333;
           width: 100%;
         }
       }
@@ -139,10 +127,9 @@
       &.tape-regular-lines,
       &.tape-gradient-blocks,
       &.tape-gray-lines {
-        margin:8px 0;
+        margin: 8px 0;
         height: 40px;
-        clip-path: polygon(
-            5px 0px,
+        clip-path: polygon(5px 0px,
             0px 4.4px,
             6px 10.4px,
             0px 14.4px,
@@ -157,8 +144,7 @@
             99.4% 20px,
             100% 11.2px,
             99.5% 5.2px,
-            99.5% 0px
-        );
+            99.5% 0px);
         background-size: 100% 100%;
         width: 70%;
         transform: rotate(.8deg);

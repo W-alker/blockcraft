@@ -10,7 +10,7 @@ import {
   Output,
   QueryList
 } from '@angular/core';
-import {BcFloatToolbarItemComponent} from "./float-toolbar-item";
+import { BcFloatToolbarItemComponent } from "./float-toolbar-item";
 
 @Component({
   selector: 'bc-float-toolbar',
@@ -37,6 +37,10 @@ export class BcFloatToolbarComponent {
   @Input()
   styles: string = ''
 
+  @Input()
+  @HostBinding('class')
+  theme: string = 'light'
+
   @Output()
   onItemClick = new EventEmitter<BcFloatToolbarItemComponent>()
 
@@ -58,7 +62,7 @@ export class BcFloatToolbarComponent {
     event.stopPropagation()
     event.preventDefault()
 
-    if(event.timeStamp - this.timestamp < 100) return;
+    if (event.timeStamp - this.timestamp < 100) return;
     this.timestamp = event.timeStamp
 
     const target = event.target as Node | null

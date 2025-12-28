@@ -7,12 +7,10 @@ import {
   Input,
   Output
 } from "@angular/core";
-import {NgForOf, NgTemplateOutlet} from "@angular/common";
-import {MatIcon} from "@angular/material/icon";
-import {BLOCK_CREATOR_SERVICE_TOKEN, BlockNodeType, EditableBlockComponent} from "../../../framework";
-import {debounce} from "../../../global";
-import {take, takeUntil} from "rxjs";
-import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
+import { NgForOf, NgTemplateOutlet } from "@angular/common";
+import { MatIcon } from "@angular/material/icon";
+import { BLOCK_CREATOR_SERVICE_TOKEN, BlockNodeType, EditableBlockComponent } from "../../../framework";
+import { debounce } from "../../../global";
 
 interface IContextMenuOption {
   flavour: string
@@ -26,17 +24,17 @@ interface IContextMenuOption {
 }
 
 const HEADING_LIST: IContextMenuOption[] = [
-  {metadata: {label: '一级标题', icon: 'bc_icon bc_biaoti_1', heading: 1}, flavour: 'heading-one', type: "heading"},
-  {metadata: {label: '二级标题', icon: 'bc_icon bc_biaoti_2', heading: 2}, flavour: 'heading-two', type: "heading"},
-  {metadata: {label: '三级标题', icon: 'bc_icon bc_biaoti_3', heading: 3}, flavour: 'heading-three', type: "heading"},
-  {metadata: {label: '四级标题', icon: 'bc_icon bc_biaoti_4', heading: 4}, flavour: 'heading-four', type: "heading"},
+  { metadata: { label: '一级标题', icon: 'bc_icon bc_biaoti_1', heading: 1 }, flavour: 'heading-one', type: "heading" },
+  { metadata: { label: '二级标题', icon: 'bc_icon bc_biaoti_2', heading: 2 }, flavour: 'heading-two', type: "heading" },
+  { metadata: { label: '三级标题', icon: 'bc_icon bc_biaoti_3', heading: 3 }, flavour: 'heading-three', type: "heading" },
+  { metadata: { label: '四级标题', icon: 'bc_icon bc_biaoti_4', heading: 4 }, flavour: 'heading-four', type: "heading" },
 ]
 const TransformReg = /^[\/、].*/
 
 @Component({
   selector: 'block-transformer-contextmenu',
   template: `
-    <ul class="list" (mousedown)="onMouseDown($event)" (mousemove)="onMouseMove()" (mouseover)="onMouseOver($event)">
+    <ul class="list" [attr.data-theme]="doc.theme" (mousedown)="onMouseDown($event)" (mousemove)="onMouseMove()" (mouseover)="onMouseOver($event)">
       @for (item of list; track item.flavour; let idx = $index) {
         <li class="list__item" [class.active]="activeIdx === idx" [attr.data-index]="idx">
           @if (item.metadata.svgIcon) {
@@ -80,7 +78,7 @@ export class BlockTransformContextMenu {
     const blocks: IContextMenuOption[] = this.doc.schemas.getSchemaList()
       .filter(v => !v.metadata.isLeaf && !['paragraph', 'root'].includes(v.flavour)
         && this.doc.schemas.isValidChildren(v.flavour, parentBlockSchema))
-      .map(v => ({flavour: v.flavour, metadata: v.metadata, type: 'block'}))
+      .map(v => ({ flavour: v.flavour, metadata: v.metadata, type: 'block' }))
     const listAll = HEADING_LIST.concat(blocks)
 
     this.list = listAll
@@ -106,26 +104,26 @@ export class BlockTransformContextMenu {
     this.activeBlock.yText.observe(textObserver)
 
     const hotKeyEvents = [
-      this.doc.event.bindHotkey({key: 'Escape',}, evt => {
+      this.doc.event.bindHotkey({ key: 'Escape', }, evt => {
         evt.preventDefault()
         this.close$.next(true)
         return true
-      }, {blockId: this.activeBlock.id}),
-      this.doc.event.bindHotkey({key: 'Enter',}, evt => {
+      }, { blockId: this.activeBlock.id }),
+      this.doc.event.bindHotkey({ key: 'Enter', }, evt => {
         evt.preventDefault()
         this.select()
         return true
-      }, {blockId: this.activeBlock.id}),
-      this.doc.event.bindHotkey({key: 'ArrowUp',}, evt => {
+      }, { blockId: this.activeBlock.id }),
+      this.doc.event.bindHotkey({ key: 'ArrowUp', }, evt => {
         evt.preventDefault()
         this.selectUp()
         return true
-      }, {blockId: this.activeBlock.id}),
-      this.doc.event.bindHotkey({key: 'ArrowDown'}, evt => {
+      }, { blockId: this.activeBlock.id }),
+      this.doc.event.bindHotkey({ key: 'ArrowDown' }, evt => {
         evt.preventDefault()
         this.selectDown()
         return true
-      }, {blockId: this.activeBlock.id})
+      }, { blockId: this.activeBlock.id })
     ]
 
     this.destroyRef.onDestroy(() => {
@@ -215,8 +213,8 @@ export class BlockTransformContextMenu {
       const snapshot = this.doc.schemas.createSnapshot(schema.flavour, [[], this.activeBlock.props])
       this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [snapshot])
         .then(() => {
-        this.doc.selection.setCursorAtBlock(snapshot.id, true)
-      })
+          this.doc.selection.setCursorAtBlock(snapshot.id, true)
+        })
       return
     }
 
@@ -228,8 +226,8 @@ export class BlockTransformContextMenu {
       newBlock.props.depth = this.activeBlock.props.depth
       this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [newBlock])
         .then(() => {
-        this.doc.selection.setCursorAtBlock(newBlock.id, true)
-      })
+          this.doc.selection.setCursorAtBlock(newBlock.id, true)
+        })
     })
   }
 

@@ -1,7 +1,7 @@
-import {DocCRUD} from "./crud";
-import {ComponentRef, Injector, NgZone, ViewContainerRef} from "@angular/core";
-import {BlockCraftError, ErrorCode, getScrollContainer, Logger, nextTick, performanceTest} from "../../global";
-import {DocVM} from "./vm";
+import { DocCRUD } from "./crud";
+import { ComponentRef, Injector, NgZone, ViewContainerRef } from "@angular/core";
+import { BlockCraftError, ErrorCode, getScrollContainer, Logger, nextTick, performanceTest } from "../../global";
+import { DocVM } from "./vm";
 import {
   IBlockSnapshot,
   EmbedConverter,
@@ -10,13 +10,13 @@ import {
   EditableBlockComponent,
   YBlock
 } from "../block-std";
-import {ClipboardManager, InputTransformer, SelectionManager} from "../modules";
-import {BehaviorSubject, Subject, Subscription, take} from "rxjs";
-import {getCommonPath} from "../utils";
-import {DocPlugin} from "../plugin";
-import {DOC_MESSAGE_SERVICE_TOKEN} from "../services";
-import {DocOverlayService} from "../services";
-import {DocDndService} from "../services/dnd.service";
+import { ClipboardManager, InputTransformer, SelectionManager } from "../modules";
+import { BehaviorSubject, Subject, Subscription, take } from "rxjs";
+import { getCommonPath } from "../utils";
+import { DocPlugin } from "../plugin";
+import { DOC_MESSAGE_SERVICE_TOKEN } from "../services";
+import { DocOverlayService } from "../services";
+import { DocDndService } from "../services/dnd.service";
 import * as Y from "yjs";
 
 interface DocConfig {
@@ -82,7 +82,7 @@ export class BlockCraftDoc {
   }
 
   get yDoc() {
-    if(!this.config.yDoc) {
+    if (!this.config.yDoc) {
       throw new BlockCraftError(ErrorCode.DefaultFatalError, `yDoc not init yet`)
     }
     return this.config.yDoc
@@ -124,6 +124,10 @@ export class BlockCraftDoc {
     return !!this._root
   }
 
+  get theme() {
+    return this.config.theme || 'light'
+  }
+
   constructor(
     public readonly config: DocConfig
   ) {
@@ -156,7 +160,7 @@ export class BlockCraftDoc {
     }
 
     const id = yRoot.get('id')
-    const comp = this.vm.createComponentByYBlocks({[id]: yRoot})
+    const comp = this.vm.createComponentByYBlocks({ [id]: yRoot })
     const root = comp[id]
     container.append(root.location.nativeElement)
     this._initEditor(root.instance as any)
@@ -179,15 +183,14 @@ export class BlockCraftDoc {
       this.vm.clear()
     })
 
-    // init theme
-    this.toggleTheme(this.config.theme || 'light')
-
     // 这两行代码会造成严重延迟
     nextTick().then(() => {
       // init scroll container
       this._scrollContainer = this.config.scrollContainer ?? getScrollContainer(comp.hostElement)
       // init readonly
       this.readonlySwitch$.next(this.config.readonly || false)
+      // init theme
+      this.toggleTheme(this.config.theme || 'light')
     })
 
     // init hotkeys
@@ -199,7 +202,7 @@ export class BlockCraftDoc {
       context.get('keyboardState').raw.shiftKey ? this.crud.undoManager.redo() : this.crud.undoManager.undo()
       context.preventDefault()
       return true
-    }, {blockId: this.rootId})
+    }, { blockId: this.rootId })
 
   }
 
@@ -406,10 +409,12 @@ export class BlockCraftDoc {
   }
 
   toggleTheme(name: string) {
+    this.config.theme = name
     this.root.hostElement.setAttribute('data-theme', name)
   }
 
   toggleReadonly(readonly: boolean) {
+    this.config.readonly = readonly
     this.readonlySwitch$.next(readonly)
   }
 

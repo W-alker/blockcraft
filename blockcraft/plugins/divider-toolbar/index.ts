@@ -2,9 +2,9 @@ import {
   DocPlugin,
   EventListen, getPositionWithOffset
 } from "../../framework";
-import {merge, Subject, Subscription, takeUntil} from "rxjs";
-import {OverlayRef} from "@angular/cdk/overlay";
-import {DividerStylePopupComponent} from "./widgets/divider-style-popup.component";
+import { merge, Subject, Subscription, takeUntil } from "rxjs";
+import { OverlayRef } from "@angular/cdk/overlay";
+import { DividerStylePopupComponent } from "./widgets/divider-style-popup.component";
 
 export class DividerExtensionPlugin extends DocPlugin {
   override name = "divider-extension";
@@ -36,7 +36,7 @@ export class DividerExtensionPlugin extends DocPlugin {
 
         this._activeBlock = dividerBlock as any
 
-        const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<DividerStylePopupComponent>({
+        const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<DividerStylePopupComponent>({
           target: dividerBlock,
           component: DividerStylePopupComponent,
           positions: [
@@ -47,7 +47,7 @@ export class DividerExtensionPlugin extends DocPlugin {
 
         this._toolbarRef = overlayRef
         componentRef.setInput('dividerBlock', dividerBlock)
-
+        componentRef.setInput('theme', this.doc.theme)
       }, 200)
 
     })

@@ -1,17 +1,17 @@
-import {ChangeDetectionStrategy, Component} from "@angular/core";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import {
   BaseBlockComponent, DOC_FILE_SERVICE_TOKEN,
   generateId,
   getPositionWithOffset,
 } from "../../framework";
-import {MermaidBlockModel} from "./index";
+import { MermaidBlockModel } from "./index";
 import mermaid from "mermaid";
-import {Subject, Subscription, takeUntil} from "rxjs";
-import {MermaidTypeListComponent} from "./widgets/mermaid-type-list.component";
-import {IMermaidType, MermaidViewMode} from "./types";
-import {debounce, nextTick} from "../../global";
-import {MermaidViewSwitchComponent} from "./widgets/mermaid-view-switch.component";
-import {AsyncPipe} from "@angular/common";
+import { Subject, Subscription, takeUntil } from "rxjs";
+import { MermaidTypeListComponent } from "./widgets/mermaid-type-list.component";
+import { IMermaidType, MermaidViewMode } from "./types";
+import { debounce, nextTick } from "../../global";
+import { MermaidViewSwitchComponent } from "./widgets/mermaid-view-switch.component";
+import { AsyncPipe } from "@angular/common";
 
 // import {ScaleRatioPipe} from "./ratio.pipe";
 
@@ -74,7 +74,6 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     threshold: [0, 1]
   })
 
-  private _propsChangeSubscription!: Subscription;
   protected _viewMode: MermaidViewMode | null = null
 
   override ngAfterViewInit() {
@@ -83,12 +82,19 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     this.graphContainer = this.hostElement.querySelector('.graph-con') as HTMLDivElement;
 
     this.setView(this.props.mode)
-    this._propsChangeSubscription = this.onPropsChange.subscribe(map => {
+
+    this.onPropsChange.pipe(takeUntil(this.onDestroy$)).subscribe(map => {
       if (map.has('mode')) {
         this.setView(this.props.mode)
       }
     })
+    const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
+    textarea.onTextChange.pipe(takeUntil(this.onDestroy$)).subscribe(this._onPreviewObserver)
+  }
 
+  override ngOnDestroy() {
+    super.ngOnDestroy();
+    this.intersectionObserver.disconnect()
   }
 
   override _init() {
@@ -126,7 +132,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     if (graphDefinition === this._prevTextContent && this.graphContainer.childElementCount) return
     this._prevTextContent = graphDefinition
     try {
-      const {svg} = await mermaid.render('graph' + generateId(11), graphDefinition, this.graphContainer);
+      const { svg } = await mermaid.render('graph' + generateId(11), graphDefinition, this.graphContainer);
       this.graphContainer.innerHTML = svg
       this.graphMaxWidth = parseInt((this.graphContainer.firstElementChild! as SVGAElement).style.maxWidth)
       this.setGraphWidth(this.graphScale)
@@ -143,13 +149,6 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     } else {
       this.graphContainer.childElementCount && this.graphContainer.replaceChildren()
     }
-
-    const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
-    if (this._viewMode === 'default') {
-      textarea.yText.observe(this._onPreviewObserver)
-    } else {
-      textarea.yText.unobserve(this._onPreviewObserver)
-    }
   }
 
   onSwitchView($event: MouseEvent) {
@@ -159,7 +158,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     const close$ = new Subject()
     const btn = $event.target as HTMLElement
     btn.classList.add('active')
-    const {componentRef} = this.doc.overlayService.createConnectedOverlay<MermaidViewSwitchComponent>({
+    const { componentRef } = this.doc.overlayService.createConnectedOverlay<MermaidViewSwitchComponent>({
       target: $event.target as HTMLElement,
       component: MermaidViewSwitchComponent,
       backdrop: true,
@@ -168,6 +167,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
       btn.classList.remove('active')
     })
     componentRef.setInput('viewMode', this.props.mode)
+    componentRef.setInput('theme', this.doc.theme)
 
     componentRef.instance.itemClicked.pipe(takeUntil(close$)).subscribe(v => {
       close$.next(true)
@@ -185,7 +185,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     const close$ = new Subject()
     const btn = $event.target as HTMLElement
     btn.classList.add('active')
-    const {componentRef} = this.doc.overlayService.createConnectedOverlay<MermaidTypeListComponent>({
+    const { componentRef } = this.doc.overlayService.createConnectedOverlay<MermaidTypeListComponent>({
       target: $event.target as HTMLElement,
       component: MermaidTypeListComponent,
       backdrop: true,
@@ -193,6 +193,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     }, close$, () => {
       btn.classList.remove('active')
     })
+    componentRef.setInput('theme', this.doc.theme)
 
     componentRef.instance.itemClicked.pipe(takeUntil(close$)).subscribe(v => {
       close$.next(true)
@@ -215,12 +216,6 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
     textarea.textLength && textarea.deleteText(0, textarea.textLength)
     textarea.insertText(0, item.prefix + item.template)
-  }
-
-  override ngOnDestroy() {
-    super.ngOnDestroy();
-    this.intersectionObserver.disconnect()
-    this._propsChangeSubscription.unsubscribe()
   }
 
   scaleGraph(number: number) {
@@ -251,7 +246,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     if (!svg || !(svg instanceof SVGElement)) return
     //svg转img
     const svgString = new XMLSerializer().serializeToString(svg);
-    const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(svgBlob);
     const img = new Image()
     img.src = url
@@ -263,6 +258,6 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
         url && URL.revokeObjectURL(url)
       }
     })
-    img.dispatchEvent(new MouseEvent('click', {bubbles: false, cancelable: true, view: window}))
+    img.dispatchEvent(new MouseEvent('click', { bubbles: false, cancelable: true, view: window }))
   }
 }

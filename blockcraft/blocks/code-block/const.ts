@@ -1,50 +1,18 @@
-// import 'prismjs/components/prism-javascript';
-// import 'prismjs/components/prism-typescript';
-// import 'prismjs/components/prism-css';
-// import 'prismjs/components/prism-markup';
-// import 'prismjs/components/prism-php';
-// import 'prismjs/components/prism-python';
-// import 'prismjs/components/prism-sql';
-// import 'prismjs/components/prism-java';
-// import 'prismjs/components/prism-go';
-// import 'prismjs/components/prism-c';
-// import 'prismjs/components/prism-cpp';
-// import 'prismjs/components/prism-csharp';
-// import 'prismjs/components/prism-rust';
-// import 'prismjs/components/prism-json';
-// import 'prismjs/components/prism-bash';
-// import 'prismjs/components/prism-git';
-// import 'prismjs/components/prism-kotlin';
-// import 'prismjs/components/prism-ruby';
-// import 'prismjs/components/prism-swift';
-// import 'prismjs/components/prism-scala';
-// import 'prismjs/components/prism-dart';
-// import 'prismjs/components/prism-mongodb';
-// import 'prismjs/components/prism-nginx';
-// import 'prismjs/components/prism-markdown';
+/**
+ * Prism 语言懒加载模块
+ *
+ * 特性：
+ * - 按需加载语言高亮模块
+ * - 自动处理依赖关系
+ * - 缓存已加载的语言
+ * - 支持 PlainText 无需加载
+ */
 
-// import 'prismjs/components/prism-basic';
-// import 'prismjs/components/prism-http';
-// import 'prismjs/components/prism-jq';
-// import 'prismjs/components/prism-jsonp';
-// import 'prismjs/components/prism-julia';
-// import 'prismjs/components/prism-latex';
-// import 'prismjs/components/prism-less';
-// import 'prismjs/components/prism-sass';
-// import 'prismjs/components/prism-scss';
-// import 'prismjs/components/prism-livescript';
-// import 'prismjs/components/prism-n4js';
-// import 'prismjs/components/prism-objectivec';
-// import 'prismjs/components/prism-plant-uml';
-// import 'prismjs/components/prism-powershell';
-// import 'prismjs/components/prism-r';
-// import 'prismjs/components/prism-tcl';
-// import 'prismjs/components/prism-vim';
-// import 'prismjs/components/prism-yaml';
-// import 'prismjs/components/prism-zig';
+// ⚠️ 注意：不要在这里全量导入 Prism 语言模块
+// 所有语言模块都应该按需动态导入
 
 export const LANGUAGE_LIST = [
-  'BASIC',  'HTTP',
+  'BASIC', 'HTTP',
   // 'JavaDoc', 'JSDoc', 'Objective-C', 'Scala', 'VB.Net',
   'JQ',
   'JSONP', 'Julia',
@@ -174,12 +142,163 @@ export const PRISM_LANGUAGE_IMPORT_MAP = {
   Markdown: 'markdown',
 }
 
-export function isLanguageSupported(lang: string) {
-  if (lang === 'PlainText') return true
-  return (window as any).Prism?.languages?.[lang]
+export function isLanguageSupported(lang: string): boolean {
+  if (lang === 'PlainText' || lang === 'plaintext') return true;
+  return typeof (window as any).Prism?.languages?.[lang] !== 'undefined';
 }
 
-export async function loadPrismLangComponent(lang: CodeBlockLanguage) {
-  if (lang === 'PlainText' || isLanguageSupported(PRISM_LANGUAGE_MAP[lang])) return
-  await import(`prismjs/components/prism-${PRISM_LANGUAGE_IMPORT_MAP[lang]}.js`);
+/**
+ * 语言依赖关系映射
+ * 某些语言需要先加载依赖语言才能正常工作
+ */
+const LANGUAGE_DEPENDENCIES: Record<string, string[]> = {
+  // C++ 依赖 C
+  'cpp': ['c'],
+  // TypeScript 依赖 JavaScript
+  'typescript': ['javascript'],
+  // JSX 依赖 JavaScript
+  'jsx': ['javascript'],
+  // TSX 依赖 TypeScript 和 JavaScript
+  'tsx': ['javascript', 'typescript'],
+  // SCSS 依赖 CSS
+  'scss': ['css'],
+  // Less 依赖 CSS
+  'less': ['css'],
+  // PHP 依赖 markup (HTML)
+  'php': ['markup'],
+  // Markdown 依赖 markup
+  'markdown': ['markup'],
+};
+
+/**
+ * 已加载语言的缓存
+ * 避免重复加载同一个语言模块
+ */
+const loadedLanguages = new Set<string>(['plaintext', 'PlainText']);
+
+/**
+ * 正在加载中的语言 Promise 缓存
+ * 避免并发加载同一个语言模块
+ */
+const loadingPromises = new Map<string, Promise<void>>();
+
+/**
+ * 递归加载语言的依赖
+ */
+async function loadLanguageDependencies(lang: string): Promise<void> {
+  const dependencies = LANGUAGE_DEPENDENCIES[lang] || [];
+
+  for (const dep of dependencies) {
+    if (!loadedLanguages.has(dep)) {
+      await loadPrismLanguage(dep);
+    }
+  }
+}
+
+/**
+ * 加载单个 Prism 语言模块
+ * @param lang - Prism 语言标识符（小写）
+ */
+async function loadPrismLanguage(lang: string): Promise<void> {
+  // 1. 检查是否已加载
+  if (loadedLanguages.has(lang)) {
+    return;
+  }
+
+  // 2. 检查是否正在加载中
+  if (loadingPromises.has(lang)) {
+    return loadingPromises.get(lang)!;
+  }
+
+  // 3. 开始加载
+  const loadPromise = (async () => {
+    try {
+      // 3.1 先加载依赖
+      await loadLanguageDependencies(lang);
+
+      // 3.2 动态导入语言模块
+      await import(`prismjs/components/prism-${lang}.js`);
+
+      // 3.3 标记为已加载
+      loadedLanguages.add(lang);
+
+      console.log(`[Prism] 语言模块已加载: ${lang}`);
+    } catch (error) {
+      console.warn(`[Prism] 无法加载语言模块: ${lang}`, error);
+      // 即使加载失败，也标记为已尝试，避免重复尝试
+      loadedLanguages.add(lang);
+    } finally {
+      // 清除加载中的 Promise
+      loadingPromises.delete(lang);
+    }
+  })();
+
+  loadingPromises.set(lang, loadPromise);
+  return loadPromise;
+}
+
+/**
+ * 按需加载 Prism 语言组件
+ * @param lang - CodeBlockLanguage 类型的语言名称
+ */
+export async function loadPrismLangComponent(lang: CodeBlockLanguage): Promise<void> {
+  // PlainText 不需要加载
+  if (lang === 'PlainText') {
+    return;
+  }
+
+  // 获取 Prism 语言标识符
+  const prismLang = PRISM_LANGUAGE_MAP[lang];
+  if (!prismLang) {
+    console.warn(`[Prism] 未知的语言: ${lang}`);
+    return;
+  }
+
+  // 检查是否已支持
+  if (isLanguageSupported(prismLang)) {
+    return;
+  }
+
+  // 获取导入路径（可能与显示名称不同）
+  const importLang = PRISM_LANGUAGE_IMPORT_MAP[lang] || prismLang;
+
+  // 加载语言模块
+  await loadPrismLanguage(importLang);
+}
+
+/**
+ * 预加载常用语言
+ * 可在应用启动时调用，提前加载高频使用的语言
+ */
+export async function preloadCommonLanguages(): Promise<void> {
+  const commonLangs: CodeBlockLanguage[] = [
+    'JavaScript',
+    'TypeScript',
+    'HTML',
+    'CSS',
+    'JSON'
+  ];
+
+  await Promise.all(
+    commonLangs.map(lang => loadPrismLangComponent(lang))
+  );
+
+  console.log('[Prism] 常用语言预加载完成');
+}
+
+/**
+ * 获取已加载的语言列表
+ */
+export function getLoadedLanguages(): string[] {
+  return Array.from(loadedLanguages);
+}
+
+/**
+ * 清除语言加载缓存（主要用于测试）
+ */
+export function clearLanguageCache(): void {
+  loadedLanguages.clear();
+  loadingPromises.clear();
+  loadedLanguages.add('plaintext');
+  loadedLanguages.add('PlainText');
 }

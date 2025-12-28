@@ -1,10 +1,10 @@
-import {BehaviorSubject, filter, fromEvent, takeUntil} from "rxjs";
-import {BlockNodeType, DocEventRegister, EventListen, IBlockSnapshot, UIEventStateContext} from "../block-std";
-import {closetBlockId} from "../utils";
-import {BLOCK_POSITION} from "../doc";
-import {DOC_FILE_SERVICE_TOKEN} from "./file.service";
-import {BLOCK_CREATOR_SERVICE_TOKEN} from "./block-creator.service";
-import {throttle} from "../../global";
+import { BehaviorSubject, filter, fromEvent, takeUntil } from "rxjs";
+import { BlockNodeType, DocEventRegister, EventListen, IBlockSnapshot, UIEventStateContext } from "../block-std";
+import { closetBlockId } from "../utils";
+import { BLOCK_POSITION } from "../doc";
+import { DOC_FILE_SERVICE_TOKEN } from "./file.service";
+import { BLOCK_CREATOR_SERVICE_TOKEN } from "./block-creator.service";
+import { throttle } from "../../global";
 
 export enum DocDndDataTypes {
   // 已有的block
@@ -23,13 +23,16 @@ export enum DocDndStatus {
   end = 'end',
 }
 
-const calcPosition = (e: DragEvent, blockWrap: HTMLElement) => {
+type DragPosition = 'before' | 'after' | 'left' | 'right' | 'none'
+
+const calcPosition = (e: DragEvent, blockWrap: HTMLElement): DragPosition => {
   const rect = blockWrap.getBoundingClientRect()
+  // 先判断是否在左右
+  // if (e.clientX < rect.left + Math.max(30, rect.width / 4)) return 'left'
+  // if (e.clientX > rect.right - Math.max(30, rect.width / 4)) return 'right'
   if (e.clientY > rect.top + rect.height / 2) return 'after'
   return 'before'
 }
-
-const scrollSpeed = 32;
 
 @DocEventRegister
 export class DocDndService {
@@ -38,7 +41,7 @@ export class DocDndService {
   ) {
   }
 
-  private prevDragPosition: 'before' | 'after' | 'none' = 'none'
+  private prevDragPosition: DragPosition = 'none'
 
   private _prevTargetElement: Node | null = null
   private prevBlock: BlockCraft.BlockComponent | null = null
@@ -66,15 +69,22 @@ export class DocDndService {
     this.dragLine = dragLine
   }
 
-  private moveDragLine = (host: HTMLElement, position: 'after' | 'before') => {
+  private moveDragLine = (host: HTMLElement, position: DragPosition) => {
     if (!this.dragLine) return
 
-    const calcLineRect = (blockWrap: HTMLElement, position: 'after' | 'before') => {
+    const calcLineRect = (blockWrap: HTMLElement, position: DragPosition) => {
       const rootRect = this.doc.root.hostElement.getBoundingClientRect()
       const rect = blockWrap.getBoundingClientRect()
-      if (position === 'after')
-        return {top: rect.bottom - rootRect.top + 1, left: rect.left - rootRect.left, width: rect.width}
-      return {top: rect.top - rootRect.top - 1, left: rect.left - rootRect.left, width: rect.width}
+      switch (position) {
+        case 'left':
+          return { top: rect.top - rootRect.top, left: rect.left - rootRect.left - 1, width: 2, height: rect.height }
+        case 'right':
+          return { top: rect.top - rootRect.top, left: rect.right - rootRect.left + 1, width: 2, height: rect.height }
+        case 'after':
+          return { top: rect.bottom - rootRect.top + 1, left: rect.left - rootRect.left, width: rect.width, height: 2 }
+        default:
+          return { top: rect.top - rootRect.top - 1, left: rect.left - rootRect.left, width: rect.width, height: 2 }
+      }
     }
 
     const rect = calcLineRect(host, position)
@@ -86,6 +96,7 @@ export class DocDndService {
       })
     }
     this.dragLine.style.width = rect.width + 'px';
+    this.dragLine.style.height = rect.height + 'px';
   }
 
   private removeDragLine = () => {
@@ -118,39 +129,6 @@ export class DocDndService {
       dataTransfer.setData(dragDataType, dragData)
     }
 
-    // requestAnimationFrame(() => {
-    //   const d1 = document.createElement('div')
-    //   d1.style.cssText = `
-    //   position: absolute;
-    //   top: 0;
-    //   left: 0;
-    //   width: 100%;
-    //   height: 100px;
-    //   z-index: 1060;
-    // `
-    //   const d2 = document.createElement('div')
-    //   d2.style.cssText = `
-    //   position: absolute;
-    //   left: 0;
-    //   bottom: 0;
-    //   width: 100%;
-    //   height: 100px;
-    //   z-index: 1060;
-    // `
-    //   d1.addEventListener('dragover', throttle((e) => {
-    //     e.preventDefault()
-    //     e.stopPropagation()
-    //     this.doc.scrollContainer!.scrollTop -= scrollSpeed
-    //   }, 32))
-    //   d2.addEventListener('dragover', throttle((e) => {
-    //     e.preventDefault()
-    //     e.stopPropagation()
-    //     this.doc.scrollContainer!.scrollTop += scrollSpeed
-    //   }, 32))
-    //   this.doc.scrollContainer!.append(d1, d2);
-    //   this.virtualScroller = [d1, d2]
-    // })
-
     this._onDragStart(evt)
   }
 
@@ -170,7 +148,7 @@ export class DocDndService {
       this.doc.event.add('dragMove', this.onDragMove)
       window.addEventListener('dragend', () => {
         this.clearDrag()
-      }, {once: true})
+      }, { once: true })
     })
   }
 
@@ -196,9 +174,10 @@ export class DocDndService {
     if (this.prevBlock !== activeBlock) {
 
       if (activeBlock === this._inBlock) return
+      const schema = this.doc.schemas.get(activeBlock.flavour)!
 
       // 对于在特殊block块内部特殊处理
-      if (['table-cell', 'callout'].includes(activeBlock.flavour)) {
+      if (schema.metadata.renderUnit) {
         this._inBlock = activeBlock
         const position = calcPosition(evt, activeBlock.hostElement)
         if (position === 'before') {
@@ -212,11 +191,9 @@ export class DocDndService {
       }
 
       // 跳出所在的特殊block块后，清除所在block块记录
-      if(activeBlock.nodeType === 'block') {
+      if (activeBlock.nodeType === 'block') {
         this._inBlock = null
       }
-
-      const schema = this.doc.schemas.get(activeBlock.flavour)!
       if (schema.metadata.isLeaf) return;
       this.prevBlock = activeBlock
     }
@@ -239,17 +216,21 @@ export class DocDndService {
     this._inBlock = null
   }
 
+  onSetColumn(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
+
+  }
+
   onSortBlock(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
     const isDepthEqual = block.props['depth'] === targetBlock.props['depth']
     if (!block || position === 'none' || targetBlock === block) return
 
     if (block.hostElement.nextElementSibling === targetBlock.hostElement && position === 'before') {
-      !isDepthEqual && block.updateProps({depth: targetBlock.props.depth})
+      !isDepthEqual && block.updateProps({ depth: targetBlock.props.depth })
       return
     }
 
     if (block.hostElement.previousElementSibling === targetBlock.hostElement && position === 'after') {
-      !isDepthEqual && block.updateProps({depth: targetBlock.props.depth})
+      !isDepthEqual && block.updateProps({ depth: targetBlock.props.depth })
       return
     }
 
@@ -267,12 +248,13 @@ export class DocDndService {
       targetIdx += 1
     }
 
-    if (!isDepthEqual) {
-      block.updateProps({depth: targetBlock.props['depth']})
-    }
-    this.doc.crud.moveBlocks(block.parentId!, block.getIndexOfParent(), 1,
-      targetBlock.parentId!, targetIdx)
-
+    this.doc.crud.transact(() => {
+      if (!isDepthEqual) {
+        block.updateProps({ depth: targetBlock.props['depth'] })
+      }
+      this.doc.crud.moveBlocks(block.parentId!, block.getIndexOfParent(), 1,
+        targetBlock.parentId!, targetIdx)
+    })
   }
 
   // TODO 文件处理应该交由插件
@@ -335,7 +317,7 @@ export class DocDndService {
     })
   }
 
-  @EventListen('drop', {flavour: 'root'})
+  @EventListen('drop', { flavour: 'root' })
   onDrop(ctx: UIEventStateContext) {
     ctx.preventDefault()
     const evt: DragEvent = ctx.getDefaultEvent()

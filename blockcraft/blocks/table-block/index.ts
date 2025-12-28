@@ -1,10 +1,10 @@
-import {generateId, NoEditableBlockNative} from "../../framework";
-import {TableBlockComponent} from "./table.block";
-import {IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
-import {BlockNodeType, IBlockProps} from "../../framework";
-import {TableRowBlockComponent} from "./table-row.block";
-import {TableCellBlockComponent} from "./table-cell.block";
-import {ParagraphBlockSchema} from "../paragraph-block";
+import { generateId, NoEditableBlockNative } from "../../framework";
+import { TableBlockComponent } from "./table.block";
+import { IBlockSchemaOptions } from "../../framework/block-std/schema/block-schema";
+import { BlockNodeType, IBlockProps } from "../../framework";
+import { TableRowBlockComponent } from "./table-row.block";
+import { TableCellBlockComponent } from "./table-cell.block";
+import { ParagraphBlockSchema } from "../paragraph-block";
 
 export interface TableBlockModel extends NoEditableBlockNative {
   flavour: 'table',
@@ -48,7 +48,7 @@ export const TableBlockSchema: IBlockSchemaOptions<TableBlockModel> = {
       flavour: 'table',
       nodeType: BlockNodeType.block,
       props: {
-        colWidths: Array.from({length: cells}, () => 100)
+        colWidths: Array.from({ length: cells }, () => 100)
       },
       meta: {},
       children
@@ -110,6 +110,7 @@ export const TableCellBlockSchema: IBlockSchemaOptions<TableCellBlockModel> = {
     label: '表格单元格',
     excludeChildren: ['table*', '*-embed', 'mermaid*'],
     isLeaf: true,
+    renderUnit: true,
   }
 }
 

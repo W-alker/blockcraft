@@ -1,6 +1,6 @@
-import {ChangeDetectionStrategy, Component, HostListener, Input} from '@angular/core';
-import {NgClass, NgForOf, NgIf} from "@angular/common";
-import {FormsModule} from "@angular/forms";
+import { ChangeDetectionStrategy, Component, HostBinding, HostListener, Input } from '@angular/core';
+import { NgClass, NgForOf, NgIf } from "@angular/common";
+import { FormsModule } from "@angular/forms";
 
 @Component({
   selector: 'app-divider-style-popup',
@@ -19,19 +19,23 @@ export class DividerStylePopupComponent {
   @Input()
   dividerBlock!: BlockCraft.IBlockComponents['divider']
 
+  @Input()
+  @HostBinding('attr.data-theme')
+  theme!: string
+
   activeTab = 'line';
   activeSize = 'medium';
 
   styleTabs = [
-    {key: 'line', label: '线型', icon: 'bc_icon bc_tubiao_xianduan-leixing'},
-    {key: 'tape', label: '贴纸胶带', icon: 'bc_jiaodai bc_icon'}
+    { key: 'line', label: '线型', icon: 'bc_icon bc_tubiao_xianduan-leixing' },
+    { key: 'tape', label: '贴纸胶带', icon: 'bc_jiaodai bc_icon' }
   ];
 
   sizeList = [
-    {key: 'thin', label: '迷你'},
-    {key: 'small', label: '薄型'},
-    {key: 'medium', label: '常规'},
-    {key: 'large', label: '厚'}
+    { key: 'thin', label: '迷你' },
+    { key: 'small', label: '薄型' },
+    { key: 'medium', label: '常规' },
+    { key: 'large', label: '厚' }
   ];
 
   tapePatterns = [
@@ -46,7 +50,7 @@ export class DividerStylePopupComponent {
   ngOnInit() {
     this.activeSize = this.dividerBlock.props.size ?? 'medium';
     this.selectedStyle = this.dividerBlock.props.style ?? 'solid';
-    if(this.selectedStyle.startsWith('tape')) {
+    if (this.selectedStyle.startsWith('tape')) {
       this.activeTab = 'tape';
     }
   }

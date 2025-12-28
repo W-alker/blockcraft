@@ -8,18 +8,18 @@ import {
   Input,
   Output,
 } from "@angular/core";
-import {NgForOf, NgIf, NgTemplateOutlet} from "@angular/common";
-import {Subscription, take} from "rxjs";
-import {BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective} from "../../../components";
-import {BlockNodeType} from "../../../framework";
-import {IBlockSchemaOptions} from "../../../framework";
-import {MatIcon} from "@angular/material/icon";
-import {IS_MAC, nextTick} from "../../../global";
-import {BLOCK_CREATOR_SERVICE_TOKEN} from "../../../framework";
-import {customToolHandler, IContextMenuItem} from "../types";
-import {NzDropDownDirective, NzDropdownMenuComponent} from "ng-zorro-antd/dropdown";
-import {parseInt} from "lib0/number";
-import {NzTooltipDirective} from "ng-zorro-antd/tooltip";
+import { NgForOf, NgIf, NgTemplateOutlet } from "@angular/common";
+import { Subscription, take } from "rxjs";
+import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective } from "../../../components";
+import { BlockNodeType } from "../../../framework";
+import { IBlockSchemaOptions } from "../../../framework";
+import { MatIcon } from "@angular/material/icon";
+import { IS_MAC, nextTick } from "../../../global";
+import { BLOCK_CREATOR_SERVICE_TOKEN } from "../../../framework";
+import { customToolHandler, IContextMenuItem } from "../types";
+import { NzDropDownDirective, NzDropdownMenuComponent } from "ng-zorro-antd/dropdown";
+import { parseInt } from "lib0/number";
+import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 
 const ALIGN_LIST: IContextMenuItem[] = [
   {
@@ -92,7 +92,7 @@ const HEADING_LIST: IContextMenuItem[] = [
   selector: 'bc-drag-handle',
   standalone: true,
   template: `
-    <div class="drag-handle"
+    <div class="drag-handle" [attr.data-theme]="doc.theme"
          [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
          [disabled]="menuDisabled" (open)="setValidBlockList()" [delay]="500"
          [withBackdrop]="false" activeClass="active" [draggable]="draggable">
@@ -112,7 +112,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     </ng-template>
 
     <ng-template #contextMenuTpl>
-      <bc-float-toolbar style="display: block; width: 224px; padding-top: 4px;" direction="column">
+      <bc-float-toolbar [theme]="doc.theme" style="display: block; width: 224px; padding-top: 4px;" direction="column">
         @if (activeBlock?.nodeType === BlockNodeType.editable) {
           <h4 class="title">基础
             <i class="bc_icon bc_xinxi" style="cursor: pointer;" nz-tooltip="鼠标停留在内容块选项上一段时间以查看对应快捷键和快速转化语法" [nzTooltipPlacement]="'top'"></i>
@@ -173,7 +173,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     </ng-template>
 
     <ng-template #blockAddList>
-      <bc-float-toolbar direction="column" styles="width: 224px; max-height: 70vh; overflow-y: auto;">
+      <bc-float-toolbar [theme]="doc.theme" direction="column" styles="width: 224px; max-height: 70vh; overflow-y: auto;">
         @if (activeBlock?.nodeType !== BlockNodeType.editable) {
           <h4 class="title">基础</h4>
           @for (item of HEADING_LIST; track item.value) {
@@ -192,7 +192,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     </ng-template>
 
     <ng-template #alignList>
-      <bc-float-toolbar direction="column" style="display: block; width: 224px;">
+      <bc-float-toolbar [theme]="doc.theme" direction="column" style="display: block; width: 224px;">
         @for (item of ALIGN_LIST; track item.name) {
           <bc-float-toolbar-item class="align-item" (mousedown)="handleToolItemClick(item)"
                                  [icon]="item.icon" [title]="item.label"
@@ -224,139 +224,7 @@ const HEADING_LIST: IContextMenuItem[] = [
       }
     </ng-template>
   `,
-  styles: [`
-    :host {
-      z-index: 10;
-      position: absolute;
-      user-select: none;
-      -webkit-user-select: none;
-      transition: all ease .2s;
-      top: 0;
-      left: 0;
-      transform: translateX(-62px);
-
-      > * {
-        user-select: none;
-        -webkit-user-select: none;
-      }
-    }
-
-    ::ng-deep mat-icon {
-      width: 1em;
-      height: 1em;
-      font-size: 1em;
-
-      > svg {
-        vertical-align: top;
-      }
-    }
-
-    .drag-handle {
-      display: flex;
-      padding: 4px 18px 4px 0;
-
-      &.active {
-        padding-right: 18px;
-      }
-
-      &.active {
-
-        .btn {
-          background-color: #E6E6E6;
-        }
-
-      }
-
-      .btn {
-        display: flex;
-        gap: 4px;
-        align-items: center;
-        padding: 0 4px;
-        background-color: #fff;
-        box-shadow: 0 0 2px 0 #999;
-        border-radius: 4px;
-        overflow: hidden;
-        cursor: pointer;
-        text-align: center;
-        color: #999;
-        font-size: 16px;
-        height: 22px;
-        line-height: 22px;
-
-        &:hover {
-          background-color: #E6E6E6;
-        }
-      }
-    }
-
-    .title {
-      margin: 8px;
-      color: #999;
-      font-size: 14px;
-      font-weight: 600;
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .base-list, .common-list {
-      margin: 0;
-    }
-
-    .base-list {
-      display: flex;
-      flex-wrap: wrap;
-      padding: 8px;
-      gap: 8px;
-
-      .base-list__item {
-        width: 24px;
-        height: 24px;
-        border-radius: 4px;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        cursor: pointer;
-        transition: all .15s ease-in-out;
-
-        &:hover, &.active {
-          background: #f3f3f3;
-        }
-
-        > i {
-          font-size: 1em;
-        }
-      }
-    }
-
-    bc-float-toolbar-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      height: 36px;
-      padding: 0 8px;
-      border-radius: 4px;
-      cursor: pointer;
-
-      &:hover, &.active {
-        background-color: #f5f5f5;
-        color: inherit;
-      }
-
-      > span {
-        color: #333;
-        font-size: 14px;
-        line-height: 20px;
-        flex: 1;
-      }
-    }
-
-    .align-item {
-      &.active {
-        color: var(--bc-active-color);
-      }
-    }
-  `],
+  styleUrls: ['./trigger-btn.scss'],
   imports: [NgIf, NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, NgForOf, MatIcon, BcOverlayTriggerDirective, NzDropdownMenuComponent, NzDropDownDirective, NzTooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -410,7 +278,7 @@ export class TriggerBtn {
       this.close()
     })
 
-    const {top, left} = this.calcPos()
+    const { top, left } = this.calcPos()
     this.display = 'block'
     this.host.nativeElement.style.transform = `
       translate(${left - 44 - 18}px, ${top - 4}px)
@@ -629,7 +497,7 @@ export class TriggerBtn {
     switch (item.name) {
       case 'align':
         if (!this.activeBlock || !this.doc.isEditable(this.activeBlock)) return
-        this.activeBlock.updateProps({textAlign: item.value as any})
+        this.activeBlock.updateProps({ textAlign: item.value as any })
         break
       case 'cut': {
         if (!this.activeBlock) return;
@@ -674,7 +542,7 @@ export class TriggerBtn {
           return;
         }
         if (this.activeBlock.flavour === 'ordered' && item.value) {
-          this.activeBlock.updateProps({heading: item.value as any})
+          this.activeBlock.updateProps({ heading: item.value as any })
           return;
         }
         if (this.activeBlock.flavour !== 'paragraph') {
@@ -686,7 +554,7 @@ export class TriggerBtn {
             this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
           })
         } else {
-          this.activeBlock.updateProps({heading: item.value as any})
+          this.activeBlock.updateProps({ heading: item.value as any })
         }
         break
     }

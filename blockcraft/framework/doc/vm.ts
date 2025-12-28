@@ -1,6 +1,6 @@
-import {ApplicationRef, ComponentRef, createComponent, ViewContainerRef} from "@angular/core";
-import {take} from "rxjs";
-import {BlockCraftError, ErrorCode, performanceTest} from "../../global";
+import { ApplicationRef, ComponentRef, createComponent, ViewContainerRef } from "@angular/core";
+import { take } from "rxjs";
+import { BlockCraftError, ErrorCode, performanceTest } from "../../global";
 import {
   BaseBlockComponent,
   BlockNodeType,
@@ -68,7 +68,6 @@ export class DocVM {
 
       this.set(id, cpr)
       this.appRef.attachView(cpr.hostView)
-      cpr.changeDetectorRef.detectChanges()
 
       const yChildren = yBlock.get('children')
       if (yBlock.get('nodeType') !== BlockNodeType.editable && yChildren.length) {
@@ -82,7 +81,7 @@ export class DocVM {
                 id: childId,
                 nodeType: BlockNodeType.editable,
                 flavour: 'paragraph',
-                props: {depth: 0},
+                props: { depth: 0 },
                 meta: {},
                 children: []
               })
@@ -94,6 +93,7 @@ export class DocVM {
         cpr.instance.childrenRenderRef?.insert(0, childrenComps)
       }
 
+      cpr.changeDetectorRef.detectChanges()
       return cpr
     }
 
@@ -108,7 +108,7 @@ export class DocVM {
   createComponentBySnapshot<T extends IBlockSnapshot>(snapshot: T, cb?: (cpr: BlockCraft.BlockComponentRef) => void) {
 
     const createComp = (snapshot: IBlockSnapshot, parentId: string | null = null) => {
-      const {id, nodeType, flavour, props, meta, children} = snapshot
+      const { id, nodeType, flavour, props, meta, children } = snapshot
 
       const schema = this.schemas.get(flavour)!
       const cpr = createComponent(schema.component, {

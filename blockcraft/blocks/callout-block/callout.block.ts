@@ -1,8 +1,8 @@
-import {ChangeDetectionStrategy, Component} from "@angular/core";
-import {BaseBlockComponent, getPositionWithOffset} from "../../framework";
-import {CalloutBlockModel} from "./index";
-import {EmojiPickerComponent} from "../../components";
-import {Subject, takeUntil} from "rxjs";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
+import { BaseBlockComponent, getPositionWithOffset } from "../../framework";
+import { CalloutBlockModel } from "./index";
+import { EmojiPickerComponent } from "../../components";
+import { Subject, takeUntil } from "rxjs";
 
 @Component({
   selector: 'div.callout-block',
@@ -10,9 +10,6 @@ import {Subject, takeUntil} from "rxjs";
     <span class="callout-block-prefix" (mousedown)="onPickEmoji($event)"
           contenteditable="false">{{ props.prefix }}</span>
     <div>
-<!--    <div class="children-render-container"></div>-->
-<!--      <ng-container #childrenContainer></ng-container>-->
-<!--    </div>-->
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -37,11 +34,11 @@ export class CalloutBlockComponent extends BaseBlockComponent<CalloutBlockModel>
   }
 
   onPickEmoji(e: Event) {
-    if(this.doc.isReadonly) return
+    if (this.doc.isReadonly) return
     e.preventDefault();
     e.stopPropagation();
 
-    const {componentRef} = this.doc.overlayService.createConnectedOverlay<EmojiPickerComponent>({
+    const { componentRef } = this.doc.overlayService.createConnectedOverlay<EmojiPickerComponent>({
       component: EmojiPickerComponent,
       target: e.target as HTMLElement,
       backdrop: true,

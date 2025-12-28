@@ -1,8 +1,8 @@
-import {Type} from "@angular/core";
-import {BlockNodeType, IBlockProps, IBlockSnapshot, IEditableBlockProps, InlineModel} from "../types";
-import {NativeBlockModel} from "../index";
-import {BlockCraftError, ErrorCode} from "../../../global";
-import {generateId} from "../../utils";
+import { Type } from "@angular/core";
+import { BlockNodeType, IBlockProps, IBlockSnapshot, IEditableBlockProps, InlineModel } from "../types";
+import { NativeBlockModel } from "../index";
+import { BlockCraftError, ErrorCode } from "../../../global";
+import { generateId } from "../../utils";
 
 export type EditableBlockCreateSnapshotParams = [(InlineModel | string)?, IBlockProps?];
 
@@ -19,7 +19,10 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
     svgIcon?: string;
     label: string;
     description?: string;
+    // 是否是某个block的依附子块
     isLeaf?: boolean;
+    // 是否是渲染单元。代表它可以渲染各种块
+    renderUnit?: boolean;
     /**
      * ['paragraph', 'image'] means that this block can contain in paragraph and image blocks\
      * ['table-*'] contains 'table-row', 'table-cell' blocks\
@@ -39,7 +42,7 @@ export const editableBlockCreateSnapShotFn = <M extends NativeBlockModel = Nativ
     const ch = []
     if (!deltas) {
     } else if (typeof deltas === 'string') {
-      ch.push({insert: deltas})
+      ch.push({ insert: deltas })
     } else if (Array.isArray(deltas)) {
       ch.push(...deltas)
     } else {

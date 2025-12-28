@@ -18,6 +18,7 @@ import {
   CalloutBlockSchema,
   CaptionBlockSchema,
   CodeBlockSchema,
+  ColumnsBlockSchema,
   DividerBlockSchema,
   FigmaEmbedBlockSchema,
   ImageBlockSchema,
@@ -63,6 +64,7 @@ import { DividerStylePopupComponent } from "../plugins/divider-toolbar/widgets/d
 import { CodeInlineEditorBinding, TableBlockBinding, TextMarkerPlugin, OrderedBlockPlugin } from "../plugins";
 import { FindReplacePlugin } from "../plugins/findReplace/findReplace";
 import { fixTable } from "../blocks/table-block/callback";
+import { ColumnBlockSchema } from "../blocks/columns-block";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -89,7 +91,8 @@ const schemas = new SchemaManager([
   TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, AttachmentBlockSchema, BookmarkBlockSchema,
   FigmaEmbedBlockSchema, JuejinEmbedBlockSchema,
   CaptionBlockSchema, RootBlockSchema,
-  MermaidTextareaBlockSchema, MermaidBlockSchema, BlockquoteBlockSchema
+  MermaidTextareaBlockSchema, MermaidBlockSchema, BlockquoteBlockSchema,
+  ColumnsBlockSchema, ColumnBlockSchema
 ])
 
 export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
@@ -115,6 +118,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
     </div>
 
     <button (click)="initBySnapshot()">初始化</button>
+    <button (click)="toggleDark()">黑夜模式</button>
     <button (mousedown)="$event.preventDefault(); logSelection()">当前选择</button>
     <button (click)="insert()">增加文本</button>
     <button (click)="doc.toggleReadonly(!doc.isReadonly)">切换只读</button>
@@ -238,6 +242,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
   ]
 })
 export class EditorComponent {
+
   @ViewChild('container', { read: ElementRef }) container!: ElementRef;
 
   constructor(
@@ -577,5 +582,10 @@ export class EditorComponent {
       const table = this.doc.getBlockById(id)!
       fixTable.call(table as any)
     }
+  }
+
+  toggleDark() {
+    this.doc.toggleTheme('dark')
+    document.body.style.backgroundColor = '#191919'
   }
 }

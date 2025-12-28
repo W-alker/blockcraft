@@ -8,10 +8,10 @@ import {
   YBlock, yBlock2Native
 } from "../block-std";
 import * as Y from "yjs";
-import {BlockCraftError, ErrorCode, nextTick} from "../../global";
-import {Subject} from "rxjs";
-import {isYArray, isYText} from "../utils/yAbstractType";
-import {DocUndoManger} from "./undoManger";
+import { BlockCraftError, ErrorCode, nextTick } from "../../global";
+import { Subject } from "rxjs";
+import { isYArray, isYText } from "../utils/yAbstractType";
+import { DocUndoManger } from "./undoManger";
 
 // This origin will skip Y.Event sync (to model)
 export const ORIGIN_SKIP_SYNC = Symbol('skip_sync')
@@ -116,7 +116,7 @@ export class DocCRUD {
 
     // sync to model
     events.forEach(ev => {
-      const {path, changes, target} = ev
+      const { path, changes, target } = ev
 
       // at top level, it`s mean that block is created or deleted
       // No need handle ORIGIN_SKIP_SYNC
@@ -173,6 +173,7 @@ export class DocCRUD {
               bm.instance.rerender()
             }
           }
+          bm.instance.onTextChange.next({ op: changes.delta as DeltaOperation[], tr })
           textChanges.push({
             block: bm.instance,
             delta: changes.delta as DeltaOperation[]
@@ -240,9 +241,9 @@ export class DocCRUD {
   }
 
   private _syncYBlockChildrenUpdate = (added: Record<string, YBlock>,
-                                       deleted: Set<string>,
-                                       events: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][],
-                                       tr: Y.Transaction) => {
+    deleted: Set<string>,
+    events: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][],
+    tr: Y.Transaction) => {
     const emitEvents: IChildrenChangeEvent = {
       isUndoRedo: tr.origin instanceof Y.UndoManager,
       local: tr.local,
@@ -275,11 +276,12 @@ export class DocCRUD {
               this.vm.destroy(c.instance.id)
             }
           })
-          deletedMap.push({index: r, length: <number>d.delete})
+          deletedMap.push({ index: r, length: <number>d.delete })
         }
       })
 
       insertDelay.set(bm, _delay_inserts)
+      bm.instance.onChildrenChange?.(deltas)
       emitEvents.transactions.push({
         block: bm.instance,
         deleted: deletedMap.length ? deletedMap : undefined,
@@ -310,7 +312,7 @@ export class DocCRUD {
   }
 
   async insertNewParagraph(parentId: string, index: number, content: string | InlineModel = '') {
-    const op = typeof content === 'string' ? [{insert: content}] : content
+    const op = typeof content === 'string' ? [{ insert: content }] : content
     const p = this.doc.schemas.createSnapshot('paragraph', [op])
     await this.insertBlocks(parentId, index, [p])
     return this.doc.getBlockById(p.id)
@@ -319,7 +321,7 @@ export class DocCRUD {
   private _insertBySnapshots = async (parentComp: BlockCraft.BlockComponentRef, index: number, snapshots: IBlockSnapshot[]) => {
     const snapshot2YBlock = (snapshot: IBlockSnapshot) => {
       const _children = snapshot.nodeType === BlockNodeType.editable ? snapshot.children : snapshot.children.map(childSnapshot => childSnapshot.id)
-      const yBlock = native2YBlock({...snapshot, children: _children} as NativeBlockModel)
+      const yBlock = native2YBlock({ ...snapshot, children: _children } as NativeBlockModel)
       this.yBlockMap.set(snapshot.id, yBlock)
       if (snapshot.nodeType !== BlockNodeType.editable && snapshot.children.length) {
         snapshot.children.forEach(childSnapshot => snapshot2YBlock(childSnapshot))
@@ -327,7 +329,7 @@ export class DocCRUD {
     }
     snapshots.forEach(snapshot => snapshot2YBlock(snapshot))
 
-    ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, snapshots.map(v => v.id))
+      ; (parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, snapshots.map(v => v.id))
   }
 
   async insertBlocks(parentId: string, index: number, snapshots: IBlockSnapshot[]) {
@@ -387,6 +389,7 @@ export class DocCRUD {
   }
 
   async deleteBlocks(parent: string, index: number, count = 1, force = false) {
+    console.log('deleteBlocks', parent, index, count)
     if (index < 0) {
       this.doc.logger.warn(`insertBlocks: index ${index} out of range`)
       return
@@ -398,7 +401,14 @@ export class DocCRUD {
       this.doc.logger.warn(`deleteBlocks: index ${index} out of range`)
       return
     }
+
     if (index === 0 && count >= parentComp.instance.childrenLength && !force) {
+      const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)!
+      // 如果父元素并非是可渲染任意块的元素
+      if (!parentSchema.metadata.renderUnit) {
+        this.deleteBlockById(parent)
+        return
+      }
       // 确保有可输入元素
       this.doc.messageService.warn('请确保此处至少有一个元素')
       // this.deleteBlockById(parentComp.instance.id)
@@ -412,8 +422,8 @@ export class DocCRUD {
     this.transact(() => {
       const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
       const flatIds = this.getFlatIds(sliceIds)
-      flatIds.forEach(id => this.yBlockMap.delete(id))
-      ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).delete(index, count)
+      flatIds.forEach(id => { this.yBlockMap.delete(id) })
+        ; (parentComp.instance.yBlock.get('children') as Y.Array<string>).delete(index, count)
     })
     return new Promise((resolve => {
       const sub = this.onChildrenUpdate$.subscribe(v => {
@@ -467,13 +477,13 @@ export class DocCRUD {
     if (!parentComp || !targetComp) return
 
     this.transact(() => {
-        const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
-        // const sliceComps = sliceIds.map(id => this.vm.get(id)!)
-        // this.vm.remove(parentComp, index, count)
-        // this.vm.insert(targetComp, targetIndex, sliceComps)
-        parentComp.instance.yBlock.get('children').delete(index, count)
-        ;(targetComp.instance.yBlock.get('children') as Y.Array<string>).insert(targetIndex, sliceIds)
-      },
+      const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
+      // const sliceComps = sliceIds.map(id => this.vm.get(id)!)
+      // this.vm.remove(parentComp, index, count)
+      // this.vm.insert(targetComp, targetIndex, sliceComps)
+      parentComp.instance.yBlock.get('children').delete(index, count)
+        ; (targetComp.instance.yBlock.get('children') as Y.Array<string>).insert(targetIndex, sliceIds)
+    },
       // ORIGIN_SKIP_SYNC
     )
   }

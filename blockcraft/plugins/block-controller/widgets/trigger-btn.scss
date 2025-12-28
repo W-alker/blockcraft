@@ -1,0 +1,145 @@
+:host {
+  z-index: 10;
+  position: absolute;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: all ease .2s;
+  top: 0;
+  left: 0;
+  transform: translateX(-62px);
+
+  >* {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+::ng-deep mat-icon {
+  width: 1em;
+  height: 1em;
+  font-size: 1em;
+
+  >svg {
+    vertical-align: top;
+  }
+}
+
+.drag-handle {
+  display: flex;
+  padding: 4px 18px 4px 0;
+
+  &.active {
+    padding-right: 18px;
+  }
+
+  &.active {
+
+    .btn {
+      background-color: #E6E6E6;
+    }
+
+  }
+
+  .btn {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    padding: 0 4px;
+    background-color: #fff;
+    box-shadow: 0 0 2px 0 #999;
+    border-radius: 4px;
+    overflow: hidden;
+    cursor: pointer;
+    text-align: center;
+    color: #999;
+    font-size: 16px;
+    height: 22px;
+    line-height: 22px;
+
+    &:hover {
+      background-color: #E6E6E6;
+    }
+  }
+
+  &[data-theme="dark"] {
+    .btn {
+      background-color: #333;
+      color: #999;
+    }
+  }
+}
+
+.title {
+  margin: 8px;
+  color: #999;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.base-list,
+.common-list {
+  margin: 0;
+}
+
+.base-list {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 8px;
+  gap: 8px;
+
+  .base-list__item {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: all .15s ease-in-out;
+
+    &:hover,
+    &.active {
+      background: #f3f3f3;
+    }
+
+    >i {
+      font-size: 1em;
+    }
+  }
+}
+
+bc-float-toolbar.dark {
+  .base-list__item {
+    color: #e3e3e3;
+
+    &:hover,
+    &.active {
+      background: rgba(255, 255, 255, 0.08);
+    }
+  }
+}
+
+bc-float-toolbar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 4px;
+  cursor: pointer;
+
+  >span {
+    font-size: 14px;
+    line-height: 20px;
+    flex: 1;
+  }
+}
+
+.align-item {
+  &.active {
+    color: var(--bc-active-color);
+  }
+}

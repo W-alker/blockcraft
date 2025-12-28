@@ -51,3 +51,23 @@ bc-color-picker {
   }
 }
 
+bc-color-picker.dark {
+  .bc-color-group__wrapper {
+    background-color: #2a2a2a;
+    box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.5);
+  }
+
+  .bc-color-group-title {
+    color: #888888;
+  }
+
+  .bc-color-group-list__item {
+    &:hover {
+      outline-color: rgba(107, 122, 255, 0.6);
+    }
+
+    &.active {
+      outline-color: var(--bc-active-color);
+    }
+  }
+}
