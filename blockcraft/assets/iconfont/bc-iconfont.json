@@ -6,6 +6,13 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "46491109",
+      "name": "分栏",
+      "font_class": "fenlan",
+      "unicode": "e623",
+      "unicode_decimal": 58915
+    },
+    {
       "icon_id": "46475110",
       "name": "新手引导",
       "font_class": "xinshouyindao",

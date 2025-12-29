@@ -59,7 +59,8 @@ export const ColumnBlockSchema: IBlockSchemaOptions<ColumnBlockModel> = {
   metadata: {
     version: 1,
     label: "列容器",
-    icon: "bc_icon bc_liebiao",
+    icon: "bc_icon bc_fenlan",
+    svgIcon: "bc_fenlan",
     description: "单列容器，用于多栏布局",
     excludeChildren: ['table*', 'root', 'columns', 'column'],
     isLeaf: true,
@@ -99,7 +100,8 @@ export const ColumnsBlockSchema: IBlockSchemaOptions<ColumnsBlockModel> = {
   metadata: {
     version: 1,
     label: "多栏布局",
-    icon: "bc_icon bc_liebiao",
+    icon: "bc_icon bc_fenlan",
+    svgIcon: "bc_fenlan",
     description: "创建 2-6 栏的响应式布局，每栏可独立编辑",
     includeChildren: ['column']
   }
