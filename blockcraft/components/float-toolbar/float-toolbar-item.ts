@@ -1,4 +1,4 @@
-import {Component, ElementRef, HostBinding, Input} from '@angular/core';
+import {ChangeDetectionStrategy, Component, ElementRef, HostBinding, Input} from '@angular/core';
 import {BcFloatToolbarComponent} from "./float-toolbar";
 import {NgIf, NgTemplateOutlet} from "@angular/common";
 
@@ -19,12 +19,7 @@ import {NgIf, NgTemplateOutlet} from "@angular/common";
     NgTemplateOutlet,
     NgIf
   ],
-  styles: [`
-    :host {
-      transition: all ease-in-out .15s;
-    }
-  `]
-  // changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class BcFloatToolbarItemComponent {
   @Input()
@@ -38,6 +33,10 @@ export class BcFloatToolbarItemComponent {
   @Input()
   @HostBinding('class.active')
   active?: boolean = false
+
+  @Input()
+  @HostBinding('class.disabled')
+  disabled?: boolean = false
 
   @Input()
   expandable = false

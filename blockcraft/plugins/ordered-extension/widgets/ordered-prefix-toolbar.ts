@@ -25,19 +25,12 @@ const ORDER_MODE_LIST = [
   template: `
     <bc-float-toolbar [theme]="theme" direction="column" (onItemClick)="onItemClicked($event)">
       @for (item of ORDER_MODE_LIST; track item.value) {
-        <bc-float-toolbar-item [name]="item.name" [active]="item.value === activeMode">
+        <bc-float-toolbar-item [name]="item.name"  [disabled]="item.value === activeMode">
           {{ item.label }}
         </bc-float-toolbar-item>
       }
     </bc-float-toolbar>
   `,
-  styles: [`
-    bc-float-toolbar bc-float-toolbar-item.active {
-      color: #333;
-      opacity: .3;
-      background: transparent;
-    }
-  `],
   standalone: true,
   imports: [
     BcFloatToolbarItemComponent,

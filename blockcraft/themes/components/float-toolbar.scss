@@ -15,10 +15,15 @@ bc-virtual-float-toolbar {
       border-radius: 4px;
       color: #333;
       white-space: nowrap;
+      transition: all ease-in-out .15s;
 
       &.active {
         background: rgba(95, 111, 255, 0.08);
         color: var(--bc-active-color);
+      }
+
+      &.disabled {
+        opacity: .6;
       }
 
       &:hover {
