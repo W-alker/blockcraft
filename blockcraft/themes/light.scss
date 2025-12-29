@@ -95,6 +95,10 @@
     &:hover {
       background-color: #F1F1EF;
     }
+
+    &.selected {
+      background-color: var(--bc-select-background-color);
+    }
   }
 
   // 浮动工具栏 - Craft 风格
