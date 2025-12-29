@@ -6,6 +6,20 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "46475110",
+      "name": "新手引导",
+      "font_class": "xinshouyindao",
+      "unicode": "e625",
+      "unicode_decimal": 58917
+    },
+    {
+      "icon_id": "46475109",
+      "name": "更新日志",
+      "font_class": "gengxinrizhi",
+      "unicode": "e626",
+      "unicode_decimal": 58918
+    },
+    {
       "icon_id": "46080098",
       "name": "取消选中",
       "font_class": "quxiaoxuanzhong",
