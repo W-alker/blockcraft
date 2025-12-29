@@ -6,6 +6,27 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "46494791",
+      "name": "视频",
+      "font_class": "shipin",
+      "unicode": "e628",
+      "unicode_decimal": 58920
+    },
+    {
+      "icon_id": "46494785",
+      "name": "音频",
+      "font_class": "yinpin",
+      "unicode": "e624",
+      "unicode_decimal": 58916
+    },
+    {
+      "icon_id": "46494784",
+      "name": "图表",
+      "font_class": "tubiao",
+      "unicode": "e627",
+      "unicode_decimal": 58919
+    },
+    {
       "icon_id": "46491109",
       "name": "分栏",
       "font_class": "fenlan",
