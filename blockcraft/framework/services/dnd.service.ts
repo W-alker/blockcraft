@@ -1,16 +1,25 @@
-import { BehaviorSubject, filter, fromEvent, takeUntil } from "rxjs";
-import { BlockNodeType, DocEventRegister, EventListen, IBlockSnapshot, UIEventStateContext } from "../block-std";
-import { closetBlockId } from "../utils";
-import { BLOCK_POSITION } from "../doc";
-import { DOC_FILE_SERVICE_TOKEN } from "./file.service";
-import { BLOCK_CREATOR_SERVICE_TOKEN } from "./block-creator.service";
-import { throttle } from "../../global";
+import {BehaviorSubject, filter, fromEvent, takeUntil} from "rxjs";
+import {
+  BlockNodeType,
+  DocEventRegister,
+  EventListen,
+  IBlockProps,
+  IBlockSnapshot,
+  UIEventStateContext
+} from "../block-std";
+import {closetBlockId} from "../utils";
+import {BLOCK_POSITION} from "../doc";
+import {DOC_FILE_SERVICE_TOKEN} from "./file.service";
+import {BLOCK_CREATOR_SERVICE_TOKEN} from "./block-creator.service";
+import {throttle} from "../../global";
 
 export enum DocDndDataTypes {
   // 已有的block
   originBlock = 'origin-block',
   // 新的block
   newBlock = 'new-block',
+  // 新的block
+  newBlockProps = 'new-block-props',
   // 文件
   file = 'Files',
 }
@@ -25,11 +34,13 @@ export enum DocDndStatus {
 
 type DragPosition = 'before' | 'after' | 'left' | 'right' | 'none'
 
-const calcPosition = (e: DragEvent, blockWrap: HTMLElement): DragPosition => {
+const calcPosition = (e: DragEvent, blockWrap: HTMLElement, leftOrRight = false): DragPosition => {
   const rect = blockWrap.getBoundingClientRect()
   // 先判断是否在左右
-  // if (e.clientX < rect.left + Math.max(30, rect.width / 4)) return 'left'
-  // if (e.clientX > rect.right - Math.max(30, rect.width / 4)) return 'right'
+  if (leftOrRight) {
+    if (e.clientX < rect.left + Math.max(30, rect.width / 4)) return 'left'
+    if (e.clientX > rect.right - Math.max(30, rect.width / 4)) return 'right'
+  }
   if (e.clientY > rect.top + rect.height / 2) return 'after'
   return 'before'
 }
@@ -77,13 +88,13 @@ export class DocDndService {
       const rect = blockWrap.getBoundingClientRect()
       switch (position) {
         case 'left':
-          return { top: rect.top - rootRect.top, left: rect.left - rootRect.left - 1, width: 2, height: rect.height }
+          return {top: rect.top - rootRect.top, left: rect.left - rootRect.left - 1, width: 2, height: rect.height}
         case 'right':
-          return { top: rect.top - rootRect.top, left: rect.right - rootRect.left + 1, width: 2, height: rect.height }
+          return {top: rect.top - rootRect.top, left: rect.right - rootRect.left + 1, width: 2, height: rect.height}
         case 'after':
-          return { top: rect.bottom - rootRect.top + 1, left: rect.left - rootRect.left, width: rect.width, height: 2 }
+          return {top: rect.bottom - rootRect.top + 1, left: rect.left - rootRect.left, width: rect.width, height: 2}
         default:
-          return { top: rect.top - rootRect.top - 1, left: rect.left - rootRect.left, width: rect.width, height: 2 }
+          return {top: rect.top - rootRect.top - 1, left: rect.left - rootRect.left, width: rect.width, height: 2}
       }
     }
 
@@ -118,7 +129,10 @@ export class DocDndService {
   }
 
   // 手动触发drag
-  startDrag(evt: DragEvent, dragDataType: DocDndDataType, dragData: string) {
+  startDrag(evt: DragEvent, data: {
+    dragDataType: DocDndDataType,
+    dragData: string
+  }[],) {
     if (evt.type !== 'dragstart') return
     evt.stopPropagation()
     const dataTransfer = evt.dataTransfer
@@ -126,7 +140,9 @@ export class DocDndService {
       dataTransfer.clearData()
       dataTransfer.dropEffect = 'move'
       dataTransfer.effectAllowed = 'move';
-      dataTransfer.setData(dragDataType, dragData)
+      data.forEach(d => {
+        dataTransfer.setData(d.dragDataType, d.dragData)
+      })
     }
 
     this._onDragStart(evt)
@@ -144,11 +160,18 @@ export class DocDndService {
           e.preventDefault()
         })
 
+      fromEvent<DragEvent>(document, 'drop').pipe(takeUntil(this.dragEnd$))
+        .subscribe((e) => {
+          evt.preventDefault()
+          evt.stopPropagation()
+          this.clearDrag()
+        })
+
       // dragMove处理
       this.doc.event.add('dragMove', this.onDragMove)
       window.addEventListener('dragend', () => {
         this.clearDrag()
-      }, { once: true })
+      }, {once: true})
     })
   }
 
@@ -172,7 +195,6 @@ export class DocDndService {
     }
     if (!activeBlock || activeBlock.flavour === 'root') return
     if (this.prevBlock !== activeBlock) {
-
       if (activeBlock === this._inBlock) return
       const schema = this.doc.schemas.get(activeBlock.flavour)!
 
@@ -198,7 +220,7 @@ export class DocDndService {
       this.prevBlock = activeBlock
     }
 
-    const position = calcPosition(evt, this.prevBlock.hostElement)
+    const position = calcPosition(evt, this.prevBlock.hostElement, !activeBlock.flavour.startsWith('column') && this.doc.schemas.has('column') && ['root'].includes(this.prevBlock.parentBlock!.flavour))
     if (this.prevDragPosition === position) return
     this.moveDragLine(this.prevBlock.hostElement, this.prevDragPosition = position)
     return true
@@ -217,20 +239,42 @@ export class DocDndService {
   }
 
   onSetColumn(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
-
+    const parent = targetBlock.parentBlock
+    const columnSchema = this.doc.schemas.get('column')
+    if (!parent || !columnSchema) return
+    if (!this.doc.schemas.isValidChildren(block.flavour, columnSchema) || !this.doc.schemas.isValidChildren(targetBlock.flavour, columnSchema)) {
+      this.doc.messageService.warn(`不允许的分栏内容`)
+      return
+    }
+    const columns = this.doc.schemas.createSnapshot('columns', [2])
+    const column1 = columns.children[0] as IBlockSnapshot
+    const column2 = columns.children[1] as IBlockSnapshot
+    column1.children = position === 'left' ? [block.toSnapshot()] : [targetBlock.toSnapshot()]
+    column2.children = position === 'left' ? [targetBlock.toSnapshot()] : [block.toSnapshot()]
+    this.doc.crud.transact(() => {
+      const index = targetBlock.getIndexOfParent()
+      const parentId = targetBlock.parentId!
+      this.doc.crud.deleteBlockById(block.id)
+      this.doc.crud.deleteBlockById(targetBlock.id)
+      this.doc.crud.insertBlocks(parentId, index, [columns])
+    })
   }
 
   onSortBlock(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
     const isDepthEqual = block.props['depth'] === targetBlock.props['depth']
     if (!block || position === 'none' || targetBlock === block) return
+    if (position === 'left' || position === 'right') {
+      this.onSetColumn(block, targetBlock, position)
+      return;
+    }
 
     if (block.hostElement.nextElementSibling === targetBlock.hostElement && position === 'before') {
-      !isDepthEqual && block.updateProps({ depth: targetBlock.props.depth })
+      !isDepthEqual && block.updateProps({depth: targetBlock.props.depth})
       return
     }
 
     if (block.hostElement.previousElementSibling === targetBlock.hostElement && position === 'after') {
-      !isDepthEqual && block.updateProps({ depth: targetBlock.props.depth })
+      !isDepthEqual && block.updateProps({depth: targetBlock.props.depth})
       return
     }
 
@@ -250,7 +294,7 @@ export class DocDndService {
 
     this.doc.crud.transact(() => {
       if (!isDepthEqual) {
-        block.updateProps({ depth: targetBlock.props['depth'] })
+        block.updateProps({depth: targetBlock.props['depth']})
       }
       this.doc.crud.moveBlocks(block.parentId!, block.getIndexOfParent(), 1,
         targetBlock.parentId!, targetIdx)
@@ -300,9 +344,10 @@ export class DocDndService {
     })
   }
 
-  onInsertNewBlock(flavour: BlockCraft.BlockFlavour, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
+  onInsertNewBlock(flavour: BlockCraft.BlockFlavour, initProps: IBlockProps, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
     if (!this.doc.schemas.isValidChildren(flavour, targetBlock.parentBlock!.flavour)) {
-      this.doc.messageService.warn(`此处不能添加图片`)
+      const newSchema = this.doc.schemas.get(flavour)
+      this.doc.messageService.warn(`此处不能添加${newSchema?.metadata.label}`)
       return
     }
 
@@ -311,13 +356,14 @@ export class DocDndService {
     blockCreator.getParamsByScheme(this.doc.schemas.get(flavour)!).then(params => {
       if (!params) return
       const snapshot = this.doc.schemas.createSnapshot(flavour, <any>params)
+      initProps && Object.assign(snapshot.props, initProps)
       this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), [snapshot]).then(() => {
         this.doc.selection.selectOrSetCursorAtBlock(snapshot.id, true)
       })
     })
   }
 
-  @EventListen('drop', { flavour: 'root' })
+  @EventListen('drop', {flavour: 'root'})
   onDrop(ctx: UIEventStateContext) {
     ctx.preventDefault()
     const evt: DragEvent = ctx.getDefaultEvent()
@@ -339,7 +385,12 @@ export class DocDndService {
       this.onSortBlock(this.doc.getBlockById(bid), this.prevBlock, this.prevDragPosition)
     } else if (evt.dataTransfer.types.includes(DocDndDataTypes.newBlock)) {
       const flavour = evt.dataTransfer.getData(DocDndDataTypes.newBlock)
-      this.onInsertNewBlock(<any>flavour, this.prevBlock, this.prevDragPosition)
+      const initPropsStr = evt.dataTransfer.getData(DocDndDataTypes.newBlockProps)
+      let initProps: IBlockProps = {}
+      if (initPropsStr) {
+        initProps = JSON.parse(initPropsStr)
+      }
+      this.onInsertNewBlock(<any>flavour, initProps, this.prevBlock, this.prevDragPosition)
     } else if (evt.dataTransfer.files) {
       this.onInsertFiles(evt.dataTransfer.files!, this.prevBlock!, this.prevDragPosition)
     }

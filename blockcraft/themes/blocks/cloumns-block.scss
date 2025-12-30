@@ -142,7 +142,7 @@
       }
 
       .divider-line {
-        width: 1px;
+        width: 2px;
         transform: translateY(8px);
         height: calc(100% - 8px);
         background: rgba(55, 53, 47, 0.12);
@@ -180,67 +180,12 @@
         &::before {
           display: block;
           content: '';
-          height: 4px;
-          width: 4px;
+          height: 6px;
+          width: 6px;
           background: #bbbfc4;
           border-radius: 50%;
         }
       }
-    }
-
-    /* 悬浮控制按钮 - Notion 风格 */
-    .columns-controls {
-      position: absolute;
-      top: -32px;
-      right: 0;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 4px 6px;
-      background: rgba(255, 255, 255, 0.95);
-      border: 1px solid rgba(0, 0, 0, 0.08);
-      border-radius: 4px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-      font-size: 12px;
-      user-select: none;
-      backdrop-filter: blur(8px);
-      z-index: 20;
-    }
-
-    .control-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 24px;
-      height: 24px;
-      padding: 0;
-      border: none;
-      background: transparent;
-      border-radius: 3px;
-      cursor: pointer;
-      color: rgba(55, 53, 47, 0.65);
-      transition: all 0.12s ease;
-
-      &:hover:not(:disabled) {
-        background: rgba(55, 53, 47, 0.08);
-        color: rgba(55, 53, 47, 0.9);
-      }
-
-      &:active:not(:disabled) {
-        background: rgba(55, 53, 47, 0.12);
-      }
-
-      &:disabled {
-        opacity: 0.3;
-        cursor: not-allowed;
-      }
-    }
-
-    .columns-count {
-      padding: 0 4px;
-      font-size: 11px;
-      color: rgba(55, 53, 47, 0.5);
-      font-weight: 500;
     }
   }
 
@@ -249,7 +194,6 @@
   .column-block {
     display: block;
     flex: 1;
-    min-width: 100px;
     padding: 0 8px;
     margin-bottom: 0;
 
@@ -262,6 +206,7 @@
       display: flex;
       flex-direction: column;
       transition: background 0.12s ease;
+      min-width: fit-content;
     }
 
     &.selected {

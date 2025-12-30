@@ -1,4 +1,4 @@
-import { Component, ElementRef, Injector, ViewChild, ViewContainerRef } from "@angular/core";
+import {Component, ElementRef, Injector, ViewChild, ViewContainerRef} from "@angular/core";
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
   BlockCraftDoc,
@@ -31,40 +31,40 @@ import {
   TableRowBlockSchema,
   TodoBlockSchema
 } from "../blocks";
-import { ConsoleLogger, getRandomDarkColor, randomColor, throttle } from "../global";
-import { BulletBlockSchema } from "../blocks/bullet-block";
-import { FloatTextToolbarPlugin } from "../plugins/float-text-toolbar/rich-text-toolbar";
-import { BlockTransformerPlugin } from "../plugins/block-transformer";
-import { BlockControllerPlugin } from "../plugins/block-controller";
-import { ImgToolbarPlugin } from "../plugins/img-toolbar";
-import { MyDocFileService } from "./services/doc-file-service";
-import { MyDocMessageService } from "./services/doc-message.service";
-import { CalloutToolbarPlugin } from "../plugins/callout-toolbar";
-import { AttachmentExtensionPlugin } from "../plugins/attachment-extension";
-import { MyBlockCreatorService } from "./services/block-creator.service";
-import { EmbedFrameExtensionPlugin } from "../plugins/embed-frame-extension";
-import { BookmarkBlockExtensionPlugin } from "../plugins/bookmark-frame-extension";
-import { InlineLinkExtension } from "../plugins/inline-link-extension";
-import { MatIcon } from "@angular/material/icon";
-import { DocDndDataTypes } from "../framework/services/dnd.service";
-import { DocExportManager } from "../tools";
-import { MyCommentService } from "./services/comment.service";
-import { AdapterService } from "./services/adapter.service";
-import { MermaidBlockSchema, MermaidTextareaBlockSchema } from "../blocks/mermaid-block";
-import { applyUpdate, Doc, mergeUpdates } from "yjs";
-import { BlockquoteBlockSchema } from "../blocks/blockquote-block";
+import {ConsoleLogger, getRandomDarkColor, randomColor, throttle} from "../global";
+import {BulletBlockSchema} from "../blocks/bullet-block";
+import {FloatTextToolbarPlugin} from "../plugins/float-text-toolbar/rich-text-toolbar";
+import {BlockTransformerPlugin} from "../plugins/block-transformer";
+import {BlockControllerPlugin} from "../plugins/block-controller";
+import {ImgToolbarPlugin} from "../plugins/img-toolbar";
+import {MyDocFileService} from "./services/doc-file-service";
+import {MyDocMessageService} from "./services/doc-message.service";
+import {CalloutToolbarPlugin} from "../plugins/callout-toolbar";
+import {AttachmentExtensionPlugin} from "../plugins/attachment-extension";
+import {MyBlockCreatorService} from "./services/block-creator.service";
+import {EmbedFrameExtensionPlugin} from "../plugins/embed-frame-extension";
+import {BookmarkBlockExtensionPlugin} from "../plugins/bookmark-frame-extension";
+import {InlineLinkExtension} from "../plugins/inline-link-extension";
+import {MatIcon} from "@angular/material/icon";
+import {DocDndDataTypes} from "../framework/services/dnd.service";
+import {DocExportManager} from "../tools";
+import {MyCommentService} from "./services/comment.service";
+import {AdapterService} from "./services/adapter.service";
+import {MermaidBlockSchema, MermaidTextareaBlockSchema} from "../blocks/mermaid-block";
+import {applyUpdate, Doc, mergeUpdates} from "yjs";
+import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
 // @ts-ignore
-import { WebsocketProvider } from './ws'
-import { MentionPlugin } from "./plugins/mention";
+import {WebsocketProvider} from './ws'
+import {MentionPlugin} from "./plugins/mention";
 import * as Y from 'yjs'
-import { BlockCraftAwareness } from "./awa";
-import { IndexeddbPersistence } from "y-indexeddb";
-import { DividerExtensionPlugin } from "../plugins/divider-toolbar";
-import { DividerStylePopupComponent } from "../plugins/divider-toolbar/widgets/divider-style-popup.component";
-import { CodeInlineEditorBinding, TableBlockBinding, TextMarkerPlugin, OrderedBlockPlugin } from "../plugins";
-import { FindReplacePlugin } from "../plugins/findReplace/findReplace";
-import { fixTable } from "../blocks/table-block/callback";
-import { ColumnBlockSchema } from "../blocks/columns-block";
+import {BlockCraftAwareness} from "./awa";
+import {IndexeddbPersistence} from "y-indexeddb";
+import {DividerExtensionPlugin} from "../plugins/divider-toolbar";
+import {DividerStylePopupComponent} from "../plugins/divider-toolbar/widgets/divider-style-popup.component";
+import {CodeInlineEditorBinding, TableBlockBinding, TextMarkerPlugin, OrderedBlockPlugin} from "../plugins";
+import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
+import {fixTable} from "../blocks/table-block/callback";
+import {ColumnBlockSchema} from "../blocks/columns-block";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -73,7 +73,7 @@ const mentionRequest = async (keyword: string) => {
     }
   }
   const len = Math.floor(Math.random() * 10)
-  const list = Array.from({ length: len }).map(() => ({
+  const list = Array.from({length: len}).map(() => ({
     id: generateId(),
     name: keyword + Math.floor(Math.random() * 10000).toString().slice(0, 4)
   }))
@@ -105,7 +105,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
   },
   toDelta: (ele) => {
     return {
-      insert: { link: ele.textContent! },
+      insert: {link: ele.textContent!},
       attributes: InlineManager.getAttrs(ele)
     };
   }
@@ -114,7 +114,8 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 @Component({
   selector: 'block-craft-editor',
   template: `
-    <div style="padding: 60px; max-width: 90vw; height: 80vh; overflow-x: hidden; overflow-y: auto;" #container (mousedown)="onContainerMousedown($event)">
+    <div style="padding: 60px; max-width: 90vw; height: 80vh; overflow-x: hidden; overflow-y: auto;" #container
+         (mousedown)="onContainerMousedown($event)">
     </div>
 
     <button (click)="initBySnapshot()">初始化</button>
@@ -141,7 +142,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
     <button (click)="quitRoom()">退出协同</button>
 
     <div class="block-area">
-      <div draggable="true" (dragstart)="onDragStart($event, 'heading-one')">
+      <div draggable="true" (dragstart)="onDragStart($event, 'paragraph', {heading: 1})">
         <i class="bc_icon bc_biaoti_1"></i>
       </div>
       <div draggable="true" (dragstart)="onDragStart($event, 'divider')">
@@ -232,18 +233,18 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
   ],
   standalone: true,
   providers: [
-    { provide: DOC_FILE_SERVICE_TOKEN, useClass: MyDocFileService },
-    { provide: DOC_MESSAGE_SERVICE_TOKEN, useClass: MyDocMessageService },
-    { provide: BLOCK_CREATOR_SERVICE_TOKEN, useClass: MyBlockCreatorService },
-    { provide: DOC_LINK_PREVIEWER_SERVICE_TOKEN, useClass: DocLinkPreviewerService },
-    { provide: DOC_ADAPTER_SERVICE_TOKEN, useClass: AdapterService },
+    {provide: DOC_FILE_SERVICE_TOKEN, useClass: MyDocFileService},
+    {provide: DOC_MESSAGE_SERVICE_TOKEN, useClass: MyDocMessageService},
+    {provide: BLOCK_CREATOR_SERVICE_TOKEN, useClass: MyBlockCreatorService},
+    {provide: DOC_LINK_PREVIEWER_SERVICE_TOKEN, useClass: DocLinkPreviewerService},
+    {provide: DOC_ADAPTER_SERVICE_TOKEN, useClass: AdapterService},
     ConsoleLogger,
     MyCommentService
   ]
 })
 export class EditorComponent {
 
-  @ViewChild('container', { read: ElementRef }) container!: ElementRef;
+  @ViewChild('container', {read: ElementRef}) container!: ElementRef;
 
   constructor(
     private injector: Injector,
@@ -275,7 +276,7 @@ export class EditorComponent {
           },
           toDelta: (ele) => {
             return {
-              insert: { mention: ele.textContent! },
+              insert: {mention: ele.textContent!},
               attributes: InlineManager.getAttrs(ele)
             }
           }
@@ -286,36 +287,36 @@ export class EditorComponent {
       ]
     ],
     plugins: [new OrderedBlockPlugin(), new CodeInlineEditorBinding(),
-    new FloatTextToolbarPlugin(), new BlockTransformerPlugin(),
-    new BlockControllerPlugin(
-      [
-        {
-          type: 'tool',
-          name: 'copyBlockLink',
-          value: true,
-          icon: 'bc_fuzhilianjie',
-          label: '复制段落链接',
-        },
-      ],
-      (item, block, doc) => {
-        switch (item.name) {
-          case 'copyBlockLink':
-            this.copyBlockLink(block)
-            return true
+      new FloatTextToolbarPlugin(), new BlockTransformerPlugin(),
+      new BlockControllerPlugin(
+        [
+          {
+            type: 'tool',
+            name: 'copyBlockLink',
+            value: true,
+            icon: 'bc_fuzhilianjie',
+            label: '复制段落链接',
+          },
+        ],
+        (item, block, doc) => {
+          switch (item.name) {
+            case 'copyBlockLink':
+              this.copyBlockLink(block)
+              return true
+          }
+          return false
         }
-        return false
-      }
-    ),
-    new TableBlockBinding(),
-    new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
-    new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(),
-    new InlineLinkExtension((link) => {
-      if (link.startsWith('http://doc-pre.com')) {
-        window.open(link.replace('http://doc-pre.com', 'http://localhost:8081/test3'), '_blank')
-      } else window.open(link, '_blank')
-    }),
-    new MentionPlugin(mentionRequest), new DividerExtensionPlugin(),
-    new FindReplacePlugin()
+      ),
+      new TableBlockBinding(),
+      new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
+      new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(),
+      new InlineLinkExtension((link) => {
+        if (link.startsWith('http://doc-pre.com')) {
+          window.open(link.replace('http://doc-pre.com', 'http://localhost:8081/test3'), '_blank')
+        } else window.open(link, '_blank')
+      }),
+      new MentionPlugin(mentionRequest), new DividerExtensionPlugin(),
+      new FindReplacePlugin()
     ]
   })
 
@@ -360,15 +361,15 @@ export class EditorComponent {
   }
 
   insert() {
-    (this.doc.getBlockById(this.pid) as EditableBlockComponent).yText.applyDelta([{ insert: 'aa ' }, { retain: 5 },
-    {
-      retain: 6,
-      attributes: { 's:color': 'red' }
-    },
-    { insert: ' bb ', attributes: { 's:color': 'red' } }, { retain: 5 }, {
-      insert: ' cc.    ',
-      attributes: { 'a:bold': true }
-    }
+    (this.doc.getBlockById(this.pid) as EditableBlockComponent).yText.applyDelta([{insert: 'aa '}, {retain: 5},
+      {
+        retain: 6,
+        attributes: {'s:color': 'red'}
+      },
+      {insert: ' bb ', attributes: {'s:color': 'red'}}, {retain: 5}, {
+        insert: ' cc.    ',
+        attributes: {'a:bold': true}
+      }
     ])
   }
 
@@ -391,15 +392,15 @@ export class EditorComponent {
     for (let i = 0; i < 100; i++) {
       _arr.push(
         this.doc.schemas.createSnapshot('paragraph', [
-          [{ insert: `hello {${i}}` }]
+          [{insert: `hello {${i}}`}]
         ])
       )
     }
     this.doc.crud.insertBlocks(this.doc.rootId, 0, _arr)
   }
 
-  onDragStart(evt: DragEvent, flavour: string) {
-    this.doc.dndService.startDrag(evt, DocDndDataTypes.newBlock, flavour)
+  onDragStart(evt: DragEvent, flavour: string, props?: any) {
+    this.doc.dndService.startDrag(evt, [{dragDataType: DocDndDataTypes.newBlock, dragData: flavour}, {dragDataType: DocDndDataTypes.newBlockProps, dragData: props ? JSON.stringify(props) : ''}])
   }
 
   exportPdf() {
@@ -412,7 +413,7 @@ export class EditorComponent {
   }
 
   exportImg() {
-    new DocExportManager(this.doc).exportToJpeg('blockcraft-export-test.png', { bgcolor: '#fff', scale: 2.0 })
+    new DocExportManager(this.doc).exportToJpeg('blockcraft-export-test.png', {bgcolor: '#fff', scale: 2.0})
   }
 
   onContainerMousedown(evt: MouseEvent) {
@@ -528,8 +529,8 @@ export class EditorComponent {
       // 'ws://193.168.2.100:30204/collaborate',
       this.docId,
       this.doc.yDoc, {
-      disableBc: false
-    })
+        disableBc: false
+      })
 
     const uid = generateId(11)
     const awa = new BlockCraftAwareness(this.doc, this.provider.awareness)

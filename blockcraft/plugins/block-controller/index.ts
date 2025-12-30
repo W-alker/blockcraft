@@ -88,7 +88,7 @@ export class BlockControllerPlugin extends DocPlugin {
 
         evt.dataTransfer?.setDragImage(this._activeBlock.hostElement, 0, 0);
 
-        this.doc.dndService.startDrag(evt, 'origin-block', this._activeBlock.id)
+        this.doc.dndService.startDrag(evt, [{dragDataType: 'origin-block', dragData: this._activeBlock.id}])
 
         fromEvent(this._cpr.location.nativeElement, 'dragend').pipe(take(1)).subscribe(() => {
           this._cpr.instance.menuDisabled = false

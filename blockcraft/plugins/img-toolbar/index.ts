@@ -5,11 +5,11 @@ import {
   EventListen,
   getPositionWithOffset
 } from "../../framework";
-import { UIEventStateContext } from "../../framework";
-import { fromEvent, Subject, Subscription, takeUntil } from "rxjs";
-import { ImageToolbar } from "./widgets/image.toolbar";
-import { downloadFile, nextTick } from "../../global";
-import { OverlayRef } from "@angular/cdk/overlay";
+import {UIEventStateContext} from "../../framework";
+import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
+import {ImageToolbar} from "./widgets/image.toolbar";
+import {downloadFile, nextTick} from "../../global";
+import {OverlayRef} from "@angular/cdk/overlay";
 
 export class ImgToolbarPlugin extends DocPlugin {
   override name = 'img-toolbar';
@@ -20,7 +20,7 @@ export class ImgToolbarPlugin extends DocPlugin {
   private _closeToolbar$ = new Subject<void>()
 
   // img 拖拽响应
-  @EventListen('dragStart', { flavour: "image" })
+  @EventListen('dragStart', {flavour: "image"})
   onImageDragStart(ctx: UIEventStateContext) {
     ctx.stopPropagation()
 
@@ -38,10 +38,10 @@ export class ImgToolbarPlugin extends DocPlugin {
 
     evt.dataTransfer?.setDragImage(target, 0, 0)
 
-    this.doc.dndService.startDrag(evt, 'origin-block', blockId)
+    this.doc.dndService.startDrag(evt, [{dragDataType: 'origin-block', dragData: blockId}])
   }
 
-  @BindHotKey({ key: 'Enter', shortKey: null, shiftKey: null, ctrlKey: null, altKey: null }, { flavour: "image" })
+  @BindHotKey({key: 'Enter', shortKey: null, shiftKey: null, ctrlKey: null, altKey: null}, {flavour: "image"})
   onImageTitleEnter(ctx: UIEventStateContext) {
     ctx.preventDefault()
     const state = ctx.get('keyboardState')
@@ -57,15 +57,15 @@ export class ImgToolbarPlugin extends DocPlugin {
     return true
   }
 
-  @EventListen('doubleClick', { flavour: "image" })
+  @EventListen('doubleClick', {flavour: "image"})
   onImageMouseDown(ctx: UIEventStateContext) {
     if (!this.doc.isReadonly) return
     const evt: MouseEvent = ctx.getDefaultEvent()
     const target = evt.target
     if (!target || !(target instanceof HTMLElement) || !target.classList.contains('img-wrapper')) return
     const img = target.querySelector('img')!
-    this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({ el: img })
-    img.dispatchEvent(new MouseEvent('click', { bubbles: false, cancelable: true, view: window }))
+    this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({el: img})
+    img.dispatchEvent(new MouseEvent('click', {bubbles: false, cancelable: true, view: window}))
     return true
   }
 
@@ -82,7 +82,7 @@ export class ImgToolbarPlugin extends DocPlugin {
 
         const imgEle = imgBlock.hostElement.querySelector('img')
         if (!imgEle || !imgEle.isConnected) return
-        const { overlayRef, componentRef } = this.doc.overlayService.createConnectedOverlay<ImageToolbar>({
+        const {overlayRef, componentRef} = this.doc.overlayService.createConnectedOverlay<ImageToolbar>({
           target: imgEle,
           positions: [
             getPositionWithOffset("top-center", 0, 8),
@@ -96,7 +96,7 @@ export class ImgToolbarPlugin extends DocPlugin {
         componentRef.setInput('theme', this.doc.theme)
 
         fromEvent<MouseEvent>(imgEle, 'mousedown').pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
-          this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({ el: imgEle })
+          this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({el: imgEle})
         })
 
         imgBlock.onPropsChange.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
@@ -139,7 +139,7 @@ export class ImgToolbarPlugin extends DocPlugin {
         const ls = this.doc.event.add('dragStart', () => {
           this._closeToolbar$.next()
           ls()
-        }, { blockId: selection.firstBlock.id })
+        }, {blockId: selection.firstBlock.id})
 
         this.doc.selection.afterNextChange(() => {
           this._closeToolbar$.next()

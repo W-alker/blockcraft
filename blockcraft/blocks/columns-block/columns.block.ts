@@ -168,15 +168,6 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
         // 实时更新 CSS 变量
         wrapper.style.setProperty(`--column-width-${dividerIndex}`, `${newLeftWidth}%`);
         wrapper.style.setProperty(`--column-width-${dividerIndex + 1}`, `${newRightWidth}%`);
-
-        // 实时更新分割线位置
-        const divider = this.hostElement.querySelector(`[data-divider-index="${dividerIndex}"]`) as HTMLElement;
-        let position = 0;
-        for (let i = 0; i < dividerIndex; i++) {
-          position += widths[i];
-        }
-        position += newLeftWidth;
-        divider.style.left = `${position}%`;
       };
 
       const onMouseUp = () => {
