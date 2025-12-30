@@ -8,8 +8,8 @@ import { Subject, takeUntil } from "rxjs";
   selector: 'div.callout-block',
   template: `
     <span class="callout-block-prefix" (mousedown)="onPickEmoji($event)"
-          contenteditable="false">{{ props.prefix }}</span>
-    <div>
+          contenteditable="false">{{ props.prefix }}
+    </span>
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,

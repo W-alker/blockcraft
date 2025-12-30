@@ -220,7 +220,9 @@ export class DocDndService {
       this.prevBlock = activeBlock
     }
 
-    const position = calcPosition(evt, this.prevBlock.hostElement, !activeBlock.flavour.startsWith('column') && this.doc.schemas.has('column') && ['root'].includes(this.prevBlock.parentBlock!.flavour))
+    const position = calcPosition(evt, this.prevBlock.hostElement)
+    // TODO 修复
+    // const position = calcPosition(evt, this.prevBlock.hostElement, !activeBlock.flavour.startsWith('column') && this.doc.schemas.has('column') && ['root'].includes(this.prevBlock.parentBlock!.flavour))
     if (this.prevDragPosition === position) return
     this.moveDragLine(this.prevBlock.hostElement, this.prevDragPosition = position)
     return true
@@ -238,6 +240,7 @@ export class DocDndService {
     this._inBlock = null
   }
 
+  // TODO 修复
   onSetColumn(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
     const parent = targetBlock.parentBlock
     const columnSchema = this.doc.schemas.get('column')
