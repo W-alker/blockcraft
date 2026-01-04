@@ -68,13 +68,13 @@ export class BlockTransformerPlugin extends DocPlugin {
     })
   }
 
-  @BindHotKey({key: ['1', '2', '3', '4'], shortKey: true})
+  @BindHotKey({key: ['0', '1', '2', '3', '4'], shortKey: true})
   formatHeading(evt: UIEventStateContext) {
     const state = evt.get('keyboardState')
     const selection = state.selection
     if (!selection.isInSameBlock || selection.from.type !== 'text' || !ALLOWED_HEADING_FLAVOURS.includes(selection.from.block.flavour)) return
     selection.from.block.updateProps({
-      heading: parseInt(state.raw.key, 10)
+      heading: state.raw.key === '0' ? null : parseInt(state.raw.key, 10)
     })
     return true
   }

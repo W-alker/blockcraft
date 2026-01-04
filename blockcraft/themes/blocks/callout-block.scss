@@ -9,10 +9,13 @@
 
   .callout-block {
     position: relative;
-    padding: 14px 1em 14px 3em;
+    padding: 1em;
     margin-bottom: 1em;
     border-radius: 4px;
     border: 1px solid transparent;
+    display: flex;
+    align-items: flex-start;
+    gap: 1em;
 
     &.selected {
       //border: 1px solid #0070f3;
@@ -26,14 +29,14 @@
     }
 
     .callout-content {
-      margin-bottom: 0;
+      [data-block-id]:last-child {
+        margin-bottom: 0;
+      }
     }
 
     .callout-block-prefix {
-      position: absolute;
-      left: 0.6em;
-      top: 14px;
-      font-size: 1.2em;
+      font-size: 1em;
+      line-height: 1lh;
       cursor: pointer;
 
       &:hover {
