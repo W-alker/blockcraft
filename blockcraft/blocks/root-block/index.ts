@@ -5,7 +5,10 @@ import { ParagraphBlockSchema } from "../paragraph-block";
 
 export interface RootBlockModel extends NoEditableBlockNative {
   flavour: "root",
-  nodeType: BlockNodeType.root
+  nodeType: BlockNodeType.root,
+  props: {
+    ff?: string
+  }
 }
 
 export const RootBlockSchema: IBlockSchemaOptions<RootBlockModel> = {

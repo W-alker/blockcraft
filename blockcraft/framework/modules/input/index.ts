@@ -28,10 +28,10 @@ export class InputTransformer {
     if (curSel.isAllSelected) {
       context.preventDefault();
       const p = this.doc.schemas.createSnapshot('paragraph', [])
-      this.doc.crud.insertBlocksBefore(curSel.from.block.id, [p])
+      this.doc.crud.insertBlocksAfter(curSel.lastBlock.id, [p])
       this.doc.selection.setCursorAtBlock(p.id, true)
       this.doc.selection.recalculate()
-      this._deleteAllSelected(curSel)
+      // this._deleteAllSelected(curSel)
       return true
     }
 
@@ -99,6 +99,10 @@ export class InputTransformer {
     const { from, to, collapsed } = normalizedRange
     if (from.type === 'selected' && (!to || to.type === 'selected')) {
       ev.preventDefault()
+      const p = this.doc.schemas.createSnapshot('paragraph', [])
+      this.doc.crud.insertBlocksAfter((to || from).blockId, [p])
+      this.doc.selection.setCursorAtBlock(p.id, true)
+      this.doc.selection.recalculate()
       return
     }
 
@@ -208,7 +212,6 @@ export class InputTransformer {
         }
       }
 
-      // TODO 迁移 这段处理连续文本需要迁移
       if (from.type === 'text') {
         const yText = from.block.yText
         yText.delete(from.index, from.length)

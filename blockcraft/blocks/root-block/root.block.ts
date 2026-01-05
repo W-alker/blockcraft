@@ -6,10 +6,12 @@ import {BlockNodeType} from "../../framework";
 
 @Component({
   selector: 'div.root-block[data-blockcraft-root="true"]',
-  template: `
-  `,
+  template: ``,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '[style.font-family]': 'props.ff',
+  }
 })
 export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
   @HostListener('contextmenu', ['$event'])
@@ -59,7 +61,7 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
           document.getSelection()!.selectAllChildren(block.hostElement)
 
           // TODO 这样实现不太好
-          if(block.flavour === 'table-cell') return
+          if (block.flavour === 'table-cell') return
           const parentBlock = block.parentBlock!
           leaveListen(parentBlock)
         })
