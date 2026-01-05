@@ -6,7 +6,7 @@ import {
 } from "../../framework";
 import { MermaidBlockModel } from "./index";
 import mermaid from "mermaid";
-import { Subject, Subscription, takeUntil } from "rxjs";
+import { Subject, takeUntil } from "rxjs";
 import { MermaidTypeListComponent } from "./widgets/mermaid-type-list.component";
 import { IMermaidType, MermaidViewMode } from "./types";
 import { debounce, nextTick } from "../../global";
@@ -88,8 +88,12 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
         this.setView(this.props.mode)
       }
     })
-    const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
-    textarea.onTextChange.pipe(takeUntil(this.onDestroy$)).subscribe(this._onPreviewObserver)
+
+    requestAnimationFrame(() => {
+      const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
+      textarea.onTextChange.pipe(takeUntil(this.onDestroy$)).subscribe(this._onPreviewObserver)
+    })
+
   }
 
   override ngOnDestroy() {

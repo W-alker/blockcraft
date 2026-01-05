@@ -246,13 +246,13 @@ export class InputTransformer {
     } else {
       const nextBlock = this.doc.nextSibling(range.to?.block || range.from.block)
       if (nextBlock) this.doc.selection.setCursorAtBlock(nextBlock, true)
-      else {
-        const parent = range.from.block.parentBlock
-        if (parent) {
-          this.doc.selection.selectAllChildren(parent)
-        }
-        return true
-      }
+      // else {
+      //   const parent = range.from.block.parentBlock
+      //   if (parent) {
+      //     this.doc.selection.selectAllChildren(parent)
+      //   }
+      //   return true
+      // }
     }
     this.doc.yDoc.transact(() => {
       if (!to) {

@@ -232,7 +232,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private onEndSelect = () => {
     if (!this._startSelectingCell) return;
     this.hostElement.classList.remove('is-selecting-cell')
-    this.showToolbar(this._selectedCellSet[Symbol.iterator]().next().value.hostElement)
+    const firstSelectedCell = this._selectedCellSet[Symbol.iterator]().next().value
+    if (firstSelectedCell) {
+      this.showToolbar(firstSelectedCell.hostElement)
+    }
     this._prevAdjustedSelection = null
   }
 
@@ -424,7 +427,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private _disableColResize = false
 
-  onColResizerMousedown(evt: Event) {
+  onColResizerMousedown(evt: MouseEvent) {
     evt.preventDefault()
     evt.stopPropagation()
 
@@ -433,29 +436,43 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     const resizingColIdx = this.hoveringCell.getIndexOfParent() + (this.hoveringCell.props.colspan || 1) - 1
     const curCol = this.hostElement.querySelector(`col:nth-child(${resizingColIdx + 1})`) as HTMLElement
+    const scrollableEl = this.tableScrollable.nativeElement
 
     let newWidth = this.props.colWidths[resizingColIdx]
+    let prevClientX = evt.clientX
+    
     const resizeSub = fromEvent<MouseEvent>(document, 'mousemove', { capture: true })
       .pipe(takeUntil(this.resizingCol$.pipe(filter(v => !v))))
       .subscribe((e) => {
-
-        if (!this.hoveringCell) {
+        if (!this.hoveringCell || !this.resizingCol$.value) {
           resizeSub.unsubscribe()
           return
         }
 
-        const { left } = this.tableScrollable.nativeElement.getBoundingClientRect()
-        const scrollLeft = this.tableScrollable.nativeElement.scrollLeft
-        if (!this.resizingCol$.value || e.clientX < left) return
-        const targetRect = curCol.getBoundingClientRect()
-        newWidth = e.clientX - targetRect.left
-        // 不得小于50
-        if (newWidth < 50) return
-        const offsetX = targetRect.right + scrollLeft - left + 10
+        // 计算鼠标移动的增量
+        const deltaX = e.clientX - prevClientX
+        prevClientX = e.clientX
+        
+        // 应用增量到宽度
+        newWidth += deltaX
+        
+        // 最小宽度限制
+        if (newWidth < 50) {
+          newWidth = 50
+          return
+        }
+        
+        // 更新列宽
+        curCol.style.width = newWidth + 'px'
         this.colBarComponent.colWidths[resizingColIdx] = newWidth
         this.colBarComponent.changeDetectionRef.markForCheck()
-        this.colResizeBar.nativeElement.style.left = `${offsetX}px`
-        curCol.style.width = newWidth + 'px'
+        
+        // 更新可视指示器位置（考虑滚动偏移）
+        const colRect = curCol.getBoundingClientRect()
+        const containerRect = scrollableEl.getBoundingClientRect()
+        // 列的右边界相对于容器的位置 + 滚动偏移量
+        const barLeft = colRect.right - containerRect.left + scrollableEl.scrollLeft + 10
+        this.colResizeBar.nativeElement.style.left = `${barLeft}px`
       })
 
     fromEvent(document, 'mouseup', { capture: true }).pipe(take(1)).subscribe(() => {
