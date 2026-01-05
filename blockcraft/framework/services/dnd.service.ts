@@ -179,52 +179,54 @@ export class DocDndService {
   private _inBlock: BlockCraft.BlockComponent | null = null
 
   private onDragMove = throttle((ctx: UIEventStateContext) => {
-    const evt: DragEvent = ctx.getDefaultEvent()
-    evt.preventDefault()
-    ctx.stopPropagation()
-    this.dragStatus$.next(DocDndStatus.moving)
+    this.doc.ngZone.runOutsideAngular(() => {
+      const evt: DragEvent = ctx.getDefaultEvent()
+      evt.preventDefault()
+      ctx.stopPropagation()
+      this.dragStatus$.next(DocDndStatus.moving)
 
-    const evtTarget = evt.target as Node
-    if (evtTarget === this.doc.root.hostElement) return
-    let activeBlock = null
-    if (evtTarget === this._prevTargetElement) activeBlock = this.prevBlock
-    else {
-      const blockId = closetBlockId(evt.target as Node)
-      if (!blockId) return
-      activeBlock = this.doc.getBlockById(blockId)
-    }
-    if (!activeBlock || activeBlock.flavour === 'root') return
-    if (this.prevBlock !== activeBlock) {
-      if (activeBlock === this._inBlock) return
-      const schema = this.doc.schemas.get(activeBlock.flavour)!
+      const evtTarget = evt.target as Node
+      if (evtTarget === this.doc.root.hostElement) return
+      let activeBlock = null
+      if (evtTarget === this._prevTargetElement) activeBlock = this.prevBlock
+      else {
+        const blockId = closetBlockId(evt.target as Node)
+        if (!blockId) return
+        activeBlock = this.doc.getBlockById(blockId)
+      }
+      if (!activeBlock || activeBlock.flavour === 'root') return
+      if (this.prevBlock !== activeBlock) {
+        if (activeBlock === this._inBlock) return
+        const schema = this.doc.schemas.get(activeBlock.flavour)!
 
-      // 对于在特殊block块内部特殊处理
-      if (schema.metadata.renderUnit) {
-        this._inBlock = activeBlock
-        const position = calcPosition(evt, activeBlock.hostElement)
-        if (position === 'before') {
-          activeBlock = this._inBlock!.firstChildren!
-        } else {
-          activeBlock = this._inBlock!.lastChildren!
+        // 对于在特殊block块内部特殊处理
+        if (schema.metadata.renderUnit) {
+          this._inBlock = activeBlock
+          const position = calcPosition(evt, activeBlock.hostElement)
+          if (position === 'before') {
+            activeBlock = this._inBlock!.firstChildren!
+          } else {
+            activeBlock = this._inBlock!.lastChildren!
+          }
+          this.prevBlock = activeBlock
+          this.moveDragLine(this.prevBlock.hostElement, this.prevDragPosition = position)
+          return
         }
+
+        // 跳出所在的特殊block块后，清除所在block块记录
+        if (activeBlock.nodeType === 'block') {
+          this._inBlock = null
+        }
+        if (schema.metadata.isLeaf) return;
         this.prevBlock = activeBlock
-        this.moveDragLine(this.prevBlock.hostElement, this.prevDragPosition = position)
-        return
       }
 
-      // 跳出所在的特殊block块后，清除所在block块记录
-      if (activeBlock.nodeType === 'block') {
-        this._inBlock = null
-      }
-      if (schema.metadata.isLeaf) return;
-      this.prevBlock = activeBlock
-    }
-
-    const position = calcPosition(evt, this.prevBlock.hostElement)
-    // TODO 修复
-    // const position = calcPosition(evt, this.prevBlock.hostElement, !activeBlock.flavour.startsWith('column') && this.doc.schemas.has('column') && ['root'].includes(this.prevBlock.parentBlock!.flavour))
-    if (this.prevDragPosition === position) return
-    this.moveDragLine(this.prevBlock.hostElement, this.prevDragPosition = position)
+      const position = calcPosition(evt, this.prevBlock.hostElement)
+      // TODO 修复
+      // const position = calcPosition(evt, this.prevBlock.hostElement, !activeBlock.flavour.startsWith('column') && this.doc.schemas.has('column') && ['root'].includes(this.prevBlock.parentBlock!.flavour))
+      if (this.prevDragPosition === position) return
+      this.moveDragLine(this.prevBlock.hostElement, this.prevDragPosition = position)
+    })
     return true
   }, 32)
 

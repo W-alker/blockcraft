@@ -1,10 +1,6 @@
 @import "base";
 
 [data-blockcraft-root="true"][data-theme="light"] {
-  // Craft 风格浅色主题优化
-  background-color: #ffffff;
-  color: #37352F; // Craft 默认文字色（更温和的深灰）
-
   // 覆盖部分变量以贴近 Craft 风格
   --bc-color: #37352F;
   --bc-color-light: #787774; // Craft 次要文字
