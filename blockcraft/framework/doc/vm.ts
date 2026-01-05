@@ -210,7 +210,6 @@ export class BlockChildrenRenderRef {
   constructor(private readonly block: BlockCraft.BlockComponent, private vm: DocVM) {
   }
 
-  @performanceTest()
   insert(index: number, comps: BlockCraft.BlockComponentRef[]) {
     const _chs = comps.map(comp => {
       comp.instance.parentId = this.block.id;

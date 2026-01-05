@@ -98,7 +98,6 @@ export class BlockControllerPlugin extends DocPlugin {
       })
   }
 
-  // TODO 第一次selectstart没执行
   @EventListen('selectStart', {flavour: "root"})
   onSelectStart() {
     this._cpr.location.nativeElement.style.pointerEvents = 'none'

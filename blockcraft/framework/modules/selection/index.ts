@@ -4,12 +4,12 @@ import {
   BlockNodeType,
   DocEventRegister,
   EditableBlockComponent,
-  EventListen, EventScopeSourceType, EventSourceState,
+  EventListen,
   INLINE_ELEMENT_TAG,
-  INLINE_END_BREAK_CLASS, STR_LINE_BREAK, UIEventState,
+  INLINE_END_BREAK_CLASS, STR_LINE_BREAK,
   UIEventStateContext
 } from "../../block-std";
-import {BlockCraftError, ErrorCode, IS_MAC, nextTick, performanceTest} from "../../../global";
+import {BlockCraftError, ErrorCode, IS_MAC} from "../../../global";
 import {BehaviorSubject, skip, take, takeUntil} from "rxjs";
 import {closetBlockId, isZeroSpace} from "../../utils";
 import {SelectionSelectedManager} from "./selected-manager";
@@ -97,7 +97,7 @@ export class SelectionManager {
       const opBlock = isBackward ? this.doc.prevSibling(focusBlock) : this.doc.nextSibling(focusBlock)
       if (!opBlock) return false
       this.selectOrSetCursorAtBlock(opBlock, !isBackward)
-      opBlock.hostElement.scrollIntoView({block: 'nearest', behavior: 'smooth'})
+      this.scrollSelectionIntoView()
       return true
     }
 
@@ -156,7 +156,7 @@ export class SelectionManager {
 
     this.doc.isEditable(opBlock)
       ? extendStartOrEnd(opBlock, isBackward) : docSelection.extend(opBlock.hostElement, isBackward ? 0 : opBlock.hostElement.childElementCount)
-    opBlock.hostElement.scrollIntoView({block: 'nearest', behavior: 'smooth'})
+    this.scrollSelectionIntoView()
     return true
   }
 
@@ -214,7 +214,7 @@ export class SelectionManager {
 
     this.doc.isEditable(opBlock)
       ? extendStartOrEnd(opBlock, !isBackward) : docSelection.extend(opBlock.hostElement, isBackward ? 0 : opBlock.hostElement.childElementCount)
-    opBlock.hostElement.scrollIntoView({block: 'nearest', behavior: 'smooth'})
+    this.scrollSelectionIntoView()
     return true
   }
 
@@ -691,7 +691,7 @@ export class SelectionManager {
     } else {
       this.selectBlock(block)
     }
-    scrollIntoView && block.hostElement.scrollIntoView({block: 'nearest'})
+    scrollIntoView && this.scrollSelectionIntoView()
   }
 
   /**
@@ -713,7 +713,7 @@ export class SelectionManager {
       if (!children) this.selectBlock(block)
       else this.selectOrSetCursorAtBlock(children, atStart)
     }
-    scrollIntoView && block.hostElement.scrollIntoView({block: 'nearest'})
+    scrollIntoView && this.scrollSelectionIntoView()
   }
 
   selectAllChildren(block: string | BlockCraft.BlockComponent) {
@@ -739,6 +739,25 @@ export class SelectionManager {
     return new FakeRange(this.doc, json, config)
   }
 
+  scrollSelectionIntoView() {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+
+    const range = sel.getRangeAt(0)
+    const rect = range.getBoundingClientRect()
+    if (!rect || rect.height === 0) return
+
+    const container = this.doc.scrollContainer!
+    const cRect = container.getBoundingClientRect()
+    const padding = 24
+
+    if (rect.bottom > cRect.bottom) {
+      container.scrollTop += rect.bottom - cRect.bottom + padding
+    } else if (rect.top < cRect.top) {
+      container.scrollTop -= cRect.top - rect.top + padding
+    }
+
+  }
 }
 
 const searchEditableDescendant = (block: BlockCraft.BlockComponent, isStart: boolean): EditableBlockComponent | null => {
