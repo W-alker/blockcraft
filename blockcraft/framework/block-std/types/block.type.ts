@@ -41,7 +41,7 @@ export interface IEditableBlockProps extends IBlockProps {
 export interface BaseBlockDesc<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord> {
   id: string
   flavour: BlockCraft.BlockFlavour
-  nodeType: BlockNodeType
+  nodeType: BlockNodeType | `${BlockNodeType}`
   meta: IMetadata & M
   props: IBlockProps & P
 }
