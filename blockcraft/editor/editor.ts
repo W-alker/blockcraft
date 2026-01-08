@@ -590,7 +590,7 @@ export class EditorComponent {
   }
 
   toggleDark() {
-    this.doc.toggleTheme('dark')
-    document.body.style.backgroundColor = '#191919'
+    this.doc.toggleTheme(this.doc.theme === 'dark' ? 'light' : 'dark')
+    document.body.style.backgroundColor = 'var(--bc-bg-primary)'
   }
 }

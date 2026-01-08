@@ -6,7 +6,7 @@ import { IMermaidType } from "../types";
 @Component({
   selector: 'mermaid-type-list',
   template: `
-    <bc-float-toolbar [theme]="theme" (onItemClick)="onItemClicked($event)" direction="column">
+    <bc-float-toolbar (onItemClick)="onItemClicked($event)" direction="column">
       @for (item of typeList; track item.name) {
         <bc-float-toolbar-item [name]="item.prefix">{{ item.name }}</bc-float-toolbar-item>
       }
@@ -21,9 +21,6 @@ import { IMermaidType } from "../types";
 })
 export class MermaidTypeListComponent {
   protected typeList = MERMAID_TYPE_LIST
-
-  @Input()
-  theme = ''
 
   @Output()
   itemClicked = new EventEmitter<IMermaidType>()

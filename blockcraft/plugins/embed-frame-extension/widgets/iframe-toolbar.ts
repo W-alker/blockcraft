@@ -12,7 +12,7 @@ const EMBED_BLOCK_VIEW_MODE_MAP: Record<string, string> = {
 @Component({
   selector: "div.iframe-toolbar",
   template: `
-    <bc-float-toolbar [theme]="doc.theme" (onItemClick)="onItemClick($event)">
+    <bc-float-toolbar (onItemClick)="onItemClick($event)">
 <!--      <a class="link" [href]="frameBlock.props.url"-->
 <!--         target="_blank">{{ frameBlock.props.url | hostUrl }}</a>-->
 <!--      <span class="bc-float-toolbar__divider"></span>-->
@@ -25,7 +25,7 @@ const EMBED_BLOCK_VIEW_MODE_MAP: Record<string, string> = {
     </bc-float-toolbar>
 
     <ng-template #viewModeTpl>
-      <bc-float-toolbar [theme]="doc.theme" direction="column" (onItemClick)="switchViewMode($event)">
+      <bc-float-toolbar direction="column" (onItemClick)="switchViewMode($event)">
         @for (mode of viewModeList; track mode[0]) {
           <bc-float-toolbar-item [value]="mode[0]" [name]="mode[0]" [active]="mode[0] === 'embed'">
             {{ mode[1] }}

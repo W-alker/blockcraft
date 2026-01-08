@@ -23,7 +23,7 @@ const ORDER_MODE_LIST = [
 @Component({
   selector: "ordered-prefix-toolbar",
   template: `
-    <bc-float-toolbar [theme]="theme" direction="column" (onItemClick)="onItemClicked($event)">
+    <bc-float-toolbar direction="column" (onItemClick)="onItemClicked($event)">
       @for (item of ORDER_MODE_LIST; track item.value) {
         <bc-float-toolbar-item [name]="item.name"  [disabled]="item.value === activeMode">
           {{ item.label }}
@@ -41,9 +41,6 @@ const ORDER_MODE_LIST = [
 export class OrderedPrefixToolbar {
   @Input()
   orderedBlock!: BlockCraft.IBlockComponents['ordered']
-
-  @Input()
-  theme!: string
 
   @Output()
   onPropsChanged$ = new EventEmitter<BlockCraft.IBlockComponents['ordered']['props']>()

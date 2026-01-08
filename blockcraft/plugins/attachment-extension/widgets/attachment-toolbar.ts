@@ -5,7 +5,7 @@ import { AsyncPipe } from "@angular/common";
 @Component({
   selector: "div.attachment-toolbar",
   template: `
-    <bc-float-toolbar [theme]="doc.theme" (onItemClick)="onItemClick.emit($event)">
+    <bc-float-toolbar (onItemClick)="onItemClick.emit($event)">
       @if(!(doc.readonlySwitch$ | async)) {
         <bc-float-toolbar-item icon="bc_bianji_1" name="rename" title="重命名"></bc-float-toolbar-item>
       }
@@ -37,6 +37,5 @@ export class AttachmentBlockToolbar {
 
   ngOnInit() {
   }
-
 
 }

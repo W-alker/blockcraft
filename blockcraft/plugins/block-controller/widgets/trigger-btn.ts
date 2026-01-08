@@ -92,7 +92,7 @@ const HEADING_LIST: IContextMenuItem[] = [
   selector: 'bc-drag-handle',
   standalone: true,
   template: `
-    <div class="drag-handle" [attr.data-theme]="doc.theme"
+    <div class="drag-handle"
          [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
          [disabled]="menuDisabled" (open)="setValidBlockList()" [delay]="500"
          [withBackdrop]="false" activeClass="active" [draggable]="draggable">
@@ -112,7 +112,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     </ng-template>
 
     <ng-template #contextMenuTpl>
-      <bc-float-toolbar [theme]="doc.theme" style="display: block; width: 224px; padding-top: 4px;" direction="column">
+      <bc-float-toolbar style="display: block; width: 224px; padding-top: 4px;" direction="column">
         @if (activeBlock?.nodeType === BlockNodeType.editable) {
           <h4 class="title">基础
             <i class="bc_icon bc_xinxi" style="cursor: pointer;" nz-tooltip="鼠标停留在内容块选项上一段时间以查看对应快捷键和快速转化语法" [nzTooltipPlacement]="'top'"></i>
@@ -173,7 +173,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     </ng-template>
 
     <ng-template #blockAddList>
-      <bc-float-toolbar [theme]="doc.theme" direction="column" styles="width: 224px; max-height: 70vh; overflow-y: auto;">
+      <bc-float-toolbar direction="column" styles="width: 224px; max-height: 70vh; overflow-y: auto;">
         @if (activeBlock?.nodeType !== BlockNodeType.editable) {
           <h4 class="title">基础</h4>
           @for (item of HEADING_LIST; track item.value) {
@@ -192,7 +192,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     </ng-template>
 
     <ng-template #alignList>
-      <bc-float-toolbar [theme]="doc.theme" direction="column" style="display: block; width: 224px;">
+      <bc-float-toolbar direction="column" style="display: block; width: 224px;">
         @for (item of ALIGN_LIST; track item.name) {
           <bc-float-toolbar-item class="align-item" (mousedown)="handleToolItemClick(item)"
                                  [icon]="item.icon" [title]="item.label"

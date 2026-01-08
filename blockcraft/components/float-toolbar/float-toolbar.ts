@@ -37,10 +37,6 @@ export class BcFloatToolbarComponent {
   @Input()
   styles: string = ''
 
-  @Input()
-  @HostBinding('class')
-  theme: string = 'light'
-
   @Output()
   onItemClick = new EventEmitter<BcFloatToolbarItemComponent>()
 

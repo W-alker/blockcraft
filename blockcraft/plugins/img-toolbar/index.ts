@@ -93,7 +93,6 @@ export class ImgToolbarPlugin extends DocPlugin {
 
         this._toolbarRef = overlayRef
         componentRef.setInput('imgBlock', selection.firstBlock)
-        componentRef.setInput('theme', this.doc.theme)
 
         fromEvent<MouseEvent>(imgEle, 'mousedown').pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
           this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({el: imgEle})

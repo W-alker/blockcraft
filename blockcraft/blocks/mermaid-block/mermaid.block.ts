@@ -171,7 +171,6 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
       btn.classList.remove('active')
     })
     componentRef.setInput('viewMode', this.props.mode)
-    componentRef.setInput('theme', this.doc.theme)
 
     componentRef.instance.itemClicked.pipe(takeUntil(close$)).subscribe(v => {
       close$.next(true)
@@ -197,7 +196,6 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     }, close$, () => {
       btn.classList.remove('active')
     })
-    componentRef.setInput('theme', this.doc.theme)
 
     componentRef.instance.itemClicked.pipe(takeUntil(close$)).subscribe(v => {
       close$.next(true)

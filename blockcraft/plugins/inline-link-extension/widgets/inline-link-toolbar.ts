@@ -4,7 +4,7 @@ import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerD
 @Component({
   selector: 'inline-link-toolbar',
   template: `
-    <bc-float-toolbar [theme]="doc.theme" (onItemClick)="onItemClick($event)">
+    <bc-float-toolbar (onItemClick)="onItemClick($event)">
       <bc-float-toolbar-item icon="bc_open-link" [title]="link" name="open-link">
         <span>{{ link }}</span>
       </bc-float-toolbar-item>
@@ -24,7 +24,7 @@ import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerD
     </bc-float-toolbar>
 
     <ng-template #viewModeTpl>
-      <bc-float-toolbar [theme]="doc.theme" direction="column" (onItemClick)="itemClicked.emit($event)">
+      <bc-float-toolbar direction="column" (onItemClick)="itemClicked.emit($event)">
         @for (mode of LINK_VIEW_MODE_MAP; track mode[0]) {
           <bc-float-toolbar-item [value]="mode[0]" name="switch-view" [active]="mode[0] === 'inline'">
             {{ mode[1] }}

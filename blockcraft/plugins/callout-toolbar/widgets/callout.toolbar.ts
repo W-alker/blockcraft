@@ -12,7 +12,7 @@ import {
 @Component({
   selector: "callout-block-toolbar",
   template: `
-    <bc-float-toolbar [theme]="theme">
+    <bc-float-toolbar>
       <bc-float-toolbar-item icon="bc_sepan" [bcOverlayTrigger]="colorPicker" />
     </bc-float-toolbar>
 
@@ -32,9 +32,6 @@ import {
 export class CalloutBlockToolbar {
   @Input()
   calloutBlock!: BlockCraft.IBlockComponents['callout']
-
-  @Input()
-  theme!: string
 
   colorGroups: ColorGroup[] = [
     {

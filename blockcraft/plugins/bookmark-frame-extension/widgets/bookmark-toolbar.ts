@@ -7,7 +7,7 @@ import { isFigmaUrl, isJueJinUrl } from "../../../global";
 @Component({
   selector: "div.iframe-toolbar",
   template: `
-    <bc-float-toolbar [theme]="doc.theme" (onItemClick)="onItemClick($event)" direction="row">
+    <bc-float-toolbar (onItemClick)="onItemClick($event)" direction="row">
       <a class="link" [href]="block.props.url"
          target="_blank">{{ block.props.url | hostUrl }}</a>
       @if (!(doc.readonlySwitch$ | async)) {
@@ -20,7 +20,7 @@ import { isFigmaUrl, isJueJinUrl } from "../../../global";
     </bc-float-toolbar>
 
     <ng-template #viewModeTpl>
-      <bc-float-toolbar [theme]="doc.theme" direction="column" (onItemClick)="switchViewMode($event)">
+      <bc-float-toolbar direction="column" (onItemClick)="switchViewMode($event)">
         @for (mode of BOOKMARK_BLOCK_VIEW_MODE_MAP; track mode[0]) {
           <bc-float-toolbar-item [value]="mode[0]" [name]="mode[0]" [active]="mode[0] === 'card'">
             {{ mode[1] }}

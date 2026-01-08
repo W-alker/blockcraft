@@ -25,7 +25,7 @@ const ALIGN_LIST = [
 @Component({
   selector: 'bc-image-toolbar',
   template: `
-    <bc-float-toolbar [theme]="theme" (onItemClick)="onItemClicked.emit($event)">
+    <bc-float-toolbar (onItemClick)="onItemClicked.emit($event)">
       <bc-float-toolbar-item icon="bc_tianjiamiaoshu" name="caption" [nz-tooltip]="imgBlock.childrenLength > 0 ? '取消图片标题' : '添加图片标题'"  [active]="imgBlock.childrenLength > 0">
       </bc-float-toolbar-item>
 
@@ -61,9 +61,6 @@ export class ImageToolbar {
   get imgBlock() {
     return this._imgBlock;
   }
-
-  @Input()
-  theme!: string
 
   @Output()
   readonly onItemClicked = new EventEmitter<BcFloatToolbarItemComponent>();

@@ -36,7 +36,6 @@ export class OrderedBlockPlugin extends DocPlugin {
     })
 
     componentRef.setInput('orderedBlock', orderedBlock)
-    componentRef.setInput('theme', this.doc.theme)
     componentRef.instance.onPropsChanged$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
       updateOrderAround(orderedBlock)
       this._closeToolbar$.next(true)

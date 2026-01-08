@@ -89,10 +89,6 @@ export class ColorPickerComponent {
     this.activeList = list
   }
 
-  @Input()
-  @HostBinding('class')
-  theme: string = 'light'
-
   @Output()
   colorPicked = new EventEmitter<{ type: string, color: string | null, group: ColorGroup }>()
 

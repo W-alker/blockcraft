@@ -5,7 +5,7 @@ import { IMermaidType, MermaidViewMode } from "../types";
 @Component({
   selector: 'mermaid-type-list',
   template: `
-    <bc-float-toolbar [theme]="theme" (onItemClick)="onItemClicked($event)" direction="column">
+    <bc-float-toolbar (onItemClick)="onItemClicked($event)" direction="column">
       @for (item of viewModes; track item) {
         <bc-float-toolbar-item [name]="item" [active]="viewMode===item">{{ viewModeMap[item] }}</bc-float-toolbar-item>
       }
@@ -21,9 +21,6 @@ import { IMermaidType, MermaidViewMode } from "../types";
 export class MermaidViewSwitchComponent {
   @Input()
   viewMode?: MermaidViewMode
-
-  @Input()
-  theme = ''
 
   @Output()
   itemClicked = new EventEmitter<MermaidViewMode>()

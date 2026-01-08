@@ -36,7 +36,7 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
 @Component({
   selector: 'cell-toolbar',
   template: `
-    <bc-float-toolbar [theme]="doc.theme" (onItemClick)="onItemClicked($event)">
+    <bc-float-toolbar (onItemClick)="onItemClicked($event)">
       <bc-float-toolbar-item icon="bc_hebingdanyuange1" name="merge" value="true"
                              [nz-tooltip]="isMerged ? '解除合并' : '合并单元格'"
                              [active]="isMerged"/>
@@ -47,17 +47,19 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
 
       <span class="bc-float-toolbar__divider"></span>
 
-      <bc-float-toolbar-item icon="bc_zuoduiqi" [expandable]="true" nz-dropdown [nzDropdownMenu]="alignFloatBar" [(nzVisible)]="dropdownVisibleMap.alignFloatBar"
+      <bc-float-toolbar-item icon="bc_zuoduiqi" [expandable]="true" nz-dropdown [nzDropdownMenu]="alignFloatBar"
+                             [(nzVisible)]="dropdownVisibleMap.alignFloatBar"
                              nzPlacement="bottomCenter" [class.active]="dropdownVisibleMap.alignFloatBar"/>
 
-      <bc-float-toolbar-item icon="bc_sepan" nz-dropdown [nzDropdownMenu]="colorPicker" [(nzVisible)]="dropdownVisibleMap.colorPicker"
+      <bc-float-toolbar-item icon="bc_sepan" nz-dropdown [nzDropdownMenu]="colorPicker"
+                             [(nzVisible)]="dropdownVisibleMap.colorPicker"
                              nzPlacement="bottomCenter" [class.active]="dropdownVisibleMap.colorPicker"/>
 
       <bc-float-toolbar-item *ngIf="showOptions.showDelete" icon="bc_shanchu-2" name="delete" value="true"/>
     </bc-float-toolbar>
 
     <nz-dropdown-menu #alignFloatBar="nzDropdownMenu">
-      <bc-float-toolbar [theme]="doc.theme" [direction]="'column'" (onItemClick)="onItemClicked($event)">
+      <bc-float-toolbar [direction]="'column'" (onItemClick)="onItemClicked($event)">
 
         <bc-float-toolbar-item *ngFor="let item of HORIZON_ALIGN_LIST" [name]="item.name"
                                [active]="textAlign === item.value"
@@ -76,7 +78,7 @@ const VERTICAL_ALIGN_LIST: CellToolbarItem[] = [
     <!--    </ng-template>-->
 
     <nz-dropdown-menu #colorPicker="nzDropdownMenu">
-      <bc-color-picker [theme]="doc.theme" (colorPicked)="onColorPicked($event)" [activeColors]="activeColors"></bc-color-picker>
+      <bc-color-picker (colorPicked)="onColorPicked($event)" [activeColors]="activeColors"></bc-color-picker>
     </nz-dropdown-menu>
 
     <!--    <ng-template #colorPicker>-->
