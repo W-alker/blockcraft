@@ -2,8 +2,8 @@ bc-color-picker {
   display: block;
 
   .bc-color-group__wrapper {
-    background: var(--bf-bg);
-    box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.10);
+    background: var(--bc-float-toolbar-bg);
+    box-shadow: var(--bc-float-toolbar-shadow);
     overflow: hidden;
     padding: 8px;
     border-radius: 4px;
@@ -47,27 +47,6 @@ bc-color-picker {
           outline: 2px solid #4857E2;
         }
       }
-    }
-  }
-}
-
-bc-color-picker.dark {
-  .bc-color-group__wrapper {
-    background-color: #2a2a2a;
-    box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.5);
-  }
-
-  .bc-color-group-title {
-    color: #888;
-  }
-
-  .bc-color-group-list__item {
-    &:hover {
-      outline-color: rgba(107, 122, 255, 0.6);
-    }
-
-    &.active {
-      outline-color: var(--bc-active-color);
     }
   }
 }

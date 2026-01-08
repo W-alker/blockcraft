@@ -1,0 +1,178 @@
+// CSS变量定义文件
+// 浅色主题作为默认值
+
+:root {
+  // 字体大小
+  --bc-fs: 16px;
+  --bc-fs-xs: calc(var(--bc-fs) - 4px);
+  --bc-fs-sm: calc(var(--bc-fs) - 2px);
+  --bc-fs-lg: calc(var(--bc-fs) + 2px);
+  --bc-fs-xl: calc(var(--bc-fs) + 4px);
+  --bc-fs-2xl: calc(var(--bc-fs) + 6px);
+  --bc-fs-3xl: calc(var(--bc-fs) + 8px);
+
+  // 行高
+  --bc-lh: 24px;
+
+  // 文字颜色
+  --bc-color: #37352F;
+  --bc-color-light: #787774;
+  --bc-color-lighter: #9B9A97;
+  --bc-color-dark: #000000;
+
+  // 边框颜色
+  --bc-border-color: #E9E9E7;
+  --bc-border-color-light: #F1F1EF;
+  --bc-border-color-dark: #CCCCCC;
+
+  // 背景颜色
+  --bc-bg-primary: #FFFFFF;
+  --bc-bg-secondary: #F7F6F3;
+  --bc-bg-elevated: #FFFFFF;
+  --bc-bg-hover: #F1F1EF;
+
+  // 状态颜色
+  --bc-warning-color: #f5a623;
+  --bc-error-color: #e03131;
+  --bc-success-color: #37b24d;
+  --bc-info-color: #339af0;
+
+  // 激活/强调色
+  --bc-active-color: #4857E2;
+  --bc-active-color-light: #1890ff;
+  --bc-active-color-lighter: rgba(72, 87, 226, 0.1);
+
+  // 特殊背景
+  --bc-error-background-color: rgba(224, 49, 49, 0.1);
+  --bc-select-background-color: rgba(24, 144, 255, 0.3);
+  --bc-mark-bg-color: rgba(255, 198, 10, 0.4);
+  --bc-highlight-bg-color: rgba(255, 198, 10, 0.25);
+  --bc-comment-bg-color: rgba(255, 239, 186, 0.6);
+  --bc-comment-border-color: rgba(255, 239, 186, 1);
+
+  // 光标颜色
+  --bc-caret-color: #000000;
+  --bc-caret-color-on-mark: #000000;
+
+  // 间距
+  --bc-segments-gap: 8px;
+  --bc-padding-sm: 4px;
+  --bc-padding-md: 8px;
+  --bc-padding-lg: 12px;
+  --bc-padding-xl: 16px;
+
+  // 圆角
+  --bc-radius-sm: 2px;
+  --bc-radius-md: 4px;
+  --bc-radius-lg: 8px;
+
+  // 阴影
+  --bc-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --bc-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.15);
+  --bc-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.2);
+
+  // 过渡动画
+  --bc-transition-fast: 0.15s ease;
+  --bc-transition-base: 0.3s ease;
+  --bc-transition-slow: 0.5s ease;
+
+  // 代码块相关颜色
+  --bc-code-bg-color: #F7F6F3;
+  --bc-code-border-color: #E6E6E6;
+  --bc-code-border-color-focus: #4857E2;
+  --bc-code-shadow-focus: 0 0 10px 0 rgba(0, 0, 0, 0.08);
+  --bc-code-head-bg-color: #F7F9FE;
+  --bc-code-head-border-color: #E6E6E6;
+  --bc-code-btn-color: var(--bc-color-light);
+  --bc-code-btn-hover-bg: rgba(153, 153, 153, 0.1);
+  --bc-code-resize-bar-bg: #FFFFFF;
+  --bc-code-resize-bar-border: #E6E6E6;
+  --bc-code-resize-bar-hover-bg: #F7F9FE;
+  --bc-code-resize-bar-hover-shadow: 0 0 5px rgba(0, 0, 0, 0.05);
+  --bc-code-resize-bar-icon-color: #E6E6E6;
+  --bc-code-inline-bg-color: rgb(242, 243, 245);
+  --bc-code-inline-border-color: rgb(234, 236, 239);
+  --bc-code-inline-color: #EB5757;
+
+  // 内联代码边框颜色
+  --bc-code-inline-border-left-color: rgb(234, 236, 239);
+  --bc-code-inline-border-right-color: rgb(234, 236, 239);
+
+  // 评论/批注颜色
+  --bc-comment-bg: rgba(255, 239, 186, 0.6);
+  --bc-comment-border: rgba(255, 239, 186, 1);
+
+  // 选区文字颜色
+  --bc-selection-color: #37352F;
+
+  // 占位符颜色
+  --bc-placeholder-color: #9B9A97;
+
+  // 光标标签颜色
+  --bc-cursor-tag-color: #FFFFFF;
+  --bc-cursor-tag-bg: rgba(0, 0, 0, 0.8);
+
+  // 浮动工具栏相关
+  --bc-float-toolbar-bg: #FFFFFF;
+  --bc-float-toolbar-shadow: 0 2px 8px rgba(15, 15, 15, 0.05), 0 0 0 1px rgba(15, 15, 15, 0.1);
+  --bc-float-toolbar-item-color: #37352F;
+  --bc-float-toolbar-item-hover-bg: #F1F1EF;
+  --bc-float-toolbar-item-active-bg: rgba(72, 87, 226, 0.1);
+  --bc-float-toolbar-divider-color: #E9E9E7;
+
+  // 表格相关
+  --bc-table-head-bg: #F2F3F5;
+  --bc-table-bar-bg: #F1F1EF;
+  --bc-table-bar-color: #FFFFFF;
+  --bc-table-bar-pt-color: #666666;
+  --bc-table-bar-active-bg: #4857E2;
+  --bc-table-resize-bar-active-bg: #4857E2;
+  --bc-table-resize-bar-add-bg: #4857E2;
+
+  // 分隔线相关
+  --bc-divider-color: #DDDDDD;
+  --bc-divider-color-large: #CCCCCC;
+
+  // Callout相关
+  --bc-callout-selected-bg: rgba(24, 144, 255, 0.3);
+
+  // 列相关
+  --bc-columns-divider-color: rgba(55, 53, 47, 0.4);
+  --bc-columns-divider-hover-color: rgba(55, 53, 47, 0.12);
+  --bc-columns-handle-color: #FFFFFF;
+  --bc-columns-handle-bg: #BBBFB4;
+
+  // 图片相关
+  --bc-image-handle-bg: #FFFFFF;
+
+  // Mermaid相关
+  --bc-mermaid-bg: #FFFFFF;
+  --bc-mermaid-border-color: #E6E6E6;
+  --bc-mermaid-head-border-color: #E6E6E6;
+  --bc-mermaid-btn-color: #333333;
+  --bc-mermaid-btn-hover-bg: rgba(153, 153, 153, 0.1);
+
+  // 代码高亮颜色 (浅色主题)
+  --bc-code-hl-variable: #005f87;
+  --bc-code-hl-keyword: #d12f1b;
+  --bc-code-hl-title: #8e44ad;
+  --bc-code-hl-number: #c25e00;
+  --bc-code-hl-string: #2a7b00;
+  --bc-code-hl-comment: slategray;
+  --bc-code-hl-function: #0066cc;
+  --bc-code-hl-operator: #aa00aa;
+  --bc-code-hl-punctuation: #999;
+  --bc-code-hl-tag: #aa3731;
+  --bc-code-hl-attr: #6c71c4;
+  --bc-code-hl-attr-name: #2980b9;
+  --bc-code-hl-attr-value: #27ae60;
+  --bc-code-hl-property: #d35400;
+  --bc-code-hl-selector: #b58900;
+  --bc-code-hl-builtin: #1c00cf;
+  --bc-code-hl-class: #9b59b6;
+  --bc-code-hl-constant: #cb4b16;
+  --bc-code-hl-regex: #008000;
+  --bc-code-hl-important: #d33682;
+  --bc-code-hl-literal: #795548;
+  --bc-code-hl-arrow: #afc2cc;
+}

@@ -1,13 +1,11 @@
-@mixin table-block {
-
+[data-blockcraft-root="true"] {
   @keyframes bc_ani_table_selected {
     to {
       background-color: var(--bc-select-background-color);
     }
   }
 
-  @at-root #{selector-unify(&, '.dragging')} {
-
+  &.dragging {
     .table-block,
     .table-row-block,
     .table-cell-block {
@@ -89,7 +87,7 @@
         position: sticky;
         left: 0;
         z-index: 1;
-        background: #f2f3f5 !important;
+        background: var(--bc-table-head-bg) !important;
         font-weight: bold;
       }
 
@@ -120,7 +118,7 @@
         top: 0;
         //top: $ctrlBarSize + 1px;
         font-weight: bold;
-        background: #f2f3f5 !important;
+        background: var(--bc-table-head-bg) !important;
       }
     }
 
@@ -263,7 +261,7 @@
         height: 20px;
         background: var(--bc-active-color);
         border-radius: 50%;
-        color: #fff;
+        color: var(--bc-table-bar-color);
         font-size: 16px;
         align-items: center;
         justify-content: center;
@@ -356,18 +354,18 @@
 
         >.bar {
           display: block;
-          background-color: #f1f1f1;
+          background-color: var(--bc-table-bar-bg);
           position: relative;
           cursor: pointer;
           z-index: 1;
 
           &:hover,
           &.hover {
-            background: #E0E0E0;
+            background: var(--bc-bg-hover);
           }
 
           &.active {
-            background: rgba(72, 87, 226, 1);
+            background: var(--bc-table-bar-active-bg);
           }
         }
 
@@ -384,7 +382,7 @@
             content: '';
             height: 4px;
             width: 4px;
-            background: #bbbfc4;
+            background: var(--bc-table-bar-pt-color);
             border-radius: 50%;
           }
         }

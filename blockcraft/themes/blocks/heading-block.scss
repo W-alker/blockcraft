@@ -1,4 +1,4 @@
-@mixin heading-block {
+[data-blockcraft-root="true"] {
   [data-node-type='editable'] {
     &[data-heading] {
       font-weight: bolder;

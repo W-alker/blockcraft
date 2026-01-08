@@ -1,6 +1,6 @@
 @import "../function";
 
-@mixin bookmark-block {
+[data-blockcraft-root="true"] {
   div.bookmark-block {
     //height: 116px;
     border: 1px solid var(--bc-border-color);

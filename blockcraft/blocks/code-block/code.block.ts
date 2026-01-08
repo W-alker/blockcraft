@@ -25,9 +25,9 @@ import { CodeInlineManagerService } from "./code-inlineManager.service";
       <div class="head-btn__group">
         <div class="head-btn" (mousedown)="showLangList($event)">
           <span class="lang">{{ props.lang }}</span>
-          <i class="bf_icon bf_xiajaintou" [hidden]="doc.readonlySwitch$ | async"></i>
+          <i class="bc_icon bc_xiajaintou" [hidden]="doc.readonlySwitch$ | async"></i>
         </div>
-        <div class="head-btn" (mousedown)="onCopyText($event)"><i class="bf_icon bf_fuzhi"></i> 复制</div>
+        <div class="head-btn" (mousedown)="onCopyText($event)"><i class="bc_icon bc_fuzhi"></i> 复制</div>
       </div>
     </div>
 

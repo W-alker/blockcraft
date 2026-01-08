@@ -1,4 +1,4 @@
-@mixin caption-block {
+[data-blockcraft-root="true"] {
   .caption-block {
     color: var(--bc-color-light);
     font-size: calc(var(--bc-fs) * 0.9);

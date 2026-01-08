@@ -581,7 +581,11 @@ export class EditorComponent {
     const id = curTable?.getAttribute('data-block-id')
     if (id) {
       const table = this.doc.getBlockById(id)!
-      fixTable.call(table as any)
+      const block = this.doc.getBlockById('vmgZeYkw0IjG9VQxEt')
+      // const b2 = this.doc.getBlockById('vmgZeYkw0IjG9VQxEt')
+      block.updateProps({'display': 'none'})
+      console.log(table, block)
+      // fixTable.call(table as any)
     }
   }
 

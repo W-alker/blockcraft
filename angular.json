@@ -32,7 +32,7 @@
           },
           "configurations": {
             "production": {
-              "tsConfig": "blockflow/tsconfig.lib.prod.json",
+              "tsConfig": "blockflow/tsconfig.lib.prod.json"
             },
             "development": {
               "tsConfig": "blockflow/tsconfig.lib.json"
@@ -80,10 +80,9 @@
             ],
             "styles": [
               "demo/src/styles.scss",
-              "blockflow/src/assets/iconfont/bf-iconfont.css",
-              "blockflow/src/assets/styles/editor.scss",
               "node_modules/viewerjs/dist/viewer.min.css",
               "node_modules/ng-zorro-antd/ng-zorro-antd.min.css",
+              "blockcraft/themes/base.scss",
               "blockcraft/themes/light.scss",
               "blockcraft/themes/dark.scss",
               "blockcraft/assets/iconfont/bc-iconfont.css"

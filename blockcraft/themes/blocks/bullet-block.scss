@@ -1,4 +1,4 @@
-@mixin bullet-block {
+[data-blockcraft-root="true"] {
   div.bullet-block {
     display: flex;
     align-items: flex-start;

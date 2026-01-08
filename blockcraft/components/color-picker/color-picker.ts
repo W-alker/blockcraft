@@ -23,7 +23,7 @@ export interface ColorGroup {
                 <span class="bc-color-group-list__item" [class.active]="item.value === activeList[colorGroup.type]"
                       (mousedown)="pickColor(colorGroup.type, item.value, colorGroup)"
                       [style.color]="item.value || 'var(--bc-color)'"
-                      style="border: 1px solid #eee;">
+                      style="border: 1px solid var(--bc-border-color);">
                 A
               </span>
               }
@@ -33,7 +33,7 @@ export interface ColorGroup {
               @for (item of colorGroup.list; track item.value) {
                 @if (item.value == 'transparent') {
                   <span class="bc-color-group-list__item" [class.active]="!activeList[colorGroup.type] || activeList[colorGroup.type] === 'transparent'"
-                        style="border: 1px solid #eee; background: linear-gradient(-45deg, transparent 49%, black 50%, transparent 51%);"
+                        style="border: 1px solid var(--bc-border-color); background: linear-gradient(-45deg, transparent 49%, var(--bc-color) 50%, transparent 51%);"
                         (mousedown)="pickColor(colorGroup.type, item.value, colorGroup)">
                 </span>
                 } @else {

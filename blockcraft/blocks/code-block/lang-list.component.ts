@@ -36,9 +36,9 @@ import { debounce } from "../../global";
       > input {
         margin: 0 auto;
         width: 120px;
-        height: calc(var(--bf-lh) * 1.5);
-        line-height: calc(var(--bf-lh) * 1.5);
-        font-size: var(--bf-fs);
+        height: calc(var(--bc-lh) * 1.5);
+        line-height: calc(var(--bc-lh) * 1.5);
+        font-size: var(--bc-fs);
         border: 1px solid #f5f2f0;
         border-radius: 4px;
         padding: 0 4px;
@@ -57,10 +57,10 @@ import { debounce } from "../../global";
       .lang-list_item {
         margin-top: 4px;
         padding: 0 4px;
-        height: calc(var(--bf-lh) * 1.5);
-        line-height: calc(var(--bf-lh) * 1.5);
+        height: calc(var(--bc-lh) * 1.5);
+        line-height: calc(var(--bc-lh) * 1.5);
         text-align: center;
-        font-size: calc(var(--bf-fs) * .8);
+        font-size: calc(var(--bc-fs) * .8);
         color: #999;
         cursor: pointer;
         border-radius: 4px;

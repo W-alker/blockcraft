@@ -180,6 +180,7 @@ export class DocVM {
     const cpr = this.store.get(id)
     if (cpr) {
       cpr.instance.childrenRenderRef?.clearAll()
+      cpr.instance.hostElement.remove()
       cpr.destroy()
       this.store.delete(id)
     }

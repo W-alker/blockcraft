@@ -1,5 +1,5 @@
-@mixin callout-block() {
-  @at-root #{selector-unify(&, '.dragging')} {
+[data-blockcraft-root="true"] {
+  &.dragging {
     .callout-block {
       > * {
         pointer-events: unset;
@@ -19,7 +19,7 @@
 
     &.selected {
       //border: 1px solid #0070f3;
-      background-color: rgba(24, 144, 255, 0.3) !important;
+      background-color: var(--bc-callout-selected-bg) !important;
     }
 
     .callout-title {

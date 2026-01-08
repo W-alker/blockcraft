@@ -1,16 +1,17 @@
-@mixin code-block {
+[data-blockcraft-root="true"] {
   div.code-block {
     --code-padding-left: calc(var(--bc-fs) * 2.8);
     --code-padding-bottom: ;
     position: relative;
-    border: 1px solid #e6e6e6;
+    border: 1px solid var(--bc-code-border-color);
     --code-font-family: "DM Mono", monospace;
-    border-radius: 8px;
-    caret-color: #000;
+    border-radius: var(--bc-radius-lg);
+    caret-color: var(--bc-caret-color);
+    background-color: var(--bc-code-bg-color);
 
     &.focused {
-      border: 1px solid var(--bc-active-color);
-      box-shadow: 0 0 10px 0 rgba(0, 0, 0, 0.08);
+      border: 1px solid var(--bc-code-border-color-focus);
+      box-shadow: var(--bc-code-shadow-focus);
 
       .resize-bar-btm {
         display: block;
@@ -72,7 +73,6 @@
         transform: unset;
       }
 
-      @include code-highlight;
     }
 
     &.focused, &:hover {
@@ -114,9 +114,9 @@
       display: flex;
       padding: 4px 8px;
       align-items: center;
-      background: #F7F9FE;
-      border-bottom: 1px solid #e6e6e6;
-      border-radius: 8px 8px 0 0;
+      background: var(--bc-code-head-bg-color);
+      border-bottom: 1px solid var(--bc-code-head-border-color);
+      border-radius: var(--bc-radius-lg) var(--bc-radius-lg) 0 0;
     }
 
     .head-btn {
@@ -129,7 +129,7 @@
       padding: 2px 4px;
       white-space: nowrap;
       color: var(--bc-color-light);
-      font-size: calc(var(--bf-fs) * .8);
+      font-size: calc(var(--bc-fs) * .8);
 
       &.btn-collapse {
         visibility: hidden;
@@ -160,7 +160,7 @@
       }
 
       &:hover {
-        background-color: rgba(153, 153, 153, .1);
+        background-color: var(--bc-code-btn-hover-bg);
       }
     }
 
@@ -180,14 +180,14 @@
         width: 100px;
         left: calc(50% - 50px);
         top: -4px;
-        border-radius: 4px;
-        background-color: #fff;
-        border: 1px solid #e6e6e6;
+        border-radius: var(--bc-radius-md);
+        background-color: var(--bc-code-resize-bar-bg);
+        border: 1px solid var(--bc-code-resize-bar-border);
         transition: all ease .2s;
 
         &:hover {
-          background-color: #f7f9fe;
-          box-shadow: 0 0 5px rgba(0, 0, 0, .05);
+          background-color: var(--bc-code-resize-bar-hover-bg);
+          box-shadow: var(--bc-code-resize-bar-hover-shadow);
         }
 
         &::after {
@@ -197,106 +197,13 @@
           left: 50%;
           transform: translate(-50%, -50%);
           font-size: 12px;
-          color: #e6e6e6;
+          color: var(--bc-code-resize-bar-icon-color);
         }
       }
 
     }
   }
 
-}
-
-@mixin code-highlight {
-  [type="variable"] {
-    color: #005f87; // 深蓝青
-  }
-
-  [type="keyword"] {
-    color: #d12f1b; // 鲜红
-  }
-
-  [type="title"] {
-    color: #8e44ad; // 紫色，常用于 class/function 名
-  }
-
-  [type="number"] {
-    color: #c25e00; // 暗橘色
-  }
-
-  [type="string"] {
-    color: #2a7b00; // 深绿色
-  }
-
-  [type="comment"] {
-    color: slategray; // 灰色
-    font-style: italic;
-  }
-
-  [type="function"] {
-    color: #0066cc; // 亮蓝色
-  }
-
-  [type="operator"] {
-    color: #aa00aa; // 品红
-  }
-
-  [type="punctuation"] {
-    color: #999; // 深灰
-  }
-
-  [type="tag"] {
-    color: #aa3731; // 红棕色
-  }
-
-  [type="attr"] {
-    color: #6c71c4; // 柔紫色
-  }
-
-  [type="attr-name"] {
-    color: #2980b9; // 蓝色
-  }
-
-  [type="attr-value"] {
-    color: #27ae60; // 草绿色
-  }
-
-  [type="property"] {
-    color: #d35400; // 烧橙
-  }
-
-  [type="selector"] {
-    color: #b58900; // 黄棕色
-  }
-
-  [type="builtin"] {
-    color: #1c00cf; // 深蓝紫
-  }
-
-  [type="class"] {
-    color: #9b59b6; // 淡紫色
-  }
-
-  [type="constant"] {
-    color: #cb4b16; // 橘棕
-  }
-
-  [type="regex"] {
-    color: #008000; // 标准绿色
-    font-style: italic;
-  }
-
-  [type="important"] {
-    color: #d33682; // 品红偏紫
-    font-weight: bold;
-  }
-
-  [type="literal"] {
-    color: #795548; // 棕色
-  }
-
-  [type="arrow"] {
-    color: #afc2cc; // 亮蓝青
-  }
 }
 
 

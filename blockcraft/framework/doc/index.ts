@@ -410,7 +410,7 @@ export class BlockCraftDoc {
 
   toggleTheme(name: string) {
     this.config.theme = name
-    this.root.hostElement.setAttribute('data-theme', name)
+    document.body.setAttribute('blockcraft-theme', name)
   }
 
   toggleReadonly(readonly: boolean) {

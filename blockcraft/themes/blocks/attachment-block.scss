@@ -1,5 +1,4 @@
-@mixin attachment-block() {
-
+[data-blockcraft-root="true"] {
   div.attachment-block {
     padding: 6px 12px 6px var(--bc-fs);
     border: 1px solid var(--bc-border-color);

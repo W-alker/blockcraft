@@ -98,7 +98,7 @@ const HEADING_LIST: IContextMenuItem[] = [
          [withBackdrop]="false" activeClass="active" [draggable]="draggable">
       <div class="btn">
         <ng-container *ngTemplateOutlet="icon; context: {$implicit: activeBlockIcon}"></ng-container>
-        <i [class]="['bf_icon', isEmpty ? 'bf_tianjia-2' : 'bf_yidong' ]"></i>
+        <i [class]="['bc_icon', isEmpty ? 'bc_tianjia-2' : 'bc_yidong' ]"></i>
       </div>
       <!--      <div class="virtual-hover-area"></div>-->
     </div>

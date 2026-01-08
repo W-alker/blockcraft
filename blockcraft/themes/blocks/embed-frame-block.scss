@@ -1,5 +1,5 @@
-@mixin embed-frame-block {
-  @at-root #{selector-unify(&, '.readonly')} {
+[data-blockcraft-root="true"] {
+  &.readonly {
     .embed-frame-block .iframe-wrapper .iframe-mask {
       pointer-events: none;
     }

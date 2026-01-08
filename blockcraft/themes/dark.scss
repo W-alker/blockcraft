@@ -1,8 +1,7 @@
-@import "base";
+// 深色主题变量覆盖
+// 使用 body[blockcraft-theme="dark"] 选择器控制主题切换
 
-// Craft 风格黑夜模式主题
-[data-blockcraft-root="true"][data-theme="dark"] {
-  // 覆盖 CSS 变量为黑夜模式配色
+body[blockcraft-theme="dark"] {
   // 文字颜色
   --bc-color: #e3e3e3;
   --bc-color-light: #888888;
@@ -10,7 +9,7 @@
   --bc-color-dark: #ffffff;
 
   // 边框颜色
-  --bc-border-color: #2d2d2d;
+  --bc-border-color: #555555;
   --bc-border-color-light: #252525;
   --bc-border-color-dark: #3a3a3a;
 
@@ -36,670 +35,113 @@
   --bc-select-background-color: rgba(107, 122, 255, 0.25);
   --bc-mark-bg-color: rgba(255, 198, 10, 0.3);
   --bc-highlight-bg-color: rgba(255, 198, 10, 0.2);
+  --bc-comment-bg-color: rgba(251, 243, 219, 0.15);
+  --bc-comment-border-color: rgba(251, 243, 219, 0.4);
 
-  // 光标颜色 - 关键优化
+  // 光标颜色
   --bc-caret-color: #ffffff;
   --bc-caret-color-on-mark: #ffffff;
 
-  // 间距（继承默认值）
-
-  // 圆角（继承默认值）
-
-  // 阴影（深色主题调整）
+  // 阴影
   --bc-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
   --bc-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
   --bc-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
 
-  // 过渡动画（继承默认值）
-
-  // 选区样式
-  ::selection {
-    background-color: var(--bc-select-background-color);
-    color: #e3e3e3;
-  }
-
-  // 编辑容器
-  .edit-container {
-    caret-color: var(--bc-caret-color);
-
-    c-element {
-
-      // 链接 - 保持主色系
-      &[link] {
-        color: var(--bc-active-color) !important;
-        text-decoration: none;
-        border-bottom: 1px solid rgba(107, 122, 255, 0.3);
-
-        &:hover {
-          border-bottom-color: var(--bc-active-color);
-        }
-      }
-
-      // 评论/批注高亮 - 增强光标可见性
-      &[data-comment] {
-        background-color: rgba(251, 243, 219, 0.15); // Craft 黄色背景深色版
-        border-bottom-color: rgba(251, 243, 219, 0.4);
-        // 在高亮背景上使用白色光标
-        caret-color: var(--bc-caret-color-on-mark);
-      }
-    }
-  }
-
-  // 高亮标记块 - 增强光标可见性
-  [data-block-id]:has(c-element[data-comment]),
-  [data-block-id]:has(.bc-mark-highlight) {
-    caret-color: var(--bc-caret-color-on-mark);
-  }
-
-  // ========== 代码块 ==========
-  .code-block {
-    background-color: #1e1e1e;
-    border-color: #2d2d2d;
-    caret-color: var(--bc-caret-color);
-
-    &.focused {
-      border-color: var(--bc-active-color);
-      box-shadow: 0 0 10px 0 rgba(107, 122, 255, 0.2);
-    }
-
-    .code-block__head {
-      background: #252525;
-      border-bottom-color: #2d2d2d;
-    }
-
-    .head-btn {
-      color: #888888;
-
-      &:hover {
-        background-color: rgba(255, 255, 255, 0.08);
-      }
-    }
-
-    .resize-bar-btm .bar-drag {
-      background-color: #252525;
-      border-color: #2d2d2d;
-
-      &:hover {
-        background-color: #2a2a2a;
-      }
-
-      &::after {
-        color: #3a3a3a;
-      }
-    }
-
-    // 代码高亮 - Craft 风格暗色主题
-    .edit-container {
-      @include code-highlight-dark;
-    }
-  }
-
-  // ========== 表格块 ==========
-  .table-block {
-    td.table-cell-block {
-      border-color: #2d2d2d;
-      background-color: #1e1e1e;
-    }
-
-    &.col-head td:first-child {
-      background: #252525 !important;
-
-      &::after {
-        background: linear-gradient(to left,
-            rgba(255, 255, 255, 0) 0%,
-            rgba(255, 255, 255, 0.05) 100%);
-      }
-    }
-
-    &.row-head tr:first-child {
-      background: #252525 !important;
-    }
-
-    // 表格控制条
-    table-col-bar,
-    table-row-bar {
-      .item {
-        >.bar {
-          background-color: #2a2a2a;
-
-          &:hover,
-          &.hover {
-            background: #353535;
-          }
-
-          &.active {
-            background: var(--bc-active-color);
-          }
-        }
-
-        >.pt::before {
-          background: #666666;
-        }
-      }
-    }
-
-    // 调整列/行的控制条
-    .table-col-resize-bar,
-    .table-row-resize-bar {
-      &.active .bar {
-        background: var(--bc-active-color);
-      }
-
-      >.add {
-        background: var(--bc-active-color);
-      }
-
-      >.bar {
-        background: var(--bc-active-color);
-      }
-    }
-  }
-
-  // ========== Callout 块 ==========
-  .callout-block {
-    background-color: #252525;
-    border-color: #2d2d2d;
-
-    &.selected {
-      background-color: var(--bc-select-background-color) !important;
-    }
-
-    .callout-block-prefix:hover {
-      background-color: rgba(107, 122, 255, 0.2);
-    }
-  }
-
-  // ========== 图片块 ==========
-  .image-block {
-    &.selected .img-wrapper {
-      outline-color: var(--bc-active-color);
-    }
-
-    .img-resizer__handle__point {
-      background-color: #191919;
-      border-color: var(--bc-active-color);
-    }
-  }
-
-  // ========== 附件块 ==========
-  .attachment-block {
-    background-color: #252525;
-    border-color: #2d2d2d;
-
-    &:hover {
-      background-color: #2a2a2a;
-      border-color: #3a3a3a;
-    }
-
-    &.selected {
-      background-color: var(--bc-select-background-color) !important;
-      border-color: var(--bc-active-color);
-    }
-
-    &__prefix {
-      color: #888888;
-    }
-
-    &__name {
-      color: #e3e3e3;
-    }
-
-    &__size {
-      color: #888888;
-    }
-  }
-
-  // ========== 嵌入块 (Embed/Bookmark) ==========
-  .embed-frame-block {
-    embed-frame-card {
-      background-color: #252525;
-      border-color: #2d2d2d;
-    }
-
-    &:hover embed-frame-card {
-      background-color: #2a2a2a;
-    }
-
-    &.selected {
-      box-shadow: 0 0 4px rgba(107, 122, 255, 0.4);
-
-      embed-frame-card {
-        border-color: var(--bc-active-color);
-      }
-
-      .iframe-link {
-        color: var(--bc-active-color);
-      }
-    }
-
-    .iframe-brand>span {
-      color: #e3e3e3;
-    }
-
-    .iframe-link {
-      color: #888888;
-
-      &:hover {
-        color: var(--bc-active-color);
-      }
-    }
-  }
-
-  .bookmark-block {
-    background-color: #252525;
-    border-color: #2d2d2d;
-
-    &:hover {
-      background-color: #2a2a2a;
-    }
-
-    &.selected {
-      border-color: var(--bc-active-color);
-      box-shadow: 0 0 4px rgba(107, 122, 255, 0.4);
-
-      .bookmark-link {
-        color: var(--bc-active-color);
-      }
-    }
-
-    .bookmark-content {
-      .bookmark-title h3 {
-        color: #e3e3e3;
-      }
-
-      .bookmark-description {
-        color: #999999;
-      }
-    }
-
-    .bookmark-link {
-      color: #888888;
-
-      &:hover {
-        color: var(--bc-active-color);
-      }
-    }
-  }
-
-  // ========== 分隔线 ==========
-  .divider-block {
-    .divide-line {
-      &.solid {
-        background-color: #3a3a3a;
-
-        &[data-size="large"] {
-          background-color: #666666;
-        }
-      }
-
-      &.dashed {
-        background: repeating-linear-gradient(to right,
-            #3a3a3a,
-            #3a3a3a 8px,
-            transparent 8px,
-            transparent 16px);
-
-        &[data-size="large"] {
-          background: repeating-linear-gradient(to right,
-              #666666,
-              #666666 8px,
-              transparent 8px,
-              transparent 16px);
-        }
-      }
-
-      &.dotted {
-        background: radial-gradient(circle, #3a3a3a 2px, transparent 2px);
-        background-size: 20px 4px;
-        background-repeat: repeat-x;
-
-        &[data-size="large"] {
-          background-image: radial-gradient(circle, #666666 2px, transparent 2px);
-        }
-      }
-
-      &.double {
-        border-color: #3a3a3a;
-
-        &[data-size="large"] {
-          border-color: #666666;
-        }
-      }
-
-      // 装饰性分隔线在黑夜模式下调整透明度和颜色
-      &.tape-dot-black,
-      &.tape-grid-pattern,
-      &.tape-regular-lines,
-      &.tape-gradient-blocks,
-      &.tape-gray-lines {
-        opacity: 0.8;
-        filter: brightness(0.7);
-      }
-    }
-  }
-
-  // ========== 引用块 ==========
-  .blockquote-block {
-    border-left-color: #3a3a3a;
-    color: #cccccc;
-  }
-
-  // ========== 待办事项 ==========
-  .todo-block {
-    .todo-block-button {
-      color: var(--bc-active-color);
-    }
-
-    &.is-checked .edit-container {
-      color: #666666;
-      text-decoration-color: #666666;
-    }
-  }
-
-  // ========== 有序列表和无序列表 ==========
-  .ordered-block {
-    .ordered-block-prefix {
-      color: var(--bc-active-color);
-
-      &:hover {
-        background-color: rgba(107, 122, 255, 0.15);
-      }
-    }
-  }
-
-  .bullet-block {
-    .bullet-block-prefix {
-      .square {
-        background-color: var(--bc-active-color);
-      }
-
-      .circle {
-        border-color: var(--bc-active-color);
-      }
-
-      .point {
-        background-color: var(--bc-active-color);
-      }
-    }
-  }
-
-  // ========== 标题块 ==========
-  .heading-block {
-
-    &[data-heading="1"],
-    &[data-heading="2"] {
-      color: #ffffff;
-    }
-  }
-
-  // ========== Mermaid 图表 ==========
-  .mermaid-block {
-    background-color: #1e1e1e;
-    border-color: #2d2d2d;
-
-    &.selected {
-      border-color: var(--bc-active-color);
-    }
-
-    .head {
-      background-color: #252525;
-      border-bottom-color: #2d2d2d;
-
-      .btn {
-        color: #888888;
-
-        &:hover,
-        &.active {
-          background-color: rgba(255, 255, 255, 0.08);
-        }
-      }
-    }
-
-    .text-container,
-    .graph-container {
-      background-color: #1e1e1e;
-
-      &::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-
-      &::-webkit-scrollbar-track {
-        background: #1e1e1e;
-      }
-
-      &::-webkit-scrollbar-thumb {
-        background: #3a3a3a;
-        border-radius: 4px;
-
-        &:hover {
-          background: #4a4a4a;
-        }
-      }
-    }
-
-    .graph-con {
-      background-color: #252525;
-    }
-
-    .control-btns {
-      .text {
-        color: #888888;
-      }
-
-      .btn {
-        color: #888888;
-
-        &:hover {
-          background-color: rgba(255, 255, 255, 0.08);
-        }
-      }
-    }
-
-    .mermaid-textarea {
-      background-color: #1e1e1e;
-      color: #e3e3e3;
-      @include code-highlight-dark;
-    }
-
-    // Mermaid 图表内部样式调整
-    .graph-con svg {
-
-      .node rect,
-      .node circle,
-      .node polygon,
-      .node ellipse,
-      .node path {
-        fill: #2a2a2a !important;
-        stroke: #4a4a4a !important;
-      }
-
-      .edgeLabel {
-        background-color: #252525 !important;
-        color: #e3e3e3 !important;
-
-        rect {
-          fill: #252525 !important;
-        }
-      }
-
-      text,
-      .nodeLabel,
-      .edgeLabel text {
-        fill: #e3e3e3 !important;
-        color: #e3e3e3 !important;
-      }
-
-      .label {
-        color: #e3e3e3 !important;
-      }
-
-      line.edge-thickness-normal,
-      path.edge-thickness-normal {
-        stroke: #666666 !important;
-      }
-
-      marker path {
-        fill: #666666 !important;
-        stroke: #666666 !important;
-      }
-    }
-  }
-
-  // Mermaid 预览图
-  .blockcraft-mermaid-preview-graph {
-    img {
-      background: #252525 !important;
-    }
-  }
-
-  // ========== Caption (图片/表格标题) ==========
-  .caption-block {
-    color: #888888;
-
-    &:focus,
-    &:hover {
-      color: #e3e3e3;
-    }
-  }
-
-  // 分栏块
-  .columns-block {
-    .divider-line {
-      background: rgba(255, 255, 255, 0.15);
-    }
-  }
-
-  // ========== 光标标记 ==========
-  .blockcraft-cursor {
-    &-tag {
-      background-color: rgba(0, 0, 0, 0.8);
-    }
-
-    [data-node-type='block']>span,
-    [data-node-type='void']>span {
-      box-shadow: 0 0 1px 1px var(--bgColor, var(--bc-mark-bg-color));
-    }
-  }
-
-  // ========== 占位符文本 ==========
-  [data-node-type="editable"].empty .edit-container::before {
-    color: #555555;
-  }
-
-  // ========== 滚动条样式 ==========
-  .table-scrollable,
-  .edit-container-wrapper {
-    &::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
-
-    &::-webkit-scrollbar-track {
-      background: #1e1e1e;
-    }
-
-    &::-webkit-scrollbar-thumb {
-      background: #3a3a3a;
-      border-radius: 4px;
-
-      &:hover {
-        background: #4a4a4a;
-      }
-    }
-  }
-}
-
-// ========== 黑夜模式代码高亮 (Craft 风格) ==========
-@mixin code-highlight-dark {
-  [type="variable"] {
-    color: #4fc3f7; // 亮青蓝
-  }
-
-  [type="keyword"] {
-    color: #ff6b9d; // 粉红
-  }
-
-  [type="title"] {
-    color: #c792ea; // 淡紫
-  }
-
-  [type="number"] {
-    color: #f78c6c; // 橘色
-  }
-
-  [type="string"] {
-    color: #c3e88d; // 嫩绿
-  }
-
-  [type="comment"] {
-    color: #676e95; // 灰蓝
-    font-style: italic;
-  }
-
-  [type="function"] {
-    color: #82aaff; // 亮蓝
-  }
-
-  [type="operator"] {
-    color: #89ddff; // 青色
-  }
-
-  [type="punctuation"] {
-    color: #999999; // 灰色
-  }
-
-  [type="tag"] {
-    color: #f07178; // 珊瑚红
-  }
-
-  [type="attr"] {
-    color: #c792ea; // 淡紫
-  }
-
-  [type="attr-name"] {
-    color: #ffcb6b; // 金黄
-  }
-
-  [type="attr-value"] {
-    color: #c3e88d; // 嫩绿
-  }
-
-  [type="property"] {
-    color: #ffcb6b; // 金黄
-  }
-
-  [type="selector"] {
-    color: #c3e88d; // 嫩绿
-  }
-
-  [type="builtin"] {
-    color: #82aaff; // 亮蓝
-  }
-
-  [type="class"] {
-    color: #ffcb6b; // 金黄
-  }
-
-  [type="constant"] {
-    color: #f78c6c; // 橘色
-  }
-
-  [type="regex"] {
-    color: #c3e88d; // 嫩绿
-    font-style: italic;
-  }
-
-  [type="important"] {
-    color: #ff5370; // 鲜红
-    font-weight: bold;
-  }
-
-  [type="literal"] {
-    color: #f78c6c; // 橘色
-  }
-
-  [type="arrow"] {
-    color: #89ddff; // 青色
-  }
+  // 选区文字颜色
+  --bc-selection-color: #e3e3e3;
+
+  // 占位符颜色
+  --bc-placeholder-color: #555555;
+
+  // 光标标签颜色
+  --bc-cursor-tag-color: #FFFFFF;
+  --bc-cursor-tag-bg: rgba(0, 0, 0, 0.8);
+
+  // 代码块相关颜色
+  --bc-code-bg-color: #1e1e1e;
+  --bc-code-border-color: #2d2d2d;
+  --bc-code-border-color-focus: #6B7AFF;
+  --bc-code-shadow-focus: 0 0 10px 0 rgba(107, 122, 255, 0.2);
+  --bc-code-head-bg-color: #252525;
+  --bc-code-head-border-color: #2d2d2d;
+  --bc-code-btn-color: #888888;
+  --bc-code-btn-hover-bg: rgba(255, 255, 255, 0.08);
+  --bc-code-resize-bar-bg: #252525;
+  --bc-code-resize-bar-border: #2d2d2d;
+  --bc-code-resize-bar-hover-bg: #2a2a2a;
+  --bc-code-resize-bar-hover-shadow: 0 0 5px rgba(0, 0, 0, 0.05);
+  --bc-code-resize-bar-icon-color: #3a3a3a;
+  --bc-code-inline-bg-color: rgba(255, 255, 255, 0.05);
+  --bc-code-inline-border-color: rgba(255, 255, 255, 0.1);
+  --bc-code-inline-color: #ff6b6b;
+  --bc-code-inline-border-left-color: rgba(255, 255, 255, 0.1);
+  --bc-code-inline-border-right-color: rgba(255, 255, 255, 0.1);
+
+  // 浮动工具栏相关
+  --bc-float-toolbar-bg: #2a2a2a;
+  --bc-float-toolbar-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  --bc-float-toolbar-item-color: #e3e3e3;
+  --bc-float-toolbar-item-hover-bg: rgba(255, 255, 255, 0.08);
+  --bc-float-toolbar-item-active-bg: rgba(107, 122, 255, 0.2);
+  --bc-float-toolbar-divider-color: #3a3a3a;
+
+  // 表格相关
+  --bc-table-head-bg: #252525;
+  --bc-table-bar-bg: #2a2a2a;
+
+  // 代码高亮颜色 (深色主题)
+  --bc-code-hl-variable: #4fc3f7;
+  --bc-code-hl-keyword: #ff6b9d;
+  --bc-code-hl-title: #c792ea;
+  --bc-code-hl-number: #f78c6c;
+  --bc-code-hl-string: #c3e88d;
+  --bc-code-hl-comment: #676e95;
+  --bc-code-hl-function: #82aaff;
+  --bc-code-hl-operator: #89ddff;
+  --bc-code-hl-punctuation: #999999;
+  --bc-code-hl-tag: #f07178;
+  --bc-code-hl-attr: #c792ea;
+  --bc-code-hl-attr-name: #ffcb6b;
+  --bc-code-hl-attr-value: #c3e88d;
+  --bc-code-hl-property: #ffcb6b;
+  --bc-code-hl-selector: #c3e88d;
+  --bc-code-hl-builtin: #82aaff;
+  --bc-code-hl-class: #ffcb6b;
+  --bc-code-hl-constant: #f78c6c;
+  --bc-code-hl-regex: #c3e88d;
+  --bc-code-hl-important: #ff5370;
+  --bc-code-hl-literal: #f78c6c;
+  --bc-code-hl-arrow: #89ddff;
+
+  // 表格相关颜色覆盖
+  --bc-table-head-bg: #252525;
+  --bc-table-bar-bg: #2a2a2a;
+  --bc-table-bar-color: #FFFFFF;
+  --bc-table-bar-pt-color: #666666;
+  --bc-table-bar-active-bg: #6B7AFF;
+  --bc-table-resize-bar-active-bg: #6B7AFF;
+  --bc-table-resize-bar-add-bg: #6B7AFF;
+
+  // 分隔线相关颜色覆盖
+  --bc-divider-color: #3a3a3a;
+  --bc-divider-color-large: #666666;
+
+  // Callout相关颜色覆盖
+  --bc-callout-selected-bg: rgba(107, 122, 255, 0.25);
+
+  // 列相关颜色覆盖
+  --bc-columns-divider-color: rgba(255, 255, 255, 0.3);
+  --bc-columns-divider-hover-color: rgba(255, 255, 255, 0.15);
+  --bc-columns-handle-color: #FFFFFF;
+  --bc-columns-handle-bg: #666666;
+
+  // 图片相关颜色覆盖
+  --bc-image-handle-bg: #191919;
+
+  // Mermaid相关颜色覆盖
+  --bc-mermaid-bg: #252525;
+  --bc-mermaid-border-color: #2d2d2d;
+  --bc-mermaid-head-border-color: #2d2d2d;
+  --bc-mermaid-btn-color: #888888;
+  --bc-mermaid-btn-hover-bg: rgba(255, 255, 255, 0.08);
 }

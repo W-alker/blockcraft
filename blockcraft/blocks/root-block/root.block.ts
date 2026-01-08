@@ -1,5 +1,5 @@
 import {ChangeDetectionStrategy, Component, HostListener} from "@angular/core";
-import {BaseBlockComponent, closetBlockId, UIEventStateContext} from "../../framework";
+import {BaseBlockComponent, closetBlockId, createBlockGapSpace, UIEventStateContext} from "../../framework";
 import {RootBlockModel} from "./index";
 import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
 import {BlockNodeType} from "../../framework";
@@ -39,6 +39,11 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
 
     this.doc.event.add('selectStart', this.onSelectstart)
     this.doc.event.add('selectEnd', this.onSelectEnd)
+
+    requestAnimationFrame(() => {
+      this.hostElement.prepend(createBlockGapSpace())
+      this.hostElement.appendChild(createBlockGapSpace())
+    })
   }
 
   onSelectstart = (ctx: UIEventStateContext) => {

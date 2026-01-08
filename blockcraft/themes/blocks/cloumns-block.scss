@@ -1,5 +1,4 @@
-@mixin columns-block {
-
+[data-blockcraft-root="true"] {
   .columns-block {
     padding: 8px 0;
 
@@ -138,14 +137,14 @@
       }
 
       &:active .divider-line {
-        background: rgba(55, 53, 47, 0.4);
+        background: var(--bc-columns-divider-color);
       }
 
       .divider-line {
         width: 2px;
         transform: translateY(8px);
         height: calc(100% - 8px);
-        background: rgba(55, 53, 47, 0.12);
+        background: var(--bc-columns-divider-hover-color);
         transition: all 0.12s ease;
         pointer-events: none;
       }
@@ -159,7 +158,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        color: #fff;
+        color: var(--bc-columns-handle-color);
         font-size: 10px;
 
         &:hover {
@@ -182,7 +181,7 @@
           content: '';
           height: 6px;
           width: 6px;
-          background: #bbbfc4;
+          background: var(--bc-columns-handle-bg);
           border-radius: 50%;
         }
       }

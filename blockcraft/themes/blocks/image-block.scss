@@ -1,5 +1,5 @@
-@mixin image-block {
-  @at-root #{selector-unify(&, '.readonly')} {
+[data-blockcraft-root="true"] {
+  &.readonly {
     .image-block .img-wrapper {
       cursor: zoom-in;
     }
@@ -65,7 +65,7 @@
         &__point {
           width: 10px;
           height: 10px;
-          background-color: #fff;
+          background-color: var(--bc-image-handle-bg);
           border: 1px solid var(--bc-active-color);
           border-radius: 50%;
         }

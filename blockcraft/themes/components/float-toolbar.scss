@@ -1,24 +1,24 @@
 bc-float-toolbar,
 bc-virtual-float-toolbar {
   .bc-float-toolbar__wrapper {
-    background-color: #fff;
-    padding: 4px;
-    border-radius: 4px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    background-color: var(--bc-float-toolbar-bg);
+    padding: var(--bc-padding-sm);
+    border-radius: var(--bc-radius-md);
+    box-shadow: var(--bc-float-toolbar-shadow);
 
     bc-float-toolbar-item {
       display: flex;
-      gap: 4px;
+      gap: var(--bc-padding-sm);
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      border-radius: 4px;
-      color: #333;
+      border-radius: var(--bc-radius-md);
+      color: var(--bc-float-toolbar-item-color);
       white-space: nowrap;
-      transition: all ease-in-out .15s;
+      transition: all var(--bc-transition-fast);
 
       &.active {
-        background: rgba(95, 111, 255, 0.08);
+        background: var(--bc-float-toolbar-item-active-bg);
         color: var(--bc-active-color);
       }
 
@@ -27,20 +27,20 @@ bc-virtual-float-toolbar {
       }
 
       &:hover {
-        background: rgba(215, 215, 215, 0.6);
+        background: var(--bc-float-toolbar-item-hover-bg);
       }
 
-      >i {
+      > i {
         font-size: inherit;
         color: inherit;
       }
 
       i.dropdown {
-        transition: transform 0.2s ease-in-out;
+        transition: transform var(--bc-transition-base);
       }
 
       &.float-children-opened {
-        background: rgba(215, 215, 215, 0.6);
+        background: var(--bc-float-toolbar-item-hover-bg);
 
         i.dropdown {
           transform: rotate(180deg);
@@ -52,17 +52,17 @@ bc-virtual-float-toolbar {
       flex-direction: column;
 
       bc-float-toolbar-item {
-        padding: 4px 8px;
+        padding: var(--bc-padding-sm) var(--bc-padding-md);
         width: 100%;
         justify-content: flex-start;
       }
 
-      >span.bc-float-toolbar__divider {
-        margin: 4px 0;
+      > span.bc-float-toolbar__divider {
+        margin: var(--bc-padding-sm) 0;
         display: block;
         flex: 1;
         height: 1px;
-        background-color: #e0e0e0;
+        background-color: var(--bc-float-toolbar-divider-color);
       }
     }
 
@@ -71,52 +71,21 @@ bc-virtual-float-toolbar {
       justify-content: space-between;
       align-items: stretch;
       height: 40px;
-      gap: 8px;
+      gap: var(--bc-padding-md);
 
       bc-float-toolbar-item {
         justify-content: center;
-        padding: 0 4px;
+        padding: 0 var(--bc-padding-sm);
       }
 
-      >span.bc-float-toolbar__divider {
+      > span.bc-float-toolbar__divider {
         flex-shrink: 0;
         height: 32px;
         width: 1px;
-        background-color: #e0e0e0;
+        background-color: var(--bc-float-toolbar-divider-color);
       }
     }
 
   }
 
-}
-
-bc-float-toolbar.dark,
-bc-virtual-float-toolbar.dark {
-
-  .bc-float-toolbar__wrapper,
-  .bc-virtual-float-toolbar__wrapper {
-    background-color: #2a2a2a;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-
-    bc-float-toolbar-item {
-      color: #e3e3e3;
-
-      &.active {
-        background: rgba(107, 122, 255, 0.2);
-        color: var(--bc-active-color);
-      }
-
-      &:hover {
-        background: rgba(255, 255, 255, 0.08);
-      }
-
-      &.float-children-opened {
-        background: rgba(255, 255, 255, 0.08);
-      }
-    }
-
-    >span.bc-float-toolbar__divider {
-      background-color: #3a3a3a;
-    }
-  }
 }

@@ -1,4 +1,4 @@
-@mixin todo-block {
+[data-blockcraft-root="true"] {
   div.todo-block {
     max-width: 100%;
     display: flex;

@@ -28,9 +28,3 @@
   -moz-user-modify: $state;
   user-modify: $state;
 }
-
-// 黑夜模式代码高亮 mixin（从 dark.scss 引用）
-@mixin code-highlight-dark {
-  // 此 mixin 在 dark.scss 中定义，这里仅作声明
-  // 实际使用时会在 dark.scss 的上下文中调用
-}
