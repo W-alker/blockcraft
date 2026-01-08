@@ -76,16 +76,17 @@ export class DocVM {
             let yBlock = yBlocks[childId] || this.doc.crud.getYBlock(childId)
             // 兜底代码
             if (!yBlock) {
-              this.doc.logger.warn('有丢失段落: ' + childId)
-              yBlock = native2YBlock({
-                id: childId,
-                nodeType: BlockNodeType.editable,
-                flavour: 'paragraph',
-                props: {depth: 0},
-                meta: {},
-                children: []
-              })
-              this.doc.yBlockMap.set(childId, yBlock)
+              this.doc.messageService.warn('有丢失段落: ' + childId)
+              // this.doc.logger.warn('有丢失段落: ' + childId)
+              // yBlock = native2YBlock({
+              //   id: childId,
+              //   nodeType: BlockNodeType.editable,
+              //   flavour: 'paragraph',
+              //   props: {depth: 0},
+              //   meta: {},
+              //   children: []
+              // })
+              // this.doc.yBlockMap.set(childId, yBlock)
             }
             return createComp(yBlock, cpr)
           }

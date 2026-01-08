@@ -8,8 +8,6 @@ import {
   performanceTest, Y_BLOCK_MAP_NAME,
   YBlock
 } from "../../../blockcraft";
-import {OLD_JSON} from "../version-adapter";
-import {DOC_IDS, TEST_DATA} from "./const";
 import * as Y from 'yjs'
 import {encodeStateAsUpdate, encodeStateVectorFromUpdate} from "yjs";
 
@@ -105,4 +103,6 @@ export class Test3Page {
 
 
   }
+
+
 }
