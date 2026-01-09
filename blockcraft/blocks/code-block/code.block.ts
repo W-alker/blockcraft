@@ -32,7 +32,7 @@ import { CodeInlineManagerService } from "./code-inlineManager.service";
     </div>
 
     <div class="edit-container-wrapper" [style.height.px]="props.h">
-      <div class="edit-container"></div>
+      <pre class="edit-container"></pre>
     </div>
 
     @if (!(doc.readonlySwitch$ | async) && !props.collapse) {

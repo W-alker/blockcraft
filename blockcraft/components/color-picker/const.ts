@@ -7,7 +7,7 @@ export interface IColorItem {
 export const BUILTIN_COLOR_LIST: readonly IColorItem[] = Object.freeze([
   {
     name: "默认",
-    value: '#37352F',  // Craft 默认文字色（深灰）
+    value: 'var(--bc-color)',  // Craft 默认文字色（深灰）
   },
   {
     name: "灰色",

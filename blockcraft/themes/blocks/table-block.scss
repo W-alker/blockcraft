@@ -261,7 +261,7 @@
         height: 20px;
         background: var(--bc-active-color);
         border-radius: 50%;
-        color: var(--bc-table-bar-color);
+        color: #fff;
         font-size: 16px;
         align-items: center;
         justify-content: center;
@@ -354,18 +354,18 @@
 
         >.bar {
           display: block;
-          background-color: var(--bc-table-bar-bg);
+          background-color: var(--bc-bg-gray);
           position: relative;
           cursor: pointer;
           z-index: 1;
 
           &:hover,
           &.hover {
-            background: var(--bc-bg-hover);
+            background: var(--bc-bg-gray2);
           }
 
           &.active {
-            background: var(--bc-table-bar-active-bg);
+            background: var(--bc-active-color);
           }
         }
 

@@ -65,6 +65,7 @@ import {CodeInlineEditorBinding, TableBlockBinding, TextMarkerPlugin, OrderedBlo
 import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
 import {fixTable} from "../blocks/table-block/callback";
 import {ColumnBlockSchema} from "../blocks/columns-block";
+import {demoJSON} from "./demo.data";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -342,8 +343,9 @@ export class EditorComponent {
   }
 
   initBySnapshot(snapshot?: IBlockSnapshot) {
-    snapshot ??= this.doc.schemas.createSnapshot('root', [this.rootId, [this.doc.schemas.createSnapshot('paragraph', [])]])
-    this.doc.initBySnapshot(snapshot, this.container.nativeElement)
+    const data = demoJSON as IBlockSnapshot
+    // snapshot ??= this.doc.schemas.createSnapshot('root', [this.rootId, [this.doc.schemas.createSnapshot('paragraph', [])]])
+    this.doc.initBySnapshot(data, this.container.nativeElement)
   }
 
   log() {

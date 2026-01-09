@@ -67,7 +67,7 @@
 
   ::selection {
     background-color: var(--bc-select-background-color);
-    color: var(--bc-selection-color);
+    color: var(--bc-color);
   }
 
   [data-block-id] {
@@ -105,6 +105,7 @@
 
   [data-node-type="void"] {
     @include user-select(none);
+    caret-color: transparent;
 
     * {
       @include user-select(none);
@@ -191,15 +192,15 @@
         font-size: small;
       }
 
-      &:not([code])+[code="true"],
+      &:not([code]) + [code="true"],
       &[code="true"]:first-of-type {
         padding-left: 0.2em;
-        border-left: 1px solid var(--bc-code-inline-border-left-color);
+        border-left: 1px solid var(--bc-code-inline-border-color);
       }
 
       &[code="true"]:has(+ c-element:not([code])) {
         padding-right: 0.2em;
-        border-right: 1px solid var(--bc-code-inline-border-right-color);
+        border-right: 1px solid var(--bc-code-inline-border-color);
       }
 
       &[code="true"] {
@@ -242,16 +243,15 @@
     }
   }
 
-
   [data-node-type='block'],
   [data-node-type='void'] {
-    .blockcraft-cursor>span {
+    .blockcraft-cursor > span {
       box-shadow: 0 0 1px 1px var(--bgColor, var(--bc-mark-bg-color));
     }
   }
 
   [data-node-type='editable'] {
-    .blockcraft-cursor>span {
+    .blockcraft-cursor > span {
       background-color: var(--bgColor, var(--bc-mark-bg-color));
     }
   }
@@ -265,7 +265,7 @@
     @include user-select(none);
     @include user-modify(read-only);
 
-    >* {
+    > * {
       @include user-select(none);
       @include user-modify(read-only);
     }
@@ -285,11 +285,12 @@
       @include user-select(none);
       font-size: 10px;
       line-height: 14px;
-      color: var(--bc-cursor-tag-color, #fff);
-      background-color: var(--bc-cursor-tag-bg, rgba(0, 0, 0, 0.8));
+      color: var(--bc-color, #fff);
+      background-color: var(--bc-mark-bg-color, rgba(0, 0, 0, 0.8));
+      // 背景取反色
+      box-shadow: var(--bc-shadow-sm);
       border-radius: var(--bc-radius-sm);
       padding: 0 2px;
     }
   }
-
 }

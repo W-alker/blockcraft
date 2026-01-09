@@ -3,9 +3,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  @else {
+  } @else {
     word-break: break-word;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -27,4 +25,71 @@
   -webkit-user-modify: $state;
   -moz-user-modify: $state;
   user-modify: $state;
+}
+
+@mixin code-highlight-theme() {
+  [type="variable"] {
+    color: var(--bc-code-hl-variable)
+  }
+  [type="keyword"] {
+    color: var(--bc-code-hl-keyword)
+  }
+  [type="title"] {
+    color: var(--bc-code-hl-title)
+  }
+  [type="string"] {
+    color: var(--bc-code-hl-string)
+  }
+  [type="number"] {
+    color: var(--bc-code-hl-number)
+  }
+  [type="function"] {
+    color: var(--bc-code-hl-function)
+  }
+  [type="comment"] {
+    color: var(--bc-code-hl-comment)
+  }
+  [type="operator"] {
+    color: var(--bc-code-hl-operator)
+  }
+  [type="tag"] {
+    color: var(--bc-code-hl-tag)
+  }
+  [type="attr"] {
+    color: var(--bc-code-hl-attr)
+  }
+  [type="attr-name"] {
+    color: var(--bc-code-hl-attr-name)
+  }
+  [type="attr-value"] {
+    color: var(--bc-code-hl-attr-value)
+  }
+  [type="property"] {
+    color: var(--bc-code-hl-property)
+  }
+  [type="selector"] {
+    color: var(--bc-code-hl-selector)
+  }
+  [type="builtin"] {
+    color: var(--bc-code-hl-builtin)
+  }
+  [type="class"] {
+    color: var(--bc-code-hl-class)
+  }
+  [type="constant"] {
+    color: var(--bc-code-hl-constant)
+  }
+  [type="regex"] {
+    color: var(--bc-code-hl-regex)
+  }
+  [type="important"] {
+    color: var(--bc-code-hl-important)
+  }
+  [type="literal"] {
+    color: var(--bc-code-hl-literal)
+  }
+  [type="arrow"] {
+    color: var(--bc-code-hl-arrow)
+  }
+
 }

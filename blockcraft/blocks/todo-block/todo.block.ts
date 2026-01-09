@@ -6,7 +6,7 @@ import {TodoBlockModel} from "./index";
   selector: 'div.todo-block',
   template: `
     <button class="todo-block-button" contenteditable="false" (mousedown)="toggleCompleted($event)">
-      <i [class]="['bc_icon', props.checked ? 'bf_xuanzhong-fill' : 'bf_weixuanzhong']"></i>
+      <i [class]="['bc_icon', props.checked ? 'bc_xuanzhong-fill' : 'bc_weixuanzhong']"></i>
     </button>
     <div class="edit-container"></div>
   `,

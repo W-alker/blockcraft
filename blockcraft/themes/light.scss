@@ -16,19 +16,8 @@ body[blockcraft-theme="light"] {
   --bc-bg-elevated: #FFFFFF;
   --bc-bg-hover: #F1F1EF;
 
-  // 选区文字颜色
-  --bc-selection-color: #37352F;
-
   // 占位符颜色
   --bc-placeholder-color: #9B9A97;
-
-  // 代码块相关颜色
-  --bc-code-bg-color: #f8f8f8;
-  --bc-code-border-color: #E9E9E7;
-  --bc-code-head-bg-color: #FFFFFF;
-  --bc-code-head-border-color: #E9E9E7;
-  --bc-code-btn-color: #787774;
-  --bc-code-btn-hover-bg: #F1F1EF;
 
   // 浮动工具栏相关
   --bc-float-toolbar-bg: #FFFFFF;
@@ -37,8 +26,4 @@ body[blockcraft-theme="light"] {
   --bc-float-toolbar-item-hover-bg: #F1F1EF;
   --bc-float-toolbar-item-active-bg: rgba(72, 87, 226, 0.1);
   --bc-float-toolbar-divider-color: #E9E9E7;
-
-  // 表格相关
-  --bc-table-head-bg: #F7F6F3;
-  --bc-table-bar-bg: #F1F1EF;
 }

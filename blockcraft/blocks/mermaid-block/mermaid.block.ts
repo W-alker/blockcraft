@@ -23,10 +23,10 @@ import { AsyncPipe } from "@angular/common";
 
       @if (!(doc.readonlySwitch$ | async)) {
         <div class="template-btn btn" (click)="onShowList($event, 'prefix')" [hidden]="props.mode === 'graph'">类型
-          <i class="bf_icon bf_xiajaintou" style="font-size: .8em"></i>
+          <i class="bc_icon bc_xiajaintou" style="font-size: .8em"></i>
         </div>
         <div class="template-btn btn" (click)="onShowList($event, 'template')" [hidden]="props.mode === 'graph'">模板
-          <i class="bf_icon bf_xiajaintou"></i>
+          <i class="bc_icon bc_xiajaintou"></i>
         </div>
       }
 
@@ -37,7 +37,7 @@ import { AsyncPipe } from "@angular/common";
       </div>
 
       <div class="switch-btn btn" [hidden]="doc.readonlySwitch$ | async" (mousedown)="onSwitchView($event)">
-        <i class="bc_icon bf_qiehuan"></i>
+        <i class="bc_icon bc_qiehuan"></i>
       </div>
     </div>
 

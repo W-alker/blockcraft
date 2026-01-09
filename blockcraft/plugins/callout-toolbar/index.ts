@@ -63,10 +63,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
       resizeObs.disconnect()
     })
     componentRef.setInput('calloutBlock', calloutBlock)
-    componentRef.setInput('theme', this.doc.theme)
     this._overlayRef = overlayRef
-
-
   }
 
   closeToolbar = () => {

@@ -1,9 +1,8 @@
-@import "../function";
-@import "./code-block";
+@use "../function" as *;
 
 .blockcraft-mermaid-preview-graph {
   img {
-    background: var(--bc-mermaid-bg);
+    background: var(--bc-bg-primary);
   }
 }
 
@@ -12,7 +11,7 @@
     display: block;
     border-radius: var(--bc-radius-md);
     overflow: hidden;
-    border: 1px solid var(--bc-mermaid-border-color);
+    border: 1px solid var(--bc-border-color);
 
     &.selected {
       border-color: var(--bc-active-color);
@@ -70,8 +69,8 @@
       display: flex;
       align-items: center;
       position: relative;
-      padding: 0 20px;
-      border-bottom: 1px solid var(--bc-mermaid-head-border-color);
+      padding: 0 16px;
+      border-bottom: 1px solid var(--bc-border-color);
       height: 45px;
 
       .btn {
@@ -87,7 +86,7 @@
         @include user-modify(read-only);
 
         &:hover, &.active {
-          background-color: var(--bc-mermaid-btn-hover-bg);
+          background-color: var(--bc-bg-hover);
         }
 
         > * {
@@ -98,7 +97,7 @@
       .switch-btn {
         position: absolute;
         top: 50%;
-        right: var(--bf-lh);
+        right: 16px;
         transform: translateY(-50%);
       }
     }
@@ -128,5 +127,6 @@
     color: var(--bc-mermaid-btn-color);
     font-size: small;
     tab-size: 1em;
+    @include code-highlight-theme;
   }
 }

@@ -30,6 +30,8 @@
   --bc-bg-secondary: #F7F6F3;
   --bc-bg-elevated: #FFFFFF;
   --bc-bg-hover: #F1F1EF;
+  --bc-bg-gray: #ECEEEF;
+  --bc-bg-gray2: #dddddd;
 
   // 状态颜色
   --bc-warning-color: #f5a623;
@@ -76,41 +78,18 @@
   --bc-transition-base: 0.3s ease;
   --bc-transition-slow: 0.5s ease;
 
-  // 代码块相关颜色
-  --bc-code-bg-color: #F7F6F3;
-  --bc-code-border-color: #E6E6E6;
-  --bc-code-border-color-focus: #4857E2;
-  --bc-code-shadow-focus: 0 0 10px 0 rgba(0, 0, 0, 0.08);
-  --bc-code-head-bg-color: #F7F9FE;
-  --bc-code-head-border-color: #E6E6E6;
-  --bc-code-btn-color: var(--bc-color-light);
-  --bc-code-btn-hover-bg: rgba(153, 153, 153, 0.1);
-  --bc-code-resize-bar-bg: #FFFFFF;
-  --bc-code-resize-bar-border: #E6E6E6;
-  --bc-code-resize-bar-hover-bg: #F7F9FE;
-  --bc-code-resize-bar-hover-shadow: 0 0 5px rgba(0, 0, 0, 0.05);
-  --bc-code-resize-bar-icon-color: #E6E6E6;
+  // 内联代码块相关颜色
   --bc-code-inline-bg-color: rgb(242, 243, 245);
   --bc-code-inline-border-color: rgb(234, 236, 239);
   --bc-code-inline-color: #EB5757;
 
-  // 内联代码边框颜色
-  --bc-code-inline-border-left-color: rgb(234, 236, 239);
-  --bc-code-inline-border-right-color: rgb(234, 236, 239);
-
-  // 评论/批注颜色
-  --bc-comment-bg: rgba(255, 239, 186, 0.6);
-  --bc-comment-border: rgba(255, 239, 186, 1);
-
-  // 选区文字颜色
-  --bc-selection-color: #37352F;
+  // 表格相关颜色
+  --bc-table-head-bg: #F2F3F5;
+  --bc-table-bar-bg: #999;
+  --bc-table-bar-pt-color: #999;
 
   // 占位符颜色
   --bc-placeholder-color: #9B9A97;
-
-  // 光标标签颜色
-  --bc-cursor-tag-color: #FFFFFF;
-  --bc-cursor-tag-bg: rgba(0, 0, 0, 0.8);
 
   // 浮动工具栏相关
   --bc-float-toolbar-bg: #FFFFFF;
@@ -119,15 +98,6 @@
   --bc-float-toolbar-item-hover-bg: #F1F1EF;
   --bc-float-toolbar-item-active-bg: rgba(72, 87, 226, 0.1);
   --bc-float-toolbar-divider-color: #E9E9E7;
-
-  // 表格相关
-  --bc-table-head-bg: #F2F3F5;
-  --bc-table-bar-bg: #F1F1EF;
-  --bc-table-bar-color: #FFFFFF;
-  --bc-table-bar-pt-color: #666666;
-  --bc-table-bar-active-bg: #4857E2;
-  --bc-table-resize-bar-active-bg: #4857E2;
-  --bc-table-resize-bar-add-bg: #4857E2;
 
   // 分隔线相关
   --bc-divider-color: #DDDDDD;
@@ -144,13 +114,6 @@
 
   // 图片相关
   --bc-image-handle-bg: #FFFFFF;
-
-  // Mermaid相关
-  --bc-mermaid-bg: #FFFFFF;
-  --bc-mermaid-border-color: #E6E6E6;
-  --bc-mermaid-head-border-color: #E6E6E6;
-  --bc-mermaid-btn-color: #333333;
-  --bc-mermaid-btn-hover-bg: rgba(153, 153, 153, 0.1);
 
   // 代码高亮颜色 (浅色主题)
   --bc-code-hl-variable: #005f87;

@@ -1,6 +1,6 @@
-@mixin ordered-block {
+[data-blockcraft-root="true"] {
 
-  @at-root #{selector-unify(&, '.readonly')} {
+  &.readonly {
     .ordered-block .ordered-block-prefix {
       cursor: unset;
 
@@ -10,7 +10,7 @@
     }
   }
 
-  div.ordered-block {
+  .ordered-block {
     max-width: 100%;
     display: flex;
     align-items: flex-start;
@@ -24,6 +24,7 @@
       border: none;
       background: none;
       font-size: 1em;
+      min-width: 1em;
 
       &:hover {
         background-color: var(--bc-select-background-color);

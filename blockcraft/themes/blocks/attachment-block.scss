@@ -9,6 +9,12 @@
     position: relative;
     max-width: 400px;
     overflow: hidden;
+    background: var(--bc-bg-secondary);
+
+    &.selected {
+      border: 1px solid var(--bc-active-color);
+      box-shadow: 0 0 2px var(--bc-active-color-light);
+    }
 
     &__prefix {
       position: absolute;

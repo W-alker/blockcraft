@@ -12,11 +12,11 @@
     flex-wrap: wrap;
     overflow: hidden;
     justify-content: center;
+    background: var(--bc-bg-secondary);
 
     &.selected {
       border: 1px solid var(--bc-active-color);
-      box-shadow: 0 0 4px var(--bc-active-color-light);
-      background: unset;
+      box-shadow: 0 0 2px var(--bc-active-color-light);
 
       .bookmark-link {
         color: var(--bc-active-color);
