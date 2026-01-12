@@ -189,7 +189,7 @@ export class SelectionControl {
     // 4. 监听鼠标按下（支持所有指针类型：鼠标、触摸板、触屏）
     fromEvent<PointerEvent>(root.hostElement, 'pointerdown', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       // 移除 pointerType 限制，支持所有类型的指针设备
-      if (evt.button === 0) this._mouseDown = true;
+      this._mouseDown = true;
     })
 
     // 5. 监听鼠标释放（重置状态）

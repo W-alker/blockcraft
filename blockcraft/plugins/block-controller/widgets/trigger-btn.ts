@@ -143,11 +143,10 @@ const HEADING_LIST: IContextMenuItem[] = [
         } @else {
 
           @if (activeBlock?.nodeType === BlockNodeType.editable) {
-            <bc-float-toolbar-item class="append-more-btn" [bcOverlayTrigger]="alignList" [disabled]="menuDisabled"
-                                   [positions]="['right-center']" [offsetX]="2" activeClass="active">
+            <bc-float-toolbar-item class="append-more-btn" [expandable]="true" [bcOverlayTrigger]="alignList" [disabled]="menuDisabled"
+                                   [positions]="['right-center']" [offsetX]="2">
               <i [class]="['bc_icon', 'bc_zuoduiqi']"></i>
               <span>对齐方式</span>
-              <i class="bf_icon bf_youjiantou"></i>
             </bc-float-toolbar-item>
 
             <span class="bc-float-toolbar__divider"></span>
@@ -162,11 +161,10 @@ const HEADING_LIST: IContextMenuItem[] = [
 
           <span class="bc-float-toolbar__divider"></span>
 
-          <bc-float-toolbar-item class="append-more-btn" [bcOverlayTrigger]="blockAddList" [disabled]="menuDisabled"
-                                 [positions]="['right-center']" [offsetX]="2" activeClass="active">
-            <i class="bf_icon bf_tianjia"></i>
+          <bc-float-toolbar-item class="append-more-btn" [expandable]="true" [bcOverlayTrigger]="blockAddList" [disabled]="menuDisabled"
+                                 [positions]="['right-center']" [offsetX]="2">
+            <i class="bc_icon bc_tianjia"></i>
             <span>在下方添加</span>
-            <i class="bf_icon bf_youjiantou"></i>
           </bc-float-toolbar-item>
         }
       </bc-float-toolbar>

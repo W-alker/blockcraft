@@ -440,7 +440,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     let newWidth = this.props.colWidths[resizingColIdx]
     let prevClientX = evt.clientX
-    
+
     const resizeSub = fromEvent<MouseEvent>(document, 'mousemove', { capture: true })
       .pipe(takeUntil(this.resizingCol$.pipe(filter(v => !v))))
       .subscribe((e) => {
@@ -452,21 +452,21 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         // 计算鼠标移动的增量
         const deltaX = e.clientX - prevClientX
         prevClientX = e.clientX
-        
+
         // 应用增量到宽度
         newWidth += deltaX
-        
+
         // 最小宽度限制
         if (newWidth < 50) {
           newWidth = 50
           return
         }
-        
+
         // 更新列宽
         curCol.style.width = newWidth + 'px'
         this.colBarComponent.colWidths[resizingColIdx] = newWidth
         this.colBarComponent.changeDetectionRef.markForCheck()
-        
+
         // 更新可视指示器位置（考虑滚动偏移）
         const colRect = curCol.getBoundingClientRect()
         const containerRect = scrollableEl.getBoundingClientRect()

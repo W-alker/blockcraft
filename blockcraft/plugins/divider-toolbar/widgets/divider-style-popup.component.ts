@@ -19,10 +19,6 @@ export class DividerStylePopupComponent {
   @Input()
   dividerBlock!: BlockCraft.IBlockComponents['divider']
 
-  @Input()
-  @HostBinding('attr.data-theme')
-  theme!: string
-
   activeTab = 'line';
   activeSize = 'medium';
 

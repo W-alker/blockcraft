@@ -27,6 +27,29 @@
   user-modify: $state;
 }
 
+@mixin bc_scrollbar() {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bc-scrollbar-thumb-color) var(--bc-scrollbar-track-color);
+
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--bc-scrollbar-thumb-color);
+    border-radius: 4px;
+
+    &:hover {
+      background: var(--bc-scrollbar-thumb-hover-color);
+    }
+  }
+
+  &::-webkit-scrollbar-track {
+    background: var(--bc-scrollbar-track-color);
+  }
+}
+
 @mixin code-highlight-theme() {
   [type="variable"] {
     color: var(--bc-code-hl-variable)

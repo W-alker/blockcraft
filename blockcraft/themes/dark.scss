@@ -45,7 +45,7 @@ body[blockcraft-theme="dark"] {
   --bc-caret-color-on-mark: #ffffff;
 
   // 阴影
-  --bc-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --bc-shadow-sm: 0 1px 3px rgba(50, 50, 50, 0.3);
   --bc-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
   --bc-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
 
@@ -108,4 +108,9 @@ body[blockcraft-theme="dark"] {
 
   // 图片相关颜色覆盖
   --bc-image-handle-bg: #191919;
+
+  // 滚动条相关
+  --bc-scrollbar-thumb-color: #434242;
+  --bc-scrollbar-thumb-hover-color: #676666;
+  --bc-scrollbar-track-color: #2e2e2e;
 }

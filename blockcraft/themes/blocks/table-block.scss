@@ -85,7 +85,7 @@
     &.col-head {
       td:first-child {
         position: sticky;
-        left: 0;
+        left: -1px;
         z-index: 1;
         background: var(--bc-table-head-bg) !important;
         font-weight: bold;
@@ -163,7 +163,6 @@
       td.table-cell-block {
         &.selected {
           background: unset;
-          -webkit-user-modify: read-only;
         }
       }
 
@@ -186,6 +185,11 @@
           height: 100%;
           user-select: none;
           -webkit-user-select: none;
+
+          > [data-block-id] {
+            width: 100%;
+            justify-content: center;
+          }
         }
       }
     }

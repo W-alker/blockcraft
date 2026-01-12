@@ -15,8 +15,11 @@ import { debounce } from "../../global";
 @Component({
   selector: 'lang-list',
   template: `
-    <input (compositionstart)="isComposing = true" (compositionend)="isComposing = false" (input)="onSearch($event)" #input (keydown)="onKeydown($event)"/>
-    <div class="lang-list" (mouseover)="onMouseEnter($event)" (mousedown)="onMouseDown($event)" #langList>
+    <input (compositionstart)="isComposing = true" (compositionend)="isComposing = false"
+           (input)="onSearch($event)" #input (keydown)="onKeydown($event)"
+           placeholder="搜索语言"
+    />
+    <div class="lang-list bc-scrollable-container" (mouseover)="onMouseEnter($event)" (mousedown)="onMouseDown($event)" #langList>
       @for (item of languageList; track item; let index = $index) {
         <div class="lang-list_item" [class.active]="item === activeLang"
              [attr.data-value]="item" [class.hover]="hoverIdx === index">
@@ -27,9 +30,9 @@ import { debounce } from "../../global";
   `,
   styles: [`
     :host {
-      background-color: #fff;
-      border: 1px solid #f5f2f0;
-      box-shadow: 0 0 4px rgba(0, 0, 0, .1);
+      background-color: var(--bc-bg-primary);
+      border: 1px solid var(--bc-border-color);
+      box-shadow: var(--bc-shadow-md);
       border-radius: 4px;
       padding: 4px;
 
@@ -39,12 +42,18 @@ import { debounce } from "../../global";
         height: calc(var(--bc-lh) * 1.5);
         line-height: calc(var(--bc-lh) * 1.5);
         font-size: var(--bc-fs);
-        border: 1px solid #f5f2f0;
+        border: 1px solid var(--bc-border-color);
         border-radius: 4px;
         padding: 0 4px;
+        color: var(--bc-color);
+        background: unset;
 
         &:focus {
-          outline: 1px solid #4857E2;
+          outline: 1px solid var(--bc-active-color);
+        }
+
+        &::placeholder {
+          color: var(--bc-color-lighter);
         }
       }
 
@@ -61,38 +70,19 @@ import { debounce } from "../../global";
         line-height: calc(var(--bc-lh) * 1.5);
         text-align: center;
         font-size: calc(var(--bc-fs) * .8);
-        color: #999;
+        color: var(--bc-color-lighter);
         cursor: pointer;
         border-radius: 4px;
 
         &.active, &.hover {
-          background-color: rgba(153, 153, 153, .1);
+          background-color: var(--bc-bg-hover);
+        }
+
+        &.active {
+          color: var(--bc-active-color);
         }
       }
 
-      &[data-theme="dark"] {
-        background-color: #333;
-        border: 1px solid #555;
-        color: #ccc;
-
-        > input {
-          border: 1px solid #555;
-          color: #ccc;
-          background-color: #2a2a2a;
-        }
-
-        .lang-list_item {
-          color: #ccc;
-            &.active {
-              background: rgba(107, 122, 255, 0.2);
-              color: var(--bc-active-color);
-            }
-
-            &:hover {
-              background: rgba(255, 255, 255, 0.08);
-            }
-        }
-      }
     }
   `],
   imports: [NgForOf],
@@ -101,9 +91,6 @@ import { debounce } from "../../global";
 })
 export class LangListComponent {
   @Input() activeLang: string = 'JavaScript';
-  @Input()
-  @HostBinding('attr.data-theme')
-  theme = ''
   @Output() langChange = new EventEmitter<CodeBlockLanguage>();
   @Output() destroy = new EventEmitter<void>()
 

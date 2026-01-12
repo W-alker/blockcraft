@@ -28,11 +28,11 @@ import {isUrl} from "../../../global";
       padding: 12px;
       width: 400px;
       border-radius: 4px;
-      border: 1px solid #E6E6E6;
-      background: #FFF;
-      box-shadow: 0px 0px 20px 0px rgba(0, 0, 0, 0.10);
+      border: 1px solid var(--bc-border-color);
+      background: var(--bc-bg-primary);
+      box-shadow: var(--bc-shadow-md);
       font-size: 14px;
-      color: #333;
+      color: var(--bc-color);
 
       .input-group {
         width: 100%;
@@ -44,15 +44,16 @@ import {isUrl} from "../../../global";
           flex: 1;
           padding: 8px;
           border-radius: 4px;
-          border: 1px solid #E6E6E6;
+          border: 1px solid var(--bc-border-color);
           outline: none;
+          background: unset;
 
           &:focus {
-            border-color: #4857E2;
+            border-color: var(--bc-active-color);
           }
 
           &.error {
-            border-color: #ff4d4f;
+            border-color: var(--bc-error-color);
           }
         }
       }

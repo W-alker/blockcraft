@@ -272,13 +272,18 @@ export class EditorComponent {
           toView: (embed) => {
             const span = document.createElement('span')
             span.textContent = embed.insert['mention'] as string
-            InlineManager.setAttrs(span, embed.attributes!)
+            // InlineManager.setAttrs(span, embed.attributes!)
+            span.setAttribute('data-mention-id', (embed.attributes!['mentionId'] || embed.attributes!['d:mentionId']) as string)
+            span.setAttribute('data-mention-type', (embed.attributes!['mentionType'] || embed.attributes!['d:mentionType']) as string)
             return span
           },
           toDelta: (ele) => {
             return {
               insert: {mention: ele.textContent!},
-              attributes: InlineManager.getAttrs(ele)
+              attributes: {
+                'mentionId': ele.getAttribute('data-mention-id')!,
+                'mentionType': ele.getAttribute('data-mention-type')
+              }
             }
           }
         }
@@ -334,6 +339,9 @@ export class EditorComponent {
     // this.enterRoom()
 
     this.listenUpdate()
+    this.doc.event.add('selectStart', e => {
+      console.log('selectStart', e)
+    })
     this.doc.event.add('selectEnd', e => {
       console.log('selectEnd', e)
     })
@@ -402,7 +410,10 @@ export class EditorComponent {
   }
 
   onDragStart(evt: DragEvent, flavour: string, props?: any) {
-    this.doc.dndService.startDrag(evt, [{dragDataType: DocDndDataTypes.newBlock, dragData: flavour}, {dragDataType: DocDndDataTypes.newBlockProps, dragData: props ? JSON.stringify(props) : ''}])
+    this.doc.dndService.startDrag(evt, [{
+      dragDataType: DocDndDataTypes.newBlock,
+      dragData: flavour
+    }, {dragDataType: DocDndDataTypes.newBlockProps, dragData: props ? JSON.stringify(props) : ''}])
   }
 
   exportPdf() {

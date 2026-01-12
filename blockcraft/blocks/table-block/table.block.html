@@ -1,4 +1,4 @@
-<div class="table-scrollable" #tableScrollable (scroll)="onScroll($event)" (scrollend)="onScrollEnd()">
+<div class="table-scrollable bc-scrollable-container" #tableScrollable (scroll)="onScroll($event)" (scrollend)="onScrollEnd()">
   <table-row-bar [rowIds]="_childrenIds" [rowHeightsRecord]="_rowHeightsRecord"
                  [selectedRange]="_activeRowRange" (selectedRangeChange)="onRowBarSelected($event)"
                  (onAdderActive)="onRowAdderActive($event)"

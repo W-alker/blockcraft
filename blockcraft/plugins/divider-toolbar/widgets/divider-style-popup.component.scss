@@ -4,14 +4,15 @@
   box-shadow: var(--bc-float-toolbar-shadow);
   width: 300px;
   padding: 8px;
+  color: var(--bc-color);
 
   .tabs {
     display: flex;
-    background: var(--bc-bg-secondary);
+    background: var(--bc-bg-primary);
     border-radius: 4px;
     margin-bottom: 12px;
     overflow: hidden;
-    border: 1px solid #eaeef2;
+    border: 1px solid var(--bc-border-color);
 
     button {
       flex: 1;
@@ -24,38 +25,14 @@
       align-items: center;
       justify-content: center;
       gap: 4px;
-      color: #444;
+      color: var(--bc-color-light);
 
       &.active {
-        background: white;
+        background: var(--bc-bg-hover);
         font-weight: 600;
-        color: black;
+        color: var(--bc-color);
       }
     }
-  }
-}
-
-:host {
-  &[data-theme="dark"] {
-    .popup {
-      background: #333;
-      color: #fff;
-    }
-
-    .tabs {
-      background: #444;
-      border: 1px solid #444;
-    }
-
-    .tabs button {
-      color: #999;
-    }
-
-    .tabs button.active {
-      background: #555;
-      color: #fff;
-    }
-
   }
 }
 
@@ -75,21 +52,21 @@
   transition: all 0.2s ease;
   /* 轻微斜切的锯齿边缘，用伪元素模拟 */
   clip-path: polygon(5px 0px,
-      0px 4.4px,
-      6px 10.4px,
-      0px 14.4px,
-      4px 19.6px,
-      0px 26.4px,
-      4px 34.8px,
-      1px 40px,
-      97% 40px,
-      100% 35.2px,
-      97% 29.6px,
-      100% 24px,
-      98% 20px,
-      100% 11.2px,
-      98% 5.2px,
-      99% 0px);
+    0px 4.4px,
+    6px 10.4px,
+    0px 14.4px,
+    4px 19.6px,
+    0px 26.4px,
+    4px 34.8px,
+    1px 40px,
+    97% 40px,
+    100% 35.2px,
+    97% 29.6px,
+    100% 24px,
+    98% 20px,
+    100% 11.2px,
+    98% 5.2px,
+    99% 0px);
   background-size: 100% 100%;
 
   &[data-tab-size="thin"] {
@@ -161,17 +138,17 @@
   transition: all ease .2s;
 
   &:hover {
-    border-color: #f5f5f5;
+    border-color: var(--bc-border-color);
   }
 
   &.selected {
-    border-color: #2196f3;
+    border-color: var(--bc-active-color-light);
   }
 
   .line {
 
     &.solid {
-      background-color: #ddd;
+      background-color: var(--bc-border-color);
       height: 1px;
 
       &[data-tab-size="thin"] {
@@ -197,10 +174,10 @@
 
     &.dashed {
       background-image: repeating-linear-gradient(to right,
-          #ccc,
-          #ccc 8px,
-          transparent 8px,
-          transparent 16px);
+        var(--bc-border-color),
+        var(--bc-border-color) 8px,
+        transparent 8px,
+        transparent 16px);
 
       &[data-tab-size="thin"] {
         width: 30%;
@@ -224,7 +201,7 @@
     }
 
     &.dotted {
-      background-image: radial-gradient(circle, #ddd 2px, transparent 2px);
+      background-image: radial-gradient(circle, var(--bc-border-color) 2px, transparent 2px);
       background-size: 20px 4px;
       background-repeat: repeat-x;
       height: 4px;
@@ -248,7 +225,7 @@
     }
 
     &.double {
-      border-color: #ddd;
+      border-color: var(--bc-border-color);
       border-bottom-style: double;
       border-width: 4px;
 

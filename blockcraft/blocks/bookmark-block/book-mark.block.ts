@@ -23,7 +23,7 @@ import {HostUrlPipe} from "../embed-blocks";
       </div>
 
       <p class="bookmark-description" spellcheck="false">{{ props.description || '暂无更多信息' }}</p>
-      <a class="bookmark-link" target="_blank" [href]="props.url">
+      <a class="bookmark-link" target="_blank" [href]="props.url" contenteditable="false">
         <span>{{ props.url | hostUrl }}</span>
         <i class="bc_icon bc_tiaozhuan"></i>
       </a>

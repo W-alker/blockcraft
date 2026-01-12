@@ -192,8 +192,8 @@ export class MentionPlugin extends DocPlugin {
         {
           insert: {mention: name},
           attributes: {
-            'd:mentionId': id,
-            'd:mentionType': _tab
+            'mentionId': id,
+            'mentionType': _tab
           }
         },
         {insert: ' '}

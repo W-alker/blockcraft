@@ -8,7 +8,7 @@
   left: 0;
   transform: translateX(-62px);
 
-  >* {
+  > * {
     user-select: none;
     -webkit-user-select: none;
   }
@@ -19,7 +19,7 @@
   height: 1em;
   font-size: 1em;
 
-  >svg {
+  > svg {
     vertical-align: top;
   }
 }
@@ -35,7 +35,7 @@
   &.active {
 
     .btn {
-      background-color: #E6E6E6;
+      background-color: var(--bc-bg-hover);
     }
 
   }
@@ -45,26 +45,19 @@
     gap: 4px;
     align-items: center;
     padding: 0 4px;
-    background-color: #fff;
-    box-shadow: 0 0 2px 0 #999;
+    background-color: var(--bc-bg-primary);
+    border: 1px solid var(--bc-border-color);
     border-radius: 4px;
     overflow: hidden;
     cursor: pointer;
     text-align: center;
-    color: #999;
+    color: var(--bc-color-lighter);
     font-size: 16px;
     height: 22px;
     line-height: 22px;
 
     &:hover {
-      background-color: #E6E6E6;
-    }
-  }
-
-  &[data-theme="dark"] {
-    .btn {
-      background-color: #333;
-      color: #999;
+      background-color: var(--bc-bg-hover);
     }
   }
 }
@@ -89,6 +82,7 @@
   flex-wrap: wrap;
   padding: 8px;
   gap: 8px;
+  color: var(--bc-color);
 
   .base-list__item {
     width: 24px;
@@ -102,22 +96,11 @@
 
     &:hover,
     &.active {
-      background: #f3f3f3;
+      background: var(--bc-bg-hover);
     }
 
-    >i {
+    > i {
       font-size: 1em;
-    }
-  }
-}
-
-bc-float-toolbar.dark {
-  .base-list__item {
-    color: #e3e3e3;
-
-    &:hover,
-    &.active {
-      background: rgba(255, 255, 255, 0.08);
     }
   }
 }
@@ -131,7 +114,7 @@ bc-float-toolbar-item {
   border-radius: 4px;
   cursor: pointer;
 
-  >span {
+  > span {
     font-size: 14px;
     line-height: 20px;
     flex: 1;

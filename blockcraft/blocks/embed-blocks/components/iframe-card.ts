@@ -20,7 +20,7 @@ import {MatIcon} from "@angular/material/icon";
       <mat-icon [svgIcon]="brand.icon"></mat-icon>
       <span spellcheck="false">{{ brand.title }}</span>
     </div>
-    <a class="iframe-link" target="_blank" [href]="props.url">
+    <a class="iframe-link" target="_blank" [href]="props.url" contenteditable="false">
       <span>{{ props.url | hostUrl }}</span>
       <i class="bc_icon bc_tiaozhuan"></i>
     </a>

@@ -34,7 +34,7 @@ const TransformReg = /^[\/、].*/
 @Component({
   selector: 'block-transformer-contextmenu',
   template: `
-    <ul class="list" [attr.data-theme]="doc.theme" (mousedown)="onMouseDown($event)" (mousemove)="onMouseMove()" (mouseover)="onMouseOver($event)">
+    <ul class="list" (mousedown)="onMouseDown($event)" (mousemove)="onMouseMove()" (mouseover)="onMouseOver($event)">
       @for (item of list; track item.flavour; let idx = $index) {
         <li class="list__item" [class.active]="activeIdx === idx" [attr.data-index]="idx">
           @if (item.metadata.svgIcon) {
@@ -54,7 +54,10 @@ const TransformReg = /^[\/、].*/
     NgTemplateOutlet,
     MatIcon
   ],
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '[class]': `'bc-scrollable-container'`
+  }
 })
 export class BlockTransformContextMenu {
   @Input() doc!: BlockCraft.Doc

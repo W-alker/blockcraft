@@ -75,8 +75,8 @@
 
   // 过渡动画
   --bc-transition-fast: 0.15s ease;
-  --bc-transition-base: 0.3s ease;
-  --bc-transition-slow: 0.5s ease;
+  --bc-transition-base: 0.225s ease;
+  --bc-transition-slow: 0.4s ease;
 
   // 内联代码块相关颜色
   --bc-code-inline-bg-color: rgb(242, 243, 245);
@@ -138,4 +138,9 @@
   --bc-code-hl-important: #d33682;
   --bc-code-hl-literal: #795548;
   --bc-code-hl-arrow: #afc2cc;
+
+  // 滚动条相关
+  --bc-scrollbar-thumb-color: #D9D9D9;
+  --bc-scrollbar-thumb-hover-color: #BFBFBF;
+  --bc-scrollbar-track-color: #fff;
 }

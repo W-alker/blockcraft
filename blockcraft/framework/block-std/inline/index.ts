@@ -80,6 +80,7 @@ export class InlineManager {
     span.setAttribute('contenteditable', 'false')
     const embed = converter.toView(delta as DeltaInsertEmbed)
     span.appendChild(embed)
+    setAttributes(node, delta.attributes!)
     node.append(span, createZeroSpace())
     return node
   }

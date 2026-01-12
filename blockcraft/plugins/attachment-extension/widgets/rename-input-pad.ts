@@ -17,14 +17,14 @@ import {ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, Out
       width: 300px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--bc-padding-md);
       border-radius: 4px;
-      border: 1px solid #E6E6E6;
-      background: #FFF;
-      box-shadow: 0px 0px 20px 0px rgba(0, 0, 0, 0.10);
+      border: 1px solid var(--bc-border-color);
+      background: var(--bc-bg-primary);
+      box-shadow: var(--bc-shadow-md);
       font-size: 14px;
       color: #333;
-      padding: 12px;
+      padding: var(--bc-padding-lg);
 
       .input-wrapper {
         flex: 1;
@@ -32,16 +32,17 @@ import {ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, Out
         align-items: flex-end;
         gap: 8px;
         border-radius: 4px;
-        border: 1px solid #E6E6E6;
+        border: 1px solid var(--bc-border-color);
         padding: 4px 8px;
         margin: 0;
+        color: var(--bc-color);
 
         &:focus-within {
-          border-color: #4857E2;
+          border-color: var(--bc-active-color);
         }
 
         &.is-error {
-          border-color: #ff4d4f !important;
+          border-color: var(--bc-error-color) !important;
         }
 
         > input {
@@ -49,10 +50,11 @@ import {ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, Out
           outline: none;
           margin: 0;
           border: none;
+          background: none;
         }
 
         > span {
-          color: #999;
+          color: var(--bc-color-lighter);
           font-size: 14px;
         }
       }
@@ -64,12 +66,12 @@ import {ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, Out
         width: 24px;
         height: 24px;
         font-size: 20px;
-        color: #666;
+        color: var(--bc-color-light);
         cursor: pointer;
         border-radius: 4px;
 
         &:hover {
-          background-color: rgba(153, 153, 153, 0.2);
+          background-color: var(--bc-bg-hover);
         }
       }
     }

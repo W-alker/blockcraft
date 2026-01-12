@@ -31,7 +31,7 @@ import { CodeInlineManagerService } from "./code-inlineManager.service";
       </div>
     </div>
 
-    <div class="edit-container-wrapper" [style.height.px]="props.h">
+    <div class="edit-container-wrapper bc-scrollable-container" [style.height.px]="props.h">
       <pre class="edit-container"></pre>
     </div>
 
@@ -144,7 +144,6 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     }, closeList$, () => {
     })
     cpr.setInput('activeLang', this.props.lang)
-    cpr.setInput('theme', this.doc.theme)
 
     cpr.instance.langChange.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(lang => {
       closeList$.next(true)

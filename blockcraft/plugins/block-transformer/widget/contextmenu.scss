@@ -1,10 +1,11 @@
 :host {
   display: block;
-  background: #fff;
+  background: var(--bc-bg-primary);
   box-shadow: 0 0 8px rgba(0, 0, 0, 0.2);
   border-radius: 4px;
   max-height: 50vh;
   overflow-y: auto;
+  color: var(--bc-color);
 
   ::ng-deep {
     mat-icon svg {
@@ -26,30 +27,17 @@
       border-radius: 4px;
       cursor: pointer;
 
-      >mat-icon,
+      > mat-icon,
       i {
         font-size: 1em;
       }
 
-      >* {
+      > * {
         pointer-events: none;
       }
 
       &.active {
-        background: #f3f3f3;
-      }
-    }
-
-    &[data-theme="dark"] {
-      background-color: #2a2a2a;
-
-      .list__item {
-        color: #e3e3e3;
-
-        &:hover,
-        &.active {
-          background: rgba(255, 255, 255, 0.08);
-        }
+        background: var(--bc-bg-hover);
       }
     }
   }

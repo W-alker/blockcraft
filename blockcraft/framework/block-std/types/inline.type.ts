@@ -36,6 +36,8 @@ export type InlineDataKey = `d:${string}`
 
 export type InlineStyleKey = `s:${string}`
 
+export type InlineCustomKey = string
+
 /**
  * inline text style
  */
@@ -48,7 +50,7 @@ export interface ITextStyles {
 }
 
 export interface IExpandedAttrs {
-  [key: InlineAttrKey | InlineDataKey]: SimpleBasicType | null
+  [key: InlineAttrKey | InlineDataKey | InlineCustomKey]: SimpleBasicType | null
 }
 
 export type InlineModel = DeltaInsert[]
