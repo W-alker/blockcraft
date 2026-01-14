@@ -95,7 +95,7 @@ const ALIGN_LIST: IToolbarMenuItem[] = [
     name: "align",
     icon: "bc_zuoduiqi",
     intro: "左对齐",
-    value: undefined,
+    value: 'left',
   },
   {
     name: "align",

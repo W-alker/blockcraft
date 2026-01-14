@@ -12,6 +12,7 @@
     }
 
     .todo-block-button {
+      flex-shrink: 0;
       margin-right: .25em;
       cursor: pointer;
       outline: none;

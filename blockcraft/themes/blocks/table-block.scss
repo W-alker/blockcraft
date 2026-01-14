@@ -9,7 +9,7 @@
     .table-block,
     .table-row-block,
     .table-cell-block {
-      >* {
+      > * {
         pointer-events: unset;
       }
     }
@@ -33,7 +33,7 @@
       }
 
       .table-cell-block {
-        >* {
+        > * {
           pointer-events: none;
         }
       }
@@ -91,7 +91,7 @@
         font-weight: bold;
       }
 
-      table-col-bar>span:first-child {
+      table-col-bar > span:first-child {
         position: sticky;
         left: 0;
         z-index: 2;
@@ -102,11 +102,11 @@
       //position: sticky;
       //top: 0;
 
-      >table-row-bar {
+      > table-row-bar {
         //padding-top: $ctrlBarSize;
       }
 
-      >table-col-bar {
+      > table-col-bar {
         //position: sticky;
         //top: 0;
         //z-index: 1;
@@ -179,17 +179,31 @@
 
         .table-cell__children-wrapper {
           padding: 12px 8px;
-          display: flex;
-          flex-direction: column;
-          align-items: stretch;
+          //display: flex;
+          //flex-direction: column;
+          //align-items: stretch;
           height: 100%;
           user-select: none;
           -webkit-user-select: none;
 
-          > [data-block-id] {
-            width: 100%;
-            justify-content: center;
+          &[data-align="center"] {
+            text-align: center;
+
+            > [data-block-id] {
+              width: 100%;
+              justify-content: center;
+            }
           }
+
+          &[data-align="right"] {
+            text-align: right;
+
+            > [data-block-id] {
+              width: 100%;
+              justify-content: end;
+            }
+          }
+
         }
       }
     }
@@ -258,7 +272,7 @@
         }
       }
 
-      >.add {
+      > .add {
         display: none;
         position: absolute;
         width: 20px;
@@ -271,7 +285,8 @@
         justify-content: center;
       }
 
-      >.bar {}
+      > .bar {
+      }
     }
 
     .table-col-resize-bar {
@@ -281,17 +296,17 @@
       height: calc(100% - $ctrlBarSize);
 
       &:hover {
-        >.bar {
+        > .bar {
           opacity: 1;
         }
       }
 
-      >.add {
+      > .add {
         top: -20px;
         left: -4px;
       }
 
-      >.bar {
+      > .bar {
         opacity: 0;
         position: absolute;
         top: 0;
@@ -313,12 +328,12 @@
         display: block;
       }
 
-      >.add {
+      > .add {
         top: -4px;
         left: -20px;
       }
 
-      >.bar {
+      > .bar {
         opacity: 0;
         position: absolute;
         top: 5px;
@@ -356,7 +371,7 @@
       .item {
         position: relative;
 
-        >.bar {
+        > .bar {
           display: block;
           background-color: var(--bc-bg-gray);
           position: relative;
@@ -373,7 +388,7 @@
           }
         }
 
-        >.pt {
+        > .pt {
           z-index: 3;
           cursor: pointer;
           position: relative;
@@ -403,11 +418,11 @@
 
       .item {
 
-        >.bar {
+        > .bar {
           height: $ctrlBarSize / 2;
         }
 
-        >.pt {
+        > .pt {
           position: absolute;
           top: -8px;
           right: -8px;
@@ -428,11 +443,11 @@
 
       .item {
 
-        >.bar {
+        > .bar {
           width: $ctrlBarSize / 2;
         }
 
-        >.pt {
+        > .pt {
           position: absolute;
           left: -8px;
           bottom: -7px;

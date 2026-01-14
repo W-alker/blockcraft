@@ -5,8 +5,9 @@ import {TableCellBlockModel} from "./index";
 @Component({
   selector: 'td.table-cell-block',
   template: `
-    <div class="table-cell__children-wrapper children-render-container" [style.align-items]="props.textAlign" [style.text-align]="props.textAlign">
-<!--      <ng-container #childrenContainer></ng-container>-->
+    <div class="table-cell__children-wrapper children-render-container"
+         [attr.data-align]="props.textAlign">
+      <!--      <ng-container #childrenContainer></ng-container>-->
     </div>
   `,
   standalone: true,

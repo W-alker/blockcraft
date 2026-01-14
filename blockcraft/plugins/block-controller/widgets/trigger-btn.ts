@@ -26,7 +26,7 @@ const ALIGN_LIST: IContextMenuItem[] = [
     name: "align",
     icon: "bc_zuoduiqi",
     label: "左对齐",
-    value: undefined,
+    value: 'left',
     type: 'tool'
   },
   {
@@ -48,7 +48,7 @@ const ALIGN_LIST: IContextMenuItem[] = [
 const HEADING_LIST: IContextMenuItem[] = [
   {
     name: "heading",
-    value: undefined,
+    value: null,
     icon: "bc_icon bc_wenben",
     label: "普通段落",
     type: 'tool',

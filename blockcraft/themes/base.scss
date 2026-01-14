@@ -105,6 +105,16 @@
     position: absolute;
     cursor: text;
     font-size: 0;
+
+    &:first-of-type {
+      left: 0;
+      top: 0;
+    }
+
+    &:last-of-type {
+      right: 0;
+      bottom: 0;
+    }
   }
 
   [data-node-type="void"] {

@@ -39,11 +39,6 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
 
     this.doc.event.add('selectStart', this.onSelectstart)
     this.doc.event.add('selectEnd', this.onSelectEnd)
-
-    requestAnimationFrame(() => {
-      this.hostElement.prepend(createBlockGapSpace())
-      this.hostElement.appendChild(createBlockGapSpace())
-    })
   }
 
   onSelectstart = (ctx: UIEventStateContext) => {
