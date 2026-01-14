@@ -194,7 +194,7 @@
     display: block;
     flex: 1;
     padding: 0 8px;
-    margin-bottom: 0;
+    margin-bottom: 0 !important;
 
     .column-content {
       width: 100%;
@@ -208,7 +208,7 @@
     }
 
     &.selected {
-      background: unset;
+      background: unset !important;
 
       .column-content {
         background-color: var(--bc-select-background-color) !important;
