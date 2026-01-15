@@ -156,35 +156,41 @@ export class AttachmentExtensionPlugin extends DocPlugin {
 
   }
 
-  @EventListen('paste', {flavour: "root"})
+  @EventListen('paste', {flavour: 'root'})
   onPaste(ctx: UIEventStateContext) {
-    const state = ctx.get('clipboardState')
-    if (!state.dataTypes.includes(ClipboardDataType.FILES)) return false
-    this.doc.clipboard.deleteContentFromSelection(state.selection)
-    const files = state.clipboardData?.files
-    if (!files?.length) return false
-    ctx.preventDefault()
+    const state = ctx.get('clipboardState');
+    if (!state.dataTypes.includes(ClipboardDataType.FILES)) return false;
+    if (this.doc.selection.value?.isAllSelected) {
+      ctx.preventDefault();
+      return true;
+    }
+    const files = state.clipboardData?.files;
+    if (!files?.length) return false;
+    ctx.preventDefault();
     Promise.allSettled(Array.from(files)
-      .map(file => this.fileService.uploadAttachment(file)))
+      .map(file => {
+        if (file.type.startsWith('image/')) return this.fileService.uploadImg(file)
+        return this.fileService.uploadAttachment(file)
+      }))
       .then(res => {
-        const snapshots: IBlockSnapshot[] = []
+        const snapshots: IBlockSnapshot[] = [];
 
         res.forEach(r => {
           if (r.status !== 'fulfilled') {
-            this.doc.messageService.error(r.reason)
-            return
+            this.doc.messageService.error(r.reason);
+            return;
           }
-          if (r.value.type.startsWith('image/')) {
-            snapshots.push(this.doc.schemas.createSnapshot('image', [r.value.url]))
-          } else {
-            snapshots.push(this.doc.schemas.createSnapshot('attachment', [(r.value as any)]))
-          }
-        })
+          const snapshot = typeof r.value === 'string' ? this.doc.schemas.createSnapshot('image', [r.value])
+            : this.doc.schemas.createSnapshot('attachment', [r.value]);
+          snapshot.props.depth = (state.selection.firstBlock.props.depth || 0);
+          snapshots.push(snapshot);
+        });
 
-        if (!snapshots.length) return
-        this.doc.crud.insertBlocksAfter(state.selection.firstBlock, snapshots)
-      })
-    return true
+        if (!snapshots.length) return;
+        this.doc.clipboard.deleteContentFromSelection(state.selection);
+        this.doc.crud.insertBlocksAfter(state.selection.firstBlock, snapshots);
+      });
+    return true;
   }
 
   destroy() {
