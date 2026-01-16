@@ -18,9 +18,10 @@ import { CodeInlineManagerService } from "./code-inlineManager.service";
   selector: 'div.code-block',
   template: `
     <div class="code-block__head" contenteditable="false">
-        <span class="head-btn btn-collapse" (mousedown)="onToggleCollapse($event)">
-            <i class="bc_icon bc_a-sanjiao-jinru6"></i>
-        </span>
+      <span class="head-btn btn-collapse" (mousedown)="onToggleCollapse($event)">
+          <i class="bc_icon bc_a-sanjiao-jinru6"></i>
+      </span>
+      <span class="block-name">代码块</span>
 
       <div class="head-btn__group">
         <div class="head-btn" (mousedown)="showLangList($event)">

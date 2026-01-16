@@ -121,6 +121,13 @@
       background: var(--bc-bg-primary);
       border-bottom: 1px solid var(--bc-border-color);
       border-radius: var(--bc-radius-lg) var(--bc-radius-lg) 0 0;
+      gap: 8px;
+
+      .block-name {
+        font-size: calc(var(--bc-fs) * .8);
+        color: var(--bc-color-light);
+        white-space: nowrap;
+      }
     }
 
     .head-btn {
