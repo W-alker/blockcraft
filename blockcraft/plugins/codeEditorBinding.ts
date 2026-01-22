@@ -82,9 +82,7 @@ export class CodeInlineEditorBinding extends DocPlugin {
       block.deleteText(from.index, block.textLength - from.index)
       const np = this.doc.schemas.createSnapshot('paragraph', [splitText, block.props])
       this.doc.crud.insertBlocksAfter(block, [np]).then(() => {
-        nextTick().then(() => {
-          this.doc.selection.setCursorAtBlock(np.id, true)
-        })
+        this.doc.selection.setCursorAtBlock(np.id, true)
       })
       return true
     }

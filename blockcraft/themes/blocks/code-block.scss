@@ -39,7 +39,7 @@
       padding: var(--bc-lh) var(--code-padding-left);
       background: none;
       font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
-      font-size: 1em;
+      font-size: calc(var(--bc-fs) * 0.85);
       line-height: 1.8em;
       text-align: left;
       word-spacing: normal;
@@ -76,7 +76,6 @@
       }
 
       @include code-highlight-theme();
-
     }
 
     &.focused, &:hover {

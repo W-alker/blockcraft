@@ -37,9 +37,10 @@ type DragPosition = 'before' | 'after' | 'left' | 'right' | 'none'
 const calcPosition = (e: DragEvent, blockWrap: HTMLElement, leftOrRight = false): DragPosition => {
   const rect = blockWrap.getBoundingClientRect()
   // 先判断是否在左右
+  const edge = Math.min(Math.max(10, rect.width / 6), 50)
   if (leftOrRight) {
-    if (e.clientX < rect.left + Math.max(30, rect.width / 4)) return 'left'
-    if (e.clientX > rect.right - Math.max(30, rect.width / 4)) return 'right'
+    if (e.clientX < rect.left + edge) return 'left'
+    if (e.clientX > rect.right - edge) return 'right'
   }
   if (e.clientY > rect.top + rect.height / 2) return 'after'
   return 'before'
@@ -162,8 +163,11 @@ export class DocDndService {
 
       fromEvent<DragEvent>(document, 'drop').pipe(takeUntil(this.dragEnd$))
         .subscribe((e) => {
-          evt.preventDefault()
-          evt.stopPropagation()
+          e.preventDefault()
+          e.stopPropagation()
+          if (this.prevBlock && this.prevDragPosition) {
+            this._parseDragData(e)
+          }
           this.clearDrag()
         })
 
@@ -221,9 +225,8 @@ export class DocDndService {
         this.prevBlock = activeBlock
       }
 
-      const position = calcPosition(evt, this.prevBlock.hostElement)
-      // TODO 修复
-      // const position = calcPosition(evt, this.prevBlock.hostElement, !activeBlock.flavour.startsWith('column') && this.doc.schemas.has('column') && ['root'].includes(this.prevBlock.parentBlock!.flavour))
+      // const position = calcPosition(evt, this.prevBlock.hostElement)
+      const position = calcPosition(evt, this.prevBlock.hostElement, !activeBlock.flavour.startsWith('column') && this.doc.schemas.has('column') && ['root', 'column'].includes(this.prevBlock.parentBlock!.flavour))
       if (this.prevDragPosition === position) return
       this.moveDragLine(this.prevBlock.hostElement, this.prevDragPosition = position)
     })
@@ -242,11 +245,17 @@ export class DocDndService {
     this._inBlock = null
   }
 
-  // TODO 修复
   onSetColumn(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
     const parent = targetBlock.parentBlock
     const columnSchema = this.doc.schemas.get('column')
     if (!parent || !columnSchema) return
+    if (parent.flavour === 'column') {
+      const newColumn = this.doc.schemas.createSnapshot('column', [[]])
+      const _insertIdx = parent.getIndexOfParent() + (position === 'left' ? 0 : 1)
+      this.doc.crud.insertBlocks(parent.parentId!, _insertIdx, [newColumn])
+      this.doc.crud.moveBlocks(block.parentId!, block.getIndexOfParent(), 1, newColumn.id, 0)
+      return;
+    }
     if (!this.doc.schemas.isValidChildren(block.flavour, columnSchema) || !this.doc.schemas.isValidChildren(targetBlock.flavour, columnSchema)) {
       this.doc.messageService.warn(`不允许的分栏内容`)
       return
@@ -254,14 +263,14 @@ export class DocDndService {
     const columns = this.doc.schemas.createSnapshot('columns', [2])
     const column1 = columns.children[0] as IBlockSnapshot
     const column2 = columns.children[1] as IBlockSnapshot
-    column1.children = position === 'left' ? [block.toSnapshot()] : [targetBlock.toSnapshot()]
-    column2.children = position === 'left' ? [targetBlock.toSnapshot()] : [block.toSnapshot()]
+    column1.children = []
+    column2.children = []
     this.doc.crud.transact(() => {
-      const index = targetBlock.getIndexOfParent()
-      const parentId = targetBlock.parentId!
-      this.doc.crud.deleteBlockById(block.id)
-      this.doc.crud.deleteBlockById(targetBlock.id)
-      this.doc.crud.insertBlocks(parentId, index, [columns])
+      this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent(), [columns])
+    })
+    this.doc.crud.transact(() => {
+      this.doc.crud.moveBlocks(block.parentId!, block.getIndexOfParent(), 1, position === 'left' ? column1.id : column2.id, 0)
+      this.doc.crud.moveBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent(), 1, position === 'left' ? column2.id : column1.id, 0)
     })
   }
 
@@ -368,7 +377,7 @@ export class DocDndService {
     })
   }
 
-  @EventListen('drop', {flavour: 'root'})
+  @EventListen('drop')
   onDrop(ctx: UIEventStateContext) {
     ctx.preventDefault()
     const evt: DragEvent = ctx.getDefaultEvent()

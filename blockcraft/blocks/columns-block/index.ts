@@ -1,14 +1,15 @@
-import { NoEditableBlockNative, BlockNodeType, IBlockSnapshot } from "../../framework";
-import { IBlockSchemaOptions } from "../../framework/block-std/schema/block-schema";
-import { nanoid } from "nanoid";
+import {NoEditableBlockNative, BlockNodeType, IBlockSnapshot} from "../../framework";
+import {IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
+import {nanoid} from "nanoid";
 
 // 先导出组件（会在下面定义全局类型后使用）
 export * from './column.block';
 export * from './columns.block';
 
-import { ColumnBlockComponent } from "./column.block";
-import { ColumnsBlockComponent } from "./columns.block";
-import { ParagraphBlockSchema } from "../paragraph-block";
+import {ColumnBlockComponent} from "./column.block";
+import {ColumnsBlockComponent} from "./columns.block";
+import {ParagraphBlockSchema} from "../paragraph-block";
+
 /**
  * 单列块模型
  */
@@ -43,9 +44,8 @@ export const ColumnBlockSchema: IBlockSchemaOptions<ColumnBlockModel> = {
   nodeType: BlockNodeType.block,
   component: ColumnBlockComponent,
   createSnapshot: (children?: IBlockSnapshot[]) => {
-    children ||= []
-    if (children.length === 0) {
-      children.push(ParagraphBlockSchema.createSnapshot());
+    if (!children) {
+      children = [ParagraphBlockSchema.createSnapshot()];
     }
     return {
       id: nanoid(),
@@ -115,7 +115,7 @@ declare global {
     }
 
     interface IBlockCreateParameters {
-      column: []
+      column: [IBlockSnapshot[]?]
       columns: [number?]
     }
   }

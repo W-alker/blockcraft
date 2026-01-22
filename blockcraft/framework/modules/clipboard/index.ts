@@ -114,7 +114,7 @@ export class ClipboardManager {
   }
 
   deleteContentFromSelection = (selection: BlockCraft.Selection) => {
-    this.doc.inputManger.deleteByRange(selection)
+    this.doc.inputManger.deleteByRange(selection, false)
   }
 
   @EventListen('copy')
@@ -283,7 +283,7 @@ export class ClipboardManager {
 
     // plain-text
     if (state.dataTypes.includes(ClipboardDataType.TEXT)) {
-      let text = state.getData(ClipboardDataType.TEXT)
+      let text = state.getData(ClipboardDataType.TEXT)!
       if (!text) return false
       text = text.replace(/\n$/g, '')
       if (isUrl(text) && isInSameBlock) {
@@ -298,21 +298,20 @@ export class ClipboardManager {
       }
 
       this.doc.crud.transact(() => {
-        // const text_lines = text.split('\n')
+        const text_lines = text.replace(/[\n\r]+$/, '').split('\n')
         if (isInSameBlock) {
-          selFrom.block.replaceText(selFrom.index, selFrom.length, text)
+          selFrom.block.replaceText(selFrom.index, selFrom.length, text_lines[0])
         } else {
           this.deleteContentFromSelection(state.selection)
-          selFrom.block.applyDeltaOperations([{retain: selFrom.index}, {insert: text}])
+          selFrom.block.applyDeltaOperations([{retain: selFrom.index}, {insert: text_lines[0]}])
         }
-        // if(text_lines.length > 1) {
-        //   const snapshots = text_lines.slice(1).map(line => this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {}]))
-        //   this.doc.crud.insertBlocksAfter(selFrom.block, snapshots)
-        // }
+        if (text_lines.length > 1) {
+          const snapshots = text_lines.slice(1).map(line => this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: selFrom.block.props.depth}]))
+          this.doc.crud.insertBlocksAfter(selFrom.block, snapshots)
+        }
       })
-      nextTick().then(() => {
-        collapsed ? selFrom.block.setInlineRange(selFrom.index + text.length)
-          : selFrom.block.setInlineRange(selFrom.index, text.length)
+      requestAnimationFrame(() => {
+        this.doc.selection.recalculate()
       })
       return true
     }

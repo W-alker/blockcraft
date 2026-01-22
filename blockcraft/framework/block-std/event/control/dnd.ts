@@ -17,6 +17,7 @@ export class DndControl {
   }
 
   onDragEnter(evt: DragEvent) {
+    this._startEvent = evt;
     this._dispatcher.run('dragEnter', this._createContext(evt))
   }
 
@@ -35,6 +36,7 @@ export class DndControl {
 
   onDrop(evt: DragEvent) {
     this._dispatcher.run('drop', this._createContext(evt))
+    this._startEvent = null
   }
 
   private _createContext(event: DragEvent) {
@@ -118,7 +120,7 @@ export class DndControl {
       this.onDragEnd(evt)
     })
 
-    fromEvent<DragEvent>(root.hostElement, 'drop').pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+    fromEvent<DragEvent>(root.hostElement, 'drop', {capture: true}).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       this.onDrop(evt)
     })
   }

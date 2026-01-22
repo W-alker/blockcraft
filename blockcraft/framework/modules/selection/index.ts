@@ -9,7 +9,7 @@ import {
   INLINE_END_BREAK_CLASS, STR_LINE_BREAK,
   UIEventStateContext
 } from "../../block-std";
-import {BlockCraftError, ErrorCode, IS_MAC} from "../../../global";
+import {BlockCraftError, ErrorCode, IS_MAC, performanceTest} from "../../../global";
 import {BehaviorSubject, skip, take, takeUntil} from "rxjs";
 import {closetBlockId, isZeroSpace} from "../../utils";
 import {SelectionSelectedManager} from "./selected-manager";
@@ -549,13 +549,38 @@ export class SelectionManager {
       return {from, to: null, collapsed: from.type === 'text'}
     }
 
-    const endBlock = startContainer === endContainer ? startBlock : this._searchClosetBlockByNode(endContainer)
+    let endBlock = startContainer === endContainer ? startBlock : this._searchClosetBlockByNode(endContainer)
 
     if (startBlock === endBlock && from.type === 'selected') {
       return {from, to: null, collapsed: false}
     }
 
-    let to = getBlockRange(endBlock, endContainer, endOffset)
+    let to: any
+    if (endContainer instanceof HTMLElement && endContainer.classList.contains('edit-container') && endOffset === 0) {
+      const prev = endContainer.closest('[data-node-type="editable"]')?.previousElementSibling
+      if (prev && prev instanceof HTMLElement) {
+        const id = prev.getAttribute('data-block-id')
+        if (id) {
+          endBlock = this.doc.getBlockById(id)! as BaseBlockComponent<any>
+          if (endBlock.nodeType === 'editable') {
+            to = {
+              blockId: id,
+              block: endBlock,
+              type: 'text',
+              index: (endBlock as EditableBlockComponent).textLength,
+              length: 0
+            }
+          } else {
+            to = {
+              blockId: id,
+              block: endBlock,
+              type: 'selected'
+            }
+          }
+        }
+      }
+    }
+    to ??= getBlockRange(endBlock, endContainer, endOffset)
 
     if (from.type === 'text') {
 

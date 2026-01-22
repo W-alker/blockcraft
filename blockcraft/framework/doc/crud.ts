@@ -117,7 +117,6 @@ export class DocCRUD {
     // sync to model
     events.forEach(ev => {
       const {path, changes, target} = ev
-
       // at top level, it`s mean that block is created or deleted
       // No need handle ORIGIN_SKIP_SYNC
       if (!path.length) {
@@ -251,6 +250,8 @@ export class DocCRUD {
       transactions: [],
     }
 
+    this.vm.deleteByIds([...deleted])
+
     const childComps = this.vm.createComponentByYBlocks(added)
     const insertDelay: Map<BlockCraft.BlockComponentRef, [number, BlockCraft.BlockComponentRef[]][]> = new Map()
 
@@ -289,7 +290,6 @@ export class DocCRUD {
       })
     })
 
-    this.vm.deleteByIds([...deleted])
     nextTick().then(() => {
       this.onChildrenUpdate$.next(emitEvents)
     })

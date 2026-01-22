@@ -207,7 +207,7 @@ export class InputTransformer {
 
   }
 
-  private _replaceText(range: INormalizedRange, text?: string | null) {
+  private _replaceText(range: INormalizedRange, text?: string | null, merge = false) {
     const {from, to, collapsed} = range
     if (collapsed) return
 
@@ -227,13 +227,18 @@ export class InputTransformer {
         text && yText.insert(from.index, text)
 
         if (to) {
-          if ((to.type === 'text' && from.length >= to.block.textLength) || to.type === 'selected') {
+          if ((to.type === 'text' && to.length >= to.block.textLength) || to.type === 'selected') {
             this.doc.crud.deleteBlockById(to.blockId)
           } else if (to.type === 'text' && (to.index > 0 || to.length > 0)) {
-            const deltas: DeltaOperation[] = [...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength)]
-            deltas.unshift({retain: yText.length})
-            yText.applyDelta(deltas)
-            this.doc.crud.deleteBlockById(to.blockId)
+            if (merge) {
+              const deltas: DeltaOperation[] = [...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength)]
+              deltas.unshift({retain: yText.length})
+              yText.applyDelta(deltas)
+              this.doc.crud.deleteBlockById(to.blockId)
+            } else {
+              const yText = to.block.yText
+              yText.delete(to.index, to.length)
+            }
           }
         }
         return
@@ -279,11 +284,11 @@ export class InputTransformer {
     return true
   }
 
-  deleteByRange(range: INormalizedRange) {
+  deleteByRange(range: INormalizedRange, merge = false) {
     if (range.from.type === 'selected' && (!range.to || range.to.type === 'selected')) {
       return this._deleteAllSelected(range)
     }
-    return this._replaceText(range)
+    return this._replaceText(range, null, merge)
   }
 
   @BindHotKey({key: 'Backspace', shiftKey: null, shortKey: null, metaKey: false})

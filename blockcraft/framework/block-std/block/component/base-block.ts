@@ -10,11 +10,11 @@ import {
   Output,
 } from "@angular/core";
 import { NativeBlockModel, Obj2YMap, proxyMap, YBlock, yBlock2Native } from "../../reactive";
-import { BlockCraftError, ErrorCode } from "../../../../global";
+import {BlockCraftError, ErrorCode, performanceTest} from "../../../../global";
 import { BlockChildrenRenderRef, ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC } from "../../../doc";
 import { BlockNodeType, IBlockProps, IBlockSnapshot } from "../../types";
 import { Subject } from "rxjs";
-import { createBlockGapSpace } from "../../../utils";
+import {createBlockGapSpace, generateId} from "../../../utils";
 import * as Y from 'yjs'
 import { STR_LINE_BREAK } from "../../inline";
 import { EditorEventName } from "../../event";
@@ -262,6 +262,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return this.doc.getBlockPath(this.id)
   }
 
+  @performanceTest()
   getIndexOfParent() {
     return this.parentBlock?.childrenIds.indexOf(this.id) ?? -1
   }

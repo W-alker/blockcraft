@@ -125,7 +125,7 @@
     padding: 6px;
     font-family: Menlo, Monaco, "Courier New", monospace;
     color: var(--bc-mermaid-btn-color);
-    font-size: small;
+    font-size: calc(var(--bc-fs) * 0.85);
     tab-size: 1em;
     @include code-highlight-theme;
   }
