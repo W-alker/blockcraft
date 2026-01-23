@@ -250,6 +250,10 @@ export class DocDndService {
     const columnSchema = this.doc.schemas.get('column')
     if (!parent || !columnSchema) return
     if (parent.flavour === 'column') {
+      if (parent.parentBlock!.childrenLength >= 8) {
+        this.doc.messageService.warn(`分栏最多支持8列`)
+        return
+      }
       const newColumn = this.doc.schemas.createSnapshot('column', [[]])
       const _insertIdx = parent.getIndexOfParent() + (position === 'left' ? 0 : 1)
       this.doc.crud.insertBlocks(parent.parentId!, _insertIdx, [newColumn])
