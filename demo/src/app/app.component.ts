@@ -1,8 +1,11 @@
 import {Component, ElementRef, ViewChild} from '@angular/core';
-import {Router} from "@angular/router";
+import {Router, RouterOutlet} from "@angular/router";
 import {MenuItemData} from "../types/menu.type";
 import {DocApiService} from "../services/doc-api.service";
 import {lastValueFrom} from "rxjs";
+import {MenuTreeComponent} from "../components/menu-tree/menu-tree";
+import {NzInputModule} from "ng-zorro-antd/input";
+import {FormsModule} from "@angular/forms";
 
 const DEFAULT_MENU_TREE_DATA: MenuItemData[] = [
   {
@@ -56,7 +59,9 @@ const DEFAULT_MENU_TREE_DATA: MenuItemData[] = [
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
-  styleUrls: ['./app.component.scss']
+  styleUrls: ['./app.component.scss'],
+  standalone: true,
+  imports: [RouterOutlet, MenuTreeComponent, NzInputModule, FormsModule]
 })
 export class AppComponent {
 

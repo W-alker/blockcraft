@@ -18,9 +18,9 @@ registerLocaleData(zh);
 
 @NgModule({
   declarations: [
-    AppComponent
   ],
   imports: [
+    AppComponent,
     BrowserModule,
     AppRoutingModule,
     NoopAnimationsModule,

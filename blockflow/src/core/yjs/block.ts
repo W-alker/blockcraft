@@ -175,6 +175,7 @@ export class BlockModel<Model extends IBlockModel = IBlockModel> {
   }
 
   get children(): Model extends IEditableBlockModel ? DeltaInsert[] : BlockModel<Model['children'] extends IEditableBlockModel[] ? IEditableBlockModel : IBlockModel>[] {
+    // @ts-ignore
     return this.nodeType === 'editable' ? this.getYText().toDelta() : this._childrenModel
   }
 
