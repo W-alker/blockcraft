@@ -6,17 +6,17 @@ import {
   getPositionWithOffset,
   UIEventStateContext
 } from "../../framework";
-import { Subject, Subscription, takeUntil } from "rxjs";
-import { OrderedBlockModel } from "../../blocks";
-import { isSimpleTypeEqual, nextTick } from "../../global";
-import { OrderedPrefixToolbar } from "./widgets/ordered-prefix-toolbar";
+import {Subject, Subscription, takeUntil} from "rxjs";
+import {OrderedBlockModel} from "../../blocks";
+import {isSimpleTypeEqual, nextTick} from "../../global";
+import {OrderedPrefixToolbar} from "./widgets/ordered-prefix-toolbar";
 
 export class OrderedBlockPlugin extends DocPlugin {
   private _sub = new Subscription()
 
   private _closeToolbar$ = new Subject()
 
-  @EventListen('mouseDown', { flavour: "ordered" })
+  @EventListen('mouseDown', {flavour: "ordered"})
   onMouseDown(ctx: UIEventStateContext) {
     if (this.doc.isReadonly) return
     const evt = ctx.getDefaultEvent<MouseEvent>()
@@ -25,7 +25,7 @@ export class OrderedBlockPlugin extends DocPlugin {
     const blockId = closetBlockId(evt.target)
     if (!blockId) return
     const orderedBlock = this.doc.getBlockById(blockId) as BlockCraft.IBlockComponents['ordered']
-    const { componentRef } = this.doc.overlayService.createConnectedOverlay<OrderedPrefixToolbar>({
+    const {componentRef} = this.doc.overlayService.createConnectedOverlay<OrderedPrefixToolbar>({
       target: evt.target,
       component: OrderedPrefixToolbar,
       positions: [getPositionWithOffset('bottom-left'), getPositionWithOffset('top-left')],
@@ -50,7 +50,7 @@ export class OrderedBlockPlugin extends DocPlugin {
       nextTick().then(() => {
 
         event.transactions.forEach(tr => {
-          const { inserted, deleted, block } = tr
+          const {inserted, deleted, block} = tr
           if (inserted) {
             const b = inserted.find(v => v.flavour === 'ordered')
             if (b) {
@@ -107,7 +107,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
   if (!block.props.start) {  // 本身就是起始编号就没必要往上找了
     for (let i = index - 1; i >= 0; i--) {
       const prevBlock = parentChildren[i]
-      if ((prevBlock.props.depth || 0) < (block.props.depth || 0)) {
+      if (prevBlock.props['heading'] && prevBlock.props['heading'] >= (block.props['heading'] || 0)) {
         break
       }
       if (prevBlock.flavour !== 'ordered') {
@@ -143,7 +143,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
   let order = aroundOrderBlocks[0].props.start ? aroundOrderBlocks[0].props.start - 1 : 0
   for (let b of aroundOrderBlocks) {
     if (b.props.order !== order) {
-      b.updateProps({ order })
+      b.updateProps({order})
     }
     order++
   }

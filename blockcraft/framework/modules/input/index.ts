@@ -537,9 +537,10 @@ export class InputTransformer {
         ...from.block.props,
         heading: null
       }])
-      this.doc.crud.insertBlocksBefore(from.block, [p]).then(() => {
-        this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
-      })
+      this.doc.crud.insertBlocksBefore(from.block, [p])
+        // .then(() => {
+        //   this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+        // })
       return true
     }
 
