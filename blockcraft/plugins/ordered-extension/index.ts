@@ -107,7 +107,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
   if (!block.props.start) {  // 本身就是起始编号就没必要往上找了
     for (let i = index - 1; i >= 0; i--) {
       const prevBlock = parentChildren[i]
-      if (prevBlock.props['heading'] && prevBlock.props['heading'] >= (block.props['heading'] || 0)) {
+      if (prevBlock.props['heading'] && prevBlock.props['heading'] < (block.props['heading'] || 0)) {
         break
       }
       if (prevBlock.flavour !== 'ordered') {

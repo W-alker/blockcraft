@@ -16,7 +16,7 @@ export enum InlineNodeType {
 export type IInlineNodeAttrs = ITextStyles & IBaseInlineAttr & IExpandedAttrs
 
 /**
- * inline attr key, it will render as `[bfi-${key}=${value}]`
+ * inline attr key, it will render as `[${key}=${value}]`
  */
 export type InlineAttrKey = `a:${string}`
 
