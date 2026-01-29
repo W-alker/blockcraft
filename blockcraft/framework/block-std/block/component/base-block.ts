@@ -96,8 +96,10 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     if (this.nodeType === BlockNodeType.void
       // || this.nodeType === BlockNodeType.block
     ) {
-      this.hostElement.prepend(createBlockGapSpace())
-      this.hostElement.appendChild(createBlockGapSpace())
+      requestAnimationFrame(() => {
+        this.hostElement.prepend(createBlockGapSpace())
+        this.hostElement.appendChild(createBlockGapSpace())
+      })
     }
     this.changeDetectorRef.markForCheck()
     this.onViewInit$.next(true)
@@ -262,7 +264,6 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return this.doc.getBlockPath(this.id)
   }
 
-  @performanceTest()
   getIndexOfParent() {
     return this.parentBlock?.childrenIds.indexOf(this.id) ?? -1
   }
