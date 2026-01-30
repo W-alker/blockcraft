@@ -100,7 +100,7 @@ const HEADING_LIST: IContextMenuItem[] = [
         <ng-container *ngTemplateOutlet="icon; context: {$implicit: activeBlockIcon}"></ng-container>
         <i [class]="['bc_icon', isEmpty ? 'bc_tianjia-2' : 'bc_yidong' ]"></i>
       </div>
-      <!--      <div class="virtual-hover-area"></div>-->
+      <div class="virtual-hover-area" style="padding-left: 4px;"></div>
     </div>
 
     <ng-template #icon let-item>
@@ -115,7 +115,9 @@ const HEADING_LIST: IContextMenuItem[] = [
       <bc-float-toolbar style="display: block; width: 224px; padding-top: 4px;" direction="column">
         @if (activeBlock?.nodeType === BlockNodeType.editable) {
           <h4 class="title">基础
-            <i class="bc_icon bc_xinxi" style="cursor: pointer;" nz-tooltip="鼠标停留在内容块选项上一段时间以查看对应快捷键和快速转化语法" [nzTooltipPlacement]="'top'"></i>
+            <i class="bc_icon bc_xinxi" style="cursor: pointer;"
+               nz-tooltip="鼠标停留在内容块选项上一段时间以查看对应快捷键和快速转化语法"
+               [nzTooltipPlacement]="'top'"></i>
           </h4>
           <ul class='base-list' (mousedown)="$event.preventDefault()">
             @for (item of HEADING_LIST; track item.value) {
@@ -143,7 +145,8 @@ const HEADING_LIST: IContextMenuItem[] = [
         } @else {
 
           @if (activeBlock?.nodeType === BlockNodeType.editable) {
-            <bc-float-toolbar-item class="append-more-btn" [expandable]="true" [bcOverlayTrigger]="alignList" [disabled]="menuDisabled"
+            <bc-float-toolbar-item class="append-more-btn" [expandable]="true" [bcOverlayTrigger]="alignList"
+                                   [disabled]="menuDisabled"
                                    [positions]="['right-center']" [offsetX]="2">
               <i [class]="['bc_icon', 'bc_zuoduiqi']"></i>
               <span>对齐方式</span>
@@ -161,7 +164,8 @@ const HEADING_LIST: IContextMenuItem[] = [
 
           <span class="bc-float-toolbar__divider"></span>
 
-          <bc-float-toolbar-item class="append-more-btn" [expandable]="true" [bcOverlayTrigger]="blockAddList" [disabled]="menuDisabled"
+          <bc-float-toolbar-item class="append-more-btn" [expandable]="true" [bcOverlayTrigger]="blockAddList"
+                                 [disabled]="menuDisabled"
                                  [positions]="['right-center']" [offsetX]="2">
             <i class="bc_icon bc_tianjia"></i>
             <span>在下方添加</span>
@@ -268,17 +272,19 @@ export class TriggerBtn {
 
     this.setIsEmpty()
 
-    // const parentBlock = this._activeBlock.parentBlock
+    const parentBlock = this._activeBlock.parentBlock!
     // this.draggable = !!parentBlock?.childrenLength && parentBlock.childrenLength > 1
 
     this._onDestroySub = this._activeBlock?.onDestroy$.pipe(take(1)).subscribe(() => {
       this.close()
     })
 
+    const ml = ['table-cell', 'column'].includes(parentBlock.flavour) ? 18 : 4
+
     const { top, left } = this.calcPos()
     this.display = 'block'
     this.host.nativeElement.style.transform = `
-      translate(${left - 44 - 18}px, ${top - 4}px)
+      translate(${left - 44 - ml}px, ${top - 4}px)
     `
     this.cdr.markForCheck()
   }
