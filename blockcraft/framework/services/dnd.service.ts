@@ -245,6 +245,18 @@ export class DocDndService {
     this._inBlock = null
   }
 
+  private _handleSourceParentAfterMove(blockId: string) {
+    const sourceParent = this.doc.getBlockById(blockId)
+    if (sourceParent?.childrenLength === 0) {
+      const schema = this.doc.schemas.get(sourceParent.flavour)!
+      if (schema.metadata.renderUnit) {
+        this.doc.crud.insertBlocks(sourceParent.id, 0, [this.doc.schemas.createSnapshot('paragraph', [])])
+      } else {
+        this.doc.crud.deleteBlockById(sourceParent.id)
+      }
+    }
+  }
+
   onSetColumn(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {
     const parent = targetBlock.parentBlock
     const columnSchema = this.doc.schemas.get('column')
@@ -254,10 +266,14 @@ export class DocDndService {
         this.doc.messageService.warn(`分栏最多支持8列`)
         return
       }
+
       const newColumn = this.doc.schemas.createSnapshot('column', [[]])
       const _insertIdx = parent.getIndexOfParent() + (position === 'left' ? 0 : 1)
+
+      const sourceParentId = block.parentId!
       this.doc.crud.insertBlocks(parent.parentId!, _insertIdx, [newColumn])
       this.doc.crud.moveBlocks(block.parentId!, block.getIndexOfParent(), 1, newColumn.id, 0)
+      this._handleSourceParentAfterMove(sourceParentId)
       return;
     }
     if (!this.doc.schemas.isValidChildren(block.flavour, columnSchema) || !this.doc.schemas.isValidChildren(targetBlock.flavour, columnSchema)) {
@@ -273,8 +289,10 @@ export class DocDndService {
       this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent(), [columns])
     })
     this.doc.crud.transact(() => {
+      const sourceParentId = block.parentId!
       this.doc.crud.moveBlocks(block.parentId!, block.getIndexOfParent(), 1, position === 'left' ? column1.id : column2.id, 0)
       this.doc.crud.moveBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent(), 1, position === 'left' ? column2.id : column1.id, 0)
+      this._handleSourceParentAfterMove(sourceParentId)
     })
   }
 
@@ -314,8 +332,12 @@ export class DocDndService {
       if (!isDepthEqual) {
         block.updateProps({depth: targetBlock.props['depth']})
       }
-      this.doc.crud.moveBlocks(block.parentId!, block.getIndexOfParent(), 1,
+
+      const sourceParentId = block.parentId!
+      this.doc.crud.moveBlocks(sourceParentId, block.getIndexOfParent(), 1,
         targetBlock.parentId!, targetIdx)
+
+      this._handleSourceParentAfterMove(sourceParentId)
     })
   }
 

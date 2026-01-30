@@ -95,7 +95,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     <div class="drag-handle"
          [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
          [disabled]="menuDisabled" (open)="setValidBlockList()" [delay]="500"
-         [withBackdrop]="false" activeClass="active" [draggable]="draggable">
+         [withBackdrop]="false" activeClass="active" draggable="true">
       <div class="btn">
         <ng-container *ngTemplateOutlet="icon; context: {$implicit: activeBlockIcon}"></ng-container>
         <i [class]="['bc_icon', isEmpty ? 'bc_tianjia-2' : 'bc_yidong' ]"></i>
@@ -253,7 +253,6 @@ export class TriggerBtn {
 
     if (!this._activeBlock) {
       this.close()
-      this.draggable = false
       return
     }
 
@@ -269,8 +268,8 @@ export class TriggerBtn {
 
     this.setIsEmpty()
 
-    const parentBlock = this._activeBlock.parentBlock
-    this.draggable = !!parentBlock?.childrenLength && parentBlock.childrenLength > 1
+    // const parentBlock = this._activeBlock.parentBlock
+    // this.draggable = !!parentBlock?.childrenLength && parentBlock.childrenLength > 1
 
     this._onDestroySub = this._activeBlock?.onDestroy$.pipe(take(1)).subscribe(() => {
       this.close()
@@ -307,7 +306,6 @@ export class TriggerBtn {
   }
 
   menuDisabled = false
-  draggable = true
   activeBlockIcon?: {
     icon?: string
     svgIcon?: string
