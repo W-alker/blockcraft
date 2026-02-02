@@ -5,7 +5,8 @@ import {
   getPositionWithOffset,
   STR_LINE_BREAK
 } from "../../framework";
-import { CodeBlockModel, isLanguageSupported, loadPrismLangComponent, PRISM_LANGUAGE_MAP } from "./index";
+import { CodeBlockModel } from "./index";
+import { isLanguageSupported, loadLanguage, SHIKI_LANGUAGE_MAP } from "./shiki-config";
 import { AsyncPipe, NgForOf } from "@angular/common";
 import { fromEvent, Subject, take, throttleTime } from "rxjs";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
@@ -63,7 +64,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   override async _init() {
     super._init();
     this._inlineManager = new CodeInlineManagerService(this.doc, this, {
-      lang: PRISM_LANGUAGE_MAP[this.props.lang],
+      lang: SHIKI_LANGUAGE_MAP[this.props.lang],
       withLineBreak: true
     })
   }
@@ -72,7 +73,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     super.ngAfterViewInit()
     this.onPropsChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
       if (e.has('lang')) {
-        this.inlineManager.setLang(PRISM_LANGUAGE_MAP[this.props.lang])
+        this.inlineManager.setLang(SHIKI_LANGUAGE_MAP[this.props.lang])
         this.rerender()
         return
       }
@@ -95,8 +96,9 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }, 200)
 
   override rerender() {
-    if (!isLanguageSupported(PRISM_LANGUAGE_MAP[this.props.lang])) {
-      loadPrismLangComponent(this.props.lang).then(() => {
+    const shikiLang = SHIKI_LANGUAGE_MAP[this.props.lang]
+    if (!isLanguageSupported(shikiLang)) {
+      loadLanguage(this.props.lang).then(() => {
         this.inlineManager.renderCode()
       })
     } else {

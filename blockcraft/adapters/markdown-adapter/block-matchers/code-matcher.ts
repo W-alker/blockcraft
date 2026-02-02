@@ -3,7 +3,8 @@ import {Code} from "mdast";
 import {BlockMarkdownAdapterMatcher} from "../block-adapter";
 import {BlockNodeType, DeltaInsert, generateId} from "../../../framework";
 import {deltaToString} from "../../../global";
-import {LANGUAGE_LIST, PRISM_LANGUAGE_MAP} from "../../../blocks/code-block/const";
+import {LANGUAGE_LIST} from "../../../blocks/code-block/const";
+import {SHIKI_LANGUAGE_MAP} from "../../../blocks/code-block/shiki-config";
 
 const isCodeNode = (node: MarkdownAST): node is Code => node.type === 'code';
 
@@ -43,7 +44,7 @@ export const codeBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher = {
         .openNode(
           {
             type: 'code',
-            lang: PRISM_LANGUAGE_MAP[(o.node.props['lang'] as keyof typeof PRISM_LANGUAGE_MAP)] || 'plaintext',
+            lang: SHIKI_LANGUAGE_MAP[(o.node.props['lang'] as keyof typeof SHIKI_LANGUAGE_MAP)] || 'plaintext',
             meta: null,
             value: deltaToString(o.node.children as DeltaInsert[]),
           },

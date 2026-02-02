@@ -4,11 +4,11 @@ import {
   Component,
   DestroyRef, ElementRef,
   EventEmitter,
-  HostBinding,
   Input,
   Output, ViewChild
 } from "@angular/core";
-import { CodeBlockLanguage, LANGUAGE_LIST, loadPrismLangComponent } from "./const";
+import { CodeBlockLanguage, LANGUAGE_LIST } from "./const";
+import { loadLanguage } from "./shiki-config";
 import { NgForOf } from "@angular/common";
 import { debounce } from "../../global";
 
@@ -97,7 +97,10 @@ export class LangListComponent {
   @ViewChild('input', { read: ElementRef }) input!: ElementRef<HTMLInputElement>
   @ViewChild('langList', { read: ElementRef }) langList!: ElementRef<HTMLElement>
 
-  protected languageList = LANGUAGE_LIST;
+  // 使用 LANGUAGE_LIST 作为语言列表（已排序的语言名称数组）
+  protected languageList: string[] = LANGUAGE_LIST;
+  // 保存初始完整列表用于搜索恢复
+  private readonly fullLanguageList = LANGUAGE_LIST;
 
   protected hoverIdx = -1;
 
@@ -145,8 +148,13 @@ export class LangListComponent {
   onSearch = debounce((e: Event) => {
     if (this.isComposing) return
     const v = (e.target as HTMLInputElement).value;
-    if (!v) this.languageList = LANGUAGE_LIST;
-    else this.languageList = LANGUAGE_LIST.filter(item => item.toLowerCase().includes(v.toLowerCase()));
+    if (!v) {
+      this.languageList = this.fullLanguageList;
+    } else {
+      this.languageList = this.fullLanguageList.filter(item =>
+        item.toLowerCase().includes(v.toLowerCase())
+      );
+    }
     this.hoverIdx = [0, this.hoverIdx, this.languageList.length].sort((a, b) => a - b)[1]
     this.cdr.markForCheck();
   }, 300)
@@ -181,7 +189,7 @@ export class LangListComponent {
   }
 
   async emitLang(lang: CodeBlockLanguage) {
-    await loadPrismLangComponent(lang)
+    await loadLanguage(lang)
     this.langChange.emit(lang)
   }
 }

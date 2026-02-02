@@ -88,8 +88,7 @@
               "blockcraft/assets/iconfont/bc-iconfont.css"
             ],
             "scripts": [
-              "node_modules/prismjs/plugins/autoloader/prism-autoloader.min.js",
-              "node_modules/prismjs/plugins/normalize-whitespace/prism-normalize-whitespace.js"
+
             ]
           },
           "configurations": {

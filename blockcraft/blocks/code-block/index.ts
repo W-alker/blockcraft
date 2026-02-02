@@ -32,6 +32,7 @@ export const CodeBlockSchema: IBlockSchemaOptions<CodeBlockModel> = {
 }
 
 export * from './const'
+export * from './shiki-config'
 
 declare global {
   namespace BlockCraft {

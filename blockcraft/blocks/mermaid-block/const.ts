@@ -1,5 +1,4 @@
 import {IMermaidType} from "./types";
-import 'prismjs/components/prism-mermaid';
 
 export const MERMAID_TYPE_LIST: IMermaidType[] = [
   {
