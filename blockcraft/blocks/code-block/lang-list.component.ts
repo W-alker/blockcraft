@@ -90,7 +90,7 @@ import { debounce } from "../../global";
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class LangListComponent {
-  @Input() activeLang: string = 'JavaScript';
+  @Input() activeLang: string = 'PlainText';
   @Output() langChange = new EventEmitter<CodeBlockLanguage>();
   @Output() destroy = new EventEmitter<void>()
 

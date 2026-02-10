@@ -64,6 +64,11 @@ class ShikiHighlighterService {
    * @param lang - 语言标识符
    */
   async ensureLanguageLoaded(lang: BundledLanguage): Promise<void> {
+    // @ts-ignore
+    if(lang === 'text') {
+      return Promise.resolve()
+    }
+
     const highlighter = await this.getHighlighter()
     const loadedLangs = highlighter.getLoadedLanguages()
 
@@ -95,6 +100,8 @@ export const shikiService = new ShikiHighlighterService()
  * 所有值都是 Shiki 内置支持的语言
  */
 export const SHIKI_LANGUAGE_MAP: Record<string, BundledLanguage> = {
+  // @ts-ignore
+  PlainText: 'text',
 
   // Web 基础语言
   HTML: 'html',

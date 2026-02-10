@@ -74,6 +74,11 @@
     color: var(--bc-color);
   }
 
+  ::-moz-selection {
+    background-color: var(--bc-select-background-color);
+    color: var(--bc-color);
+  }
+
   [data-block-id] {
     position: relative;
     margin-bottom: var(--bc-segments-gap);

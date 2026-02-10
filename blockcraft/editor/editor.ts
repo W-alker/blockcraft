@@ -31,7 +31,7 @@ import {
   TableRowBlockSchema,
   TodoBlockSchema
 } from "../blocks";
-import {ConsoleLogger, getRandomDarkColor, randomColor, throttle} from "../global";
+import {ConsoleLogger, getRandomDarkColor, nextTick, randomColor, throttle} from "../global";
 import {BulletBlockSchema} from "../blocks/bullet-block";
 import {FloatTextToolbarPlugin} from "../plugins/float-text-toolbar/rich-text-toolbar";
 import {BlockTransformerPlugin} from "../plugins/block-transformer";
@@ -66,6 +66,7 @@ import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
 import {fixTable} from "../blocks/table-block/callback";
 import {ColumnBlockSchema} from "../blocks/columns-block";
 import {demoJSON} from "./demo.data";
+import {DemoPresentationPlugin} from "../plugins/demo-presentation";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -142,20 +143,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
     <button (click)="enterRoom()">进入协同</button>
     <button (click)="quitRoom()">退出协同</button>
 
-    <div class="block-area">
-      <div draggable="true" (dragstart)="onDragStart($event, 'paragraph', {heading: 1})">
-        <i class="bc_icon bc_biaoti_1"></i>
-      </div>
-      <div draggable="true" (dragstart)="onDragStart($event, 'divider')">
-        <mat-icon svgIcon="bc_fengexian"></mat-icon>
-      </div>
-      <div draggable="true" (dragstart)="onDragStart($event, 'attachment')">
-        <mat-icon svgIcon="bc_wenjian-color"></mat-icon>
-      </div>
-      <div draggable="true" (dragstart)="onDragStart($event, 'figma-embed')">
-        <mat-icon svgIcon="bc_Figma"></mat-icon>
-      </div>
-    </div>
+    <button (click)="demo()">演示模式</button>
   `,
   styles: [`:host {
     margin: 20px;
@@ -322,7 +310,8 @@ export class EditorComponent {
         } else window.open(link, '_blank')
       }),
       new MentionPlugin(mentionRequest), new DividerExtensionPlugin(),
-      new FindReplacePlugin()
+      new FindReplacePlugin(),
+      new DemoPresentationPlugin()
     ]
   })
 
@@ -605,5 +594,14 @@ export class EditorComponent {
   toggleDark() {
     this.doc.toggleTheme(this.doc.theme === 'dark' ? 'light' : 'dark')
     document.body.style.backgroundColor = 'var(--bc-bg-primary)'
+  }
+
+  demo() {
+    // 进入演示模式
+    this.doc.toggleReadonly(true)
+    nextTick().then(() => {
+      // @ts-ignore
+      this.doc.enterDemoMode('presentation');
+    })
   }
 }

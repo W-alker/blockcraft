@@ -223,6 +223,7 @@ export class SelectionManager {
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
     evt.preventDefault()
+    evt.stopPropagation()
     const common = this.doc.getBlockById(selection.commonParent)
     if (this.doc.isEditable(common)) {
       if (selection.from.type !== 'text') return

@@ -5,23 +5,23 @@
     }
 
     &[data-heading='1'] {
+      font-size: calc(var(--bc-fs) * 2);
+      line-height: calc(var(--bc-lh) * 2);
+    }
+
+    &[data-heading='2'] {
       font-size: calc(var(--bc-fs) * 1.8);
       line-height: calc(var(--bc-lh) * 1.8);
     }
 
-    &[data-heading='2'] {
+    &[data-heading='3'] {
       font-size: calc(var(--bc-fs) * 1.6);
       line-height: calc(var(--bc-lh) * 1.6);
     }
 
-    &[data-heading='3'] {
+    &[data-heading='4'] {
       font-size: calc(var(--bc-fs) * 1.4);
       line-height: calc(var(--bc-lh) * 1.4);
-    }
-
-    &[data-heading='4'] {
-      font-size: calc(var(--bc-fs) * 1.2);
-      line-height: calc(var(--bc-lh) * 1.2);
     }
   }
 

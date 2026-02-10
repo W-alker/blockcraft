@@ -13,8 +13,14 @@ import type { BundledLanguage, ThemedToken } from 'shiki'
  * @param lines - Shiki 返回的 token 数组（按行）
  * @param withLineBreak - 是否处理换行符
  */
+/**
+ * 将 Shiki 的 token 数组展平为 Delta 操作数组
+ * 只使用 token 类型信息，不使用颜色（颜色由 CSS 主题控制）
+ * 参考 Prism 的 flatPrismTokens 实现
+ * @param lines - Shiki 返回的 token 数组（按行）
+ * @param withLineBreak - 是否添加 d:lineBreak 属性（换行符本身始终保留）
+ */
 const flatShikiTokens = (lines: ThemedToken[][], withLineBreak = true): DeltaInsertText[] => {
-  console.log('----themedTokens----', lines)
   const res: DeltaInsertText[] = []
 
   for (let i = 0; i < lines.length; i++) {
@@ -23,56 +29,22 @@ const flatShikiTokens = (lines: ThemedToken[][], withLineBreak = true): DeltaIns
     for (const token of line) {
       if (!token.content) continue
 
-      // 使用 token 的类型信息（explanation 中包含语法类型）
-      const color = token.color
+      const baseAttrs = token.color ? { 's:color': token.color } : undefined
 
-      const baseAttrs = color ? { 's:color': color } : undefined
-
-      // 处理 token 内容中的换行符
-      if (withLineBreak && token.content.includes(STR_LINE_BREAK)) {
-        let start = 0
-        while (true) {
-          const idx = token.content.indexOf(STR_LINE_BREAK, start)
-          if (idx === -1) break
-
-          // 换行符前的内容
-          if (idx > start) {
-            res.push({
-              insert: token.content.slice(start, idx),
-              attributes: baseAttrs
-            })
-          }
-
-          // 换行符本身
-          res.push({
-            insert: STR_LINE_BREAK,
-            attributes: baseAttrs ? { ...baseAttrs, 'd:lineBreak': true } : { 'd:lineBreak': true }
-          })
-
-          start = idx + 1
-        }
-
-        // 换行符后的剩余内容
-        if (start < token.content.length) {
-          res.push({
-            insert: token.content.slice(start),
-            attributes: baseAttrs
-          })
-        }
-      } else {
-        // 没有换行符，直接插入
-        res.push({
-          insert: token.content,
-          attributes: baseAttrs
-        })
-      }
+      // 直接插入 token 内容（保留空格等格式）
+      res.push({
+        insert: token.content,
+        attributes: baseAttrs
+      })
     }
 
     // 行尾换行符（除了最后一行）
-    if (withLineBreak && i < lines.length - 1) {
+    // Shiki 的每一行就是一个完整的行，行与行之间需要换行符
+    if (i < lines.length - 1) {
+      // withLineBreak 控制是否添加 d:lineBreak 属性，但换行符本身始终保留
       res.push({
         insert: STR_LINE_BREAK,
-        attributes: { 'd:lineBreak': true }
+        attributes: withLineBreak ? { 'd:lineBreak': true } : undefined
       })
     }
   }
@@ -101,7 +73,7 @@ export class CodeInlineManagerService extends InlineManager {
     doc: BlockCraft.Doc,
     protected block: EditableBlockComponent,
     protected options: IRenderOptions = {
-      lang: 'plaintext'
+      lang: 'text'
     }
   ) {
     super(doc);
@@ -118,11 +90,11 @@ export class CodeInlineManagerService extends InlineManager {
    * 获取当前语言的 Shiki 标识符
    */
   private getShikiLanguage(): BundledLanguage {
-    const lang = this.options.lang || 'plaintext';
+    const lang = this.options.lang || 'text';
 
     // 如果语言不存在或就是 plaintext，直接返回
-    if (!lang || lang === 'plaintext') {
-      return 'plaintext' as BundledLanguage
+    if (!lang || lang === 'text') {
+      return 'text' as BundledLanguage
     }
 
     return lang as BundledLanguage
@@ -158,8 +130,7 @@ export class CodeInlineManagerService extends InlineManager {
       // 使用 Shiki 进行语法高亮 - 获取 token 类型信息
       const result = highlighter.codeToTokens(text, {
         lang,
-        theme: 'github-light', // 需要指定主题，但我们只使用 token 类型
-        includeExplanation: 'scopeName'
+        theme: 'github-light',
       });
 
       // 转换为 Delta 格式

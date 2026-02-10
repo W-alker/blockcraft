@@ -201,6 +201,7 @@ export class BlockCraftDoc {
     }, context => {
       context.get('keyboardState').raw.shiftKey ? this.crud.undoManager.redo() : this.crud.undoManager.undo()
       context.preventDefault()
+      context.stopPropagation()
       return true
     }, { blockId: this.rootId })
 
