@@ -1,6 +1,6 @@
 import {ApplicationRef, ComponentRef, createComponent} from "@angular/core";
-import { DemoControlBarComponent } from "./widgets/demo-control-bar.component";
-import {throttle} from "../../global";
+import {DemoControlBarComponent} from "./widgets/demo-control-bar.component";
+import {nextTick, throttle} from "../../global";
 
 export interface DemoConfig {
   presentation?: {
@@ -14,7 +14,7 @@ export interface DemoConfig {
   };
   preview?: {
     showToolbar: boolean;
-  };
+  }
 }
 
 export class PresentationController {
@@ -29,7 +29,8 @@ export class PresentationController {
   constructor(
     private doc: BlockCraft.Doc,
     private config: DemoConfig
-  ) {}
+  ) {
+  }
 
   start() {
     // 保存原始状态
@@ -46,20 +47,23 @@ export class PresentationController {
     // 2. 设置只读模式
     this.doc.toggleReadonly(true);
 
-    // 3. 创建演示容器
-    this.createPresentationContainer();
+    nextTick().then(() => {
+      // 3. 创建演示容器
+      this.createPresentationContainer();
 
-    // 4. 进入全屏
-    this.enterFullscreen();
+      // 4. 进入全屏
+      this.enterFullscreen();
 
-    // 5. 渲染控制栏
-    this.renderControlBar();
+      // 5. 渲染控制栏
+      this.renderControlBar();
 
-    // 6. 绑定事件
-    this.bindEvents();
+      // 6. 绑定事件
+      this.bindEvents();
 
-    // 7. 显示第一页
-    this.renderPage(0);
+      // 7. 显示第一页
+      this.renderPage(0);
+    })
+
   }
 
   private analyzePages(): BlockCraft.BlockComponent[][] {
@@ -114,7 +118,7 @@ export class PresentationController {
   private createPresentationContainer() {
     // 创建演示容器
     this.presentationContainer = document.createElement('div');
-    this.presentationContainer.className = 'presentation-stage';
+    this.presentationContainer.className = 'presentation-stage readonly';
     this.presentationContainer.setAttribute('data-blockcraft-root', 'true')
     this.presentationContainer.style.cssText = `
       position: fixed;
@@ -125,19 +129,19 @@ export class PresentationController {
       background: var(--bc-bg-primary, #ffffff);
       z-index: 9999;
       overflow: auto;
-      padding: 60px;
+      padding: 10vh 10vw;
       box-sizing: border-box;
     `;
 
     // 创建内容包装器（限制宽度）
     this.contentWrapper = document.createElement('div');
     this.contentWrapper.style.cssText = `
-      max-width: 900px;
       margin: 0 auto;
-      min-height: calc(100vh - 120px);
+      min-height: calc(100% - 20vh);
       display: flex;
       flex-direction: column;
       justify-content: center;
+      width: 100%;
     `;
 
     this.presentationContainer.appendChild(this.contentWrapper);
