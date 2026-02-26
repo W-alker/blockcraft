@@ -1,17 +1,25 @@
 @font-face {
   font-family: "bc_icon"; /* Project id 4682833 */
-  src: url('bc-iconfont.woff2?t=1766992079249') format('woff2'),
-       url('bc-iconfont.woff?t=1766992079249') format('woff'),
-       url('bc-iconfont.ttf?t=1766992079249') format('truetype'),
-       url('bc-iconfont.svg?t=1766992079249#bc_icon') format('svg');
+  src: url('bc-iconfont.woff2?t=1772094261098') format('woff2'),
+       url('bc-iconfont.woff?t=1772094261098') format('woff'),
+       url('bc-iconfont.ttf?t=1772094261098') format('truetype'),
+       url('bc-iconfont.svg?t=1772094261098#bc_icon') format('svg');
 }
 
 .bc_icon {
   font-family: "bc_icon" !important;
-  font-size: inherit;
+  font-size: 1em;
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.bc_gongshi:before {
+  content: "\e62a";
+}
+
+.bc_fangdajing:before {
+  content: "\e629";
 }
 
 .bc_shipin:before {

@@ -33,6 +33,7 @@ import {
 } from "../blocks";
 import {ConsoleLogger, getRandomDarkColor, nextTick, randomColor, throttle} from "../global";
 import {BulletBlockSchema} from "../blocks/bullet-block";
+import {FormulaBlockSchema} from "../blocks/formula-block";
 import {FloatTextToolbarPlugin} from "../plugins/float-text-toolbar/rich-text-toolbar";
 import {BlockTransformerPlugin} from "../plugins/block-transformer";
 import {BlockControllerPlugin} from "../plugins/block-controller";
@@ -44,6 +45,7 @@ import {AttachmentExtensionPlugin} from "../plugins/attachment-extension";
 import {MyBlockCreatorService} from "./services/block-creator.service";
 import {EmbedFrameExtensionPlugin} from "../plugins/embed-frame-extension";
 import {BookmarkBlockExtensionPlugin} from "../plugins/bookmark-frame-extension";
+import {FormulaBlockExtensionPlugin} from "../plugins/formula-extension";
 import {InlineLinkExtension} from "../plugins/inline-link-extension";
 import {MatIcon} from "@angular/material/icon";
 import {DocDndDataTypes} from "../framework/services/dnd.service";
@@ -94,7 +96,8 @@ const schemas = new SchemaManager([
   FigmaEmbedBlockSchema, JuejinEmbedBlockSchema,
   CaptionBlockSchema, RootBlockSchema,
   MermaidTextareaBlockSchema, MermaidBlockSchema, BlockquoteBlockSchema,
-  ColumnsBlockSchema, ColumnBlockSchema
+  ColumnsBlockSchema, ColumnBlockSchema,
+  FormulaBlockSchema
 ])
 
 export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
@@ -278,7 +281,7 @@ export class EditorComponent {
       ],
       [
         'link', OLD_LINK_EMBED_CONVERTER
-      ]
+      ],
     ],
     plugins: [new OrderedBlockPlugin(), new CodeInlineEditorBinding(),
       new FloatTextToolbarPlugin(), new BlockTransformerPlugin(),
@@ -304,6 +307,7 @@ export class EditorComponent {
       new TableBlockBinding(),
       new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
       new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(),
+      new FormulaBlockExtensionPlugin(),
       new InlineLinkExtension((link) => {
         if (link.startsWith('http://doc-pre.com')) {
           window.open(link.replace('http://doc-pre.com', 'http://localhost:8081/test3'), '_blank')

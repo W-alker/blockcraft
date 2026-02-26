@@ -15,11 +15,13 @@ import {
   tableCellBlockHtmlAdapterMatcher,
   tableRowBlockHtmlAdapterMatcher
 } from "./table-matcher";
+import {formulaBlockHtmlAdapterMatcher} from "./formula-matcher";
 
 export const DEFAULT_BLOCK_MATCHERS: BlockHtmlAdapterMatcher[] = [
   paragraphBlockHtmlAdapterMatcher,
   listBlockAdapterMatcher,
   codeBlockHtmlAdapterMatcher,
+  formulaBlockHtmlAdapterMatcher,
   dividerBlockHtmlAdapterMatcher,
   imageBlockHtmlAdapterMatcher,
   embedFigmaBlockHtmlAdapterMatcher,

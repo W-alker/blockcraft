@@ -279,7 +279,7 @@ export class TriggerBtn {
       this.close()
     })
 
-    const ml = ['table-cell', 'column'].includes(parentBlock.flavour) ? 18 : 4
+    const ml = ['table-cell', 'column'].includes(parentBlock.flavour) ? 18 : 8
 
     const { top, left } = this.calcPos()
     this.display = 'block'

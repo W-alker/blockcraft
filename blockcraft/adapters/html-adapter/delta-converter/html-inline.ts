@@ -218,6 +218,30 @@ export const htmlBrElementToDeltaMatcher: HtmlASTToDeltaMatcher = {
   },
 };
 
+export const htmlMathInlineToDeltaMatcher: HtmlASTToDeltaMatcher = {
+  name: 'math-inline',
+  match: ast =>
+    isElement(ast) && (
+      (ast.tagName === 'code' && Array.isArray(ast.properties?.['className']) &&
+        (ast.properties['className'] as string[]).includes('math')) ||
+      (ast.tagName === 'span' && Array.isArray(ast.properties?.['className']) &&
+        (ast.properties['className'] as string[]).some(c => c === 'katex' || c === 'math-inline'))
+    ),
+  toDelta: (ast, context) => {
+    if (!isElement(ast)) return [];
+    const latex = (ast.properties?.['dataLatex'] as string) || '';
+    if (latex) {
+      return [{insert: latex, attributes: {'a:latex': latex}}];
+    }
+    return ast.children.flatMap(child =>
+      context.toDelta(child, {trim: false}).map(delta => {
+        delta.attributes = {...delta.attributes, 'a:latex': delta.insert as string};
+        return delta;
+      })
+    );
+  },
+};
+
 export const htmlInlineToDeltaMatchers: HtmlASTToDeltaMatcher[] = [
   htmlTextToDeltaMatcher,
   htmlTextLikeElementToDeltaMatcher,
@@ -229,4 +253,5 @@ export const htmlInlineToDeltaMatchers: HtmlASTToDeltaMatcher[] = [
   htmlLinkElementToDeltaMatcher,
   htmlMarkElementToDeltaMatcher,
   htmlBrElementToDeltaMatcher,
+  htmlMathInlineToDeltaMatcher,
 ];

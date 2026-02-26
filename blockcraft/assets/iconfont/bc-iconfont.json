@@ -6,6 +6,20 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "10352314",
+      "name": "公式",
+      "font_class": "gongshi",
+      "unicode": "e62a",
+      "unicode_decimal": 58922
+    },
+    {
+      "icon_id": "46509656",
+      "name": "搜索",
+      "font_class": "fangdajing",
+      "unicode": "e629",
+      "unicode_decimal": 58921
+    },
+    {
       "icon_id": "46494791",
       "name": "视频",
       "font_class": "shipin",

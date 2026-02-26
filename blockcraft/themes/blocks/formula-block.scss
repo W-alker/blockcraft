@@ -1,0 +1,74 @@
+@use '../function' as *;
+
+[data-blockcraft-root="true"] {
+  div.formula-block {
+    display: block;
+    border-radius: var(--bc-radius-lg);
+    overflow: hidden;
+    transition: border-color var(--bc-transition-fast);
+
+    &:has(.katex) {
+      border-color: transparent;
+    }
+
+    &:not(:has(.katex)) {
+      background-color: var(--bc-bg-hover);
+    }
+
+    &.selected, &.editing {
+      outline: 1px solid var(--bc-active-color);
+      box-shadow: var(--bc-shadow-sm);
+      background: var(--bc-active-color-lighter);
+    }
+
+    &:hover:not(.selected) {
+      background-color: var(--bc-bg-hover);
+    }
+
+    > [data-block-zero-space] {
+      display: none;
+    }
+
+    .formula-display {
+      padding: 12px 20px;
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      overflow-x: auto;
+      scrollbar-width: thin;
+
+      .katex-display {
+        margin: 0;
+      }
+
+      .katex {
+        font-size: 1.1em;
+      }
+
+      .formula-placeholder {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--bc-color-lighter);
+        font-size: calc(var(--bc-fs) * 0.9);
+      }
+
+      .formula-placeholder-icon {
+        font-family: 'CMU Serif', 'Latin Modern Math', Georgia, serif;
+        font-size: 1.1em;
+        font-weight: 600;
+        font-style: italic;
+        color: var(--bc-color-secondary);
+
+        sub {
+          font-size: 0.7em;
+          vertical-align: -0.15em;
+          margin-left: -0.1em;
+        }
+      }
+    }
+  }
+}

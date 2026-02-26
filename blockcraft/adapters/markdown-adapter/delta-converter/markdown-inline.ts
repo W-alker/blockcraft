@@ -95,16 +95,22 @@ export const markdownListToDeltaMatcher: MarkdownASTToDeltaMatcher = {
   toDelta: () => [],
 };
 
-// export const markdownInlineMathToDeltaMatcher: MarkdownASTToDeltaMatcher = {
-//   name: 'inlineMath',
-//   match: ast => ast.type === 'inlineMath',
-//   toDelta: ast => {
-//     if (!('value' in ast)) {
-//       return [];
-//     }
-//     return [{insert: ' ', attributes: {latex: ast.value}}];
-//   },
-// };
+export const markdownTableToDeltaMatcher: MarkdownASTToDeltaMatcher = {
+  name: 'table',
+  match: ast => ast.type === 'table' || ast.type === 'tableRow',
+  toDelta: () => [],
+};
+
+export const markdownInlineMathToDeltaMatcher: MarkdownASTToDeltaMatcher = {
+  name: 'inlineMath',
+  match: ast => ast.type === 'inlineMath',
+  toDelta: ast => {
+    if (!('value' in ast)) {
+      return [];
+    }
+    return [{insert: ast.value, attributes: {'a:latex': ast.value}}];
+  },
+};
 
 export const markdownInlineToDeltaMatchers: MarkdownASTToDeltaMatcher[] = [
   markdownTextToDeltaMatcher,
@@ -113,6 +119,7 @@ export const markdownInlineToDeltaMatchers: MarkdownASTToDeltaMatcher[] = [
   markdownEmphasisToDeltaMatcher,
   markdownDeleteToDeltaMatcher,
   markdownLinkToDeltaMatcher,
-  // markdownInlineMathToDeltaMatcher,
+  markdownInlineMathToDeltaMatcher,
   markdownListToDeltaMatcher,
+  markdownTableToDeltaMatcher,
 ];

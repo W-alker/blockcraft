@@ -37,45 +37,57 @@ export class ASTWalker<ONode extends object, TNode extends object | never> {
       return;
     }
 
+    // Collect all traversable child nodes across all properties into a flat list,
+    // so that `next` can be correctly computed across property boundaries.
+    const flatChildren: {
+      node: ONode;
+      prop: Keyof<ONode>;
+      index: number | null;
+    }[] = [];
+
     for (const key in o.node) {
       const value = o.node[key];
-
       if (value && typeof value === 'object') {
         if (Array.isArray(value)) {
-          for (
-            let i = this.context._skipChildrenNum;
-            i < value.length;
-            i += 1
-          ) {
+          for (let i = 0; i < value.length; i++) {
             const item = value[i];
             if (
               item !== null &&
               typeof item === 'object' &&
               this._isONode(item)
             ) {
-              const nextItem = value[i + 1] ?? null;
-              await this._visit({
+              flatChildren.push({
                 node: item,
-                next: nextItem,
-                parent: o,
                 prop: key as unknown as Keyof<ONode>,
                 index: i,
               });
             }
           }
-        } else if (
-          this.context._skipChildrenNum === 0 &&
-          this._isONode(value)
-        ) {
-          await this._visit({
+        } else if (this._isONode(value)) {
+          flatChildren.push({
             node: value,
-            next: null,
-            parent: o,
             prop: key as unknown as Keyof<ONode>,
             index: null,
           });
         }
       }
+    }
+
+    // Visit children with correct `next` references
+    for (
+      let i = this.context._skipChildrenNum;
+      i < flatChildren.length;
+      i++
+    ) {
+      const child = flatChildren[i];
+      const nextChild = flatChildren[i + 1] ?? null;
+      await this._visit({
+        node: child.node,
+        next: nextChild ? nextChild.node : null,
+        parent: o,
+        prop: child.prop,
+        index: child.index,
+      });
     }
 
     if (this._leave) {

@@ -146,8 +146,29 @@ export const mentionDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher =
     },
   };
 
+export const latexDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher =
+  {
+    name: 'latex',
+    match: delta => !!delta.attributes?.['a:latex'],
+    toAST: delta => ({
+      type: 'element',
+      tagName: 'code',
+      properties: {
+        className: ['math', 'math-inline'],
+        dataLatex: delta.attributes?.['a:latex'] as string,
+      },
+      children: [
+        {
+          type: 'text',
+          value: delta.attributes?.['a:latex'] as string,
+        },
+      ],
+    }),
+  };
+
 export const inlineDeltaToHtmlAdapterMatchers: InlineDeltaToHtmlAdapterMatcher[] =
   [
+    latexDeltaToHtmlAdapterMatcher,
     boldDeltaToHtmlAdapterMatcher,
     italicDeltaToHtmlAdapterMatcher,
     strikeDeltaToHtmlAdapterMatcher,

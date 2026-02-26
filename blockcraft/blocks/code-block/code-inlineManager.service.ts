@@ -1,56 +1,102 @@
 import {
   DeltaInsertText, DeltaOperation, EditableBlockComponent,
+  INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS,
   InlineManager,
   STR_LINE_BREAK
 } from "../../framework";
 import { shikiService } from "./shiki-config";
 import type { BundledLanguage, ThemedToken } from 'shiki'
+import {performanceTest} from "../../global";
 
-/**
- * 将 Shiki 的 token 数组展平为 Delta 操作数组
- * 只使用 token 类型信息，不使用颜色（颜色由 CSS 主题控制）
- * 参考 Prism 的 flatPrismTokens 实现
- * @param lines - Shiki 返回的 token 数组（按行）
- * @param withLineBreak - 是否处理换行符
- */
-/**
- * 将 Shiki 的 token 数组展平为 Delta 操作数组
- * 只使用 token 类型信息，不使用颜色（颜色由 CSS 主题控制）
- * 参考 Prism 的 flatPrismTokens 实现
- * @param lines - Shiki 返回的 token 数组（按行）
- * @param withLineBreak - 是否添加 d:lineBreak 属性（换行符本身始终保留）
- */
+// ─── Token 工具 ───
+
 const flatShikiTokens = (lines: ThemedToken[][], withLineBreak = true): DeltaInsertText[] => {
   const res: DeltaInsertText[] = []
-
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-
-    for (const token of line) {
+    for (const token of lines[i]) {
       if (!token.content) continue
-
-      const baseAttrs = token.color ? { 's:color': token.color } : undefined
-
-      // 直接插入 token 内容（保留空格等格式）
       res.push({
         insert: token.content,
-        attributes: baseAttrs
+        attributes: token.color ? { 's:color': token.color } : undefined
       })
     }
-
-    // 行尾换行符（除了最后一行）
-    // Shiki 的每一行就是一个完整的行，行与行之间需要换行符
     if (i < lines.length - 1) {
-      // withLineBreak 控制是否添加 d:lineBreak 属性，但换行符本身始终保留
       res.push({
         insert: STR_LINE_BREAK,
         attributes: withLineBreak ? { 'd:lineBreak': true } : undefined
       })
     }
   }
-
   return res
 }
+
+// ─── 行级 Diff ───
+
+interface TokenLine {
+  deltas: DeltaInsertText[]
+  /** 指纹：每个 token 的文本+颜色拼接，用于快速判等 */
+  fp: string
+}
+
+/** 按 \n delta 分行，同时计算每行指纹 */
+function groupTokenLines(deltas: DeltaInsertText[]): TokenLine[] {
+  const lines: TokenLine[] = []
+  let cur: DeltaInsertText[] = []
+  let fp = ''
+
+  for (const d of deltas) {
+    cur.push(d)
+    // 指纹 = 每个 token 的 "文本内容\0颜色\0" 拼接
+    fp += d.insert + '\0' + (d.attributes?.['s:color'] || '') + '\0'
+    if (d.insert === STR_LINE_BREAK && d.attributes?.['d:lineBreak']) {
+      lines.push({ deltas: cur, fp })
+      cur = []
+      fp = ''
+    }
+  }
+  if (cur.length) lines.push({ deltas: cur, fp })
+  return lines
+}
+
+/**
+ * 从 DOM 容器按 lineBreak 元素分行，返回每行包含的 c-element 列表。
+ * 仅用于定位要移除/插入的 DOM 节点，不参与指纹比较。
+ */
+function readDOMLineElements(container: HTMLElement): HTMLElement[][] {
+  const all = Array.from(
+    container.querySelectorAll(INLINE_ELEMENT_TAG)
+  ) as HTMLElement[]
+
+  const lines: HTMLElement[][] = []
+  let cur: HTMLElement[] = []
+
+  for (const ele of all) {
+    if (ele.classList.contains(INLINE_END_BREAK_CLASS)) continue
+    cur.push(ele)
+    if (ele.textContent === STR_LINE_BREAK && ele.dataset['lineBreak']) {
+      lines.push(cur)
+      cur = []
+    }
+  }
+  if (cur.length) lines.push(cur)
+  return lines
+}
+
+/** DOM 行的纯文本 */
+function domLineText(elements: HTMLElement[]): string {
+  let s = ''
+  for (const ele of elements) s += ele.textContent || ''
+  return s
+}
+
+/** Token 行的纯文本 */
+function tokenLineText(line: TokenLine): string {
+  let s = ''
+  for (const d of line.deltas) s += d.insert
+  return s
+}
+
+// ─── Service ───
 
 interface IRenderOptions {
   lang: string;
@@ -60,150 +106,192 @@ interface IRenderOptions {
 /**
  * 基于 Shiki 的代码高亮内联管理服务
  *
- * 特性：
- * - 使用 VS Code 的 TextMate 语法引擎
- * - 更准确的语法高亮
- * - 只使用 token 类型信息，样式由 CSS 主题控制
- * - 差分更新，仅重新渲染变化的部分
- * - 保持光标位置
+ * 行级差分策略：
+ * 1. Shiki tokenize 全文 → 按行分组 + 计算指纹
+ * 2. 新旧指纹都来自 Shiki token（hex 颜色），格式天然一致
+ * 3. 前后缀收缩找变化行区间
+ * 4. 从 DOM 定位对应行的 c-element → 移除旧的 → 插入新的
+ *
+ * 关键：指纹比较不读 DOM（避免浏览器 hex→rgb 转换导致永远不匹配）
  */
 export class CodeInlineManagerService extends InlineManager {
+
+  /** 上次每行的指纹，用于行级 diff */
+  private _lineFPs: string[] = []
 
   constructor(
     doc: BlockCraft.Doc,
     protected block: EditableBlockComponent,
-    protected options: IRenderOptions = {
-      lang: 'text'
-    }
+    protected options: IRenderOptions = { lang: 'text' }
   ) {
     super(doc);
   }
 
-  /**
-   * 设置当前语言
-   */
   setLang(lang: string) {
     this.options.lang = lang;
+    this._lineFPs = [];
   }
 
-  /**
-   * 获取当前语言的 Shiki 标识符
-   */
   private getShikiLanguage(): BundledLanguage {
     const lang = this.options.lang || 'text';
-
-    // 如果语言不存在或就是 plaintext，直接返回
-    if (!lang || lang === 'text') {
-      return 'text' as BundledLanguage
-    }
-
+    if (!lang || lang === 'text') return 'text' as BundledLanguage
     return lang as BundledLanguage
   }
 
-  /**
-   * 差分高亮：根据 Delta 操作重新高亮代码
-   * @param ops - Delta 操作数组
-   */
-  async diffHighLight(ops: DeltaOperation[]) {
-    // 保存光标位置
+  private async _tokenize(text: string): Promise<DeltaInsertText[]> {
+    const highlighter = await shikiService.getHighlighter();
+    const lang = this.getShikiLanguage();
+    await shikiService.ensureLanguageLoaded(lang);
+    const result = highlighter.codeToTokens(text, {
+      lang, theme: 'github-light',
+    });
+    return flatShikiTokens(result.tokens, this.options.withLineBreak);
+  }
+
+  @performanceTest()
+  async diffHighLight(_ops: DeltaOperation[]) {
     const isHere = this.doc.selection.value?.from.blockId === this.block.id;
     let pos = 0;
-
     if (isHere) {
-      const sel = this.doc.selection.normalizeRange(document.getSelection()!.getRangeAt(0));
+      const sel = this.doc.selection.normalizeRange(
+        document.getSelection()!.getRangeAt(0)
+      );
       pos = sel?.from.type === 'text' ? sel.from.index : 0;
     }
 
     try {
-      // 获取高亮器
-      const highlighter = await shikiService.getHighlighter();
-
-      // 获取语言标识符
-      const lang = this.getShikiLanguage();
-
-      // 确保语言已加载
-      await shikiService.ensureLanguageLoaded(lang);
-
-      // 获取代码文本
       const text = this.block.textContent();
+      const newDeltas = await this._tokenize(text);
+      const newLines = groupTokenLines(newDeltas);
+      const newFPs = newLines.map(l => l.fp);
+      const oldFPs = this._lineFPs;
 
-      // 使用 Shiki 进行语法高亮 - 获取 token 类型信息
-      const result = highlighter.codeToTokens(text, {
-        lang,
-        theme: 'github-light',
-      });
+      // 快速判等：指纹数组完全一致则跳过
+      if (oldFPs.length === newFPs.length && oldFPs.every((fp, i) => fp === newFPs[i])) {
+        return;
+      }
 
-      // 转换为 Delta 格式
-      const deltas = flatShikiTokens(result.tokens, this.options.withLineBreak);
+      const container = this.block.containerElement;
 
-      // 渲染到 DOM
-      this.render(deltas, this.block.containerElement);
+      if (!oldFPs.length) {
+        // 首次渲染
+        this.render(newDeltas, container);
+      } else {
+        this._patchLines(container, newLines, newFPs);
+      }
 
-      // 恢复光标位置
+      this._lineFPs = newFPs;
+
       if (isHere) {
         this.block.setInlineRange(pos);
       }
     } catch (error) {
       console.error('[ShikiInlineManager] 高亮失败:', error);
-      // 失败时降级为普通文本
+      this._lineFPs = [];
       this.renderPlainText();
     }
   }
 
   /**
-   * 完整重新渲染代码高亮
+   * 行级 DOM patch
+   *
+   * 核心难点：框架的 applyDeltaToView 在本方法之前已修改了 DOM
+   * （插入/删除用户输入的字符），导致 DOM 的 c-element 结构和
+   * _lineFPs 缓存不一致。
+   *
+   * 解决：用 DOM 行的纯文本 vs token 行的纯文本做前后缀收缩。
+   * 文本相同 + 指纹相同 → 该行不需要更新。
+   * 其余行整行替换 DOM 节点。
    */
+  private _patchLines(
+    container: HTMLElement,
+    newLines: TokenLine[],
+    newFPs: string[]
+  ) {
+    const domLines = readDOMLineElements(container);
+    const domLen = domLines.length;
+    const newLen = newLines.length;
+    const oldFPs = this._lineFPs;
+    const oldLen = oldFPs.length;
+
+    // 前缀收缩：DOM 行文本 === token 行文本 且 指纹没变
+    // 需要同时约束 domLen、newLen、oldLen，避免 oldFPs[prefix] 越界
+    const prefixMax = Math.min(domLen, newLen, oldLen);
+    let prefix = 0;
+    while (prefix < prefixMax) {
+      if (domLineText(domLines[prefix]) !== tokenLineText(newLines[prefix])) break;
+      if (oldFPs[prefix] !== newFPs[prefix]) break;
+      prefix++;
+    }
+
+    // 后缀收缩（从各自末尾向前比较）
+    // oldFPs 用 oldLen 索引，避免 domLen !== oldLen 时取到错误指纹
+    const suffixMax = Math.min(domLen, newLen, oldLen) - prefix;
+    let suffix = 0;
+    while (suffix < suffixMax) {
+      const di = domLen - 1 - suffix;
+      const ni = newLen - 1 - suffix;
+      const oi = oldLen - 1 - suffix;
+      if (domLineText(domLines[di]) !== tokenLineText(newLines[ni])) break;
+      if (oldFPs[oi] !== newFPs[ni]) break;
+      suffix++;
+    }
+
+    // 全部一致
+    if (prefix + suffix >= domLen && prefix + suffix >= newLen) return;
+
+    // 找插入锚点
+    const endBreak = container.querySelector('.' + INLINE_END_BREAK_CLASS)!;
+    let insertBefore: Node = endBreak;
+    if (suffix > 0) {
+      insertBefore = domLines[domLen - suffix][0];
+    }
+
+    // 移除旧变化行
+    for (let i = prefix; i < domLen - suffix; i++) {
+      for (const ele of domLines[i]) ele.remove();
+    }
+
+    // 插入新变化行
+    for (let i = prefix; i < newLen - suffix; i++) {
+      for (const d of newLines[i].deltas) {
+        container.insertBefore(this.createInlineNode(d), insertBefore);
+      }
+    }
+  }
+
   async renderCode() {
     try {
-      const highlighter = await shikiService.getHighlighter();
-      const lang = this.getShikiLanguage();
-
-      // 确保语言已加载
-      await shikiService.ensureLanguageLoaded(lang);
-
       const text = this.block.textContent();
-
-      // 使用 Shiki 进行语法高亮 - 获取 token 类型信息
-      const result = highlighter.codeToTokens(text, {
-        lang,
-        theme: 'github-light', // 需要指定主题，但我们只使用 token 类型
-        includeExplanation: 'scopeName'
-      });
-
-      const deltas = flatShikiTokens(result.tokens, this.options.withLineBreak);
+      const deltas = await this._tokenize(text);
       this.render(deltas, this.block.containerElement);
+      const lines = groupTokenLines(deltas);
+      this._lineFPs = lines.map(l => l.fp);
     } catch (error) {
       console.error('[ShikiInlineManager] 渲染失败:', error);
+      this._lineFPs = [];
       this.renderPlainText();
     }
   }
 
-  /**
-   * 渲染为普通文本（备用方案）
-   */
   private renderPlainText() {
     const text = this.block.textContent();
     const deltas: DeltaInsertText[] = [];
-
     if (this.options.withLineBreak && text.includes(STR_LINE_BREAK)) {
       let start = 0;
       while (true) {
         const idx = text.indexOf(STR_LINE_BREAK, start);
         if (idx === -1) break;
-
-        if (idx > start) {
-          deltas.push({ insert: text.slice(start, idx) });
-        }
+        if (idx > start) deltas.push({ insert: text.slice(start, idx) });
         deltas.push({ insert: STR_LINE_BREAK, attributes: { 'd:lineBreak': true } });
         start = idx + 1;
       }
-      if (start < text.length) {
-        deltas.push({ insert: text.slice(start) });
-      }
+      if (start < text.length) deltas.push({ insert: text.slice(start) });
     } else {
       deltas.push({ insert: text });
     }
-
     this.render(deltas, this.block.containerElement);
+    const lines = groupTokenLines(deltas);
+    this._lineFPs = lines.map(l => l.fp);
   }
 }

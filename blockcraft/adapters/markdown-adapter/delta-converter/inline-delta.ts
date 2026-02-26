@@ -84,31 +84,30 @@ export const linkDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatc
     },
   };
 
-// export const latexDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatcher =
-//   {
-//     name: 'inlineLatex',
-//     match: delta => !!delta.attributes?.latex,
-//     toAST: delta => {
-//       const mdast: PhrasingContent = {
-//         type: 'text',
-//         value: delta.insert,
-//       };
-//       if (delta.attributes?.latex) {
-//         return {
-//           type: 'inlineMath',
-//           value: delta.attributes.latex,
-//         };
-//       }
-//       return mdast;
-//     },
-//   };
+export const latexDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatcher =
+  {
+    name: 'inlineLatex',
+    match: delta => !!delta.attributes?.['a:latex'],
+    toAST: delta => {
+      if (delta.attributes?.['a:latex']) {
+        return {
+          type: 'inlineMath',
+          value: delta.attributes['a:latex'] as string,
+        };
+      }
+      return {
+        type: 'text',
+        value: delta.insert as string,
+      };
+    },
+  };
 
 export const inlineDeltaToMarkdownAdapterMatchers: InlineDeltaToMarkdownAdapterMatcher[] =
   [
+    latexDeltaToMarkdownAdapterMatcher,
     linkDeltaToMarkdownAdapterMatcher,
     inlineCodeDeltaToMarkdownAdapterMatcher,
     boldDeltaToMarkdownAdapterMatcher,
     italicDeltaToMarkdownAdapterMatcher,
     strikeDeltaToMarkdownAdapterMatcher,
-    // latexDeltaToMarkdownAdapterMatcher,
   ];
