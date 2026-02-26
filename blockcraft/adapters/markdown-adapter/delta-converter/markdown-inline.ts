@@ -108,7 +108,7 @@ export const markdownInlineMathToDeltaMatcher: MarkdownASTToDeltaMatcher = {
     if (!('value' in ast)) {
       return [];
     }
-    return [{insert: ast.value, attributes: {'a:latex': ast.value}}];
+    return [{insert: {latex: ast.value}}];
   },
 };
 

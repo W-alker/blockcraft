@@ -57,6 +57,7 @@ import {applyUpdate, Doc, mergeUpdates} from "yjs";
 import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
 // @ts-ignore
 import {WebsocketProvider} from './ws'
+import katex from 'katex'
 import {MentionPlugin} from "./plugins/mention";
 import * as Y from 'yjs'
 import {BlockCraftAwareness} from "./awa";
@@ -281,6 +282,34 @@ export class EditorComponent {
       ],
       [
         'link', OLD_LINK_EMBED_CONVERTER
+      ],
+      [
+        'latex', {
+        toView: (embed) => {
+          const span = document.createElement('span')
+          span.classList.add('inline-formula')
+          const latex = (embed.insert['latex'] || '') as string
+          span.setAttribute('data-latex', latex)
+          try {
+            katex.render(latex, span, {output: 'mathml', throwOnError: false})
+          } catch {
+            span.textContent = latex
+          }
+          return span
+        },
+        toDelta: (ele) => {
+          return {
+            insert: {latex: ele.getAttribute('data-latex') || ele.textContent || ''},
+            attributes: InlineManager.getAttrs(ele)
+          }
+        },
+        onDestroy: (ele) => {
+          console.log('latex embed destroyed')
+        },
+        onMount: (ele) => {
+          console.log('latex embed mounted')
+        }
+      }
       ],
     ],
     plugins: [new OrderedBlockPlugin(), new CodeInlineEditorBinding(),

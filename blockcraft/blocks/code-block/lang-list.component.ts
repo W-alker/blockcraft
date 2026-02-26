@@ -142,7 +142,7 @@ export class LangListComponent {
   }
 
   viewHoverLang() {
-    this.langList.nativeElement.children[this.hoverIdx]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    this.langList.nativeElement.children[this.hoverIdx]?.scrollIntoView({ block: 'nearest' })
   }
 
   onSearch = debounce((e: Event) => {

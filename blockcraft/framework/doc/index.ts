@@ -179,6 +179,7 @@ export class BlockCraftDoc {
     // listen root destroy, release all resources
     comp.onDestroy$.pipe(take(1)).subscribe(() => {
       this.onDestroy$.next(true)
+      this.inlineManager.destroy()
       this.plugins.forEach(plugin => plugin.destroy())
       this.vm.clear()
     })

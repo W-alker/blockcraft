@@ -231,14 +231,12 @@ export const htmlMathInlineToDeltaMatcher: HtmlASTToDeltaMatcher = {
     if (!isElement(ast)) return [];
     const latex = (ast.properties?.['dataLatex'] as string) || '';
     if (latex) {
-      return [{insert: latex, attributes: {'a:latex': latex}}];
+      return [{insert: {latex}}];
     }
-    return ast.children.flatMap(child =>
-      context.toDelta(child, {trim: false}).map(delta => {
-        delta.attributes = {...delta.attributes, 'a:latex': delta.insert as string};
-        return delta;
-      })
-    );
+    const text = ast.children.flatMap(child =>
+      context.toDelta(child, {trim: false})
+    ).map(d => d.insert as string).join('');
+    return text ? [{insert: {latex: text}}] : [];
   },
 };
 

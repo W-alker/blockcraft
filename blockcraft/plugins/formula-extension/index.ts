@@ -1,4 +1,4 @@
-import {closetBlockId, DocPlugin, EventListen, getPositionWithOffset} from "../../framework";
+import {closetBlockId, DocPlugin, EditableBlockComponent, EventListen, getPositionWithOffset, INLINE_ELEMENT_TAG} from "../../framework";
 import {Subject, takeUntil} from "rxjs";
 import {FormulaBlockToolbar} from "./widgets/formula-toolbar";
 import {UIEventStateContext} from "../../framework";
@@ -14,7 +14,7 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
   init() {}
 
   @EventListen('mouseDown', {flavour: 'formula'})
-  onClick(ctx: UIEventStateContext) {
+  onBlockClick(ctx: UIEventStateContext) {
     const target = ctx.getDefaultEvent().target as Node
     const blockId = closetBlockId(target)
     if (!blockId) return
@@ -46,6 +46,67 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
     })
 
     return true
+  }
+
+  @EventListen('mouseDown', {flavour: 'root'})
+  onInlineClick(ctx: UIEventStateContext) {
+    const target = ctx.getDefaultEvent().target as Element | null
+    if (!target || !(target instanceof Element)) return
+
+    const formulaEl = target.closest('.inline-formula') as HTMLElement | null
+    if (!formulaEl) return
+
+    const cElement = formulaEl.closest(INLINE_ELEMENT_TAG) as HTMLElement | null
+    if (!cElement) return
+
+    const blockId = closetBlockId(target)
+    if (!blockId) return
+
+    const block = this.doc.getBlockById(blockId)
+    if (!this.doc.isEditable(block)) return
+
+    const embedIndex = this._getEmbedIndex(block, cElement)
+    if (embedIndex < 0) return
+
+    const latex = formulaEl.getAttribute('data-latex') || ''
+
+    this.closeToolbar()
+
+    const {componentRef} = this.doc.overlayService.createConnectedOverlay<FormulaBlockToolbar>({
+      target: formulaEl,
+      component: FormulaBlockToolbar,
+      positions: [
+        getPositionWithOffset("bottom-center", 0, 8),
+        getPositionWithOffset("top-center", 0, 8),
+      ],
+      backdrop: true
+    }, this._closeToolbar$, this.closeToolbar)
+
+    componentRef.setInput('doc', this.doc)
+    componentRef.setInput('initialLatex', latex)
+    this._toolbarRef = componentRef
+
+    componentRef.instance.confirm.pipe(takeUntil(this._closeToolbar$)).subscribe(newLatex => {
+      block.applyDeltaOperations([
+        {retain: embedIndex},
+        {delete: 1},
+        {insert: {latex: newLatex}}
+      ])
+      this.closeToolbar()
+    })
+
+    return true
+  }
+
+  private _getEmbedIndex(block: EditableBlockComponent, cElement: HTMLElement): number {
+    const elements = Array.from(block.containerElement.querySelectorAll(INLINE_ELEMENT_TAG))
+    let index = 0
+    for (const el of elements) {
+      if (el === cElement) return index
+      const isEmbed = (el.firstElementChild as HTMLElement)?.contentEditable === 'false'
+      index += isEmbed ? 1 : (el.textContent?.length || 0)
+    }
+    return -1
   }
 
   closeToolbar = () => {

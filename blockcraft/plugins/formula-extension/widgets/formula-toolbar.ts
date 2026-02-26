@@ -92,6 +92,7 @@ import katex from 'katex';
 export class FormulaBlockToolbar implements AfterViewInit {
   @Input() block!: BlockCraft.IBlockComponents['formula'];
   @Input() doc!: BlockCraft.Doc;
+  @Input() initialLatex = '';
   @Output() confirm = new EventEmitter<string>();
 
   @ViewChild('preview') preview!: ElementRef<HTMLElement>;
@@ -102,7 +103,7 @@ export class FormulaBlockToolbar implements AfterViewInit {
   constructor(private cdr: ChangeDetectorRef) {}
 
   ngAfterViewInit() {
-    this.latex = this.block?.props?.latex || '';
+    this.latex = this.initialLatex || this.block?.props?.latex || '';
     this.cdr.detectChanges();
     this.renderPreview();
     setTimeout(() => {

@@ -149,21 +149,24 @@ export const mentionDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher =
 export const latexDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher =
   {
     name: 'latex',
-    match: delta => !!delta.attributes?.['a:latex'],
-    toAST: delta => ({
-      type: 'element',
-      tagName: 'code',
-      properties: {
-        className: ['math', 'math-inline'],
-        dataLatex: delta.attributes?.['a:latex'] as string,
-      },
-      children: [
-        {
-          type: 'text',
-          value: delta.attributes?.['a:latex'] as string,
+    match: delta => typeof delta.insert === 'object' && 'latex' in (delta.insert as object),
+    toAST: delta => {
+      const latex = (delta.insert as Record<string, unknown>)['latex'] as string;
+      return {
+        type: 'element',
+        tagName: 'code',
+        properties: {
+          className: ['math', 'math-inline'],
+          dataLatex: latex,
         },
-      ],
-    }),
+        children: [
+          {
+            type: 'text',
+            value: latex,
+          },
+        ],
+      };
+    },
   };
 
 export const inlineDeltaToHtmlAdapterMatchers: InlineDeltaToHtmlAdapterMatcher[] =

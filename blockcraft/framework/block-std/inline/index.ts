@@ -20,12 +20,16 @@ import {getAttributesFrom} from "./getAttributes";
 export type EmbedConverter = {
   toDelta: EmbedViewToDelta
   toView: CreateEmbedView
+  onMount?: (element: HTMLElement, delta: DeltaInsertEmbed) => (() => void) | void
+  onDestroy?: (element: HTMLElement, delta: DeltaInsertEmbed) => void
 }
 export type CreateEmbedView = (delta: DeltaInsertEmbed) => HTMLElement
 export type EmbedViewToDelta = (ele: HTMLElement) => DeltaInsertEmbed
 
 export class InlineManager {
   private _embedConverterMap: Map<string, EmbedConverter>
+  private _disposeMap = new Map<HTMLElement, () => void>()
+  private _embedMetaMap = new Map<HTMLElement, { key: string, delta: DeltaInsertEmbed }>()
 
   constructor(readonly doc: BlockCraft.Doc) {
     this._embedConverterMap = new Map<string, EmbedConverter>(this.doc.config.embeds || [])
@@ -71,7 +75,8 @@ export class InlineManager {
       return InlineManager.createTextElement(delta as DeltaInsertText)
     }
 
-    const converter = this._embedConverterMap.get(Object.keys(delta.insert)[0])
+    const embedKey = Object.keys(delta.insert)[0]
+    const converter = this._embedConverterMap.get(embedKey)
     if (!converter) {
       throw new BlockCraftError(ErrorCode.InlineEditorError, 'no embed registered for this type: ' + JSON.stringify(delta))
     }
@@ -82,7 +87,57 @@ export class InlineManager {
     span.appendChild(embed)
     setAttributes(node, delta.attributes!)
     node.append(span, createZeroSpace())
+
+    this._embedMetaMap.set(embed, { key: embedKey, delta: delta as DeltaInsertEmbed })
+
+    if (converter.onMount) {
+      requestAnimationFrame(() => {
+        const dispose = converter.onMount!(embed, delta as DeltaInsertEmbed)
+        if (dispose) {
+          this._disposeMap.set(embed, dispose)
+        }
+      })
+    }
+
     return node
+  }
+
+  /**
+   * 真正销毁单个 embed 的生命周期（用于 stepDelete 等真正删除场景）
+   */
+  disposeEmbed(element: HTMLElement) {
+    const embed = element.querySelector('span[contenteditable="false"] > *') as HTMLElement | null
+    if (!embed) return
+    const dispose = this._disposeMap.get(embed)
+    if (dispose) {
+      dispose()
+      this._disposeMap.delete(embed)
+    }
+    const meta = this._embedMetaMap.get(embed)
+    if (meta) {
+      this._embedConverterMap.get(meta.key)?.onDestroy?.(embed, meta.delta)
+      this._embedMetaMap.delete(embed)
+    }
+  }
+
+  /**
+   * 清理映射但不调用 dispose/onDestroy（用于 render 重建场景，embed 只是临时移除后会重新 mount）
+   */
+  unmountAll() {
+    this._disposeMap.clear()
+    this._embedMetaMap.clear()
+  }
+
+  /**
+   * 真正销毁所有 embed 的生命周期（用于 InlineManager/Doc 销毁）
+   */
+  destroy() {
+    this._disposeMap.forEach(dispose => dispose())
+    this._disposeMap.clear()
+    this._embedMetaMap.forEach(({key, delta}, embed) => {
+      this._embedConverterMap.get(key)?.onDestroy?.(embed, delta)
+    })
+    this._embedMetaMap.clear()
   }
 
   protected _createEndBreak(): HTMLElement {
@@ -97,6 +152,7 @@ export class InlineManager {
   }
 
   render(deltas: InlineModel, container: HTMLElement) {
+    this.unmountAll()
     container.replaceChildren(createZeroSpace(), ...this.createInlineNodeGroup(deltas),
       this._createEndBreak()
     )
@@ -241,6 +297,7 @@ export class InlineManager {
         }
 
         if (nodeStep.indexInNode === 0 && len >= eleLength) {
+          if (isElementEmbed) this.disposeEmbed(ele)
           ele.remove()
           len -= eleLength
           elementsNodes.splice(nodeStep.index, 1)

@@ -13,7 +13,7 @@ import {
 } from "../../block-std";
 import {BlockSelection, INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
-import {BlockCraftError, ErrorCode, sliceDelta} from "../../../global";
+import {BlockCraftError, ErrorCode, performanceTest, sliceDelta} from "../../../global";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
@@ -71,14 +71,12 @@ export class InputTransformer {
     }
     const text = ev.data
     const {block, index} = sel.from
+    const isZero = isZeroSpace(sel.raw.startContainer)
     this.doc.crud.transact(() => {
-      block.yText.insert(index === 0 ? 0 : index - text.length, text)
+      block.yText.insert(isZero ? index : index - text.length, text)
       // TODO: 更好的中文输入法反显渲染. 目前看必须重新渲染，否则涉及到协同的情况很容易出错
       block.rerender()
-
-      requestAnimationFrame(() => {
-        block.setInlineRange(index === 0 ? text.length : index)
-      })
+      block.setInlineRange(isZero ? text.length + index : index)
     }, ORIGIN_SKIP_SYNC)
     next?.()
   }

@@ -1,7 +1,7 @@
 import {
   BindHotKey,
   DeltaOperation,
-  DocPlugin, EventListen, IInlineRange, ORIGIN_SKIP_SYNC,
+  DocPlugin, EventListen, IInlineRange, isZeroSpace, ORIGIN_SKIP_SYNC,
   STR_LINE_BREAK,
   STR_TAB,
   UIEventStateContext
@@ -46,21 +46,18 @@ export class CodeInlineEditorBinding extends DocPlugin {
     const text = ev.data
 
     const {block, index} = sel.from
+    const isZero = isZeroSpace(sel.raw.startContainer)
 
     this.doc.crud.transact(() => {
-      // if (this._compositionStartDeleteRange) {
-      //   block.deleteText(this._compositionStartDeleteRange.index, this._compositionStartDeleteRange.length)
-      //   this._compositionStartDeleteRange = null
-      // }
-      block.yText.insert(index === 0 ? 0 : index - text.length, text)
+      block.yText.insert(isZero ? index : index - text.length, text)
     }, ORIGIN_SKIP_SYNC)
 
-    if (block.flavour === 'code' && block.props.lang === 'PlainText') {
-      block.rerender()
-    }
-
+    block.rerender()
+    // if (block.flavour === 'code' && block.props.lang === 'PlainText') {
+    // }
+    //
     requestAnimationFrame(() => {
-      block.setInlineRange(index === 0 ? text.length : index)
+      block.setInlineRange(isZero ? text.length + index : index)
     })
     next?.()
     return true

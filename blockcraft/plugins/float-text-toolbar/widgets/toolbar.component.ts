@@ -196,6 +196,11 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
                              icon="bc_lianjie" title="链接" *ngIf="isLinkAble">
       </bc-float-toolbar-item>
 
+      <bc-float-toolbar-item name="formula" [value]="true"
+                             icon="bc_gongshi" title="行内公式" *ngIf="isLinkAble"
+                             nz-tooltip="行内公式">
+      </bc-float-toolbar-item>
+
       <span class="bc-float-toolbar__divider"></span>
       <bc-float-toolbar-item icon="bc_bianji" [bcOverlayTrigger]="colorPicker"
                              [style.color]="activeColors['color']"
@@ -341,6 +346,9 @@ export class FloatTextToolbarComponent {
         evt.value ? this.onLink() : this.formatText({['a:link']: null})
         evt.value === false && this.activeAttrs.delete(evt.name)
         break
+      case 'formula':
+        this.onInlineFormula()
+        break
     }
   }
 
@@ -424,17 +432,20 @@ export class FloatTextToolbarComponent {
       close()
       if (selection.from.type !== 'text') return
       const {index, length} = selection.from
-      // const deltas: DeltaOperation[] = []
-      // if (index > 0) {
-      //   deltas.push({retain: index})
-      // }
-      // deltas.push({delete: length})
-      // deltas.push({
-      //   insert: {link: range.toString()},
-      //   attributes: {'d:href': url}
-      // })
       selection.from.block.formatText(index, length, {'a:link': url})
     })
+  }
+
+  onInlineFormula() {
+    const selection = this.doc.selection.value
+    if (!selection || selection.from.type !== 'text') return
+    const {block, index, length} = selection.from
+    const text = selection.raw.toString()
+    block.applyDeltaOperations([
+      ...(index > 0 ? [{retain: index}] : []),
+      {delete: length},
+      {insert: {latex: text}}
+    ])
   }
 
   // onComment() {

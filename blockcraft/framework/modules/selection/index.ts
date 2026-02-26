@@ -244,7 +244,7 @@ export class SelectionManager {
     return true
   }
 
-  @BindHotKey({key: 'Home', shortKey: null})
+  @BindHotKey({key: 'Home', shortKey: null, shiftKey: false})
   handleHome(context: UIEventStateContext) {
     const state = context.get('keyboardState')
     const {selection} = state
@@ -259,11 +259,12 @@ export class SelectionManager {
       else selection.from.block.setInlineRange(index + 1)
       return true
     }
+
     selection.from.block.setInlineRange(0)
     return true
   }
 
-  @BindHotKey({key: 'End', shortKey: null})
+  @BindHotKey({key: 'End', shortKey: null, shiftKey: false})
   handleEnd(context: UIEventStateContext) {
     const state = context.get('keyboardState')
     const {selection} = state

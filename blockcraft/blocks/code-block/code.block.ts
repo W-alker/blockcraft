@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component } from "@angular/core";
 import {
   DeltaOperation,
   EditableBlockComponent,
-  getPositionWithOffset,
+  getPositionWithOffset, ORIGIN_SKIP_SYNC,
   STR_LINE_BREAK
 } from "../../framework";
 import { CodeBlockModel } from "./index";
@@ -80,6 +80,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
       this.changeDetectorRef.markForCheck()
     })
     this.onTextChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
+      if(e.tr.origin === ORIGIN_SKIP_SYNC) return
       this._debounce_highlight(e.op)
     })
   }

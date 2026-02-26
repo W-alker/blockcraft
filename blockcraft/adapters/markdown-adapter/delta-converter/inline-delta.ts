@@ -87,19 +87,11 @@ export const linkDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatc
 export const latexDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatcher =
   {
     name: 'inlineLatex',
-    match: delta => !!delta.attributes?.['a:latex'],
-    toAST: delta => {
-      if (delta.attributes?.['a:latex']) {
-        return {
-          type: 'inlineMath',
-          value: delta.attributes['a:latex'] as string,
-        };
-      }
-      return {
-        type: 'text',
-        value: delta.insert as string,
-      };
-    },
+    match: delta => typeof delta.insert === 'object' && 'latex' in delta.insert,
+    toAST: delta => ({
+      type: 'inlineMath',
+      value: (delta.insert as Record<string, unknown>)['latex'] as string,
+    }),
   };
 
 export const inlineDeltaToMarkdownAdapterMatchers: InlineDeltaToMarkdownAdapterMatcher[] =
