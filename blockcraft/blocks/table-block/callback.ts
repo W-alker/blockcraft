@@ -449,8 +449,137 @@ export function deleteTableRows(this: TableBlockComponent, index: number, count:
   this.doc.crud.deleteBlocks(this.id, index, count);
 }
 
-export function fixTable() {
+/**
+ * 修复表格中逻辑合并与物理属性不一致的问题
+ *
+ * 策略：以可见源单元格为权威，按阅读顺序（上→下，左→右）"先到先得"构建优先级矩阵，
+ * 再根据矩阵统一修正所有单元格的 display / rowspan / colspan。
+ */
+export function fixTable(this: TableBlockComponent) {
+  const rows = this.getChildrenBlocks();
+  const rowCount = rows.length;
+  const colCount = rows[0]?.childrenLength || 0;
+  if (rowCount === 0 || colCount === 0) return;
 
+  // ── Phase 1: 构建优先级矩阵 ──────────────────────────────
+  type CellInfo = { cell: TableCellBlockComponent; sourceRow: number; sourceCol: number };
+  const matrix: (CellInfo | null)[][] = [];
+  for (let i = 0; i < rowCount; i++) {
+    matrix[i] = new Array(colCount).fill(null);
+  }
+
+  // 记录每个源单元格在矩阵中实际能占据的 span（可能因冲突而缩小）
+  const resolvedSpans = new Map<string, { rowspan: number; colspan: number }>();
+
+  for (let r = 0; r < rowCount; r++) {
+    for (let c = 0; c < colCount; c++) {
+      const cell = rows[r].getChildrenByIndex(c) as TableCellBlockComponent;
+      if (!cell || cell.props.display === 'none') continue;
+
+      // 该位置已被更早的源单元格占据 → 此 cell 不能做源，后续会被修正为隐藏
+      if (matrix[r][c] !== null) continue;
+
+      const rowspan = cell.props.rowspan || 1;
+      const colspan = cell.props.colspan || 1;
+
+      // 计算实际可达的矩形区域：向右扩展时遇到已占据就停，向下同理
+      let actualColspan = 0;
+      for (let cc = c; cc < c + colspan && cc < colCount; cc++) {
+        if (matrix[r][cc] !== null) break;
+        actualColspan++;
+      }
+      actualColspan = Math.max(1, actualColspan);
+
+      let actualRowspan = 0;
+      for (let rr = r; rr < r + rowspan && rr < rowCount; rr++) {
+        let rowAvailable = true;
+        for (let cc = c; cc < c + actualColspan; cc++) {
+          if (matrix[rr][cc] !== null) { rowAvailable = false; break; }
+        }
+        if (!rowAvailable) break;
+        actualRowspan++;
+      }
+      actualRowspan = Math.max(1, actualRowspan);
+
+      // 填充矩阵
+      for (let rr = r; rr < r + actualRowspan; rr++) {
+        for (let cc = c; cc < c + actualColspan; cc++) {
+          matrix[rr][cc] = { cell, sourceRow: r, sourceCol: c };
+        }
+      }
+
+      resolvedSpans.set(cell.id, { rowspan: actualRowspan, colspan: actualColspan });
+    }
+  }
+
+  // ── Phase 2: 根据矩阵修复所有单元格 ─────────────────────
+  let fixCount = 0;
+
+  this.doc.crud.transact(() => {
+    for (let r = 0; r < rowCount; r++) {
+      for (let c = 0; c < colCount; c++) {
+        const cell = rows[r].getChildrenByIndex(c) as TableCellBlockComponent;
+        if (!cell) continue;
+
+        const cellInfo = matrix[r][c];
+        const isHidden = cell.props.display === 'none';
+
+        if (!cellInfo) {
+          // ── 无主位置：应该是可见 1×1 ──
+          if (isHidden || cell.props.rowspan || cell.props.colspan) {
+            cell.updateProps({ display: null, rowspan: null, colspan: null });
+            if (cell.childrenLength === 0) {
+              this.doc.crud.insertBlocks(cell.id, 0, [
+                this.doc.schemas.createSnapshot('paragraph', [])
+              ]);
+            }
+            fixCount++;
+          }
+        } else if (cellInfo.sourceRow === r && cellInfo.sourceCol === c) {
+          // ── 当前位置是源单元格 ──
+          const updates: Record<string, any> = {};
+
+          if (isHidden) {
+            updates["display"] = null;
+            if (cell.childrenLength === 0) {
+              this.doc.crud.insertBlocks(cell.id, 0, [
+                this.doc.schemas.createSnapshot('paragraph', [])
+              ]);
+            }
+          }
+
+          const span = resolvedSpans.get(cell.id)!;
+          const expectedRowspan = span.rowspan <= 1 ? null : span.rowspan;
+          const expectedColspan = span.colspan <= 1 ? null : span.colspan;
+
+          if ((cell.props.rowspan || null) !== expectedRowspan) updates["rowspan"] = expectedRowspan;
+          if ((cell.props.colspan || null) !== expectedColspan) updates["colspan"] = expectedColspan;
+
+          if (Object.keys(updates).length > 0) {
+            cell.updateProps(updates);
+            fixCount++;
+          }
+        } else {
+          // ── 被其他源单元格占据的位置：应该隐藏 ──
+          const updates: Record<string, any> = {};
+          if (!isHidden) updates["display"] = 'none';
+          if (cell.props.rowspan) updates["rowspan"] = null;
+          if (cell.props.colspan) updates["colspan"] = null;
+
+          if (Object.keys(updates).length > 0) {
+            cell.updateProps(updates);
+            fixCount++;
+          }
+        }
+      }
+    }
+  });
+
+  if (fixCount > 0) {
+    console.log(`fixTable: 修复了 ${fixCount} 个单元格`);
+  } else {
+    console.log('fixTable: 表格数据一致，无需修复');
+  }
 }
 
 export function debugTableMerge(this: TableBlockComponent) {
