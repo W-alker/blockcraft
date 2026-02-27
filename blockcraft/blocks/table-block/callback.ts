@@ -452,3 +452,140 @@ export function deleteTableRows(this: TableBlockComponent, index: number, count:
 export function fixTable() {
 
 }
+
+export function debugTableMerge(this: TableBlockComponent) {
+  const rows = this.getChildrenBlocks();
+  const rowCount = rows.length;
+  const colCount = rows[0]?.childrenLength || 0;
+
+  console.log('\n========== 表格合并情况 ==========');
+  console.log(`表格大小: ${rowCount} 行 × ${colCount} 列\n`);
+
+  // 构建虚拟矩阵
+  const matrix = buildCellMatrix(rows, rowCount, colCount);
+
+  // 1. 打印逻辑矩阵（应该合并的情况）
+  console.log('【逻辑矩阵】每个位置应该被哪个源单元格占据:');
+  const logicalTable: any = {};
+  for (let r = 0; r < rowCount; r++) {
+    const rowData: any = {};
+    for (let c = 0; c < colCount; c++) {
+      const cellInfo = matrix[r][c];
+      if (cellInfo) {
+        const { sourceRow, sourceCol } = cellInfo;
+        rowData[`列${c}`] = `(${sourceRow},${sourceCol})`;
+      } else {
+        rowData[`列${c}`] = '空';
+      }
+    }
+    logicalTable[`行${r}`] = rowData;
+  }
+  console.table(logicalTable);
+
+  // 2. 打印物理结构（真实属性）
+  console.log('\n【物理结构】每行的实际单元格属性:');
+  const physicalTable: any = {};
+  rows.forEach((row, r) => {
+    const cells = row.getChildrenBlocks() as TableCellBlockComponent[];
+    const rowData: any = {};
+
+    cells.forEach((cell, c) => {
+      const display = cell.props.display;
+      const rowspan = cell.props.rowspan || 1;
+      const colspan = cell.props.colspan || 1;
+
+      if (display === 'none') {
+        rowData[`列${c}`] = '隐藏';
+      } else if (rowspan > 1 || colspan > 1) {
+        rowData[`列${c}`] = `${rowspan}×${colspan}`;
+      } else {
+        rowData[`列${c}`] = '1×1';
+      }
+    });
+
+    physicalTable[`行${r}`] = rowData;
+  });
+  console.table(physicalTable);
+
+  // 3. 打印差异检测
+  console.log('\n【差异检测】逻辑与物理不一致的单元格:');
+  const errors: any[] = [];
+
+  for (let r = 0; r < rowCount; r++) {
+    const row = rows[r];
+    const cells = row.getChildrenBlocks() as TableCellBlockComponent[];
+
+    cells.forEach((cell, physicalIdx) => {
+      // 找到该物理单元格对应的逻辑列
+      let logicalCol = 0;
+      for (let i = 0; i < physicalIdx; i++) {
+        const prevCell = cells[i];
+        if (prevCell.props.display !== 'none') {
+          logicalCol += prevCell.props.colspan || 1;
+        } else {
+          logicalCol++;
+        }
+      }
+
+      const cellInfo = matrix[r]?.[logicalCol];
+      const isHidden = cell.props.display === 'none';
+      const shouldBeHidden = cellInfo && (cellInfo.sourceRow !== r || cellInfo.sourceCol !== logicalCol);
+
+      if (isHidden !== shouldBeHidden) {
+        errors.push({
+          位置: `(${r},${logicalCol})`,
+          物理索引: physicalIdx,
+          当前display: isHidden ? 'none' : 'visible',
+          应该是: shouldBeHidden ? 'none' : 'visible',
+          占据者: cellInfo ? `(${cellInfo.sourceRow},${cellInfo.sourceCol})` : '无',
+          问题: isHidden ? '不应该隐藏' : '应该隐藏'
+        });
+      }
+
+      // 检查合并属性
+      if (!isHidden && cellInfo) {
+        const actualRowspan = cell.props.rowspan || 1;
+        const actualColspan = cell.props.colspan || 1;
+
+        // 计算该源单元格应该占据的范围
+        let expectedRowspan = 1;
+        let expectedColspan = 1;
+
+        for (let rr = r; rr < rowCount; rr++) {
+          if (matrix[rr]?.[logicalCol]?.cell.id === cell.id) {
+            expectedRowspan = rr - r + 1;
+          } else {
+            break;
+          }
+        }
+
+        for (let cc = logicalCol; cc < colCount; cc++) {
+          if (matrix[r]?.[cc]?.cell.id === cell.id) {
+            expectedColspan = cc - logicalCol + 1;
+          } else {
+            break;
+          }
+        }
+
+        if (actualRowspan !== expectedRowspan || actualColspan !== expectedColspan) {
+          errors.push({
+            位置: `(${r},${logicalCol})`,
+            物理索引: physicalIdx,
+            当前合并: `${actualRowspan}×${actualColspan}`,
+            应该是: `${expectedRowspan}×${expectedColspan}`,
+            占据者: '自己',
+            问题: '合并范围不正确'
+          });
+        }
+      }
+    });
+  }
+
+  if (errors.length > 0) {
+    console.table(errors);
+  } else {
+    console.log('  ✓ 没有发现不一致');
+  }
+
+  console.log('\n==================================\n');
+}

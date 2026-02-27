@@ -6,6 +6,27 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "20406824",
+      "name": "上",
+      "font_class": "shang",
+      "unicode": "e791",
+      "unicode_decimal": 59281
+    },
+    {
+      "icon_id": "20406853",
+      "name": "下",
+      "font_class": "xia",
+      "unicode": "e796",
+      "unicode_decimal": 59286
+    },
+    {
+      "icon_id": "10885271",
+      "name": "导入",
+      "font_class": "daoru",
+      "unicode": "e62b",
+      "unicode_decimal": 58923
+    },
+    {
       "icon_id": "10352314",
       "name": "公式",
       "font_class": "gongshi",
@@ -1205,7 +1226,7 @@
     {
       "icon_id": "41838978",
       "name": "文中图片_下载",
-      "font_class": "daoru",
+      "font_class": "xiazai",
       "unicode": "e724",
       "unicode_decimal": 59172
     },

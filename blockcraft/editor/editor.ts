@@ -66,7 +66,7 @@ import {DividerExtensionPlugin} from "../plugins/divider-toolbar";
 import {DividerStylePopupComponent} from "../plugins/divider-toolbar/widgets/divider-style-popup.component";
 import {CodeInlineEditorBinding, TableBlockBinding, TextMarkerPlugin, OrderedBlockPlugin} from "../plugins";
 import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
-import {fixTable} from "../blocks/table-block/callback";
+import {debugTableMerge, fixTable} from "../blocks/table-block/callback";
 import {ColumnBlockSchema} from "../blocks/columns-block";
 import {demoJSON} from "./demo.data";
 import {DemoPresentationPlugin} from "../plugins/demo-presentation";
@@ -142,6 +142,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 
     <button (click)="listenUpdate()">监听数据变化</button>
     <button (click)="test()">测试</button>
+    <button (click)="logTable()">打印表格情况</button>
     <button (click)="fixTable()">修复表格</button>
 
     <button (click)="enterRoom()">进入协同</button>
@@ -614,6 +615,17 @@ export class EditorComponent {
       // const b2 = this.doc.getBlockById('vmgZeYkw0IjG9VQxEt')
       block.updateProps({'display': 'none'})
       console.log(table, block)
+      // fixTable.call(table as any)
+    }
+  }
+
+  logTable() {
+    const curTable = this.doc.selection.value?.from.block.hostElement.closest('.table-block')
+    const id = curTable?.getAttribute('data-block-id')
+    if (id) {
+      const table = this.doc.getBlockById(id)!
+      debugTableMerge.call(table as any)
+      // const b2 = this.doc.getBlockById('vmgZeYkw0IjG9VQxEt')
       // fixTable.call(table as any)
     }
   }
