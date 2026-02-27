@@ -1,9 +1,9 @@
 @font-face {
   font-family: "bc_icon"; /* Project id 4682833 */
-  src: url('bc-iconfont.woff2?t=1772094261098') format('woff2'),
-       url('bc-iconfont.woff?t=1772094261098') format('woff'),
-       url('bc-iconfont.ttf?t=1772094261098') format('truetype'),
-       url('bc-iconfont.svg?t=1772094261098#bc_icon') format('svg');
+  src: url('bc-iconfont.woff2?t=1772172767998') format('woff2'),
+       url('bc-iconfont.woff?t=1772172767998') format('woff'),
+       url('bc-iconfont.ttf?t=1772172767998') format('truetype'),
+       url('bc-iconfont.svg?t=1772172767998#bc_icon') format('svg');
 }
 
 .bc_icon {
@@ -698,7 +698,7 @@
   content: "\2b";
 }
 
-.bc_xiazai-2:before {
+.bc_daoru:before {
   content: "\e724";
 }
 
@@ -1204,9 +1204,5 @@
 
 .bc_wendangguanxi:before {
   content: "\e710";
-}
-
-.bc_xiazai:before {
-  content: "\e711";
 }
 

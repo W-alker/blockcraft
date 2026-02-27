@@ -115,30 +115,18 @@ export const tableCellBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher =
       const {walkerContext, deltaConverter} = context;
       const cellSnapshot = TableCellBlockSchema.createSnapshot();
 
-      walkerContext.openNode(cellSnapshot, 'children');
-
       // tableCell children are phrasing content (inline), convert to paragraph
       if ('children' in o.node && o.node.children.length > 0) {
         const deltas = deltaConverter.astToDelta(o.node);
-        walkerContext.openNode(
-          ParagraphBlockSchema.createSnapshot(deltas),
-          'children'
-        ).closeNode();
-        walkerContext.skipAllChildren();
-        walkerContext.closeNode();
+        // Replace default empty paragraph with content paragraph
+        cellSnapshot.children = [ParagraphBlockSchema.createSnapshot(deltas)];
       }
+
+      walkerContext.openNode(cellSnapshot, 'children');
+      walkerContext.skipAllChildren();
+      walkerContext.closeNode();
     },
     leave: (o, context) => {
-      if (o.node.type !== 'tableCell') return;
-      const {walkerContext} = context;
-      const currentNode = walkerContext.currentNode();
-      if (currentNode?.flavour === 'table-cell') {
-        // Ensure cell has at least one paragraph
-        if (!currentNode.children.length) {
-          walkerContext.openNode(ParagraphBlockSchema.createSnapshot()).closeNode();
-        }
-        walkerContext.closeNode();
-      }
     },
   },
   fromBlockSnapshot: {

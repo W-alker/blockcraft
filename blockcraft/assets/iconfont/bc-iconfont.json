@@ -1205,7 +1205,7 @@
     {
       "icon_id": "41838978",
       "name": "文中图片_下载",
-      "font_class": "xiazai-2",
+      "font_class": "daoru",
       "unicode": "e724",
       "unicode_decimal": 59172
     },
@@ -2090,13 +2090,6 @@
       "font_class": "wendangguanxi",
       "unicode": "e710",
       "unicode_decimal": 59152
-    },
-    {
-      "icon_id": "41838958",
-      "name": "列表最右侧更多_文档操作_下载为",
-      "font_class": "xiazai",
-      "unicode": "e711",
-      "unicode_decimal": 59153
     }
   ]
 }
