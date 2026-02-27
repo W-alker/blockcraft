@@ -215,6 +215,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     if (!id || this.hoveringCell?.id === id) return
 
     if (!this.resizingCol$.value && !this.doc.isReadonly) {
+      // 鼠标回到表格单元格时，清理可能残留的添加器激活状态
+      if (this._colAdderHandler) this._clearColAdderState()
+      if (this._rowAdderHandler) this._clearRowAdderState()
+
       // hovering bar
       this.hoveringCell = this.doc.getBlockById(id) as TableCellBlockComponent
       const offsetX = this.hoveringCell.hostElement.getBoundingClientRect().right
@@ -490,9 +494,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _colLeaveHandler: ((e: Event) => void) | null = null  // 新增：追踪 mouseleave 监听器
 
   onColAdderActive(colIdx: number) {
-    if (this._disableColResize) return
-
-    // 先清理之前可能残留的状态
+    // 先清理之前可能残留的状态（不能在此之前 return，否则卡住后永远无法恢复）
     this._clearColAdderState()
 
     const offsetLeft = this.props.colWidths.slice(0, colIdx).reduce((a, b) => a + b, 0)

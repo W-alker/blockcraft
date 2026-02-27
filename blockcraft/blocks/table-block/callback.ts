@@ -516,16 +516,8 @@ export function debugTableMerge(this: TableBlockComponent) {
     const cells = row.getChildrenBlocks() as TableCellBlockComponent[];
 
     cells.forEach((cell, physicalIdx) => {
-      // 找到该物理单元格对应的逻辑列
-      let logicalCol = 0;
-      for (let i = 0; i < physicalIdx; i++) {
-        const prevCell = cells[i];
-        if (prevCell.props.display !== 'none') {
-          logicalCol += prevCell.props.colspan || 1;
-        } else {
-          logicalCol++;
-        }
-      }
+      // 在此表格模型中，每行始终有 colCount 个子 cell，物理索引即逻辑列索引
+      const logicalCol = physicalIdx;
 
       const cellInfo = matrix[r]?.[logicalCol];
       const isHidden = cell.props.display === 'none';
