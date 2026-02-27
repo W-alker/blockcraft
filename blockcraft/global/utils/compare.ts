@@ -14,7 +14,6 @@ export const isSimpleTypeEqual = (a: SimpleBasicType, b: SimpleBasicType): boole
  * @return -1 if a < b, 0 if a = b, 1 if a > b
  */
 export const compareSimpleValue = (a: SimpleValue, b: SimpleValue): number => {
-  console.log('compareSimpleValue', a, b)
   if (a == undefined) {
     a = 0
   }

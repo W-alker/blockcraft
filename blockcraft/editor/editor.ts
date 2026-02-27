@@ -302,12 +302,6 @@ export class EditorComponent {
             insert: {latex: ele.getAttribute('data-latex') || ele.textContent || ''},
             attributes: InlineManager.getAttrs(ele)
           }
-        },
-        onDestroy: (ele) => {
-          console.log('latex embed destroyed')
-        },
-        onMount: (ele) => {
-          console.log('latex embed mounted')
         }
       }
       ],

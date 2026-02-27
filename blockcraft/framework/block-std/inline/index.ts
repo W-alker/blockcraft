@@ -20,7 +20,8 @@ import {getAttributesFrom} from "./getAttributes";
 export type EmbedConverter = {
   toDelta: EmbedViewToDelta
   toView: CreateEmbedView
-  onMount?: (element: HTMLElement, delta: DeltaInsertEmbed) => (() => void) | void
+  // onMount?: (element: HTMLElement, delta: DeltaInsertEmbed) => (() => void) | void
+  // onUpdate?: (element: HTMLElement, delta: DeltaInsertEmbed) => void
   onDestroy?: (element: HTMLElement, delta: DeltaInsertEmbed) => void
 }
 export type CreateEmbedView = (delta: DeltaInsertEmbed) => HTMLElement
@@ -30,6 +31,8 @@ export class InlineManager {
   private _embedConverterMap: Map<string, EmbedConverter>
   private _disposeMap = new Map<HTMLElement, () => void>()
   private _embedMetaMap = new Map<HTMLElement, { key: string, delta: DeltaInsertEmbed }>()
+  private _isRerendering = false
+  private _pendingUpdateKeys = new Set<string>()
 
   constructor(readonly doc: BlockCraft.Doc) {
     this._embedConverterMap = new Map<string, EmbedConverter>(this.doc.config.embeds || [])
@@ -90,20 +93,29 @@ export class InlineManager {
 
     this._embedMetaMap.set(embed, { key: embedKey, delta: delta as DeltaInsertEmbed })
 
-    if (converter.onMount) {
-      requestAnimationFrame(() => {
-        const dispose = converter.onMount!(embed, delta as DeltaInsertEmbed)
-        if (dispose) {
-          this._disposeMap.set(embed, dispose)
-        }
-      })
+    if (this._isRerendering) return node
+
+    if (this._pendingUpdateKeys.has(embedKey)) {
+      this._pendingUpdateKeys.delete(embedKey)
+      // requestAnimationFrame(() => {
+      //   converter.onUpdate?.(embed, delta as DeltaInsertEmbed)
+      // })
     }
+    // else if (converter.onMount) {
+    //   requestAnimationFrame(() => {
+    //     const dispose = converter.onMount!(embed, delta as DeltaInsertEmbed)
+    //     if (dispose) {
+    //       this._disposeMap.set(embed, dispose)
+    //     }
+    //   })
+    // }
 
     return node
   }
 
   /**
-   * 真正销毁单个 embed 的生命周期（用于 stepDelete 等真正删除场景）
+   * 真正销毁单个 embed（stepDelete 场景）
+   * 同时记录 key 到 _pendingUpdateKeys，供后续 stepInsert 判断是否为更新
    */
   disposeEmbed(element: HTMLElement) {
     const embed = element.querySelector('span[contenteditable="false"] > *') as HTMLElement | null
@@ -116,6 +128,7 @@ export class InlineManager {
     const meta = this._embedMetaMap.get(embed)
     if (meta) {
       this._embedConverterMap.get(meta.key)?.onDestroy?.(embed, meta.delta)
+      this._pendingUpdateKeys.add(meta.key)
       this._embedMetaMap.delete(embed)
     }
   }
@@ -152,10 +165,12 @@ export class InlineManager {
   }
 
   render(deltas: InlineModel, container: HTMLElement) {
+    this._isRerendering = true
     this.unmountAll()
     container.replaceChildren(createZeroSpace(), ...this.createInlineNodeGroup(deltas),
       this._createEndBreak()
     )
+    this._isRerendering = false
   }
 
   applyDeltaToView(deltas: DeltaOperation[], container: HTMLElement) {
@@ -217,6 +232,16 @@ export class InlineManager {
 
           // |AAAAAA|
           op.attributes && setAttributes(ele, op.attributes)
+          // if (op.attributes && (ele.firstElementChild as HTMLElement).contentEditable === 'false') {
+          //   const embed = ele.firstElementChild!.firstElementChild as HTMLElement | null
+          //   if (embed) {
+          //     const meta = this._embedMetaMap.get(embed)
+          //     if (meta && isObjectInclude(meta.delta.attributes!, op.attributes)) {
+          //       meta.delta.attributes = {...meta.delta.attributes!, ...op.attributes}
+          //       this._embedConverterMap.get(meta.key)?.onUpdate?.(embed, op.attributes)
+          //     }
+          //   }
+          // }
           len -= eleLength
           nodeStep = {
             index: nodeStep.index,

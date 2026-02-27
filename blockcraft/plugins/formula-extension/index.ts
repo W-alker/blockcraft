@@ -1,4 +1,10 @@
-import {closetBlockId, DocPlugin, EditableBlockComponent, EventListen, getPositionWithOffset, INLINE_ELEMENT_TAG} from "../../framework";
+import {
+  closetBlockId,
+  DocPlugin,
+  EventListen,
+  getPositionWithOffset,
+  INLINE_ELEMENT_TAG
+} from "../../framework";
 import {Subject, takeUntil} from "rxjs";
 import {FormulaBlockToolbar} from "./widgets/formula-toolbar";
 import {UIEventStateContext} from "../../framework";
@@ -11,7 +17,8 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
   private _activeBlock: BlockCraft.IBlockComponents['formula'] | null = null
   private _toolbarRef: ComponentRef<FormulaBlockToolbar> | null = null
 
-  init() {}
+  init() {
+  }
 
   @EventListen('mouseDown', {flavour: 'formula'})
   onBlockClick(ctx: UIEventStateContext) {
@@ -65,9 +72,6 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
     const block = this.doc.getBlockById(blockId)
     if (!this.doc.isEditable(block)) return
 
-    const embedIndex = this._getEmbedIndex(block, cElement)
-    if (embedIndex < 0) return
-
     const latex = formulaEl.getAttribute('data-latex') || ''
 
     this.closeToolbar()
@@ -87,26 +91,35 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
     this._toolbarRef = componentRef
 
     componentRef.instance.confirm.pipe(takeUntil(this._closeToolbar$)).subscribe(newLatex => {
+      const {from} = this.getEmbedRange(formulaEl)
+      if (from.type !== 'text') return
+      const embedIndex = from.index
       block.applyDeltaOperations([
         {retain: embedIndex},
         {delete: 1},
         {insert: {latex: newLatex}}
       ])
+      requestAnimationFrame(() => {
+        this.doc.selection.setCursorAt(block, embedIndex + 1)
+      })
       this.closeToolbar()
     })
 
     return true
   }
 
-  private _getEmbedIndex(block: EditableBlockComponent, cElement: HTMLElement): number {
-    const elements = Array.from(block.containerElement.querySelectorAll(INLINE_ELEMENT_TAG))
-    let index = 0
-    for (const el of elements) {
-      if (el === cElement) return index
-      const isEmbed = (el.firstElementChild as HTMLElement)?.contentEditable === 'false'
-      index += isEmbed ? 1 : (el.textContent?.length || 0)
-    }
-    return -1
+  createEmbedRange(cElement: HTMLElement) {
+    const range = document.createRange();
+    range.selectNodeContents(cElement);
+    range.collapse(true)
+    return range
+  }
+
+  getEmbedRange(target: HTMLElement) {
+    const range = this.createEmbedRange(target);
+    const normalizedRange = this.doc.selection.normalizeRange(range);
+    range.detach();
+    return normalizedRange;
   }
 
   closeToolbar = () => {
@@ -116,5 +129,6 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
     this._toolbarRef = null
   }
 
-  destroy() {}
+  destroy() {
+  }
 }
