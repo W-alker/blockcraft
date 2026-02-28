@@ -6,6 +6,111 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "15644385",
+      "name": "显示",
+      "font_class": "xianshi",
+      "unicode": "e6fc",
+      "unicode_decimal": 59132
+    },
+    {
+      "icon_id": "4354249",
+      "name": "形状-矩形",
+      "font_class": "juxing",
+      "unicode": "eb97",
+      "unicode_decimal": 60311
+    },
+    {
+      "icon_id": "4880714",
+      "name": "图形",
+      "font_class": "tuxing",
+      "unicode": "e62d",
+      "unicode_decimal": 58925
+    },
+    {
+      "icon_id": "9017165",
+      "name": "荧光笔",
+      "font_class": "yingguangbi",
+      "unicode": "e64c",
+      "unicode_decimal": 58956
+    },
+    {
+      "icon_id": "9040956",
+      "name": "菱形框",
+      "font_class": "lingxing",
+      "unicode": "e636",
+      "unicode_decimal": 58934
+    },
+    {
+      "icon_id": "10207960",
+      "name": "画笔工具-椭圆",
+      "font_class": "tuoyuan",
+      "unicode": "e62c",
+      "unicode_decimal": 58924
+    },
+    {
+      "icon_id": "13201032",
+      "name": "激光笔",
+      "font_class": "jiguangbi",
+      "unicode": "e62f",
+      "unicode_decimal": 58927
+    },
+    {
+      "icon_id": "14095241",
+      "name": "隐藏",
+      "font_class": "yincang",
+      "unicode": "e779",
+      "unicode_decimal": 59257
+    },
+    {
+      "icon_id": "15726968",
+      "name": "形状-三角形",
+      "font_class": "sanjiaoxing",
+      "unicode": "e652",
+      "unicode_decimal": 58962
+    },
+    {
+      "icon_id": "15908727",
+      "name": "画笔",
+      "font_class": "huabi",
+      "unicode": "e687",
+      "unicode_decimal": 59015
+    },
+    {
+      "icon_id": "15937155",
+      "name": "橡皮擦",
+      "font_class": "xiangpica",
+      "unicode": "e7f1",
+      "unicode_decimal": 59377
+    },
+    {
+      "icon_id": "18170318",
+      "name": "星,星星,星形,半星,实星",
+      "font_class": "star",
+      "unicode": "e9a1",
+      "unicode_decimal": 59809
+    },
+    {
+      "icon_id": "21810031",
+      "name": "箭头画笔",
+      "font_class": "jiantouhuabi",
+      "unicode": "e6ab",
+      "unicode_decimal": 59051
+    },
+    {
+      "icon_id": "28115496",
+      "name": "S批量编号",
+      "font_class": "bianhao1",
+      "unicode": "e77d",
+      "unicode_decimal": 59261
+    },
+    {
+      "icon_id": "37719765",
+      "name": "直线",
+      "font_class": "zhixian",
+      "unicode": "e998",
+      "unicode_decimal": 59800
+    },
+    {
       "icon_id": "20406824",
       "name": "上",
       "font_class": "shang",

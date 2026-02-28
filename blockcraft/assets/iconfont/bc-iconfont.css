@@ -1,9 +1,9 @@
 @font-face {
   font-family: "bc_icon"; /* Project id 4682833 */
-  src: url('bc-iconfont.woff2?t=1772179330767') format('woff2'),
-       url('bc-iconfont.woff?t=1772179330767') format('woff'),
-       url('bc-iconfont.ttf?t=1772179330767') format('truetype'),
-       url('bc-iconfont.svg?t=1772179330767#bc_icon') format('svg');
+  src: url('bc-iconfont.woff2?t=1772262566763') format('woff2'),
+       url('bc-iconfont.woff?t=1772262566763') format('woff'),
+       url('bc-iconfont.ttf?t=1772262566763') format('truetype'),
+       url('bc-iconfont.svg?t=1772262566763#bc_icon') format('svg');
 }
 
 .bc_icon {
@@ -12,6 +12,66 @@
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.bc_xianshi:before {
+  content: "\e6fc";
+}
+
+.bc_juxing:before {
+  content: "\eb97";
+}
+
+.bc_tuxing:before {
+  content: "\e62d";
+}
+
+.bc_yingguangbi:before {
+  content: "\e64c";
+}
+
+.bc_lingxing:before {
+  content: "\e636";
+}
+
+.bc_tuoyuan:before {
+  content: "\e62c";
+}
+
+.bc_jiguangbi:before {
+  content: "\e62f";
+}
+
+.bc_yincang:before {
+  content: "\e779";
+}
+
+.bc_sanjiaoxing:before {
+  content: "\e652";
+}
+
+.bc_huabi:before {
+  content: "\e687";
+}
+
+.bc_xiangpica:before {
+  content: "\e7f1";
+}
+
+.bc_star:before {
+  content: "\e9a1";
+}
+
+.bc_jiantouhuabi:before {
+  content: "\e6ab";
+}
+
+.bc_bianhao1:before {
+  content: "\e77d";
+}
+
+.bc_zhixian:before {
+  content: "\e998";
 }
 
 .bc_shang:before {

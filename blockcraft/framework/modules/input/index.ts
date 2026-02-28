@@ -76,7 +76,10 @@ export class InputTransformer {
       block.yText.insert(isZero ? index : index - text.length, text)
       // TODO: 更好的中文输入法反显渲染. 目前看必须重新渲染，否则涉及到协同的情况很容易出错
       block.rerender()
-      block.setInlineRange(isZero ? text.length + index : index)
+
+      requestAnimationFrame(() => {
+        block.setInlineRange(isZero ? text.length + index : index)
+      })
     }, ORIGIN_SKIP_SYNC)
     next?.()
   }
@@ -544,7 +547,7 @@ export class InputTransformer {
 
     const deltas = sliceDelta(from.block.textDeltas(), from.index)
     const p = this.doc.schemas.createSnapshot(
-      (from.block.textLength && !from.block.heading) ? from.block.flavour : 'paragraph', [deltas, {
+      (from.block.textLength && !from.block.heading && from.block.flavour !== 'blockquote') ? from.block.flavour : 'paragraph', [deltas, {
         ...from.block.props,
         heading: null,
       }])

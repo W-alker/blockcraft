@@ -1,0 +1,235 @@
+:root {
+  --preview-bg: rgba(0, 0, 0, 0.95);
+  --preview-close-color: #ffffff;
+  --preview-close-hover: #ff4757;
+}
+
+.simple-preview-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.2);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: fadeIn 0.2s ease-out;
+  /* 增强遮罩效果 */
+  box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.3);
+}
+
+/* 绝对定位模式（用于元素全屏） */
+.simple-preview-overlay.absolute-mode {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  /* 确保覆盖整个容器 */
+  inset: 0;
+  /* 元素全屏模式下的特殊遮罩 */
+  background: var(--preview-overlay-bg);
+  box-shadow: inset 0 0 150px rgba(0, 0, 0, 0.5);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.preview-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+  /* 确保容器填充整个overlay */
+  flex: 1;
+}
+
+.preview-close-btn {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--preview-close-color);
+  font-size: 28px;
+  font-weight: 300;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  z-index: 1001;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+.preview-close-btn:hover {
+  background: var(--preview-close-hover);
+  transform: scale(1.1);
+}
+
+.preview-close-btn:focus {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 2px;
+}
+
+.preview-loading {
+  position: absolute;
+  color: #fff;
+  font-size: 16px;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 12px 24px;
+  border-radius: 20px;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  animation: pulse 1.5s ease-in-out infinite;
+  z-index: 1000;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.preview-image-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  /* 确保wrapper填充整个容器 */
+  flex: 1;
+}
+
+.preview-image-wrapper.dragging {
+  cursor: grabbing;
+}
+
+.preview-image {
+  max-width: 95vw;
+  max-height: 95vh;
+  object-fit: contain;
+  transform-origin: center center;
+  cursor: grabbing;
+}
+
+/* 全屏模式下的特殊样式 */
+.simple-preview-overlay:-webkit-full-screen,
+.simple-preview-overlay:-moz-full-screen,
+.simple-preview-overlay:-ms-fullscreen,
+.simple-preview-overlay:fullscreen,
+.simple-preview-overlay.absolute-mode {
+  z-index: 2147483647;
+}
+
+/* 错误状态 */
+.preview-error {
+  position: absolute;
+  color: #ff6b6b;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 16px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  animation: slideInUp 0.3s ease-out;
+  z-index: 1002;
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .preview-close-btn {
+    top: 15px;
+    right: 15px;
+    width: 36px;
+    height: 36px;
+    font-size: 24px;
+  }
+
+  .preview-loading {
+    font-size: 14px;
+    padding: 10px 20px;
+  }
+
+  .preview-image {
+    max-width: 98vw;
+    max-height: 98vh;
+  }
+}
+
+/* 触摸设备优化 */
+@media (pointer: coarse) {
+  .preview-close-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .preview-image-wrapper {
+    touch-action: none;
+  }
+}
+
+/* 高对比度模式 */
+@media (prefers-contrast: more) {
+  :root {
+    --preview-bg: rgba(0, 0, 0, 0.98);
+    --preview-close-color: #ffffff;
+    --preview-close-hover: #ff0000;
+  }
+
+  .preview-close-btn {
+    border: 2px solid var(--preview-close-color);
+  }
+}
+
+/* 减少动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .simple-preview-overlay,
+  .preview-close-btn,
+  .preview-image,
+  .preview-loading,
+  .preview-error {
+    animation: none;
+    transition: none;
+  }
+
+  .preview-image {
+    transition: none;
+  }
+}

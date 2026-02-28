@@ -20,6 +20,12 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, In
 
       <span class="divider"></span>
 
+      <button (click)="onToggleDrawing()" title="画笔标注">
+        <i class="bc_icon bc_jihaobi"></i>
+      </button>
+
+      <span class="divider"></span>
+
       <button (click)="onExit()" title="退出演示模式 (ESC)">
         <i class="bc_icon bc_guanbi"></i>
       </button>
@@ -45,7 +51,7 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, In
       font-size: 14px;
 
       transition: opacity 0.3s, transform 0.3s;
-      z-index: 10000;
+      z-index: 10002;
 
       &.hidden {
         opacity: 0;
@@ -97,8 +103,10 @@ export class DemoControlBarComponent {
   @Output() prev = new EventEmitter<void>();
   @Output() next = new EventEmitter<void>();
   @Output() exit = new EventEmitter<void>();
+  @Output() toggleDrawing = new EventEmitter<void>();
 
   isHidden = false;
+  pinned = false;
   private hideTimer?: number;
 
   constructor(private cdr: ChangeDetectorRef) {}
@@ -110,6 +118,7 @@ export class DemoControlBarComponent {
 
   startHideTimer() {
     clearTimeout(this.hideTimer);
+    if (this.pinned) return;
     this.hideTimer = window.setTimeout(() => {
       this.isHidden = true;
       this.cdr.markForCheck();
@@ -136,6 +145,12 @@ export class DemoControlBarComponent {
 
   onExit() {
     this.exit.emit();
+  }
+
+  onToggleDrawing() {
+    this.toggleDrawing.emit();
+    this.show();
+    this.startHideTimer();
   }
 
   updateView() {

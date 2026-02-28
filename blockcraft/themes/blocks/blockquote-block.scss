@@ -12,18 +12,18 @@
       height: 100%;
       background: var(--bc-border-color);
     }
-
-    &:has(+ .blockquote-block) {
-      padding-bottom: 0;
-    }
-
-    +.blockquote-block {
-      padding-top: 0;
-
-      &::before {
-        top: calc(-1 * var(--bc-segments-gap));
-        height: calc(100% + var(--bc-segments-gap));
-      }
-    }
+    //
+    //&:has(+ .blockquote-block) {
+    //  padding-bottom: 0;
+    //}
+    //
+    //+.blockquote-block {
+    //  padding-top: 0;
+    //
+    //  &::before {
+    //    top: calc(-1 * var(--bc-segments-gap));
+    //    height: calc(100% + var(--bc-segments-gap));
+    //  }
+    //}
   }
 }

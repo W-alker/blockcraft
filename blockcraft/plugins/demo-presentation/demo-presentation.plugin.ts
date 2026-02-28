@@ -24,15 +24,15 @@ export class DemoPresentationPlugin extends DocPlugin {
     }
 
     const defaultConfig: DemoConfig = {
-      presentation: {
-        focusStrategy: 'viewport',
-        unfocusedOpacity: 0.3,
-        showProgress: true,
-        autoHideControls: true,
-        autoHideDelay: 3000,
-        enableTransition: true,
-        transitionDuration: 300,
-      },
+      // presentation: {
+      //   focusStrategy: 'viewport',
+      //   unfocusedOpacity: 0.3,
+      //   showProgress: true,
+      //   autoHideControls: true,
+      //   autoHideDelay: 3000,
+      //   enableTransition: true,
+      //   transitionDuration: 300,
+      // },
       preview: {
         showToolbar: true,
       },
@@ -41,7 +41,7 @@ export class DemoPresentationPlugin extends DocPlugin {
     const finalConfig = {
       ...defaultConfig,
       ...config,
-      presentation: {...defaultConfig.presentation, ...config?.presentation},
+      // presentation: {...defaultConfig.presentation, ...config?.presentation},
       preview: {...defaultConfig.preview, ...config?.preview},
     } as DemoConfig;
 

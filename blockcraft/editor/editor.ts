@@ -64,7 +64,13 @@ import {BlockCraftAwareness} from "./awa";
 import {IndexeddbPersistence} from "y-indexeddb";
 import {DividerExtensionPlugin} from "../plugins/divider-toolbar";
 import {DividerStylePopupComponent} from "../plugins/divider-toolbar/widgets/divider-style-popup.component";
-import {CodeInlineEditorBinding, TableBlockBinding, TextMarkerPlugin, OrderedBlockPlugin} from "../plugins";
+import {
+  CodeInlineEditorBinding,
+  TableBlockBinding,
+  TextMarkerPlugin,
+  OrderedBlockPlugin,
+  PresentationController
+} from "../plugins";
 import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
 import {debugTableMerge, fixTable} from "../blocks/table-block/callback";
 import {ColumnBlockSchema} from "../blocks/columns-block";
@@ -148,7 +154,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
     <button (click)="enterRoom()">进入协同</button>
     <button (click)="quitRoom()">退出协同</button>
 
-    <button (click)="demo()">演示模式</button>
+    <button (click)="startDemo()">演示模式</button>
   `,
   styles: [`:host {
     margin: 20px;
@@ -338,8 +344,7 @@ export class EditorComponent {
         } else window.open(link, '_blank')
       }),
       new MentionPlugin(mentionRequest), new DividerExtensionPlugin(),
-      new FindReplacePlugin(),
-      new DemoPresentationPlugin()
+      new FindReplacePlugin()
     ]
   })
 
@@ -633,12 +638,26 @@ export class EditorComponent {
     document.body.style.backgroundColor = 'var(--bc-bg-primary)'
   }
 
-  demo() {
-    // 进入演示模式
-    this.doc.toggleReadonly(true)
-    nextTick().then(() => {
-      // @ts-ignore
-      this.doc.enterDemoMode('presentation');
-    })
+  private _demoController: PresentationController | null = null
+
+  startDemo(doc: BlockCraft.Doc = this.doc) {
+    if (this._demoController) {
+      this._demoController.destroy();
+      this._demoController = null;
+    }
+    this._demoController ??= new PresentationController(doc, {
+      cover: {
+        banner: {
+          url: 'https://picsum.photos/1920/1080?random'
+        },
+        author: {
+          name: 'Demo Author',
+          avatar: 'https://picsum.photos/200/300?random',
+          info: 'Demo Author Description'
+        },
+        title: 'Demo Presentation'
+      }
+    });
+    this._demoController.start();
   }
 }

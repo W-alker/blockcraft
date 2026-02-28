@@ -1,0 +1,274 @@
+import Konva from 'konva';
+import {DrawingTool, ToolConfig, TextTool} from './drawing-tools';
+import {DrawingStateManager} from './drawing-state';
+
+export class DrawingCanvas {
+    private stage: Konva.Stage | null = null;
+    private drawingLayer!: Konva.Layer;
+    private previewLayer!: Konva.Layer;
+    private laserLayer!: Konva.Layer;
+    private stateManager = new DrawingStateManager();
+    private currentTool: DrawingTool | null = null;
+    private toolConfig: ToolConfig = {color: '#E74F1F', width: 4, fillColor: '', opacity: 1, dash: [], eraserWidth: 10};
+    private undoStack: string[] = [];
+    private redoStack: string[] = [];
+    private isDrawing = false;
+    private enabled = false;
+    private container: HTMLElement | null = null;
+    private resizeObserver: ResizeObserver | null = null;
+    private strokeHistory: { json: string; timestamp: number }[] = [];
+
+    // private isReplaying = false;
+
+    mount(container: HTMLElement): void {
+        this.container = container;
+
+        const stageContainer = document.createElement('div');
+        stageContainer.className = 'drawing-canvas-container';
+        stageContainer.style.cssText = `
+          position: absolute;
+          top: 0; left: 0;
+          width: 100%; height: 100%;
+          z-index: 10001;
+          pointer-events: none;
+          overflow: hidden;
+        `;
+        container.appendChild(stageContainer);
+
+        Konva.pixelRatio = 1
+        this.stage = new Konva.Stage({
+            container: stageContainer,
+            width: container.offsetWidth,
+            height: container.scrollHeight || container.offsetHeight,
+        });
+
+        this.drawingLayer = new Konva.Layer({name: 'drawingLayer'});
+        this.previewLayer = new Konva.Layer({ name: 'previewLayer' });
+        this.laserLayer = new Konva.Layer({name: 'laserLayer'});
+
+        this.stage.add(this.drawingLayer);
+        this.stage.add(this.previewLayer);
+        this.stage.add(this.laserLayer);
+
+        this.bindStageEvents();
+        this.observeResize(container, stageContainer);
+    }
+
+    unmount(): void {
+        this.currentTool?.onDestroy?.();
+        this.resizeObserver?.disconnect();
+        this.stage?.destroy();
+        this.container?.querySelector('.drawing-canvas-container')?.remove();
+        this.stage = null;
+        this.container = null;
+    }
+
+    setTool(tool: DrawingTool | null): void {
+        this.currentTool?.onDestroy?.();
+        this.currentTool = tool;
+        if (this.stage) {
+            const stageContainer = this.stage.container();
+            stageContainer.style.cursor = tool?.cursor ?? 'default';
+        }
+        if (tool instanceof TextTool && this.container) {
+            tool.setContainer(this.container);
+        }
+        // if (tool instanceof SelectTool) {
+        //   tool.setLayer(this.drawingLayer);
+        // }
+        // if (tool instanceof SpotlightTool && this.container) {
+        //   tool.setContainer(this.container);
+        // }
+        // if (tool instanceof MagnifierTool && this.container) {
+        //   tool.setContainer(this.container);
+        // }
+    }
+
+    setColor(color: string): void {
+        this.toolConfig.color = color;
+    }
+
+    setWidth(width: number): void {
+        this.toolConfig.width = width;
+    }
+
+    setFillColor(fillColor: string): void {
+        this.toolConfig.fillColor = fillColor;
+    }
+
+    setEraserWidth(width: number): void {
+        this.toolConfig.eraserWidth = width;
+    }
+
+    setOpacity(opacity: number): void {
+        this.toolConfig.opacity = Math.max(0, Math.min(1, opacity));
+    }
+
+    setDash(dash: number[]): void {
+        this.toolConfig.dash = dash;
+    }
+
+    setEnabled(enabled: boolean): void {
+        this.enabled = enabled;
+        if (this.stage) {
+            const stageContainer = this.stage.container();
+            stageContainer.style.pointerEvents = enabled ? 'auto' : 'none';
+        }
+    }
+
+    undo(): void {
+        if (this.undoStack.length === 0) return;
+        this.redoStack.push(this.drawingLayer.toJSON());
+        const prev = this.undoStack.pop()!;
+        this.restoreLayerFromJSON(this.drawingLayer, prev);
+    }
+
+    redo(): void {
+        if (this.redoStack.length === 0) return;
+        this.undoStack.push(this.drawingLayer.toJSON());
+        const next = this.redoStack.pop()!;
+        this.restoreLayerFromJSON(this.drawingLayer, next);
+    }
+
+    clear(): void {
+        this.pushUndo();
+        this.drawingLayer.destroyChildren();
+        this.drawingLayer.batchDraw();
+        this.redoStack = [];
+        this.strokeHistory = [];
+    }
+
+    savePageState(pageIndex: number): void {
+        this.stateManager.savePage(pageIndex, this.drawingLayer);
+    }
+
+    restorePageState(pageIndex: number): void {
+        this.stateManager.restorePage(pageIndex, this.drawingLayer);
+        this.undoStack = [];
+        this.redoStack = [];
+    }
+
+    resizeToContainer(): void {
+        if (!this.stage || !this.container) return;
+        this.stage.width(this.container.offsetWidth);
+        this.stage.height(this.container.scrollHeight || this.container.offsetHeight);
+    }
+
+    toggleVisibility(): boolean {
+        const visible = !this.drawingLayer.visible();
+        this.drawingLayer.visible(visible);
+        this.drawingLayer.getStage()?.batchDraw();
+        return visible;
+    }
+
+    isVisible(): boolean {
+        return this.drawingLayer.visible();
+    }
+
+    getDrawingLayer(): Konva.Layer {
+        return this.drawingLayer;
+    }
+
+    // replay(): void {
+    //   if (this.isReplaying || this.strokeHistory.length === 0) return;
+    //   this.isReplaying = true;
+    //
+    //   // Save current state
+    //   const savedJSON = this.drawingLayer.toJSON();
+    //   this.drawingLayer.destroyChildren();
+    //   this.drawingLayer.batchDraw();
+    //
+    //   let index = 0;
+    //   const strokes = this.strokeHistory;
+    //
+    //   const addNext = () => {
+    //     if (index >= strokes.length) {
+    //       // Restore original state
+    //       this.restoreLayerFromJSON(this.drawingLayer, savedJSON);
+    //       this.isReplaying = false;
+    //       return;
+    //     }
+    //     const node = Konva.Node.create(strokes[index].json);
+    //     this.drawingLayer.add(node);
+    //     this.drawingLayer.batchDraw();
+    //     index++;
+    //
+    //     const delay = index < strokes.length
+    //       ? Math.min(strokes[index].timestamp - strokes[index - 1].timestamp, 500)
+    //       : 800;
+    //     setTimeout(addNext, Math.max(delay, 100));
+    //   };
+    //
+    //   addNext();
+    // }
+
+    private bindStageEvents(): void {
+        if (!this.stage) return;
+
+        this.stage.on('mousedown touchstart', (e) => {
+            if (!this.enabled || !this.currentTool) return;
+            this.isDrawing = true;
+            const pos = this.stage!.getPointerPosition();
+            if (!pos) return;
+            // Adjust for scroll offset
+            const adjusted = this.adjustPos(pos);
+            this.pushUndo();
+            this.currentTool.onMouseDown(adjusted, this.drawingLayer, this.toolConfig);
+        });
+
+        this.stage.on('mousemove touchmove', (e) => {
+            if (!this.enabled || !this.currentTool) return;
+            const pos = this.stage!.getPointerPosition();
+            if (!pos) return;
+            const adjusted = this.adjustPos(pos);
+            if (this.isDrawing) {
+                this.currentTool.onMouseMove(adjusted, this.drawingLayer, this.toolConfig);
+            }
+        });
+
+        this.stage.on('mouseup touchend', (e) => {
+            if (!this.enabled || !this.currentTool) return;
+            this.isDrawing = false;
+            const pos = this.stage!.getPointerPosition();
+            if (!pos) return;
+            const adjusted = this.adjustPos(pos);
+            const node = this.currentTool.onMouseUp(adjusted, this.drawingLayer, this.toolConfig);
+            if (node) {
+                this.redoStack = [];
+                this.strokeHistory.push({json: node.toJSON(), timestamp: Date.now()});
+            }
+        });
+    }
+
+    private adjustPos(pos: { x: number; y: number }): { x: number; y: number } {
+        // Stage is positioned at top of scrollable container, so no scroll adjustment needed
+        // since Konva stage covers the full scrollHeight
+        return {x: pos.x, y: pos.y};
+    }
+
+    private pushUndo(): void {
+        this.undoStack.push(this.drawingLayer.toJSON());
+        if (this.undoStack.length > 50) {
+            this.undoStack.shift();
+        }
+    }
+
+    private restoreLayerFromJSON(layer: Konva.Layer, json: string): void {
+        layer.destroyChildren();
+        const data = JSON.parse(json);
+        if (data.children) {
+            for (const childData of data.children) {
+                const node = Konva.Node.create(JSON.stringify(childData));
+                layer.add(node);
+            }
+        }
+        layer.batchDraw();
+    }
+
+    private observeResize(container: HTMLElement, stageContainer: HTMLElement): void {
+        this.resizeObserver = new ResizeObserver(() => {
+            this.resizeToContainer();
+        });
+        this.resizeObserver.observe(container);
+    }
+}
