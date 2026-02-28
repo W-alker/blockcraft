@@ -94,11 +94,18 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
       const {from} = this.getEmbedRange(formulaEl)
       if (from.type !== 'text') return
       const embedIndex = from.index
-      block.applyDeltaOperations([
-        {retain: embedIndex},
-        {delete: 1},
-        {insert: {latex: newLatex}}
-      ])
+      if(!newLatex) {
+        block.applyDeltaOperations([
+          {retain: embedIndex},
+          {delete: 1}
+        ])
+      } else {
+        block.applyDeltaOperations([
+          {retain: embedIndex},
+          {delete: 1},
+          {insert: newLatex}
+        ])
+      }
       requestAnimationFrame(() => {
         this.doc.selection.setCursorAt(block, embedIndex + 1)
       })
