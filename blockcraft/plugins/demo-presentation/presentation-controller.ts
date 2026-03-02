@@ -405,7 +405,7 @@ export class PresentationController {
     // 创建 DrawingCanvas（如果尚未创建）
     if (!this.drawingCanvas) {
       this.drawingCanvas = new DrawingCanvas();
-      this.drawingCanvas.mount(this._demoDoc.root.hostElement);
+      this.drawingCanvas.mount(this._demoDoc.root.hostElement, this.presentationContainer);
       this.drawingCanvas.restorePageState(this.currentPageIndex);
     }
     this.drawingCanvas.setEnabled(true);
@@ -556,6 +556,11 @@ export class PresentationController {
     this.eventCleanups = [];
 
     // 重置引用
+    this.drawingCanvas?.unmount();
+    this.drawingCanvas = null;
+    this.drawingToolbarRef?.destroy();
+    this.drawingToolbarRef = null;
+    this.isDrawingMode = false;
     this._demoDoc?.destroy()
     this._demoDoc = null;
     this.presentationContainer?.remove();

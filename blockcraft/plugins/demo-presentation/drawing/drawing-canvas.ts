@@ -15,31 +15,38 @@ export class DrawingCanvas {
     private isDrawing = false;
     private enabled = false;
     private container: HTMLElement | null = null;
+    private scrollContainer: HTMLElement | null = null;
+    private stageContainer: HTMLElement | null = null;
     private resizeObserver: ResizeObserver | null = null;
+    private scrollSyncRaf: number | null = null;
     private strokeHistory: { json: string; timestamp: number }[] = [];
+    private readonly onScroll = () => this.scheduleSyncViewport();
 
     // private isReplaying = false;
 
-    mount(container: HTMLElement): void {
+    mount(container: HTMLElement, scrollContainer?: HTMLElement): void {
         this.container = container;
+        this.scrollContainer = scrollContainer ?? this.findScrollContainer(container);
 
         const stageContainer = document.createElement('div');
         stageContainer.className = 'drawing-canvas-container';
         stageContainer.style.cssText = `
           position: absolute;
           top: 0; left: 0;
-          width: 100%; height: 100%;
+          width: 100%;
           z-index: 10001;
           pointer-events: none;
           overflow: hidden;
         `;
+        this.stageContainer = stageContainer;
         container.appendChild(stageContainer);
 
-        Konva.pixelRatio = 1
+        const viewportHeight = this.getViewportHeight();
+        Konva.pixelRatio = 1;
         this.stage = new Konva.Stage({
             container: stageContainer,
             width: container.offsetWidth,
-            height: container.scrollHeight || container.offsetHeight,
+            height: viewportHeight,
         });
 
         this.drawingLayer = new Konva.Layer({name: 'drawingLayer'});
@@ -51,15 +58,24 @@ export class DrawingCanvas {
         this.stage.add(this.laserLayer);
 
         this.bindStageEvents();
-        this.observeResize(container, stageContainer);
+        this.observeResize(container);
+        this.scrollContainer?.addEventListener('scroll', this.onScroll, {passive: true});
+        this.syncViewport();
     }
 
     unmount(): void {
         this.currentTool?.onDestroy?.();
         this.resizeObserver?.disconnect();
+        if (this.scrollSyncRaf !== null) {
+            cancelAnimationFrame(this.scrollSyncRaf);
+            this.scrollSyncRaf = null;
+        }
+        this.scrollContainer?.removeEventListener('scroll', this.onScroll);
         this.stage?.destroy();
-        this.container?.querySelector('.drawing-canvas-container')?.remove();
+        this.stageContainer?.remove();
         this.stage = null;
+        this.stageContainer = null;
+        this.scrollContainer = null;
         this.container = null;
     }
 
@@ -149,9 +165,7 @@ export class DrawingCanvas {
     }
 
     resizeToContainer(): void {
-        if (!this.stage || !this.container) return;
-        this.stage.width(this.container.offsetWidth);
-        this.stage.height(this.container.scrollHeight || this.container.offsetHeight);
+        this.syncViewport();
     }
 
     toggleVisibility(): boolean {
@@ -241,9 +255,7 @@ export class DrawingCanvas {
     }
 
     private adjustPos(pos: { x: number; y: number }): { x: number; y: number } {
-        // Stage is positioned at top of scrollable container, so no scroll adjustment needed
-        // since Konva stage covers the full scrollHeight
-        return {x: pos.x, y: pos.y};
+        return {x: pos.x, y: pos.y + this.getScrollTop()};
     }
 
     private pushUndo(): void {
@@ -265,10 +277,92 @@ export class DrawingCanvas {
         layer.batchDraw();
     }
 
-    private observeResize(container: HTMLElement, stageContainer: HTMLElement): void {
+    private observeResize(container: HTMLElement): void {
         this.resizeObserver = new ResizeObserver(() => {
-            this.resizeToContainer();
+            this.scheduleSyncViewport();
         });
         this.resizeObserver.observe(container);
+        if (this.scrollContainer && this.scrollContainer !== container) {
+            this.resizeObserver.observe(this.scrollContainer);
+        }
+    }
+
+    private scheduleSyncViewport(): void {
+        if (this.scrollSyncRaf !== null) return;
+        this.scrollSyncRaf = requestAnimationFrame(() => {
+            this.scrollSyncRaf = null;
+            this.syncViewport();
+        });
+    }
+
+    private syncViewport(): void {
+        if (!this.stage || !this.container || !this.stageContainer) return;
+
+        const viewportHeight = this.getViewportHeight();
+        const viewportWidth = this.container.offsetWidth;
+        const scrollTop = this.getScrollTop();
+        const layerOffsetY = -scrollTop;
+        let changed = false;
+
+        if (this.stage.width() !== viewportWidth) {
+            this.stage.width(viewportWidth);
+            changed = true;
+        }
+        if (this.stage.height() !== viewportHeight) {
+            this.stage.height(viewportHeight);
+            changed = true;
+        }
+
+        const top = `${scrollTop}px`;
+        if (this.stageContainer.style.top !== top) {
+            this.stageContainer.style.top = top;
+            changed = true;
+        }
+        const height = `${viewportHeight}px`;
+        if (this.stageContainer.style.height !== height) {
+            this.stageContainer.style.height = height;
+            changed = true;
+        }
+
+        if (this.drawingLayer.y() !== layerOffsetY) {
+            this.drawingLayer.y(layerOffsetY);
+            changed = true;
+        }
+        if (this.previewLayer.y() !== layerOffsetY) {
+            this.previewLayer.y(layerOffsetY);
+            changed = true;
+        }
+        if (this.laserLayer.y() !== layerOffsetY) {
+            this.laserLayer.y(layerOffsetY);
+            changed = true;
+        }
+
+        if (changed) {
+            this.stage.batchDraw();
+        }
+    }
+
+    private getScrollTop(): number {
+        return this.scrollContainer?.scrollTop ?? 0;
+    }
+
+    private getViewportHeight(): number {
+        if (this.scrollContainer) {
+            return this.scrollContainer.clientHeight;
+        }
+        return this.container?.offsetHeight ?? window.innerHeight;
+    }
+
+    private findScrollContainer(el: HTMLElement): HTMLElement | null {
+        let parent: HTMLElement | null = el.parentElement;
+        while (parent) {
+            const style = window.getComputedStyle(parent);
+            const overflowY = style.overflowY;
+            if ((overflowY === 'auto' || overflowY === 'scroll') && parent.scrollHeight > parent.clientHeight) {
+                return parent;
+            }
+            parent = parent.parentElement;
+        }
+        return null;
     }
 }
