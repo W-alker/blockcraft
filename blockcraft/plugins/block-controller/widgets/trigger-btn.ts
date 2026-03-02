@@ -3,12 +3,11 @@ import {
   ChangeDetectorRef,
   Component, ElementRef,
   EventEmitter,
-  HostBinding,
   HostListener,
   Input,
   Output,
 } from "@angular/core";
-import { NgForOf, NgIf, NgTemplateOutlet } from "@angular/common";
+import { NgIf, NgTemplateOutlet } from "@angular/common";
 import { Subscription, take } from "rxjs";
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective } from "../../../components";
 import { BlockNodeType } from "../../../framework";
@@ -16,10 +15,19 @@ import { IBlockSchemaOptions } from "../../../framework";
 import { MatIcon } from "@angular/material/icon";
 import { IS_MAC, nextTick } from "../../../global";
 import { BLOCK_CREATOR_SERVICE_TOKEN } from "../../../framework";
-import { customToolHandler, IContextMenuItem } from "../types";
-import { NzDropDownDirective, NzDropdownMenuComponent } from "ng-zorro-antd/dropdown";
+import {
+  BlockMenuActionEvent,
+  BlockMenuActionHandler,
+  BlockMenuContext,
+  BlockMenuItem,
+  BlockMenuResolver,
+  BlockMenuSection,
+  customToolHandler,
+  IContextMenuItem
+} from "../types";
 import { parseInt } from "lib0/number";
 import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
+import { BlockMenuComponent } from "./block-menu";
 
 const ALIGN_LIST: IContextMenuItem[] = [
   {
@@ -143,23 +151,25 @@ const HEADING_LIST: IContextMenuItem[] = [
         @if (isEmpty) {
           <ng-container *ngTemplateOutlet="moreBlocksTpl"></ng-container>
         } @else {
+          <bc-block-menu [items]="primaryToolMenuItems"
+                         [embedded]="true"
+                         [menuDisabled]="menuDisabled"
+                         (itemAction)="handleMenuAction($event)"></bc-block-menu>
 
-          @if (activeBlock?.nodeType === BlockNodeType.editable) {
-            <bc-float-toolbar-item class="append-more-btn" [expandable]="true" [bcOverlayTrigger]="alignList"
-                                   [disabled]="menuDisabled"
-                                   [positions]="['right-center']" [offsetX]="2">
-              <i [class]="['bc_icon', 'bc_zuoduiqi']"></i>
-              <span>对齐方式</span>
-            </bc-float-toolbar-item>
-
+          @if (blockMenuSections.length) {
             <span class="bc-float-toolbar__divider"></span>
-          }
-
-          @for (item of toolList; track item.name) {
-            <bc-float-toolbar-item class="append-more-btn" (mousedown)="handleToolItemClick(item)">
-              <i [class]="['bc_icon', item.icon]"></i>
-              <span>{{ item.label }}</span>
-            </bc-float-toolbar-item>
+            @for (section of blockMenuSections; track section.key) {
+              @if (section.title) {
+                <h4 class="title">{{ section.title }}</h4>
+              }
+              <bc-block-menu [items]="section.items"
+                             [embedded]="true"
+                             [menuDisabled]="menuDisabled"
+                             (itemAction)="handleMenuAction($event)"></bc-block-menu>
+              @if (!$last) {
+                <span class="bc-float-toolbar__divider"></span>
+              }
+            }
           }
 
           <span class="bc-float-toolbar__divider"></span>
@@ -193,18 +203,6 @@ const HEADING_LIST: IContextMenuItem[] = [
       </bc-float-toolbar>
     </ng-template>
 
-    <ng-template #alignList>
-      <bc-float-toolbar direction="column" style="display: block; width: 224px;">
-        @for (item of ALIGN_LIST; track item.name) {
-          <bc-float-toolbar-item class="align-item" (mousedown)="handleToolItemClick(item)"
-                                 [icon]="item.icon" [title]="item.label"
-                                 [active]="$any(activeBlock?.props)['textAlign'] === item.value">
-            {{ item.label }}
-          </bc-float-toolbar-item>
-        }
-      </bc-float-toolbar>
-    </ng-template>
-
     <ng-template #moreBlocksTpl>
       <h4 class="title">常用</h4>
       <ng-container *ngTemplateOutlet="otherBlockListTpl; context: { $implicit: _validOtherBlockList }"></ng-container>
@@ -227,7 +225,7 @@ const HEADING_LIST: IContextMenuItem[] = [
     </ng-template>
   `,
   styleUrls: ['./trigger-btn.scss'],
-  imports: [NgIf, NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, NgForOf, MatIcon, BcOverlayTriggerDirective, NzDropdownMenuComponent, NzDropDownDirective, NzTooltipDirective],
+  imports: [NgIf, NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, MatIcon, BcOverlayTriggerDirective, NzTooltipDirective, BlockMenuComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.contenteditable]': 'false',
@@ -248,7 +246,6 @@ export class TriggerBtn {
   @Input()
   set activeBlock(val: BlockCraft.BlockComponent | null) {
     if (this._activeBlock === val) return
-    // this.closeContextMenu()
 
     this._activeBlock = val
     this._onDestroySub?.unsubscribe()
@@ -256,7 +253,11 @@ export class TriggerBtn {
     this.activeBlockIcon = undefined
 
     if (!this._activeBlock) {
-      this.close()
+      this.primaryToolMenuItems = []
+      this.blockMenuSections = []
+      this.display = 'none'
+      this.menuDisabled = false
+      this.cdr.markForCheck()
       return
     }
 
@@ -271,11 +272,11 @@ export class TriggerBtn {
     }
 
     this.setIsEmpty()
+    this.refreshMenuData()
 
     const parentBlock = this._activeBlock.parentBlock!
-    // this.draggable = !!parentBlock?.childrenLength && parentBlock.childrenLength > 1
 
-    this._onDestroySub = this._activeBlock?.onDestroy$.pipe(take(1)).subscribe(() => {
+    this._onDestroySub = this._activeBlock.onDestroy$.pipe(take(1)).subscribe(() => {
       this.close()
     })
 
@@ -298,6 +299,12 @@ export class TriggerBtn {
 
   @Input()
   customToolHandler?: customToolHandler
+
+  @Input()
+  blockMenuResolver?: BlockMenuResolver
+
+  @Input()
+  blockMenuActionHandler?: BlockMenuActionHandler
 
   @Output()
   itemClicked = new EventEmitter<{ item: IBlockSchemaOptions, type: 'block' } | {
@@ -333,7 +340,6 @@ export class TriggerBtn {
   }
 
   protected readonly BlockNodeType = BlockNodeType;
-  protected readonly ALIGN_LIST = ALIGN_LIST;
   protected readonly HEADING_LIST = HEADING_LIST;
   protected baseBlockList: IBlockSchemaOptions[] = []
   protected otherBlockList: IBlockSchemaOptions[] = []
@@ -363,6 +369,9 @@ export class TriggerBtn {
     }
   ]
 
+  protected primaryToolMenuItems: BlockMenuItem[] = []
+  protected blockMenuSections: BlockMenuSection[] = []
+
   protected display = 'none'
   protected isEmpty = false
   private _onDestroySub?: Subscription
@@ -382,7 +391,6 @@ export class TriggerBtn {
       const rect = container.getBoundingClientRect()
       return {
         top: rect.top - rootRect.top
-          // + this.calcLineHeight(container) / 2 - 11
           + this.doc.root.hostElement.scrollTop,
         left,
       }
@@ -402,33 +410,141 @@ export class TriggerBtn {
   @HostListener('mousedown', ['$event'])
   onMouse(event: MouseEvent) {
     event.stopPropagation()
-    // event.preventDefault()  // If open this line, the btn can't be dragged
   }
 
   @HostListener('mouseenter', ['$event'])
   onMouseEnter(e: Event) {
     e.stopPropagation()
     this.setIsEmpty()
+    this.refreshMenuData()
     this.cdr.markForCheck()
-    // this.showContextMenu()
   }
 
   setIsEmpty() {
-    // @ts-expect-error
+    if (!this._activeBlock) {
+      this.isEmpty = false
+      return
+    }
+    // @ts-expect-error paragraph block has textLength
     this.isEmpty = this._activeBlock.flavour === 'paragraph' ? !this._activeBlock.textLength && !this.activeBlock?.props.heading : false
   }
 
   setValidBlockList() {
-    const parentBlockSchema = this.doc.schemas.get(this.activeBlock!.parentBlock!.flavour)!
+    if (!this.activeBlock?.parentBlock) return
+    const parentBlockSchema = this.doc.schemas.get(this.activeBlock.parentBlock.flavour)!
     this._validOtherBlockList = this.otherBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
     this._validBaseBlockList = this.baseBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
     this._validEmbeddedBlockList = this.embeddedBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
+    this.refreshMenuData()
   }
 
   close() {
     this.display = 'none'
     this.activeBlock = null
     this.cdr.markForCheck()
+  }
+
+  private refreshMenuData() {
+    this.primaryToolMenuItems = this.buildPrimaryToolMenuItems()
+    this.blockMenuSections = this.resolveBlockMenuSections()
+  }
+
+  private buildPrimaryToolMenuItems() {
+    if (!this.activeBlock || this.isEmpty) return []
+
+    const items: BlockMenuItem[] = []
+    if (this.activeBlock.nodeType === BlockNodeType.editable) {
+      items.push({
+        type: 'dropdown',
+        name: 'align-menu',
+        icon: 'bc_zuoduiqi',
+        label: '对齐方式',
+        items: ALIGN_LIST.map(item => ({
+          type: 'simple',
+          name: item.name,
+          label: item.label,
+          icon: item.icon,
+          value: item.value,
+          active: (this.activeBlock?.props as any)['textAlign'] === item.value,
+          data: { legacyTool: item }
+        }))
+      })
+      items.push({
+        type: 'divider',
+        name: 'tool-align-divider'
+      })
+    }
+
+    this.toolList.forEach(item => {
+      items.push({
+        type: 'simple',
+        name: item.name,
+        label: item.label,
+        icon: item.icon,
+        desc: item.desc,
+        value: item.value,
+        data: { legacyTool: item }
+      })
+    })
+
+    return items
+  }
+
+  private resolveBlockMenuSections() {
+    const ctx = this.createMenuContext()
+    if (!ctx || !this.blockMenuResolver) return []
+    return (this.blockMenuResolver(ctx) || [])
+      .map(section => ({
+        ...section,
+        items: section.items.filter(item => !item.hidden)
+      }))
+      .filter(section => section.items.length > 0)
+  }
+
+  private createMenuContext(): BlockMenuContext | null {
+    const block = this.activeBlock
+    if (!block) return null
+    return {
+      activeBlock: block,
+      doc: this.doc,
+      findClosestBlock: (flavour) => this.findClosestBlock(block, flavour)
+    }
+  }
+
+  private findClosestBlock(start: BlockCraft.BlockComponent | null, flavour: BlockCraft.BlockFlavour | string) {
+    let current = start
+    while (current) {
+      if (current.flavour === flavour) return current
+      current = current.parentBlock
+    }
+    return null
+  }
+
+  handleMenuAction(event: BlockMenuActionEvent) {
+    const legacyTool = this.getLegacyTool(event.item)
+    if (legacyTool) {
+      this.handleToolItemClick(legacyTool)
+      nextTick().then(() => {
+        this.refreshMenuData()
+        this.cdr.markForCheck()
+      })
+      return
+    }
+
+    const ctx = this.createMenuContext()
+    if (!ctx || !this.blockMenuActionHandler) return
+    const handled = this.blockMenuActionHandler(event, ctx)
+    if (!handled) return
+    nextTick().then(() => {
+      this.refreshMenuData()
+      this.cdr.markForCheck()
+    })
+  }
+
+  private getLegacyTool(item: BlockMenuItem): IContextMenuItem | null {
+    if (!("data" in item) || !item.data || typeof item.data !== 'object') return null
+    const data = item.data as { legacyTool?: IContextMenuItem }
+    return data.legacyTool || null
   }
 
   handleBlockItemClick(item: IBlockSchemaOptions) {
@@ -524,7 +640,6 @@ export class TriggerBtn {
       case 'copy': {
         if (!this.activeBlock) return;
         this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
-
           this.doc.messageService.success('已复制')
           this.close()
         })
@@ -563,4 +678,3 @@ export class TriggerBtn {
   }
 
 }
-

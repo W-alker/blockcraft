@@ -2,7 +2,22 @@ import {fromEvent, take, takeUntil} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {TriggerBtn} from "./widgets/trigger-btn";
 import {closetBlockId, DocPlugin, EventListen} from "../../framework";
-import {IContextMenuItem, customToolHandler} from "./types";
+import {
+  BlockControllerPluginOptions,
+  BlockMenuActionEvent,
+  BlockMenuActionHandler,
+  BlockMenuContext,
+  BlockMenuResolver,
+  BlockMenuSection,
+  customToolHandler,
+  IContextMenuItem
+} from "./types";
+
+const TABLE_MENU_NAMES = {
+  equalWidth: "table-equal-width",
+  rowHead: "table-row-head",
+  colHead: "table-col-head",
+} as const;
 
 export class BlockControllerPlugin extends DocPlugin {
   override name = 'block-controller'
@@ -17,11 +32,27 @@ export class BlockControllerPlugin extends DocPlugin {
 
   private _timer?: number
 
+  public readonly customTools: IContextMenuItem[]
+  private readonly customToolHandler?: customToolHandler
+  private readonly blockMenuResolver?: BlockMenuResolver
+  private readonly blockMenuActionHandler?: BlockMenuActionHandler
+
+  constructor(customTools?: IContextMenuItem[], customToolHandler?: customToolHandler)
+  constructor(options?: BlockControllerPluginOptions)
   constructor(
-    public readonly customTools: IContextMenuItem[] = [],
-    private readonly customToolHandler?: customToolHandler
+    customToolsOrOptions: IContextMenuItem[] | BlockControllerPluginOptions = [],
+    customToolHandler?: customToolHandler
   ) {
     super();
+    if (Array.isArray(customToolsOrOptions)) {
+      this.customTools = customToolsOrOptions
+      this.customToolHandler = customToolHandler
+      return
+    }
+    this.customTools = customToolsOrOptions.customTools || []
+    this.customToolHandler = customToolsOrOptions.customToolHandler
+    this.blockMenuResolver = customToolsOrOptions.blockMenuResolver
+    this.blockMenuActionHandler = customToolsOrOptions.blockMenuActionHandler
   }
 
   init() {
@@ -32,6 +63,8 @@ export class BlockControllerPlugin extends DocPlugin {
     this._cpr.setInput('doc', this.doc)
     this._cpr.setInput('customTools', this.customTools)
     this._cpr.setInput('customToolHandler', this.customToolHandler)
+    this._cpr.setInput('blockMenuResolver', this.resolveBlockMenus)
+    this._cpr.setInput('blockMenuActionHandler', this.handleBlockMenuAction)
     this.doc.root.hostElement.appendChild(this._cpr.location.nativeElement)
 
     fromEvent<MouseEvent>(this.doc.root.hostElement, 'mouseover').pipe(takeUntil(this.doc.onDestroy$)).subscribe(e => {
@@ -114,9 +147,73 @@ export class BlockControllerPlugin extends DocPlugin {
     this._timer = undefined
   }
 
+  private resolveBlockMenus = (ctx: BlockMenuContext): BlockMenuSection[] => {
+    const builtinSections = this.resolveTableMenu(ctx)
+    const customSections = this.blockMenuResolver?.(ctx) || []
+    return [...builtinSections, ...customSections]
+  }
+
+  private handleBlockMenuAction = (event: BlockMenuActionEvent, ctx: BlockMenuContext): boolean => {
+    const customHandled = this.blockMenuActionHandler?.(event, ctx)
+    if (customHandled) return true
+    return this.handleTableMenuAction(event, ctx)
+  }
+
+  private resolveTableMenu(ctx: BlockMenuContext): BlockMenuSection[] {
+    const table = ctx.findClosestBlock('table') as BlockCraft.IBlockComponents['table'] | null
+    if (!table) return []
+    return [
+      {
+        key: 'table-tools',
+        title: '表格',
+        items: [
+          {
+            type: 'simple',
+            icon: "bc_liekuan",
+            name: TABLE_MENU_NAMES.equalWidth,
+            label: '均分列宽'
+          },
+          {
+            type: 'switch',
+            name: TABLE_MENU_NAMES.rowHead,
+            icon: 'bc_biaotihang',
+            label: '标题行',
+            checked: !!table.props.rowHead
+          },
+          {
+            type: 'switch',
+            name: TABLE_MENU_NAMES.colHead,
+            icon: 'bc_biaotilie',
+            label: '标题列',
+            checked: !!table.props.colHead
+          }
+        ]
+      }
+    ]
+  }
+
+  private handleTableMenuAction(event: BlockMenuActionEvent, ctx: BlockMenuContext) {
+    const table = ctx.findClosestBlock('table') as BlockCraft.IBlockComponents['table'] | null
+    if (!table) return false
+    switch (event.item.name) {
+      case TABLE_MENU_NAMES.equalWidth:
+        table.setEqualColumnWidths()
+        return true
+      case TABLE_MENU_NAMES.rowHead:
+        table.toggleHeaderRow()
+        return true
+      case TABLE_MENU_NAMES.colHead:
+        table.toggleHeaderColumn()
+        return true
+      default:
+        return false
+    }
+  }
+
   destroy() {
     this._cpr.destroy()
   }
 
 }
 
+export * from "./types"

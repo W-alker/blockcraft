@@ -6,6 +6,20 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "2474974",
+      "name": "自动列宽",
+      "font_class": "zidongliekuan",
+      "unicode": "e696",
+      "unicode_decimal": 59030
+    },
+    {
+      "icon_id": "12695947",
+      "name": "列宽",
+      "font_class": "liekuan",
+      "unicode": "e711",
+      "unicode_decimal": 59153
+    },
+    {
       "icon_id": "15644385",
       "name": "显示",
       "font_class": "xianshi",

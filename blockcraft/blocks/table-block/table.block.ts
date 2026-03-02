@@ -162,6 +162,46 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     })
   }
 
+  setEqualColumnWidths(minWidth = 50) {
+    if (!this.colLength) return
+
+    const containerWidth = this.tableScrollable?.nativeElement?.clientWidth
+      || this.hostElement.clientWidth
+      || this.colLength * minWidth
+    const eachWidth = Math.max(minWidth, Math.floor(containerWidth / this.colLength))
+    const nextWidths = Array.from({ length: this.colLength }, () => eachWidth)
+
+    this.updateProps({
+      colWidths: nextWidths
+    })
+
+    // 清理拖拽过程中写入到 <col> 的临时 style.width，避免后续属性宽度被覆盖
+    this._clearColInlineWidths()
+
+    // 从超宽表格切换到均分时，重置并钳制滚动位置，避免右侧出现空白区
+    requestAnimationFrame(() => {
+      const scroller = this.tableScrollable?.nativeElement
+      if (!scroller) return
+      scroller.scrollLeft = 0
+      const maxScrollLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth)
+      if (scroller.scrollLeft > maxScrollLeft) {
+        scroller.scrollLeft = maxScrollLeft
+      }
+    })
+  }
+
+  toggleHeaderRow() {
+    this.updateProps({
+      rowHead: !this.props.rowHead
+    })
+  }
+
+  toggleHeaderColumn() {
+    this.updateProps({
+      colHead: !this.props.colHead
+    })
+  }
+
   private _closetCell(event: Event) {
     const target = event.target as Node
     const ele = target instanceof HTMLElement ? target : target.parentElement!
@@ -444,6 +484,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     let newWidth = this.props.colWidths[resizingColIdx]
     let prevClientX = evt.clientX
+    const minWidth = 50
 
     const resizeSub = fromEvent<MouseEvent>(document, 'mousemove', { capture: true })
       .pipe(takeUntil(this.resizingCol$.pipe(filter(v => !v))))
@@ -461,8 +502,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         newWidth += deltaX
 
         // 最小宽度限制
-        if (newWidth < 50) {
-          newWidth = 50
+        if (newWidth < minWidth) {
+          newWidth = minWidth
           return
         }
 
@@ -483,10 +524,22 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       if (!this.resizingCol$.value) return
       this.resizingCol$.next(false)
       const widths = [...this.props.colWidths]
-      widths[resizingColIdx] = Math.max(50, newWidth)
+      widths[resizingColIdx] = Math.max(minWidth, newWidth)
       this.updateProps({
         colWidths: widths
       })
+
+      // 拖拽结束后清理临时 inline width，改由模型中的 colWidths 统一控制
+      requestAnimationFrame(() => {
+        curCol.style.width = ''
+      })
+    })
+  }
+
+  private _clearColInlineWidths() {
+    const cols = this.hostElement.querySelectorAll('col')
+    cols.forEach(col => {
+      (col as HTMLElement).style.width = ''
     })
   }
 
