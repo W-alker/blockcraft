@@ -14,6 +14,7 @@ import { LangListComponent } from "./lang-list.component";
 import { CodeBlockLanguage } from "./const";
 import { debounce, nextTick } from "../../global";
 import { CodeInlineManagerService } from "./code-inlineManager.service";
+import { CodeBlockNameInputComponent } from "./block-name-input.component";
 
 @Component({
   selector: 'div.code-block',
@@ -22,7 +23,7 @@ import { CodeInlineManagerService } from "./code-inlineManager.service";
       <span class="head-btn btn-collapse" (mousedown)="onToggleCollapse($event)">
           <i class="bc_icon bc_a-sanjiao-jinru6"></i>
       </span>
-      <span class="block-name">代码块</span>
+      <span class="block-name" spellcheck="false" (mousedown)="showBlockNameInput($event)">{{ blockName }}</span>
 
       <div class="head-btn__group">
         <div class="head-btn" (mousedown)="showLangList($event)">
@@ -56,6 +57,10 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   private lines: string[] = []
 
   private _inlineManager!: CodeInlineManagerService
+
+  get blockName() {
+    return this.props.blockName?.trim() || '代码块'
+  }
 
   override get inlineManager() {
     return this._inlineManager
@@ -165,6 +170,40 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
       setTimeout(() => {
         el.childNodes[1].textContent = '复制'
       }, 2000)
+    })
+  }
+
+  showBlockNameInput(event: MouseEvent) {
+    if (this.doc.isReadonly) return
+    event.stopPropagation()
+    event.preventDefault()
+
+    const close$ = new Subject<void>()
+    const close = () => close$.next()
+
+    const { componentRef } = this.doc.overlayService.createConnectedOverlay<CodeBlockNameInputComponent>({
+      target: event.currentTarget as HTMLElement,
+      component: CodeBlockNameInputComponent,
+      positions: [getPositionWithOffset('bottom-left', 0, 6), getPositionWithOffset('top-left', 0, 6)],
+      backdrop: true
+    }, close$, () => {
+    })
+
+    componentRef.setInput('value', this.props.blockName?.trim() || '')
+
+    requestAnimationFrame(() => {
+      componentRef.instance.focus()
+    })
+
+    componentRef.instance.cancel.pipe(takeUntilDestroyed(componentRef.instance.destroyRef)).subscribe(() => {
+      close()
+    })
+
+    componentRef.instance.valueChange.pipe(takeUntilDestroyed(componentRef.instance.destroyRef)).subscribe(value => {
+      this.updateProps({
+        blockName: value || null
+      })
+      close()
     })
   }
 

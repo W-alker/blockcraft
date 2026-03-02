@@ -126,6 +126,14 @@
         font-size: calc(var(--bc-fs) * .8);
         color: var(--bc-color-light);
         white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: pointer;
+        user-select: none;
+
+        &:hover {
+          color: var(--bc-color);
+        }
       }
     }
 
@@ -214,5 +222,3 @@
   }
 
 }
-
-
