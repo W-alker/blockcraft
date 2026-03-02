@@ -1,66 +1,60 @@
 import {
   BindHotKey,
   DeltaOperation,
-  DocPlugin, EventListen, IInlineRange, isZeroSpace, ORIGIN_SKIP_SYNC,
+  DocPlugin, EventListen, isZeroSpace, OneShotCursorAnchor, ORIGIN_SKIP_SYNC,
   STR_LINE_BREAK,
   STR_TAB,
   UIEventStateContext
 } from "../framework";
-import {BlockCraftError, ErrorCode, getLinesByRange, getScrollContainer, nextTick} from "../global";
+import {BlockCraftError, ErrorCode, getLinesByRange, getScrollContainer} from "../global";
 
 export class CodeInlineEditorBinding extends DocPlugin {
+  private _compositionAnchor: OneShotCursorAnchor | null = null
 
-  // TODO 迁移  compositionStart事件
-  // private _compositionStartDeleteRange: IInlineRange | null = null
+  private get compositionAnchor() {
+    return this._compositionAnchor ||= new OneShotCursorAnchor(this.doc)
+  }
 
-  // @EventListen('compositionStart', {flavour: 'code'})
-  // @EventListen('compositionStart', {flavour: 'mermaid-textarea'})
-  // private _handleCompositionStart(context: UIEventStateContext) {
-  //   const ev = context.getDefaultEvent<CompositionEvent>()
-  //   if (!ev.data) return true
-  //   const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
-  //   if (!sel || sel.from.type !== 'text') {
-  //     throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
-  //   }
-  //   const {block, index, length} = sel.from
-  //   this.doc.crud.transact(() => {
-  //     block.deleteText(index, length)
-  //   })
-  //   // this._compositionStartDeleteRange = {
-  //   //   index: sel.from.index,
-  //   //   length: sel.from.length
-  //   // }
-  //   return true
-  // }
+  @EventListen('compositionStart', {flavour: 'code'})
+  @EventListen('compositionStart', {flavour: 'mermaid-textarea'})
+  private _handleCompositionStart() {
+    this.compositionAnchor.reset()
+    this.compositionAnchor.captureFromSelection({isComposing: true})
+  }
 
   @EventListen('compositionEnd', {flavour: 'code'})
   @EventListen('compositionEnd', {flavour: 'mermaid-textarea'})
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.getDefaultEvent<CompositionEvent>()
-    ev.preventDefault()
+    // ev.preventDefault()
+    try {
+      const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
+      if (!sel || sel.from.type !== 'text') {
+        throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
+      }
+      const text = ev.data
 
-    const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
-    if (!sel || sel.from.type !== 'text') {
-      throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
+      const {block, index} = sel.from
+      const isZero = isZeroSpace(sel.raw.startContainer)
+      const fallbackIndex = isZero ? index : Math.max(0, index - text.length)
+      const {block: insertBlock, index: insertIndex} = this.compositionAnchor.resolve({block, index: fallbackIndex})!
+
+      this.doc.crud.transact(() => {
+        insertBlock.yText.insert(insertIndex, text)
+      }, ORIGIN_SKIP_SYNC)
+
+      insertBlock.rerender()
+      // if (block.flavour === 'code' && block.props.lang === 'PlainText') {
+      // }
+      //
+      requestAnimationFrame(() => {
+        insertBlock.setInlineRange(insertIndex + text.length)
+      })
+      next?.()
+      return true
+    } finally {
+      this.compositionAnchor.reset()
     }
-    const text = ev.data
-
-    const {block, index} = sel.from
-    const isZero = isZeroSpace(sel.raw.startContainer)
-
-    this.doc.crud.transact(() => {
-      block.yText.insert(isZero ? index : index - text.length, text)
-    }, ORIGIN_SKIP_SYNC)
-
-    block.rerender()
-    // if (block.flavour === 'code' && block.props.lang === 'PlainText') {
-    // }
-    //
-    requestAnimationFrame(() => {
-      block.setInlineRange(isZero ? text.length + index : index)
-    })
-    next?.()
-    return true
   }
 
   @BindHotKey({key: 'Enter', shiftKey: null}, {flavour: 'code'})
@@ -206,4 +200,3 @@ function scrollIntoNearestParentY(target: HTMLElement, {behavior = 'auto'} = {})
     parent.scrollTop = targetScrollTop + rect.height
   }
 }
-

@@ -14,16 +14,21 @@ import {
 import {BlockSelection, INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
 import {BlockCraftError, ErrorCode, performanceTest, sliceDelta} from "../../../global";
+import {OneShotCursorAnchor} from "../../utils/one-shot-selection-anchor";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
 @DocEventRegister
 export class InputTransformer {
+  private readonly _compositionAnchor: OneShotCursorAnchor
+
   constructor(public readonly doc: BlockCraft.Doc) {
+    this._compositionAnchor = new OneShotCursorAnchor(doc)
   }
 
   @EventListen('compositionStart')
   private _handleCompositionStart(context: UIEventStateContext) {
+    this._compositionAnchor.reset()
     const curSel = this.doc.selection.value!
     if (curSel.isAllSelected) {
       context.preventDefault();
@@ -37,6 +42,7 @@ export class InputTransformer {
       this.doc.crud.insertBlocksAfter(curSel.lastBlock.id, [p])
       this.doc.selection.setCursorAtBlock(p.id, true)
       this.doc.selection.recalculate()
+      this._compositionAnchor.captureFromSelection({isComposing: true})
       // this._deleteAllSelected(curSel)
       return true
     }
@@ -57,6 +63,7 @@ export class InputTransformer {
       this.doc.selection.recalculate()
       this._replaceText(curSel)
     }
+    this._compositionAnchor.captureFromSelection({isComposing: true})
     return true
   }
 
@@ -64,29 +71,37 @@ export class InputTransformer {
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.getDefaultEvent<CompositionEvent>()
     ev.preventDefault()
+    try {
+      const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
+      if (!sel || sel.from.type !== 'text') {
+        throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
+      }
+      const text = ev.data
+      const {block, index} = sel.from
+      const isZero = isZeroSpace(sel.raw.startContainer)
+      const fallbackIndex = isZero ? index : Math.max(0, index - text.length)
+      const {block: insertBlock, index: insertIndex} = this._compositionAnchor.resolve({block, index: fallbackIndex})!
+      const cursorIndex = insertIndex + text.length
+      this.doc.crud.transact(() => {
+        insertBlock.yText.insert(insertIndex, text)
+        // TODO: 更好的中文输入法反显渲染. 目前看必须重新渲染，否则涉及到协同的情况很容易出错
+        insertBlock.rerender()
 
-    const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
-    if (!sel || sel.from.type !== 'text') {
-      throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
+        queueMicrotask(() => {
+          insertBlock.setInlineRange(cursorIndex)
+        })
+      }, ORIGIN_SKIP_SYNC)
+      next?.()
+    } finally {
+      this._compositionAnchor.reset()
     }
-    const text = ev.data
-    const {block, index} = sel.from
-    const isZero = isZeroSpace(sel.raw.startContainer)
-    this.doc.crud.transact(() => {
-      block.yText.insert(isZero ? index : index - text.length, text)
-      // TODO: 更好的中文输入法反显渲染. 目前看必须重新渲染，否则涉及到协同的情况很容易出错
-      block.rerender()
-
-      requestAnimationFrame(() => {
-        block.setInlineRange(isZero ? text.length + index : index)
-      })
-    }, ORIGIN_SKIP_SYNC)
-    next?.()
   }
 
   @EventListen('beforeInput')
   private _handleBeforeInput(context: BlockCraft.EventStateContext) {
     const ev = context.get('defaultState').event as InputEvent
+    this._compositionAnchor.captureFromInputEvent(ev, {isComposing: true})
+
     if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {
       ev.preventDefault()
       return
@@ -578,4 +593,3 @@ function getPlainTextFromInputEvent(event: InputEvent) {
   }
   return null;
 }
-

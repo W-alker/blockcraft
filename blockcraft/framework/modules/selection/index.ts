@@ -463,32 +463,90 @@ export class SelectionManager {
         return offset > 0 ? block.textLength : 0
       }
 
-      // if is element
       const isContainer = node === block.containerElement
-
-      const elements = block.containerElement.querySelectorAll(INLINE_ELEMENT_TAG)
-      if (elements.length === 0 || (isContainer && offset === 0)) {
+      const elements = Array.from(block.containerElement.querySelectorAll(INLINE_ELEMENT_TAG)) as HTMLElement[]
+      if (elements.length === 0) {
         return 0
       }
 
-      const isCElement = !isContainer && (node instanceof HTMLElement && node.localName === INLINE_ELEMENT_TAG)
+      // Safari/Chrome 在 IME 期间会把光标放在 container 的首个 gap 后（offset=1）
+      if (isContainer && offset <= 1) {
+        return 0
+      }
+
       const zeroNode = isZeroSpace(node)
-      const isGap = !isContainer && !!zeroNode
-
-      // if zero text at end
-      if (isGap && zeroNode?.parentElement === block.containerElement) {
+      if (zeroNode?.parentElement === block.containerElement) {
         return 0
       }
 
-      const cElement = isContainer ? elements[Math.max(0, offset - 2)] : (isCElement ? node : node.parentElement!.closest(INLINE_ELEMENT_TAG)!)
+      const cElement = (() => {
+        if (isContainer) {
+          const index = Math.min(elements.length - 1, Math.max(0, offset - 2))
+          return elements[index]
+        }
+
+        if (node instanceof HTMLElement && node.localName === INLINE_ELEMENT_TAG) {
+          return node
+        }
+
+        return node.parentElement?.closest(INLINE_ELEMENT_TAG) as HTMLElement | null
+      })()
+
+      if (!cElement) {
+        throw new BlockCraftError(ErrorCode.SelectionError, 'Fatal range position')
+      }
+
+      const getElementLength = (element: HTMLElement) => {
+        const firstNode = element.firstChild
+        const isEmbed = firstNode instanceof HTMLElement && firstNode.contentEditable === 'false'
+        if (isEmbed) return 1
+
+        // composing 时，浏览器可能会把文本直接放在 c-element 下
+        if (options?.isComposing && firstNode instanceof Text) {
+          return firstNode.length
+        }
+
+        return element.textContent?.length ?? 0
+      }
+
+      const getNodeOffset = (targetNode: Node, nodeOffset: number, elementLength: number) => {
+        if (targetNode instanceof Text) {
+          return Math.max(0, Math.min(nodeOffset, targetNode.length))
+        }
+
+        if (!(targetNode instanceof HTMLElement)) {
+          return Math.max(0, Math.min(nodeOffset, elementLength))
+        }
+
+        if (targetNode === cElement) {
+          const firstNode = cElement.firstChild
+          const isEmbed = firstNode instanceof HTMLElement && firstNode.contentEditable === 'false'
+          if (isEmbed) {
+            return nodeOffset > 0 ? 1 : 0
+          }
+        }
+
+        const boundary = Math.max(0, Math.min(nodeOffset, targetNode.childNodes.length))
+        let textOffset = 0
+        for (let i = 0; i < boundary; i++) {
+          const child = targetNode.childNodes[i]
+          if (isZeroSpace(child)) continue
+          textOffset += child.textContent?.length ?? 0
+        }
+
+        return Math.max(0, Math.min(textOffset, elementLength))
+      }
 
       let pos = 0
       for (let i = 0; i < elements.length; i++) {
-        const firstChild = elements[i].firstElementChild
-        const isEmbed = !(firstChild instanceof HTMLElement ? firstChild.contentEditable !== 'false' : (options?.isComposing ? firstChild instanceof Text : false))
-        const elementLength = isEmbed ? 1 : elements[i].textContent!.length
-        if (elements[i] === cElement) {
-          return pos + (isGap ? 1 : (isContainer ? elementLength : offset))
+        const element = elements[i]
+        const elementLength = getElementLength(element)
+        if (element === cElement) {
+          const isGap = isZeroSpace(node) && node.parentElement?.closest(INLINE_ELEMENT_TAG) === cElement
+          if (isGap) {
+            return pos + 1
+          }
+          return pos + (isContainer ? elementLength : getNodeOffset(node, offset, elementLength))
         }
         pos += elementLength
       }

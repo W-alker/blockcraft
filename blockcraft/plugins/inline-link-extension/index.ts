@@ -10,6 +10,7 @@ import {nextTick, sliceDelta} from "../../global";
 import {UIEventStateContext, IBlockSnapshot} from "../../framework";
 import {ComponentRef} from "@angular/core";
 import {LinkEditFloatDialog} from "./widgets/link-edit-dialog";
+import {OneShotRangeAnchor} from "../../framework/utils/one-shot-selection-anchor";
 
 export class InlineLinkExtension extends DocPlugin {
   override name = 'inline-link-extension'
@@ -150,15 +151,33 @@ export class InlineLinkExtension extends DocPlugin {
 
     let fakeRange: FakeRange
 
+    const linkInfo = this.getLinkInfo(target)
+    if (linkInfo.textRange.from.type !== 'text') return
+
+    const rangeAnchor = new OneShotRangeAnchor(this.doc)
+
+    const fallbackRange = {
+      block: linkInfo.textRange.from.block,
+      index: linkInfo.textRange.from.index,
+      length: linkInfo.textRange.from.length
+    }
+    rangeAnchor.capture(fallbackRange.block, fallbackRange.index, fallbackRange.length)
+
     const setFakeRange = () => {
       nextTick().then(() => {
         fakeRange?.destroy()
-        const _range = this.getLinkInfo(target).textRange
-        fakeRange = this.doc.selection.createFakeRange(_range)
+        const _range = rangeAnchor.resolve()
+        if(!_range) return
+        fakeRange = this.doc.selection.createFakeRange({
+          from: {
+            ..._range,
+            blockId: _range.block.id,
+            type: 'text'
+          },
+          to: null
+        })
       })
     }
-
-    const linkInfo = this.getLinkInfo(target)
 
     const {componentRef} = this.doc.overlayService.createConnectedOverlay<LinkEditFloatDialog>({
       target: target,
@@ -188,15 +207,16 @@ export class InlineLinkExtension extends DocPlugin {
     componentRef.instance.close.pipe(takeUntil(close$)).subscribe(() => close$.next())
     componentRef.instance.update.pipe(takeUntil(close$)).subscribe(v => {
       close$.next()
-      const {textRange, text} = this.getLinkInfo(target)
-      const link = this.tryGetLink(target)
-      if (textRange.from.type !== 'text') return
-      if (text !== v.text) {
-        textRange.from.block.replaceText(textRange.from.index, textRange.from.length, v.text, {'a:link': v.href})
-      } else if (link !== v.href) {
-        textRange.from.block.formatText(textRange.from.index, textRange.from.length, {'a:link': v.href})
+      const currentRange = rangeAnchor.consume(fallbackRange)
+      if (!currentRange) return
+
+      const currentText = currentRange.block.textContent().slice(currentRange.index, currentRange.index + currentRange.length)
+      if (currentText !== v.text) {
+        currentRange.block.replaceText(currentRange.index, currentRange.length, v.text, {'a:link': v.href})
+      } else {
+        currentRange.block.formatText(currentRange.index, currentRange.length, {'a:link': v.href})
       }
-      textRange.from.block.setInlineRange(textRange.from.index, v.text.length)
+      currentRange.block.setInlineRange(currentRange.index, v.text.length)
     })
   }
 
