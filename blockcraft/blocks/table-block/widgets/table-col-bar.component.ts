@@ -15,7 +15,7 @@ import {fromEvent, take} from "rxjs";
     <div class="item">
       <span class="pt" (mouseenter)="onAddColBtnEnter(0)"></span>
     </div>
-    @for (w of colWidths; track w; let idx = $index) {
+    @for (w of colWidths; track $index; let idx = $index) {
       <div class="item">
           <span class="bar" (mousedown)="onMouseDown(idx)" [style.width.px]="w"
                 [attr.data-index]="idx" [class.active]="idx >= _selectedRange[0] && idx <= _selectedRange[1]">

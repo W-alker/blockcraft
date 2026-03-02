@@ -168,7 +168,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const containerWidth = this.tableScrollable?.nativeElement?.clientWidth
       || this.hostElement.clientWidth
       || this.colLength * minWidth
-    const eachWidth = Math.max(minWidth, Math.floor(containerWidth / this.colLength))
+    const overhead = this._getTableHorizontalOverhead()
+    const availableWidth = Math.max(this.colLength * minWidth, containerWidth - overhead)
+    const eachWidth = Math.max(minWidth, Math.floor(availableWidth / this.colLength))
     const nextWidths = Array.from({ length: this.colLength }, () => eachWidth)
 
     this.updateProps({
@@ -179,15 +181,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this._clearColInlineWidths()
 
     // 从超宽表格切换到均分时，重置并钳制滚动位置，避免右侧出现空白区
-    requestAnimationFrame(() => {
-      const scroller = this.tableScrollable?.nativeElement
-      if (!scroller) return
-      scroller.scrollLeft = 0
-      const maxScrollLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth)
-      if (scroller.scrollLeft > maxScrollLeft) {
-        scroller.scrollLeft = maxScrollLeft
-      }
-    })
+    this._normalizeHorizontalScroll(true)
   }
 
   toggleHeaderRow() {
@@ -533,6 +527,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       requestAnimationFrame(() => {
         curCol.style.width = ''
       })
+      this._normalizeHorizontalScroll()
     })
   }
 
@@ -540,6 +535,33 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const cols = this.hostElement.querySelectorAll('col')
     cols.forEach(col => {
       (col as HTMLElement).style.width = ''
+    })
+  }
+
+  private _getTableHorizontalOverhead() {
+    const table = this.hostElement.querySelector('table') as HTMLElement | null
+    if (!table) return 0
+    const colEls = table.querySelectorAll('col')
+    if (!colEls.length) return 0
+    const colsTotal = Array.from(colEls).reduce((sum, col) => {
+      return sum + (col as HTMLElement).getBoundingClientRect().width
+    }, 0)
+    return Math.max(0, Math.ceil(table.getBoundingClientRect().width - colsTotal))
+  }
+
+  private _normalizeHorizontalScroll(resetToStart = false) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const scroller = this.tableScrollable?.nativeElement
+        if (!scroller) return
+        if (resetToStart) {
+          scroller.scrollLeft = 0
+        }
+        const maxScrollLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth)
+        if (scroller.scrollLeft > maxScrollLeft) {
+          scroller.scrollLeft = maxScrollLeft
+        }
+      })
     })
   }
 

@@ -11,7 +11,7 @@
 
     <table>
       <colgroup>
-        @for (w of props.colWidths; track w) {
+        @for (w of props.colWidths; track $index) {
           <col [width]="w" />
         }
       </colgroup>
@@ -32,5 +32,4 @@
   <span class="add">+</span>
   <div class="bar"></div>
 </div>
-
 
