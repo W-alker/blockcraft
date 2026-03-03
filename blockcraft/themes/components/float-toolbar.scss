@@ -53,9 +53,14 @@ bc-virtual-float-toolbar {
       flex-direction: column;
 
       bc-float-toolbar-item {
+        margin-top: 2px;
         padding: var(--bc-padding-sm) var(--bc-padding-md);
         width: 100%;
         justify-content: flex-start;
+
+        &:first-of-type {
+          margin-top: 0;
+        }
 
         i.dropdown {
           transform: rotate(-90deg);

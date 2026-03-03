@@ -10,6 +10,32 @@ import {performanceTest} from "../../global";
 
 // ─── Token 工具 ───
 
+const MERMAID_LANG_SET = new Set<BundledLanguage>(['mermaid', 'mmd'])
+
+const isMermaidLang = (lang: BundledLanguage) => MERMAID_LANG_SET.has(lang)
+
+const hasMultipleTokenColors = (lines: ThemedToken[][]): boolean => {
+  const colors = new Set<string>()
+  for (const line of lines) {
+    for (const token of line) {
+      if (!token.color) continue
+      colors.add(token.color)
+      if (colors.size > 1) return true
+    }
+  }
+  return false
+}
+
+const wrapMermaidForShiki = (text: string): string => {
+  const body = text.endsWith('\n') ? text : `${text}\n`
+  return `\`\`\`mermaid\n${body}\`\`\``
+}
+
+const stripMermaidFenceLines = (lines: ThemedToken[][]): ThemedToken[][] => {
+  if (lines.length <= 2) return []
+  return lines.slice(1, -1)
+}
+
 const flatShikiTokens = (lines: ThemedToken[][], withLineBreak = true): DeltaInsertText[] => {
   const res: DeltaInsertText[] = []
   for (let i = 0; i < lines.length; i++) {
@@ -148,10 +174,26 @@ export class CodeInlineManagerService extends InlineManager {
     const highlighter = await shikiService.getHighlighter();
     const lang = this.getShikiLanguage();
     await shikiService.ensureLanguageLoaded(lang);
-    const result = highlighter.codeToTokens(text, {
+    const baseTokens = highlighter.codeToTokens(text, {
       lang, theme: this.options.theme || 'github-light',
     });
-    return flatShikiTokens(result.tokens, this.options.withLineBreak);
+
+    let tokenLines = baseTokens.tokens
+
+    // Shiki 的 mermaid 语法是 markdown 注入语法，直接高亮纯 mermaid 文本时常会退化成单色。
+    // 当检测到单色时，改为 fenced mermaid 方式分词，再剥离 fence 行。
+    if (isMermaidLang(lang) && !hasMultipleTokenColors(tokenLines)) {
+      const wrappedText = wrapMermaidForShiki(text)
+      const wrappedTokens = highlighter.codeToTokens(wrappedText, {
+        lang, theme: this.options.theme || 'github-light',
+      })
+      const strippedLines = stripMermaidFenceLines(wrappedTokens.tokens)
+      if (hasMultipleTokenColors(strippedLines)) {
+        tokenLines = strippedLines
+      }
+    }
+
+    return flatShikiTokens(tokenLines, this.options.withLineBreak);
   }
 
   @performanceTest()

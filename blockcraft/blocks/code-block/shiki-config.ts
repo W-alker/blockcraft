@@ -52,6 +52,7 @@ class ShikiHighlighterService {
         'html',
         'css',
         'json',
+        'mermaid'
       ]
     })
 

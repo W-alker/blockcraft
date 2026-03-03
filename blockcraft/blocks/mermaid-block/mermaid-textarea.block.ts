@@ -49,7 +49,6 @@ export class MermaidTextareaBlockComponent extends EditableBlockComponent<Mermai
     })
   }, 200)
 
-  @performanceTest('mermaid textarea block render')
   override rerender() {
     this.inlineManager.renderCode()
   }
