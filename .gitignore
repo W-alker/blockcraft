@@ -44,3 +44,4 @@ testem.log
 Thumbs.db
 pnpm-lock.yaml
 /.codex
+/.npm-cache
