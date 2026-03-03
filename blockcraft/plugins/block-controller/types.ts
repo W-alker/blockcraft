@@ -100,9 +100,24 @@ export interface BlockMenuActionEvent {
 export type BlockMenuResolver = (ctx: BlockMenuContext) => BlockMenuSection[] | null | undefined
 export type BlockMenuActionHandler = (event: BlockMenuActionEvent, ctx: BlockMenuContext) => boolean | void
 
+export interface BlockControllerPositionContext {
+  activeBlock: BlockCraft.BlockComponent
+  parentBlock: BlockCraft.BlockComponent | null
+  left: number
+  top: number
+}
+
+export interface BlockControllerPositionResult {
+  x: number
+  y: number
+}
+
+export type BlockControllerPositionResolver = (ctx: BlockControllerPositionContext) => BlockControllerPositionResult
+
 export interface BlockControllerPluginOptions {
   customTools?: IContextMenuItem[]
   customToolHandler?: customToolHandler
   blockMenuResolver?: BlockMenuResolver
   blockMenuActionHandler?: BlockMenuActionHandler
+  positionResolver?: BlockControllerPositionResolver
 }

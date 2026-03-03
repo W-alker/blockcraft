@@ -16,8 +16,7 @@
   }
 
   .table-block {
-    $ctrlBarSize: 16px;
-    padding-left: $ctrlBarSize;
+    padding-bottom: 16px;
 
     &.is-selecting-cell {
       -webkit-user-modify: read-only;
@@ -103,7 +102,6 @@
       //top: 0;
 
       > table-row-bar {
-        //padding-top: $ctrlBarSize;
       }
 
       > table-col-bar {
@@ -116,13 +114,13 @@
         z-index: 2;
         position: sticky;
         top: 0;
-        //top: $ctrlBarSize + 1px;
         font-weight: bold;
         background: var(--bc-table-head-bg) !important;
       }
     }
 
     .table-scrollable {
+      padding-top: 16px;
       overflow-x: auto;
       overflow-y: hidden;
       scrollbar-width: thin;
@@ -291,7 +289,7 @@
       top: $ctrlBarSize;
       left: 0;
       width: 12px;
-      height: calc(100% - $ctrlBarSize);
+      height: calc(100% - $ctrlBarSize - 16px);
 
       &:hover {
         > .bar {
@@ -318,7 +316,7 @@
     .table-row-resize-bar {
       display: none;
       top: 0;
-      left: $ctrlBarSize;
+      left: -8px;
       width: calc(100% - $ctrlBarSize);
       height: 12px;
 
@@ -409,10 +407,10 @@
     }
 
     table-col-bar {
-      position: relative;
-      height: $ctrlBarSize / 2;
-      margin-left: 1px;
-      margin-top: $ctrlBarSize / 2;
+      position: absolute;
+      top: -8px;
+      left: 1px;
+      height: $ctrlBarSize;
 
       .item {
 
@@ -435,7 +433,7 @@
     table-row-bar {
       position: absolute;
       top: $ctrlBarSize + 1px;
-      left: $ctrlBarSize / 2;
+      left: -8px;
       width: $ctrlBarSize / 2;
       flex-direction: column;
 

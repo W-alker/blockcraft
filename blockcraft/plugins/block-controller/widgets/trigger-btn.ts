@@ -18,6 +18,7 @@ import { BLOCK_CREATOR_SERVICE_TOKEN } from "../../../framework";
 import {
   BlockMenuActionEvent,
   BlockMenuActionHandler,
+  BlockControllerPositionResolver,
   BlockMenuContext,
   BlockMenuItem,
   BlockMenuResolver,
@@ -274,18 +275,22 @@ export class TriggerBtn {
     this.setIsEmpty()
     this.refreshMenuData()
 
-    const parentBlock = this._activeBlock.parentBlock!
+    const parentBlock = this._activeBlock.parentBlock
 
     this._onDestroySub = this._activeBlock.onDestroy$.pipe(take(1)).subscribe(() => {
       this.close()
     })
 
-    const ml = ['table-cell', 'column'].includes(parentBlock.flavour) ? 18 : 8
-
     const { top, left } = this.calcPos()
+    const position = this.resolveHandlePosition({
+      activeBlock: this._activeBlock,
+      parentBlock,
+      left,
+      top
+    })
     this.display = 'block'
     this.host.nativeElement.style.transform = `
-      translate(${left - 44 - ml}px, ${top - 4}px)
+      translate(${position.x}px, ${position.y}px)
     `
     this.cdr.markForCheck()
   }
@@ -305,6 +310,9 @@ export class TriggerBtn {
 
   @Input()
   blockMenuActionHandler?: BlockMenuActionHandler
+
+  @Input()
+  positionResolver?: BlockControllerPositionResolver
 
   @Output()
   itemClicked = new EventEmitter<{ item: IBlockSchemaOptions, type: 'block' } | {
@@ -399,6 +407,28 @@ export class TriggerBtn {
     return {
       top: wrapRect.top - rootRect.top + this.doc.root.hostElement.scrollTop,
       left
+    }
+  }
+
+  private resolveHandlePosition(ctx: {
+    activeBlock: BlockCraft.BlockComponent
+    parentBlock: BlockCraft.BlockComponent | null
+    left: number
+    top: number
+  }) {
+    if (this.positionResolver) {
+      return this.positionResolver(ctx)
+    }
+    if(ctx.activeBlock.flavour === 'table') {
+      return {
+        x: ctx.left - 44 - 18,
+        y: ctx.top - 12
+      }
+    }
+    const marginLeft = ctx.parentBlock && ['table-cell', 'column'].includes(ctx.parentBlock.flavour) ? 18 : 8
+    return {
+      x: ctx.left - 44 - marginLeft,
+      y: ctx.top - 4
     }
   }
 

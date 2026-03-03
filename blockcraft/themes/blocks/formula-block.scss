@@ -12,7 +12,7 @@
     }
 
     &:not(:has(.katex)) {
-      background-color: var(--bc-bg-hover);
+      background-color: var(--bc-bg-secondary);
     }
 
     &.selected, &.editing {
@@ -22,7 +22,7 @@
     }
 
     &:hover:not(.selected) {
-      background-color: var(--bc-bg-hover);
+      background-color: var(--bc-bg-secondary);
     }
 
     > [data-block-zero-space] {

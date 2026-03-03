@@ -47,6 +47,7 @@ export class BlockCraftDoc {
    * If true, doc is readonly
    */
   public readonly readonlySwitch$ = new BehaviorSubject<boolean>(true)
+  readonly themeChange$ = new Subject<string>()
 
   readonly crud = new DocCRUD(this)
   readonly vm = new DocVM(this)
@@ -412,6 +413,7 @@ export class BlockCraftDoc {
 
   toggleTheme(name: string) {
     document.body.setAttribute('blockcraft-theme', this.config.theme = name)
+    this.themeChange$.next(this.config.theme)
   }
 
   toggleReadonly(readonly: boolean) {

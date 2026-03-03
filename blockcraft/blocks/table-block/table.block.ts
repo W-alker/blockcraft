@@ -256,7 +256,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       // hovering bar
       this.hoveringCell = this.doc.getBlockById(id) as TableCellBlockComponent
       const offsetX = this.hoveringCell.hostElement.getBoundingClientRect().right
-        - this.tableScrollable.nativeElement.getBoundingClientRect().left + 10
+        - this.tableScrollable.nativeElement.getBoundingClientRect().left - 6
       this.colResizeBar.nativeElement.style.left = `${offsetX}px`
     }
 
@@ -576,7 +576,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       - this.tableScrollable.nativeElement.scrollLeft
 
     const bar = this.colResizeBar.nativeElement
-    bar.style.left = `${offsetLeft + 12}px`
+    bar.style.left = `${offsetLeft - 6}px`
     bar.classList.add('active')
     this._disableColResize = true
 

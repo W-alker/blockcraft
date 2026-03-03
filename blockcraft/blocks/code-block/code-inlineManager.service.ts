@@ -101,6 +101,7 @@ function tokenLineText(line: TokenLine): string {
 interface IRenderOptions {
   lang: string;
   withLineBreak?: boolean;
+  theme?: string;
 }
 
 /**
@@ -132,6 +133,11 @@ export class CodeInlineManagerService extends InlineManager {
     this._lineFPs = [];
   }
 
+  setTheme(theme: string) {
+    this.options.theme = theme;
+    this._lineFPs = [];
+  }
+
   private getShikiLanguage(): BundledLanguage {
     const lang = this.options.lang || 'text';
     if (!lang || lang === 'text') return 'text' as BundledLanguage
@@ -143,7 +149,7 @@ export class CodeInlineManagerService extends InlineManager {
     const lang = this.getShikiLanguage();
     await shikiService.ensureLanguageLoaded(lang);
     const result = highlighter.codeToTokens(text, {
-      lang, theme: 'github-light',
+      lang, theme: this.options.theme || 'github-light',
     });
     return flatShikiTokens(result.tokens, this.options.withLineBreak);
   }

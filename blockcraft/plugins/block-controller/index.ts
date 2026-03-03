@@ -4,6 +4,7 @@ import {TriggerBtn} from "./widgets/trigger-btn";
 import {closetBlockId, DocPlugin, EventListen} from "../../framework";
 import {
   BlockControllerPluginOptions,
+  BlockControllerPositionResolver,
   BlockMenuActionEvent,
   BlockMenuActionHandler,
   BlockMenuContext,
@@ -36,6 +37,7 @@ export class BlockControllerPlugin extends DocPlugin {
   private readonly customToolHandler?: customToolHandler
   private readonly blockMenuResolver?: BlockMenuResolver
   private readonly blockMenuActionHandler?: BlockMenuActionHandler
+  private readonly positionResolver?: BlockControllerPositionResolver
 
   constructor(customTools?: IContextMenuItem[], customToolHandler?: customToolHandler)
   constructor(options?: BlockControllerPluginOptions)
@@ -53,6 +55,7 @@ export class BlockControllerPlugin extends DocPlugin {
     this.customToolHandler = customToolsOrOptions.customToolHandler
     this.blockMenuResolver = customToolsOrOptions.blockMenuResolver
     this.blockMenuActionHandler = customToolsOrOptions.blockMenuActionHandler
+    this.positionResolver = customToolsOrOptions.positionResolver
   }
 
   init() {
@@ -65,6 +68,7 @@ export class BlockControllerPlugin extends DocPlugin {
     this._cpr.setInput('customToolHandler', this.customToolHandler)
     this._cpr.setInput('blockMenuResolver', this.resolveBlockMenus)
     this._cpr.setInput('blockMenuActionHandler', this.handleBlockMenuAction)
+    this._cpr.setInput('positionResolver', this.positionResolver)
     this.doc.root.hostElement.appendChild(this._cpr.location.nativeElement)
 
     fromEvent<MouseEvent>(this.doc.root.hostElement, 'mouseover').pipe(takeUntil(this.doc.onDestroy$)).subscribe(e => {

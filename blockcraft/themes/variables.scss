@@ -15,9 +15,10 @@
   --bc-lh: 24px;
 
   // 文字颜色
-  --bc-color: #37352F;
-  --bc-color-light: #787774;
-  --bc-color-lighter: #9B9A97;
+  // 文字颜色
+  --bc-color: #1f2e3c;
+  --bc-color-light: #5f7184;
+  --bc-color-lighter: #8b9cad;
   --bc-color-dark: #000000;
 
   // 边框颜色
@@ -27,11 +28,12 @@
 
   // 背景颜色
   --bc-bg-primary: #FFFFFF;
-  --bc-bg-secondary: #F7F6F3;
+  --bc-bg-secondary: #fafaf7;
   --bc-bg-elevated: #FFFFFF;
   --bc-bg-hover: #F1F1EF;
   --bc-bg-gray: #ECEEEF;
   --bc-bg-gray2: #dddddd;
+  --bc-bg-muted: #f8fbfe;
 
   // 状态颜色
   --bc-warning-color: #f5a623;
@@ -57,7 +59,7 @@
   --bc-caret-color-on-mark: #000000;
 
   // 间距
-  --bc-segments-gap: 8px;
+  --bc-segments-gap: 10px;
   --bc-padding-sm: 4px;
   --bc-padding-md: 8px;
   --bc-padding-lg: 12px;

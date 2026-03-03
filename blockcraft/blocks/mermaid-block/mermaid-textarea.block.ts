@@ -27,7 +27,12 @@ export class MermaidTextareaBlockComponent extends EditableBlockComponent<Mermai
     super._init();
     this._inlineManager = new CodeInlineManagerService(this.doc, this, {
       lang: 'mermaid',
-      withLineBreak: false
+      withLineBreak: false,
+      theme: this.doc.theme.includes('light') ? 'github-light' : 'github-dark',
+    })
+    this.doc.themeChange$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(v => {
+      this.inlineManager.setTheme(this.doc.theme.includes('light') ? 'github-light' : 'github-dark')
+      this.rerender()
     })
   }
 

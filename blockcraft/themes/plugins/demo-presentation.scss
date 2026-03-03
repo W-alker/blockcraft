@@ -6,7 +6,7 @@
 
 .demo-root[data-blockcraft-root="true"] {
   width: 100%;
-  --bc-segments-gap: 24px;
+  --bc-segments-gap: 18px;
   --bc-fs: 22px;
   --bc-lh: 30px;
 
@@ -40,31 +40,7 @@
     display: none;
   }
 
-  [data-node-type='editable'] {
-    &[data-heading] {
-      font-weight: bolder;
-    }
 
-    &[data-heading='1'] {
-      font-size: calc(var(--bc-fs) * 2);
-      line-height: calc(var(--bc-lh) * 2);
-    }
-
-    &[data-heading='2'] {
-      font-size: calc(var(--bc-fs) * 1.8);
-      line-height: calc(var(--bc-lh) * 1.8);
-    }
-
-    &[data-heading='3'] {
-      font-size: calc(var(--bc-fs) * 1.6);
-      line-height: calc(var(--bc-lh) * 1.6);
-    }
-
-    &[data-heading='4'] {
-      font-size: calc(var(--bc-fs) * 1.4);
-      line-height: calc(var(--bc-lh) * 1.4);
-    }
-  }
 }
 
 .simple-preview-overlay {

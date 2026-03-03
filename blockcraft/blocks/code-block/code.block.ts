@@ -70,7 +70,12 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     super._init();
     this._inlineManager = new CodeInlineManagerService(this.doc, this, {
       lang: SHIKI_LANGUAGE_MAP[this.props.lang],
-      withLineBreak: true
+      withLineBreak: true,
+      theme: this.doc.theme.includes('light') ? 'github-light' : 'github-dark',
+    })
+    this.doc.themeChange$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(v => {
+      this.inlineManager.setTheme(this.doc.theme.includes('light') ? 'github-light' : 'github-dark')
+      this.rerender()
     })
   }
 

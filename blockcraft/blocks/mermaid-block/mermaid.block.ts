@@ -239,6 +239,42 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     svg.style.maxWidth = this.graphMaxWidth * ratio + 'px'
   }
 
+  private createPreviewSvg(svg: SVGElement) {
+    const previewSvg = svg.cloneNode(true) as SVGElement
+    if (!(previewSvg instanceof SVGSVGElement)) return previewSvg
+
+    // Mermaid 默认会输出 width="100%" + max-width，脱离原容器后会导致固有尺寸异常
+    previewSvg.style.removeProperty('max-width')
+    previewSvg.style.removeProperty('width')
+    previewSvg.style.removeProperty('height')
+
+    let width = 0
+    let height = 0
+    const viewBoxAttr = previewSvg.getAttribute('viewBox')
+    if (viewBoxAttr) {
+      const viewBox = viewBoxAttr.split(/[\s,]+/).map(v => Number(v.trim()))
+      if (viewBox.length === 4 && viewBox.every(Number.isFinite) && viewBox[2] > 0 && viewBox[3] > 0) {
+        width = viewBox[2]
+        height = viewBox[3]
+      }
+    }
+
+    if (!width || !height) {
+      const rect = svg.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        width = rect.width
+        height = rect.height
+      }
+    }
+
+    if (width > 0 && height > 0) {
+      previewSvg.setAttribute('width', `${width}`)
+      previewSvg.setAttribute('height', `${height}`)
+    }
+
+    return previewSvg
+  }
+
   async onPreviewGraph(evt: MouseEvent) {
     const sel = this.doc.selection.value
     if (!sel || sel.to || sel.from.blockId !== this.id) return
@@ -247,19 +283,24 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     const svg = this.graphContainer.firstElementChild
     if (!svg || !(svg instanceof SVGElement)) return
     //svg转img
-    const svgString = new XMLSerializer().serializeToString(svg);
+    const svgString = new XMLSerializer().serializeToString(this.createPreviewSvg(svg));
     const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(svgBlob);
     const img = new Image()
+    img.onload = () => {
+      this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({
+        el: img,
+        title: 'mermaid',
+        className: 'blockcraft-mermaid-preview-graph',
+        hidden: () => {
+          url && URL.revokeObjectURL(url)
+        }
+      })
+      img.dispatchEvent(new MouseEvent('click', { bubbles: false, cancelable: true, view: window }))
+    }
+    img.onerror = () => {
+      url && URL.revokeObjectURL(url)
+    }
     img.src = url
-    this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({
-      el: img,
-      title: 'mermaid',
-      className: 'blockcraft-mermaid-preview-graph',
-      stop: () => {
-        url && URL.revokeObjectURL(url)
-      }
-    })
-    img.dispatchEvent(new MouseEvent('click', { bubbles: false, cancelable: true, view: window }))
   }
 }

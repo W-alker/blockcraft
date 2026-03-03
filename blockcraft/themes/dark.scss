@@ -3,23 +3,24 @@
 
 body[blockcraft-theme="dark"] {
   // 文字颜色
-  --bc-color: #e3e3e3;
-  --bc-color-light: #888888;
-  --bc-color-lighter: #666666;
+  --bc-color: #dbe7f2;
+  --bc-color-light: #9db0c2;
+  --bc-color-lighter: #7f93a6;
   --bc-color-dark: #ffffff;
 
   // 边框颜色
-  --bc-border-color: #555555;
-  --bc-border-color-light: #252525;
-  --bc-border-color-dark: #3a3a3a;
+  --bc-border-color: #33414d;
+  --bc-border-color-light: #283540;
+  --bc-border-color-dark: #3f4d59;
 
   // 背景颜色
-  --bc-bg-primary: #191919;
-  --bc-bg-secondary: #1e1e1e;
-  --bc-bg-elevated: #252525;
-  --bc-bg-hover: #2a2a2a;
-  --bc-bg-gray: #434242;
-  --bc-bg-gray2: #676666;
+  --bc-bg-primary: #171d24;
+  --bc-bg-secondary: #1e2731;
+  --bc-bg-elevated: #1a2129;
+  --bc-bg-hover: #24303c;
+  --bc-bg-gray: #2f3b47;
+  --bc-bg-gray2: #465767;
+  --bc-bg-muted: #1e2731;
 
   // 状态颜色
   --bc-warning-color: #f5a623;

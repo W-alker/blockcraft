@@ -139,30 +139,6 @@
   [data-node-type="editable"] {
     transition: all .1s ease;
 
-    &[data-heading="1"] {
-      font-size: var(--bc-fs-3xl);
-    }
-
-    &[data-heading="2"] {
-      font-size: var(--bc-fs-2xl);
-    }
-
-    &[data-heading="3"] {
-      font-size: var(--bc-fs-xl);
-    }
-
-    &[data-heading="4"] {
-      font-size: var(--bc-fs-lg);
-    }
-
-    &[data-heading="5"] {
-      font-size: var(--bc-fs-lg);
-    }
-
-    &[data-heading="6"] {
-      font-size: var(--bc-fs-lg);
-    }
-
     &.empty {
       .edit-container::before {
         content: attr(data-placeholder);
