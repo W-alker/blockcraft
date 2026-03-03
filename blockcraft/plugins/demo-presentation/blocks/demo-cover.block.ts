@@ -34,9 +34,11 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
     <div class="content-area">
       <div class="title">{{ props.title }}</div>
       <div class="auth-info">
-        <div class="author-avatar">
-          <img [src]="props.author?.avatar" alt="Author Avatar">
-        </div>
+        @if(props.author?.avatar) {
+          <div class="author-avatar">
+            <img [src]="props.author?.avatar" alt="Author Avatar">
+          </div>
+        }
         <div class="author-text">{{ props.author?.name }} {{ props.author?.info }}</div>
       </div>
       <div class="current-time">{{ time }}</div>
@@ -98,7 +100,7 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
         font-size: 70px;
         font-weight: 700;
         color: #2c3e50;
-        margin-bottom: 1.5rem;
+        margin-bottom: 24px;
         line-height: 1.2;
         letter-spacing: 1px;
         text-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -107,9 +109,9 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
       .auth-info {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.5em;
         color: #7f8c8d;
-        font-size: 1.1rem;
+        font-size: var(--bc-fs);
         text-shadow: 0 2px 4px rgba(0,0,0,0.05);
       }
 
