@@ -165,9 +165,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   setEqualColumnWidths(minWidth = 50) {
     if (!this.colLength) return
 
-    const containerWidth = this.tableScrollable?.nativeElement?.clientWidth
+    const containerWidth = (this.tableScrollable?.nativeElement?.clientWidth
       || this.hostElement.clientWidth
-      || this.colLength * minWidth
+      || this.colLength * minWidth) - 6
     const overhead = this._getTableHorizontalOverhead()
     const availableWidth = Math.max(this.colLength * minWidth, containerWidth - overhead)
     const eachWidth = Math.max(minWidth, Math.floor(availableWidth / this.colLength))
