@@ -1,5 +1,7 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {RootBlockComponent} from "../../../blocks/root-block/root.block";
+import {BlockNodeType, IBlockSchemaOptions} from "../../../framework";
+import {RootBlockSchema} from "../../../blocks";
 
 @Component({
   selector: `div.root-block.demo-root[data-blockcraft-root="true"]`,
@@ -14,4 +16,9 @@ import {RootBlockComponent} from "../../../blocks/root-block/root.block";
   }
 })
 export class DemoRootComponent extends RootBlockComponent{
+}
+
+export const DemoRootBlockSchema: IBlockSchemaOptions = {
+  ...RootBlockSchema,
+  component: DemoRootComponent,
 }

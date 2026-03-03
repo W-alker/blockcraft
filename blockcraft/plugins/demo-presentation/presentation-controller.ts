@@ -3,7 +3,7 @@ import {DemoControlBarComponent} from "./widgets/demo-control-bar.component";
 import {nextTick, throttle} from "../../global";
 import {BlockCraftDoc, IBlockSnapshot, SchemaManager} from "../../framework";
 import * as Y from 'yjs';
-import {DemoCoverBlockModel, DemoCoverBlockSchema, DemoRootComponent} from "./blocks";
+import {DemoCoverBlockModel, DemoCoverBlockSchema, DemoRootBlockSchema, DemoRootComponent} from "./blocks";
 import {SimpleImagePreview} from "./widgets/simple-image-preview.component";
 import {
   PenTool, HighlighterTool, EraserTool,
@@ -85,7 +85,7 @@ export class PresentationController {
     schemas.push(DemoCoverBlockSchema)
     const schemaStore = new SchemaManager(schemas)
     // 重新注册根block
-    schemaStore.get('root')!.component = DemoRootComponent
+    schemaStore.register(DemoRootBlockSchema)
     this._demoDoc = new BlockCraftDoc({
       ...this.originDoc.config,
       plugins: [],
