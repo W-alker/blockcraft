@@ -58,8 +58,8 @@ export const TableBlockSchema: IBlockSchemaOptions<TableBlockModel> = {
     version: 1.0,
     label: '表格',
     includeChildren: ['table-row'],
-    icon: "bf_icn bf_column-vertical",
-    svgIcon: "bf_column-vertical",
+    icon: "bc_icn bc_column-vertical",
+    svgIcon: "bc_column-vertical",
   }
 }
 
