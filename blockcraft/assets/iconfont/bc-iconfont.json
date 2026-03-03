@@ -6,6 +6,13 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "14198017",
+      "name": "拼写和语法检查",
+      "font_class": "pinxieheyufajiancha",
+      "unicode": "e630",
+      "unicode_decimal": 58928
+    },
+    {
       "icon_id": "2474974",
       "name": "自动列宽",
       "font_class": "zidongliekuan",
