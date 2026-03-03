@@ -57,6 +57,10 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
       background: white;
       transform: none !important;
 
+      &.selected {
+        background: white !important;
+      }
+
       .banner {
         margin: -10vh 0 0 -10vw;
         max-height: 100vh;
@@ -97,7 +101,7 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
       }
 
       .title {
-        font-size: 70px;
+        font-size: calc(var(--bc-fs) * 3.5);
         font-weight: 700;
         color: #2c3e50;
         margin-bottom: 24px;
@@ -111,15 +115,17 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
         align-items: center;
         gap: 0.5em;
         color: #7f8c8d;
-        font-size: var(--bc-fs);
+        font-size: calc(var(--bc-fs) * 1.2);
         text-shadow: 0 2px 4px rgba(0,0,0,0.05);
       }
 
       .author-avatar {
-        width: 30px;
-        height: 30px;
-        border-radius:50%;
-        overflow:hidden;
+        img {
+          width: 30px;
+          height: 30px;
+          border-radius:50%;
+          overflow:hidden;
+        }
       }
 
       .author-text {
@@ -128,7 +134,7 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
 
       .current-time {
         color: #95a5a6;
-        font-size: .9em;
+        font-size: var(--bc-fs);
         font-weight: 400;
         margin-top: 1em;
       }
