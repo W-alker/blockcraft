@@ -1,15 +1,16 @@
 [data-blockcraft-root="true"] {
   div.attachment-block {
+    margin: 6px 0 0;
     padding: 6px 12px 6px var(--bc-fs);
     border: 1px solid var(--bc-border-color);
-    border-radius: 4px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     gap: 8px;
     position: relative;
     max-width: 400px;
     overflow: hidden;
-    background: var(--bc-bg-secondary);
+    background: var(--bc-block-bg);
 
     &.selected {
       border: 1px solid var(--bc-active-color);

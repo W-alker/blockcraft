@@ -22,6 +22,28 @@
 @import "components/color-picker";
 @import "components/float-toolbar";
 
+block-craft-editor {
+  display: block;
+  margin: 0;
+  height: auto;
+  overflow: visible;
+  font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+block-craft-editor .bc-editor-canvas {
+  width: min(95vw, 1024px);
+  max-width: 1024px;
+  height: min(84vh, 900px);
+  margin: 8px auto 16px;
+  padding: 48px 64px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--bc-canvas-border);
+  border-radius: 12px;
+  background: var(--bc-canvas-bg);
+  box-shadow: var(--bc-canvas-shadow);
+}
+
 [data-blockcraft-root="true"] {
   position: relative;
   outline: none;
@@ -101,6 +123,15 @@
     }
   }
 
+  .paragraph-block,
+  .bullet-block,
+  .ordered-block,
+  .todo-block,
+  .blockquote-block,
+  [data-node-type="editable"][data-heading] {
+    max-width: 74ch;
+  }
+
   [data-zero-space="true"] {
     user-select: text;
     padding: 0 0.5px;
@@ -139,16 +170,28 @@
   [data-node-type="editable"] {
     transition: all .1s ease;
 
+    &[data-heading] {
+      margin-top: 24px;
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+
     &[data-heading="1"] {
-      font-size: var(--bc-fs-3xl);
+      font-size: clamp(30px, 4vw, 40px);
+      line-height: 1.25;
+      font-weight: 750;
     }
 
     &[data-heading="2"] {
-      font-size: var(--bc-fs-2xl);
+      font-size: clamp(24px, 3vw, 32px);
+      line-height: 1.28;
+      font-weight: 710;
     }
 
     &[data-heading="3"] {
-      font-size: var(--bc-fs-xl);
+      font-size: clamp(20px, 2.4vw, 26px);
+      line-height: 1.35;
+      font-weight: 680;
     }
 
     &[data-heading="4"] {
@@ -321,4 +364,27 @@
 
 .bc-scrollable-container {
   @include bc_scrollbar;
+}
+
+@media (max-width: 900px) {
+  block-craft-editor .bc-editor-canvas {
+    width: 100%;
+    height: 78vh;
+    padding: 24px 16px;
+    border-radius: 10px;
+  }
+
+  [data-blockcraft-root="true"] {
+    --bc-fs: 15px;
+    --bc-lh: 26px;
+
+    .paragraph-block,
+    .bullet-block,
+    .ordered-block,
+    .todo-block,
+    .blockquote-block,
+    [data-node-type="editable"][data-heading] {
+      max-width: 100%;
+    }
+  }
 }

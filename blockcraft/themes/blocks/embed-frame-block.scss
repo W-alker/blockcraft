@@ -6,6 +6,7 @@
   }
 
   div.embed-frame-block {
+    margin: 6px 0 0;
 
     &.selected {
       background: unset;
@@ -33,10 +34,12 @@
       gap: 8px;
 
       padding: 8px 12px 8px;
-      border-radius: 4px;
+      border-radius: 10px;
       position: relative;
       border: 1px solid var(--bc-border-color);
       transition: border 0.2s ease-in-out, box-shadow 0.2s ease-in-out, background 0.2s ease-in-out;
+      box-shadow: none;
+      background: var(--bc-block-bg);
     }
 
     .iframe-wrapper {

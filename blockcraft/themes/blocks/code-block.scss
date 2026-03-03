@@ -5,11 +5,12 @@
     --code-padding-left: calc(var(--bc-fs) * 2.8);
     --code-padding-bottom: ;
     position: relative;
+    margin: 6px 0 0;
     border: 1px solid var(--bc-border-color);
     --code-font-family: "DM Mono", monospace;
-    border-radius: var(--bc-radius-lg);
+    border-radius: 10px;
     caret-color: var(--bc-caret-color);
-    background-color: var(--bc-bg-secondary);
+    background-color: var(--bc-block-muted-bg);
 
     &.focused {
       border: 1px solid var(--bc-active-color);
@@ -36,11 +37,11 @@
     }
 
     .edit-container {
-      padding: var(--bc-lh) var(--code-padding-left);
+      padding: 14px 44px;
       background: none;
       font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
-      font-size: calc(var(--bc-fs) * 0.85);
-      line-height: 1.8em;
+      font-size: 13px;
+      line-height: 1.75em;
       text-align: left;
       word-spacing: normal;
       word-break: normal;
@@ -93,7 +94,7 @@
 
       .code-block__head {
         border-bottom: 0;
-        border-radius: 8px;
+        border-radius: 10px;
       }
 
       .edit-container-wrapper {
@@ -115,12 +116,13 @@
       overflow: hidden;
       width: 100%;
       display: flex;
-      padding: 4px 8px;
+      padding: 0 12px;
       align-items: center;
-      background: var(--bc-bg-primary);
+      background: var(--bc-block-muted-bg);
       border-bottom: 1px solid var(--bc-border-color);
-      border-radius: var(--bc-radius-lg) var(--bc-radius-lg) 0 0;
+      border-radius: 10px 10px 0 0;
       gap: 8px;
+      height: 40px;
 
       .block-name {
         font-size: calc(var(--bc-fs) * .8);
@@ -214,5 +216,3 @@
   }
 
 }
-
-

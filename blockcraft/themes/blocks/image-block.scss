@@ -6,7 +6,9 @@
   }
 
   div.image-block {
-    padding: 8px;
+    margin: 6px 0 0;
+    padding: 2px 0;
+    background: transparent !important;
 
     &.selected {
       background: unset;
@@ -26,6 +28,9 @@
     }
 
     .image-block__container {
+      padding: 0;
+      border: none;
+      background: transparent;
       width: fit-content;
 
       &[data-align='center'] {
@@ -48,6 +53,8 @@
     .img-wrapper {
       //display: inline-block;
       position: relative;
+      overflow: visible;
+      background: transparent;
     }
 
     img {

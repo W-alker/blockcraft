@@ -9,15 +9,18 @@
 
   .callout-block {
     position: relative;
-    padding: 1em;
-    margin-bottom: 1em;
-    border-radius: 4px;
-    border: 1px solid transparent;
+    padding: 12px 14px;
+    margin: 6px 0 0;
+    border-radius: 10px;
+    border: 1px solid var(--bc-border-color);
+    border-left: 3px solid var(--bc-callout-line);
     display: flex;
     align-items: flex-start;
-    gap: 1em;
+    gap: 12px;
     overflow-x: hidden;
     overflow-y: visible;
+    box-shadow: none;
+    background: var(--bc-block-muted-bg);
 
     &.selected {
       //border: 1px solid #0070f3;

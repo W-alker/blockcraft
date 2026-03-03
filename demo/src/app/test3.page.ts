@@ -19,7 +19,7 @@ import {encodeStateAsUpdate, encodeStateVectorFromUpdate} from "yjs";
     <button (click)="onTest()">迁移测试</button>
     <button (click)="onTest2()">Yjs测试</button>
   `,
-  styles: [``],
+  styles: [],
   imports: [
     EditorComponent
   ],

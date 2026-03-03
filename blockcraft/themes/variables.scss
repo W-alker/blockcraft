@@ -12,26 +12,28 @@
   --bc-fs-3xl: calc(var(--bc-fs) + 8px);
 
   // 行高
-  --bc-lh: 24px;
+  --bc-lh: 28px;
 
   // 文字颜色
-  --bc-color: #37352F;
-  --bc-color-light: #787774;
-  --bc-color-lighter: #9B9A97;
+  --bc-color: #1f2e3c;
+  --bc-color-light: #5f7184;
+  --bc-color-lighter: #8b9cad;
   --bc-color-dark: #000000;
 
   // 边框颜色
-  --bc-border-color: #E9E9E7;
-  --bc-border-color-light: #F1F1EF;
+  --bc-border-color: #dbe4ec;
+  --bc-border-color-light: #edf3f8;
   --bc-border-color-dark: #CCCCCC;
 
   // 背景颜色
   --bc-bg-primary: #FFFFFF;
-  --bc-bg-secondary: #F7F6F3;
+  --bc-bg-secondary: #f8fbfe;
   --bc-bg-elevated: #FFFFFF;
-  --bc-bg-hover: #F1F1EF;
+  --bc-bg-hover: #eef4fa;
   --bc-bg-gray: #ECEEEF;
   --bc-bg-gray2: #dddddd;
+  --bc-block-bg: #ffffff;
+  --bc-block-muted-bg: #f8fbfe;
 
   // 状态颜色
   --bc-warning-color: #f5a623;
@@ -40,13 +42,13 @@
   --bc-info-color: #339af0;
 
   // 激活/强调色
-  --bc-active-color: #4857E2;
+  --bc-active-color: #1677ff;
   --bc-active-color-light: #1890ff;
-  --bc-active-color-lighter: rgba(72, 87, 226, 0.1);
+  --bc-active-color-lighter: rgba(22, 119, 255, 0.12);
 
   // 特殊背景
   --bc-error-background-color: rgba(224, 49, 49, 0.1);
-  --bc-select-background-color: rgba(24, 144, 255, 0.3);
+  --bc-select-background-color: rgba(22, 119, 255, 0.2);
   --bc-mark-bg-color: rgba(255, 198, 10, 0.4);
   --bc-highlight-bg-color: rgba(255, 198, 10, 0.25);
   --bc-comment-bg-color: rgba(255, 239, 186, 0.6);
@@ -57,7 +59,7 @@
   --bc-caret-color-on-mark: #000000;
 
   // 间距
-  --bc-segments-gap: 8px;
+  --bc-segments-gap: 10px;
   --bc-padding-sm: 4px;
   --bc-padding-md: 8px;
   --bc-padding-lg: 12px;
@@ -105,6 +107,14 @@
 
   // Callout相关
   --bc-callout-selected-bg: rgba(24, 144, 255, 0.3);
+  --bc-callout-line: #8eaac2;
+  --bc-quote-line: #9ab3c9;
+
+  // 编辑器画布容器
+  --bc-page-bg: #f3f6fa;
+  --bc-canvas-bg: #ffffff;
+  --bc-canvas-border: #d8e1ea;
+  --bc-canvas-shadow: 0 8px 24px rgba(20, 36, 52, 0.08);
 
   // 列相关
   --bc-columns-divider-color: rgba(55, 53, 47, 0.4);

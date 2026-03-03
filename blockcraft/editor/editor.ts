@@ -68,7 +68,7 @@ import {CodeInlineEditorBinding, TableBlockBinding, TextMarkerPlugin, OrderedBlo
 import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
 import {debugTableMerge, fixTable} from "../blocks/table-block/callback";
 import {ColumnBlockSchema} from "../blocks/columns-block";
-import {demoJSON} from "./demo.data";
+import {demoJSON} from "./demo-data";
 import {DemoPresentationPlugin} from "../plugins/demo-presentation";
 
 const mentionRequest = async (keyword: string) => {
@@ -120,7 +120,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 @Component({
   selector: 'block-craft-editor',
   template: `
-    <div style="padding: 60px; max-width: 90vw; height: 80vh; overflow-x: hidden; overflow-y: auto;" #container
+    <div class="bc-editor-canvas" #container
          (mousedown)="onContainerMousedown($event)">
     </div>
 
@@ -151,10 +151,13 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
     <button (click)="demo()">演示模式</button>
   `,
   styles: [`:host {
-    margin: 20px;
     display: block;
-    overflow-y: auto;
-    height: 90vh;
+    margin: 0;
+    overflow: visible;
+    height: auto;
+    min-height: 100vh;
+    padding: 12px;
+    background: var(--bc-page-bg);
   }
 
   .block-area {
@@ -190,7 +193,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 
       span[data-mention-id] {
         padding: 0 .15em;
-        color: #4857E2;
+        color: var(--bc-active-color);
         cursor: pointer;
         white-space: pre-wrap;
         word-break: break-all;
@@ -211,7 +214,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
         }
 
         &:hover {
-          background-color: rgba(72, 87, 226, 0.1);
+          background-color: var(--bc-active-color-lighter);
           border-radius: 4px;
           text-decoration: underline;
         }
@@ -219,6 +222,12 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 
     }
 
+  }
+
+  @media (max-width: 900px) {
+    :host {
+      padding: 8px;
+    }
   }
   `],
   imports: [
@@ -552,8 +561,8 @@ export class EditorComponent {
     this.doc.yDoc.on('update', initFn)
 
     this.provider = new WebsocketProvider(
-      'ws://localhost:1234',
-      // 'ws://196.168.1.153:1234',
+      //'ws://localhost:1234',
+      'ws://196.168.1.153:1234',
       // 'ws://ws-doc.cses7.com',
       // 'ws://ws-doc-pre.cses7.com',
       // 'ws://193.168.2.100:30204/collaborate',

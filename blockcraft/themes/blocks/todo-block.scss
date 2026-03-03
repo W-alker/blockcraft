@@ -13,7 +13,7 @@
 
     .todo-block-button {
       flex-shrink: 0;
-      margin-right: .25em;
+      margin-right: .4em;
       cursor: pointer;
       outline: none;
       border: none;
@@ -22,7 +22,7 @@
       height: 1lh;
       line-height: 1lh;
       font-size: 1em;
-      min-width: 1em;
+      min-width: 1.2em;
 
       > i {
         pointer-events: none;
@@ -30,7 +30,8 @@
     }
 
     .edit-container {
-      width: fit-content;
+      width: 100%;
+      min-width: 0;
     }
 
   }

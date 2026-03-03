@@ -3,27 +3,38 @@
 
 body[blockcraft-theme="light"] {
   // 文字颜色
-  --bc-color: #37352F;
-  --bc-color-light: #787774;
-  --bc-color-lighter: #9B9A97;
+  --bc-color: #1f2e3c;
+  --bc-color-light: #5f7184;
+  --bc-color-lighter: #8b9cad;
 
   // 边框颜色
-  --bc-border-color: #E9E9E7;
-  --bc-border-color-light: #F1F1EF;
+  --bc-border-color: #dbe4ec;
+  --bc-border-color-light: #edf3f8;
 
   // 背景颜色
-  --bc-bg-secondary: #F7F6F3;
+  --bc-bg-secondary: #f8fbfe;
   --bc-bg-elevated: #FFFFFF;
-  --bc-bg-hover: #F1F1EF;
+  --bc-bg-hover: #eef4fa;
+  --bc-block-bg: #ffffff;
+  --bc-block-muted-bg: #f8fbfe;
 
   // 占位符颜色
-  --bc-placeholder-color: #9B9A97;
+  --bc-placeholder-color: #8b9cad;
 
   // 浮动工具栏相关
   --bc-float-toolbar-bg: #FFFFFF;
   --bc-float-toolbar-shadow: 0 2px 8px rgba(15, 15, 15, 0.05), 0 0 0 1px rgba(15, 15, 15, 0.1);
-  --bc-float-toolbar-item-color: #37352F;
+  --bc-float-toolbar-item-color: #1f2e3c;
   --bc-float-toolbar-item-hover-bg: #F1F1EF;
-  --bc-float-toolbar-item-active-bg: rgba(72, 87, 226, 0.1);
-  --bc-float-toolbar-divider-color: #E9E9E7;
+  --bc-float-toolbar-item-active-bg: rgba(22, 119, 255, 0.12);
+  --bc-float-toolbar-divider-color: #dbe4ec;
+
+  --bc-active-color: #1677ff;
+  --bc-select-background-color: rgba(22, 119, 255, 0.2);
+  --bc-callout-line: #8eaac2;
+  --bc-quote-line: #9ab3c9;
+  --bc-page-bg: #f3f6fa;
+  --bc-canvas-bg: #ffffff;
+  --bc-canvas-border: #d8e1ea;
+  --bc-canvas-shadow: 0 8px 24px rgba(20, 36, 52, 0.08);
 }

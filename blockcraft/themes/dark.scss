@@ -3,23 +3,25 @@
 
 body[blockcraft-theme="dark"] {
   // 文字颜色
-  --bc-color: #e3e3e3;
-  --bc-color-light: #888888;
-  --bc-color-lighter: #666666;
+  --bc-color: #dbe7f2;
+  --bc-color-light: #9db0c2;
+  --bc-color-lighter: #7f93a6;
   --bc-color-dark: #ffffff;
 
   // 边框颜色
-  --bc-border-color: #555555;
-  --bc-border-color-light: #252525;
-  --bc-border-color-dark: #3a3a3a;
+  --bc-border-color: #33414d;
+  --bc-border-color-light: #283540;
+  --bc-border-color-dark: #3f4d59;
 
   // 背景颜色
-  --bc-bg-primary: #191919;
-  --bc-bg-secondary: #1e1e1e;
-  --bc-bg-elevated: #252525;
-  --bc-bg-hover: #2a2a2a;
-  --bc-bg-gray: #434242;
-  --bc-bg-gray2: #676666;
+  --bc-bg-primary: #171d24;
+  --bc-bg-secondary: #1e2731;
+  --bc-bg-elevated: #1a2129;
+  --bc-bg-hover: #24303c;
+  --bc-bg-gray: #2f3b47;
+  --bc-bg-gray2: #465767;
+  --bc-block-bg: #1a2129;
+  --bc-block-muted-bg: #1e2731;
 
   // 状态颜色
   --bc-warning-color: #f5a623;
@@ -28,21 +30,21 @@ body[blockcraft-theme="dark"] {
   --bc-info-color: #4fc3f7;
 
   // 激活/强调色
-  --bc-active-color: #6B7AFF;
-  --bc-active-color-light: #5B6AE8;
-  --bc-active-color-lighter: rgba(107, 122, 255, 0.15);
+  --bc-active-color: #4a9bff;
+  --bc-active-color-light: #73b3ff;
+  --bc-active-color-lighter: rgba(74, 155, 255, 0.16);
 
   // 特殊背景
   --bc-error-background-color: rgba(255, 107, 107, 0.15);
-  --bc-select-background-color: rgba(107, 122, 255, 0.25);
+  --bc-select-background-color: rgba(74, 155, 255, 0.24);
   --bc-mark-bg-color: rgba(255, 198, 10, 0.3);
   --bc-highlight-bg-color: rgba(255, 198, 10, 0.2);
   --bc-comment-bg-color: rgba(251, 243, 219, 0.15);
   --bc-comment-border-color: rgba(251, 243, 219, 0.4);
 
   // 光标颜色
-  --bc-caret-color: #ffffff;
-  --bc-caret-color-on-mark: #ffffff;
+  --bc-caret-color: #dbe7f2;
+  --bc-caret-color-on-mark: #dbe7f2;
 
   // 阴影
   --bc-shadow-sm: 0 1px 3px rgba(50, 50, 50, 0.3);
@@ -53,7 +55,7 @@ body[blockcraft-theme="dark"] {
   --bc-placeholder-color: #555555;
 
   // 表格相关颜色
-  --bc-table-head-bg: #252525;
+  --bc-table-head-bg: #1e2731;
 
   // 代码块相关颜色
   --bc-code-btn-hover-bg: rgba(255, 255, 255, 0.08);
@@ -98,7 +100,9 @@ body[blockcraft-theme="dark"] {
   --bc-divider-color-large: #666666;
 
   // Callout相关颜色覆盖
-  --bc-callout-selected-bg: rgba(107, 122, 255, 0.25);
+  --bc-callout-selected-bg: rgba(74, 155, 255, 0.25);
+  --bc-callout-line: #5f7e98;
+  --bc-quote-line: #5d768d;
 
   // 列相关颜色覆盖
   --bc-columns-divider-color: rgba(255, 255, 255, 0.3);
@@ -107,10 +111,16 @@ body[blockcraft-theme="dark"] {
   --bc-columns-handle-bg: #666666;
 
   // 图片相关颜色覆盖
-  --bc-image-handle-bg: #191919;
+  --bc-image-handle-bg: #171d24;
 
   // 滚动条相关
   --bc-scrollbar-thumb-color: #434242;
   --bc-scrollbar-thumb-hover-color: #676666;
   --bc-scrollbar-track-color: #2e2e2e;
+
+  // 编辑器画布容器
+  --bc-page-bg: #11161b;
+  --bc-canvas-bg: #171d24;
+  --bc-canvas-border: #2d3742;
+  --bc-canvas-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
 }

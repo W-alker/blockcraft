@@ -3,17 +3,13 @@
 [data-blockcraft-root="true"] {
   div.formula-block {
     display: block;
-    border-radius: var(--bc-radius-lg);
+    margin: 6px 0 0;
+    border: 1px solid var(--bc-border-color);
+    border-radius: 10px;
     overflow: hidden;
     transition: border-color var(--bc-transition-fast);
-
-    &:has(.katex) {
-      border-color: transparent;
-    }
-
-    &:not(:has(.katex)) {
-      background-color: var(--bc-bg-hover);
-    }
+    box-shadow: none;
+    background: var(--bc-block-bg);
 
     &.selected, &.editing {
       outline: 1px solid var(--bc-active-color);
@@ -30,7 +26,7 @@
     }
 
     .formula-display {
-      padding: 12px 20px;
+      padding: 12px 16px;
       min-height: 40px;
       display: flex;
       align-items: center;

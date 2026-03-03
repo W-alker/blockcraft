@@ -126,6 +126,9 @@
       overflow-x: auto;
       overflow-y: hidden;
       scrollbar-width: thin;
+      border: 1px solid var(--bc-border-color);
+      border-radius: 10px;
+      background: var(--bc-block-bg);
     }
 
     .table-wrapper {
@@ -155,6 +158,7 @@
         &:first-child {
           td {
             border-top: 1px solid var(--bc-border-color);
+            background: var(--bc-block-muted-bg);
           }
         }
       }

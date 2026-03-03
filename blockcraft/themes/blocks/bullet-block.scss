@@ -4,13 +4,13 @@
     align-items: flex-start;
 
     .bullet-block-prefix {
-      margin-right: .25em;
+      margin-right: .4em;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
       height: 1lh;
-      min-width: 1em;
+      min-width: 1.2em;
 
       .square {
         width: calc(var(--bc-fs) * 0.4);
@@ -34,7 +34,8 @@
     }
 
     .edit-container {
-      width: fit-content;
+      width: 100%;
+      min-width: 0;
     }
   }
 }
