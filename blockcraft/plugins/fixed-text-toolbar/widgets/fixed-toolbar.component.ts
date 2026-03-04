@@ -84,7 +84,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 ]
 
 @Component({
-  selector: "div.fixed-text-toolbar",
+  selector: "bc-fixed-text-toolbar",
   template: `
     <div class="fixed-inline-toolbar" (mousedown)="onToolbarMouseDown($event)">
       <ng-content select="[fixed-toolbar-prefix]"></ng-content>

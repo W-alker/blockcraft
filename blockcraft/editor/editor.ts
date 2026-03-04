@@ -129,7 +129,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 @Component({
   selector: 'block-craft-editor',
   template: `
-    <div class="fixed-text-toolbar" [doc]="doc" [stickyTop]="0"></div>
+    <bc-fixed-text-toolbar [doc]="doc" [stickyTop]="0"></bc-fixed-text-toolbar>
 
     <div style="padding: 60px; max-width: 90vw; height: 80vh; overflow-x: hidden; overflow-y: auto;" #container
          (mousedown)="onContainerMousedown($event)">
