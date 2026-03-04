@@ -34,9 +34,9 @@ import {
 import {ConsoleLogger, getRandomDarkColor, nextTick, randomColor, throttle} from "../global";
 import {BulletBlockSchema} from "../blocks/bullet-block";
 import {FormulaBlockSchema} from "../blocks/formula-block";
-import {FloatTextToolbarPlugin} from "../plugins/float-text-toolbar/rich-text-toolbar";
+import {FixedTextToolbarComponent} from "../plugins/fixed-text-toolbar";
 import {BlockTransformerPlugin} from "../plugins/block-transformer";
-import {BlockControllerPlugin} from "../plugins/block-controller";
+import {BlockControllerPlugin, mergeBlockControllerOptions} from "../plugins/block-controller";
 import {ImgToolbarPlugin} from "../plugins/img-toolbar";
 import {MyDocFileService} from "./services/doc-file-service";
 import {MyDocMessageService} from "./services/doc-message.service";
@@ -66,6 +66,7 @@ import {DividerExtensionPlugin} from "../plugins/divider-toolbar";
 import {DividerStylePopupComponent} from "../plugins/divider-toolbar/widgets/divider-style-popup.component";
 import {
   CodeInlineEditorBinding,
+  FloatTextToolbarPlugin,
   TableBlockBinding,
   TextMarkerPlugin,
   OrderedBlockPlugin,
@@ -76,6 +77,8 @@ import {debugTableMerge, fixTable} from "../blocks/table-block/callback";
 import {ColumnBlockSchema} from "../blocks/columns-block";
 import {demoJSON} from "./demo.data";
 import {DemoPresentationPlugin} from "../plugins/demo-presentation";
+import {TranslatePlugin} from "../plugins/translate";
+import {MyDocTranslationService} from "./services/doc-translation.service";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -126,6 +129,8 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 @Component({
   selector: 'block-craft-editor',
   template: `
+    <div class="fixed-text-toolbar" [doc]="doc" [stickyTop]="0"></div>
+
     <div style="padding: 60px; max-width: 90vw; height: 80vh; overflow-x: hidden; overflow-y: auto;" #container
          (mousedown)="onContainerMousedown($event)">
     </div>
@@ -229,7 +234,8 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
   `],
   imports: [
     MatIcon,
-    DividerStylePopupComponent
+    DividerStylePopupComponent,
+    FixedTextToolbarComponent
   ],
   standalone: true,
   providers: [
@@ -254,6 +260,38 @@ export class EditorComponent {
 
   docId = '689ac2b31a9abe3ae8a6788d'
   rootId = '689ac2b31a9abe3ae8a6788d'
+
+  private readonly translatePlugin = new TranslatePlugin({
+    sourceLang: 'auto',
+    defaultTargetLang: 'chinese_simplified',
+    targetLangWhenSourceIsChinese: 'english',
+    service: new MyDocTranslationService(),
+  })
+
+  private readonly blockControllerPlugin = new BlockControllerPlugin(
+    mergeBlockControllerOptions(
+      {
+        customTools: [
+          {
+            type: 'tool',
+            name: 'copyBlockLink',
+            value: true,
+            icon: 'bc_fuzhilianjie',
+            label: '复制段落链接',
+          },
+        ],
+        customToolHandler: (item, block) => {
+          switch (item.name) {
+            case 'copyBlockLink':
+              this.copyBlockLink(block)
+              return true
+          }
+          return false
+        }
+      },
+      this.translatePlugin.createBlockControllerOptions()
+    )
+  )
 
   doc = new BlockCraftDoc({
     yDoc: new Y.Doc({
@@ -314,26 +352,9 @@ export class EditorComponent {
       ],
     ],
     plugins: [new OrderedBlockPlugin(), new CodeInlineEditorBinding(),
-      new FloatTextToolbarPlugin(), new BlockTransformerPlugin(),
-      new BlockControllerPlugin(
-        [
-          {
-            type: 'tool',
-            name: 'copyBlockLink',
-            value: true,
-            icon: 'bc_fuzhilianjie',
-            label: '复制段落链接',
-          },
-        ],
-        (item, block, doc) => {
-          switch (item.name) {
-            case 'copyBlockLink':
-              this.copyBlockLink(block)
-              return true
-          }
-          return false
-        }
-      ),
+      new FloatTextToolbarPlugin(),
+      new BlockTransformerPlugin(),
+      this.blockControllerPlugin,
       new TableBlockBinding(),
       new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
       new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(),
@@ -344,7 +365,8 @@ export class EditorComponent {
         } else window.open(link, '_blank')
       }),
       new MentionPlugin(mentionRequest), new DividerExtensionPlugin(),
-      new FindReplacePlugin()
+      new FindReplacePlugin(),
+      this.translatePlugin
     ]
   })
 

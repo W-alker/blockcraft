@@ -3,9 +3,9 @@ import {
   Component,
   EventEmitter,
   HostBinding,
-  HostListener,
   Input,
-  Output
+  Output,
+  SimpleChanges
 } from "@angular/core";
 import {
   BcFloatToolbarComponent,
@@ -165,6 +165,21 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
   }
 ]
 
+const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
+  {
+    attr: null,
+    class: 'none'
+  },
+  {
+    attr: 'r1',
+    class: 'radius-1'
+  },
+  {
+    attr: 'rb',
+    class: 'right-border'
+  }
+]
+
 @Component({
   selector: "div.float-text-toolbar",
   template: `
@@ -231,7 +246,22 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
 
     <ng-template #colorPicker>
       <bc-color-picker (colorPicked)="onColorPicked($event)" [gapAround]="8"
-                       [activeColors]="activeColors"></bc-color-picker>
+                       [activeColors]="activeColors">
+        <div class="bc-color-group">
+          <div class="bc-color-group-title">背景图形</div>
+          <div class="bg-list">
+            @for (item of bgGraphList; track item.attr) {
+              <div class="bg-graph-item"
+                   [class]="item.class"
+                   [class.active]="activeAttrs.get('bg') == item.attr"
+                   (click)="onBgGraphPicked(item.attr)">
+                <span [style.background-color]="activeColors['backColor'] || '#f4a1a1'"
+                      [style.color]="activeColors['color'] || '#ffffff'">文本</span>
+              </div>
+            }
+          </div>
+        </div>
+      </bc-color-picker>
     </ng-template>
 
     <ng-template #alignFloatBar>
@@ -255,6 +285,57 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
         user-select: none;
         -webkit-user-select: none;
       }
+    }
+
+    .bg-list {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .bg-graph-item {
+      width: 46px;
+      height: 27px;
+      border-radius: 2px;
+      border: 1px solid var(--bc-border-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .bg-graph-item.active {
+      border: 2px solid var(--bc-active-color);
+    }
+
+    .bg-graph-item:hover {
+      border: 2px solid var(--bc-active-color-light);
+    }
+
+    .bg-graph-item > span {
+      width: 35px;
+      height: 16px;
+      font-size: 11px;
+      color: #fff;
+      text-align: center;
+      background-color: #f4a1a1;
+    }
+
+    .bg-graph-item.none {
+      background: linear-gradient(-29deg, transparent 49%, var(--bc-color-dark) 50%, transparent 51%);
+    }
+
+    .bg-graph-item.none > span {
+      display: none;
+    }
+
+    .bg-graph-item.radius-1 > span {
+      border-radius: 1em;
+    }
+
+    .bg-graph-item.right-border > span {
+      border-radius: .3em;
+      border-right: .25em solid var(--bc-active-color);
     }
   `],
   imports: [
@@ -290,6 +371,7 @@ export class FloatTextToolbarComponent {
   alignList: IToolbarMenuItem[] = ALIGN_LIST
   headingList: IToolbarMenuItem[] = HEADING_LIST
   listList: IToolbarMenuItem[] = LIST_LIST
+  bgGraphList = BG_GRAPH_LIST
 
   @Input({required: true})
   activeAttrs = new Map<string, any>()
@@ -311,8 +393,18 @@ export class FloatTextToolbarComponent {
   }
 
   ngOnInit() {
+    this.syncSelectionState()
+  }
+
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['activeProps'] || changes['activeFlavour']) {
+      this.syncSelectionState()
+    }
+  }
+
+  private syncSelectionState() {
     const selection = this.doc.selection.value!
-    this.isLinkAble = selection.isInSameBlock && selection.from.type === 'text'
+    this.isLinkAble = !!selection && selection.isInSameBlock && selection.from.type === 'text'
     this.activeHeading = HEADING_LIST.find(v => v.value === this.activeProps.heading) || HEADING_LIST[0]
   }
 
@@ -353,38 +445,12 @@ export class FloatTextToolbarComponent {
   }
 
   setProps(props: Partial<IEditableBlockProps>) {
-    const selection = this.doc.selection.value
-    if (!selection) return
-
-    this.doc.crud.transact(() => {
-      const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
-      for (const id of between) {
-        const block = this.doc.getBlockById(id)
-        if (!this.doc.isEditable(block) || block.plainTextOnly) continue;
-        block.updateProps({...props})
-      }
-      this.activeProps = {...this.activeProps, ...props}
-    })
+    this.utils.updateBlockProps(props)
+    this.activeProps = {...this.activeProps, ...props}
   }
 
   transformList(flavour: BlockCraft.BlockFlavour) {
-    const selection = this.doc.selection.value
-    if (!selection) return
-
-    // TODO 优化替换后的选区
-    this.doc.crud.transact(async () => {
-      const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
-      for (const i in between) {
-        const id = between[i]
-        const block = this.doc.getBlockById(id)
-        if (!this.doc.isEditable(block) || block.plainTextOnly || block.flavour === flavour) continue;
-        const newBlock = this.doc.schemas.createSnapshot(flavour, [block.textDeltas(), {
-          ...block.props,
-          heading: flavour === 'ordered' ? block.props.heading : null
-        }])
-        await this.doc.crud.replaceWithSnapshots(id, [newBlock])
-      }
-    })
+    this.utils.transformBlocks(flavour)
   }
 
   formatText(attrs: IInlineNodeAttrs) {
@@ -397,9 +463,14 @@ export class FloatTextToolbarComponent {
         this.formatText({'s:color': evt.color})
         break
       case 'backColor':
-        this.formatText({'s:background': evt.color})
+        this.formatText({'s:background': evt.color === 'transparent' ? null : evt.color})
         break
     }
+    this.doc.selection.recalculate()
+  }
+
+  onBgGraphPicked(bg: string | null) {
+    this.formatText({'a:bg': bg})
     this.doc.selection.recalculate()
   }
 

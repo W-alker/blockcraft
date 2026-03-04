@@ -158,6 +158,11 @@
 
     c-element {
 
+      $bg-r1: .6em;
+      $bg-r2: .2em;
+      $bg-pad: .3em;
+      $bg-margin: .2em;
+
       &[bold="true"] {
         font-weight: bolder;
       }
@@ -186,6 +191,48 @@
       &[sup="true"] {
         vertical-align: super;
         font-size: small;
+      }
+
+      &[bg] {
+        color: #fff;
+        background-color: #f4a1a1;
+      }
+
+      &:not([bg="r1"]) + [bg="r1"],
+      &[bg="r1"]:first-of-type {
+        border-top-left-radius: $bg-r1;
+        border-bottom-left-radius: $bg-r1;
+        padding-left: $bg-pad;
+        margin-left: $bg-margin;
+      }
+
+      &[bg="r1"]:has(+ c-element:not([bg="r1"])) {
+        border-top-right-radius: $bg-r1;
+        border-bottom-right-radius: $bg-r1;
+        padding-right: $bg-pad;
+        margin-right: $bg-margin;
+      }
+
+      &:not([bg="r2"]) + [bg="r2"],
+      &[bg="r2"]:first-of-type,
+      &:not([bg="rb"]) + [bg="rb"],
+      &[bg="rb"]:first-of-type {
+        border-top-left-radius: $bg-r2;
+        border-bottom-left-radius: $bg-r2;
+        padding-left: $bg-pad;
+        margin-left: $bg-margin;
+      }
+
+      &[bg="r2"]:has(+ c-element:not([bg="r2"])),
+      &[bg="rb"]:has(+ c-element:not([bg="rb"])) {
+        border-top-right-radius: $bg-r2;
+        border-bottom-right-radius: $bg-r2;
+        padding-right: $bg-pad;
+        margin-right: $bg-margin;
+      }
+
+      &[bg="rb"]:has(+ c-element:not([bg="rb"])) {
+        border-right: 3px solid var(--bc-active-color);
       }
 
       &:not([code]) + [code="true"],

@@ -121,3 +121,42 @@ export interface BlockControllerPluginOptions {
   blockMenuActionHandler?: BlockMenuActionHandler
   positionResolver?: BlockControllerPositionResolver
 }
+
+export const mergeBlockControllerOptions = (
+  ...optionsList: Array<BlockControllerPluginOptions | null | undefined>
+): BlockControllerPluginOptions => {
+  const options = optionsList.filter(Boolean) as BlockControllerPluginOptions[]
+
+  const customTools = options.flatMap(option => option.customTools || [])
+
+  const customToolHandlers = options
+    .map(option => option.customToolHandler)
+    .filter((handler): handler is customToolHandler => typeof handler === 'function')
+
+  const menuResolvers = options
+    .map(option => option.blockMenuResolver)
+    .filter((resolver): resolver is BlockMenuResolver => typeof resolver === 'function')
+
+  const menuActionHandlers = options
+    .map(option => option.blockMenuActionHandler)
+    .filter((handler): handler is BlockMenuActionHandler => typeof handler === 'function')
+
+  const positionResolver = options.find(option => !!option.positionResolver)?.positionResolver
+
+  return {
+    customTools,
+    customToolHandler: customToolHandlers.length ? (item, block, doc) => {
+      return customToolHandlers.some(handler => !!handler(item, block, doc))
+    } : undefined,
+    blockMenuResolver: menuResolvers.length ? (ctx) => {
+      return menuResolvers.flatMap(resolver => resolver(ctx) || [])
+    } : undefined,
+    blockMenuActionHandler: menuActionHandlers.length ? (event, ctx) => {
+      for (const handler of menuActionHandlers) {
+        if (handler(event, ctx)) return true
+      }
+      return false
+    } : undefined,
+    positionResolver,
+  }
+}

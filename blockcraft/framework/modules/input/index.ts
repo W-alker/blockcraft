@@ -2,6 +2,7 @@ import {ORIGIN_SKIP_SYNC} from "../../doc";
 import {
   BindHotKey,
   BlockNodeType,
+  DeltaInsert,
   DeltaOperation,
   DocEventRegister,
   EventListen,
@@ -21,9 +22,56 @@ const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'delet
 @DocEventRegister
 export class InputTransformer {
   private readonly _compositionAnchor: OneShotCursorAnchor
+  private _nextInsertAttrs: {
+    blockId: string
+    index: number
+    attrs?: DeltaInsert['attributes']
+  } | null = null
 
   constructor(public readonly doc: BlockCraft.Doc) {
     this._compositionAnchor = new OneShotCursorAnchor(doc)
+  }
+
+  setNextInsertAttrs(attrs: DeltaInsert['attributes'], point: { blockId: string, index: number }) {
+    this._nextInsertAttrs = {
+      blockId: point.blockId,
+      index: point.index,
+      attrs
+    }
+  }
+
+  hasNextInsertAttrs() {
+    return this._nextInsertAttrs !== null
+  }
+
+  private matchNextInsertPoint(point: { blockId: string, index: number }, allowNearby = false) {
+    if (!this._nextInsertAttrs) return false
+    if (this._nextInsertAttrs.blockId !== point.blockId) return false
+    return allowNearby
+      ? Math.abs(this._nextInsertAttrs.index - point.index) <= 1
+      : this._nextInsertAttrs.index === point.index
+  }
+
+  peekNextInsertAttrs(point: { blockId: string, index: number }, options?: { allowNearby?: boolean }) {
+    if (!this._nextInsertAttrs) return undefined
+    if (!this.matchNextInsertPoint(point, !!options?.allowNearby)) return undefined
+    return this._nextInsertAttrs.attrs
+  }
+
+  clearNextInsertAttrs() {
+    this._nextInsertAttrs = null
+  }
+
+  private consumeNextInsertAttrs(blockId: string, index: number, options?: { allowNearby?: boolean }) {
+    if (!this._nextInsertAttrs) return undefined
+    const hit = this.matchNextInsertPoint({
+      blockId,
+      index
+    }, !!options?.allowNearby)
+    if (!hit) return undefined
+    const attrs = hit ? this._nextInsertAttrs.attrs : undefined
+    this._nextInsertAttrs = null
+    return attrs
   }
 
   @EventListen('compositionStart')
@@ -81,9 +129,10 @@ export class InputTransformer {
       const isZero = isZeroSpace(sel.raw.startContainer)
       const fallbackIndex = isZero ? index : Math.max(0, index - text.length)
       const {block: insertBlock, index: insertIndex} = this._compositionAnchor.resolve({block, index: fallbackIndex})!
+      const insertAttrs = this.consumeNextInsertAttrs(insertBlock.id, insertIndex, {allowNearby: true})
       const cursorIndex = insertIndex + text.length
       this.doc.crud.transact(() => {
-        insertBlock.yText.insert(insertIndex, text)
+        insertBlock.yText.insert(insertIndex, text, insertAttrs)
         // TODO: 更好的中文输入法反显渲染. 目前看必须重新渲染，否则涉及到协同的情况很容易出错
         insertBlock.rerender()
 
@@ -215,6 +264,25 @@ export class InputTransformer {
         length: 0
       })
       return
+    }
+
+    const pendingInsertAttrs = this.consumeNextInsertAttrs(from.block.id, from.index, {allowNearby: true})
+
+    if (pendingInsertAttrs !== undefined) {
+      ev.preventDefault()
+      this.doc.crud.transact(() => {
+        from.block.yText.insert(from.index, text, pendingInsertAttrs)
+      })
+      this.doc.selection.setSelection({
+        ...from,
+        index: from.index + text.length,
+        length: 0
+      })
+      return
+    }
+
+    if (this.hasNextInsertAttrs()) {
+      this.clearNextInsertAttrs()
     }
 
     this.doc.crud.transact(() => {
