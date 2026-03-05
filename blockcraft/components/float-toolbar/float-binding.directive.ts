@@ -30,15 +30,15 @@ export class BcOverlayTriggerDirective {
   @Input() withBackdrop = false;
   @Input() delay = 0;
 
-  private _disabled = false;
-  @Input()
-  set disabled(disabled: boolean) {
-    this._disabled = disabled
+  private _overlayDisabled = false;
+  @Input('bcOverlayDisabled')
+  set overlayDisabled(disabled: boolean) {
+    this._overlayDisabled = disabled
     if (disabled) this.closeOverlay()
   }
 
-  get disabled() {
-    return this._disabled
+  get overlayDisabled() {
+    return this._overlayDisabled
   }
 
   @Output()
@@ -75,7 +75,7 @@ export class BcOverlayTriggerDirective {
 
   @HostListener('mouseenter')
   showOverlay() {
-    if (this.overlayRef || !this.contentTemplate || this.disabled) {
+    if (this.overlayRef || !this.contentTemplate || this.overlayDisabled) {
       return;
     }
 
@@ -95,7 +95,7 @@ export class BcOverlayTriggerDirective {
   private _openDelayTimer?: number
 
   openOverlay() {
-    if(this.disabled || !this.elementRef.nativeElement.isConnected) return
+    if(this.overlayDisabled || !this.elementRef.nativeElement.isConnected) return
     const positionStrategy = this.overlay.position()
       .flexibleConnectedTo(this.elementRef)
       .withPositions(this.positions.map(position => getPositionWithOffset(position, this.offsetX, this.offsetY)))

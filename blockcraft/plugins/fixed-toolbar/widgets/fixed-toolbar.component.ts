@@ -1,8 +1,20 @@
 import {ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, OnDestroy, OnInit, Output} from "@angular/core";
-import {BcOverlayTriggerDirective, ColorGroup, ColorPickerComponent} from "../../../components";
+import {
+  BcColumnCountPickerComponent,
+  BcOverlayTriggerDirective,
+  BcTableSizePickerComponent,
+  ColorGroup,
+  ColorPickerComponent,
+  IColumnCountPickedEvent,
+  ITableSizePickedEvent
+} from "../../../components";
 import {IBlockSelectionJSON, IEditableBlockProps, IInlineNodeAttrs, TextToolbarHelper} from "../../../framework";
-import {Subscription} from "rxjs";
-import {debounce} from "../../../global";
+import {merge, Subscription} from "rxjs";
+import {debounce, nextTick} from "../../../global";
+import {Overlay} from "@angular/cdk/overlay";
+import {ComponentPortal} from "@angular/cdk/portal";
+import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
+import {LinkInputPad} from "../../float-text-toolbar/widgets/link-input-pad";
 
 type TInlineToggle = 'bold' | 'italic' | 'underline' | 'strike' | 'code' | 'sup' | 'sub'
 type TAlignValue = 'left' | 'center' | 'right'
@@ -84,158 +96,140 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 ]
 
 @Component({
-  selector: "bc-fixed-text-toolbar",
+  selector: "bc-fixed-toolbar",
   template: `
-    <div class="fixed-inline-toolbar" (mousedown)="onToolbarMouseDown($event)">
-      <ng-content select="[fixed-toolbar-prefix]"></ng-content>
+    <ng-content select="[fixed-toolbar-prefix]"></ng-content>
 
-      <button class="toolbar-btn" title="撤销" (mousedown)="onActionMouseDown($event)" (click)="undo()">
-        <i class="bc_icon bc_chehui"></i>
-      </button>
-      <button class="toolbar-btn" title="重做" (mousedown)="onActionMouseDown($event)" (click)="redo()">
-        <i class="bc_icon bc_huitui"></i>
-      </button>
+    <button class="toolbar-btn" title="撤销" (mousedown)="onActionMouseDown($event)" (click)="undo()">
+      <i class="bc_icon bc_chehui"></i>
+    </button>
+    <button class="toolbar-btn" title="重做" (mousedown)="onActionMouseDown($event)" (click)="redo()">
+      <i class="bc_icon bc_huitui"></i>
+    </button>
 
-      <span class="toolbar-divider"></span>
+    <span class="toolbar-divider"></span>
 
-      <label class="toolbar-select toolbar-select--style">
-        <select [disabled]="readonly || !allEditable"
-                [value]="selectedStyle"
-                (change)="onStyleChanged($event)">
-          @for (item of styleOptions; track item.value) {
-            <option [value]="item.value">{{ item.label }}</option>
-          }
-        </select>
-      </label>
+    <label class="toolbar-select toolbar-select--style">
+      <select [disabled]="readonly || !allEditable"
+              [value]="selectedStyle"
+              (change)="onStyleChanged($event)">
+        @for (item of styleOptions; track item.value) {
+          <option [value]="item.value">{{ item.label }}</option>
+        }
+      </select>
+    </label>
 
-      @for (item of inlineToggleActions; track item.value) {
-        <button class="toolbar-btn"
-                [class.active]="isAttrActive(item.value)"
-                [title]="item.title"
-                [disabled]="readonly || !allEditable"
-                (mousedown)="onActionMouseDown($event)"
-                (click)="toggleInlineAttr(item.value)">
-          <i [class]="['bc_icon', item.icon]"></i>
-        </button>
-      }
-
-      <span class="toolbar-divider"></span>
-
-      @for (item of listActions; track item.value) {
-        <button class="toolbar-btn"
-                [class.active]="activeFlavour === item.value"
-                [title]="item.title"
-                [disabled]="readonly || !allEditable"
-                (mousedown)="onActionMouseDown($event)"
-                (click)="setList(item.value)">
-          <i [class]="['bc_icon', item.icon]"></i>
-        </button>
-      }
-
-      @for (item of alignActions; track item.value) {
-        <button class="toolbar-btn"
-                [class.active]="isAlignActive(item.value)"
-                [title]="item.title"
-                [disabled]="readonly || !allEditable"
-                (mousedown)="onActionMouseDown($event)"
-                (click)="setAlign(item.value)">
-          <i [class]="['bc_icon', item.icon]"></i>
-        </button>
-      }
-
-      <span class="toolbar-divider"></span>
-
+    @for (item of inlineToggleActions; track item.value) {
       <button class="toolbar-btn"
-              title="文字/背景颜色"
-              [attr.disabled]="readonly || !allEditable ? '' : null"
-              [disabled]="readonly || !allEditable"
-              [bcOverlayTrigger]="colorPicker"
-              [style.color]="activeColors['color']"
-              [style.background-color]="activeColors['backColor']">
-        <i class="bc_icon bc_bianji"></i>
-      </button>
-
-      @if (isLinkAble) {
-        <button class="toolbar-btn"
-                [class.active]="linkEditing || isAttrActive('link')"
-                title="链接"
-                [disabled]="readonly || !allEditable || !hasTextSelection"
-                (mousedown)="onActionMouseDown($event)"
-                (click)="openLinkEditor()">
-          <i class="bc_icon bc_lianjie"></i>
-        </button>
-
-        <button class="toolbar-btn"
-                title="行内公式"
-                [disabled]="readonly || !allEditable || !hasTextSelection"
-                (mousedown)="onActionMouseDown($event)"
-                (click)="insertFormula()">
-          <i class="bc_icon bc_gongshi"></i>
-        </button>
-      }
-
-      <button class="toolbar-btn"
-              title="清除格式"
+              [class.active]="isAttrActive(item.value)"
+              [title]="item.title"
               [disabled]="readonly || !allEditable"
               (mousedown)="onActionMouseDown($event)"
-              (click)="clearFormat()">
-        <i class="bc_icon bc_quxiao"></i>
+              (click)="toggleInlineAttr(item.value)">
+        <i [class]="['bc_icon', item.icon]"></i>
+      </button>
+    }
+
+    <span class="toolbar-divider"></span>
+
+    @for (item of listActions; track item.value) {
+      <button class="toolbar-btn"
+              [class.active]="activeFlavour === item.value"
+              [title]="item.title"
+              [disabled]="readonly || !allEditable"
+              (mousedown)="onActionMouseDown($event)"
+              (click)="setList(item.value)">
+        <i [class]="['bc_icon', item.icon]"></i>
+      </button>
+    }
+
+    @for (item of alignActions; track item.value) {
+      <button class="toolbar-btn"
+              [class.active]="isAlignActive(item.value)"
+              [title]="item.title"
+              [disabled]="readonly || !allEditable"
+              (mousedown)="onActionMouseDown($event)"
+              (click)="setAlign(item.value)">
+        <i [class]="['bc_icon', item.icon]"></i>
+      </button>
+    }
+
+    <span class="toolbar-divider"></span>
+
+    <button class="toolbar-btn"
+            title="文字/背景颜色"
+            [attr.disabled]="readonly || !allEditable ? '' : null"
+            [disabled]="readonly || !allEditable"
+            [bcOverlayTrigger]="colorPicker"
+            [style.color]="activeColors['color']"
+            [style.background-color]="activeColors['backColor']">
+      <i class="bc_icon bc_bianji"></i>
+    </button>
+
+    @if (isLinkAble) {
+      <button class="toolbar-btn"
+              [class.active]="isAttrActive('link')"
+              title="链接"
+              [disabled]="readonly || !allEditable || !hasTextSelection"
+              (mousedown)="onActionMouseDown($event)"
+              (click)="onLinkAction()">
+        <i class="bc_icon bc_lianjie"></i>
       </button>
 
-      @if (extensionActions.length) {
-        <span class="toolbar-divider"></span>
+      <button class="toolbar-btn"
+              title="行内公式"
+              [disabled]="readonly || !allEditable || !hasTextSelection"
+              (mousedown)="onActionMouseDown($event)"
+              (click)="insertFormula()">
+        <i class="bc_icon bc_gongshi"></i>
+      </button>
+    }
 
-        @for (item of extensionActions; track item.key) {
-          @if (item.dividerBefore) {
-            <span class="toolbar-divider"></span>
-          }
+    <button class="toolbar-btn"
+            title="清除格式"
+            [disabled]="readonly || !allEditable"
+            (mousedown)="onActionMouseDown($event)"
+            (click)="clearFormat()">
+      <i class="bc_icon bc_quxiao"></i>
+    </button>
 
-          <button class="toolbar-btn"
-                  [class.active]="!!item.active"
-                  [title]="item.title"
-                  [disabled]="readonly || !!item.disabled"
-                  (mousedown)="onActionMouseDown($event)"
-                  (click)="onExtensionAction(item)">
-            <i [class]="['bc_icon', item.icon]"></i>
-          </button>
+    <span class="toolbar-divider"></span>
+
+    <button class="toolbar-btn"
+            title="插入表格"
+            [disabled]="readonly || !selectionJSON"
+            [bcOverlayTrigger]="quickTablePicker">
+      <i class="bc_icon bc_column-vertical"></i>
+    </button>
+
+    <button class="toolbar-btn"
+            title="创建分栏"
+            [disabled]="readonly || !selectionJSON"
+            [bcOverlayTrigger]="columnCountPicker">
+      <i class="bc_icon bc_fenlan"></i>
+    </button>
+
+    @if (extensionActions.length) {
+      <span class="toolbar-divider"></span>
+
+      @for (item of extensionActions; track item.key) {
+        @if (item.dividerBefore) {
+          <span class="toolbar-divider"></span>
         }
+
+        <button class="toolbar-btn"
+                [class.active]="!!item.active"
+                [title]="item.title"
+                [disabled]="readonly || !!item.disabled"
+                (mousedown)="onActionMouseDown($event)"
+                (click)="onExtensionAction(item)">
+          <i [class]="['bc_icon', item.icon]"></i>
+        </button>
       }
+    }
 
-      @if (linkEditing) {
-        <div class="link-editor">
-          <input type="text"
-                 placeholder="输入链接后回车确认"
-                 [value]="linkDraft"
-                 (input)="onLinkDraftInput($event)"
-                 (keydown)="onLinkInputKeydown($event)">
-
-          <button class="toolbar-btn"
-                  title="确认"
-                  [disabled]="readonly || !allEditable || !hasTextSelection"
-                  (mousedown)="onActionMouseDown($event)"
-                  (click)="confirmLink()">
-            <i class="bc_icon bc_queding"></i>
-          </button>
-
-          <button class="toolbar-btn"
-                  title="移除链接"
-                  [disabled]="readonly || !allEditable || !hasTextSelection"
-                  (mousedown)="onActionMouseDown($event)"
-                  (click)="removeLink()">
-            <i class="bc_icon bc_jiebang"></i>
-          </button>
-
-          <button class="toolbar-btn"
-                  title="关闭"
-                  (mousedown)="onActionMouseDown($event)"
-                  (click)="cancelLinkEditor()">
-            <i class="bc_icon bc_guanbi"></i>
-          </button>
-        </div>
-      }
-
-      <ng-content select="[fixed-toolbar-suffix]"></ng-content>
-    </div>
+    <ng-content></ng-content>
+    <ng-content select="[fixed-toolbar-suffix]"></ng-content>
 
     <ng-template #colorPicker>
       <bc-color-picker (colorPicked)="onColorPicked($event)"
@@ -257,18 +251,28 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         </div>
       </bc-color-picker>
     </ng-template>
+
+    <ng-template #quickTablePicker>
+      <bc-table-size-picker (pick)="insertQuickTable($event)"></bc-table-size-picker>
+    </ng-template>
+
+    <ng-template #columnCountPicker>
+      <bc-column-count-picker (pick)="insertColumnsBlock($event)"></bc-column-count-picker>
+    </ng-template>
   `,
   styles: [`
     :host {
-      display: block;
-      position: sticky;
-      top: var(--bc-fixed-toolbar-top, 0px);
-      z-index: 40;
-      pointer-events: none;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+      width: max-content;
+      padding: var(--bc-fixed-toolbar-padding, 5px 8px);
+      border: var(--bc-fixed-toolbar-border, 1px solid var(--bc-float-toolbar-divider-color));
+      box-shadow: var(--bc-fixed-toolbar-shadow, 0 6px 16px rgba(15, 15, 15, 0.08));
+      pointer-events: auto;
       transition: opacity .12s ease;
       will-change: transform;
-      padding: 8px 0 10px;
-      background: linear-gradient(to bottom, var(--bc-bg-primary) 0%, var(--bc-bg-primary) 84%, rgba(255, 255, 255, 0) 100%);
     }
 
     :host(.hidden) {
@@ -279,22 +283,6 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     :host(.readonly) {
       opacity: .6;
       pointer-events: none;
-    }
-
-    .fixed-inline-toolbar {
-      pointer-events: auto;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      flex-wrap: wrap;
-      width: max-content;
-      max-width: min(920px, calc(100vw - 80px));
-      min-height: 38px;
-      padding: 5px 8px;
-      border: 1px solid var(--bc-float-toolbar-divider-color);
-      border-radius: 10px;
-      background: var(--bc-bg-primary);
-      box-shadow: 0 6px 16px rgba(15, 15, 15, 0.08);
     }
 
     .toolbar-btn {
@@ -371,32 +359,6 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       flex-shrink: 0;
     }
 
-    .link-editor {
-      height: 28px;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding-left: 6px;
-      margin-left: 2px;
-      border-left: 1px solid var(--bc-float-toolbar-divider-color);
-    }
-
-    .link-editor > input {
-      height: 100%;
-      width: 220px;
-      border: 1px solid var(--bc-border-color);
-      border-radius: 6px;
-      background: var(--bc-bg-primary);
-      outline: none;
-      color: var(--bc-color);
-      font-size: 12px;
-      padding: 0 8px;
-    }
-
-    .link-editor > input:focus {
-      border-color: var(--bc-active-color);
-    }
-
     .bg-list {
       display: flex;
       gap: 6px;
@@ -451,14 +413,17 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
   standalone: true,
   imports: [
     BcOverlayTriggerDirective,
-    ColorPickerComponent
+    ColorPickerComponent,
+    BcTableSizePickerComponent,
+    BcColumnCountPickerComponent
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     'contenteditable': 'false',
     '[class.readonly]': 'readonly',
     '[class.hidden]': '!visible',
-    '[style.--bc-fixed-toolbar-top.px]': 'stickyTop'
+    '[style.--bc-fixed-toolbar-top.px]': 'stickyTop',
+    '(mousedown)': 'onToolbarMouseDown($event)'
   }
 })
 export class FixedTextToolbarComponent implements OnInit, OnDestroy {
@@ -506,9 +471,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   @Input()
   set hasTextSelection(value: boolean) {
     this._hasTextSelection = value
-    if (!value) {
-      this.linkEditing = false
-    }
   }
 
   get hasTextSelection() {
@@ -529,9 +491,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   protected readonly listActions = LIST_ACTIONS
   protected readonly alignActions = ALIGN_ACTIONS
   protected readonly bgGraphList = BG_GRAPH_LIST
-
-  protected linkEditing = false
-  protected linkDraft = ''
 
   ngOnInit() {
     this.syncToolbarState(this.doc.selection.value)
@@ -656,56 +615,80 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     })
   }
 
-  protected openLinkEditor() {
-    if (this.readonly || !this.allEditable || !this.isLinkAble || !this.hasTextSelection) return
+  protected async insertQuickTable(evt: ITableSizePickedEvent) {
+    if (this.readonly || !this.selectionJSON) return
     this.restoreSelection()
-    const active = this.activeAttrs.get('link')
-    this.linkDraft = typeof active === 'string' ? active : ''
-    this.linkEditing = true
+    const selection = this.doc.selection.value
+    if (!selection) return
+
+    const inserted = await this.insertTable(evt.rows, evt.cols, selection)
+    if (!inserted) return
+    this.doc.selection.recalculate()
+    this.syncToolbarState(this.doc.selection.value)
+    this.cdr.markForCheck()
   }
 
-  protected onLinkDraftInput(evt: Event) {
-    this.linkDraft = (evt.target as HTMLInputElement).value
+  protected async insertColumnsBlock(evt: IColumnCountPickedEvent) {
+    if (this.readonly || !this.selectionJSON) return
+    this.restoreSelection()
+    const selection = this.doc.selection.value
+    if (!selection) return
+
+    const inserted = await this.insertColumns(evt.count, selection)
+    if (!inserted) return
+    this.doc.selection.recalculate()
+    this.syncToolbarState(this.doc.selection.value)
+    this.cdr.markForCheck()
   }
 
-  protected onLinkInputKeydown(evt: KeyboardEvent) {
-    if (evt.key === 'Enter') {
-      evt.preventDefault()
-      this.confirmLink()
+  protected onLinkAction() {
+    if (this.readonly || !this.allEditable || !this.isLinkAble || !this.hasTextSelection) return
+    if (this.isAttrActive('link')) {
+      this.runWithSelection(() => {
+        this.toolbarHelper.formatText({'a:link': null})
+      })
       return
     }
-    if (evt.key === 'Escape') {
-      evt.preventDefault()
-      this.cancelLinkEditor()
-    }
+    this.openLinkPad()
   }
 
-  protected confirmLink() {
-    if (!this.hasTextSelection) {
-      this.linkEditing = false
-      return
-    }
-    const url = this.linkDraft.trim()
-    this.runWithSelection(() => {
-      this.toolbarHelper.formatText({'a:link': url || null})
+  protected openLinkPad() {
+    this.restoreSelection()
+    const selection = this.doc.selection.value
+    if (!selection || !selection.isInSameBlock || selection.from.type !== 'text' || !this.hasTextSelection) return
+    const selectionJSON = selection.toJSON()
+
+    const rect = selection.raw.getBoundingClientRect()
+    const fake = this.doc.selection.createFakeRange(selection)
+    const overlay = this.doc.injector.get(Overlay)
+
+    const positionStrategy = overlay.position().global().top(rect.bottom + 'px').left(rect.left + 'px')
+    const portal = new ComponentPortal(LinkInputPad)
+    const ovr = overlay.create({
+      positionStrategy,
+      hasBackdrop: true,
+      backdropClass: 'cdk-overlay-transparent-backdrop',
     })
-    this.linkEditing = false
-  }
 
-  protected removeLink() {
-    if (!this.hasTextSelection) {
-      this.linkEditing = false
-      return
+    const close = () => {
+      ovr.dispose()
+      fake.destroy()
+      nextTick().then(() => {
+        this.doc.selection.replay(selectionJSON)
+        this.doc.selection.recalculate()
+        this.syncToolbarState(this.doc.selection.value)
+        this.cdr.markForCheck()
+      })
     }
-    this.runWithSelection(() => {
-      this.toolbarHelper.formatText({'a:link': null})
-    })
-    this.linkDraft = ''
-    this.linkEditing = false
-  }
 
-  protected cancelLinkEditor() {
-    this.linkEditing = false
+    const cpr = ovr.attach(portal)
+    merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
+    cpr.instance.onConfirm.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe((url: string) => {
+      close()
+      if (selection.from.type !== 'text') return
+      const {index, length} = selection.from
+      selection.from.block.formatText(index, length, {'a:link': url})
+    })
   }
 
   protected insertFormula() {
@@ -740,9 +723,9 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
         's:fontSize': null,
         's:fontFamily': null
       } as unknown as IInlineNodeAttrs)
-      if (this.activeFlavour !== 'paragraph') {
-        this.toolbarHelper.transformBlocks('paragraph')
-      }
+      // if (this.activeFlavour !== 'paragraph') {
+      //   this.toolbarHelper.transformBlocks('paragraph')
+      // }
       this.toolbarHelper.updateBlockProps({
         heading: undefined,
         textAlign: undefined
@@ -780,8 +763,72 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     }
   }
 
+  private canInsertBlock(flavour: BlockCraft.BlockFlavour, selection: BlockCraft.Selection | null = this.doc.selection.value) {
+    return !!selection
+  }
+
+  private resolveInsertAnchor(flavour: BlockCraft.BlockFlavour, selection: BlockCraft.Selection) {
+    let anchor: BlockCraft.BlockComponent | null = selection.lastBlock
+    while (anchor?.parentBlock && !this.doc.schemas.isValidChildren(flavour, anchor.parentBlock.flavour)) {
+      anchor = anchor.parentBlock
+    }
+    if (!anchor || !anchor.parentBlock || !this.doc.schemas.isValidChildren(flavour, anchor.parentBlock.flavour)) {
+      return null
+    }
+    return anchor
+  }
+
+  private async insertTable(rows: number, cols: number, selection: BlockCraft.Selection) {
+    const safeRows = Math.max(1, Math.min(12, Math.floor(rows) || 0))
+    const safeCols = Math.max(1, Math.min(12, Math.floor(cols) || 0))
+    const anchor = this.resolveInsertAnchor('table', selection)
+    if (!anchor) return null
+
+    const tableSnapshot = this.doc.schemas.createSnapshot('table', [safeRows, safeCols])
+    await this.doc.crud.insertBlocksAfter(anchor, [tableSnapshot])
+
+    const firstParagraphId = (tableSnapshot as any).children?.[0]?.children?.[0]?.children?.[0]?.id as string | undefined
+    if (firstParagraphId) {
+      this.doc.selection.setCursorAtBlock(firstParagraphId, true)
+    } else {
+      this.doc.selection.selectOrSetCursorAtBlock(tableSnapshot.id, true)
+    }
+    return tableSnapshot
+  }
+
+  private async insertColumns(count: number, selection: BlockCraft.Selection) {
+    const safeCount = Math.max(2, Math.min(6, Math.floor(count) || 0))
+    const anchor = this.resolveInsertAnchor('columns', selection)
+    if (!anchor) return null
+
+    const columnsSnapshot = this.doc.schemas.createSnapshot('columns', [safeCount])
+    await this.doc.crud.insertBlocksAfter(anchor, [columnsSnapshot])
+
+    const firstParagraphId = (columnsSnapshot as any).children?.[0]?.children?.[0]?.id as string | undefined
+    if (firstParagraphId) {
+      this.doc.selection.setCursorAtBlock(firstParagraphId, true)
+    } else {
+      this.doc.selection.selectOrSetCursorAtBlock(columnsSnapshot.id, true)
+    }
+    return columnsSnapshot
+  }
+
   private syncToolbarState(selection: BlockCraft.Selection | null) {
-    if (!selection || selection.isAllSelected || selection.from.type !== 'text' || !this.doc.isEditable(selection.from.block)
+
+    if (!selection) {
+      this.activeAttrs = new Map<string, any>()
+      this.activeColors = {}
+      this.activeProps = {}
+      this.activeFlavour = 'paragraph'
+      this.allEditable = false
+      this.selectionJSON = null
+      this.isLinkAble = false
+      this.hasTextSelection = false
+      this.cdr.markForCheck()
+      return
+    }
+
+    if (selection.isAllSelected || selection.from.type !== 'text' || !this.doc.isEditable(selection.from.block)
       || selection.from.block.plainTextOnly
     ) {
       this.activeAttrs = new Map<string, any>()
@@ -789,7 +836,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       this.activeProps = {}
       this.activeFlavour = 'paragraph'
       this.allEditable = false
-      this.selectionJSON = null
+      this.selectionJSON = selection.toJSON()
       this.isLinkAble = false
       this.hasTextSelection = false
       this.cdr.markForCheck()

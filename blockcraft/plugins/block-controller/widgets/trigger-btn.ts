@@ -103,7 +103,7 @@ const HEADING_LIST: IContextMenuItem[] = [
   template: `
     <div class="drag-handle"
          [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
-         [disabled]="menuDisabled" (open)="setValidBlockList()" [delay]="500"
+         [bcOverlayDisabled]="menuDisabled" (open)="setValidBlockList()" [delay]="500"
          [withBackdrop]="false" activeClass="active" draggable="true">
       <div class="btn">
         <ng-container *ngTemplateOutlet="icon; context: {$implicit: activeBlockIcon}"></ng-container>
@@ -177,6 +177,7 @@ const HEADING_LIST: IContextMenuItem[] = [
 
           <bc-float-toolbar-item class="append-more-btn" [expandable]="true" [bcOverlayTrigger]="blockAddList"
                                  [disabled]="menuDisabled"
+                                 [bcOverlayDisabled]="menuDisabled"
                                  [positions]="['right-center']" [offsetX]="2">
             <i class="bc_icon bc_tianjia"></i>
             <span>在下方添加</span>

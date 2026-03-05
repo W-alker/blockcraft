@@ -34,7 +34,7 @@ import {
 import {ConsoleLogger, getRandomDarkColor, nextTick, randomColor, throttle} from "../global";
 import {BulletBlockSchema} from "../blocks/bullet-block";
 import {FormulaBlockSchema} from "../blocks/formula-block";
-import {FixedTextToolbarComponent} from "../plugins/fixed-text-toolbar";
+import {FixedTextToolbarComponent} from "../plugins/fixed-toolbar";
 import {BlockTransformerPlugin} from "../plugins/block-transformer";
 import {BlockControllerPlugin, mergeBlockControllerOptions} from "../plugins/block-controller";
 import {ImgToolbarPlugin} from "../plugins/img-toolbar";
@@ -129,7 +129,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 @Component({
   selector: 'block-craft-editor',
   template: `
-    <bc-fixed-text-toolbar [doc]="doc" [stickyTop]="0"></bc-fixed-text-toolbar>
+    <bc-fixed-toolbar [doc]="doc" [stickyTop]="0"></bc-fixed-toolbar>
 
     <div style="padding: 60px; max-width: 90vw; height: 80vh; overflow-x: hidden; overflow-y: auto;" #container
          (mousedown)="onContainerMousedown($event)">

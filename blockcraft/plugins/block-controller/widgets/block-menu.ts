@@ -36,6 +36,7 @@ import {
         } @else if (item.type === "dropdown") {
           <bc-float-toolbar-item [icon]="item.icon" [title]="item.desc || item.label"
                                  [disabled]="isDisabled(item)"
+                                 [bcOverlayDisabled]="isDisabled(item)"
                                  [expandable]="true"
                                  [bcOverlayTrigger]="subMenuTpl"
                                  [positions]="item.positions || defaultSubMenuPositions"

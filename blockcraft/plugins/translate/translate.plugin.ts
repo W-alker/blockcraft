@@ -23,6 +23,21 @@ const TRANSLATE_MENU_NAMES = {
   translateParagraph: "translate-paragraph",
 } as const;
 
+const MAINSTREAM_TRANSLATE_LANGUAGE_CODES = new Set<string>([
+  "chinese_simplified",
+  "english",
+  "japanese",
+  "korean",
+  "french",
+  "german",
+  "spanish",
+  "russian",
+  "arabic",
+  "portuguese",
+  "italian",
+  "chinese_traditional",
+]);
+
 export interface DocTranslateOptions {
   sourceLang?: string;
   targetLang: string;
@@ -299,6 +314,7 @@ export class TranslatePlugin extends DocPlugin {
     for (const language of languages) {
       const code = language.code?.trim();
       if (!code) continue;
+      if (!MAINSTREAM_TRANSLATE_LANGUAGE_CODES.has(code)) continue;
       if (map.has(code)) continue;
       map.set(code, {
         code,
