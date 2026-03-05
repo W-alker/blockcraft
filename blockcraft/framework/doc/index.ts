@@ -17,6 +17,7 @@ import { DocPlugin } from "../plugin";
 import { DOC_MESSAGE_SERVICE_TOKEN } from "../services";
 import { DocOverlayService } from "../services";
 import { DocDndService } from "../services/dnd.service";
+import { DocChain } from "../chain/doc-chain";
 import * as Y from "yjs";
 
 interface DocConfig {
@@ -127,6 +128,10 @@ export class BlockCraftDoc {
 
   get theme() {
     return this.config.theme || 'light'
+  }
+
+  chain() {
+    return new DocChain(this)
   }
 
   constructor(
