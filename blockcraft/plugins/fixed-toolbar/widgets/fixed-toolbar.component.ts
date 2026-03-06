@@ -579,7 +579,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   protected setList(flavour: TListFlavour) {
     this.runWithSelection(() => {
-      this.toolbarHelper.transformBlocks(flavour)
+      this.toolbarHelper.transformBlocks(this.activeFlavour === flavour ? 'paragraph' : flavour)
     })
   }
 

@@ -450,7 +450,7 @@ export class FloatTextToolbarComponent {
   }
 
   transformList(flavour: BlockCraft.BlockFlavour) {
-    this.utils.transformBlocks(flavour)
+    this.utils.transformBlocks(this.activeFlavour === flavour ? 'paragraph' : flavour)
   }
 
   formatText(attrs: IInlineNodeAttrs) {
