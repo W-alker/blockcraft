@@ -52,10 +52,11 @@ export class OrderedBlockPlugin extends DocPlugin {
         event.transactions.forEach(tr => {
           const {inserted, deleted, block} = tr
           if (inserted) {
-            const b = inserted.find(v => v.flavour === 'ordered')
-            if (b) {
-              updateOrderAround(<any>b)
-            }
+            inserted.forEach(insertedBlock => {
+              if (insertedBlock.flavour === 'ordered') {
+                updateOrderAround(<any>insertedBlock)
+              }
+            })
           }
 
           if (deleted) {
@@ -75,12 +76,13 @@ export class OrderedBlockPlugin extends DocPlugin {
     this._sub.add(
       this.doc.onPropsUpdate$.subscribe((event) => {
         if (event.isUndoRedo) return;
-        const tr = event.transactions[0]
-        if (tr.block.flavour !== 'ordered' || !tr.changes.has('depth')) return
-        nextTick().then(() => {
-          updateOrderAround(<any>tr.block)
-          const nextBlock = this.doc.nextSibling(tr.block)
-          nextBlock && nextBlock.flavour === 'ordered' && (nextBlock.props.depth || 0) < (tr.block.props.depth || 0) && updateOrderAround(<any>nextBlock)
+        event.transactions.forEach(tr => {
+          if (tr.block.flavour !== 'ordered' || (!tr.changes.has('depth') && !tr.changes.has('heading'))) return
+          nextTick().then(() => {
+            updateOrderAround(<any>tr.block)
+            const nextBlock = this.doc.nextSibling(tr.block)
+            nextBlock && nextBlock.flavour === 'ordered' && (nextBlock.props.depth || 0) < (tr.block.props.depth || 0) && updateOrderAround(<any>nextBlock)
+          })
         })
       })
     )
@@ -107,7 +109,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
   if (!block.props.start) {  // 本身就是起始编号就没必要往上找了
     for (let i = index - 1; i >= 0; i--) {
       const prevBlock = parentChildren[i]
-      if (prevBlock.props['heading'] && prevBlock.props['heading'] < (block.props['heading'] || 0)) {
+      if (isHigherHeadingLevel(prevBlock, block)) {
         break
       }
       if (prevBlock.flavour !== 'ordered') {
@@ -119,6 +121,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
         // }
         continue
       }
+      if (!isSameHeadingLevel(prevBlock, block)) continue
       if (isSimpleTypeEqual(prevBlock.props.depth, block.props.depth)) {
         aroundOrderBlocks.unshift(prevBlock)
 
@@ -129,10 +132,14 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
 
   for (let j = index + 1; j < parentChildren.length; j++) {
     const nextBlock = parentChildren[j]
+    if (isHigherHeadingLevel(nextBlock, block)) {
+      break
+    }
     if (nextBlock.flavour !== 'ordered') continue
     if ((nextBlock.props.depth || 0) < (block.props.depth || 0)) {
       break
     }
+    if (!isSameHeadingLevel(nextBlock, block)) continue
     if (isSimpleTypeEqual(nextBlock.props.depth, block.props.depth)) {
       if (nextBlock.props.start) break
 
@@ -151,4 +158,17 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
 
 }
 
+const getHeadingLevel = (block: BaseBlockComponent<any>) => {
+  return (block.props['heading'] || 0) as number
+}
+
+const isSameHeadingLevel = (left: BaseBlockComponent<any>, right: BaseBlockComponent<any>) => {
+  return isSimpleTypeEqual(getHeadingLevel(left), getHeadingLevel(right))
+}
+
+const isHigherHeadingLevel = (candidate: BaseBlockComponent<any>, target: BaseBlockComponent<any>) => {
+  const candidateHeading = getHeadingLevel(candidate)
+  const targetHeading = getHeadingLevel(target)
+  return candidateHeading > 0 && targetHeading > 0 && candidateHeading < targetHeading
+}
 
