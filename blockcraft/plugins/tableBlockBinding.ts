@@ -1,6 +1,9 @@
 import {BindHotKey, DocPlugin, EventListen, IBlockSnapshot} from "../framework";
 import {UIEventStateContext} from "../framework";
 import {BlockCraftError, ErrorCode} from "../global";
+import {ClipboardDataType} from "../framework/modules/clipboard";
+import {TableCellBlockComponent} from "../blocks/table-block/table-cell.block";
+import {replaceSnapshotsIdDeeply} from "../framework/utils";
 
 export class TableBlockBinding extends DocPlugin {
 
@@ -24,17 +27,69 @@ export class TableBlockBinding extends DocPlugin {
     return this._handleCopyOrCut(context, true)
   }
 
-  // @EventListen('paste', {flavour: 'table'})
-  // handlePaste(context: UIEventStateContext) {
-  //   if (this.doc.isReadonly) return
-  //   const state = context.get('keyboardState')
-  //   const {raw: evt, selection} = state
-  //   const table = this._getTable(selection)
-  // }
+  @EventListen('paste', {flavour: 'table'})
+  async handlePaste(context: UIEventStateContext) {
+    if (this.doc.isReadonly) return false
+    const state = context.get('clipboardState')
+    const {selection} = state
+    if (!selection || selection.kind !== 'table') return false
+
+    const table = this._getTable(selection)
+    const coordinates = table.getSelectedCoordinates()
+    if (!coordinates) return false
+
+    context.preventDefault()
+
+    if (state.dataTypes.includes(ClipboardDataType.HTML)) {
+      const htmlString = state.getData(ClipboardDataType.HTML)
+      const htmlAdapter = this.doc.clipboard.adapter?.getAdapter(ClipboardDataType.HTML)
+      if (htmlAdapter && htmlString) {
+        try {
+          const rootSnapshot = await htmlAdapter.toSnapshot(htmlString)
+          const snapshotMatrix = rootSnapshot ? this._extractTableCellSnapshots(rootSnapshot) : null
+          if (snapshotMatrix?.length) {
+            const lastFocusedBlockId = this._applyCellSnapshotMatrix(
+              table.getCellsMatrixByCoordinates(coordinates.start, coordinates.end),
+              snapshotMatrix
+            )
+            if (lastFocusedBlockId) {
+              this.doc.selection.setCursorAtBlock(lastFocusedBlockId, false)
+            }
+            return true
+          }
+        } catch (e) {
+          this.doc.logger.warn('table html paste error', e)
+        }
+      }
+    }
+
+    const text = state.getData(ClipboardDataType.TEXT)
+    if (!text) return false
+
+    const rows = text.replace(/\r\n/g, '\n').replace(/\n$/g, '').split('\n').map(row => row.split('\t'))
+    const matrix = table.getCellsMatrixByCoordinates(coordinates.start, coordinates.end)
+    let lastParagraphId: string | null = null
+
+    matrix.forEach((cells, rowIndex) => {
+      const rowData = rows[rowIndex]
+      if (!rowData) return
+      cells.forEach((cell, colIndex) => {
+        const value = rowData[colIndex]
+        if (value === undefined) return
+        lastParagraphId = this._replaceCellContent(cell, value)
+      })
+    })
+
+    if (lastParagraphId) {
+      this.doc.selection.setCursorAtBlock(lastParagraphId, false)
+    }
+
+    return true
+  }
 
   private _handleCopyOrCut(context: UIEventStateContext, isCut: boolean): boolean {
     const selection = this.doc.selection.value
-    if (!selection || !selection.from.block.flavour.startsWith('table')) return false
+    if (!selection || selection.kind !== 'table') return false
     context.preventDefault()
     const table = this._getTable(selection)
     const coordinates = table.getSelectedCoordinates()
@@ -72,7 +127,7 @@ export class TableBlockBinding extends DocPlugin {
   handleArrow(context: UIEventStateContext) {
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
-    if (!selection || selection.from.block.flavour !== 'table-cell') return false
+    if (!selection || selection.kind !== 'table') return false
 
     const block = this._getTable(selection)
     context.preventDefault()
@@ -85,7 +140,7 @@ export class TableBlockBinding extends DocPlugin {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
-    if (!selection.isAllSelected || selection.from.block.flavour !== 'table-cell') return
+    if (selection.kind !== 'table' || !selection.isAllSelected) return
     const table = this._getTable(selection)
     const coordinates = table.getSelectedCoordinates()
     evt.preventDefault()
@@ -103,7 +158,7 @@ export class TableBlockBinding extends DocPlugin {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
-    if (!selection.isAllSelected || selection.from.block.flavour !== 'table-cell') return false
+    if (selection.kind !== 'table' || !selection.isAllSelected) return false
     evt.preventDefault()
     const table = this._getTable(selection)
     this.doc.selection.selectBlock(table)
@@ -122,6 +177,73 @@ export class TableBlockBinding extends DocPlugin {
   }
 
   init(): void {
+  }
+
+  private _replaceCellContent(cell: TableCellBlockComponent, text: string) {
+    const paragraph = this.doc.schemas.createSnapshot('paragraph', [text ? [{insert: text}] : []])
+    const firstChild = cell.firstChildren
+    if (!firstChild) {
+      this.doc.crud.insertBlocks(cell.id, 0, [paragraph])
+      return paragraph.id
+    }
+
+    this.doc.crud.replaceWithSnapshots(firstChild.id, [paragraph])
+    if (cell.childrenLength > 1) {
+      this.doc.crud.deleteBlocks(cell.id, 1, cell.childrenLength - 1)
+    }
+    return paragraph.id
+  }
+
+  private _replaceCellSnapshots(cell: TableCellBlockComponent, snapshots: IBlockSnapshot[]) {
+    const clonedSnapshots = JSON.parse(JSON.stringify(
+      snapshots.length ? snapshots : [this.doc.schemas.createSnapshot('paragraph', [])]
+    )) as IBlockSnapshot[]
+    replaceSnapshotsIdDeeply(clonedSnapshots)
+
+    const firstChild = cell.firstChildren
+    if (!firstChild) {
+      this.doc.crud.insertBlocks(cell.id, 0, clonedSnapshots)
+      return clonedSnapshots[clonedSnapshots.length - 1].id
+    }
+
+    this.doc.crud.replaceWithSnapshots(firstChild.id, clonedSnapshots)
+    if (cell.childrenLength > clonedSnapshots.length) {
+      this.doc.crud.deleteBlocks(cell.id, clonedSnapshots.length, cell.childrenLength - clonedSnapshots.length)
+    }
+    return clonedSnapshots[clonedSnapshots.length - 1].id
+  }
+
+  private _extractTableCellSnapshots(rootSnapshot: IBlockSnapshot) {
+    const tableSnapshot = (() => {
+      if (rootSnapshot.flavour === 'table') return rootSnapshot
+      if (rootSnapshot.nodeType !== 'root') return null
+      return (rootSnapshot.children as IBlockSnapshot[]).find(child => child.flavour === 'table') || null
+    })()
+
+    if (!tableSnapshot || tableSnapshot.flavour !== 'table') return null
+
+    return (tableSnapshot.children as IBlockSnapshot[])
+      .filter(row => row.flavour === 'table-row')
+      .map(row => (row.children as IBlockSnapshot[])
+        .filter(cell => cell.flavour === 'table-cell')
+        .map(cell => cell.children as IBlockSnapshot[]))
+  }
+
+  private _applyCellSnapshotMatrix(
+    targetMatrix: BlockCraft.IBlockComponents['table-cell'][][],
+    snapshotMatrix: IBlockSnapshot[][][]
+  ) {
+    let lastFocusedBlockId: string | null = null
+    targetMatrix.forEach((cells, rowIndex) => {
+      const rowSnapshots = snapshotMatrix[rowIndex]
+      if (!rowSnapshots) return
+      cells.forEach((cell, colIndex) => {
+        const snapshots = rowSnapshots[colIndex]
+        if (!snapshots) return
+        lastFocusedBlockId = this._replaceCellSnapshots(cell, snapshots)
+      })
+    })
+    return lastFocusedBlockId
   }
 
 }

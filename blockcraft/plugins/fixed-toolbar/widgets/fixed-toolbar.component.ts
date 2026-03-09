@@ -655,7 +655,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   protected openLinkPad() {
     this.restoreSelection()
     const selection = this.doc.selection.value
-    if (!selection || !selection.isInSameBlock || selection.from.type !== 'text' || !this.hasTextSelection) return
+    if (!selection || selection.kind !== 'text' || !selection.isInSameBlock || selection.from.type !== 'text' || !this.hasTextSelection) return
     const selectionJSON = selection.toJSON()
 
     const rect = selection.raw.getBoundingClientRect()
@@ -685,7 +685,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
     cpr.instance.onConfirm.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe((url: string) => {
       close()
-      if (selection.from.type !== 'text') return
+      if (selection.kind !== 'text' || selection.from.type !== 'text') return
       const {index, length} = selection.from
       selection.from.block.formatText(index, length, {'a:link': url})
     })
@@ -695,7 +695,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (!this.hasTextSelection) return
     this.runWithSelection(() => {
       const selection = this.doc.selection.value
-      if (!selection || selection.from.type !== 'text') return
+      if (!selection || selection.kind !== 'text' || selection.from.type !== 'text') return
       const {block, index, length} = selection.from
       const text = selection.raw.toString()
       block.applyDeltaOperations([
@@ -746,7 +746,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this.restoreSelection()
 
     const selection = this.doc.selection.value
-    if (!selection || selection.from.type !== 'text') return
+    if (!selection || (selection.kind !== 'text' && selection.kind !== 'mixed') || selection.from.type !== 'text') return
     run()
 
     this.doc.selection.recalculate()
@@ -828,7 +828,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       return
     }
 
-    if (selection.isAllSelected || selection.from.type !== 'text' || !this.doc.isEditable(selection.from.block)
+    if (selection.kind === 'block' || selection.kind === 'table'
+      || selection.isAllSelected || selection.from.type !== 'text' || !this.doc.isEditable(selection.from.block)
       || selection.from.block.plainTextOnly
     ) {
       this.activeAttrs = new Map<string, any>()
@@ -850,8 +851,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this.activeFlavour = common.flavour || 'paragraph'
     this.allEditable = !!common.allEditable
     this.selectionJSON = selection.toJSON()
-    this.isLinkAble = selection.isInSameBlock && selection.from.type === 'text'
-    this.hasTextSelection = selection.isInSameBlock
+    this.isLinkAble = selection.kind === 'text' && selection.isInSameBlock && selection.from.type === 'text'
+    this.hasTextSelection = selection.kind === 'text' && selection.isInSameBlock
       && selection.from.type === 'text'
       && !selection.collapsed
       && selection.from.length > 0

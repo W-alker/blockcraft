@@ -24,7 +24,8 @@ export class ImgToolbarPlugin extends DocPlugin {
   onImageDragStart(ctx: UIEventStateContext) {
     ctx.stopPropagation()
 
-    if (this.doc.isReadonly || this.doc.selection.value?.to) {
+    const selection = this.doc.selection.value
+    if (this.doc.isReadonly || (selection && selection.kind !== 'block')) {
       ctx.preventDefault()
       return
     }
@@ -46,8 +47,7 @@ export class ImgToolbarPlugin extends DocPlugin {
     ctx.preventDefault()
     const state = ctx.get('keyboardState')
     const selection = state.selection
-    const blockId = selection.commonParent
-    const block = this.doc.getBlockById(blockId)
+    const block = selection.firstBlock
 
     const np = this.doc.schemas.createSnapshot('paragraph', [])
     const imgBlock = block.flavour === 'caption' ? block.parentBlock! : block
@@ -71,7 +71,7 @@ export class ImgToolbarPlugin extends DocPlugin {
 
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
-      if (!selection || selection.to || selection.firstBlock.flavour !== 'image') {
+      if (!selection || selection.kind !== 'block' || selection.blocks.length !== 1 || selection.firstBlock.flavour !== 'image') {
         this._toolbarRef && this.closeToolbar()
         return
       }

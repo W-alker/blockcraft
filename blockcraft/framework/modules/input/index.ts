@@ -6,13 +6,14 @@ import {
   DeltaOperation,
   DocEventRegister,
   EventListen,
+  IBlockSnapshot,
   INLINE_ELEMENT_TAG,
   INLINE_END_BREAK_CLASS,
   INLINE_TEXT_NODE_TAG,
   STR_LINE_BREAK,
   UIEventStateContext
 } from "../../block-std";
-import {BlockSelection, INormalizedRange} from "../selection";
+import {BlockSelection, IBlockTextRange, INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
 import {BlockCraftError, ErrorCode, performanceTest, sliceDelta} from "../../../global";
 import {OneShotCursorAnchor} from "../../utils/one-shot-selection-anchor";
@@ -62,6 +63,39 @@ export class InputTransformer {
     this._nextInsertAttrs = null
   }
 
+  private _createParagraphSnapshotsFromText(text: string, depth?: number) {
+    const lines = text.replace(/[\n\r]+$/, '').split('\n')
+    return lines.map(line => this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {
+      depth
+    }]))
+  }
+
+  replacePureSelectedRangeWithSnapshots(
+    range: BlockSelection,
+    snapshots: IBlockSnapshot[],
+    options?: { focusAtStart?: boolean }
+  ) {
+    if (range.from.type !== 'selected' || (range.to && range.to.type !== 'selected')) {
+      return false
+    }
+
+    if (!snapshots.length) {
+      this.deleteByRange(range)
+      return true
+    }
+
+    const focusTargetId = (options?.focusAtStart ? snapshots[0] : snapshots[snapshots.length - 1]).id
+    this.doc.crud.insertBlocksAfter(range.lastBlock, snapshots)
+    this.deleteByRange(range)
+    this.doc.selection.selectOrSetCursorAtBlock(focusTargetId, !!options?.focusAtStart)
+    return true
+  }
+
+  replacePureSelectedRangeWithText(range: BlockSelection, text: string) {
+    const snapshots = this._createParagraphSnapshotsFromText(text, range.firstBlock.props.depth)
+    return this.replacePureSelectedRangeWithSnapshots(range, snapshots, {focusAtStart: false})
+  }
+
   private consumeNextInsertAttrs(blockId: string, index: number, options?: { allowNearby?: boolean }) {
     if (!this._nextInsertAttrs) return undefined
     const hit = this.matchNextInsertPoint({
@@ -78,20 +112,14 @@ export class InputTransformer {
   private _handleCompositionStart(context: UIEventStateContext) {
     this._compositionAnchor.reset()
     const curSel = this.doc.selection.value!
-    if (curSel.isAllSelected) {
+    if (curSel.kind === 'table') {
+      return
+    }
+    if (curSel.kind === 'block') {
       context.preventDefault();
-      const curParent = curSel.lastBlock.parentBlock!
-      const curParentSchema = this.doc.schemas.get(curParent.flavour)!
-      if (!curParentSchema.metadata.renderUnit) {
-        curSel.raw.collapse(true)
-        return true
-      }
-      const p = this.doc.schemas.createSnapshot('paragraph', [])
-      this.doc.crud.insertBlocksAfter(curSel.lastBlock.id, [p])
-      this.doc.selection.setCursorAtBlock(p.id, true)
-      this.doc.selection.recalculate()
+      const p = this.doc.schemas.createSnapshot('paragraph', [[], {depth: curSel.firstBlock.props.depth}])
+      this.replacePureSelectedRangeWithSnapshots(curSel, [p], {focusAtStart: true})
       this._compositionAnchor.captureFromSelection({isComposing: true})
-      // this._deleteAllSelected(curSel)
       return true
     }
 
@@ -171,16 +199,25 @@ export class InputTransformer {
     // const staticRange = normalizedRange.raw
 
     const {from, to, collapsed} = normalizedRange
-    if (from.type === 'selected' && (!to || to.type === 'selected')) {
+    const text = getPlainTextFromInputEvent(ev)
+    if (normalizedRange.kind === 'block' || normalizedRange.kind === 'table') {
+      if (normalizedRange.kind === 'table') {
+        return
+      }
       ev.preventDefault()
-      const p = this.doc.schemas.createSnapshot('paragraph', [])
-      this.doc.crud.insertBlocksAfter((to || from).blockId, [p])
-      this.doc.selection.setCursorAtBlock(p.id, true)
-      this.doc.selection.recalculate()
+      if (ev.inputType.startsWith('delete')) {
+        this.deleteByRange(normalizedRange)
+        this.doc.selection.recalculate()
+        return
+      }
+
+      if (!text) {
+        return
+      }
+
+      this.replacePureSelectedRangeWithText(normalizedRange as BlockSelection, text)
       return
     }
-
-    const text = getPlainTextFromInputEvent(ev)
 
     if (to) {
       ev.preventDefault()
@@ -375,6 +412,88 @@ export class InputTransformer {
     return this._replaceText(range, null, merge)
   }
 
+  private _collapseSelectionForEnter(selection: BlockSelection): IBlockTextRange | null {
+    if (selection.kind === 'table') return null
+
+    if (selection.from.type === 'text') {
+      this._replaceText(selection)
+      return {
+        ...selection.from,
+        length: 0
+      }
+    }
+
+    if (selection.to?.type === 'text') {
+      this._replaceText(selection)
+      return {
+        ...selection.to,
+        length: 0
+      }
+    }
+
+    return null
+  }
+
+  private async _handleEnterAtTextPoint(from: IBlockTextRange, raw: KeyboardEvent) {
+    // 强制同段换行
+    if (raw.shiftKey) {
+      from.block.insertText(from.index, STR_LINE_BREAK)
+      from.block.setInlineRange(from.index + 1)
+      return true
+    }
+
+    // 空段落
+    if (!from.block.textLength) {
+
+      if (from.block.props.heading) {
+        from.block.updateProps({
+          heading: null
+        })
+        return true
+      }
+
+      if (from.block.props.depth > 0) {
+        from.block.updateProps({
+          depth: from.block.props.depth - 1
+        })
+        return true
+      }
+
+      const p = this.doc.schemas.createSnapshot('paragraph', [[], from.block.props])
+      if (from.block.flavour !== 'paragraph') {
+        await this.doc.crud.replaceWithSnapshots(from.blockId, [p])
+      } else {
+        await this.doc.crud.insertBlocksAfter(from.block, [p])
+      }
+      this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+      return true
+    }
+
+    // 在前面换行
+    if (from.index === 0) {
+      const p = this.doc.schemas.createSnapshot(from.block.flavour, [[], {
+        ...from.block.props,
+        heading: null
+      }])
+      this.doc.crud.insertBlocksBefore(from.block, [p])
+      return true
+    }
+
+    const deltas = sliceDelta(from.block.textDeltas(), from.index)
+    const p = this.doc.schemas.createSnapshot(
+      (from.block.textLength && !from.block.heading && from.block.flavour !== 'blockquote') ? from.block.flavour : 'paragraph', [deltas, {
+        ...from.block.props,
+        heading: null,
+      }])
+    this.doc.crud.transact(() => {
+      from.block.deleteText(from.index)
+      this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {
+        this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+      })
+    })
+    return true
+  }
+
   @BindHotKey({key: 'Backspace', shiftKey: null, shortKey: null, metaKey: false})
   private _handleBackspace(context: UIEventStateContext) {
     const state = context.get('keyboardState')
@@ -557,7 +676,8 @@ export class InputTransformer {
   @BindHotKey({key: 'Enter', shiftKey: null, ctrlKey: null})
   private async _handlerEnter(context: UIEventStateContext) {
     const state = context.get('keyboardState')
-    const {from, to, collapsed, isAllSelected, raw} = state.selection
+    const {from, collapsed, isAllSelected} = state.selection
+    const raw = state.raw
 
     context.preventDefault()
 
@@ -569,78 +689,13 @@ export class InputTransformer {
     }
 
     if (!collapsed) {
-      const winSel = window.getSelection()!
-      if (from.type === 'text') {
-        winSel.setPosition(raw.startContainer, raw.startOffset)
-      } else {
-        winSel.setPosition(raw.endContainer, raw.endOffset)
-      }
-      this._replaceText(state.selection)
-      return true
+      const collapsedPoint = this._collapseSelectionForEnter(state.selection)
+      if (!collapsedPoint) return true
+      return this._handleEnterAtTextPoint(collapsedPoint, raw)
     }
 
     if (from.type !== 'text') return false
-
-    // 强制同段换行
-    if (state.raw.shiftKey) {
-      from.block.insertText(from.index, STR_LINE_BREAK)
-      from.block.setInlineRange(from.index + 1)
-      return true
-    }
-
-    // 空段落
-    if (!from.block.textLength) {
-
-      if (from.block.props.heading) {
-        from.block.updateProps({
-          heading: null
-        })
-        return true
-      }
-
-      if (from.block.props.depth > 0) {
-        from.block.updateProps({
-          depth: from.block.props.depth - 1
-        })
-        return true
-      }
-
-      const p = this.doc.schemas.createSnapshot('paragraph', [[], from.block.props])
-      if (from.block.flavour !== 'paragraph') {
-        await this.doc.crud.replaceWithSnapshots(from.blockId, [p])
-      } else {
-        await this.doc.crud.insertBlocksAfter(from.block, [p])
-      }
-      this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
-      return true
-    }
-
-    // 在前面换行
-    if (from.index === 0) {
-      const p = this.doc.schemas.createSnapshot(from.block.flavour, [[], {
-        ...from.block.props,
-        heading: null
-      }])
-      this.doc.crud.insertBlocksBefore(from.block, [p])
-        // .then(() => {
-        //   this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
-        // })
-      return true
-    }
-
-    const deltas = sliceDelta(from.block.textDeltas(), from.index)
-    const p = this.doc.schemas.createSnapshot(
-      (from.block.textLength && !from.block.heading && from.block.flavour !== 'blockquote') ? from.block.flavour : 'paragraph', [deltas, {
-        ...from.block.props,
-        heading: null,
-      }])
-    this.doc.crud.transact(() => {
-      from.block.deleteText(from.index)
-      this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {
-        this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
-      })
-    })
-    return true
+    return this._handleEnterAtTextPoint(from, raw)
   }
 
 }

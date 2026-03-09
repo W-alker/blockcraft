@@ -1,5 +1,32 @@
-import {closetBlockId} from "../../utils";
+import {getCommonPath} from "../../utils";
 import {IBlockSelectionJSON, INormalizedRange} from "./types";
+
+const compareDomBoundaries = (
+  doc: Document,
+  left: { node: Node, offset: number },
+  right: { node: Node, offset: number }
+) => {
+  const leftRange = doc.createRange()
+  leftRange.setStart(left.node, left.offset)
+  leftRange.collapse(true)
+
+  const rightRange = doc.createRange()
+  rightRange.setStart(right.node, right.offset)
+  rightRange.collapse(true)
+
+  return leftRange.compareBoundaryPoints(Range.START_TO_START, rightRange)
+}
+
+const getNativeSelectionDirection = (doc: Document, selection: Selection) => {
+  if (!selection.anchorNode || !selection.focusNode) return 'forward' as const
+  return compareDomBoundaries(doc, {
+    node: selection.anchorNode,
+    offset: selection.anchorOffset
+  }, {
+    node: selection.focusNode,
+    offset: selection.focusOffset
+  }) <= 0 ? 'forward' : 'backward'
+}
 
 export class BlockSelection implements INormalizedRange {
 
@@ -7,13 +34,27 @@ export class BlockSelection implements INormalizedRange {
               private readonly normalizedRange: INormalizedRange,
               readonly raw: Range,
               private selection: Selection) {
-    this._commonParent = this.isInSameBlock ? this.from.blockId : closetBlockId(raw.commonAncestorContainer)!
+    this._commonParent = this._resolveCommonParent()
+    this._selectedBlocks = this._collectSelectedBlocks()
+    this._selectedBlockIds = this._selectedBlocks.map(block => block.id)
   }
 
   private readonly _commonParent: string
+  private readonly _selectedBlocks: BlockCraft.BlockComponent[]
+  private readonly _selectedBlockIds: string[]
+
+  private _resolveCommonParent() {
+    if (this.isInSameBlock) return this.from.blockId
+    const commonPath = getCommonPath(this.from.block.getPath(), this.lastBlock.getPath())
+    return commonPath.at(-1) || this.from.blockId
+  }
 
   get commonParent() {
     return this._commonParent
+  }
+
+  get kind() {
+    return this.normalizedRange.kind
   }
 
   get from() {
@@ -34,6 +75,30 @@ export class BlockSelection implements INormalizedRange {
 
   get collapsed() {
     return this.normalizedRange.collapsed
+  }
+
+  get blocks() {
+    return this._selectedBlocks
+  }
+
+  get selectedBlockIds() {
+    return this._selectedBlockIds
+  }
+
+  get isTextSelection() {
+    return this.kind === 'text'
+  }
+
+  get isBlockSelection() {
+    return this.kind === 'block'
+  }
+
+  get isMixedSelection() {
+    return this.kind === 'mixed'
+  }
+
+  get isTableSelection() {
+    return this.kind === 'table'
   }
 
   get isInSameBlock() {
@@ -63,15 +128,35 @@ export class BlockSelection implements INormalizedRange {
   }
 
   getDirection() {
-    if (this.selection.anchorNode === this.selection.focusNode) {
-      return this.raw.startOffset < this.raw.endOffset ? 'forward' : 'backward'
-    }
-    const position = this.selection.anchorNode!.compareDocumentPosition(this.selection.focusNode!)
-    return position === Node.DOCUMENT_POSITION_PRECEDING ? 'backward' : 'forward'
+    const doc = this.raw.startContainer.ownerDocument || this.raw.endContainer.ownerDocument
+    if (!doc) return 'forward'
+    return getNativeSelectionDirection(doc, this.selection)
+  }
+
+  private _compareBlocksInDocumentOrder(left: BlockCraft.BlockComponent, right: BlockCraft.BlockComponent) {
+    if (left === right) return 0
+    const position = left.hostElement.compareDocumentPosition(right.hostElement)
+    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1
+    if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1
+    return 0
+  }
+
+  private _collectSelectedBlocks() {
+    if (!this.to) return [this.from.block]
+    const uniqueBlocks = new Map<string, BlockCraft.BlockComponent>()
+    uniqueBlocks.set(this.from.blockId, this.from.block)
+    uniqueBlocks.set(this.to.blockId, this.to.block)
+    this._doc.queryBlocksThroughPathDeeply(this.from.block, this.to.block).forEach(through => {
+      through.group.forEach(id => {
+        uniqueBlocks.set(id, this._doc.getBlockById(id))
+      })
+    })
+    return [...uniqueBlocks.values()].sort((left, right) => this._compareBlocksInDocumentOrder(left, right))
   }
 
   toJSON(): IBlockSelectionJSON {
     return JSON.parse(JSON.stringify({
+      kind: this.kind,
       from: {
         ...this.from,
         block: undefined
@@ -81,7 +166,8 @@ export class BlockSelection implements INormalizedRange {
         block: undefined
       } : null,
       collapsed: this.collapsed,
-      commonParent: this.commonParent
+      commonParent: this.commonParent,
+      selectedBlockIds: this.selectedBlockIds
     }))
   }
 }

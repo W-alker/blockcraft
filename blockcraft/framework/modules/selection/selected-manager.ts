@@ -37,36 +37,17 @@ export class SelectionSelectedManager {
     this._clearAllClass()
     if (!selection) return;
 
-    const {from, to, isAllSelected} = selection
+    const {from, isAllSelected} = selection
 
     // 控制不可输入
     isAllSelected ? this.doc.root.hostElement.classList.add('all-selected') : this.doc.root.hostElement.classList.remove('all-selected')
 
-    if (!to) {
+    if (selection.blocks.length === 1) {
       this._setClass(from.block)
       return;
     }
-    // const between = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
-    // if (!between?.length) return
-    // between.forEach(through => {
-    //   through.group.forEach(v => {
-    //     const b = this.doc.getBlockById(v)
-    //     if (b.nodeType !== BlockNodeType.editable) {
-    //       this._setSelectedClass(b as any)
-    //     }
-    //   })
-    // })
-    // if(from.type === "selected") {
-      this._setClass(from.block)
-    // }
-    // if(to.type === "selected") {
-      this._setClass(to.block)
-    // }
-    const between = this.doc.queryBlocksBetween(from.block, to.block, false)
-    if (!between?.length) return
-    between.forEach(v => {
-      const b = this.doc.getBlockById(v)
-      this._setClass(<any>b)
+    selection.blocks.forEach(block => {
+      this._setClass(<any>block)
     })
   }
 }

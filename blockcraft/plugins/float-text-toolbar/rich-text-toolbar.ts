@@ -34,7 +34,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     });
 
     this.doc.selection.changeObserve().subscribe(debounce(sel => {
-      if (this.doc.isReadonly || !sel || sel.collapsed || sel.isAllSelected || sel.isEmpty) return;
+      if (this.doc.isReadonly || !sel || sel.kind === 'block' || sel.kind === 'table' || sel.collapsed || sel.isAllSelected || sel.isEmpty) return;
       if (this.toolbarOvr) this.closeToolbar();
       if (sel.firstBlock['plainTextOnly'] && sel.lastBlock['plainTextOnly']) return;
       this.openToolbar();
@@ -86,7 +86,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
       rect = relativeBlock.hostElement.getBoundingClientRect();
     } else {
       const selRect = selection.raw.getClientRects();
-      rect = selection.isInSameBlock ? selRect[0] : (isForward ? selRect[selRect.length - 1] : selRect[0]);
+      rect = selection.kind === 'text' && selection.isInSameBlock ? selRect[0] : (isForward ? selRect[selRect.length - 1] : selRect[0]);
     }
     const blockRect = relativeBlock.hostElement.getBoundingClientRect();
 
@@ -101,7 +101,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
     let relativeYPos = 'top';
     let offsetY = 0;
-    if ((!selection.isInSameBlock && isForward)
+    if (((selection.kind !== 'text' || !selection.isInSameBlock) && isForward)
       ? rect.bottom + 48 < this.doc.scrollContainer!.getBoundingClientRect().bottom
       : rect.top - 48 < this.doc.scrollContainer!.getBoundingClientRect().top) {
       relativeYPos = 'bottom';

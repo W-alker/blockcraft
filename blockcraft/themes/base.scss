@@ -42,25 +42,25 @@
     vertical-align: top;
   }
 
-  &.selecting,
-  [data-node-type="block"].selecting {
-
-    [data-node-type="block"],
-    [data-node-type="void"] {
-      @include user-modify(read-only);
-
-      * {
-        @include user-select(none);
-        @include user-modify(read-only);
-      }
-
-      [data-block-zero-space="true"] {
-        user-select: text;
-        -webkit-user-select: text;
-        @include user-modify(read-write);
-      }
-    }
-  }
+  //&.selecting,
+  //[data-node-type="block"].selecting {
+  //
+  //  [data-node-type="block"],
+  //  [data-node-type="void"] {
+  //    @include user-modify(read-only);
+  //
+  //    * {
+  //      @include user-select(none);
+  //      @include user-modify(read-only);
+  //    }
+  //
+  //    [data-block-zero-space="true"] {
+  //      user-select: text;
+  //      -webkit-user-select: text;
+  //      @include user-modify(read-write);
+  //    }
+  //  }
+  //}
 
   h1, h2, h3, h4, h5, h6 {
     color: var(--bc-color);
@@ -86,14 +86,14 @@
     caret-color: var(--bc-caret-color);
 
     &.selected {
-      @include user-modify(read-only);
+      //@include user-modify(read-only);
       background-color: var(--bc-select-background-color);
 
       // TODO
-      ::selection {
-        background: transparent;
-        color: inherit;
-      }
+      //::selection {
+      //  background: transparent;
+      //  color: inherit;
+      //}
     }
 
     &:last-child {

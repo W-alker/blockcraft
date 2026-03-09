@@ -12,7 +12,11 @@ export class FakeRange {
 
   private _fakeSpans: HTMLElement[] = []
 
-  constructor(private readonly doc: BlockCraft.Doc, private readonly json: Pick<IBlockSelectionJSON, 'from' | 'to'>, private readonly config: IFakeRangeConfig = {}) {
+  constructor(
+    private readonly doc: BlockCraft.Doc,
+    private readonly json: Pick<IBlockSelectionJSON, 'from' | 'to'> & { selectedBlockIds?: string[] },
+    private readonly config: IFakeRangeConfig = {}
+  ) {
     const {from, to} = json
     const fromBlock = this.doc.getBlockById(from.blockId)
     this._fakeSpans.push(from.type === 'selected' ? this._createBlockFakeSpan(fromBlock) : this._createTextFakeSpan(fromBlock, from.index, from.length))
@@ -23,14 +27,21 @@ export class FakeRange {
     } else {
       this._fakeSpans.push(this._createBlockFakeSpan(toBlock))
     }
-    const between = this.doc.queryBlocksBetween(from.blockId, to.blockId)
-    between.forEach(id => {
-      const block = this.doc.getBlockById(id)
-      this._fakeSpans.push(
-        // this.doc.isEditable(block) ?
-        // this._createTextFakeSpan(block, 0, block.textLength) :
-        this._createBlockFakeSpan(block)
-      )
+    const middleBlockIds = json.selectedBlockIds?.filter(id => id !== from.blockId && id !== to.blockId)
+    if (middleBlockIds?.length) {
+      middleBlockIds.forEach(id => {
+        const block = this.doc.getBlockById(id)
+        this._fakeSpans.push(this._createBlockFakeSpan(block))
+      })
+      return
+    }
+
+    const throughPath = this.doc.queryBlocksThroughPathDeeply(from.blockId, to.blockId)
+    throughPath.forEach(through => {
+      through.group.forEach(id => {
+        const block = this.doc.getBlockById(id)
+        this._fakeSpans.push(this._createBlockFakeSpan(block))
+      })
     })
   }
 
@@ -127,4 +138,3 @@ export class FakeRange {
   }
 
 }
-

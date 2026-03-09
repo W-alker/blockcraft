@@ -45,10 +45,10 @@ export class TextToolbarHelper {
     let flavour: BlockCraft.BlockFlavour | undefined = selection.firstBlock.flavour
     let allEditable = selection.firstBlock.nodeType === BlockNodeType.editable
 
-    const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true).map(id => this.doc.getBlockById(id))
+    const blocks = selection.blocks
 
     const allDeltas: DeltaInsert[] = []
-    if (selection.from.type === 'text' && selection.collapsed) {
+    if (selection.kind === 'text' && selection.from.type === 'text' && selection.collapsed) {
       const collapsedAttrs = this.doc.inputManger.peekNextInsertAttrs({
         blockId: selection.from.blockId,
         index: selection.from.index
@@ -71,9 +71,11 @@ export class TextToolbarHelper {
 
     if (selection.from.type === 'text') {
       allDeltas.push(...sliceDelta(selection.from.block.textDeltas(), selection.from.index, selection.from.index + selection.from.length))
+    } else if (this.doc.isEditable(selection.from.block) && !selection.from.block.plainTextOnly) {
+      allDeltas.push(...selection.from.block.textDeltas())
     }
 
-    between.slice(1).forEach((block, i) => {
+    blocks.slice(1).forEach((block, i) => {
       if (!this.doc.isEditable(block) || block.plainTextOnly) {
         allEditable = false
         return
@@ -87,7 +89,7 @@ export class TextToolbarHelper {
       if (block.flavour !== null && block.flavour !== flavour) {
         flavour = undefined
       }
-      if (i === between.length - 2 && selection.to?.type === 'text') {
+      if (block.id === selection.to?.blockId && selection.to?.type === 'text') {
         allDeltas.push(...sliceDelta(block.textDeltas(), 0, selection.to.index))
       } else {
         allDeltas.push(...block.textDeltas())
@@ -115,6 +117,8 @@ export class TextToolbarHelper {
     if (!selection) return
 
     const {from, to} = selection
+    if ((selection.kind === 'block' || selection.kind === 'table')) return
+
     if (selection.collapsed && from.type === 'text') {
       const nextAttrs: Record<string, any> = {
         ...this.getCollapsedAttrs(from.block, from.index)
@@ -132,32 +136,28 @@ export class TextToolbarHelper {
       })
     }
 
-    if (from.type === 'text' && !from.block.plainTextOnly) {
-      from.block.formatText(from.index, from.length, attrs)
-    }
-    if (!to) return
-    if (to.type === 'text' && !to.block.plainTextOnly) {
-      to.block.formatText(to.index, to.length, attrs)
-    }
-
-    const between = this.doc.queryBlocksBetween(from.block, to.block)
-    for (const id of between) {
-      const block = this.doc.getBlockById(id)
-      if (!this.doc.isEditable(block) || block.plainTextOnly) continue
+    selection.blocks.forEach(block => {
+      if (!this.doc.isEditable(block) || block.plainTextOnly) return
+      if (block.id === from.blockId && from.type === 'text') {
+        block.formatText(from.index, from.length, attrs)
+        return
+      }
+      if (block.id === to?.blockId && to.type === 'text') {
+        block.formatText(to.index, to.length, attrs)
+        return
+      }
       block.formatText(0, block.textLength, attrs)
-    }
+    })
   }
 
   updateBlockProps(props: Partial<IEditableBlockProps>, selection: BlockCraft.Selection | null = this.doc.selection.value) {
     if (!selection) return
 
     this.doc.crud.transact(() => {
-      const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
-      for (const id of between) {
-        const block = this.doc.getBlockById(id)
-        if (!this.doc.isEditable(block) || block.plainTextOnly) continue
+      selection.blocks.forEach(block => {
+        if (!this.doc.isEditable(block) || block.plainTextOnly) return
         block.updateProps({...props})
-      }
+      })
     })
   }
 
@@ -165,15 +165,13 @@ export class TextToolbarHelper {
     if (!selection) return
 
     this.doc.crud.transact(async () => {
-      const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
-      for (const id of between) {
-        const block = this.doc.getBlockById(id)
+      for (const block of selection.blocks) {
         if (!this.doc.isEditable(block) || block.plainTextOnly || block.flavour === flavour) continue
         const newBlock = this.doc.schemas.createSnapshot(flavour, [block.textDeltas(), {
           ...block.props,
           heading: flavour === 'ordered' ? block.props.heading : null
         }])
-        await this.doc.crud.replaceWithSnapshots(id, [newBlock])
+        await this.doc.crud.replaceWithSnapshots(block.id, [newBlock])
       }
     })
   }

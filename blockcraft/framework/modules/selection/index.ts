@@ -15,7 +15,62 @@ import {closetBlockId, isZeroSpace} from "../../utils";
 import {SelectionSelectedManager} from "./selected-manager";
 import {FakeRange, IFakeRangeConfig} from "./createFakeRange";
 import {BlockSelection} from "./blockSelection";
-import {IBlockInlineRangeJSON, IBlockRange, IBlockSelectionJSON, INormalizedRange} from "./types";
+import {IBlockInlineRangeJSON, IBlockRange, IBlockSelectionJSON, INormalizedRange, SelectionKind} from "./types";
+
+type IDomSelectionBoundary = {
+  node: Node
+  offset: number
+}
+
+type INativeSelectionSnapshot = {
+  selection: Selection
+  range: Range
+  anchor: IDomSelectionBoundary
+  focus: IDomSelectionBoundary
+  start: IDomSelectionBoundary
+  end: IDomSelectionBoundary
+  collapsed: boolean
+}
+
+const compareDomBoundaries = (
+  doc: Document,
+  left: IDomSelectionBoundary,
+  right: IDomSelectionBoundary
+) => {
+  const leftRange = doc.createRange()
+  leftRange.setStart(left.node, left.offset)
+  leftRange.collapse(true)
+
+  const rightRange = doc.createRange()
+  rightRange.setStart(right.node, right.offset)
+  rightRange.collapse(true)
+
+  return leftRange.compareBoundaryPoints(Range.START_TO_START, rightRange)
+}
+
+const getNativeSelectionSnapshot = (doc: Document, selection: Selection): INativeSelectionSnapshot | null => {
+  if (!selection.anchorNode || !selection.focusNode || selection.rangeCount === 0) return null
+
+  const anchor = {
+    node: selection.anchorNode,
+    offset: selection.anchorOffset
+  }
+  const focus = {
+    node: selection.focusNode,
+    offset: selection.focusOffset
+  }
+  const isForward = compareDomBoundaries(doc, anchor, focus) <= 0
+
+  return {
+    selection,
+    range: selection.getRangeAt(0),
+    anchor,
+    focus,
+    start: isForward ? anchor : focus,
+    end: isForward ? focus : anchor,
+    collapsed: selection.isCollapsed
+  }
+}
 
 @DocEventRegister
 export class SelectionManager {
@@ -25,6 +80,7 @@ export class SelectionManager {
   // private _stack: (IBlockSelectionJSON | null)[] = []
 
   private selectedManager = new SelectionSelectedManager(this.doc)
+  private _domSelectionSyncSuspended = 0
 
   constructor(public readonly doc: BlockCraft.Doc) {
     this.doc.afterInit(this._bindEvents)
@@ -66,10 +122,25 @@ export class SelectionManager {
     })
   }
 
+  get isDomSelectionSyncSuspended() {
+    return this._domSelectionSyncSuspended > 0
+  }
+
+  private _suspendDomSelectionSync<T>(fn: () => T) {
+    this._domSelectionSyncSuspended++
+    try {
+      return fn()
+    } finally {
+      queueMicrotask(() => {
+        this._domSelectionSyncSuspended = Math.max(0, this._domSelectionSyncSuspended - 1)
+      })
+    }
+  }
+
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
 
     this.doc.event.customListen(document, 'selectionchange').subscribe(e => {
-      if (this.doc.event.status.isComposing) return
+      if (this.doc.event.status.isComposing || this.isDomSelectionSyncSuspended) return
       // this.doc.event.run('selectionChange', UIEventStateContext.from(new UIEventState(e), new EventSourceState({
       //   event: e,
       //   sourceType: EventScopeSourceType.Selection
@@ -372,6 +443,247 @@ export class SelectionManager {
     return block as BaseBlockComponent<any>
   }
 
+  private _createSelectedRange(block: BaseBlockComponent<any>): IBlockRange {
+    return {
+      blockId: block.id,
+      block,
+      type: 'selected'
+    }
+  }
+
+  private _createTextRange(block: EditableBlockComponent<any>, index: number): IBlockRange {
+    return {
+      blockId: block.id,
+      block,
+      type: 'text',
+      index: Math.max(0, Math.min(index, block.textLength)),
+      length: 0
+    }
+  }
+
+  private _resolveBoundaryForBlock(block: BaseBlockComponent<any>, edge: 'start' | 'end'): IBlockRange {
+    if (block instanceof EditableBlockComponent) {
+      return this._createTextRange(block, edge === 'start' ? 0 : block.textLength)
+    }
+
+    if (block.nodeType !== BlockNodeType.editable) {
+      const child = edge === 'start' ? block.firstChildren : block.lastChildren
+      if (child) return this._resolveBoundaryForBlock(child, edge)
+    }
+
+    return this._createSelectedRange(block)
+  }
+
+  private _resolveContainerBoundary(block: BaseBlockComponent<any>, offset: number, edge: 'start' | 'end'): IBlockRange {
+    if (block.nodeType === BlockNodeType.editable || block.childrenLength === 0) {
+      return this._createSelectedRange(block)
+    }
+
+    const children = block.getChildrenBlocks()
+    if (edge === 'start') {
+      if (offset <= 0) return this._resolveBoundaryForBlock(children[0], 'start')
+      if (offset >= children.length) return this._resolveBoundaryForBlock(children.at(-1)!, 'end')
+      return this._resolveBoundaryForBlock(children[offset], 'start')
+    }
+
+    if (offset <= 0) return this._resolveBoundaryForBlock(children[0], 'start')
+    return this._resolveBoundaryForBlock(children[Math.min(children.length - 1, offset - 1)], 'end')
+  }
+
+  private _resolveRootBoundary(offset: number, edge: 'start' | 'end') {
+    const root = this.doc.root
+    if (!root.childrenLength) {
+      throw new BlockCraftError(ErrorCode.SelectionError, 'Cannot resolve selection on empty root')
+    }
+    const children = root.getChildrenBlocks()
+    const index = edge === 'start'
+      ? Math.min(children.length - 1, Math.max(0, offset))
+      : Math.min(children.length - 1, Math.max(0, offset - 1))
+    return this._resolveBoundaryForBlock(children[index], edge)
+  }
+
+  private _isWholeBlockHostSelection(block: BaseBlockComponent<any>, range: StaticRange) {
+    if (block.nodeType === BlockNodeType.root) return false
+    return range.startContainer === block.hostElement
+      && range.endContainer === block.hostElement
+      && range.startOffset === 0
+      && range.endOffset === block.hostElement.childNodes.length
+  }
+
+  private _compareBlockRange(left: IBlockRange, right: IBlockRange) {
+    if (left.block === right.block) {
+      if (left.type === 'selected' || right.type === 'selected') return 0
+      return left.index - right.index
+    }
+
+    return compareDomBoundaries(this.doc.root.hostElement.ownerDocument, {
+      node: left.block.hostElement,
+      offset: 0
+    }, {
+      node: right.block.hostElement,
+      offset: 0
+    })
+  }
+
+  private _resolveSelectionKind(from: IBlockRange, to: IBlockRange | null, collapsed: boolean): SelectionKind {
+    const boundaryBlocks = [from.block, to?.block].filter(Boolean) as BlockCraft.BlockComponent[]
+    const isTableBoundary = boundaryBlocks.length > 0 && boundaryBlocks.every(block => block.flavour === 'table-cell')
+
+    if (isTableBoundary) return 'table'
+
+    if (!to) {
+      if (from.type === 'selected') return 'block'
+      return 'text'
+    }
+
+    if (from.block === to.block && from.type === 'text' && to.type === 'text') {
+      return 'text'
+    }
+
+    if (from.type === 'selected' && to.type === 'selected') {
+      return 'block'
+    }
+
+    return collapsed ? 'text' : 'mixed'
+  }
+
+  private _getInlineOffset(
+    block: EditableBlockComponent<any>,
+    node: Node,
+    offset: number,
+    options?: { isComposing?: boolean }
+  ) {
+    if (node === block.hostElement && block.hostElement !== block.containerElement) {
+      return offset > 0 ? block.textLength : 0
+    }
+
+    const isContainer = node === block.containerElement
+    const elements = Array.from(block.containerElement.querySelectorAll(INLINE_ELEMENT_TAG)) as HTMLElement[]
+    if (elements.length === 0) {
+      return 0
+    }
+
+    if (isContainer && offset <= 1) {
+      return 0
+    }
+
+    const zeroNode = isZeroSpace(node)
+    if (zeroNode?.parentElement === block.containerElement) {
+      return 0
+    }
+
+    const cElement = (() => {
+      if (isContainer) {
+        const index = Math.min(elements.length - 1, Math.max(0, offset - 2))
+        return elements[index]
+      }
+
+      if (node instanceof HTMLElement && node.localName === INLINE_ELEMENT_TAG) {
+        return node
+      }
+
+      return node.parentElement?.closest(INLINE_ELEMENT_TAG) as HTMLElement | null
+    })()
+
+    if (!cElement) {
+      throw new BlockCraftError(ErrorCode.SelectionError, 'Fatal range position')
+    }
+
+    const getElementLength = (element: HTMLElement) => {
+      const firstNode = element.firstChild
+      const isEmbed = firstNode instanceof HTMLElement && firstNode.contentEditable === 'false'
+      if (isEmbed) return 1
+
+      if (options?.isComposing && firstNode instanceof Text) {
+        return firstNode.length
+      }
+
+      return element.textContent?.length ?? 0
+    }
+
+    const getNodeOffset = (targetNode: Node, nodeOffset: number, elementLength: number) => {
+      if (targetNode instanceof Text) {
+        return Math.max(0, Math.min(nodeOffset, targetNode.length))
+      }
+
+      if (!(targetNode instanceof HTMLElement)) {
+        return Math.max(0, Math.min(nodeOffset, elementLength))
+      }
+
+      if (targetNode === cElement) {
+        const firstNode = cElement.firstChild
+        const isEmbed = firstNode instanceof HTMLElement && firstNode.contentEditable === 'false'
+        if (isEmbed) {
+          return nodeOffset > 0 ? 1 : 0
+        }
+      }
+
+      const boundary = Math.max(0, Math.min(nodeOffset, targetNode.childNodes.length))
+      let textOffset = 0
+      for (let i = 0; i < boundary; i++) {
+        const child = targetNode.childNodes[i]
+        if (isZeroSpace(child)) continue
+        textOffset += child.textContent?.length ?? 0
+      }
+
+      return Math.max(0, Math.min(textOffset, elementLength))
+    }
+
+    let pos = 0
+    for (let i = 0; i < elements.length; i++) {
+      const element = elements[i]
+      const elementLength = getElementLength(element)
+      if (element === cElement) {
+        const isGap = isZeroSpace(node) && node.parentElement?.closest(INLINE_ELEMENT_TAG) === cElement
+        if (isGap) {
+          return pos + 1
+        }
+        return pos + (isContainer ? elementLength : getNodeOffset(node, offset, elementLength))
+      }
+      pos += elementLength
+    }
+
+    throw new BlockCraftError(ErrorCode.SelectionError, 'Fatal range position')
+  }
+
+  private _normalizeBoundary(
+    boundary: IDomSelectionBoundary,
+    edge: 'start' | 'end',
+    options?: { isComposing?: boolean }
+  ): IBlockRange {
+    const {node, offset} = boundary
+    if (node === this.doc.root.hostElement) {
+      return this._resolveRootBoundary(offset, edge)
+    }
+
+    const block = this._searchClosetBlockByNode(node)
+    if (block instanceof EditableBlockComponent) {
+      if (edge === 'end' && node instanceof HTMLElement
+        && node.classList.contains('edit-container') && offset === 0
+      ) {
+        const prev = node.closest('[data-node-type="editable"]')?.previousElementSibling
+        if (prev instanceof HTMLElement) {
+          const id = prev.getAttribute('data-block-id')
+          if (id) {
+            return this._resolveBoundaryForBlock(this.doc.getBlockById(id) as BaseBlockComponent<any>, 'end')
+          }
+        }
+      }
+
+      if (node instanceof HTMLElement && node.classList.contains(INLINE_END_BREAK_CLASS)) {
+        return this._createTextRange(block, block.textLength)
+      }
+
+      return this._createTextRange(block, this._getInlineOffset(block, node, offset, options))
+    }
+
+    if (node === block.hostElement && block.childrenLength > 0) {
+      return this._resolveContainerBoundary(block, offset, edge)
+    }
+
+    return this._createSelectedRange(block)
+  }
+
   private _prevRange: Range | null = null
 
   /**
@@ -384,7 +696,13 @@ export class SelectionManager {
     next?: () => void
   } {
     const selection = document.getSelection()
-    if (!selection || !selection.rangeCount) {
+    const snapshot = selection ? getNativeSelectionSnapshot(this.doc.root.hostElement.ownerDocument, selection) : null
+    const root = this.doc.root.hostElement
+    const isInsideRoot = !!snapshot
+      && root.contains(snapshot.anchor.node)
+      && root.contains(snapshot.focus.node)
+
+    if (!snapshot || !isInsideRoot) {
       const next = () => {
         this.selectionChange$.next(null)
         this.selectedManager.setSelected(null)
@@ -395,42 +713,20 @@ export class SelectionManager {
         value: null,
         next: execNext ? undefined : next
       }
-    }
-
-    const range = selection?.getRangeAt(0)
-    if (!range ||
-      (document.activeElement !== this.doc.root.hostElement && !this.doc.root.hostElement.contains(range.commonAncestorContainer))
-    ) {
-      const next = () => {
-        this.selectionChange$.next(null)
-        this.selectedManager.setSelected(null)
-      }
-
-      execNext && next()
-      return {
-        value: null,
-        next: execNext ? undefined : next
-      }
-    }
-
-    // 如果选区在根元素上，则移动选择并重新计算。这种情况多发生于删除选中元素的情况
-    if (range.startContainer === this.doc.root.hostElement || range.endContainer === this.doc.root.hostElement) {
-      selection.modify('move', range.endOffset >= this.doc.root.childrenLength ? 'backward' : 'forward', 'character')
-      return this.recalculate()
     }
 
     try {
-      const _nr = this.normalizeRange(range, options)
-      if (_nr.to && _nr.to.block.parentId !== _nr.from.block.parentId) {
-        range.collapse()
-        return {
-          value: null,
-          next: () => {
-          }
-        }
-      }
+      const _nr = this.normalizeRange(snapshot.range, options)
+      // if (_nr.to && _nr.to.block.parentId !== _nr.from.block.parentId) {
+      //   range.collapse()
+      //   return {
+      //     value: null,
+      //     next: () => {
+      //     }
+      //   }
+      // }
 
-      const r = new BlockSelection(this.doc, _nr, range, selection)
+      const r = new BlockSelection(this.doc, _nr, snapshot.range, snapshot.selection)
       const next = () => {
         this.selectionChange$.next(r)
         this.selectedManager.setSelected(r)
@@ -455,200 +751,57 @@ export class SelectionManager {
 
   normalizeRange(range: StaticRange, options?: { isComposing?: boolean }): INormalizedRange {
     const {startContainer, endContainer, startOffset, endOffset, collapsed} = range
-    const startBlock = this._searchClosetBlockByNode(startContainer)
+    const startBlock = startContainer === this.doc.root.hostElement
+      ? null
+      : this._searchClosetBlockByNode(startContainer)
+    const endBlock = endContainer === this.doc.root.hostElement
+      ? null
+      : this._searchClosetBlockByNode(endContainer)
 
-    const getInlineOffset = (block: EditableBlockComponent<any>, node: Node, offset: number) => {
-
-      if (node === block.hostElement && block.hostElement !== block.containerElement) {
-        return offset > 0 ? block.textLength : 0
-      }
-
-      const isContainer = node === block.containerElement
-      const elements = Array.from(block.containerElement.querySelectorAll(INLINE_ELEMENT_TAG)) as HTMLElement[]
-      if (elements.length === 0) {
-        return 0
-      }
-
-      // Safari/Chrome 在 IME 期间会把光标放在 container 的首个 gap 后（offset=1）
-      if (isContainer && offset <= 1) {
-        return 0
-      }
-
-      const zeroNode = isZeroSpace(node)
-      if (zeroNode?.parentElement === block.containerElement) {
-        return 0
-      }
-
-      const cElement = (() => {
-        if (isContainer) {
-          const index = Math.min(elements.length - 1, Math.max(0, offset - 2))
-          return elements[index]
-        }
-
-        if (node instanceof HTMLElement && node.localName === INLINE_ELEMENT_TAG) {
-          return node
-        }
-
-        return node.parentElement?.closest(INLINE_ELEMENT_TAG) as HTMLElement | null
-      })()
-
-      if (!cElement) {
-        throw new BlockCraftError(ErrorCode.SelectionError, 'Fatal range position')
-      }
-
-      const getElementLength = (element: HTMLElement) => {
-        const firstNode = element.firstChild
-        const isEmbed = firstNode instanceof HTMLElement && firstNode.contentEditable === 'false'
-        if (isEmbed) return 1
-
-        // composing 时，浏览器可能会把文本直接放在 c-element 下
-        if (options?.isComposing && firstNode instanceof Text) {
-          return firstNode.length
-        }
-
-        return element.textContent?.length ?? 0
-      }
-
-      const getNodeOffset = (targetNode: Node, nodeOffset: number, elementLength: number) => {
-        if (targetNode instanceof Text) {
-          return Math.max(0, Math.min(nodeOffset, targetNode.length))
-        }
-
-        if (!(targetNode instanceof HTMLElement)) {
-          return Math.max(0, Math.min(nodeOffset, elementLength))
-        }
-
-        if (targetNode === cElement) {
-          const firstNode = cElement.firstChild
-          const isEmbed = firstNode instanceof HTMLElement && firstNode.contentEditable === 'false'
-          if (isEmbed) {
-            return nodeOffset > 0 ? 1 : 0
-          }
-        }
-
-        const boundary = Math.max(0, Math.min(nodeOffset, targetNode.childNodes.length))
-        let textOffset = 0
-        for (let i = 0; i < boundary; i++) {
-          const child = targetNode.childNodes[i]
-          if (isZeroSpace(child)) continue
-          textOffset += child.textContent?.length ?? 0
-        }
-
-        return Math.max(0, Math.min(textOffset, elementLength))
-      }
-
-      let pos = 0
-      for (let i = 0; i < elements.length; i++) {
-        const element = elements[i]
-        const elementLength = getElementLength(element)
-        if (element === cElement) {
-          const isGap = isZeroSpace(node) && node.parentElement?.closest(INLINE_ELEMENT_TAG) === cElement
-          if (isGap) {
-            return pos + 1
-          }
-          return pos + (isContainer ? elementLength : getNodeOffset(node, offset, elementLength))
-        }
-        pos += elementLength
-      }
-
-      throw new BlockCraftError(ErrorCode.SelectionError, 'Fatal range position')
-    }
-
-    const getBlockRange = (block: BaseBlockComponent<any>, node: Node, offset: number): IBlockRange => {
-      if (block instanceof EditableBlockComponent) {
-        if (node instanceof HTMLElement && node.classList.contains(INLINE_END_BREAK_CLASS)) {
-          return {
-            blockId: block.id,
-            block: block,
-            type: 'text',
-            index: block.textLength,
-            length: 0
-          }
-        }
-
-        return {
-          blockId: block.id,
-          block: block,
-          type: 'text',
-          index: getInlineOffset(block, node, offset),
-          length: 0
-        }
-      }
-
-      // if (offset === 0) {
-      //   const prevBlock = this.doc.prevSibling(block) as BaseBlockComponent<any>
-      //   if (prevBlock) {
-      //     if (prevBlock instanceof EditableBlockComponent) {
-      //       return {
-      //         blockId: prevBlock.id,
-      //         block: prevBlock,
-      //         type: 'text',
-      //         index: prevBlock.textLength,
-      //         length: 0
-      //       }
-      //     }
-      //
-      //     return {
-      //       blockId: prevBlock.id,
-      //       block: prevBlock,
-      //       type: 'selected'
-      //     }
-      //   }
-      // }
-
+    if (!collapsed && startBlock && startBlock === endBlock
+      && this._isWholeBlockHostSelection(startBlock, range)
+    ) {
       return {
-        blockId: block.id,
-        block: block,
-        type: 'selected'
+        kind: 'block',
+        from: this._createSelectedRange(startBlock),
+        to: null,
+        collapsed: false
       }
     }
 
-    let from = getBlockRange(startBlock, startContainer, startOffset)
+    let from = this._normalizeBoundary({
+      node: startContainer,
+      offset: startOffset
+    }, 'start', options)
 
     if (collapsed) {
-      return {from, to: null, collapsed: from.type === 'text'}
+      return {kind: this._resolveSelectionKind(from, null, true), from, to: null, collapsed: from.type === 'text'}
     }
 
-    let endBlock = startContainer === endContainer ? startBlock : this._searchClosetBlockByNode(endContainer)
+    let to = this._normalizeBoundary({
+      node: endContainer,
+      offset: endOffset
+    }, 'end', options)
 
-    if (startBlock === endBlock && from.type === 'selected') {
-      return {from, to: null, collapsed: false}
+    if (this._compareBlockRange(from, to) > 0) {
+      [from, to] = [to, from]
     }
 
-    let to: any
-    if (endContainer instanceof HTMLElement && endContainer.classList.contains('edit-container') && endOffset === 0) {
-      const prev = endContainer.closest('[data-node-type="editable"]')?.previousElementSibling
-      if (prev && prev instanceof HTMLElement) {
-        const id = prev.getAttribute('data-block-id')
-        if (id) {
-          endBlock = this.doc.getBlockById(id)! as BaseBlockComponent<any>
-          if (endBlock.nodeType === 'editable') {
-            to = {
-              blockId: id,
-              block: endBlock,
-              type: 'text',
-              index: (endBlock as EditableBlockComponent).textLength,
-              length: 0
-            }
-          } else {
-            to = {
-              blockId: id,
-              block: endBlock,
-              type: 'selected'
-            }
-          }
+    if (from.block === to.block) {
+      if (from.type === 'selected' || to.type === 'selected') {
+        return {
+          kind: this._resolveSelectionKind(this._createSelectedRange(from.block), null, false),
+          from: this._createSelectedRange(from.block),
+          to: null,
+          collapsed: false
         }
       }
+
+      from.length = Math.max(0, to.index - from.index)
+      return {kind: this._resolveSelectionKind(from, null, false), from, to: null, collapsed: false}
     }
-    to ??= getBlockRange(endBlock, endContainer, endOffset)
 
     if (from.type === 'text') {
-
-      if (endBlock === startBlock && to.type === 'text') {
-        from.length = to.index - from.index
-        return {from, to: null, collapsed: false}
-      }
-
       from.length = from.block.textLength - from.index
     }
 
@@ -657,34 +810,7 @@ export class SelectionManager {
       to.index = 0
     }
 
-    // 是否不同级（可能是子可编辑元素鼠标选中向外滑动）
-    // if (from.block.parentId !== to.block.parentId) {
-    // 找到同级
-    // const path1 = from.block.getPath()
-    // const path2 = to.block.getPath()
-    // let i = 0
-    // while (path1[i] === path2[i]) i++
-    //
-    // const path1Ancestor = path1[i]
-    // const path2Ancestor = path2[i]
-    // if(path1Ancestor !== from.blockId) {
-    //   from = {
-    //     blockId: path1Ancestor,
-    //     // @ts-expect-error
-    //     block: this.doc.getBlockById(path1Ancestor),
-    //     type: 'selected'
-    //   }
-    // }
-    // if(path2Ancestor !== to.blockId) {
-    //   to = {
-    //     blockId: path2Ancestor,
-    //     // @ts-expect-error
-    //     block: this.doc.getBlockById(path2Ancestor),
-    //     type: 'selected'
-    //   }
-    // }
-    // }
-    return {from, to, collapsed: false}
+    return {kind: this._resolveSelectionKind(from, to, false), from, to, collapsed: false}
   }
 
   private _setRange(from: IBlockInlineRangeJSON, to: IBlockInlineRangeJSON | null = null) {
@@ -721,7 +847,7 @@ export class SelectionManager {
       return range
     }
 
-    range.setEnd(toBlock.hostElement, toBlock.hostElement.childElementCount)
+    range.setEnd(toBlock.hostElement, toBlock.hostElement.childNodes.length)
     return range
   }
 
@@ -733,21 +859,27 @@ export class SelectionManager {
 
     if (block.nodeType === 'root') {
       range.setStart(block.firstChildren!.hostElement, 0)
-      range.setEnd(block.lastChildren!.hostElement, block.lastChildren!.hostElement.childElementCount)
+      range.setEnd(block.lastChildren!.hostElement, block.lastChildren!.hostElement.childNodes.length)
     } else {
       range.setStart(block.hostElement, 0)
-      range.setEnd(block.hostElement, block.hostElement.childElementCount)
+      range.setEnd(block.hostElement, block.hostElement.childNodes.length)
     }
 
-    selection.removeAllRanges()
-    selection.addRange(range)
+    this._suspendDomSelectionSync(() => {
+      selection.removeAllRanges()
+      selection.addRange(range)
+    })
+    this.recalculate()
   }
 
   setSelection(...args: Parameters<typeof this._setRange>) {
     const range = this._setRange(...args)
     const selection = document.getSelection()!
-    selection.removeAllRanges()
-    selection.addRange(range)
+    this._suspendDomSelectionSync(() => {
+      selection.removeAllRanges()
+      selection.addRange(range)
+    })
+    this.recalculate()
     return range
   }
 
@@ -759,7 +891,10 @@ export class SelectionManager {
   setCursorAt(block: EditableBlockComponent, index: number) {
     const startNodePos = this.doc.inlineManager.queryNodePositionInlineByOffset(block.containerElement, index)
     const selection = document.getSelection()!
-    selection.setPosition(startNodePos.node, startNodePos.offset)
+    this._suspendDomSelectionSync(() => {
+      selection.setPosition(startNodePos.node, startNodePos.offset)
+    })
+    this.recalculate()
   }
 
   /**
@@ -820,7 +955,7 @@ export class SelectionManager {
     this.setSelection(json.from, json.to)
   }
 
-  createFakeRange(json: Pick<IBlockSelectionJSON, 'from' | 'to'>, config: IFakeRangeConfig = {}) {
+  createFakeRange(json: Pick<IBlockSelectionJSON, 'from' | 'to'> & { selectedBlockIds?: string[] }, config: IFakeRangeConfig = {}) {
     return new FakeRange(this.doc, json, config)
   }
 

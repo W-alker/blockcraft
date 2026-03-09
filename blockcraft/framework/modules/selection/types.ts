@@ -5,6 +5,8 @@ export interface IInlineRange {
   length: number
 }
 
+export type SelectionKind = 'text' | 'block' | 'mixed' | 'table'
+
 /**
  * {@link IBlockTextRange} 的 JSON 格式\
  * {@link IBlockSelectedRange} 的 JSON 格式
@@ -24,6 +26,7 @@ export interface IBlockSelectedRange {
 }
 
 export interface INormalizedRange {
+  kind: SelectionKind,
   from: IBlockRange,
   to: IBlockRange | null,
   collapsed: boolean
@@ -40,8 +43,10 @@ export type IBlockInlineRangeJSON = {
 }
 
 export interface IBlockSelectionJSON {
+  kind: SelectionKind
   from: IBlockInlineRangeJSON,
   to: IBlockInlineRangeJSON | null
   collapsed: boolean
   commonParent: string
+  selectedBlockIds: string[]
 }

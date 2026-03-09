@@ -151,11 +151,11 @@ export class TextMarkerComponent {
 
   formatText(attrs: IInlineNodeAttrs) {
     const selection = this.doc.selection.value
-    if (!selection) return
+    if (!selection || selection.kind === 'block' || selection.kind === 'table') return
 
-    const {from, to} = selection
+    const {from} = selection
     if (from.type === 'text') {
-      from.block.formatText(from.index, from.length, attrs)
+      this.utils.formatText(attrs, selection)
     }
   }
 

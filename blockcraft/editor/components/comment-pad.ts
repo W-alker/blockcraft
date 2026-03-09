@@ -119,14 +119,14 @@ export class EditorCommentPad extends CommentPad {
   }
 
   override onSubmit() {
-    if (this.isDisabled || this.selection.from.type !== 'text') {
+    if (this.isDisabled || this.selection.kind !== 'text' || this.selection.from.type !== 'text') {
       return;
     }
 
     const block = this.doc.getBlockById(this.selection.from.blockId)
     if (!this.doc.isEditable(block)) return;
     this.commentService.addComment(this.value, this.commentId).then(c => {
-      if(this.selection.from.type !== 'text') return
+      if(this.selection.kind !== 'text' || this.selection.from.type !== 'text') return
       block.yText.format(this.selection.from.index, this.selection.from.length, {'d:comment': c.id})
       this.close()
     })

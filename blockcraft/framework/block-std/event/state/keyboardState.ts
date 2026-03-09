@@ -3,6 +3,8 @@ import {UIEventState} from "../base";
 export interface KeyEventContext {
   // if the selection is collapsed
   collapsed: boolean
+  // semantic selection kind
+  selectionKind: BlockCraft.Selection['kind']
   // prefix text before the selection(Until the start of from block). If the selection from block is not editable, this will be null
   prefix: string | null
   // suffix text after the selection(Until the end of to block). If the selection to block is null or not editable, this will be null
@@ -35,6 +37,7 @@ export class KeyboardEventState extends UIEventState {
     const {from, to, collapsed, isInSameBlock} = selection
     this.context = {
       collapsed,
+      selectionKind: selection.kind,
       flavour: from.block.flavour,
       blockId: from.block.id,
       isInSameBlock,

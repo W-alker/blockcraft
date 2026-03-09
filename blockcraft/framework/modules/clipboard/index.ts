@@ -4,6 +4,7 @@ import {
   DeltaInsert,
   DeltaOperation,
   DocEventRegister,
+  EditableBlockComponent,
   EventListen,
   IBlockSnapshot, STR_LINE_BREAK,
   UIEventStateContext
@@ -43,6 +44,96 @@ export class ClipboardManager {
     return copyBlocks.call(this, rootSnapshot)
   }
 
+  private _createParagraphSnapshotsFromText(text: string, depth?: number) {
+    const normalized = text.replace(/[\n\r]+$/, '')
+    if (!normalized) {
+      return [this.doc.schemas.createSnapshot('paragraph', [[], {depth}])]
+    }
+    return normalized.split('\n').map(line => this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth}]))
+  }
+
+  private _compareBlocksInDocumentOrder(left: BlockCraft.BlockComponent, right: BlockCraft.BlockComponent) {
+    if (left === right) return 0
+    const position = left.hostElement.compareDocumentPosition(right.hostElement)
+    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1
+    if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1
+    return 0
+  }
+
+  private _collectMiddleBlocks(selection: BlockCraft.Selection) {
+    const {from, to} = selection
+    if (!to) return []
+    const uniqueBlocks = new Map<string, BlockCraft.BlockComponent>()
+    this.doc.queryBlocksThroughPathDeeply(from.block, to.block).forEach(through => {
+      through.group.forEach(id => {
+        uniqueBlocks.set(id, this.doc.getBlockById(id))
+      })
+    })
+    return [...uniqueBlocks.values()].sort((left, right) => this._compareBlocksInDocumentOrder(left, right))
+  }
+
+  private _canMergeSnapshotIntoEditableBlock(snapshot: IBlockSnapshot, editableBlock: EditableBlockComponent<any>) {
+    return snapshot.nodeType === BlockNodeType.editable
+      && (snapshot.flavour === 'paragraph' || snapshot.flavour === editableBlock.flavour)
+      && compareSimpleValue(snapshot.props['heading'] as SimpleBasicType, editableBlock.props['heading']) <= 0
+  }
+
+  private _prependSnapshotIntoEditableBlock(snapshot: IBlockSnapshot, editableBlock: EditableBlockComponent<any>) {
+    const insertLength = deltaStrLength(snapshot.children as DeltaInsert[])
+    editableBlock.applyDeltaOperations(snapshot.children as DeltaInsert[])
+    return insertLength
+  }
+
+  private async _pasteSnapshotsIntoLeadingSelectedTrailingTextRange(selection: BlockCraft.Selection, snapshots: IBlockSnapshot[]) {
+    const {from, to} = selection
+    if (from.type !== 'selected' || !to || to.type !== 'text') return false
+
+    const tailBlock = to.block
+    const fullyConsumesTail = to.length >= tailBlock.textLength
+
+    const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, tailBlock)
+    this.doc.crud.transact(() => {
+      throughPath.forEach(through => {
+        this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
+      })
+      this.doc.crud.deleteBlockById(from.blockId)
+      if (!fullyConsumesTail) {
+        tailBlock.replaceText(to.index, to.length, null)
+      }
+    })
+
+    if (fullyConsumesTail) {
+      if (!snapshots.length) {
+        await this.doc.crud.deleteBlockById(tailBlock.id)
+        this.doc.selection.recalculate()
+        return true
+      }
+      await this.doc.crud.replaceWithSnapshots(tailBlock.id, snapshots)
+      this.doc.selection.selectOrSetCursorAtBlock(snapshots[snapshots.length - 1].id, false)
+      return true
+    }
+
+    let insertLength = 0
+    if (snapshots.length && this._canMergeSnapshotIntoEditableBlock(snapshots[snapshots.length - 1], tailBlock)) {
+      const lastSnapshot = snapshots.pop()!
+      insertLength = this._prependSnapshotIntoEditableBlock(lastSnapshot, tailBlock)
+    }
+
+    if (snapshots.length) {
+      await this.doc.crud.insertBlocksBefore(tailBlock, snapshots)
+    }
+
+    if (insertLength > 0) {
+      tailBlock.setInlineRange(insertLength)
+    } else if (snapshots.length) {
+      this.doc.selection.selectOrSetCursorAtBlock(snapshots[snapshots.length - 1].id, false)
+    } else {
+      this.doc.selection.recalculate()
+    }
+
+    return true
+  }
+
   private _wrapDeltaByRoot(deltas: DeltaInsert[]) {
     const p = this.doc.schemas.createSnapshot('paragraph', [deltas])
     return this.doc.schemas.createSnapshot('root', [generateId(), [p]])
@@ -73,10 +164,10 @@ export class ClipboardManager {
 
     const snapshots: IBlockSnapshot[] = []
     let plainText = ''
-    const betweenBlocks = this.doc.queryBlocksBetween(from.block, to.block)
-    for (const bid of betweenBlocks) {
-      snapshots.push(this.doc.getBlockById(bid).toSnapshot())
-      plainText += (this.doc.getBlockById(bid).textContent() + STR_LINE_BREAK)
+    const middleBlocks = this._collectMiddleBlocks(selection)
+    for (const block of middleBlocks) {
+      snapshots.push(block.toSnapshot())
+      plainText += (block.textContent() + STR_LINE_BREAK)
     }
 
     if (from.type === 'text') {
@@ -102,7 +193,7 @@ export class ClipboardManager {
       }
     } else {
       snapshots.push(to.block.toSnapshot())
-      plainText = to.block.textContent() + plainText
+      plainText += to.block.textContent()
     }
 
     clipboardData.setData(ClipboardDataType.TEXT, plainText)
@@ -146,7 +237,64 @@ export class ClipboardManager {
     })
 
     const selection = state.selection
-    if (selection.from.type !== 'text') return
+    const supportsBlockReplacement = selection.kind === 'block'
+    const isLeadingSelectedTrailingTextRange = selection.kind === 'mixed'
+      && selection.from.type === 'selected'
+      && selection.to?.type === 'text'
+
+    if (supportsBlockReplacement && state.dataTypes.includes(ClipboardDataType.FILES)) {
+      return false
+    }
+
+    if (supportsBlockReplacement && state.dataTypes.includes(ClipboardDataType.HTML)) {
+      const htmlString = state.getData(ClipboardDataType.HTML)
+      const htmlAdapter = this.adapter?.getAdapter(ClipboardDataType.HTML)
+      if (htmlAdapter && htmlString) {
+        try {
+          const rootSnapshot = await htmlAdapter.toSnapshot(htmlString)
+          if (rootSnapshot?.nodeType === BlockNodeType.root && rootSnapshot.children.length) {
+            const snapshots = rootSnapshot.children as IBlockSnapshot[]
+            replaceSnapshotsIdDeeply(snapshots)
+            return this.doc.inputManger.replacePureSelectedRangeWithSnapshots(selection, snapshots)
+          }
+        } catch (e) {
+          this.doc.logger.warn('html2snapshot error', e)
+        }
+      }
+    }
+
+    if (supportsBlockReplacement && state.dataTypes.includes(ClipboardDataType.TEXT)) {
+      const text = state.getData(ClipboardDataType.TEXT)
+      if (!text) return false
+      const snapshots = this._createParagraphSnapshotsFromText(text, selection.firstBlock.props.depth)
+      return this.doc.inputManger.replacePureSelectedRangeWithSnapshots(selection, snapshots)
+    }
+
+    if (isLeadingSelectedTrailingTextRange && state.dataTypes.includes(ClipboardDataType.HTML)) {
+      const htmlString = state.getData(ClipboardDataType.HTML)
+      const htmlAdapter = this.adapter?.getAdapter(ClipboardDataType.HTML)
+      if (htmlAdapter && htmlString) {
+        try {
+          const rootSnapshot = await htmlAdapter.toSnapshot(htmlString)
+          if (rootSnapshot?.nodeType === BlockNodeType.root && rootSnapshot.children.length) {
+            const snapshots = rootSnapshot.children as IBlockSnapshot[]
+            replaceSnapshotsIdDeeply(snapshots)
+            return this._pasteSnapshotsIntoLeadingSelectedTrailingTextRange(selection, snapshots)
+          }
+        } catch (e) {
+          this.doc.logger.warn('html2snapshot error', e)
+        }
+      }
+    }
+
+    if (isLeadingSelectedTrailingTextRange && state.dataTypes.includes(ClipboardDataType.TEXT)) {
+      const text = state.getData(ClipboardDataType.TEXT)
+      if (!text) return false
+      const snapshots = this._createParagraphSnapshotsFromText(text, selection.to.block.props.depth)
+      return this._pasteSnapshotsIntoLeadingSelectedTrailingTextRange(selection, snapshots)
+    }
+
+    if (selection.from.type !== 'text') return false
 
     const {from: selFrom, isInSameBlock, collapsed} = selection
 

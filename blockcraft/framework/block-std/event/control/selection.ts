@@ -3,6 +3,14 @@ import { UIEventState, UIEventStateContext } from "../base";
 import { EventScopeSourceType, EventSourceState, SelectEventState } from "../state";
 import { isMac } from "lib0/environment";
 
+type TNativeSelectionState = {
+  anchorNode: Node
+  anchorOffset: number
+  focusNode: Node
+  focusOffset: number
+  collapsed: boolean
+}
+
 export class SelectionControl {
   constructor(private _dispatcher: BlockCraft.EventDispatcher) {
   }
@@ -10,7 +18,7 @@ export class SelectionControl {
   private _isSelecting = false;
   private _shiftKeyPressing = false;
   private _mouseDown = false;
-  private _lastSelectionString = ''; // 用于检测选区变化
+  private _lastSelectionState: TNativeSelectionState | null = null;
   private _selectionChangeDebounceTimer: any = null;
 
   get isSelecting() {
@@ -37,7 +45,7 @@ export class SelectionControl {
     // 鼠标/触摸选择
     else if (this._mouseDown) {
       // 监听拖拽开始（可能转为拖放操作）
-      this._dispatcher.rootElement.addEventListener('dragstart', e => {
+      this._dispatcher.rootElement.addEventListener('dragstart', (e: DragEvent) => {
         if (!this._isSelecting) return;
         this._isSelecting = false;
         this._dispatcher.run('selectEnd', this._buildContext(e))
@@ -85,12 +93,46 @@ export class SelectionControl {
   /**
    * 通过 selectionchange 检测程序化选择
    */
-  private _handleSelectionChange = () => {
+  private _readSelectionState(rootElement: HTMLElement): TNativeSelectionState | null {
     const selection = document.getSelection();
-    if (!selection || selection.rangeCount === 0) {
+    if (!selection || selection.rangeCount === 0 || !selection.anchorNode || !selection.focusNode) {
+      return null
+    }
+
+    if (selection.isCollapsed) {
+      return null
+    }
+
+    const isInsideRoot = rootElement.contains(selection.anchorNode) && rootElement.contains(selection.focusNode)
+    if (!isInsideRoot) {
+      return null
+    }
+
+    return {
+      anchorNode: selection.anchorNode,
+      anchorOffset: selection.anchorOffset,
+      focusNode: selection.focusNode,
+      focusOffset: selection.focusOffset,
+      collapsed: selection.isCollapsed
+    }
+  }
+
+  private _isSameSelectionState(left: TNativeSelectionState | null, right: TNativeSelectionState | null) {
+    if (!left || !right) return left === right
+    return left.collapsed === right.collapsed
+      && left.anchorNode === right.anchorNode
+      && left.anchorOffset === right.anchorOffset
+      && left.focusNode === right.focusNode
+      && left.focusOffset === right.focusOffset
+  }
+
+  private _handleSelectionChange = (rootElement: HTMLElement) => {
+    const currentState = this._readSelectionState(rootElement)
+
+    if (!currentState) {
       // 选区清空
-      if (this._lastSelectionString) {
-        this._lastSelectionString = '';
+      if (this._lastSelectionState) {
+        this._lastSelectionState = null;
         if (this._isSelecting) {
           this._isSelecting = false;
           this._dispatcher.run('selectEnd', this._buildContext(new Event('selectionchange')));
@@ -99,10 +141,9 @@ export class SelectionControl {
       return;
     }
 
-    const currentString = selection.toString();
+    const hasChanged = !this._isSameSelectionState(this._lastSelectionState, currentState)
 
-    // 检测到选区从空变为非空（程序化选择开始）
-    if (!this._lastSelectionString && currentString && !this._isSelecting) {
+    if (!this._lastSelectionState && !this._isSelecting) {
       // 不在用户主动选择中，可能是程序化选择
       if (!this._mouseDown && !this._shiftKeyPressing) {
         this._isSelecting = true;
@@ -118,8 +159,7 @@ export class SelectionControl {
         }, 100);
       }
     }
-    // 检测选区从非空变为空或改变
-    else if (this._lastSelectionString !== currentString) {
+    else if (hasChanged) {
       // 如果正在通过 selectionchange 追踪，重置定时器
       if (!this._mouseDown && !this._shiftKeyPressing && this._isSelecting) {
         clearTimeout(this._selectionChangeDebounceTimer);
@@ -132,7 +172,7 @@ export class SelectionControl {
       }
     }
 
-    this._lastSelectionString = currentString;
+    this._lastSelectionState = currentState;
   }
 
   private _buildContext = (event: Event) => {
@@ -201,6 +241,11 @@ export class SelectionControl {
     fromEvent<MouseEvent>(root.hostElement, 'dblclick').pipe(takeUntil(root.onDestroy$)).subscribe(e => {
       this._handleMultiClickEnd(e);
     });
+
+    fromEvent<Event>(root.hostElement.ownerDocument, 'selectionchange').pipe(takeUntil(root.onDestroy$)).subscribe(() => {
+      if (this._dispatcher.doc.selection.isDomSelectionSyncSuspended) return
+      this._handleSelectionChange(root.hostElement)
+    })
   }
 
   /**

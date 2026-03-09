@@ -46,7 +46,7 @@ export class BlockTransformerPlugin extends DocPlugin {
       item.hotkey && this.doc.event.bindHotkey(item.hotkey, (evt) => {
         const state = evt.get('keyboardState')
         const selection = state.selection
-        if (!selection.isInSameBlock || selection.from.type !== 'text' || selection.from.block.flavour === item.flavour) return
+        if (selection.kind !== 'text' || !selection.isInSameBlock || selection.from.type !== 'text' || selection.from.block.flavour === item.flavour) return
         evt.preventDefault()
         BlockTransformerPlugin.transformEditableBlock(this.doc, selection.from.block, item.flavour as any)
         return true
@@ -72,7 +72,7 @@ export class BlockTransformerPlugin extends DocPlugin {
   formatHeading(evt: UIEventStateContext) {
     const state = evt.get('keyboardState')
     const selection = state.selection
-    if (!selection.isInSameBlock || selection.from.type !== 'text' || !ALLOWED_HEADING_FLAVOURS.includes(selection.from.block.flavour)) return
+    if (selection.kind !== 'text' || !selection.isInSameBlock || selection.from.type !== 'text' || !ALLOWED_HEADING_FLAVOURS.includes(selection.from.block.flavour)) return
     selection.from.block.updateProps({
       heading: state.raw.key === '0' ? null : parseInt(state.raw.key, 10)
     })
@@ -90,7 +90,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     }
     if (e.data === '\/' || e.data === '、') {
       const selection = this.doc.selection.value
-      if (!selection || !selection.collapsed || selection.from.type !== 'text' || selection.from.block.flavour !== 'paragraph') return
+      if (!selection || selection.kind !== 'text' || !selection.collapsed || selection.from.type !== 'text' || selection.from.block.flavour !== 'paragraph') return
       const block = selection.from.block
       if (block.textContent() !== e.data) return
       const schema = this.doc.schemas.get(block.flavour)!
@@ -101,7 +101,7 @@ export class BlockTransformerPlugin extends DocPlugin {
 
   private _mdTransform = () => {
     const selection = this.doc.selection.value!
-    if (!selection.collapsed || selection.from.type !== 'text') return false
+    if (selection.kind !== 'text' || !selection.collapsed || selection.from.type !== 'text') return false
     const block = selection.from.block
     if (!block || block.flavour !== 'paragraph') return
     const text = block.textContent().slice(0, selection.from.index + 1)

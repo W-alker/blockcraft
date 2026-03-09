@@ -404,7 +404,7 @@ export class FloatTextToolbarComponent {
 
   private syncSelectionState() {
     const selection = this.doc.selection.value!
-    this.isLinkAble = !!selection && selection.isInSameBlock && selection.from.type === 'text'
+    this.isLinkAble = !!selection && selection.kind === 'text' && selection.isInSameBlock && selection.from.type === 'text'
     this.activeHeading = HEADING_LIST.find(v => v.value === this.activeProps.heading) || HEADING_LIST[0]
   }
 
@@ -501,7 +501,7 @@ export class FloatTextToolbarComponent {
     merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
     cpr.instance.onConfirm.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe((url: string) => {
       close()
-      if (selection.from.type !== 'text') return
+      if (selection.kind !== 'text' || selection.from.type !== 'text') return
       const {index, length} = selection.from
       selection.from.block.formatText(index, length, {'a:link': url})
     })
@@ -509,7 +509,7 @@ export class FloatTextToolbarComponent {
 
   onInlineFormula() {
     const selection = this.doc.selection.value
-    if (!selection || selection.from.type !== 'text') return
+    if (!selection || selection.kind !== 'text' || selection.from.type !== 'text') return
     const {block, index, length} = selection.from
     const text = selection.raw.toString()
     block.applyDeltaOperations([

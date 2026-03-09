@@ -6,6 +6,7 @@ import {BehaviorSubject, take} from "rxjs";
 import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
 import {nextTick} from "../../global";
 import type {IBlockRange} from "../modules/selection/types";
+import {getCommonPath} from "../utils";
 
 type UndoManagerEventName = 'stack-item-added' | 'stack-item-updated' | 'stack-item-popped' | 'stack-cleared'
 
@@ -178,11 +179,45 @@ export class DocUndoManger {
     const to = snapshot.to ? this._resolveSelectionPoint(snapshot.to) : null
     if (snapshot.to && !to) return null
 
+    const kind = (() => {
+      const boundaryBlocks = [from.blockId, to?.blockId].filter(Boolean).map(id => this.doc.getBlockById(id!))
+      const isTableBoundary = boundaryBlocks.length > 0 && boundaryBlocks.every(block => block.flavour === 'table-cell')
+      if (isTableBoundary) return 'table' as const
+      if (!to) return from.type === 'selected' ? 'block' as const : 'text' as const
+      if (from.type === 'selected' && to.type === 'selected') return 'block' as const
+      if (from.type === 'text' && to.type === 'text' && from.blockId === to.blockId) return 'text' as const
+      return 'mixed' as const
+    })()
+
+    const selectedBlockIds = (() => {
+      if (!to) return [from.blockId]
+      const uniqueBlocks = new Map<string, string>()
+      uniqueBlocks.set(from.blockId, from.blockId)
+      uniqueBlocks.set(to.blockId, to.blockId)
+      this.doc.queryBlocksThroughPathDeeply(from.blockId, to.blockId).forEach(through => {
+        through.group.forEach(id => uniqueBlocks.set(id, id))
+      })
+      return [...uniqueBlocks.keys()].sort((left, right) => {
+        const position = this.doc.getBlockById(left).hostElement.compareDocumentPosition(this.doc.getBlockById(right).hostElement)
+        if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1
+        if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1
+        return 0
+      })
+    })()
+
+    const commonParent = (() => {
+      if (!to) return from.blockId
+      const commonPath = getCommonPath(this.doc.getBlockPath(from.blockId), this.doc.getBlockPath(to.blockId))
+      return commonPath.at(-1) || from.blockId
+    })()
+
     return {
+      kind,
       from,
       to,
       collapsed: !to && from.type === 'text' && from.length === 0,
-      commonParent: from.blockId
+      commonParent,
+      selectedBlockIds
     }
   }
 
