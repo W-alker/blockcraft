@@ -100,10 +100,10 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
   template: `
     <ng-content select="[fixed-toolbar-prefix]"></ng-content>
 
-    <button class="toolbar-btn" title="撤销" (mousedown)="onActionMouseDown($event)" (click)="undo()">
+    <button class="toolbar-btn" title="撤销" (mousedown)="onActionMouseDown($event)" (click)="undo()" [disabled]="!doc?.crud?.undoManager?.isCanUndo()">
       <i class="bc_icon bc_chehui"></i>
     </button>
-    <button class="toolbar-btn" title="重做" (mousedown)="onActionMouseDown($event)" (click)="redo()">
+    <button class="toolbar-btn" title="重做" (mousedown)="onActionMouseDown($event)" (click)="redo()" [disabled]="!doc?.crud?.undoManager?.isCanRedo()">
       <i class="bc_icon bc_huitui"></i>
     </button>
 
