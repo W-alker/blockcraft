@@ -146,7 +146,8 @@ export class Test2Page {
       const res = await request('/meetingDoc/migrateQueryOldDocs', {pageIndex})
       hasMore = res.hasMore
       const items = res.items.map((v: any) => {
-        const sections = v.textSections.map((v: any) => v.content)
+        if(!v.doc) return null
+        const sections = v.doc.textSections.map((v: any) => v.content)
           .reduce((pre: any, cur: any) => {
             pre[cur?.id] = cur
             return pre
@@ -155,9 +156,9 @@ export class Test2Page {
           id: v.id,
           docType: v.docType,
           meetingId: v.meetingId,
-          data: v.sections.map((sec: any) => sections[sec]).filter(Boolean)
+          data: v.doc.sections.map((sec: any) => sections[sec]).filter(Boolean)
         }
-      })
+      }).filter(Boolean)
 
       for(let i = 0; i < items.length; i++) {
         const data = EditorMigrate.transform(items[i].data)
