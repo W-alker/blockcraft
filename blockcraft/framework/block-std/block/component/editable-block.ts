@@ -5,6 +5,11 @@ import * as Y from 'yjs'
 import { DeltaInsert, DeltaOperation } from "../../types";
 import { INLINE_CONTAINER_CLASS } from "../../inline";
 import { Subject } from "rxjs";
+import Delta from "quill-delta";
+
+const composeDelta = (current: DeltaInsert[], operations: DeltaOperation[]) => {
+  return new Delta(current as never).compose(new Delta(operations as never)).ops as DeltaInsert[];
+};
 
 @Component({
   selector: 'editable-block',
@@ -15,6 +20,7 @@ import { Subject } from "rxjs";
 })
 export class EditableBlockComponent<Model extends EditableBlockNative = EditableBlockNative> extends BaseBlockComponent<Model> {
   plainTextOnly = false
+  protected _snapshotDelta: DeltaInsert[] = []
 
   private _yText!: Y.Text
   get yText() {
@@ -22,7 +28,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   get inlineManager() {
-    return this.doc.inlineManager
+    return this.getDocRuntime().inlineManager
   }
 
   onTextChange = new Subject<{ op: DeltaOperation[]; tr: Y.Transaction; }>();
@@ -36,6 +42,25 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   override reattach() {
     super.reattach();
     this.rerender()
+  }
+
+  protected override _initSnapshotState() {
+    super._initSnapshotState();
+    this._snapshotDelta = this.snapshot?.nodeType === 'editable'
+      ? [...this.snapshot.children]
+      : [];
+  }
+
+  protected override onRenderStateUpdated() {
+    if (this._containerElement) {
+      this.rerender()
+    }
+  }
+
+  protected override onRenderContextUpdated() {
+    if (this._containerElement && !this.hasReactiveState()) {
+      this.rerender()
+    }
   }
 
   protected _containerElement!: HTMLElement
@@ -58,31 +83,48 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   get textLength() {
-    return this.yText.length
+    return this.textDeltas().reduce((acc, cur) => {
+      return acc + (typeof cur.insert === 'string' ? cur.insert.length : 1)
+    }, 0)
   }
 
   override textContent() {
-    return (this.yText.toDelta() as DeltaInsert[]).reduce((acc, cur) => {
+    return this.textDeltas().reduce((acc, cur) => {
       return acc + (typeof cur.insert === 'string' ? cur.insert : cur.insert['break'] ? '\n' : '')
     }, '')
   }
 
   textDeltas(): DeltaInsert[] {
-    return this.yText.toDelta()
+    if (this.hasReactiveState()) {
+      return this.yText.toDelta()
+    }
+    return [...this._snapshotDelta]
   }
 
   rerender() {
+    if (this.renderContext) {
+      this.renderContext.renderInline(this.textDeltas(), this.containerElement)
+      return
+    }
     this.inlineManager.render(this.textDeltas(), this.containerElement)
   }
 
   insertText(index: number, text: string, attributes?: DeltaInsert['attributes']) {
     if (!text) return
-    this.yText.insert(index, text, attributes)
+    if (this.hasReactiveState()) {
+      this.yText.insert(index, text, attributes)
+      return
+    }
+    this.applyDeltaOperations([{retain: index}, {insert: text, attributes}])
   }
 
   deleteText(index: number, length = this.textLength - index) {
     if (!length) return
-    this.yText.delete(index, length)
+    if (this.hasReactiveState()) {
+      this.yText.delete(index, length)
+      return
+    }
+    this.applyDeltaOperations([{retain: index}, {delete: length}])
   }
 
   replaceText(index: number, length: number, text?: string | null, attributes?: DeltaInsert['attributes']) {
@@ -90,15 +132,33 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     index > 0 && delta.push({ retain: index })
     length > 0 && delta.push({ delete: length })
     text && delta.push({ insert: text, attributes })
-    this.yText.applyDelta(delta)
+    this.applyDeltaOperations(delta)
   }
 
   formatText(index: number, length: number, attributes: DeltaInsert['attributes']) {
-    this.yText.format(index, length, attributes as any)
+    if (this.hasReactiveState()) {
+      this.yText.format(index, length, attributes as any)
+      return
+    }
+    const delta: DeltaOperation[] = []
+    index > 0 && delta.push({retain: index})
+    length > 0 && delta.push({retain: length, attributes})
+    this.applyDeltaOperations(delta)
   }
 
   applyDeltaOperations(delta: DeltaOperation[]) {
-    this.yText.applyDelta(delta)
+    if (this.hasReactiveState()) {
+      this.yText.applyDelta(delta)
+      return
+    }
+
+    this._snapshotDelta = composeDelta(this._snapshotDelta, delta)
+    if (this.snapshot?.nodeType === 'editable') {
+      this.snapshot.children = [...this._snapshotDelta]
+    }
+    this._native.children = [...this._snapshotDelta] as Model['children']
+    this._applyDeltaToView(delta)
+    this.changeDetectorRef.markForCheck()
   }
 
   // deleteText(index: number, length = this.textLength - index) {
@@ -144,6 +204,14 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   // }
 
   protected _applyDeltaToYText(deltas: DeltaOperation[]) {
+    if (!this.hasReactiveState()) {
+      this._snapshotDelta = composeDelta(this._snapshotDelta, deltas)
+      if (this.snapshot?.nodeType === 'editable') {
+        this.snapshot.children = [...this._snapshotDelta]
+      }
+      this._native.children = [...this._snapshotDelta] as Model['children']
+      return
+    }
     this.yText.applyDelta(deltas)
     // let r = 0
     // for (const delta of deltas) {
@@ -164,17 +232,25 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   protected _applyDeltaToView(deltas: DeltaOperation[]) {
-    if (this.doc.isReadonly) return
+    if ((this.doc as BlockCraft.Doc | undefined)?.isReadonly) return
+    if (this.renderContext) {
+      try {
+        this.renderContext.patchInline(deltas, this.containerElement)
+      } catch (e) {
+        this.rerender()
+      }
+      return
+    }
     try {
-      this.doc.inlineManager.applyDeltaToView(deltas, this.containerElement)
+      this.getDocRuntime().inlineManager.applyDeltaToView(deltas, this.containerElement)
     } catch (e) {
-      this.doc.logger.error(`Error throw when apply delta to view. Block: `, this, e)
+      this.getDocRuntime().logger.error(`Error throw when apply delta to view. Block: `, this, e)
       this.rerender()
     }
   }
 
   setInlineRange(index: number, length = 0) {
-    return this.doc.selection.setSelection({
+    return this.getDocRuntime().selection.setSelection({
       index,
       length,
       type: 'text',

@@ -9,15 +9,21 @@ import {
   Input,
   Output,
 } from "@angular/core";
-import { NativeBlockModel, Obj2YMap, proxyMap, YBlock, yBlock2Native } from "../../reactive";
-import {BlockCraftError, ErrorCode, performanceTest} from "../../../../global";
+import { NativeBlockModel, Obj2YMap, proxyMap, YBlock } from "../../reactive";
+import {BlockCraftError, ErrorCode} from "../../../../global";
 import { BlockChildrenRenderRef, ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC } from "../../../doc";
 import { BlockNodeType, IBlockProps, IBlockSnapshot } from "../../types";
 import { Subject } from "rxjs";
-import {createBlockGapSpace, generateId} from "../../../utils";
+import {createBlockGapSpace} from "../../../utils";
 import * as Y from 'yjs'
 import { STR_LINE_BREAK } from "../../inline";
 import { EditorEventName } from "../../event";
+import {
+  BlockRenderContext,
+  cloneBlockSnapshot,
+  snapshotTextContent,
+  snapshotToNativeBlockModel
+} from "../../../render";
 
 @Component({
   selector: 'base-block',
@@ -28,10 +34,28 @@ import { EditorEventName } from "../../event";
 export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockModel> {
 
   protected _native!: Model
+  protected _snapshot?: IBlockSnapshot<Model['props'], Model['meta']>
+  private _didInit = false
 
   @Input()
   set model(native: Model) {
     this._native = native
+  }
+
+  @Input()
+  set snapshot(snapshot: IBlockSnapshot<Model['props'], Model['meta']> | null | undefined) {
+    if (!snapshot) return
+    this._snapshot = cloneBlockSnapshot(snapshot)
+    this._native = snapshotToNativeBlockModel(this._snapshot) as Model
+    if (this._didInit && !this.hasReactiveState()) {
+      this._init()
+      this.onRenderStateUpdated()
+      this.changeDetectorRef.markForCheck()
+    }
+  }
+
+  get snapshot() {
+    return this._snapshot
   }
 
   private _yBlock!: YBlock<Model>
@@ -45,7 +69,21 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return this._yBlock
   }
 
-  @Input({ required: true })
+  private _renderContext?: BlockRenderContext
+
+  @Input()
+  set renderContext(context: BlockRenderContext | null | undefined) {
+    this._renderContext = context ?? undefined
+    if (this._didInit) {
+      this.onRenderContextUpdated()
+    }
+  }
+
+  get renderContext() {
+    return this._renderContext
+  }
+
+  @Input()
   readonly doc!: BlockCraft.Doc
 
   readonly onViewInit$ = new Subject<boolean>();
@@ -87,6 +125,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   ngOnInit() {
+    this._didInit = true
     this._init()
   }
 
@@ -114,6 +153,15 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
    * @protected
    */
   protected _init() {
+    if (this.hasReactiveState()) {
+      this._initReactiveState()
+      return
+    }
+
+    this._initSnapshotState()
+  }
+
+  protected _initReactiveState() {
     this._yProps = this._yBlock.get('props')
     this._yMeta = this._yBlock.get('meta')
     this._props = proxyMap(this._native.props, this._yProps)
@@ -122,12 +170,76 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
       (this._childrenIds = (this._yBlock.get('children') as Y.Array<string>).toArray())
   }
 
+  protected _initSnapshotState() {
+    this._props = this._native.props
+    this._meta = this._native.meta
+    if (this.nodeType !== BlockNodeType.editable) {
+      this._childrenIds = [...(this._native.children as string[])]
+    }
+  }
+
+  protected onRenderStateUpdated() {
+  }
+
+  protected onRenderContextUpdated() {
+  }
+
+  protected hasReactiveState() {
+    return !!this._yBlock
+  }
+
+  protected hasSnapshotState() {
+    return !!this._snapshot
+  }
+
+  protected getDocRuntime() {
+    const doc = this.doc as BlockCraft.Doc | undefined
+    if (!doc) {
+      throw new BlockCraftError(ErrorCode.DefaultFatalError, `Block ${this.id} requires editor runtime`)
+    }
+    return doc
+  }
+
+  protected syncSnapshotProps(props: Partial<Model['props']>) {
+    if (this.hasReactiveState()) return
+
+    for (const [key, value] of Object.entries(props)) {
+      if (value == null) {
+        Reflect.deleteProperty(this._native.props, key)
+        this._snapshot && Reflect.deleteProperty(this._snapshot.props, key)
+        continue
+      }
+      Reflect.set(this._native.props, key, value)
+      this._snapshot && Reflect.set(this._snapshot.props, key, value)
+    }
+  }
+
+  protected syncSnapshotMeta(meta: Partial<Model['meta']>) {
+    if (this.hasReactiveState()) return
+
+    for (const [key, value] of Object.entries(meta)) {
+      if (value == null) {
+        Reflect.deleteProperty(this._native.meta, key)
+        this._snapshot && Reflect.deleteProperty(this._snapshot.meta, key)
+        continue
+      }
+      Reflect.set(this._native.meta, key, value)
+      this._snapshot && Reflect.set(this._snapshot.meta, key, value)
+    }
+  }
+
   /**
    * 设置初始化数据，不会产生历史数据
    * @param props
    * @protected
    */
   protected setInitProps(props: Partial<Model['props']>) {
+    if (!this.hasReactiveState()) {
+      this.syncSnapshotProps(props)
+      this.changeDetectorRef.markForCheck()
+      return
+    }
+
     this.doc.crud.transact(() => {
       for (const [key, value] of Object.entries(props)) {
         if (value == null) {
@@ -162,11 +274,11 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     global?: boolean;
     flavour?: boolean
   }) {
-    this.doc.event.add(name, handler, {
+    this.getDocRuntime().event.add(name, handler, {
       flavour: options?.global
         ? undefined
         : options?.flavour
-          ? this?.flavour
+          ? this.flavour as BlockCraft.BlockFlavour
           : undefined,
       blockId: options?.global || options?.flavour ? undefined : this.id,
     })
@@ -188,11 +300,13 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   get parentBlock(): BlockCraft.BlockComponent | null {
-    return this.parentId ? this.doc.getBlockById(this.parentId) : null
+    if (!this.parentId || !(this.doc as BlockCraft.Doc | undefined)) return null
+    return this.doc.getBlockById(this.parentId)
   }
 
   get childrenLength() {
     if (this.nodeType === BlockNodeType.editable) return 0
+    if (!this.hasReactiveState()) return this._childrenIds.length
     return (this.yBlock.get('children') as Y.Array<string>).length
   }
 
@@ -206,6 +320,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     if (this.nodeType === BlockNodeType.editable) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
     }
+    if (!this.hasReactiveState()) return this._childrenIds
     return this._childrenIds = (this.yBlock.get('children') as Y.Array<string>).toArray()
   }
 
@@ -214,11 +329,16 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
     }
 
-    return this.childrenIds.map(id => this.doc.getBlockById(id)) as BaseBlockComponent<any>[]
+    return this.childrenIds.map(id => this.getDocRuntime().getBlockById(id)) as BaseBlockComponent<any>[]
   }
 
   get firstChildren(): BaseBlockComponent<any> | null {
     if (this.nodeType === BlockNodeType.editable) return null
+    if (!this.hasReactiveState()) {
+      const id = this.childrenIds[0]
+      if (!id || !(this.doc as BlockCraft.Doc | undefined)) return null
+      return this.doc.getBlockById(id) as any
+    }
     const yChildren = this.yBlock.get('children') as Y.Array<string>
     if (!yChildren.length) return null
     const id = yChildren.get(0)
@@ -228,6 +348,11 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   get lastChildren(): BaseBlockComponent<any> | null {
     if (this.nodeType === BlockNodeType.editable) return null
+    if (!this.hasReactiveState()) {
+      const id = this.childrenIds[this.childrenIds.length - 1]
+      if (!id || !(this.doc as BlockCraft.Doc | undefined)) return null
+      return this.doc.getBlockById(id) as any
+    }
     const yChildren = this.yBlock.get('children') as Y.Array<string>
     if (!yChildren.length) return null
     const id = yChildren.get(yChildren.length - 1)
@@ -239,13 +364,14 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     if (this.nodeType === BlockNodeType.editable) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
     }
-    return this.doc.getBlockById(this.getChildrenIdByIndex(index))
+    return this.getDocRuntime().getBlockById(this.getChildrenIdByIndex(index))
   }
 
   getChildrenIdByIndex(index: number) {
     if (this.nodeType === BlockNodeType.editable) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
     }
+    if (!this.hasReactiveState()) return this.childrenIds[index]
     return (this.yBlock.get('children') as Y.Array<string>).get(index)
   }
 
@@ -261,7 +387,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   // }
 
   getPath() {
-    return this.doc.getBlockPath(this.id)
+    return this.getDocRuntime().getBlockPath(this.id)
   }
 
   getIndexOfParent() {
@@ -269,7 +395,12 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   updateProps(props: Partial<Model['props']>) {
-    if (this.doc.isReadonly) return
+    if ((this.doc as BlockCraft.Doc | undefined)?.isReadonly) return
+    if (!this.hasReactiveState()) {
+      this.syncSnapshotProps(props)
+      this.changeDetectorRef.markForCheck()
+      return
+    }
     this.doc.crud.transact(() => {
       for (const key in props) {
         if (this._native.props[key] == props[key]) continue
@@ -284,6 +415,11 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   updateMeta(meta: Partial<Model['meta']>) {
+    if (!this.hasReactiveState()) {
+      this.syncSnapshotMeta(meta)
+      this.changeDetectorRef.markForCheck()
+      return
+    }
     this.doc.crud.transact(() => {
       for (const key in meta) {
         if (meta[key] === null) {
@@ -297,6 +433,14 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   toSnapshot(deep = true): IBlockSnapshot {
+    if (this.hasSnapshotState() && !this.hasReactiveState()) {
+      const snapshot = cloneBlockSnapshot(this._snapshot!)
+      if (!deep && (snapshot.nodeType === BlockNodeType.block || snapshot.nodeType === BlockNodeType.root)) {
+        snapshot.children = []
+      }
+      return snapshot
+    }
+
     return {
       id: this.id,
       flavour: this.flavour,
@@ -313,6 +457,10 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   textContent() {
+    if (this.hasSnapshotState() && !this.hasReactiveState()) {
+      return snapshotTextContent(this._snapshot!)
+    }
+
     let text = ''
     if (this.nodeType === BlockNodeType.editable) {
       text += (this._yBlock.get('children') as Y.Text).toJSON()

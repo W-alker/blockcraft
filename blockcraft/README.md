@@ -1,5 +1,9 @@
 # BlockCraft
 
+## 改造文档
+
+- `RENDER_RUNTIME_REFACTOR.md`
+
 ## 待优化
 
 - [ ] doc 的生命周期
@@ -82,7 +86,6 @@
 - [X] shift跨表格行多选, 删除导致的数据出错
 - [ ] 文本工具栏超出屏幕
 - [X] 导出PDF时携带标题
-
 
 
 
