@@ -163,8 +163,14 @@ export class DocCRUD {
 
           if (!this.doc.isEditable(bm.instance))
             throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} is not editable`)
+
+          const isCompositionLocked = this.doc.inputManger.isCompositionLockedForBlock(blockId)
+          if (isCompositionLocked && !tr.local && tr.origin !== ORIGIN_SKIP_SYNC) {
+            this.doc.inputManger.queueCompositionRemoteDelta(blockId, changes.delta as DeltaOperation[])
+          }
+
           // Y.Text
-          if (tr.origin !== ORIGIN_SKIP_SYNC) {
+          if (tr.origin !== ORIGIN_SKIP_SYNC && !isCompositionLocked) {
             try {
               bm.instance.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], bm.instance.containerElement)
             } catch (e) {

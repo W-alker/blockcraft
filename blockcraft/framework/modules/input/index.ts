@@ -1,4 +1,5 @@
 import {ORIGIN_SKIP_SYNC} from "../../doc";
+import Delta from "quill-delta";
 import {
   BindHotKey,
   BlockNodeType,
@@ -19,9 +20,18 @@ import {OneShotCursorAnchor} from "../../utils/one-shot-selection-anchor";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
+type CompositionSession = {
+  blockId: string
+  baselineDelta: DeltaInsert[]
+  startIndex: number
+  queuedRemoteDeltas: DeltaOperation[][]
+  phase: 'active' | 'flushing'
+}
+
 @DocEventRegister
 export class InputTransformer {
   private readonly _compositionAnchor: OneShotCursorAnchor
+  private _compositionSession: CompositionSession | null = null
   private _nextInsertAttrs: {
     blockId: string
     index: number
@@ -62,6 +72,16 @@ export class InputTransformer {
     this._nextInsertAttrs = null
   }
 
+  isCompositionLockedForBlock(blockId: string) {
+    return this._compositionSession?.blockId === blockId
+  }
+
+  queueCompositionRemoteDelta(blockId: string, delta: DeltaOperation[]) {
+    if (!this.isCompositionLockedForBlock(blockId)) return false
+    this._compositionSession?.queuedRemoteDeltas.push(delta)
+    return true
+  }
+
   private consumeNextInsertAttrs(blockId: string, index: number, options?: { allowNearby?: boolean }) {
     if (!this._nextInsertAttrs) return undefined
     const hit = this.matchNextInsertPoint({
@@ -72,6 +92,61 @@ export class InputTransformer {
     const attrs = hit ? this._nextInsertAttrs.attrs : undefined
     this._nextInsertAttrs = null
     return attrs
+  }
+
+  private _beginCompositionSession() {
+    const anchor = this._compositionAnchor.resolve()
+    if (!anchor) {
+      this._compositionSession = null
+      return
+    }
+
+    this._compositionSession = {
+      blockId: anchor.block.id,
+      baselineDelta: anchor.block.textDeltas(),
+      startIndex: anchor.index,
+      queuedRemoteDeltas: [],
+      phase: 'active'
+    }
+  }
+
+  private _resetCompositionSession() {
+    this._compositionSession = null
+    this._compositionAnchor.reset()
+  }
+
+  private _composeRemoteDelta(session: CompositionSession) {
+    return session.queuedRemoteDeltas.reduce(
+      (acc, delta) => acc.compose(new Delta(delta)),
+      new Delta()
+    )
+  }
+
+  private _applyInsertAttrs(delta: Delta, attrs?: DeltaInsert['attributes']) {
+    if (!attrs || !Object.keys(attrs).length || !delta.ops.length) {
+      return delta
+    }
+
+    return new Delta(
+      delta.ops.map(op => {
+        if (typeof op.insert !== 'string') return op
+        return {
+          ...op,
+          attributes: op.attributes ? {
+            ...attrs,
+            ...op.attributes
+          } : attrs
+        }
+      })
+    )
+  }
+
+  private _getCompositionDomCursorIndex(session: CompositionSession, selection: BlockSelection | null) {
+    if (!selection || selection.from.type !== 'text' || selection.from.blockId !== session.blockId) {
+      return session.startIndex
+    }
+
+    return selection.from.index + selection.from.length
   }
 
   @EventListen('compositionStart')
@@ -91,6 +166,7 @@ export class InputTransformer {
       this.doc.selection.setCursorAtBlock(p.id, true)
       this.doc.selection.recalculate()
       this._compositionAnchor.captureFromSelection({isComposing: true})
+      this._beginCompositionSession()
       // this._deleteAllSelected(curSel)
       return true
     }
@@ -112,44 +188,72 @@ export class InputTransformer {
       this._replaceText(curSel)
     }
     this._compositionAnchor.captureFromSelection({isComposing: true})
+    this._beginCompositionSession()
     return true
   }
 
   @EventListen('compositionEnd')
   private _handleCompositionEnd(context: UIEventStateContext) {
-    const ev = context.getDefaultEvent<CompositionEvent>()
-    ev.preventDefault()
-    try {
-      const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
-      if (!sel || sel.from.type !== 'text') {
-        throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
-      }
-      const text = ev.data
-      const {block, index} = sel.from
-      const isZero = isZeroSpace(sel.raw.startContainer)
-      const fallbackIndex = isZero ? index : Math.max(0, index - text.length)
-      const {block: insertBlock, index: insertIndex} = this._compositionAnchor.resolve({block, index: fallbackIndex})!
-      const insertAttrs = this.consumeNextInsertAttrs(insertBlock.id, insertIndex, {allowNearby: true})
-      const cursorIndex = insertIndex + text.length
-      this.doc.crud.transact(() => {
-        insertBlock.yText.insert(insertIndex, text, insertAttrs)
-        // TODO: 更好的中文输入法反显渲染. 目前看必须重新渲染，否则涉及到协同的情况很容易出错
-        insertBlock.rerender()
+    context.getDefaultEvent<CompositionEvent>()
+    const session = this._compositionSession
+    if (!session) {
+      this._compositionAnchor.reset()
+      return
+    }
 
-        queueMicrotask(() => {
-          insertBlock.setInlineRange(cursorIndex)
-        })
+    session.phase = 'flushing'
+    try {
+      const {value: selection, next} = this.doc.selection.recalculate(false, {isComposing: true})
+      const domCursorIndex = this._getCompositionDomCursorIndex(session, selection)
+
+      let block: BlockCraft.BlockComponent
+      try {
+        block = this.doc.getBlockById(session.blockId)
+      } catch {
+        next?.()
+        return
+      }
+
+      if (!this.doc.isEditable(block)) {
+        next?.()
+        return
+      }
+
+      const domDelta = this.doc.inlineManager.readDelta(block.containerElement)
+      const remoteDelta = this._composeRemoteDelta(session)
+      const insertAttrs = this.consumeNextInsertAttrs(block.id, session.startIndex, {allowNearby: true})
+      const localDelta = this._applyInsertAttrs(
+        new Delta(session.baselineDelta).diff(new Delta(domDelta)),
+        insertAttrs
+      )
+      const rebasedLocal = session.queuedRemoteDeltas.length
+        ? remoteDelta.transform(localDelta, true)
+        : localDelta
+      const rebasedStartIndex = session.queuedRemoteDeltas.length
+        ? remoteDelta.transformPosition(session.startIndex, true)
+        : session.startIndex
+      const cursorIndex = Math.max(rebasedStartIndex, rebasedStartIndex + Math.max(0, domCursorIndex - session.startIndex))
+
+      this.doc.crud.transact(() => {
+        if (rebasedLocal.ops.length) {
+          block.yText.applyDelta(rebasedLocal.ops as DeltaOperation[])
+        }
       }, ORIGIN_SKIP_SYNC)
+
+      block.rerender()
+
+      queueMicrotask(() => {
+        block.setInlineRange(cursorIndex)
+      })
       next?.()
     } finally {
-      this._compositionAnchor.reset()
+      this._resetCompositionSession()
     }
   }
 
   @EventListen('beforeInput')
   private _handleBeforeInput(context: BlockCraft.EventStateContext) {
     const ev = context.get('defaultState').event as InputEvent
-    this._compositionAnchor.captureFromInputEvent(ev, {isComposing: true})
 
     if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {
       ev.preventDefault()

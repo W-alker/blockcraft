@@ -14,7 +14,7 @@ import {
 import {BlockCraftError, ErrorCode} from "../../../global";
 import setAttributes from "./setAttributes";
 import {compareAttributesWithEle} from "./compareAttributes";
-import {createZeroSpace} from "../../utils";
+import {createZeroSpace, isZeroSpace} from "../../utils";
 import {getAttributesFrom} from "./getAttributes";
 
 export type EmbedConverter = {
@@ -171,6 +171,79 @@ export class InlineManager {
       this._createEndBreak()
     )
     this._isRerendering = false
+  }
+
+  private _readInlineText(node: Node): string {
+    if (isZeroSpace(node)) return ''
+
+    if (node instanceof Text) {
+      return node.data
+    }
+
+    if (!(node instanceof HTMLElement)) {
+      return ''
+    }
+
+    if (node.contentEditable === 'false' || node.classList.contains(INLINE_END_BREAK_CLASS)) {
+      return ''
+    }
+
+    return Array.from(node.childNodes).map(child => this._readInlineText(child)).join('')
+  }
+
+  private _getElementAttributes(element: HTMLElement): IInlineNodeAttrs | undefined {
+    const attrs = InlineManager.getAttrs(element)
+    return Object.keys(attrs).length ? attrs : undefined
+  }
+
+  readDelta(container: HTMLElement): DeltaInsert[] {
+    const elements = Array.from(container.children).filter(
+      (node): node is HTMLElement => node instanceof HTMLElement && node.localName === INLINE_ELEMENT_TAG
+    )
+
+    const deltas: DeltaInsert[] = []
+
+    for (const element of elements) {
+      if (element.classList.contains(INLINE_END_BREAK_CLASS)) continue
+
+      const attrs = this._getElementAttributes(element)
+      const embedContainer = Array.from(element.children).find(
+        (child): child is HTMLElement => child instanceof HTMLElement && child.contentEditable === 'false'
+      )
+
+      if (embedContainer?.firstElementChild instanceof HTMLElement) {
+        const embed = embedContainer.firstElementChild
+        const meta = this._embedMetaMap.get(embed)
+        const converter = meta ? this._embedConverterMap.get(meta.key) : null
+        if (!converter) {
+          throw new BlockCraftError(ErrorCode.InlineEditorError, 'no embed converter found when read delta')
+        }
+
+        const embedDelta = converter.toDelta(embed)
+        const mergedAttrs = attrs || embedDelta.attributes
+          ? {
+            ...(attrs || {}),
+            ...(embedDelta.attributes || {})
+          }
+          : undefined
+
+        deltas.push({
+          ...embedDelta,
+          ...(mergedAttrs ? {attributes: mergedAttrs} : {})
+        })
+        continue
+      }
+
+      const text = Array.from(element.childNodes).map(node => this._readInlineText(node)).join('')
+      if (!text.length) continue
+
+      deltas.push({
+        insert: text,
+        ...(attrs ? {attributes: attrs} : {})
+      })
+    }
+
+    return deltas
   }
 
   applyDeltaToView(deltas: DeltaOperation[], container: HTMLElement) {

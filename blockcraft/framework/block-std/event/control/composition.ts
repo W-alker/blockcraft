@@ -26,8 +26,11 @@ export class CompositionControl {
   }
 
   private _end = (event: CompositionEvent) => {
-    this._isComposing = false
-    this._dispatcher.run('compositionEnd', this._buildContext(event))
+    queueMicrotask(() => {
+      if (!this._isComposing) return
+      this._dispatcher.run('compositionEnd', this._buildContext(event))
+      this._isComposing = false
+    })
   }
 
   listen(root: BlockCraft.IBlockComponents['root']) {
