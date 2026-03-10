@@ -16,6 +16,7 @@ import {fromEvent, takeUntil} from "rxjs";
 @Directive({
   selector: '[bcOverlayTrigger]',
   standalone: true,
+  exportAs: 'bcOverlayTrigger',
   host: {
     '[attr.data-float-binding]': 'true',
   }
@@ -166,6 +167,10 @@ export class BcOverlayTriggerDirective {
     this.overlayRef = null;
     this.close.emit(true)
     this.elementRef.nativeElement.classList.remove(this.activeClass)
+  }
+
+  closePanel() {
+    this.closeOverlay()
   }
 
 }

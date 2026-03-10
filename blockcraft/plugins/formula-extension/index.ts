@@ -103,7 +103,7 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
         block.applyDeltaOperations([
           {retain: embedIndex},
           {delete: 1},
-          {insert: newLatex}
+          {insert: {latex: newLatex}}
         ])
       }
       requestAnimationFrame(() => {

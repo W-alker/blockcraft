@@ -198,14 +198,16 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     <button class="toolbar-btn"
             title="插入表格"
             [disabled]="readonly || !selectionJSON"
-            [bcOverlayTrigger]="quickTablePicker">
+            [bcOverlayTrigger]="quickTablePicker"
+            #quickTableTrigger="bcOverlayTrigger">
       <i class="bc_icon bc_column-vertical"></i>
     </button>
 
     <button class="toolbar-btn"
             title="创建分栏"
             [disabled]="readonly || !selectionJSON"
-            [bcOverlayTrigger]="columnCountPicker">
+            [bcOverlayTrigger]="columnCountPicker"
+            #columnCountTrigger="bcOverlayTrigger">
       <i class="bc_icon bc_fenlan"></i>
     </button>
 
@@ -253,11 +255,11 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     </ng-template>
 
     <ng-template #quickTablePicker>
-      <bc-table-size-picker (pick)="insertQuickTable($event)"></bc-table-size-picker>
+      <bc-table-size-picker (pick)="insertQuickTable($event, quickTableTrigger)"></bc-table-size-picker>
     </ng-template>
 
     <ng-template #columnCountPicker>
-      <bc-column-count-picker (pick)="insertColumnsBlock($event)"></bc-column-count-picker>
+      <bc-column-count-picker (pick)="insertColumnsBlock($event, columnCountTrigger)"></bc-column-count-picker>
     </ng-template>
   `,
   styles: [`
@@ -615,7 +617,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     })
   }
 
-  protected async insertQuickTable(evt: ITableSizePickedEvent) {
+  protected async insertQuickTable(evt: ITableSizePickedEvent, trigger: BcOverlayTriggerDirective) {
     if (this.readonly || !this.selectionJSON) return
     this.restoreSelection()
     const selection = this.doc.selection.value
@@ -623,12 +625,13 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
     const inserted = await this.insertTable(evt.rows, evt.cols, selection)
     if (!inserted) return
+    trigger.closePanel()
     this.doc.selection.recalculate()
     this.syncToolbarState(this.doc.selection.value)
     this.cdr.markForCheck()
   }
 
-  protected async insertColumnsBlock(evt: IColumnCountPickedEvent) {
+  protected async insertColumnsBlock(evt: IColumnCountPickedEvent, trigger: BcOverlayTriggerDirective) {
     if (this.readonly || !this.selectionJSON) return
     this.restoreSelection()
     const selection = this.doc.selection.value
@@ -636,6 +639,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
     const inserted = await this.insertColumns(evt.count, selection)
     if (!inserted) return
+    trigger.closePanel()
     this.doc.selection.recalculate()
     this.syncToolbarState(this.doc.selection.value)
     this.cdr.markForCheck()
