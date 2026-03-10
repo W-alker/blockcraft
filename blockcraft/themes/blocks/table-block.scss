@@ -168,11 +168,11 @@
         margin: 0;
         min-width: 50px;
         overflow-x: hidden;
-        border-bottom: 1px solid var(--bc-border-color);
-        border-right: 1px solid var(--bc-border-color);
+        border-bottom: 1px solid var(--bc-table-border-color);
+        border-right: 1px solid var(--bc-table-border-color);
 
         &:first-child {
-          border-left: 1px solid var(--bc-border-color);
+          border-left: 1px solid var(--bc-table-border-color);
         }
 
         .table-cell__children-wrapper {

@@ -13,11 +13,13 @@ import {
   customToolHandler,
   IContextMenuItem
 } from "./types";
+import {fixTable} from "../../blocks/table-block/callback";
 
 const TABLE_MENU_NAMES = {
   equalWidth: "table-equal-width",
   rowHead: "table-row-head",
   colHead: "table-col-head",
+  fix: 'table-fix',
 } as const;
 
 export class BlockControllerPlugin extends DocPlugin {
@@ -173,6 +175,12 @@ export class BlockControllerPlugin extends DocPlugin {
         items: [
           {
             type: 'simple',
+            icon: 'bc_xiufubiaoge',
+            name: TABLE_MENU_NAMES.fix,
+            label: '修复表格'
+          },
+          {
+            type: 'simple',
             icon: "bc_liekuan",
             name: TABLE_MENU_NAMES.equalWidth,
             label: '均分列宽'
@@ -200,6 +208,9 @@ export class BlockControllerPlugin extends DocPlugin {
     const table = ctx.findClosestBlock('table') as BlockCraft.IBlockComponents['table'] | null
     if (!table) return false
     switch (event.item.name) {
+      case TABLE_MENU_NAMES.fix:
+        fixTable.call(table);
+        return true
       case TABLE_MENU_NAMES.equalWidth:
         table.setEqualColumnWidths()
         return true
