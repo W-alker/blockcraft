@@ -68,7 +68,6 @@ export class MarkdownAdapter extends ASTWalker<MarkdownAST, IBlockSnapshot> {
       children: [],
     };
     const ast = this._markdownToAst(markdown);
-    console.log(ast)
     return this._traverseMarkdown(ast, blockSnapshotRoot);
   }
 

@@ -79,6 +79,7 @@ import {demoJSON} from "./demo.data";
 import {DemoPresentationPlugin} from "../plugins/demo-presentation";
 import {TranslatePlugin} from "../plugins/translate";
 import {MyDocTranslationService} from "./services/doc-translation.service";
+import {MarkdownStreamRenderer} from "./markdown-stream-renderer";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -153,6 +154,7 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
 
     <button (click)="listenUpdate()">监听数据变化</button>
     <button (click)="test()">测试</button>
+    <button (click)="startMarkdownStreamTest()">测试Markdown流</button>
     <button (click)="logTable()">打印表格情况</button>
     <button (click)="fixTable()">修复表格</button>
 
@@ -257,6 +259,9 @@ export class EditorComponent {
     private logger: ConsoleLogger
   ) {
   }
+
+  private _markdownStreamRenderer?: MarkdownStreamRenderer;
+  private _markdownTestTimer: number | null = null;
 
   docId = '689ac2b31a9abe3ae8a6788d'
   rootId = '689ac2b31a9abe3ae8a6788d'
@@ -391,6 +396,39 @@ export class EditorComponent {
     })
     this.doc.event.add('selectionChange', e => {
       console.log('selectionChange', e)
+    })
+  }
+
+  ngOnDestroy() {
+    this.stopMarkdownStreamTest()
+    this._markdownStreamRenderer?.destroy()
+  }
+
+  get markdownStreamValue() {
+    return this.markdownStreamRenderer.value
+  }
+
+  async renderMarkdown(markdown: string) {
+    this.ensureMarkdownRenderReady()
+    await this.markdownStreamRenderer.replace(markdown, {
+      immediate: true
+    })
+  }
+
+  appendMarkdownChunk(chunk: string) {
+    this.ensureMarkdownRenderReady()
+    return this.markdownStreamRenderer.append(chunk)
+  }
+
+  flushMarkdownStream() {
+    this.ensureMarkdownRenderReady()
+    return this.markdownStreamRenderer.flush()
+  }
+
+  clearMarkdownStream() {
+    this.ensureMarkdownRenderReady()
+    return this.markdownStreamRenderer.clear({
+      immediate: true
     })
   }
 
@@ -529,6 +567,89 @@ export class EditorComponent {
     // --------------------------
   }
 
+  startMarkdownStreamTest() {
+    this.stopMarkdownStreamTest()
+    void this.clearMarkdownStream()
+
+    const markdown = `# BlockCraft Markdown Stream Test
+
+这是第一段，模拟 AI 持续输出内容。
+
+## 列表
+- 第一项
+- 第二项
+- 第三项
+
+## 任务列表
+- [x] 已完成事项
+- [ ] 待处理事项
+
+## 嵌套列表
+1. 第一层
+   1. 第二层 A
+   2. 第二层 B
+2. 另一项
+
+## 代码块
+
+\`\`\`ts
+const message = "hello blockcraft";
+console.log(message);
+\`\`\`
+
+## 表格
+
+| 功能 | 状态 | 说明 |
+| --- | --- | --- |
+| Markdown 流 | 已接入 | 逐块写入 |
+| Diff 渲染 | 已接入 | 块级与文本级 |
+| 表格 | 测试中 | 覆盖 GFM table |
+
+## 引用
+> 差异渲染应该只更新变化的部分。
+
+---
+
+## 公式
+
+$$
+E = mc^2
+$$
+
+最后一段：**加粗**、\`inline code\`、以及普通文本。
+`
+    const chunkSize = 4
+    const chars = Array.from(markdown)
+    const chunks = Array.from(
+      {length: Math.ceil(chars.length / chunkSize)},
+      (_, index) => chars.slice(index * chunkSize, (index + 1) * chunkSize).join('')
+    )
+
+    let cursor = 0
+    const tick = () => {
+      if (cursor >= chunks.length) {
+        this._markdownTestTimer = null
+        void this.flushMarkdownStream()
+        return
+      }
+
+      void this.appendMarkdownChunk(chunks[cursor]!)
+      cursor += 1
+      this._markdownTestTimer = window.setTimeout(tick, 90)
+    }
+
+    tick()
+  }
+
+  private stopMarkdownStreamTest() {
+    if (this._markdownTestTimer === null) {
+      return
+    }
+
+    clearTimeout(this._markdownTestTimer)
+    this._markdownTestTimer = null
+  }
+
   updateList: Uint8Array[] = []
 
   listenUpdate() {
@@ -610,11 +731,7 @@ export class EditorComponent {
     if (!files?.length) return
     const file = files[0]
     const text = await file.text()
-    const mdAdapter = this.injector.get(DOC_ADAPTER_SERVICE_TOKEN).getAdapter(ClipboardDataType.RTF)
-    if (!mdAdapter) return
-    const snapshot = await mdAdapter.toSnapshot(text)
-    if (!snapshot) return
-    this.doc.crud.insertBlocks(this.doc.rootId, 0, snapshot.children as IBlockSnapshot[])
+    await this.renderMarkdown(text)
   }
 
   exportMd() {
@@ -658,6 +775,32 @@ export class EditorComponent {
   toggleDark() {
     this.doc.toggleTheme(this.doc.theme === 'dark' ? 'light' : 'dark')
     document.body.style.backgroundColor = 'var(--bc-bg-primary)'
+  }
+
+  private get markdownStreamRenderer() {
+    const adapter = this.injector
+      .get(DOC_ADAPTER_SERVICE_TOKEN)
+      .getAdapter(ClipboardDataType.RTF)
+
+    if (!adapter) {
+      throw new Error('Markdown adapter is not registered.')
+    }
+
+    return this._markdownStreamRenderer ??= new MarkdownStreamRenderer(this.doc, adapter)
+  }
+
+  private ensureMarkdownRenderReady() {
+    if (!this.container?.nativeElement) {
+      throw new Error('Editor container is not ready yet.')
+    }
+
+    if (!this.doc.isInitialized) {
+      const rootSnapshot = this.doc.schemas.createSnapshot('root', [
+        this.rootId,
+        [this.doc.schemas.createSnapshot('paragraph', [])]
+      ])
+      this.doc.initBySnapshot(rootSnapshot, this.container.nativeElement)
+    }
   }
 
   private _demoController: PresentationController | null = null
