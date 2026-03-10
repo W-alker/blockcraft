@@ -27,15 +27,22 @@ export type EmbedConverter = {
 export type CreateEmbedView = (delta: DeltaInsertEmbed) => HTMLElement
 export type EmbedViewToDelta = (ele: HTMLElement) => DeltaInsertEmbed
 
+export type InlineManagerConfig = {
+  embeds?: [string, EmbedConverter][]
+}
+
 export class InlineManager {
   private _embedConverterMap: Map<string, EmbedConverter>
   private _disposeMap = new Map<HTMLElement, () => void>()
   private _embedMetaMap = new Map<HTMLElement, { key: string, delta: DeltaInsertEmbed }>()
   private _isRerendering = false
   private _pendingUpdateKeys = new Set<string>()
+  protected readonly doc?: BlockCraft.Doc
 
-  constructor(readonly doc: BlockCraft.Doc) {
-    this._embedConverterMap = new Map<string, EmbedConverter>(this.doc.config.embeds || [])
+  constructor(config: BlockCraft.Doc | InlineManagerConfig = {}) {
+    this.doc = 'config' in config ? config : undefined
+    const embeds = 'config' in config ? config.config.embeds : config.embeds
+    this._embedConverterMap = new Map<string, EmbedConverter>(embeds || [])
   }
 
   static setAttrs(element: HTMLElement, attributes?: IInlineNodeAttrs) {

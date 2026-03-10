@@ -2,12 +2,12 @@ import { ChangeDetectionStrategy, Component } from "@angular/core";
 import {
   DeltaOperation,
   EditableBlockComponent,
+  InlineManagerConfig,
   getPositionWithOffset, ORIGIN_SKIP_SYNC,
   STR_LINE_BREAK
 } from "../../framework";
 import { CodeBlockModel } from "./index";
 import { isLanguageSupported, loadLanguage, SHIKI_LANGUAGE_MAP } from "./shiki-config";
-import { AsyncPipe, NgForOf } from "@angular/common";
 import { fromEvent, Subject, take, throttleTime } from "rxjs";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { LangListComponent } from "./lang-list.component";
@@ -28,7 +28,7 @@ import { CodeBlockNameInputComponent } from "./block-name-input.component";
       <div class="head-btn__group">
         <div class="head-btn" (mousedown)="showLangList($event)">
           <span class="lang">{{ props.lang }}</span>
-          <i class="bc_icon bc_xiajaintou" [hidden]="doc.readonlySwitch$ | async"></i>
+          <i class="bc_icon bc_xiajaintou" [hidden]="isReadonly"></i>
         </div>
         <div class="head-btn" (mousedown)="onCopyText($event)"><i class="bc_icon bc_fuzhi"></i> 复制</div>
       </div>
@@ -38,14 +38,13 @@ import { CodeBlockNameInputComponent } from "./block-name-input.component";
       <pre class="edit-container"></pre>
     </div>
 
-    @if (!(doc.readonlySwitch$ | async) && !props.collapse) {
+    @if (!isReadonly && !props.collapse) {
       <div class="resize-bar-btm" contenteditable="false" (mousedown)="onResizeMouseDown($event)">
         <div class="bar-drag"></div>
       </div>
     }
   `,
   standalone: true,
-  imports: [NgForOf, AsyncPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class.is-collapse]': 'props.collapse'
@@ -55,11 +54,16 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   override plainTextOnly = true
 
   private lines: string[] = []
+  private _isReadonly = true
 
   private _inlineManager!: CodeInlineManagerService
 
   get blockName() {
     return this.props.blockName?.trim() || '代码块'
+  }
+
+  get isReadonly() {
+    return this._isReadonly
   }
 
   override get inlineManager() {
@@ -68,15 +72,28 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   override async _init() {
     super._init();
-    this._inlineManager = new CodeInlineManagerService(this.doc, this, {
+    const doc = this.doc as BlockCraft.Doc | undefined
+    this._isReadonly = this.renderContext?.readonly ?? doc?.isReadonly ?? true
+
+    const inlineConfig: BlockCraft.Doc | InlineManagerConfig = doc ?? {}
+    const theme = !doc || doc.theme.includes('light') ? 'github-light' : 'github-dark'
+
+    this._inlineManager = new CodeInlineManagerService(inlineConfig, this, {
       lang: SHIKI_LANGUAGE_MAP[this.props.lang],
       withLineBreak: true,
-      theme: this.doc.theme.includes('light') ? 'github-light' : 'github-dark',
+      theme,
     })
-    this.doc.themeChange$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(v => {
-      this.inlineManager.setTheme(this.doc.theme.includes('light') ? 'github-light' : 'github-dark')
-      this.rerender()
-    })
+
+    if (doc) {
+      doc.themeChange$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+        this.inlineManager.setTheme(doc.theme.includes('light') ? 'github-light' : 'github-dark')
+        this.rerender()
+      })
+      doc.readonlySwitch$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(value => {
+        this._isReadonly = value
+        this.changeDetectorRef.markForCheck()
+      })
+    }
   }
 
   override ngAfterViewInit() {
@@ -100,7 +117,8 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   private _debounce_highlight = debounce((e: DeltaOperation[]) => {
-    if (this.doc.event.status.isComposing) return
+    const doc = this.doc as BlockCraft.Doc | undefined
+    if (doc?.event.status.isComposing) return
     nextTick().then(() => {
       this.inlineManager.diffHighLight(e)
     })
@@ -145,12 +163,13 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   showLangList(e: Event) {
-    if (this.doc.isReadonly) return
+    const doc = this.doc as BlockCraft.Doc | undefined
+    if (!doc || doc.isReadonly) return
     e.preventDefault()
     e.stopPropagation()
 
     const closeList$ = new Subject()
-    const { componentRef: cpr } = this.doc.overlayService.createConnectedOverlay<LangListComponent>({
+    const { componentRef: cpr } = doc.overlayService.createConnectedOverlay<LangListComponent>({
       target: e.target as HTMLElement,
       component: LangListComponent,
       positions: [getPositionWithOffset('bottom-center'), getPositionWithOffset('top-center')],
@@ -169,7 +188,11 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   onCopyText(e: Event) {
     e.stopPropagation()
     e.preventDefault()
-    this.doc.clipboard.copyText(this.textContent()).then(() => {
+    const copyTask = (this.doc as BlockCraft.Doc | undefined)
+      ? (this.doc as BlockCraft.Doc).clipboard.copyText(this.textContent())
+      : navigator.clipboard.writeText(this.textContent())
+
+    copyTask.then(() => {
       const el = e.target as HTMLElement
       el.childNodes[1].textContent = '已复制'
       setTimeout(() => {
@@ -179,14 +202,15 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   showBlockNameInput(event: MouseEvent) {
-    if (this.doc.isReadonly) return
+    const doc = this.doc as BlockCraft.Doc | undefined
+    if (!doc || doc.isReadonly) return
     event.stopPropagation()
     event.preventDefault()
 
     const close$ = new Subject<void>()
     const close = () => close$.next()
 
-    const { componentRef } = this.doc.overlayService.createConnectedOverlay<CodeBlockNameInputComponent>({
+    const { componentRef } = doc.overlayService.createConnectedOverlay<CodeBlockNameInputComponent>({
       target: event.currentTarget as HTMLElement,
       component: CodeBlockNameInputComponent,
       positions: [getPositionWithOffset('bottom-left', 0, 6), getPositionWithOffset('top-left', 0, 6)],
@@ -213,13 +237,15 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   onResizeMouseDown(evt: MouseEvent) {
+    const doc = this.doc as BlockCraft.Doc | undefined
+    if (!doc) return
     evt.stopPropagation()
     evt.preventDefault()
     let startY = evt.clientY;
     let startHeight = this.props.h ?? this.containerElement.getBoundingClientRect().height
     let newHeight = startHeight
 
-    this.doc.ngZone.runOutsideAngular(() => {
+    doc.ngZone.runOutsideAngular(() => {
       const mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove')
         .pipe(throttleTime(32))
         .subscribe((e) => {
@@ -244,7 +270,8 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   onToggleCollapse($event: MouseEvent) {
     $event.stopPropagation()
-    if (this.doc.isReadonly) {
+    const doc = this.doc as BlockCraft.Doc | undefined
+    if (!doc || doc.isReadonly) {
       this.hostElement.classList.toggle('is-collapse')
       return
     }

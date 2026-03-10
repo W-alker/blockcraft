@@ -1,6 +1,7 @@
 import {
   DeltaInsertText, DeltaOperation, EditableBlockComponent,
   INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS,
+  InlineManagerConfig,
   InlineManager,
   STR_LINE_BREAK
 } from "../../framework";
@@ -147,7 +148,7 @@ export class CodeInlineManagerService extends InlineManager {
   private _lineFPs: string[] = []
 
   constructor(
-    doc: BlockCraft.Doc,
+    doc: BlockCraft.Doc | InlineManagerConfig,
     protected block: EditableBlockComponent,
     protected options: IRenderOptions = { lang: 'text' }
   ) {
@@ -198,10 +199,11 @@ export class CodeInlineManagerService extends InlineManager {
 
   @performanceTest()
   async diffHighLight(_ops: DeltaOperation[]) {
-    const isHere = this.doc.selection.value?.from.blockId === this.block.id;
+    const doc = this.doc;
+    const isHere = doc?.selection.value?.from.blockId === this.block.id;
     let pos = 0;
-    if (isHere) {
-      const sel = this.doc.selection.normalizeRange(
+    if (isHere && doc) {
+      const sel = doc.selection.normalizeRange(
         document.getSelection()!.getRangeAt(0)
       );
       pos = sel?.from.type === 'text' ? sel.from.index : 0;

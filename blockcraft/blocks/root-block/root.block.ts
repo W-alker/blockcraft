@@ -1,5 +1,5 @@
-import {ChangeDetectionStrategy, Component, HostListener} from "@angular/core";
-import {BaseBlockComponent, closetBlockId, createBlockGapSpace, UIEventStateContext} from "../../framework";
+import {ChangeDetectionStrategy, Component} from "@angular/core";
+import {BaseBlockComponent, closetBlockId, UIEventStateContext} from "../../framework";
 import {RootBlockModel} from "./index";
 import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
 import {BlockNodeType} from "../../framework";
@@ -11,16 +11,18 @@ import {BlockNodeType} from "../../framework";
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[style.font-family]': 'props.ff',
+    '(contextmenu)': 'onContextMenu($event)',
+    '(mousedown)': 'onMouseDown($event)',
   }
 })
 export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
-  @HostListener('contextmenu', ['$event'])
   onContextMenu(event: MouseEvent) {
+    if (!(this.doc as BlockCraft.Doc | undefined)) return
     event.preventDefault()
   }
 
-  @HostListener('mousedown', ['$event'])
-  onSelectStart(event: MouseEvent) {
+  onMouseDown(event: MouseEvent) {
+    if (!(this.doc as BlockCraft.Doc | undefined)) return
     if (event.target === this.hostElement) {
       event.preventDefault()
     }
@@ -32,23 +34,34 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
   override ngAfterViewInit() {
     super.ngAfterViewInit();
 
-    this.doc.readonlySwitch$.pipe(takeUntil(this.onDestroy$)).subscribe(v => {
+    const doc = this.doc as BlockCraft.Doc | undefined
+    if (!doc) {
+      const readonly = this.renderContext?.readonly ?? true
+      this.hostElement.setAttribute('contenteditable', readonly ? 'false' : 'true')
+      readonly ? this.hostElement.classList.add('readonly') : this.hostElement.classList.remove('readonly')
+      return
+    }
+
+    doc.readonlySwitch$.pipe(takeUntil(this.onDestroy$)).subscribe(v => {
       this.hostElement.setAttribute('contenteditable', v ? 'false' : 'true')
       v ? this.hostElement.classList.add('readonly') : this.hostElement.classList.remove('readonly')
     })
 
-    this.doc.event.add('selectStart', this.onSelectstart)
-    this.doc.event.add('selectEnd', this.onSelectEnd)
+    doc.event.add('selectStart', this.onSelectstart)
+    doc.event.add('selectEnd', this.onSelectEnd)
   }
 
   onSelectstart = (ctx: UIEventStateContext) => {
+    const doc = this.doc as BlockCraft.Doc | undefined
+    if (!doc) return
+
     const selectState = ctx.get('selectState')
     if (selectState.trigger !== 'mouse') return;
 
     const event = ctx.getDefaultEvent<Event>()
     const id = closetBlockId(event.target as HTMLElement)
     if (!id) return
-    const selectStartBlock = this.doc.getBlockById(id)
+    const selectStartBlock = doc.getBlockById(id)
     this.selecting$.next('start')
 
     const leaveListen = (block: BlockCraft.BlockComponent) => {

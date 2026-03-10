@@ -394,3 +394,31 @@ Reason:
 - directly helps the message rendering target
 - creates reusable seam for later component migration
 - keeps current editor behavior stable
+
+## 13. Current Progress
+
+The following foundation has already been implemented in this branch:
+
+- `framework/render/types.ts`
+  - `BlockRenderContext`
+  - `BlockTreeHost`
+- `framework/render/doc-render-context.ts`
+  - editor runtime adapter for inline rendering
+- `framework/render/standalone-render-context.ts`
+  - standalone inline render context for non-editor rendering
+- `framework/render/block-children-render-ref.ts`
+  - render-layer children container ref, no longer owned by `DocVM`
+- `framework/render/snapshot-renderer.ts`
+  - snapshot-driven component tree mount and update
+- `framework/render/snapshot-render-session.ts`
+  - framework entry point for standalone snapshot rendering
+- `framework/block-std/block/component/base-block.ts`
+  - supports `snapshot` + `renderContext` inputs
+  - keeps existing `doc + yBlock` compatibility path
+- `framework/block-std/block/component/editable-block.ts`
+  - supports non-Yjs delta state and inline patching via render context
+- `blocks/root-block/root.block.ts`
+  - can degrade to readonly render root when no editor runtime is provided
+
+This means the refactor has moved from planning into the first framework slice,
+but the migration is not complete yet because many concrete blocks still assume full editor runtime.

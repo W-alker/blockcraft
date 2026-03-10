@@ -10,6 +10,9 @@ import {
   YBlock,
   yBlock2Native
 } from "../block-std";
+import {BlockChildrenRenderRef} from "../render/block-children-render-ref";
+import {DocBlockRenderContext} from "../render/doc-render-context";
+import {snapshotToNativeBlockModel} from "../render/utils";
 import * as Y from "yjs";
 
 export class DocVM {
@@ -17,6 +20,7 @@ export class DocVM {
   appRef = this.doc.injector.get(ApplicationRef)
   private envInjector = this.appRef.injector
   private store: Map<string, BlockCraft.BlockComponentRef> = new Map()
+  private readonly renderContext = new DocBlockRenderContext(this.doc)
 
   constructor(
     private readonly doc: BlockCraft.Doc
@@ -61,6 +65,7 @@ export class DocVM {
       cpr.setInput('model', yBlock2Native(yBlock))
       cpr.setInput('yBlock', yBlock)
       cpr.setInput('doc', this.doc)
+      cpr.setInput('renderContext', this.renderContext)
       cpr.instance.parentId = parent?.instance.id || null
       if (cpr.instance.nodeType !== BlockNodeType.editable && cpr.instance.nodeType !== BlockNodeType.void) {
         cpr.instance.childrenRenderRef = new BlockChildrenRenderRef(cpr.instance, this)
@@ -124,7 +129,9 @@ export class DocVM {
 
       cpr.instance.parentId = parentId
       cpr.setInput('doc', this.doc)
-      cpr.setInput('model', model)
+      cpr.setInput('renderContext', this.renderContext)
+      cpr.setInput('snapshot', snapshot)
+      cpr.setInput('model', snapshotToNativeBlockModel(snapshot) as NativeBlockModel)
       cpr.setInput('yBlock', native2YBlock(model))
       cb && cb(cpr)
       if (cpr.instance.nodeType !== BlockNodeType.editable && cpr.instance.nodeType !== BlockNodeType.void) {
@@ -200,64 +207,6 @@ export class DocVM {
   }
 
 }
-
-export class BlockChildrenRenderRef {
-  private _containerElement?: HTMLElement
-  get containerElement() {
-    return this._containerElement ??= (this.block.hostElement.querySelector('.children-render-container') || this.block.hostElement)
-  }
-
-  private _compRefs: BlockCraft.BlockComponentRef[] = []
-
-  constructor(private readonly block: BlockCraft.BlockComponent, private vm: DocVM) {
-  }
-
-  insert(index: number, comps: BlockCraft.BlockComponentRef[]) {
-    const _chs = comps.map(comp => {
-      comp.instance.parentId = this.block.id;
-      return comp.location.nativeElement
-    })
-    if (!this._compRefs.length || index === 0) {
-      this.containerElement.prepend(..._chs)
-    } else {
-      const startComps = this._compRefs[index - 1]
-      startComps.instance.hostElement.after(..._chs)
-    }
-    this._compRefs.splice(index, 0, ...comps)
-  }
-
-  remove(index: number, length = 1) {
-    const comps = this._compRefs.splice(index, length)
-    comps.forEach(comp => {
-      this.vm.destroy(comp.instance.id)
-    })
-  }
-
-  clearAll() {
-    this._compRefs.forEach(comp => {
-      this.vm.destroy(comp.instance.id)
-    })
-    this._compRefs = []
-  }
-
-  get(index: number) {
-    return this._compRefs[index]
-  }
-
-  slice(start: number, end: number) {
-    return this._compRefs.slice(start, start + end)
-  }
-
-  splice(index: number, length: number) {
-    return this._compRefs.splice(index, length)
-  }
-
-  get length() {
-    return this._compRefs.length
-  }
-
-}
-
 declare global {
   namespace BlockCraft {
     type ViewManager = DocVM

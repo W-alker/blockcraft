@@ -11,7 +11,7 @@ import {
 } from "@angular/core";
 import { NativeBlockModel, Obj2YMap, proxyMap, YBlock } from "../../reactive";
 import {BlockCraftError, ErrorCode} from "../../../../global";
-import { BlockChildrenRenderRef, ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC } from "../../../doc";
+import { ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC } from "../../../doc";
 import { BlockNodeType, IBlockProps, IBlockSnapshot } from "../../types";
 import { Subject } from "rxjs";
 import {createBlockGapSpace} from "../../../utils";
@@ -20,6 +20,7 @@ import { STR_LINE_BREAK } from "../../inline";
 import { EditorEventName } from "../../event";
 import {
   BlockRenderContext,
+  BlockChildrenRenderRef,
   cloneBlockSnapshot,
   snapshotTextContent,
   snapshotToNativeBlockModel
