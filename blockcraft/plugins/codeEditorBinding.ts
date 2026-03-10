@@ -9,18 +9,18 @@ import {
 import {BlockCraftError, ErrorCode, getLinesByRange, getScrollContainer} from "../global";
 
 export class CodeInlineEditorBinding extends DocPlugin {
-  private _compositionAnchor: OneShotCursorAnchor | null = null
+  // private _compositionAnchor: OneShotCursorAnchor | null = null
 
-  private get compositionAnchor() {
-    return this._compositionAnchor ||= new OneShotCursorAnchor(this.doc)
-  }
-
-  @EventListen('compositionStart', {flavour: 'code'})
-  @EventListen('compositionStart', {flavour: 'mermaid-textarea'})
-  private _handleCompositionStart() {
-    this.compositionAnchor.reset()
-    this.compositionAnchor.captureFromSelection({isComposing: true})
-  }
+  // private get compositionAnchor() {
+  //   return this._compositionAnchor ||= new OneShotCursorAnchor(this.doc)
+  // }
+  //
+  // @EventListen('compositionStart', {flavour: 'code'})
+  // @EventListen('compositionStart', {flavour: 'mermaid-textarea'})
+  // private _handleCompositionStart() {
+  //   this.compositionAnchor.reset()
+  //   this.compositionAnchor.captureFromSelection({isComposing: true})
+  // }
 
   @EventListen('compositionEnd', {flavour: 'code'})
   @EventListen('compositionEnd', {flavour: 'mermaid-textarea'})
@@ -32,28 +32,26 @@ export class CodeInlineEditorBinding extends DocPlugin {
       if (!sel || sel.from.type !== 'text') {
         throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
       }
+
       const text = ev.data
 
       const {block, index} = sel.from
       const isZero = isZeroSpace(sel.raw.startContainer)
-      const fallbackIndex = isZero ? index : Math.max(0, index - text.length)
-      const {block: insertBlock, index: insertIndex} = this.compositionAnchor.resolve({block, index: fallbackIndex})!
 
       this.doc.crud.transact(() => {
-        insertBlock.yText.insert(insertIndex, text)
+        block.yText.insert(isZero ? index : index - text.length, text)
       }, ORIGIN_SKIP_SYNC)
 
-      insertBlock.rerender()
+      block.rerender()
       // if (block.flavour === 'code' && block.props.lang === 'PlainText') {
       // }
       //
       requestAnimationFrame(() => {
-        insertBlock.setInlineRange(insertIndex + text.length)
+        block.setInlineRange(isZero ? text.length + index : index)
       })
       next?.()
       return true
     } finally {
-      this.compositionAnchor.reset()
     }
   }
 

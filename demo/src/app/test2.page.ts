@@ -2,6 +2,7 @@ import {Component, ElementRef, ViewChild} from "@angular/core";
 import * as Y from 'yjs'
 import {WebsocketProvider} from "y-websocket";
 import {EditorMigrate} from "../version-adapter/transformer";
+import {RootBlockSchema} from "../../../blockcraft";
 
 @Component({
   selector: 'app-test2',
@@ -25,10 +26,11 @@ export class Test2Page {
   }
 
   async onFlush() {
-    const ids = prod_ids
-    for (const id of ids) {
-      await this.flushDoc(id)
-    }
+    // const ids = prod_ids
+    // for (const id of ids) {
+    //   await this.flushDoc(id)
+    // }
+    this.flushMeetingDocs()
   }
 
   async flushDoc(docId: string) {
@@ -79,38 +81,98 @@ export class Test2Page {
     })
   }
 
-  // async flushFromJSON(docId: string) {
-  //   const request = async (docId: string) => {
-  //     const myHeaders = new Headers();
-  //     myHeaders.append("appType", "bct");
-  //     myHeaders.append("device", "IOS");
-  //     myHeaders.append("language", "zh");
-  //     myHeaders.append("deviceId", "ED380414932542BAB4993E5AC3E07C64");
-  //     myHeaders.append("appVersion", "1.0.120");
-  //     // myHeaders.append("timeZone", "Asia/Shanghai");
-  //     myHeaders.append("osVersion", "16.5.1");
-  //     myHeaders.append("cookieId", "6835bb53551ee570db0575c8");
-  //     myHeaders.append("siteName", "b");
-  //     myHeaders.append("envType", "pre");
-  //     myHeaders.append("User-Agent", "Apifox/1.0.0 (https://apifox.com)");
-  //     myHeaders.append("Content-Type", "application/json");
-  //     myHeaders.append("Accept", "*/*");
-  //     myHeaders.append("Host", "196.168.1.81:3399");
-  //     myHeaders.append("Connection", "keep-alive");
-  //
-  //     await (await fetch("http://api-pre.jinqidongli.com/doc/flush/article", {
-  //       method: 'POST',
-  //       headers: myHeaders,
-  //       body: JSON.stringify({
-  //         id: docId,
-  //       }),
-  //       redirect: 'follow'
-  //     })).json().then(async docDetail => {
-  //     }).catch(e => {
-  //     })
-  //   }
-  // }
+  async flushFromJSON(docId: string) {
+    const request = async (docId: string) => {
+      const myHeaders = new Headers();
+      myHeaders.append("appType", "bct");
+      myHeaders.append("device", "IOS");
+      myHeaders.append("language", "zh");
+      myHeaders.append("deviceId", "ED380414932542BAB4993E5AC3E07C64");
+      myHeaders.append("appVersion", "1.0.120");
+      // myHeaders.append("timeZone", "Asia/Shanghai");
+      myHeaders.append("osVersion", "16.5.1");
+      myHeaders.append("cookieId", "6835bb53551ee570db0575c8");
+      myHeaders.append("siteName", "b");
+      myHeaders.append("envType", "pre");
+      myHeaders.append("User-Agent", "Apifox/1.0.0 (https://apifox.com)");
+      myHeaders.append("Content-Type", "application/json");
+      myHeaders.append("Accept", "*/*");
+      myHeaders.append("Host", "196.168.1.81:3399");
+      myHeaders.append("Connection", "keep-alive");
 
+      await (await fetch("http://api-pre.jinqidongli.com/doc/flush/article", {
+        method: 'POST',
+        headers: myHeaders,
+        body: JSON.stringify({
+          id: docId,
+        }),
+        redirect: 'follow'
+      })).json().then(async docDetail => {
+      }).catch(e => {
+      })
+    }
+  }
+
+  async flushMeetingDocs() {
+    const request = async (uri: string, data: any = {}) => {
+      const myHeaders = new Headers();
+      myHeaders.append("appType", "bct");
+      myHeaders.append("device", "IOS");
+      myHeaders.append("language", "zh");
+      myHeaders.append("deviceId", "ED380414932542BAB4993E5AC3E07C64");
+      myHeaders.append("appVersion", "1.0.120");
+      // myHeaders.append("timeZone", "Asia/Shanghai");
+      myHeaders.append("osVersion", "16.5.1");
+      myHeaders.append("cookieId", "69afe5fd359c19a63099f16d");
+      myHeaders.append("siteName", "b");
+      myHeaders.append("envType", "pre");
+      myHeaders.append("User-Agent", "Apifox/1.0.0 (https://apifox.com)");
+      myHeaders.append("Content-Type", "application/json");
+      myHeaders.append("Accept", "*/*");
+      myHeaders.append("Host", "196.168.1.81:3399");
+      myHeaders.append("Connection", "keep-alive");
+
+      return await (await fetch("http://196.168.1.216:3399" + uri, {
+        method: 'POST',
+        headers: myHeaders,
+        body: JSON.stringify(data),
+        redirect: 'follow'
+      })).json()
+    }
+
+    let pageIndex = 0
+    let hasMore = false;
+    const flush = async () => {
+      const res = await request('/meetingDoc/migrateQueryOldDocs', {pageIndex})
+      hasMore = res.hasMore
+      const items = res.items.map((v: any) => {
+        const sections = v.textSections.map((v: any) => v.content)
+          .reduce((pre: any, cur: any) => {
+            pre[cur?.id] = cur
+            return pre
+          }, {})
+        return {
+          id: v.id,
+          docType: v.docType,
+          meetingId: v.meetingId,
+          data: v.sections.map((sec: any) => sections[sec]).filter(Boolean)
+        }
+      })
+
+      for(let i = 0; i < items.length; i++) {
+        const data = EditorMigrate.transform(items[i].data)
+        const rootSnapshot = RootBlockSchema.createSnapshot(items[i].id, data)
+        await request('/meetingDoc/saveMeetingDoc', {
+          ...items[i],
+          doc: rootSnapshot
+        })
+      }
+      pageIndex++
+      if(hasMore) flush()
+    }
+    flush()
+
+  }
 
   async onCsv(e: any) {
     const file = e.target.files[0];
@@ -125,35 +187,3 @@ export class Test2Page {
   }
 }
 
-const _fail_ids = [
-  '6952302adf61df69e8c4e95c',
-  '6952302bc9ced620c5afed89',
-  '685d18e34d78a96cfb610826',
-  '6952302bdf61df69e8c4e95e',
-  '6952302bc9ced620c5afed8b',
-  '6952302bdf61df69e8c4e960',
-  '675a89e2240a616c438ba76e',
-  '662b2809bd53f07ec953343b',
-  '65ee876476ee3d10ffd4ce2f',
-  '674d85ed34c2814531dd406a',
-  '677bad9e2b639a4be50446d1',
-  '677badbb2b639a4be50446dc',
-  '677ba0e2341f673c42900f98',
-  '677ba87c341f673c429010ed',
-  '677ba06f098541777ea2492d',
-  '677bada92b639a4be50446d9',
-  '677ba070341f673c42900f88',
-  '658521b63a11bb5b0b1573a5',
-  '673dac5ff0047d051dffcbaf',
-  '662b2813bd53f07ec9533444',
-  '670e21382af0f85085780295',
-  '6746805fbdfbe82304ef78eb',
-  '6756c93e8ea9803a782199aa',
-  '6756c77b8ea9803a782198ab',
-  '67c51cb85ff1c07c046a5f3b'
-];
-
-const prod_ids = [
-  '691aefcc0781f16f91af5b8c',
-  '691300507d9cf51e1cbde2cc'
-]
