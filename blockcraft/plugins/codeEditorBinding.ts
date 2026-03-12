@@ -1,7 +1,7 @@
 import {
   BindHotKey,
   DeltaOperation,
-  DocPlugin, EventListen, isZeroSpace, OneShotCursorAnchor, ORIGIN_SKIP_SYNC,
+  DocPlugin, EventListen, isZeroSpace, ORIGIN_SKIP_SYNC,
   STR_LINE_BREAK,
   STR_TAB,
   UIEventStateContext
@@ -26,32 +26,53 @@ export class CodeInlineEditorBinding extends DocPlugin {
   @EventListen('compositionEnd', {flavour: 'mermaid-textarea'})
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.getDefaultEvent<CompositionEvent>()
-    // ev.preventDefault()
+    ev.preventDefault()
+    const text = ev.data || ''
+    const compositionSession = this.doc.inputManger.compositionSession
+
     try {
-      const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
-      if (!sel || sel.from.type !== 'text') {
-        throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
-      }
+      const point = compositionSession.prepareCommit() || (() => {
+        const {value: sel} = this.doc.selection.recalculate(false, {isComposing: true})
+        if (!sel || sel.from.type !== 'text') {
+          throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
+        }
 
-      const text = ev.data
+        const {block, index} = sel.from
+        const isZero = isZeroSpace(sel.raw.startContainer)
+        return {
+          block,
+          index: isZero ? index : Math.max(0, index - text.length)
+        }
+      })()
 
-      const {block, index} = sel.from
-      const isZero = isZeroSpace(sel.raw.startContainer)
+      const {block, index} = point
 
       this.doc.crud.transact(() => {
-        block.yText.insert(isZero ? index : index - text.length, text)
+        text && block.yText.insert(index, text)
       }, ORIGIN_SKIP_SYNC)
 
       block.rerender()
-      // if (block.flavour === 'code' && block.props.lang === 'PlainText') {
-      // }
-      //
       requestAnimationFrame(() => {
-        block.setInlineRange(isZero ? text.length + index : index)
+        block.setInlineRange(index + text.length)
       })
-      next?.()
+
+      const deferred = compositionSession.drainDeferredPatches()
+      if (deferred.length) {
+        for (const patch of deferred) {
+          try {
+            const patchBlock = this.doc.getBlockById(patch.blockId)
+            if (this.doc.isEditable(patchBlock)) {
+              this.doc.inlineManager.applyDeltaToView(patch.delta, patchBlock.containerElement)
+            }
+          } catch {
+            // deferred patch replay failed; block may have been deleted
+          }
+        }
+      }
+
       return true
     } finally {
+      compositionSession.end()
     }
   }
 
