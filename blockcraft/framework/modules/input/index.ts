@@ -123,20 +123,18 @@ export class InputTransformer {
   @EventListen('compositionEnd')
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.getDefaultEvent<CompositionEvent>()
+    const compositionState = context.get('compositionState')
     ev.preventDefault()
     try {
-      const {value: sel, next} = this.doc.selection.recalculate(false, {isComposing: true})
-      if (!sel || sel.from.type !== 'text') {
+      const text = compositionState.text
+      const fallbackPoint = compositionState.getFallbackPoint()
+      const anchorPoint = this._compositionAnchor.resolve(fallbackPoint)
+      const commitPoint = compositionState.resolveCommitPoint(anchorPoint || fallbackPoint)
+      if (!commitPoint) {
         throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
       }
-      const text = ev.data
-      const {block, index} = sel.from
-      const isZero = isZeroSpace(sel.raw.startContainer)
-      const fallbackIndex = isZero ? index : Math.max(0, index - text.length)
 
-      const sessionPoint = this.compositionSession.prepareCommit({block, index: fallbackIndex})
-      const anchorPoint = this._compositionAnchor.resolve({block, index: fallbackIndex})
-      const {block: insertBlock, index: insertIndex} = sessionPoint || anchorPoint || {block, index: fallbackIndex}
+      const {block: insertBlock, index: insertIndex} = commitPoint
 
       const insertAttrs = this.consumeNextInsertAttrs(insertBlock.id, insertIndex, {allowNearby: true})
       const cursorIndex = insertIndex + text.length
@@ -163,7 +161,7 @@ export class InputTransformer {
         }
       }
 
-      next?.()
+      compositionState.next?.()
     } finally {
       this._compositionAnchor.reset()
       this.compositionSession.end()

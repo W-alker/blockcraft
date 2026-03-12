@@ -1,6 +1,7 @@
 import {fromEvent, takeUntil} from "rxjs";
 import {UIEventState, UIEventStateContext} from "../base";
 import {EventScopeSourceType, EventSourceState} from "../state";
+import {CompositionEventState} from "../state/compositionState";
 
 export class CompositionControl {
 
@@ -16,6 +17,7 @@ export class CompositionControl {
   private _buildContext = (event: CompositionEvent) => {
     return UIEventStateContext.from(
       new UIEventState(event),
+      new CompositionEventState(this._dispatcher.doc, event),
       new EventSourceState({event, sourceType: EventScopeSourceType.Selection})
     )
   }

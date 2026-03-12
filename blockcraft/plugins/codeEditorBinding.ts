@@ -1,7 +1,7 @@
 import {
   BindHotKey,
   DeltaOperation,
-  DocPlugin, EventListen, isZeroSpace, ORIGIN_SKIP_SYNC,
+  DocPlugin, EventListen, ORIGIN_SKIP_SYNC,
   STR_LINE_BREAK,
   STR_TAB,
   UIEventStateContext
@@ -26,24 +26,16 @@ export class CodeInlineEditorBinding extends DocPlugin {
   @EventListen('compositionEnd', {flavour: 'mermaid-textarea'})
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.getDefaultEvent<CompositionEvent>()
+    const compositionState = context.get('compositionState')
     ev.preventDefault()
-    const text = ev.data || ''
+    const text = compositionState.text
     const compositionSession = this.doc.inputManger.compositionSession
 
     try {
-      const point = compositionSession.prepareCommit() || (() => {
-        const {value: sel} = this.doc.selection.recalculate(false, {isComposing: true})
-        if (!sel || sel.from.type !== 'text') {
-          throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
-        }
-
-        const {block, index} = sel.from
-        const isZero = isZeroSpace(sel.raw.startContainer)
-        return {
-          block,
-          index: isZero ? index : Math.max(0, index - text.length)
-        }
-      })()
+      const point = compositionState.resolveCommitPoint()
+      if (!point) {
+        throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
+      }
 
       const {block, index} = point
 

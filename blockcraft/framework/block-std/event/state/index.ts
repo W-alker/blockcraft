@@ -1,4 +1,5 @@
 export * from './sourceState'
 export * from './keyboardState'
 export * from './clipboardState'
+export * from './compositionState'
 export * from './selectState'
