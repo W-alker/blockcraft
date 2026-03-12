@@ -16,12 +16,14 @@ import {BlockSelection, INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
 import {BlockCraftError, ErrorCode, performanceTest, sliceDelta} from "../../../global";
 import {OneShotCursorAnchor} from "../../utils/one-shot-selection-anchor";
+import {CompositionSession} from "./composition-session";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
 @DocEventRegister
 export class InputTransformer {
   private readonly _compositionAnchor: OneShotCursorAnchor
+  readonly compositionSession: CompositionSession
   private _nextInsertAttrs: {
     blockId: string
     index: number
@@ -30,6 +32,7 @@ export class InputTransformer {
 
   constructor(public readonly doc: BlockCraft.Doc) {
     this._compositionAnchor = new OneShotCursorAnchor(doc)
+    this.compositionSession = new CompositionSession(doc)
   }
 
   setNextInsertAttrs(attrs: DeltaInsert['attributes'], point: { blockId: string, index: number }) {
@@ -77,6 +80,7 @@ export class InputTransformer {
   @EventListen('compositionStart')
   private _handleCompositionStart(context: UIEventStateContext) {
     this._compositionAnchor.reset()
+    this.compositionSession.reset()
     const curSel = this.doc.selection.value!
     if (curSel.isAllSelected) {
       context.preventDefault();
@@ -91,7 +95,7 @@ export class InputTransformer {
       this.doc.selection.setCursorAtBlock(p.id, true)
       this.doc.selection.recalculate()
       this._compositionAnchor.captureFromSelection({isComposing: true})
-      // this._deleteAllSelected(curSel)
+      this.compositionSession.startFromSelection({isComposing: true})
       return true
     }
 
@@ -112,6 +116,7 @@ export class InputTransformer {
       this._replaceText(curSel)
     }
     this._compositionAnchor.captureFromSelection({isComposing: true})
+    this.compositionSession.startFromSelection({isComposing: true})
     return true
   }
 
@@ -128,21 +133,40 @@ export class InputTransformer {
       const {block, index} = sel.from
       const isZero = isZeroSpace(sel.raw.startContainer)
       const fallbackIndex = isZero ? index : Math.max(0, index - text.length)
-      const {block: insertBlock, index: insertIndex} = this._compositionAnchor.resolve({block, index: fallbackIndex})!
+
+      const sessionPoint = this.compositionSession.prepareCommit({block, index: fallbackIndex})
+      const anchorPoint = this._compositionAnchor.resolve({block, index: fallbackIndex})
+      const {block: insertBlock, index: insertIndex} = sessionPoint || anchorPoint || {block, index: fallbackIndex}
+
       const insertAttrs = this.consumeNextInsertAttrs(insertBlock.id, insertIndex, {allowNearby: true})
       const cursorIndex = insertIndex + text.length
       this.doc.crud.transact(() => {
         insertBlock.yText.insert(insertIndex, text, insertAttrs)
-        // TODO: 更好的中文输入法反显渲染. 目前看必须重新渲染，否则涉及到协同的情况很容易出错
         insertBlock.rerender()
 
         queueMicrotask(() => {
           insertBlock.setInlineRange(cursorIndex)
         })
       }, ORIGIN_SKIP_SYNC)
+
+      const deferred = this.compositionSession.drainDeferredPatches()
+      if (deferred.length) {
+        for (const patch of deferred) {
+          try {
+            const patchBlock = this.doc.getBlockById(patch.blockId)
+            if (this.doc.isEditable(patchBlock)) {
+              this.doc.inlineManager.applyDeltaToView(patch.delta, patchBlock.containerElement)
+            }
+          } catch {
+            // deferred patch replay failed; block may have been deleted
+          }
+        }
+      }
+
       next?.()
     } finally {
       this._compositionAnchor.reset()
+      this.compositionSession.end()
     }
   }
 
@@ -150,6 +174,7 @@ export class InputTransformer {
   private _handleBeforeInput(context: BlockCraft.EventStateContext) {
     const ev = context.get('defaultState').event as InputEvent
     this._compositionAnchor.captureFromInputEvent(ev, {isComposing: true})
+    this.compositionSession.updateAnchorFromInputEvent(ev, {isComposing: true})
 
     if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {
       ev.preventDefault()

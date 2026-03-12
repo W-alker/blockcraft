@@ -70,15 +70,11 @@ export class FakeRange {
     if (!this.doc.isEditable(block)) {
       throw new BlockCraftError(ErrorCode.SelectionError, `Set fake range: Block ${block.id} is not editable`)
     }
-    const range = block.hostElement.ownerDocument.createRange()
-    const startNodePos = this.doc.inlineManager.queryNodePositionInlineByOffset((block as EditableBlockComponent).containerElement, index)
-    range.setStart(startNodePos.node, startNodePos.offset)
-    if (!length) {
-      range.collapse()
-    } else {
-      const endNodePos = this.doc.inlineManager.queryNodePositionInlineByOffset((block as EditableBlockComponent).containerElement, index + length)
-      range.setEnd(endNodePos.node, endNodePos.offset)
-    }
+    const mapper = this.doc.inlineManager.positionMapper
+    const container = (block as EditableBlockComponent).containerElement
+    const range = length
+      ? mapper.modelRangeToDomRange(container, index, index + length)
+      : mapper.modelRangeToDomRange(container, index)
 
     const wrapper = block.containerElement
     const wrapRect = wrapper.getBoundingClientRect()

@@ -16,6 +16,8 @@ import setAttributes from "./setAttributes";
 import {compareAttributesWithEle} from "./compareAttributes";
 import {createZeroSpace} from "../../utils";
 import {getAttributesFrom} from "./getAttributes";
+import {InlinePositionMapper} from "./position/inline-position-mapper";
+import {InlinePluginAPI} from "./runtime/inline-plugin-api";
 
 export type EmbedConverter = {
   toDelta: EmbedViewToDelta
@@ -34,8 +36,12 @@ export class InlineManager {
   private _isRerendering = false
   private _pendingUpdateKeys = new Set<string>()
 
+  readonly positionMapper = new InlinePositionMapper()
+  readonly pluginAPI: InlinePluginAPI
+
   constructor(readonly doc: BlockCraft.Doc) {
     this._embedConverterMap = new Map<string, EmbedConverter>(this.doc.config.embeds || [])
+    this.pluginAPI = new InlinePluginAPI(() => this.positionMapper, () => this.doc)
   }
 
   static setAttrs(element: HTMLElement, attributes?: IInlineNodeAttrs) {
@@ -534,36 +540,13 @@ export class InlineManager {
     node: HTMLElement | Text,
     offset: number
   } {
-    if (offset === 0) {
-      return {
-        node: container.firstElementChild?.firstChild as Text,
-        offset: 0
-      }
-    }
-
-    const elementsNodes = Array.from(container.querySelectorAll(INLINE_ELEMENT_TAG)) as HTMLElement[]
-    for (const ele of elementsNodes) {
-      const isEmbed = (ele.firstElementChild as HTMLElement).contentEditable === 'false'
-      const eleLength = isEmbed ? 1 : ele.textContent!.length
-      if (offset <= eleLength) {
-        if (isEmbed && offset === 1) {
-          return {
-            node: ele.querySelector('[data-zero-space="true"]')!.firstChild as Text,
-            offset: 0
-          }
-        }
-
-        return {
-          node: ele.firstElementChild!.firstChild as Text,
-          offset: offset
-        }
-      }
-      offset -= eleLength
-    }
-    throw new BlockCraftError(ErrorCode.InlineEditorError, `Error inline node position queried: character offset: ${offset}`)
+    return this.positionMapper.modelPointToDomPoint(container, offset) as { node: HTMLElement | Text, offset: number }
   }
 
 }
 
 export * from './const'
 export * from './compareAttributes'
+export * from './position/inline-position-mapper'
+export * from './blot'
+export * from './runtime'

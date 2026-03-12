@@ -5,11 +5,10 @@ import {
   DocEventRegister,
   EditableBlockComponent,
   EventListen,
-  INLINE_ELEMENT_TAG,
   INLINE_END_BREAK_CLASS, STR_LINE_BREAK,
   UIEventStateContext
 } from "../../block-std";
-import {BlockCraftError, ErrorCode, IS_MAC, performanceTest} from "../../../global";
+import {BlockCraftError, ErrorCode, IS_MAC} from "../../../global";
 import {BehaviorSubject, skip, take, takeUntil} from "rxjs";
 import {closetBlockId, isZeroSpace} from "../../utils";
 import {SelectionSelectedManager} from "./selected-manager";
@@ -128,9 +127,10 @@ export class SelectionManager {
     const isBackward = state.raw.key === "ArrowUp"
 
     const focusBlock = this.doc.getBlockById(focusBlockId)
+    const mapper = this.doc.inlineManager.positionMapper
 
     const extendStartOrEnd = (block: EditableBlockComponent, isStart: boolean) => {
-      const nodeAndOffset = this.doc.inlineManager.queryNodePositionInlineByOffset(block.containerElement, isStart ? 0 : block.textLength)
+      const nodeAndOffset = mapper.modelPointToDomPoint(block.containerElement, isStart ? 0 : block.textLength)
       docSelection.extend(nodeAndOffset.node, nodeAndOffset.offset)
     }
 
@@ -186,8 +186,6 @@ export class SelectionManager {
       (isBackward && (opObj.type === 'selected' ? false : (opObj.index > 0))) ||
       (!isBackward && (opObj.type === 'selected' ? false : (opObj.index + opObj.length < opObj.block.textLength)))
     ) {
-      // ctx.preventDefault()
-      // docSelection.modify('extend', isBackward ? 'left' : 'right', 'character')
       return true
     }
 
@@ -196,7 +194,6 @@ export class SelectionManager {
       ctx.preventDefault()
       const parent = this.doc.getBlockById(focusBlockId).parentBlock
       if (parent && parent.nodeType !== BlockNodeType.root) {
-        // 选中父级, 一定是非editable块
         docSelection.setBaseAndExtent(
           parent.hostElement, isBackward ? parent.hostElement.childElementCount : 0,
           parent.hostElement, isBackward ? 0 : parent.hostElement.childElementCount
@@ -206,9 +203,10 @@ export class SelectionManager {
     }
 
     ctx.preventDefault()
+    const mapper = this.doc.inlineManager.positionMapper
 
     const extendStartOrEnd = (block: EditableBlockComponent, isStart: boolean) => {
-      const nodeAndOffset = this.doc.inlineManager.queryNodePositionInlineByOffset(block.containerElement, isStart ? 0 : block.textLength)
+      const nodeAndOffset = mapper.modelPointToDomPoint(block.containerElement, isStart ? 0 : block.textLength)
       docSelection.extend(nodeAndOffset.node, nodeAndOffset.offset)
     }
 
@@ -457,101 +455,13 @@ export class SelectionManager {
     const {startContainer, endContainer, startOffset, endOffset, collapsed} = range
     const startBlock = this._searchClosetBlockByNode(startContainer)
 
-    const getInlineOffset = (block: EditableBlockComponent<any>, node: Node, offset: number) => {
+    const mapper = this.doc.inlineManager.positionMapper
 
+    const getInlineOffset = (block: EditableBlockComponent<any>, node: Node, offset: number) => {
       if (node === block.hostElement && block.hostElement !== block.containerElement) {
         return offset > 0 ? block.textLength : 0
       }
-
-      const isContainer = node === block.containerElement
-      const elements = Array.from(block.containerElement.querySelectorAll(INLINE_ELEMENT_TAG)) as HTMLElement[]
-      if (elements.length === 0) {
-        return 0
-      }
-
-      // Safari/Chrome 在 IME 期间会把光标放在 container 的首个 gap 后（offset=1）
-      if (isContainer && offset <= 1) {
-        return 0
-      }
-
-      const zeroNode = isZeroSpace(node)
-      if (zeroNode?.parentElement === block.containerElement) {
-        return 0
-      }
-
-      const cElement = (() => {
-        if (isContainer) {
-          const index = Math.min(elements.length - 1, Math.max(0, offset - 2))
-          return elements[index]
-        }
-
-        if (node instanceof HTMLElement && node.localName === INLINE_ELEMENT_TAG) {
-          return node
-        }
-
-        return node.parentElement?.closest(INLINE_ELEMENT_TAG) as HTMLElement | null
-      })()
-
-      if (!cElement) {
-        throw new BlockCraftError(ErrorCode.SelectionError, 'Fatal range position')
-      }
-
-      const getElementLength = (element: HTMLElement) => {
-        const firstNode = element.firstChild
-        const isEmbed = firstNode instanceof HTMLElement && firstNode.contentEditable === 'false'
-        if (isEmbed) return 1
-
-        // composing 时，浏览器可能会把文本直接放在 c-element 下
-        if (options?.isComposing && firstNode instanceof Text) {
-          return firstNode.length
-        }
-
-        return element.textContent?.length ?? 0
-      }
-
-      const getNodeOffset = (targetNode: Node, nodeOffset: number, elementLength: number) => {
-        if (targetNode instanceof Text) {
-          return Math.max(0, Math.min(nodeOffset, targetNode.length))
-        }
-
-        if (!(targetNode instanceof HTMLElement)) {
-          return Math.max(0, Math.min(nodeOffset, elementLength))
-        }
-
-        if (targetNode === cElement) {
-          const firstNode = cElement.firstChild
-          const isEmbed = firstNode instanceof HTMLElement && firstNode.contentEditable === 'false'
-          if (isEmbed) {
-            return nodeOffset > 0 ? 1 : 0
-          }
-        }
-
-        const boundary = Math.max(0, Math.min(nodeOffset, targetNode.childNodes.length))
-        let textOffset = 0
-        for (let i = 0; i < boundary; i++) {
-          const child = targetNode.childNodes[i]
-          if (isZeroSpace(child)) continue
-          textOffset += child.textContent?.length ?? 0
-        }
-
-        return Math.max(0, Math.min(textOffset, elementLength))
-      }
-
-      let pos = 0
-      for (let i = 0; i < elements.length; i++) {
-        const element = elements[i]
-        const elementLength = getElementLength(element)
-        if (element === cElement) {
-          const isGap = isZeroSpace(node) && node.parentElement?.closest(INLINE_ELEMENT_TAG) === cElement
-          if (isGap) {
-            return pos + 1
-          }
-          return pos + (isContainer ? elementLength : getNodeOffset(node, offset, elementLength))
-        }
-        pos += elementLength
-      }
-
-      throw new BlockCraftError(ErrorCode.SelectionError, 'Fatal range position')
+      return mapper.domPointToModelPoint(block.containerElement, node, offset, options)
     }
 
     const getBlockRange = (block: BaseBlockComponent<any>, node: Node, offset: number): IBlockRange => {
@@ -688,10 +598,11 @@ export class SelectionManager {
   }
 
   private _setRange(from: IBlockInlineRangeJSON, to: IBlockInlineRangeJSON | null = null) {
+    const mapper = this.doc.inlineManager.positionMapper
     const fromBlock = this.doc.getBlockById(from.blockId)
     const range = document.createRange()
     if (from.type === 'text') {
-      const startNodePos = this.doc.inlineManager.queryNodePositionInlineByOffset((fromBlock as EditableBlockComponent).containerElement, from.index)
+      const startNodePos = mapper.modelPointToDomPoint((fromBlock as EditableBlockComponent).containerElement, from.index)
       range.setStart(startNodePos.node, startNodePos.offset)
       if (from.length === 0) {
         range.collapse(true)
@@ -699,7 +610,7 @@ export class SelectionManager {
       }
 
       if (!to) {
-        const endNodePos = this.doc.inlineManager.queryNodePositionInlineByOffset((fromBlock as EditableBlockComponent).containerElement, from.index + from.length)
+        const endNodePos = mapper.modelPointToDomPoint((fromBlock as EditableBlockComponent).containerElement, from.index + from.length)
         range.setEnd(endNodePos.node, endNodePos.offset)
         return range
       }
@@ -716,7 +627,7 @@ export class SelectionManager {
 
     const toBlock = this.doc.getBlockById(to.blockId)
     if (to.type === 'text') {
-      const endNodePos = this.doc.inlineManager.queryNodePositionInlineByOffset((toBlock as EditableBlockComponent).containerElement, to.index + to.length)
+      const endNodePos = mapper.modelPointToDomPoint((toBlock as EditableBlockComponent).containerElement, to.index + to.length)
       range.setEnd(endNodePos.node, endNodePos.offset)
       return range
     }
@@ -757,7 +668,7 @@ export class SelectionManager {
    * @param index the index of the cursor
    */
   setCursorAt(block: EditableBlockComponent, index: number) {
-    const startNodePos = this.doc.inlineManager.queryNodePositionInlineByOffset(block.containerElement, index)
+    const startNodePos = this.doc.inlineManager.positionMapper.modelPointToDomPoint(block.containerElement, index)
     const selection = document.getSelection()!
     selection.setPosition(startNodePos.node, startNodePos.offset)
   }
