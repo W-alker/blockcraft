@@ -214,10 +214,10 @@ export class BlockTransformContextMenu {
     const schema = this.doc.schemas.get(flavour)!
     if (schema.nodeType === BlockNodeType.editable) {
       const snapshot = this.doc.schemas.createSnapshot(schema.flavour, [[], this.activeBlock.props])
-      this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [snapshot])
-        .then(() => {
-          this.doc.selection.setCursorAtBlock(snapshot.id, true)
-        })
+      void this.doc.chain()
+        .replaceWithSnapshots(this.activeBlock.id, [snapshot])
+        .setCursorAtBlock(snapshot.id, true)
+        .run()
       return
     }
 
@@ -227,10 +227,10 @@ export class BlockTransformContextMenu {
       if (!params) return
       const newBlock = this.doc.schemas.createSnapshot(schema.flavour, params as any)
       newBlock.props.depth = this.activeBlock.props.depth
-      this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [newBlock])
-        .then(() => {
-          this.doc.selection.setCursorAtBlock(newBlock.id, true)
-        })
+      void this.doc.chain()
+        .replaceWithSnapshots(this.activeBlock.id, [newBlock])
+        .setCursorAtBlock(newBlock.id, true)
+        .run()
     })
   }
 

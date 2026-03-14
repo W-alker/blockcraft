@@ -587,9 +587,10 @@ export class TriggerBtn {
       blockCreator.getParamsByScheme(item).then(params => {
         if (!targetBlock || !params) return
         const newBlock = this.doc.schemas.createSnapshot(item.flavour, params as any)
-        this.doc.crud.insertBlocksAfter(targetBlock, [newBlock]).then(() => {
-          this.doc.selection.setCursorAtBlock(newBlock.id, true)
-        })
+        void this.doc.chain()
+          .insertAfterSnapshots(targetBlock, [newBlock])
+          .setCursorAtBlock(newBlock.id, true)
+          .run()
       })
     }
 
@@ -600,11 +601,11 @@ export class TriggerBtn {
         ...block.props,
         heading: undefined
       }])
-      this.doc.crud.replaceWithSnapshots(this.activeBlock!.id, [newBlock]).then(() => {
-        nextTick().then(() => {
-          this.doc.selection.setCursorAtBlock(newBlock.id, true)
-        })
-      })
+      void this.doc.chain()
+        .replaceWithSnapshots(this.activeBlock!.id, [newBlock])
+        .nextTick()
+        .setCursorAtBlock(newBlock.id, true)
+        .run()
     }
 
     if (this.isEmpty) {
@@ -651,22 +652,28 @@ export class TriggerBtn {
       case 'cut': {
         if (!this.activeBlock) return;
         this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
-          this.activeBlock && this.doc.crud.deleteBlockById(this.activeBlock.id).then(() => {
-            requestAnimationFrame(() => {
-              this.doc.selection.recalculate()
-            })
-            this.doc.messageService.success('已剪切')
-          })
+          if (this.activeBlock) {
+            void this.doc.chain()
+              .deleteById(this.activeBlock.id)
+              .animationFrame()
+              .recalculateSelection()
+              .tap(() => {
+                this.doc.messageService.success('已剪切')
+              })
+              .run()
+          }
           this.close()
         })
       }
         break
       case 'delete':
-        this.activeBlock && this.doc.crud.deleteBlockById(this.activeBlock.id).then(() => {
-          requestAnimationFrame(() => {
-            this.doc.selection.recalculate()
-          })
-        })
+        if (this.activeBlock) {
+          void this.doc.chain()
+            .deleteById(this.activeBlock.id)
+            .animationFrame()
+            .recalculateSelection()
+            .run()
+        }
         break
       case 'copy': {
         if (!this.activeBlock) return;
@@ -683,10 +690,13 @@ export class TriggerBtn {
             depth: this.activeBlock.props.depth,
             heading: item.value
           }])
-          this.doc.crud.insertBlocksAfter(this.activeBlock, [p]).then(() => {
-            this.menuDisabled = true
-            this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
-          })
+          void this.doc.chain()
+            .insertAfterSnapshots(this.activeBlock, [p])
+            .tap(() => {
+              this.menuDisabled = true
+            })
+            .selectOrSetCursorAtBlock(p.id, true)
+            .run()
           return;
         }
         if (this.activeBlock.flavour === 'ordered' && item.value) {
@@ -698,9 +708,10 @@ export class TriggerBtn {
             ...this.activeBlock.props,
             heading: item.value
           }])
-          this.doc.crud.replaceWithSnapshots(this.activeBlock.id, [p]).then(() => {
-            this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
-          })
+          void this.doc.chain()
+            .replaceWithSnapshots(this.activeBlock.id, [p])
+            .selectOrSetCursorAtBlock(p.id, true)
+            .run()
         } else {
           this.activeBlock.updateProps({ heading: item.value as any })
         }

@@ -51,9 +51,10 @@ export class ImgToolbarPlugin extends DocPlugin {
 
     const np = this.doc.schemas.createSnapshot('paragraph', [])
     const imgBlock = block.flavour === 'caption' ? block.parentBlock! : block
-    this.doc.crud.insertBlocks(imgBlock.parentId!, imgBlock.getIndexOfParent() + (state.raw.ctrlKey ? 0 : 1), [np]).then(() => {
-      this.doc.selection.selectOrSetCursorAtBlock(np.id, true)
-    })
+    void this.doc.chain()
+      .insertSnapshots(imgBlock.parentId!, imgBlock.getIndexOfParent() + (state.raw.ctrlKey ? 0 : 1), [np])
+      .selectOrSetCursorAtBlock(np.id, true)
+      .run()
     return true
   }
 
@@ -117,9 +118,10 @@ export class ImgToolbarPlugin extends DocPlugin {
                 this.doc.crud.deleteBlocks(imgBlock.id, 0, 1, true)
               } else {
                 const title = this.doc.schemas.createSnapshot('caption', [])
-                this.doc.crud.insertBlocks(imgBlock.id, 0, [title]).then(() => {
-                  this.doc.selection.selectOrSetCursorAtBlock(title.id, true)
-                })
+                void this.doc.chain()
+                  .insertSnapshots(imgBlock.id, 0, [title])
+                  .selectOrSetCursorAtBlock(title.id, true)
+                  .run()
               }
               break
             case 'change':

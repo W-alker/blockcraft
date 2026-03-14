@@ -260,24 +260,27 @@ export class ClipboardManager {
       }
 
       // 新增blocks
-      this.doc.crud.insertBlocksAfter(editableBlock, snapshots).then(() => {
-        if (collapsed) return
-        const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
-        this.doc.selection.setSelection({
-          blockId: editableBlock.id,
-          index: fromIndex,
-          length: editableBlock.textLength,
-          type: 'text'
-        }, this.doc.isEditable(endBlock) ? {
-          blockId: endBlock.id,
-          index: 0,
-          length: endBlock.textLength,
-          type: 'text'
-        } : {
-          blockId: endBlock.id,
-          type: 'selected'
+      void this.doc.chain()
+        .insertAfterSnapshots(editableBlock, snapshots)
+        .tap(() => {
+          if (collapsed) return
+          const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
+          this.doc.selection.setSelection({
+            blockId: editableBlock.id,
+            index: fromIndex,
+            length: editableBlock.textLength,
+            type: 'text'
+          }, this.doc.isEditable(endBlock) ? {
+            blockId: endBlock.id,
+            index: 0,
+            length: endBlock.textLength,
+            type: 'text'
+          } : {
+            blockId: endBlock.id,
+            type: 'selected'
+          })
         })
-      })
+        .run()
       return true
     }
 

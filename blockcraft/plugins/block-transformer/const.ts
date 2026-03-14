@@ -62,9 +62,10 @@ export const blockTransforms: IBlockTransformConfig[] = [
         o.props['order'] = parsedNum - 1
         o.props['start'] = parsedNum
       }
-      doc.crud.replaceWithSnapshots(from.id, [o]).then(() => {
-        doc.selection.selectOrSetCursorAtBlock(o.id, true)
-      })
+      void doc.chain()
+        .replaceWithSnapshots(from.id, [o])
+        .selectOrSetCursorAtBlock(o.id, true)
+        .run()
     }
   },
   {
@@ -82,9 +83,10 @@ export const blockTransforms: IBlockTransformConfig[] = [
       const callout = doc.schemas.createSnapshot('callout', [])
       const p = doc.schemas.createSnapshot('paragraph', [sliceDelta(from.textDeltas(), matchedString.length), from.props])
       callout.children = [p]
-      doc.crud.replaceWithSnapshots(from.id, [callout]).then(() => {
-        doc.selection.selectOrSetCursorAtBlock(p.id, true)
-      })
+      void doc.chain()
+        .replaceWithSnapshots(from.id, [callout])
+        .selectOrSetCursorAtBlock(p.id, true)
+        .run()
     }
   },
   {

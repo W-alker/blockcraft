@@ -90,16 +90,18 @@ export class BookmarkBlockToolbar {
           return
         }
         const embed = this.doc.schemas.createSnapshot(this.embedType, [this.block.props.url, this.block.props])
-        this.doc.crud.replaceWithSnapshots(this.block.id, [embed]).then(() => {
-        })
+        void this.doc.chain()
+          .replaceWithSnapshots(this.block.id, [embed])
+          .run()
         break
       case 'inline':
         const paragraph = this.doc.schemas.createSnapshot('paragraph', [
           [{ insert: this.block.props.url, attributes: { 'a:link': this.block.props.url } }], this.block.props]
         )
-        this.doc.crud.replaceWithSnapshots(this.block.id, [paragraph]).then(() => {
-          this.doc.selection.selectOrSetCursorAtBlock(paragraph.id, false)
-        })
+        void this.doc.chain()
+          .replaceWithSnapshots(this.block.id, [paragraph])
+          .selectOrSetCursorAtBlock(paragraph.id, false)
+          .run()
         break
     }
   }

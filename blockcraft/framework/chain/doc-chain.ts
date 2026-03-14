@@ -1,4 +1,6 @@
+import { nextTick } from "../../global"
 import { IBlockSnapshot } from "../block-std"
+import { IBlockInlineRangeJSON } from "../modules"
 
 export interface DocChainContext {
   doc: BlockCraft.Doc
@@ -28,6 +30,13 @@ export class DocChain {
   }
 
   /**
+   * Run synchronous mutations inside one Y transaction.
+   */
+  transact<T = unknown>(executor: (doc: BlockCraft.Doc, lastResult: unknown) => T, origin: any = null) {
+    return this.push(context => this.doc.crud.transact(() => executor(context.doc, context.lastResult), origin))
+  }
+
+  /**
    * Run side effects while preserving `lastResult`.
    */
   tap(handler: (context: Readonly<DocChainContext>) => Promise<void> | void) {
@@ -39,6 +48,19 @@ export class DocChain {
       })
       return context.lastResult
     })
+  }
+
+  nextTick() {
+    return this.push(async context => {
+      await nextTick()
+      return context.lastResult
+    })
+  }
+
+  animationFrame() {
+    return this.push(context => new Promise(resolve => {
+      requestAnimationFrame(() => resolve(context.lastResult))
+    }))
   }
 
   snapshot<T extends BlockCraft.BlockFlavour>(flavour: T, ...params: BlockCraft.BlockCreateParameters<T>) {
@@ -99,6 +121,36 @@ export class DocChain {
 
   move(parentId: string, index: number, count: number, targetId: string, targetIndex: number) {
     return this.push(() => this.doc.crud.moveBlocks(parentId, index, count, targetId, targetIndex))
+  }
+
+  selectBlock(block: string | BlockCraft.BlockComponent) {
+    return this.tap(() => {
+      this.doc.selection.selectBlock(block)
+    })
+  }
+
+  setSelection(from: IBlockInlineRangeJSON, to: IBlockInlineRangeJSON | null = null) {
+    return this.tap(() => {
+      this.doc.selection.setSelection(from, to)
+    })
+  }
+
+  selectOrSetCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean, scrollIntoView = true) {
+    return this.tap(() => {
+      this.doc.selection.selectOrSetCursorAtBlock(block, atStart, scrollIntoView)
+    })
+  }
+
+  setCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean, scrollIntoView = true) {
+    return this.tap(() => {
+      this.doc.selection.setCursorAtBlock(block, atStart, scrollIntoView)
+    })
+  }
+
+  recalculateSelection(execNext = true, options?: { isComposing?: boolean }) {
+    return this.tap(() => {
+      this.doc.selection.recalculate(execNext, options)
+    })
   }
 
   async run() {

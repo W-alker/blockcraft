@@ -31,9 +31,10 @@ export class BlockTransformerPlugin extends DocPlugin {
   static transformEditableBlock = (doc: BlockCraft.Doc, from: EditableBlockComponent<any>, to: BlockCraft.BlockFlavour) => {
     const deltas = from.textDeltas()
     const newBlock = doc.schemas.createSnapshot(to, [deltas, from.props])
-    doc.crud.replaceWithSnapshots(from.id, [newBlock]).then(() => {
-      doc.selection.selectOrSetCursorAtBlock(newBlock.id, true)
-    })
+    void doc.chain()
+      .replaceWithSnapshots(from.id, [newBlock])
+      .selectOrSetCursorAtBlock(newBlock.id, true)
+      .run()
   }
 
   init() {
@@ -141,9 +142,10 @@ export class BlockTransformerPlugin extends DocPlugin {
     if (newBlock.nodeType === 'void') {
       appendBlocks.push(this.doc.schemas.createSnapshot('paragraph', [[], block.props]))
     }
-    this.doc.crud.replaceWithSnapshots(block.id, appendBlocks).then(() => {
-      this.doc.selection.setCursorAtBlock(appendBlocks[0].id, true)
-    })
+    void this.doc.chain()
+      .replaceWithSnapshots(block.id, appendBlocks)
+      .setCursorAtBlock(appendBlocks[0].id, true)
+      .run()
     return true
   }
 

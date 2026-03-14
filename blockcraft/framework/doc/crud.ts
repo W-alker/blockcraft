@@ -8,7 +8,7 @@ import {
   YBlock, yBlock2Native
 } from "../block-std";
 import * as Y from "yjs";
-import {BlockCraftError, ErrorCode, nextTick} from "../../global";
+import {BlockCraftError, ErrorCode} from "../../global";
 import {Subject} from "rxjs";
 import {isYArray, isYText} from "../utils/yAbstractType";
 import {DocUndoManger} from "./undoManger";
@@ -53,6 +53,11 @@ export interface IPropsChangeEvent {
       action: "add" | "update" | "delete"
     }>
   }[]
+}
+
+type BlockDeleteRange = {
+  index: number,
+  length: number
 }
 
 export class DocCRUD {
@@ -253,7 +258,6 @@ export class DocCRUD {
     this.vm.deleteByIds([...deleted])
 
     const childComps = this.vm.createComponentByYBlocks(added)
-    const insertDelay: Map<BlockCraft.BlockComponentRef, [number, BlockCraft.BlockComponentRef[]][]> = new Map()
 
     events.forEach(([bm, deltas]) => {
       const _delay_inserts: [number, BlockCraft.BlockComponentRef[]][] = []
@@ -281,7 +285,6 @@ export class DocCRUD {
         }
       })
 
-      insertDelay.set(bm, _delay_inserts)
       bm.instance.onChildrenChange?.(deltas)
       emitEvents.transactions.push({
         block: bm.instance,
@@ -290,9 +293,7 @@ export class DocCRUD {
       })
     })
 
-    nextTick().then(() => {
-      this.onChildrenUpdate$.next(emitEvents)
-    })
+    this.onChildrenUpdate$.next(emitEvents)
   }
 
   getFlatIds = (blockIds: string[]) => {
@@ -311,11 +312,17 @@ export class DocCRUD {
     return flatIds
   }
 
-  async insertNewParagraph(parentId: string, index: number, content: string | InlineModel = '') {
+  insertNewParagraph(parentId: string, index: number, content: string | InlineModel = ''): BlockCraft.BlockComponent {
     const op = typeof content === 'string' ? [{insert: content}] : content
     const p = this.doc.schemas.createSnapshot('paragraph', [op])
-    await this.insertBlocks(parentId, index, [p])
+    this.insertBlocks(parentId, index, [p])
     return this.doc.getBlockById(p.id)
+  }
+
+  private _resolveInsertedBlocks = (snapshots: IBlockSnapshot[]): BlockCraft.BlockComponent[] => {
+    return snapshots
+      .map(snapshot => this.vm.get(snapshot.id)?.instance)
+      .filter((block): block is BlockCraft.BlockComponent => !!block)
   }
 
   private _insertBySnapshots = async (parentComp: BlockCraft.BlockComponentRef, index: number, snapshots: IBlockSnapshot[]) => {
@@ -332,16 +339,16 @@ export class DocCRUD {
     ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, snapshots.map(v => v.id))
   }
 
-  async insertBlocks(parentId: string, index: number, snapshots: IBlockSnapshot[]) {
-    if (!snapshots.length) return
+  insertBlocks(parentId: string, index: number, snapshots: IBlockSnapshot[]): BlockCraft.BlockComponent[] {
+    if (!snapshots.length) return []
     if (index < 0) {
       this.doc.logger.warn(`insertBlocks: index ${index} out of range`)
-      return
+      return []
     }
     const parentComp = this.vm.get(parentId)
     if (!parentComp) {
       this.doc.logger.warn(`parentComp ${parentId} not found`)
-      return
+      return []
     }
 
     // 过滤不允许的blocks
@@ -365,15 +372,7 @@ export class DocCRUD {
       this._insertBySnapshots(parentComp, index, validSnapshots)
     })
 
-    return new Promise((resolve => {
-      const sub = this.onChildrenUpdate$.subscribe(v => {
-        const inserted = v.transactions.find(v => v.block.id === parentComp.instance.id)?.inserted
-        if (inserted && inserted.find(v => v.id === snapshots[snapshots.length - 1].id)) {
-          sub.unsubscribe()
-          resolve(inserted)
-        }
-      })
-    }))
+    return this._resolveInsertedBlocks(validSnapshots)
   }
 
   insertBlocksBefore(block: string | BlockCraft.BlockComponent, snapshots: IBlockSnapshot[]) {
@@ -397,35 +396,34 @@ export class DocCRUD {
     ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).delete(index, count)
   }
 
-  async deleteBlocks(parent: string, index: number, count = 1, force = false) {
+  deleteBlocks(parent: string, index: number, count = 1, force = false): BlockDeleteRange[] {
     if (index < 0) {
       this.doc.logger.warn(`insertBlocks: index ${index} out of range`)
-      return
+      return []
     }
 
-    if (count === 0) return
+    if (count === 0) return []
     const parentComp = this.vm.get(parent)!
     if (index >= parentComp.instance.childrenLength) {
       this.doc.logger.warn(`deleteBlocks: index ${index} out of range`)
-      return
+      return []
     }
 
     if (index === 0 && count >= parentComp.instance.childrenLength && !force) {
       const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)!
       // 如果父元素并非是可渲染任意块的元素
       if (!parentSchema.metadata.renderUnit) {
-        this.deleteBlockById(parent)
-        return
+        return this.deleteBlockById(parent)
       }
 
+      const deletedLength = parentComp.instance.childrenLength
+      const p = this.doc.schemas.createSnapshot('paragraph', [])
       this.transact(() => {
-        this._delete(parentComp, index, count)
-        const p = this.doc.schemas.createSnapshot('paragraph', [])
-        this.insertBlocks(parentComp.instance.id, 0, [p]).then(v => {
-          this.doc.selection.recalculate()
-        })
+        this._delete(parentComp, index, deletedLength)
+        this._insertBySnapshots(parentComp, 0, [p])
       })
-      return
+      this.doc.selection.recalculate()
+      return [{index, length: deletedLength}]
     }
 
     if (index + count > parentComp.instance.childrenLength) {
@@ -435,24 +433,16 @@ export class DocCRUD {
     this.transact(() => {
       this._delete(parentComp, index, count)
     })
-    return new Promise((resolve => {
-      const sub = this.onChildrenUpdate$.subscribe(v => {
-        const deleted = v.transactions.find(v => v.block.id === parentComp.instance.id)?.deleted
-        if (deleted) {
-          sub.unsubscribe()
-          resolve(deleted)
-        }
-      })
-    }))
+    return [{index, length: count}]
   }
 
-  deleteBlockById(blockId: string) {
+  deleteBlockById(blockId: string): BlockDeleteRange[] {
     const block = this.doc.getBlockById(blockId)
     const index = block.getIndexOfParent()
     return this.deleteBlocks(block.parentId!, index, 1)
   }
 
-  async replaceWithSnapshots(blockId: string, snapshots: IBlockSnapshot[]) {
+  replaceWithSnapshots(blockId: string, snapshots: IBlockSnapshot[]): BlockCraft.BlockComponent[] {
     const block = this.doc.getBlockById(blockId)
     const index = block.getIndexOfParent()
     const parentId = block.parentId!
@@ -469,16 +459,7 @@ export class DocCRUD {
         this._insertBySnapshots(parentComp, index, snapshots)
       }
     })
-    // TODO 条件判断优化
-    return new Promise((resolve => {
-      const sub = this.onChildrenUpdate$.subscribe(v => {
-        const inserted = v.transactions.find(v => v.block.id === parentComp.instance.id)?.inserted
-        if (inserted && inserted.find(v => v.id === snapshots[snapshots.length - 1].id)) {
-          sub.unsubscribe()
-          resolve(inserted)
-        }
-      })
-    }))
+    return this._resolveInsertedBlocks(snapshots)
   }
 
   moveBlocks(parentId: string, index: number, count: number, targetId: string, targetIndex: number) {

@@ -397,9 +397,10 @@ export class DocDndService {
       if (!params) return
       const snapshot = this.doc.schemas.createSnapshot(flavour, <any>params)
       initProps && Object.assign(snapshot.props, initProps)
-      this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), [snapshot]).then(() => {
-        this.doc.selection.setCursorAtBlock(snapshot.id, true)
-      })
+      void this.doc.chain()
+        .insertSnapshots(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), [snapshot])
+        .setCursorAtBlock(snapshot.id, true)
+        .run()
     })
   }
 

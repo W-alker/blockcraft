@@ -789,7 +789,9 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (!anchor) return null
 
     const tableSnapshot = this.doc.schemas.createSnapshot('table', [safeRows, safeCols])
-    await this.doc.crud.insertBlocksAfter(anchor, [tableSnapshot])
+    await this.doc.chain()
+      .insertAfterSnapshots(anchor, [tableSnapshot])
+      .run()
 
     const firstParagraphId = (tableSnapshot as any).children?.[0]?.children?.[0]?.children?.[0]?.id as string | undefined
     if (firstParagraphId) {
@@ -806,7 +808,9 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (!anchor) return null
 
     const columnsSnapshot = this.doc.schemas.createSnapshot('columns', [safeCount])
-    await this.doc.crud.insertBlocksAfter(anchor, [columnsSnapshot])
+    await this.doc.chain()
+      .insertAfterSnapshots(anchor, [columnsSnapshot])
+      .run()
 
     const firstParagraphId = (columnsSnapshot as any).children?.[0]?.children?.[0]?.id as string | undefined
     if (firstParagraphId) {

@@ -152,10 +152,11 @@ export class TextToolbarHelper {
     if (!selection) return
 
     this.doc.crud.transact(() => {
-      const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
+      const between: string[] = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
       for (const id of between) {
         const block = this.doc.getBlockById(id)
-        if (!this.doc.isEditable(block) || block.plainTextOnly) continue
+        if (!this.doc.isEditable(block)) continue
+        if (block.plainTextOnly) continue
         block.updateProps({...props})
       }
     })
@@ -164,17 +165,20 @@ export class TextToolbarHelper {
   transformBlocks(flavour: BlockCraft.BlockFlavour, selection: BlockCraft.Selection | null = this.doc.selection.value) {
     if (!selection) return
 
-    this.doc.crud.transact(async () => {
-      const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
-      for (const id of between) {
-        const block = this.doc.getBlockById(id)
-        if (!this.doc.isEditable(block) || block.plainTextOnly || block.flavour === flavour) continue
-        const newBlock = this.doc.schemas.createSnapshot(flavour, [block.textDeltas(), {
-          ...block.props,
-          heading: flavour === 'ordered' ? block.props.heading : null
-        }])
-        await this.doc.crud.replaceWithSnapshots(id, [newBlock])
-      }
-    })
+    const between: string[] = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
+    void this.doc.chain()
+      .transact(() => {
+        between.forEach(id => {
+          const block = this.doc.getBlockById(id)
+          if (!this.doc.isEditable(block)) return
+          if (block.plainTextOnly || block.flavour === flavour) return
+          const newBlock = this.doc.schemas.createSnapshot(flavour, [block.textDeltas(), {
+            ...block.props,
+            heading: flavour === 'ordered' ? block.props.heading : null
+          }])
+          this.doc.crud.replaceWithSnapshots(id, [newBlock])
+        })
+      })
+      .run()
   }
 }

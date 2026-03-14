@@ -237,12 +237,13 @@ export class InlineLinkExtension extends DocPlugin {
       insertBlocks.push(this.doc.schemas.createSnapshot(block.flavour, [splitRightDeltas, block.props]))
     }
 
-    this.doc.crud.transact(() => {
-      block.deleteText(index, block.textLength - index)
-      this.doc.crud.insertBlocksAfter(block, insertBlocks).then(() => {
-        this.doc.selection.selectBlock(bookmark.id)
+    void this.doc.chain()
+      .transact(() => {
+        block.deleteText(index, block.textLength - index)
+        this.doc.crud.insertBlocksAfter(block, insertBlocks)
       })
-    })
+      .selectBlock(bookmark.id)
+      .run()
   }
 
   destroy() {

@@ -416,15 +416,15 @@ export class InputTransformer {
       if (schema.metadata.isLeaf) return true
       const deltas = from.block.textDeltas()
       const np = this.doc.schemas.createSnapshot('paragraph', [deltas, from.block.props])
-      this.doc.crud.replaceWithSnapshots(from.block.id, [np]).then(() => {
-        // 强制触发selectionChange
-        this.doc.selection.setSelection({
+      void this.doc.chain()
+        .replaceWithSnapshots(from.block.id, [np])
+        .setSelection({
           index: 0,
           length: 0,
           type: 'text',
           blockId: np.id
         })
-      })
+        .run()
       return true
     }
 
@@ -586,8 +586,9 @@ export class InputTransformer {
 
     if (isAllSelected) {
       const p = this.doc.schemas.createSnapshot('paragraph', [[], from.block.props])
-      await (state.raw.ctrlKey ? this.doc.crud.insertBlocksBefore(state.selection.firstBlock, [p]) : this.doc.crud.insertBlocksAfter(state.selection.lastBlock, [p]))
-      this.doc.selection.setCursorAtBlock(p.id, true)
+      await (state.raw.ctrlKey ? this.doc.chain().insertBeforeSnapshots(state.selection.firstBlock, [p]) : this.doc.chain().insertAfterSnapshots(state.selection.lastBlock, [p]))
+        .setCursorAtBlock(p.id, true)
+        .run()
       return true
     }
 
@@ -629,12 +630,11 @@ export class InputTransformer {
       }
 
       const p = this.doc.schemas.createSnapshot('paragraph', [[], from.block.props])
-      if (from.block.flavour !== 'paragraph') {
-        await this.doc.crud.replaceWithSnapshots(from.blockId, [p])
-      } else {
-        await this.doc.crud.insertBlocksAfter(from.block, [p])
-      }
-      this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+      await (from.block.flavour !== 'paragraph'
+        ? this.doc.chain().replaceWithSnapshots(from.blockId, [p])
+        : this.doc.chain().insertAfterSnapshots(from.block, [p]))
+        .selectOrSetCursorAtBlock(p.id, true)
+        .run()
       return true
     }
 
@@ -657,12 +657,13 @@ export class InputTransformer {
         ...from.block.props,
         heading: null,
       }])
-    this.doc.crud.transact(() => {
-      from.block.deleteText(from.index)
-      this.doc.crud.insertBlocksAfter(from.block, [p]).then(() => {
-        this.doc.selection.selectOrSetCursorAtBlock(p.id, true)
+    void this.doc.chain()
+      .transact(() => {
+        from.block.deleteText(from.index)
+        this.doc.crud.insertBlocksAfter(from.block, [p])
       })
-    })
+      .selectOrSetCursorAtBlock(p.id, true)
+      .run()
     return true
   }
 

@@ -470,9 +470,11 @@ export class EditorComponent {
       this.doc.selection.setCursorAtBlock(this.doc.root.lastChildren, false)
       return
     }
-    this.doc.crud.insertNewParagraph(this.doc.rootId, this.doc.root.childrenLength, '').then(p => {
-      this.doc.selection.setCursorAtBlock(p, true)
-    })
+    const paragraph = this.doc.schemas.createSnapshot('paragraph', [''])
+    void this.doc.chain()
+      .insertSnapshots(this.doc.rootId, this.doc.root.childrenLength, [paragraph])
+      .setCursorAtBlock(paragraph.id, true)
+      .run()
   }
 
   logSelection() {

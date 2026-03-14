@@ -65,16 +65,18 @@ export class EmbedFrameBlockToolbar {
     switch ($event.value) {
       case 'card':
         const bookmark = this.doc.schemas.createSnapshot('bookmark', [this.frameBlock.props.url])
-        this.doc.crud.replaceWithSnapshots(this.frameBlock.id, [bookmark]).then(() => {
-        })
+        void this.doc.chain()
+          .replaceWithSnapshots(this.frameBlock.id, [bookmark])
+          .run()
         break
       case 'inline':
         const paragraph = this.doc.schemas.createSnapshot('paragraph', [
           [{ insert: this.frameBlock.props.url, attributes: { 'a:link': this.frameBlock.props.url } }]]
         )
-        this.doc.crud.replaceWithSnapshots(this.frameBlock.id, [paragraph]).then(() => {
-          this.doc.selection.selectOrSetCursorAtBlock(paragraph.id, false)
-        })
+        void this.doc.chain()
+          .replaceWithSnapshots(this.frameBlock.id, [paragraph])
+          .selectOrSetCursorAtBlock(paragraph.id, false)
+          .run()
         break
     }
   }
