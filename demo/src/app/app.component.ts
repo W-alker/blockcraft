@@ -60,8 +60,7 @@ const DEFAULT_MENU_TREE_DATA: MenuItemData[] = [
   selector: 'app-root',
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.scss'],
-  standalone: true,
-  imports: [RouterOutlet, MenuTreeComponent, NzInputModule, FormsModule]
+  standalone: false,
 })
 export class AppComponent {
 

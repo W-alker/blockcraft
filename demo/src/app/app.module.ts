@@ -13,22 +13,21 @@ import {MatIconModule, MatIconRegistry} from "@angular/material/icon";
 import {HttpClientModule} from "@angular/common/http";
 import {MenuTreeComponent} from "../components/menu-tree/menu-tree";
 import {DocApiService} from "../services/doc-api.service";
+import {RouterOutlet} from "@angular/router";
 
 registerLocaleData(zh);
 
 @NgModule({
   declarations: [
+    AppComponent,
   ],
   imports: [
-    AppComponent,
     BrowserModule,
     AppRoutingModule,
     NoopAnimationsModule,
-    NzInputModule,
-    FormsModule,
     MatIconModule,
     HttpClientModule,
-    MenuTreeComponent
+    RouterOutlet, MenuTreeComponent, NzInputModule, FormsModule
   ],
   providers: [
     {provide: FILE_UPLOADER, useClass: FileUploaderService},

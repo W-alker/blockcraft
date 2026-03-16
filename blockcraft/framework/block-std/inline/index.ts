@@ -17,7 +17,6 @@ import {compareAttributesWithEle} from "./compareAttributes";
 import {createZeroSpace} from "../../utils";
 import {getAttributesFrom} from "./getAttributes";
 import {InlinePositionMapper} from "./position/inline-position-mapper";
-import {InlinePluginAPI} from "./runtime/inline-plugin-api";
 
 export type EmbedConverter = {
   toDelta: EmbedViewToDelta
@@ -37,11 +36,9 @@ export class InlineManager {
   private _pendingUpdateKeys = new Set<string>()
 
   readonly positionMapper = new InlinePositionMapper()
-  readonly pluginAPI: InlinePluginAPI
 
   constructor(readonly doc: BlockCraft.Doc) {
     this._embedConverterMap = new Map<string, EmbedConverter>(this.doc.config.embeds || [])
-    this.pluginAPI = new InlinePluginAPI(() => this.positionMapper, () => this.doc)
   }
 
   static setAttrs(element: HTMLElement, attributes?: IInlineNodeAttrs) {
