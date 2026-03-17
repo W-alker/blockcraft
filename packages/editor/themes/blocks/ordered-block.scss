@@ -1,0 +1,38 @@
+[data-blockcraft-root="true"] {
+
+  &.readonly {
+    .ordered-block .ordered-block-prefix {
+      cursor: unset;
+
+      &:hover {
+        background-color: unset;
+      }
+    }
+  }
+
+  .ordered-block {
+    max-width: 100%;
+    display: flex;
+    align-items: flex-start;
+
+    .ordered-block-prefix {
+      flex-shrink: 0;
+      margin-right: .25em;
+      cursor: pointer;
+      color: var(--bc-active-color);
+      border-radius: 4px;
+      padding: 0 2px;
+      border: none;
+      background: none;
+      font-size: 1em;
+
+      &:hover {
+        background-color: var(--bc-select-background-color);
+      }
+    }
+
+    .edit-container {
+      width: fit-content;
+    }
+  }
+}

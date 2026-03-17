@@ -1,0 +1,549 @@
+import {
+  DeltaInsert,
+  DeltaInsertEmbed,
+  DeltaInsertText,
+  DeltaOperation,
+  DeltaRetain,
+  IInlineNodeAttrs,
+  InlineModel
+} from "../types";
+import {
+  INLINE_ELEMENT_TAG, INLINE_END_BREAK_CLASS,
+  INLINE_TEXT_NODE_TAG
+} from "./const";
+import {BlockCraftError, ErrorCode} from "../../../global";
+import setAttributes from "./setAttributes";
+import {compareAttributesWithEle} from "./compareAttributes";
+import {createZeroSpace} from "../../utils";
+import {getAttributesFrom} from "./getAttributes";
+import {InlinePositionMapper} from "./position/inline-position-mapper";
+
+export type EmbedConverter = {
+  toDelta: EmbedViewToDelta
+  toView: CreateEmbedView
+  // onMount?: (element: HTMLElement, delta: DeltaInsertEmbed) => (() => void) | void
+  // onUpdate?: (element: HTMLElement, delta: DeltaInsertEmbed) => void
+  onDestroy?: (element: HTMLElement, delta: DeltaInsertEmbed) => void
+}
+export type CreateEmbedView = (delta: DeltaInsertEmbed) => HTMLElement
+export type EmbedViewToDelta = (ele: HTMLElement) => DeltaInsertEmbed
+
+export class InlineManager {
+  private _embedConverterMap: Map<string, EmbedConverter>
+  private _disposeMap = new Map<HTMLElement, () => void>()
+  private _embedMetaMap = new Map<HTMLElement, { key: string, delta: DeltaInsertEmbed }>()
+  private _isRerendering = false
+  private _pendingUpdateKeys = new Set<string>()
+
+  readonly positionMapper = new InlinePositionMapper()
+
+  constructor(readonly doc: BlockCraft.Doc) {
+    this._embedConverterMap = new Map<string, EmbedConverter>(this.doc.config.embeds || [])
+  }
+
+  static setAttrs(element: HTMLElement, attributes?: IInlineNodeAttrs) {
+    if (!attributes) return
+    setAttributes(element, attributes)
+  }
+
+  static getAttrs(element: HTMLElement): IInlineNodeAttrs {
+    return getAttributesFrom(element)
+  }
+
+  static createTextNode(text: string): HTMLElement {
+    const node = document.createElement(INLINE_TEXT_NODE_TAG)
+    node.textContent = text
+    return node
+  }
+
+  static createTextElement(delta: DeltaInsertText): HTMLElement {
+    const node = document.createElement(INLINE_ELEMENT_TAG)
+    node.appendChild(InlineManager.createTextNode(delta.insert))
+    delta.attributes && setAttributes(node, delta.attributes)
+    return node
+  }
+
+  // static createAnchorElement(delta: DeltaInsertText): HTMLElement {
+  //   const node = document.createElement(INLINE_ELEMENT_TAG)
+  //   const anchor = document.createElement('a')
+  //   anchor.textContent = delta.insert
+  //   anchor.href = delta.attributes?.['a:link'] || ''
+  //   node.appendChild(anchor)
+  //   delta.attributes && setAttributes(node, delta.attributes)
+  //   return node
+  // }
+
+  createInlineNode(delta: DeltaInsert): HTMLElement {
+    if (typeof delta.insert === 'string') {
+      // if(delta.attributes?.['a:link']) {
+      //   return InlineManager.createAnchorElement(delta as DeltaInsertText)
+      // }
+      return InlineManager.createTextElement(delta as DeltaInsertText)
+    }
+
+    const embedKey = Object.keys(delta.insert)[0]
+    const converter = this._embedConverterMap.get(embedKey)
+    if (!converter) {
+      throw new BlockCraftError(ErrorCode.InlineEditorError, 'no embed registered for this type: ' + JSON.stringify(delta))
+    }
+    const node = document.createElement(INLINE_ELEMENT_TAG)
+    const span = document.createElement('span')
+    span.setAttribute('contenteditable', 'false')
+    const embed = converter.toView(delta as DeltaInsertEmbed)
+    span.appendChild(embed)
+    setAttributes(node, delta.attributes!)
+    node.append(span, createZeroSpace())
+
+    this._embedMetaMap.set(embed, { key: embedKey, delta: delta as DeltaInsertEmbed })
+
+    if (this._isRerendering) return node
+
+    if (this._pendingUpdateKeys.has(embedKey)) {
+      this._pendingUpdateKeys.delete(embedKey)
+      // requestAnimationFrame(() => {
+      //   converter.onUpdate?.(embed, delta as DeltaInsertEmbed)
+      // })
+    }
+    // else if (converter.onMount) {
+    //   requestAnimationFrame(() => {
+    //     const dispose = converter.onMount!(embed, delta as DeltaInsertEmbed)
+    //     if (dispose) {
+    //       this._disposeMap.set(embed, dispose)
+    //     }
+    //   })
+    // }
+
+    return node
+  }
+
+  /**
+   * 真正销毁单个 embed（stepDelete 场景）
+   * 同时记录 key 到 _pendingUpdateKeys，供后续 stepInsert 判断是否为更新
+   */
+  disposeEmbed(element: HTMLElement) {
+    const embed = element.querySelector('span[contenteditable="false"] > *') as HTMLElement | null
+    if (!embed) return
+    const dispose = this._disposeMap.get(embed)
+    if (dispose) {
+      dispose()
+      this._disposeMap.delete(embed)
+    }
+    const meta = this._embedMetaMap.get(embed)
+    if (meta) {
+      this._embedConverterMap.get(meta.key)?.onDestroy?.(embed, meta.delta)
+      this._pendingUpdateKeys.add(meta.key)
+      this._embedMetaMap.delete(embed)
+    }
+  }
+
+  /**
+   * 清理映射但不调用 dispose/onDestroy（用于 render 重建场景，embed 只是临时移除后会重新 mount）
+   */
+  unmountAll() {
+    this._disposeMap.clear()
+    this._embedMetaMap.clear()
+  }
+
+  /**
+   * 真正销毁所有 embed 的生命周期（用于 InlineManager/Doc 销毁）
+   */
+  destroy() {
+    this._disposeMap.forEach(dispose => dispose())
+    this._disposeMap.clear()
+    this._embedMetaMap.forEach(({key, delta}, embed) => {
+      this._embedConverterMap.get(key)?.onDestroy?.(embed, delta)
+    })
+    this._embedMetaMap.clear()
+  }
+
+  protected _createEndBreak(): HTMLElement {
+    const node = document.createElement(INLINE_ELEMENT_TAG)
+    node.classList.add(INLINE_END_BREAK_CLASS)
+    node.appendChild(document.createElement('br'))
+    return node
+  }
+
+  createInlineNodeGroup(deltas: DeltaInsert[]): HTMLElement[] {
+    return deltas.map(delta => this.createInlineNode(delta))
+  }
+
+  render(deltas: InlineModel, container: HTMLElement) {
+    this._isRerendering = true
+    this.unmountAll()
+    container.replaceChildren(createZeroSpace(), ...this.createInlineNodeGroup(deltas),
+      this._createEndBreak()
+    )
+    this._isRerendering = false
+  }
+
+  applyDeltaToView(deltas: DeltaOperation[], container: HTMLElement) {
+    const elementsNodes = Array.from(container.querySelectorAll(INLINE_ELEMENT_TAG)) as HTMLElement[]
+
+    let nodeStep = {
+      index: 0,
+      indexInNode: 0
+    }
+
+    const sliceInlineElement = (ele: HTMLElement, index: number, len: number, attrs: IInlineNodeAttrs) => {
+      const textNode = ele.firstElementChild!.firstChild as Text
+      const splitTextContent = textNode.wholeText.slice(index, len + index)
+      const clonedNode = ele.cloneNode(true) as HTMLElement
+      setAttributes(clonedNode, attrs)
+      textNode.deleteData(index, len)
+      ;(clonedNode.firstElementChild?.firstChild as Text).textContent = splitTextContent
+      return clonedNode
+    }
+
+    const stepRetain = (op: DeltaRetain) => {
+      let len = op.retain
+
+      while (len > 0) {
+
+        const ele = elementsNodes[nodeStep.index]
+        const eleLength = (ele.firstElementChild as HTMLElement).contentEditable === 'false' ? 1 : ele.textContent!.length
+
+        // AAAAAA|
+        if (nodeStep.indexInNode === eleLength) {
+          nodeStep = {
+            index: nodeStep.index + 1,
+            indexInNode: 0
+          }
+          continue
+        }
+
+        // |AAAAAA?
+        if (nodeStep.indexInNode === 0) {
+          // |AAAAA|A
+          if (len < eleLength) {
+
+            if (op.attributes) {
+              const beforeNode = sliceInlineElement(ele, 0, len, op.attributes)
+              ele.before(beforeNode)
+              elementsNodes.splice(nodeStep.index, 0, beforeNode)
+              nodeStep = {
+                index: nodeStep.index + 1,
+                indexInNode: eleLength - len
+              }
+              len = 0
+              break
+            }
+
+            nodeStep.indexInNode = len
+            len = 0
+            break
+          }
+
+          // |AAAAAA|
+          op.attributes && setAttributes(ele, op.attributes)
+          // if (op.attributes && (ele.firstElementChild as HTMLElement).contentEditable === 'false') {
+          //   const embed = ele.firstElementChild!.firstElementChild as HTMLElement | null
+          //   if (embed) {
+          //     const meta = this._embedMetaMap.get(embed)
+          //     if (meta && isObjectInclude(meta.delta.attributes!, op.attributes)) {
+          //       meta.delta.attributes = {...meta.delta.attributes!, ...op.attributes}
+          //       this._embedConverterMap.get(meta.key)?.onUpdate?.(embed, op.attributes)
+          //     }
+          //   }
+          // }
+          len -= eleLength
+          nodeStep = {
+            index: nodeStep.index,
+            indexInNode: eleLength
+          }
+          continue
+        }
+
+        // A|AAAAAA|
+        if (len >= eleLength - nodeStep.indexInNode) {
+          const restLen = eleLength - nodeStep.indexInNode
+          if (op.attributes) {
+            const node = sliceInlineElement(ele, nodeStep.indexInNode, restLen, op.attributes)
+            ele.after(node)
+            elementsNodes.splice(nodeStep.index + 1, 0, node)
+            nodeStep = {
+              index: nodeStep.index + 1,
+              indexInNode: restLen
+            }
+            len -= restLen
+            continue
+          }
+
+          len -= restLen
+          nodeStep = {
+            index: nodeStep.index + 1,
+            indexInNode: 0
+          }
+          continue
+        }
+
+        // A|AAA|A
+        if (op.attributes) {
+          const textNode = ele.firstElementChild!.firstChild as Text
+          const wholeText = textNode.wholeText
+
+          const beforeNode = ele.cloneNode(false) as HTMLElement
+          const afterNode = ele.cloneNode(false) as HTMLElement
+          beforeNode.appendChild(InlineManager.createTextNode(wholeText.slice(0, nodeStep.indexInNode)))
+          afterNode.appendChild(InlineManager.createTextNode(wholeText.slice(nodeStep.indexInNode + len)))
+
+          textNode.deleteData(nodeStep.indexInNode + len, wholeText.length - nodeStep.indexInNode - len)
+          textNode.deleteData(0, nodeStep.indexInNode)
+
+          ele.before(beforeNode)
+          ele.after(afterNode)
+          setAttributes(ele, op.attributes)
+
+          elementsNodes.splice(nodeStep.index, 0, beforeNode)
+          elementsNodes.splice(nodeStep.index + 2, 0, afterNode)
+          len = 0
+          nodeStep = {
+            index: nodeStep.index + 1,
+            indexInNode: len
+          }
+          continue
+        }
+
+        nodeStep.indexInNode += len
+        len = 0
+        break
+      }
+    }
+
+    const stepDelete = (len: number) => {
+      if (!len) return;
+      while (len > 0) {
+        const ele = elementsNodes[nodeStep.index]
+        const isElementEmbed = (ele.firstElementChild as HTMLElement).contentEditable === 'false'
+        const eleLength = isElementEmbed ? 1 : ele.textContent!.length
+
+        if (nodeStep.indexInNode === eleLength) {
+          nodeStep = {
+            index: nodeStep.index + 1,
+            indexInNode: 0
+          }
+          continue
+        }
+
+        if (nodeStep.indexInNode === 0 && len >= eleLength) {
+          if (isElementEmbed) this.disposeEmbed(ele)
+          ele.remove()
+          len -= eleLength
+          elementsNodes.splice(nodeStep.index, 1)
+
+          if (!elementsNodes.length) {
+            nodeStep = {
+              index: 0,
+              indexInNode: 0
+            }
+            return
+          }
+
+          nodeStep = {
+            index: nodeStep.index,
+            indexInNode: 0
+          }
+          continue
+        }
+
+        const textNode = ele.firstElementChild?.firstChild as Text
+        if (!(textNode instanceof Text)) {
+          throw new BlockCraftError(ErrorCode.InlineEditorError, 'Error inline node match')
+        }
+        const maxDeleteLength = eleLength - nodeStep.indexInNode
+        if (len >= maxDeleteLength) {
+          textNode.deleteData(nodeStep.indexInNode, maxDeleteLength)
+          len -= maxDeleteLength
+          nodeStep = {
+            index: nodeStep.index + 1,
+            indexInNode: 0
+          }
+        } else {
+          textNode.deleteData(nodeStep.indexInNode, len)
+          len = 0
+        }
+      }
+    }
+
+    const stepInsert = (op: DeltaInsert) => {
+
+      const isOpElementEmbed = typeof op.insert === 'object'
+      const opLength = isOpElementEmbed ? 1 : (op.insert as string).length
+
+      if (!elementsNodes.length) {
+        const ele = this.createInlineNode(op)
+        container.firstElementChild!.after(ele)
+        elementsNodes.push(ele)
+        nodeStep = {
+          index: 0,
+          indexInNode: opLength
+        }
+        return
+      }
+
+      let ele: HTMLElement
+      let isElementEmbed: boolean
+      let eleLength: number
+      if (nodeStep.indexInNode === 0 && nodeStep.index >= elementsNodes.length) {
+        ele = elementsNodes[elementsNodes.length - 1]
+        isElementEmbed = (ele.firstElementChild as HTMLElement).contentEditable === 'false'
+        eleLength = isElementEmbed ? 1 : ele.textContent!.length
+        nodeStep = {
+          index: elementsNodes.length - 1,
+          indexInNode: eleLength
+        }
+      } else {
+        ele = elementsNodes[nodeStep.index]
+        isElementEmbed = (ele.firstElementChild as HTMLElement).contentEditable === 'false'
+        eleLength = isElementEmbed ? 1 : ele.textContent!.length
+      }
+
+      // case 1 : embed node
+      if (isElementEmbed) {
+        const newNode = this.createInlineNode(op)
+        if (nodeStep.indexInNode === 0) {
+          ele.before(newNode)
+          elementsNodes.splice(nodeStep.index, 0, newNode)
+          nodeStep = {
+            index: nodeStep.index,
+            indexInNode: opLength
+          }
+          return
+        }
+        ele.after(newNode)
+        elementsNodes.splice(nodeStep.index + 1, 0, newNode)
+        nodeStep = {
+          index: nodeStep.index + 1,
+          indexInNode: opLength
+        }
+        return
+      }
+
+      // case 2 : text node
+      // case 2.1: at text node begin
+      if (nodeStep.indexInNode === 0) {
+
+        // case 2.1.1: text node is first element
+        if (nodeStep.index === 0) {
+          const newNode = this.createInlineNode(op)
+          ele.before(newNode)
+          elementsNodes.splice(0, 0, newNode)
+          nodeStep = {
+            index: 0,
+            indexInNode: opLength
+          }
+          return
+        }
+
+        // case 2.1.2: text node is not first element
+        const prevNode = elementsNodes[nodeStep.index - 1]
+        const isPrevEmbed = (prevNode.firstElementChild as HTMLElement).contentEditable === 'false'
+        const isPrevEqual = compareAttributesWithEle(prevNode, op.attributes)
+
+        if (isPrevEmbed || !isPrevEqual || isOpElementEmbed) {
+
+          const newNode = this.createInlineNode(op)
+          ele.before(newNode)
+          elementsNodes.splice(nodeStep.index, 0, newNode)
+          nodeStep = {
+            index: nodeStep.index,
+            indexInNode: opLength
+          }
+
+          return
+        }
+
+        // case 2.1.3: text node is not first element and equal
+        if (typeof op.insert === 'string') {
+          const prevTextNode = prevNode.firstElementChild?.firstChild as Text
+          if (!(prevTextNode instanceof Text)) {
+            throw new BlockCraftError(ErrorCode.InlineEditorError, 'Error inline node match')
+          }
+          const prevLength = prevTextNode.length
+          prevTextNode.insertData(prevLength, op.insert)
+          nodeStep = {
+            index: nodeStep.index - 1,
+            indexInNode: prevLength + opLength
+          }
+          return
+        }
+      }
+
+      // case 2.2
+      const isEqual = compareAttributesWithEle(ele, op.attributes)
+      // case 2.2.1: insert equal text to text node
+      if (isEqual && typeof op.insert === 'string') {
+        const textNode = ele.firstElementChild?.firstChild as Text
+        if (!(textNode instanceof Text)) {
+          throw new BlockCraftError(ErrorCode.InlineEditorError, 'Error inline node match')
+        }
+        textNode.insertData(nodeStep.indexInNode, op.insert)
+        nodeStep.indexInNode += op.insert.length
+        return;
+      }
+
+      // case 2.2.2: insert embed node or not equal text to text node
+      const newNode = this.createInlineNode(op)
+
+      // case 2.2.2.1: at last of text node
+      if (nodeStep.indexInNode === eleLength) {
+        // text-embed-gap
+        ele.after(newNode)
+        elementsNodes.splice(nodeStep.index + 1, 0, newNode)
+        nodeStep = {
+          index: nodeStep.index + 1,
+          indexInNode: opLength
+        }
+        return
+      }
+
+      // case 2.2.2.2: at middle of text node
+      // text-embed-text or text-text-text
+      const textNode = ele.firstElementChild?.firstChild as Text
+      if (!(textNode instanceof Text)) {
+        throw new BlockCraftError(ErrorCode.InlineEditorError, 'Error inline node match')
+      }
+      const clonedNode = ele.cloneNode(true) as HTMLElement
+      textNode.deleteData(nodeStep.indexInNode, eleLength - nodeStep.indexInNode);
+      (clonedNode.firstElementChild?.firstChild as Text).deleteData(0, nodeStep.indexInNode)
+      ele.after(newNode, clonedNode)
+      elementsNodes.splice(nodeStep.index + 1, 0, newNode, clonedNode)
+      nodeStep = {
+        index: nodeStep.index + 1,
+        indexInNode: opLength
+      }
+    }
+
+    for (const delta of deltas) {
+      if ('retain' in delta) {
+        stepRetain(delta as DeltaRetain)
+        continue
+      }
+      if (delta.delete) {
+        stepDelete(delta.delete)
+        continue
+      }
+      if (delta.insert) {
+        stepInsert(delta as DeltaInsert)
+      }
+    }
+
+    if (!elementsNodes.length) {
+      container.replaceChildren(createZeroSpace())
+      return
+    }
+  }
+
+  queryNodePositionInlineByOffset(container: HTMLElement, offset: number): {
+    node: HTMLElement | Text,
+    offset: number
+  } {
+    return this.positionMapper.modelPointToDomPoint(container, offset) as { node: HTMLElement | Text, offset: number }
+  }
+
+}
+
+export * from './const'
+export * from './compareAttributes'
+export * from './position/inline-position-mapper'
+export * from './blot'
+export * from './runtime'

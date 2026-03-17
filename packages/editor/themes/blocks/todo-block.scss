@@ -1,0 +1,37 @@
+[data-blockcraft-root="true"] {
+  div.todo-block {
+    max-width: 100%;
+    display: flex;
+    align-items: flex-start;
+
+    &.is-checked {
+      .edit-container {
+        text-decoration: line-through;
+        opacity: .8;
+      }
+    }
+
+    .todo-block-button {
+      flex-shrink: 0;
+      margin-right: .25em;
+      cursor: pointer;
+      outline: none;
+      border: none;
+      background: none;
+      color: var(--bc-active-color);
+      height: 1lh;
+      line-height: 1lh;
+      font-size: 1em;
+      min-width: 1em;
+
+      > i {
+        pointer-events: none;
+      }
+    }
+
+    .edit-container {
+      width: fit-content;
+    }
+
+  }
+}

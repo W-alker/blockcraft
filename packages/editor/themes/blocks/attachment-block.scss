@@ -1,0 +1,66 @@
+[data-blockcraft-root="true"] {
+  div.attachment-block {
+    padding: 6px 12px 6px var(--bc-fs);
+    border: 1px solid var(--bc-border-color);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    max-width: 400px;
+    overflow: hidden;
+    background: var(--bc-bg-secondary);
+
+    &.selected {
+      border: 1px solid var(--bc-active-color);
+      box-shadow: 0 0 2px var(--bc-active-color-light);
+    }
+
+    &__prefix {
+      position: absolute;
+      top: 14px;
+      left: 10px;
+      font-size: var(--bc-fs);
+      height: var(--bc-lh);
+    }
+
+    &__info {
+      padding: 8px 16px;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    &__name {
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      word-break: break-all;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--bc-color);
+      font-style: normal;
+      font-weight: 600;
+    }
+
+    &__size {
+      margin-top: 4px;
+      font-size: small;
+      line-height: .8lh;
+      color: var(--bc-color-light);
+    }
+
+    &__icon-wrapper {
+      width: 50px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+
+      mat-icon {
+        font-size: 40px;
+        height: 40px;
+        width: 40px;
+      }
+    }
+  }
+}

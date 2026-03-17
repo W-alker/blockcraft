@@ -1,0 +1,40 @@
+[data-blockcraft-root="true"] {
+  div.bullet-block {
+    display: flex;
+    align-items: flex-start;
+
+    .bullet-block-prefix {
+      margin-right: .25em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      height: 1lh;
+      min-width: 1em;
+
+      .square {
+        width: calc(var(--bc-fs) * 0.4);
+        height: calc(var(--bc-fs) * 0.4);
+        background-color: var(--bc-active-color);
+      }
+
+      .circle {
+        width: calc(var(--bc-fs) * 0.4);
+        height: calc(var(--bc-fs) * 0.4);
+        border-radius: 50%;
+        border: 1px solid var(--bc-active-color);
+      }
+
+      .point {
+        width: calc(var(--bc-fs) * 0.4);
+        height:calc(var(--bc-fs) * 0.4);
+        border-radius: 50%;
+        background-color: var(--bc-active-color);
+      }
+    }
+
+    .edit-container {
+      width: fit-content;
+    }
+  }
+}

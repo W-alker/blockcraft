@@ -1,0 +1,107 @@
+bc-float-toolbar,
+bc-virtual-float-toolbar {
+  .bc-float-toolbar__wrapper {
+    background-color: var(--bc-float-toolbar-bg);
+    padding: var(--bc-padding-sm);
+    border-radius: var(--bc-radius-md);
+    box-shadow: var(--bc-float-toolbar-shadow);
+
+    bc-float-toolbar-item {
+      display: flex;
+      gap: var(--bc-padding-sm);
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border-radius: var(--bc-radius-md);
+      color: var(--bc-float-toolbar-item-color);
+      white-space: nowrap;
+      transition: all var(--bc-transition-fast);
+
+      &.active {
+        background: var(--bc-float-toolbar-item-active-bg);
+        color: var(--bc-active-color);
+      }
+
+      &.disabled {
+        opacity: .6;
+      }
+
+      &:hover {
+        background: var(--bc-float-toolbar-item-hover-bg);
+      }
+
+      > i {
+        font-size: inherit;
+        color: inherit;
+      }
+
+      i.dropdown {
+        color: var(--bc-color-lighter);
+        transition: transform var(--bc-transition-base);
+      }
+
+      &.float-children-opened {
+        background: var(--bc-float-toolbar-item-hover-bg);
+
+        i.dropdown {
+          transform: rotate(180deg);
+        }
+      }
+    }
+
+    &[data-direction="column"] {
+      flex-direction: column;
+
+      bc-float-toolbar-item {
+        margin-top: 2px;
+        padding: var(--bc-padding-sm) var(--bc-padding-md);
+        width: 100%;
+        justify-content: flex-start;
+
+        &:first-of-type {
+          margin-top: 0;
+        }
+
+        i.dropdown {
+          transform: rotate(-90deg);
+        }
+
+        &.float-children-opened {
+          i.dropdown {
+            transform: rotate(90deg);
+          }
+        }
+      }
+
+      > span.bc-float-toolbar__divider {
+        margin: var(--bc-padding-sm) 0;
+        display: block;
+        flex: 1;
+        height: 1px;
+        background-color: var(--bc-float-toolbar-divider-color);
+      }
+    }
+
+    &[data-direction="row"] {
+      display: flex;
+      justify-content: space-between;
+      align-items: stretch;
+      height: 40px;
+      gap: var(--bc-padding-md);
+
+      bc-float-toolbar-item {
+        justify-content: center;
+        padding: 0 var(--bc-padding-sm);
+      }
+
+      > span.bc-float-toolbar__divider {
+        flex-shrink: 0;
+        height: 32px;
+        width: 1px;
+        background-color: var(--bc-float-toolbar-divider-color);
+      }
+    }
+
+  }
+
+}

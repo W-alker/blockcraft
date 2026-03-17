@@ -1,0 +1,93 @@
+// 深色主题变量覆盖
+// 使用 body[blockcraft-theme="dark"] 选择器控制主题切换
+
+body[blockcraft-theme="dark"] {
+  // 文字颜色
+  --bc-color: #dbe7f2;
+  --bc-color-light: #9db0c2;
+  --bc-color-lighter: #7f93a6;
+  --bc-color-dark: #ffffff;
+
+  // 边框颜色
+  --bc-border-color: #33414d;
+  --bc-border-color-light: #283540;
+  --bc-border-color-dark: #3f4d59;
+
+  // 背景颜色
+  --bc-bg-primary: #171d24;
+  --bc-bg-secondary: #1e2731;
+  --bc-bg-elevated: #1a2129;
+  --bc-bg-hover: #24303c;
+  --bc-bg-gray: #2f3b47;
+  --bc-bg-gray2: #465767;
+  --bc-bg-muted: #1e2731;
+
+  // 状态颜色
+  --bc-warning-color: #f5a623;
+  --bc-error-color: #ff6b6b;
+  --bc-success-color: #51cf66;
+  --bc-info-color: #4fc3f7;
+
+  // 激活/强调色
+  --bc-active-color: #6B7AFF;
+  --bc-active-color-light: #5B6AE8;
+  --bc-active-color-lighter: rgba(107, 122, 255, 0.15);
+
+  // 特殊背景
+  --bc-error-background-color: rgba(255, 107, 107, 0.15);
+  --bc-select-background-color: rgba(107, 122, 255, 0.25);
+  --bc-mark-bg-color: rgba(255, 198, 10, 0.3);
+  --bc-highlight-bg-color: rgba(255, 198, 10, 0.2);
+  --bc-comment-bg-color: rgba(251, 243, 219, 0.15);
+  --bc-comment-border-color: rgba(251, 243, 219, 0.4);
+
+  // 光标颜色
+  --bc-caret-color: #ffffff;
+  --bc-caret-color-on-mark: #ffffff;
+
+  // 阴影
+  --bc-shadow-sm: 0 1px 3px rgba(50, 50, 50, 0.3);
+  --bc-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --bc-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+
+  // 占位符颜色
+  --bc-placeholder-color: #555555;
+
+  // 表格相关颜色
+  --bc-table-head-bg: #252525;
+
+  // 代码块相关颜色
+  --bc-code-btn-hover-bg: rgba(255, 255, 255, 0.08);
+  --bc-code-inline-bg-color: rgba(255, 255, 255, 0.05);
+  --bc-code-inline-border-color: rgba(255, 255, 255, 0.1);
+  --bc-code-inline-color: #ff6b6b;
+
+  // 浮动工具栏相关
+  --bc-float-toolbar-bg: #2a2a2a;
+  --bc-float-toolbar-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  --bc-float-toolbar-item-color: #e3e3e3;
+  --bc-float-toolbar-item-hover-bg: rgba(255, 255, 255, 0.08);
+  --bc-float-toolbar-item-active-bg: rgba(107, 122, 255, 0.2);
+  --bc-float-toolbar-divider-color: #3a3a3a;
+
+  // 分隔线相关颜色覆盖
+  --bc-divider-color: #3a3a3a;
+  --bc-divider-color-large: #666666;
+
+  // Callout相关颜色覆盖
+  --bc-callout-selected-bg: rgba(107, 122, 255, 0.25);
+
+  // 列相关颜色覆盖
+  --bc-columns-divider-color: rgba(255, 255, 255, 0.3);
+  --bc-columns-divider-hover-color: rgba(255, 255, 255, 0.15);
+  --bc-columns-handle-color: #FFFFFF;
+  --bc-columns-handle-bg: #666666;
+
+  // 图片相关颜色覆盖
+  --bc-image-handle-bg: #191919;
+
+  // 滚动条相关
+  --bc-scrollbar-thumb-color: #434242;
+  --bc-scrollbar-thumb-hover-color: #676666;
+  --bc-scrollbar-track-color: #2e2e2e;
+}

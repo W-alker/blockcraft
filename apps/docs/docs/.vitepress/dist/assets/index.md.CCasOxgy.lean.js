@@ -1,0 +1,1 @@
+import{_ as e,o,c as t,ae as l}from"./chunks/framework.EHGTsUvI.js";const f=JSON.parse('{"title":"Blockcraft","description":"","frontmatter":{},"headers":[],"relativePath":"index.md","filePath":"index.md"}'),r={name:"index.md"};function c(i,a,d,n,s,p){return o(),t("div",null,[...a[0]||(a[0]=[l("",6)])])}const h=e(r,[["render",c]]);export{f as __pageData,h as default};

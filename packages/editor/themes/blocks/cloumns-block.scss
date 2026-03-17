@@ -1,0 +1,224 @@
+[data-blockcraft-root="true"] {
+  .columns-block {
+    padding: 8px 0;
+
+    /* 包装容器，用于放置分割线 */
+    .columns-wrapper {
+      position: relative;
+      width: 100%;
+    }
+
+    /* Notion 风格：横向布局容器 - 包含 column-block 子块 */
+    .columns-layout {
+      display: flex;
+      width: 100%;
+      align-items: stretch;
+
+      /* column-block 使用 CSS 变量控制宽度 */
+      >* {
+        min-width: 0;
+        flex: 0 0 auto;
+      }
+
+      /* 为每列设置宽度变量 */
+      >*:nth-child(1) {
+        width: var(--column-width-0, 50%);
+        max-width: var(--column-width-0, 50%);
+      }
+
+      >*:nth-child(2) {
+        width: var(--column-width-1, 50%);
+        max-width: var(--column-width-1, 50%);
+      }
+
+      >*:nth-child(3) {
+        width: var(--column-width-2, 33.33%);
+        max-width: var(--column-width-2, 33.33%);
+      }
+
+      >*:nth-child(4) {
+        width: var(--column-width-3, 25%);
+        max-width: var(--column-width-3, 25%);
+      }
+
+      >*:nth-child(5) {
+        width: var(--column-width-4, 20%);
+        max-width: var(--column-width-4, 20%);
+      }
+
+      >*:nth-child(6) {
+        width: var(--column-width-5, 16.66%);
+        max-width: var(--column-width-5, 16.66%);
+      }
+
+      >*:nth-child(7) {
+        width: var(--column-width-6, 14.28%);
+        max-width: var(--column-width-6, 14.28%);
+      }
+
+      >*:nth-child(8) {
+        width: var(--column-width-7, 12.5%);
+        max-width: var(--column-width-7, 12.5%);
+      }
+    }
+
+    &:hover {
+      .column-block .column-content {
+        outline: 1px dashed var(--bc-border-color);
+      }
+
+      .column-divider {
+        opacity: 1;
+      }
+    }
+
+    &.selected {
+      .column-block .column-content {
+        background: unset;
+      }
+
+      .column-divider {
+        opacity: 0;
+      }
+    }
+
+    /* 列之间的可拖拽分割线 - Notion 风格 */
+    .column-divider {
+      z-index: 101;
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 12px;
+      margin-left: -6px;
+      cursor: col-resize;
+      z-index: 10;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      user-select: none;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+
+      &:nth-child(2) {
+        left: var(--column-width-0);
+      }
+
+      &:nth-child(3) {
+        left: calc(var(--column-width-0) + var(--column-width-1))
+      }
+
+      &:nth-child(4) {
+        left: calc(var(--column-width-0) + var(--column-width-1) + var(--column-width-2))
+      }
+
+      &:nth-child(5) {
+        left: calc(var(--column-width-0) + var(--column-width-1) + var(--column-width-2) + var(--column-width-3))
+      }
+
+      &:nth-child(6) {
+        left: calc(var(--column-width-0) + var(--column-width-1) + var(--column-width-2) + var(--column-width-3) + var(--column-width-4))
+      }
+
+      &:nth-child(7) {
+        left: calc(var(--column-width-0) + var(--column-width-1) + var(--column-width-2) + var(--column-width-3) + var(--column-width-4) + var(--column-width-5))
+      }
+
+      &:nth-child(8) {
+        left: calc(var(--column-width-0) + var(--column-width-1) + var(--column-width-2) + var(--column-width-3) + var(--column-width-4) + var(--column-width-5) + var(--column-width-6))
+      }
+
+      &:nth-child(9) {
+        left: calc(var(--column-width-0) + var(--column-width-1) + var(--column-width-2) + var(--column-width-3) + var(--column-width-4) + var(--column-width-5) + var(--column-width-6) + var(--column-width-7))
+      }
+
+      &:hover .divider-line {
+        background: var(--bc-active-color);
+        width: 2px;
+      }
+
+      &:active .divider-line {
+        background: var(--bc-columns-divider-color);
+      }
+
+      .divider-line {
+        width: 2px;
+        transform: translateY(8px);
+        height: calc(100% - 8px);
+        background: var(--bc-columns-divider-hover-color);
+        transition: all 0.12s ease;
+        pointer-events: none;
+      }
+
+      .add-point {
+        position: absolute;
+        top: -10px;
+        left: -2px;
+        width: 16px;
+        height: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--bc-columns-handle-color);
+        font-size: 10px;
+
+        &:hover {
+          background: var(--bc-active-color);
+          cursor: pointer;
+          border-radius: 50%;
+
+          &::before {
+            display: none;
+          }
+
+          &::after {
+            content: '+';
+          }
+
+        }
+
+        &::before {
+          display: block;
+          content: '';
+          height: 6px;
+          width: 6px;
+          background: var(--bc-columns-handle-bg);
+          border-radius: 50%;
+        }
+      }
+    }
+  }
+
+
+  // 列块
+  .column-block {
+    display: block;
+    flex: 1;
+    padding: 0 8px;
+    margin-bottom: 0 !important;
+
+    .column-content {
+      width: 100%;
+      height: 100%;
+      padding: 4px;
+      border-radius: 4px;
+      /* 子块在这里纵向堆叠 */
+      display: flex;
+      flex-direction: column;
+      transition: background 0.12s ease;
+      overflow: hidden;
+    }
+
+    &.selected {
+      background: unset !important;
+
+      .column-content {
+        background-color: var(--bc-select-background-color) !important;
+      }
+
+      .column-divider {
+        opacity: 0;
+      }
+    }
+  }
+
+}

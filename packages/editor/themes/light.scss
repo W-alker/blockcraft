@@ -1,0 +1,30 @@
+// 浅色主题变量覆盖
+// 使用 body[blockcraft-theme="light"] 选择器控制主题切换
+
+body[blockcraft-theme="light"] {
+  // 文字颜色
+  --bc-color: #1f2e3c;
+  --bc-color-light: #5f7184;
+  --bc-color-lighter: #8b9cad;
+
+  // 边框颜色
+  --bc-border-color: #E9E9E7;
+  --bc-border-color-light: #F1F1EF;
+
+  // 背景颜色
+  --bc-bg-secondary: #faf9f9;
+  --bc-bg-elevated: #FFFFFF;
+  --bc-bg-hover: #F1F1EF;
+  --bc-bg-muted: #f8fbfe;
+
+  // 占位符颜色
+  --bc-placeholder-color: #9B9A97;
+
+  // 浮动工具栏相关
+  --bc-float-toolbar-bg: #FFFFFF;
+  --bc-float-toolbar-shadow: 0 2px 8px rgba(15, 15, 15, 0.05), 0 0 0 1px rgba(15, 15, 15, 0.1);
+  --bc-float-toolbar-item-color: #37352F;
+  --bc-float-toolbar-item-hover-bg: #F1F1EF;
+  --bc-float-toolbar-item-active-bg: rgba(72, 87, 226, 0.1);
+  --bc-float-toolbar-divider-color: #E9E9E7;
+}

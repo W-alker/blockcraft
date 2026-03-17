@@ -1,0 +1,215 @@
+@mixin text-ellipsis($lines: 3) {
+  @if ($lines ==1) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  } @else {
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+@mixin user-select($state: none) {
+  -webkit-user-select: $state;
+  -moz-user-select: $state;
+  -ms-user-select: $state;
+  user-select: $state;
+}
+
+@mixin user-modify($state: none) {
+  -webkit-user-modify: $state;
+  -moz-user-modify: $state;
+  user-modify: $state;
+}
+
+@mixin bc_scrollbar() {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bc-scrollbar-thumb-color) var(--bc-scrollbar-track-color);
+
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--bc-scrollbar-thumb-color);
+    border-radius: 4px;
+
+    &:hover {
+      background: var(--bc-scrollbar-thumb-hover-color);
+    }
+  }
+
+  &::-webkit-scrollbar-track {
+    background: var(--bc-scrollbar-track-color);
+  }
+}
+
+@mixin code-highlight-theme() {
+  [type="variable"] {
+    color: var(--bc-code-hl-variable)
+  }
+  [type="keyword"] {
+    color: var(--bc-code-hl-keyword)
+  }
+  [type="title"] {
+    color: var(--bc-code-hl-title)
+  }
+  [type="string"] {
+    color: var(--bc-code-hl-string)
+  }
+  [type="number"] {
+    color: var(--bc-code-hl-number)
+  }
+  [type="function"] {
+    color: var(--bc-code-hl-function)
+  }
+  [type="comment"] {
+    color: var(--bc-code-hl-comment)
+  }
+  [type="operator"] {
+    color: var(--bc-code-hl-operator)
+  }
+  [type="tag"] {
+    color: var(--bc-code-hl-tag)
+  }
+  [type="attr"] {
+    color: var(--bc-code-hl-attr)
+  }
+  [type="attr-name"] {
+    color: var(--bc-code-hl-attr-name)
+  }
+  [type="attr-value"] {
+    color: var(--bc-code-hl-attr-value)
+  }
+  [type="property"] {
+    color: var(--bc-code-hl-property)
+  }
+  [type="selector"] {
+    color: var(--bc-code-hl-selector)
+  }
+  [type="builtin"] {
+    color: var(--bc-code-hl-builtin)
+  }
+  [type="class"] {
+    color: var(--bc-code-hl-class)
+  }
+  [type="constant"] {
+    color: var(--bc-code-hl-constant)
+  }
+  [type="regex"] {
+    color: var(--bc-code-hl-regex)
+  }
+  [type="important"] {
+    color: var(--bc-code-hl-important)
+  }
+  [type="literal"] {
+    color: var(--bc-code-hl-literal)
+  }
+  [type="arrow"] {
+    color: var(--bc-code-hl-arrow)
+  }
+  [type="punctuation"] {
+    color: var(--bc-code-hl-punctuation)
+  }
+
+  // 补充 Prism.js 剩余标签类型 - Craft 配色
+  [type="prolog"],
+  [type="doctype"],
+  [type="cdata"] {
+    color: #9B9B9B;
+    font-style: italic;
+  }
+
+  [type="namespace"] {
+    opacity: 0.7;
+  }
+
+  [type="boolean"] {
+    color: #EB5757;
+  }
+
+  [type="symbol"],
+  [type="deleted"] {
+    color: #EB5757;
+  }
+
+  [type="char"],
+  [type="inserted"] {
+    color: #27AE60;
+  }
+
+  [type="atrule"] {
+    color: #2F80ED;
+  }
+
+  [type="class-name"] {
+    color: #F2994A;
+  }
+
+  [type="bold"] {
+    font-weight: bold;
+  }
+
+  [type="italic"] {
+    font-style: italic;
+  }
+
+  // Markdown 特定类型
+  [type="bullet"],
+  [type="list"],
+  [type="hr"] {
+    color: #7c7c7c;
+  }
+
+  [type="table"],
+  [type="table-row"],
+  [type="table-cell"] {
+    color: #7c7c7c;
+  }
+
+  [type="heading"],
+  [type="header"] {
+    color: #EB5757;
+    font-weight: bold;
+  }
+
+  [type="blockquote"] {
+    color: #9B9B9B;
+    font-style: italic;
+  }
+
+  [type="entity"],
+  [type="url"] {
+    color: #2F80ED;
+  }
+
+  [type="image"],
+  [type="image-alt"] {
+    color: #27AE60;
+  }
+
+  [type="emphasis"],
+  [type="strong"] {
+    color: #BB6BD9;
+  }
+
+  [type="strikethrough"] {
+    text-decoration: line-through;
+    color: #9B9B9B;
+  }
+
+  [type="code-language"] {
+    color: #7c7c7c;
+  }
+  
+  [type="code-block"] {
+    color: #F2994A;
+  }
+
+}

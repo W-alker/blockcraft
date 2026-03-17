@@ -1,0 +1,133 @@
+@use "../function" as *;
+
+.blockcraft-mermaid-preview-graph {
+  img {
+    background: var(--bc-bg-primary);
+  }
+}
+
+[data-blockcraft-root="true"] {
+  div.mermaid-block {
+    display: block;
+    border-radius: var(--bc-radius-md);
+    overflow: hidden;
+    border: 1px solid var(--bc-border-color);
+
+    &.selected {
+      border-color: var(--bc-active-color);
+      background-color: unset;
+
+      .graph-con {
+        cursor: zoom-in;
+      }
+    }
+
+    &[data-mode="default"] {
+
+      .content {
+        display: flex;
+      }
+
+      .graph-container {
+        border-left: 1px solid var(--bc-border-color);
+      }
+    }
+
+    &[data-mode="text"] {
+      .graph-container {
+        visibility: hidden;
+        height: 0;
+        overflow: hidden;
+      }
+    }
+
+    &[data-mode="graph"] {
+      .text-container {
+        visibility: hidden;
+        height: 0;
+        overflow: hidden;
+        padding: 0;
+      }
+    }
+
+    .text-container, .graph-container {
+      flex: 1;
+      overflow: auto;
+      scrollbar-width: thin;
+      max-height: 60vh;
+    }
+
+    .edit-container {
+      padding: 16px;
+    }
+
+    .graph-con {
+      padding: 10px;
+    }
+
+    .head {
+      display: flex;
+      align-items: center;
+      position: relative;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--bc-border-color);
+      height: 45px;
+      background: var(--bc-bg-muted);
+
+      .btn {
+        padding: var(--bc-padding-sm) var(--bc-padding-md);
+        cursor: pointer;
+        border-radius: var(--bc-radius-md);
+        display: flex;
+        align-items: center;
+        gap: var(--bc-padding-sm);
+        font-size: small;
+        color: var(--bc-color-light);
+        @include user-select(none);
+        @include user-modify(read-only);
+
+        &:hover, &.active {
+          background-color: var(--bc-bg-hover);
+        }
+
+        > * {
+          pointer-events: none;
+        }
+      }
+
+      .switch-btn {
+        position: absolute;
+        top: 50%;
+        right: 16px;
+        transform: translateY(-50%);
+      }
+    }
+
+    .control-btns {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 8px 40px 8px 16px;
+
+      .btn {
+        font-size: var(--bc-fs-xl);
+      }
+
+      .text {
+        color: var(--bc-color-light);
+      }
+    }
+  }
+
+  .mermaid-textarea {
+    margin-bottom: 0;
+    padding: 6px;
+    font-family: Menlo, Monaco, "Courier New", monospace;
+    color: var(--bc-mermaid-btn-color);
+    font-size: calc(var(--bc-fs) * 0.85);
+    tab-size: 1em;
+    @include code-highlight-theme;
+  }
+}

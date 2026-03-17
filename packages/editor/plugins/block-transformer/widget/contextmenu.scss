@@ -1,0 +1,44 @@
+:host {
+  display: block;
+  background: var(--bc-bg-primary);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  max-height: 50vh;
+  overflow-y: auto;
+  color: var(--bc-color);
+
+  ::ng-deep {
+    mat-icon svg {
+      vertical-align: top;
+    }
+  }
+
+  .list {
+    margin: 0;
+    padding: 4px;
+    width: 224px;
+
+    &__item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 36px;
+      padding: 0 8px;
+      border-radius: 4px;
+      cursor: pointer;
+
+      > mat-icon,
+      i {
+        font-size: 1em;
+      }
+
+      > * {
+        pointer-events: none;
+      }
+
+      &.active {
+        background: var(--bc-bg-hover);
+      }
+    }
+  }
+}

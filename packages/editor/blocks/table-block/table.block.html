@@ -1,0 +1,35 @@
+<div class="table-scrollable bc-scrollable-container" #tableScrollable (scroll)="onScroll($event)" (scrollend)="onScrollEnd()">
+  <table-row-bar [rowIds]="_childrenIds" [rowHeightsRecord]="_rowHeightsRecord"
+                 [selectedRange]="_activeRowRange" (selectedRangeChange)="onRowBarSelected($event)"
+                 (onAdderActive)="onRowAdderActive($event)"
+                 #rowBarComponent></table-row-bar>
+
+  <div class="table-wrapper">
+    <table-col-bar [colWidths]="props.colWidths" [selectedRange]="_activeColRange"
+                   (selectedRangeChange)="onColBarSelected($event)" (onAdderActive)="onColAdderActive($event)"
+                   #colBarComponent />
+
+    <table>
+      <colgroup>
+        @for (w of props.colWidths; track $index) {
+          <col [width]="w" />
+        }
+      </colgroup>
+
+      <tbody class="children-render-container">
+<!--        <ng-container #childrenContainer></ng-container>-->
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="table-col-resize-bar" contenteditable="false" #colResizeBar (mousedown)="onColResizerMousedown($event)">
+  <span class="add">+</span>
+  <div class="bar"></div>
+</div>
+
+<div class="table-row-resize-bar" contenteditable="false" #rowResizeBar>
+  <span class="add">+</span>
+  <div class="bar"></div>
+</div>
+

@@ -1,0 +1,26 @@
+<div class="emoji-picker-panel">
+  <input
+    type="text" (ngModelChange)="onSearch($event)"
+    [(ngModel)]="searchTerm"
+    (compositionstart)="handleCompositionStart()"
+    (compositionend)="handleCompositionEnd()"
+    class="emoji-search"
+    placeholder="🔍 搜索 Emoji..."
+  />
+
+  <div class="emoji-groups">
+    <div *ngFor="let group of filteredGroups" class="emoji-group">
+      <div class="group-title">{{ group.name }}</div>
+      <div class="emoji-list">
+    <span
+      *ngFor="let emoji of group.emojis"
+      class="emoji" [attr.data-emoji]="emoji.char"
+      [title]="emoji.keywords.join(', ')"
+    >
+      {{ emoji.char }}
+    </span>
+      </div>
+    </div>
+  </div>
+
+</div>

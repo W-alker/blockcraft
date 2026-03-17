@@ -1,0 +1,482 @@
+import {
+  BlockNodeType,
+  DeltaOperation, EditableBlockComponent,
+  IBlockSnapshot,
+  InlineModel,
+  native2YBlock,
+  NativeBlockModel,
+  YBlock, yBlock2Native
+} from "../block-std";
+import * as Y from "yjs";
+import {BlockCraftError, ErrorCode} from "../../global";
+import {Subject} from "rxjs";
+import {isYArray, isYText} from "../utils/yAbstractType";
+import {DocUndoManger} from "./undoManger";
+
+// This origin will skip Y.Event sync (to model)
+export const ORIGIN_SKIP_SYNC = Symbol('skip_sync')
+// This origin will not be recorded in undo/redo stack
+export const ORIGIN_NO_RECORD = Symbol('no_record')
+
+export interface ITextChangeEvent {
+  isUndoRedo: boolean,
+  origin: any,
+  local: boolean
+  transactions: {
+    block: EditableBlockComponent
+    delta: DeltaOperation[]
+  }[]
+}
+
+export interface IChildrenChangeEvent {
+  isUndoRedo: boolean,
+  origin: any
+  local: boolean
+  transactions: {
+    inserted?: BlockCraft.BlockComponent[]
+    deleted?: {
+      index: number,
+      length: number
+    }[],
+    block: BlockCraft.BlockComponent,
+  }[]
+}
+
+export interface IPropsChangeEvent {
+  isUndoRedo: boolean
+  origin: any,
+  local: boolean
+  transactions: {
+    block: BlockCraft.BlockComponent
+    changes: Map<string, {
+      oldValue: any
+      action: "add" | "update" | "delete"
+    }>
+  }[]
+}
+
+type BlockDeleteRange = {
+  index: number,
+  length: number
+}
+
+export class DocCRUD {
+
+  undoManager!: DocUndoManger
+  readonly onChildrenUpdate$ = new Subject<IChildrenChangeEvent>()
+  readonly onPropsUpdate$ = new Subject<IPropsChangeEvent>()
+  readonly onTextUpdate$ = new Subject<ITextChangeEvent>()
+
+  get yDoc() {
+    return this.doc.yDoc
+  }
+
+  get yBlockMap() {
+    return this.doc.yBlockMap
+  }
+
+  constructor(
+    private readonly doc: BlockCraft.Doc
+  ) {
+    this.doc.afterInit(() => {
+
+      this.undoManager = new DocUndoManger(this.doc, this.yBlockMap)
+
+      this.yBlockMap.observeDeep((evt, tr) => {
+        this.doc.ngZone.run(() => {
+          this._syncYEvent(evt, tr)
+          if (!tr.local) {
+            requestAnimationFrame(() => {
+              this.doc.selection.recalculate()
+            })
+          }
+        })
+      })
+    })
+  }
+
+  get vm() {
+    return this.doc.vm
+  }
+
+  getYBlock(id: string) {
+    return this.yBlockMap.get(id)
+  }
+
+  transact(fn: () => void, origin: any = null) {
+    return this.yDoc.transact(fn, origin)
+  }
+
+  private _syncYEvent = (events: Y.YEvent<any>[], tr: Y.Transaction) => {
+    // local change with skip
+    const isUndoRedo = tr.origin instanceof Y.UndoManager
+
+    const added: Record<string, YBlock> = {}
+    const deleted = new Set<string>()
+
+    const propsChanges: IPropsChangeEvent['transactions'] = []
+    const textChanges: ITextChangeEvent['transactions'] = []
+
+    const delay_childrenEvent_handlers: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][] = []
+
+    // sync to model
+    events.forEach(ev => {
+      const {path, changes, target} = ev
+      // at top level, it`s mean that block is created or deleted
+      // No need handle ORIGIN_SKIP_SYNC
+      if (!path.length) {
+        tr.origin !== ORIGIN_SKIP_SYNC && changes.keys.forEach((change, key) => {
+          if (change.action === 'delete') {
+            deleted.add(key)
+            return
+          }
+
+          // 重新设置yBlock，因为之前的被替换了
+          const v = this.vm.get(key)
+          const yBlock = this.getYBlock(key)
+          if (v && yBlock) {
+            v.setInput('yBlock', yBlock)
+            v.setInput('model', yBlock2Native(yBlock))
+          }
+        })
+
+        return
+      }
+
+      const blockId = path[0] as string
+      const keyProp = path[1]
+      const bm = this.vm.get(blockId)
+      if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
+
+      if (keyProp === "children") {
+        if (isYArray(target)) {
+          if (tr.origin !== ORIGIN_SKIP_SYNC) {
+            changes.delta.forEach(change => {
+              if (change.insert) {
+                (change.insert as string[]).forEach(id => {
+                  added[id] = this.getYBlock(id)!
+                })
+              }
+            })
+
+            delay_childrenEvent_handlers.push([bm, changes.delta])
+          }
+
+          // @ts-expect-error
+          bm.instance._childrenIds = target.toArray()
+        } else if (isYText(target)) {
+
+          if (!this.doc.isEditable(bm.instance))
+            throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} is not editable`)
+          // Y.Text
+          if (tr.origin !== ORIGIN_SKIP_SYNC) {
+            try {
+              bm.instance.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], bm.instance.containerElement)
+            } catch (e) {
+              this.doc.logger.warn('applyDeltaToView error;blockId:' + blockId, e)
+              bm.instance.rerender()
+            }
+          }
+          bm.instance.onTextChange.next({op: changes.delta as DeltaOperation[], tr})
+          textChanges.push({
+            block: bm.instance,
+            delta: changes.delta as DeltaOperation[]
+          })
+
+        }
+      }
+
+      const propKey = path[1] as 'props' | 'meta'
+
+      if (tr.origin !== ORIGIN_SKIP_SYNC) {
+        changes.keys.forEach((change, key) => {
+          switch (change.action) {
+            case 'add':
+            case "update":
+              // @ts-expect-error
+              Reflect.set(bm.instance._native[propKey], key, target.get(key))
+              break;
+            case 'delete':
+              // @ts-expect-error
+              Reflect.deleteProperty(bm.instance._native[propKey], key)
+              break;
+          }
+        })
+        // 触发视图检查
+        Promise.resolve().then(() => {
+          bm.instance.changeDetectorRef.markForCheck()
+          bm.instance.onPropsChange.emit(changes.keys as any)
+        })
+      }
+
+      propKey === 'props' && propsChanges.push({
+        block: bm.instance,
+        changes: changes.keys
+      })
+    })
+
+    if (propsChanges.length) {
+      this.onPropsUpdate$.next({
+        isUndoRedo,
+        origin: tr.origin,
+        transactions: propsChanges,
+        local: tr.local
+      })
+
+      propsChanges.forEach(v => {
+        v.block.onPropsChange.emit(v.changes as any)
+      })
+    }
+
+    if (textChanges.length) {
+      this.onTextUpdate$.next({
+        isUndoRedo,
+        origin: tr.origin,
+        transactions: textChanges,
+        local: tr.local
+      })
+    }
+
+    if (delay_childrenEvent_handlers.length) {
+      this._syncYBlockChildrenUpdate(added, deleted, delay_childrenEvent_handlers, tr)
+    }
+
+    this.undoManager.undoRedoing$.value && this.undoManager.undoRedoing$.next(false)
+  }
+
+  private _syncYBlockChildrenUpdate = (added: Record<string, YBlock>,
+                                       deleted: Set<string>,
+                                       events: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][],
+                                       tr: Y.Transaction) => {
+    const emitEvents: IChildrenChangeEvent = {
+      isUndoRedo: tr.origin instanceof Y.UndoManager,
+      local: tr.local,
+      origin: tr.origin,
+      transactions: [],
+    }
+
+    this.vm.deleteByIds([...deleted])
+
+    const childComps = this.vm.createComponentByYBlocks(added)
+
+    events.forEach(([bm, deltas]) => {
+      const _delay_inserts: [number, BlockCraft.BlockComponentRef[]][] = []
+      const deletedMap: { index: number, length: number }[] = []
+
+      let r = 0
+      deltas.forEach(d => {
+        if (d.retain) {
+          r += d.retain
+        } else if (d.insert) {
+          // 所有的插入操作需要延迟执行
+          const _insertComps = (d.insert as string[]).map(id => childComps[id])
+          _delay_inserts.push([r, _insertComps])
+          this.vm.insert(bm, r, _insertComps)
+          r += _insertComps.length
+        } else if (d.delete) {
+          // 有可能是被移动的元素，此时是不需要销毁再重建的
+          const cps = bm.instance.childrenRenderRef!.splice(r, d.delete)
+          cps.forEach(c => {
+            if (deleted.has(c.instance.id)) {
+              this.vm.destroy(c.instance.id)
+            }
+          })
+          deletedMap.push({index: r, length: <number>d.delete})
+        }
+      })
+
+      bm.instance.onChildrenChange?.(deltas)
+      emitEvents.transactions.push({
+        block: bm.instance,
+        deleted: deletedMap.length ? deletedMap : undefined,
+        inserted: _delay_inserts.map(v => v[1].map(v => v.instance)).flat()
+      })
+    })
+
+    this.onChildrenUpdate$.next(emitEvents)
+  }
+
+  getFlatIds = (blockIds: string[]) => {
+    const flatIds: string[] = blockIds.slice()
+    const flat = (ids: string[]) => {
+      ids.forEach(id => {
+        const target = this.yBlockMap.get(id)?.get('children')
+        if (target && isYArray(target)) {
+          const _bIds = target.toArray()
+          flatIds.push(..._bIds)
+          flat(_bIds)
+        }
+      })
+    }
+    flat(blockIds)
+    return flatIds
+  }
+
+  insertNewParagraph(parentId: string, index: number, content: string | InlineModel = ''): BlockCraft.BlockComponent {
+    const op = typeof content === 'string' ? [{insert: content}] : content
+    const p = this.doc.schemas.createSnapshot('paragraph', [op])
+    this.insertBlocks(parentId, index, [p])
+    return this.doc.getBlockById(p.id)
+  }
+
+  private _resolveInsertedBlocks = (snapshots: IBlockSnapshot[]): BlockCraft.BlockComponent[] => {
+    return snapshots
+      .map(snapshot => this.vm.get(snapshot.id)?.instance)
+      .filter((block): block is BlockCraft.BlockComponent => !!block)
+  }
+
+  private _insertBySnapshots = async (parentComp: BlockCraft.BlockComponentRef, index: number, snapshots: IBlockSnapshot[]) => {
+    const snapshot2YBlock = (snapshot: IBlockSnapshot) => {
+      const _children = snapshot.nodeType === BlockNodeType.editable ? snapshot.children : snapshot.children.map(childSnapshot => childSnapshot.id)
+      const yBlock = native2YBlock({...snapshot, children: _children} as NativeBlockModel)
+      this.yBlockMap.set(snapshot.id, yBlock)
+      if (snapshot.nodeType !== BlockNodeType.editable && snapshot.children.length) {
+        snapshot.children.forEach(childSnapshot => snapshot2YBlock(childSnapshot))
+      }
+    }
+    snapshots.forEach(snapshot => snapshot2YBlock(snapshot))
+
+    ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, snapshots.map(v => v.id))
+  }
+
+  insertBlocks(parentId: string, index: number, snapshots: IBlockSnapshot[]): BlockCraft.BlockComponent[] {
+    if (!snapshots.length) return []
+    if (index < 0) {
+      this.doc.logger.warn(`insertBlocks: index ${index} out of range`)
+      return []
+    }
+    const parentComp = this.vm.get(parentId)
+    if (!parentComp) {
+      this.doc.logger.warn(`parentComp ${parentId} not found`)
+      return []
+    }
+
+    // 过滤不允许的blocks
+    const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)!
+    const validSnapshots = snapshots.filter(s => this.doc.schemas.isValidChildren(s.flavour, parentSchema))
+    if (!validSnapshots.length) {
+      if (snapshots.length === 1) {
+        const snapshot = snapshots[0]
+        const schema = this.doc.schemas.get(snapshot.flavour)
+        if (schema) {
+          this.doc.messageService.warn(`不允许将 ${schema.metadata.label} 插入到 ${parentSchema.metadata.label} 中`)
+        }
+      }
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `insertBlocks: no valid children`)
+    }
+    if (snapshots.length > validSnapshots.length) {
+      this.doc.messageService.warn(`已过滤该位置不允许的内容块`)
+    }
+
+    this.transact(() => {
+      this._insertBySnapshots(parentComp, index, validSnapshots)
+    })
+
+    return this._resolveInsertedBlocks(validSnapshots)
+  }
+
+  insertBlocksBefore(block: string | BlockCraft.BlockComponent, snapshots: IBlockSnapshot[]) {
+    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    const index = block.getIndexOfParent()
+    return this.insertBlocks(block.parentId!, index, snapshots)
+  }
+
+  insertBlocksAfter(block: string | BlockCraft.BlockComponent, snapshots: IBlockSnapshot[]) {
+    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    const index = block.getIndexOfParent() + 1
+    return this.insertBlocks(block.parentId!, index, snapshots)
+  }
+
+  private _delete = (parentComp: BlockCraft.BlockComponentRef, index: number, count = 1) => {
+    const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
+    const flatIds = this.getFlatIds(sliceIds)
+    flatIds.forEach(id => {
+      this.yBlockMap.delete(id)
+    })
+    ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).delete(index, count)
+  }
+
+  deleteBlocks(parent: string, index: number, count = 1, force = false): BlockDeleteRange[] {
+    if (index < 0) {
+      this.doc.logger.warn(`insertBlocks: index ${index} out of range`)
+      return []
+    }
+
+    if (count === 0) return []
+    const parentComp = this.vm.get(parent)!
+    if (index >= parentComp.instance.childrenLength) {
+      this.doc.logger.warn(`deleteBlocks: index ${index} out of range`)
+      return []
+    }
+
+    if (index === 0 && count >= parentComp.instance.childrenLength && !force) {
+      const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)!
+      // 如果父元素并非是可渲染任意块的元素
+      if (!parentSchema.metadata.renderUnit) {
+        return this.deleteBlockById(parent)
+      }
+
+      const deletedLength = parentComp.instance.childrenLength
+      const p = this.doc.schemas.createSnapshot('paragraph', [])
+      this.transact(() => {
+        this._delete(parentComp, index, deletedLength)
+        this._insertBySnapshots(parentComp, 0, [p])
+      })
+      this.doc.selection.recalculate()
+      return [{index, length: deletedLength}]
+    }
+
+    if (index + count > parentComp.instance.childrenLength) {
+      count = parentComp.instance.childrenLength - index
+    }
+
+    this.transact(() => {
+      this._delete(parentComp, index, count)
+    })
+    return [{index, length: count}]
+  }
+
+  deleteBlockById(blockId: string): BlockDeleteRange[] {
+    const block = this.doc.getBlockById(blockId)
+    const index = block.getIndexOfParent()
+    return this.deleteBlocks(block.parentId!, index, 1)
+  }
+
+  replaceWithSnapshots(blockId: string, snapshots: IBlockSnapshot[]): BlockCraft.BlockComponent[] {
+    const block = this.doc.getBlockById(blockId)
+    const index = block.getIndexOfParent()
+    const parentId = block.parentId!
+    const parentComp = this.vm.get(parentId)
+    if (!parentComp) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `parentComp ${parentId} not found`)
+    }
+    this.transact(() => {
+      const yChildren = parentComp.instance.yBlock.get('children') as Y.Array<string>
+      const flatIds = this.getFlatIds([blockId])
+      flatIds.forEach(id => this.yBlockMap.delete(id))
+      yChildren.delete(index, 1)
+      if (snapshots?.length) {
+        this._insertBySnapshots(parentComp, index, snapshots)
+      }
+    })
+    return this._resolveInsertedBlocks(snapshots)
+  }
+
+  moveBlocks(parentId: string, index: number, count: number, targetId: string, targetIndex: number) {
+    const parentComp = this.vm.get(parentId)
+    const targetComp = this.vm.get(targetId)
+    if (!parentComp || !targetComp) return
+
+    this.transact(() => {
+        const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
+        // const sliceComps = sliceIds.map(id => this.vm.get(id)!)
+        // this.vm.remove(parentComp, index, count)
+        // this.vm.insert(targetComp, targetIndex, sliceComps)
+        parentComp.instance.yBlock.get('children').delete(index, count)
+        ;(targetComp.instance.yBlock.get('children') as Y.Array<string>).insert(targetIndex, sliceIds)
+      },
+      // ORIGIN_SKIP_SYNC
+    )
+  }
+
+}

@@ -1,0 +1,118 @@
+@import "../function";
+
+[data-blockcraft-root="true"] {
+  div.bookmark-block {
+    //height: 116px;
+    border: 1px solid var(--bc-border-color);
+    border-radius: 4px;
+    padding: 12px 12px 0 12px;
+    display: flex;
+    gap: 12px;
+    transition: border 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    flex-wrap: wrap;
+    overflow: hidden;
+    justify-content: center;
+    background: var(--bc-bg-secondary);
+
+    &.selected {
+      border: 1px solid var(--bc-active-color);
+      box-shadow: 0 0 2px var(--bc-active-color-light);
+
+      .bookmark-link {
+        color: var(--bc-active-color);
+      }
+    }
+
+    .bookmark-content {
+      //width: calc(100% - 204px - 12px);
+      flex: 1;
+      white-space: nowrap;
+      display: flex;
+      gap: 4px;
+      flex-direction: column;
+      padding-bottom: 8px;
+      min-width: 140px;
+
+      .bookmark-icon {
+        width: var(--bc-fs-xl);
+        height: var(--bc-fs-xl);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: var(var(--bc-fs-xl));
+        border-radius: 4px;
+        overflow: hidden;
+
+        img, svg, object {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+      }
+
+      .bookmark-title {
+        display: flex;
+        align-items: center;
+        line-height: 1.8em;
+        gap: 4px;
+
+        h3 {
+          flex: 1;
+          margin: 0;
+          font-size: var(--bc-fs-xl);
+          @include text-ellipsis(1);
+        }
+      }
+
+      .bookmark-description {
+        margin: 0;
+        font-size: var(--bc-fs-sm);
+        line-height: calc(var(--bc-fs-sm) + 6px);
+        @include text-ellipsis(2);
+      }
+    }
+
+    .bookmark-link {
+      color: var(--bc-color-light);
+      text-decoration: none;
+      font-size: var(--bc-fs-sm);
+      line-height: calc(var(--bc-fs-sm) + 6px);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      width: fit-content;
+      max-width: 100%;
+
+      &:hover {
+        color: var(--bc-active-color-light);
+      }
+
+      > span {
+        @include text-ellipsis(1);
+        flex: 1;
+        flex-direction: column;
+      }
+
+      > i {
+        font-size: small;
+      }
+
+    }
+
+    .bookmark-banner {
+      width: 204px;
+      min-width: 120px;
+      max-width: 204px;
+      flex: 1;
+
+      img, svg, object {
+        width: 100%;
+        max-width: 100%;
+        height: 102px;
+        object-fit: contain;
+        border-radius: 4px 4px var(--1, 0px) var(--1, 0px);
+      }
+    }
+
+  }
+}
