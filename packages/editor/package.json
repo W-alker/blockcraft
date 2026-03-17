@@ -1,6 +1,6 @@
 {
   "name": "@blockcraft/editor",
-  "version": "0.1.0",
+  "version": "0.1.31",
   "peerDependencies": {
     "@angular/animations": "^20.0.0",
     "@angular/cdk": "^20.0.0",
@@ -42,7 +42,6 @@
     "y-websocket": "^2.1.0",
     "yjs": "^13.6.18"
   },
-  "devDependencies": {
-  },
+  "devDependencies": {},
   "sideEffects": false
 }
