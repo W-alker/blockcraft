@@ -11,7 +11,6 @@ import {closetBlockId} from "../utils";
 import {BLOCK_POSITION} from "../doc";
 import {DOC_FILE_SERVICE_TOKEN} from "./file.service";
 import {BLOCK_CREATOR_SERVICE_TOKEN} from "./block-creator.service";
-import {throttle} from "../../global";
 
 export enum DocDndDataTypes {
   // 已有的block
@@ -33,9 +32,9 @@ export enum DocDndStatus {
 }
 
 type DragPosition = 'before' | 'after' | 'left' | 'right' | 'none'
+type DragLineRect = { top: number, left: number, width: number, height: number }
 
-const calcPosition = (e: DragEvent, blockWrap: HTMLElement, leftOrRight = false): DragPosition => {
-  const rect = blockWrap.getBoundingClientRect()
+const calcPositionByRect = (e: Pick<DragEvent, 'clientX' | 'clientY'>, rect: Pick<DOMRect, 'top' | 'left' | 'right' | 'width' | 'height'>, leftOrRight = false): DragPosition => {
   // 先判断是否在左右
   const edge = Math.min(Math.max(10, rect.width / 6), 50)
   if (leftOrRight) {
@@ -44,6 +43,42 @@ const calcPosition = (e: DragEvent, blockWrap: HTMLElement, leftOrRight = false)
   }
   if (e.clientY > rect.top + rect.height / 2) return 'after'
   return 'before'
+}
+
+const calcLineRect = (
+  rootRect: Pick<DOMRect, 'top' | 'left'>,
+  rect: Pick<DOMRect, 'top' | 'left' | 'right' | 'bottom' | 'width' | 'height'>,
+  position: DragPosition
+): DragLineRect => {
+  switch (position) {
+    case 'left':
+      return {top: rect.top - rootRect.top, left: rect.left - rootRect.left - 1, width: 2, height: rect.height}
+    case 'right':
+      return {top: rect.top - rootRect.top, left: rect.right - rootRect.left + 1, width: 2, height: rect.height}
+    case 'after':
+      return {top: rect.bottom - rootRect.top + 1, left: rect.left - rootRect.left, width: rect.width, height: 2}
+    default:
+      return {top: rect.top - rootRect.top - 1, left: rect.left - rootRect.left, width: rect.width, height: 2}
+  }
+}
+
+const DRAG_SCROLL_EDGE = 56
+const DRAG_SCROLL_MAX_STEP = 24
+
+const calcDragScrollStep = (pointer: number, start: number, end: number) => {
+  if (pointer < start + DRAG_SCROLL_EDGE) {
+    const ratio = (start + DRAG_SCROLL_EDGE - pointer) / DRAG_SCROLL_EDGE
+    return -Math.ceil(DRAG_SCROLL_MAX_STEP * Math.min(1, ratio))
+  }
+  if (pointer > end - DRAG_SCROLL_EDGE) {
+    const ratio = (pointer - (end - DRAG_SCROLL_EDGE)) / DRAG_SCROLL_EDGE
+    return Math.ceil(DRAG_SCROLL_MAX_STEP * Math.min(1, ratio))
+  }
+  return 0
+}
+
+const isViewportScroller = (container: HTMLElement) => {
+  return container === document.body || container === document.documentElement
 }
 
 @DocEventRegister
@@ -62,6 +97,10 @@ export class DocDndService {
   dragEnd$ = this.dragStatus$.asObservable().pipe(filter(v => v === DocDndStatus.end))
 
   private dragLine: HTMLElement | null = null
+  private dragScrollFrame: number | null = null
+  private dragMoveFrame: number | null = null
+  private lastDragEvent: DragEvent | null = null
+  private lastDragLineRect: DragLineRect | null = null
   // private rootRect: Pick<DOMRect, 'top' | 'left' | 'width' | 'height'> = {top: 0, left: 0, width: 0, height: 0}
 
   private createDragLine = () => {
@@ -75,46 +114,145 @@ export class DocDndService {
       height: 2px;
       background-color: #3a53d9;
       pointer-events: none;
+      will-change: transform, width, height;
       box-shadow: 0 0 2px var(--bc-active-color-light);
     `
     this.doc.root.hostElement.appendChild(dragLine)
     this.dragLine = dragLine
   }
 
-  private moveDragLine = (host: HTMLElement, position: DragPosition) => {
+  private moveDragLine = (host: HTMLElement, position: DragPosition, hostRect = host.getBoundingClientRect()) => {
     if (!this.dragLine) return
-
-    const calcLineRect = (blockWrap: HTMLElement, position: DragPosition) => {
-      const rootRect = this.doc.root.hostElement.getBoundingClientRect()
-      const rect = blockWrap.getBoundingClientRect()
-      switch (position) {
-        case 'left':
-          return {top: rect.top - rootRect.top, left: rect.left - rootRect.left - 1, width: 2, height: rect.height}
-        case 'right':
-          return {top: rect.top - rootRect.top, left: rect.right - rootRect.left + 1, width: 2, height: rect.height}
-        case 'after':
-          return {top: rect.bottom - rootRect.top + 1, left: rect.left - rootRect.left, width: rect.width, height: 2}
-        default:
-          return {top: rect.top - rootRect.top - 1, left: rect.left - rootRect.left, width: rect.width, height: 2}
-      }
+    const rect = calcLineRect(this.doc.root.hostElement.getBoundingClientRect(), hostRect, position)
+    const prevRect = this.lastDragLineRect
+    if (!prevRect || prevRect.left !== rect.left || prevRect.top !== rect.top) {
+      this.dragLine.style.transform = `translate3d(${rect.left}px, ${rect.top}px, 0)`
     }
-
-    const rect = calcLineRect(host, position)
-    this.dragLine.style.transform = `translate(${rect.left}px, ${rect.top}px)`;
-    if (!this.dragLine.style.transition) {
-      requestAnimationFrame(() => {
-        if (!this.dragLine) return
-        this.dragLine.style.transition = 'transform .08s'
-      })
+    if (!prevRect || prevRect.width !== rect.width) {
+      this.dragLine.style.width = rect.width + 'px'
     }
-    this.dragLine.style.width = rect.width + 'px';
-    this.dragLine.style.height = rect.height + 'px';
+    if (!prevRect || prevRect.height !== rect.height) {
+      this.dragLine.style.height = rect.height + 'px'
+    }
+    this.lastDragLineRect = rect
   }
 
   private removeDragLine = () => {
     if (!this.dragLine) return
     this.dragLine.remove()
     this.dragLine = null
+  }
+
+  private queueDragScroll = (evt: DragEvent) => {
+    this.lastDragEvent = evt
+    if (this.dragScrollFrame !== null) return
+    this.dragScrollFrame = requestAnimationFrame(this.runDragScroll)
+  }
+
+  private queueDragMove = (evt: DragEvent) => {
+    this.lastDragEvent = evt
+    if (this.dragMoveFrame !== null) return
+    this.dragMoveFrame = requestAnimationFrame(this.runDragMoveFrame)
+  }
+
+  private runDragMoveFrame = () => {
+    this.dragMoveFrame = null
+    if (this.dragStatus$.value === DocDndStatus.end || !this.lastDragEvent) return
+    this.processDragMove(this.lastDragEvent)
+  }
+
+  private runDragScroll = () => {
+    this.dragScrollFrame = null
+    if (this.dragStatus$.value === DocDndStatus.end || !this.lastDragEvent) return
+
+    const container = this.doc.scrollContainer
+    if (!container) return
+
+    if (isViewportScroller(container)) {
+      const scrollElement = document.scrollingElement as HTMLElement | null
+      if (!scrollElement) return
+      const deltaY = calcDragScrollStep(this.lastDragEvent.clientY, 0, window.innerHeight)
+      if (!deltaY) return
+
+      const nextTop = Math.max(0, Math.min(scrollElement.scrollTop + deltaY, scrollElement.scrollHeight - window.innerHeight))
+      if (nextTop === scrollElement.scrollTop) return
+      scrollElement.scrollTop = nextTop
+      this.queueDragMove(this.lastDragEvent)
+      this.dragScrollFrame = requestAnimationFrame(this.runDragScroll)
+      return
+    }
+
+    const rect = container.getBoundingClientRect()
+    const deltaY = calcDragScrollStep(this.lastDragEvent.clientY, rect.top, rect.bottom)
+    if (!deltaY) return
+
+    const nextTop = Math.max(0, Math.min(container.scrollTop + deltaY, container.scrollHeight - container.clientHeight))
+    if (nextTop === container.scrollTop) return
+    container.scrollTop = nextTop
+    this.queueDragMove(this.lastDragEvent)
+    this.dragScrollFrame = requestAnimationFrame(this.runDragScroll)
+  }
+
+  private stopDragScroll = () => {
+    this.lastDragEvent = null
+    if (this.dragScrollFrame === null) return
+    cancelAnimationFrame(this.dragScrollFrame)
+    this.dragScrollFrame = null
+  }
+
+  private stopDragMove = () => {
+    if (this.dragMoveFrame !== null) {
+      cancelAnimationFrame(this.dragMoveFrame)
+      this.dragMoveFrame = null
+    }
+  }
+
+  private processDragMove = (evt: DragEvent) => {
+    this.dragStatus$.next(DocDndStatus.moving)
+
+    const evtTarget = (document.elementFromPoint(evt.clientX, evt.clientY) ?? evt.target) as Node | null
+    if (!evtTarget || evtTarget === this.doc.root.hostElement) return
+
+    const blockId = evtTarget === this._prevTargetElement
+      ? this.prevBlock?.id
+      : closetBlockId(evtTarget)
+    if (!blockId) return
+
+    let activeBlock = blockId === this.prevBlock?.id
+      ? this.prevBlock
+      : this.doc.getBlockById(blockId)
+    if (!activeBlock || activeBlock.flavour === 'root') return
+    this._prevTargetElement = evtTarget
+
+    if (this.prevBlock !== activeBlock) {
+      if (activeBlock === this._inBlock) return
+      const schema = this.doc.schemas.get(activeBlock.flavour)!
+
+      if (schema.metadata.renderUnit) {
+        this._inBlock = activeBlock
+        const renderBlockRect = activeBlock.hostElement.getBoundingClientRect()
+        const position = calcPositionByRect(evt, renderBlockRect)
+        activeBlock = position === 'before' ? this._inBlock!.firstChildren! : this._inBlock!.lastChildren!
+        this.prevBlock = activeBlock
+        this.prevDragPosition = position
+        this.moveDragLine(this.prevBlock.hostElement, position)
+        return
+      }
+
+      if (activeBlock.nodeType === 'block') {
+        this._inBlock = null
+      }
+      if (schema.metadata.isLeaf) return
+      this.prevBlock = activeBlock
+    }
+
+    const hostRect = this.prevBlock.hostElement.getBoundingClientRect()
+    const allowColumnDrop = !activeBlock.flavour.startsWith('column')
+      && this.doc.schemas.has('column')
+      && ['root', 'column'].includes(this.prevBlock.parentBlock!.flavour)
+    const position = calcPositionByRect(evt, hostRect, allowColumnDrop)
+    this.prevDragPosition = position
+    this.moveDragLine(this.prevBlock.hostElement, position, hostRect)
   }
 
   // 外部文件 拖拽响应
@@ -159,6 +297,7 @@ export class DocDndService {
       fromEvent<DragEvent>(document, 'dragover').pipe(takeUntil(this.dragEnd$))
         .subscribe((e) => {
           e.preventDefault()
+          this.queueDragScroll(e)
         })
 
       fromEvent<DragEvent>(document, 'drop').pipe(takeUntil(this.dragEnd$))
@@ -182,65 +321,29 @@ export class DocDndService {
   // 所在的nodeType为block的块内部
   private _inBlock: BlockCraft.BlockComponent | null = null
 
-  private onDragMove = throttle((ctx: UIEventStateContext) => {
+  private onDragMove = (ctx: UIEventStateContext) => {
     this.doc.ngZone.runOutsideAngular(() => {
       const evt: DragEvent = ctx.getDefaultEvent()
       evt.preventDefault()
       ctx.stopPropagation()
-      this.dragStatus$.next(DocDndStatus.moving)
-
-      const evtTarget = evt.target as Node
-      if (evtTarget === this.doc.root.hostElement) return
-      let activeBlock = null
-      if (evtTarget === this._prevTargetElement) activeBlock = this.prevBlock
-      else {
-        const blockId = closetBlockId(evt.target as Node)
-        if (!blockId) return
-        activeBlock = this.doc.getBlockById(blockId)
-      }
-      if (!activeBlock || activeBlock.flavour === 'root') return
-      if (this.prevBlock !== activeBlock) {
-        if (activeBlock === this._inBlock) return
-        const schema = this.doc.schemas.get(activeBlock.flavour)!
-
-        // 对于在特殊block块内部特殊处理
-        if (schema.metadata.renderUnit) {
-          this._inBlock = activeBlock
-          const position = calcPosition(evt, activeBlock.hostElement)
-          if (position === 'before') {
-            activeBlock = this._inBlock!.firstChildren!
-          } else {
-            activeBlock = this._inBlock!.lastChildren!
-          }
-          this.prevBlock = activeBlock
-          this.moveDragLine(this.prevBlock.hostElement, this.prevDragPosition = position)
-          return
-        }
-
-        // 跳出所在的特殊block块后，清除所在block块记录
-        if (activeBlock.nodeType === 'block') {
-          this._inBlock = null
-        }
-        if (schema.metadata.isLeaf) return;
-        this.prevBlock = activeBlock
-      }
-
-      // const position = calcPosition(evt, this.prevBlock.hostElement)
-      const position = calcPosition(evt, this.prevBlock.hostElement, !activeBlock.flavour.startsWith('column') && this.doc.schemas.has('column') && ['root', 'column'].includes(this.prevBlock.parentBlock!.flavour))
-      if (this.prevDragPosition === position) return
-      this.moveDragLine(this.prevBlock.hostElement, this.prevDragPosition = position)
+      this.queueDragMove(evt)
     })
     return true
-  }, 32)
+  }
 
   private clearDrag = () => {
     // this.doc.root.hostElement.classList.remove('dragging')
     if (this.dragStatus$.value === DocDndStatus.end) return
     // this.virtualScroller?.forEach(e => e.remove())
     // this.virtualScroller = null
+    this.stopDragScroll()
+    this.stopDragMove()
     this.removeDragLine()
     this.dragStatus$.next(DocDndStatus.end)
     this.prevDragPosition = 'none'
+    this.prevBlock = null
+    this._prevTargetElement = null
+    this.lastDragLineRect = null
     this.doc.event.remove('dragMove', this.onDragMove)
     this._inBlock = null
   }

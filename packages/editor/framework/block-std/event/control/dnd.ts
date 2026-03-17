@@ -1,4 +1,4 @@
-import {fromEvent, Subject, take, takeUntil, throttleTime} from "rxjs";
+import {animationFrameScheduler, fromEvent, Subject, take, takeUntil, throttleTime} from "rxjs";
 import {EventScopeSourceType, EventSourceState} from "../state";
 import {UIEventState, UIEventStateContext} from "../base";
 
@@ -108,9 +108,14 @@ export class DndControl {
       this.onDragEnter(evt)
     })
 
-    fromEvent<DragEvent>(root.hostElement, 'dragover').pipe(takeUntil(root.onDestroy$), throttleTime(20)).subscribe(evt => {
-      this.onDragMove(evt)
-    })
+    fromEvent<DragEvent>(root.hostElement, 'dragover')
+      .pipe(
+        takeUntil(root.onDestroy$),
+        throttleTime(0, animationFrameScheduler, {leading: true, trailing: true})
+      )
+      .subscribe(evt => {
+        this.onDragMove(evt)
+      })
 
     fromEvent<DragEvent>(root.hostElement, 'dragleave').pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       this.onDragLeave(evt)
