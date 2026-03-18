@@ -19,7 +19,7 @@ import {
   TableBlockSchema,
   TodoBlockSchema,
   type IBlockSnapshot
-} from '@blockcraft/editor';
+} from '@ccc/blockcraft';
 
 const ROOT_ID = '689ac2b31a9abe3ae8a6788d';
 

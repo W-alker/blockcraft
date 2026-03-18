@@ -1,6 +1,9 @@
 {
-  "name": "@blockcraft/editor",
+  "name": "@ccc/blockcraft",
   "version": "0.1.31",
+  "publishConfig": {
+    "registry": "http://npm.runtongqiuben.com"
+  },
   "peerDependencies": {
     "@angular/animations": "^20.0.0",
     "@angular/cdk": "^20.0.0",

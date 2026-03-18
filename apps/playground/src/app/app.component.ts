@@ -14,9 +14,9 @@ import {
   MarkdownStreamRenderer,
   PresentationController,
   generateId
-} from '@blockcraft/editor';
-import { debugTableMerge, fixTable } from '@blockcraft/editor/blocks/table-block/callback';
-import { BlockCraftAwareness } from '@blockcraft/editor/editor/awa';
+} from '@ccc/blockcraft';
+import { debugTableMerge, fixTable } from '@ccc/blockcraft/blocks/table-block/callback';
+import { BlockCraftAwareness } from '@ccc/blockcraft/editor/awa';
 import { Subscription } from 'rxjs';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';

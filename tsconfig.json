@@ -3,11 +3,11 @@
   "compilerOptions": {
     "baseUrl": "./",
     "paths": {
-      "@blockcraft/editor": [
+      "@ccc/blockcraft": [
         "./packages/editor/index.ts",
         "./dist/editor"
       ],
-      "@blockcraft/editor/*": [
+      "@ccc/blockcraft/*": [
         "./packages/editor/*",
         "./dist/editor/*"
       ]

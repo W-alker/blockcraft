@@ -32,6 +32,7 @@ pnpm publish:editor:major
 ```
 
 - `pnpm publish:editor` 默认自动升级 `packages/editor/package.json` 的补丁版本
-- 脚本会先构建 `dist/editor`，再发布该目录里的 npm 包
+- 编辑器 npm 包名固定为 `@ccc/blockcraft`
+- 脚本会先构建 `dist/editor`，再固定发布到 `http://npm.runtongqiuben.com`
 - 需要附加 npm 参数时可用 `pnpm publish:editor -- --tag beta`
 - 验证流程可用 `pnpm publish:editor -- --dry-run`，脚本会在结束后恢复版本文件
