@@ -11,6 +11,8 @@
     "publish:editor": "node ./scripts/publish-editor.mjs",
     "publish:editor:minor": "node ./scripts/publish-editor.mjs minor",
     "publish:editor:major": "node ./scripts/publish-editor.mjs major",
+    "cancel-publish:editor": "node ./scripts/unpublish-editor.mjs",
+    "unpublish:editor": "node ./scripts/unpublish-editor.mjs",
     "build:docs": "pnpm --filter @blockcraft/docs docs:build",
     "dev:docs": "pnpm --filter @blockcraft/docs docs:dev",
     "build": "pnpm build:editor && pnpm build:playground && pnpm build:docs",

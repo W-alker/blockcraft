@@ -19,19 +19,31 @@ export class MarkdownDeltaConverter extends DeltaASTConverter<
     readonly configs: Map<string, string>,
     readonly inlineDeltaMatchers: InlineDeltaToMarkdownAdapterMatcher[],
     readonly markdownASTToDeltaMatchers: MarkdownASTToDeltaMatcher[]
-  ) {
+    ) {
     super();
+  }
+
+  private _deltaInsertToPlainText(delta: DeltaInsert) {
+    if (typeof delta.insert === 'string') {
+      return delta.insert;
+    }
+
+    if ('mention' in delta.insert) {
+      return String(delta.insert['mention'] ?? '');
+    }
+
+    return '';
   }
 
   applyTextFormatting(
     delta: DeltaInsert
   ): PhrasingContent {
+    const plainText = this._deltaInsertToPlainText(delta);
     let mdast: PhrasingContent = {
       type: 'text',
-      // @ts-ignore
       value: delta.attributes?.["a:underline"]
-        ? `<u>${delta.insert}</u>`
-        : delta.insert,
+        ? `<u>${plainText}</u>`
+        : plainText,
     };
 
     const context: {

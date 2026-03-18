@@ -3,6 +3,7 @@ import remarkParse from 'remark-parse';
 import {unified} from 'unified';
 import {
   BlockNodeType,
+  DeltaInsert,
   DocAttachmentInfo,
   DocFileService,
   IBlockSnapshot,
@@ -32,7 +33,7 @@ class TestDocFileService extends DocFileService {
 const createEditableSnapshot = (
   id: string,
   flavour: IBlockSnapshot['flavour'],
-  text: string,
+  text: string | DeltaInsert[],
   props: IBlockSnapshot['props']
 ): IBlockSnapshot => ({
   id,
@@ -40,7 +41,7 @@ const createEditableSnapshot = (
   nodeType: BlockNodeType.editable,
   props,
   meta: {},
-  children: [{insert: text}],
+  children: Array.isArray(text) ? text : [{insert: text}],
 });
 
 const createRootSnapshot = (children: IBlockSnapshot[]): IBlockSnapshot => ({
@@ -177,5 +178,25 @@ describe('MarkdownAdapter', () => {
     expect(topLevelLists[2]!.children[0]!.checked).toBeTrue();
     expect(markdown).toContain('2. 第二步');
     expect(markdown).toContain('- [x] 已完成');
+  });
+
+  it('exports mention embeds as plain text', async () => {
+    const snapshot = createRootSnapshot([
+      createEditableSnapshot('paragraph-1', 'paragraph', [
+        {insert: 'Hello '},
+        {
+          insert: {mention: 'Alice'},
+          attributes: {
+            mentionId: 'user-1',
+            mentionType: 'user',
+          },
+        },
+        {insert: ' world'},
+      ], {depth: 0}),
+    ]);
+
+    const markdown = await adapter.toMarkdown(snapshot);
+
+    expect(markdown.trim()).toBe('Hello Alice world');
   });
 });
