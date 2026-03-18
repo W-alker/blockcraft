@@ -44,7 +44,12 @@ type DebugActionId =
   | 'exportImage'
   | 'enterRoom'
   | 'quitRoom'
-  | 'demo';
+  | 'demo'
+  | 'toggleMonitor'
+  | 'startSim'
+  | 'stopSim';
+
+type MonitorStatus = 'ok' | 'error' | 'none';
 
 interface DebugAction {
   id: DebugActionId;
@@ -95,6 +100,14 @@ const ACTION_SECTIONS: DebugSection[] = [
       { id: 'markdownStream', label: 'Markdown 流' },
       { id: 'logTable', label: '打印表格' },
       { id: 'fixTable', label: '修复表格' }
+    ]
+  },
+  {
+    title: '一致性检测',
+    actions: [
+      { id: 'toggleMonitor', label: '开关监控' },
+      { id: 'startSim', label: '模拟协同', tone: 'primary' },
+      { id: 'stopSim', label: '停止模拟', tone: 'danger' }
     ]
   },
   {
@@ -170,6 +183,20 @@ const ACTION_SECTIONS: DebugSection[] = [
               </div>
             }
           </nav>
+
+          <div class="sim-controls">
+            <span class="nav-label">模拟参数</span>
+            <div class="sim-row">
+              <span class="sim-label">用户数</span>
+              <input type="range" min="1" max="5" [value]="simUserCount" (input)="onSimSettingChange('users', $event)">
+              <span class="sim-value">{{ simUserCount }}</span>
+            </div>
+            <div class="sim-row">
+              <span class="sim-label">间隔</span>
+              <input type="range" min="100" max="2000" step="100" [value]="simIntervalMs" (input)="onSimSettingChange('interval', $event)">
+              <span class="sim-value">{{ simIntervalMs }}ms</span>
+            </div>
+          </div>
         </section>
 
         <section class="sidebar-card selection-panel">
@@ -211,6 +238,25 @@ const ACTION_SECTIONS: DebugSection[] = [
         <section class="editor-stage">
           <block-craft-editor #editor [stickyTop]="0"></block-craft-editor>
         </section>
+
+        @if (isMonitorActive) {
+          <section class="monitor-panel" [class.monitor-panel--error]="monitorStatus === 'error'">
+            <div class="monitor-header">
+              <span class="section-title">INLINE 一致性</span>
+              <span class="monitor-stats">
+                @if (isSimulationRunning) {
+                  <span class="status-pill status-pill--active">{{ simUserCount }}人 · {{ simIntervalMs }}ms · {{ simOpCount }} ops</span>
+                }
+                @switch (monitorStatus) {
+                  @case ('ok') { <span class="status-pill status-pill--active">✓ 一致</span> }
+                  @case ('error') { <span class="status-pill monitor-pill--error">✗ 不一致</span> }
+                  @default { <span class="status-pill">无聚焦块</span> }
+                }
+              </span>
+            </div>
+            <pre class="monitor-output">{{ monitorOutput }}</pre>
+          </section>
+        }
       </main>
     </div>
   `,
@@ -548,6 +594,88 @@ const ACTION_SECTIONS: DebugSection[] = [
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
     }
 
+    .monitor-panel {
+      flex-shrink: 0;
+      margin-top: 16px;
+      border-radius: 16px;
+      background: var(--bc-bg-elevated);
+      border: 1px solid var(--bc-border-color-light);
+      overflow: hidden;
+    }
+
+    .monitor-panel--error {
+      border-color: #f43f5e;
+    }
+
+    .monitor-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--bc-border-color-light);
+      background: var(--bc-bg-secondary);
+    }
+
+    .monitor-stats {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .monitor-pill--error {
+      color: #be123c;
+      border-color: #f43f5e;
+      background: #fff1f2;
+    }
+
+    .monitor-output {
+      margin: 0;
+      padding: 12px 16px;
+      font-size: 11px;
+      line-height: 1.6;
+      font-family: ui-monospace, monospace;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: var(--bc-color);
+      max-height: 320px;
+      overflow-y: auto;
+    }
+
+    .sim-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 14px;
+      border-top: 1px solid var(--bc-border-color-light);
+    }
+
+    .sim-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sim-label {
+      font-size: 11px;
+      color: var(--bc-color-lighter);
+      width: 42px;
+      flex-shrink: 0;
+    }
+
+    .sim-row input[type="range"] {
+      flex: 1;
+      height: 4px;
+      accent-color: var(--bc-active-color);
+    }
+
+    .sim-value {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--bc-color);
+      width: 48px;
+      text-align: right;
+    }
+
     @media (max-width: 1200px) {
       .sidebar {
         width: 320px;
@@ -582,6 +710,21 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   selectionJson: string | null = null;
   selectionMeta: DebugMetaItem[] = [];
 
+  // Monitor — focused block only
+  isMonitorActive = false;
+  monitorOutput = '';
+  monitorStatus: MonitorStatus = 'none';
+  private _monitorTimer: ReturnType<typeof setInterval> | null = null;
+
+  // Simulation
+  isSimulationRunning = false;
+  simOpCount = 0;
+  simUserCount = 1;
+  simIntervalMs = 800;
+  private _simTimer: ReturnType<typeof setInterval> | null = null;
+  private _shadowDoc: Y.Doc | null = null;
+  private _shadowCleanup: (() => void) | null = null;
+
   constructor() {
     this.iconRegistry.addSvgIconSet(
       this.sanitizer.bypassSecurityTrustResourceUrl('https://at.alicdn.com/t/c/font_4682833_9f8nqslb5uf.js')
@@ -589,13 +732,13 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit(): void {
-    queueMicrotask(() => {
-      try {
-        this.initializeEditor();
-      } catch (error) {
-        console.error('Auto init editor failed:', error);
-      }
-    });
+    // queueMicrotask(() => {
+    //   try {
+    //     this.initializeEditor();
+    //   } catch (error) {
+    //     console.error('Auto init editor failed:', error);
+    //   }
+    // });
   }
 
   ngOnDestroy(): void {
@@ -604,6 +747,8 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     this._demoController?.destroy();
     this.quitRoom();
     this._selectionSub?.unsubscribe();
+    this.stopMonitor();
+    this.stopSimulation();
   }
 
   get isInitialized() {
@@ -636,6 +781,15 @@ export class AppComponent implements AfterViewInit, OnDestroy {
 
   get hasSelection() {
     return !!this.selectionJson;
+  }
+
+  private getFocusedEditableBlock(): EditableBlockComponent | null {
+    const editor = this.editor;
+    if (!editor?.doc.isInitialized) return null;
+    const sel = editor.doc.selection.value;
+    if (!sel) return null;
+    const block = sel.from.block;
+    return editor.doc.isEditable(block) ? block as EditableBlockComponent : null;
   }
 
   private _subscribeSelection() {
@@ -772,6 +926,15 @@ export class AppComponent implements AfterViewInit, OnDestroy {
         return;
       case 'demo':
         this.startDemo();
+        return;
+      case 'toggleMonitor':
+        this.toggleMonitor();
+        return;
+      case 'startSim':
+        this.startSimulation();
+        return;
+      case 'stopSim':
+        this.stopSimulation();
         return;
     }
   }
@@ -1122,30 +1285,33 @@ $$
   }
 
   enterRoom() {
-    const editor = this.ensureEditorInitialized();
-    this.quitRoom();
-
     const initFn = () => {
-      const yRoot = editor.doc.yBlockMap?.get(editor.docId);
+      const yRoot = this.editor?.doc.yBlockMap?.get(this.editor?.docId)
       if (yRoot) {
-        editor.doc.initByYBlock(yRoot, this.editorContainer);
-        editor.doc.yDoc.off('update', initFn);
+        this.editor?.doc.initByYBlock(yRoot, this.editor?.container.nativeElement)
+        this.editor?.doc.yDoc.off('update', initFn)
       }
-    };
+    }
 
-    this._collabInitHandler = initFn;
-    editor.doc.yDoc.on('update', initFn);
+    this.editor?.doc.yDoc.on('update', initFn)
 
-    this.provider = new WebsocketProvider('ws://196.168.1.153:1234', editor.docId, editor.doc.yDoc, {
-      disableBc: false
-    });
+    this.provider = new WebsocketProvider(
+      // 'ws://localhost:1234',
+      'ws://196.168.1.153:1234',
+      // 'ws://ws-doc.cses7.com',
+      // 'ws://ws-doc-pre.cses7.com',
+      // 'ws://193.168.2.100:30204/collaborate',
+      this.editor!.docId,
+      this.editor!.doc.yDoc, {
+        disableBc: false
+      })
 
-    const uid = generateId(11);
-    const awareness = new BlockCraftAwareness(editor.doc, this.provider.awareness);
-    awareness.setLocalUser({
+    const uid = generateId(11)
+    const awa = new BlockCraftAwareness(this.editor!.doc, this.provider.awareness)
+    awa.setLocalUser({
       id: uid,
-      name: uid
-    });
+      name: uid,
+    })
   }
 
   quitRoom() {
@@ -1176,5 +1342,255 @@ $$
       }
     });
     this._demoController.start();
+  }
+
+  // ─── Consistency Monitor (focused block only) ───
+
+  toggleMonitor() {
+    if (this.isMonitorActive) {
+      this.stopMonitor();
+    } else {
+      this.startMonitor();
+    }
+  }
+
+  private startMonitor() {
+    this.ensureEditorInitialized();
+    this.isMonitorActive = true;
+    this.refreshMonitor();
+    this._monitorTimer = setInterval(() => {
+      this.zone.run(() => this.refreshMonitor());
+    }, 300);
+  }
+
+  private stopMonitor() {
+    this.isMonitorActive = false;
+    this.monitorOutput = '';
+    this.monitorStatus = 'none';
+    if (this._monitorTimer) {
+      clearInterval(this._monitorTimer);
+      this._monitorTimer = null;
+    }
+  }
+
+  private refreshMonitor() {
+    const block = this.getFocusedEditableBlock();
+    if (!block) {
+      this.monitorOutput = '(光标不在可编辑块上)';
+      this.monitorStatus = 'none';
+      this.cdr.markForCheck();
+      return;
+    }
+
+    try {
+      this.monitorOutput = this.buildMonitorOutput(block);
+    } catch (e) {
+      this.monitorOutput = `ERROR: ${(e as Error).message}`;
+      this.monitorStatus = 'error';
+    }
+    this.cdr.markForCheck();
+  }
+
+  private buildMonitorOutput(block: EditableBlockComponent): string {
+    const lines: string[] = [];
+    const yDeltas = block.yText.toDelta() as any[];
+    const leaves = (block as any).runtime.scrollBlot.leaves as any[];
+    const container = (block as any).runtime.container as HTMLElement;
+    const cElements = Array.from(container.querySelectorAll('c-element'))
+      .filter((el: Element) => !el.classList.contains('bc-end-break'));
+
+    lines.push(`${block.flavour} · ${block.id.slice(0, 8)}`);
+    lines.push('');
+
+    const fmtAttrs = (a: any) => {
+      if (!a || !Object.keys(a).length) return '';
+      const short = Object.entries(a).map(([k, v]) => v === true ? k : `${k}:${v}`).join(',');
+      return ` {${short}}`;
+    };
+
+    // Delta
+    lines.push(`Delta (${yDeltas.length})`);
+    yDeltas.forEach((d: any, i: number) => {
+      if (typeof d.insert === 'string') {
+        lines.push(`  [${i}] "${this.truncate(d.insert, 30)}"${fmtAttrs(d.attributes)}  len=${d.insert.length}`);
+      } else {
+        const key = Object.keys(d.insert)[0];
+        lines.push(`  [${i}] □${key}${fmtAttrs(d.attributes)}  len=1`);
+      }
+    });
+
+    // Blot
+    lines.push(`Blot (${leaves.length})`);
+    leaves.forEach((l: any, i: number) => {
+      if ('text' in l && typeof l.text === 'string') {
+        lines.push(`  [${i}] "${this.truncate(l.text, 30)}"${fmtAttrs(l.attrs)}  len=${l.length}`);
+      } else {
+        lines.push(`  [${i}] □embed${fmtAttrs(l.attrs)}  len=${l.length}`);
+      }
+    });
+
+    // DOM
+    lines.push(`DOM (${cElements.length})`);
+    cElements.forEach((el: Element, i: number) => {
+      const ct = el.querySelector('c-text');
+      if (ct) {
+        lines.push(`  [${i}] "${this.truncate(ct.textContent || '', 30)}"  len=${(ct.textContent || '').length}`);
+      } else {
+        lines.push(`  [${i}] □embed  len=1`);
+      }
+    });
+
+    // Diff
+    const diffs: string[] = [];
+    if (yDeltas.length !== leaves.length) diffs.push(`段数: Delta(${yDeltas.length}) ≠ Blot(${leaves.length})`);
+    if (yDeltas.length !== cElements.length) diffs.push(`段数: Delta(${yDeltas.length}) ≠ DOM(${cElements.length})`);
+
+    const minLen = Math.min(yDeltas.length, leaves.length, cElements.length);
+    for (let i = 0; i < minLen; i++) {
+      const yd = yDeltas[i];
+      const leaf = leaves[i] as any;
+      const el = cElements[i];
+
+      const yStr = typeof yd.insert === 'string' ? yd.insert : null;
+      const bStr = 'text' in leaf ? leaf.text : null;
+      const ct = el.querySelector('c-text');
+      const dStr = ct ? (ct.textContent || '') : null;
+
+      if (yStr !== null && bStr !== null && yStr !== bStr)
+        diffs.push(`[${i}] text: Delta="${this.truncate(yStr, 20)}" ≠ Blot="${this.truncate(bStr, 20)}"`);
+      if (yStr !== null && dStr !== null && yStr !== dStr)
+        diffs.push(`[${i}] text: Delta="${this.truncate(yStr, 20)}" ≠ DOM="${this.truncate(dStr, 20)}"`);
+      if (bStr !== null && dStr !== null && bStr !== dStr)
+        diffs.push(`[${i}] text: Blot="${this.truncate(bStr, 20)}" ≠ DOM="${this.truncate(dStr, 20)}"`);
+    }
+
+    const maxSegs = Math.max(yDeltas.length, leaves.length, cElements.length);
+    for (let i = minLen; i < maxSegs; i++) {
+      const has = [i < yDeltas.length ? 'Delta' : null, i < leaves.length ? 'Blot' : null, i < cElements.length ? 'DOM' : null].filter(Boolean);
+      const missing = [i >= yDeltas.length ? 'Delta' : null, i >= leaves.length ? 'Blot' : null, i >= cElements.length ? 'DOM' : null].filter(Boolean);
+      diffs.push(`[${i}] 仅存在于 ${has.join(',')}，缺失于 ${missing.join(',')}`);
+    }
+
+    lines.push('');
+    if (diffs.length) {
+      lines.push(`✗ ${diffs.length} 处不一致:`);
+      diffs.forEach(d => lines.push(`  ${d}`));
+      this.monitorStatus = 'error';
+    } else {
+      lines.push('✓ Delta / Blot / DOM 三方一致');
+      this.monitorStatus = 'ok';
+    }
+
+    return lines.join('\n');
+  }
+
+  private truncate(s: string, max: number): string {
+    return s.length > max ? s.slice(0, max) + '…' : s;
+  }
+
+  // ─── Collaborative Simulation ───
+
+  onSimSettingChange(type: 'users' | 'interval', event: Event) {
+    const val = +(event.target as HTMLInputElement).value;
+    if (type === 'users') this.simUserCount = val;
+    else this.simIntervalMs = val;
+    if (this.isSimulationRunning) this.restartSimTimer();
+  }
+
+  startSimulation() {
+    if (this.isSimulationRunning) return;
+    this.ensureEditorInitialized();
+
+    const mainDoc = this.editor!.doc.yDoc;
+    this._shadowDoc = new Y.Doc();
+    Y.applyUpdate(this._shadowDoc, Y.encodeStateAsUpdate(mainDoc));
+
+    const syncToShadow = (update: Uint8Array, origin: any) => {
+      if (origin !== 'shadow') {
+        try { Y.applyUpdate(this._shadowDoc!, update, 'main'); } catch {}
+      }
+    };
+    const syncToMain = (update: Uint8Array, origin: any) => {
+      if (origin !== 'main') {
+        try { Y.applyUpdate(mainDoc, update, 'shadow'); } catch {}
+      }
+    };
+    mainDoc.on('update', syncToShadow);
+    this._shadowDoc.on('update', syncToMain);
+
+    this._shadowCleanup = () => {
+      mainDoc.off('update', syncToShadow);
+      this._shadowDoc?.off('update', syncToMain);
+      this._shadowDoc?.destroy();
+      this._shadowDoc = null;
+    };
+
+    this.isSimulationRunning = true;
+    this.simOpCount = 0;
+    this.restartSimTimer();
+  }
+
+  stopSimulation() {
+    this.isSimulationRunning = false;
+    if (this._simTimer) {
+      clearInterval(this._simTimer);
+      this._simTimer = null;
+    }
+    this._shadowCleanup?.();
+    this._shadowCleanup = null;
+  }
+
+  private restartSimTimer() {
+    if (this._simTimer) clearInterval(this._simTimer);
+    this._simTimer = setInterval(() => {
+      for (let i = 0; i < this.simUserCount; i++) {
+        this.performRandomOp();
+      }
+    }, this.simIntervalMs);
+  }
+
+  private performRandomOp() {
+    if (!this._shadowDoc) return;
+
+    const shadowBlockMap = this._shadowDoc.getMap<Y.Map<any>>('blocks');
+    const editableEntries: { id: string; yText: Y.Text }[] = [];
+    shadowBlockMap.forEach((yBlock, id) => {
+      try {
+        const children = yBlock.get('children');
+        if (children instanceof Y.Text) editableEntries.push({ id, yText: children });
+      } catch {}
+    });
+    if (!editableEntries.length) return;
+
+    // 80% chance to operate on the focused paragraph
+    const focusedBlock = this.getFocusedEditableBlock();
+    let target: { id: string; yText: Y.Text };
+    if (focusedBlock && Math.random() < 0.8) {
+      const match = editableEntries.find(e => e.id === focusedBlock.id);
+      target = match || editableEntries[Math.floor(Math.random() * editableEntries.length)];
+    } else {
+      target = editableEntries[Math.floor(Math.random() * editableEntries.length)];
+    }
+
+    const textLen = target.yText.length;
+    const chars = 'abcdefghij ';
+
+    this._shadowDoc.transact(() => {
+      if (textLen === 0 || Math.random() < 0.7) {
+        const pos = Math.floor(Math.random() * (textLen + 1));
+        const len = 1 + Math.floor(Math.random() * 3);
+        let text = '';
+        for (let i = 0; i < len; i++) text += chars[Math.floor(Math.random() * chars.length)];
+        target.yText.insert(pos, text);
+      } else {
+        const maxDel = Math.min(3, textLen);
+        const count = 1 + Math.floor(Math.random() * maxDel);
+        const start = Math.floor(Math.random() * (textLen - count + 1));
+        target.yText.delete(start, count);
+      }
+    });
+
+    this.simOpCount++;
+    this.cdr.markForCheck();
   }
 }

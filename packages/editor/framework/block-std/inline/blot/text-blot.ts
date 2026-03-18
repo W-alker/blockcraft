@@ -32,11 +32,21 @@ export class TextBlot extends LeafBlot implements IFormattedBlot {
     this.attrs = attrs
   }
 
+  private _syncFromDom() {
+    const el = (this.domNode as HTMLElement).firstElementChild
+    if (el?.firstChild instanceof Text) {
+      const domText = el.firstChild.textContent || ''
+      if (domText !== this._text) this._text = domText
+    }
+  }
+
   get length() {
+    this._syncFromDom()
     return this._text.length
   }
 
   get text() {
+    this._syncFromDom()
     return this._text
   }
 
@@ -54,6 +64,14 @@ export class TextBlot extends LeafBlot implements IFormattedBlot {
   updateText(newText: string) {
     this._text = newText
     this.textNode.textContent = newText
+  }
+
+  /**
+   * Sync internal text state from the DOM text node.
+   * Use when external code (e.g. mention plugin) has modified the DOM text node directly.
+   */
+  syncText() {
+    this._text = this.textNode.textContent || ''
   }
 
   /**

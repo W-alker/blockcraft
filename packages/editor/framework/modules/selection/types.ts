@@ -1,8 +1,8 @@
 import {BaseBlockComponent, EditableBlockComponent} from "../../block-std";
 
 export interface IInlineRange {
-  index: number
-  length: number
+  readonly index: number
+  readonly length: number
 }
 
 /**
@@ -12,21 +12,21 @@ export interface IInlineRange {
 export type IBlockRange = IBlockTextRange | IBlockSelectedRange
 
 export interface IBlockTextRange extends IInlineRange {
-  block: EditableBlockComponent<any>
-  blockId: string
-  type: 'text'
+  readonly block: EditableBlockComponent<any>
+  readonly blockId: string
+  readonly type: 'text'
 }
 
 export interface IBlockSelectedRange {
-  block: BaseBlockComponent<any>
-  blockId: string
-  type: 'selected'
+  readonly block: BaseBlockComponent<any>
+  readonly blockId: string
+  readonly type: 'selected'
 }
 
 export interface INormalizedRange {
-  from: IBlockRange,
-  to: IBlockRange | null,
-  collapsed: boolean
+  readonly from: IBlockRange,
+  readonly to: IBlockRange | null,
+  readonly collapsed: boolean
 }
 
 export type IBlockInlineRangeJSON = {

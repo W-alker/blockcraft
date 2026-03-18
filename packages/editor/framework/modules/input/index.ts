@@ -15,14 +15,12 @@ import {
 import {BlockSelection, INormalizedRange} from "../selection";
 import {isZeroSpace} from "../../utils";
 import {BlockCraftError, ErrorCode, performanceTest, sliceDelta} from "../../../global";
-import {OneShotCursorAnchor} from "../../utils/one-shot-selection-anchor";
 import {CompositionSession} from "./composition-session";
 
 const ALLOW_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward', 'insertReplacementText', 'insertCompositionText', 'deleteByCut'])
 
 @DocEventRegister
 export class InputTransformer {
-  private readonly _compositionAnchor: OneShotCursorAnchor
   readonly compositionSession: CompositionSession
   private _nextInsertAttrs: {
     blockId: string
@@ -31,7 +29,6 @@ export class InputTransformer {
   } | null = null
 
   constructor(public readonly doc: BlockCraft.Doc) {
-    this._compositionAnchor = new OneShotCursorAnchor(doc)
     this.compositionSession = new CompositionSession(doc)
   }
 
@@ -79,7 +76,6 @@ export class InputTransformer {
 
   @EventListen('compositionStart')
   private _handleCompositionStart(context: UIEventStateContext) {
-    this._compositionAnchor.reset()
     this.compositionSession.reset()
     const curSel = this.doc.selection.value!
     if (curSel.isAllSelected) {
@@ -94,7 +90,6 @@ export class InputTransformer {
       this.doc.crud.insertBlocksAfter(curSel.lastBlock.id, [p])
       this.doc.selection.setCursorAtBlock(p.id, true)
       this.doc.selection.recalculate()
-      this._compositionAnchor.captureFromSelection({isComposing: true})
       this.compositionSession.startFromSelection({isComposing: true})
       return true
     }
@@ -114,9 +109,16 @@ export class InputTransformer {
       }
       this.doc.selection.recalculate()
       this._replaceText(curSel)
+      // After delete, DOM selection may be on a removed node.
+      // Use the known model position directly instead of reading DOM.
+      const anchorBlock = curSel.from.type === 'text' ? curSel.from.block : (curSel.to?.type === 'text' ? curSel.to.block : null)
+      const anchorIndex = curSel.from.type === 'text' ? curSel.from.index : 0
+      if (anchorBlock) {
+        this.compositionSession.start(anchorBlock as any, anchorIndex)
+      }
+    } else {
+      this.compositionSession.startFromSelection({isComposing: true})
     }
-    this._compositionAnchor.captureFromSelection({isComposing: true})
-    this.compositionSession.startFromSelection({isComposing: true})
     return true
   }
 
@@ -128,7 +130,7 @@ export class InputTransformer {
     try {
       const text = compositionState.text
       const fallbackPoint = compositionState.getFallbackPoint()
-      const anchorPoint = this._compositionAnchor.resolve(fallbackPoint)
+      const anchorPoint = this.compositionSession.resolveInsertionPoint(fallbackPoint)
       const commitPoint = compositionState.resolveCommitPoint(anchorPoint || fallbackPoint)
       if (!commitPoint) {
         throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
@@ -153,7 +155,7 @@ export class InputTransformer {
           try {
             const patchBlock = this.doc.getBlockById(patch.blockId)
             if (this.doc.isEditable(patchBlock)) {
-              this.doc.inlineManager.applyDeltaToView(patch.delta, patchBlock.containerElement)
+              patchBlock.runtime.applyDelta(patch.delta)
             }
           } catch {
             // deferred patch replay failed; block may have been deleted
@@ -163,7 +165,6 @@ export class InputTransformer {
 
       compositionState.next?.()
     } finally {
-      this._compositionAnchor.reset()
       this.compositionSession.end()
     }
   }
@@ -171,7 +172,6 @@ export class InputTransformer {
   @EventListen('beforeInput')
   private _handleBeforeInput(context: BlockCraft.EventStateContext) {
     const ev = context.get('defaultState').event as InputEvent
-    this._compositionAnchor.captureFromInputEvent(ev, {isComposing: true})
     this.compositionSession.updateAnchorFromInputEvent(ev, {isComposing: true})
 
     if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {
@@ -224,18 +224,23 @@ export class InputTransformer {
     // delete content
     if (from.type === 'text' && ev.inputType.startsWith('delete')) {
       ev.preventDefault()
+      let deleteRange: INormalizedRange = normalizedRange
       // 要删除的可能是embed节点
       if (staticRange.startContainer === staticRange.endContainer && isZeroSpace(staticRange.startContainer) && normalizedRange.from.type === 'text') {
-        normalizedRange.from.index = normalizedRange.from.index - 1
-        normalizedRange.from.length = 1
+        deleteRange = {
+          ...normalizedRange,
+          from: {...normalizedRange.from, index: normalizedRange.from.index - 1, length: 1}
+        }
       }
       document.getSelection()?.collapseToStart()
-      this._replaceText(normalizedRange)
+      this._replaceText(deleteRange)
       this.doc.selection.recalculate()
       return;
     }
 
     if (!text) return;
+
+    let needsRerender = false
 
     // in zero text
     if (collapsed && isZeroSpace(staticRange.startContainer)) {
@@ -255,6 +260,7 @@ export class InputTransformer {
         zeroTextEle.after(cElement)
       }
       document.getSelection()!.setPosition(textElement.firstChild!, text.length)
+      needsRerender = true
     }
 
     // in inline end break
@@ -275,6 +281,7 @@ export class InputTransformer {
         document.getSelection()!.setPosition(textElement.firstChild!, text.length)
         ev.preventDefault()
       }
+      needsRerender = true
     }
 
     if (from.type !== 'text') return
@@ -308,10 +315,25 @@ export class InputTransformer {
       this.clearNextInsertAttrs()
     }
 
-    this.doc.crud.transact(() => {
-      from.block.yText.insert(from.index, text)
-    }, ORIGIN_SKIP_SYNC)
-
+    if (needsRerender) {
+      // Zero-space / end-break: DOM was manually patched above, use ORIGIN_SKIP_SYNC + rerender
+      this.doc.crud.transact(() => {
+        from.block.yText.insert(from.index, text)
+      }, ORIGIN_SKIP_SYNC)
+      from.block.rerender()
+      from.block.setInlineRange(from.index + text.length)
+    } else {
+      // Normal input: controlled rendering — preventDefault lets observer sync blot tree
+      ev.preventDefault()
+      this.doc.crud.transact(() => {
+        from.block.yText.insert(from.index, text)
+      })
+      this.doc.selection.setSelection({
+        ...from,
+        index: from.index + text.length,
+        length: 0
+      })
+    }
   }
 
   private _replaceText(range: INormalizedRange, text?: string | null, merge = false) {

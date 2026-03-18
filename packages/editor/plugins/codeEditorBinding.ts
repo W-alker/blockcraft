@@ -54,7 +54,7 @@ export class CodeInlineEditorBinding extends DocPlugin {
           try {
             const patchBlock = this.doc.getBlockById(patch.blockId)
             if (this.doc.isEditable(patchBlock)) {
-              this.doc.inlineManager.applyDeltaToView(patch.delta, patchBlock.containerElement)
+              patchBlock.runtime.applyDelta(patch.delta)
             }
           } catch {
             // deferred patch replay failed; block may have been deleted

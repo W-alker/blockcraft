@@ -1,8 +1,8 @@
-import { ChangeDetectionStrategy, Component, DestroyRef } from "@angular/core";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import { DeltaOperation, EditableBlockComponent } from "../../framework";
 import { MermaidTextareaBlockModel } from "./index";
-import { CodeInlineManagerService } from "../code-block/code-inlineManager.service";
-import { debounce, nextTick, performanceTest } from "../../global";
+import { CodeInlineRuntime } from "../code-block/code-inline-runtime";
+import { debounce, nextTick } from "../../global";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 
 @Component({
@@ -17,21 +17,22 @@ import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 export class MermaidTextareaBlockComponent extends EditableBlockComponent<MermaidTextareaBlockModel> {
   override plainTextOnly = true;
 
-  private _inlineManager!: CodeInlineManagerService
+  private _codeRuntime!: CodeInlineRuntime
 
-  override get inlineManager() {
-    return this._inlineManager
-  }
-
-  override _init() {
-    super._init();
-    this._inlineManager = new CodeInlineManagerService(this.doc, this, {
+  protected override _initRuntime() {
+    const embedConverters = new Map(this.doc.config.embeds || [])
+    this._codeRuntime = new CodeInlineRuntime(this._containerElement, embedConverters, {
       lang: 'mermaid',
       withLineBreak: false,
       theme: this.doc.theme.includes('light') ? 'github-light' : 'github-dark',
     })
-    this.doc.themeChange$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(v => {
-      this.inlineManager.setTheme(this.doc.theme.includes('light') ? 'github-light' : 'github-dark')
+    this._runtime = this._codeRuntime
+  }
+
+  override _init() {
+    super._init();
+    this.doc.themeChange$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this._codeRuntime.setTheme(this.doc.theme.includes('light') ? 'github-light' : 'github-dark')
       this.rerender()
     })
   }
@@ -45,12 +46,16 @@ export class MermaidTextareaBlockComponent extends EditableBlockComponent<Mermai
 
   private _debounce_highlight = debounce((op: DeltaOperation[]) => {
     nextTick().then(() => {
-      this.inlineManager.diffHighLight(op)
+      this._codeRuntime.diffHighLight(op, {
+        block: this,
+        selectionValue: this.doc.selection.value,
+        normalizeRange: (range: Range) => this.doc.selection.normalizeRange(range)
+      })
     })
   }, 200)
 
   override rerender() {
-    this.inlineManager.renderCode()
+    super.rerender()
+    this._codeRuntime.renderCode(() => this.textContent())
   }
 }
-

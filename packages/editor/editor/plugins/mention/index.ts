@@ -1,14 +1,11 @@
 import {
   DocPlugin,
   EventListen,
-  generateId, getPositionWithOffset,
-  IBlockTextRange,
   OneShotCursorAnchor,
-  ORIGIN_SKIP_SYNC,
   UIEventStateContext
 } from "../../../framework";
-import {BlockCraftError, characterAtDelta, ErrorCode, nextTick} from "../../../global";
-import {debounceTime, fromEventPattern, skip, Subject, takeUntil} from "rxjs";
+import {characterAtDelta, nextTick} from "../../../global";
+import {debounceTime, skip, Subject, takeUntil} from "rxjs";
 import {MentionDialog} from "./widget/mention-dialog";
 import {IMentionResponse, MentionType} from "./types";
 
@@ -20,6 +17,7 @@ export class MentionPlugin extends DocPlugin {
   override name = 'mention';
 
   private _closeDialog$ = new Subject()
+  private _isMentionOpen = false
 
   constructor(private request: IMentionRequest) {
     super();
@@ -30,6 +28,8 @@ export class MentionPlugin extends DocPlugin {
 
   @EventListen('beforeInput', {flavour: 'root'})
   onBindingInput(ctx: UIEventStateContext) {
+    if (this._isMentionOpen) return
+
     const e = ctx.getDefaultEvent() as InputEvent;
     const curSel = this.doc.selection.value!;
     if (e.data !== '@' || e.isComposing || !curSel.collapsed || curSel.from.type !== 'text' || curSel.from.block.plainTextOnly) return;
@@ -38,13 +38,22 @@ export class MentionPlugin extends DocPlugin {
     // @前字符为 空格 时触发
     if (from.index > 0 && characterAtDelta(from.block.textDeltas(), from.index) !== ' ') return;
 
-    e.preventDefault()
-    this.openMention(from)
-    return true
+    // 不 preventDefault，让 @ 走 InputTransformer 正常流程
+    // yText、blot、DOM 通过标准管道保持一致
+    const block = from.block
+    const atIndex = from.index
+    this._isMentionOpen = true
+    nextTick().then(() => {
+      if (!this._tryOpenMention(block, atIndex)) {
+        this._isMentionOpen = false
+      }
+    })
   }
 
   @EventListen('mouseDown', {flavour: 'root'})
   onMouseDown(ctx: UIEventStateContext) {
+    this._closeDialog$.next(true)
+
     const e = ctx.getDefaultEvent() as MouseEvent;
     if (e.button !== 0) return;
     const target = e.target;
@@ -55,124 +64,46 @@ export class MentionPlugin extends DocPlugin {
     return true;
   }
 
-  openMention(selection: IBlockTextRange) {
-    let {index, block} = selection
-    const placeholderAnchor = new OneShotCursorAnchor(this.doc)
-    let compositionStartText = ''
+  private _tryOpenMention(block: any, atIndex: number): boolean {
+    // 验证 @ 已经被 InputTransformer 写入 yText
+    if (block.yText.toString().charAt(atIndex) !== '@') return false
 
-    this.doc.crud.transact(() => {
-      // 伪造mention-placeholder输入
-      this.doc.inlineManager.applyDeltaToView([
-        {retain: index},
-        {insert: '@', attributes: {'a:mention-placeholder': true}}
-      ], block.containerElement)
-      block.yText.insert(index, '@')
-    }, ORIGIN_SKIP_SYNC)
-    placeholderAnchor.capture(block, index)
+    // 从原生 Selection 获取 @ 的屏幕坐标（不依赖 blot tree）
+    const sel = window.getSelection()
+    if (!sel || !sel.anchorNode) return false
+    let atRect: DOMRect
+    try {
+      const range = document.createRange()
+      range.setStart(sel.anchorNode, Math.max(0, sel.anchorOffset - 1))
+      range.setEnd(sel.anchorNode, sel.anchorOffset)
+      atRect = range.getBoundingClientRect()
+    } catch {
+      return false
+    }
+    if (!atRect.width && !atRect.height) return false
 
-    const target = block.containerElement.querySelector(`[mention-placeholder]`);
-    if (!target || !(target instanceof HTMLElement)) return
-    const textNode = target.firstElementChild?.firstChild
-    if (!textNode || !(textNode instanceof Text)) return
+    let index = atIndex
+    const anchor = new OneShotCursorAnchor(this.doc)
+    anchor.capture(block, index)
 
-    this.doc.selection.setCursorAt(block, index + 1)
-
-    const calcPos = () => {
-      const point = placeholderAnchor.resolve({block, index})
-      if (!point) {
-        throw new BlockCraftError(ErrorCode.SelectionError, 'UnExcepted selection')
-      }
-
+    // 从 yText 提取关键词（不依赖 blot tree，通过 anchor 处理协作冲突）
+    const getKeyword = (): string | null => {
+      const point = anchor.resolve({block, index})
+      if (!point) return null
       block = point.block
       index = point.index
-
-      return {
-        block,
-        index,
-        length: textNode.length
-      }
-    }
-
-    const getCommittedCompositionText = (ev: CompositionEvent, insertIndex: number) => {
-      if (ev.data) return ev.data
-
-      const currentText = textNode.textContent || ''
-      if (!currentText) return ''
-
-      if (compositionStartText && currentText.startsWith(compositionStartText)) {
-        return currentText.slice(compositionStartText.length)
-      }
-
-      const relativeInsertIndex = Math.max(0, insertIndex - index)
-      return currentText.slice(relativeInsertIndex)
-    }
-
-    const syncPlaceholderTextNode = (insertIndex: number, text: string) => {
-      const relativeInsertIndex = Math.max(0, insertIndex - index)
-      const nextText = compositionStartText.slice(0, relativeInsertIndex)
-        + text
-        + compositionStartText.slice(relativeInsertIndex)
-
-      if (textNode.textContent !== nextText) {
-        textNode.textContent = nextText
-      }
-
-      const selection = document.getSelection()
-      if (!selection) return
-      selection.setPosition(textNode, Math.min(nextText.length, relativeInsertIndex + text.length))
+      const text = block.yText.toString()
+      if (text.charAt(index) !== '@') return null
+      const curSel = this.doc.selection.value
+      if (!curSel || !curSel.collapsed || curSel.from.type !== 'text' || curSel.from.block !== block) return null
+      const cursorIndex = curSel.from.index
+      if (cursorIndex <= index) return null
+      const keyword = text.slice(index + 1, cursorIndex)
+      if (/\s/.test(keyword)) return null
+      return keyword
     }
 
     const tempBindings = [
-      this.doc.event.add('compositionStart', () => {
-        compositionStartText = textNode.textContent || ''
-        return
-      }, {blockId: block.id}),
-      // !!!!!!!!! 阻止默认输入法关闭事件
-      this.doc.event.add('compositionEnd', ctx => {
-        const ev = ctx.getDefaultEvent<CompositionEvent>()
-        ev.preventDefault()
-        const compositionSession = this.doc.inputManger.compositionSession
-
-        try {
-          const placeholderPoint = placeholderAnchor.resolve({block, index}) || {block, index}
-          block = placeholderPoint.block
-          index = placeholderPoint.index
-
-          const insertPoint = compositionSession.prepareCommit({
-            block,
-            index: index + 1
-          }) || {
-            block,
-            index: index + 1
-          }
-          const text = getCommittedCompositionText(ev, insertPoint.index)
-
-          this.doc.crud.transact(() => {
-            text && insertPoint.block.yText.insert(insertPoint.index, text, {'a:mention-placeholder': true})
-          }, ORIGIN_SKIP_SYNC)
-          syncPlaceholderTextNode(insertPoint.index, text)
-
-          const deferred = compositionSession.drainDeferredPatches()
-          if (deferred.length) {
-            for (const patch of deferred) {
-              try {
-                const patchBlock = this.doc.getBlockById(patch.blockId)
-                if (this.doc.isEditable(patchBlock)) {
-                  this.doc.inlineManager.applyDeltaToView(patch.delta, patchBlock.containerElement)
-                }
-              } catch {
-                // deferred patch replay failed; block may have been deleted
-              }
-            }
-          }
-
-          return true
-        } finally {
-          compositionStartText = textNode.textContent || ''
-          compositionSession.end()
-        }
-      }, {blockId: block.id}),
-      // 键盘绑定
       this.doc.event.bindHotkey({key: 'Escape'}, ctx => {
         ctx.preventDefault()
         if (this.doc.event.status.isComposing) return
@@ -198,69 +129,79 @@ export class MentionPlugin extends DocPlugin {
         ctx.preventDefault()
         if (this.doc.event.status.isComposing) return
         dialog.instance.onSure()
-        dialog.instance.onTabChange(dialog.instance.activeTabIndex === 0 ? 1 : 0)
         return true
       }, {blockId: block.id}),
     ]
 
-    const {componentRef: dialog} = this.doc.overlayService.createConnectedOverlay<MentionDialog>({
-      target,
+    const observedBlock = block
+
+    const {componentRef: dialog} = this.doc.overlayService.createGlobalOverlay<MentionDialog>({
       component: MentionDialog,
-      positions: [getPositionWithOffset('bottom-left'), getPositionWithOffset('top-left'),
-        getPositionWithOffset('bottom-right'), getPositionWithOffset('top-right')]
+      top: `${atRect.bottom}px`,
+      left: `${atRect.left}px`,
     }, this._closeDialog$, () => {
+      this._isMentionOpen = false
       tempBindings.forEach(v => v())
-      if (!textNode || !textNode.isConnected) {
-        placeholderAnchor.reset()
-        return
-      }
-      const {block, index, length} = calcPos()
-      placeholderAnchor.reset()
-      block.formatText(index, length, {'a:mention-placeholder': null})
+      anchor.reset()
     })
 
     let _tab: MentionType = 'user'
 
     const searchList = () => {
       if (this.doc.event.status.isComposing) return
-      if (!textNode.textContent) return this._closeDialog$.next(true)
-      const keyword = textNode.textContent?.trim().slice(1) || ''
+      const keyword = getKeyword()
+      if (keyword === null) {
+        this._closeDialog$.next(true)
+        return
+      }
       this.request(keyword, _tab).then(res => {
         dialog.setInput('list', res.list)
       })
     }
 
-    // 监听tab change
-    dialog.instance.tabChange.pipe(takeUntil(this._closeDialog$)).subscribe(type => {
+    // 初始搜索
+    this.request('', _tab).then(res => {
+      dialog.setInput('list', res.list)
+    })
+
+    // Tab 切换 (skip ngOnInit emission)
+    dialog.instance.tabChange.pipe(skip(1), takeUntil(this._closeDialog$)).subscribe(type => {
       _tab = type
       searchList()
     })
 
-    // 监听输入变化 搜索
-    let mutationObserver: MutationObserver
-    fromEventPattern(
-      handler => {
-        mutationObserver = new MutationObserver(handler)
-        mutationObserver.observe(textNode, {characterData: true})
-      },
-      () => mutationObserver?.disconnect()
-    ).pipe(debounceTime(300), takeUntil(this._closeDialog$)).subscribe(searchList)
+    // 文本变化时搜索（本地输入、IME 提交、远程编辑都会触发）
+    // debounce 300ms 批处理快速变化；getKeyword() 每次验证上下文
+    observedBlock.onTextChange
+      .pipe(debounceTime(300), takeUntil(this._closeDialog$))
+      .subscribe(searchList)
 
-    // target失焦关闭时机
-    this.doc.selection.changeObserve().pipe(skip(1), takeUntil(this._closeDialog$)).subscribe(v => {
-      if (!v || !v.collapsed) return this._closeDialog$.next(true)
-      const {startContainer, endContainer} = v?.raw
-      if (startContainer !== endContainer || !target.contains(startContainer)) {
-        this._closeDialog$.next(true)
-      }
-    })
-
-    // 确定输入
+    // 确认：替换 @keyword 为 mention embed
+    // 参照 TipTap/Slate 模式：从文档模型计算替换范围
     dialog.instance.confirm.pipe(takeUntil(this._closeDialog$)).subscribe(({id, name}) => {
-      const {block, index, length} = calcPos()
+      const point = anchor.resolve({block, index})
+      if (point) {
+        block = point.block
+        index = point.index
+      }
+      const text = block.yText.toString()
+      if (text.charAt(index) !== '@') return
+
+      // 从 selection 或 yText 扫描确定 @keyword 的结束位置
+      const curSel = this.doc.selection.value
+      let end: number
+      if (curSel?.collapsed && curSel.from.type === 'text'
+        && curSel.from.block === block && curSel.from.index > index) {
+        end = curSel.from.index
+      } else {
+        // fallback：从 @ 往后扫到空白字符
+        end = index + 1
+        while (end < text.length && !/\s/.test(text.charAt(end))) end++
+      }
+
       block.applyDeltaOperations([
         {retain: index},
-        {delete: length},
+        {delete: end - index},
         {
           insert: {mention: name},
           attributes: {
@@ -276,6 +217,7 @@ export class MentionPlugin extends DocPlugin {
       this._closeDialog$.next(true)
     })
 
+    return true
   }
 
   onMentionClick(id: string, type: string, e: MouseEvent) {
