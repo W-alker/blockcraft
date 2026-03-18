@@ -5,7 +5,6 @@ import { DocVM } from "./vm";
 import {
   IBlockSnapshot,
   EmbedConverter,
-  InlineManager,
   UIEventDispatcher,
   EditableBlockComponent,
   YBlock
@@ -53,7 +52,6 @@ export class BlockCraftDoc {
   readonly crud = new DocCRUD(this)
   readonly vm = new DocVM(this)
   readonly event = new UIEventDispatcher(this)
-  readonly inlineManager = new InlineManager(this)
   readonly selection = new SelectionManager(this)
   readonly clipboard = new ClipboardManager(this)
   readonly inputManger = new InputTransformer(this)
@@ -185,7 +183,6 @@ export class BlockCraftDoc {
     // listen root destroy, release all resources
     comp.onDestroy$.pipe(take(1)).subscribe(() => {
       this.onDestroy$.next(true)
-      this.inlineManager.destroy()
       this.plugins.forEach(plugin => plugin.destroy())
       this.vm.clear()
     })

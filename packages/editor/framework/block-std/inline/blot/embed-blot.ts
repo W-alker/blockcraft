@@ -1,15 +1,16 @@
 import {BlotType, IFormattedBlot, LeafBlot} from "./blot";
-import {IInlineNodeAttrs} from "../../types";
+import {DeltaInsertEmbed, IInlineNodeAttrs} from "../../types";
 import {INLINE_ELEMENT_TAG} from "../const";
 import setAttributes from "../setAttributes";
 import {createZeroSpace} from "../../../utils";
+import type {EmbedConverter} from "../index";
 
 /**
  * EmbedBlot represents an atomic inline embed (mention, formula, inline-image, etc.).
  *
  * Its logical length is always 1.
  *
- * DOM contract (Phase 1 — matches current InlineManager output):
+ * DOM contract:
  * ```
  *   <c-element [attrs]>
  *     <span contenteditable="false">
@@ -20,6 +21,9 @@ import {createZeroSpace} from "../../../utils";
  * ```
  *
  * The trailing zero-width space is the caret parking spot for "after embed" position.
+ *
+ * Lifecycle: the EmbedBlot owns its converter reference and delta snapshot,
+ * so that `detach()` can automatically call `converter.onDestroy()`.
  */
 export class EmbedBlot extends LeafBlot implements IFormattedBlot {
   readonly type = BlotType.Embed
@@ -28,10 +32,14 @@ export class EmbedBlot extends LeafBlot implements IFormattedBlot {
   attrs: IInlineNodeAttrs | undefined
 
   private _embedElement: HTMLElement
+  private _converter: EmbedConverter | null
+  private _delta: DeltaInsertEmbed
 
   constructor(
     embedView: HTMLElement,
-    attrs?: IInlineNodeAttrs
+    attrs?: IInlineNodeAttrs,
+    converter?: EmbedConverter | null,
+    delta?: DeltaInsertEmbed
   ) {
     const cElement = document.createElement(INLINE_ELEMENT_TAG)
     const span = document.createElement('span')
@@ -42,6 +50,8 @@ export class EmbedBlot extends LeafBlot implements IFormattedBlot {
     super(cElement)
     this._embedElement = embedView
     this.attrs = attrs
+    this._converter = converter ?? null
+    this._delta = delta ?? { insert: {} } as DeltaInsertEmbed
   }
 
   get cElement(): HTMLElement {
@@ -56,11 +66,23 @@ export class EmbedBlot extends LeafBlot implements IFormattedBlot {
     return this.cElement.querySelector('[data-zero-space="true"]') as HTMLElement
   }
 
+  get embedKey(): string {
+    return Object.keys(this._delta.insert)[0] ?? ''
+  }
+
   /**
    * Update formatting attributes on the outer c-element.
    */
   format(attrs: IInlineNodeAttrs) {
     this.attrs = attrs
     setAttributes(this.cElement, attrs)
+  }
+
+  /**
+   * Remove from DOM and call converter.onDestroy if registered.
+   */
+  override detach() {
+    this._converter?.onDestroy?.(this._embedElement, this._delta)
+    super.detach()
   }
 }

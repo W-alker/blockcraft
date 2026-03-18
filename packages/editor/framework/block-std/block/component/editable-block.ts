@@ -4,6 +4,7 @@ import { EditableBlockNative } from "../../reactive";
 import * as Y from 'yjs'
 import { DeltaInsert, DeltaOperation } from "../../types";
 import { INLINE_CONTAINER_CLASS } from "../../inline";
+import { InlineRuntime } from "../../inline/runtime/inline-runtime";
 import { Subject } from "rxjs";
 
 @Component({
@@ -21,8 +22,14 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     return this._yText ||= this.yBlock.get('children') as Y.Text
   }
 
-  get inlineManager() {
-    return this.doc.inlineManager
+  protected _runtime!: InlineRuntime
+
+  /**
+   * Per-block InlineRuntime: owns ScrollBlot tree + InlinePositionMapper.
+   * Subclasses (e.g. CodeBlockComponent) can override runtime creation.
+   */
+  get runtime(): InlineRuntime {
+    return this._runtime
   }
 
   onTextChange = new Subject<{ op: DeltaOperation[]; tr: Y.Transaction; }>();
@@ -30,7 +37,18 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   override ngAfterViewInit() {
     super.ngAfterViewInit();
     this._containerElement = this.hostElement.classList.contains(INLINE_CONTAINER_CLASS) ? this.hostElement : this.hostElement.querySelector(`.${INLINE_CONTAINER_CLASS}`)!
+
+    this._initRuntime()
     this.rerender()
+  }
+
+  /**
+   * Initialize the InlineRuntime for this block.
+   * Called once in ngAfterViewInit. Subclasses can override to use a custom runtime.
+   */
+  protected _initRuntime() {
+    const embedConverters = new Map(this.doc.config.embeds || [])
+    this._runtime = new InlineRuntime(this._containerElement, embedConverters)
   }
 
   override reattach() {
@@ -40,9 +58,6 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
   protected _containerElement!: HTMLElement
 
-  /**
-   * 编辑文本的容器
-   */
   get containerElement() {
     return this._containerElement
   }
@@ -72,7 +87,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   rerender() {
-    this.inlineManager.render(this.textDeltas(), this.containerElement)
+    this._runtime.render(this.textDeltas())
   }
 
   insertText(index: number, text: string, attributes?: DeltaInsert['attributes']) {
@@ -101,72 +116,18 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     this.yText.applyDelta(delta)
   }
 
-  // deleteText(index: number, length = this.textLength - index) {
-  //   if (!length) return
-  //   this.applyDeltaOperation([{retain: index}, {delete: length}])
-  // }
-  //
-  // insertText(index: number, text: string, attributes?: DeltaInsert['attributes']) {
-  //   if (!text) return
-  //   this.applyDeltaOperation([{retain: index}, {insert: text, attributes}])
-  // }
-  //
-  // replaceText(index: number, length: number, text?: string | null) {
-  //   const delta: DeltaOperation[] = []
-  //   index > 0 && delta.push({retain: index})
-  //   length > 0 && delta.push({delete: length})
-  //   text && delta.push({insert: text})
-  //   this.doc.crud.transact(() => {
-  //     length > 0 && this.yText.delete(index, length)
-  //     text && this.yText.insert(index, text)
-  //     this._applyDeltaToView(delta)
-  //   }, ORIGIN_SKIP_SYNC)
-  // }
-  //
-  // insertEmbed(index: number, embed: DeltaInsertEmbed) {
-  //   this.applyDeltaOperation([{retain: index}, embed])
-  // }
-  //
-  // formatText(index: number, length: number, attributes: DeltaInsert['attributes']) {
-  //   this.doc.crud.transact(() => {
-  //     // @ts-expect-error
-  //     this.yText.format(index, length, attributes)
-  //     this._applyDeltaToView([{retain: index}, {retain: length, attributes}])
-  //   }, ORIGIN_SKIP_SYNC)
-  // }
-
-  // applyDeltaOperation(delta: DeltaOperation[]) {
-  //   if (this.doc.isReadonly) return
-  //   this.doc.crud.transact(() => {
-  //     this._applyDeltaToYText(delta)
-  //     this._applyDeltaToView(delta)
-  //   }, ORIGIN_SKIP_SYNC)
-  // }
-
   protected _applyDeltaToYText(deltas: DeltaOperation[]) {
     this.yText.applyDelta(deltas)
-    // let r = 0
-    // for (const delta of deltas) {
-    //   if (delta.insert) {
-    //     if (typeof delta.insert === 'string') {
-    //       this.yText.insert(r, delta.insert, delta.attributes)
-    //       r += delta.insert.length
-    //     } else {
-    //       this.yText.insertEmbed(r, delta.insert, delta.attributes)
-    //       r += 1
-    //     }
-    //   } else if (delta.delete) {
-    //     this.yText.delete(r, delta.delete)
-    //   } else if (delta.retain) {
-    //     r += delta.retain
-    //   }
-    // }
   }
 
+  /**
+   * Apply delta operations to the view via the blot tree (InlineRuntime).
+   * Called by crud.ts when Y.Text changes arrive from remote or local transactions.
+   */
   protected _applyDeltaToView(deltas: DeltaOperation[]) {
     if (this.doc.isReadonly) return
     try {
-      this.doc.inlineManager.applyDeltaToView(deltas, this.containerElement)
+      this._runtime.applyDelta(deltas)
     } catch (e) {
       this.doc.logger.error(`Error throw when apply delta to view. Block: `, this, e)
       this.rerender()

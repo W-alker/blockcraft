@@ -127,10 +127,9 @@ export class SelectionManager {
     const isBackward = state.raw.key === "ArrowUp"
 
     const focusBlock = this.doc.getBlockById(focusBlockId)
-    const mapper = this.doc.inlineManager.positionMapper
 
     const extendStartOrEnd = (block: EditableBlockComponent, isStart: boolean) => {
-      const nodeAndOffset = mapper.modelPointToDomPoint(block.containerElement, isStart ? 0 : block.textLength)
+      const nodeAndOffset = block.runtime.mapper.modelPointToDomPoint(block.containerElement, isStart ? 0 : block.textLength)
       docSelection.extend(nodeAndOffset.node, nodeAndOffset.offset)
     }
 
@@ -203,10 +202,9 @@ export class SelectionManager {
     }
 
     ctx.preventDefault()
-    const mapper = this.doc.inlineManager.positionMapper
 
     const extendStartOrEnd = (block: EditableBlockComponent, isStart: boolean) => {
-      const nodeAndOffset = mapper.modelPointToDomPoint(block.containerElement, isStart ? 0 : block.textLength)
+      const nodeAndOffset = block.runtime.mapper.modelPointToDomPoint(block.containerElement, isStart ? 0 : block.textLength)
       docSelection.extend(nodeAndOffset.node, nodeAndOffset.offset)
     }
 
@@ -455,13 +453,11 @@ export class SelectionManager {
     const {startContainer, endContainer, startOffset, endOffset, collapsed} = range
     const startBlock = this._searchClosetBlockByNode(startContainer)
 
-    const mapper = this.doc.inlineManager.positionMapper
-
     const getInlineOffset = (block: EditableBlockComponent<any>, node: Node, offset: number) => {
       if (node === block.hostElement && block.hostElement !== block.containerElement) {
         return offset > 0 ? block.textLength : 0
       }
-      return mapper.domPointToModelPoint(block.containerElement, node, offset, options)
+      return block.runtime.mapper.domPointToModelPoint(block.containerElement, node, offset, options)
     }
 
     const getBlockRange = (block: BaseBlockComponent<any>, node: Node, offset: number): IBlockRange => {
@@ -555,16 +551,15 @@ export class SelectionManager {
     if (from.type === 'text') {
 
       if (endBlock === startBlock && to.type === 'text') {
-        from.length = to.index - from.index
+        from = {...from, length: to.index - from.index}
         return {from, to: null, collapsed: false}
       }
 
-      from.length = from.block.textLength - from.index
+      from = {...from, length: from.block.textLength - from.index}
     }
 
     if (to.type === 'text') {
-      to.length = to.index
-      to.index = 0
+      to = {...to, length: to.index, index: 0}
     }
 
     // 是否不同级（可能是子可编辑元素鼠标选中向外滑动）
@@ -598,11 +593,11 @@ export class SelectionManager {
   }
 
   private _setRange(from: IBlockInlineRangeJSON, to: IBlockInlineRangeJSON | null = null) {
-    const mapper = this.doc.inlineManager.positionMapper
     const fromBlock = this.doc.getBlockById(from.blockId)
     const range = document.createRange()
     if (from.type === 'text') {
-      const startNodePos = mapper.modelPointToDomPoint((fromBlock as EditableBlockComponent).containerElement, from.index)
+      const fb = fromBlock as EditableBlockComponent
+      const startNodePos = fb.runtime.mapper.modelPointToDomPoint(fb.containerElement, from.index)
       range.setStart(startNodePos.node, startNodePos.offset)
       if (from.length === 0) {
         range.collapse(true)
@@ -610,7 +605,7 @@ export class SelectionManager {
       }
 
       if (!to) {
-        const endNodePos = mapper.modelPointToDomPoint((fromBlock as EditableBlockComponent).containerElement, from.index + from.length)
+        const endNodePos = fb.runtime.mapper.modelPointToDomPoint(fb.containerElement, from.index + from.length)
         range.setEnd(endNodePos.node, endNodePos.offset)
         return range
       }
@@ -627,7 +622,8 @@ export class SelectionManager {
 
     const toBlock = this.doc.getBlockById(to.blockId)
     if (to.type === 'text') {
-      const endNodePos = mapper.modelPointToDomPoint((toBlock as EditableBlockComponent).containerElement, to.index + to.length)
+      const tb = toBlock as EditableBlockComponent
+      const endNodePos = tb.runtime.mapper.modelPointToDomPoint(tb.containerElement, to.index + to.length)
       range.setEnd(endNodePos.node, endNodePos.offset)
       return range
     }
@@ -668,7 +664,7 @@ export class SelectionManager {
    * @param index the index of the cursor
    */
   setCursorAt(block: EditableBlockComponent, index: number) {
-    const startNodePos = this.doc.inlineManager.positionMapper.modelPointToDomPoint(block.containerElement, index)
+    const startNodePos = block.runtime.mapper.modelPointToDomPoint(block.containerElement, index)
     const selection = document.getSelection()!
     selection.setPosition(startNodePos.node, startNodePos.offset)
   }

@@ -13,7 +13,7 @@ import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { LangListComponent } from "./lang-list.component";
 import { CodeBlockLanguage } from "./const";
 import { debounce, nextTick } from "../../global";
-import { CodeInlineManagerService } from "./code-inlineManager.service";
+import { CodeInlineRuntime } from "./code-inline-runtime";
 import { CodeBlockNameInputComponent } from "./block-name-input.component";
 
 @Component({
@@ -56,25 +56,29 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   private lines: string[] = []
 
-  private _inlineManager!: CodeInlineManagerService
+  private _codeRuntime!: CodeInlineRuntime
 
   get blockName() {
     return this.props.blockName?.trim() || '代码块'
   }
 
-  override get inlineManager() {
-    return this._inlineManager
-  }
-
-  override async _init() {
-    super._init();
-    this._inlineManager = new CodeInlineManagerService(this.doc, this, {
+  /**
+   * Override _initRuntime to create CodeInlineRuntime instead of InlineRuntime.
+   */
+  protected override _initRuntime() {
+    const embedConverters = new Map(this.doc.config.embeds || [])
+    this._codeRuntime = new CodeInlineRuntime(this._containerElement, embedConverters, {
       lang: SHIKI_LANGUAGE_MAP[this.props.lang],
       withLineBreak: true,
       theme: this.doc.theme.includes('light') ? 'github-light' : 'github-dark',
     })
-    this.doc.themeChange$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(v => {
-      this.inlineManager.setTheme(this.doc.theme.includes('light') ? 'github-light' : 'github-dark')
+    this._runtime = this._codeRuntime
+  }
+
+  override _init() {
+    super._init();
+    this.doc.themeChange$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this._codeRuntime.setTheme(this.doc.theme.includes('light') ? 'github-light' : 'github-dark')
       this.rerender()
     })
   }
@@ -83,7 +87,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     super.ngAfterViewInit()
     this.onPropsChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
       if (e.has('lang')) {
-        this.inlineManager.setLang(SHIKI_LANGUAGE_MAP[this.props.lang])
+        this._codeRuntime.setLang(SHIKI_LANGUAGE_MAP[this.props.lang])
         this.rerender()
         return
       }
@@ -102,18 +106,28 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   private _debounce_highlight = debounce((e: DeltaOperation[]) => {
     if (this.doc.event.status.isComposing) return
     nextTick().then(() => {
-      this.inlineManager.diffHighLight(e)
+      this._codeRuntime.diffHighLight(e, {
+        block: this,
+        selectionValue: this.doc.selection.value,
+        normalizeRange: (range: Range) => this.doc.selection.normalizeRange(range)
+      })
     })
   }, 200)
 
   override rerender() {
+    // Synchronous blot tree build first (plain text, no colors).
+    // This ensures the blot tree is immediately available for cursor positioning
+    // (e.g. after compositionEnd which calls rerender then setInlineRange).
+    super.rerender()
+
+    // Then schedule async Shiki highlighting
     const shikiLang = SHIKI_LANGUAGE_MAP[this.props.lang]
     if (!isLanguageSupported(shikiLang)) {
       loadLanguage(this.props.lang).then(() => {
-        this.inlineManager.renderCode()
+        this._codeRuntime.renderCode(() => this.textContent())
       })
     } else {
-      this.inlineManager.renderCode()
+      this._codeRuntime.renderCode(() => this.textContent())
     }
   }
 
@@ -225,7 +239,6 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
         .subscribe((e) => {
           let dy = 0
           dy = e.clientY - startY
-          // 如果是向上滚动，更快点
           if (dy < 0) {
             dy *= 2
           }

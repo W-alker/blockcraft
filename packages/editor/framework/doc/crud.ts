@@ -170,11 +170,17 @@ export class DocCRUD {
             throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} is not editable`)
           // Y.Text
           if (tr.origin !== ORIGIN_SKIP_SYNC) {
-            try {
-              bm.instance.inlineManager.applyDeltaToView(changes.delta as DeltaOperation[], bm.instance.containerElement)
-            } catch (e) {
-              this.doc.logger.warn('applyDeltaToView error;blockId:' + blockId, e)
-              bm.instance.rerender()
+            // Defer remote patches for blocks currently in IME composition
+            if (!tr.local && this.doc.inputManger.compositionSession.shouldDeferPatch(blockId)) {
+              this.doc.inputManger.compositionSession.deferPatch(blockId, changes.delta as DeltaOperation[])
+            } else {
+              try {
+                // @ts-expect-error accessing protected method
+                bm.instance._applyDeltaToView(changes.delta as DeltaOperation[])
+              } catch (e) {
+                this.doc.logger.warn('applyDeltaToView error;blockId:' + blockId, e)
+                bm.instance.rerender()
+              }
             }
           }
           bm.instance.onTextChange.next({op: changes.delta as DeltaOperation[], tr})
