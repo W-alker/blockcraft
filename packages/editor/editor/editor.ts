@@ -1,4 +1,4 @@
-import {Component, ElementRef, Injector, Input, ViewChild} from "@angular/core";
+import {Component, ElementRef, Injector, Input, OnDestroy, ViewChild, signal} from "@angular/core";
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
   BlockCraftDoc,
@@ -34,7 +34,7 @@ import {
 import {ConsoleLogger} from "../global";
 import {BulletBlockSchema} from "../blocks/bullet-block";
 import {FormulaBlockSchema} from "../blocks/formula-block";
-import {FixedTextToolbarComponent} from "../plugins/fixed-toolbar";
+import {FixedTextToolbarComponent, IFixedToolbarExtensionActionContext} from "../plugins/fixed-toolbar";
 import {BlockTransformerPlugin} from "../plugins/block-transformer";
 import {BlockControllerPlugin, mergeBlockControllerOptions} from "../plugins/block-controller";
 import {ImgToolbarPlugin} from "../plugins/img-toolbar";
@@ -65,6 +65,9 @@ import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
 import {ColumnBlockSchema} from "../blocks/columns-block";
 import {TranslatePlugin} from "../plugins/translate";
 import {MyDocTranslationService} from "./services/doc-translation.service";
+import {VoiceTranscriptionPlugin} from "../plugins/voice-transcription";
+import {resolveSpeechTranscriptionService} from "./services/speech-transcription.service";
+import {Subscription} from "rxjs";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -116,7 +119,11 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
   selector: 'block-craft-editor',
   template: `
     <section class="editor-shell">
-      <bc-fixed-toolbar [doc]="doc" [stickyTop]="stickyTop"></bc-fixed-toolbar>
+      <bc-fixed-toolbar
+        [doc]="doc"
+        [stickyTop]="stickyTop"
+        [extensionActions]="voiceToolbarActions()"
+        (extensionAction)="onToolbarExtensionAction($event)"></bc-fixed-toolbar>
 
       <div class="editor-container" #container (mousedown)="onContainerMousedown($event)"></div>
     </section>
@@ -194,15 +201,21 @@ export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
     MyCommentService
   ]
 })
-export class EditorComponent {
+export class EditorComponent implements OnDestroy {
 
   @ViewChild('container', {read: ElementRef}) container!: ElementRef;
   @Input() stickyTop = 0;
+  readonly voiceToolbarActions = signal<ReturnType<VoiceTranscriptionPlugin['createToolbarActions']>>([])
+  private readonly sub = new Subscription()
 
   constructor(
     private injector: Injector,
     private logger: ConsoleLogger
   ) {
+    this.voiceToolbarActions.set(this.voiceTranscriptionPlugin.createToolbarActions())
+    this.sub.add(this.voiceTranscriptionPlugin.state$.subscribe(() => {
+      this.voiceToolbarActions.set(this.voiceTranscriptionPlugin.createToolbarActions())
+    }))
   }
 
   docId = '689ac2b31a9abe3ae8a6788d'
@@ -213,6 +226,10 @@ export class EditorComponent {
     defaultTargetLang: 'chinese_simplified',
     targetLangWhenSourceIsChinese: 'chinese_simplified',
     service: new MyDocTranslationService(),
+  })
+
+  private readonly voiceTranscriptionPlugin = new VoiceTranscriptionPlugin({
+    service: resolveSpeechTranscriptionService(this.injector)
   })
 
   private readonly blockControllerPlugin = new BlockControllerPlugin(
@@ -313,9 +330,18 @@ export class EditorComponent {
       }),
       new MentionPlugin(mentionRequest), new DividerExtensionPlugin(),
       new FindReplacePlugin(),
-      this.translatePlugin
+      this.translatePlugin,
+      this.voiceTranscriptionPlugin
     ]
   })
+
+  ngOnDestroy() {
+    this.sub.unsubscribe()
+  }
+
+  onToolbarExtensionAction(context: IFixedToolbarExtensionActionContext) {
+    void this.voiceTranscriptionPlugin.handleToolbarAction(context)
+  }
 
   copyBlockLink(block: BlockCraft.BlockComponent) {
     const url = 'http://doc-pre.com' + '?blockId=' + block.id

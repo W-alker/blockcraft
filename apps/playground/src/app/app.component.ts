@@ -127,7 +127,7 @@ const ACTION_SECTIONS: DebugSection[] = [
           <div class="status-grid">
             <div class="status-item">
               <span class="status-item__label">文档</span>
-              <span class="status-pill" [class.status-pill--active]="isInitialized">{{ isInitialized ? '已初始化' : '未初始化' }}</span>
+              <span class="status-pill" [class.status-pill--active]="editorInitialized">{{ editorInitialized ? '已初始化' : '未初始化' }}</span>
             </div>
             <div class="status-item">
               <span class="status-item__label">编辑</span>
@@ -572,11 +572,13 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   private readonly zone = inject(NgZone);
   private _markdownStreamRenderer?: MarkdownStreamRenderer;
   private _markdownTestTimer: number | null = null;
+  private _autoInitTimer: number | null = null;
   private _demoController: PresentationController | null = null;
   private _collabInitHandler?: () => void;
   private _selectionSub?: Subscription;
 
   readonly updateList: Uint8Array[] = [];
+  editorInitialized = false;
   isListeningUpdate = false;
   provider?: WebsocketProvider;
   selectionJson: string | null = null;
@@ -589,16 +591,21 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit(): void {
-    queueMicrotask(() => {
+    this._autoInitTimer = window.setTimeout(() => {
+      this._autoInitTimer = null;
       try {
         this.initializeEditor();
       } catch (error) {
         console.error('Auto init editor failed:', error);
       }
-    });
+    }, 0);
   }
 
   ngOnDestroy(): void {
+    if (this._autoInitTimer !== null) {
+      window.clearTimeout(this._autoInitTimer);
+      this._autoInitTimer = null;
+    }
     this.stopMarkdownStreamTest();
     this._markdownStreamRenderer?.destroy();
     this._demoController?.destroy();
@@ -606,12 +613,8 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     this._selectionSub?.unsubscribe();
   }
 
-  get isInitialized() {
-    return this.editor?.doc.isInitialized ?? false;
-  }
-
   get isReadonly() {
-    return this.editor?.doc.isReadonly ?? false;
+    return this.editor?.doc.isReadonly ?? true;
   }
 
   get currentTheme() {
@@ -853,9 +856,11 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   }
 
   initializeEditor() {
-    this.ensureEditorInitialized();
+    const editor = this.ensureEditorInitialized();
+    this.editorInitialized = editor.doc.isInitialized;
     this.syncPageTheme();
     this._subscribeSelection();
+    this.cdr.markForCheck();
   }
 
   toggleTheme() {
