@@ -68,6 +68,7 @@ import {MyDocTranslationService} from "./services/doc-translation.service";
 import {VoiceTranscriptionPlugin} from "../plugins/voice-transcription";
 import {resolveSpeechTranscriptionService} from "./services/speech-transcription.service";
 import {Subscription} from "rxjs";
+import {PasteFormatSelectorPlugin} from "../plugins/paste-format-selector";
 
 const mentionRequest = async (keyword: string) => {
   if (keyword === 'a') {
@@ -320,6 +321,7 @@ export class EditorComponent implements OnDestroy {
       new BlockTransformerPlugin(),
       this.blockControllerPlugin,
       new TableBlockBinding(),
+      new PasteFormatSelectorPlugin(),
       new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
       new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(),
       new FormulaBlockExtensionPlugin(),

@@ -1,6 +1,7 @@
 import {
   BindHotKey,
   BlockNodeType,
+  ClipboardEventState,
   DeltaInsert,
   DeltaOperation,
   DocEventRegister,
@@ -16,19 +17,36 @@ import {
   nextTick, SimpleBasicType,
   sliceDelta
 } from "../../../global";
-import {ClipboardDataType} from "./types";
+import {
+  ClipboardDataType,
+  ClipboardPasteApplyResult,
+  ClipboardPasteFormatType,
+  ClipboardPasteOption,
+  ClipboardPasteSession,
+  ClipboardPasteSessionView
+} from "./types";
 import {
   generateId,
   replaceSnapshotsIdDeeply,
 } from "../../utils";
 import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
 import {copyBlocks} from "./copyBlocks";
+import {BehaviorSubject} from "rxjs";
+import {
+  cloneSnapshot,
+  createTableSnapshotFromMatrix,
+  getMarkdownClipboardText,
+  looksLikeMarkdown,
+  parseTabularText
+} from "./paste-utils";
 
 export * from './types'
 
 @DocEventRegister
 export class ClipboardManager {
   adapter = this.doc.injector.get(DOC_ADAPTER_SERVICE_TOKEN)
+  readonly pasteFormatSession$ = new BehaviorSubject<ClipboardPasteSessionView | null>(null)
+  private _lastPasteSession: ClipboardPasteSession | null = null
 
   constructor(public readonly doc: BlockCraft.Doc) {
   }
@@ -117,6 +135,329 @@ export class ClipboardManager {
     this.doc.inputManger.deleteByRange(selection, false)
   }
 
+  clearPasteFormatSession() {
+    this._lastPasteSession = null
+    if (this.pasteFormatSession$.value) {
+      this.pasteFormatSession$.next(null)
+    }
+  }
+
+  async reapplyLastPaste(type: ClipboardPasteFormatType) {
+    const session = this._lastPasteSession
+    if (!session || session.selectedType === type) return false
+
+    const option = session.options.find(candidate => candidate.type === type)
+    if (!option || !this.doc.crud.undoManager.isCanUndo()) {
+      this.clearPasteFormatSession()
+      return false
+    }
+
+    this.doc.crud.undoManager.undo()
+    await nextTick()
+    await nextTick()
+
+    const selection = this.doc.selection.value
+    const applyResult = selection ? await this.applyPasteOption(option, selection) : null
+    if (!applyResult) {
+      this.clearPasteFormatSession()
+      return false
+    }
+
+    session.selectedType = type
+    session.anchorBlockId = applyResult.anchorBlockId
+    await nextTick()
+    this.pasteFormatSession$.next(this._toPasteSessionView(session))
+    return true
+  }
+
+  async applyPasteOption(
+    option: ClipboardPasteOption,
+    selection: BlockCraft.Selection
+  ): Promise<ClipboardPasteApplyResult | null> {
+    if (selection.from.type !== 'text') return null
+
+    if (option.payload.kind === 'text') {
+      return this._applyPlainText(option.payload.text, selection)
+    }
+
+    return this._applySnapshot(option.payload.snapshot, selection)
+  }
+
+  private _setPasteFormatSession(
+    options: ClipboardPasteOption[],
+    selectedType: ClipboardPasteFormatType,
+    anchorBlockId: string
+  ) {
+    if (options.length < 2) {
+      this.clearPasteFormatSession()
+      return
+    }
+
+    this._lastPasteSession = {
+      anchorBlockId,
+      selectedType,
+      options
+    }
+    this.pasteFormatSession$.next(this._toPasteSessionView(this._lastPasteSession))
+  }
+
+  private _toPasteSessionView(session: ClipboardPasteSession): ClipboardPasteSessionView {
+    return {
+      anchorBlockId: session.anchorBlockId,
+      selectedType: session.selectedType,
+      options: session.options.map(({type, label}) => ({type, label}))
+    }
+  }
+
+  private _pushPasteOption(options: ClipboardPasteOption[], option: ClipboardPasteOption | null) {
+    if (!option || options.some(candidate => candidate.type === option.type)) return
+    options.push(option)
+  }
+
+  private _pickDefaultPasteOption(options: ClipboardPasteOption[]) {
+    const priority: ClipboardPasteFormatType[] = ['html', 'table', 'markdown', 'plain-text']
+    for (const type of priority) {
+      const option = options.find(candidate => candidate.type === type)
+      if (option) return option
+    }
+    return options[0]
+  }
+
+  private async _buildPasteOptions(state: ClipboardEventState) {
+    const options: ClipboardPasteOption[] = []
+
+    if (state.dataTypes.includes(ClipboardDataType.HTML)) {
+      const htmlString = state.getData(ClipboardDataType.HTML)
+      const htmlAdapter = this.adapter?.getAdapter(ClipboardDataType.HTML)
+      if (htmlAdapter && htmlString) {
+        try {
+          const htmlSnapshot = await htmlAdapter.toSnapshot(htmlString)
+          if (htmlSnapshot.nodeType === BlockNodeType.root && htmlSnapshot.children.length) {
+            this._pushPasteOption(options, {
+              type: 'html',
+              label: 'HTML',
+              payload: {
+                kind: 'snapshot',
+                snapshot: htmlSnapshot
+              }
+            })
+          }
+        } catch (e) {
+          this.doc.logger.warn('html2snapshot error', e)
+        }
+      }
+    }
+
+    const plainText = state.getData(ClipboardDataType.TEXT)?.replace(/\n$/g, '') || ''
+    if (plainText) {
+      this._pushPasteOption(options, {
+        type: 'plain-text',
+        label: '纯文本',
+        payload: {
+          kind: 'text',
+          text: plainText
+        }
+      })
+    }
+
+    const tableText = state.getData(ClipboardDataType.TSV) || plainText
+    const tableMatrix = tableText ? parseTabularText(tableText) : null
+    if (tableMatrix?.length) {
+      this._pushPasteOption(options, {
+        type: 'table',
+        label: '表格',
+        payload: {
+          kind: 'snapshot',
+          snapshot: {
+            id: generateId(),
+            flavour: 'root',
+            nodeType: BlockNodeType.root,
+            props: {},
+            meta: {},
+            children: [
+              createTableSnapshotFromMatrix(
+                this.doc,
+                tableMatrix,
+                state.selection.firstBlock?.props.depth || 0
+              )
+            ]
+          }
+        }
+      })
+    }
+
+    const markdownText = getMarkdownClipboardText(state)
+      || (plainText && looksLikeMarkdown(plainText) ? plainText : null)
+    if (markdownText) {
+      const markdownAdapter = this.adapter?.getAdapter(ClipboardDataType.MARKDOWN)
+        || this.adapter?.getAdapter(ClipboardDataType.RTF)
+      if (markdownAdapter) {
+        try {
+          const markdownSnapshot = await markdownAdapter.toSnapshot(markdownText)
+          if (markdownSnapshot.nodeType === BlockNodeType.root && markdownSnapshot.children.length) {
+            this._pushPasteOption(options, {
+              type: 'markdown',
+              label: 'Markdown',
+              payload: {
+                kind: 'snapshot',
+                snapshot: markdownSnapshot
+              }
+            })
+          }
+        } catch (e) {
+          this.doc.logger.warn('markdown2snapshot error', e)
+        }
+      }
+    }
+
+    return options
+  }
+
+  private _applyPlainText(text: string, selection: BlockCraft.Selection): ClipboardPasteApplyResult | null {
+    if (selection.from.type !== 'text') return null
+
+    const {from: selFrom, isInSameBlock, collapsed} = selection
+    let normalizedText = text.replace(/\n$/g, '')
+    if (!normalizedText) return null
+
+    if (isUrl(normalizedText) && isInSameBlock) {
+      selection.collapsed ?
+        selFrom.block.insertText(selFrom.index, normalizedText, {'a:link': normalizedText})
+        : selFrom.block.formatText(selFrom.index, selFrom.length, {'a:link': normalizedText})
+      nextTick().then(() => {
+        collapsed ? selFrom.block.setInlineRange(selFrom.index + normalizedText.length)
+          : selFrom.block.setInlineRange(selFrom.index, selFrom.length)
+      })
+      return {
+        anchorBlockId: selFrom.block.id
+      }
+    }
+
+    let anchorBlockId = selFrom.block.id
+    this.doc.crud.transact(() => {
+      const textLines = normalizedText.replace(/[\n\r]+$/, '').split('\n')
+      if (isInSameBlock) {
+        selFrom.block.replaceText(selFrom.index, selFrom.length, textLines[0])
+      } else {
+        this.deleteContentFromSelection(selection)
+        selFrom.block.applyDeltaOperations([{retain: selFrom.index}, {insert: textLines[0]}])
+      }
+      if (textLines.length > 1) {
+        const snapshots = textLines
+          .slice(1)
+          .map(line => this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: selFrom.block.props.depth}]))
+        anchorBlockId = snapshots[snapshots.length - 1]?.id || anchorBlockId
+        this.doc.crud.insertBlocksAfter(selFrom.block, snapshots)
+      }
+    })
+
+    requestAnimationFrame(() => {
+      this.doc.selection.recalculate()
+    })
+
+    return {
+      anchorBlockId
+    }
+  }
+
+  private async _applySnapshot(
+    snapshot: IBlockSnapshot,
+    selection: BlockCraft.Selection
+  ): Promise<ClipboardPasteApplyResult | null> {
+    if (selection.from.type !== 'text') return null
+    if (snapshot.nodeType !== BlockNodeType.root || !snapshot.children.length) return null
+
+    const rootSnapshot = cloneSnapshot(snapshot)
+    const snapshots = rootSnapshot.children as IBlockSnapshot[]
+    const {from: selFrom, isInSameBlock, collapsed} = selection
+    const {index: fromIndex, length: fromLength, block: editableBlock} = selFrom
+    const textLength = editableBlock.textLength
+
+    replaceSnapshotsIdDeeply(snapshots)
+
+    if (isInSameBlock) {
+      const ops: DeltaOperation[] = [{retain: fromIndex}]
+      let insertLength = 0
+
+      if (snapshots[0].nodeType === BlockNodeType.editable
+        && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
+        && compareSimpleValue(snapshots[0].props['heading'] as SimpleBasicType, editableBlock.props['heading']) <= 0
+      ) {
+        insertLength = deltaStrLength(snapshots[0].children)
+        ops.push(...snapshots[0].children)
+        snapshots.shift()
+      }
+
+      if (!snapshots.length) {
+        editableBlock.deleteText(fromIndex, fromLength)
+        editableBlock.applyDeltaOperations(ops)
+        insertLength > 0 && nextTick().then(() => {
+          collapsed ? editableBlock.setInlineRange(fromIndex + insertLength) : editableBlock.setInlineRange(fromIndex, insertLength)
+        })
+        return {
+          anchorBlockId: editableBlock.id
+        }
+      }
+
+      if (fromIndex + fromLength < textLength) {
+        ops.push({delete: textLength - fromIndex})
+        const sliceDeltas = sliceDelta(editableBlock.textDeltas(), fromIndex + fromLength, textLength)
+        const splitSnapshot = this.doc.schemas.createSnapshot('paragraph', [sliceDeltas, editableBlock.props])
+        this.doc.crud.insertBlocksAfter(editableBlock, [splitSnapshot])
+      } else {
+        editableBlock.deleteText(fromIndex, fromLength)
+      }
+      editableBlock.applyDeltaOperations(ops)
+    } else {
+      this.deleteContentFromSelection(selection)
+
+      if (snapshots[0].nodeType === BlockNodeType.editable
+        && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
+      ) {
+        const insertLength = deltaStrLength(snapshots[0].children)
+        editableBlock.applyDeltaOperations([{retain: fromIndex}, ...snapshots[0].children])
+        snapshots.shift()
+
+        if (!snapshots.length) {
+          insertLength > 0 && nextTick().then(() => {
+            collapsed ? editableBlock.setInlineRange(fromIndex + insertLength) : editableBlock.setInlineRange(fromIndex, insertLength)
+          })
+          return {
+            anchorBlockId: editableBlock.id
+          }
+        }
+      }
+    }
+
+    const anchorBlockId = snapshots[snapshots.length - 1]?.id || editableBlock.id
+
+    await this.doc.chain()
+      .insertAfterSnapshots(editableBlock, snapshots)
+      .tap(() => {
+        if (collapsed) return
+        const endBlock = this.doc.getBlockById(anchorBlockId)
+        this.doc.selection.setSelection({
+          blockId: editableBlock.id,
+          index: fromIndex,
+          length: editableBlock.textLength,
+          type: 'text'
+        }, this.doc.isEditable(endBlock) ? {
+          blockId: endBlock.id,
+          index: 0,
+          length: endBlock.textLength,
+          type: 'text'
+        } : {
+          blockId: endBlock.id,
+          type: 'selected'
+        })
+      })
+      .run()
+
+    return {
+      anchorBlockId
+    }
+  }
+
   @EventListen('copy')
   async onCopy(context: UIEventStateContext) {
     const state = context.get('clipboardState')
@@ -141,9 +482,6 @@ export class ClipboardManager {
   async onPaste(context: UIEventStateContext) {
     context.preventDefault()
     const state = context.get('clipboardState')
-    state.dataTypes.forEach(v => {
-      console.log(`%c${v}`, 'color: red; font-size: large;', state.clipboardData?.getData(v), state.clipboardData?.files)
-    })
 
     const selection = state.selection
     if (selection.from.type !== 'text') return
@@ -154,6 +492,7 @@ export class ClipboardManager {
     if (selFrom.block.plainTextOnly) {
       const text = state.clipboardData?.getData(ClipboardDataType.TEXT)
       if (!text) return false
+      this.clearPasteFormatSession()
       selFrom.block.replaceText(selection.from.index, selection.from.length, text)
       nextTick().then(() => {
         collapsed ? selFrom.block.setInlineRange(selFrom.index + text.length)
@@ -164,162 +503,26 @@ export class ClipboardManager {
 
     // file
     if (state.dataTypes.includes(ClipboardDataType.FILES)) {
+      this.clearPasteFormatSession()
       return false
     }
 
-    let rootSnapshot: IBlockSnapshot | undefined
-    // rtf
-    // if (state.dataTypes.includes(ClipboardDataType.RTF)) {
-    //   const rtfString = state.getData(ClipboardDataType.RTF)
-    //   const rtfAdapter = this.adapter?.getAdapter(ClipboardDataType.RTF)
-    //   if (rtfAdapter && rtfString) {
-    //     try {
-    //       rootSnapshot = await rtfAdapter.toSnapshot(rtfString)
-    //       console.log(`%crtf2snapshot`, 'color: red; font-size: large;', rootSnapshot)
-    //     } catch (e) {
-    //       this.doc.logger.warn('rtf2snapshot error', e)
-    //     }
-    //   }
-    // }
-
-    // html
-    if (!rootSnapshot && state.dataTypes.includes(ClipboardDataType.HTML)) {
-      const htmlString = state.getData(ClipboardDataType.HTML)
-      const htmlAdapter = this.adapter?.getAdapter(ClipboardDataType.HTML)
-      if (htmlAdapter && htmlString) {
-        try {
-          rootSnapshot = await htmlAdapter.toSnapshot(htmlString)
-        } catch (e) {
-          this.doc.logger.warn('html2snapshot error', e)
-        }
-      }
+    const options = await this._buildPasteOptions(state)
+    const defaultOption = this._pickDefaultPasteOption(options)
+    if (!defaultOption) {
+      this.clearPasteFormatSession()
+      return false
     }
 
-    console.log('---------------html2snapshot', rootSnapshot)
-
-    if (rootSnapshot && rootSnapshot.children.length && rootSnapshot.nodeType === BlockNodeType.root) {
-      const snapshots: IBlockSnapshot[] = rootSnapshot.children as IBlockSnapshot[]
-      const {index: fromIndex, length: fromLength, block: editableBlock} = selFrom
-      const textLength = editableBlock.textLength
-
-      replaceSnapshotsIdDeeply(snapshots)
-
-      // 同一文本块
-      if (isInSameBlock) {
-        const ops: DeltaOperation[] = [{retain: fromIndex}]
-
-        let insertLength = 0
-        // 是否需要和本段合并
-        if (snapshots[0].nodeType === BlockNodeType.editable
-          && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
-          && compareSimpleValue(snapshots[0].props['heading'] as SimpleBasicType, editableBlock.props['heading']) <= 0
-        ) {
-          insertLength = deltaStrLength(snapshots[0].children)
-          ops.push(...snapshots[0].children)
-          snapshots.shift()
-        }
-
-        // 不需要拆分, 代表这是一个行内操作
-        if (!snapshots.length) {
-          editableBlock.deleteText(fromIndex, fromLength)
-          editableBlock.applyDeltaOperations(ops)
-          insertLength > 0 && nextTick().then(() => {
-            collapsed ? editableBlock.setInlineRange(fromIndex + insertLength) : editableBlock.setInlineRange(fromIndex, insertLength)
-          })
-          return;
-        }
-
-        // 文本中间位置
-        if (fromIndex + fromLength < textLength) {
-          ops.push({delete: textLength - fromIndex})
-          // 拆分
-          const sliceDeltas = sliceDelta(editableBlock.textDeltas(), fromIndex + fromLength, textLength)
-          const splitSnapshot = this.doc.schemas.createSnapshot('paragraph', [sliceDeltas, editableBlock.props])
-          this.doc.crud.insertBlocksAfter(editableBlock, [splitSnapshot])
-        } else {
-          editableBlock.deleteText(fromIndex, fromLength)
-        }
-        editableBlock.applyDeltaOperations(ops)
-      } else {
-        // 删除区间内容
-        this.deleteContentFromSelection(state.selection)
-
-        // 是否需要和本段合并
-        if (snapshots[0].nodeType === BlockNodeType.editable && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)) {
-          const insertLength = deltaStrLength(snapshots[0].children)
-          editableBlock.applyDeltaOperations([{retain: fromIndex}, ...snapshots[0].children])
-          snapshots.shift()
-
-          if (!snapshots.length) {
-            insertLength > 0 && nextTick().then(() => {
-              collapsed ? editableBlock.setInlineRange(fromIndex + insertLength) : editableBlock.setInlineRange(fromIndex, insertLength)
-            })
-            return
-          }
-        }
-      }
-
-      // 新增blocks
-      void this.doc.chain()
-        .insertAfterSnapshots(editableBlock, snapshots)
-        .tap(() => {
-          if (collapsed) return
-          const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
-          this.doc.selection.setSelection({
-            blockId: editableBlock.id,
-            index: fromIndex,
-            length: editableBlock.textLength,
-            type: 'text'
-          }, this.doc.isEditable(endBlock) ? {
-            blockId: endBlock.id,
-            index: 0,
-            length: endBlock.textLength,
-            type: 'text'
-          } : {
-            blockId: endBlock.id,
-            type: 'selected'
-          })
-        })
-        .run()
-      return true
+    const applyResult = await this.applyPasteOption(defaultOption, selection)
+    if (!applyResult) {
+      this.clearPasteFormatSession()
+      return false
     }
 
-    // plain-text
-    if (state.dataTypes.includes(ClipboardDataType.TEXT)) {
-      let text = state.getData(ClipboardDataType.TEXT)!
-      if (!text) return false
-      text = text.replace(/\n$/g, '')
-      if (isUrl(text) && isInSameBlock) {
-        selection.collapsed ?
-          selFrom.block.insertText(selFrom.index, text, {'a:link': text})
-          : selFrom.block.formatText(selFrom.index, selFrom.length, {'a:link': text})
-        nextTick().then(() => {
-          collapsed ? selFrom.block.setInlineRange(selFrom.index + text.length)
-            : selFrom.block.setInlineRange(selFrom.index, selFrom.length)
-        })
-        return true
-      }
-
-      this.doc.crud.transact(() => {
-        const text_lines = text.replace(/[\n\r]+$/, '').split('\n')
-        if (isInSameBlock) {
-          selFrom.block.replaceText(selFrom.index, selFrom.length, text_lines[0])
-        } else {
-          this.deleteContentFromSelection(state.selection)
-          selFrom.block.applyDeltaOperations([{retain: selFrom.index}, {insert: text_lines[0]}])
-        }
-        if (text_lines.length > 1) {
-          const snapshots = text_lines.slice(1).map(line => this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: selFrom.block.props.depth}]))
-          this.doc.crud.insertBlocksAfter(selFrom.block, snapshots)
-        }
-      })
-      requestAnimationFrame(() => {
-        this.doc.selection.recalculate()
-      })
-      return true
-    }
-
-    return false
+    await nextTick()
+    this._setPasteFormatSession(options, defaultOption.type, applyResult.anchorBlockId)
+    return true
   }
 }
 

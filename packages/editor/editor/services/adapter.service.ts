@@ -15,6 +15,11 @@ export class AdapterService extends DocAdapterService {
       fromSnapshot: (snapshot: IBlockSnapshot) => this.htmlAdapter.toHtml(snapshot)
     },
     {
+      type: ClipboardDataType.MARKDOWN,
+      toSnapshot: (markdown: string) => this.markdownAdapter.toBlockSnapshot(markdown),
+      fromSnapshot: (snapshot: IBlockSnapshot) => this.markdownAdapter.toMarkdown(snapshot)
+    },
+    {
       type: ClipboardDataType.RTF,
       toSnapshot: (rtf: string) => this.markdownAdapter.toBlockSnapshot(rtf),
       fromSnapshot: (snapshot: IBlockSnapshot) => this.markdownAdapter.toMarkdown(snapshot)
