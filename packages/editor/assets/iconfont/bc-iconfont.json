@@ -6,6 +6,27 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "46373033",
+      "name": "上传",
+      "font_class": "shangchuan",
+      "unicode": "e96f",
+      "unicode_decimal": 59759
+    },
+    {
+      "icon_id": "37102615",
+      "name": "声音_开",
+      "font_class": "sound_on",
+      "unicode": "e745",
+      "unicode_decimal": 59205
+    },
+    {
+      "icon_id": "37102639",
+      "name": "声音_关闭",
+      "font_class": "sound_off",
+      "unicode": "e753",
+      "unicode_decimal": 59219
+    },
+    {
       "icon_id": "43265639",
       "name": "修复表格",
       "font_class": "xiufubiaoge",
