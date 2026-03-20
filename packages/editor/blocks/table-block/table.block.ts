@@ -222,8 +222,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
 
     const sub1 = this.doc.event.customListen(document, 'selectionchange').pipe(skip(1)).subscribe(() => {
-      const selection = window.getSelection()!
-      if (!cell.hostElement.contains(selection.focusNode)) {
+      const curSel = this.doc.selection.value
+      if (!curSel || !cell.hostElement.contains(curSel.from.block.hostElement)) {
         startSelectCell()
         sub1.unsubscribe()
       }

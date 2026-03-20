@@ -130,9 +130,12 @@ export class ClipboardManager {
     const state = context.get('clipboardState')
     context.preventDefault()
 
+    const {from} = state.selection
     this.copyFromSelection(state.selection, state.clipboardData!).then(() => {
       this.deleteContentFromSelection(state.selection)
-      document.getSelection()?.collapseToStart()
+      if (from.type === 'text') {
+        this.doc.selection.setCursorAt(from.block as any, from.index)
+      }
     })
 
   }

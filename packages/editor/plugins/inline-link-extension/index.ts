@@ -128,7 +128,7 @@ export class InlineLinkExtension extends DocPlugin {
     })
 
     this.doc.selection.selectionChange$.pipe(skip(1), takeUntil(this._closeToolbar$)).subscribe(sel => {
-      if (!sel || sel.to || !sel.collapsed || sel.from.type !== 'text' || !this._linkNode?.contains(document.getSelection()?.getRangeAt(0)?.startContainer!)) {
+      if (!sel || sel.to || !sel.collapsed || sel.from.type !== 'text' || !this._isCursorInLink(sel, link)) {
         this._closeToolbar$.next()
         return
       }
@@ -138,6 +138,20 @@ export class InlineLinkExtension extends DocPlugin {
       this._closeToolbar$.next()
     })
 
+  }
+
+  private _isCursorInLink(sel: BlockCraft.Selection, link: string): boolean {
+    if (sel.from.type !== 'text') return false
+    const deltas = sel.from.block.textDeltas()
+    let pos = 0
+    for (const d of deltas) {
+      const len = typeof d.insert === 'string' ? d.insert.length : 1
+      if (pos <= sel.from.index && sel.from.index < pos + len) {
+        return d.attributes?.['a:link'] === link
+      }
+      pos += len
+    }
+    return false
   }
 
   closeToolbar = () => {

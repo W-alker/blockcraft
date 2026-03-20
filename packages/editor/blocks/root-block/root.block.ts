@@ -58,7 +58,7 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
       if (block.nodeType !== BlockNodeType.root) {
         fromEvent(block.hostElement, 'pointerleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1)))).subscribe(e => {
           block.hostElement.classList.remove('selecting')
-          document.getSelection()!.selectAllChildren(block.hostElement)
+          this.doc.selection.selectBlock(block)
 
           // TODO 这样实现不太好
           if (block.flavour === 'table-cell') return

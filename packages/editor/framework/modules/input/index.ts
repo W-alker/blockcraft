@@ -83,7 +83,7 @@ export class InputTransformer {
       const curParent = curSel.lastBlock.parentBlock!
       const curParentSchema = this.doc.schemas.get(curParent.flavour)!
       if (!curParentSchema.metadata.renderUnit) {
-        document.getSelection()?.collapseToStart()
+        this.doc.selection.blur()
         return true
       }
       const p = this.doc.schemas.createSnapshot('paragraph', [])
@@ -101,15 +101,11 @@ export class InputTransformer {
     }
 
     if (!curSel.collapsed) {
-      const winSel = window.getSelection()!
-      curSel.from.type === 'text' ? winSel.collapseToStart() : winSel.collapseToEnd()
-      this.doc.selection.recalculate()
       this._replaceText(curSel)
-      // After delete, DOM selection may be on a removed node.
-      // Use the known model position directly instead of reading DOM.
       const anchorBlock = curSel.from.type === 'text' ? curSel.from.block : (curSel.to?.type === 'text' ? curSel.to.block : null)
       const anchorIndex = curSel.from.type === 'text' ? curSel.from.index : 0
       if (anchorBlock) {
+        this.doc.selection.setCursorAt(anchorBlock as any, anchorIndex)
         this.compositionSession.start(anchorBlock as any, anchorIndex)
       }
     } else {
@@ -219,9 +215,10 @@ export class InputTransformer {
           from: {...normalizedRange.from, index: normalizedRange.from.index - 1, length: 1}
         }
       }
-      document.getSelection()?.collapseToStart()
       this._replaceText(deleteRange)
-      this.doc.selection.recalculate()
+      if (deleteRange.from.type === 'text') {
+        this.doc.selection.setCursorAt(deleteRange.from.block as any, deleteRange.from.index)
+      }
       return;
     }
 
@@ -246,7 +243,6 @@ export class InputTransformer {
         cElement.appendChild(textElement)
         zeroTextEle.after(cElement)
       }
-      document.getSelection()!.setPosition(textElement.firstChild!, text.length)
       needsRerender = true
     }
 
@@ -257,7 +253,6 @@ export class InputTransformer {
       if (prevElement.localName === INLINE_ELEMENT_TAG && child?.isContentEditable) {
         const len = child.textContent!.length;
         (child.firstChild as Text).insertData(len, text)
-        document.getSelection()!.setPosition(child.firstChild!, len + text.length)
         ev.preventDefault()
       } else {
         const cElement = document.createElement(INLINE_ELEMENT_TAG)
@@ -265,7 +260,6 @@ export class InputTransformer {
         textElement.textContent = text
         cElement.appendChild(textElement)
         staticRange.startContainer.before(cElement)
-        document.getSelection()!.setPosition(textElement.firstChild!, text.length)
         ev.preventDefault()
       }
       needsRerender = true
@@ -602,9 +596,11 @@ export class InputTransformer {
     }
 
     if (!collapsed) {
-      const winSel = window.getSelection()!
-      from.type === 'text' ? winSel.collapseToStart() : winSel.collapseToEnd()
       this._replaceText(state.selection)
+      const anchorPoint = from.type === 'text' ? from : to
+      if (anchorPoint?.type === 'text') {
+        this.doc.selection.setCursorAt(anchorPoint.block as any, anchorPoint.index)
+      }
       return true
     }
 

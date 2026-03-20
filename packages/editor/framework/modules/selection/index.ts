@@ -281,34 +281,57 @@ export class SelectionManager {
     return new FakeRange(this.doc, json, config)
   }
 
+  /**
+   * Create a transient DOM Range from the current model selection.
+   * Used internally for geometry queries (rects, scroll).
+   */
+  private _rangeFromModel(): Range | null {
+    const sel = this.value
+    if (!sel) return null
+    try {
+      return this._setRange(sel.from, sel.to)
+    } catch {
+      return null
+    }
+  }
+
   getSelectionRect(): DOMRect | null {
-    const sel = document.getSelection()
-    if (!sel?.rangeCount) return null
-    return sel.getRangeAt(0).getBoundingClientRect()
+    const range = this._rangeFromModel()
+    if (!range) return null
+    return range.getBoundingClientRect()
   }
 
   getSelectionRects(): DOMRectList | null {
-    const sel = document.getSelection()
-    if (!sel?.rangeCount) return null
-    return sel.getRangeAt(0).getClientRects()
+    const range = this._rangeFromModel()
+    if (!range) return null
+    return range.getClientRects()
   }
 
   getSelectedText(): string {
-    return document.getSelection()?.toString() ?? ''
-  }
-
-  collapseDomSelection(toStart = true) {
-    const sel = document.getSelection()
-    if (!sel) return
-    toStart ? sel.collapseToStart() : sel.collapseToEnd()
+    const sel = this.value
+    if (!sel) return ''
+    const {from, to} = sel
+    if (!to) {
+      if (from.type !== 'text') return from.block.textContent()
+      return from.block.textContent().slice(from.index, from.index + from.length)
+    }
+    let text = from.type === 'text'
+      ? from.block.textContent().slice(from.index, from.index + from.length)
+      : from.block.textContent()
+    const betweenBlocks = this.doc.queryBlocksBetween(from.block, to.block)
+    for (const bid of betweenBlocks) {
+      text += '\n' + this.doc.getBlockById(bid).textContent()
+    }
+    if (to.type === 'text') {
+      text += '\n' + to.block.textContent().slice(to.index, to.index + to.length)
+    } else {
+      text += '\n' + to.block.textContent()
+    }
+    return text
   }
 
   scrollSelectionIntoView() {
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0) return
-
-    const range = sel.getRangeAt(0)
-    const rect = range.getBoundingClientRect()
+    const rect = this.getSelectionRect()
     if (!rect || rect.height === 0) return
 
     const container = this.doc.scrollContainer!
@@ -320,7 +343,6 @@ export class SelectionManager {
     } else if (rect.top < cRect.top) {
       container.scrollTop -= cRect.top - rect.top + padding
     }
-
   }
 }
 
