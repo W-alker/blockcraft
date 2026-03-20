@@ -1,6 +1,8 @@
 import {ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, OnDestroy, OnInit, Output} from "@angular/core";
 import {
   BcColumnCountPickerComponent,
+  BcFloatToolbarComponent,
+  BcFloatToolbarItemComponent,
   BcOverlayTriggerDirective,
   BcTableSizePickerComponent,
   ColorGroup,
@@ -19,11 +21,10 @@ import {LinkInputPad} from "../../float-text-toolbar/widgets/link-input-pad";
 type TInlineToggle = 'bold' | 'italic' | 'underline' | 'strike' | 'code' | 'sup' | 'sub'
 type TAlignValue = 'left' | 'center' | 'right'
 type TListFlavour = 'ordered' | 'bullet' | 'todo'
-type TStyleValue = 'paragraph' | 'heading-1' | 'heading-2' | 'heading-3' | 'heading-4' | TListFlavour
-
-interface IToolbarOption<T extends string = string> {
-  value: T
-  label: string
+interface IStyleMenuItem {
+  name: string
+  value: any
+  intro: string
 }
 
 interface IToolbarIconAction<T extends string = string> {
@@ -47,15 +48,12 @@ export interface IFixedToolbarExtensionActionContext {
   doc: BlockCraft.Doc
 }
 
-const STYLE_OPTIONS: IToolbarOption<TStyleValue>[] = [
-  {value: 'paragraph', label: '正文'},
-  {value: 'heading-1', label: '一级标题'},
-  {value: 'heading-2', label: '二级标题'},
-  {value: 'heading-3', label: '三级标题'},
-  {value: 'heading-4', label: '四级标题'},
-  {value: 'ordered', label: '有序列表'},
-  {value: 'bullet', label: '无序列表'},
-  {value: 'todo', label: '待办事项'}
+const HEADING_MENU_LIST: IStyleMenuItem[] = [
+  {name: 'heading', intro: '正文', value: null},
+  {name: 'heading', value: 1, intro: '一级标题'},
+  {name: 'heading', value: 2, intro: '二级标题'},
+  {name: 'heading', value: 3, intro: '三级标题'},
+  {name: 'heading', value: 4, intro: '四级标题'},
 ]
 
 const INLINE_TOGGLE_ACTIONS: IToolbarIconAction<TInlineToggle>[] = [
@@ -109,15 +107,13 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
     <span class="toolbar-divider"></span>
 
-    <label class="toolbar-select toolbar-select--style">
-      <select [disabled]="readonly || !allEditable"
-              [value]="selectedStyle"
-              (change)="onStyleChanged($event)">
-        @for (item of styleOptions; track item.value) {
-          <option [value]="item.value">{{ item.label }}</option>
-        }
-      </select>
-    </label>
+    <button class="toolbar-btn toolbar-btn--style"
+            [disabled]="readonly || !allEditable"
+            [bcOverlayTrigger]="styleDropdown"
+            #styleTrigger="bcOverlayTrigger">
+      <span>{{ activeStyleItem.intro }}</span>
+      <i class="bc_icon bc_xiajaintou"></i>
+    </button>
 
     @for (item of inlineToggleActions; track item.value) {
       <button class="toolbar-btn"
@@ -261,160 +257,158 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     <ng-template #columnCountPicker>
       <bc-column-count-picker (pick)="insertColumnsBlock($event, columnCountTrigger)"></bc-column-count-picker>
     </ng-template>
+
+    <ng-template #styleDropdown>
+      <bc-float-toolbar [direction]="'column'" (onItemClick)="onStyleItemClicked($event, styleTrigger)" [gapAround]="8">
+        @for (item of headingMenuList; track item.value) {
+          <bc-float-toolbar-item [name]="item.name" [value]="item.value"
+                                 [active]="isHeadingItemActive(item)">{{ item.intro }}
+          </bc-float-toolbar-item>
+        }
+      </bc-float-toolbar>
+    </ng-template>
   `,
   styles: [`
-    :host {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      flex-wrap: wrap;
-      width: max-content;
-      padding: var(--bc-fixed-toolbar-padding, 5px 8px);
-      border: var(--bc-fixed-toolbar-border, 1px solid var(--bc-float-toolbar-divider-color));
-      box-shadow: var(--bc-fixed-toolbar-shadow, 0 6px 16px rgba(15, 15, 15, 0.08));
-      pointer-events: auto;
-      transition: opacity .12s ease;
-      will-change: transform;
-    }
+      :host {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          flex-wrap: wrap;
+          width: max-content;
+          padding: var(--bc-fixed-toolbar-padding, 5px 8px);
+          border: var(--bc-fixed-toolbar-border, 1px solid var(--bc-float-toolbar-divider-color));
+          box-shadow: var(--bc-fixed-toolbar-shadow, 0 6px 16px rgba(15, 15, 15, 0.08));
+          pointer-events: auto;
+          transition: opacity .12s ease;
+          will-change: transform;
+      }
 
-    :host(.hidden) {
-      opacity: 0;
-      visibility: hidden;
-    }
+      :host(.hidden) {
+          opacity: 0;
+          visibility: hidden;
+      }
 
-    :host(.readonly) {
-      opacity: .6;
-      pointer-events: none;
-    }
+      :host(.readonly) {
+          opacity: .6;
+          pointer-events: none;
+      }
 
-    .toolbar-btn {
-      height: 28px;
-      min-width: 28px;
-      border: 0;
-      border-radius: 6px;
-      background: transparent;
-      color: var(--bc-float-toolbar-item-color);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all var(--bc-transition-fast);
-      padding: 0 6px;
-      line-height: 1;
-    }
+      .toolbar-btn {
+          height: 28px;
+          min-width: 28px;
+          border-radius: 6px;
+          background: transparent;
+          color: var(--bc-float-toolbar-item-color);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all var(--bc-transition-fast);
+          padding: 0 6px;
+          line-height: 1;
+          border: 0;
+      }
 
-    .toolbar-btn:hover:not(:disabled) {
-      background: var(--bc-float-toolbar-item-hover-bg);
-    }
+      .toolbar-btn:hover:not(:disabled) {
+          background: var(--bc-float-toolbar-item-hover-bg);
+      }
 
-    .toolbar-btn.active {
-      background: var(--bc-float-toolbar-item-active-bg);
-      color: var(--bc-active-color);
-    }
+      .toolbar-btn.active {
+          background: var(--bc-float-toolbar-item-active-bg);
+          color: var(--bc-active-color);
+      }
 
-    .toolbar-btn:disabled {
-      opacity: .4;
-      cursor: not-allowed;
-    }
+      .toolbar-btn:disabled {
+          opacity: .4;
+          cursor: not-allowed;
+      }
 
-    .toolbar-btn > i {
-      font-size: 14px;
-      color: inherit;
-    }
+      .toolbar-btn > i {
+          font-size: 14px;
+          color: inherit;
+      }
 
-    .toolbar-select {
-      position: relative;
-      height: 28px;
-      display: inline-flex;
-      align-items: center;
-      border: 1px solid var(--bc-border-color);
-      border-radius: 6px;
-      overflow: hidden;
-      background: var(--bc-bg-primary);
-    }
+      .toolbar-btn--style {
+          gap: 4px;
+          min-width: 80px;
+          border: 1px solid var(--bc-border-color);
+      }
 
-    .toolbar-select > select {
-      height: 100%;
-      border: 0;
-      outline: none;
-      background: transparent;
-      color: var(--bc-color);
-      font-size: 12px;
-      padding: 0 6px;
-      cursor: pointer;
-    }
+      .toolbar-btn--style > span {
+          font-size: 12px;
+          flex: 1;
+          text-align: left;
+      }
 
-    .toolbar-select > select:disabled {
-      cursor: not-allowed;
-      opacity: .45;
-    }
+      .toolbar-btn--style > i:last-child {
+          font-size: 10px;
+          opacity: .6;
+      }
 
-    .toolbar-select--style > select {
-      min-width: 96px;
-    }
+      .toolbar-divider {
+          width: 1px;
+          height: 20px;
+          background: var(--bc-float-toolbar-divider-color);
+          margin: 0 2px;
+          flex-shrink: 0;
+      }
 
-    .toolbar-divider {
-      width: 1px;
-      height: 20px;
-      background: var(--bc-float-toolbar-divider-color);
-      margin: 0 2px;
-      flex-shrink: 0;
-    }
+      .bg-list {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+      }
 
-    .bg-list {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
+      .bg-graph-item {
+          width: 46px;
+          height: 27px;
+          border-radius: 2px;
+          border: 1px solid var(--bc-border-color);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+      }
 
-    .bg-graph-item {
-      width: 46px;
-      height: 27px;
-      border-radius: 2px;
-      border: 1px solid var(--bc-border-color);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-    }
+      .bg-graph-item.active {
+          border: 2px solid var(--bc-active-color);
+      }
 
-    .bg-graph-item.active {
-      border: 2px solid var(--bc-active-color);
-    }
+      .bg-graph-item:hover {
+          border: 2px solid var(--bc-active-color-light);
+      }
 
-    .bg-graph-item:hover {
-      border: 2px solid var(--bc-active-color-light);
-    }
+      .bg-graph-item > span {
+          width: 35px;
+          height: 16px;
+          font-size: 11px;
+          color: #fff;
+          text-align: center;
+          background-color: #f4a1a1;
+      }
 
-    .bg-graph-item > span {
-      width: 35px;
-      height: 16px;
-      font-size: 11px;
-      color: #fff;
-      text-align: center;
-      background-color: #f4a1a1;
-    }
+      .bg-graph-item.none {
+          background: linear-gradient(-29deg, transparent 49%, var(--bc-color-dark) 50%, transparent 51%);
+      }
 
-    .bg-graph-item.none {
-      background: linear-gradient(-29deg, transparent 49%, var(--bc-color-dark) 50%, transparent 51%);
-    }
+      .bg-graph-item.none > span {
+          display: none;
+      }
 
-    .bg-graph-item.none > span {
-      display: none;
-    }
+      .bg-graph-item.radius-1 > span {
+          border-radius: 1em;
+      }
 
-    .bg-graph-item.radius-1 > span {
-      border-radius: 1em;
-    }
-
-    .bg-graph-item.right-border > span {
-      border-radius: .3em;
-      border-right: .25em solid var(--bc-active-color);
-    }
+      .bg-graph-item.right-border > span {
+          border-radius: .3em;
+          border-right: .25em solid var(--bc-active-color);
+      }
   `],
   standalone: true,
   imports: [
     BcOverlayTriggerDirective,
+    BcFloatToolbarComponent,
+    BcFloatToolbarItemComponent,
     ColorPickerComponent,
     BcTableSizePickerComponent,
     BcColumnCountPickerComponent
@@ -488,7 +482,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   @Output()
   extensionAction = new EventEmitter<IFixedToolbarExtensionActionContext>()
 
-  protected readonly styleOptions = STYLE_OPTIONS
+  protected readonly headingMenuList = HEADING_MENU_LIST
   protected readonly inlineToggleActions = INLINE_TOGGLE_ACTIONS
   protected readonly listActions = LIST_ACTIONS
   protected readonly alignActions = ALIGN_ACTIONS
@@ -511,15 +505,12 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this._sub.unsubscribe()
   }
 
-  protected get selectedStyle(): TStyleValue {
-    if (this.activeFlavour === 'ordered' || this.activeFlavour === 'bullet' || this.activeFlavour === 'todo') {
-      return this.activeFlavour
-    }
+  protected get activeStyleItem(): IStyleMenuItem {
     const heading = this.activeProps.heading
     if (typeof heading === 'number' && heading > 0 && heading <= 4) {
-      return `heading-${heading}` as TStyleValue
+      return HEADING_MENU_LIST.find(item => item.value === heading) || HEADING_MENU_LIST[0]
     }
-    return 'paragraph'
+    return HEADING_MENU_LIST[0]
   }
 
   protected onToolbarMouseDown(evt: MouseEvent) {
@@ -545,26 +536,20 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this.doc.crud.undoManager.redo()
   }
 
-  protected onStyleChanged(evt: Event) {
-    const value = (evt.target as HTMLSelectElement).value as TStyleValue
-    this.runWithSelection(() => {
-      if (value === 'ordered' || value === 'bullet' || value === 'todo') {
-        this.toolbarHelper.transformBlocks(value)
-        return
-      }
+  protected isHeadingItemActive(item: IStyleMenuItem): boolean {
+    if (item.value === null) {
+      return this.activeFlavour === 'paragraph' && !this.activeProps.heading
+    }
+    return this.activeProps.heading === item.value
+  }
 
+  protected onStyleItemClicked(item: BcFloatToolbarItemComponent, trigger: BcOverlayTriggerDirective) {
+    trigger.closePanel()
+    this.runWithSelection(() => {
       if (this.activeFlavour !== 'paragraph') {
         this.toolbarHelper.transformBlocks('paragraph')
       }
-
-      if (value === 'paragraph') {
-        this.toolbarHelper.updateBlockProps({heading: undefined})
-        return
-      }
-
-      const heading = Number(value.replace('heading-', ''))
-      if (Number.isNaN(heading) || heading < 1 || heading > 4) return
-      this.toolbarHelper.updateBlockProps({heading})
+      this.toolbarHelper.updateBlockProps({heading: item.value || undefined})
     })
   }
 
