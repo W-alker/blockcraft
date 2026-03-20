@@ -72,9 +72,18 @@ export class EmbedBlot extends LeafBlot implements IFormattedBlot {
 
   /**
    * Update formatting attributes on the outer c-element.
+   * Merges with existing attrs; null values remove the attribute (delta semantics).
    */
   format(attrs: IInlineNodeAttrs) {
-    this.attrs = attrs
+    const merged: Record<string, any> = {...(this.attrs || {})}
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v === null || v === undefined) {
+        delete merged[k]
+      } else {
+        merged[k] = v
+      }
+    }
+    this.attrs = Object.keys(merged).length ? merged as IInlineNodeAttrs : undefined
     setAttributes(this.cElement, attrs)
   }
 

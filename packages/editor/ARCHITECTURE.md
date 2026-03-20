@@ -191,23 +191,75 @@ const MyBlockSchema: IBlockSchemaOptions = {
 
 ## 四、行内编辑系统（Inline Editing）
 
-### 4.1 Delta 模型
+### 4.1 总体架构
+
+行内编辑系统负责将 Yjs Y.Text 中的 Delta 数据渲染为可编辑的 DOM，并处理用户输入（包括 IME 输入法）。
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   数据层 (Source of Truth)                │
+│                                                         │
+│    Y.Text ─── toDelta() ──→ DeltaInsert[]               │
+│      │                         │                        │
+│      │ applyDelta()            │ 全量: build()          │
+│      │ (协同/本地事务)          │ 增量: applyDelta()      │
+│      ▼                         ▼                        │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │              Blot Tree (运行时中间层)              │    │
+│  │                                                   │    │
+│  │  ScrollBlot (root)                                │    │
+│  │    ├── TextBlot("Hello ")     [length=6]          │    │
+│  │    ├── TextBlot("world")      [length=5, bold]    │    │
+│  │    ├── EmbedBlot(mention)     [length=1]          │    │
+│  │    └── BreakBlot              [length=0]          │    │
+│  └─────────────────────────────────────────────────┘    │
+│                         │                               │
+│                         │ 每个 Blot 拥有并管理自己的 DOM   │
+│                         ▼                               │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │              DOM (浏览器渲染层)                     │    │
+│  │                                                   │    │
+│  │  <div.edit-container>                             │    │
+│  │    <span data-zero-space>​</span>                  │    │
+│  │    <c-element>                                    │    │
+│  │      <c-text>Hello </c-text>                      │    │
+│  │    </c-element>                                   │    │
+│  │    <c-element a:bold="true">                      │    │
+│  │      <c-text>world</c-text>                       │    │
+│  │    </c-element>                                   │    │
+│  │    <c-element>                                    │    │
+│  │      <span contenteditable="false">@张三</span>   │    │
+│  │      <span data-zero-space>​</span>               │    │
+│  │    </c-element>                                   │    │
+│  │    <c-element class="bc-end-break"><br></c-element>│   │
+│  │  </div>                                           │    │
+│  └─────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────┘
+```
+
+**核心设计原则：**
+- Y.Text (Yjs CRDT) 是唯一的数据源，Blot 树不参与持久化或协同协议
+- Blot 树是轻量级运行时中间层，每个 Blot 持有自己的 DOM 节点
+- DOM 从不被直接查询来反推模型状态（除了 IME 输入法合成期间）
+- 增量更新优先：大多数变更通过 `applyDelta()` 增量修补，避免全量重建
+
+### 4.2 Delta 模型
 
 采用 Quill 兼容的 Delta 格式：
 
 ```typescript
-// 插入操作
-type DeltaInsertText = {
-  insert: string
+// 快照（Y.Text.toDelta() 的输出）
+type DeltaInsert = {
+  insert: string | object    // 文本 或 嵌入对象 (如 {mention: "张三"})
   attributes?: IInlineNodeAttrs
 }
 
-// 增量操作
+// 增量操作（描述变更）
 type DeltaOperation = {
   insert?: string | object   // 插入
   delete?: number            // 删除 N 个字符
   retain?: number            // 保留 N 个字符
-  attributes?: IInlineNodeAttrs
+  attributes?: IInlineNodeAttrs  // 与 retain 搭配 = 格式化
 }
 ```
 
@@ -218,59 +270,282 @@ type DeltaOperation = {
 | `s:` | CSS 样式 | `s:color`, `s:background`, `s:fontSize` |
 | `d:` | data 属性 | `d:lineBreak` |
 
-### 4.2 InlineManager
+特殊属性：`mentionId`, `mentionType` 等用于 embed 元数据，不带前缀。
 
-**DOM 结构：**
-```html
-<div class="edit-container">
-  <zero-space/>                          <!-- 零宽空格，光标定位 -->
-  <c-element>                            <!-- 行内元素 -->
-    <c-text>文本内容</c-text>
-  </c-element>
-  <c-element style="color: #d73a49">    <!-- 带样式的行内元素 -->
-    <c-text>关键字</c-text>
-  </c-element>
-  <c-element class="bc-end-break">      <!-- 结尾换行 -->
-    <br>
-  </c-element>
-</div>
-```
-
-**两种渲染模式：**
-
-1. **全量渲染 `render(deltas, container)`**
-   - `container.replaceChildren(zeroSpace, ...nodes, endBreak)`
-   - 销毁所有旧节点，重建全部 DOM
-   - 用于首次渲染、语言切换
-
-2. **增量渲染 `applyDeltaToView(ops, container)`**
-   - 遍历 DeltaOperation[]，逐个执行 retain/delete/insert
-   - 通过 `nodeStep { index, indexInNode }` 追踪当前位置
-   - 只修改变化的节点，保留未变化的 DOM
-   - 支持节点拆分、合并、属性更新
-
-### 4.3 applyDeltaToView 核心逻辑
+### 4.3 Blot 类型体系
 
 ```
-输入: DeltaOperation[] = [
-  { retain: 10 },           // 跳过前 10 个字符
-  { delete: 5 },            // 删除 5 个字符
-  { insert: "new", attributes: { 's:color': '#d73a49' } }  // 插入新内容
-]
+IBlot (接口)
+  │
+  ├── ScrollBlot      type='scroll'  根容器，管理子 blot 列表
+  │     └── children: IBlot[]
+  │
+  └── LeafBlot (抽象基类)
+        ├── TextBlot    type='text'   连续同格式文本，length = 文本长度
+        ├── EmbedBlot   type='embed'  原子嵌入，length = 1
+        ├── BreakBlot   type='break'  结尾换行，length = 0
+        └── CursorBlot  type='cursor' IME 合成期光标占位，length = 0
+```
+
+**每种 Blot 的 DOM 结构：**
+
+| Blot | DOM | 说明 |
+|------|-----|------|
+| TextBlot | `<c-element [attrs]><c-text>文本</c-text></c-element>` | 直接操作 Text 节点 |
+| EmbedBlot | `<c-element [attrs]><span ce="false">视图</span><span data-zero-space>​</span></c-element>` | 不可编辑 + 光标停靠零宽空格 |
+| BreakBlot | `<c-element class="bc-end-break"><br></c-element>` | 保证空行可输入 |
+| CursorBlot | `<c-element class="bc-cursor"><c-text>​</c-text></c-element>` | 临时插入，IME 结束后移除 |
+
+### 4.4 InlineRuntime — 每块协调器
+
+每个 `EditableBlockComponent` 拥有一个 `InlineRuntime` 实例：
+
+```typescript
+class InlineRuntime {
+  scrollBlot: ScrollBlot     // Blot 树
+  mapper: InlinePositionMapper  // 位置映射
+
+  render(deltas)             // 全量重建 Blot 树 + DOM
+  applyDelta(ops)            // 增量修补
+  modelPointToDom(index)     // 模型偏移 → DOM 点
+  domPointToModel(node, off) // DOM 点 → 模型偏移
+  findBlotByOffset(offset)   // 查找偏移处的叶子 Blot
+}
+```
+
+**初始化流程：**
+```
+EditableBlockComponent.ngAfterViewInit()
+  → _initRuntime()
+      → new InlineRuntime(containerElement, embedConverters)
+          → new ScrollBlot(container, embedConverters)
+          → new InlinePositionMapper().setScrollBlot(scrollBlot)
+  → rerender()
+      → scrollBlot.build(yText.toDelta())
+```
+
+### 4.5 两种渲染路径
+
+#### 4.5.1 全量渲染 — `ScrollBlot.build(deltas)`
+
+- 销毁所有旧 Blot，清空 DOM
+- 遍历 DeltaInsert[]，为每个 delta 创建 TextBlot 或 EmbedBlot
+- 重建完整 DOM：`container.replaceChildren(zeroSpace, ...blots, breakBlot)`
+- 用于：首次渲染、语言切换、IME compositionEnd 后、一致性校验回退
+
+#### 4.5.2 增量修补 — `ScrollBlot.applyDelta(ops)`
+
+遍历 DeltaOperation[]，对 Blot 树执行增量操作：
+
+```
+输入: [{ retain: 6 }, { delete: 5 }, { insert: "world!", attributes: { 'a:bold': true } }]
 
 处理流程:
-  stepRetain(op):
-    - 按字符数前进，跨越 c-element 边界
-    - 如果有 attributes，拆分节点并应用样式
+  retain(6):
+    - 模型游标前进 6 个字符
+    - 如果携带 attributes → _formatRange(): 拆分 TextBlot 并应用格式
 
-  stepDelete(len):
-    - 删除字符，可能删除整个 c-element 或部分文本
-    - 更新 nodeStep 位置
+  delete(5):
+    - _deleteRange(): 从当前游标删除 5 个字符
+    - 可能删除整个 Blot 或截断 TextBlot
 
-  stepInsert(op):
-    - 在当前位置插入新节点
-    - 如果属性匹配相邻节点，合并文本（避免碎片化）
-    - 否则创建新 c-element
+  insert("world!", {bold}):
+    - 优化路径: 如果当前位置的 TextBlot 属性匹配 → insertAt() 原地追加
+    - 如果前一个 TextBlot 属性匹配 → 追加到前一个 Blot 末尾
+    - 回退路径: 创建新 Blot → _insertBlotAt() 插入（可能拆分现有 TextBlot）
+
+  清理: _cleanupEmptyLeaves()
+    - 移除长度为 0 的 TextBlot
+    - 合并相邻且属性相同的 TextBlot（避免碎片化）
+```
+
+**关键操作的 Blot 树变化示例：**
+```
+插入: "abc" 插入到 TextBlot("Hello") 的偏移 5
+  Before: [TextBlot("Hello")]
+  After:  [TextBlot("Helloabc")]    ← 属性匹配，原地 insertAt
+
+格式化: 偏移 2-4 加粗
+  Before: [TextBlot("Hello")]
+  After:  [TextBlot("He"), TextBlot("ll", {bold}), TextBlot("o")]  ← split + format
+
+删除: 偏移 2 删除 3 个字符
+  Before: [TextBlot("Hello")]
+  After:  [TextBlot("Heo")]  ← 可能合并为更少的 Blot，但先 deleteAt 再 cleanup
+```
+
+### 4.6 一致性校验
+
+每次 `applyDelta()` 后，`EditableBlockComponent._applyDeltaToView()` 执行一致性校验：
+
+```typescript
+_applyDeltaToView(deltas) {
+  try {
+    this._runtime.applyDelta(deltas)
+    if (!this._verifyBlotConsistency()) {
+      this.rerender()  // 回退到全量重建
+    }
+  } catch (e) {
+    this.rerender()    // 异常保护
+  }
+}
+```
+
+校验逻辑：比较 Blot 树的文本内容与 `yText.toDelta()` 的文本内容。
+- 遍历 Blot 树：TextBlot 贡献其文本，EmbedBlot 贡献 `\ufffc`
+- 遍历 Delta 模型：文本 insert 原样，对象 insert 记为 `\ufffc`
+- 长度或内容不匹配 → 回退到 `rerender()` 全量重建
+
+这是一个安全网机制，确保 applyDelta 的任何 bug 不会导致 Blot 树与 Y.Text 永久分歧。
+
+### 4.7 位置映射 — InlinePositionMapper
+
+`InlinePositionMapper` 在模型偏移（字符索引）和 DOM 点（node + offset）之间双向映射。
+
+#### 4.7.1 Model → DOM (`modelPointToDomPoint`)
+
+```
+遍历叶子 Blot，递减剩余偏移量:
+  - TextBlot: 返回 (textNode, remaining)
+  - EmbedBlot:
+    - remaining=0 → 返回 embed 容器的 span[ce=false]
+    - remaining=1 → 返回 gap 零宽空格的 Text 节点
+  - 偏移量=0 → 返回 leading zero-space
+```
+
+#### 4.7.2 DOM → Model (`domPointToModelPoint`)
+
+```
+1. 找到 node 所属的 <c-element>
+2. 在 leaves 中匹配该 <c-element> 对应的 Blot
+3. 累加该 Blot 之前所有叶子的长度 = 基础偏移
+4. 计算 node 在 Blot 内的局部偏移
+5. 返回 基础偏移 + 局部偏移
+```
+
+### 4.8 嵌入系统 — EmbedConverter
+
+嵌入对象（mention、link、latex 等）通过 `EmbedConverter` 注册：
+
+```typescript
+interface EmbedConverter {
+  type: string                              // 嵌入类型名称 (如 'mention')
+  toView(delta: DeltaInsertEmbed): HTMLElement  // delta → DOM 视图
+  onDestroy?(el: HTMLElement, delta: DeltaInsertEmbed): void  // 清理回调
+}
+```
+
+**嵌入 delta 格式：**
+```typescript
+{ insert: { mention: "张三" }, attributes: { mentionId: "u123", mentionType: "user" } }
+{ insert: { link: "https://example.com" }, attributes: { "a:link": "https://..." } }
+{ insert: { latex: "E=mc^2" } }
+```
+
+`EmbedBlot` 持有其 converter 引用和原始 delta，`detach()` 时自动调用 `converter.onDestroy()`。
+
+### 4.9 输入处理管线
+
+#### 4.9.1 控制渲染模式
+
+BlockCraft 使用 **controlled rendering**（受控渲染）：拦截浏览器输入，手动写入 Y.Text，由 Y.Event 驱动视图更新。
+
+```
+用户按键 'a'
+  → beforeInput 事件
+  → InputTransformer.handleBeforeInput()
+      → e.preventDefault()                     // 阻止浏览器默认插入
+      → doc.crud.transact(() => {
+          block.yText.insert(index, 'a')      // 写入 Y.Text
+        })
+      → Y.Event 触发
+      → crud._syncYEvent() → block._applyDeltaToView(delta)  // 增量更新 Blot 树
+      → selectionManager 恢复光标
+```
+
+#### 4.9.2 IME 输入法（Composition）处理
+
+IME 输入是最复杂的输入场景，因为浏览器在合成期间直接修改 DOM，不经过 `beforeInput`。
+
+**CompositionSession 生命周期：**
+```
+idle ──compositionStart──► active ──compositionEnd──► committing ──► idle
+                             │                           │
+                             └── (远程 delta) ────► 缓存 (deferPatch)
+```
+
+**各阶段处理：**
+
+| 阶段 | 事件 | 处理 |
+|------|------|------|
+| `compositionStart` | 浏览器开始 IME 合成 | 创建 `CompositionSession`，捕获 `OneShotCursorAnchor`（Yjs RelativePosition） |
+| `active` | 浏览器修改 DOM（下划线候选文字） | 不干预浏览器 DOM 操作；远程 delta 到达时缓存而不应用 |
+| `compositionEnd` | 用户确认候选词 | `preventDefault`，将最终文本写入 Y.Text（ORIGIN_SKIP_SYNC），调用 `rerender()` 全量重建 |
+| `committing` | rerender + 光标恢复 | **同步**设置光标（不用 microtask），排空缓存的远程 patches（不重放） |
+
+**关键设计决策：**
+
+1. **`ORIGIN_SKIP_SYNC`**: compositionEnd 的 Y.Text 事务使用此 origin，跳过 Y.Event → applyDeltaToView 路径。因为紧接着会调用 `rerender()` 从完整 Y.Text 重建视图。
+
+2. **同步光标恢复**: compositionEnd 后必须在同一个事务中 `rerender()` + `setInlineRange()`。如果用 `queueMicrotask` 延迟，会有一个间隙让 `selectionchange` 事件触发 `recalculate()`，此时 `isComposing` 已经是 false 但 DOM 还没有有效选区，导致光标跳到位置 0。
+
+3. **缓存排空不重放**: `drainDeferredPatches()` 只清空缓存，不重放 delta。因为 `rerender()` 从完整 Y.Text 模型重建，已经包含了所有远程变更。重放会导致双重应用。
+
+#### 4.9.3 OneShotCursorAnchor — 协同安全锚点
+
+```typescript
+class OneShotCursorAnchor {
+  capture(block, index)   // Y.createRelativePositionFromTypeIndex
+  resolve(fallback?)      // Y.createAbsolutePositionFromRelativePosition
+  reset()                 // 清除锚点
+}
+```
+
+使用 Yjs `RelativePosition`：即使远程用户在锚点之前插入/删除文本，锚点仍然指向逻辑上正确的位置。用于：
+- IME 合成期间追踪插入点
+- MentionPlugin 追踪 `@` 字符位置
+
+### 4.10 EmbedBlot 格式化语义
+
+`format()` 方法使用**合并语义**（与 TextBlot 一致）：
+
+```typescript
+format(attrs: IInlineNodeAttrs) {
+  const merged = { ...this.attrs }
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined) delete merged[k]  // 删除属性
+    else merged[k] = v                                    // 设置/更新属性
+  }
+  this.attrs = Object.keys(merged).length ? merged : undefined
+  setAttributes(this.cElement, attrs)
+}
+```
+
+这确保对 EmbedBlot 应用格式化（如加粗）时，不会丢失已有的 `mentionId`、`mentionType` 等元数据属性。
+
+### 4.11 数据流总览（行内编辑）
+
+```
+本地输入:
+  beforeInput → preventDefault → yText.insert/delete/format
+    → Y.Event → crud._syncYEvent → onTextUpdate$
+    → block._applyDeltaToView(delta)
+    → scrollBlot.applyDelta(ops)  → DOM 增量更新
+    → _verifyBlotConsistency() → 不一致则 rerender()
+
+IME 输入:
+  compositionStart → session.start()
+  compositionEnd → preventDefault → yText.insert (ORIGIN_SKIP_SYNC)
+    → block.rerender() → scrollBlot.build(deltas) → DOM 全量重建
+    → block.setInlineRange() → 同步恢复光标
+    → session.drainDeferredPatches() → 排空不重放
+
+远程协同:
+  Yjs sync → Y.Event → crud._syncYEvent → onTextUpdate$
+    → if (compositionSession.shouldDeferPatch(blockId))
+        → session.deferPatch() → 缓存等待
+    → else
+        → block._applyDeltaToView(delta) → 增量更新
 ```
 
 ---
@@ -461,7 +736,7 @@ abstract class DocPlugin {
 | `EmbedFrameExtensionPlugin` | iframe 嵌入管理 |
 | `BookmarkBlockExtensionPlugin` | 书签块工具栏 |
 | `InlineLinkExtension` | 链接编辑和预览 |
-| `MentionPlugin` | @提及功能 |
+| `MentionPlugin` | @提及：纯执行流引擎（触发、关键词、键盘转发、确认提交），UI 完全由 `MentionPanelFactory` 注入 |
 | `DividerExtensionPlugin` | 分割线样式 |
 | `FindReplacePlugin` | 查找替换（Ctrl+F） |
 | `DemoPresentationPlugin` | 演示模式 |
@@ -862,5 +1137,5 @@ UndoManager (撤销栈更新)
 | `ngZone.runOutsideAngular` | 拖拽、resize 等高频操作 |
 | `IntersectionObserver` | Mermaid 懒渲染 |
 | `ResizeObserver` | 表格行高追踪 |
-| 增量 DOM patch | `applyDeltaToView` 替代全量 `render` |
+| 增量 Blot patch | `ScrollBlot.applyDelta()` 增量修补 + 一致性校验回退 |
 | Delta 缓存 + 前后缀收缩 | 代码高亮差分更新 |

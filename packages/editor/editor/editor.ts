@@ -52,7 +52,7 @@ import {AdapterService} from "./services/adapter.service";
 import {MermaidBlockSchema, MermaidTextareaBlockSchema} from "../blocks/mermaid-block";
 import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
 import katex from 'katex'
-import {MentionPlugin} from "./plugins/mention";
+import {MentionPlugin, createDefaultMentionPanel} from "../plugins/mention";
 import * as Y from 'yjs'
 import {DividerExtensionPlugin} from "../plugins/divider-toolbar";
 import {
@@ -66,7 +66,7 @@ import {ColumnBlockSchema} from "../blocks/columns-block";
 import {TranslatePlugin} from "../plugins/translate";
 import {MyDocTranslationService} from "./services/doc-translation.service";
 
-const mentionRequest = async (keyword: string) => {
+const mentionRequest = async (keyword: string, _type?: string) => {
   if (keyword === 'a') {
     return {
       list: []
@@ -311,7 +311,11 @@ export class EditorComponent {
           window.open(link.replace('http://doc-pre.com', 'http://localhost:8081/test3'), '_blank')
         } else window.open(link, '_blank')
       }),
-      new MentionPlugin(mentionRequest), new DividerExtensionPlugin(),
+      new MentionPlugin({
+        panel: createDefaultMentionPanel({
+          request: mentionRequest,
+        }),
+      }), new DividerExtensionPlugin(),
       new FindReplacePlugin(),
       this.translatePlugin
     ]

@@ -85,17 +85,15 @@ export class ScrollBlot implements IScrollBlot {
    */
   applyDelta(ops: DeltaOperation[]) {
     let cursor = 0  // model offset cursor
-    let leafIdx = 0 // index into `this.leaves`
 
     const getLeafAtCursor = (): { leaf: TextBlot | EmbedBlot; localOffset: number; leafIndex: number } | null => {
       const leaves = this.leaves
       let offset = 0
-      for (let i = leafIdx; i < leaves.length; i++) {
+      for (let i = 0; i < leaves.length; i++) {
         if (offset + leaves[i].length > cursor || (offset + leaves[i].length === cursor && i === leaves.length - 1)) {
           return {leaf: leaves[i], localOffset: cursor - offset, leafIndex: i}
         }
         if (offset + leaves[i].length === cursor) {
-          leafIdx = i + 1
           return leaves[i + 1]
             ? {leaf: leaves[i + 1], localOffset: 0, leafIndex: i + 1}
             : {leaf: leaves[i], localOffset: leaves[i].length, leafIndex: i}
@@ -111,8 +109,6 @@ export class ScrollBlot implements IScrollBlot {
           this._formatRange(cursor, op.retain, op.attributes)
         }
         cursor += op.retain
-        const info = getLeafAtCursor()
-        if (info) leafIdx = info.leafIndex
         continue
       }
 
@@ -128,8 +124,6 @@ export class ScrollBlot implements IScrollBlot {
           if (info && info.leaf instanceof TextBlot && this._attrsMatch(info.leaf.attrs, op.attributes)) {
             info.leaf.insertAt(info.localOffset, op.insert)
             cursor += op.insert.length
-            const newInfo = getLeafAtCursor()
-            if (newInfo) leafIdx = newInfo.leafIndex
             continue
           }
           // At boundary, check previous leaf
@@ -138,8 +132,6 @@ export class ScrollBlot implements IScrollBlot {
             if (prevLeaf instanceof TextBlot && this._attrsMatch(prevLeaf.attrs, op.attributes)) {
               prevLeaf.insertAt(prevLeaf.length, op.insert)
               cursor += op.insert.length
-              const newInfo = getLeafAtCursor()
-              if (newInfo) leafIdx = newInfo.leafIndex
               continue
             }
           }
@@ -149,8 +141,6 @@ export class ScrollBlot implements IScrollBlot {
         const blot = this._createLeafBlot(delta)
         this._insertBlotAt(cursor, blot)
         cursor += blot.length
-        const info = getLeafAtCursor()
-        if (info) leafIdx = info.leafIndex
       }
     }
 
@@ -424,9 +414,10 @@ export class ScrollBlot implements IScrollBlot {
         remaining -= leaf.length
         pos += leaf.length
         const childIdx = this._children.indexOf(leaf)
-        this._children.splice(childIdx, 1)
-        leaf.detach()
-        i--
+        if (childIdx >= 0) {
+          this._children.splice(childIdx, 1)
+          leaf.detach()
+        }
         continue
       }
 
@@ -442,15 +433,16 @@ export class ScrollBlot implements IScrollBlot {
     let remaining = length
     let pos = 0
     for (const leaf of this.leaves) {
-      if (pos + leaf.length <= startOffset) {
-        pos += leaf.length
+      const origLen = leaf.length // capture before potential split
+      if (pos + origLen <= startOffset) {
+        pos += origLen
         continue
       }
 
       const localStart = Math.max(0, startOffset - pos)
-      const canFormat = Math.min(remaining, leaf.length - localStart)
+      const canFormat = Math.min(remaining, origLen - localStart)
 
-      if (localStart === 0 && canFormat >= leaf.length) {
+      if (localStart === 0 && canFormat >= origLen) {
         if (leaf instanceof TextBlot) leaf.format(attrs)
         else if (leaf instanceof EmbedBlot) leaf.format(attrs)
         remaining -= canFormat
@@ -475,7 +467,7 @@ export class ScrollBlot implements IScrollBlot {
         }
       }
 
-      pos += leaf.length + (leaf instanceof TextBlot ? 0 : canFormat)
+      pos += origLen
       if (remaining <= 0) break
     }
   }
@@ -495,6 +487,15 @@ export class ScrollBlot implements IScrollBlot {
       if (child.type === BlotType.Text && child.length === 0) {
         child.detach()
         this._children.splice(i, 1)
+      }
+    }
+    // Merge adjacent TextBlots with matching attributes
+    for (let i = 0; i < this._children.length - 1; i++) {
+      const cur = this._children[i]
+      const next = this._children[i + 1]
+      if (cur instanceof TextBlot && next instanceof TextBlot && (cur as TextBlot).mergeWith(next as TextBlot)) {
+        this._children.splice(i + 1, 1)
+        i--
       }
     }
   }

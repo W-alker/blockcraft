@@ -102,9 +102,18 @@ export class TextBlot extends LeafBlot implements IFormattedBlot {
 
   /**
    * Update formatting attributes on the DOM element.
+   * In delta semantics, null attribute values mean "remove attribute".
    */
   format(attrs: IInlineNodeAttrs) {
-    this.attrs = attrs
+    const merged: Record<string, any> = {...(this.attrs || {})}
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v === null || v === undefined) {
+        delete merged[k]
+      } else {
+        merged[k] = v
+      }
+    }
+    this.attrs = Object.keys(merged).length ? merged as IInlineNodeAttrs : undefined
     setAttributes(this.cElement, attrs)
   }
 

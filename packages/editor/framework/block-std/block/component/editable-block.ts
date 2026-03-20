@@ -3,7 +3,7 @@ import { BaseBlockComponent } from "./base-block";
 import { EditableBlockNative } from "../../reactive";
 import * as Y from 'yjs'
 import { DeltaInsert, DeltaOperation } from "../../types";
-import { INLINE_CONTAINER_CLASS } from "../../inline";
+import { INLINE_CONTAINER_CLASS, TextBlot, BlotType } from "../../inline";
 import { InlineRuntime } from "../../inline/runtime/inline-runtime";
 import { Subject } from "rxjs";
 
@@ -128,10 +128,51 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     if (this.doc.isReadonly) return
     try {
       this._runtime.applyDelta(deltas)
-    } catch (e) {
-      this.doc.logger.error(`Error throw when apply delta to view. Block: `, this, e)
+      if (!this._verifyBlotConsistency()) {
+        this.rerender()
+      }
+    } catch {
       this.rerender()
     }
+  }
+
+  /**
+   * Verify that the blot tree content matches the Yjs delta model.
+   * Returns true if consistent, false if mismatch detected.
+   */
+  private _verifyBlotConsistency(): boolean {
+    const deltas = this.yText.toDelta() as DeltaInsert[]
+    const leaves = this._runtime.scrollBlot.leaves
+
+    let expectedLen = 0
+    let expectedText = ''
+    for (const d of deltas) {
+      if (typeof d.insert === 'string') {
+        expectedLen += d.insert.length
+        expectedText += d.insert
+      } else {
+        expectedLen += 1
+        expectedText += '\ufffc'
+      }
+    }
+
+    let actualLen = 0
+    let actualText = ''
+    for (const leaf of leaves) {
+      if (leaf.type === BlotType.Text) {
+        const t = (leaf as TextBlot).text
+        actualLen += t.length
+        actualText += t
+      } else if (leaf.type === BlotType.Embed) {
+        actualLen += 1
+        actualText += '\ufffc'
+      }
+    }
+
+    if (expectedLen !== actualLen || expectedText !== actualText) {
+      return false
+    }
+    return true
   }
 
   setInlineRange(index: number, length = 0) {

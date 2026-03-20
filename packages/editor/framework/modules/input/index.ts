@@ -143,25 +143,16 @@ export class InputTransformer {
       this.doc.crud.transact(() => {
         insertBlock.yText.insert(insertIndex, text, insertAttrs)
         insertBlock.rerender()
-
-        queueMicrotask(() => {
-          insertBlock.setInlineRange(cursorIndex)
-        })
+        // Set cursor synchronously after rerender to avoid selectionchange race.
+        // queueMicrotask would leave a gap where selectionchange fires with
+        // invalid DOM selection (isComposing is already false), resetting cursor to 0.
+        insertBlock.setInlineRange(cursorIndex)
       }, ORIGIN_SKIP_SYNC)
 
-      const deferred = this.compositionSession.drainDeferredPatches()
-      if (deferred.length) {
-        for (const patch of deferred) {
-          try {
-            const patchBlock = this.doc.getBlockById(patch.blockId)
-            if (this.doc.isEditable(patchBlock)) {
-              patchBlock.runtime.applyDelta(patch.delta)
-            }
-          } catch {
-            // deferred patch replay failed; block may have been deleted
-          }
-        }
-      }
+      // Drain deferred patches WITHOUT replaying.
+      // rerender() already built the blot tree from the full Y.Text model,
+      // which includes all remote changes. Replaying would double-apply them.
+      this.compositionSession.drainDeferredPatches()
 
       compositionState.next?.()
     } finally {

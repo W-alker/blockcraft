@@ -44,23 +44,11 @@ export class CodeInlineEditorBinding extends DocPlugin {
       }, ORIGIN_SKIP_SYNC)
 
       block.rerender()
-      requestAnimationFrame(() => {
-        block.setInlineRange(index + text.length)
-      })
+      block.setInlineRange(index + text.length)
 
-      const deferred = compositionSession.drainDeferredPatches()
-      if (deferred.length) {
-        for (const patch of deferred) {
-          try {
-            const patchBlock = this.doc.getBlockById(patch.blockId)
-            if (this.doc.isEditable(patchBlock)) {
-              patchBlock.runtime.applyDelta(patch.delta)
-            }
-          } catch {
-            // deferred patch replay failed; block may have been deleted
-          }
-        }
-      }
+      // Drain deferred patches WITHOUT replaying.
+      // rerender() already built the blot tree from the full Y.Text model.
+      compositionSession.drainDeferredPatches()
 
       return true
     } finally {
