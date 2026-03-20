@@ -20,6 +20,15 @@ export function normalizeRange(
 ): INormalizedRange {
   const {startContainer, endContainer, startOffset, endOffset, collapsed} = range
 
+  const _lazy = (range: any): any => {
+    Object.defineProperty(range, 'block', {
+      get: () => getBlockById(range.blockId),
+      enumerable: false,
+      configurable: true,
+    });
+    return range;
+  }
+
   const resolveBlock = (node: Node): BaseBlockComponent<any> => {
     const id = closetBlockId(node)
     if (!id) {
@@ -38,29 +47,26 @@ export function normalizeRange(
   const getBlockRange = (block: BaseBlockComponent<any>, node: Node, offset: number): IBlockRange => {
     if (block instanceof EditableBlockComponent) {
       if (node instanceof HTMLElement && node.classList.contains(INLINE_END_BREAK_CLASS)) {
-        return {
+        return _lazy({
           blockId: block.id,
-          block: block,
           type: 'text',
           index: block.textLength,
           length: 0
-        }
+        })
       }
 
-      return {
+      return _lazy({
         blockId: block.id,
-        block: block,
         type: 'text',
         index: getInlineOffset(block, node, offset),
         length: 0
-      }
+      })
     }
 
-    return {
+    return _lazy({
       blockId: block.id,
-      block: block,
       type: 'selected'
-    }
+    })
   }
 
   const startBlock = resolveBlock(startContainer)
@@ -84,19 +90,17 @@ export function normalizeRange(
       if (id) {
         endBlock = getBlockById(id) as BaseBlockComponent<any>
         if (endBlock.nodeType === 'editable') {
-          to = {
+          to = _lazy({
             blockId: id,
-            block: endBlock,
             type: 'text',
             index: (endBlock as EditableBlockComponent).textLength,
             length: 0
-          }
+          })
         } else {
-          to = {
+          to = _lazy({
             blockId: id,
-            block: endBlock,
             type: 'selected'
-          }
+          })
         }
       }
     }
@@ -106,15 +110,15 @@ export function normalizeRange(
   if (from.type === 'text') {
 
     if (endBlock === startBlock && to.type === 'text') {
-      from = {...from, length: to.index - from.index}
+      from = _lazy({...from, length: to.index - from.index})
       return {from, to: null, collapsed: false}
     }
 
-    from = {...from, length: from.block.textLength - from.index}
+    from = _lazy({...from, length: from.block.textLength - from.index})
   }
 
   if (to.type === 'text') {
-    to = {...to, length: to.index, index: 0}
+    to = _lazy({...to, length: to.index, index: 0})
   }
 
   return {from, to, collapsed: false}

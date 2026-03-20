@@ -219,6 +219,11 @@ export class SelectionManager {
     selection.setPosition(startNodePos.node, startNodePos.offset)
   }
 
+  extendTo(block: EditableBlockComponent, index: number) {
+    const pos = block.runtime.mapper.modelPointToDomPoint(block.containerElement, index)
+    document.getSelection()?.extend(pos.node, pos.offset)
+  }
+
   /**
    * 1. If the block is editable, set the cursor at the start or end of the block. \
    * 2. If the block is not editable, select the block.

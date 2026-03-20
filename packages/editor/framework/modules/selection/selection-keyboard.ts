@@ -17,9 +17,23 @@ export class SelectionKeyboard {
   @BindHotKey({key: ['ArrowUp', "ArrowDown", 'ArrowLeft', 'ArrowRight'], shiftKey: false})
   private _handlerUpOrDown(ctx: UIEventStateContext) {
     const state = ctx.get('keyboardState')
-    const {isAllSelected, to, from} = state.selection
+    const {isAllSelected, to, from, collapsed, isStartOfBlock, isEndOfBlock} = state.selection
 
-    if (!isAllSelected) return
+    if (!isAllSelected) {
+      if (collapsed && from.type === 'text') {
+        const isBack = state.raw.key === 'ArrowUp' || state.raw.key === 'ArrowLeft'
+        if ((isBack && isStartOfBlock) || (!isBack && isEndOfBlock)) {
+          const sibling = isBack ? this.doc.prevSibling(from.block) : this.doc.nextSibling(from.block)
+          if (sibling && sibling.nodeType === BlockNodeType.void) {
+            ctx.preventDefault()
+            this.doc.selection.selectOrSetCursorAtBlock(sibling, !isBack)
+            this.doc.selection.scrollSelectionIntoView()
+            return true
+          }
+        }
+      }
+      return
+    }
     ctx.preventDefault()
 
     const docSelection = document.getSelection()!
@@ -210,6 +224,67 @@ export class SelectionKeyboard {
     }
 
     selection.from.block.setInlineRange(selection.from.block.textLength)
+    return true
+  }
+
+  @BindHotKey({key: 'Escape'})
+  private _handleEscape(ctx: UIEventStateContext) {
+    const state = ctx.get('keyboardState')
+    const {selection} = state
+    if (selection.collapsed) return
+    if (selection.from.type !== 'text' && !selection.to) return
+    ctx.preventDefault()
+
+    const isForward = selection.getDirection() === 'forward'
+    if (selection.isInSameBlock && selection.from.type === 'text') {
+      const index = isForward ? selection.from.index + selection.from.length : selection.from.index
+      selection.from.block.setInlineRange(index)
+    } else {
+      const block = isForward ? selection.lastBlock : selection.firstBlock
+      this.doc.selection.selectOrSetCursorAtBlock(block, !isForward)
+    }
+    return true
+  }
+
+  @BindHotKey({key: 'Home', shortKey: null, shiftKey: true})
+  handleShiftHome(context: UIEventStateContext) {
+    const state = context.get('keyboardState')
+    const {selection} = state
+    if (selection.from.type !== 'text' || !selection.isInSameBlock) return
+    context.preventDefault()
+
+    const block = selection.from.block as EditableBlockComponent
+
+    if (block.plainTextOnly) {
+      const focusIndex = selection.getDirection() === 'forward'
+        ? selection.from.index + selection.from.length : selection.from.index
+      const lineStart = block.textContent().slice(0, focusIndex).lastIndexOf(STR_LINE_BREAK)
+      this.doc.selection.extendTo(block, lineStart === -1 ? 0 : lineStart + 1)
+      return true
+    }
+
+    this.doc.selection.extendTo(block, 0)
+    return true
+  }
+
+  @BindHotKey({key: 'End', shortKey: null, shiftKey: true})
+  handleShiftEnd(context: UIEventStateContext) {
+    const state = context.get('keyboardState')
+    const {selection} = state
+    if (selection.from.type !== 'text' || !selection.isInSameBlock) return
+    context.preventDefault()
+
+    const block = selection.from.block as EditableBlockComponent
+
+    if (block.plainTextOnly) {
+      const focusIndex = selection.getDirection() === 'forward'
+        ? selection.from.index + selection.from.length : selection.from.index
+      const lineEnd = block.textContent().indexOf(STR_LINE_BREAK, focusIndex)
+      this.doc.selection.extendTo(block, lineEnd === -1 ? block.textLength : lineEnd)
+      return true
+    }
+
+    this.doc.selection.extendTo(block, block.textLength)
     return true
   }
 

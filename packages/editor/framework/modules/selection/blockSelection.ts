@@ -53,8 +53,8 @@ export class BlockSelection implements INormalizedRange {
   get isEmpty() {
     const isFromEmpty = this.from.type === 'text' ? this.from.length === 0 : false
     if (!this.to) return isFromEmpty
-    if(!isFromEmpty || this.to.block.hostElement.previousElementSibling !== this.from.block.hostElement) return false
-    return this.to.type === 'selected' ? false : (this.to.index === 0 && this.to.length === 0)
+    if (!isFromEmpty) return false
+    return this.to.type === 'text' ? (this.to.index === 0 && this.to.length === 0) : false
   }
 
   getDirection() {
@@ -62,17 +62,11 @@ export class BlockSelection implements INormalizedRange {
   }
 
   toJSON(): IBlockSelectionJSON {
-    return JSON.parse(JSON.stringify({
-      from: {
-        ...this.from,
-        block: undefined
-      },
-      to: this.to ? {
-        ...this.to,
-        block: undefined
-      } : null,
+    return {
+      from: {...this.from},
+      to: this.to ? {...this.to} : null,
       collapsed: this.collapsed,
       commonParent: this.commonParent
-    }))
+    } as IBlockSelectionJSON
   }
 }
