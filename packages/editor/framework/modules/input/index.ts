@@ -83,7 +83,7 @@ export class InputTransformer {
       const curParent = curSel.lastBlock.parentBlock!
       const curParentSchema = this.doc.schemas.get(curParent.flavour)!
       if (!curParentSchema.metadata.renderUnit) {
-        curSel.raw.collapse(true)
+        document.getSelection()?.collapseToStart()
         return true
       }
       const p = this.doc.schemas.createSnapshot('paragraph', [])
@@ -102,11 +102,7 @@ export class InputTransformer {
 
     if (!curSel.collapsed) {
       const winSel = window.getSelection()!
-      if (curSel.from.type === 'text') {
-        winSel.setPosition(curSel.raw.startContainer, curSel.raw.startOffset)
-      } else {
-        winSel.setPosition(curSel.raw.endContainer, curSel.raw.endOffset)
-      }
+      curSel.from.type === 'text' ? winSel.collapseToStart() : winSel.collapseToEnd()
       this.doc.selection.recalculate()
       this._replaceText(curSel)
       // After delete, DOM selection may be on a removed node.
@@ -593,7 +589,7 @@ export class InputTransformer {
   @BindHotKey({key: 'Enter', shiftKey: null, ctrlKey: null})
   private async _handlerEnter(context: UIEventStateContext) {
     const state = context.get('keyboardState')
-    const {from, to, collapsed, isAllSelected, raw} = state.selection
+    const {from, to, collapsed, isAllSelected} = state.selection
 
     context.preventDefault()
 
@@ -607,11 +603,7 @@ export class InputTransformer {
 
     if (!collapsed) {
       const winSel = window.getSelection()!
-      if (from.type === 'text') {
-        winSel.setPosition(raw.startContainer, raw.startOffset)
-      } else {
-        winSel.setPosition(raw.endContainer, raw.endOffset)
-      }
+      from.type === 'text' ? winSel.collapseToStart() : winSel.collapseToEnd()
       this._replaceText(state.selection)
       return true
     }

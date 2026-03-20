@@ -61,7 +61,7 @@ export class CodeInlineEditorBinding extends DocPlugin {
   handleEnterKey(context: UIEventStateContext) {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
-    const {from, to, raw} = state.selection
+    const {from, to} = state.selection
     if (to || from.type !== 'text') return false
     const block = from.block
 
@@ -98,7 +98,7 @@ export class CodeInlineEditorBinding extends DocPlugin {
   handleTabKey(context: UIEventStateContext) {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
-    const {from, to, raw} = state.selection
+    const {from, to} = state.selection
     if (to || from.type !== 'text') return false
     context.preventDefault()
     const block = from.block

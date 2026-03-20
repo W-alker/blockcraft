@@ -85,7 +85,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     if(relativeBlock.nodeType !== 'editable') {
       rect = relativeBlock.hostElement.getBoundingClientRect();
     } else {
-      const selRect = selection.raw.getClientRects();
+      const selRect = this.doc.selection.getSelectionRects()!;
       rect = selection.isInSameBlock ? selRect[0] : (isForward ? selRect[selRect.length - 1] : selRect[0]);
     }
     const blockRect = relativeBlock.hostElement.getBoundingClientRect();

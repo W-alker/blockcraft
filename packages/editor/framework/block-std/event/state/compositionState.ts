@@ -47,9 +47,10 @@ export class CompositionEventState extends UIEventState {
     if (!selection || selection.from.type !== 'text') return null
 
     const {block, index} = selection.from
+    const domStartContainer = document.getSelection()?.getRangeAt(0)?.startContainer
     return {
       block,
-      index: isZeroSpace(selection.raw.startContainer) ? index : Math.max(0, index - text.length)
+      index: (domStartContainer && isZeroSpace(domStartContainer)) ? index : Math.max(0, index - text.length)
     }
   }
 

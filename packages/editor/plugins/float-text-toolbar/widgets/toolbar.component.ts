@@ -478,7 +478,7 @@ export class FloatTextToolbarComponent {
     const selection = this.doc.selection.value!
     const selectionJSON = selection.toJSON()
 
-    const rect = selection.raw.getBoundingClientRect()
+    const rect = this.doc.selection.getSelectionRect()!
     const fake = this.doc.selection.createFakeRange(selection)
     const overlay = this.doc.injector.get(Overlay)
 
@@ -511,7 +511,7 @@ export class FloatTextToolbarComponent {
     const selection = this.doc.selection.value
     if (!selection || selection.from.type !== 'text') return
     const {block, index, length} = selection.from
-    const text = selection.raw.toString()
+    const text = this.doc.selection.getSelectedText()
     block.applyDeltaOperations([
       ...(index > 0 ? [{retain: index}] : []),
       {delete: length},
@@ -519,38 +519,4 @@ export class FloatTextToolbarComponent {
     ])
   }
 
-  // onComment() {
-  //   const commentComponent = this.config.commentComponent
-  //   if (!commentComponent) {
-  //     throw new BlockCraftError(ErrorCode.DefaultRuntimeError, 'commentComponent is not defined')
-  //   }
-  //
-  //   const selection = this.doc.selection.value!
-  //   const selectionJSON = selection.toJSON()
-  //
-  //   const rect = selection.raw.getBoundingClientRect()
-  //   const fake = this.doc.selection.createFakeRange(selection, {bgColor: 'rgba(255, 239, 186, .6)'})
-  //   const overlay = this.doc.injector.get(Overlay)
-  //
-  //   const positionStrategy = overlay.position().global().top(rect.bottom + 'px').left(rect.left + 'px')
-  //   const portal = new ComponentPortal(commentComponent, null, this.doc.injector)
-  //   const ovr = overlay.create({
-  //     positionStrategy,
-  //     hasBackdrop: true,
-  //     backdropClass: 'cdk-overlay-transparent-backdrop',
-  //   })
-  //
-  //   const close = () => {
-  //     ovr.dispose()
-  //     fake.destroy()
-  //     this.doc.selection.replay(selectionJSON)
-  //   }
-  //   const cpr = ovr.attach(portal)
-  //   cpr.setInput('selection', selectionJSON)
-  //   cpr.setInput('doc', this.doc)
-  //   cpr.setInput('commentId', this.activeAttrs.get('commentId'))
-  //   cpr.setInput('close', close)
-  //
-  //   merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
-  // }
 }

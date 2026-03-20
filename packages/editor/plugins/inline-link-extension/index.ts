@@ -128,7 +128,7 @@ export class InlineLinkExtension extends DocPlugin {
     })
 
     this.doc.selection.selectionChange$.pipe(skip(1), takeUntil(this._closeToolbar$)).subscribe(sel => {
-      if (!sel || sel.to || !sel.collapsed || sel.from.type !== 'text' || !this._linkNode?.contains(sel.raw.startContainer)) {
+      if (!sel || sel.to || !sel.collapsed || sel.from.type !== 'text' || !this._linkNode?.contains(document.getSelection()?.getRangeAt(0)?.startContainer!)) {
         this._closeToolbar$.next()
         return
       }

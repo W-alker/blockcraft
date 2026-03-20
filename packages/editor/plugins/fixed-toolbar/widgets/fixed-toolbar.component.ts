@@ -662,7 +662,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (!selection || !selection.isInSameBlock || selection.from.type !== 'text' || !this.hasTextSelection) return
     const selectionJSON = selection.toJSON()
 
-    const rect = selection.raw.getBoundingClientRect()
+    const rect = this.doc.selection.getSelectionRect()!
     const fake = this.doc.selection.createFakeRange(selection)
     const overlay = this.doc.injector.get(Overlay)
 
@@ -701,7 +701,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       const selection = this.doc.selection.value
       if (!selection || selection.from.type !== 'text') return
       const {block, index, length} = selection.from
-      const text = selection.raw.toString()
+      const text = this.doc.selection.getSelectedText()
       block.applyDeltaOperations([
         ...(index > 0 ? [{retain: index}] : []),
         {delete: length},

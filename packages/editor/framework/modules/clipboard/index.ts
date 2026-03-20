@@ -132,7 +132,7 @@ export class ClipboardManager {
 
     this.copyFromSelection(state.selection, state.clipboardData!).then(() => {
       this.deleteContentFromSelection(state.selection)
-      state.selection.raw.collapse(true)
+      document.getSelection()?.collapseToStart()
     })
 
   }

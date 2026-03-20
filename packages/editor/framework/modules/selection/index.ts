@@ -4,6 +4,7 @@ import {
   EditableBlockComponent,
 } from "../../block-std";
 import {BehaviorSubject, skip, take, takeUntil} from "rxjs";
+import {closetBlockId} from "../../utils";
 import {SelectionSelectedManager} from "./selected-manager";
 import {SelectionKeyboard} from "./selection-keyboard";
 import {FakeRange, IFakeRangeConfig} from "./createFakeRange";
@@ -110,7 +111,11 @@ export class SelectionManager {
         }
       }
 
-      const r = new BlockSelection(this.doc, _nr, range, selection)
+      const commonParent = _nr.to
+        ? closetBlockId(range.commonAncestorContainer)!
+        : _nr.from.blockId
+      const direction = computeDirection(selection)
+      const r = new BlockSelection(_nr, commonParent, direction)
       const next = () => {
         this.selectionChange$.next(r)
         this.selectedManager.setSelected(r)
@@ -276,6 +281,28 @@ export class SelectionManager {
     return new FakeRange(this.doc, json, config)
   }
 
+  getSelectionRect(): DOMRect | null {
+    const sel = document.getSelection()
+    if (!sel?.rangeCount) return null
+    return sel.getRangeAt(0).getBoundingClientRect()
+  }
+
+  getSelectionRects(): DOMRectList | null {
+    const sel = document.getSelection()
+    if (!sel?.rangeCount) return null
+    return sel.getRangeAt(0).getClientRects()
+  }
+
+  getSelectedText(): string {
+    return document.getSelection()?.toString() ?? ''
+  }
+
+  collapseDomSelection(toStart = true) {
+    const sel = document.getSelection()
+    if (!sel) return
+    toStart ? sel.collapseToStart() : sel.collapseToEnd()
+  }
+
   scrollSelectionIntoView() {
     const sel = window.getSelection()
     if (!sel || sel.rangeCount === 0) return
@@ -295,6 +322,15 @@ export class SelectionManager {
     }
 
   }
+}
+
+function computeDirection(sel: globalThis.Selection): 'forward' | 'backward' {
+  if (!sel.anchorNode || !sel.focusNode) return 'forward'
+  if (sel.anchorNode === sel.focusNode) {
+    return sel.anchorOffset <= sel.focusOffset ? 'forward' : 'backward'
+  }
+  const position = sel.anchorNode.compareDocumentPosition(sel.focusNode)
+  return position & Node.DOCUMENT_POSITION_PRECEDING ? 'backward' : 'forward'
 }
 
 const searchEditableDescendant = (block: BlockCraft.BlockComponent, isStart: boolean): EditableBlockComponent | null => {

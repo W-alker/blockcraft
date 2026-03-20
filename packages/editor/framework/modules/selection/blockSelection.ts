@@ -1,16 +1,11 @@
-import {closetBlockId} from "../../utils";
 import {IBlockSelectionJSON, INormalizedRange} from "./types";
 
 export class BlockSelection implements INormalizedRange {
 
-  constructor(private _doc: BlockCraft.Doc,
-              private readonly normalizedRange: INormalizedRange,
-              readonly raw: Range,
-              private selection: Selection) {
-    this._commonParent = this.isInSameBlock ? this.from.blockId : closetBlockId(raw.commonAncestorContainer)!
+  constructor(private readonly normalizedRange: INormalizedRange,
+              private readonly _commonParent: string,
+              private readonly _direction: 'forward' | 'backward') {
   }
-
-  private readonly _commonParent: string
 
   get commonParent() {
     return this._commonParent
@@ -63,11 +58,7 @@ export class BlockSelection implements INormalizedRange {
   }
 
   getDirection() {
-    if (this.selection.anchorNode === this.selection.focusNode) {
-      return this.raw.startOffset < this.raw.endOffset ? 'forward' : 'backward'
-    }
-    const position = this.selection.anchorNode!.compareDocumentPosition(this.selection.focusNode!)
-    return position === Node.DOCUMENT_POSITION_PRECEDING ? 'backward' : 'forward'
+    return this._direction
   }
 
   toJSON(): IBlockSelectionJSON {

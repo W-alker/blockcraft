@@ -216,9 +216,9 @@ export class SelectionKeyboard {
   @EventListen('keyDown')
   private _handlerNoEditable(ctx: UIEventStateContext) {
     const state = ctx.get('keyboardState')
-    if (state.composing || !state.selection.raw.collapsed) return;
-
     const selection = document.getSelection()!
+    if (state.composing || !selection.isCollapsed) return;
+
     const activeNode = selection.focusNode
     const zero = isZeroSpace(activeNode!)
     if (zero) {
