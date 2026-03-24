@@ -5,7 +5,7 @@ import type {IBlockSelectionJSON} from "../modules";
 import {BehaviorSubject, take} from "rxjs";
 import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
 import {nextTick} from "../../global";
-import type {IBlockRange} from "../modules/selection/types";
+import type {ISelectionPoint} from "../modules/selection/types";
 
 type UndoManagerEventName = 'stack-item-added' | 'stack-item-updated' | 'stack-item-popped' | 'stack-cleared'
 
@@ -34,6 +34,13 @@ export class DocUndoManger {
   private _redoSelectionStack: Array<IRelativeSelectionSnapshot | null> = []
   readonly undoRedoing$ = new BehaviorSubject(false)
 
+  /**
+   * Pre-captured selection snapshot, taken BEFORE a transaction starts.
+   * This solves the timing issue where stack-item-added fires AFTER the transaction
+   * has already deleted blocks, making the selection endpoints inaccessible.
+   */
+  private _pendingSnapshot: IRelativeSelectionSnapshot | null | undefined = undefined
+
   constructor(private doc: BlockCraft.Doc, yBlockMap: Y.Map<YBlock>, options?: {
     trackedOrigins?: any[]
     captureTimeout?: number
@@ -45,8 +52,12 @@ export class DocUndoManger {
 
     this.on('stack-item-added', (evt) => {
       if (evt.type === 'undo') {
-        // console.log('%cundo stack', 'background: #444;', this.yUndoManager.undoStack, this.doc.selection)
-        this._undoSelectionStack.push(this._captureSelectionSnapshot())
+        // Use pre-captured snapshot if available, otherwise capture now (may fail for deleted blocks)
+        const snapshot = this._pendingSnapshot !== undefined
+          ? this._pendingSnapshot
+          : this._captureSelectionSnapshot()
+        this._pendingSnapshot = undefined
+        this._undoSelectionStack.push(snapshot)
         if (this._undoSelectionStack.length > 200) {
           this._yUndoManager.undoStack.shift()
           this._yUndoManager.redoStack.shift()
@@ -54,6 +65,14 @@ export class DocUndoManger {
         }
       }
     })
+  }
+
+  /**
+   * Pre-capture the current selection for the undo stack.
+   * Call this BEFORE a transaction that may delete blocks referenced by the current selection.
+   */
+  captureSelectionBeforeChange() {
+    this._pendingSnapshot = this._captureSelectionSnapshot()
   }
 
   on(eventName: UndoManagerEventName, listener: (event: StackItemEvent) => void) {
@@ -105,30 +124,55 @@ export class DocUndoManger {
     return Math.max(min, Math.min(index, max))
   }
 
-  private _captureSelectionPoint(range: IBlockRange): IRelativeSelectionPoint {
-    if (range.type === 'selected') {
-      return {
-        type: 'selected',
-        blockId: range.blockId
-      }
+  private _capturePointSafe(blockId: string, type: 'text' | 'selected', offset: number, length: number): IRelativeSelectionPoint | null {
+    if (type === 'selected') {
+      return {type: 'selected', blockId}
     }
-
-    const safeIndex = this._clampIndex(range.index, 0, range.block.textLength)
-    return {
-      type: 'text',
-      blockId: range.blockId,
-      length: range.length,
-      position: Y.createRelativePositionFromTypeIndex(range.block.yText, safeIndex)
+    try {
+      const block = this.doc.getBlockById(blockId)
+      if (!this.doc.isEditable(block)) return null
+      const safeIndex = this._clampIndex(offset, 0, block.textLength)
+      return {
+        type: 'text',
+        blockId,
+        length,
+        position: Y.createRelativePositionFromTypeIndex(block.yText, safeIndex)
+      }
+    } catch {
+      return null
     }
   }
 
   private _captureSelectionSnapshot(): IRelativeSelectionSnapshot | null {
-    const selection = this.doc.selection.value
-    if (!selection) return null
+    const sel = this.doc.selection.value
+    if (!sel) return null
 
-    return {
-      from: this._captureSelectionPoint(selection.from),
-      to: selection.to ? this._captureSelectionPoint(selection.to) : null
+    try {
+      const s = sel.start, e = sel.end
+
+      // Same-block: from captures [start.offset, end.offset)
+      if (sel.isInSameBlock) {
+        const len = s.type === 'text' && e.type === 'text' ? e.offset - s.offset : 0
+        const from = this._capturePointSafe(s.blockId, s.type, s.type === 'text' ? s.offset : 0, len)
+        return from ? {from, to: null} : null
+      }
+
+      // Cross-block:
+      // - from captures [start.offset, end of start block)
+      // - to captures [0, end.offset) in the end block
+      //   Note: to range always starts at offset 0 in the end block
+      const fromPoint = this._capturePointSafe(
+        s.blockId, s.type, s.type === 'text' ? s.offset : 0,
+        s.type === 'text' ? (s.block as any).textLength - s.offset : 0
+      )
+      if (!fromPoint) return null
+
+      const endLen = e.type === 'text' ? e.offset : 0
+      const toPoint = this._capturePointSafe(e.blockId, e.type, 0, endLen)
+
+      return {from: fromPoint, to: toPoint}
+    } catch {
+      return null
     }
   }
 

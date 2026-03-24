@@ -12,7 +12,7 @@ import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
     '[class.edit-container]': 'true'
   },
   standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MermaidTextareaBlockComponent extends EditableBlockComponent<MermaidTextareaBlockModel> {
   override plainTextOnly = true;

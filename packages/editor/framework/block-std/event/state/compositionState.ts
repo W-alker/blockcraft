@@ -37,7 +37,7 @@ export class CompositionEventState extends UIEventState {
 
   requireSelection() {
     const selection = this.selection
-    if (!selection || selection.from.type !== 'text') {
+    if (!selection || selection.start.type !== 'text') {
       throw new BlockCraftError(ErrorCode.InlineEditorError, `Invalid inputRange`)
     }
     return selection
@@ -45,9 +45,10 @@ export class CompositionEventState extends UIEventState {
 
   getFallbackPoint(text = this.text): ITextCursorPoint | null {
     const selection = this.selection
-    if (!selection || selection.from.type !== 'text') return null
+    if (!selection || selection.start.type !== 'text') return null
 
-    const {block, index} = selection.from
+    const block = selection.firstBlock as any
+    const index = selection.start.offset
     return {
       block,
       index: isEmbedAdjacentPosition(block.textDeltas(), index) ? index : Math.max(0, index - text.length)

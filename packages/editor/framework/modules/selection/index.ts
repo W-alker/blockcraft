@@ -9,8 +9,15 @@ import {SelectionSelectedManager} from "./selected-manager";
 import {SelectionKeyboard} from "./selection-keyboard";
 import {FakeRange, IFakeRangeConfig} from "./createFakeRange";
 import {BlockSelection} from "./blockSelection";
-import {IBlockInlineRangeJSON, IBlockSelectionJSON, INormalizedRange} from "./types";
-import {normalizeRange as _normalizeRange} from "./normalize";
+import {
+  IBlockInlineRangeJSON,
+  IBlockSelectionJSON,
+  INormalizedRange,
+  ISelectionJSON,
+  ISelectionPoint,
+  ISelectionPointJSON,
+} from "./types";
+import {normalizeRange as _normalizeRange, INormalizedEndpoints, endpointsToLegacy, lazyPoint as _lazyPoint} from "./normalize";
 
 @DocEventRegister
 export class SelectionManager {
@@ -19,6 +26,7 @@ export class SelectionManager {
 
   private selectedManager = new SelectionSelectedManager(this.doc)
   private _keyboard = new SelectionKeyboard(this.doc)
+  private _suppressRecalculate = false
 
   constructor(public readonly doc: BlockCraft.Doc) {
     this.doc.afterInit(this._bindEvents)
@@ -29,6 +37,7 @@ export class SelectionManager {
   }
 
   blur() {
+    this._applyState(null)
     document.getSelection()?.removeAllRanges()
   }
 
@@ -40,140 +49,151 @@ export class SelectionManager {
     return this.selectionChange$.pipe(skip(1), take(1), takeUntil(this.doc.onDestroy$))
   }
 
-  /**
-   * 一般用于手动触发变化后对下一次的selectionChange变化后触发事件（框架内部事件执行后）
-   * @param fn
-   */
   afterNextChange(fn: (selection: BlockSelection | null) => void) {
     this.nextChangeObserve().subscribe(fn)
   }
 
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
     this.doc.event.customListen(document, 'selectionchange').subscribe(e => {
+      if (this._suppressRecalculate) return
       if (this.doc.event.status.isComposing) return
       this.recalculate()
     })
   }
 
-  /**
-   * 对于行内delta操作后，可能需要重新计算当前范围
-   * @param execNext 是否立即执行发送事件
-   * @param options
-   */
+  // ── Read from DOM (user interaction path) ──
+
   recalculate(execNext = true, options?: { isComposing?: boolean }): {
     value: BlockSelection | null
     next?: () => void
   } {
     const selection = document.getSelection()
     if (!selection || !selection.rangeCount) {
-      const next = () => {
-        this.selectionChange$.next(null)
-        this.selectedManager.setSelected(null)
-      }
-
+      const next = () => this._applyState(null)
       execNext && next()
-      return {
-        value: null,
-        next: execNext ? undefined : next
-      }
+      return {value: null, next: execNext ? undefined : next}
     }
 
     const range = selection?.getRangeAt(0)
     if (!range ||
       (document.activeElement !== this.doc.root.hostElement && !this.doc.root.hostElement.contains(range.commonAncestorContainer))
     ) {
-      const next = () => {
-        this.selectionChange$.next(null)
-        this.selectedManager.setSelected(null)
-      }
-
+      const next = () => this._applyState(null)
       execNext && next()
-      return {
-        value: null,
-        next: execNext ? undefined : next
-      }
+      return {value: null, next: execNext ? undefined : next}
     }
 
-    // 如果选区在根元素上，则移动选择并重新计算。这种情况多发生于删除选中元素的情况
     if (range.startContainer === this.doc.root.hostElement || range.endContainer === this.doc.root.hostElement) {
       selection.modify('move', range.endOffset >= this.doc.root.childrenLength ? 'backward' : 'forward', 'character')
       return this.recalculate()
     }
 
     try {
-      const _nr = this.normalizeRange(range, options)
-      if (_nr.to && _nr.to.block.parentId !== _nr.from.block.parentId) {
-        range.collapse()
-        return {
-          value: null,
-          next: () => {
-          }
+      // normalizeRange returns {start, end} in document order.
+      // Determine real anchor/head from native Selection direction.
+      const endpoints = this._normalizeRange(range, options)
+      const isBackward = isSelectionBackward(selection)
+      const anchor = isBackward ? endpoints.end : endpoints.start
+      const head = isBackward ? endpoints.start : endpoints.end
+
+      // Cross-parent constraint (kept for now)
+      if (anchor.blockId !== head.blockId) {
+        const anchorParent = anchor.block.parentId
+        const headParent = head.block.parentId
+        if (anchorParent !== headParent) {
+          range.collapse()
+          return {value: null, next: () => {}}
         }
       }
 
-      const commonParent = _nr.to
+      const commonParent = anchor.blockId !== head.blockId
         ? closetBlockId(range.commonAncestorContainer)!
-        : _nr.from.blockId
-      const direction = computeDirection(selection)
-      const r = new BlockSelection(_nr, commonParent, direction)
-      const next = () => {
-        this.selectionChange$.next(r)
-        this.selectedManager.setSelected(r)
-      }
+        : anchor.blockId
 
+      const r = this._createBlockSelection(anchor, head, commonParent)
+      const next = () => this._applyState(r)
       execNext && next()
-      return {
-        value: r,
-        next: execNext ? undefined : next
-      }
+      return {value: r, next: execNext ? undefined : next}
     } catch (e) {
       this.doc.logger.warn('normalizeRangeError: ', e)
-      const next = () => {
-      }
+      const next = () => {}
       execNext && next()
-      return {
-        value: null,
-        next: execNext ? undefined : next
-      }
+      return {value: null, next: execNext ? undefined : next}
     }
   }
 
+  /**
+   * Public API returns legacy INormalizedRange for backward compat.
+   * Internally use _normalizeRange() for new anchor/head format.
+   */
   normalizeRange(range: StaticRange, options?: { isComposing?: boolean }): INormalizedRange {
+    return endpointsToLegacy(this._normalizeRange(range, options))
+  }
+
+  private _normalizeRange(range: StaticRange, options?: { isComposing?: boolean }): INormalizedEndpoints {
     return _normalizeRange(range, id => this.doc.getBlockById(id) as any, options)
   }
 
-  private _setRange(from: IBlockInlineRangeJSON, to: IBlockInlineRangeJSON | null = null) {
-    const fromBlock = this.doc.getBlockById(from.blockId)
-    const range = document.createRange()
-    if (from.type === 'text') {
-      const fb = fromBlock as EditableBlockComponent
-      const startNodePos = fb.runtime.mapper.modelPointToDomPoint(fb.containerElement, from.index)
-      range.setStart(startNodePos.node, startNodePos.offset)
-      if (from.length === 0) {
-        range.collapse(true)
-        return range
-      }
+  // ── Model state management ──
 
-      if (!to) {
-        const endNodePos = fb.runtime.mapper.modelPointToDomPoint(fb.containerElement, from.index + from.length)
+  private _applyState(sel: BlockSelection | null) {
+    this.selectionChange$.next(sel)
+    this.selectedManager.setSelected(sel)
+  }
+
+  private _createBlockSelection(anchor: ISelectionPoint, head: ISelectionPoint, commonParent: string): BlockSelection {
+    return new BlockSelection(
+      anchor, head, commonParent,
+      id => this.doc.getBlockById(id) as any,
+      (a, b) => this.doc.compareBlockPosition(a, b),
+    )
+  }
+
+  // ── DOM Range construction ──
+
+  /**
+   * Build a DOM Range from model selection points.
+   * Works with both new ISelectionPointJSON and legacy IBlockInlineRangeJSON.
+   */
+  private _buildDomRange(startPoint: any, endPoint?: any | null): Range {
+    const range = document.createRange()
+    const fromBlock = this.doc.getBlockById(startPoint.blockId)
+
+    if (startPoint.type === 'text') {
+      const fb = fromBlock as EditableBlockComponent
+      const startOffset = startPoint.offset ?? startPoint.index ?? 0
+      const startNodePos = fb.runtime.mapper.modelPointToDomPoint(fb.containerElement, startOffset)
+      range.setStart(startNodePos.node, startNodePos.offset)
+
+      // Collapsed or single-block range
+      if (!endPoint || (endPoint.blockId === startPoint.blockId && endPoint.type === 'text')) {
+        const endOffset = endPoint
+          ? (endPoint.offset ?? (endPoint.index != null ? endPoint.index + (endPoint.length ?? 0) : startOffset))
+          : startOffset
+        if (endOffset === startOffset) {
+          range.collapse(true)
+          return range
+        }
+        const endNodePos = fb.runtime.mapper.modelPointToDomPoint(fb.containerElement, endOffset)
         range.setEnd(endNodePos.node, endNodePos.offset)
         return range
       }
     }
 
-    if (from.type === 'selected') {
+    if (startPoint.type === 'selected') {
       range.setStart(fromBlock.hostElement, 0)
     }
 
-    if (!to) {
+    if (!endPoint) {
       range.collapse(true)
       return range
     }
 
-    const toBlock = this.doc.getBlockById(to.blockId)
-    if (to.type === 'text') {
+    const toBlock = this.doc.getBlockById(endPoint.blockId)
+    if (endPoint.type === 'text') {
       const tb = toBlock as EditableBlockComponent
-      const endNodePos = tb.runtime.mapper.modelPointToDomPoint(tb.containerElement, to.index + to.length)
+      const endOffset = endPoint.offset ?? ((endPoint.index ?? 0) + (endPoint.length ?? 0))
+      const endNodePos = tb.runtime.mapper.modelPointToDomPoint(tb.containerElement, endOffset)
       range.setEnd(endNodePos.node, endNodePos.offset)
       return range
     }
@@ -181,6 +201,8 @@ export class SelectionManager {
     range.setEnd(toBlock.hostElement, toBlock.hostElement.childElementCount)
     return range
   }
+
+  // ── Public API: programmatic selection ──
 
   selectBlock(block: BlockCraft.BlockComponent | string) {
     block = typeof block === 'string' ? this.doc.getBlockById(block) : block
@@ -200,19 +222,16 @@ export class SelectionManager {
     selection.addRange(range)
   }
 
-  setSelection(...args: Parameters<typeof this._setRange>) {
-    const range = this._setRange(...args)
+  /** @deprecated Use setSelection with ISelectionPointJSON */
+  setSelection(from: IBlockInlineRangeJSON, to?: IBlockInlineRangeJSON | null): Range
+  setSelection(from: any, to?: any): Range {
+    const range = this._buildDomRange(from, to)
     const selection = document.getSelection()!
     selection.removeAllRanges()
     selection.addRange(range)
     return range
   }
 
-  /**
-   * set cursor at the position of the editable block
-   * @param block the block to set cursor at
-   * @param index the index of the cursor
-   */
   setCursorAt(block: EditableBlockComponent, index: number) {
     const startNodePos = block.runtime.mapper.modelPointToDomPoint(block.containerElement, index)
     const selection = document.getSelection()!
@@ -224,13 +243,6 @@ export class SelectionManager {
     document.getSelection()?.extend(pos.node, pos.offset)
   }
 
-  /**
-   * 1. If the block is editable, set the cursor at the start or end of the block. \
-   * 2. If the block is not editable, select the block.
-   * @param block
-   * @param atStart
-   * @param scrollIntoView
-   */
   selectOrSetCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean, scrollIntoView = true) {
     block = typeof block === 'string' ? this.doc.getBlockById(block) : block
     if (this.doc.isEditable(block)) {
@@ -241,14 +253,6 @@ export class SelectionManager {
     scrollIntoView && this.scrollSelectionIntoView()
   }
 
-  /**
-   * 1. If the block is editable, set the cursor at the start or end of the block. \
-   * 2. If the block is void, select the block.\
-   * 3. If the block has children, try to find an editable descendant and set the cursor at the start or end of it. If no editable descendant is found, select the block.
-   * @param block
-   * @param atStart
-   * @param scrollIntoView
-   */
   setCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean, scrollIntoView = true) {
     block = typeof block === 'string' ? this.doc.getBlockById(block) : block
     if (this.doc.isEditable(block)) {
@@ -277,24 +281,44 @@ export class SelectionManager {
     }
   }
 
-  replay(json: IBlockSelectionJSON | null) {
+  /** @deprecated Use replay with ISelectionJSON */
+  replay(json: IBlockSelectionJSON | ISelectionJSON | null) {
     if (!json) return
-    this.setSelection(json.from, json.to)
+    if ('anchor' in json) {
+      // New format
+      const range = this._buildDomRange(json.anchor, json.head)
+      const selection = document.getSelection()!
+      selection.removeAllRanges()
+      selection.addRange(range)
+    } else {
+      // Legacy format
+      this.setSelection(json.from, json.to)
+    }
   }
 
-  createFakeRange(json: Pick<IBlockSelectionJSON, 'from' | 'to'>, config: IFakeRangeConfig = {}) {
-    return new FakeRange(this.doc, json, config)
+  createFakeRange(source: Pick<IBlockSelectionJSON, 'from' | 'to'> | BlockSelection | ISelectionJSON, config: IFakeRangeConfig = {}) {
+    if (source instanceof BlockSelection) {
+      return new FakeRange(this.doc, source, config)
+    }
+    if ('anchor' in source) {
+      // ISelectionJSON → build a BlockSelection
+      const sel = this._createBlockSelection(
+        _lazyPoint(source.anchor, id => this.doc.getBlockById(id) as any),
+        _lazyPoint(source.head, id => this.doc.getBlockById(id) as any),
+        source.commonParent
+      )
+      return new FakeRange(this.doc, sel, config)
+    }
+    return new FakeRange(this.doc, source, config)
   }
 
-  /**
-   * Create a transient DOM Range from the current model selection.
-   * Used internally for geometry queries (rects, scroll).
-   */
+  // ── Geometry queries ──
+
   private _rangeFromModel(): Range | null {
     const sel = this.value
     if (!sel) return null
     try {
-      return this._setRange(sel.from, sel.to)
+      return this._buildDomRange(pointToLegacy(sel.start), pointToLegacy(sel.end))
     } catch {
       return null
     }
@@ -315,22 +339,26 @@ export class SelectionManager {
   getSelectedText(): string {
     const sel = this.value
     if (!sel) return ''
-    const {from, to} = sel
-    if (!to) {
-      if (from.type !== 'text') return from.block.textContent()
-      return from.block.textContent().slice(from.index, from.index + from.length)
+    const s = sel.start, e = sel.end
+    const startBlock = sel.firstBlock, endBlock = sel.lastBlock
+
+    if (sel.isInSameBlock) {
+      if (s.type !== 'text') return startBlock.textContent()
+      const eOff = e.type === 'text' ? e.offset : (startBlock as any).textLength
+      return startBlock.textContent().slice(s.offset, eOff)
     }
-    let text = from.type === 'text'
-      ? from.block.textContent().slice(from.index, from.index + from.length)
-      : from.block.textContent()
-    const betweenBlocks = this.doc.queryBlocksBetween(from.block, to.block)
+
+    let text = s.type === 'text'
+      ? startBlock.textContent().slice(s.offset)
+      : startBlock.textContent()
+    const betweenBlocks = this.doc.queryBlocksBetween(startBlock, endBlock)
     for (const bid of betweenBlocks) {
       text += '\n' + this.doc.getBlockById(bid).textContent()
     }
-    if (to.type === 'text') {
-      text += '\n' + to.block.textContent().slice(to.index, to.index + to.length)
+    if (e.type === 'text') {
+      text += '\n' + endBlock.textContent().slice(0, e.offset)
     } else {
-      text += '\n' + to.block.textContent()
+      text += '\n' + endBlock.textContent()
     }
     return text
   }
@@ -351,13 +379,25 @@ export class SelectionManager {
   }
 }
 
-function computeDirection(sel: globalThis.Selection): 'forward' | 'backward' {
-  if (!sel.anchorNode || !sel.focusNode) return 'forward'
+/**
+ * Detect if the native Selection is backward (user dragged right-to-left or bottom-to-top).
+ * Range.start is always document-order first, but Selection.anchor may be after focus.
+ */
+function isSelectionBackward(sel: globalThis.Selection): boolean {
+  if (sel.isCollapsed || !sel.anchorNode || !sel.focusNode) return false
   if (sel.anchorNode === sel.focusNode) {
-    return sel.anchorOffset <= sel.focusOffset ? 'forward' : 'backward'
+    return sel.anchorOffset > sel.focusOffset
   }
-  const position = sel.anchorNode.compareDocumentPosition(sel.focusNode)
-  return position & Node.DOCUMENT_POSITION_PRECEDING ? 'backward' : 'forward'
+  const cmp = sel.anchorNode.compareDocumentPosition(sel.focusNode)
+  return !!(cmp & Node.DOCUMENT_POSITION_PRECEDING)
+}
+
+/** Convert new ISelectionPoint to legacy-compatible shape for _buildDomRange */
+function pointToLegacy(p: ISelectionPoint): any {
+  if (p.type === 'text') {
+    return {blockId: p.blockId, type: 'text', offset: p.offset, index: p.offset, length: 0}
+  }
+  return {blockId: p.blockId, type: 'selected'}
 }
 
 const searchEditableDescendant = (block: BlockCraft.BlockComponent, isStart: boolean): EditableBlockComponent | null => {
@@ -377,3 +417,4 @@ export * from './types'
 export * from './createFakeRange'
 export * from './blockSelection'
 export {normalizeRange} from './normalize'
+export type {INormalizedEndpoints} from './normalize'

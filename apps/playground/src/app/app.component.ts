@@ -10,7 +10,7 @@ import {
   EditableBlockComponent,
   EditorComponent,
   IBlockSnapshot,
-  IBlockSelectionJSON,
+  ISelectionJSON,
   MarkdownStreamRenderer,
   PresentationController,
   generateId
@@ -788,7 +788,7 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     if (!editor?.doc.isInitialized) return null;
     const sel = editor.doc.selection.value;
     if (!sel) return null;
-    const block = sel.from.block;
+    const block = sel.firstBlock;
     return editor.doc.isEditable(block) ? block as EditableBlockComponent : null;
   }
 
@@ -845,18 +845,18 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  private _describeSelectionSpan(selection: IBlockSelectionJSON) {
-    const from = this._formatSelectionPoint(selection.from);
-    const to = selection.to ? this._formatSelectionPoint(selection.to) : from;
+  private _describeSelectionSpan(selection: ISelectionJSON) {
+    const from = this._formatSelectionPoint(selection.anchor);
+    const to = this._formatSelectionPoint(selection.head);
     return from === to ? from : `${from} → ${to}`;
   }
 
-  private _formatSelectionPoint(point: IBlockSelectionJSON['from']) {
+  private _formatSelectionPoint(point: ISelectionJSON['anchor']) {
     if (point.type === 'selected') {
       return `${point.blockId} · block`;
     }
 
-    return `${point.blockId} · ${point.index}:${point.length}`;
+    return `${point.blockId} · offset:${point.offset ?? 0}`;
   }
 
   runAction(actionId: DebugActionId) {
@@ -995,7 +995,7 @@ export class AppComponent implements AfterViewInit, OnDestroy {
 
   private getCurrentEditableBlock() {
     const editor = this.ensureEditorInitialized();
-    const selected = editor.doc.selection.value?.from.block;
+    const selected = editor.doc.selection.value?.firstBlock;
     if (selected && editor.doc.isEditable(selected)) {
       return selected as EditableBlockComponent;
     }
@@ -1010,7 +1010,7 @@ export class AppComponent implements AfterViewInit, OnDestroy {
 
   private getCurrentTable() {
     const editor = this.ensureEditorInitialized();
-    const tableElement = editor.doc.selection.value?.from.block.hostElement.closest('.table-block');
+    const tableElement = editor.doc.selection.value?.firstBlock.hostElement.closest('.table-block');
     const id = tableElement?.getAttribute('data-block-id');
     return id ? editor.doc.getBlockById(id) : null;
   }

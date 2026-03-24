@@ -32,14 +32,14 @@ export class KeyboardEventState extends UIEventState {
     this.composing = event.isComposing
     this.selection = selection
 
-    const {from, to, collapsed, isInSameBlock} = selection
+    const s = selection.start, e = selection.end
     this.context = {
-      collapsed,
-      flavour: from.block.flavour,
-      blockId: from.block.id,
-      isInSameBlock,
-      prefix: from.type === 'text' ? from.block.textContent().substring(0, from.index) : null,
-      suffix: to ? (to.type === 'text' ? to.block.textContent().substring(to.index) : null) : null
+      collapsed: selection.collapsed,
+      flavour: selection.firstBlock.flavour,
+      blockId: selection.firstBlock.id,
+      isInSameBlock: selection.isInSameBlock,
+      prefix: s.type === 'text' ? selection.firstBlock.textContent().substring(0, s.offset) : null,
+      suffix: !selection.isInSameBlock && e.type === 'text' ? selection.lastBlock.textContent().substring(e.offset) : null
     }
   }
 }

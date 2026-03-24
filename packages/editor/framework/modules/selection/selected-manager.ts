@@ -37,32 +37,19 @@ export class SelectionSelectedManager {
     this._clearAllClass()
     if (!selection) return;
 
-    const {from, to, isAllSelected} = selection
+    const {isAllSelected, isInSameBlock} = selection
 
-    // 控制不可输入
     isAllSelected ? this.doc.root.hostElement.classList.add('all-selected') : this.doc.root.hostElement.classList.remove('all-selected')
 
-    if (!to) {
-      this._setClass(from.block)
+    if (isInSameBlock) {
+      this._setClass(selection.firstBlock)
       return;
     }
-    // const between = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
-    // if (!between?.length) return
-    // between.forEach(through => {
-    //   through.group.forEach(v => {
-    //     const b = this.doc.getBlockById(v)
-    //     if (b.nodeType !== BlockNodeType.editable) {
-    //       this._setSelectedClass(b as any)
-    //     }
-    //   })
-    // })
-    // if(from.type === "selected") {
-      this._setClass(from.block)
-    // }
-    // if(to.type === "selected") {
-      this._setClass(to.block)
-    // }
-    const between = this.doc.queryBlocksBetween(from.block, to.block, false)
+
+    // Cross-block: mark start, end, and all between
+    this._setClass(selection.firstBlock)
+    this._setClass(selection.lastBlock)
+    const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, false)
     if (!between?.length) return
     between.forEach(v => {
       const b = this.doc.getBlockById(v)

@@ -34,7 +34,7 @@ export class TableBlockBinding extends DocPlugin {
 
   private _handleCopyOrCut(context: UIEventStateContext, isCut: boolean): boolean {
     const selection = this.doc.selection.value
-    if (!selection || !selection.from.block.flavour.startsWith('table')) return false
+    if (!selection || !selection.firstBlock.flavour.startsWith('table')) return false
     context.preventDefault()
     const table = this._getTable(selection)
     const coordinates = table.getSelectedCoordinates()
@@ -72,7 +72,7 @@ export class TableBlockBinding extends DocPlugin {
   handleArrow(context: UIEventStateContext) {
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
-    if (!selection || selection.from.block.flavour !== 'table-cell') return false
+    if (!selection || selection.firstBlock.flavour !== 'table-cell') return false
 
     const block = this._getTable(selection)
     context.preventDefault()
@@ -85,7 +85,7 @@ export class TableBlockBinding extends DocPlugin {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
-    if (!selection.isAllSelected || selection.from.block.flavour !== 'table-cell') return
+    if (!selection.isAllSelected || selection.firstBlock.flavour !== 'table-cell') return
     const table = this._getTable(selection)
     const coordinates = table.getSelectedCoordinates()
     evt.preventDefault()
@@ -103,7 +103,7 @@ export class TableBlockBinding extends DocPlugin {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
-    if (!selection.isAllSelected || selection.from.block.flavour !== 'table-cell') return false
+    if (!selection.isAllSelected || selection.firstBlock.flavour !== 'table-cell') return false
     evt.preventDefault()
     const table = this._getTable(selection)
     this.doc.selection.selectBlock(table)

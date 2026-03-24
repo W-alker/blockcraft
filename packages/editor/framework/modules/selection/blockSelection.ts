@@ -1,72 +1,160 @@
-import {IBlockSelectionJSON, INormalizedRange} from "./types";
+import {BaseBlockComponent, EditableBlockComponent} from "../../block-std";
+import {
+  IBlockSelectionJSON,
+  ISelectionJSON,
+  ISelectionPoint,
+  ISelectionPointJSON,
+} from "./types";
 
-export class BlockSelection implements INormalizedRange {
+export class BlockSelection {
 
-  constructor(private readonly normalizedRange: INormalizedRange,
-              private readonly _commonParent: string,
-              private readonly _direction: 'forward' | 'backward') {
+  constructor(
+    readonly anchor: ISelectionPoint,
+    readonly head: ISelectionPoint,
+    readonly commonParent: string,
+    private readonly _getBlockById: (id: string) => BaseBlockComponent<any>,
+    private readonly _comparePosition: (a: string, b: string) => number,
+  ) {
   }
 
-  get commonParent() {
-    return this._commonParent
-  }
+  // ── Core derived properties ──
 
-  get from() {
-    return this.normalizedRange.from
-  }
-
-  get to() {
-    return this.normalizedRange.to
-  }
-
-  get firstBlock() {
-    return this.from.block
-  }
-
-  get lastBlock() {
-    return this.to?.block || this.from.block
-  }
-
-  get collapsed() {
-    return this.normalizedRange.collapsed
-  }
-
-  get isInSameBlock() {
-    return !this.to
-  }
-
-  get isStartOfBlock() {
-    return this.from.type === 'selected' ? true : this.from.index === 0
-  }
-
-  get isAllSelected() {
-    return this.from.type === 'selected' ? (this.to ? this.to.type === 'selected' : true) : false
-  }
-
-  get isEndOfBlock() {
-    if (this.to) {
-      return this.to.type === 'selected' ? true : (this.to.index + this.to.length) >= this.to.block.textLength
+  get direction(): 'forward' | 'backward' {
+    if (this.anchor.blockId === this.head.blockId) {
+      if (this.anchor.type === 'text' && this.head.type === 'text') {
+        return this.anchor.offset <= this.head.offset ? 'forward' : 'backward'
+      }
+      return 'forward'
     }
-    return this.from.type === 'text' ? (this.from.index + this.from.length) === this.from.block.textLength : true
+    const cmp = this._comparePosition(this.anchor.blockId, this.head.blockId)
+    return (cmp & Node.DOCUMENT_POSITION_FOLLOWING) ? 'forward' : 'backward'
   }
 
-  get isEmpty() {
-    const isFromEmpty = this.from.type === 'text' ? this.from.length === 0 : false
-    if (!this.to) return isFromEmpty
-    if (!isFromEmpty) return false
-    return this.to.type === 'text' ? (this.to.index === 0 && this.to.length === 0) : false
+  get collapsed(): boolean {
+    return this.anchor.blockId === this.head.blockId
+      && this.anchor.type === 'text' && this.head.type === 'text'
+      && this.anchor.offset === this.head.offset
   }
 
+  get isInSameBlock(): boolean {
+    return this.anchor.blockId === this.head.blockId
+  }
+
+  /** Anchor/head ordered by document position (start is before end) */
+  get start(): ISelectionPoint {
+    return this.direction === 'forward' ? this.anchor : this.head
+  }
+
+  get end(): ISelectionPoint {
+    return this.direction === 'forward' ? this.head : this.anchor
+  }
+
+  get firstBlock(): BaseBlockComponent<any> {
+    return this.start.block
+  }
+
+  get lastBlock(): BaseBlockComponent<any> {
+    return this.end.block
+  }
+
+  get isStartOfBlock(): boolean {
+    const s = this.start
+    return s.type === 'selected' || s.offset === 0
+  }
+
+  get isEndOfBlock(): boolean {
+    const e = this.end
+    return e.type === 'selected' || (e.block as EditableBlockComponent).textLength === e.offset
+  }
+
+  get isAllSelected(): boolean {
+    return this.anchor.type === 'selected' && this.head.type === 'selected'
+  }
+
+  get isEmpty(): boolean {
+    if (!this.isInSameBlock) return false
+    if (this.anchor.type !== 'text' || this.head.type !== 'text') return false
+    return this.anchor.offset === this.head.offset
+  }
+
+  /** @deprecated Use direction instead */
   getDirection() {
-    return this._direction
+    return this.direction
   }
 
-  toJSON(): IBlockSelectionJSON {
-    return {
-      from: {...this.from},
-      to: this.to ? {...this.to} : null,
-      collapsed: this.collapsed,
-      commonParent: this.commonParent
-    } as IBlockSelectionJSON
+  contains(blockId: string, offset?: number): boolean {
+    if (this.isInSameBlock) {
+      if (blockId !== this.anchor.blockId) return false
+      if (offset === undefined) return true
+      const s = this.start, e = this.end
+      if (s.type !== 'text' || e.type !== 'text') return true
+      return offset >= s.offset && offset <= e.offset
+    }
+
+    if (blockId === this.start.blockId) {
+      if (offset === undefined || this.start.type === 'selected') return true
+      return offset >= this.start.offset
+    }
+    if (blockId === this.end.blockId) {
+      if (offset === undefined || this.end.type === 'selected') return true
+      return offset <= this.end.offset
+    }
+
+    // Check if blockId is between start and end in document order
+    const cmpStart = this._comparePosition(this.start.blockId, blockId)
+    const cmpEnd = this._comparePosition(blockId, this.end.blockId)
+    return !!(cmpStart & Node.DOCUMENT_POSITION_FOLLOWING) && !!(cmpEnd & Node.DOCUMENT_POSITION_FOLLOWING)
   }
+
+  // ── Serialization ──
+
+  toJSON(): ISelectionJSON {
+    return this.toSelectionJSON()
+  }
+
+  toSelectionJSON(): ISelectionJSON {
+    return {
+      anchor: pointToJSON(this.anchor),
+      head: pointToJSON(this.head),
+      commonParent: this.commonParent,
+    }
+  }
+
+  toLegacyJSON(): IBlockSelectionJSON {
+    const s = this.start, e = this.end
+    const startLen = this.isInSameBlock && s.type === 'text' && e.type === 'text'
+      ? e.offset - s.offset
+      : (s.type === 'text' ? (s.block as EditableBlockComponent).textLength - s.offset : 0)
+    const endLen = e.type === 'text' ? e.offset : 0
+
+    return {
+      from: s.type === 'text'
+        ? {blockId: s.blockId, type: 'text', index: s.offset, length: startLen}
+        : {blockId: s.blockId, type: 'selected'},
+      to: this.isInSameBlock ? null
+        : (e.type === 'text'
+          ? {blockId: e.blockId, type: 'text', index: 0, length: endLen}
+          : {blockId: e.blockId, type: 'selected'}),
+      collapsed: this.collapsed,
+      commonParent: this.commonParent,
+    }
+  }
+}
+
+function pointToJSON(p: ISelectionPoint): ISelectionPointJSON {
+  return p.type === 'text'
+    ? {blockId: p.blockId, type: 'text', offset: p.offset}
+    : {blockId: p.blockId, type: 'selected'}
+}
+
+function _lazy<T extends { blockId: string }>(
+  range: T,
+  getBlockById: (id: string) => BaseBlockComponent<any>,
+): T & { block: BaseBlockComponent<any> } {
+  Object.defineProperty(range, 'block', {
+    get: () => getBlockById(range.blockId),
+    enumerable: false,
+    configurable: true,
+  });
+  return range as any;
 }

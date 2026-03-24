@@ -42,7 +42,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
       this.clearTimer()
 
-      if (!selection || selection.to || selection.firstBlock?.flavour !== 'attachment') {
+      if (!selection || !selection.isInSameBlock || selection.firstBlock?.flavour !== 'attachment') {
         this._toolbarRef && this.closeToolbar()
         return
       }

@@ -4,6 +4,7 @@ import {
   DeltaInsert,
   DeltaOperation,
   DocEventRegister,
+  EditableBlockComponent,
   EventListen,
   IBlockSnapshot, STR_LINE_BREAK,
   UIEventStateContext
@@ -53,16 +54,20 @@ export class ClipboardManager {
   }
 
   copyFromSelection = async (selection: BlockCraft.Selection, clipboardData: DataTransfer) => {
-    const {from, to} = selection
-    if (!to) {
+    const s = selection.start, e = selection.end
+    const startBlock = selection.firstBlock
+    const endBlock = selection.lastBlock
+
+    if (selection.isInSameBlock) {
       let snapshot: IBlockSnapshot
-      if (from.type === 'text') {
-        const sliceDeltas = sliceDelta(from.block.textDeltas(), from.index, from.length + from.index)
+      if (s.type === 'text') {
+        const eOff = (e.type === 'text' ? e.offset : (startBlock as EditableBlockComponent).textLength)
+        const sliceDeltas = sliceDelta((startBlock as EditableBlockComponent).textDeltas(), s.offset, eOff)
         snapshot = this._wrapDeltaByRoot(sliceDeltas)
         clipboardData.setData(ClipboardDataType.TEXT, deltaToString(sliceDeltas))
       } else {
-        clipboardData.setData(ClipboardDataType.TEXT, from.block.textContent())
-        snapshot = this._wrapSnapshotsByRoot([from.block.toSnapshot()])
+        clipboardData.setData(ClipboardDataType.TEXT, startBlock.textContent())
+        snapshot = this._wrapSnapshotsByRoot([startBlock.toSnapshot()])
       }
 
       for (const adapter1 of this.adapter.supportedAdapters) {
@@ -73,40 +78,41 @@ export class ClipboardManager {
 
     const snapshots: IBlockSnapshot[] = []
     let plainText = ''
-    const betweenBlocks = this.doc.queryBlocksBetween(from.block, to.block)
+    const betweenBlocks = this.doc.queryBlocksBetween(startBlock, endBlock)
     for (const bid of betweenBlocks) {
       snapshots.push(this.doc.getBlockById(bid).toSnapshot())
       plainText += (this.doc.getBlockById(bid).textContent() + STR_LINE_BREAK)
     }
 
-    if (from.type === 'text') {
-      if (from.index < from.block.textLength) {
-        const sliceDeltas = sliceDelta(from.block.textDeltas(), from.index, from.length + from.index)
-        const snapshot = from.block.toSnapshot()
+    if (s.type === 'text') {
+      const sBlock = startBlock as EditableBlockComponent
+      if (s.offset < sBlock.textLength) {
+        const sliceDeltas = sliceDelta(sBlock.textDeltas(), s.offset, sBlock.textLength)
+        const snapshot = sBlock.toSnapshot()
         snapshot.children = sliceDeltas
         snapshots.unshift(snapshot)
         plainText = deltaToString(sliceDeltas) + STR_LINE_BREAK + plainText
       }
     } else {
-      snapshots.unshift(from.block.toSnapshot())
-      plainText = from.block.textContent() + plainText
+      snapshots.unshift(startBlock.toSnapshot())
+      plainText = startBlock.textContent() + plainText
     }
 
-    if (to.type === 'text') {
-      if (to.length > 0) {
-        const sliceDeltas = sliceDelta(to.block.textDeltas(), to.index, to.length + to.index)
-        const snapshot = to.block.toSnapshot()
+    if (e.type === 'text') {
+      if (e.offset > 0) {
+        const eBlock = endBlock as EditableBlockComponent
+        const sliceDeltas = sliceDelta(eBlock.textDeltas(), 0, e.offset)
+        const snapshot = eBlock.toSnapshot()
         snapshot.children = sliceDeltas
         snapshots.push(snapshot)
         plainText += deltaToString(sliceDeltas)
       }
     } else {
-      snapshots.push(to.block.toSnapshot())
-      plainText = to.block.textContent() + plainText
+      snapshots.push(endBlock.toSnapshot())
+      plainText = endBlock.textContent() + plainText
     }
 
     clipboardData.setData(ClipboardDataType.TEXT, plainText)
-    // clipboardData.setData(ClipboardDataType.BLOCK_SNAPSHOTS, JSON.stringify(snapshots))
     const rootSnapshot = await this._wrapSnapshotsByRoot(snapshots)
     for (const adapter1 of this.adapter.supportedAdapters) {
       clipboardData.setData(adapter1.type, await adapter1.fromSnapshot(rootSnapshot))
@@ -130,11 +136,14 @@ export class ClipboardManager {
     const state = context.get('clipboardState')
     context.preventDefault()
 
-    const {from} = state.selection
-    this.copyFromSelection(state.selection, state.clipboardData!).then(() => {
-      this.deleteContentFromSelection(state.selection)
-      if (from.type === 'text') {
-        this.doc.selection.setCursorAt(from.block as any, from.index)
+    const sel = state.selection
+    const startType = sel.start.type
+    const startBlockId = sel.start.blockId
+    const startOffset = startType === 'text' ? sel.start.offset : 0
+    this.copyFromSelection(sel, state.clipboardData!).then(() => {
+      this.deleteContentFromSelection(sel)
+      if (startType === 'text') {
+        this.doc.selection.setCursorAt(this.doc.getBlockById(startBlockId) as any, startOffset)
       }
     })
 
@@ -149,18 +158,23 @@ export class ClipboardManager {
     })
 
     const selection = state.selection
-    if (selection.from.type !== 'text') return
+    if (selection.start.type !== 'text') return
 
-    const {from: selFrom, isInSameBlock, collapsed} = selection
+    const editableBlock = selection.firstBlock as EditableBlockComponent
+    const fromIndex = selection.start.offset
+    const fromLength = selection.isInSameBlock && selection.end.type === 'text'
+      ? selection.end.offset - fromIndex
+      : editableBlock.textLength - fromIndex
+    const {isInSameBlock, collapsed} = selection
 
     // 纯文本块
-    if (selFrom.block.plainTextOnly) {
+    if (editableBlock.plainTextOnly) {
       const text = state.clipboardData?.getData(ClipboardDataType.TEXT)
       if (!text) return false
-      selFrom.block.replaceText(selection.from.index, selection.from.length, text)
+      editableBlock.replaceText(fromIndex, fromLength, text)
       nextTick().then(() => {
-        collapsed ? selFrom.block.setInlineRange(selFrom.index + text.length)
-          : selFrom.block.setInlineRange(selFrom.index, text.length)
+        collapsed ? editableBlock.setInlineRange(fromIndex + text.length)
+          : editableBlock.setInlineRange(fromIndex, text.length)
       })
       return true
     }
@@ -171,19 +185,6 @@ export class ClipboardManager {
     }
 
     let rootSnapshot: IBlockSnapshot | undefined
-    // rtf
-    // if (state.dataTypes.includes(ClipboardDataType.RTF)) {
-    //   const rtfString = state.getData(ClipboardDataType.RTF)
-    //   const rtfAdapter = this.adapter?.getAdapter(ClipboardDataType.RTF)
-    //   if (rtfAdapter && rtfString) {
-    //     try {
-    //       rootSnapshot = await rtfAdapter.toSnapshot(rtfString)
-    //       console.log(`%crtf2snapshot`, 'color: red; font-size: large;', rootSnapshot)
-    //     } catch (e) {
-    //       this.doc.logger.warn('rtf2snapshot error', e)
-    //     }
-    //   }
-    // }
 
     // html
     if (!rootSnapshot && state.dataTypes.includes(ClipboardDataType.HTML)) {
@@ -202,7 +203,6 @@ export class ClipboardManager {
 
     if (rootSnapshot && rootSnapshot.children.length && rootSnapshot.nodeType === BlockNodeType.root) {
       const snapshots: IBlockSnapshot[] = rootSnapshot.children as IBlockSnapshot[]
-      const {index: fromIndex, length: fromLength, block: editableBlock} = selFrom
       const textLength = editableBlock.textLength
 
       replaceSnapshotsIdDeeply(snapshots)
@@ -294,11 +294,11 @@ export class ClipboardManager {
       text = text.replace(/\n$/g, '')
       if (isUrl(text) && isInSameBlock) {
         selection.collapsed ?
-          selFrom.block.insertText(selFrom.index, text, {'a:link': text})
-          : selFrom.block.formatText(selFrom.index, selFrom.length, {'a:link': text})
+          editableBlock.insertText(fromIndex, text, {'a:link': text})
+          : editableBlock.formatText(fromIndex, fromLength, {'a:link': text})
         nextTick().then(() => {
-          collapsed ? selFrom.block.setInlineRange(selFrom.index + text.length)
-            : selFrom.block.setInlineRange(selFrom.index, selFrom.length)
+          collapsed ? editableBlock.setInlineRange(fromIndex + text.length)
+            : editableBlock.setInlineRange(fromIndex, fromLength)
         })
         return true
       }
@@ -306,14 +306,14 @@ export class ClipboardManager {
       this.doc.crud.transact(() => {
         const text_lines = text.replace(/[\n\r]+$/, '').split('\n')
         if (isInSameBlock) {
-          selFrom.block.replaceText(selFrom.index, selFrom.length, text_lines[0])
+          editableBlock.replaceText(fromIndex, fromLength, text_lines[0])
         } else {
           this.deleteContentFromSelection(state.selection)
-          selFrom.block.applyDeltaOperations([{retain: selFrom.index}, {insert: text_lines[0]}])
+          editableBlock.applyDeltaOperations([{retain: fromIndex}, {insert: text_lines[0]}])
         }
         if (text_lines.length > 1) {
-          const snapshots = text_lines.slice(1).map(line => this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: selFrom.block.props.depth}]))
-          this.doc.crud.insertBlocksAfter(selFrom.block, snapshots)
+          const snapshots = text_lines.slice(1).map(line => this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: editableBlock.props.depth}]))
+          this.doc.crud.insertBlocksAfter(editableBlock, snapshots)
         }
       })
       requestAnimationFrame(() => {

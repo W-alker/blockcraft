@@ -47,9 +47,9 @@ export class BlockTransformerPlugin extends DocPlugin {
       item.hotkey && this.doc.event.bindHotkey(item.hotkey, (evt) => {
         const state = evt.get('keyboardState')
         const selection = state.selection
-        if (!selection.isInSameBlock || selection.from.type !== 'text' || selection.from.block.flavour === item.flavour) return
+        if (!selection.isInSameBlock || selection.start.type !== 'text' || selection.firstBlock.flavour === item.flavour) return
         evt.preventDefault()
-        BlockTransformerPlugin.transformEditableBlock(this.doc, selection.from.block, item.flavour as any)
+        BlockTransformerPlugin.transformEditableBlock(this.doc, selection.firstBlock as any, item.flavour as any)
         return true
       })
 
@@ -73,8 +73,8 @@ export class BlockTransformerPlugin extends DocPlugin {
   formatHeading(evt: UIEventStateContext) {
     const state = evt.get('keyboardState')
     const selection = state.selection
-    if (!selection.isInSameBlock || selection.from.type !== 'text' || !ALLOWED_HEADING_FLAVOURS.includes(selection.from.block.flavour)) return
-    selection.from.block.updateProps({
+    if (!selection.isInSameBlock || selection.start.type !== 'text' || !ALLOWED_HEADING_FLAVOURS.includes(selection.firstBlock.flavour)) return
+    ;(selection.firstBlock as any).updateProps({
       heading: state.raw.key === '0' ? null : parseInt(state.raw.key, 10)
     })
     return true
@@ -91,8 +91,8 @@ export class BlockTransformerPlugin extends DocPlugin {
     }
     if (e.data === '\/' || e.data === '、') {
       const selection = this.doc.selection.value
-      if (!selection || !selection.collapsed || selection.from.type !== 'text' || selection.from.block.flavour !== 'paragraph') return
-      const block = selection.from.block
+      if (!selection || !selection.collapsed || selection.start.type !== 'text' || selection.firstBlock.flavour !== 'paragraph') return
+      const block = selection.firstBlock as any
       if (block.textContent() !== e.data) return
       const schema = this.doc.schemas.get(block.flavour)!
       if (schema.metadata.isLeaf) return
@@ -102,10 +102,10 @@ export class BlockTransformerPlugin extends DocPlugin {
 
   private _mdTransform = () => {
     const selection = this.doc.selection.value!
-    if (!selection.collapsed || selection.from.type !== 'text') return false
-    const block = selection.from.block
+    if (!selection.collapsed || selection.start.type !== 'text') return false
+    const block = selection.firstBlock as any
     if (!block || block.flavour !== 'paragraph') return
-    const text = block.textContent().slice(0, selection.from.index + 1)
+    const text = block.textContent().slice(0, selection.start.offset + 1)
     const matched = this.mdTransformList.find((item) => item.regex.test(text))
     if (!matched) return false
 
@@ -113,7 +113,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     if (matched.flavour.startsWith('heading-')) {
       const heading = headingTransforms.findIndex(item => item.flavour === matched.flavour)
       if (heading < 0) return false
-      const selIdx = selection.from.index
+      const selIdx = selection.start.offset
       this.doc.crud.transact(() => {
         block.deleteText(0, selIdx + 1)
         block.updateProps({
@@ -167,7 +167,7 @@ export class BlockTransformerPlugin extends DocPlugin {
 
     merge(
       cpr.instance.close$,
-      this.doc.selection.selectionChange$.pipe(skip(1), filter(v => !v || !!v.to || !v.collapsed || (v.firstBlock.id !== block.id))),
+      this.doc.selection.selectionChange$.pipe(skip(1), filter(v => !v || !v.isInSameBlock || !v.collapsed || (v.firstBlock.id !== block.id))),
       block.onDestroy$).pipe(takeUntil(this.closeMenu$)).subscribe(() => {
       this.closeMenu$.next(true)
     })

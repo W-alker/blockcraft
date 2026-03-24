@@ -66,18 +66,19 @@ export class MentionPlugin extends DocPlugin {
     if (e.data !== this._trigger || e.isComposing) return
 
     const curSel = this.doc.selection.value
-    if (!curSel?.collapsed || curSel.from.type !== 'text' || curSel.from.block.plainTextOnly) return
+    if (!curSel?.collapsed || curSel.start.type !== 'text' || (curSel.firstBlock as EditableBlockComponent).plainTextOnly) return
 
-    const from = curSel.from
+    const startBlock = curSel.firstBlock as EditableBlockComponent
+    const startOffset = curSel.start.offset
     // Only trigger after a space or at the beginning of the line
-    if (from.index > 0) {
-      const prevChar = characterAtDelta(from.block.textDeltas(), from.index)
+    if (startOffset > 0) {
+      const prevChar = characterAtDelta(startBlock.textDeltas(), startOffset)
       if (prevChar !== ' ') return
     }
 
     e.preventDefault()
-    const block = from.block as EditableBlockComponent
-    const atIndex = from.index
+    const block = startBlock
+    const atIndex = startOffset
 
     this._isOpen = true
 
@@ -87,7 +88,8 @@ export class MentionPlugin extends DocPlugin {
     })
 
     this.doc.selection.setSelection({
-      ...from,
+      blockId: block.id,
+      type: 'text',
       index: atIndex + 1,
       length: 0
     })
@@ -157,9 +159,9 @@ export class MentionPlugin extends DocPlugin {
       if (this._charAtModelIndex(b, i) !== this._trigger) return null
 
       const curSel = this.doc.selection.value
-      if (!curSel?.collapsed || curSel.from.type !== 'text' || curSel.from.block !== b) return null
+      if (!curSel?.collapsed || curSel.start.type !== 'text' || curSel.firstBlock !== b) return null
 
-      const cursorIndex = curSel.from.index
+      const cursorIndex = curSel.start.offset
       if (cursorIndex <= i) return null
 
       const keyword = this._textBetween(b, i + 1, cursorIndex)
@@ -263,9 +265,9 @@ export class MentionPlugin extends DocPlugin {
 
       const curSel = this.doc.selection.value
       let end: number
-      if (curSel?.collapsed && curSel.from.type === 'text'
-        && curSel.from.block === block && curSel.from.index > index) {
-        end = curSel.from.index
+      if (curSel?.collapsed && curSel.start.type === 'text'
+        && curSel.firstBlock === block && curSel.start.offset > index) {
+        end = curSel.start.offset
       } else {
         end = index + 1
         const yLen = block.yText.length

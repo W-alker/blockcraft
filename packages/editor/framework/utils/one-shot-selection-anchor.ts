@@ -115,11 +115,11 @@ export class OneShotCursorAnchor {
    */
   captureFromSelection(options?: { isComposing?: boolean }) {
     const {value: sel} = this.doc.selection.recalculate(false, options)
-    if (!sel || sel.from.type !== 'text') {
+    if (!sel || sel.start.type !== 'text') {
       this._point = null
       return false
     }
-    this.capture(sel.from.block, sel.from.index)
+    this.capture(sel.firstBlock as EditableBlockComponent, sel.start.offset)
     return true
   }
 
@@ -225,30 +225,23 @@ export class OneShotRangeAnchor {
    * 基于当前 selection 捕获区间。
    *
    * 行为说明：
-   * - collapsed/单端场景：按 from.index + from.length；
-   * - 双端 text 场景：归一化为 [min, max]；
-   * - 非 text 或跨块 text：返回 false 并 reset。
+   * - 仅支持同一块内的 text 选区；
+   * - 非 text 或跨块：返回 false 并 reset。
    */
   captureFromSelection(options?: { isComposing?: boolean }) {
     const {value: sel} = this.doc.selection.recalculate(false, options)
-    if (!sel || sel.from.type !== 'text') {
+    if (!sel || sel.start.type !== 'text') {
       this.reset()
       return false
     }
 
-    if (!sel.to) {
-      this.capture(sel.from.block, sel.from.index, sel.from.length)
-      return true
-    }
-
-    if (sel.to.type !== 'text' || sel.to.blockId !== sel.from.blockId) {
+    if (!sel.isInSameBlock || sel.end.type !== 'text') {
       this.reset()
       return false
     }
 
-    const start = Math.min(sel.from.index, sel.to.index)
-    const end = Math.max(sel.from.index + sel.from.length, sel.to.index + sel.to.length)
-    this.capture(sel.from.block, start, end - start)
+    // start/end are document-ordered, so offset math is straightforward
+    this.capture(sel.firstBlock as EditableBlockComponent, sel.start.offset, sel.end.offset - sel.start.offset)
     return true
   }
 

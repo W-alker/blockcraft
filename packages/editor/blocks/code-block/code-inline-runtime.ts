@@ -175,14 +175,14 @@ export class CodeInlineRuntime extends InlineRuntime {
    */
   async diffHighLight(_ops: DeltaOperation[], opts?: {
     block: { id: string, textContent: () => string, setInlineRange: (idx: number) => void },
-    selectionValue: { from: { blockId: string, type: string, index?: number } } | null,
+    selectionValue: { start: { blockId: string, type: string, offset?: number } } | null,
     normalizeRange: (range: Range) => { from: { type: string, index?: number } }
   }) {
     let pos = 0
     let isHere = false
 
     if (opts) {
-      isHere = opts.selectionValue?.from.blockId === opts.block.id
+      isHere = opts.selectionValue?.start.blockId === opts.block.id
       if (isHere) {
         const sel = document.getSelection()
         if (sel?.rangeCount) {

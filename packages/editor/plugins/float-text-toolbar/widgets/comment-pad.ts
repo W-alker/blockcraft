@@ -9,7 +9,7 @@ import {
   ViewChild
 } from "@angular/core";
 import {FormsModule} from "@angular/forms";
-import {IBlockSelectionJSON} from "../../../framework";
+import {ISelectionJSON} from "../../../framework";
 
 @Component({
   selector: "comment-pad",
@@ -109,7 +109,7 @@ export class CommentPad {
   commentId?: string
 
   @Input()
-  selection!: IBlockSelectionJSON
+  selection!: ISelectionJSON
 
   @Input({required: true})
   doc!: BlockCraft.Doc

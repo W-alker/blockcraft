@@ -5,29 +5,34 @@ import {
 } from "../../block-std";
 import {BlockCraftError, ErrorCode} from "../../../global";
 import {closetBlockId} from "../../utils";
-import {IBlockRange, INormalizedRange} from "./types";
+import {IBlockRange, INormalizedRange, ISelectionPoint} from "./types";
 
 /**
- * Convert a DOM StaticRange to a model-level INormalizedRange.
+ * Document-ordered endpoints from normalizeRange().
+ * Note: `start` is always before `end` in document order.
+ * The caller (recalculate) determines the real anchor/head direction
+ * from the native Selection API.
+ */
+export interface INormalizedEndpoints {
+  readonly start: ISelectionPoint
+  readonly end: ISelectionPoint
+}
+
+/**
+ * Convert a DOM StaticRange to model-level anchor/head selection points.
  *
  * Pure function — depends only on the provided `getBlockById` resolver,
  * no SelectionManager or Doc instance state.
+ *
+ * Returns raw endpoints without length computation. The caller (BlockSelection)
+ * derives lengths, direction, and other properties on demand.
  */
 export function normalizeRange(
   range: StaticRange,
   getBlockById: (id: string) => BaseBlockComponent<any>,
   options?: { isComposing?: boolean }
-): INormalizedRange {
+): INormalizedEndpoints {
   const {startContainer, endContainer, startOffset, endOffset, collapsed} = range
-
-  const _lazy = (range: any): any => {
-    Object.defineProperty(range, 'block', {
-      get: () => getBlockById(range.blockId),
-      enumerable: false,
-      configurable: true,
-    });
-    return range;
-  }
 
   const resolveBlock = (node: Node): BaseBlockComponent<any> => {
     const id = closetBlockId(node)
@@ -44,45 +49,32 @@ export function normalizeRange(
     return block.runtime.mapper.domPointToModelPoint(block.containerElement, node, offset, options)
   }
 
-  const getBlockRange = (block: BaseBlockComponent<any>, node: Node, offset: number): IBlockRange => {
+  const resolvePoint = (block: BaseBlockComponent<any>, node: Node, offset: number): ISelectionPoint => {
     if (block instanceof EditableBlockComponent) {
       if (node instanceof HTMLElement && node.classList.contains(INLINE_END_BREAK_CLASS)) {
-        return _lazy({
-          blockId: block.id,
-          type: 'text',
-          index: block.textLength,
-          length: 0
-        })
+        return lazyPoint({blockId: block.id, type: 'text', offset: block.textLength}, getBlockById)
       }
-
-      return _lazy({
-        blockId: block.id,
-        type: 'text',
-        index: getInlineOffset(block, node, offset),
-        length: 0
-      })
+      return lazyPoint({blockId: block.id, type: 'text', offset: getInlineOffset(block, node, offset)}, getBlockById)
     }
-
-    return _lazy({
-      blockId: block.id,
-      type: 'selected'
-    })
+    return lazyPoint({blockId: block.id, type: 'selected', offset: 0}, getBlockById)
   }
 
   const startBlock = resolveBlock(startContainer)
-  let from = getBlockRange(startBlock, startContainer, startOffset)
+  const s = resolvePoint(startBlock, startContainer, startOffset)
 
   if (collapsed) {
-    return {from, to: null, collapsed: from.type === 'text'}
+    return {start: s, end: s}
   }
 
   let endBlock = startContainer === endContainer ? startBlock : resolveBlock(endContainer)
 
-  if (startBlock === endBlock && from.type === 'selected') {
-    return {from, to: null, collapsed: false}
+  // Same block, selected type
+  if (startBlock === endBlock && s.type === 'selected') {
+    return {start: s, end: s}
   }
 
-  let to: any
+  // Edge case: endContainer is an edit-container at offset 0 -> resolve to previous block's end
+  let e: ISelectionPoint | undefined
   if (endContainer instanceof HTMLElement && endContainer.classList.contains('edit-container') && endOffset === 0) {
     const prev = endContainer.closest('[data-node-type="editable"]')?.previousElementSibling
     if (prev && prev instanceof HTMLElement) {
@@ -90,36 +82,74 @@ export function normalizeRange(
       if (id) {
         endBlock = getBlockById(id) as BaseBlockComponent<any>
         if (endBlock.nodeType === 'editable') {
-          to = _lazy({
-            blockId: id,
-            type: 'text',
-            index: (endBlock as EditableBlockComponent).textLength,
-            length: 0
-          })
+          e = lazyPoint({blockId: id, type: 'text', offset: (endBlock as EditableBlockComponent).textLength}, getBlockById)
         } else {
-          to = _lazy({
-            blockId: id,
-            type: 'selected'
-          })
+          e = lazyPoint({blockId: id, type: 'selected', offset: 0}, getBlockById)
         }
       }
     }
   }
-  to ??= getBlockRange(endBlock, endContainer, endOffset)
+  e ??= resolvePoint(endBlock, endContainer, endOffset)
 
-  if (from.type === 'text') {
+  return {start: s, end: e}
+}
 
-    if (endBlock === startBlock && to.type === 'text') {
-      from = _lazy({...from, length: to.index - from.index})
-      return {from, to: null, collapsed: false}
+/**
+ * Convert new anchor/head endpoints to legacy INormalizedRange (from/to/collapsed).
+ * Used for backward compat during migration.
+ */
+export function endpointsToLegacy(endpoints: INormalizedEndpoints): INormalizedRange {
+  const {start, end} = endpoints
+  const collapsed = start.blockId === end.blockId
+    && start.type === 'text' && end.type === 'text'
+    && start.offset === end.offset
+
+  const _lazy = (range: any, block: BaseBlockComponent<any>): any => {
+    Object.defineProperty(range, 'block', {
+      get: () => block,
+      enumerable: false,
+      configurable: true,
+    });
+    return range;
+  }
+
+  const makeFrom = (): IBlockRange => {
+    if (start.type === 'selected') {
+      return _lazy({blockId: start.blockId, type: 'selected'}, start.block)
     }
-
-    from = _lazy({...from, length: from.block.textLength - from.index})
+    if (start.blockId === end.blockId && end.type === 'text') {
+      return _lazy({blockId: start.blockId, type: 'text', index: start.offset, length: end.offset - start.offset}, start.block)
+    }
+    return _lazy({
+      blockId: start.blockId, type: 'text', index: start.offset,
+      length: (start.block as EditableBlockComponent).textLength - start.offset
+    }, start.block)
   }
 
-  if (to.type === 'text') {
-    to = _lazy({...to, length: to.index, index: 0})
+  const makeTo = (): IBlockRange | null => {
+    if (start.blockId === end.blockId) return null
+    if (end.type === 'selected') {
+      return _lazy({blockId: end.blockId, type: 'selected'}, end.block)
+    }
+    return _lazy({blockId: end.blockId, type: 'text', index: 0, length: end.offset}, end.block)
   }
 
-  return {from, to, collapsed: false}
+  return {
+    from: makeFrom(),
+    to: makeTo(),
+    collapsed,
+  }
+}
+
+export function lazyPoint(
+  point: { blockId: string; type: string; offset?: number },
+  getBlockById: (id: string) => BaseBlockComponent<any>,
+): ISelectionPoint {
+  if (point.offset === undefined) (point as any).offset = 0
+  Object.defineProperty(point, 'block', {
+    get: () => getBlockById(point.blockId),
+    enumerable: false,
+    configurable: true,
+  });
+  return point as ISelectionPoint;
 }

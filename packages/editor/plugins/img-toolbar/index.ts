@@ -24,7 +24,7 @@ export class ImgToolbarPlugin extends DocPlugin {
   onImageDragStart(ctx: UIEventStateContext) {
     ctx.stopPropagation()
 
-    if (this.doc.isReadonly || this.doc.selection.value?.to) {
+    if (this.doc.isReadonly || (this.doc.selection.value && !this.doc.selection.value.isInSameBlock)) {
       ctx.preventDefault()
       return
     }
@@ -72,7 +72,7 @@ export class ImgToolbarPlugin extends DocPlugin {
 
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
-      if (!selection || selection.to || selection.firstBlock.flavour !== 'image') {
+      if (!selection || !selection.isInSameBlock || selection.firstBlock.flavour !== 'image') {
         this._toolbarRef && this.closeToolbar()
         return
       }

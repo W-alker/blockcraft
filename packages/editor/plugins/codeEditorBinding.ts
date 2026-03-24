@@ -61,15 +61,17 @@ export class CodeInlineEditorBinding extends DocPlugin {
   handleEnterKey(context: UIEventStateContext) {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
-    const {from, to} = state.selection
-    if (to || from.type !== 'text') return false
-    const block = from.block
+    const sel = state.selection
+    if (!sel.isInSameBlock || sel.start.type !== 'text') return false
+    const block = sel.firstBlock as any
+    const offset = sel.start.offset
+    const len = sel.end.type === 'text' ? sel.end.offset - offset : 0
 
     // 代码块强制换新行
-    if (state.raw.shiftKey && from.block.flavour === 'code') {
+    if (state.raw.shiftKey && block.flavour === 'code') {
       context.preventDefault()
-      const splitText = block.textContent().slice(from.index + from.length)
-      block.deleteText(from.index, block.textLength - from.index)
+      const splitText = block.textContent().slice(offset + len)
+      block.deleteText(offset, block.textLength - offset)
       const np = this.doc.schemas.createSnapshot('paragraph', [splitText, block.props])
       void this.doc.chain()
         .insertAfterSnapshots(block, [np])
@@ -78,17 +80,17 @@ export class CodeInlineEditorBinding extends DocPlugin {
       return true
     }
 
-    if (from.length !== 0) {
-      block.deleteText(from.index, from.length)
+    if (len !== 0) {
+      block.deleteText(offset, len)
     }
-    const currLine = block.textContent().slice(0, from.index).split(STR_LINE_BREAK).at(-1)
+    const currLine = block.textContent().slice(0, offset).split(STR_LINE_BREAK).at(-1)
     const tabs = (currLine?.split(STR_TAB).length || 1) - 1
     const deltas: DeltaOperation[] = [
-      {retain: from.index},
+      {retain: offset},
       {insert: STR_LINE_BREAK + (tabs ? STR_TAB.repeat(tabs) : '')},
     ]
     block.applyDeltaOperations(deltas)
-    const range = block.setInlineRange(from.index + STR_LINE_BREAK.length + tabs * STR_TAB.length)
+    const range = block.setInlineRange(offset + STR_LINE_BREAK.length + tabs * STR_TAB.length)
     block.flavour === 'code' && block.props.h && scrollIntoNearestParentY(range.startContainer.parentElement!)
     return true
   }
@@ -98,26 +100,28 @@ export class CodeInlineEditorBinding extends DocPlugin {
   handleTabKey(context: UIEventStateContext) {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
-    const {from, to} = state.selection
-    if (to || from.type !== 'text') return false
+    const sel = state.selection
+    if (!sel.isInSameBlock || sel.start.type !== 'text') return false
     context.preventDefault()
-    const block = from.block
+    const block = sel.firstBlock as any
+    const offset = sel.start.offset
+    const len = sel.end.type === 'text' ? sel.end.offset - offset : 0
 
     // collapsed
-    if (from.length === 0) {
+    if (len === 0) {
       if (!state.raw.shiftKey) {
-        block.insertText(from.index, STR_TAB)
-        block.setInlineRange(from.index + STR_TAB.length)
+        block.insertText(offset, STR_TAB)
+        block.setInlineRange(offset + STR_TAB.length)
         return true
       }
 
-      if (from.index === 0) return true
-      const prevStr = block.textContent().at(from.index - 1)
-      prevStr === STR_TAB && block.deleteText(from.index - 1, 1)
+      if (offset === 0) return true
+      const prevStr = block.textContent().at(offset - 1)
+      prevStr === STR_TAB && block.deleteText(offset - 1, 1)
       return true
     }
 
-    const lines = getLinesByRange(block.textContent(), from.index, from.index + from.length)
+    const lines = getLinesByRange(block.textContent(), offset, offset + len)
     let before = lines.before.reduce((prev, curr) => prev + curr.length, 0)
     const deltas: DeltaOperation[] = []
 

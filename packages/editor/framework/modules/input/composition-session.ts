@@ -110,11 +110,11 @@ export class CompositionSession {
    */
   startFromSelection(options?: { isComposing?: boolean }): boolean {
     const {value: sel} = this.doc.selection.recalculate(false, options)
-    if (!sel || sel.from.type !== 'text') {
+    if (!sel || sel.start.type !== 'text') {
       this.reset()
       return false
     }
-    this.start(sel.from.block, sel.from.index)
+    this.start(sel.firstBlock as any, sel.start.offset)
     return true
   }
 

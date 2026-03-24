@@ -120,14 +120,18 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     // (e.g. after compositionEnd which calls rerender then setInlineRange).
     super.rerender()
 
-    // Then schedule async Shiki highlighting
+    // Defer async Shiki highlighting to next microtask.
+    // This ensures setInlineRange() (called after rerender in compositionEnd)
+    // has already set the DOM cursor before renderCode captures/restores it.
     const shikiLang = SHIKI_LANGUAGE_MAP[this.props.lang]
     if (!isLanguageSupported(shikiLang)) {
       loadLanguage(this.props.lang).then(() => {
         this._codeRuntime.renderCode(() => this.textContent())
       })
     } else {
-      this._codeRuntime.renderCode(() => this.textContent())
+      queueMicrotask(() => {
+        this._codeRuntime.renderCode(() => this.textContent())
+      })
     }
   }
 
