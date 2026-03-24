@@ -169,7 +169,7 @@ export class SelectionManager {
       if (!endPoint || (endPoint.blockId === startPoint.blockId && endPoint.type === 'text')) {
         const endOffset = endPoint
           ? (endPoint.offset ?? (endPoint.index != null ? endPoint.index + (endPoint.length ?? 0) : startOffset))
-          : startOffset
+          : (startPoint.length ? startOffset + startPoint.length : startOffset)
         if (endOffset === startOffset) {
           range.collapse(true)
           return range
