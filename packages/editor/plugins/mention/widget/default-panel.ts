@@ -52,7 +52,7 @@ export function createDefaultMentionPanel(config: DefaultMentionPanelConfig): Me
     // Bridge Angular outputs → Observable streams
     dialogRef.instance.confirm
       .pipe(takeUntil(destroy$))
-      .subscribe(item => onConfirm.next(item))
+      .subscribe(item => onConfirm.next({...item, mentionType: currentType}))
 
     // Tab change → re-search with current keyword (skip initial ngOnInit emission)
     dialogRef.instance.tabChange
