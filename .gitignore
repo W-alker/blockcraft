@@ -47,3 +47,4 @@ pnpm-lock.yaml
 /.npm-cache
 .gitnexus
 /.playwright-cli
+/.claude/worktrees

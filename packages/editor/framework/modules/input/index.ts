@@ -271,6 +271,7 @@ export class InputTransformer {
     if (from.type !== 'text') return
     if (!collapsed) {
       ev.preventDefault()
+      this.doc.crud.undoManager.captureSelectionBeforeChange()
       from.block.replaceText(from.index, from.length, text)
       this.doc.selection.setSelection({
         ...from,
@@ -327,8 +328,8 @@ export class InputTransformer {
     const {from, to, collapsed} = range
     if (collapsed) return
 
-    // Pre-capture selection for undo BEFORE the transaction deletes blocks
-    if (to) this.doc.crud.undoManager.captureSelectionBeforeChange()
+    // Pre-capture selection for undo BEFORE the transaction mutates yText
+    this.doc.crud.undoManager.captureSelectionBeforeChange()
 
     this.doc.crud.transact(() => {
       if (to) {
