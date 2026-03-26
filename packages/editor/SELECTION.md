@@ -123,7 +123,7 @@ start/end：  按文档顺序排列（start 始终在 end 之前）
 | `lastBlock` | `BaseBlockComponent` | `end.block` |
 | `isStartOfBlock` | `boolean` | start 在块首 |
 | `isEndOfBlock` | `boolean` | end 在块尾 |
-| `isAllSelected` | `boolean` | 两端点均为 `type: 'selected'` |
+| `isAllSelected` | `boolean` | 同块: 两端均 `selected`；跨块: `isStartOfBlock && isEndOfBlock` |
 | `isEmpty` | `boolean` | 同块、同偏移 |
 
 ### 方法
@@ -340,17 +340,39 @@ resolve()
   → 映射到新的绝对 index
 ```
 
-### Undo/Redo
+### Undo/Redo 选区恢复
 
-`DocUndoManager` 在每次 undo stack 变更时捕获选区快照：
+`DocUndoManager` 使用 `Y.RelativePosition` 追踪选区端点，确保协同安全。
 
+**快照捕获：**
 ```
-BlockSelection → _capturePoint(start/end) → IRelativeSelectionPoint (Y.RelativePosition)
-                                                    ↓  (undo/redo 后)
-                                          _resolveSelectionPoint → IBlockSelectionJSON
-                                                    ↓
-                                          doc.selection.replay(json)
+BlockSelection
+  → _captureSelectionSnapshot()
+    → 同块: from = RelativePosition(start.offset) + length(end.offset - start.offset)
+    → 跨块: from = RelativePosition(start.offset) + length(块尾), to = RelativePosition(0) + length(end.offset)
+  → IRelativeSelectionSnapshot { from, to }
 ```
+
+**快照恢复：**
+```
+IRelativeSelectionSnapshot
+  → _resolveSelectionPoint(point)
+    → Y.createAbsolutePositionFromRelativePosition(position, yDoc) → 绝对 index
+    → clamp(index, 0, block.textLength) + clamp(length, 0, maxLength)
+  → IBlockSelectionJSON { from, to }
+  → doc.selection.replay(json)
+```
+
+**预捕获机制 — `captureSelectionBeforeChange()`**：
+
+`stack-item-added` 事件在 Yjs transaction 结束后触发，此时 yText 已被修改。直接用 `_captureSelectionSnapshot()` 会基于修改后的 yText 创建 `RelativePosition`，导致 undo 后偏移错误。
+
+解决方案：在所有修改 yText 的操作之前调用 `captureSelectionBeforeChange()`，预先存入 `_pendingSnapshot`。`stack-item-added` handler 优先使用它。
+
+调用点：
+- `_replaceText()` — 所有文本替换操作
+- `_deleteAllSelected()` — 全选删除
+- `_handleBeforeInput()` — 同段落非折叠选区编辑
 
 ### 远端变更
 
@@ -363,15 +385,18 @@ if (!tr.local) {
 
 ### _suppressRecalculate 机制
 
-当程序主动写 DOM 选区（`setCursorAt`、`setSelection`）后，浏览器会触发 `selectionchange` 事件。`_suppressRecalculate` 标志防止这个事件触发不必要的 `recalculate()`，避免循环：
+`_suppressRecalculate` 标志用于防止 `selectionchange` 事件触发不必要的 `recalculate()`。
+
+当前程序化选区操作（`setCursorAt`、`setSelection` 等）设置 DOM 选区后，浏览器会异步触发 `selectionchange`。`recalculate()` 从 DOM 反读选区创建 `BlockSelection`，对于用户交互路径这是正确的。但程序化路径中，调用方已经知道期望的选区状态，`recalculate()` 的 DOM 反读可能因浏览器 Range 标准化、跨父级约束等原因产生错误结果。
 
 ```
-程序 setCursorAt() → DOM 变更 → selectionchange 事件
-                                    │
-                          _suppressRecalculate = true → 跳过 recalculate()
-                                    │
-                          requestAnimationFrame → _suppressRecalculate = false
+selectionchange handler:
+  if (_suppressRecalculate) → 跳过 recalculate()
+  if (isComposing)          → 跳过 (IME 期间由 CompositionSession 管理)
+  else                      → recalculate()
 ```
+
+> **注意**：当前 `_suppressRecalculate` 为预留机制，程序化路径仍通过 `selectionchange → recalculate()` 创建模型状态。后续可改为程序化路径直接创建 `BlockSelection` 并抑制 `selectionchange` 回路。
 
 ---
 

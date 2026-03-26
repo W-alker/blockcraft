@@ -601,44 +601,80 @@ handleBold(ctx: UIEventStateContext) { }
 
 ## 六、选区管理（Selection）
 
-### 6.1 选区类型
+### 6.1 Anchor/Head 端点模型
+
+选区由两个端点 + 公共父级构成，采用 **anchor/head** 模型保留方向信息：
 
 ```typescript
-// 文本选区（在可编辑块内）
-type TextRange = {
-  blockId: string
-  block: EditableBlockComponent
-  type: 'text'
-  index: number      // 字符偏移
-  length: number     // 选中长度
+// 选区端点（惰性解析 block getter）
+type ISelectionPoint = ITextSelectionPoint | ISelectedSelectionPoint
+
+interface ITextSelectionPoint {
+  readonly blockId: string
+  readonly type: 'text'
+  readonly offset: number              // 块内字符偏移
+  readonly block: EditableBlockComponent  // non-enumerable getter
 }
 
-// 块选区（选中整个块）
-type SelectedRange = {
-  blockId: string
-  block: BlockComponent
-  type: 'selected'
+interface ISelectedSelectionPoint {
+  readonly blockId: string
+  readonly type: 'selected'
+  readonly block: BaseBlockComponent
 }
 
 // 完整选区
-interface BlockSelection {
-  from: TextRange | SelectedRange
-  to: TextRange | SelectedRange | null
-  collapsed: boolean
-  isAllSelected: boolean
-  commonParent: string
-  raw: Range
+class BlockSelection {
+  readonly anchor: ISelectionPoint    // 用户操作起点
+  readonly head: ISelectionPoint      // 用户操作终点（focus）
+  readonly commonParent: string
+
+  // 有序端点（按文档顺序）
+  get start: ISelectionPoint          // 文档顺序靠前
+  get end: ISelectionPoint            // 文档顺序靠后
+  get direction: 'forward' | 'backward'
+
+  // 状态查询
+  get collapsed: boolean
+  get isInSameBlock: boolean
+  get isAllSelected: boolean
+  get isStartOfBlock: boolean
+  get isEndOfBlock: boolean
+  get firstBlock / lastBlock: BaseBlockComponent
 }
 ```
 
-### 6.2 关键方法
+### 6.2 两条数据路径
+
+```
+Path A: 用户操作 (DOM → Model)
+  document selectionchange → recalculate()
+    → normalizeRange(range) → {start, end} (文档顺序)
+    → isSelectionBackward(selection) → 确定 anchor/head 方向
+    → new BlockSelection(anchor, head, commonParent)
+    → _applyState() → selectionChange$.next()
+
+Path B: 程序操作 (Model → DOM)
+  setCursorAt / setSelection / selectBlock / ...
+    → 构建 DOM Range → addRange / setPosition
+    → selectionchange 事件 → recalculate()
+```
+
+### 6.3 关键方法
 
 ```typescript
-setSelection(from, to?)           // 设置选区
+// 程序化选区设置
+setSelection(from, to?)           // 从序列化点设置选区
 setCursorAt(block, index)         // 设置光标
 selectBlock(block)                // 选中整个块
-normalizeRange(range)             // 标准化 DOM Range 为 BlockSelection
-recalculate()                     // 重新计算当前选区
+selectAllChildren(block)          // 选中块内所有内容
+extendTo(block, index)            // 从当前 anchor 扩展到新位置
+replay(json)                      // 从 ISelectionJSON 恢复（undo/redo）
+
+// 读取与查询
+recalculate()                     // 从 DOM 重新计算选区
+normalizeRange(range)             // DOM Range → model 端点
+getSelectionRect()                // 选区外接矩形
+getSelectedText()                 // 选中文本
 scrollSelectionIntoView()         // 滚动到选区可见
 ```
 
@@ -1090,10 +1126,63 @@ class DocUndoManger {
   isCanUndo(): boolean
   isCanRedo(): boolean
   clearHistory(): void
+  captureSelectionBeforeChange(): void  // 预捕获选区（mutation 前调用）
 }
 ```
 
-**选区追踪：** 每次可撤销操作前捕获选区状态，撤销/重做后恢复。
+### 10.1 选区快照机制
+
+Undo 需要在撤销后恢复操作前的选区。使用 Yjs `RelativePosition` 追踪光标位置，确保协同编辑时位置依然正确。
+
+**快照结构：**
+```typescript
+type IRelativeSelectionSnapshot = {
+  from: IRelativeSelectionPoint   // start 端点 (RelativePosition + length)
+  to: IRelativeSelectionPoint | null  // end 端点（跨块时）
+}
+```
+
+**流程：**
+```
+编辑操作 → Yjs transaction → stack-item-added 事件
+                                     │
+                  ┌──────────────────┤
+                  │                  │
+          _pendingSnapshot?    _captureSelectionSnapshot()
+          （预捕获优先）         （回退方案，此时 yText 已变化）
+                  │                  │
+                  └──────┬───────────┘
+                         ↓
+              undoSelectionStack.push(snapshot)
+
+撤销 → yUndoManager.undo() → _replaySelectionAfterUndoRedo()
+         → resolveSelectionSnapshot(snapshot) → replay(json)
+```
+
+### 10.2 预捕获时序问题
+
+**核心问题**：`stack-item-added` 事件在 Yjs transaction 结束后触发，此时 `yText` 已被修改。`Y.createRelativePositionFromTypeIndex` 基于修改后的 yText 创建，导致 undo 后解析到错误的位置。
+
+**解决方案 — `captureSelectionBeforeChange()`**：
+
+在任何修改 yText 的操作**之前**调用，将当前选区快照存入 `_pendingSnapshot`。`stack-item-added` 优先使用 `_pendingSnapshot`。
+
+```
+正确时序:
+  captureSelectionBeforeChange()    ← yText 未变化，RelativePosition 正确
+  replaceText / deleteText / ...    ← yText 变化
+  stack-item-added                  ← 使用 _pendingSnapshot
+
+错误时序 (未预捕获):
+  replaceText / deleteText / ...    ← yText 变化
+  stack-item-added                  ← _captureSelectionSnapshot() 基于变化后的 yText，位置偏移
+```
+
+**调用点：**
+- `InputTransformer._replaceText()` — 所有文本替换（同块/跨块）
+- `InputTransformer._deleteAllSelected()` — 全选删除
+- `InputTransformer._handleBeforeInput()` — 同段落选中输入替换
+- 任何需要删除块的操作前
 
 **Origin 系统：**
 - `ORIGIN_SKIP_SYNC`: 跳过 Y.Event 同步到模型
@@ -1138,4 +1227,6 @@ UndoManager (撤销栈更新)
 | `IntersectionObserver` | Mermaid 懒渲染 |
 | `ResizeObserver` | 表格行高追踪 |
 | 增量 Blot patch | `ScrollBlot.applyDelta()` 增量修补 + 一致性校验回退 |
+| ScrollBlot 缓存 | leaves/prefix-sum 惰性缓存 + `findByOffset` 二分查找 O(log n) |
+| 一致性校验快速路径 | `_verifyBlotConsistency` 先 O(1) 长度对比，不匹配才做全文本比较 |
 | Delta 缓存 + 前后缀收缩 | 代码高亮差分更新 |
