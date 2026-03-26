@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component } from "@angular/core";
-import { DeltaOperation, EditableBlockComponent } from "../../framework";
+import { DeltaOperation, EditableBlockComponent, ORIGIN_SKIP_SYNC } from "../../framework";
 import { MermaidTextareaBlockModel } from "./index";
 import { CodeInlineRuntime } from "../code-block/code-inline-runtime";
 import { debounce, nextTick } from "../../global";
@@ -40,11 +40,13 @@ export class MermaidTextareaBlockComponent extends EditableBlockComponent<Mermai
   override ngAfterViewInit(): void {
     super.ngAfterViewInit();
     this.onTextChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
+      if (e.tr.origin === ORIGIN_SKIP_SYNC) return
       this._debounce_highlight(e.op)
     })
   }
 
   private _debounce_highlight = debounce((op: DeltaOperation[]) => {
+    if (this.doc.event.status.isComposing) return
     nextTick().then(() => {
       this._codeRuntime.diffHighLight(op, {
         block: this,
@@ -56,6 +58,8 @@ export class MermaidTextareaBlockComponent extends EditableBlockComponent<Mermai
 
   override rerender() {
     super.rerender()
-    this._codeRuntime.renderCode(() => this.textContent())
+    queueMicrotask(() => {
+      this._codeRuntime.renderCode(() => this.textContent())
+    })
   }
 }

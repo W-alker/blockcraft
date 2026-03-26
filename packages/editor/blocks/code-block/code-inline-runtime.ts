@@ -226,8 +226,11 @@ export class CodeInlineRuntime extends InlineRuntime {
   async renderCode(getText?: () => string) {
     try {
       const text = getText?.() ?? this._getPlainText()
+      const deltas = await this._tokenize(text)
 
-      // Capture cursor position before async tokenization
+      // Capture cursor AFTER async tokenization, right before rebuild.
+      // This ensures we capture the position set by any intervening operations
+      // (e.g. undo replay that runs during the await).
       const sel = document.getSelection()
       const isHere = !!(sel?.rangeCount && this.container.contains(sel.focusNode))
       let cursorPos = 0
@@ -237,7 +240,6 @@ export class CodeInlineRuntime extends InlineRuntime {
         } catch { /* cursor capture failed, will skip restore */ }
       }
 
-      const deltas = await this._tokenize(text)
       this.scrollBlot.build(deltas)
       const lines = groupTokenLines(deltas)
       this._lineFPs = lines.map(l => l.fp)
