@@ -6,7 +6,6 @@
   }
 
   div.image-block {
-    padding: 8px;
 
     &.selected {
       background: unset;
@@ -48,6 +47,7 @@
     .img-wrapper {
       //display: inline-block;
       position: relative;
+      width: fit-content;
     }
 
     img {

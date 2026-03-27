@@ -7,12 +7,29 @@ import {
 } from "../../framework";
 import {UIEventStateContext} from "../../framework";
 import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
-import {ImageToolbar} from "./widgets/image.toolbar";
+import {IImageToolbarItem, ImageToolbar} from "./widgets/image.toolbar";
 import {downloadFile, nextTick} from "../../global";
 import {OverlayRef} from "@angular/cdk/overlay";
+import {BcFloatToolbarItemComponent} from "../../components";
+
+export interface ImgToolbarPluginOptions {
+  /**
+   * 追加到工具栏的自定义按钮
+   */
+  extraItems?: IImageToolbarItem[]
+
+  /**
+   * 自定义按钮点击回调。返回 true 表示已处理。
+   */
+  onExtraItemClick?: (itemName: string, block: BlockCraft.IBlockComponents['image'], doc: BlockCraft.Doc) => boolean
+}
 
 export class ImgToolbarPlugin extends DocPlugin {
   override name = 'img-toolbar';
+
+  constructor(private options?: ImgToolbarPluginOptions) {
+    super();
+  }
 
   private _sub?: Subscription
   private _toolbarRef?: OverlayRef
@@ -95,6 +112,10 @@ export class ImgToolbarPlugin extends DocPlugin {
         this._toolbarRef = overlayRef
         componentRef.setInput('imgBlock', selection.firstBlock)
 
+        if (this.options?.extraItems?.length) {
+          componentRef.setInput('extraItems', this.options.extraItems)
+        }
+
         fromEvent<MouseEvent>(imgEle, 'mousedown').pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
           this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({el: imgEle})
         })
@@ -133,6 +154,9 @@ export class ImgToolbarPlugin extends DocPlugin {
               this.doc.clipboard.copyText(selection.firstBlock.props.src).then(() => {
                 this.doc.messageService.success('图片链接已复制到剪贴板')
               })
+              break
+            default:
+              this.options?.onExtraItemClick?.(v.name, imgBlock as BlockCraft.IBlockComponents['image'], this.doc)
               break
           }
         })

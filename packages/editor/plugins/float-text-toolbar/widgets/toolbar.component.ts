@@ -221,12 +221,16 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
                              [style.color]="activeColors['color']"
                              [style.background-color]="activeColors['backColor']"/>
 
-      <!--      @if (config.withComment && isLinkAble && !activeAttrs.has('comment')) {-->
-      <!--        <span class="bc-float-toolbar__divider"></span>-->
-      <!--        <bc-float-toolbar-item name="comment" [value]="activeAttrs.get('comment')"-->
-      <!--                               icon="bc_pinglun" title="评论" [active]="activeAttrs.has('comment')">-->
-      <!--        </bc-float-toolbar-item>-->
-      <!--      }-->
+      @if (extraItems.length) {
+        <span class="bc-float-toolbar__divider"></span>
+        @for (item of extraItems; track item.name) {
+          <bc-float-toolbar-item [name]="item.name" [value]="item.value"
+                                 [icon]="item.icon" [title]="item.intro"
+                                 [active]="item.active"
+                                 [nz-tooltip]="item.tip">
+          </bc-float-toolbar-item>
+        }
+      }
 
     </bc-float-toolbar>
 
@@ -373,6 +377,12 @@ export class FloatTextToolbarComponent {
   listList: IToolbarMenuItem[] = LIST_LIST
   bgGraphList = BG_GRAPH_LIST
 
+  @Input()
+  extraItems: IToolbarMenuItem[] = []
+
+  @Output()
+  onExtraItemClick = new EventEmitter<BcFloatToolbarItemComponent>()
+
   @Input({required: true})
   activeAttrs = new Map<string, any>()
 
@@ -413,6 +423,12 @@ export class FloatTextToolbarComponent {
   }
 
   onItemClicked(evt: BcFloatToolbarItemComponent) {
+    // 先检查是否是扩展按钮
+    if (this.extraItems.some(i => i.name === evt.name)) {
+      this.onExtraItemClick.emit(evt)
+      return
+    }
+
     switch (evt.name) {
       case 'heading':
         this.setProps({heading: evt.value as any})

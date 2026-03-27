@@ -9,8 +9,20 @@ import {UIEventStateContext, IBlockSnapshot} from "../../framework";
 import {BlockCraftError, downloadFile, ErrorCode, nextTick} from "../../global";
 import {merge, Subject, Subscription, takeUntil} from "rxjs";
 import {OverlayRef} from "@angular/cdk/overlay";
-import {AttachmentBlockToolbar} from "./widgets/attachment-toolbar";
+import {AttachmentBlockToolbar, IAttachmentToolbarItem} from "./widgets/attachment-toolbar";
 import {RenameInputPad} from "./widgets/rename-input-pad";
+
+export interface AttachmentExtensionOptions {
+  /**
+   * 追加到工具栏的自定义按钮
+   */
+  extraItems?: IAttachmentToolbarItem[]
+
+  /**
+   * 自定义按钮点击回调。返回 true 表示已处理。
+   */
+  onExtraItemClick?: (itemName: string, block: BlockCraft.IBlockComponents['attachment'], doc: BlockCraft.Doc) => boolean
+}
 
 export class AttachmentExtensionPlugin extends DocPlugin {
   override name = "attachment-extension";
@@ -24,6 +36,10 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   private _closeToolbar$ = new Subject<void>()
 
   private _activeBlock: BlockCraft.IBlockComponents['attachment'] | null = null
+
+  constructor(private options?: AttachmentExtensionOptions) {
+    super();
+  }
 
   @EventListen('mouseDown', {flavour: 'attachment'})
   onClick(state: UIEventStateContext) {
@@ -70,6 +86,10 @@ export class AttachmentExtensionPlugin extends DocPlugin {
 
         componentRef.setInput('doc', this.doc)
 
+        if (this.options?.extraItems?.length) {
+          componentRef.setInput('extraItems', this.options.extraItems)
+        }
+
         attachmentBlock.onDestroy$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
           this._closeToolbar$.next()
         })
@@ -92,6 +112,9 @@ export class AttachmentExtensionPlugin extends DocPlugin {
               break
             case 'delete':
               this.doc.crud.deleteBlockById(attachmentBlock.id)
+              break
+            default:
+              this.options?.onExtraItemClick?.(v.name, attachmentBlock as BlockCraft.IBlockComponents['attachment'], this.doc)
               break
           }
         })

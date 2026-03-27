@@ -1,134 +1,176 @@
-import {Component, EventEmitter, Input, Output} from "@angular/core";
+import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  EventEmitter,
+  Input,
+  NgZone,
+  OnDestroy,
+  Output
+} from "@angular/core";
 import {fromEvent, Subscription, take, throttleTime} from "rxjs";
 
 @Component({
   selector: 'block-resizer',
   template: `
-    <div class="block-resizer__handle block-resizer__handle__point block-resizer__handle--tl"
+    <div class="block-resizer__bar block-resizer__bar--left"
          (click)="$event.stopPropagation()" contenteditable="false"
-         (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
-    <div class="block-resizer__handle block-resizer__handle__point block-resizer__handle--tr"
+         (mousedown)="onHandleMouseDown($event, 'left')">
+      <div class="block-resizer__bar-inner"></div>
+    </div>
+    <div class="block-resizer__bar block-resizer__bar--right"
          (click)="$event.stopPropagation()" contenteditable="false"
-         (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
-    <div class="block-resizer__handle block-resizer__handle__point block-resizer__handle--bl"
-         (click)="$event.stopPropagation()" contenteditable="false"
-         (mousedown)="onResizeHandleMouseDown($event, 'left')"></div>
-    <div class="block-resizer__handle block-resizer__handle__point block-resizer__handle--br"
-         (click)="$event.stopPropagation()" contenteditable="false"
-         (mousedown)="onResizeHandleMouseDown($event, 'right')"></div>
+         (mousedown)="onHandleMouseDown($event, 'right')">
+      <div class="block-resizer__bar-inner"></div>
+    </div>
   `,
   styles: [`
     :host {
       display: block;
       position: absolute;
-      width: 100%;
-      height: 100%;
-      top: 0;
-      left: 0;
-
-      .block-resizer__handle__point {
-        width: 10px;
-        height: 10px;
-        background-color: #fff;
-        border: 1px solid var(--bc-active-color);
-        border-radius: 50%;
-      }
-
-      .block-resizer__handle {
-        position: absolute;
-        /*display: none;*/
-      }
-
-      .block-resizer__handle--tl {
-        top: -7px;
-        left: -7px;
-        cursor: nwse-resize;
-      }
-
-      .block-resizer__handle--tr {
-        top: -7px;
-        right: -7px;
-        cursor: nesw-resize;
-      }
-
-      .block-resizer__handle--bl {
-        bottom: -7px;
-        left: -7px;
-        cursor: nesw-resize;
-      }
-
-      .block-resizer__handle--br {
-        bottom: -7px;
-        right: -7px;
-        cursor: nwse-resize;
-      }
-
-      .block-resizer__handle--left, .block-resizer__handle--right {
-        top: 0;
-        width: 4px;
-        height: 100%;
-        cursor: w-resize;
-      }
-
-      .block-resizer__handle--left {
-        left: -2px;
-      }
-
-      .block-resizer__handle--right {
-        right: -2px;
-      }
+      inset: 0;
+      pointer-events: none;
     }
 
+    .block-resizer__bar {
+      position: absolute;
+      top: 0;
+      width: 20px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: auto;
+      cursor: col-resize;
+      z-index: 10;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    :host(.visible) > .block-resizer__bar {
+      opacity: 1;
+    }
+
+    .block-resizer__bar--left {
+      left: -10px;
+    }
+
+    .block-resizer__bar--right {
+      right: -10px;
+    }
+
+    .block-resizer__bar-inner {
+      width: 6px;
+      height: 48px;
+      max-height: 60%;
+      min-height: 24px;
+      border-radius: 3px;
+      background: var(--bc-active-color, #4857E2);
+      opacity: 0.75;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+      transition: opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .block-resizer__bar:hover .block-resizer__bar-inner {
+      opacity: 1;
+      transform: scaleY(1.15);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .block-resizer__bar:active .block-resizer__bar-inner {
+      opacity: 1;
+      transform: scaleY(1.15);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
   `],
-  standalone: true
+  standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class ResizeContainerComponent {
+export class ResizeContainerComponent implements AfterViewInit, OnDestroy {
   @Input({required: true})
   container!: HTMLElement
 
+  @Input()
+  maxWidthContainer?: HTMLElement
+
+  @Input()
+  minWidth = 30
 
   @Output()
-  sizeChange = new EventEmitter<{ width: number, height: number }>()
+  widthChange = new EventEmitter<number>()
 
-  private startPoint?: { x: number, y: number, direction: 'left' | 'right' }
-  private mouseMove$?: Subscription
-  private _showSize = {width: 0, height: 0}
+  @Output()
+  resizeStart = new EventEmitter<void>()
+
+  @Output()
+  resizeEnd = new EventEmitter<void>()
+
+  private _startPoint?: { x: number; side: string }
+  private _mouseMove$?: Subscription
+  private _hoverEnter?: () => void
+  private _hoverLeave?: () => void
+
+  constructor(private ngZone: NgZone, private elRef: ElementRef<HTMLElement>) {}
 
   ngAfterViewInit() {
-    const rect = this.container.getBoundingClientRect()
-    this._showSize = {width: rect.width, height: rect.height}
+    const host = this.elRef.nativeElement;
+    const parent = this.container?.parentElement ?? this.container;
+
+    this._hoverEnter = () => host.classList.add('visible');
+    this._hoverLeave = () => {
+      if (!this._startPoint) host.classList.remove('visible');
+    };
+
+    parent.addEventListener('mouseenter', this._hoverEnter);
+    parent.addEventListener('mouseleave', this._hoverLeave);
   }
 
-  onResizeHandleMouseDown(event: MouseEvent, direction: 'left' | 'right') {
-    event.stopPropagation()
-    event.preventDefault()
+  ngOnDestroy() {
+    this._mouseMove$?.unsubscribe();
+    const parent = this.container?.parentElement ?? this.container;
+    if (this._hoverEnter) parent.removeEventListener('mouseenter', this._hoverEnter);
+    if (this._hoverLeave) parent.removeEventListener('mouseleave', this._hoverLeave);
+  }
 
-    this.mouseMove$?.unsubscribe()
-    this.startPoint = {x: event.clientX, y: event.clientY, direction}
+  onHandleMouseDown(event: MouseEvent, side: 'left' | 'right') {
+    event.preventDefault();
+    event.stopPropagation();
 
-    this.mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove')
-      .pipe(throttleTime(60))
-      .subscribe((e) => {
-        const movePx = e.clientX - this.startPoint!.x
-        if (this.startPoint!.direction === 'left') {
-          this._showSize.width -= movePx
-          this._showSize.height -= movePx
-        } else {
-          this._showSize.width += movePx
-          this._showSize.height += movePx
-        }
-        this.startPoint!.x = e.clientX
+    let width = this.container.clientWidth;
+    const maxWidthEl = this.maxWidthContainer ?? this.container.parentElement;
+    const maxWidth = maxWidthEl ? maxWidthEl.clientWidth : Infinity;
 
-        this.container.style.width = `${this._showSize.width}px`
-        this.container.style.height = `${this._showSize.height}px`
-      })
+    this.resizeStart.emit();
 
-    fromEvent<MouseEvent>(document, 'mouseup').pipe(take(1)).subscribe((e) => {
-      this.startPoint = undefined
-      this.mouseMove$?.unsubscribe()
-      const rect = this.container.getBoundingClientRect()
-      this._showSize = {width: rect.width, height: rect.height}
-      this.sizeChange.emit(this._showSize)
-    })
+    this.ngZone.runOutsideAngular(() => {
+      this._mouseMove$?.unsubscribe();
+      this._startPoint = {x: event.clientX, side};
+
+      this._mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove', {capture: true})
+        .pipe(throttleTime(16))
+        .subscribe((e) => {
+          const deltaX = e.clientX - this._startPoint!.x;
+          this._startPoint!.x = e.clientX;
+
+          width += this._startPoint!.side === 'left' ? -deltaX : deltaX;
+
+          if (width > maxWidth || width < this.minWidth) return;
+
+          this.container.style.width = `${width}px`;
+        });
+
+      fromEvent<MouseEvent>(document, 'mouseup', {capture: true})
+        .pipe(take(1))
+        .subscribe(() => {
+          this._startPoint = undefined;
+          this._mouseMove$?.unsubscribe();
+          this.elRef.nativeElement.classList.remove('visible');
+          this.ngZone.run(() => {
+            this.widthChange.emit(Math.round(width));
+            this.resizeEnd.emit();
+          });
+        });
+    });
   }
 }

@@ -1,38 +1,66 @@
-import {DocAttachmentInfo, DocFileService} from "../../framework";
+import {DocAttachmentInfo, DocFileService, UploadProgressCallback} from "../../framework";
 import {Injectable} from "@angular/core";
 import Viewer from "viewerjs";
 
+const LOCAL_URL_PREFIX = '__blockcraft_local__:'
+
 @Injectable()
 export class MyDocFileService extends DocFileService {
+  private _objectURLMap = new Map<string, { file: File; nativeURL: string }>()
 
-  uploadImg(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.readAsDataURL(file)
-      reader.addEventListener('loadend', (v) => {
-        resolve(v.target!.result as string)
-      })
-    })
+  private _maxSize = 60 * 1024 * 1024 // 60MB
+
+  uploadImg(file: File, onProgress?: UploadProgressCallback): Promise<string> {
+    return this._simulateUpload(onProgress, () => this._createNativeObjectURL(file))
   }
 
-  uploadAttachment(file: File): Promise<DocAttachmentInfo> {
-    return new Promise((resolve, reject) => {
-      // 最大500kb
-      if (file.size > 1024 * 500) {
-        reject('文件过大')
-      }
+  uploadVideo(file: File, onProgress?: UploadProgressCallback): Promise<DocAttachmentInfo> {
+    return this._simulateUpload(onProgress, () => ({
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      url: this._createNativeObjectURL(file),
+    }))
+  }
 
-      const reader = new FileReader()
-      reader.readAsDataURL(file)
-      reader.addEventListener('loadend', (v) => {
-        resolve({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          url: v.target!.result as string,
-        })
-      })
-    })
+  uploadAttachment(file: File, onProgress?: UploadProgressCallback): Promise<DocAttachmentInfo> {
+    return this._simulateUpload(onProgress, () => ({
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      url: this._createNativeObjectURL(file),
+    }))
+  }
+
+  createObjectURL(file: File): string {
+    const nativeURL = URL.createObjectURL(file)
+    const key = LOCAL_URL_PREFIX + nativeURL
+    this._objectURLMap.set(key, { file, nativeURL })
+    return key
+  }
+
+  getFileByObjectURL(url: string): File | undefined {
+    return this._objectURLMap.get(url)?.file
+  }
+
+  getFilePreviewURLByObjectURL(url: string): string {
+    return this._objectURLMap.get(url)?.nativeURL ?? url.replace(LOCAL_URL_PREFIX, '')
+  }
+
+  removeObjectURL(url: string): void {
+    const entry = this._objectURLMap.get(url)
+    if (entry) {
+      URL.revokeObjectURL(entry.nativeURL)
+      this._objectURLMap.delete(url)
+    }
+  }
+
+  isLocalObjectURL(url: string): boolean {
+    return url.startsWith(LOCAL_URL_PREFIX)
+  }
+
+  isOverMaxSize(size: number): boolean {
+    return size > this._maxSize
   }
 
   previewAttachment() {
@@ -73,5 +101,32 @@ export class MyDocFileService extends DocFileService {
         ...options
       })
     }
+  }
+
+  private _simulateUpload<T>(onProgress: UploadProgressCallback | undefined, fn: () => T, ms = 2000): Promise<T> {
+    return new Promise(resolve => {
+      if (!onProgress) {
+        setTimeout(() => resolve(fn()), ms)
+        return
+      }
+
+      const steps = 20
+      const interval = ms / steps
+      let step = 0
+
+      const timer = setInterval(() => {
+        step++
+        onProgress(Math.min(Math.round((step / steps) * 100), 99))
+        if (step >= steps) {
+          clearInterval(timer)
+          onProgress(100)
+          resolve(fn())
+        }
+      }, interval)
+    })
+  }
+
+  private _createNativeObjectURL(file: File): string {
+    return URL.createObjectURL(file)
   }
 }

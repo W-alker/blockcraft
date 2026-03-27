@@ -29,7 +29,9 @@ import {
   TableBlockSchema,
   TableCellBlockSchema,
   TableRowBlockSchema,
-  TodoBlockSchema
+  TodoBlockSchema,
+  VideoBlockSchema,
+  AudioBlockSchema
 } from "../blocks";
 import {ConsoleLogger} from "../global";
 import {BulletBlockSchema} from "../blocks/bullet-block";
@@ -93,7 +95,8 @@ const schemas = new SchemaManager([
   CaptionBlockSchema, RootBlockSchema,
   MermaidTextareaBlockSchema, MermaidBlockSchema, BlockquoteBlockSchema,
   ColumnsBlockSchema, ColumnBlockSchema,
-  FormulaBlockSchema
+  FormulaBlockSchema,
+  VideoBlockSchema, AudioBlockSchema
 ])
 
 export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
