@@ -43,6 +43,8 @@ export class PresentationController {
   private drawingTools: Map<DrawingToolType, DrawingTool> = new Map();
   private isDrawingMode = false;
   private isImgPreviewMode = false;
+  private needReenterFullscreen = false;
+  private currentPreview: SimpleImagePreview | null = null;
 
   private _demoDoc: BlockCraft.Doc | null = null;
 
@@ -161,10 +163,19 @@ export class PresentationController {
     return false;
   }
 
+  private tryReenterFullscreen() {
+    if (this.needReenterFullscreen && !document.fullscreenElement) {
+      this.needReenterFullscreen = false;
+      this.enterFullscreen();
+    }
+  }
+
   private enterFullscreen() {
-    // 使用浏览器原生全屏 API
     if (this.presentationContainer && this.presentationContainer.requestFullscreen) {
-      this.presentationContainer.requestFullscreen().catch(err => {
+      this.presentationContainer.requestFullscreen().then(() => {
+        // 锁定 Escape 键，防止浏览器在图片预览时自动退出全屏
+        (navigator as any).keyboard?.lock?.(['Escape'])?.catch?.(() => {});
+      }).catch(err => {
         console.warn('Failed to enter fullscreen:', err);
       });
     }
@@ -227,6 +238,11 @@ export class PresentationController {
         }
       }
 
+      // 非 Escape 键时尝试恢复全屏（Safari 降级：预览关闭后借用户交互重新进入全屏）
+      if (e.key !== 'Escape') {
+        this.tryReenterFullscreen();
+      }
+
       switch (e.key) {
         case 'ArrowDown':
         case 'ArrowRight':
@@ -265,6 +281,7 @@ export class PresentationController {
     const clickHandler = (e: MouseEvent) => {
       // 绘图模式下不触发点击翻页
       if (this.isDrawingMode) return;
+      this.tryReenterFullscreen();
 
       const target = e.target as HTMLElement;
       if (target === this.presentationContainer) {
@@ -289,6 +306,15 @@ export class PresentationController {
         this.showSimpleImagePreview(img as HTMLElement)
         return;
       }
+
+      const mermaidGraph = target.closest('.graph-con');
+      if (mermaidGraph) {
+        const svg = mermaidGraph.querySelector('svg');
+        if (svg) {
+          this.showMermaidPreview(mermaidGraph as HTMLElement);
+          return;
+        }
+      }
     };
 
     if (this.presentationContainer) {
@@ -298,11 +324,31 @@ export class PresentationController {
       });
     }
 
+    // 拦截 mermaid 图表的 mousedown，阻止 block 自身的 viewerjs 预览
+    if (this.presentationContainer) {
+      const mermaidMousedownInterceptor = (e: MouseEvent) => {
+        if (this.isDrawingMode) return;
+        const target = e.target as HTMLElement;
+        if (target.closest('.graph-con')?.querySelector('svg')) {
+          e.stopPropagation();
+        }
+      };
+      this.presentationContainer.addEventListener('mousedown', mermaidMousedownInterceptor, true);
+      this.eventCleanups.push(() => {
+        this.presentationContainer?.removeEventListener('mousedown', mermaidMousedownInterceptor, true);
+      });
+    }
+
     // 监听全屏退出
     const fullscreenChangeHandler = () => {
       if (!document.fullscreenElement) {
-        // 用户按 ESC 退出了全屏
-        this.destroy();
+        if (this.isImgPreviewMode) {
+          // Safari 中 ESC 不会触发 keydown，需在此主动关闭预览
+          this.currentPreview?.hide();
+          this.needReenterFullscreen = true;
+        } else {
+          this.destroy();
+        }
       }
     };
 
@@ -528,11 +574,11 @@ export class PresentationController {
     if (!img?.src) return;
     this.isImgPreviewMode = true;
 
-    new SimpleImagePreview({
+    this.currentPreview = new SimpleImagePreview({
       src: img.src,
       container: this.presentationContainer || document.body,
       onClose: () => {
-        // 预览关闭后的清理工作
+        this.currentPreview = null;
         setTimeout(() => {
           this.isImgPreviewMode = false;
         }, 100)
@@ -540,11 +586,71 @@ export class PresentationController {
       onError: (error) => {
         console.error('Image preview error:', error);
       }
-    }).show();
+    });
+    this.currentPreview.show();
+  }
+
+  private showMermaidPreview(graphCon: HTMLElement) {
+    const svg = graphCon.querySelector('svg');
+    if (!svg || !(svg instanceof SVGElement)) return;
+
+    this.isImgPreviewMode = true;
+
+    // 克隆 SVG 并修正尺寸，使其脱离原容器后仍能正确显示
+    const previewSvg = svg.cloneNode(true) as SVGElement;
+    if (previewSvg instanceof SVGSVGElement) {
+      previewSvg.style.removeProperty('max-width');
+      previewSvg.style.removeProperty('width');
+      previewSvg.style.removeProperty('height');
+
+      let width = 0;
+      let height = 0;
+      const viewBoxAttr = previewSvg.getAttribute('viewBox');
+      if (viewBoxAttr) {
+        const viewBox = viewBoxAttr.split(/[\s,]+/).map(Number);
+        if (viewBox.length === 4 && viewBox.every(Number.isFinite) && viewBox[2] > 0 && viewBox[3] > 0) {
+          width = viewBox[2];
+          height = viewBox[3];
+        }
+      }
+      if (!width || !height) {
+        const rect = svg.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          width = rect.width;
+          height = rect.height;
+        }
+      }
+      if (width > 0 && height > 0) {
+        previewSvg.setAttribute('width', `${width}`);
+        previewSvg.setAttribute('height', `${height}`);
+      }
+    }
+
+    const svgString = new XMLSerializer().serializeToString(previewSvg);
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+
+    this.currentPreview = new SimpleImagePreview({
+      src: url,
+      container: this.presentationContainer || document.body,
+      onClose: () => {
+        this.currentPreview = null;
+        URL.revokeObjectURL(url);
+        setTimeout(() => {
+          this.isImgPreviewMode = false;
+        }, 100);
+      },
+      onError: (error) => {
+        URL.revokeObjectURL(url);
+        console.error('Mermaid preview error:', error);
+      }
+    });
+    this.currentPreview.show();
   }
 
   destroy() {
-    // 退出全屏
+    (navigator as any).keyboard?.unlock?.();
+
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(err => {
         console.warn('Failed to exit fullscreen:', err);
