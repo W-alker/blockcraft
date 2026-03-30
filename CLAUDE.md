@@ -139,3 +139,67 @@ packages/editor/ai-skills/
 ├── blockcraft-event.md     # L2: Event 事件系统
 └── blockcraft-data.md      # L2: Yjs 数据模型
 ```
+
+# BlockCraft 项目特定规则
+
+> 通用规则（多方案评估、一致性、DDD、浏览器兼容）已提取至全局 `~/.claude/rules/`，所有项目共享。
+> 以下是 BlockCraft 编辑器的**项目特定**补充规则。
+> 详细的代码模板和决策树参见 `.claude/agents/blockcraft-engineer.md`。
+
+## 性能检查清单（BlockCraft 特定）
+
+- [ ] Angular 组件使用 `ChangeDetectionStrategy.OnPush`
+- [ ] 高频事件（mousemove, scroll, selectionchange）使用 `throttle` / `debounce`
+- [ ] 大数据操作在 `ngZone.runOutsideAngular()` 中执行
+- [ ] Yjs observe 回调中避免触发 Angular 变更检测
+- [ ] Overlay/Toolbar 使用 CDK Overlay，不污染文档 DOM 结构
+- [ ] `destroy()` 中清理所有订阅、定时器、事件监听
+- [ ] 不在渲染路径中执行同步 DOM 查询（如 `getBoundingClientRect`、`offsetHeight`）
+
+## 浏览器兼容性补充（BlockCraft 特定）
+
+> 通用浏览器规则见全局 `~/.claude/rules/typescript/browser-compat.md`。以下是富文本编辑器的额外要求。
+
+- `contenteditable` 行为在不同浏览器中差异巨大。所有内容突变必须走 `InputTransformer` 拦截 + Yjs 写入，**禁止**依赖浏览器原生 contenteditable 行为
+- IME 相关代码必须使用框架的 `CompositionSession` 状态机（参见 `blockcraft-input.md`），不要自行处理 composition 事件
+- `@BindHotKey` 中的 `shortKey` 自动映射 macOS Cmd / Windows Ctrl，**禁止**在 Plugin 中硬编码 `metaKey` 或 `ctrlKey`
+
+## 数据一致性（BlockCraft 特定）
+
+- 所有 Block 数据突变**必须**通过 Yjs transaction（`DocCRUD` / `DocChain`），**禁止**直接修改 props 或 DOM
+- Inline 内容的单一数据源是 `Y.Text`。DOM 状态必须与 `Y.Text.toDelta()` 一致，不一致时以 Y.Text 为准重渲染
+- Undo/Redo 必须完整恢复选区状态（`DocUndoManager` 的 selection snapshot）
+- 本地操作和远程协同操作经过相同渲染路径，**禁止**为本地操作绕过 Yjs
+- 使用 `Y.RelativePosition` 处理协同位置引用，**禁止**绝对 index
+- Block ID 使用 `generateId()` 生成，**禁止**手动拼接
+
+## 接口一致性（BlockCraft 特定）
+
+- Block 组件：`standalone: true`、`OnPush`、selector 格式 `tag.flavour-block`
+- Plugin 生命周期：`init()` / `destroy()` 严格对称
+- 事件处理器：返回 `true` = 已消费停止冒泡，`void`/`false` = 继续冒泡
+- `updateProps()` 生成 undo 历史，`setInitProps()` 不生成
+- Plugin **禁止**直接访问 `Y.Text` / `Y.Map`，通过 `BlockComponent` 公开方法和 `DocChain` 操作
+- 主题变量（CSS custom properties）是统一外观的唯一手段，**禁止**硬编码颜色/字号
+
+## DDD 领域边界（BlockCraft 特定）
+
+> 通用 DDD 原则见全局 `~/.claude/rules/common/patterns.md`。以下是本项目具体的领域划分。
+
+| 领域 | 职责 | 目录 | 核心实体 |
+|------|------|------|----------|
+| **Document** | 文档生命周期、块树、CRUD | `framework/doc/` | `BlockCraftDoc`, `DocCRUD`, `DocVM` |
+| **Block** | 数据模型、组件基类、Schema | `framework/block-std/block/`, `schema/` | `BaseBlockComponent`, `NativeBlockModel`, `SchemaManager` |
+| **Inline** | 行内富文本、Blot 树、Embed | `framework/block-std/inline/` | `InlineRuntime`, `ScrollBlot`, `EmbedConverter` |
+| **Selection** | 选区模型、光标、范围 | `framework/modules/selection/` | `SelectionManager`, `BlockSelection` |
+| **Input** | 输入拦截、IME、内容突变 | `framework/modules/input/` | `InputTransformer`, `CompositionSession` |
+| **Event** | 事件分发、装饰器、冒泡 | `framework/block-std/event/` | `UIEventDispatcher` |
+| **Clipboard** | 复制粘贴、序列化 | `framework/modules/clipboard/` | `ClipboardManager` |
+| **Adapter** | HTML/Markdown ↔ Snapshot 转换 | `adapters/` | `HtmlAdapter`, `MarkdownAdapter`, `ASTWalker` |
+| **Plugin** | 扩展行为、工具栏、快捷键 | `framework/plugin/`, `plugins/` | `DocPlugin` |
+
+**跨域限制**：
+- Selection 不直接操作 Blot 树 → 通过 `EditableBlockComponent` API
+- Plugin 不直接访问 Yjs → 通过 `BlockComponent` + `DocChain`
+- Block 组件不解析 HTML → 通过 `Adapter` 防腐层
+- Embed 渲染/序列化 → 封装在 `EmbedConverter` 中
