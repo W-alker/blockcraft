@@ -182,6 +182,14 @@ packages/editor/ai-skills/
 - Plugin **禁止**直接访问 `Y.Text` / `Y.Map`，通过 `BlockComponent` 公开方法和 `DocChain` 操作
 - 主题变量（CSS custom properties）是统一外观的唯一手段，**禁止**硬编码颜色/字号
 
+## 图标规范（BlockCraft 特定）
+
+- 所有 icon **必须**使用字体图标（iconfont），图标资源位于 `packages/editor/assets/iconfont/`
+- 使用方式：`<i class="bc_icon bc_图标名"></i>` 或 Schema 中的 `icon: "bc_icon bc_图标名"`
+- 如果现有图标不满足需求，可以向 `packages/editor/assets/iconfont/` 中新增字体图标
+- **唯一例外**：需要多色的图标允许使用 SVG（Schema 中的 `svgIcon` 字段），单色图标一律用字体图标
+- **禁止**使用图片（png/jpg）作为图标，**禁止**内联 base64 图标
+
 ## DDD 领域边界（BlockCraft 特定）
 
 > 通用 DDD 原则见全局 `~/.claude/rules/common/patterns.md`。以下是本项目具体的领域划分。
