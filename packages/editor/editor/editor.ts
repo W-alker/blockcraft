@@ -64,6 +64,7 @@ import {
   OrderedBlockPlugin
 } from "../plugins";
 import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
+import {BlockGapCreatorPlugin} from "../plugins/block-gap-creator";
 import {ColumnBlockSchema} from "../blocks/columns-block";
 import {TranslatePlugin} from "../plugins/translate";
 import {MyDocTranslationService} from "./services/doc-translation.service";
@@ -320,7 +321,8 @@ export class EditorComponent {
         }),
       }), new DividerExtensionPlugin(),
       new FindReplacePlugin(),
-      this.translatePlugin
+      this.translatePlugin,
+      new BlockGapCreatorPlugin()
     ]
   })
 
