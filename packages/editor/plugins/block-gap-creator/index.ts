@@ -5,42 +5,69 @@ import {Subscription} from "rxjs";
 export class BlockGapCreatorPlugin extends DocPlugin {
   override name = 'block-gap-creator'
 
-  private _sub?: Subscription
+  private _subs: Subscription[] = []
+
+  /** mousedown must land on root gap AND movement < threshold to count as a gap click */
+  private _downOnGap = false
+  private _downX = 0
+  private _downY = 0
+
+  private static readonly _MOVE_THRESHOLD = 5
 
   init() {
     const root = this.doc.root
-    this._sub = this.doc.event.customListen(root.hostElement, 'click').subscribe((e) => {
-      const evt = e as MouseEvent
-      if (this.doc.isReadonly) return
-      // Only trigger when click lands on root container itself (the gap area)
-      if (evt.target !== root.hostElement) return
+    const host = root.hostElement
 
-      evt.preventDefault()
+    // Track whether mousedown started on the gap (not inside a block)
+    this._subs.push(
+      this.doc.event.customListen(host, 'mousedown').subscribe((e) => {
+        const evt = e as MouseEvent
+        this._downOnGap = evt.target === host
+        this._downX = evt.clientX
+        this._downY = evt.clientY
+      })
+    )
 
-      const {above, below} = this._findAdjacentBlocks(evt.clientX, evt.clientY)
-      if (!above && !below) return
+    this._subs.push(
+      this.doc.event.customListen(host, 'click').subscribe((e) => {
+        const evt = e as MouseEvent
+        if (this.doc.isReadonly) return
+        // mousedown must have started on the gap itself
+        if (!this._downOnGap) return
+        // click target must also be on the gap
+        if (evt.target !== host) return
+        // reject drag-like movements (cross-block selection, etc.)
+        const dx = evt.clientX - this._downX
+        const dy = evt.clientY - this._downY
+        if (dx * dx + dy * dy > BlockGapCreatorPlugin._MOVE_THRESHOLD * BlockGapCreatorPlugin._MOVE_THRESHOLD) return
 
-      // If the block above the gap is editable, focus at its end
-      if (above && this.doc.isEditable(above)) {
-        this.doc.selection.setCursorAtBlock(above, false)
-        return
-      }
+        evt.preventDefault()
 
-      // If the block below the gap is editable, focus at its beginning
-      if (below && this.doc.isEditable(below)) {
-        this.doc.selection.setCursorAtBlock(below, true)
-        return
-      }
+        const {above, below} = this._findAdjacentBlocks(evt.clientX, evt.clientY)
+        if (!above && !below) return
 
-      // Both non-editable: create an empty paragraph between them
-      const p = this.doc.schemas.createSnapshot('paragraph', [])
-      if (below) {
-        this.doc.crud.insertBlocksBefore(below, [p])
-      } else if (above) {
-        this.doc.crud.insertBlocksAfter(above, [p])
-      }
-      this.doc.selection.setCursorAtBlock(p.id, true)
-    })
+        // If the block above the gap is editable, focus at its end
+        if (above && this.doc.isEditable(above)) {
+          this.doc.selection.setCursorAtBlock(above, false)
+          return
+        }
+
+        // If the block below the gap is editable, focus at its beginning
+        if (below && this.doc.isEditable(below)) {
+          this.doc.selection.setCursorAtBlock(below, true)
+          return
+        }
+
+        // Both non-editable: create an empty paragraph between them
+        const p = this.doc.schemas.createSnapshot('paragraph', [])
+        if (below) {
+          this.doc.crud.insertBlocksBefore(below, [p])
+        } else if (above) {
+          this.doc.crud.insertBlocksAfter(above, [p])
+        }
+        this.doc.selection.setCursorAtBlock(p.id, true)
+      })
+    )
   }
 
   /**
@@ -79,6 +106,6 @@ export class BlockGapCreatorPlugin extends DocPlugin {
   }
 
   destroy() {
-    this._sub?.unsubscribe()
+    this._subs.forEach(s => s.unsubscribe())
   }
 }
