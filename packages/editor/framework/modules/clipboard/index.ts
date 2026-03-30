@@ -1,5 +1,4 @@
 import {
-  BindHotKey,
   BlockNodeType,
   DeltaInsert,
   DeltaOperation,
@@ -17,14 +16,13 @@ import {
   nextTick, SimpleBasicType,
   sliceDelta
 } from "../../../global";
-import {BehaviorSubject} from "rxjs";
+import {Subject} from "rxjs";
 import {
   ClipboardDataType,
   ClipboardPasteApplyResult,
+  ClipboardPasteCompletedEvent,
   ClipboardPasteFormatType,
   ClipboardPasteOption,
-  ClipboardPasteSession,
-  ClipboardPasteSessionView,
 } from "./types";
 import {
   generateId,
@@ -32,7 +30,7 @@ import {
 } from "../../utils";
 import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
 import {copyBlocks} from "./copyBlocks";
-import {cloneSnapshot} from "./paste-utils";
+import {cloneSnapshot, getMarkdownClipboardText, looksLikeMarkdown} from "./paste-utils";
 
 export * from './types'
 
@@ -40,8 +38,8 @@ export * from './types'
 export class ClipboardManager {
   adapter = this.doc.injector.get(DOC_ADAPTER_SERVICE_TOKEN)
 
-  readonly pasteFormatSession$ = new BehaviorSubject<ClipboardPasteSessionView | null>(null)
-  private _pasteSession: ClipboardPasteSession | null = null
+  /** Emits null to clear, or format data after a paste with alternatives. */
+  readonly pasteFormatData$ = new Subject<ClipboardPasteCompletedEvent | null>()
 
   constructor(public readonly doc: BlockCraft.Doc) {
   }
@@ -135,27 +133,22 @@ export class ClipboardManager {
     this.doc.inputManger.deleteByRange(selection, false)
   }
 
-  // ── Paste Format Session ──
-
-  clearPasteFormatSession() {
-    this._pasteSession = null
-    this.pasteFormatSession$.next(null)
-  }
-
   async applyPasteOption(option: ClipboardPasteOption, selection: BlockCraft.Selection): Promise<ClipboardPasteApplyResult | null> {
     if (selection.start.type !== 'text') return null
     const editableBlock = selection.firstBlock as EditableBlockComponent
     const fromIndex = selection.start.offset
-    const fromLength = selection.isInSameBlock && selection.end.type === 'text'
-      ? selection.end.offset - fromIndex
-      : editableBlock.textLength - fromIndex
+
+    // Delete selected content first for range selections (handles both same-block and cross-block)
+    if (!selection.collapsed) {
+      this.deleteContentFromSelection(selection)
+    }
 
     const {payload} = option
     if (payload.kind === 'text') {
       const text = payload.text
       this.doc.crud.transact(() => {
         const textLines = text.replace(/[\n\r]+$/, '').split('\n')
-        editableBlock.replaceText(fromIndex, fromLength, textLines[0])
+        editableBlock.replaceText(fromIndex, 0, textLines[0])
         if (textLines.length > 1) {
           const snapshots = textLines.slice(1).map((line: string) =>
             this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: editableBlock.props.depth}])
@@ -179,46 +172,6 @@ export class ClipboardManager {
     }
 
     return null
-  }
-
-  async reapplyLastPaste(type: ClipboardPasteFormatType) {
-    const session = this._pasteSession
-    if (!session || session.selectedType === type) return
-
-    const option = session.options.find(o => o.type === type)
-    if (!option) return
-
-    this.doc.crud.undoManager.undo()
-    await nextTick()
-
-    const selection = this.doc.selection.value
-    if (!selection) return
-
-    const result = await this.applyPasteOption(option, selection)
-    if (result) {
-      session.selectedType = type
-      session.anchorBlockId = result.anchorBlockId
-      this._emitPasteSessionView()
-    }
-  }
-
-  openPasteFormatSession(anchorBlockId: string, selectedType: ClipboardPasteFormatType, options: ClipboardPasteOption[]) {
-    if (options.length <= 1) return
-    this._pasteSession = {anchorBlockId, selectedType, options}
-    this._emitPasteSessionView()
-  }
-
-  private _emitPasteSessionView() {
-    const session = this._pasteSession
-    if (!session) {
-      this.pasteFormatSession$.next(null)
-      return
-    }
-    this.pasteFormatSession$.next({
-      anchorBlockId: session.anchorBlockId,
-      selectedType: session.selectedType,
-      options: session.options.map(o => ({type: o.type, label: o.label}))
-    })
   }
 
   @EventListen('copy')
@@ -250,7 +203,7 @@ export class ClipboardManager {
   @EventListen('paste')
   async onPaste(context: UIEventStateContext) {
     context.preventDefault()
-    this.clearPasteFormatSession()
+    this.pasteFormatData$.next(null)
     const state = context.get('clipboardState')
     state.dataTypes.forEach(v => {
       console.log(`%c${v}`, 'color: red; font-size: large;', state.clipboardData?.getData(v), state.clipboardData?.files)
@@ -300,15 +253,21 @@ export class ClipboardManager {
 
     console.log('---------------html2snapshot', rootSnapshot)
 
-    // Collect alternative format data before mutations
+    // Collect alternative format data before mutations (plugin uses this for format selector)
     const altPlainText = state.getData(ClipboardDataType.TEXT) || null
     const savedHtmlSnapshot = rootSnapshot ? cloneSnapshot(rootSnapshot) : null
-    const tryOpenFormatSession = (appliedType: ClipboardPasteFormatType) => {
-      if (!altPlainText || !savedHtmlSnapshot) return
-      this.openPasteFormatSession(editableBlock.id, appliedType, [
-        {type: 'html', label: '保留格式', payload: {kind: 'snapshot', snapshot: savedHtmlSnapshot}},
-        {type: 'plain-text', label: '纯文本', payload: {kind: 'text', text: altPlainText}},
-      ])
+    const markdownText = getMarkdownClipboardText(state) || (altPlainText && looksLikeMarkdown(altPlainText) ? altPlainText : null)
+    const selectionJSON = selection.toJSON()
+
+    const emitFormatData = (appliedType: ClipboardPasteFormatType) => {
+      this.pasteFormatData$.next({
+        anchorBlockId: editableBlock.id,
+        appliedType,
+        htmlSnapshot: savedHtmlSnapshot,
+        plainText: altPlainText,
+        markdownText,
+        selectionJSON,
+      })
     }
 
     if (rootSnapshot && rootSnapshot.children.length && rootSnapshot.nodeType === BlockNodeType.root) {
@@ -339,7 +298,7 @@ export class ClipboardManager {
           insertLength > 0 && nextTick().then(() => {
             collapsed ? editableBlock.setInlineRange(fromIndex + insertLength) : editableBlock.setInlineRange(fromIndex, insertLength)
           })
-          tryOpenFormatSession('html')
+          emitFormatData('html')
           return;
         }
 
@@ -368,7 +327,7 @@ export class ClipboardManager {
             insertLength > 0 && nextTick().then(() => {
               collapsed ? editableBlock.setInlineRange(fromIndex + insertLength) : editableBlock.setInlineRange(fromIndex, insertLength)
             })
-            tryOpenFormatSession('html')
+            emitFormatData('html')
             return
           }
         }
@@ -396,7 +355,7 @@ export class ClipboardManager {
           })
         })
         .run()
-      tryOpenFormatSession('html')
+      emitFormatData('html')
       return true
     }
 
@@ -438,5 +397,3 @@ export class ClipboardManager {
     return false
   }
 }
-
-export * from './types'

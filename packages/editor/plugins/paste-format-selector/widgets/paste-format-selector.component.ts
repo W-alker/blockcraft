@@ -11,7 +11,7 @@ import {ClipboardPasteFormatType, ClipboardPasteSessionView} from "../../../fram
       [value]="session().selectedType"
       (change)="onChange($event)">
       @for (option of session().options; track option.type) {
-        <option [value]="option.type">{{ option.label }}</option>
+        <option [value]="option.type" [selected]="option.type === session().selectedType">{{ option.label }}</option>
       }
     </select>
   `,

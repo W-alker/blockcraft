@@ -1,4 +1,5 @@
 import {IBlockSnapshot} from "../../block-std";
+import {ISelectionJSON} from "../selection/types";
 
 export enum ClipboardDataType {
   TEXT = "text/plain",
@@ -40,4 +41,15 @@ export interface ClipboardPasteSessionView {
 
 export interface ClipboardPasteApplyResult {
   anchorBlockId: string
+}
+
+/** Emitted by ClipboardManager after a paste with available format alternatives. */
+export interface ClipboardPasteCompletedEvent {
+  anchorBlockId: string
+  appliedType: ClipboardPasteFormatType
+  htmlSnapshot: IBlockSnapshot | null
+  plainText: string | null
+  markdownText: string | null
+  /** Serialized selection state from before paste mutations, used to restore after undo. */
+  selectionJSON: ISelectionJSON
 }
