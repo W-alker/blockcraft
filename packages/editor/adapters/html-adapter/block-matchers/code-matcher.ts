@@ -3,7 +3,17 @@ import {CodeBlockSchema} from "../../../blocks";
 import {HastUtils} from "../../utils";
 import {deltaToString} from "../../../global";
 import {DeltaInsert} from "../../../framework";
-import {Text} from "hast";
+import {HtmlAST} from "../../types";
+
+/** Extract raw text from a code `<pre>` tree, converting `<br>` to `\n` and preserving whitespace. */
+function getCodeText(node: HtmlAST): string {
+  if (node.type === 'text') return node.value;
+  if (node.type === 'element') {
+    if (node.tagName === 'br') return '\n';
+    return node.children.map(child => getCodeText(child as HtmlAST)).join('');
+  }
+  return '';
+}
 
 export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   toMatch: o => HastUtils.isElement(o.node) && o.node.tagName === 'pre',
@@ -22,10 +32,7 @@ export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         walkerContext.closeNode()
       }
 
-      const codeSpans = HastUtils.flatNodes(o.node, () => true);
-
-      // @ts-ignore
-      const text = (codeSpans['children'] as Array<Text>).reduce((text, span) => text + span.value, '').replace(/\n+$/g, '')
+      const text = getCodeText(o.node).replace(/\n+$/g, '')
       if(!text) return;
 
       const codeBlock = CodeBlockSchema.createSnapshot(text)
