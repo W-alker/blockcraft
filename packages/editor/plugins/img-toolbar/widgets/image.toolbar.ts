@@ -2,6 +2,12 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, In
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent } from "../../../components";
 import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 
+export interface IImageToolbarItem {
+  name: string
+  icon: string
+  label: string
+}
+
 const ALIGN_LIST = [
   {
     name: "align",
@@ -37,8 +43,15 @@ const ALIGN_LIST = [
       }
 
       <span class="bc-float-toolbar__divider"></span>
-      <bc-float-toolbar-item icon="bc_xiazai-2" name="download" nz-tooltip="下载图片"></bc-float-toolbar-item>
+      <bc-float-toolbar-item icon="bc_xiazai" name="download" nz-tooltip="下载图片"></bc-float-toolbar-item>
       <bc-float-toolbar-item icon="bc_tupianlianjie" name="copy-url" nz-tooltip="复制图片链接"></bc-float-toolbar-item>
+
+      @if (extraItems.length) {
+        <span class="bc-float-toolbar__divider"></span>
+        @for (item of extraItems; track item.name) {
+          <bc-float-toolbar-item [icon]="item.icon" [name]="item.name" [nz-tooltip]="item.label"></bc-float-toolbar-item>
+        }
+      }
     </bc-float-toolbar>
   `,
   styles: [``],
@@ -61,6 +74,9 @@ export class ImageToolbar {
   get imgBlock() {
     return this._imgBlock;
   }
+
+  @Input()
+  extraItems: IImageToolbarItem[] = []
 
   @Output()
   readonly onItemClicked = new EventEmitter<BcFloatToolbarItemComponent>();

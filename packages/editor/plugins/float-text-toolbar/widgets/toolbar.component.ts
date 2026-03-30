@@ -221,12 +221,16 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
                              [style.color]="activeColors['color']"
                              [style.background-color]="activeColors['backColor']"/>
 
-      <!--      @if (config.withComment && isLinkAble && !activeAttrs.has('comment')) {-->
-      <!--        <span class="bc-float-toolbar__divider"></span>-->
-      <!--        <bc-float-toolbar-item name="comment" [value]="activeAttrs.get('comment')"-->
-      <!--                               icon="bc_pinglun" title="评论" [active]="activeAttrs.has('comment')">-->
-      <!--        </bc-float-toolbar-item>-->
-      <!--      }-->
+      @if (extraItems.length) {
+        <span class="bc-float-toolbar__divider"></span>
+        @for (item of extraItems; track item.name) {
+          <bc-float-toolbar-item [name]="item.name" [value]="item.value"
+                                 [icon]="item.icon" [title]="item.intro"
+                                 [active]="item.active"
+                                 [nz-tooltip]="item.tip">
+          </bc-float-toolbar-item>
+        }
+      }
 
     </bc-float-toolbar>
 
@@ -373,6 +377,12 @@ export class FloatTextToolbarComponent {
   listList: IToolbarMenuItem[] = LIST_LIST
   bgGraphList = BG_GRAPH_LIST
 
+  @Input()
+  extraItems: IToolbarMenuItem[] = []
+
+  @Output()
+  onExtraItemClick = new EventEmitter<BcFloatToolbarItemComponent>()
+
   @Input({required: true})
   activeAttrs = new Map<string, any>()
 
@@ -404,7 +414,7 @@ export class FloatTextToolbarComponent {
 
   private syncSelectionState() {
     const selection = this.doc.selection.value!
-    this.isLinkAble = !!selection && selection.isInSameBlock && selection.from.type === 'text'
+    this.isLinkAble = !!selection && selection.isInSameBlock && selection.start.type === 'text'
     this.activeHeading = HEADING_LIST.find(v => v.value === this.activeProps.heading) || HEADING_LIST[0]
   }
 
@@ -413,6 +423,12 @@ export class FloatTextToolbarComponent {
   }
 
   onItemClicked(evt: BcFloatToolbarItemComponent) {
+    // 先检查是否是扩展按钮
+    if (this.extraItems.some(i => i.name === evt.name)) {
+      this.onExtraItemClick.emit(evt)
+      return
+    }
+
     switch (evt.name) {
       case 'heading':
         this.setProps({heading: evt.value as any})
@@ -478,7 +494,7 @@ export class FloatTextToolbarComponent {
     const selection = this.doc.selection.value!
     const selectionJSON = selection.toJSON()
 
-    const rect = selection.raw.getBoundingClientRect()
+    const rect = this.doc.selection.getSelectionRect()!
     const fake = this.doc.selection.createFakeRange(selection)
     const overlay = this.doc.injector.get(Overlay)
 
@@ -501,17 +517,21 @@ export class FloatTextToolbarComponent {
     merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
     cpr.instance.onConfirm.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe((url: string) => {
       close()
-      if (selection.from.type !== 'text') return
-      const {index, length} = selection.from
-      selection.from.block.formatText(index, length, {'a:link': url})
+      if (selection.start.type !== 'text') return
+      const startBlock = selection.firstBlock as any
+      const index = selection.start.offset
+      const length = selection.isInSameBlock && selection.end.type === 'text' ? selection.end.offset - index : startBlock.textLength - index
+      startBlock.formatText(index, length, {'a:link': url})
     })
   }
 
   onInlineFormula() {
     const selection = this.doc.selection.value
-    if (!selection || selection.from.type !== 'text') return
-    const {block, index, length} = selection.from
-    const text = selection.raw.toString()
+    if (!selection || selection.start.type !== 'text') return
+    const block = selection.firstBlock as any
+    const index = selection.start.offset
+    const length = selection.isInSameBlock && selection.end.type === 'text' ? selection.end.offset - index : block.textLength - index
+    const text = this.doc.selection.getSelectedText()
     block.applyDeltaOperations([
       ...(index > 0 ? [{retain: index}] : []),
       {delete: length},
@@ -519,38 +539,4 @@ export class FloatTextToolbarComponent {
     ])
   }
 
-  // onComment() {
-  //   const commentComponent = this.config.commentComponent
-  //   if (!commentComponent) {
-  //     throw new BlockCraftError(ErrorCode.DefaultRuntimeError, 'commentComponent is not defined')
-  //   }
-  //
-  //   const selection = this.doc.selection.value!
-  //   const selectionJSON = selection.toJSON()
-  //
-  //   const rect = selection.raw.getBoundingClientRect()
-  //   const fake = this.doc.selection.createFakeRange(selection, {bgColor: 'rgba(255, 239, 186, .6)'})
-  //   const overlay = this.doc.injector.get(Overlay)
-  //
-  //   const positionStrategy = overlay.position().global().top(rect.bottom + 'px').left(rect.left + 'px')
-  //   const portal = new ComponentPortal(commentComponent, null, this.doc.injector)
-  //   const ovr = overlay.create({
-  //     positionStrategy,
-  //     hasBackdrop: true,
-  //     backdropClass: 'cdk-overlay-transparent-backdrop',
-  //   })
-  //
-  //   const close = () => {
-  //     ovr.dispose()
-  //     fake.destroy()
-  //     this.doc.selection.replay(selectionJSON)
-  //   }
-  //   const cpr = ovr.attach(portal)
-  //   cpr.setInput('selection', selectionJSON)
-  //   cpr.setInput('doc', this.doc)
-  //   cpr.setInput('commentId', this.activeAttrs.get('commentId'))
-  //   cpr.setInput('close', close)
-  //
-  //   merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
-  // }
 }

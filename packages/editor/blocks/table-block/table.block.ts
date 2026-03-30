@@ -222,8 +222,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
 
     const sub1 = this.doc.event.customListen(document, 'selectionchange').pipe(skip(1)).subscribe(() => {
-      const selection = window.getSelection()!
-      if (!cell.hostElement.contains(selection.focusNode)) {
+      const curSel = this.doc.selection.value
+      if (!curSel || !cell.hostElement.contains(curSel.firstBlock.hostElement)) {
         startSelectCell()
         sub1.unsubscribe()
       }
@@ -408,7 +408,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const selectedCell = this.doc.selection.value!.firstBlock
 
     merge(
-      this.doc.selection.selectionChange$.pipe(skip(1), filter(v => v?.from.blockId !== selectedCell.id)),
+      this.doc.selection.selectionChange$.pipe(skip(1), filter(v => v?.start.blockId !== selectedCell.id)),
       this.onDestroy$, cpr.instance.onClose$)
       .pipe(takeUntil(cpr.instance.onDestroy)).subscribe(closeCb)
   }

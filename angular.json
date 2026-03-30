@@ -34,6 +34,7 @@
               "packages/editor/themes/base.scss",
               "packages/editor/themes/light.scss",
               "packages/editor/themes/dark.scss",
+              "packages/editor/themes/plugins/demo-presentation.scss",
               "packages/editor/assets/iconfont/bc-iconfont.css"
             ],
             "scripts": []

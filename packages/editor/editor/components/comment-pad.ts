@@ -119,15 +119,18 @@ export class EditorCommentPad extends CommentPad {
   }
 
   override onSubmit() {
-    if (this.isDisabled || this.selection.from.type !== 'text') {
+    if (this.isDisabled || this.selection.start.type !== 'text') {
       return;
     }
 
-    const block = this.doc.getBlockById(this.selection.from.blockId)
+    const block = this.doc.getBlockById(this.selection.start.blockId)
     if (!this.doc.isEditable(block)) return;
     this.commentService.addComment(this.value, this.commentId).then(c => {
-      if(this.selection.from.type !== 'text') return
-      block.yText.format(this.selection.from.index, this.selection.from.length, {'d:comment': c.id})
+      const sel = this.selection
+      if(sel.start.type !== 'text') return
+      const s = sel.start, e = sel.end
+      const len = sel.isInSameBlock && e.type === 'text' ? e.offset - s.offset : (block as any).textLength - s.offset
+      block.yText.format(s.offset, len, {'d:comment': c.id})
       this.close()
     })
   }

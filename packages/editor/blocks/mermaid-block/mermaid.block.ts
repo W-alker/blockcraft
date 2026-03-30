@@ -56,7 +56,7 @@ import { AsyncPipe } from "@angular/common";
     AsyncPipe,
     // ScaleRatioPipe
   ],
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel> {
 
@@ -277,7 +277,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
 
   async onPreviewGraph(evt: MouseEvent) {
     const sel = this.doc.selection.value
-    if (!sel || sel.to || sel.from.blockId !== this.id) return
+    if (!sel || !sel.isInSameBlock || sel.start.blockId !== this.id) return
     evt.stopPropagation()
     evt.preventDefault()
     const svg = this.graphContainer.firstElementChild

@@ -1,14 +1,14 @@
 import { Awareness } from 'y-protocols/awareness';
 import { Subject, takeUntil } from 'rxjs';
 import {debounce, getRandomDarkColor} from "../global";
-import {FakeRange, IBlockSelectionJSON} from "../framework";
+import {FakeRange, ISelectionJSON} from "../framework";
 
 interface Config {
   throttleTime?: number;
 }
 
 interface IAwarenessState {
-  cursor: IBlockSelectionJSON | null;
+  cursor: ISelectionJSON | null;
   user: {
     id: string,
     name: string
@@ -37,7 +37,7 @@ class Cursor {
     this._color = color;
   }
 
-  updatePosition(selection: IBlockSelectionJSON | null) {
+  updatePosition(selection: ISelectionJSON | null) {
     if (this._fakeCursor) {
       this._fakeCursor.destroy();
       this._fakeCursor = null;

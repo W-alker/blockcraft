@@ -10,7 +10,7 @@ import {
   IColumnCountPickedEvent,
   ITableSizePickedEvent
 } from "../../../components";
-import {IBlockSelectionJSON, IEditableBlockProps, IInlineNodeAttrs, TextToolbarHelper} from "../../../framework";
+import {ISelectionJSON, IEditableBlockProps, IInlineNodeAttrs, TextToolbarHelper} from "../../../framework";
 import {merge, Subscription} from "rxjs";
 import {debounce, nextTick} from "../../../global";
 import {Overlay} from "@angular/cdk/overlay";
@@ -44,7 +44,7 @@ export interface IFixedToolbarExtensionAction {
 
 export interface IFixedToolbarExtensionActionContext {
   action: IFixedToolbarExtensionAction
-  selection: IBlockSelectionJSON | null
+  selection: ISelectionJSON | null
   doc: BlockCraft.Doc
 }
 
@@ -474,7 +474,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   @Input()
-  selectionJSON: IBlockSelectionJSON | null = null
+  selectionJSON: ISelectionJSON | null = null
 
   @Input()
   extensionActions: IFixedToolbarExtensionAction[] = []
@@ -644,10 +644,10 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   protected openLinkPad() {
     this.restoreSelection()
     const selection = this.doc.selection.value
-    if (!selection || !selection.isInSameBlock || selection.from.type !== 'text' || !this.hasTextSelection) return
+    if (!selection || !selection.isInSameBlock || selection.start.type !== 'text' || !this.hasTextSelection) return
     const selectionJSON = selection.toJSON()
 
-    const rect = selection.raw.getBoundingClientRect()
+    const rect = this.doc.selection.getSelectionRect()!
     const fake = this.doc.selection.createFakeRange(selection)
     const overlay = this.doc.injector.get(Overlay)
 
@@ -674,9 +674,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
     cpr.instance.onConfirm.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe((url: string) => {
       close()
-      if (selection.from.type !== 'text') return
-      const {index, length} = selection.from
-      selection.from.block.formatText(index, length, {'a:link': url})
+      if (selection.start.type !== 'text') return
+      const startBlock = selection.firstBlock as any
+      const startOff = selection.start.offset
+      const len = selection.isInSameBlock && selection.end.type === 'text' ? selection.end.offset - startOff : startBlock.textLength - startOff
+      startBlock.formatText(startOff, len, {'a:link': url})
     })
   }
 
@@ -684,9 +686,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (!this.hasTextSelection) return
     this.runWithSelection(() => {
       const selection = this.doc.selection.value
-      if (!selection || selection.from.type !== 'text') return
-      const {block, index, length} = selection.from
-      const text = selection.raw.toString()
+      if (!selection || selection.start.type !== 'text') return
+      const block = selection.firstBlock as any
+      const index = selection.start.offset
+      const length = selection.isInSameBlock && selection.end.type === 'text' ? selection.end.offset - index : block.textLength - index
+      const text = this.doc.selection.getSelectedText()
       block.applyDeltaOperations([
         ...(index > 0 ? [{retain: index}] : []),
         {delete: length},
@@ -735,7 +739,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this.restoreSelection()
 
     const selection = this.doc.selection.value
-    if (!selection || selection.from.type !== 'text') return
+    if (!selection || selection.start.type !== 'text') return
     run()
 
     this.doc.selection.recalculate()
@@ -821,8 +825,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       return
     }
 
-    if (selection.isAllSelected || selection.from.type !== 'text' || !this.doc.isEditable(selection.from.block)
-      || selection.from.block.plainTextOnly
+    if (selection.isAllSelected || selection.start.type !== 'text' || !this.doc.isEditable(selection.firstBlock)
+      || (selection.firstBlock as any).plainTextOnly
     ) {
       this.activeAttrs = new Map<string, any>()
       this.activeColors = {}
@@ -843,11 +847,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this.activeFlavour = common.flavour || 'paragraph'
     this.allEditable = !!common.allEditable
     this.selectionJSON = selection.toJSON()
-    this.isLinkAble = selection.isInSameBlock && selection.from.type === 'text'
+    this.isLinkAble = selection.isInSameBlock && selection.start.type === 'text'
     this.hasTextSelection = selection.isInSameBlock
-      && selection.from.type === 'text'
+      && selection.start.type === 'text'
       && !selection.collapsed
-      && selection.from.length > 0
+      && !selection.isEmpty
     this.cdr.markForCheck()
   }
 

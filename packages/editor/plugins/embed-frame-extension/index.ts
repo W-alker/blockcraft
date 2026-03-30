@@ -15,7 +15,7 @@ export class EmbedFrameExtensionPlugin extends DocPlugin {
 
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
-      if (!selection || selection.to || !selection.firstBlock?.flavour.endsWith('embed')) {
+      if (!selection || !selection.isInSameBlock || !selection.firstBlock?.flavour.endsWith('embed')) {
         this._toolbarRef && this.closeToolbar()
         return
       }

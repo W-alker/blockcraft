@@ -1,10 +1,23 @@
 import {BindHotKey, BlockNodeType, DocPlugin, EventListen, POSITION_MAP, UIEventStateContext} from "../../framework";
 import {debounceTime, Subject, Subscription, takeUntil} from "rxjs";
 import {ComponentRef, Type} from "@angular/core";
-import {FloatTextToolbarComponent} from "./widgets/toolbar.component";
+import {FloatTextToolbarComponent, IToolbarMenuItem} from "./widgets/toolbar.component";
 import {ConnectedPosition, OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
 import {debounce} from "../../global";
+import {BcFloatToolbarItemComponent} from "../../components";
+
+export interface FloatTextToolbarPluginOptions {
+  /**
+   * 追加到工具栏末尾的自定义按钮
+   */
+  extraItems?: IToolbarMenuItem[]
+
+  /**
+   * 自定义按钮点击回调。返回 true 表示已处理。
+   */
+  onExtraItemClick?: (item: BcFloatToolbarItemComponent, doc: BlockCraft.Doc) => boolean
+}
 
 export class FloatTextToolbarPlugin extends DocPlugin {
   override name = 'float-text-toolbar';
@@ -22,7 +35,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     props: {}
   };
 
-  constructor() {
+  constructor(private options?: FloatTextToolbarPluginOptions) {
     super();
   }
 
@@ -68,6 +81,17 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this._cpr.setInput('activeProps', this.activeCommonAttrs.props);
     this._cpr.setInput('activeFlavour', this.activeCommonAttrs.flavour);
 
+    if (this.options?.extraItems?.length) {
+      this._cpr.setInput('extraItems', this.options.extraItems);
+    }
+
+    if (this.options?.onExtraItemClick) {
+      const handler = this.options.onExtraItemClick;
+      this._cpr.instance.onExtraItemClick.pipe(takeUntil(this._closeCpr$)).subscribe(item => {
+        handler(item, this.doc);
+      });
+    }
+
     this.doc.selection.nextChangeObserve().pipe(takeUntil(this._closeCpr$)).subscribe(() => {
       this.closeToolbar();
     });
@@ -85,7 +109,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     if(relativeBlock.nodeType !== 'editable') {
       rect = relativeBlock.hostElement.getBoundingClientRect();
     } else {
-      const selRect = selection.raw.getClientRects();
+      const selRect = this.doc.selection.getSelectionRects()!;
       rect = selection.isInSameBlock ? selRect[0] : (isForward ? selRect[selRect.length - 1] : selRect[0]);
     }
     const blockRect = relativeBlock.hostElement.getBoundingClientRect();

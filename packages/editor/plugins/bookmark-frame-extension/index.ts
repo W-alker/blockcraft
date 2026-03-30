@@ -16,7 +16,7 @@ export class BookmarkBlockExtensionPlugin extends DocPlugin {
 
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
-      if (!selection || selection.to || selection.firstBlock?.flavour !== 'bookmark') {
+      if (!selection || !selection.isInSameBlock || selection.firstBlock?.flavour !== 'bookmark') {
         this._toolbarRef && this.closeToolbar()
         return
       }

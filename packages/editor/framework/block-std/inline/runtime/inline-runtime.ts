@@ -1,4 +1,5 @@
 import {ScrollBlot, TextBlot, EmbedBlot, BlotType, IBlot} from "../blot";
+import {EmbedConverterMap} from "../blot/scroll-blot";
 import {InlinePositionMapper, PointAffinity, IDomPoint} from "../position/inline-position-mapper";
 import {DeltaInsert, DeltaOperation, InlineModel} from "../../types";
 import type {EmbedConverter} from "../index";
@@ -15,11 +16,11 @@ import type {EmbedConverter} from "../index";
  *
  * Usage:
  * ```ts
- *   const rt = new InlineRuntime(container, embedConverters, positionMapper)
+ *   const rt = new InlineRuntime(container, embedConverters)
  *   rt.render(deltas)                    // full rebuild
  *   rt.applyDelta(ops)                   // incremental patch
- *   rt.modelPointToDom(5)                // model->DOM
- *   rt.domPointToModel(node, offset)     // DOM->model
+ *   rt.mapper.modelPointToDomPoint(...)   // model->DOM
+ *   rt.mapper.domPointToModelPoint(...)   // DOM->model
  * ```
  *
  * The runtime does NOT own the Y.Text or trigger Yjs transactions;
@@ -31,11 +32,11 @@ export class InlineRuntime {
 
   constructor(
     readonly container: HTMLElement,
-    embedConverters: Map<string, EmbedConverter>,
-    mapper?: InlinePositionMapper
+    embedConverters: EmbedConverterMap
   ) {
-    this._mapper = mapper ?? new InlinePositionMapper()
     this._scrollBlot = new ScrollBlot(container, embedConverters)
+    this._mapper = new InlinePositionMapper()
+    this._mapper.setScrollBlot(this._scrollBlot)
   }
 
   get scrollBlot(): ScrollBlot {

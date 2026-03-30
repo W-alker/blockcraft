@@ -45,11 +45,18 @@ export abstract class LeafBlot implements IBlot {
   abstract readonly length: number
   parent: IScrollBlot | null = null
 
+  /**
+   * Index in the parent ScrollBlot._children array.
+   * Maintained by ScrollBlot._ensureIndex(). -1 means not indexed.
+   */
+  _childIndex = -1
+
   constructor(public domNode: Node) {}
 
   detach() {
     this.domNode.parentNode?.removeChild(this.domNode)
     this.parent = null
+    this._childIndex = -1
   }
 }
 

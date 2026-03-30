@@ -38,9 +38,6 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
     snapshot: IBlockSnapshot,
     // assets?: AssetsManager
   ) => {
-    // TODO 删除log
-    console.log('----------------html ast', html)
-
     if (html.type === 'root') {
       const htmlNode = html.children.find(node => node.type === 'element' && node.tagName === 'html')
       if (htmlNode && htmlNode.type === 'element' && htmlNode.properties && htmlNode.properties[SIGN_BLOCK_CRAFT_JSON]) {

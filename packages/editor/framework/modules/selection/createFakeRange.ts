@@ -1,10 +1,10 @@
-import {IBlockSelectionJSON} from "./index";
+import {IBlockSelectionJSON} from "./types";
 import {EditableBlockComponent} from "../../block-std";
 import {BlockCraftError, ErrorCode} from "../../../global";
+import {BlockSelection} from "./blockSelection";
 
 export interface IFakeRangeConfig {
   bgColor?: string,
-  // borderColor?: string,
   minCursorWidth?: number
 }
 
@@ -12,11 +12,45 @@ export class FakeRange {
 
   private _fakeSpans: HTMLElement[] = []
 
-  constructor(private readonly doc: BlockCraft.Doc, private readonly json: Pick<IBlockSelectionJSON, 'from' | 'to'>, private readonly config: IFakeRangeConfig = {}) {
+  constructor(
+    private readonly doc: BlockCraft.Doc,
+    source: Pick<IBlockSelectionJSON, 'from' | 'to'> | BlockSelection,
+    private readonly config: IFakeRangeConfig = {}
+  ) {
+    if (source instanceof BlockSelection) {
+      this._buildFromSelection(source)
+    } else {
+      this._buildFromLegacyJSON(source)
+    }
+  }
+
+  private _buildFromSelection(sel: BlockSelection) {
+    const s = sel.start, e = sel.end
+    const startBlock = this.doc.getBlockById(s.blockId)
+    this._fakeSpans.push(
+      s.type === 'selected'
+        ? this._createBlockFakeSpan(startBlock)
+        : this._createTextFakeSpan(startBlock, s.offset, sel.isInSameBlock ? (e.type === 'text' ? e.offset - s.offset : 0) : (startBlock as EditableBlockComponent).textLength - s.offset)
+    )
+    if (sel.isInSameBlock) return
+
+    const endBlock = this.doc.getBlockById(e.blockId)
+    if (e.type === 'text') {
+      e.offset > 0 && this._fakeSpans.push(this._createTextFakeSpan(endBlock, 0, e.offset))
+    } else {
+      this._fakeSpans.push(this._createBlockFakeSpan(endBlock))
+    }
+    const between = this.doc.queryBlocksBetween(s.blockId, e.blockId)
+    between.forEach(id => {
+      this._fakeSpans.push(this._createBlockFakeSpan(this.doc.getBlockById(id)))
+    })
+  }
+
+  private _buildFromLegacyJSON(json: Pick<IBlockSelectionJSON, 'from' | 'to'>) {
     const {from, to} = json
     const fromBlock = this.doc.getBlockById(from.blockId)
     this._fakeSpans.push(from.type === 'selected' ? this._createBlockFakeSpan(fromBlock) : this._createTextFakeSpan(fromBlock, from.index, from.length))
-    if (!to) return this
+    if (!to) return
     const toBlock = this.doc.getBlockById(to.blockId)
     if (to.type === 'text') {
       to.length > 0 && this._fakeSpans.push(this._createTextFakeSpan(toBlock, to.index, to.length))
@@ -25,12 +59,7 @@ export class FakeRange {
     }
     const between = this.doc.queryBlocksBetween(from.blockId, to.blockId)
     between.forEach(id => {
-      const block = this.doc.getBlockById(id)
-      this._fakeSpans.push(
-        // this.doc.isEditable(block) ?
-        // this._createTextFakeSpan(block, 0, block.textLength) :
-        this._createBlockFakeSpan(block)
-      )
+      this._fakeSpans.push(this._createBlockFakeSpan(this.doc.getBlockById(id)))
     })
   }
 
@@ -70,11 +99,11 @@ export class FakeRange {
     if (!this.doc.isEditable(block)) {
       throw new BlockCraftError(ErrorCode.SelectionError, `Set fake range: Block ${block.id} is not editable`)
     }
-    const mapper = this.doc.inlineManager.positionMapper
-    const container = (block as EditableBlockComponent).containerElement
+    const eb = block as EditableBlockComponent
+    const container = eb.containerElement
     const range = length
-      ? mapper.modelRangeToDomRange(container, index, index + length)
-      : mapper.modelRangeToDomRange(container, index)
+      ? eb.runtime.mapper.modelRangeToDomRange(container, index, index + length)
+      : eb.runtime.mapper.modelRangeToDomRange(container, index)
 
     const wrapper = block.containerElement
     const wrapRect = wrapper.getBoundingClientRect()
@@ -123,4 +152,3 @@ export class FakeRange {
   }
 
 }
-

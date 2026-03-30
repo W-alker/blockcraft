@@ -42,4 +42,13 @@ export class CursorBlot extends LeafBlot {
   get anchorNode(): Text {
     return this.cElement.firstElementChild!.firstChild as Text
   }
+
+  /**
+   * Extract the text that the browser wrote into this blot during composition.
+   * Strips the initial zero-width space marker character.
+   */
+  extractCompositionText(): string {
+    const raw = (this.domNode as HTMLElement).textContent || ''
+    return raw.replace(/[\u200B\u200C]/g, '')
+  }
 }

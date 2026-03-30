@@ -1,23 +1,48 @@
-<div class="find-replace" (mousedown)="onMouseDown($event)" #wrapper>
-  <i class="bc_icon bc_guanbi btn-close" (click)="onClose.emit()"></i>
-  <label>查找：</label>
-  <div class="field">
-    <input [(ngModel)]="findText" (ngModelChange)="onFindTextChange()" (keydown.shift.enter)="findPrev()"
-           (keydown.enter)="findNext()" (keydown.escape)="onClose.emit()" #findInput/>
-    @if (matchedList.length) {
-      <span>{{ matchIndex + 1 }} / {{ matchedList.length }}</span>
-    } @else {
-      <span>0 / 0</span>
-    }
+<div class="find-replace">
+  <!-- Row 1: Find -->
+  <div class="find-row">
+    <div class="field">
+      <i class="bc_icon bc_search field-icon"></i>
+      <input type="text" placeholder="查找" [(ngModel)]="findText" (ngModelChange)="onFindTextChange()"
+             (keydown.shift.enter)="findPrev()" (keydown.enter)="findNext()" (keydown.escape)="onClose.emit()"
+             #findInput/>
+      <span class="flag-group">
+        <span class="flag-sep">/</span>
+        @for (item of helper.regFlagList; track item.value) {
+          <span class="flag" [class.active]="item.checked" [title]="item.title"
+                (click)="onFlagChange(item)">{{ item.name }}</span>
+        }
+      </span>
+    </div>
+
+    <span class="match-info" [hidden]="!helper.matchedList.length">
+      {{ helper.matchIndex + 1 }}/{{ helper.matchedList.length }}
+    </span>
+
+    <span class="nav-btn" [class.disabled]="!helper.matchedList.length"
+          (mousedown)="$event.preventDefault(); findPrev()">
+      <i class="bc_icon bc_shang"></i>
+    </span>
+    <span class="nav-btn" [class.disabled]="!helper.matchedList.length"
+          (mousedown)="$event.preventDefault(); findNext()">
+      <i class="bc_icon bc_xia"></i>
+    </span>
+
+    <span class="close-btn" (click)="onClose.emit()">
+      <i class="bc_icon bc_guanbi"></i>
+    </span>
   </div>
-  <label>替换为：</label>
-  <div class="field">
-    <input [(ngModel)]="replaceText" (keydown.escape)="onClose.emit()"/>
-  </div>
-  <div class="actions">
-    <button (click)="findPrev()">上一个</button>
-    <button (click)="findNext()">下一个</button>
-    <button (click)="replaceOne()">替换当前</button>
-    <button (click)="replaceAll()">全部替换</button>
-  </div>
+
+  <!-- Row 2: Replace (non-readonly) -->
+  @if (!(doc.readonlySwitch$ | async)) {
+    <div class="replace-row">
+      <div class="field">
+        <i class="bc_icon bc_file-search-02 field-icon"></i>
+        <input type="text" placeholder="替换为" [(ngModel)]="replaceText" (keydown.escape)="onClose.emit()"/>
+      </div>
+
+      <button class="action-btn" [disabled]="!helper.matchedList.length" (click)="replaceOne()">替换</button>
+      <button class="action-btn" [disabled]="!helper.matchedList.length" (click)="replaceAll()">全部</button>
+    </div>
+  }
 </div>

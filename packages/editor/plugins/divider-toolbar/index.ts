@@ -21,7 +21,7 @@ export class DividerExtensionPlugin extends DocPlugin {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
       this.clearTimer()
 
-      if (!selection || selection.to || selection.firstBlock?.flavour !== 'divider') {
+      if (!selection || !selection.isInSameBlock || selection.firstBlock?.flavour !== 'divider') {
         this._toolbarRef && this.closeToolbar()
         return
       }

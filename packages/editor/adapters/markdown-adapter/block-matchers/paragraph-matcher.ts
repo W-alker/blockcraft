@@ -69,6 +69,15 @@ export const paragraphBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher =
             break;
           }
           case 'blockquote': {
+            // Process each child paragraph separately to preserve boundaries
+            const bqChildren = 'children' in o.node ? (o.node.children as MarkdownAST[]) : [];
+            const deltas: DeltaInsert[] = [];
+            for (let i = 0; i < bqChildren.length; i++) {
+              if (i > 0 && deltas.length > 0) {
+                deltas.push({insert: '\n'});
+              }
+              deltas.push(...deltaConverter.astToDelta(bqChildren[i]));
+            }
             walkerContext
               .openNode(
                 {
@@ -77,7 +86,7 @@ export const paragraphBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher =
                   flavour: 'blockquote',
                   props: {},
                   meta: {},
-                  children: deltaConverter.astToDelta(o.node),
+                  children: deltas,
                 },
                 'children'
               )

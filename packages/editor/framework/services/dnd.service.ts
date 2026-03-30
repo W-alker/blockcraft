@@ -455,13 +455,42 @@ export class DocDndService {
         return
       }
 
-      fileService.uploadImg(files[0]).then(v => {
-        this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0),
-          [this.doc.schemas.createSnapshot('image', [v])])
-      }).catch(err => {
-        this.doc.messageService.error(`上传失败: ${err.message}`)
-      })
+      const url = fileService.createObjectURL(files[0])
+      this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0),
+        [this.doc.schemas.createSnapshot('image', [url])])
       return
+    }
+
+    if (files.length === 1 && files[0].type.startsWith('video/')) {
+      if (this.doc.schemas.get('video') && this.doc.schemas.isValidChildren('video', targetBlock.parentBlock!.flavour)) {
+        const url = fileService.createObjectURL(files[0])
+        const snapshot = this.doc.schemas.createSnapshot('video', [{
+          url,
+          name: files[0].name,
+          size: files[0].size,
+          type: files[0].type,
+          sourceType: 'local' as const,
+        }])
+        snapshot.props.depth = targetBlock.props['depth']
+        this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), [snapshot])
+        return
+      }
+    }
+
+    if (files.length === 1 && files[0].type.startsWith('audio/')) {
+      if (this.doc.schemas.get('audio') && this.doc.schemas.isValidChildren('audio', targetBlock.parentBlock!.flavour)) {
+        const url = fileService.createObjectURL(files[0])
+        const snapshot = this.doc.schemas.createSnapshot('audio', [{
+          url,
+          name: files[0].name,
+          size: files[0].size,
+          type: files[0].type,
+          sourceType: 'local' as const,
+        }])
+        snapshot.props.depth = targetBlock.props['depth']
+        this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), [snapshot])
+        return
+      }
     }
 
     if (!this.doc.schemas.isValidChildren('attachment', targetBlock.parentBlock!.flavour)) {
@@ -470,21 +499,20 @@ export class DocDndService {
     }
 
     const _files = Array.from(files).filter(v => !v.type.startsWith('image/'))
-    Promise.allSettled(_files.map(v => fileService.uploadAttachment(v))).then(v => {
-      const _blocks: IBlockSnapshot[] = []
-      v.forEach((r, i) => {
-        if (r.status !== 'fulfilled') {
-          this.doc.messageService.error(`${r.reason}`)
-          return
-        }
-        _blocks.push(this.doc.schemas.createSnapshot('attachment', [(r.value as any)]))
-      })
-
-      if (!_blocks.length) return
-      // TAG: Depth
-      _blocks.forEach(b => b.props.depth = targetBlock.props['depth'])
-      this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), _blocks)
+    const _blocks: IBlockSnapshot[] = _files.map(f => {
+      const url = fileService.createObjectURL(f)
+      return this.doc.schemas.createSnapshot('attachment', [{
+        name: f.name,
+        size: f.size,
+        type: f.type,
+        url,
+      }])
     })
+
+    if (!_blocks.length) return
+    // TAG: Depth
+    _blocks.forEach(b => b.props.depth = targetBlock.props['depth'])
+    this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), _blocks)
   }
 
   onInsertNewBlock(flavour: BlockCraft.BlockFlavour, initProps: IBlockProps, targetBlock: BlockCraft.BlockComponent, position: typeof this.prevDragPosition) {

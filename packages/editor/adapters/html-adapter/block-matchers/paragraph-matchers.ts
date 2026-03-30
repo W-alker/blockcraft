@@ -77,6 +77,15 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           break;
         }
         case 'blockquote': {
+          // Process each child element separately to preserve paragraph boundaries
+          const bqChildren = HastUtils.isElement(o.node) ? o.node.children : [];
+          const deltas: DeltaInsert[] = [];
+          for (let i = 0; i < bqChildren.length; i++) {
+            if (i > 0 && deltas.length > 0) {
+              deltas.push({insert: '\n'});
+            }
+            deltas.push(...deltaConverter.astToDelta(bqChildren[i]));
+          }
           walkerContext.openNode(
             {
               nodeType: BlockNodeType.editable,
@@ -84,7 +93,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
               flavour: 'blockquote',
               props: {},
               meta: {},
-              children: deltaConverter.astToDelta(o.node),
+              children: deltas,
             },
             'children'
           ).closeNode()
@@ -189,7 +198,14 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
             type: 'element',
             tagName: 'blockquote',
             properties: {},
-            children: deltaConverter.deltaToAST(delta),
+            children: [
+              {
+                type: 'element',
+                tagName: 'p',
+                properties: {},
+                children: deltaConverter.deltaToAST(delta),
+              }
+            ],
           }, 'children').closeNode()
           break;
       }

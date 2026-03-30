@@ -16,8 +16,9 @@ const native2Y = function (native: Object): Y.Map<any> | Y.Array<any> {
     for (const v of native) {
       if (v != null && typeof v === 'object') {
         arr.push(native2Y(v))
+      } else {
+        arr.push(v)
       }
-      arr.push(v)
     }
     yarr.push(arr)
     return yarr
@@ -28,8 +29,9 @@ const native2Y = function (native: Object): Y.Map<any> | Y.Array<any> {
     const v = native[key as keyof typeof native]
     if (v && typeof v === 'object') {
       map.set(key, native2Y(v))
+    } else {
+      map.set(key, v)
     }
-    map.set(key, v)
   }
   return map
 }

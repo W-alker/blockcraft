@@ -48,11 +48,13 @@ export class TextToolbarHelper {
     const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true).map(id => this.doc.getBlockById(id))
 
     const allDeltas: DeltaInsert[] = []
-    if (selection.from.type === 'text' && selection.collapsed) {
+    if (selection.start.type === 'text' && selection.collapsed) {
+      const startBlock = selection.firstBlock as EditableBlockComponent
+      const startOffset = selection.start.offset
       const collapsedAttrs = this.doc.inputManger.peekNextInsertAttrs({
-        blockId: selection.from.blockId,
-        index: selection.from.index
-      }) || this.getCollapsedAttrs(selection.from.block, selection.from.index)
+        blockId: selection.start.blockId,
+        index: startOffset
+      }) || this.getCollapsedAttrs(startBlock, startOffset)
       colors = {
         color: (collapsedAttrs['s:color'] as string | null) ?? null,
         backColor: (collapsedAttrs['s:background'] as string | null) ?? null
@@ -69,8 +71,13 @@ export class TextToolbarHelper {
       }
     }
 
-    if (selection.from.type === 'text') {
-      allDeltas.push(...sliceDelta(selection.from.block.textDeltas(), selection.from.index, selection.from.index + selection.from.length))
+    if (selection.start.type === 'text') {
+      const startBlock = selection.firstBlock as EditableBlockComponent
+      const startOffset = selection.start.offset
+      const endOffset = selection.isInSameBlock && selection.end.type === 'text'
+        ? selection.end.offset
+        : startBlock.textLength
+      allDeltas.push(...sliceDelta(startBlock.textDeltas(), startOffset, endOffset))
     }
 
     between.slice(1).forEach((block, i) => {
@@ -87,8 +94,8 @@ export class TextToolbarHelper {
       if (block.flavour !== null && block.flavour !== flavour) {
         flavour = undefined
       }
-      if (i === between.length - 2 && selection.to?.type === 'text') {
-        allDeltas.push(...sliceDelta(block.textDeltas(), 0, selection.to.index))
+      if (i === between.length - 2 && !selection.isInSameBlock && selection.end.type === 'text') {
+        allDeltas.push(...sliceDelta(block.textDeltas(), 0, selection.end.offset))
       } else {
         allDeltas.push(...block.textDeltas())
       }
@@ -114,10 +121,12 @@ export class TextToolbarHelper {
   formatText = (attrs: IInlineNodeAttrs, selection: BlockCraft.Selection | null = this.doc.selection.value) => {
     if (!selection) return
 
-    const {from, to} = selection
-    if (selection.collapsed && from.type === 'text') {
+    const s = selection.start, e = selection.end
+
+    if (selection.collapsed && s.type === 'text') {
+      const startBlock = selection.firstBlock as EditableBlockComponent
       const nextAttrs: Record<string, any> = {
-        ...this.getCollapsedAttrs(from.block, from.index)
+        ...this.getCollapsedAttrs(startBlock, s.offset)
       }
       Object.entries(attrs).forEach(([key, value]) => {
         if (value === null || value === undefined) {
@@ -127,20 +136,28 @@ export class TextToolbarHelper {
         }
       })
       this.doc.inputManger.setNextInsertAttrs(nextAttrs as IInlineNodeAttrs, {
-        blockId: from.blockId,
-        index: from.index
+        blockId: s.blockId,
+        index: s.offset
       })
     }
 
-    if (from.type === 'text' && !from.block.plainTextOnly) {
-      from.block.formatText(from.index, from.length, attrs)
+    if (s.type === 'text') {
+      const startBlock = selection.firstBlock as EditableBlockComponent
+      if (!startBlock.plainTextOnly) {
+        const len = selection.isInSameBlock && e.type === 'text' ? e.offset - s.offset : startBlock.textLength - s.offset
+        startBlock.formatText(s.offset, len, attrs)
+      }
     }
-    if (!to) return
-    if (to.type === 'text' && !to.block.plainTextOnly) {
-      to.block.formatText(to.index, to.length, attrs)
+    if (selection.isInSameBlock) return
+
+    if (e.type === 'text') {
+      const endBlock = selection.lastBlock as EditableBlockComponent
+      if (!endBlock.plainTextOnly && e.offset > 0) {
+        endBlock.formatText(0, e.offset, attrs)
+      }
     }
 
-    const between = this.doc.queryBlocksBetween(from.block, to.block)
+    const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock)
     for (const id of between) {
       const block = this.doc.getBlockById(id)
       if (!this.doc.isEditable(block) || block.plainTextOnly) continue

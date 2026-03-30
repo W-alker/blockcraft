@@ -97,7 +97,7 @@ export class BlockControllerPlugin extends DocPlugin {
 
     this.doc.selection.selectionChange$.pipe(takeUntil(this.doc.onDestroy$)).subscribe(v => {
       if (this.doc.isReadonly) return
-      if (v?.to) {
+      if (v && !v.isInSameBlock) {
         this._cpr.setInput('activeBlock', this._activeBlock = null)
         this._cpr.setInput('hidden', this.isHidden = true)
       } else {

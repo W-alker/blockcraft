@@ -1,5 +1,6 @@
 import {
   AttachmentBlockSchema,
+  AudioBlockSchema,
   BlockquoteBlockSchema,
   BookmarkBlockSchema,
   BulletBlockSchema,
@@ -18,6 +19,7 @@ import {
   RootBlockSchema,
   TableBlockSchema,
   TodoBlockSchema,
+  VideoBlockSchema,
   type IBlockSnapshot
 } from '@ccc/blockcraft';
 
@@ -187,6 +189,18 @@ const createTable = () => {
   return table;
 };
 
+const createVideo = () =>
+  VideoBlockSchema.createSnapshot({
+    url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    sourceType: 'link',
+  });
+
+const createAudio = () =>
+  AudioBlockSchema.createSnapshot({
+    url: '',
+    sourceType: 'local',
+  });
+
 const createFormula = () =>
   FormulaBlockSchema.createSnapshot('\\int_{0}^{1} x^2 \\, dx = \\frac{1}{3}');
 
@@ -212,6 +226,8 @@ const createDocument = (): IBlockSnapshot => {
   const table = createTable();
   const formula = createFormula();
   const divider = createDivider();
+  const video = createVideo();
+  const audio = createAudio();
 
   return RootBlockSchema.createSnapshot(ROOT_ID, [
     intro,
@@ -224,6 +240,8 @@ const createDocument = (): IBlockSnapshot => {
     mermaid,
     formula,
     image,
+    video,
+    audio,
     bookmark,
     figma,
     juejin,

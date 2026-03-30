@@ -29,7 +29,9 @@ import {
   TableBlockSchema,
   TableCellBlockSchema,
   TableRowBlockSchema,
-  TodoBlockSchema
+  TodoBlockSchema,
+  VideoBlockSchema,
+  AudioBlockSchema
 } from "../blocks";
 import {ConsoleLogger} from "../global";
 import {BulletBlockSchema} from "../blocks/bullet-block";
@@ -52,7 +54,7 @@ import {AdapterService} from "./services/adapter.service";
 import {MermaidBlockSchema, MermaidTextareaBlockSchema} from "../blocks/mermaid-block";
 import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
 import katex from 'katex'
-import {MentionPlugin} from "./plugins/mention";
+import {MentionPlugin, createDefaultMentionPanel} from "../plugins/mention";
 import * as Y from 'yjs'
 import {DividerExtensionPlugin} from "../plugins/divider-toolbar";
 import {
@@ -62,6 +64,7 @@ import {
   OrderedBlockPlugin
 } from "../plugins";
 import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
+import {BlockGapCreatorPlugin} from "../plugins/block-gap-creator";
 import {ColumnBlockSchema} from "../blocks/columns-block";
 import {TranslatePlugin} from "../plugins/translate";
 import {MyDocTranslationService} from "./services/doc-translation.service";
@@ -70,7 +73,7 @@ import {resolveSpeechTranscriptionService} from "./services/speech-transcription
 import {Subscription} from "rxjs";
 import {PasteFormatSelectorPlugin} from "../plugins/paste-format-selector";
 
-const mentionRequest = async (keyword: string) => {
+const mentionRequest = async (keyword: string, _type?: string) => {
   if (keyword === 'a') {
     return {
       list: []
@@ -97,7 +100,8 @@ const schemas = new SchemaManager([
   CaptionBlockSchema, RootBlockSchema,
   MermaidTextareaBlockSchema, MermaidBlockSchema, BlockquoteBlockSchema,
   ColumnsBlockSchema, ColumnBlockSchema,
-  FormulaBlockSchema
+  FormulaBlockSchema,
+  VideoBlockSchema, AudioBlockSchema
 ])
 
 export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
@@ -330,10 +334,15 @@ export class EditorComponent implements OnDestroy {
           window.open(link.replace('http://doc-pre.com', 'http://localhost:8081/test3'), '_blank')
         } else window.open(link, '_blank')
       }),
-      new MentionPlugin(mentionRequest), new DividerExtensionPlugin(),
+      new MentionPlugin({
+        panel: createDefaultMentionPanel({
+          request: mentionRequest,
+        }),
+      }), new DividerExtensionPlugin(),
       new FindReplacePlugin(),
       this.translatePlugin,
-      this.voiceTranscriptionPlugin
+      this.voiceTranscriptionPlugin,
+      new BlockGapCreatorPlugin()
     ]
   })
 

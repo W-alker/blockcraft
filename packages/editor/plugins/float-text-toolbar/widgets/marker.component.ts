@@ -153,9 +153,11 @@ export class TextMarkerComponent {
     const selection = this.doc.selection.value
     if (!selection) return
 
-    const {from, to} = selection
-    if (from.type === 'text') {
-      from.block.formatText(from.index, from.length, attrs)
+    if (selection.start.type === 'text') {
+      const block = selection.firstBlock as any
+      const s = selection.start, e = selection.end
+      const len = selection.isInSameBlock && e.type === 'text' ? e.offset - s.offset : block.textLength - s.offset
+      block.formatText(s.offset, len, attrs)
     }
   }
 

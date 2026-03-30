@@ -83,7 +83,7 @@ export class TextMarkerPlugin extends DocPlugin {
     const isBackward = selection.getDirection() === 'backward'
     const relativeBlock = isBackward ? selection.lastBlock : selection.firstBlock
 
-    const rect = selection.raw.getBoundingClientRect()
+    const rect = this.doc.selection.getSelectionRect()!
     const blockRect = relativeBlock.hostElement.getBoundingClientRect()
     const offsetX = rect.left - blockRect.left
 
