@@ -17,7 +17,5 @@ export * from './demo-presentation'
 export * from './formula-extension'
 export * from './mention'
 export * from './translate'
-export * from './block-gap-creator'
-
-export * from './voice-transcription'
+export * from "./block-gap-creator";
 export * from './paste-format-selector'
