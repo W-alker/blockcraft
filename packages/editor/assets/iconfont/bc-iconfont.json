@@ -6,6 +6,69 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "6129323",
+      "name": "280皮肤、个性化",
+      "font_class": "pifug-fill",
+      "unicode": "e7e8",
+      "unicode_decimal": 59368
+    },
+    {
+      "icon_id": "6129325",
+      "name": "279皮肤、个性化、主题-线性",
+      "font_class": "pifug",
+      "unicode": "e7e9",
+      "unicode_decimal": 59369
+    },
+    {
+      "icon_id": "9096379",
+      "name": "个性化设置",
+      "font_class": "gexinghuashezhi",
+      "unicode": "e632",
+      "unicode_decimal": 58930
+    },
+    {
+      "icon_id": "37168547",
+      "name": "工作流_设置",
+      "font_class": "version_settings",
+      "unicode": "e758",
+      "unicode_decimal": 59224
+    },
+    {
+      "icon_id": "45022979",
+      "name": "设置",
+      "font_class": "shezhi",
+      "unicode": "e928",
+      "unicode_decimal": 59688
+    },
+    {
+      "icon_id": "3752118",
+      "name": "模板中心",
+      "font_class": "mobanzhongxin2",
+      "unicode": "e75b",
+      "unicode_decimal": 59227
+    },
+    {
+      "icon_id": "17375849",
+      "name": "个人空间",
+      "font_class": "gerenkongjian",
+      "unicode": "e75f",
+      "unicode_decimal": 59231
+    },
+    {
+      "icon_id": "29865161",
+      "name": "更多",
+      "font_class": "gengduo1",
+      "unicode": "e682",
+      "unicode_decimal": 59010
+    },
+    {
+      "icon_id": "42840608",
+      "name": "开发者中心-模板中心",
+      "font_class": "mobanzhongxin",
+      "unicode": "e760",
+      "unicode_decimal": 59232
+    },
+    {
       "icon_id": "46373033",
       "name": "上传",
       "font_class": "shangchuan",
