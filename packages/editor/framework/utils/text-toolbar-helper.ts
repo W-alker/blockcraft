@@ -148,7 +148,13 @@ export class TextToolbarHelper {
         startBlock.formatText(s.offset, len, attrs)
       }
     }
-    if (selection.isInSameBlock) return
+    if (selection.isInSameBlock) {
+      // Restore selection after DOM restructuring from format (e.g., text node splits)
+      if (!selection.collapsed) {
+        this.doc.selection.setSelection(s, e)
+      }
+      return
+    }
 
     if (e.type === 'text') {
       const endBlock = selection.lastBlock as EditableBlockComponent
@@ -162,6 +168,11 @@ export class TextToolbarHelper {
       const block = this.doc.getBlockById(id)
       if (!this.doc.isEditable(block) || block.plainTextOnly) continue
       block.formatText(0, block.textLength, attrs)
+    }
+
+    // Restore selection after DOM restructuring from format
+    if (!selection.collapsed) {
+      this.doc.selection.setSelection(s, e)
     }
   }
 

@@ -224,6 +224,7 @@ export class SelectionManager {
 
   /** @deprecated Use setSelection with ISelectionPointJSON */
   setSelection(from: IBlockInlineRangeJSON, to?: IBlockInlineRangeJSON | null): Range
+  setSelection(from: ISelectionPoint, to?: ISelectionPoint | null): Range
   setSelection(from: any, to?: any): Range {
     const range = this._buildDomRange(from, to)
     const selection = document.getSelection()!

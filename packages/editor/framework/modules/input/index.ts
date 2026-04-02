@@ -87,8 +87,10 @@ export class InputTransformer {
         this.doc.selection.blur()
         return true
       }
+      this.doc.crud.undoManager.captureSelectionBeforeChange()
       const p = this.doc.schemas.createSnapshot('paragraph', [])
       this.doc.crud.insertBlocksAfter(curSel.lastBlock.id, [p])
+      this._deleteAllSelected(curSel)
       this.doc.selection.setCursorAtBlock(p.id, true)
       this.doc.selection.recalculate()
       this.compositionSession.startFromSelection({isComposing: true})
@@ -102,9 +104,36 @@ export class InputTransformer {
     }
 
     if (!curSel.collapsed) {
-      this._replaceText(curSel)
+      const needsMerge = !curSel.isInSameBlock
       const anchorBlock = curSel.start.type === 'text' ? curSel.firstBlock : (!curSel.isInSameBlock && curSel.end.type === 'text' ? curSel.lastBlock : null)
       const anchorIndex = curSel.start.type === 'text' ? curSel.start.offset : 0
+
+      if (needsMerge && anchorBlock && curSel.start.type === 'text' && curSel.end.type === 'text') {
+        // Composition-specific merge: separate append from delete so the observer's
+        // _applyDeltaToView only handles simple deltas. The append uses ORIGIN_SKIP_SYNC
+        // + rerender() to avoid DOM patches that the browser's composition setup overrides.
+        const fromBlock = curSel.firstBlock as any
+        const toBlock = curSel.lastBlock as any
+        const remainStart = curSel.end.offset
+        const remainingDelta = remainStart < toBlock.textLength
+          ? [...sliceDelta(toBlock.textDeltas(), remainStart, toBlock.textLength)]
+          : null
+
+        // Step 1: delete selected content + delete to block (normal observer path, skip append)
+        this._replaceText(curSel, null, true, true)
+
+        // Step 2: append remaining with ORIGIN_SKIP_SYNC (observer skips _applyDeltaToView)
+        if (remainingDelta?.length) {
+          this.doc.crud.transact(() => {
+            const appendDelta: DeltaOperation[] = [{retain: fromBlock.yText.length}, ...remainingDelta]
+            fromBlock.yText.applyDelta(appendDelta)
+          }, ORIGIN_SKIP_SYNC)
+          fromBlock.rerender()
+        }
+      } else {
+        this._replaceText(curSel, null, needsMerge)
+      }
+
       if (anchorBlock) {
         this.doc.selection.setCursorAt(anchorBlock as any, anchorIndex)
         this.compositionSession.start(anchorBlock as any, anchorIndex)
@@ -193,17 +222,20 @@ export class InputTransformer {
 
     if (to) {
       ev.preventDefault()
-      this._replaceText(normalizedRange, text)
-      const cursorPos = from.type === 'text' ? from : (to.type === 'text' ? to : null)
-      if (!cursorPos) {
+      this._replaceText(normalizedRange, text, true)
+      if (from.type === 'text') {
+        this.doc.selection.setSelection({
+          ...from,
+          index: from.index + (text?.length || 0),
+          length: 0
+        })
+      } else if (to.type === 'text') {
+        // from 是 selected 类型（已被删除），内容合并到了 to 不存在的情况不会发生
+        // 此时 from 块已删，回退到 recalculate
         this.doc.selection.recalculate()
-        return;
+      } else {
+        this.doc.selection.recalculate()
       }
-      this.doc.selection.setSelection({
-        ...cursorPos,
-        index: cursorPos.index + (text?.length || 0),
-        length: 0
-      })
       return;
     }
 
@@ -321,7 +353,7 @@ export class InputTransformer {
     }
   }
 
-  private _replaceText(range: INormalizedRange | BlockSelection, text?: string | null, merge = false) {
+  private _replaceText(range: INormalizedRange | BlockSelection, text?: string | null, merge = false, skipAppend = false) {
     if (range instanceof BlockSelection) {
       range = endpointsToLegacy({start: range.start, end: range.end})
     }
@@ -330,6 +362,15 @@ export class InputTransformer {
 
     // Pre-capture selection for undo BEFORE the transaction mutates yText
     this.doc.crud.undoManager.captureSelectionBeforeChange()
+
+    // Capture remaining delta from to block BEFORE the transaction deletes it
+    let remainingDelta: DeltaOperation[] | null = null
+    if (merge && to?.type === 'text' && from.type === 'text') {
+      const remainStart = to.index + to.length
+      if (remainStart < to.block.textLength) {
+        remainingDelta = [...sliceDelta(to.block.textDeltas(), remainStart, to.block.textLength)]
+      }
+    }
 
     this.doc.crud.transact(() => {
       if (to) {
@@ -347,18 +388,14 @@ export class InputTransformer {
         text && yText.insert(from.index, text)
 
         if (to) {
-          if ((to.type === 'text' && to.length >= to.block.textLength) || to.type === 'selected') {
+          if (merge) {
+            // Delete to block entirely; remaining content appended after transaction
+            this.doc.crud.deleteBlockById(to.blockId)
+          } else if ((to.type === 'text' && to.length >= to.block.textLength) || to.type === 'selected') {
             this.doc.crud.deleteBlockById(to.blockId)
           } else if (to.type === 'text' && (to.index > 0 || to.length > 0)) {
-            if (merge) {
-              const deltas: DeltaOperation[] = [...sliceDelta(to.block.textDeltas(), to.index + to.length, to.block.textLength)]
-              deltas.unshift({retain: yText.length})
-              yText.applyDelta(deltas)
-              this.doc.crud.deleteBlockById(to.blockId)
-            } else {
-              const yText = to.block.yText
-              yText.delete(to.index, to.length)
-            }
+            const yText = to.block.yText
+            yText.delete(to.index, to.length)
           }
         }
         return
@@ -369,6 +406,14 @@ export class InputTransformer {
       this.doc.crud.deleteBlockById(from.blockId)
       to.block.replaceText(to.index, to.length, text)
     })
+
+    // After transaction: append remaining delta from to block to from block.
+    // This is a separate implicit transaction, so the observer gets a simple
+    // append delta (retain + insert) instead of a complex combined delta.
+    if (remainingDelta?.length && from.type === 'text' && !skipAppend) {
+      const appendDelta: DeltaOperation[] = [{retain: from.block.yText.length}, ...remainingDelta]
+      from.block.applyDeltaOperations(appendDelta)
+    }
   }
 
   private _deleteAllSelected(range: INormalizedRange | BlockSelection) {

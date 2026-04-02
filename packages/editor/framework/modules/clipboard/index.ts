@@ -130,7 +130,7 @@ export class ClipboardManager {
   }
 
   deleteContentFromSelection = (selection: BlockCraft.Selection) => {
-    this.doc.inputManger.deleteByRange(selection, false)
+    this.doc.inputManger.deleteByRange(selection, true)
   }
 
   async applyPasteOption(option: ClipboardPasteOption, selection: BlockCraft.Selection): Promise<ClipboardPasteApplyResult | null> {
