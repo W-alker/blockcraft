@@ -1,6 +1,8 @@
 # BlockCraft: Creating Toolbars & Overlay UI
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
+>
+> Last updated: 2026-04-07
 
 ## Overlay Service
 

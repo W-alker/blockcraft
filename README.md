@@ -5,8 +5,26 @@
 ## 结构
 
 - `packages/editor`：编辑器源码与正式 npm 发版包
+- `packages/editor/ai-skills`：**AI 技能包** —— 渐进式披露文档，用于 AI agent 与外部应用快速上手 BlockCraft（创建 plugin/block/embed/集成等），随 npm 包发布
 - `apps/playground`：Angular 20 playground
 - `apps/docs`：文档站
+
+## AI 技能包
+
+`packages/editor/ai-skills/` 是一份按 L0/L1/L2 渐进式披露组织的技能包，覆盖：
+- 在宿主 Angular 应用中集成 BlockCraft（`blockcraft-app.md`）
+- 创建 Plugin / Block / Inline Embed / Adapter / Toolbar
+- Selection / Input / Inline / Event / Yjs 数据模型的深潜文档
+- **版本适配**：`MIGRATIONS.md` 记录每个版本的破坏性变更与 before/after 迁移代码
+
+外部消费者通过 `node_modules/@ccc/blockcraft/ai-skills/` 访问，或运行：
+```bash
+node node_modules/@ccc/blockcraft/ai-skills/install.mjs           # 安装到 ~/.claude/skills/
+node node_modules/@ccc/blockcraft/ai-skills/install.mjs --target codex  # 安装到 ~/.agents/skills/
+```
+详情见 `packages/editor/ai-skills/README.md`。
+
+> ⚠️ **贡献者注意**：任何对 `packages/editor/framework/`、`blocks/`、`plugins/` 等的架构性修改都**必须**在同一个 PR 中同步更新 ai-skills 文档并追加 `MIGRATIONS.md` 条目，同时按 severity 调整 `packages/editor/package.json` 的版本号。完整规则见 `CLAUDE.md` "文档同步规则" 章节。
 
 ## 启动
 

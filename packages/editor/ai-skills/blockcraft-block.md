@@ -4,6 +4,8 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
+>
+> Last updated: 2026-04-07
 
 ## Block Types
 
@@ -263,8 +265,9 @@ import { MyContainerModel } from "./index";
   },
 })
 export class MyContainerComponent extends BaseBlockComponent<MyContainerModel> {
-  // Optional: react to children changes
-  override onChildrenChange(childrenIds: string[]) {
+  // Optional callback hook: called whenever the Y.Array<string> children list mutates.
+  // Receives the YEvent delta describing what was added/removed.
+  override onChildrenChange = (delta: Y.YEvent<Y.Array<string>>['changes']['delta']) => {
     // Called when children array changes
   }
 }
@@ -300,90 +303,129 @@ Create `themes/blocks/_my-block.scss` and import in the theme entry.
 ## BaseBlockComponent Key API
 
 ```typescript
-// Properties (via Yjs proxy)
-this.props              // Typed props object
+// ── Identity ──
+this.id                 // string
+this.flavour            // 'paragraph' | 'image' | ...
+this.nodeType           // BlockNodeType.editable | void | block | root
+this.doc                // BlockCraftDoc
+
+// ── Data (proxied through Yjs) ──
+this.props              // Typed props object — read & write through proxyMap
 this.meta               // Metadata object
-this.model              // NativeBlockModel (full model)
-this.yBlock             // Raw Y.Map
+this.yBlock             // Raw Y.Map<...>
+this._native            // Underlying NativeBlockModel (protected)
 
-// Mutations (create undo history)
-this.updateProps({ key: value })
+// ── Mutations ──
+this.updateProps({ key: value })       // Creates undo history; respects readonly
+this.setInitProps({ key: value })      // No undo history; for setup
+this.updateMeta({ key: value })        // Mutates meta (ORIGIN_SKIP_SYNC, no broadcast)
 
-// Mutations (no undo history)
-this.setInitProps({ key: value })
+// ── Tree navigation ──
+this.parentId                          // string | null
+this.parentBlock                       // BaseBlockComponent | null
+this.childrenIds                       // string[] (throws on editable blocks)
+this.childrenLength                    // number
+this.getChildrenBlocks()               // BaseBlockComponent[]
+this.getChildrenByIndex(index)         // BaseBlockComponent
+this.getChildrenIdByIndex(index)       // string
+this.firstChildren                     // BaseBlockComponent | null
+this.lastChildren                      // BaseBlockComponent | null
+this.getPath()                         // string[] — block id path from root
+this.getIndexOfParent()                // number — index within parent's childrenIds
 
-// Navigation
-this.childrenIds        // string[]
-this.getChildrenBlocks() // BlockComponent[]
-this.firstChildren      // First child block
-this.lastChildren       // Last child block
-this.getPath()          // Block path in tree
-this.getIndexOfParent() // Index within parent
+// ── Serialization ──
+this.toSnapshot(deep?)                 // IBlockSnapshot
+this.textContent()                     // Plain text (recursive)
 
-// Serialization
-this.toSnapshot(deep?)  // IBlockSnapshot
-this.textContent()      // Plain text
+// ── Event binding (scoped to this block) ──
+this.bindEvent('click', handler, { flavour?, global? })
 
-// Event binding (local to this block)
-this.bindEvent('click', handler)
+// ── Lifecycle ──
+this.onViewInit$                       // Subject<boolean> — fires after ngAfterViewInit
+this.onDestroy$                        // Subject<boolean> — fires in ngOnDestroy
+this.onPropsChange                     // EventEmitter<Map> — props mutation events
+this.onChildrenChange?                 // Optional callback assigned by subclasses
 
-// Lifecycle
-this.onViewInit$        // Subject (fires after view init)
-this.onDestroy$         // Subject (fires on destroy)
-this.hostElement        // HTMLElement
-this.changeDetectorRef  // ChangeDetectorRef
+// ── DOM & Angular handles ──
+this.hostElement                       // HTMLElement (root of the component)
+this.changeDetectorRef                 // ChangeDetectorRef (use markForCheck())
+this.destroyRef                        // DestroyRef (for takeUntilDestroyed)
+
+// ── Detach / reattach (used by virtual rendering) ──
+this.detach()                          // Detach from change detection, fires onDestroy$
+this.reattach()                        // Re-init from current Yjs state
 ```
+
+> **Gap-space behavior**: Void blocks (`nodeType === void`) automatically prepend and append a zero-width gap space element in `ngAfterViewInit`. This makes it possible for the cursor to land *before* and *after* the block. Container blocks (`block` nodeType) do not currently get gap spaces but the framework reserves the right to add them — see `createBlockGapSpace()` in `framework/utils/`.
 
 ## EditableBlockComponent Additional API
 
 ```typescript
-this.yText                          // Y.Text
-this.runtime                        // InlineRuntime
-this.textDeltas()                   // DeltaInsert[]
-this.textLength                     // number
+// ── Inline state ──
+this.yText                                       // Y.Text (canonical inline content)
+this.runtime                                     // InlineRuntime (Blot tree + mapper)
+this.containerElement                            // HTMLElement (.bc-inline-container)
+this.textLength                                  // number (yText.length)
+this.textDeltas()                                // DeltaInsert[] (yText.toDelta())
 
-// Text mutations
+// ── Inline mutations (write directly to yText) ──
 this.insertText(index, text, attrs?)
-this.deleteText(index, length?)
-this.replaceText(index, length, text, attrs?)
+this.deleteText(index, length?)                  // length defaults to textLength - index
+this.replaceText(index, length, text?, attrs?)   // applyDelta-based
 this.formatText(index, length, attrs)
-this.applyDeltaOperations(delta)
+this.applyDeltaOperations(delta)                 // raw applyDelta passthrough
 
-// Cursor
-this.setInlineRange(index, length?)
+// ── Render ──
+this.rerender()                                  // Force runtime.render(textDeltas())
 
-// Config
-this.plainTextOnly = true           // Disables rich text (for code blocks)
+// ── Cursor / selection inside this block ──
+this.setInlineRange(index, length = 0): Range    // Returns the DOM Range applied
 
-// Events
-this.onTextChange                   // Subject<void>
+// ── Config ──
+this.plainTextOnly = true                        // Disables rich formatting (for code blocks)
+
+// ── Events ──
+this.onTextChange  // Subject<{ op: DeltaOperation[]; tr: Y.Transaction }>
 ```
+
+> **Heading is a prop, not a block type**. The "heading" levels (h1, h2, h3) are stored as `props.heading` on `paragraph` blocks and exposed via the `[attr.data-heading]` host binding on `EditableBlockComponent`. There is no separate `heading` flavour. To toggle: `paragraphBlock.updateProps({ heading: 1 })`.
 
 ## DocChain: Block Operations
 
+`DocChain` is the fluent transaction builder. Each method enqueues a step; `run()` commits everything in a single Yjs transaction. Async tasks can be interleaved with `.task()`.
+
 ```typescript
-// Insert after a block
-doc.chain().insertAfter(existingBlock, 'my-block', ...params).run();
+// Insert relative to an existing block (parent inferred)
+doc.chain().insertAfter(existingBlock, 'my-block', ...params).run()
+doc.chain().insertBefore(existingBlock, 'paragraph', 'Hello').run()
 
-// Insert before
-doc.chain().insertBefore(existingBlock, 'paragraph', 'Hello').run();
+// Insert at a specific child index inside a parent
+doc.chain().insert(parentId, index, 'my-block', ...params).run()
 
-// Insert at specific position in parent
-doc.chain().insert(parentId, index, 'my-block', ...params).run();
+// Insert pre-built snapshots (no schema params)
+doc.chain().insertSnapshots(parentId, index, [snapshotA, snapshotB]).run()
 
 // Replace a block
-doc.chain().replaceWith(blockId, 'my-block', ...params).run();
+doc.chain().replaceWith(blockId, 'my-block', ...params).run()
 
 // Delete
-doc.chain().deleteById(blockId).run();
+doc.chain().deleteById(blockId).run()
 
-// Chain multiple operations
+// Cursor positioning (queued, runs after the mutations land)
 doc.chain()
   .insertAfter(block, 'paragraph', 'New paragraph')
-  .task(ctx => { /* custom async work */ })
-  .setCursorAtBlock(newBlock)
-  .run();
+  .setCursorAtBlock(newBlockId, true)   // atStart
+  .run()
+
+// Custom async work between steps
+doc.chain()
+  .insertAfter(block, 'paragraph', 'New paragraph')
+  .task(async ctx => { await fetchSomething(); })
+  .setCursorAtBlock(newBlockId, false)
+  .run()
 ```
+
+> Always prefer `DocChain` over calling `doc.crud` directly. The chain handles transaction grouping, undo history boundaries, and cursor restoration in one place.
 
 ## Checklist
 

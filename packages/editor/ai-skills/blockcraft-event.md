@@ -1,6 +1,8 @@
 # BlockCraft: Event System Deep Dive
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying event dispatch or handling.
+>
+> Last updated: 2026-04-07
 
 ## Architecture Overview
 

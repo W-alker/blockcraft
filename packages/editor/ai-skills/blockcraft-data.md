@@ -1,6 +1,8 @@
 # BlockCraft: Yjs Data Model Deep Dive
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
+>
+> Last updated: 2026-04-07
 
 ## Architecture Overview
 
@@ -22,10 +24,10 @@ BlockCraftDoc
 
 | File | Purpose |
 |------|---------|
-| `framework/doc/index.ts` | `BlockCraftDoc` — owns `Y.Doc` |
-| `framework/doc/doc-crud.ts` | `DocCRUD` — all Yjs mutations |
-| `framework/doc/doc-vm.ts` | `DocVM` — Angular component lifecycle |
-| `framework/doc/doc-undo-manager.ts` | `DocUndoManager` — undo/redo with selection |
+| `framework/doc/index.ts` | `BlockCraftDoc` — owns `Y.Doc`, exposes services |
+| `framework/doc/crud.ts` | `DocCRUD` — all Yjs mutations + observables |
+| `framework/doc/vm.ts` | `DocVM` — Angular component creation/lookup |
+| `framework/doc/undoManger.ts` | `DocUndoManager` — undo/redo with selection (note: filename is "Manger") |
 | `framework/block-std/reactive/block.ts` | `proxyMap`, `YBlock`, `NativeBlockModel` |
 
 ## Reactive Proxy System
@@ -115,17 +117,16 @@ Snapshots are the serialization format used for:
 
 ## Undo/Redo
 
-`DocUndoManager` wraps `Y.UndoManager` with parallel selection stacks:
+`DocUndoManager` wraps `Y.UndoManager` with parallel selection stacks. It lives on `doc.crud.undoManager`:
 
 ```typescript
-// Undo/redo automatically managed by Yjs
 // All mutations via DocCRUD.transact() are automatically tracked
 
 // Manual undo/redo
-doc.undoManager.undo()
-doc.undoManager.redo()
-doc.undoManager.canUndo()
-doc.undoManager.canRedo()
+doc.crud.undoManager.undo()
+doc.crud.undoManager.redo()
+doc.crud.undoManager.canUndo()
+doc.crud.undoManager.canRedo()
 ```
 
 Selection state is saved alongside undo items using `Y.RelativePosition` (collaboration-safe).

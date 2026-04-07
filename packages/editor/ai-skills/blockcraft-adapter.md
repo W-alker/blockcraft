@@ -3,6 +3,8 @@
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
+>
+> Last updated: 2026-04-07
 
 ## Architecture
 

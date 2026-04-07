@@ -3,6 +3,8 @@
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
+>
+> Last updated: 2026-04-07
 
 ## What is an Inline Embed?
 

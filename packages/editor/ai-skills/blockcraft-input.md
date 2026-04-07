@@ -1,6 +1,8 @@
 # BlockCraft: Input System Deep Dive
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
+>
+> Last updated: 2026-04-07
 
 ## Architecture Overview
 
