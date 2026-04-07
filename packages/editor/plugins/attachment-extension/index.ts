@@ -12,6 +12,8 @@ import {OverlayRef} from "@angular/cdk/overlay";
 import {AttachmentBlockToolbar, IAttachmentToolbarItem} from "./widgets/attachment-toolbar";
 import {RenameInputPad} from "./widgets/rename-input-pad";
 
+type AttachmentBlock = BlockCraft.IBlockComponents['attachment']
+
 export interface AttachmentExtensionOptions {
   /**
    * 追加到工具栏的自定义按钮
@@ -21,7 +23,28 @@ export interface AttachmentExtensionOptions {
   /**
    * 自定义按钮点击回调。返回 true 表示已处理。
    */
-  onExtraItemClick?: (itemName: string, block: BlockCraft.IBlockComponents['attachment'], doc: BlockCraft.Doc) => boolean
+  onExtraItemClick?: (itemName: string, block: AttachmentBlock, doc: BlockCraft.Doc) => boolean
+
+  /**
+   * 自定义预览逻辑。一旦传入，将在工具栏追加预览按钮，点击时调用此函数。
+   * 不传则不显示预览按钮。
+   */
+  onPreview?: (block: AttachmentBlock, doc: BlockCraft.Doc) => void
+
+  /**
+   * 预览按钮图标类名，默认 'bc_eye-open'
+   */
+  previewIcon?: string
+
+  /**
+   * 预览按钮 tooltip 文案，默认 '预览'
+   */
+  previewLabel?: string
+
+  /**
+   * 空附件点击时的提示（附件仍在上传中时），默认 '文件可能正在上传中，暂不可用'
+   */
+  uploadingTip?: string
 }
 
 export class AttachmentExtensionPlugin extends DocPlugin {
@@ -35,18 +58,49 @@ export class AttachmentExtensionPlugin extends DocPlugin {
 
   private _closeToolbar$ = new Subject<void>()
 
-  private _activeBlock: BlockCraft.IBlockComponents['attachment'] | null = null
+  private _activeBlock: AttachmentBlock | null = null
 
   constructor(private options?: AttachmentExtensionOptions) {
     super();
   }
 
+  /**
+   * 统一处理附件块的点击行为：
+   *  - 空附件（无 url）：编辑模式下打开文件选择器
+   *  - 正在上传（非 http url）：提示上传中
+   *  - 已就绪 + 只读模式：选中块
+   */
   @EventListen('mouseDown', {flavour: 'attachment'})
   onClick(state: UIEventStateContext) {
-    if (!this.doc.isReadonly) return
     const blockId = closetBlockId(state.getDefaultEvent().target as Node)
-    blockId && this.doc.selection.selectBlock(blockId)
-    return true
+    if (!blockId) return
+    const block = this.doc.getBlockById(blockId) as AttachmentBlock | null
+    if (!block) return
+
+    // 空附件：编辑模式下打开文件选择
+    if (!block.props.url) {
+      state.preventDefault()
+      if (!this.doc.isReadonly) {
+        block.inputLocalFile()
+      }
+      return true
+    }
+
+    // 正在上传中
+    if (!block.props.url.startsWith('http')) {
+      state.preventDefault()
+      this.doc.messageService.warn(this.options?.uploadingTip ?? '文件可能正在上传中，暂不可用')
+      return true
+    }
+
+    // 只读模式下：选中块以便预览/下载
+    if (this.doc.isReadonly) {
+      state.preventDefault()
+      this.doc.selection.selectBlock(blockId)
+      return true
+    }
+
+    return
   }
 
   init() {
@@ -63,7 +117,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         return
       }
 
-      const attachmentBlock = selection.firstBlock as BlockCraft.IBlockComponents['attachment']
+      const attachmentBlock = selection.firstBlock as AttachmentBlock
       if (this._toolbarRef && this._activeBlock === attachmentBlock) return;
       this.closeToolbar()
 
@@ -71,7 +125,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         this._timer = null
         if (this._toolbarRef && this._activeBlock === attachmentBlock) return;
 
-        this._activeBlock = attachmentBlock as any
+        this._activeBlock = attachmentBlock
 
         const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<AttachmentBlockToolbar>({
           target: attachmentBlock,
@@ -84,8 +138,16 @@ export class AttachmentExtensionPlugin extends DocPlugin {
 
         this._toolbarRef = overlayRef
 
+        const canUse = this._isCanUse(attachmentBlock)
         componentRef.setInput('doc', this.doc)
-
+        componentRef.setInput('canUse', canUse)
+        componentRef.setInput('showPreview', !!this.options?.onPreview)
+        if (this.options?.previewIcon) {
+          componentRef.setInput('previewIcon', this.options.previewIcon)
+        }
+        if (this.options?.previewLabel) {
+          componentRef.setInput('previewLabel', this.options.previewLabel)
+        }
         if (this.options?.extraItems?.length) {
           componentRef.setInput('extraItems', this.options.extraItems)
         }
@@ -97,24 +159,19 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         componentRef.instance.onItemClick.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
           switch (v.name) {
             case 'rename':
-              if (!attachmentBlock.props.url) {
-                this.doc.messageService.warn("无法重命名未上传的附件")
-                return
-              }
-              this.onRename(attachmentBlock as BlockCraft.IBlockComponents['attachment'])
+              this.onRename(attachmentBlock)
               break
             case 'download':
-              if (!attachmentBlock.props.url) {
-                this.doc.messageService.warn("没有上传的附件")
-                return
-              }
               downloadFile(attachmentBlock.props.url, attachmentBlock.props.name)
+              break
+            case 'preview':
+              this.options?.onPreview?.(attachmentBlock, this.doc)
               break
             case 'delete':
               this.doc.crud.deleteBlockById(attachmentBlock.id)
               break
             default:
-              this.options?.onExtraItemClick?.(v.name, attachmentBlock as BlockCraft.IBlockComponents['attachment'], this.doc)
+              this.options?.onExtraItemClick?.(v.name, attachmentBlock, this.doc)
               break
           }
         })
@@ -122,6 +179,12 @@ export class AttachmentExtensionPlugin extends DocPlugin {
       }, 200)
 
     })
+  }
+
+  /** 附件是否就绪：有 url 且已上传至远端（http(s) 协议） */
+  private _isCanUse(block: AttachmentBlock): boolean {
+    const url = block.props.url
+    return !!url && (url.startsWith('http://') || url.startsWith('https://'))
   }
 
   clearTimer() {
@@ -137,7 +200,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     this._activeBlock = null
   }
 
-  onRename(block: BlockCraft.IBlockComponents['attachment']) {
+  onRename(block: AttachmentBlock) {
     const close$ = new Subject<void>()
 
     const close = () => {
@@ -218,6 +281,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
 
   destroy() {
     this._sub?.unsubscribe()
+    this.closeToolbar()
   }
 
 

@@ -9,7 +9,7 @@ import {getAttachmentIcon} from "./icons";
   selector: 'div.attachment-block',
   template: `
     @if (!props.url) {
-      <div class="attachment-block__empty" contenteditable="false" (click)="inputLocalFile()">
+      <div class="attachment-block__empty" contenteditable="false">
         <i class="bc_icon bc_wenjian-color"></i>
         <span>上传文件</span>
       </div>
