@@ -288,6 +288,7 @@ export class DocDndService {
   }
 
   private _onDragStart(evt: DragEvent) {
+    if(this.doc.isReadonly) return
     this.doc.ngZone.runOutsideAngular(() => {
       this.clearDrag()
       this.dragStatus$.next(DocDndStatus.start)

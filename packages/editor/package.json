@@ -1,6 +1,6 @@
 {
   "name": "@ccc/blockcraft",
-  "version": "0.1.35",
+  "version": "0.1.37",
   "publishConfig": {
     "registry": "http://npm.runtongqiuben.com"
   },
