@@ -82,7 +82,12 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this._cpr.setInput('activeFlavour', this.activeCommonAttrs.flavour);
 
     if (this.options?.extraItems?.length) {
-      this._cpr.setInput('extraItems', this.options.extraItems);
+      const visibleExtras = this.options.extraItems.filter(
+        item => !item.visible || item.visible(sel)
+      );
+      if (visibleExtras.length) {
+        this._cpr.setInput('extraItems', visibleExtras);
+      }
     }
 
     if (this.options?.onExtraItemClick) {

@@ -34,6 +34,11 @@ export interface IToolbarMenuItem {
   intro?: string
   divide?: boolean
   tip?: string
+  /**
+   * 可选的展示时机判定函数，接收当前选区，返回 true 时展示该项。
+   * 未设置时默认展示。
+   */
+  visible?: (selection: BlockCraft.Selection) => boolean
 }
 
 const HEADING_LIST: IToolbarMenuItem[] = [
