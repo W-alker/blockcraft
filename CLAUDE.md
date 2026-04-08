@@ -131,7 +131,8 @@ Before completing any code modification task, verify:
 | 修改 `DocConfig` 或 `BlockCraftDoc` 构造参数 | `blockcraft-app.md` |
 | 修改 DI Token (`DOC_FILE_SERVICE_TOKEN` 等) 或 service 接口 | `blockcraft-app.md` |
 | 新增/删除/重命名 Block 类型 | `blockcraft.md`（Block 分类表） |
-| 新增/删除/重命名 Plugin | `blockcraft.md`（Plugin 列表） + `blockcraft-plugin.md` |
+| 新增/删除/重命名 Plugin | `blockcraft.md`（Plugin 列表） + `blockcraft-plugin.md` + 对应的 `blockcraft-plugins-*.md` 分类文件 + `blockcraft-plugins-ref.md`（索引表） |
+| 修改现有 Plugin 的构造参数、Options 接口、扩展点、公开 API | 对应的 `blockcraft-plugins-*.md` 分类文件（按插件所属分类定位：`formatting` / `block` / `toolbar` / `inline` / `util`） |
 | 修改 DocChain API | `blockcraft.md` + `blockcraft-block.md` |
 | 修改主题系统结构 | `blockcraft-theme.md` |
 | 重构 / 新增 / 删除任何上述未列出的对外 API | `blockcraft.md` + 受影响的 L1 + `MIGRATIONS.md` |
@@ -182,6 +183,12 @@ packages/editor/ai-skills/   # 同时随 npm 包发布到 node_modules/@ccc/bloc
 ├── install.mjs             # 一键安装到 ~/.claude/skills 或 ~/.agents/skills 的脚本
 ├── blockcraft.md           # L0: 概览 + 路由表
 ├── blockcraft-app.md       # L1: 在宿主 Angular 应用中嵌入 BlockCraft
+├── blockcraft-plugins-ref.md # L1: 内置插件索引（按分类路由到子文件）
+├── blockcraft-plugins-formatting.md # L1: 文本格式化插件
+├── blockcraft-plugins-block.md      # L1: 块管理插件
+├── blockcraft-plugins-toolbar.md    # L1: 块工具栏插件
+├── blockcraft-plugins-inline.md     # L1: 行内扩展 + 键盘绑定插件
+├── blockcraft-plugins-util.md       # L1: 工具类插件
 ├── blockcraft-plugin.md    # L1: 创建 Plugin
 ├── blockcraft-block.md     # L1: 创建 Block
 ├── blockcraft-embed.md     # L1: 创建 Inline Embed

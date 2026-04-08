@@ -2,9 +2,10 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> For event system internals, see L2: `blockcraft-event.md`
+> For configuring existing built-in plugins, see `blockcraft-plugins-ref.md`.
+> For event system internals, see L2: `blockcraft-event.md`.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-04-08
 
 ## Plugin Lifecycle
 

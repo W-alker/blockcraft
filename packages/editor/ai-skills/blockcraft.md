@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-04-07 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-04-08 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -86,6 +86,7 @@ packages/editor/
 | Task | Sub-Skill File | Level |
 |------|----------------|-------|
 | **Embed BlockCraft in a host Angular app** | `blockcraft-app.md` | L1 |
+| Configure / use existing plugins | `blockcraft-plugins-ref.md` | L1 |
 | Create a new plugin | `blockcraft-plugin.md` | L1 |
 | Create a new block | `blockcraft-block.md` | L1 |
 | Create an inline embed (mention, link, latex, …) | `blockcraft-embed.md` | L1 |
@@ -243,6 +244,12 @@ packages/editor/ai-skills/         # also shipped at node_modules/@ccc/blockcraf
 ├── install.mjs             # One-command installer for ~/.claude/skills/
 ├── blockcraft.md           # L0: this file (overview + router)
 ├── blockcraft-app.md       # L1: embed BlockCraft in a host Angular app
+├── blockcraft-plugins-ref.md # L1: built-in插件索引 + 路由（按分类指向下方子文件）
+├── blockcraft-plugins-formatting.md # L1: 文本格式化插件（FloatTextToolbar, TextMarker, FixedToolbar）
+├── blockcraft-plugins-block.md      # L1: 块管理插件（BlockController, GapCreator, Transformer, Ordered）
+├── blockcraft-plugins-toolbar.md    # L1: 块工具栏插件（Attachment, Img, Bookmark, Callout, Divider, Embed, Formula）
+├── blockcraft-plugins-inline.md     # L1: 行内扩展 + 键盘绑定（InlineLink, Mention, Code, Table）
+├── blockcraft-plugins-util.md       # L1: 工具类插件（FindReplace, PasteFormat, Demo, Translate）
 ├── blockcraft-plugin.md    # L1: create plugins
 ├── blockcraft-block.md     # L1: create blocks (void / editable / container)
 ├── blockcraft-embed.md     # L1: create inline embeds

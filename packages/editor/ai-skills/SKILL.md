@@ -7,7 +7,7 @@ description: Use when building, extending, or embedding the BlockCraft block-bas
 
 > **AI discovery entry point.** This file exists so AI tools that scan for `SKILL.md` (Claude Code, Codex, etc.) can find this skill pack. Read this file first, then jump into the L0 router.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-04-08
 
 ## What is BlockCraft?
 
@@ -22,7 +22,7 @@ The pack is organised as **three-level progressive disclosure**:
 | Level | When to read | Files |
 |-------|--------------|-------|
 | **L0** | **Always read first** — overview + routing table | `blockcraft.md` |
-| **L1** | After L0, pick one task guide for your specific work | `blockcraft-app.md`, `blockcraft-plugin.md`, `blockcraft-block.md`, `blockcraft-embed.md`, `blockcraft-adapter.md`, `blockcraft-toolbar.md`, `blockcraft-theme.md`, `blockcraft-debug.md`, `blockcraft-perf.md`, `blockcraft-test.md` |
+| **L1** | After L0, pick one task guide for your specific work | `blockcraft-app.md`, `blockcraft-plugins-ref.md` (index → `blockcraft-plugins-formatting.md` / `blockcraft-plugins-block.md` / `blockcraft-plugins-toolbar.md` / `blockcraft-plugins-inline.md` / `blockcraft-plugins-util.md`), `blockcraft-plugin.md`, `blockcraft-block.md`, `blockcraft-embed.md`, `blockcraft-adapter.md`, `blockcraft-toolbar.md`, `blockcraft-theme.md`, `blockcraft-debug.md`, `blockcraft-perf.md`, `blockcraft-test.md` |
 | **L2** | Only when L1 isn't enough or you're touching framework internals | `blockcraft-selection.md`, `blockcraft-input.md`, `blockcraft-inline.md`, `blockcraft-event.md`, `blockcraft-data.md` |
 | **Migration** | Whenever upgrading `@ccc/blockcraft` or before bumping its version | `MIGRATIONS.md` |
 
@@ -38,6 +38,7 @@ The pack is organised as **three-level progressive disclosure**:
 | I want to… | Read this |
 |------------|-----------|
 | **Embed BlockCraft in my Angular app** | `blockcraft-app.md` |
+| **Configure / use built-in plugins** | `blockcraft-plugins-ref.md` |
 | **Create a new editor plugin** | `blockcraft-plugin.md` |
 | **Create a new block type (void/editable/container)** | `blockcraft-block.md` |
 | **Create an inline embed (mention, link, latex, …)** | `blockcraft-embed.md` |
