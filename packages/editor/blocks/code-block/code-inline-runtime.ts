@@ -34,8 +34,16 @@ const stripMermaidFenceLines = (lines: ThemedToken[][]): ThemedToken[][] => {
   return lines.slice(1, -1)
 }
 
-const flatShikiTokens = (lines: ThemedToken[][], withLineBreak = true): DeltaInsertText[] => {
+const getOriginalLineBreaks = (text: string): string[] => text.match(/\r\n|\r|\n/g) || []
+
+export const flatShikiTokens = (
+  lines: ThemedToken[][],
+  originalText: string,
+  withLineBreak = true
+): DeltaInsertText[] => {
   const res: DeltaInsertText[] = []
+  const originalLineBreaks = getOriginalLineBreaks(originalText)
+
   for (let i = 0; i < lines.length; i++) {
     for (const token of lines[i]) {
       if (!token.content) continue
@@ -45,6 +53,9 @@ const flatShikiTokens = (lines: ThemedToken[][], withLineBreak = true): DeltaIns
       })
     }
     if (i < lines.length - 1) {
+      if (originalLineBreaks[i] === '\r\n') {
+        res.push({insert: '\r'})
+      }
       res.push({
         insert: STR_LINE_BREAK,
         attributes: withLineBreak ? {'d:lineBreak': true} : undefined
@@ -167,7 +178,7 @@ export class CodeInlineRuntime extends InlineRuntime {
       }
     }
 
-    return flatShikiTokens(tokenLines, this._options.withLineBreak)
+    return flatShikiTokens(tokenLines, text, this._options.withLineBreak)
   }
 
   /**
