@@ -18,33 +18,37 @@ export interface AttachmentExtensionOptions {
   /**
    * 追加到工具栏的自定义按钮
    */
-  extraItems?: IAttachmentToolbarItem[]
+  extraItems?: IAttachmentToolbarItem[];
 
   /**
    * 自定义按钮点击回调。返回 true 表示已处理。
    */
-  onExtraItemClick?: (itemName: string, block: AttachmentBlock, doc: BlockCraft.Doc) => boolean
+  onExtraItemClick?: (
+    itemName: string,
+    block: AttachmentBlock,
+    doc: BlockCraft.Doc,
+  ) => boolean;
 
   /**
    * 自定义预览逻辑。一旦传入，将在工具栏追加预览按钮，点击时调用此函数。
    * 不传则不显示预览按钮。
    */
-  onPreview?: (block: AttachmentBlock, doc: BlockCraft.Doc) => void
+  onPreview?: (block: AttachmentBlock, doc: BlockCraft.Doc) => void;
 
   /**
    * 预览按钮图标类名，默认 'bc_eye-open'
    */
-  previewIcon?: string
+  previewIcon?: string;
 
   /**
    * 预览按钮 tooltip 文案，默认 '预览'
    */
-  previewLabel?: string
+  previewLabel?: string;
 
   /**
    * 空附件点击时的提示（附件仍在上传中时），默认 '文件可能正在上传中，暂不可用'
    */
-  uploadingTip?: string
+  uploadingTip?: string;
 }
 
 export class AttachmentExtensionPlugin extends DocPlugin {
@@ -162,7 +166,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
               this.onRename(attachmentBlock)
               break
             case 'download':
-              downloadFile(attachmentBlock.props.url, attachmentBlock.props.name)
+              this.fileService.downloadAttachment(attachmentBlock.props);
               break
             case 'preview':
               this.options?.onPreview?.(attachmentBlock, this.doc)

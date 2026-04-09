@@ -1,4 +1,5 @@
 import {InjectionToken} from "@angular/core";
+import { downloadFile } from "../../global";
 
 export interface DocAttachmentInfo {
   name: string
@@ -22,6 +23,10 @@ export abstract class DocFileService {
   abstract uploadAttachment(file: File, onProgress?: UploadProgressCallback): Promise<DocAttachmentInfo>
 
   abstract previewAttachment(options: any): void
+
+  downloadAttachment(options: Pick<DocAttachmentInfo, 'url' | 'name'>): Promise<void> {
+    return downloadFile(options.url, options.name)
+  }
 
   abstract previewImg(options: Record<string, unknown>): void
 

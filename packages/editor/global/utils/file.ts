@@ -110,7 +110,7 @@ export const downloadFile = async (url: string | Blob, filename = '未命名') =
   window.URL.revokeObjectURL(blobUrl);
 };
 
-function getSafeFileName(string: string) {
+export function getSafeFileName(string: string) {
   const replacement = ' ';
   const filenameReservedRegex = /[<>:"/\\|?*\u0000-\u001F]/g;
   const windowsReservedNameRegex = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
