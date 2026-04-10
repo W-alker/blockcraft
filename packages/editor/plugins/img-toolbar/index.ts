@@ -8,7 +8,7 @@ import {
 import {UIEventStateContext} from "../../framework";
 import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
 import {IImageToolbarItem, ImageToolbar} from "./widgets/image.toolbar";
-import { BlockCraftError, ErrorCode, nextTick} from "../../global";
+import { BlockCraftError, ErrorCode, getImageExt, nextTick} from "../../global";
 import {OverlayRef} from "@angular/cdk/overlay";
 
 export interface ImgToolbarPluginOptions {
@@ -207,7 +207,9 @@ export class ImgToolbarPlugin extends DocPlugin {
               case "download":
                 this.fileService.downloadAttachment({
                   url: imgBlock.props.src,
-                  name: imgBlock.firstChildren?.textContent() || '',
+                  name:
+                    (imgBlock.firstChildren?.textContent() || Date.now()) +
+                    "." + getImageExt(imgBlock.props.src),
                 });
                 break;
               case "copy-url":

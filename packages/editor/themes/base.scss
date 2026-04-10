@@ -127,6 +127,10 @@
     @include user-select(none);
     caret-color: transparent;
 
+    input, textarea {
+      caret-color: var(--bc-caret-color);
+    }
+
     * {
       @include user-select(none);
     }
