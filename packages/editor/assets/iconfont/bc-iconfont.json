@@ -6,6 +6,41 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "5472030",
+      "name": "任务(任务列表）",
+      "font_class": "renwuban",
+      "unicode": "e775",
+      "unicode_decimal": 59253
+    },
+    {
+      "icon_id": "21811974",
+      "name": "任务卡片-流程",
+      "font_class": "renwukapian-liucheng",
+      "unicode": "e633",
+      "unicode_decimal": 58931
+    },
+    {
+      "icon_id": "22929764",
+      "name": "B_任务列表_正",
+      "font_class": "renwukapian-fill",
+      "unicode": "e634",
+      "unicode_decimal": 58932
+    },
+    {
+      "icon_id": "22929781",
+      "name": "B_任务列表_负",
+      "font_class": "renwukapian",
+      "unicode": "e635",
+      "unicode_decimal": 58933
+    },
+    {
+      "icon_id": "35119240",
+      "name": "c008任务列表",
+      "font_class": "renwuliebiao",
+      "unicode": "e638",
+      "unicode_decimal": 58936
+    },
+    {
       "icon_id": "6129323",
       "name": "280皮肤、个性化",
       "font_class": "pifug-fill",

@@ -1,9 +1,9 @@
 @font-face {
   font-family: "bc_icon"; /* Project id 4682833 */
-  src: url('bc-iconfont.woff2?t=1775120167568') format('woff2'),
-       url('bc-iconfont.woff?t=1775120167568') format('woff'),
-       url('bc-iconfont.ttf?t=1775120167568') format('truetype'),
-       url('bc-iconfont.svg?t=1775120167568#bc_icon') format('svg');
+  src: url('bc-iconfont.woff2?t=1775808628453') format('woff2'),
+       url('bc-iconfont.woff?t=1775808628453') format('woff'),
+       url('bc-iconfont.ttf?t=1775808628453') format('truetype'),
+       url('bc-iconfont.svg?t=1775808628453#bc_icon') format('svg');
 }
 
 .bc_icon {
@@ -12,6 +12,26 @@
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.bc_renwuban:before {
+  content: "\e775";
+}
+
+.bc_renwukapian-liucheng:before {
+  content: "\e633";
+}
+
+.bc_renwukapian-fill:before {
+  content: "\e634";
+}
+
+.bc_renwukapian:before {
+  content: "\e635";
+}
+
+.bc_renwuliebiao:before {
+  content: "\e638";
 }
 
 .bc_pifug-fill:before {
