@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-04-13
 
 ## Block Types
 
@@ -14,6 +14,14 @@
 | `void` | `BaseBlockComponent` | No | No | Custom template with `contenteditable="false"` |
 | `editable` | `EditableBlockComponent` | Yes (Y.Text) | No | Empty template, host has `edit-container` class |
 | `block` | `BaseBlockComponent` | No | Yes | Template with `children-render-container` div |
+
+## Choosing Between Editable Text and Native Inputs
+
+- Use `EditableBlockComponent` when the text is part of the document body and must participate in Yjs sync, undo/redo, IME, inline formatting, and cursor navigation.
+- Use a native `input` / `textarea` only for **block-local property editing** inside `void` or `block` nodes.
+- Native form controls now bypass the editor's input/hotkey/selection pipeline automatically.
+- For non-form custom widgets that should behave the same way, add `data-bc-native-input` to the widget root.
+- When a native field changes, commit through `updateProps()`, `setInitProps()`, or `DocChain` rather than trying to wire it into `InputTransformer`.
 
 ## File Structure
 
@@ -109,6 +117,40 @@ export class MyBlockComponent extends BaseBlockComponent<MyBlockModel> {
     this.updateProps({ src: 'new-value' });
   }
 }
+```
+
+### Void / Block Node With Native Input
+
+```typescript
+@Component({
+  selector: 'div.embed-config-block',
+  template: `
+    <div class="embed-config" contenteditable="false">
+      <input
+        type="text"
+        [value]="props.url || ''"
+        placeholder="Paste URL"
+        (input)="onUrlInput($event)"
+      />
+    </div>
+  `,
+  standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class EmbedConfigBlockComponent extends BaseBlockComponent<any> {
+  onUrlInput(event: Event) {
+    const value = (event.target as HTMLInputElement).value;
+    this.updateProps({ url: value });
+  }
+}
+```
+
+Use `data-bc-native-input` when the editable surface is not literally an `input` / `textarea` / `select`:
+
+```html
+<div class="custom-editor-shell" contenteditable="false" data-bc-native-input>
+  <!-- third-party widget mounts here -->
+</div>
 ```
 
 ---

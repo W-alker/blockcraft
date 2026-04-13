@@ -2,26 +2,48 @@ import {IBlockSnapshot} from "../../block-std";
 import {ClipboardDataType, ClipboardManager} from "./index";
 import {snapshots2Text} from "../../utils";
 
-async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
-  let clipboardItem: ClipboardItem
-  try {
-    const items: Partial<Record<ClipboardDataType, Blob>> = {}
-    for (const adp of this.adapter.supportedAdapters) {
-      const str = await adp.fromSnapshot(snapshot)
-      items[adp.type] = new Blob([str], {type: adp.type})
-    }
-    clipboardItem = new ClipboardItem({
-      [ClipboardDataType.TEXT]: new Blob([snapshots2Text([snapshot])], {type: 'text/plain'}),
-      ...items
-    })
+const STANDARD_CLIPBOARD_WRITE_TYPES = new Set<string>([
+  ClipboardDataType.TEXT,
+  ClipboardDataType.HTML,
+  ClipboardDataType.IMAGE,
+]);
 
-  } catch (e) {
-    clipboardItem = new ClipboardItem({
-      [ClipboardDataType.TEXT]: new Blob([snapshots2Text([snapshot])], {type: 'text/plain'}),
-    })
+function supportsClipboardWriteType(type: string) {
+  if (STANDARD_CLIPBOARD_WRITE_TYPES.has(type)) {
+    return true;
   }
 
-  return navigator.clipboard.write([clipboardItem])
+  const clipboardItemCtor = globalThis.ClipboardItem as
+    | (typeof ClipboardItem & {supports?: (type: string) => boolean})
+    | undefined;
+
+  if (typeof clipboardItemCtor?.supports === 'function') {
+    return clipboardItemCtor.supports(type);
+  }
+
+  return false;
+}
+
+async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
+  const itemData: Record<string, Blob> = {
+    [ClipboardDataType.TEXT]: new Blob([snapshots2Text([snapshot])], {type: ClipboardDataType.TEXT}),
+  };
+
+  try {
+    for (const adp of this.adapter.supportedAdapters) {
+      if (!supportsClipboardWriteType(adp.type)) continue;
+      const str = await adp.fromSnapshot(snapshot)
+      itemData[adp.type] = new Blob([str], {type: adp.type})
+    }
+  } catch (e) {
+    return tryCommand.call(this, snapshot)
+  }
+
+  try {
+    return await navigator.clipboard.write([new ClipboardItem(itemData)])
+  } catch (e) {
+    return tryCommand.call(this, snapshot)
+  }
 }
 
 async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) {

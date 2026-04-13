@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-04-13
 
 ## Architecture
 
@@ -232,6 +232,14 @@ export const blockMarkdownAdapterMatchers: BlockMarkdownAdapterMatcher[] = [
 ];
 ```
 
+## Media Blocks: Recommended Mapping
+
+- **HTML export**: `video` / `audio` blocks should emit native media tags. Wrapping them in `<figure>` is recommended so generic paragraph matchers don't accidentally flatten them as inline content.
+- **HTML import**: Prefer reading `src` from the media element first, then fall back to the first `<source>` child. Preserve useful metadata through `data-*` attributes such as `data-source-type`, `data-name`, `data-size`, `data-type`.
+- **Markdown export**: Markdown has no stable native media syntax. Export media blocks as links and add a lightweight title hint, for example `[Clip](https://cdn.example.com/demo.mp4 "blockcraft:video")`.
+- **Markdown import**: Recognize the media hint title first. If there is no hint, fall back to URL heuristics such as common media extensions or known video platform hosts.
+- **Paragraph matcher interaction**: If your markdown/html paragraph matcher also accepts raw `html`, `div`, or `paragraph` nodes, explicitly exclude media-only nodes so both matchers do not consume the same source node.
+
 ## Checklist
 
 - [ ] `toMatch` correctly identifies the source AST node type
@@ -251,3 +259,4 @@ export const blockMarkdownAdapterMatchers: BlockMarkdownAdapterMatcher[] = [
 | Paragraph | `html-adapter/block-matchers/paragraph-matchers.ts` | `markdown-adapter/block-matchers/paragraph-matcher.ts` |
 | Image | `html-adapter/block-matchers/image-matcher.ts` | `markdown-adapter/block-matchers/image-matcher.ts` |
 | Code | `html-adapter/block-matchers/code-matcher.ts` | `markdown-adapter/block-matchers/code-matcher.ts` |
+| Video / Audio | `html-adapter/block-matchers/media-matcher.ts` | `markdown-adapter/block-matchers/media-matcher.ts` |

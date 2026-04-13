@@ -16,6 +16,15 @@ class TestDocFileService extends DocFileService {
     return Promise.resolve('');
   }
 
+  uploadVideo(): Promise<DocAttachmentInfo> {
+    return Promise.resolve({
+      name: '',
+      type: '',
+      url: '',
+      size: 0,
+    });
+  }
+
   uploadAttachment(): Promise<DocAttachmentInfo> {
     return Promise.resolve({
       name: '',
@@ -28,6 +37,28 @@ class TestDocFileService extends DocFileService {
   previewAttachment(): void {}
 
   previewImg(): void {}
+
+  createObjectURL(): string {
+    return '';
+  }
+
+  getFileByObjectURL(): File | undefined {
+    return undefined;
+  }
+
+  getFilePreviewURLByObjectURL(): string {
+    return '';
+  }
+
+  removeObjectURL(): void {}
+
+  isLocalObjectURL(): boolean {
+    return false;
+  }
+
+  isOverMaxSize(): boolean {
+    return false;
+  }
 }
 
 const createEditableSnapshot = (
@@ -300,6 +331,91 @@ describe('MarkdownAdapter', () => {
 
       const markdown = await adapter.toMarkdown(snapshot);
       expect(markdown.trim()).toBe('Hello Alice world');
+    });
+  });
+
+  describe('media blocks', () => {
+    it('exports video blocks as markdown links with a media hint title', async () => {
+      const snapshot = createRootSnapshot([
+        createVoidSnapshot('video-1', 'video', {
+          url: 'https://cdn.example.com/demo.mp4',
+          name: 'Demo clip',
+          sourceType: 'link',
+          type: 'video/mp4',
+        }),
+      ]);
+
+      const markdown = await adapter.toMarkdown(snapshot);
+      expect(markdown.trim()).toBe(
+        '[Demo clip](https://cdn.example.com/demo.mp4 "blockcraft:video")'
+      );
+    });
+
+    it('exports audio blocks as markdown links with a media hint title', async () => {
+      const snapshot = createRootSnapshot([
+        createVoidSnapshot('audio-1', 'audio', {
+          url: 'https://cdn.example.com/demo.ogg',
+          name: 'Theme song',
+          sourceType: 'link',
+        }),
+      ]);
+
+      const markdown = await adapter.toMarkdown(snapshot);
+      expect(markdown.trim()).toBe(
+        '[Theme song](https://cdn.example.com/demo.ogg "blockcraft:audio")'
+      );
+    });
+
+    it('imports markdown links with media hint titles as media blocks', async () => {
+      const source = [
+        '[Demo clip](https://cdn.example.com/demo.mp4 "blockcraft:video")',
+        '',
+        '[Theme song](https://cdn.example.com/demo.ogg "blockcraft:audio")',
+      ].join('\n');
+
+      const snapshot = await adapter.toBlockSnapshot(source);
+      const children = snapshot.children as IBlockSnapshot[];
+
+      expect(children[0]?.flavour).toBe('video');
+      expect(children[0]?.props['url']).toBe('https://cdn.example.com/demo.mp4');
+      expect(children[0]?.props['name']).toBe('Demo clip');
+
+      expect(children[1]?.flavour).toBe('audio');
+      expect(children[1]?.props['url']).toBe('https://cdn.example.com/demo.ogg');
+      expect(children[1]?.props['name']).toBe('Theme song');
+    });
+
+    it('imports known video platform links as video blocks', async () => {
+      const source = '[Watch](https://www.youtube.com/watch?v=dQw4w9WgXcQ)\n';
+      const snapshot = await adapter.toBlockSnapshot(source);
+      const firstChild = (snapshot.children as IBlockSnapshot[])[0];
+
+      expect(firstChild?.flavour).toBe('video');
+      expect(firstChild?.props['url']).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+      expect(firstChild?.props['name']).toBe('Watch');
+    });
+
+    it('imports raw html media tags as media blocks', async () => {
+      const source = [
+        '<video src="https://cdn.example.com/demo.mp4" width="640" poster="https://cdn.example.com/poster.jpg" data-source-type="embed" data-type="video/mp4"></video>',
+        '',
+        '<audio src="https://cdn.example.com/theme.mp3" title="Theme song" data-size="2048"></audio>',
+      ].join('\n');
+
+      const snapshot = await adapter.toBlockSnapshot(source);
+      const children = snapshot.children as IBlockSnapshot[];
+
+      expect(children[0]?.flavour).toBe('video');
+      expect(children[0]?.props['url']).toBe('https://cdn.example.com/demo.mp4');
+      expect(children[0]?.props['width']).toBe(640);
+      expect(children[0]?.props['poster']).toBe('https://cdn.example.com/poster.jpg');
+      expect(children[0]?.props['sourceType']).toBe('embed');
+      expect(children[0]?.props['type']).toBe('video/mp4');
+
+      expect(children[1]?.flavour).toBe('audio');
+      expect(children[1]?.props['url']).toBe('https://cdn.example.com/theme.mp3');
+      expect(children[1]?.props['name']).toBe('Theme song');
+      expect(children[1]?.props['size']).toBe(2048);
     });
   });
 

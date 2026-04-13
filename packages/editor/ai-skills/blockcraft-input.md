@@ -2,12 +2,12 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-04-13
 
 ## Architecture Overview
 
 ```
-DOM beforeInput event
+DOM beforeInput event inside an editable block
   → UIEventDispatcher routes to InputTransformer
   → e.preventDefault() (ALWAYS — editor owns all mutations)
   → InputTransformer classifies inputType
@@ -16,7 +16,16 @@ DOM beforeInput event
   → InlineRuntime.applyDelta() updates DOM
 ```
 
-**Key principle**: The editor intercepts ALL `beforeInput` events, prevents default browser behavior, and writes directly to Yjs. The DOM is never the source of truth — Yjs is.
+**Key principle**: The editor intercepts `beforeInput` for `EditableBlockComponent` surfaces, prevents default browser behavior, and writes directly to Yjs. The DOM is never the source of truth for editable blocks — Yjs is.
+
+## Native Input Islands
+
+`InputTransformer` does **not** own native form controls embedded inside `void` / `block` nodes.
+
+- Native `input`, `textarea`, and `select` elements now bypass the editor's `beforeInput`, hotkey, IME, paste, mouse, and selection pipelines.
+- Custom widgets can opt into the same isolation by adding `data-bc-native-input` to the widget root.
+- Use this mode for editing **block props / metadata** such as URL, title, caption, or config text.
+- Do **not** use it for collaborative document body text. If the text should participate in Yjs, undo/redo, selection navigation, or block splitting, model it as an `EditableBlockComponent` (or an inner editor host), not a native textarea.
 
 ## Key Files
 

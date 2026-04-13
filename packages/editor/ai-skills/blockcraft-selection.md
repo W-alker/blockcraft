@@ -2,12 +2,13 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-04-07 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-04-13 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
 ```
 User interaction (click / keyboard / API)
+  → focus into native input island? → SelectionManager.blur()
   → DOM `selectionchange` event (or programmatic call)
   → SelectionManager.recalculate()
       → normalizeRange(DOMRange)         // DOM → endpoints
@@ -18,6 +19,16 @@ User interaction (click / keyboard / API)
 ```
 
 **Key principle**: `BlockSelection` is the canonical truth. The DOM `Selection` is a derived view. Programmatic mutations build a DOM `Range` from the model and apply it via `Selection.addRange`.
+
+## Native Input Islands
+
+When focus moves into a native `input`, `textarea`, `select`, or a node marked with `data-bc-native-input` inside the editor:
+
+- `SelectionManager` clears the current `BlockSelection`
+- subsequent `selectionchange` recalculations stay `null` while that native control owns focus
+- the editor stops treating the previous inline cursor as active
+
+This prevents stale toolbar state and accidental block-level keyboard handling while a block-local form field is being edited.
 
 ## Key Files
 

@@ -14,7 +14,7 @@ import {
 } from "../../block-std";
 import {BlockSelection, INormalizedRange} from "../selection";
 import {endpointsToLegacy} from "../selection/normalize";
-import {isZeroSpace} from "../../utils";
+import {isNativeInputTarget, isZeroSpace} from "../../utils";
 import {BlockCraftError, ErrorCode, performanceTest, sliceDelta} from "../../../global";
 import {CompositionSession} from "./composition-session";
 
@@ -187,6 +187,9 @@ export class InputTransformer {
   @EventListen('beforeInput')
   private _handleBeforeInput(context: BlockCraft.EventStateContext) {
     const ev = context.get('defaultState').event as InputEvent
+    if (isNativeInputTarget(ev.target)) {
+      return
+    }
     this.compositionSession.updateAnchorFromInputEvent(ev, {isComposing: true})
 
     if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {

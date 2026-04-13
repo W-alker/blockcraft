@@ -2,6 +2,7 @@ import {BlockHtmlAdapterMatcher} from "../block-adapter";
 import {HastUtils} from "../../index";
 import {ParagraphBlockSchema} from "../../../blocks";
 import {BlockNodeType, DeltaInsert, generateId} from "../../../framework";
+import {isMediaContainerHtmlNode} from "./media-matcher";
 
 const paragraphBlockMatchTags = [
   'p',
@@ -55,6 +56,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         case 'body':
         case 'div':
         case 'footer': {
+          if (isMediaContainerHtmlNode(o.node)) return;
           if (!HastUtils.isParagraphLike(o.node)) return;
           if (o.parent?.node.type === 'element' && !['li', 'p'].includes(o.parent.node.tagName)) {
             const p = ParagraphBlockSchema.createSnapshot()
@@ -212,4 +214,3 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
     },
   },
 };
-

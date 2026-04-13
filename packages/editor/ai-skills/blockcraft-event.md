@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying event dispatch or handling.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-04-13
 
 ## Architecture Overview
 
@@ -42,6 +42,16 @@ cut, copy, paste,
 selectStart, selectEnd,
 contextMenu, wheel, pinch, pan
 ```
+
+## Native Input Target Bypass
+
+The root dispatcher and event controls treat native form controls as **input islands**:
+
+- Native `input`, `textarea`, and `select` targets bypass editor `beforeInput`
+- keyboard hotkeys, composition events, paste handling, mouse events, and selection gesture tracking also bypass those targets
+- custom widgets can opt into the same behavior with `data-bc-native-input`
+
+This keeps block-local forms from accidentally triggering document commands such as Enter-to-split, Backspace merge, mention trigger detection, or slash transforms.
 
 ## Three-Tier Scope Routing
 

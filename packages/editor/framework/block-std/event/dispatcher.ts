@@ -3,7 +3,7 @@ import {EventScopeSourceType, EventSourceState} from "./state";
 import {BlockCraftError, ErrorCode, performanceTest} from "../../../global";
 import {KeyboardControl, CompositionControl, ClipboardControl, DndControl, MouseControl} from "./control";
 import {fromEvent, take, takeUntil} from "rxjs";
-import {closetBlockId} from "../../utils";
+import {closetBlockId, isNativeInputTarget} from "../../utils";
 import {HasEventTargetAddRemove} from "rxjs/internal/observable/fromEvent";
 import {SelectionControl} from "./control/selection";
 
@@ -143,6 +143,9 @@ export class UIEventDispatcher {
       fromEvent(root.hostElement, eventName.toLowerCase(), {passive: eventName === 'wheel' ? false : undefined})
         .pipe(takeUntil(root.onDestroy$))
         .subscribe(event => {
+          if (eventName === 'beforeInput' && isNativeInputTarget(event.target)) {
+            return
+          }
           this.run(
             eventName,
             UIEventStateContext.from(

@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-04-07 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-04-13 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,51 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v0.2.13 — 2026-04-13 — Native Input Islands Inside Void / Block Nodes
+
+**Severity**: patch
+
+**What changed**: Native `input`, `textarea`, and `select` elements embedded inside BlockCraft blocks now bypass the editor's document-level `beforeInput`, hotkey, composition, paste, mouse, and selection pipelines. A custom widget can opt into the same isolation by adding `data-bc-native-input` on its root element. While one of these native controls is focused, `SelectionManager` clears the active `BlockSelection` instead of leaving stale editor selection state behind.
+
+**Why**: The previous event model assumed text input only happened inside `EditableBlockComponent`. When a `void` or `block` node hosted a native form control, browser events bubbled to the root editor and could accidentally trigger document commands such as Enter-to-split, Backspace merge, mention triggers, slash transforms, or stale toolbar state.
+
+**Affected ai-skills files**:
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-event.md`
+- `blockcraft-input.md`
+- `blockcraft-selection.md`
+
+### New APIs / Features
+
+- `data-bc-native-input` marker for non-form widgets that should be treated like isolated native input hosts
+
+### Migration Recipe
+
+```html
+<!-- before: third-party editor or custom text widget inside a void/block node -->
+<div class="widget-shell"></div>
+
+<!-- after -->
+<div class="widget-shell" data-bc-native-input></div>
+```
+
+```typescript
+// before: trying to route block-local form edits through InputTransformer
+// (not supported for void/block native controls)
+
+// after: treat it as block-local state and commit via props / chain
+onInput(event: Event) {
+  this.updateProps({ value: (event.target as HTMLInputElement).value });
+}
+```
+
+### Behavior Changes
+
+- Typing, IME composition, paste, and keyboard shortcuts inside native form controls no longer reach the editor command pipeline.
+- Focusing a native form control inside the editor clears the current `BlockSelection`.
+- Root-level `beforeInput` plugins such as mention/slash style triggers will no longer react to text typed inside isolated native controls.
 
 ### v0.1.38 — 2026-04-07 — AI Skill Pack External Distribution
 

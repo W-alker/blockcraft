@@ -16,6 +16,7 @@ import {
   tableRowBlockHtmlAdapterMatcher
 } from "./table-matcher";
 import {formulaBlockHtmlAdapterMatcher} from "./formula-matcher";
+import {mediaBlockHtmlAdapterMatcher} from "./media-matcher";
 
 export const DEFAULT_BLOCK_MATCHERS: BlockHtmlAdapterMatcher[] = [
   paragraphBlockHtmlAdapterMatcher,
@@ -24,6 +25,7 @@ export const DEFAULT_BLOCK_MATCHERS: BlockHtmlAdapterMatcher[] = [
   formulaBlockHtmlAdapterMatcher,
   dividerBlockHtmlAdapterMatcher,
   imageBlockHtmlAdapterMatcher,
+  mediaBlockHtmlAdapterMatcher,
   embedFigmaBlockHtmlAdapterMatcher,
   embedJuejinBlockHtmlAdapterMatcher,
   bookmarkBlockHtmlAdapterMatcher,

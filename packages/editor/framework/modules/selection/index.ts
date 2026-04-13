@@ -4,7 +4,7 @@ import {
   EditableBlockComponent,
 } from "../../block-std";
 import {BehaviorSubject, skip, take, takeUntil} from "rxjs";
-import {closetBlockId} from "../../utils";
+import {closetBlockId, isNativeInputTarget} from "../../utils";
 import {SelectionSelectedManager} from "./selected-manager";
 import {SelectionKeyboard} from "./selection-keyboard";
 import {FakeRange, IFakeRangeConfig} from "./createFakeRange";
@@ -59,6 +59,12 @@ export class SelectionManager {
       if (this.doc.event.status.isComposing) return
       this.recalculate()
     })
+    this.doc.event.customListen<FocusEvent>(root.hostElement, 'focusin').subscribe(event => {
+      if (!isNativeInputTarget(event.target)) return
+      if (this.value) {
+        this.blur()
+      }
+    })
   }
 
   // ── Read from DOM (user interaction path) ──
@@ -67,6 +73,13 @@ export class SelectionManager {
     value: BlockSelection | null
     next?: () => void
   } {
+    const activeElement = document.activeElement
+    if (activeElement && this.doc.root.hostElement.contains(activeElement) && isNativeInputTarget(activeElement)) {
+      const next = () => this._applyState(null)
+      execNext && next()
+      return {value: null, next: execNext ? undefined : next}
+    }
+
     const selection = document.getSelection()
     if (!selection || !selection.rangeCount) {
       const next = () => this._applyState(null)

@@ -91,13 +91,17 @@ Before completing any code modification task, verify:
 
 ## 文档同步规则（MANDATORY）
 
-> **核心原则**：BlockCraft 框架代码 + ai-skills 文档 + MIGRATIONS.md 三者**永远在同一个 commit/PR 中同步演进**。任何对外可观测的改动都必须留下文档痕迹。
+> **核心原则**：只有在**架构层 / 公共契约 / 扩展点**发生变化，或本次任务**明确同步更新相关 ai-skills 文档**时，BlockCraft 框架代码、ai-skills 文档与 `MIGRATIONS.md` 才需要在同一个 commit/PR 中同步演进。
+>
+> **默认规则**：普通 bug fix、实现细节修复、兼容性补丁、测试补充、非架构性行为修正，**不要默认**追加 `MIGRATIONS.md`，也**不要因为代码有变化就机械更新**无关 ai-skills 文档。
+>
+> **版本号规则**：`packages/editor/package.json` 的版本号**不联动**上述同步流程，属于用户手动定义的发布决策。**除非用户明确要求**，否则任何任务中都**不要自动修改版本号**。
 >
 > **谁会看这些规则**：在这个仓库工作的所有 AI agent 和人类开发者。下游依赖 `@ccc/blockcraft` 的项目是这套规则的最终受益者——他们升级版本时只要看 `MIGRATIONS.md` 就知道要改什么。
 
 ### 触发条件
 
-当你修改了 `packages/editor/framework/`、`packages/editor/blocks/`、`packages/editor/plugins/`、`packages/editor/adapters/`、`packages/editor/themes/`、`packages/editor/editor/` 等目录下**任何对外可观测的代码**（不限于"架构性"，下方都属于"对外可观测"）：
+当你修改了 `packages/editor/framework/`、`packages/editor/blocks/`、`packages/editor/plugins/`、`packages/editor/adapters/`、`packages/editor/themes/`、`packages/editor/editor/` 等目录下，且改动满足以下任一条件时，才触发本节的强制同步要求：
 
 - 任何 exported 类、接口、函数、常量的新增 / 修改 / 删除 / 重命名
 - Plugin / Block / Embed / Schema / Service Token 的新增 / 删除 / 重命名
@@ -107,11 +111,13 @@ Before completing any code modification task, verify:
 - 事件名、事件 payload 形状的变动
 - 原本会抛错的边界情况改为静默（或反之）
 
-你**必须**做下列三件事，任一遗漏均视为未完成本次任务：
+如果本次改动只是局部实现修复，且**没有改变公共契约 / 架构 / 使用方式**，则不触发下面三项默认要求。
+
+当且仅当触发上述条件时，你**必须**做下列三件事，任一遗漏均视为未完成本次任务：
 
 1. **同步 ai-skills 文档** — 见下表，按"变更类型 → 受影响文档"映射更新。所有被改动文件的顶部 `Last updated:` 日期一并刷新。
 2. **追加 MIGRATIONS.md 条目** — 在 `packages/editor/ai-skills/MIGRATIONS.md` 顶部插入新版本块（紧跟在最近条目之上），按文件内的 entry 模板填写。即使 severity 是 patch 也要写，理由写"内部修复，无外部影响"也算。
-3. **依据 severity 调整版本号** — 修改 `packages/editor/package.json` 的 `version` 字段，遵循 `MIGRATIONS.md` 中的"Severity Reference Card"。**禁止**在没有更新 MIGRATIONS.md 的情况下提升版本号。
+3. **版本号是否调整由用户决定** — 不要把修改 `packages/editor/package.json` 的 `version` 视为默认步骤；只有在用户明确要求发布、bump version、对齐版本策略时才修改。
 
 ### 变更类型映射表
 
@@ -137,7 +143,9 @@ Before completing any code modification task, verify:
 | 修改主题系统结构 | `blockcraft-theme.md` |
 | 重构 / 新增 / 删除任何上述未列出的对外 API | `blockcraft.md` + 受影响的 L1 + `MIGRATIONS.md` |
 
-> 任何一行变更都至少需要更新 `MIGRATIONS.md`。如果改的是 framework 内部、完全不影响外部可观测行为，也写一条 patch 级条目说"内部重构，无 API 影响"——留白比留迹危险。
+> 只有触发本节的“架构层 / 公共契约 / 扩展点变化”条件时，才需要更新 `MIGRATIONS.md`。
+>
+> 不要把普通 bug fix、内部实现调整、测试补充、浏览器兼容性兜底、局部 UX 修正机械记录进 `MIGRATIONS.md`。只有当外部使用者升级时**确实需要知道这件事**，或者本次任务**明确同步更新相关 ai-skills 文档**时，才留迁移痕迹。
 
 ### 操作流程（每次架构性修改都执行）
 
@@ -152,26 +160,29 @@ Before completing any code modification task, verify:
    - 如果是 minor/major：填 New APIs、Deprecations、Migration Recipe（含 before/after 代码）
    - 如果是 major：填 Breaking Changes 节
    - 行为变化填 Behavior Changes 节
-6. **更新 `packages/editor/package.json` 的 `version`**，遵循 severity 规则
+6. **仅在用户明确要求时再更新 `packages/editor/package.json` 的 `version`**
 7. **PR 描述中显式列出**本次同步更新了哪些 ai-skills 文件，以及 MIGRATIONS 新增的版本号——评审者会照此对照检查
-8. **如果不确定是否需要更新，宁可更新，不要遗漏**——补一条 patch 级 MIGRATIONS 条目的成本远低于让下游消费者踩坑
+8. **如果不确定是否触发本节，先判断是否真的影响外部契约 / 架构 / skill 使用方式**；不要因为“代码变了”就自动补版本号或迁移记录
 
 ### 反面案例（明令禁止）
 
 - ❌ 修改 `BaseBlockComponent` 的方法签名，但不动 `blockcraft-block.md`
 - ❌ 删除一个 exported type，但不写 MIGRATIONS 条目
-- ❌ 提升 `package.json` 版本号到 0.2.0，但 MIGRATIONS 顶部仍是 0.1.x 的条目
+- ❌ 在没有用户明确要求的情况下，擅自提升 `package.json` 版本号
 - ❌ "顺手"把一个 deprecated API 删掉，PR 里既没有 major bump 也没有 MIGRATIONS 条目
 - ❌ 新增一个 plugin，但 `blockcraft.md` 的 Plugin 列表和 `MIGRATIONS.md` 都没有提
 - ❌ 把 `blockcraft.md` 改了但忘记更新 `Last updated` 日期
 
 ### 执行边界
 
-- **bug fix（无 API 表面变化）**：仍然要写一条 patch 级 MIGRATIONS 条目，但 ai-skills 文件可以不动
+- **bug fix（无 API / 架构 / 扩展点变化）**：默认不更新 `MIGRATIONS.md`，默认不修改版本号；相关 ai-skills 文件只有在本次任务明确同步修正文档时才更新
 - **重命名内部 helper 函数**：如果它没有 export，不需要任何文档变化
 - **README / 项目文档变更**：不需要 MIGRATIONS 条目
 - **测试代码 / 脚手架代码变更**：不需要 MIGRATIONS 条目
 - **新增 ai-skills 文件本身**：作为 minor 写一条条目，列出新文件
+- **只更新 ai-skills 文档本身**：如果没有版本发布意图、没有公共契约变化，可以只改相关 skill 文档，不必默认 bump 版本号
+- **版本号管理**：版本号由用户自己定义；只有当用户明确要求发布、升级版本、对齐 release 计划时才修改
+- **用户明确要求不要改版本号 / 不记迁移记录**：遵循用户要求，除非用户随后又明确要求发布相关操作
 
 ## 文件清单
 

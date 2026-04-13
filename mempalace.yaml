@@ -1,0 +1,30 @@
+wing: blockcraft
+rooms:
+- name: documentation
+  description: Files from docs/
+  keywords:
+  - documentation
+  - docs
+- name: 'http:'
+  description: Files from http:/
+  keywords:
+  - 'http:'
+  - 'http:'
+- name: scripts
+  description: Files from scripts/
+  keywords:
+  - scripts
+  - scripts
+- name: packages
+  description: Files from packages/
+  keywords:
+  - packages
+  - packages
+- name: apps
+  description: Files from apps/
+  keywords:
+  - apps
+  - apps
+- name: general
+  description: Files that don't fit other rooms
+  keywords: []

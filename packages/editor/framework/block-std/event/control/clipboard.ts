@@ -1,6 +1,7 @@
 import {fromEvent, takeUntil} from "rxjs";
 import {UIEventState, UIEventStateContext} from "../base";
 import {ClipboardEventState, EventScopeSourceType, EventSourceState} from "../state";
+import {isNativeInputTarget} from "../../../utils";
 
 export class ClipboardControl {
   constructor(private _dispatcher: BlockCraft.EventDispatcher) {
@@ -24,6 +25,7 @@ export class ClipboardControl {
       this._dispatcher.run('cut', this._createContext(ev))
     })
     fromEvent<ClipboardEvent>(root.hostElement, 'paste').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
+      if (isNativeInputTarget(ev.target)) return
       if (this._dispatcher.status.isReadOnly) {
         ev.preventDefault()
         return

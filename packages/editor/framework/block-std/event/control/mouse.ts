@@ -1,6 +1,7 @@
 import {fromEvent, takeUntil} from "rxjs";
 import {UIEventState, UIEventStateContext} from "../base";
 import {EventScopeSourceType, EventSourceState} from "../state";
+import {isNativeInputTarget} from "../../../utils";
 
 function createContext(
   event: MouseEvent,
@@ -26,23 +27,28 @@ export class MouseControl {
 
   private _down = (event: MouseEvent) => {
     this._isMouseReleased = false;
+    if (isNativeInputTarget(event.target)) return
     this._dispatcher.run('mouseDown', createContext(event))
   }
 
   private _up = (event: MouseEvent) => {
     this._isMouseReleased = true;
+    if (isNativeInputTarget(event.target)) return
     this._dispatcher.run('mouseUp', createContext(event));
   }
 
   private _enter = (event: MouseEvent) => {
+    if (isNativeInputTarget(event.target)) return
     this._dispatcher.run('mouseEnter', createContext(event));
   }
 
   private _leave = (event: MouseEvent) => {
+    if (isNativeInputTarget(event.target)) return
     this._dispatcher.run('mouseLeave', createContext(event));
   }
 
   private _dblclick = (event: MouseEvent) => {
+    if (isNativeInputTarget(event.target)) return
     this._dispatcher.run('doubleClick', createContext(event));
   }
 

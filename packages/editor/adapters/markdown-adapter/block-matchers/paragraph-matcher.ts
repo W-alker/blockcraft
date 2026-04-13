@@ -2,11 +2,12 @@ import {MarkdownAST} from "../type";
 import {BlockMarkdownAdapterMatcher} from "../block-adapter";
 import {BlockNodeType, DeltaInsert, generateId} from "../../../framework";
 import {Heading} from "mdast";
+import {isMediaMarkdownNode} from "./media-matcher";
 
 const PARAGRAPH_MDAST_TYPE = ['paragraph', 'html', 'heading', 'blockquote'];
 
 const isParagraphMDASTType = (node: MarkdownAST) =>
-  PARAGRAPH_MDAST_TYPE.includes(node.type);
+  PARAGRAPH_MDAST_TYPE.includes(node.type) && !isMediaMarkdownNode(node);
 
 export const paragraphBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher =
   {
@@ -171,4 +172,3 @@ export const paragraphBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher =
       },
     },
   };
-

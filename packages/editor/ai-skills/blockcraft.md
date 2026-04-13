@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-04-08 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-04-13 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -188,6 +188,7 @@ onBold(ctx: UIEventStateContext) { ... }
 - All block components are `standalone: true`
 - Block selectors use element+class: `div.my-block`, `p.paragraph-block`
 - Void blocks use `contenteditable="false"` on inner content
+- Native `input` / `textarea` / `select` inside void or container blocks are treated as isolated "input islands" and bypass editor hotkeys / `beforeInput`; custom widgets can opt in with `data-bc-native-input`
 - Container blocks include a `<div class="children-render-container">` for child blocks
 - Editable blocks have an empty template; the inline runtime renders into the host element
 - All mutations go through Yjs transactions (via `DocCRUD` or `DocChain`)

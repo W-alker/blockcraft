@@ -2,6 +2,7 @@ import { debounceTime, fromEvent, skip, takeUntil } from "rxjs";
 import { UIEventState, UIEventStateContext } from "../base";
 import { EventScopeSourceType, EventSourceState, SelectEventState } from "../state";
 import { isMac } from "lib0/environment";
+import { isNativeInputTarget } from "../../../utils";
 
 export class SelectionControl {
   constructor(private _dispatcher: BlockCraft.EventDispatcher) {
@@ -153,11 +154,13 @@ export class SelectionControl {
   listen(root: BlockCraft.IBlockComponents['root']) {
     // 1. 监听原生 selectstart 事件（鼠标拖拽、双击、三击）
     fromEvent<MouseEvent>(root.hostElement, 'selectstart').pipe(takeUntil(root.onDestroy$)).subscribe(e => {
+      if (isNativeInputTarget(e.target)) return
       this.onSelectstart(e)
     });
 
     // 2. 监听键盘事件
     fromEvent<KeyboardEvent>(window, 'keydown', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+      if (isNativeInputTarget(evt.target)) return
       // 追踪 Shift 键状态
       if (evt.shiftKey) {
         this._shiftKeyPressing = true;
@@ -177,7 +180,9 @@ export class SelectionControl {
     fromEvent<KeyboardEvent>(window, 'keyup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       if (!evt.shiftKey) {
         this._shiftKeyPressing = false;
-
+      }
+      if (isNativeInputTarget(evt.target)) return
+      if (!evt.shiftKey) {
         // Shift 键释放时，如果有选区则触发 selectEnd
         if (this._isSelecting || !this._dispatcher.doc.selection.value?.collapsed) {
           this._isSelecting = false;
@@ -188,6 +193,7 @@ export class SelectionControl {
 
     // 4. 监听鼠标按下（支持所有指针类型：鼠标、触摸板、触屏）
     fromEvent<PointerEvent>(root.hostElement, 'pointerdown', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+      if (isNativeInputTarget(evt.target)) return
       // 移除 pointerType 限制，支持所有类型的指针设备
       this._mouseDown = true;
     })
@@ -199,6 +205,7 @@ export class SelectionControl {
 
     // 6. 监听双击事件（双击选中单词）
     fromEvent<MouseEvent>(root.hostElement, 'dblclick').pipe(takeUntil(root.onDestroy$)).subscribe(e => {
+      if (isNativeInputTarget(e.target)) return
       this._handleMultiClickEnd(e);
     });
   }
