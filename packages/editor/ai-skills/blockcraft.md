@@ -147,6 +147,7 @@ doc.selection.getSelectedText()         // string
 //   .firstBlock / .lastBlock
 //   .collapsed / .isInSameBlock / .isAllSelected / .isStartOfBlock / .isEndOfBlock
 //   .direction             — 'forward' | 'backward'
+//   .isAllSelected         — true only when both endpoints are whole-block selected points
 
 // Type-narrowing example
 const sel = doc.selection.value

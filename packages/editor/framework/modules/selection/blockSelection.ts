@@ -68,11 +68,7 @@ export class BlockSelection {
   }
 
   get isAllSelected(): boolean {
-    if (this.isInSameBlock) {
-      return this.anchor.type === 'selected' && this.head.type === 'selected'
-    }
-    // Cross-block: all selected when covering from start-of-first-block to end-of-last-block
-    return this.isStartOfBlock && this.isEndOfBlock
+    return this.anchor.type === 'selected' && this.head.type === 'selected'
   }
 
   get isEmpty(): boolean {

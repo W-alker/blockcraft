@@ -67,6 +67,40 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v0.2.14 — 2026-04-13 — Selection: `isAllSelected` Means Block Selection Only
+
+**Severity**: patch
+
+**What changed**: `BlockSelection.isAllSelected` now returns `true` only when both `anchor` and `head` are `type: 'selected'` points. A cross-block text range that happens to start at offset `0` and end at the last block's `textLength` is no longer treated as "all selected".
+
+**Why**: The previous implementation conflated "text selection covers full block boundaries" with "the selection endpoints are block/void selections". That caused block-level behaviors to leak into normal text ranges, including the floating text toolbar disappearing for multi-paragraph text selections.
+
+**Affected ai-skills files**:
+- `blockcraft-selection.md`
+- `blockcraft.md`
+
+### Migration Recipe
+
+```typescript
+// before
+if (selection.isAllSelected) {
+  // this also matched text selections like paragraph-start -> paragraph-end
+}
+
+// after
+if (selection.isAllSelected) {
+  // only block/void-style selections reach this branch
+}
+
+// if you need the old "full text coverage" check explicitly:
+const coversWholeRange = selection.isStartOfBlock && selection.isEndOfBlock
+```
+
+### Behavior Changes
+
+- Cross-block text selections now remain text selections even when they cover whole paragraphs.
+- Plugins such as the floating text toolbar and fixed toolbar will treat those ranges as format-able text instead of block-level "all selected" state.
+
 ### v0.2.13 — 2026-04-13 — Native Input Islands Inside Void / Block Nodes
 
 **Severity**: patch

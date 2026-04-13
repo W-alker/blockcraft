@@ -89,7 +89,7 @@ class BlockSelection {
   get isInSameBlock(): boolean       // anchor.blockId === head.blockId
   get isStartOfBlock(): boolean      // start is at offset 0 OR start is 'selected'
   get isEndOfBlock(): boolean        // end is at textLength OR end is 'selected'
-  get isAllSelected(): boolean       // covers start-of-first-block to end-of-last-block
+  get isAllSelected(): boolean       // both anchor/head are whole-block ('selected') points
   get isEmpty(): boolean             // collapsed text selection (alias for cursor)
 
   // ── Containment ──
@@ -276,7 +276,7 @@ if (selection.start.type === 'selected') {
   // selection.firstBlock is fully selected
 }
 
-// Check "select all"
+// Check block-level full selection
 if (selection.isAllSelected) { ... }
 
 // Check if a particular block is inside the current selection
