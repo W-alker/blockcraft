@@ -19,6 +19,7 @@ export class BlockTransformerPlugin extends DocPlugin {
   override version = 1.0;
 
   private mdTransformList: { regex: RegExp, flavour: string }[] = []
+  private pendingInputTriggerSeq = 0
 
   constructor(
     readonly transformList: IBlockTransformConfig[] = blockTransforms
@@ -83,37 +84,38 @@ export class BlockTransformerPlugin extends DocPlugin {
   @EventListen('beforeInput')
   onBeforeInput(evt: UIEventStateContext) {
     const e = evt.getDefaultEvent() as InputEvent
-    if (e.data === ' ') {
-      nextTick().then(() => {
-        this._mdTransform()
-      })
-      return
-    }
-    if (e.data === '\/' || e.data === '、') {
-      const selection = this.doc.selection.value
-      if (!selection || !selection.collapsed || selection.start.type !== 'text' || selection.firstBlock.flavour !== 'paragraph') return
-      const block = selection.firstBlock as any
-      if (block.textContent() !== e.data) return
-      const schema = this.doc.schemas.get(block.flavour)!
-      if (schema.metadata.isLeaf) return
-      this.openContextMenu(block)
-    }
+    const inputText = getPlainTextFromInputEvent(e)
+    this.queueInputTrigger(inputText)
+  }
+
+  @EventListen('keyDown')
+  onKeyDown(evt: UIEventStateContext) {
+    const state = evt.get('keyboardState')
+    const raw = state.raw
+    if (raw.metaKey || raw.ctrlKey || raw.altKey) return
+    this.queueInputTrigger(raw.key)
   }
 
   private _mdTransform = () => {
-    const selection = this.doc.selection.value!
+    const selection = this.getCurrentSelection()
+    if (!selection) return false
     if (!selection.collapsed || selection.start.type !== 'text') return false
     const block = selection.firstBlock as any
     if (!block || block.flavour !== 'paragraph') return
-    const text = block.textContent().slice(0, selection.start.offset + 1)
-    const matched = this.mdTransformList.find((item) => item.regex.test(text))
+    const blockText = block.textContent()
+    const prefixes = [
+      blockText.slice(0, Math.min(selection.start.offset + 1, blockText.length)),
+      blockText.slice(0, Math.min(selection.start.offset, blockText.length))
+    ]
+    const matched = this.mdTransformList.find((item) => prefixes.some(text => item.regex.test(text)))
     if (!matched) return false
+    const matchedText = prefixes.find(text => matched.regex.test(text))!
 
     // 设置heading
     if (matched.flavour.startsWith('heading-')) {
       const heading = headingTransforms.findIndex(item => item.flavour === matched.flavour)
       if (heading < 0) return false
-      const selIdx = selection.start.offset
+      const selIdx = matchedText.length - 1
       this.doc.crud.transact(() => {
         block.deleteText(0, selIdx + 1)
         block.updateProps({
@@ -126,11 +128,11 @@ export class BlockTransformerPlugin extends DocPlugin {
     const config = this.transformList.find((item) => item.flavour === matched.flavour)!
 
     if (config.onConvert) {
-      config.onConvert!(this.doc, block, text)
+      config.onConvert!(this.doc, block, matchedText)
       return
     }
 
-    const newBlock = this.doc.schemas.createSnapshot(matched.flavour as any, [sliceDelta(block.textDeltas(), text.length), {
+    const newBlock = this.doc.schemas.createSnapshot(matched.flavour as any, [sliceDelta(block.textDeltas(), matchedText.length), {
       ...block.props, heading: undefined
     }])
 
@@ -177,4 +179,41 @@ export class BlockTransformerPlugin extends DocPlugin {
     this.sub.unsubscribe()
   }
 
+  private queueInputTrigger(inputText: string | null | undefined) {
+    if (inputText !== ' ' && inputText !== '\/' && inputText !== '、') return
+    const seq = ++this.pendingInputTriggerSeq
+    nextTick().then(() => {
+      if (this.pendingInputTriggerSeq !== seq) return
+      if (inputText === ' ') {
+        this._mdTransform()
+        return
+      }
+      this.tryOpenContextMenu(inputText)
+    })
+  }
+
+  private tryOpenContextMenu(inputText: '/' | '、') {
+    const selection = this.getCurrentSelection()
+    if (!selection || !selection.collapsed || selection.start.type !== 'text' || selection.firstBlock.flavour !== 'paragraph') return
+    const block = selection.firstBlock as any
+    if (block.textContent() !== inputText) return
+    const schema = this.doc.schemas.get(block.flavour)!
+    if (schema.metadata.isLeaf) return
+    this.openContextMenu(block)
+  }
+
+  private getCurrentSelection() {
+    return this.doc.selection.recalculate(false).value || this.doc.selection.value
+  }
+
+}
+
+function getPlainTextFromInputEvent(event: InputEvent) {
+  if (typeof event.data === 'string') {
+    return event.data
+  }
+  if (event.dataTransfer?.types.includes('text/plain')) {
+    return event.dataTransfer.getData('text/plain')
+  }
+  return null
 }
