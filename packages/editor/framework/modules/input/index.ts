@@ -63,6 +63,22 @@ export class InputTransformer {
     this._nextInsertAttrs = null
   }
 
+  /**
+   * `beforeinput.getTargetRanges()` may shrink around read-only void/block
+   * nodes, so keep trusting the editor model when the current selection
+   * includes whole-block endpoints.
+   */
+  private _shouldUseSelectionModelForBeforeInput(selection: BlockSelection | null): selection is BlockSelection {
+    return !!selection && (selection.start.type === 'selected' || selection.end.type === 'selected')
+  }
+
+  private _resolveBeforeInputRange(selection: BlockSelection | null, targetRange: INormalizedRange | null) {
+    if (this._shouldUseSelectionModelForBeforeInput(selection)) {
+      return selection
+    }
+    return targetRange
+  }
+
   private consumeNextInsertAttrs(blockId: string, index: number, options?: { allowNearby?: boolean }) {
     if (!this._nextInsertAttrs) return undefined
     const hit = this.matchNextInsertPoint({
@@ -202,43 +218,42 @@ export class InputTransformer {
     }
 
     const staticRange = ev.getTargetRanges ? ev.getTargetRanges()[0] : null;
-    if (!staticRange) {
+    const targetRange = staticRange ? this.doc.selection.normalizeRange(staticRange) : null
+    const effectiveRange = this._resolveBeforeInputRange(this.doc.selection.value, targetRange)
+    if (!effectiveRange) {
       return;
     }
 
-    const normalizedRange = this.doc.selection.normalizeRange(staticRange)
-    // this.doc.selection.recalculate()
-    // const normalizedRange = this.doc.selection.value!
-    // const staticRange = normalizedRange.raw
+    const normalizedRange = effectiveRange instanceof BlockSelection
+      ? endpointsToLegacy({start: effectiveRange.start, end: effectiveRange.end})
+      : effectiveRange
 
     const {from, to, collapsed} = normalizedRange
+    const text = getPlainTextFromInputEvent(ev)
+
     if (from.type === 'selected' && (!to || to.type === 'selected')) {
       ev.preventDefault()
-      const p = this.doc.schemas.createSnapshot('paragraph', [])
-      this.doc.crud.insertBlocksAfter((to || from).blockId, [p])
-      this.doc.selection.setCursorAtBlock(p.id, true)
-      this.doc.selection.recalculate()
+      if (text) {
+        this._replaceSelectedBlocksWithParagraph(effectiveRange, text)
+      } else {
+        this._deleteAllSelected(effectiveRange)
+      }
       return
     }
 
-    const text = getPlainTextFromInputEvent(ev)
-
     if (to) {
       ev.preventDefault()
-      this._replaceText(normalizedRange, text, true)
-      if (from.type === 'text') {
-        this.doc.selection.setSelection({
-          ...from,
-          index: from.index + (text?.length || 0),
-          length: 0
-        })
-      } else if (to.type === 'text') {
-        // from 是 selected 类型（已被删除），内容合并到了 to 不存在的情况不会发生
-        // 此时 from 块已删，回退到 recalculate
+      this._replaceText(effectiveRange, text, true)
+      const cursorPos = from.type === 'text' ? from : (to.type === 'text' ? to : null)
+      if (!cursorPos) {
         this.doc.selection.recalculate()
-      } else {
-        this.doc.selection.recalculate()
+        return;
       }
+      this.doc.selection.setSelection({
+        ...cursorPos,
+        index: cursorPos.index + (text?.length || 0),
+        length: 0
+      })
       return;
     }
 
@@ -247,7 +262,11 @@ export class InputTransformer {
       ev.preventDefault()
       let deleteRange: INormalizedRange = normalizedRange
       // 要删除的可能是embed节点
-      if (staticRange.startContainer === staticRange.endContainer && isZeroSpace(staticRange.startContainer) && normalizedRange.from.type === 'text') {
+      if (staticRange
+        && staticRange.startContainer === staticRange.endContainer
+        && isZeroSpace(staticRange.startContainer)
+        && normalizedRange.from.type === 'text'
+      ) {
         deleteRange = {
           ...normalizedRange,
           from: {...normalizedRange.from, index: normalizedRange.from.index - 1, length: 1}
@@ -265,7 +284,7 @@ export class InputTransformer {
     let needsRerender = false
 
     // in zero text
-    if (collapsed && isZeroSpace(staticRange.startContainer)) {
+    if (staticRange && collapsed && isZeroSpace(staticRange.startContainer)) {
       ev.preventDefault()
       const zeroTextEle = staticRange.startContainer.parentElement!
       const textElement: HTMLElement = document.createElement(INLINE_TEXT_NODE_TAG)
@@ -285,7 +304,11 @@ export class InputTransformer {
     }
 
     // in inline end break
-    if (collapsed && staticRange.startContainer instanceof HTMLElement && staticRange.startContainer.classList.contains(INLINE_END_BREAK_CLASS)) {
+    if (staticRange
+      && collapsed
+      && staticRange.startContainer instanceof HTMLElement
+      && staticRange.startContainer.classList.contains(INLINE_END_BREAK_CLASS)
+    ) {
       const prevElement = staticRange.startContainer.previousElementSibling!
       const child = prevElement.firstElementChild as HTMLElement | null
       if (prevElement.localName === INLINE_ELEMENT_TAG && child?.isContentEditable) {
@@ -354,6 +377,32 @@ export class InputTransformer {
         length: 0
       })
     }
+  }
+
+  private _replaceSelectedBlocksWithParagraph(range: INormalizedRange | BlockSelection, text: string) {
+    if (range instanceof BlockSelection) {
+      range = endpointsToLegacy({start: range.start, end: range.end})
+    }
+
+    const {from, to} = range
+    const paragraph = this.doc.schemas.createSnapshot('paragraph', [text])
+
+    this.doc.crud.undoManager.captureSelectionBeforeChange()
+    this.doc.crud.transact(() => {
+      this.doc.crud.insertBlocksAfter((to || from).blockId, [paragraph])
+      if (to) {
+        const throughPath = this.doc.queryBlocksThroughPathDeeply(from.block, to.block)
+        if (throughPath.length) {
+          throughPath.forEach(through => {
+            this.doc.crud.deleteBlocks(through.parent, through.index, through.length)
+          })
+        }
+        this.doc.crud.deleteBlockById(to.blockId)
+      }
+      this.doc.crud.deleteBlockById(from.blockId)
+    })
+
+    this.doc.selection.setCursorAtBlock(paragraph.id, false)
   }
 
   private _replaceText(range: INormalizedRange | BlockSelection, text?: string | null, merge = false, skipAppend = false) {
