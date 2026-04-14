@@ -79,6 +79,23 @@ export class InputTransformer {
     return targetRange
   }
 
+  private _isPrintableKey(event: KeyboardEvent) {
+    return event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey
+  }
+
+  private _canReplaceSelectedBlocksWithParagraph(range: INormalizedRange | BlockSelection) {
+    if (range instanceof BlockSelection) {
+      range = endpointsToLegacy({start: range.start, end: range.end})
+    }
+
+    const target = range.to || range.from
+    const parent = target.block.parentBlock
+    if (!parent) return false
+
+    const parentSchema = this.doc.schemas.get(parent.flavour)
+    return !!parentSchema?.metadata.renderUnit && this.doc.schemas.isValidChildren('paragraph', parent.flavour)
+  }
+
   private consumeNextInsertAttrs(blockId: string, index: number, options?: { allowNearby?: boolean }) {
     if (!this._nextInsertAttrs) return undefined
     const hit = this.matchNextInsertPoint({
@@ -234,7 +251,7 @@ export class InputTransformer {
     if (from.type === 'selected' && (!to || to.type === 'selected')) {
       ev.preventDefault()
       if (text) {
-        this._replaceSelectedBlocksWithParagraph(effectiveRange, text)
+        this._replaceSelectedBlocksWithParagraph(effectiveRange, text) || this.doc.selection.blur()
       } else {
         this._deleteAllSelected(effectiveRange)
       }
@@ -379,7 +396,41 @@ export class InputTransformer {
     }
   }
 
+  @EventListen('keyDown')
+  private _handleSelectedStartPrintableFallback(context: UIEventStateContext) {
+    const ev = context.getDefaultEvent<KeyboardEvent>()
+    if (!this._isPrintableKey(ev)) return
+
+    const selection = this.doc.selection.value
+    if (!selection
+      || selection.collapsed
+      || selection.start.type !== 'selected'
+      // || selection.commonParent !== this.doc.rootId
+    ) return
+
+    ev.preventDefault()
+
+    if (selection.end.type === 'text') {
+      this._replaceText(selection, ev.key, true)
+      this.doc.selection.setSelection({
+        blockId: selection.end.blockId,
+        type: 'text',
+        index: ev.key.length,
+        length: 0
+      })
+      return true
+    }
+
+    this._replaceSelectedBlocksWithParagraph(selection, ev.key)
+    // || this.doc.selection.blur()
+    return true
+  }
+
   private _replaceSelectedBlocksWithParagraph(range: INormalizedRange | BlockSelection, text: string) {
+    if (!this._canReplaceSelectedBlocksWithParagraph(range)) {
+      return false
+    }
+
     if (range instanceof BlockSelection) {
       range = endpointsToLegacy({start: range.start, end: range.end})
     }
@@ -403,6 +454,7 @@ export class InputTransformer {
     })
 
     this.doc.selection.setCursorAtBlock(paragraph.id, false)
+    return true
   }
 
   private _replaceText(range: INormalizedRange | BlockSelection, text?: string | null, merge = false, skipAppend = false) {
