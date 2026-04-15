@@ -10,7 +10,13 @@ import {
   IColumnCountPickedEvent,
   ITableSizePickedEvent
 } from "../../../components";
-import {ISelectionJSON, IEditableBlockProps, IInlineNodeAttrs, TextToolbarHelper} from "../../../framework";
+import {
+  BLOCK_CREATOR_SERVICE_TOKEN,
+  IEditableBlockProps,
+  IInlineNodeAttrs,
+  ISelectionJSON,
+  TextToolbarHelper
+} from "../../../framework";
 import {merge, Subscription} from "rxjs";
 import {debounce, nextTick} from "../../../global";
 import {Overlay} from "@angular/cdk/overlay";
@@ -98,113 +104,164 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
   template: `
     <ng-content select="[fixed-toolbar-prefix]"></ng-content>
 
-    <button class="toolbar-btn" title="撤销" (mousedown)="onActionMouseDown($event)" (click)="undo()" [disabled]="!doc?.crud?.undoManager?.isCanUndo()">
+    <button
+      class="toolbar-btn"
+      title="撤销"
+      (mousedown)="onActionMouseDown($event)"
+      (click)="undo()"
+      [disabled]="!doc?.crud?.undoManager?.isCanUndo()"
+    >
       <i class="bc_icon bc_chehui"></i>
     </button>
-    <button class="toolbar-btn" title="重做" (mousedown)="onActionMouseDown($event)" (click)="redo()" [disabled]="!doc?.crud?.undoManager?.isCanRedo()">
+    <button
+      class="toolbar-btn"
+      title="重做"
+      (mousedown)="onActionMouseDown($event)"
+      (click)="redo()"
+      [disabled]="!doc?.crud?.undoManager?.isCanRedo()"
+    >
       <i class="bc_icon bc_huitui"></i>
     </button>
 
     <span class="toolbar-divider"></span>
 
-    <button class="toolbar-btn toolbar-btn--style"
-            [disabled]="readonly || !allEditable"
-            [bcOverlayTrigger]="styleDropdown"
-            #styleTrigger="bcOverlayTrigger">
+    <button
+      class="toolbar-btn toolbar-btn--style"
+      [disabled]="readonly || !canTransformBlocks"
+      [bcOverlayTrigger]="styleDropdown"
+      #styleTrigger="bcOverlayTrigger"
+    >
       <span>{{ activeStyleItem.intro }}</span>
       <i class="bc_icon bc_xiajaintou"></i>
     </button>
 
     @for (item of inlineToggleActions; track item.value) {
-      <button class="toolbar-btn"
-              [class.active]="isAttrActive(item.value)"
-              [title]="item.title"
-              [disabled]="readonly || !allEditable"
-              (mousedown)="onActionMouseDown($event)"
-              (click)="toggleInlineAttr(item.value)">
+      <button
+        class="toolbar-btn"
+        [class.active]="isAttrActive(item.value)"
+        [title]="item.title"
+        [disabled]="readonly || !allEditable"
+        (mousedown)="onActionMouseDown($event)"
+        (click)="toggleInlineAttr(item.value)"
+      >
         <i [class]="['bc_icon', item.icon]"></i>
       </button>
     }
 
-    <span class="toolbar-divider"></span>
-
-    @for (item of listActions; track item.value) {
-      <button class="toolbar-btn"
-              [class.active]="activeFlavour === item.value"
-              [title]="item.title"
-              [disabled]="readonly || !allEditable"
-              (mousedown)="onActionMouseDown($event)"
-              (click)="setList(item.value)">
-        <i [class]="['bc_icon', item.icon]"></i>
-      </button>
-    }
-
-    @for (item of alignActions; track item.value) {
-      <button class="toolbar-btn"
-              [class.active]="isAlignActive(item.value)"
-              [title]="item.title"
-              [disabled]="readonly || !allEditable"
-              (mousedown)="onActionMouseDown($event)"
-              (click)="setAlign(item.value)">
-        <i [class]="['bc_icon', item.icon]"></i>
-      </button>
-    }
-
-    <span class="toolbar-divider"></span>
-
-    <button class="toolbar-btn"
-            title="文字/背景颜色"
-            [attr.disabled]="readonly || !allEditable ? '' : null"
-            [disabled]="readonly || !allEditable"
-            [bcOverlayTrigger]="colorPicker"
-            [style.color]="activeColors['color']"
-            [style.background-color]="activeColors['backColor']">
+    <button
+      class="toolbar-btn"
+      title="文字/背景颜色"
+      [attr.disabled]="readonly || !allEditable ? '' : null"
+      [disabled]="readonly || !allEditable"
+      [bcOverlayTrigger]="colorPicker"
+      [style.color]="activeColors['color']"
+      [style.background-color]="activeColors['backColor']"
+    >
       <i class="bc_icon bc_bianji"></i>
     </button>
 
-    @if (isLinkAble) {
-      <button class="toolbar-btn"
-              [class.active]="isAttrActive('link')"
-              title="链接"
-              [disabled]="readonly || !allEditable || !hasTextSelection"
-              (mousedown)="onActionMouseDown($event)"
-              (click)="onLinkAction()">
-        <i class="bc_icon bc_lianjie"></i>
-      </button>
-
-      <button class="toolbar-btn"
-              title="行内公式"
-              [disabled]="readonly || !allEditable || !hasTextSelection"
-              (mousedown)="onActionMouseDown($event)"
-              (click)="insertFormula()">
-        <i class="bc_icon bc_gongshi"></i>
-      </button>
-    }
-
-    <button class="toolbar-btn"
-            title="清除格式"
-            [disabled]="readonly || !allEditable"
-            (mousedown)="onActionMouseDown($event)"
-            (click)="clearFormat()">
+    <button
+      class="toolbar-btn"
+      title="清除格式"
+      [disabled]="readonly || !allEditable"
+      (mousedown)="onActionMouseDown($event)"
+      (click)="clearFormat()"
+    >
       <i class="bc_icon bc_quxiao"></i>
     </button>
 
     <span class="toolbar-divider"></span>
 
-    <button class="toolbar-btn"
-            title="插入表格"
-            [disabled]="readonly || !selectionJSON"
-            [bcOverlayTrigger]="quickTablePicker"
-            #quickTableTrigger="bcOverlayTrigger">
-      <i class="bc_icon bc_column-vertical"></i>
+    @for (item of listActions; track item.value) {
+      <button
+        class="toolbar-btn"
+        [class.active]="activeFlavour === item.value"
+        [title]="item.title"
+        [disabled]="readonly || !canTransformBlocks"
+        (mousedown)="onActionMouseDown($event)"
+        (click)="setList(item.value)"
+      >
+        <i [class]="['bc_icon', item.icon]"></i>
+      </button>
+    }
+
+    @for (item of alignActions; track item.value) {
+      <button
+        class="toolbar-btn"
+        [class.active]="isAlignActive(item.value)"
+        [title]="item.title"
+        [disabled]="readonly || !allEditable"
+        (mousedown)="onActionMouseDown($event)"
+        (click)="setAlign(item.value)"
+      >
+        <i [class]="['bc_icon', item.icon]"></i>
+      </button>
+    }
+
+    <span class="toolbar-divider"></span>
+
+    <button
+      class="toolbar-btn"
+      [class.active]="isAttrActive('link')"
+      title="链接"
+      [disabled]="readonly || !allEditable || !isLinkAble || !hasTextSelection"
+      (mousedown)="onActionMouseDown($event)"
+      (click)="onLinkAction()"
+    >
+      <i class="bc_icon bc_lianjie"></i>
     </button>
 
-    <button class="toolbar-btn"
-            title="创建分栏"
-            [disabled]="readonly || !selectionJSON"
-            [bcOverlayTrigger]="columnCountPicker"
-            #columnCountTrigger="bcOverlayTrigger">
+    <button
+      class="toolbar-btn"
+      title="行内公式"
+      [disabled]="readonly || !allEditable || !isLinkAble || !hasTextSelection"
+      (mousedown)="onActionMouseDown($event)"
+      (click)="insertFormula()"
+    >
+      <i class="bc_icon bc_gongshi"></i>
+    </button>
+
+    <button
+      class="toolbar-btn toolbar-btn--dropdown"
+      title="插入表格"
+      [disabled]="readonly || !selectionJSON"
+      [bcOverlayTrigger]="quickTablePicker"
+      #quickTableTrigger="bcOverlayTrigger"
+    >
+      <i class="bc_icon bc_column-vertical"></i>
+      <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+    </button>
+
+    <button
+      class="toolbar-btn toolbar-btn--dropdown"
+      title="创建分栏"
+      [disabled]="readonly || !selectionJSON"
+      [bcOverlayTrigger]="columnCountPicker"
+      #columnCountTrigger="bcOverlayTrigger"
+    >
       <i class="bc_icon bc_fenlan"></i>
+      <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+    </button>
+
+    <button
+      class="toolbar-btn"
+      title="插入图片"
+      [disabled]="readonly || !selectionJSON"
+      (mousedown)="onActionMouseDown($event)"
+      (click)="insertSchemaBlock('image')"
+    >
+      <i class="bc_icon bc_tupian-color"></i>
+    </button>
+
+    <button
+      class="toolbar-btn toolbar-btn--dropdown"
+      title="插入视频或音频"
+      [disabled]="readonly || !selectionJSON"
+      [bcOverlayTrigger]="mediaTypePicker"
+      #mediaTypeTrigger="bcOverlayTrigger"
+    >
+      <i class="bc_icon bc_shipin"></i>
+      <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
     </button>
 
     @if (extensionActions.length) {
@@ -215,12 +272,14 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
           <span class="toolbar-divider"></span>
         }
 
-        <button class="toolbar-btn"
-                [class.active]="!!item.active"
-                [title]="item.title"
-                [disabled]="readonly || !!item.disabled"
-                (mousedown)="onActionMouseDown($event)"
-                (click)="onExtensionAction(item)">
+        <button
+          class="toolbar-btn"
+          [class.active]="!!item.active"
+          [title]="item.title"
+          [disabled]="readonly || !!item.disabled"
+          (mousedown)="onActionMouseDown($event)"
+          (click)="onExtensionAction(item)"
+        >
           <i [class]="['bc_icon', item.icon]"></i>
         </button>
       }
@@ -230,19 +289,28 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     <ng-content select="[fixed-toolbar-suffix]"></ng-content>
 
     <ng-template #colorPicker>
-      <bc-color-picker (colorPicked)="onColorPicked($event)"
-                       [gapAround]="8"
-                       [activeColors]="activeColors">
+      <bc-color-picker
+        (colorPicked)="onColorPicked($event)"
+        [gapAround]="8"
+        [activeColors]="activeColors"
+      >
         <div class="bc-color-group">
           <div class="bc-color-group-title">背景图形</div>
           <div class="bg-list">
             @for (item of bgGraphList; track item.attr) {
-              <div class="bg-graph-item"
-                   [class]="item.class"
-                   [class.active]="activeAttrs.get('bg') == item.attr"
-                   (click)="onBgGraphPicked(item.attr)">
-                <span [style.background-color]="activeColors['backColor'] || '#f4a1a1'"
-                      [style.color]="activeColors['color'] || '#ffffff'">文本</span>
+              <div
+                class="bg-graph-item"
+                [class]="item.class"
+                [class.active]="activeAttrs.get('bg') == item.attr"
+                (click)="onBgGraphPicked(item.attr)"
+              >
+                <span
+                  [style.background-color]="
+                    activeColors['backColor'] || '#f4a1a1'
+                  "
+                  [style.color]="activeColors['color'] || '#ffffff'"
+                  >文本</span
+                >
               </div>
             }
           </div>
@@ -251,159 +319,208 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     </ng-template>
 
     <ng-template #quickTablePicker>
-      <bc-table-size-picker (pick)="insertQuickTable($event, quickTableTrigger)"></bc-table-size-picker>
+      <bc-table-size-picker
+        (pick)="insertQuickTable($event, quickTableTrigger)"
+      ></bc-table-size-picker>
     </ng-template>
 
     <ng-template #columnCountPicker>
-      <bc-column-count-picker (pick)="insertColumnsBlock($event, columnCountTrigger)"></bc-column-count-picker>
+      <bc-column-count-picker
+        (pick)="insertColumnsBlock($event, columnCountTrigger)"
+      ></bc-column-count-picker>
+    </ng-template>
+
+    <ng-template #mediaTypePicker>
+      <bc-float-toolbar
+        [direction]="'column'"
+        (onItemClick)="onMediaTypePicked($event, mediaTypeTrigger)"
+        [gapAround]="8"
+      >
+        <bc-float-toolbar-item name="media" value="video" icon="bc_shipin">
+          插入视频
+        </bc-float-toolbar-item>
+        <bc-float-toolbar-item name="media" value="audio" icon="bc_yinpin">
+          插入音频
+        </bc-float-toolbar-item>
+      </bc-float-toolbar>
     </ng-template>
 
     <ng-template #styleDropdown>
-      <bc-float-toolbar [direction]="'column'" (onItemClick)="onStyleItemClicked($event, styleTrigger)" [gapAround]="8">
+      <bc-float-toolbar
+        [direction]="'column'"
+        (onItemClick)="onStyleItemClicked($event, styleTrigger)"
+        [gapAround]="8"
+      >
         @for (item of headingMenuList; track item.value) {
-          <bc-float-toolbar-item [name]="item.name" [value]="item.value"
-                                 [active]="isHeadingItemActive(item)">{{ item.intro }}
+          <bc-float-toolbar-item
+            [name]="item.name"
+            [value]="item.value"
+            [active]="isHeadingItemActive(item)"
+            >{{ item.intro }}
           </bc-float-toolbar-item>
         }
       </bc-float-toolbar>
     </ng-template>
   `,
-  styles: [`
+  styles: [
+    `
       :host {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          flex-wrap: wrap;
-          width: max-content;
-          padding: var(--bc-fixed-toolbar-padding, 5px 8px);
-          border: var(--bc-fixed-toolbar-border, 1px solid var(--bc-float-toolbar-divider-color));
-          box-shadow: var(--bc-fixed-toolbar-shadow, 0 6px 16px rgba(15, 15, 15, 0.08));
-          pointer-events: auto;
-          transition: opacity .12s ease;
-          will-change: transform;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-wrap: wrap;
+        width: max-content;
+        padding: var(--bc-fixed-toolbar-padding, 5px 8px);
+        border: var(
+          --bc-fixed-toolbar-border,
+          1px solid var(--bc-float-toolbar-divider-color)
+        );
+        box-shadow: var(
+          --bc-fixed-toolbar-shadow,
+          0 6px 16px rgba(15, 15, 15, 0.08)
+        );
+        pointer-events: auto;
+        transition: opacity 0.12s ease;
+        will-change: transform;
       }
 
       :host(.hidden) {
-          opacity: 0;
-          visibility: hidden;
+        opacity: 0;
+        visibility: hidden;
       }
 
       :host(.readonly) {
-          opacity: .6;
-          pointer-events: none;
+        opacity: 0.6;
+        pointer-events: none;
       }
 
       .toolbar-btn {
-          height: 28px;
-          min-width: 28px;
-          border-radius: 6px;
-          background: transparent;
-          color: var(--bc-float-toolbar-item-color);
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          transition: all var(--bc-transition-fast);
-          padding: 0 6px;
-          line-height: 1;
-          border: 0;
+        height: 28px;
+        min-width: 28px;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--bc-float-toolbar-item-color);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all var(--bc-transition-fast);
+        padding: 0 6px;
+        line-height: 1;
+        border: 0;
       }
 
       .toolbar-btn:hover:not(:disabled) {
-          background: var(--bc-float-toolbar-item-hover-bg);
+        background: var(--bc-float-toolbar-item-hover-bg);
       }
 
       .toolbar-btn.active {
-          background: var(--bc-float-toolbar-item-active-bg);
-          color: var(--bc-active-color);
+        background: var(--bc-float-toolbar-item-active-bg);
+        color: var(--bc-active-color);
       }
 
       .toolbar-btn:disabled {
-          opacity: .4;
-          cursor: not-allowed;
+        opacity: 0.4;
+        cursor: not-allowed;
       }
 
       .toolbar-btn > i {
-          font-size: 14px;
-          color: inherit;
+        font-size: 14px;
+        color: inherit;
+      }
+
+      .toolbar-btn__caret {
+        font-size: 10px !important;
+        opacity: .6;
+        flex-shrink: 0;
+      }
+
+      .toolbar-btn--dropdown {
+        gap: 4px;
       }
 
       .toolbar-btn--style {
-          gap: 4px;
-          min-width: 80px;
-          border: 1px solid var(--bc-border-color);
+        gap: 4px;
+        min-width: 80px;
+        border: 1px solid var(--bc-border-color);
       }
 
       .toolbar-btn--style > span {
-          font-size: 12px;
-          flex: 1;
-          text-align: left;
+        font-size: 12px;
+        flex: 1;
+        text-align: left;
       }
 
       .toolbar-btn--style > i:last-child {
-          font-size: 10px;
-          opacity: .6;
+        font-size: 10px;
+        opacity: 0.6;
       }
 
       .toolbar-divider {
-          width: 1px;
-          height: 20px;
-          background: var(--bc-float-toolbar-divider-color);
-          margin: 0 2px;
-          flex-shrink: 0;
+        width: 1px;
+        height: 20px;
+        background: var(--bc-float-toolbar-divider-color);
+        margin: 0 2px;
+        flex-shrink: 0;
       }
 
       .bg-list {
-          display: flex;
-          gap: 6px;
-          flex-wrap: wrap;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
       }
 
       .bg-graph-item {
-          width: 46px;
-          height: 27px;
-          border-radius: 2px;
-          border: 1px solid var(--bc-border-color);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
+        width: 46px;
+        height: 27px;
+        border-radius: 2px;
+        border: 1px solid var(--bc-border-color);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
       }
 
       .bg-graph-item.active {
-          border: 2px solid var(--bc-active-color);
+        border: 2px solid var(--bc-active-color);
       }
 
       .bg-graph-item:hover {
-          border: 2px solid var(--bc-active-color-light);
+        border: 2px solid var(--bc-active-color-light);
       }
 
       .bg-graph-item > span {
-          width: 35px;
-          height: 16px;
-          font-size: 11px;
-          color: #fff;
-          text-align: center;
-          background-color: #f4a1a1;
+        width: 35px;
+        height: 16px;
+        font-size: 11px;
+        color: #fff;
+        text-align: center;
+        background-color: #f4a1a1;
       }
 
       .bg-graph-item.none {
-          background: linear-gradient(-29deg, transparent 49%, var(--bc-color-dark) 50%, transparent 51%);
+        background: linear-gradient(
+          -29deg,
+          transparent 49%,
+          var(--bc-color-dark) 50%,
+          transparent 51%
+        );
       }
 
       .bg-graph-item.none > span {
-          display: none;
+        display: none;
       }
 
       .bg-graph-item.radius-1 > span {
-          border-radius: 1em;
+        border-radius: 1em;
       }
 
       .bg-graph-item.right-border > span {
-          border-radius: .3em;
-          border-right: .25em solid var(--bc-active-color);
+        border-radius: 0.3em;
+        border-right: 0.25em solid var(--bc-active-color);
       }
-  `],
+    `,
+  ],
   standalone: true,
   imports: [
     BcOverlayTriggerDirective,
@@ -411,451 +528,612 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     BcFloatToolbarItemComponent,
     ColorPickerComponent,
     BcTableSizePickerComponent,
-    BcColumnCountPickerComponent
+    BcColumnCountPickerComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    'contenteditable': 'false',
-    '[class.readonly]': 'readonly',
-    '[class.hidden]': '!visible',
-    '[style.--bc-fixed-toolbar-top.px]': 'stickyTop',
-    '(mousedown)': 'onToolbarMouseDown($event)'
-  }
+    contenteditable: "false",
+    "[class.readonly]": "readonly",
+    "[class.hidden]": "!visible",
+    "[style.--bc-fixed-toolbar-top.px]": "stickyTop",
+    "(mousedown)": "onToolbarMouseDown($event)",
+  },
 })
 export class FixedTextToolbarComponent implements OnInit, OnDestroy {
-  private readonly _sub = new Subscription()
-  private _toolbarHelper?: TextToolbarHelper
+  private readonly _sub = new Subscription();
+  private _toolbarHelper?: TextToolbarHelper;
 
-  constructor(private readonly cdr: ChangeDetectorRef) {
-  }
+  constructor(private readonly cdr: ChangeDetectorRef) {}
 
-  @Input({required: true})
-  doc!: BlockCraft.Doc
-
-  @Input()
-  utils?: TextToolbarHelper
+  @Input({ required: true })
+  doc!: BlockCraft.Doc;
 
   @Input()
-  readonly = false
+  utils?: TextToolbarHelper;
 
   @Input()
-  stickyTop = 0
+  readonly = false;
 
   @Input()
-  visible = true
+  stickyTop = 0;
 
   @Input()
-  activeAttrs = new Map<string, any>()
+  visible = true;
 
   @Input()
-  activeColors: Record<string, string | null> = {}
+  activeAttrs = new Map<string, any>();
 
   @Input()
-  activeProps: Partial<IEditableBlockProps> = {}
+  activeColors: Record<string, string | null> = {};
 
   @Input()
-  activeFlavour: BlockCraft.BlockFlavour = 'paragraph'
+  activeProps: Partial<IEditableBlockProps> = {};
 
   @Input()
-  allEditable = false
+  activeFlavour: BlockCraft.BlockFlavour = "paragraph";
 
   @Input()
-  isLinkAble = false
+  allEditable = false;
 
-  private _hasTextSelection = false
+  canTransformBlocks = false;
+
+  @Input()
+  isLinkAble = false;
+
+  private _hasTextSelection = false;
 
   @Input()
   set hasTextSelection(value: boolean) {
-    this._hasTextSelection = value
+    this._hasTextSelection = value;
   }
 
   get hasTextSelection() {
-    return this._hasTextSelection
+    return this._hasTextSelection;
   }
 
   @Input()
-  selectionJSON: ISelectionJSON | null = null
+  selectionJSON: ISelectionJSON | null = null;
 
   @Input()
-  extensionActions: IFixedToolbarExtensionAction[] = []
+  extensionActions: IFixedToolbarExtensionAction[] = [];
 
   @Output()
-  extensionAction = new EventEmitter<IFixedToolbarExtensionActionContext>()
+  extensionAction = new EventEmitter<IFixedToolbarExtensionActionContext>();
 
-  protected readonly headingMenuList = HEADING_MENU_LIST
-  protected readonly inlineToggleActions = INLINE_TOGGLE_ACTIONS
-  protected readonly listActions = LIST_ACTIONS
-  protected readonly alignActions = ALIGN_ACTIONS
-  protected readonly bgGraphList = BG_GRAPH_LIST
+  protected readonly headingMenuList = HEADING_MENU_LIST;
+  protected readonly inlineToggleActions = INLINE_TOGGLE_ACTIONS;
+  protected readonly listActions = LIST_ACTIONS;
+  protected readonly alignActions = ALIGN_ACTIONS;
+  protected readonly bgGraphList = BG_GRAPH_LIST;
 
   ngOnInit() {
-    this.syncToolbarState(this.doc.selection.value)
+    this.syncToolbarState(this.doc.selection.value);
 
-    this._sub.add(this.doc.selection.changeObserve().subscribe(debounce((sel) => {
-      this.syncToolbarState(sel)
-    }, 40)))
+    this._sub.add(
+      this.doc.selection.changeObserve().subscribe(
+        debounce((sel) => {
+          this.syncToolbarState(sel);
+        }, 40),
+      ),
+    );
 
-    this._sub.add(this.doc.readonlySwitch$.subscribe((readonly) => {
-      this.readonly = readonly
-      this.cdr.markForCheck()
-    }))
+    this._sub.add(
+      this.doc.readonlySwitch$.subscribe((readonly) => {
+        this.readonly = readonly;
+        this.cdr.markForCheck();
+      }),
+    );
   }
 
   ngOnDestroy() {
-    this._sub.unsubscribe()
+    this._sub.unsubscribe();
   }
 
   protected get activeStyleItem(): IStyleMenuItem {
-    const heading = this.activeProps.heading
-    if (typeof heading === 'number' && heading > 0 && heading <= 4) {
-      return HEADING_MENU_LIST.find(item => item.value === heading) || HEADING_MENU_LIST[0]
+    const heading = this.activeProps.heading;
+    if (typeof heading === "number" && heading > 0 && heading <= 4) {
+      return (
+        HEADING_MENU_LIST.find((item) => item.value === heading) ||
+        HEADING_MENU_LIST[0]
+      );
     }
-    return HEADING_MENU_LIST[0]
+    return HEADING_MENU_LIST[0];
   }
 
   protected onToolbarMouseDown(evt: MouseEvent) {
-    const target = evt.target as HTMLElement | null
-    if (!target) return
-    if (target.closest('input,select,textarea')) return
-    evt.preventDefault()
-    evt.stopPropagation()
+    const target = evt.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest("input,select,textarea")) return;
+    evt.preventDefault();
+    evt.stopPropagation();
   }
 
   protected onActionMouseDown(evt: MouseEvent) {
-    evt.preventDefault()
-    evt.stopPropagation()
+    evt.preventDefault();
+    evt.stopPropagation();
   }
 
   protected undo() {
-    if (this.readonly) return
-    this.doc.crud.undoManager.undo()
+    if (this.readonly) return;
+    this.doc.crud.undoManager.undo();
   }
 
   protected redo() {
-    if (this.readonly) return
-    this.doc.crud.undoManager.redo()
+    if (this.readonly) return;
+    this.doc.crud.undoManager.redo();
   }
 
   protected isHeadingItemActive(item: IStyleMenuItem): boolean {
     if (item.value === null) {
-      return this.activeFlavour === 'paragraph' && !this.activeProps.heading
+      return this.activeFlavour === "paragraph" && !this.activeProps.heading;
     }
-    return this.activeProps.heading === item.value
+    return this.activeProps.heading === item.value;
   }
 
-  protected onStyleItemClicked(item: BcFloatToolbarItemComponent, trigger: BcOverlayTriggerDirective) {
-    trigger.closePanel()
-    this.runWithSelection(() => {
-      if (this.activeFlavour !== 'paragraph') {
-        this.toolbarHelper.transformBlocks('paragraph')
-      }
-      this.toolbarHelper.updateBlockProps({heading: item.value || undefined})
-    })
+  protected onStyleItemClicked(
+    item: BcFloatToolbarItemComponent,
+    trigger: BcOverlayTriggerDirective,
+  ) {
+    trigger.closePanel();
+    this.runWithSelection(
+      () => {
+        if (this.activeFlavour !== "paragraph") {
+          this.toolbarHelper.transformBlocks("paragraph");
+        }
+        this.toolbarHelper.updateBlockProps({
+          heading: item.value || undefined,
+        });
+      },
+      { allowBlockTransform: true },
+    );
   }
 
   protected isAttrActive(name: string) {
-    return this.activeAttrs.has(name) && this.activeAttrs.get(name) !== null
+    return this.activeAttrs.has(name) && this.activeAttrs.get(name) !== null;
   }
 
   protected toggleInlineAttr(name: TInlineToggle) {
-    const active = this.isAttrActive(name)
+    const active = this.isAttrActive(name);
     this.runWithSelection(() => {
-      this.toolbarHelper.formatText({[`a:${name}`]: active ? null : true} as IInlineNodeAttrs)
-    })
+      this.toolbarHelper.formatText({
+        [`a:${name}`]: active ? null : true,
+      } as IInlineNodeAttrs);
+    });
   }
 
   protected setList(flavour: TListFlavour) {
-    this.runWithSelection(() => {
-      this.toolbarHelper.transformBlocks(this.activeFlavour === flavour ? 'paragraph' : flavour)
-    })
+    this.runWithSelection(
+      () => {
+        this.toolbarHelper.transformBlocks(
+          this.activeFlavour === flavour ? "paragraph" : flavour,
+        );
+      },
+      { allowBlockTransform: true },
+    );
   }
 
   protected isAlignActive(align: TAlignValue) {
-    if (align === 'left') return !this.activeProps.textAlign
-    return this.activeProps.textAlign === align
+    if (align === "left") return !this.activeProps.textAlign;
+    return this.activeProps.textAlign === align;
   }
 
   protected setAlign(align: TAlignValue) {
     this.runWithSelection(() => {
       this.toolbarHelper.updateBlockProps({
-        textAlign: align === 'left' ? undefined : align as any
-      })
-    })
+        textAlign: align === "left" ? undefined : (align as any),
+      });
+    });
   }
 
-  protected onColorPicked(evt: { type: string; color: string | null; group: ColorGroup }) {
+  protected onColorPicked(evt: {
+    type: string;
+    color: string | null;
+    group: ColorGroup;
+  }) {
     this.runWithSelection(() => {
       switch (evt.type) {
-        case 'color':
-          this.toolbarHelper.formatText({'s:color': evt.color})
-          break
-        case 'backColor':
-          this.toolbarHelper.formatText({'s:background': evt.color === 'transparent' ? null : evt.color})
-          break
+        case "color":
+          this.toolbarHelper.formatText({ "s:color": evt.color });
+          break;
+        case "backColor":
+          this.toolbarHelper.formatText({
+            "s:background": evt.color === "transparent" ? null : evt.color,
+          });
+          break;
       }
-    })
+    });
   }
 
   protected onBgGraphPicked(bg: string | null) {
     this.runWithSelection(() => {
-      this.toolbarHelper.formatText({'a:bg': bg})
-    })
+      this.toolbarHelper.formatText({ "a:bg": bg });
+    });
   }
 
-  protected async insertQuickTable(evt: ITableSizePickedEvent, trigger: BcOverlayTriggerDirective) {
-    if (this.readonly || !this.selectionJSON) return
-    this.restoreSelection()
-    const selection = this.doc.selection.value
-    if (!selection) return
+  protected async insertQuickTable(
+    evt: ITableSizePickedEvent,
+    trigger: BcOverlayTriggerDirective,
+  ) {
+    if (this.readonly || !this.selectionJSON) return;
+    this.restoreSelection();
+    const selection = this.doc.selection.value;
+    if (!selection) return;
 
-    const inserted = await this.insertTable(evt.rows, evt.cols, selection)
-    if (!inserted) return
-    trigger.closePanel()
-    this.doc.selection.recalculate()
-    this.syncToolbarState(this.doc.selection.value)
-    this.cdr.markForCheck()
+    const inserted = await this.insertTable(evt.rows, evt.cols, selection);
+    if (!inserted) return;
+    trigger.closePanel();
+    this.doc.selection.recalculate();
+    this.syncToolbarState(this.doc.selection.value);
+    this.cdr.markForCheck();
   }
 
-  protected async insertColumnsBlock(evt: IColumnCountPickedEvent, trigger: BcOverlayTriggerDirective) {
-    if (this.readonly || !this.selectionJSON) return
-    this.restoreSelection()
-    const selection = this.doc.selection.value
-    if (!selection) return
+  protected async insertColumnsBlock(
+    evt: IColumnCountPickedEvent,
+    trigger: BcOverlayTriggerDirective,
+  ) {
+    if (this.readonly || !this.selectionJSON) return;
+    this.restoreSelection();
+    const selection = this.doc.selection.value;
+    if (!selection) return;
 
-    const inserted = await this.insertColumns(evt.count, selection)
-    if (!inserted) return
-    trigger.closePanel()
-    this.doc.selection.recalculate()
-    this.syncToolbarState(this.doc.selection.value)
-    this.cdr.markForCheck()
+    const inserted = await this.insertColumns(evt.count, selection);
+    if (!inserted) return;
+    trigger.closePanel();
+    this.doc.selection.recalculate();
+    this.syncToolbarState(this.doc.selection.value);
+    this.cdr.markForCheck();
+  }
+
+  protected onMediaTypePicked(
+    item: BcFloatToolbarItemComponent,
+    trigger: BcOverlayTriggerDirective,
+  ) {
+    trigger.closePanel();
+    if (item.value === "video" || item.value === "audio") {
+      void this.insertSchemaBlock(item.value);
+    }
   }
 
   protected onLinkAction() {
-    if (this.readonly || !this.allEditable || !this.isLinkAble || !this.hasTextSelection) return
-    if (this.isAttrActive('link')) {
+    if (
+      this.readonly ||
+      !this.allEditable ||
+      !this.isLinkAble ||
+      !this.hasTextSelection
+    )
+      return;
+    if (this.isAttrActive("link")) {
       this.runWithSelection(() => {
-        this.toolbarHelper.formatText({'a:link': null})
-      })
-      return
+        this.toolbarHelper.formatText({ "a:link": null });
+      });
+      return;
     }
-    this.openLinkPad()
+    this.openLinkPad();
   }
 
   protected openLinkPad() {
-    this.restoreSelection()
-    const selection = this.doc.selection.value
-    if (!selection || !selection.isInSameBlock || selection.start.type !== 'text' || !this.hasTextSelection) return
-    const selectionJSON = selection.toJSON()
+    this.restoreSelection();
+    const selection = this.doc.selection.value;
+    if (
+      !selection ||
+      !selection.isInSameBlock ||
+      selection.start.type !== "text" ||
+      !this.hasTextSelection
+    )
+      return;
+    const selectionJSON = selection.toJSON();
 
-    const rect = this.doc.selection.getSelectionRect()!
-    const fake = this.doc.selection.createFakeRange(selection)
-    const overlay = this.doc.injector.get(Overlay)
+    const rect = this.doc.selection.getSelectionRect()!;
+    const fake = this.doc.selection.createFakeRange(selection);
+    const overlay = this.doc.injector.get(Overlay);
 
-    const positionStrategy = overlay.position().global().top(rect.bottom + 'px').left(rect.left + 'px')
-    const portal = new ComponentPortal(LinkInputPad)
+    const positionStrategy = overlay
+      .position()
+      .global()
+      .top(rect.bottom + "px")
+      .left(rect.left + "px");
+    const portal = new ComponentPortal(LinkInputPad);
     const ovr = overlay.create({
       positionStrategy,
       hasBackdrop: true,
-      backdropClass: 'cdk-overlay-transparent-backdrop',
-    })
+      backdropClass: "cdk-overlay-transparent-backdrop",
+    });
 
     const close = () => {
-      ovr.dispose()
-      fake.destroy()
+      ovr.dispose();
+      fake.destroy();
       nextTick().then(() => {
-        this.doc.selection.replay(selectionJSON)
-        this.doc.selection.recalculate()
-        this.syncToolbarState(this.doc.selection.value)
-        this.cdr.markForCheck()
-      })
-    }
+        this.doc.selection.replay(selectionJSON);
+        this.doc.selection.recalculate();
+        this.syncToolbarState(this.doc.selection.value);
+        this.cdr.markForCheck();
+      });
+    };
 
-    const cpr = ovr.attach(portal)
-    merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
-    cpr.instance.onConfirm.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe((url: string) => {
-      close()
-      if (selection.start.type !== 'text') return
-      const startBlock = selection.firstBlock as any
-      const startOff = selection.start.offset
-      const len = selection.isInSameBlock && selection.end.type === 'text' ? selection.end.offset - startOff : startBlock.textLength - startOff
-      startBlock.formatText(startOff, len, {'a:link': url})
-    })
+    const cpr = ovr.attach(portal);
+    merge(ovr.backdropClick(), cpr.instance.onCancel)
+      .pipe(takeUntilDestroyed(cpr.instance.destroyRef))
+      .subscribe(close);
+    cpr.instance.onConfirm
+      .pipe(takeUntilDestroyed(cpr.instance.destroyRef))
+      .subscribe((url: string) => {
+        close();
+        if (selection.start.type !== "text") return;
+        const startBlock = selection.firstBlock as any;
+        const startOff = selection.start.offset;
+        const len =
+          selection.isInSameBlock && selection.end.type === "text"
+            ? selection.end.offset - startOff
+            : startBlock.textLength - startOff;
+        startBlock.formatText(startOff, len, { "a:link": url });
+      });
   }
 
   protected insertFormula() {
-    if (!this.hasTextSelection) return
+    if (!this.hasTextSelection) return;
     this.runWithSelection(() => {
-      const selection = this.doc.selection.value
-      if (!selection || selection.start.type !== 'text') return
-      const block = selection.firstBlock as any
-      const index = selection.start.offset
-      const length = selection.isInSameBlock && selection.end.type === 'text' ? selection.end.offset - index : block.textLength - index
-      const text = this.doc.selection.getSelectedText()
+      const selection = this.doc.selection.value;
+      if (!selection || selection.start.type !== "text") return;
+      const block = selection.firstBlock as any;
+      const index = selection.start.offset;
+      const length =
+        selection.isInSameBlock && selection.end.type === "text"
+          ? selection.end.offset - index
+          : block.textLength - index;
+      const text = this.doc.selection.getSelectedText();
       block.applyDeltaOperations([
-        ...(index > 0 ? [{retain: index}] : []),
-        {delete: length},
-        {insert: {latex: text}}
-      ])
-    })
+        ...(index > 0 ? [{ retain: index }] : []),
+        { delete: length },
+        { insert: { latex: text } },
+      ]);
+    });
   }
 
   protected clearFormat() {
     this.runWithSelection(() => {
       this.toolbarHelper.formatText({
-        'a:bold': null,
-        'a:italic': null,
-        'a:underline': null,
-        'a:strike': null,
-        'a:code': null,
-        'a:sub': null,
-        'a:sup': null,
-        'a:bg': null,
-        'a:link': null,
-        's:color': null,
-        's:background': null,
-        's:fontSize': null,
-        's:fontFamily': null
-      } as unknown as IInlineNodeAttrs)
+        "a:bold": null,
+        "a:italic": null,
+        "a:underline": null,
+        "a:strike": null,
+        "a:code": null,
+        "a:sub": null,
+        "a:sup": null,
+        "a:bg": null,
+        "a:link": null,
+        "s:color": null,
+        "s:background": null,
+        "s:fontSize": null,
+        "s:fontFamily": null,
+      } as unknown as IInlineNodeAttrs);
       // if (this.activeFlavour !== 'paragraph') {
       //   this.toolbarHelper.transformBlocks('paragraph')
       // }
       this.toolbarHelper.updateBlockProps({
         heading: undefined,
-        textAlign: undefined
-      })
-    })
+        textAlign: undefined,
+      });
+    });
   }
 
   protected onExtensionAction(action: IFixedToolbarExtensionAction) {
     this.extensionAction.emit({
       action,
       selection: this.selectionJSON,
-      doc: this.doc
-    })
+      doc: this.doc,
+    });
   }
 
-  private runWithSelection(run: () => void) {
-    if (this.readonly || !this.allEditable) return
-    this.restoreSelection()
+  private runWithSelection(
+    run: () => void,
+    options?: { allowBlockTransform?: boolean },
+  ) {
+    if (this.readonly) return;
+    this.restoreSelection();
 
-    const selection = this.doc.selection.value
-    if (!selection || selection.start.type !== 'text') return
-    run()
+    const selection = this.doc.selection.value;
+    const canRun = options?.allowBlockTransform
+      ? this.canTransformSelection(selection)
+      : this.canFormatTextSelection(selection);
+    if (!canRun) return;
+    run();
 
-    this.doc.selection.recalculate()
-    const current = this.doc.selection.value
-    this.syncToolbarState(current)
-    this.cdr.markForCheck()
+    this.doc.selection.recalculate();
+    const current = this.doc.selection.value;
+    this.syncToolbarState(current);
+    this.cdr.markForCheck();
   }
 
   private restoreSelection() {
-    if (!this.selectionJSON) return
+    if (!this.selectionJSON) return;
     try {
-      this.doc.selection.replay(this.selectionJSON)
+      this.doc.selection.replay(this.selectionJSON);
+    } catch {}
+  }
+
+  private canInsertBlock(
+    flavour: BlockCraft.BlockFlavour,
+    selection: BlockCraft.Selection | null = this.doc.selection.value,
+  ) {
+    return !!selection;
+  }
+
+  private resolveInsertAnchor(
+    flavour: BlockCraft.BlockFlavour,
+    selection: BlockCraft.Selection,
+  ) {
+    let anchor: BlockCraft.BlockComponent | null = selection.lastBlock;
+    while (
+      anchor?.parentBlock &&
+      !this.doc.schemas.isValidChildren(flavour, anchor.parentBlock.flavour)
+    ) {
+      anchor = anchor.parentBlock;
+    }
+    if (
+      !anchor ||
+      !anchor.parentBlock ||
+      !this.doc.schemas.isValidChildren(flavour, anchor.parentBlock.flavour)
+    ) {
+      return null;
+    }
+    return anchor;
+  }
+
+  protected async insertSchemaBlock(flavour: "image" | "video" | "audio") {
+    if (this.readonly || !this.selectionJSON) return;
+    this.restoreSelection();
+    const selection = this.doc.selection.value;
+    if (!selection) return;
+
+    const schema = this.doc.schemas.get(flavour);
+    if (!schema) return;
+
+    const anchor = this.resolveInsertAnchor(flavour, selection);
+    if (!anchor) {
+      this.doc.messageService.warn(`此处不能添加${schema.metadata.label}`);
+      return;
+    }
+
+    const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN);
+
+    try {
+      const params = await blockCreator.getParamsByScheme(schema as any);
+      if (!params) return;
+
+      const snapshot = this.doc.schemas.createSnapshot(flavour, params as any);
+      await this.doc.chain().insertAfterSnapshots(anchor, [snapshot]).run();
+      this.doc.selection.selectOrSetCursorAtBlock(snapshot.id, true);
+      this.doc.selection.recalculate();
+      this.syncToolbarState(this.doc.selection.value);
+      this.cdr.markForCheck();
     } catch {
     }
   }
 
-  private canInsertBlock(flavour: BlockCraft.BlockFlavour, selection: BlockCraft.Selection | null = this.doc.selection.value) {
-    return !!selection
-  }
+  private async insertTable(
+    rows: number,
+    cols: number,
+    selection: BlockCraft.Selection,
+  ) {
+    const safeRows = Math.max(1, Math.min(12, Math.floor(rows) || 0));
+    const safeCols = Math.max(1, Math.min(12, Math.floor(cols) || 0));
+    const anchor = this.resolveInsertAnchor("table", selection);
+    if (!anchor) return null;
 
-  private resolveInsertAnchor(flavour: BlockCraft.BlockFlavour, selection: BlockCraft.Selection) {
-    let anchor: BlockCraft.BlockComponent | null = selection.lastBlock
-    while (anchor?.parentBlock && !this.doc.schemas.isValidChildren(flavour, anchor.parentBlock.flavour)) {
-      anchor = anchor.parentBlock
-    }
-    if (!anchor || !anchor.parentBlock || !this.doc.schemas.isValidChildren(flavour, anchor.parentBlock.flavour)) {
-      return null
-    }
-    return anchor
-  }
+    const tableSnapshot = this.doc.schemas.createSnapshot("table", [
+      safeRows,
+      safeCols,
+    ]);
+    await this.doc.chain().insertAfterSnapshots(anchor, [tableSnapshot]).run();
 
-  private async insertTable(rows: number, cols: number, selection: BlockCraft.Selection) {
-    const safeRows = Math.max(1, Math.min(12, Math.floor(rows) || 0))
-    const safeCols = Math.max(1, Math.min(12, Math.floor(cols) || 0))
-    const anchor = this.resolveInsertAnchor('table', selection)
-    if (!anchor) return null
-
-    const tableSnapshot = this.doc.schemas.createSnapshot('table', [safeRows, safeCols])
-    await this.doc.chain()
-      .insertAfterSnapshots(anchor, [tableSnapshot])
-      .run()
-
-    const firstParagraphId = (tableSnapshot as any).children?.[0]?.children?.[0]?.children?.[0]?.id as string | undefined
+    const firstParagraphId = (tableSnapshot as any).children?.[0]?.children?.[0]
+      ?.children?.[0]?.id as string | undefined;
     if (firstParagraphId) {
-      this.doc.selection.setCursorAtBlock(firstParagraphId, true)
+      this.doc.selection.setCursorAtBlock(firstParagraphId, true);
     } else {
-      this.doc.selection.selectOrSetCursorAtBlock(tableSnapshot.id, true)
+      this.doc.selection.selectOrSetCursorAtBlock(tableSnapshot.id, true);
     }
-    return tableSnapshot
+    return tableSnapshot;
   }
 
   private async insertColumns(count: number, selection: BlockCraft.Selection) {
-    const safeCount = Math.max(2, Math.min(6, Math.floor(count) || 0))
-    const anchor = this.resolveInsertAnchor('columns', selection)
-    if (!anchor) return null
+    const safeCount = Math.max(2, Math.min(6, Math.floor(count) || 0));
+    const anchor = this.resolveInsertAnchor("columns", selection);
+    if (!anchor) return null;
 
-    const columnsSnapshot = this.doc.schemas.createSnapshot('columns', [safeCount])
-    await this.doc.chain()
+    const columnsSnapshot = this.doc.schemas.createSnapshot("columns", [
+      safeCount,
+    ]);
+    await this.doc
+      .chain()
       .insertAfterSnapshots(anchor, [columnsSnapshot])
-      .run()
+      .run();
 
-    const firstParagraphId = (columnsSnapshot as any).children?.[0]?.children?.[0]?.id as string | undefined
+    const firstParagraphId = (columnsSnapshot as any).children?.[0]
+      ?.children?.[0]?.id as string | undefined;
     if (firstParagraphId) {
-      this.doc.selection.setCursorAtBlock(firstParagraphId, true)
+      this.doc.selection.setCursorAtBlock(firstParagraphId, true);
     } else {
-      this.doc.selection.selectOrSetCursorAtBlock(columnsSnapshot.id, true)
+      this.doc.selection.selectOrSetCursorAtBlock(columnsSnapshot.id, true);
     }
-    return columnsSnapshot
+    return columnsSnapshot;
   }
 
   private syncToolbarState(selection: BlockCraft.Selection | null) {
-
     if (!selection) {
-      this.activeAttrs = new Map<string, any>()
-      this.activeColors = {}
-      this.activeProps = {}
-      this.activeFlavour = 'paragraph'
-      this.allEditable = false
-      this.selectionJSON = null
-      this.isLinkAble = false
-      this.hasTextSelection = false
-      this.cdr.markForCheck()
-      return
+      this.activeAttrs = new Map<string, any>();
+      this.activeColors = {};
+      this.activeProps = {};
+      this.activeFlavour = "paragraph";
+      this.allEditable = false;
+      this.canTransformBlocks = false;
+      this.selectionJSON = null;
+      this.isLinkAble = false;
+      this.hasTextSelection = false;
+      this.cdr.markForCheck();
+      return;
     }
 
-    if (selection.isAllSelected || selection.start.type !== 'text' || !this.doc.isEditable(selection.firstBlock)
-      || (selection.firstBlock as any).plainTextOnly
-    ) {
-      this.activeAttrs = new Map<string, any>()
-      this.activeColors = {}
-      this.activeProps = {}
-      this.activeFlavour = 'paragraph'
-      this.allEditable = false
-      this.selectionJSON = selection.toJSON()
-      this.isLinkAble = false
-      this.hasTextSelection = false
-      this.cdr.markForCheck()
-      return
+    this.selectionJSON = selection.toJSON();
+    this.canTransformBlocks = this.canTransformSelection(selection);
+    if (!this.canTransformBlocks) {
+      this.activeAttrs = new Map<string, any>();
+      this.activeColors = {};
+      this.activeProps = {};
+      this.activeFlavour = "paragraph";
+      this.allEditable = false;
+      this.isLinkAble = false;
+      this.hasTextSelection = false;
+      this.cdr.markForCheck();
+      return;
     }
 
-    const common = this.toolbarHelper.getCurrentCommonAttrs(selection)
-    this.activeAttrs = new Map(common.attrs)
-    this.activeColors = {...common.colors}
-    this.activeProps = {...common.props}
-    this.activeFlavour = common.flavour || 'paragraph'
-    this.allEditable = !!common.allEditable
-    this.selectionJSON = selection.toJSON()
-    this.isLinkAble = selection.isInSameBlock && selection.start.type === 'text'
-    this.hasTextSelection = selection.isInSameBlock
-      && selection.start.type === 'text'
-      && !selection.collapsed
-      && !selection.isEmpty
-    this.cdr.markForCheck()
+    const common = this.toolbarHelper.getCurrentCommonAttrs(selection);
+    this.activeProps = { ...common.props };
+    this.activeFlavour = common.flavour || "paragraph";
+    this.allEditable = this.canFormatTextSelection(selection);
+    this.activeAttrs = this.allEditable
+      ? new Map(common.attrs)
+      : new Map<string, any>();
+    this.activeColors = this.allEditable ? { ...common.colors } : {};
+    this.isLinkAble =
+      this.allEditable &&
+      selection.isInSameBlock &&
+      selection.start.type === "text";
+    this.hasTextSelection =
+      this.allEditable &&
+      selection.isInSameBlock &&
+      selection.start.type === "text" &&
+      !selection.collapsed &&
+      !selection.isEmpty;
+    this.cdr.markForCheck();
+  }
+
+  private canTransformSelection(selection: BlockCraft.Selection | null) {
+    if (!selection || selection.isAllSelected) return false;
+
+    const between = this.doc.queryBlocksBetween(
+      selection.firstBlock,
+      selection.lastBlock,
+      true,
+    );
+    return between.every((id) => {
+      const block = this.doc.getBlockById(id);
+      return this.doc.isEditable(block) && !block.plainTextOnly;
+    });
+  }
+
+  private canFormatTextSelection(selection: BlockCraft.Selection | null) {
+    return (
+      !!selection &&
+      selection.start.type === "text" &&
+      this.canTransformSelection(selection)
+    );
   }
 
   private get toolbarHelper() {
-    return this.utils || (this._toolbarHelper ||= new TextToolbarHelper(this.doc))
+    return (
+      this.utils || (this._toolbarHelper ||= new TextToolbarHelper(this.doc))
+    );
   }
 }

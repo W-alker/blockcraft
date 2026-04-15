@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-04-08
+> Last updated: 2026-04-15
 
 ## FloatTextToolbarPlugin
 
@@ -111,7 +111,19 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
 
 > `plugins/fixed-toolbar/widgets/fixed-toolbar.component.ts` — Fixed-position toolbar embedded in host app template.
 
-**Not a `DocPlugin`** — this is an Angular standalone component (`<bc-fixed-toolbar>`) meant to be placed directly in the host application's template. Provides heading selection, inline formatting, color pickers, alignment, list conversion, table/column insertion, and link editing.
+**Not a `DocPlugin`** — this is an Angular standalone component (`<bc-fixed-toolbar>`) meant to be placed directly in the host application's template. Provides heading selection, inline formatting, color pickers, alignment, list conversion, table/column insertion, image insertion, video/audio insertion, and link editing.
+
+### Insertion Actions
+
+- Table and column actions use picker overlays from the fixed toolbar.
+- Image insertion supports either a direct image URL or local image upload.
+- Video and audio insertion are grouped under one dropdown entry and reuse the shared media-creator flow.
+
+### Selection Behavior
+
+- Heading and list transforms work on cross-block text selections as long as every covered block is editable and not `plainTextOnly`.
+- Link and inline-formula actions remain restricted to same-block text selections; on cross-block selections the buttons stay visible but disabled.
+- Inline-format buttons still follow text-range availability; block-level transforms are more permissive than inline text formatting.
 
 ### Component Inputs
 

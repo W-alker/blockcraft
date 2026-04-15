@@ -34,12 +34,8 @@ export class MyBlockCreatorService extends BlockCreatorService {
         })
         break
       case 'image':
-        const imgFileList = await this.fileService.inputFiles('image/*')
-        const imgFile = imgFileList[0]
-        if (this.fileService.isOverMaxSize(imgFile.size)) {
-          throw new Error('图片过大')
-        }
-        params.push(this.fileService.createObjectURL(imgFile))
+        const imageResult = await this.onShowMediaCreator(schema, 'image')
+        params.push(imageResult)
         break
       case 'juejin-embed':
       case 'figma-embed':
@@ -88,7 +84,7 @@ export class MyBlockCreatorService extends BlockCreatorService {
     })
   }
 
-  private onShowMediaCreator(schema: IBlockSchemaOptions, mediaType: 'video' | 'audio'): Promise<any> {
+  private onShowMediaCreator(schema: IBlockSchemaOptions, mediaType: 'image' | 'video' | 'audio'): Promise<any> {
     const overlay = this.injector.get(Overlay)
     const ovr = overlay.create({
       positionStrategy: overlay.position().global().centerHorizontally().centerVertically(),
@@ -104,6 +100,25 @@ export class MyBlockCreatorService extends BlockCreatorService {
     return new Promise((resolve, reject) => {
       cpr.instance.onSubmit.pipe(takeUntilDestroyed(cpr.instance.destroyer)).subscribe((result: MediaCreatorResult) => {
         ovr.dispose()
+        if (mediaType === 'image') {
+          switch (result.type) {
+            case 'link':
+              resolve(result.url)
+              return
+            case 'local':
+              if (result.file) {
+                if (this.fileService.isOverMaxSize(result.file.size)) {
+                  reject(new Error('图片过大'))
+                  return
+                }
+                resolve(this.fileService.createObjectURL(result.file))
+                return
+              }
+              reject()
+              return
+          }
+        }
+
         const params: any = {
           sourceType: result.type
         }

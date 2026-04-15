@@ -7,9 +7,10 @@ import {
   EventEmitter,
   Input,
   Output,
-  ViewChild
+  ViewChild,
+  inject
 } from '@angular/core';
-import {IBlockSchemaOptions} from "../../framework";
+import {DOC_FILE_SERVICE_TOKEN, IBlockSchemaOptions} from "../../framework";
 import {urlRegex} from "../../global";
 
 export type MediaSourceType = 'link' | 'local';
@@ -24,8 +25,11 @@ export interface MediaCreatorResult {
   selector: 'media-creator',
   template: `
     <div class="mc-header">
-      <div class="mc-icon">
-        <i class="bc_icon" [class.bc_shipin]="mediaType === 'video'" [class.bc_yinpin]="mediaType === 'audio'"></i>
+        <div class="mc-icon">
+        <i class="bc_icon"
+           [class.bc_tupian-color]="mediaType === 'image'"
+           [class.bc_shipin]="mediaType === 'video'"
+           [class.bc_yinpin]="mediaType === 'audio'"></i>
       </div>
       <div>
         <h3>{{ schema.metadata.label }}</h3>
@@ -70,7 +74,10 @@ export interface MediaCreatorResult {
         @if (selectedFile) {
           <div class="mc-file-card">
             <div class="mc-file-icon">
-              <i class="bc_icon" [class.bc_shipin]="mediaType === 'video'" [class.bc_yinpin]="mediaType === 'audio'"></i>
+              <i class="bc_icon"
+                 [class.bc_tupian-color]="mediaType === 'image'"
+                 [class.bc_shipin]="mediaType === 'video'"
+                 [class.bc_yinpin]="mediaType === 'audio'"></i>
             </div>
             <div class="mc-file-info">
               <span class="mc-file-name">{{ selectedFile.name }}</span>
@@ -367,11 +374,13 @@ export interface MediaCreatorResult {
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MediaCreatorComponent {
+  private readonly fileService = inject(DOC_FILE_SERVICE_TOKEN, {optional: true});
+
   @Input()
   schema!: IBlockSchemaOptions;
 
   @Input()
-  mediaType: 'video' | 'audio' = 'video';
+  mediaType: 'image' | 'video' | 'audio' = 'video';
 
   @Output()
   onSubmit = new EventEmitter<MediaCreatorResult>();
@@ -415,31 +424,58 @@ export class MediaCreatorComponent {
   }
 
   getDefaultDescription(): string {
-    return this.mediaType === 'video'
-      ? '插入视频，支持链接或本地上传'
-      : '插入音频，支持链接或本地上传';
+    switch (this.mediaType) {
+      case 'image':
+        return '插入图片，支持链接或本地上传';
+      case 'video':
+        return '插入视频，支持链接或本地上传';
+      default:
+        return '插入音频，支持链接或本地上传';
+    }
   }
 
   getUrlPlaceholder(): string {
-    return this.mediaType === 'video'
-      ? 'https://example.com/video.mp4'
-      : 'https://example.com/audio.mp3';
+    switch (this.mediaType) {
+      case 'image':
+        return 'https://example.com/image.png';
+      case 'video':
+        return 'https://example.com/video.mp4';
+      default:
+        return 'https://example.com/audio.mp3';
+    }
   }
 
   getUrlHint(): string {
-    return this.mediaType === 'video'
-      ? '支持 MP4、WebM 等视频文件，以及 YouTube、Bilibili、优酷、腾讯视频等平台链接'
-      : '支持 MP3、WAV、OGG 等音频文件链接';
+    switch (this.mediaType) {
+      case 'image':
+        return '支持可直接访问的图片链接';
+      case 'video':
+        return '支持 MP4、WebM 等视频文件，以及 YouTube、Bilibili、优酷、腾讯视频等平台链接';
+      default:
+        return '支持 MP3、WAV、OGG 等音频文件链接';
+    }
   }
 
   getAcceptType(): string {
-    return this.mediaType === 'video' ? 'video/*' : 'audio/*';
+    switch (this.mediaType) {
+      case 'image':
+        return 'image/*';
+      case 'video':
+        return 'video/*';
+      default:
+        return 'audio/*';
+    }
   }
 
   getFileHint(): string {
-    return this.mediaType === 'video'
-      ? '支持 MP4、WebM、OGG 格式，最大 100MB'
-      : '支持 MP3、WAV、OGG 格式，最大 50MB';
+    switch (this.mediaType) {
+      case 'image':
+        return '支持 PNG、JPG、GIF、WebP、SVG 格式，最大 60MB';
+      case 'video':
+        return '支持 MP4、WebM、OGG 格式，最大 100MB';
+      default:
+        return '支持 MP3、WAV、OGG 格式，最大 50MB';
+    }
   }
 
   verifyUrl() {
@@ -450,6 +486,10 @@ export class MediaCreatorComponent {
 
   isValidMediaUrl(url: string): boolean {
     if (!url?.trim()) return false;
+
+    if (this.mediaType === 'image') {
+      return urlRegex.test(url);
+    }
 
     if (this.mediaType === 'video') {
       const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv', '.m4v', '.3gp'];
@@ -509,17 +549,22 @@ export class MediaCreatorComponent {
   }
 
   handleFile(file: File) {
-    const maxSize = this.mediaType === 'video' ? 100 * 1024 * 1024 : 50 * 1024 * 1024;
-    if (file.size > maxSize) {
+    const isOverSize = this.mediaType === 'image'
+      ? !!this.fileService?.isOverMaxSize(file.size)
+      : file.size > (this.mediaType === 'video' ? 100 * 1024 * 1024 : 50 * 1024 * 1024);
+
+    if (isOverSize) {
       this.selectedFile = null;
       this.isDisabled = true;
       this.cdr.markForCheck();
       return;
     }
 
-    const isValidType = this.mediaType === 'video'
-      ? file.type.startsWith('video/')
-      : file.type.startsWith('audio/');
+    const isValidType = this.mediaType === 'image'
+      ? file.type.startsWith('image/')
+      : this.mediaType === 'video'
+        ? file.type.startsWith('video/')
+        : file.type.startsWith('audio/');
 
     if (!isValidType) {
       this.selectedFile = null;

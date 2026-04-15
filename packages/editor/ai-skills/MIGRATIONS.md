@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-04-13 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-04-15 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,42 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v0.2.16 — 2026-04-15 — Fixed Toolbar Media Insert Actions
+
+**Severity**: patch
+
+**What changed**: `FixedTextToolbarComponent` now exposes more insertion actions directly in the toolbar. Table and columns keep their existing picker behavior but now show a dropdown affordance. The toolbar also adds image insertion plus a video/audio dropdown. Image creation now supports either a remote URL or local upload through the shared media-creator flow.
+
+**Why**: The fixed toolbar already handled table and columns, but other common insert actions still required other entry points. Reusing the shared block-creator and media-creator flows keeps insertion behavior consistent while making the toolbar more complete.
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-formatting.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Fixed-toolbar table and column insert buttons now visually communicate that they open pickers.
+- Fixed-toolbar image insertion supports image URL input and local upload.
+- Fixed-toolbar video/audio insertion is available from a shared dropdown entry and uses the existing media creation dialog.
+
+### v0.2.15 — 2026-04-15 — Fixed Toolbar Cross-Block Heading/List Transforms
+
+**Severity**: patch
+
+**What changed**: `FixedTextToolbarComponent` now allows heading changes and list conversion (`ordered`, `bullet`, `todo`) on cross-block text selections, matching the behavior scope that users already had in the floating text toolbar. The fixed toolbar keeps its existing layout; only the selection gating for block-level transforms changed.
+
+**Why**: The fixed toolbar previously gated too much of its behavior behind text-format selection checks, which made multi-line selections feel weaker than the floating toolbar even though the underlying `TextToolbarHelper` APIs already support multi-block block transforms.
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-formatting.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Cross-block text selections across editable, non-`plainTextOnly` blocks can now be converted to heading styles from the fixed toolbar.
+- The same selections can now be converted between `ordered`, `bullet`, `todo`, and `paragraph` from the fixed toolbar.
+- Link and inline-formula actions remain same-block only; on cross-block text selections their buttons stay visible but disabled in the fixed toolbar.
 
 ### v0.2.14 — 2026-04-13 — Selection: `isAllSelected` Means Block Selection Only
 
