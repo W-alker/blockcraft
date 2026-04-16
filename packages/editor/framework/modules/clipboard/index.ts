@@ -135,43 +135,191 @@ export class ClipboardManager {
 
   async applyPasteOption(option: ClipboardPasteOption, selection: BlockCraft.Selection): Promise<ClipboardPasteApplyResult | null> {
     if (selection.start.type !== 'text') return null
+    const originalCollapsedSelection = selection.collapsed ? selection.toJSON() : null
+    this.doc.selection.blur()
+
+    const {payload} = option
+    if (payload.kind === 'text') {
+      return this._applyTextPasteOption(payload.text, selection, originalCollapsedSelection)
+    }
+
+    if (payload.kind === 'snapshot') {
+      return this._applySnapshotPasteOption(payload.snapshot, selection, originalCollapsedSelection)
+    }
+
+    return null
+  }
+
+  private async _applyTextPasteOption(
+    text: string,
+    selection: BlockCraft.Selection,
+    originalCollapsedSelection: ReturnType<BlockCraft.Selection['toJSON']> | null
+  ): Promise<ClipboardPasteApplyResult | null> {
+    if (selection.start.type !== 'text') return null
+
     const editableBlock = selection.firstBlock as EditableBlockComponent
     const fromIndex = selection.start.offset
+    const textLines = text.replace(/[\n\r]+$/, '').split('\n')
+    const appendedSnapshots = textLines.slice(1).map((line: string) =>
+      this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: editableBlock.props.depth}])
+    )
 
-    // Delete selected content first for range selections (handles both same-block and cross-block)
     if (!selection.collapsed) {
       this.deleteContentFromSelection(selection)
     }
 
-    const {payload} = option
-    if (payload.kind === 'text') {
-      const text = payload.text
-      this.doc.crud.transact(() => {
-        const textLines = text.replace(/[\n\r]+$/, '').split('\n')
-        editableBlock.replaceText(fromIndex, 0, textLines[0])
-        if (textLines.length > 1) {
-          const snapshots = textLines.slice(1).map((line: string) =>
-            this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: editableBlock.props.depth}])
-          )
-          this.doc.crud.insertBlocksAfter(editableBlock, snapshots)
-        }
-      })
-      return {anchorBlockId: editableBlock.id}
-    }
-
-    if (payload.kind === 'snapshot') {
-      const snapshot = payload.snapshot
-      if (snapshot.nodeType === BlockNodeType.root && snapshot.children.length) {
-        const snapshots = snapshot.children as IBlockSnapshot[]
-        replaceSnapshotsIdDeeply(snapshots)
-        await this.doc.chain()
-          .insertAfterSnapshots(editableBlock, snapshots)
-          .run()
+    this.doc.crud.transact(() => {
+      editableBlock.replaceText(fromIndex, 0, textLines[0])
+      if (appendedSnapshots.length) {
+        this.doc.crud.insertBlocksAfter(editableBlock, appendedSnapshots)
       }
+    })
+
+    await nextTick()
+    if (selection.collapsed) {
+      this._restoreCollapsedSelectionAndSync(originalCollapsedSelection)
       return {anchorBlockId: editableBlock.id}
     }
 
-    return null
+    if (!appendedSnapshots.length) {
+      this._setTextRangeAndSync(editableBlock, fromIndex, textLines[0].length)
+      return {anchorBlockId: editableBlock.id}
+    }
+
+    const endBlock = this.doc.getBlockById(appendedSnapshots[appendedSnapshots.length - 1].id)
+    this._setCrossBlockRangeAndSync(editableBlock, fromIndex, endBlock)
+    return {anchorBlockId: editableBlock.id}
+  }
+
+  private async _applySnapshotPasteOption(
+    snapshot: IBlockSnapshot,
+    selection: BlockCraft.Selection,
+    originalCollapsedSelection: ReturnType<BlockCraft.Selection['toJSON']> | null
+  ): Promise<ClipboardPasteApplyResult | null> {
+    if (selection.start.type !== 'text') return null
+    if (snapshot.nodeType !== BlockNodeType.root || !snapshot.children.length) return null
+
+    const editableBlock = selection.firstBlock as EditableBlockComponent
+    const fromIndex = selection.start.offset
+    const fromLength = selection.isInSameBlock && selection.end.type === 'text'
+      ? selection.end.offset - fromIndex
+      : editableBlock.textLength - fromIndex
+    const {isInSameBlock, collapsed} = selection
+    const snapshots: IBlockSnapshot[] = snapshot.children as IBlockSnapshot[]
+    replaceSnapshotsIdDeeply(snapshots)
+
+    if (isInSameBlock) {
+      const ops: DeltaOperation[] = [{retain: fromIndex}]
+      const textLength = editableBlock.textLength
+
+      let insertLength = 0
+      if (snapshots[0].nodeType === BlockNodeType.editable
+        && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
+        && compareSimpleValue(snapshots[0].props['heading'] as SimpleBasicType, editableBlock.props['heading']) <= 0
+      ) {
+        insertLength = deltaStrLength(snapshots[0].children)
+        ops.push(...snapshots[0].children)
+        snapshots.shift()
+      }
+
+      if (!snapshots.length) {
+        editableBlock.deleteText(fromIndex, fromLength)
+        editableBlock.applyDeltaOperations(ops)
+        await nextTick()
+        if (collapsed) {
+          this._restoreCollapsedSelectionAndSync(originalCollapsedSelection)
+        } else {
+          this._setTextRangeAndSync(editableBlock, fromIndex, insertLength)
+        }
+        return {anchorBlockId: editableBlock.id}
+      }
+
+      if (fromIndex + fromLength < textLength) {
+        ops.push({delete: textLength - fromIndex})
+        const sliceDeltas = sliceDelta(editableBlock.textDeltas(), fromIndex + fromLength, textLength)
+        const splitSnapshot = this.doc.schemas.createSnapshot('paragraph', [sliceDeltas, editableBlock.props])
+        this.doc.crud.insertBlocksAfter(editableBlock, [splitSnapshot])
+      } else {
+        editableBlock.deleteText(fromIndex, fromLength)
+      }
+      editableBlock.applyDeltaOperations(ops)
+    } else {
+      this.deleteContentFromSelection(selection)
+
+      if (snapshots[0].nodeType === BlockNodeType.editable && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)) {
+        const insertLength = deltaStrLength(snapshots[0].children)
+        editableBlock.applyDeltaOperations([{retain: fromIndex}, ...snapshots[0].children])
+        snapshots.shift()
+
+        if (!snapshots.length) {
+          await nextTick()
+          if (collapsed) {
+            this._restoreCollapsedSelectionAndSync(originalCollapsedSelection)
+          } else {
+            this._setTextRangeAndSync(editableBlock, fromIndex, insertLength)
+          }
+          return {anchorBlockId: editableBlock.id}
+        }
+      }
+    }
+
+    await this.doc.chain()
+      .insertAfterSnapshots(editableBlock, snapshots)
+      .run()
+
+    await nextTick()
+    const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
+    if (collapsed) {
+      this._restoreCollapsedSelectionAndSync(originalCollapsedSelection)
+      return {anchorBlockId: editableBlock.id}
+    } else {
+      this._setCrossBlockRangeAndSync(editableBlock, fromIndex, endBlock)
+      return {anchorBlockId: editableBlock.id}
+    }
+  }
+
+  private _restoreCollapsedSelectionAndSync(selectionJSON: ReturnType<BlockCraft.Selection['toJSON']> | null) {
+    if (!selectionJSON) return
+
+    try {
+      this.doc.selection.replay(selectionJSON)
+      this.doc.selection.recalculate()
+    } catch (e) {
+      this.doc.logger.warn('restoreCollapsedPasteSelection error', e)
+    }
+  }
+
+  private _setTextRangeAndSync(block: EditableBlockComponent, index: number, length: number) {
+    block.setInlineRange(index, length)
+    this.doc.selection.recalculate()
+  }
+
+  private _setCrossBlockRangeAndSync(startBlock: EditableBlockComponent, startOffset: number, endBlock: BlockCraft.BlockComponent) {
+    this.doc.selection.setSelection({
+      blockId: startBlock.id,
+      index: startOffset,
+      length: startBlock.textLength - startOffset,
+      type: 'text'
+    }, this.doc.isEditable(endBlock) ? {
+      blockId: endBlock.id,
+      index: 0,
+      length: endBlock.textLength,
+      type: 'text'
+    } : {
+      blockId: endBlock.id,
+      type: 'selected'
+    })
+    this.doc.selection.recalculate()
+  }
+
+  private _setCursorAndSync(block: BlockCraft.BlockComponent, atEnd = false, index?: number) {
+    if (this.doc.isEditable(block)) {
+      const offset = index ?? (atEnd ? block.textLength : 0)
+      this.doc.selection.setCursorAt(block, offset)
+    } else {
+      this.doc.selection.setCursorAtBlock(block, atEnd, false)
+    }
+    this.doc.selection.recalculate()
   }
 
   @EventListen('copy')

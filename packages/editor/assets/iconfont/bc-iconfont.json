@@ -6,6 +6,13 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "11713058",
+      "name": "格式刷",
+      "font_class": "geshishua",
+      "unicode": "e639",
+      "unicode_decimal": 58937
+    },
+    {
       "icon_id": "5472030",
       "name": "任务(任务列表）",
       "font_class": "renwuban",

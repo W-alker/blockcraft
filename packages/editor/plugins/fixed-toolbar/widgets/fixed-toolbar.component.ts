@@ -17,8 +17,8 @@ import {
   ISelectionJSON,
   TextToolbarHelper
 } from "../../../framework";
-import {merge, Subscription} from "rxjs";
-import {debounce, nextTick} from "../../../global";
+import {fromEvent, merge, Subscription} from "rxjs";
+import {debounce, IS_MAC, nextTick} from "../../../global";
 import {Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
@@ -37,6 +37,10 @@ interface IToolbarIconAction<T extends string = string> {
   value: T
   icon: string
   title: string
+}
+
+interface IFormatBrushPayload {
+  inlineAttrs: IInlineNodeAttrs
 }
 
 export interface IFixedToolbarExtensionAction {
@@ -168,6 +172,17 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       (click)="clearFormat()"
     >
       <i class="bc_icon bc_quxiao"></i>
+    </button>
+
+    <button
+      class="toolbar-btn"
+      [class.active]="formatBrushActive"
+      [title]="formatBrushTitle"
+      [disabled]="readonly || (!formatBrushActive && !canCaptureFormatBrush())"
+      (mousedown)="onActionMouseDown($event)"
+      (click)="toggleFormatBrush()"
+    >
+      <i class="bc_icon bc_geshishua"></i>
     </button>
 
     <span class="toolbar-divider"></span>
@@ -542,6 +557,10 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   private readonly _sub = new Subscription();
   private _toolbarHelper?: TextToolbarHelper;
+  private _formatBrushPayload: IFormatBrushPayload | null = null;
+  private _formatBrushSourceKey: string | null = null;
+  private _formatBrushLastAppliedKey: string | null = null;
+  private _isApplyingFormatBrush = false;
 
   constructor(private readonly cdr: ChangeDetectorRef) {}
 
@@ -605,6 +624,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   protected readonly listActions = LIST_ACTIONS;
   protected readonly alignActions = ALIGN_ACTIONS;
   protected readonly bgGraphList = BG_GRAPH_LIST;
+  protected formatBrushActive = false;
+
+  protected get formatBrushTitle() {
+    return `格式刷（${IS_MAC ? "⌘" : "Ctrl"}+Shift+C）`;
+  }
 
   ngOnInit() {
     this.syncToolbarState(this.doc.selection.value);
@@ -612,20 +636,48 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this._sub.add(
       this.doc.selection.changeObserve().subscribe(
         debounce((sel) => {
-          this.syncToolbarState(sel);
+          this.handleSelectionChange(sel);
         }, 40),
       ),
     );
 
     this._sub.add(
+      this.doc.event.add("selectEnd", () => {
+        void this.tryApplyFormatBrush(this.doc.selection.value);
+      }),
+    );
+
+    this._sub.add(
       this.doc.readonlySwitch$.subscribe((readonly) => {
         this.readonly = readonly;
+        if (readonly) {
+          this.clearFormatBrush();
+        }
+        this.cdr.markForCheck();
+      }),
+    );
+
+    this._sub.add(
+      fromEvent<KeyboardEvent>(document, "keydown").subscribe((evt) => {
+        if (this.isNativeInputTarget(evt.target)) return;
+
+        if (this.isFormatBrushHotkey(evt)) {
+          if (this.formatBrushActive || !this.canCaptureFormatBrush()) return;
+          evt.preventDefault();
+          this.activateFormatBrush();
+          return;
+        }
+
+        if (evt.key !== "Escape" || !this.formatBrushActive) return;
+        evt.preventDefault();
+        this.clearFormatBrush();
         this.cdr.markForCheck();
       }),
     );
   }
 
   ngOnDestroy() {
+    this.clearFormatBrush();
     this._sub.unsubscribe();
   }
 
@@ -916,12 +968,67 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     });
   }
 
+  protected toggleFormatBrush() {
+    if (this.formatBrushActive) {
+      this.clearFormatBrush();
+      this.cdr.markForCheck();
+      return;
+    }
+
+    this.activateFormatBrush();
+  }
+
+  protected activateFormatBrush() {
+    if (this.formatBrushActive) {
+      this.cdr.markForCheck();
+      return;
+    }
+
+    const selection = this.doc.selection.value;
+    if (!this.canCaptureFormatBrush(selection)) return;
+    if (!selection) return;
+
+    const payload = this.buildFormatBrushPayload(selection);
+    if (!payload) return;
+
+    this._formatBrushPayload = payload;
+    this._formatBrushSourceKey = this.getSelectionKey(selection);
+    this._formatBrushLastAppliedKey = null;
+    this.formatBrushActive = true;
+    this.cdr.markForCheck();
+  }
+
   protected onExtensionAction(action: IFixedToolbarExtensionAction) {
     this.extensionAction.emit({
       action,
       selection: this.selectionJSON,
       doc: this.doc,
     });
+  }
+
+  private handleSelectionChange(selection: BlockCraft.Selection | null) {
+    this.syncToolbarState(selection);
+  }
+
+  private clearFormatBrush() {
+    this.formatBrushActive = false;
+    this._formatBrushPayload = null;
+    this._formatBrushSourceKey = null;
+    this._formatBrushLastAppliedKey = null;
+    this._isApplyingFormatBrush = false;
+  }
+
+  private isNativeInputTarget(target: EventTarget | null) {
+    return target instanceof HTMLElement && !!target.closest("input,textarea,select");
+  }
+
+  private isFormatBrushHotkey(evt: KeyboardEvent) {
+    return (
+      evt.key.toLowerCase() === "c" &&
+      evt.shiftKey &&
+      !evt.altKey &&
+      (IS_MAC ? evt.metaKey : evt.ctrlKey)
+    );
   }
 
   private runWithSelection(
@@ -958,6 +1065,51 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     return !!selection;
   }
 
+  protected canCaptureFormatBrush(
+    selection: BlockCraft.Selection | null = this.doc.selection.value,
+  ) {
+    return this.canFormatTextSelection(selection);
+  }
+
+  private canApplyFormatBrush(selection: BlockCraft.Selection | null) {
+    return (
+      this.canFormatTextSelection(selection) &&
+      !!selection &&
+      !selection.collapsed &&
+      !selection.isEmpty
+    );
+  }
+
+  private buildFormatBrushPayload(selection: BlockCraft.Selection) {
+    const common = this.toolbarHelper.getCurrentCommonAttrs(selection);
+    if (!common.allEditable || selection.start.type !== "text") return null;
+
+    const inlineAttrs: IInlineNodeAttrs = {
+      "a:bold": this.readFormatBrushAttr(common.attrs, "bold"),
+      "a:italic": this.readFormatBrushAttr(common.attrs, "italic"),
+      "a:underline": this.readFormatBrushAttr(common.attrs, "underline"),
+      "a:strike": this.readFormatBrushAttr(common.attrs, "strike"),
+      "a:code": this.readFormatBrushAttr(common.attrs, "code"),
+      "a:sup": this.readFormatBrushAttr(common.attrs, "sup"),
+      "a:sub": this.readFormatBrushAttr(common.attrs, "sub"),
+      "a:bg": this.readFormatBrushAttr(common.attrs, "bg"),
+      "s:color": common.colors["color"] ?? null,
+      "s:background": common.colors["backColor"] ?? null,
+    } as IInlineNodeAttrs;
+
+    return {
+      inlineAttrs,
+    } satisfies IFormatBrushPayload;
+  }
+
+  private readFormatBrushAttr(attrs: Map<string, any>, key: string) {
+    return attrs.has(key) ? attrs.get(key) : null;
+  }
+
+  private getSelectionKey(selection: BlockCraft.Selection | null) {
+    return selection ? JSON.stringify(selection.toJSON()) : null;
+  }
+
   private resolveInsertAnchor(
     flavour: BlockCraft.BlockFlavour,
     selection: BlockCraft.Selection,
@@ -977,6 +1129,50 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       return null;
     }
     return anchor;
+  }
+
+  private async tryApplyFormatBrush(selection: BlockCraft.Selection | null) {
+    if (
+      !this.formatBrushActive ||
+      !this._formatBrushPayload ||
+      this._isApplyingFormatBrush ||
+      !this.canApplyFormatBrush(selection)
+    ) {
+      return false;
+    }
+
+    const selectionKey = this.getSelectionKey(selection);
+    if (
+      !selectionKey ||
+      selectionKey === this._formatBrushSourceKey ||
+      selectionKey === this._formatBrushLastAppliedKey
+    ) {
+      return false;
+    }
+
+    this._isApplyingFormatBrush = true;
+    this._formatBrushLastAppliedKey = selectionKey;
+
+    try {
+      if (!selection) return false;
+      await this.applyFormatBrushPayload(selection, this._formatBrushPayload);
+      this.doc.selection.recalculate();
+      this.clearFormatBrush();
+      this.syncToolbarState(this.doc.selection.value);
+      this.cdr.markForCheck();
+      return true;
+    } finally {
+      void nextTick().then(() => {
+        this._isApplyingFormatBrush = false;
+      });
+    }
+  }
+
+  private async applyFormatBrushPayload(
+    selection: BlockCraft.Selection,
+    payload: IFormatBrushPayload,
+  ) {
+    this.toolbarHelper.formatText(payload.inlineAttrs, selection);
   }
 
   protected async insertSchemaBlock(flavour: "image" | "video" | "audio") {

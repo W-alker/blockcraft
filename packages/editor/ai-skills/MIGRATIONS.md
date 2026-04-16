@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-04-15 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-04-16 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,62 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v0.2.19 — 2026-04-16 — Fixed Toolbar Format Brush Hotkey
+
+**Severity**: patch
+
+**What changed**: The fixed-toolbar format brush now exposes the `Cmd/Ctrl+Shift+C` shortcut as a quick activation shortcut, and the toolbar button tooltip now shows the shortcut hint inline.
+
+**Why**: The format brush had become keyboard-friendly in behavior but still required pointer access to activate. Adding a direct activation shortcut keeps it aligned with common editor workflows and makes the hint discoverable from the button itself without changing the existing cancel flow.
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-formatting.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `Cmd/Ctrl+Shift+C` now quickly enables the fixed-toolbar format brush.
+- The fixed-toolbar format brush button tooltip now displays the shortcut hint.
+
+### v0.2.18 — 2026-04-16 — Fixed Toolbar Format Brush Source/Target Selection Rules
+
+**Severity**: patch
+
+**What changed**: The fixed-toolbar format brush now uses the dedicated `bc_geshishua` icon, allows a collapsed text caret as the source formatting point, and only applies formatting after the user finishes a later non-collapsed target text selection. The copied payload is limited to inline formatting only, and the brush automatically exits after the first successful apply.
+
+**Why**: The original version still behaved too much like an immediate selection-change reaction. The adjusted interaction matches the intended workflow better: pick up inline formatting from the current caret/selection, then choose a target range and apply only after that range is fully selected.
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-formatting.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- The fixed-toolbar format brush can now be activated from a collapsed text caret.
+- The brush waits for a later non-collapsed target text selection to finish before applying formatting.
+- After the first successful apply, the brush automatically turns off.
+- The brush no longer copies heading, list flavour, or alignment.
+- The brush icon now uses `bc_geshishua`.
+
+### v0.2.17 — 2026-04-16 — Fixed Toolbar Persistent Format Brush
+
+**Severity**: patch
+
+**What changed**: `FixedTextToolbarComponent` now includes a persistent format-brush action. The brush captures common formatting from the current text selection and keeps applying it to later text selections until the user explicitly cancels it.
+
+**Why**: The fixed toolbar already exposed the main formatting controls, but repeated manual re-application was still slower than common document-editor workflows. A local fixed-toolbar implementation adds the capability without widening the change into shared toolbar/plugin infrastructure.
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-formatting.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- The fixed toolbar now has a format-brush button with persistent active state.
+- The brush copies heading, list flavour, alignment, and common inline text styling.
+- The brush does not copy links, inline formulas, or non-text block structures.
+- The brush stays active until the user clicks it again or presses `Escape`.
 
 ### v0.3.0 — 2026-04-15 — Standalone Snapshot Viewer
 

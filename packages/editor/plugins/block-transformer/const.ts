@@ -107,8 +107,8 @@ export const blockTransforms: IBlockTransformConfig[] = [
   },
   {
     flavour: 'code',
-    description: `代码块(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + C)\nMarkdown: \`\`\` (空格)`,
+    description: `代码块(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + e)\nMarkdown: \`\`\` (空格)`,
     markdown: /^```\s$/,
-    hotkey: {key: ['c', 'C'], shortKey: true, shiftKey: true}
+    hotkey: {key: ['E', 'e'], shortKey: true, shiftKey: true}
   }
 ]

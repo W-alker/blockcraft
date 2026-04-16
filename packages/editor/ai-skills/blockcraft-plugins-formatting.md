@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-04-15
+> Last updated: 2026-04-16
 
 ## FloatTextToolbarPlugin
 
@@ -118,6 +118,14 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
 - Table and column actions use picker overlays from the fixed toolbar.
 - Image insertion supports either a direct image URL or local image upload.
 - Video and audio insertion are grouped under one dropdown entry and reuse the shared media-creator flow.
+
+### Format Brush
+
+- The fixed toolbar includes a one-shot format-brush action.
+- Activating it can use either a collapsed text caret or a normal text selection as the source format.
+- After activation, the brush waits for the user to finish a later non-collapsed target text selection before applying formatting, then automatically exits.
+- The brush only copies common inline text styling; it does not copy heading, list flavour, alignment, links, inline formulas, or non-text block contents.
+- `Cmd/Ctrl+Shift+C` can be used to quickly enable the brush; cancellation still uses the toolbar button or `Escape`.
 
 ### Selection Behavior
 

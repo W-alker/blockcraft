@@ -118,13 +118,7 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
       this.doc.crud.undoManager.undo()
       await nextTick()
 
-      // Restore the pre-paste selection since undo may not restore it reliably
-      if (this._selectionJSON) {
-        this.doc.selection.replay(this._selectionJSON)
-        await nextTick()
-      }
-
-      const selection = this.doc.selection.value
+      const selection = await this._restoreSelection()
       if (!selection) {
         this._clearSession()
         return
@@ -141,6 +135,47 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
     } catch (e) {
       this.doc.logger.warn('reapplyPaste error', e)
       this._clearSession()
+    }
+  }
+
+  private async _restoreSelection(): Promise<BlockCraft.Selection | null> {
+    if (!this._selectionJSON) {
+      this.doc.selection.recalculate()
+      return this.doc.selection.value
+    }
+
+    const applySelection = () => {
+      this.doc.selection.replay(this._selectionJSON!)
+      const {value} = this.doc.selection.recalculate()
+      return value
+    }
+
+    const hasAllBlocks = () => {
+      try {
+        this.doc.getBlockById(this._selectionJSON!.anchor.blockId)
+        this.doc.getBlockById(this._selectionJSON!.head.blockId)
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (!hasAllBlocks()) {
+          await nextTick()
+          continue
+        }
+
+        const restored = applySelection()
+        if (restored) return restored
+        await nextTick()
+      }
+
+      return null
+    } catch (e) {
+      this.doc.logger.warn('restorePasteSelection error', e)
+      return null
     }
   }
 
