@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-04-15
+> Last updated: 2026-04-16
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -117,6 +117,35 @@ The snapshot viewer is:
 - display-only
 - independent from `BlockCraftDoc`, plugins, Yjs, selection, and input modules
 - optimized for snapshot-first rendering, not editing
+
+## Markdown Stream Viewer
+
+When the host receives Markdown progressively, use the standalone Markdown stream viewer instead of building snapshots manually.
+
+```typescript
+import { createMarkdownStreamViewer } from '@org/blockcraft-editor'
+
+const streamViewer = createMarkdownStreamViewer({
+  container: containerEl,
+  viewerOptions: {
+    baseUrl: 'https://cdn.example.com/',
+    resourcePolicy: 'eager',
+  },
+})
+
+streamViewer.append('# Hello\\n\\n')
+streamViewer.append('Streaming paragraph\\n\\n')
+streamViewer.replace('# Hello world\\n\\nStreaming paragraph\\n\\n')
+streamViewer.finish()
+streamViewer.destroy()
+```
+
+Method semantics:
+
+- `append(chunk)` — append-only convenience for chunk streams
+- `replace(fullMarkdown)` — replace the current full Markdown text, useful when the producer rewrites prior content
+- `finish()` — flush pending complex blocks such as fenced code, tables, and mermaid blocks
+- `destroy()` — clear viewer resources
 
 ## Step 2 — Provide DI Services
 

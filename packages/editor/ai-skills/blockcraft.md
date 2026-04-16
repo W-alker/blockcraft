@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-04-15 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-04-16 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -132,6 +132,26 @@ renderer.destroy()
 ```html
 <bc-snapshot-viewer [snapshot]="snapshot"></bc-snapshot-viewer>
 ```
+
+### Markdown Stream Viewer
+
+```typescript
+import { createMarkdownStreamViewer } from '@ccc/blockcraft'
+
+const viewer = createMarkdownStreamViewer({
+  container: hostEl,
+  viewerOptions: {
+    resourcePolicy: 'eager',
+  },
+})
+
+viewer.append('# Hello\\n\\n')
+viewer.replace('# Hello world\\n\\nUpdated paragraph\\n')
+viewer.finish()
+viewer.destroy()
+```
+
+Use this path when the source arrives as Markdown chunks or full-text rewrites rather than prebuilt snapshots.
 
 ### DocChain (Fluent Mutations)
 

@@ -67,6 +67,48 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v0.2.20 — 2026-04-16 — Standalone Markdown Stream Viewer
+
+**Severity**: minor
+
+**What changed**: `@ccc/blockcraft` now exports `createMarkdownStreamViewer()` as a standalone display-only Markdown streaming API layered on top of snapshot-viewer. It accepts append-only chunks or full-text replacements, supports `finish()` for flushing delayed complex blocks, and stays independent from `BlockCraftDoc`, Yjs, and editor runtime state.
+
+**Why**: Snapshot-viewer already handled direct snapshot rendering, but hosts receiving LLM or other progressive Markdown output needed a viewer-native streaming path that does not spin up the full editor runtime.
+
+**Affected ai-skills files**:
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `createMarkdownStreamViewer(options)`
+- `append(chunk)`
+- `replace(fullMarkdownText)`
+- `finish()`
+- `destroy()`
+
+### Migration Recipe
+
+```typescript
+// before: wait for final markdown, then convert to snapshot
+const snapshot = await markdownAdapter.toBlockSnapshot(markdown)
+snapshotRenderer.render(containerEl, snapshot)
+
+// after: progressively render markdown
+const viewer = createMarkdownStreamViewer({
+  container: containerEl,
+})
+
+viewer.append(markdownChunk)
+viewer.finish()
+```
+
+### Behavior Changes
+
+- Hosts can now progressively render Markdown before a final snapshot exists.
+- Delayed complex blocks such as fenced code, mermaid, and tables can be flushed on `finish()`.
+
 ### v0.2.19 — 2026-04-16 — Fixed Toolbar Format Brush Hotkey
 
 **Severity**: patch

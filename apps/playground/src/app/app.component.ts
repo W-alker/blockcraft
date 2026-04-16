@@ -1,4 +1,4 @@
-import { AfterViewInit, ChangeDetectorRef, Component, NgZone, OnDestroy, ViewChild, inject } from '@angular/core';
+import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, NgZone, OnDestroy, ViewChild, inject } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import { MatIconRegistry } from '@angular/material/icon';
 import {
@@ -11,9 +11,11 @@ import {
   EditorComponent,
   IBlockSnapshot,
   ISelectionJSON,
+  MarkdownStreamViewer,
   MarkdownStreamRenderer,
   PresentationController,
   SnapshotViewerComponent,
+  createMarkdownStreamViewer,
   generateId
 } from '@ccc/blockcraft';
 import { debugTableMerge, fixTable } from '@ccc/blockcraft/blocks/table-block/callback';
@@ -271,21 +273,58 @@ const ACTION_SECTIONS: DebugSection[] = [
             <div class="viewer-demo-panel__header">
               <div>
                 <h3>Snapshot Viewer Demo</h3>
-                <p>独立于 Doc / Plugin / Yjs 的显示路径，用同一份 block snapshot 直接渲染。</p>
+                <p>独立于 Doc / Plugin / Yjs 的显示路径，支持 snapshot 和 Markdown 流式两种演示模式。</p>
               </div>
 
               <div class="viewer-demo-panel__actions">
-                <span class="status-pill status-pill--solid">{{ snapshotViewerSourceLabel }}</span>
-                <button class="panel-btn" type="button" (click)="loadSnapshotViewerDemo()">加载 Demo</button>
-                <button class="panel-btn panel-btn--primary" type="button" (click)="syncSnapshotViewerFromEditor()">同步当前文档</button>
+                <div class="viewer-mode-tabs" role="tablist" aria-label="viewer mode">
+                  <button
+                    class="viewer-mode-tab"
+                    type="button"
+                    [class.viewer-mode-tab--active]="activeViewerMode === 'snapshot'"
+                    (click)="setViewerMode('snapshot')">
+                    Snapshot
+                  </button>
+                  <button
+                    class="viewer-mode-tab"
+                    type="button"
+                    [class.viewer-mode-tab--active]="activeViewerMode === 'markdown-stream'"
+                    (click)="setViewerMode('markdown-stream')">
+                    Markdown Stream
+                  </button>
+                </div>
+
+                @if (activeViewerMode === 'snapshot') {
+                  <span class="status-pill status-pill--solid">{{ snapshotViewerSourceLabel }}</span>
+                  <button class="panel-btn" type="button" (click)="loadSnapshotViewerDemo()">加载 Demo</button>
+                  <button class="panel-btn panel-btn--primary" type="button" (click)="syncSnapshotViewerFromEditor()">同步当前文档</button>
+                } @else {
+                  <span class="status-pill status-pill--solid">{{ markdownStreamStatusLabel }}</span>
+                  <button class="panel-btn" type="button" (click)="startMarkdownStreamDemo()">开始流式 Demo</button>
+                  <button class="panel-btn" type="button" (click)="appendNextMarkdownChunk()">逐段追加</button>
+                  <button class="panel-btn" type="button" (click)="rewriteMarkdownStreamDemo()">模拟回改</button>
+                  <button class="panel-btn panel-btn--primary" type="button" (click)="finishMarkdownStreamDemo()">完成</button>
+                }
               </div>
             </div>
 
             <div class="viewer-demo-panel__stage">
-              <bc-snapshot-viewer
-                [snapshot]="snapshotViewerSnapshot"
-                [options]="snapshotViewerOptions">
-              </bc-snapshot-viewer>
+              @if (activeViewerMode === 'snapshot') {
+                <bc-snapshot-viewer
+                  [snapshot]="snapshotViewerSnapshot"
+                  [options]="snapshotViewerOptions">
+                </bc-snapshot-viewer>
+              } @else {
+                <div class="markdown-stream-demo">
+                  <label class="markdown-stream-demo__label" for="markdown-stream-source">Markdown Source</label>
+                  <textarea
+                    id="markdown-stream-source"
+                    class="markdown-stream-demo__input"
+                    [value]="markdownStreamSource"
+                    (input)="onMarkdownStreamSourceInput($event)"></textarea>
+                  <div class="markdown-stream-demo__viewer" #markdownStreamHost></div>
+                </div>
+              }
             </div>
           </section>
         }
@@ -728,6 +767,39 @@ const ACTION_SECTIONS: DebugSection[] = [
       gap: 10px;
     }
 
+    .viewer-mode-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px;
+      border-radius: 999px;
+      background: var(--bc-bg-secondary);
+      border: 1px solid var(--bc-border-color-light);
+    }
+
+    .viewer-mode-tab {
+      min-height: 32px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--bc-color-light);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all .2s ease;
+    }
+
+    .viewer-mode-tab:hover {
+      color: var(--bc-color);
+      background: var(--bc-bg-hover);
+    }
+
+    .viewer-mode-tab--active {
+      color: #fff;
+      background: var(--bc-active-color);
+    }
+
     .panel-btn {
       display: inline-flex;
       align-items: center;
@@ -777,6 +849,40 @@ const ACTION_SECTIONS: DebugSection[] = [
       min-height: 100%;
       min-width: 0;
       max-width: 100%;
+    }
+
+    .markdown-stream-demo {
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+      gap: 18px;
+      min-height: 100%;
+    }
+
+    .markdown-stream-demo__label {
+      display: none;
+    }
+
+    .markdown-stream-demo__input {
+      width: 100%;
+      min-height: 420px;
+      padding: 16px;
+      border-radius: 14px;
+      border: 1px solid var(--bc-border-color-light);
+      background: var(--bc-bg-elevated);
+      color: var(--bc-color);
+      font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+
+    .markdown-stream-demo__viewer {
+      min-width: 0;
+      min-height: 420px;
+      padding: 18px;
+      border-radius: 14px;
+      border: 1px solid var(--bc-border-color-light);
+      background: var(--bc-bg-elevated);
+      overflow: auto;
     }
 
     .monitor-panel {
@@ -882,6 +988,10 @@ const ACTION_SECTIONS: DebugSection[] = [
         justify-content: flex-start;
       }
 
+      .markdown-stream-demo {
+        grid-template-columns: 1fr;
+      }
+
       .nav-grid,
       .selection-meta,
       .status-grid {
@@ -892,6 +1002,7 @@ const ACTION_SECTIONS: DebugSection[] = [
 })
 export class AppComponent implements AfterViewInit, OnDestroy {
   @ViewChild('editor') editor?: EditorComponent;
+  @ViewChild('markdownStreamHost') markdownStreamHost?: ElementRef<HTMLElement>;
 
   readonly actionSections = ACTION_SECTIONS;
 
@@ -913,11 +1024,34 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   selectionJson: string | null = null;
   selectionMeta: DebugMetaItem[] = [];
   activeMainTab: 'editor' | 'viewer' = 'editor';
+  activeViewerMode: 'snapshot' | 'markdown-stream' = 'snapshot';
   snapshotViewerSnapshot: IBlockSnapshot = this.createDemoSnapshot();
   snapshotViewerSource: 'demo' | 'current' = 'demo';
   readonly snapshotViewerOptions = {
     resourcePolicy: 'eager' as const
   };
+  markdownStreamSource = `# Old title
+
+Streaming paragraph intro.
+
+\`\`\`ts
+const answer = 42;
+\`\`\`
+
+\`\`\`mermaid
+graph TD
+  A-->B
+\`\`\`
+
+| Name | Status |
+| --- | --- |
+| stream | ready |
+`;
+  markdownStreamChunks = this.buildMarkdownStreamChunks(this.markdownStreamSource);
+  markdownStreamIndex = 0;
+  private _markdownStreamPlayTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly _markdownStreamPlayIntervalMs = 700;
+  private _markdownStreamViewer: MarkdownStreamViewer | null = null;
 
   // Monitor — focused block only
   isMonitorActive = false;
@@ -962,6 +1096,9 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     this._selectionSub?.unsubscribe();
     this.stopMonitor();
     this.stopSimulation();
+    this.stopMarkdownStreamPlayback();
+    this._markdownStreamViewer?.destroy();
+    this._markdownStreamViewer = null;
   }
 
   get isReadonly() {
@@ -996,9 +1133,24 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     return this.snapshotViewerSource === 'current' ? '当前文档快照' : '内置 Demo 快照';
   }
 
+  get markdownStreamStatusLabel() {
+    return `${this.markdownStreamIndex}/${this.markdownStreamChunks.length} chunks${this._markdownStreamPlayTimer ? ' · 自动播放中' : ''}`;
+  }
+
   setMainTab(tab: 'editor' | 'viewer') {
     this.activeMainTab = tab;
     this.cdr.markForCheck();
+    if (tab === 'viewer' && this.activeViewerMode === 'markdown-stream') {
+      queueMicrotask(() => this.ensureMarkdownStreamViewer());
+    }
+  }
+
+  setViewerMode(mode: 'snapshot' | 'markdown-stream') {
+    this.activeViewerMode = mode;
+    this.cdr.markForCheck();
+    if (mode === 'markdown-stream') {
+      queueMicrotask(() => this.ensureMarkdownStreamViewer());
+    }
   }
 
   private getFocusedEditableBlock(): EditableBlockComponent | null {
@@ -1245,6 +1397,7 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     this.snapshotViewerSnapshot = this.createDemoSnapshot();
     this.snapshotViewerSource = 'demo';
     this.activeMainTab = 'viewer';
+    this.activeViewerMode = 'snapshot';
     this.cdr.markForCheck();
   }
 
@@ -1258,7 +1411,133 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     this.snapshotViewerSnapshot = JSON.parse(JSON.stringify(snapshot)) as IBlockSnapshot;
     this.snapshotViewerSource = 'current';
     this.activeMainTab = 'viewer';
+    this.activeViewerMode = 'snapshot';
     this.cdr.markForCheck();
+  }
+
+  startMarkdownStreamDemo() {
+    this.activeMainTab = 'viewer';
+    this.activeViewerMode = 'markdown-stream';
+    this.markdownStreamChunks = this.buildMarkdownStreamChunks(this.markdownStreamSource);
+    this.markdownStreamIndex = 0;
+    this.cdr.detectChanges();
+
+    const viewer = this.ensureMarkdownStreamViewer(true);
+    this.stopMarkdownStreamPlayback();
+    viewer.replace('');
+    if (this.markdownStreamChunks.length) {
+      viewer.append(this.markdownStreamChunks[0]!);
+      this.markdownStreamIndex = 1;
+      this.scheduleMarkdownStreamPlayback();
+    } else {
+      viewer.finish();
+    }
+    this.cdr.markForCheck();
+  }
+
+  appendNextMarkdownChunk() {
+    this.stopMarkdownStreamPlayback();
+    const viewer = this.ensureMarkdownStreamViewer();
+    if (this.markdownStreamIndex >= this.markdownStreamChunks.length) {
+      return;
+    }
+
+    viewer.append(this.markdownStreamChunks[this.markdownStreamIndex]!);
+    this.markdownStreamIndex += 1;
+    this.cdr.markForCheck();
+  }
+
+  rewriteMarkdownStreamDemo() {
+    this.stopMarkdownStreamPlayback();
+    const viewer = this.ensureMarkdownStreamViewer();
+    const rewritten = this.markdownStreamSource.replace('# Old title', '# New title');
+    this.markdownStreamSource = rewritten;
+    viewer.replace(rewritten);
+    this.markdownStreamIndex = this.markdownStreamChunks.length;
+    this.cdr.markForCheck();
+  }
+
+  finishMarkdownStreamDemo() {
+    this.stopMarkdownStreamPlayback();
+    const viewer = this.ensureMarkdownStreamViewer();
+    viewer.finish();
+    this.cdr.markForCheck();
+  }
+
+  onMarkdownStreamSourceInput(event: Event) {
+    this.markdownStreamSource = (event.target as HTMLTextAreaElement).value;
+  }
+
+  private buildMarkdownStreamChunks(source: string) {
+    const paragraphs = source.split(/(\n\n)/).filter(Boolean);
+    const chunks: string[] = [];
+    let buffer = '';
+
+    for (const part of paragraphs) {
+      buffer += part;
+      if (part === '\n\n') {
+        chunks.push(buffer);
+        buffer = '';
+      }
+    }
+
+    if (buffer) {
+      chunks.push(buffer);
+    }
+
+    return chunks.length ? chunks : [source];
+  }
+
+  private ensureMarkdownStreamViewer(reset = false) {
+    const host = this.markdownStreamHost?.nativeElement;
+    if (!host) {
+      throw new Error('Markdown stream host is not ready yet.');
+    }
+
+    if (reset && this._markdownStreamViewer) {
+      this._markdownStreamViewer.destroy();
+      this._markdownStreamViewer = null;
+      host.replaceChildren();
+    }
+
+    if (!this._markdownStreamViewer) {
+      this._markdownStreamViewer = createMarkdownStreamViewer({
+        container: host,
+        viewerOptions: this.snapshotViewerOptions,
+      });
+    }
+
+    return this._markdownStreamViewer;
+  }
+
+  private scheduleMarkdownStreamPlayback() {
+    this.stopMarkdownStreamPlayback();
+    if (this.markdownStreamIndex >= this.markdownStreamChunks.length) {
+      this.finishMarkdownStreamDemo();
+      return;
+    }
+
+    this._markdownStreamPlayTimer = setTimeout(() => {
+      this._markdownStreamPlayTimer = null;
+      const viewer = this.ensureMarkdownStreamViewer();
+      if (this.markdownStreamIndex >= this.markdownStreamChunks.length) {
+        viewer.finish();
+        this.cdr.markForCheck();
+        return;
+      }
+
+      viewer.append(this.markdownStreamChunks[this.markdownStreamIndex]!);
+      this.markdownStreamIndex += 1;
+      this.cdr.markForCheck();
+      this.scheduleMarkdownStreamPlayback();
+    }, this._markdownStreamPlayIntervalMs);
+  }
+
+  private stopMarkdownStreamPlayback() {
+    if (this._markdownStreamPlayTimer !== null) {
+      clearTimeout(this._markdownStreamPlayTimer);
+      this._markdownStreamPlayTimer = null;
+    }
   }
 
   toggleTheme() {
