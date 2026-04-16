@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-04-15
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -45,7 +45,82 @@ import {
 } from '@org/blockcraft-editor/blocks'
 ```
 
+## Snapshot Viewer (Display-Only Path)
+
+When the host only needs to display a block snapshot, use the standalone snapshot-viewer path instead of constructing `BlockCraftDoc`.
+
+### Angular wrapper
+
+```typescript
+import { SnapshotViewerComponent, IBlockSnapshot } from '@org/blockcraft-editor'
+
+@Component({
+  selector: 'doc-preview',
+  standalone: true,
+  imports: [SnapshotViewerComponent],
+  template: `
+    <bc-snapshot-viewer
+      [snapshot]="snapshot"
+      [options]="{
+        baseUrl: cdnBaseUrl,
+        resourcePolicy: 'eager',
+        enhancers: viewerEnhancers
+      }"
+    />
+  `,
+})
+export class DocPreviewComponent {
+  snapshot!: IBlockSnapshot
+  cdnBaseUrl = 'https://cdn.example.com/'
+  viewerEnhancers = {
+    bookmark: {
+      load: (url: string) => this.previewApi.query(url),
+    },
+    formula: {
+      render: (latex: string) => this.katexService.renderToString(latex),
+    },
+    mermaid: {
+      render: (source: string) => this.mermaidService.renderToSvg(source),
+    },
+  }
+}
+```
+
+### Standalone renderer
+
+```typescript
+import { createSnapshotRenderer, IBlockSnapshot } from '@org/blockcraft-editor'
+
+const renderer = createSnapshotRenderer({
+  baseUrl: 'https://cdn.example.com/',
+  resourcePolicy: 'visible', // use 'off' to keep remote resources unloaded
+  enhancers: {
+    bookmark: {
+      load: (url, signal) => previewService.query(url, signal),
+    },
+    formula: {
+      render: (latex, signal) => formulaService.render(latex, signal),
+    },
+    mermaid: {
+      render: (source, signal) => mermaidService.render(source, signal),
+    },
+  },
+})
+
+renderer.render(containerEl, snapshot as IBlockSnapshot)
+renderer.update(nextSnapshot)
+renderer.destroy()
+```
+
+The snapshot viewer is:
+
+- display-only
+- independent from `BlockCraftDoc`, plugins, Yjs, selection, and input modules
+- optimized for snapshot-first rendering, not editing
+
 ## Step 2 — Provide DI Services
+
+> Snapshot-viewer does **not** need the editor DI token graph. The DI section below applies only to `BlockCraftDoc` / full editor embedding.
 
 The framework reads several services from Angular's injector via `InjectionToken`s. The host **must** provide all of them.
 

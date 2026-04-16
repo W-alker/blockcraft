@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-04-13 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-04-15 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -73,6 +73,7 @@ packages/editor/
 ├── blocks/                 # All block implementations (one dir per block)
 ├── plugins/                # All plugin implementations (one dir per plugin)
 ├── components/             # Reusable UI components (toolbar, pickers)
+├── snapshot-viewer/        # Standalone display-only snapshot renderer
 ├── adapters/               # HTML/Markdown import/export
 ├── themes/                 # CSS themes (base, light, dark, per-block styles)
 ├── tools/                  # Export utilities (PDF, print)
@@ -93,6 +94,7 @@ packages/editor/
 | Add HTML/Markdown import/export for a block | `blockcraft-adapter.md` | L1 |
 | Create/modify toolbars or overlay UI | `blockcraft-toolbar.md` | L1 |
 | Customize themes or block styles | `blockcraft-theme.md` | L1 |
+| Render a snapshot without creating an editor runtime | `blockcraft-app.md` | L1 |
 | Debug data flow, events, or sync issues | `blockcraft-debug.md` | L1 |
 | Optimize performance | `blockcraft-perf.md` | L1 |
 | Write tests | `blockcraft-test.md` | L1 |
@@ -112,6 +114,24 @@ packages/editor/
 - **Stuck on a runtime error**: jump to `blockcraft-debug.md` for tracing strategies.
 
 ## Quick Reference: Common APIs
+
+### Snapshot Viewer (Display Only)
+
+```typescript
+import { createSnapshotRenderer } from '@ccc/blockcraft'
+
+const renderer = createSnapshotRenderer({
+  resourcePolicy: 'eager',
+})
+
+renderer.render(containerEl, rootSnapshot)
+renderer.update(nextRootSnapshot)
+renderer.destroy()
+```
+
+```html
+<bc-snapshot-viewer [snapshot]="snapshot"></bc-snapshot-viewer>
+```
 
 ### DocChain (Fluent Mutations)
 

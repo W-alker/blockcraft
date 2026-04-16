@@ -13,6 +13,7 @@ import {
   ISelectionJSON,
   MarkdownStreamRenderer,
   PresentationController,
+  SnapshotViewerComponent,
   generateId
 } from '@ccc/blockcraft';
 import { debugTableMerge, fixTable } from '@ccc/blockcraft/blocks/table-block/callback';
@@ -123,7 +124,7 @@ const ACTION_SECTIONS: DebugSection[] = [
 @Component({
   selector: 'bc-root',
   standalone: true,
-  imports: [EditorComponent],
+  imports: [EditorComponent, SnapshotViewerComponent],
   template: `
     <div class="app-shell">
       <aside class="sidebar">
@@ -230,16 +231,66 @@ const ACTION_SECTIONS: DebugSection[] = [
         <div class="editor-header">
           <div>
             <h2>编辑器主内容区</h2>
-            <p>左侧面板负责调试控制，右侧保留完整编辑操作空间。</p>
+            <p>左侧面板负责调试控制，右侧可在完整编辑器与 snapshot-viewer demo 间切换。</p>
           </div>
-          <span class="editor-header__hint">Selection 实时刷新</span>
+          <div class="editor-header__actions">
+            <div class="main-tabs" role="tablist" aria-label="主内容切换">
+              <button
+                class="main-tab"
+                type="button"
+                role="tab"
+                [attr.aria-selected]="activeMainTab === 'editor'"
+                [class.main-tab--active]="activeMainTab === 'editor'"
+                (click)="setMainTab('editor')">
+                编辑器
+              </button>
+              <button
+                class="main-tab"
+                type="button"
+                role="tab"
+                [attr.aria-selected]="activeMainTab === 'viewer'"
+                [class.main-tab--active]="activeMainTab === 'viewer'"
+                (click)="setMainTab('viewer')">
+                Snapshot Viewer
+              </button>
+            </div>
+            <span class="editor-header__hint">
+              {{ activeMainTab === 'editor' ? 'Selection 实时刷新' : snapshotViewerSourceLabel }}
+            </span>
+          </div>
         </div>
 
-        <section class="editor-stage">
-          <block-craft-editor #editor [stickyTop]="0"></block-craft-editor>
-        </section>
+        @if (activeMainTab === 'editor') {
+          <section class="editor-stage">
+            <block-craft-editor #editor [stickyTop]="0"></block-craft-editor>
+          </section>
+        }
 
-        @if (isMonitorActive) {
+        @if (activeMainTab === 'viewer') {
+          <section class="viewer-demo-panel">
+            <div class="viewer-demo-panel__header">
+              <div>
+                <h3>Snapshot Viewer Demo</h3>
+                <p>独立于 Doc / Plugin / Yjs 的显示路径，用同一份 block snapshot 直接渲染。</p>
+              </div>
+
+              <div class="viewer-demo-panel__actions">
+                <span class="status-pill status-pill--solid">{{ snapshotViewerSourceLabel }}</span>
+                <button class="panel-btn" type="button" (click)="loadSnapshotViewerDemo()">加载 Demo</button>
+                <button class="panel-btn panel-btn--primary" type="button" (click)="syncSnapshotViewerFromEditor()">同步当前文档</button>
+              </div>
+            </div>
+
+            <div class="viewer-demo-panel__stage">
+              <bc-snapshot-viewer
+                [snapshot]="snapshotViewerSnapshot"
+                [options]="snapshotViewerOptions">
+              </bc-snapshot-viewer>
+            </div>
+          </section>
+        }
+
+        @if (isMonitorActive && activeMainTab === 'editor') {
           <section class="monitor-panel" [class.monitor-panel--error]="monitorStatus === 'error'">
             <div class="monitor-header">
               <span class="section-title">INLINE 一致性</span>
@@ -583,6 +634,48 @@ const ACTION_SECTIONS: DebugSection[] = [
       font-weight: 600;
     }
 
+    .editor-header__actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .main-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px;
+      border-radius: 999px;
+      background: var(--bc-bg-secondary);
+      border: 1px solid var(--bc-border-color-light);
+    }
+
+    .main-tab {
+      min-height: 34px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--bc-color-light);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all .2s ease;
+    }
+
+    .main-tab:hover {
+      color: var(--bc-color);
+      background: var(--bc-bg-hover);
+    }
+
+    .main-tab--active {
+      color: #fff;
+      background: var(--bc-active-color);
+      box-shadow: 0 8px 18px rgba(72, 87, 226, 0.22);
+    }
+
     .editor-stage {
       flex: 1;
       min-height: 0;
@@ -592,6 +685,98 @@ const ACTION_SECTIONS: DebugSection[] = [
       background: var(--bc-bg-elevated);
       border: 1px solid var(--bc-border-color-light);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    }
+
+    .viewer-demo-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex: 1;
+      min-height: 0;
+      padding: 18px;
+      border-radius: 20px;
+      background: var(--bc-bg-elevated);
+      border: 1px solid var(--bc-border-color-light);
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+    }
+
+    .viewer-demo-panel__header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .viewer-demo-panel__header h3 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--bc-color);
+    }
+
+    .viewer-demo-panel__header p {
+      margin: 6px 0 0;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--bc-color-light);
+    }
+
+    .viewer-demo-panel__actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .panel-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid var(--bc-border-color-light);
+      background: var(--bc-bg-secondary);
+      color: var(--bc-color);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .2s ease;
+    }
+
+    .panel-btn:hover {
+      border-color: var(--bc-active-color-light);
+      background: var(--bc-active-color-lighter);
+    }
+
+    .panel-btn--primary {
+      border-color: var(--bc-active-color);
+      background: var(--bc-active-color);
+      color: #fff;
+    }
+
+    .panel-btn--primary:hover {
+      background: var(--bc-active-color);
+      opacity: 0.92;
+    }
+
+    .viewer-demo-panel__stage {
+      flex: 1;
+      min-height: 0;
+      padding: 18px;
+      border-radius: 16px;
+      border: 1px dashed var(--bc-border-color);
+      background:
+        linear-gradient(180deg, var(--bc-bg-primary) 0%, var(--bc-bg-muted) 100%);
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    .viewer-demo-panel__stage bc-snapshot-viewer {
+      display: block;
+      min-height: 100%;
+      min-width: 0;
+      max-width: 100%;
     }
 
     .monitor-panel {
@@ -681,6 +866,22 @@ const ACTION_SECTIONS: DebugSection[] = [
         width: 320px;
       }
 
+      .viewer-demo-panel__header {
+        flex-direction: column;
+      }
+
+      .viewer-demo-panel__actions {
+        justify-content: flex-start;
+      }
+
+      .editor-header {
+        flex-direction: column;
+      }
+
+      .editor-header__actions {
+        justify-content: flex-start;
+      }
+
       .nav-grid,
       .selection-meta,
       .status-grid {
@@ -711,6 +912,12 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   provider?: WebsocketProvider;
   selectionJson: string | null = null;
   selectionMeta: DebugMetaItem[] = [];
+  activeMainTab: 'editor' | 'viewer' = 'editor';
+  snapshotViewerSnapshot: IBlockSnapshot = this.createDemoSnapshot();
+  snapshotViewerSource: 'demo' | 'current' = 'demo';
+  readonly snapshotViewerOptions = {
+    resourcePolicy: 'eager' as const
+  };
 
   // Monitor — focused block only
   isMonitorActive = false;
@@ -783,6 +990,15 @@ export class AppComponent implements AfterViewInit, OnDestroy {
 
   get hasSelection() {
     return !!this.selectionJson;
+  }
+
+  get snapshotViewerSourceLabel() {
+    return this.snapshotViewerSource === 'current' ? '当前文档快照' : '内置 Demo 快照';
+  }
+
+  setMainTab(tab: 'editor' | 'viewer') {
+    this.activeMainTab = tab;
+    this.cdr.markForCheck();
   }
 
   private getFocusedEditableBlock(): EditableBlockComponent | null {
@@ -1022,6 +1238,26 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     this.editorInitialized = editor.doc.isInitialized;
     this.syncPageTheme();
     this._subscribeSelection();
+    this.cdr.markForCheck();
+  }
+
+  loadSnapshotViewerDemo() {
+    this.snapshotViewerSnapshot = this.createDemoSnapshot();
+    this.snapshotViewerSource = 'demo';
+    this.activeMainTab = 'viewer';
+    this.cdr.markForCheck();
+  }
+
+  syncSnapshotViewerFromEditor() {
+    const editor = this.ensureEditorInitialized();
+    const snapshot = editor.doc.exportSnapshot();
+    if (!snapshot) {
+      return;
+    }
+
+    this.snapshotViewerSnapshot = JSON.parse(JSON.stringify(snapshot)) as IBlockSnapshot;
+    this.snapshotViewerSource = 'current';
+    this.activeMainTab = 'viewer';
     this.cdr.markForCheck();
   }
 

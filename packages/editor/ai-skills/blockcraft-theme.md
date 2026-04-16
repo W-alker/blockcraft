@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-04-15
 
 ## Theme Structure
 
@@ -29,6 +29,22 @@ themes/
 doc.toggleTheme('dark');   // Sets body[blockcraft-theme="dark"]
 doc.toggleTheme('light');  // Sets body[blockcraft-theme="light"]
 ```
+
+## Snapshot Viewer Styling
+
+The standalone snapshot-viewer reuses the same block class naming and `[data-blockcraft-root="true"]` readonly styling model as the editor wherever practical.
+
+Current viewer-specific entrypoints:
+
+- `packages/editor/themes/components/snapshot-viewer.scss`
+- `packages/editor/themes/base.scss` imports that file automatically
+
+Practical rules:
+
+- Keep viewer-only styles scoped under `.bc-snapshot-viewer`
+- Reuse existing block classes such as `.paragraph-block`, `.table-block`, `.bookmark-block`, `.embed-frame-block`
+- Prefer existing `--bc-*` tokens instead of hardcoded colors or spacing
+- Treat viewer inline embeds (`.bc-snapshot-inline-embed`) as a lightweight display shell, not an interactive widget
 
 ## Adding Styles for a New Block
 

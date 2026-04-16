@@ -21,6 +21,7 @@
 
 @import "components/color-picker";
 @import "components/float-toolbar";
+@import "components/snapshot-viewer";
 
 [data-blockcraft-root="true"] {
   position: relative;
@@ -152,7 +153,7 @@
   }
 
   .edit-container {
-    white-space: pre;
+    white-space: break-spaces;
     user-select: text;
 
     span[contenteditable='false'] {

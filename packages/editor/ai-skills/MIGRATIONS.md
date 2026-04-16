@@ -67,6 +67,57 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v0.3.0 — 2026-04-15 — Standalone Snapshot Viewer
+
+**Severity**: minor
+
+**What changed**: `@ccc/blockcraft` now exports a standalone display-only snapshot viewer. The new API surface includes `createSnapshotRenderer()` for DOM-first rendering and `SnapshotViewerComponent` (`<bc-snapshot-viewer>`) for Angular hosts. This path renders `IBlockSnapshot` trees without creating `BlockCraftDoc`, plugins, selection state, input handling, or Yjs runtime objects. It also introduces `resourcePolicy`, `baseUrl`, and optional bookmark/formula/mermaid enhancement hooks for progressive rendering of heavier blocks.
+
+**Why**: The editor runtime is optimized for interaction. Preview, feed, readonly-card, and lightweight host scenarios needed a cheaper path that can render snapshots quickly without carrying the full editing stack.
+
+**Affected ai-skills files**:
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `createSnapshotRenderer(options)` export from the package barrel
+- `SnapshotViewerComponent` export from the component/package barrel
+- `packages/editor/snapshot-viewer/` standalone subsystem
+- viewer options:
+  - `baseUrl`
+  - `resourcePolicy: 'eager' | 'visible' | 'off'`
+  - `enhancers.bookmark.load(url, signal)`
+  - `enhancers.formula.render(latex, signal)`
+  - `enhancers.mermaid.render(source, signal)`
+
+### Migration Recipe
+
+```typescript
+// before: display a snapshot by booting the full editor runtime
+const doc = new BlockCraftDoc(config)
+doc.initBySnapshot(snapshot, containerEl)
+doc.readonlySwitch$.next(true)
+
+// after: display-only snapshot path
+const renderer = createSnapshotRenderer({
+  resourcePolicy: 'eager',
+})
+renderer.render(containerEl, snapshot)
+```
+
+```html
+<!-- Angular host -->
+<bc-snapshot-viewer [snapshot]="snapshot"></bc-snapshot-viewer>
+```
+
+### Behavior Changes
+
+- Display-only hosts no longer need editor DI services or `BlockCraftDoc` just to render a snapshot preview.
+- Remote media and iframe-like content can now be deferred with `resourcePolicy` instead of always loading immediately.
+
 ### v0.2.16 — 2026-04-15 — Fixed Toolbar Media Insert Actions
 
 **Severity**: patch
