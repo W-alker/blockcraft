@@ -6,6 +6,20 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "2743872",
+      "name": "放大",
+      "font_class": "fangda",
+      "unicode": "e63e",
+      "unicode_decimal": 58942
+    },
+    {
+      "icon_id": "2743893",
+      "name": "缩小",
+      "font_class": "suoxiao",
+      "unicode": "e645",
+      "unicode_decimal": 58949
+    },
+    {
       "icon_id": "11713058",
       "name": "格式刷",
       "font_class": "geshishua",
@@ -865,20 +879,6 @@
       "font_class": "jiaodai",
       "unicode": "e62e",
       "unicode_decimal": 58926
-    },
-    {
-      "icon_id": "7789613",
-      "name": "缩放大",
-      "font_class": "fangda",
-      "unicode": "e603",
-      "unicode_decimal": 58883
-    },
-    {
-      "icon_id": "7789618",
-      "name": "缩放小",
-      "font_class": "suoxiao",
-      "unicode": "e604",
-      "unicode_decimal": 58884
     },
     {
       "icon_id": "38395951",
