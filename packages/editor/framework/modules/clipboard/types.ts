@@ -8,6 +8,7 @@ export enum ClipboardDataType {
   RTF = "text/rtf",
   TSV = "text/tab-separated-values",
   JSON = "application/json",
+  BLOCKCRAFT_SNAPSHOT = "application/x-blockcraft-snapshot+json",
   IMAGE = "image/png",
   FILES = "Files",
   URI = "text/uri-list"

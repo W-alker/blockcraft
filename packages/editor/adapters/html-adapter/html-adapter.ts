@@ -10,9 +10,6 @@ import {inlineDeltaToHtmlAdapterMatchers} from "./delta-converter/inline-delta";
 import {htmlInlineToDeltaMatchers} from "./delta-converter/html-inline";
 import {DEFAULT_BLOCK_MATCHERS} from "./block-matchers";
 import type {Root} from 'hast';
-import {HastUtils} from "../utils";
-
-export const SIGN_BLOCK_CRAFT_JSON = 'blockcraft-json';
 
 export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
   deltaConverter = new HtmlDeltaConverter(this.adapterConfigs, inlineDeltaToHtmlAdapterMatchers, htmlInlineToDeltaMatchers)
@@ -38,15 +35,6 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
     snapshot: IBlockSnapshot,
     // assets?: AssetsManager
   ) => {
-    if (html.type === 'root') {
-      const htmlNode = html.children.find(node => node.type === 'element' && node.tagName === 'html')
-      if (htmlNode && htmlNode.type === 'element' && htmlNode.properties && htmlNode.properties[SIGN_BLOCK_CRAFT_JSON]) {
-        const json = JSON.parse(htmlNode.properties[SIGN_BLOCK_CRAFT_JSON] as string)
-        // TODO 验证数据完整性
-        return json
-      }
-    }
-
     const walker = new ASTWalker<HtmlAST, IBlockSnapshot>();
     walker.setONodeTypeGuard(
       (node): node is HtmlAST =>
@@ -175,10 +163,6 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
       ],
     };
     const ast = await this._traverseSnapshot(blockSnapshot, root);
-    const htmlElement = ast.children.find(v => v.type === 'element' && v.tagName === 'html')
-    if (htmlElement && htmlElement.type === 'element') {
-      htmlElement.properties[SIGN_BLOCK_CRAFT_JSON] = JSON.stringify(blockSnapshot)
-    }
     return this._astToHtml(ast);
   }
 }

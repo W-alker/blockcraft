@@ -1,6 +1,10 @@
 import {IBlockSnapshot} from "../../block-std";
 import {ClipboardDataType, ClipboardManager} from "./index";
 import {snapshots2Text} from "../../utils";
+import {
+  BLOCKCRAFT_WEB_SNAPSHOT_MIME,
+  buildClipboardItems,
+} from "./internal-clipboard";
 
 const STANDARD_CLIPBOARD_WRITE_TYPES = new Set<string>([
   ClipboardDataType.TEXT,
@@ -25,15 +29,31 @@ function supportsClipboardWriteType(type: string) {
 }
 
 async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
-  const itemData: Record<string, Blob> = {
-    [ClipboardDataType.TEXT]: new Blob([snapshots2Text([snapshot])], {type: ClipboardDataType.TEXT}),
-  };
+  const supportedAdapterTypes = new Set<string>();
+  for (const adapter of this.adapter.supportedAdapters) {
+    if (supportsClipboardWriteType(adapter.type)) {
+      supportedAdapterTypes.add(adapter.type);
+    }
+  }
+
+  const items = await buildClipboardItems(
+    this.adapter.supportedAdapters,
+    snapshot,
+    snapshots2Text([snapshot]),
+    supportedAdapterTypes
+  );
+  const itemData: Record<string, Blob> = {};
 
   try {
-    for (const adp of this.adapter.supportedAdapters) {
-      if (!supportsClipboardWriteType(adp.type)) continue;
-      const str = await adp.fromSnapshot(snapshot)
-      itemData[adp.type] = new Blob([str], {type: adp.type})
+    for (const [type, value] of Object.entries(items)) {
+      if (supportsClipboardWriteType(type)) {
+        itemData[type] = new Blob([value], {type});
+        continue;
+      }
+
+      if (type === ClipboardDataType.BLOCKCRAFT_SNAPSHOT && supportsClipboardWriteType(BLOCKCRAFT_WEB_SNAPSHOT_MIME)) {
+        itemData[BLOCKCRAFT_WEB_SNAPSHOT_MIME] = new Blob([value], {type: BLOCKCRAFT_WEB_SNAPSHOT_MIME});
+      }
     }
   } catch (e) {
     return tryCommand.call(this, snapshot)
@@ -48,25 +68,18 @@ async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
 
 async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) {
   return new Promise<void>(async (resolve, reject) => {
-    const items: Partial<Record<ClipboardDataType, string | Blob>> = {}
-    try {
-      for (const adp of this.adapter.supportedAdapters) {
-        items[adp.type] = await adp.fromSnapshot(rootSnapshot)
-      }
-    } catch (e) {
-      console.error(e)
-    } finally {
-      items[ClipboardDataType.TEXT] = snapshots2Text([rootSnapshot])
-    }
+    const items = await buildClipboardItems(this.adapter.supportedAdapters, rootSnapshot, snapshots2Text([rootSnapshot]));
 
-    let range: Range
+    let range: Range | undefined
     const selection = window.getSelection()
     if (selection && selection.rangeCount) {
       range = selection.getRangeAt(0)?.cloneRange()
       selection.removeAllRanges()
     }
 
+    let copyHandled = false
     document.body.addEventListener('copy', (e) => {
+      copyHandled = true
       if (range) {
         window.getSelection()?.removeAllRanges()
         window.getSelection()?.addRange(range)
@@ -76,15 +89,19 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
       e.stopPropagation()
       if (!e.clipboardData) {
         reject('clipboardData is null')
+        return
       }
 
-      for (let itemsKey in items) {
-        /// @ts-ignore
-        e.clipboardData?.setData(itemsKey, items[itemsKey])
+      for (const [type, value] of Object.entries(items)) {
+        e.clipboardData.setData(type, value)
       }
       resolve()
     }, {once: true})
-    document.execCommand('copy')
+
+    const success = document.execCommand('copy')
+    if (!success && !copyHandled) {
+      reject('execCommand copy failed')
+    }
   })
 }
 

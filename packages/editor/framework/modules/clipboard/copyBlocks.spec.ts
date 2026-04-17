@@ -1,6 +1,10 @@
 import {BlockNodeType, IBlockSnapshot} from "../../block-std";
 import {copyBlocks} from "./copyBlocks";
 import {ClipboardDataType} from "./types";
+import {
+  BLOCKCRAFT_CLIPBOARD_MARKER_CLASS,
+  BLOCKCRAFT_WEB_SNAPSHOT_MIME,
+} from "./internal-clipboard";
 
 type FakeClipboardManager = {
   adapter: {
@@ -64,7 +68,9 @@ describe('copyBlocks', () => {
     let clipboardItemData: Record<string, Blob> | undefined;
     class MockClipboardItem {
       static supports(type: string) {
-        return type !== ClipboardDataType.MARKDOWN && type !== ClipboardDataType.RTF;
+        return type !== ClipboardDataType.MARKDOWN
+          && type !== ClipboardDataType.RTF
+          && type !== BLOCKCRAFT_WEB_SNAPSHOT_MIME;
       }
 
       constructor(data: Record<string, Blob>) {
@@ -99,13 +105,54 @@ describe('copyBlocks', () => {
     expect(clipboardItemData).toBeDefined();
     expect(clipboardItemData?.[ClipboardDataType.TEXT]).toBeDefined();
     expect(clipboardItemData?.[ClipboardDataType.HTML]).toBeDefined();
+    expect(await clipboardItemData?.[ClipboardDataType.HTML]?.text()).toContain(BLOCKCRAFT_CLIPBOARD_MARKER_CLASS);
     expect(clipboardItemData?.[ClipboardDataType.MARKDOWN]).toBeUndefined();
     expect(clipboardItemData?.[ClipboardDataType.RTF]).toBeUndefined();
+    expect(clipboardItemData?.[BLOCKCRAFT_WEB_SNAPSHOT_MIME]).toBeUndefined();
+  });
+
+  it('writes the internal snapshot as a web custom format when navigator supports it', async () => {
+    const writeSpy = jasmine.createSpy('write').and.resolveTo();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {write: writeSpy},
+    });
+
+    let clipboardItemData: Record<string, Blob> | undefined;
+    class MockClipboardItem {
+      static supports(type: string) {
+        return type === BLOCKCRAFT_WEB_SNAPSHOT_MIME
+          || type === ClipboardDataType.TEXT
+          || type === ClipboardDataType.HTML;
+      }
+
+      constructor(data: Record<string, Blob>) {
+        clipboardItemData = data;
+      }
+    }
+
+    Object.defineProperty(globalThis, 'ClipboardItem', {
+      configurable: true,
+      value: MockClipboardItem,
+    });
+
+    const manager: FakeClipboardManager = {
+      adapter: {
+        supportedAdapters: [
+          {type: ClipboardDataType.HTML, fromSnapshot: async () => '<p>Hello world</p>'},
+        ],
+      },
+    };
+
+    await copyBlocks.call(manager as any, snapshot);
+
+    expect(writeSpy).toHaveBeenCalled();
+    expect(clipboardItemData?.[BLOCKCRAFT_WEB_SNAPSHOT_MIME]).toBeDefined();
   });
 
   it('falls back to execCommand copy when navigator.write rejects', async () => {
     const writeSpy = jasmine.createSpy('write').and.rejectWith(
-      new DOMException('Type text/markdown not supported on write.', 'NotAllowedError')
+      new DOMException('Type not supported on write.', 'NotAllowedError')
     );
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -164,7 +211,14 @@ describe('copyBlocks', () => {
     expect(writeSpy).toHaveBeenCalled();
     expect(document.execCommand).toHaveBeenCalledWith('copy');
     expect(setData).toHaveBeenCalledWith(ClipboardDataType.TEXT, 'Hello world\n');
-    expect(setData).toHaveBeenCalledWith(ClipboardDataType.HTML, '<p>Hello world</p>');
+    expect(setData).toHaveBeenCalledWith(
+      ClipboardDataType.HTML,
+      jasmine.stringMatching(new RegExp(`^<p>Hello world</p><span[^>]*${BLOCKCRAFT_CLIPBOARD_MARKER_CLASS}`))
+    );
     expect(setData).toHaveBeenCalledWith(ClipboardDataType.MARKDOWN, '# Hello world');
+    expect(setData).toHaveBeenCalledWith(
+      ClipboardDataType.BLOCKCRAFT_SNAPSHOT,
+      jasmine.stringMatching(/"flavour":"root"/)
+    );
   });
 });

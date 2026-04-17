@@ -76,6 +76,12 @@ const createRootSnapshot = (children: IBlockSnapshot[]): IBlockSnapshot => ({
 describe('HtmlAdapter', () => {
   const adapter = new HtmlAdapter(new TestDocFileService());
 
+  it('exports html without blockcraft-json metadata on the root element', async () => {
+    const html = await adapter.toHtml(createRootSnapshot([]));
+
+    expect(html).not.toContain('blockcraft-json');
+  });
+
   describe('media blocks', () => {
     it('exports video and audio blocks as native media tags', async () => {
       const snapshot = createRootSnapshot([

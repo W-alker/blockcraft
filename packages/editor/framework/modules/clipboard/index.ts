@@ -30,6 +30,11 @@ import {
 } from "../../utils";
 import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
 import {copyBlocks} from "./copyBlocks";
+import {
+  buildClipboardItems,
+  parseClipboardSnapshot,
+  parseClipboardSnapshotFromHtml,
+} from "./internal-clipboard";
 import {cloneSnapshot, getMarkdownClipboardText, looksLikeMarkdown} from "./paste-utils";
 
 export * from './types'
@@ -63,6 +68,12 @@ export class ClipboardManager {
     return this.doc.schemas.createSnapshot('root', [generateId(), snapshots])
   }
 
+  private _setClipboardData(clipboardData: DataTransfer, items: Record<string, string>) {
+    for (const [type, value] of Object.entries(items)) {
+      clipboardData.setData(type, value)
+    }
+  }
+
   copyFromSelection = async (selection: BlockCraft.Selection, clipboardData: DataTransfer) => {
     const s = selection.start, e = selection.end
     const startBlock = selection.firstBlock
@@ -70,19 +81,19 @@ export class ClipboardManager {
 
     if (selection.isInSameBlock) {
       let snapshot: IBlockSnapshot
+      let plainText: string
       if (s.type === 'text') {
         const eOff = (e.type === 'text' ? e.offset : (startBlock as EditableBlockComponent).textLength)
         const sliceDeltas = sliceDelta((startBlock as EditableBlockComponent).textDeltas(), s.offset, eOff)
         snapshot = this._wrapDeltaByRoot(sliceDeltas)
-        clipboardData.setData(ClipboardDataType.TEXT, deltaToString(sliceDeltas))
+        plainText = deltaToString(sliceDeltas)
       } else {
-        clipboardData.setData(ClipboardDataType.TEXT, startBlock.textContent())
+        plainText = startBlock.textContent()
         snapshot = this._wrapSnapshotsByRoot([startBlock.toSnapshot()])
       }
 
-      for (const adapter1 of this.adapter.supportedAdapters) {
-        clipboardData.setData(adapter1.type, await adapter1.fromSnapshot(snapshot))
-      }
+      const items = await buildClipboardItems(this.adapter.supportedAdapters, snapshot, plainText)
+      this._setClipboardData(clipboardData, items)
       return
     }
 
@@ -122,11 +133,9 @@ export class ClipboardManager {
       plainText = endBlock.textContent() + plainText
     }
 
-    clipboardData.setData(ClipboardDataType.TEXT, plainText)
     const rootSnapshot = await this._wrapSnapshotsByRoot(snapshots)
-    for (const adapter1 of this.adapter.supportedAdapters) {
-      clipboardData.setData(adapter1.type, await adapter1.fromSnapshot(rootSnapshot))
-    }
+    const items = await buildClipboardItems(this.adapter.supportedAdapters, rootSnapshot, plainText)
+    this._setClipboardData(clipboardData, items)
   }
 
   deleteContentFromSelection = (selection: BlockCraft.Selection) => {
@@ -386,15 +395,25 @@ export class ClipboardManager {
 
     let rootSnapshot: IBlockSnapshot | undefined
 
+    // internal snapshot
+    if (!rootSnapshot && state.dataTypes.includes(ClipboardDataType.BLOCKCRAFT_SNAPSHOT)) {
+      rootSnapshot = parseClipboardSnapshot(state.getData(ClipboardDataType.BLOCKCRAFT_SNAPSHOT)) || undefined
+    }
+
     // html
     if (!rootSnapshot && state.dataTypes.includes(ClipboardDataType.HTML)) {
       const htmlString = state.getData(ClipboardDataType.HTML)
-      const htmlAdapter = this.adapter?.getAdapter(ClipboardDataType.HTML)
-      if (htmlAdapter && htmlString) {
-        try {
-          rootSnapshot = await htmlAdapter.toSnapshot(htmlString)
-        } catch (e) {
-          this.doc.logger.warn('html2snapshot error', e)
+      if (htmlString) {
+        rootSnapshot = parseClipboardSnapshotFromHtml(htmlString) || undefined
+        if (!rootSnapshot) {
+          const htmlAdapter = this.adapter?.getAdapter(ClipboardDataType.HTML)
+          if (htmlAdapter) {
+            try {
+              rootSnapshot = await htmlAdapter.toSnapshot(htmlString)
+            } catch (e) {
+              this.doc.logger.warn('html2snapshot error', e)
+            }
+          }
         }
       }
     }
