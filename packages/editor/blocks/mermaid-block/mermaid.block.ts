@@ -9,7 +9,7 @@ import mermaid from "mermaid";
 import { Subject, takeUntil } from "rxjs";
 import { MermaidTypeListComponent } from "./widgets/mermaid-type-list.component";
 import { IMermaidType, MermaidViewMode } from "./types";
-import { debounce, nextTick } from "../../global";
+import { debounce, downloadFile, nextTick } from "../../global";
 import { MermaidViewSwitchComponent } from "./widgets/mermaid-view-switch.component";
 import { AsyncPipe } from "@angular/common";
 
@@ -30,13 +30,20 @@ import { AsyncPipe } from "@angular/common";
         </div>
       }
 
+      <div class="download-btn btn icon-btn"
+           [hidden]="props.mode === 'text'"
+           title="导出 SVG"
+           (mousedown)="onDownloadSvg($event)">
+        <i class="bc_icon bc_xiazai"></i>
+      </div>
+
       <div class="control-btns" [hidden]="props.mode === 'text' ">
-        <span class="btn" (mousedown)="scaleGraph(-0.25)"><i class="bc_icon bc_suoxiao"></i></span>
-        <span class="btn" (mousedown)="scaleGraph(0.25)"><i class="bc_icon bc_fangda"></i></span>
+        <span class="btn icon-btn" (mousedown)="scaleGraph(-0.25)" title="缩小"><i class="bc_icon bc_suoxiao"></i></span>
+        <span class="btn icon-btn" (mousedown)="scaleGraph(0.25)" title="放大"><i class="bc_icon bc_fangda"></i></span>
         <!--        <span class="text">缩放： {{ graphScale | scaleRatio }}</span>-->
       </div>
 
-      <div class="switch-btn btn" [hidden]="doc.readonlySwitch$ | async" (mousedown)="onSwitchView($event)">
+      <div class="switch-btn btn icon-btn" [hidden]="doc.readonlySwitch$ | async" (mousedown)="onSwitchView($event)">
         <i class="bc_icon bc_qiehuan"></i>
       </div>
     </div>
@@ -59,7 +66,6 @@ import { AsyncPipe } from "@angular/common";
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel> {
-
   protected graphScale = 1
   protected graphMaxWidth = 0
 
@@ -120,7 +126,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     })
   }, 500)
 
-  private _prevTextContent = ''
+  private _renderedTextContent = ''
 
   protected onFocus($event: MouseEvent) {
     $event.stopPropagation()
@@ -133,14 +139,15 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
     if (!textarea.textLength) return
     const graphDefinition = textarea.textContent();
-    if (graphDefinition === this._prevTextContent && this.graphContainer.childElementCount) return
-    this._prevTextContent = graphDefinition
+    if (graphDefinition === this._renderedTextContent && this.graphContainer.childElementCount) return
     try {
       const { svg } = await mermaid.render('graph' + generateId(11), graphDefinition, this.graphContainer);
       this.graphContainer.innerHTML = svg
+      this._renderedTextContent = graphDefinition
       this.graphMaxWidth = parseInt((this.graphContainer.firstElementChild! as SVGAElement).style.maxWidth)
       this.setGraphWidth(this.graphScale)
     } catch (err) {
+      this._renderedTextContent = ''
       // this.graphContainer.innerHTML = `<div style="color: var(--bc-error-color);">${err}</div>`
     }
   }
@@ -210,6 +217,15 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     })
   }
 
+  onDownloadSvg($event: MouseEvent) {
+    $event.preventDefault()
+    $event.stopPropagation()
+    if (this.props.mode === 'text') {
+      return
+    }
+    void this.exportSvg()
+  }
+
   addTypePrefix(prefix: string) {
     (this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']).insertText(0, prefix)
   }
@@ -273,6 +289,58 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     }
 
     return previewSvg
+  }
+
+  private async exportSvg() {
+    const source = this.getGraphDefinition()
+    if (!source.trim()) {
+      this.doc.messageService.warn('Mermaid 内容为空，无法导出')
+      return
+    }
+
+    const svg = await this.createExportSvg(source)
+    if (!svg) return
+
+    const svgBlob = new Blob([this.serializeSvg(svg)], { type: 'image/svg+xml;charset=utf-8' })
+    await downloadFile(svgBlob, this.getExportFileName())
+  }
+
+  private async createExportSvg(graphDefinition: string) {
+    const renderedSvg = this.graphContainer.firstElementChild
+    if (renderedSvg instanceof SVGElement && graphDefinition === this._renderedTextContent) {
+      return this.createPreviewSvg(renderedSvg)
+    }
+
+    try {
+      const container = document.createElement('div')
+      const { svg } = await mermaid.render('graph' + generateId(11), graphDefinition, container)
+      const parsedSvg = this.parseSvgMarkup(svg)
+      if (!parsedSvg) {
+        throw new Error('invalid svg')
+      }
+      return this.createPreviewSvg(parsedSvg)
+    } catch {
+      this.doc.messageService.warn('Mermaid 语法有误，无法导出图表')
+      return null
+    }
+  }
+
+  private getGraphDefinition() {
+    const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
+    return textarea.textLength ? textarea.textContent() : ''
+  }
+
+  private parseSvgMarkup(svgMarkup: string) {
+    const doc = new DOMParser().parseFromString(svgMarkup, 'image/svg+xml')
+    return doc.querySelector('svg')
+  }
+
+  private serializeSvg(svg: SVGElement) {
+    return new XMLSerializer().serializeToString(svg)
+  }
+
+  private getExportFileName() {
+    return `mermaid-${this.id}.svg`
   }
 
   async onPreviewGraph(evt: MouseEvent) {

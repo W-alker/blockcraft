@@ -81,10 +81,10 @@
         display: flex;
         align-items: center;
         gap: var(--bc-padding-sm);
-        font-size: small;
         color: var(--bc-color-light);
         @include user-select(none);
         @include user-modify(read-only);
+        font-size: var(--bc-fs-sm);
 
         &:hover, &.active {
           background-color: var(--bc-bg-hover);
@@ -95,25 +95,33 @@
         }
       }
 
+      .icon-btn {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        justify-content: center;
+        gap: 0;
+        font-size: var(--bc-fs);
+      }
+
       .switch-btn {
-        position: absolute;
-        top: 50%;
-        right: 16px;
-        transform: translateY(-50%);
+        margin-left: 4px;
+      }
+
+      .control-btns[hidden] + .switch-btn {
+        margin-left: auto;
+      }
+
+      .download-btn {
+        margin-left: auto;
       }
     }
 
     .control-btns {
-      flex: 1;
       display: flex;
       align-items: center;
-      justify-content: flex-end;
-      gap: 8px;
-      padding: 8px 40px 8px 16px;
-
-      .btn {
-        font-size: var(--bc-fs-xl);
-      }
+      gap: 4px;
+      margin-left: 4px;
 
       .text {
         color: var(--bc-color-light);
