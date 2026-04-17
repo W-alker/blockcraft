@@ -4,6 +4,11 @@ export const markdownStreamFixtures = {
     nextText: "Hello world\n\n",
     finalized: false,
   },
+  paragraphProvisional: {
+    previousText: "",
+    nextText: "Hello world",
+    finalized: false,
+  },
   fencedCodePending: {
     previousText: "",
     nextText: "```ts\nconst x = 1;\n",

@@ -316,12 +316,54 @@ const ACTION_SECTIONS: DebugSection[] = [
                 </bc-snapshot-viewer>
               } @else {
                 <div class="markdown-stream-demo">
-                  <label class="markdown-stream-demo__label" for="markdown-stream-source">Markdown Source</label>
-                  <textarea
-                    id="markdown-stream-source"
-                    class="markdown-stream-demo__input"
-                    [value]="markdownStreamSource"
-                    (input)="onMarkdownStreamSourceInput($event)"></textarea>
+                  <div class="markdown-stream-demo__controls">
+                    <label class="markdown-stream-demo__label" for="markdown-stream-source">Markdown Source</label>
+                    <textarea
+                      id="markdown-stream-source"
+                      class="markdown-stream-demo__input"
+                      [value]="markdownStreamSource"
+                      (input)="onMarkdownStreamSourceInput($event)"></textarea>
+
+                    <section class="chunk-preview">
+                      <div class="chunk-preview__header">
+                        <span class="section-title">模拟分片数据</span>
+                        <div class="chunk-preview__header-actions">
+                          <div class="chunk-mode-tabs" role="tablist" aria-label="chunk mode">
+                            <button
+                              class="chunk-mode-tab"
+                              type="button"
+                              [class.chunk-mode-tab--active]="markdownStreamChunkMode === 'paragraph'"
+                              (click)="setMarkdownChunkMode('paragraph')">
+                              按段切块
+                            </button>
+                            <button
+                              class="chunk-mode-tab"
+                              type="button"
+                              [class.chunk-mode-tab--active]="markdownStreamChunkMode === 'random'"
+                              (click)="setMarkdownChunkMode('random')">
+                              随机字符级
+                            </button>
+                          </div>
+                          <span class="status-pill status-pill--solid">{{ markdownStreamChunks.length }} chunks</span>
+                        </div>
+                      </div>
+
+                      <div class="chunk-preview__list">
+                        @for (chunk of markdownStreamChunks; track $index) {
+                          <article
+                            class="chunk-preview__item"
+                            [class.chunk-preview__item--done]="$index < markdownStreamIndex"
+                            [class.chunk-preview__item--active]="$index === markdownStreamIndex">
+                            <div class="chunk-preview__meta">
+                              <strong>Chunk {{ $index + 1 }}</strong>
+                              <span>{{ getMarkdownChunkState($index) }}</span>
+                            </div>
+                            <pre class="chunk-preview__text">{{ chunk }}</pre>
+                          </article>
+                        }
+                      </div>
+                    </section>
+                  </div>
                   <div class="markdown-stream-demo__viewer" #markdownStreamHost></div>
                 </div>
               }
@@ -858,6 +900,13 @@ const ACTION_SECTIONS: DebugSection[] = [
       min-height: 100%;
     }
 
+    .markdown-stream-demo__controls {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 0;
+    }
+
     .markdown-stream-demo__label {
       display: none;
     }
@@ -883,6 +932,115 @@ const ACTION_SECTIONS: DebugSection[] = [
       border: 1px solid var(--bc-border-color-light);
       background: var(--bc-bg-elevated);
       overflow: auto;
+    }
+
+    .chunk-preview {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid var(--bc-border-color-light);
+      background: var(--bc-bg-elevated);
+    }
+
+    .chunk-preview__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .chunk-preview__header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .chunk-mode-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 999px;
+      background: var(--bc-bg-secondary);
+      border: 1px solid var(--bc-border-color-light);
+    }
+
+    .chunk-mode-tab {
+      min-height: 28px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--bc-color-light);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all .2s ease;
+    }
+
+    .chunk-mode-tab:hover {
+      color: var(--bc-color);
+      background: var(--bc-bg-hover);
+    }
+
+    .chunk-mode-tab--active {
+      color: #fff;
+      background: var(--bc-active-color);
+    }
+
+    .chunk-preview__list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 320px;
+      overflow: auto;
+    }
+
+    .chunk-preview__item {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--bc-border-color-light);
+      background: var(--bc-bg-secondary);
+    }
+
+    .chunk-preview__item--done {
+      border-color: var(--bc-active-color-light);
+      background: rgba(72, 87, 226, 0.08);
+    }
+
+    .chunk-preview__item--active {
+      border-color: var(--bc-active-color);
+      box-shadow: 0 0 0 1px rgba(72, 87, 226, 0.12);
+    }
+
+    .chunk-preview__meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--bc-color-light);
+    }
+
+    .chunk-preview__meta strong {
+      font-size: 12px;
+      color: var(--bc-color);
+    }
+
+    .chunk-preview__text {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: var(--bc-color);
     }
 
     .monitor-panel {
@@ -992,6 +1150,15 @@ const ACTION_SECTIONS: DebugSection[] = [
         grid-template-columns: 1fr;
       }
 
+      .chunk-preview__header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .chunk-preview__header-actions {
+        justify-content: flex-start;
+      }
+
       .nav-grid,
       .selection-meta,
       .status-grid {
@@ -1047,6 +1214,7 @@ graph TD
 | --- | --- |
 | stream | ready |
 `;
+  markdownStreamChunkMode: 'paragraph' | 'random' = 'paragraph';
   markdownStreamChunks = this.buildMarkdownStreamChunks(this.markdownStreamSource);
   markdownStreamIndex = 0;
   private _markdownStreamPlayTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1135,6 +1303,24 @@ graph TD
 
   get markdownStreamStatusLabel() {
     return `${this.markdownStreamIndex}/${this.markdownStreamChunks.length} chunks${this._markdownStreamPlayTimer ? ' · 自动播放中' : ''}`;
+  }
+
+  getMarkdownChunkState(index: number) {
+    if (index < this.markdownStreamIndex) {
+      return '已推送';
+    }
+    if (index === this.markdownStreamIndex && this._markdownStreamPlayTimer) {
+      return '下一段';
+    }
+    return '待发送';
+  }
+
+  setMarkdownChunkMode(mode: 'paragraph' | 'random') {
+    this.markdownStreamChunkMode = mode;
+    this.markdownStreamChunks = this.buildMarkdownStreamChunks(this.markdownStreamSource);
+    this.markdownStreamIndex = 0;
+    this.stopMarkdownStreamPlayback();
+    this.cdr.markForCheck();
   }
 
   setMainTab(tab: 'editor' | 'viewer') {
@@ -1466,9 +1652,16 @@ graph TD
 
   onMarkdownStreamSourceInput(event: Event) {
     this.markdownStreamSource = (event.target as HTMLTextAreaElement).value;
+    this.markdownStreamChunks = this.buildMarkdownStreamChunks(this.markdownStreamSource);
+    this.markdownStreamIndex = 0;
+    this.stopMarkdownStreamPlayback();
   }
 
   private buildMarkdownStreamChunks(source: string) {
+    if (this.markdownStreamChunkMode === 'random') {
+      return this.buildRandomMarkdownChunks(source);
+    }
+
     const paragraphs = source.split(/(\n\n)/).filter(Boolean);
     const chunks: string[] = [];
     let buffer = '';
@@ -1486,6 +1679,25 @@ graph TD
     }
 
     return chunks.length ? chunks : [source];
+  }
+
+  private buildRandomMarkdownChunks(source: string) {
+    if (!source) {
+      return [''];
+    }
+
+    const chunks: string[] = [];
+    let cursor = 0;
+    let seed = source.length || 1;
+
+    while (cursor < source.length) {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      const step = 4 + (seed % 18);
+      chunks.push(source.slice(cursor, cursor + step));
+      cursor += step;
+    }
+
+    return chunks;
   }
 
   private ensureMarkdownStreamViewer(reset = false) {

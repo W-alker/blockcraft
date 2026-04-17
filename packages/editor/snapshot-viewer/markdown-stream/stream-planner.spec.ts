@@ -2,20 +2,31 @@ import {markdownStreamFixtures} from "../testing/fixtures/markdown-stream.fixtur
 import {planMarkdownStream} from "./stream-planner";
 
 describe("planMarkdownStream", () => {
+  it("marks an open paragraph tail as provisional before a blank-line boundary", () => {
+    const result = planMarkdownStream(markdownStreamFixtures.paragraphProvisional);
+
+    expect(result.provisionalRanges.length).toBe(1);
+    expect(result.provisionalRanges[0]?.kind).toBe("paragraph");
+    expect(result.readyRanges).toEqual([]);
+    expect(result.pendingRanges).toEqual([]);
+  });
+
   it("marks a paragraph ready after a blank-line boundary", () => {
     const result = planMarkdownStream(markdownStreamFixtures.paragraphStable);
 
     expect(result.readyRanges.length).toBe(1);
     expect(result.readyRanges[0]?.kind).toBe("paragraph");
+    expect(result.provisionalRanges).toEqual([]);
     expect(result.pendingRanges).toEqual([]);
   });
 
   it("keeps a fenced code block pending until the closing fence arrives", () => {
     const result = planMarkdownStream(markdownStreamFixtures.fencedCodePending);
 
-    expect(result.pendingRanges.length).toBe(1);
-    expect(result.pendingRanges[0]?.kind).toBe("code");
+    expect(result.provisionalRanges.length).toBe(1);
+    expect(result.provisionalRanges[0]?.kind).toBe("raw-text");
     expect(result.readyRanges).toEqual([]);
+    expect(result.pendingRanges).toEqual([]);
   });
 
   it("keeps a mermaid fenced block pending until the closing fence arrives", () => {

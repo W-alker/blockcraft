@@ -57,10 +57,12 @@ export class SnapshotViewerStreamEngine implements MarkdownStreamViewer {
     })
 
     const ranges = this.session.isFinalized()
-      ? [...plan.readyRanges, ...plan.pendingRanges]
-      : plan.readyRanges
+      ? [...plan.readyRanges, ...plan.provisionalRanges, ...plan.pendingRanges]
+      : [...plan.readyRanges, ...plan.provisionalRanges]
 
-    const preservedSegments = this.renderedSegments.filter((segment) => segment.range.end <= plan.reparseStart)
+    const preservedSegments = this.renderedSegments.filter(
+      (segment) => segment.range.end <= plan.reparseStart && segment.range.state === "stable"
+    )
     const nextSegments = [
       ...preservedSegments,
       ...(await this.parseRanges(ranges)),

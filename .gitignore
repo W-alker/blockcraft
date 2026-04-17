@@ -49,3 +49,4 @@ pnpm-lock.yaml
 /.playwright-cli
 /.claude/worktrees
 /docs/superpowers/*
+/output

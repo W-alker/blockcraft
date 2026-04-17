@@ -10,7 +10,7 @@ export function planMarkdownStream(
 ): MarkdownStreamPlannerResult {
   const changedOffset = findFirstChangedOffset(input.previousText, input.nextText);
   const reparseStart = findSafeBoundaryStart(input.nextText, changedOffset);
-  const {readyRanges, pendingRanges} = scanMarkdownRanges(
+  const {readyRanges, provisionalRanges, pendingRanges} = scanMarkdownRanges(
     input.nextText,
     reparseStart,
     input.finalized
@@ -20,6 +20,7 @@ export function planMarkdownStream(
     changedOffset,
     reparseStart,
     readyRanges,
+    provisionalRanges,
     pendingRanges,
   };
 }
@@ -28,8 +29,9 @@ function scanMarkdownRanges(
   text: string,
   startOffset: number,
   finalized: boolean
-): Pick<MarkdownStreamPlannerResult, "readyRanges" | "pendingRanges"> {
+): Pick<MarkdownStreamPlannerResult, "readyRanges" | "provisionalRanges" | "pendingRanges"> {
   const readyRanges: MarkdownPlannedRange[] = [];
+  const provisionalRanges: MarkdownPlannedRange[] = [];
   const pendingRanges: MarkdownPlannedRange[] = [];
   const lines = splitLines(text);
   let index = findLineIndexForOffset(lines, startOffset);
@@ -45,24 +47,24 @@ function scanMarkdownRanges(
 
     if (isFenceStart(line.text)) {
       const fenceResult = consumeFence(lines, index, finalized);
-      pushRange(fenceResult.range, fenceResult.ready, readyRanges, pendingRanges);
+      pushRange(fenceResult.range, readyRanges, provisionalRanges, pendingRanges);
       index = fenceResult.nextIndex;
       continue;
     }
 
     if (isTableStart(lines, index)) {
       const tableResult = consumeTable(lines, index, finalized);
-      pushRange(tableResult.range, tableResult.ready, readyRanges, pendingRanges);
+      pushRange(tableResult.range, readyRanges, provisionalRanges, pendingRanges);
       index = tableResult.nextIndex;
       continue;
     }
 
     const blockResult = consumeImmediateBlock(lines, index, finalized);
-    pushRange(blockResult.range, blockResult.ready, readyRanges, pendingRanges);
+    pushRange(blockResult.range, readyRanges, provisionalRanges, pendingRanges);
     index = blockResult.nextIndex;
   }
 
-  return {readyRanges, pendingRanges};
+  return {readyRanges, provisionalRanges, pendingRanges};
 }
 
 function consumeFence(lines: LineEntry[], startIndex: number, finalized: boolean) {
@@ -78,12 +80,12 @@ function consumeFence(lines: LineEntry[], startIndex: number, finalized: boolean
   const rangeEnd = hasClosingFence ? lines[endIndex]!.end : lines[lines.length - 1]!.end;
   return {
     range: {
-      kind: lang === "mermaid" ? "mermaid" : "code",
+      kind: hasClosingFence || finalized ? (lang === "mermaid" ? "mermaid" : "code") : "raw-text",
+      state: hasClosingFence || finalized ? "stable" : (lang === "mermaid" ? "pending" : "provisional"),
       start: opener.start,
       end: rangeEnd,
       text: linesToText(lines, startIndex, hasClosingFence ? endIndex + 1 : lines.length),
     } satisfies MarkdownPlannedRange,
-    ready: hasClosingFence || finalized,
     nextIndex: hasClosingFence ? endIndex + 1 : lines.length,
   };
 }
@@ -98,11 +100,11 @@ function consumeTable(lines: LineEntry[], startIndex: number, finalized: boolean
   return {
     range: {
       kind: "table",
+      state: endedByBoundary ? "stable" : "pending",
       start: lines[startIndex]!.start,
       end: lines[endIndex - 1]!.end,
       text: linesToText(lines, startIndex, endIndex),
     } satisfies MarkdownPlannedRange,
-    ready: endedByBoundary,
     nextIndex: endIndex,
   };
 }
@@ -127,11 +129,11 @@ function consumeImmediateBlock(lines: LineEntry[], startIndex: number, finalized
   return {
     range: {
       kind,
+      state: hasBoundary ? "stable" : "provisional",
       start: firstLine.start,
       end: lines[endIndex - 1]!.end,
       text: linesToText(lines, startIndex, endIndex),
     } satisfies MarkdownPlannedRange,
-    ready: hasBoundary,
     nextIndex: endIndex,
   };
 }
@@ -262,12 +264,16 @@ function linesToText(lines: LineEntry[], startIndex: number, endIndex: number) {
 
 function pushRange(
   range: MarkdownPlannedRange,
-  ready: boolean,
   readyRanges: MarkdownPlannedRange[],
+  provisionalRanges: MarkdownPlannedRange[],
   pendingRanges: MarkdownPlannedRange[]
 ) {
-  if (ready) {
+  if (range.state === "stable") {
     readyRanges.push(range);
+    return;
+  }
+  if (range.state === "provisional") {
+    provisionalRanges.push(range);
     return;
   }
   pendingRanges.push(range);

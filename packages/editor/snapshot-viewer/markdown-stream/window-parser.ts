@@ -2,6 +2,7 @@ import {MarkdownAdapter} from "../../adapters/markdown-adapter";
 import {BlockNodeType} from "../../framework/block-std/types/block.type";
 import {DocAttachmentInfo, DocFileService} from "../../framework/services/file.service";
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
+import {ParagraphBlockSchema} from "../../blocks/paragraph-block";
 import {MarkdownWindowParseInput, MarkdownWindowParseResult} from "./types";
 
 class MarkdownStreamFileService extends DocFileService {
@@ -51,6 +52,14 @@ export class MarkdownToSnapshotWindowParser {
   private readonly adapter = new MarkdownAdapter(new MarkdownStreamFileService())
 
   async parse(input: MarkdownWindowParseInput): Promise<MarkdownWindowParseResult> {
+    if (input.range?.kind === "raw-text") {
+      return {
+        blocks: normalizeWindowBlocks([
+          ParagraphBlockSchema.createSnapshot(input.markdown),
+        ], `raw-${input.range.start}`),
+      }
+    }
+
     const rootSnapshot = await this.adapter.toBlockSnapshot(input.markdown)
     const prefix = input.range ? `${input.range.kind}-${input.range.start}` : "window"
     return {

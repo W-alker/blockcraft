@@ -14,6 +14,7 @@ export interface MarkdownStreamViewer {
 }
 
 export type MarkdownPlannedBlockKind =
+  | "raw-text"
   | "paragraph"
   | "heading"
   | "blockquote"
@@ -25,6 +26,7 @@ export type MarkdownPlannedBlockKind =
   | "unknown";
 
 export interface MarkdownPlannedRange {
+  state: "stable" | "provisional" | "pending"
   kind: MarkdownPlannedBlockKind
   start: number
   end: number
@@ -41,6 +43,7 @@ export interface MarkdownStreamPlannerResult {
   changedOffset: number
   reparseStart: number
   readyRanges: MarkdownPlannedRange[]
+  provisionalRanges: MarkdownPlannedRange[]
   pendingRanges: MarkdownPlannedRange[]
 }
 

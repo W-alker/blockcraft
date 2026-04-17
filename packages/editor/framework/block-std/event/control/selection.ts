@@ -22,6 +22,12 @@ export class SelectionControl {
     return this._shiftKeyPressing;
   }
 
+  private _finishSelection = (e: Event) => {
+    if (!this._isSelecting) return;
+    this._isSelecting = false;
+    this._dispatcher.run('selectEnd', this._buildContext(e))
+  }
+
   /**
    * 触发 selectStart 事件
    * 覆盖场景：鼠标拖拽、双击、三击、触摸操作
@@ -38,19 +44,13 @@ export class SelectionControl {
     // 鼠标/触摸选择
     else if (this._mouseDown) {
       // 监听拖拽开始（可能转为拖放操作）
-      this._dispatcher.rootElement.addEventListener('dragstart', e => {
-        if (!this._isSelecting) return;
-        this._isSelecting = false;
-        this._dispatcher.run('selectEnd', this._buildContext(e))
-      }, { once: true, capture: true })
+      this._dispatcher.rootElement.addEventListener('dragstart', this._finishSelection, { once: true, capture: true })
 
-      // 监听鼠标/触摸释放（覆盖鼠标、触摸板、触屏）
-      document.body.addEventListener('pointerup', e => {
-        // 移除 pointerType 限制，支持所有指针类型
-        if (!this._isSelecting) return;
-        this._isSelecting = false;
-        this._dispatcher.run('selectEnd', this._buildContext(e))
-      }, { once: true, capture: true })
+      // Safari may miss pointer events during native text selection, so also
+      // listen to legacy mouse/touch releases to guarantee selectEnd.
+      window.addEventListener('pointerup', this._finishSelection, { once: true, capture: true })
+      window.addEventListener('mouseup', this._finishSelection, { once: true, capture: true })
+      window.addEventListener('touchend', this._finishSelection, { once: true, capture: true })
     }
   }
 
@@ -194,12 +194,21 @@ export class SelectionControl {
     // 4. 监听鼠标按下（支持所有指针类型：鼠标、触摸板、触屏）
     fromEvent<PointerEvent>(root.hostElement, 'pointerdown', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       if (isNativeInputTarget(evt.target)) return
-      // 移除 pointerType 限制，支持所有类型的指针设备
+      this._mouseDown = true;
+    })
+    fromEvent<MouseEvent>(root.hostElement, 'mousedown', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+      if (isNativeInputTarget(evt.target)) return
       this._mouseDown = true;
     })
 
     // 5. 监听鼠标释放（重置状态）
     fromEvent<PointerEvent>(window, 'pointerup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+      this._mouseDown = false;
+    })
+    fromEvent<MouseEvent>(window, 'mouseup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(() => {
+      this._mouseDown = false;
+    })
+    fromEvent<TouchEvent>(window, 'touchend', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(() => {
       this._mouseDown = false;
     })
 

@@ -1,11 +1,11 @@
 import {SnapshotViewerStreamEngine} from "./stream-engine";
 
 describe("SnapshotViewerStreamEngine", () => {
-  it("renders a paragraph after it becomes stable", async () => {
+  it("renders a paragraph provisionally before it becomes stable", async () => {
     const host = document.createElement("div")
     const engine = new SnapshotViewerStreamEngine({container: host})
 
-    engine.append("Hello world\n\n")
+    engine.append("Hello world")
     await flushPromises()
 
     expect(host.textContent).toContain("Hello world")
@@ -24,13 +24,13 @@ describe("SnapshotViewerStreamEngine", () => {
     expect(host.textContent).toContain("Second paragraph")
   })
 
-  it("keeps a fenced code block hidden until the closing fence arrives", async () => {
+  it("shows raw text for an open code fence until the closing fence arrives", async () => {
     const host = document.createElement("div")
     const engine = new SnapshotViewerStreamEngine({container: host})
 
     engine.append("```ts\nconst x = 1;\n")
     await flushPromises()
-    expect(host.textContent).not.toContain("const x = 1;")
+    expect(host.textContent).toContain("const x = 1;")
 
     engine.append("```\n")
     await flushPromises()
