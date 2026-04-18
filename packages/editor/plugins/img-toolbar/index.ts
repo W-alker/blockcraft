@@ -1,26 +1,37 @@
 import {
-  BindHotKey, closetBlockId,
-  DOC_FILE_SERVICE_TOKEN, DocFileService,
+  BindHotKey,
+  closetBlockId,
+  DOC_FILE_SERVICE_TOKEN,
+  DocFileService,
   DocPlugin,
   EventListen,
-  getPositionWithOffset
+  getPositionWithOffset,
 } from "../../framework";
-import {UIEventStateContext} from "../../framework";
-import {fromEvent, Subject, Subscription, takeUntil} from "rxjs";
-import {IImageToolbarItem, ImageToolbar} from "./widgets/image.toolbar";
-import { BlockCraftError, ErrorCode, getImageExt, nextTick} from "../../global";
-import {OverlayRef} from "@angular/cdk/overlay";
+import { UIEventStateContext } from "../../framework";
+import { fromEvent, Subject, Subscription, takeUntil } from "rxjs";
+import { IImageToolbarItem, ImageToolbar } from "./widgets/image.toolbar";
+import {
+  BlockCraftError,
+  ErrorCode,
+  getImageExt,
+  nextTick,
+} from "../../global";
+import { OverlayRef } from "@angular/cdk/overlay";
 
 export interface ImgToolbarPluginOptions {
   /**
    * 追加到工具栏的自定义按钮
    */
-  extraItems?: IImageToolbarItem[]
+  extraItems?: IImageToolbarItem[];
 
   /**
    * 自定义按钮点击回调。返回 true 表示已处理。
    */
-  onExtraItemClick?: (itemName: string, block: BlockCraft.IBlockComponents['image'], doc: BlockCraft.Doc) => boolean
+  onExtraItemClick?: (
+    itemName: string,
+    block: BlockCraft.IBlockComponents["image"],
+    doc: BlockCraft.Doc,
+  ) => boolean;
 }
 
 export class ImgToolbarPlugin extends DocPlugin {
@@ -75,6 +86,8 @@ export class ImgToolbarPlugin extends DocPlugin {
     { flavour: "image" },
   )
   onImageTitleEnter(ctx: UIEventStateContext) {
+    if (this.doc.isReadonly) return;
+
     ctx.preventDefault();
     const state = ctx.get("keyboardState");
     const selection = state.selection;
@@ -127,8 +140,15 @@ export class ImgToolbarPlugin extends DocPlugin {
       );
     }
 
+    this.doc.subscribeReadonlyChange((readonly) => {
+      if (readonly) {
+        this.closeToolbar();
+      }
+    });
+
     this._sub = this.doc.selection.selectionChange$.subscribe((selection) => {
       if (
+        this.doc.isReadonly ||
         !selection ||
         !selection.isInSameBlock ||
         selection.firstBlock.flavour !== "image"
@@ -139,6 +159,11 @@ export class ImgToolbarPlugin extends DocPlugin {
 
       const imgBlock = selection.firstBlock;
       setTimeout(() => {
+        if (this.doc.isReadonly) {
+          this.closeToolbar();
+          return;
+        }
+
         if (this._toolbarRef) return;
 
         const imgEle = imgBlock.hostElement.querySelector("img");
@@ -209,7 +234,8 @@ export class ImgToolbarPlugin extends DocPlugin {
                   url: imgBlock.props.src,
                   name:
                     (imgBlock.firstChildren?.textContent() || Date.now()) +
-                    "." + getImageExt(imgBlock.props.src),
+                    "." +
+                    getImageExt(imgBlock.props.src),
                 });
                 break;
               case "copy-url":
@@ -258,6 +284,7 @@ export class ImgToolbarPlugin extends DocPlugin {
   };
 
   destroy() {
+    this.closeToolbar();
     this._sub?.unsubscribe();
   }
 }
