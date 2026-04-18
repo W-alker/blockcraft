@@ -26,6 +26,16 @@
         pointer-events: none;
       }
 
+      ::selection {
+        background: transparent;
+        color: inherit;
+      }
+
+      ::-moz-selection {
+        background: transparent;
+        color: inherit;
+      }
+
       * {
         user-select: none;
         -webkit-user-select: none;

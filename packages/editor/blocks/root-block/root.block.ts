@@ -29,6 +29,15 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
   private selecting$ = new BehaviorSubject<'end' | 'start' | 'moving'>("end")
   private selectingBlock: BlockCraft.BlockComponent | null = null
 
+  private _isInsideTable(block: BlockCraft.BlockComponent | null) {
+    let current = block
+    while (current && current.nodeType !== BlockNodeType.root) {
+      if (current.flavour === 'table' || current.flavour.startsWith('table-')) return true
+      current = current.parentBlock
+    }
+    return false
+  }
+
   override ngAfterViewInit() {
     super.ngAfterViewInit();
 
@@ -49,6 +58,7 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
     const id = closetBlockId(event.target as HTMLElement)
     if (!id) return
     const selectStartBlock = this.doc.getBlockById(id)
+    if (this._isInsideTable(selectStartBlock)) return
     this.selecting$.next('start')
 
     const leaveListen = (block: BlockCraft.BlockComponent) => {

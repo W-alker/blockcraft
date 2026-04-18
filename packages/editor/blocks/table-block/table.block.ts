@@ -7,7 +7,6 @@ import { TableBlockModel } from "./index";
 import { TableCellBlockComponent } from "./table-cell.block";
 import { BehaviorSubject, filter, fromEvent, merge, skip, Subject, take, takeUntil } from "rxjs";
 import { CellToolbarComponent } from "./widgets/cell-toolbar.component";
-import { AsyncPipe, NgForOf, NgIf } from "@angular/common";
 import { TableColBarComponent } from "./widgets/table-col-bar.component";
 import { TableRowBarComponent } from "./widgets/table-row-bar.component";
 import { adjustSelection, RectangleSelection } from "./utils";
@@ -15,13 +14,12 @@ import { debounce, nextTick, throttle } from "../../global";
 import { addTableCol, addTableRow, deleteTableCols, deleteTableRows } from "./callback";
 import { OverlayRef } from "@angular/cdk/overlay";
 import { TableCellsSelection } from "./types";
-import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 
 @Component({
   selector: 'div.table-block',
   templateUrl: './table.block.html',
   standalone: true,
-  imports: [NgForOf, TableColBarComponent, TableRowBarComponent, AsyncPipe, NgIf, NzTooltipDirective],
+  imports: [TableColBarComponent, TableRowBarComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class.row-head]': 'props.rowHead',
@@ -215,10 +213,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const cell = this.doc.getBlockById(id) as TableCellBlockComponent
 
     const startSelectCell = () => {
+      // Safari may keep extending the native DOM selection into table rows
+      // after we switch to rectangle cell selection, so clear it first.
+      this.doc.selection.blur()
       this._startSelectingCell = cell
       this.hostElement.classList.add('is-selecting-cell')
       this.selectCell(cell)
-      this.doc.selection.selectBlock(this._startSelectingCell!)
     }
 
     const sub1 = this.doc.event.customListen(document, 'selectionchange').pipe(skip(1)).subscribe(() => {
@@ -236,10 +236,25 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       startSelectCell()
     })
 
-    this.doc.event.once('selectEnd', () => {
+    let finished = false
+    const finishSelection = () => {
+      if (finished) return
+      finished = true
       sub1.unsubscribe()
       sub2.unsubscribe()
+      releaseSub.unsubscribe()
+      removeSelectEnd()
       this.onEndSelect()
+    }
+
+    const releaseSub = merge(
+      this.doc.event.customListen(window, 'pointerup', { once: true }),
+      this.doc.event.customListen(window, 'mouseup', { once: true }),
+      this.doc.event.customListen(window, 'touchend', { once: true }),
+    ).subscribe(() => finishSelection())
+
+    const removeSelectEnd = this.doc.event.once('selectEnd', () => {
+      finishSelection()
     })
   }
 
@@ -270,9 +285,32 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private onEndSelect = () => {
     if (!this._startSelectingCell) return;
     this.hostElement.classList.remove('is-selecting-cell')
+    const anchorCell = this._startSelectingCell
     const firstSelectedCell = this._selectedCellSet[Symbol.iterator]().next().value
     if (firstSelectedCell) {
-      this.showToolbar(firstSelectedCell.hostElement)
+      let toolbarOpened = false
+      const openToolbar = (watchSelection: boolean) => {
+        if (toolbarOpened) return
+        toolbarOpened = true
+        this.showToolbar(firstSelectedCell.hostElement, 'cells', undefined, 1, undefined, {
+          selectedCellId: anchorCell.id,
+          watchSelection,
+        })
+      }
+
+      const restoreSelection = () => {
+        const selection = this.doc.selection.recalculate().value
+        return !!selection && selection.firstBlock.id === anchorCell.id
+      }
+
+      this.doc.selection.selectBlock(anchorCell)
+      if (restoreSelection()) {
+        openToolbar(true)
+      } else {
+        nextTick().then(() => {
+          openToolbar(restoreSelection())
+        })
+      }
     }
     this._prevAdjustedSelection = null
   }
@@ -365,7 +403,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     return this.confirmSelection(cellsSelection.start, cellsSelection.end)
   }
 
-  showToolbar(target: HTMLElement, type: 'col' | 'row' | 'cells' = 'cells', index?: number, count = 1, closeFn?: () => void) {
+  showToolbar(target: HTMLElement, type: 'col' | 'row' | 'cells' = 'cells', index?: number, count = 1, closeFn?: () => void,
+              options?: { selectedCellId?: string, watchSelection?: boolean }) {
     if (this.toolbarOvr) {
       this.toolbarOvr.dispose()
       this.toolbarOvr = undefined
@@ -405,12 +444,16 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     cpr.setInput('doc', this.doc)
     cpr.setInput('table', this)
 
-    const selectedCell = this.doc.selection.value!.firstBlock
+    const selectedCellId = options?.selectedCellId ?? this.doc.selection.value?.firstBlock.id
+    const watchSelection = options?.watchSelection ?? true
+    const selectionClose$ = this.doc.selection.selectionChange$
+      .pipe(skip(1), filter(v => v?.start.blockId !== selectedCellId))
 
-    merge(
-      this.doc.selection.selectionChange$.pipe(skip(1), filter(v => v?.start.blockId !== selectedCell.id)),
-      this.onDestroy$, cpr.instance.onClose$)
-      .pipe(takeUntil(cpr.instance.onDestroy)).subscribe(closeCb)
+    const close$ = watchSelection && selectedCellId
+      ? merge(selectionClose$, this.onDestroy$, cpr.instance.onClose$)
+      : merge(this.onDestroy$, cpr.instance.onClose$)
+
+    close$.pipe(takeUntil(cpr.instance.onDestroy)).subscribe(closeCb)
   }
 
   onColBarSelected(range: [number, number]) {
