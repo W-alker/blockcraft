@@ -106,33 +106,53 @@ export class BlockTransformContextMenu {
 
     this.activeBlock.yText.observe(textObserver)
 
-    const hotKeyEvents = [
-      this.doc.event.bindHotkey({ key: 'Escape', }, evt => {
-        evt.preventDefault()
-        this.close$.next(true)
-        return true
-      }, { blockId: this.activeBlock.id }),
-      this.doc.event.bindHotkey({ key: 'Enter', }, evt => {
-        evt.preventDefault()
-        this.select()
-        return true
-      }, { blockId: this.activeBlock.id }),
-      this.doc.event.bindHotkey({ key: 'ArrowUp', }, evt => {
-        evt.preventDefault()
-        this.selectUp()
-        return true
-      }, { blockId: this.activeBlock.id }),
-      this.doc.event.bindHotkey({ key: 'ArrowDown' }, evt => {
-        evt.preventDefault()
-        this.selectDown()
-        return true
-      }, { blockId: this.activeBlock.id })
-    ]
+    this.doc.root.hostElement.addEventListener('keydown', this.handleRootKeydown, true)
 
     this.destroyRef.onDestroy(() => {
-      hotKeyEvents.forEach(v => v())
+      this.doc.root.hostElement.removeEventListener('keydown', this.handleRootKeydown, true)
       this.activeBlock.yText?.unobserve(textObserver)
     })
+  }
+
+  private handleRootKeydown = (event: KeyboardEvent) => {
+    if (this.doc.event.status.isComposing || !this.isSelectionInActiveBlock()) return
+
+    switch (event.key) {
+      case 'Escape':
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation?.()
+        this.close$.next(true)
+        return
+      case 'Enter':
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation?.()
+        this.select()
+        return
+      case 'ArrowUp':
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation?.()
+        this.selectUp()
+        return
+      case 'ArrowDown':
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation?.()
+        this.selectDown()
+        return
+      default:
+        return
+    }
+  }
+
+  private isSelectionInActiveBlock() {
+    const selection = this.doc.selection.recalculate(false).value || this.doc.selection.value
+    return !!selection
+      && selection.collapsed
+      && selection.start.type === 'text'
+      && selection.firstBlock.id === this.activeBlock.id
   }
 
   onMouseDown(evt: MouseEvent) {
@@ -166,6 +186,7 @@ export class BlockTransformContextMenu {
   }
 
   selectUp() {
+    if (!this.list.length) return;
     this.enterKeyboardNavigation();
     this.activeIdx = (this.activeIdx - 1 + this.list.length) % this.list.length;
     this.cdr.detectChanges();
@@ -173,6 +194,7 @@ export class BlockTransformContextMenu {
   }
 
   selectDown() {
+    if (!this.list.length) return;
     this.enterKeyboardNavigation();
     this.activeIdx = (this.activeIdx + 1) % this.list.length;
     this.cdr.detectChanges();
