@@ -109,7 +109,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
   if (!block.props.start) {  // 本身就是起始编号就没必要往上找了
     for (let i = index - 1; i >= 0; i--) {
       const prevBlock = parentChildren[i]
-      if (isHigherHeadingLevel(prevBlock, block)) {
+      if (isHeadingBoundary(prevBlock)) {
         break
       }
       if (prevBlock.flavour !== 'ordered') {
@@ -120,6 +120,9 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
         //   break
         // }
         continue
+      }
+      if (getDepth(prevBlock) < getDepth(block)) {
+        break
       }
       if (!isSameHeadingLevel(prevBlock, block)) continue
       if (isSimpleTypeEqual(prevBlock.props.depth, block.props.depth)) {
@@ -132,7 +135,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
 
   for (let j = index + 1; j < parentChildren.length; j++) {
     const nextBlock = parentChildren[j]
-    if (isHigherHeadingLevel(nextBlock, block)) {
+    if (isHeadingBoundary(nextBlock)) {
       break
     }
     if (nextBlock.flavour !== 'ordered') continue
@@ -162,13 +165,14 @@ const getHeadingLevel = (block: BaseBlockComponent<any>) => {
   return (block.props['heading'] || 0) as number
 }
 
+const getDepth = (block: BaseBlockComponent<any>) => {
+  return (block.props['depth'] || 0) as number
+}
+
 const isSameHeadingLevel = (left: BaseBlockComponent<any>, right: BaseBlockComponent<any>) => {
   return isSimpleTypeEqual(getHeadingLevel(left), getHeadingLevel(right))
 }
 
-const isHigherHeadingLevel = (candidate: BaseBlockComponent<any>, target: BaseBlockComponent<any>) => {
-  const candidateHeading = getHeadingLevel(candidate)
-  const targetHeading = getHeadingLevel(target)
-  return candidateHeading > 0 && targetHeading > 0 && candidateHeading < targetHeading
+const isHeadingBoundary = (block: BaseBlockComponent<any>) => {
+  return getHeadingLevel(block) > 0
 }
-
