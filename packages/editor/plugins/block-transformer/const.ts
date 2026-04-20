@@ -1,4 +1,4 @@
-import {EditableBlockComponent, HotKeyTrigger, IBlockProps, ORIGIN_SKIP_SYNC} from "../../framework";
+import {BaseBlockComponent, EditableBlockComponent, HotKeyTrigger, IBlockProps, ORIGIN_SKIP_SYNC} from "../../framework";
 import {IS_MAC, sliceDelta} from "../../global";
 
 export interface IBlockTransformConfig {
@@ -45,15 +45,10 @@ export const blockTransforms: IBlockTransformConfig[] = [
     markdown: /^(\d|[a-z])+\.\s$/,
     hotkey: {key: ['o', 'O'], shortKey: true, shiftKey: true},
     onConvert: (doc, from, matchedString) => {
-      const prevBlock = doc.prevSibling(from)
-      // props.order = prevBlock?.flavour === 'ordered' ? (prevBlock.props['order'] || 0) + 1 : 1
-      // if(!prevBlock || (!prevBlock.props.depth && prevBlock.flavour != 'ordered')) {
-      //   props['start'] = 1
-      // }
-
       const o = doc.schemas.createSnapshot('ordered', [sliceDelta(from.textDeltas(), matchedString.length), from.props])
-      if (prevBlock?.flavour === 'ordered') {
-        o.props['order'] = prevBlock.props['order'] || 0
+      const prevOrdered = findPreviousOrderedForContinuation(from as unknown as BaseBlockComponent<any>)
+      if (prevOrdered) {
+        o.props['order'] = prevOrdered.props['order'] || 0
       } else {
         let parsedNum = parseInt(matchedString, 10)
         if (isNaN(parsedNum)) {
@@ -112,3 +107,49 @@ export const blockTransforms: IBlockTransformConfig[] = [
     hotkey: {key: ['E', 'e'], shortKey: true, shiftKey: true}
   }
 ]
+
+const findPreviousOrderedForContinuation = (block: BaseBlockComponent<any>) => {
+  const parent = block.parentBlock
+  if (!parent) return null
+
+  const siblings = parent.getChildrenBlocks()
+  const index = siblings.indexOf(block)
+  if (index === -1) return null
+
+  for (let i = index - 1; i >= 0; i--) {
+    const prevBlock = siblings[i]
+    if (isHeadingBoundary(prevBlock)) {
+      break
+    }
+    if (prevBlock.flavour !== 'ordered') {
+      continue
+    }
+    if (getDepth(prevBlock) < getDepth(block)) {
+      break
+    }
+    if (!isSameHeadingLevel(prevBlock, block)) {
+      continue
+    }
+    if (getDepth(prevBlock) === getDepth(block)) {
+      return prevBlock
+    }
+  }
+
+  return null
+}
+
+const getDepth = (block: BlockCraft.BlockComponent) => {
+  return (block.props['depth'] || 0) as number
+}
+
+const getHeadingLevel = (block: BlockCraft.BlockComponent) => {
+  return (block.props['heading'] || 0) as number
+}
+
+const isSameHeadingLevel = (left: BlockCraft.BlockComponent, right: BlockCraft.BlockComponent) => {
+  return getHeadingLevel(left) === getHeadingLevel(right)
+}
+
+const isHeadingBoundary = (block: BlockCraft.BlockComponent) => {
+  return getHeadingLevel(block) > 0
+}

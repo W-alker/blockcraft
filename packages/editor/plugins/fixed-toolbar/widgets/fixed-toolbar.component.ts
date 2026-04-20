@@ -133,6 +133,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       class="toolbar-btn toolbar-btn--style"
       [disabled]="readonly || !canTransformBlocks"
       [bcOverlayTrigger]="styleDropdown"
+      [bcOverlayDisabled]="readonly || !canTransformBlocks"
       #styleTrigger="bcOverlayTrigger"
     >
       <span>{{ activeStyleItem.intro }}</span>
@@ -158,6 +159,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       [attr.disabled]="readonly || !allEditable ? '' : null"
       [disabled]="readonly || !allEditable"
       [bcOverlayTrigger]="colorPicker"
+      [bcOverlayDisabled]="readonly || !allEditable"
       [style.color]="activeColors['color']"
       [style.background-color]="activeColors['backColor']"
     >
@@ -241,6 +243,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       title="插入表格"
       [disabled]="readonly || !selectionJSON"
       [bcOverlayTrigger]="quickTablePicker"
+      [bcOverlayDisabled]="readonly || !selectionJSON"
       #quickTableTrigger="bcOverlayTrigger"
     >
       <i class="bc_icon bc_column-vertical"></i>
@@ -252,6 +255,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       title="创建分栏"
       [disabled]="readonly || !selectionJSON"
       [bcOverlayTrigger]="columnCountPicker"
+      [bcOverlayDisabled]="readonly || !selectionJSON"
       #columnCountTrigger="bcOverlayTrigger"
     >
       <i class="bc_icon bc_fenlan"></i>
@@ -273,6 +277,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       title="插入视频或音频"
       [disabled]="readonly || !selectionJSON"
       [bcOverlayTrigger]="mediaTypePicker"
+      [bcOverlayDisabled]="readonly || !selectionJSON"
       #mediaTypeTrigger="bcOverlayTrigger"
     >
       <i class="bc_icon bc_shipin"></i>
