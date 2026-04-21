@@ -14,6 +14,8 @@ const calcIntersectionLength = (start1: number, length1: number, start2: number,
   return Math.max(0, intersectionEnd - intersectionStart);
 };
 
+export type CellMatrixEntry = { cell: TableCellBlockComponent; sourceRow: number; sourceCol: number } | null
+
 /**
  * 核心工具：构建表格的虚拟矩阵，记录每个逻辑位置被哪个源单元格占据
  * @param rows 所有行的 Block 对象数组
@@ -21,11 +23,11 @@ const calcIntersectionLength = (start1: number, length1: number, start2: number,
  * @param colCount 表格列数
  * @returns 二维数组，每个位置存储占据该位置的源单元格信息
  */
-const buildCellMatrix = (
+export const buildCellMatrix = (
   rows: BlockCraft.BlockComponent[],
   rowCount: number,
   colCount: number
-): Array<Array<{ cell: TableCellBlockComponent; sourceRow: number; sourceCol: number } | null>> => {
+): CellMatrixEntry[][] => {
   // 初始化虚拟矩阵
   const matrix: Array<Array<{ cell: TableCellBlockComponent; sourceRow: number; sourceCol: number } | null>> = [];
   for (let i = 0; i < rowCount; i++) {

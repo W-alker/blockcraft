@@ -4,6 +4,9 @@
                  [selectedRange]="_activeRowRange"
                  (hoveredHandleChange)="onRowHandleHovered($event)"
                  (selectedRangeChange)="onRowBarSelected($event)"
+                 (reorderStart)="onRowReorderStart($event)"
+                 (reorderMove)="onRowReorderMove($event)"
+                 (reorderEnd)="onRowReorderEnd($event)"
                  #rowBarComponent></table-row-bar>
 
   <div class="table-wrapper" #tableWrapper>
@@ -17,6 +20,9 @@
                    [selectedRange]="_activeColRange"
                    (hoveredHandleChange)="onColHandleHovered($event)"
                    (selectedRangeChange)="onColBarSelected($event)"
+                   (reorderStart)="onColReorderStart($event)"
+                   (reorderMove)="onColReorderMove($event)"
+                   (reorderEnd)="onColReorderEnd($event)"
                    #colBarComponent />
 
     <table>
@@ -30,6 +36,24 @@
 <!--        <ng-container #childrenContainer></ng-container>-->
       </tbody>
     </table>
+
+    @if (_rowReorder) {
+      <div class="table-row-drop-line"
+           [style.top.px]="_rowReorder.dropLineTop"></div>
+      <div class="table-row-drop-preview"
+           [style.top.px]="_rowReorder.previewTop"
+           [style.height.px]="_rowReorder.previewHeight"
+           [style.width.px]="_rowReorder.previewWidth"></div>
+    }
+
+    @if (_colReorder) {
+      <div class="table-col-drop-line"
+           [style.left.px]="_colReorder.dropLineLeft"></div>
+      <div class="table-col-drop-preview"
+           [style.left.px]="_colReorder.previewLeft"
+           [style.width.px]="_colReorder.previewWidth"
+           [style.height.px]="_colReorder.previewHeight"></div>
+    }
   </div>
 </div>
 

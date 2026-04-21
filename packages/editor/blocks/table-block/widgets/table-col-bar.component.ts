@@ -7,7 +7,22 @@ import {
   Output
 } from "@angular/core";
 import {NgForOf} from "@angular/common";
-import {fromEvent, take} from "rxjs";
+import {fromEvent, merge, Subject, take, takeUntil} from "rxjs";
+
+const DRAG_THRESHOLD_PX = 4
+
+export interface ColReorderStartEvent {
+  fromIndex: number
+  count: number
+}
+
+export interface ColReorderMoveEvent {
+  cursorX: number
+}
+
+export interface ColReorderEndEvent {
+  commit: boolean
+}
 
 @Component({
   selector: 'table-col-bar',
@@ -15,7 +30,7 @@ import {fromEvent, take} from "rxjs";
     @for (w of colWidths; track $index; let idx = $index) {
       <button type="button"
               class="handle"
-              (mousedown)="onMouseDown(idx)"
+              (mousedown)="onMouseDown(idx, $event)"
               [style.width.px]="w"
               [attr.data-index]="idx"
               [class.visible]="visibleHandleIndex === idx"
@@ -65,6 +80,15 @@ export class TableColBarComponent {
   @Output()
   hoveredHandleChange = new EventEmitter<number | null>()
 
+  @Output()
+  reorderStart = new EventEmitter<ColReorderStartEvent>()
+
+  @Output()
+  reorderMove = new EventEmitter<ColReorderMoveEvent>()
+
+  @Output()
+  reorderEnd = new EventEmitter<ColReorderEndEvent>()
+
   protected _hoveredIndex: number | null = null
 
   constructor(
@@ -73,50 +97,78 @@ export class TableColBarComponent {
   ) {
   }
 
-  private _getIdx(evt: MouseEvent) {
-    evt.preventDefault()
-    evt.stopPropagation()
-    const target = evt.target as HTMLElement | null
-    const handle = target?.closest('[data-index]') as HTMLElement | null
-    const dataIndex = handle?.getAttribute('data-index')
-    if (!dataIndex) return null
-    return parseInt(dataIndex, 10)
-  }
-
   onHandleEnter(idx: number) {
+    if (this.host.nativeElement.classList.contains('reordering')) return
     this._hoveredIndex = idx
     this.hoveredHandleChange.emit(idx)
     this.changeDetectionRef.markForCheck()
   }
 
   onHandleLeave() {
+    if (this.host.nativeElement.classList.contains('reordering')) return
     this._hoveredIndex = null
     this.hoveredHandleChange.emit(null)
     this.changeDetectionRef.markForCheck()
   }
 
-  onMouseDown(idx: number) {
-    // const idx = this._getIdx(evt)
-    // if (idx == null) return
+  onMouseDown(idx: number, event: MouseEvent) {
+    event.preventDefault()
+    event.stopPropagation()
     this._selectedRange = [idx, idx]
     this.host.nativeElement.classList.add('selecting')
 
-    const sub = fromEvent<MouseEvent>(this.host.nativeElement, 'mouseover').subscribe(v => {
-      v.preventDefault()
-      v.stopPropagation()
-      const _oIdx = this._getIdx(v)
-      if (_oIdx == null) return
-      this._selectedRange = [
-        Math.min(idx, _oIdx),
-        Math.max(idx, _oIdx)
-      ]
-      this.changeDetectionRef.markForCheck()
-    })
+    const startX = event.clientX
+    const startY = event.clientY
+    const stop$ = new Subject<void>()
+    let mode: 'pending' | 'dragging' = 'pending'
 
-    fromEvent<MouseEvent>(document.documentElement, 'pointerup', {capture: true}).pipe(take(1)).subscribe(v => {
-      sub.unsubscribe()
-      this.selectedRangeChange.emit(this._selectedRange)
-      this.host.nativeElement.classList.remove('selecting')
+    fromEvent<PointerEvent>(document, 'pointermove')
+      .pipe(takeUntil(stop$))
+      .subscribe(e => {
+        if (mode === 'pending') {
+          const dx = e.clientX - startX
+          const dy = e.clientY - startY
+          if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return
+          mode = 'dragging'
+          this.host.nativeElement.classList.add('reordering')
+          this.host.nativeElement.classList.remove('selecting')
+          this._hoveredIndex = null
+          this.reorderStart.emit({ fromIndex: idx, count: 1 })
+        }
+        this.reorderMove.emit({ cursorX: e.clientX })
+      })
+
+    fromEvent<KeyboardEvent>(document, 'keydown', { capture: true })
+      .pipe(takeUntil(stop$))
+      .subscribe(e => {
+        if (e.key !== 'Escape' || mode !== 'dragging') return
+        e.preventDefault()
+        mode = 'pending'
+        stop$.next()
+        stop$.complete()
+        this._cleanupReorder()
+        this.reorderEnd.emit({ commit: false })
+      })
+
+    merge(
+      fromEvent<PointerEvent>(window, 'pointerup', { capture: true }),
+      fromEvent<MouseEvent>(window, 'mouseup', { capture: true }),
+    ).pipe(take(1), takeUntil(stop$)).subscribe(() => {
+      stop$.next()
+      stop$.complete()
+      if (mode === 'dragging') {
+        this._cleanupReorder()
+        this.reorderEnd.emit({ commit: true })
+      } else {
+        this.host.nativeElement.classList.remove('selecting')
+        this.selectedRangeChange.emit(this._selectedRange)
+      }
     })
+  }
+
+  private _cleanupReorder() {
+    this.host.nativeElement.classList.remove('reordering')
+    this.host.nativeElement.classList.remove('selecting')
+    this.changeDetectionRef.markForCheck()
   }
 }

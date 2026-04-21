@@ -241,7 +241,9 @@
       }
     }
 
-    &.is-selecting-cell {
+    &.is-selecting-cell,
+    &.is-reordering-row,
+    &.is-reordering-col {
 
       .table-col-resize-bar {
         display: none;
@@ -267,6 +269,52 @@
       width: 1px;
       height: 1px;
       pointer-events: none;
+    }
+
+    .table-row-drop-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--bc-active-color);
+      z-index: 150;
+      pointer-events: none;
+      transform: translateY(-1px);
+      border-radius: 1px;
+    }
+
+    .table-row-drop-preview {
+      position: absolute;
+      left: 0;
+      z-index: 140;
+      pointer-events: none;
+      background: var(--bc-select-background-color);
+      opacity: 0.5;
+      border-radius: 2px;
+      outline: 1px solid var(--bc-active-color);
+    }
+
+    .table-col-drop-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--bc-active-color);
+      z-index: 150;
+      pointer-events: none;
+      transform: translateX(-1px);
+      border-radius: 1px;
+    }
+
+    .table-col-drop-preview {
+      position: absolute;
+      top: 0;
+      z-index: 140;
+      pointer-events: none;
+      background: var(--bc-select-background-color);
+      opacity: 0.5;
+      border-radius: 2px;
+      outline: 1px solid var(--bc-active-color);
     }
 
     .table-col-resize-bar {
@@ -308,6 +356,11 @@
       table-row-bar {
         visibility: visible;
       }
+    }
+
+    table-col-bar.reordering,
+    table-row-bar.reordering {
+      visibility: visible;
     }
 
     table-col-bar,

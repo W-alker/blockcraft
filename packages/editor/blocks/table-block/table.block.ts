@@ -5,13 +5,13 @@ import {
 import { TableBlockModel } from "./index";
 import { TableCellBlockComponent } from "./table-cell.block";
 import { BehaviorSubject, filter, fromEvent, merge, Subject, take, takeUntil } from "rxjs";
-import { TableColBarComponent } from "./widgets/table-col-bar.component";
-import { TableRowBarComponent } from "./widgets/table-row-bar.component";
+import { ColReorderEndEvent, ColReorderMoveEvent, ColReorderStartEvent, TableColBarComponent } from "./widgets/table-col-bar.component";
+import { RowReorderEndEvent, RowReorderMoveEvent, RowReorderStartEvent, TableRowBarComponent } from "./widgets/table-row-bar.component";
 import { TableStructureToolbarComponent } from "./widgets/table-structure-toolbar.component";
 import { resolveTableStructureAnchor } from "./widgets/table-structure-anchor";
 import { adjustSelection, RectangleSelection } from "./utils";
 import { debounce, nextTick, throttle } from "../../global";
-import { addTableCol, addTableRow, deleteTableCols, deleteTableRows } from "./callback";
+import { addTableCol, addTableRow, buildCellMatrix, CellMatrixEntry, deleteTableCols, deleteTableRows } from "./callback";
 import { OverlayRef } from "@angular/cdk/overlay";
 import { TableCellsSelection } from "./types";
 import { BlockSelection } from "../../framework/modules/selection/blockSelection";
@@ -29,6 +29,8 @@ import { BlockSelection } from "../../framework/modules/selection/blockSelection
     '[class.has-row-handle-hover]': '_hoveredRowHandle != null',
     '[class.has-col-handle-visible]': '_visibleColHandle != null',
     '[class.has-row-handle-visible]': '_visibleRowHandle != null',
+    '[class.is-reordering-row]': '_rowReorder != null',
+    '[class.is-reordering-col]': '_colReorder != null',
   }
 })
 export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
@@ -76,6 +78,26 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _prevAdjustedSelection: TableCellsSelection | null = null
   private _activeCellsRange: { start: [number, number], end: [number, number], anchorId: string } | null = null
   private _suppressFocusSync = false
+
+  protected _rowReorder: {
+    fromIndex: number
+    count: number
+    targetIndex: number
+    dropLineTop: number
+    previewTop: number
+    previewHeight: number
+    previewWidth: number
+  } | null = null
+
+  protected _colReorder: {
+    fromIndex: number
+    count: number
+    targetIndex: number
+    dropLineLeft: number
+    previewLeft: number
+    previewWidth: number
+    previewHeight: number
+  } | null = null
 
   private resizeObserver = new ResizeObserver(entries => {
     for (const entry of entries) {
@@ -714,6 +736,384 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         selectionKind: 'row',
       })
     })
+  }
+
+  onRowReorderStart(evt: RowReorderStartEvent) {
+    if (this.doc.isReadonly) return
+    const rows = this._getRowElements()
+    if (!rows.length) return
+
+    // Expand drag range to the smallest merge-closed range so we never split
+    // rowspan cells. A user clicking a single row may end up moving several
+    // rows when that row is entangled in merges — the preview reflects this.
+    const closure = this._computeRowClosure(evt.fromIndex, evt.count)
+    const src = rows[closure.start]
+    const srcEnd = rows[closure.start + closure.count - 1]
+    if (!src || !srcEnd) return
+
+    const wrapperRect = this.tableWrapper.nativeElement.getBoundingClientRect()
+    const firstRect = rows[0].getBoundingClientRect()
+    const srcRect = src.getBoundingClientRect()
+    const srcEndRect = srcEnd.getBoundingClientRect()
+
+    this._rowReorder = {
+      fromIndex: closure.start,
+      count: closure.count,
+      targetIndex: closure.start,
+      dropLineTop: firstRect.top - wrapperRect.top,
+      previewTop: srcRect.top - wrapperRect.top,
+      previewHeight: srcEndRect.bottom - srcRect.top,
+      previewWidth: srcRect.width,
+    }
+    this._hideTableMenu()
+    this.changeDetectorRef.markForCheck()
+  }
+
+  onRowReorderMove(evt: RowReorderMoveEvent) {
+    if (!this._rowReorder) return
+    const rows = this._getRowElements()
+    if (!rows.length) return
+
+    const wrapperRect = this.tableWrapper.nativeElement.getBoundingClientRect()
+    const { fromIndex, count } = this._rowReorder
+    const { targetIndex, dropLineTop } = this._computeRowDropTarget(evt.cursorY, rows, wrapperRect, fromIndex, count)
+    const previewTop = evt.cursorY - wrapperRect.top - this._rowReorder.previewHeight / 2
+
+    this._rowReorder = {
+      ...this._rowReorder,
+      targetIndex,
+      dropLineTop,
+      previewTop,
+    }
+    this.changeDetectorRef.markForCheck()
+  }
+
+  onRowReorderEnd(evt: RowReorderEndEvent) {
+    const state = this._rowReorder
+    this._rowReorder = null
+    this.changeDetectorRef.markForCheck()
+    if (!state || !evt.commit) return
+
+    const { fromIndex, count, targetIndex } = state
+    // Dropping on or inside the source range is a no-op.
+    if (targetIndex >= fromIndex && targetIndex <= fromIndex + count) return
+    const adjustedTarget = targetIndex > fromIndex + count ? targetIndex - count : targetIndex
+    this.doc.crud.moveBlocks(this.id, fromIndex, count, this.id, adjustedTarget)
+
+    // Reset any lingering row-selection UI — the rows just moved and the
+    // previous selection range no longer points at the same data.
+    this._activeRowRange = [-1, -1]
+    this._clearSelected()
+    this._clearActiveRanges()
+    this._activeCellsRange = null
+    this._hideTableMenu()
+  }
+
+  private _getRowElements(): HTMLElement[] {
+    if (!this.tableBody) return []
+    return Array.from(this.tableBody.querySelectorAll(':scope > tr')) as HTMLElement[]
+  }
+
+  /**
+   * Expand a row range to the smallest superset that no rowspan crosses.
+   * Iterates until stable: if any cell inside the range has its merge source
+   * above `start`, pull `start` down; if any source inside the range has
+   * rowspan extending past `end`, push `end` down. Works for any count ≥ 1.
+   */
+  private _computeRowClosure(fromIndex: number, count: number): { start: number, count: number } {
+    const rows = this.getChildrenBlocks()
+    const rowCount = rows.length
+    const colCount = this.colLength
+    if (!rowCount || !colCount) return { start: fromIndex, count }
+
+    const matrix = buildCellMatrix(rows, rowCount, colCount)
+    let start = Math.max(0, Math.min(fromIndex, rowCount - 1))
+    let end = Math.max(start + 1, Math.min(fromIndex + count, rowCount))
+
+    let changed = true
+    while (changed) {
+      changed = false
+      for (let r = start; r < end; r++) {
+        for (let c = 0; c < colCount; c++) {
+          const info = matrix[r][c]
+          if (!info) continue
+          if (info.sourceRow < start) {
+            start = info.sourceRow
+            changed = true
+          }
+          if (info.sourceRow === r && info.sourceCol === c) {
+            const span = info.cell.props.rowspan || 1
+            if (r + span > end) {
+              end = r + span
+              changed = true
+            }
+          }
+        }
+      }
+    }
+    return { start, count: end - start }
+  }
+
+  /**
+   * Given a raw targetIndex from cursor hit-testing, snap to the nearest
+   * boundary that no rowspan crosses. A boundary i is valid iff for every
+   * column c, no cell covering (i, c) has sourceRow < i (which would mean a
+   * merge straddles i).
+   */
+  private _snapRowBoundary(targetIndex: number, cursorY: number, rows: HTMLElement[], matrix: CellMatrixEntry[][], colCount: number): number {
+    const rowCount = rows.length
+    if (targetIndex <= 0) return 0
+    if (targetIndex >= rowCount) return rowCount
+
+    const splitsMerge = (idx: number) => {
+      if (idx <= 0 || idx >= rowCount) return false
+      for (let c = 0; c < colCount; c++) {
+        const info = matrix[idx]?.[c]
+        if (info && info.sourceRow < idx) return true
+      }
+      return false
+    }
+
+    if (!splitsMerge(targetIndex)) return targetIndex
+
+    // Search up and down for the nearest valid boundary; pick the side the
+    // cursor is physically closer to.
+    let up = targetIndex
+    while (up > 0 && splitsMerge(up)) up--
+    let down = targetIndex
+    while (down < rowCount && splitsMerge(down)) down++
+
+    const upY = up === 0 ? rows[0].getBoundingClientRect().top : rows[up].getBoundingClientRect().top
+    const downY = down === rowCount
+      ? rows[rowCount - 1].getBoundingClientRect().bottom
+      : rows[down].getBoundingClientRect().top
+
+    return Math.abs(cursorY - upY) <= Math.abs(cursorY - downY) ? up : down
+  }
+
+  private _computeRowDropTarget(
+    cursorY: number,
+    rows: HTMLElement[],
+    wrapperRect: DOMRect,
+    fromIndex: number,
+    count: number,
+  ): { targetIndex: number, dropLineTop: number } {
+    let targetIndex = rows.length
+    for (let i = 0; i < rows.length; i++) {
+      const rect = rows[i].getBoundingClientRect()
+      if (cursorY < rect.top + rect.height / 2) {
+        targetIndex = i
+        break
+      }
+    }
+
+    // Snap the raw hit to a boundary that doesn't split a rowspan.
+    const colCount = this.colLength
+    const rowBlocks = this.getChildrenBlocks()
+    const matrix = buildCellMatrix(rowBlocks, rowBlocks.length, colCount)
+    targetIndex = this._snapRowBoundary(targetIndex, cursorY, rows, matrix, colCount)
+
+    // Snap target inside source range to boundary (no-op position).
+    if (targetIndex > fromIndex && targetIndex < fromIndex + count) {
+      targetIndex = fromIndex
+    }
+    const dropLineTop = this._computeDropLineTop(rows, targetIndex) - wrapperRect.top
+    return { targetIndex, dropLineTop }
+  }
+
+  private _computeDropLineTop(rows: HTMLElement[], targetIndex: number): number {
+    if (targetIndex >= rows.length) {
+      const last = rows[rows.length - 1].getBoundingClientRect()
+      return last.bottom
+    }
+    return rows[targetIndex].getBoundingClientRect().top
+  }
+
+  onColReorderStart(evt: ColReorderStartEvent) {
+    if (this.doc.isReadonly) return
+    const colCount = this.colLength
+    if (!colCount) return
+
+    const closure = this._computeColClosure(evt.fromIndex, evt.count)
+    const colWidths = this.props.colWidths || []
+    const wrapperRect = this.tableWrapper.nativeElement.getBoundingClientRect()
+    const tbodyRect = this.tableBody.getBoundingClientRect()
+
+    const leftOffset = this._colLeftOffset(closure.start, colWidths)
+    const previewLeft = tbodyRect.left + leftOffset - wrapperRect.left
+    const previewWidth = colWidths.slice(closure.start, closure.start + closure.count).reduce((a, b) => a + b, 0)
+    const previewHeight = tbodyRect.height
+
+    this._colReorder = {
+      fromIndex: closure.start,
+      count: closure.count,
+      targetIndex: closure.start,
+      dropLineLeft: tbodyRect.left - wrapperRect.left,
+      previewLeft,
+      previewWidth,
+      previewHeight,
+    }
+    this._hideTableMenu()
+    this.changeDetectorRef.markForCheck()
+  }
+
+  onColReorderMove(evt: ColReorderMoveEvent) {
+    if (!this._colReorder) return
+    const wrapperRect = this.tableWrapper.nativeElement.getBoundingClientRect()
+    const { fromIndex, count, previewWidth } = this._colReorder
+    const { targetIndex, dropLineLeft } = this._computeColDropTarget(evt.cursorX, wrapperRect, fromIndex, count)
+    const previewLeft = evt.cursorX - wrapperRect.left - previewWidth / 2
+
+    this._colReorder = {
+      ...this._colReorder,
+      targetIndex,
+      dropLineLeft,
+      previewLeft,
+    }
+    this.changeDetectorRef.markForCheck()
+  }
+
+  onColReorderEnd(evt: ColReorderEndEvent) {
+    const state = this._colReorder
+    this._colReorder = null
+    this.changeDetectorRef.markForCheck()
+    if (!state || !evt.commit) return
+
+    const { fromIndex, count, targetIndex } = state
+    if (targetIndex >= fromIndex && targetIndex <= fromIndex + count) return
+    const adjustedTarget = targetIndex > fromIndex + count ? targetIndex - count : targetIndex
+
+    this.doc.crud.transact(() => {
+      const rows = this.getChildrenBlocks()
+      rows.forEach(row => {
+        this.doc.crud.moveBlocks(row.id, fromIndex, count, row.id, adjustedTarget)
+      })
+      const widths = [...(this.props.colWidths || [])]
+      const moving = widths.splice(fromIndex, count)
+      widths.splice(adjustedTarget, 0, ...moving)
+      this.updateProps({ colWidths: widths })
+    })
+
+    this._activeColRange = [-1, -1]
+    this._clearSelected()
+    this._clearActiveRanges()
+    this._activeCellsRange = null
+    this._hideTableMenu()
+  }
+
+  /** Sum of col widths before `colIdx` — used as x-offset from tbody left edge. */
+  private _colLeftOffset(colIdx: number, colWidths: number[]): number {
+    let x = 0
+    for (let i = 0; i < colIdx; i++) x += colWidths[i] || 0
+    return x
+  }
+
+  /**
+   * Column analog of `_computeRowClosure`. Expands range until no colspan
+   * crosses the boundary. Iterates until stable.
+   */
+  private _computeColClosure(fromIndex: number, count: number): { start: number, count: number } {
+    const rows = this.getChildrenBlocks()
+    const rowCount = rows.length
+    const colCount = this.colLength
+    if (!rowCount || !colCount) return { start: fromIndex, count }
+
+    const matrix = buildCellMatrix(rows, rowCount, colCount)
+    let start = Math.max(0, Math.min(fromIndex, colCount - 1))
+    let end = Math.max(start + 1, Math.min(fromIndex + count, colCount))
+
+    let changed = true
+    while (changed) {
+      changed = false
+      for (let c = start; c < end; c++) {
+        for (let r = 0; r < rowCount; r++) {
+          const info = matrix[r][c]
+          if (!info) continue
+          if (info.sourceCol < start) {
+            start = info.sourceCol
+            changed = true
+          }
+          if (info.sourceRow === r && info.sourceCol === c) {
+            const span = info.cell.props.colspan || 1
+            if (c + span > end) {
+              end = c + span
+              changed = true
+            }
+          }
+        }
+      }
+    }
+    return { start, count: end - start }
+  }
+
+  private _snapColBoundary(
+    targetIndex: number,
+    cursorX: number,
+    colWidths: number[],
+    matrix: CellMatrixEntry[][],
+    rowCount: number,
+    tbodyLeft: number,
+  ): number {
+    const colCount = colWidths.length
+    if (targetIndex <= 0) return 0
+    if (targetIndex >= colCount) return colCount
+
+    const splitsMerge = (idx: number) => {
+      if (idx <= 0 || idx >= colCount) return false
+      for (let r = 0; r < rowCount; r++) {
+        const info = matrix[r]?.[idx]
+        if (info && info.sourceCol < idx) return true
+      }
+      return false
+    }
+
+    if (!splitsMerge(targetIndex)) return targetIndex
+
+    let up = targetIndex
+    while (up > 0 && splitsMerge(up)) up--
+    let down = targetIndex
+    while (down < colCount && splitsMerge(down)) down++
+
+    const upX = tbodyLeft + this._colLeftOffset(up, colWidths)
+    const downX = tbodyLeft + this._colLeftOffset(down, colWidths)
+
+    return Math.abs(cursorX - upX) <= Math.abs(cursorX - downX) ? up : down
+  }
+
+  private _computeColDropTarget(
+    cursorX: number,
+    wrapperRect: DOMRect,
+    fromIndex: number,
+    count: number,
+  ): { targetIndex: number, dropLineLeft: number } {
+    const colWidths = this.props.colWidths || []
+    const colCount = colWidths.length
+    const tbodyRect = this.tableBody.getBoundingClientRect()
+    const tbodyLeft = tbodyRect.left
+
+    // Walk cumulative widths and find which column mid-point the cursor passed.
+    let acc = 0
+    let targetIndex = colCount
+    for (let i = 0; i < colCount; i++) {
+      const w = colWidths[i] || 0
+      if (cursorX < tbodyLeft + acc + w / 2) {
+        targetIndex = i
+        break
+      }
+      acc += w
+    }
+
+    // Snap to merge-safe boundary.
+    const rows = this.getChildrenBlocks()
+    const matrix = buildCellMatrix(rows, rows.length, colCount)
+    targetIndex = this._snapColBoundary(targetIndex, cursorX, colWidths, matrix, rows.length, tbodyLeft)
+
+    if (targetIndex > fromIndex && targetIndex < fromIndex + count) {
+      targetIndex = fromIndex
+    }
+
+    const dropLineLeft = tbodyLeft + this._colLeftOffset(targetIndex, colWidths) - wrapperRect.left
+    return { targetIndex, dropLineLeft }
   }
 
   onColResizerMousedown(evt: MouseEvent) {
