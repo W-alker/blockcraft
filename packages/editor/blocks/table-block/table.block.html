@@ -1,12 +1,22 @@
 <div class="table-scrollable bc-scrollable-container" #tableScrollable (scroll)="onScroll($event)" (scrollend)="onScrollEnd()">
   <table-row-bar [rowIds]="_childrenIds" [rowHeightsRecord]="_rowHeightsRecord"
-                 [selectedRange]="_activeRowRange" (selectedRangeChange)="onRowBarSelected($event)"
-                 (onAdderActive)="onRowAdderActive($event)"
+                 [visibleHandleIndex]="_visibleRowHandle"
+                 [selectedRange]="_activeRowRange"
+                 (hoveredHandleChange)="onRowHandleHovered($event)"
+                 (selectedRangeChange)="onRowBarSelected($event)"
                  #rowBarComponent></table-row-bar>
 
-  <div class="table-wrapper">
-    <table-col-bar [colWidths]="props.colWidths" [selectedRange]="_activeColRange"
-                   (selectedRangeChange)="onColBarSelected($event)" (onAdderActive)="onColAdderActive($event)"
+  <div class="table-wrapper" #tableWrapper>
+    <div class="table-menu-anchor"
+         #tableMenuAnchor
+         [style.left.px]="_tableMenu.left + _tableMenu.width / 2"
+         [style.top.px]="_tableMenu.top"></div>
+
+    <table-col-bar [colWidths]="props.colWidths"
+                   [visibleHandleIndex]="_visibleColHandle"
+                   [selectedRange]="_activeColRange"
+                   (hoveredHandleChange)="onColHandleHovered($event)"
+                   (selectedRangeChange)="onColBarSelected($event)"
                    #colBarComponent />
 
     <table>
@@ -24,12 +34,5 @@
 </div>
 
 <div class="table-col-resize-bar" contenteditable="false" #colResizeBar (mousedown)="onColResizerMousedown($event)">
-  <span class="add">+</span>
   <div class="bar"></div>
 </div>
-
-<div class="table-row-resize-bar" contenteditable="false" #rowResizeBar>
-  <span class="add">+</span>
-  <div class="bar"></div>
-</div>
-

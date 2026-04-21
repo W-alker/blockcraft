@@ -50,3 +50,4 @@ pnpm-lock.yaml
 /.claude/worktrees
 /docs/superpowers/*
 /output
+/.superpowers

@@ -1,19 +1,20 @@
 import { ChangeDetectionStrategy, Component, ElementRef, ViewChild } from "@angular/core";
 import {
-  BaseBlockComponent, getPositionWithOffset,
-  UIEventStateContext
+  BaseBlockComponent, getPositionWithOffset
 } from "../../framework";
 import { TableBlockModel } from "./index";
 import { TableCellBlockComponent } from "./table-cell.block";
-import { BehaviorSubject, filter, fromEvent, merge, skip, Subject, take, takeUntil } from "rxjs";
-import { CellToolbarComponent } from "./widgets/cell-toolbar.component";
+import { BehaviorSubject, filter, fromEvent, merge, Subject, take, takeUntil } from "rxjs";
 import { TableColBarComponent } from "./widgets/table-col-bar.component";
 import { TableRowBarComponent } from "./widgets/table-row-bar.component";
+import { TableStructureToolbarComponent } from "./widgets/table-structure-toolbar.component";
+import { resolveTableStructureAnchor } from "./widgets/table-structure-anchor";
 import { adjustSelection, RectangleSelection } from "./utils";
 import { debounce, nextTick, throttle } from "../../global";
 import { addTableCol, addTableRow, deleteTableCols, deleteTableRows } from "./callback";
 import { OverlayRef } from "@angular/cdk/overlay";
 import { TableCellsSelection } from "./types";
+import { BlockSelection } from "../../framework/modules/selection/blockSelection";
 
 @Component({
   selector: 'div.table-block',
@@ -24,15 +25,19 @@ import { TableCellsSelection } from "./types";
   host: {
     '[class.row-head]': 'props.rowHead',
     '[class.col-head]': 'props.colHead',
+    '[class.has-col-handle-hover]': '_hoveredColHandle != null',
+    '[class.has-row-handle-hover]': '_hoveredRowHandle != null',
+    '[class.has-col-handle-visible]': '_visibleColHandle != null',
+    '[class.has-row-handle-visible]': '_visibleRowHandle != null',
   }
 })
 export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
-
   protected hoveringCell: TableCellBlockComponent | null = null
   protected resizingCol$ = new BehaviorSubject(false)
 
   protected _startSelectingCell: TableCellBlockComponent | null = null
   protected _lastSelectingCell: TableCellBlockComponent | null = null
+  private _pendingStart: TableCellBlockComponent | null = null
 
   private _selectedCellSet = new Set<TableCellBlockComponent>()
 
@@ -42,8 +47,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private tableBody!: HTMLElement
 
   @ViewChild('tableScrollable', { read: ElementRef }) tableScrollable!: ElementRef<HTMLElement>
+  @ViewChild('tableWrapper', { read: ElementRef }) tableWrapper!: ElementRef<HTMLElement>
+  @ViewChild('tableMenuAnchor', { read: ElementRef }) tableMenuAnchor!: ElementRef<HTMLElement>
   @ViewChild('colResizeBar', { read: ElementRef }) colResizeBar!: ElementRef<HTMLElement>
-  @ViewChild('rowResizeBar', { read: ElementRef }) rowResizeBar!: ElementRef<HTMLElement>
   @ViewChild('colBarComponent') colBarComponent!: TableColBarComponent
   @ViewChild('rowBarComponent') rowBarComponent!: TableRowBarComponent
 
@@ -51,8 +57,25 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   protected _activeColRange: [number, number] = [-1, -1]
   protected _activeRowRange: [number, number] = [-1, -1]
+  protected _hoveredColHandle: number | null = null
+  protected _hoveredRowHandle: number | null = null
+  protected _visibleColHandle: number | null = null
+  protected _visibleRowHandle: number | null = null
+  protected _tableMenu = {
+    visible: false,
+    left: -9999,
+    top: -9999,
+    width: 0,
+    rowIndex: 0,
+    rowCount: 1,
+    colIndex: 0,
+    colCount: 1,
+    selectionKind: 'cell' as 'cell' | 'cells' | 'row' | 'col',
+  }
 
   private _prevAdjustedSelection: TableCellsSelection | null = null
+  private _activeCellsRange: { start: [number, number], end: [number, number], anchorId: string } | null = null
+  private _suppressFocusSync = false
 
   private resizeObserver = new ResizeObserver(entries => {
     for (const entry of entries) {
@@ -91,20 +114,26 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.rowBarComponent.changeDetectionRef.markForCheck()
     })
 
-    this.doc.event.add('selectStart', this.onSelectstart, { blockId: this.id })
-    this.doc.event.add('mouseEnter', this.onMouseEnter, { blockId: this.id })
+    // Attach native DOM listeners directly to the table host so routing
+    // cannot swallow the events. Capture-phase mousedown guarantees we arm
+    // selection state before any other handler runs.
+    fromEvent<MouseEvent>(this.hostElement, 'mousedown', { capture: true })
+      .pipe(takeUntil(this.onDestroy$))
+      .subscribe(e => this._handleNativeMouseDown(e))
+    fromEvent<MouseEvent>(this.hostElement, 'mouseover')
+      .pipe(takeUntil(this.onDestroy$))
+      .subscribe(e => this._handleNativeMouseOver(e))
+    this.doc.selection.selectionChange$
+      .pipe(takeUntil(this.onDestroy$))
+      .subscribe(selection => {
+        this._syncTableFocusUi(selection)
+      })
   }
 
   override ngOnDestroy() {
     super.ngOnDestroy();
     this.mutationObserver.disconnect()
     this.resizeObserver.disconnect()
-    this.doc.event.remove('selectStart', this.onSelectstart)
-    this.doc.event.remove('mouseEnter', this.onMouseEnter)
-
-    // 清理列和行添加器的状态，避免事件监听器泄漏
-    this._clearColAdderState()
-    this._clearRowAdderState()
   }
 
   get colLength() {
@@ -201,118 +230,122 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     return closetCell?.getAttribute('data-block-id')
   }
 
-  onSelectstart = (ctx: UIEventStateContext) => {
+  // Armed at capture-phase native mousedown on the table host. Native
+  // listeners (not the framework dispatcher) so routing can't swallow events.
+  private _handleNativeMouseDown(evt: MouseEvent) {
+    if (this.doc.isReadonly) return
+    const id = this._closetCell(evt)
+    if (!id) return
+    const cell = this.doc.getBlockById(id) as TableCellBlockComponent
+    if (!cell) return
+
     this._clearSelected()
     this._startSelectingCell = this._lastSelectingCell = null
+    this._prevAdjustedSelection = null
+    this._activeCellsRange = null
+    this._pendingStart = cell
 
-    const evt = ctx.getDefaultEvent()
-    const id = this._closetCell(evt)
+    const origin = cell
 
-    if (!id) return
-
-    const cell = this.doc.getBlockById(id) as TableCellBlockComponent
-
-    const startSelectCell = () => {
-      // Safari may keep extending the native DOM selection into table rows
-      // after we switch to rectangle cell selection, so clear it first.
-      this.doc.selection.blur()
-      this._startSelectingCell = cell
-      this.hostElement.classList.add('is-selecting-cell')
-      this.selectCell(cell)
+    // Primary promotion signal: mouseleave on the origin cell itself.
+    // This fires the moment the cursor crosses the cell boundary, regardless
+    // of pointer capture, native text-selection state, or selectionchange
+    // timing. `{ once: true }` so we only promote once; `_handleNativeMouseOver`
+    // handles subsequent cell crossings for rectangle expansion.
+    const onOriginLeave = () => {
+      if (this._startSelectingCell) return
+      if (!this._pendingStart) return
+      this._startCellSelection(origin)
     }
-
-    const sub1 = this.doc.event.customListen(document, 'selectionchange').pipe(skip(1)).subscribe(() => {
-      const curSel = this.doc.selection.value
-      if (!curSel || !cell.hostElement.contains(curSel.firstBlock.hostElement)) {
-        startSelectCell()
-        sub1.unsubscribe()
-      }
-    })
-
-    const sub2 = this.doc.event.customListen(cell.hostElement, 'mouseleave', { once: true }).subscribe(() => {
-      evt.preventDefault()
-      evt.stopPropagation()
-
-      startSelectCell()
-    })
+    origin.hostElement.addEventListener('mouseleave', onOriginLeave, { once: true })
 
     let finished = false
     const finishSelection = () => {
       if (finished) return
       finished = true
-      sub1.unsubscribe()
-      sub2.unsubscribe()
+      origin.hostElement.removeEventListener('mouseleave', onOriginLeave)
       releaseSub.unsubscribe()
-      removeSelectEnd()
       this.onEndSelect()
     }
 
     const releaseSub = merge(
-      this.doc.event.customListen(window, 'pointerup', { once: true }),
-      this.doc.event.customListen(window, 'mouseup', { once: true }),
-      this.doc.event.customListen(window, 'touchend', { once: true }),
-    ).subscribe(() => finishSelection())
-
-    const removeSelectEnd = this.doc.event.once('selectEnd', () => {
-      finishSelection()
-    })
+      fromEvent<PointerEvent>(window, 'pointerup', { capture: true }),
+      fromEvent<MouseEvent>(window, 'mouseup', { capture: true }),
+      fromEvent<TouchEvent>(window, 'touchend', { capture: true }),
+    ).pipe(takeUntil(this.onDestroy$)).subscribe(() => finishSelection())
   }
 
-  onMouseEnter = (ctx: UIEventStateContext) => {
-    const evt = ctx.getDefaultEvent<MouseEvent>()
+  private _handleNativeMouseOver(evt: MouseEvent) {
+    if (this.doc.isReadonly) return
     const id = this._closetCell(evt)
     if (!id || this.hoveringCell?.id === id) return
 
-    if (!this.resizingCol$.value && !this.doc.isReadonly) {
-      // 鼠标回到表格单元格时，清理可能残留的添加器激活状态
-      if (this._colAdderHandler) this._clearColAdderState()
-      if (this._rowAdderHandler) this._clearRowAdderState()
-
-      // hovering bar
+    if (!this.resizingCol$.value) {
       this.hoveringCell = this.doc.getBlockById(id) as TableCellBlockComponent
       const offsetX = this.hoveringCell.hostElement.getBoundingClientRect().right
         - this.tableScrollable.nativeElement.getBoundingClientRect().left - 6
       this.colResizeBar.nativeElement.style.left = `${offsetX}px`
     }
 
-    // select cells
-    if (!this._startSelectingCell || evt.buttons < 1) return;
-    if ((!this._lastSelectingCell && id === this._startSelectingCell.id) || id === this._lastSelectingCell?.id) return
+    // Promote pending on first different-cell crossing (belt + suspenders
+    // alongside the document pointermove listener).
+    if (!this._startSelectingCell && this._pendingStart && evt.buttons >= 1
+      && id !== this._pendingStart.id) {
+      this._startCellSelection(this._pendingStart)
+    }
+
+    if (!this._startSelectingCell || evt.buttons < 1) return
+    if ((!this._lastSelectingCell && id === this._startSelectingCell.id)
+      || id === this._lastSelectingCell?.id) return
     this._lastSelectingCell = this.doc.getBlockById(id) as TableCellBlockComponent
     this._setRectangleSelected()
   }
 
+  private _startCellSelection(cell: TableCellBlockComponent) {
+    if (this._startSelectingCell) return
+    // Apply visual state FIRST so the cell is already highlighted before we
+    // touch the native selection. If we blur first, there's a flash where the
+    // text cursor disappears but the 'selected' class hasn't painted yet.
+    this._startSelectingCell = cell
+    this._pendingStart = null
+    this.hostElement.classList.add('is-selecting-cell')
+    this.selectCell(cell)
+    // Now clear the native selection so Safari doesn't keep extending it
+    // across cells. Suppress sync so the transient null selectionchange
+    // doesn't wipe the highlight/range state we just set.
+    this._suppressFocusSync = true
+    try {
+      this.doc.selection.blur()
+    } finally {
+      this._suppressFocusSync = false
+    }
+  }
+
   private onEndSelect = () => {
+    this._pendingStart = null
     if (!this._startSelectingCell) return;
     this.hostElement.classList.remove('is-selecting-cell')
     const anchorCell = this._startSelectingCell
-    const firstSelectedCell = this._selectedCellSet[Symbol.iterator]().next().value
-    if (firstSelectedCell) {
-      let toolbarOpened = false
-      const openToolbar = (watchSelection: boolean) => {
-        if (toolbarOpened) return
-        toolbarOpened = true
-        this.showToolbar(firstSelectedCell.hostElement, 'cells', undefined, 1, undefined, {
-          selectedCellId: anchorCell.id,
-          watchSelection,
-        })
-      }
+    this._startSelectingCell = this._lastSelectingCell = null
 
-      const restoreSelection = () => {
-        const selection = this.doc.selection.recalculate().value
-        return !!selection && selection.firstBlock.id === anchorCell.id
+    if (this._selectedCellSet.size > 1 && this._prevAdjustedSelection) {
+      const sel = this._prevAdjustedSelection
+      this._activeCellsRange = {
+        start: [sel.start[0], sel.start[1]],
+        end: [sel.end[0], sel.end[1]],
+        anchorId: anchorCell.id,
       }
-
-      this.doc.selection.selectBlock(anchorCell)
-      if (restoreSelection()) {
-        openToolbar(true)
-      } else {
-        nextTick().then(() => {
-          openToolbar(restoreSelection())
-        })
-      }
+    } else {
+      this._activeCellsRange = null
     }
     this._prevAdjustedSelection = null
+
+    this._suppressFocusSync = true
+    try {
+      this.doc.selection.selectBlock(anchorCell)
+    } finally {
+      this._suppressFocusSync = false
+    }
   }
 
   protected selectCell = (cell: TableCellBlockComponent) => {
@@ -403,78 +436,250 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     return this.confirmSelection(cellsSelection.start, cellsSelection.end)
   }
 
-  showToolbar(target: HTMLElement, type: 'col' | 'row' | 'cells' = 'cells', index?: number, count = 1, closeFn?: () => void,
-              options?: { selectedCellId?: string, watchSelection?: boolean }) {
+  onColHandleHovered(index: number | null) {
+    this._hoveredColHandle = index
+    this.changeDetectorRef.markForCheck()
+  }
+
+  onRowHandleHovered(index: number | null) {
+    this._hoveredRowHandle = index
+    this.changeDetectorRef.markForCheck()
+  }
+
+  private _getCellCoordinate(cell: TableCellBlockComponent) {
+    const rowIdx = this.childrenIds.indexOf(cell.parentId!)
+    const colIdx = cell.getIndexOfParent()
+    if (rowIdx < 0 || colIdx < 0) return null
+    return { rowIdx, colIdx }
+  }
+
+  private _resolveCellFromSelection(selection: BlockSelection | null) {
+    if (!selection) return null
+    const block = selection.firstBlock
+    if (!this.hostElement.contains(block.hostElement)) return null
+    if (block.flavour === 'table-cell') {
+      return block as TableCellBlockComponent
+    }
+
+    const cellId = block.hostElement.closest('td[data-block-id]')?.getAttribute('data-block-id')
+    if (!cellId) return null
+    return this.doc.getBlockById(cellId) as TableCellBlockComponent
+  }
+
+  private _showTableMenu(options: {
+    rowIndex: number,
+    rowCount?: number,
+    colIndex: number,
+    colCount?: number,
+    selectionKind?: 'cell' | 'cells' | 'row' | 'col',
+  }) {
+    if (this.doc.isReadonly) {
+      this._hideTableMenu()
+      return
+    }
+
+    const tableRect = this.tableWrapper.nativeElement.querySelector('table')?.getBoundingClientRect()
+    if (!tableRect) {
+      this._hideTableMenu()
+      return
+    }
+
+    const anchor = resolveTableStructureAnchor({
+      wrapperRect: this.tableWrapper.nativeElement.getBoundingClientRect(),
+      selectionRect: tableRect,
+      gap: 12,
+    })
+
+    this._tableMenu = {
+      visible: true,
+      left: anchor.left,
+      top: anchor.top,
+      width: anchor.width,
+      rowIndex: options.rowIndex,
+      rowCount: options.rowCount ?? 1,
+      colIndex: options.colIndex,
+      colCount: options.colCount ?? 1,
+      selectionKind: options.selectionKind ?? 'cell',
+    }
+    this.hostElement.classList.add('active')
+    this.changeDetectorRef.markForCheck()
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        this._showTableMenuOverlay()
+      })
+    })
+  }
+
+  private _hideTableMenu() {
+    this._disposeToolbar()
+    this._tableMenu = {
+      visible: false,
+      left: -9999,
+      top: -9999,
+      width: 0,
+      rowIndex: 0,
+      rowCount: 1,
+      colIndex: 0,
+      colCount: 1,
+      selectionKind: 'cell',
+    }
+    this.hostElement.classList.remove('active')
+    this.changeDetectorRef.markForCheck()
+  }
+
+  private _clearActiveRanges() {
+    if (this._activeColRange[0] !== -1 || this._activeColRange[1] !== -1) {
+      this._activeColRange = [-1, -1]
+      this.colBarComponent?.changeDetectionRef.markForCheck()
+    }
+    if (this._activeRowRange[0] !== -1 || this._activeRowRange[1] !== -1) {
+      this._activeRowRange = [-1, -1]
+      this.rowBarComponent?.changeDetectionRef.markForCheck()
+    }
+  }
+
+  private _syncHandleVisibility(cell: TableCellBlockComponent | null) {
+    if (!cell) {
+      this._visibleRowHandle = null
+      this._visibleColHandle = null
+      this.changeDetectorRef.markForCheck()
+      return
+    }
+
+    const coordinate = this._getCellCoordinate(cell)
+    if (!coordinate) return
+    this._visibleRowHandle = this._activeRowRange[0] > -1 ? this._activeRowRange[0] : coordinate.rowIdx
+    this._visibleColHandle = this._activeColRange[0] > -1 ? this._activeColRange[0] : coordinate.colIdx
+    this.changeDetectorRef.markForCheck()
+  }
+
+  private _syncTableFocusUi(selection: BlockSelection | null) {
+    if (this.doc.isReadonly) {
+      this._hideTableMenu()
+      this._visibleRowHandle = null
+      this._visibleColHandle = null
+      this._clearSelected()
+      this._activeCellsRange = null
+      return
+    }
+
+    const cell = this._resolveCellFromSelection(selection)
+    if (!cell) {
+      // `selectBlock` fires a transient null selectionchange between
+      // `removeAllRanges()` and `addRange()`. Skip so we don't wipe the range
+      // and highlights we just set in `onEndSelect`.
+      if (this._suppressFocusSync) return
+      // Also skip while an active cell-drag is in progress: we deliberately
+      // blur the native selection inside `_startCellSelection` to stop Safari
+      // extending text selection, so a null selection is EXPECTED during drag.
+      // Without this guard the async selectionchange dispatched by
+      // `removeAllRanges()` would wipe the rectangle we just highlighted.
+      if (this._startSelectingCell) return
+      this._hideTableMenu()
+      this._visibleRowHandle = null
+      this._visibleColHandle = null
+      this._clearSelected()
+      this._clearActiveRanges()
+      this._activeCellsRange = null
+      return
+    }
+
+    if (this._startSelectingCell) return
+
+    const coordinate = this._getCellCoordinate(cell)
+    if (!coordinate) return
+
+    const range = this._activeCellsRange
+    if (range && range.anchorId === cell.id) {
+      this._syncHandleVisibility(cell)
+      this._showTableMenu({
+        rowIndex: range.start[0],
+        rowCount: range.end[0] - range.start[0] + 1,
+        colIndex: range.start[1],
+        colCount: range.end[1] - range.start[1] + 1,
+        selectionKind: 'cells',
+      })
+      return
+    }
+
+    this._activeCellsRange = null
+    this._clearSelected()
+    this._clearActiveRanges()
+    this._syncHandleVisibility(cell)
+
+    this._showTableMenu({
+      rowIndex: coordinate.rowIdx,
+      colIndex: coordinate.colIdx,
+      selectionKind: 'cell',
+    })
+  }
+
+  refreshTableMenuFromSelection() {
+    this._syncTableFocusUi(this.doc.selection.recalculate().value)
+  }
+
+  private _disposeToolbar() {
     if (this.toolbarOvr) {
       this.toolbarOvr.dispose()
       this.toolbarOvr = undefined
       this._closeToolbar$.next(true)
     }
+  }
 
-    if (this.doc.isReadonly) {
-      this.doc.selection.afterNextChange(() => this._clearSelected())
+  private _showTableMenuOverlay() {
+    this._disposeToolbar()
+
+    if (this.doc.isReadonly || !this._tableMenu.visible || !this.tableMenuAnchor) {
       return
     }
 
-    this.hostElement.classList.add('active')
     const closeCb = () => {
-      closeFn?.()
-
-      // close toolbar
-      this.hostElement.classList.remove('active')
-      this._clearSelected()
-      this._closeToolbar$.next(true)
-      this._startSelectingCell = this._lastSelectingCell = null
+      this.toolbarOvr = undefined
     }
 
-    const { componentRef: cpr, overlayRef } = this.doc.overlayService.createConnectedOverlay<CellToolbarComponent>({
-      target,
-      component: CellToolbarComponent,
+    const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<TableStructureToolbarComponent>({
+      target: this.tableMenuAnchor.nativeElement,
+      component: TableStructureToolbarComponent,
       positions: [
-        getPositionWithOffset('top-left', 0, 8),
-        getPositionWithOffset('bottom-left', 0, 8),
-        getPositionWithOffset('top-right', 0, 8),
-        getPositionWithOffset('bottom-right', 0, 8),
+        getPositionWithOffset('bottom-center', 0, 8),
+        getPositionWithOffset('top-center', 0, 8),
       ],
-      backdrop: true
+      backdrop: false,
     }, this._closeToolbar$, closeCb)
+
     this.toolbarOvr = overlayRef
-
-    cpr.setInput('options', { type, index, count })
-    cpr.setInput('doc', this.doc)
-    cpr.setInput('table', this)
-
-    const selectedCellId = options?.selectedCellId ?? this.doc.selection.value?.firstBlock.id
-    const watchSelection = options?.watchSelection ?? true
-    const selectionClose$ = this.doc.selection.selectionChange$
-      .pipe(skip(1), filter(v => v?.start.blockId !== selectedCellId))
-
-    const close$ = watchSelection && selectedCellId
-      ? merge(selectionClose$, this.onDestroy$, cpr.instance.onClose$)
-      : merge(this.onDestroy$, cpr.instance.onClose$)
-
-    close$.pipe(takeUntil(cpr.instance.onDestroy)).subscribe(closeCb)
+    componentRef.setInput('table', this)
+    componentRef.setInput('rowIndex', this._tableMenu.rowIndex)
+    componentRef.setInput('rowCount', this._tableMenu.rowCount)
+    componentRef.setInput('colIndex', this._tableMenu.colIndex)
+    componentRef.setInput('colCount', this._tableMenu.colCount)
+    componentRef.setInput('selectionKind', this._tableMenu.selectionKind)
   }
 
   onColBarSelected(range: [number, number]) {
     const firstCell = this.firstChildren!.getChildrenByIndex(range[0]) as TableCellBlockComponent
     this.doc.selection.selectBlock(firstCell)
-
-    const col = this.hostElement.querySelector(`col:nth-child(${range[0] + 1})`) as HTMLElement
     const len = range[1] - range[0] + 1
+    const currentRowIndex = this._visibleRowHandle ?? 0
 
     this.doc.selection.afterNextChange(() => {
       this._activeColRange = range
-      this.rowBarComponent.changeDetectionRef.markForCheck()
-      this.getCellsMatrixByCoordinates([0, range[0]], [this.rowLength - 1, range[1]])
+      this.colBarComponent.changeDetectionRef.markForCheck()
+      const selectedCells = this.getCellsMatrixByCoordinates([0, range[0]], [this.rowLength - 1, range[1]])
         .map(row => row.filter((cell, cellAddIdx) => !cell.props.colspan || cell.props.colspan + cellAddIdx <= len))
-        .flat(1).forEach(cell => this.selectCell(cell))
+        .flat(1)
+      selectedCells.forEach(cell => this.selectCell(cell))
+      this._visibleColHandle = range[0]
+      this._visibleRowHandle = currentRowIndex
 
       // TODO 监听过程中col增加或减少了，调整选区
 
-      this.showToolbar(col, 'col', range[0], range[1] - range[0] + 1, () => {
-        this._activeColRange = [-1, -1]
-        this.colBarComponent.changeDetectionRef.markForCheck()
+      this._showTableMenu({
+        rowIndex: 0,
+        rowCount: this.rowLength,
+        colIndex: range[0],
+        colCount: len,
+        selectionKind: 'col',
       })
     })
 
@@ -485,34 +690,37 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.doc.selection.selectBlock(firstCell)
 
     const len = range[1] - range[0] + 1
-    const row = this.hostElement.querySelector(`tr:nth-child(${range[0] + 1})`) as HTMLElement
+    const currentColIndex = this._visibleColHandle ?? 0
 
     this.doc.selection.afterNextChange(() => {
       this._activeRowRange = range
       this.rowBarComponent.changeDetectionRef.markForCheck()
-      this.getCellsMatrixByCoordinates([range[0], 0], [range[1], this.colLength - 1])
+      const selectedCells = this.getCellsMatrixByCoordinates([range[0], 0], [range[1], this.colLength - 1])
         .map(
           (row, rowAddIdx) =>
             row.filter(cell => !cell.props.rowspan || cell.props.rowspan + rowAddIdx <= len)
         ).flat(1)
-        .forEach(cell => this.selectCell(cell))
+      selectedCells.forEach(cell => this.selectCell(cell))
+      this._visibleRowHandle = range[0]
+      this._visibleColHandle = currentColIndex
 
       // TODO 监听过程中row增加或减少了，调整选区或者关闭
 
-      this.showToolbar(row, 'row', range[0], range[1] - range[0] + 1, () => {
-        this._activeRowRange = [-1, -1]
-        this.rowBarComponent.changeDetectionRef.markForCheck()
+      this._showTableMenu({
+        rowIndex: range[0],
+        rowCount: len,
+        colIndex: 0,
+        colCount: this.colLength,
+        selectionKind: 'row',
       })
     })
   }
-
-  private _disableColResize = false
 
   onColResizerMousedown(evt: MouseEvent) {
     evt.preventDefault()
     evt.stopPropagation()
 
-    if (!this.hoveringCell || this._disableColResize) return
+    if (!this.hoveringCell) return
     this.resizingCol$.next(true)
 
     const resizingColIdx = this.hoveringCell.getIndexOfParent() + (this.hoveringCell.props.colspan || 1) - 1
@@ -608,121 +816,6 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     })
   }
 
-  private _colAdderHandler: ((e: Event) => void) | null = null
-  private _colLeaveHandler: ((e: Event) => void) | null = null  // 新增：追踪 mouseleave 监听器
-
-  onColAdderActive(colIdx: number) {
-    // 先清理之前可能残留的状态（不能在此之前 return，否则卡住后永远无法恢复）
-    this._clearColAdderState()
-
-    const offsetLeft = this.props.colWidths.slice(0, colIdx).reduce((a, b) => a + b, 0)
-      - this.tableScrollable.nativeElement.scrollLeft
-
-    const bar = this.colResizeBar.nativeElement
-    bar.style.left = `${offsetLeft - 6}px`
-    bar.classList.add('active')
-    this._disableColResize = true
-
-    // 创建新的 handler 并缓存引用
-    this._colAdderHandler = (e: Event) => {
-      e.stopPropagation()
-      e.preventDefault()
-      this.addColumn(colIdx)
-      // 添加列后立即清理状态
-      this._clearColAdderState()
-    }
-
-    bar.addEventListener('mousedown', this._colAdderHandler)
-
-    // 创建并缓存 mouseleave handler
-    this._colLeaveHandler = (e: Event) => {
-      e.stopPropagation()
-      e.preventDefault()
-      this._clearColAdderState()
-    }
-
-    bar.addEventListener('mouseleave', this._colLeaveHandler, { once: true, capture: true })
-  }
-
-  /**
-   * 清理列添加器状态
-   */
-  private _clearColAdderState() {
-    const bar = this.colResizeBar?.nativeElement
-    if (!bar) return
-
-    // 移除 active 类
-    bar.classList.remove('active')
-    this._disableColResize = false
-
-    // 移除事件监听器
-    if (this._colAdderHandler) {
-      bar.removeEventListener('mousedown', this._colAdderHandler)
-      this._colAdderHandler = null
-    }
-
-    if (this._colLeaveHandler) {
-      bar.removeEventListener('mouseleave', this._colLeaveHandler)
-      this._colLeaveHandler = null
-    }
-  }
-
-  private _rowAdderHandler: ((e: Event) => void) | null = null
-  private _rowLeaveHandler: ((e: Event) => void) | null = null  // 新增：追踪 mouseleave 监听器
-
-  onRowAdderActive(rowIdx: number) {
-    // 先清理之前可能残留的状态
-    this._clearRowAdderState()
-
-    const offsetTop = this.childrenIds.slice(0, rowIdx).reduce((a, b) => a + this._rowHeightsRecord[b], 0)
-    const el = this.rowResizeBar.nativeElement
-
-    el.style.transform = `translateY(${offsetTop - 6 + 16}px)`
-    el.classList.add('active')
-
-    // 创建新的 handler，并存入字段
-    this._rowAdderHandler = (e: Event) => {
-      e.stopPropagation()
-      e.preventDefault()
-      this.addRow(rowIdx)
-      // 添加行后立即清理状态
-      this._clearRowAdderState()
-    }
-
-    el.addEventListener('mousedown', this._rowAdderHandler)
-
-    // 创建并缓存 mouseleave handler
-    this._rowLeaveHandler = (e: Event) => {
-      e.stopPropagation()
-      e.preventDefault()
-      this._clearRowAdderState()
-    }
-
-    el.addEventListener('mouseleave', this._rowLeaveHandler, { once: true, capture: true })
-  }
-
-  /**
-   * 清理行添加器状态
-   */
-  private _clearRowAdderState() {
-    const el = this.rowResizeBar?.nativeElement
-    if (!el) return
-
-    // 移除 active 类
-    el.classList.remove('active')
-
-    // 移除事件监听器
-    if (this._rowAdderHandler) {
-      el.removeEventListener('mousedown', this._rowAdderHandler)
-      this._rowAdderHandler = null
-    }
-
-    if (this._rowLeaveHandler) {
-      el.removeEventListener('mouseleave', this._rowLeaveHandler)
-      this._rowLeaveHandler = null
-    }
-  }
-
   private _prevScrollLeft = 0
   private _isShiftScroll = false
 
@@ -736,6 +829,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }, 1000)
 
   onScroll = throttle((evt: Event) => {
+    this.toolbarOvr?.updatePosition()
     if (this.doc.event.status.isShiftKeyPressing) {
       this._isShiftScroll = true
     }

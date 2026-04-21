@@ -219,7 +219,6 @@
     .table-block {
 
       .table-col-resize-bar,
-      .table-row-resize-bar,
       table-col-bar,
       table-row-bar {
         display: none;
@@ -231,7 +230,6 @@
     $ctrlBarSize: 16px;
 
     .table-col-resize-bar,
-    .table-row-resize-bar,
     table-col-bar,
     table-row-bar {
       user-select: none;
@@ -245,8 +243,7 @@
 
     &.is-selecting-cell {
 
-      .table-col-resize-bar,
-      .table-row-resize-bar {
+      .table-col-resize-bar {
         display: none;
       }
     }
@@ -259,40 +256,17 @@
       }
     }
 
-    .table-col-resize-bar,
-    .table-row-resize-bar {
+    .table-col-resize-bar {
       position: absolute;
       z-index: 102;
       cursor: col-resize;
+    }
 
-      &.active {
-        cursor: pointer;
-
-        .add {
-          display: flex;
-        }
-
-        .bar {
-          opacity: 1;
-          pointer-events: none;
-        }
-      }
-
-      > .add {
-        display: none;
-        position: absolute;
-        width: 20px;
-        height: 20px;
-        background: var(--bc-active-color);
-        border-radius: 50%;
-        color: #fff;
-        font-size: 16px;
-        align-items: center;
-        justify-content: center;
-      }
-
-      > .bar {
-      }
+    .table-menu-anchor {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      pointer-events: none;
     }
 
     .table-col-resize-bar {
@@ -307,11 +281,6 @@
         }
       }
 
-      > .add {
-        top: -20px;
-        left: -4px;
-      }
-
       > .bar {
         opacity: 0;
         position: absolute;
@@ -323,30 +292,10 @@
       }
     }
 
-    .table-row-resize-bar {
-      display: none;
-      top: 0;
-      left: -8px;
-      width: calc(100% - $ctrlBarSize);
-      height: 12px;
-
-      &.active {
-        display: block;
-      }
-
-      > .add {
-        top: -4px;
-        left: -20px;
-      }
-
-      > .bar {
+    &.has-col-handle-hover {
+      .table-col-resize-bar {
         opacity: 0;
-        position: absolute;
-        top: 5px;
-        left: 0;
-        width: 100%;
-        height: 2px;
-        background: var(--bc-active-color);
+        pointer-events: none;
       }
     }
 
@@ -366,104 +315,162 @@
       visibility: hidden;
       display: flex;
       z-index: 100;
-      transition: visibility .5s;
+      transition: visibility .2s ease;
 
       &.selecting {
-        .pt {
+        .handle {
           pointer-events: none;
         }
       }
 
-      .item {
+      .handle {
         position: relative;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        appearance: none;
+        -webkit-appearance: none;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        font-size: 0;
+        transition: background-color .16s ease, transform .16s ease;
+        opacity: 0;
+        pointer-events: none;
+        overflow: visible;
 
-        > .bar {
-          display: block;
-          background-color: var(--bc-bg-gray);
-          position: relative;
-          cursor: pointer;
-          z-index: 1;
-
-          &:hover,
-          &.hover {
-            background: var(--bc-bg-gray2);
-          }
-
-          &.active {
-            background: var(--bc-active-color);
-          }
+        &:hover,
+        &.hover {
+          background: transparent;
         }
 
-        > .pt {
-          z-index: 3;
-          cursor: pointer;
-          position: relative;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-
-          &::before {
-            display: block;
-            content: '';
-            height: 4px;
-            width: 4px;
-            background: var(--bc-table-bar-pt-color);
-            border-radius: 50%;
-          }
+        &.active,
+        &.visible {
+          background: transparent;
+          opacity: 1;
+          pointer-events: auto;
         }
-
       }
 
+      .handle-line,
+      .handle-grip {
+        display: block;
+        transition: transform .16s ease, opacity .16s ease, background-color .16s ease, box-shadow .16s ease;
+      }
+
+      .handle-line {
+        position: absolute;
+        background: var(--bc-table-bar-pt-color);
+        border-radius: 999px;
+        border: 1px solid #fff;
+        box-sizing: border-box;
+        opacity: .9;
+      }
+
+      .handle-grip {
+        position: absolute;
+        opacity: 0;
+        background-color: #fff;
+        border: 1px solid var(--bc-float-toolbar-divider-color);
+        box-shadow: 0 6px 16px rgba(16, 24, 40, 0.14);
+        border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .handle-grip > .bc_icon {
+        font-size: 12px;
+        color: #98a2b3;
+      }
+
+      .handle.hover .handle-line,
+      .handle.active .handle-line,
+      .handle:hover .handle-line {
+        opacity: 0;
+      }
+
+      .handle.hover .handle-grip,
+      .handle.active .handle-grip,
+      .handle:hover .handle-grip {
+        opacity: 1;
+      }
     }
 
     table-col-bar {
       position: absolute;
-      top: -8px;
+      top: -7px;
       left: 1px;
-      height: $ctrlBarSize;
+      height: 8px;
 
-      .item {
-
-        > .bar {
-          height: $ctrlBarSize / 2;
-        }
-
-        > .pt {
-          position: absolute;
-          top: -8px;
-          right: -8px;
-          content: '';
-          height: 8px;
-          width: 14px;
-        }
+      .handle {
+        height: 8px;
+        align-items: stretch;
       }
 
+      .handle-line {
+        left: 50%;
+        bottom: -1px;
+        width: 18px;
+        height: 4px;
+        transform: translateX(-50%);
+      }
+
+      .handle-grip {
+        top: 100%;
+        left: 50%;
+        width: 22px;
+        height: 16px;
+        transform: translateX(-50%) translateY(-42%) scale(.92);
+      }
+
+      .handle-grip > .bc_icon {
+        transform: rotate(90deg);
+      }
+
+      .handle.hover .handle-grip,
+      .handle.active .handle-grip,
+      .handle:hover .handle-grip {
+        transform: translateX(-50%) translateY(-42%) scale(1);
+      }
     }
 
     table-row-bar {
       position: absolute;
       top: $ctrlBarSize + 1px;
-      left: -8px;
-      width: $ctrlBarSize / 2;
+      left: -7px;
+      width: 8px;
       flex-direction: column;
 
-      .item {
-
-        > .bar {
-          width: $ctrlBarSize / 2;
-        }
-
-        > .pt {
-          position: absolute;
-          left: -8px;
-          bottom: -7px;
-          content: '';
-          height: 14px;
-          width: 8px;
-        }
-
+      .handle {
+        width: 8px;
+        justify-content: stretch;
       }
 
+      .handle-line {
+        right: -1px;
+        top: 50%;
+        width: 4px;
+        height: 18px;
+        transform: translateY(-50%);
+      }
+
+      .handle-grip {
+        top: 50%;
+        left: 100%;
+        width: 16px;
+        height: 22px;
+        transform: translateX(-42%) translateY(-50%) scale(.92);
+      }
+
+      .handle.hover .handle-grip,
+      .handle.active .handle-grip,
+      .handle:hover .handle-grip {
+        transform: translateX(-42%) translateY(-50%) scale(1);
+      }
     }
+
   }
 }

@@ -12,17 +12,22 @@ import {fromEvent, take} from "rxjs";
 @Component({
   selector: "table-row-bar",
   template: `
-    <div class="item">
-      <span class="pt" (mouseenter)="onAddRowBtnEnter(0)"></span>
-    </div>
     @for (rowId of rowIds; let idx = $index; track rowId) {
-      <div class="item">
-        <span class="bar" (mousedown)="onMouseDown(idx)"
+      <button type="button"
+              class="handle"
               [style.height.px]="rowHeightsRecord[rowId]"
               [attr.data-index]="idx"
-              [class.active]="idx >= _selectedRange[0] && idx <= _selectedRange[1]"></span>
-        <div class="pt" (mouseenter)="onAddRowBtnEnter(idx + 1)"></div>
-      </div>
+              [class.visible]="visibleHandleIndex === idx"
+              [class.active]="idx >= _selectedRange[0] && idx <= _selectedRange[1]"
+              [class.hover]="_hoveredIndex === idx"
+              (mouseenter)="onHandleEnter(idx)"
+              (mouseleave)="onHandleLeave()"
+              (mousedown)="onMouseDown(idx)">
+        <span class="handle-line"></span>
+        <span class="handle-grip">
+          <i class="bc_icon bc_yidong"></i>
+        </span>
+      </button>
     }
   `,
   imports: [
@@ -48,17 +53,23 @@ export class TableRowBarComponent {
   @Input({required: true})
   rowHeightsRecord: {[key: string]: number} = {}
 
+  @Input()
+  visibleHandleIndex: number | null = null
+
   protected _selectedRange: [number, number] = [-1, -1]
   @Input()
   set selectedRange(val: [number, number]) {
     this._selectedRange = val
+    this.changeDetectionRef.markForCheck()
   }
 
   @Output()
   selectedRangeChange = new EventEmitter<[number, number]>()
 
   @Output()
-  onAdderActive = new EventEmitter<number>()
+  hoveredHandleChange = new EventEmitter<number | null>()
+
+  protected _hoveredIndex: number | null = null
 
   constructor(
     public readonly changeDetectionRef: ChangeDetectorRef,
@@ -69,10 +80,23 @@ export class TableRowBarComponent {
   private _getIdx(evt: MouseEvent) {
     evt.preventDefault()
     evt.stopPropagation()
-    const target = evt.target as HTMLElement
-    const dataIndex = target.getAttribute('data-index')
+    const target = evt.target as HTMLElement | null
+    const handle = target?.closest('[data-index]') as HTMLElement | null
+    const dataIndex = handle?.getAttribute('data-index')
     if (!dataIndex) return null
-    return parseInt(dataIndex)
+    return parseInt(dataIndex, 10)
+  }
+
+  onHandleEnter(idx: number) {
+    this._hoveredIndex = idx
+    this.hoveredHandleChange.emit(idx)
+    this.changeDetectionRef.markForCheck()
+  }
+
+  onHandleLeave() {
+    this._hoveredIndex = null
+    this.hoveredHandleChange.emit(null)
+    this.changeDetectionRef.markForCheck()
   }
 
   onMouseDown(idx: number) {
@@ -96,9 +120,5 @@ export class TableRowBarComponent {
       this.selectedRangeChange.emit(this._selectedRange)
       this.host.nativeElement.classList.remove('selecting')
     })
-  }
-
-  onAddRowBtnEnter(idx: number) {
-    this.onAdderActive.emit(idx)
   }
 }
