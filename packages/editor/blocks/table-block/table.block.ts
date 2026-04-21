@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, ViewChild } from "@angular/core";
+import { ChangeDetectionStrategy, ComponentRef, Component, ElementRef, ViewChild } from "@angular/core";
 import {
   BaseBlockComponent, getPositionWithOffset
 } from "../../framework";
@@ -44,6 +44,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _selectedCellSet = new Set<TableCellBlockComponent>()
 
   private toolbarOvr?: OverlayRef
+  private toolbarRef?: ComponentRef<TableStructureToolbarComponent>
   private _closeToolbar$ = new Subject()
 
   private tableBody!: HTMLElement
@@ -644,19 +645,44 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     if (this.toolbarOvr) {
       this.toolbarOvr.dispose()
       this.toolbarOvr = undefined
+      this.toolbarRef = undefined
       this._closeToolbar$.next(true)
     }
   }
 
   private _showTableMenuOverlay() {
-    this._disposeToolbar()
-
     if (this.doc.isReadonly || !this._tableMenu.visible || !this.tableMenuAnchor) {
+      this._disposeToolbar()
+      return
+    }
+
+    // Reuse the existing overlay when possible — we only update inputs and
+    // ask CDK to recompute the position against the (already-moved) anchor,
+    // instead of tearing down and rebuilding the Angular component tree.
+    if (this.toolbarOvr && this.toolbarRef) {
+      this._applyToolbarInputs(this.toolbarRef)
+      // Flush Angular so the overlay's content reflects the new inputs, then
+      // wait one frame for the browser to reflow before asking CDK to
+      // reposition.
+      this.toolbarRef.changeDetectorRef.detectChanges()
+      const overlay = this.toolbarOvr
+      requestAnimationFrame(() => {
+        if (this.toolbarOvr !== overlay) return
+        // Re-apply the position strategy rather than calling updatePosition().
+        // CDK's FlexibleConnectedPositionStrategy with `withPush` +
+        // `withFlexibleDimensions` accumulates drift when updatePosition is
+        // invoked against a live overlay (the overlay progressively shifts
+        // left ~140px per re-center). Reassigning the strategy clears its
+        // cached origin/bounding-box rects and lands on the intended center.
+        const strategy = overlay.getConfig().positionStrategy
+        if (strategy) overlay.updatePositionStrategy(strategy)
+      })
       return
     }
 
     const closeCb = () => {
       this.toolbarOvr = undefined
+      this.toolbarRef = undefined
     }
 
     const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<TableStructureToolbarComponent>({
@@ -670,12 +696,17 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }, this._closeToolbar$, closeCb)
 
     this.toolbarOvr = overlayRef
-    componentRef.setInput('table', this)
-    componentRef.setInput('rowIndex', this._tableMenu.rowIndex)
-    componentRef.setInput('rowCount', this._tableMenu.rowCount)
-    componentRef.setInput('colIndex', this._tableMenu.colIndex)
-    componentRef.setInput('colCount', this._tableMenu.colCount)
-    componentRef.setInput('selectionKind', this._tableMenu.selectionKind)
+    this.toolbarRef = componentRef
+    this._applyToolbarInputs(componentRef)
+  }
+
+  private _applyToolbarInputs(ref: ComponentRef<TableStructureToolbarComponent>) {
+    ref.setInput('table', this)
+    ref.setInput('rowIndex', this._tableMenu.rowIndex)
+    ref.setInput('rowCount', this._tableMenu.rowCount)
+    ref.setInput('colIndex', this._tableMenu.colIndex)
+    ref.setInput('colCount', this._tableMenu.colCount)
+    ref.setInput('selectionKind', this._tableMenu.selectionKind)
   }
 
   onColBarSelected(range: [number, number]) {
