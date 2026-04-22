@@ -77,11 +77,13 @@ function consumeFence(lines: LineEntry[], startIndex: number, finalized: boolean
   }
 
   const hasClosingFence = endIndex < lines.length;
+  const closed = hasClosingFence || finalized;
+  const isMermaid = lang === "mermaid";
   const rangeEnd = hasClosingFence ? lines[endIndex]!.end : lines[lines.length - 1]!.end;
   return {
     range: {
-      kind: hasClosingFence || finalized ? (lang === "mermaid" ? "mermaid" : "code") : "raw-text",
-      state: hasClosingFence || finalized ? "stable" : (lang === "mermaid" ? "pending" : "provisional"),
+      kind: isMermaid ? "mermaid" : "code",
+      state: closed ? "stable" : (isMermaid ? "pending" : "provisional"),
       start: opener.start,
       end: rangeEnd,
       text: linesToText(lines, startIndex, hasClosingFence ? endIndex + 1 : lines.length),
@@ -99,8 +101,8 @@ function consumeTable(lines: LineEntry[], startIndex: number, finalized: boolean
   const endedByBoundary = endIndex < lines.length ? lines[endIndex]!.text.trim() === "" || !isTableRow(lines[endIndex]!.text) : finalized;
   return {
     range: {
-      kind: "table",
-      state: endedByBoundary ? "stable" : "pending",
+      kind: endedByBoundary ? "table" : "raw-text",
+      state: endedByBoundary ? "stable" : "provisional",
       start: lines[startIndex]!.start,
       end: lines[endIndex - 1]!.end,
       text: linesToText(lines, startIndex, endIndex),
@@ -202,17 +204,13 @@ function findSafeBoundaryStart(text: string, offset: number) {
   }
 
   const beforeOffset = text.slice(0, offset);
-  const boundaryCandidates = [
-    beforeOffset.lastIndexOf("\n\n"),
-    beforeOffset.lastIndexOf("\n```"),
-  ].filter((candidate) => candidate >= 0);
+  const blankLineBoundary = beforeOffset.lastIndexOf("\n\n");
 
-  if (boundaryCandidates.length === 0) {
+  if (blankLineBoundary < 0) {
     return 0;
   }
 
-  const boundary = Math.max(...boundaryCandidates);
-  return boundary === beforeOffset.lastIndexOf("\n\n") ? boundary + 2 : boundary + 1;
+  return blankLineBoundary + 2;
 }
 
 function resolveTableContextLineIndex(lines: LineEntry[], lineIndex: number) {

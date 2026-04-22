@@ -9,17 +9,42 @@ export function patchChildren(options: {
   patchNode: (current: MountedSnapshotNode, next: IBlockSnapshot, renderContext: SnapshotRenderContext) => MountedSnapshotNode
   mountNode: (snapshot: IBlockSnapshot, renderContext: SnapshotRenderContext) => MountedSnapshotNode
 }): MountedSnapshotNode[] {
-  const currentById = new Map(options.currentChildren.map((child) => [child.snapshot.id, child]))
-  const nextChildren = options.nextSnapshots.map((snapshot) => {
+  const {parent, currentChildren, nextSnapshots, renderContext} = options
+
+  const currentById = new Map<string, MountedSnapshotNode>()
+  currentChildren.forEach((child) => currentById.set(child.snapshot.id, child))
+
+  const usedIds = new Set<string>()
+  const nextChildren: MountedSnapshotNode[] = nextSnapshots.map((snapshot) => {
     const current = currentById.get(snapshot.id)
     if (current) {
-      return options.patchNode(current, snapshot, options.renderContext)
+      usedIds.add(snapshot.id)
+      return options.patchNode(current, snapshot, renderContext)
     }
-
-    return options.mountNode(snapshot, options.renderContext)
+    return options.mountNode(snapshot, renderContext)
   })
 
-  options.parent.replaceChildren(...nextChildren.map((child) => child.element))
+  // 1. Detach mounted children that are no longer in the next list.
+  currentChildren.forEach((child) => {
+    if (!usedIds.has(child.snapshot.id) && child.element.parentNode === parent) {
+      parent.removeChild(child.element)
+    }
+  })
+
+  // 2. Reconcile element order in-place: only move/insert what's out of position.
+  for (let i = 0; i < nextChildren.length; i += 1) {
+    const targetEl = nextChildren[i]!.element
+    const currentAtIndex = parent.childNodes[i] ?? null
+    if (currentAtIndex !== targetEl) {
+      parent.insertBefore(targetEl, currentAtIndex)
+    }
+  }
+
+  // 3. Trim any unexpected trailing nodes (defensive; should already be empty).
+  while (parent.childNodes.length > nextChildren.length) {
+    parent.removeChild(parent.childNodes[parent.childNodes.length - 1]!)
+  }
+
   return nextChildren
 }
 

@@ -8,6 +8,50 @@ import {SHIKI_LANGUAGE_MAP} from "../../../blocks/code-block/shiki-config";
 
 const isCodeNode = (node: MarkdownAST): node is Code => node.type === 'code';
 
+const LANGUAGE_ALIAS: Record<string, string> = {
+  ts: 'TypeScript',
+  tsx: 'TSX',
+  js: 'JavaScript',
+  jsx: 'JSX',
+  py: 'Python',
+  rb: 'Ruby',
+  rs: 'Rust',
+  kt: 'Kotlin',
+  cs: 'C#',
+  'c++': 'C++',
+  cpp: 'C++',
+  'objective-c': 'Objective-C',
+  'objc': 'Objective-C',
+  sh: 'Shell',
+  bash: 'Shell',
+  zsh: 'Shell',
+  shell: 'Shell',
+  yml: 'YAML',
+  yaml: 'YAML',
+  md: 'Markdown',
+  markdown: 'Markdown',
+  htm: 'HTML',
+  text: 'PlainText',
+  txt: 'PlainText',
+  plaintext: 'PlainText',
+};
+
+function resolveDisplayLanguage(codeLang: string): string {
+  const lower = codeLang.toLowerCase();
+  const aliased = LANGUAGE_ALIAS[lower];
+  if (aliased) {
+    return aliased;
+  }
+  const byDisplay = LANGUAGE_LIST.find(v => v.toLowerCase() === lower);
+  if (byDisplay) {
+    return byDisplay;
+  }
+  const byShikiId = LANGUAGE_LIST.find(v =>
+    SHIKI_LANGUAGE_MAP[v as keyof typeof SHIKI_LANGUAGE_MAP]?.toLowerCase() === lower
+  );
+  return byShikiId || 'PlainText';
+}
+
 export const codeBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher = {
   toMatch: o => isCodeNode(o.node),
   fromMatch: o => o.node.flavour === 'code',
@@ -18,6 +62,38 @@ export const codeBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher = {
       }
       const {walkerContext} = context;
       const codeLang = o.node.lang || 'PlainText';
+      if (codeLang.toLowerCase() === 'mermaid') {
+        walkerContext
+          .openNode(
+            {
+              id: generateId(),
+              flavour: 'mermaid',
+              nodeType: BlockNodeType.block,
+              props: {
+                mode: 'graph',
+              },
+              meta: {},
+              children: [],
+            },
+            'children'
+          )
+          .openNode(
+            {
+              id: generateId(),
+              flavour: 'mermaid-textarea',
+              nodeType: BlockNodeType.editable,
+              props: {},
+              meta: {},
+              children: [{
+                insert: o.node.value,
+              }],
+            },
+            'children'
+          )
+          .closeNode()
+          .closeNode();
+        return;
+      }
       walkerContext
         .openNode(
           {
@@ -25,7 +101,7 @@ export const codeBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher = {
             nodeType: BlockNodeType.editable,
             flavour: 'code',
             props: {
-              lang: LANGUAGE_LIST.find(v => v.toLowerCase() === codeLang.toLowerCase()) || 'PlainText',
+              lang: resolveDisplayLanguage(codeLang),
             },
             children: [{
               insert: o.node.value,

@@ -77,9 +77,6 @@ const ACTION_SECTIONS: DebugSection[] = [
       { id: 'init', label: '初始化', tone: 'primary' },
       { id: 'theme', label: '主题' },
       { id: 'readonly', label: '只读' },
-      { id: 'insert', label: '插入文本' },
-      { id: 'undo', label: '撤销' },
-      { id: 'redo', label: '重做' },
       { id: 'addData', label: '追加段落' }
     ]
   },
@@ -89,7 +86,6 @@ const ACTION_SECTIONS: DebugSection[] = [
       { id: 'importHtml', label: '导入 HTML' },
       { id: 'importMarkdown', label: '导入 Markdown' },
       { id: 'exportMarkdown', label: '导出 Markdown' },
-      { id: 'exportPdf', label: '导出 PDF' },
       { id: 'exportImage', label: '导出图片' }
     ]
   },
@@ -99,10 +95,8 @@ const ACTION_SECTIONS: DebugSection[] = [
       { id: 'log', label: '打印数据' },
       { id: 'logSelection', label: '打印选区' },
       { id: 'listenUpdate', label: '监听更新' },
-      { id: 'test', label: 'Yjs 测试' },
       { id: 'markdownStream', label: 'Markdown 流' },
       { id: 'logTable', label: '打印表格' },
-      { id: 'fixTable', label: '修复表格' }
     ]
   },
   {

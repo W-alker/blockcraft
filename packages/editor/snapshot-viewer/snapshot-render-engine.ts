@@ -1,5 +1,6 @@
 import {IBlockSnapshot} from "../framework/block-std/types/block.type";
 import {InlineModel} from "../framework/block-std/types/inline.type";
+import {DeltaInsert} from "../framework/block-std/types/delta.type";
 import {patchChildren, resolveChildContainer} from "./dom/patch-children";
 import {normalizeSnapshot} from "./dom/normalize-snapshot";
 import {renderInline} from "./inline/render-inline";
@@ -136,7 +137,18 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
       return this.mountNode(next, renderContext)
     }
 
+    if (snapshotsAreEqual(current.snapshot, next)) {
+      return current
+    }
+
     if (next.nodeType === "editable" || next.nodeType === "void") {
+      if (this.tryApplyEditableDelta(current, next)) {
+        return {
+          snapshot: next,
+          element: current.element,
+          children: [],
+        }
+      }
       const fresh = this.renderBlock(next, renderContext)
       this.syncElement(current.element, fresh)
       return {
@@ -256,23 +268,296 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     return current.id === next.id && current.flavour === next.flavour && current.nodeType === next.nodeType
   }
 
+  private tryApplyEditableDelta(current: MountedSnapshotNode, next: IBlockSnapshot): boolean {
+    if (next.nodeType !== "editable" || current.snapshot.nodeType !== "editable") {
+      return false
+    }
+    if (!propsEqual(current.snapshot.props, next.props)) {
+      return false
+    }
+    const oldDelta = current.snapshot.children as unknown as DeltaInsert[]
+    const newDelta = next.children as unknown as DeltaInsert[]
+    if (!Array.isArray(oldDelta) || !Array.isArray(newDelta)) {
+      return false
+    }
+    const editContainer = current.element.querySelector(".edit-container") as HTMLElement | null
+    if (!editContainer) {
+      return false
+    }
+    // 1) Pure-append fast path — works even when the container has been restructured
+    //    (e.g. shiki tokenized a code block into many <c-element>s). We only need to
+    //    locate the trailing text node and appendData the new tail.
+    if (tryAppendOnlyDelta(editContainer, oldDelta, newDelta)) {
+      return true
+    }
+    // 2) Structural c-element-level diff — requires the container children still map
+    //    1:1 to the old delta.
+    if (editContainer.childNodes.length === oldDelta.length) {
+      return applyInlineDelta(editContainer, oldDelta, newDelta)
+    }
+    return false
+  }
+
   private syncElement(target: HTMLElement, source: HTMLElement, replaceChildren = true) {
     if (target.tagName !== source.tagName) {
       return
     }
 
-    Array.from(target.getAttributeNames()).forEach((name) => target.removeAttribute(name))
-    Array.from(source.getAttributeNames()).forEach((name) => {
-      const value = source.getAttribute(name)
-      if (value !== null) {
-        target.setAttribute(name, value)
-      }
-    })
-    target.className = source.className
-    target.style.cssText = source.style.cssText
+    syncAttributes(target, source)
 
     if (replaceChildren) {
-      target.replaceChildren(...Array.from(source.childNodes).map((node) => node.cloneNode(true)))
+      syncChildNodes(target, source)
     }
   }
+}
+
+function syncAttributes(target: Element, source: Element) {
+  const sourceAttrNames = source.getAttributeNames()
+  const sourceAttrSet = new Set(sourceAttrNames)
+  target.getAttributeNames().forEach((name) => {
+    if (!sourceAttrSet.has(name)) {
+      target.removeAttribute(name)
+    }
+  })
+  sourceAttrNames.forEach((name) => {
+    const value = source.getAttribute(name)
+    if (value === null) return
+    if (target.getAttribute(name) !== value) {
+      target.setAttribute(name, value)
+    }
+  })
+}
+
+function syncChildNodes(target: Node, source: Node) {
+  const sourceChildren = Array.from(source.childNodes)
+
+  for (let index = 0; index < sourceChildren.length; index += 1) {
+    const sourceChild = sourceChildren[index]!
+    const targetChild = target.childNodes[index]
+
+    if (!targetChild) {
+      target.appendChild(sourceChild.cloneNode(true))
+      continue
+    }
+
+    if (sourceChild.nodeType !== targetChild.nodeType) {
+      target.replaceChild(sourceChild.cloneNode(true), targetChild)
+      continue
+    }
+
+    if (sourceChild.nodeType === Node.TEXT_NODE || sourceChild.nodeType === Node.COMMENT_NODE) {
+      if (targetChild.nodeValue !== sourceChild.nodeValue) {
+        targetChild.nodeValue = sourceChild.nodeValue
+      }
+      continue
+    }
+
+    if (sourceChild.nodeType === Node.ELEMENT_NODE) {
+      const sourceEl = sourceChild as Element
+      const targetEl = targetChild as Element
+      if (sourceEl.tagName !== targetEl.tagName) {
+        target.replaceChild(sourceChild.cloneNode(true), targetChild)
+        continue
+      }
+      syncAttributes(targetEl, sourceEl)
+      syncChildNodes(targetEl, sourceEl)
+      continue
+    }
+
+    target.replaceChild(sourceChild.cloneNode(true), targetChild)
+  }
+
+  while (target.childNodes.length > sourceChildren.length) {
+    target.removeChild(target.childNodes[target.childNodes.length - 1]!)
+  }
+}
+
+function snapshotsAreEqual(a: IBlockSnapshot, b: IBlockSnapshot): boolean {
+  if (a === b) return true
+  if (a.id !== b.id || a.flavour !== b.flavour || a.nodeType !== b.nodeType) return false
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+function propsEqual(a: IBlockSnapshot["props"], b: IBlockSnapshot["props"]): boolean {
+  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {})
+}
+
+function deltaAttributesEqual(
+  a?: DeltaInsert["attributes"],
+  b?: DeltaInsert["attributes"],
+): boolean {
+  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {})
+}
+
+function deltaUnitEqual(a: DeltaInsert, b: DeltaInsert): boolean {
+  if (!deltaAttributesEqual(a.attributes, b.attributes)) return false
+  if (typeof a.insert === "string" && typeof b.insert === "string") {
+    return a.insert === b.insert
+  }
+  if (typeof a.insert !== "object" || typeof b.insert !== "object") return false
+  return JSON.stringify(a.insert) === JSON.stringify(b.insert)
+}
+
+function applyInlineDelta(
+  container: HTMLElement,
+  oldDelta: DeltaInsert[],
+  newDelta: DeltaInsert[],
+): boolean {
+  const commonLen = Math.min(oldDelta.length, newDelta.length)
+
+  for (let i = 0; i < commonLen; i += 1) {
+    const oldItem = oldDelta[i]!
+    const newItem = newDelta[i]!
+    const child = container.childNodes[i]
+    if (!child || child.nodeType !== Node.ELEMENT_NODE) {
+      return false
+    }
+    const cElement = child as HTMLElement
+    if (cElement.tagName !== "C-ELEMENT") {
+      return false
+    }
+
+    if (deltaUnitEqual(oldItem, newItem)) {
+      continue
+    }
+
+    if (
+      typeof oldItem.insert === "string" &&
+      typeof newItem.insert === "string" &&
+      deltaAttributesEqual(oldItem.attributes, newItem.attributes)
+    ) {
+      // Same attribute run, only text changed → surgical CharacterData ops.
+      if (!patchTextInCElement(cElement, oldItem.insert, newItem.insert)) {
+        return false
+      }
+      continue
+    }
+
+    // Attributes, embed type or text-vs-embed changed → replace just this c-element.
+    const replacement = renderInline([newItem]).firstElementChild as HTMLElement | null
+    if (!replacement) {
+      return false
+    }
+    container.replaceChild(replacement, cElement)
+  }
+
+  if (newDelta.length > oldDelta.length) {
+    const extras = renderInline(newDelta.slice(oldDelta.length))
+    container.appendChild(extras)
+  } else if (oldDelta.length > newDelta.length) {
+    while (container.childNodes.length > newDelta.length) {
+      container.removeChild(container.lastChild!)
+    }
+  }
+
+  return true
+}
+
+function patchTextInCElement(cElement: HTMLElement, oldText: string, newText: string): boolean {
+  if (oldText === newText) return true
+  const textNode = findFirstTextNode(cElement)
+  if (!textNode) {
+    cElement.textContent = newText
+    return true
+  }
+
+  const minLen = Math.min(oldText.length, newText.length)
+  let prefix = 0
+  while (prefix < minLen && oldText.charCodeAt(prefix) === newText.charCodeAt(prefix)) {
+    prefix += 1
+  }
+  let suffix = 0
+  while (
+    suffix < minLen - prefix &&
+    oldText.charCodeAt(oldText.length - 1 - suffix) === newText.charCodeAt(newText.length - 1 - suffix)
+  ) {
+    suffix += 1
+  }
+
+  const deleteCount = oldText.length - prefix - suffix
+  const insertText = newText.slice(prefix, newText.length - suffix)
+
+  // Bail out if the text node content got out of sync somehow (e.g. modified by enhancements).
+  if (textNode.data !== oldText) {
+    textNode.data = newText
+    return true
+  }
+
+  if (deleteCount > 0) {
+    textNode.deleteData(prefix, deleteCount)
+  }
+  if (insertText.length > 0) {
+    textNode.insertData(prefix, insertText)
+  }
+  return true
+}
+
+function findFirstTextNode(node: Node): Text | null {
+  if (node.nodeType === Node.TEXT_NODE) return node as Text
+  for (let i = 0; i < node.childNodes.length; i += 1) {
+    const found = findFirstTextNode(node.childNodes[i]!)
+    if (found) return found
+  }
+  return null
+}
+
+function findLastTextNode(node: Node): Text | null {
+  if (node.nodeType === Node.TEXT_NODE) return node as Text
+  for (let i = node.childNodes.length - 1; i >= 0; i -= 1) {
+    const found = findLastTextNode(node.childNodes[i]!)
+    if (found) return found
+  }
+  return null
+}
+
+function tryAppendOnlyDelta(
+  container: HTMLElement,
+  oldDelta: DeltaInsert[],
+  newDelta: DeltaInsert[],
+): boolean {
+  // Only handle pure-text deltas; embeds change structure and need real diffing.
+  for (const item of oldDelta) {
+    if (typeof item.insert !== "string") return false
+  }
+  for (const item of newDelta) {
+    if (typeof item.insert !== "string") return false
+  }
+
+  // All leading items must match exactly (same text, same attrs).
+  if (newDelta.length < oldDelta.length) return false
+  const leading = oldDelta.length - 1
+  for (let i = 0; i < leading; i += 1) {
+    if (!deltaUnitEqual(oldDelta[i]!, newDelta[i]!)) return false
+  }
+
+  // The last old delta item must be a text prefix of the corresponding new item,
+  // with identical attributes. Items beyond old.length are appended as new c-elements.
+  let tailOldText = ""
+  let tailNewText = ""
+  if (oldDelta.length > 0) {
+    const oldLast = oldDelta[oldDelta.length - 1]!
+    const newAtLast = newDelta[oldDelta.length - 1]!
+    if (!deltaAttributesEqual(oldLast.attributes, newAtLast.attributes)) return false
+    const oldText = oldLast.insert as string
+    const newText = newAtLast.insert as string
+    if (!newText.startsWith(oldText)) return false
+    tailOldText = oldText
+    tailNewText = newText
+  }
+
+  // Compute append tail to the existing last text node (if any).
+  const extraInLastItem = tailNewText.slice(tailOldText.length)
+  if (extraInLastItem.length > 0) {
+    const lastText = findLastTextNode(container)
+    if (!lastText) return false
+    lastText.appendData(extraInLastItem)
+  }
+
+  // Append entirely new delta items as fresh c-elements.
+  if (newDelta.length > oldDelta.length) {
+    const extras = renderInline(newDelta.slice(oldDelta.length))
+    container.appendChild(extras)
+  }
+
+  return true
 }

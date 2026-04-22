@@ -20,11 +20,11 @@ describe("planMarkdownStream", () => {
     expect(result.pendingRanges).toEqual([]);
   });
 
-  it("keeps a fenced code block pending until the closing fence arrives", () => {
+  it("renders an unclosed fenced code block as provisional code so the shell stays mounted", () => {
     const result = planMarkdownStream(markdownStreamFixtures.fencedCodePending);
 
     expect(result.provisionalRanges.length).toBe(1);
-    expect(result.provisionalRanges[0]?.kind).toBe("raw-text");
+    expect(result.provisionalRanges[0]?.kind).toBe("code");
     expect(result.readyRanges).toEqual([]);
     expect(result.pendingRanges).toEqual([]);
   });
@@ -35,14 +35,16 @@ describe("planMarkdownStream", () => {
     expect(result.pendingRanges.length).toBe(1);
     expect(result.pendingRanges[0]?.kind).toBe("mermaid");
     expect(result.readyRanges).toEqual([]);
+    expect(result.provisionalRanges).toEqual([]);
   });
 
-  it("keeps a table pending until the table boundary is stable", () => {
+  it("renders an unclosed table as raw-text until the table boundary is stable", () => {
     const result = planMarkdownStream(markdownStreamFixtures.tablePending);
 
-    expect(result.pendingRanges.length).toBe(1);
-    expect(result.pendingRanges[0]?.kind).toBe("table");
+    expect(result.provisionalRanges.length).toBe(1);
+    expect(result.provisionalRanges[0]?.kind).toBe("raw-text");
     expect(result.readyRanges).toEqual([]);
+    expect(result.pendingRanges).toEqual([]);
   });
 
   it("backtracks to the start of the table block when finalizing a trailing table", () => {

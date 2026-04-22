@@ -11,9 +11,15 @@ export class SnapshotViewerStreamEngine implements MarkdownStreamViewer {
   private readonly parser = new MarkdownToSnapshotWindowParser()
   private readonly renderer: SnapshotRenderer
   private readonly container: HTMLElement
-  private processing = Promise.resolve()
+  private flushChain: Promise<void> = Promise.resolve()
   private rendered = false
   private renderedSegments: Array<{ range: MarkdownPlannedRange, blocks: IBlockSnapshot[] }> = []
+  private lastProcessedText = ""
+  private renderedKey: string | null = null
+  private rerenderRequested = false
+  private scheduledFlush: Promise<void> | null = null
+  private scheduledFrameId: number | null = null
+  private destroyed = false
 
   constructor(private readonly options: MarkdownStreamViewerOptions = {}) {
     this.container = options.container ?? document.createElement("div")
@@ -21,35 +27,91 @@ export class SnapshotViewerStreamEngine implements MarkdownStreamViewer {
   }
 
   append(chunk: string): void {
-    const previousText = this.session.getText()
     this.session.append(chunk)
-    this.queueProcess(previousText)
+    this.scheduleFlush()
   }
 
   replace(markdown: string): void {
-    const previousText = this.session.getText()
     this.session.replace(markdown)
-    this.queueProcess(previousText)
+    this.scheduleFlush()
   }
 
   finish(): void {
-    const previousText = this.session.getText()
     this.session.finish()
-    this.queueProcess(previousText)
+    this.scheduleFlush()
   }
 
   destroy(): void {
+    this.destroyed = true
+    if (this.scheduledFrameId !== null) {
+      cancelAnimationFrame(this.scheduledFrameId)
+      this.scheduledFrameId = null
+    }
+    this.scheduledFlush = null
     this.renderer.destroy()
     this.session.destroy()
     this.renderedSegments = []
+    this.lastProcessedText = ""
+    this.renderedKey = null
   }
 
-  private queueProcess(previousText: string) {
-    this.processing = this.processing.then(() => this.process(previousText))
+  private computeKey(): string {
+    return `${this.session.getText()}|${this.session.isFinalized() ? 1 : 0}`
   }
 
-  private async process(previousText: string) {
-    const nextText = this.session.getText()
+  private scheduleFlush(): Promise<void> {
+    if (this.destroyed) {
+      return Promise.resolve()
+    }
+    if (this.scheduledFlush) {
+      return this.scheduledFlush
+    }
+    this.scheduledFlush = new Promise<void>((resolve, reject) => {
+      const runner = () => {
+        this.scheduledFrameId = null
+        this.flush()
+          .then(resolve)
+          .catch(reject)
+          .finally(() => {
+            this.scheduledFlush = null
+          })
+      }
+      if (typeof requestAnimationFrame === "function") {
+        this.scheduledFrameId = requestAnimationFrame(runner)
+      } else {
+        runner()
+      }
+    })
+    return this.scheduledFlush
+  }
+
+  private flush(): Promise<void> {
+    if (this.destroyed) {
+      return this.flushChain
+    }
+    const currentKey = this.computeKey()
+    if (this.renderedKey === currentKey && !this.rerenderRequested) {
+      return this.flushChain
+    }
+    this.rerenderRequested = true
+    this.flushChain = this.flushChain.then(async () => {
+      while (this.rerenderRequested && !this.destroyed) {
+        this.rerenderRequested = false
+        const previousText = this.lastProcessedText
+        const nextText = this.session.getText()
+        await this.process(previousText, nextText)
+        this.lastProcessedText = nextText
+        this.renderedKey = this.computeKey()
+        if (this.renderedKey !== currentKey) {
+          // text changed during async work -- loop again
+          this.rerenderRequested = true
+        }
+      }
+    })
+    return this.flushChain
+  }
+
+  private async process(previousText: string, nextText: string) {
     const plan = planMarkdownStream({
       previousText,
       nextText,
