@@ -165,6 +165,9 @@ export class TableRowBarComponent {
         this.reorderEnd.emit({ commit: true })
       } else {
         this.host.nativeElement.classList.remove('selecting')
+        this._hoveredIndex = null
+        this.hoveredHandleChange.emit(null)
+        this.changeDetectionRef.markForCheck()
         this.selectedRangeChange.emit(this._selectedRange)
       }
     })
@@ -173,6 +176,18 @@ export class TableRowBarComponent {
   private _cleanupReorder() {
     this.host.nativeElement.classList.remove('reordering')
     this.host.nativeElement.classList.remove('selecting')
+    this._hoveredIndex = null
+    this.hoveredHandleChange.emit(null)
+    this.changeDetectionRef.markForCheck()
+  }
+
+  resetVisualState() {
+    this.host.nativeElement.classList.remove('reordering')
+    this.host.nativeElement.classList.remove('selecting')
+    this._hoveredIndex = null
+    this._selectedRange = [-1, -1]
+    this.visibleHandleIndex = null
+    this.hoveredHandleChange.emit(null)
     this.changeDetectionRef.markForCheck()
   }
 }

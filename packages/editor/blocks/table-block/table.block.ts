@@ -263,9 +263,17 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     if (!cell) return
 
     this._clearSelected()
+    this._clearActiveRanges()
     this._startSelectingCell = this._lastSelectingCell = null
     this._prevAdjustedSelection = null
     this._activeCellsRange = null
+    this._hoveredRowHandle = null
+    this._hoveredColHandle = null
+    this._visibleRowHandle = null
+    this._visibleColHandle = null
+    this._resetHandleBars()
+    this._hideTableMenu()
+    this.changeDetectorRef.markForCheck()
     this._pendingStart = cell
 
     const origin = cell
@@ -550,21 +558,26 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.changeDetectorRef.markForCheck()
   }
 
+  private _resetHandleBars() {
+    this.rowBarComponent?.resetVisualState()
+    this.colBarComponent?.resetVisualState()
+  }
+
   private _clearActiveRanges() {
     if (this._activeColRange[0] !== -1 || this._activeColRange[1] !== -1) {
       this._activeColRange = [-1, -1]
-      this.colBarComponent?.changeDetectionRef.markForCheck()
     }
     if (this._activeRowRange[0] !== -1 || this._activeRowRange[1] !== -1) {
       this._activeRowRange = [-1, -1]
-      this.rowBarComponent?.changeDetectionRef.markForCheck()
     }
+    this._resetHandleBars()
   }
 
   private _syncHandleVisibility(cell: TableCellBlockComponent | null) {
     if (!cell) {
       this._visibleRowHandle = null
       this._visibleColHandle = null
+      this._resetHandleBars()
       this.changeDetectorRef.markForCheck()
       return
     }
@@ -573,6 +586,14 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     if (!coordinate) return
     this._visibleRowHandle = this._activeRowRange[0] > -1 ? this._activeRowRange[0] : coordinate.rowIdx
     this._visibleColHandle = this._activeColRange[0] > -1 ? this._activeColRange[0] : coordinate.colIdx
+    if (this.rowBarComponent) {
+      this.rowBarComponent.visibleHandleIndex = this._visibleRowHandle
+      this.rowBarComponent.changeDetectionRef.markForCheck()
+    }
+    if (this.colBarComponent) {
+      this.colBarComponent.visibleHandleIndex = this._visibleColHandle
+      this.colBarComponent.changeDetectionRef.markForCheck()
+    }
     this.changeDetectorRef.markForCheck()
   }
 
@@ -621,6 +642,58 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         colIndex: range.start[1],
         colCount: range.end[1] - range.start[1] + 1,
         selectionKind: 'cells',
+      })
+      return
+    }
+
+    if (this._activeColRange[0] > -1 && this._activeColRange[1] > -1
+      && coordinate.rowIdx === 0
+      && coordinate.colIdx === this._activeColRange[0]) {
+      this._visibleColHandle = this._activeColRange[0]
+      this._visibleRowHandle = null
+      if (this.colBarComponent) {
+        this.colBarComponent.visibleHandleIndex = this._visibleColHandle
+        this.colBarComponent.selectedRange = this._activeColRange
+        this.colBarComponent.changeDetectionRef.markForCheck()
+      }
+      if (this.rowBarComponent) {
+        this.rowBarComponent.visibleHandleIndex = null
+        this.rowBarComponent.selectedRange = [-1, -1]
+        this.rowBarComponent.changeDetectionRef.markForCheck()
+      }
+      this.changeDetectorRef.markForCheck()
+      this._showTableMenu({
+        rowIndex: 0,
+        rowCount: this.rowLength,
+        colIndex: this._activeColRange[0],
+        colCount: this._activeColRange[1] - this._activeColRange[0] + 1,
+        selectionKind: 'col',
+      })
+      return
+    }
+
+    if (this._activeRowRange[0] > -1 && this._activeRowRange[1] > -1
+      && coordinate.rowIdx === this._activeRowRange[0]
+      && coordinate.colIdx === 0) {
+      this._visibleRowHandle = this._activeRowRange[0]
+      this._visibleColHandle = null
+      if (this.rowBarComponent) {
+        this.rowBarComponent.visibleHandleIndex = this._visibleRowHandle
+        this.rowBarComponent.selectedRange = this._activeRowRange
+        this.rowBarComponent.changeDetectionRef.markForCheck()
+      }
+      if (this.colBarComponent) {
+        this.colBarComponent.visibleHandleIndex = null
+        this.colBarComponent.selectedRange = [-1, -1]
+        this.colBarComponent.changeDetectionRef.markForCheck()
+      }
+      this.changeDetectorRef.markForCheck()
+      this._showTableMenu({
+        rowIndex: this._activeRowRange[0],
+        rowCount: this._activeRowRange[1] - this._activeRowRange[0] + 1,
+        colIndex: 0,
+        colCount: this.colLength,
+        selectionKind: 'row',
       })
       return
     }
@@ -711,19 +784,27 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   onColBarSelected(range: [number, number]) {
     const firstCell = this.firstChildren!.getChildrenByIndex(range[0]) as TableCellBlockComponent
-    this.doc.selection.selectBlock(firstCell)
     const len = range[1] - range[0] + 1
-    const currentRowIndex = this._visibleRowHandle ?? 0
-
-    this.doc.selection.afterNextChange(() => {
+    const applySelection = () => {
+      this._clearSelected()
+      this._activeCellsRange = null
+      if (this._activeRowRange[0] > -1 || this._activeRowRange[1] > -1) {
+        this._activeRowRange = [-1, -1]
+        this.rowBarComponent.selectedRange = [-1, -1]
+        this.rowBarComponent.changeDetectionRef.markForCheck()
+      }
       this._activeColRange = range
+      this.colBarComponent.selectedRange = range
       this.colBarComponent.changeDetectionRef.markForCheck()
       const selectedCells = this.getCellsMatrixByCoordinates([0, range[0]], [this.rowLength - 1, range[1]])
         .map(row => row.filter((cell, cellAddIdx) => !cell.props.colspan || cell.props.colspan + cellAddIdx <= len))
         .flat(1)
       selectedCells.forEach(cell => this.selectCell(cell))
+      this._hoveredRowHandle = null
+      this._hoveredColHandle = null
       this._visibleColHandle = range[0]
-      this._visibleRowHandle = currentRowIndex
+      this.colBarComponent.visibleHandleIndex = range[0]
+      this.rowBarComponent.visibleHandleIndex = null
 
       // TODO 监听过程中col增加或减少了，调整选区
 
@@ -734,19 +815,31 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         colCount: len,
         selectionKind: 'col',
       })
+    }
+
+    this.doc.selection.selectBlock(firstCell)
+    applySelection()
+    nextTick().then(() => {
+      this.doc.selection.recalculate()
     })
 
   }
 
   onRowBarSelected(range: [number, number]) {
     const firstCell = this.getChildrenByIndex(range[0]).getChildrenByIndex(0) as TableCellBlockComponent
-    this.doc.selection.selectBlock(firstCell)
 
     const len = range[1] - range[0] + 1
-    const currentColIndex = this._visibleColHandle ?? 0
 
-    this.doc.selection.afterNextChange(() => {
+    const applySelection = () => {
+      this._clearSelected()
+      this._activeCellsRange = null
+      if (this._activeColRange[0] > -1 || this._activeColRange[1] > -1) {
+        this._activeColRange = [-1, -1]
+        this.colBarComponent.selectedRange = [-1, -1]
+        this.colBarComponent.changeDetectionRef.markForCheck()
+      }
       this._activeRowRange = range
+      this.rowBarComponent.selectedRange = range
       this.rowBarComponent.changeDetectionRef.markForCheck()
       const selectedCells = this.getCellsMatrixByCoordinates([range[0], 0], [range[1], this.colLength - 1])
         .map(
@@ -754,8 +847,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
             row.filter(cell => !cell.props.rowspan || cell.props.rowspan + rowAddIdx <= len)
         ).flat(1)
       selectedCells.forEach(cell => this.selectCell(cell))
+      this._hoveredRowHandle = null
+      this._hoveredColHandle = null
       this._visibleRowHandle = range[0]
-      this._visibleColHandle = currentColIndex
+      this.rowBarComponent.visibleHandleIndex = range[0]
+      this.colBarComponent.visibleHandleIndex = null
 
       // TODO 监听过程中row增加或减少了，调整选区或者关闭
 
@@ -766,6 +862,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         colCount: this.colLength,
         selectionKind: 'row',
       })
+    }
+
+    this.doc.selection.selectBlock(firstCell)
+    applySelection()
+    nextTick().then(() => {
+      this.doc.selection.recalculate()
     })
   }
 
