@@ -125,6 +125,7 @@ export interface IConnectOverlayCreateOptions {
   component: ComponentType<any>;
   positions?: ConnectedPosition[];
   backdrop?: boolean;
+  clampTo?: HTMLElement;
 }
 
 export type IGlobalOverlayCreateOptions = {
@@ -207,11 +208,35 @@ export class DocOverlayService {
     return positionStrategy;
   }
 
-  private _clampConnectedOverlay(overlayRef: OverlayRef) {
+  private _clampConnectedOverlay(
+    overlayRef: OverlayRef,
+    clampTo?: HTMLElement,
+  ) {
     const scrollContainer = this.doc.scrollContainer;
     if (!scrollContainer?.isConnected) return;
 
-    const containerRect = scrollContainer.getBoundingClientRect();
+    const scrollRect = scrollContainer.getBoundingClientRect();
+    const clampRect = clampTo?.isConnected
+      ? clampTo.getBoundingClientRect()
+      : null;
+    const containerRect = clampRect
+      ? {
+          left: Math.max(scrollRect.left, clampRect.left),
+          right: Math.min(scrollRect.right, clampRect.right),
+          top: Math.max(scrollRect.top, clampRect.top),
+          bottom: Math.min(scrollRect.bottom, clampRect.bottom),
+          width: Math.max(
+            0,
+            Math.min(scrollRect.right, clampRect.right) -
+              Math.max(scrollRect.left, clampRect.left),
+          ),
+          height: Math.max(
+            0,
+            Math.min(scrollRect.bottom, clampRect.bottom) -
+              Math.max(scrollRect.top, clampRect.top),
+          ),
+        }
+      : scrollRect;
     if (containerRect.width <= 0 || containerRect.height <= 0) return;
 
     const maxWidth = Math.max(
@@ -325,7 +350,10 @@ export class DocOverlayService {
       const scheduleClamp = () => {
         requestAnimationFrame(() => {
           if (!overlayRef.hasAttached()) return;
-          this._clampConnectedOverlay(overlayRef);
+          this._clampConnectedOverlay(
+            overlayRef,
+            'target' in params ? params.clampTo : undefined,
+          );
         });
       };
 
@@ -362,7 +390,8 @@ export class DocOverlayService {
       .subscribe(
         throttle(() => {
           overlayRef && overlayRef.updatePosition();
-          'target' in params && this._clampConnectedOverlay(overlayRef);
+          'target' in params &&
+            this._clampConnectedOverlay(overlayRef, params.clampTo);
         }, 200),
       );
 

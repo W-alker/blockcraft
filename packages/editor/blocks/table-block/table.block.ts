@@ -462,6 +462,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         end: [this._activeRowRange[1], this.colLength - 1]
       }
     }
+    if (this._activeCellsRange) {
+      return {
+        start: [...this._activeCellsRange.start],
+        end: [...this._activeCellsRange.end],
+      }
+    }
     const cellsSelection = this._getSelectedCellsCoordinates()
     if (!cellsSelection) return null
     return this.confirmSelection(cellsSelection.start, cellsSelection.end)
@@ -515,9 +521,19 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       return
     }
 
+    const scrollableRect = this.tableScrollable.nativeElement.getBoundingClientRect()
+    const rootRect = this.doc.root.hostElement.getBoundingClientRect()
+    const viewportRect = {
+      left: Math.max(scrollableRect.left, rootRect.left),
+      right: Math.min(scrollableRect.right, rootRect.right),
+      top: Math.max(scrollableRect.top, rootRect.top),
+      bottom: Math.min(scrollableRect.bottom, rootRect.bottom),
+    }
+
     const anchor = resolveTableStructureAnchor({
       wrapperRect: this.tableWrapper.nativeElement.getBoundingClientRect(),
       selectionRect: tableRect,
+      viewportRect,
       gap: 12,
     })
 
@@ -761,6 +777,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<TableStructureToolbarComponent>({
       target: this.tableMenuAnchor.nativeElement,
       component: TableStructureToolbarComponent,
+      clampTo: this.doc.root.hostElement,
       positions: [
         getPositionWithOffset('bottom-center', 0, 8),
         getPositionWithOffset('top-center', 0, 8),
