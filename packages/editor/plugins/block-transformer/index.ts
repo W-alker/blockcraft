@@ -1,14 +1,12 @@
 import {filter, fromEvent, merge, skip, Subject, Subscription, take, takeUntil} from "rxjs";
-import {Overlay, OverlayRef} from "@angular/cdk/overlay";
 import {
   BindHotKey,
   DocPlugin,
   EditableBlockComponent,
-  EventListen, getPositionWithOffset, ORIGIN_SKIP_SYNC,
+  EventListen, getPositionWithOffset,
 } from "../../framework";
 import {UIEventStateContext} from "../../framework";
 import {nextTick, sliceDelta} from "../../global";
-import {ComponentPortal} from "@angular/cdk/portal";
 import {BlockTransformContextMenu} from "./widget/contextmenu";
 import {blockTransforms, headingTransforms, IBlockTransformConfig,} from "./const";
 
@@ -146,7 +144,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     }
     void this.doc.chain()
       .replaceWithSnapshots(block.id, appendBlocks)
-      .setCursorAtBlock(appendBlocks[0].id, true)
+      .setCursorAtBlock(appendBlocks[appendBlocks.length - 1].id, true)
       .run()
     return true
   }
