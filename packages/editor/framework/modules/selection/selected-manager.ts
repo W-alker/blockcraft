@@ -10,6 +10,12 @@ export class SelectionSelectedManager {
 
   private _setSelectedClass(block: BaseBlockComponent<any>) {
     block.hostElement.classList.add('selected')
+    // Switch the block to non-editable at the DOM level. Together with the
+    // explicit `contenteditable=true` on gap-zero spaces (`createBlockGapSpace`),
+    // this prevents stray text edits while still allowing the native Range
+    // cursor to anchor on the gap span — which keeps `keydown` bubbling and
+    // `beforeinput` firing for Backspace/Delete/printable replacements.
+    block.hostElement.setAttribute('contenteditable', 'false')
     this._selectedSet.add(block)
   }
 
@@ -25,6 +31,7 @@ export class SelectionSelectedManager {
   private _clearAllClass() {
     this._selectedSet.forEach(v => {
       v.hostElement.classList.remove('selected')
+      v.hostElement.removeAttribute('contenteditable')
     })
     this._focusedSet.forEach(v => {
       v.hostElement.classList.remove('focused')

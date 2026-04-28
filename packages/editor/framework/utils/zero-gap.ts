@@ -16,6 +16,10 @@ export const isZeroSpace = (node: Node) => {
 export function createBlockGapSpace() {
   const emptyNode = createZeroSpace()
   emptyNode.setAttribute('data-block-zero-space', 'true')
+  // Explicitly editable so the gap can serve as a cursor anchor even when the
+  // surrounding block is `contenteditable=false` (e.g. while it is the active
+  // block-level selection target).
+  emptyNode.setAttribute('contenteditable', 'true')
   return emptyNode
 }
 
@@ -44,11 +48,4 @@ export function getBlockGapAnchor(
     node: textNode,
     offset: side === 'leading' ? 0 : textNode.length,
   }
-}
-
-export const isBlockGapSpace = (node: Node | null | undefined): HTMLElement | null => {
-  if (!node) return null
-  const ele = node instanceof HTMLElement ? node : node.parentElement
-  if (ele?.getAttribute('data-block-zero-space') === 'true') return ele
-  return null
 }

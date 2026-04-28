@@ -87,17 +87,10 @@
     caret-color: var(--bc-caret-color);
 
     &.selected {
-      @include user-modify(read-only);
+      // Editability is controlled via the `contenteditable` attribute toggled
+      // by SelectionSelectedManager — see `_setSelectedClass` /
+      // `_clearAllClass`. CSS here only owns visual feedback.
       background-color: var(--bc-select-background-color);
-
-      // Keep gap-space spans read-write so the native Range can anchor on them
-      // for `selected` block selections — otherwise the read-only context
-      // strips focus, suppresses keydown bubbling, and breaks Backspace/Delete.
-      // Mirrors the `.selecting` exception above.
-      > [data-block-zero-space="true"] {
-        @include user-modify(read-write);
-        @include user-select(text);
-      }
 
       // TODO
       ::selection {
