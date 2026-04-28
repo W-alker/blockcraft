@@ -4,7 +4,7 @@ import {
   EditableBlockComponent,
 } from "../../block-std";
 import {BehaviorSubject, skip, take, takeUntil} from "rxjs";
-import {closetBlockId, isNativeInputTarget} from "../../utils";
+import {closetBlockId, getBlockGapAnchor, isNativeInputTarget} from "../../utils";
 import {SelectionSelectedManager} from "./selected-manager";
 import {SelectionKeyboard} from "./selection-keyboard";
 import {FakeRange, IFakeRangeConfig} from "./createFakeRange";
@@ -194,7 +194,15 @@ export class SelectionManager {
     }
 
     if (startPoint.type === 'selected') {
-      range.setStart(fromBlock.hostElement, 0)
+      // Anchor on the leading gap span's text node so the native Range starts
+      // inside an editable text node — this lets Safari fire `beforeinput` for
+      // backspace/delete on void/block selections.
+      const leading = getBlockGapAnchor(fromBlock.hostElement, 'leading')
+      if (leading) {
+        range.setStart(leading.node, leading.offset)
+      } else {
+        range.setStart(fromBlock.hostElement, 0)
+      }
     }
 
     if (!endPoint) {
@@ -211,7 +219,12 @@ export class SelectionManager {
       return range
     }
 
-    range.setEnd(toBlock.hostElement, toBlock.hostElement.childElementCount)
+    const trailing = getBlockGapAnchor(toBlock.hostElement, 'trailing')
+    if (trailing) {
+      range.setEnd(trailing.node, trailing.offset)
+    } else {
+      range.setEnd(toBlock.hostElement, toBlock.hostElement.childElementCount)
+    }
     return range
   }
 
@@ -223,12 +236,31 @@ export class SelectionManager {
     const selection = document.getSelection()!
     const range = document.createRange()
 
+    const setEndpoint = (
+      side: 'start' | 'end',
+      target: BlockCraft.BlockComponent,
+    ) => {
+      const anchor = getBlockGapAnchor(
+        target.hostElement,
+        side === 'start' ? 'leading' : 'trailing',
+      )
+      if (anchor) {
+        side === 'start'
+          ? range.setStart(anchor.node, anchor.offset)
+          : range.setEnd(anchor.node, anchor.offset)
+        return
+      }
+      side === 'start'
+        ? range.setStart(target.hostElement, 0)
+        : range.setEnd(target.hostElement, target.hostElement.childElementCount)
+    }
+
     if (block.nodeType === 'root') {
-      range.setStart(block.firstChildren!.hostElement, 0)
-      range.setEnd(block.lastChildren!.hostElement, block.lastChildren!.hostElement.childElementCount)
+      setEndpoint('start', block.firstChildren!)
+      setEndpoint('end', block.lastChildren!)
     } else {
-      range.setStart(block.hostElement, 0)
-      range.setEnd(block.hostElement, block.hostElement.childElementCount)
+      setEndpoint('start', block)
+      setEndpoint('end', block)
     }
 
     selection.removeAllRanges()

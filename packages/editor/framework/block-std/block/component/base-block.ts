@@ -93,9 +93,20 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   ngAfterViewInit() {
     this.hostElement.setAttribute('data-block-id', this.id)
     this.hostElement.setAttribute('data-node-type', this.nodeType)
-    if (this.nodeType === BlockNodeType.void
-      // || this.nodeType === BlockNodeType.block
-    ) {
+    // Gap spaces give the native Selection an editable text node to anchor on
+    // when the block itself is treated as `selected`. Without them Safari refuses
+    // to dispatch `beforeinput` (the Range start lands on a contenteditable=false
+    // wrapper). Apply to both leaf voids and container blocks; CSS already
+    // positions `[data-block-zero-space]` absolutely so layout is unaffected.
+    // Skip `isLeaf` blocks — they're structural sub-blocks (table-row /
+    // table-cell / column) that don't render independently or participate in
+    // normal block-level selection.
+    const wantsGap =
+      this.nodeType === BlockNodeType.void ||
+      this.nodeType === BlockNodeType.block
+    const isLeaf =
+      !!this.doc.schemas.get(this.flavour)?.metadata.isLeaf
+    if (wantsGap && !isLeaf) {
       requestAnimationFrame(() => {
         this.hostElement.prepend(createBlockGapSpace())
         this.hostElement.appendChild(createBlockGapSpace())

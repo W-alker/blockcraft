@@ -104,6 +104,28 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
         </button>
       </ng-container>
 
+      <ng-container *ngIf="showHeaderRowToggle || showHeaderColToggle">
+        <span class="table-structure-toolbar__divider"></span>
+        <button *ngIf="showHeaderRowToggle"
+                type="button"
+                class="table-structure-toolbar__item"
+                [class.active]="!!table.props.rowHead"
+                nz-tooltip
+                [nzTooltipTitle]="table.props.rowHead ? '取消标题行' : '设为标题行'"
+                (click)="toggleHeaderRow($event)">
+          <i class="bc_icon bc_biaotihang"></i>
+        </button>
+        <button *ngIf="showHeaderColToggle"
+                type="button"
+                class="table-structure-toolbar__item"
+                [class.active]="!!table.props.colHead"
+                nz-tooltip
+                [nzTooltipTitle]="table.props.colHead ? '取消标题列' : '设为标题列'"
+                (click)="toggleHeaderColumn($event)">
+          <i class="bc_icon bc_biaotilie"></i>
+        </button>
+      </ng-container>
+
       <ng-container *ngIf="canToggleMerge">
         <span class="table-structure-toolbar__divider"></span>
         <button type="button"
@@ -264,6 +286,8 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges {
   protected canToggleMerge = false
   protected showRowOps = true
   protected showColOps = true
+  protected showHeaderRowToggle = false
+  protected showHeaderColToggle = false
 
   private _selectedCells: TableCell[] = []
 
@@ -296,6 +320,8 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges {
     const endRow = this.rowIndex + this.rowCount - 1
     const startCol = this.colIndex
     const endCol = this.colIndex + this.colCount - 1
+    this.showHeaderRowToggle = startRow === 0
+    this.showHeaderColToggle = startCol === 0
     const matrix = this.table.getCellsMatrixByCoordinates([startRow, startCol], [endRow, endCol])
     const cells = matrix.flat(1) as TableCell[]
     this._selectedCells = cells
@@ -382,6 +408,20 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges {
       const nextIndex = Math.min(this.colIndex, this.table.colLength - 1)
       this.table.onColBarSelected([nextIndex, nextIndex])
     })
+  }
+
+  toggleHeaderRow(event: MouseEvent) {
+    this._consume(event)
+    this.table.toggleHeaderRow()
+    this.cdr.markForCheck()
+    nextTick().then(() => this.table.refreshTableMenuFromSelection?.())
+  }
+
+  toggleHeaderColumn(event: MouseEvent) {
+    this._consume(event)
+    this.table.toggleHeaderColumn()
+    this.cdr.markForCheck()
+    nextTick().then(() => this.table.refreshTableMenuFromSelection?.())
   }
 
   toggleMerge(event: MouseEvent) {
