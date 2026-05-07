@@ -660,6 +660,31 @@ describe('MarkdownAdapter', () => {
   // ─── Table tests ──────────────────────────────────────────────────
 
   describe('tables', () => {
+    const buildTableSnapshot = (rows: IBlockSnapshot[][]): IBlockSnapshot => ({
+      id: 't1',
+      flavour: 'table',
+      nodeType: BlockNodeType.block,
+      props: {colWidths: rows[0]?.map(() => 120) ?? []},
+      meta: {},
+      children: rows.map((cells, rIdx) => ({
+        id: `r${rIdx}`,
+        flavour: 'table-row',
+        nodeType: BlockNodeType.block,
+        props: {height: 60},
+        meta: {},
+        children: cells,
+      })),
+    });
+
+    const buildCell = (id: string, children: IBlockSnapshot[]): IBlockSnapshot => ({
+      id,
+      flavour: 'table-cell',
+      nodeType: BlockNodeType.block,
+      props: {},
+      meta: {},
+      children,
+    });
+
     it('round-trips a simple table', async () => {
       const source = '| A | B |\n| --- | --- |\n| 1 | 2 |\n';
       const snapshot = await adapter.toBlockSnapshot(source);
@@ -673,6 +698,60 @@ describe('MarkdownAdapter', () => {
       expect(md).toContain('B');
       expect(md).toContain('1');
       expect(md).toContain('2');
+    });
+
+    it('does not duplicate cell text on export (regression)', async () => {
+      const snapshot = createRootSnapshot([
+        buildTableSnapshot([
+          [
+            buildCell('c1', [createEditableSnapshot('p1', 'paragraph', 'Alpha', {})]),
+            buildCell('c2', [createEditableSnapshot('p2', 'paragraph', 'Beta', {})]),
+          ],
+        ]),
+      ]);
+
+      const md = await adapter.toMarkdown(snapshot);
+
+      // Each cell value must appear exactly once in the output.
+      expect((md.match(/Alpha/g) ?? []).length).toBe(1);
+      expect((md.match(/Beta/g) ?? []).length).toBe(1);
+    });
+
+    it('renders cell with multiple paragraphs joined by <br> (regression)', async () => {
+      const snapshot = createRootSnapshot([
+        buildTableSnapshot([
+          [
+            buildCell('c1', [
+              createEditableSnapshot('p1', 'paragraph', 'Line1', {}),
+              createEditableSnapshot('p2', 'paragraph', 'Line2', {}),
+            ]),
+          ],
+        ]),
+      ]);
+
+      const md = await adapter.toMarkdown(snapshot);
+      expect((md.match(/Line1/g) ?? []).length).toBe(1);
+      expect((md.match(/Line2/g) ?? []).length).toBe(1);
+      expect(md).toContain('Line1<br>Line2');
+    });
+
+    it('renders ordered list inside cell as inline numbered text (regression)', async () => {
+      const snapshot = createRootSnapshot([
+        buildTableSnapshot([
+          [
+            buildCell('c1', [
+              createEditableSnapshot('o1', 'ordered', 'step1', {depth: 0, order: 0}),
+              createEditableSnapshot('o2', 'ordered', 'step2', {depth: 0, order: 1}),
+            ]),
+          ],
+        ]),
+      ]);
+
+      const md = await adapter.toMarkdown(snapshot);
+      expect((md.match(/step1/g) ?? []).length).toBe(1);
+      expect((md.match(/step2/g) ?? []).length).toBe(1);
+      expect(md).toContain('1. step1');
+      expect(md).toContain('2. step2');
     });
   });
 

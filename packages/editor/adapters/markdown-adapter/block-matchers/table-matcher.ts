@@ -1,7 +1,58 @@
+import type {PhrasingContent} from 'mdast';
 import {MarkdownAST} from "../type";
 import {BlockMarkdownAdapterMatcher} from "../block-adapter";
 import {BlockNodeType, DeltaInsert, generateId, IBlockSnapshot} from "../../../framework";
 import {ParagraphBlockSchema, TableCellBlockSchema} from "../../../blocks";
+import {MarkdownDeltaConverter} from "../delta-converter";
+
+// GFM table cells can only contain phrasing content. Convert each child block of
+// a table-cell into inline phrasing, separated by `<br>` for multi-block cells.
+const buildCellPhrasingContent = (
+  cellSnapshot: IBlockSnapshot,
+  deltaConverter: MarkdownDeltaConverter
+): PhrasingContent[] => {
+  const children = (cellSnapshot.children ?? []) as IBlockSnapshot[];
+  const result: PhrasingContent[] = [];
+
+  children.forEach((child, idx) => {
+    if (idx > 0) {
+      result.push({type: 'html', value: '<br>'} as PhrasingContent);
+    }
+
+    const flavour = child.flavour;
+    const depth = Number(child.props?.['depth'] ?? 0);
+    const indent = '  '.repeat(Math.max(0, depth));
+    let prefix = '';
+
+    if (flavour === 'bullet') {
+      prefix = `${indent}- `;
+    } else if (flavour === 'ordered') {
+      const orderProp = child.props?.['order'];
+      const startProp = child.props?.['start'];
+      const displayedNum =
+        typeof orderProp === 'number'
+          ? orderProp + 1
+          : typeof startProp === 'number'
+            ? startProp
+            : idx + 1;
+      prefix = `${indent}${displayedNum}. `;
+    } else if (flavour === 'todo') {
+      const checked = !!child.props?.['checked'];
+      prefix = `${indent}${checked ? '[x] ' : '[ ] '}`;
+    }
+
+    if (prefix) {
+      result.push({type: 'text', value: prefix} as PhrasingContent);
+    }
+
+    const deltas = (child.children ?? []) as DeltaInsert[];
+    if (deltas.length > 0) {
+      result.push(...deltaConverter.deltaToAST(deltas));
+    }
+  });
+
+  return result;
+};
 
 export const tableBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher = {
   toMatch: o => o.node.type === 'table',
@@ -135,41 +186,25 @@ export const tableCellBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher =
         context.walkerContext.skipAllChildren();
         return;
       }
-      const {walkerContext} = context;
-      walkerContext.openNode(
-        {
-          type: 'tableCell',
-          children: [],
-        } as unknown as MarkdownAST,
-        'children'
-      );
-    },
-    leave: (o, context) => {
-      if (o.node.flavour !== 'table-cell') return;
-      if (o.node.props['display'] === 'none') return;
-      context.walkerContext.closeNode();
-    },
-  },
-};
-
-// Matcher for paragraph blocks inside table cells (fromBlockSnapshot direction)
-// Converts paragraph children of table-cell into inline content for markdown tableCell
-export const tableCellParagraphMarkdownMatcher: BlockMarkdownAdapterMatcher = {
-  toMatch: () => false, // Not used in toBlockSnapshot direction
-  fromMatch: o =>
-    o.node.flavour === 'paragraph' &&
-    o.parent?.node.flavour === 'table-cell',
-  toBlockSnapshot: {},
-  fromBlockSnapshot: {
-    enter: (o, context) => {
       const {walkerContext, deltaConverter} = context;
-      const delta = o.node.children as DeltaInsert[];
-      const phrasingContent = deltaConverter.deltaToAST(delta);
-      // Push inline content directly into the parent tableCell
-      const currentNode = walkerContext.currentNode();
-      if (currentNode && 'children' in currentNode) {
-        (currentNode as any).children.push(...phrasingContent);
-      }
+
+      // Convert all child blocks of the cell into phrasing content up-front and
+      // skip the walker's normal child traversal. Otherwise multiple block
+      // matchers (paragraph / list) would also fire on the cell's children and
+      // produce duplicated or invalid AST nodes inside the tableCell.
+      // We must open AND close the node within enter, because skipAllChildren()
+      // also prevents the walker from invoking the matcher's `leave` handler.
+      const phrasingContent = buildCellPhrasingContent(o.node as IBlockSnapshot, deltaConverter);
+
+      walkerContext
+        .openNode(
+          {
+            type: 'tableCell',
+            children: phrasingContent,
+          } as unknown as MarkdownAST,
+          'children'
+        )
+        .closeNode();
       walkerContext.skipAllChildren();
     },
   },

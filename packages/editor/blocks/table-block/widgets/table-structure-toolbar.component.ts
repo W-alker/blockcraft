@@ -337,6 +337,10 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges {
     }
 
     const first = cells[0]
+    const isSingleMergedCell = cells.length === 1 && (
+      !!first.props.rowspan && first.props.rowspan > 1
+      || !!first.props.colspan && first.props.colspan > 1
+    )
     let commonColor: string | null = first.props.color ?? null
     let commonBackColor: string | null = first.props.backColor ?? null
     let commonVerticalAlign: string | null = (first.props as any).verticalAlign ?? null
@@ -356,8 +360,8 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges {
     this.activeColors = { color: commonColor, backColor: commonBackColor }
     this.textAlign = commonTextAlign
     this.verticalAlign = commonVerticalAlign
-    this.isMerged = cells.length > 1 && visibleCount === 1
-    this.canToggleMerge = cells.length > 1
+    this.isMerged = isSingleMergedCell || (cells.length > 1 && visibleCount === 1)
+    this.canToggleMerge = isSingleMergedCell || cells.length > 1
     this.cdr.markForCheck()
   }
 
@@ -435,6 +439,7 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges {
       const end = [this.rowIndex + this.rowCount - 1, this.colIndex + this.colCount - 1]
       mergeTableCells.call(this.table, start, end)
     }
+    this._syncCellState()
     nextTick().then(() => this.table.refreshTableMenuFromSelection?.())
   }
 

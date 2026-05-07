@@ -3,7 +3,7 @@ import {
   DocEventRegister,
   EditableBlockComponent,
 } from "../../block-std";
-import {BehaviorSubject, skip, take, takeUntil} from "rxjs";
+import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
 import {closetBlockId, getBlockGapAnchor, isNativeInputTarget} from "../../utils";
 import {SelectionSelectedManager} from "./selected-manager";
 import {SelectionKeyboard} from "./selection-keyboard";
@@ -65,6 +65,25 @@ export class SelectionManager {
         this.blur()
       }
     })
+    // Triple-click: select the entire editable block's content. Native
+    // triple-click can extend across editing-host boundaries introduced by
+    // gap spans (data-block-zero-space, contenteditable=true) — landing the
+    // range end on the next block's gap span (cross-block selection that
+    // includes the void block) or on root.hostElement (which the
+    // recalculate() fallback collapses via selection.modify('move')).
+    // Intercept and program the selection ourselves.
+    fromEvent<MouseEvent>(root.hostElement, 'mousedown', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(event => {
+        if (event.detail !== 3) return
+        if (isNativeInputTarget(event.target)) return
+        const blockId = closetBlockId(event.target as Node)
+        if (!blockId) return
+        const block = this.doc.getBlockById(blockId)
+        if (!block || !this.doc.isEditable(block)) return
+        event.preventDefault()
+        this.selectAllChildren(block)
+      })
   }
 
   // ── Read from DOM (user interaction path) ──

@@ -377,6 +377,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     } finally {
       this._suppressFocusSync = false
     }
+
+    const syncSelectionUi = () => {
+      this._syncTableFocusUi(this.doc.selection.recalculate().value)
+    }
+
+    syncSelectionUi()
+    nextTick().then(syncSelectionUi)
   }
 
   protected selectCell = (cell: TableCellBlockComponent) => {
@@ -1375,11 +1382,18 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.doc.messageService.info('按住 shift 键加滚轮可快速横向滚动')
       this._prevScrollLeft = scroller.scrollLeft
     }
+    if (this._tableMenu.visible) {
+      this.refreshTableMenuFromSelection()
+    }
     this._isShiftScroll = false
   }, 1000)
 
   onScroll = throttle((evt: Event) => {
-    this.toolbarOvr?.updatePosition()
+    if (this._tableMenu.visible) {
+      this.refreshTableMenuFromSelection()
+    } else {
+      this.toolbarOvr?.updatePosition()
+    }
     if (this.doc.event.status.isShiftKeyPressing) {
       this._isShiftScroll = true
     }

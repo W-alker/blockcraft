@@ -1,44 +1,79 @@
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
-  Component, DestroyRef,
+  Component,
+  DestroyRef,
   ElementRef,
   EventEmitter,
   Input,
-  Output
+  Output,
 } from "@angular/core";
 import { NgForOf, NgTemplateOutlet } from "@angular/common";
 import { MatIcon } from "@angular/material/icon";
-import { BLOCK_CREATOR_SERVICE_TOKEN, BlockNodeType, EditableBlockComponent } from "../../../framework";
+import {
+  BLOCK_CREATOR_SERVICE_TOKEN,
+  BlockNodeType,
+  EditableBlockComponent,
+} from "../../../framework";
 import { debounce } from "../../../global";
 
 interface IContextMenuOption {
-  flavour: string
-  type: 'block' | 'tool' | 'heading'
+  flavour: string;
+  type: "block" | "tool" | "heading";
   metadata: {
-    label: string
-    icon?: string
-    svgIcon?: string
-    [key: string]: any
-  }
+    label: string;
+    icon?: string;
+    svgIcon?: string;
+    [key: string]: any;
+  };
 }
 
+type MenuNavigationKey = "Escape" | "Enter" | "ArrowUp" | "ArrowDown";
+
 const HEADING_LIST: IContextMenuOption[] = [
-  { metadata: { label: '一级标题', icon: 'bc_icon bc_biaoti_1', heading: 1 }, flavour: 'heading-one', type: "heading" },
-  { metadata: { label: '二级标题', icon: 'bc_icon bc_biaoti_2', heading: 2 }, flavour: 'heading-two', type: "heading" },
-  { metadata: { label: '三级标题', icon: 'bc_icon bc_biaoti_3', heading: 3 }, flavour: 'heading-three', type: "heading" },
-  { metadata: { label: '四级标题', icon: 'bc_icon bc_biaoti_4', heading: 4 }, flavour: 'heading-four', type: "heading" },
-]
-const TransformReg = /^[\/、].*/
+  {
+    metadata: { label: "一级标题", icon: "bc_icon bc_biaoti_1", heading: 1 },
+    flavour: "heading-one",
+    type: "heading",
+  },
+  {
+    metadata: { label: "二级标题", icon: "bc_icon bc_biaoti_2", heading: 2 },
+    flavour: "heading-two",
+    type: "heading",
+  },
+  {
+    metadata: { label: "三级标题", icon: "bc_icon bc_biaoti_3", heading: 3 },
+    flavour: "heading-three",
+    type: "heading",
+  },
+  {
+    metadata: { label: "四级标题", icon: "bc_icon bc_biaoti_4", heading: 4 },
+    flavour: "heading-four",
+    type: "heading",
+  },
+];
+const TransformReg = /^[\/、].*/;
 
 @Component({
-  selector: 'block-transformer-contextmenu',
+  selector: "block-transformer-contextmenu",
   template: `
-    <ul class="list" (mousedown)="onMouseDown($event)" (mousemove)="onMouseMove()" (mouseover)="onMouseOver($event)">
+    <ul
+      class="list"
+      (mousedown)="onMouseDown($event)"
+      (mousemove)="onMouseMove()"
+      (mouseover)="onMouseOver($event)"
+    >
       @for (item of list; track item.flavour; let idx = $index) {
-        <li class="list__item" [class.active]="activeIdx === idx" [attr.data-index]="idx">
+        <li
+          class="list__item"
+          [class.active]="activeIdx === idx"
+          [attr.data-index]="idx"
+        >
           @if (item.metadata.svgIcon) {
-            <mat-icon [svgIcon]="item.metadata.svgIcon" style="width: 1em; height: 1em"></mat-icon>
+            <mat-icon
+              [svgIcon]="item.metadata.svgIcon"
+              style="width: 1em; height: 1em"
+            ></mat-icon>
           } @else {
             <i [class]="item.metadata.icon"></i>
           }
@@ -47,130 +82,166 @@ const TransformReg = /^[\/、].*/
       }
     </ul>
   `,
-  styleUrls: ['contextmenu.scss'],
+  styleUrls: ["contextmenu.scss"],
   standalone: true,
-  imports: [
-    NgForOf,
-    NgTemplateOutlet,
-    MatIcon
-  ],
+  imports: [NgForOf, NgTemplateOutlet, MatIcon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    '[class]': `'bc-scrollable-container'`
-  }
+    "[class]": `'bc-scrollable-container'`,
+  },
 })
 export class BlockTransformContextMenu {
-  @Input() doc!: BlockCraft.Doc
-  @Input() activeBlock!: EditableBlockComponent
+  @Input() doc!: BlockCraft.Doc;
+  @Input() activeBlock!: EditableBlockComponent;
 
-  @Output() close$ = new EventEmitter<boolean>()
+  @Output() close$ = new EventEmitter<boolean>();
 
-  list: IContextMenuOption[] = []
+  list: IContextMenuOption[] = [];
   protected activeIdx = 0;
   private isKeyboardNavigating = false;
+  private lastHandledNavigationAt = 0;
 
   constructor(
     public readonly cdr: ChangeDetectorRef,
     public readonly host: ElementRef<HTMLElement>,
-    public readonly destroyRef: DestroyRef
-  ) {
-  }
+    public readonly destroyRef: DestroyRef,
+  ) {}
 
   ngOnInit() {
-    const parentBlockSchema = this.doc.schemas.get(this.activeBlock.parentBlock!.flavour)!
-    const blocks: IContextMenuOption[] = this.doc.schemas.getSchemaList()
-      .filter(v => !v.metadata.isLeaf && !['paragraph', 'root'].includes(v.flavour)
-        && this.doc.schemas.isValidChildren(v.flavour, parentBlockSchema))
-      .map(v => ({ flavour: v.flavour, metadata: v.metadata, type: 'block' }))
-    const listAll = HEADING_LIST.concat(blocks)
+    const parentBlockSchema = this.doc.schemas.get(
+      this.activeBlock.parentBlock!.flavour,
+    )!;
+    const blocks: IContextMenuOption[] = this.doc.schemas
+      .getSchemaList()
+      .filter(
+        (v) =>
+          !v.metadata.isLeaf &&
+          !["paragraph", "root"].includes(v.flavour) &&
+          this.doc.schemas.isValidChildren(v.flavour, parentBlockSchema),
+      )
+      .map((v) => ({
+        flavour: v.flavour,
+        metadata: v.metadata,
+        type: "block",
+      }));
+    const listAll = HEADING_LIST.concat(blocks);
 
-    this.list = listAll
+    this.list = listAll;
 
     const textObserver = debounce(() => {
       if (this.doc.event.status.isComposing) return;
-      const text = this.activeBlock.textContent()
+      const text = this.activeBlock.textContent();
       if (!text || !TransformReg.test(text)) {
-        this.close$.next(true)
-        return
+        this.close$.next(true);
+        return;
       }
-      const searchText = text.slice(1).toLowerCase()
-      const matchedItems = listAll.filter(v => v.metadata.label.startsWith(searchText) || v.flavour.toLowerCase().startsWith(searchText))
+      const searchText = text.slice(1).toLowerCase();
+      const matchedItems = listAll.filter(
+        (v) =>
+          v.metadata.label.startsWith(searchText) ||
+          v.flavour.toLowerCase().startsWith(searchText),
+      );
       if (!matchedItems.length) {
-        this.close$.next(true)
-        return
+        this.close$.next(true);
+        return;
       }
-      this.list = matchedItems
-      this.activeIdx = 0
-      this.cdr.markForCheck()
-    }, 300)
+      this.list = matchedItems;
+      this.activeIdx = 0;
+      this.cdr.markForCheck();
+    }, 300);
 
-    this.activeBlock.yText.observe(textObserver)
+    this.activeBlock.yText.observe(textObserver);
 
-    this.doc.root.hostElement.addEventListener('keydown', this.handleRootKeydown, true)
+    const hotKeyEvents = [
+      this.doc.event.bindHotkey({ key: "Escape" }, (evt) =>
+        this.handleHotkeyEvent(evt, "Escape"),
+      ),
+      this.doc.event.bindHotkey({ key: "Enter" }, (evt) =>
+        this.handleHotkeyEvent(evt, "Enter"),
+      ),
+      this.doc.event.bindHotkey({ key: "ArrowUp" }, (evt) =>
+        this.handleHotkeyEvent(evt, "ArrowUp"),
+      ),
+      this.doc.event.bindHotkey({ key: "ArrowDown" }, (evt) =>
+        this.handleHotkeyEvent(evt, "ArrowDown"),
+      ),
+    ];
+
+    document.addEventListener("keydown", this.handleRootKeydown, true);
 
     this.destroyRef.onDestroy(() => {
-      this.doc.root.hostElement.removeEventListener('keydown', this.handleRootKeydown, true)
-      this.activeBlock.yText?.unobserve(textObserver)
-    })
+      document.removeEventListener("keydown", this.handleRootKeydown, true);
+      hotKeyEvents.forEach((off) => off());
+      this.activeBlock.yText?.unobserve(textObserver);
+    });
   }
 
   private handleRootKeydown = (event: KeyboardEvent) => {
-    if (this.doc.event.status.isComposing || !this.isSelectionInActiveBlock()) return
+    if (!this.canHandleMenuKeydown()) return;
+    if (!this.handleMenuKey(event.key)) return;
 
-    switch (event.key) {
-      case 'Escape':
-        event.preventDefault()
-        event.stopPropagation()
-        event.stopImmediatePropagation?.()
-        this.close$.next(true)
-        return
-      case 'Enter':
-        event.preventDefault()
-        event.stopPropagation()
-        event.stopImmediatePropagation?.()
-        this.select()
-        return
-      case 'ArrowUp':
-        event.preventDefault()
-        event.stopPropagation()
-        event.stopImmediatePropagation?.()
-        this.selectUp()
-        return
-      case 'ArrowDown':
-        event.preventDefault()
-        event.stopPropagation()
-        event.stopImmediatePropagation?.()
-        this.selectDown()
-        return
-      default:
-        return
-    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+  };
+
+  private handleHotkeyEvent(
+    evt: BlockCraft.EventStateContext,
+    key: MenuNavigationKey,
+  ) {
+    if (!this.canHandleMenuKeydown()) return false;
+    if (!this.handleMenuKey(key)) return false;
+
+    evt.preventDefault();
+    const event = evt.getDefaultEvent() as KeyboardEvent;
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    return true;
   }
 
-  private isSelectionInActiveBlock() {
-    const selection = this.doc.selection.recalculate(false).value || this.doc.selection.value
-    return !!selection
-      && selection.collapsed
-      && selection.start.type === 'text'
-      && selection.firstBlock.id === this.activeBlock.id
+  private canHandleMenuKeydown() {
+    return !this.doc.event.status.isComposing;
+  }
+
+  private handleMenuKey(key: string) {
+    switch (key) {
+      case "Escape":
+        this.markNavigationHandled();
+        this.close$.next(true);
+        return true;
+      case "Enter":
+        this.markNavigationHandled();
+        this.select();
+        return true;
+      case "ArrowUp":
+        this.markNavigationHandled();
+        this.selectUp();
+        return true;
+      case "ArrowDown":
+        this.markNavigationHandled();
+        this.selectDown();
+        return true;
+      default:
+        return false;
+    }
   }
 
   onMouseDown(evt: MouseEvent) {
-    evt.preventDefault()
+    evt.preventDefault();
     if (evt.eventPhase === Event.AT_TARGET) {
-      return
+      return;
     }
 
-    this.select()
+    this.select();
   }
 
   onMouseOver(event: MouseEvent) {
     if (this.isKeyboardNavigating) return;
 
-    const li = (event.target as HTMLElement).closest('.list__item');
+    const li = (event.target as HTMLElement).closest(".list__item");
     if (!li) return;
 
-    const dataIdx = li.getAttribute('data-index');
+    const dataIdx = li.getAttribute("data-index");
     if (!dataIdx) return;
     const idx = parseInt(dataIdx, 10);
     if (idx === -1 || idx === this.activeIdx) return;
@@ -205,55 +276,85 @@ export class BlockTransformContextMenu {
     this.isKeyboardNavigating = true;
   }
 
+  shouldIgnoreSelectionChange() {
+    return Date.now() - this.lastHandledNavigationAt < 120;
+  }
+
+  private markNavigationHandled() {
+    this.lastHandledNavigationAt = Date.now();
+  }
+
   scrollToActive() {
-    this.host.nativeElement.querySelector('.list__item.active')?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'nearest'
-    })
+    const container = this.host.nativeElement;
+    const activeItem =
+      container.querySelector<HTMLElement>(".list__item.active");
+    if (!activeItem) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const itemRect = activeItem.getBoundingClientRect();
+
+    if (itemRect.top < containerRect.top) {
+      container.scrollTop = Math.max(
+        0,
+        container.scrollTop - (containerRect.top - itemRect.top),
+      );
+      return;
+    }
+
+    if (itemRect.bottom > containerRect.bottom) {
+      container.scrollTop += itemRect.bottom - containerRect.bottom;
+    }
   }
 
   select() {
-    if (this.activeIdx === -1) return
-    const item = this.list[this.activeIdx]
+    if (this.activeIdx === -1) return;
+    const item = this.list[this.activeIdx];
     if (!item) return;
 
     switch (item.type) {
-      case 'block':
+      case "block":
         this.transform2Block(item.flavour as any);
         break;
-      case 'heading':
-        this.activeBlock.deleteText(0, this.activeBlock.textLength)
+      case "heading":
+        this.activeBlock.deleteText(0, this.activeBlock.textLength);
         this.activeBlock.updateProps({
-          heading: item.metadata['heading']
-        })
+          heading: item.metadata["heading"],
+        });
         break;
     }
 
-    this.close$.next(true)
+    this.close$.next(true);
   }
 
   transform2Block(flavour: BlockCraft.BlockFlavour) {
-    const schema = this.doc.schemas.get(flavour)!
+    const schema = this.doc.schemas.get(flavour)!;
     if (schema.nodeType === BlockNodeType.editable) {
-      const snapshot = this.doc.schemas.createSnapshot(schema.flavour, [[], this.activeBlock.props])
-      void this.doc.chain()
+      const snapshot = this.doc.schemas.createSnapshot(schema.flavour, [
+        [],
+        this.activeBlock.props,
+      ]);
+      void this.doc
+        .chain()
         .replaceWithSnapshots(this.activeBlock.id, [snapshot])
         .setCursorAtBlock(snapshot.id, true)
-        .run()
-      return
+        .run();
+      return;
     }
 
     // TODO
-    const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
-    blockCreator.getParamsByScheme(schema).then(params => {
-      if (!params) return
-      const newBlock = this.doc.schemas.createSnapshot(schema.flavour, params as any)
-      newBlock.props.depth = this.activeBlock.props.depth
-      void this.doc.chain()
+    const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN);
+    blockCreator.getParamsByScheme(schema).then((params) => {
+      if (!params) return;
+      const newBlock = this.doc.schemas.createSnapshot(
+        schema.flavour,
+        params as any,
+      );
+      newBlock.props.depth = this.activeBlock.props.depth;
+      void this.doc
+        .chain()
         .replaceWithSnapshots(this.activeBlock.id, [newBlock])
         .setCursorAtBlock(newBlock.id, true)
-        .run()
-    })
+        .run();
+    });
   }
-
 }

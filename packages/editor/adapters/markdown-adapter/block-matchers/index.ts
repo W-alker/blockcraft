@@ -12,15 +12,11 @@ import {
   tableBlockMarkdownAdapterMatcher,
   tableRowBlockMarkdownAdapterMatcher,
   tableCellBlockMarkdownAdapterMatcher,
-  tableCellParagraphMarkdownMatcher,
 } from "./table-matcher";
 import {formulaBlockMarkdownAdapterMatcher} from "./formula-matcher";
 import {mediaBlockMarkdownAdapterMatcher} from "./media-matcher";
 
 export const defaultBlockMarkdownAdapterMatchers = [
-  // Table cell paragraph must come before generic paragraph matcher
-  // so that paragraphs inside table cells are handled as inline content
-  tableCellParagraphMarkdownMatcher,
   mediaBlockMarkdownAdapterMatcher,
   paragraphBlockMarkdownAdapterMatcher,
   listBlockMarkdownAdapterMatcher,
