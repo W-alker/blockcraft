@@ -722,7 +722,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   protected isHeadingItemActive(item: IStyleMenuItem): boolean {
     if (item.value === null) {
-      return this.activeFlavour === "paragraph" && !this.activeProps.heading;
+      return !this.activeProps.heading;
     }
     return this.activeProps.heading === item.value;
   }
@@ -734,9 +734,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     trigger.closePanel();
     this.runWithSelection(
       () => {
-        if (this.activeFlavour !== "paragraph") {
-          this.toolbarHelper.transformBlocks("paragraph");
-        }
         this.toolbarHelper.updateBlockProps({
           heading: item.value || undefined,
         });

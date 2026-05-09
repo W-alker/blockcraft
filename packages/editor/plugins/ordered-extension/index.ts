@@ -109,7 +109,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
   if (!block.props.start) {  // 本身就是起始编号就没必要往上找了
     for (let i = index - 1; i >= 0; i--) {
       const prevBlock = parentChildren[i]
-      if (isHeadingBoundary(prevBlock)) {
+      if (isHeadingBoundary(prevBlock, block)) {
         break
       }
       if (prevBlock.flavour !== 'ordered') {
@@ -135,7 +135,7 @@ const updateOrderAround = (block: BaseBlockComponent<OrderedBlockModel>) => {
 
   for (let j = index + 1; j < parentChildren.length; j++) {
     const nextBlock = parentChildren[j]
-    if (isHeadingBoundary(nextBlock)) {
+    if (isHeadingBoundary(nextBlock, block)) {
       break
     }
     if (nextBlock.flavour !== 'ordered') continue
@@ -173,6 +173,12 @@ const isSameHeadingLevel = (left: BaseBlockComponent<any>, right: BaseBlockCompo
   return isSimpleTypeEqual(getHeadingLevel(left), getHeadingLevel(right))
 }
 
-const isHeadingBoundary = (block: BaseBlockComponent<any>) => {
-  return getHeadingLevel(block) > 0
+const isHeadingBoundary = (block: BaseBlockComponent<any>, referenceBlock: BaseBlockComponent<any>) => {
+  const headingLevel = getHeadingLevel(block)
+  if (headingLevel <= 0) return false
+
+  const referenceHeadingLevel = getHeadingLevel(referenceBlock)
+  if (referenceHeadingLevel <= 0) return true
+
+  return headingLevel < referenceHeadingLevel
 }
