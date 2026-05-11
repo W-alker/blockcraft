@@ -44,7 +44,7 @@ const createIntroParagraph = () =>
     { insert: ' 展示正式编辑器需要覆盖的内容结构，包括 ' },
     { insert: { mention: 'Alice Chen' }, attributes: { mentionId: 'user_alice', mentionType: 'user' } },
     { insert: '、' },
-    { insert: { link: '产品文档' }, attributes: { 'd:href': 'https://blockcraft.dev/docs' } },
+    { insert: '产品文档', attributes: { 'a:link': 'https://blockcraft.dev/docs' } },
     { insert: ' 和行内公式 ' },
     { insert: { latex: 'E=mc^2' } },
     { insert: '。' }

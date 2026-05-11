@@ -7,7 +7,6 @@ import {
   DOC_LINK_PREVIEWER_SERVICE_TOKEN,
   DOC_MESSAGE_SERVICE_TOKEN,
   DocLinkPreviewerService,
-  EmbedConverter,
   InlineManager,
   SchemaManager,
   generateId
@@ -100,22 +99,6 @@ const schemas = new SchemaManager([
   FormulaBlockSchema,
   VideoBlockSchema, AudioBlockSchema
 ])
-
-export const OLD_LINK_EMBED_CONVERTER: EmbedConverter = {
-  toView: (embed) => {
-    const a = document.createElement('a');
-    a.textContent = embed.insert['link'] as string;
-    a.target = '_blank';
-    a.href = embed.attributes?.['d:href'] as string;
-    return a;
-  },
-  toDelta: (ele) => {
-    return {
-      insert: {link: ele.textContent!},
-      attributes: InlineManager.getAttrs(ele)
-    };
-  }
-};
 
 @Component({
   selector: 'block-craft-editor',
@@ -277,9 +260,6 @@ export class EditorComponent implements OnDestroy {
             }
           }
         }
-      ],
-      [
-        'link', OLD_LINK_EMBED_CONVERTER
       ],
       [
         'latex', {

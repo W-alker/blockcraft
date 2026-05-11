@@ -4,11 +4,13 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-05-11
 
 ## What is an Inline Embed?
 
-An inline embed is a non-text element rendered inside an editable block's text flow. Examples: `@mention`, `link`, `latex formula`. Each embed occupies exactly 1 character position in the delta model.
+An inline embed is a non-text element rendered inside an editable block's text flow. Examples: `@mention`, `latex formula`. Each embed occupies exactly 1 character position in the delta model.
+
+> **Note:** plain hyperlinks are *not* an embed — they are an attribute on a text delta (`{ insert: "label", attributes: { "a:link": "https://…" } }`) and are styled by `InlineLinkExtension`. Reserve embeds for non-text widgets (mention chips, formulas, …).
 
 ## Delta Format
 
@@ -18,7 +20,6 @@ An inline embed is a non-text element rendered inside an editable block's text f
 
 // Examples:
 { insert: { mention: "Alice" }, attributes: { mentionId: "u123", mentionType: "user" } }
-{ insert: { link: "https://example.com" }, attributes: { "a:link": "https://..." } }
 { insert: { latex: "E=mc^2" } }
 ```
 
@@ -77,7 +78,6 @@ const doc = new BlockCraftDoc({
   embeds: [
     ['myEmbed', myEmbedConverter],  // [key, converter]
     ['mention', mentionConverter],
-    ['link', linkConverter],
     ['latex', latexConverter],
   ],
 });
@@ -120,7 +120,6 @@ if (block && block instanceof EditableBlockComponent) {
 | Embed Key | Converter Location | Description |
 |-----------|-------------------|-------------|
 | `mention` | `editor/editor.ts` (inline) | @mention with user ID |
-| `link` | `editor/editor.ts` (inline) | Inline hyperlink |
 | `latex` | `editor/editor.ts` (inline) | KaTeX formula rendering |
 
 ## Checklist

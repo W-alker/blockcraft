@@ -438,8 +438,9 @@ interface EmbedConverter {
 **嵌入 delta 格式：**
 ```typescript
 { insert: { mention: "张三" }, attributes: { mentionId: "u123", mentionType: "user" } }
-{ insert: { link: "https://example.com" }, attributes: { "a:link": "https://..." } }
 { insert: { latex: "E=mc^2" } }
+// 普通超链接通过 a:link 属性表达，不属于 embed：
+{ insert: "查看文档", attributes: { "a:link": "https://..." } }
 ```
 
 `EmbedBlot` 持有其 converter 引用和原始 delta，`detach()` 时自动调用 `converter.onDestroy()`。

@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-04-16 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-05-11 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -90,7 +90,7 @@ packages/editor/
 | Configure / use existing plugins | `blockcraft-plugins-ref.md` | L1 |
 | Create a new plugin | `blockcraft-plugin.md` | L1 |
 | Create a new block | `blockcraft-block.md` | L1 |
-| Create an inline embed (mention, link, latex, …) | `blockcraft-embed.md` | L1 |
+| Create an inline embed (mention, latex, …) | `blockcraft-embed.md` | L1 |
 | Add HTML/Markdown import/export for a block | `blockcraft-adapter.md` | L1 |
 | Create/modify toolbars or overlay UI | `blockcraft-toolbar.md` | L1 |
 | Customize themes or block styles | `blockcraft-theme.md` | L1 |

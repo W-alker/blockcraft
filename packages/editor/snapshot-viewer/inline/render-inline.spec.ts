@@ -47,21 +47,6 @@ describe("renderInline", () => {
     expect(mention?.textContent).toBe("Alice")
   })
 
-  it("renders link embeds as anchors using d:href", () => {
-    const fragment = renderInline([
-      {
-        insert: {link: "产品文档"},
-        attributes: {
-          "d:href": "https://blockcraft.dev/docs",
-        },
-      },
-    ])
-
-    const link = fragment.querySelector('a[href="https://blockcraft.dev/docs"]')
-    expect(link).not.toBeNull()
-    expect(link?.textContent).toBe("产品文档")
-  })
-
   it("renders inline latex embeds with formula markup", () => {
     const fragment = renderInline([
       {

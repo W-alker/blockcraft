@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-04-16
+> Last updated: 2026-05-11
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -259,7 +259,6 @@ doc = new BlockCraftDoc({
   embeds: [
     // [name, EmbedConverter] — see blockcraft-embed.md
     ['mention', mentionConverter],
-    ['link', linkConverter],
     ['latex', latexConverter],
   ],
   plugins: [
@@ -475,7 +474,7 @@ doc.afterInit(fn)          // run fn once root is ready
 `packages/editor/editor/editor.ts` is the bundled demo editor — read it as a complete, working example. It shows:
 - All 5 DI providers wired up (`MyDocFileService`, `MyDocMessageService`, `MyBlockCreatorService`, …)
 - Full schema list
-- All 3 reference embed converters (mention, link, latex)
+- All 2 reference embed converters (mention, latex)
 - The full plugin stack
 - A custom block-controller `customTools` extension (`copyBlockLink`)
 - Mouse-down at the empty bottom area to append a paragraph

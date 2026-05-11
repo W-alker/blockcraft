@@ -57,8 +57,6 @@ function createInlineEmbedView(item: DeltaInsertEmbed, embedKey: string): HTMLEl
       return createInlineFormulaElement(`${item.insert[embedKey] || ""}`)
     case "mention":
       return createMentionElement(item)
-    case "link":
-      return createLinkEmbedElement(item)
     default:
       return createGenericEmbedElement(item, embedKey)
   }
@@ -92,18 +90,6 @@ function createMentionElement(item: DeltaInsertEmbed): HTMLElement {
   }
 
   return mention
-}
-
-function createLinkEmbedElement(item: DeltaInsertEmbed): HTMLElement {
-  const anchor = document.createElement("a")
-  anchor.textContent = `${item.insert["link"] || ""}`
-  anchor.target = "_blank"
-  anchor.rel = "noopener noreferrer"
-  const href = item.attributes?.["d:href"]
-  if (href) {
-    anchor.href = `${href}`
-  }
-  return anchor
 }
 
 function createGenericEmbedElement(item: DeltaInsertEmbed, embedKey: string): HTMLElement {
