@@ -1,6 +1,21 @@
-import {BindHotKey, DocPlugin, EventListen, IBlockSnapshot} from "../framework";
+import {
+  BindHotKey,
+  ClipboardDataType,
+  DOC_ADAPTER_SERVICE_TOKEN,
+  DocPlugin,
+  EventListen,
+  IBlockSnapshot,
+  replaceSnapshotsIdDeeply
+} from "../framework";
 import {UIEventStateContext} from "../framework";
 import {BlockCraftError, ErrorCode} from "../global";
+import {parseClipboardSnapshot, parseClipboardSnapshotFromHtml} from "../framework/modules/clipboard/internal-clipboard";
+import {
+  cloneSnapshot,
+  createTableSnapshotFromMatrix,
+  getMarkdownClipboardText,
+  parseTabularText
+} from "../framework/modules/clipboard/paste-utils";
 
 export class TableBlockBinding extends DocPlugin {
 
@@ -24,13 +39,177 @@ export class TableBlockBinding extends DocPlugin {
     return this._handleCopyOrCut(context, true)
   }
 
-  // @EventListen('paste', {flavour: 'table'})
-  // handlePaste(context: UIEventStateContext) {
-  //   if (this.doc.isReadonly) return
-  //   const state = context.get('keyboardState')
-  //   const {raw: evt, selection} = state
-  //   const table = this._getTable(selection)
-  // }
+  @EventListen('paste', {flavour: 'table'})
+  handlePaste(context: UIEventStateContext) {
+    if (this.doc.isReadonly) return
+
+    const state = context.get('clipboardState')
+    const {selection} = state
+    if (!selection) return false
+
+    let table: BlockCraft.IBlockComponents['table']
+    try {
+      table = this._getTable(selection)
+    } catch {
+      return false
+    }
+
+    if (!this._hasPastedTableData(state)) return false
+
+    const startCoordinate = this._getPasteStartCoordinate(table, selection)
+    if (!startCoordinate) return false
+
+    context.preventDefault()
+    void this._parsePastedTableSnapshot(state).then(tableSnapshot => {
+      if (!tableSnapshot) return
+      this._fillTableFromSnapshot(table, tableSnapshot, startCoordinate)
+    })
+    return true
+  }
+
+  private _getPasteStartCoordinate(table: BlockCraft.IBlockComponents['table'], selection: BlockCraft.Selection) {
+    const coordinates = table.getSelectedCoordinates()
+    if (coordinates) return coordinates.start
+
+    const cellId = selection.firstBlock.hostElement
+      .closest('td[data-block-id]')
+      ?.getAttribute('data-block-id')
+    if (!cellId) return null
+
+    const cell = this.doc.getBlockById(cellId) as BlockCraft.IBlockComponents['table-cell']
+    const rowIndex = table.childrenIds.indexOf(cell.parentId!)
+    const colIndex = cell.getIndexOfParent()
+    if (rowIndex < 0 || colIndex < 0) return null
+
+    return [rowIndex, colIndex]
+  }
+
+  private _hasPastedTableData(state: {
+    dataTypes: readonly string[]
+    getData: (type: ClipboardDataType) => string | null
+  }) {
+    if (state.dataTypes.includes(ClipboardDataType.BLOCKCRAFT_SNAPSHOT)) {
+      const snapshot = parseClipboardSnapshot(state.getData(ClipboardDataType.BLOCKCRAFT_SNAPSHOT))
+      if (snapshot && findFirstTableSnapshot(snapshot)) return true
+    }
+
+    if (state.dataTypes.includes(ClipboardDataType.HTML)) {
+      const htmlString = state.getData(ClipboardDataType.HTML)
+      const snapshot = parseClipboardSnapshotFromHtml(htmlString)
+      if (snapshot && findFirstTableSnapshot(snapshot)) return true
+      if (htmlString && /<table[\s>]/i.test(htmlString)) return true
+    }
+
+    const plainText = state.getData(ClipboardDataType.TEXT) || ''
+    const markdownText = getMarkdownClipboardText(state) || (plainText && looksLikeMarkdownTable(plainText) ? plainText : null)
+    if (markdownText && looksLikeMarkdownTable(markdownText)) return true
+
+    const tabularText = state.getData(ClipboardDataType.TSV) || plainText
+    return !!tabularText && !!parseTabularText(tabularText)
+  }
+
+  private async _parsePastedTableSnapshot(state: {
+    dataTypes: readonly string[]
+    getData: (type: ClipboardDataType) => string | null
+  }) {
+    let rootSnapshot: IBlockSnapshot | null = null
+
+    if (state.dataTypes.includes(ClipboardDataType.BLOCKCRAFT_SNAPSHOT)) {
+      rootSnapshot = parseClipboardSnapshot(state.getData(ClipboardDataType.BLOCKCRAFT_SNAPSHOT))
+    }
+
+    if (!rootSnapshot && state.dataTypes.includes(ClipboardDataType.HTML)) {
+      const htmlString = state.getData(ClipboardDataType.HTML)
+      rootSnapshot = parseClipboardSnapshotFromHtml(htmlString)
+      if (!rootSnapshot && htmlString) {
+        const htmlAdapter = this.doc.injector.get(DOC_ADAPTER_SERVICE_TOKEN)?.getAdapter(ClipboardDataType.HTML)
+        if (htmlAdapter) {
+          try {
+            rootSnapshot = await htmlAdapter.toSnapshot(htmlString)
+          } catch (e) {
+            this.doc.logger.warn('table html paste parse error', e)
+          }
+        }
+      }
+    }
+
+    const plainText = state.getData(ClipboardDataType.TEXT) || ''
+    const markdownText = getMarkdownClipboardText(state) || (plainText && looksLikeMarkdownTable(plainText) ? plainText : null)
+    if (!rootSnapshot && markdownText) {
+      const markdownAdapter = this.doc.injector.get(DOC_ADAPTER_SERVICE_TOKEN)?.getAdapter(ClipboardDataType.MARKDOWN)
+      if (markdownAdapter) {
+        try {
+          rootSnapshot = await markdownAdapter.toSnapshot(markdownText)
+        } catch (e) {
+          this.doc.logger.warn('table markdown paste parse error', e)
+        }
+      }
+    }
+
+    if (!rootSnapshot) {
+      const tabularText = state.getData(ClipboardDataType.TSV) || plainText
+      const matrix = tabularText ? parseTabularText(tabularText) : null
+      if (matrix) {
+        return createTableSnapshotFromMatrix(this.doc, matrix, 0)
+      }
+    }
+
+    return rootSnapshot ? findFirstTableSnapshot(rootSnapshot) : null
+  }
+
+  private _fillTableFromSnapshot(
+    table: BlockCraft.IBlockComponents['table'],
+    sourceTable: IBlockSnapshot,
+    start: number[]
+  ) {
+    const sourceRows = getPastedTableCellRows(sourceTable)
+    if (!sourceRows.length) return
+
+    this.doc.crud.transact(() => {
+      for (let rowOffset = 0; rowOffset < sourceRows.length; rowOffset++) {
+        const targetRowIndex = start[0] + rowOffset
+        if (targetRowIndex >= table.rowLength) break
+
+        const sourceCells = sourceRows[rowOffset]
+        const targetCells = table.getChildrenByIndex(targetRowIndex).childrenIds
+          .slice(start[1])
+          .map(id => this.doc.getBlockById(id) as BlockCraft.IBlockComponents['table-cell'])
+          .filter(cell => cell.props.display !== 'none')
+
+        for (let colOffset = 0; colOffset < sourceCells.length; colOffset++) {
+          const targetCell = targetCells[colOffset]
+          if (!targetCell) break
+
+          const children = cloneSnapshot(sourceCells[colOffset].children || []) as IBlockSnapshot[]
+          const nextChildren = children.length
+            ? children
+            : [this.doc.schemas.createSnapshot('paragraph', [])]
+          replaceSnapshotsIdDeeply(nextChildren)
+
+          if (targetCell.childrenLength) {
+            this.doc.crud.deleteBlocks(targetCell.id, 0, targetCell.childrenLength, true)
+          }
+          this.doc.crud.insertBlocks(targetCell.id, 0, nextChildren)
+        }
+      }
+    })
+
+    requestAnimationFrame(() => {
+      this._restoreCursorInCell(table, start)
+    })
+  }
+
+  private _restoreCursorInCell(table: BlockCraft.IBlockComponents['table'], coordinate: number[]) {
+    try {
+      const targetCell = table.getCellByCoordinate(coordinate[0], coordinate[1])
+      ;(table as unknown as {_clearSelectionUiState: () => void})._clearSelectionUiState()
+      this.doc.selection.setCursorAtBlock(targetCell, false, false)
+      this.doc.selection.recalculate()
+    } catch (e) {
+      this.doc.logger.warn('restoreTablePasteCursor error', e)
+      this.doc.selection.recalculate()
+    }
+  }
 
   private _handleCopyOrCut(context: UIEventStateContext, isCut: boolean): boolean {
     const selection = this.doc.selection.value
@@ -126,6 +305,10 @@ export class TableBlockBinding extends DocPlugin {
 
 }
 
+function looksLikeMarkdownTable(text: string) {
+  return /(^|\n)\s*\|.+\|\s*\n\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*(\n|$)/.test(text.trim())
+}
+
 function legalizeTableModels(snapshot: IBlockSnapshot, fillCb: () => IBlockSnapshot) {
   const rows = snapshot.children as IBlockSnapshot[]
   const masterMatrix = rows.map(row => {
@@ -206,4 +389,25 @@ function legalizeTableModels(snapshot: IBlockSnapshot, fillCb: () => IBlockSnaps
   }
   return snapshot
 
+}
+
+export function findFirstTableSnapshot(snapshot: IBlockSnapshot): IBlockSnapshot | null {
+  if (snapshot.flavour === 'table') return snapshot
+  const children = Array.isArray(snapshot.children) ? snapshot.children : []
+  for (const child of children) {
+    if (!child || typeof child !== 'object' || !('flavour' in child)) continue
+    const table = findFirstTableSnapshot(child as IBlockSnapshot)
+    if (table) return table
+  }
+  return null
+}
+
+export function getPastedTableCellRows(tableSnapshot: IBlockSnapshot): IBlockSnapshot[][] {
+  if (tableSnapshot.flavour !== 'table') return []
+  const rows = (tableSnapshot.children || []) as IBlockSnapshot[]
+  return rows
+    .filter(row => row.flavour === 'table-row')
+    .map(row => ((row.children || []) as IBlockSnapshot[])
+      .filter(cell => cell.flavour === 'table-cell' && cell.props['display'] !== 'none'))
+    .filter(row => row.length > 0)
 }

@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-04-08
+> Last updated: 2026-05-09
 
 ## Inline Extensions
 
@@ -146,7 +146,7 @@ new CodeInlineEditorBinding()
 
 > `plugins/tableBlockBinding.ts` — Keyboard and clipboard bindings for table blocks.
 
-Handles copy/cut of selected cell ranges, Shift+Arrow to select whole table, Delete/Backspace to clear cells, and Cmd+A to select entire table.
+Handles copy/cut of selected cell ranges, table-shaped paste into existing cells, Shift+Arrow to select whole table, Delete/Backspace to clear cells, and Cmd+A to select entire table.
 
 #### Configuration
 
@@ -162,6 +162,7 @@ new TableBlockBinding()
 |-------------|---------|----------|
 | `copy` | `table` | Copy selected cells as table snapshot |
 | `cut` | `table` | Copy + clear selected cells |
+| `paste` | `table` | When clipboard content is a BlockCraft/HTML/Markdown/TSV table, fill existing table cells one-to-one from the focused cell or selected top-left cell; oversized source rows/columns are clipped to the current table, then the range selection UI is cleared |
 | `Shift+Arrow` | `table-cell` | Select the whole table block |
 | `Delete` / `Backspace` | `table` | Clear content of selected cells |
 | `Cmd/Ctrl+A` | `table-cell` | Select entire table (when cell is all-selected) |

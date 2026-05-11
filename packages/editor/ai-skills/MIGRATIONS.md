@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-04-16 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-05-09 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,25 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v0.2.29 — 2026-05-09 — Table Paste Into Existing Cells
+
+**Severity**: patch
+
+**What changed**: `TableBlockBinding` now intercepts table-shaped paste while the selection is inside an existing table. BlockCraft table snapshots, external HTML tables, Markdown tables, and tab-separated table text are parsed into a source table and copied into the current table cells one-to-one from the focused cell or selected top-left cell.
+
+**Why**: Pasting a table while focused in a table previously followed the general block paste path, which inserted a new table/block content instead of filling the current table cells. Users expect spreadsheet-style paste to map source cells onto the existing table grid.
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-inline.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Table-shaped paste inside a table fills existing cells instead of inserting a new table block.
+- Source rows/columns that exceed the current table bounds are clipped; the paste does not automatically add rows or columns.
+- Cell-range selection highlights are cleared after table paste, and the cursor is restored inside the paste start cell.
+- Plain non-table paste inside a table still falls back to the normal editor paste path.
 
 ### v0.2.20 — 2026-04-16 — Standalone Markdown Stream Viewer
 

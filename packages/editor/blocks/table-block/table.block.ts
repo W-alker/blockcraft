@@ -246,6 +246,20 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     })
   }
 
+  private _clearSelectionUiState() {
+    this._startSelectingCell = this._lastSelectingCell = null
+    this._prevAdjustedSelection = null
+    this._activeCellsRange = null
+    this._hoveredRowHandle = null
+    this._hoveredColHandle = null
+    this._visibleRowHandle = null
+    this._visibleColHandle = null
+    this._clearSelected()
+    this._clearActiveRanges()
+    this._hideTableMenu()
+    this.changeDetectorRef.markForCheck()
+  }
+
   private _closetCell(event: Event) {
     const target = event.target as Node
     const ele = target instanceof HTMLElement ? target : target.parentElement!
@@ -262,18 +276,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const cell = this.doc.getBlockById(id) as TableCellBlockComponent
     if (!cell) return
 
-    this._clearSelected()
-    this._clearActiveRanges()
-    this._startSelectingCell = this._lastSelectingCell = null
-    this._prevAdjustedSelection = null
-    this._activeCellsRange = null
-    this._hoveredRowHandle = null
-    this._hoveredColHandle = null
-    this._visibleRowHandle = null
-    this._visibleColHandle = null
-    this._resetHandleBars()
-    this._hideTableMenu()
-    this.changeDetectorRef.markForCheck()
+    this._clearSelectionUiState()
     this._pendingStart = cell
 
     const origin = cell
