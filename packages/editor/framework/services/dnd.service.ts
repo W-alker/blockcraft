@@ -64,6 +64,7 @@ const calcLineRect = (
 
 const DRAG_SCROLL_EDGE = 56
 const DRAG_SCROLL_MAX_STEP = 24
+const DRAG_WATCHDOG_MS = 500
 
 const calcDragScrollStep = (pointer: number, start: number, end: number) => {
   if (pointer < start + DRAG_SCROLL_EDGE) {
@@ -101,6 +102,9 @@ export class DocDndService {
   private dragMoveFrame: number | null = null
   private lastDragEvent: DragEvent | null = null
   private lastDragLineRect: DragLineRect | null = null
+  // 兜底：浏览器在拖回 OS / ESC 取消等场景不一定可靠地触发 drop/dragend
+  // 每次 dragover/dragMove 重置看门狗；超过 DRAG_WATCHDOG_MS 没收到事件就强制清理
+  private dragWatchdog: number | null = null
   // private rootRect: Pick<DOMRect, 'top' | 'left' | 'width' | 'height'> = {top: 0, left: 0, width: 0, height: 0}
 
   private createDragLine = () => {
@@ -207,49 +211,82 @@ export class DocDndService {
     }
   }
 
+  private resetDragWatchdog = () => {
+    if (this.dragWatchdog !== null) clearTimeout(this.dragWatchdog)
+    this.dragWatchdog = window.setTimeout(() => {
+      this.dragWatchdog = null
+      this.clearDrag()
+    }, DRAG_WATCHDOG_MS)
+  }
+
+  private stopDragWatchdog = () => {
+    if (this.dragWatchdog === null) return
+    clearTimeout(this.dragWatchdog)
+    this.dragWatchdog = null
+  }
+
   private processDragMove = (evt: DragEvent) => {
     this.dragStatus$.next(DocDndStatus.moving)
+    this.resetDragWatchdog()
 
+    // === 阶段 1：识别 activeBlock ===
+    // 失败的场景（gap / root / leaf / 已进入的 _inBlock）不再 return，
+    // 而是落到阶段 2 用现有 prevBlock + 当前 Y 重新计算拖拽线位置，避免“卡住”。
     const evtTarget = (document.elementFromPoint(evt.clientX, evt.clientY) ?? evt.target) as Node | null
-    if (!evtTarget || evtTarget === this.doc.root.hostElement) return
+    const validTarget = evtTarget && evtTarget !== this.doc.root.hostElement
+    const blockId = validTarget
+      ? (evtTarget === this._prevTargetElement
+          ? this.prevBlock?.id
+          : closetBlockId(evtTarget))
+      : null
 
-    const blockId = evtTarget === this._prevTargetElement
-      ? this.prevBlock?.id
-      : closetBlockId(evtTarget)
-    if (!blockId) return
-
-    let activeBlock = blockId === this.prevBlock?.id
-      ? this.prevBlock
-      : this.doc.getBlockById(blockId)
-    if (!activeBlock || activeBlock.flavour === 'root') return
-    this._prevTargetElement = evtTarget
-
-    if (this.prevBlock !== activeBlock) {
-      if (activeBlock === this._inBlock) return
-      const schema = this.doc.schemas.get(activeBlock.flavour)!
-
-      if (schema.metadata.renderUnit) {
-        this._inBlock = activeBlock
-        const renderBlockRect = activeBlock.hostElement.getBoundingClientRect()
-        const position = calcPositionByRect(evt, renderBlockRect)
-        activeBlock = position === 'before' ? this._inBlock!.firstChildren! : this._inBlock!.lastChildren!
-        this.prevBlock = activeBlock
-        this.prevDragPosition = position
-        this.moveDragLine(this.prevBlock.hostElement, position)
-        return
-      }
-
-      if (activeBlock.nodeType === 'block') {
-        this._inBlock = null
-      }
-      if (schema.metadata.isLeaf) return
-      this.prevBlock = activeBlock
+    let activeBlock: BlockCraft.BlockComponent | null = null
+    if (blockId) {
+      activeBlock = (blockId === this.prevBlock?.id
+        ? this.prevBlock
+        : this.doc.getBlockById(blockId)) ?? null
+      if (activeBlock?.flavour === 'root') activeBlock = null
     }
 
+    if (activeBlock) {
+      this._prevTargetElement = evtTarget
+
+      if (this.prevBlock !== activeBlock && activeBlock !== this._inBlock) {
+        const schema = this.doc.schemas.get(activeBlock.flavour)!
+
+        if (schema.metadata.renderUnit) {
+          // renderUnit 用父容器中心决定 before/after，并把目标设为对应的首/末子块
+          // 这里位置和容器绑定（不是子块自身），保留原有自渲染逻辑后直接返回
+          this._inBlock = activeBlock
+          const renderBlockRect = activeBlock.hostElement.getBoundingClientRect()
+          const position = calcPositionByRect(evt, renderBlockRect)
+          const childBlock = position === 'before' ? activeBlock.firstChildren : activeBlock.lastChildren
+          if (childBlock) {
+            this.prevBlock = childBlock
+            this.prevDragPosition = position
+            this.moveDragLine(childBlock.hostElement, position)
+          }
+          return
+        }
+
+        if (activeBlock.nodeType === 'block') {
+          this._inBlock = null
+        }
+        // isLeaf：不更新 prevBlock（leaf 不能作为子级容器），但仍落到阶段 2 刷新线位置
+        if (!schema.metadata.isLeaf) {
+          this.prevBlock = activeBlock
+        }
+      }
+    }
+
+    // === 阶段 2：基于 prevBlock 刷新拖拽线（兜底） ===
+    if (!this.prevBlock?.hostElement?.isConnected) return
     const hostRect = this.prevBlock.hostElement.getBoundingClientRect()
-    const allowColumnDrop = !activeBlock.flavour.startsWith('column')
+    const parentFlavour = this.prevBlock.parentBlock?.flavour
+    const allowColumnDrop = !this.prevBlock.flavour.startsWith('column')
       && this.doc.schemas.has('column')
-      && ['root', 'column'].includes(this.prevBlock.parentBlock!.flavour)
+      && parentFlavour != null
+      && ['root', 'column'].includes(parentFlavour)
     const position = calcPositionByRect(evt, hostRect, allowColumnDrop)
     this.prevDragPosition = position
     this.moveDragLine(this.prevBlock.hostElement, position, hostRect)
@@ -294,10 +331,12 @@ export class DocDndService {
       this.dragStatus$.next(DocDndStatus.start)
       // this.doc.root.hostElement.classList.add('dragging')
       this.createDragLine()
+      this.resetDragWatchdog()
       // 防止释放时会有个返回的动画
       fromEvent<DragEvent>(document, 'dragover').pipe(takeUntil(this.dragEnd$))
         .subscribe((e) => {
           e.preventDefault()
+          this.resetDragWatchdog()
           this.queueDragScroll(e)
         })
 
@@ -310,6 +349,28 @@ export class DocDndService {
           }
           this.clearDrag()
         })
+
+      // 兜底 1：外部文件被拖回 OS（window 的 dragend 不会触发）
+      // dragleave 在跨越元素时也会触发，所以只在 relatedTarget 为 null 或坐标越窗时清理
+      fromEvent<DragEvent>(document, 'dragleave').pipe(takeUntil(this.dragEnd$))
+        .subscribe((e) => {
+          const outOfWindow = !e.relatedTarget
+            || e.clientX <= 0
+            || e.clientY <= 0
+            || e.clientX >= window.innerWidth
+            || e.clientY >= window.innerHeight
+          if (outOfWindow) this.clearDrag()
+        })
+
+      // 兜底 2：ESC 取消拖拽（部分浏览器不会可靠触发 dragend）
+      fromEvent<KeyboardEvent>(document, 'keydown').pipe(takeUntil(this.dragEnd$))
+        .subscribe((e) => {
+          if (e.key === 'Escape') this.clearDrag()
+        })
+
+      // 兜底 3：document 级 dragend（除了原本 window 上的兜底，再加一层冒泡监听）
+      fromEvent<DragEvent>(document, 'dragend').pipe(takeUntil(this.dragEnd$))
+        .subscribe(() => this.clearDrag())
 
       // dragMove处理
       this.doc.event.add('dragMove', this.onDragMove)
@@ -333,13 +394,13 @@ export class DocDndService {
   }
 
   private clearDrag = () => {
-    // this.doc.root.hostElement.classList.remove('dragging')
+    // 幂等：line 和 watchdog 即使在 status === end 的异常路径下也要兜底清理，
+    // 防止 dragLine 残留在 DOM（曾出现“拖拽结束蓝线还在”的场景）。
+    this.removeDragLine()
+    this.stopDragWatchdog()
     if (this.dragStatus$.value === DocDndStatus.end) return
-    // this.virtualScroller?.forEach(e => e.remove())
-    // this.virtualScroller = null
     this.stopDragScroll()
     this.stopDragMove()
-    this.removeDragLine()
     this.dragStatus$.next(DocDndStatus.end)
     this.prevDragPosition = 'none'
     this.prevBlock = null
