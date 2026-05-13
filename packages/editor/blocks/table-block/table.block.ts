@@ -254,6 +254,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this._hoveredColHandle = null
     this._visibleRowHandle = null
     this._visibleColHandle = null
+    // Keep the visual lockdown class in sync with `_startSelectingCell`. If we
+    // null the state here (e.g. an interleaving second mousedown during an
+    // active drag) without removing the class, the table stays in
+    // `-webkit-user-modify: read-only` + `pointer-events: none` mode and the
+    // user can no longer focus / edit any cell in the table.
+    this.hostElement.classList.remove('is-selecting-cell')
     this._clearSelected()
     this._clearActiveRanges()
     this._hideTableMenu()
@@ -271,6 +277,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   // listeners (not the framework dispatcher) so routing can't swallow events.
   private _handleNativeMouseDown(evt: MouseEvent) {
     if (this.doc.isReadonly) return
+    // Only react to primary (left) button. On Mac WebView / Safari the
+    // trackpad's two-finger tap and force-touch can dispatch button=2
+    // mousedown during an active left-button drag; on Chrome a stray
+    // right-click can do the same. Letting those into `_clearSelectionUiState`
+    // would null `_startSelectingCell` while the visual lockdown class stays
+    // on the table host — locking the entire table as read-only.
+    if (evt.button !== 0) return
     const id = this._closetCell(evt)
     if (!id) return
     const cell = this.doc.getBlockById(id) as TableCellBlockComponent
@@ -302,9 +315,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.onEndSelect()
     }
 
+    // Release on primary button only. Right/middle-button up events fired
+    // while the user is still holding left would otherwise terminate the
+    // drag prematurely. Touchend has no button and always passes through.
+    const isPrimaryRelease = (e: PointerEvent | MouseEvent) => e.button === 0
     const releaseSub = merge(
-      fromEvent<PointerEvent>(window, 'pointerup', { capture: true }),
-      fromEvent<MouseEvent>(window, 'mouseup', { capture: true }),
+      fromEvent<PointerEvent>(window, 'pointerup', { capture: true }).pipe(filter(isPrimaryRelease)),
+      fromEvent<MouseEvent>(window, 'mouseup', { capture: true }).pipe(filter(isPrimaryRelease)),
       fromEvent<TouchEvent>(window, 'touchend', { capture: true }),
     ).pipe(takeUntil(this.onDestroy$)).subscribe(() => finishSelection())
   }
@@ -357,26 +374,44 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private onEndSelect = () => {
     this._pendingStart = null
-    if (!this._startSelectingCell) return;
+    // Defence-in-depth: always clear the lockdown class on drag-end, even if
+    // the state machine got desynced. `_clearSelectionUiState` also clears it,
+    // but if onEndSelect is reached via a stale releaseSub closure whose
+    // `_startSelectingCell` was nulled elsewhere, the early-return below would
+    // otherwise leave the class on.
     this.hostElement.classList.remove('is-selecting-cell')
+    if (!this._startSelectingCell) return;
     const anchorCell = this._startSelectingCell
     this._startSelectingCell = this._lastSelectingCell = null
 
-    if (this._selectedCellSet.size > 1 && this._prevAdjustedSelection) {
-      const sel = this._prevAdjustedSelection
+    const isMultiCell = this._selectedCellSet.size > 1 && !!this._prevAdjustedSelection
+    if (isMultiCell) {
+      const sel = this._prevAdjustedSelection!
       this._activeCellsRange = {
         start: [sel.start[0], sel.start[1]],
         end: [sel.end[0], sel.end[1]],
         anchorId: anchorCell.id,
       }
     } else {
+      // Single-cell drag-select: drop straight into text editing inside the
+      // cell instead of entering framework block-selection. Block-selection
+      // would set `contenteditable=false` on the <td>, which in Chrome
+      // prevents the next click from positioning the caret (no selectionchange
+      // fires, so the contenteditable=false sticks) and in Safari produces a
+      // confusing "first click clears, caret lost" two-step. Cursor-placement
+      // lets the user type immediately and matches the natural click flow.
       this._activeCellsRange = null
+      this._clearSelected()
     }
     this._prevAdjustedSelection = null
 
     this._suppressFocusSync = true
     try {
-      this.doc.selection.selectBlock(anchorCell)
+      if (isMultiCell) {
+        this.doc.selection.selectBlock(anchorCell)
+      } else {
+        this.doc.selection.setCursorAtBlock(anchorCell, false, false)
+      }
     } finally {
       this._suppressFocusSync = false
     }
