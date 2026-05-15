@@ -33,13 +33,31 @@ export class RectangleSelection {
   }
 }
 
-export function adjustSelection(
-  selection: RectangleSelection,
-  table: TableBlockComponent
-): TableCellsSelection {
-  const masterMap = new Map<string, TableCellBlockComponent>();
+export type CellMasterMap = Map<string, TableCellBlockComponent>;
 
-  // Step 1: 构建 masterMap
+/**
+ * Build a (row, col) → cell lookup covering every visible cell, including
+ * the coverage cells of any rowspan/colspan merge. O(rows × cols).
+ *
+ * The result is stable for the lifetime of an interactive drag — call sites
+ * that re-run adjustment many times in a row (cell-rectangle drag selection)
+ * should build this once and reuse via `adjustSelectionWithMap`.
+ *
+ * Note: deliberately bypasses `getCellCoordinates` (which walks
+ * `parentBlock.childrenIds.indexOf(...)` and would dominate the build for
+ * large tables). The outer-loop indices `i`/`j` already give the source row
+ * and column directly.
+ */
+export function buildCellMasterMap(table: TableBlockComponent): CellMasterMap {
+  return buildCellMasterMapWithSources(table).masterMap;
+}
+
+export function buildCellMasterMapWithSources(table: TableBlockComponent): {
+  masterMap: CellMasterMap,
+  sourceCoords: Map<TableCellBlockComponent, [number, number]>,
+} {
+  const masterMap: CellMasterMap = new Map();
+  const sourceCoords = new Map<TableCellBlockComponent, [number, number]>();
   const rowCount = table.childrenLength;
   for (let i = 0; i < rowCount; i++) {
     const row = table.getChildrenByIndex(i);
@@ -48,16 +66,27 @@ export function adjustSelection(
       const cell = row.getChildrenByIndex(j) as TableCellBlockComponent;
       if (!cell || cell.props.display === "none") continue;
 
-      const { min, max } = getCellCoordinates(cell);
-      for (let r = min[0]; r <= max[0]; r++) {
-        for (let c = min[1]; c <= max[1]; c++) {
+      sourceCoords.set(cell, [i, j]);
+
+      const rowspan = cell.props.rowspan || 1;
+      const colspan = cell.props.colspan || 1;
+      const lastRow = i + rowspan - 1;
+      const lastCol = j + colspan - 1;
+      for (let r = i; r <= lastRow; r++) {
+        for (let c = j; c <= lastCol; c++) {
           masterMap.set(`${r},${c}`, cell);
         }
       }
     }
   }
+  return { masterMap, sourceCoords };
+}
 
-  // Step 2: 增量 flood-fill 扩展区域
+export function adjustSelectionWithMap(
+  selection: RectangleSelection,
+  masterMap: CellMasterMap,
+  sourceCoords?: Map<TableCellBlockComponent, [number, number]>,
+): TableCellsSelection {
   selection.normalize();
   const visited = new Set<string>();
   const queue: [number, number][] = [];
@@ -76,29 +105,44 @@ export function adjustSelection(
     const cell = masterMap.get(`${r},${c}`);
     if (!cell) continue;
 
-    const { min, max } = getCellCoordinates(cell);
+    // Resolve the cell's source position. With a precomputed `sourceCoords`
+    // we skip `getCellCoordinates` (which walks `childrenIds.indexOf` twice).
+    let sourceRow: number, sourceCol: number;
+    if (sourceCoords) {
+      const coord = sourceCoords.get(cell);
+      if (!coord) continue;
+      sourceRow = coord[0];
+      sourceCol = coord[1];
+    } else {
+      const { min } = getCellCoordinates(cell);
+      sourceRow = min[0];
+      sourceCol = min[1];
+    }
+    const rowspan = cell.props.rowspan || 1;
+    const colspan = cell.props.colspan || 1;
+    const lastRow = sourceRow + rowspan - 1;
+    const lastCol = sourceCol + colspan - 1;
 
     // 如果 master 超出选区范围，就扩展，并把新的格子也加入队列
     let expanded = false;
-    if (min[0] < selection.startRow) {
-      selection.startRow = min[0];
+    if (sourceRow < selection.startRow) {
+      selection.startRow = sourceRow;
       expanded = true;
     }
-    if (min[1] < selection.startCol) {
-      selection.startCol = min[1];
+    if (sourceCol < selection.startCol) {
+      selection.startCol = sourceCol;
       expanded = true;
     }
-    if (max[0] > selection.endRow) {
-      selection.endRow = max[0];
+    if (lastRow > selection.endRow) {
+      selection.endRow = lastRow;
       expanded = true;
     }
-    if (max[1] > selection.endCol) {
-      selection.endCol = max[1];
+    if (lastCol > selection.endCol) {
+      selection.endCol = lastCol;
       expanded = true;
     }
 
     if (expanded) {
-      // 将新区域加入队列
       for (let rr = selection.startRow; rr <= selection.endRow; rr++) {
         for (let cc = selection.startCol; cc <= selection.endCol; cc++) {
           const key = `${rr},${cc}`;
@@ -115,6 +159,13 @@ export function adjustSelection(
     start: [selection.startRow, selection.startCol],
     end: [selection.endRow, selection.endCol],
   };
+}
+
+export function adjustSelection(
+  selection: RectangleSelection,
+  table: TableBlockComponent,
+): TableCellsSelection {
+  return adjustSelectionWithMap(selection, buildCellMasterMap(table));
 }
 
 

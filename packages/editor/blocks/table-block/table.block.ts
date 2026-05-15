@@ -9,7 +9,7 @@ import { ColReorderEndEvent, ColReorderMoveEvent, ColReorderStartEvent, TableCol
 import { RowReorderEndEvent, RowReorderMoveEvent, RowReorderStartEvent, TableRowBarComponent } from "./widgets/table-row-bar.component";
 import { TableStructureToolbarComponent } from "./widgets/table-structure-toolbar.component";
 import { resolveTableStructureAnchor } from "./widgets/table-structure-anchor";
-import { adjustSelection, RectangleSelection } from "./utils";
+import { adjustSelection, adjustSelectionWithMap, buildCellMasterMap, buildCellMasterMapWithSources, CellMasterMap, RectangleSelection } from "./utils";
 import { debounce, nextTick, throttle } from "../../global";
 import { addTableCol, addTableRow, buildCellMatrix, CellMatrixEntry, deleteTableCols, deleteTableRows } from "./callback";
 import { OverlayRef } from "@angular/cdk/overlay";
@@ -79,6 +79,15 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _prevAdjustedSelection: TableCellsSelection | null = null
   private _activeCellsRange: { start: [number, number], end: [number, number], anchorId: string } | null = null
   private _suppressFocusSync = false
+  // Precomputed (row, col) → cell map cached for the duration of one drag
+  // session. Building it is O(rows × cols) and we'd otherwise rebuild it on
+  // every mouseover crossing — see `_setRectangleSelected` / `confirmSelection`.
+  private _dragMasterMap: CellMasterMap | null = null
+  // Reverse lookup populated alongside _dragMasterMap: cell → its source
+  // (rowIdx, colIdx). Lets us avoid the O(R + C) `childrenIds.indexOf` walks
+  // inside `_getSelectedCellsCoordinates` on every mouseover crossing.
+  private _dragCellSourceCoord: Map<TableCellBlockComponent, [number, number]> | null = null
+  private _dragStartCoord: [number, number] | null = null
 
   protected _rowReorder: {
     fromIndex: number
@@ -140,12 +149,20 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // Attach native DOM listeners directly to the table host so routing
     // cannot swallow the events. Capture-phase mousedown guarantees we arm
     // selection state before any other handler runs.
+    //
+    // The mouseover stream runs OUTSIDE Angular's zone — it fires once per
+    // child-element crossing inside cells (potentially dozens per cell visit
+    // on rich-text content) and every event would otherwise schedule a CD
+    // tick across the entire app. The handler only mutates DOM (classList)
+    // and our own internal state, so no CD is required for the hot drag path.
     fromEvent<MouseEvent>(this.hostElement, 'mousedown', { capture: true })
       .pipe(takeUntil(this.onDestroy$))
       .subscribe(e => this._handleNativeMouseDown(e))
-    fromEvent<MouseEvent>(this.hostElement, 'mouseover')
-      .pipe(takeUntil(this.onDestroy$))
-      .subscribe(e => this._handleNativeMouseOver(e))
+    this.doc.ngZone.runOutsideAngular(() => {
+      fromEvent<MouseEvent>(this.hostElement, 'mouseover')
+        .pipe(takeUntil(this.onDestroy$))
+        .subscribe(e => this._handleNativeMouseOver(e))
+    })
     this.doc.selection.selectionChange$
       .pipe(takeUntil(this.onDestroy$))
       .subscribe(selection => {
@@ -260,6 +277,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // `-webkit-user-modify: read-only` + `pointer-events: none` mode and the
     // user can no longer focus / edit any cell in the table.
     this.hostElement.classList.remove('is-selecting-cell')
+    this._dragMasterMap = null
+    this._dragCellSourceCoord = null
+    this._dragStartCoord = null
     this._clearSelected()
     this._clearActiveRanges()
     this._hideTableMenu()
@@ -291,6 +311,17 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     this._clearSelectionUiState()
     this._pendingStart = cell
+
+    // Eagerly precompute the master map during the mousedown idle window.
+    // Building it can cost several milliseconds on large tables and would
+    // otherwise be billed against the FIRST cell crossing (where the user is
+    // expecting instant visual feedback). Doing it here hides the cost
+    // inside the click's natural pause — invisible if the user only clicks,
+    // and a clean handoff if they drag.
+    const built = buildCellMasterMapWithSources(this)
+    this._dragMasterMap = built.masterMap
+    this._dragCellSourceCoord = built.sourceCoords
+    this._dragStartCoord = built.sourceCoords.get(cell) ?? null
 
     const origin = cell
 
@@ -331,8 +362,18 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const id = this._closetCell(evt)
     if (!id || this.hoveringCell?.id === id) return
 
-    if (!this.resizingCol$.value) {
-      this.hoveringCell = this.doc.getBlockById(id) as TableCellBlockComponent
+    // Always refresh `hoveringCell` so the `hoveringCell?.id === id`
+    // early-return at the top of this handler keeps short-circuiting
+    // same-cell events. If we leave it stale during drag, re-entering a
+    // previously crossed cell would falsely match and skip the rectangle
+    // update.
+    this.hoveringCell = this.doc.getBlockById(id) as TableCellBlockComponent
+
+    // Skip the resize-bar repositioning while a cell drag is in flight —
+    // each call costs two forced-layout `getBoundingClientRect()` reads and
+    // the resize bar is hidden during drag anyway. The next non-drag
+    // mouseover after release will refresh it.
+    if (!this.resizingCol$.value && !this._startSelectingCell) {
       const offsetX = this.hoveringCell.hostElement.getBoundingClientRect().right
         - this.tableScrollable.nativeElement.getBoundingClientRect().left - 6
       this.colResizeBar.nativeElement.style.left = `${offsetX}px`
@@ -359,6 +400,16 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // text cursor disappears but the 'selected' class hasn't painted yet.
     this._startSelectingCell = cell
     this._pendingStart = null
+    // Master map + source-coordinate map were precomputed during mousedown
+    // (`_handleNativeMouseDown`) so the first cell crossing pays zero build
+    // cost. If the precompute path didn't run for some reason (e.g., the
+    // promotion fired via a non-standard path), build lazily here.
+    if (!this._dragMasterMap) {
+      const built = buildCellMasterMapWithSources(this)
+      this._dragMasterMap = built.masterMap
+      this._dragCellSourceCoord = built.sourceCoords
+      this._dragStartCoord = built.sourceCoords.get(cell) ?? null
+    }
     this.hostElement.classList.add('is-selecting-cell')
     this.selectCell(cell)
     // Now clear the native selection so Safari doesn't keep extending it
@@ -380,6 +431,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // `_startSelectingCell` was nulled elsewhere, the early-return below would
     // otherwise leave the class on.
     this.hostElement.classList.remove('is-selecting-cell')
+    this._dragMasterMap = null
+    this._dragCellSourceCoord = null
+    this._dragStartCoord = null
     if (!this._startSelectingCell) return;
     const anchorCell = this._startSelectingCell
     this._startSelectingCell = this._lastSelectingCell = null
@@ -450,16 +504,44 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       && this._prevAdjustedSelection?.start[1] === start[1]
       && this._prevAdjustedSelection?.end[1] === end[1]) return
 
-    this._clearSelected()
-    // 初始位置和结束位置相等
-    if (start[0] === end[0] && start[1] === end[1]) {
-      this.selectCell(this._startSelectingCell!)
-      return
-    }
-
     this._prevAdjustedSelection = selection
 
-    this.getCellsMatrixByCoordinates(start, end).flat(1).forEach(cell => this.selectCell(cell))
+    // Compute the next selected-cell set. During an active drag we look up
+    // cells directly via the cached masterMap (O(R×C) Map.get) instead of
+    // walking childrenIds + getBlockById O(R×C) times per mouseover.
+    let nextCells: Set<TableCellBlockComponent>
+    if (start[0] === end[0] && start[1] === end[1]) {
+      nextCells = new Set([this._startSelectingCell!])
+    } else if (this._dragMasterMap) {
+      nextCells = new Set<TableCellBlockComponent>()
+      for (let r = start[0]; r <= end[0]; r++) {
+        for (let c = start[1]; c <= end[1]; c++) {
+          const cell = this._dragMasterMap.get(`${r},${c}`)
+          if (cell) nextCells.add(cell)
+        }
+      }
+    } else {
+      nextCells = new Set(this.getCellsMatrixByCoordinates(start, end).flat(1))
+    }
+    this._applySelectedDiff(nextCells)
+  }
+
+  // Apply a new selected-cell set by diff'ing against the current one — only
+  // touch classList on cells that actually changed state. The previous
+  // implementation cleared every cell and re-added all of them on every
+  // mouseover, producing O(prev + curr) DOM writes per cell-boundary crossing.
+  private _applySelectedDiff(nextCells: Set<TableCellBlockComponent>) {
+    this._selectedCellSet.forEach(cell => {
+      if (!nextCells.has(cell)) {
+        cell.hostElement.classList.remove('selected')
+      }
+    })
+    nextCells.forEach(cell => {
+      if (!this._selectedCellSet.has(cell)) {
+        cell.hostElement.classList.add('selected')
+      }
+    })
+    this._selectedCellSet = nextCells
   }
 
   protected _getSelectedCellsCoordinates() {
@@ -470,6 +552,27 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
     let startCell = this._startSelectingCell
     let endCell = this._lastSelectingCell
+
+    // Hot path: during an active drag we have a precomputed cell → source
+    // coordinate map (built once in `_startCellSelection`). This avoids
+    // walking `childrenIds.indexOf(...)` O(R + C) times per mouseover —
+    // those toArray()/indexOf walks would otherwise dominate the per-event
+    // budget for large tables.
+    const sourceMap = this._dragCellSourceCoord
+    if (sourceMap && this._dragStartCoord) {
+      const startCoordinate = this._dragStartCoord
+      if (startCell === endCell) {
+        return { start: startCoordinate, end: startCoordinate }
+      }
+      const endCoordinate = sourceMap.get(endCell)
+      if (endCoordinate) {
+        return {
+          start: [Math.min(startCoordinate[0], endCoordinate[0]), Math.min(startCoordinate[1], endCoordinate[1])],
+          end: [Math.max(startCoordinate[0], endCoordinate[0]), Math.max(startCoordinate[1], endCoordinate[1])]
+        }
+      }
+      // Fall through to slow path if the map is stale (e.g., remote mutation).
+    }
 
     const rowIds = this.childrenIds
     const startCoordinate = [rowIds.indexOf(startCell.parentId!), startCell.getIndexOfParent()]
@@ -491,7 +594,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   confirmSelection(start: number[], end: number[]) {
-    return adjustSelection(new RectangleSelection(start[0], start[1], end[0], end[1]), this)
+    const rect = new RectangleSelection(start[0], start[1], end[0], end[1])
+    if (this._dragMasterMap) {
+      return adjustSelectionWithMap(rect, this._dragMasterMap, this._dragCellSourceCoord ?? undefined)
+    }
+    return adjustSelection(rect, this)
   }
 
   getSelectedCoordinates() {

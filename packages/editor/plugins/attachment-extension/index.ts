@@ -257,29 +257,38 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     const files = state.clipboardData?.files;
     if (!files?.length) return false;
     ctx.preventDefault();
-    Promise.allSettled(Array.from(files)
-      .map(file => {
-        if (file.type.startsWith('image/')) return this.fileService.uploadImg(file)
-        return this.fileService.uploadAttachment(file)
-      }))
-      .then(res => {
-        const snapshots: IBlockSnapshot[] = [];
 
-        res.forEach(r => {
-          if (r.status !== 'fulfilled') {
-            this.doc.messageService.error(r.reason);
-            return;
-          }
-          const snapshot = typeof r.value === 'string' ? this.doc.schemas.createSnapshot('image', [r.value])
-            : this.doc.schemas.createSnapshot('attachment', [r.value]);
-          snapshot.props.depth = (state.selection.firstBlock.props.depth || 0);
-          snapshots.push(snapshot);
-        });
+    // Create blocks with local object URLs IMMEDIATELY — image / attachment
+    // block components detect a non-http(s) src in their `ngOnInit` and kick
+    // off the upload themselves, showing in-place upload progress. The
+    // previous implementation awaited every upload before inserting, so a
+    // pasted screenshot stayed invisible until the network round-trip
+    // finished. Matches the drag-and-drop path in `DndService.onInsertFiles`.
+    const depth = state.selection.firstBlock.props.depth || 0;
+    const snapshots: IBlockSnapshot[] = [];
+    for (const file of Array.from(files)) {
+      if (this.fileService.isOverMaxSize(file.size)) {
+        this.doc.messageService.warn(
+          file.type.startsWith('image/') ? '图片过大，最大支持 60MB' : '文件过大',
+        );
+        continue;
+      }
+      const url = this.fileService.createObjectURL(file);
+      const snapshot = file.type.startsWith('image/')
+        ? this.doc.schemas.createSnapshot('image', [url])
+        : this.doc.schemas.createSnapshot('attachment', [{
+            name: file.name,
+            url,
+            type: file.type,
+            size: file.size,
+          }]);
+      snapshot.props.depth = depth;
+      snapshots.push(snapshot);
+    }
 
-        if (!snapshots.length) return;
-        this.doc.clipboard.deleteContentFromSelection(state.selection);
-        this.doc.crud.insertBlocksAfter(state.selection.firstBlock, snapshots);
-      });
+    if (!snapshots.length) return true;
+    this.doc.clipboard.deleteContentFromSelection(state.selection);
+    this.doc.crud.insertBlocksAfter(state.selection.firstBlock, snapshots);
     return true;
   }
 
