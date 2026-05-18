@@ -286,7 +286,6 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     :host {
       z-index: 100;
       display: block;
-      position: absolute;
       user-select: none;
       -webkit-user-select: none;
 

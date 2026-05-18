@@ -81,7 +81,6 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
     :host {
       z-index: 100;
       display: block;
-      position: absolute;
       user-select: none;
       -webkit-user-select: none;
 
