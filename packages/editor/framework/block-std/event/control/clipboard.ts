@@ -13,17 +13,27 @@ export class ClipboardControl {
     // The browser then treats the ZWS span as the editing host and
     // `document.activeElement` is no longer root itself — so we accept any
     // active element that lives *inside* root.
+    //
+    // Readonly 模式下没有任何 contenteditable=true 的元素，activeElement 通常
+    // 是 body；但用户仍可用鼠标选中编辑器内的文本。此时用原生 Selection 兜底：
+    // 只有整段选区都被 root 包含（commonAncestor 在 root 内）时才算编辑器持有，
+    // 跨越编辑器边界的选区不会被误判。
     const isEditorFocused = () => {
       const ae = document.activeElement
-      return !!ae && root.hostElement.contains(ae)
+      if (ae && root.hostElement.contains(ae)) return true
+      const sel = document.getSelection()
+      if (!sel || sel.rangeCount === 0) return false
+      try {
+        const range = sel.getRangeAt(0)
+        return root.hostElement.contains(range.commonAncestorContainer)
+      } catch {
+        return false
+      }
     }
 
     fromEvent<ClipboardEvent>(document, 'copy').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
       if (!isEditorFocused()) return
-      if (this._dispatcher.status.isReadOnly) {
-        ev.preventDefault()
-        return
-      }
+      // copy 不修改文档，readonly 模式也允许走 adapter 流程
       this._dispatcher.run('copy', this._createContext(ev))
     })
     fromEvent<ClipboardEvent>(document, 'cut').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {

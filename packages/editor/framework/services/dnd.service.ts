@@ -351,11 +351,11 @@ export class DocDndService {
         })
 
       // 兜底 1：外部文件被拖回 OS（window 的 dragend 不会触发）
-      // dragleave 在跨越元素时也会触发，所以只在 relatedTarget 为 null 或坐标越窗时清理
+      // 注意：Safari 在元素间移动时也会把 relatedTarget 设为 null，
+      // 因此只能用坐标判断是否真的越出视口，不能依赖 relatedTarget。
       fromEvent<DragEvent>(document, 'dragleave').pipe(takeUntil(this.dragEnd$))
         .subscribe((e) => {
-          const outOfWindow = !e.relatedTarget
-            || e.clientX <= 0
+          const outOfWindow = e.clientX <= 0
             || e.clientY <= 0
             || e.clientX >= window.innerWidth
             || e.clientY >= window.innerHeight
