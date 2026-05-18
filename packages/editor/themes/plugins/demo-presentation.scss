@@ -6,9 +6,10 @@
 
 .demo-root[data-blockcraft-root="true"] {
   width: 100%;
-  --bc-segments-gap: 18px;
-  --bc-fs: 22px;
-  --bc-lh: 30px;
+  // --bc-fs / --bc-lh / --bc-segments-gap 由 PresentationController 根据源文档
+  // 对应变量 × 各自 scale（config.fontScale / lineHeightScale / segmentsGapScale）
+  // 注入到 .presentation-stage 父容器，子级（含 demo-root）通过 CSS 变量继承。
+  // 这里不再 calc 派生，避免 stylesheet 规则覆盖父级注入的继承值。
 
   margin: 0 auto;
   min-height: calc(100% - 20vh);

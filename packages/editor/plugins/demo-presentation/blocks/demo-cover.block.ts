@@ -56,6 +56,9 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
       position: relative;
       background: white;
       transform: none !important;
+      // 给文字 mix-blend-mode 限定混合范围：只与本封面内的 banner / 白底参与差异运算，
+      // 不与外层 .presentation-stage 或更外层的内容混合，避免视觉串扰。
+      isolation: isolate;
 
       &.selected {
         background: white !important;
@@ -100,23 +103,37 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
         text-align: center;
       }
 
+      // 文字采用「白色 + mix-blend-mode: difference」+ 多层 text-shadow 兜底：
+      //   * difference 模式下，白色 (1,1,1) 与背景做 |1 - bg| 运算 → 永远是背景的反色，
+      //     白底变黑字、黑底变白字、彩图变互补色，保证最大亮度对比，不需要额外面板。
+      //   * 多层深色阴影构成柔和描边，给文字加体积感；同时也是不支持 difference 的浏览器
+      //     （极少数）的可读性兜底。
+      //   * isolation 放在 :host 上，让混合范围限定在封面内（不污染外部），文本元素本身
+      //     不需要再次创建 stacking context。
+      .title, .auth-info, .current-time {
+        color: #ffffff;
+        mix-blend-mode: difference;
+      }
+
       .title {
         font-size: calc(var(--bc-fs) * 3.5);
         font-weight: 700;
-        color: #2c3e50;
         margin-bottom: 24px;
         line-height: 1.2;
         letter-spacing: 1px;
-        text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        text-shadow:
+          0 1px 2px rgba(0, 0, 0, 0.55),
+          0 2px 12px rgba(0, 0, 0, 0.35);
       }
 
       .auth-info {
         display: flex;
         align-items: center;
         gap: 0.5em;
-        color: #7f8c8d;
         font-size: calc(var(--bc-fs) * 1.2);
-        text-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        text-shadow:
+          0 1px 2px rgba(0, 0, 0, 0.55),
+          0 1px 6px rgba(0, 0, 0, 0.3);
       }
 
       .author-avatar {
@@ -133,10 +150,12 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
       }
 
       .current-time {
-        color: #95a5a6;
         font-size: var(--bc-fs);
         font-weight: 400;
         margin-top: 1em;
+        text-shadow:
+          0 1px 2px rgba(0, 0, 0, 0.55),
+          0 1px 6px rgba(0, 0, 0, 0.3);
       }
 
       .company-info {

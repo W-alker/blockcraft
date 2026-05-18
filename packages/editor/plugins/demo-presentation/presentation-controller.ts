@@ -29,7 +29,25 @@ export interface DemoConfig {
     showToolbar: boolean;
   },
   cover?: DemoCoverBlockModel['props']
+  /**
+   * 演示模式相对源文档字号的放大倍数。
+   * demo 容器的 --bc-fs 会被设为 sourceFs * fontScale，表格列宽（colWidths）
+   * 按同样倍数缩放。默认 1.5。设为 1 可关闭放大。
+   */
+  fontScale?: number
+  /**
+   * 演示模式相对源文档行高（--bc-lh）的缩放倍数。默认与 fontScale 保持一致，
+   * 这样 lh / fs 比例不变。需要更紧凑或更宽松的行距时单独设置。
+   */
+  lineHeightScale?: number
+  /**
+   * 演示模式相对源文档块间距（--bc-segments-gap）的缩放倍数。默认与 fontScale
+   * 保持一致；单独设置可让段落留白更窄或更宽。
+   */
+  segmentsGapScale?: number
 }
+
+const DEFAULT_DEMO_FONT_SCALE = 1.5;
 
 export class PresentationController {
   private pages: IBlockSnapshot[][] = [];
@@ -112,6 +130,17 @@ export class PresentationController {
       padding: 10vh 10vw;
       box-sizing: border-box;
     `
+    // 根据源文档当前 --bc-fs / --bc-lh / --bc-segments-gap 注入演示模式各自的尺寸。
+    // 默认所有 scale 都跟随 fontScale，使整体节奏保持源文档比例；用户可在 config 中
+    // 单独覆盖 lineHeightScale / segmentsGapScale 调整行距和块间距。表格 colWidths
+    // 用 fontScale 缩放。子级（含 demo-root）通过 CSS 变量继承读取这些值。
+    const sourceFs = this.readSourceCssLength('--bc-fs', 16);
+    const sourceLh = this.readSourceCssLength('--bc-lh', 24);
+    const sourceGap = this.readSourceCssLength('--bc-segments-gap', 10);
+    this.presentationContainer.style.setProperty('--bc-fs', `${sourceFs * this.getFontScale()}px`);
+    this.presentationContainer.style.setProperty('--bc-lh', `${sourceLh * this.getLineHeightScale()}px`);
+    this.presentationContainer.style.setProperty('--bc-segments-gap', `${sourceGap * this.getSegmentsGapScale()}px`);
+
     document.body.appendChild(this.presentationContainer);
     this._demoDoc.initBySnapshot(rootSnapshot, this.presentationContainer);
   }
@@ -390,7 +419,7 @@ export class PresentationController {
   private updatePageContent(index: number) {
     if (!this._demoDoc?.root) return;
 
-    const currentPage = this.pages[index];
+    const currentPage = this.scaleTableColWidths(this.pages[index]);
 
     this._demoDoc.crud.deleteBlocks(this._demoDoc.rootId, 0, this._demoDoc.root.childrenLength, true)
     this._demoDoc.crud.insertBlocks(this._demoDoc.rootId, 0, currentPage)
@@ -399,6 +428,67 @@ export class PresentationController {
     if (this.presentationContainer) {
       this.presentationContainer.scrollTop = 0;
     }
+  }
+
+  // demo fs = sourceFs * fontScale，所以表格 colWidths 的缩放比例
+  // 就是同一个 fontScale，跟当前源文档具体多少像素无关。
+  // 外部未传入或值非法（<=0）时回落到 DEFAULT_DEMO_FONT_SCALE。
+  private getFontScale(): number {
+    return this.normalizeScale(this.config.fontScale, DEFAULT_DEMO_FONT_SCALE);
+  }
+
+  // 行高 / 块间距默认跟随 fontScale，保持整体节奏与源文档比例一致；
+  // 用户在 config 中显式给值时单独覆盖。
+  private getLineHeightScale(): number {
+    return this.normalizeScale(this.config.lineHeightScale, this.getFontScale());
+  }
+
+  private getSegmentsGapScale(): number {
+    return this.normalizeScale(this.config.segmentsGapScale, this.getFontScale());
+  }
+
+  private normalizeScale(v: number | undefined, fallback: number): number {
+    return Number.isFinite(v) && (v as number) > 0 ? (v as number) : fallback;
+  }
+
+  // 读源文档 root 的 computed CSS 长度变量（如 --bc-fs / --bc-lh / --bc-segments-gap）。
+  // 源未挂载或变量异常时退回到 fallback。
+  private readSourceCssLength(varName: string, fallback: number): number {
+    const root = (this.originDoc as any)?.root?.hostElement as HTMLElement | undefined;
+    if (root) {
+      const v = parseFloat(getComputedStyle(root).getPropertyValue(varName));
+      if (Number.isFinite(v) && v > 0) return v;
+    }
+    return fallback;
+  }
+
+  // 递归遍历 snapshot 树，对 flavour === 'table' 的节点按字号比例缩放 colWidths。
+  // 返回新对象，不修改 this.pages 原始数据，确保多次翻页结果一致。
+  private scaleTableColWidths(snapshots: IBlockSnapshot[]): IBlockSnapshot[] {
+    const ratio = this.getFontScale();
+    if (ratio === 1) return snapshots;
+    return snapshots.map(snap => this.scaleSnapshot(snap, ratio));
+  }
+
+  private scaleSnapshot(snap: IBlockSnapshot, ratio: number): IBlockSnapshot {
+    let next = snap;
+    const colWidths = (snap.props as any)?.colWidths;
+    if (snap.flavour === 'table' && Array.isArray(colWidths)) {
+      next = {
+        ...snap,
+        props: {
+          ...snap.props,
+          colWidths: colWidths.map((w: number) => Math.round(w * ratio)),
+        },
+      };
+    }
+    if (Array.isArray(next.children) && next.children.length > 0) {
+      next = {
+        ...next,
+        children: (next.children as IBlockSnapshot[]).map(child => this.scaleSnapshot(child, ratio)),
+      } as IBlockSnapshot;
+    }
+    return next;
   }
 
   next() {

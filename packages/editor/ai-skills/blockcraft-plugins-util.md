@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-04-08
+> Last updated: 2026-05-18
 
 ## FindReplacePlugin
 
@@ -71,9 +71,31 @@ doc.enterDemoMode(config?: Partial<DemoConfig>)
 doc.exitDemoMode()
 ```
 
-| Config Field | Type | Description |
-|-------------|------|-------------|
-| `preview.showToolbar` | `boolean` | Whether to show toolbar in presentation mode |
+| Config Field | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `preview.showToolbar` | `boolean` | `true` | Whether to show the control toolbar in presentation mode |
+| `cover` | `DemoCoverBlockModel['props']` | `undefined` | Optional cover page props (title / subtitle / etc.). When provided, a cover page is prepended as the first slide |
+| `fontScale` | `number` | `1.5` | Demo container's `--bc-fs` is set to `sourceFs * fontScale`; table `colWidths` are scaled by the same factor so column widths stay consistent with the enlarged font. Must be `> 0`; set to `1` to disable enlargement |
+| `lineHeightScale` | `number` | `fontScale` | Demo container's `--bc-lh` is set to `sourceLh * lineHeightScale`. Defaults to `fontScale` so line height tracks font size; override for tighter / looser line spacing. Must be `> 0` |
+| `segmentsGapScale` | `number` | `fontScale` | Demo container's `--bc-segments-gap` is set to `sourceGap * segmentsGapScale`. Defaults to `fontScale` so block spacing tracks font size; override for tighter / looser paragraph gaps. Must be `> 0` |
+
+### Font / spacing scaling behavior
+
+The demo container reads the source doc's computed `--bc-fs`, `--bc-lh`, `--bc-segments-gap` and injects scaled versions onto `.presentation-stage`. Each axis has its own scale, and the two spacing scales default to `fontScale` so the source doc's overall rhythm is preserved when only one knob is touched. The demo SCSS no longer derives `--bc-lh` / `--bc-segments-gap` via `calc()` — the JS injection is the single source of truth and cascades down to `.demo-root`. Table column widths (`props.colWidths`) are multiplied by `fontScale` on every page render; the original `pages` data is not mutated.
+
+```typescript
+// Default 1.5× across the board
+doc.enterDemoMode();
+
+// Bigger font but keep source line height proportional (lh scales to 1.8 too)
+doc.enterDemoMode({ fontScale: 1.8 });
+
+// Compact mode: font scaled up, but line height and gap stay closer to source
+doc.enterDemoMode({ fontScale: 1.5, lineHeightScale: 1.2, segmentsGapScale: 1 });
+
+// No enlargement at all (presentation matches source exactly)
+doc.enterDemoMode({ fontScale: 1 });
+```
 
 ---
 
