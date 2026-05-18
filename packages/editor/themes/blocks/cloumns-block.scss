@@ -62,13 +62,23 @@
       }
     }
 
-    &:hover {
+    &:hover,
+    &.drag-over {
       .column-block .column-content {
         outline: 1px dashed var(--bc-border-color);
       }
 
       .column-divider {
         opacity: 1;
+      }
+    }
+
+    /* 拖拽期间：分栏线让出 hit-test，并隐藏 + 号，避免遮挡 drop target / 视觉干扰 */
+    &.drag-over .column-divider {
+      pointer-events: none;
+
+      .add-point {
+        display: none;
       }
     }
 

@@ -94,6 +94,10 @@ export class DocDndService {
   private _prevTargetElement: Node | null = null
   private prevBlock: BlockCraft.BlockComponent | null = null
 
+  // 当前 drag-over 链：从 prevBlock 向上走到 root 之前的所有 block hostElement。
+  // 任意 block 都可通过 `&.drag-over { ... }` 在 SCSS 中订阅这个状态。
+  private dragOverChain: HTMLElement[] = []
+
   dragStatus$ = new BehaviorSubject(DocDndStatus.end)
   dragEnd$ = this.dragStatus$.asObservable().pipe(filter(v => v === DocDndStatus.end))
 
@@ -225,6 +229,30 @@ export class DocDndService {
     this.dragWatchdog = null
   }
 
+  // 维护 drag-over class 的 ancestor chain：进来的 block + 所有 block 类型祖先（不含 root）。
+  // 每次 drop target 变化时增量更新，避免逐次 add/remove 触发 reflow。
+  private updateDragOverChain = (target: BlockCraft.BlockComponent | null) => {
+    const next: HTMLElement[] = []
+    let cursor: BlockCraft.BlockComponent | null = target
+    while (cursor && cursor.flavour !== 'root') {
+      next.push(cursor.hostElement)
+      cursor = cursor.parentBlock ?? null
+    }
+
+    const prev = this.dragOverChain
+    if (prev.length === next.length && prev.every((el, i) => el === next[i])) return
+
+    const nextSet = new Set(next)
+    for (const el of prev) {
+      if (!nextSet.has(el)) el.classList.remove('drag-over')
+    }
+    const prevSet = new Set(prev)
+    for (const el of next) {
+      if (!prevSet.has(el)) el.classList.add('drag-over')
+    }
+    this.dragOverChain = next
+  }
+
   private processDragMove = (evt: DragEvent) => {
     this.dragStatus$.next(DocDndStatus.moving)
     this.resetDragWatchdog()
@@ -266,6 +294,7 @@ export class DocDndService {
             this.prevDragPosition = position
             this.moveDragLine(childBlock.hostElement, position)
           }
+          this.updateDragOverChain(this.prevBlock)
           return
         }
 
@@ -290,6 +319,7 @@ export class DocDndService {
     const position = calcPositionByRect(evt, hostRect, allowColumnDrop)
     this.prevDragPosition = position
     this.moveDragLine(this.prevBlock.hostElement, position, hostRect)
+    this.updateDragOverChain(this.prevBlock)
   }
 
   // 外部文件 拖拽响应
@@ -398,6 +428,7 @@ export class DocDndService {
     // 防止 dragLine 残留在 DOM（曾出现“拖拽结束蓝线还在”的场景）。
     this.removeDragLine()
     this.stopDragWatchdog()
+    this.updateDragOverChain(null)
     if (this.dragStatus$.value === DocDndStatus.end) return
     this.stopDragScroll()
     this.stopDragMove()
