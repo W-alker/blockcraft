@@ -10,12 +10,21 @@ export class SelectionSelectedManager {
 
   private _setSelectedClass(block: BaseBlockComponent<any>) {
     block.hostElement.classList.add('selected')
-    // Switch the block to non-editable at the DOM level. Together with the
-    // explicit `contenteditable=true` on gap-zero spaces (`createBlockGapSpace`),
-    // this prevents stray text edits while still allowing the native Range
-    // cursor to anchor on the gap span — which keeps `keydown` bubbling and
-    // `beforeinput` firing for Backspace/Delete/printable replacements.
-    block.hostElement.setAttribute('contenteditable', 'false')
+    // `contenteditable=false` is only safe on `void` blocks (image, divider, ...)
+    // where it locks down a leaf that has no editable descendants — the gap-zero
+    // spans (`createBlockGapSpace`) re-open `contenteditable=true` so the native
+    // Range cursor can still anchor and `keydown` / `beforeinput` keep firing.
+    //
+    // Container blocks (`nodeType === 'block'`: callout / columns / column /
+    // table / table-cell / frame) MUST NOT receive `contenteditable=false`,
+    // because the attribute is inherited and would silently freeze the entire
+    // descendant subtree. If the cleanup path (`_clearAllClass` via the next
+    // `setSelected`) is skipped — e.g. a resize / drag-out / mouseup lands
+    // outside root and no `selectionchange` fires — the container stays
+    // contenteditable=false and the whole document becomes uneditable.
+    if (block.nodeType === BlockNodeType.void) {
+      block.hostElement.setAttribute('contenteditable', 'false')
+    }
     this._selectedSet.add(block)
   }
 
@@ -31,7 +40,14 @@ export class SelectionSelectedManager {
   private _clearAllClass() {
     this._selectedSet.forEach(v => {
       v.hostElement.classList.remove('selected')
-      v.hostElement.removeAttribute('contenteditable')
+      // Symmetric with `_setSelectedClass`: only void blocks ever receive
+      // `contenteditable=false` here, so only void blocks should have it
+      // cleared. Calling `removeAttribute('contenteditable')` on a container
+      // is a no-op, but on `root` it would strip the `contenteditable="true"`
+      // installed by `RootBlockComponent` and freeze the entire editor.
+      if (v.nodeType === BlockNodeType.void) {
+        v.hostElement.removeAttribute('contenteditable')
+      }
     })
     this._focusedSet.forEach(v => {
       v.hostElement.classList.remove('focused')
