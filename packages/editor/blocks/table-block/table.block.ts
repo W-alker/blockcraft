@@ -163,6 +163,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         .pipe(takeUntil(this.onDestroy$))
         .subscribe(e => this._handleNativeMouseOver(e))
     })
+    // Safari 不会为原生 scrollbar 上的点击发 mousedown，因此用排除法：
+    // 记录最近一次 wheel 时间戳，scroll 触发时若没有近期 wheel，就视为非滚轮源（滚动条拖拽 / 键盘 / 触摸）。
+    fromEvent<WheelEvent>(this.tableScrollable.nativeElement, 'wheel', { passive: true, capture: true })
+      .pipe(takeUntil(this.onDestroy$))
+      .subscribe(() => {
+        this._lastWheelTime = performance.now()
+      })
     this.doc.selection.selectionChange$
       .pipe(takeUntil(this.onDestroy$))
       .subscribe(selection => {
@@ -1520,10 +1527,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private _prevScrollLeft = 0
   private _isShiftScroll = false
+  private _lastWheelTime = 0
+  private _isNonWheelScroll = false
 
   onScrollEnd = debounce(() => {
     const scroller = this.tableScrollable.nativeElement
-    if (!this._isShiftScroll && scroller.scrollLeft !== this._prevScrollLeft) {
+    if (this._isNonWheelScroll && !this._isShiftScroll && scroller.scrollLeft !== this._prevScrollLeft) {
       this.doc.messageService.info('按住 shift 键加滚轮可快速横向滚动')
       this._prevScrollLeft = scroller.scrollLeft
     }
@@ -1531,6 +1540,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.refreshTableMenuFromSelection()
     }
     this._isShiftScroll = false
+    this._isNonWheelScroll = false
   }, 1000)
 
   onScroll = throttle((evt: Event) => {
@@ -1542,5 +1552,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     if (this.doc.event.status.isShiftKeyPressing) {
       this._isShiftScroll = true
     }
+    // wheel 事件先于 scroll 触发，间隔通常 < 50ms；放宽到 200ms 容忍调度抖动
+    if (performance.now() - this._lastWheelTime > 200) {
+      this._isNonWheelScroll = true
+    }
+    // Safari < 18.2 不支持原生 scrollend，统一由 debounce 兜底
+    this.onScrollEnd()
   }, 50)
 }
