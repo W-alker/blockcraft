@@ -27,7 +27,11 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
   }
 
   private selecting$ = new BehaviorSubject<'end' | 'start' | 'moving'>("end")
-  private selectingBlock: BlockCraft.BlockComponent | null = null
+  // Set 追踪：单引用模式下，leaveListen 链中前一级 block 的清理订阅若被
+  // `selecting$` 的下次 emit 通过 takeUntil 提前打断，pointerleave handler
+  // 永远不会执行，`.selecting` 类就会卡死。改用 Set 收集所有打上类的 block，
+  // 配合 _cleanupAllSelecting 兜底清理。
+  private selectingBlocks = new Set<BlockCraft.BlockComponent>()
 
   private _isInsideTable(block: BlockCraft.BlockComponent | null) {
     let current = block
@@ -36,6 +40,33 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
       current = current.parentBlock
     }
     return false
+  }
+
+  private _markSelecting(block: BlockCraft.BlockComponent) {
+    block.hostElement.classList.add('selecting')
+    this.selectingBlocks.add(block)
+  }
+
+  private _unmarkSelecting(block: BlockCraft.BlockComponent) {
+    block.hostElement.classList.remove('selecting')
+    this.selectingBlocks.delete(block)
+  }
+
+  /**
+   * 兜底清理：清空 Set 中追踪的 block，再用 querySelector 扫一遍 DOM 移除
+   * 任何漏网的 `.selecting`。覆盖以下异常路径：
+   * - selectEnd 因窗口失焦 / tab 切换未触发
+   * - selectStart 重入导致前一会话的 takeUntil 提前打断 pointerleave handler
+   * - selectingBlocks Set 与 DOM 状态不同步
+   * 限定 `[data-block-id]` 范围以避免误伤 table-col-bar 等同名类。
+   */
+  private _cleanupAllSelecting() {
+    this.selectingBlocks.forEach(b => b.hostElement.classList.remove('selecting'))
+    this.selectingBlocks.clear()
+    this.hostElement.classList.remove('selecting')
+    this.hostElement.querySelectorAll('[data-block-id].selecting').forEach(el => {
+      el.classList.remove('selecting')
+    })
   }
 
   override ngAfterViewInit() {
@@ -48,6 +79,19 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
 
     this.doc.event.add('selectStart', this.onSelectstart)
     this.doc.event.add('selectEnd', this.onSelectEnd)
+
+    // 窗口失焦 / tab 切换时浏览器可能丢 pointerup / mouseup，导致 selectEnd
+    // 不触发，`.selecting` 卡在 block 上整个文档变只读。这里做最后兜底。
+    fromEvent(window, 'blur').pipe(takeUntil(this.onDestroy$)).subscribe(() => {
+      this.selecting$.next('end')
+      this._cleanupAllSelecting()
+    })
+    fromEvent(document, 'visibilitychange').pipe(takeUntil(this.onDestroy$)).subscribe(() => {
+      if (document.visibilityState === 'hidden') {
+        this.selecting$.next('end')
+        this._cleanupAllSelecting()
+      }
+    })
   }
 
   onSelectstart = (ctx: UIEventStateContext) => {
@@ -59,15 +103,19 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
     if (!id) return
     const selectStartBlock = this.doc.getBlockById(id)
     if (this._isInsideTable(selectStartBlock)) return
+
+    // 入口兜底：上一次 selection 若因任何原因（重入、selectEnd 漏触发、
+    // takeUntil 提前打断订阅）残留了 `.selecting`，新会话开始前彻底清掉。
+    this._cleanupAllSelecting()
+
     this.selecting$.next('start')
 
     const leaveListen = (block: BlockCraft.BlockComponent) => {
-      this.selectingBlock = block
-      block.hostElement.classList.add('selecting')
+      this._markSelecting(block)
 
       if (block.nodeType !== BlockNodeType.root) {
         fromEvent(block.hostElement, 'pointerleave').pipe(take(1), takeUntil(this.selecting$.pipe(skip(1)))).subscribe(e => {
-          block.hostElement.classList.remove('selecting')
+          this._unmarkSelecting(block)
           this.doc.selection.selectBlock(block)
 
           // TODO 这样实现不太好
@@ -89,9 +137,10 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
 
   onSelectEnd = () => {
     this.selecting$.next('end')
-    if (!this.selectingBlock) return
-    this.selectingBlock.hostElement.classList.remove('selecting')
-    this.selectingBlock = null
+    // 不仅清空 Set，还兜底扫一遍 DOM。pointerleave 订阅被 takeUntil 提前
+    // 打断时，handler 中的 classList.remove 不会执行，Set 也不会同步删除，
+    // querySelector 是兜底的唯一可靠路径。
+    this._cleanupAllSelecting()
   }
 
 }

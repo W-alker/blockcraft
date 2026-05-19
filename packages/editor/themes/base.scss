@@ -48,7 +48,7 @@
 
     [data-node-type="block"],
     [data-node-type="void"] {
-      @include user-modify(read-only);
+      //@include user-modify(read-only);
 
       * {
         @include user-select(none);

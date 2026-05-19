@@ -22,9 +22,9 @@ export class SelectionSelectedManager {
     // `setSelected`) is skipped — e.g. a resize / drag-out / mouseup lands
     // outside root and no `selectionchange` fires — the container stays
     // contenteditable=false and the whole document becomes uneditable.
-    if (block.nodeType === BlockNodeType.void) {
-      block.hostElement.setAttribute('contenteditable', 'false')
-    }
+    // if (block.nodeType === BlockNodeType.void) {
+    //   block.hostElement.setAttribute('contenteditable', 'false')
+    // }
     this._selectedSet.add(block)
   }
 
@@ -45,9 +45,9 @@ export class SelectionSelectedManager {
       // cleared. Calling `removeAttribute('contenteditable')` on a container
       // is a no-op, but on `root` it would strip the `contenteditable="true"`
       // installed by `RootBlockComponent` and freeze the entire editor.
-      if (v.nodeType === BlockNodeType.void) {
-        v.hostElement.removeAttribute('contenteditable')
-      }
+      // if (v.nodeType === BlockNodeType.void) {
+      //   v.hostElement.removeAttribute('contenteditable')
+      // }
     })
     this._focusedSet.forEach(v => {
       v.hostElement.classList.remove('focused')
