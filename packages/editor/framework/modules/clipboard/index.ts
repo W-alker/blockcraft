@@ -31,9 +31,12 @@ import {
 import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
 import {copyBlocks} from "./copyBlocks";
 import {
+  BLOCKCRAFT_WEB_SNAPSHOT_MIME,
   buildClipboardItems,
   parseClipboardSnapshot,
   parseClipboardSnapshotFromHtml,
+  serializeClipboardSnapshot,
+  supportsClipboardWriteType,
 } from "./internal-clipboard";
 import {cloneSnapshot, getMarkdownClipboardText, looksLikeMarkdown} from "./paste-utils";
 
@@ -75,26 +78,54 @@ export class ClipboardManager {
   }
 
   copyFromSelection = async (selection: BlockCraft.Selection, clipboardData: DataTransfer) => {
+    const {snapshot, plainText} = this._buildCopyPayload(selection)
+
+    if (this.doc.isReadonly) {
+      // 只读模式：contenteditable=false 时 Chromium（特别是 Windows）会在
+      // 同步 copy 事件 handler 返回后立刻解绑 event.clipboardData，await 之后
+      // 的 setData 会被丢——之前 Windows 上只读复制完全拿不到内容就是这个
+      // 原因。这里改成两步：
+      //   1. 同步写最小集（TEXT + 内部 snapshot）兜底，确保 sync 窗口里
+      //      就已经有内容落地
+      //   2. 异步走 navigator.clipboard.write（接受 Promise，不受同步事件
+      //      窗口限制）覆盖富文本 MIME；非内置 MIME 自动走 `web ` 前缀的
+      //      Web Custom Format，BC↔BC 内部粘贴可以从那边恢复
+      // 外部应用读取 `text/markdown` / `text/rtf` 这类非标准 MIME 在这条
+      // 路径下会拿不到，是 web 平台 async clipboard 的硬约束，不是回归。
+      this._setClipboardData(clipboardData, {
+        [ClipboardDataType.TEXT]: plainText,
+        [ClipboardDataType.BLOCKCRAFT_SNAPSHOT]: serializeClipboardSnapshot(snapshot),
+      })
+      await this._writeRichClipboardAsync(snapshot, plainText)
+      return
+    }
+
+    // 可编辑模式：沿用旧路径——await 完 adapter 转换后再一次性 setData。
+    // 可编辑上下文里 Chromium 对同一 copy 事件 microtask 内的 setData 容忍
+    // 度高，所有 adapter 产出的 MIME（含 text/markdown / text/rtf 等非内置
+    // 类型）都能直写到 event.clipboardData，粘贴到外部应用时格式完整。
+    const items = await buildClipboardItems(this.adapter.supportedAdapters, snapshot, plainText)
+    this._setClipboardData(clipboardData, items)
+  }
+
+  private _buildCopyPayload(selection: BlockCraft.Selection): {snapshot: IBlockSnapshot, plainText: string} {
     const s = selection.start, e = selection.end
     const startBlock = selection.firstBlock
     const endBlock = selection.lastBlock
 
     if (selection.isInSameBlock) {
-      let snapshot: IBlockSnapshot
-      let plainText: string
       if (s.type === 'text') {
         const eOff = (e.type === 'text' ? e.offset : (startBlock as EditableBlockComponent).textLength)
         const sliceDeltas = sliceDelta((startBlock as EditableBlockComponent).textDeltas(), s.offset, eOff)
-        snapshot = this._wrapDeltaByRoot(sliceDeltas)
-        plainText = deltaToString(sliceDeltas)
-      } else {
-        plainText = startBlock.textContent()
-        snapshot = this._wrapSnapshotsByRoot([startBlock.toSnapshot()])
+        return {
+          snapshot: this._wrapDeltaByRoot(sliceDeltas),
+          plainText: deltaToString(sliceDeltas),
+        }
       }
-
-      const items = await buildClipboardItems(this.adapter.supportedAdapters, snapshot, plainText)
-      this._setClipboardData(clipboardData, items)
-      return
+      return {
+        snapshot: this._wrapSnapshotsByRoot([startBlock.toSnapshot()]),
+        plainText: startBlock.textContent(),
+      }
     }
 
     const snapshots: IBlockSnapshot[] = []
@@ -109,9 +140,9 @@ export class ClipboardManager {
       const sBlock = startBlock as EditableBlockComponent
       if (s.offset < sBlock.textLength) {
         const sliceDeltas = sliceDelta(sBlock.textDeltas(), s.offset, sBlock.textLength)
-        const snapshot = sBlock.toSnapshot()
-        snapshot.children = sliceDeltas
-        snapshots.unshift(snapshot)
+        const sn = sBlock.toSnapshot()
+        sn.children = sliceDeltas
+        snapshots.unshift(sn)
         plainText = deltaToString(sliceDeltas) + STR_LINE_BREAK + plainText
       }
     } else {
@@ -123,9 +154,9 @@ export class ClipboardManager {
       if (e.offset > 0) {
         const eBlock = endBlock as EditableBlockComponent
         const sliceDeltas = sliceDelta(eBlock.textDeltas(), 0, e.offset)
-        const snapshot = eBlock.toSnapshot()
-        snapshot.children = sliceDeltas
-        snapshots.push(snapshot)
+        const sn = eBlock.toSnapshot()
+        sn.children = sliceDeltas
+        snapshots.push(sn)
         plainText += deltaToString(sliceDeltas)
       }
     } else {
@@ -133,9 +164,50 @@ export class ClipboardManager {
       plainText = endBlock.textContent() + plainText
     }
 
-    const rootSnapshot = await this._wrapSnapshotsByRoot(snapshots)
-    const items = await buildClipboardItems(this.adapter.supportedAdapters, rootSnapshot, plainText)
-    this._setClipboardData(clipboardData, items)
+    return {
+      snapshot: this._wrapSnapshotsByRoot(snapshots),
+      plainText,
+    }
+  }
+
+  private async _writeRichClipboardAsync(snapshot: IBlockSnapshot, plainText: string): Promise<void> {
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.write) return
+    if (typeof ClipboardItem === 'undefined') return
+
+    let items: Record<string, string>
+    try {
+      items = await buildClipboardItems(this.adapter.supportedAdapters, snapshot, plainText)
+    } catch (e) {
+      this.doc.logger.warn('buildClipboardItems error', e)
+      return
+    }
+
+    // 内置 MIME（text/plain、text/html、image/png）直写；其余 MIME（markdown、
+    // rtf、blockcraft snapshot 等）一律包成 Web Custom Format（`web <mime>`），
+    // 这样 navigator.clipboard.write 的整体调用能容纳全部 adapter 产出，BC↔BC
+    // 内部粘贴可以从这些 web 前缀类型恢复完整 snapshot/markdown/rtf 数据。
+    // 注意：外部应用（Word / Google Docs / 第三方 MD 编辑器）只读取原始 MIME，
+    // 不识别 `web ` 前缀——这是 web 平台 async clipboard API 的硬约束，
+    // 没法在保留 Windows 兼容的同时同时满足。
+    const itemData: Record<string, Blob> = {}
+    for (const [type, value] of Object.entries(items)) {
+      if (supportsClipboardWriteType(type)) {
+        itemData[type] = new Blob([value], {type})
+        continue
+      }
+      const webType = `web ${type}`
+      if (supportsClipboardWriteType(webType)) {
+        itemData[webType] = new Blob([value], {type: webType})
+      }
+    }
+
+    if (Object.keys(itemData).length === 0) return
+
+    try {
+      await navigator.clipboard.write([new ClipboardItem(itemData)])
+    } catch (e) {
+      this.doc.logger.warn('navigator.clipboard.write error', e)
+    }
   }
 
   deleteContentFromSelection = (selection: BlockCraft.Selection) => {
@@ -395,9 +467,13 @@ export class ClipboardManager {
 
     let rootSnapshot: IBlockSnapshot | undefined
 
-    // internal snapshot
+    // internal snapshot —— 优先取直 MIME；若被 navigator.clipboard.write 覆盖到
+    // `web ` 前缀变体下也能恢复，保证 BC↔BC 内部粘贴不依赖 HTML marker 路径。
     if (!rootSnapshot && state.dataTypes.includes(ClipboardDataType.BLOCKCRAFT_SNAPSHOT)) {
       rootSnapshot = parseClipboardSnapshot(state.getData(ClipboardDataType.BLOCKCRAFT_SNAPSHOT)) || undefined
+    }
+    if (!rootSnapshot && state.dataTypes.includes(BLOCKCRAFT_WEB_SNAPSHOT_MIME)) {
+      rootSnapshot = parseClipboardSnapshot(state.getData(BLOCKCRAFT_WEB_SNAPSHOT_MIME)) || undefined
     }
 
     // html

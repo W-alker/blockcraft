@@ -10,6 +10,28 @@ export const BLOCKCRAFT_CLIPBOARD_PAYLOAD_ATTR = 'data-bc-clipboard-payload';
 export const BLOCKCRAFT_CLIPBOARD_FORMAT = 'blockcraft/snapshot';
 export const BLOCKCRAFT_CLIPBOARD_VERSION = '1';
 
+const STANDARD_CLIPBOARD_WRITE_TYPES = new Set<string>([
+  ClipboardDataType.TEXT,
+  ClipboardDataType.HTML,
+  ClipboardDataType.IMAGE,
+]);
+
+export function supportsClipboardWriteType(type: string) {
+  if (STANDARD_CLIPBOARD_WRITE_TYPES.has(type)) {
+    return true;
+  }
+
+  const clipboardItemCtor = globalThis.ClipboardItem as
+    | (typeof ClipboardItem & {supports?: (type: string) => boolean})
+    | undefined;
+
+  if (typeof clipboardItemCtor?.supports === 'function') {
+    return clipboardItemCtor.supports(type);
+  }
+
+  return false;
+}
+
 function cloneSnapshot<T>(value: T): T {
   if (typeof structuredClone === 'function') {
     return structuredClone(value);

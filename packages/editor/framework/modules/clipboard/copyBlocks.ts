@@ -4,29 +4,8 @@ import {snapshots2Text} from "../../utils";
 import {
   BLOCKCRAFT_WEB_SNAPSHOT_MIME,
   buildClipboardItems,
+  supportsClipboardWriteType,
 } from "./internal-clipboard";
-
-const STANDARD_CLIPBOARD_WRITE_TYPES = new Set<string>([
-  ClipboardDataType.TEXT,
-  ClipboardDataType.HTML,
-  ClipboardDataType.IMAGE,
-]);
-
-function supportsClipboardWriteType(type: string) {
-  if (STANDARD_CLIPBOARD_WRITE_TYPES.has(type)) {
-    return true;
-  }
-
-  const clipboardItemCtor = globalThis.ClipboardItem as
-    | (typeof ClipboardItem & {supports?: (type: string) => boolean})
-    | undefined;
-
-  if (typeof clipboardItemCtor?.supports === 'function') {
-    return clipboardItemCtor.supports(type);
-  }
-
-  return false;
-}
 
 async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
   const supportedAdapterTypes = new Set<string>();
