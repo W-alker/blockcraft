@@ -57,7 +57,7 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
     }
 
     let copyHandled = false
-    document.body.addEventListener('copy', (e) => {
+    const handler = (e: ClipboardEvent) => {
       copyHandled = true
       if (range) {
         window.getSelection()?.removeAllRanges()
@@ -75,11 +75,23 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
         e.clipboardData.setData(type, value)
       }
       resolve()
-    }, {once: true})
+    }
+    document.body.addEventListener('copy', handler, {once: true})
 
-    const success = document.execCommand('copy')
-    if (!success && !copyHandled) {
-      reject('execCommand copy failed')
+    let success = false
+    try {
+      success = document.execCommand('copy')
+    } catch (e) {
+      // execCommand 抛错时清理 listener，避免下次 copy 事件触发陈旧回调
+      document.body.removeEventListener('copy', handler)
+      reject(e)
+      return
+    }
+    if (!copyHandled) {
+      // copy 事件未触发：listener 仍挂在 document.body 上，必须显式移除
+      // 否则会成为孤儿，下一次任意 copy 事件会以陈旧的 items/range 闭包错误地 resolve
+      document.body.removeEventListener('copy', handler)
+      reject(success ? 'copy event did not fire' : 'execCommand copy failed')
     }
   })
 }

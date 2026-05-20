@@ -88,7 +88,7 @@ export class SelectionManager {
 
   // ── Read from DOM (user interaction path) ──
 
-  recalculate(execNext = true, options?: { isComposing?: boolean }): {
+  recalculate(execNext = true, options?: { isComposing?: boolean }, _depth = 0): {
     value: BlockSelection | null
     next?: () => void
   } {
@@ -116,8 +116,15 @@ export class SelectionManager {
     }
 
     if (range.startContainer === this.doc.root.hostElement || range.endContainer === this.doc.root.hostElement) {
+      // selection.modify 在边界处可能无法推进 range，原代码同步自递归会栈溢出；
+      // 限制重试深度，超出后视为无效选区。
+      if (_depth >= 3) {
+        const next = () => this._applyState(null)
+        execNext && next()
+        return {value: null, next: execNext ? undefined : next}
+      }
       selection.modify('move', range.endOffset >= this.doc.root.childrenLength ? 'backward' : 'forward', 'character')
-      return this.recalculate()
+      return this.recalculate(execNext, options, _depth + 1)
     }
 
     try {

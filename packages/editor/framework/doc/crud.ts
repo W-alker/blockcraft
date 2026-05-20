@@ -67,6 +67,9 @@ export class DocCRUD {
   readonly onPropsUpdate$ = new Subject<IPropsChangeEvent>()
   readonly onTextUpdate$ = new Subject<ITextChangeEvent>()
 
+  // 保存 observer 引用，doc 销毁时需要 unobserveDeep；否则若宿主复用 yDoc，observer 会堆积
+  private _yObserverHandler: ((events: Y.YEvent<any>[], tr: Y.Transaction) => void) | null = null
+
   get yDoc() {
     return this.doc.yDoc
   }
@@ -82,16 +85,26 @@ export class DocCRUD {
 
       this.undoManager = new DocUndoManger(this.doc, this.yBlockMap)
 
-      this.yBlockMap.observeDeep((evt, tr) => {
+      this._yObserverHandler = (evt, tr) => {
         this.doc.ngZone.run(() => {
           this._syncYEvent(evt, tr)
           if (!tr.local) {
             requestAnimationFrame(() => {
+              // doc 可能在 rAF 触发前被销毁；isInitialized 在 destroy() 中转为 false
+              if (!this.doc.isInitialized) return
               this.doc.selection.recalculate()
             })
           }
         })
-      })
+      }
+      this.yBlockMap.observeDeep(this._yObserverHandler)
+    })
+
+    this.doc.onDestroy(() => {
+      if (this._yObserverHandler) {
+        this.yBlockMap.unobserveDeep(this._yObserverHandler)
+        this._yObserverHandler = null
+      }
     })
   }
 
@@ -210,6 +223,8 @@ export class DocCRUD {
         })
         // 触发视图检查
         Promise.resolve().then(() => {
+          // 微任务可能晚于 vm.destroy 触发；bm.hostView.destroyed 为 true 时直接跳过，避免访问已销毁视图
+          if (bm.hostView.destroyed) return
           bm.instance.changeDetectorRef.markForCheck()
           bm.instance.onPropsChange.emit(changes.keys as any)
         })
