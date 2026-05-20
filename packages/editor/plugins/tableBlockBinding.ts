@@ -162,7 +162,7 @@ export class TableBlockBinding extends DocPlugin {
     sourceTable: IBlockSnapshot,
     start: number[]
   ) {
-    const sourceRows = getPastedTableCellRows(sourceTable)
+    const sourceRows = getPastedTableCellGrid(sourceTable)
     if (!sourceRows.length) return
 
     this.doc.crud.transact(() => {
@@ -171,16 +171,18 @@ export class TableBlockBinding extends DocPlugin {
         if (targetRowIndex >= table.rowLength) break
 
         const sourceCells = sourceRows[rowOffset]
-        const targetCells = table.getChildrenByIndex(targetRowIndex).childrenIds
-          .slice(start[1])
-          .map(id => this.doc.getBlockById(id) as BlockCraft.IBlockComponents['table-cell'])
-          .filter(cell => cell.props.display !== 'none')
+        const targetRow = table.getChildrenByIndex(targetRowIndex)
 
         for (let colOffset = 0; colOffset < sourceCells.length; colOffset++) {
-          const targetCell = targetCells[colOffset]
-          if (!targetCell) break
+          const sourceCell = sourceCells[colOffset]
+          const targetCellId = targetRow.childrenIds[start[1] + colOffset]
+          if (!targetCellId) break
+          if (!sourceCell) continue
 
-          const children = cloneSnapshot(sourceCells[colOffset].children || []) as IBlockSnapshot[]
+          const targetCell = this.doc.getBlockById(targetCellId) as BlockCraft.IBlockComponents['table-cell']
+          if (targetCell.props.display === 'none') continue
+
+          const children = cloneSnapshot(sourceCell.children || []) as IBlockSnapshot[]
           const nextChildren = children.length
             ? children
             : [this.doc.schemas.createSnapshot('paragraph', [])]
@@ -400,6 +402,19 @@ export function findFirstTableSnapshot(snapshot: IBlockSnapshot): IBlockSnapshot
     if (table) return table
   }
   return null
+}
+
+type PastedTableCellGrid = Array<Array<IBlockSnapshot | null>>
+
+function getPastedTableCellGrid(tableSnapshot: IBlockSnapshot): PastedTableCellGrid {
+  if (tableSnapshot.flavour !== 'table') return []
+  const rows = (tableSnapshot.children || []) as IBlockSnapshot[]
+  return rows
+    .filter(row => row.flavour === 'table-row')
+    .map(row => ((row.children || []) as IBlockSnapshot[])
+      .filter(cell => cell.flavour === 'table-cell')
+      .map(cell => cell.props['display'] === 'none' ? null : cell))
+    .filter(row => row.length > 0)
 }
 
 export function getPastedTableCellRows(tableSnapshot: IBlockSnapshot): IBlockSnapshot[][] {

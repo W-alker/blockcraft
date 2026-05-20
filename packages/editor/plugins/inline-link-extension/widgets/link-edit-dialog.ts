@@ -25,8 +25,11 @@ import {isUrl} from "../../../global";
   `,
   styles: [`
     :host {
+      display: block;
       padding: 12px;
       width: 400px;
+      max-width: calc(100vw - 24px);
+      box-sizing: border-box;
       border-radius: 4px;
       border: 1px solid var(--bc-border-color);
       background: var(--bc-bg-primary);
@@ -39,14 +42,18 @@ import {isUrl} from "../../../global";
         display: flex;
         align-items: center;
         gap: 8px;
+        min-width: 0;
 
         > input {
           flex: 1;
+          min-width: 0;
           padding: 8px;
           border-radius: 4px;
           border: 1px solid var(--bc-border-color);
           outline: none;
           background: unset;
+          overflow: hidden;
+          text-overflow: ellipsis;
 
           &:focus {
             border-color: var(--bc-active-color);
