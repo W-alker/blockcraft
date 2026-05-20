@@ -401,6 +401,26 @@ export class DocOverlayService {
         close$.next(true);
       });
 
+    // root 节点被临时从 DOM 移除（如宿主路由切换/隐藏）时，关闭 overlay。
+    // 复用 createConnectedOverlay 中 MutationObserver 的同款机制，但以 doc.root 为基准，
+    // 覆盖 BlockComponent target、global overlay 等所有路径。
+    if (this.doc.isInitialized) {
+      const rootHost = this.doc.root.hostElement;
+      if (!rootHost.isConnected) {
+        close$.next(true);
+      } else {
+        const rootObserver = new MutationObserver(() => {
+          if (!rootHost.isConnected) {
+            close$.next(true);
+          }
+        });
+        rootObserver.observe(document.body, { subtree: true, childList: true });
+        close$.pipe(take(1)).subscribe(() => {
+          rootObserver.disconnect();
+        });
+      }
+    }
+
     close$.pipe(take(1)).subscribe(() => {
       onDestroy?.();
       overlayRef.dispose();
