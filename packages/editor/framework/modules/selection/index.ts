@@ -86,6 +86,21 @@ export class SelectionManager {
       })
   }
 
+  /**
+   * 临时屏蔽原生 `selectionchange` 触发的 recalculate。
+   *
+   * 用于 transformBlocks / 批量 DOM 替换等场景：WKWebView 在大批 DOM
+   * 替换 + contenteditable=false 子元素附近会同步发出大量 selectionchange，
+   * 每次都触发 recalculate + selection.modify('move') 强制 layout，
+   * 主线程被锁（Blink 不会出现）。
+   *
+   * 注意：只 gate 原生事件入口；代码主动调 `recalculate()` 不受影响，
+   * 因此调用方应在批量操作结束后手动 `recalculate()` 一次收敛。
+   */
+  setSuppressRecalculate(v: boolean) {
+    this._suppressRecalculate = v
+  }
+
   // ── Read from DOM (user interaction path) ──
 
   recalculate(execNext = true, options?: { isComposing?: boolean }, _depth = 0): {

@@ -194,6 +194,17 @@ export class TextToolbarHelper {
     if (!selection) return
 
     const between: string[] = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
+
+    // 切列表类型等批量替换：WKWebView 在 DOM 大批替换 + contenteditable=false
+    // 子元素（todo/ordered/bullet 的 prefix）附近会同步发出大量 selectionchange，
+    // 每次都触发 recalculate + selection.modify('move') 强制 layout，最终主线程
+    // 被锁（Blink 不会出现）。整个 transform 期间 gate 原生事件入口，并在 DOM
+    // 落地后用 oldId → newId 映射 replay 老选区，避免原生 selection 因节点
+    // 被替换而丢失导致失焦。
+    const savedJson = selection.toJSON()
+    const idMap = new Map<string, string>()
+
+    this.doc.selection.setSuppressRecalculate(true)
     void this.doc.chain()
       .transact(() => {
         between.forEach(id => {
@@ -204,9 +215,30 @@ export class TextToolbarHelper {
             ...block.props,
             heading: flavour === 'ordered' ? block.props.heading : null
           }])
+          idMap.set(id, newBlock.id)
           this.doc.crud.replaceWithSnapshots(id, [newBlock])
         })
       })
       .run()
+      .finally(() => {
+        // 等 Angular 同步插入完成 + 一帧 layout 后再放开。
+        // 直接放开会让残留的 selectionchange 队列立刻进入 recalculate。
+        requestAnimationFrame(() => {
+          // 用 idMap remap 老选区，恢复焦点到对应的新块。
+          // 未被替换的块（已是目标 flavour / plainTextOnly）id 不变。
+          // textDeltas 完全克隆到新块，offset 仍然有效。
+          const remapId = (id: string) => idMap.get(id) ?? id
+          const remapped = {
+            anchor: { ...savedJson.anchor, blockId: remapId(savedJson.anchor.blockId) },
+            head: { ...savedJson.head, blockId: remapId(savedJson.head.blockId) },
+            commonParent: remapId(savedJson.commonParent),
+          }
+          try {
+            this.doc.selection.replay(remapped)
+          } catch {}
+          this.doc.selection.setSuppressRecalculate(false)
+          this.doc.selection.recalculate()
+        })
+      })
   }
 }
