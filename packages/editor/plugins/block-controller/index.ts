@@ -125,7 +125,11 @@ export class BlockControllerPlugin extends DocPlugin {
         hostElement.style.opacity = '0.5'
         hostElement.style.pointerEvents = 'none'
 
-        evt.dataTransfer?.setDragImage(this._activeBlock.hostElement, 0, 0);
+        // 不要直接把 hostElement 当 drag image：WKWebView 会同步光栅化整个元素到 NSImage，
+        // block 越大（表格 / code-block / 富文本嵌入）这一步阻塞越久，且整个拖拽周期都在维持这份大位图，
+        // 表现为持续卡顿。这里克隆一份并强制压缩尺寸 + 剥离重样式，让光栅化代价稳定且极小。
+        const ghost = this._createDragGhost(hostElement)
+        evt.dataTransfer?.setDragImage(ghost, 12, 12);
 
         this.doc.dndService.startDrag(evt, [{dragDataType: 'origin-block', dragData: this._activeBlock.id}])
 
@@ -135,6 +139,47 @@ export class BlockControllerPlugin extends DocPlugin {
           hostElement.style.pointerEvents = ''
         })
       })
+  }
+
+  private _dragGhost: HTMLElement | null = null
+
+  private _createDragGhost(source: HTMLElement) {
+    // 复用单一 ghost 容器，避免每次拖拽都堆 DOM 节点
+    if (!this._dragGhost) {
+      const g = document.createElement('div')
+      g.setAttribute('aria-hidden', 'true')
+      g.style.cssText = [
+        'position: fixed',
+        // 放在视口左上角外侧，浏览器拍快照只看 layout 位置不看 visibility
+        'top: -10000px',
+        'left: -10000px',
+        'width: 240px',
+        'max-height: 56px',
+        'overflow: hidden',
+        'padding: 8px 12px',
+        'box-sizing: border-box',
+        'background: var(--bc-bg-color, #fff)',
+        'color: var(--bc-text-color, #1f2329)',
+        'border-radius: 6px',
+        'box-shadow: 0 6px 24px rgba(0,0,0,0.12)',
+        'font-size: 13px',
+        'line-height: 20px',
+        'white-space: nowrap',
+        'text-overflow: ellipsis',
+        'pointer-events: none',
+        // 关键：阻止子树被 opacity / filter / transform 拉升为合成层，让光栅化走最便宜的路径
+        'will-change: auto',
+        'contain: layout paint',
+        'z-index: -1',
+      ].join(';')
+      document.body.appendChild(g)
+      this._dragGhost = g
+    }
+    const ghost = this._dragGhost
+    // 用 textContent 抽取一行预览，避免克隆复杂子树（表格、媒体、shiki 高亮等）
+    const text = (source.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 60)
+    ghost.textContent = text || `📦 ${this._activeBlock?.flavour ?? 'block'}`
+    return ghost
   }
 
   @EventListen('selectStart', {flavour: "root"})
@@ -227,6 +272,10 @@ export class BlockControllerPlugin extends DocPlugin {
 
   destroy() {
     this._cpr.destroy()
+    if (this._dragGhost) {
+      this._dragGhost.remove()
+      this._dragGhost = null
+    }
   }
 
 }

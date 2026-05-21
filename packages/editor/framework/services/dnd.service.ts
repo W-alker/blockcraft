@@ -1,4 +1,4 @@
-import {BehaviorSubject, filter, fromEvent, takeUntil} from "rxjs";
+import {BehaviorSubject, filter, fromEvent, take, takeUntil} from "rxjs";
 import {
   BlockNodeType,
   DocEventRegister,
@@ -107,9 +107,19 @@ export class DocDndService {
   private lastDragEvent: DragEvent | null = null
   private lastDragLineRect: DragLineRect | null = null
   // 兜底：浏览器在拖回 OS / ESC 取消等场景不一定可靠地触发 drop/dragend
-  // 每次 dragover/dragMove 重置看门狗；超过 DRAG_WATCHDOG_MS 没收到事件就强制清理
+  // 每次 dragover/dragMove 仅更新 lastDragActivityTs；watchdog timer 在到点后自检剩余 idle 时间，
+  // 不满阈值就续期。避免高频 dragover 反复 clearTimeout/setTimeout（WKWebView 上 RunLoop 调度成本较高）。
   private dragWatchdog: number | null = null
-  // private rootRect: Pick<DOMRect, 'top' | 'left' | 'width' | 'height'> = {top: 0, left: 0, width: 0, height: 0}
+  private lastDragActivityTs = 0
+  // 缓存 root.hostElement 在 viewport 中的位置，避免 dragover 每帧 getBoundingClientRect 触发同步 layout
+  private cachedRootHostRect: { top: number, left: number } | null = null
+
+  private refreshCachedRootHostRect = () => {
+    const rect = this.doc.root.hostElement.getBoundingClientRect()
+    const cached = { top: rect.top, left: rect.left }
+    this.cachedRootHostRect = cached
+    return cached
+  }
 
   private createDragLine = () => {
     if (this.dragLine) return
@@ -131,7 +141,8 @@ export class DocDndService {
 
   private moveDragLine = (host: HTMLElement, position: DragPosition, hostRect = host.getBoundingClientRect()) => {
     if (!this.dragLine) return
-    const rect = calcLineRect(this.doc.root.hostElement.getBoundingClientRect(), hostRect, position)
+    const rootRect = this.cachedRootHostRect ?? this.refreshCachedRootHostRect()
+    const rect = calcLineRect(rootRect, hostRect, position)
     const prevRect = this.lastDragLineRect
     if (!prevRect || prevRect.left !== rect.left || prevRect.top !== rect.top) {
       this.dragLine.style.transform = `translate3d(${rect.left}px, ${rect.top}px, 0)`
@@ -216,11 +227,19 @@ export class DocDndService {
   }
 
   private resetDragWatchdog = () => {
-    if (this.dragWatchdog !== null) clearTimeout(this.dragWatchdog)
-    this.dragWatchdog = window.setTimeout(() => {
-      this.dragWatchdog = null
+    this.lastDragActivityTs = performance.now()
+    if (this.dragWatchdog !== null) return
+    this.dragWatchdog = window.setTimeout(this._watchdogTick, DRAG_WATCHDOG_MS)
+  }
+
+  private _watchdogTick = () => {
+    this.dragWatchdog = null
+    const idle = performance.now() - this.lastDragActivityTs
+    if (idle >= DRAG_WATCHDOG_MS) {
       this.clearDrag()
-    }, DRAG_WATCHDOG_MS)
+      return
+    }
+    this.dragWatchdog = window.setTimeout(this._watchdogTick, DRAG_WATCHDOG_MS - idle)
   }
 
   private stopDragWatchdog = () => {
@@ -254,7 +273,9 @@ export class DocDndService {
   }
 
   private processDragMove = (evt: DragEvent) => {
-    this.dragStatus$.next(DocDndStatus.moving)
+    if (this.dragStatus$.value !== DocDndStatus.moving) {
+      this.dragStatus$.next(DocDndStatus.moving)
+    }
     this.resetDragWatchdog()
 
     // === 阶段 1：识别 activeBlock ===
@@ -361,7 +382,19 @@ export class DocDndService {
       this.dragStatus$.next(DocDndStatus.start)
       // this.doc.root.hostElement.classList.add('dragging')
       this.createDragLine()
+      this.refreshCachedRootHostRect()
       this.resetDragWatchdog()
+
+      // root.hostElement 在拖拽期间通常不动，缓存其 viewport top/left 避免每帧重测。
+      // 但窗口缩放 / 外层容器滚动 / 文档自身滚动可能改变它的视口位置，需要失效缓存。
+      // 用 passive 监听，且只清空缓存（下次 moveDragLine 内部再 lazy 刷新），避免在 scroll/resize 风暴中额外做 layout。
+      const invalidateRootRect = () => { this.cachedRootHostRect = null }
+      window.addEventListener('resize', invalidateRootRect, {passive: true})
+      window.addEventListener('scroll', invalidateRootRect, {passive: true, capture: true})
+      this.dragEnd$.pipe(take(1)).subscribe(() => {
+        window.removeEventListener('resize', invalidateRootRect)
+        window.removeEventListener('scroll', invalidateRootRect, {capture: true} as any)
+      })
       // 防止释放时会有个返回的动画
       fromEvent<DragEvent>(document, 'dragover').pipe(takeUntil(this.dragEnd$))
         .subscribe((e) => {
@@ -437,6 +470,7 @@ export class DocDndService {
     this.prevBlock = null
     this._prevTargetElement = null
     this.lastDragLineRect = null
+    this.cachedRootHostRect = null
     this.doc.event.remove('dragMove', this.onDragMove)
     this._inBlock = null
   }
