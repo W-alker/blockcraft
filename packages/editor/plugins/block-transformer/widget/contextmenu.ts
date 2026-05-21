@@ -100,6 +100,7 @@ export class BlockTransformContextMenu {
   protected activeIdx = 0;
   private isKeyboardNavigating = false;
   private lastHandledNavigationAt = 0;
+  private suppressTimerId: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     public readonly cdr: ChangeDetectorRef,
@@ -173,12 +174,18 @@ export class BlockTransformContextMenu {
       document.removeEventListener("keydown", this.handleRootKeydown, true);
       hotKeyEvents.forEach((off) => off());
       this.activeBlock.yText?.unobserve(textObserver);
+      if (this.suppressTimerId !== null) {
+        clearTimeout(this.suppressTimerId);
+        this.suppressTimerId = null;
+      }
+      this.doc.selection.setSuppressRecalculate(false);
     });
   }
 
   private handleRootKeydown = (event: KeyboardEvent) => {
     if (!this.canHandleMenuKeydown()) return;
     if (!this.handleMenuKey(event.key)) return;
+    console.log('=', this.activeIdx, this.list.length);
 
     event.preventDefault();
     event.stopPropagation();
@@ -260,7 +267,7 @@ export class BlockTransformContextMenu {
     if (!this.list.length) return;
     this.enterKeyboardNavigation();
     this.activeIdx = (this.activeIdx - 1 + this.list.length) % this.list.length;
-    this.cdr.detectChanges();
+    this._syncActiveClass();
     this.scrollToActive();
   }
 
@@ -268,8 +275,30 @@ export class BlockTransformContextMenu {
     if (!this.list.length) return;
     this.enterKeyboardNavigation();
     this.activeIdx = (this.activeIdx + 1) % this.list.length;
-    this.cdr.detectChanges();
+    this._syncActiveClass();
     this.scrollToActive();
+  }
+
+  /**
+   * CDK overlay + OnPush 组件 + 原生 keydown 监听的组合下，在某些场景（首次
+   * 聚焦的新段落）detectChanges 不能可靠地把 `[class.active]` 绑定推进到
+   * DOM。这里既做 Angular 侧的标脏 + 本地 CD，又用原生 DOM API 把 `.active`
+   * 类强制同步一次，保证视觉一定更新。
+   */
+  private _syncActiveClass() {
+    this.cdr.markForCheck();
+    this.cdr.detectChanges();
+    const items = this.host.nativeElement.querySelectorAll<HTMLElement>(
+      ".list__item",
+    );
+    items.forEach((el) => {
+      const idx = Number(el.getAttribute("data-index"));
+      if (idx === this.activeIdx) {
+        el.classList.add("active");
+      } else {
+        el.classList.remove("active");
+      }
+    });
   }
 
   enterKeyboardNavigation() {
@@ -282,6 +311,19 @@ export class BlockTransformContextMenu {
 
   private markNavigationHandled() {
     this.lastHandledNavigationAt = Date.now();
+    // WKWebView/Safari 在 contenteditable 中可能无视 keydown 的
+    // preventDefault 仍然移动 DOM 光标，导致 selectionchange 触发
+    // recalculate 把 BlockSelection 模型拽走、菜单被误关。这里 gate
+    // 住原生 selectionchange 入口，让模型在导航期间保持锚定在
+    // activeBlock。每次导航刷新窗口，菜单销毁时统一释放。
+    this.doc.selection.setSuppressRecalculate(true);
+    if (this.suppressTimerId !== null) {
+      clearTimeout(this.suppressTimerId);
+    }
+    this.suppressTimerId = setTimeout(() => {
+      this.suppressTimerId = null;
+      this.doc.selection.setSuppressRecalculate(false);
+    }, 120);
   }
 
   scrollToActive() {

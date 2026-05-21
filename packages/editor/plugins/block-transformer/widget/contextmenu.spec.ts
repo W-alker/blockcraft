@@ -36,6 +36,7 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
         recalculate: jasmine
           .createSpy("recalculate")
           .and.callFake(() => ({ value: recalculatedSelection })),
+        setSuppressRecalculate: jasmine.createSpy("setSuppressRecalculate"),
       },
     } as any;
 
@@ -123,6 +124,25 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
 
     expect(component.selectDown).toHaveBeenCalled();
     expect(component.shouldIgnoreSelectionChange()).toBeTrue();
+  });
+
+  it("suppresses native selectionchange recalculate during arrow navigation", () => {
+    const { component } = createComponent({
+      collapsed: true,
+      start: { type: "text" },
+      firstBlock: { id: "block-1" },
+    });
+    spyOn(component, "selectDown");
+
+    (component as any).handleRootKeydown({
+      key: "ArrowDown",
+      preventDefault: jasmine.createSpy("preventDefault"),
+      stopPropagation: jasmine.createSpy("stopPropagation"),
+    } as unknown as KeyboardEvent);
+
+    expect(
+      component.doc.selection.setSuppressRecalculate,
+    ).toHaveBeenCalledWith(true);
   });
 
   it("scrolls vertically without changing horizontal offset", () => {

@@ -210,6 +210,13 @@ export class BlockTransformerPlugin extends DocPlugin {
   private closeMenu$ = new Subject();
 
   openContextMenu(block: EditableBlockComponent) {
+    // 关掉可能还存在的旧菜单。textObserver 关菜单是 debounce 300ms 的，
+    // 用户在 300ms 内"删除字符 → 重新输入 / 触发"会让旧菜单还活着、
+    // 新菜单又叠上来。旧 menu 的 document keydown listener 先注册先派发，
+    // 把事件吃掉之后 stopImmediatePropagation 让新 menu 的 listener
+    // 无法触发，看起来就是"按上下键不动但 activeIdx 在变"。
+    this.closeMenu$.next(true);
+
     const { componentRef: cpr } =
       this.doc.overlayService.createConnectedOverlay<BlockTransformContextMenu>(
         {
@@ -274,10 +281,43 @@ export class BlockTransformerPlugin extends DocPlugin {
     )
       return;
     const block = selection.firstBlock as any;
-    if (block.textContent() !== inputText) return;
     const schema = this.doc.schemas.get(block.flavour)!;
     if (schema.metadata.isLeaf) return;
-    this.openContextMenu(block);
+    if (block.textContent() === inputText) {
+      this.openContextMenu(block);
+      return;
+    }
+    // 兜底：IME 输入 `、` 时 beforeInput 在 compositionEnd 之前触发，
+    // 但 Yjs yText 要等 compositionEnd 才落地。nextTick 时 textContent
+    // 还不匹配，这里挂一次性 yText observer 等内容落地后重试。
+    const yText = block.yText;
+    if (!yText) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const cleanup = () => {
+      try {
+        yText.unobserve(observer);
+      } catch {}
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+    const observer = () => {
+      if (block.textContent() !== inputText) return;
+      cleanup();
+      // compositionEnd 后选区会被刷新，重新确认仍在该 block 内
+      const sel = this.getCurrentSelection();
+      if (
+        sel &&
+        sel.collapsed &&
+        sel.start.type === "text" &&
+        sel.firstBlock.id === block.id
+      ) {
+        this.openContextMenu(block);
+      }
+    };
+    yText.observe(observer);
+    timer = setTimeout(cleanup, 300);
   }
 
   private getCurrentSelection() {
