@@ -24,7 +24,7 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
                [style.width.px]="props.width"
                loading="lazy"
                contenteditable="false"
-               [draggable]="!(doc.readonlySwitch$ | async)"
+               draggable="false"
                #imgEle/>
           @if (!(doc.readonlySwitch$ | async)) {
             <block-resizer [container]="imgEle"

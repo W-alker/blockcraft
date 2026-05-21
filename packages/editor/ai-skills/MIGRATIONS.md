@@ -67,6 +67,67 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-05-21 (major)
+
+**What changed**: 内部 block 拖拽从 HTML5 drag/drop API 切换为 PointerEvents 自实现。新增 `doc.dragController`（`DocInternalDragController`）。`DocDndService` 瘦身为"高层 commit 方法分发 + 外部文件 HTML5 路径"。
+
+**Why**: HTML5 drag/drop API 在 WKWebView（Tauri、macOS Safari、桌面 Electron-on-WebKit）上比 Chrome 慢一档，根因在底层架构：drag image 必经 `NSDraggingSession` → `NSImage` → IOSurface 跨进程；dragover 经多进程边界；合成层抢主线程。PointerEvents 自实现让 JS 层完全控制，并且首次支持触摸 / 触控笔。
+
+**Affected ai-skills files**:
+- `blockcraft-app.md` — 新增 `doc.dragController` 服务介绍
+- `blockcraft.md` — 服务索引表更新
+
+### Breaking Changes
+
+#### 删除：`DocDndService.startDrag(evt: DragEvent, data)`
+
+旧（HTML5）：
+
+```ts
+fromEvent<DragEvent>(triggerBtn, 'dragstart').subscribe(evt => {
+  evt.dataTransfer?.setDragImage(hostElement, 0, 0)
+  this.doc.dndService.startDrag(evt, [{ dragDataType: 'origin-block', dragData: blockId }])
+})
+```
+
+新（PointerEvents）：
+
+```ts
+fromEvent<PointerEvent>(triggerBtn, 'pointerdown').subscribe(evt => {
+  if (evt.button !== 0) return
+  this.doc.dragController.startDrag(evt, { kind: 'origin-block', blockId })
+})
+```
+
+调用方还需要：
+
+- 在 trigger 元素上加 CSS `touch-action: none`（避免触摸滚动手势抢走 pointer）
+- 不要再调 `setDragImage` —— controller 自渲染 ghost
+- 不要再手动 `style.opacity = '0.5'` —— 源 block 视觉由 `.bc-drag-source` class 承担
+
+### New APIs
+
+- `doc.dragController: DocInternalDragController`
+- `DocInternalDragController.startDrag(evt, data, options?)`
+- `DocInternalDragController.cancel()`
+- `DocInternalDragController.state$: Observable<'idle' | 'armed' | 'dragging' | 'dropping'>`
+- `DocInternalDragController.isDragging: boolean`
+- 数据类型：`InternalDragData = { kind: 'origin-block', blockId } | { kind: 'new-block', flavour, initProps? }`
+- 选项：`InternalDragOptions = { ghostLabel?: string, movementThreshold?: number }`
+
+### Behavior Changes
+
+- 内部 block 拖拽不再触发原生 `dragstart` / `dragover` / `drop` 事件（仅外部文件拖入仍触发）
+- 触摸设备首次支持 block 拖拽
+- 拖拽期间源 block 不再使用 `opacity: 0.5`，改用 CSS `.bc-drag-source { outline: 1px dashed var(--bc-active-color); outline-offset: 2px; border-radius: 4px; }`
+- 移动阈值：mouse / pen = 4px，touch = 8px（自动按 `pointerType` 区分，可通过 `options.movementThreshold` 覆盖）
+
+### Migration Recipe
+
+参考上文 Breaking Changes 节的 before / after 代码。把 `dragstart` 订阅替换为 `pointerdown` 订阅，把 `dndService.startDrag(DragEvent, ...)` 替换为 `dragController.startDrag(PointerEvent, ...)`。配合 SCSS：在自定义主题中如果想覆盖源 block 拖拽视觉，定义 `.bc-drag-source { ... }` 即可。
+
+---
+
 ### v0.2.35 — 2026-05-18 — Demo Presentation Size Scales Are Source-Relative & Configurable
 
 **Severity**: minor

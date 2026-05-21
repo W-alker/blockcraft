@@ -221,7 +221,7 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
           ({
             key: "ArrowDown",
             stopPropagation,
-          }) as KeyboardEvent,
+          }) as unknown as KeyboardEvent,
       },
       "ArrowDown",
     );

@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-05-11
+> Last updated: 2026-05-21
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -426,7 +426,8 @@ doc.selection              // SelectionManager
 doc.clipboard              // ClipboardManager
 doc.inputManger            // InputTransformer (sic — note typo in field name)
 doc.overlayService         // DocOverlayService — CDK Overlay wrapper
-doc.dndService             // DocDndService — drag & drop coordination
+doc.dndService             // DocDndService — 外部文件拖入 + commit 类方法分发
+doc.dragController         // DocInternalDragController — 内部 block 拖拽（PointerEvents 实现）
 doc.messageService         // DocMessageService (resolved from DI token)
 doc.schemas                // SchemaManager
 doc.injector               // Angular Injector
@@ -444,6 +445,34 @@ doc.chain()                // → DocChain (fluent transactions)
 doc.toggleTheme(name)
 doc.afterInit(fn)          // run fn once root is ready
 ```
+
+## doc.dragController
+
+`DocInternalDragController` — 内部 block 拖拽控制器（PointerEvents 实现，统一鼠标 / 触摸 / 触控笔）。
+
+```ts
+// 启动一次内部拖拽（block-controller / img-toolbar 等插件的 pointerdown 入口里调）
+doc.dragController.startDrag(
+  pointerEvent,
+  { kind: 'origin-block', blockId },        // 或 { kind: 'new-block', flavour, initProps? }
+  { ghostLabel?: string, movementThreshold?: number }
+)
+
+// 主动取消
+doc.dragController.cancel()
+
+// 状态机：'idle' | 'armed' | 'dragging' | 'dropping'
+doc.dragController.state$.subscribe(state => { ... })
+doc.dragController.isDragging  // boolean
+```
+
+调用方需要：
+- 在 pointerdown handler 里调（不是 dragstart），按钮过滤 `evt.button !== 0`
+- 对触发元素加 CSS `touch-action: none`，避免触摸滚动手势抢走 pointer
+- 不要再设 `setDragImage` —— controller 自渲染轻量 ghost
+- 不要再手动 `opacity: 0.5` —— 源 block 视觉由 `.bc-drag-source` class 承担
+
+外部文件（OS → 编辑器）拖入仍走 HTML5 drop，由 `doc.dndService` 内部处理。
 
 ## Common Mistakes
 

@@ -48,33 +48,6 @@ export class ImgToolbarPlugin extends DocPlugin {
 
   private _closeToolbar$ = new Subject<void>();
 
-  // img 拖拽响应
-  @EventListen("dragStart", { flavour: "image" })
-  onImageDragStart(ctx: UIEventStateContext) {
-    ctx.stopPropagation();
-
-    if (
-      this.doc.isReadonly ||
-      (this.doc.selection.value && !this.doc.selection.value.isInSameBlock)
-    ) {
-      ctx.preventDefault();
-      return;
-    }
-
-    const evt: DragEvent = ctx.getDefaultEvent();
-
-    const target = evt.target;
-    if (!target || !(target instanceof HTMLImageElement)) return;
-    const blockId = closetBlockId(target);
-    if (!blockId) return;
-
-    evt.dataTransfer?.setDragImage(target, 0, 0);
-
-    this.doc.dndService.startDrag(evt, [
-      { dragDataType: "origin-block", dragData: blockId },
-    ]);
-  }
-
   @BindHotKey(
     {
       key: "Enter",
@@ -145,6 +118,41 @@ export class ImgToolbarPlugin extends DocPlugin {
         this.closeToolbar();
       }
     });
+
+    // Image block drag via pointerdown (replaces former HTML5 dragstart path)
+    // 重点：
+    // 1. image-block.scss 给 <img> 设了 pointer-events: none（仅 .selected 状态 unset），
+    //    所以点击图片时 evt.target 多半是 .img-wrapper 而不是 HTMLImageElement。
+    //    匹配方式改为"closest block 是 image flavour"。
+    // 2. 监听 document capture phase（而不是 root.hostElement）—— 比 root 更外层一层，
+    //    任何 root 内部 element 上的 stopPropagation(capture) 都不会拦掉我们。
+    // 3. 不再做 isInSameBlock 检查 —— 老 dragstart 路径里那条 guard 在 mousedown 之后触发，
+    //    selection 已是最新；PointerEvents 路径里 pointerdown 早于 mousedown，selection
+    //    还是旧的，那条 guard 会误拦掉对图片的拖拽。
+    fromEvent<PointerEvent>(document, 'pointerdown', { capture: true })
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(evt => {
+        if (this.doc.isReadonly) return
+        if (evt.button !== 0) return
+        const target = evt.target
+        if (!(target instanceof Element)) return
+        if (!this.doc.root.hostElement.contains(target)) return
+        // 排除调宽度的 resize 句柄、占位插图按钮等
+        if (target.closest('block-resizer')) return
+        if (target.closest('.upload-hint')) return
+
+        const blockId = closetBlockId(target as Node)
+        if (!blockId) return
+        let block: BlockCraft.BlockComponent | null = null
+        try { block = this.doc.getBlockById(blockId) } catch { return }
+        if (!block || block.flavour !== 'image') return
+
+        this.doc.dragController.startDrag(
+          evt,
+          { kind: 'origin-block', blockId },
+          { ghostLabel: '图片' },
+        )
+      })
 
     this._sub = this.doc.selection.selectionChange$.subscribe((selection) => {
       if (
@@ -255,14 +263,14 @@ export class ImgToolbarPlugin extends DocPlugin {
             }
           });
 
-        const ls = this.doc.event.add(
-          "dragStart",
-          () => {
-            this._closeToolbar$.next();
-            ls();
-          },
-          { blockId: selection.firstBlock.id },
-        );
+        const dragSub = this.doc.dragController.state$
+          .pipe(takeUntil(this._closeToolbar$))
+          .subscribe(state => {
+            if (state === 'dragging') {
+              this._closeToolbar$.next();
+              dragSub.unsubscribe();
+            }
+          });
 
         this.doc.selection.afterNextChange(() => {
           this._closeToolbar$.next();

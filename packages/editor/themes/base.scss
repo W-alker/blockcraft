@@ -23,6 +23,11 @@
 @import "components/float-toolbar";
 @import "components/snapshot-viewer";
 
+// 内部 block 拖拽期间，源 block 加 .bc-drag-source 标记（由 DocInternalDragController 添加 / 移除）。
+.bc-drag-source {
+  opacity: 0.5;
+}
+
 [data-blockcraft-root="true"] {
   position: relative;
   outline: none;

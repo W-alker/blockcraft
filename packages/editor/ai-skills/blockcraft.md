@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-05-11 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-05-21 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -161,6 +161,19 @@ doc.chain()
   .setCursorAtBlock(newBlock)
   .run()
 ```
+
+### Doc Services Index
+
+Key services accessible on `doc.*` (see `blockcraft-app.md` for full API details):
+
+| Service | Description | Source file |
+|---------|-------------|-------------|
+| `doc.dragController` | 内部 block 拖拽（PointerEvents） | `framework/services/internal-drag.controller.ts` |
+| `doc.dndService`     | 外部文件拖入 + commit 类方法分发  | `framework/services/dnd.service.ts` |
+| `doc.overlayService` | CDK Overlay wrapper | `framework/services/overlay.service.ts` |
+| `doc.clipboard`      | ClipboardManager | `framework/modules/clipboard/` |
+| `doc.selection`      | SelectionManager (anchor/head model) | `framework/modules/selection/` |
+| `doc.event`          | UIEventDispatcher | `framework/block-std/event/` |
 
 ### Block Property Updates
 

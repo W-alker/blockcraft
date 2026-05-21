@@ -16,6 +16,7 @@ import { DocPlugin } from "../plugin";
 import { DOC_MESSAGE_SERVICE_TOKEN } from "../services";
 import { DocOverlayService } from "../services";
 import { DocDndService } from "../services/dnd.service";
+import { DocInternalDragController } from "../services/internal-drag.controller";
 import { DocChain } from "../chain/doc-chain";
 import * as Y from "yjs";
 
@@ -65,6 +66,7 @@ export class BlockCraftDoc {
   public readonly messageService = this.injector.get(DOC_MESSAGE_SERVICE_TOKEN)
   public readonly overlayService = new DocOverlayService(this)
   public readonly dndService = new DocDndService(this)
+  public readonly dragController = new DocInternalDragController(this)
 
   private _scrollContainer: HTMLElement | null = null
 
@@ -136,7 +138,10 @@ export class BlockCraftDoc {
     public readonly config: DocConfig
   ) {
     this._plugins = this.config.plugins || []
-    this.onDestroy(this._subscriptions.unsubscribe)
+    this.onDestroy(() => {
+      this.dragController.destroy()
+      this._subscriptions.unsubscribe()
+    })
     this._yBlockMap = this.yDoc.getMap<YBlock>(Y_BLOCK_MAP_NAME)
   }
 
