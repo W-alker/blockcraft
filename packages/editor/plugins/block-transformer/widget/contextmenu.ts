@@ -101,6 +101,7 @@ export class BlockTransformContextMenu {
   private isKeyboardNavigating = false;
   private lastHandledNavigationAt = 0;
   private suppressTimerId: ReturnType<typeof setTimeout> | null = null;
+  private restoreRafId: number | null = null;
 
   constructor(
     public readonly cdr: ChangeDetectorRef,
@@ -178,6 +179,10 @@ export class BlockTransformContextMenu {
         clearTimeout(this.suppressTimerId);
         this.suppressTimerId = null;
       }
+      if (this.restoreRafId !== null) {
+        cancelAnimationFrame(this.restoreRafId);
+        this.restoreRafId = null;
+      }
       this.doc.selection.setSuppressRecalculate(false);
     });
   }
@@ -185,7 +190,6 @@ export class BlockTransformContextMenu {
   private handleRootKeydown = (event: KeyboardEvent) => {
     if (!this.canHandleMenuKeydown()) return;
     if (!this.handleMenuKey(event.key)) return;
-    console.log('=', this.activeIdx, this.list.length);
 
     event.preventDefault();
     event.stopPropagation();
@@ -317,6 +321,21 @@ export class BlockTransformContextMenu {
     // 住原生 selectionchange 入口，让模型在导航期间保持锚定在
     // activeBlock。每次导航刷新窗口，菜单销毁时统一释放。
     this.doc.selection.setSuppressRecalculate(true);
+
+    // Tauri/WKWebView 下，AppKit 在 JS keydown 之前同步执行
+    // doCommandBySelector:(moveUp:/moveDown:/...) 把 DOM caret 拽走，
+    // preventDefault 已经晚了。这里事后纠错：把 caret 拽回模型记录
+    // 的位置。同步 + microtask + rAF 三重保险覆盖 IPC 时序所有可能。
+    this._restoreCaret();
+    queueMicrotask(() => this._restoreCaret());
+    if (this.restoreRafId !== null) {
+      cancelAnimationFrame(this.restoreRafId);
+    }
+    this.restoreRafId = requestAnimationFrame(() => {
+      this.restoreRafId = null;
+      this._restoreCaret();
+    });
+
     if (this.suppressTimerId !== null) {
       clearTimeout(this.suppressTimerId);
     }
@@ -324,6 +343,13 @@ export class BlockTransformContextMenu {
       this.suppressTimerId = null;
       this.doc.selection.setSuppressRecalculate(false);
     }, 120);
+  }
+
+  private _restoreCaret() {
+    const sel = this.doc.selection.value;
+    if (!sel || sel.start.type !== "text") return;
+    if (sel.firstBlock?.id !== this.activeBlock?.id) return;
+    this.activeBlock.setInlineRange(sel.start.offset);
   }
 
   scrollToActive() {

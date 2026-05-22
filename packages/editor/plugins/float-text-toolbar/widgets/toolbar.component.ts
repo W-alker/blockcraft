@@ -205,7 +205,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         }
 
         <bc-float-toolbar-item [name]="item.name" [value]="activeAttrs.has(item.name) ? null : true"
-                               [icon]="item.icon" [title]="item.intro" [active]="activeAttrs.has(item.name)"
+                               [icon]="item.icon" [title]="item.tip" [active]="activeAttrs.has(item.name)"
                                [nz-tooltip]="item.tip">
         </bc-float-toolbar-item>
       }
@@ -230,7 +230,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         <span class="bc-float-toolbar__divider"></span>
         @for (item of extraItems; track item.name) {
           <bc-float-toolbar-item [name]="item.name" [value]="item.value"
-                                 [icon]="item.icon" [title]="item.intro"
+                                 [icon]="item.icon" [title]="item.tip"
                                  [active]="item.active"
                                  [nz-tooltip]="item.tip">
           </bc-float-toolbar-item>
