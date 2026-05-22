@@ -113,18 +113,22 @@ export class DocInternalDragController {
     // (1) 我们所有 pointermove/up/cancel 都挂在 window 上 capture phase，事件传递不依赖 capture
     // (2) 部分 Chrome 版本下，对 <img> / 子树 element 调 setPointerCapture 会阻塞 ancestor 的
     //     wheel/scroll，表现为 "拖拽触发后页面无法滚动"
-
-    // 清掉已有 selection。覆盖"用户先在段落里点过文字（留下 caret），再去拖图片 / drag-handle"
-    // 这种场景：armed 阶段 Safari 已经会从那个 caret 出发延伸 range，selection 看起来乱跳。
-    // 拖块场景下保留 caret 没意义，清空起点最安全。
-    try { document.getSelection()?.removeAllRanges() } catch {}
-
+    //
+    // armed 阶段不清 selection：清得太早会破坏"单击不拖"场景下 framework 通过 native
+    // selection / selectionchange 推导出 block selection 的链路（比如点击图片想让它进入
+    // selected 状态）。selection 的清除推迟到真正进 dragging 的 _enterDragging。
     this._activePointerId = evt.pointerId
     this._data = data
     this._options = { ...options }
     this._startX = evt.clientX
     this._startY = evt.clientY
     this._pointerType = evt.pointerType || 'mouse'
+    // 屏蔽 framework selectionchange→recalculate：pointerdown 后浏览器还会发 mousedown，
+    // 后续 selectionchange 会让 framework 把 BlockSelection 重算回 null（mousedown 落点
+    // 可能在 .img-wrapper 等非 block 边界元素上，recalculate 算不出 BlockSelection）。
+    // 我们在 pointerdown 时显式 selectBlock 设好的 selection 不能被这条链路覆盖掉。
+    // teardown 时恢复。
+    this.doc.selection.setSuppressRecalculate(true)
     this._attachGlobalListeners()
     this._state$.next('armed')
   }
@@ -235,6 +239,9 @@ export class DocInternalDragController {
     if (this._state$.value === 'dragging' || this._state$.value === 'dropping') {
       this.doc.dndService.dragStatus$.next('end' as any)
     }
+    // 恢复 framework selectionchange→recalculate（startDrag 时屏蔽了）。
+    // 注意：保护范围只到 teardown，后续用户操作可以正常更新 BlockSelection。
+    try { this.doc.selection.setSuppressRecalculate(false) } catch {}
     this._prevBlock = null
     this._prevDragPosition = 'none'
     this._prevTargetEl = null

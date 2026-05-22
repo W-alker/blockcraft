@@ -147,6 +147,11 @@ export class ImgToolbarPlugin extends DocPlugin {
         try { block = this.doc.getBlockById(blockId) } catch { return }
         if (!block || block.flavour !== 'image') return
 
+        // 显式选中 image block。不依赖 native selection → selectionchange → recalculate
+        // 这条间接链路（pointerdown 触发 startDrag 后会 attach 一堆 listener，
+        // 经验上对 native selection 链路有干扰，导致单击图片不显示 selected 工具栏）。
+        this.doc.selection.selectBlock(block)
+
         this.doc.dragController.startDrag(
           evt,
           { kind: 'origin-block', blockId },

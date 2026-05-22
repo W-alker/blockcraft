@@ -7,6 +7,7 @@ function makeMockDoc(): any {
     root: { hostElement: document.createElement('div') },
     getBlockById: () => null,
     schemas: { has: () => false, get: () => null },
+    selection: { setSuppressRecalculate: jasmine.createSpy('setSuppressRecalculate') },
     dndService: {
       dragStatus$: { next: jasmine.createSpy('next'), value: 'end' },
       onSortBlock: jasmine.createSpy('onSortBlock'),
