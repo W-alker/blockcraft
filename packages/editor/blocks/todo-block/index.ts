@@ -22,7 +22,8 @@ export const TodoBlockSchema: IBlockSchemaOptions<TodoBlockModel> = {
     version: 1,
     label: "待办事项",
     icon: 'bc_icon bc_gongzuoshixiang-color',
-    svgIcon: 'bc_gongzuoshixiang-color'
+    svgIcon: 'bc_gongzuoshixiang-color',
+    placeholder: '待办事项',
   }
 }
 

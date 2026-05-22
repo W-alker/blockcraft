@@ -25,7 +25,8 @@ export const OrderedBlockSchema: IBlockSchemaOptions<OrderedBlockModel> = {
     version: 1,
     label: "有序列表",
     icon: 'bc_icon bc_youxuliebiao-color',
-    svgIcon: 'bc_youxuliebiao-color'
+    svgIcon: 'bc_youxuliebiao-color',
+    placeholder: '列表项',
   }
 }
 

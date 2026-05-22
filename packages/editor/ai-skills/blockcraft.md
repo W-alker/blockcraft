@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-05-21 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-05-22 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -249,6 +249,7 @@ onBold(ctx: UIEventStateContext) { ... }
 - Global type declarations use `declare global { namespace BlockCraft { ... } }`
 - Icons use the iconfont class system: `<i class="bc_icon bc_xxx"></i>` (no PNGs, no inline SVGs except for multi-color)
 - Hotkey decorators use `shortKey: true` for cross-platform Cmd/Ctrl — never hardcode `metaKey`/`ctrlKey`
+- Empty editable blocks show placeholder text from `metadata.placeholder` on focus (see `blockcraft-block.md` → Editable Block Placeholder)
 
 ## Plugins Currently Bundled (from `editor/editor.ts`)
 

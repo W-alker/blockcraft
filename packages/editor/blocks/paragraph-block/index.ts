@@ -20,6 +20,10 @@ export const ParagraphBlockSchema: IBlockSchemaOptions<ParagraphBlockModel> = {
     version: 1,
     label: "基础段落",
     icon: "bc_icon bc_wenben",
+    placeholder: {
+      default: '输入"/"呼出菜单',
+      heading: { 1: '一级标题', 2: '二级标题', 3: '三级标题' },
+    },
   }
 }
 

@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-04-13
+> Last updated: 2026-05-22
 
 ## Block Types
 
@@ -468,6 +468,50 @@ doc.chain()
 ```
 
 > Always prefer `DocChain` over calling `doc.crud` directly. The chain handles transaction grouping, undo history boundaries, and cursor restoration in one place.
+
+## Editable Block Placeholder
+
+Set `metadata.placeholder` on an editable block schema and the framework will
+render the placeholder text on the host element when the block is focused and
+its `yText.length === 0`. CSS already styles `.empty .edit-container::before`
+to render `attr(data-placeholder)` in `var(--bc-color-light)`.
+
+```typescript
+import { BlockPlaceholderConfig } from "../../framework";
+
+// String form — one placeholder for all states:
+metadata: {
+  // ...
+  placeholder: '列表项',
+}
+
+// Object form — separate text per heading level on paragraph:
+metadata: {
+  // ...
+  placeholder: {
+    default: '输入"/"呼出菜单',
+    heading: { 1: '一级标题', 2: '二级标题', 3: '三级标题' },
+  },
+}
+```
+
+**Resolution rules** (`resolvePlaceholderText`):
+
+| Config | `props.heading` | Result |
+|--------|-----------------|--------|
+| `undefined` | any | `''` (not rendered) |
+| `'foo'` | any | `'foo'` |
+| `{ default: 'A' }` | undefined | `'A'` |
+| `{ default: 'A' }` | 1 | `'A'` (no matching heading entry) |
+| `{ default: 'A', heading: { 1: 'H1' } }` | 1 | `'H1'` |
+| `{ default: 'A', heading: { 1: 'H1' } }` | 2 | `'A'` (fallback to default) |
+| `{ heading: { 1: 'H1' } }` | undefined | `''` (no default) |
+
+**Display contract**:
+- Visible only when current selection is `type: 'text'` and `start.blockId === block.id` AND `textLength === 0`.
+- DOM state managed via `data-placeholder` attribute + `.empty` class on the host element.
+- Readonly mode never displays placeholder (`selection.value` stays `null`).
+- Subscriptions are auto-disposed via `takeUntilDestroyed(this.destroyRef)`.
 
 ## Checklist
 

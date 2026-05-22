@@ -20,7 +20,8 @@ export const BulletBlockSchema: IBlockSchemaOptions<BulletBlockModel> = {
     version: 1,
     label: "无序列表",
     icon: 'bc_icon bc_wuxuliebiao-color',
-    svgIcon: 'bc_wuxuliebiao-color'
+    svgIcon: 'bc_wuxuliebiao-color',
+    placeholder: '列表项',
   }
 }
 

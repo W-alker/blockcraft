@@ -152,9 +152,27 @@
     transition: all .1s ease;
 
     &.empty {
+      // Match both self-as-edit-container (e.g. paragraph: host element has
+      // `.edit-container` class directly) and descendant edit-container
+      // (e.g. bullet/todo/blockquote: host contains a child `.edit-container`).
+      &.edit-container::before,
       .edit-container::before {
         content: attr(data-placeholder);
         color: var(--bc-color-light);
+        // Absolute positioning takes the placeholder out of the inline flow,
+        // so the caret stays at the container's start instead of being pushed
+        // to the right of the placeholder text. The positioning context is
+        // the `.edit-container` itself (see `position: relative` rule below),
+        // which sits to the right of any block prefix (bullet/todo checkbox/etc).
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+        // `nowrap` prevents the placeholder from collapsing into a vertical
+        // single-character column when the parent `.edit-container` is a
+        // shrink-to-fit flex item (bullet/ordered/todo hosts use
+        // `display: flex`, so an empty edit-container has near-zero width).
+        white-space: nowrap;
       }
     }
   }
@@ -162,6 +180,7 @@
   .edit-container {
     white-space: break-spaces;
     user-select: text;
+    position: relative;
 
     span[contenteditable='false'] {
       margin: 0 2px;

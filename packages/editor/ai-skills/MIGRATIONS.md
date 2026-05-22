@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-05-18 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-05-22 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,51 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-05-22 (minor)
+
+**What changed**: 新增 `IBlockSchemaOptions.metadata.placeholder` 字段（`BlockPlaceholderConfig` 类型，`string` 或 `{ default?, heading?: { 1?, 2?, 3? } }` 结构）。所有 `EditableBlockComponent` 派生块在「聚焦 + `textLength === 0`」时会自动从 host element 上读取该字段，渲染 `data-placeholder` attribute + `.empty` class，触发既有 CSS。内置 `paragraph` / `bullet` / `ordered` / `todo` / `blockquote` schema 已带默认文案；未配置 placeholder 的 schema 不受影响、不显示任何占位符。
+
+**Why**: BlockCraft 主题 `themes/base.scss` 早已为 `[data-node-type="editable"].empty .edit-container::before { content: attr(data-placeholder); }` 准备好样式，但缺少 TS 行为支撑。本次补齐，使空段落 / 列表项 / 引用等具备 Notion 风格的输入引导。
+
+**Affected ai-skills files**:
+- `blockcraft.md` — Conventions 章节追加一条 placeholder 约定
+- `blockcraft-block.md` — 新增 "Editable Block Placeholder" 章节
+
+### New APIs / Features
+
+- `BlockPlaceholderConfig` exported type
+- `resolvePlaceholderText(config, heading)` pure helper (exported from `framework/block-std/schema/block-schema.ts`)
+- `IBlockSchemaOptions['metadata'].placeholder?: BlockPlaceholderConfig`
+- `EditableBlockComponent` 新增 protected 方法 `_resolvePlaceholderText` / `_isSelfFocused` / `_syncPlaceholderState` / `_initPlaceholderSubscriptions`（默认在 `ngAfterViewInit` 末尾自动调用，子类如有覆盖请确保调用 `super.ngAfterViewInit()`）
+
+### Migration Recipe
+
+Existing schemas need no changes (the field is optional). To enable a placeholder:
+
+```typescript
+// Before
+metadata: {
+  version: 1,
+  label: '基础段落',
+  icon: 'bc_icon bc_wenben',
+}
+
+// After
+metadata: {
+  version: 1,
+  label: '基础段落',
+  icon: 'bc_icon bc_wenben',
+  placeholder: {
+    default: '输入"/"呼出菜单',
+    heading: { 1: '一级标题', 2: '二级标题', 3: '三级标题' },
+  },
+}
+```
+
+### Behavior Changes
+
+Empty focused `paragraph` blocks now show `输入"/"呼出菜单`（以及在 heading 1/2/3 模式下 `一级标题` / `二级标题` / `三级标题`）。`bullet` / `ordered` show `列表项`. `todo` shows `待办事项`. `blockquote` shows `引用`. 如果宿主应用在自定义 schema 时未保留这些字段，对应默认文案会被丢弃 —— 显式在 schema 上设置 `metadata.placeholder` 即可恢复或自定义。
 
 ### v?.?.? - 2026-05-21 (major)
 

@@ -8,6 +8,36 @@ export type EditableBlockCreateSnapshotParams = [(InlineModel | string)?, IBlock
 
 type BlockCreateFn<T extends unknown[], M extends NativeBlockModel> = T extends [infer A, infer B, infer C] ? (arg1: A, arg: B, arg3: C) => IBlockSnapshot<M['props'], M['meta']> : (...args: T) => IBlockSnapshot<M['props'], M['meta']>
 
+export type BlockPlaceholderConfig =
+  | string
+  | {
+      default?: string
+      heading?: { 1?: string; 2?: string; 3?: string }
+    }
+
+/**
+ * Resolve the placeholder text for an editable block based on its Schema
+ * placeholder config and current heading level.
+ *
+ * Returns '' when no applicable placeholder is configured.
+ */
+export function resolvePlaceholderText(
+  config: BlockPlaceholderConfig | undefined,
+  heading: number | undefined
+): string {
+  if (!config) return ''
+  if (typeof config === 'string') return config
+
+  if (heading != null && config.heading) {
+    // `heading` arrives as a generic number from props; values outside 1–3
+    // safely resolve to `undefined` via the heading map's optional keys.
+    const headingMap = config.heading as { [key: number]: string | undefined }
+    const headingText = headingMap[heading]
+    if (headingText) return headingText
+  }
+  return config.default ?? ''
+}
+
 export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockModel> {
   flavour: T['flavour'];
   nodeType: T['nodeType'];
@@ -33,6 +63,13 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
      * This block cannot contain the specified block. It is priority over 'includeChildren'
      */
     excludeChildren?: string[]
+    /**
+     * Placeholder shown on focused empty editable blocks.
+     * - string: a single placeholder for all states.
+     * - object: provide `default` and/or per-heading text.
+     * - omitted: no placeholder is rendered.
+     */
+    placeholder?: BlockPlaceholderConfig
   }
 }
 
