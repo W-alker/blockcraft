@@ -122,7 +122,9 @@ const HEADING_LIST: IContextMenuItem[] = [
     </ng-template>
 
     <ng-template #contextMenuTpl>
-      <bc-float-toolbar style="display: block; width: 224px; padding-top: 4px;" direction="column">
+      <bc-float-toolbar style="display: block; width: 224px; padding-top: 4px;"
+                        styles="max-height: 60vh; overflow-y: auto;"
+                        direction="column">
         @if (activeBlock?.nodeType === BlockNodeType.editable) {
           <h4 class="title">基础
             <i class="bc_icon bc_xinxi" style="cursor: pointer;"
