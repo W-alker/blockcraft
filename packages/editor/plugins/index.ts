@@ -19,3 +19,4 @@ export * from './mention'
 export * from './translate'
 export * from "./block-gap-creator";
 export * from './paste-format-selector'
+export * from './placeholder'

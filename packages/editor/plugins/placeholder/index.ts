@@ -1,4 +1,4 @@
-import { Subscription, filter } from "rxjs"
+import { Subscription, filter, fromEvent } from "rxjs"
 import { DocPlugin } from "../../framework"
 import {
   BlockPlaceholderConfig,
@@ -33,8 +33,6 @@ export class PlaceholderPlugin extends DocPlugin {
   override name = "placeholder"
 
   private readonly _globalSubs: Subscription[] = []
-  private _removeCompositionStart?: () => void
-  private _removeCompositionEnd?: () => void
 
   private _activeBlock: EditableBlockComponent | null = null
   private _activeBlockSubs?: Subscription
@@ -50,23 +48,25 @@ export class PlaceholderPlugin extends DocPlugin {
       this.doc.readonlySwitch$.subscribe(() => this._sync()),
     )
 
-    // 2. Composition events route through the framework dispatcher, which
-    //    sends them to the selection's commonParent block. We listen at
-    //    the global tier so we get every composition regardless of which
-    //    block the selection lives in.
-    this._removeCompositionStart = this.doc.event.add(
-      "compositionStart",
-      () => {
+    // 2. Composition events — listen to native DOM events on the root host
+    //    in capture phase. We can't use `doc.event.add('compositionStart')`
+    //    because `InputTransformer._handleCompositionStart` is registered as
+    //    a global handler and always returns `true` (stopPropagation), so any
+    //    later-registered global handler — including ours — would never run.
+    //    Capture-phase native listening sidesteps the framework dispatcher
+    //    entirely and guarantees we observe every IME session.
+    const rootHost = this.doc.root.hostElement
+    this._globalSubs.push(
+      fromEvent<CompositionEvent>(rootHost, "compositionstart", { capture: true }).subscribe(() => {
         this._isComposing = true
         this._sync()
-      },
+      }),
     )
-    this._removeCompositionEnd = this.doc.event.add(
-      "compositionEnd",
-      () => {
+    this._globalSubs.push(
+      fromEvent<CompositionEvent>(rootHost, "compositionend", { capture: true }).subscribe(() => {
         this._isComposing = false
         this._sync()
-      },
+      }),
     )
   }
 
@@ -75,8 +75,6 @@ export class PlaceholderPlugin extends DocPlugin {
     this._globalSubs.length = 0
     this._activeBlockSubs?.unsubscribe()
     this._activeBlockSubs = undefined
-    this._removeCompositionStart?.()
-    this._removeCompositionEnd?.()
 
     // Best-effort DOM cleanup for the last active block (e.g. on hot-reload).
     if (this._activeBlock) {
