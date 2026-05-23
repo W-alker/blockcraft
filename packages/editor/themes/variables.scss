@@ -95,11 +95,13 @@
   --bc-table-fullscreen-z: 800;
   --bc-table-fullscreen-mask-z: 799;
   --bc-table-fullscreen-overlay-bg: rgba(0, 0, 0, 0.55);
-  --bc-table-fullscreen-padding: 24px;        // 水平 padding，作用在 .is-fullscreen 上
-  // 表格内容到顶/底浮层工具栏的缓冲。原先作用在 .is-fullscreen 外层（会挤短滚动条），
-  // 改为作用在 .table-scrollable 内部 padding——滚动条仍然贴 viewport 上下边缘全长，
-  // 但 scroll-top / scroll-bottom 时表格内容跟浮层工具栏之间留出这段距离。
-  --bc-table-fullscreen-padding-y: 64px;
+  --bc-table-fullscreen-padding: 24px;        // 水平 padding，作用在 .table-scrollable 内部
+  // 表格内容到 .table-scrollable 顶/底边缘的物理 padding。设为 0：
+  //   - sticky 表头 top: 0 时，scroll=0 表头直接贴 viewport 顶部，没有过渡空隙
+  //   - 滚动内容直接顶到 viewport 上/下边缘；顶/底浮层工具栏（opacity:0 默认隐藏，
+  //     选中时浮现）会盖住自己 zone 范围内的内容，这是 option-B 的设计取舍
+  //   - 需要恢复物理边距的话，消费者在自己 :root 覆盖此变量
+  --bc-table-fullscreen-padding-y: 0;
   --bc-table-fullscreen-radius: 8px;
   --bc-table-fullscreen-bg: var(--bc-bg-elevated, #fff);
 

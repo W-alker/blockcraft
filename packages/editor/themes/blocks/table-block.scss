@@ -58,9 +58,7 @@
       inset: 0;
       z-index: var(--bc-table-fullscreen-z);
       background: var(--bc-table-fullscreen-bg);
-      // 只保留水平 padding。垂直缓冲改作用在 .table-scrollable 内部 padding 上，
-      // 这样滚动条仍然贴 viewport 上下边缘是全长，而不是被外层 padding 挤短。
-      padding: 0 var(--bc-table-fullscreen-padding);
+      padding: 64px 0;
       // 滚动下放到 .table-scrollable 内部，外层容器只布局不滚。
       // 这样 top: 12px / bottom: 16px 的 position:absolute 工具栏始终
       // 锚定在 viewport 边缘，不会跟着表格内容滚走。
@@ -77,6 +75,8 @@
       display: flex;
       align-items: safe center;
       justify-content: safe center;
+      padding-left: var(--bc-table-fullscreen-padding);
+      padding-right: var(--bc-table-fullscreen-padding);
 
       // 全屏态下放大按钮、加底色，提升可见度（普通态保持 hover 才显的轻量风格）
       .bc-table-fullscreen-btn {
@@ -101,37 +101,23 @@
       }
 
       .table-scrollable {
+        width: 100%;
         max-height: 100%;
         max-width: 100%;
-        // flex item 默认 min-width/min-height: auto，会拒绝缩小到内容尺寸以下，
-        // 跟 max-*: 100% 同时存在时可能导致内容溢出父容器。显式置 0，让
-        // max-* 真正生效。
         min-width: 0;
         min-height: 0;
-        // 全屏态下垂直滚动接管到这里（普通态保持 overflow-y: hidden，让页面滚）。
-        // 配合外层 .is-fullscreen 的 overflow: hidden + position:absolute 工具栏，
-        // 工具栏始终钉在 viewport，只有表格内容区随手势滚动。
         overflow-y: auto;
-        // 把垂直缓冲做在 padding 上而不是外层 .is-fullscreen 上：
-        //   - 滚动条仍然贴 viewport 上/下边缘，是全长，不会被截短
-        //   - scroll-top / scroll-bottom 时表格内容跟浮层工具栏之间有 64px 视觉距离
-        //   - 程序化滚动 (scrollIntoView / 方向键) 借助 scroll-padding 不会把焦点
-        //     行落在工具栏后面
-        //   - 滚动到中段时内容会从浮层工具栏下方滑过（标准浮层 toolbar 模式，
-        //     由工具栏自身的不透明背景遮挡，视觉上是干净的）
         padding-top: var(--bc-table-fullscreen-padding-y);
         padding-bottom: var(--bc-table-fullscreen-padding-y);
-        scroll-padding-top: var(--bc-table-fullscreen-padding-y);
-        scroll-padding-bottom: var(--bc-table-fullscreen-padding-y);
+        scroll-padding-top: 60px;
+        scroll-padding-bottom: 64px;
       }
 
-      // 顶部居中的「固定式」结构工具栏（替代普通态下的 CDK Overlay）。
-      // 全屏阅读场景下，工具栏不再追着选中单元格跑——固定在表格上方，
-      // 始终可达，绕开 CDK 在 zoom + fixed 下的 clampTo 定位问题。
-      //
-      // 实现技巧：组件保持挂载（只渲染一次，避免每次切换单元格重建），
-      // 用 .is-visible class + opacity/transform 控制显隐 → 平滑过渡，
-      // 闪烁的来源（_hideTableMenu 在 mousedown 时短暂关掉 visible）不再可感知。
+      .table-wrapper {
+        margin-left: auto;
+        margin-right: auto;
+      }
+
       .bc-table-fullscreen-menu {
         position: absolute;
         top: 12px;
@@ -224,6 +210,14 @@
           margin: 0 4px;
         }
       }
+
+      // 全屏 + row-head 组合：sticky 表头紧贴 viewport 最顶部。
+      // 顶部浮层结构工具栏（top:12 + ~40 高）默认 opacity:0 隐藏，选中单元格
+      // 时才浮现并覆盖表头上部分；用户接受这层遮挡换取"表头始终在 viewport 最顶"
+      // 的视觉。表头本身被覆盖的部分仍然可点击 / 可读，只是被工具栏背景挡住。
+      &.row-head tr:first-child > td {
+        top: 0;
+      }
     }
 
     // 全屏 + selected 双类组合：覆盖下方 `.selected { background: unset !important }`
@@ -315,7 +309,7 @@
       td:first-child {
         position: sticky;
         left: -1px;
-        z-index: 1;
+        z-index: 2;
         background: var(--bc-table-head-bg) !important;
         font-weight: bold;
       }
@@ -340,12 +334,36 @@
         //z-index: 1;
       }
 
+      // sticky 作用在 <td> 而不是 <tr>。原因：
+      //   - Safari 16+ 才完整支持 sticky <tr>；早期 WebKit 对 sticky <tr> 支持不全，
+      //     会出现"表头跟着滚走、其他行覆盖表头"的现象
+      //   - 部分浏览器对 <tr> 的 background 不绘制 painting layer，
+      //     导致 sticky tr 透出后面滚动过的内容
+      // 改作用在 td 上后两个问题都消除：每个 td 自己是 sticky + 有 background。
       tr:first-child {
-        z-index: 2;
-        position: sticky;
-        top: 0;
         font-weight: bold;
-        background: var(--bc-table-head-bg) !important;
+
+        > td {
+          position: sticky;
+          top: -1px;
+          z-index: 2;
+          background: var(--bc-table-head-bg) !important;
+        }
+      }
+
+      // 让 sticky 表头跳出 .table-scrollable 的滚动容器，直接相对外层（viewport / 页面）sticky。
+      //   1. padding-top: 0 — 抹掉 .table-scrollable 默认 16px padding-top 把首行往下推的偏移
+      //   2. overflow-y: clip — `clip` 跟 `hidden` 一样裁切超出，但**不创建滚动容器**；
+      //      这样 sticky 不再被 .table-scrollable 困住，而是挂到外层滚动容器（page/viewport）
+      //   3. 浏览器支持：Chrome 90+ / Firefox 81+ / Safari 16+。老浏览器回退到 `visible`，
+      //      被 overflow-x: auto 拉成 `auto`，相当于原 hidden 行为（sticky 内嵌行为不变，不炸）
+      //
+      // ⚠️ 必须用 :not(.is-fullscreen) 限定！全屏模式下 .table-scrollable 自己就是
+      // 垂直滚动容器（overflow-y: auto），sticky 表头要相对全屏 viewport sticky；
+      // 如果这里改成 clip，全屏会丢失垂直滚动。
+      &:not(.is-fullscreen) .table-scrollable {
+        padding-top: 0;
+        overflow-y: clip;
       }
     }
 
@@ -364,11 +382,12 @@
     }
 
     table {
-      //border-collapse: collapse;
-      //border-spacing: 0;
+      border-collapse: collapse;
+      border-spacing: 0;
       width: fit-content;
       table-layout: fixed;
       position: relative;
+      border: 1px solid var(--bc-table-border-color);
 
       col-group {
         col {
@@ -398,11 +417,10 @@
         margin: 0;
         min-width: 50px;
         overflow-x: hidden;
-        // 必须 position: relative：列宽 resize bar 在 hover 时被 appendChild 进 cell，
-        // 用 absolute + right:-6px 自动贴在 cell 右边界。
         position: relative;
-        border-bottom: 1px solid var(--bc-table-border-color);
-        border-right: 1px solid var(--bc-table-border-color);
+        border: 1px solid var(--bc-table-border-color);
+        //border-bottom: 1px solid var(--bc-table-border-color);
+        //border-right: 1px solid var(--bc-table-border-color);
 
         &:first-child {
           border-left: 1px solid var(--bc-table-border-color);
