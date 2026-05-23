@@ -61,17 +61,17 @@
   <div class="bar"></div>
 </div>
 
-<button class="bc-table-fullscreen-btn"
-        type="button"
-        contenteditable="false"
-        [attr.aria-label]="isFullscreen ? '退出全屏' : '全屏'"
-        [attr.title]="isFullscreen ? '退出全屏' : '全屏'"
-        (mousedown)="$event.preventDefault()"
-        (click)="toggleFullscreen(); $event.stopPropagation()">
-  <i class="bc_icon"
-     [class.bc_arrow-expand]="!isFullscreen"
-     [class.bc_x-circle-contained]="isFullscreen"></i>
-</button>
+@if (!isFullscreen) {
+  <button class="bc-table-fullscreen-btn"
+          type="button"
+          contenteditable="false"
+          aria-label="全屏"
+          title="全屏"
+          (mousedown)="$event.preventDefault()"
+          (click)="toggleFullscreen(); $event.stopPropagation()">
+    <i class="bc_icon bc_arrow-expand"></i>
+  </button>
+}
 
 @if (isFullscreen) {
   <div class="bc-table-fullscreen-controls"
@@ -96,6 +96,12 @@
             class="bc-table-fullscreen-controls__btn bc-table-fullscreen-controls__btn--text"
             title="适合宽度"
             (click)="fullscreenFitToWidth(); $event.stopPropagation()">适合</button>
+    <span class="bc-table-fullscreen-controls__divider"></span>
+    <button type="button"
+            class="bc-table-fullscreen-controls__btn bc-table-fullscreen-controls__btn--text"
+            aria-label="退出全屏"
+            title="退出全屏  ·  Esc"
+            (click)="toggleFullscreen(); $event.stopPropagation()">退出</button>
   </div>
 
   <div class="bc-table-fullscreen-menu"

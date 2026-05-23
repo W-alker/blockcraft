@@ -58,7 +58,9 @@
       inset: 0;
       z-index: var(--bc-table-fullscreen-z);
       background: var(--bc-table-fullscreen-bg);
-      padding: var(--bc-table-fullscreen-padding-y) var(--bc-table-fullscreen-padding);
+      // 只保留水平 padding。垂直缓冲改作用在 .table-scrollable 内部 padding 上，
+      // 这样滚动条仍然贴 viewport 上下边缘是全长，而不是被外层 padding 挤短。
+      padding: 0 var(--bc-table-fullscreen-padding);
       // 滚动下放到 .table-scrollable 内部，外层容器只布局不滚。
       // 这样 top: 12px / bottom: 16px 的 position:absolute 工具栏始终
       // 锚定在 viewport 边缘，不会跟着表格内容滚走。
@@ -82,6 +84,10 @@
         right: 12px;
         width: 40px;
         height: 40px;
+        // 全屏态下浮层工具栏统一压到 table-col-bar / table-row-bar (z=100) +
+        // resize-bar (z=102) + drop-line/preview (z=140/150) 之上。
+        // 不然向下滚动时，col-bar 会从下方滑到 viewport 顶部、盖住关闭按钮 / 结构工具栏。
+        z-index: 200;
         background: var(--bc-bg-hover, rgba(0, 0, 0, 0.06));
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 
@@ -106,6 +112,17 @@
         // 配合外层 .is-fullscreen 的 overflow: hidden + position:absolute 工具栏，
         // 工具栏始终钉在 viewport，只有表格内容区随手势滚动。
         overflow-y: auto;
+        // 把垂直缓冲做在 padding 上而不是外层 .is-fullscreen 上：
+        //   - 滚动条仍然贴 viewport 上/下边缘，是全长，不会被截短
+        //   - scroll-top / scroll-bottom 时表格内容跟浮层工具栏之间有 64px 视觉距离
+        //   - 程序化滚动 (scrollIntoView / 方向键) 借助 scroll-padding 不会把焦点
+        //     行落在工具栏后面
+        //   - 滚动到中段时内容会从浮层工具栏下方滑过（标准浮层 toolbar 模式，
+        //     由工具栏自身的不透明背景遮挡，视觉上是干净的）
+        padding-top: var(--bc-table-fullscreen-padding-y);
+        padding-bottom: var(--bc-table-fullscreen-padding-y);
+        scroll-padding-top: var(--bc-table-fullscreen-padding-y);
+        scroll-padding-bottom: var(--bc-table-fullscreen-padding-y);
       }
 
       // 顶部居中的「固定式」结构工具栏（替代普通态下的 CDK Overlay）。
@@ -120,7 +137,9 @@
         top: 12px;
         left: 50%;
         transform: translateX(-50%) translateY(-6px);
-        z-index: 3;
+        // 要高过 col-bar (100) / resize-bar (102) / drop-preview (140) / drop-line (150)，
+        // 否则向下滚动时 col-bar 会盖到结构工具栏上面。
+        z-index: 200;
         max-width: calc(100% - 120px); // 给右上角的 X 按钮让出空间
         opacity: 0;
         pointer-events: none;
@@ -149,7 +168,9 @@
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-        z-index: 3;
+        // 同 .bc-table-fullscreen-menu，要高过 col-bar (100) / resize-bar (102) /
+        // drop-preview (140) / drop-line (150)，避免向上滚动时 row-bar 把缩放控件盖住。
+        z-index: 200;
         user-select: none;
         font-family: inherit;
 
