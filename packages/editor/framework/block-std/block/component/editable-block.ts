@@ -1,14 +1,11 @@
 import { ChangeDetectionStrategy, Component, HostBinding } from "@angular/core";
-import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { BaseBlockComponent } from "./base-block";
 import { EditableBlockNative } from "../../reactive";
 import * as Y from 'yjs'
 import { DeltaInsert, DeltaOperation } from "../../types";
 import { INLINE_CONTAINER_CLASS, TextBlot, BlotType } from "../../inline";
 import { InlineRuntime } from "../../inline/runtime/inline-runtime";
-import { Subject, filter } from "rxjs";
-import { BlockPlaceholderConfig, resolvePlaceholderText } from "../../schema/block-schema";
-import { BlockSelection } from "../../../modules/selection/blockSelection";
+import { Subject } from "rxjs";
 
 @Component({
   selector: 'editable-block',
@@ -19,11 +16,6 @@ import { BlockSelection } from "../../../modules/selection/blockSelection";
 })
 export class EditableBlockComponent<Model extends EditableBlockNative = EditableBlockNative> extends BaseBlockComponent<Model> {
   plainTextOnly = false
-
-  private _placeholderConfig?: BlockPlaceholderConfig
-  private _isFocused = false
-  private _isComposing = false
-  private _lastAppliedPlaceholder = ''
 
   private _yText!: Y.Text
   get yText() {
@@ -48,7 +40,6 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
     this._initRuntime()
     this.rerender()
-    this._initPlaceholderSubscriptions()
   }
 
   /**
@@ -185,89 +176,6 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
       length,
       type: 'text',
       blockId: this.id
-    })
-  }
-
-  protected _resolvePlaceholderText(): string {
-    return resolvePlaceholderText(this._placeholderConfig, this.props['heading'] as number | undefined)
-  }
-
-  protected _isSelfFocused(sel: BlockSelection | null): boolean {
-    if (!sel) return false
-    return sel.start.type === 'text' && sel.start.blockId === this.id
-  }
-
-  protected _syncPlaceholderState(): void {
-    const shouldShow = this._isFocused && this.textLength === 0 && !this._isComposing
-    const text = shouldShow ? this._resolvePlaceholderText() : ''
-
-    if (text === this._lastAppliedPlaceholder) return
-    this._lastAppliedPlaceholder = text
-
-    // `.empty` lives on the host (so the `[data-node-type="editable"].empty`
-    // selector matches), but `data-placeholder` must live on the
-    // `.edit-container` itself — CSS `attr(data-placeholder)` reads the
-    // attribute from the element the `::before` pseudo is attached to, not
-    // from an ancestor. For paragraph/blockquote the host *is* the
-    // edit-container so both writes land on the same element; for
-    // bullet/ordered/todo they are different elements.
-    if (text) {
-      this._containerElement.setAttribute('data-placeholder', text)
-      this.hostElement.classList.add('empty')
-    } else {
-      this._containerElement.removeAttribute('data-placeholder')
-      this.hostElement.classList.remove('empty')
-    }
-  }
-
-  protected _initPlaceholderSubscriptions(): void {
-    this._placeholderConfig = this.doc.schemas.get(this.flavour, false)?.metadata.placeholder
-
-    // `selectionChange$` is a BehaviorSubject; the subscribe fires synchronously
-    // with the current value, which gives us the initial _syncPlaceholderState()
-    // call without an explicit one at the end of this method.
-    this.doc.selection.selectionChange$
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(sel => {
-        this._isFocused = this._isSelfFocused(sel)
-        this._syncPlaceholderState()
-      })
-
-    this.onTextChange
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this._syncPlaceholderState())
-
-    this.onPropsChange
-      .pipe(
-        filter(map => map.has('heading' as keyof Model['props'])),
-        takeUntilDestroyed(this.destroyRef),
-      )
-      .subscribe(() => this._syncPlaceholderState())
-
-    // Hide placeholder during IME composition. The composing text renders
-    // directly into the contenteditable host but does not commit to yText
-    // until `compositionend`; without this guard the placeholder visually
-    // overlaps the composing preview.
-    //
-    // We use the framework's `compositionStart` / `compositionEnd` dispatched
-    // events (routed via `selection.commonParent`) instead of native DOM
-    // listeners because IME events may fire on the contenteditable root rather
-    // than this block's host element, so a host-level `fromEvent` can miss
-    // them. The dispatcher always routes composition events to the block
-    // owning the current selection.
-    const removeStart = this.doc.event.add('compositionStart', () => {
-      this._isComposing = true
-      this._syncPlaceholderState()
-    }, { blockId: this.id })
-
-    const removeEnd = this.doc.event.add('compositionEnd', () => {
-      this._isComposing = false
-      this._syncPlaceholderState()
-    }, { blockId: this.id })
-
-    this.destroyRef.onDestroy(() => {
-      removeStart()
-      removeEnd()
     })
   }
 

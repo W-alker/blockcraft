@@ -68,6 +68,7 @@ import {ColumnBlockSchema} from "../blocks/columns-block";
 import {TranslatePlugin} from "../plugins/translate";
 import {MyDocTranslationService} from "./services/doc-translation.service";
 import {PasteFormatSelectorPlugin} from "../plugins/paste-format-selector";
+import {PlaceholderPlugin} from "../plugins/placeholder";
 
 const mentionRequest = async (keyword: string, _type?: string) => {
   if (keyword === 'a') {
@@ -290,6 +291,7 @@ export class EditorComponent implements OnDestroy {
       this.blockControllerPlugin,
       new TableBlockBinding(),
       new PasteFormatSelectorPlugin(),
+      new PlaceholderPlugin(),
       new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
       new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(),
       new FormulaBlockExtensionPlugin(),
