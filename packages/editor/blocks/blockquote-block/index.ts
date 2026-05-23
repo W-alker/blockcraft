@@ -20,7 +20,6 @@ export const BlockquoteBlockSchema: IBlockSchemaOptions<BlockquoteBlockModel> = 
     version: 1,
     label: "空引用",
     icon: "bc_icon bc_blockquote",
-    placeholder: '引用',
   }
 }
 
