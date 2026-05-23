@@ -60,3 +60,55 @@
 <div class="table-col-resize-bar" contenteditable="false" #colResizeBar (mousedown)="onColResizerMousedown($event)">
   <div class="bar"></div>
 </div>
+
+<button class="bc-table-fullscreen-btn"
+        type="button"
+        contenteditable="false"
+        [attr.aria-label]="isFullscreen ? '退出全屏' : '全屏'"
+        [attr.title]="isFullscreen ? '退出全屏' : '全屏'"
+        (mousedown)="$event.preventDefault()"
+        (click)="toggleFullscreen(); $event.stopPropagation()">
+  <i class="bc_icon"
+     [class.bc_arrow-expand]="!isFullscreen"
+     [class.bc_x-circle-contained]="isFullscreen"></i>
+</button>
+
+@if (isFullscreen) {
+  <div class="bc-table-fullscreen-controls"
+       contenteditable="false"
+       (mousedown)="$event.preventDefault()">
+    <button type="button"
+            class="bc-table-fullscreen-controls__btn"
+            [disabled]="!canZoomOut"
+            title="缩小  ·  Ctrl/Cmd + 滚轮↓"
+            (click)="fullscreenZoomOut(); $event.stopPropagation()">−</button>
+    <button type="button"
+            class="bc-table-fullscreen-controls__zoom"
+            title="点击重置到 100%"
+            (click)="resetFullscreenZoom(); $event.stopPropagation()">{{ zoomPercent }}%</button>
+    <button type="button"
+            class="bc-table-fullscreen-controls__btn"
+            [disabled]="!canZoomIn"
+            title="放大  ·  Ctrl/Cmd + 滚轮↑"
+            (click)="fullscreenZoomIn(); $event.stopPropagation()">+</button>
+    <span class="bc-table-fullscreen-controls__divider"></span>
+    <button type="button"
+            class="bc-table-fullscreen-controls__btn bc-table-fullscreen-controls__btn--text"
+            title="适合宽度"
+            (click)="fullscreenFitToWidth(); $event.stopPropagation()">适合</button>
+  </div>
+
+  <div class="bc-table-fullscreen-menu"
+       [class.is-visible]="_tableMenu.visible"
+       contenteditable="false"
+       (mousedown)="$event.preventDefault()">
+    <table-structure-toolbar
+      [table]="this"
+      [rowIndex]="_tableMenu.rowIndex"
+      [rowCount]="_tableMenu.rowCount"
+      [colIndex]="_tableMenu.colIndex"
+      [colCount]="_tableMenu.colCount"
+      [selectionKind]="_tableMenu.selectionKind"
+    />
+  </div>
+}

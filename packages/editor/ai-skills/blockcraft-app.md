@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-05-21
+> Last updated: 2026-05-23
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -486,6 +486,7 @@ doc.dragController.isDragging  // boolean
 | Constructing `BlockCraftDoc` outside an Angular component | The constructor needs an `Injector`. Inject one (or use `EnvironmentInjector`). |
 | Saving via `JSON.stringify(doc)` | Serialize via `doc.root.toSnapshot(true)` instead — Yjs internals are not JSON-safe. |
 | Hardcoding `metaKey`/`ctrlKey` in your custom plugin hotkeys | Use `shortKey: true` for cross-platform Cmd/Ctrl mapping. |
+| `transform` / `filter` / `will-change` / `perspective` on an ancestor of the BlockCraft host | Traps `position: fixed` in that ancestor, so table block's **fullscreen view** (which uses `position: fixed; inset: 0`) cannot truly fill the viewport. Move animations to sibling/descendant levels of the editor host, not above it. |
 
 ## Checklist
 

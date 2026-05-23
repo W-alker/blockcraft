@@ -18,6 +18,179 @@
   .table-block {
     padding-bottom: 16px;
 
+    // Fullscreen view feature
+    position: relative;
+
+    .bc-table-fullscreen-btn {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--bc-color-light, #666);
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.15s ease, background-color 0.15s ease;
+      z-index: 12;
+
+      &:hover {
+        background: var(--bc-bg-hover, rgba(0, 0, 0, 0.06));
+      }
+
+      .bc_icon {
+        font-size: 16px;
+      }
+    }
+
+    &:hover .bc-table-fullscreen-btn,
+    &.is-fullscreen .bc-table-fullscreen-btn {
+      opacity: 1;
+    }
+
+    &.is-fullscreen {
+      position: fixed;
+      inset: 0;
+      z-index: var(--bc-table-fullscreen-z);
+      background: var(--bc-table-fullscreen-bg);
+      padding: var(--bc-table-fullscreen-padding-y) var(--bc-table-fullscreen-padding);
+      overflow: auto;
+      border-radius: 0;
+      box-sizing: border-box;
+
+      // 全屏态下放大按钮、加底色，提升可见度（普通态保持 hover 才显的轻量风格）
+      .bc-table-fullscreen-btn {
+        top: 12px;
+        right: 12px;
+        width: 40px;
+        height: 40px;
+        background: var(--bc-bg-hover, rgba(0, 0, 0, 0.06));
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+
+        .bc_icon {
+          font-size: 22px;
+        }
+
+        &:hover {
+          background: var(--bc-bg-gray, rgba(0, 0, 0, 0.12));
+        }
+      }
+
+      .table-scrollable {
+        max-height: 100%;
+        max-width: 100%;
+      }
+
+      // 顶部居中的「固定式」结构工具栏（替代普通态下的 CDK Overlay）。
+      // 全屏阅读场景下，工具栏不再追着选中单元格跑——固定在表格上方，
+      // 始终可达，绕开 CDK 在 zoom + fixed 下的 clampTo 定位问题。
+      //
+      // 实现技巧：组件保持挂载（只渲染一次，避免每次切换单元格重建），
+      // 用 .is-visible class + opacity/transform 控制显隐 → 平滑过渡，
+      // 闪烁的来源（_hideTableMenu 在 mousedown 时短暂关掉 visible）不再可感知。
+      .bc-table-fullscreen-menu {
+        position: absolute;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%) translateY(-6px);
+        z-index: 3;
+        max-width: calc(100% - 120px); // 给右上角的 X 按钮让出空间
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s ease, transform 0.15s ease;
+
+        &.is-visible {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
+          pointer-events: auto;
+        }
+      }
+
+      // 底部居中浮动 toolbar：缩放控制 + 适合宽度
+      .bc-table-fullscreen-controls {
+        position: absolute;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 4px;
+        background: rgba(40, 40, 40, 0.92);
+        color: #fff;
+        border-radius: 24px;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+        z-index: 3;
+        user-select: none;
+        font-family: inherit;
+
+        &__btn,
+        &__zoom {
+          background: transparent;
+          border: 0;
+          color: #fff;
+          cursor: pointer;
+          padding: 6px 10px;
+          border-radius: 16px;
+          font-size: 16px;
+          line-height: 1;
+          transition: background-color 0.15s ease;
+          font-family: inherit;
+        }
+
+        &__btn {
+          min-width: 32px;
+
+          &:hover:not([disabled]) {
+            background: rgba(255, 255, 255, 0.15);
+          }
+
+          &[disabled] {
+            opacity: 0.35;
+            cursor: not-allowed;
+          }
+        }
+
+        &__btn--text {
+          font-size: 13px;
+          padding: 6px 12px;
+        }
+
+        &__zoom {
+          padding: 6px 12px;
+          font-size: 13px;
+          min-width: 54px;
+          text-align: center;
+
+          &:hover {
+            background: rgba(255, 255, 255, 0.15);
+          }
+        }
+
+        &__divider {
+          width: 1px;
+          height: 18px;
+          background: rgba(255, 255, 255, 0.18);
+          margin: 0 4px;
+        }
+      }
+    }
+
+    // 全屏 + selected 双类组合：覆盖下方 `.selected { background: unset !important }`
+    // 规则。同等 !important 时靠 specificity（(0,4,0) > (0,3,0)）取胜。
+    // 如果只在上面的 &.is-fullscreen 里加 !important 是无效的——specificity
+    // 相同 + 同样 !important + 对方在 source order 后面，对方仍然赢。
+    &.is-fullscreen.selected {
+      background: var(--bc-table-fullscreen-bg) !important;
+    }
+
     &.is-selecting-cell {
       -webkit-user-modify: read-only;
 
@@ -182,6 +355,9 @@
         margin: 0;
         min-width: 50px;
         overflow-x: hidden;
+        // 必须 position: relative：列宽 resize bar 在 hover 时被 appendChild 进 cell，
+        // 用 absolute + right:-6px 自动贴在 cell 右边界。
+        position: relative;
         border-bottom: 1px solid var(--bc-table-border-color);
         border-right: 1px solid var(--bc-table-border-color);
 
@@ -321,11 +497,16 @@
       outline: 1px solid var(--bc-active-color);
     }
 
+    // Resize bar 现在是「悬停 cell」的 DOM 子节点（由 JS appendChild 切换归属）。
+    // 用 CSS 自动定位到 cell 右边界，跨浏览器 / 任何 zoom / 任何 border-spacing 都
+    // 不需要 JS 数学计算。详细原因见 TableBlockComponent._handleNativeMouseOver
+    // 旁的注释。
     .table-col-resize-bar {
-      top: $ctrlBarSize;
-      left: 0;
+      top: 0;
+      right: -6px;
       width: 12px;
-      height: calc(100% - $ctrlBarSize - 16px);
+      height: 100%;
+      left: auto;
 
       &:hover {
         > .bar {
@@ -337,10 +518,13 @@
         opacity: 0;
         position: absolute;
         top: 0;
-        left: 5px;
+        // 改用 50% + translateX 居中，让宽度变化时也精确居中在 cell.right 边界上。
+        left: 50%;
+        transform: translateX(-50%);
         height: 100%;
-        width: 2px;
+        width: 3px;
         background: var(--bc-active-color);
+        border-radius: 1px;
       }
     }
 
@@ -525,5 +709,25 @@
       }
     }
 
+  }
+}
+
+// 表格全屏期间 body 锁滚动 + 全屏遮罩
+//
+// 遮罩放在 body 层而不是表格内的 ::before，因为表格 .is-fullscreen 自己是
+// position: fixed + z-index: 800 → 会建立独立的 stacking context；
+// 内部的 ::before 即便 z-index 设很低，也只在「该子 context」内排序，
+// 反而会盖到表格内容上。body ::before 是兜底背景，z-index 在全局 stacking
+// 里低于表格容器，所以表格内容能正确地浮在遮罩之上。
+body.bc-table-fullscreen-lock {
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: var(--bc-table-fullscreen-overlay-bg);
+    z-index: var(--bc-table-fullscreen-mask-z);
+    pointer-events: none;
   }
 }

@@ -5,12 +5,14 @@ import {
   HostListener,
   Input,
   OnChanges,
+  OnDestroy,
   OnInit,
   SimpleChanges,
 } from '@angular/core'
 import { NgForOf, NgIf } from '@angular/common'
 import { NzTooltipDirective } from 'ng-zorro-antd/tooltip'
 import { NzDropDownDirective, NzDropdownMenuComponent } from 'ng-zorro-antd/dropdown'
+import { Subscription } from 'rxjs'
 import { ColorGroup, ColorPickerComponent } from '../../../components'
 import { nextTick } from '../../../global'
 import { TableCellBlockModel } from '../index'
@@ -165,6 +167,18 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
         <i class="bc_icon bc_sepan"></i>
         <i class="bc_icon bc_xiajaintou table-structure-toolbar__caret"></i>
       </button>
+
+      <span class="table-structure-toolbar__divider"></span>
+      <button type="button"
+              class="table-structure-toolbar__item"
+              [class.active]="isFullscreen"
+              nz-tooltip
+              [nzTooltipTitle]="isFullscreen ? '退出全屏' : '全屏'"
+              (click)="toggleFullscreen($event)">
+        <i class="bc_icon"
+           [class.bc_arrow-expand]="!isFullscreen"
+           [class.bc_x-circle-contained]="isFullscreen"></i>
+      </button>
     </div>
 
     <nz-dropdown-menu #alignMenu="nzDropdownMenu">
@@ -267,7 +281,7 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
     }
   `],
 })
-export class TableStructureToolbarComponent implements OnInit, OnChanges {
+export class TableStructureToolbarComponent implements OnInit, OnChanges, OnDestroy {
   @Input({ required: true }) table!: BlockCraft.IBlockComponents['table']
   @Input({ required: true }) rowIndex!: number
   @Input() rowCount = 1
@@ -288,8 +302,10 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges {
   protected showColOps = true
   protected showHeaderRowToggle = false
   protected showHeaderColToggle = false
+  protected isFullscreen = false
 
   private _selectedCells: TableCell[] = []
+  private _fullscreenSub?: Subscription
 
   constructor(private readonly cdr: ChangeDetectorRef) {}
 
@@ -300,6 +316,18 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges {
 
   ngOnInit() {
     this._syncCellState()
+    // OnPush 下需要订阅状态流并 markForCheck，否则全屏切换后图标不会更新
+    const stream$ = this.table?.isFullscreen$
+    if (stream$) {
+      this._fullscreenSub = stream$.subscribe(value => {
+        this.isFullscreen = value
+        this.cdr.markForCheck()
+      })
+    }
+  }
+
+  ngOnDestroy() {
+    this._fullscreenSub?.unsubscribe()
   }
 
   ngOnChanges(changes: SimpleChanges) {
@@ -310,6 +338,11 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges {
     ) {
       this._syncCellState()
     }
+  }
+
+  toggleFullscreen(event: MouseEvent) {
+    this._consume(event)
+    this.table.toggleFullscreen()
   }
 
   private _syncCellState() {

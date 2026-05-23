@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-04-15
+> Last updated: 2026-05-23
 
 ## Theme Structure
 
@@ -97,6 +97,34 @@ Read `themes/base.scss` and `themes/variables.scss` for the current variable lis
 
 // Border
 --bc-border-radius
+```
+
+### Table Block Fullscreen View
+
+Defined in `themes/variables.scss`; theme-neutral defaults (override per theme if needed):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `--bc-table-fullscreen-z` | `800` | z-index of the fullscreen table container (kept below `1000` so CDK Overlay panes — structure-toolbar, float-toolbar, mention panel — naturally float above the table) |
+| `--bc-table-fullscreen-mask-z` | `799` | z-index of the dimming mask (just below the table) |
+| `--bc-table-fullscreen-overlay-bg` | `rgba(0, 0, 0, 0.55)` | Dimming color over the underlying document |
+| `--bc-table-fullscreen-padding` | `40px` | Inner padding between viewport edge and the table |
+| `--bc-table-fullscreen-radius` | `8px` | Corner radius (overridden to `0` in the default `is-fullscreen` rule) |
+| `--bc-table-fullscreen-bg` | `var(--bc-bg-elevated, #fff)` | Background color behind the table while fullscreen |
+
+Companion class names (also part of the public CSS contract):
+
+- `.table-block.is-fullscreen` — applied to the table host while in fullscreen view
+- `.bc-table-fullscreen-btn` — hover button at the top-right of every table block
+- `body.bc-table-fullscreen-lock` — applied to `<body>` to suppress background scrolling while a table is fullscreen
+
+Override examples (dark theme could darken the mask, adjust bg):
+
+```scss
+body[blockcraft-theme="dark"] {
+  --bc-table-fullscreen-overlay-bg: rgba(0, 0, 0, 0.7);
+  --bc-table-fullscreen-bg: var(--bc-bg-primary, #171d24);
+}
 ```
 
 ## Checklist

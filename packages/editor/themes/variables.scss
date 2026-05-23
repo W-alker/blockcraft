@@ -91,6 +91,15 @@
   --bc-table-bar-pt-color: #999;
   --bc-table-border-color: #DFE0E3;
 
+  // 表格全屏视图
+  --bc-table-fullscreen-z: 800;
+  --bc-table-fullscreen-mask-z: 799;
+  --bc-table-fullscreen-overlay-bg: rgba(0, 0, 0, 0.55);
+  --bc-table-fullscreen-padding: 24px;        // 水平 padding（保留旧名）
+  --bc-table-fullscreen-padding-y: 64px;      // 上下 padding，给固定式结构工具栏 + 缩放控件留空间
+  --bc-table-fullscreen-radius: 8px;
+  --bc-table-fullscreen-bg: var(--bc-bg-elevated, #fff);
+
   // 占位符颜色
   --bc-placeholder-color: #9B9A97;
 

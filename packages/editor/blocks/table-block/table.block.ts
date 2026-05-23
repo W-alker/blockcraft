@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ComponentRef, Component, ElementRef, ViewChild } from "@angular/core";
+import { ChangeDetectionStrategy, ChangeDetectorRef, ComponentRef, Component, ElementRef, ViewChild, inject } from "@angular/core";
 import {
   BaseBlockComponent, getPositionWithOffset
 } from "../../framework";
@@ -15,12 +15,13 @@ import { addTableCol, addTableRow, buildCellMatrix, CellMatrixEntry, deleteTable
 import { OverlayRef } from "@angular/cdk/overlay";
 import { TableCellsSelection } from "./types";
 import { BlockSelection } from "../../framework/modules/selection/blockSelection";
+import { TableFullscreenController } from "./table-fullscreen-controller";
 
 @Component({
   selector: 'div.table-block',
   templateUrl: './table.block.html',
   standalone: true,
-  imports: [TableColBarComponent, TableRowBarComponent],
+  imports: [TableColBarComponent, TableRowBarComponent, TableStructureToolbarComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class.row-head]': 'props.rowHead',
@@ -133,8 +134,47 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.rowBarComponent.changeDetectionRef.markForCheck()
   })
 
+  /**
+   * 全屏视图状态控制器。负责本地 CSS class / body 锁滚动 / Esc 退出 / IME 守卫 / 全局单例。
+   * 状态不写入 Yjs，不进 Undo 历史。
+   */
+  private fullscreenController!: TableFullscreenController
+
+  /** ChangeDetectorRef 用于全屏 toolbar 上 zoom 百分比 / disabled 状态的更新。 */
+  private readonly cdrLocal = inject(ChangeDetectorRef)
+
   override ngAfterViewInit() {
     super.ngAfterViewInit();
+    this.fullscreenController = new TableFullscreenController(this.hostElement)
+    // 进入/退出全屏：
+    //  1. 销毁任何 CDK Overlay 形式的结构工具栏（普通态 → 全屏：切换到模板内联渲染；
+    //     全屏 → 普通态：丢弃可能残留的 inline，等 _showTableMenuOverlay 重建 CDK 版）
+    //  2. 触发模板 CD 让 @if (isFullscreen) 块显隐切换
+    //  3. 根据当前选区重新触发 menu 状态同步，保证切换后 toolbar 立即可见
+    this.fullscreenController.state$
+      .pipe(takeUntil(this.onDestroy$))
+      .subscribe(() => {
+        this._disposeToolbar()
+        this.cdrLocal.markForCheck()
+        Promise.resolve().then(() => this.refreshTableMenuFromSelection())
+      })
+    // 缩放变化时直接写 CSS zoom（OnPush 下绕过 CD），并触发模板 CD（百分比刷新）
+    this.fullscreenController.zoom$
+      .pipe(takeUntil(this.onDestroy$))
+      .subscribe(z => {
+        if (this.tableWrapper?.nativeElement) {
+          this.tableWrapper.nativeElement.style.zoom = String(z)
+        }
+        this.cdrLocal.markForCheck()
+      })
+    // 全屏期间 viewport 尺寸变化也需要重新对齐
+    fromEvent(window, 'resize')
+      .pipe(takeUntil(this.onDestroy$))
+      .subscribe(() => {
+        if (this.fullscreenController.isFullscreen) {
+          this.toolbarOvr?.updatePosition()
+        }
+      })
     this.tableBody = this.tableScrollable.nativeElement.querySelector('tbody')!
     // 刚初始化的时候对row进行高度记录
     const rows = this.tableBody.querySelectorAll('tr')
@@ -181,6 +221,96 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     super.ngOnDestroy();
     this.mutationObserver.disconnect()
     this.resizeObserver.disconnect()
+    this.fullscreenController?.destroy()
+    // 软隐策略下 _hideTableMenu 不再销毁 CDK overlay；组件销毁时必须显式清理，
+    // 否则 overlay 仍挂在 body 下监听 scroll/resize，存在内存泄漏。
+    this._disposeToolbar()
+  }
+
+  /** 当前是否处于全屏视图。模板用。 */
+  get isFullscreen(): boolean {
+    return this.fullscreenController?.isFullscreen ?? false
+  }
+
+  /** 全屏状态可观察流（外部 / 工具栏订阅）。 */
+  get isFullscreen$() {
+    return this.fullscreenController?.state$
+  }
+
+  /** 切换全屏视图。 */
+  toggleFullscreen(): void {
+    this.fullscreenController?.toggle()
+  }
+
+  /** 显式设置全屏视图状态。 */
+  setFullscreen(value: boolean): void {
+    this.fullscreenController?.set(value)
+  }
+
+  /** 全屏视图当前缩放比例（1 = 100%）。普通态恒为 1。 */
+  get fullscreenZoom(): number {
+    return this.fullscreenController?.zoom$.value ?? 1
+  }
+
+  /** 显式设置全屏缩放（会按 [0.5, 3] clamp，普通态调用是 no-op 直到下次进入全屏前被重置）。 */
+  setFullscreenZoom(value: number): void {
+    this.fullscreenController?.setZoom(value)
+  }
+
+  /** 全屏放大一步。 */
+  fullscreenZoomIn(): void {
+    this.fullscreenController?.zoomIn()
+  }
+
+  /** 全屏缩小一步。 */
+  fullscreenZoomOut(): void {
+    this.fullscreenController?.zoomOut()
+  }
+
+  /** 全屏缩放重置到 100%。 */
+  resetFullscreenZoom(): void {
+    this.fullscreenController?.resetZoom()
+  }
+
+  /** 模板用：当前缩放百分比（已 round）。 */
+  get zoomPercent(): number {
+    return Math.round(this.fullscreenZoom * 100)
+  }
+
+  /** 模板用：是否还能继续放大（用于 button[disabled]）。 */
+  get canZoomIn(): boolean {
+    return this.fullscreenZoom < TableFullscreenController.ZOOM_MAX - 0.001
+  }
+
+  /** 模板用：是否还能继续缩小。 */
+  get canZoomOut(): boolean {
+    return this.fullscreenZoom > TableFullscreenController.ZOOM_MIN + 0.001
+  }
+
+  /**
+   * 适合宽度：一键让表格视觉宽度填满 viewport（扣除全屏 padding）。
+   *
+   * 注意：**不**用 `getBoundingClientRect()` 反推原始宽度。
+   * 浏览器对 CSS `zoom` 下 BCR 的语义不一致：
+   *   - Chrome / Edge：返回 scaled viewport pixels
+   *   - Safari：可能返回 unscaled CSS pixels
+   *   - Firefox：126+ 才支持 zoom，行为也不完全对齐
+   * 反推会在 Safari 下导致每次点击 fit 都以当前 zoom 倍数继续放大（指数爆炸）。
+   *
+   * 改用数据模型 `props.colWidths` 求和——这是 schema 里的真值，
+   * 与 zoom 状态完全无关，跨浏览器恒定。
+   * 边框引起的几像素误差忽略不计。
+   */
+  fullscreenFitToWidth(): void {
+    if (!this.isFullscreen) return
+    const colWidths = this.props.colWidths
+    if (!colWidths || colWidths.length === 0) return
+    const tableWidth = colWidths.reduce((sum, w) => sum + w, 0)
+    if (tableWidth <= 0) return
+    const paddingLeft = parseFloat(getComputedStyle(this.hostElement).paddingLeft) || 24
+    const availableWidth = window.innerWidth - paddingLeft * 2
+    if (availableWidth <= 0) return
+    this.setFullscreenZoom(availableWidth / tableWidth)
   }
 
   get colLength() {
@@ -289,7 +419,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this._dragStartCoord = null
     this._clearSelected()
     this._clearActiveRanges()
-    this._hideTableMenu()
+    // 注意：这里**不调用** _hideTableMenu()。
+    // 这个函数在 mousedown 进入新选区时被调用，那时旧的工具栏应该原地保留——
+    // 等 selectionchange 触发 _syncTableFocusUi → _showTableMenu，让 reuse 路径
+    // 只更新 inputs + 重定位，工具栏视觉上「滑动」到新位置，不重建。
+    // 真正的隐藏发生在 _syncTableFocusUi(null)（用户彻底离开表格）等路径。
     this.changeDetectorRef.markForCheck()
   }
 
@@ -311,6 +445,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // would null `_startSelectingCell` while the visual lockdown class stays
     // on the table host — locking the entire table as read-only.
     if (evt.button !== 0) return
+    // 列宽 resize bar 现在是 cell 的子节点（CSS-only 定位方案，见
+    // `_handleNativeMouseOver`）。bar 自己的 onColResizerMousedown 走 bubble 阶段
+    // fire；而本 handler 走 capture 阶段，会**先**于 bar handler 启动 cell 选区流程。
+    // 早 bail 一下，让落在 bar 上的 mousedown 只走列宽拖拽，不开启 cell 矩形选择。
+    const target = evt.target as Node | null
+    if (target && this.colResizeBar?.nativeElement.contains(target)) return
     const id = this._closetCell(evt)
     if (!id) return
     const cell = this.doc.getBlockById(id) as TableCellBlockComponent
@@ -376,14 +516,26 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // update.
     this.hoveringCell = this.doc.getBlockById(id) as TableCellBlockComponent
 
-    // Skip the resize-bar repositioning while a cell drag is in flight —
-    // each call costs two forced-layout `getBoundingClientRect()` reads and
-    // the resize bar is hidden during drag anyway. The next non-drag
-    // mouseover after release will refresh it.
+    // Resize bar 现在用「把 bar 元素 appendChild 进当前 hover 的 cell」的方案：
+    // bar 是 cell 的 absolute 子节点，CSS `right: -6px; height: 100%` 让它自动贴
+    // 在 cell 右边界。**零 JS 数学** —— 跟 zoom / border-spacing / border-collapse
+    // / padding / 任何浏览器 BCR 语义全部解耦。
+    //
+    // 之前用 BCR / offsetLeft / props.colWidths 累加 + computed border-spacing 的方案
+    // 每加一种边界条件就要补一份计算；这套方案靠浏览器自身的 layout 引擎处理，最稳。
+    //
+    // 唯一权衡：bar 高度 = 当前 cell 高度（不再是全表高度）。这是 Notion / Linear
+    // 等产品的常见做法，UX 上更聚焦。
     if (!this.resizingCol$.value && !this._startSelectingCell) {
-      const offsetX = this.hoveringCell.hostElement.getBoundingClientRect().right
-        - this.tableScrollable.nativeElement.getBoundingClientRect().left - 6
-      this.colResizeBar.nativeElement.style.left = `${offsetX}px`
+      const cellEl = this.hoveringCell.hostElement
+      const barEl = this.colResizeBar.nativeElement
+      if (barEl.parentElement !== cellEl) {
+        cellEl.appendChild(barEl)
+        // 清掉可能残留的 inline style（旧定位方案的产物 / 拖拽过程的手动 left）
+        // —— 否则会覆盖 CSS 里 `right: -6px` 的自动定位。
+        barEl.style.left = ''
+        barEl.style.right = ''
+      }
     }
 
     // Promote pending on first different-cell crossing (belt + suspenders
@@ -681,13 +833,19 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
 
     const scrollableRect = this.tableScrollable.nativeElement.getBoundingClientRect()
-    const rootRect = this.doc.root.hostElement.getBoundingClientRect()
-    const viewportRect = {
-      left: Math.max(scrollableRect.left, rootRect.left),
-      right: Math.min(scrollableRect.right, rootRect.right),
-      top: Math.max(scrollableRect.top, rootRect.top),
-      bottom: Math.min(scrollableRect.bottom, rootRect.bottom),
-    }
+    // 全屏态下整个 viewport 都属于表格，不要跟 editor root 取交集（root 在遮罩底下、
+    // 实际不可见），否则会把工具栏 anchor clamp 到一个用户看不见的小矩形里。
+    const viewportRect = this.isFullscreen
+      ? scrollableRect
+      : (() => {
+          const rootRect = this.doc.root.hostElement.getBoundingClientRect()
+          return {
+            left: Math.max(scrollableRect.left, rootRect.left),
+            right: Math.min(scrollableRect.right, rootRect.right),
+            top: Math.max(scrollableRect.top, rootRect.top),
+            bottom: Math.min(scrollableRect.bottom, rootRect.bottom),
+          }
+        })()
 
     const anchor = resolveTableStructureAnchor({
       wrapperRect: this.tableWrapper.nativeElement.getBoundingClientRect(),
@@ -717,17 +875,16 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   private _hideTableMenu() {
+    // 真正"用户离开了表格"时才走这里：销毁 CDK overlay + 隐藏内联 toolbar。
+    // 切换单元格不再触发这里（_clearSelectionUiState 不再 hide），
+    // 因此 selection 切换时工具栏只更新位置/内容，不会重建。
+    //
+    // rowIndex / colIndex 等业务数据保留：全屏内联工具栏 keep-alive 的子组件
+    // 如果反复收到 input 变化会走多次无用的 ngOnChanges 流程；只翻 visible 标志。
     this._disposeToolbar()
     this._tableMenu = {
+      ...this._tableMenu,
       visible: false,
-      left: -9999,
-      top: -9999,
-      width: 0,
-      rowIndex: 0,
-      rowCount: 1,
-      colIndex: 0,
-      colCount: 1,
-      selectionKind: 'cell',
     }
     this.hostElement.classList.remove('active')
     this.changeDetectorRef.markForCheck()
@@ -900,6 +1057,14 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private _showTableMenuOverlay() {
     if (this.doc.isReadonly || !this._tableMenu.visible || !this.tableMenuAnchor) {
+      this._disposeToolbar()
+      return
+    }
+
+    // 全屏态下结构工具栏改为「固定」渲染到 .table-block.is-fullscreen 顶部居中
+    // （由 table.block.html 的 @if 块负责），绕开 CDK Overlay 在 zoom + fullscreen
+    // 下 clampTo / scrollContainer 引用错位的一系列问题。这里只负责销毁可能残存的 CDK 实例。
+    if (this.isFullscreen) {
       this._disposeToolbar()
       return
     }
@@ -1434,7 +1599,6 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     const resizingColIdx = this.hoveringCell.getIndexOfParent() + (this.hoveringCell.props.colspan || 1) - 1
     const curCol = this.hostElement.querySelector(`col:nth-child(${resizingColIdx + 1})`) as HTMLElement
-    const scrollableEl = this.tableScrollable.nativeElement
 
     let newWidth = this.props.colWidths[resizingColIdx]
     let prevClientX = evt.clientX
@@ -1466,12 +1630,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         this.colBarComponent.colWidths[resizingColIdx] = newWidth
         this.colBarComponent.changeDetectionRef.markForCheck()
 
-        // 更新可视指示器位置（考虑滚动偏移）
-        const colRect = curCol.getBoundingClientRect()
-        const containerRect = scrollableEl.getBoundingClientRect()
-        // 列的右边界相对于容器的位置 + 滚动偏移量
-        const barLeft = colRect.right - containerRect.left + scrollableEl.scrollLeft + 10
-        this.colResizeBar.nativeElement.style.left = `${barLeft}px`
+        // 不再手动定位 resize bar：bar 是当前 hover cell 的子节点，CSS `right: -6px`
+        // 让它自动贴在 cell 右边界。cell 宽度跟着 col 宽度变 → bar 自动跟随。
       })
 
     fromEvent(document, 'mouseup', { capture: true }).pipe(take(1)).subscribe(() => {

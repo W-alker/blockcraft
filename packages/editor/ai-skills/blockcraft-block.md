@@ -509,9 +509,14 @@ metadata: {
 
 **Display contract**:
 - Visible only when current selection is `type: 'text'` and `start.blockId === block.id` AND `textLength === 0`.
-- DOM state managed via `data-placeholder` attribute + `.empty` class on the host element.
+- DOM state managed via `data-placeholder` attribute on the `.edit-container` (the inline runtime container) + `.empty` class on the host element.
+- Hidden during IME composition to avoid visual overlap with the composing preview (framework subscribes to `compositionStart` / `compositionEnd` events routed via `selection.commonParent`).
 - Readonly mode never displays placeholder (`selection.value` stays `null`).
-- Subscriptions are auto-disposed via `takeUntilDestroyed(this.destroyRef)`.
+- Subscriptions are auto-disposed via `takeUntilDestroyed(this.destroyRef)`; framework-level composition handlers cleaned up via `destroyRef.onDestroy(...)`.
+
+**Caveat — blocks with their own `::before`**:
+- The CSS uses a `::before` pseudo-element on `.edit-container` to render the placeholder text. If your block already styles its own `::before` on the same element (e.g. `blockquote` uses `::before` for the left quote rule), the two pseudo-elements collide.
+- In that case **omit `metadata.placeholder` entirely**. `blockquote` is the built-in example: it has no default placeholder for this reason.
 
 ## Checklist
 

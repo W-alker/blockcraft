@@ -149,7 +149,7 @@
   }
 
   [data-node-type="editable"] {
-    transition: all .1s ease;
+    //transition: all .1s ease;
 
     &.empty {
       // Match both self-as-edit-container (e.g. paragraph: host element has
@@ -158,7 +158,8 @@
       &.edit-container::before,
       .edit-container::before {
         content: attr(data-placeholder);
-        color: var(--bc-color-light);
+        color: var(--bc-color);
+        opacity: .3;
         // Absolute positioning takes the placeholder out of the inline flow,
         // so the caret stays at the container's start instead of being pushed
         // to the right of the placeholder text. The positioning context is

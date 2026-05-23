@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-05-22 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-05-23 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,11 +67,87 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-05-23 (minor)
+
+**What changed**: `TableBlockComponent` 新增「全屏视图」能力（页面内最大化覆盖形态）。鼠标移入表格时右上角出现悬浮按钮可进入全屏；选中单元格出现的结构工具栏内也追加了同样的全屏按钮；全屏状态下按 Esc 或再次点击同位按钮可退出。全屏期间表格 host 通过 CSS class `is-fullscreen` + `position: fixed; inset: 0` 覆盖 viewport，DOM 不搬移，因此单元格输入 / 选区 / IME / Yjs 协同 / 撤销 / 列宽拖拽 / 行列重排 / structure-toolbar / mention / float-toolbar 等所有既有能力**全部保留**。状态是本地视图状态，不写入 Yjs、不进 Undo 历史。同一时刻最多一张表格全屏；进入新表格的全屏会先退出旧的。IME composing 期间 Esc 不会退出全屏。
+
+全屏内支持 **Ctrl/Cmd + 滚轮缩放**（针对长表格阅读场景）：50% – 300% 范围、10% 步进，退出全屏自动重置到 100%。通过 CSS `zoom` 应用到 `.table-wrapper`，layout 真实重排，scrollbar 自然适配。
+
+**Why**: 大表格在文档内空间受限，常常需要临时全屏专注查看 / 编辑。原本只能通过浏览器原生 Fullscreen API 间接达成，但那受 iframe / Safari 限制且会打断协同；这一版选择 CSS-only 原地全屏方案，零 DOM 搬移、零框架内部状态污染、对所有插件透明。
+
+**Affected ai-skills files**:
+- `blockcraft-theme.md` — 新增「Table Block Fullscreen View」CSS 变量表 + class 公开契约说明
+- `blockcraft-app.md` — Common Mistakes 表追加一条：BlockCraft 祖先节点避免使用 `transform` / `filter` / `will-change` / `perspective`（否则 `position: fixed` 被困容器内，表格全屏无法真正占满 viewport）
+
+### New APIs / Features
+
+`TableBlockComponent` 新增 public 接口（位于 `packages/editor/blocks/table-block/table.block.ts`）：
+
+```typescript
+// 当前是否处于全屏视图（模板友好的 getter）
+get isFullscreen(): boolean
+
+// 可观察的全屏状态流（BehaviorSubject<boolean>）
+get isFullscreen$(): BehaviorSubject<boolean> | undefined
+
+// 切换全屏状态
+toggleFullscreen(): void
+
+// 显式设置全屏状态（重复同值是 no-op）
+setFullscreen(value: boolean): void
+
+// 全屏缩放 API（仅在全屏态生效；退出全屏自动重置到 1）
+get fullscreenZoom(): number
+setFullscreenZoom(value: number): void   // clamp 到 [0.5, 3]
+fullscreenZoomIn(): void                  // +10%
+fullscreenZoomOut(): void                 // -10%
+resetFullscreenZoom(): void               // 回到 100%
+```
+
+`TableFullscreenController`（内部类）也暴露同样的 API：`zoom$` / `setZoom` / `zoomIn` / `zoomOut` / `resetZoom`，以及静态常量 `ZOOM_MIN` / `ZOOM_MAX` / `ZOOM_STEP`。
+
+新增内部类 `TableFullscreenController`（`packages/editor/blocks/table-block/table-fullscreen-controller.ts`），独立于 Angular，纯 TS 实现，承担状态机 + DOM 副作用 + Esc 监听 + IME 守卫 + 全局单例。被 `TableBlockComponent` 持有；外部消费者**不应**直接构造它。
+
+新增 CSS 公开契约（写入 `themes/variables.scss`）：
+
+| Variable | Default | 说明 |
+|---|---|---|
+| `--bc-table-fullscreen-z` | `800` | 全屏表格容器 z-index（故意低于 CDK Overlay 默认 1000，让 structure-toolbar / float-toolbar / mention 自然浮在表格之上） |
+| `--bc-table-fullscreen-mask-z` | `799` | 遮罩层 z-index |
+| `--bc-table-fullscreen-overlay-bg` | `rgba(0, 0, 0, 0.55)` | 遮罩色 |
+| `--bc-table-fullscreen-padding` | `40px` | viewport 边距 |
+| `--bc-table-fullscreen-radius` | `8px` | 圆角 |
+| `--bc-table-fullscreen-bg` | `var(--bc-bg-elevated, #fff)` | 背景色 |
+
+新增 class 名（公开契约）：
+- `.table-block.is-fullscreen` — 标记表格 host 处于全屏视图
+- `.bc-table-fullscreen-btn` — 悬浮按钮（hover 显现，全屏态下常显）
+- `body.bc-table-fullscreen-lock` — 锁滚动
+
+字体图标复用既有资源 `bc_arrow-expand`（进入）+ `bc_x-circle-contained`（退出），未新增 iconfont 字形。
+
+### Behavior Changes
+
+- 同一时刻最多一张表格处于全屏。从 table A 全屏切到 table B 全屏会自动退出 A（通过模块级 `WeakRef` 单例）。
+- 全屏期间 `body` 上挂 `bc-table-fullscreen-lock` 类（CSS 设 `overflow: hidden`）禁止背景滚动。如果宿主 app 依赖 body scroll 行为的代码（很少见），需感知此状态。
+- 全屏期间的 `Escape` 按下被表格在 capture phase 消费（`stopPropagation` + `preventDefault`）。普通模式下 Escape 不被表格拦截。
+- 全屏期间 Ctrl/Cmd + 滚轮被表格在 capture phase 消费（`passive: false` + `preventDefault`），拦截浏览器原生页面缩放，改为表格内缩放。普通模式下滚轮不被拦截。
+- 全屏状态不在 Yjs 中同步；协同其他端不会因为本端进入全屏而变化。
+- 全屏缩放状态同上：不同步、不进 Undo、退出全屏强制回到 100%。
+- 重启浏览器 / 重新打开文档不恢复全屏状态（与 hover、滚动位置同性质）。
+- 全屏 zoom ≠ 100% 时进行行/列拖拽重排，drop-line 指示位置会按 zoom 比例偏移（math 没有按 zoom 修正）。阅读场景不受影响；如确实需要在缩放下重排，先重置缩放再操作。
+
+### Migration Recipe
+
+无 — 升级即可使用，下游消费者无需修改任何代码。
+
+---
+
 ### v?.?.? - 2026-05-22 (minor)
 
-**What changed**: 新增 `IBlockSchemaOptions.metadata.placeholder` 字段（`BlockPlaceholderConfig` 类型，`string` 或 `{ default?, heading?: { 1?, 2?, 3? } }` 结构）。所有 `EditableBlockComponent` 派生块在「聚焦 + `textLength === 0`」时会自动从 host element 上读取该字段，渲染 `data-placeholder` attribute + `.empty` class，触发既有 CSS。内置 `paragraph` / `bullet` / `ordered` / `todo` / `blockquote` schema 已带默认文案；未配置 placeholder 的 schema 不受影响、不显示任何占位符。
+**What changed**: 新增 `IBlockSchemaOptions.metadata.placeholder` 字段（`BlockPlaceholderConfig` 类型，`string` 或 `{ default?, heading?: { 1?, 2?, 3? } }` 结构）。所有 `EditableBlockComponent` 派生块在「聚焦 + `textLength === 0`」时会自动从 host element 上读取该字段，渲染 `data-placeholder` attribute + `.empty` class，触发既有 CSS。内置 `paragraph` / `bullet` / `ordered` / `todo` schema 已带默认文案；`blockquote` 自身已有 `::before` 伪元素（左侧引用线），不参与 placeholder 渲染避免冲突；其他未配置 placeholder 的 schema 不受影响、不显示任何占位符。
 
-**Why**: BlockCraft 主题 `themes/base.scss` 早已为 `[data-node-type="editable"].empty .edit-container::before { content: attr(data-placeholder); }` 准备好样式，但缺少 TS 行为支撑。本次补齐，使空段落 / 列表项 / 引用等具备 Notion 风格的输入引导。
+**Why**: BlockCraft 主题 `themes/base.scss` 早已为 `[data-node-type="editable"].empty .edit-container::before { content: attr(data-placeholder); }` 准备好样式，但缺少 TS 行为支撑。本次补齐，使空段落 / 列表项 / 待办具备 Notion 风格的输入引导。
 
 **Affected ai-skills files**:
 - `blockcraft.md` — Conventions 章节追加一条 placeholder 约定
@@ -110,7 +186,7 @@ metadata: {
 
 ### Behavior Changes
 
-Empty focused `paragraph` blocks now show `输入"/"呼出菜单`（以及在 heading 1/2/3 模式下 `一级标题` / `二级标题` / `三级标题`）。`bullet` / `ordered` show `列表项`. `todo` shows `待办事项`. `blockquote` shows `引用`. 如果宿主应用在自定义 schema 时未保留这些字段，对应默认文案会被丢弃 —— 显式在 schema 上设置 `metadata.placeholder` 即可恢复或自定义。
+Empty focused `paragraph` blocks now show `输入"/"呼出菜单`（以及在 heading 1/2/3 模式下 `一级标题` / `二级标题` / `三级标题`）。`bullet` / `ordered` show `列表项`. `todo` shows `待办事项`. `blockquote` 不参与 placeholder（其自身已有 `::before` 引用线伪元素，会与 placeholder ::before 冲突）。如果宿主应用在自定义 schema 时未保留这些字段，对应默认文案会被丢弃 —— 显式在 schema 上设置 `metadata.placeholder` 即可恢复或自定义。
 
 ### v?.?.? - 2026-05-21 (major)
 
