@@ -59,9 +59,22 @@
       z-index: var(--bc-table-fullscreen-z);
       background: var(--bc-table-fullscreen-bg);
       padding: var(--bc-table-fullscreen-padding-y) var(--bc-table-fullscreen-padding);
-      overflow: auto;
+      // 滚动下放到 .table-scrollable 内部，外层容器只布局不滚。
+      // 这样 top: 12px / bottom: 16px 的 position:absolute 工具栏始终
+      // 锚定在 viewport 边缘，不会跟着表格内容滚走。
+      overflow: hidden;
       border-radius: 0;
       box-sizing: border-box;
+      margin: 0;
+
+      // 全屏视图下小表格在 viewport 内居中显示。
+      // `safe` 关键字：表格大到溢出 viewport 时，自动退回到 start 对齐，
+      // 否则居中会把头部推到 viewport 之外、用户无法通过滚动看到。
+      // 关闭按钮 / 顶部工具栏 / 底部缩放控件都是 position:absolute，
+      // 不参与 flex 布局，因此各自的 top/right/bottom/left 仍按原坐标生效。
+      display: flex;
+      align-items: safe center;
+      justify-content: safe center;
 
       // 全屏态下放大按钮、加底色，提升可见度（普通态保持 hover 才显的轻量风格）
       .bc-table-fullscreen-btn {
@@ -84,6 +97,15 @@
       .table-scrollable {
         max-height: 100%;
         max-width: 100%;
+        // flex item 默认 min-width/min-height: auto，会拒绝缩小到内容尺寸以下，
+        // 跟 max-*: 100% 同时存在时可能导致内容溢出父容器。显式置 0，让
+        // max-* 真正生效。
+        min-width: 0;
+        min-height: 0;
+        // 全屏态下垂直滚动接管到这里（普通态保持 overflow-y: hidden，让页面滚）。
+        // 配合外层 .is-fullscreen 的 overflow: hidden + position:absolute 工具栏，
+        // 工具栏始终钉在 viewport，只有表格内容区随手势滚动。
+        overflow-y: auto;
       }
 
       // 顶部居中的「固定式」结构工具栏（替代普通态下的 CDK Overlay）。
@@ -724,13 +746,13 @@
 // 里低于表格容器，所以表格内容能正确地浮在遮罩之上。
 body.bc-table-fullscreen-lock {
   overflow: hidden;
-
-  &::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background: var(--bc-table-fullscreen-overlay-bg);
-    z-index: var(--bc-table-fullscreen-mask-z);
-    pointer-events: none;
-  }
+  //
+  //&::before {
+  //  content: '';
+  //  position: fixed;
+  //  inset: 0;
+  //  background: var(--bc-table-fullscreen-overlay-bg);
+  //  z-index: var(--bc-table-fullscreen-mask-z);
+  //  pointer-events: none;
+  //}
 }
