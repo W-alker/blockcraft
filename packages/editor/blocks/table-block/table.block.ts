@@ -968,6 +968,21 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const range = this._activeCellsRange
     if (range && range.anchorId === cell.id) {
       this._syncHandleVisibility(cell)
+      // Mirror the rectangle's row/col span onto the bar widgets so the
+      // visible drag handles know the full multi-row/multi-col extent.
+      // Without this, dragging a bar handle inside a cell rectangle would
+      // fall back to single-row/col because the bar's _selectedRange is
+      // still [-1, -1].
+      const colRange: [number, number] = [range.start[1], range.end[1]]
+      const rowRange: [number, number] = [range.start[0], range.end[0]]
+      if (this.colBarComponent) {
+        this.colBarComponent.selectedRange = colRange
+        this.colBarComponent.changeDetectionRef.markForCheck()
+      }
+      if (this.rowBarComponent) {
+        this.rowBarComponent.selectedRange = rowRange
+        this.rowBarComponent.changeDetectionRef.markForCheck()
+      }
       this._showTableMenu({
         rowIndex: range.start[0],
         rowCount: range.end[0] - range.start[0] + 1,

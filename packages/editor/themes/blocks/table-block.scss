@@ -587,7 +587,10 @@
           background: transparent;
         }
 
-        &.active,
+        // Only the .visible handle is shown and interactive — `.active` marks
+        // membership in a multi-row/col selection but doesn't paint its own
+        // handle, so a selection always surfaces exactly one bar handle even
+        // when the underlying range spans many rows/columns.
         &.visible {
           background: transparent;
           opacity: 1;

@@ -114,7 +114,18 @@ export class TableColBarComponent {
   onMouseDown(idx: number, event: MouseEvent) {
     event.preventDefault()
     event.stopPropagation()
-    this._selectedRange = [idx, idx]
+
+    // Preserve an existing multi-column selection when the mousedown lands on
+    // a handle inside that range — so dragging moves the whole selection,
+    // not just the clicked column. Click outside the range resets to single.
+    const inExistingRange = this._selectedRange[0] !== -1
+      && idx >= this._selectedRange[0]
+      && idx <= this._selectedRange[1]
+    if (!inExistingRange) {
+      this._selectedRange = [idx, idx]
+    }
+    const dragFromIndex = this._selectedRange[0]
+    const dragCount = this._selectedRange[1] - this._selectedRange[0] + 1
     this.host.nativeElement.classList.add('selecting')
 
     const startX = event.clientX
@@ -133,7 +144,7 @@ export class TableColBarComponent {
           this.host.nativeElement.classList.add('reordering')
           this.host.nativeElement.classList.remove('selecting')
           this._hoveredIndex = null
-          this.reorderStart.emit({ fromIndex: idx, count: 1 })
+          this.reorderStart.emit({ fromIndex: dragFromIndex, count: dragCount })
         }
         this.reorderMove.emit({ cursorX: e.clientX })
       })
