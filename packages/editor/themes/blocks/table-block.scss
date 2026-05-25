@@ -62,19 +62,23 @@
       // 滚动下放到 .table-scrollable 内部，外层容器只布局不滚。
       // 这样 top: 12px / bottom: 16px 的 position:absolute 工具栏始终
       // 锚定在 viewport 边缘，不会跟着表格内容滚走。
-      overflow: hidden;
+      overflow: auto;
       border-radius: 0;
       box-sizing: border-box;
       margin: 0;
 
       // 全屏视图下小表格在 viewport 内居中显示。
-      // `safe` 关键字：表格大到溢出 viewport 时，自动退回到 start 对齐，
-      // 否则居中会把头部推到 viewport 之外、用户无法通过滚动看到。
+      // 不用 `align-items: safe center`：WKWebView (Safari < 16.5 / iOS < 16.5)
+      // 不支持 `safe` 关键字——要么整条规则被当作无效退回 stretch，要么 safe
+      // 被忽略只剩 center。后者情况下放大后表格高度 > viewport，flex 居中把表头
+      // 推到 viewport 上方负坐标；overflow: auto 不允许 scrollTop 为负
+      // → 上方内容永久被裁掉、用户无法滚动到顶部。
+      // 改用子项 `margin: auto`：flex 容器里子项的 auto margin 自带 safe-center
+      // 语义——有剩余空间时吃掉空间居中，无剩余空间时收缩为 0、紧贴容器起点。
+      // Flexbox 一代特性，所有支持 flex 的浏览器都支持，无版本兼容隐患。
       // 关闭按钮 / 顶部工具栏 / 底部缩放控件都是 position:absolute，
       // 不参与 flex 布局，因此各自的 top/right/bottom/left 仍按原坐标生效。
       display: flex;
-      align-items: safe center;
-      justify-content: safe center;
       padding-left: var(--bc-table-fullscreen-padding);
       padding-right: var(--bc-table-fullscreen-padding);
 
@@ -101,12 +105,13 @@
       }
 
       .table-scrollable {
+        // safe center 的 flexbox 兼容替代——见上方 .is-fullscreen display: flex 注释。
+        // 内容比 viewport 小：vertical margin auto 吃掉剩余空间 → 自动垂直居中；
+        // 内容比 viewport 大（放大后）：margin 收缩为 0 → 表格顶部紧贴容器顶 padding，
+        // scrollTop=0 即对齐表头，避免老版本 WKWebView 上方被裁。
+        margin: auto;
         width: 100%;
-        max-height: 100%;
-        max-width: 100%;
-        min-width: 0;
-        min-height: 0;
-        overflow-y: auto;
+        overflow-y: hidden;
         padding-top: var(--bc-table-fullscreen-padding-y);
         padding-bottom: var(--bc-table-fullscreen-padding-y);
         scroll-padding-top: 60px;
@@ -118,11 +123,13 @@
         margin-right: auto;
       }
 
+      // row-bar 现在放在 .table-wrapper 内部，containing block 自动是 wrapper，
+      // 跟着 wrapper 居中浮动 / CSS zoom 缩放 / 水平滚动一起走，全屏态无需任何覆盖。
+
       .bc-table-fullscreen-menu {
-        position: absolute;
+        position: fixed;
         top: 12px;
         left: 50%;
-        transform: translateX(-50%) translateY(-6px);
         // 要高过 col-bar (100) / resize-bar (102) / drop-preview (140) / drop-line (150)，
         // 否则向下滚动时 col-bar 会盖到结构工具栏上面。
         z-index: 200;
@@ -140,7 +147,7 @@
 
       // 底部居中浮动 toolbar：缩放控制 + 适合宽度
       .bc-table-fullscreen-controls {
-        position: absolute;
+        position: fixed;
         bottom: 16px;
         left: 50%;
         transform: translateX(-50%);
@@ -361,9 +368,13 @@
       // ⚠️ 必须用 :not(.is-fullscreen) 限定！全屏模式下 .table-scrollable 自己就是
       // 垂直滚动容器（overflow-y: auto），sticky 表头要相对全屏 viewport sticky；
       // 如果这里改成 clip，全屏会丢失垂直滚动。
-      &:not(.is-fullscreen) .table-scrollable {
-        padding-top: 0;
-        overflow-y: clip;
+      &:not(.is-fullscreen) {
+        .table-scrollable {
+          padding-top: 0;
+          overflow-y: clip;
+        }
+        // row-bar 的 top: 1px 现在是全局默认（containing block 已改为 wrapper），
+        // 不再需要 :not(.is-fullscreen) 单独覆盖。
       }
     }
 
@@ -387,7 +398,8 @@
       width: fit-content;
       table-layout: fixed;
       position: relative;
-      border: 1px solid var(--bc-table-border-color);
+      border-right: 1px solid var(--bc-table-border-color);
+      border-bottom: 1px solid var(--bc-table-border-color);
 
       col-group {
         col {
@@ -419,12 +431,8 @@
         overflow-x: hidden;
         position: relative;
         border: 1px solid var(--bc-table-border-color);
-        //border-bottom: 1px solid var(--bc-table-border-color);
-        //border-right: 1px solid var(--bc-table-border-color);
-
-        &:first-child {
-          border-left: 1px solid var(--bc-table-border-color);
-        }
+        border-left: 1px solid var(--bc-table-border-color);
+        border-top: 1px solid var(--bc-table-border-color);
 
         .table-cell__children-wrapper {
           padding: 12px 8px;
@@ -715,8 +723,13 @@
 
       .handle-line {
         left: 50%;
-        bottom: -1px;
+        // bottom: -5px 而不是 -1px：把 line 整体下移 4px，让它落在 wrapper 内侧
+        // （wrapper 内 y=0~6，即首行 cell padding 区域），不再悬浮在 col-bar 上方外侧。
+        // 这样在 .table-scrollable padding-top: 0 的模式（fullscreen / row-head）下
+        // 也完全可见，不会被 scrollable 的 overflow 沿 wrapper 上边缘裁掉。
+        bottom: -4px;
         width: 18px;
+        // 非 active 状态下用 6px 替代原来的 4px，跟 row-bar 的 width 保持一致。
         height: 4px;
         transform: translateX(-50%);
       }
@@ -741,7 +754,12 @@
 
     table-row-bar {
       position: absolute;
-      top: $ctrlBarSize + 1px;
+      // top: 1px — row-bar 在 .table-wrapper 内部，containing block = wrapper。
+      // wrapper 内部第一行 td 的 top edge 在 y=0（border-collapse: collapse 下），
+      // 所以 row-bar 顶部往下 1px 就对齐到首行顶部下 1px（视觉上 1px 缓冲）。
+      // 跟 col-bar 的 `top: -7px` 同思路：在 wrapper 局部坐标系里直接定位，
+      // 不依赖任何 padding-top / scrollLeft / zoom 计算。
+      top: 1px;
       left: -7px;
       width: 8px;
       flex-direction: column;
@@ -752,8 +770,13 @@
       }
 
       .handle-line {
-        right: -1px;
+        // right: -5px 而不是 -1px：把 line 整体右移 4px，让它落在 wrapper 内侧
+        // （wrapper 内 x=0~6，即首列 cell padding 区域），不再悬浮在 row-bar 左侧外侧。
+        // 解决在普通模式 / row-head 模式下 .table-scrollable 无 padding-left 时
+        // 被 overflow 沿 wrapper 左边缘裁掉的问题。
+        right: -4px;
         top: 50%;
+        // 非 active 状态下用 6px 替代原来的 4px，跟 col-bar handle-line 的 height 一致。
         width: 4px;
         height: 18px;
         transform: translateY(-50%);

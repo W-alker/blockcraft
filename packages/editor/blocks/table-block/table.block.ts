@@ -17,6 +17,133 @@ import { TableCellsSelection } from "./types";
 import { BlockSelection } from "../../framework/modules/selection/blockSelection";
 import { TableFullscreenController } from "./table-fullscreen-controller";
 
+function cssZoomDeclarationSupported(): boolean {
+  if (typeof CSS === 'undefined' || typeof CSS.supports !== 'function') return true
+  return CSS.supports('zoom', '2')
+}
+
+/**
+ * CSS zoom 下至少有三套坐标语义需要分开探测：
+ * 1. BCR 距离是否已经乘过 zoom；
+ * 2. absolute 子元素的 style.top/left 渲染时是否乘 zoom；
+ * 3. absolute 子元素的 style.width/height 渲染时是否乘 zoom。
+ *
+ * Chromium 基本是 BCR=visual、position/size 都乘 zoom；WKWebView 的 BCR、
+ * absolute position、absolute size 可能各自不同步。若只看 child BCR offset
+ * 会把多种组合混在一起，导致 cursor(clientX/Y) 与 BCR 坐标比较时偏移。
+ */
+let _bcrScalesWithZoomCache: boolean | null = null
+function bcrScalesWithZoomInZoomedParent(): boolean {
+  if (_bcrScalesWithZoomCache !== null) return _bcrScalesWithZoomCache
+  if (typeof document === 'undefined' || !document.body) {
+    return true
+  }
+  if (!cssZoomDeclarationSupported()) {
+    _bcrScalesWithZoomCache = false
+    return _bcrScalesWithZoomCache
+  }
+  const parent = document.createElement('div')
+  parent.style.cssText = 'position:fixed;left:-99999px;top:-99999px;zoom:2;width:100px;height:100px;visibility:hidden;pointer-events:none;'
+  const child = document.createElement('div')
+  child.style.cssText = 'margin-left:50px;width:1px;height:1px;'
+  parent.appendChild(child)
+  document.body.appendChild(parent)
+  void parent.offsetWidth
+  const ratio = (
+    child.getBoundingClientRect().left - parent.getBoundingClientRect().left
+  ) / 50
+  document.body.removeChild(parent)
+  _bcrScalesWithZoomCache = ratio > 1.5
+  return _bcrScalesWithZoomCache
+}
+
+function hitTestZoomedChild(childStyle: string, x: number, y: number): boolean | null {
+  if (typeof document === 'undefined' || !document.body || typeof document.elementFromPoint !== 'function') {
+    return null
+  }
+  if (typeof window !== 'undefined' && (window.innerWidth <= x || window.innerHeight <= y)) {
+    return null
+  }
+  const parent = document.createElement('div')
+  parent.style.cssText = 'position:fixed;left:0;top:0;zoom:2;width:200px;height:200px;opacity:0;pointer-events:auto;z-index:2147483647;'
+  const child = document.createElement('div')
+  child.style.cssText = `${childStyle};background:#000;pointer-events:auto;`
+  parent.appendChild(child)
+  document.body.appendChild(parent)
+  void parent.offsetWidth
+  const hit = document.elementFromPoint(x, y)
+  document.body.removeChild(parent)
+  return hit === child || (!!hit?.parentElement && child.contains(hit))
+}
+
+let _styleTopAppliesZoomCache: boolean | null = null
+function styleTopAppliesZoomInZoomedParent(): boolean {
+  if (_styleTopAppliesZoomCache !== null) return _styleTopAppliesZoomCache
+  if (typeof document === 'undefined' || !document.body) {
+    return true
+  }
+  if (!cssZoomDeclarationSupported()) {
+    _styleTopAppliesZoomCache = false
+    return _styleTopAppliesZoomCache
+  }
+  const hitZoomedPosition = hitTestZoomedChild(
+    'position:absolute;left:50px;top:0;width:10px;height:10px;',
+    105,
+    5,
+  )
+  if (hitZoomedPosition !== null) {
+    _styleTopAppliesZoomCache = hitZoomedPosition
+    return _styleTopAppliesZoomCache
+  }
+  const parent = document.createElement('div')
+  parent.style.cssText = 'position:fixed;left:-99999px;top:-99999px;zoom:2;width:100px;height:100px;visibility:hidden;pointer-events:none;'
+  const child = document.createElement('div')
+  child.style.cssText = 'position:absolute;top:50px;left:0;width:1px;height:1px;'
+  parent.appendChild(child)
+  document.body.appendChild(parent)
+  void parent.offsetWidth
+  const offset = child.getBoundingClientRect().top - parent.getBoundingClientRect().top
+  document.body.removeChild(parent)
+  const bcrScaleAtZoom2 = bcrScalesWithZoomInZoomedParent() ? 2 : 1
+  const visualFactorAtZoom2 = (offset / 50) * (2 / bcrScaleAtZoom2)
+  _styleTopAppliesZoomCache = visualFactorAtZoom2 > 1.5
+  return _styleTopAppliesZoomCache
+}
+
+let _styleSizeAppliesZoomCache: boolean | null = null
+function styleSizeAppliesZoomInZoomedParent(): boolean {
+  if (_styleSizeAppliesZoomCache !== null) return _styleSizeAppliesZoomCache
+  if (typeof document === 'undefined' || !document.body) {
+    return true
+  }
+  if (!cssZoomDeclarationSupported()) {
+    _styleSizeAppliesZoomCache = false
+    return _styleSizeAppliesZoomCache
+  }
+  const hitZoomedSize = hitTestZoomedChild(
+    'width:50px;height:50px;',
+    75,
+    25,
+  )
+  if (hitZoomedSize !== null) {
+    _styleSizeAppliesZoomCache = hitZoomedSize
+    return _styleSizeAppliesZoomCache
+  }
+  const parent = document.createElement('div')
+  parent.style.cssText = 'position:fixed;left:-99999px;top:-99999px;zoom:2;width:100px;height:100px;visibility:hidden;pointer-events:none;'
+  const child = document.createElement('div')
+  child.style.cssText = 'width:50px;height:50px;'
+  parent.appendChild(child)
+  document.body.appendChild(parent)
+  void parent.offsetWidth
+  const h = child.getBoundingClientRect().height
+  document.body.removeChild(parent)
+  const bcrScaleAtZoom2 = bcrScalesWithZoomInZoomedParent() ? 2 : 1
+  const visualFactorAtZoom2 = (h / 50) * (2 / bcrScaleAtZoom2)
+  _styleSizeAppliesZoomCache = visualFactorAtZoom2 > 1.5
+  return _styleSizeAppliesZoomCache
+}
+
 @Component({
   selector: 'div.table-block',
   templateUrl: './table.block.html',
@@ -96,8 +223,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     targetIndex: number
     dropLineTop: number
     previewTop: number
+    /** style.height 实际值（按 size factor 折算后） */
     previewHeight: number
     previewWidth: number
+    /** 源行 visual height（不经 size factor 折算），用于 cursor centering 数学。
+     *  WebKit 上 position 和 size 可能用不同 factor，centering 必须用 visual。 */
+    previewVisualHeight: number
   } | null = null
 
   protected _colReorder: {
@@ -106,8 +237,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     targetIndex: number
     dropLineLeft: number
     previewLeft: number
+    /** style.width 实际值（按 size factor 折算后） */
     previewWidth: number
     previewHeight: number
+    /** 源列 visual width（不经 size factor 折算），用于 cursor centering 数学。 */
+    previewVisualWidth: number
   } | null = null
 
   private resizeObserver = new ResizeObserver(entries => {
@@ -133,6 +267,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
     this.rowBarComponent.changeDetectionRef.markForCheck()
   })
+
 
   /**
    * 全屏视图状态控制器。负责本地 CSS class / body 锁滚动 / Esc 退出 / IME 守卫 / 全局单例。
@@ -1227,6 +1362,67 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     })
   }
 
+  /**
+   * BCR-derived 距离换算到 inline style 时的除数。Chromium 通常是 zoom，
+   * WKWebView 在部分版本里 BCR 不乘 zoom，但 absolute style 会乘 zoom，此时除数是 1。
+   */
+  private _zoomFactorForBcr(): number {
+    const zoom = this._actualCssZoom()
+    if (!cssZoomDeclarationSupported() || zoom === 0) return 1
+    return this._zoomFactorForBcrMeasure() * this._zoomFactorForVisualPosition() / zoom
+  }
+
+  /**
+   * BCR-derived 尺寸换算到 style.height / style.width 时的除数。
+   * position 和 size 在 WebKit 上可能不对称，所以不能复用 position factor。
+   */
+  private _zoomFactorForBcrSize(): number {
+    const zoom = this._actualCssZoom()
+    if (!cssZoomDeclarationSupported() || zoom === 0) return 1
+    return this._zoomFactorForBcrMeasure() * this._zoomFactorForVisualSize() / zoom
+  }
+
+  private _actualCssZoom(): number {
+    if (!cssZoomDeclarationSupported()) return 1
+    return this.fullscreenController?.zoom$.value ?? 1
+  }
+
+  private _zoomFactorForBcrMeasure(): number {
+    return bcrScalesWithZoomInZoomedParent() ? this._actualCssZoom() : 1
+  }
+
+  private _zoomFactorForVisualPosition(): number {
+    return styleTopAppliesZoomInZoomedParent() ? this._actualCssZoom() : 1
+  }
+
+  private _zoomFactorForVisualSize(): number {
+    return styleSizeAppliesZoomInZoomedParent() ? this._actualCssZoom() : 1
+  }
+
+  private _stylePositionFromBcrDistance(distance: number): number {
+    return distance / this._zoomFactorForBcr()
+  }
+
+  private _stylePositionFromVisualDistance(distance: number): number {
+    return distance / this._zoomFactorForVisualPosition()
+  }
+
+  private _styleSizeFromBcrDistance(distance: number): number {
+    return distance / this._zoomFactorForBcrSize()
+  }
+
+  private _styleSizeFromVisualDistance(distance: number): number {
+    return distance / this._zoomFactorForVisualSize()
+  }
+
+  private _visualDistanceFromBcr(distance: number): number {
+    return distance * this._actualCssZoom() / this._zoomFactorForBcrMeasure()
+  }
+
+  private _layoutDistanceFromBcr(distance: number): number {
+    return distance / this._zoomFactorForBcrMeasure()
+  }
+
   onRowReorderStart(evt: RowReorderStartEvent) {
     if (this.doc.isReadonly) return
     const rows = this._getRowElements()
@@ -1244,15 +1440,22 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const firstRect = rows[0].getBoundingClientRect()
     const srcRect = src.getBoundingClientRect()
     const srcEndRect = srcEnd.getBoundingClientRect()
+    // position 跟 size 用独立的 zoom factor：WebKit 上两者可能不对称（top 当 visual，
+    // height 仍 × zoom）。`previewVisualHeight` 存原始 visual 值，move 时用于 cursor
+    // centering，避免 size factor 跟 position factor 不一致时中心算错位。
+    const bcrH = srcEndRect.bottom - srcRect.top
+    const bcrW = srcRect.width
+    const visualH = this._visualDistanceFromBcr(srcEndRect.bottom - srcRect.top)
 
     this._rowReorder = {
       fromIndex: closure.start,
       count: closure.count,
       targetIndex: closure.start,
-      dropLineTop: firstRect.top - wrapperRect.top,
-      previewTop: srcRect.top - wrapperRect.top,
-      previewHeight: srcEndRect.bottom - srcRect.top,
-      previewWidth: srcRect.width,
+      dropLineTop: this._stylePositionFromBcrDistance(firstRect.top - wrapperRect.top),
+      previewTop: this._stylePositionFromBcrDistance(srcRect.top - wrapperRect.top),
+      previewHeight: this._styleSizeFromBcrDistance(bcrH),
+      previewWidth: this._styleSizeFromBcrDistance(bcrW),
+      previewVisualHeight: visualH,
     }
     this._hideTableMenu()
     this.changeDetectorRef.markForCheck()
@@ -1264,9 +1467,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     if (!rows.length) return
 
     const wrapperRect = this.tableWrapper.nativeElement.getBoundingClientRect()
-    const { fromIndex, count } = this._rowReorder
+    const { fromIndex, count, previewVisualHeight } = this._rowReorder
     const { targetIndex, dropLineTop } = this._computeRowDropTarget(evt.cursorY, rows, wrapperRect, fromIndex, count)
-    const previewTop = evt.cursorY - wrapperRect.top - this._rowReorder.previewHeight / 2
+    const cursorDistance = evt.cursorY - wrapperRect.top
+    // 用 visualH（不是 previewHeight，后者按 size factor 已折算）做 centering：
+    // 把 cursor 在 visual viewport 里的位置先减去 visualH/2，再 / posZ 折算回 style.top 单位。
+    // 这样无论 position 和 size factor 是否一致，preview 渲染后的中心始终落在 cursor。
+    const previewTop = this._stylePositionFromVisualDistance(cursorDistance - previewVisualHeight / 2)
 
     this._rowReorder = {
       ...this._rowReorder,
@@ -1377,7 +1584,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       ? rows[rowCount - 1].getBoundingClientRect().bottom
       : rows[down].getBoundingClientRect().top
 
-    return Math.abs(cursorY - upY) <= Math.abs(cursorY - downY) ? up : down
+    const wrapperTop = this.tableWrapper.nativeElement.getBoundingClientRect().top
+    const cursorYInBcr = wrapperTop + this._stylePositionFromVisualDistance(cursorY - wrapperTop) * this._zoomFactorForBcr()
+    return Math.abs(cursorYInBcr - upY) <= Math.abs(cursorYInBcr - downY) ? up : down
   }
 
   private _computeRowDropTarget(
@@ -1387,10 +1596,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     fromIndex: number,
     count: number,
   ): { targetIndex: number, dropLineTop: number } {
+    const cursorYInBcr = wrapperRect.top + this._stylePositionFromVisualDistance(cursorY - wrapperRect.top) * this._zoomFactorForBcr()
     let targetIndex = rows.length
     for (let i = 0; i < rows.length; i++) {
       const rect = rows[i].getBoundingClientRect()
-      if (cursorY < rect.top + rect.height / 2) {
+      if (cursorYInBcr < rect.top + rect.height / 2) {
         targetIndex = i
         break
       }
@@ -1406,7 +1616,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     if (targetIndex > fromIndex && targetIndex < fromIndex + count) {
       targetIndex = fromIndex
     }
-    const dropLineTop = this._computeDropLineTop(rows, targetIndex) - wrapperRect.top
+    const dropLineTop = this._stylePositionFromBcrDistance(this._computeDropLineTop(rows, targetIndex) - wrapperRect.top)
     return { targetIndex, dropLineTop }
   }
 
@@ -1427,20 +1637,28 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const colWidths = this.props.colWidths || []
     const wrapperRect = this.tableWrapper.nativeElement.getBoundingClientRect()
     const tbodyRect = this.tableBody.getBoundingClientRect()
+    // 全程用 visual 坐标算位置/尺寸，最后才 / posZ 折成 style 单位——这样跨浏览器统一：
+    // Chromium (posZ=actualZoom) 和 WebKit (posZ=1) 都自动得到正确的 style.left。
+    // sizeZ 单独应用到 style.width / style.height（WebKit 上可能跟 posZ 不一致）。
+    // colWidths 是 layout 值，需要 × actualZoom 折成 visual 才能跟 BCR (visual) 相加。
+    const actualZoom = this.fullscreenController?.zoom$.value ?? 1
 
-    const leftOffset = this._colLeftOffset(closure.start, colWidths)
-    const previewLeft = tbodyRect.left + leftOffset - wrapperRect.left
-    const previewWidth = colWidths.slice(closure.start, closure.start + closure.count).reduce((a, b) => a + b, 0)
-    const previewHeight = tbodyRect.height
+    const layoutLeftOffset = this._colLeftOffset(closure.start, colWidths)
+    const layoutWidth = colWidths.slice(closure.start, closure.start + closure.count).reduce((a, b) => a + b, 0)
+    const visualLeftOffset = layoutLeftOffset * actualZoom
+    const visualW = layoutWidth * actualZoom
+    const visualH = this._visualDistanceFromBcr(tbodyRect.height)
+    const visualDistanceToTbody = this._visualDistanceFromBcr(tbodyRect.left - wrapperRect.left)
 
     this._colReorder = {
       fromIndex: closure.start,
       count: closure.count,
       targetIndex: closure.start,
-      dropLineLeft: tbodyRect.left - wrapperRect.left,
-      previewLeft,
-      previewWidth,
-      previewHeight,
+      dropLineLeft: this._stylePositionFromVisualDistance(visualDistanceToTbody),
+      previewLeft: this._stylePositionFromVisualDistance(visualDistanceToTbody + visualLeftOffset),
+      previewWidth: this._styleSizeFromVisualDistance(visualW),
+      previewHeight: this._styleSizeFromVisualDistance(visualH),
+      previewVisualWidth: visualW,
     }
     this._hideTableMenu()
     this.changeDetectorRef.markForCheck()
@@ -1449,9 +1667,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   onColReorderMove(evt: ColReorderMoveEvent) {
     if (!this._colReorder) return
     const wrapperRect = this.tableWrapper.nativeElement.getBoundingClientRect()
-    const { fromIndex, count, previewWidth } = this._colReorder
-    const { targetIndex, dropLineLeft } = this._computeColDropTarget(evt.cursorX, wrapperRect, fromIndex, count)
-    const previewLeft = evt.cursorX - wrapperRect.left - previewWidth / 2
+    const actualZoom = this.fullscreenController?.zoom$.value ?? 1
+    const { fromIndex, count, previewVisualWidth } = this._colReorder
+    const { targetIndex, dropLineLeft } = this._computeColDropTarget(evt.cursorX, wrapperRect, fromIndex, count, actualZoom)
+    // 用 visualW 做 cursor centering，跟 row reorder 同理（避免 sizeZ ≠ posZ 时中心偏移）。
+    const cursorDistance = evt.cursorX - wrapperRect.left
+    const previewLeft = this._stylePositionFromVisualDistance(cursorDistance - previewVisualWidth / 2)
 
     this._colReorder = {
       ...this._colReorder,
@@ -1541,7 +1762,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     colWidths: number[],
     matrix: CellMatrixEntry[][],
     rowCount: number,
+    wrapperRect: DOMRect,
     tbodyLeft: number,
+    actualZoom: number = 1,
   ): number {
     const colCount = colWidths.length
     if (targetIndex <= 0) return 0
@@ -1563,29 +1786,46 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     let down = targetIndex
     while (down < colCount && splitsMerge(down)) down++
 
-    const upX = tbodyLeft + this._colLeftOffset(up, colWidths)
-    const downX = tbodyLeft + this._colLeftOffset(down, colWidths)
+    // 比较 cursor 跟两个候选边界哪个更近，要统一到同一坐标系。
+    // clientX 是 visual viewport 坐标；部分 WKWebView 下 BCR 距离可能是 layout 坐标，
+    // 所以先转成 BCR 坐标差，再折成 colWidths 使用的 layout 坐标。
+    const cursorLayoutFromWrapper = (cursorX - wrapperRect.left) / actualZoom
+    const tbodyLayoutFromWrapper = this._layoutDistanceFromBcr(tbodyLeft - wrapperRect.left)
+    const cursorInLocal = cursorLayoutFromWrapper - tbodyLayoutFromWrapper
+    const upLocal = this._colLeftOffset(up, colWidths)
+    const downLocal = this._colLeftOffset(down, colWidths)
 
-    return Math.abs(cursorX - upX) <= Math.abs(cursorX - downX) ? up : down
+    return Math.abs(cursorInLocal - upLocal) <= Math.abs(cursorInLocal - downLocal) ? up : down
   }
 
+  /**
+   * @param actualZoom 当前 CSS zoom 实际值（不是 posZ）；用于 visual ↔ layout 互转。
+   *                   dropLineLeft 的 / posZ 折算单独在末尾应用。
+   */
   private _computeColDropTarget(
     cursorX: number,
     wrapperRect: DOMRect,
     fromIndex: number,
     count: number,
+    actualZoom: number = 1,
   ): { targetIndex: number, dropLineLeft: number } {
     const colWidths = this.props.colWidths || []
     const colCount = colWidths.length
     const tbodyRect = this.tableBody.getBoundingClientRect()
     const tbodyLeft = tbodyRect.left
 
+    // 把 cursor 从 viewport visual 坐标折算成 tbody 内部 layout 坐标（colWidths 累加单位）。
+    // 部分 WKWebView 下 BCR 自身不乘 zoom，直接用 visual/BCR 差值会把坐标放大一倍。
+    const cursorLayoutFromWrapper = (cursorX - wrapperRect.left) / actualZoom
+    const tbodyLayoutFromWrapper = this._layoutDistanceFromBcr(tbodyLeft - wrapperRect.left)
+    const cursorInLocal = cursorLayoutFromWrapper - tbodyLayoutFromWrapper
+
     // Walk cumulative widths and find which column mid-point the cursor passed.
     let acc = 0
     let targetIndex = colCount
     for (let i = 0; i < colCount; i++) {
       const w = colWidths[i] || 0
-      if (cursorX < tbodyLeft + acc + w / 2) {
+      if (cursorInLocal < acc + w / 2) {
         targetIndex = i
         break
       }
@@ -1595,13 +1835,18 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // Snap to merge-safe boundary.
     const rows = this.getChildrenBlocks()
     const matrix = buildCellMatrix(rows, rows.length, colCount)
-    targetIndex = this._snapColBoundary(targetIndex, cursorX, colWidths, matrix, rows.length, tbodyLeft)
+    targetIndex = this._snapColBoundary(targetIndex, cursorX, colWidths, matrix, rows.length, wrapperRect, tbodyLeft, actualZoom)
 
     if (targetIndex > fromIndex && targetIndex < fromIndex + count) {
       targetIndex = fromIndex
     }
 
-    const dropLineLeft = tbodyLeft + this._colLeftOffset(targetIndex, colWidths) - wrapperRect.left
+    // dropLineLeft 给 inline style 用：先在 visual 坐标算出列边界相对 wrapper 的偏移，
+    // 再按实际 position 渲染语义折成 style.left 单位。
+    const layoutOffset = this._colLeftOffset(targetIndex, colWidths)
+    const visualOffset = layoutOffset * actualZoom
+    const visualDistance = this._visualDistanceFromBcr(tbodyLeft - wrapperRect.left)
+    const dropLineLeft = this._stylePositionFromVisualDistance(visualDistance + visualOffset)
     return { targetIndex, dropLineLeft }
   }
 

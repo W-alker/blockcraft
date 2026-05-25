@@ -102,133 +102,137 @@ const schemas = new SchemaManager([
 ])
 
 @Component({
-  selector: 'block-craft-editor',
+  selector: "block-craft-editor",
   template: `
     <section class="editor-shell">
-      <bc-fixed-toolbar
-        [doc]="doc"
-        [stickyTop]="stickyTop"></bc-fixed-toolbar>
+      <bc-fixed-toolbar [doc]="doc" [stickyTop]="stickyTop"></bc-fixed-toolbar>
 
-      <div class="editor-container" #container (mousedown)="onContainerMousedown($event)"></div>
+      <div
+        class="editor-container"
+        #container
+        (mousedown)="onContainerMousedown($event)"
+      ></div>
     </section>
   `,
-  styles: [`:host {
-    display: block;
-    min-width: 0;
-  }
-
-  .editor-shell {
-    position: relative;
-  }
-
-  .editor-container {
-    min-height: min(78vh, 960px);
-    max-height: min(78vh, 960px);
-    overflow-x: hidden;
-    overflow-y: auto;
-    padding: 48px 56px 64px;
-    border-radius: 24px;
-    color: var(--bc-color);
-    border: 1px solid var(--bc-border-color-light);
-    background:
-      linear-gradient(180deg, var(--bc-bg-elevated), var(--bc-bg-primary));
-    box-shadow: var(--bc-shadow-lg);
-  }
-
-  ::ng-deep {
-    [data-blockcraft-root="true"] {
-
-      span[data-mention-id] {
-        padding: 0 .15em;
-        color: #4857E2;
-        cursor: pointer;
-        white-space: pre-wrap;
-        word-break: break-all;
-
-        &[data-mention-type="user"] {
-          &::before {
-            content: '@';
-          }
-        }
-
-        &[data-mention-type="doc"] {
-          &::before {
-            content: "\\e6c8";
-            font-family: "bc_icon" !important;
-            font-size: 1em;
-            font-style: normal;
-          }
-        }
-
-        &:hover {
-          background-color: rgba(72, 87, 226, 0.1);
-          border-radius: 4px;
-          text-decoration: underline;
-        }
+  styles: [
+    `
+      :host {
+        display: block;
+        min-width: 0;
       }
 
-    }
+      .editor-shell {
+        position: relative;
+      }
 
-  }
-  `],
-  imports: [
-    FixedTextToolbarComponent
+      .editor-container {
+        min-height: min(78vh, 960px);
+        max-height: min(78vh, 960px);
+        overflow-x: hidden;
+        overflow-y: auto;
+        padding: 48px 56px 64px;
+        border-radius: 24px;
+        color: var(--bc-color);
+        border: 1px solid var(--bc-border-color-light);
+        background: linear-gradient(
+          180deg,
+          var(--bc-bg-elevated),
+          var(--bc-bg-primary)
+        );
+        box-shadow: var(--bc-shadow-lg);
+      }
+
+      ::ng-deep {
+        [data-blockcraft-root="true"] {
+          span[data-mention-id] {
+            padding: 0 0.15em;
+            color: #4857e2;
+            cursor: pointer;
+            white-space: pre-wrap;
+            word-break: break-all;
+
+            &[data-mention-type="user"] {
+              &::before {
+                content: "@";
+              }
+            }
+
+            &[data-mention-type="doc"] {
+              &::before {
+                content: "\\e6c8";
+                font-family: "bc_icon" !important;
+                font-size: 1em;
+                font-style: normal;
+              }
+            }
+
+            &:hover {
+              background-color: rgba(72, 87, 226, 0.1);
+              border-radius: 4px;
+              text-decoration: underline;
+            }
+          }
+        }
+      }
+    `,
   ],
+  imports: [FixedTextToolbarComponent],
   standalone: true,
   providers: [
-    {provide: DOC_FILE_SERVICE_TOKEN, useClass: MyDocFileService},
-    {provide: DOC_MESSAGE_SERVICE_TOKEN, useClass: MyDocMessageService},
-    {provide: BLOCK_CREATOR_SERVICE_TOKEN, useClass: MyBlockCreatorService},
-    {provide: DOC_LINK_PREVIEWER_SERVICE_TOKEN, useClass: DocLinkPreviewerService},
-    {provide: DOC_ADAPTER_SERVICE_TOKEN, useClass: AdapterService},
+    { provide: DOC_FILE_SERVICE_TOKEN, useClass: MyDocFileService },
+    { provide: DOC_MESSAGE_SERVICE_TOKEN, useClass: MyDocMessageService },
+    { provide: BLOCK_CREATOR_SERVICE_TOKEN, useClass: MyBlockCreatorService },
+    {
+      provide: DOC_LINK_PREVIEWER_SERVICE_TOKEN,
+      useClass: DocLinkPreviewerService,
+    },
+    { provide: DOC_ADAPTER_SERVICE_TOKEN, useClass: AdapterService },
     ConsoleLogger,
-    MyCommentService
-  ]
+    MyCommentService,
+  ],
 })
 export class EditorComponent implements OnDestroy {
-
-  @ViewChild('container', {read: ElementRef}) container!: ElementRef;
+  @ViewChild("container", { read: ElementRef }) container!: ElementRef;
   @Input() stickyTop = 0;
   constructor(
     private injector: Injector,
-    private logger: ConsoleLogger
-  ) {
-  }
+    private logger: ConsoleLogger,
+  ) {}
 
-  docId = '689ac2b31a9abe3ae8a6788d'
-  rootId = '689ac2b31a9abe3ae8a6788d'
+  docId = "111";
+  rootId = "111";
 
   private readonly translatePlugin = new TranslatePlugin({
-    sourceLang: 'auto',
-    defaultTargetLang: 'chinese_simplified',
-    targetLangWhenSourceIsChinese: 'chinese_simplified',
+    sourceLang: "auto",
+    defaultTargetLang: "chinese_simplified",
+    targetLangWhenSourceIsChinese: "chinese_simplified",
     service: new MyDocTranslationService(),
-  })
+  });
 
   private readonly blockControllerPlugin = new BlockControllerPlugin(
     mergeBlockControllerOptions(
       {
         customTools: [
           {
-            type: 'tool',
-            name: 'copyBlockLink',
+            type: "tool",
+            name: "copyBlockLink",
             value: true,
-            icon: 'bc_fuzhilianjie',
-            label: '复制段落链接',
+            icon: "bc_fuzhilianjie",
+            label: "复制段落链接",
           },
         ],
         customToolHandler: (item, block) => {
           switch (item.name) {
-            case 'copyBlockLink':
-              this.copyBlockLink(block)
-              return true
+            case "copyBlockLink":
+              this.copyBlockLink(block);
+              return true;
           }
-          return false
-        }
+          return false;
+        },
       },
-      this.translatePlugin.createBlockControllerOptions()
-    )
-  )
+      this.translatePlugin.createBlockControllerOptions(),
+    ),
+  );
 
   doc = new BlockCraftDoc({
     yDoc: new Y.Doc({
@@ -241,104 +245,129 @@ export class EditorComponent implements OnDestroy {
     injector: this.injector,
     embeds: [
       [
-        'mention',
+        "mention",
         {
           toView: (embed) => {
-            const span = document.createElement('span')
-            span.textContent = embed.insert['mention'] as string
+            const span = document.createElement("span");
+            span.textContent = embed.insert["mention"] as string;
             // InlineManager.setAttrs(span, embed.attributes!)
-            span.setAttribute('data-mention-id', (embed.attributes!['mentionId'] || embed.attributes!['d:mentionId']) as string)
-            span.setAttribute('data-mention-type', (embed.attributes!['mentionType'] || embed.attributes!['d:mentionType']) as string)
-            return span
+            span.setAttribute(
+              "data-mention-id",
+              (embed.attributes!["mentionId"] ||
+                embed.attributes!["d:mentionId"]) as string,
+            );
+            span.setAttribute(
+              "data-mention-type",
+              (embed.attributes!["mentionType"] ||
+                embed.attributes!["d:mentionType"]) as string,
+            );
+            return span;
           },
           toDelta: (ele) => {
             return {
-              insert: {mention: ele.textContent!},
+              insert: { mention: ele.textContent! },
               attributes: {
-                'mentionId': ele.getAttribute('data-mention-id')!,
-                'mentionType': ele.getAttribute('data-mention-type')
-              }
-            }
-          }
-        }
+                mentionId: ele.getAttribute("data-mention-id")!,
+                mentionType: ele.getAttribute("data-mention-type"),
+              },
+            };
+          },
+        },
       ],
       [
-        'latex', {
-        toView: (embed) => {
-          const span = document.createElement('span')
-          span.classList.add('inline-formula')
-          const latex = (embed.insert['latex'] || '') as string
-          span.setAttribute('data-latex', latex)
-          try {
-            katex.render(latex, span, {output: 'mathml', throwOnError: false})
-          } catch {
-            span.textContent = latex
-          }
-          return span
+        "latex",
+        {
+          toView: (embed) => {
+            const span = document.createElement("span");
+            span.classList.add("inline-formula");
+            const latex = (embed.insert["latex"] || "") as string;
+            span.setAttribute("data-latex", latex);
+            try {
+              katex.render(latex, span, {
+                output: "mathml",
+                throwOnError: false,
+              });
+            } catch {
+              span.textContent = latex;
+            }
+            return span;
+          },
+          toDelta: (ele) => {
+            return {
+              insert: {
+                latex: ele.getAttribute("data-latex") || ele.textContent || "",
+              },
+              attributes: InlineManager.getAttrs(ele),
+            };
+          },
         },
-        toDelta: (ele) => {
-          return {
-            insert: {latex: ele.getAttribute('data-latex') || ele.textContent || ''},
-            attributes: InlineManager.getAttrs(ele)
-          }
-        }
-      }
       ],
     ],
-    plugins: [new OrderedBlockPlugin(), new CodeInlineEditorBinding(),
+    plugins: [
+      new OrderedBlockPlugin(),
+      new CodeInlineEditorBinding(),
       new FloatTextToolbarPlugin(),
       new BlockTransformerPlugin(),
       this.blockControllerPlugin,
       new TableBlockBinding(),
       new PasteFormatSelectorPlugin(),
       new PlaceholderPlugin(),
-      new ImgToolbarPlugin(), new CalloutToolbarPlugin(), new AttachmentExtensionPlugin(),
-      new EmbedFrameExtensionPlugin(), new BookmarkBlockExtensionPlugin(),
+      new ImgToolbarPlugin(),
+      new CalloutToolbarPlugin(),
+      new AttachmentExtensionPlugin(),
+      new EmbedFrameExtensionPlugin(),
+      new BookmarkBlockExtensionPlugin(),
       new FormulaBlockExtensionPlugin(),
       new InlineLinkExtension((link) => {
-        if (link.startsWith('http://doc-pre.com')) {
-          window.open(link.replace('http://doc-pre.com', 'http://localhost:8081/test3'), '_blank')
-        } else window.open(link, '_blank')
+        if (link.startsWith("http://doc-pre.com")) {
+          window.open(
+            link.replace("http://doc-pre.com", "http://localhost:8081/test3"),
+            "_blank",
+          );
+        } else window.open(link, "_blank");
       }),
       new MentionPlugin({
         panel: createDefaultMentionPanel({
           request: mentionRequest,
         }),
-      }), new DividerExtensionPlugin(),
+      }),
+      new DividerExtensionPlugin(),
       new FindReplacePlugin(),
       this.translatePlugin,
-      new BlockGapCreatorPlugin()
-    ]
-  })
+      new BlockGapCreatorPlugin(),
+    ],
+  });
 
-  ngOnDestroy() {
-  }
+  ngOnDestroy() {}
 
   copyBlockLink(block: BlockCraft.BlockComponent) {
-    const url = 'http://doc-pre.com' + '?blockId=' + block.id
+    const url = "http://doc-pre.com" + "?blockId=" + block.id;
     this.doc.clipboard.copyText(url).then(() => {
-      this.doc.messageService.success('已复制链接')
-    })
+      this.doc.messageService.success("已复制链接");
+    });
   }
 
   onContainerMousedown(evt: MouseEvent) {
     if (evt.target === evt.currentTarget && evt.eventPhase === evt.AT_TARGET) {
-      evt.preventDefault()
-      evt.stopPropagation()
-      this.appendParagraph()
+      evt.preventDefault();
+      evt.stopPropagation();
+      this.appendParagraph();
     }
   }
 
   private appendParagraph() {
-    if (this.doc.root.lastChildren?.flavour === 'paragraph') {
-      this.doc.selection.setCursorAtBlock(this.doc.root.lastChildren, false)
-      return
+    if (this.doc.root.lastChildren?.flavour === "paragraph") {
+      this.doc.selection.setCursorAtBlock(this.doc.root.lastChildren, false);
+      return;
     }
 
-    const paragraph = this.doc.schemas.createSnapshot('paragraph', [''])
-    void this.doc.chain()
-      .insertSnapshots(this.doc.rootId, this.doc.root.childrenLength, [paragraph])
+    const paragraph = this.doc.schemas.createSnapshot("paragraph", [""]);
+    void this.doc
+      .chain()
+      .insertSnapshots(this.doc.rootId, this.doc.root.childrenLength, [
+        paragraph,
+      ])
       .setCursorAtBlock(paragraph.id, true)
-      .run()
+      .run();
   }
 }

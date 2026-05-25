@@ -2021,6 +2021,7 @@ $$
     this.editor?.doc.yDoc.on('update', initFn)
 
     this.provider = new WebsocketProvider(
+      // 'ws://ws-doc-v2.cses7.com/collaboration',
       'ws://localhost:1234',
       // 'ws://196.168.1.153:1234',
       // 'ws://ws-doc.cses7.com',

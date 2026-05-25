@@ -1,15 +1,21 @@
 <div class="table-scrollable bc-scrollable-container" #tableScrollable (scroll)="onScroll($event)">
-  <table-row-bar [rowIds]="_childrenIds" [rowHeightsRecord]="_rowHeightsRecord"
-                 [visibleHandleIndex]="_visibleRowHandle"
-                 [selectedRange]="_activeRowRange"
-                 (hoveredHandleChange)="onRowHandleHovered($event)"
-                 (selectedRangeChange)="onRowBarSelected($event)"
-                 (reorderStart)="onRowReorderStart($event)"
-                 (reorderMove)="onRowReorderMove($event)"
-                 (reorderEnd)="onRowReorderEnd($event)"
-                 #rowBarComponent></table-row-bar>
-
   <div class="table-wrapper" #tableWrapper>
+    <!--
+      table-row-bar 跟 table-col-bar 一样放在 .table-wrapper 内部。
+      containing block = .table-wrapper：自动跟随 wrapper 居中浮动 / CSS zoom 缩放 /
+      水平滚动（horizontal scroll on .table-scrollable 移动 wrapper，row-bar 跟着移动）。
+      不需要任何 JS 计算或同步。
+    -->
+    <table-row-bar [rowIds]="_childrenIds" [rowHeightsRecord]="_rowHeightsRecord"
+                   [visibleHandleIndex]="_visibleRowHandle"
+                   [selectedRange]="_activeRowRange"
+                   (hoveredHandleChange)="onRowHandleHovered($event)"
+                   (selectedRangeChange)="onRowBarSelected($event)"
+                   (reorderStart)="onRowReorderStart($event)"
+                   (reorderMove)="onRowReorderMove($event)"
+                   (reorderEnd)="onRowReorderEnd($event)"
+                   #rowBarComponent></table-row-bar>
+
     <div class="table-menu-anchor"
          #tableMenuAnchor
          [style.left.px]="_tableMenu.left + _tableMenu.width / 2"
