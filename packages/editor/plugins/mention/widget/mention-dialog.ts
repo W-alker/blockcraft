@@ -111,6 +111,13 @@ export class MentionDialog {
     this.tabChange.emit(MENTION_TABS[index].type)
   }
 
+  moveTab(direction: 'prev' | 'next') {
+    const offset = direction === 'prev' ? -1 : 1
+    const nextIndex = (this.activeTabIndex + offset + MENTION_TABS.length) % MENTION_TABS.length
+    this.onTabChange(nextIndex)
+    this.cdr.detectChanges()
+  }
+
   ngOnDestroy() {
     this.close.emit(true)
   }
