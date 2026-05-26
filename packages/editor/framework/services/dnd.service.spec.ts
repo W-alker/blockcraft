@@ -143,3 +143,72 @@ describe('DocDndService.onSortBlocks — cross parent', () => {
     expect(svc.onSortBlock).toHaveBeenCalledWith(b1, target, 'after')
   })
 })
+
+describe('DocDndService.onSortBlocks — column path', () => {
+  function makeColumnMockDoc(blocks: Record<string, any>) {
+    const doc = makeMockDoc(blocks)
+    const newColumnSnapshot = { id: 'new-col', flavour: 'column', props: {}, children: [], meta: {} }
+    const columnsSnapshot = { id: 'new-cols', flavour: 'columns', props: {}, children: [], meta: {} }
+    doc.schemas.has = (flavour: string) => flavour === 'column' || flavour === 'columns'
+    doc.schemas.get = (flavour: string) => flavour === 'column' || flavour === 'columns'
+      ? { metadata: {}, flavour }
+      : null
+    doc.schemas.createSnapshot = (flavour: string) =>
+      flavour === 'column' ? { ...newColumnSnapshot } :
+      flavour === 'columns' ? { ...columnsSnapshot, children: [{ ...newColumnSnapshot, id: 'c1' }, { ...newColumnSnapshot, id: 'c2' }] } :
+      null
+    doc.crud.insertBlocks = jasmine.createSpy('insertBlocks')
+    return doc
+  }
+
+  it('drops multi-block into a new column to the right of an existing column member', () => {
+    const root = makeBlock('root', null, 'root', { childrenLength: 3 })
+    const columnsBlock = makeBlock('cols', 'root', 'columns', { __index: 0, childrenLength: 2 })
+    const existingCol = makeBlock('col1', 'cols', 'column', { __index: 0, childrenLength: 2 })
+    const b1 = makeBlock('b1', 'pa', 'paragraph', { __index: 0 })
+    const b2 = makeBlock('b2', 'pa', 'paragraph', { __index: 1 })
+    const parentA = makeBlock('pa', 'root', 'section', { __index: 1 })
+    const targetInCol = makeBlock('t', 'col1', 'paragraph', { __index: 0 })
+    b1.parentBlock = parentA
+    b2.parentBlock = parentA
+    parentA.parentBlock = root
+    targetInCol.parentBlock = existingCol
+    existingCol.parentBlock = columnsBlock
+    columnsBlock.parentBlock = root
+
+    const doc = makeColumnMockDoc({ root, cols: columnsBlock, col1: existingCol, pa: parentA, b1, b2, t: targetInCol })
+    const svc = new DocDndService(doc)
+    svc.onSortBlocks([b1, b2], targetInCol, 'right')
+
+    // Expect: new column inserted next to existingCol, then both b1 and b2 moved into it.
+    expect((doc.crud.insertBlocks as jasmine.Spy)).toHaveBeenCalled()
+    expect(doc._calls.moveBlocks.length).toBe(1)
+    const [sourceParentId, firstIdx, count] = doc._calls.moveBlocks[0]
+    expect(sourceParentId).toBe('pa')
+    expect(firstIdx).toBe(0)
+    expect(count).toBe(2)
+  })
+
+  it('rejects column drop when existing parent already has 8 columns', () => {
+    const root = makeBlock('root', null, 'root')
+    const columnsBlock = makeBlock('cols', 'root', 'columns', { childrenLength: 8 })
+    const existingCol = makeBlock('col1', 'cols', 'column', { __index: 0 })
+    const parentA = makeBlock('pa', 'root', 'section')
+    const b1 = makeBlock('b1', 'pa', 'paragraph', { __index: 0 })
+    const b2 = makeBlock('b2', 'pa', 'paragraph', { __index: 1 })
+    const targetInCol = makeBlock('t', 'col1', 'paragraph', { __index: 0 })
+    b1.parentBlock = parentA
+    b2.parentBlock = parentA
+    parentA.parentBlock = root
+    targetInCol.parentBlock = existingCol
+    existingCol.parentBlock = columnsBlock
+    columnsBlock.parentBlock = root
+
+    const doc = makeColumnMockDoc({ root, cols: columnsBlock, col1: existingCol, pa: parentA, b1, b2, t: targetInCol })
+    const svc = new DocDndService(doc)
+    svc.onSortBlocks([b1, b2], targetInCol, 'right')
+
+    expect(doc._calls.warn).toEqual(['分栏最多支持8列'])
+    expect(doc._calls.moveBlocks.length).toBe(0)
+  })
+})

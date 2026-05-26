@@ -396,11 +396,68 @@ export class DocDndService {
   }
 
   private _onSetColumnBatch(
-    _sources: BlockCraft.BlockComponent[],
-    _target: BlockCraft.BlockComponent,
-    _position: DragPosition
+    sources: BlockCraft.BlockComponent[],
+    target: BlockCraft.BlockComponent,
+    position: 'left' | 'right'
   ): void {
-    // TODO(task-7): implement multi-block column drop
+    const parent = target.parentBlock
+    const columnSchema = this.doc.schemas.get('column')
+    if (!parent || !columnSchema) return
+
+    const sourceParent = sources[0].parentBlock
+    if (!sourceParent) return
+
+    // Case A: target is already inside an existing `column` — add a new sibling column.
+    if (parent.flavour === 'column') {
+      const columnsBlock = parent.parentBlock
+      if (!columnsBlock || columnsBlock.childrenLength >= 8) {
+        this.doc.messageService.warn(`分栏最多支持8列`)
+        return
+      }
+      const newColumn = this.doc.schemas.createSnapshot('column', [[]])
+      const insertIdx = parent.getIndexOfParent() + (position === 'left' ? 0 : 1)
+
+      const sourceParentId = sourceParent.id
+      const firstIdx = sources[0].getIndexOfParent()
+      const count = sources.length
+
+      this.doc.crud.transact(() => {
+        this.doc.crud.insertBlocks(columnsBlock.id, insertIdx, [newColumn])
+        this.doc.crud.moveBlocks(sourceParentId, firstIdx, count, newColumn.id, 0)
+        this._handleSourceParentAfterMove(sourceParentId)
+      })
+      return
+    }
+
+    // Case B: target is a regular block — create a new `columns` wrapper around it.
+    for (const s of sources) {
+      if (!this.doc.schemas.isValidChildren(s.flavour, columnSchema)) {
+        this.doc.messageService.warn(`不允许的分栏内容`)
+        return
+      }
+    }
+    if (!this.doc.schemas.isValidChildren(target.flavour, columnSchema)) {
+      this.doc.messageService.warn(`不允许的分栏内容`)
+      return
+    }
+
+    const columns = this.doc.schemas.createSnapshot('columns', [2])
+    const column1 = columns.children[0] as IBlockSnapshot
+    const column2 = columns.children[1] as IBlockSnapshot
+    column1.children = []
+    column2.children = []
+
+    this.doc.crud.transact(() => {
+      this.doc.crud.insertBlocks(target.parentId!, target.getIndexOfParent(), [columns])
+    })
+    this.doc.crud.transact(() => {
+      const sourceParentId = sourceParent.id
+      const firstIdx = sources[0].getIndexOfParent()
+      const count = sources.length
+      this.doc.crud.moveBlocks(sourceParentId, firstIdx, count, position === 'left' ? column1.id : column2.id, 0)
+      this.doc.crud.moveBlocks(target.parentId!, target.getIndexOfParent(), 1, position === 'left' ? column2.id : column1.id, 0)
+      this._handleSourceParentAfterMove(sourceParentId)
+    })
   }
 
   // TODO 文件处理应该交由插件
