@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-04-08
+> Last updated: 2026-05-26
 
 ## BlockControllerPlugin
 
@@ -64,8 +64,26 @@ new BlockControllerPlugin({
 
 ### Notes
 
-- Hides during multi-block selections and in readonly mode
+- Hidden in readonly mode
 - Interacts with `TranslatePlugin` which provides its own `blockMenuResolver`/`blockMenuActionHandler` pair via `createBlockControllerOptions()`
+
+### Multi-block drag (since v?.?.?)
+
+The drag handle now respects an active cross-block selection: when the user
+drag-selects multiple blocks and then presses the drag handle, the entire
+selected range is dragged as one unit.
+
+- Behavior triggers only when:
+  - `doc.selection.value` is cross-block (`!isInSameBlock`),
+  - The hovered active block is **inside** the selection, AND
+  - All selected blocks share the same `parentId` (a contiguous sibling range).
+- Otherwise the plugin falls back to single-block drag of the hovered block.
+- Cross-block selection no longer hides the drag handle; instead it anchors
+  the handle on `selection.firstBlock`.
+
+The drag is dispatched as `{ kind: 'origin-blocks', blockIds: string[] }` to
+`doc.dragController.startDrag(...)`, and committed via the new
+`DocDndService.onSortBlocks(sources, target, position)` API.
 
 ---
 
