@@ -327,9 +327,21 @@ export class DocInternalDragController {
       if (source && source !== this._prevBlock) {
         this.doc.dndService.onSortBlock(source, this._prevBlock, this._prevDragPosition)
       }
-    } else if (this._data.kind === 'origin-blocks') {
-      // TODO(task-4): dispatch to dndService.onSortBlocks for multi-block drag
-    } else if (this._data.kind === 'new-block') {
+      return
+    }
+
+    if (this._data.kind === 'origin-blocks') {
+      const sources = this._data.blockIds
+        .map(id => this._safeGetBlockById(id))
+        .filter((b): b is BlockCraft.BlockComponent => !!b)
+      if (sources.length < 2) return
+      if (sources.includes(this._prevBlock)) return
+      // Task 5 will add onSortBlocks to DocDndService; cast is temporary.
+      ;(this.doc.dndService as any).onSortBlocks(sources, this._prevBlock, this._prevDragPosition)
+      return
+    }
+
+    if (this._data.kind === 'new-block') {
       this.doc.dndService.onInsertNewBlock(
         this._data.flavour,
         this._data.initProps ?? {},

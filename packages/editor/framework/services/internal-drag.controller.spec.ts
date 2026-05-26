@@ -11,6 +11,7 @@ function makeMockDoc(): any {
     dndService: {
       dragStatus$: { next: jasmine.createSpy('next'), value: 'end' },
       onSortBlock: jasmine.createSpy('onSortBlock'),
+      onSortBlocks: jasmine.createSpy('onSortBlocks'),
       onInsertNewBlock: jasmine.createSpy('onInsertNewBlock'),
     },
   }
@@ -265,6 +266,68 @@ describe('DocInternalDragController state machine', () => {
     expect(ghost.textContent).toBe('Hello world +1')
 
     dispatchPointerCancel(target)
+    hostA.remove()
+    hostB.remove()
+  })
+
+  it('origin-blocks pointerup commits via dndService.onSortBlocks', () => {
+    const hostA = document.createElement('div')
+    const hostB = document.createElement('div')
+    const hostTarget = document.createElement('div')
+    document.body.appendChild(hostA)
+    document.body.appendChild(hostB)
+    document.body.appendChild(hostTarget)
+    const blockA = makeBlock('a', hostA)
+    const blockB = makeBlock('b', hostB)
+    const blockTarget = makeBlock('target', hostTarget)
+    doc.getBlockById = (id: string) =>
+      id === 'a' ? blockA : id === 'b' ? blockB : id === 'target' ? blockTarget : null
+
+    const evt = makePointerEvent('pointerdown', { clientX: 100, clientY: 100 })
+    Object.defineProperty(evt, 'target', { value: target })
+    ctrl.startDrag(evt, { kind: 'origin-blocks', blockIds: ['a', 'b'] })
+    dispatchPointerMove(target, 110, 110)
+    expect(ctrl.state).toBe('dragging')
+
+    // Bypass hit-test plumbing — set internal state directly so commit has a target.
+    ;(ctrl as any)._prevBlock = blockTarget
+    ;(ctrl as any)._prevDragPosition = 'after'
+
+    dispatchPointerUp(target)
+
+    expect(doc.dndService.onSortBlocks).toHaveBeenCalledTimes(1)
+    const [sources, dropTarget, position] = (doc.dndService.onSortBlocks as jasmine.Spy).calls.mostRecent().args
+    expect(sources.map((b: any) => b.id)).toEqual(['a', 'b'])
+    expect(dropTarget).toBe(blockTarget)
+    expect(position).toBe('after')
+
+    hostA.remove()
+    hostB.remove()
+    hostTarget.remove()
+  })
+
+  it('origin-blocks skips commit when target is inside source set', () => {
+    const hostA = document.createElement('div')
+    const hostB = document.createElement('div')
+    document.body.appendChild(hostA)
+    document.body.appendChild(hostB)
+    const blockA = makeBlock('a', hostA)
+    const blockB = makeBlock('b', hostB)
+    doc.getBlockById = (id: string) =>
+      id === 'a' ? blockA : id === 'b' ? blockB : null
+
+    const evt = makePointerEvent('pointerdown', { clientX: 100, clientY: 100 })
+    Object.defineProperty(evt, 'target', { value: target })
+    ctrl.startDrag(evt, { kind: 'origin-blocks', blockIds: ['a', 'b'] })
+    dispatchPointerMove(target, 110, 110)
+
+    ;(ctrl as any)._prevBlock = blockA   // target is one of the sources
+    ;(ctrl as any)._prevDragPosition = 'after'
+
+    dispatchPointerUp(target)
+
+    expect(doc.dndService.onSortBlocks).not.toHaveBeenCalled()
+
     hostA.remove()
     hostB.remove()
   })
