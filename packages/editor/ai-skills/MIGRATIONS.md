@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-05-23 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-05-26 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,65 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-05-26 (minor)
+
+**What changed**: The `block-controller` plugin's drag handle now supports
+multi-block drag. When a cross-block selection exists and the active block is
+inside it, pressing the drag handle drags the entire contiguous sibling range
+as one unit. Non-contiguous or cross-parent selections (e.g. spanning columns
+or table cells) automatically fall back to single-block drag of the hovered
+block.
+
+To support this, the framework adds:
+- `InternalDragData` gains an `origin-blocks` variant:
+  `{ kind: 'origin-blocks'; blockIds: string[] }`.
+- `DocDndService.onSortBlocks(sources, target, position)` is the bulk-commit
+  counterpart of the existing `onSortBlock`.
+
+The existing `origin-block` / `onSortBlock` single-block path is unchanged.
+
+**Why**: Notion-/feishu-style editors let users drag a multi-block selection
+in one motion. Previously the BlockCraft drag handle was hidden whenever a
+cross-block selection was active, forcing users to drop the selection before
+dragging.
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-block.md` — documented the multi-drag behavior of
+  `block-controller`.
+
+### New APIs / Features
+- `InternalDragData` union now includes `{ kind: 'origin-blocks'; blockIds: string[] }`.
+- `DocDndService.onSortBlocks(sources, target, position)` — bulk-commit
+  multi-block drag. Defensive guards: silent no-op when sources are empty,
+  target is inside sources, or schema validation fails (warn + return).
+
+### Behavior Changes
+- `block-controller` plugin: cross-block selection no longer hides the drag
+  handle. The handle is anchored on `selection.firstBlock` and remains
+  draggable. This is the only user-visible behavior change.
+- `dragController.startDrag` silently normalizes `{ kind: 'origin-blocks',
+  blockIds: [] }` (refuses, stays idle) and `{ kind: 'origin-blocks',
+  blockIds: [singleId] }` (downgrades to `origin-block`). Callers do not need
+  to pre-validate the length of `queryBlocksBetween` results.
+
+### Migration Recipe
+For framework consumers who care about the multi-block drag flow, no code
+changes are required. The old single-block path is fully preserved:
+
+```typescript
+// Old (still works)
+dragController.startDrag(evt, { kind: 'origin-block', blockId: activeId })
+
+// New (opt-in, for callers that want bulk drag)
+dragController.startDrag(evt, { kind: 'origin-blocks', blockIds: rangeIds })
+```
+
+For consumers who patched `block-controller` to react to its `hidden` state
+during cross-block selection — that signal is gone. Use
+`doc.selection.selectionChange$` directly to observe selection state.
+
+---
 
 ### v?.?.? - 2026-05-23 (minor)
 

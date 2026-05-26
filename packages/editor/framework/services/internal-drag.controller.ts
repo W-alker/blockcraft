@@ -7,6 +7,7 @@ export type InternalDragState = 'idle' | 'armed' | 'dragging' | 'dropping'
 
 export type InternalDragData =
   | { kind: 'origin-block'; blockId: string }
+  | { kind: 'origin-blocks'; blockIds: string[] }
   | { kind: 'new-block'; flavour: BlockCraft.BlockFlavour; initProps?: IBlockProps }
 
 export interface InternalDragOptions {
@@ -65,7 +66,7 @@ export class DocInternalDragController {
   private _scrollFrame: number | null = null
   private _lastX = 0
   private _lastY = 0
-  private _sourceMarker: HTMLElement | null = null
+  private _sourceMarkers: HTMLElement[] = []
   // drag-over chain：从当前 prevBlock 向上到 root 之前的所有 block hostElement。
   // 任意 block 都可通过 SCSS 的 `&.drag-over { ... }` 订阅这个状态做高亮反馈。
   private _dragOverChain: HTMLElement[] = []
@@ -109,6 +110,16 @@ export class DocInternalDragController {
     if (this.doc.isReadonly) return
     if (!evt.target) return
 
+    // Normalize origin-blocks: must have >= 2 ids; otherwise downgrade to origin-block.
+    // Empty array has nothing to fall back to → refuse (return early).
+    let normalized: InternalDragData = data
+    if (data.kind === 'origin-blocks') {
+      if (data.blockIds.length === 0) return
+      if (data.blockIds.length === 1) {
+        normalized = { kind: 'origin-block', blockId: data.blockIds[0] }
+      }
+    }
+
     // 不再调 setPointerCapture：
     // (1) 我们所有 pointermove/up/cancel 都挂在 window 上 capture phase，事件传递不依赖 capture
     // (2) 部分 Chrome 版本下，对 <img> / 子树 element 调 setPointerCapture 会阻塞 ancestor 的
@@ -118,7 +129,7 @@ export class DocInternalDragController {
     // selection / selectionchange 推导出 block selection 的链路（比如点击图片想让它进入
     // selected 状态）。selection 的清除推迟到真正进 dragging 的 _enterDragging。
     this._activePointerId = evt.pointerId
-    this._data = data
+    this._data = normalized
     this._options = { ...options }
     this._startX = evt.clientX
     this._startY = evt.clientY
@@ -316,7 +327,20 @@ export class DocInternalDragController {
       if (source && source !== this._prevBlock) {
         this.doc.dndService.onSortBlock(source, this._prevBlock, this._prevDragPosition)
       }
-    } else if (this._data.kind === 'new-block') {
+      return
+    }
+
+    if (this._data.kind === 'origin-blocks') {
+      const sources = this._data.blockIds
+        .map(id => this._safeGetBlockById(id))
+        .filter((b): b is BlockCraft.BlockComponent => !!b)
+      if (sources.length < 2) return
+      if (sources.includes(this._prevBlock)) return
+      this.doc.dndService.onSortBlocks(sources, this._prevBlock, this._prevDragPosition)
+      return
+    }
+
+    if (this._data.kind === 'new-block') {
       this.doc.dndService.onInsertNewBlock(
         this._data.flavour,
         this._data.initProps ?? {},
@@ -375,6 +399,13 @@ export class DocInternalDragController {
       const block = this._safeGetBlockById(this._data.blockId)
       const text = block?.hostElement.textContent?.trim().replace(/\s+/g, ' ').slice(0, 60)
       return text || `${block?.flavour ?? 'Block'}`
+    }
+    if (this._data.kind === 'origin-blocks') {
+      const firstId = this._data.blockIds[0]
+      const block = this._safeGetBlockById(firstId)
+      const text = block?.hostElement.textContent?.trim().replace(/\s+/g, ' ').slice(0, 60)
+      const base = text || `${block?.flavour ?? 'Block'}`
+      return `${base} +${this._data.blockIds.length - 1}`
     }
     return `${this._data.flavour}`
   }
@@ -588,16 +619,21 @@ export class DocInternalDragController {
   }
 
   private _applySourceMarker(): void {
-    if (this._data?.kind !== 'origin-block') return
-    const block = this._safeGetBlockById(this._data.blockId)
-    if (!block) return
-    block.hostElement.classList.add('bc-drag-source')
-    this._sourceMarker = block.hostElement
+    if (!this._data) return
+    const ids: string[] =
+      this._data.kind === 'origin-block' ? [this._data.blockId] :
+      this._data.kind === 'origin-blocks' ? this._data.blockIds : []
+    for (const id of ids) {
+      const block = this._safeGetBlockById(id)
+      if (!block) continue
+      block.hostElement.classList.add('bc-drag-source')
+      this._sourceMarkers.push(block.hostElement)
+    }
   }
 
   private _clearSourceMarker(): void {
-    if (!this._sourceMarker) return
-    this._sourceMarker.classList.remove('bc-drag-source')
-    this._sourceMarker = null
+    if (!this._sourceMarkers.length) return
+    for (const el of this._sourceMarkers) el.classList.remove('bc-drag-source')
+    this._sourceMarkers = []
   }
 }

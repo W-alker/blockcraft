@@ -52,6 +52,17 @@ export class FloatTextToolbarPlugin extends DocPlugin {
       if (sel.firstBlock['plainTextOnly'] && sel.lastBlock['plainTextOnly']) return;
       this.openToolbar();
     }, 350));
+
+    // Close the toolbar whenever an internal block drag starts. During drag the
+    // framework suppresses selection recalculation (see
+    // DocInternalDragController.setSuppressRecalculate), so selectionChange$ no
+    // longer fires while pointer is held — without this hook the toolbar would
+    // linger over the drag ghost.
+    this.doc.dragController.state$
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(state => {
+        if (state !== 'idle' && this.toolbarOvr) this.closeToolbar();
+      });
   }
 
   // @EventListen('selectEnd', { flavour: 'root' })

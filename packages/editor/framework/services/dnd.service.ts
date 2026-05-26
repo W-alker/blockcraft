@@ -328,6 +328,142 @@ export class DocDndService {
     })
   }
 
+  /**
+   * Multi-block sibling reorder. Sources must be same-parent contiguous siblings;
+   * caller is responsible for that invariant (block-controller computes via
+   * doc.queryBlocksBetween). Service performs defensive checks and silently
+   * returns on violation.
+   */
+  onSortBlocks(
+    sources: BlockCraft.BlockComponent[],
+    target: BlockCraft.BlockComponent,
+    position: DragPosition
+  ): void {
+    if (!sources.length || position === 'none') return
+    if (sources.includes(target)) return
+    if (sources.some(s => s.hostElement.contains(target.hostElement))) return
+
+    if (sources.length === 1) {
+      this.onSortBlock(sources[0], target, position)
+      return
+    }
+
+    const sourceParent = sources[0].parentBlock
+    if (!sourceParent || sources.some(s => s.parentId !== sourceParent.id)) return
+    const targetParent = target.parentBlock
+    if (!targetParent) return
+
+    if (position === 'left' || position === 'right') {
+      this._onSetColumnBatch(sources, target, position)
+      return
+    }
+
+    for (const s of sources) {
+      if (!this.doc.schemas.isValidChildren(s.flavour, targetParent.flavour)) {
+        this.doc.messageService.warn(`不允许的移动`)
+        return
+      }
+    }
+
+    const firstIdx = sources[0].getIndexOfParent()
+    const lastIdx = sources[sources.length - 1].getIndexOfParent()
+    const count = lastIdx - firstIdx + 1
+    if (count !== sources.length) return
+
+    if (sourceParent === targetParent) {
+      const targetIdx = target.getIndexOfParent()
+      if (targetIdx === firstIdx - 1 && position === 'after') return
+      if (targetIdx === lastIdx + 1 && position === 'before') return
+    }
+
+    // Compute insert index. Use count-aware adjustment instead of the ±1 that
+    // single-block onSortBlock uses (see table-block row reorder for the same
+    // pattern). For same-parent reorder where sources lie before target in the
+    // children array, the delete inside crud.moveBlocks shifts target's index
+    // down by `count`; account for that before applying the +1 for 'after'.
+    let targetIdx = target.getIndexOfParent()
+    if (sourceParent === targetParent && firstIdx < targetIdx) {
+      targetIdx -= count
+    }
+    if (position === 'after') {
+      targetIdx += 1
+    }
+
+    const targetDepth = target.props['depth']
+    this.doc.crud.transact(() => {
+      for (const s of sources) {
+        if (s.props['depth'] !== targetDepth) s.updateProps({ depth: targetDepth })
+      }
+      this.doc.crud.moveBlocks(sourceParent.id, firstIdx, count, targetParent.id, targetIdx)
+      this._handleSourceParentAfterMove(sourceParent.id)
+    })
+  }
+
+  private _onSetColumnBatch(
+    sources: BlockCraft.BlockComponent[],
+    target: BlockCraft.BlockComponent,
+    position: 'left' | 'right'
+  ): void {
+    const parent = target.parentBlock
+    const columnSchema = this.doc.schemas.get('column')
+    if (!parent || !columnSchema) return
+
+    const sourceParent = sources[0].parentBlock
+    if (!sourceParent) return
+
+    // Case A: target is already inside an existing `column` — add a new sibling column.
+    if (parent.flavour === 'column') {
+      const columnsBlock = parent.parentBlock
+      if (!columnsBlock || columnsBlock.childrenLength >= 8) {
+        this.doc.messageService.warn(`分栏最多支持8列`)
+        return
+      }
+      const newColumn = this.doc.schemas.createSnapshot('column', [[]])
+      const insertIdx = parent.getIndexOfParent() + (position === 'left' ? 0 : 1)
+
+      const sourceParentId = sourceParent.id
+      const firstIdx = sources[0].getIndexOfParent()
+      const count = sources.length
+
+      this.doc.crud.transact(() => {
+        this.doc.crud.insertBlocks(columnsBlock.id, insertIdx, [newColumn])
+        this.doc.crud.moveBlocks(sourceParentId, firstIdx, count, newColumn.id, 0)
+        this._handleSourceParentAfterMove(sourceParentId)
+      })
+      return
+    }
+
+    // Case B: target is a regular block — create a new `columns` wrapper around it.
+    for (const s of sources) {
+      if (!this.doc.schemas.isValidChildren(s.flavour, columnSchema)) {
+        this.doc.messageService.warn(`不允许的分栏内容`)
+        return
+      }
+    }
+    if (!this.doc.schemas.isValidChildren(target.flavour, columnSchema)) {
+      this.doc.messageService.warn(`不允许的分栏内容`)
+      return
+    }
+
+    const columns = this.doc.schemas.createSnapshot('columns', [2])
+    const column1 = columns.children[0] as IBlockSnapshot
+    const column2 = columns.children[1] as IBlockSnapshot
+    column1.children = []
+    column2.children = []
+
+    this.doc.crud.transact(() => {
+      this.doc.crud.insertBlocks(target.parentId!, target.getIndexOfParent(), [columns])
+    })
+    this.doc.crud.transact(() => {
+      const sourceParentId = sourceParent.id
+      const firstIdx = sources[0].getIndexOfParent()
+      const count = sources.length
+      this.doc.crud.moveBlocks(sourceParentId, firstIdx, count, position === 'left' ? column1.id : column2.id, 0)
+      this.doc.crud.moveBlocks(target.parentId!, target.getIndexOfParent(), 1, position === 'left' ? column2.id : column1.id, 0)
+      this._handleSourceParentAfterMove(sourceParentId)
+    })
+  }
+
   // TODO 文件处理应该交由插件
   onInsertFiles(files: FileList, targetBlock: BlockCraft.BlockComponent, position: DragPosition) {
     if (!files?.length || position === 'none') return
