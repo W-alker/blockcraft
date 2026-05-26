@@ -61,8 +61,32 @@ describe('DocDndService.onSortBlocks — same parent reorder', () => {
     expect(firstIdx).toBe(0)
     expect(count).toBe(2)
     expect(targetParentId).toBe('p')
-    // posRel = AFTER (mock default), position = 'after', parentId match → targetIdx = 5 (not bumped)
-    expect(targetIdx).toBe(5)
+    // Same parent, sources [0, 1] before target (idx 5), position='after':
+    //   delete(0, 2) shifts target down by count(2) to idx 3; for 'after' we want
+    //   sources right after target, so insert at 3 + 1 = 4.
+    expect(targetIdx).toBe(4)
+  })
+
+  it('drops "before" target lands sources immediately before target (count-aware)', () => {
+    // [b1, b2, c, d, e, t, ...] — drop sources [b1, b2] before t at index 5
+    // After delete(0, 2), t is at index 3. To land sources just before t, insert at 3.
+    const parent = makeBlock('p', null)
+    const b1 = makeBlock('b1', 'p', 'paragraph', { __index: 0 })
+    const b2 = makeBlock('b2', 'p', 'paragraph', { __index: 1 })
+    const target = makeBlock('t', 'p', 'paragraph', { __index: 5 })
+    b1.parentBlock = parent
+    b2.parentBlock = parent
+    target.parentBlock = parent
+
+    const doc = makeMockDoc({ p: parent, b1, b2, t: target })
+    const svc = new DocDndService(doc)
+    svc.onSortBlocks([b1, b2], target, 'before')
+
+    expect(doc._calls.moveBlocks.length).toBe(1)
+    const [, firstIdx, count, , targetIdx] = doc._calls.moveBlocks[0]
+    expect(firstIdx).toBe(0)
+    expect(count).toBe(2)
+    expect(targetIdx).toBe(3)   // Was 4 in buggy code (off-by-(count-1))
   })
 
   it('no-ops when dropping "after" the block immediately before the source range', () => {
@@ -132,7 +156,8 @@ describe('DocDndService.onSortBlocks — cross parent', () => {
     target.parentBlock = parentB
 
     const doc = makeMockDoc({ pa: parentA, pb: parentB, b1, b2, t: target })
-    // compareBlockPosition default is AFTER; position='before' + AFTER → targetIdx = max(0, 3-1) = 2
+    // Cross-parent move: delete from source parent doesn't affect target parent
+    // indices, so insert at target's original index (3) for 'before' drop.
     const svc = new DocDndService(doc)
     svc.onSortBlocks([b1, b2], target, 'before')
 
@@ -141,7 +166,7 @@ describe('DocDndService.onSortBlocks — cross parent', () => {
     expect(firstIdx).toBe(0)
     expect(count).toBe(2)
     expect(targetParentId).toBe('pb')
-    expect(targetIdx).toBe(2)
+    expect(targetIdx).toBe(3)
   })
 
   it('returns silently when target is descendant of any source', () => {

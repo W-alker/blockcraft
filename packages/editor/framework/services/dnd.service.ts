@@ -376,12 +376,16 @@ export class DocDndService {
       if (targetIdx === lastIdx + 1 && position === 'before') return
     }
 
+    // Compute insert index. Use count-aware adjustment instead of the ±1 that
+    // single-block onSortBlock uses (see table-block row reorder for the same
+    // pattern). For same-parent reorder where sources lie before target in the
+    // children array, the delete inside crud.moveBlocks shifts target's index
+    // down by `count`; account for that before applying the +1 for 'after'.
     let targetIdx = target.getIndexOfParent()
-    const posRel = this.doc.compareBlockPosition(sources[0], target)
-    if (position === 'before' && posRel === BLOCK_POSITION.AFTER) {
-      targetIdx = Math.max(0, targetIdx - 1)
+    if (sourceParent === targetParent && firstIdx < targetIdx) {
+      targetIdx -= count
     }
-    if (position === 'after' && (target.parentId !== sourceParent.id || posRel === BLOCK_POSITION.BEFORE)) {
+    if (position === 'after') {
       targetIdx += 1
     }
 
