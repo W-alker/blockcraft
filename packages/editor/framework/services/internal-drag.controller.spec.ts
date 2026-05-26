@@ -331,4 +331,35 @@ describe('DocInternalDragController state machine', () => {
     hostA.remove()
     hostB.remove()
   })
+
+  it('origin-blocks skips commit when remote collab deletes leave < 2 valid sources', () => {
+    const hostA = document.createElement('div')
+    const hostTarget = document.createElement('div')
+    document.body.appendChild(hostA)
+    document.body.appendChild(hostTarget)
+    const blockA = makeBlock('a', hostA)
+    const blockTarget = makeBlock('target', hostTarget)
+    // 'b' and 'c' will return null from getBlockById — simulating remote-collab deletion mid-drag.
+    doc.getBlockById = (id: string) =>
+      id === 'a' ? blockA :
+      id === 'target' ? blockTarget : null
+
+    const evt = makePointerEvent('pointerdown', { clientX: 100, clientY: 100 })
+    Object.defineProperty(evt, 'target', { value: target })
+    ctrl.startDrag(evt, { kind: 'origin-blocks', blockIds: ['a', 'b', 'c'] })
+    dispatchPointerMove(target, 110, 110)
+    expect(ctrl.state).toBe('dragging')
+
+    ;(ctrl as any)._prevBlock = blockTarget
+    ;(ctrl as any)._prevDragPosition = 'after'
+
+    dispatchPointerUp(target)
+
+    // Only 'a' resolves; sources.length is 1, guard rejects.
+    expect(doc.dndService.onSortBlocks).not.toHaveBeenCalled()
+    expect(ctrl.state).toBe('idle')
+
+    hostA.remove()
+    hostTarget.remove()
+  })
 })

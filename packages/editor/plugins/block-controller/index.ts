@@ -98,18 +98,13 @@ export class BlockControllerPlugin extends DocPlugin {
 
     this.doc.selection.selectionChange$.pipe(takeUntil(this.doc.onDestroy$)).subscribe(v => {
       if (this.doc.isReadonly) return
-      if (v && !v.isInSameBlock) {
-        // Cross-block selection: keep the handle visible and anchor it to the
-        // first selected block so the user can drag the whole range immediately
-        // without re-hovering. Single-block selections still rely on hover to
-        // pick the active block.
-        if (this._activeBlock !== v.firstBlock) {
-          this._cpr.setInput('activeBlock', this._activeBlock = v.firstBlock as BlockCraft.BlockComponent)
-        }
-        this.isHidden && this._cpr.setInput('hidden', this.isHidden = false)
-      } else {
-        this.isHidden && this._cpr.setInput('hidden', this.isHidden = false)
+      // Cross-block selection: anchor the handle on the first selected block so the
+      // user can drag the whole range immediately without re-hovering. Single-block
+      // selections still rely on hover to pick the active block.
+      if (v && !v.isInSameBlock && this._activeBlock !== v.firstBlock) {
+        this._cpr.setInput('activeBlock', this._activeBlock = v.firstBlock as BlockCraft.BlockComponent)
       }
+      this.isHidden && this._cpr.setInput('hidden', this.isHidden = false)
     })
 
     this.doc.subscribeReadonlyChange(v => {

@@ -64,6 +64,40 @@ describe('DocDndService.onSortBlocks — same parent reorder', () => {
     // posRel = AFTER (mock default), position = 'after', parentId match → targetIdx = 5 (not bumped)
     expect(targetIdx).toBe(5)
   })
+
+  it('no-ops when dropping "after" the block immediately before the source range', () => {
+    const parent = makeBlock('p', null)
+    const adjacentBefore = makeBlock('adj', 'p', 'paragraph', { __index: 0 })
+    const b1 = makeBlock('b1', 'p', 'paragraph', { __index: 1 })
+    const b2 = makeBlock('b2', 'p', 'paragraph', { __index: 2 })
+    adjacentBefore.parentBlock = parent
+    b1.parentBlock = parent
+    b2.parentBlock = parent
+
+    const doc = makeMockDoc({ p: parent, adj: adjacentBefore, b1, b2 })
+    const svc = new DocDndService(doc)
+    svc.onSortBlocks([b1, b2], adjacentBefore, 'after')
+
+    // Adjacent no-op: target at firstIdx - 1 with position 'after' → already there.
+    expect(doc._calls.moveBlocks.length).toBe(0)
+  })
+
+  it('no-ops when dropping "before" the block immediately after the source range', () => {
+    const parent = makeBlock('p', null)
+    const b1 = makeBlock('b1', 'p', 'paragraph', { __index: 0 })
+    const b2 = makeBlock('b2', 'p', 'paragraph', { __index: 1 })
+    const adjacentAfter = makeBlock('adj', 'p', 'paragraph', { __index: 2 })
+    b1.parentBlock = parent
+    b2.parentBlock = parent
+    adjacentAfter.parentBlock = parent
+
+    const doc = makeMockDoc({ p: parent, b1, b2, adj: adjacentAfter })
+    const svc = new DocDndService(doc)
+    svc.onSortBlocks([b1, b2], adjacentAfter, 'before')
+
+    // Adjacent no-op: target at lastIdx + 1 with position 'before' → already there.
+    expect(doc._calls.moveBlocks.length).toBe(0)
+  })
 })
 
 describe('DocDndService.onSortBlocks — cross parent', () => {
