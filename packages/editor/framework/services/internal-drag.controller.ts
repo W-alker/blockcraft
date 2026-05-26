@@ -66,7 +66,7 @@ export class DocInternalDragController {
   private _scrollFrame: number | null = null
   private _lastX = 0
   private _lastY = 0
-  private _sourceMarker: HTMLElement | null = null
+  private _sourceMarkers: HTMLElement[] = []
   // drag-over chain：从当前 prevBlock 向上到 root 之前的所有 block hostElement。
   // 任意 block 都可通过 SCSS 的 `&.drag-over { ... }` 订阅这个状态做高亮反馈。
   private _dragOverChain: HTMLElement[] = []
@@ -603,16 +603,21 @@ export class DocInternalDragController {
   }
 
   private _applySourceMarker(): void {
-    if (this._data?.kind !== 'origin-block') return
-    const block = this._safeGetBlockById(this._data.blockId)
-    if (!block) return
-    block.hostElement.classList.add('bc-drag-source')
-    this._sourceMarker = block.hostElement
+    if (!this._data) return
+    const ids: string[] =
+      this._data.kind === 'origin-block' ? [this._data.blockId] :
+      this._data.kind === 'origin-blocks' ? this._data.blockIds : []
+    for (const id of ids) {
+      const block = this._safeGetBlockById(id)
+      if (!block) continue
+      block.hostElement.classList.add('bc-drag-source')
+      this._sourceMarkers.push(block.hostElement)
+    }
   }
 
   private _clearSourceMarker(): void {
-    if (!this._sourceMarker) return
-    this._sourceMarker.classList.remove('bc-drag-source')
-    this._sourceMarker = null
+    if (!this._sourceMarkers.length) return
+    for (const el of this._sourceMarkers) el.classList.remove('bc-drag-source')
+    this._sourceMarkers = []
   }
 }

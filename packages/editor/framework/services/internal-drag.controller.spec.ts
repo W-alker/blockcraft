@@ -20,6 +20,10 @@ function makePointerEvent(type: string, opts: Partial<PointerEventInit> = {}): P
   return new PointerEvent(type, { pointerId: 1, clientX: 0, clientY: 0, button: 0, ...opts })
 }
 
+function makeBlock(id: string, host: HTMLElement): any {
+  return { id, hostElement: host, flavour: 'paragraph' }
+}
+
 describe('DocInternalDragController state machine', () => {
   let ctrl: DocInternalDragController
   let target: HTMLElement
@@ -214,5 +218,30 @@ describe('DocInternalDragController state machine', () => {
     expect(ctrl.state).toBe('dragging')
     window.dispatchEvent(new Event('blur'))
     expect(ctrl.state).toBe('idle')
+  })
+
+  it('origin-blocks marks every source host with bc-drag-source on dragging entry', () => {
+    const hostA = document.createElement('div')
+    const hostB = document.createElement('div')
+    document.body.appendChild(hostA)
+    document.body.appendChild(hostB)
+    doc.getBlockById = (id: string) =>
+      id === 'a' ? makeBlock('a', hostA) :
+      id === 'b' ? makeBlock('b', hostB) : null
+
+    const evt = makePointerEvent('pointerdown', { clientX: 100, clientY: 100 })
+    Object.defineProperty(evt, 'target', { value: target })
+    ctrl.startDrag(evt, { kind: 'origin-blocks', blockIds: ['a', 'b'] })
+    dispatchPointerMove(target, 110, 110)
+    expect(ctrl.state).toBe('dragging')
+    expect(hostA.classList.contains('bc-drag-source')).toBe(true)
+    expect(hostB.classList.contains('bc-drag-source')).toBe(true)
+
+    dispatchPointerCancel(target)
+    expect(hostA.classList.contains('bc-drag-source')).toBe(false)
+    expect(hostB.classList.contains('bc-drag-source')).toBe(false)
+
+    hostA.remove()
+    hostB.remove()
   })
 })
