@@ -336,8 +336,7 @@ export class DocInternalDragController {
         .filter((b): b is BlockCraft.BlockComponent => !!b)
       if (sources.length < 2) return
       if (sources.includes(this._prevBlock)) return
-      // Task 5 will add onSortBlocks to DocDndService; cast is temporary.
-      ;(this.doc.dndService as any).onSortBlocks(sources, this._prevBlock, this._prevDragPosition)
+      this.doc.dndService.onSortBlocks(sources, this._prevBlock, this._prevDragPosition)
       return
     }
 

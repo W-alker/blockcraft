@@ -328,6 +328,81 @@ export class DocDndService {
     })
   }
 
+  /**
+   * Multi-block sibling reorder. Sources must be same-parent contiguous siblings;
+   * caller is responsible for that invariant (block-controller computes via
+   * doc.queryBlocksBetween). Service performs defensive checks and silently
+   * returns on violation.
+   */
+  onSortBlocks(
+    sources: BlockCraft.BlockComponent[],
+    target: BlockCraft.BlockComponent,
+    position: DragPosition
+  ): void {
+    if (!sources.length || position === 'none') return
+    if (sources.includes(target)) return
+    if (sources.some(s => s.hostElement.contains(target.hostElement))) return
+
+    if (sources.length === 1) {
+      this.onSortBlock(sources[0], target, position)
+      return
+    }
+
+    const sourceParent = sources[0].parentBlock
+    if (!sourceParent || sources.some(s => s.parentId !== sourceParent.id)) return
+    const targetParent = target.parentBlock
+    if (!targetParent) return
+
+    if (position === 'left' || position === 'right') {
+      this._onSetColumnBatch(sources, target, position)
+      return
+    }
+
+    for (const s of sources) {
+      if (!this.doc.schemas.isValidChildren(s.flavour, targetParent.flavour)) {
+        this.doc.messageService.warn(`不允许的移动`)
+        return
+      }
+    }
+
+    const firstIdx = sources[0].getIndexOfParent()
+    const lastIdx = sources[sources.length - 1].getIndexOfParent()
+    const count = lastIdx - firstIdx + 1
+    if (count !== sources.length) return
+
+    if (sourceParent === targetParent) {
+      const targetIdx = target.getIndexOfParent()
+      if (targetIdx === firstIdx - 1 && position === 'after') return
+      if (targetIdx === lastIdx + 1 && position === 'before') return
+    }
+
+    let targetIdx = target.getIndexOfParent()
+    const posRel = this.doc.compareBlockPosition(sources[0], target)
+    if (position === 'before' && posRel === BLOCK_POSITION.AFTER) {
+      targetIdx = Math.max(0, targetIdx - 1)
+    }
+    if (position === 'after' && (target.parentId !== sourceParent.id || posRel === BLOCK_POSITION.BEFORE)) {
+      targetIdx += 1
+    }
+
+    const targetDepth = target.props['depth']
+    this.doc.crud.transact(() => {
+      for (const s of sources) {
+        if (s.props['depth'] !== targetDepth) s.updateProps({ depth: targetDepth })
+      }
+      this.doc.crud.moveBlocks(sourceParent.id, firstIdx, count, targetParent.id, targetIdx)
+      this._handleSourceParentAfterMove(sourceParent.id)
+    })
+  }
+
+  private _onSetColumnBatch(
+    _sources: BlockCraft.BlockComponent[],
+    _target: BlockCraft.BlockComponent,
+    _position: DragPosition
+  ): void {
+    // TODO(task-7): implement multi-block column drop
+  }
+
   // TODO 文件处理应该交由插件
   onInsertFiles(files: FileList, targetBlock: BlockCraft.BlockComponent, position: DragPosition) {
     if (!files?.length || position === 'none') return
