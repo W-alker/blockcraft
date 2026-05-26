@@ -2,6 +2,7 @@ import {fromEvent, takeUntil} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {TriggerBtn} from "./widgets/trigger-btn";
 import {closetBlockId, DocPlugin, EventListen} from "../../framework";
+import type {InternalDragData} from "../../framework/services/internal-drag.controller";
 import {
   BlockControllerPluginOptions,
   BlockControllerPositionResolver,
@@ -111,6 +112,24 @@ export class BlockControllerPlugin extends DocPlugin {
     this.addDraggable()
   }
 
+  private resolveDragData(activeBlock: BlockCraft.BlockComponent): InternalDragData {
+    const sel = this.doc.selection.value
+    if (!sel || sel.isInSameBlock) {
+      return { kind: 'origin-block', blockId: activeBlock.id }
+    }
+    if (sel.firstBlock.parentId !== sel.lastBlock.parentId) {
+      return { kind: 'origin-block', blockId: activeBlock.id }
+    }
+    const ids = this.doc.queryBlocksBetween(sel.firstBlock, sel.lastBlock, true)
+    if (!ids.includes(activeBlock.id)) {
+      return { kind: 'origin-block', blockId: activeBlock.id }
+    }
+    if (ids.length < 2) {
+      return { kind: 'origin-block', blockId: activeBlock.id }
+    }
+    return { kind: 'origin-blocks', blockIds: ids }
+  }
+
   // drag handle 拖拽响应
   addDraggable() {
     fromEvent<PointerEvent>(this._cpr.location.nativeElement, 'pointerdown')
@@ -123,10 +142,8 @@ export class BlockControllerPlugin extends DocPlugin {
         this._cpr.instance.menuDisabled = true
         this._cpr.instance.cdr.detectChanges()
 
-        this.doc.dragController.startDrag(
-          evt,
-          { kind: 'origin-block', blockId: this._activeBlock.id },
-        )
+        const data = this.resolveDragData(this._activeBlock)
+        this.doc.dragController.startDrag(evt, data)
 
         // Re-enable menu after drag ends (success or cancel)
         const sub = this.doc.dragController.state$.subscribe(state => {
