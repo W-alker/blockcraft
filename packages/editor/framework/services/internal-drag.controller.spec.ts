@@ -69,6 +69,56 @@ describe('DocInternalDragController state machine', () => {
     // second startDrag should not overwrite activePointerId (still 1 from first call)
   })
 
+  it('startDrag accepts origin-blocks variant with >= 2 ids', () => {
+    const evt = makePointerEvent('pointerdown')
+    Object.defineProperty(evt, 'target', { value: target })
+    ctrl.startDrag(evt, { kind: 'origin-blocks', blockIds: ['b1', 'b2', 'b3'] })
+    expect(ctrl.state).toBe('armed')
+  })
+
+  it('startDrag downgrades origin-blocks with single id to origin-block', () => {
+    const sourceHost = document.createElement('div')
+    const targetHost = document.createElement('div')
+    document.body.appendChild(sourceHost)
+    document.body.appendChild(targetHost)
+    const sourceBlock = { id: 'b1', hostElement: sourceHost, flavour: 'paragraph' }
+    const targetBlock = { id: 'target', hostElement: targetHost, flavour: 'paragraph' }
+    doc.getBlockById = (id: string) =>
+      id === 'b1' ? sourceBlock :
+      id === 'target' ? targetBlock : null
+
+    const evt = makePointerEvent('pointerdown', { clientX: 100, clientY: 100 })
+    Object.defineProperty(evt, 'target', { value: target })
+    ctrl.startDrag(evt, { kind: 'origin-blocks', blockIds: ['b1'] })
+    expect(ctrl.state).toBe('armed')
+
+    dispatchPointerMove(target, 110, 110)
+    expect(ctrl.state).toBe('dragging')
+
+    // Bypass hit-test plumbing — set internal state directly so commit has a target.
+    ;(ctrl as any)._prevBlock = targetBlock
+    ;(ctrl as any)._prevDragPosition = 'after'
+
+    dispatchPointerUp(target)
+
+    // Downgrade verified: onSortBlock was called (not onSortBlocks, not onInsertNewBlock).
+    expect(doc.dndService.onSortBlock).toHaveBeenCalledTimes(1)
+    const [src, tgt, pos] = (doc.dndService.onSortBlock as jasmine.Spy).calls.mostRecent().args
+    expect(src).toBe(sourceBlock)
+    expect(tgt).toBe(targetBlock)
+    expect(pos).toBe('after')
+
+    sourceHost.remove()
+    targetHost.remove()
+  })
+
+  it('startDrag downgrades empty origin-blocks to no-op', () => {
+    const evt = makePointerEvent('pointerdown')
+    Object.defineProperty(evt, 'target', { value: target })
+    ctrl.startDrag(evt, { kind: 'origin-blocks', blockIds: [] })
+    expect(ctrl.state).toBe('idle')
+  })
+
   function dispatchPointerMove(el: HTMLElement, clientX: number, clientY: number, pointerId = 1, pointerType = 'mouse') {
     const evt = new PointerEvent('pointermove', { pointerId, clientX, clientY, pointerType, bubbles: true })
     el.dispatchEvent(evt)

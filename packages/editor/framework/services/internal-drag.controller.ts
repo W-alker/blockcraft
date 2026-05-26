@@ -7,6 +7,7 @@ export type InternalDragState = 'idle' | 'armed' | 'dragging' | 'dropping'
 
 export type InternalDragData =
   | { kind: 'origin-block'; blockId: string }
+  | { kind: 'origin-blocks'; blockIds: string[] }
   | { kind: 'new-block'; flavour: BlockCraft.BlockFlavour; initProps?: IBlockProps }
 
 export interface InternalDragOptions {
@@ -109,6 +110,16 @@ export class DocInternalDragController {
     if (this.doc.isReadonly) return
     if (!evt.target) return
 
+    // Normalize origin-blocks: must have >= 2 ids; otherwise downgrade to origin-block.
+    // Empty array has nothing to fall back to → refuse (return early).
+    let normalized: InternalDragData = data
+    if (data.kind === 'origin-blocks') {
+      if (data.blockIds.length === 0) return
+      if (data.blockIds.length === 1) {
+        normalized = { kind: 'origin-block', blockId: data.blockIds[0] }
+      }
+    }
+
     // 不再调 setPointerCapture：
     // (1) 我们所有 pointermove/up/cancel 都挂在 window 上 capture phase，事件传递不依赖 capture
     // (2) 部分 Chrome 版本下，对 <img> / 子树 element 调 setPointerCapture 会阻塞 ancestor 的
@@ -118,7 +129,7 @@ export class DocInternalDragController {
     // selection / selectionchange 推导出 block selection 的链路（比如点击图片想让它进入
     // selected 状态）。selection 的清除推迟到真正进 dragging 的 _enterDragging。
     this._activePointerId = evt.pointerId
-    this._data = data
+    this._data = normalized
     this._options = { ...options }
     this._startX = evt.clientX
     this._startY = evt.clientY
@@ -316,6 +327,8 @@ export class DocInternalDragController {
       if (source && source !== this._prevBlock) {
         this.doc.dndService.onSortBlock(source, this._prevBlock, this._prevDragPosition)
       }
+    } else if (this._data.kind === 'origin-blocks') {
+      // TODO(task-4): dispatch to dndService.onSortBlocks for multi-block drag
     } else if (this._data.kind === 'new-block') {
       this.doc.dndService.onInsertNewBlock(
         this._data.flavour,
@@ -376,7 +389,9 @@ export class DocInternalDragController {
       const text = block?.hostElement.textContent?.trim().replace(/\s+/g, ' ').slice(0, 60)
       return text || `${block?.flavour ?? 'Block'}`
     }
-    return `${this._data.flavour}`
+    if (this._data.kind === 'new-block') return `${this._data.flavour}`
+    // origin-blocks: multi-block ghost label deferred to Task 3
+    return 'Block'
   }
 
   private _moveGhost(x: number, y: number): void {
