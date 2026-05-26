@@ -244,4 +244,28 @@ describe('DocInternalDragController state machine', () => {
     hostA.remove()
     hostB.remove()
   })
+
+  it('origin-blocks ghost label uses "<first text> +N" format', () => {
+    const hostA = document.createElement('div')
+    hostA.textContent = '  Hello   world  '
+    const hostB = document.createElement('div')
+    hostB.textContent = 'irrelevant'
+    document.body.appendChild(hostA)
+    document.body.appendChild(hostB)
+    doc.getBlockById = (id: string) =>
+      id === 'a' ? makeBlock('a', hostA) :
+      id === 'b' ? makeBlock('b', hostB) : null
+
+    const evt = makePointerEvent('pointerdown', { clientX: 100, clientY: 100 })
+    Object.defineProperty(evt, 'target', { value: target })
+    ctrl.startDrag(evt, { kind: 'origin-blocks', blockIds: ['a', 'b'] })
+    dispatchPointerMove(target, 110, 110)
+
+    const ghost = document.body.querySelector<HTMLElement>('div[aria-hidden="true"]')!
+    expect(ghost.textContent).toBe('Hello world +1')
+
+    dispatchPointerCancel(target)
+    hostA.remove()
+    hostB.remove()
+  })
 })

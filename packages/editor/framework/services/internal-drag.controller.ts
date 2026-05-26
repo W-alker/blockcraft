@@ -389,9 +389,14 @@ export class DocInternalDragController {
       const text = block?.hostElement.textContent?.trim().replace(/\s+/g, ' ').slice(0, 60)
       return text || `${block?.flavour ?? 'Block'}`
     }
-    if (this._data.kind === 'new-block') return `${this._data.flavour}`
-    // origin-blocks: multi-block ghost label deferred to Task 3
-    return 'Block'
+    if (this._data.kind === 'origin-blocks') {
+      const firstId = this._data.blockIds[0]
+      const block = this._safeGetBlockById(firstId)
+      const text = block?.hostElement.textContent?.trim().replace(/\s+/g, ' ').slice(0, 60)
+      const base = text || `${block?.flavour ?? 'Block'}`
+      return `${base} +${this._data.blockIds.length - 1}`
+    }
+    return `${this._data.flavour}`
   }
 
   private _moveGhost(x: number, y: number): void {
