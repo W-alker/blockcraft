@@ -19,7 +19,8 @@
     <div class="table-menu-anchor"
          #tableMenuAnchor
          [style.left.px]="_tableMenu.left + _tableMenu.width / 2"
-         [style.top.px]="_tableMenu.top"></div>
+         [style.top.px]="_tableMenu.top"
+         [style.height.px]="_tableMenu.height"></div>
 
     <table-col-bar [colWidths]="props.colWidths"
                    [visibleHandleIndex]="_visibleColHandle"

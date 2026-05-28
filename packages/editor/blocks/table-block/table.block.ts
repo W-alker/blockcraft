@@ -8,11 +8,11 @@ import { BehaviorSubject, filter, fromEvent, merge, Subject, take, takeUntil } f
 import { ColReorderEndEvent, ColReorderMoveEvent, ColReorderStartEvent, TableColBarComponent } from "./widgets/table-col-bar.component";
 import { RowReorderEndEvent, RowReorderMoveEvent, RowReorderStartEvent, TableRowBarComponent } from "./widgets/table-row-bar.component";
 import { TableStructureToolbarComponent } from "./widgets/table-structure-toolbar.component";
-import { resolveTableStructureAnchor } from "./widgets/table-structure-anchor";
+import { preferTableToolbarAbove, resolveTableStructureAnchor } from "./widgets/table-structure-anchor";
 import { adjustSelection, adjustSelectionWithMap, buildCellMasterMap, buildCellMasterMapWithSources, CellMasterMap, RectangleSelection } from "./utils";
 import { debounce, nextTick, throttle } from "../../global";
 import { addTableCol, addTableRow, buildCellMatrix, CellMatrixEntry, deleteTableCols, deleteTableRows } from "./callback";
-import { OverlayRef } from "@angular/cdk/overlay";
+import { ConnectedPosition, FlexibleConnectedPositionStrategy, OverlayRef } from "@angular/cdk/overlay";
 import { TableCellsSelection } from "./types";
 import { BlockSelection } from "../../framework/modules/selection/blockSelection";
 import { TableFullscreenController } from "./table-fullscreen-controller";
@@ -197,6 +197,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     left: -9999,
     top: -9999,
     width: 0,
+    height: 0,
     rowIndex: 0,
     rowCount: 1,
     colIndex: 0,
@@ -986,7 +987,6 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       wrapperRect: this.tableWrapper.nativeElement.getBoundingClientRect(),
       selectionRect: tableRect,
       viewportRect,
-      gap: 12,
     })
 
     this._tableMenu = {
@@ -994,6 +994,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       left: anchor.left,
       top: anchor.top,
       width: anchor.width,
+      height: anchor.height,
       rowIndex: options.rowIndex,
       rowCount: options.rowCount ?? 1,
       colIndex: options.colIndex,
@@ -1205,6 +1206,32 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
   }
 
+  /**
+   * Order the structure toolbar's connect positions (below-first vs above-first).
+   *
+   * CDK's own flip uses the browser window as its viewport, but the toolbar is
+   * clamped to the editor's scroll container, which can be shorter than the
+   * window. When the table sits near the bottom of that scroll viewport there is
+   * no room below it *inside the editor*, so we must flip above the table — else
+   * `_clampConnectedOverlay` drags the toolbar back up over the last rows.
+   * Measuring against the scroll viewport keeps this decision in sync with the
+   * clamp (which also clamps to the scroll container now that `clampTo` is unset).
+   */
+  private _resolveToolbarPositions(): ConnectedPosition[] {
+    const gap = 8
+    const below = getPositionWithOffset('bottom-center', 0, gap)
+    const above = getPositionWithOffset('top-center', 0, gap)
+    const scroller = this.doc.scrollContainer
+    const tableEl = this.tableWrapper?.nativeElement.querySelector('table')
+    if (!scroller || !tableEl) return [below, above]
+    const flipAbove = preferTableToolbarAbove({
+      tableRect: tableEl.getBoundingClientRect(),
+      viewportRect: scroller.getBoundingClientRect(),
+      gap,
+    })
+    return flipAbove ? [above, below] : [below, above]
+  }
+
   private _showTableMenuOverlay() {
     if (this.doc.isReadonly || !this._tableMenu.visible || !this.tableMenuAnchor) {
       this._disposeToolbar()
@@ -1231,14 +1258,14 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       const overlay = this.toolbarOvr
       requestAnimationFrame(() => {
         if (this.toolbarOvr !== overlay) return
-        // Re-apply the position strategy rather than calling updatePosition().
-        // CDK's FlexibleConnectedPositionStrategy with `withPush` +
-        // `withFlexibleDimensions` accumulates drift when updatePosition is
-        // invoked against a live overlay (the overlay progressively shifts
-        // left ~140px per re-center). Reassigning the strategy clears its
-        // cached origin/bounding-box rects and lands on the intended center.
-        const strategy = overlay.getConfig().positionStrategy
-        if (strategy) overlay.updatePositionStrategy(strategy)
+        const strategy = overlay.getConfig().positionStrategy as FlexibleConnectedPositionStrategy | undefined
+        if (strategy) {
+          // Re-decide below/above against the (possibly scrolled) table so the
+          // toolbar flips sides when the table nears the scroll-viewport edge,
+          // instead of being clamped over its own rows.
+          strategy.withPositions(this._resolveToolbarPositions())
+          overlay.updatePosition()
+        }
       })
       return
     }
@@ -1248,14 +1275,20 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.toolbarRef = undefined
     }
 
+    // No `clampTo: root` — the root block wraps the content, so when the table
+    // is the last/only block root.bottom ≈ table.bottom and the clamp would drag
+    // the toolbar up over the table. Clamping to the scroll viewport (default)
+    // gives the toolbar the editor's full visible height to sit in.
+    //
+    // `flexibleDimensions: false` — with flexible dimensions CDK builds a wide
+    // flex bounding box and left-aligns the toolbar in it (it drifts off-center
+    // on scroll). This toolbar is fixed-size and must stay centered on the
+    // anchor, so force CDK's exact-position path instead.
     const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<TableStructureToolbarComponent>({
       target: this.tableMenuAnchor.nativeElement,
       component: TableStructureToolbarComponent,
-      clampTo: this.doc.root.hostElement,
-      positions: [
-        getPositionWithOffset('bottom-center', 0, 8),
-        getPositionWithOffset('top-center', 0, 8),
-      ],
+      positions: this._resolveToolbarPositions(),
+      flexibleDimensions: false,
       backdrop: false,
     }, this._closeToolbar$, closeCb)
 

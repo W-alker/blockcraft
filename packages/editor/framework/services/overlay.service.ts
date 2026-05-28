@@ -126,6 +126,16 @@ export interface IConnectOverlayCreateOptions {
   positions?: ConnectedPosition[];
   backdrop?: boolean;
   clampTo?: HTMLElement;
+  /**
+   * Forwarded to CDK's `withFlexibleDimensions`. Defaults to `true` to preserve
+   * shrink-to-fit behavior for resizable overlays (e.g. long pickers). Set
+   * `false` for fixed-size overlays that must stay centered on their origin:
+   * with flexible dimensions CDK builds a wide flex bounding box and, once it
+   * flags the overlay "flush", left-aligns it instead of centering (the pane
+   * drifts off-center). The exact-position path (`flexibleDimensions: false`)
+   * centers on the origin reliably.
+   */
+  flexibleDimensions?: boolean;
 }
 
 export type IGlobalOverlayCreateOptions = {
@@ -169,7 +179,7 @@ export class DocOverlayService {
       return this.overlay
         .position()
         .flexibleConnectedTo(el)
-        .withFlexibleDimensions(true)
+        .withFlexibleDimensions(params.flexibleDimensions ?? true)
         .withGrowAfterOpen(true)
         .withPush(true)
         .withViewportMargin(CONNECTED_OVERLAY_MARGIN)
