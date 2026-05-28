@@ -43,7 +43,7 @@ function makeMockDoc(blocks: Record<string, any>): any {
 
 describe('DocDndService.onSortBlocks — same parent reorder', () => {
   it('moves contiguous siblings as a single moveBlocks call', () => {
-    const parent = makeBlock('p', null)
+    const parent = makeBlock('p', null, 'root', { childrenIds: ['b1', 'b2', 'x2', 'x3', 'x4', 't'] })
     const b1 = makeBlock('b1', 'p', 'paragraph', { __index: 0 })
     const b2 = makeBlock('b2', 'p', 'paragraph', { __index: 1 })
     const target = makeBlock('t', 'p', 'paragraph', { __index: 5 })
@@ -70,7 +70,7 @@ describe('DocDndService.onSortBlocks — same parent reorder', () => {
   it('drops "before" target lands sources immediately before target (count-aware)', () => {
     // [b1, b2, c, d, e, t, ...] — drop sources [b1, b2] before t at index 5
     // After delete(0, 2), t is at index 3. To land sources just before t, insert at 3.
-    const parent = makeBlock('p', null)
+    const parent = makeBlock('p', null, 'root', { childrenIds: ['b1', 'b2', 'x2', 'x3', 'x4', 't'] })
     const b1 = makeBlock('b1', 'p', 'paragraph', { __index: 0 })
     const b2 = makeBlock('b2', 'p', 'paragraph', { __index: 1 })
     const target = makeBlock('t', 'p', 'paragraph', { __index: 5 })
@@ -90,7 +90,7 @@ describe('DocDndService.onSortBlocks — same parent reorder', () => {
   })
 
   it('no-ops when dropping "after" the block immediately before the source range', () => {
-    const parent = makeBlock('p', null)
+    const parent = makeBlock('p', null, 'root', { childrenIds: ['adj', 'b1', 'b2'] })
     const adjacentBefore = makeBlock('adj', 'p', 'paragraph', { __index: 0 })
     const b1 = makeBlock('b1', 'p', 'paragraph', { __index: 1 })
     const b2 = makeBlock('b2', 'p', 'paragraph', { __index: 2 })
@@ -107,7 +107,7 @@ describe('DocDndService.onSortBlocks — same parent reorder', () => {
   })
 
   it('no-ops when dropping "before" the block immediately after the source range', () => {
-    const parent = makeBlock('p', null)
+    const parent = makeBlock('p', null, 'root', { childrenIds: ['b1', 'b2', 'adj'] })
     const b1 = makeBlock('b1', 'p', 'paragraph', { __index: 0 })
     const b2 = makeBlock('b2', 'p', 'paragraph', { __index: 1 })
     const adjacentAfter = makeBlock('adj', 'p', 'paragraph', { __index: 2 })
@@ -122,11 +122,58 @@ describe('DocDndService.onSortBlocks — same parent reorder', () => {
     // Adjacent no-op: target at lastIdx + 1 with position 'before' → already there.
     expect(doc._calls.moveBlocks.length).toBe(0)
   })
+
+  it('aborts (no-op) when a concurrent remote reorder injects a foreign block into the source span', () => {
+    // Drag captured sources [A, B, C] from P = [A, B, C, X].
+    // Remote swapped B and X mid-drag → P is now [A, X, C, B].
+    // sources[0]=A@0, sources[2]=C@2 would fool the old span check (count 3),
+    // but the run [0,3) is [A, X, C] — contains foreign X, missing B.
+    const parent = makeBlock('p', null, 'root', { childrenIds: ['A', 'X', 'C', 'B'] })
+    const A = makeBlock('A', 'p', 'paragraph', { __index: 0 })
+    const X = makeBlock('X', 'p', 'paragraph', { __index: 1 })
+    const C = makeBlock('C', 'p', 'paragraph', { __index: 2 })
+    const B = makeBlock('B', 'p', 'paragraph', { __index: 3 })
+    A.parentBlock = parent; X.parentBlock = parent; C.parentBlock = parent; B.parentBlock = parent
+    const target = makeBlock('t', 'p2', 'paragraph', { __index: 0 })
+    const targetParent = makeBlock('p2', null, 'root', { childrenIds: ['t'] })
+    target.parentBlock = targetParent
+
+    // sources in the stale drag-start order [A, B, C]
+    const doc = makeMockDoc({ p: parent, p2: targetParent, A, X, C, B, t: target })
+    const svc = new DocDndService(doc)
+    svc.onSortBlocks([A, B, C], target, 'before')
+
+    expect(doc._calls.moveBlocks.length).toBe(0)   // must NOT move [A, X, C]
+  })
+
+  it('still moves correctly when sources array order is scrambled but blocks remain contiguous', () => {
+    // P = [A, B, C] (contiguous), but sources passed in scrambled order [C, A, B]
+    // (e.g. remote reordered the captured array's blocks among themselves).
+    // min/max indices = [0,2] → count 3, slice [0,3) = [A,B,C] = source set → OK to move.
+    const parent = makeBlock('p', null, 'root', { childrenIds: ['A', 'B', 'C'] })
+    const A = makeBlock('A', 'p', 'paragraph', { __index: 0 })
+    const B = makeBlock('B', 'p', 'paragraph', { __index: 1 })
+    const C = makeBlock('C', 'p', 'paragraph', { __index: 2 })
+    A.parentBlock = parent; B.parentBlock = parent; C.parentBlock = parent
+    const target = makeBlock('t', 'p2', 'paragraph', { __index: 0 })
+    const targetParent = makeBlock('p2', null, 'root', { childrenIds: ['t'] })
+    target.parentBlock = targetParent
+
+    const doc = makeMockDoc({ p: parent, p2: targetParent, A, B, C, t: target })
+    const svc = new DocDndService(doc)
+    svc.onSortBlocks([C, A, B], target, 'before')   // scrambled input order
+
+    expect(doc._calls.moveBlocks.length).toBe(1)
+    const [sourceParentId, firstIdx, count] = doc._calls.moveBlocks[0]
+    expect(sourceParentId).toBe('p')
+    expect(firstIdx).toBe(0)   // min index, not sources[0]'s index (which is C=2)
+    expect(count).toBe(3)
+  })
 })
 
 describe('DocDndService.onSortBlocks — cross parent', () => {
   it('rejects when any source is invalid child of target parent', () => {
-    const parentA = makeBlock('pa', null)
+    const parentA = makeBlock('pa', null, 'root', { childrenIds: ['b1', 'b2'] })
     const parentB = makeBlock('pb', null, 'column')
     const b1 = makeBlock('b1', 'pa', 'paragraph', { __index: 0 })
     const b2 = makeBlock('b2', 'pa', 'image', { __index: 1 })
@@ -146,7 +193,7 @@ describe('DocDndService.onSortBlocks — cross parent', () => {
   })
 
   it('moves valid blocks across parents in one moveBlocks call', () => {
-    const parentA = makeBlock('pa', null)
+    const parentA = makeBlock('pa', null, 'root', { childrenIds: ['b1', 'b2'] })
     const parentB = makeBlock('pb', null)
     const b1 = makeBlock('b1', 'pa', 'paragraph', { __index: 0 })
     const b2 = makeBlock('b2', 'pa', 'paragraph', { __index: 1 })

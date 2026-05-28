@@ -365,10 +365,20 @@ export class DocDndService {
       }
     }
 
-    const firstIdx = sources[0].getIndexOfParent()
-    const lastIdx = sources[sources.length - 1].getIndexOfParent()
+    // Source positions are read fresh here, but the block ids were captured at
+    // pointerdown. A concurrent remote edit during the drag may have reordered
+    // them, so don't trust the captured array order: derive the range from the
+    // min/max of current indices, then confirm the contiguous run is EXACTLY the
+    // source set before moving. Otherwise a remote swap that preserves the span
+    // could drag a foreign block and strand a source one.
+    const indices = sources.map(s => s.getIndexOfParent())
+    if (indices.some(i => i < 0)) return                       // a source left this parent
+    const firstIdx = Math.min(...indices)
+    const lastIdx = Math.max(...indices)
     const count = lastIdx - firstIdx + 1
-    if (count !== sources.length) return
+    if (count !== sources.length) return                       // gap → not contiguous
+    const sourceIds = new Set(sources.map(s => s.id))
+    if (sourceParent.childrenIds.slice(firstIdx, firstIdx + count).some(id => !sourceIds.has(id))) return
 
     if (sourceParent === targetParent) {
       const targetIdx = target.getIndexOfParent()
