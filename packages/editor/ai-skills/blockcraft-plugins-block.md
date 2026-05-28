@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-05-26
+> Last updated: 2026-05-28
 
 ## BlockControllerPlugin
 
@@ -84,6 +84,25 @@ selected range is dragged as one unit.
 The drag is dispatched as `{ kind: 'origin-blocks', blockIds: string[] }` to
 `doc.dragController.startDrag(...)`, and committed via the new
 `DocDndService.onSortBlocks(sources, target, position)` API.
+
+### Multi-block menu
+
+When a cross-block selection covers the active block, the drag-handle menu
+collapses to just **cut / copy / delete**, and those three operate on the whole
+selection range:
+
+- **copy** copies whole-block snapshots of every selected block
+  (`clipboard.copyBlocksModel`), not an offset-sliced text range.
+- **cut** copies all then deletes every selected block by id in one transaction.
+- **delete** deletes every selected block by id in one transaction.
+
+All other menu items — alignment, heading, block-type conversion, "在下方添加",
+`customTools`, and custom `blockMenuResolver` sections such as the table tools —
+are hidden in multi-block mode. Single-block selection keeps the full menu
+unchanged. The multi/single judgment mirrors the drag dispatch: a cross-block
+selection whose range includes the active block (otherwise the single-block menu
+shows). If the multi-selection collapses to fewer than two blocks between opening
+the menu and clicking, the action falls back to the single-block path.
 
 ---
 

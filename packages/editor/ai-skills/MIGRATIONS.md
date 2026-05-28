@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-05-26 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-05-28 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,31 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-05-28 (minor)
+
+**What changed**: The `block-controller` plugin's drag-handle menu now collapses
+to three items — cut / copy / delete — whenever a cross-block selection covers
+the active block, and those three act on the whole selection range (copy =
+whole-block snapshots; cut/delete = delete each selected block by id in one
+transaction). All other menu items (alignment, heading, block-type conversion,
+"在下方添加", `customTools`, custom/table sections) are hidden in multi-block
+mode. Single-block selection is unchanged.
+
+**Why**: Multi-block drag was added previously, but the menu actions still only
+affected the single active block. Reducing the multi-block menu to the three
+structural actions matches user expectation and avoids ambiguous multi-block
+semantics for formatting/conversion items.
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-block.md` — documented the multi-block menu reduction.
+
+### Behavior Changes
+- `block-controller`: opening the drag-handle menu while a cross-block selection
+  is active now shows only cut / copy / delete (previously the full single-block
+  menu for `selection.firstBlock`). No public API signature changed.
+
+---
 
 ### v?.?.? - 2026-05-26 (minor)
 
