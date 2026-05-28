@@ -97,6 +97,30 @@ const HEADING_LIST: IContextMenuItem[] = [
   }
 ]
 
+const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
+  {
+    type: 'tool',
+    name: 'cut',
+    value: true,
+    icon: 'bc_jianqie',
+    label: '剪切',
+  },
+  {
+    type: 'tool',
+    name: 'copy',
+    icon: 'bc_fuzhi',
+    value: true,
+    label: '复制',
+  },
+  {
+    type: 'tool',
+    name: 'delete',
+    icon: 'bc_shanchu-2',
+    value: true,
+    label: '删除'
+  }
+]
+
 @Component({
   selector: 'bc-drag-handle',
   standalone: true,
@@ -125,7 +149,7 @@ const HEADING_LIST: IContextMenuItem[] = [
       <bc-float-toolbar style="display: block; width: 224px; padding-top: 4px;"
                         styles="max-height: 60vh; overflow-y: auto;"
                         direction="column">
-        @if (activeBlock?.nodeType === BlockNodeType.editable) {
+        @if (!isMultiSelection && activeBlock?.nodeType === BlockNodeType.editable) {
           <h4 class="title">基础
             <i class="bc_icon bc_xinxi" style="cursor: pointer;"
                nz-tooltip="鼠标停留在内容块选项上一段时间以查看对应快捷键和快速转化语法"
@@ -160,7 +184,7 @@ const HEADING_LIST: IContextMenuItem[] = [
                          [menuDisabled]="menuDisabled"
                          (itemAction)="handleMenuAction($event)"></bc-block-menu>
 
-          @if (blockMenuSections.length) {
+          @if (!isMultiSelection && blockMenuSections.length) {
             <span class="bc-float-toolbar__divider"></span>
             @for (section of blockMenuSections; track section.key) {
               @if (section.title) {
@@ -176,15 +200,17 @@ const HEADING_LIST: IContextMenuItem[] = [
             }
           }
 
-          <span class="bc-float-toolbar__divider"></span>
+          @if (!isMultiSelection) {
+            <span class="bc-float-toolbar__divider"></span>
 
-          <bc-float-toolbar-item class="append-more-btn" [expandable]="true" [bcOverlayTrigger]="blockAddList"
-                                 [disabled]="menuDisabled"
-                                 [bcOverlayDisabled]="menuDisabled"
-                                 [positions]="['right-center']" [offsetX]="2">
-            <i class="bc_icon bc_tianjia"></i>
-            <span>在下方添加</span>
-          </bc-float-toolbar-item>
+            <bc-float-toolbar-item class="append-more-btn" [expandable]="true" [bcOverlayTrigger]="blockAddList"
+                                   [disabled]="menuDisabled"
+                                   [bcOverlayDisabled]="menuDisabled"
+                                   [positions]="['right-center']" [offsetX]="2">
+              <i class="bc_icon bc_tianjia"></i>
+              <span>在下方添加</span>
+            </bc-float-toolbar-item>
+          }
         }
       </bc-float-toolbar>
     </ng-template>
@@ -357,35 +383,14 @@ export class TriggerBtn {
   protected otherBlockList: IBlockSchemaOptions[] = []
   protected embeddedBlockList: IBlockSchemaOptions[] = []
 
-  protected toolList: IContextMenuItem[] = [
-    {
-      type: 'tool',
-      name: 'cut',
-      value: true,
-      icon: 'bc_jianqie',
-      label: '剪切',
-    },
-    {
-      type: 'tool',
-      name: 'copy',
-      icon: 'bc_fuzhi',
-      value: true,
-      label: '复制',
-    },
-    {
-      type: 'tool',
-      name: 'delete',
-      icon: 'bc_shanchu-2',
-      value: true,
-      label: '删除'
-    }
-  ]
+  protected toolList: IContextMenuItem[] = [...BUILTIN_TOOL_LIST]
 
   protected primaryToolMenuItems: BlockMenuItem[] = []
   protected blockMenuSections: BlockMenuSection[] = []
 
   protected display = 'none'
   protected isEmpty = false
+  private _isMultiSelection = false
   private _onDestroySub?: Subscription
 
   protected _validBaseBlockList: IBlockSchemaOptions[] = []
@@ -472,6 +477,38 @@ export class TriggerBtn {
     this.refreshMenuData()
   }
 
+  protected get isMultiSelection() {
+    return this._isMultiSelection
+  }
+
+  private computeIsMultiSelection(): boolean {
+    const sel = this.doc.selection.value
+    if (!sel || sel.isInSameBlock || !this._activeBlock) return false
+    const ids = this.doc.queryBlocksBetween(sel.firstBlock, sel.lastBlock, true)
+    return ids.includes(this._activeBlock.id)
+  }
+
+  private getSelectedBlockIds(): string[] {
+    const sel = this.doc.selection.value
+    if (!sel) return []
+    return this.doc.queryBlocksBetween(sel.firstBlock, sel.lastBlock, true)
+  }
+
+  // Resolve the selected block ids for a multi-block menu action. Returns null
+  // when the selection is no longer a valid (>=2 block) range — e.g. a concurrent
+  // remote edit collapsed it or deleted one of the blocks — so the caller falls
+  // back to the single-block path on activeBlock.
+  private resolveMultiActionIds(): string[] | null {
+    try {
+      const ids = this.getSelectedBlockIds()
+      if (ids.length < 2) return null
+      ids.forEach(id => this.doc.getBlockById(id))  // surface a concurrently-deleted id as a throw
+      return ids
+    } catch {
+      return null
+    }
+  }
+
   close() {
     this.display = 'none'
     this.activeBlock = null
@@ -479,12 +516,25 @@ export class TriggerBtn {
   }
 
   private refreshMenuData() {
+    this._isMultiSelection = this.computeIsMultiSelection()
     this.primaryToolMenuItems = this.buildPrimaryToolMenuItems()
     this.blockMenuSections = this.resolveBlockMenuSections()
   }
 
   private buildPrimaryToolMenuItems() {
     if (!this.activeBlock || this.isEmpty) return []
+
+    if (this._isMultiSelection) {
+      // 多块模式：仅剪切/复制/删除，无 align 下拉、无 customTools
+      return BUILTIN_TOOL_LIST.map(item => ({
+        type: 'simple' as const,
+        name: item.name,
+        label: item.label,
+        icon: item.icon,
+        value: item.value,
+        data: { legacyTool: item }
+      }))
+    }
 
     const items: BlockMenuItem[] = []
     if (this.activeBlock.nodeType === BlockNodeType.editable) {
@@ -653,6 +703,30 @@ export class TriggerBtn {
         this.activeBlock.updateProps({ textAlign: item.value as any })
         break
       case 'cut': {
+        if (this._isMultiSelection) {
+          const ids = this.resolveMultiActionIds()
+          if (ids) {
+            const snapshots = ids.map(id => this.doc.getBlockById(id).toSnapshot())
+            this.doc.clipboard.copyBlocksModel(snapshots)
+              .then(() => {
+                void this.doc.chain()
+                  .transact(() => ids.forEach(id => this.doc.crud.deleteBlockById(id)))
+                  .animationFrame()
+                  .recalculateSelection()
+                  .tap(() => {
+                    this.doc.messageService.success('已剪切')
+                    this.close()
+                  })
+                  .run()
+              })
+              .catch(err => {
+                this.doc.logger.warn('block-controller multi cut failed', err)
+                this.close()
+              })
+            return
+          }
+          // multi-selection collapsed → fall through to single-block cut
+        }
         if (!this.activeBlock) return;
         this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
           if (this.activeBlock) {
@@ -670,6 +744,19 @@ export class TriggerBtn {
       }
         break
       case 'delete':
+        if (this._isMultiSelection) {
+          const ids = this.resolveMultiActionIds()
+          if (ids) {
+            void this.doc.chain()
+              .transact(() => ids.forEach(id => this.doc.crud.deleteBlockById(id)))
+              .animationFrame()
+              .recalculateSelection()
+              .tap(() => this.close())
+              .run()
+            return
+          }
+          // multi-selection collapsed → fall through to single-block delete
+        }
         if (this.activeBlock) {
           void this.doc.chain()
             .deleteById(this.activeBlock.id)
@@ -679,6 +766,23 @@ export class TriggerBtn {
         }
         break
       case 'copy': {
+        if (this._isMultiSelection) {
+          const ids = this.resolveMultiActionIds()
+          if (ids) {
+            const snapshots = ids.map(id => this.doc.getBlockById(id).toSnapshot())
+            this.doc.clipboard.copyBlocksModel(snapshots)
+              .then(() => {
+                this.doc.messageService.success('已复制')
+                this.close()
+              })
+              .catch(err => {
+                this.doc.logger.warn('block-controller multi copy failed', err)
+                this.close()
+              })
+            return
+          }
+          // multi-selection collapsed → fall through to single-block copy
+        }
         if (!this.activeBlock) return;
         this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
           this.doc.messageService.success('已复制')
