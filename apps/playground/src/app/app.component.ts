@@ -40,6 +40,7 @@ type DebugActionId =
   | 'markdownStream'
   | 'logTable'
   | 'fixTable'
+  | 'toggleCopyFilter'
   | 'importHtml'
   | 'importMarkdown'
   | 'exportMarkdown'
@@ -97,6 +98,7 @@ const ACTION_SECTIONS: DebugSection[] = [
       { id: 'listenUpdate', label: '监听更新' },
       { id: 'markdownStream', label: 'Markdown 流' },
       { id: 'logTable', label: '打印表格' },
+      { id: 'toggleCopyFilter', label: '过滤链接(复制)' },
     ]
   },
   {
@@ -150,6 +152,10 @@ const ACTION_SECTIONS: DebugSection[] = [
             <div class="status-item">
               <span class="status-item__label">协同</span>
               <span class="status-pill" [class.status-pill--active]="provider">{{ collabStatus }}</span>
+            </div>
+            <div class="status-item">
+              <span class="status-item__label">复制过滤</span>
+              <span class="status-pill" [class.status-pill--active]="copyFilterActive">{{ copyFilterActive ? '过滤链接' : '关闭' }}</span>
             </div>
             <div class="status-item status-item--wide">
               <span class="status-item__label">更新监听</span>
@@ -1181,6 +1187,10 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   readonly updateList: Uint8Array[] = [];
   editorInitialized = false;
   isListeningUpdate = false;
+
+  // 临时调试：复制时过滤行内链接属性（a:link），可开关
+  copyFilterActive = false;
+  private _disposeCopyFilter: (() => void) | null = null;
   provider?: WebsocketProvider;
   selectionJson: string | null = null;
   selectionMeta: DebugMetaItem[] = [];
@@ -1261,6 +1271,8 @@ graph TD
     this.stopMarkdownStreamPlayback();
     this._markdownStreamViewer?.destroy();
     this._markdownStreamViewer = null;
+    this._disposeCopyFilter?.();
+    this._disposeCopyFilter = null;
   }
 
   get isReadonly() {
@@ -1452,6 +1464,9 @@ graph TD
         return;
       case 'fixTable':
         this.fixTable();
+        return;
+      case 'toggleCopyFilter':
+        this.toggleCopyFilter();
         return;
       case 'importHtml':
         void this.importHTML();
@@ -1760,6 +1775,22 @@ graph TD
   toggleReadonly() {
     const editor = this.ensureEditorInitialized();
     editor.doc.toggleReadonly(!editor.doc.isReadonly);
+  }
+
+  toggleCopyFilter() {
+    const editor = this.requireEditor();
+    if (this.copyFilterActive) {
+      this._disposeCopyFilter?.();
+      this._disposeCopyFilter = null;
+      this.copyFilterActive = false;
+    } else {
+      // 复制时清除行内链接属性 a:link（其余内容保留）
+      this._disposeCopyFilter = editor.doc.clipboard.registerCopyFilter({
+        stripAttributes: ['a:link'],
+      });
+      this.copyFilterActive = true;
+    }
+    this.cdr.markForCheck();
   }
 
   insertTestText() {

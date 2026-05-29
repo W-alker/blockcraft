@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-05-28 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-05-29 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,55 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-05-29 (minor)
+
+**What changed**: Added a composable copy-filter pipeline to the clipboard.
+Copies can now drop blocks by flavour, strip inline delta attributes, and run an
+arbitrary transform — applied once to the snapshot so every clipboard format
+(text / html / markdown / snapshot) stays consistent.
+
+**Why**: Hosts/plugins need to filter what gets copied (e.g. exclude internal
+block types, strip styling) without each format diverging.
+
+**Affected ai-skills files**:
+- `blockcraft-app.md` — documented `DocConfig.copyFilter` + `registerCopyFilter` + per-call override.
+- `blockcraft-plugin.md` — documented plugins contributing copy filters in `init()` / `destroy()`.
+- `blockcraft.md` — added the copy-filter line to the Doc Services Index area.
+
+### New APIs / Features
+- `DocConfig.copyFilter?: ClipboardCopyFilter` — global filter (seeds the registry).
+- `ClipboardManager.registerCopyFilter(filter): () => void` — composable registration (returns disposer); used by plugins. Multiple filters compose in registration order.
+- `copyFromSelection(sel, data, { filter })` / `copyBlocksModel(snapshots, { filter })` — optional per-call override (`false` = skip filtering for that call).
+- Types `ClipboardCopyFilter` / `CopyFilterContext`; pure functions `applyCopyFilters` / `resolveCopyFilters`.
+
+### Migration Recipe
+
+Opt-in — no change needed if you don't filter.
+
+Global (host):
+
+```typescript
+// before
+const doc = new BlockCraftDoc({ /* … */ })
+
+// after
+const doc = new BlockCraftDoc({
+  /* … */
+  copyFilter: { excludeFlavours: ['comment'], stripAttributes: ['s:color'] },
+})
+```
+
+Plugin:
+
+```typescript
+// init()
+this._disposeFilter = this.doc.clipboard.registerCopyFilter({ excludeFlavours: ['my-block'] })
+// destroy()
+this._disposeFilter?.()
+```
+
+---
 
 ### v?.?.? - 2026-05-28 (minor)
 

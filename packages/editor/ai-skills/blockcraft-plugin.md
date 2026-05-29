@@ -5,7 +5,7 @@
 > For configuring existing built-in plugins, see `blockcraft-plugins-ref.md`.
 > For event system internals, see L2: `blockcraft-event.md`.
 >
-> Last updated: 2026-04-08
+> Last updated: 2026-05-29
 
 ## Plugin Lifecycle
 
@@ -205,6 +205,25 @@ onClick(ctx: UIEventStateContext) {
   // ...
 }
 ```
+
+### 插件贡献复制过滤器
+
+插件可在 `init()` 注册复制过滤器、在 `destroy()` 注销（多个插件互不覆盖，按注册顺序叠加）：
+
+```typescript
+class MyPlugin extends DocPlugin {
+  private _disposeFilter?: () => void
+  init() {
+    this._disposeFilter = this.doc.clipboard.registerCopyFilter({
+      excludeFlavours: ['my-internal-block'],
+      stripAttributes: ['s:background'],
+    })
+  }
+  destroy() { this._disposeFilter?.() }
+}
+```
+
+`ClipboardCopyFilter` 字段：`excludeFlavours` / `excludeBlock(snapshot, ctx)` / `stripAttributes`（key 数组或 `(key, value) => boolean`）/ `transform(root, ctx)`（逃生舱，返回新 snapshot）。
 
 ## Available Event Names
 

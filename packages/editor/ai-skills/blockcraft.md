@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-05-22 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-05-29 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -174,6 +174,8 @@ Key services accessible on `doc.*` (see `blockcraft-app.md` for full API details
 | `doc.clipboard`      | ClipboardManager | `framework/modules/clipboard/` |
 | `doc.selection`      | SelectionManager (anchor/head model) | `framework/modules/selection/` |
 | `doc.event`          | UIEventDispatcher | `framework/block-std/event/` |
+
+- 复制过滤：`DocConfig.copyFilter` / `doc.clipboard.registerCopyFilter()`（按 flavour/属性过滤 + transform 逃生舱；详见 blockcraft-app.md / blockcraft-plugin.md）
 
 ### Block Property Updates
 

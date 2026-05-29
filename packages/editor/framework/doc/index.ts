@@ -9,7 +9,7 @@ import {
   EditableBlockComponent,
   YBlock
 } from "../block-std";
-import { ClipboardManager, InputTransformer, SelectionManager } from "../modules";
+import { ClipboardManager, InputTransformer, SelectionManager, ClipboardCopyFilter } from "../modules";
 import { BehaviorSubject, Subject, Subscription, take } from "rxjs";
 import { getCommonPath } from "../utils";
 import { DocPlugin } from "../plugin";
@@ -30,6 +30,8 @@ interface DocConfig {
   embeds?: [string, EmbedConverter][]
   plugins?: DocPlugin[]
   readonly?: boolean
+  /** Global copy filter; seeded into ClipboardManager's registry. Omit = no filtering. */
+  copyFilter?: ClipboardCopyFilter
   // 如果不传递，会尝试向上遍历获取
   scrollContainer?: HTMLElement
 }

@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-05-23
+> Last updated: 2026-05-29
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -286,9 +286,28 @@ interface DocConfig {
   embeds?: [string, EmbedConverter][]     // inline embed converters
   plugins?: DocPlugin[]
   readonly?: boolean                      // default: true (set false on init or via switch later)
+  copyFilter?: ClipboardCopyFilter        // global copy filter; seeds ClipboardManager registry. Omit = no filtering
   scrollContainer?: HTMLElement           // walked upward if omitted
 }
 ```
+
+### 复制过滤（Copy Filter）
+
+`DocConfig.copyFilter?: ClipboardCopyFilter` 配置全局复制过滤器；不传则不过滤。
+运行时可用 `doc.clipboard.registerCopyFilter(filter): () => void` 追加过滤器（返回 disposer，可组合，多个按注册顺序叠加）。
+
+```ts
+const doc = new BlockCraftDoc({
+  // …
+  copyFilter: {
+    excludeFlavours: ['comment'],            // 复制时丢弃整块（含子树）
+    stripAttributes: ['s:color', 'a:link'],  // 清除行内属性
+    // transform: (root, ctx) => root,       // 逃生舱：任意转换，返回新 snapshot
+  },
+})
+```
+
+复制入口可临时覆盖：`copyFromSelection(sel, data, { filter })` / `copyBlocksModel(snapshots, { filter })`；传 `false` 表示本次完全不过滤。过滤作用于序列化前的 snapshot，所有产出格式（text/html/markdown/snapshot）一致。
 
 ## Step 5 — Initialise the Document
 

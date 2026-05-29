@@ -18,6 +18,7 @@ import {
 } from "../../../global";
 import {Subject} from "rxjs";
 import {
+  ClipboardCopyFilter,
   ClipboardDataType,
   ClipboardPasteApplyResult,
   ClipboardPasteCompletedEvent,
@@ -27,9 +28,11 @@ import {
 import {
   generateId,
   replaceSnapshotsIdDeeply,
+  snapshots2Text,
 } from "../../utils";
 import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
 import {copyBlocks} from "./copyBlocks";
+import {applyCopyFilters, resolveCopyFilters} from "./copy-filter";
 import {
   BLOCKCRAFT_WEB_SNAPSHOT_MIME,
   buildClipboardItems,
@@ -41,6 +44,7 @@ import {
 import {cloneSnapshot, getMarkdownClipboardText, looksLikeMarkdown} from "./paste-utils";
 
 export * from './types'
+export * from './copy-filter'
 
 @DocEventRegister
 export class ClipboardManager {
@@ -49,6 +53,22 @@ export class ClipboardManager {
   /** Emits null to clear, or format data after a paste with alternatives. */
   readonly pasteFormatData$ = new Subject<ClipboardPasteCompletedEvent | null>()
 
+  /** Composable copy-filter registry. Seeded by config; plugins append via registerCopyFilter. */
+  private _copyFilters: ClipboardCopyFilter[] =
+    this.doc.config.copyFilter ? [this.doc.config.copyFilter] : []
+
+  /**
+   * Register a copy filter. Returns a disposer.
+   * Plugins call this in init() and the disposer in destroy(); filters compose in registration order.
+   */
+  registerCopyFilter(filter: ClipboardCopyFilter): () => void {
+    this._copyFilters.push(filter)
+    return () => {
+      const i = this._copyFilters.indexOf(filter)
+      if (i >= 0) this._copyFilters.splice(i, 1)
+    }
+  }
+
   constructor(public readonly doc: BlockCraft.Doc) {
   }
 
@@ -56,9 +76,17 @@ export class ClipboardManager {
     return navigator.clipboard.writeText(text)
   }
 
-  copyBlocksModel = (snapshots: IBlockSnapshot[]): Promise<void> => {
+  copyBlocksModel = (
+    snapshots: IBlockSnapshot[],
+    opts?: { filter?: ClipboardCopyFilter | false }
+  ): Promise<void> => {
     if (!snapshots?.length) return Promise.reject('no blocks to copy')
-    const rootSnapshot = this._wrapSnapshotsByRoot(snapshots)
+    let rootSnapshot = this._wrapSnapshotsByRoot(snapshots)
+    const filters = resolveCopyFilters(this._copyFilters, opts?.filter)
+    if (filters.length) {
+      rootSnapshot = applyCopyFilters(rootSnapshot, filters, {source: 'programmatic', readonly: this.doc.isReadonly}, this.doc.logger)
+      if (!rootSnapshot.children.length) return Promise.reject('all blocks filtered out')
+    }
     return copyBlocks.call(this, rootSnapshot)
   }
 
@@ -77,8 +105,18 @@ export class ClipboardManager {
     }
   }
 
-  copyFromSelection = async (selection: BlockCraft.Selection, clipboardData: DataTransfer) => {
-    const {snapshot, plainText} = this._buildCopyPayload(selection)
+  copyFromSelection = async (
+    selection: BlockCraft.Selection,
+    clipboardData: DataTransfer,
+    opts?: { filter?: ClipboardCopyFilter | false }
+  ) => {
+    let {snapshot, plainText} = this._buildCopyPayload(selection)
+    const filters = resolveCopyFilters(this._copyFilters, opts?.filter)
+    if (filters.length) {
+      snapshot = applyCopyFilters(snapshot, filters, {source: 'selection', readonly: this.doc.isReadonly}, this.doc.logger)
+      if (!snapshot.children.length) return // all content filtered out → no-op, don't clobber clipboard
+      plainText = snapshots2Text([snapshot])
+    }
 
     if (this.doc.isReadonly) {
       // 只读模式：contenteditable=false 时 Chromium（特别是 Windows）会在
@@ -453,10 +491,10 @@ export class ClipboardManager {
       const text = state.clipboardData?.getData(ClipboardDataType.TEXT)
       if (!text) return false
       editableBlock.replaceText(fromIndex, fromLength, text)
-      nextTick().then(() => {
-        collapsed ? editableBlock.setInlineRange(fromIndex + text.length)
-          : editableBlock.setInlineRange(fromIndex, text.length)
-      })
+      // 收缩选区粘贴后不重设光标位置；仅范围选区时把粘贴内容选中
+      if (!collapsed) {
+        nextTick().then(() => editableBlock.setInlineRange(fromIndex, text.length))
+      }
       return true
     }
 
