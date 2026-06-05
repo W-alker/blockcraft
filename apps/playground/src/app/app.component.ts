@@ -2053,15 +2053,17 @@ $$
 
     this.provider = new WebsocketProvider(
       // 'ws://ws-doc-v2.cses7.com/collaboration',
-      'ws://localhost:1234',
+      "ws://localhost:1234",
       // 'ws://196.168.1.153:1234',
       // 'ws://ws-doc.cses7.com',
-      // 'ws://ws-doc-pre.cses7.com',
+      // "ws://ws-doc-pre.cses7.com/collaboration",
       // 'ws://193.168.2.100:30204/collaborate',
       this.editor!.docId,
-      this.editor!.doc.yDoc, {
-        disableBc: false
-      })
+      this.editor!.doc.yDoc,
+      {
+        disableBc: false,
+      },
+    );
 
     const uid = generateId(11)
     const awa = new BlockCraftAwareness(this.editor!.doc, this.provider.awareness)

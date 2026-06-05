@@ -76,7 +76,7 @@ export interface IColumnCountPickedEvent {
 })
 export class BcColumnCountPickerComponent {
   @Input()
-  minCount = 2
+  minCount = 1
 
   @Input()
   maxCount = 8
@@ -84,10 +84,20 @@ export class BcColumnCountPickerComponent {
   @Input()
   emptyHint = '拖动选择分栏列数'
 
+  /** 当前栏数（打开时回显高亮）；0 表示无当前值 */
+  @Input()
+  current = 0
+
   @Output()
   pick = new EventEmitter<IColumnCountPickedEvent>()
 
-  activeCount = 0
+  /** 鼠标悬停预览的栏数；0 表示未悬停 */
+  private _hovering = 0
+
+  /** 高亮栏数：悬停时取悬停值，否则回显当前值 */
+  get activeCount() {
+    return this._hovering || this.current
+  }
 
   get counts() {
     const min = Math.max(1, Math.floor(this.minCount) || 1)
@@ -96,8 +106,13 @@ export class BcColumnCountPickerComponent {
   }
 
   get hintText() {
-    if (!this.activeCount) return this.emptyHint
-    return `${this.activeCount} 列`
+    if (this._hovering) {
+      // 已有分栏（current ≥ 2）内悬停到 1 列时，提示这是"取消分栏"
+      if (this._hovering === 1 && this.current >= 2) return '取消分栏'
+      return `${this._hovering} 列`
+    }
+    if (this.current > 0) return `当前 ${this.current} 列`
+    return this.emptyHint
   }
 
   onMouseDown(evt: MouseEvent) {
@@ -106,15 +121,14 @@ export class BcColumnCountPickerComponent {
   }
 
   onHover(count: number) {
-    this.activeCount = count
+    this._hovering = count
   }
 
   onPickerLeave() {
-    this.activeCount = 0
+    this._hovering = 0
   }
 
   onPick(count: number) {
-    this.activeCount = count
     this.pick.emit({count})
   }
 }

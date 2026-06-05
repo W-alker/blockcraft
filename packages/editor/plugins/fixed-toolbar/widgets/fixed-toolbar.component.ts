@@ -252,7 +252,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
     <button
       class="toolbar-btn toolbar-btn--dropdown"
-      title="创建分栏"
+      title="分栏"
       [disabled]="readonly || !selectionJSON"
       [bcOverlayTrigger]="columnCountPicker"
       [bcOverlayDisabled]="readonly || !selectionJSON"
@@ -346,6 +346,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
     <ng-template #columnCountPicker>
       <bc-column-count-picker
+        [current]="columnPickerCurrent"
         (pick)="insertColumnsBlock($event, columnCountTrigger)"
       ></bc-column-count-picker>
     </ng-template>
@@ -601,6 +602,9 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   canTransformBlocks = false;
 
+  /** 分栏按钮回显的栏数：选区在分栏内为当前栏数，否则为 1（单栏） */
+  columnPickerCurrent = 1;
+
   @Input()
   isLinkAble = false;
 
@@ -830,9 +834,9 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     const selection = this.doc.selection.value;
     if (!selection) return;
 
-    const inserted = await this.insertColumns(evt.count, selection);
-    if (!inserted) return;
+    const changed = await this.insertColumns(evt.count, selection);
     trigger.closePanel();
+    if (!changed) return;
     this.doc.selection.recalculate();
     this.syncToolbarState(this.doc.selection.value);
     this.cdr.markForCheck();
@@ -1235,25 +1239,226 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   private async insertColumns(count: number, selection: BlockCraft.Selection) {
-    const safeCount = Math.max(2, Math.min(6, Math.floor(count) || 0));
-    const anchor = this.resolveInsertAnchor("columns", selection);
-    if (!anchor) return null;
+    const safeCount = Math.max(1, Math.min(8, Math.floor(count) || 0));
 
-    const columnsSnapshot = this.doc.schemas.createSnapshot("columns", [
-      safeCount,
-    ]);
-    await this.doc
-      .chain()
-      .insertAfterSnapshots(anchor, [columnsSnapshot])
-      .run();
-
-    const firstParagraphId = (columnsSnapshot as any).children?.[0]
-      ?.children?.[0]?.id as string | undefined;
-    if (firstParagraphId) {
-      this.doc.selection.setCursorAtBlock(firstParagraphId, true);
-    } else {
-      this.doc.selection.selectOrSetCursorAtBlock(columnsSnapshot.id, true);
+    // 选区在分栏内：调整当前分栏的栏数（目标 1 栏 = 取消分栏）
+    const columnsBlock = this.findColumnsAncestor(selection.firstBlock);
+    if (columnsBlock) {
+      return this.applyColumnCount(columnsBlock, safeCount);
     }
+
+    // 选区在分栏外：选 1 栏视为维持单栏、不处理；≥2 栏对多块选区执行"行转列"
+    if (safeCount < 2) return null;
+    return this.convertSelectedBlocksToColumns(safeCount, selection);
+  }
+
+  /** 从给定块向上查找最近的分栏（columns）祖先块；找不到返回 null。 */
+  private findColumnsAncestor(
+    block: BlockCraft.BlockComponent | null | undefined,
+  ): BlockCraft.BlockComponent | null {
+    let cur: BlockCraft.BlockComponent | null | undefined = block;
+    while (cur) {
+      if (cur.flavour === "columns") return cur;
+      cur = cur.parentBlock;
+    }
+    return null;
+  }
+
+  /**
+   * 调整已有分栏块的栏数：
+   * - 目标 1 栏 → 取消分栏（解散为上下布局）。
+   * - 目标 > 当前 → 末尾追加空栏。
+   * - 目标 < 当前 → 把多余栏的内容并入最后保留的栏，再删除多余栏。
+   * 列宽由分栏块的 onChildrenChange 自动按等分重算。
+   */
+  private applyColumnCount(
+    columnsBlock: BlockCraft.BlockComponent,
+    targetCount: number,
+  ) {
+    const current = columnsBlock.childrenLength;
+    if (targetCount <= 1) return this.dissolveColumns(columnsBlock);
+    if (targetCount === current) return columnsBlock;
+
+    if (targetCount > current) {
+      const newColumns = Array.from({ length: targetCount - current }, () =>
+        this.doc.schemas.createSnapshot("column", []),
+      );
+      this.doc.crud.transact(() => {
+        this.doc.crud.insertBlocks(columnsBlock.id, current, newColumns);
+      });
+      return columnsBlock;
+    }
+
+    // targetCount < current：把多余栏的内容并入最后保留的栏后删除；仅含空段落的栏直接丢弃
+    const columnIds = [...columnsBlock.childrenIds];
+    const keepLastId = columnIds[targetCount - 1];
+    const removeIds = columnIds.slice(targetCount);
+    this.doc.crud.transact(() => {
+      for (const removeId of removeIds) {
+        const removeCol = this.doc.getBlockById(removeId);
+        if (removeCol && !this.isColumnEffectivelyEmpty(removeCol)) {
+          const keepLen = this.doc.getBlockById(keepLastId)?.childrenLength ?? 0;
+          this.doc.crud.moveBlocks(
+            removeId,
+            0,
+            removeCol.childrenLength,
+            keepLastId,
+            keepLen,
+          );
+        }
+        this.doc.crud.deleteBlockById(removeId);
+      }
+    });
+    return columnsBlock;
+  }
+
+  /**
+   * 解散分栏：把分栏块内所有栏的内容按顺序平铺回分栏块所在的父级（上下布局），
+   * 随后删除已清空的分栏块。
+   */
+  private dissolveColumns(columnsBlock: BlockCraft.BlockComponent) {
+    const parent = columnsBlock.parentBlock;
+    if (!parent) return null;
+    const parentId = parent.id;
+    const columnIds = [...columnsBlock.childrenIds];
+
+    // 插入位置始终紧接在分栏块之前；每移走一栏内容，分栏块随之后移，insertAt 同步累加。
+    let insertAt = columnsBlock.getIndexOfParent();
+    let firstContentId: string | undefined;
+    let movedAny = false;
+    this.doc.crud.transact(() => {
+      for (const colId of columnIds) {
+        const col = this.doc.getBlockById(colId);
+        // 仅含空段落的栏直接丢弃，不平铺出来
+        if (!col || this.isColumnEffectivelyEmpty(col)) continue;
+        // 必须在移动前取数：moveBlocks 会清空该栏，移动后 childrenLength 归零，
+        // 直接复用会导致 insertAt 不前进、各栏内容被插到前一栏之前（顺序反转）。
+        const childCount = col.childrenLength;
+        if (!firstContentId) firstContentId = col.childrenIds[0];
+        this.doc.crud.moveBlocks(colId, 0, childCount, parentId, insertAt);
+        insertAt += childCount;
+        movedAny = true;
+      }
+      // 全部栏都为空时：仅当分栏块是父级唯一子块（删除后会留空洞）才补一个空段落占位
+      if (!movedAny && parent.childrenLength <= 1) {
+        const placeholder = this.doc.schemas.createSnapshot("paragraph", []);
+        this.doc.crud.insertBlocks(parentId, insertAt, [placeholder]);
+        firstContentId = placeholder.id;
+      }
+      // 各栏已清空，删除整个分栏块
+      this.doc.crud.deleteBlockById(columnsBlock.id);
+    });
+
+    if (firstContentId) {
+      this.doc.selection.selectOrSetCursorAtBlock(firstContentId, true);
+    }
+    return columnsBlock;
+  }
+
+  /** 判断某一栏是否"只有空段落"：无子块，或所有子块都是空文本段落 */
+  private isColumnEffectivelyEmpty(
+    columnBlock: BlockCraft.BlockComponent,
+  ): boolean {
+    const childIds = columnBlock.childrenIds;
+    if (!childIds.length) return true;
+    return childIds.every((id) => {
+      const child = this.doc.getBlockById(id);
+      if (!child || child.flavour !== "paragraph") return false;
+      return this.doc.isEditable(child) && child.textLength === 0;
+    });
+  }
+
+  /**
+   * 行转列：当选区跨越 ≥2 个同级块时，把这些块分配进 `count` 个并排的栏中。
+   *
+   * - 行数 == 栏数：一栏放一块（主路径，如选 2 行选 2 栏 → 上下两行变左右两栏）。
+   * - 行数 > 栏数：按顺序连续均分，靠前的栏多放一块。
+   * - 行数 < 栏数：靠前的栏每栏一块，多出来的空栏保留默认空段落。
+   *
+   * 仅当选中的块同属一个父块、可作为 column 子块、且父块允许放置 columns 时才生效；
+   * 否则返回 null（不创建分栏）。
+   */
+  private convertSelectedBlocksToColumns(
+    count: number,
+    selection: BlockCraft.Selection,
+  ) {
+    const columnSchema = this.doc.schemas.get("column");
+    if (!columnSchema) return null;
+
+    const betweenIds = this.doc.queryBlocksBetween(
+      selection.firstBlock,
+      selection.lastBlock,
+      true,
+    );
+    if (betweenIds.length < 2) return null;
+
+    const blocks = betweenIds
+      .map((id) => this.doc.getBlockById(id))
+      .filter((b) => !!b);
+    if (blocks.length < 2) return null;
+
+    const parent = blocks[0].parentBlock;
+    if (!parent) return null;
+
+    // 必须同父、可作为列内容、父块允许放置 columns，否则不转换
+    const sameParent = blocks.every((b) => b.parentId === parent.id);
+    const allValidChildren = blocks.every((b) =>
+      this.doc.schemas.isValidChildren(b.flavour, columnSchema),
+    );
+    if (
+      !sameParent ||
+      !allValidChildren ||
+      !this.doc.schemas.isValidChildren("columns", parent.flavour)
+    ) {
+      return null;
+    }
+
+    // 计算每栏分得的块数（连续均分，余数分给靠前的栏）
+    const total = blocks.length;
+    const base = Math.floor(total / count);
+    const remainder = total % count;
+    const takes = Array.from(
+      { length: count },
+      (_, c) => base + (c < remainder ? 1 : 0),
+    );
+
+    const columnsSnapshot = this.doc.schemas.createSnapshot("columns", [count]);
+    const columnSnapshots = (columnsSnapshot as any).children as any[];
+    // 接收块的栏清空默认段落；空栏保留默认段落以满足列容器非空约束
+    takes.forEach((take, c) => {
+      if (take > 0 && columnSnapshots[c]) columnSnapshots[c].children = [];
+    });
+
+    const parentId = parent.id;
+    const firstIndex = blocks[0].getIndexOfParent();
+    const firstBlockId = blocks[0].id;
+
+    // 插入 columns 后，源块整体后移一位，落在 [firstIndex + 1, ...) 的连续区间。
+    // 预先算出每栏对应的源块起始位置。
+    const starts: number[] = [];
+    let acc = firstIndex + 1;
+    for (let c = 0; c < count; c++) {
+      starts.push(acc);
+      acc += takes[c];
+    }
+
+    // 第一笔事务先插入 columns 块，待 VM 物化出 column 子块后，
+    // 第二笔事务再把源块移入对应栏（与 dnd.service 的分栏创建保持一致）。
+    this.doc.crud.transact(() => {
+      this.doc.crud.insertBlocks(parentId, firstIndex, [columnsSnapshot]);
+    });
+    this.doc.crud.transact(() => {
+      // 自右向左搬移：每次移走的都是当前末段，不会影响尚未搬移的靠前块的索引。
+      for (let c = count - 1; c >= 0; c--) {
+        const take = takes[c];
+        if (take <= 0) continue;
+        const colId = columnSnapshots[c]?.id;
+        if (!colId) continue;
+        this.doc.crud.moveBlocks(parentId, starts[c], take, colId, 0);
+      }
+    });
+
+    this.doc.selection.selectOrSetCursorAtBlock(firstBlockId, true);
     return columnsSnapshot;
   }
 
@@ -1266,6 +1471,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       this.allEditable = false;
       this.canTransformBlocks = false;
       this.selectionJSON = null;
+      this.columnPickerCurrent = 1;
       this.isLinkAble = false;
       this.hasTextSelection = false;
       this.cdr.markForCheck();
@@ -1273,6 +1479,9 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     }
 
     this.selectionJSON = selection.toJSON();
+    // 分栏按钮回显：选区在分栏内显示当前栏数，否则按"单栏"显示
+    const columnsBlock = this.findColumnsAncestor(selection.firstBlock);
+    this.columnPickerCurrent = columnsBlock ? columnsBlock.childrenLength : 1;
     this.canTransformBlocks = this.canTransformSelection(selection);
     if (!this.canTransformBlocks) {
       this.activeAttrs = new Map<string, any>();
