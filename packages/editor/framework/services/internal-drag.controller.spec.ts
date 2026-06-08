@@ -7,7 +7,10 @@ function makeMockDoc(): any {
     root: { hostElement: document.createElement('div') },
     getBlockById: () => null,
     schemas: { has: () => false, get: () => null },
-    selection: { setSuppressRecalculate: jasmine.createSpy('setSuppressRecalculate') },
+    selection: {
+      setSuppressRecalculate: jasmine.createSpy('setSuppressRecalculate'),
+      blur: jasmine.createSpy('blur'),
+    },
     dndService: {
       dragStatus$: { next: jasmine.createSpy('next'), value: 'end' },
       onSortBlock: jasmine.createSpy('onSortBlock'),
@@ -139,6 +142,23 @@ describe('DocInternalDragController state machine', () => {
 
     dispatchPointerMove(target, 104, 104)
     expect(ctrl.state).toBe('dragging')
+  })
+
+  it('entering dragging clears framework BlockSelection via selection.blur (symmetric with native clear)', () => {
+    // Otherwise SelectionSelectedManager's .selected/.focused classes stay
+    // applied on the pre-drag cross-block range — because setSuppressRecalculate
+    // suppresses the selectionchange → recalculate → _applyState path. Calling
+    // selection.blur() bypasses the suppression to clear both halves.
+    const evt = makePointerEvent('pointerdown', { clientX: 100, clientY: 100, pointerType: 'mouse' })
+    Object.defineProperty(evt, 'target', { value: target })
+    ctrl.startDrag(evt, { kind: 'origin-block', blockId: 'b1' })
+
+    // armed: not yet committed to drag, framework selection must NOT be blurred yet
+    expect(doc.selection.blur).not.toHaveBeenCalled()
+
+    dispatchPointerMove(target, 110, 110)
+    expect(ctrl.state).toBe('dragging')
+    expect(doc.selection.blur).toHaveBeenCalledTimes(1)
   })
 
   it('uses 8px threshold for touch input', () => {

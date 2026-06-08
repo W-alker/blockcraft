@@ -306,7 +306,15 @@ export class DocInternalDragController {
     // 主动清除现有 selection。Safari 在 pointermove 期间会"延伸"已有 native selection，
     // 跨 contenteditable 块（table cell / column 内段落都是独立 contenteditable）拖动时
     // selection 会乱跳。selectstart preventDefault 拦不住这种延伸，必须清空起点。
-    try { document.getSelection()?.removeAllRanges() } catch {}
+    //
+    // 用 selection.blur() 而不是 document.getSelection().removeAllRanges()：blur()
+    // 还会同步把 framework 的 BlockSelection（selectionChange$.value）清成 null，
+    // 触发 SelectionSelectedManager._clearAllClass 立刻摘掉 .selected / .focused。
+    // 否则 setSuppressRecalculate(true) 会让 selectionchange→recalculate 短路，
+    // 框架侧的 BlockSelection 保持在 pre-drag 的跨块值不变，非 editable 块（image /
+    // divider 等）上的 .selected 视觉就会一直挂着直到下一次真实的 selectionchange。
+    // _applyState 不走 suppress 通道，所以 blur() 直接生效。
+    try { this.doc.selection.blur() } catch {}
     this._createGhost()
     this._updateGhostLabel()
     this._moveGhost(evt.clientX, evt.clientY)
