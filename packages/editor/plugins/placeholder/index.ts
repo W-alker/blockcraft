@@ -8,6 +8,22 @@ import { EditableBlockComponent } from "../../framework/block-std/block/componen
 import { BlockSelection } from "../../framework/modules/selection/blockSelection"
 
 /**
+ * Per-flavour placeholder overrides. Takes precedence over each Schema's
+ * `metadata.placeholder` *at render time only* — the Schema itself is
+ * never mutated.
+ *
+ * - Key present, value = string / object: override applied.
+ * - Key present, value = `null`: placeholder explicitly disabled even if
+ *   the Schema configures one.
+ * - Key absent: fall back to the Schema's `metadata.placeholder`.
+ */
+export type PlaceholderOverrides = Record<string, BlockPlaceholderConfig | null>
+
+export interface PlaceholderPluginOptions {
+  overrides?: PlaceholderOverrides
+}
+
+/**
  * PlaceholderPlugin — renders placeholder text on an empty, focused editable
  * block.
  *
@@ -19,8 +35,15 @@ import { BlockSelection } from "../../framework/modules/selection/blockSelection
  * fan-in through one handler each. So the steady-state subscription count
  * is constant (≈6) regardless of how large the document is.
  *
- * Reads `IBlockSchemaOptions.metadata.placeholder` to decide what text to
- * render. Blocks without a placeholder config render nothing.
+ * Resolution order for a given flavour:
+ *   1. `options.overrides[flavour]` (including `null` = disable)
+ *   2. `doc.schemas.get(flavour).metadata.placeholder`
+ *   3. nothing rendered
+ *
+ * Overrides do NOT mutate the Schema — they only affect the text injected
+ * at render time. This keeps the Schema as a static single source of truth
+ * for non-presentation consumers while still letting host apps customise
+ * placeholder text (e.g. for i18n) without writing a new Schema.
  *
  * DOM contract (matches existing CSS in `themes/base.scss`):
  *   - `.empty` class on the host element (so the
@@ -33,11 +56,46 @@ export class PlaceholderPlugin extends DocPlugin {
   override name = "placeholder"
 
   private readonly _globalSubs: Subscription[] = []
+  private _overrides: PlaceholderOverrides
 
   private _activeBlock: EditableBlockComponent | null = null
   private _activeBlockSubs?: Subscription
   private _isComposing = false
   private _lastAppliedText = ""
+
+  constructor(options: PlaceholderPluginOptions = {}) {
+    super()
+    this._overrides = { ...(options.overrides ?? {}) }
+  }
+
+  /**
+   * Replace the current override map with a new one (e.g. when the host
+   * app switches locale). The previously active block re-renders
+   * immediately so the new text takes effect on screen without waiting
+   * for the next selection / text change.
+   */
+  setOverrides(overrides: PlaceholderOverrides): void {
+    this._overrides = { ...overrides }
+    this._lastAppliedText = ""
+    this._sync()
+  }
+
+  /**
+   * Patch a single flavour's override without touching the others.
+   * Pass `null` to explicitly disable, or `undefined` to revert to the
+   * Schema default.
+   */
+  setOverrideFor(flavour: string, config: BlockPlaceholderConfig | null | undefined): void {
+    const next = { ...this._overrides }
+    if (config === undefined) {
+      delete next[flavour]
+    } else {
+      next[flavour] = config
+    }
+    this._overrides = next
+    this._lastAppliedText = ""
+    this._sync()
+  }
 
   init() {
     // 1. Global subscriptions (constant, doc-wide)
@@ -142,6 +200,19 @@ export class PlaceholderPlugin extends DocPlugin {
     this._sync()
   }
 
+  /**
+   * Resolve the effective placeholder config for a flavour, applying any
+   * runtime override on top of the Schema's static config.
+   */
+  private _resolveConfigFor(flavour: string): BlockPlaceholderConfig | undefined {
+    if (Object.prototype.hasOwnProperty.call(this._overrides, flavour)) {
+      // `null` is an explicit "disable" — return undefined so the caller
+      // treats this flavour as having no placeholder.
+      return this._overrides[flavour] ?? undefined
+    }
+    return this.doc.schemas.get(flavour, false)?.metadata.placeholder
+  }
+
   private _sync = () => {
     const block = this._activeBlock
     if (!block) return
@@ -151,9 +222,7 @@ export class PlaceholderPlugin extends DocPlugin {
       !this._isComposing &&
       block.textLength === 0
 
-    const config = this.doc.schemas.get(block.flavour, false)?.metadata.placeholder as
-      | BlockPlaceholderConfig
-      | undefined
+    const config = this._resolveConfigFor(block.flavour)
     const heading = block.props["heading"] as number | undefined
     const text = shouldShow ? resolvePlaceholderText(config, heading) : ""
 

@@ -2,7 +2,81 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-05-18
+> Last updated: 2026-06-08
+
+## PlaceholderPlugin
+
+> `plugins/placeholder/index.ts` — Renders schema-declared placeholder text on the currently focused empty editable block.
+
+Reads `IBlockSchemaOptions.metadata.placeholder` (see `blockcraft-block.md` → "Editable Block Placeholder (Schema field)") and renders the resolved text via a `::before` pseudo-element. Holds **constant** doc-wide subscriptions regardless of how many editable blocks exist — selection / readonly / IME composition each fan-in through a single handler, and only the currently focused block's `onTextChange` / `onPropsChange` are subscribed at any one time.
+
+### Configuration
+
+```typescript
+new PlaceholderPlugin(options?: PlaceholderPluginOptions)
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `overrides` | `PlaceholderOverrides` | `{}` | Per-flavour placeholder overrides applied at render time **without mutating the Schema** |
+
+```typescript
+export type PlaceholderOverrides = Record<string, BlockPlaceholderConfig | null>
+```
+
+- key present, value = `string` or `{ default, heading }` → override the schema's placeholder
+- key present, value = `null` → explicitly disable placeholder for that flavour (even if the schema declares one)
+- key absent → fall back to `schema.metadata.placeholder`
+
+### Public API
+
+| Method | Description |
+|--------|-------------|
+| `setOverrides(overrides: PlaceholderOverrides)` | Replace the whole override map (e.g. on i18n locale change) and immediately re-render the active block |
+| `setOverrideFor(flavour, config)` | Patch a single flavour. Pass `null` to disable, `undefined` to revert to the schema default |
+
+### Usage Examples
+
+```typescript
+// Default — picks up every schema's metadata.placeholder
+new PlaceholderPlugin()
+
+// Override built-in text (e.g. English UI)
+new PlaceholderPlugin({
+  overrides: {
+    paragraph: { default: "Type '/' for commands", heading: { 1: 'Heading 1', 2: 'Heading 2', 3: 'Heading 3' } },
+    bullet:   'List item',
+    ordered:  'List item',
+    todo:     'To-do',
+    callout:  null, // explicitly disabled
+  },
+})
+
+// Runtime locale switch
+const ph = new PlaceholderPlugin({ overrides: getOverridesForLocale('en') })
+// ... later ...
+ph.setOverrides(getOverridesForLocale('zh'))
+
+// Per-flavour patch
+ph.setOverrideFor('paragraph', { default: 'Write something…' })
+ph.setOverrideFor('callout', null)         // disable
+ph.setOverrideFor('callout', undefined)    // revert to schema default
+```
+
+### Display Contract
+
+- Visible only when: current selection is `type: 'text'`, `start.blockId === block.id`, `sel.isInSameBlock`, AND `textLength === 0`.
+- Hidden during IME composition — plugin listens to native `compositionstart` / `compositionend` on the root host in capture phase (bypassing the framework dispatcher because `InputTransformer._handleCompositionStart` is a global handler that stops propagation).
+- Hidden in readonly mode (`doc.isReadonly === true` OR `doc.readonlySwitch$` emits `true`).
+- DOM state: `data-placeholder` attribute on `.edit-container` (the element the CSS `::before` targets) + `.empty` class on the host element (matches the `[data-node-type="editable"].empty` selector).
+
+### Notes
+
+- Bundled in the default editor preset (`editor/editor.ts`). To disable, omit it from `DocConfig.plugins`.
+- Schema field (`metadata.placeholder`) and runtime override are decoupled: overrides do not modify the Schema, so non-presentation consumers reading the Schema still see the original declared text.
+- Blocks with their own `::before` styling (e.g. `blockquote`) must not declare `placeholder` in their schema — or pass `overrides[flavour] = null` to suppress at the plugin level.
+
+---
 
 ## FindReplacePlugin
 

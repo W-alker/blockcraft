@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-05-22
+> Last updated: 2026-06-08
 
 ## Block Types
 
@@ -469,12 +469,12 @@ doc.chain()
 
 > Always prefer `DocChain` over calling `doc.crud` directly. The chain handles transaction grouping, undo history boundaries, and cursor restoration in one place.
 
-## Editable Block Placeholder
+## Editable Block Placeholder (Schema field)
 
-Set `metadata.placeholder` on an editable block schema and the framework will
-render the placeholder text on the host element when the block is focused and
-its `yText.length === 0`. CSS already styles `.empty .edit-container::before`
-to render `attr(data-placeholder)` in `var(--bc-color-light)`.
+Editable blocks declare a placeholder via `metadata.placeholder` on their
+schema. The text is rendered by `PlaceholderPlugin` at runtime — see
+`blockcraft-plugins-util.md` → "PlaceholderPlugin" for the rendering /
+override APIs. This section documents only the schema-side field.
 
 ```typescript
 import { BlockPlaceholderConfig } from "../../framework";
@@ -495,7 +495,8 @@ metadata: {
 }
 ```
 
-**Resolution rules** (`resolvePlaceholderText`):
+**Resolution rules** (`resolvePlaceholderText` pure helper, exported from
+`framework/block-std/schema/block-schema.ts`):
 
 | Config | `props.heading` | Result |
 |--------|-----------------|--------|
@@ -507,16 +508,22 @@ metadata: {
 | `{ default: 'A', heading: { 1: 'H1' } }` | 2 | `'A'` (fallback to default) |
 | `{ heading: { 1: 'H1' } }` | undefined | `''` (no default) |
 
-**Display contract**:
-- Visible only when current selection is `type: 'text'` and `start.blockId === block.id` AND `textLength === 0`.
-- DOM state managed via `data-placeholder` attribute on the `.edit-container` (the inline runtime container) + `.empty` class on the host element.
-- Hidden during IME composition to avoid visual overlap with the composing preview (framework subscribes to `compositionStart` / `compositionEnd` events routed via `selection.commonParent`).
-- Readonly mode never displays placeholder (`selection.value` stays `null`).
-- Subscriptions are auto-disposed via `takeUntilDestroyed(this.destroyRef)`; framework-level composition handlers cleaned up via `destroyRef.onDestroy(...)`.
+**Built-in defaults** (configured on shipped schemas):
+
+| Flavour | placeholder |
+|---------|-------------|
+| `paragraph` | `{ default: '输入"/"呼出菜单', heading: { 1: '一级标题', 2: '二级标题', 3: '三级标题' } }` |
+| `bullet` / `ordered` | `'列表项'` |
+| `todo` | `'待办事项'` |
+| `blockquote` | _none_ (uses its own `::before` for the left quote rule) |
 
 **Caveat — blocks with their own `::before`**:
-- The CSS uses a `::before` pseudo-element on `.edit-container` to render the placeholder text. If your block already styles its own `::before` on the same element (e.g. `blockquote` uses `::before` for the left quote rule), the two pseudo-elements collide.
-- In that case **omit `metadata.placeholder` entirely**. `blockquote` is the built-in example: it has no default placeholder for this reason.
+- `PlaceholderPlugin` writes a `::before` pseudo-element on `.edit-container`. If your block already styles its own `::before` on the same element (e.g. `blockquote` does for the left quote rule), the two pseudo-elements collide.
+- In that case **omit `metadata.placeholder` entirely** from the schema, OR pass `{ overrides: { '<flavour>': null } }` to `PlaceholderPlugin`. `blockquote` is the built-in example: its schema has no placeholder for this reason.
+
+> Without `PlaceholderPlugin` in the `DocConfig.plugins` array, the schema
+> field is inert — nothing is rendered. The plugin is part of the default
+> editor preset, so host apps usually do not need to wire it manually.
 
 ## Checklist
 

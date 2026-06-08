@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-05-29 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-06-08 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -276,50 +276,71 @@ resetFullscreenZoom(): void               // 回到 100%
 
 ---
 
-### v?.?.? - 2026-05-22 (minor)
+### v?.?.? - 2026-06-08 (minor)
 
-**What changed**: 新增 `IBlockSchemaOptions.metadata.placeholder` 字段（`BlockPlaceholderConfig` 类型，`string` 或 `{ default?, heading?: { 1?, 2?, 3? } }` 结构）。所有 `EditableBlockComponent` 派生块在「聚焦 + `textLength === 0`」时会自动从 host element 上读取该字段，渲染 `data-placeholder` attribute + `.empty` class，触发既有 CSS。内置 `paragraph` / `bullet` / `ordered` / `todo` schema 已带默认文案；`blockquote` 自身已有 `::before` 伪元素（左侧引用线），不参与 placeholder 渲染避免冲突；其他未配置 placeholder 的 schema 不受影响、不显示任何占位符。
+**What changed**: 新增 `PlaceholderPlugin`（默认编辑器预设的一部分），以及 schema 层的 `IBlockSchemaOptions.metadata.placeholder` 配置字段。空的、聚焦的 editable 块在 IME 非组合期、非只读模式下自动显示 placeholder 文案。架构上是 **plugin 路径**（不是基类内置）：plugin 在 doc 层维护单点订阅（selection/readonly/composition + 当前 focused block 的 onTextChange/onPropsChange），订阅数恒定 6 ≈ 与文档块数无关。
 
-**Why**: BlockCraft 主题 `themes/base.scss` 早已为 `[data-node-type="editable"].empty .edit-container::before { content: attr(data-placeholder); }` 准备好样式，但缺少 TS 行为支撑。本次补齐，使空段落 / 列表项 / 待办具备 Notion 风格的输入引导。
+**Why**: 与上一版（2026-05-22 的 EditableBlockComponent 内置实现）对比：基类内置每个 editable block 都订阅 selection/readonly/composition 3 个全局流，N 个块 = 5N 个订阅，大文档下扩展性差。改为 plugin 后单点订阅，且 placeholder 完全可选 / 可继承 / 可定制（runtime override 不需要改 schema）。
 
 **Affected ai-skills files**:
-- `blockcraft.md` — Conventions 章节追加一条 placeholder 约定
-- `blockcraft-block.md` — 新增 "Editable Block Placeholder" 章节
+- `blockcraft.md` — 默认 plugin 列表 + 文件结构说明
+- `blockcraft-block.md` — "Editable Block Placeholder (Schema field)" 章节（schema 层视角）
+- `blockcraft-plugins-ref.md` — 索引追加 PlaceholderPlugin
+- `blockcraft-plugins-util.md` — 新增 PlaceholderPlugin 完整章节（配置 / API / 显示契约）
 
 ### New APIs / Features
 
-- `BlockPlaceholderConfig` exported type
-- `resolvePlaceholderText(config, heading)` pure helper (exported from `framework/block-std/schema/block-schema.ts`)
-- `IBlockSchemaOptions['metadata'].placeholder?: BlockPlaceholderConfig`
-- `EditableBlockComponent` 新增 protected 方法 `_resolvePlaceholderText` / `_isSelfFocused` / `_syncPlaceholderState` / `_initPlaceholderSubscriptions`（默认在 `ngAfterViewInit` 末尾自动调用，子类如有覆盖请确保调用 `super.ngAfterViewInit()`）
+- **Plugin**: `PlaceholderPlugin` from `@ccc/blockcraft` (exported via `plugins/placeholder/index.ts`)
+- **Plugin options**: `PlaceholderPluginOptions { overrides?: PlaceholderOverrides }`
+- **Override type**: `PlaceholderOverrides = Record<string, BlockPlaceholderConfig | null>` — `null` 表示显式禁用
+- **Plugin instance methods**:
+  - `setOverrides(overrides)` — 整体替换 override map（适合 i18n locale 切换）并立即重渲染
+  - `setOverrideFor(flavour, config)` — 增量更新单个 flavour；`null` 禁用，`undefined` 还原 schema 默认
+- **Schema field**: `IBlockSchemaOptions['metadata'].placeholder?: BlockPlaceholderConfig`
+- **Type**: `BlockPlaceholderConfig = string | { default?, heading?: { 1?, 2?, 3? } }`
+- **Pure helper**: `resolvePlaceholderText(config, heading)` exported from `framework/block-std/schema/block-schema.ts`
+- **Built-in schema defaults**: `paragraph` / `bullet` / `ordered` / `todo` 已带默认文案；`blockquote` 因自身 `::before` 引用线伪元素故不参与
 
 ### Migration Recipe
 
-Existing schemas need no changes (the field is optional). To enable a placeholder:
+宿主应用默认 plugin 集合已包含 `PlaceholderPlugin`，**升级即可启用**，无需改动。要禁用 / 自定义：
 
 ```typescript
-// Before
+// 默认行为（无须显式声明）—— 读取每个 schema 的 metadata.placeholder
+new PlaceholderPlugin()
+
+// 自定义文案（典型场景：i18n）
+new PlaceholderPlugin({
+  overrides: {
+    paragraph: { default: "Type '/' for commands", heading: { 1: 'Heading 1', 2: 'Heading 2', 3: 'Heading 3' } },
+    bullet:   'List item',
+    todo:     'To-do',
+    callout:  null,   // 显式禁用，即使 schema 配了
+  },
+})
+
+// 自定义 schema 想加 placeholder：在 metadata 上声明
 metadata: {
   version: 1,
-  label: '基础段落',
-  icon: 'bc_icon bc_wenben',
+  label: 'My block',
+  placeholder: '输入内容',  // string 或对象
 }
 
-// After
-metadata: {
-  version: 1,
-  label: '基础段落',
-  icon: 'bc_icon bc_wenben',
-  placeholder: {
-    default: '输入"/"呼出菜单',
-    heading: { 1: '一级标题', 2: '二级标题', 3: '三级标题' },
-  },
-}
+// 自定义 schema 不想要 placeholder：省略字段或让 plugin override 为 null
 ```
+
+`PlaceholderPlugin` 不在 plugins 数组里时，schema 的 `metadata.placeholder` 字段是惰性的 —— 不会渲染任何东西，不会报错。
 
 ### Behavior Changes
 
-Empty focused `paragraph` blocks now show `输入"/"呼出菜单`（以及在 heading 1/2/3 模式下 `一级标题` / `二级标题` / `三级标题`）。`bullet` / `ordered` show `列表项`. `todo` shows `待办事项`. `blockquote` 不参与 placeholder（其自身已有 `::before` 引用线伪元素，会与 placeholder ::before 冲突）。如果宿主应用在自定义 schema 时未保留这些字段，对应默认文案会被丢弃 —— 显式在 schema 上设置 `metadata.placeholder` 即可恢复或自定义。
+- 空的 focused `paragraph` 显示 `输入"/"呼出菜单`，heading 1/2/3 模式下分别显示 `一级标题` / `二级标题` / `三级标题`
+- 空的 focused `bullet` / `ordered` 显示 `列表项`
+- 空的 focused `todo` 显示 `待办事项`
+- `blockquote` 不显示 placeholder（自身 `::before` 占用）
+- Readonly 模式下任何 block 都不显示 placeholder
+- IME composition 期间隐藏 placeholder，组合结束后立即恢复（如内容仍空）
+- 跨块选区时全部隐藏 placeholder
+- 宿主自定义 schema 时若未保留 `metadata.placeholder` 字段，对应默认文案会被丢弃 —— 通过 `overrides` 或重新声明字段恢复
 
 ### v?.?.? - 2026-05-21 (major)
 

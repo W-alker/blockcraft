@@ -4,9 +4,9 @@
 >
 > For creating new plugins, see `blockcraft-plugin.md`.
 >
-> Last updated: 2026-04-08
+> Last updated: 2026-06-08
 
-This index covers all 22 built-in plugins. Pick the category file that matches your task — don't read all files at once.
+This index covers all 23 built-in plugins. Pick the category file that matches your task — don't read all files at once.
 
 ## Category Router
 
@@ -16,7 +16,7 @@ This index covers all 22 built-in plugins. Pick the category file that matches y
 | Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin |
 | Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
 | Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, CodeInlineEditorBinding, TableBlockBinding |
-| Utilities | `blockcraft-plugins-util.md` | FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, TranslatePlugin |
+| Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, TranslatePlugin |
 
 ## Quick Lookup
 
@@ -40,6 +40,7 @@ This index covers all 22 built-in plugins. Pick the category file that matches y
 | `MentionPlugin` | `inline` | `panel` (required), `trigger`, `onMentionClick` |
 | `CodeInlineEditorBinding` | `inline` | none (zero-config) |
 | `TableBlockBinding` | `inline` | none (zero-config) |
+| `PlaceholderPlugin` | `util` | `overrides` (optional per-flavour text override map) |
 | `FindReplacePlugin` | `util` | none (zero-config) |
 | `PasteFormatSelectorPlugin` | `util` | none (zero-config) |
 | `DemoPresentationPlugin` | `util` | none (zero-config) |

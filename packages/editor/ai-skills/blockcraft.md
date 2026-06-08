@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-05-29 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-06-08 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -277,6 +277,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `MentionPlugin` | `plugins/mention/` | `@`-trigger with pluggable panel factory |
 | `FindReplacePlugin` | `plugins/findReplace/` | Cmd+F find & replace |
 | `TranslatePlugin` | `plugins/translate/` | Block translation via DI service |
+| `PlaceholderPlugin` | `plugins/placeholder/` | Renders schema-declared placeholder on focused empty editable blocks; supports per-flavour overrides |
 
 > A host app can pass any subset of these (plus its own custom plugins) into `DocConfig.plugins`. See `blockcraft-app.md`.
 
@@ -307,7 +308,7 @@ packages/editor/ai-skills/         # also shipped at node_modules/@ccc/blockcraf
 ├── blockcraft-plugins-block.md      # L1: 块管理插件（BlockController, GapCreator, Transformer, Ordered）
 ├── blockcraft-plugins-toolbar.md    # L1: 块工具栏插件（Attachment, Img, Bookmark, Callout, Divider, Embed, Formula）
 ├── blockcraft-plugins-inline.md     # L1: 行内扩展 + 键盘绑定（InlineLink, Mention, Code, Table）
-├── blockcraft-plugins-util.md       # L1: 工具类插件（FindReplace, PasteFormat, Demo, Translate）
+├── blockcraft-plugins-util.md       # L1: 工具类插件（Placeholder, FindReplace, PasteFormat, Demo, Translate）
 ├── blockcraft-plugin.md    # L1: create plugins
 ├── blockcraft-block.md     # L1: create blocks (void / editable / container)
 ├── blockcraft-embed.md     # L1: create inline embeds
