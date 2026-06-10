@@ -110,6 +110,12 @@ export class BlockTransformerPlugin extends DocPlugin {
       !ALLOWED_HEADING_FLAVOURS.includes(selection.firstBlock.flavour)
     )
       return;
+    // shortKey + 0~4 collide with native browser shortcuts (Cmd/Ctrl+0 resets
+    // zoom, Cmd/Ctrl+1~4 switch tabs). Returning true only stops internal
+    // propagation, so we must prevent the native default explicitly — but only
+    // once we've confirmed we're actually handling the heading change, to avoid
+    // hijacking these keys when the cursor isn't in a heading-capable block.
+    evt.preventDefault();
     (selection.firstBlock as any).updateProps({
       heading: state.raw.key === "0" ? null : parseInt(state.raw.key, 10),
     });

@@ -54,15 +54,16 @@ const ALIGN_LIST: IContextMenuItem[] = [
   }
 ]
 
-const HEADING_LIST: IContextMenuItem[] = [
-  {
-    name: "heading",
-    value: null,
-    icon: "bc_icon bc_wenben",
-    label: "普通段落",
-    type: 'tool',
-    desc: `普通段落`,
-  },
+const NORMAL_PARAGRAPH_ITEM: IContextMenuItem = {
+  name: "heading",
+  value: null,
+  icon: "bc_icon bc_wenben",
+  label: "普通段落",
+  type: 'tool',
+  desc: `普通段落`,
+}
+
+const HEADING_LEVEL_LIST: IContextMenuItem[] = [
   {
     name: "heading",
     value: 1,
@@ -96,6 +97,13 @@ const HEADING_LIST: IContextMenuItem[] = [
     desc: `四级标题(${IS_MAC ? '⌘' : 'Ctrl'} + 4)\nMarkdown: #### (空格)`,
   }
 ]
+
+// 普通段落 + H1–H4. The base-list heading toggle uses HEADING_LEVEL_LIST only:
+// clicking an active heading reverts the block to a normal paragraph, so a
+// dedicated 普通段落 button is redundant there. The void-block "在下方添加" menu
+// still uses the full list, since 普通段落 is the only way to insert a plain
+// paragraph (paragraph is filtered out of every block list).
+const HEADING_LIST: IContextMenuItem[] = [NORMAL_PARAGRAPH_ITEM, ...HEADING_LEVEL_LIST]
 
 const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
   {
@@ -156,9 +164,9 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
                [nzTooltipPlacement]="'top'"></i>
           </h4>
           <ul class='base-list' (mousedown)="$event.preventDefault()">
-            @for (item of HEADING_LIST; track item.value) {
+            @for (item of HEADING_LEVEL_LIST; track item.value) {
               <li class="base-list__item" [title]="item.desc" (mousedown)="handleToolItemClick(item)"
-                  [class.active]="!item.value ? (activeBlock?.flavour === 'paragraph' && !activeBlock?.props?.['heading']) : (activeBlock?.props?.['heading'] || '') + '' === (item.value || '') + ''">
+                  [class.active]="(activeBlock?.props?.['heading'] || '') + '' === (item.value || '') + ''">
                 <i [class]="item.icon"></i>
               </li>
             }
@@ -379,6 +387,7 @@ export class TriggerBtn {
 
   protected readonly BlockNodeType = BlockNodeType;
   protected readonly HEADING_LIST = HEADING_LIST;
+  protected readonly HEADING_LEVEL_LIST = HEADING_LEVEL_LIST;
   protected baseBlockList: IBlockSchemaOptions[] = []
   protected otherBlockList: IBlockSchemaOptions[] = []
   protected embeddedBlockList: IBlockSchemaOptions[] = []
@@ -790,7 +799,7 @@ export class TriggerBtn {
         })
       }
         break
-      case 'heading':
+      case 'heading': {
         if (!this.activeBlock) return
         if (!this.doc.isEditable(this.activeBlock)) {
           const p = this.doc.schemas.createSnapshot('paragraph', [[], {
@@ -806,23 +815,31 @@ export class TriggerBtn {
             .run()
           return;
         }
+        // Clicking the already-active heading toggles the block back to a normal
+        // paragraph. Mirrors the template's `active` highlight condition: only
+        // H1–H4 toggle off (item.value truthy); the explicit "普通段落" entry
+        // (item.value === null) always reverts.
+        const isActiveHeading = !!item.value
+          && (this.activeBlock.props.heading || '') + '' === (item.value || '') + ''
+        const targetHeading = isActiveHeading ? null : item.value
         if (this.activeBlock.flavour === 'ordered' && item.value) {
-          this.activeBlock.updateProps({ heading: item.value as any })
+          this.activeBlock.updateProps({ heading: targetHeading as any })
           return;
         }
         if (this.activeBlock.flavour !== 'paragraph') {
           const p = this.doc.schemas.createSnapshot('paragraph', [this.activeBlock.textDeltas(), {
             ...this.activeBlock.props,
-            heading: item.value
+            heading: targetHeading
           }])
           void this.doc.chain()
             .replaceWithSnapshots(this.activeBlock.id, [p])
             .selectOrSetCursorAtBlock(p.id, true)
             .run()
         } else {
-          this.activeBlock.updateProps({ heading: item.value as any })
+          this.activeBlock.updateProps({ heading: targetHeading as any })
         }
         break
+      }
     }
   }
 

@@ -1247,7 +1247,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       return this.applyColumnCount(columnsBlock, safeCount);
     }
 
-    // 选区在分栏外：选 1 栏视为维持单栏、不处理；≥2 栏对多块选区执行"行转列"
+    // 选区在分栏外：选 1 栏视为维持单栏、不处理；≥2 栏把当前选区（单块或多块）就地转成分栏
     if (safeCount < 2) return null;
     return this.convertSelectedBlocksToColumns(safeCount, selection);
   }
@@ -1369,9 +1369,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * 行转列：当选区跨越 ≥2 个同级块时，把这些块分配进 `count` 个并排的栏中。
+   * 行转列：把选区覆盖的同级块（≥1 个）就地包进 `count` 个并排的栏中。
    *
-   * - 行数 == 栏数：一栏放一块（主路径，如选 2 行选 2 栏 → 上下两行变左右两栏）。
+   * - 单块选区（光标只在一个段落内）：该块进第一栏，其余栏保留默认空段落 →
+   *   当前段落原地变成分栏，而不是在下方新增空分栏。
+   * - 行数 == 栏数：一栏放一块（如选 2 行选 2 栏 → 上下两行变左右两栏）。
    * - 行数 > 栏数：按顺序连续均分，靠前的栏多放一块。
    * - 行数 < 栏数：靠前的栏每栏一块，多出来的空栏保留默认空段落。
    *
@@ -1390,12 +1392,12 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       selection.lastBlock,
       true,
     );
-    if (betweenIds.length < 2) return null;
+    if (betweenIds.length < 1) return null;
 
     const blocks = betweenIds
       .map((id) => this.doc.getBlockById(id))
       .filter((b) => !!b);
-    if (blocks.length < 2) return null;
+    if (blocks.length < 1) return null;
 
     const parent = blocks[0].parentBlock;
     if (!parent) return null;
