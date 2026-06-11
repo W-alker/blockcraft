@@ -54,6 +54,12 @@ const HEADING_LIST: IContextMenuOption[] = [
 ];
 const TransformReg = /^[\/、].*/;
 
+// 导航后把光标"钉"在原块里的时间窗口（ms）。WKWebView/Tauri 下 AppKit 的
+// moveUp:/moveDown: 可能比任何 sync/microtask/rAF 都晚才把 DOM caret 拽走，
+// 所以不再用固定时序补偿，而是在这个窗口内监听 selectionchange，等真正的
+// 移动发生时再纠正，与底层 IPC 时序解耦。
+const NAV_PIN_WINDOW_MS = 150;
+
 @Component({
   selector: "block-transformer-contextmenu",
   template: `
@@ -101,7 +107,8 @@ export class BlockTransformContextMenu {
   private isKeyboardNavigating = false;
   private lastHandledNavigationAt = 0;
   private suppressTimerId: ReturnType<typeof setTimeout> | null = null;
-  private restoreRafId: number | null = null;
+  private caretGuardArmed = false;
+  private navTextLength = 0;
 
   constructor(
     public readonly cdr: ChangeDetectorRef,
@@ -179,10 +186,7 @@ export class BlockTransformContextMenu {
         clearTimeout(this.suppressTimerId);
         this.suppressTimerId = null;
       }
-      if (this.restoreRafId !== null) {
-        cancelAnimationFrame(this.restoreRafId);
-        this.restoreRafId = null;
-      }
+      this._disarmCaretGuard();
       this.doc.selection.setSuppressRecalculate(false);
     });
   }
@@ -310,11 +314,12 @@ export class BlockTransformContextMenu {
   }
 
   shouldIgnoreSelectionChange() {
-    return Date.now() - this.lastHandledNavigationAt < 120;
+    return Date.now() - this.lastHandledNavigationAt < NAV_PIN_WINDOW_MS;
   }
 
   private markNavigationHandled() {
     this.lastHandledNavigationAt = Date.now();
+    this.navTextLength = this.activeBlock?.textLength ?? 0;
     // WKWebView/Safari 在 contenteditable 中可能无视 keydown 的
     // preventDefault 仍然移动 DOM 光标，导致 selectionchange 触发
     // recalculate 把 BlockSelection 模型拽走、菜单被误关。这里 gate
@@ -322,34 +327,79 @@ export class BlockTransformContextMenu {
     // activeBlock。每次导航刷新窗口，菜单销毁时统一释放。
     this.doc.selection.setSuppressRecalculate(true);
 
-    // Tauri/WKWebView 下，AppKit 在 JS keydown 之前同步执行
-    // doCommandBySelector:(moveUp:/moveDown:/...) 把 DOM caret 拽走，
-    // preventDefault 已经晚了。这里事后纠错：把 caret 拽回模型记录
-    // 的位置。同步 + microtask + rAF 三重保险覆盖 IPC 时序所有可能。
+    // 立刻纠正一次：覆盖 "AppKit 在 JS keydown 之前就把 caret 拽走" 的
+    // 场景——此时模型还停在导航前的位置，能直接还原。
     this._restoreCaret();
-    queueMicrotask(() => this._restoreCaret());
-    if (this.restoreRafId !== null) {
-      cancelAnimationFrame(this.restoreRafId);
-    }
-    this.restoreRafId = requestAnimationFrame(() => {
-      this.restoreRafId = null;
-      this._restoreCaret();
-    });
+
+    // 事件驱动纠正：Tauri/WKWebView 下 AppKit 的 moveUp:/moveDown: 可能
+    // 晚于任何 sync/microtask/rAF 才把 DOM caret 拽走，固定时序的补偿会全部
+    // 赶在移动之前空跑，移动随后覆盖 caret 且无人再拉回——表现就是“菜单
+    // 高亮对、光标却跟着上下跳”。改成在导航窗口内监听 selectionchange，等
+    // 真正的移动触发事件时再把 caret 拉回锚点，与底层 IPC 时序解耦。
+    this._armCaretGuard();
 
     if (this.suppressTimerId !== null) {
       clearTimeout(this.suppressTimerId);
     }
     this.suppressTimerId = setTimeout(() => {
       this.suppressTimerId = null;
+      this._disarmCaretGuard();
       this.doc.selection.setSuppressRecalculate(false);
-    }, 120);
+    }, NAV_PIN_WINDOW_MS);
   }
+
+  private _armCaretGuard() {
+    if (this.caretGuardArmed) return;
+    this.caretGuardArmed = true;
+    document.addEventListener("selectionchange", this._onSelectionDrift);
+  }
+
+  private _disarmCaretGuard() {
+    if (!this.caretGuardArmed) return;
+    this.caretGuardArmed = false;
+    document.removeEventListener("selectionchange", this._onSelectionDrift);
+  }
+
+  private _onSelectionDrift = () => {
+    if (this.doc.event.status.isComposing) return;
+    // 窗口内用户继续打字 → 文本长度变化 → 这是合法的光标右移而非上下键
+    // 漂移，停止纠正、交还给正常输入流程，避免把刚输入字符的光标吞掉。
+    if ((this.activeBlock?.textLength ?? 0) !== this.navTextLength) {
+      this._disarmCaretGuard();
+      return;
+    }
+    this._restoreCaret();
+  };
 
   private _restoreCaret() {
     const sel = this.doc.selection.value;
     if (!sel || sel.start.type !== "text") return;
     if (sel.firstBlock?.id !== this.activeBlock?.id) return;
-    this.activeBlock.setInlineRange(sel.start.offset);
+    const target = sel.start.offset;
+    // 幂等：DOM caret 已经落在锚点上就不要再 set——否则 setInlineRange 触发
+    // 的 selectionchange 会再次进入本函数，形成自激循环。
+    if (this._caretIsAt(target)) return;
+    this.activeBlock.setInlineRange(target);
+  }
+
+  /** 当前 DOM 折叠光标是否恰好落在 activeBlock 的 `offset` 处。 */
+  private _caretIsAt(offset: number): boolean {
+    const dom = document.getSelection();
+    if (!dom || !dom.isCollapsed || !dom.focusNode) return false;
+    const container = this.activeBlock?.containerElement;
+    if (!container || !container.contains(dom.focusNode)) return false;
+    try {
+      return (
+        this.activeBlock.runtime.domPointToModel(
+          dom.focusNode,
+          dom.focusOffset,
+        ) === offset
+      );
+    } catch {
+      // 读不出来就当作"已在锚点"，宁可不纠正也不要陷入 setInlineRange →
+      // selectionchange 的自激循环（跨块漂移已被上面的 contains 判断兜住）。
+      return true;
+    }
   }
 
   scrollToActive() {

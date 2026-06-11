@@ -1,6 +1,4 @@
 import {ChangeDetectionStrategy, Component, ElementRef, HostBinding, Input} from '@angular/core';
-import {BcFloatToolbarComponent} from "./float-toolbar";
-import {NgIf, NgTemplateOutlet} from "@angular/common";
 
 @Component({
   selector: 'bc-float-toolbar-item',
@@ -14,11 +12,6 @@ import {NgIf, NgTemplateOutlet} from "@angular/common";
     }
   `,
   standalone: true,
-  imports: [
-    BcFloatToolbarComponent,
-    NgTemplateOutlet,
-    NgIf
-  ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class BcFloatToolbarItemComponent {
