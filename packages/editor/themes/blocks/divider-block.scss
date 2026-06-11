@@ -7,6 +7,10 @@
     justify-content: center;
     width: 100%;
 
+    &.divider-toolbar-active {
+      background-color: var(--bc-select-background-color);
+    }
+
     .divide-line {
       background: var(--bc-border-color);
       font-size: 0;
@@ -168,6 +172,134 @@
           transform: unset;
         }
 
+      }
+    }
+
+    .divide-line.divide-tape {
+      display: flex;
+      align-items: center;
+
+      &[data-align="left"] {
+        justify-content: flex-start;
+      }
+
+      &[data-align="center"] {
+        justify-content: center;
+      }
+
+      &[data-align="right"] {
+        justify-content: flex-end;
+      }
+
+      .divide-label {
+        padding: 0 16px;
+        font-family: Georgia, "Songti SC", "STSong", "SimSun", "宋体", serif;
+        font-size: 14px;
+        line-height: 1.5;
+        color: #fff;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+        white-space: nowrap;
+        user-select: none;
+        pointer-events: none;
+      }
+    }
+
+    .divide-line-text {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      gap: 12px;
+      min-height: 1.5em;
+      pointer-events: none;
+
+      .divide-seg {
+        flex: 1 1 0;
+        min-width: 16px;
+        height: 1px;
+
+        &.solid {
+          background-color: var(--bc-divider-color);
+        }
+
+        &.dashed {
+          height: 1px;
+          background: repeating-linear-gradient(to right,
+              var(--bc-divider-color),
+              var(--bc-divider-color) 8px,
+              transparent 8px,
+              transparent 16px);
+        }
+
+        &.dotted {
+          height: 4px;
+          background: radial-gradient(circle, var(--bc-divider-color) 2px, transparent 2px);
+          background-size: 20px 4px;
+          background-repeat: repeat-x;
+        }
+
+        &.double {
+          height: 0;
+          border-bottom: 3px double var(--bc-divider-color);
+        }
+      }
+
+      .divide-label {
+        flex: 0 0 auto;
+        font-family: Georgia, "Songti SC", "STSong", "SimSun", "宋体", serif;
+        font-size: 14px;
+        line-height: 1.5;
+        color: var(--bc-color-light);
+        white-space: nowrap;
+        user-select: none;
+      }
+
+      &[data-align="left"] .divide-seg:first-child {
+        display: none;
+      }
+
+      &[data-align="right"] .divide-seg:last-child {
+        display: none;
+      }
+
+      // size 控制整体宽度（对所有对齐都生效）；min-content 兜底，避免文字被压坏。
+      &[data-size="thin"] {
+        width: 20%;
+        min-width: min-content;
+      }
+
+      &[data-size="small"] {
+        width: 50%;
+        min-width: min-content;
+      }
+
+      // 变窄后，对齐决定整体靠左 / 居中 / 靠右（auto margin 覆盖父级 justify-content）。
+      &[data-align="left"] {
+        margin-right: auto;
+      }
+
+      &[data-align="right"] {
+        margin-left: auto;
+      }
+
+      &[data-align="center"] {
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      &[data-size="large"] .divide-seg {
+
+        &.solid,
+        &.dashed {
+          height: 2px;
+        }
+
+        &.dotted {
+          height: 6px;
+        }
+
+        &.double {
+          border-bottom-width: 6px;
+        }
       }
     }
   }

@@ -21,6 +21,15 @@ export class DividerExtensionPlugin extends DocPlugin {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
       this.clearTimer()
 
+      // Keep the toolbar open while the user interacts with it (e.g. typing in the
+      // 文字装订 input): focusing the overlay input blurs the divider block and fires a
+      // selectionChange that would otherwise immediately close the toolbar.
+      // NOTE: a disposed OverlayRef has `overlayElement === null`, so use optional
+      // chaining — throwing here would permanently kill this subscription.
+      if (this._toolbarRef?.overlayElement?.contains(document.activeElement)) {
+        return
+      }
+
       if (!selection || !selection.isInSameBlock || selection.firstBlock?.flavour !== 'divider') {
         this._toolbarRef && this.closeToolbar()
         return
@@ -35,6 +44,9 @@ export class DividerExtensionPlugin extends DocPlugin {
         if (this._toolbarRef && this._activeBlock === dividerBlock) return;
 
         this._activeBlock = dividerBlock as any
+        // Keep the divider visually "selected" while its label is edited in the toolbar:
+        // focusing the toolbar input clears the editor selection (which removes `.selected`).
+        dividerBlock.hostElement.classList.add('divider-toolbar-active')
 
         const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<DividerStylePopupComponent>({
           target: dividerBlock,
@@ -60,9 +72,11 @@ export class DividerExtensionPlugin extends DocPlugin {
   }
 
   closeToolbar = () => {
-    this._closeToolbar$.next()
-    this.clearTimer()
+    this._activeBlock?.hostElement.classList.remove('divider-toolbar-active')
     this._activeBlock = null
+    this._toolbarRef = undefined
+    this.clearTimer()
+    this._closeToolbar$.next()
   }
 
   destroy() {

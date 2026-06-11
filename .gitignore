@@ -52,3 +52,6 @@ pnpm-lock.yaml
 /output
 /.superpowers
 /.omx
+
+# Superpowers brainstorm mockups
+.superpowers/

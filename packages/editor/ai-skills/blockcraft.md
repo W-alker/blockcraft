@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-06-08 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-06-11 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -268,7 +268,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `TableBlockBinding` | `plugins/tableBlockBinding.ts` | Table cell merge/split, column resize |
 | `ImgToolbarPlugin` | `plugins/img-toolbar/` | Image alignment, caption, replace |
 | `CalloutToolbarPlugin` | `plugins/callout-toolbar/` | Callout color/icon picker |
-| `DividerExtensionPlugin` | `plugins/divider-toolbar/` | Divider hover toolbar |
+| `DividerExtensionPlugin` | `plugins/divider-toolbar/` | Divider hover toolbar (style / size / optional text label + align) |
 | `AttachmentExtensionPlugin` | `plugins/attachment-extension/` | Attachment preview/download UI |
 | `EmbedFrameExtensionPlugin` | `plugins/embed-frame-extension/` | Resize/replace iframe embeds |
 | `BookmarkBlockExtensionPlugin` | `plugins/bookmark-frame-extension/` | Bookmark preview fetch |

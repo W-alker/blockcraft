@@ -31,6 +31,33 @@
     </div>
   </div>
 
+  <!-- Text Label options -->
+  <div class="text-options" *ngIf="activeTab === 'text'">
+    <input class="text-input" type="text"
+           [value]="labelText"
+           placeholder="输入文字…"
+           (mousedown)="$event.stopPropagation()"
+           (input)="setText($any($event.target).value)" />
+    <div class="align-row">
+      <button *ngFor="let a of alignList"
+              [class.active]="activeAlign === a.key"
+              [title]="a.label"
+              (mousedown)="setAlign(a.key)">
+        <i [ngClass]="a.icon"></i>
+      </button>
+    </div>
+    <div class="color-row">
+      <button type="button" class="color-swatch default"
+              [class.active]="!activeColor"
+              (mousedown)="setColor('')" title="默认">A</button>
+      <button type="button" *ngFor="let c of colors"
+              class="color-swatch"
+              [style.background]="c"
+              [class.active]="activeColor === c"
+              (mousedown)="setColor(c)" [title]="c"></button>
+    </div>
+  </div>
+
   <div class="tabs">
     <button *ngFor="let tab of sizeList" (mousedown)="selectSize(tab.key)"
             [class.active]="tab.key === activeSize">

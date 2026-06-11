@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-06-08 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-06-11 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,35 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-06-11 (minor)
+
+**What changed**: The `divider` block gained two optional props — `text?: string`
+and `align?: 'left' | 'center' | 'right'` (default `center`). When `text` is set,
+the divider renders a read-only label: for line styles (solid/dashed/dotted/double)
+the label sits in the middle with line segments on each side (alignment redistributes
+the segments); for tape styles the label sits inside the tape band. The divider hover
+toolbar (`DividerStylePopupComponent`) gained a third `文字装订` tab with a text input and
+left/center/right alignment buttons. The divider block stays `BlockNodeType.void` — no
+data migration, no selection/navigation change.
+
+**Why**: Feature request — users wanted captionable dividers (chapter/section labels)
+editable from the floating toolbar, without turning the divider into an editable block.
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-toolbar.md` — documented the divider toolbar `文字` tab + alignment.
+- `blockcraft.md` — updated the `DividerExtensionPlugin` row.
+
+### New APIs / Features
+- `DividerBlockModel.props.text?: string` — optional divider label.
+- `DividerBlockModel.props.align?: 'left' | 'center' | 'right'` — label alignment (default `center`).
+- `DividerBlockModel.props.color?: string` — optional label text color (empty = theme default, slightly muted `--bc-color-light`).
+- Divider toolbar `文字装订` tab (text input + alignment + color swatches).
+
+### Behavior Changes
+- A divider with a non-empty `text` prop now renders a label. Existing dividers (no `text`) render exactly as before. HTML/Markdown export still drops divider props (`style` / `size` / `text` / `color`) — unchanged from prior behavior.
+
+---
 
 ### v?.?.? - 2026-05-29 (minor)
 

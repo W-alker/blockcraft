@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-04-08
+> Last updated: 2026-06-11
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -150,7 +150,9 @@ new CalloutToolbarPlugin()
 
 > `plugins/divider-toolbar/` — Style selector for divider blocks.
 
-Shows a `DividerStylePopupComponent` when a divider block is selected, allowing users to change the divider style.
+Shows a `DividerStylePopupComponent` when a divider block is selected, allowing users to change the divider's line/tape style, size, and an optional **text label** with alignment.
+
+The popup has three style tabs — `线型` (line), `贴纸胶带` (tape), and `文字装订` (text label) — plus a size selector. The `文字装订` tab edits the divider block's `text` prop via a text input and its `align` prop (`left` / `center` / `right`) via alignment buttons, and its `color` prop via color swatches (empty = theme default). The divider block stays a `void` block; the label is a read-only `text` prop rendered by the block — for line styles the text is centered with line segments on both sides, for tape styles the text sits inside the tape band. `align` defaults to `center`. When `text` is empty the divider renders as a plain line (unchanged).
 
 ### Configuration
 

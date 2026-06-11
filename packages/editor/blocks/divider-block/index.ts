@@ -8,6 +8,9 @@ export interface DividerBlockModel extends NoEditableBlockNative {
   props: {
     style?: string
     size?: string
+    text?: string
+    align?: 'left' | 'center' | 'right'
+    color?: string
   }
 }
 

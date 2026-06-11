@@ -24,7 +24,8 @@ export class DividerStylePopupComponent {
 
   styleTabs = [
     { key: 'line', label: '线型', icon: 'bc_icon bc_tubiao_xianduan-leixing' },
-    { key: 'tape', label: '贴纸胶带', icon: 'bc_jiaodai bc_icon' }
+    { key: 'tape', label: '贴纸胶带', icon: 'bc_jiaodai bc_icon' },
+    { key: 'text', label: '文字装订', icon: 'bc_icon bc_wenben' }
   ];
 
   sizeList = [
@@ -38,14 +39,27 @@ export class DividerStylePopupComponent {
     'tape-dot-black', 'tape-grid-pattern', 'tape-regular-lines', 'tape-gradient-blocks', 'tape-gray-lines'
   ];
 
-  colors = ['#F44336', '#FF9800', '#FFCCBC', '#004D40', '#00796B', '#4CAF50', '#3F51B5', '#FFC107', '#42A5F5', '#F48FB1', '#B39DDB'];
+  colors = ['#EF5350', '#FFA726', '#FFCA28', '#66BB6A', '#26A69A', '#42A5F5', '#7E57C2', '#EC407A', '#8D6E63', '#90A4AE', '#29B6F6'];
 
   selectedStyle = 'solid';
   lineStyles = ['solid', 'dashed', 'dotted', 'double'];
 
+  activeAlign: 'left' | 'center' | 'right' = 'center';
+  labelText = '';
+  activeColor = '';
+
+  alignList: { key: 'left' | 'center' | 'right'; icon: string; label: string }[] = [
+    { key: 'left', icon: 'bc_icon bc_zuoduiqi', label: '左对齐' },
+    { key: 'center', icon: 'bc_icon bc_juzhongduiqi', label: '居中' },
+    { key: 'right', icon: 'bc_icon bc_youduiqi', label: '右对齐' }
+  ];
+
   ngOnInit() {
     this.activeSize = this.dividerBlock.props.size ?? 'medium';
     this.selectedStyle = this.dividerBlock.props.style ?? 'solid';
+    this.activeAlign = this.dividerBlock.props.align ?? 'center';
+    this.labelText = this.dividerBlock.props.text ?? '';
+    this.activeColor = this.dividerBlock.props.color ?? '';
     if (this.selectedStyle.startsWith('tape')) {
       this.activeTab = 'tape';
     }
@@ -72,6 +86,21 @@ export class DividerStylePopupComponent {
     this.dividerBlock.updateProps({
       size: size
     })
+  }
+
+  setText(value: string) {
+    this.labelText = value;
+    this.dividerBlock.updateProps({ text: value })
+  }
+
+  setAlign(align: 'left' | 'center' | 'right') {
+    this.activeAlign = align;
+    this.dividerBlock.updateProps({ align })
+  }
+
+  setColor(color: string) {
+    this.activeColor = color;
+    this.dividerBlock.updateProps({ color })
   }
 
   closePopup() {
