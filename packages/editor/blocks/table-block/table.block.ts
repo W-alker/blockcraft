@@ -230,6 +230,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     /** 源行 visual height（不经 size factor 折算），用于 cursor centering 数学。
      *  WebKit 上 position 和 size 可能用不同 factor，centering 必须用 visual。 */
     previewVisualHeight: number
+    /** 协同兜底：drag start 时锁定的源行 ID 数组（按拖拽顺序）。drag end 时
+     *  在 crud.transact 内用 indexOf 重算真实 fromIndex 并逐项校验，远端
+     *  在拖拽期间增删行也能正确定位（或安全 abort）。 */
+    anchorIds: string[]
   } | null = null
 
   protected _colReorder: {
@@ -243,6 +247,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     previewHeight: number
     /** 源列 visual width（不经 size factor 折算），用于 cursor centering 数学。 */
     previewVisualWidth: number
+    /** 协同兜底：drag start 时锁定的「每行独立的源 cell ID 数组」。drag end
+     *  在 crud.transact 内逐行 indexOf 重算每行 fromIndex，并要求所有行漂移
+     *  量一致（否则视为表格列结构已损坏，abort）。 */
+    anchorCellIdsByRow: string[][]
   } | null = null
 
   private resizeObserver = new ResizeObserver(entries => {
@@ -1480,6 +1488,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const bcrW = srcRect.width
     const visualH = this._visualDistanceFromBcr(srcEndRect.bottom - srcRect.top)
 
+    // 抓拍源行的 block ID 数组，drag end 时用作协同兜底锚点。
+    const rowBlocks = this.getChildrenBlocks()
+    const anchorIds = rowBlocks
+      .slice(closure.start, closure.start + closure.count)
+      .map(b => b.id)
+    if (anchorIds.length !== closure.count) return
+
     this._rowReorder = {
       fromIndex: closure.start,
       count: closure.count,
@@ -1489,6 +1504,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       previewHeight: this._styleSizeFromBcrDistance(bcrH),
       previewWidth: this._styleSizeFromBcrDistance(bcrW),
       previewVisualHeight: visualH,
+      anchorIds,
     }
     this._hideTableMenu()
     this.changeDetectorRef.markForCheck()
@@ -1523,11 +1539,29 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.changeDetectorRef.markForCheck()
     if (!state || !evt.commit) return
 
-    const { fromIndex, count, targetIndex } = state
+    const { fromIndex, count, targetIndex, anchorIds } = state
     // Dropping on or inside the source range is a no-op.
     if (targetIndex >= fromIndex && targetIndex <= fromIndex + count) return
-    const adjustedTarget = targetIndex > fromIndex + count ? targetIndex - count : targetIndex
-    this.doc.crud.moveBlocks(this.id, fromIndex, count, this.id, adjustedTarget)
+
+    // 协同兜底：把「定位 + 校验 + 实际移动」放进同一个 transact，确保 indexOf
+    // 看到的 childrenIds 和 moveBlocks 操作的 Y.Array 在同一原子区间内。
+    this.doc.crud.transact(() => {
+      const liveChildren = this.childrenIds
+      const liveFromIndex = liveChildren.indexOf(anchorIds[0])
+      if (liveFromIndex < 0) return // 源行被远端删除
+      for (let i = 0; i < anchorIds.length; i++) {
+        if (liveChildren[liveFromIndex + i] !== anchorIds[i]) return // 源段被远端打散
+      }
+      // 用源段漂移补偿 targetIndex（假设远端的增删主要发生在 fromIndex 之前）。
+      const drift = liveFromIndex - fromIndex
+      const liveTargetIndex = targetIndex + drift
+      if (liveTargetIndex < 0 || liveTargetIndex > liveChildren.length) return
+      if (liveTargetIndex >= liveFromIndex && liveTargetIndex <= liveFromIndex + count) return
+      const adjustedTarget = liveTargetIndex > liveFromIndex + count
+        ? liveTargetIndex - count
+        : liveTargetIndex
+      this.doc.crud.moveBlocks(this.id, liveFromIndex, count, this.id, adjustedTarget)
+    })
 
     // Reset any lingering row-selection UI — the rows just moved and the
     // previous selection range no longer points at the same data.
@@ -1683,6 +1717,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const visualH = this._visualDistanceFromBcr(tbodyRect.height)
     const visualDistanceToTbody = this._visualDistanceFromBcr(tbodyRect.left - wrapperRect.left)
 
+    // 抓拍每行的源 cell ID 数组，drag end 时用作协同兜底锚点。
+    const rowBlocks = this.getChildrenBlocks()
+    const anchorCellIdsByRow = rowBlocks.map(row =>
+      row.childrenIds.slice(closure.start, closure.start + closure.count)
+    )
+    if (anchorCellIdsByRow.some(ids => ids.length !== closure.count)) return
+
     this._colReorder = {
       fromIndex: closure.start,
       count: closure.count,
@@ -1692,6 +1733,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       previewWidth: this._styleSizeFromVisualDistance(visualW),
       previewHeight: this._styleSizeFromVisualDistance(visualH),
       previewVisualWidth: visualW,
+      anchorCellIdsByRow,
     }
     this._hideTableMenu()
     this.changeDetectorRef.markForCheck()
@@ -1722,17 +1764,49 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.changeDetectorRef.markForCheck()
     if (!state || !evt.commit) return
 
-    const { fromIndex, count, targetIndex } = state
+    const { fromIndex, count, targetIndex, anchorCellIdsByRow } = state
     if (targetIndex >= fromIndex && targetIndex <= fromIndex + count) return
-    const adjustedTarget = targetIndex > fromIndex + count ? targetIndex - count : targetIndex
 
+    // 协同兜底：在 transact 内逐行用 anchorCellIdsByRow 重算 fromIndex 并校验。
+    // 要求所有行的漂移量一致（列结构必须对齐），否则视为表格已损坏，整段 abort。
     this.doc.crud.transact(() => {
       const rows = this.getChildrenBlocks()
-      rows.forEach(row => {
-        this.doc.crud.moveBlocks(row.id, fromIndex, count, row.id, adjustedTarget)
-      })
+      if (rows.length !== anchorCellIdsByRow.length) return // 行数被远端改了
+
+      const liveFromIndices: number[] = []
+      for (let r = 0; r < rows.length; r++) {
+        const anchors = anchorCellIdsByRow[r]
+        const cellIds = rows[r].childrenIds
+        const liveFrom = cellIds.indexOf(anchors[0])
+        if (liveFrom < 0) return // 该行的源段被远端删除
+        for (let c = 0; c < anchors.length; c++) {
+          if (cellIds[liveFrom + c] !== anchors[c]) return // 该行源段被打散
+        }
+        liveFromIndices.push(liveFrom)
+      }
+
+      const baseDrift = liveFromIndices[0] - fromIndex
+      // 所有行漂移量必须一致——否则各行列数不齐，整张表已经不是合法的矩形。
+      if (liveFromIndices.some(f => f - fromIndex !== baseDrift)) return
+
+      const liveFromIndex = liveFromIndices[0]
+      const liveTargetIndex = targetIndex + baseDrift
+      const liveColCount = rows[0]?.childrenIds.length ?? 0
+      if (liveTargetIndex < 0 || liveTargetIndex > liveColCount) return
+      if (liveTargetIndex >= liveFromIndex && liveTargetIndex <= liveFromIndex + count) return
+      const adjustedTarget = liveTargetIndex > liveFromIndex + count
+        ? liveTargetIndex - count
+        : liveTargetIndex
+
+      // 先校验 colWidths（与 cell 段长度一致）；不通过则在改任何块之前 abort，
+      // 避免「cells 已移动但 widths 没动」的半应用。
       const widths = [...(this.props.colWidths || [])]
-      const moving = widths.splice(fromIndex, count)
+      if (liveFromIndex + count > widths.length) return
+
+      rows.forEach((row, r) => {
+        this.doc.crud.moveBlocks(row.id, liveFromIndices[r], count, row.id, adjustedTarget)
+      })
+      const moving = widths.splice(liveFromIndex, count)
       widths.splice(adjustedTarget, 0, ...moving)
       this.updateProps({ colWidths: widths })
     })

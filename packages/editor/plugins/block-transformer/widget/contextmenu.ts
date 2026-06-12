@@ -109,6 +109,11 @@ export class BlockTransformContextMenu {
   private suppressTimerId: ReturnType<typeof setTimeout> | null = null;
   private caretGuardArmed = false;
   private navTextLength = 0;
+  // WKWebView/Tauri 下回车会被 document 捕获监听 + doc.event 热键双重派发，
+  // stopImmediatePropagation 拦不住第二次，导致 select() 跑两遍（转换两次、
+  // 多出一个 textarea 视图 + 对已删块报 Block not found）。一次性护栏，确保
+  // 单次菜单只确认一次。Chrome 下本就只派发一次，加这个无副作用。
+  private _consumed = false;
 
   constructor(
     public readonly cdr: ChangeDetectorRef,
@@ -425,9 +430,11 @@ export class BlockTransformContextMenu {
   }
 
   select() {
+    if (this._consumed) return;
     if (this.activeIdx === -1) return;
     const item = this.list[this.activeIdx];
     if (!item) return;
+    this._consumed = true;
 
     switch (item.type) {
       case "block":
