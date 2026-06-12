@@ -12,6 +12,7 @@ import {BlockCraftError, ErrorCode} from "../../global";
 import {Subject} from "rxjs";
 import {isYArray, isYText} from "../utils/yAbstractType";
 import {DocUndoManger} from "./undoManger";
+import {ChildrenRepairer} from "./children-repair";
 
 // This origin will skip Y.Event sync (to model)
 export const ORIGIN_SKIP_SYNC = Symbol('skip_sync')
@@ -70,6 +71,9 @@ export class DocCRUD {
   // 保存 observer 引用，doc 销毁时需要 unobserveDeep；否则若宿主复用 yDoc，observer 会堆积
   private _yObserverHandler: ((events: Y.YEvent<any>[], tr: Y.Transaction) => void) | null = null
 
+  // 远端 CRDT 合并可能让同一 block ID 重复出现（同父两次 / 跨父两处），仅远端事务触发检测
+  private _childrenRepairer!: ChildrenRepairer
+
   get yDoc() {
     return this.doc.yDoc
   }
@@ -81,9 +85,17 @@ export class DocCRUD {
   constructor(
     private readonly doc: BlockCraft.Doc
   ) {
+    // 早于 afterInit 构造：ChildrenRepairer 构造函数只允许保存 doc 引用，
+    // 不得访问 doc.vm / doc.schemas 等 afterInit 之后才就绪的属性
+    this._childrenRepairer = new ChildrenRepairer(doc)
     this.doc.afterInit(() => {
 
       this.undoManager = new DocUndoManger(this.doc, this.yBlockMap)
+
+      // 载入时一次性完整性扫描：必须在 observeDeep 之前 —— 初始同步的合并
+      // 发生在 observer 挂载前，离线交叉推送/存量损伤只能在这里兜住；
+      // 且此时修复事务不会进入 _syncYEvent，渲染直接从干净状态开始
+      this._childrenRepairer.scanOnLoad()
 
       this._yObserverHandler = (evt, tr) => {
         this.doc.ngZone.run(() => {
@@ -314,6 +326,12 @@ export class DocCRUD {
 
     this.vm.deleteByIds([...deleted])
 
+    // IME 组合期间宿主块被删（本地或远端）：通知 session abort，
+    // 防止 compositionEnd 把组合文本写进 detached Y.Text。O(1) 集合查找。
+    if (deleted.size) {
+      this.doc.inputManger.compositionSession.handleBlocksDeleted(deleted)
+    }
+
     const childComps = this.vm.createComponentByYBlocks(added)
 
     events.forEach(([bm, deltas]) => {
@@ -327,6 +345,10 @@ export class DocCRUD {
         } else if (d.insert) {
           // 所有的插入操作需要延迟执行
           const _insertComps = (d.insert as string[]).map(id => childComps[id])
+          if (!tr.local) {
+            // 跨父重复检测必须在 vm.insert 改写 parentId 之前抓取旧父块
+            this._childrenRepairer.noteRemoteInserts(bm, _insertComps)
+          }
           _delay_inserts.push([r, _insertComps])
           this.vm.insert(bm, r, _insertComps)
           r += _insertComps.length
@@ -351,6 +373,11 @@ export class DocCRUD {
     })
 
     this.onChildrenUpdate$.next(emitEvents)
+
+    if (!tr.local) {
+      // 远端结构变更后做同父重复预检（微任务合批，预检 O(children)）
+      this._childrenRepairer.noteRemoteParents(events.map(([pbm]) => pbm.instance.id))
+    }
   }
 
   getFlatIds = (blockIds: string[]) => {

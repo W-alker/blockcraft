@@ -472,9 +472,6 @@ export class ClipboardManager {
     context.preventDefault()
     this.pasteFormatData$.next(null)
     const state = context.get('clipboardState')
-    state.dataTypes.forEach(v => {
-      console.log(`%c${v}`, 'color: red; font-size: large;', state.clipboardData?.getData(v), state.clipboardData?.files)
-    })
 
     const selection = state.selection
     if (selection.start.type !== 'text') return
@@ -531,8 +528,6 @@ export class ClipboardManager {
         }
       }
     }
-
-    console.log('---------------html2snapshot', rootSnapshot)
 
     // Collect alternative format data before mutations (plugin uses this for format selector)
     const altPlainText = state.getData(ClipboardDataType.TEXT) || null

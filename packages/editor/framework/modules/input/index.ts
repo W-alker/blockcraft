@@ -251,8 +251,14 @@ export class InputTransformer {
   @EventListen("compositionEnd")
   private _handleCompositionEnd(context: UIEventStateContext) {
     const ev = context.getDefaultEvent<CompositionEvent>();
-    const compositionState = context.get("compositionState");
     ev.preventDefault();
+    // 宿主块在组合期间被删除（通常是远端协同删除）时 session 已 abort：
+    // 此时提交点只能落在 detached Y.Text 或 DOM fallback 出的无关块上，
+    // 两者都会造成静默错写，直接丢弃本次组合提交。
+    if (this.compositionSession.consumeAbort()) {
+      return;
+    }
+    const compositionState = context.get("compositionState");
     try {
       const text = compositionState.text;
       const fallbackPoint = compositionState.getFallbackPoint();
@@ -831,11 +837,16 @@ export class InputTransformer {
     // 如果前一个兄弟块是可编辑块
     if (this.doc.isEditable(prevBlock)) {
       context.preventDefault();
-      const deltas: DeltaOperation[] = block.textDeltas();
-      deltas.unshift({ retain: prevBlock.textLength });
+      // 「读取本块文本 → 并入前块 → 删除本块」必须是同一个 Yjs 事务：
+      // 拆开时协同方会观察到文本已并入但本块仍存在的中间态。选区设置是
+      // 纯本地副作用，放在事务外，避免 selectionChange$ 订阅者在事务中途执行。
       prevBlock.setInlineRange(prevBlock.textLength);
-      prevBlock.applyDeltaOperations(deltas);
-      this.doc.crud.deleteBlockById(block.id);
+      this.doc.crud.transact(() => {
+        const deltas: DeltaOperation[] = block.textDeltas();
+        deltas.unshift({ retain: prevBlock.textLength });
+        prevBlock.applyDeltaOperations(deltas);
+        this.doc.crud.deleteBlockById(block.id);
+      });
       this.doc.selection.recalculate();
       return true;
     }
@@ -867,12 +878,16 @@ export class InputTransformer {
     const nextBlock = this.doc.nextSibling(block);
     if (nextBlock) {
       if (this.doc.isEditable(nextBlock)) {
-        const deltas: DeltaOperation[] = nextBlock.textDeltas();
-        deltas.unshift({ retain: block.textLength });
-        block.setInlineRange(block.textLength);
-        block.applyDeltaOperations(deltas);
-        this.doc.crud.deleteBlockById(nextBlock.id);
         context.preventDefault();
+        // 与 Backspace 合并对称：读取、并入、删块放进同一事务，见上方说明。
+        block.setInlineRange(block.textLength);
+        this.doc.crud.transact(() => {
+          const deltas: DeltaOperation[] = nextBlock.textDeltas();
+          deltas.unshift({ retain: block.textLength });
+          block.applyDeltaOperations(deltas);
+          this.doc.crud.deleteBlockById(nextBlock.id);
+        });
+        this.doc.selection.recalculate();
         return true;
       } else {
         this.doc.selection.selectBlock(nextBlock);

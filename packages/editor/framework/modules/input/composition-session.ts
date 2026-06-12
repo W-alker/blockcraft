@@ -63,6 +63,8 @@ export class CompositionSession {
   private _anchor: OneShotCursorAnchor
   private _activeBlockId: string | null = null
   private _deferredPatches: IDeferredPatch[] = []
+  /** 组合期间宿主块被删除（通常来自远端协同）后置位；compositionEnd 据此丢弃本次提交 */
+  private _abortedByBlockRemoval = false
 
   constructor(private readonly doc: BlockCraft.Doc) {
     this._anchor = new OneShotCursorAnchor(doc)
@@ -102,6 +104,7 @@ export class CompositionSession {
     this._phase = CompositionPhase.Active
     this._activeBlockId = block.id
     this._deferredPatches = []
+    this._abortedByBlockRemoval = false
     this._anchor.capture(block, anchorIndex)
   }
 
@@ -183,6 +186,32 @@ export class CompositionSession {
   }
 
   /**
+   * Notify the session that blocks were removed from the document
+   * (local or remote). If the composing host block is among them, the
+   * session aborts: writing the pending composition to a detached Y.Text
+   * would silently lose the input (or fall back onto an unrelated block).
+   *
+   * Called from DocCRUD's children sync path — O(1) per deletion batch.
+   */
+  handleBlocksDeleted(deletedIds: ReadonlySet<string>) {
+    if (this._phase !== CompositionPhase.Active) return
+    if (!this._activeBlockId || !deletedIds.has(this._activeBlockId)) return
+    this.end()
+    // end() 之后置位：abort 标记要存活到 compositionEnd 事件被消费为止
+    this._abortedByBlockRemoval = true
+  }
+
+  /**
+   * One-shot check for the abort flag. compositionEnd handler calls this
+   * first and discards the commit when it returns true.
+   */
+  consumeAbort(): boolean {
+    const aborted = this._abortedByBlockRemoval
+    this._abortedByBlockRemoval = false
+    return aborted
+  }
+
+  /**
    * End the session and return to idle.
    */
   end() {
@@ -193,9 +222,12 @@ export class CompositionSession {
   }
 
   /**
-   * Force reset (e.g. on error or block deletion during composition).
+   * Force reset (e.g. on error or a new composition starting).
+   * Also clears a stale abort flag from a previous aborted composition
+   * whose compositionend never fired (detached DOM may swallow it).
    */
   reset() {
     this.end()
+    this._abortedByBlockRemoval = false
   }
 }

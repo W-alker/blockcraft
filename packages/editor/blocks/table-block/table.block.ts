@@ -12,6 +12,7 @@ import { preferTableToolbarAbove, resolveTableStructureAnchor } from "./widgets/
 import { adjustSelection, adjustSelectionWithMap, buildCellMasterMap, buildCellMasterMapWithSources, CellMasterMap, RectangleSelection } from "./utils";
 import { debounce, nextTick, throttle } from "../../global";
 import { addTableCol, addTableRow, buildCellMatrix, CellMatrixEntry, deleteTableCols, deleteTableRows } from "./callback";
+import { attachTableNormalizer } from "./table-normalize";
 import { ConnectedPosition, FlexibleConnectedPositionStrategy, OverlayRef } from "@angular/cdk/overlay";
 import { TableCellsSelection } from "./types";
 import { BlockSelection } from "../../framework/modules/selection/blockSelection";
@@ -359,6 +360,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       .subscribe(selection => {
         this._syncTableFocusUi(selection)
       })
+
+    // 协同兜底：远端结构事务后校验矩形不变量与 colWidths 对齐。
+    // 仅远端事务触发 + O(rows) 预检，本地编辑路径零开销，见 table-normalize.ts
+    attachTableNormalizer(this)
   }
 
   override ngOnDestroy() {

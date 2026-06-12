@@ -123,9 +123,12 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   /**
    * Apply delta operations to the view via the blot tree (InlineRuntime).
    * Called by crud.ts when Y.Text changes arrive from remote or local transactions.
+   *
+   * 只读模式下同样要渲染：readonly 拦截的是「本地输入」，不是「远端/程序化
+   * 更新」。早退会让只读协同查看者的视图冻结，且切回可编辑后 blot 树与
+   * Y.Text 脱节，后续光标定位与写入全部错位。
    */
   protected _applyDeltaToView(deltas: DeltaOperation[]) {
-    if (this.doc.isReadonly) return
     try {
       this._runtime.applyDelta(deltas)
       if (!this._verifyBlotConsistency()) {
