@@ -6,6 +6,7 @@ import { DocCRUD } from "./crud"
 
 type MockBlockRef = {
   instance: MockBlockInstance
+  hostView: { destroyed: boolean }
 }
 
 type MockChildrenRenderRef = {
@@ -88,7 +89,8 @@ const createBlockRef = (
       yBlock.get('nodeType'),
       yBlock,
       parentId,
-    )
+    ),
+    hostView: { destroyed: false }
   }
   store.set(ref.instance.id, ref)
   return ref
@@ -139,7 +141,7 @@ const createDocHarness = () => {
   }
 
   const selection = {
-    value: null,
+    value: null as { anchor: { blockId: string }, head: { blockId: string } } | null,
     recalculate: jasmine.createSpy('recalculate')
   }
 
@@ -148,6 +150,7 @@ const createDocHarness = () => {
     yBlockMap,
     vm,
     selection,
+    isInitialized: true,
     ngZone: {
       run: (fn: () => void) => fn()
     },
@@ -181,7 +184,8 @@ const createDocHarness = () => {
       fn(rootRef.instance as unknown as BlockCraft.IBlockComponents['root'])
     },
     isEditable: (block: { nodeType: BlockNodeType }) => block.nodeType === BlockNodeType.editable,
-    onDestroy$: new Subject<void>()
+    onDestroy$: new Subject<void>(),
+    onDestroy: jasmine.createSpy('onDestroy')
   }
 
   const crud = new DocCRUD(doc as unknown as BlockCraft.Doc)
@@ -191,9 +195,29 @@ const createDocHarness = () => {
     rootRef,
     store,
     selection,
-    createdParagraphs
+    createdParagraphs,
+    yDoc
   }
 }
+
+/**
+ * Replay a mutation as a *remote* transaction: clone current state into a
+ * second Y.Doc, mutate it there, then apply the resulting update back. The
+ * observer on the original doc sees `tr.local === false`, exercising the
+ * collaboration path.
+ */
+const applyRemoteUpdate = (yDoc: Y.Doc, mutate: (blocks: Y.Map<YBlock>) => void) => {
+  const remote = new Y.Doc()
+  Y.applyUpdate(remote, Y.encodeStateAsUpdate(yDoc))
+  let update: Uint8Array | null = null
+  const handler = (u: Uint8Array) => { update = u }
+  remote.on('update', handler)
+  remote.transact(() => mutate(remote.getMap<YBlock>('blocks')))
+  remote.off('update', handler)
+  if (update) Y.applyUpdate(yDoc, update)
+}
+
+const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
 
 describe('DocCRUD', () => {
   it('emits children updates synchronously for insert operations', () => {
@@ -237,5 +261,54 @@ describe('DocCRUD', () => {
     expect(selection.recalculate).toHaveBeenCalled()
     expect(createdParagraphs.map(snapshot => snapshot.id)).toEqual(['paragraph-auto-1'])
     expect(rootRef.instance.childrenIds).toEqual(['paragraph-auto-1'])
+  })
+
+  it('does NOT recalculate selection when a remote change misses the selection blocks', async () => {
+    const {crud, rootRef, selection, yDoc} = createDocHarness()
+    crud.insertBlocks(rootRef.instance.id, 0, [createEditableSnapshot('a'), createEditableSnapshot('b')])
+
+    // Local user has a selection inside block "a".
+    selection.value = {anchor: {blockId: 'a'}, head: {blockId: 'a'}}
+    selection.recalculate.calls.reset()
+
+    // A collaborator inserts a brand-new block "c" elsewhere — never touches "a".
+    applyRemoteUpdate(yDoc, blocks => {
+      const cBlock = native2YBlock({
+        id: 'c',
+        flavour: 'paragraph',
+        nodeType: BlockNodeType.editable,
+        props: {depth: 0},
+        meta: {},
+        children: []
+      } as unknown as NativeBlockModel)
+      blocks.set('c', cBlock)
+      ;(blocks.get('root')!.get('children') as Y.Array<string>).insert(2, ['c'])
+    })
+
+    await nextFrame()
+    await Promise.resolve()
+
+    expect(selection.recalculate).not.toHaveBeenCalled()
+    expect(rootRef.instance.childrenIds).toEqual(['a', 'b', 'c'])
+  })
+
+  it('recalculates selection when a remote change hits a selection endpoint block', async () => {
+    const {crud, rootRef, selection, yDoc} = createDocHarness()
+    crud.insertBlocks(rootRef.instance.id, 0, [createEditableSnapshot('a'), createEditableSnapshot('b')])
+
+    // Local selection endpoint is block "a".
+    selection.value = {anchor: {blockId: 'a'}, head: {blockId: 'a'}}
+    selection.recalculate.calls.reset()
+
+    // A collaborator deletes block "a" out from under the selection.
+    applyRemoteUpdate(yDoc, blocks => {
+      blocks.delete('a')
+      ;(blocks.get('root')!.get('children') as Y.Array<string>).delete(0, 1)
+    })
+
+    await nextFrame()
+    await Promise.resolve()
+
+    expect(selection.recalculate).toHaveBeenCalled()
   })
 })

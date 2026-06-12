@@ -89,9 +89,16 @@ export class DocCRUD {
         this.doc.ngZone.run(() => {
           this._syncYEvent(evt, tr)
           if (!tr.local) {
+            // 远端改动到达时，只有当它触及本地选区所在的端点 block 才需要重算选区：
+            // 端点 block 的文本/结构变化会让原生 selection 与模型脱节。协同方在其它
+            // block 持续编辑时，若无条件 recalculate，selectionChange$ 会空转（重算出
+            // 逻辑相同的选区却仍 next() 一次），导致 float-text-toolbar 等订阅方被反复
+            // 开关。affected 必须在事务回调内同步采集（YEvent 仅在此刻有效）。
+            const affected = this._collectAffectedBlockIds(evt)
             requestAnimationFrame(() => {
               // doc 可能在 rAF 触发前被销毁；isInitialized 在 destroy() 中转为 false
               if (!this.doc.isInitialized) return
+              if (!this._remoteChangeAffectsSelection(affected)) return
               this.doc.selection.recalculate()
             })
           }
@@ -118,6 +125,35 @@ export class DocCRUD {
 
   transact(fn: () => void, origin: any = null) {
     return this.yDoc.transact(fn, origin)
+  }
+
+  /**
+   * 采集一次远端事务里被改动的 block id 集合。
+   * - 顶层 map 增删：变更的 key 即 block id（yBlockMap 以 id 扁平存储 block）
+   * - 嵌套改动（props / meta / children / text）：path[0] 即所属 block id
+   */
+  private _collectAffectedBlockIds(events: Y.YEvent<any>[]): Set<string> {
+    const ids = new Set<string>()
+    for (const ev of events) {
+      if (!ev.path.length) {
+        ev.changes.keys.forEach((_change, key) => ids.add(key))
+      } else {
+        ids.add(ev.path[0] as string)
+      }
+    }
+    return ids
+  }
+
+  /**
+   * 远端改动是否影响当前选区：只要触及选区任一端点 block 即视为影响。
+   * 端点 block 的文本/结构变化才会让原生 selection 与模型脱节、需要重算；
+   * 选区跨越的中间 block 变化不会移动端点 DOM 节点，原生 selection 仍然有效。
+   * 无选区时（本地用户没有选区）远端改动无从影响，直接跳过。
+   */
+  private _remoteChangeAffectsSelection(affected: Set<string>): boolean {
+    const sel = this.doc.selection.value
+    if (!sel) return false
+    return affected.has(sel.anchor.blockId) || affected.has(sel.head.blockId)
   }
 
   private _syncYEvent = (events: Y.YEvent<any>[], tr: Y.Transaction) => {
