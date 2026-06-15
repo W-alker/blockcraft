@@ -206,6 +206,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     selectionKind: 'cell' as 'cell' | 'cells' | 'row' | 'col',
   }
 
+  /** 协同兜底：_showTableMenu 时抓拍的锚点 ID。菜单动作执行瞬间据此重定位
+   *  行/列 span（indexOf + 连续性校验），远端增删让快照索引漂移时仍命中正确
+   *  目标，锚点失效则安全放弃——绝不按错位索引执行破坏性操作。
+   *  与 _tableMenu 一样在 hide 时保留（keep-alive 内联工具栏），每次 show 重抓。 */
+  private _tableMenuAnchor: { rowIds: string[], colCellIds: string[] } | null = null
+
   private _prevAdjustedSelection: TableCellsSelection | null = null
   private _activeCellsRange: { start: [number, number], end: [number, number], anchorId: string } | null = null
   private _suppressFocusSync = false
@@ -513,6 +519,87 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.doc.crud.transact(() => {
       deleteTableRows.call(this, index, count)
     })
+  }
+
+  // ── 结构工具栏菜单动作（协同安全入口）─────────────────────────
+  // 工具栏持有的 rowIndex/colIndex 是菜单展示时的快照，远端增删行列后会漂移。
+  // 这些入口在点击瞬间用 _tableMenuAnchor 重定位；「解析 → 执行」在同一同步
+  // 调用栈内完成（远端更新只能以宏任务到达），无需再进事务内二次校验。
+
+  /** 用锚点重算 span；锚点被远端删除/打散返回 null */
+  private _resolveAnchoredSpan(anchorIds: string[], liveIds: string[]): { index: number, count: number } | null {
+    if (!anchorIds.length) return null
+    const index = liveIds.indexOf(anchorIds[0])
+    if (index < 0) return null
+    for (let i = 1; i < anchorIds.length; i++) {
+      if (liveIds[index + i] !== anchorIds[i]) return null
+    }
+    return { index, count: anchorIds.length }
+  }
+
+  private _resolveMenuRowSpan() {
+    const anchor = this._tableMenuAnchor
+    return anchor ? this._resolveAnchoredSpan(anchor.rowIds, this.childrenIds) : null
+  }
+
+  private _resolveMenuColSpan() {
+    const anchor = this._tableMenuAnchor
+    const firstRowCellIds = this.firstChildren?.childrenIds
+    // 注：列锚点以「抓拍时的首行 cell」为基准。若远端在首行上方插入了新行，
+    // 首行身份改变，列锚点会失配并放弃操作（假阳性 abort）——保守设计，
+    // 用户重新唤起菜单即可刷新锚点；绝不冒按错位列索引删错列的风险。
+    return anchor && firstRowCellIds ? this._resolveAnchoredSpan(anchor.colCellIds, firstRowCellIds) : null
+  }
+
+  private _abortMenuAction(kind: 'row' | 'col') {
+    this.doc.logger.warn(`table menu: anchored ${kind} span no longer exists (remote change), action skipped`)
+    this._hideTableMenu()
+  }
+
+  menuAddRowAbove() {
+    const span = this._resolveMenuRowSpan()
+    if (!span) return this._abortMenuAction('row')
+    this.addRow(span.index)
+  }
+
+  menuAddRowBelow() {
+    const span = this._resolveMenuRowSpan()
+    if (!span) return this._abortMenuAction('row')
+    this.addRow(span.index + span.count)
+  }
+
+  /** @returns 实际执行删除的起始行索引；锚点失效返回 null（未执行任何删除） */
+  menuDeleteRows(): number | null {
+    const span = this._resolveMenuRowSpan()
+    if (!span) {
+      this._abortMenuAction('row')
+      return null
+    }
+    this.deleteRows(span.index, span.count)
+    return span.index
+  }
+
+  menuAddColumnLeft() {
+    const span = this._resolveMenuColSpan()
+    if (!span) return this._abortMenuAction('col')
+    this.addColumn(span.index)
+  }
+
+  menuAddColumnRight() {
+    const span = this._resolveMenuColSpan()
+    if (!span) return this._abortMenuAction('col')
+    this.addColumn(span.index + span.count)
+  }
+
+  /** @returns 实际执行删除的起始列索引；锚点失效返回 null（未执行任何删除） */
+  menuDeleteColumns(): number | null {
+    const span = this._resolveMenuColSpan()
+    if (!span) {
+      this._abortMenuAction('col')
+      return null
+    }
+    this.deleteColumns(span.index, span.count)
+    return span.index
   }
 
   setEqualColumnWidths(minWidth = 50) {
@@ -1001,6 +1088,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       selectionRect: tableRect,
       viewportRect,
     })
+
+    const liveRowIds = this.childrenIds
+    const liveFirstRowCellIds = this.firstChildren?.childrenIds ?? []
+    this._tableMenuAnchor = {
+      rowIds: liveRowIds.slice(options.rowIndex, options.rowIndex + (options.rowCount ?? 1)),
+      colCellIds: liveFirstRowCellIds.slice(options.colIndex, options.colIndex + (options.colCount ?? 1)),
+    }
 
     this._tableMenu = {
       visible: true,

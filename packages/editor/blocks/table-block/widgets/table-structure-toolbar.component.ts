@@ -403,46 +403,52 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges, OnDest
     event.stopPropagation()
   }
 
+  // 结构动作统一走 table 的 menu* 协同安全入口：内部用菜单展示时抓拍的
+  // 锚点 ID 在点击瞬间重定位，本组件持有的 rowIndex/colIndex 快照漂移时
+  // 也不会按错位索引执行（详见 table.block.ts 菜单动作一节）。
+
   insertRowBefore(event: MouseEvent) {
     this._consume(event)
-    this.table.addRow(this.rowIndex)
+    this.table.menuAddRowAbove()
     nextTick().then(() => this.table.refreshTableMenuFromSelection?.())
   }
 
   insertRowAfter(event: MouseEvent) {
     this._consume(event)
-    this.table.addRow(this.rowIndex + this.rowCount)
+    this.table.menuAddRowBelow()
     nextTick().then(() => this.table.refreshTableMenuFromSelection?.())
   }
 
   deleteRow(event: MouseEvent) {
     this._consume(event)
-    this.table.deleteRows(this.rowIndex, this.rowCount)
+    const liveIndex = this.table.menuDeleteRows()
+    if (liveIndex === null) return
     nextTick().then(() => {
       if (!this.table.rowLength) return
-      const nextIndex = Math.min(this.rowIndex, this.table.rowLength - 1)
+      const nextIndex = Math.min(liveIndex, this.table.rowLength - 1)
       this.table.onRowBarSelected([nextIndex, nextIndex])
     })
   }
 
   insertColBefore(event: MouseEvent) {
     this._consume(event)
-    this.table.addColumn(this.colIndex)
+    this.table.menuAddColumnLeft()
     nextTick().then(() => this.table.refreshTableMenuFromSelection?.())
   }
 
   insertColAfter(event: MouseEvent) {
     this._consume(event)
-    this.table.addColumn(this.colIndex + this.colCount)
+    this.table.menuAddColumnRight()
     nextTick().then(() => this.table.refreshTableMenuFromSelection?.())
   }
 
   deleteCol(event: MouseEvent) {
     this._consume(event)
-    this.table.deleteColumns(this.colIndex, this.colCount)
+    const liveIndex = this.table.menuDeleteColumns()
+    if (liveIndex === null) return
     nextTick().then(() => {
       if (!this.table.colLength) return
-      const nextIndex = Math.min(this.colIndex, this.table.colLength - 1)
+      const nextIndex = Math.min(liveIndex, this.table.colLength - 1)
       this.table.onColBarSelected([nextIndex, nextIndex])
     })
   }

@@ -132,10 +132,40 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     try {
       this._runtime.applyDelta(deltas)
       if (!this._verifyBlotConsistency()) {
-        this.rerender()
+        this._rerenderRestoringCursor(deltas)
       }
     } catch {
-      this.rerender()
+      this._rerenderRestoringCursor(deltas)
+    }
+  }
+
+  /**
+   * 兜底 rerender 会整体重建 DOM（replaceChildren），原生选区随之失效，
+   * 本地正在打字时远端触发兜底会直接丢光标。若当前文本选区完全位于本块，
+   * 先把端点 offset 经 delta 变换映射到新坐标，rerender 后恢复。
+   * 只在兜底路径执行；applyDelta 命中的正常路径零开销。
+   */
+  private _rerenderRestoringCursor(deltas: DeltaOperation[]) {
+    let restore: { index: number, length: number } | null = null
+    try {
+      const sel = this.doc.selection.value
+      if (sel && sel.isInSameBlock
+        && sel.start.type === 'text' && sel.end.type === 'text'
+        && sel.start.blockId === this.id) {
+        const max = this.textLength
+        const start = Math.max(0, Math.min(transformIndexThroughDeltas(sel.start.offset, deltas), max))
+        const end = Math.max(start, Math.min(transformIndexThroughDeltas(sel.end.offset, deltas), max))
+        restore = { index: start, length: end - start }
+      }
+    } catch {
+      // 选区读取/变换失败不阻碍兜底渲染本身
+    }
+    this.rerender()
+    if (restore) {
+      // 同步恢复是安全的：selectionchange 按规范异步排队派发（addRange 不会
+      // 同步触发 recalculate）；IME 组合期间本块的远端 patch 走 deferPatch，
+      // 不会进入本路径。与 compositionEnd 的 rerender + setInlineRange 同模式。
+      this.setInlineRange(restore.index, restore.length)
     }
   }
 
@@ -182,4 +212,31 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     })
   }
 
+}
+
+/**
+ * 把旧文本坐标经 delta（retain/insert/delete 序列）变换到新坐标：
+ * 光标前的远端插入右移、删除左移；恰好落在光标位置的插入不移动光标
+ * （左 affinity，与本地输入直觉一致）。
+ *
+ * 不变量：oldPos 只统计「旧文本坐标的消耗量」——retain/delete 消耗旧坐标，
+ * insert 不消耗（Quill delta 语义），因此 insert 分支【不能】推进 oldPos；
+ * `index - oldPos` 恒等于光标前尚未处理的旧字符数，delete 分支据此截取
+ * 与光标的重叠量。给 insert 加 oldPos += len 看似"对齐"实则破坏该不变量。
+ */
+function transformIndexThroughDeltas(index: number, deltas: DeltaOperation[]): number {
+  let newIndex = index
+  let oldPos = 0
+  for (const d of deltas) {
+    if (oldPos >= index) break
+    if (d.retain) {
+      oldPos += d.retain
+    } else if (typeof d.delete === 'number') {
+      newIndex -= Math.min(d.delete, index - oldPos)
+      oldPos += d.delete
+    } else if (d.insert) {
+      newIndex += typeof d.insert === 'string' ? d.insert.length : 1
+    }
+  }
+  return newIndex
 }

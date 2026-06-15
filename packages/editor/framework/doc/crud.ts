@@ -181,7 +181,7 @@ export class DocCRUD {
     const delay_childrenEvent_handlers: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][] = []
 
     // sync to model
-    events.forEach(ev => {
+    const processEvent = (ev: Y.YEvent<any>) => {
       const {path, changes, target} = ev
       // at top level, it`s mean that block is created or deleted
       // No need handle ORIGIN_SKIP_SYNC
@@ -282,6 +282,17 @@ export class DocCRUD {
         block: bm.instance,
         changes: changes.keys
       })
+    }
+
+    // 逐事件隔离：单个坏事件（如目标块组件缺失）只跳过自身，
+    // 不中断同一事务批次里的后续事件——否则一个异常会让批内其余
+    // 远端变更全部丢失且无自愈机会
+    events.forEach(ev => {
+      try {
+        processEvent(ev)
+      } catch (e) {
+        this.doc.logger.warn('syncYEvent: skip broken event, path=' + JSON.stringify(ev.path), e)
+      }
     })
 
     if (propsChanges.length) {

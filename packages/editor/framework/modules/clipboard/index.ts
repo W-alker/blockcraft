@@ -42,6 +42,7 @@ import {
   supportsClipboardWriteType,
 } from "./internal-clipboard";
 import {cloneSnapshot, getMarkdownClipboardText, looksLikeMarkdown} from "./paste-utils";
+import * as Y from "yjs";
 
 export * from './types'
 export * from './copy-filter'
@@ -459,10 +460,23 @@ export class ClipboardManager {
     const startBlockId = sel.start.blockId
     const startOffset = startType === 'text' ? sel.start.offset : 0
     this.copyFromSelection(sel, state.clipboardData!).then(() => {
+      // 异步复制期间端点块可能被远端删除：内容已入剪贴板，删除环节安全放弃，
+      // 避免对悬空选区执行删除时未捕获异常中断整个 cut 流程
+      const startAlive = !!this.doc.vm.get(startBlockId)
+      const endAlive = sel.isInSameBlock || !!this.doc.vm.get(sel.end.blockId)
+      if (!startAlive || !endAlive) {
+        this.doc.logger.warn('cut: selection block removed during copy, skip delete')
+        return
+      }
       this.deleteContentFromSelection(sel)
       if (startType === 'text') {
-        this.doc.selection.setCursorAt(this.doc.getBlockById(startBlockId) as any, startOffset)
+        const block = this.doc.getBlockById(startBlockId) as EditableBlockComponent | null
+        if (!block) return
+        // 远端并发编辑后旧 offset 可能越界，夹取到现存文本范围
+        this.doc.selection.setCursorAt(block as any, Math.min(startOffset, block.textLength))
       }
+    }).catch(e => {
+      this.doc.logger.warn('cut: delete after copy failed', e)
     })
 
   }
@@ -477,8 +491,9 @@ export class ClipboardManager {
     if (selection.start.type !== 'text') return
 
     const editableBlock = selection.firstBlock as EditableBlockComponent
-    const fromIndex = selection.start.offset
-    const fromLength = selection.isInSameBlock && selection.end.type === 'text'
+    // HTML 异步解析路径会在 await 后用 RelativePosition 重解析这两个坐标，其余路径同步使用
+    let fromIndex = selection.start.offset
+    let fromLength = selection.isInSameBlock && selection.end.type === 'text'
       ? selection.end.offset - fromIndex
       : editableBlock.textLength - fromIndex
     const {isInSameBlock, collapsed} = selection
@@ -519,11 +534,26 @@ export class ClipboardManager {
         if (!rootSnapshot) {
           const htmlAdapter = this.adapter?.getAdapter(ClipboardDataType.HTML)
           if (htmlAdapter) {
+            // HTML 解析是本流程唯一的异步间隙：解析期间远端可能编辑/删除锚点块，
+            // 事件时刻捕获的 fromIndex/fromLength 会漂移。用 RelativePosition
+            // 锚定选区端点（一次性创建，无热路径开销），解析完成后重解析回绝对坐标
+            const anchorStart = Y.createRelativePositionFromTypeIndex(editableBlock.yText, fromIndex)
+            const anchorEnd = Y.createRelativePositionFromTypeIndex(editableBlock.yText, fromIndex + fromLength)
             try {
               rootSnapshot = await htmlAdapter.toSnapshot(htmlString)
             } catch (e) {
               this.doc.logger.warn('html2snapshot error', e)
             }
+            // 锚点块在解析期间被远端删除：数据未动，放弃本次粘贴（安全降级）
+            if (!this.doc.vm.get(editableBlock.id)) {
+              this.doc.logger.warn('paste: anchor block removed during html parsing, abort')
+              return false
+            }
+            const liveStart = Y.createAbsolutePositionFromRelativePosition(anchorStart, this.doc.yDoc)
+            const liveEnd = Y.createAbsolutePositionFromRelativePosition(anchorEnd, this.doc.yDoc)
+            const liveMax = editableBlock.textLength
+            fromIndex = Math.max(0, Math.min(liveStart?.index ?? fromIndex, liveMax))
+            fromLength = Math.max(0, Math.min(liveEnd?.index ?? (fromIndex + fromLength), liveMax) - fromIndex)
           }
         }
       }
@@ -569,8 +599,11 @@ export class ClipboardManager {
 
         // 不需要拆分, 代表这是一个行内操作
         if (!snapshots.length) {
-          editableBlock.deleteText(fromIndex, fromLength)
-          editableBlock.applyDeltaOperations(ops)
+          // 删除 + 插入并入同一事务：协同方观察不到「已删未插」的中间态
+          this.doc.crud.transact(() => {
+            editableBlock.deleteText(fromIndex, fromLength)
+            editableBlock.applyDeltaOperations(ops)
+          })
           insertLength > 0 && nextTick().then(() => {
             collapsed ? editableBlock.setInlineRange(fromIndex + insertLength) : editableBlock.setInlineRange(fromIndex, insertLength)
           })
@@ -578,59 +611,79 @@ export class ClipboardManager {
           return;
         }
 
-        // 文本中间位置
-        if (fromIndex + fromLength < textLength) {
-          ops.push({delete: textLength - fromIndex})
-          // 拆分
-          const sliceDeltas = sliceDelta(editableBlock.textDeltas(), fromIndex + fromLength, textLength)
-          const splitSnapshot = this.doc.schemas.createSnapshot('paragraph', [sliceDeltas, editableBlock.props])
-          this.doc.crud.insertBlocksAfter(editableBlock, [splitSnapshot])
-        } else {
-          editableBlock.deleteText(fromIndex, fromLength)
-        }
-        editableBlock.applyDeltaOperations(ops)
-      } else {
-        // 删除区间内容
-        this.deleteContentFromSelection(state.selection)
-
-        // 是否需要和本段合并
-        if (snapshots[0].nodeType === BlockNodeType.editable && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)) {
-          const insertLength = deltaStrLength(snapshots[0].children)
-          editableBlock.applyDeltaOperations([{retain: fromIndex}, ...snapshots[0].children])
-          snapshots.shift()
-
-          if (!snapshots.length) {
-            insertLength > 0 && nextTick().then(() => {
-              collapsed ? editableBlock.setInlineRange(fromIndex + insertLength) : editableBlock.setInlineRange(fromIndex, insertLength)
-            })
-            emitFormatData('html')
-            return
+        // 拆分/删除 + 行内合并 + 插入后续块并入同一事务（原先分散在 2-3 个
+        // 事务，远端会闪现拆分了但内容未到的中间态）
+        this.doc.crud.transact(() => {
+          // 文本中间位置
+          if (fromIndex + fromLength < textLength) {
+            ops.push({delete: textLength - fromIndex})
+            // 拆分
+            const sliceDeltas = sliceDelta(editableBlock.textDeltas(), fromIndex + fromLength, textLength)
+            const splitSnapshot = this.doc.schemas.createSnapshot('paragraph', [sliceDeltas, editableBlock.props])
+            this.doc.crud.insertBlocksAfter(editableBlock, [splitSnapshot])
+          } else {
+            editableBlock.deleteText(fromIndex, fromLength)
           }
+          editableBlock.applyDeltaOperations(ops)
+          this.doc.crud.insertBlocksAfter(editableBlock, snapshots)
+        })
+      } else {
+        // 端点存活校验：HTML 异步解析期间选区端点块可能已被远端删除
+        const endPoint = state.selection.end
+        if (endPoint.blockId !== editableBlock.id && !this.doc.vm.get(endPoint.blockId)) {
+          this.doc.logger.warn('paste: selection end block removed during parsing, abort')
+          return false
+        }
+
+        let mergedInsertLength = 0
+        // 跨块粘贴：删选区 + 首块合并 + 插入后续块并入同一事务。
+        // 注：deleteContentFromSelection 内部 _replaceText 原设计是「删除事务 +
+        // 独立 append 事务」两步；嵌套后被 Yjs 合并为单事务——这是有意为之：
+        // 整次粘贴成为一步 undo，远端也只观察到一次原子变更。观察者收到的
+        // 合并 delta 若超出增量应用能力，会走一致性检查 → rerender 兜底。
+        this.doc.crud.transact(() => {
+          // 删除区间内容
+          this.deleteContentFromSelection(state.selection)
+
+          // 是否需要和本段合并
+          if (snapshots[0].nodeType === BlockNodeType.editable && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)) {
+            mergedInsertLength = deltaStrLength(snapshots[0].children)
+            editableBlock.applyDeltaOperations([{retain: fromIndex}, ...snapshots[0].children])
+            snapshots.shift()
+          }
+
+          if (snapshots.length) {
+            this.doc.crud.insertBlocksAfter(editableBlock, snapshots)
+          }
+        })
+
+        if (!snapshots.length) {
+          mergedInsertLength > 0 && nextTick().then(() => {
+            collapsed ? editableBlock.setInlineRange(fromIndex + mergedInsertLength) : editableBlock.setInlineRange(fromIndex, mergedInsertLength)
+          })
+          emitFormatData('html')
+          return
         }
       }
 
-      // 新增blocks
-      void this.doc.chain()
-        .insertAfterSnapshots(editableBlock, snapshots)
-        .tap(() => {
-          if (collapsed) return
-          const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
-          this.doc.selection.setSelection({
-            blockId: editableBlock.id,
-            index: fromIndex,
-            length: editableBlock.textLength,
-            type: 'text'
-          }, this.doc.isEditable(endBlock) ? {
-            blockId: endBlock.id,
-            index: 0,
-            length: endBlock.textLength,
-            type: 'text'
-          } : {
-            blockId: endBlock.id,
-            type: 'selected'
-          })
+      // 粘贴块的选区设置（原 chain.tap 逻辑；插入已在上方事务内完成）
+      if (!collapsed) {
+        const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
+        this.doc.selection.setSelection({
+          blockId: editableBlock.id,
+          index: fromIndex,
+          length: editableBlock.textLength,
+          type: 'text'
+        }, this.doc.isEditable(endBlock) ? {
+          blockId: endBlock.id,
+          index: 0,
+          length: endBlock.textLength,
+          type: 'text'
+        } : {
+          blockId: endBlock.id,
+          type: 'selected'
         })
-        .run()
+      }
       emitFormatData('html')
       return true
     }

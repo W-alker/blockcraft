@@ -170,7 +170,10 @@ export class SelectionManager {
       return {value: r, next: execNext ? undefined : next}
     } catch (e) {
       this.doc.logger.warn('normalizeRangeError: ', e)
-      const next = () => {}
+      // normalize 失败（典型：选区端点块已被远端删除）必须清空模型选区，
+      // 与上方各无效分支保持一致。残留悬空 blockId 会让后续所有
+      // sel.anchor.block 取值器抛错（selected-manager 遍历等）。
+      const next = () => this._applyState(null)
       execNext && next()
       return {value: null, next: execNext ? undefined : next}
     }
