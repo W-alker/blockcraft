@@ -122,9 +122,17 @@ export class BlockTransformContextMenu {
   ) {}
 
   ngOnInit() {
-    const parentBlockSchema = this.doc.schemas.get(
-      this.activeBlock.parentBlock!.flavour,
-    )!;
+    // activeBlock 可能在菜单打开瞬间被远端删除：parentBlock 变 null，
+    // 原 parentBlock! 非空断言会抛 TypeError 让整个 ngOnInit 崩溃。关闭菜单兜底。
+    // close$ 的订阅在 createConnectedOverlay 之后已就绪（ngOnInit 在更晚的 CD
+    // 周期才跑），但同步 emit 会让 overlay 在自身 ngOnInit 内 dispose 形成
+    // ngOnInit→ngOnDestroy 重入，推迟一个微任务发出更干净。
+    const parentBlock = this.activeBlock.parentBlock;
+    if (!parentBlock) {
+      queueMicrotask(() => this.close$.next(true));
+      return;
+    }
+    const parentBlockSchema = this.doc.schemas.get(parentBlock.flavour)!;
     const blocks: IContextMenuOption[] = this.doc.schemas
       .getSchemaList()
       .filter(
@@ -470,6 +478,9 @@ export class BlockTransformContextMenu {
     const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN);
     blockCreator.getParamsByScheme(schema).then((params) => {
       if (!params) return;
+      // activeBlock 可能在 getParamsByScheme（弹窗/异步）期间被远端删除：
+      // 对已删块 replaceWithSnapshots 无效，且读 props 会拿到陈旧值，直接放弃
+      if (!this.doc.vm.get(this.activeBlock.id)) return;
       const newBlock = this.doc.schemas.createSnapshot(
         schema.flavour,
         params as any,

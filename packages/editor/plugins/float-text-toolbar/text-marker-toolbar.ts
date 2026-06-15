@@ -116,6 +116,8 @@ export class TextMarkerPlugin extends DocPlugin {
   }
 
   destroy() {
+    // 插件销毁时必须同时关闭 overlay，否则 CDK overlay 残留泄漏。对齐 ImgToolbar。
+    this.closeToolbar()
     this._sub?.unsubscribe()
   }
 }

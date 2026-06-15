@@ -212,10 +212,14 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     this.changeDetectorRef.markForCheck();
 
     this.fileService.uploadImg(file, (p) => {
+      // 上传期间块可能被本地/远端删除：detectChanges on destroyed view 会抛错
+      if (this._isGone()) return;
       this.uploadProgress = p;
       this.changeDetectorRef.detectChanges();
     }).then(resultUrl => {
       this.fileService.removeObjectURL(url);
+      // 块已删：跳过 setInitProps（否则写入 detached Y.Map，undo 时复活孤儿块）
+      if (this._isGone()) return;
       this.setInitProps({src: resultUrl});
       this.uploadProgress = 100;
       this._previewUri = '';
@@ -223,6 +227,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     }).catch(() => {
       this.fileService.removeObjectURL(url);
       this.doc.messageService.warn('图片上传失败');
+      if (this._isGone()) return;
       this.setInitProps({src: ''});
       this.uploadProgress = 100;
       this._previewUri = '';

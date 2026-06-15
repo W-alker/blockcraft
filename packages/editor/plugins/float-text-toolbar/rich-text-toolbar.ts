@@ -221,6 +221,10 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   };
 
   destroy() {
+    // 插件销毁（含文档销毁/远端删块导致选区清空连锁）时必须同时关闭 overlay，
+    // 否则 CDK overlay 残留在 body 下继续监听 scroll/resize，造成内存泄漏。
+    // 对齐 ImgToolbar 的正确实现。
+    this.closeToolbar();
     this._sub?.unsubscribe();
   }
 }

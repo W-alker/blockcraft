@@ -169,6 +169,20 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     this.changeDetectorRef.reattach()
   }
 
+  /**
+   * 异步副作用安全护栏：块是否已「消失」——被移出 vm（本地/远端删除）或宿主
+   * 视图已销毁。上传完成、语法高亮等 await 之后的回调应先查它再写：否则
+   * setInitProps 会写入 detached Y.Map（undo 时复活孤儿块），detectChanges
+   * 会在已销毁视图上抛错。
+   *
+   * 注意：虚拟化 detach() 只断开变更检测、块仍在 vm 中，此处返回 false（不算
+   * 消失）——那种情况下 setInitProps 应正常写入、数据需要持久化。
+   */
+  protected _isGone(): boolean {
+    const ref = this.doc.vm.get(this.id)
+    return !ref || ref.hostView.destroyed
+  }
+
   bindEvent(name: EditorEventName, handler: BlockCraft.EventHandler, options?: {
     global?: boolean;
     flavour?: boolean

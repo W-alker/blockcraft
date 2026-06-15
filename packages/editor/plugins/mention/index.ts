@@ -261,6 +261,14 @@ export class MentionPlugin extends DocPlugin {
     // ─ Confirm: replace @keyword with embed ─
     panel.onConfirm.pipe(takeUntil(this._close$)).subscribe(data => {
       resolveAnchor()
+      // 协同兜底：会话期间锚点块被远端删除时 anchor.resolve 无法重定位、block
+      // 仍指向已 detached 的旧块，applyDeltaOperations 会写进 detached Y.Text
+      // 静默丢失。_charAtModelIndex 对 detached 文本可能仍读到旧的 @，挡不住，
+      // 必须显式确认块还在文档中。
+      if (!this.doc.vm.get(block.id)) {
+        this._close$.next()
+        return
+      }
       if (this._charAtModelIndex(block, index) !== this._trigger) return
 
       const curSel = this.doc.selection.value

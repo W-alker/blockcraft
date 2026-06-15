@@ -84,7 +84,30 @@ export class EmbedBlot extends LeafBlot implements IFormattedBlot {
       }
     }
     this.attrs = Object.keys(merged).length ? merged as IInlineNodeAttrs : undefined
+
+    // 通用 DOM 格式属性（a:/d:/s:）直接、廉价地落到外层 c-element。
     setAttributes(this.cElement, attrs)
+
+    // 无前缀的 embed 语义属性（如 mentionId/mentionType）决定 converter 渲染出的
+    // 内层视图，setAttributes 不认这些 key。一旦它们变化（典型：远端 format 改了
+    // mention 指向），必须重跑 converter.toView 刷新内层视图——否则视图永久陈旧、
+    // 点击仍用旧 id，且一致性检查（delta vs blot 树）测不出这种 blot-vs-DOM 偏差。
+    // a:/d:/s: 的常规格式化（加粗/颜色，含跨越 embed 的范围格式）不会命中这里，
+    // 避免给 latex 等 embed 带来无谓的 KaTeX 重渲染。
+    const hasSemanticChange = Object.keys(attrs).some(
+      k => !k.startsWith('a:') && !k.startsWith('d:') && !k.startsWith('s:')
+    )
+    const nextDelta: DeltaInsertEmbed = {insert: this._delta.insert, attributes: this.attrs}
+    if (hasSemanticChange && this._converter) {
+      try {
+        const newView = this._converter.toView(nextDelta)
+        this._embedElement.replaceWith(newView)
+        this._embedElement = newView
+      } catch {
+        // converter 渲染失败：保留旧视图，整段 rerender 是最终兜底
+      }
+    }
+    this._delta = nextDelta
   }
 
   /**

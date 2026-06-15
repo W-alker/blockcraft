@@ -123,6 +123,17 @@ export class CodeInlineRuntime extends InlineRuntime {
 
   private _lineFPs: string[] = []
   private _options: IRenderOptions
+  /**
+   * 高亮代际令牌。renderCode（全量）和 diffHighLight（增量）都 await 异步
+   * tokenize，期间文本可能又变了。两者共享此令牌：开始时 ++ 抢占，await 后
+   * 若令牌已被更新的高亮请求改掉，则放弃写回——否则陈旧 token 会覆盖更新的
+   * blot 树，且把 _lineFPs 基线设成陈旧指纹，导致后续增量 diff 持续错位。
+   *
+   * 配套的 `!this.container.isConnected` 守卫拦的是「块在 tokenize 期间被删除」。
+   * 注意：当前虚拟化是 CD-detach（容器仍在 DOM、isConnected 为 true），不会误杀；
+   * 若将来虚拟化改为把 hostElement 移出 DOM，此守卫需要换成 _isGone 式判断。
+   */
+  private _renderToken = 0
 
   constructor(
     container: HTMLElement,
@@ -208,9 +219,12 @@ export class CodeInlineRuntime extends InlineRuntime {
       }
     }
 
+    const myToken = ++this._renderToken
     try {
       const text = opts?.block.textContent() ?? this._getPlainText()
       const newDeltas = await this._tokenize(text)
+      // 陈旧/已卸载守卫：更新的高亮请求已抢占，或块在 tokenize 期间被移除
+      if (myToken !== this._renderToken || !this.container.isConnected) return
       const newLines = groupTokenLines(newDeltas)
       const newFPs = newLines.map(l => l.fp)
 
@@ -235,9 +249,14 @@ export class CodeInlineRuntime extends InlineRuntime {
   }
 
   async renderCode(getText?: () => string) {
+    const myToken = ++this._renderToken
     try {
       const text = getText?.() ?? this._getPlainText()
       const deltas = await this._tokenize(text)
+
+      // 陈旧/已卸载守卫：更新的 renderCode/diffHighLight 已抢占令牌，或块在
+      // tokenize 期间被移除。继续 build 会用旧文本覆盖更新的树、污染 _lineFPs。
+      if (myToken !== this._renderToken || !this.container.isConnected) return
 
       // Capture cursor AFTER async tokenization, right before rebuild.
       // This ensures we capture the position set by any intervening operations
