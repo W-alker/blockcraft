@@ -234,8 +234,13 @@ export class ScrollBlot implements IScrollBlot {
   }
 
   /**
-   * Get the model offset of a given leaf blot.
+   * Get the model offset of a given blot.
    * O(n) worst-case for identity scan, but offset lookup is O(1) once found.
+   *
+   * Zero-length blots (CursorBlot, BreakBlot) occupy no model characters;
+   * their offset is the cumulative length of the leaves preceding them in
+   * _children — i.e. their insertion point in model coordinates.
+   * Returns -1 only for blots that are not children of this scroll.
    */
   offsetOf(blot: IBlot): number {
     this._ensureIndex()
@@ -244,7 +249,16 @@ export class ScrollBlot implements IScrollBlot {
     for (let i = 0; i < leaves.length; i++) {
       if (leaves[i] === blot) return sums[i]
     }
-    return -1
+    const childIdx = this._childIndexOf(blot)
+    if (childIdx < 0) return -1
+    let offset = 0
+    for (let i = 0; i < childIdx; i++) {
+      const b = this._children[i]
+      if (b.type === BlotType.Text || b.type === BlotType.Embed) {
+        offset += b.length
+      }
+    }
+    return offset
   }
 
   /**
