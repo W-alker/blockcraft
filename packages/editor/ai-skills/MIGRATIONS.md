@@ -73,6 +73,8 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 **Why**: 用户需要对选中词做相对比例（而非固定 px）的字号调整。实现中发现行内 `s:` 驼峰样式 key 从未真正渲染，需一并修复以保证样式正确。
 
+配套在 base 主题加一条规则 `c-element[style*="font-size"] { line-height: 1.5 }`，让缩放后的行内文字行高随字号等比增长（文档基准比例 `--bc-lh / --bc-fs = 1.5`），避免大字号挤在固定行高里。
+
 **Affected ai-skills files**:
 - `blockcraft-plugins-formatting.md` — `FixedTextToolbarComponent` 新增「Font Scale」节
 - `blockcraft-inline.md` — Attributes 节补充 `a:`/`d:`/`s:` → DOM 应用规则与 camelCase→kebab 说明
