@@ -101,8 +101,41 @@ describe('convertBulbBlock', () => {
     expect(markers[0].url).toBe('https://note.youdao/a');
   });
 
-  it('throws on unknown block', () => {
-    expect(() => convertBulbBlock({ name: 'mindmap' }, makeCtx())).toThrowError(/unknown block/);
+  it('code: joins code-line children with newlines and resolves the language key', () => {
+    const out = convertBulbBlock({
+      name: 'code',
+      data: { language: 'typescript' },
+      nodes: [
+        { name: 'code-line', nodes: [textNode([{ text: "export type T = 'x'" }])] },
+        { name: 'code-line', nodes: [textNode([{ text: '' }])] },
+        { name: 'code-line', nodes: [textNode([{ text: '/**' }])] },
+      ],
+    }, makeCtx());
+    expect(out[0].flavour).toBe('code');
+    expect(out[0].props['lang']).toBe('TypeScript');
+    expect(out[0].children).toEqual([{ insert: "export type T = 'x'\n\n/**" }]);
+  });
+
+  it('diagram (PlantUML): preserved as a PlainText code block', () => {
+    const out = convertBulbBlock({
+      name: 'diagram',
+      data: { language: 'PlantUML' },
+      nodes: [{ name: 'code-line', nodes: [textNode([{ text: 'a -> b' }])] }],
+    }, makeCtx());
+    expect(out[0].flavour).toBe('code');
+    expect(out[0].props['lang']).toBe('PlainText');
+    expect(out[0].children).toEqual([{ insert: 'a -> b' }]);
+  });
+
+  it('degrades an unknown block to a paragraph of its text (no throw)', () => {
+    const out = convertBulbBlock({ name: 'mindmap', nodes: [textNode([{ text: 'kept text' }])] }, makeCtx());
+    expect(out.length).toBe(1);
+    expect(out[0].flavour).toBe('paragraph');
+    expect(out[0].children).toEqual([{ insert: 'kept text' }]);
+  });
+
+  it('drops an unknown block with no text', () => {
+    expect(convertBulbBlock({ name: 'mindmap' }, makeCtx())).toEqual([]);
   });
 });
 
@@ -146,5 +179,34 @@ describe('bulb table grid reconstruction', () => {
     expect(row1[0].props.display).toBe('none');
     expect(row1[1].props.display).toBe('none');
     expect(row1[2].children[0].children).toEqual([{ insert: 'C' }]);
+  });
+
+  // Mirrors the user's real 有道云 table: a merged cell whose content is a
+  // mix of paragraphs AND a nested ordered list (list-items inside a table-cell).
+  it('handles paragraphs + nested list-items inside a merged cell', () => {
+    const realish: BulbNode = {
+      name: 'table',
+      data: { colsWidth: [220, 220, 220], rowsHeight: [40, 251] },
+      nodes: [
+        { name: 'table-row', nodes: [
+          { name: 'table-cell', data: { colSpan: 2, rowSpan: 2 }, nodes: [
+            { name: 'paragraph', nodes: [textNode([{ text: 'asdasdasdasd' }])] },
+            { name: 'paragraph', nodes: [textNode([{ text: '' }])] },
+            { name: 'list-item', data: { listType: 'ordered', listLevel: 1 }, nodes: [textNode([{ text: 'ad ' }])] },
+            { name: 'list-item', data: { listType: 'ordered', listLevel: 1 }, nodes: [textNode([{ text: 'sad ' }])] },
+          ] },
+          { name: 'table-cell', nodes: [{ name: 'paragraph', nodes: [textNode([{ text: 'asdsdsadsad' }])] }] },
+        ] },
+        { name: 'table-row', nodes: [
+          { name: 'table-cell', nodes: [{ name: 'paragraph', nodes: [textNode([{ text: 'asdsadads' }])] }] },
+        ] },
+      ],
+    };
+    const t = convertBulbBlock(realish, makeCtx())[0];
+    const anchor = (t.children[0] as any).children[0];
+    expect(anchor.props.colspan).toBe(2);
+    // cell children: 2 paragraphs + 2 ordered list items
+    expect(anchor.children.map((c: any) => c.flavour)).toEqual(['paragraph', 'paragraph', 'ordered', 'ordered']);
+    expect(anchor.children[2].props.order).toBe(0); // no state.index → 0-based default
   });
 });

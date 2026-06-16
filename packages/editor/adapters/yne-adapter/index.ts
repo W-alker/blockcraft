@@ -12,7 +12,7 @@ import {
 } from "./types";
 
 export { rehostYneAttachments, collectAndStripRehostMarkers } from "./resource";
-export { parseYoudaoHtml, isYoudaoHtml } from "./youdao-html";
+export { parseYoudaoHtml, isYoudaoHtml, ynedbg } from "./youdao-html";
 export { YNE_JSON_MIME, YNE_IMAGE_JSON_MIME } from "./types";
 export type { YneDeferredAttachment } from "./types";
 

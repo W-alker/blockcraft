@@ -57,7 +57,21 @@ describe('block-converters (non-resource)', () => {
     expect(out[0].children).toEqual([{ insert: 'a\nb' }]);
   });
 
-  it('throws on unknown blockType', () => {
-    expect(() => convertBlock({ blockType: 'mindmap' }, ctx())).toThrowError(/unknown blockType/);
+  it('maps diagram to a PlainText code block, preserving its source', () => {
+    const out = convertBlock({ blockType: 'diagram', language: 'PlantUML', richText: rich('a -> b') }, ctx());
+    expect(out[0].flavour).toBe('code');
+    expect(out[0].props['lang']).toBe('PlainText');
+    expect(out[0].children).toEqual([{ insert: 'a -> b' }]);
+  });
+
+  it('degrades an unknown blockType to a paragraph of its text (no throw)', () => {
+    const out = convertBlock({ blockType: 'mindmap', richText: rich('kept') }, ctx());
+    expect(out.length).toBe(1);
+    expect(out[0].flavour).toBe('paragraph');
+    expect(out[0].children).toEqual([{ insert: 'kept' }]);
+  });
+
+  it('drops an unknown blockType with no text', () => {
+    expect(convertBlock({ blockType: 'mindmap' }, ctx())).toEqual([]);
   });
 });

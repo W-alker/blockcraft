@@ -119,7 +119,7 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
 - Writes the inline style `s:fontSize` as an `em` value (e.g. ratio `1.2` → `1.2em`), so it scales relative to the block's base font size; ratio `1` removes the style (back to default).
 - A base theme rule (`c-element[style*="font-size"] { line-height: 1.5 }`) makes the line-height track the scaled font (the document's `--bc-lh / --bc-fs` ratio is a uniform `1.5`), so enlarged text grows its line instead of crowding the fixed `--bc-lh`.
 - Panel offers preset ratios (`0.5 / 0.8 / 1.0 / 1.2 / 1.5 / 2.0`) and a text `−`/`+` stepper that adjusts by `0.1em` per click (clamped to `0.5–3`).
-- The trigger button reflects the current selection's common ratio; the panel snapshots the selection on open so toolbar interaction doesn't drop the target range.
+- The trigger button reflects the current selection's common ratio; picks apply to the live selection (picker buttons `preventDefault` on mousedown so the editor keeps focus/selection). On a collapsed caret it sets the pending insert format, so subsequent typing inherits the size.
 - `BcFontScalePickerComponent` is exported from the package root for reuse.
 
 ### Insertion Actions

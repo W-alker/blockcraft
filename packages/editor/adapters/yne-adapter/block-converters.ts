@@ -34,7 +34,9 @@ function editableSegments(
   return list.map(seg => make(seg, props));
 }
 
-function mapLang(language: string | undefined): string {
+/** Resolve a 有道云 language string to a valid CodeBlock lang key (case-insensitive),
+ *  defaulting to PlainText. Shared with the bulb (HTML) converter. */
+export function mapLang(language: string | undefined): string {
   if (!language) return 'PlainText';
   const lower = String(language).toLowerCase();
   const key = Object.keys(SHIKI_LANGUAGE_MAP).find(k => k.toLowerCase() === lower);
@@ -85,7 +87,10 @@ export function convertBlock(block: YneBlock, ctx: YneConvertContext): IBlockSna
       if (color) snap.props['color'] = color;
       return [snap];
     }
-    case 'code': {
+    case 'code':
+    case 'diagram': {
+      // diagram (PlantUML/Mermaid) has no native counterpart — preserve its source as
+      // a code block. Its language isn't in SHIKI_LANGUAGE_MAP so mapLang → PlainText.
       const text = (block.richText?.data ?? []).map(c => c.char).join('');
       const lang = mapLang(block.language);
       // Code block: raw text, no line-break splitting — newlines are part of the code.
@@ -101,7 +106,13 @@ export function convertBlock(block: YneBlock, ctx: YneConvertContext): IBlockSna
       return [yneImageToSnapshot(block, ctx)];
     case 'attachment':
       return [yneAttachmentToSnapshot(block, ctx)];
-    default:
-      throw new Error(`yne: unknown blockType ${block.blockType}`);
+    default: {
+      // Unknown blockType: degrade to a text paragraph (or drop if empty) rather than
+      // throwing — one unsupported block must not abort the whole high-fidelity paste.
+      const text = richTextToDelta(block.richText).map(d => d.insert as string).join('').trim();
+      return text
+        ? [ParagraphBlockSchema.createSnapshot(text) as unknown as IBlockSnapshot]
+        : [];
+    }
   }
 }

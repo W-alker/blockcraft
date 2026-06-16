@@ -22,6 +22,7 @@ import {
 } from "../../blocks";
 import { DocFileService } from "../../framework";
 import { buildAttachmentSnapshot, buildImageSnapshot } from "./resource";
+import { mapLang } from "./block-converters";
 
 export interface BulbMark {
   type: string;
@@ -55,6 +56,7 @@ export interface BulbNode {
     rowsHeight?: number[];
     style?: { textAlign?: string };
     lang?: string;
+    language?: string;
   };
   nodes?: BulbNode[];
   leaves?: BulbLeaf[];
@@ -187,6 +189,36 @@ function bulbTableToSnapshot(block: BulbNode, ctx: BulbConvertContext): IBlockSn
   return table;
 }
 
+/**
+ * 有道云 code & diagram blocks nest each line as a `code-line` *block* child
+ * (type:'block'), whose children are the text nodes — so bulbNodesToDelta(block.nodes)
+ * alone yields nothing. Descend into the code-lines and join them with "\n".
+ * Falls back to direct text extraction if a payload inlines text nodes.
+ */
+function bulbCodeText(block: BulbNode): string {
+  const lines = (block.nodes ?? []).filter(n => n.name === 'code-line');
+  if (lines.length) {
+    return lines
+      .map(line => bulbNodesToDelta(line.nodes).map(d => d.insert as string).join(''))
+      .join('\n');
+  }
+  return bulbNodesToDelta(block.nodes).map(d => d.insert as string).join('');
+}
+
+/** Recursively collect plain text from any bulb subtree — used to salvage the
+ *  content of an unknown block instead of aborting the whole paste. */
+function bulbCollectText(block: BulbNode): string {
+  let out = '';
+  for (const n of block.nodes ?? []) {
+    if (n.type === 'text' && n.leaves) {
+      for (const leaf of n.leaves) out += leaf.text ?? '';
+    } else {
+      out += bulbCollectText(n);
+    }
+  }
+  return out;
+}
+
 export function convertBulbBlock(block: BulbNode, ctx: BulbConvertContext): IBlockSnapshot[] {
   switch (block.name) {
     case 'heading': {
@@ -216,9 +248,16 @@ export function convertBulbBlock(block: BulbNode, ctx: BulbConvertContext): IBlo
       snap.props['checked'] = checked;
       return [snap];
     }
-    case 'code': {
-      const text = bulbNodesToDelta(block.nodes).map(d => d.insert as string).join('');
-      return [CodeBlockSchema.createSnapshot(text, { lang: 'PlainText' } as IBlockProps)];
+    case 'code':
+    case 'diagram': {
+      // 有道云 diagram (PlantUML/Mermaid) has no native counterpart — preserve its
+      // source as a code block. PlantUML/Mermaid aren't in SHIKI_LANGUAGE_MAP, so
+      // mapLang resolves them to PlainText automatically.
+      const text = bulbCodeText(block);
+      const snap = CodeBlockSchema.createSnapshot(text) as unknown as IBlockSnapshot;
+      // `lang` isn't forwarded by editableBlockCreateSnapShotFn — set it manually.
+      snap.props['lang'] = mapLang(block.data?.language ?? block.data?.lang);
+      return [snap];
     }
     case 'hr':
     case 'horizontal-line':
@@ -239,7 +278,13 @@ export function convertBulbBlock(block: BulbNode, ctx: BulbConvertContext): IBlo
       })];
     case 'table':
       return [bulbTableToSnapshot(block, ctx)];
-    default:
-      throw new Error(`bulb: unknown block ${block.name}`);
+    default: {
+      // Unknown block: degrade to a text paragraph (or drop if empty) rather than
+      // throwing — one unsupported block must not abort the whole high-fidelity paste.
+      const text = bulbCollectText(block).trim();
+      return text
+        ? [ParagraphBlockSchema.createSnapshot([{ insert: text }] as DeltaInsert[])]
+        : [];
+    }
   }
 }

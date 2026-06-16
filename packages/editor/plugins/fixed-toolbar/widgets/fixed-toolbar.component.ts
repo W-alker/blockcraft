@@ -147,7 +147,6 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       [disabled]="readonly || !allEditable"
       [bcOverlayTrigger]="fontScalePicker"
       [bcOverlayDisabled]="readonly || !allEditable"
-      (open)="onFontScaleOpen()"
     >
       <i class="bc_icon bc_wenben"></i>
       <span class="toolbar-btn__scale">{{ activeFontScaleLabel }}</span>
@@ -595,8 +594,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   private _formatBrushSourceKey: string | null = null;
   private _formatBrushLastAppliedKey: string | null = null;
   private _isApplyingFormatBrush = false;
-  /** 字体缩放面板打开时冻结的选区快照（面板含输入框，聚焦会清空原生选区）。 */
-  private _fontScaleSelectionJSON: ISelectionJSON | null = null;
 
   constructor(private readonly cdr: ChangeDetectorRef) {}
 
@@ -859,36 +856,17 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     return 1;
   }
 
-  protected onFontScaleOpen() {
-    // 面板含输入框，聚焦它会让编辑器失焦、原生选区可能被清空（跨浏览器差异）。
-    // 在面板打开时冻结当前选区，应用时回放该快照（与 openLinkPad 同策略）。
-    const selection = this.doc.selection.value;
-    this._fontScaleSelectionJSON = selection
-      ? selection.toJSON()
-      : this.selectionJSON;
-  }
-
   protected onFontScalePicked(ratio: number) {
-    if (this.readonly) return;
-
-    const snapshot = this._fontScaleSelectionJSON;
-    if (snapshot) {
-      try {
-        this.doc.selection.replay(snapshot);
-      } catch {}
-    }
-
-    const selection = this.doc.selection.value;
-    if (!this.canFormatTextSelection(selection)) return;
-
-    // 相对比例写成 CSS em（相对所在块基准字号）；1 = 默认 → 移除该样式。
-    this.toolbarHelper.formatText({
-      "s:fontSize": ratio === 1 ? null : `${ratio}em`,
-    } as IInlineNodeAttrs);
-
-    this.doc.selection.recalculate();
-    this.syncToolbarState(this.doc.selection.value);
-    this.cdr.markForCheck();
+    // 用实时选区（与取色器一致）：picker 里的按钮在 mousedown 已 preventDefault，
+    // 不会夺走编辑器焦点，故 selection 始终是最新的——不能用面板打开时的快照，
+    // 否则「选号→输入→再选号」时会把光标回放到输入之前。
+    // 光标（collapsed）场景下 formatText 会把比例写进 pendingInsertAttrs，
+    // 后续输入自动套用该字号。
+    this.runWithSelection(() => {
+      this.toolbarHelper.formatText({
+        "s:fontSize": ratio === 1 ? null : `${ratio}em`,
+      } as IInlineNodeAttrs);
+    });
   }
 
   protected async insertQuickTable(

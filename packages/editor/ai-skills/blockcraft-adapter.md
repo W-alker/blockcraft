@@ -281,4 +281,6 @@ WKWebView（Tauri）及部分浏览器会从 `paste` 事件里**剥离自定义�
 - **格式**：bulb 格式（`{name, data, nodes:[{type:'text', leaves:[{text, marks}]}]}`），见 `bulb-converter.ts`。marks 映射：`bold/italic/delete/underline → a:*`，`color/backgroundColor → s:color/s:background`，`fontSize → s:fontSize`。
 - **表格**：bulb 表格是嵌套（table>row>cell，省略被合并格），转换时按 colSpan/rowSpan 重建网格并补 `display:'none'` 占位格。
 - **图片**：从可见 `<img data:base64>` 按文档顺序取字节（`text/yne-image-json` 被剥离时的唯一字节来源）→ `fileService.createObjectURL` → image block 自动上传。
+- **代码 / 图表**：bulb `code`/`diagram` 把每行包成 `code-line` 子块（`type:'block'`，文本在其子节点里），转换时下钻 `code-line` 并以 `\n` 连接；语言经 `mapLang` 大小写不敏感解析到 `CodeBlockLanguage`，无匹配（如 PlantUML/Mermaid）回退 `PlainText`。`diagram` 无原生对应，按代码块保留源码。
+- **未知块容错**：单个不认识的 bulb 块**不会**中断整篇解析——降级为保留其文本的段落（无文本则丢弃），而非抛错。整篇回退到有损 HTML 仅用于真正无法解析的 payload（无 `<article>` / JSON 损坏）。
 - **附件重传（关键拆分）**：附件的异步 fetch 重传是**插入后、协同敏感**的副作用，不在 adapter 里做。两条有道云路径都用 `buildAttachmentSnapshot` 在 attachment snapshot 的 `meta` 上打**临时重传标记**；`clipboard.ts` 在插入/克隆前用 `collectAndStripRehostMarkers` 统一**收集并剥离**标记（绝不写进 Yjs、不同步给协同端），插入后再 `rehostYneAttachments` 异步重传（只有本地粘贴者做）。

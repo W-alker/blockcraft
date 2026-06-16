@@ -86,6 +86,8 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 - 从有道云粘贴时：浏览器优先 `text/yne-json`；被剥离自定义 MIME 的环境（Tauri 等）由 `HtmlAdapter` 内部识别 `data-content` 兜住。两者产出等价的高保真结果（标题/列表/待办/分割线/代码/合并表格/图片/附件 + 行内样式），不再回退到「附件变图片、样式丢失」的通用 HTML。
 - 非有道云 HTML 不含 `data-content`/`yne-bulb-block` marker → `isYoudaoHtml` 返回 false → 完全走原通用 HTML adapter，零回归。
 - 附件重传标记仅存在于内存中的 paste snapshot 上，插入前即被剥离，不进入 Yjs、不同步给协同端——只有本地粘贴者执行重传。
+- **代码 / 图表块**：bulb `code`/`diagram` 把每行包成 `code-line` 子块，文本在其子节点里——转换时下钻 `code-line` 并以 `\n` 连接（此前 bulb 路径的 `code` 块取不到文本、产出空块）；语言经 `mapLang` 大小写不敏感解析，`diagram`（PlantUML/Mermaid，无原生对应）按 `PlainText` 代码块保留源码。`block-converters.ts`（`text/yne-json` 路径）同步支持 `diagram`。
+- **未知块容错（throw → 降级）**：两条有道云路径的 `convertBulbBlock` / `convertBlock` 遇到不认识的块**不再抛错**，而是降级为保留其文本的段落（无文本则丢弃）。此前单个未知块（如 `diagram`）会经 catch 触发**整篇**回退到有损 HTML；现在仅真正无法解析的 payload（无 `<article>` / JSON 损坏）才整篇回退，单个生僻块不再连累全文。
 
 ### Migration Recipe
 无需迁移（新增能力，向后兼容）。

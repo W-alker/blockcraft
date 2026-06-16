@@ -9,7 +9,7 @@ import {HtmlDeltaConverter} from "./delta-converter";
 import {inlineDeltaToHtmlAdapterMatchers} from "./delta-converter/inline-delta";
 import {htmlInlineToDeltaMatchers} from "./delta-converter/html-inline";
 import {DEFAULT_BLOCK_MATCHERS} from "./block-matchers";
-import {isYoudaoHtml, parseYoudaoHtml} from "../yne-adapter";
+import {isYoudaoHtml, parseYoudaoHtml, ynedbg} from "../yne-adapter";
 import type {Root} from 'hast';
 
 export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
@@ -146,9 +146,12 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
     // 有道云 HTML 短路：WKWebView/Tauri 等会剥离 text/yne-json 等自定义剪贴板
     // MIME，只剩 text/html；但完整结构嵌在 <article data-content> 里、图片字节在
     // 可见 <img data:base64> 中。命中即走高保真 bulb 解析，跳过通用（有损）HAST。
-    if (isYoudaoHtml(html)) {
+    const youdaoMatch = isYoudaoHtml(html);
+    ynedbg('HtmlAdapter.toBlockSnapshot: isYoudaoHtml=', youdaoMatch, 'htmlLen=', html.length);
+    if (youdaoMatch) {
       const youdao = parseYoudaoHtml(html, this.fileService);
       if (youdao) return Promise.resolve(youdao);
+      // matched but parse returned null → parseYoudaoHtml already logged why; fall through to generic
     }
     const blockSnapshotRoot: IBlockSnapshot = {
       id: generateId(),
