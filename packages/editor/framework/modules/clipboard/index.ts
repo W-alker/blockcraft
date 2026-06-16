@@ -42,6 +42,13 @@ import {
   supportsClipboardWriteType,
 } from "./internal-clipboard";
 import {cloneSnapshot, getMarkdownClipboardText, looksLikeMarkdown} from "./paste-utils";
+import {logPasteFormats} from "./paste-debug";
+import {
+  parseYneClipboard,
+  rehostYneAttachments,
+  YNE_JSON_MIME,
+  YneDeferredAttachment,
+} from "../../../adapters/yne-adapter";
 import * as Y from "yjs";
 
 export * from './types'
@@ -487,6 +494,9 @@ export class ClipboardManager {
     this.pasteFormatData$.next(null)
     const state = context.get('clipboardState')
 
+    // Dev-only: dump raw clipboard formats. No-op unless window.__BC_PASTE_LOG__ is set.
+    logPasteFormats(state.clipboardData)
+
     const selection = state.selection
     if (selection.start.type !== 'text') return
 
@@ -524,6 +534,22 @@ export class ClipboardManager {
     }
     if (!rootSnapshot && state.dataTypes.includes(BLOCKCRAFT_WEB_SNAPSHOT_MIME)) {
       rootSnapshot = parseClipboardSnapshot(state.getData(BLOCKCRAFT_WEB_SNAPSHOT_MIME)) || undefined
+    }
+
+    // 有道云 text/yne-json —— 高保真结构化格式，优先级高于 HTML。
+    // 解析失败/未知块返回 null，自然落到下方 HTML 分支（兜底）。
+    let yneDeferred: YneDeferredAttachment[] = []
+    if (!rootSnapshot && state.dataTypes.includes(YNE_JSON_MIME)) {
+      const parsed = parseYneClipboard(state, this.doc)
+      if (parsed && parsed.snapshot.children.length) {
+        rootSnapshot = parsed.snapshot
+        yneDeferred = parsed.deferredAttachments
+        // 同步插入完成后再异步重传附件（读取 replaceSnapshotsIdDeeply 改写后的最终 id）。
+        // nextTick 在本次 onPaste 的同步突变之后触发；附件块为 void，不会被首段合并/shift。
+        if (yneDeferred.length) {
+          nextTick().then(() => rehostYneAttachments(this.doc, yneDeferred))
+        }
+      }
     }
 
     // html

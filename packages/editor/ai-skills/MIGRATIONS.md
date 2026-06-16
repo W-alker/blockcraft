@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-06-11 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-06-15 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,51 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-06-15 (minor) — 固定工具栏字体缩放工具
+
+**What changed**: 固定工具栏（`bc-fixed-toolbar`）新增「字体缩放」下拉工具，对选区文字按**相对比例**缩放（预设 `0.5/0.8/1.0/1.2/1.5/2.0` + 文字 `−`/`+` 步进，每次 ±0.1em），比例写入行内样式 `s:fontSize` 的 `em` 值（如 `1.2` → `1.2em`；`1` = 默认 → 清除该样式）。格式刷同步纳入 `s:fontSize`（复制源文字的字号缩放）。配套修复 `framework/block-std/inline/setAttributes.ts`：`s:` 样式 key 在写入 DOM 前做 camelCase→kebab 转换，使 `s:fontSize` / `s:fontFamily` 等驼峰 key 真正生效（此前 `style.setProperty('fontSize', …)` 被浏览器静默忽略）。新增导出组件 `BcFontScalePickerComponent`。
+
+**Why**: 用户需要对选中词做相对比例（而非固定 px）的字号调整。实现中发现行内 `s:` 驼峰样式 key 从未真正渲染，需一并修复以保证样式正确。
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-formatting.md` — `FixedTextToolbarComponent` 新增「Font Scale」节
+- `blockcraft-inline.md` — Attributes 节补充 `a:`/`d:`/`s:` → DOM 应用规则与 camelCase→kebab 说明
+
+### New APIs / Features
+- `BcFontScalePickerComponent`（`bc-font-scale-picker`）：相对字体缩放选择器，`@Input() current: number`、`@Output() pick: EventEmitter<number>`，从包根导出。
+- 固定工具栏新增字体缩放工具——无需额外配置，随 `bc-fixed-toolbar` 自带。
+
+### Behavior Changes
+- `s:` 行内样式中的 camelCase key（`s:fontSize`、`s:fontFamily` 等）现在会正确渲染为对应的连字符 CSS 属性（`font-size`、`font-family`）；此前因 `setProperty` 不识别 camelCase 而被静默忽略。单词 key（`s:color`、`s:background`）与 CSS 自定义属性（`s:--x`）行为不变。
+- 影响面极小：此前唯一写入 `s:fontSize` 的是有道云粘贴适配器，且写的是无单位数字（如 `16`），修复后仍是非法 font-size 值被忽略，现有内容观感不变。
+- 固定工具栏「格式刷」现在也复制字号缩放（`s:fontSize`）；此前只复制粗斜体/下划线/删除线/代码/上下标/底纹/颜色/背景。
+
+### Migration Recipe
+无需迁移（新增能力 + 兼容性修复，向后兼容）。
+
+### v?.?.? - 2026-06-15 (minor)
+
+**What changed**: 新增 `adapters/yne-adapter/` 模块与 `ClipboardManager.onPaste` 的 `text/yne-json` 分支，为有道云笔记粘贴提供高保真路径（标题/列表/待办/分割线/代码/合并表格/图片/附件 + 行内样式）。向后兼容：非有道云内容不含该 MIME，完全走原路径。
+
+**Why**: 有道云 HTML 有损，其剪贴板自带高保真 `text/yne-json`，直接翻译可大幅提升粘贴质量。
+
+**Affected ai-skills files**:
+- `blockcraft-adapter.md` — 新增「有道云笔记 `text/yne-json` 剪贴板适配器」节
+- `blockcraft.md` — Doc Services Index 追加粘贴优先级说明
+
+### New APIs / Features
+- `parseYneClipboard(state, doc): YneParseResult | null`（内部模块 `adapters/yne-adapter/`，未从包根导出，外部无需改动）。
+- `rehostYneAttachments(doc, deferred): Promise<void>`（同上，内部使用）。
+
+### Behavior Changes
+- 从有道云笔记粘贴时走新高保真路径；其它来源（无 `text/yne-json` MIME）完全不受影响，继续走原 HTML/plain 路径。
+- 有道云附件块插入后会异步 fetch 重传；当 fetch 失败（CORS/鉴权）或上传服务未返回 http(s) URL（如无后端环境返回的 blob: 对象 URL）时保留有道云原 URL，不打断粘贴流程。仅当上传返回最终 http(s) URL 时才替换，避免附件块卡在「上传中」状态（attachment 块以 `url.startsWith('http')` 判定就绪）。
+
+### Migration Recipe
+无需迁移（新增能力，向后兼容）。
+
+---
 
 ### v?.?.? - 2026-06-11 (minor)
 

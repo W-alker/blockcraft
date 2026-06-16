@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-04-13
+> Last updated: 2026-06-15
 
 ## Architecture
 
@@ -260,3 +260,14 @@ export const blockMarkdownAdapterMatchers: BlockMarkdownAdapterMatcher[] = [
 | Image | `html-adapter/block-matchers/image-matcher.ts` | `markdown-adapter/block-matchers/image-matcher.ts` |
 | Code | `html-adapter/block-matchers/code-matcher.ts` | `markdown-adapter/block-matchers/code-matcher.ts` |
 | Video / Audio | `html-adapter/block-matchers/media-matcher.ts` | `markdown-adapter/block-matchers/media-matcher.ts` |
+
+## 有道云笔记 `text/yne-json` 剪贴板适配器
+
+有道云笔记复制时在剪贴板写入高保真私有格式 `text/yne-json`（结构化块数组）+ `text/yne-image-json`（图片 URL→base64）。`adapters/yne-adapter/` 把它直接翻译成 `BlockSnapshot`，绕过有损的 HTML。
+
+- **入口**：`parseYneClipboard(state, doc): YneParseResult | null`（`adapters/yne-adapter/index.ts`）。
+- **优先级**：`ClipboardManager.onPaste` 中位于 internal snapshot 之后、`text/html` 之前；解析失败/未知块返回 `null` → 回退 HTML。
+- **与 html/markdown adapter 的区别**：yne-json 是纯 JSON，不走 unified/rehype/remark + `ASTWalker`，因此独立成模块，不接入 `doc.adapter` 统一管线。
+- **图片**：base64 → `File` → `fileService.createObjectURL` → image block 自动上传。
+- **附件**：先用有道云 URL 建块，插入后 `rehostYneAttachments` 异步 fetch 重传（best-effort，CORS/鉴权失败则保留原 URL）。
+- **样式映射**：`bold/italic/strike → a:*`，`color/back-color/font-size → s:color/s:background/s:fontSize`；标题丢弃冗余 font-size。
