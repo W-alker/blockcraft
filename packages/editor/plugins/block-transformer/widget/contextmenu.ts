@@ -138,6 +138,7 @@ export class BlockTransformContextMenu {
       .filter(
         (v) =>
           !v.metadata.isLeaf &&
+          !v.metadata.hideInInsertMenu &&
           !["paragraph", "root"].includes(v.flavour) &&
           this.doc.schemas.isValidChildren(v.flavour, parentBlockSchema),
       )

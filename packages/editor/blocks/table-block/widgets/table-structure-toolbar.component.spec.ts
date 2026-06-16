@@ -13,10 +13,13 @@ describe('TableStructureToolbarComponent', () => {
     const component = new TableStructureToolbarComponent(cdr)
     const cells = overrides.cells ?? []
     component.table = {
-      addRow: jasmine.createSpy('addRow'),
-      addColumn: jasmine.createSpy('addColumn'),
-      deleteRows: jasmine.createSpy('deleteRows'),
-      deleteColumns: jasmine.createSpy('deleteColumns'),
+      // 结构动作经协同安全的 menu* 入口委托（索引按锚点在 table.block 内重算）
+      menuAddRowAbove: jasmine.createSpy('menuAddRowAbove'),
+      menuAddRowBelow: jasmine.createSpy('menuAddRowBelow'),
+      menuDeleteRows: jasmine.createSpy('menuDeleteRows').and.returnValue(2),
+      menuAddColumnLeft: jasmine.createSpy('menuAddColumnLeft'),
+      menuAddColumnRight: jasmine.createSpy('menuAddColumnRight'),
+      menuDeleteColumns: jasmine.createSpy('menuDeleteColumns').and.returnValue(1),
       refreshTableMenuFromSelection: jasmine.createSpy('refreshTableMenuFromSelection'),
       onRowBarSelected: jasmine.createSpy('onRowBarSelected'),
       onColBarSelected: jasmine.createSpy('onColBarSelected'),
@@ -31,12 +34,15 @@ describe('TableStructureToolbarComponent', () => {
     return component
   }
 
+  // 工具栏只负责委托到协同安全的 menu* 入口；真正的行/列索引由 table.block 在
+  // 点击瞬间按抓拍的锚点 ID 重算（见 table.block.ts 菜单动作一节）。因此这里断言
+  // “委托到正确的菜单动作”，而非旧的“按快照下标直接调 addRow/deleteColumns”。
   it('inserts before the selected row', () => {
     const component = createComponent()
 
     component.insertRowBefore(new MouseEvent('mousedown'))
 
-    expect(component.table.addRow).toHaveBeenCalledWith(2)
+    expect(component.table.menuAddRowAbove).toHaveBeenCalled()
   })
 
   it('inserts after the selected row', () => {
@@ -44,7 +50,7 @@ describe('TableStructureToolbarComponent', () => {
 
     component.insertRowAfter(new MouseEvent('mousedown'))
 
-    expect(component.table.addRow).toHaveBeenCalledWith(4)
+    expect(component.table.menuAddRowBelow).toHaveBeenCalled()
   })
 
   it('deletes the selected column range', () => {
@@ -52,7 +58,7 @@ describe('TableStructureToolbarComponent', () => {
 
     component.deleteCol(new MouseEvent('mousedown'))
 
-    expect(component.table.deleteColumns).toHaveBeenCalledWith(1, 3)
+    expect(component.table.menuDeleteColumns).toHaveBeenCalled()
   })
 
   it('inserts after the selected column range', () => {
@@ -60,7 +66,7 @@ describe('TableStructureToolbarComponent', () => {
 
     component.insertColAfter(new MouseEvent('mousedown'))
 
-    expect(component.table.addColumn).toHaveBeenCalledWith(3)
+    expect(component.table.menuAddColumnRight).toHaveBeenCalled()
   })
 
   it('marks merge available when multiple cells are selected', () => {

@@ -43,7 +43,15 @@ export class DocVM {
     return this.store.get(id) as BlockCraft.BlockComponentRef<T> | undefined
   }
 
-  createComponentByYBlocks(yBlocks: Record<string, YBlock>) {
+  /**
+   * @param onMissingChild 可选：构建时遇到悬空 child 引用（childId 无对应 yBlock）
+   *   逐个上报。仅初始加载路径（initByYBlock）传入，用于"遇到才兜底"地剪除这些
+   *   引用；运行时远端路径不传，纯跳过（容错增量同步缺口、不写不广播）。
+   */
+  createComponentByYBlocks(
+    yBlocks: Record<string, YBlock>,
+    onMissingChild?: (parentId: string, childId: string) => void
+  ) {
     // 乱序的，要根据children中的Id顺序组合
     const createComp = (yBlock: YBlock, parent: BlockCraft.BlockComponentRef | null = null) => {
       const id = yBlock.get('id')
@@ -73,24 +81,25 @@ export class DocVM {
       if (yBlock.get('nodeType') !== BlockNodeType.editable && yChildren.length) {
         const childrenComps = yChildren.toArray().map(
           childId => {
-            let yBlock = yBlocks[childId] || this.doc.crud.getYBlock(childId)
-            // 兜底代码
-            if (!yBlock) {
-              this.doc.messageService.warn('有丢失段落: ' + childId)
-              // this.doc.logger.warn('有丢失段落: ' + childId)
-              // yBlock = native2YBlock({
-              //   id: childId,
-              //   nodeType: BlockNodeType.editable,
-              //   flavour: 'paragraph',
-              //   props: {depth: 0},
-              //   meta: {},
-              //   children: []
-              // })
-              // this.doc.yBlockMap.set(childId, yBlock)
+            const childYBlock = yBlocks[childId] || this.doc.crud.getYBlock(childId)
+            // 悬空 child 引用：childId 在父块 children 数组里，但 yBlockMap 没有
+            // 对应 yBlock。成因是历史协同「并发移动 vs 删除」——一端把块移入新父
+            // （新父 children 加引用）、另一端删除该块（删 yBlock），合并后引用
+            // 存活而 yBlock 丢失。CRDT 加载本就要容忍这种引用缺口（增量同步乱序
+            // 也会临时出现）。必须跳过：把 undefined 传给 createComp 会在
+            // `yBlock.get('id')` 处抛错，导致整篇文档初始化失败、_root 永不就绪。
+            // 不在此合成占位块（会把空段落写回 yBlockMap 广播+持久化）。是否剪除
+            // 引用交给调用方：初始加载会通过 onMissingChild 收集、构建后兜底剪除
+            // （修正 _compRefs 与模型的长度错位）；运行时路径不传回调，仅跳过渲染
+            // （增量同步下该块可能只是尚未到达，不能剪）。
+            if (!childYBlock) {
+              this.doc.logger.warn('skip missing child block on load: ' + childId)
+              onMissingChild?.(cpr.instance.id, childId)
+              return null
             }
-            return createComp(yBlock, cpr)
+            return createComp(childYBlock, cpr)
           }
-        )
+        ).filter((c): c is BlockCraft.BlockComponentRef => c !== null)
         cpr.instance.childrenRenderRef?.insert(0, childrenComps)
       }
 

@@ -51,6 +51,8 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
     description?: string;
     // 是否是某个block的依附子块
     isLeaf?: boolean;
+    // true → 从插入菜单（斜杠菜单 + 右侧快捷插入）隐藏；与 isLeaf 不同，不限制其作为根级子块，仍可程序化插入
+    hideInInsertMenu?: boolean;
     // 是否是渲染单元。代表它可以渲染各种块
     renderUnit?: boolean;
     /**

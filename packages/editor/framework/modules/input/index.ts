@@ -18,6 +18,7 @@ import { isNativeInputTarget, isZeroSpace } from "../../utils";
 import {
   BlockCraftError,
   ErrorCode,
+  getCommonAttributesFromDeltas,
   performanceTest,
   sliceDelta,
 } from "../../../global";
@@ -153,6 +154,28 @@ export class InputTransformer {
     const attrs = hit ? this._nextInsertAttrs.attrs : undefined;
     this._nextInsertAttrs = null;
     return attrs;
+  }
+
+  /**
+   * Typing over a non-collapsed selection must keep the inline format shared by
+   * the replaced text — e.g. selecting two chars inside a bold run and typing
+   * should produce bold text, not plain. Returns the attributes common to the
+   * deleted slice, or `undefined` when the range is empty or its format is mixed
+   * (mirrors how the toolbar reports active formats via
+   * `getCommonAttributesFromDeltas`). Must be read BEFORE the delete mutates Y.Text.
+   */
+  private _inheritedReplaceAttrs(
+    block: { textDeltas(): DeltaInsert[] },
+    index: number,
+    length: number,
+  ): DeltaInsert["attributes"] | undefined {
+    if (length <= 0) return undefined;
+    const common = getCommonAttributesFromDeltas(
+      sliceDelta(block.textDeltas(), index, index + length),
+    );
+    return Object.keys(common).length
+      ? (common as DeltaInsert["attributes"])
+      : undefined;
   }
 
   @EventListen("compositionStart")
@@ -472,7 +495,12 @@ export class InputTransformer {
     if (!collapsed) {
       ev.preventDefault();
       this.doc.crud.undoManager.captureSelectionBeforeChange();
-      from.block.replaceText(from.index, from.length, text);
+      from.block.replaceText(
+        from.index,
+        from.length,
+        text,
+        this._inheritedReplaceAttrs(from.block, from.index, from.length),
+      );
       this.doc.selection.setSelection({
         ...from,
         index: from.index + (text?.length || 0),
@@ -628,6 +656,22 @@ export class InputTransformer {
       }
     }
 
+    // Inherit the replaced range's shared inline format so typed-over text keeps
+    // its formatting (bold/italic/color/…). Read from the block we insert into,
+    // BEFORE the transaction deletes the slice.
+    let insertAttrs: DeltaInsert["attributes"] | undefined;
+    if (text) {
+      if (from.type === "text") {
+        insertAttrs = this._inheritedReplaceAttrs(
+          from.block,
+          from.index,
+          from.length,
+        );
+      } else if (to?.type === "text") {
+        insertAttrs = this._inheritedReplaceAttrs(to.block, to.index, to.length);
+      }
+    }
+
     this.doc.crud.transact(() => {
       if (to) {
         const throughPath = this.doc.queryBlocksThroughPathDeeply(
@@ -648,7 +692,7 @@ export class InputTransformer {
       if (from.type === "text") {
         const yText = from.block.yText;
         yText.delete(from.index, from.length);
-        text && yText.insert(from.index, text);
+        text && yText.insert(from.index, text, insertAttrs);
 
         if (to) {
           if (merge) {
@@ -670,7 +714,7 @@ export class InputTransformer {
       // 无法输入的情况
       if (to?.type !== "text") return;
       this.doc.crud.deleteBlockById(from.blockId);
-      to.block.replaceText(to.index, to.length, text);
+      to.block.replaceText(to.index, to.length, text, insertAttrs);
     });
 
     // After transaction: append remaining delta from to block to from block.

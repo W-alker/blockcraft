@@ -92,10 +92,9 @@ export class DocCRUD {
 
       this.undoManager = new DocUndoManger(this.doc, this.yBlockMap)
 
-      // 载入时一次性完整性扫描：必须在 observeDeep 之前 —— 初始同步的合并
-      // 发生在 observer 挂载前，离线交叉推送/存量损伤只能在这里兜住；
-      // 且此时修复事务不会进入 _syncYEvent，渲染直接从干净状态开始
-      this._childrenRepairer.scanOnLoad()
+      // 注：children 完整性修复已前移到 initByYBlock 构建组件树【之前】执行
+      // （见 repairChildRefsOnLoad）。afterInit 在构建之后，此处再修会让删除的
+      // 模型下标 splice 到已错位的 _compRefs，故不在这里做。
 
       this._yObserverHandler = (evt, tr) => {
         this.doc.ngZone.run(() => {
@@ -133,6 +132,16 @@ export class DocCRUD {
 
   getYBlock(id: string) {
     return this.yBlockMap.get(id)
+  }
+
+  /**
+   * 「遇到才兜底」剪除初始加载时实际遇到的悬空 child 引用（refs 由
+   * createComponentByYBlocks 在构建中收集）。必须在构建之后、observer 挂载之前
+   * 调用（见 initByYBlock）：修正因跳过悬空 child 造成的 _compRefs 长度错位，
+   * 且不触发按模型下标 splice 的视图同步。干净文档不会有 refs，零开销。
+   */
+  pruneChildRefs(refs: ReadonlyArray<{ parentId: string, childId: string }>) {
+    this._childrenRepairer.pruneRefs(refs)
   }
 
   transact(fn: () => void, origin: any = null) {
@@ -339,8 +348,9 @@ export class DocCRUD {
 
     // IME 组合期间宿主块被删（本地或远端）：通知 session abort，
     // 防止 compositionEnd 把组合文本写进 detached Y.Text。O(1) 集合查找。
+    // best-effort：input 子系统未就绪时无组合可中止，可选链跳过即可。
     if (deleted.size) {
-      this.doc.inputManger.compositionSession.handleBlocksDeleted(deleted)
+      this.doc.inputManger?.compositionSession?.handleBlocksDeleted(deleted)
     }
 
     const childComps = this.vm.createComponentByYBlocks(added)

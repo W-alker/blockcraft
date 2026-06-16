@@ -375,9 +375,9 @@ export class TriggerBtn {
     this.toolList = this.toolList.concat(this.customTools)
 
     const schemas = this.doc.schemas.getSchemaList().filter(v => v.flavour !== 'paragraph')
-    this.baseBlockList = schemas.filter(item => item.nodeType === BlockNodeType.editable && !item.metadata.isLeaf)
+    this.baseBlockList = schemas.filter(item => item.nodeType === BlockNodeType.editable && !item.metadata.isLeaf && !item.metadata.hideInInsertMenu)
     this.otherBlockList = schemas.filter(item =>
-      (item.nodeType === BlockNodeType.void || item.nodeType === BlockNodeType.block) && !item.metadata.isLeaf && !item.flavour.endsWith('-embed'))
+      (item.nodeType === BlockNodeType.void || item.nodeType === BlockNodeType.block) && !item.metadata.isLeaf && !item.metadata.hideInInsertMenu && !item.flavour.endsWith('-embed'))
     this.embeddedBlockList = schemas.filter(item => item.flavour.endsWith('-embed'))
   }
 

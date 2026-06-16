@@ -33,96 +33,63 @@ export class ChildrenRepairer {
   }
 
   /**
-   * 文档载入时的一次性完整性扫描（修复离线交叉推送 / 存量历史损伤）。
+   * 「遇到才兜底」剪除悬空 child 引用：只删 `refs` 里指定的那些（即初始加载构建
+   * 组件树时 `createComponentByYBlocks` 实际遇到并跳过的悬空引用）。不做全文档扫描——
+   * 干净文档零开销。
    *
-   * 必须在 yBlockMap.observeDeep 注册【之前】、组件创建之前调用：
-   * - 「同步完成后统一渲染」的接入时序下，初始合并发生在 observer 挂载前，
-   *   带伤状态不会以远端事件形态出现，事件驱动路径对此是盲区；
-   * - 此时修复事务不会触发 _syncYEvent（observer 未挂、组件未建，避开
-   *   "组件不存在即 throw" 的路径），也无需 DOM 复位，渲染从干净状态开始。
+   * 悬空引用成因：历史协同「并发移动 vs 删除」——一端把块移入新父（新父 children
+   * 加引用）、另一端删块（删 yBlock），合并后引用存活而 yBlock 丢失。
    *
-   * 成本：O(全文档块数) 一次遍历 + 每父块一个 Set 判重，只在 load 执行一次，
-   * 远低于随后逐块创建组件的初始渲染成本。
-   * 与事件路径不同：这里能看到全量状态，跨父重复（含 ≥3 父的极端情况）
-   * 按「全体出现父块中 ID 字典序最小者保留」一次性解决，与事件路径的
-   * 两两仲裁规则收敛到同一结果。
+   * 【必须在构建组件树之后、observer 挂载之前调用】（见 initByYBlock）：
+   * - 构建时悬空 child 被跳过渲染，`_compRefs` 比 Y.Array 短一项（长度错位）；
+   *   此处剪掉 Y.Array 里的悬空引用，两者重新对齐；
+   * - 此时 observer 未挂、undoManager 未建 → 删除不触发 `_syncYBlockChildrenUpdate`
+   *   的按模型下标 splice（否则会 splice 到已错位的 `_compRefs`、删错有效组件），
+   *   也不进 undo。
+   *
+   * 只读端不修复：此时 `readonlySwitch$` 尚未被 `_initEditor` 的 nextTick 赋值
+   * （初值为 true），`isReadonly` 不可靠，必须用配置源 `config.readonly` 判定——
+   * 只读端通常在协同服务端无写权限，绝不能广播修复事务（渲染端 skip 已能容错）。
    */
-  scanOnLoad() {
-    // 只读端不写修复，与事件路径策略一致；可编辑端修好后会广播过来
-    if (this.doc.isReadonly) return
+  pruneRefs(refs: ReadonlyArray<{ parentId: string, childId: string }>) {
+    if (this.doc.config.readonly || !refs.length) return
     try {
-      this._scanOnLoad()
+      this._pruneRefs(refs)
     } catch (e) {
-      // 扫描自身的任何异常都不允许阻断文档初始化
-      this.doc.logger.warn('children load scan failed', e)
+      // 兜底自身的任何异常都不允许阻断文档初始化
+      this.doc.logger.warn('dangling ref prune failed', e)
     }
   }
 
-  private _scanOnLoad() {
+  private _pruneRefs(refs: ReadonlyArray<{ parentId: string, childId: string }>) {
     const yBlockMap = this.doc.yBlockMap
-    const dupParents = new Set<string>()             // 同父重复的父块
-    const crossOccur = new Map<string, Set<string>>() // 跨父重复：childId → 全部出现的父块
-    const seenIn = new Map<string, string>()          // childId → 首见父块
+    const byParent = new Map<string, Set<string>>()
+    for (const { parentId, childId } of refs) {
+      let dead = byParent.get(parentId)
+      if (!dead) byParent.set(parentId, dead = new Set())
+      dead.add(childId)
+    }
 
-    yBlockMap.forEach((yBlock, parentId) => {
-      const yChildren = yBlock.get('children')
-      if (!isYArray(yChildren)) return
-      const ids = yChildren.toArray() as string[]
-      const local = new Set<string>()
-      for (const id of ids) {
-        if (local.has(id)) {
-          dupParents.add(parentId)
-          continue
-        }
-        local.add(id)
-        const firstParent = seenIn.get(id)
-        if (firstParent === undefined) {
-          seenIn.set(id, parentId)
-        } else if (firstParent !== parentId) {
-          let occur = crossOccur.get(id)
-          if (!occur) crossOccur.set(id, occur = new Set([firstParent]))
-          occur.add(parentId)
-        }
-      }
-    })
-
-    if (!dupParents.size && !crossOccur.size) return
-
+    let removed = 0
     this.doc.crud.transact(() => {
-      for (const pid of dupParents) {
-        const yChildren = yBlockMap.get(pid)?.get('children')
-        if (!yChildren || !isYArray(yChildren)) continue
+      byParent.forEach((deadIds, parentId) => {
+        const yChildren = yBlockMap.get(parentId)?.get('children')
+        if (!yChildren || !isYArray(yChildren)) return
         const ids = yChildren.toArray() as string[]
-        // 保留首个出现：正向标记重复索引，倒序删除避免索引漂移
-        const seen = new Set<string>()
-        const dupIndexes: number[] = []
-        ids.forEach((id, i) => {
-          if (seen.has(id)) dupIndexes.push(i)
-          else seen.add(id)
-        })
-        for (let i = dupIndexes.length - 1; i >= 0; i--) {
-          yChildren.delete(dupIndexes[i], 1)
+        // 倒序删除，下标不漂移；再次校验「确实仍悬空」防御误删（构建到此处之间
+        // 状态不应变化，但 yBlockMap.get 仍非空则跳过，绝不删有效引用）。
+        for (let i = ids.length - 1; i >= 0; i--) {
+          if (deadIds.has(ids[i]) && !yBlockMap.get(ids[i])) {
+            yChildren.delete(i, 1)
+            removed++
+          }
         }
-      }
-
-      crossOccur.forEach((parents, blockId) => {
-        let keep: string | null = null
-        parents.forEach(pid => {
-          if (keep === null || pid < keep) keep = pid
-        })
-        parents.forEach(pid => {
-          if (pid === keep) return
-          const yChildren = yBlockMap.get(pid)?.get('children')
-          if (!yChildren || !isYArray(yChildren)) return
-          const idx = (yChildren.toArray() as string[]).indexOf(blockId)
-          if (idx >= 0) yChildren.delete(idx, 1)
-        })
       })
     }, ORIGIN_NO_RECORD)
 
-    this.doc.logger.warn(
-      `children load scan: fixed ${dupParents.size} duplicated parent(s), ${crossOccur.size} cross-parent duplicate(s)`
-    )
+    if (removed) {
+      this.doc.logger.warn(`pruned ${removed} dangling child ref(s) encountered on load`)
+    }
   }
 
   /**

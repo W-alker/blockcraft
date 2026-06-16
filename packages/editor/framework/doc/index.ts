@@ -171,7 +171,19 @@ export class BlockCraftDoc {
     }
 
     const id = yRoot.get('id')
-    const comp = this.vm.createComponentByYBlocks({ [id]: yRoot })
+    // 「遇到才兜底」：构建组件树时收集实际遇到的悬空 child 引用（历史协同
+    // 「移动 vs 删除」遗留的孤儿引用，无对应 yBlock）。干净文档一个都不会触发，
+    // 不做任何全文档扫描。
+    const danglingRefs: { parentId: string, childId: string }[] = []
+    const comp = this.vm.createComponentByYBlocks(
+      { [id]: yRoot },
+      (parentId, childId) => danglingRefs.push({ parentId, childId }),
+    )
+    // 构建后、observer 挂载前剪除遇到的悬空引用：构建时它们被跳过渲染，
+    // _compRefs 比模型短，此处剪掉模型里的悬空引用使两者重新对齐；此刻 observer
+    // 未挂，删除不会触发按模型下标 splice（否则会删错有效组件）。
+    if (danglingRefs.length) this.crud.pruneChildRefs(danglingRefs)
+
     const root = comp[id]
     container.append(root.location.nativeElement)
     this._initEditor(root.instance as any)
