@@ -1,7 +1,7 @@
 import * as Y from 'yjs'
 import {BaseBlockDesc, BlockNodeType, IBlockProps, IEditableBlockProps, InlineModel} from "../types";
 import {BlockCraftError, ErrorCode, UnknownRecord} from "../../../global";
-import {ORIGIN_SKIP_SYNC} from "../../doc";
+import {ORIGIN_SKIP_SYNC} from "../../doc/origins"; // 直连叶子文件，勿经 doc barrel 成环
 
 const native2Y = function (native: Object): Y.Map<any> | Y.Array<any> {
   if (typeof native !== 'object')

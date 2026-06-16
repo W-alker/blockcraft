@@ -14,10 +14,10 @@ import {isYArray, isYText} from "../utils/yAbstractType";
 import {DocUndoManger} from "./undoManger";
 import {ChildrenRepairer} from "./children-repair";
 
-// This origin will skip Y.Event sync (to model)
-export const ORIGIN_SKIP_SYNC = Symbol('skip_sync')
-// This origin will not be recorded in undo/redo stack
-export const ORIGIN_NO_RECORD = Symbol('no_record')
+// ORIGIN_* 已抽到零依赖叶子文件 ./origins（避免 base-block/reactive 经 doc barrel 成环）。
+// 这里 import 供 crud 内部使用，并 re-export 以保持 `export * from './crud'` 的公共导出面不变。
+import { ORIGIN_SKIP_SYNC, ORIGIN_NO_RECORD } from "./origins";
+export { ORIGIN_SKIP_SYNC, ORIGIN_NO_RECORD };
 
 export interface ITextChangeEvent {
   isUndoRedo: boolean,

@@ -1,4 +1,5 @@
-import {DeltaInsert, IInlineNodeAttrs} from "../../framework";
+// 纯类型用 `import type`：编译期擦除，避免 global → framework barrel 的运行时成环边。
+import type {DeltaInsert, IInlineNodeAttrs} from "../../framework";
 
 // 将DeltaInsert[]根据其中的\n拆分成多个DeltaInsert[]
 export const splitDeltaByLineBreak = (delta: DeltaInsert[], str_break = '\n'): DeltaInsert[][] => {

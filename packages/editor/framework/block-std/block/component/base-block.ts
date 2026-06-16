@@ -11,7 +11,10 @@ import {
 } from "@angular/core";
 import { NativeBlockModel, Obj2YMap, proxyMap, YBlock, yBlock2Native } from "../../reactive";
 import {BlockCraftError, ErrorCode, performanceTest} from "../../../../global";
-import { BlockChildrenRenderRef, ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC } from "../../../doc";
+// 直连叶子文件，避免经 `../../../doc` barrel 把 modules/chain/各 block 子类拖进基类闭包
+// （否则 rollup 会把 BaseBlockComponent 排到子类之后 → 启动 TDZ / "superclass is not a constructor"）。
+import { ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC } from "../../../doc/origins";
+import type { BlockChildrenRenderRef } from "../../../doc/vm";
 import { BlockNodeType, IBlockProps, IBlockSnapshot } from "../../types";
 import { Subject } from "rxjs";
 import {createBlockGapSpace, generateId} from "../../../utils";
