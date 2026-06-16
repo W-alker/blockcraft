@@ -9,12 +9,12 @@ import {
   YneBlock,
   YneConvertContext,
   YneImageMap,
-  YneParseResult,
 } from "./types";
 
-export { rehostYneAttachments } from "./resource";
+export { rehostYneAttachments, collectAndStripRehostMarkers } from "./resource";
+export { parseYoudaoHtml, isYoudaoHtml } from "./youdao-html";
 export { YNE_JSON_MIME, YNE_IMAGE_JSON_MIME } from "./types";
-export type { YneParseResult, YneDeferredAttachment } from "./types";
+export type { YneDeferredAttachment } from "./types";
 
 interface YneClipboardState {
   dataTypes: readonly string[];
@@ -36,10 +36,15 @@ function parseImageMap(raw: string | null): Map<string, string> {
   return map;
 }
 
+/**
+ * Parse 有道云's `text/yne-json` clipboard payload into a root snapshot.
+ * Attachment snapshots are tagged for re-host via a transient meta marker
+ * ({@link collectAndStripRehostMarkers}); the clipboard re-hosts them post-insert.
+ */
 export function parseYneClipboard(
   state: YneClipboardState,
   doc: BlockCraft.Doc
-): YneParseResult | null {
+): IBlockSnapshot | null {
   const raw = state.getData(YNE_JSON_MIME);
   if (!raw) return null;
 
@@ -50,7 +55,6 @@ export function parseYneClipboard(
     const ctx: YneConvertContext = {
       imageMap: parseImageMap(state.getData(YNE_IMAGE_JSON_MIME)),
       fileService: doc.injector.get(DOC_FILE_SERVICE_TOKEN),
-      deferredAttachments: [],
     };
 
     const children: IBlockSnapshot[] = [];
@@ -59,8 +63,7 @@ export function parseYneClipboard(
     }
     if (!children.length) return null;
 
-    const snapshot = RootBlockSchema.createSnapshot(generateId(), children);
-    return { snapshot, deferredAttachments: ctx.deferredAttachments };
+    return RootBlockSchema.createSnapshot(generateId(), children);
   } catch (e) {
     doc.logger?.warn?.('parseYneClipboard failed', e);
     return null;

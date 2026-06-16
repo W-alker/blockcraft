@@ -72,14 +72,8 @@ export interface YneDeferredAttachment {
   fileLength: number;
 }
 
-export interface YneParseResult {
-  snapshot: IBlockSnapshot;
-  deferredAttachments: YneDeferredAttachment[];
-}
-
 export interface YneConvertContext {
   /** image source URL -> base64 data URI (from text/yne-image-json) */
   imageMap: Map<string, string>;
   fileService: DocFileService;
-  deferredAttachments: YneDeferredAttachment[];
 }

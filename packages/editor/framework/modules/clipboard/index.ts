@@ -44,10 +44,10 @@ import {
 import {cloneSnapshot, getMarkdownClipboardText, looksLikeMarkdown} from "./paste-utils";
 import {logPasteFormats} from "./paste-debug";
 import {
+  collectAndStripRehostMarkers,
   parseYneClipboard,
   rehostYneAttachments,
   YNE_JSON_MIME,
-  YneDeferredAttachment,
 } from "../../../adapters/yne-adapter";
 import * as Y from "yjs";
 
@@ -536,23 +536,15 @@ export class ClipboardManager {
       rootSnapshot = parseClipboardSnapshot(state.getData(BLOCKCRAFT_WEB_SNAPSHOT_MIME)) || undefined
     }
 
-    // 有道云 text/yne-json —— 高保真结构化格式，优先级高于 HTML。
+    // 有道云 text/yne-json —— 浏览器侧的高保真结构化格式（自定义 MIME，Tauri/WKWebView
+    // 会剥离，那种环境改由 HTML 分支的 htmlAdapter 内部识别 <article data-content>）。
     // 解析失败/未知块返回 null，自然落到下方 HTML 分支（兜底）。
-    let yneDeferred: YneDeferredAttachment[] = []
     if (!rootSnapshot && state.dataTypes.includes(YNE_JSON_MIME)) {
-      const parsed = parseYneClipboard(state, this.doc)
-      if (parsed && parsed.snapshot.children.length) {
-        rootSnapshot = parsed.snapshot
-        yneDeferred = parsed.deferredAttachments
-        // 同步插入完成后再异步重传附件（读取 replaceSnapshotsIdDeeply 改写后的最终 id）。
-        // nextTick 在本次 onPaste 的同步突变之后触发；附件块为 void，不会被首段合并/shift。
-        if (yneDeferred.length) {
-          nextTick().then(() => rehostYneAttachments(this.doc, yneDeferred))
-        }
-      }
+      const snap = parseYneClipboard(state, this.doc)
+      if (snap && snap.children.length) rootSnapshot = snap
     }
 
-    // html
+    // html（htmlAdapter.toSnapshot 内部已对有道云 <article data-content> 做高保真短路）
     if (!rootSnapshot && state.dataTypes.includes(ClipboardDataType.HTML)) {
       const htmlString = state.getData(ClipboardDataType.HTML)
       if (htmlString) {
@@ -583,6 +575,14 @@ export class ClipboardManager {
           }
         }
       }
+    }
+
+    // 有道云附件重传：两条有道云路径（text/yne-json + HTML data-content）都在 attachment
+    // snapshot 的 meta 上打了重传标记。这里在插入/克隆前统一收集并剥离标记（绝不写进 Yjs、
+    // 不同步给协同端），插入后再异步 fetch 重传——只有本地粘贴者做，读取插入后的最终 block id。
+    const rehostMarkers = rootSnapshot ? collectAndStripRehostMarkers(rootSnapshot) : []
+    if (rehostMarkers.length) {
+      nextTick().then(() => rehostYneAttachments(this.doc, rehostMarkers))
     }
 
     // Collect alternative format data before mutations (plugin uses this for format selector)

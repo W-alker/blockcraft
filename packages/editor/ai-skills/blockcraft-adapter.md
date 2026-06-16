@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-06-15
+> Last updated: 2026-06-16
 
 ## Architecture
 
@@ -271,3 +271,14 @@ export const blockMarkdownAdapterMatchers: BlockMarkdownAdapterMatcher[] = [
 - **图片**：base64 → `File` → `fileService.createObjectURL` → image block 自动上传。
 - **附件**：先用有道云 URL 建块，插入后 `rehostYneAttachments` 异步 fetch 重传（best-effort，CORS/鉴权失败则保留原 URL）。
 - **样式映射**：`bold/italic/strike → a:*`，`color/back-color/font-size → s:color/s:background/s:fontSize`；标题丢弃冗余 font-size。
+
+### 有道云 HTML `data-content` 路径（Tauri/WKWebView 必需）
+
+WKWebView（Tauri）及部分浏览器会从 `paste` 事件里**剥离自定义剪贴板 MIME**（`text/yne-json` / `text/yne-image-json`），只留 `text/html`——此时上面的 `text/yne-json` 分支拿不到数据，会回退到有损 HTML（附件变图片、行内 CSS 样式丢失）。但完整高保真结构仍嵌在 HTML 里的 `<article data-content="…bulb JSON…">`（HTML 属性，不会被剥离），图片字节也在可见 `<img data-media-type="image" src="data:…">` 中。
+
+- **入口**：`parseYoudaoHtml(html, fileService): IBlockSnapshot | null`（`adapters/yne-adapter/youdao-html.ts`）；用 `isYoudaoHtml(html)` 先做 marker 预判。
+- **位置（关键）**：解析在 **`HtmlAdapter.toBlockSnapshot` 内短路**——`isYoudaoHtml(html)` 命中就走 bulb 高保真解析、跳过通用 HAST，否则照常。**HTML→snapshot 全部归 Adapter 层**，`clipboard.ts` 不再特判有道云（符合 DDD「Block 不解析 HTML，走 Adapter 防腐层」）。浏览器仍优先 `text/yne-json` 分支；Tauri 等被剥离自定义 MIME 的环境由这条 HTML 路径兜住。
+- **格式**：bulb 格式（`{name, data, nodes:[{type:'text', leaves:[{text, marks}]}]}`），见 `bulb-converter.ts`。marks 映射：`bold/italic/delete/underline → a:*`，`color/backgroundColor → s:color/s:background`，`fontSize → s:fontSize`。
+- **表格**：bulb 表格是嵌套（table>row>cell，省略被合并格），转换时按 colSpan/rowSpan 重建网格并补 `display:'none'` 占位格。
+- **图片**：从可见 `<img data:base64>` 按文档顺序取字节（`text/yne-image-json` 被剥离时的唯一字节来源）→ `fileService.createObjectURL` → image block 自动上传。
+- **附件重传（关键拆分）**：附件的异步 fetch 重传是**插入后、协同敏感**的副作用，不在 adapter 里做。两条有道云路径都用 `buildAttachmentSnapshot` 在 attachment snapshot 的 `meta` 上打**临时重传标记**；`clipboard.ts` 在插入/克隆前用 `collectAndStripRehostMarkers` 统一**收集并剥离**标记（绝不写进 Yjs、不同步给协同端），插入后再 `rehostYneAttachments` 异步重传（只有本地粘贴者做）。

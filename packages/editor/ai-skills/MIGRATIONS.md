@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-06-15 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-06-16 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,29 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-06-16 (minor) — 有道云 HTML data-content 粘贴路径
+
+**What changed**: 新增 `adapters/yne-adapter/youdao-html.ts` + `bulb-converter.ts`，从粘贴 HTML 的 `<article data-content="…">`（有道云 bulb JSON）解析高保真结构。解析在 **`HtmlAdapter.toBlockSnapshot` 内短路**（`isYoudaoHtml` 命中即走 bulb 解析，否则照常 HAST）——HTML→snapshot 全部归 Adapter 层，`ClipboardManager` 不再特判有道云。原因：WKWebView（Tauri）及部分浏览器会从 `paste` 事件剥离自定义剪贴板 MIME（`text/yne-json` / `text/yne-image-json`），导致原 `text/yne-json` 路径拿不到数据、回退到有损 HTML（附件变图片、行内 CSS 样式丢失）。bulb 数据嵌在 HTML 属性里不会被剥离，图片字节从可见 `<img data:base64>` 取。`resource.ts` 抽出共享 `buildImageSnapshot` / `buildAttachmentSnapshot`，两条有道云路径复用。附件异步重传留在 clipboard：转换器在 attachment snapshot 的 `meta` 打临时标记，`collectAndStripRehostMarkers` 在插入前收集并剥离（不写进 Yjs），插入后 `rehostYneAttachments` 重传。
+
+**Why**: 桌面端（cses-client / Tauri）实测有道云粘贴走不到 `text/yne-json` 分支——WKWebView 只透传 `text/html`。需要一条基于 HTML `data-content` 的路径，覆盖所有环境；并把 HTML 解析收敛到 Adapter 层（DDD），重传这种 post-insertion/协同敏感的副作用留在 clipboard。
+
+**Affected ai-skills files**:
+- `blockcraft-adapter.md` — 「有道云笔记」节新增「有道云 HTML data-content 路径」子节
+
+### New APIs / Features
+- `parseYoudaoHtml(html, fileService): IBlockSnapshot | null` 与 `isYoudaoHtml(html)`（内部模块，从 `adapters/yne-adapter` 导出，未从包根导出；由 `HtmlAdapter` 调用）。
+- `collectAndStripRehostMarkers(root): YneDeferredAttachment[]`（收集并剥离附件重传标记）。
+- `buildImageSnapshot` / `buildAttachmentSnapshot`（`resource.ts` 内部共享构建器）。
+- `parseYneClipboard` 返回值改为 `IBlockSnapshot | null`（原 `{snapshot, deferredAttachments}` 结构连同 `YneParseResult` 类型移除；附件重传改走 meta 标记机制）。
+
+### Behavior Changes
+- 从有道云粘贴时：浏览器优先 `text/yne-json`；被剥离自定义 MIME 的环境（Tauri 等）由 `HtmlAdapter` 内部识别 `data-content` 兜住。两者产出等价的高保真结果（标题/列表/待办/分割线/代码/合并表格/图片/附件 + 行内样式），不再回退到「附件变图片、样式丢失」的通用 HTML。
+- 非有道云 HTML 不含 `data-content`/`yne-bulb-block` marker → `isYoudaoHtml` 返回 false → 完全走原通用 HTML adapter，零回归。
+- 附件重传标记仅存在于内存中的 paste snapshot 上，插入前即被剥离，不进入 Yjs、不同步给协同端——只有本地粘贴者执行重传。
+
+### Migration Recipe
+无需迁移（新增能力，向后兼容）。
 
 ### v?.?.? - 2026-06-15 (minor) — 固定工具栏字体缩放工具
 

@@ -1,5 +1,5 @@
 // packages/editor/adapters/yne-adapter/resource.spec.ts
-import { dataUriToFile, inferMimeType, yneImageToSnapshot, yneAttachmentToSnapshot, rehostYneAttachments } from "./resource";
+import { dataUriToFile, inferMimeType, yneImageToSnapshot, yneAttachmentToSnapshot, rehostYneAttachments, collectAndStripRehostMarkers } from "./resource";
 import { IBlockSnapshot } from "../../framework";
 import { YneConvertContext } from "./types";
 
@@ -31,7 +31,6 @@ function makeCtx(overrides: Partial<YneConvertContext> = {}): YneConvertContext 
       createObjectURL: (f: File) => `blob-local:${f.name}`,
       uploadAttachment: () => Promise.resolve({ url: 'https://cdn/x.csv', name: 'x.csv', type: 'text/csv', size: 10 }),
     } as any,
-    deferredAttachments: [],
     ...overrides,
   };
 }
@@ -60,8 +59,16 @@ describe('resource block converters', () => {
     expect(snap.flavour).toBe('attachment');
     expect(snap.props['url']).toBe('https://note.youdao/a.csv');
     expect(snap.props['type']).toBe('text/csv');
-    expect(ctx.deferredAttachments.length).toBe(1);
-    expect(ctx.deferredAttachments[0].snapshot).toBe(snap);
+    const markers = collectAndStripRehostMarkers(snap);
+    expect(markers.length).toBe(1);
+    expect(markers[0].snapshot).toBe(snap);
+    expect(markers[0].url).toBe('https://note.youdao/a.csv');
+  });
+
+  it('collectAndStripRehostMarkers strips the marker (idempotent)', () => {
+    const snap = yneAttachmentToSnapshot({ blockType: 'attachment', source: 'https://note.youdao/a.csv', fileName: 'a.csv', fileLength: 3913 }, makeCtx());
+    expect(collectAndStripRehostMarkers(snap).length).toBe(1);
+    expect(collectAndStripRehostMarkers(snap).length).toBe(0);
   });
 });
 

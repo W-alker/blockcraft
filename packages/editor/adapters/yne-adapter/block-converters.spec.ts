@@ -5,7 +5,6 @@ import { YneBlock, YneConvertContext } from "./types";
 const ctx = (): YneConvertContext => ({
   imageMap: new Map(),
   fileService: {} as any,
-  deferredAttachments: [],
 });
 
 const rich = (text: string) => ({ data: text.split('').map(char => ({ char })) });
