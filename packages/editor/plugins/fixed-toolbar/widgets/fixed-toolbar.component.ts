@@ -3,6 +3,7 @@ import {
   BcColumnCountPickerComponent,
   BcFloatToolbarComponent,
   BcFloatToolbarItemComponent,
+  BcFontScalePickerComponent,
   BcOverlayTriggerDirective,
   BcTableSizePickerComponent,
   ColorGroup,
@@ -138,6 +139,19 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     >
       <span>{{ activeStyleItem.intro }}</span>
       <i class="bc_icon bc_xiajaintou"></i>
+    </button>
+
+    <button
+      class="toolbar-btn toolbar-btn--dropdown"
+      title="字体缩放"
+      [disabled]="readonly || !allEditable"
+      [bcOverlayTrigger]="fontScalePicker"
+      [bcOverlayDisabled]="readonly || !allEditable"
+      (open)="onFontScaleOpen()"
+    >
+      <i class="bc_icon bc_wenben"></i>
+      <span class="toolbar-btn__scale">{{ activeFontScaleLabel }}</span>
+      <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
     </button>
 
     @for (item of inlineToggleActions; track item.value) {
@@ -338,6 +352,13 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       </bc-color-picker>
     </ng-template>
 
+    <ng-template #fontScalePicker>
+      <bc-font-scale-picker
+        [current]="activeFontScale"
+        (pick)="onFontScalePicked($event)"
+      ></bc-font-scale-picker>
+    </ng-template>
+
     <ng-template #quickTablePicker>
       <bc-table-size-picker
         (pick)="insertQuickTable($event, quickTableTrigger)"
@@ -456,6 +477,12 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         flex-shrink: 0;
       }
 
+      .toolbar-btn__scale {
+        font-size: 12px;
+        min-width: 26px;
+        text-align: center;
+      }
+
       .toolbar-btn--dropdown {
         gap: 4px;
       }
@@ -550,6 +577,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     ColorPickerComponent,
     BcTableSizePickerComponent,
     BcColumnCountPickerComponent,
+    BcFontScalePickerComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -567,6 +595,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   private _formatBrushSourceKey: string | null = null;
   private _formatBrushLastAppliedKey: string | null = null;
   private _isApplyingFormatBrush = false;
+  /** 字体缩放面板打开时冻结的选区快照（面板含输入框，聚焦会清空原生选区）。 */
+  private _fontScaleSelectionJSON: ISelectionJSON | null = null;
 
   constructor(private readonly cdr: ChangeDetectorRef) {}
 
@@ -806,6 +836,59 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this.runWithSelection(() => {
       this.toolbarHelper.formatText({ "a:bg": bg });
     });
+  }
+
+  /** 当前选区共有的字体缩放比例（1 = 默认/正文大小）。 */
+  protected get activeFontScale(): number {
+    return this.parseFontScale(this.activeAttrs.get("fontSize"));
+  }
+
+  protected get activeFontScaleLabel(): string {
+    return `${this.activeFontScale}×`;
+  }
+
+  /** 仅把 `<n>em` 解析为相对比例；px 等非比例值或缺省一律回退 1（默认大小）。 */
+  private parseFontScale(value: unknown): number {
+    if (typeof value === "string") {
+      const match = /^([\d.]+)em$/.exec(value.trim());
+      if (match) {
+        const n = Number.parseFloat(match[1]);
+        if (Number.isFinite(n) && n > 0) return Math.round(n * 100) / 100;
+      }
+    }
+    return 1;
+  }
+
+  protected onFontScaleOpen() {
+    // 面板含输入框，聚焦它会让编辑器失焦、原生选区可能被清空（跨浏览器差异）。
+    // 在面板打开时冻结当前选区，应用时回放该快照（与 openLinkPad 同策略）。
+    const selection = this.doc.selection.value;
+    this._fontScaleSelectionJSON = selection
+      ? selection.toJSON()
+      : this.selectionJSON;
+  }
+
+  protected onFontScalePicked(ratio: number) {
+    if (this.readonly) return;
+
+    const snapshot = this._fontScaleSelectionJSON;
+    if (snapshot) {
+      try {
+        this.doc.selection.replay(snapshot);
+      } catch {}
+    }
+
+    const selection = this.doc.selection.value;
+    if (!this.canFormatTextSelection(selection)) return;
+
+    // 相对比例写成 CSS em（相对所在块基准字号）；1 = 默认 → 移除该样式。
+    this.toolbarHelper.formatText({
+      "s:fontSize": ratio === 1 ? null : `${ratio}em`,
+    } as IInlineNodeAttrs);
+
+    this.doc.selection.recalculate();
+    this.syncToolbarState(this.doc.selection.value);
+    this.cdr.markForCheck();
   }
 
   protected async insertQuickTable(
@@ -1101,6 +1184,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       "a:bg": this.readFormatBrushAttr(common.attrs, "bg"),
       "s:color": common.colors["color"] ?? null,
       "s:background": common.colors["backColor"] ?? null,
+      "s:fontSize": this.readFormatBrushAttr(common.attrs, "fontSize"),
     } as IInlineNodeAttrs;
 
     return {

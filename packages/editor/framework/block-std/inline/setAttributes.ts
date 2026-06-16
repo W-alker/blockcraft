@@ -14,7 +14,11 @@ export const setAttributes = (element: HTMLElement, attributes: IInlineNodeAttrs
       continue
     }
     if (key.startsWith('s:')) {
-      const k = key.slice(2)
+      // `setProperty` 只认连字符式属性名（font-size），驼峰名（fontSize）会被静默忽略。
+      // 把 `s:fontSize` / `s:fontFamily` 等驼峰 key 转成连字符再写入；
+      // 自定义属性（--foo）大小写敏感，保持原样。
+      const raw = key.slice(2)
+      const k = raw.startsWith('--') ? raw : raw.replace(/[A-Z]/g, m => '-' + m.toLowerCase())
       attr ? element.style.setProperty(k, attr + '') : element.style.removeProperty(k)
     }
   }

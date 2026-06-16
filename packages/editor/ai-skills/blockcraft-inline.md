@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-06-15
 
 ## Architecture Overview
 
@@ -134,6 +134,18 @@ import { InlineManager } from "../../framework";
 InlineManager.getAttrs(element)    // Read attributes from DOM element
 InlineManager.setAttrs(element, attrs) // Apply attributes to DOM element
 ```
+
+### Attribute namespaces → DOM (`setAttributes`)
+
+`framework/block-std/inline/setAttributes.ts` applies delta attributes onto each `<c-element>` container by key prefix:
+
+| Prefix | Example key | Applied as |
+|--------|-------------|------------|
+| `a:` | `a:bold`, `a:link` | HTML attribute — `element.setAttribute('bold', …)` |
+| `d:` | `d:foo` | `data-*` — `element.dataset.foo = …` |
+| `s:` | `s:color`, `s:fontSize` | inline CSS — `element.style.setProperty('color' / 'font-size', …)` |
+
+A `null`/falsy value removes the attribute/style. For `s:` keys the property name is **camelCase→kebab-case** converted before `setProperty` (so `s:fontSize` → `font-size`, `s:fontFamily` → `font-family`) — `setProperty` ignores camelCase names, so this conversion is what makes those styles actually render. CSS custom properties (`s:--x`) keep their case. Relative font scaling stores `s:fontSize` as an `em` ratio, e.g. `'1.2em'` (relative to the block's base font size).
 
 ## When to Read Source Files
 

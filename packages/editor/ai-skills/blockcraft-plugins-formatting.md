@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-04-16
+> Last updated: 2026-06-15
 
 ## FloatTextToolbarPlugin
 
@@ -111,7 +111,15 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
 
 > `plugins/fixed-toolbar/widgets/fixed-toolbar.component.ts` — Fixed-position toolbar embedded in host app template.
 
-**Not a `DocPlugin`** — this is an Angular standalone component (`<bc-fixed-toolbar>`) meant to be placed directly in the host application's template. Provides heading selection, inline formatting, color pickers, alignment, list conversion, table/column insertion, image insertion, video/audio insertion, and link editing.
+**Not a `DocPlugin`** — this is an Angular standalone component (`<bc-fixed-toolbar>`) meant to be placed directly in the host application's template. Provides heading selection, inline formatting, color pickers, font scaling (relative ratio), alignment, list conversion, table/column insertion, image insertion, video/audio insertion, and link editing.
+
+### Font Scale
+
+- A dropdown tool (`bc-font-scale-picker`) for **relative** font sizing of the selected text — ratios, not absolute px.
+- Writes the inline style `s:fontSize` as an `em` value (e.g. ratio `1.2` → `1.2em`), so it scales relative to the block's base font size; ratio `1` removes the style (back to default).
+- Panel offers preset ratios (`0.5 / 0.8 / 1.0 / 1.2 / 1.5 / 2.0`) and a text `−`/`+` stepper that adjusts by `0.1em` per click (clamped to `0.5–3`).
+- The trigger button reflects the current selection's common ratio; the panel snapshots the selection on open so toolbar interaction doesn't drop the target range.
+- `BcFontScalePickerComponent` is exported from the package root for reuse.
 
 ### Insertion Actions
 
@@ -124,7 +132,7 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
 - The fixed toolbar includes a one-shot format-brush action.
 - Activating it can use either a collapsed text caret or a normal text selection as the source format.
 - After activation, the brush waits for the user to finish a later non-collapsed target text selection before applying formatting, then automatically exits.
-- The brush only copies common inline text styling; it does not copy heading, list flavour, alignment, links, inline formulas, or non-text block contents.
+- The brush only copies common inline text styling — bold/italic/underline/strike/code/sup/sub, text color, background, and font scale (`s:fontSize`); it does not copy heading, list flavour, alignment, links, inline formulas, or non-text block contents.
 - `Cmd/Ctrl+Shift+C` can be used to quickly enable the brush; cancellation still uses the toolbar button or `Escape`.
 
 ### Selection Behavior
