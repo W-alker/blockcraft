@@ -1,4 +1,5 @@
 import {Observable} from "rxjs";
+import type {EditableBlockComponent} from "../../framework";
 
 // ─── Data Types ───
 
@@ -77,6 +78,11 @@ export type MentionPanelFactory = (ctx: {
 
 // ─── Plugin Config ───
 
+export interface MentionConfirmContext {
+  /** The block that owns the @keyword being confirmed. */
+  block: EditableBlockComponent
+}
+
 export interface MentionPluginConfig {
   /** Factory that creates the floating panel UI */
   panel: MentionPanelFactory
@@ -84,4 +90,18 @@ export interface MentionPluginConfig {
   trigger?: string
   /** Called when user clicks an existing mention embed in the document */
   onMentionClick?: (id: string, type: string, event: MouseEvent) => void
+  /**
+   * Called when the user confirms a mention, after the @keyword range is
+   * resolved but before the embed is inserted.
+   *
+   * Return `true` to signal the host has fully handled this mention itself: the
+   * plugin then removes the @keyword text and SKIPS inserting the embed (no
+   * node, no trailing space). Return `false`/`undefined` for the default
+   * behavior (replace @keyword with a mention embed).
+   *
+   * Use this when a mention's effect should be a host-side side-effect (e.g.
+   * adding a task collaborator) that must run only on the acting client, rather
+   * than a synced embed node that every collaborator would observe and react to.
+   */
+  onConfirm?: (data: IMentionData, context: MentionConfirmContext) => boolean | void
 }

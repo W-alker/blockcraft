@@ -13,7 +13,7 @@ import {IMentionPanel, MentionPluginConfig} from "./types";
 
 export {createDefaultMentionPanel} from "./widget/default-panel";
 export type {DefaultMentionPanelConfig} from "./widget/default-panel";
-export type {MentionPluginConfig, IMentionPanel, IMentionData, MentionType, IMentionResponse, MentionPanelFactory} from "./types";
+export type {MentionPluginConfig, MentionConfirmContext, IMentionPanel, IMentionData, MentionType, IMentionResponse, MentionPanelFactory} from "./types";
 
 /**
  * MentionPlugin — inline @-mention with collaboration-safe anchoring.
@@ -284,6 +284,23 @@ export class MentionPlugin extends DocPlugin {
           if (c === null || /\s/.test(c)) break
           end++
         }
+      }
+
+      // Host opt-out: let the owning block claim this confirm and run its own
+      // side-effect instead of inserting an inline embed. Only the acting client
+      // reaches here, so a host-side effect (e.g. add a task collaborator) runs
+      // exactly once — collaborators never observe a synced node. The @keyword
+      // (transient plain text) is removed; nothing is inserted in its place.
+      if (this._config.onConfirm?.(data, {block}) === true) {
+        block.applyDeltaOperations([
+          {retain: index},
+          {delete: end - index}
+        ])
+        nextTick().then(() => {
+          this.doc.selection.setCursorAt(block, index)
+        })
+        this._close$.next()
+        return
       }
 
       // Build embed delta from the confirmed data.

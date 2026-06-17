@@ -67,6 +67,34 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-06-17 (minor) — MentionPlugin 新增 `onConfirm` 宿主认领钩子（确认时可不产生节点）
+
+**What changed**: `MentionPluginConfig` 新增可选项 `onConfirm?: (data: IMentionData, ctx: MentionConfirmContext) => boolean | void`，并导出新接口 `MentionConfirmContext { block: EditableBlockComponent }`。确认 @ 选项时，插件在解析出 `@keyword` 范围后、插入 embed **之前**回调 `onConfirm`：返回 `true` 表示宿主已自行处理，插件只删除 `@keyword`（不插入 `{mention}` 节点、不补尾随空格，光标落在原 `@` 处）；返回假值或未配置则维持原有「替换为 `{mention}` embed + 空格」行为。纯新增、向后兼容。
+
+**Why**: 协同场景下把「@人员」固化成 CRDT 同步的 mention 节点，会让每个打开文档的协作者都各自观察到该节点并重复执行副作用（cses 待办块「@人 → 加任务参与人」一度在 N 端各触发一次 `updateCollaborator` + 抢删同一节点）。本钩子让宿主把这类 mention 收敛成「只在点选这一端发生的副作用」，其余端通过各自领域的实时通道（如任务订阅）获知结果，而非通过文档节点。
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-inline.md` — MentionPlugin 配置表新增 `onConfirm` 行 + Notes 说明宿主认领语义
+
+### New APIs / Features
+- `MentionPluginConfig.onConfirm?: (data, { block }) => boolean | void` — 确认拦截钩子；返回 `true` 时插件跳过 embed 插入，仅删除 `@keyword`
+- 新增导出类型 `MentionConfirmContext`（`{ block: EditableBlockComponent }`）
+
+### Migration Recipe
+纯新增、可选，现有代码零改动。需要「@ 落地为宿主副作用而非节点」时：
+
+```typescript
+new MentionPlugin({
+  panel,
+  // 返回 true：插件删除 @keyword 但不插入 mention 节点，宿主自行处理（如加协作者）
+  onConfirm: (data, { block }) =>
+    block.flavour === 'todo' && (block as any).handleMentionConfirm?.(data) === true,
+})
+```
+
+### Behavior Changes
+- 仅当配置了 `onConfirm` 且其返回 `true` 时，确认产生的 delta 由「删 `@keyword` + 插 `{mention}` embed + 空格」变为「仅删 `@keyword`」。未配置或返回假值时，行为与改动前逐字节一致。
+
 ### v?.?.? - 2026-06-17 (minor) — `--bc-lh` 改为无单位行高比例（修复 WebKit CSS zoom 下行间重叠）
 
 **What changed**: 主题 token `--bc-lh` 从写死的 px 长度 `24px` 改为**无单位行高比例** `1.5`（基准 `24 / 16`）。正文（`base.scss`）与各级标题（`heading-block.scss`）的 `line-height` 直接读 `var(--bc-lh)`（标题不再 `calc(var(--bc-lh) * N)`——无单位比例已对各自放大后的 `font-size` 生效）。少数把 `--bc-lh` 当「一行高度」px 用的地方改为 `calc(var(--bc-lh) * var(--bc-fs))`（attachment `__prefix` 高度、code-block 容器纵向 padding、code lang-list 行高/高度）。`base.scss` 的 `c-element[style*="font-size"]` 行高规则由硬编码 `1.5` 改为 `var(--bc-lh)`（DRY）。演示模式 `PresentationController` 改为把 `--bc-lh` 当无单位比例读写（`sourceLhRatio * lineHeightScale / fontScale`），最终视觉行高与旧实现完全等价。

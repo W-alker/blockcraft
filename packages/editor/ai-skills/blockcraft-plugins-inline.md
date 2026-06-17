@@ -75,6 +75,7 @@ new MentionPlugin(config: MentionPluginConfig)
 | `panel` | `MentionPanelFactory` | **required** | `(ctx: { doc, rect }) => IMentionPanel` — provides all UI and search logic |
 | `trigger` | `string` | `'@'` | Character that opens the mention panel |
 | `onMentionClick` | `(id, type, event) => void` | — | Callback when a rendered mention embed is clicked |
+| `onConfirm` | `(data, { block }) => boolean \| void` | — | Host opt-out, called after the `@keyword` range is resolved but **before** the embed is inserted. Return `true` to claim the confirm: the plugin removes the `@keyword` and inserts **no** embed (no node, no trailing space) — the host applies its own side-effect instead. Falsy → default embed insertion |
 
 #### Consumer-Provided Panel Interface
 
@@ -113,6 +114,7 @@ new MentionPlugin({
 
 - Uses `OneShotCursorAnchor` for collaboration-safe cursor tracking during the mention session
 - The trigger character is physically inserted into `Y.Text` and removed/replaced on confirm or cancel
+- `onConfirm` lets a host block turn a mention into a **side-effect that runs only on the acting client** rather than a CRDT-synced embed node. Use it when every collaborator observing the node would otherwise re-run the effect (e.g. a synced todo adding a task collaborator from `@user` — only the picker should write; others learn via that domain's own realtime channel)
 
 ---
 
