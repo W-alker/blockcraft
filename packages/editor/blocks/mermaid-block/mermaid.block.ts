@@ -9,7 +9,7 @@ import mermaid from "mermaid";
 import { Subject, takeUntil } from "rxjs";
 import { MermaidTypeListComponent } from "./widgets/mermaid-type-list.component";
 import { IMermaidType, MermaidViewMode } from "./types";
-import { debounce, downloadFile, nextTick } from "../../global";
+import { debounce, nextTick } from "../../global";
 import { MermaidViewSwitchComponent } from "./widgets/mermaid-view-switch.component";
 import { AsyncPipe } from "@angular/common";
 
@@ -302,7 +302,18 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     if (!svg) return
 
     const svgBlob = new Blob([this.serializeSvg(svg)], { type: 'image/svg+xml;charset=utf-8' })
-    await downloadFile(svgBlob, this.getExportFileName())
+
+    // 通过宿主注入的 DocFileService 下载，而不是直接走浏览器 <a download>。
+    // 浏览器环境下基类实现回退到锚点下载；在 Tauri/WKWebView 等宿主中，
+    // 宿主可重写 downloadAttachment 走原生保存对话框（锚点下载在 WKWebView 中会被静默忽略）。
+    const blobUrl = URL.createObjectURL(svgBlob)
+    try {
+      await this.doc.injector
+        .get(DOC_FILE_SERVICE_TOKEN)
+        .downloadAttachment({ url: blobUrl, name: this.getExportFileName() })
+    } finally {
+      URL.revokeObjectURL(blobUrl)
+    }
   }
 
   private async createExportSvg(graphDefinition: string) {
