@@ -39,8 +39,8 @@ import { debounce } from "../../global";
       > input {
         margin: 0 auto;
         width: 120px;
-        height: calc(var(--bc-lh) * 1.5);
-        line-height: calc(var(--bc-lh) * 1.5);
+        height: calc(var(--bc-lh) * var(--bc-fs) * 1.5);
+        line-height: calc(var(--bc-lh) * var(--bc-fs) * 1.5);
         font-size: var(--bc-fs);
         border: 1px solid var(--bc-border-color);
         border-radius: 4px;
@@ -66,8 +66,8 @@ import { debounce } from "../../global";
       .lang-list_item {
         margin-top: 4px;
         padding: 0 4px;
-        height: calc(var(--bc-lh) * 1.5);
-        line-height: calc(var(--bc-lh) * 1.5);
+        height: calc(var(--bc-lh) * var(--bc-fs) * 1.5);
+        line-height: calc(var(--bc-lh) * var(--bc-fs) * 1.5);
         text-align: center;
         font-size: calc(var(--bc-fs) * .8);
         color: var(--bc-color-lighter);

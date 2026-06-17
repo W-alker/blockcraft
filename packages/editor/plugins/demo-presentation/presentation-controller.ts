@@ -135,10 +135,18 @@ export class PresentationController {
     // 单独覆盖 lineHeightScale / segmentsGapScale 调整行距和块间距。表格 colWidths
     // 用 fontScale 缩放。子级（含 demo-root）通过 CSS 变量继承读取这些值。
     const sourceFs = this.readSourceCssLength('--bc-fs', 16);
-    const sourceLh = this.readSourceCssLength('--bc-lh', 24);
+    // --bc-lh 现为无单位比例（line-height ratio），不是 px 长度。
+    const sourceLhRatio = this.readSourceCssLength('--bc-lh', 1.5);
     const sourceGap = this.readSourceCssLength('--bc-segments-gap', 10);
     this.presentationContainer.style.setProperty('--bc-fs', `${sourceFs * this.getFontScale()}px`);
-    this.presentationContainer.style.setProperty('--bc-lh', `${sourceLh * this.getLineHeightScale()}px`);
+    // 无单位比例自身随字号等比放大，默认（lineHeightScale === fontScale）保持源比例不变；
+    // 仅当 lineHeightScale ≠ fontScale 时按两者之比调整行距松紧。最终视觉行高
+    // = ratio × demo--bc-fs = (sourceLhRatio·LHS/FS) × (sourceFs·FS) = sourceLhRatio·sourceFs·LHS，
+    // 与旧的 `sourceLhPx × LHS` 完全等价。保持无单位是为了兼容 WebKit 的 CSS zoom。
+    this.presentationContainer.style.setProperty(
+      '--bc-lh',
+      `${sourceLhRatio * this.getLineHeightScale() / this.getFontScale()}`,
+    );
     this.presentationContainer.style.setProperty('--bc-segments-gap', `${sourceGap * this.getSegmentsGapScale()}px`);
 
     document.body.appendChild(this.presentationContainer);
@@ -451,8 +459,8 @@ export class PresentationController {
     return Number.isFinite(v) && (v as number) > 0 ? (v as number) : fallback;
   }
 
-  // 读源文档 root 的 computed CSS 长度变量（如 --bc-fs / --bc-lh / --bc-segments-gap）。
-  // 源未挂载或变量异常时退回到 fallback。
+  // 读源文档 root 的 computed CSS 数值变量（--bc-fs / --bc-segments-gap 为 px 长度，
+  // --bc-lh 为无单位行高比例）；parseFloat 对两者都适用。源未挂载或变量异常时退回 fallback。
   private readSourceCssLength(varName: string, fallback: number): number {
     const root = (this.originDoc as any)?.root?.hostElement as HTMLElement | undefined;
     if (root) {

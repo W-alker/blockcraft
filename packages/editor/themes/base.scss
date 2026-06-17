@@ -48,15 +48,6 @@
     vertical-align: top;
   }
 
-  // 行内字号缩放（s:fontSize）：带 inline font-size 的 c-element 让行高随字号
-  // 等比放大，避免大字号文字挤在固定行高（--bc-lh）里造成行间重叠。文档基准
-  // 行高比例为 --bc-lh / --bc-fs = 24 / 16 = 1.5，正文与各级标题均保持该比例，
-  // 故统一用 1.5 无单位行高即可与全局排版一致（缩小的字号由父行 strut 兜底，
-  // 不会反向压缩整行）。
-  c-element[style*="font-size"] {
-    line-height: 1.5;
-  }
-
   &.selecting,
   [data-node-type="block"].selecting {
 

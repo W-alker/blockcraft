@@ -36,7 +36,8 @@
     }
 
     .edit-container {
-      padding: var(--bc-lh) var(--code-padding-left);
+      // --bc-lh 现为无单位比例，纵向 padding 需要 px → 乘回 --bc-fs（= 24px）。
+      padding: calc(var(--bc-lh) * var(--bc-fs)) var(--code-padding-left);
       background: none;
       font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
       font-size: calc(var(--bc-fs) * 0.85);

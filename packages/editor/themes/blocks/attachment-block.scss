@@ -21,7 +21,8 @@
       top: 14px;
       left: 10px;
       font-size: var(--bc-fs);
-      height: var(--bc-lh);
+      // --bc-lh 现为无单位比例，这里需要「一行高度」的 px → 乘回 --bc-fs（= 24px）。
+      height: calc(var(--bc-lh) * var(--bc-fs));
     }
 
     &__info {

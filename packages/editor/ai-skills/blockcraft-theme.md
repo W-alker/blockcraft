@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-05-23
+> Last updated: 2026-06-17
 
 ## Theme Structure
 
@@ -98,6 +98,15 @@ Read `themes/base.scss` and `themes/variables.scss` for the current variable lis
 // Border
 --bc-border-radius
 ```
+
+> **`--bc-lh` is a unitless line-height *ratio* (default `1.5`), not a px length.** This is deliberate:
+> CSS `zoom` (e.g. the table fullscreen view) does **not** scale a px `line-height` in WebKit / WKWebView
+> (Tauri, Safari) — only the font grows, so a px line-height makes text rows overlap as you zoom in.
+> A unitless ratio scales with the font on every engine.
+> - When overriding it, supply a **unitless number** (`--bc-lh: 1.6`), never a px length.
+> - Need a "one line tall" px length? Derive it: `calc(var(--bc-lh) * var(--bc-fs))`.
+> - Headings use `line-height: var(--bc-lh)` directly — the ratio already scales against each
+>   heading's enlarged `font-size`, so no `* N` multiplier is needed.
 
 ### Table Block Fullscreen View
 

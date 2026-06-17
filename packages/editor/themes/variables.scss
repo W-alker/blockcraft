@@ -11,8 +11,12 @@
   --bc-fs-2xl: calc(var(--bc-fs) + 6px);
   --bc-fs-3xl: calc(var(--bc-fs) + 8px);
 
-  // 行高
-  --bc-lh: 24px;
+  // 行高比例（无单位）。基准 24px / 16px = 1.5。
+  // 必须保持无单位：CSS `zoom`（如表格全屏缩放）在 WebKit/WKWebView 下不会缩放
+  // 写死 px 的 line-height（只放大字号），导致放大后行间重叠；无单位比例随字号
+  // 等比放大，跨引擎都正确。需要「一行高度」的 px 长度时用 calc(var(--bc-lh) * var(--bc-fs))。
+  // ⚠️ 下游覆盖此变量时必须给无单位数字（如 1.6），不要给 px 长度。
+  --bc-lh: 1.5;
 
   // 文字颜色
   // 文字颜色
