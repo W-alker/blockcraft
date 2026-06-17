@@ -332,6 +332,27 @@ describe('MarkdownAdapter', () => {
       const markdown = await adapter.toMarkdown(snapshot);
       expect(markdown.trim()).toBe('Hello Alice world');
     });
+
+    it('does not crash when an op has a missing or non-object insert (legacy/edge data)', async () => {
+      // delta-op 模型里 insert 本就是可选的（DeltaOperation.insert?），历史/异常持久化数据
+      // 可能产生 insert 缺失、为 null 或为原始值的 op。导出 markdown 不能因为某一个坏 op
+      // 整篇抛错。回归：Safari/WebKit 下 `'mention' in undefined` 抛 "undefined is not an Object"，
+      // 导致整篇文档导出失败。坏 op 应被安全跳过，周围正常文本照常导出。
+      const snapshot = createRootSnapshot([
+        createEditableSnapshot('paragraph-1', 'paragraph', [
+          {insert: 'before '},
+          {insert: undefined},        // insert 显式 undefined
+          {attributes: {bogus: 1}},   // 完全没有 insert 键
+          {insert: null},             // insert 为 null
+          {insert: 42},               // insert 为原始值（非 string / 非 object）
+          {insert: ' after'},
+        ] as unknown as DeltaInsert[], {depth: 0}),
+      ]);
+
+      const markdown = await adapter.toMarkdown(snapshot);
+      expect(markdown).toContain('before');
+      expect(markdown).toContain('after');
+    });
   });
 
   describe('media blocks', () => {

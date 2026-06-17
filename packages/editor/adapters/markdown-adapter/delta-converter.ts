@@ -28,7 +28,11 @@ export class MarkdownDeltaConverter extends DeltaASTConverter<
       return delta.insert;
     }
 
-    if ('mention' in delta.insert) {
+    // insert 在 delta-op 模型里是可选的（见 DeltaOperation.insert?）：历史/异常持久化数据
+    // 可能产生 insert 缺失、为 null 或为原始值的 op。必须先确认它是对象再用 `in`，否则
+    // Safari/WebKit 下 `'mention' in undefined` 会抛 "undefined is not an Object" 致整篇导出失败。
+    // 与同模块 latexDeltaToMarkdownAdapterMatcher 的 `typeof delta.insert === 'object'` 守卫保持一致。
+    if (delta.insert && typeof delta.insert === 'object' && 'mention' in delta.insert) {
       return String(delta.insert['mention'] ?? '');
     }
 

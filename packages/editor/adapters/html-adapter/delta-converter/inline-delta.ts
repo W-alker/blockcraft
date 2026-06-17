@@ -149,7 +149,9 @@ export const mentionDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher =
 export const latexDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher =
   {
     name: 'latex',
-    match: delta => typeof delta.insert === 'object' && 'latex' in (delta.insert as object),
+    // `typeof null === 'object'` 为 true，故必须先排除 null/undefined 再用 `in`，
+    // 否则历史/异常数据里 insert 为 null 的 op 会让 `'latex' in null` 抛错，整篇导出失败。
+    match: delta => !!delta.insert && typeof delta.insert === 'object' && 'latex' in (delta.insert as object),
     toAST: delta => {
       const latex = (delta.insert as Record<string, unknown>)['latex'] as string;
       return {
