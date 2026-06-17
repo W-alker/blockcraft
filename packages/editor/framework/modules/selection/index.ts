@@ -386,6 +386,26 @@ export class SelectionManager {
     }
   }
 
+  /**
+   * Build a BlockSelection from JSON points WITHOUT touching the DOM or the live
+   * selection. Use when code needs a selection object to operate on (e.g. a
+   * programmatic paste/replace) but must NOT move the user's cursor. Returns null
+   * if either endpoint block no longer exists.
+   */
+  createSelection(json: ISelectionJSON): BlockSelection | null {
+    try {
+      this.doc.getBlockById(json.anchor.blockId)
+      this.doc.getBlockById(json.head.blockId)
+    } catch {
+      return null
+    }
+    return this._createBlockSelection(
+      _lazyPoint(json.anchor, id => this.doc.getBlockById(id) as any),
+      _lazyPoint(json.head, id => this.doc.getBlockById(id) as any),
+      json.commonParent,
+    )
+  }
+
   createFakeRange(source: Pick<IBlockSelectionJSON, 'from' | 'to'> | BlockSelection | ISelectionJSON, config: IFakeRangeConfig = {}) {
     if (source instanceof BlockSelection) {
       return new FakeRange(this.doc, source, config)

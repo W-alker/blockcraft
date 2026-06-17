@@ -75,6 +75,15 @@ export class DocUndoManger {
     this._pendingSnapshot = this._captureSelectionSnapshot()
   }
 
+  /**
+   * Force the next tracked transaction to begin a fresh undo stack item instead of
+   * time-merging into the previous one (Yjs merges changes within `captureTimeout`).
+   * Use before a discrete user action that must be independently undoable.
+   */
+  stopCapturing() {
+    this._yUndoManager.stopCapturing()
+  }
+
   on(eventName: UndoManagerEventName, listener: (event: StackItemEvent) => void) {
     this._yUndoManager.on(eventName, listener)
   }
@@ -102,22 +111,30 @@ export class DocUndoManger {
   undo() {
     if (!this.isCanUndo() || this.undoRedoing$.value) return
     this.undoRedoing$.next(true)
-    this._redoSelectionStack.push(this._captureSelectionSnapshot())
-
-    this._yUndoManager.undo()
-    const last = this._undoSelectionStack.pop()
-    if (last === undefined) return
-    this._replaySelectionAfterUndoRedo(last)
+    try {
+      this._redoSelectionStack.push(this._captureSelectionSnapshot())
+      this._yUndoManager.undo()
+      const last = this._undoSelectionStack.pop()
+      if (last !== undefined) this._replaySelectionAfterUndoRedo(last)
+    } finally {
+      // The flag is normally cleared inside crud._syncYEvent during the undo
+      // transaction. But if that observer throws before reaching the reset (e.g. a
+      // children-sync hiccup while reverting a cross-block paste), it would stick
+      // `true` and silently block EVERY subsequent undo/redo. Guarantee it here.
+      this.undoRedoing$.next(false)
+    }
   }
 
   redo() {
     if (!this.isCanRedo() || this.undoRedoing$.value) return
     this.undoRedoing$.next(true)
-
-    this._yUndoManager.redo()
-    const last = this._redoSelectionStack.pop()
-    if (last === undefined) return
-    this._replaySelectionAfterUndoRedo(last)
+    try {
+      this._yUndoManager.redo()
+      const last = this._redoSelectionStack.pop()
+      if (last !== undefined) this._replaySelectionAfterUndoRedo(last)
+    } finally {
+      this.undoRedoing$.next(false)
+    }
   }
 
   private _clampIndex(index: number, min: number, max: number) {
@@ -240,6 +257,11 @@ export class DocUndoManger {
           }
           const selection = this._resolveSelectionSnapshot(snapshot)
           if (!selection) throw new Error('invalid undo selection')
+          // Undo/redo swaps content; when the removed nodes held the caret, the browser
+          // drops focus out of the contenteditable host. Since Ctrl+Z is bound to the
+          // root block, an unfocused editor makes the NEXT undo silently no-op. Re-focus
+          // the host before restoring the selection so keyboard undo keeps working.
+          this._focusEditingHost(selection.from?.blockId)
           this.doc.selection.replay(selection)
         } catch (e) {
           this.doc.selection.recalculate()
@@ -247,6 +269,21 @@ export class DocUndoManger {
         }
       })
     })
+  }
+
+  /** Restore DOM focus to the editing host for a block, if it isn't already focused. */
+  private _focusEditingHost(blockId?: string) {
+    if (!blockId) return
+    try {
+      const block = this.doc.getBlockById(blockId)
+      const host = (block.hostElement.closest('[contenteditable="true"]') as HTMLElement | null)
+        ?? this.doc.root.hostElement
+      if (host && document.activeElement !== host) {
+        host.focus({preventScroll: true})
+      }
+    } catch {
+      // block no longer exists — nothing to focus
+    }
   }
 
   clearHistory() {

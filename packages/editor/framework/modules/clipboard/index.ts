@@ -24,7 +24,10 @@ import {
   ClipboardPasteCompletedEvent,
   ClipboardPasteFormatType,
   ClipboardPasteOption,
+  PasteRegion,
+  PasteRegionPoint,
 } from "./types";
+import {ISelectionPointJSON} from "../selection/types";
 import {
   generateId,
   replaceSnapshotsIdDeeply,
@@ -271,10 +274,161 @@ export class ClipboardManager {
     }
 
     if (payload.kind === 'snapshot') {
-      return this._applySnapshotPasteOption(payload.snapshot, selection, originalCollapsedSelection)
+      // Clone first: _applySnapshotPasteOption mutates the snapshot in place
+      // (replaceSnapshotsIdDeeply + snapshots.shift()). The same option object is
+      // reused across every format switch, so applying it must never consume it —
+      // otherwise re-selecting a format would paste a progressively shortened tree.
+      return this._applySnapshotPasteOption(cloneSnapshot(payload.snapshot), selection, originalCollapsedSelection)
     }
 
     return null
+  }
+
+  /**
+   * Re-apply a paste option over the span a previous paste produced.
+   *
+   * Resolves the tracked {@link PasteRegion} (relative-position anchors) back to a
+   * live range selection, then pastes the new option over it. This replaces the
+   * old "undo() + re-apply" flow: switching format is now a self-contained,
+   * single-undo-item replace that never depends on the global undo stack (which
+   * could merge with prior edits, no-op under re-entrancy, or revert too much/little).
+   *
+   * @param collapsed when the original paste was at a collapsed cursor, leave a
+   *   collapsed caret at the paste point (region start) instead of selecting the content.
+   * @returns the new region for the next switch, or null if the region no longer resolves.
+   */
+  async replacePasteRegion(region: PasteRegion, option: ClipboardPasteOption, collapsed = false): Promise<ClipboardPasteApplyResult | null> {
+    const selection = this._resolveRegionToSelection(region)
+    if (!selection || selection.start.type !== 'text') return null
+
+    // Each switch is its own undo step: stopCapturing keeps Yjs from time-merging it
+    // into the paste (or a prior switch).
+    this.doc.crud.undoManager.stopCapturing()
+
+    // Collapsed-origin: the caret belongs at the paste point (region start) and stays
+    // there across every switch. Park it there BEFORE the change so the undo snapshot
+    // records the paste point (not wherever the caret drifted), then
+    // captureSelectionBeforeChange picks it up. Net caret position is unchanged → no flash.
+    if (collapsed) {
+      this._placeCaretAtRegionStart(region)
+    }
+    this.doc.crud.undoManager.captureSelectionBeforeChange()
+
+    const result = await this.applyPasteOption(option, selection)
+    if (!result) return result
+
+    // Set the final selection ourselves, focusing the editing host FIRST so the caret
+    // is visible — the content swap removes the node that held focus, dropping it to
+    // <body> ("失焦"). collapsed → caret at the paste point (region start); range →
+    // reselect the inserted content.
+    this._finishSwitchSelection(result.region ?? region, collapsed)
+    return result
+  }
+
+  /** Park a collapsed caret at the paste point (region start), syncing the model. */
+  private _placeCaretAtRegionStart(region: PasteRegion) {
+    const start = this._resolveRegionPoint(region.start)
+    if (!start || start.type !== 'text') return
+    try {
+      const block = this.doc.getBlockById(start.blockId)
+      this._setCursorAndSync(block, false, start.offset)
+    } catch (e) {
+      this.doc.logger.warn('placeCaretAtRegionStart error', e)
+    }
+  }
+
+  /**
+   * Final caret/selection after a switch. Focus the editing host first (the content
+   * swap drops DOM focus to <body>, hiding the caret), then assert the selection:
+   * collapsed-origin → caret at the paste point (region start — stable across switches
+   * and undo); range-origin → reselect [start, end].
+   */
+  private _finishSwitchSelection(region: PasteRegion, collapsed: boolean) {
+    const startJson = this._resolveRegionPoint(region.start)
+    if (!startJson || startJson.type !== 'text') return
+    const headJson = collapsed ? startJson : (this._resolveRegionPoint(region.end) ?? startJson)
+
+    let host: HTMLElement | null = this.doc.root.hostElement
+    try {
+      const block = this.doc.getBlockById(startJson.blockId)
+      host = (block.hostElement.closest('[contenteditable="true"]') as HTMLElement | null) ?? this.doc.root.hostElement
+    } catch {
+      // anchor block gone — fall back to the root editing host
+    }
+
+    try {
+      if (host && document.activeElement !== host) host.focus({preventScroll: true})
+      this.doc.selection.replay({anchor: startJson, head: headJson, commonParent: startJson.blockId})
+      this.doc.selection.recalculate()
+    } catch (e) {
+      this.doc.logger.warn('finishSwitchSelection error', e)
+    }
+  }
+
+  /**
+   * Capture the span [startIndex, endIndex] as relative-position anchors. Called
+   * right after a paste transaction commits (Y.Text already reflects the inserted
+   * content). `endIndex === null` marks a whole-block end (non-editable last block).
+   * Start associates right, end associates left, so the region brackets exactly the
+   * inserted content even if a remote peer edits at the boundaries before the switch.
+   */
+  private _captureRegion(
+    startBlockId: string,
+    startIndex: number,
+    endBlockId: string,
+    endIndex: number | null,
+  ): PasteRegion | null {
+    try {
+      const startBlock = this.doc.getBlockById(startBlockId)
+      if (!this.doc.isEditable(startBlock)) return null
+      const start: PasteRegionPoint = {
+        blockId: startBlockId,
+        rel: Y.createRelativePositionFromTypeIndex(startBlock.yText, startIndex),
+      }
+
+      let end: PasteRegionPoint
+      if (endIndex == null) {
+        end = {blockId: endBlockId, rel: null}
+      } else {
+        const endBlock = this.doc.getBlockById(endBlockId)
+        end = this.doc.isEditable(endBlock)
+          ? {blockId: endBlockId, rel: Y.createRelativePositionFromTypeIndex(endBlock.yText, endIndex, -1)}
+          : {blockId: endBlockId, rel: null}
+      }
+      return {start, end}
+    } catch (e) {
+      this.doc.logger.warn('capturePasteRegion error', e)
+      return null
+    }
+  }
+
+  private _resolveRegionToSelection(region: PasteRegion): BlockCraft.Selection | null {
+    const anchor = this._resolveRegionPoint(region.start)
+    if (!anchor || anchor.type !== 'text') return null
+    const head = this._resolveRegionPoint(region.end)
+    if (!head) return null
+
+    // Build the selection WITHOUT a DOM round-trip (no replay → no cursor flash).
+    // applyPasteOption works on the model selection directly; moving the live cursor
+    // to the region first would visibly jump it on every switch.
+    return this.doc.selection.createSelection({anchor, head, commonParent: anchor.blockId})
+  }
+
+  private _resolveRegionPoint(point: PasteRegionPoint): ISelectionPointJSON | null {
+    let block: BlockCraft.BlockComponent
+    try {
+      block = this.doc.getBlockById(point.blockId)
+    } catch {
+      return null
+    }
+    if (point.rel === null) {
+      return {blockId: point.blockId, type: 'selected'}
+    }
+    if (!this.doc.isEditable(block)) return null
+    const abs = Y.createAbsolutePositionFromRelativePosition(point.rel, this.doc.yDoc)
+    if (!abs || abs.type !== block.yText) return null
+    const offset = Math.max(0, Math.min(abs.index, block.textLength))
+    return {blockId: point.blockId, type: 'text', offset}
   }
 
   private async _applyTextPasteOption(
@@ -291,11 +445,12 @@ export class ClipboardManager {
       this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: editableBlock.props.depth}])
     )
 
-    if (!selection.collapsed) {
-      this.deleteContentFromSelection(selection)
-    }
-
+    // Delete + insert in ONE transaction → a single undo step (so Ctrl+Z reverts the
+    // whole switch, not just the insert leaving the delete behind).
     this.doc.crud.transact(() => {
+      if (!selection.collapsed) {
+        this.deleteContentFromSelection(selection)
+      }
       editableBlock.replaceText(fromIndex, 0, textLines[0])
       if (appendedSnapshots.length) {
         this.doc.crud.insertBlocksAfter(editableBlock, appendedSnapshots)
@@ -303,19 +458,23 @@ export class ClipboardManager {
     })
 
     await nextTick()
+
+    const len0 = textLines[0].length
+    const lastAppended = appendedSnapshots.length
+      ? this.doc.getBlockById(appendedSnapshots[appendedSnapshots.length - 1].id)
+      : null
+    const region = lastAppended
+      ? this._captureRegion(editableBlock.id, fromIndex, lastAppended.id, this.doc.isEditable(lastAppended) ? lastAppended.textLength : null)
+      : this._captureRegion(editableBlock.id, fromIndex, editableBlock.id, fromIndex + len0)
+
     if (selection.collapsed) {
       this._restoreCollapsedSelectionAndSync(originalCollapsedSelection)
-      return {anchorBlockId: editableBlock.id}
+    } else if (!lastAppended) {
+      this._setTextRangeAndSync(editableBlock, fromIndex, len0)
+    } else {
+      this._setCrossBlockRangeAndSync(editableBlock, fromIndex, lastAppended)
     }
-
-    if (!appendedSnapshots.length) {
-      this._setTextRangeAndSync(editableBlock, fromIndex, textLines[0].length)
-      return {anchorBlockId: editableBlock.id}
-    }
-
-    const endBlock = this.doc.getBlockById(appendedSnapshots[appendedSnapshots.length - 1].id)
-    this._setCrossBlockRangeAndSync(editableBlock, fromIndex, endBlock)
-    return {anchorBlockId: editableBlock.id}
+    return {anchorBlockId: editableBlock.id, region}
   }
 
   private async _applySnapshotPasteOption(
@@ -335,74 +494,83 @@ export class ClipboardManager {
     const snapshots: IBlockSnapshot[] = snapshot.children as IBlockSnapshot[]
     replaceSnapshotsIdDeeply(snapshots)
 
-    if (isInSameBlock) {
-      const ops: DeltaOperation[] = [{retain: fromIndex}]
-      const textLength = editableBlock.textLength
+    // All structural writes go into ONE transaction so the entire re-apply is a
+    // single undo step (matching onPaste). Previously delete/split/insert landed in
+    // separate Yjs transactions that only merged by a 500ms timer, so Ctrl+Z could
+    // revert just a fragment of the switch — losing content or restoring a mid-state.
+    let inlineLength = 0           // chars merged inline into editableBlock at fromIndex
+    let hasTrailingBlocks = false  // standalone blocks inserted after editableBlock
 
-      let insertLength = 0
-      if (snapshots[0].nodeType === BlockNodeType.editable
-        && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
-        && compareSimpleValue(snapshots[0].props['heading'] as SimpleBasicType, editableBlock.props['heading']) <= 0
-      ) {
-        insertLength = deltaStrLength(snapshots[0].children)
-        ops.push(...snapshots[0].children)
-        snapshots.shift()
-      }
+    this.doc.crud.transact(() => {
+      if (isInSameBlock) {
+        const ops: DeltaOperation[] = [{retain: fromIndex}]
+        const textLength = editableBlock.textLength
 
-      if (!snapshots.length) {
-        editableBlock.deleteText(fromIndex, fromLength)
-        editableBlock.applyDeltaOperations(ops)
-        await nextTick()
-        if (collapsed) {
-          this._restoreCollapsedSelectionAndSync(originalCollapsedSelection)
-        } else {
-          this._setTextRangeAndSync(editableBlock, fromIndex, insertLength)
+        if (snapshots[0].nodeType === BlockNodeType.editable
+          && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)
+          && compareSimpleValue(snapshots[0].props['heading'] as SimpleBasicType, editableBlock.props['heading']) <= 0
+        ) {
+          inlineLength = deltaStrLength(snapshots[0].children)
+          ops.push(...snapshots[0].children)
+          snapshots.shift()
         }
-        return {anchorBlockId: editableBlock.id}
-      }
-
-      if (fromIndex + fromLength < textLength) {
-        ops.push({delete: textLength - fromIndex})
-        const sliceDeltas = sliceDelta(editableBlock.textDeltas(), fromIndex + fromLength, textLength)
-        const splitSnapshot = this.doc.schemas.createSnapshot('paragraph', [sliceDeltas, editableBlock.props])
-        this.doc.crud.insertBlocksAfter(editableBlock, [splitSnapshot])
-      } else {
-        editableBlock.deleteText(fromIndex, fromLength)
-      }
-      editableBlock.applyDeltaOperations(ops)
-    } else {
-      this.deleteContentFromSelection(selection)
-
-      if (snapshots[0].nodeType === BlockNodeType.editable && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)) {
-        const insertLength = deltaStrLength(snapshots[0].children)
-        editableBlock.applyDeltaOperations([{retain: fromIndex}, ...snapshots[0].children])
-        snapshots.shift()
 
         if (!snapshots.length) {
-          await nextTick()
-          if (collapsed) {
-            this._restoreCollapsedSelectionAndSync(originalCollapsedSelection)
-          } else {
-            this._setTextRangeAndSync(editableBlock, fromIndex, insertLength)
-          }
-          return {anchorBlockId: editableBlock.id}
+          editableBlock.deleteText(fromIndex, fromLength)
+          editableBlock.applyDeltaOperations(ops)
+          return
+        }
+
+        if (fromIndex + fromLength < textLength) {
+          ops.push({delete: textLength - fromIndex})
+          const sliceDeltas = sliceDelta(editableBlock.textDeltas(), fromIndex + fromLength, textLength)
+          const splitSnapshot = this.doc.schemas.createSnapshot('paragraph', [sliceDeltas, editableBlock.props])
+          this.doc.crud.insertBlocksAfter(editableBlock, [splitSnapshot])
+        } else {
+          editableBlock.deleteText(fromIndex, fromLength)
+        }
+        editableBlock.applyDeltaOperations(ops)
+        this.doc.crud.insertBlocksAfter(editableBlock, snapshots)
+        hasTrailingBlocks = true
+      } else {
+        this.deleteContentFromSelection(selection)
+
+        if (snapshots[0].nodeType === BlockNodeType.editable && (snapshots[0].flavour === 'paragraph' || snapshots[0].flavour === editableBlock.flavour)) {
+          inlineLength = deltaStrLength(snapshots[0].children)
+          editableBlock.applyDeltaOperations([{retain: fromIndex}, ...snapshots[0].children])
+          snapshots.shift()
+        }
+
+        if (snapshots.length) {
+          this.doc.crud.insertBlocksAfter(editableBlock, snapshots)
+          hasTrailingBlocks = true
         }
       }
-    }
-
-    await this.doc.chain()
-      .insertAfterSnapshots(editableBlock, snapshots)
-      .run()
+    })
 
     await nextTick()
+
+    if (!hasTrailingBlocks) {
+      const region = this._captureRegion(editableBlock.id, fromIndex, editableBlock.id, fromIndex + inlineLength)
+      if (collapsed) {
+        this._restoreCollapsedSelectionAndSync(originalCollapsedSelection)
+      } else {
+        this._setTextRangeAndSync(editableBlock, fromIndex, inlineLength)
+      }
+      return {anchorBlockId: editableBlock.id, region}
+    }
+
     const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
+    const region = this._captureRegion(
+      editableBlock.id, fromIndex,
+      endBlock.id, this.doc.isEditable(endBlock) ? endBlock.textLength : null,
+    )
     if (collapsed) {
       this._restoreCollapsedSelectionAndSync(originalCollapsedSelection)
-      return {anchorBlockId: editableBlock.id}
     } else {
       this._setCrossBlockRangeAndSync(editableBlock, fromIndex, endBlock)
-      return {anchorBlockId: editableBlock.id}
     }
+    return {anchorBlockId: editableBlock.id, region}
   }
 
   private _restoreCollapsedSelectionAndSync(selectionJSON: ReturnType<BlockCraft.Selection['toJSON']> | null) {
@@ -589,16 +757,16 @@ export class ClipboardManager {
     const altPlainText = state.getData(ClipboardDataType.TEXT) || null
     const savedHtmlSnapshot = rootSnapshot ? cloneSnapshot(rootSnapshot) : null
     const markdownText = getMarkdownClipboardText(state) || (altPlainText && looksLikeMarkdown(altPlainText) ? altPlainText : null)
-    const selectionJSON = selection.toJSON()
 
-    const emitFormatData = (appliedType: ClipboardPasteFormatType) => {
+    const emitFormatData = (appliedType: ClipboardPasteFormatType, region: PasteRegion | null) => {
       this.pasteFormatData$.next({
         anchorBlockId: editableBlock.id,
         appliedType,
         htmlSnapshot: savedHtmlSnapshot,
         plainText: altPlainText,
         markdownText,
-        selectionJSON,
+        region,
+        collapsed,
       })
     }
 
@@ -633,7 +801,7 @@ export class ClipboardManager {
           insertLength > 0 && nextTick().then(() => {
             collapsed ? editableBlock.setInlineRange(fromIndex + insertLength) : editableBlock.setInlineRange(fromIndex, insertLength)
           })
-          emitFormatData('html')
+          emitFormatData('html', this._captureRegion(editableBlock.id, fromIndex, editableBlock.id, fromIndex + insertLength))
           return;
         }
 
@@ -687,14 +855,14 @@ export class ClipboardManager {
           mergedInsertLength > 0 && nextTick().then(() => {
             collapsed ? editableBlock.setInlineRange(fromIndex + mergedInsertLength) : editableBlock.setInlineRange(fromIndex, mergedInsertLength)
           })
-          emitFormatData('html')
+          emitFormatData('html', this._captureRegion(editableBlock.id, fromIndex, editableBlock.id, fromIndex + mergedInsertLength))
           return
         }
       }
 
       // 粘贴块的选区设置（原 chain.tap 逻辑；插入已在上方事务内完成）
+      const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
       if (!collapsed) {
-        const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
         this.doc.selection.setSelection({
           blockId: editableBlock.id,
           index: fromIndex,
@@ -710,7 +878,10 @@ export class ClipboardManager {
           type: 'selected'
         })
       }
-      emitFormatData('html')
+      emitFormatData('html', this._captureRegion(
+        editableBlock.id, fromIndex,
+        endBlock.id, this.doc.isEditable(endBlock) ? endBlock.textLength : null,
+      ))
       return true
     }
 

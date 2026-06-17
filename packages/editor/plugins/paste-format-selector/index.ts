@@ -13,7 +13,7 @@ import {
   generateId,
   getPositionWithOffset,
   IBlockSnapshot,
-  ISelectionJSON,
+  PasteRegion,
   UIEventStateContext
 } from "../../framework";
 import {createTableSnapshotFromMatrix} from "../../framework/modules/clipboard/paste-utils";
@@ -36,7 +36,9 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
   private _close$?: Subject<void>
   private _updateSession?: (session: ClipboardPasteSessionView) => void
   private _session: ClipboardPasteSession | null = null
-  private _selectionJSON: ISelectionJSON | null = null
+  private _region: PasteRegion | null = null
+  private _collapsed = false
+  private _reapplying = false
   private _sub = new Subscription()
 
   init() {
@@ -103,29 +105,31 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
     if (options.length <= 1) return
 
     this._session = {anchorBlockId, selectedType: appliedType, options}
-    this._selectionJSON = event.selectionJSON
+    this._region = event.region
+    this._collapsed = event.collapsed
     this._emitSessionView()
   }
 
   private async _reapplyPaste(type: ClipboardPasteFormatType) {
     const session = this._session
-    if (!session || session.selectedType === type) return
+    if (!session || session.selectedType === type || !this._region) return
 
     const option = session.options.find(o => o.type === type)
     if (!option) return
 
+    // Serialize switches: a re-apply is async (selection round-trip + Yjs writes).
+    // Without this guard a fast second click would run while the first's writes are
+    // still landing, interleaving regions and orphaning blocks ("内容越来越多").
+    if (this._reapplying) return
+    this._reapplying = true
+
     try {
-      this.doc.crud.undoManager.undo()
-      await nextTick()
-
-      const selection = await this._restoreSelection()
-      if (!selection) {
-        this._clearSession()
-        return
-      }
-
-      const result = await this.doc.clipboard.applyPasteOption(option, selection)
-      if (result) {
+      // Select the span the previous paste produced and replace it in place. No
+      // undo() — the region is self-contained, so switching never depends on the
+      // global undo stack (which could merge with prior edits or no-op).
+      const result = await this.doc.clipboard.replacePasteRegion(this._region, option, this._collapsed)
+      if (result && result.region) {
+        this._region = result.region
         session.selectedType = type
         session.anchorBlockId = result.anchorBlockId
         this._emitSessionView()
@@ -135,52 +139,15 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
     } catch (e) {
       this.doc.logger.warn('reapplyPaste error', e)
       this._clearSession()
-    }
-  }
-
-  private async _restoreSelection(): Promise<BlockCraft.Selection | null> {
-    if (!this._selectionJSON) {
-      this.doc.selection.recalculate()
-      return this.doc.selection.value
-    }
-
-    const applySelection = () => {
-      this.doc.selection.replay(this._selectionJSON!)
-      const {value} = this.doc.selection.recalculate()
-      return value
-    }
-
-    const hasAllBlocks = () => {
-      try {
-        this.doc.getBlockById(this._selectionJSON!.anchor.blockId)
-        this.doc.getBlockById(this._selectionJSON!.head.blockId)
-        return true
-      } catch {
-        return false
-      }
-    }
-
-    try {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        if (!hasAllBlocks()) {
-          await nextTick()
-          continue
-        }
-
-        const restored = applySelection()
-        if (restored) return restored
-        await nextTick()
-      }
-
-      return null
-    } catch (e) {
-      this.doc.logger.warn('restorePasteSelection error', e)
-      return null
+    } finally {
+      this._reapplying = false
     }
   }
 
   private _clearSession() {
     this._session = null
+    this._region = null
+    this._collapsed = false
     this._renderSession(null)
   }
 

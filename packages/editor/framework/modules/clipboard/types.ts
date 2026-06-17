@@ -1,5 +1,5 @@
+import type * as Y from "yjs";
 import {IBlockSnapshot} from "../../block-std";
-import {ISelectionJSON} from "../selection/types";
 import {SimpleBasicType} from "../../../global";
 
 export enum ClipboardDataType {
@@ -41,8 +41,31 @@ export interface ClipboardPasteSessionView {
   options: Array<Pick<ClipboardPasteOption, 'type' | 'label'>>
 }
 
+/**
+ * One endpoint of a {@link PasteRegion}. `rel` is a Yjs RelativePosition anchored
+ * inside the block's Y.Text (collaboration-safe, survives concurrent edits). A
+ * `null` rel marks a whole-block (`'selected'`) endpoint — e.g. a void block that
+ * ended the paste. Treat as opaque: produced and resolved only by ClipboardManager.
+ */
+export interface PasteRegionPoint {
+  blockId: string
+  rel: Y.RelativePosition | null
+}
+
+/**
+ * The span of content a paste produced, captured as relative-position anchors so a
+ * later re-apply can select and replace exactly that span — without touching the
+ * global undo stack. `start` is always a text point (the insertion offset).
+ */
+export interface PasteRegion {
+  start: PasteRegionPoint
+  end: PasteRegionPoint
+}
+
 export interface ClipboardPasteApplyResult {
   anchorBlockId: string
+  /** The span the apply produced, for a subsequent format switch. Null if it could not be captured. */
+  region: PasteRegion | null
 }
 
 /** Emitted by ClipboardManager after a paste with available format alternatives. */
@@ -52,8 +75,14 @@ export interface ClipboardPasteCompletedEvent {
   htmlSnapshot: IBlockSnapshot | null
   plainText: string | null
   markdownText: string | null
-  /** Serialized selection state from before paste mutations, used to restore after undo. */
-  selectionJSON: ISelectionJSON
+  /** Span of the applied paste, used to select+replace it when switching format. */
+  region: PasteRegion | null
+  /**
+   * Whether the original paste happened at a collapsed cursor (vs. over a range).
+   * Collapsed → switching format leaves a collapsed cursor instead of selecting
+   * the inserted content.
+   */
+  collapsed: boolean
 }
 
 /** Context passed to filter predicates / transforms. */
