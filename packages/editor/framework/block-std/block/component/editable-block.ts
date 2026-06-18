@@ -40,6 +40,38 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
     this._initRuntime()
     this.rerender()
+
+    // WebKit/WKWebView (Tauri) 偶发会在聚焦空 contenteditable 时「深克隆」宿主元素，
+    // 留下一个没有 Angular 组件、却带着相同 data-block-id 的孤儿 DOM 节点
+    // （表现为同一个块出现两个 .xxx-block / .mermaid-textarea）。聚焦发生在创建之后，
+    // 故下一帧再扫一次兜底清除；后续任意 rerender 也会清。
+    requestAnimationFrame(() => this._pruneDuplicateHostClones())
+  }
+
+  /**
+   * 移除本块宿主的孤儿克隆。WebKit 的 contenteditable 引擎有时会深克隆聚焦中的
+   * 宿主元素，克隆体复制了 `data-block-id` 但没有 Angular 组件上下文（dead node）。
+   * 每个块 id 在 DOM 里只允许有一个真实宿主——把同级里携带本块 id、又不是本宿主的
+   * 节点删掉。纯本地 DOM 操作、O(同级数)，不触碰模型。
+   */
+  protected _pruneDuplicateHostClones() {
+    const host = this.hostElement
+    const id = this.id
+    // 克隆体由浏览器复制节点产生，必然紧挨真实宿主（前或后），所以只向两侧相邻
+    // 扫描：O(克隆数)（正常为 0，只多两次 getAttribute），不在 rerender 热路径做
+    // 全量同级遍历。
+    let prev = host.previousElementSibling
+    while (prev && prev.getAttribute('data-block-id') === id) {
+      const p = prev.previousElementSibling
+      prev.remove()
+      prev = p
+    }
+    let next = host.nextElementSibling
+    while (next && next.getAttribute('data-block-id') === id) {
+      const n = next.nextElementSibling
+      next.remove()
+      next = n
+    }
   }
 
   /**
@@ -88,6 +120,8 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
   rerender() {
     this._runtime.render(this.textDeltas())
+    // 任意一次 rerender 都顺手清掉 WebKit 留下的宿主克隆（首次输入即可自愈）。
+    this._pruneDuplicateHostClones()
   }
 
   insertText(index: number, text: string, attributes?: DeltaInsert['attributes']) {
