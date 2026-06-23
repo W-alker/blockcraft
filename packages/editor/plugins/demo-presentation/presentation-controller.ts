@@ -2,6 +2,7 @@ import {ApplicationRef, ComponentRef, createComponent} from "@angular/core";
 import {DemoControlBarComponent} from "./widgets/demo-control-bar.component";
 import {nextTick, throttle} from "../../global";
 import {BlockCraftDoc, IBlockSnapshot, SchemaManager} from "../../framework";
+import {analyzePages} from "./page-analyzer";
 import * as Y from 'yjs';
 import {DemoCoverBlockModel, DemoCoverBlockSchema, DemoRootBlockSchema, DemoRootComponent} from "./blocks";
 import {SimpleImagePreview} from "./widgets/simple-image-preview.component";
@@ -75,7 +76,7 @@ export class PresentationController {
   start() {
     const rootSnapshot = this.originDoc.exportSnapshot()!;
 
-    this.pages = this.analyzePages(rootSnapshot.children as IBlockSnapshot[]);
+    this.pages = analyzePages(rootSnapshot.children as IBlockSnapshot[]);
 
     if(this.config.cover) {
       this.pages.unshift([DemoCoverBlockSchema.createSnapshot(this.config.cover)])
@@ -151,53 +152,6 @@ export class PresentationController {
 
     document.body.appendChild(this.presentationContainer);
     this._demoDoc.initBySnapshot(rootSnapshot, this.presentationContainer);
-  }
-
-  private analyzePages(snapshots: IBlockSnapshot[]): IBlockSnapshot[][] {
-    const pages: IBlockSnapshot[][] = [];
-    let currentPage: IBlockSnapshot[] = [];
-
-    for (const block of snapshots) {
-      if (this.isPageBreakBlock(block)) {
-        // 遇到分页标记
-        if (currentPage.length > 0) {
-          // 结束当前页，开始新页
-          pages.push(currentPage);
-          currentPage = [block];
-        } else {
-          // 当前页为空，将分页标记作为新页的开始
-          currentPage = [block];
-        }
-      } else {
-        currentPage.push(block);
-      }
-    }
-
-    // 添加最后一页（如果有内容）
-    if (currentPage.length > 0) {
-      pages.push(currentPage);
-    }
-
-    return pages;
-  }
-
-  private isPageBreakBlock(block: IBlockSnapshot): boolean {
-    // divider、带有 heading 属性的块、callout
-    // @ts-ignore
-    if (block.flavour === 'page-divider') {
-      return true;
-    }
-
-    if (block.flavour === 'callout') {
-      return true;
-    }
-
-    // 检查 props 中是否有 heading 属性
-    if (block.props['heading']) {
-      return true;
-    }
-
-    return false;
   }
 
   private tryReenterFullscreen() {
