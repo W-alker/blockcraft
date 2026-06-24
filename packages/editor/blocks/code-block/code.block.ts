@@ -15,6 +15,7 @@ import { CodeBlockLanguage } from "./const";
 import { debounce, nextTick } from "../../global";
 import { CodeInlineRuntime } from "./code-inline-runtime";
 import { CodeBlockNameInputComponent } from "./block-name-input.component";
+import { isFormatOnlyDelta } from "./color-merge";
 
 @Component({
   selector: 'div.code-block',
@@ -96,7 +97,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     this.onTextChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
       if(e.tr.origin === ORIGIN_SKIP_SYNC) return
       // 纯格式变更（如选区染色）不改变文本/语法高亮；跳过重渲，避免 diffHighLight 把选区塌缩成光标
-      if (e.op.length > 0 && e.op.every(o => o.retain !== undefined && o.insert === undefined && o.delete === undefined)) return
+      if (isFormatOnlyDelta(e.op)) return
       this._debounce_highlight(e.op)
     })
   }

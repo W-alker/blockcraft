@@ -12,6 +12,7 @@ import { IMermaidType, MermaidViewMode } from "./types";
 import { debounce, nextTick } from "../../global";
 import { MermaidViewSwitchComponent } from "./widgets/mermaid-view-switch.component";
 import { AsyncPipe } from "@angular/common";
+import { isFormatOnlyDelta } from "../code-block/color-merge";
 
 // import {ScaleRatioPipe} from "./ratio.pipe";
 
@@ -97,7 +98,11 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
 
     requestAnimationFrame(() => {
       const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
-      textarea.onTextChange.pipe(takeUntil(this.onDestroy$)).subscribe(this._onPreviewObserver)
+      textarea.onTextChange.pipe(takeUntil(this.onDestroy$)).subscribe(e => {
+        // 纯格式变更（如染色）不改变 mermaid 文本，图无需重渲，跳过预览调度
+        if (isFormatOnlyDelta(e.op)) return
+        this._onPreviewObserver()
+      })
     })
 
   }

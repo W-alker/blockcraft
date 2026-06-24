@@ -1,4 +1,4 @@
-import {mergeColorOverShiki, deltaFingerprint} from './color-merge';
+import {mergeColorOverShiki, deltaFingerprint, isFormatOnlyDelta} from './color-merge';
 import {DeltaInsert, DeltaInsertText} from '../../framework/block-std/types';
 
 describe('mergeColorOverShiki', () => {
@@ -111,5 +111,20 @@ describe('deltaFingerprint', () => {
     const a: DeltaInsertText = {insert: 'x', attributes: {'s:color': 'red'}};
     const b: DeltaInsertText = {insert: 'x', attributes: {'s:color': 'red'}};
     expect(deltaFingerprint(a)).toBe(deltaFingerprint(b));
+  });
+});
+
+describe('isFormatOnlyDelta', () => {
+  it('true for retain-only ops (e.g. a color format)', () => {
+    expect(isFormatOnlyDelta([{retain: 3}, {retain: 5, attributes: {'s:background': 'yellow'}}])).toBe(true);
+  });
+  it('false when any op inserts', () => {
+    expect(isFormatOnlyDelta([{retain: 3}, {insert: 'x'}])).toBe(false);
+  });
+  it('false when any op deletes', () => {
+    expect(isFormatOnlyDelta([{retain: 3}, {delete: 2}])).toBe(false);
+  });
+  it('false for empty ops', () => {
+    expect(isFormatOnlyDelta([])).toBe(false);
   });
 });

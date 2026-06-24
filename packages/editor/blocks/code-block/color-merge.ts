@@ -1,4 +1,4 @@
-import {DeltaInsert, DeltaInsertText} from '../../framework/block-std/types';
+import {DeltaInsert, DeltaInsertText, DeltaOperation} from '../../framework/block-std/types';
 
 type ColorAttrs = {'s:color'?: string; 's:background'?: string};
 
@@ -112,3 +112,10 @@ export function mergeColorOverShiki(
 /** 行级 diff 指纹：text + s:color + s:background。 */
 export const deltaFingerprint = (d: DeltaInsertText): string =>
   `${d.insert}\0${d.attributes?.['s:color'] || ''}\0${d.attributes?.['s:background'] || ''}\0`;
+
+/**
+ * 判断一组 delta op 是否「纯格式变更」：只有 retain（可带 attributes），无 insert/delete。
+ * 例如选区染色——文本未变，故语法高亮 / mermaid 图都无需重渲，调用方可据此跳过。
+ */
+export const isFormatOnlyDelta = (ops: DeltaOperation[]): boolean =>
+  ops.length > 0 && ops.every(o => o.retain !== undefined && o.insert === undefined && o.delete === undefined);
