@@ -1,9 +1,10 @@
-import {BindHotKey, BlockNodeType, DocPlugin, EventListen, POSITION_MAP, UIEventStateContext} from "../../framework";
-import {debounceTime, Subject, Subscription, takeUntil} from "rxjs";
-import {ComponentRef, Type} from "@angular/core";
-import {ConnectedPosition, OverlayRef} from "@angular/cdk/overlay";
+import {DocPlugin} from "../../framework";
+import {Subject, Subscription} from "rxjs";
+import {ComponentRef} from "@angular/core";
+import {OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
 import {TextMarkerComponent} from "./widgets/marker.component";
+import {calcFloatToolbarPosition} from "./toolbar-position";
 
 export class TextMarkerPlugin extends DocPlugin {
   override name = "text-marker-toolbar";
@@ -22,7 +23,10 @@ export class TextMarkerPlugin extends DocPlugin {
   }
 
   constructor(
-    protected readonly markTextBlockFlavours: BlockCraft.BlockFlavour[]
+    protected readonly markTextBlockFlavours: BlockCraft.BlockFlavour[],
+    // 仅颜色工具栏的 flavour（如 'code'）：选区会弹出工具栏但只显示调色板，
+    // 隐藏加粗/斜体/下划线/删除线。与 markTextBlockFlavours 互斥，重复项会被忽略。
+    protected readonly colorOnlyFlavours: BlockCraft.BlockFlavour[] = []
   ) {
     super();
   }
@@ -31,6 +35,11 @@ export class TextMarkerPlugin extends DocPlugin {
     this.utils = new TextToolbarUtils(this.doc)
 
     this.markTextBlockFlavours.forEach(flavour => {
+      this.doc.event.add('selectEnd', this.onSelectEnd, {flavour})
+    })
+    this.colorOnlyFlavours.forEach(flavour => {
+      // 同一 flavour 若也在 markTextBlockFlavours 里则跳过，避免重复注册 selectEnd 导致开两个 overlay。
+      if (this.markTextBlockFlavours.includes(flavour)) return
       this.doc.event.add('selectEnd', this.onSelectEnd, {flavour})
     })
 
@@ -54,7 +63,7 @@ export class TextMarkerPlugin extends DocPlugin {
   openToolbar() {
     const sel = this.doc.selection.value!
 
-    const {connectElement, connectPositions} = this._calcPosition(sel)
+    const {connectElement, connectPositions} = calcFloatToolbarPosition(this.doc, sel)
 
     const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<TextMarkerComponent>({
       target: connectElement,
@@ -70,44 +79,11 @@ export class TextMarkerPlugin extends DocPlugin {
     this._cpr.setInput('utils', this.utils)
     this._cpr.setInput('activeAttrs', this.activeCommonAttrs.attrs)
     this._cpr.setInput('activeColors', this.activeCommonAttrs.colors)
+    this._cpr.setInput('colorOnly', this.colorOnlyFlavours.includes(sel.firstBlock.flavour))
 
-    this.doc.selection.nextChangeObserve().pipe(takeUntil(this._closeCpr$)).subscribe(() => {
-      this.closeToolbar()
-    })
-  }
-
-  private _calcPosition(selection: BlockCraft.Selection): {
-    connectElement: HTMLElement,
-    connectPositions: ConnectedPosition[]
-  } {
-    const isBackward = selection.getDirection() === 'backward'
-    const relativeBlock = isBackward ? selection.lastBlock : selection.firstBlock
-
-    const rect = this.doc.selection.getSelectionRect()!
-    const blockRect = relativeBlock.hostElement.getBoundingClientRect()
-    const offsetX = rect.left - blockRect.left
-
-    if (relativeBlock.nodeType !== BlockNodeType.editable) {
-      return {
-        connectElement: relativeBlock.hostElement,
-        connectPositions: isBackward
-          ? [{...POSITION_MAP['top-left'], offsetX},
-            {...POSITION_MAP['top-right'], offsetX}]
-          : [{...POSITION_MAP['bottom-left'], offsetY: 48,},
-            {...POSITION_MAP['bottom-right'], offsetY: 48,}]
-      }
-    }
-
-    const offsetY = isBackward ? rect.top - blockRect.top : rect.bottom - blockRect.bottom
-
-    return {
-      connectElement: relativeBlock.hostElement,
-      connectPositions: isBackward ?
-        [{...POSITION_MAP['top-left'], offsetY: -48 + offsetY, offsetX},
-          {...POSITION_MAP['top-right'], offsetY: -48 + offsetY, offsetX}] :
-        [{...POSITION_MAP['bottom-left'], offsetY: offsetY + 8, offsetX},
-          {...POSITION_MAP['bottom-right'], offsetY: offsetY + 8, offsetX}]
-    }
+    // 不订阅 nextChangeObserve 关闭：本工具栏带 backdrop，点击外部由 backdropClick 关闭即可。
+    // formatText 染色会塌缩+恢复选区（触发一次 selectionchange），若在此关闭会导致染色后
+    // 工具栏消失且不再出现（本插件按 selectEnd 开启，不像 rich-toolbar 那样会自动重开）。
   }
 
   closeToolbar() {

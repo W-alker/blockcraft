@@ -41,6 +41,8 @@ export class MermaidTextareaBlockComponent extends EditableBlockComponent<Mermai
     super.ngAfterViewInit();
     this.onTextChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => {
       if (e.tr.origin === ORIGIN_SKIP_SYNC) return
+      // 纯格式变更（如选区染色）不改变文本/语法高亮；跳过重渲，避免 diffHighLight 把选区塌缩成光标
+      if (e.op.length > 0 && e.op.every(o => o.retain !== undefined && o.insert === undefined && o.delete === undefined)) return
       this._debounce_highlight(e.op)
     })
   }
@@ -59,7 +61,7 @@ export class MermaidTextareaBlockComponent extends EditableBlockComponent<Mermai
   override rerender() {
     super.rerender()
     queueMicrotask(() => {
-      this._codeRuntime.renderCode(() => this.textContent())
+      this._codeRuntime.renderCode(() => this.textContent(), () => this.textDeltas())
     })
   }
 }

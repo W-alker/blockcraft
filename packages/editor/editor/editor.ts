@@ -60,7 +60,8 @@ import {
   CodeInlineEditorBinding,
   FloatTextToolbarPlugin,
   TableBlockBinding,
-  OrderedBlockPlugin
+  OrderedBlockPlugin,
+  TextMarkerPlugin
 } from "../plugins";
 import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
 import {BlockGapCreatorPlugin} from "../plugins/block-gap-creator";
@@ -335,6 +336,10 @@ export class EditorComponent implements OnDestroy {
       new FindReplacePlugin(),
       this.translatePlugin,
       new BlockGapCreatorPlugin(),
+      // 代码块 / mermaid 源码的仅颜色工具栏：rich text 由上面的 FloatTextToolbarPlugin
+      // 负责（它对 plainTextOnly 块会跳过），这里只补充这些 plainTextOnly 块的颜色覆盖，
+      // 二者互不重叠。('mermaid-textarea' 是 mermaid 块里可编辑的源码子块)
+      new TextMarkerPlugin([], ['code', 'mermaid-textarea']),
     ],
   });
 

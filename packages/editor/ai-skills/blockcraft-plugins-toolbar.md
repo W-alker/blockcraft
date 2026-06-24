@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-06-11
+> Last updated: 2026-06-24
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -207,3 +207,63 @@ new FormulaBlockExtensionPlugin()
 - Block-level formula: updates `latex` prop via `updateProps()`
 - Inline formula: updates via `applyDeltaOperations` on the embed range
 - Overlay uses `backdrop: true` for modal-like behavior
+
+---
+
+## TextMarkerPlugin
+
+> `plugins/float-text-toolbar/text-marker-toolbar.ts` — Floating color/format toolbar for text selections.
+
+Shows a floating `TextMarkerComponent` toolbar when the user selects text inside designated block flavours. Supports two registration modes: **full rich-text mode** (bold, italic, underline, strike, color picker) and **color-only mode** (color picker only). The same plugin instance manages both; flavours must not appear in both lists simultaneously — duplicates in `colorOnlyFlavours` are silently ignored if the flavour is already listed in `markTextBlockFlavours`.
+
+`plainTextOnly` blocks (e.g., `code`) are skipped by the normal floating text toolbar (`FloatTextToolbarPlugin`), making `TextMarkerPlugin` with `colorOnlyFlavours` the correct opt-in path for code-block color selection.
+
+### Configuration
+
+```typescript
+new TextMarkerPlugin(
+  markTextBlockFlavours?: BlockFlavour[],  // default []
+  colorOnlyFlavours?: BlockFlavour[]       // default []
+)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `markTextBlockFlavours` | `BlockFlavour[]` | `[]` | Flavours that show the full float toolbar (bold/italic/underline/strike + color picker) |
+| `colorOnlyFlavours` | `BlockFlavour[]` | `[]` | Flavours that show the float toolbar restricted to the color picker only; mutually exclusive with `markTextBlockFlavours` (dupes ignored) |
+
+### TextMarkerComponent API
+
+| Input | Type | Description |
+|-------|------|-------------|
+| `colorOnly` | `boolean` | When `true`, hides bold/italic/underline/strike and shows only the color picker |
+
+### Usage Examples
+
+**Full rich-text toolbar for custom blocks:**
+
+```typescript
+new TextMarkerPlugin(['my-rich-block', 'callout-body'])
+```
+
+**Color-only toolbar for code / mermaid source blocks:**
+
+```typescript
+new TextMarkerPlugin([], ['code', 'mermaid-textarea'])
+```
+
+**Combined — rich formatting for prose, color-only for code:**
+
+```typescript
+// Typical bundled-editor setup
+new TextMarkerPlugin(
+  ['paragraph', 'heading', 'bullet', 'ordered', 'todo'],  // full toolbar
+  ['code']                                                  // color picker only
+)
+```
+
+### Notes
+
+- The bundled `<editor>` component (from `packages/editor/editor/editor.ts`) registers `new TextMarkerPlugin([], ['code', 'mermaid-textarea'])` alongside `FloatTextToolbarPlugin`. Rich-text blocks continue to be served by `FloatTextToolbarPlugin`; code blocks and the mermaid source block (both `plainTextOnly`, sharing `CodeInlineRuntime`) get a color-only overlay. Consumers assembling their own editor must opt in manually.
+- Color selections (`s:color` / `s:background`) on code blocks persist in the native Yjs document, survive collaboration and undo, but are not exported to HTML or Markdown — external clipboard output remains plain text.
+- A flavour listed in both `markTextBlockFlavours` and `colorOnlyFlavours` is treated as rich-text only (the color-only registration is silently skipped).

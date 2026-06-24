@@ -1,6 +1,7 @@
 import {InlineRuntime} from "../../framework/block-std/inline/runtime/inline-runtime";
 import {EmbedConverterMap} from "../../framework/block-std/inline/blot/scroll-blot";
-import {DeltaInsertText, DeltaOperation, InlineModel} from "../../framework/block-std/types";
+import {DeltaInsert, DeltaInsertText, DeltaOperation, InlineModel} from "../../framework/block-std/types";
+import {mergeColorOverShiki, deltaFingerprint} from "./color-merge";
 import {STR_LINE_BREAK} from "../../framework/block-std/inline/const";
 import {shikiService} from "./shiki-config";
 import type {BundledLanguage, ThemedToken} from 'shiki'
@@ -79,7 +80,7 @@ function groupTokenLines(deltas: DeltaInsertText[]): TokenLine[] {
 
   for (const d of deltas) {
     cur.push(d)
-    fp += d.insert + '\0' + (d.attributes?.['s:color'] || '') + '\0'
+    fp += deltaFingerprint(d)
     if (d.insert === STR_LINE_BREAK && d.attributes?.['d:lineBreak']) {
       lines.push({deltas: cur, fp})
       cur = []
@@ -168,7 +169,7 @@ export class CodeInlineRuntime extends InlineRuntime {
     return lang as BundledLanguage
   }
 
-  private async _tokenize(text: string): Promise<DeltaInsertText[]> {
+  private async _tokenize(text: string, modelDeltas: DeltaInsert[] = []): Promise<DeltaInsertText[]> {
     const highlighter = await shikiService.getHighlighter()
     const lang = this._getShikiLanguage()
     await shikiService.ensureLanguageLoaded(lang)
@@ -189,14 +190,15 @@ export class CodeInlineRuntime extends InlineRuntime {
       }
     }
 
-    return flatShikiTokens(tokenLines, text, this._options.withLineBreak)
+    const shikiDeltas = flatShikiTokens(tokenLines, text, this._options.withLineBreak)
+    return modelDeltas.length ? mergeColorOverShiki(shikiDeltas, modelDeltas) : shikiDeltas
   }
 
   /**
    * Shiki tokenize -> line-level diff -> blot tree patch.
    */
   async diffHighLight(_ops: DeltaOperation[], opts?: {
-    block: { id: string, textContent: () => string, setInlineRange: (idx: number) => void },
+    block: { id: string, textContent: () => string, setInlineRange: (idx: number) => void, textDeltas?: () => DeltaInsert[] },
     selectionValue: { start: { blockId: string, type: string, offset?: number } } | null,
     normalizeRange: (range: Range) => { from: { type: string, index?: number } }
   }) {
@@ -222,7 +224,8 @@ export class CodeInlineRuntime extends InlineRuntime {
     const myToken = ++this._renderToken
     try {
       const text = opts?.block.textContent() ?? this._getPlainText()
-      const newDeltas = await this._tokenize(text)
+      const modelDeltas = opts?.block.textDeltas?.() ?? []
+      const newDeltas = await this._tokenize(text, modelDeltas)
       // 陈旧/已卸载守卫：更新的高亮请求已抢占，或块在 tokenize 期间被移除
       if (myToken !== this._renderToken || !this.container.isConnected) return
       const newLines = groupTokenLines(newDeltas)
@@ -248,11 +251,12 @@ export class CodeInlineRuntime extends InlineRuntime {
     }
   }
 
-  async renderCode(getText?: () => string) {
+  async renderCode(getText?: () => string, getModelDeltas?: () => DeltaInsert[]) {
     const myToken = ++this._renderToken
     try {
       const text = getText?.() ?? this._getPlainText()
-      const deltas = await this._tokenize(text)
+      const modelDeltas = getModelDeltas?.() ?? []
+      const deltas = await this._tokenize(text, modelDeltas)
 
       // 陈旧/已卸载守卫：更新的 renderCode/diffHighLight 已抢占令牌，或块在
       // tokenize 期间被移除。继续 build 会用旧文本覆盖更新的树、污染 _lineFPs。

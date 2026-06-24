@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-06-17 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-06-24 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,54 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-06-24 (minor) — Code block 支持用户颜色叠加；TextMarkerPlugin 新增 `colorOnlyFlavours`
+
+**Severity**: minor
+
+**What changed**: Code blocks (and the mermaid source block, which shares the same `CodeInlineRuntime`) now support user-applied color and background-color overlays on top of Shiki syntax highlighting. The new internal module `blocks/code-block/color-merge.ts` (`mergeColorOverShiki`, `deltaFingerprint`) merges model inline attributes `s:color` / `s:background` from `Y.Text` over Shiki token colors during the render pipeline of `CodeInlineRuntime`. Previously those attributes were ignored entirely. Colors persist natively in the Yjs document, survive collaboration and undo/redo, but are not exported to HTML or Markdown (external clipboard output remains plain text).
+
+`TextMarkerPlugin` gains an optional second constructor parameter `colorOnlyFlavours?: BlockFlavour[]` (default `[]`). Flavours listed there pop the floating toolbar but show only the color picker (bold/italic/underline/strike hidden), backed by a new `@Input() colorOnly: boolean` on `TextMarkerComponent`. A flavour listed in both `markTextBlockFlavours` and `colorOnlyFlavours` is silently ignored in the color-only list.
+
+The bundled `<editor>` component (`packages/editor/editor/editor.ts`) now registers `new TextMarkerPlugin([], ['code', 'mermaid-textarea'])` alongside the existing `FloatTextToolbarPlugin()`. Consumers using the pre-assembled editor component get a color toolbar on code blocks and mermaid source by default, with no overlap with the rich-text toolbar.
+
+**Why**: Code blocks are marked `plainTextOnly`, so the existing `FloatTextToolbarPlugin` declined to format them. Users needed to color code spans (e.g., highlight a variable name) while keeping Shiki syntax highlighting. The `colorOnlyFlavours` extension point lets the host selectively enable color-only overlays on any plain-text block without exposing the full rich-text toolbar.
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-toolbar.md` — 新增 TextMarkerPlugin 完整章节（`colorOnlyFlavours` 参数、`colorOnly` Input、使用示例）
+
+### New APIs / Features
+
+- `TextMarkerPlugin` constructor 2nd param: `colorOnlyFlavours?: BlockFlavour[] = []` — listed flavours show a color-only toolbar; mutually exclusive with `markTextBlockFlavours` (dupes silently skipped).
+- `TextMarkerComponent` `@Input() colorOnly: boolean` — when `true`, hides bold/italic/underline/strike and renders only the color picker.
+- Internal module `blocks/code-block/color-merge.ts`:
+  - `mergeColorOverShiki(shikiDelta, modelDelta): Delta` — pure function; applies model `s:color` / `s:background` attrs over Shiki token colors.
+  - `deltaFingerprint(delta): string` — content/attrs hash used for render memoization; now includes `s:background`.
+
+### Behavior Changes
+
+- `CodeInlineRuntime` now merges model `s:color` / `s:background` attrs over Shiki syntax colors at render time (affects both the code block and the mermaid source block, which share this runtime). Previously these attributes were stored in `Y.Text` but had no visual effect.
+- The line-diff fingerprint (`deltaFingerprint`) now includes `s:background`, so background-color changes on code lines correctly invalidate the render cache.
+- The bundled `<editor>` component now shows a color-only floating toolbar on code-block and mermaid-source text selections by default. Rich-text blocks are still served by `FloatTextToolbarPlugin` with no change.
+- HTML/Markdown export and external clipboard continue to output plain text for code blocks — color attrs are native-doc-only and not serialized to external formats.
+
+### Migration Recipe
+
+纯新增，向后兼容。现有单参数 `new TextMarkerPlugin([...])` 调用零改动。
+
+消费者自行组装编辑器（未使用捆绑 `<editor>` 组件）时，如需启用代码块颜色叠加：
+
+```typescript
+// before — code blocks get no color toolbar
+new TextMarkerPlugin(['paragraph', 'heading'])
+
+// after — add 'code' / 'mermaid-textarea' to colorOnlyFlavours; existing rich flavours unaffected
+new TextMarkerPlugin(['paragraph', 'heading'], ['code', 'mermaid-textarea'])
+```
+
+使用捆绑 `<editor>` 组件的消费者无需任何改动——升级即启用代码块颜色工具栏。
+
+---
 
 ### v?.?.? - 2026-06-17 (minor) — MentionPlugin 新增 `onConfirm` 宿主认领钩子（确认时可不产生节点）
 

@@ -60,13 +60,14 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
   selector: "div.text-marker-toolbar",
   template: `
     <bc-float-toolbar (onItemClick)="onItemClicked($event)">
-      @for (item of defaultMenuList; track item.name + item.value) {
-        <bc-float-toolbar-item [name]="item.name" [value]="activeAttrs.has(item.name) ? null : true"
-                               [icon]="item.icon" [title]="item.intro" [active]="activeAttrs.has(item.name)">
-        </bc-float-toolbar-item>
+      @if (!colorOnly) {
+        @for (item of defaultMenuList; track item.name + item.value) {
+          <bc-float-toolbar-item [name]="item.name" [value]="activeAttrs.has(item.name) ? null : true"
+                                 [icon]="item.icon" [title]="item.intro" [active]="activeAttrs.has(item.name)">
+          </bc-float-toolbar-item>
+        }
+        <span class="bc-float-toolbar__divider"></span>
       }
-
-      <span class="bc-float-toolbar__divider"></span>
       <bc-float-toolbar-item icon="bc_bianji" [bcOverlayTrigger]="colorPicker"
                              [style.color]="activeColors['color']"
                              [style.background-color]="activeColors['backColor']"/>
@@ -126,6 +127,9 @@ export class TextMarkerComponent {
   @Input({required: true})
   activeColors: Record<string, string | null> = {}
 
+  @Input()
+  colorOnly = false
+
   constructor() {
   }
 
@@ -157,6 +161,11 @@ export class TextMarkerComponent {
       const s = selection.start, e = selection.end
       const len = selection.isInSameBlock && e.type === 'text' ? e.offset - s.offset : block.textLength - s.offset
       block.formatText(s.offset, len, attrs)
+      // 格式化会拆分 blot 使原生选区塌缩；非折叠选区重新 setSelection 把 range 恢复回来，
+      // 对齐 TextToolbarHelper.formatText（不要再 recalculate，否则会把塌缩后的 DOM 选区写回模型）。
+      if (!selection.collapsed) {
+        this.doc.selection.setSelection(s, e)
+      }
     }
   }
 
@@ -166,9 +175,10 @@ export class TextMarkerComponent {
         this.formatText({'s:color': evt.color})
         break
       case 'backColor':
-        this.formatText({'s:background': evt.color})
+        // 透明 = 清除背景：写 null 移除 attr，避免在 Y.Text 里留下 's:background':'transparent' 脏数据。
+        // 对齐 fixed-toolbar 的处理。
+        this.formatText({'s:background': evt.color === 'transparent' ? null : evt.color})
         break
     }
-    this.doc.selection.recalculate()
   }
 }
