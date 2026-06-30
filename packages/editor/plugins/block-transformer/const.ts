@@ -55,7 +55,7 @@ export const blockTransforms: IBlockTransformConfig[] = [
           parsedNum = 1
         }
         o.props['order'] = parsedNum - 1
-        o.props['start'] = parsedNum
+        // o.props['start'] = parsedNum
       }
       void doc.chain()
         .replaceWithSnapshots(from.id, [o])
