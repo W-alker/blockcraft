@@ -30,7 +30,7 @@ export class DividerExtensionPlugin extends DocPlugin {
         return
       }
 
-      if (!selection || !selection.isInSameBlock || selection.firstBlock?.flavour !== 'divider') {
+      if (!selection || !selection.isInSameBlock || selection.firstBlock?.flavour !== 'divider' || selection.anchor.type !== 'selected') {
         this._toolbarRef && this.closeToolbar()
         return
       }

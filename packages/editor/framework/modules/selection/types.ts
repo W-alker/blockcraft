@@ -17,12 +17,21 @@ export interface ISelectedSelectionPoint {
   readonly block: BaseBlockComponent<any>
 }
 
-export type ISelectionPoint = ITextSelectionPoint | ISelectedSelectionPoint
+export interface IGapSelectionPoint {
+  readonly blockId: string
+  readonly type: 'gap'
+  readonly side: 'before' | 'after'
+  /** Lazy-resolved block reference (non-enumerable, defined via Object.defineProperty) */
+  readonly block: BaseBlockComponent<any>
+}
+
+export type ISelectionPoint = ITextSelectionPoint | ISelectedSelectionPoint | IGapSelectionPoint
 
 export interface ISelectionPointJSON {
   blockId: string
-  type: 'text' | 'selected'
-  offset?: number
+  type: 'text' | 'selected' | 'gap'
+  offset?: number               // text
+  side?: 'before' | 'after'     // gap
 }
 
 export interface ISelectionJSON {
@@ -71,6 +80,10 @@ export type IBlockInlineRangeJSON = {
 } | {
   blockId: string,
   type: 'selected'
+} | {
+  blockId: string,
+  type: 'gap',
+  side: 'before' | 'after'
 }
 
 /** @deprecated Use ISelectionJSON instead */

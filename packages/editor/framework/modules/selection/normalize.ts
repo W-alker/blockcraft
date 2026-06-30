@@ -5,7 +5,8 @@ import {
 } from "../../block-std";
 import {BlockCraftError, ErrorCode} from "../../../global";
 import {closetBlockId} from "../../utils";
-import {IBlockRange, INormalizedRange, ISelectionPoint} from "./types";
+import {resolveBlockGapSide} from "../../utils/zero-gap";
+import {IBlockRange, INormalizedRange, ISelectionPoint, IGapSelectionPoint} from "./types";
 
 /**
  * Document-ordered endpoints from normalizeRange().
@@ -60,6 +61,18 @@ export function normalizeRange(
   }
 
   const startBlock = resolveBlock(startContainer)
+
+  // Gap cursor: a COLLAPSED caret inside a block's leading/trailing gap span maps to
+  // a `gap` point. This MUST be gated on `collapsed` — a NON-collapsed leading->trailing
+  // range is a whole-block `selected` selection (resolved below), not a gap.
+  if (collapsed) {
+    const gapSide = resolveBlockGapSide(startContainer)
+    if (gapSide !== null && (startBlock.nodeType === 'void' || startBlock.nodeType === 'block')) {
+      const gp = lazyGapPoint(startBlock.id, gapSide, getBlockById)
+      return {start: gp, end: gp}
+    }
+  }
+
   const s = resolvePoint(startBlock, startContainer, startOffset)
 
   if (collapsed) {
@@ -100,6 +113,19 @@ export function normalizeRange(
  */
 export function endpointsToLegacy(endpoints: INormalizedEndpoints): INormalizedRange {
   const {start, end} = endpoints
+
+  // Gap is lossy in legacy format — collapse to a whole-block `selected` range.
+  if (start.type === 'gap' || end.type === 'gap') {
+    const block = start.block
+    const range: any = {blockId: start.blockId, type: 'selected'}
+    Object.defineProperty(range, 'block', {
+      get: () => block,
+      enumerable: false,
+      configurable: true,
+    })
+    return {from: range, to: null, collapsed: true}
+  }
+
   const collapsed = start.blockId === end.blockId
     && start.type === 'text' && end.type === 'text'
     && start.offset === end.offset
@@ -152,4 +178,18 @@ export function lazyPoint(
     configurable: true,
   });
   return point as ISelectionPoint;
+}
+
+export function lazyGapPoint(
+  blockId: string,
+  side: 'before' | 'after',
+  getBlockById: (id: string) => BaseBlockComponent<any>,
+): IGapSelectionPoint {
+  const point: IGapSelectionPoint = { blockId, type: 'gap', side } as any
+  Object.defineProperty(point, 'block', {
+    get: () => getBlockById(blockId),
+    enumerable: false,
+    configurable: true,
+  })
+  return point
 }

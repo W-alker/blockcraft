@@ -10,7 +10,7 @@
   div.mermaid-block {
     display: block;
     border-radius: var(--bc-radius-md);
-    overflow: hidden;
+    //overflow: hidden;
     border: 1px solid var(--bc-border-color);
 
     &.selected {

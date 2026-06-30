@@ -28,7 +28,8 @@ export class FakeRange {
     const s = sel.start, e = sel.end
     const startBlock = this.doc.getBlockById(s.blockId)
     this._fakeSpans.push(
-      s.type === 'selected'
+      // gap and selected have no meaningful offset → render a whole-block fake span
+      s.type !== 'text'
         ? this._createBlockFakeSpan(startBlock)
         : this._createTextFakeSpan(startBlock, s.offset, sel.isInSameBlock ? (e.type === 'text' ? e.offset - s.offset : 0) : (startBlock as EditableBlockComponent).textLength - s.offset)
     )
@@ -49,7 +50,8 @@ export class FakeRange {
   private _buildFromLegacyJSON(json: Pick<IBlockSelectionJSON, 'from' | 'to'>) {
     const {from, to} = json
     const fromBlock = this.doc.getBlockById(from.blockId)
-    this._fakeSpans.push(from.type === 'selected' ? this._createBlockFakeSpan(fromBlock) : this._createTextFakeSpan(fromBlock, from.index, from.length))
+    // gap and selected legacy variants have no index/length → whole-block fake span
+    this._fakeSpans.push(from.type !== 'text' ? this._createBlockFakeSpan(fromBlock) : this._createTextFakeSpan(fromBlock, from.index, from.length))
     if (!to) return
     const toBlock = this.doc.getBlockById(to.blockId)
     if (to.type === 'text') {

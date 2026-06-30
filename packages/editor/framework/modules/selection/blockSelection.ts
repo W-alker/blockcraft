@@ -31,9 +31,17 @@ export class BlockSelection {
   }
 
   get collapsed(): boolean {
-    return this.anchor.blockId === this.head.blockId
-      && this.anchor.type === 'text' && this.head.type === 'text'
-      && this.anchor.offset === this.head.offset
+    if (this.anchor.blockId === this.head.blockId) {
+      // Two gap points with same side -> collapsed
+      if (this.anchor.type === 'gap' && this.head.type === 'gap') {
+        return this.anchor.side === this.head.side
+      }
+      // Two text points with same offset -> collapsed
+      if (this.anchor.type === 'text' && this.head.type === 'text') {
+        return this.anchor.offset === this.head.offset
+      }
+    }
+    return false
   }
 
   get isInSameBlock(): boolean {
@@ -59,12 +67,14 @@ export class BlockSelection {
 
   get isStartOfBlock(): boolean {
     const s = this.start
-    return s.type === 'selected' || s.offset === 0
+    return s.type === 'gap' ? s.side === 'before' : (s.type === 'selected' || s.offset === 0)
   }
 
   get isEndOfBlock(): boolean {
     const e = this.end
-    return e.type === 'selected' || (e.block as EditableBlockComponent).textLength === e.offset
+    if (e.type === 'gap') return e.side === 'after'
+    if (e.type === 'selected') return true
+    return (e.block as EditableBlockComponent).textLength === e.offset
   }
 
   get isAllSelected(): boolean {
@@ -87,16 +97,17 @@ export class BlockSelection {
       if (blockId !== this.anchor.blockId) return false
       if (offset === undefined) return true
       const s = this.start, e = this.end
+      // gap and selected don't have meaningful offsets; treat as whole-block
       if (s.type !== 'text' || e.type !== 'text') return true
       return offset >= s.offset && offset <= e.offset
     }
 
     if (blockId === this.start.blockId) {
-      if (offset === undefined || this.start.type === 'selected') return true
+      if (offset === undefined || this.start.type !== 'text') return true
       return offset >= this.start.offset
     }
     if (blockId === this.end.blockId) {
-      if (offset === undefined || this.end.type === 'selected') return true
+      if (offset === undefined || this.end.type !== 'text') return true
       return offset <= this.end.offset
     }
 
@@ -122,6 +133,18 @@ export class BlockSelection {
 
   toLegacyJSON(): IBlockSelectionJSON {
     const s = this.start, e = this.end
+
+    // Gap is collapsed-only — both endpoints are the same gap point. Treat as a
+    // whole-block `selected` range (consistent with endpointsToLegacy / undoManger).
+    if (s.type === 'gap' || e.type === 'gap') {
+      return {
+        from: {blockId: s.blockId, type: 'selected'},
+        to: null,
+        collapsed: true,
+        commonParent: this.commonParent,
+      }
+    }
+
     const startLen = this.isInSameBlock && s.type === 'text' && e.type === 'text'
       ? e.offset - s.offset
       : (s.type === 'text' ? (s.block as EditableBlockComponent).textLength - s.offset : 0)
@@ -142,6 +165,9 @@ export class BlockSelection {
 }
 
 function pointToJSON(p: ISelectionPoint): ISelectionPointJSON {
+  if (p.type === 'gap') {
+    return {blockId: p.blockId, type: 'gap', side: p.side}
+  }
   return p.type === 'text'
     ? {blockId: p.blockId, type: 'text', offset: p.offset}
     : {blockId: p.blockId, type: 'selected'}

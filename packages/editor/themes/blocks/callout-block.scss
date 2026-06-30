@@ -9,15 +9,21 @@
 
   .callout-block {
     position: relative;
-    padding: 1em;
     margin-bottom: 1em;
     border-radius: 4px;
     border: 1px solid transparent;
-    display: flex;
-    align-items: flex-start;
-    gap: 1em;
-    overflow-x: hidden;
-    overflow-y: visible;
+
+    // Host is now the flex [gap][content][gap] column (see base.scss). The original
+    // inner layout (emoji | content row + padding) moves onto the content wrapper.
+    // Padding stays a full 1em — the uniform negative-margin filler in base.scss
+    // absorbs its own height, so NO per-block padding maths is needed here.
+    > .bc-block-content {
+      display: flex;
+      align-items: flex-start;
+      gap: 1em;
+      width: 100%;
+      padding: 1em;
+    }
 
     &.selected {
       //border: 1px solid #0070f3;
@@ -32,6 +38,8 @@
 
     .callout-content {
       width: 100%;
+      overflow-x: hidden;
+      overflow-y: visible;
 
       [data-block-id]:last-child {
         margin-bottom: 0;

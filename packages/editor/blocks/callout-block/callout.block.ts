@@ -7,10 +7,18 @@ import { Subject, takeUntil } from "rxjs";
 @Component({
   selector: 'div.callout-block',
   template: `
-    <span class="callout-block-prefix" (mousedown)="onPickEmoji($event)"
-          contenteditable="false">{{ props.prefix }}
-    </span>
-    <div class="callout-content children-render-container">
+    <!-- Gap-cursor PoC: prefix + content live inside .bc-block-content (the STANDARD
+         wrapper the uniform base.scss rule keys off via :has(> .bc-block-content)).
+         The host becomes a flex COLUMN [leading gap] / .bc-block-content / [trailing
+         gap]; the gap fillers are prepended/appended to the HOST (see
+         BaseBlockComponent.ngAfterViewInit), i.e. siblings of .bc-block-content.
+         children-render-container is found via querySelector, so wrapping is safe. -->
+    <div class="bc-block-content">
+      <span class="callout-block-prefix" (mousedown)="onPickEmoji($event)"
+            contenteditable="false">{{ props.prefix }}
+      </span>
+      <div class="callout-content children-render-container">
+      </div>
     </div>
   `,
   standalone: true,

@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-04-13 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-06-30 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -46,7 +46,7 @@ This prevents stale toolbar state and accidental block-level keyboard handling w
 
 ### Selection Point (Discriminated Union)
 
-A point describes **one endpoint** of a selection. There are two variants discriminated by `type`:
+A point describes **one endpoint** of a selection. There are three variants discriminated by `type`:
 
 ```typescript
 // Cursor inside an editable block's inline text
@@ -64,10 +64,33 @@ interface ISelectedSelectionPoint {
   readonly block: BaseBlockComponent<any>       // lazy-resolved, non-enumerable
 }
 
-type ISelectionPoint = ITextSelectionPoint | ISelectedSelectionPoint
+// Yuque-style gap cursor: a COLLAPSED blinking caret beside a void or container
+// block. `side` says whether the caret sits at the block's leading ('before') or
+// trailing ('after') edge. Typing/Enter at a gap inserts an adjacent paragraph
+// (keeping the block); arrow nav moves the gap across blocks.
+interface IGapSelectionPoint {
+  readonly blockId: string
+  readonly type: 'gap'
+  readonly side: 'before' | 'after'             // which edge of the block
+  readonly block: BaseBlockComponent<any>       // lazy-resolved, non-enumerable
+}
+
+type ISelectionPoint = ITextSelectionPoint | ISelectedSelectionPoint | IGapSelectionPoint
 ```
 
-> The `block` accessor is defined via `Object.defineProperty` with `enumerable: false`, so it doesn't show up in `JSON.stringify`. Always narrow on `point.type` before reading `offset`.
+> The `block` accessor is defined via `Object.defineProperty` with `enumerable: false`, so it doesn't show up in `JSON.stringify`. Always narrow on `point.type` before reading `offset` (text-only) or `side` (gap-only).
+
+### Gap Cursor (`type: 'gap'`)
+
+A gap point reuses the per-block **`contenteditable` gap filler spans** (`<span data-block-zero-space class="bc-block-gap"><br></span>`) that `BaseBlockComponent` mounts around non-leaf void/container blocks (`createBlockGapSpace()` in `framework/utils/zero-gap.ts`). A **collapsed** native range landing inside the leading filler normalizes to `{type:'gap', side:'before'}`; inside the trailing filler it becomes `{type:'gap', side:'after'}` (see `resolveBlockGapSide()`). `_buildDomRange` maps the gap point back to a collapsed range at `(fillerSpan, 0)` — before the `<br>` — via `getBlockGapCaretSpan()`. The **browser renders its real native caret** on that filler line box (above the card for `before`, below for `after`); there is no fake CSS bar.
+
+Gap is **always collapsed** — both `anchor` and `head` are the same gap point, so `collapsed` is true and there is no offset. Behaviors at a gap:
+
+- **Arrow nav** — Left/Right (and Up/Down into a void/container) move the gap across blocks (`before` ↔ `after` ↔ neighbour).
+- **Type / Enter / IME** — inserts an adjacent paragraph as a sibling at the gap index, keeping the void/container block, then drops the caret into the new paragraph.
+- **Backspace / Delete** — removes the void/container block from a gap.
+- **Click on blank area** — beside a void/container block sets a gap cursor on the nearest edge.
+- **Paste** — inserts clipboard blocks as siblings at the gap index (`before` = block index, `after` = block index + 1), keeping the block (handled by `ClipboardManager._applyGapPaste`).
 
 ### BlockSelection
 
@@ -85,10 +108,10 @@ class BlockSelection {
   get lastBlock(): BaseBlockComponent<any>    // end.block
 
   // ── Predicates ──
-  get collapsed(): boolean           // anchor === head AND text-type AND same offset
+  get collapsed(): boolean           // same block AND (text+same offset, OR gap+same side)
   get isInSameBlock(): boolean       // anchor.blockId === head.blockId
-  get isStartOfBlock(): boolean      // start is at offset 0 OR start is 'selected'
-  get isEndOfBlock(): boolean        // end is at textLength OR end is 'selected'
+  get isStartOfBlock(): boolean      // start at offset 0, OR 'selected', OR gap 'before'
+  get isEndOfBlock(): boolean        // end at textLength, OR 'selected', OR gap 'after'
   get isAllSelected(): boolean       // both anchor/head are whole-block ('selected') points
   get isEmpty(): boolean             // collapsed text selection (alias for cursor)
 
@@ -110,8 +133,9 @@ class BlockSelection {
 ```typescript
 interface ISelectionPointJSON {
   blockId: string
-  type: 'text' | 'selected'
+  type: 'text' | 'selected' | 'gap'
   offset?: number               // present only for type === 'text'
+  side?: 'before' | 'after'     // present only for type === 'gap'
 }
 
 interface ISelectionJSON {
@@ -120,6 +144,8 @@ interface ISelectionJSON {
   commonParent: string
 }
 ```
+
+> `toJSON()` / `replay()` round-trip the gap `side`, so a saved gap cursor restores to the exact edge. `DocUndoManager` captures the gap `side` too, so undo/redo restores "before vs after" precisely rather than degrading to a whole-block `selected` snapshot. The deprecated legacy `IBlockSelectionJSON.from` union is widened with a `{blockId, type:'gap', side}` variant for this round-trip; `toLegacyJSON()` itself still degrades a gap to a lossy `selected` point.
 
 ## SelectionManager Public API
 
@@ -165,6 +191,12 @@ doc.selection.setCursorAtBlock(block, atStart, scrollIntoView?)
 
 // Select an entire block (used for void/block-level selection)
 doc.selection.selectBlock(block)
+
+// Set a Yuque-style gap cursor beside a void/container block.
+// side: 'before' → caret at the leading edge; 'after' → trailing edge.
+// Accepts a block id or a BlockComponent. Builds a collapsed range in the
+// matching zero-width gap span.
+doc.selection.setGapCursor(block, 'before' | 'after', scrollIntoView?)
 
 // Extend the current selection's head to a new point (used for shift+click)
 doc.selection.extendTo(editableBlock, offset)
@@ -293,7 +325,9 @@ const between = doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock
 | Reading `selection.from.block` | Use `selection.anchor.block` or `selection.start.block` |
 | Reading `selection.from.index` without narrowing | Narrow on `point.type === 'text'` first, then use `.offset` |
 | Comparing `selection.isCollapsed` | Use `selection.collapsed` (legacy alias removed) |
-| Using offsets directly without checking type | A `'selected'` point has no `offset` field |
+| Using offsets directly without checking type | A `'selected'` or `'gap'` point has no `offset` field |
+| Assuming a gap point has `.offset` | Narrow on `point.type === 'gap'` first; gap points carry `side`, not `offset` |
+| Building an `ISelectionPointJSON` for a gap without `side` | Include `side: 'before' \| 'after'` whenever `type === 'gap'` |
 | Building `ISelectionPointJSON` and forgetting `type` | The `type` field is required |
 | Calling `setSelection()` with the legacy `{from, to}` shape in new code | Pass `ISelectionPoint` directly |
 | Manipulating `document.getSelection()` directly | Always go through `SelectionManager` so the model stays in sync |

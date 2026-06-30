@@ -1,14 +1,19 @@
 [data-blockcraft-root="true"] {
   .divider-block {
     margin: 8px 0;
-    min-height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
 
     &.divider-toolbar-active {
       background-color: var(--bc-select-background-color);
+    }
+
+    // The host is now the flex [gap][content][gap] column (see base.scss), so the
+    // original centring + min-height move onto the content wrapper (the middle item).
+    > .bc-block-content {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 24px;
+      width: 100%;
     }
 
     .divide-line {

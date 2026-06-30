@@ -5,27 +5,32 @@ import {DividerBlockModel} from "./index";
 @Component({
   selector: 'div.divider-block',
   template: `
-    @if (props.text) {
-      @if (isTape) {
-        <div [class]="['divide-line', 'divide-tape', resolvedStyle]"
-             [attr.data-size]="props.size"
-             [attr.data-align]="align"
-             contenteditable="false">
-          <span class="divide-label" [style.color]="props.color || null">{{ props.text }}</span>
-        </div>
+    <!-- Gap-cursor PoC: content wrapped in .bc-block-content so the host becomes a
+         flex [leading gap] / .bc-block-content / [trailing gap] column (see the
+         uniform rule in base.scss). Gap fillers are prepended/appended to the HOST. -->
+    <div class="bc-block-content">
+      @if (props.text) {
+        @if (isTape) {
+          <div [class]="['divide-line', 'divide-tape', resolvedStyle]"
+               [attr.data-size]="props.size"
+               [attr.data-align]="align"
+               contenteditable="false">
+            <span class="divide-label" [style.color]="props.color || null">{{ props.text }}</span>
+          </div>
+        } @else {
+          <div class="divide-line-text"
+               [attr.data-size]="props.size"
+               [attr.data-align]="align"
+               contenteditable="false">
+            <span [class]="['divide-seg', resolvedStyle]"></span>
+            <span class="divide-label" [style.color]="props.color || null">{{ props.text }}</span>
+            <span [class]="['divide-seg', resolvedStyle]"></span>
+          </div>
+        }
       } @else {
-        <div class="divide-line-text"
-             [attr.data-size]="props.size"
-             [attr.data-align]="align"
-             contenteditable="false">
-          <span [class]="['divide-seg', resolvedStyle]"></span>
-          <span class="divide-label" [style.color]="props.color || null">{{ props.text }}</span>
-          <span [class]="['divide-seg', resolvedStyle]"></span>
-        </div>
+        <div [class]="['divide-line', props.style]" [attr.data-size]="props.size" contenteditable="false"></div>
       }
-    } @else {
-      <div [class]="['divide-line', props.style]" [attr.data-size]="props.size" contenteditable="false"></div>
-    }
+    </div>
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush

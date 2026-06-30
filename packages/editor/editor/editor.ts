@@ -127,11 +127,11 @@ const schemas = new SchemaManager([
       }
 
       .editor-container {
-        min-height: min(78vh, 960px);
-        max-height: min(78vh, 960px);
+        /* Definite height so the editable root's percentage min-height resolves
+           (a child's % min-height is ignored when the parent height is auto). */
+        height: min(78vh, 960px);
         overflow-x: hidden;
         overflow-y: auto;
-        padding: 48px 56px 64px;
         border-radius: 24px;
         color: var(--bc-color);
         border: 1px solid var(--bc-border-color-light);
@@ -145,6 +145,16 @@ const schemas = new SchemaManager([
 
       ::ng-deep {
         [data-blockcraft-root="true"] {
+          /* Fill the scroll card so a click in the blank area BELOW the content
+             still lands on the editable root (not the scroll container), letting
+             the block-gap-creator plugin resolve it to the nearest block — Yuque
+             behaviour. Without this the editable root is only as tall as its
+             content and the band underneath belongs to .editor-container, which
+             the plugin never sees. */
+          box-sizing: border-box;
+          min-height: 100%;
+          padding: 48px 56px 64px;
+
           span[data-mention-id] {
             padding: 0 0.15em;
             color: #4857e2;
@@ -339,7 +349,7 @@ export class EditorComponent implements OnDestroy {
       // 代码块 / mermaid 源码的仅颜色工具栏：rich text 由上面的 FloatTextToolbarPlugin
       // 负责（它对 plainTextOnly 块会跳过），这里只补充这些 plainTextOnly 块的颜色覆盖，
       // 二者互不重叠。('mermaid-textarea' 是 mermaid 块里可编辑的源码子块)
-      new TextMarkerPlugin([], ['code', 'mermaid-textarea']),
+      new TextMarkerPlugin([], ["code", "mermaid-textarea"]),
     ],
   });
 
@@ -354,9 +364,9 @@ export class EditorComponent implements OnDestroy {
 
   onContainerMousedown(evt: MouseEvent) {
     if (evt.target === evt.currentTarget && evt.eventPhase === evt.AT_TARGET) {
-      evt.preventDefault();
-      evt.stopPropagation();
-      this.appendParagraph();
+      // evt.preventDefault();
+      // evt.stopPropagation();
+      // this.appendParagraph();
     }
   }
 

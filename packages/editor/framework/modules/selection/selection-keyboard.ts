@@ -8,31 +8,42 @@ import {
   UIEventStateContext
 } from "../../block-std";
 import {IS_MAC} from "../../../global";
-import {closetBlockId, isZeroSpace} from "../../utils";
+import {closetBlockId, isZeroSpace, resolveBlockGapSide} from "../../utils";
+import {searchEditableDescendant} from "./index";
 import {ITextSelectionPoint} from "./types";
 
 @DocEventRegister
 export class SelectionKeyboard {
   constructor(public readonly doc: BlockCraft.Doc) {}
 
-  @BindHotKey({key: ['ArrowUp', "ArrowDown", 'ArrowLeft', 'ArrowRight'], shiftKey: false})
+  @BindHotKey({key: ['ArrowUp', "ArrowDown"], shiftKey: false})
   private _handlerUpOrDown(ctx: UIEventStateContext) {
     const state = ctx.get('keyboardState')
     const sel = state.selection
     const {isAllSelected, collapsed, isStartOfBlock, isEndOfBlock} = sel
+    const isBack = state.raw.key === 'ArrowUp'
 
     if (!isAllSelected) {
+      // Collapsed caret crossing into a void/container sibling lands on the
+      // NEAR-side gap (gap-before when moving down into it, gap-after when
+      // moving up). A plain text→text crossing falls through to the browser
+      // (no goal-column tracking — that is deferred to P5).
       if (collapsed && sel.start.type === 'text') {
-        const isBack = state.raw.key === 'ArrowUp' || state.raw.key === 'ArrowLeft'
         if ((isBack && isStartOfBlock) || (!isBack && isEndOfBlock)) {
           const sibling = isBack ? this.doc.prevSibling(sel.firstBlock) : this.doc.nextSibling(sel.firstBlock)
-          if (sibling && sibling.nodeType === BlockNodeType.void) {
+          if (sibling && (sibling.nodeType === BlockNodeType.void || sibling.nodeType === BlockNodeType.block)) {
             ctx.preventDefault()
-            this.doc.selection.selectOrSetCursorAtBlock(sibling, !isBack)
+            this.doc.selection.setGapCursor(sibling, isBack ? 'after' : 'before')
             this.doc.selection.scrollSelectionIntoView()
             return true
           }
         }
+      } else if (collapsed && sel.start.type === 'gap') {
+        // Up/Down stepping out of a gap caret: move to the adjacent sibling and
+        // land on its near-side gap (void/container) or text edge (editable).
+        ctx.preventDefault()
+        this._stepOutOfGap(sel.firstBlock, sel.start.side, isBack)
+        return true
       }
       return
     }
@@ -44,12 +55,19 @@ export class SelectionKeyboard {
 
     // head is the focus endpoint
     const headBlock = sel.head.block
-    const isBackward = state.raw.key === "ArrowUp" || state.raw.key === "ArrowLeft"
 
     const focusSibling = () => {
-      const opBlock = isBackward ? this.doc.prevSibling(focusBlock) : this.doc.nextSibling(focusBlock)
+      const opBlock = isBack ? this.doc.prevSibling(focusBlock) : this.doc.nextSibling(focusBlock)
       if (!opBlock) return false
-      this.doc.selection.selectOrSetCursorAtBlock(opBlock, !isBackward)
+      // Up/Down landing on a void OR container sibling lands on its near-side
+      // gap, not a whole-block `selected` (gap is the collapsed caret;
+      // `selected` is the shift-extension / whole-block state, left unchanged
+      // here).
+      if (opBlock.nodeType === BlockNodeType.void || opBlock.nodeType === BlockNodeType.block) {
+        this.doc.selection.setGapCursor(opBlock, isBack ? 'after' : 'before')
+      } else {
+        this.doc.selection.selectOrSetCursorAtBlock(opBlock, !isBack)
+      }
       this.doc.selection.scrollSelectionIntoView()
       return true
     }
@@ -62,10 +80,155 @@ export class SelectionKeyboard {
     if (headBlock.nodeType === BlockNodeType.block) {
       const res = focusSibling()
       if (!res) {
-        this.doc.selection.setCursorAtBlock(focusBlock, isBackward)
+        this.doc.selection.setCursorAtBlock(focusBlock, isBack)
       }
     }
     return true
+  }
+
+  @BindHotKey({key: ['ArrowLeft', "ArrowRight"], shiftKey: false})
+  private _handlerLeftOrRight(ctx: UIEventStateContext) {
+    const handled = this._handleLeftRightArrow(ctx)
+    if (handled) {
+      // Suppress the native caret move; we have repositioned the selection
+      // ourselves (stopPropagation alone does not preventDefault).
+      ctx.preventDefault()
+      return true
+    }
+    return
+  }
+
+  /**
+   * Left/Right cross-block gap navigation state machine.
+   *
+   * Stops, left→right:
+   *   …text-end │ gap-before(void) │ gap-after(void) │ text-start…
+   *   …text-end │ gap-before(container) │ <descendants…> │ gap-after(container) │ text-start…
+   *
+   * Returns `true` (consuming the event) when it programmatically moves the
+   * caret; returns `undefined` to let the browser handle in-block movement.
+   *
+   * NOTE (cross-browser): we intercept and reposition the collapsed caret
+   * explicitly because the gap span carries a single ZWS — native arrow keys
+   * would drift the caret within the span without changing the model gap side.
+   */
+  private _handleLeftRightArrow(ctx: UIEventStateContext): true | undefined {
+    const state = ctx.get('keyboardState')
+    const sel = state.selection
+    const {isAllSelected, collapsed} = sel
+    const isLeft = state.raw.key === 'ArrowLeft'
+
+    // Whole-block `selected` (e.g. after Esc on a void) is not gap-collapsed —
+    // leave it to the browser / other handlers (shift-extension is unchanged).
+    if (isAllSelected) return
+
+    if (collapsed && sel.start.type === 'text') {
+      const block = sel.firstBlock as EditableBlockComponent
+      const atStart = isLeft && sel.start.offset === 0
+      const atEnd = !isLeft && sel.start.offset === block.textLength
+      if (atStart || atEnd) {
+        return this._enterSiblingOrExitParent(block, isLeft)
+      }
+      return
+    }
+
+    if (collapsed && sel.start.type === 'gap') {
+      return this._moveFromGap(sel.firstBlock, sel.start.side, isLeft)
+    }
+
+    return
+  }
+
+  /**
+   * From a text edge, move into the adjacent sibling. If there is no sibling and
+   * the parent is a container block, exit the container by landing on the
+   * parent's far-side gap (so the next arrow press leaves the container).
+   */
+  private _enterSiblingOrExitParent(block: BlockCraft.BlockComponent, isLeft: boolean): true | undefined {
+    const sibling = isLeft ? this.doc.prevSibling(block) : this.doc.nextSibling(block)
+    if (sibling) {
+      this._enterBlockFromSide(sibling, isLeft)
+      return true
+    }
+    // No sibling: bubble up to exit an enclosing container block.
+    const parent = block.parentBlock
+    if (parent && parent.nodeType === BlockNodeType.block) {
+      this.doc.selection.setGapCursor(parent, isLeft ? 'before' : 'after')
+      this.doc.selection.scrollSelectionIntoView()
+      return true
+    }
+    return
+  }
+
+  /**
+   * Enter `block` arriving from the given direction. `isLeft` true means the
+   * caret is travelling right→left (ArrowLeft), so it enters at the block's
+   * trailing edge; false means left→right, entering at the leading edge.
+   *  - void:      near-side gap (gap-before when entering from the left)
+   *  - container: near-side gap first (then a subsequent arrow steps inside)
+   *  - editable:  text edge
+   */
+  private _enterBlockFromSide(block: BlockCraft.BlockComponent, isLeft: boolean) {
+    if (block.nodeType === BlockNodeType.void || block.nodeType === BlockNodeType.block) {
+      this.doc.selection.setGapCursor(block, isLeft ? 'after' : 'before')
+    } else if (this.doc.isEditable(block)) {
+      this.doc.selection.selectOrSetCursorAtBlock(block, !isLeft)
+    } else {
+      const editable = searchEditableDescendant(block, !isLeft)
+      if (editable) {
+        this.doc.selection.selectOrSetCursorAtBlock(editable, !isLeft)
+      } else {
+        this.doc.selection.setGapCursor(block, isLeft ? 'after' : 'before')
+      }
+    }
+    this.doc.selection.scrollSelectionIntoView()
+  }
+
+  /** Left/Right movement when the caret currently sits on a gap point. */
+  private _moveFromGap(gapBlock: BlockCraft.BlockComponent, side: 'before' | 'after', isLeft: boolean): true | undefined {
+    // Moving toward the block's interior (Right at gap-before / Left at gap-after).
+    const movingInward = isLeft ? side === 'after' : side === 'before'
+
+    if (movingInward) {
+      if (gapBlock.nodeType === BlockNodeType.void) {
+        // Void: step across to the opposite gap side (two-stop block).
+        this.doc.selection.setGapCursor(gapBlock, isLeft ? 'before' : 'after')
+        this.doc.selection.scrollSelectionIntoView()
+        return true
+      }
+      if (gapBlock.nodeType === BlockNodeType.block) {
+        // Container: enter the first/last editable descendant; if none, step to
+        // the opposite gap side so the block still has two reachable stops.
+        const editable = searchEditableDescendant(gapBlock, !isLeft)
+        if (editable) {
+          this.doc.selection.selectOrSetCursorAtBlock(editable, !isLeft)
+        } else {
+          this.doc.selection.setGapCursor(gapBlock, isLeft ? 'before' : 'after')
+        }
+        this.doc.selection.scrollSelectionIntoView()
+        return true
+      }
+    }
+
+    // Moving away from the block: leave for the adjacent sibling (or exit parent).
+    return this._enterSiblingOrExitParent(gapBlock, isLeft)
+  }
+
+  /** Up/Down stepping out of a gap caret onto the adjacent sibling. */
+  private _stepOutOfGap(gapBlock: BlockCraft.BlockComponent, side: 'before' | 'after', isBack: boolean) {
+    // For void/container the two gap stops also act as Up/Down stops: pressing
+    // Down at gap-before steps to gap-after within the same block, and vice versa.
+    const steppingInward = isBack ? side === 'after' : side === 'before'
+    if (steppingInward && (gapBlock.nodeType === BlockNodeType.void || gapBlock.nodeType === BlockNodeType.block)) {
+      this.doc.selection.setGapCursor(gapBlock, isBack ? 'before' : 'after')
+      this.doc.selection.scrollSelectionIntoView()
+      return
+    }
+    const res = this._enterSiblingOrExitParent(gapBlock, isBack)
+    if (!res) {
+      // No adjacent target: keep the caret on the current gap stop.
+      this.doc.selection.setGapCursor(gapBlock, side)
+    }
   }
 
   @BindHotKey({key: ['ArrowUp', "ArrowDown"], shiftKey: true})
@@ -302,6 +465,12 @@ export class SelectionKeyboard {
     const activeNode = selection.focusNode
     const zero = isZeroSpace(activeNode!)
     if (zero) {
+      // Block-level gap caret (leading/trailing block gap span): cross-block
+      // arrow navigation is owned by the gap-aware @BindHotKey handlers above,
+      // which run first and consume the event. Bail out here so the two paths
+      // never fight. Non-block zero-spaces (e.g. inline embed boundaries) still
+      // use the native char-step fallback below.
+      if (resolveBlockGapSide(activeNode!) !== null) return
       switch (state.raw.key) {
         case 'Backspace':
         case 'ArrowLeft':

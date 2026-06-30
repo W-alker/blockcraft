@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-06-15 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-06-30 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -198,7 +198,7 @@ doc.selection.selectionChange$          // BehaviorSubject<BlockSelection | null
 doc.selection.getSelectedText()         // string
 
 // A BlockSelection has:
-//   .anchor / .head        — discriminated ISelectionPoint (text | selected)
+//   .anchor / .head        — discriminated ISelectionPoint (text | selected | gap)
 //   .start / .end          — same points but document-ordered
 //   .firstBlock / .lastBlock
 //   .collapsed / .isInSameBlock / .isAllSelected / .isStartOfBlock / .isEndOfBlock
@@ -211,11 +211,16 @@ if (sel && sel.start.type === 'text') {
   const editableBlock = sel.start.block        // EditableBlockComponent
   const offset = sel.start.offset              // number
 }
+if (sel && sel.start.type === 'gap') {
+  const voidBlock = sel.start.block            // BaseBlockComponent (void/container)
+  const side = sel.start.side                  // 'before' | 'after'
+}
 
 // Write
 doc.selection.setCursorAt(editableBlock, offset)
 doc.selection.setCursorAtBlock(block, atStart, scrollIntoView?)
 doc.selection.selectBlock(block)               // whole-block selection
+doc.selection.setGapCursor(block, 'before' | 'after', scrollIntoView?)  // gap cursor beside void/container block
 doc.selection.extendTo(editableBlock, offset)  // shift+click
 doc.selection.blur()                           // clear
 

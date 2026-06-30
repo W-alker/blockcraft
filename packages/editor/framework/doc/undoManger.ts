@@ -16,10 +16,19 @@ type IRelativeSelectionTextPoint = {
   position: Y.RelativePosition
 }
 
+// gap point captured for undo: a collapsed cursor beside a void/container block.
+// Round-trips the `side` so undo/redo restores "before vs after" exactly instead
+// of degrading to a whole-block `selected` snapshot.
+type IRelativeSelectionGapPoint = {
+  type: 'gap'
+  blockId: string
+  side: 'before' | 'after'
+}
+
 type IRelativeSelectionPoint = {
   type: 'selected'
   blockId: string
-} | IRelativeSelectionTextPoint
+} | IRelativeSelectionTextPoint | IRelativeSelectionGapPoint
 
 type IRelativeSelectionSnapshot = {
   from: IRelativeSelectionPoint
@@ -141,7 +150,16 @@ export class DocUndoManger {
     return Math.max(min, Math.min(index, max))
   }
 
-  private _capturePointSafe(blockId: string, type: 'text' | 'selected', offset: number, length: number): IRelativeSelectionPoint | null {
+  private _capturePointSafe(
+    blockId: string,
+    type: 'text' | 'selected' | 'gap',
+    offset: number,
+    length: number,
+    side?: 'before' | 'after',
+  ): IRelativeSelectionPoint | null {
+    if (type === 'gap') {
+      return {type: 'gap', blockId, side: side ?? 'before'}
+    }
     if (type === 'selected') {
       return {type: 'selected', blockId}
     }
@@ -167,10 +185,21 @@ export class DocUndoManger {
     try {
       const s = sel.start, e = sel.end
 
+      // gap is always a collapsed single point beside a void/container block.
+      // Capture its `side` so undo/redo restores "before vs after" precisely.
+      if (s.type === 'gap') {
+        const from = this._capturePointSafe(s.blockId, 'gap', 0, 0, s.side)
+        return from ? {from, to: null} : null
+      }
+
+      // text/selected are mutually exclusive with gap below this point.
+      const captureType = (t: 'text' | 'selected' | 'gap'): 'text' | 'selected' =>
+        t === 'text' ? 'text' : 'selected'
+
       // Same-block: from captures [start.offset, end.offset)
       if (sel.isInSameBlock) {
         const len = s.type === 'text' && e.type === 'text' ? e.offset - s.offset : 0
-        const from = this._capturePointSafe(s.blockId, s.type, s.type === 'text' ? s.offset : 0, len)
+        const from = this._capturePointSafe(s.blockId, captureType(s.type), s.type === 'text' ? s.offset : 0, len)
         return from ? {from, to: null} : null
       }
 
@@ -179,13 +208,13 @@ export class DocUndoManger {
       // - to captures [0, end.offset) in the end block
       //   Note: to range always starts at offset 0 in the end block
       const fromPoint = this._capturePointSafe(
-        s.blockId, s.type, s.type === 'text' ? s.offset : 0,
+        s.blockId, captureType(s.type), s.type === 'text' ? s.offset : 0,
         s.type === 'text' ? (s.block as any).textLength - s.offset : 0
       )
       if (!fromPoint) return null
 
       const endLen = e.type === 'text' ? e.offset : 0
-      const toPoint = this._capturePointSafe(e.blockId, e.type, 0, endLen)
+      const toPoint = this._capturePointSafe(e.blockId, captureType(e.type), 0, endLen)
 
       return {from: fromPoint, to: toPoint}
     } catch {
@@ -194,6 +223,19 @@ export class DocUndoManger {
   }
 
   private _resolveSelectionPoint(point: IRelativeSelectionPoint): IBlockSelectionJSON['from'] | null {
+    if (point.type === 'gap') {
+      try {
+        this.doc.getBlockById(point.blockId)
+      } catch {
+        return null
+      }
+      return {
+        type: 'gap',
+        blockId: point.blockId,
+        side: point.side,
+      }
+    }
+
     if (point.type === 'selected') {
       try {
         this.doc.getBlockById(point.blockId)
@@ -242,7 +284,7 @@ export class DocUndoManger {
     return {
       from,
       to,
-      collapsed: !to && from.type === 'text' && from.length === 0,
+      collapsed: !to && (from.type === 'gap' || (from.type === 'text' && from.length === 0)),
       commonParent: from.blockId
     }
   }

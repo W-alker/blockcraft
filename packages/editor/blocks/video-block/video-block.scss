@@ -2,14 +2,11 @@
   display: block;
   margin: 8px 0;
   position: relative;
+  //width: fit-content;
+  //min-width: 50px;
 
   &.selected {
     background: unset !important;
-
-    .resizable-container {
-      outline: 2px solid var(--bc-active-color);
-      box-shadow: 0 0 6px var(--bc-active-color-light);
-    }
   }
 }
 

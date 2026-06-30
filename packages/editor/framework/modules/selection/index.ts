@@ -4,7 +4,7 @@ import {
   EditableBlockComponent,
 } from "../../block-std";
 import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
-import {closetBlockId, getBlockGapAnchor, isNativeInputTarget} from "../../utils";
+import {closetBlockId, getBlockGapAnchor, getBlockGapCaretSpan, isNativeInputTarget} from "../../utils";
 import {SelectionSelectedManager} from "./selected-manager";
 import {SelectionKeyboard} from "./selection-keyboard";
 import {FakeRange, IFakeRangeConfig} from "./createFakeRange";
@@ -17,7 +17,7 @@ import {
   ISelectionPoint,
   ISelectionPointJSON,
 } from "./types";
-import {normalizeRange as _normalizeRange, INormalizedEndpoints, endpointsToLegacy, lazyPoint as _lazyPoint} from "./normalize";
+import {normalizeRange as _normalizeRange, INormalizedEndpoints, endpointsToLegacy, lazyPoint as _lazyPoint, lazyGapPoint} from "./normalize";
 
 @DocEventRegister
 export class SelectionManager {
@@ -216,6 +216,29 @@ export class SelectionManager {
     const range = document.createRange()
     const fromBlock = this.doc.getBlockById(startPoint.blockId)
 
+    // Handle gap start
+    if (startPoint.type === 'gap') {
+      // Collapsed gap caret: place it at offset 0 of the filler span (before the
+      // `<br>`) for BOTH sides, so the browser paints the native caret on the
+      // filler line — above the card for 'before', below for 'after'.
+      const span = getBlockGapCaretSpan(fromBlock.hostElement, startPoint.side === 'before' ? 'before' : 'after')
+      if (span) {
+        range.setStart(span, 0)
+      } else {
+        range.setStart(fromBlock.hostElement, startPoint.side === 'before' ? 0 : fromBlock.hostElement.childElementCount)
+      }
+
+      // For collapsed gap range, collapse and return. Only collapse when the end
+      // is the SAME side — a same-block before→after gap range must build a real
+      // range via the trailing/leading anchors (handled by the gap-end block below).
+      if (!endPoint || (endPoint.blockId === startPoint.blockId && endPoint.type === 'gap' && endPoint.side === startPoint.side)) {
+        range.collapse(true)
+        return range
+      }
+
+      // Gap start with non-gap end: fall through to handle end
+    }
+
     if (startPoint.type === 'text') {
       const fb = fromBlock as EditableBlockComponent
       const startOffset = startPoint.offset ?? startPoint.index ?? 0
@@ -255,6 +278,18 @@ export class SelectionManager {
     }
 
     const toBlock = this.doc.getBlockById(endPoint.blockId)
+
+    // Handle gap end
+    if (endPoint.type === 'gap') {
+      const span = getBlockGapCaretSpan(toBlock.hostElement, endPoint.side === 'before' ? 'before' : 'after')
+      if (span) {
+        range.setEnd(span, 0)
+      } else {
+        range.setEnd(toBlock.hostElement, endPoint.side === 'before' ? 0 : toBlock.hostElement.childElementCount)
+      }
+      return range
+    }
+
     if (endPoint.type === 'text') {
       const tb = toBlock as EditableBlockComponent
       const endOffset = endPoint.offset ?? ((endPoint.index ?? 0) + (endPoint.length ?? 0))
@@ -371,6 +406,22 @@ export class SelectionManager {
     }
   }
 
+  /**
+   * Place a collapsed gap caret beside a void/container block.
+   * `side: 'before'` anchors inside the leading gap span, `'after'` the trailing one.
+   */
+  public setGapCursor(block: string | BlockCraft.BlockComponent, side: 'before' | 'after', scrollIntoView?: boolean): void {
+    const resolvedBlock = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    const gapPoint = {blockId: resolvedBlock.id, type: 'gap' as const, side}
+    const range = this._buildDomRange(gapPoint)
+    const selection = document.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+    if (scrollIntoView) {
+      this.scrollSelectionIntoView()
+    }
+  }
+
   /** @deprecated Use replay with ISelectionJSON */
   replay(json: IBlockSelectionJSON | ISelectionJSON | null) {
     if (!json) return
@@ -399,9 +450,13 @@ export class SelectionManager {
     } catch {
       return null
     }
+    const makePoint = (p: ISelectionPointJSON) =>
+      p.type === 'gap'
+        ? lazyGapPoint(p.blockId, p.side!, id => this.doc.getBlockById(id) as any)
+        : _lazyPoint(p, id => this.doc.getBlockById(id) as any)
     return this._createBlockSelection(
-      _lazyPoint(json.anchor, id => this.doc.getBlockById(id) as any),
-      _lazyPoint(json.head, id => this.doc.getBlockById(id) as any),
+      makePoint(json.anchor),
+      makePoint(json.head),
       json.commonParent,
     )
   }
@@ -412,9 +467,13 @@ export class SelectionManager {
     }
     if ('anchor' in source) {
       // ISelectionJSON → build a BlockSelection
+      const makePoint = (p: ISelectionPointJSON) =>
+        p.type === 'gap'
+          ? lazyGapPoint(p.blockId, p.side!, id => this.doc.getBlockById(id) as any)
+          : _lazyPoint(p, id => this.doc.getBlockById(id) as any)
       const sel = this._createBlockSelection(
-        _lazyPoint(source.anchor, id => this.doc.getBlockById(id) as any),
-        _lazyPoint(source.head, id => this.doc.getBlockById(id) as any),
+        makePoint(source.anchor),
+        makePoint(source.head),
         source.commonParent
       )
       return new FakeRange(this.doc, sel, config)
@@ -435,6 +494,20 @@ export class SelectionManager {
   }
 
   getSelectionRect(): DOMRect | null {
+    // Gap caret: the collapsed Range sits at an element boundary (offset 0 of the
+    // filler span, before its `<br>`), and `range.getBoundingClientRect()` returns
+    // an empty 0×0 rect there — which makes `scrollSelectionIntoView` bail. The
+    // filler span itself is the real visual caret position (a positioned line box),
+    // so measure it directly.
+    const start = this.value?.start
+    if (start && start.type === 'gap') {
+      try {
+        const span = getBlockGapCaretSpan(start.block.hostElement, start.side)
+        if (span) return span.getBoundingClientRect()
+      } catch {
+        // fall through to the range-based path
+      }
+    }
     const range = this._rangeFromModel()
     if (!range) return null
     return range.getBoundingClientRect()
@@ -504,13 +577,16 @@ function isSelectionBackward(sel: globalThis.Selection): boolean {
 
 /** Convert new ISelectionPoint to legacy-compatible shape for _buildDomRange */
 function pointToLegacy(p: ISelectionPoint): any {
+  if (p.type === 'gap') {
+    return {blockId: p.blockId, type: 'gap', side: p.side}
+  }
   if (p.type === 'text') {
     return {blockId: p.blockId, type: 'text', offset: p.offset, index: p.offset, length: 0}
   }
   return {blockId: p.blockId, type: 'selected'}
 }
 
-const searchEditableDescendant = (block: BlockCraft.BlockComponent, isStart: boolean): EditableBlockComponent | null => {
+export const searchEditableDescendant = (block: BlockCraft.BlockComponent, isStart: boolean): EditableBlockComponent | null => {
   if (block.nodeType === BlockNodeType.editable) return <EditableBlockComponent>block
   const child = isStart ? block.firstChildren : block.lastChildren
   if (!child || child.nodeType === BlockNodeType.void) return null

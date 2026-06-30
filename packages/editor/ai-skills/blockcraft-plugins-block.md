@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-05-28
+> Last updated: 2026-06-30
 
 ## BlockControllerPlugin
 
@@ -108,9 +108,15 @@ the menu and clicking, the action falls back to the single-block path.
 
 ## BlockGapCreatorPlugin
 
-> `plugins/block-gap-creator/` — Inserts paragraph when clicking between blocks.
+> `plugins/block-gap-creator/` — Resolves blank-area clicks to a sensible caret (gap cursor / line-end / nearest block).
 
-Detects clicks in the empty gap between blocks. When the gap between two non-editable blocks is clicked, inserts a new empty paragraph. If the adjacent block is editable, moves the cursor to that block instead.
+Detects clicks in blank areas that the browser wouldn't otherwise place a caret in, and routes them via the gap-cursor model:
+
+- **Beside a void/container block** (inside the block's host but outside its `[data-gap-anchor]` content box) → drops a **gap cursor** (`setGapCursor(block, 'before' | 'after')`, side by click position). Typing there inserts an adjacent paragraph and **keeps** the block (it no longer eagerly creates an empty paragraph on click).
+- **Right of a text line** (block padding, outside `.edit-container`) → places a text caret at that line's end (feature-detected `caretRangeFromPoint`).
+- **Root gutter / below all content** → focuses the nearest root-level child: editable → its text end/start; void → its `gap-after`/`gap-before`.
+
+Includes a mousedown+click same-target anti-drag guard so a drag-select never drops a gap cursor. Content clicks pass through to native handling unchanged.
 
 ### Configuration
 

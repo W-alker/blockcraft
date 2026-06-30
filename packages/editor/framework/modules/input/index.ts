@@ -13,7 +13,7 @@ import {
   STR_LINE_BREAK,
   UIEventStateContext,
 } from "../../block-std";
-import { BlockSelection, INormalizedRange } from "../selection";
+import { BlockSelection, IGapSelectionPoint, INormalizedRange } from "../selection";
 import { endpointsToLegacy } from "../selection/normalize";
 import { isNativeInputTarget, isZeroSpace } from "../../utils";
 import {
@@ -224,10 +224,48 @@ export class InputTransformer {
       : undefined;
   }
 
+  /**
+   * Insert a new paragraph adjacent to the void/container block the gap cursor
+   * sits beside, then place the caret into it. The void/container block is KEPT
+   * (gap input never replaces the block, unlike whole-block `selected` input).
+   */
+  private _insertParagraphAtGap(gap: IGapSelectionPoint, text: string): void {
+    const index =
+      gap.block.getIndexOfParent() + (gap.side === "after" ? 1 : 0);
+    const newParagraph = this.doc.crud.insertNewParagraph(
+      gap.block.parentId!,
+      index,
+      text ? [{ insert: text }] : [],
+    );
+    this.doc.selection.setCursorAt(newParagraph as any, text.length);
+  }
+
   @EventListen("compositionStart")
   private _handleCompositionStart(context: UIEventStateContext) {
     this.compositionSession.reset();
     const curSel = this.doc.selection.value!;
+
+    // Handle gap-cursor IME: the gap sits inside a non-editable void/container
+    // block, so we must synchronously materialize a real empty paragraph, move
+    // the caret into it, then let composition proceed in that editable block.
+    // Use a NORMAL transaction (NOT ORIGIN_SKIP_SYNC) for the structural insert;
+    // the OneShotCursorAnchor is captured (via startFromSelection) in the NEW
+    // paragraph so compositionEnd resolves its insertion point there. The
+    // void/container block is KEPT.
+    if (curSel.collapsed && curSel.start.type === "gap") {
+      context.preventDefault();
+      const gap = curSel.start;
+      const index =
+        gap.block.getIndexOfParent() + (gap.side === "after" ? 1 : 0);
+      const newParagraph = this.doc.crud.insertNewParagraph(
+        gap.block.parentId!,
+        index,
+      );
+      this.doc.selection.setCursorAt(newParagraph as any, 0);
+      this.compositionSession.startFromSelection({ isComposing: true });
+      return true;
+    }
+
     if (curSel.isAllSelected) {
       context.preventDefault();
       const resolved = this._resolveBlockSelectionHost(curSel.lastBlock);
@@ -412,6 +450,25 @@ export class InputTransformer {
     }
 
     if (ev.isComposing || ev.defaultPrevented) {
+      return;
+    }
+
+    // Handle gap-cursor input: insert paragraph at gap, keep the void/container
+    // block. The legacy `normalizeRange`/`endpointsToLegacy` path collapses gap
+    // into `selected` (lossy), so the gap must be read from the live model
+    // selection here, BEFORE that conversion, and take priority over the
+    // `selected` replace-block branch below.
+    const modelSel = this.doc.selection.value;
+    if (
+      modelSel &&
+      modelSel.collapsed &&
+      modelSel.start.type === "gap"
+    ) {
+      ev.preventDefault();
+      const gapText = getPlainTextFromInputEvent(ev);
+      if (gapText) {
+        this._insertParagraphAtGap(modelSel.start, gapText);
+      }
       return;
     }
 
@@ -619,6 +676,16 @@ export class InputTransformer {
     if (!this._isPrintableKey(ev)) return;
 
     const selection = this.doc.selection.value;
+
+    // Handle gap-cursor printable key: insert paragraph at gap, keep the block.
+    // A gap cursor is collapsed, so it must be handled before the collapsed
+    // early-return below (which is the `selected` whole-block fallback path).
+    if (selection && selection.collapsed && selection.start.type === "gap") {
+      ev.preventDefault();
+      this._insertParagraphAtGap(selection.start, ev.key);
+      return true;
+    }
+
     if (
       !selection ||
       selection.collapsed ||
@@ -889,6 +956,24 @@ export class InputTransformer {
       return this._deleteAllSelected(sel);
     }
 
+    // Handle gap-after a void block + Backspace: delete that void block, then
+    // recalculate the selection synchronously so the next render reads a fresh
+    // model (avoids a stale "Block not found" crash). Only true `void` blocks are
+    // deleted — container (`block`) gaps are consumed but kept, since deleting a
+    // whole container with editable descendants on a single keypress is destructive.
+    if (
+      sel.collapsed &&
+      sel.start.type === "gap" &&
+      sel.start.side === "after"
+    ) {
+      context.preventDefault();
+      if (sel.start.block.nodeType === BlockNodeType.void) {
+        this.doc.crud.deleteBlockById(sel.start.block.id);
+        this.doc.selection.recalculate();
+      }
+      return true;
+    }
+
     if (!sel.collapsed || sel.start.type !== "text" || sel.start.offset !== 0)
       return false;
     const block = sel.firstBlock as any;
@@ -994,6 +1079,22 @@ export class InputTransformer {
       return this._deleteAllSelected(sel);
     }
 
+    // Handle gap-before a void block + Delete (forward): delete that void block,
+    // then recalculate synchronously (see _handleBackspace for the rationale).
+    // Only true `void` blocks are deleted — container (`block`) gaps are kept.
+    if (
+      sel.collapsed &&
+      sel.start.type === "gap" &&
+      sel.start.side === "before"
+    ) {
+      context.preventDefault();
+      if (sel.start.block.nodeType === BlockNodeType.void) {
+        this.doc.crud.deleteBlockById(sel.start.block.id);
+        this.doc.selection.recalculate();
+      }
+      return true;
+    }
+
     const block = sel.firstBlock as any;
     if (
       !sel.collapsed ||
@@ -1090,6 +1191,13 @@ export class InputTransformer {
     const sel = state.selection;
 
     context.preventDefault();
+
+    // Handle gap-cursor Enter: insert a new empty paragraph at the gap, keep the
+    // void/container block, and move the caret into the new paragraph.
+    if (sel.collapsed && sel.start.type === "gap") {
+      this._insertParagraphAtGap(sel.start, "");
+      return true;
+    }
 
     if (sel.isAllSelected) {
       const p = this.doc.schemas.createSnapshot("paragraph", [

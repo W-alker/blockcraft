@@ -311,3 +311,86 @@ describe('InputTransformer block-selection paragraph host resolution', () => {
     expect(transformer['_resolveBlockSelectionHost'](divider)).toBeNull()
   })
 })
+
+describe('InputTransformer._insertParagraphAtGap', () => {
+  const createTestDoc = (indexOfParent: number) => {
+    const mockVoidBlock = {
+      id: 'void-1',
+      parentId: 'parent-1',
+      getIndexOfParent: jasmine.createSpy('getIndexOfParent').and.returnValue(indexOfParent),
+      nodeType: 'void',
+    }
+    const mockNewParagraph = {id: 'paragraph-new', textLength: 0}
+    const doc = {
+      event: eventStub(),
+      selection: {
+        value: null,
+        setCursorAt: jasmine.createSpy('setCursorAt'),
+      },
+      crud: {
+        insertNewParagraph: jasmine.createSpy('insertNewParagraph').and.returnValue(mockNewParagraph),
+        deleteBlockById: jasmine.createSpy('deleteBlockById'),
+      },
+    }
+    return {doc, mockVoidBlock, mockNewParagraph}
+  }
+
+  const makeGap = (side: 'before' | 'after', block: any) => ({
+    blockId: 'void-1',
+    type: 'gap' as const,
+    side,
+    block,
+  })
+
+  it('inserts paragraph BEFORE the void at the block index when side=before', () => {
+    const {doc, mockVoidBlock} = createTestDoc(2)
+    const transformer = new InputTransformer(doc as any) as any
+
+    transformer['_insertParagraphAtGap'](makeGap('before', mockVoidBlock), 'hello')
+
+    // before => index unchanged (= getIndexOfParent())
+    expect(doc.crud.insertNewParagraph).toHaveBeenCalledWith('parent-1', 2, [{insert: 'hello'}])
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(
+      doc.crud.insertNewParagraph.calls.mostRecent().returnValue,
+      5,
+    )
+  })
+
+  it('inserts paragraph AFTER the void at index+1 when side=after', () => {
+    const {doc, mockVoidBlock} = createTestDoc(2)
+    const transformer = new InputTransformer(doc as any) as any
+
+    transformer['_insertParagraphAtGap'](makeGap('after', mockVoidBlock), 'world')
+
+    // after => index + 1
+    expect(doc.crud.insertNewParagraph).toHaveBeenCalledWith('parent-1', 3, [{insert: 'world'}])
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(
+      doc.crud.insertNewParagraph.calls.mostRecent().returnValue,
+      5,
+    )
+  })
+
+  it('inserts an empty paragraph (empty op) and places the caret at 0 for empty text', () => {
+    const {doc, mockVoidBlock} = createTestDoc(0)
+    const transformer = new InputTransformer(doc as any) as any
+
+    transformer['_insertParagraphAtGap'](makeGap('before', mockVoidBlock), '')
+
+    expect(doc.crud.insertNewParagraph).toHaveBeenCalledWith('parent-1', 0, [])
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(
+      doc.crud.insertNewParagraph.calls.mostRecent().returnValue,
+      0,
+    )
+  })
+
+  it('keeps the original void block — never calls deleteBlockById', () => {
+    const {doc, mockVoidBlock} = createTestDoc(1)
+    const transformer = new InputTransformer(doc as any) as any
+
+    transformer['_insertParagraphAtGap'](makeGap('after', mockVoidBlock), 'x')
+
+    // after => getIndexOfParent() (=1) + 1 = 2
+    expect(doc.crud.insertNewParagraph).toHaveBeenCalledWith('parent-1', 2, [{insert: 'x'}])
+    expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
+  })
+})

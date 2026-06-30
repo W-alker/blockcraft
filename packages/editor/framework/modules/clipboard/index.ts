@@ -1,5 +1,6 @@
 import {
   BlockNodeType,
+  ClipboardEventState,
   DeltaInsert,
   DeltaOperation,
   DocEventRegister,
@@ -27,7 +28,7 @@ import {
   PasteRegion,
   PasteRegionPoint,
 } from "./types";
-import {ISelectionPointJSON} from "../selection/types";
+import {IGapSelectionPoint, ISelectionPointJSON} from "../selection/types";
 import {
   generateId,
   replaceSnapshotsIdDeeply,
@@ -573,6 +574,108 @@ export class ClipboardManager {
     return {anchorBlockId: editableBlock.id, region}
   }
 
+  /**
+   * Paste at a gap cursor (collapsed selection beside a void/container block).
+   *
+   * Inserts the clipboard blocks as SIBLINGS at the gap index — gap-before inserts
+   * before the block, gap-after inserts after it — and KEEPS the void/container
+   * block (never replaces it). Falls back to a plain-text paragraph paste when no
+   * structured snapshot is available.
+   *
+   * @returns true when blocks were inserted, false on no-op (nothing usable on the
+   *   clipboard, or the gap block's parent is gone).
+   */
+  private async _applyGapPaste(selection: BlockCraft.Selection, state: ClipboardEventState): Promise<boolean> {
+    const gapPoint = selection.start as IGapSelectionPoint
+    const gapBlock = gapPoint.block
+    if (!gapBlock?.parentId) return false
+
+    const rootSnapshot = await this._collectGapPasteSnapshot(state, gapBlock.props?.depth ?? 0)
+    if (!rootSnapshot || !rootSnapshot.children.length || rootSnapshot.nodeType !== BlockNodeType.root) {
+      return false
+    }
+
+    const snapshots: IBlockSnapshot[] = rootSnapshot.children as IBlockSnapshot[]
+    replaceSnapshotsIdDeeply(snapshots)
+
+    // 有道云附件重传标记：插入前统一收集并剥离（绝不写进 Yjs），插入后异步重传。
+    const rehostMarkers = collectAndStripRehostMarkers(rootSnapshot)
+    if (rehostMarkers.length) {
+      nextTick().then(() => rehostYneAttachments(this.doc, rehostMarkers))
+    }
+
+    // Insert as siblings at the gap index. insertBlocksBefore/After resolve the
+    // parent + index from the live block and run inside their own transaction, so
+    // the void/container block is preserved (no delete) and this is a single undo step.
+    const inserted = gapPoint.side === 'after'
+      ? this.doc.crud.insertBlocksAfter(gapBlock, snapshots)
+      : this.doc.crud.insertBlocksBefore(gapBlock, snapshots)
+    if (!inserted.length) return false
+
+    await nextTick()
+
+    // Place the caret in the last inserted block (end of its text, or whole-block).
+    const lastBlock = inserted[inserted.length - 1]
+    if (this.doc.isEditable(lastBlock)) {
+      this.doc.selection.setCursorAt(lastBlock, lastBlock.textLength)
+    } else {
+      this.doc.selection.setCursorAtBlock(lastBlock, false, false)
+    }
+    this.doc.selection.recalculate()
+
+    return true
+  }
+
+  /**
+   * Resolve the clipboard payload to a root snapshot for a gap paste, trying the
+   * structured formats first (internal snapshot → web-custom snapshot → YNE JSON →
+   * HTML adapter) and falling back to splitting plain text into paragraphs.
+   */
+  private async _collectGapPasteSnapshot(state: ClipboardEventState, gapDepth: number): Promise<IBlockSnapshot | undefined> {
+    let rootSnapshot: IBlockSnapshot | undefined
+
+    if (state.dataTypes.includes(ClipboardDataType.BLOCKCRAFT_SNAPSHOT)) {
+      rootSnapshot = parseClipboardSnapshot(state.getData(ClipboardDataType.BLOCKCRAFT_SNAPSHOT)) || undefined
+    }
+    if (!rootSnapshot && state.dataTypes.includes(BLOCKCRAFT_WEB_SNAPSHOT_MIME)) {
+      rootSnapshot = parseClipboardSnapshot(state.getData(BLOCKCRAFT_WEB_SNAPSHOT_MIME)) || undefined
+    }
+
+    if (!rootSnapshot && state.dataTypes.includes(YNE_JSON_MIME)) {
+      const snap = parseYneClipboard(state, this.doc)
+      if (snap && snap.children.length) rootSnapshot = snap
+    }
+
+    if (!rootSnapshot && state.dataTypes.includes(ClipboardDataType.HTML)) {
+      const htmlString = state.getData(ClipboardDataType.HTML)
+      if (htmlString) {
+        rootSnapshot = parseClipboardSnapshotFromHtml(htmlString) || undefined
+        if (!rootSnapshot) {
+          const htmlAdapter = this.adapter?.getAdapter(ClipboardDataType.HTML)
+          if (htmlAdapter) {
+            try {
+              rootSnapshot = await htmlAdapter.toSnapshot(htmlString)
+            } catch (e) {
+              this.doc.logger.warn('html2snapshot error in gap paste', e)
+            }
+          }
+        }
+      }
+    }
+
+    // Plain-text fallback: one paragraph per line, wrapped in a root snapshot.
+    if (!rootSnapshot && state.dataTypes.includes(ClipboardDataType.TEXT)) {
+      const text = state.getData(ClipboardDataType.TEXT)
+      if (!text) return undefined
+      const paras = text.replace(/[\n\r]+$/, '').split('\n').map(line =>
+        this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: gapDepth}])
+      )
+      rootSnapshot = this._wrapSnapshotsByRoot(paras)
+    }
+
+    return rootSnapshot
+  }
+
   private _restoreCollapsedSelectionAndSync(selectionJSON: ReturnType<BlockCraft.Selection['toJSON']> | null) {
     if (!selectionJSON) return
 
@@ -666,6 +769,13 @@ export class ClipboardManager {
     logPasteFormats(state.clipboardData)
 
     const selection = state.selection
+
+    // Gap cursor paste: insert clipboard blocks as siblings beside the void/container
+    // block (keeping it), instead of the text-only paste path below.
+    if (selection.start.type === 'gap') {
+      return this._applyGapPaste(selection, state)
+    }
+
     if (selection.start.type !== 'text') return
 
     const editableBlock = selection.firstBlock as EditableBlockComponent
