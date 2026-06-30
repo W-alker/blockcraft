@@ -367,6 +367,30 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         this._syncTableFocusUi(selection)
       })
 
+    // 在表格内进行文本编辑（普通打字 / IME 提交）时折叠矩形（行/列）多选高亮。
+    // 多格选区的高亮存在本组件的 _selectedCellSet / _activeCellsRange 里，而
+    // doc.selection 只跟踪 anchor 格——光标进入 anchor 格编辑时 _syncTableFocusUi
+    // 的 keep-alive 分支会保留矩形，导致其它格残留 .selected 样式。这里在真正发生
+    // 文本变更时主动清理（O(1) 预检：无多选直接返回）。Delete 清空内容不插入文本、
+    // 不触发本路径，多选保持不变（符合“清空后仍选中”的预期）。
+    this.doc.crud.onTextUpdate$
+      .pipe(takeUntil(this.onDestroy$))
+      .subscribe(e => {
+        if (!e.local || this._startSelectingCell) return
+        const hasRectSelection = !!this._activeCellsRange
+          || this._selectedCellSet.size > 0
+          || this._activeColRange[0] > -1
+          || this._activeRowRange[0] > -1
+        if (!hasRectSelection) return
+        const editedInThisTable = e.transactions.some(t =>
+          this.hostElement.contains(t.block.hostElement))
+        if (!editedInThisTable) return
+        this._activeCellsRange = null
+        this._clearSelected()
+        this._clearActiveRanges()
+        this.changeDetectorRef.markForCheck()
+      })
+
     // 协同兜底：远端结构事务后校验矩形不变量与 colWidths 对齐。
     // 仅远端事务触发 + O(rows) 预检，本地编辑路径零开销，见 table-normalize.ts
     attachTableNormalizer(this)

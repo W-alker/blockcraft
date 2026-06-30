@@ -370,7 +370,7 @@
       // 如果这里改成 clip，全屏会丢失垂直滚动。
       &:not(.is-fullscreen) {
         .table-scrollable {
-          padding-top: 0;
+          //padding-top: 0;
           overflow-y: clip;
         }
         // row-bar 的 top: 1px 现在是全局默认（containing block 已改为 wrapper），

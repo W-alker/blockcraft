@@ -5,6 +5,7 @@ import {
   DeltaInsert,
   DeltaOperation,
   DocEventRegister,
+  EditableBlockComponent,
   EventListen,
   INLINE_ELEMENT_TAG,
   INLINE_END_BREAK_CLASS,
@@ -119,22 +120,67 @@ export class InputTransformer {
     );
   }
 
-  private _canReplaceSelectedBlocksWithParagraph(
-    range: INormalizedRange | BlockSelection,
-  ) {
-    if (range instanceof BlockSelection) {
-      range = endpointsToLegacy({ start: range.start, end: range.end });
-    }
-
-    const target = range.to || range.from;
-    const parent = target.block.parentBlock;
-    if (!parent) return false;
-
-    const parentSchema = this.doc.schemas.get(parent.flavour);
-    return (
-      !!parentSchema?.metadata.renderUnit &&
+  /**
+   * Resolve where a typed / composed paragraph should go when a BLOCK selection
+   * (no text caret) is replaced by input.
+   *
+   * - `sibling`: the selected block's PARENT is a renderUnit that accepts a
+   *   paragraph (callout / root / …). Replace the selected block with a new
+   *   sibling paragraph in that parent — the long-standing behaviour. Checked
+   *   FIRST so callout etc. keep their current "replace the whole block" UX.
+   * - `inside`: the parent can't host a paragraph (table-row / columns / …) but
+   *   the SELECTED block is itself a renderUnit container that can (table-cell /
+   *   column). Clear that container's content and edit INSIDE it.
+   *
+   * The `inside` case is the fix for IME / typing over a block-selected cell or
+   * column: previously the handler only looked at the parent, found it wasn't a
+   * renderUnit, and bailed to `blur()`. Because `compositionstart` can't be
+   * cancelled, the native IME then wrote glyphs straight into the still
+   * `contenteditable` container — glyphs never persisted to Y.Text (phantom
+   * characters in the view; the cell's only paragraph could be stranded).
+   *
+   * Returns null when neither the block nor its parent can host a paragraph
+   * (e.g. a void block) — the caller falls back to `blur()`.
+   */
+  private _resolveBlockSelectionHost(
+    block: BlockCraft.BlockComponent,
+  ): { host: BlockCraft.BlockComponent; mode: "sibling" | "inside" } | null {
+    const parent = block.parentBlock;
+    if (
+      parent &&
+      this.doc.schemas.get(parent.flavour)?.metadata.renderUnit &&
       this.doc.schemas.isValidChildren("paragraph", parent.flavour)
-    );
+    ) {
+      return { host: parent, mode: "sibling" };
+    }
+    if (
+      this.doc.schemas.get(block.flavour)?.metadata.renderUnit &&
+      this.doc.schemas.isValidChildren("paragraph", block.flavour)
+    ) {
+      return { host: block, mode: "inside" };
+    }
+    return null;
+  }
+
+  /**
+   * Clear a renderUnit container down to a single empty paragraph and return
+   * that paragraph (so a caret / typed text can land in it). `deleteBlocks` on a
+   * renderUnit parent auto-inserts the empty paragraph; we only top it up for
+   * the degenerate empty-container case. All mutation goes through Yjs.
+   */
+  private _clearContainerToEmptyParagraph(
+    host: BlockCraft.BlockComponent,
+  ): EditableBlockComponent | null {
+    if (host.childrenLength > 0) {
+      this.doc.crud.deleteBlocks(host.id, 0, host.childrenLength);
+    }
+    if (host.childrenLength === 0) {
+      this.doc.crud.insertBlocks(host.id, 0, [
+        this.doc.schemas.createSnapshot("paragraph", []),
+      ]);
+    }
+    const first = host.firstChildren;
+    return first && this.doc.isEditable(first) ? first : null;
   }
 
   private consumeNextInsertAttrs(
@@ -184,17 +230,31 @@ export class InputTransformer {
     const curSel = this.doc.selection.value!;
     if (curSel.isAllSelected) {
       context.preventDefault();
-      const curParent = curSel.lastBlock.parentBlock!;
-      const curParentSchema = this.doc.schemas.get(curParent.flavour)!;
-      if (!curParentSchema.metadata.renderUnit) {
+      const resolved = this._resolveBlockSelectionHost(curSel.lastBlock);
+      if (!resolved) {
         this.doc.selection.blur();
         return true;
       }
       this.doc.crud.undoManager.captureSelectionBeforeChange();
-      const p = this.doc.schemas.createSnapshot("paragraph", []);
-      this.doc.crud.insertBlocksAfter(curSel.lastBlock.id, [p]);
-      this._deleteAllSelected(curSel);
-      this.doc.selection.setCursorAtBlock(p.id, true);
+      if (resolved.mode === "sibling") {
+        const p = this.doc.schemas.createSnapshot("paragraph", []);
+        this.doc.crud.insertBlocksAfter(curSel.lastBlock.id, [p]);
+        this._deleteAllSelected(curSel);
+        this.doc.selection.setCursorAtBlock(p.id, true);
+      } else {
+        // `inside`: the selected block is a renderUnit container (table-cell /
+        // column) whose parent can't host a paragraph. Clear it and drop the
+        // caret into its fresh empty paragraph BEFORE the native IME writes, so
+        // composition lands in a real, Y.Text-backed text node instead of an
+        // un-modelled container. compositionEnd's rerender() then scrubs any
+        // glyph the IME may have raced in. See _resolveBlockSelectionHost.
+        const target = this._clearContainerToEmptyParagraph(resolved.host);
+        if (!target) {
+          this.doc.selection.blur();
+          return true;
+        }
+        this.doc.selection.setCursorAtBlock(target.id, true);
+      }
       this.doc.selection.recalculate();
       this.compositionSession.startFromSelection({ isComposing: true });
       return true;
@@ -589,18 +649,41 @@ export class InputTransformer {
     range: INormalizedRange | BlockSelection,
     text: string,
   ) {
-    if (!this._canReplaceSelectedBlocksWithParagraph(range)) {
-      return false;
-    }
-
     if (range instanceof BlockSelection) {
       range = endpointsToLegacy({ start: range.start, end: range.end });
     }
 
     const { from, to } = range;
-    const paragraph = this.doc.schemas.createSnapshot("paragraph", [text]);
+    const target = to || from;
+    const resolved = this._resolveBlockSelectionHost(target.block);
+    if (!resolved) {
+      return false;
+    }
 
     this.doc.crud.undoManager.captureSelectionBeforeChange();
+
+    if (resolved.mode === "inside") {
+      // Typing over a block-selected renderUnit container (table-cell / column):
+      // clear it and type into its fresh empty paragraph instead of replacing
+      // the container in its (non-renderUnit) parent. Mirrors the
+      // compositionStart `inside` path. See _resolveBlockSelectionHost.
+      const editable = this._clearContainerToEmptyParagraph(resolved.host);
+      if (!editable) return false;
+      if (text) {
+        this.doc.crud.transact(() => {
+          editable.yText.insert(0, text);
+        });
+      }
+      this.doc.selection.setSelection({
+        blockId: editable.id,
+        type: "text",
+        index: text ? text.length : 0,
+        length: 0,
+      });
+      return true;
+    }
+
+    const paragraph = this.doc.schemas.createSnapshot("paragraph", [text]);
     this.doc.crud.transact(() => {
       this.doc.crud.insertBlocksAfter((to || from).blockId, [paragraph]);
       if (to) {

@@ -235,3 +235,79 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
     expect(insert).toHaveBeenCalledWith(2, 'Z', {'a:italic': true})
   })
 })
+
+describe('InputTransformer block-selection paragraph host resolution', () => {
+  // Schema lookup driven by a per-flavour map: renderUnit flag + whether the
+  // flavour accepts a paragraph child. Mirrors the two schema reads in
+  // _resolveBlockSelectionHost.
+  const makeDoc = (
+    schemaMap: Record<string, { renderUnit?: boolean; acceptsParagraph?: boolean }>,
+  ) => ({
+    event: eventStub(),
+    schemas: {
+      get: (flavour: string) =>
+        schemaMap[flavour]
+          ? {metadata: {renderUnit: !!schemaMap[flavour].renderUnit}}
+          : undefined,
+      isValidChildren: (_child: string, parentFlavour: string) =>
+        !!schemaMap[parentFlavour]?.acceptsParagraph,
+    },
+  })
+  const mkBlock = (flavour: string, id: string, parentBlock: any = null) => ({
+    flavour,
+    id,
+    parentBlock,
+  })
+
+  it('routes a block-selected table-cell to inside-mode (parent row cannot host a paragraph)', () => {
+    const doc = makeDoc({
+      'table-cell': {renderUnit: true, acceptsParagraph: true},
+      'table-row': {renderUnit: false, acceptsParagraph: false},
+    })
+    const cell = mkBlock('table-cell', 'cell-1', mkBlock('table-row', 'row-1'))
+    const transformer = new InputTransformer(doc as any) as any
+    expect(transformer['_resolveBlockSelectionHost'](cell)).toEqual({host: cell, mode: 'inside'})
+  })
+
+  it('routes a block-selected column to inside-mode (parent columns cannot host a paragraph)', () => {
+    const doc = makeDoc({
+      column: {renderUnit: true, acceptsParagraph: true},
+      columns: {renderUnit: false, acceptsParagraph: false},
+    })
+    const column = mkBlock('column', 'column-1', mkBlock('columns', 'columns-1'))
+    const transformer = new InputTransformer(doc as any) as any
+    expect(transformer['_resolveBlockSelectionHost'](column)).toEqual({host: column, mode: 'inside'})
+  })
+
+  it('keeps a block-selected callout on sibling-mode (parent can host a paragraph)', () => {
+    const doc = makeDoc({
+      callout: {renderUnit: true, acceptsParagraph: true},
+      root: {renderUnit: true, acceptsParagraph: true},
+    })
+    const root = mkBlock('root', 'root')
+    const callout = mkBlock('callout', 'callout-1', root)
+    const transformer = new InputTransformer(doc as any) as any
+    expect(transformer['_resolveBlockSelectionHost'](callout)).toEqual({host: root, mode: 'sibling'})
+  })
+
+  it('routes a block-selected paragraph inside a cell to sibling-mode', () => {
+    const doc = makeDoc({
+      paragraph: {renderUnit: false, acceptsParagraph: false},
+      'table-cell': {renderUnit: true, acceptsParagraph: true},
+    })
+    const cell = mkBlock('table-cell', 'cell-1')
+    const paragraph = mkBlock('paragraph', 'p-1', cell)
+    const transformer = new InputTransformer(doc as any) as any
+    expect(transformer['_resolveBlockSelectionHost'](paragraph)).toEqual({host: cell, mode: 'sibling'})
+  })
+
+  it('returns null when neither the block nor its parent can host a paragraph', () => {
+    const doc = makeDoc({
+      divider: {renderUnit: false, acceptsParagraph: false},
+      'table-row': {renderUnit: false, acceptsParagraph: false},
+    })
+    const divider = mkBlock('divider', 'divider-1', mkBlock('table-row', 'row-1'))
+    const transformer = new InputTransformer(doc as any) as any
+    expect(transformer['_resolveBlockSelectionHost'](divider)).toBeNull()
+  })
+})
