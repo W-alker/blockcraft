@@ -207,4 +207,9 @@ new OrderedBlockPlugin()
 ### Notes
 
 - Subscribes to `doc.onChildrenUpdate$` and `doc.onPropsUpdate$` for automatic renumbering
+- Recalculates the affected parent block as one sibling sequence after local child changes, or after ordered block `depth` / `heading` / `start` prop changes
+- Numbering is grouped by sibling `depth` + `heading`; changing one ordered block's `heading` renumbers following ordered siblings in the same parent
+- Explicit `start` restarts the sequence from that number; following same-depth/same-heading ordered blocks continue from it
+- A `start`-only prop change uses a local recalculation range and stops at the next explicit `start` boundary for the same `depth` + `heading`
+- Returning from a nested depth to a shallower depth clears deeper counters, so nested ordered lists restart under the next parent item
 - Shows `OrderedPrefixToolbar` when the list prefix button is clicked
