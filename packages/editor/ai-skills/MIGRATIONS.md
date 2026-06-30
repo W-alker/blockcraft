@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-06-24 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-06-30 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,27 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-06-30 (patch) — OrderedBlockPlugin 父节点级自动重排
+
+**Severity**: patch
+
+**What changed**: `OrderedBlockPlugin` now recalculates ordered-list numbering by scanning the affected parent block's sibling sequence instead of only walking around the changed ordered block. Child insert/delete changes schedule the whole parent for renumbering; ordered block `depth` / `heading` / `start` prop changes schedule that block's parent. The scan groups counters by sibling `depth + heading`, honors explicit `start`, lets same-depth ordered blocks continue across non-ordered siblings, and clears deeper counters after returning to a shallower depth.
+
+**Why**: The old local-neighborhood algorithm missed several user-visible cases: changing the `heading` on one ordered block could leave following ordered blocks with stale order values; nested ordered items could continue under the wrong parent after the sequence returned to a shallower depth; and deletion/insert cases depended too heavily on the immediate neighboring block. Parent-level scanning makes the plugin behave closer to how users expect continuous ordered blocks to sort themselves.
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-block.md` — OrderedBlockPlugin behavior notes updated for parent-level renumbering
+
+### Behavior Changes
+- Changing an ordered block's `heading`, `depth`, or `start` now renumbers following ordered siblings in the same parent during the next scheduling tick. Previously the plugin could update only the local run around the changed block.
+- Ordered numbering now groups by `depth + heading`: lower-level heading ordered blocks no longer split higher-level heading numbering, and same-depth/same-heading ordered blocks continue as one sequence.
+- Same-depth ordered blocks continue across non-ordered siblings. Returning to a shallower depth clears deeper counters, so nested ordered numbering restarts below the next shallower item.
+- A `start`-only prop change now uses a bounded local recalculation range and stops at the next explicit `start` for the same `depth + heading`. Child changes and `depth` / `heading` changes still use parent-level scanning because they can affect multiple numbering groups.
+- No public API or configuration changes. Existing `new OrderedBlockPlugin()` usage stays unchanged.
+
+### Migration Recipe
+No code migration required. If downstream tests asserted exact stale `order` props after `heading` / `depth` edits, update those expectations to the corrected renumbered sequence.
 
 ### v?.?.? - 2026-06-24 (minor) — Code block 支持用户颜色叠加；TextMarkerPlugin 新增 `colorOnlyFlavours`
 
