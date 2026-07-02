@@ -22,7 +22,7 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
   @HostListener('mousedown', ['$event'])
   onSelectStart(event: MouseEvent) {
     if (event.target === this.hostElement) {
-      event.preventDefault()
+      // event.preventDefault()
     }
   }
 

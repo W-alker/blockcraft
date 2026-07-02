@@ -1,4 +1,5 @@
 import {InputTransformer} from "./index";
+import {BlockNodeType} from "../../block-std";
 
 // `@DocEventRegister` validates `doc.event` and registers listeners in the
 // constructor, so every mock doc must expose a minimal event dispatcher stub.
@@ -392,5 +393,122 @@ describe('InputTransformer._insertParagraphAtGap', () => {
     // after => getIndexOfParent() (=1) + 1 = 2
     expect(doc.crud.insertNewParagraph).toHaveBeenCalledWith('parent-1', 2, [{insert: 'x'}])
     expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
+  })
+
+  it('does not materialize a gap paragraph from printable keydown', () => {
+    const {doc, mockVoidBlock} = createTestDoc(1)
+    const selection = {
+      collapsed: true,
+      start: makeGap('after', mockVoidBlock),
+    }
+    ;(doc.selection as any).value = selection
+    const transformer = new InputTransformer(doc as any) as any
+    const preventDefault = jasmine.createSpy('preventDefault')
+
+    const result = transformer['_handleSelectedStartPrintableFallback']({
+      getDefaultEvent: () => ({
+        key: 'n',
+        metaKey: false,
+        ctrlKey: false,
+        altKey: false,
+        preventDefault,
+      }),
+    })
+
+    expect(result).toBeUndefined()
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(doc.crud.insertNewParagraph).not.toHaveBeenCalled()
+  })
+
+  it('still materializes a gap paragraph from non-composing beforeinput', () => {
+    const {doc, mockVoidBlock} = createTestDoc(1)
+    const selection = {
+      collapsed: true,
+      start: makeGap('after', mockVoidBlock),
+    }
+    ;(doc.selection as any).value = selection
+    const transformer = new InputTransformer(doc as any) as any
+    spyOn(transformer.compositionSession, 'updateAnchorFromInputEvent')
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const event = {
+      target: null,
+      inputType: 'insertText',
+      data: 'a',
+      isComposing: false,
+      defaultPrevented: false,
+      preventDefault,
+    }
+
+    transformer['_handleBeforeInput']({
+      get: () => ({event}),
+    } as any)
+
+    expect(preventDefault).toHaveBeenCalled()
+    expect(doc.crud.insertNewParagraph).toHaveBeenCalledWith('parent-1', 2, [{insert: 'a'}])
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(
+      doc.crud.insertNewParagraph.calls.mostRecent().returnValue,
+      1,
+    )
+  })
+})
+
+describe('InputTransformer gap deletion', () => {
+  const createTransformer = (side: 'before' | 'after', nodeType: BlockNodeType) => {
+    const block = {
+      id: 'container-1',
+      nodeType,
+    }
+    const selection = {
+      isAllSelected: false,
+      collapsed: true,
+      start: {
+        blockId: block.id,
+        type: 'gap' as const,
+        side,
+        block,
+      },
+    }
+    const doc = {
+      event: eventStub(),
+      selection: {
+        recalculate: jasmine.createSpy('recalculate'),
+      },
+      crud: {
+        deleteBlockById: jasmine.createSpy('deleteBlockById'),
+      },
+    }
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const context = {
+      preventDefault,
+      get: () => ({selection}),
+    }
+    return {
+      doc,
+      preventDefault,
+      context,
+      transformer: new InputTransformer(doc as any) as any,
+    }
+  }
+
+  it('Backspace deletes a container block from gap-after', () => {
+    const {transformer, context, doc, preventDefault} = createTransformer('after', BlockNodeType.block)
+
+    const result = transformer['_handleBackspace'](context)
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(doc.crud.deleteBlockById).toHaveBeenCalledOnceWith('container-1')
+    expect(doc.selection.recalculate).toHaveBeenCalled()
+  })
+
+  it('Delete deletes a container block from gap-before', () => {
+    const {transformer, context, doc, preventDefault} = createTransformer('before', BlockNodeType.block)
+
+    const result = transformer['_handleDelete'](context)
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(doc.crud.deleteBlockById).toHaveBeenCalledOnceWith('container-1')
+    expect(doc.selection.recalculate).toHaveBeenCalled()
   })
 })

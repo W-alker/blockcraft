@@ -677,15 +677,6 @@ export class InputTransformer {
 
     const selection = this.doc.selection.value;
 
-    // Handle gap-cursor printable key: insert paragraph at gap, keep the block.
-    // A gap cursor is collapsed, so it must be handled before the collapsed
-    // early-return below (which is the `selected` whole-block fallback path).
-    if (selection && selection.collapsed && selection.start.type === "gap") {
-      ev.preventDefault();
-      this._insertParagraphAtGap(selection.start, ev.key);
-      return true;
-    }
-
     if (
       !selection ||
       selection.collapsed ||
@@ -941,6 +932,31 @@ export class InputTransformer {
     return this._replaceText(range, null, merge);
   }
 
+  private _deleteGapBlockAt(
+    sel: BlockSelection,
+    side: "before" | "after",
+  ): boolean {
+    if (
+      !sel.collapsed ||
+      sel.start.type !== "gap" ||
+      sel.start.side !== side
+    ) {
+      return false;
+    }
+
+    const block = sel.start.block;
+    if (
+      block.nodeType !== BlockNodeType.void &&
+      block.nodeType !== BlockNodeType.block
+    ) {
+      return false;
+    }
+
+    this.doc.crud.deleteBlockById(block.id);
+    this.doc.selection.recalculate();
+    return true;
+  }
+
   @BindHotKey({
     key: "Backspace",
     shiftKey: null,
@@ -956,21 +972,11 @@ export class InputTransformer {
       return this._deleteAllSelected(sel);
     }
 
-    // Handle gap-after a void block + Backspace: delete that void block, then
-    // recalculate the selection synchronously so the next render reads a fresh
-    // model (avoids a stale "Block not found" crash). Only true `void` blocks are
-    // deleted — container (`block`) gaps are consumed but kept, since deleting a
-    // whole container with editable descendants on a single keypress is destructive.
-    if (
-      sel.collapsed &&
-      sel.start.type === "gap" &&
-      sel.start.side === "after"
-    ) {
+    // Gap-after + Backspace deletes the void/container block next to the caret,
+    // then recalculates synchronously so the next render does not read a stale
+    // selection that still points at the deleted block.
+    if (this._deleteGapBlockAt(sel, "after")) {
       context.preventDefault();
-      if (sel.start.block.nodeType === BlockNodeType.void) {
-        this.doc.crud.deleteBlockById(sel.start.block.id);
-        this.doc.selection.recalculate();
-      }
       return true;
     }
 
@@ -1079,19 +1085,9 @@ export class InputTransformer {
       return this._deleteAllSelected(sel);
     }
 
-    // Handle gap-before a void block + Delete (forward): delete that void block,
-    // then recalculate synchronously (see _handleBackspace for the rationale).
-    // Only true `void` blocks are deleted — container (`block`) gaps are kept.
-    if (
-      sel.collapsed &&
-      sel.start.type === "gap" &&
-      sel.start.side === "before"
-    ) {
+    // Gap-before + Delete mirrors Backspace from gap-after.
+    if (this._deleteGapBlockAt(sel, "before")) {
       context.preventDefault();
-      if (sel.start.block.nodeType === BlockNodeType.void) {
-        this.doc.crud.deleteBlockById(sel.start.block.id);
-        this.doc.selection.recalculate();
-      }
       return true;
     }
 

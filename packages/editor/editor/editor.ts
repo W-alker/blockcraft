@@ -145,12 +145,6 @@ const schemas = new SchemaManager([
 
       ::ng-deep {
         [data-blockcraft-root="true"] {
-          /* Fill the scroll card so a click in the blank area BELOW the content
-             still lands on the editable root (not the scroll container), letting
-             the block-gap-creator plugin resolve it to the nearest block — Yuque
-             behaviour. Without this the editable root is only as tall as its
-             content and the band underneath belongs to .editor-container, which
-             the plugin never sees. */
           box-sizing: border-box;
           min-height: 100%;
           padding: 48px 56px 64px;

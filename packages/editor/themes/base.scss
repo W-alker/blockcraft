@@ -35,6 +35,7 @@
   line-height: var(--bc-lh);
   @include user-select(none);
   color: var(--bc-color);
+  caret-color: var(--bc-caret-color);
 
   > [data-block-zero-space="true"] {
     @include user-select(none);
@@ -89,7 +90,6 @@
   [data-block-id] {
     position: relative;
     margin-bottom: var(--bc-segments-gap);
-    caret-color: var(--bc-caret-color);
 
     &.selected {
       // Editability is controlled via the `contenteditable` attribute toggled
@@ -115,71 +115,49 @@
     outline: none;
   }
 
-  // Block gap filler: an absolutely-positioned `<br>` line box pinned to the
-  // card's TOP edge (leading, `:first-of-type`) and BOTTOM edge (trailing,
-  // `:last-of-type`). Absolute keeps it OUT of flow so it never becomes a flex
-  // item, never adds layout space, and is never re-laid-out by the various block
-  // hosts (flex / overflow / cards). The browser paints its NATIVE caret on this
-  // line — no fake CSS bar. The filler itself is invisible (0-width line box);
-  // only the caret shows. Per-block offset tuning lives in themes/blocks/*.scss.
   .bc-block-gap,
   [data-block-zero-space="true"] {
     position: absolute;
     z-index: 1;
     cursor: text;
-    line-height: var(--bc-lh);
-    // The native caret must be visible inside the filler even when the
-    // surrounding void block forces `caret-color: transparent` (see below).
-    caret-color: var(--bc-caret-color);
+    font-size: var(--bc-fs);
+    //line-height: var(--bc-lh);
+    //caret-color: var(--bc-caret-color);
   }
-  // Centre the caret ON the content's top edge (leading) / bottom edge
-  // (trailing) so `before` reads as "above the card" and `after` as "below it",
-  // and the two never coincide on short blocks (e.g. a 24px divider).
+
   .bc-block-gap:first-of-type,
   [data-block-zero-space="true"]:first-of-type {
     top: 0;
     left: -2px;
   }
+
   .bc-block-gap:last-of-type,
   [data-block-zero-space="true"]:last-of-type {
     bottom: 0;
     right: -2px;
   }
 
-  // ── EXPERIMENTAL · Flex [gap][content][gap] (Yuque-style) ────────────────────
-  // A block OPTS IN by giving its content a `> .bc-block-content` wrapper (in its
-  // template). For those blocks the gap fillers become REAL in-flow flex items, so
-  // the BROWSER natively places the caret on them when you click above / below the
-  // block — no JS block-gap-creator needed for the vertical gaps. Blocks WITHOUT
-  // the wrapper keep the absolute fillers above (routed by JS). This single rule is
-  // the whole uniform mechanism; per-block work is only splitting the block's inner
-  // styles onto .bc-block-content (host keeps its outer look). Reference: divider, callout.
-  [data-block-id]:has(> .bc-block-content) {
-    display: flex;
-    flex-direction: column;
-
-    > .bc-block-gap {
-      position: relative;   // in flow; `relative` only so `z-index` applies
-      z-index: 1;           // paint OVER the content edge it overlaps, so clicks land on it
-      inset: auto;          // neutralise the absolute :first/:last offsets above
-      flex: 0 0 auto;
-      width: 100%;
-      height: var(--bc-segments-gap);
-      line-height: var(--bc-segments-gap);
-    }
-    // Negative margin cancels the filler's OWN height → zero net added space,
-    // uniformly, no matter the block's padding/margin. The filler overlaps the
-    // content's top/bottom edge; z-index keeps it clickable. before → top-left,
-    // after → bottom-right.
-    > .bc-block-gap:first-of-type {
-      margin-bottom: calc(-1 * var(--bc-segments-gap));
-      text-align: left;
-    }
-    > .bc-block-gap:last-of-type {
-      margin-top: calc(-1 * var(--bc-segments-gap));
-      text-align: right;
-    }
-  }
+  //[data-block-id]:has(> .bc-block-content) {
+  //  display: flex;
+  //  //flex-direction: column;
+  //
+  //  > .bc-block-gap {
+  //    position: relative;   // in flow; `relative` only so `z-index` applies
+  //    z-index: 1;           // paint OVER the content edge it overlaps, so clicks land on it
+  //    inset: auto;          // neutralise the absolute :first/:last offsets above
+  //    flex: 0 0 auto;
+  //    font-size: var(--bc-fs);
+  //  }
+  //
+  //  > .bc-block-gap:first-of-type {
+  //    align-self: flex-start;
+  //    text-align: left;
+  //  }
+  //  > .bc-block-gap:last-of-type {
+  //    text-align: right;
+  //    align-self: flex-end;
+  //  }
+  //}
 
   [data-node-type="void"] {
     @include user-select(none);

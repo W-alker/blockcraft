@@ -17,9 +17,21 @@
 
   .table-block {
     padding-bottom: 16px;
+    width: fit-content;
+    max-width: 100%;
+    overflow-x: hidden;
 
-    // Fullscreen view feature
     position: relative;
+
+    .bc-block-gap:first-of-type,
+    [data-block-zero-space="true"]:first-of-type {
+      left: 0;
+    }
+
+    .bc-block-gap:last-of-type,
+    [data-block-zero-space="true"]:last-of-type {
+      right: 0;
+    }
 
     .bc-table-fullscreen-btn {
       position: absolute;
@@ -59,13 +71,15 @@
       z-index: var(--bc-table-fullscreen-z);
       background: var(--bc-table-fullscreen-bg);
       padding: 64px 0;
-      // 滚动下放到 .table-scrollable 内部，外层容器只布局不滚。
+      // 横向滚动下放到 .table-scrollable 内部，外层只保留纵向滚动。
       // 这样 top: 12px / bottom: 16px 的 position:absolute 工具栏始终
       // 锚定在 viewport 边缘，不会跟着表格内容滚走。
-      overflow: auto;
+      overflow-x: hidden;
+      overflow-y: auto;
       border-radius: 0;
       box-sizing: border-box;
       margin: 0;
+      width: 100%;
 
       // 全屏视图下小表格在 viewport 内居中显示。
       // 不用 `align-items: safe center`：WKWebView (Safari < 16.5 / iOS < 16.5)
@@ -88,9 +102,6 @@
         right: 12px;
         width: 40px;
         height: 40px;
-        // 全屏态下浮层工具栏统一压到 table-col-bar / table-row-bar (z=100) +
-        // resize-bar (z=102) + drop-line/preview (z=140/150) 之上。
-        // 不然向下滚动时，col-bar 会从下方滑到 viewport 顶部、盖住关闭按钮 / 结构工具栏。
         z-index: 200;
         background: var(--bc-bg-hover, rgba(0, 0, 0, 0.06));
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -111,6 +122,8 @@
         // scrollTop=0 即对齐表头，避免老版本 WKWebView 上方被裁。
         margin: auto;
         width: 100%;
+        min-width: 0;
+        max-width: 100%;
         overflow-y: hidden;
         padding-top: var(--bc-table-fullscreen-padding-y);
         padding-bottom: var(--bc-table-fullscreen-padding-y);
@@ -121,6 +134,10 @@
       .table-wrapper {
         margin-left: auto;
         margin-right: auto;
+      }
+
+      .table-menu-anchor {
+        display: none;
       }
 
       // row-bar 现在放在 .table-wrapper 内部，containing block 自动是 wrapper，

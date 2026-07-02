@@ -1,6 +1,7 @@
 import {BlockNodeType, DocPlugin} from "../../framework";
-import {closetBlockId, caretRangeFromPoint, resolveGapSideFromRect} from "../../framework/utils";
-import {Subscription} from "rxjs";
+import {closetBlockId, caretRangeFromPoint, isNativeInputTarget, resolveBlockGapSide, resolveGapSideFromRect} from "../../framework/utils";
+import {fromEvent, Subscription} from "rxjs";
+import {performanceTest} from "../../global";
 
 /**
  * Resolves a blank-area click into a gap caret, a text caret, or an adjacent
@@ -21,8 +22,10 @@ export class BlockGapCreatorPlugin extends DocPlugin {
 
   private _subs: Subscription[] = []
 
-  /** mousedown must land on root gap AND movement < threshold to count as a gap click */
+  /** mousedown must land on root/block blank area AND movement < threshold to count as a plain gap click */
   private _downOnGap = false
+  private _downHandled = false
+  private _isMouseDown = false
   private _downX = 0
   private _downY = 0
 
@@ -32,13 +35,40 @@ export class BlockGapCreatorPlugin extends DocPlugin {
     const root = this.doc.root
     const host = root.hostElement
 
-    // Track whether mousedown started on the gap (not inside a block)
     this._subs.push(
       this.doc.event.customListen(host, 'mousedown').subscribe((e) => {
         const evt = e as MouseEvent
-        this._downOnGap = evt.target === host
+        this._resetDownState()
+        this._isMouseDown = true
         this._downX = evt.clientX
         this._downY = evt.clientY
+        this._downOnGap = this._isPlainRootGapMouseDown(evt)
+
+        if (this.doc.isReadonly) return
+        if (!this._shouldResolveOnMouseDown(evt)) return
+
+        if (!this._resolveBlankAreaSelection(evt.clientX, evt.clientY)) return
+        evt.preventDefault()
+        this._downHandled = true
+        this._downOnGap = true
+        this.doc.selection.recalculate()
+      })
+    )
+
+    this._subs.push(
+      fromEvent<MouseEvent>(window, 'mousemove', {capture: true}).subscribe((evt) => {
+        if (!this._isMouseDown || !this._downHandled) return
+        if (!this._isDragLike(evt.clientX, evt.clientY)) return
+        if (this._extendSelectionToPoint(evt.clientX, evt.clientY)) {
+          evt.preventDefault()
+        }
+      })
+    )
+
+    this._subs.push(
+      fromEvent<MouseEvent>(window, 'mouseup', {capture: true}).subscribe(() => {
+        this._isMouseDown = false
+        setTimeout(() => this._resetDownState())
       })
     )
 
@@ -46,80 +76,159 @@ export class BlockGapCreatorPlugin extends DocPlugin {
       this.doc.event.customListen(host, 'click').subscribe((e) => {
         const evt = e as MouseEvent
         if (this.doc.isReadonly) return
-        // mousedown must have started on the gap itself
+
+        if (this._downHandled) {
+          evt.preventDefault()
+          this._resetDownState()
+          return
+        }
+
+        // mousedown must have started on the gap itself. This is a fallback for
+        // cases where the mousedown path did not resolve a blank-area target.
         if (!this._downOnGap) return
         // click target must also be on the gap
         if (evt.target !== host) return
         // reject drag-like movements (cross-block selection, etc.)
-        const dx = evt.clientX - this._downX
-        const dy = evt.clientY - this._downY
-        if (dx * dx + dy * dy > BlockGapCreatorPlugin._MOVE_THRESHOLD * BlockGapCreatorPlugin._MOVE_THRESHOLD) return
+        if (this._isDragLike(evt.clientX, evt.clientY)) {
+          return
+        }
 
         evt.preventDefault()
-
-        // The block the pointer is vertically level with, resolved purely from
-        // child rects. This works in the SIDE gutter, where the click target is
-        // the root host and `elementFromPoint` can't see the block beside it.
-        const row = this._resolveRowBlockByPoint(evt.clientX, evt.clientY)
-
-        // Case (A0): side gutter level with a gap-eligible (void/container) block
-        // → that block's gap. Resolved BEFORE the text-line probe so a tall void
-        // block's gap wins over a far adjacent paragraph that `caretRangeFromPoint`
-        // would otherwise clamp the caret to.
-        if (row && row.gutter && this._isGapEligible(row.block)) {
-          this.doc.selection.setGapCursor(row.block, row.side)
-          return
-        }
-
-        // Case (B): text line caret (editable row in its side padding, or right of
-        // a wrapped line).
-        if (this._tryTextLineEndCaret(evt.clientX, evt.clientY)) return
-
-        // Case (A): elementFromPoint lands on a gap-eligible block host, outside
-        // its content box (a block with inner padding that reaches the pointer).
-        const clickedElement = document.elementFromPoint(evt.clientX, evt.clientY)
-        const blockId = clickedElement ? closetBlockId(clickedElement) : null
-        const clickedBlock = blockId ? this._safeGetBlock(blockId) : null
-        if (clickedBlock && this._isGapEligible(clickedBlock)) {
-          const side = this._resolveSideFromClickRect(clickedBlock, evt.clientX, evt.clientY)
-          if (side) {
-            this.doc.selection.setGapCursor(clickedBlock, side)
-            return
-          }
-        }
-
-        // Case (A2): side gutter level with an EDITABLE block that Case B didn't
-        // resolve → text caret at the near end (left gutter → start, right → end).
-        if (row && row.gutter && this.doc.isEditable(row.block)) {
-          this.doc.selection.setCursorAtBlock(row.block, row.side === 'before')
-          return
-        }
-
-        // Case (C): root gutter / below all content — find nearest root child by Y
-        const {above, below} = this._findAdjacentBlocks(evt.clientX, evt.clientY)
-        if (!above && !below) return
-
-        // If the block above the gap is editable, focus at its end
-        if (above && this.doc.isEditable(above)) {
-          this.doc.selection.setCursorAtBlock(above, false)
-          return
-        }
-
-        // If the block below the gap is editable, focus at its beginning
-        if (below && this.doc.isEditable(below)) {
-          this.doc.selection.setCursorAtBlock(below, true)
-          return
-        }
-
-        // Both non-editable: gap-after on the block above (if gap-eligible),
-        // else gap-before on the block below.
-        if (above && this._isGapEligible(above)) {
-          this.doc.selection.setGapCursor(above, 'after')
-        } else if (below && this._isGapEligible(below)) {
-          this.doc.selection.setGapCursor(below, 'before')
-        }
+        this._resolveBlankAreaSelection(evt.clientX, evt.clientY)
       })
     )
+  }
+
+  private _resetDownState(): void {
+    this._downOnGap = false
+    this._downHandled = false
+    this._isMouseDown = false
+  }
+
+  private _isDragLike(x: number, y: number): boolean {
+    const dx = x - this._downX
+    const dy = y - this._downY
+    return dx * dx + dy * dy > BlockGapCreatorPlugin._MOVE_THRESHOLD * BlockGapCreatorPlugin._MOVE_THRESHOLD
+  }
+
+  private _shouldResolveOnMouseDown(evt: MouseEvent): boolean {
+    if (!this._isPlainMouseDown(evt)) return false
+    if (isNativeInputTarget(evt.target)) return false
+
+    const target = evt.target
+    if (!(target instanceof Node)) return false
+    if (target === this.doc.root.hostElement) return true
+    if (this._isInBlockGapAnchor(target)) return true
+
+    const blockId = closetBlockId(target)
+    const block = blockId ? this._safeGetBlock(blockId) : null
+    if (!block || !this._isGapEligible(block)) return false
+    return this._resolveSideFromClickRect(block, evt.clientX, evt.clientY) !== null
+  }
+
+  private _isPlainRootGapMouseDown(evt: MouseEvent): boolean {
+    return this._isPlainMouseDown(evt) && evt.target === this.doc.root.hostElement
+  }
+
+  private _isPlainMouseDown(evt: MouseEvent): boolean {
+    if (evt.button !== 0 || evt.detail > 1) return false
+    return !evt.shiftKey && !evt.altKey && !evt.ctrlKey && !evt.metaKey
+  }
+
+  private _extendSelectionToPoint(x: number, y: number): boolean {
+    const range = caretRangeFromPoint(x, y)
+    if (!range) return false
+    if (!this._isRangeInsideRoot(range)) return false
+
+    const selection = document.getSelection()
+    if (!selection?.rangeCount || typeof selection.extend !== 'function') return false
+
+    try {
+      selection.extend(range.startContainer, range.startOffset)
+      this.doc.selection.recalculate()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private _isRangeInsideRoot(range: Range): boolean {
+    const root = this.doc.root.hostElement
+    return range.startContainer !== root && root.contains(range.startContainer)
+  }
+
+  @performanceTest()
+  private _resolveBlankAreaSelection(x: number, y: number): boolean {
+    const clickedElement = document.elementFromPoint(x, y)
+    const clickedGapSide = clickedElement ? resolveBlockGapSide(clickedElement) : null
+    if (clickedElement && clickedGapSide) {
+      const blockId = closetBlockId(clickedElement)
+      const block = blockId ? this._safeGetBlock(blockId) : null
+      if (block && this._isGapEligible(block)) {
+        this.doc.selection.setGapCursor(block, clickedGapSide)
+        return true
+      }
+    }
+
+    // The block the pointer is vertically level with, resolved purely from
+    // child rects. This works in the SIDE gutter, where the click target is
+    // the root host and `elementFromPoint` can't see the block beside it.
+    const row = this._resolveRowBlockByPoint(x, y)
+
+    if (row?.gutter) {
+      if (this._isGapEligible(row.block)) {
+        this.doc.selection.setGapCursor(row.block, row.side)
+        return true
+      }
+      if (this.doc.isEditable(row.block)) {
+        this.doc.selection.setCursorAtBlock(row.block, row.side === 'before', false)
+        return true
+      }
+    }
+
+    // Case (B): text line caret (editable row in its side padding, or right of
+    // a wrapped line).
+    if (this._tryTextLineEndCaret(x, y)) return true
+
+    // Case (A): elementFromPoint lands on a gap-eligible block host, outside
+    // its content box (a block with inner padding that reaches the pointer).
+    const blockId = clickedElement ? closetBlockId(clickedElement) : null
+    const clickedBlock = blockId ? this._safeGetBlock(blockId) : null
+    if (clickedBlock && this._isGapEligible(clickedBlock)) {
+      const side = this._resolveSideFromClickRect(clickedBlock, x, y)
+      if (side) {
+        this.doc.selection.setGapCursor(clickedBlock, side)
+        return true
+      }
+    }
+
+    // Case (C): root gutter / below all content — find nearest root child by Y
+    const {above, below} = this._findAdjacentBlocks(x, y)
+    if (!above && !below) return false
+
+    // If the block above the gap is editable, focus at its end
+    if (above && this.doc.isEditable(above)) {
+      this.doc.selection.setCursorAtBlock(above, false, false)
+      return true
+    }
+
+    // If the block below the gap is editable, focus at its beginning
+    if (below && this.doc.isEditable(below)) {
+      this.doc.selection.setCursorAtBlock(below, true, false)
+      return true
+    }
+
+    // Both non-editable: gap-after on the block above (if gap-eligible),
+    // else gap-before on the block below.
+    if (above && this._isGapEligible(above)) {
+      this.doc.selection.setGapCursor(above, 'after')
+      return true
+    }
+    if (below && this._isGapEligible(below)) {
+      this.doc.selection.setGapCursor(below, 'before')
+      return true
+    }
+    return false
   }
 
   /**
@@ -176,11 +285,43 @@ export class BlockGapCreatorPlugin extends DocPlugin {
 
   /**
    * Resolve 'before'/'after' from the click position relative to the block's
-   * host rect. Returns null for an in-content click.
+   * visual content rect. Returns null for an in-content click.
    */
   private _resolveSideFromClickRect(block: BlockCraft.BlockComponent, x: number, y: number): 'before' | 'after' | null {
-    const anchorEl = block.hostElement
-    return resolveGapSideFromRect(anchorEl.getBoundingClientRect(), x, y)
+    return resolveGapSideFromRect(this._getBlockContentRect(block), x, y)
+  }
+
+  private _getBlockContentRect(block: BlockCraft.BlockComponent): { top: number; bottom: number; left: number; right: number } {
+    const explicitContent = block.hostElement.querySelector(':scope > .bc-block-content')
+    if (explicitContent instanceof HTMLElement) {
+      return explicitContent.getBoundingClientRect()
+    }
+
+    const contentChildren = Array
+      .from(block.hostElement.children)
+      .filter((child): child is HTMLElement =>
+        child instanceof HTMLElement &&
+        child.getAttribute('data-block-zero-space') !== 'true' &&
+        !child.classList.contains('blockcraft-cursor')
+      )
+
+    if (!contentChildren.length) {
+      return block.hostElement.getBoundingClientRect()
+    }
+
+    const rects = contentChildren.map(child => child.getBoundingClientRect())
+    const first = rects[0]
+    return rects.slice(1).reduce((acc, rect) => ({
+      top: Math.min(acc.top, rect.top),
+      bottom: Math.max(acc.bottom, rect.bottom),
+      left: Math.min(acc.left, rect.left),
+      right: Math.max(acc.right, rect.right),
+    }), {
+      top: first.top,
+      bottom: first.bottom,
+      left: first.left,
+      right: first.right,
+    })
   }
 
   /**

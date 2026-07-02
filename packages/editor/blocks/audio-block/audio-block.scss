@@ -1,6 +1,7 @@
 :host {
   display: block;
   margin: 8px 0;
+  max-width: 400px;
 
   &.selected {
     background: unset !important;
@@ -22,7 +23,6 @@
   border: 1px solid var(--bc-border-color-light, #F1F1EF);
   border-radius: 8px;
   background: var(--bc-bg-secondary, #FAFAFA);
-  max-width: 400px;
 
   span {
     color: var(--bc-color-lighter, #8b9cad);
@@ -40,25 +40,25 @@
 }
 
 @keyframes bc-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .upload-hint {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 24px;
+  padding: 12px;
   border: 2px dashed var(--bc-border-color, #E6E6E6);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
   background: var(--bc-bg-secondary, #FAFAFA);
-  max-width: 400px;
 
   i {
-    font-size: 36px;
+    font-size: 24px;
     color: var(--bc-color-light, #999);
   }
 
