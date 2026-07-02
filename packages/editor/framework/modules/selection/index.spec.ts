@@ -52,7 +52,7 @@ describe('SelectionManager DOM selection normalization', () => {
     document.querySelectorAll('[data-block-id="root"]').forEach(el => el.remove());
   });
 
-  it('ignores a collapsed native range on a non-editable block host', () => {
+  it('keeps a collapsed native range on a non-editable block host as a block selection', () => {
     const {manager, blockHost} = createManager();
     const range = document.createRange();
     range.setStart(blockHost, 0);
@@ -64,8 +64,12 @@ describe('SelectionManager DOM selection normalization', () => {
 
     const result = manager.recalculate();
 
-    expect(result.value).toBeNull();
-    expect(manager.value).toBeNull();
-    expect(blockHost.classList.contains('selected')).toBeFalse();
+    expect(result.value).not.toBeNull();
+    expect(result.value!.start.type).toBe('selected');
+    expect(result.value!.start.blockId).toBe('block-1');
+    expect(result.value!.end.type).toBe('selected');
+    expect(result.value!.end.blockId).toBe('block-1');
+    expect(manager.value).toBe(result.value);
+    expect(blockHost.classList.contains('selected')).toBeTrue();
   });
 });

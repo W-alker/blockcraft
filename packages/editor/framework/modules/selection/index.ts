@@ -146,11 +146,6 @@ export class SelectionManager {
       // normalizeRange returns {start, end} in document order.
       // Determine real anchor/head from native Selection direction.
       const endpoints = this._normalizeRange(range, options)
-      if (this._isNativeCollapsedBlockSelection(range, endpoints)) {
-        const next = () => this._applyState(null)
-        execNext && next()
-        return {value: null, next: execNext ? undefined : next}
-      }
       const isBackward = isSelectionBackward(selection)
       const anchor = isBackward ? endpoints.end : endpoints.start
       const head = isBackward ? endpoints.start : endpoints.end
@@ -194,13 +189,6 @@ export class SelectionManager {
 
   private _normalizeRange(range: StaticRange, options?: { isComposing?: boolean }): INormalizedEndpoints {
     return _normalizeRange(range, id => this.doc.getBlockById(id) as any, options)
-  }
-
-  private _isNativeCollapsedBlockSelection(range: StaticRange, endpoints: INormalizedEndpoints): boolean {
-    return range.collapsed &&
-      endpoints.start.type === 'selected' &&
-      endpoints.end.type === 'selected' &&
-      endpoints.start.blockId === endpoints.end.blockId
   }
 
   // ── Model state management ──
