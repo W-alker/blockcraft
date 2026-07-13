@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-06-24
+> Last updated: 2026-07-08
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -10,7 +10,7 @@ These plugins provide floating toolbars that appear when specific block types ar
 
 > `plugins/attachment-extension/` — Attachment block interactions and toolbar.
 
-Manages click behavior on attachment blocks (file picker for empty blocks, upload-in-progress warnings), shows a connected toolbar with rename/download/preview/delete actions, and handles file paste.
+Manages click behavior on attachment blocks (file picker for empty blocks, upload-in-progress warnings), shows a connected toolbar with rename/download/preview/delete actions, and handles file paste. Rename mode keeps the attachment visually active with the private `.bc-attachment-renaming` class while the native rename input owns focus; whole-block `.selected` remains owned by `SelectionManager`.
 
 ### Configuration
 

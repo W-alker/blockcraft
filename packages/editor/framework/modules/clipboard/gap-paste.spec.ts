@@ -36,17 +36,24 @@ describe('ClipboardManager – paste at gap', () => {
     children,
   });
 
-  const createManager = () => {
+  const createManager = (options: {removeInsertedBeforeCaretRestore?: boolean} = {}) => {
     snapshotSeq = 0;
     const calls: Array<{ method: 'before' | 'after'; blockId: string; snapshots: IBlockSnapshot[] }> = [];
+    const liveBlocks = new Map<string, BlockCraft.BlockComponent>();
 
     // Resolve inserted blocks from snapshots so `_applyGapPaste` can place the caret.
-    const resolveInserted = (snapshots: IBlockSnapshot[]) =>
-      snapshots.map(s => ({
+    const resolveInserted = (snapshots: IBlockSnapshot[]) => {
+      const inserted = snapshots.map(s => ({
         id: s.id,
         nodeType: s.nodeType,
         textLength: 5,
       })) as unknown as BlockCraft.BlockComponent[];
+      inserted.forEach(block => liveBlocks.set(block.id, block));
+      if (options.removeInsertedBeforeCaretRestore) {
+        inserted.forEach(block => liveBlocks.delete(block.id));
+      }
+      return inserted;
+    };
 
     const setCursorAt = jasmine.createSpy('setCursorAt');
     const setCursorAtBlock = jasmine.createSpy('setCursorAtBlock');
@@ -74,6 +81,11 @@ describe('ClipboardManager – paste at gap', () => {
           calls.push({method: 'after', blockId: block.id, snapshots});
           return resolveInserted(snapshots);
         },
+      },
+      getBlockById: (id: string) => {
+        const block = liveBlocks.get(id);
+        if (!block) throw new Error(`missing block ${id}`);
+        return block;
       },
       selection: {setCursorAt, setCursorAtBlock, recalculate: jasmine.createSpy('recalculate')},
     };
@@ -117,6 +129,18 @@ describe('ClipboardManager – paste at gap', () => {
     expect(setCursorAt).toHaveBeenCalledWith(
       jasmine.objectContaining({nodeType: BlockNodeType.editable}), 5,
     );
+  });
+
+  it('does not restore the caret when the inserted gap-paste block was removed before nextTick', async () => {
+    const {manager, calls, setCursorAt, setCursorAtBlock} = createManager({removeInsertedBeforeCaretRestore: true});
+    const selection = gapSelection('divider-1', 'after');
+
+    const ok = await (manager as any)._applyGapPaste(selection, textState('pasted'));
+
+    expect(ok).toBeTrue();
+    expect(calls.length).toBe(1);
+    expect(setCursorAt).not.toHaveBeenCalled();
+    expect(setCursorAtBlock).not.toHaveBeenCalled();
   });
 
   it('inserts pasted blocks as siblings BEFORE the void block for gap-before', async () => {
@@ -175,5 +199,28 @@ describe('ClipboardManager – paste at gap', () => {
 
     expect(ok).toBeFalse();
     expect(calls.length).toBe(0);
+  });
+
+  it('skips inline range restore when the editable target is stale', () => {
+    const recalculate = jasmine.createSpy('recalculate');
+    const doc = {
+      event: eventStub(),
+      config: {},
+      injector: {get: () => ({supportedAdapters: [], getAdapter: () => undefined})},
+      logger: {warn: jasmine.createSpy('warn')},
+      getBlockById: jasmine.createSpy('getBlockById').and.throwError('missing'),
+      selection: {recalculate},
+    };
+    const block = {
+      id: 'p1',
+      nodeType: BlockNodeType.editable,
+      setInlineRange: jasmine.createSpy('setInlineRange'),
+    };
+    const manager = new ClipboardManager(doc as any);
+
+    (manager as any)._setTextRangeAndSync(block, 0, 1);
+
+    expect(block.setInlineRange).not.toHaveBeenCalled();
+    expect(recalculate).not.toHaveBeenCalled();
   });
 });

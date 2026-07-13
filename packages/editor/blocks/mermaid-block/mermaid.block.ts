@@ -361,7 +361,13 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
 
   async onPreviewGraph(evt: MouseEvent) {
     const sel = this.doc.selection.value
-    if (!sel || !sel.isInSameBlock || sel.start.blockId !== this.id) return
+    if (
+      !sel ||
+      !sel.isInSameBlock ||
+      sel.start.blockId !== this.id ||
+      sel.anchor.type !== 'selected' ||
+      sel.head.type !== 'selected'
+    ) return
     evt.stopPropagation()
     evt.preventDefault()
     const svg = this.graphContainer.firstElementChild

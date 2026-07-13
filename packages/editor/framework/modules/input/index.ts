@@ -13,13 +13,13 @@ import {
   STR_LINE_BREAK,
   UIEventStateContext,
 } from "../../block-std";
-import { BlockSelection, IGapSelectionPoint, INormalizedRange } from "../selection";
+import { BlockSelection, IBlockRange, IGapSelectionPoint, INormalizedRange } from "../selection";
+import { isSelectionAlive } from "../selection/liveness";
 import { endpointsToLegacy } from "../selection/normalize";
 import { isNativeInputTarget, isZeroSpace } from "../../utils";
 import {
-  BlockCraftError,
-  ErrorCode,
   getCommonAttributesFromDeltas,
+  nextTick,
   performanceTest,
   sliceDelta,
 } from "../../../global";
@@ -34,9 +34,29 @@ const ALLOW_INPUT_TYPES = new Set([
   "deleteByCut",
 ]);
 
+type BoundarySelectionTarget = {
+  host: BlockCraft.BlockComponent;
+  from: number;
+  to: number;
+  count: number;
+};
+
+type TextReplacementTarget = {
+  block: EditableBlockComponent;
+  offset: number;
+};
+
+type TableCellSelectionTarget = {
+  table: BlockCraft.IBlockComponents["table"];
+  anchorCell: BlockCraft.IBlockComponents["table-cell"];
+  headCell: BlockCraft.IBlockComponents["table-cell"];
+  cells: BlockCraft.IBlockComponents["table-cell"][];
+};
+
 @DocEventRegister
 export class InputTransformer {
   readonly compositionSession: CompositionSession;
+  private _compositionUndoGroupActive = false;
   private _nextInsertAttrs: {
     blockId: string;
     index: number;
@@ -97,7 +117,12 @@ export class InputTransformer {
   ): selection is BlockSelection {
     return (
       !!selection &&
-      (selection.start.type === "selected" || selection.end.type === "selected")
+      (
+        this._hasWholeBlockEndpoint(selection) ||
+        selection.start.type === "boundary" ||
+        selection.end.type === "boundary" ||
+        this._hasTableCellSelection(selection)
+      )
     );
   }
 
@@ -229,7 +254,10 @@ export class InputTransformer {
    * sits beside, then place the caret into it. The void/container block is KEPT
    * (gap input never replaces the block, unlike whole-block `selected` input).
    */
-  private _insertParagraphAtGap(gap: IGapSelectionPoint, text: string): void {
+  private _insertParagraphAtGap(
+    gap: IGapSelectionPoint,
+    text: string,
+  ): EditableBlockComponent {
     const index =
       gap.block.getIndexOfParent() + (gap.side === "after" ? 1 : 0);
     const newParagraph = this.doc.crud.insertNewParagraph(
@@ -238,31 +266,672 @@ export class InputTransformer {
       text ? [{ insert: text }] : [],
     );
     this.doc.selection.setCursorAt(newParagraph as any, text.length);
+    return newParagraph as EditableBlockComponent;
+  }
+
+  private _setTextSelectionAndSync(
+    base: string | Partial<IBlockRange>,
+    index: number,
+  ): void {
+    const point = typeof base === "string"
+      ? {blockId: base}
+      : {...base};
+    this.doc.selection.setSelection({
+      ...point,
+      type: "text",
+      index,
+      length: 0,
+    } as any);
+    this.doc.selection.recalculate?.();
+  }
+
+  private _setCursorAtAndSync(block: EditableBlockComponent, index: number): void {
+    this.doc.selection.setCursorAt(block as any, index);
+    this.doc.selection.recalculate?.();
+  }
+
+  private _focusEditingHostForBlock(
+    block: BlockCraft.BlockComponent | null | undefined,
+  ): void {
+    let host = (this.doc as any).root?.hostElement as HTMLElement | undefined;
+    try {
+      const blockHost = block?.hostElement;
+      host = (blockHost?.closest?.('[contenteditable="true"]') as HTMLElement | null) ||
+        host;
+    } catch {
+      // Fall back to root host below.
+    }
+    const active = document.activeElement;
+    if (host && active !== host && !host.contains(active)) {
+      host.focus?.({ preventScroll: true });
+    }
+  }
+
+  private _setCompositionTextCursor(
+    block: EditableBlockComponent,
+    offset: number,
+  ): boolean {
+    const safeOffset = Math.max(0, Math.min(offset, block.textLength ?? offset));
+    try {
+      this._focusEditingHostForBlock(block);
+      this.doc.selection.setCursorAt?.(block as any, safeOffset);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private _setCommittedCompositionCursor(
+    block: EditableBlockComponent,
+    index: number,
+  ): void {
+    const safeIndex = Math.max(0, Math.min(index, block.textLength ?? index));
+    this._focusEditingHostForBlock(block);
+    block.setInlineRange(safeIndex);
+    const root = (this.doc as any).root?.hostElement as HTMLElement | undefined;
+    const active = document.activeElement;
+    if (root && root.isConnected && active && active !== root && !root.contains(active)) {
+      this._focusEditingHostForBlock(block);
+      block.setInlineRange(safeIndex);
+    }
+  }
+
+  private _captureCompositionCommitUndoSelection(
+    block: EditableBlockComponent,
+    index: number,
+  ): void {
+    const safeIndex = Math.max(0, Math.min(index, block.textLength ?? index));
+    const selection = {
+      anchor: {blockId: block.id, type: "text", offset: safeIndex},
+      head: {blockId: block.id, type: "text", offset: safeIndex},
+      commonParent: block.id,
+    };
+
+    try {
+      this._focusEditingHostForBlock(block);
+      const replay = (this.doc.selection as any).replay;
+      if (typeof replay === "function") {
+        replay.call(this.doc.selection, selection);
+      } else {
+        this.doc.selection.setCursorAt?.(block as any, safeIndex);
+        this.doc.selection.recalculate?.();
+      }
+    } catch {
+      try {
+        this._setCompositionTextCursor(block, safeIndex);
+        this.doc.selection.recalculate?.();
+      } catch {
+        // Best effort only; the undo manager will fall back to its current
+        // selection if the DOM is already gone.
+      }
+    }
+
+    (this.doc.crud as any).undoManager?.captureSelectionBeforeChange?.();
+  }
+
+  private _startCompositionAtEditableBlock(
+    block: BlockCraft.BlockComponent | null | undefined,
+    offset = 0,
+  ): boolean {
+    const isEditable = block ? ((this.doc as any).isEditable?.(block) ?? true) : false;
+    if (!block || !isEditable) {
+      this.doc.selection.blur();
+      return false;
+    }
+    const editableBlock = block as EditableBlockComponent;
+    const safeOffset = Math.max(0, Math.min(offset, editableBlock.textLength ?? offset));
+    if (!this._setCompositionTextCursor(editableBlock, safeOffset)) {
+      this.doc.selection.blur();
+      return false;
+    }
+    this.compositionSession.start(editableBlock, safeOffset);
+    return true;
+  }
+
+  private _abortCompositionStart(context: UIEventStateContext) {
+    context.preventDefault();
+    this.doc.selection.blur();
+    this.compositionSession.abortPendingCommit();
+    this._endCompositionUndoGroup();
+    return true;
+  }
+
+  private _beginCompositionUndoGroup() {
+    if (this._compositionUndoGroupActive) return;
+    this.doc.crud.undoManager?.beginCaptureGroup?.();
+    this._compositionUndoGroupActive = true;
+  }
+
+  private _endCompositionUndoGroup() {
+    if (!this._compositionUndoGroupActive) return;
+    this._compositionUndoGroupActive = false;
+    this.doc.crud.undoManager?.endCaptureGroup?.();
+  }
+
+  private _recoverCompositionSelection(
+    context: UIEventStateContext,
+  ): BlockSelection | null {
+    let curSel = this.doc.selection.value;
+    if (!curSel) {
+      const compositionState = context.has("compositionState")
+        ? context.get("compositionState")
+        : null;
+      let result: { value: BlockSelection | null; next?: () => void } | null = null;
+      try {
+        result = compositionState?.selectionResult ?? null;
+        result?.next?.();
+      } catch {
+        return null;
+      }
+      curSel = result?.value ?? this.doc.selection.value;
+    }
+
+    if (!curSel || isSelectionAlive(curSel, this.doc)) {
+      return curSel;
+    }
+
+    let result: { value: BlockSelection | null; next?: () => void } | null = null;
+    try {
+      result = this.doc.selection.recalculate?.(false, { isComposing: true }) ?? null;
+      result?.next?.();
+    } catch {
+      return null;
+    }
+    const recovered = result ? result.value : this.doc.selection.value;
+    if (!recovered || !isSelectionAlive(recovered, this.doc)) {
+      return null;
+    }
+    return recovered;
+  }
+
+  private _resolveBoundarySelection(
+    selection: BlockSelection,
+  ): BoundarySelectionTarget | null {
+    const start = selection.start;
+    const end = selection.end;
+    if (start.type !== "boundary" || end.type !== "boundary") return null;
+    if (start.blockId !== end.blockId) return null;
+
+    const host = start.block;
+    const max = host.childrenLength;
+    const from = Math.max(0, Math.min(start.index, end.index, max));
+    const to = Math.max(from, Math.min(Math.max(start.index, end.index), max));
+    return {
+      host,
+      from,
+      to,
+      count: to - from,
+    };
+  }
+
+  private _canBoundaryHostParagraph(target: BoundarySelectionTarget): boolean {
+    const schema = this.doc.schemas.get(target.host.flavour);
+    return (
+      !!schema?.metadata.renderUnit &&
+      this.doc.schemas.isValidChildren("paragraph", target.host.flavour)
+    );
+  }
+
+  private _replaceBoundarySelectionWithParagraph(
+    selection: BlockSelection,
+    text: string,
+  ): EditableBlockComponent | null {
+    const target = this._resolveBoundarySelection(selection);
+    if (!target || !this._canBoundaryHostParagraph(target)) return null;
+
+    this.doc.crud.undoManager.captureSelectionBeforeChange();
+    const paragraph = this.doc.schemas.createSnapshot(
+      "paragraph",
+      text ? [text] : [],
+    );
+
+    this.doc.crud.transact(() => {
+      if (target.count > 0) {
+        this.doc.crud.deleteBlocks(target.host.id, target.from, target.count, true);
+      }
+      this.doc.crud.insertBlocks(target.host.id, target.from, [paragraph]);
+    });
+
+    const block = this.doc.getBlockById(paragraph.id);
+    return block && this.doc.isEditable(block)
+      ? block as EditableBlockComponent
+      : null;
+  }
+
+  private _selectAfterBoundaryDelete(target: BoundarySelectionTarget) {
+    if (!target.host.childrenLength) {
+      this.doc.selection.blur();
+      return;
+    }
+    const nextIndex = Math.min(target.from, target.host.childrenLength - 1);
+    const atStart = target.from < target.host.childrenLength;
+    const childId = target.host.childrenIds[nextIndex];
+    const child = this.doc.getBlockById(childId);
+    if (!child) {
+      this.doc.selection.recalculate();
+      return;
+    }
+    this.doc.selection.selectOrSetCursorAtBlock(child, atStart);
+  }
+
+  private _deleteBoundarySelection(selection: BlockSelection): boolean {
+    const target = this._resolveBoundarySelection(selection);
+    if (!target || target.count <= 0) return false;
+    if (!this._canBoundaryHostParagraph(target)) return false;
+
+    this.doc.crud.undoManager.captureSelectionBeforeChange();
+    this.doc.crud.deleteBlocks(target.host.id, target.from, target.count);
+    this._selectAfterBoundaryDelete(target);
+    return true;
+  }
+
+  private _directChildUnder(
+    parent: BlockCraft.BlockComponent,
+    block: BlockCraft.BlockComponent,
+  ): BlockCraft.BlockComponent | null {
+    let current: BlockCraft.BlockComponent | null = block;
+    while (current?.parentId && current.parentId !== parent.id) {
+      current = current.parentBlock ?? this.doc.getBlockById(current.parentId);
+    }
+    return current?.parentId === parent.id ? current : null;
+  }
+
+  private _childIndex(
+    parent: BlockCraft.BlockComponent,
+    child: BlockCraft.BlockComponent,
+  ): number {
+    const index = parent.childrenIds?.indexOf(child.id) ?? -1;
+    if (index >= 0) return index;
+    return typeof child.getIndexOfParent === "function" ? child.getIndexOfParent() : -1;
+  }
+
+  private _legacyRange(
+    from: IBlockRange,
+    to: IBlockRange | null,
+  ): INormalizedRange {
+    return {
+      from,
+      to,
+      collapsed: false,
+    };
+  }
+
+  private _legacyTextPoint(
+    block: EditableBlockComponent,
+    index: number,
+    length: number,
+  ): IBlockRange {
+    return {
+      blockId: block.id,
+      type: "text",
+      index,
+      length,
+      block,
+    } as IBlockRange;
+  }
+
+  private _legacySelectedPoint(
+    block: BlockCraft.BlockComponent,
+  ): IBlockRange {
+    return {
+      blockId: block.id,
+      type: "selected",
+      block,
+    } as IBlockRange;
+  }
+
+  private _mixedBoundarySelectionToLegacy(
+    selection: BlockSelection,
+  ): INormalizedRange | null {
+    const start = selection.start;
+    const end = selection.end;
+
+    if (start.type === "boundary" && end.type === "text") {
+      const host = start.block;
+      const textBlock = end.block as EditableBlockComponent;
+      const textChild = this._directChildUnder(host, textBlock);
+      if (!textChild) return null;
+      const textChildIndex = this._childIndex(host, textChild);
+      if (textChildIndex < 0 || start.index > textChildIndex) return null;
+
+      if (start.index === textChildIndex) {
+        if (textChild.id !== textBlock.id) return null;
+        return this._legacyRange(
+          this._legacyTextPoint(textBlock, 0, end.offset),
+          null,
+        );
+      }
+
+      const fromId = host.childrenIds[start.index];
+      if (!fromId) return null;
+      const fromBlock = this.doc.getBlockById(fromId);
+      return this._legacyRange(
+        this._legacySelectedPoint(fromBlock),
+        this._legacyTextPoint(textBlock, 0, end.offset),
+      );
+    }
+
+    if (start.type === "text" && end.type === "boundary") {
+      const host = end.block;
+      const textBlock = start.block as EditableBlockComponent;
+      const textChild = this._directChildUnder(host, textBlock);
+      if (!textChild) return null;
+      const textChildIndex = this._childIndex(host, textChild);
+      if (textChildIndex < 0 || end.index <= textChildIndex) return null;
+
+      const from = this._legacyTextPoint(
+        textBlock,
+        start.offset,
+        textBlock.textLength - start.offset,
+      );
+      if (end.index === textChildIndex + 1) {
+        if (textChild.id !== textBlock.id) return null;
+        return this._legacyRange(from, null);
+      }
+
+      const toId = host.childrenIds[end.index - 1];
+      if (!toId) return null;
+      const toBlock = this.doc.getBlockById(toId);
+      return this._legacyRange(from, this._legacySelectedPoint(toBlock));
+    }
+
+    return null;
+  }
+
+  private _legacyTextCursorAfterReplacement(
+    range: INormalizedRange,
+    textLength: number,
+  ): { blockId: string; index: number } | null {
+    if (range.from.type === "text") {
+      return {
+        blockId: range.from.blockId,
+        index: range.from.index + textLength,
+      };
+    }
+    if (range.to?.type === "text") {
+      return {
+        blockId: range.to.blockId,
+        index: range.to.index + textLength,
+      };
+    }
+    return null;
+  }
+
+  private _replaceMixedBoundarySelectionWithText(
+    selection: BlockSelection,
+    text: string,
+    syncSelection = true,
+  ): TextReplacementTarget | null {
+    const range = this._mixedBoundarySelectionToLegacy(selection);
+    if (!range) return null;
+
+    const cursor = this._legacyTextCursorAfterReplacement(range, text.length);
+    if (!cursor) return null;
+
+    const block = this.doc.getBlockById(cursor.blockId);
+    if (!this.doc.isEditable(block)) return null;
+
+    this._replaceText(range, text, true);
+    if (syncSelection) {
+      this._setTextSelectionAndSync({blockId: cursor.blockId}, cursor.index);
+    } else {
+      this.doc.selection.setSelection({
+        blockId: cursor.blockId,
+        type: "text",
+        index: cursor.index,
+        length: 0,
+      });
+    }
+    return {
+      block: block as EditableBlockComponent,
+      offset: cursor.index,
+    };
+  }
+
+  private _replaceBoundarySelectionWithText(
+    selection: BlockSelection,
+    text: string,
+  ): boolean {
+    const block = this._replaceBoundarySelectionWithParagraph(selection, text);
+    if (!block) {
+      return !!this._replaceMixedBoundarySelectionWithText(selection, text);
+    }
+    this._setCursorAtAndSync(block as any, text.length);
+    return true;
+  }
+
+  private _getLiveBlockById<T extends BlockCraft.BlockComponent = BlockCraft.BlockComponent>(
+    id: string,
+  ): T | null {
+    try {
+      return (this.doc.getBlockById(id) as T | null) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private _isLiveTable(block: unknown): block is BlockCraft.IBlockComponents["table"] {
+    return !!block &&
+      (block as BlockCraft.BlockComponent).flavour === "table" &&
+      Array.isArray((block as BlockCraft.IBlockComponents["table"]).childrenIds) &&
+      typeof (block as BlockCraft.IBlockComponents["table"]).confirmSelection === "function" &&
+      typeof (block as BlockCraft.IBlockComponents["table"]).getCellsMatrixByCoordinates === "function";
+  }
+
+  private _isLiveTableCell(block: unknown): block is BlockCraft.IBlockComponents["table-cell"] {
+    return !!block &&
+      (block as BlockCraft.BlockComponent).flavour === "table-cell" &&
+      typeof (block as BlockCraft.IBlockComponents["table-cell"]).getIndexOfParent === "function";
+  }
+
+  private _resolveTableCellSelection(
+    selection: BlockSelection,
+  ): TableCellSelectionTarget | null {
+    const tableCellSelection = selection.getTableCellSelection();
+    if (!tableCellSelection) return null;
+
+    const table = this._getLiveBlockById<BlockCraft.IBlockComponents["table"]>(tableCellSelection.tableId);
+    const anchorCell = this._getLiveBlockById<BlockCraft.IBlockComponents["table-cell"]>(tableCellSelection.anchorCellId);
+    const headCell = this._getLiveBlockById<BlockCraft.IBlockComponents["table-cell"]>(tableCellSelection.headCellId);
+    if (!this._isLiveTable(table) || !this._isLiveTableCell(anchorCell) || !this._isLiveTableCell(headCell)) return null;
+
+    let anchor: { rowIdx: number; colIdx: number };
+    let head: { rowIdx: number; colIdx: number };
+    try {
+      anchor = {
+        rowIdx: table.childrenIds.indexOf(anchorCell.parentId!),
+        colIdx: anchorCell.getIndexOfParent(),
+      };
+      head = {
+        rowIdx: table.childrenIds.indexOf(headCell.parentId!),
+        colIdx: headCell.getIndexOfParent(),
+      };
+    } catch {
+      return null;
+    }
+    if (anchor.rowIdx < 0 || anchor.colIdx < 0 || head.rowIdx < 0 || head.colIdx < 0) {
+      return null;
+    }
+
+    let cells: BlockCraft.IBlockComponents["table-cell"][];
+    try {
+      const coordinates = table.confirmSelection(
+        [Math.min(anchor.rowIdx, head.rowIdx), Math.min(anchor.colIdx, head.colIdx)],
+        [Math.max(anchor.rowIdx, head.rowIdx), Math.max(anchor.colIdx, head.colIdx)],
+      );
+      cells = table.getCellsMatrixByCoordinates(coordinates.start, coordinates.end)
+        .flat(1)
+        .filter(cell => this._isLiveTableCell(cell) && cell.props?.display !== "none");
+    } catch {
+      return null;
+    }
+    if (!cells.length) return null;
+
+    const effectiveAnchor = cells.some(cell => cell.id === anchorCell.id)
+      ? anchorCell
+      : cells[0];
+    const effectiveHead = cells.some(cell => cell.id === headCell.id)
+      ? headCell
+      : cells[cells.length - 1];
+
+    return {
+      table,
+      anchorCell: effectiveAnchor,
+      headCell: effectiveHead,
+      cells,
+    };
+  }
+
+  private _hasTableCellSelection(selection: BlockSelection): boolean {
+    return typeof selection.getTableCellSelection === "function" &&
+      !!selection.getTableCellSelection();
+  }
+
+  private _replaceTableCellWithParagraph(
+    cell: BlockCraft.IBlockComponents["table-cell"],
+    text: string | null,
+  ): string | null {
+    if (cell.props?.display === "none") return null;
+
+    const oldChildrenLength = cell.childrenLength;
+    const paragraph = this.doc.schemas.createSnapshot(
+      "paragraph",
+      text ? [text] : [],
+    );
+    this.doc.crud.insertBlocks(cell.id, 0, [paragraph]);
+    if (oldChildrenLength > 0) {
+      this.doc.crud.deleteBlocks(cell.id, 1, oldChildrenLength, true);
+    }
+    return paragraph.id;
+  }
+
+  private _setTextSelectionWhenReady(blockId: string, index: number): void {
+    const apply = () => {
+      try {
+        (this.doc as any).root?.hostElement?.focus?.({ preventScroll: true });
+        this.doc.selection.setSelection({
+          blockId,
+          type: "text",
+          offset: index,
+        } as any);
+        this.doc.selection.recalculate();
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    if (apply()) return;
+    void nextTick().then(() => {
+      if (!apply()) {
+        this.doc.logger.warn(`restore text cursor failed: ${blockId}`);
+      }
+    });
+  }
+
+  private _setCursorAtBlockWhenReady(blockId: string, atStart: boolean): void {
+    const apply = () => {
+      try {
+        (this.doc as any).root?.hostElement?.focus?.({ preventScroll: true });
+        this.doc.selection.setCursorAtBlock(blockId, atStart);
+        this.doc.selection.recalculate();
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    if (apply()) return;
+    void nextTick().then(() => {
+      if (!apply()) {
+        this.doc.logger.warn(`restore table-cell cursor failed: ${blockId}`);
+      }
+    });
+  }
+
+  private _replaceTableCellSelection(
+    selection: BlockSelection,
+    text: string | null,
+    mode: "text-cursor" | "table-selection" | "anchor-cursor",
+  ): string | null {
+    const target = this._resolveTableCellSelection(selection);
+    if (!target) return null;
+
+    this.doc.crud.undoManager.captureSelectionBeforeChange();
+    const anchorRef: { blockId: string | null } = { blockId: null };
+
+    this.doc.crud.transact(() => {
+      target.cells.forEach(cell => {
+        const blockId = this._replaceTableCellWithParagraph(
+          cell,
+          cell.id === target.anchorCell.id ? text : null,
+        );
+        if (cell.id === target.anchorCell.id) {
+          anchorRef.blockId = blockId;
+        }
+      });
+    });
+
+    const anchorBlockId = anchorRef.blockId;
+    if (!anchorBlockId) return null;
+
+    if (mode === "text-cursor") {
+      this._setTextSelectionWhenReady(anchorBlockId, text?.length ?? 0);
+    } else if (mode === "anchor-cursor") {
+      this._setCursorAtBlockWhenReady(anchorBlockId, true);
+    } else {
+      this.doc.selection.setTableCellSelection(
+        target.table,
+        target.anchorCell,
+        target.headCell,
+      );
+    }
+
+    return anchorBlockId;
   }
 
   @EventListen("compositionStart")
   private _handleCompositionStart(context: UIEventStateContext) {
+    this._endCompositionUndoGroup();
     this.compositionSession.reset();
-    const curSel = this.doc.selection.value!;
+    const curSel = this._recoverCompositionSelection(context);
+
+    if (!curSel) {
+      return this._abortCompositionStart(context);
+    }
 
     // Handle gap-cursor IME: the gap sits inside a non-editable void/container
     // block, so we must synchronously materialize a real empty paragraph, move
     // the caret into it, then let composition proceed in that editable block.
     // Use a NORMAL transaction (NOT ORIGIN_SKIP_SYNC) for the structural insert;
-    // the OneShotCursorAnchor is captured (via startFromSelection) in the NEW
-    // paragraph so compositionEnd resolves its insertion point there. The
+    // the OneShotCursorAnchor is captured directly in the NEW paragraph so
+    // compositionEnd resolves its insertion point there even if the browser
+    // native selection jitters during IME startup. The
     // void/container block is KEPT.
     if (curSel.collapsed && curSel.start.type === "gap") {
       context.preventDefault();
-      const gap = curSel.start;
-      const index =
-        gap.block.getIndexOfParent() + (gap.side === "after" ? 1 : 0);
-      const newParagraph = this.doc.crud.insertNewParagraph(
-        gap.block.parentId!,
-        index,
-      );
-      this.doc.selection.setCursorAt(newParagraph as any, 0);
-      this.compositionSession.startFromSelection({ isComposing: true });
+      this._beginCompositionUndoGroup();
+      const newParagraph = this._insertParagraphAtGap(curSel.start, "");
+      if (!this._startCompositionAtEditableBlock(newParagraph, 0)) {
+        this._endCompositionUndoGroup();
+      }
+      return true;
+    }
+
+    if (this._hasTableCellSelection(curSel)) {
+      context.preventDefault();
+      this._beginCompositionUndoGroup();
+      const target = this._replaceTableCellSelection(curSel, null, "anchor-cursor");
+      if (!target) {
+        this.doc.selection.blur();
+        this._endCompositionUndoGroup();
+        return true;
+      }
+      this.doc.selection.recalculate();
+      const block = this.doc.getBlockById(target);
+      if (!this._startCompositionAtEditableBlock(block, 0)) {
+        this._endCompositionUndoGroup();
+      }
       return true;
     }
 
@@ -273,12 +942,18 @@ export class InputTransformer {
         this.doc.selection.blur();
         return true;
       }
+      this._beginCompositionUndoGroup();
       this.doc.crud.undoManager.captureSelectionBeforeChange();
       if (resolved.mode === "sibling") {
         const p = this.doc.schemas.createSnapshot("paragraph", []);
         this.doc.crud.insertBlocksAfter(curSel.lastBlock.id, [p]);
         this._deleteAllSelected(curSel);
         this.doc.selection.setCursorAtBlock(p.id, true);
+        const target = this.doc.getBlockById(p.id);
+        if (!this._startCompositionAtEditableBlock(target, 0)) {
+          this._endCompositionUndoGroup();
+          return true;
+        }
       } else {
         // `inside`: the selected block is a renderUnit container (table-cell /
         // column) whose parent can't host a paragraph. Clear it and drop the
@@ -289,26 +964,55 @@ export class InputTransformer {
         const target = this._clearContainerToEmptyParagraph(resolved.host);
         if (!target) {
           this.doc.selection.blur();
+          this._endCompositionUndoGroup();
           return true;
         }
         this.doc.selection.setCursorAtBlock(target.id, true);
+        if (!this._startCompositionAtEditableBlock(target, 0)) {
+          this._endCompositionUndoGroup();
+          return true;
+        }
       }
       this.doc.selection.recalculate();
-      this.compositionSession.startFromSelection({ isComposing: true });
+      return true;
+    }
+
+    if (this._hasBoundaryEndpoint(curSel)) {
+      context.preventDefault();
+      this._beginCompositionUndoGroup();
+      const target = this._replaceBoundarySelectionWithParagraph(curSel, "");
+      if (!target) {
+        const mixedTarget = this._replaceMixedBoundarySelectionWithText(curSel, "", false);
+        if (mixedTarget) {
+          if (!this._startCompositionAtEditableBlock(mixedTarget.block, mixedTarget.offset)) {
+            this._endCompositionUndoGroup();
+          }
+          return true;
+        }
+        this.doc.selection.blur();
+        this._endCompositionUndoGroup();
+        return true;
+      }
+      this.doc.selection.setCursorAtBlock(target.id, true);
+      this.doc.selection.recalculate();
+      if (!this._startCompositionAtEditableBlock(target, 0)) {
+        this._endCompositionUndoGroup();
+      }
       return true;
     }
 
     if (curSel.start.type !== "text") {
       if (curSel.isInSameBlock || curSel.end.type !== "text") {
-        throw new BlockCraftError(
-          ErrorCode.InlineEditorError,
-          "compositionStart: last block is not editable",
-        );
+        return this._abortCompositionStart(context);
       }
     }
 
     if (!curSel.collapsed) {
       const needsMerge = !curSel.isInSameBlock;
+      if (this._hasWholeBlockEndpoint(curSel) || needsMerge) {
+        context.preventDefault();
+        this._beginCompositionUndoGroup();
+      }
       const anchorBlock =
         curSel.start.type === "text"
           ? curSel.firstBlock
@@ -361,10 +1065,17 @@ export class InputTransformer {
 
       if (anchorBlock) {
         this.doc.selection.setCursorAt(anchorBlock as any, anchorIndex);
-        this.compositionSession.start(anchorBlock as any, anchorIndex);
+        if (!this._startCompositionAtEditableBlock(anchorBlock, anchorIndex)) {
+          this._endCompositionUndoGroup();
+          return true;
+        }
       }
     } else {
-      this.compositionSession.startFromSelection({ isComposing: true });
+      if (curSel.start.type === "text") {
+        this._startCompositionAtEditableBlock(curSel.firstBlock, curSel.start.offset);
+      } else {
+        this.compositionSession.startFromSelection({ isComposing: true });
+      }
     }
     return true;
   }
@@ -377,25 +1088,33 @@ export class InputTransformer {
     // 此时提交点只能落在 detached Y.Text 或 DOM fallback 出的无关块上，
     // 两者都会造成静默错写，直接丢弃本次组合提交。
     if (this.compositionSession.consumeAbort()) {
+      this._endCompositionUndoGroup();
+      return;
+    }
+    if (this.compositionSession.isIdle) {
+      this._endCompositionUndoGroup();
       return;
     }
     const compositionState = context.get("compositionState");
     try {
       const text = compositionState.text;
-      const fallbackPoint = compositionState.getFallbackPoint();
       const anchorPoint =
-        this.compositionSession.resolveInsertionPoint(fallbackPoint);
+        this.compositionSession.resolveInsertionPoint(null);
+      const fallbackPoint = anchorPoint
+        ? null
+        : compositionState.getFallbackPoint();
       const commitPoint = compositionState.resolveCommitPoint(
         anchorPoint || fallbackPoint,
       );
       if (!commitPoint) {
-        throw new BlockCraftError(
-          ErrorCode.InlineEditorError,
-          `Invalid inputRange`,
-        );
+        return;
       }
 
       const { block: insertBlock, index: insertIndex } = commitPoint;
+      this._captureCompositionCommitUndoSelection(
+        insertBlock as EditableBlockComponent,
+        insertIndex,
+      );
 
       const insertAttrs = this.consumeNextInsertAttrs(
         insertBlock.id,
@@ -409,7 +1128,7 @@ export class InputTransformer {
         // Set cursor synchronously after rerender to avoid selectionchange race.
         // queueMicrotask would leave a gap where selectionchange fires with
         // invalid DOM selection (isComposing is already false), resetting cursor to 0.
-        insertBlock.setInlineRange(cursorIndex);
+        this._setCommittedCompositionCursor(insertBlock as EditableBlockComponent, cursorIndex);
       }, ORIGIN_SKIP_SYNC);
 
       // Drain deferred patches WITHOUT replaying.
@@ -422,18 +1141,24 @@ export class InputTransformer {
       this.doc.selection.recalculate();
     } finally {
       this.compositionSession.end();
+      this._endCompositionUndoGroup();
     }
   }
 
   @EventListen("beforeInput")
-  private _handleBeforeInput(context: BlockCraft.EventStateContext) {
+  private _handleBeforeInput(context: BlockCraft.EventStateContext): boolean | void {
     const ev = context.get("defaultState").event as InputEvent;
     if (isNativeInputTarget(ev.target)) {
       return;
     }
-    this.compositionSession.updateAnchorFromInputEvent(ev, {
-      isComposing: true,
-    });
+    // compositionStart captures the accepted model/materialized target. During
+    // IME updates, browser target ranges can be transient or stale; do not let
+    // them retarget the commit anchor.
+    if (!ev.isComposing) {
+      this.compositionSession.updateAnchorFromInputEvent(ev, {
+        isComposing: true,
+      });
+    }
 
     if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {
       ev.preventDefault();
@@ -450,6 +1175,9 @@ export class InputTransformer {
     }
 
     if (ev.isComposing || ev.defaultPrevented) {
+      if (ev.isComposing && !this.compositionSession.isActive) {
+        ev.preventDefault();
+      }
       return;
     }
 
@@ -473,15 +1201,47 @@ export class InputTransformer {
     }
 
     const staticRange = ev.getTargetRanges ? ev.getTargetRanges()[0] : null;
-    const targetRange = staticRange
-      ? this.doc.selection.normalizeRange(staticRange)
-      : null;
+    let targetRange: INormalizedRange | null = null;
+    if (staticRange) {
+      try {
+        targetRange = this.doc.selection.normalizeRange(staticRange);
+      } catch (e) {
+        this.doc.logger?.warn?.("beforeInputNormalizeRangeError: ", e);
+      }
+    }
     const effectiveRange = this._resolveBeforeInputRange(
       this.doc.selection.value,
       targetRange,
     );
     if (!effectiveRange) {
-      return;
+      ev.preventDefault();
+      this.doc.selection.blur();
+      return true;
+    }
+
+    const text = getPlainTextFromInputEvent(ev);
+
+    if (effectiveRange instanceof BlockSelection && this._hasBoundaryEndpoint(effectiveRange)) {
+      ev.preventDefault();
+      const handled = text
+        ? this._replaceBoundarySelectionWithText(effectiveRange, text)
+        : this._deleteBoundarySelection(effectiveRange) ||
+          !!this._replaceMixedBoundarySelectionWithText(effectiveRange, "");
+      if (!handled) {
+        this.doc.selection.blur();
+      }
+      return true;
+    }
+
+    if (effectiveRange instanceof BlockSelection && this._hasTableCellSelection(effectiveRange)) {
+      ev.preventDefault();
+      const handled = text
+        ? this._replaceTableCellSelection(effectiveRange, text, "text-cursor")
+        : this._replaceTableCellSelection(effectiveRange, null, "table-selection");
+      if (!handled) {
+        this.doc.selection.blur();
+      }
+      return true;
     }
 
     const normalizedRange =
@@ -493,9 +1253,8 @@ export class InputTransformer {
         : effectiveRange;
 
     const { from, to, collapsed } = normalizedRange;
-    const text = getPlainTextFromInputEvent(ev);
 
-    if (from.type === "selected" && (!to || to.type === "selected")) {
+    if (this._isWholeBlockSelectedRange(normalizedRange)) {
       ev.preventDefault();
       if (text) {
         this._replaceSelectedBlocksWithParagraph(effectiveRange, text) ||
@@ -515,11 +1274,7 @@ export class InputTransformer {
         this.doc.selection.recalculate();
         return;
       }
-      this.doc.selection.setSelection({
-        ...cursorPos,
-        index: cursorPos.index + (text?.length || 0),
-        length: 0,
-      });
+      this._setTextSelectionAndSync(cursorPos, cursorPos.index + (text?.length || 0));
       return;
     }
 
@@ -545,10 +1300,7 @@ export class InputTransformer {
       }
       this._replaceText(deleteRange);
       if (deleteRange.from.type === "text") {
-        this.doc.selection.setCursorAt(
-          deleteRange.from.block as any,
-          deleteRange.from.index,
-        );
+        this._setCursorAtAndSync(deleteRange.from.block as any, deleteRange.from.index);
       }
       return;
     }
@@ -618,11 +1370,7 @@ export class InputTransformer {
         text,
         this._inheritedReplaceAttrs(from.block, from.index, from.length),
       );
-      this.doc.selection.setSelection({
-        ...from,
-        index: from.index + (text?.length || 0),
-        length: 0,
-      });
+      this._setTextSelectionAndSync(from, from.index + (text?.length || 0));
       return;
     }
 
@@ -637,11 +1385,7 @@ export class InputTransformer {
       this.doc.crud.transact(() => {
         from.block.yText.insert(from.index, text, pendingInsertAttrs);
       });
-      this.doc.selection.setSelection({
-        ...from,
-        index: from.index + text.length,
-        length: 0,
-      });
+      this._setTextSelectionAndSync(from, from.index + text.length);
       return;
     }
 
@@ -662,11 +1406,7 @@ export class InputTransformer {
       this.doc.crud.transact(() => {
         from.block.yText.insert(from.index, text);
       });
-      this.doc.selection.setSelection({
-        ...from,
-        index: from.index + text.length,
-        length: 0,
-      });
+      this._setTextSelectionAndSync(from, from.index + text.length);
     }
   }
 
@@ -677,30 +1417,13 @@ export class InputTransformer {
 
     const selection = this.doc.selection.value;
 
-    if (
-      !selection ||
-      selection.collapsed ||
-      selection.start.type !== "selected"
-      // || selection.commonParent !== this.doc.rootId
-    )
-      return;
+    if (!selection) return;
 
-    ev.preventDefault();
-
-    if (selection.end.type === "text") {
-      this._replaceText(selection, ev.key, true);
-      this.doc.selection.setSelection({
-        blockId: selection.end.blockId,
-        type: "text",
-        index: ev.key.length,
-        length: 0,
-      });
+    if (this._handlePrintableModelSelection(selection, ev.key)) {
+      ev.preventDefault();
       return true;
     }
-
-    this._replaceSelectedBlocksWithParagraph(selection, ev.key);
-    // || this.doc.selection.blur()
-    return true;
+    return;
   }
 
   private _replaceSelectedBlocksWithParagraph(
@@ -732,12 +1455,7 @@ export class InputTransformer {
           editable.yText.insert(0, text);
         });
       }
-      this.doc.selection.setSelection({
-        blockId: editable.id,
-        type: "text",
-        index: text ? text.length : 0,
-        length: 0,
-      });
+      this._setTextSelectionAndSync({blockId: editable.id}, text ? text.length : 0);
       return true;
     }
 
@@ -763,7 +1481,86 @@ export class InputTransformer {
       this.doc.crud.deleteBlockById(from.blockId);
     });
 
-    this.doc.selection.setCursorAtBlock(paragraph.id, false);
+    this._setTextSelectionWhenReady(paragraph.id, text.length);
+    return true;
+  }
+
+  private _hasBoundaryEndpoint(selection: BlockSelection): boolean {
+    return selection.start?.type === "boundary" || selection.end?.type === "boundary";
+  }
+
+  private _hasWholeBlockEndpoint(selection: BlockSelection): boolean {
+    return selection.start?.type === "selected" || selection.end?.type === "selected";
+  }
+
+  private _isLegacyWholeBlockPoint(point?: IBlockRange | null): boolean {
+    return point?.type === "selected";
+  }
+
+  private _isWholeBlockSelectedRange(range: INormalizedRange): boolean {
+    return this._isLegacyWholeBlockPoint(range.from) && (!range.to || this._isLegacyWholeBlockPoint(range.to));
+  }
+
+  private _legacyRangeHasWholeBlockEndpoint(range: INormalizedRange): boolean {
+    return this._isLegacyWholeBlockPoint(range.from) || this._isLegacyWholeBlockPoint(range.to);
+  }
+
+  private _selectionTextCursorAfterReplacement(
+    selection: BlockSelection,
+    textLength: number,
+  ): { blockId: string; type: "text"; index: number; length: 0 } | null {
+    if (selection.start.type === "text") {
+      return {
+        blockId: selection.start.blockId,
+        type: "text",
+        index: selection.start.offset + textLength,
+        length: 0,
+      };
+    }
+    if (selection.end.type === "text") {
+      return {
+        blockId: selection.end.blockId,
+        type: "text",
+        index: textLength,
+        length: 0,
+      };
+    }
+    return null;
+  }
+
+  private _handlePrintableModelSelection(
+    selection: BlockSelection,
+    text: string,
+  ): boolean | undefined {
+    if (this._hasTableCellSelection(selection)) {
+      this._replaceTableCellSelection(selection, text, "text-cursor") ||
+        this.doc.selection.blur();
+      return true;
+    }
+
+    if (this._hasBoundaryEndpoint(selection)) {
+      this._replaceBoundarySelectionWithText(selection, text) ||
+        this.doc.selection.blur();
+      return true;
+    }
+
+    if (selection.collapsed) return;
+
+    if (!this._hasWholeBlockEndpoint(selection)) return;
+
+    if (selection.isAllSelected) {
+      this._replaceSelectedBlocksWithParagraph(selection, text) ||
+        this.doc.selection.blur();
+      return true;
+    }
+
+    this._replaceText(selection, text, true);
+    const cursor = this._selectionTextCursorAfterReplacement(selection, text.length);
+    if (cursor) {
+      this._setTextSelectionAndSync({blockId: cursor.blockId}, cursor.index);
+    } else {
+      this.doc.selection.recalculate();
+    }
     return true;
   }
 
@@ -781,6 +1578,40 @@ export class InputTransformer {
 
     // Pre-capture selection for undo BEFORE the transaction mutates yText
     this.doc.crud.undoManager.captureSelectionBeforeChange();
+
+    // Whole-block endpoints, and cross-block text endpoints with blocks between
+    // them, may be deleted by the transaction below. Move the live model/native
+    // selection to the stable text endpoint AFTER the undo snapshot is captured,
+    // instead of blur()ing: clearing the native range here can make WebKit/Blink
+    // abort an IME session immediately.
+    const shouldStabilizeTextEndpoint =
+      this._legacyRangeHasWholeBlockEndpoint(range) ||
+      (from.type === "text" && to?.type === "text" && from.blockId !== to.blockId);
+    if (shouldStabilizeTextEndpoint) {
+      const stableTextPoint =
+        from.type === "text"
+          ? { blockId: from.blockId, offset: from.index }
+          : to?.type === "text"
+            ? { blockId: to.blockId, offset: to.index }
+            : null;
+      if (stableTextPoint && this.doc.selection?.replay) {
+        this.doc.selection.replay({
+          anchor: {
+            blockId: stableTextPoint.blockId,
+            type: "text",
+            offset: stableTextPoint.offset,
+          },
+          head: {
+            blockId: stableTextPoint.blockId,
+            type: "text",
+            offset: stableTextPoint.offset,
+          },
+          commonParent: stableTextPoint.blockId,
+        });
+      } else if (this.doc.selection?.blur) {
+        this.doc.selection.blur();
+      }
+    }
 
     // Capture remaining delta from to block BEFORE the transaction deletes it
     let remainingDelta: DeltaOperation[] | null = null;
@@ -841,7 +1672,7 @@ export class InputTransformer {
             this.doc.crud.deleteBlockById(to.blockId);
           } else if (
             (to.type === "text" && to.length >= to.block.textLength) ||
-            to.type === "selected"
+            this._isLegacyWholeBlockPoint(to)
           ) {
             this.doc.crud.deleteBlockById(to.blockId);
           } else if (to.type === "text" && (to.index > 0 || to.length > 0)) {
@@ -920,13 +1751,13 @@ export class InputTransformer {
   }
 
   deleteByRange(range: INormalizedRange | BlockSelection, merge = false) {
+    if (range instanceof BlockSelection && this._hasTableCellSelection(range)) {
+      return !!this._replaceTableCellSelection(range, null, "table-selection");
+    }
     if (range instanceof BlockSelection) {
       range = endpointsToLegacy({ start: range.start, end: range.end });
     }
-    if (
-      range.from.type === "selected" &&
-      (!range.to || range.to.type === "selected")
-    ) {
+    if (this._isWholeBlockSelectedRange(range)) {
       return this._deleteAllSelected(range);
     }
     return this._replaceText(range, null, merge);
@@ -952,9 +1783,95 @@ export class InputTransformer {
       return false;
     }
 
+    const parent = block.parentBlock;
+    const index = block.getIndexOfParent();
+    const prevBlock = this.doc.prevSibling(block);
+    const nextBlock = this.doc.nextSibling(block);
+
+    this.doc.crud.undoManager?.captureSelectionBeforeChange?.();
     this.doc.crud.deleteBlockById(block.id);
-    this.doc.selection.recalculate();
+    this._restoreSelectionAfterGapBlockDelete(parent, index, prevBlock, nextBlock);
     return true;
+  }
+
+  private _restoreSelectionAfterGapBlockDelete(
+    parent: BlockCraft.BlockComponent | null | undefined,
+    deletedIndex: number,
+    prevBlock: BlockCraft.BlockComponent | null | undefined,
+    nextBlock: BlockCraft.BlockComponent | null | undefined,
+  ): void {
+    if (nextBlock && this._focusBlockEdge(nextBlock, true)) return;
+    if (prevBlock && this._focusBlockEdge(prevBlock, false)) return;
+
+    const fallback = this._childAt(parent, deletedIndex);
+    if (fallback && this._focusBlockEdge(fallback, true)) return;
+
+    this.doc.selection.blur();
+  }
+
+  private _childAt(
+    parent: BlockCraft.BlockComponent | null | undefined,
+    preferredIndex: number,
+  ): BlockCraft.BlockComponent | null {
+    if (!parent?.childrenLength) return null;
+    const index = Math.max(0, Math.min(preferredIndex, parent.childrenLength - 1));
+    const childId = parent.childrenIds?.[index];
+    return childId ? this._getLiveBlockById(childId) : null;
+  }
+
+  private _focusBlockEdge(
+    block: BlockCraft.BlockComponent,
+    atStart: boolean,
+  ): boolean {
+    try {
+      if (this.doc.isEditable(block)) {
+        const offset = atStart ? 0 : (block as EditableBlockComponent).textLength;
+        this.doc.selection.replay({
+          anchor: { blockId: block.id, type: "text", offset },
+          head: { blockId: block.id, type: "text", offset },
+          commonParent: block.id,
+        });
+        return true;
+      }
+
+      if (block.nodeType === BlockNodeType.void || block.nodeType === BlockNodeType.block) {
+        this.doc.selection.setGapCursor(block, atStart ? "before" : "after");
+        return true;
+      }
+
+      this.doc.selection.selectBlock(block);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private _handleModelDeleteSelection(
+    sel: BlockSelection,
+    gapSide: "before" | "after",
+  ): boolean | null {
+    if (sel.isAllSelected) {
+      return this._deleteAllSelected(sel);
+    }
+
+    if (this._hasBoundaryEndpoint(sel)) {
+      this._deleteBoundarySelection(sel) ||
+        this._replaceMixedBoundarySelectionWithText(sel, "") ||
+        this.doc.selection.blur();
+      return true;
+    }
+
+    if (this._hasTableCellSelection(sel)) {
+      this._replaceTableCellSelection(sel, null, "table-selection") ||
+        this.doc.selection.blur();
+      return true;
+    }
+
+    if (this._deleteGapBlockAt(sel, gapSide)) {
+      return true;
+    }
+
+    return null;
   }
 
   @BindHotKey({
@@ -967,17 +1884,13 @@ export class InputTransformer {
     const state = context.get("keyboardState");
     const sel = state.selection;
 
-    if (sel.isAllSelected) {
-      context.preventDefault();
-      return this._deleteAllSelected(sel);
-    }
-
     // Gap-after + Backspace deletes the void/container block next to the caret,
     // then recalculates synchronously so the next render does not read a stale
     // selection that still points at the deleted block.
-    if (this._deleteGapBlockAt(sel, "after")) {
+    const modelDeleteResult = this._handleModelDeleteSelection(sel, "after");
+    if (modelDeleteResult !== null) {
       context.preventDefault();
-      return true;
+      return modelDeleteResult;
     }
 
     if (!sel.collapsed || sel.start.type !== "text" || sel.start.offset !== 0)
@@ -1080,15 +1993,11 @@ export class InputTransformer {
     const state = context.get("keyboardState");
     const sel = state.selection;
 
-    if (sel.isAllSelected) {
-      context.preventDefault();
-      return this._deleteAllSelected(sel);
-    }
-
     // Gap-before + Delete mirrors Backspace from gap-after.
-    if (this._deleteGapBlockAt(sel, "before")) {
+    const modelDeleteResult = this._handleModelDeleteSelection(sel, "before");
+    if (modelDeleteResult !== null) {
       context.preventDefault();
-      return true;
+      return modelDeleteResult;
     }
 
     const block = sel.firstBlock as any;
@@ -1207,6 +2116,18 @@ export class InputTransformer {
       )
         .setCursorAtBlock(p.id, true)
         .run();
+      return true;
+    }
+
+    if (this._hasBoundaryEndpoint(sel)) {
+      this._replaceBoundarySelectionWithText(sel, "") ||
+        this.doc.selection.blur();
+      return true;
+    }
+
+    if (this._hasTableCellSelection(sel)) {
+      this._replaceTableCellSelection(sel, null, "anchor-cursor") ||
+        this.doc.selection.blur();
       return true;
     }
 

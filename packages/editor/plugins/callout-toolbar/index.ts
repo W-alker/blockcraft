@@ -1,8 +1,9 @@
 import { DocPlugin, getPositionWithOffset } from "../../framework";
-import { Subject, Subscription } from "rxjs";
+import { Subject, Subscription, takeUntil } from "rxjs";
 import { OverlayRef } from "@angular/cdk/overlay";
 import { CalloutBlockToolbar } from "./widgets/callout.toolbar";
 import { throttle } from "../../global";
+import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 
 export class CalloutToolbarPlugin extends DocPlugin {
   override name = 'callout-toolbar';
@@ -17,18 +18,42 @@ export class CalloutToolbarPlugin extends DocPlugin {
 
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
-      if (this.doc.isReadonly || !selection || !selection.isInSameBlock || selection.firstBlock.parentBlock?.flavour !== 'callout') {
+      this.clearTimer()
+
+      if (
+        this.doc.isReadonly ||
+        !selection ||
+        !isSelectionAlive(selection as any, this.doc) ||
+        !selection.isInSameBlock ||
+        selection.start.type !== 'text' ||
+        selection.end.type !== 'text' ||
+        selection.firstBlock.parentBlock?.flavour !== 'callout'
+      ) {
         this._overlayRef && this.closeToolbar()
         return
       }
 
-      this.clearTimer()
       const calloutBlock = selection.firstBlock.parentBlock
 
       if (this._overlayRef && this._activeCalloutBlock === calloutBlock) return;
       this.closeToolbar()
 
-      setTimeout(() => {
+      this._timer = setTimeout(() => {
+        this._timer = null
+        if (this._overlayRef && this._activeCalloutBlock === calloutBlock) return;
+        const currentSelection = this.doc.selection.value
+        if (
+          !currentSelection ||
+          !isSelectionAlive(currentSelection as any, this.doc) ||
+          !currentSelection.isInSameBlock ||
+          currentSelection.start.type !== 'text' ||
+          currentSelection.end.type !== 'text' ||
+          currentSelection.firstBlock.parentBlock?.id !== calloutBlock.id ||
+          !this._isBlockAlive(calloutBlock)
+        ) {
+          return
+        }
+
         this.openToolbar(calloutBlock)
       }, 200)
     })
@@ -43,6 +68,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
 
   openToolbar = (calloutBlock: BlockCraft.BlockComponent) => {
     if (this._overlayRef && this._activeCalloutBlock === calloutBlock) return;
+    if (!this._isBlockAlive(calloutBlock)) return;
 
     this._activeCalloutBlock = calloutBlock
 
@@ -64,6 +90,10 @@ export class CalloutToolbarPlugin extends DocPlugin {
     })
     componentRef.setInput('calloutBlock', calloutBlock)
     this._overlayRef = overlayRef
+
+    calloutBlock.onDestroy$?.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
+      this.closeToolbar()
+    })
   }
 
   closeToolbar = () => {
@@ -76,5 +106,14 @@ export class CalloutToolbarPlugin extends DocPlugin {
 
   destroy() {
     this._sub?.unsubscribe()
+    this.closeToolbar()
+  }
+
+  private _isBlockAlive(block: BlockCraft.BlockComponent): boolean {
+    try {
+      return this.doc.getBlockById(block.id) === block
+    } catch {
+      return false
+    }
   }
 }

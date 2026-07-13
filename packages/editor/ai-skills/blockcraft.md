@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-06-30 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-07-08 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -193,17 +193,37 @@ block.updateProps({ style: 'dashed' })
 
 ```typescript
 // Read
-doc.selection.value                     // BlockSelection | null
-doc.selection.selectionChange$          // BehaviorSubject<BlockSelection | null>
+doc.selection.value                     // BlockSelection | null; stale block refs read back as null
+doc.selection.selectionChange$          // BehaviorSubject<BlockSelection | null>; stale block refs are cleared to null before emit
 doc.selection.getSelectedText()         // string
 
 // A BlockSelection has:
-//   .anchor / .head        — discriminated ISelectionPoint (text | selected | gap)
+//   .anchor / .head        — discriminated ISelectionPoint (text | selected | gap | boundary | table-cell)
 //   .start / .end          — same points but document-ordered
 //   .firstBlock / .lastBlock
 //   .collapsed / .isInSameBlock / .isAllSelected / .isStartOfBlock / .isEndOfBlock
 //   .direction             — 'forward' | 'backward'
 //   .isAllSelected         — true only when both endpoints are whole-block selected points
+// Non-collapsed container-boundary DOM endpoints normalize to boundary points:
+//   { blockId: container.id, type: 'boundary', index: childBoundaryIndex }
+// Same-container boundary ranges in paragraph-capable renderUnit containers
+// support Yjs-owned replace/delete/IME materialization.
+// Shift+Arrow over void/container gap blocks, and Shift+Arrow leaving a
+// container from its first/last child, use parent boundary endpoints; the
+// derived DOM Range prefers the block's leading/trailing gap text anchors.
+// Existing non-collapsed text anchors stay text points; InputTransformer safely
+// replaces supported mixed text+boundary ranges without falling back to DOM input.
+// Table rectangular selection can be model-owned as table-cell anchor/head:
+//   { blockId: cell.id, type: 'table-cell', tableId: table.id }
+// Read the rectangle intent via selection.getTableCellSelection(). Empty native
+// selectionchange events do not clear it while the editor host keeps focus.
+// getSelectionRect()/getSelectionRects() return null for table-cell selections
+// because they are model-only and do not expose a derived DOM Range.
+// Gap cursor is model-owned as a gap point; the derived DOM Range anchors inside
+// the gap filler's zero-width text node for Safari/WebKit native caret painting.
+// Non-collapsed boundary ranges that use a child block's gap text anchor or
+// void/container chrome round-trip back to parent boundary points; same-block
+// leading→trailing gap/chrome ranges stay selected.
 
 // Type-narrowing example
 const sel = doc.selection.value
@@ -215,18 +235,30 @@ if (sel && sel.start.type === 'gap') {
   const voidBlock = sel.start.block            // BaseBlockComponent (void/container)
   const side = sel.start.side                  // 'before' | 'after'
 }
+if (sel && sel.start.type === 'boundary') {
+  const container = sel.start.block            // BaseBlockComponent (block/root)
+  const index = sel.start.index                // child boundary index
+}
+if (sel && sel.start.type === 'table-cell') {
+  const cell = sel.start.block                 // table-cell block
+  const tableId = sel.start.tableId
+  const rectangle = sel.getTableCellSelection()
+}
 
 // Write
 doc.selection.setCursorAt(editableBlock, offset)
 doc.selection.setCursorAtBlock(block, atStart, scrollIntoView?)
-doc.selection.selectBlock(block)               // whole-block selection
-doc.selection.setGapCursor(block, 'before' | 'after', scrollIntoView?)  // gap cursor beside void/container block
+doc.selection.selectBlock(block)               // whole-block selection; updates value synchronously
+doc.selection.setGapCursor(block, 'before' | 'after', scrollIntoView?)  // gap cursor; updates value synchronously
+doc.selection.setTableCellSelection(table, anchorCell, headCell?, scrollIntoView?) // model-owned table rectangle
 doc.selection.extendTo(editableBlock, offset)  // shift+click
+doc.selection.selectAllChildren(block)         // editable text range; container/root boundary range
+// Ctrl+A ladder: partial text -> full text -> parent boundary range -> parent content
 doc.selection.blur()                           // clear
 
 // Persist & restore
 doc.selection.value?.toJSON()                  // ISelectionJSON
-doc.selection.replay(savedJSON)                // accepts new and legacy formats
+doc.selection.replay(savedJSON)                // ISelectionJSON updates value synchronously; legacy accepted
 ```
 
 > The legacy `selection.from / selection.to / selection.from.index` shape is **deprecated** but still parsed for backward compat. New code MUST use `anchor / head / start / end` and narrow on `point.type` before reading `offset`. See `blockcraft-selection.md` for details.
@@ -271,7 +303,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `PasteFormatSelectorPlugin` | `plugins/paste-format-selector/` | Choose paste format (HTML / Markdown / plain) |
 | `OrderedBlockPlugin` | `plugins/ordered-extension/` | Auto-renumber ordered lists |
 | `CodeInlineEditorBinding` | `plugins/codeEditorBinding.ts` | Shiki syntax highlighting binding for code blocks |
-| `TableBlockBinding` | `plugins/tableBlockBinding.ts` | Table cell merge/split, column resize |
+| `TableBlockBinding` | `plugins/tableBlockBinding.ts` | Table clipboard, model/explicit cell-range keyboard bindings, merge/split helpers |
 | `ImgToolbarPlugin` | `plugins/img-toolbar/` | Image alignment, caption, replace |
 | `CalloutToolbarPlugin` | `plugins/callout-toolbar/` | Callout color/icon picker |
 | `DividerExtensionPlugin` | `plugins/divider-toolbar/` | Divider hover toolbar (style / size / optional text label + align) |

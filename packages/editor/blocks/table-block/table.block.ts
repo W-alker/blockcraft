@@ -18,6 +18,8 @@ import { TableCellsSelection } from "./types";
 import { BlockSelection } from "../../framework/modules/selection/blockSelection";
 import { TableFullscreenController } from "./table-fullscreen-controller";
 
+const TABLE_CELL_SELECTED_CLASS = 'bc-table-cell-selected'
+
 function cssZoomDeclarationSupported(): boolean {
   if (typeof CSS === 'undefined' || typeof CSS.supports !== 'function') return true
   return CSS.supports('zoom', '2')
@@ -367,12 +369,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         this._syncTableFocusUi(selection)
       })
 
-    // 在表格内进行文本编辑（普通打字 / IME 提交）时折叠矩形（行/列）多选高亮。
-    // 多格选区的高亮存在本组件的 _selectedCellSet / _activeCellsRange 里，而
-    // doc.selection 只跟踪 anchor 格——光标进入 anchor 格编辑时 _syncTableFocusUi
-    // 的 keep-alive 分支会保留矩形，导致其它格残留 .selected 样式。这里在真正发生
-    // 文本变更时主动清理（O(1) 预检：无多选直接返回）。Delete 清空内容不插入文本、
-    // 不触发本路径，多选保持不变（符合“清空后仍选中”的预期）。
+    // 在表格内进行文本编辑（普通打字 / IME 提交）时折叠行/列多选高亮。
+    // Model-owned table-cell 选区切换到文本光标时会由 _syncTableFocusUi 同步清理；
+    // 这里保留为本地文本更新的兜底路径，覆盖旧的显式行/列选择和异步渲染交错。
     this.doc.crud.onTextUpdate$
       .pipe(takeUntil(this.onDestroy$))
       .subscribe(e => {
@@ -855,6 +854,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this._dragStartCoord = null
     if (!this._startSelectingCell) return;
     const anchorCell = this._startSelectingCell
+    const headCell = this._lastSelectingCell ?? anchorCell
     this._startSelectingCell = this._lastSelectingCell = null
 
     const isMultiCell = this._selectedCellSet.size > 1 && !!this._prevAdjustedSelection
@@ -881,7 +881,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this._suppressFocusSync = true
     try {
       if (isMultiCell) {
-        this.doc.selection.selectBlock(anchorCell)
+        this.doc.selection.setTableCellSelection(this, anchorCell, headCell)
       } else {
         this.doc.selection.setCursorAtBlock(anchorCell, false, false)
       }
@@ -890,21 +890,27 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
 
     const syncSelectionUi = () => {
-      this._syncTableFocusUi(this.doc.selection.recalculate().value)
+      if (isMultiCell) {
+        this._syncTableFocusUi(this.doc.selection.value)
+      } else {
+        this._syncTableFocusUi(this.doc.selection.recalculate().value)
+      }
     }
 
     syncSelectionUi()
-    nextTick().then(syncSelectionUi)
+    if (!isMultiCell) {
+      nextTick().then(syncSelectionUi)
+    }
   }
 
   protected selectCell = (cell: TableCellBlockComponent) => {
     if (this._selectedCellSet.has(cell)) return
     this._selectedCellSet.add(cell)
-    cell.hostElement.classList.add('selected')
+    cell.hostElement.classList.add(TABLE_CELL_SELECTED_CLASS)
   }
 
   protected _clearSelected() {
-    this._selectedCellSet.forEach(cell => cell.hostElement.classList.remove('selected'))
+    this._selectedCellSet.forEach(cell => cell.hostElement.classList.remove(TABLE_CELL_SELECTED_CLASS))
     this._selectedCellSet.clear()
   }
 
@@ -952,12 +958,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _applySelectedDiff(nextCells: Set<TableCellBlockComponent>) {
     this._selectedCellSet.forEach(cell => {
       if (!nextCells.has(cell)) {
-        cell.hostElement.classList.remove('selected')
+        cell.hostElement.classList.remove(TABLE_CELL_SELECTED_CLASS)
       }
     })
     nextCells.forEach(cell => {
       if (!this._selectedCellSet.has(cell)) {
-        cell.hostElement.classList.add('selected')
+        cell.hostElement.classList.add(TABLE_CELL_SELECTED_CLASS)
       }
     })
     this._selectedCellSet = nextCells
@@ -966,8 +972,16 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   protected _getSelectedCellsCoordinates() {
     if (!this._startSelectingCell || !this._lastSelectingCell) {
       const docSelection = this.doc.selection.value
-      if (!docSelection || docSelection.firstBlock.flavour !== 'table-cell') return null
-      this._startSelectingCell = this._lastSelectingCell = docSelection.firstBlock as TableCellBlockComponent
+      let firstBlock: BlockCraft.BlockComponent | null = null
+      try {
+        firstBlock = docSelection?.firstBlock ?? null
+      } catch {
+        return null
+      }
+      if (!firstBlock || firstBlock.flavour !== 'table-cell') return null
+      const liveCell = this._getLiveBlockById<TableCellBlockComponent>(firstBlock.id)
+      if (!this._isTableCellBlock(liveCell) || !this.hostElement.contains(liveCell.hostElement)) return null
+      this._startSelectingCell = this._lastSelectingCell = liveCell
     }
     let startCell = this._startSelectingCell
     let endCell = this._lastSelectingCell
@@ -1044,6 +1058,45 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     return this.confirmSelection(cellsSelection.start, cellsSelection.end)
   }
 
+  /**
+   * Return only an explicit table-structure selection (dragged cells, row
+   * range, or column range). Unlike getSelectedCoordinates(), this never falls
+   * back to the current text/block selection's first cell.
+   */
+  getExplicitSelectedCoordinates(): TableCellsSelection | null {
+    if (this._activeColRange[0] > -1 && this._activeColRange[1] > -1) {
+      return {
+        start: [0, this._activeColRange[0]],
+        end: [this.rowLength - 1, this._activeColRange[1]]
+      }
+    }
+    if (this._activeRowRange[0] > -1 && this._activeRowRange[1] > -1) {
+      return {
+        start: [this._activeRowRange[0], 0],
+        end: [this._activeRowRange[1], this.colLength - 1]
+      }
+    }
+    if (this._activeCellsRange) {
+      return {
+        start: [...this._activeCellsRange.start],
+        end: [...this._activeCellsRange.end],
+      }
+    }
+    if (this._selectedCellSet.size <= 1) return null
+
+    const coordinates = [...this._selectedCellSet]
+      .map(cell => this._getCellCoordinate(cell))
+      .filter((coordinate): coordinate is { rowIdx: number, colIdx: number } => !!coordinate)
+    if (coordinates.length <= 1) return null
+
+    const rows = coordinates.map(coordinate => coordinate.rowIdx)
+    const cols = coordinates.map(coordinate => coordinate.colIdx)
+    return this.confirmSelection(
+      [Math.min(...rows), Math.min(...cols)],
+      [Math.max(...rows), Math.max(...cols)],
+    )
+  }
+
   onColHandleHovered(index: number | null) {
     this._hoveredColHandle = index
     this.changeDetectorRef.markForCheck()
@@ -1054,7 +1107,22 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.changeDetectorRef.markForCheck()
   }
 
-  private _getCellCoordinate(cell: TableCellBlockComponent) {
+  private _getLiveBlockById<T extends BlockCraft.BlockComponent = BlockCraft.BlockComponent>(id: string): T | null {
+    try {
+      return (this.doc.getBlockById(id) as T | null) ?? null
+    } catch {
+      return null
+    }
+  }
+
+  private _isTableCellBlock(block: unknown): block is TableCellBlockComponent {
+    return !!block
+      && (block as BlockCraft.BlockComponent).flavour === 'table-cell'
+      && typeof (block as TableCellBlockComponent).getIndexOfParent === 'function'
+  }
+
+  private _getCellCoordinate(cell: TableCellBlockComponent | null | undefined) {
+    if (!this._isTableCellBlock(cell)) return null
     const rowIdx = this.childrenIds.indexOf(cell.parentId!)
     const colIdx = cell.getIndexOfParent()
     if (rowIdx < 0 || colIdx < 0) return null
@@ -1063,15 +1131,76 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private _resolveCellFromSelection(selection: BlockSelection | null) {
     if (!selection) return null
-    const block = selection.firstBlock
+    let block: BlockCraft.BlockComponent
+    try {
+      block = selection.firstBlock
+    } catch {
+      return null
+    }
+    const liveBlock = this._getLiveBlockById(block.id)
+    if (!liveBlock?.hostElement) return null
+    block = liveBlock
     if (!this.hostElement.contains(block.hostElement)) return null
-    if (block.flavour === 'table-cell') {
+    if (this._isTableCellBlock(block)) {
       return block as TableCellBlockComponent
     }
 
     const cellId = block.hostElement.closest('td[data-block-id]')?.getAttribute('data-block-id')
     if (!cellId) return null
-    return this.doc.getBlockById(cellId) as TableCellBlockComponent
+    const cell = this._getLiveBlockById<TableCellBlockComponent>(cellId)
+    return this._isTableCellBlock(cell) ? cell : null
+  }
+
+  private _syncFromTableCellSelection(selection: BlockSelection | null) {
+    const tableCellSelection = selection?.getTableCellSelection()
+    if (!tableCellSelection || tableCellSelection.tableId !== this.id) return false
+
+    const anchorCell = this._getLiveBlockById<TableCellBlockComponent>(tableCellSelection.anchorCellId)
+    const headCell = this._getLiveBlockById<TableCellBlockComponent>(tableCellSelection.headCellId)
+    if (!this._isTableCellBlock(anchorCell) || !this._isTableCellBlock(headCell)) return false
+
+    const anchorCoordinate = this._getCellCoordinate(anchorCell)
+    const headCoordinate = this._getCellCoordinate(headCell)
+    if (!anchorCoordinate || !headCoordinate) return false
+
+    this._clearActiveRanges()
+    const adjusted = this.confirmSelection(
+      [
+        Math.min(anchorCoordinate.rowIdx, headCoordinate.rowIdx),
+        Math.min(anchorCoordinate.colIdx, headCoordinate.colIdx),
+      ],
+      [
+        Math.max(anchorCoordinate.rowIdx, headCoordinate.rowIdx),
+        Math.max(anchorCoordinate.colIdx, headCoordinate.colIdx),
+      ],
+    )
+    this._activeCellsRange = {
+      start: [adjusted.start[0], adjusted.start[1]],
+      end: [adjusted.end[0], adjusted.end[1]],
+      anchorId: anchorCell.id,
+    }
+    this._applySelectedDiff(new Set(this.getCellsMatrixByCoordinates(adjusted.start, adjusted.end).flat(1)))
+    this._syncHandleVisibility(anchorCell)
+
+    const colRange: [number, number] = [adjusted.start[1], adjusted.end[1]]
+    const rowRange: [number, number] = [adjusted.start[0], adjusted.end[0]]
+    if (this.colBarComponent) {
+      this.colBarComponent.selectedRange = colRange
+      this.colBarComponent.changeDetectionRef.markForCheck()
+    }
+    if (this.rowBarComponent) {
+      this.rowBarComponent.selectedRange = rowRange
+      this.rowBarComponent.changeDetectionRef.markForCheck()
+    }
+
+    this._showTableMenu({
+      rowIndex: adjusted.start[0],
+      rowCount: adjusted.end[0] - adjusted.start[0] + 1,
+      colIndex: adjusted.start[1],
+      colCount: adjusted.end[1] - adjusted.start[1] + 1,
+      selectionKind: 'cells',
+    })
+    return true
   }
 
   private _showTableMenu(options: {
@@ -1206,6 +1335,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       return
     }
 
+    if (this._syncFromTableCellSelection(selection)) return
+
     const cell = this._resolveCellFromSelection(selection)
     if (!cell) {
       // `selectBlock` fires a transient null selectionchange between
@@ -1231,34 +1362,6 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     const coordinate = this._getCellCoordinate(cell)
     if (!coordinate) return
-
-    const range = this._activeCellsRange
-    if (range && range.anchorId === cell.id) {
-      this._syncHandleVisibility(cell)
-      // Mirror the rectangle's row/col span onto the bar widgets so the
-      // visible drag handles know the full multi-row/multi-col extent.
-      // Without this, dragging a bar handle inside a cell rectangle would
-      // fall back to single-row/col because the bar's _selectedRange is
-      // still [-1, -1].
-      const colRange: [number, number] = [range.start[1], range.end[1]]
-      const rowRange: [number, number] = [range.start[0], range.end[0]]
-      if (this.colBarComponent) {
-        this.colBarComponent.selectedRange = colRange
-        this.colBarComponent.changeDetectionRef.markForCheck()
-      }
-      if (this.rowBarComponent) {
-        this.rowBarComponent.selectedRange = rowRange
-        this.rowBarComponent.changeDetectionRef.markForCheck()
-      }
-      this._showTableMenu({
-        rowIndex: range.start[0],
-        rowCount: range.end[0] - range.start[0] + 1,
-        colIndex: range.start[1],
-        colCount: range.end[1] - range.start[1] + 1,
-        selectionKind: 'cells',
-      })
-      return
-    }
 
     if (this._activeColRange[0] > -1 && this._activeColRange[1] > -1
       && coordinate.rowIdx === 0

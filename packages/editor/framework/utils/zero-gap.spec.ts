@@ -2,10 +2,12 @@ import {
   createBlockGapSpace,
   getBlockGapAnchor,
   getBlockGapCaretSpan,
+  isZeroSpace,
   resolveBlockGapSide,
   resolveGapSideFromRect,
   IGapRect,
 } from './zero-gap'
+import {STR_ZERO_WIDTH_SPACE} from '../block-std/inline'
 
 /** Build a non-editable host with leading + trailing gap fillers, mirroring the
  *  DOM that BaseBlockComponent mounts for void/container blocks. */
@@ -22,30 +24,48 @@ function makeGapHost(): {host: HTMLElement; leading: HTMLElement; trailing: HTML
 }
 
 describe('createBlockGapSpace', () => {
-  it('builds a contenteditable filler span containing a real <br>', () => {
+  it('builds a contenteditable filler span containing only a zero-width text anchor', () => {
     const span = createBlockGapSpace()
     expect(span.tagName).toBe('SPAN')
     expect(span.getAttribute('data-zero-space')).toBe('true')
     expect(span.getAttribute('data-block-zero-space')).toBe('true')
     expect(span.getAttribute('contenteditable')).toBe('true')
     expect(span.classList.contains('bc-block-gap')).toBe(true)
-    expect(span.firstChild).toBeInstanceOf(HTMLBRElement)
-    // No zero-width-space text node — the caret-able line box comes from <br>.
-    expect(span.textContent).toBe('')
+    expect(span.childNodes.length).toBe(1)
+    expect(span.firstChild?.nodeType).toBe(Node.TEXT_NODE)
+    expect(span.firstChild?.textContent).toBe(STR_ZERO_WIDTH_SPACE)
+  })
+})
+
+describe('isZeroSpace', () => {
+  it('returns null for a missing native selection node', () => {
+    expect(isZeroSpace(null)).toBeNull()
+    expect(isZeroSpace(undefined)).toBeNull()
   })
 })
 
 describe('getBlockGapAnchor', () => {
-  it('returns the leading filler span at offset 0', () => {
+  it('returns the leading filler text node at offset 0', () => {
     const {host, leading} = makeGapHost()
     const a = getBlockGapAnchor(host, 'leading')
-    expect(a).toEqual({node: leading, offset: 0})
+    expect(a).toEqual({node: leading.firstChild!, offset: 0})
   })
 
-  it('returns the trailing filler span at offset 1 (past the <br>)', () => {
+  it('returns the trailing filler text node at the text end', () => {
     const {host, trailing} = makeGapHost()
     const a = getBlockGapAnchor(host, 'trailing')
-    expect(a).toEqual({node: trailing, offset: 1})
+    expect(a).toEqual({node: trailing.firstChild!, offset: STR_ZERO_WIDTH_SPACE.length})
+  })
+
+  it('still returns the trailing filler when a non-gap sibling span is appended', () => {
+    const {host, trailing} = makeGapHost()
+    const cursor = document.createElement('span')
+    cursor.className = 'blockcraft-cursor'
+    host.appendChild(cursor)
+
+    const a = getBlockGapAnchor(host, 'trailing')
+
+    expect(a).toEqual({node: trailing.firstChild!, offset: STR_ZERO_WIDTH_SPACE.length})
   })
 
   it('returns null when no gap filler is mounted', () => {
@@ -66,6 +86,15 @@ describe('getBlockGapCaretSpan', () => {
     expect(getBlockGapCaretSpan(host, 'after')).toBe(trailing)
   })
 
+  it('still returns the trailing filler when a non-gap sibling span is appended', () => {
+    const {host, trailing} = makeGapHost()
+    const cursor = document.createElement('span')
+    cursor.className = 'blockcraft-cursor'
+    host.appendChild(cursor)
+
+    expect(getBlockGapCaretSpan(host, 'after')).toBe(trailing)
+  })
+
   it('returns null when no gap filler is mounted', () => {
     const host = document.createElement('div')
     expect(getBlockGapCaretSpan(host, 'before')).toBeNull()
@@ -80,7 +109,7 @@ describe('resolveBlockGapSide', () => {
     expect(resolveBlockGapSide(trailing)).toBe('after')
   })
 
-  it('resolves the inner <br> of the filler via .closest', () => {
+  it('resolves the zero-width text node of the filler', () => {
     const {leading, trailing} = makeGapHost()
     expect(resolveBlockGapSide(leading.firstChild!)).toBe('before')
     expect(resolveBlockGapSide(trailing.firstChild!)).toBe('after')

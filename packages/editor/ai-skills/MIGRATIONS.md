@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-06-30 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-07-12 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,329 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-07-12 (patch) — IME structural edits undo atomically
+
+**Severity**: patch
+
+**What changed**: `InputTransformer` now wraps IME flows that materialize or delete blocks at `compositionStart` in a `DocUndoManager` capture group that remains open until `compositionEnd` commits the final text. `DocUndoManager` can temporarily force multiple tracked Yjs transactions into one undo item regardless of elapsed wall time, then restores the normal capture timeout and stops capturing so the next user action stays separate.
+
+**Why**: Yjs' default `captureTimeout` can split a single IME intent when the user spends longer than the merge window in the input method. For selected non-editable blocks and other structural IME paths, that meant undo could restore only the text commit or only the structural replacement, leaving the restored model selection and native DOM selection out of sync.
+
+**Affected ai-skills files**:
+- `blockcraft-input.md` — documents IME capture groups for structural materialization paths.
+- `blockcraft-data.md` — documents `DocUndoManager` capture groups over multi-transaction input primitives.
+
+### Behavior Changes
+
+- IME over gap, boundary, table-cell, whole-block selected, and mixed cross-block selections now undoes as one user action even if composition lasts longer than Yjs' normal `captureTimeout`.
+- Undo after such IME input restores the pre-input selection snapshot attached to the structural edit, instead of letting the later text commit create a separate undo item with a caret inside the replacement paragraph.
+- A new `compositionStart` closes any leftover IME capture group before starting another session, preventing an interrupted composition from merging unrelated future edits.
+
+### Migration Recipe
+
+No application migration is required. Plugins implementing comparable multi-transaction IME/input primitives should use existing editor mutation APIs and avoid manually splitting one user intent into independent undo items.
+
+### v?.?.? - 2026-07-07 (patch) — IME composition aborts stale selections safely
+
+**Severity**: patch
+
+**What changed**: `InputTransformer` now treats a composition selection that still points at removed blocks as a fail-closed IME startup. It tries the existing composition selection recovery once; if no live model-backed insertion point exists, it prevents default, clears the selection, marks the pending composition as aborted, and consumes the matching `compositionEnd` without committing text. `CompositionEventState.getFallbackPoint()` returns `null` instead of throwing if a recalculated selection becomes stale.
+
+**Why**: IME events can arrive while undo, block deletion, table/cell selection, or browser selectionchange has left a short-lived stale `BlockSelection`. Throwing from lazy `firstBlock` / `lastBlock` reads leaves the editor in a repeated `Block not found` state. Aborting the single invalid composition keeps Yjs authoritative and avoids committing native IME text into the wrong block.
+
+**Affected ai-skills files**:
+- `blockcraft-input.md` — documents stale composition selection abort behavior.
+
+### Behavior Changes
+
+- `compositionStart` over an unrecoverable stale selection clears the editor selection and aborts the pending composition instead of throwing.
+- The matching `compositionEnd` exits without reading `compositionState` or writing text.
+- `compositionEnd` with no resolved commit point exits without throwing `Invalid inputRange`.
+
+### Migration Recipe
+
+No application migration is required. Downstream code that intentionally expected IME `BlockCraftError`s for stale selections should instead treat this as dropped browser input and observe normal selection/input state.
+
+### v?.?.? - 2026-07-08 (patch) — whole-block selection and gap-block Shift+Arrow are model-first
+
+**Severity**: patch
+
+**What changed**: `SelectionManager.selectBlock()` now writes the canonical `BlockSelection` synchronously before applying the derived native DOM `Range`. Programmatic DOM range application for model-first selection paths briefly suppresses native `selectionchange`, and new-format `replay(ISelectionJSON)` derives the native DOM Range from document-ordered `start/end` while preserving anchor/head direction in the model. `selectAllChildren()` is now model-first too: editable blocks replay a full text range, container/root blocks with children replay a `[boundary(0), boundary(childrenLength)]` range, and only void/empty blocks fall back to whole-block `selected`. Ctrl+A now treats a full editable text range, full container boundary range, or explicit whole-block selection as already covering the current block's content and climbs to `selectAllChildren(parent)`, while partial container boundary ranges expand inside the current container first. Shift+Arrow extension that crosses into a void/container block now replays a parent `boundary` endpoint, and Shift+Arrow leaving a container from its first/last child maps the moving endpoint to the container's boundary in its parent instead of promoting the container to whole-block `selected`. Boundary DOM range construction prefers the adjacent block's leading/trailing gap text anchor when one exists, instead of using native `Selection.extend(hostElement, ...)` or a whole-block `selected` endpoint for range extension; non-collapsed cross-block gap anchors and void/container chrome endpoints now normalize back to the corresponding parent boundary point. Existing non-collapsed text anchors remain text points, with `InputTransformer` handling supported mixed `text + boundary` replacement and IME materialization. `SelectionSelectedManager` no longer writes the legacy root `.all-selected` class; consumers should use `BlockSelection.isAllSelected` or block-level `.selected` classes instead. `AttachmentExtensionPlugin` no longer fakes `.selected` on attachment blocks while the rename input is focused; it uses `.bc-attachment-renaming` for that private visual state and restores the real model selection on close. `TableBlockComponent` now paints rectangular cell selection with `.bc-table-cell-selected` instead of reusing the generic `.selected` class on `td.table-cell-block`.
+
+**Why**: Safari/WebKit can reinterpret a callout/highlight/container host range as internal child text or boundary endpoints when the browser fires a delayed `selectionchange`. That could make undo restore the callout's internal content selection instead of the selected block, and could make Shift+Arrow selection shrink or stop when crossing into a container block. Boundary endpoints keep the moving Shift+Arrow endpoint as a document-position range, while gap anchors keep the native DOM endpoints out of the container's editable children. Keeping existing text anchors avoids a visual/model split where the browser paints only a container selection but input deletes additional text below it.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — Quick Reference notes that `selectBlock()` updates `doc.selection.value` synchronously.
+- `blockcraft-selection.md` — documents model-first whole-block selection, boundary-backed Shift+Arrow over gap blocks, and short native selectionchange suppression for derived DOM ranges.
+- `blockcraft-input.md` — documents Yjs-owned replacement and IME handling for supported mixed `text + boundary` ranges.
+- `blockcraft-plugins-toolbar.md` — documents AttachmentExtensionPlugin rename-mode visual class ownership.
+- `blockcraft-plugins-inline.md` — documents the private table cell rectangle class used by `TableBlockComponent`.
+
+### Behavior Changes
+
+- Code that calls `doc.selection.selectBlock(block)` can read `doc.selection.value` immediately after the call. The value is the whole-block selected model state before the browser native Selection view catches up.
+- Code that calls `doc.selection.selectAllChildren(block)` can read `doc.selection.value` immediately after the call. For editable blocks, the value is a full text range. For container/root blocks with children, the value is a boundary range over direct children instead of a whole-block selected endpoint.
+- Repeated Ctrl+A climbs by model coverage: partial editable text selects the full text, full editable text selects parent content, partial container boundary ranges expand to the current container's children, and full container boundary or explicit whole-block selections climb to parent content. Table-cell text still promotes to model table-cell selection before whole-table selection.
+- The editor no longer adds `.all-selected` to the root host for whole-block selected ranges. External code should read `doc.selection.value?.isAllSelected` for state and style the actual selected blocks through `.selected`.
+- Attachment rename mode no longer adds `.selected` directly while the rename overlay input owns focus. Theme/custom CSS that intentionally styled the rename-active attachment through `.attachment-block.selected` should also target `.attachment-block.bc-attachment-renaming`.
+- Table rectangular cell selection no longer adds `.selected` to `td.table-cell-block`; it uses `.bc-table-cell-selected`. Whole-table block selection still uses `.table-block.selected` through the normal `SelectionManager` path.
+- Programmatic whole-block selection is less browser-dependent around container/callout blocks. A delayed native `selectionchange` caused by applying the derived DOM Range should not overwrite the canonical model selection.
+- Shift+Arrow crossing from text or a gap cursor into a void/container block now extends the moving endpoint with parent `{type: 'boundary', index}` points. Shift+Arrow leaving a container from its first or last child does the same at the container's parent boundary instead of turning the container into a whole-block `selected` endpoint. Continued Shift+Arrow extension advances from the model `head` instead of the browser native `Selection.focusNode`, so replayed backward ranges keep growing from the upper edge instead of shrinking from the lower text endpoint. Collapsed starts can still materialize structural boundary ranges, but existing non-collapsed text anchors stay text points so the visible text extent remains represented in the model. The DOM view for boundary endpoints prefers the target block's gap text node, so Safari has a stable native anchor; if a later `selectionchange` reads that cross-block gap anchor or void/container chrome endpoint back, it normalizes to the same parent boundary point instead of a whole-block `selected` endpoint. Same-block leading→trailing gap/chrome ranges still represent explicit whole-block selection.
+- Typing, Backspace/Delete fallback, Enter, and IME over supported mixed `text + boundary` selections stay in the Yjs-owned input path and keep the caret/composition on the surviving editable text endpoint instead of blurring.
+- IME over cross-block text selections now also collapses the live model/native selection to the surviving text endpoint after undo snapshot capture but before deleting covered blocks, so composition commits into the retained `Y.Text` even when a container/highlight block is inside the selected range.
+- No migration is required for normal consumers. Tests that waited for native `selectionchange` after `selectBlock()` should assert the synchronous model selection instead.
+
+### v?.?.? - 2026-07-07 (patch) — stale selections clear before reads and broadcasts
+
+**Severity**: patch
+
+**What changed**: `SelectionManager` now validates a `BlockSelection`'s lazy block references before applying/broadcasting it through `selectionChange$` and before returning `doc.selection.value`. If undo/replay or structural edits leave a selection pointing at deleted blocks, the manager clears it to `null` instead of letting consumers read `firstBlock` / `lastBlock` and throw `Block not found`.
+
+**Why**: Table focus UI, selected-class painting, toolbars, and other selection subscribers all consume the same canonical selection stream. Centralizing the stale-selection guard prevents each subscriber from needing its own `try/catch` around lazy block access after undo/redo.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — notes that stale block refs are cleared before `selectionChange$` emit and `doc.selection.value` read.
+- `blockcraft-selection.md` — documents the selection liveness guard in the lifecycle, value getter, and observer API.
+
+### Behavior Changes
+
+- Invalid replay/undo selections that reference missing blocks now clear to `null` before selection subscribers run or when `doc.selection.value` is read. No public API shape changed; consumers that already handle `null` selections need no migration.
+
+### v?.?.? - 2026-07-06 (patch) — mixed whole-block/text IME input collapses before deletion
+
+**Severity**: patch
+
+**What changed**: `InputTransformer` now handles mixed selections such as `{ anchor: selected block, head: text offset }` during IME startup by capturing the undo snapshot first, collapsing the live model/native selection to the surviving editable text endpoint before deleting whole-block endpoints, then starting composition there. The same destructive replace helper now avoids exposing a dangling selected block to sync observers while keeping the native IME target focused.
+
+**Why**: IME over a selection that starts on a whole block and ends inside text could delete the selected block while `doc.selection.value` still pointed at it. Synchronous observers and subsequent editing/undo could then read a stale block id, causing repeated `block not found`-style failures.
+
+**Affected ai-skills files**:
+- `blockcraft-input.md` — documents mixed whole-block/text input and IME replacement behavior.
+
+### Behavior Changes
+
+- IME and text replacement over mixed whole-block/text ranges now stay in the controlled Yjs input path and keep focus on the surviving text endpoint instead of leaving a stale selection that points at a deleted block.
+- No external API shape changed; no migration is required for normal consumers.
+
+### v?.?.? - 2026-07-06 (patch) — selection replay and undo snapshots use anchor/head model
+
+**Severity**: patch
+
+**What changed**: `SelectionManager.replay(ISelectionJSON)` now updates the canonical `BlockSelection` synchronously before applying the derived native DOM Range. `DocUndoManager` now captures and restores selection snapshots as anchor/head model points instead of legacy `from/to`, preserving text selection direction, gap side, boundary indexes, and table-cell anchor/head intent during undo/redo.
+
+**Why**: undo/redo and programmatic replay need a stable model selection immediately after restore. Relying on a later browser `selectionchange` can leave `doc.selection.value` stale or null, and legacy `from/to` snapshots lose direction-sensitive intent for backward text selections and rectangular table selections.
+
+**Affected ai-skills files**:
+- `blockcraft-selection.md` — documents synchronous new-format replay and anchor/head undo snapshots.
+- `blockcraft.md` — Quick Reference notes that `replay(ISelectionJSON)` updates `doc.selection.value` synchronously.
+
+### Behavior Changes
+
+- Code that calls `doc.selection.replay(savedSelectionJson)` with the new `ISelectionJSON` shape can read `doc.selection.value` immediately after the call. The browser native `Selection` remains a derived view and may still be absent for model-only table-cell selections.
+- Undo/redo restores anchor/head direction for supported selection point types instead of normalizing snapshots to document-ordered legacy `from/to`.
+
+### v?.?.? - 2026-07-06 (patch) — IME composition anchors are captured from the accepted model target
+
+**Severity**: patch
+
+**What changed**: `InputTransformer` now starts `CompositionSession` directly from the accepted model text point or from the paragraph it materializes for gap, boundary, table-cell, and selected renderUnit IME input. `selection.recalculate()` can still run after materialization to settle local UI, but the composition commit anchor no longer depends on that DOM-derived result. Active composing `beforeinput` target ranges no longer retarget the session anchor.
+
+**Why**: during IME startup, browsers can temporarily clear or move the native DOM selection, especially around model-only table-cell selections and gap/boundary materialization. Re-reading DOM selection after the editor already knows the intended target could retarget or drop the composition. Capturing from the model/materialized block keeps the commit in Y.Text control flow.
+
+**Affected ai-skills files**:
+- `blockcraft-input.md` — documents the compositionStart model-anchor rule and the reduced role of `selection.recalculate()` during IME startup.
+
+### Behavior Changes
+
+- IME composition over text, gap, boundary, table-cell, and selected renderUnit targets commits to the model target accepted at `compositionStart`, even if a follow-up DOM selection recalculation or composing `beforeinput` target range returns `null` or a stale range during browser IME startup.
+
+### v?.?.? - 2026-07-06 (patch) — table-cell selections no longer expose DOM range geometry
+
+**Severity**: patch
+
+**What changed**: `SelectionManager.getSelectionRect()` and `getSelectionRects()` now return `null` for model-owned table-cell selections. Table-cell selections still round-trip through `BlockSelection.getTableCellSelection()`, `setTableCellSelection()`, replay, clipboard/input handlers, and `createFakeRange()`.
+
+**Why**: a rectangular table selection is model-owned and the browser native range is intentionally cleared. Exposing a synthetic DOM Range from `getSelectionRect(s)` let unrelated toolbar/overlay code treat table-cell selections as DOM-backed text/block selections, which could resurrect floating text UI or derive misleading geometry.
+
+**Affected ai-skills files**:
+- `blockcraft-selection.md` — documents that table-cell selections are rectless/model-only for geometry APIs.
+- `blockcraft.md` — Quick Reference notes that `getSelectionRect(s)` returns `null` for table-cell selections.
+
+### Behavior Changes
+
+- Plugins that position UI from `doc.selection.getSelectionRect()` or `getSelectionRects()` must handle `null` for table-cell selections. Use `selection.getTableCellSelection()` plus table component APIs, or `doc.selection.createFakeRange(selection)`, when table-specific visual feedback is needed.
+
+### v?.?.? - 2026-07-06 (patch) — gap cursor uses a text-only native caret anchor
+
+**Severity**: patch
+
+**What changed**: `createBlockGapSpace()` now creates each block gap filler with only a zero-width text node, and `SelectionManager` places collapsed gap DOM ranges inside that text node instead of at the filler span boundary. The previous filler `<br>` is removed. The selection model is unchanged: gap selections are still represented as `{ blockId, type: 'gap', side }`, and `getBlockGapCaretSpan()` still returns the visual filler span for geometry.
+
+**Why**: Safari/WebKit does not reliably paint a native caret for a collapsed range at `(fillerSpan, 0)` when the editable filler behaves like an empty span. Anchoring the range in a real text node keeps the native caret path visible without reintroducing a CSS fake cursor; removing `<br>` keeps the filler DOM shape single-purpose.
+
+**Affected ai-skills files**:
+- `blockcraft-selection.md` — documented the text-only gap filler and zero-width text-node anchor.
+- `blockcraft.md` — Quick Reference notes that gap DOM ranges anchor inside the filler text node for WebKit caret visibility.
+
+### Behavior Changes
+
+- The DOM shape of internal block gap fillers changes from span + `<br>` to span + zero-width text node. Code should continue reading the `BlockSelection` model instead of depending on `document.getSelection().anchorNode` being the filler span itself.
+- No migration is required for normal `doc.selection.setGapCursor()`, input, keyboard, clipboard, or undo/redo usage.
+
+### v?.?.? - 2026-07-03 (minor) — table-cell 选区点与表格矩形选区模型化
+
+**Severity**: minor
+
+**What changed**: the selection point union now includes `ITableCellSelectionPoint { blockId, type: 'table-cell', tableId, block }`. `SelectionManager.setTableCellSelection(table, anchorCell, headCell?, scrollIntoView?)` stores a model-owned rectangular table selection synchronously, focuses the editor host, clears the browser native range, and lets `TableBlockComponent` paint the selected cells. `BlockSelection.getTableCellSelection()` exposes `{ tableId, anchorCellId, headCellId }`. Selection-sourced events for table-cell model selections now route from the anchor/head cells before bubbling to rows/table/root. `TableBlockBinding` now reads the table-cell model selection for copy/cut/paste/delete/arrow navigation before falling back to explicit table-owned row/column/cell coordinates. `InputTransformer` also recognizes table-cell selections for typing, printable keydown fallback, Enter, Backspace/Delete fallback, and IME materialization. Undo/redo snapshots preserve `blockId + tableId` and replay the table-cell model selection when both still exist.
+
+**Why**: table cell selection is rectangular and cannot be represented safely by DOM Range endpoints or a single block selection. Modeling the rectangle in `BlockSelection` gives input, clipboard, deletion, and undo/redo a stable source of truth while keeping the browser selection as a derived/optional view.
+
+**Affected ai-skills files**:
+- `blockcraft-selection.md` — documented `ITableCellSelectionPoint`, JSON shape, `getTableCellSelection()`, `setTableCellSelection()`, model-only replay, and undo/redo behavior
+- `blockcraft-input.md` — documented table-cell rectangle input, delete, Enter, and IME materialization semantics
+- `blockcraft-plugins-inline.md` — documented TableBlockBinding's table-cell model selection flow and fallback to explicit coordinates
+- `blockcraft-event.md` — documented table-cell model selection event scope routing from anchor/head cells
+- `blockcraft.md` — Quick Reference now lists `table-cell` selection points and `setTableCellSelection()`
+
+### New APIs / Features
+
+- `ITableCellSelectionPoint { blockId, type: 'table-cell', tableId, block }` — a new selection endpoint variant for table-cell rectangles.
+- `ISelectionPointJSON` accepts `{ blockId, type: 'table-cell', tableId }`.
+- `BlockSelection.getTableCellSelection(): { tableId: string; anchorCellId: string; headCellId: string } | null`.
+- `doc.selection.setTableCellSelection(table, anchorCell, headCell?, scrollIntoView?)`.
+
+### Behavior Changes
+
+- Drag-selecting multiple table cells now writes a model table-cell selection instead of selecting only the anchor cell as a whole block.
+- Replaying table-cell JSON restores the model selection without constructing a native DOM Range.
+- Empty native `selectionchange` events caused by clearing the browser range no longer clear a model-owned table-cell selection while the editor host keeps focus, so undo/redo can restore the rectangle reliably.
+- `doc.selection.getSelectedText()` for a table-cell rectangle returns selected cell text as tab/newline-separated table text.
+- `doc.selection.createFakeRange(selection)` now paints model-owned table-cell selections as a border-only focus ring on the anchor cell instead of rendering the full rectangle.
+- Table copy/cut/paste/delete paths prefer table-cell model coordinates before fallback table component coordinates.
+- Keydown events over model table-cell selections route from the anchor/head cells, so `{flavour: 'table-cell'}` and `{flavour: 'table'}` handlers still run when the browser native Selection has no focus node.
+- Arrow over a model table-cell selection moves/collapses to the adjacent visible cell; Shift+Arrow keeps the anchor and extends the head. Boundary arrows are consumed and keep the model selection unchanged.
+- Typing or printable keydown over a table-cell rectangle clears selected visible cells, inserts text into the anchor cell's fresh paragraph, and moves the caret after the inserted text.
+- IME over a table-cell rectangle clears selected visible cells, materializes a fresh empty paragraph in the anchor cell, and starts `CompositionSession` there so commit writes to `Y.Text`.
+- Backspace/Delete fallback over a table-cell rectangle clears selected visible cells and restores the model table-cell rectangle; Enter clears selected visible cells and places the caret in the anchor cell.
+
+### Migration Recipe
+
+Consumers with exhaustive `switch (point.type)` logic must add a `table-cell` branch:
+
+```typescript
+if (selection.start.type === 'table-cell') {
+  const cell = selection.start.block
+  const tableId = selection.start.tableId
+  const rectangle = selection.getTableCellSelection()
+}
+```
+
+Plugins that previously inferred table rectangles from `selection.firstBlock` should prefer `selection.getTableCellSelection()` and derive coordinates from the owning table.
+
+### v?.?.? - 2026-07-03 (minor) — 表格显式矩形选区删除
+
+**Severity**: minor
+
+**What changed**: `TableBlockComponent` now exposes `getExplicitSelectedCoordinates()`, which returns only an active table-structure selection (dragged cell rectangle, row range, or column range) and never falls back to the current cursor / first cell. `TableBlockBinding` uses that explicit rectangle for Delete/Backspace before considering the legacy single-cell block-selection fallback.
+
+**Why**: table cell selection is rectangular, while the generic `BlockSelection` can still point only at the anchor cell or an inner paragraph. The old Delete/Backspace path could therefore clear only the first cell when the visual table rectangle was selected. Preferring the table-owned rectangle keeps the data mutation aligned with the user's selected cells without treating DOM classes as the source of truth.
+
+**Affected ai-skills files**:
+- `blockcraft-plugins-inline.md` — documented TableBlockBinding's explicit rectangle delete behavior and the related table component API
+- `blockcraft.md` — updated the plugin quick reference for TableBlockBinding
+
+### New APIs / Features
+
+- `TableBlockComponent.getExplicitSelectedCoordinates(): TableCellsSelection | null` returns the active cell/row/column rectangle only.
+
+### Behavior Changes
+
+- Delete/Backspace over an explicit table cell rectangle clears every cell in that rectangle.
+- Plain text deletion inside a table cell is still left to `InputTransformer` when no explicit table rectangle is active.
+
+### Migration Recipe
+
+No code migration required for normal consumers. Plugins that need to distinguish a real table rectangle from the current cursor cell should use `getExplicitSelectedCoordinates()` instead of `getSelectedCoordinates()`.
+
+### v?.?.? - 2026-07-03 (minor) — boundary 选区点与容器边界归一化
+
+**Severity**: minor
+
+**What changed**: the selection point union now includes `IBoundarySelectionPoint { blockId, type: 'boundary', index, block }`, representing a document-tree child boundary inside a container/root block. Non-collapsed DOM range endpoints that land on a container/root block host, a wrapper around its children container, or its `.children-render-container` now normalize to boundary points instead of lossy text or whole-block selected points. `SelectionManager.setSelection()` / `replay()` can build DOM Ranges from boundary JSON, `SelectedManager` paints covered child blocks, `FakeRange` renders covered child blocks, and `DocUndoManager` stores boundary indexes as Yjs relative positions over the parent children array. `InputTransformer` can now structurally edit same-container boundary ranges in renderUnit containers that accept paragraphs.
+
+**Why**: browsers often paint selections whose endpoints sit on wrapper elements around nested editable children, especially in callout/container blocks. Treating those endpoints as whole-container `selected` points could mix a container point with child text points and then fail the parent guard; mapping them to text points made the selection controllable, but erased the fact that the user selected a child-list boundary. Boundary points give BlockCraft a ProseMirror-like model position for container content while keeping DOM as a derived view.
+
+**Affected ai-skills files**:
+- `blockcraft-selection.md` — documented `IBoundarySelectionPoint`, boundary JSON, normalization, replay, fake range, undo/redo, and structural input constraints
+- `blockcraft-input.md` — documented structural input / IME behavior for same-container boundary selections
+- `blockcraft.md` — Quick Reference notes that container-boundary DOM endpoints normalize to boundary points
+
+### New APIs / Features
+
+- `IBoundarySelectionPoint { blockId, type: 'boundary', index, block }` — a new selection endpoint variant. `blockId` is the owning container/root block; `index` is the child boundary position.
+- `ISelectionPointJSON` accepts `{ blockId, type: 'boundary', index }`.
+- `BlockSelection.getBoundarySelectedChildIds(): string[] | null` returns direct child ids covered by a same-container boundary range.
+
+### Behavior Changes
+- Drag or browser-created selections that start/end on a container block's child wrapper can now become boundary-to-boundary selections instead of collapsing to `null` or degrading to descendant text endpoints.
+- `doc.selection.getSelectedText()` for a boundary range returns covered child block text joined by newlines.
+- `createFakeRange()` and selected CSS painting cover the selected child blocks for same-container boundary ranges.
+- Same-container boundary selections inside renderUnit containers that accept paragraphs are now Yjs-controlled for input: typing / printable keydown replaces the covered children with one paragraph, IME first materializes an empty paragraph before `CompositionSession` starts, Backspace/Delete delete the covered children, and Enter replaces them with an empty paragraph.
+- Boundary selections in containers that cannot safely host paragraphs remain fail-closed: input prevents default and clears the editor selection instead of allowing browser-native DOM mutation.
+- Collapsed selections on non-editable block hosts are unchanged; they still normalize as whole-block/gap-style block selections where applicable.
+
+### Migration Recipe
+Consumers with exhaustive `switch (point.type)` logic must add a `boundary` branch:
+
+```typescript
+if (selection.start.type === 'boundary') {
+  const container = selection.start.block
+  const index = selection.start.index
+}
+```
+
+Downstream tests that asserted container-wrapper selections were rejected or normalized to descendant text endpoints should update expectations to boundary points.
+
+### v?.?.? - 2026-07-02 (patch) — 未识别选区输入 fail-closed
+
+**Severity**: patch
+
+**What changed**: selection-sourced events now still run global handlers when `doc.selection.value` is `null`. `InputTransformer` uses that path to fail closed: if editor-root `beforeInput` cannot be resolved from either the live model selection or `beforeinput.getTargetRanges()`, it prevents the native browser mutation and clears the editor selection. IME follows the same rule: `compositionStart` tries to recover a model selection, refuses to start `CompositionSession` if recovery fails, and composing `beforeInput` is prevented when no active session owns it.
+
+**Why**: browsers can paint complex native selections across container blocks / nested editable children that BlockCraft cannot yet express safely. Letting input proceed in that state mutates DOM outside Yjs, creating phantom content and selection drift. Failing closed keeps DOM and Yjs consistent while the richer container-selection model is being built.
+
+**Affected ai-skills files**:
+- `blockcraft-input.md` — documented the fail-closed input guard and IME behavior
+- `blockcraft-event.md` — documented global handler dispatch when selection-sourced events have no model selection
+
+### Behavior Changes
+- Global `@EventListen('beforeInput')` / composition handlers can now run even when `doc.selection.value` is `null`.
+- Editor-root `beforeInput` with an un-normalizable selection now calls `preventDefault()` instead of silently returning and allowing browser-native DOM mutation.
+- `compositionStart` without a recoverable model selection is rejected; a matching idle `compositionEnd` is ignored after `preventDefault()`.
+
+### Migration Recipe
+No code migration required. Plugins that register global selection-sourced handlers should tolerate `doc.selection.value === null`; this was already possible for defensive code, but those handlers may now be invoked in that state.
+
+### v?.?.? - 2026-07-02 (patch) — gap 光标模型同步与 trailing filler 稳定性
+
+**Severity**: patch
+
+**What changed**: `SelectionManager.setGapCursor(block, side, scrollIntoView?)` now updates the canonical `BlockSelection` synchronously before applying the derived native DOM `Range`. The zero-gap helpers that resolve leading/trailing filler spans now enumerate direct gap children instead of relying on `:first-of-type` / `:last-of-type`, so an appended FakeRange cursor span no longer hides the trailing gap filler.
+
+**Why**: gap 光标是 void/container 块旁输入、键盘导航、粘贴和 IME materialize 的共同入口。如果 programmatic gap cursor 只写 DOM，再等浏览器 `selectionchange` 回填模型，调用方会短暂读到旧 selection；而 FakeRange overlay 追加的普通 `span` 也可能让 trailing gap 查找失败。模型优先和直接 gap 枚举能让选区状态更接近 ProseMirror 的 state-first 语义。
+
+**Affected ai-skills files**:
+- `blockcraft-selection.md` — documented the model-first `setGapCursor()` flow
+- `blockcraft.md` — Quick Reference notes that `setGapCursor()` updates `doc.selection.value` synchronously
+
+### Behavior Changes
+- `doc.selection.setGapCursor()` returns with `doc.selection.value` already set to a collapsed `{type: 'gap', side}` `BlockSelection`, and `selectionChange$` has already emitted that state.
+- Trailing gap anchor/caret lookup remains correct when an unrelated sibling `span` (for example a FakeRange cursor overlay) is appended after the block's gap fillers.
+- `doc.selection.getSelectedText()` returns `''` for a collapsed gap cursor instead of returning the adjacent block's text content.
+
+### Migration Recipe
+No code migration required. If downstream tests assumed `setGapCursor()` only updated the native DOM selection and waited for a later `selectionchange` event before reading `doc.selection.value`, update them to assert the synchronous gap state immediately after the call.
 
 ### v?.?.? - 2026-06-30 (patch) — OrderedBlockPlugin 父节点级自动重排
 

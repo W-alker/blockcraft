@@ -25,13 +25,36 @@ export interface IGapSelectionPoint {
   readonly block: BaseBlockComponent<any>
 }
 
-export type ISelectionPoint = ITextSelectionPoint | ISelectedSelectionPoint | IGapSelectionPoint
+export interface IBoundarySelectionPoint {
+  readonly blockId: string
+  readonly type: 'boundary'
+  readonly index: number
+  /** Lazy-resolved container/root block reference (non-enumerable, defined via Object.defineProperty) */
+  readonly block: BaseBlockComponent<any>
+}
+
+export interface ITableCellSelectionPoint {
+  readonly blockId: string
+  readonly type: 'table-cell'
+  readonly tableId: string
+  /** Lazy-resolved table-cell block reference (non-enumerable, defined via Object.defineProperty) */
+  readonly block: BaseBlockComponent<any>
+}
+
+export type ISelectionPoint =
+  ITextSelectionPoint |
+  ISelectedSelectionPoint |
+  IGapSelectionPoint |
+  IBoundarySelectionPoint |
+  ITableCellSelectionPoint
 
 export interface ISelectionPointJSON {
   blockId: string
-  type: 'text' | 'selected' | 'gap'
+  type: 'text' | 'selected' | 'gap' | 'boundary' | 'table-cell'
   offset?: number               // text
   side?: 'before' | 'after'     // gap
+  index?: number                // boundary
+  tableId?: string              // table-cell
 }
 
 export interface ISelectionJSON {
@@ -84,6 +107,14 @@ export type IBlockInlineRangeJSON = {
   blockId: string,
   type: 'gap',
   side: 'before' | 'after'
+} | {
+  blockId: string,
+  type: 'boundary',
+  index: number
+} | {
+  blockId: string,
+  type: 'table-cell',
+  tableId: string
 }
 
 /** @deprecated Use ISelectionJSON instead */

@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-07-12
 
 ## Architecture Overview
 
@@ -130,6 +130,17 @@ doc.crud.undoManager.canRedo()
 ```
 
 Selection state is saved alongside undo items using `Y.RelativePosition` (collaboration-safe).
+
+IME flows that split one user intent across multiple Yjs transactions can temporarily open a capture group:
+
+```typescript
+doc.crud.undoManager.beginCaptureGroup()
+// compositionStart: materialize/delete blocks
+// compositionEnd: commit final IME text
+doc.crud.undoManager.endCaptureGroup()
+```
+
+The group forces the involved transactions into one undo item regardless of elapsed wall time, then restores the normal Yjs `captureTimeout` and stops capturing so the next user action starts a fresh undo item. This is used internally by `InputTransformer`; plugins should prefer higher-level editor APIs unless they are implementing a comparable multi-transaction input primitive.
 
 ## Transaction Origins
 

@@ -27,8 +27,10 @@ export class FindReplaceDialog implements OnInit, OnDestroy {
   replaceText = ''
 
   helper!: FindReplaceHelper
+  private _destroyed = false
 
   ngOnInit() {
+    this._destroyed = false
     this.helper = new FindReplaceHelper(this.doc)
     this.helper.listen()
   }
@@ -38,7 +40,12 @@ export class FindReplaceDialog implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
-    this.helper.destroy()
+    this._destroyed = true
+    if (this._timer) {
+      clearTimeout(this._timer)
+      this._timer = null
+    }
+    this.helper?.destroy()
   }
 
   onFlagChange(item: typeof this.helper.regFlagList[number]) {
@@ -65,6 +72,7 @@ export class FindReplaceDialog implements OnInit, OnDestroy {
 
   private _timer: any
   onFindTextChange = debounce(() => {
+    if (this._destroyed) return
     if (this._timer) {
       clearTimeout(this._timer)
       this._timer = null

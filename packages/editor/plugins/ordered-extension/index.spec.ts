@@ -9,6 +9,7 @@ type MockBlock = {
   props: IBlockProps
   parentBlock: MockParent | null
   updateProps: jasmine.Spy
+  onDestroy$: Subject<void>
 }
 
 type MockParent = {
@@ -32,7 +33,8 @@ const createBlock = (id: string, flavour = 'paragraph', props: IBlockProps = {})
     nodeType: BlockNodeType.editable,
     props: {depth: 0, ...props},
     parentBlock: null,
-    updateProps: jasmine.createSpy(`updateProps:${id}`)
+    updateProps: jasmine.createSpy(`updateProps:${id}`),
+    onDestroy$: new Subject<void>()
   } as MockBlock
 
   block.updateProps.and.callFake((patch: IBlockProps) => {
@@ -124,6 +126,25 @@ const triggerPropsChanged = (onPropsUpdate$: Subject<any>, block: MockBlock, cha
       changes: new Map(changedKeys.map(key => [key, {oldValue: undefined, action: 'update'}]))
     }]
   })
+}
+
+const createPrefixMouseDownContext = (blockId: string) => {
+  const host = document.createElement('ordered-block')
+  host.setAttribute('data-block-id', blockId)
+  const button = document.createElement('button')
+  button.classList.add('ordered-block-prefix')
+  host.appendChild(button)
+  const event = {
+    button: 0,
+    target: button,
+  } as unknown as MouseEvent
+
+  return {
+    ctx: {
+      getDefaultEvent: () => event,
+    },
+    host,
+  }
 }
 
 describe('OrderedBlockPlugin', () => {
@@ -269,5 +290,60 @@ describe('OrderedBlockPlugin', () => {
 
     expect(blocks.map(block => block.props['order'])).toEqual([0, 1])
     plugin.destroy()
+  })
+
+  it('does not open prefix toolbar when the ordered block is stale', () => {
+    const plugin = new OrderedBlockPlugin()
+    const overlayService = {
+      createConnectedOverlay: jasmine.createSpy('createConnectedOverlay')
+    }
+    ;(plugin as any).doc = {
+      isReadonly: false,
+      getBlockById: jasmine.createSpy('getBlockById').and.throwError('missing'),
+      overlayService,
+    }
+    const {ctx, host} = createPrefixMouseDownContext('ordered-1')
+
+    ;(plugin as any).onMouseDown(ctx)
+
+    expect(overlayService.createConnectedOverlay).not.toHaveBeenCalled()
+    host.remove()
+  })
+
+  it('does not schedule prefix toolbar updates after the block becomes stale', () => {
+    const plugin = new OrderedBlockPlugin()
+    const block = createOrderedBlock('ordered-1')
+    attachToParent([block])
+    const onPropsChanged$ = new Subject<void>()
+    const closeToolbar$ = new Subject<boolean>()
+    const setInput = jasmine.createSpy('setInput')
+    const scheduleParentOf = spyOn<any>(plugin, '_scheduleParentOf')
+    const getBlockById = jasmine.createSpy('getBlockById')
+      .and.returnValues(block, block)
+    const overlayService = {
+      createConnectedOverlay: jasmine.createSpy('createConnectedOverlay').and.returnValue({
+        componentRef: {
+          setInput,
+          instance: {
+            onPropsChanged$,
+          },
+        },
+      }),
+    }
+    ;(plugin as any).doc = {
+      isReadonly: false,
+      getBlockById,
+      overlayService,
+    }
+    ;(plugin as any)._closeToolbar$ = closeToolbar$
+    const {ctx, host} = createPrefixMouseDownContext('ordered-1')
+
+    ;(plugin as any).onMouseDown(ctx)
+    getBlockById.and.throwError('missing')
+    onPropsChanged$.next()
+
+    expect(setInput).toHaveBeenCalledWith('orderedBlock', block)
+    expect(scheduleParentOf).not.toHaveBeenCalled()
+    host.remove()
   })
 })

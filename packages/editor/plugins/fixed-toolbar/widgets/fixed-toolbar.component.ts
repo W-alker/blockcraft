@@ -13,6 +13,7 @@ import {
 } from "../../../components";
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
+  IBlockSnapshot,
   IEditableBlockProps,
   IInlineNodeAttrs,
   ISelectionJSON,
@@ -24,6 +25,8 @@ import {Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {LinkInputPad} from "../../float-text-toolbar/widgets/link-input-pad";
+import {getSelectionCoveredBlockIds} from "../../../framework/modules/selection/covered-blocks";
+import {isSelectionAlive} from "../../../framework/modules/selection/liveness";
 
 type TInlineToggle = 'bold' | 'italic' | 'underline' | 'strike' | 'code' | 'sup' | 'sub'
 type TAlignValue = 'left' | 'center' | 'right'
@@ -43,6 +46,11 @@ interface IToolbarIconAction<T extends string = string> {
 interface IFormatBrushPayload {
   inlineAttrs: IInlineNodeAttrs
 }
+
+type InsertPlacement =
+  | { kind: "before"; anchor: BlockCraft.BlockComponent }
+  | { kind: "after"; anchor: BlockCraft.BlockComponent }
+  | { kind: "index"; parentId: string; index: number }
 
 export interface IFixedToolbarExtensionAction {
   key: string
@@ -254,9 +262,9 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     <button
       class="toolbar-btn toolbar-btn--dropdown"
       title="插入表格"
-      [disabled]="readonly || !selectionJSON"
+      [disabled]="readonly || !canInsertBlock('table')"
       [bcOverlayTrigger]="quickTablePicker"
-      [bcOverlayDisabled]="readonly || !selectionJSON"
+      [bcOverlayDisabled]="readonly || !canInsertBlock('table')"
       #quickTableTrigger="bcOverlayTrigger"
     >
       <i class="bc_icon bc_column-vertical"></i>
@@ -266,9 +274,9 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     <button
       class="toolbar-btn toolbar-btn--dropdown"
       title="分栏"
-      [disabled]="readonly || !selectionJSON"
+      [disabled]="readonly || !canUseColumns"
       [bcOverlayTrigger]="columnCountPicker"
-      [bcOverlayDisabled]="readonly || !selectionJSON"
+      [bcOverlayDisabled]="readonly || !canUseColumns"
       #columnCountTrigger="bcOverlayTrigger"
     >
       <i class="bc_icon bc_fenlan"></i>
@@ -278,7 +286,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     <button
       class="toolbar-btn"
       title="插入图片"
-      [disabled]="readonly || !selectionJSON"
+      [disabled]="readonly || !canInsertBlock('image')"
       (mousedown)="onActionMouseDown($event)"
       (click)="insertSchemaBlock('image')"
     >
@@ -288,9 +296,9 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     <button
       class="toolbar-btn toolbar-btn--dropdown"
       title="插入视频或音频"
-      [disabled]="readonly || !selectionJSON"
+      [disabled]="readonly || (!canInsertBlock('video') && !canInsertBlock('audio'))"
       [bcOverlayTrigger]="mediaTypePicker"
-      [bcOverlayDisabled]="readonly || !selectionJSON"
+      [bcOverlayDisabled]="readonly || (!canInsertBlock('video') && !canInsertBlock('audio'))"
       #mediaTypeTrigger="bcOverlayTrigger"
     >
       <i class="bc_icon bc_shipin"></i>
@@ -629,6 +637,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   canTransformBlocks = false;
 
+  canUseColumns = false;
+
   /** 分栏按钮回显的栏数：选区在分栏内为当前栏数，否则为 1（单栏） */
   columnPickerCurrent = 1;
 
@@ -661,12 +671,14 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   protected readonly alignActions = ALIGN_ACTIONS;
   protected readonly bgGraphList = BG_GRAPH_LIST;
   protected formatBrushActive = false;
+  private _destroyed = false;
 
   protected get formatBrushTitle() {
     return `格式刷（${IS_MAC ? "⌘" : "Ctrl"}+Shift+C）`;
   }
 
   ngOnInit() {
+    this._destroyed = false;
     this.syncToolbarState(this.doc.selection.value);
 
     this._sub.add(
@@ -713,6 +725,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this._destroyed = true;
     this.clearFormatBrush();
     this._sub.unsubscribe();
   }
@@ -876,7 +889,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (this.readonly || !this.selectionJSON) return;
     this.restoreSelection();
     const selection = this.doc.selection.value;
-    if (!selection) return;
+    if (!this.isLiveSelection(selection)) return;
 
     const inserted = await this.insertTable(evt.rows, evt.cols, selection);
     if (!inserted) return;
@@ -893,7 +906,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (this.readonly || !this.selectionJSON) return;
     this.restoreSelection();
     const selection = this.doc.selection.value;
-    if (!selection) return;
+    if (!this.isLiveSelection(selection) || !this.canUseColumnPicker(selection)) {
+      trigger.closePanel();
+      this.syncToolbarState(selection);
+      return;
+    }
 
     const changed = await this.insertColumns(evt.count, selection);
     trigger.closePanel();
@@ -934,7 +951,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this.restoreSelection();
     const selection = this.doc.selection.value;
     if (
-      !selection ||
+      !this.isLiveSelection(selection) ||
       !selection.isInSameBlock ||
       selection.start.type !== "text" ||
       !this.hasTextSelection
@@ -942,8 +959,15 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       return;
     const selectionJSON = selection.toJSON();
 
-    const rect = this.doc.selection.getSelectionRect()!;
-    const fake = this.doc.selection.createFakeRange(selection);
+    const rect = this.doc.selection.getSelectionRect();
+    if (!rect) return;
+
+    let fake;
+    try {
+      fake = this.doc.selection.createFakeRange(selection);
+    } catch {
+      return;
+    }
     const overlay = this.doc.injector.get(Overlay);
 
     const positionStrategy = overlay
@@ -962,7 +986,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       ovr.dispose();
       fake.destroy();
       nextTick().then(() => {
-        this.doc.selection.replay(selectionJSON);
+        if (!this.replaySelection(selectionJSON)) return;
         this.doc.selection.recalculate();
         this.syncToolbarState(this.doc.selection.value);
         this.cdr.markForCheck();
@@ -977,12 +1001,14 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       .pipe(takeUntilDestroyed(cpr.instance.destroyRef))
       .subscribe((url: string) => {
         close();
-        if (selection.start.type !== "text") return;
-        const startBlock = selection.firstBlock as any;
-        const startOff = selection.start.offset;
+        if (!this.replaySelection(selectionJSON)) return;
+        const liveSelection = this.doc.selection.value;
+        if (!this.isLiveSelection(liveSelection) || liveSelection.start.type !== "text") return;
+        const startBlock = liveSelection.firstBlock as any;
+        const startOff = liveSelection.start.offset;
         const len =
-          selection.isInSameBlock && selection.end.type === "text"
-            ? selection.end.offset - startOff
+          liveSelection.isInSameBlock && liveSelection.end.type === "text"
+            ? liveSelection.end.offset - startOff
             : startBlock.textLength - startOff;
         startBlock.formatText(startOff, len, { "a:link": url });
       });
@@ -992,7 +1018,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (!this.hasTextSelection) return;
     this.runWithSelection(() => {
       const selection = this.doc.selection.value;
-      if (!selection || selection.start.type !== "text") return;
+      if (!this.isLiveSelection(selection) || selection.start.type !== "text") return;
       const block = selection.firstBlock as any;
       const index = selection.start.offset;
       const length =
@@ -1066,9 +1092,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   protected onExtensionAction(action: IFixedToolbarExtensionAction) {
+    if (this.readonly || action.disabled) return;
+
     this.extensionAction.emit({
       action,
-      selection: this.selectionJSON,
+      selection: this.resolveExtensionActionSelection(),
       doc: this.doc,
     });
   }
@@ -1120,16 +1148,34 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   private restoreSelection() {
     if (!this.selectionJSON) return;
-    try {
-      this.doc.selection.replay(this.selectionJSON);
-    } catch {}
+    this.replaySelection(this.selectionJSON);
   }
 
-  private canInsertBlock(
+  private replaySelection(selectionJSON: ISelectionJSON | null) {
+    if (this._destroyed || !selectionJSON) return false;
+    try {
+      this.doc.selection.replay(selectionJSON);
+      return this.isLiveSelection(this.doc.selection.value);
+    } catch {
+      return false;
+    }
+  }
+
+  private resolveExtensionActionSelection() {
+    if (!this.selectionJSON) return null;
+    if (!this.replaySelection(this.selectionJSON)) {
+      this.syncToolbarState(this.doc.selection.value);
+      return null;
+    }
+    return this.doc.selection.value?.toJSON() ?? null;
+  }
+
+  protected canInsertBlock(
     flavour: BlockCraft.BlockFlavour,
     selection: BlockCraft.Selection | null = this.doc.selection.value,
   ) {
-    return !!selection;
+    if (!this.isLiveSelection(selection)) return false;
+    return !!this.resolveInsertPlacement(flavour, selection);
   }
 
   protected canCaptureFormatBrush(
@@ -1178,11 +1224,45 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     return selection ? JSON.stringify(selection.toJSON()) : null;
   }
 
-  private resolveInsertAnchor(
+  private resolveInsertPlacement(
     flavour: BlockCraft.BlockFlavour,
     selection: BlockCraft.Selection,
-  ) {
-    let anchor: BlockCraft.BlockComponent | null = selection.lastBlock;
+  ): InsertPlacement | null {
+    if (!this.isLiveSelection(selection)) return null;
+    if (selection.getTableCellSelection?.()) return null;
+
+    const start = selection.start;
+    const end = selection.end;
+    if (start.type === "boundary" && end.type === "boundary" && start.blockId === end.blockId) {
+      return this.resolveContainerInsertPlacement(flavour, start.block, Math.max(start.index, end.index));
+    }
+
+    if (selection.collapsed && start.type === "gap") {
+      return this.resolveBlockInsertPlacement(flavour, start.block, start.side === "before" ? "before" : "after");
+    }
+
+    return this.resolveBlockInsertPlacement(flavour, selection.lastBlock, "after");
+  }
+
+  private resolveContainerInsertPlacement(
+    flavour: BlockCraft.BlockFlavour,
+    container: BlockCraft.BlockComponent,
+    index: number,
+  ): InsertPlacement | null {
+    if (!this.doc.schemas.isValidChildren(flavour, container.flavour)) return null;
+    return {
+      kind: "index",
+      parentId: container.id,
+      index: Math.max(0, Math.min(container.childrenLength, index)),
+    };
+  }
+
+  private resolveBlockInsertPlacement(
+    flavour: BlockCraft.BlockFlavour,
+    block: BlockCraft.BlockComponent,
+    side: "before" | "after",
+  ): InsertPlacement | null {
+    let anchor: BlockCraft.BlockComponent | null = block;
     while (
       anchor?.parentBlock &&
       !this.doc.schemas.isValidChildren(flavour, anchor.parentBlock.flavour)
@@ -1196,7 +1276,20 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     ) {
       return null;
     }
-    return anchor;
+    return {kind: side, anchor};
+  }
+
+  private insertSnapshotsAtPlacement(
+    placement: InsertPlacement,
+    snapshots: IBlockSnapshot[],
+  ) {
+    if (placement.kind === "index") {
+      return this.doc.chain().insertSnapshots(placement.parentId, placement.index, snapshots).run();
+    }
+    if (placement.kind === "before") {
+      return this.doc.chain().insertBeforeSnapshots(placement.anchor, snapshots).run();
+    }
+    return this.doc.chain().insertAfterSnapshots(placement.anchor, snapshots).run();
   }
 
   private async tryApplyFormatBrush(selection: BlockCraft.Selection | null) {
@@ -1247,13 +1340,13 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (this.readonly || !this.selectionJSON) return;
     this.restoreSelection();
     const selection = this.doc.selection.value;
-    if (!selection) return;
+    if (!this.isLiveSelection(selection)) return;
 
     const schema = this.doc.schemas.get(flavour);
     if (!schema) return;
 
-    const anchor = this.resolveInsertAnchor(flavour, selection);
-    if (!anchor) {
+    const placement = this.resolveInsertPlacement(flavour, selection);
+    if (!placement) {
       this.doc.messageService.warn(`此处不能添加${schema.metadata.label}`);
       return;
     }
@@ -1265,7 +1358,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       if (!params) return;
 
       const snapshot = this.doc.schemas.createSnapshot(flavour, params as any);
-      await this.doc.chain().insertAfterSnapshots(anchor, [snapshot]).run();
+      await this.insertSnapshotsAtPlacement(placement, [snapshot]);
       this.doc.selection.selectOrSetCursorAtBlock(snapshot.id, true);
       this.doc.selection.recalculate();
       this.syncToolbarState(this.doc.selection.value);
@@ -1281,14 +1374,14 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   ) {
     const safeRows = Math.max(1, Math.min(12, Math.floor(rows) || 0));
     const safeCols = Math.max(1, Math.min(12, Math.floor(cols) || 0));
-    const anchor = this.resolveInsertAnchor("table", selection);
-    if (!anchor) return null;
+    const placement = this.resolveInsertPlacement("table", selection);
+    if (!placement) return null;
 
     const tableSnapshot = this.doc.schemas.createSnapshot("table", [
       safeRows,
       safeCols,
     ]);
-    await this.doc.chain().insertAfterSnapshots(anchor, [tableSnapshot]).run();
+    await this.insertSnapshotsAtPlacement(placement, [tableSnapshot]);
 
     const firstParagraphId = (tableSnapshot as any).children?.[0]?.children?.[0]
       ?.children?.[0]?.id as string | undefined;
@@ -1449,11 +1542,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     const columnSchema = this.doc.schemas.get("column");
     if (!columnSchema) return null;
 
-    const betweenIds = this.doc.queryBlocksBetween(
-      selection.firstBlock,
-      selection.lastBlock,
-      true,
-    );
+    const betweenIds = this.getSelectedBlockIds(selection);
     if (betweenIds.length < 1) return null;
 
     const blocks = betweenIds
@@ -1527,13 +1616,14 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   private syncToolbarState(selection: BlockCraft.Selection | null) {
-    if (!selection) {
+    if (!this.isLiveSelection(selection)) {
       this.activeAttrs = new Map<string, any>();
       this.activeColors = {};
       this.activeProps = {};
       this.activeFlavour = "paragraph";
       this.allEditable = false;
       this.canTransformBlocks = false;
+      this.canUseColumns = false;
       this.selectionJSON = null;
       this.columnPickerCurrent = 1;
       this.isLinkAble = false;
@@ -1547,6 +1637,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     const columnsBlock = this.findColumnsAncestor(selection.firstBlock);
     this.columnPickerCurrent = columnsBlock ? columnsBlock.childrenLength : 1;
     this.canTransformBlocks = this.canTransformSelection(selection);
+    this.canUseColumns = this.canUseColumnPicker(selection);
     if (!this.canTransformBlocks) {
       this.activeAttrs = new Map<string, any>();
       this.activeColors = {};
@@ -1581,25 +1672,47 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   private canTransformSelection(selection: BlockCraft.Selection | null) {
-    if (!selection || selection.isAllSelected) return false;
+    if (!this.isLiveSelection(selection) || selection.isAllSelected) return false;
 
-    const between = this.doc.queryBlocksBetween(
-      selection.firstBlock,
-      selection.lastBlock,
-      true,
-    );
+    let between: string[];
+    try {
+      between = this.getSelectedBlockIds(selection);
+    } catch {
+      return false;
+    }
+    if (!between.length) return false;
     return between.every((id) => {
-      const block = this.doc.getBlockById(id);
-      return this.doc.isEditable(block) && !block.plainTextOnly;
+      try {
+        const block = this.doc.getBlockById(id);
+        return this.doc.isEditable(block) && !block.plainTextOnly;
+      } catch {
+        return false;
+      }
     });
+  }
+
+  private canUseColumnPicker(selection: BlockCraft.Selection | null) {
+    if (!this.isLiveSelection(selection)) return false;
+    if (selection.getTableCellSelection?.()) return false;
+    if (selection.collapsed && selection.start.type !== "text") return false;
+    if (this.findColumnsAncestor(selection.firstBlock)) return true;
+    return this.canTransformSelection(selection);
+  }
+
+  private getSelectedBlockIds(selection: BlockCraft.Selection) {
+    return getSelectionCoveredBlockIds(selection, this.doc);
   }
 
   private canFormatTextSelection(selection: BlockCraft.Selection | null) {
     return (
-      !!selection &&
+      this.isLiveSelection(selection) &&
       selection.start.type === "text" &&
       this.canTransformSelection(selection)
     );
+  }
+
+  private isLiveSelection(selection: BlockCraft.Selection | null | undefined): selection is BlockCraft.Selection {
+    return isSelectionAlive(selection as any, this.doc);
   }
 
   private get toolbarHelper() {

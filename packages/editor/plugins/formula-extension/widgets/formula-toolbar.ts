@@ -1,6 +1,6 @@
 import {
   AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef, Component,
-  ElementRef, EventEmitter, Input, Output, ViewChild,
+  ElementRef, EventEmitter, Input, OnDestroy, Output, ViewChild,
 } from "@angular/core";
 // @ts-ignore
 import katex from 'katex';
@@ -89,7 +89,7 @@ import katex from 'katex';
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class FormulaBlockToolbar implements AfterViewInit {
+export class FormulaBlockToolbar implements AfterViewInit, OnDestroy {
   @Input() block!: BlockCraft.IBlockComponents['formula'];
   @Input() doc!: BlockCraft.Doc;
   @Input() initialLatex = '';
@@ -99,18 +99,31 @@ export class FormulaBlockToolbar implements AfterViewInit {
   @ViewChild('latexInput') latexInput!: ElementRef<HTMLTextAreaElement>;
 
   latex = '';
+  private _destroyed = false;
+  private _focusTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private cdr: ChangeDetectorRef) {}
 
   ngAfterViewInit() {
+    this._destroyed = false;
     this.latex = this.initialLatex || this.block?.props?.latex || '';
     this.cdr.detectChanges();
     this.renderPreview();
-    setTimeout(() => {
+    this._focusTimer = setTimeout(() => {
+      this._focusTimer = null;
+      if (this._destroyed) return;
       this.latexInput?.nativeElement.focus();
       const len = this.latexInput?.nativeElement.value.length || 0;
       this.latexInput?.nativeElement.setSelectionRange(len, len);
     });
+  }
+
+  ngOnDestroy() {
+    this._destroyed = true;
+    if (this._focusTimer !== null) {
+      clearTimeout(this._focusTimer);
+      this._focusTimer = null;
+    }
   }
 
   onInput(event: Event) {

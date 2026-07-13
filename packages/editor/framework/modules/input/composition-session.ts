@@ -202,6 +202,18 @@ export class CompositionSession {
   }
 
   /**
+   * @internal
+   *
+   * Abort the current composition before commit. Used when compositionstart
+   * cannot resolve a valid model-backed insertion point; the matching
+   * compositionend should then be consumed without writing text.
+   */
+  abortPendingCommit() {
+    this.end()
+    this._abortedByBlockRemoval = true
+  }
+
+  /**
    * One-shot check for the abort flag. compositionEnd handler calls this
    * first and discards the commit when it returns true.
    */

@@ -2,6 +2,7 @@ import {fromEvent, takeUntil} from "rxjs";
 import {UIEventState, UIEventStateContext} from "../base";
 import {ClipboardEventState, EventScopeSourceType, EventSourceState} from "../state";
 import {isNativeInputTarget} from "../../../utils";
+import {isSelectionAlive} from "../../../modules/selection/liveness";
 
 export class ClipboardControl {
   constructor(private _dispatcher: BlockCraft.EventDispatcher) {
@@ -30,34 +31,53 @@ export class ClipboardControl {
         return false
       }
     }
+    const isNativeClipboardTarget = (ev: ClipboardEvent) =>
+      isNativeInputTarget(ev.target) || isNativeInputTarget(document.activeElement)
 
     fromEvent<ClipboardEvent>(document, 'copy').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
+      if (isNativeClipboardTarget(ev)) return
       if (!isEditorFocused()) return
       // copy 不修改文档，readonly 模式也允许走 adapter 流程
-      this._dispatcher.run('copy', this._createContext(ev))
+      this._runWithSelection('copy', ev)
     })
     fromEvent<ClipboardEvent>(document, 'cut').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
+      if (isNativeClipboardTarget(ev)) return
       if (!isEditorFocused()) return
       if (this._dispatcher.status.isReadOnly) {
         ev.preventDefault()
         return
       }
-      this._dispatcher.run('cut', this._createContext(ev))
+      this._runWithSelection('cut', ev, true)
     })
-    fromEvent<ClipboardEvent>(root.hostElement, 'paste').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
-      if (isNativeInputTarget(ev.target)) return
+    fromEvent<ClipboardEvent>(document, 'paste').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
+      if (isNativeClipboardTarget(ev)) return
+      if (!isEditorFocused()) return
       if (this._dispatcher.status.isReadOnly) {
         ev.preventDefault()
         return
       }
-      this._dispatcher.run('paste', this._createContext(ev))
+      this._runWithSelection('paste', ev, true)
     })
   }
 
-  private _createContext(event: ClipboardEvent) {
+  private _runWithSelection(name: 'copy' | 'cut' | 'paste', event: ClipboardEvent, preventDefaultIfMissing = false) {
+    const selection = this._dispatcher.currentSelection
+    if (!selection) {
+      if (preventDefaultIfMissing) event.preventDefault()
+      return
+    }
+    if (!isSelectionAlive(selection as any, this._dispatcher.doc ?? {})) {
+      if (preventDefaultIfMissing) event.preventDefault()
+      this._dispatcher.doc?.selection?.blur?.()
+      return
+    }
+    this._dispatcher.run(name, this._createContext(event, selection))
+  }
+
+  private _createContext(event: ClipboardEvent, selection: BlockCraft.Selection) {
     return UIEventStateContext.from(
       new UIEventState(event),
-      new ClipboardEventState({event, selection: this._dispatcher.currentSelection!}),
+      new ClipboardEventState({event, selection}),
       new EventSourceState({event, sourceType: EventScopeSourceType.Selection})
     )
   }

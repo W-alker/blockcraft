@@ -8,7 +8,6 @@ import {
   replaceSnapshotsIdDeeply
 } from "../framework";
 import {UIEventStateContext} from "../framework";
-import {BlockCraftError, ErrorCode} from "../global";
 import {parseClipboardSnapshot, parseClipboardSnapshotFromHtml} from "../framework/modules/clipboard/internal-clipboard";
 import {
   cloneSnapshot,
@@ -19,13 +18,18 @@ import {
 
 export class TableBlockBinding extends DocPlugin {
 
-  // TODO 可以直接block tree向上查找
-  private _getTable(selection: BlockCraft.Selection) {
-    const tableId = selection.firstBlock.hostElement.closest('.table-block[data-block-id]')?.getAttribute('data-block-id')
-    if (!tableId) {
-      throw new BlockCraftError(ErrorCode.EventDispatcherError, `Cannot find table block for selection: ${selection}`)
+  private _getLiveTableFromSelection(selection: BlockCraft.Selection): BlockCraft.IBlockComponents['table'] | null {
+    try {
+      const firstBlock = this._getSafeSelectionFirstBlock(selection)
+      const tableId = firstBlock?.hostElement
+        ?.closest('.table-block[data-block-id]')
+        ?.getAttribute('data-block-id')
+      if (!tableId) return null
+      const table = this._getLiveBlockById<BlockCraft.IBlockComponents['table']>(tableId)
+      return table?.flavour === 'table' ? table : null
+    } catch {
+      return null
     }
-    return this.doc.getBlockById(tableId) as BlockCraft.IBlockComponents['table']
   }
 
   @EventListen('copy', {flavour: 'table'})
@@ -47,12 +51,8 @@ export class TableBlockBinding extends DocPlugin {
     const {selection} = state
     if (!selection) return false
 
-    let table: BlockCraft.IBlockComponents['table']
-    try {
-      table = this._getTable(selection)
-    } catch {
-      return false
-    }
+    const table = this._getLiveTableFromSelection(selection)
+    if (!table) return false
 
     if (!this._hasPastedTableData(state)) return false
 
@@ -62,26 +62,277 @@ export class TableBlockBinding extends DocPlugin {
     context.preventDefault()
     void this._parsePastedTableSnapshot(state).then(tableSnapshot => {
       if (!tableSnapshot) return
-      this._fillTableFromSnapshot(table, tableSnapshot, startCoordinate)
+      const liveTable = this._resolveParsedTablePasteTarget(table, selection, startCoordinate)
+      if (!liveTable) return
+      this._fillTableFromSnapshot(liveTable, tableSnapshot, startCoordinate)
     })
     return true
   }
 
+  private _getLiveBlockById<T extends BlockCraft.BlockComponent = BlockCraft.BlockComponent>(id: string): T | null {
+    try {
+      return (this.doc.getBlockById(id) as T | null) ?? null
+    } catch {
+      return null
+    }
+  }
+
+  private _getSafeSelectionFirstBlock(selection: BlockCraft.Selection | null | undefined): BlockCraft.BlockComponent | null {
+    if (!selection) return null
+    try {
+      return selection.firstBlock ?? null
+    } catch {
+      return null
+    }
+  }
+
+  private _isLiveTableCell(block: unknown): block is BlockCraft.IBlockComponents['table-cell'] {
+    return !!block
+      && (block as BlockCraft.BlockComponent).flavour === 'table-cell'
+      && typeof (block as BlockCraft.IBlockComponents['table-cell']).getIndexOfParent === 'function'
+  }
+
+  private _resolveParsedTablePasteTarget(
+    table: BlockCraft.IBlockComponents['table'],
+    selection: BlockCraft.Selection,
+    startCoordinate: number[],
+  ): BlockCraft.IBlockComponents['table'] | null {
+    const liveTable = this._getLiveBlockById<BlockCraft.IBlockComponents['table']>(table.id)
+    if (!liveTable || liveTable.flavour !== 'table') {
+      this.doc.logger.warn('table paste target selection is stale, abort')
+      return null
+    }
+
+    const tableCellSelection = typeof selection.getTableCellSelection === 'function'
+      ? selection.getTableCellSelection()
+      : null
+    if (tableCellSelection) {
+      if (tableCellSelection.tableId !== liveTable.id || !this._getTableCellSelectionCoordinates(liveTable, selection)) {
+        this.doc.logger.warn('table paste target selection is stale, abort')
+        return null
+      }
+    } else {
+      try {
+        const firstBlock = this._getSafeSelectionFirstBlock(selection)
+        if (!firstBlock || (firstBlock.id && !this._getLiveBlockById(firstBlock.id))) {
+          this.doc.logger.warn('table paste target selection is stale, abort')
+          return null
+        }
+      } catch {
+        this.doc.logger.warn('table paste target selection is stale, abort')
+        return null
+      }
+    }
+
+    const targetCell = liveTable.getCellByCoordinate(startCoordinate[0], startCoordinate[1])
+    if (!targetCell || !this._getLiveBlockById(targetCell.id)) {
+      this.doc.logger.warn('table paste target cell is stale, abort')
+      return null
+    }
+
+    return liveTable
+  }
+
   private _getPasteStartCoordinate(table: BlockCraft.IBlockComponents['table'], selection: BlockCraft.Selection) {
+    const tableCellCoordinates = this._getTableCellSelectionCoordinates(table, selection)
+    if (tableCellCoordinates) return tableCellCoordinates.start
+    if (this._hasTableCellSelection(selection)) return null
+
     const coordinates = table.getSelectedCoordinates()
     if (coordinates) return coordinates.start
+    const firstBlock = this._getSafeSelectionFirstBlock(selection)
+    if (!firstBlock) return null
+    if (firstBlock.id && !this._getLiveBlockById(firstBlock.id)) return null
 
-    const cellId = selection.firstBlock.hostElement
+    const cellId = firstBlock.hostElement
       .closest('td[data-block-id]')
       ?.getAttribute('data-block-id')
     if (!cellId) return null
 
-    const cell = this.doc.getBlockById(cellId) as BlockCraft.IBlockComponents['table-cell']
+    const cell = this._getLiveBlockById<BlockCraft.IBlockComponents['table-cell']>(cellId)
+    if (!this._isLiveTableCell(cell)) return null
+
     const rowIndex = table.childrenIds.indexOf(cell.parentId!)
     const colIndex = cell.getIndexOfParent()
     if (rowIndex < 0 || colIndex < 0) return null
 
     return [rowIndex, colIndex]
+  }
+
+  private _getTableCellSelectionEndpoints(
+    table: BlockCraft.IBlockComponents['table'],
+    selection: BlockCraft.Selection,
+  ) {
+    const tableCellSelection = typeof selection.getTableCellSelection === 'function'
+      ? selection.getTableCellSelection()
+      : null
+    if (!tableCellSelection || tableCellSelection.tableId !== table.id) return null
+
+    let anchorCell: BlockCraft.IBlockComponents['table-cell'] | null
+    let headCell: BlockCraft.IBlockComponents['table-cell'] | null
+    try {
+      anchorCell = this._getLiveBlockById<BlockCraft.IBlockComponents['table-cell']>(tableCellSelection.anchorCellId)
+      headCell = this._getLiveBlockById<BlockCraft.IBlockComponents['table-cell']>(tableCellSelection.headCellId)
+    } catch {
+      return null
+    }
+    if (!this._isLiveTableCell(anchorCell) || !this._isLiveTableCell(headCell)) return null
+
+    let anchor: {rowIdx: number; colIdx: number}
+    let head: {rowIdx: number; colIdx: number}
+    try {
+      anchor = {
+        rowIdx: table.childrenIds.indexOf(anchorCell.parentId!),
+        colIdx: anchorCell.getIndexOfParent(),
+      }
+      head = {
+        rowIdx: table.childrenIds.indexOf(headCell.parentId!),
+        colIdx: headCell.getIndexOfParent(),
+      }
+    } catch {
+      return null
+    }
+    if (anchor.rowIdx < 0 || anchor.colIdx < 0 || head.rowIdx < 0 || head.colIdx < 0) return null
+
+    return {anchorCell, headCell, anchor, head}
+  }
+
+  private _getTableCellSelectionCoordinates(
+    table: BlockCraft.IBlockComponents['table'],
+    selection: BlockCraft.Selection,
+  ) {
+    const endpoints = this._getTableCellSelectionEndpoints(table, selection)
+    if (!endpoints) return null
+
+    return table.confirmSelection(
+      [Math.min(endpoints.anchor.rowIdx, endpoints.head.rowIdx), Math.min(endpoints.anchor.colIdx, endpoints.head.colIdx)],
+      [Math.max(endpoints.anchor.rowIdx, endpoints.head.rowIdx), Math.max(endpoints.anchor.colIdx, endpoints.head.colIdx)],
+    )
+  }
+
+  private _hasTableCellSelection(selection: BlockCraft.Selection | null | undefined): boolean {
+    return !!selection && typeof selection.getTableCellSelection === 'function' && !!selection.getTableCellSelection()
+  }
+
+  private _findNextVisibleCell(
+    table: BlockCraft.IBlockComponents['table'],
+    rowIdx: number,
+    colIdx: number,
+    rowDelta: number,
+    colDelta: number,
+  ): BlockCraft.IBlockComponents['table-cell'] | null {
+    let nextRow = rowIdx + rowDelta
+    let nextCol = colIdx + colDelta
+    while (
+      nextRow >= 0 &&
+      nextRow < table.rowLength &&
+      nextCol >= 0 &&
+      nextCol < table.colLength
+    ) {
+      const cell = table.getCellByCoordinate(nextRow, nextCol)
+      if (cell && cell.props?.display !== 'none') return cell
+      nextRow += rowDelta
+      nextCol += colDelta
+    }
+    return null
+  }
+
+  private _findNextTabCell(
+    table: BlockCraft.IBlockComponents['table'],
+    rowIdx: number,
+    colIdx: number,
+    backward: boolean,
+  ): BlockCraft.IBlockComponents['table-cell'] | null {
+    let nextRow = rowIdx
+    let nextCol = colIdx
+    while (true) {
+      if (backward) {
+        nextCol--
+        if (nextCol < 0) {
+          nextRow--
+          nextCol = table.colLength - 1
+        }
+      } else {
+        nextCol++
+        if (nextCol >= table.colLength) {
+          nextRow++
+          nextCol = 0
+        }
+      }
+      if (nextRow < 0 || nextRow >= table.rowLength) return null
+      const cell = table.getCellByCoordinate(nextRow, nextCol)
+      if (cell && cell.props?.display !== 'none') return cell
+    }
+  }
+
+  private _moveTableCellSelection(
+    table: BlockCraft.IBlockComponents['table'],
+    selection: BlockCraft.Selection,
+    key: string,
+    extend: boolean,
+  ): boolean {
+    const endpoints = this._getTableCellSelectionEndpoints(table, selection)
+    if (!endpoints) return false
+
+    const direction = {
+      ArrowUp: [-1, 0],
+      ArrowDown: [1, 0],
+      ArrowLeft: [0, -1],
+      ArrowRight: [0, 1],
+    }[key] as [number, number] | undefined
+    if (!direction) return false
+
+    const nextCell = this._findNextVisibleCell(
+      table,
+      endpoints.head.rowIdx,
+      endpoints.head.colIdx,
+      direction[0],
+      direction[1],
+    )
+    if (!nextCell) return true
+
+    this.doc.selection.setTableCellSelection(
+      table,
+      extend ? endpoints.anchorCell : nextCell,
+      nextCell,
+      true,
+    )
+    return true
+  }
+
+  private _moveTableCellSelectionByTab(
+    table: BlockCraft.IBlockComponents['table'],
+    selection: BlockCraft.Selection,
+    backward: boolean,
+  ): boolean {
+    const endpoints = this._getTableCellSelectionEndpoints(table, selection)
+    if (!endpoints) return false
+
+    const nextCell = this._findNextTabCell(
+      table,
+      endpoints.head.rowIdx,
+      endpoints.head.colIdx,
+      backward,
+    )
+    if (!nextCell) return true
+
+    this.doc.selection.setTableCellSelection(
+      table,
+      nextCell,
+      nextCell,
+      true,
+    )
+    return true
+  }
+
+  private _restoreCursorAtTableCellAnchor(selection: BlockCraft.Selection): boolean {
+    const table = this._getLiveTableFromSelection(selection)
+    if (!table) return false
+    const endpoints = this._getTableCellSelectionEndpoints(table, selection)
+    if (!endpoints) return false
+    this.doc.selection.setCursorAtBlock(endpoints.anchorCell, false, false)
+    this.doc.selection.recalculate()
+    return true
   }
 
   private _hasPastedTableData(state: {
@@ -172,6 +423,7 @@ export class TableBlockBinding extends DocPlugin {
 
         const sourceCells = sourceRows[rowOffset]
         const targetRow = table.getChildrenByIndex(targetRowIndex)
+        if (!targetRow) continue
 
         for (let colOffset = 0; colOffset < sourceCells.length; colOffset++) {
           const sourceCell = sourceCells[colOffset]
@@ -179,7 +431,8 @@ export class TableBlockBinding extends DocPlugin {
           if (!targetCellId) break
           if (!sourceCell) continue
 
-          const targetCell = this.doc.getBlockById(targetCellId) as BlockCraft.IBlockComponents['table-cell']
+          const targetCell = this._getLiveBlockById<BlockCraft.IBlockComponents['table-cell']>(targetCellId)
+          if (!this._isLiveTableCell(targetCell)) continue
           if (targetCell.props.display === 'none') continue
 
           const children = cloneSnapshot(sourceCell.children || []) as IBlockSnapshot[]
@@ -203,8 +456,11 @@ export class TableBlockBinding extends DocPlugin {
 
   private _restoreCursorInCell(table: BlockCraft.IBlockComponents['table'], coordinate: number[]) {
     try {
-      const targetCell = table.getCellByCoordinate(coordinate[0], coordinate[1])
-      ;(table as unknown as {_clearSelectionUiState: () => void})._clearSelectionUiState()
+      const liveTable = this._getLiveBlockById<BlockCraft.IBlockComponents['table']>(table.id)
+      if (!liveTable || liveTable.flavour !== 'table') return
+      const targetCell = liveTable.getCellByCoordinate(coordinate[0], coordinate[1])
+      if (!targetCell || !this._getLiveBlockById(targetCell.id)) return
+      ;(liveTable as unknown as {_clearSelectionUiState: () => void})._clearSelectionUiState()
       this.doc.selection.setCursorAtBlock(targetCell, false, false)
       this.doc.selection.recalculate()
     } catch (e) {
@@ -215,25 +471,33 @@ export class TableBlockBinding extends DocPlugin {
 
   private _handleCopyOrCut(context: UIEventStateContext, isCut: boolean): boolean {
     const selection = this.doc.selection.value
-    if (!selection || !selection.firstBlock.flavour.startsWith('table')) return false
-    context.preventDefault()
-    const table = this._getTable(selection)
-    const coordinates = table.getSelectedCoordinates()
+    const firstBlock = this._getSafeSelectionFirstBlock(selection)
+    if (!selection || !firstBlock || !firstBlock.flavour.startsWith('table')) return false
+    if (selection.isAllSelected && firstBlock.flavour === 'table') return false
+
+    const table = this._getLiveTableFromSelection(selection)
+    if (!table) return false
+
+    const tableCellCoordinates = this._getTableCellSelectionCoordinates(table, selection)
+    if (this._hasTableCellSelection(selection) && !tableCellCoordinates) return false
+
+    const coordinates = tableCellCoordinates || table.getSelectedCoordinates()
     if (!coordinates) return false
 
+    context.preventDefault()
     const {start, end} = coordinates
     const matrix = table.getCellsMatrixByCoordinates(start, end)
     const tableSnapshot = this._createTableSnapshot(table, matrix, start, end)
     const legalSnapshot = legalizeTableModels(tableSnapshot, () => this.doc.schemas.createSnapshot('paragraph', []))
 
-    const copyResult = this.doc.clipboard.copyBlocksModel([legalSnapshot]).then(() => {
+    void this.doc.clipboard.copyBlocksModel([legalSnapshot]).then(() => {
       this.doc.messageService.success('已复制')
-    })
-    if (isCut) {
-      copyResult.then(() => {
+      if (isCut) {
         this.clearCellContent(matrix.flat())
-      })
-    }
+      }
+    }).catch(e => {
+      this.doc.logger.warn(isCut ? 'table cut failed' : 'table copy failed', e)
+    })
 
     return true
   }
@@ -249,15 +513,45 @@ export class TableBlockBinding extends DocPlugin {
     return snapshot
   }
 
-  @BindHotKey({key: ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'], shiftKey: true}, {flavour: 'table-cell'})
+  @BindHotKey({
+    key: ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'],
+    shiftKey: null,
+    ctrlKey: false,
+    altKey: false,
+    metaKey: false,
+  }, {flavour: 'table-cell'})
   handleArrow(context: UIEventStateContext) {
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
-    if (!selection || selection.firstBlock.flavour !== 'table-cell') return false
+    const firstBlock = this._getSafeSelectionFirstBlock(selection)
+    if (!this._hasTableCellSelection(selection) || firstBlock?.flavour !== 'table-cell') return false
 
-    const block = this._getTable(selection)
+    const table = this._getLiveTableFromSelection(selection)
+    if (!table) return false
+    if (!this._getTableCellSelectionEndpoints(table, selection)) return false
     context.preventDefault()
-    this.doc.selection.selectBlock(block)
+    if (this._moveTableCellSelection(table, selection, evt.key, evt.shiftKey)) return true
+    return true
+  }
+
+  @BindHotKey({
+    key: 'Tab',
+    shiftKey: null,
+    ctrlKey: false,
+    altKey: false,
+    metaKey: false,
+  }, {flavour: 'table-cell'})
+  handleTab(context: UIEventStateContext) {
+    const state = context.get('keyboardState')
+    const {raw: evt, selection} = state
+    const firstBlock = this._getSafeSelectionFirstBlock(selection)
+    if (!this._hasTableCellSelection(selection) || firstBlock?.flavour !== 'table-cell') return false
+
+    const table = this._getLiveTableFromSelection(selection)
+    if (!table) return false
+    if (!this._getTableCellSelectionEndpoints(table, selection)) return false
+    context.preventDefault()
+    this._moveTableCellSelectionByTab(table, selection, !!evt.shiftKey)
     return true
   }
 
@@ -266,13 +560,28 @@ export class TableBlockBinding extends DocPlugin {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
-    if (!selection.isAllSelected || selection.firstBlock.flavour !== 'table-cell') return
-    const table = this._getTable(selection)
-    const coordinates = table.getSelectedCoordinates()
-    evt.preventDefault()
+    if (!selection) return false
+    const firstBlock = this._getSafeSelectionFirstBlock(selection)
+    if (!firstBlock) return false
+    if (selection.isAllSelected && firstBlock.flavour === 'table') return false
+
+    const table = this._getLiveTableFromSelection(selection)
+    if (!table) return false
+
+    const tableCellCoordinates = this._getTableCellSelectionCoordinates(table, selection)
+    if (this._hasTableCellSelection(selection) && !tableCellCoordinates) return false
+
+    const explicitCoordinates = tableCellCoordinates || table.getExplicitSelectedCoordinates()
+    const coordinates = explicitCoordinates || (
+      selection.isAllSelected && firstBlock.flavour === 'table-cell'
+        ? table.getSelectedCoordinates()
+        : null
+    )
     if (!coordinates) {
       return false
     }
+
+    evt.preventDefault()
     const adjustedSelection = table.confirmSelection(coordinates.start, coordinates.end)
     const cells = table.getCellsMatrixByCoordinates(adjustedSelection.start, adjustedSelection.end).flat(1)
     this.clearCellContent(cells)
@@ -284,10 +593,27 @@ export class TableBlockBinding extends DocPlugin {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const {raw: evt, selection} = state
-    if (!selection.isAllSelected || selection.firstBlock.flavour !== 'table-cell') return false
+    if (!selection) return false
+    const firstBlock = this._getSafeSelectionFirstBlock(selection)
+    if (!firstBlock) return false
+    if (!this._hasTableCellSelection(selection) && !(selection.isAllSelected && firstBlock.flavour === 'table-cell')) return false
+    const table = this._getLiveTableFromSelection(selection)
+    if (!table) return false
+    if (this._hasTableCellSelection(selection) && !this._getTableCellSelectionEndpoints(table, selection)) return false
     evt.preventDefault()
-    const table = this._getTable(selection)
     this.doc.selection.selectBlock(table)
+    return true
+  }
+
+  @BindHotKey({key: 'Escape'}, {flavour: 'table-cell'})
+  handleEscape(context: UIEventStateContext) {
+    const state = context.get('keyboardState')
+    const {selection} = state
+    const firstBlock = this._getSafeSelectionFirstBlock(selection)
+    if (!this._hasTableCellSelection(selection) || firstBlock?.flavour !== 'table-cell') return false
+    const restored = this._restoreCursorAtTableCellAnchor(selection)
+    if (!restored) return false
+    context.preventDefault()
     return true
   }
 

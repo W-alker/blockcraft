@@ -59,7 +59,9 @@ export const blockTransforms: IBlockTransformConfig[] = [
       }
       void doc.chain()
         .replaceWithSnapshots(from.id, [o])
+        .nextTick()
         .selectOrSetCursorAtBlock(o.id, true)
+        .recalculateSelection()
         .run()
     }
   },
@@ -80,7 +82,9 @@ export const blockTransforms: IBlockTransformConfig[] = [
       callout.children = [p]
       void doc.chain()
         .replaceWithSnapshots(from.id, [callout])
+        .nextTick()
         .selectOrSetCursorAtBlock(p.id, true)
+        .recalculateSelection()
         .run()
     }
   },

@@ -10,6 +10,7 @@ import {characterAtDelta, nextTick} from "../../global";
 import {debounceTime, filter, fromEvent, merge, skip, Subject, take, takeUntil} from "rxjs";
 import {DeltaInsert} from "../../framework/block-std/types";
 import {IMentionPanel, MentionPluginConfig} from "./types";
+import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 
 export {createDefaultMentionPanel} from "./widget/default-panel";
 export type {DefaultMentionPanelConfig} from "./widget/default-panel";
@@ -66,7 +67,7 @@ export class MentionPlugin extends DocPlugin {
     if (e.data !== this._trigger || e.isComposing) return
 
     const curSel = this.doc.selection.value
-    if (!curSel?.collapsed || curSel.start.type !== 'text' || (curSel.firstBlock as EditableBlockComponent).plainTextOnly) return
+    if (!this._isLiveTextCursor(curSel) || (curSel.firstBlock as EditableBlockComponent).plainTextOnly) return
 
     const startBlock = curSel.firstBlock as EditableBlockComponent
     const startOffset = curSel.start.offset
@@ -159,7 +160,7 @@ export class MentionPlugin extends DocPlugin {
       if (this._charAtModelIndex(b, i) !== this._trigger) return null
 
       const curSel = this.doc.selection.value
-      if (!curSel?.collapsed || curSel.start.type !== 'text' || curSel.firstBlock !== b) return null
+      if (!this._isLiveTextCursor(curSel) || curSel.firstBlock !== b) return null
 
       const cursorIndex = curSel.start.offset
       if (cursorIndex <= i) return null
@@ -265,7 +266,7 @@ export class MentionPlugin extends DocPlugin {
       // 仍指向已 detached 的旧块，applyDeltaOperations 会写进 detached Y.Text
       // 静默丢失。_charAtModelIndex 对 detached 文本可能仍读到旧的 @，挡不住，
       // 必须显式确认块还在文档中。
-      if (!this.doc.vm.get(block.id)) {
+      if (!this._isBlockAlive(block)) {
         this._close$.next()
         return
       }
@@ -273,7 +274,7 @@ export class MentionPlugin extends DocPlugin {
 
       const curSel = this.doc.selection.value
       let end: number
-      if (curSel?.collapsed && curSel.start.type === 'text'
+      if (this._isLiveTextCursor(curSel)
         && curSel.firstBlock === block && curSel.start.offset > index) {
         end = curSel.start.offset
       } else {
@@ -296,9 +297,7 @@ export class MentionPlugin extends DocPlugin {
           {retain: index},
           {delete: end - index}
         ])
-        nextTick().then(() => {
-          this.doc.selection.setCursorAt(block, index)
-        })
+        this._setCursorAtWhenBlockAlive(block, index)
         this._close$.next()
         return
       }
@@ -320,10 +319,31 @@ export class MentionPlugin extends DocPlugin {
         {insert: ' '}
       ])
 
-      nextTick().then(() => {
-        this.doc.selection.setCursorAt(block, index + 2)
-      })
+      this._setCursorAtWhenBlockAlive(block, index + 2)
       this._close$.next()
+    })
+  }
+
+  private _isBlockAlive(block: EditableBlockComponent): boolean {
+    try {
+      if (!this.doc.vm.get(block.id)) return false
+      return this.doc.getBlockById(block.id) === block
+    } catch {
+      return false
+    }
+  }
+
+  private _isLiveTextCursor(
+    selection: BlockCraft.Selection | null | undefined
+  ): selection is BlockCraft.Selection & { start: { type: 'text'; offset: number } } {
+    if (!isSelectionAlive(selection as any, this.doc)) return false
+    return !!selection?.collapsed && selection.start.type === 'text'
+  }
+
+  private _setCursorAtWhenBlockAlive(block: EditableBlockComponent, index: number) {
+    nextTick().then(() => {
+      if (!this._isBlockAlive(block)) return
+      this.doc.selection.setCursorAt(block, index)
     })
   }
 

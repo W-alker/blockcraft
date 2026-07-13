@@ -1,0 +1,111 @@
+import {Subject} from "rxjs";
+import {TranslatePlugin, TranslatePluginService} from "./translate.plugin";
+
+const createService = (): TranslatePluginService => ({
+  translate: jasmine.createSpy("translate").and.resolveTo("translated"),
+  getSupportedLanguages: jasmine.createSpy("getSupportedLanguages").and.resolveTo([]),
+});
+
+const createEditableBlock = (id = "p1") => ({
+  id,
+  flavour: "paragraph",
+  textLength: 6,
+  textContent: jasmine.createSpy("textContent").and.returnValue("source"),
+  replaceText: jasmine.createSpy("replaceText"),
+  insertText: jasmine.createSpy("insertText"),
+  setInlineRange: jasmine.createSpy("setInlineRange"),
+  hostElement: document.createElement("paragraph-block"),
+});
+
+describe("TranslatePlugin lifecycle", () => {
+  it("tears down readonly and document destroy observers on destroy", () => {
+    const onDestroy$ = new Subject<void>();
+    const readonlySub = {
+      unsubscribe: jasmine.createSpy("unsubscribeReadonly"),
+    };
+    const plugin = new TranslatePlugin({persistLastTargetLang: false});
+    (plugin as any).doc = {
+      onDestroy$,
+      subscribeReadonlyChange: jasmine.createSpy("subscribeReadonlyChange").and.returnValue(readonlySub),
+    };
+    const closePreview = spyOn<any>(plugin, "closePreview").and.callThrough();
+
+    plugin.init();
+    plugin.destroy();
+    onDestroy$.next();
+
+    expect(closePreview).toHaveBeenCalledTimes(1);
+    expect(readonlySub.unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not expose translate menu for a stale active block", () => {
+    const block = createEditableBlock();
+    const plugin = new TranslatePlugin({
+      persistLastTargetLang: false,
+      service: createService(),
+    });
+    (plugin as any).doc = {
+      isEditable: jasmine.createSpy("isEditable").and.returnValue(true),
+      getBlockById: jasmine.createSpy("getBlockById").and.throwError("missing"),
+    };
+
+    const options = plugin.createBlockControllerOptions();
+    const sections = options.blockMenuResolver!({
+      activeBlock: block as any,
+      doc: (plugin as any).doc,
+      findClosestBlock: () => null,
+    });
+
+    expect(sections).toEqual([]);
+  });
+
+  it("does not consume translate action for a stale active block", () => {
+    const block = createEditableBlock();
+    const plugin = new TranslatePlugin({
+      persistLastTargetLang: false,
+      service: createService(),
+    });
+    (plugin as any).doc = {
+      isEditable: jasmine.createSpy("isEditable").and.returnValue(true),
+      getBlockById: jasmine.createSpy("getBlockById").and.throwError("missing"),
+    };
+
+    const translateParagraph = spyOn<any>(plugin, "translateParagraph");
+    const options = plugin.createBlockControllerOptions();
+    const handled = options.blockMenuActionHandler!({
+      item: {name: "translate-paragraph"} as any,
+      source: "simple",
+      path: [],
+    }, {
+      activeBlock: block as any,
+      doc: (plugin as any).doc,
+      findClosestBlock: () => null,
+    });
+
+    expect(handled).toBeFalse();
+    expect(translateParagraph).not.toHaveBeenCalled();
+  });
+
+  it("does not replace text when the preview block became stale", () => {
+    const block = createEditableBlock();
+    const plugin = new TranslatePlugin({
+      persistLastTargetLang: false,
+      service: createService(),
+    });
+    (plugin as any).doc = {
+      getBlockById: jasmine.createSpy("getBlockById").and.throwError("missing"),
+      messageService: {
+        warn: jasmine.createSpy("warn"),
+        success: jasmine.createSpy("success"),
+      },
+    };
+    (plugin as any)._activeEditableBlock = block;
+    (plugin as any)._translatedText = "translated";
+
+    (plugin as any).replaceOriginalText();
+
+    expect(block.replaceText).not.toHaveBeenCalled();
+    expect(block.setInlineRange).not.toHaveBeenCalled();
+    expect((plugin as any).doc.messageService.success).not.toHaveBeenCalled();
+  });
+});

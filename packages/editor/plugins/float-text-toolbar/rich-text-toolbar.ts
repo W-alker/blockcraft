@@ -7,6 +7,8 @@ import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
 import {debounce} from "../../global";
 import {BcFloatToolbarItemComponent} from "../../components";
 import {calcFloatToolbarPosition} from "./toolbar-position";
+import {isFloatTextToolbarSelection} from "./selection";
+import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 
 export interface FloatTextToolbarPluginOptions {
   /**
@@ -43,27 +45,36 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   init() {
     this.utils = new TextToolbarUtils(this.doc);
 
-    this.doc.subscribeReadonlyChange(() => {
-      this.toolbarOvr && this.closeToolbar();
-    });
+    this._sub.add(
+      this.doc.subscribeReadonlyChange(() => {
+        this.toolbarOvr && this.closeToolbar();
+      })
+    );
 
-    this.doc.selection.changeObserve().subscribe(debounce(sel => {
-      if (this.doc.isReadonly || !sel || sel.collapsed || sel.isAllSelected || sel.isEmpty) return;
-      if (this.toolbarOvr) this.closeToolbar();
-      if (sel.firstBlock['plainTextOnly'] && sel.lastBlock['plainTextOnly']) return;
-      this.openToolbar();
-    }, 350));
+    this._sub.add(
+      this.doc.selection.changeObserve().subscribe(debounce(sel => {
+        if (this.doc.isReadonly || !isFloatTextToolbarSelection(sel) || !isSelectionAlive(sel as any, this.doc)) {
+          if (this.toolbarOvr) this.closeToolbar();
+          return;
+        }
+        if (this.toolbarOvr) this.closeToolbar();
+        if ((sel.firstBlock as any).plainTextOnly && (sel.lastBlock as any).plainTextOnly) return;
+        this.openToolbar();
+      }, 350))
+    );
 
     // Close the toolbar whenever an internal block drag starts. During drag the
     // framework suppresses selection recalculation (see
     // DocInternalDragController.setSuppressRecalculate), so selectionChange$ no
     // longer fires while pointer is held — without this hook the toolbar would
     // linger over the drag ghost.
-    this.doc.dragController.state$
-      .pipe(takeUntil(this.doc.onDestroy$))
-      .subscribe(state => {
-        if (state !== 'idle' && this.toolbarOvr) this.closeToolbar();
-      });
+    this._sub.add(
+      this.doc.dragController.state$
+        .pipe(takeUntil(this.doc.onDestroy$))
+        .subscribe(state => {
+          if (state !== 'idle' && this.toolbarOvr) this.closeToolbar();
+        })
+    );
   }
 
   // @EventListen('selectEnd', { flavour: 'root' })
@@ -73,9 +84,12 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   // }
 
   openToolbar() {
-    const sel = this.doc.selection.value!;
+    const sel = this.doc.selection.value;
+    if (!isFloatTextToolbarSelection(sel) || !isSelectionAlive(sel as any, this.doc)) return;
 
-    const { connectElement, connectPositions } = this._calcPosition(sel);
+    const position = this._calcPosition(sel);
+    if (!position) return;
+    const { connectElement, connectPositions } = position;
 
     const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<FloatTextToolbarComponent>({
       target: connectElement,
@@ -85,7 +99,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this._cpr = componentRef;
     this.toolbarOvr = overlayRef;
 
-    this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(this.doc.selection.value!);
+    this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(sel);
     this._cpr.setInput('doc', this.doc);
     this._cpr.setInput('utils', this.utils);
     this._cpr.setInput('activeAttrs', this.activeCommonAttrs.attrs);
@@ -117,7 +131,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   private _calcPosition(selection: BlockCraft.Selection): {
     connectElement: HTMLElement,
     connectPositions: ConnectedPosition[]
-  } {
+  } | null {
     return calcFloatToolbarPosition(this.doc, selection);
   }
 

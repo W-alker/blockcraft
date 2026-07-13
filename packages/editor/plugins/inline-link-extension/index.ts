@@ -4,19 +4,27 @@ import {
   EventListen, FakeRange, getPositionWithOffset,
   INLINE_TEXT_NODE_TAG, INLINE_ELEMENT_TAG
 } from "../../framework";
-import {skip, Subject, takeUntil} from "rxjs";
+import {skip, Subject, Subscription, takeUntil} from "rxjs";
 import {InlineLinkToolbar} from "./widgets/inline-link-toolbar";
 import {nextTick, sliceDelta} from "../../global";
 import {UIEventStateContext, IBlockSnapshot} from "../../framework";
+import type {IBlockTextRange, INormalizedRange} from "../../framework";
 import {ComponentRef} from "@angular/core";
 import {LinkEditFloatDialog} from "./widgets/link-edit-dialog";
 import {OneShotRangeAnchor} from "../../framework/utils/one-shot-selection-anchor";
+import {isSelectionAlive} from "../../framework/modules/selection/liveness";
+
+type TextLinkInfo = {
+  textRange: INormalizedRange & {from: IBlockTextRange}
+  text: string
+}
 
 export class InlineLinkExtension extends DocPlugin {
   override name = 'inline-link-extension'
 
   private _cpr: ComponentRef<InlineLinkToolbar> | null = null
   private _closeToolbar$ = new Subject<void>()
+  private _sub = new Subscription()
 
   private _linkNode: HTMLElement | null = null
 
@@ -29,9 +37,11 @@ export class InlineLinkExtension extends DocPlugin {
   }
 
   init() {
-    this.doc.subscribeReadonlyChange(() => {
-      this._cpr?.setInput('isReadOnly', this.doc.isReadonly)
-    })
+    this._sub.add(
+      this.doc.subscribeReadonlyChange(() => {
+        this._cpr?.setInput('isReadOnly', this.doc.isReadonly)
+      })
+    )
   }
 
   @EventListen('doubleClick', {flavour: "root"})
@@ -54,7 +64,9 @@ export class InlineLinkExtension extends DocPlugin {
     const blockId = closetBlockId(target)
     if (!blockId) return
 
-    this.openToolbar(target as HTMLElement, link, this.doc.getBlockById(blockId))
+    const block = this._getLiveBlockById(blockId)
+    if (!block) return
+    this.openToolbar(target as HTMLElement, link, block)
     return true
   }
 
@@ -81,8 +93,18 @@ export class InlineLinkExtension extends DocPlugin {
     }
   }
 
+  private _tryGetTextLinkInfo(target: HTMLElement): TextLinkInfo | null {
+    try {
+      const linkInfo = this.getLinkInfo(target)
+      if (linkInfo.textRange.from.type !== 'text') return null
+      return linkInfo as TextLinkInfo
+    } catch {
+      return null
+    }
+  }
+
   openToolbar(target: HTMLElement, link: string, block: BlockCraft.BlockComponent) {
-    if (this._cpr || !this.doc.isEditable(block)) return
+    if (this._cpr || !this._isBlockAlive(block) || !this.doc.isEditable(block)) return
     this._linkNode = target
 
     const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<InlineLinkToolbar>({
@@ -103,13 +125,15 @@ export class InlineLinkExtension extends DocPlugin {
         }
           break
         case 'edit-link':
+          if (!this._isBlockAlive(block)) return
           this.onEditLink(target, block)
           this.closeToolbar()
           break
         case 'unbind-link': {
-          const range = this.getLinkInfo(target).textRange
-          if (range.from.type !== 'text' || range.from.block !== block) return;
-          block.formatText(range.from.index, range.from.length, {'a:link': null})
+          const linkInfo = this._tryGetTextLinkInfo(target)
+          if (!linkInfo || linkInfo.textRange.from.block !== block || !this._isBlockAlive(block)) return;
+          const {from} = linkInfo.textRange
+          block.formatText(from.index, from.length, {'a:link': null})
           this.closeToolbar()
         }
           break
@@ -141,10 +165,12 @@ export class InlineLinkExtension extends DocPlugin {
   }
 
   private _isCursorInLink(sel: BlockCraft.Selection, link: string): boolean {
+    if (!isSelectionAlive(sel as any, this.doc)) return false
     if (sel.start.type !== 'text') return false
-    const block = sel.firstBlock as any
+    const block = sel.firstBlock
+    if (!this._isBlockAlive(block) || !this.doc.isEditable(block)) return false
     const offset = sel.start.offset
-    const deltas = block.textDeltas()
+    const deltas = (block as any).textDeltas()
     let pos = 0
     for (const d of deltas) {
       const len = typeof d.insert === 'string' ? d.insert.length : 1
@@ -162,13 +188,14 @@ export class InlineLinkExtension extends DocPlugin {
   }
 
   onEditLink(target: HTMLElement, block: BlockCraft.BlockComponent) {
-    if (!this.doc.isEditable(block)) return
+    if (!this._isBlockAlive(block) || !this.doc.isEditable(block)) return
     const close$ = new Subject<void>()
+    let closed = false
 
     let fakeRange: FakeRange
 
-    const linkInfo = this.getLinkInfo(target)
-    if (linkInfo.textRange.from.type !== 'text') return
+    const linkInfo = this._tryGetTextLinkInfo(target)
+    if (!linkInfo) return
 
     const rangeAnchor = new OneShotRangeAnchor(this.doc)
 
@@ -181,9 +208,10 @@ export class InlineLinkExtension extends DocPlugin {
 
     const setFakeRange = () => {
       nextTick().then(() => {
+        if (closed) return
         fakeRange?.destroy()
         const _range = rangeAnchor.resolve()
-        if(!_range) return
+        if(!_range || !this._isBlockAlive(_range.block)) return
         fakeRange = this.doc.selection.createFakeRange({
           from: {
             ..._range,
@@ -204,6 +232,8 @@ export class InlineLinkExtension extends DocPlugin {
       ],
       backdrop: true
     }, close$, () => {
+      if (closed) return
+      closed = true
       block.yText.unobserve(setFakeRange)
       close$.next()
       fakeRange?.destroy()
@@ -214,6 +244,7 @@ export class InlineLinkExtension extends DocPlugin {
 
     // 伪造选中
     requestAnimationFrame(() => {
+      if (closed) return
       componentRef.instance.focus()
       setFakeRange()
     })
@@ -224,7 +255,7 @@ export class InlineLinkExtension extends DocPlugin {
     componentRef.instance.update.pipe(takeUntil(close$)).subscribe(v => {
       close$.next()
       const currentRange = rangeAnchor.consume(fallbackRange)
-      if (!currentRange) return
+      if (!currentRange || !this._isBlockAlive(currentRange.block)) return
 
       const currentText = currentRange.block.textContent().slice(currentRange.index, currentRange.index + currentRange.length)
       if (currentText !== v.text) {
@@ -241,9 +272,11 @@ export class InlineLinkExtension extends DocPlugin {
     const link = this.tryGetLink(this._linkNode)
     if (!link) return
 
-    const _range = this.getLinkInfo(this._linkNode).textRange
-    if (_range.from.type !== 'text') return
+    const linkInfo = this._tryGetTextLinkInfo(this._linkNode)
+    if (!linkInfo) return
+    const _range = linkInfo.textRange
     const {block, index, length} = _range.from
+    if (!this._isBlockAlive(block) || !this.doc.isEditable(block)) return
 
     const bookmark = this.doc.schemas.createSnapshot('bookmark', [link])
     const insertBlocks: IBlockSnapshot[] = [bookmark]
@@ -263,6 +296,26 @@ export class InlineLinkExtension extends DocPlugin {
   }
 
   destroy() {
+    this.closeToolbar()
+    this._sub.unsubscribe()
+  }
+
+  private _getLiveBlockById(blockId: string): BlockCraft.BlockComponent | null {
+    try {
+      const block = this.doc.getBlockById(blockId)
+      return this._isBlockAlive(block) ? block : null
+    } catch {
+      return null
+    }
+  }
+
+  private _isBlockAlive(block: BlockCraft.BlockComponent | null | undefined): block is BlockCraft.BlockComponent {
+    if (!block) return false
+    try {
+      return this.doc.getBlockById(block.id) === block
+    } catch {
+      return false
+    }
   }
 }
 

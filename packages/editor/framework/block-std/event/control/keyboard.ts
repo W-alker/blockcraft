@@ -26,18 +26,16 @@ export class KeyboardControl {
 
   private _down = (event: KeyboardEvent) => {
     if (!this._shouldTrigger(event)) return;
-    this._dispatcher.run('keyDown', this._createContext(event, new KeyboardEventState({
-      event,
-      selection: this._dispatcher.currentSelection!
-    })));
+    const keyboardState = this._createKeyboardEventState(event, true)
+    if (!keyboardState) return
+    this._dispatcher.run('keyDown', this._createContext(event, keyboardState));
   }
 
   private _up = (event: KeyboardEvent) => {
     if (!this._shouldTrigger(event)) return;
-    this._dispatcher.run('keyUp', this._createContext(event, new KeyboardEventState({
-      event,
-      selection: this._dispatcher.currentSelection!
-    })))
+    const keyboardState = this._createKeyboardEventState(event, false)
+    if (!keyboardState) return
+    this._dispatcher.run('keyUp', this._createContext(event, keyboardState))
   }
 
   private _shouldTrigger = (event: KeyboardEvent) => {
@@ -48,8 +46,37 @@ export class KeyboardControl {
     return !(['c', 'v', 'x'].includes(event.key) &&
       mod &&
       !event.shiftKey &&
-      !event.altKey) && this._dispatcher.currentSelection
+      !event.altKey)
   };
+
+  private _createKeyboardEventState(event: KeyboardEvent, preventMutation: boolean): KeyboardEventState | null {
+    const selection = this._dispatcher.currentSelection
+    if (!selection) {
+      this._handleMissingSelection(event, preventMutation)
+      return null
+    }
+
+    try {
+      return new KeyboardEventState({
+        event,
+        selection
+      })
+    } catch {
+      this._handleMissingSelection(event, preventMutation)
+      return null
+    }
+  }
+
+  private _handleMissingSelection(event: KeyboardEvent, preventMutation: boolean) {
+    if (preventMutation && this._shouldPreventDefaultForStaleSelection(event)) {
+      event.preventDefault()
+    }
+    this._dispatcher.doc.selection?.blur?.()
+  }
+
+  private _shouldPreventDefaultForStaleSelection(event: KeyboardEvent) {
+    return event.key.length === 1 || ['Backspace', 'Delete', 'Enter'].includes(event.key)
+  }
 
   private _createContext(event: Event, keyboardState: KeyboardEventState) {
     return UIEventStateContext.from(

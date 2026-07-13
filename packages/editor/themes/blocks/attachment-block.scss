@@ -11,7 +11,8 @@
     //overflow: hidden;
     background: var(--bc-bg-secondary);
 
-    &.selected {
+    &.selected,
+    &.bc-attachment-renaming {
       border: 1px solid var(--bc-active-color);
       box-shadow: 0 0 2px var(--bc-active-color-light);
     }

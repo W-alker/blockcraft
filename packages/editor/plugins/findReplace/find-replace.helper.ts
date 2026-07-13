@@ -54,6 +54,7 @@ export class FindReplaceHelper {
   private _findText = ''
   private _subs: Subscription[] = []
   private _blockOrder: string[] | null = null
+  private _destroyed = false
 
   /** 当前搜索是否使用懒加载模式 */
   private _lazyMode = false
@@ -70,6 +71,7 @@ export class FindReplaceHelper {
   // ── Lifecycle ────────────────────────────────────────────────
 
   listen() {
+    this._destroyed = false
     this._initObserver()
 
     this._subs.push(
@@ -79,6 +81,7 @@ export class FindReplaceHelper {
         this._blockOrder = null
 
         nextTick().then(() => {
+          if (this._destroyed || !this.isActive) return
           evt.transactions.forEach(t => {
             if (t.deleted) {
               const parentBlock = t.block
@@ -95,6 +98,7 @@ export class FindReplaceHelper {
             if (t.inserted) {
               t.inserted.forEach(block => {
                 if (!this.doc.isEditable(block)) return
+                if (!this._isBlockAlive(block)) return
                 this._matchBlockText(block)
               })
             }
@@ -110,8 +114,10 @@ export class FindReplaceHelper {
         this.cancelHighlight()
 
         nextTick().then(() => {
+          if (this._destroyed || !this.isActive) return
           evt.transactions.forEach(t => {
             const block = t.block
+            if (!this._isBlockAlive(block)) return
             this.clearOldMatchesMark(block.id)
             this._matchBlockText(block)
           })
@@ -123,6 +129,7 @@ export class FindReplaceHelper {
   }
 
   destroy() {
+    this._destroyed = true
     this.clearAll()
     this._destroyObserver()
     this._subs.forEach(s => s.unsubscribe())
@@ -175,10 +182,8 @@ export class FindReplaceHelper {
   private _materializeBlock(blockId: string) {
     const matches = this.matchedBlockMap.get(blockId)
     if (!matches) return
-    matches.forEach(m => {
-      if (m.fakeRange) return
-      m.fakeRange = this._createFakeRange(m)
-    })
+    const pending = [...matches]
+    pending.forEach(m => this._ensureFakeRange(m))
   }
 
   /** 为离开视口的块销毁 FakeRange（保留当前高亮项） */
@@ -197,11 +202,8 @@ export class FindReplaceHelper {
   /** 全量创建所有 FakeRange（非懒加载模式） */
   private _materializeAll() {
     this.matchedBlockMap.forEach(matches => {
-      matches.forEach(m => {
-        if (!m.fakeRange) {
-          m.fakeRange = this._createFakeRange(m)
-        }
-      })
+      const pending = [...matches]
+      pending.forEach(m => this._ensureFakeRange(m))
     })
   }
 
@@ -303,17 +305,14 @@ export class FindReplaceHelper {
   }
 
   highlightCurrent(withScroll = true) {
-    if (!this.matchedList.length) return
-    if (this.matchIndex >= this.matchedList.length) {
-      this.matchIndex = this.matchedList.length - 1
+    while (this.matchedList.length) {
+      this._clampMatchIndex()
+      const match = this.matchedList[this.matchIndex]
+      if (!this._ensureFakeRange(match)) continue
+      match.fakeRange!.setColor({bgColor: ACTIVE_COLOR})
+      withScroll && match.block.hostElement.scrollIntoView({behavior: 'smooth', block: 'center', inline: 'center'})
+      return
     }
-    if (this.matchIndex < 0) {
-      this.matchIndex = 0
-    }
-    const match = this.matchedList[this.matchIndex]
-    this._ensureFakeRange(match)
-    match.fakeRange!.setColor({bgColor: ACTIVE_COLOR})
-    withScroll && match.block.hostElement.scrollIntoView({behavior: 'smooth', block: 'center', inline: 'center'})
   }
 
   // ── Replace ──────────────────────────────────────────────────
@@ -321,6 +320,7 @@ export class FindReplaceHelper {
   replaceOne(replaceText: string) {
     if (!this.matchedList.length) return
     const match = this.matchedList[this.matchIndex]
+    if (!this._ensureFakeRange(match)) return
     this.doc.crud.transact(() => {
       this._replaceMatch(match, replaceText)
     })
@@ -335,11 +335,16 @@ export class FindReplaceHelper {
           const retain = m.index - cursor
           if (retain > 0) delta.push({retain})
           delta.push({delete: m.length})
-          if (replaceText) delta.push({insert: replaceText})
-          cursor = m.index + m.length
-        })
-        const block = this.doc.getBlockById(bid)
-        if (!this.doc.isEditable(block)) return
+        if (replaceText) delta.push({insert: replaceText})
+        cursor = m.index + m.length
+      })
+        let block: BlockCraft.BlockComponent
+        try {
+          block = this.doc.getBlockById(bid)
+        } catch {
+          return
+        }
+        if (!this._isBlockAlive(block) || !this.doc.isEditable(block)) return
         block.applyDeltaOperations(delta)
       })
       this._destroyAllFakeRanges()
@@ -390,9 +395,56 @@ export class FindReplaceHelper {
     })
   }
 
-  private _ensureFakeRange(match: FindReplaceMatch) {
-    if (match.fakeRange) return
-    match.fakeRange = this._createFakeRange(match)
+  private _ensureFakeRange(match: FindReplaceMatch): boolean {
+    if (this._destroyed || !this._isBlockAlive(match.block)) {
+      this._dropMatch(match)
+      return false
+    }
+    if (match.fakeRange) return true
+    try {
+      match.fakeRange = this._createFakeRange(match)
+      return true
+    } catch {
+      this._dropMatch(match)
+      return false
+    }
+  }
+
+  private _dropMatch(match: FindReplaceMatch) {
+    const blockMatches = this.matchedBlockMap.get(match.block.id)
+    if (blockMatches) {
+      const blockIndex = blockMatches.indexOf(match)
+      if (blockIndex >= 0) blockMatches.splice(blockIndex, 1)
+      if (!blockMatches.length) {
+        this.matchedBlockMap.delete(match.block.id)
+        this._unobserveBlock(match.block.id)
+      }
+    }
+
+    const listIndex = this.matchedList.indexOf(match)
+    if (listIndex >= 0) {
+      this.matchedList.splice(listIndex, 1)
+      if (listIndex <= this.matchIndex) this.matchIndex--
+    }
+
+    if (match.fakeRange) {
+      match.fakeRange.destroy()
+      match.fakeRange = null
+    }
+    this._clampMatchIndex()
+  }
+
+  private _clampMatchIndex() {
+    if (!this.matchedList.length) {
+      this.matchIndex = 0
+      return
+    }
+    if (this.matchIndex >= this.matchedList.length) {
+      this.matchIndex = this.matchedList.length - 1
+    }
+    if (this.matchIndex < 0) {
+      this.matchIndex = 0
+    }
   }
 
   private _createFakeRange(match: FindReplaceMatch): FakeRange {
@@ -493,8 +545,17 @@ export class FindReplaceHelper {
   }
 
   private _replaceMatch(match: FindReplaceMatch, replaceText: string) {
-    if (!this.doc.isEditable(match.block)) return
+    if (!this._isBlockAlive(match.block) || !this.doc.isEditable(match.block)) return
     match.block.yText.delete(match.index, match.length)
     replaceText && match.block.yText.insert(match.index, replaceText)
+  }
+
+  private _isBlockAlive(block: BlockCraft.BlockComponent | null | undefined) {
+    if (!block) return false
+    try {
+      return this.doc.getBlockById(block.id) === block
+    } catch {
+      return false
+    }
   }
 }

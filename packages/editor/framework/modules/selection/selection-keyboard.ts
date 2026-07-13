@@ -10,11 +10,469 @@ import {
 import {IS_MAC} from "../../../global";
 import {closetBlockId, isZeroSpace, resolveBlockGapSide} from "../../utils";
 import {searchEditableDescendant} from "./index";
-import {ITextSelectionPoint} from "./types";
+import {IBoundarySelectionPoint, ISelectionPointJSON, ITextSelectionPoint} from "./types";
 
 @DocEventRegister
 export class SelectionKeyboard {
   constructor(public readonly doc: BlockCraft.Doc) {}
+
+  private _getBlockByIdSafe(blockId: string | null | undefined): BlockCraft.BlockComponent | null {
+    if (!blockId) return null
+    try {
+      return this.doc.getBlockById(blockId)
+    } catch {
+      return null
+    }
+  }
+
+  private _selectionHeadBlockSafe(selection: BlockCraft.Selection): BlockCraft.BlockComponent | null {
+    try {
+      return selection.head?.block ?? null
+    } catch {
+      return null
+    }
+  }
+
+  private _getTableForCell(cell: BlockCraft.BlockComponent): BlockCraft.IBlockComponents['table'] | null {
+    const row = cell.parentBlock
+    if (row?.parentBlock?.flavour === 'table') {
+      return row.parentBlock as BlockCraft.IBlockComponents['table']
+    }
+
+    const tableId = cell.hostElement
+      ?.closest?.('.table-block[data-block-id]')
+      ?.getAttribute('data-block-id')
+    const table = this._getBlockByIdSafe(tableId)
+    return table?.flavour === 'table' ? table as BlockCraft.IBlockComponents['table'] : null
+  }
+
+  private _selectTableCell(cell: BlockCraft.BlockComponent | null | undefined, scrollIntoView = true): boolean {
+    if (!cell || cell.flavour !== 'table-cell') return false
+    const table = this._getTableForCell(cell)
+    if (!table) return false
+    this.doc.selection.setTableCellSelection(
+      table,
+      cell as BlockCraft.IBlockComponents['table-cell'],
+      cell as BlockCraft.IBlockComponents['table-cell'],
+      scrollIntoView,
+    )
+    return true
+  }
+
+  private _selectTableFromTableCellSelection(selection: BlockCraft.Selection): boolean {
+    const tableCellSelection = typeof selection.getTableCellSelection === 'function'
+      ? selection.getTableCellSelection()
+      : null
+    if (!tableCellSelection) return false
+
+    const table = this._getBlockByIdSafe(tableCellSelection.tableId)
+    if (!table || table.flavour !== 'table') return false
+
+    this.doc.selection.selectBlock(table)
+    return true
+  }
+
+  private _getTableCellForBlock(block: BlockCraft.BlockComponent | null | undefined): BlockCraft.IBlockComponents['table-cell'] | null {
+    let current = block
+    while (current && current.nodeType !== BlockNodeType.root) {
+      if (current.flavour === 'table-cell') {
+        return current as BlockCraft.IBlockComponents['table-cell']
+      }
+      current = current.parentBlock
+    }
+    return null
+  }
+
+  private _getTableCellCoordinate(
+    table: BlockCraft.IBlockComponents['table'],
+    cell: BlockCraft.IBlockComponents['table-cell'],
+  ): {rowIdx: number; colIdx: number} | null {
+    const rowIdx = table.childrenIds.indexOf(cell.parentId!)
+    const colIdx = cell.getIndexOfParent()
+    return rowIdx >= 0 && colIdx >= 0 ? {rowIdx, colIdx} : null
+  }
+
+  private _findNextTableCellByArrow(
+    table: BlockCraft.IBlockComponents['table'],
+    cell: BlockCraft.IBlockComponents['table-cell'],
+    key: string,
+  ): BlockCraft.IBlockComponents['table-cell'] | null {
+    const coordinate = this._getTableCellCoordinate(table, cell)
+    if (!coordinate) return null
+
+    const direction = {
+      ArrowUp: [-1, 0],
+      ArrowDown: [1, 0],
+      ArrowLeft: [0, -1],
+      ArrowRight: [0, 1],
+    }[key] as [number, number] | undefined
+    if (!direction) return null
+
+    let rowIdx = coordinate.rowIdx + direction[0]
+    let colIdx = coordinate.colIdx + direction[1]
+    while (
+      rowIdx >= 0 &&
+      rowIdx < table.rowLength &&
+      colIdx >= 0 &&
+      colIdx < table.colLength
+    ) {
+      const nextCell = table.getCellByCoordinate(rowIdx, colIdx)
+      if (nextCell && nextCell.props?.display !== 'none') return nextCell
+      rowIdx += direction[0]
+      colIdx += direction[1]
+    }
+    return null
+  }
+
+  private _promoteTableTextShiftArrow(
+    focusBlock: BlockCraft.BlockComponent | null | undefined,
+    key: string,
+  ): boolean {
+    const anchorCell = this._getTableCellForBlock(focusBlock)
+    if (!anchorCell) return false
+
+    const table = this._getTableForCell(anchorCell)
+    if (!table) return false
+
+    const headCell = this._findNextTableCellByArrow(table, anchorCell, key) || anchorCell
+    this.doc.selection.setTableCellSelection(table, anchorCell, headCell, true)
+    return true
+  }
+
+  private _isLeavingTableCell(
+    focusBlock: BlockCraft.BlockComponent | null | undefined,
+    nextBlock: BlockCraft.BlockComponent | null | undefined,
+  ): boolean {
+    const focusCell = this._getTableCellForBlock(focusBlock)
+    if (!focusCell) return false
+    if (!nextBlock) return true
+    const nextCell = this._getTableCellForBlock(nextBlock)
+    return nextCell?.id !== focusCell.id
+  }
+
+  private _parentBlock(block: BlockCraft.BlockComponent): BlockCraft.BlockComponent | null {
+    if (block.parentBlock) return block.parentBlock
+    if (!block.parentId) return null
+    return this._getBlockByIdSafe(block.parentId)
+  }
+
+  private _childrenLength(block: BlockCraft.BlockComponent): number {
+    if (typeof block.childrenLength === 'number') return block.childrenLength
+    return block.childrenIds?.length ?? 0
+  }
+
+  private _schemaMetadata(block: BlockCraft.BlockComponent) {
+    return this.doc.schemas?.get(block.flavour)?.metadata
+  }
+
+  private _supportsBlockGap(block: BlockCraft.BlockComponent): boolean {
+    const metadata = this._schemaMetadata(block)
+    return (
+      (block.nodeType === BlockNodeType.void || block.nodeType === BlockNodeType.block) &&
+      !metadata?.isLeaf
+    )
+  }
+
+  private _isRenderUnit(block: BlockCraft.BlockComponent): boolean {
+    return !!this._schemaMetadata(block)?.renderUnit
+  }
+
+  private _childAt(block: BlockCraft.BlockComponent, index: number): BlockCraft.BlockComponent | null {
+    const childId = block.childrenIds?.[index]
+    if (!childId) return null
+    return this._getBlockByIdSafe(childId)
+  }
+
+  private _setBoundaryCursor(block: BlockCraft.BlockComponent, atStart: boolean): void {
+    const index = atStart ? 0 : this._childrenLength(block)
+    const point: ISelectionPointJSON = {
+      blockId: block.id,
+      type: 'boundary',
+      index,
+    }
+    this.doc.selection.replay({
+      anchor: point,
+      head: point,
+      commonParent: block.id,
+    })
+  }
+
+  private _isFullTextSelection(
+    selection: BlockCraft.Selection,
+    block: EditableBlockComponent,
+  ): boolean {
+    if (!selection.isInSameBlock) return false
+    if (selection.start.type !== 'text' || selection.end.type !== 'text') return false
+    return selection.start.blockId === block.id &&
+      selection.end.blockId === block.id &&
+      selection.start.offset === 0 &&
+      selection.end.offset === block.textLength
+  }
+
+  private _isFullBoundarySelection(
+    selection: BlockCraft.Selection,
+    block: BlockCraft.BlockComponent,
+  ): boolean {
+    const childrenLength = this._childrenLength(block)
+    if (childrenLength <= 0) return false
+    if (selection.start.type !== 'boundary' || selection.end.type !== 'boundary') return false
+    return selection.start.blockId === block.id &&
+      selection.end.blockId === block.id &&
+      selection.start.index === 0 &&
+      selection.end.index === childrenLength
+  }
+
+  private _isWholeBlockSelection(
+    selection: BlockCraft.Selection,
+    block: BlockCraft.BlockComponent,
+  ): boolean {
+    if (selection.start.type !== 'selected' || selection.end.type !== 'selected') return false
+    return selection.start.blockId === block.id && selection.end.blockId === block.id
+  }
+
+  private _selectParentChildren(block: BlockCraft.BlockComponent): boolean {
+    const parent = this._parentBlock(block)
+    if (!parent) return false
+    this.doc.selection.selectAllChildren(parent)
+    return true
+  }
+
+  private _isSameOrAncestor(
+    maybeAncestor: BlockCraft.BlockComponent,
+    block: BlockCraft.BlockComponent,
+  ) {
+    let cursor: BlockCraft.BlockComponent | null = block
+    while (cursor) {
+      if (cursor.id === maybeAncestor.id) return true
+      cursor = this._parentBlock(cursor)
+    }
+    return false
+  }
+
+  private _commonParentForSelectionHead(
+    selection: BlockCraft.Selection,
+    headBlock: BlockCraft.BlockComponent,
+  ) {
+    const anchor = selection.toJSON().anchor as ISelectionPointJSON
+    if (anchor.blockId === headBlock.id) return headBlock.id
+
+    const anchorBlock = selection.anchor.block
+    if (this._isSameOrAncestor(headBlock, anchorBlock)) return headBlock.id
+    if (this._isSameOrAncestor(anchorBlock, headBlock)) return anchorBlock.id
+
+    return headBlock.parentId ?? selection.commonParent
+  }
+
+  private _replaySelectionHead(
+    selection: BlockCraft.Selection,
+    head: ISelectionPointJSON,
+    headBlock: BlockCraft.BlockComponent,
+  ) {
+    this.doc.selection.replay({
+      anchor: selection.toJSON().anchor as ISelectionPointJSON,
+      head,
+      commonParent: this._commonParentForSelectionHead(selection, headBlock),
+    })
+  }
+
+  /**
+   * Last-resort fallback for legacy/orphan blocks whose parent boundary cannot
+   * be resolved. Normal Shift+Arrow structure extension should replay a
+   * boundary endpoint instead.
+   */
+  private _extendSelectionToWholeBlockFallback(
+    selection: BlockCraft.Selection,
+    block: BlockCraft.BlockComponent,
+  ) {
+    this._replaySelectionHead(
+      selection,
+      {blockId: block.id, type: 'selected'},
+      block,
+    )
+  }
+
+  private _extendSelectionToTextOffset(
+    selection: BlockCraft.Selection,
+    block: EditableBlockComponent,
+    offset: number,
+  ) {
+    const safeOffset = Math.max(0, Math.min(offset, block.textLength))
+    this._replaySelectionHead(
+      selection,
+      {blockId: block.id, type: 'text', offset: safeOffset},
+      block,
+    )
+  }
+
+  private _extendSelectionToTextEdge(
+    selection: BlockCraft.Selection,
+    block: EditableBlockComponent,
+    isStart: boolean,
+  ) {
+    this._extendSelectionToTextOffset(selection, block, isStart ? 0 : block.textLength)
+  }
+
+  private _focusBlockForShiftSelection(
+    sel: BlockCraft.Selection,
+    nativeSelection: globalThis.Selection,
+  ): BlockCraft.BlockComponent | null {
+    if (!sel.collapsed && sel.head && sel.head.type !== 'gap' && sel.head.type !== 'boundary') {
+      const headBlock = this._selectionHeadBlockSafe(sel)
+      if (headBlock) return headBlock
+    }
+    const focusBlockId = nativeSelection.focusNode ? closetBlockId(nativeSelection.focusNode) : null
+    const focusBlock = this._getBlockByIdSafe(focusBlockId)
+    if (focusBlock) return focusBlock
+    return this._selectionHeadBlockSafe(sel)
+  }
+
+  private _boundaryPointForBlock(
+    block: BlockCraft.BlockComponent,
+    side: 'before' | 'after',
+  ): ISelectionPointJSON | null {
+    if (!block.parentId) return null
+
+    const parent = block.parentBlock ?? this._getBlockByIdSafe(block.parentId)
+    if (!parent) return null
+
+    const childrenIds = parent.childrenIds ?? []
+    let index = childrenIds.indexOf(block.id)
+    if (index < 0 && typeof block.getIndexOfParent === 'function') {
+      index = block.getIndexOfParent()
+    }
+    if (index < 0) return null
+
+    return {
+      blockId: parent.id,
+      type: 'boundary',
+      index: side === 'before' ? index : index + 1,
+    }
+  }
+
+  private _directChildUnder(
+    parentId: string,
+    block: BlockCraft.BlockComponent,
+  ): BlockCraft.BlockComponent | null {
+    let current: BlockCraft.BlockComponent | null = block
+    while (current?.parentId && current.parentId !== parentId) {
+      current = current.parentBlock ?? this._getBlockByIdSafe(current.parentId)
+    }
+    return current?.parentId === parentId ? current : null
+  }
+
+  private _boundaryPointForSelectionAnchor(
+    selection: BlockCraft.Selection,
+    parentId: string,
+    extendingSide: 'before' | 'after',
+  ): ISelectionPointJSON | null {
+    const anchor = selection.anchor
+    if (anchor.type === 'text' && !selection.collapsed) {
+      return null
+    }
+
+    if (anchor.type === 'boundary') {
+      return anchor.blockId === parentId
+        ? selection.toJSON().anchor as ISelectionPointJSON
+        : null
+    }
+
+    const anchorBlock = this._directChildUnder(parentId, anchor.block)
+    if (!anchorBlock) return null
+
+    let side: 'before' | 'after' = extendingSide
+    if (anchor.type === 'text') {
+      const textLength = (anchor.block as EditableBlockComponent).textLength
+      side = extendingSide === 'before'
+        ? (anchor.offset <= 0 ? 'before' : 'after')
+        : (anchor.offset >= textLength ? 'after' : 'before')
+    } else if (anchor.type === 'gap') {
+      side = anchor.side
+    } else if (anchor.type === 'selected') {
+      side = extendingSide === 'before' ? 'after' : 'before'
+    }
+
+    return this._boundaryPointForBlock(anchorBlock, side)
+  }
+
+  private _extendSelectionToBlockBoundary(
+    selection: BlockCraft.Selection,
+    block: BlockCraft.BlockComponent,
+    side: 'before' | 'after',
+  ) {
+    const head = this._boundaryPointForBlock(block, side)
+    if (!head) {
+      this._extendSelectionToWholeBlockFallback(selection, block)
+      return
+    }
+    let anchor = selection.toJSON().anchor as ISelectionPointJSON
+    anchor = this._boundaryPointForSelectionAnchor(selection, head.blockId, side) ?? anchor
+    this.doc.selection.replay({
+      anchor,
+      head,
+      commonParent: head.blockId,
+    })
+  }
+
+  private _extendSelectionOutOfParentBoundary(
+    selection: BlockCraft.Selection,
+    parent: BlockCraft.BlockComponent,
+    side: 'before' | 'after',
+  ): boolean {
+    const head = this._boundaryPointForBlock(parent, side)
+    if (!head) return false
+
+    this.doc.selection.replay({
+      anchor: selection.toJSON().anchor as ISelectionPointJSON,
+      head,
+      commonParent: head.blockId,
+    })
+    return true
+  }
+
+  private _selectBoundaryRangeFromGap(
+    gap: {block: BlockCraft.BlockComponent; side: 'before' | 'after'},
+  ): boolean {
+    const anchor = this._boundaryPointForBlock(gap.block, gap.side)
+    const head = this._boundaryPointForBlock(gap.block, gap.side === 'before' ? 'after' : 'before')
+    if (!anchor || !head) return false
+
+    this.doc.selection.replay({
+      anchor,
+      head,
+      commonParent: anchor.blockId,
+    })
+    return true
+  }
+
+  private _extendBoundaryHeadVertically(
+    selection: BlockCraft.Selection,
+    isBackward: boolean,
+  ): boolean {
+    const head = selection.head
+    if (!head) return false
+    if (head.type !== 'boundary') return false
+
+    const host = head.block
+    const childIndex = isBackward ? head.index - 1 : head.index
+    const childId = host.childrenIds?.[childIndex]
+    if (!childId) return false
+
+    const child = this._getBlockByIdSafe(childId)
+    if (!child) return false
+    if (this.doc.isEditable(child)) {
+      this._extendSelectionToTextEdge(selection, child as EditableBlockComponent, isBackward)
+      return true
+    }
+
+    const nextHead = this._boundaryPointForBlock(child, isBackward ? 'before' : 'after')
+    if (!nextHead) return false
+    this.doc.selection.replay({
+      anchor: selection.toJSON().anchor as ISelectionPointJSON,
+      head: nextHead,
+      commonParent: nextHead.blockId,
+    })
+    return true
+  }
 
   @BindHotKey({key: ['ArrowUp', "ArrowDown"], shiftKey: false})
   private _handlerUpOrDown(ctx: UIEventStateContext) {
@@ -33,9 +491,15 @@ export class SelectionKeyboard {
           const sibling = isBack ? this.doc.prevSibling(sel.firstBlock) : this.doc.nextSibling(sel.firstBlock)
           if (sibling && (sibling.nodeType === BlockNodeType.void || sibling.nodeType === BlockNodeType.block)) {
             ctx.preventDefault()
-            this.doc.selection.setGapCursor(sibling, isBack ? 'after' : 'before')
-            this.doc.selection.scrollSelectionIntoView()
+            this._enterBlockFromSide(sibling, isBack)
             return true
+          }
+          if (!sibling) {
+            const handled = this._enterSiblingOrExitParent(sel.firstBlock, isBack)
+            if (handled) {
+              ctx.preventDefault()
+              return true
+            }
           }
         }
       } else if (collapsed && sel.start.type === 'gap') {
@@ -49,26 +513,19 @@ export class SelectionKeyboard {
     }
     ctx.preventDefault()
 
+    const modelHeadBlock = this._selectionHeadBlockSafe(sel)
     const docSelection = document.getSelection()!
-    const focusBlockId = closetBlockId(docSelection.focusNode!)!
-    const focusBlock = this.doc.getBlockById(focusBlockId)
+    const focusBlockId = docSelection.focusNode ? closetBlockId(docSelection.focusNode) : null
+    const focusBlock = modelHeadBlock ?? this._getBlockByIdSafe(focusBlockId)
+    if (!focusBlock) return true
 
     // head is the focus endpoint
-    const headBlock = sel.head.block
+    const headBlock = modelHeadBlock ?? focusBlock
 
     const focusSibling = () => {
       const opBlock = isBack ? this.doc.prevSibling(focusBlock) : this.doc.nextSibling(focusBlock)
       if (!opBlock) return false
-      // Up/Down landing on a void OR container sibling lands on its near-side
-      // gap, not a whole-block `selected` (gap is the collapsed caret;
-      // `selected` is the shift-extension / whole-block state, left unchanged
-      // here).
-      if (opBlock.nodeType === BlockNodeType.void || opBlock.nodeType === BlockNodeType.block) {
-        this.doc.selection.setGapCursor(opBlock, isBack ? 'after' : 'before')
-      } else {
-        this.doc.selection.selectOrSetCursorAtBlock(opBlock, !isBack)
-      }
-      this.doc.selection.scrollSelectionIntoView()
+      this._enterBlockFromSide(opBlock, isBack)
       return true
     }
 
@@ -118,8 +575,8 @@ export class SelectionKeyboard {
     const {isAllSelected, collapsed} = sel
     const isLeft = state.raw.key === 'ArrowLeft'
 
-    // Whole-block `selected` (e.g. after Esc on a void) is not gap-collapsed —
-    // leave it to the browser / other handlers (shift-extension is unchanged).
+    // Plain arrows do not reinterpret an explicit whole-block selection.
+    // Shift+Arrow uses the boundary-first paths below.
     if (isAllSelected) return
 
     if (collapsed && sel.start.type === 'text') {
@@ -134,6 +591,10 @@ export class SelectionKeyboard {
 
     if (collapsed && sel.start.type === 'gap') {
       return this._moveFromGap(sel.firstBlock, sel.start.side, isLeft)
+    }
+
+    if (collapsed && sel.start.type === 'boundary') {
+      return this._moveFromBoundary(sel.start, isLeft)
     }
 
     return
@@ -153,7 +614,11 @@ export class SelectionKeyboard {
     // No sibling: bubble up to exit an enclosing container block.
     const parent = block.parentBlock
     if (parent && parent.nodeType === BlockNodeType.block) {
-      this.doc.selection.setGapCursor(parent, isLeft ? 'before' : 'after')
+      if (this._supportsBlockGap(parent)) {
+        this.doc.selection.setGapCursor(parent, isLeft ? 'before' : 'after')
+      } else {
+        return this._enterSiblingOrExitParent(parent, isLeft)
+      }
       this.doc.selection.scrollSelectionIntoView()
       return true
     }
@@ -169,7 +634,7 @@ export class SelectionKeyboard {
    *  - editable:  text edge
    */
   private _enterBlockFromSide(block: BlockCraft.BlockComponent, isLeft: boolean) {
-    if (block.nodeType === BlockNodeType.void || block.nodeType === BlockNodeType.block) {
+    if (this._supportsBlockGap(block)) {
       this.doc.selection.setGapCursor(block, isLeft ? 'after' : 'before')
     } else if (this.doc.isEditable(block)) {
       this.doc.selection.selectOrSetCursorAtBlock(block, !isLeft)
@@ -177,11 +642,27 @@ export class SelectionKeyboard {
       const editable = searchEditableDescendant(block, !isLeft)
       if (editable) {
         this.doc.selection.selectOrSetCursorAtBlock(editable, !isLeft)
+      } else if (this._isRenderUnit(block)) {
+        this._setBoundaryCursor(block, !isLeft)
       } else {
-        this.doc.selection.setGapCursor(block, isLeft ? 'after' : 'before')
+        this._enterSiblingOrExitParent(block, isLeft)
       }
     }
     this.doc.selection.scrollSelectionIntoView()
+  }
+
+  private _moveFromBoundary(boundary: IBoundarySelectionPoint, isLeft: boolean): true | undefined {
+    const host = boundary.block
+    const child = isLeft
+      ? this._childAt(host, boundary.index - 1)
+      : this._childAt(host, boundary.index)
+
+    if (child) {
+      this._enterBlockFromSide(child, isLeft)
+      return true
+    }
+
+    return this._enterSiblingOrExitParent(host, isLeft)
   }
 
   /** Left/Right movement when the caret currently sits on a gap point. */
@@ -190,6 +671,10 @@ export class SelectionKeyboard {
     const movingInward = isLeft ? side === 'after' : side === 'before'
 
     if (movingInward) {
+      if (!this._supportsBlockGap(gapBlock)) {
+        this._enterBlockFromSide(gapBlock, isLeft)
+        return true
+      }
       if (gapBlock.nodeType === BlockNodeType.void) {
         // Void: step across to the opposite gap side (two-stop block).
         this.doc.selection.setGapCursor(gapBlock, isLeft ? 'before' : 'after')
@@ -219,15 +704,23 @@ export class SelectionKeyboard {
     // For void/container the two gap stops also act as Up/Down stops: pressing
     // Down at gap-before steps to gap-after within the same block, and vice versa.
     const steppingInward = isBack ? side === 'after' : side === 'before'
-    if (steppingInward && (gapBlock.nodeType === BlockNodeType.void || gapBlock.nodeType === BlockNodeType.block)) {
-      this.doc.selection.setGapCursor(gapBlock, isBack ? 'before' : 'after')
-      this.doc.selection.scrollSelectionIntoView()
+    if (steppingInward) {
+      if (this._supportsBlockGap(gapBlock)) {
+        this.doc.selection.setGapCursor(gapBlock, isBack ? 'before' : 'after')
+        this.doc.selection.scrollSelectionIntoView()
+      } else {
+        this._enterBlockFromSide(gapBlock, isBack)
+      }
       return
     }
     const res = this._enterSiblingOrExitParent(gapBlock, isBack)
     if (!res) {
       // No adjacent target: keep the caret on the current gap stop.
-      this.doc.selection.setGapCursor(gapBlock, side)
+      if (this._supportsBlockGap(gapBlock)) {
+        this.doc.selection.setGapCursor(gapBlock, side)
+      } else {
+        this._enterBlockFromSide(gapBlock, isBack)
+      }
     }
   }
 
@@ -236,41 +729,52 @@ export class SelectionKeyboard {
     ctx.preventDefault()
     const state = ctx.get('keyboardState')
     const docSelection = document.getSelection()!
-    const focusBlockId = closetBlockId(docSelection.focusNode!)
-    if (!focusBlockId) {
+    const isBackward = state.raw.key === "ArrowUp"
+    if (
+      !state.selection.collapsed &&
+      this._extendBoundaryHeadVertically(state.selection, isBackward)
+    ) {
+      this.doc.selection.scrollSelectionIntoView()
       return true
     }
 
-    const isBackward = state.raw.key === "ArrowUp"
-
-    const focusBlock = this.doc.getBlockById(focusBlockId)
-
-    const extendStartOrEnd = (block: EditableBlockComponent, isStart: boolean) => {
-      const nodeAndOffset = block.runtime.mapper.modelPointToDomPoint(block.containerElement, isStart ? 0 : block.textLength)
-      docSelection.extend(nodeAndOffset.node, nodeAndOffset.offset)
+    const focusBlock = this._focusBlockForShiftSelection(state.selection, docSelection)
+    if (!focusBlock) {
+      return true
     }
 
     if (docSelection.isCollapsed && this.doc.isEditable(focusBlock) &&
       (isBackward ? !state.selection.isStartOfBlock : !state.selection.isEndOfBlock)
     ) {
-      extendStartOrEnd(focusBlock, isBackward)
+      this._extendSelectionToTextEdge(state.selection, focusBlock as EditableBlockComponent, isBackward)
+      this.doc.selection.scrollSelectionIntoView()
       return true
     }
 
-    const opBlock = isBackward ? this.doc.prevSibling(focusBlockId) : this.doc.nextSibling(focusBlockId)
+    const opBlock = isBackward ? this.doc.prevSibling(focusBlock.id) : this.doc.nextSibling(focusBlock.id)
+    if (
+      this._isLeavingTableCell(focusBlock, opBlock) &&
+      this._promoteTableTextShiftArrow(focusBlock, state.raw.key)
+    ) {
+      return true
+    }
+
     if (!opBlock) {
-      const parent = this.doc.getBlockById(focusBlockId).parentBlock
+      const parent = this._parentBlock(focusBlock)
       if (parent && parent.nodeType !== BlockNodeType.root) {
-        docSelection.setBaseAndExtent(
-          parent.hostElement, isBackward ? 0 : parent.hostElement.childElementCount,
-          parent.hostElement, isBackward ? parent.hostElement.childElementCount : 0
-        )
+        if (!this._extendSelectionOutOfParentBoundary(state.selection, parent, isBackward ? 'before' : 'after')) {
+          this._extendSelectionToWholeBlockFallback(state.selection, parent)
+        }
+        this.doc.selection.scrollSelectionIntoView()
       }
       return true
     }
 
-    this.doc.isEditable(opBlock)
-      ? extendStartOrEnd(opBlock, isBackward) : docSelection.extend(opBlock.hostElement, isBackward ? 0 : opBlock.hostElement.childElementCount)
+    if (this.doc.isEditable(opBlock)) {
+      this._extendSelectionToTextEdge(state.selection, opBlock as EditableBlockComponent, isBackward)
+    } else {
+      this._extendSelectionToBlockBoundary(state.selection, opBlock, isBackward ? 'before' : 'after')
+    }
     this.doc.selection.scrollSelectionIntoView()
     return true
   }
@@ -280,49 +784,81 @@ export class SelectionKeyboard {
     const state = ctx.get('keyboardState')
     const sel = state.selection
     const docSelection = document.getSelection()!
-
-    const focusBlockId = closetBlockId(docSelection.focusNode!)
-    if (!focusBlockId) {
-      ctx.preventDefault()
-      return true
-    }
-
     const isBackward = state.raw.key === "ArrowLeft"
 
+    if (sel.collapsed && sel.start.type === 'gap') {
+      const movingInward = isBackward
+        ? sel.start.side === 'after'
+        : sel.start.side === 'before'
+      if (movingInward) {
+        ctx.preventDefault()
+        if (!this._selectBoundaryRangeFromGap(sel.start)) {
+          // Missing parent/index metadata: preserve the user's intent as an
+          // explicit whole-block selection instead of manufacturing a boundary.
+          this.doc.selection.selectBlock(sel.start.block)
+        }
+        this.doc.selection.scrollSelectionIntoView()
+        return true
+      }
+    }
+
     // Single block, not at boundary — let browser handle
-    if (sel.isInSameBlock && ((isBackward && !sel.isStartOfBlock) || (!isBackward && !sel.isEndOfBlock))) {
+    if (sel.collapsed && sel.isInSameBlock && ((isBackward && !sel.isStartOfBlock) || (!isBackward && !sel.isEndOfBlock))) {
       return true
     }
 
-    // head (focus) has room to extend within its block — let browser handle
+    // Collapsed text carets keep native character movement. Non-collapsed
+    // ranges use the model head so replayed backward selections keep extending
+    // from the intended endpoint instead of the browser's current focus node.
     const head = sel.head
     if (head.type === 'text') {
-      if (isBackward && head.offset > 0) return true
-      if (!isBackward && head.offset < (head.block as EditableBlockComponent).textLength) return true
+      const headBlock = head.block as EditableBlockComponent
+      if (sel.collapsed) {
+        if (isBackward && head.offset > 0) return true
+        if (!isBackward && head.offset < headBlock.textLength) return true
+      } else {
+        const nextOffset = head.offset + (isBackward ? -1 : 1)
+        if (nextOffset >= 0 && nextOffset <= headBlock.textLength) {
+          ctx.preventDefault()
+          this._extendSelectionToTextOffset(sel, headBlock, nextOffset)
+          this.doc.selection.scrollSelectionIntoView()
+          return true
+        }
+      }
     }
 
-    const opBlock = isBackward ? this.doc.prevSibling(focusBlockId) : this.doc.nextSibling(focusBlockId)
+    const focusBlock = this._focusBlockForShiftSelection(sel, docSelection)
+    if (!focusBlock) {
+      ctx.preventDefault()
+      return true
+    }
+
+    const opBlock = isBackward ? this.doc.prevSibling(focusBlock.id) : this.doc.nextSibling(focusBlock.id)
+    if (
+      this._isLeavingTableCell(focusBlock, opBlock) &&
+      this._promoteTableTextShiftArrow(focusBlock, state.raw.key)
+    ) {
+      ctx.preventDefault()
+      return true
+    }
+
     if (!opBlock) {
       ctx.preventDefault()
-      const parent = this.doc.getBlockById(focusBlockId).parentBlock
+      const parent = this._parentBlock(focusBlock)
       if (parent && parent.nodeType !== BlockNodeType.root) {
-        docSelection.setBaseAndExtent(
-          parent.hostElement, isBackward ? parent.hostElement.childElementCount : 0,
-          parent.hostElement, isBackward ? 0 : parent.hostElement.childElementCount
-        )
+        if (!this._extendSelectionOutOfParentBoundary(sel, parent, isBackward ? 'before' : 'after')) {
+          this._extendSelectionToWholeBlockFallback(sel, parent)
+        }
+        this.doc.selection.scrollSelectionIntoView()
       }
       return true
     }
 
     ctx.preventDefault()
 
-    const extendStartOrEnd = (block: EditableBlockComponent, isStart: boolean) => {
-      const nodeAndOffset = block.runtime.mapper.modelPointToDomPoint(block.containerElement, isStart ? 0 : block.textLength)
-      docSelection.extend(nodeAndOffset.node, nodeAndOffset.offset)
-    }
-
     this.doc.isEditable(opBlock)
-      ? extendStartOrEnd(opBlock, !isBackward) : docSelection.extend(opBlock.hostElement, isBackward ? 0 : opBlock.hostElement.childElementCount)
+      ? this._extendSelectionToTextEdge(sel, opBlock as EditableBlockComponent, !isBackward)
+      : this._extendSelectionToBlockBoundary(sel, opBlock, isBackward ? 'before' : 'after')
     this.doc.selection.scrollSelectionIntoView()
     return true
   }
@@ -333,23 +869,33 @@ export class SelectionKeyboard {
     const {raw: evt, selection: sel} = state
     evt.preventDefault()
     evt.stopPropagation()
-    const common = this.doc.getBlockById(sel.commonParent)
+    if (this._selectTableFromTableCellSelection(sel)) return true
+
+    const common = this._getBlockByIdSafe(sel.commonParent)
+    if (!common) return true
     if (this.doc.isEditable(common)) {
-      if (sel.start.type !== 'text') return
-      if (sel.isInSameBlock && sel.start.offset === 0 && (sel.end as ITextSelectionPoint).offset === common.textLength) {
-        this.doc.selection.selectAllChildren(common.parentBlock!)
+      if (sel.start.type !== 'text') return true
+      if (this._isFullTextSelection(sel, common as EditableBlockComponent)) {
+        if (this._selectTableCell(this._parentBlock(common))) return true
+        this._selectParentChildren(common)
       } else {
         this.doc.selection.selectAllChildren(common)
         this.doc.messageService.info(`连续按下${IS_MAC ? '⌘' : 'ctrl'} + A以选中全文`)
       }
       return true
     }
-    if (sel.start.blockId === common.id && sel.start.block.flavour !== 'root') {
-      this.doc.selection.selectAllChildren(common.parentBlock!)
+    if (this._selectTableCell(common)) return true
+    if (
+      this._isFullBoundarySelection(sel, common) ||
+      this._isWholeBlockSelection(sel, common)
+    ) {
+      if (!this._selectParentChildren(common)) {
+        this.doc.selection.selectAllChildren(common)
+      }
       return true
     }
 
-    this.doc.selection.selectAllChildren(sel.commonParent)
+    this.doc.selection.selectAllChildren(common)
     return true
   }
 
@@ -463,7 +1009,8 @@ export class SelectionKeyboard {
     if (state.composing || !selection.isCollapsed) return;
 
     const activeNode = selection.focusNode
-    const zero = isZeroSpace(activeNode!)
+    if (!activeNode) return;
+    const zero = isZeroSpace(activeNode)
     if (zero) {
       // Block-level gap caret (leading/trailing block gap span): cross-block
       // arrow navigation is owned by the gap-aware @BindHotKey handlers above,

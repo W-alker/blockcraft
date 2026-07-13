@@ -17,6 +17,7 @@ import {
   UIEventStateContext
 } from "../../framework";
 import {createTableSnapshotFromMatrix} from "../../framework/modules/clipboard/paste-utils";
+import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 import {nextTick} from "../../global";
 import {PasteFormatSelectorComponent} from "./widgets/paste-format-selector.component";
 
@@ -40,20 +41,28 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
   private _collapsed = false
   private _reapplying = false
   private _sub = new Subscription()
+  private _destroyed = false
+  private _overlayCreateSeq = 0
+  private _pasteEventSeq = 0
 
   init() {
+    this._destroyed = false
     this._sub.add(
       this.doc.clipboard.pasteFormatData$.subscribe(event => {
+        const seq = ++this._pasteEventSeq
         if (!event) {
           this._clearSession()
           return
         }
-        void this._handlePasteCompleted(event)
+        void this._handlePasteCompleted(event, seq)
       })
     )
   }
 
   destroy() {
+    this._destroyed = true
+    this._pasteEventSeq++
+    this._overlayCreateSeq++
     this._closeOverlay()
     this._sub.unsubscribe()
   }
@@ -70,13 +79,24 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
     if (files.length !== 1 || !this._isSpreadsheetFile(files[0]!)) return false
 
     context.preventDefault()
-    void this._pasteSpreadsheetFile(files[0]!, state.selection)
+    const seq = ++this._pasteEventSeq
+    const depth = this._selectionDepth(state.selection)
+    if (depth == null) {
+      this.doc.messageService.warn('当前位置无法插入表格')
+      return true
+    }
+    void this._pasteSpreadsheetFile(files[0]!, state.selection, depth, seq)
     return true
   }
 
   // ── Session management (moved from ClipboardManager) ──
 
-  private async _handlePasteCompleted(event: ClipboardPasteCompletedEvent) {
+  private async _handlePasteCompleted(event: ClipboardPasteCompletedEvent, seq = ++this._pasteEventSeq) {
+    if (!this._isCurrentPasteEvent(seq)) return
+    if (!event.region) {
+      this._clearSession()
+      return
+    }
     const {anchorBlockId, appliedType, htmlSnapshot, plainText, markdownText} = event
 
     const options: ClipboardPasteOption[] = []
@@ -88,6 +108,7 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
       if (mdAdapter) {
         try {
           const mdSnapshot = await mdAdapter.toSnapshot(markdownText)
+          if (!this._isCurrentPasteEvent(seq)) return
           options.push({type: 'markdown', label: 'Markdown', payload: {kind: 'snapshot', snapshot: mdSnapshot}})
         } catch (e) {
           this.doc.logger.warn('markdown2snapshot error', e)
@@ -102,12 +123,20 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
       options.push({type: 'plain-text', label: '纯文本', payload: {kind: 'text', text: plainText}})
     }
 
-    if (options.length <= 1) return
+    if (!this._isCurrentPasteEvent(seq)) return
+    if (options.length <= 1) {
+      this._clearSession()
+      return
+    }
 
     this._session = {anchorBlockId, selectedType: appliedType, options}
     this._region = event.region
     this._collapsed = event.collapsed
     this._emitSessionView()
+  }
+
+  private _isCurrentPasteEvent(seq: number) {
+    return !this._destroyed && seq === this._pasteEventSeq
   }
 
   private async _reapplyPaste(type: ClipboardPasteFormatType) {
@@ -128,6 +157,7 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
       // undo() — the region is self-contained, so switching never depends on the
       // global undo stack (which could merge with prior edits or no-op).
       const result = await this.doc.clipboard.replacePasteRegion(this._region, option, this._collapsed)
+      if (this._destroyed) return
       if (result && result.region) {
         this._region = result.region
         session.selectedType = type
@@ -148,6 +178,7 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
     this._session = null
     this._region = null
     this._collapsed = false
+    this._overlayCreateSeq++
     this._renderSession(null)
   }
 
@@ -179,11 +210,13 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
     }
 
     this._closeOverlay()
-    void this._createOverlay(session)
+    const seq = ++this._overlayCreateSeq
+    void this._createOverlay(session, seq)
   }
 
-  private async _createOverlay(session: ClipboardPasteSessionView) {
+  private async _createOverlay(session: ClipboardPasteSessionView, seq: number) {
     await nextTick()
+    if (this._destroyed || seq !== this._overlayCreateSeq) return
     const anchor = this._getAnchorBlock(session.anchorBlockId)
     if (!anchor) return
 
@@ -197,9 +230,16 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
         getPositionWithOffset('bottom-left', 0, 8),
       ]
     }, close$, () => {
+      if (seq !== this._overlayCreateSeq) return
       this._overlayRef = undefined
       this._close$ = undefined
     })
+
+    if (this._destroyed || seq !== this._overlayCreateSeq) {
+      close$.next()
+      overlayRef.dispose()
+      return
+    }
 
     this._overlayRef = overlayRef
     this._close$ = close$
@@ -228,6 +268,7 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
   }
 
   private _closeOverlay() {
+    this._overlayCreateSeq++
     this._close$?.next()
     this._close$ = undefined
     this._overlayRef = undefined
@@ -242,6 +283,15 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
     }
   }
 
+  private _selectionDepth(selection: BlockCraft.Selection): number | null {
+    if (!isSelectionAlive(selection as any, this.doc)) return null
+    try {
+      return selection.firstBlock.props.depth || 0
+    } catch {
+      return null
+    }
+  }
+
   // ── Spreadsheet helpers ──
 
   private _isSpreadsheetFile(file: File): boolean {
@@ -250,16 +300,21 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
     return ext ? SPREADSHEET_EXTENSIONS.has(ext) : false
   }
 
-  private async _pasteSpreadsheetFile(file: File, selection: BlockCraft.Selection) {
+  private async _pasteSpreadsheetFile(file: File, selection: BlockCraft.Selection, depth: number, seq: number) {
     try {
       const matrix = await this._readSpreadsheetMatrix(file)
+      if (!this._isCurrentPasteEvent(seq)) return
       if (!matrix.length) {
         this.doc.messageService.warn('未能解析到表格数据')
         return
       }
+      if (!isSelectionAlive(selection as any, this.doc)) {
+        this.doc.logger.warn('spreadsheet paste target selection is stale, abort')
+        return
+      }
 
       const snapshot = this.doc.schemas.createSnapshot('root', [generateId(), [
-        createTableSnapshotFromMatrix(this.doc, matrix, selection.firstBlock.props.depth || 0)
+        createTableSnapshotFromMatrix(this.doc, matrix, depth)
       ]])
       const option: ClipboardPasteOption = {
         type: 'table',
@@ -270,6 +325,7 @@ export class PasteFormatSelectorPlugin extends DocPlugin {
         }
       }
       const applyResult = await this.doc.clipboard.applyPasteOption(option, selection)
+      if (!this._isCurrentPasteEvent(seq)) return
       if (!applyResult) {
         this.doc.messageService.warn('当前位置无法插入表格')
         return

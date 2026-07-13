@@ -7,6 +7,7 @@ import {
   UIEventStateContext
 } from "../framework";
 import {BlockCraftError, ErrorCode, getLinesByRange, getScrollContainer} from "../global";
+import {isSelectionAlive} from "../framework/modules/selection/liveness";
 
 export class CodeInlineEditorBinding extends DocPlugin {
   // private _compositionAnchor: OneShotCursorAnchor | null = null
@@ -62,7 +63,7 @@ export class CodeInlineEditorBinding extends DocPlugin {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const sel = state.selection
-    if (!sel.isInSameBlock || sel.start.type !== 'text') return false
+    if (!isSelectionAlive(sel as any, this.doc) || !sel.isInSameBlock || sel.start.type !== 'text') return false
     const block = sel.firstBlock as any
     const offset = sel.start.offset
     const len = sel.end.type === 'text' ? sel.end.offset - offset : 0
@@ -101,7 +102,7 @@ export class CodeInlineEditorBinding extends DocPlugin {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const sel = state.selection
-    if (!sel.isInSameBlock || sel.start.type !== 'text') return false
+    if (!isSelectionAlive(sel as any, this.doc) || !sel.isInSameBlock || sel.start.type !== 'text') return false
     context.preventDefault()
     const block = sel.firstBlock as any
     const offset = sel.start.offset

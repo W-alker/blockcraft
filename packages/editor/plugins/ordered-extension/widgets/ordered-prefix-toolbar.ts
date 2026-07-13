@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, Output } from "@angular/core";
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, OnDestroy, Output } from "@angular/core";
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent } from "../../../components";
 import { nextTick } from "../../../global";
 
@@ -38,9 +38,12 @@ const ORDER_MODE_LIST = [
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class OrderedPrefixToolbar {
+export class OrderedPrefixToolbar implements OnDestroy {
   @Input()
   orderedBlock!: BlockCraft.IBlockComponents['ordered']
+
+  @Input()
+  isBlockAlive: (block: BlockCraft.BlockComponent) => boolean = () => true
 
   @Output()
   onPropsChanged$ = new EventEmitter<BlockCraft.IBlockComponents['ordered']['props']>()
@@ -48,6 +51,7 @@ export class OrderedPrefixToolbar {
   protected ORDER_MODE_LIST = ORDER_MODE_LIST
 
   protected activeMode = 'continue'
+  private _destroyed = false
 
   constructor(
     private cdr: ChangeDetectorRef
@@ -55,17 +59,23 @@ export class OrderedPrefixToolbar {
   }
 
   ngOnInit() {
+    this._destroyed = false
     this.checkMode()
   }
 
+  ngOnDestroy() {
+    this._destroyed = true
+  }
+
   checkMode() {
+    if (!this.orderedBlock || !this.isBlockAlive(this.orderedBlock)) return
     this.activeMode = this.orderedBlock.props.start ? 'reset' : 'continue'
     this.cdr.markForCheck()
   }
 
   onItemClicked($event: BcFloatToolbarItemComponent) {
     if (this.activeMode === $event.name) return
-    console.log($event.name)
+    if (!this.orderedBlock || !this.isBlockAlive(this.orderedBlock)) return
     switch ($event.name) {
       case 'recalculate':
         break
@@ -82,6 +92,8 @@ export class OrderedPrefixToolbar {
         break
     }
     nextTick().then(() => {
+      if (this._destroyed) return
+      if (!this.orderedBlock || !this.isBlockAlive(this.orderedBlock)) return
       this.checkMode()
       this.onPropsChanged$.emit(this.orderedBlock.props)
     })

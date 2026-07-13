@@ -5,6 +5,8 @@ import {OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
 import {TextMarkerComponent} from "./widgets/marker.component";
 import {calcFloatToolbarPosition} from "./toolbar-position";
+import {isFloatTextToolbarSelection} from "./selection";
+import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 
 export class TextMarkerPlugin extends DocPlugin {
   override name = "text-marker-toolbar";
@@ -35,22 +37,24 @@ export class TextMarkerPlugin extends DocPlugin {
     this.utils = new TextToolbarUtils(this.doc)
 
     this.markTextBlockFlavours.forEach(flavour => {
-      this.doc.event.add('selectEnd', this.onSelectEnd, {flavour})
+      this._sub.add(this.doc.event.add('selectEnd', this.onSelectEnd, {flavour}))
     })
     this.colorOnlyFlavours.forEach(flavour => {
       // 同一 flavour 若也在 markTextBlockFlavours 里则跳过，避免重复注册 selectEnd 导致开两个 overlay。
       if (this.markTextBlockFlavours.includes(flavour)) return
-      this.doc.event.add('selectEnd', this.onSelectEnd, {flavour})
+      this._sub.add(this.doc.event.add('selectEnd', this.onSelectEnd, {flavour}))
     })
 
-    this.doc.subscribeReadonlyChange(() => {
-      this.toolbarOvr && this.closeToolbar()
-    })
+    this._sub.add(
+      this.doc.subscribeReadonlyChange(() => {
+        this.toolbarOvr && this.closeToolbar()
+      })
+    )
   }
 
   onSelectEnd = () => {
     const sel = this.doc.selection.value!
-    if (this.doc.isReadonly || !sel || sel.collapsed || sel.isAllSelected || sel.isEmpty  || !sel.isInSameBlock
+    if (this.doc.isReadonly || !isFloatTextToolbarSelection(sel) || !sel.isInSameBlock || !isSelectionAlive(sel as any, this.doc)
       // || this.doc.event.status.isSelecting
     ) {
       if (this.toolbarOvr) this.closeToolbar()
@@ -61,9 +65,12 @@ export class TextMarkerPlugin extends DocPlugin {
   }
 
   openToolbar() {
-    const sel = this.doc.selection.value!
+    const sel = this.doc.selection.value
+    if (!isFloatTextToolbarSelection(sel) || !sel.isInSameBlock || !isSelectionAlive(sel as any, this.doc)) return
 
-    const {connectElement, connectPositions} = calcFloatToolbarPosition(this.doc, sel)
+    const position = calcFloatToolbarPosition(this.doc, sel)
+    if (!position) return
+    const {connectElement, connectPositions} = position
 
     const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<TextMarkerComponent>({
       target: connectElement,
@@ -74,7 +81,7 @@ export class TextMarkerPlugin extends DocPlugin {
     this._cpr = componentRef
     this.toolbarOvr = overlayRef
 
-    this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(this.doc.selection.value!)
+    this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(sel)
     this._cpr.setInput('doc', this.doc)
     this._cpr.setInput('utils', this.utils)
     this._cpr.setInput('activeAttrs', this.activeCommonAttrs.attrs)

@@ -1,4 +1,5 @@
 import {BaseBlockComponent, BlockNodeType, EditableBlockComponent} from "../../block-std";
+import {getSelectionCoveredBlockIds} from "./covered-blocks";
 
 export class SelectionSelectedManager {
 
@@ -60,30 +61,8 @@ export class SelectionSelectedManager {
     this._clearAllClass()
     if (!selection) return;
 
-    const {isAllSelected, isInSameBlock} = selection
-
-    isAllSelected ? this.doc.root.hostElement.classList.add('all-selected') : this.doc.root.hostElement.classList.remove('all-selected')
-
-    // Gap cursor: collapsed selection on a gap point. The native range sits in
-    // the `<br>` filler span (`createBlockGapSpace`) and the BROWSER paints the
-    // real native caret on that line — no extra fake-bar rendering needed here.
-    if (selection.collapsed && selection.start.type === 'gap') {
-      return
-    }
-
-    if (isInSameBlock) {
-      this._setClass(selection.firstBlock)
-      return;
-    }
-
-    // Cross-block: mark start, end, and all between
-    this._setClass(selection.firstBlock)
-    this._setClass(selection.lastBlock)
-    const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, false)
-    if (!between?.length) return
-    between.forEach(v => {
-      const b = this.doc.getBlockById(v)
-      this._setClass(<any>b)
+    getSelectionCoveredBlockIds(selection, this.doc).forEach(id => {
+      this._setClass(this.doc.getBlockById(id) as any)
     })
   }
 }

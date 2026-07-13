@@ -16,6 +16,7 @@ import {
   EditableBlockComponent,
 } from "../../../framework";
 import { debounce } from "../../../global";
+import {isSelectionAlive} from "../../../framework/modules/selection/liveness";
 
 interface IContextMenuOption {
   flavour: string;
@@ -387,6 +388,7 @@ export class BlockTransformContextMenu {
 
   private _restoreCaret() {
     const sel = this.doc.selection.value;
+    if (!isSelectionAlive(sel as any, this.doc)) return;
     if (!sel || sel.start.type !== "text") return;
     if (sel.firstBlock?.id !== this.activeBlock?.id) return;
     const target = sel.start.offset;
@@ -470,7 +472,9 @@ export class BlockTransformContextMenu {
       void this.doc
         .chain()
         .replaceWithSnapshots(this.activeBlock.id, [snapshot])
+        .nextTick()
         .setCursorAtBlock(snapshot.id, true)
+        .recalculateSelection()
         .run();
       return;
     }
@@ -490,7 +494,9 @@ export class BlockTransformContextMenu {
       void this.doc
         .chain()
         .replaceWithSnapshots(this.activeBlock.id, [newBlock])
+        .nextTick()
         .setCursorAtBlock(newBlock.id, true)
+        .recalculateSelection()
         .run();
     });
   }

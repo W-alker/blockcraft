@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-05-09
+> Last updated: 2026-07-08
 
 ## Inline Extensions
 
@@ -148,7 +148,9 @@ new CodeInlineEditorBinding()
 
 > `plugins/tableBlockBinding.ts` — Keyboard and clipboard bindings for table blocks.
 
-Handles copy/cut of selected cell ranges, table-shaped paste into existing cells, Shift+Arrow to select whole table, Delete/Backspace to clear cells, and Cmd+A to select entire table.
+Handles copy/cut of selected cell ranges, table-shaped paste into existing cells, Arrow/Shift+Arrow movement for model-owned cell rectangles, Delete/Backspace to clear cells, and Cmd+A to select entire table.
+
+Table rectangular selection is model-owned when possible: drag-selected cells are written as `table-cell` anchor/head points via `SelectionManager.setTableCellSelection(table, anchorCell, headCell)`. `TableBlockComponent` turns that model selection into adjusted table coordinates and paints cells with its private `.bc-table-cell-selected` class. Row ranges, column ranges, and older transient paths still live as explicit table coordinates, so `TableBlockBinding` reads the table-cell model first and then falls back to `table.getExplicitSelectedCoordinates()` for destructive keyboard actions. Arrow keys over a model table-cell selection update the model directly: plain Arrow moves/collapses to the adjacent visible cell, while Shift+Arrow keeps the anchor and extends the head. Delete/Backspace therefore clears every selected cell instead of only the anchor cell, while ordinary text deletion inside a cell is still left to `InputTransformer`.
 
 #### Configuration
 
@@ -165,12 +167,20 @@ new TableBlockBinding()
 | `copy` | `table` | Copy selected cells as table snapshot |
 | `cut` | `table` | Copy + clear selected cells |
 | `paste` | `table` | When clipboard content is a BlockCraft/HTML/Markdown/TSV table, fill existing table cells one-to-one from the focused cell or selected top-left cell; oversized source rows/columns are clipped to the current table, then the range selection UI is cleared |
-| `Shift+Arrow` | `table-cell` | Select the whole table block |
-| `Delete` / `Backspace` | `table` | Clear content of selected cells |
-| `Cmd/Ctrl+A` | `table-cell` | Select entire table (when cell is all-selected) |
+| `Arrow` | `table-cell` | Move/collapse a model table-cell selection to the adjacent visible cell; boundary arrows are consumed and keep the selection unchanged |
+| `Shift+Arrow` | `table-cell` | Extend the model table-cell selection by moving the head cell and keeping the anchor cell fixed |
+| `Delete` / `Backspace` | `table` | Clear content of the explicit selected cell rectangle; if there is no rectangle, only a whole-cell block selection falls back to clearing the single selected cell. Plain text deletion inside a cell is left to `InputTransformer` |
+| `Cmd/Ctrl+A` | `table-cell` | Select entire table after the current cell content is already fully selected |
 
 #### Public API
 
 | Method | Description |
 |--------|-------------|
 | `clearCellContent(cells)` | Clear content of given table cells |
+
+#### Related Table Component API
+
+| Method | Description |
+|--------|-------------|
+| `table.getExplicitSelectedCoordinates()` | Return the active cell/row/column rectangle only. Unlike `getSelectedCoordinates()`, it never falls back to the current selection's first cell |
+| `doc.selection.setTableCellSelection(table, anchorCell, headCell?)` | Store a model-owned rectangular table-cell selection. The browser native Range is cleared and the table component paints the selected rectangle |

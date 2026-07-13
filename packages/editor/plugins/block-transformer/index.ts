@@ -23,6 +23,7 @@ import {
   headingTransforms,
   IBlockTransformConfig,
 } from "./const";
+import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 
 const ALLOWED_HEADING_FLAVOURS: BlockCraft.BlockFlavour[] = [
   "paragraph",
@@ -35,6 +36,7 @@ export class BlockTransformerPlugin extends DocPlugin {
 
   private mdTransformList: { regex: RegExp; flavour: string }[] = [];
   private pendingInputTriggerSeq = 0;
+  private destroyed = false;
 
   constructor(
     readonly transformList: IBlockTransformConfig[] = blockTransforms,
@@ -54,11 +56,14 @@ export class BlockTransformerPlugin extends DocPlugin {
     void doc
       .chain()
       .replaceWithSnapshots(from.id, [newBlock])
+      .nextTick()
       .selectOrSetCursorAtBlock(newBlock.id, true)
+      .recalculateSelection()
       .run();
   };
 
   init() {
+    this.destroyed = false;
     this.transformList.forEach((item) => {
       const schema = this.doc.schemas.get(item.flavour, false);
       if (!schema) return;
@@ -70,15 +75,21 @@ export class BlockTransformerPlugin extends DocPlugin {
           const state = evt.get("keyboardState");
           const selection = state.selection;
           if (
+            !isSelectionAlive(selection as any, this.doc) ||
             !selection.isInSameBlock ||
-            selection.start.type !== "text" ||
-            selection.firstBlock.flavour === item.flavour
+            selection.start.type !== "text"
+          )
+            return;
+          const block = selection.firstBlock as EditableBlockComponent<any>;
+          if (
+            block.flavour === item.flavour ||
+            !this.isBlockAlive(block)
           )
             return;
           evt.preventDefault();
           BlockTransformerPlugin.transformEditableBlock(
             this.doc,
-            selection.firstBlock as any,
+            block,
             item.flavour as any,
           );
           return true;
@@ -105,9 +116,15 @@ export class BlockTransformerPlugin extends DocPlugin {
     const state = evt.get("keyboardState");
     const selection = state.selection;
     if (
+      !isSelectionAlive(selection as any, this.doc) ||
       !selection.isInSameBlock ||
-      selection.start.type !== "text" ||
-      !ALLOWED_HEADING_FLAVOURS.includes(selection.firstBlock.flavour)
+      selection.start.type !== "text"
+    )
+      return;
+    const block = selection.firstBlock as EditableBlockComponent<any>;
+    if (
+      !ALLOWED_HEADING_FLAVOURS.includes(block.flavour) ||
+      !this.isBlockAlive(block)
     )
       return;
     // shortKey + 0~4 collide with native browser shortcuts (Cmd/Ctrl+0 resets
@@ -116,7 +133,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     // once we've confirmed we're actually handling the heading change, to avoid
     // hijacking these keys when the cursor isn't in a heading-capable block.
     evt.preventDefault();
-    (selection.firstBlock as any).updateProps({
+    block.updateProps({
       heading: state.raw.key === "0" ? null : parseInt(state.raw.key, 10),
     });
     return true;
@@ -140,9 +157,11 @@ export class BlockTransformerPlugin extends DocPlugin {
   private _mdTransform = () => {
     const selection = this.getCurrentSelection();
     if (!selection) return false;
+    if (!isSelectionAlive(selection as any, this.doc)) return false;
     if (!selection.collapsed || selection.start.type !== "text") return false;
     const block = selection.firstBlock as any;
     if (!block || block.flavour !== "paragraph") return;
+    if (!this.isBlockAlive(block)) return false;
     const blockText = block.textContent();
     const prefixes = [
       blockText.slice(
@@ -208,7 +227,9 @@ export class BlockTransformerPlugin extends DocPlugin {
     void this.doc
       .chain()
       .replaceWithSnapshots(block.id, appendBlocks)
+      .nextTick()
       .setCursorAtBlock(appendBlocks[appendBlocks.length - 1].id, true)
+      .recalculateSelection()
       .run();
     return true;
   };
@@ -216,6 +237,7 @@ export class BlockTransformerPlugin extends DocPlugin {
   private closeMenu$ = new Subject();
 
   openContextMenu(block: EditableBlockComponent) {
+    if (this.destroyed || !this.isBlockAlive(block)) return;
     // 关掉可能还存在的旧菜单。textObserver 关菜单是 debounce 300ms 的，
     // 用户在 300ms 内"删除字符 → 重新输入 / 触发"会让旧菜单还活着、
     // 新菜单又叠上来。旧 menu 的 document keydown listener 先注册先派发，
@@ -247,6 +269,7 @@ export class BlockTransformerPlugin extends DocPlugin {
         filter(
           (v) =>
             !v ||
+            !isSelectionAlive(v as any, this.doc) ||
             !v.isInSameBlock ||
             !v.collapsed ||
             v.firstBlock.id !== block.id,
@@ -261,6 +284,9 @@ export class BlockTransformerPlugin extends DocPlugin {
   }
 
   destroy() {
+    this.destroyed = true;
+    this.pendingInputTriggerSeq++;
+    this.closeMenu$.next(true);
     this.sub.unsubscribe();
   }
 
@@ -268,6 +294,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     if (inputText !== " " && inputText !== "\/" && inputText !== "、") return;
     const seq = ++this.pendingInputTriggerSeq;
     nextTick().then(() => {
+      if (this.destroyed) return;
       if (this.pendingInputTriggerSeq !== seq) return;
       if (inputText === " ") {
         this._mdTransform();
@@ -281,12 +308,14 @@ export class BlockTransformerPlugin extends DocPlugin {
     const selection = this.getCurrentSelection();
     if (
       !selection ||
+      !isSelectionAlive(selection as any, this.doc) ||
       !selection.collapsed ||
       selection.start.type !== "text" ||
       selection.firstBlock.flavour !== "paragraph"
     )
       return;
     const block = selection.firstBlock as any;
+    if (!this.isBlockAlive(block)) return;
     const schema = this.doc.schemas.get(block.flavour)!;
     if (schema.metadata.isLeaf) return;
     if (block.textContent() === inputText) {
@@ -314,7 +343,10 @@ export class BlockTransformerPlugin extends DocPlugin {
       // compositionEnd 后选区会被刷新，重新确认仍在该 block 内
       const sel = this.getCurrentSelection();
       if (
+        !this.destroyed &&
+        this.isBlockAlive(block) &&
         sel &&
+        isSelectionAlive(sel as any, this.doc) &&
         sel.collapsed &&
         sel.start.type === "text" &&
         sel.firstBlock.id === block.id
@@ -327,9 +359,22 @@ export class BlockTransformerPlugin extends DocPlugin {
   }
 
   private getCurrentSelection() {
-    return (
-      this.doc.selection.recalculate(false).value || this.doc.selection.value
-    );
+    try {
+      return (
+        this.doc.selection.recalculate(false).value || this.doc.selection.value
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  private isBlockAlive(block: EditableBlockComponent | null | undefined) {
+    if (!block) return false;
+    try {
+      return this.doc.getBlockById(block.id) === block;
+    } catch {
+      return false;
+    }
   }
 }
 

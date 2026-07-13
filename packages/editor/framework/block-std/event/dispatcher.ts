@@ -73,6 +73,9 @@ export class UIEventDispatcher {
 
   constructor(readonly doc: BlockCraft.Doc) {
     this.doc.afterInit(this._bindEvents)
+    this.doc.onDestroy$?.pipe(take(1)).subscribe(() => {
+      this.selectionControl.dispose()
+    })
   }
 
   get rootElement() {
@@ -192,8 +195,23 @@ export class UIEventDispatcher {
     if (!handlers) return;
 
     const selection = this.currentSelection!
-    if (!selection) return;
-    this._runEvents(name, [selection.commonParent], context)
+    if (!selection) {
+      this._runEvents(name, [], context)
+      return
+    }
+    this._runEvents(name, this._getSelectionScopeBlocks(selection), context)
+  }
+
+  private _getSelectionScopeBlocks(selection: BlockCraft.Selection): string[] {
+    const tableCellSelection = typeof selection.getTableCellSelection === 'function'
+      ? selection.getTableCellSelection()
+      : null
+    if (!tableCellSelection) return [selection.commonParent]
+
+    return Array.from(new Set([
+      tableCellSelection.anchorCellId,
+      tableCellSelection.headCellId,
+    ]))
   }
 
   private _runEventsByTarget(name: EditorEventName, context: UIEventStateContext) {
@@ -220,6 +238,14 @@ export class UIEventDispatcher {
     return false
   }
 
+  private _getExistingBlockById(blockId: string): BlockCraft.BlockComponent | null {
+    try {
+      return this.doc.getBlockById(blockId)
+    } catch {
+      return null
+    }
+  }
+
   // @performanceTest('event dispatcher')
   private _runEvents(name: EditorEventName, blocks: string[], context: UIEventStateContext) {
     const handlers = this._handlersMap[name];
@@ -227,9 +253,18 @@ export class UIEventDispatcher {
 
     let blockIds = blocks;
     while (blockIds.length > 0) {
-      const _blocks = blockIds.map(blockId => this.doc.getBlockById(blockId))
+      const scopedBlocks = blockIds
+        .map(blockId => ({
+          id: blockId,
+          block: this._getExistingBlockById(blockId),
+        }))
+        .filter(item => item.block) as Array<{ id: string; block: BlockCraft.BlockComponent }>
+      if (!scopedBlocks.length) break
+
+      const _blocks = scopedBlocks.map(item => item.block)
+      const scopedBlockIds = scopedBlocks.map(item => item.id)
       // 优先id匹配
-      const idHandlers = handlers.filter(h => h.blockId && blockIds.includes(h.blockId));
+      const idHandlers = handlers.filter(h => h.blockId && scopedBlockIds.includes(h.blockId));
       const flavourHandlers = handlers.filter(h => h.flavour && _blocks.some(block => block.flavour === h.flavour));
 
       const res = this._runEventScope(idHandlers.concat(flavourHandlers), context)

@@ -46,7 +46,8 @@ export class OrderedBlockPlugin extends DocPlugin {
 
     const blockId = closetBlockId(evt.target)
     if (!blockId) return
-    const orderedBlock = this.doc.getBlockById(blockId) as BlockCraft.IBlockComponents['ordered']
+    const orderedBlock = this.getLiveOrderedBlock(blockId)
+    if (!orderedBlock) return
     const {componentRef} = this.doc.overlayService.createConnectedOverlay<OrderedPrefixToolbar>({
       target: evt.target,
       component: OrderedPrefixToolbar,
@@ -58,7 +59,9 @@ export class OrderedBlockPlugin extends DocPlugin {
     })
 
     componentRef.setInput('orderedBlock', orderedBlock)
+    componentRef.setInput('isBlockAlive', (block: BlockCraft.BlockComponent) => this.isBlockAlive(block))
     componentRef.instance.onPropsChanged$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
+      if (!this.isBlockAlive(orderedBlock)) return
       this._scheduleParentOf(orderedBlock as unknown as OrderableBlock)
       this._closeToolbar$.next(true)
     })
@@ -116,6 +119,25 @@ export class OrderedBlockPlugin extends DocPlugin {
     if (block.flavour !== 'ordered') return
     this._pendingStartBlocks.add(block)
     this._ensureFlushScheduled()
+  }
+
+  private getLiveOrderedBlock(blockId: string): BlockCraft.IBlockComponents['ordered'] | null {
+    try {
+      const block = this.doc.getBlockById(blockId)
+      if (block.flavour !== 'ordered') return null
+      return this.isBlockAlive(block) ? block as BlockCraft.IBlockComponents['ordered'] : null
+    } catch {
+      return null
+    }
+  }
+
+  private isBlockAlive(block: BlockCraft.BlockComponent | null | undefined): block is BlockCraft.BlockComponent {
+    if (!block) return false
+    try {
+      return this.doc.getBlockById(block.id) === block
+    } catch {
+      return false
+    }
   }
 
   private _ensureFlushScheduled() {

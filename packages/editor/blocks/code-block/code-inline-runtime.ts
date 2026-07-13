@@ -206,7 +206,7 @@ export class CodeInlineRuntime extends InlineRuntime {
     let isHere = false
 
     if (opts) {
-      isHere = opts.selectionValue?.start.blockId === opts.block.id
+      isHere = opts.selectionValue?.start.type === 'text' && opts.selectionValue.start.blockId === opts.block.id
       if (isHere) {
         const sel = document.getSelection()
         if (sel?.rangeCount) {

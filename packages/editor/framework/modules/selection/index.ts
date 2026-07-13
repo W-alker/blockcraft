@@ -17,7 +17,16 @@ import {
   ISelectionPoint,
   ISelectionPointJSON,
 } from "./types";
-import {normalizeRange as _normalizeRange, INormalizedEndpoints, endpointsToLegacy, lazyPoint as _lazyPoint, lazyGapPoint} from "./normalize";
+import {
+  normalizeRange as _normalizeRange,
+  INormalizedEndpoints,
+  endpointsToLegacy,
+  lazyPoint as _lazyPoint,
+  lazyGapPoint,
+  lazyBoundaryPoint,
+  lazyTableCellPoint,
+} from "./normalize";
+import {isSelectionAlive} from "./liveness";
 
 @DocEventRegister
 export class SelectionManager {
@@ -27,13 +36,18 @@ export class SelectionManager {
   private selectedManager = new SelectionSelectedManager(this.doc)
   private _keyboard = new SelectionKeyboard(this.doc)
   private _suppressRecalculate = false
+  private _suppressProgrammaticSelectionChangeUntil = 0
 
   constructor(public readonly doc: BlockCraft.Doc) {
     this.doc.afterInit(this._bindEvents)
   }
 
   get value() {
-    return this.selectionChange$.value
+    const selection = this.selectionChange$.value
+    if (!selection) return null
+    if (isSelectionAlive(selection, this.doc)) return selection
+    this._applyState(null)
+    return null
   }
 
   blur() {
@@ -55,7 +69,7 @@ export class SelectionManager {
 
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
     this.doc.event.customListen(document, 'selectionchange').subscribe(e => {
-      if (this._suppressRecalculate) return
+      if (this._shouldSuppressNativeSelectionChange()) return
       if (this.doc.event.status.isComposing) return
       this.recalculate()
     })
@@ -101,7 +115,28 @@ export class SelectionManager {
     this._suppressRecalculate = v
   }
 
+  private _shouldSuppressNativeSelectionChange(): boolean {
+    if (this._suppressRecalculate) return true
+    return this._suppressProgrammaticSelectionChangeUntil > performance.now()
+  }
+
+  private _suppressProgrammaticSelectionChange() {
+    this._suppressProgrammaticSelectionChangeUntil = Math.max(
+      this._suppressProgrammaticSelectionChangeUntil,
+      performance.now() + 80,
+    )
+  }
+
   // ── Read from DOM (user interaction path) ──
+
+  private _shouldKeepModelOnlySelection(): boolean {
+    const current = this.value
+    if (!current?.getTableCellSelection()) return false
+    const activeElement = document.activeElement
+    return !!activeElement &&
+      (activeElement === this.doc.root.hostElement ||
+        this.doc.root.hostElement.contains(activeElement))
+  }
 
   recalculate(execNext = true, options?: { isComposing?: boolean }, _depth = 0): {
     value: BlockSelection | null
@@ -116,6 +151,9 @@ export class SelectionManager {
 
     const selection = document.getSelection()
     if (!selection || !selection.rangeCount) {
+      if (this._shouldKeepModelOnlySelection()) {
+        return {value: this.value}
+      }
       const next = () => this._applyState(null)
       execNext && next()
       return {value: null, next: execNext ? undefined : next}
@@ -152,8 +190,8 @@ export class SelectionManager {
 
       // Cross-parent constraint (kept for now)
       if (anchor.blockId !== head.blockId) {
-        const anchorParent = anchor.block.parentId
-        const headParent = head.block.parentId
+        const anchorParent = anchor.type === 'boundary' ? anchor.blockId : anchor.block.parentId
+        const headParent = head.type === 'boundary' ? head.blockId : head.block.parentId
         if (anchorParent !== headParent) {
           range.collapse()
           return {value: null, next: () => {}}
@@ -194,8 +232,9 @@ export class SelectionManager {
   // ── Model state management ──
 
   private _applyState(sel: BlockSelection | null) {
-    this.selectionChange$.next(sel)
-    this.selectedManager.setSelected(sel)
+    const nextSelection = isSelectionAlive(sel, this.doc) ? sel : null
+    this.selectionChange$.next(nextSelection)
+    this.selectedManager.setSelected(nextSelection)
   }
 
   private _createBlockSelection(anchor: ISelectionPoint, head: ISelectionPoint, commonParent: string): BlockSelection {
@@ -204,6 +243,112 @@ export class SelectionManager {
       id => this.doc.getBlockById(id) as any,
       (a, b) => this.doc.compareBlockPosition(a, b),
     )
+  }
+
+  private _getGapCaretDomPoint(
+    hostElement: HTMLElement,
+    side: 'before' | 'after',
+  ): {node: Node; offset: number} | null {
+    const span = getBlockGapCaretSpan(hostElement, side)
+    if (!span) return null
+    const text = span.firstChild
+    if (text?.nodeType === Node.TEXT_NODE) return {node: text, offset: 0}
+    return {node: span, offset: 0}
+  }
+
+  private _setModelOnlySelection(selectionState: BlockSelection, scrollIntoView?: boolean) {
+    this._applyState(selectionState)
+    this._suppressProgrammaticSelectionChange()
+    this.doc.root.hostElement.focus?.({preventScroll: true})
+    document.getSelection()?.removeAllRanges()
+    if (scrollIntoView) {
+      this.scrollSelectionIntoView()
+    }
+  }
+
+  private _applyDomRange(range: Range) {
+    const selection = document.getSelection()!
+    this._suppressProgrammaticSelectionChange()
+    selection.removeAllRanges()
+    selection.addRange(range)
+  }
+
+  private _applyDomRangeForSelection(selectionState: BlockSelection, scrollIntoView?: boolean): boolean {
+    if (this._shouldDeferGapDomRange(selectionState)) {
+      this._suppressProgrammaticSelectionChange()
+      document.getSelection()?.removeAllRanges()
+      this._retryGapDomRangeWhenReady(selectionState.toJSON(), scrollIntoView)
+      return false
+    }
+
+    const range = this._buildDomRange(
+      pointToLegacy(selectionState.start),
+      pointToLegacy(selectionState.end),
+    )
+    this._applyDomRange(range)
+    if (scrollIntoView) {
+      this.scrollSelectionIntoView()
+    }
+    return true
+  }
+
+  private _shouldDeferGapDomRange(selection: BlockSelection): boolean {
+    const gap = this._collapsedGapPoint(selection)
+    if (!gap) return false
+    try {
+      return !this._getGapCaretDomPoint(gap.block.hostElement, gap.side)
+    } catch {
+      return false
+    }
+  }
+
+  private _collapsedGapPoint(selection: BlockSelection): Extract<ISelectionPoint, {type: 'gap'}> | null {
+    if (!selection.collapsed) return null
+    if (selection.start.type !== 'gap' || selection.end.type !== 'gap') return null
+    if (selection.start.blockId !== selection.end.blockId || selection.start.side !== selection.end.side) return null
+    return selection.start
+  }
+
+  private _retryGapDomRangeWhenReady(expected: ISelectionJSON, scrollIntoView?: boolean, attempts = 3): void {
+    requestAnimationFrame(() => {
+      const current = this.value
+      if (!current || !sameSelectionJSON(current.toJSON(), expected)) return
+      if (this._shouldDeferGapDomRange(current)) {
+        if (attempts > 0) {
+          this._retryGapDomRangeWhenReady(expected, scrollIntoView, attempts - 1)
+        }
+        return
+      }
+      try {
+        this._applyDomRangeForSelection(current, scrollIntoView)
+      } catch {
+        this.blur()
+      }
+    })
+  }
+
+  private _wholeBlockPoint(blockId: string): ISelectionPoint {
+    return this._pointFromJSON(wholeBlockSelectionPointJSON(blockId))
+  }
+
+  private _setWholeBlockRangeEndpoint(
+    range: Range,
+    side: 'start' | 'end',
+    target: BlockCraft.BlockComponent,
+  ) {
+    const anchor = getBlockGapAnchor(
+      target.hostElement,
+      side === 'start' ? 'leading' : 'trailing',
+    )
+    if (anchor) {
+      side === 'start'
+        ? range.setStart(anchor.node, anchor.offset)
+        : range.setEnd(anchor.node, anchor.offset)
+      return
+    }
+    side === 'start'
+      ? range.setStart(target.hostElement, 0)
+      : range.setEnd(target.hostElement, target.hostElement.childElementCount)
   }
 
   // ── DOM Range construction ──
@@ -216,14 +361,30 @@ export class SelectionManager {
     const range = document.createRange()
     const fromBlock = this.doc.getBlockById(startPoint.blockId)
 
+    if (startPoint.type === 'table-cell') {
+      range.setStart(fromBlock.hostElement, 0)
+      if (!endPoint || (endPoint.blockId === startPoint.blockId && endPoint.type === 'table-cell')) {
+        range.setEnd(fromBlock.hostElement, fromBlock.hostElement.childElementCount)
+        return range
+      }
+    }
+
+    if (startPoint.type === 'boundary') {
+      const point = this._getBoundaryDomPoint(startPoint, 'start')
+      range.setStart(point.node, point.offset)
+      if (!endPoint || (endPoint.blockId === startPoint.blockId && endPoint.type === 'boundary' && endPoint.index === startPoint.index)) {
+        range.collapse(true)
+        return range
+      }
+    }
+
     // Handle gap start
     if (startPoint.type === 'gap') {
-      // Collapsed gap caret: place it at offset 0 of the filler span (before the
-      // `<br>`) for BOTH sides, so the browser paints the native caret on the
-      // filler line — above the card for 'before', below for 'after'.
-      const span = getBlockGapCaretSpan(fromBlock.hostElement, startPoint.side === 'before' ? 'before' : 'after')
-      if (span) {
-        range.setStart(span, 0)
+      // Collapsed gap caret: place it inside the filler text node so Safari can
+      // paint a real native caret. The span itself still owns the visual line box.
+      const point = this._getGapCaretDomPoint(fromBlock.hostElement, startPoint.side === 'before' ? 'before' : 'after')
+      if (point) {
+        range.setStart(point.node, point.offset)
       } else {
         range.setStart(fromBlock.hostElement, startPoint.side === 'before' ? 0 : fromBlock.hostElement.childElementCount)
       }
@@ -260,16 +421,11 @@ export class SelectionManager {
       }
     }
 
-    if (startPoint.type === 'selected') {
+    if (isWholeBlockSelectionPoint(startPoint)) {
       // Anchor on the leading gap span's text node so the native Range starts
       // inside an editable text node — this lets Safari fire `beforeinput` for
       // backspace/delete on void/block selections.
-      const leading = getBlockGapAnchor(fromBlock.hostElement, 'leading')
-      if (leading) {
-        range.setStart(leading.node, leading.offset)
-      } else {
-        range.setStart(fromBlock.hostElement, 0)
-      }
+      this._setWholeBlockRangeEndpoint(range, 'start', fromBlock)
     }
 
     if (!endPoint) {
@@ -279,11 +435,22 @@ export class SelectionManager {
 
     const toBlock = this.doc.getBlockById(endPoint.blockId)
 
+    if (endPoint.type === 'table-cell') {
+      range.setEnd(toBlock.hostElement, toBlock.hostElement.childElementCount)
+      return range
+    }
+
+    if (endPoint.type === 'boundary') {
+      const point = this._getBoundaryDomPoint(endPoint, 'end')
+      range.setEnd(point.node, point.offset)
+      return range
+    }
+
     // Handle gap end
     if (endPoint.type === 'gap') {
-      const span = getBlockGapCaretSpan(toBlock.hostElement, endPoint.side === 'before' ? 'before' : 'after')
-      if (span) {
-        range.setEnd(span, 0)
+      const point = this._getGapCaretDomPoint(toBlock.hostElement, endPoint.side === 'before' ? 'before' : 'after')
+      if (point) {
+        range.setEnd(point.node, point.offset)
       } else {
         range.setEnd(toBlock.hostElement, endPoint.side === 'before' ? 0 : toBlock.hostElement.childElementCount)
       }
@@ -298,52 +465,77 @@ export class SelectionManager {
       return range
     }
 
-    const trailing = getBlockGapAnchor(toBlock.hostElement, 'trailing')
-    if (trailing) {
-      range.setEnd(trailing.node, trailing.offset)
-    } else {
-      range.setEnd(toBlock.hostElement, toBlock.hostElement.childElementCount)
-    }
+    this._setWholeBlockRangeEndpoint(range, 'end', toBlock)
     return range
+  }
+
+  private _getBoundaryDomPoint(point: { blockId: string; index: number }, side: 'start' | 'end'): {node: Node; offset: number} {
+    const block = this.doc.getBlockById(point.blockId)
+    const container =
+      block.childrenRenderRef?.containerElement ??
+      block.hostElement.querySelector<HTMLElement>('.children-render-container') ??
+      block.hostElement
+    const childIds = block.childrenIds ?? []
+    const index = Math.max(0, Math.min(point.index ?? 0, childIds.length))
+    const gapPoint = this._getBoundaryGapDomPoint(childIds, index, side)
+    if (gapPoint) return gapPoint
+    const childNodes = Array.from(container.childNodes)
+    const childAt = childIds[index] ? this.doc.getBlockById(childIds[index]) : null
+    const nextDomIndex = childAt ? childNodes.indexOf(childAt.hostElement) : -1
+    if (nextDomIndex >= 0) return {node: container, offset: nextDomIndex}
+    const prevChild = index > 0 && childIds[index - 1] ? this.doc.getBlockById(childIds[index - 1]) : null
+    const prevDomIndex = prevChild ? childNodes.indexOf(prevChild.hostElement) : -1
+    if (prevDomIndex >= 0) return {node: container, offset: prevDomIndex + 1}
+    return {node: container, offset: Math.min(index, childNodes.length)}
+  }
+
+  private _getBoundaryGapDomPoint(
+    childIds: string[],
+    index: number,
+    side: 'start' | 'end',
+  ): {node: Node; offset: number} | null {
+    const getChild = (childIndex: number): BlockCraft.BlockComponent | null => {
+      const childId = childIds[childIndex]
+      return childId ? this.doc.getBlockById(childId) : null
+    }
+    const leading = () => {
+      const child = getChild(index)
+      return child ? getBlockGapAnchor(child.hostElement, 'leading') : null
+    }
+    const trailing = () => {
+      const child = getChild(index - 1)
+      return child ? getBlockGapAnchor(child.hostElement, 'trailing') : null
+    }
+
+    return side === 'start'
+      ? leading() ?? trailing()
+      : trailing() ?? leading()
   }
 
   // ── Public API: programmatic selection ──
 
   selectBlock(block: BlockCraft.BlockComponent | string) {
     block = typeof block === 'string' ? this.doc.getBlockById(block) : block
-
-    const selection = document.getSelection()!
     const range = document.createRange()
-
-    const setEndpoint = (
-      side: 'start' | 'end',
-      target: BlockCraft.BlockComponent,
-    ) => {
-      const anchor = getBlockGapAnchor(
-        target.hostElement,
-        side === 'start' ? 'leading' : 'trailing',
-      )
-      if (anchor) {
-        side === 'start'
-          ? range.setStart(anchor.node, anchor.offset)
-          : range.setEnd(anchor.node, anchor.offset)
-        return
-      }
-      side === 'start'
-        ? range.setStart(target.hostElement, 0)
-        : range.setEnd(target.hostElement, target.hostElement.childElementCount)
-    }
+    let anchorBlock: BlockCraft.BlockComponent | null = null
+    let headBlock: BlockCraft.BlockComponent | null = null
 
     if (block.nodeType === 'root') {
-      setEndpoint('start', block.firstChildren!)
-      setEndpoint('end', block.lastChildren!)
+      anchorBlock = block.firstChildren ?? null
+      headBlock = block.lastChildren ?? null
     } else {
-      setEndpoint('start', block)
-      setEndpoint('end', block)
+      anchorBlock = block
+      headBlock = block
     }
+    if (!anchorBlock || !headBlock) return
 
-    selection.removeAllRanges()
-    selection.addRange(range)
+    this._setWholeBlockRangeEndpoint(range, 'start', anchorBlock)
+    this._setWholeBlockRangeEndpoint(range, 'end', headBlock)
+
+    const anchor = this._wholeBlockPoint(anchorBlock.id)
+    const head = this._wholeBlockPoint(headBlock.id)
+    this._applyState(this._createBlockSelection(anchor, head, block.id))
+    this._applyDomRange(range)
   }
 
   /** @deprecated Use setSelection with ISelectionPointJSON */
@@ -395,11 +587,16 @@ export class SelectionManager {
   selectAllChildren(block: string | BlockCraft.BlockComponent) {
     block = typeof block === 'string' ? this.doc.getBlockById(block) : block
     if (this.doc.isEditable(block)) {
-      this.setSelection({
-        blockId: block.id,
-        type: 'text',
-        index: 0,
-        length: block.textLength
+      this.replay({
+        anchor: {blockId: block.id, type: 'text', offset: 0},
+        head: {blockId: block.id, type: 'text', offset: block.textLength},
+        commonParent: block.id,
+      })
+    } else if (block.childrenLength > 0) {
+      this.replay({
+        anchor: {blockId: block.id, type: 'boundary', index: 0},
+        head: {blockId: block.id, type: 'boundary', index: block.childrenLength},
+        commonParent: block.id,
       })
     } else {
       this.selectBlock(block)
@@ -412,28 +609,80 @@ export class SelectionManager {
    */
   public setGapCursor(block: string | BlockCraft.BlockComponent, side: 'before' | 'after', scrollIntoView?: boolean): void {
     const resolvedBlock = typeof block === 'string' ? this.doc.getBlockById(block) : block
-    const gapPoint = {blockId: resolvedBlock.id, type: 'gap' as const, side}
-    const range = this._buildDomRange(gapPoint)
-    const selection = document.getSelection()!
-    selection.removeAllRanges()
-    selection.addRange(range)
-    if (scrollIntoView) {
-      this.scrollSelectionIntoView()
-    }
+    const gapPoint = lazyGapPoint(
+      resolvedBlock.id,
+      side,
+      id => this.doc.getBlockById(id) as any,
+    )
+    const selectionState = this._createBlockSelection(gapPoint, gapPoint, resolvedBlock.id)
+    this._applyState(selectionState)
+    this._applyDomRangeForSelection(selectionState, scrollIntoView)
+  }
+
+  public setTableCellSelection(
+    table: string | BlockCraft.IBlockComponents['table'],
+    anchorCell: string | BlockCraft.IBlockComponents['table-cell'],
+    headCell?: string | BlockCraft.IBlockComponents['table-cell'],
+    scrollIntoView?: boolean,
+  ): void {
+    const resolvedTable = typeof table === 'string'
+      ? this.doc.getBlockById(table) as BlockCraft.IBlockComponents['table']
+      : table
+    const resolvedAnchor = typeof anchorCell === 'string'
+      ? this.doc.getBlockById(anchorCell) as BlockCraft.IBlockComponents['table-cell']
+      : anchorCell
+    const resolvedHead = typeof headCell === 'string'
+      ? this.doc.getBlockById(headCell) as BlockCraft.IBlockComponents['table-cell']
+      : (headCell ?? resolvedAnchor)
+    const getBlock = (id: string) => this.doc.getBlockById(id) as any
+    const anchor = lazyTableCellPoint(resolvedAnchor.id, resolvedTable.id, getBlock)
+    const head = lazyTableCellPoint(resolvedHead.id, resolvedTable.id, getBlock)
+    this._setModelOnlySelection(
+      this._createBlockSelection(anchor, head, resolvedTable.id),
+      scrollIntoView,
+    )
   }
 
   /** @deprecated Use replay with ISelectionJSON */
   replay(json: IBlockSelectionJSON | ISelectionJSON | null) {
-    if (!json) return
+    if (!json) {
+      this.blur()
+      return
+    }
     if ('anchor' in json) {
       // New format
-      const range = this._buildDomRange(json.anchor, json.head)
-      const selection = document.getSelection()!
-      selection.removeAllRanges()
-      selection.addRange(range)
+      const selectionState = this.createSelection(json)
+      if (!selectionState) {
+        this.blur()
+        return
+      }
+      if (selectionState.getTableCellSelection()) {
+        this._setModelOnlySelection(selectionState)
+        return
+      }
+      try {
+        this._applyState(selectionState)
+        this._applyDomRangeForSelection(selectionState)
+      } catch {
+        this.blur()
+      }
     } else {
+      if (json.from.type === 'table-cell') {
+        const head = json.to?.type === 'table-cell' ? json.to : json.from
+        const selection = this.createSelection({
+          anchor: {blockId: json.from.blockId, type: 'table-cell', tableId: json.from.tableId},
+          head: {blockId: head.blockId, type: 'table-cell', tableId: head.tableId},
+          commonParent: json.commonParent,
+        })
+        if (selection) this._setModelOnlySelection(selection)
+        return
+      }
       // Legacy format
-      this.setSelection(json.from, json.to)
+      try {
+        this.setSelection(json.from, json.to)
+      } catch {
+        this.blur()
+      }
     }
   }
 
@@ -447,18 +696,22 @@ export class SelectionManager {
     try {
       this.doc.getBlockById(json.anchor.blockId)
       this.doc.getBlockById(json.head.blockId)
+      if (json.commonParent) this.doc.getBlockById(json.commonParent)
+      if (json.anchor.type === 'table-cell' || json.head.type === 'table-cell') {
+        if (json.anchor.type !== 'table-cell' || json.head.type !== 'table-cell') return null
+        if (!json.anchor.tableId || json.anchor.tableId !== json.head.tableId) return null
+        this.doc.getBlockById(json.anchor.tableId)
+      }
     } catch {
       return null
     }
-    const makePoint = (p: ISelectionPointJSON) =>
-      p.type === 'gap'
-        ? lazyGapPoint(p.blockId, p.side!, id => this.doc.getBlockById(id) as any)
-        : _lazyPoint(p, id => this.doc.getBlockById(id) as any)
-    return this._createBlockSelection(
+    const makePoint = (p: ISelectionPointJSON) => this._pointFromJSON(p)
+    const selection = this._createBlockSelection(
       makePoint(json.anchor),
       makePoint(json.head),
       json.commonParent,
     )
+    return isSelectionAlive(selection, this.doc) ? selection : null
   }
 
   createFakeRange(source: Pick<IBlockSelectionJSON, 'from' | 'to'> | BlockSelection | ISelectionJSON, config: IFakeRangeConfig = {}) {
@@ -467,15 +720,7 @@ export class SelectionManager {
     }
     if ('anchor' in source) {
       // ISelectionJSON → build a BlockSelection
-      const makePoint = (p: ISelectionPointJSON) =>
-        p.type === 'gap'
-          ? lazyGapPoint(p.blockId, p.side!, id => this.doc.getBlockById(id) as any)
-          : _lazyPoint(p, id => this.doc.getBlockById(id) as any)
-      const sel = this._createBlockSelection(
-        makePoint(source.anchor),
-        makePoint(source.head),
-        source.commonParent
-      )
+      const sel = this.createSelection(source)
       return new FakeRange(this.doc, sel, config)
     }
     return new FakeRange(this.doc, source, config)
@@ -486,6 +731,7 @@ export class SelectionManager {
   private _rangeFromModel(): Range | null {
     const sel = this.value
     if (!sel) return null
+    if (sel.getTableCellSelection()) return null
     try {
       return this._buildDomRange(pointToLegacy(sel.start), pointToLegacy(sel.end))
     } catch {
@@ -494,11 +740,8 @@ export class SelectionManager {
   }
 
   getSelectionRect(): DOMRect | null {
-    // Gap caret: the collapsed Range sits at an element boundary (offset 0 of the
-    // filler span, before its `<br>`), and `range.getBoundingClientRect()` returns
-    // an empty 0×0 rect there — which makes `scrollSelectionIntoView` bail. The
-    // filler span itself is the real visual caret position (a positioned line box),
-    // so measure it directly.
+    // Gap caret: the collapsed Range sits inside the filler text node, while the
+    // filler span owns the positioned line box used for scroll/overlay geometry.
     const start = this.value?.start
     if (start && start.type === 'gap') {
       try {
@@ -522,10 +765,41 @@ export class SelectionManager {
   getSelectedText(): string {
     const sel = this.value
     if (!sel) return ''
+    const tableCellSelection = sel.getTableCellSelection()
+    if (tableCellSelection) {
+      try {
+        const table = this.doc.getBlockById(tableCellSelection.tableId) as BlockCraft.IBlockComponents['table']
+        const anchorCell = this.doc.getBlockById(tableCellSelection.anchorCellId) as BlockCraft.IBlockComponents['table-cell']
+        const headCell = this.doc.getBlockById(tableCellSelection.headCellId) as BlockCraft.IBlockComponents['table-cell']
+        const anchor = {
+          rowIdx: table.childrenIds.indexOf(anchorCell.parentId!),
+          colIdx: anchorCell.getIndexOfParent(),
+        }
+        const head = {
+          rowIdx: table.childrenIds.indexOf(headCell.parentId!),
+          colIdx: headCell.getIndexOfParent(),
+        }
+        if (anchor.rowIdx < 0 || anchor.colIdx < 0 || head.rowIdx < 0 || head.colIdx < 0) return ''
+        const coordinates = table.confirmSelection(
+          [Math.min(anchor.rowIdx, head.rowIdx), Math.min(anchor.colIdx, head.colIdx)],
+          [Math.max(anchor.rowIdx, head.rowIdx), Math.max(anchor.colIdx, head.colIdx)],
+        )
+        return table.getCellsMatrixByCoordinates(coordinates.start, coordinates.end)
+          .map(row => row.map(cell => cell.textContent()).join('\t'))
+          .join('\n')
+      } catch {
+        return ''
+      }
+    }
+    const boundaryChildIds = sel.getBoundarySelectedChildIds()
+    if (boundaryChildIds) {
+      return boundaryChildIds.map(id => this.doc.getBlockById(id).textContent()).join('\n')
+    }
     const s = sel.start, e = sel.end
     const startBlock = sel.firstBlock, endBlock = sel.lastBlock
 
     if (sel.isInSameBlock) {
+      if (s.type === 'gap') return ''
       if (s.type !== 'text') return startBlock.textContent()
       const eOff = e.type === 'text' ? e.offset : (startBlock as any).textLength
       return startBlock.textContent().slice(s.offset, eOff)
@@ -560,6 +834,22 @@ export class SelectionManager {
       container.scrollTop -= cRect.top - rect.top + padding
     }
   }
+
+  private _pointFromJSON(p: ISelectionPointJSON): ISelectionPoint {
+    if (p.type === 'gap') {
+      return lazyGapPoint(p.blockId, p.side!, id => this.doc.getBlockById(id) as any)
+    }
+    if (p.type === 'boundary') {
+      return lazyBoundaryPoint(p.blockId, p.index ?? 0, id => this.doc.getBlockById(id) as any)
+    }
+    if (p.type === 'table-cell') {
+      return lazyTableCellPoint(p.blockId, p.tableId!, id => this.doc.getBlockById(id) as any)
+    }
+    if (isWholeBlockSelectionPoint(p)) {
+      return _lazyPoint(wholeBlockSelectionPointJSON(p.blockId), id => this.doc.getBlockById(id) as any)
+    }
+    return _lazyPoint(p, id => this.doc.getBlockById(id) as any)
+  }
 }
 
 /**
@@ -575,15 +865,49 @@ function isSelectionBackward(sel: globalThis.Selection): boolean {
   return !!(cmp & Node.DOCUMENT_POSITION_PRECEDING)
 }
 
+type DomRangePointJSON =
+  | ISelectionPointJSON
+  | IBlockInlineRangeJSON
+  | (Extract<IBlockInlineRangeJSON, { type: 'text' }> & { offset?: number })
+
+function isWholeBlockSelectionPoint(point: Pick<ISelectionPointJSON, 'type'>): boolean {
+  return point.type === 'selected'
+}
+
+function wholeBlockSelectionPointJSON(blockId: string): ISelectionPointJSON {
+  return {blockId, type: 'selected'}
+}
+
+function sameSelectionJSON(a: ISelectionJSON, b: ISelectionJSON): boolean {
+  return a.commonParent === b.commonParent &&
+    samePointJSON(a.anchor, b.anchor) &&
+    samePointJSON(a.head, b.head)
+}
+
+function samePointJSON(a: ISelectionPointJSON, b: ISelectionPointJSON): boolean {
+  return a.blockId === b.blockId &&
+    a.type === b.type &&
+    (a.offset ?? null) === (b.offset ?? null) &&
+    (a.side ?? null) === (b.side ?? null) &&
+    (a.index ?? null) === (b.index ?? null) &&
+    (a.tableId ?? null) === (b.tableId ?? null)
+}
+
 /** Convert new ISelectionPoint to legacy-compatible shape for _buildDomRange */
-function pointToLegacy(p: ISelectionPoint): any {
+function pointToLegacy(p: ISelectionPoint): DomRangePointJSON {
   if (p.type === 'gap') {
     return {blockId: p.blockId, type: 'gap', side: p.side}
+  }
+  if (p.type === 'boundary') {
+    return {blockId: p.blockId, type: 'boundary', index: p.index}
+  }
+  if (p.type === 'table-cell') {
+    return {blockId: p.blockId, type: 'table-cell', tableId: p.tableId}
   }
   if (p.type === 'text') {
     return {blockId: p.blockId, type: 'text', offset: p.offset, index: p.offset, length: 0}
   }
-  return {blockId: p.blockId, type: 'selected'}
+  return wholeBlockSelectionPointJSON(p.blockId)
 }
 
 export const searchEditableDescendant = (block: BlockCraft.BlockComponent, isStart: boolean): EditableBlockComponent | null => {

@@ -159,6 +159,15 @@ export class ClipboardManager {
   }
 
   private _buildCopyPayload(selection: BlockCraft.Selection): {snapshot: IBlockSnapshot, plainText: string} {
+    const boundaryChildIds = selection.getBoundarySelectedChildIds()
+    if (boundaryChildIds) {
+      const snapshots = boundaryChildIds.map(id => this.doc.getBlockById(id).toSnapshot())
+      return {
+        snapshot: this._wrapSnapshotsByRoot(snapshots),
+        plainText: snapshots2Text(snapshots),
+      }
+    }
+
     const s = selection.start, e = selection.end
     const startBlock = selection.firstBlock
     const endBlock = selection.lastBlock
@@ -179,11 +188,11 @@ export class ClipboardManager {
     }
 
     const snapshots: IBlockSnapshot[] = []
-    let plainText = ''
+    const plainTextParts: string[] = []
     const betweenBlocks = this.doc.queryBlocksBetween(startBlock, endBlock)
-    for (const bid of betweenBlocks) {
-      snapshots.push(this.doc.getBlockById(bid).toSnapshot())
-      plainText += (this.doc.getBlockById(bid).textContent() + STR_LINE_BREAK)
+    const pushSnapshot = (block: BlockCraft.BlockComponent, plainText: string) => {
+      snapshots.push(block.toSnapshot())
+      plainTextParts.push(plainText)
     }
 
     if (s.type === 'text') {
@@ -192,12 +201,16 @@ export class ClipboardManager {
         const sliceDeltas = sliceDelta(sBlock.textDeltas(), s.offset, sBlock.textLength)
         const sn = sBlock.toSnapshot()
         sn.children = sliceDeltas
-        snapshots.unshift(sn)
-        plainText = deltaToString(sliceDeltas) + STR_LINE_BREAK + plainText
+        snapshots.push(sn)
+        plainTextParts.push(deltaToString(sliceDeltas))
       }
     } else {
-      snapshots.unshift(startBlock.toSnapshot())
-      plainText = startBlock.textContent() + plainText
+      pushSnapshot(startBlock, startBlock.textContent())
+    }
+
+    for (const bid of betweenBlocks) {
+      const block = this.doc.getBlockById(bid)
+      pushSnapshot(block, block.textContent())
     }
 
     if (e.type === 'text') {
@@ -207,16 +220,15 @@ export class ClipboardManager {
         const sn = eBlock.toSnapshot()
         sn.children = sliceDeltas
         snapshots.push(sn)
-        plainText += deltaToString(sliceDeltas)
+        plainTextParts.push(deltaToString(sliceDeltas))
       }
     } else {
-      snapshots.push(endBlock.toSnapshot())
-      plainText = endBlock.textContent() + plainText
+      pushSnapshot(endBlock, endBlock.textContent())
     }
 
     return {
       snapshot: this._wrapSnapshotsByRoot(snapshots),
-      plainText,
+      plainText: plainTextParts.join(STR_LINE_BREAK),
     }
   }
 
@@ -461,9 +473,15 @@ export class ClipboardManager {
     await nextTick()
 
     const len0 = textLines[0].length
+    if (!this._isBlockAlive(editableBlock)) {
+      return {anchorBlockId: editableBlock.id, region: null}
+    }
     const lastAppended = appendedSnapshots.length
-      ? this.doc.getBlockById(appendedSnapshots[appendedSnapshots.length - 1].id)
+      ? this._getBlockByIdSafe(appendedSnapshots[appendedSnapshots.length - 1].id)
       : null
+    if (appendedSnapshots.length && !lastAppended) {
+      return {anchorBlockId: editableBlock.id, region: null}
+    }
     const region = lastAppended
       ? this._captureRegion(editableBlock.id, fromIndex, lastAppended.id, this.doc.isEditable(lastAppended) ? lastAppended.textLength : null)
       : this._captureRegion(editableBlock.id, fromIndex, editableBlock.id, fromIndex + len0)
@@ -550,6 +568,9 @@ export class ClipboardManager {
     })
 
     await nextTick()
+    if (!this._isBlockAlive(editableBlock)) {
+      return {anchorBlockId: editableBlock.id, region: null}
+    }
 
     if (!hasTrailingBlocks) {
       const region = this._captureRegion(editableBlock.id, fromIndex, editableBlock.id, fromIndex + inlineLength)
@@ -561,7 +582,10 @@ export class ClipboardManager {
       return {anchorBlockId: editableBlock.id, region}
     }
 
-    const endBlock = this.doc.getBlockById(snapshots[snapshots.length - 1].id)
+    const endBlock = this._getBlockByIdSafe(snapshots[snapshots.length - 1].id)
+    if (!endBlock) {
+      return {anchorBlockId: editableBlock.id, region: null}
+    }
     const region = this._captureRegion(
       editableBlock.id, fromIndex,
       endBlock.id, this.doc.isEditable(endBlock) ? endBlock.textLength : null,
@@ -617,11 +641,10 @@ export class ClipboardManager {
     // Place the caret in the last inserted block (end of its text, or whole-block).
     const lastBlock = inserted[inserted.length - 1]
     if (this.doc.isEditable(lastBlock)) {
-      this.doc.selection.setCursorAt(lastBlock, lastBlock.textLength)
+      this._setCursorAndSync(lastBlock, true)
     } else {
-      this.doc.selection.setCursorAtBlock(lastBlock, false, false)
+      this._setCursorAndSync(lastBlock, false)
     }
-    this.doc.selection.recalculate()
 
     return true
   }
@@ -687,37 +710,81 @@ export class ClipboardManager {
     }
   }
 
+  private _isBlockAlive(block: BlockCraft.BlockComponent | null | undefined): block is BlockCraft.BlockComponent {
+    if (!block) return false
+    if (typeof (this.doc as any).getBlockById !== 'function') return true
+    try {
+      return this.doc.getBlockById(block.id) === block
+    } catch {
+      return false
+    }
+  }
+
+  private _getBlockByIdSafe(id: string): BlockCraft.BlockComponent | null {
+    try {
+      return this.doc.getBlockById(id)
+    } catch {
+      return null
+    }
+  }
+
+  private _setInlineRangeIfAlive(block: EditableBlockComponent, index: number, length?: number) {
+    if (!this._isBlockAlive(block)) return false
+    try {
+      if (typeof length === 'number') {
+        block.setInlineRange(index, length)
+      } else {
+        block.setInlineRange(index)
+      }
+      return true
+    } catch (e) {
+      this.doc.logger.warn('setInlineRange after paste failed', e)
+      return false
+    }
+  }
+
   private _setTextRangeAndSync(block: EditableBlockComponent, index: number, length: number) {
-    block.setInlineRange(index, length)
-    this.doc.selection.recalculate()
+    if (this._setInlineRangeIfAlive(block, index, length)) {
+      this.doc.selection.recalculate()
+    }
   }
 
   private _setCrossBlockRangeAndSync(startBlock: EditableBlockComponent, startOffset: number, endBlock: BlockCraft.BlockComponent) {
-    this.doc.selection.setSelection({
-      blockId: startBlock.id,
-      index: startOffset,
-      length: startBlock.textLength - startOffset,
-      type: 'text'
-    }, this.doc.isEditable(endBlock) ? {
-      blockId: endBlock.id,
-      index: 0,
-      length: endBlock.textLength,
-      type: 'text'
-    } : {
-      blockId: endBlock.id,
-      type: 'selected'
-    })
-    this.doc.selection.recalculate()
+    if (!this._isBlockAlive(startBlock) || !this._isBlockAlive(endBlock)) return
+    try {
+      this.doc.selection.setSelection({
+        blockId: startBlock.id,
+        index: startOffset,
+        length: startBlock.textLength - startOffset,
+        type: 'text'
+      }, this.doc.isEditable(endBlock) ? {
+        blockId: endBlock.id,
+        index: 0,
+        length: endBlock.textLength,
+        type: 'text'
+      } : {
+        blockId: endBlock.id,
+        type: 'selected'
+      })
+      this.doc.selection.recalculate()
+    } catch (e) {
+      this.doc.logger.warn('setCrossBlockRange after paste failed', e)
+    }
   }
 
   private _setCursorAndSync(block: BlockCraft.BlockComponent, atEnd = false, index?: number) {
-    if (this.doc.isEditable(block)) {
-      const offset = index ?? (atEnd ? block.textLength : 0)
-      this.doc.selection.setCursorAt(block, offset)
-    } else {
-      this.doc.selection.setCursorAtBlock(block, atEnd, false)
+    if (!this._isBlockAlive(block)) return
+    try {
+      if (this.doc.isEditable(block)) {
+        const offset = index ?? (atEnd ? block.textLength : 0)
+        this.doc.selection.setCursorAt(block, offset)
+      } else {
+        this.doc.selection.setCursorAtBlock(block, atEnd, false)
+      }
+      this.doc.selection.recalculate()
+    } catch (e) {
+      this.doc.logger.warn('setCursor after paste failed', e)
     }
-    this.doc.selection.recalculate()
   }
 
   @EventListen('copy')
@@ -793,7 +860,7 @@ export class ClipboardManager {
       editableBlock.replaceText(fromIndex, fromLength, text)
       // 收缩选区粘贴后不重设光标位置；仅范围选区时把粘贴内容选中
       if (!collapsed) {
-        nextTick().then(() => editableBlock.setInlineRange(fromIndex, text.length))
+        nextTick().then(() => this._setInlineRangeIfAlive(editableBlock, fromIndex, text.length))
       }
       return true
     }
@@ -909,7 +976,9 @@ export class ClipboardManager {
             editableBlock.applyDeltaOperations(ops)
           })
           insertLength > 0 && nextTick().then(() => {
-            collapsed ? editableBlock.setInlineRange(fromIndex + insertLength) : editableBlock.setInlineRange(fromIndex, insertLength)
+            collapsed
+              ? this._setInlineRangeIfAlive(editableBlock, fromIndex + insertLength)
+              : this._setInlineRangeIfAlive(editableBlock, fromIndex, insertLength)
           })
           emitFormatData('html', this._captureRegion(editableBlock.id, fromIndex, editableBlock.id, fromIndex + insertLength))
           return;
@@ -963,7 +1032,9 @@ export class ClipboardManager {
 
         if (!snapshots.length) {
           mergedInsertLength > 0 && nextTick().then(() => {
-            collapsed ? editableBlock.setInlineRange(fromIndex + mergedInsertLength) : editableBlock.setInlineRange(fromIndex, mergedInsertLength)
+            collapsed
+              ? this._setInlineRangeIfAlive(editableBlock, fromIndex + mergedInsertLength)
+              : this._setInlineRangeIfAlive(editableBlock, fromIndex, mergedInsertLength)
           })
           emitFormatData('html', this._captureRegion(editableBlock.id, fromIndex, editableBlock.id, fromIndex + mergedInsertLength))
           return
@@ -1005,8 +1076,9 @@ export class ClipboardManager {
           editableBlock.insertText(fromIndex, text, {'a:link': text})
           : editableBlock.formatText(fromIndex, fromLength, {'a:link': text})
         nextTick().then(() => {
-          collapsed ? editableBlock.setInlineRange(fromIndex + text.length)
-            : editableBlock.setInlineRange(fromIndex, fromLength)
+          collapsed
+            ? this._setInlineRangeIfAlive(editableBlock, fromIndex + text.length)
+            : this._setInlineRangeIfAlive(editableBlock, fromIndex, fromLength)
         })
         return true
       }
@@ -1025,7 +1097,11 @@ export class ClipboardManager {
         }
       })
       requestAnimationFrame(() => {
-        this.doc.selection.recalculate()
+        try {
+          this.doc.selection.recalculate()
+        } catch (e) {
+          this.doc.logger.warn('paste selection recalculate failed', e)
+        }
       })
       return true
     }

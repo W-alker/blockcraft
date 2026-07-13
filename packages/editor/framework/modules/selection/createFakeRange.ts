@@ -8,25 +8,42 @@ export interface IFakeRangeConfig {
   minCursorWidth?: number
 }
 
+const overlayContainingBlockState = new WeakMap<HTMLElement, {
+  count: number,
+  previousPosition: string
+}>()
+
 export class FakeRange {
 
   private _fakeSpans: HTMLElement[] = []
+  private _styleTargets: HTMLElement[] = []
+  private _styleCleanups: (() => void)[] = []
 
   constructor(
     private readonly doc: BlockCraft.Doc,
-    source: Pick<IBlockSelectionJSON, 'from' | 'to'> | BlockSelection,
+    source: Pick<IBlockSelectionJSON, 'from' | 'to'> | BlockSelection | null,
     private readonly config: IFakeRangeConfig = {}
   ) {
     if (source instanceof BlockSelection) {
       this._buildFromSelection(source)
-    } else {
+    } else if (source) {
       this._buildFromLegacyJSON(source)
     }
   }
 
   private _buildFromSelection(sel: BlockSelection) {
+    if (this._buildFromTableCellSelection(sel)) return
+
+    const boundaryChildIds = sel.getBoundarySelectedChildIds()
+    if (boundaryChildIds) {
+      boundaryChildIds.forEach(id => {
+        this._fakeSpans.push(this._createBlockFakeSpan(this.doc.getBlockById(id)))
+      })
+      return
+    }
+
     const s = sel.start, e = sel.end
-    const startBlock = this.doc.getBlockById(s.blockId)
+    const startBlock = sel.firstBlock
     this._fakeSpans.push(
       // gap and selected have no meaningful offset → render a whole-block fake span
       s.type !== 'text'
@@ -35,13 +52,13 @@ export class FakeRange {
     )
     if (sel.isInSameBlock) return
 
-    const endBlock = this.doc.getBlockById(e.blockId)
+    const endBlock = sel.lastBlock
     if (e.type === 'text') {
       e.offset > 0 && this._fakeSpans.push(this._createTextFakeSpan(endBlock, 0, e.offset))
     } else {
       this._fakeSpans.push(this._createBlockFakeSpan(endBlock))
     }
-    const between = this.doc.queryBlocksBetween(s.blockId, e.blockId)
+    const between = this.doc.queryBlocksBetween(startBlock, endBlock)
     between.forEach(id => {
       this._fakeSpans.push(this._createBlockFakeSpan(this.doc.getBlockById(id)))
     })
@@ -65,6 +82,23 @@ export class FakeRange {
     })
   }
 
+  private _buildFromTableCellSelection(sel: BlockSelection): boolean {
+    const tableCellSelection = sel.getTableCellSelection()
+    if (!tableCellSelection) return false
+
+    try {
+      const anchorCell = this.doc.getBlockById(tableCellSelection.anchorCellId) as BlockCraft.IBlockComponents['table-cell']
+      if (anchorCell.props?.display !== 'none') {
+        this._applyTableCellFakeStyle(anchorCell)
+        this._fakeSpans.push(this._createDetachedFakeSpan())
+      }
+    } catch {
+      // The selection points may have been deleted by collaboration. Treat it
+      // as handled so callers do not fall back to endpoint-only block spans.
+    }
+    return true
+  }
+
   get fakeSpans() {
     return this._fakeSpans
   }
@@ -73,28 +107,108 @@ export class FakeRange {
     this._fakeSpans.forEach(span => {
       options.bgColor && span.style.setProperty('--bgColor', options.bgColor)
     })
+    this._styleTargets.forEach(target => {
+      options.bgColor && target.style.setProperty('--bgColor', options.bgColor)
+    })
   }
 
   private _createBlockFakeSpan(block: BlockCraft.BlockComponent) {
     if (this.doc.isEditable(block)) {
       return this._createTextFakeSpan(block, 0, block.textLength)
     }
+    this._ensureOverlayContainingBlock(block.hostElement)
     const span = document.createElement('span');
     span.classList.add('blockcraft-cursor')
     span.style.cssText = `
-    position: unset;
-    --bgColor: ${this.config.bgColor || 'var(--bc-select-background-color)'};
+      position: absolute;
+      display: block;
+      inset: 0;
+      box-sizing: border-box;
+      z-index: 100;
+      pointer-events: none;
+      --bgColor: ${this.config.bgColor || 'var(--bc-select-background-color)'};
     `
     const child = document.createElement('span');
     child.style.cssText = `
-        left: 0;
-        top: 0;
-        bottom: 0;
-        right: 0;
+      position: absolute;
+      display: block;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      right: 0;
+      box-sizing: border-box;
+      border: 0;
+      background-color: transparent;
+      box-shadow: inset 0 0 0 2px var(--bgColor);
     `
     span.appendChild(child)
     block.hostElement.appendChild(span)
     return span
+  }
+
+  private _ensureOverlayContainingBlock(target: HTMLElement) {
+    const existing = overlayContainingBlockState.get(target)
+    if (existing) {
+      existing.count++
+      this._styleCleanups.push(() => this._releaseOverlayContainingBlock(target, existing))
+      return
+    }
+    if (getComputedStyle(target).position !== 'static') return
+    const previousPosition = target.style.position
+    target.style.position = 'relative'
+    const state = {
+      count: 1,
+      previousPosition,
+    }
+    overlayContainingBlockState.set(target, state)
+    this._styleCleanups.push(() => this._releaseOverlayContainingBlock(target, state))
+  }
+
+  private _releaseOverlayContainingBlock(
+    target: HTMLElement,
+    state: { count: number, previousPosition: string }
+  ) {
+    state.count--
+    if (state.count > 0) return
+    target.style.position = state.previousPosition
+    overlayContainingBlockState.delete(target)
+  }
+
+  private _createDetachedFakeSpan() {
+    const span = document.createElement('span');
+    span.classList.add('blockcraft-cursor')
+    const child = document.createElement('span');
+    span.appendChild(child)
+    return span
+  }
+
+  private _applyTableCellFakeStyle(cell: BlockCraft.IBlockComponents['table-cell']) {
+    const target = cell.hostElement
+    const previousOutlineWidth = target.style.outlineWidth
+    const previousOutlineStyle = target.style.outlineStyle
+    const previousOutlineColor = target.style.outlineColor
+    const previousOutlineOffset = target.style.outlineOffset
+    const previousBgColor = target.style.getPropertyValue('--bgColor')
+    const previousBgColorPriority = target.style.getPropertyPriority('--bgColor')
+
+    target.style.setProperty('--bgColor', this.config.bgColor || 'var(--bc-select-background-color)')
+    target.style.outlineWidth = '2px'
+    target.style.outlineStyle = 'solid'
+    target.style.outlineColor = 'var(--bgColor)'
+    target.style.outlineOffset = '-2px'
+
+    this._styleTargets.push(target)
+    this._styleCleanups.push(() => {
+      target.style.outlineWidth = previousOutlineWidth
+      target.style.outlineStyle = previousOutlineStyle
+      target.style.outlineColor = previousOutlineColor
+      target.style.outlineOffset = previousOutlineOffset
+      if (previousBgColor) {
+        target.style.setProperty('--bgColor', previousBgColor, previousBgColorPriority)
+      } else {
+        target.style.removeProperty('--bgColor')
+      }
+    })
   }
 
   private _createTextFakeSpan(block: BlockCraft.BlockComponent, index: number, length: number) {
@@ -149,7 +263,10 @@ export class FakeRange {
     this._fakeSpans.forEach(span => {
       span.remove()
     })
+    this._styleCleanups.forEach(cleanup => cleanup())
     this._fakeSpans = []
+    this._styleTargets = []
+    this._styleCleanups = []
   }
 
 }

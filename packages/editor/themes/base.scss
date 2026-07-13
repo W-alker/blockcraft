@@ -119,10 +119,17 @@
   [data-block-zero-space="true"] {
     position: absolute;
     z-index: 1;
+    display: inline-block;
+    box-sizing: border-box;
+    width: 1px;
+    min-width: 1px;
+    height: calc(var(--bc-lh) * var(--bc-fs));
+    padding: 0;
     cursor: text;
     font-size: var(--bc-fs);
-    //line-height: var(--bc-lh);
-    //caret-color: var(--bc-caret-color);
+    line-height: var(--bc-lh);
+    caret-color: var(--bc-caret-color);
+    white-space: pre;
   }
 
   .bc-block-gap:first-of-type,

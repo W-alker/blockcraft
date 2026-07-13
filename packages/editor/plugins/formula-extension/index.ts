@@ -5,7 +5,7 @@ import {
   getPositionWithOffset,
   INLINE_ELEMENT_TAG,
 } from "../../framework";
-import { Subject, takeUntil } from "rxjs";
+import { Subject, Subscription, takeUntil } from "rxjs";
 import { FormulaBlockToolbar } from "./widgets/formula-toolbar";
 import { UIEventStateContext } from "../../framework";
 import { ComponentRef } from "@angular/core";
@@ -17,26 +17,33 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
   private _activeBlock: BlockCraft.IBlockComponents["formula"] | null = null;
   private _activeInlineFormulaEl: HTMLElement | null = null;
   private _toolbarRef: ComponentRef<FormulaBlockToolbar> | null = null;
+  private _sub = new Subscription();
 
   init() {
-    this.doc.subscribeReadonlyChange((readonly) => {
-      if (readonly) {
-        this.closeToolbar();
-      }
-    });
+    this._sub.add(
+      this.doc.subscribeReadonlyChange((readonly) => {
+        if (readonly) {
+          this.closeToolbar();
+        }
+      }),
+    );
   }
 
   @EventListen("mouseDown", { flavour: "formula" })
   onBlockClick(ctx: UIEventStateContext) {
     if (this.doc.isReadonly) return;
 
-    const target = ctx.getDefaultEvent().target as Node;
-    const blockId = closetBlockId(target);
+    const target = ctx.getDefaultEvent().target;
+    const content = target instanceof Element
+      ? target.closest(".formula-block-container")
+      : null;
+    if (!content) return;
+
+    const blockId = closetBlockId(content);
     if (!blockId) return;
 
-    const block = this.doc.getBlockById(
-      blockId,
-    ) as BlockCraft.IBlockComponents["formula"];
+    const block = this._getLiveBlockById(blockId) as BlockCraft.IBlockComponents["formula"] | null;
+    if (!block || block.flavour !== "formula") return;
     if (this._activeBlock === block) return;
 
     this.closeToolbar();
@@ -65,6 +72,10 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
     componentRef.instance.confirm
       .pipe(takeUntil(this._closeToolbar$))
       .subscribe((latex) => {
+        if (!this._isBlockAlive(block)) {
+          this.closeToolbar();
+          return;
+        }
         block.updateProps({ latex });
         this.closeToolbar();
       });
@@ -90,7 +101,8 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
     const blockId = closetBlockId(target);
     if (!blockId) return;
 
-    const block = this.doc.getBlockById(blockId);
+    const block = this._getLiveBlockById(blockId);
+    if (!block) return;
     if (!this.doc.isEditable(block)) return;
 
     const latex = formulaEl.getAttribute("data-latex") || "";
@@ -121,8 +133,16 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
     componentRef.instance.confirm
       .pipe(takeUntil(this._closeToolbar$))
       .subscribe((newLatex) => {
-        const { from } = this.getEmbedRange(formulaEl);
-        if (from.type !== "text") return;
+        if (!this._isBlockAlive(block)) {
+          this.closeToolbar();
+          return;
+        }
+        const range = this._tryGetEmbedRange(formulaEl);
+        if (!range || range.from.type !== "text") {
+          this.closeToolbar();
+          return;
+        }
+        const { from } = range;
         const embedIndex = from.index;
         if (!newLatex) {
           block.applyDeltaOperations([{ retain: embedIndex }, { delete: 1 }]);
@@ -134,6 +154,7 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
           ]);
         }
         requestAnimationFrame(() => {
+          if (!this._isBlockAlive(block)) return;
           this.doc.selection.setCursorAt(block, embedIndex + 1);
         });
         this.closeToolbar();
@@ -156,6 +177,31 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
     return normalizedRange;
   }
 
+  private _getLiveBlockById(blockId: string): BlockCraft.BlockComponent | null {
+    try {
+      const block = this.doc.getBlockById(blockId);
+      return this._isBlockAlive(block) ? block : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private _tryGetEmbedRange(target: HTMLElement) {
+    try {
+      return this.getEmbedRange(target);
+    } catch {
+      return null;
+    }
+  }
+
+  private _isBlockAlive(block: BlockCraft.BlockComponent): boolean {
+    try {
+      return this.doc.getBlockById(block.id) === block;
+    } catch {
+      return false;
+    }
+  }
+
   closeToolbar = () => {
     this._activeBlock?.hostElement.classList.remove("editing");
     this._activeInlineFormulaEl?.classList.remove("editing");
@@ -167,5 +213,6 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
 
   destroy() {
     this.closeToolbar();
+    this._sub.unsubscribe();
   }
 }

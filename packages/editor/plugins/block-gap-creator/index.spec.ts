@@ -173,6 +173,62 @@ describe("BlockGapCreatorPlugin", () => {
     expect(selection.setGapCursor).toHaveBeenCalledOnceWith(voidBlock, "after")
   })
 
+  it("treats attachment host whitespace as a gap after content-hit plugins decline it", () => {
+    const {plugin, voidHost, voidBlock, selection} = createHarness()
+    voidBlock.flavour = "attachment"
+    voidHost.getBoundingClientRect = () => rect(100, 100, 420, 180)
+    voidHost.replaceChildren()
+    const prefix = document.createElement("div")
+    prefix.className = "attachment-block__prefix"
+    prefix.getBoundingClientRect = () => rect(120, 120, 150, 160)
+    const info = document.createElement("div")
+    info.className = "attachment-block__info"
+    info.getBoundingClientRect = () => rect(160, 115, 330, 165)
+    const icon = document.createElement("div")
+    icon.className = "attachment-block__icon-wrapper"
+    icon.getBoundingClientRect = () => rect(340, 120, 390, 160)
+    voidHost.append(prefix, info, icon)
+    spyOn(document, "elementFromPoint").and.returnValue(voidHost)
+
+    const shouldResolve = plugin._shouldResolveOnMouseDown({
+      button: 0,
+      detail: 1,
+      clientX: 410,
+      clientY: 140,
+      target: voidHost,
+    } as unknown as MouseEvent)
+    const handled = plugin._resolveBlankAreaSelection(410, 140)
+
+    expect(shouldResolve).toBeTrue()
+    expect(handled).toBeTrue()
+    expect(selection.setGapCursor).toHaveBeenCalledOnceWith(voidBlock, "after")
+  })
+
+  it("treats formula host whitespace as a gap after formula content clicks are filtered", () => {
+    const {plugin, voidHost, voidBlock, selection} = createHarness()
+    voidBlock.flavour = "formula"
+    voidHost.getBoundingClientRect = () => rect(100, 100, 360, 190)
+    voidHost.replaceChildren()
+    const content = document.createElement("div")
+    content.className = "formula-block-container"
+    content.getBoundingClientRect = () => rect(130, 120, 330, 170)
+    voidHost.appendChild(content)
+    spyOn(document, "elementFromPoint").and.returnValue(voidHost)
+
+    const shouldResolve = plugin._shouldResolveOnMouseDown({
+      button: 0,
+      detail: 1,
+      clientX: 110,
+      clientY: 145,
+      target: voidHost,
+    } as unknown as MouseEvent)
+    const handled = plugin._resolveBlankAreaSelection(110, 145)
+
+    expect(shouldResolve).toBeTrue()
+    expect(handled).toBeTrue()
+    expect(selection.setGapCursor).toHaveBeenCalledOnceWith(voidBlock, "before")
+  })
+
   it("prevents native mousedown selection on image right-side blank area", () => {
     const {plugin, voidHost, voidBlock, selection} = createHarness()
     voidHost.setAttribute("data-node-type", BlockNodeType.block)

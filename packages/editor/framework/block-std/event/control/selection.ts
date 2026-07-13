@@ -1,4 +1,4 @@
-import { debounceTime, fromEvent, skip, takeUntil } from "rxjs";
+import { fromEvent, takeUntil } from "rxjs";
 import { UIEventState, UIEventStateContext } from "../base";
 import { EventScopeSourceType, EventSourceState, SelectEventState } from "../state";
 import { isMac } from "lib0/environment";
@@ -13,6 +13,9 @@ export class SelectionControl {
   private _mouseDown = false;
   private _lastSelectionString = ''; // 用于检测选区变化
   private _selectionChangeDebounceTimer: any = null;
+  private _multiClickEndTimer: any = null;
+  private _keyboardSelectionEndCleanup: (() => void) | null = null;
+  private _finishSelectionListenerCleanups: Array<() => void> = [];
 
   get isSelecting() {
     return this._isSelecting;
@@ -43,29 +46,58 @@ export class SelectionControl {
     }
     // 鼠标/触摸选择
     else if (this._mouseDown) {
+      this._clearFinishSelectionListeners()
+
       // 监听拖拽开始（可能转为拖放操作）
-      this._dispatcher.rootElement.addEventListener('dragstart', this._finishSelection, { once: true, capture: true })
+      this._listenOnceForFinish(this._dispatcher.rootElement, 'dragstart')
 
       // Safari may miss pointer events during native text selection, so also
       // listen to legacy mouse/touch releases to guarantee selectEnd.
-      window.addEventListener('pointerup', this._finishSelection, { once: true, capture: true })
-      window.addEventListener('mouseup', this._finishSelection, { once: true, capture: true })
-      window.addEventListener('touchend', this._finishSelection, { once: true, capture: true })
+      this._listenOnceForFinish(window, 'pointerup')
+      this._listenOnceForFinish(window, 'mouseup')
+      this._listenOnceForFinish(window, 'touchend')
     }
+  }
+
+  private _listenOnceForFinish(target: EventTarget, eventName: string) {
+    const listener = (e: Event) => {
+      this._clearFinishSelectionListeners()
+      this._finishSelection(e)
+    }
+    target.addEventListener(eventName, listener, {once: true, capture: true})
+    this._finishSelectionListenerCleanups.push(() => {
+      target.removeEventListener(eventName, listener, true)
+    })
+  }
+
+  private _clearFinishSelectionListeners() {
+    this._finishSelectionListenerCleanups.forEach(cleanup => cleanup())
+    this._finishSelectionListenerCleanups = []
+  }
+
+  private _clearKeyboardSelectionEndListener() {
+    this._keyboardSelectionEndCleanup?.()
+    this._keyboardSelectionEndCleanup = null
   }
 
   /**
    * 为键盘选择设置结束监听
    */
   private _setupKeyboardSelectionEnd() {
+    this._clearKeyboardSelectionEndListener()
+
     // Shift 键释放时结束选择
     const keyupHandler = (e: KeyboardEvent) => {
+      this._keyboardSelectionEndCleanup = null
       if (!e.shiftKey && this._isSelecting) {
         this._isSelecting = false;
         this._dispatcher.run('selectEnd', this._buildContext(e));
       }
     };
     window.addEventListener('keyup', keyupHandler, { once: true, capture: true });
+    this._keyboardSelectionEndCleanup = () => {
+      window.removeEventListener('keyup', keyupHandler, true)
+    }
   }
 
   /**
@@ -74,7 +106,9 @@ export class SelectionControl {
   private _handleMultiClickEnd = (e: MouseEvent) => {
     if (this._isSelecting) {
       // 双击/三击后立即标记选择结束
-      setTimeout(() => {
+      clearTimeout(this._multiClickEndTimer)
+      this._multiClickEndTimer = setTimeout(() => {
+        this._multiClickEndTimer = null
         if (this._isSelecting) {
           this._isSelecting = false;
           this._dispatcher.run('selectEnd', this._buildContext(e));
@@ -224,5 +258,10 @@ export class SelectionControl {
    */
   dispose() {
     clearTimeout(this._selectionChangeDebounceTimer);
+    this._selectionChangeDebounceTimer = null;
+    clearTimeout(this._multiClickEndTimer);
+    this._multiClickEndTimer = null;
+    this._clearKeyboardSelectionEndListener();
+    this._clearFinishSelectionListeners();
   }
 }

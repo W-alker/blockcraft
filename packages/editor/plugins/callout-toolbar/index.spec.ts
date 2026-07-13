@@ -1,0 +1,134 @@
+import {fakeAsync, tick} from "@angular/core/testing";
+import {Subject} from "rxjs";
+import {CalloutToolbarPlugin} from "./index";
+
+describe("CalloutToolbarPlugin delayed toolbar", () => {
+  const makeHarness = () => {
+    const selection$ = new Subject<any>();
+    const selectionValue = {current: null as any};
+    const calloutBlock = {
+      id: "callout-1",
+      flavour: "callout",
+      hostElement: document.createElement("div"),
+      onDestroy$: new Subject<void>(),
+    };
+    const textBlock = {
+      id: "text-1",
+      flavour: "text",
+      parentBlock: calloutBlock,
+    };
+    const calloutSelection = {
+      isInSameBlock: true,
+      start: {type: "text"},
+      end: {type: "text"},
+      firstBlock: textBlock,
+    };
+    const calloutBoundarySelection = {
+      isInSameBlock: true,
+      start: {type: "boundary", index: 0},
+      end: {type: "boundary", index: 1},
+      firstBlock: textBlock,
+    };
+    const doc = {
+      isReadonly: false,
+      selection: {
+        selectionChange$: selection$,
+        get value() {
+          return selectionValue.current;
+        },
+      },
+      getBlockById: jasmine.createSpy("getBlockById").and.returnValue(calloutBlock),
+      overlayService: {
+        createConnectedOverlay: jasmine.createSpy("createConnectedOverlay").and.returnValue({
+          componentRef: {
+            setInput: jasmine.createSpy("setInput"),
+          },
+          overlayRef: {
+            dispose: jasmine.createSpy("dispose"),
+            updatePosition: jasmine.createSpy("updatePosition"),
+          },
+        }),
+      },
+    };
+    const plugin = new CalloutToolbarPlugin();
+    (plugin as any).doc = doc;
+    return {plugin, doc, selection$, selectionValue, calloutSelection, calloutBoundarySelection};
+  };
+
+  it("cancels delayed toolbar open when selection is cleared", fakeAsync(() => {
+    const {plugin, doc, selection$, selectionValue, calloutSelection} = makeHarness();
+    plugin.init();
+
+    selectionValue.current = calloutSelection;
+    selection$.next(calloutSelection);
+    tick(50);
+    selectionValue.current = null;
+    selection$.next(null);
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    plugin.destroy();
+  }));
+
+  it("rechecks the current selection before opening", fakeAsync(() => {
+    const {plugin, doc, selection$, selectionValue, calloutSelection} = makeHarness();
+    plugin.init();
+
+    selectionValue.current = calloutSelection;
+    selection$.next(calloutSelection);
+    selectionValue.current = null;
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    plugin.destroy();
+  }));
+
+  it("opens toolbar for text selections inside callout blocks", fakeAsync(() => {
+    const {plugin, doc, selection$, selectionValue, calloutSelection} = makeHarness();
+    plugin.init();
+
+    selectionValue.current = calloutSelection;
+    selection$.next(calloutSelection);
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).toHaveBeenCalled();
+    plugin.destroy();
+  }));
+
+  it("does not open when the captured callout block is stale", fakeAsync(() => {
+    const {plugin, doc, selection$, selectionValue, calloutSelection} = makeHarness();
+    plugin.init();
+
+    selectionValue.current = calloutSelection;
+    selection$.next(calloutSelection);
+    doc.getBlockById.and.returnValue({...calloutSelection.firstBlock.parentBlock});
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    plugin.destroy();
+  }));
+
+  it("cancels delayed toolbar open on destroy", fakeAsync(() => {
+    const {plugin, doc, selection$, selectionValue, calloutSelection} = makeHarness();
+    plugin.init();
+
+    selectionValue.current = calloutSelection;
+    selection$.next(calloutSelection);
+    plugin.destroy();
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+  }));
+
+  it("does not open toolbar for non-text callout selections", fakeAsync(() => {
+    const {plugin, doc, selection$, selectionValue, calloutBoundarySelection} = makeHarness();
+    plugin.init();
+
+    selectionValue.current = calloutBoundarySelection;
+    selection$.next(calloutBoundarySelection);
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    plugin.destroy();
+  }));
+});

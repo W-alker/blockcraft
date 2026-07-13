@@ -1,10 +1,13 @@
 import {
+  closetBlockId,
   DocPlugin,
-  EventListen, getPositionWithOffset
+  EventListen, getPositionWithOffset,
+  resolveBlockGapSide,
 } from "../../framework";
 import { merge, Subject, Subscription, takeUntil } from "rxjs";
 import { OverlayRef } from "@angular/cdk/overlay";
 import { DividerStylePopupComponent } from "./widgets/divider-style-popup.component";
+import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 
 export class DividerExtensionPlugin extends DocPlugin {
   override name = "divider-extension";
@@ -16,6 +19,30 @@ export class DividerExtensionPlugin extends DocPlugin {
   private _closeToolbar$ = new Subject<void>()
 
   private _activeBlock: BlockCraft.IBlockComponents['divider'] | null = null
+
+  @EventListen('mouseDown', {flavour: 'divider'})
+  private _handleDividerMouseDown(context: BlockCraft.EventStateContext) {
+    const event = context.getDefaultEvent<MouseEvent>()
+    if (event.defaultPrevented || event.button !== 0) return
+
+    const target = event.target
+    if (!(target instanceof Node)) return
+    if (resolveBlockGapSide(target)) return
+
+    const blockId = closetBlockId(target)
+    if (!blockId) return
+
+    let block: BlockCraft.BlockComponent | null = null
+    try {
+      block = this.doc.getBlockById(blockId)
+    } catch {
+      return
+    }
+    if (!block || block.flavour !== 'divider') return
+
+    event.preventDefault()
+    this.doc.selection.selectBlock(block)
+  }
 
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
@@ -30,7 +57,14 @@ export class DividerExtensionPlugin extends DocPlugin {
         return
       }
 
-      if (!selection || !selection.isInSameBlock || selection.firstBlock?.flavour !== 'divider' || selection.anchor.type !== 'selected') {
+      if (
+        !selection ||
+        !isSelectionAlive(selection as any, this.doc) ||
+        !selection.isInSameBlock ||
+        selection.firstBlock?.flavour !== 'divider' ||
+        selection.anchor.type !== 'selected' ||
+        selection.head.type !== 'selected'
+      ) {
         this._toolbarRef && this.closeToolbar()
         return
       }
@@ -42,6 +76,18 @@ export class DividerExtensionPlugin extends DocPlugin {
       this._timer = setTimeout(() => {
         this._timer = null
         if (this._toolbarRef && this._activeBlock === dividerBlock) return;
+        const currentSelection = this.doc.selection.value
+        if (
+          !currentSelection ||
+          !isSelectionAlive(currentSelection as any, this.doc) ||
+          !currentSelection.isInSameBlock ||
+          currentSelection.firstBlock?.id !== dividerBlock.id ||
+          currentSelection.anchor.type !== 'selected' ||
+          currentSelection.head.type !== 'selected' ||
+          !this._isBlockAlive(dividerBlock)
+        ) {
+          return
+        }
 
         this._activeBlock = dividerBlock as any
         // Keep the divider visually "selected" while its label is edited in the toolbar:
@@ -59,6 +105,10 @@ export class DividerExtensionPlugin extends DocPlugin {
 
         this._toolbarRef = overlayRef
         componentRef.setInput('dividerBlock', dividerBlock)
+
+        dividerBlock.onDestroy$?.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
+          this.closeToolbar()
+        })
       }, 200)
 
     })
@@ -74,6 +124,7 @@ export class DividerExtensionPlugin extends DocPlugin {
   closeToolbar = () => {
     this._activeBlock?.hostElement.classList.remove('divider-toolbar-active')
     this._activeBlock = null
+    this._toolbarRef?.dispose()
     this._toolbarRef = undefined
     this.clearTimer()
     this._closeToolbar$.next()
@@ -81,7 +132,15 @@ export class DividerExtensionPlugin extends DocPlugin {
 
   destroy() {
     this._sub?.unsubscribe()
+    this.closeToolbar()
   }
 
+  private _isBlockAlive(block: BlockCraft.BlockComponent): boolean {
+    try {
+      return this.doc.getBlockById(block.id) === block
+    } catch {
+      return false
+    }
+  }
 
 }

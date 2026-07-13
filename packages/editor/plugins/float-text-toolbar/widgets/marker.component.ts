@@ -17,6 +17,7 @@ import {
 import {SimpleValue} from "../../../global";
 import {NgForOf, NgIf} from "@angular/common";
 import {IInlineNodeAttrs} from "../../../framework";
+import {isSelectionAlive} from "../../../framework/modules/selection/liveness";
 import {TextToolbarUtils} from "../utils";
 
 export interface IToolbarMenuItem {
@@ -154,7 +155,7 @@ export class TextMarkerComponent {
 
   formatText(attrs: IInlineNodeAttrs) {
     const selection = this.doc.selection.value
-    if (!selection) return
+    if (!selection || !isSelectionAlive(selection as any, this.doc)) return
 
     if (selection.start.type === 'text') {
       const block = selection.firstBlock as any

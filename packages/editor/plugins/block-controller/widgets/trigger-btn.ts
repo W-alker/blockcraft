@@ -12,6 +12,7 @@ import { Subscription, take } from "rxjs";
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective } from "../../../components";
 import { BlockNodeType } from "../../../framework";
 import { IBlockSchemaOptions } from "../../../framework";
+import {getSelectionCoveredBlockIds} from "../../../framework/modules/selection/covered-blocks";
 import { MatIcon } from "@angular/material/icon";
 import { IS_MAC, nextTick } from "../../../global";
 import { BLOCK_CREATOR_SERVICE_TOKEN } from "../../../framework";
@@ -282,6 +283,8 @@ export class TriggerBtn {
   }
 
   private _activeBlock: BlockCraft.BlockComponent | null = null
+  private _destroyed = false
+
   @Input()
   set activeBlock(val: BlockCraft.BlockComponent | null) {
     if (this._activeBlock === val) return
@@ -372,6 +375,7 @@ export class TriggerBtn {
   }
 
   ngOnInit() {
+    this._destroyed = false
     this.toolList = this.toolList.concat(this.customTools)
 
     const schemas = this.doc.schemas.getSchemaList().filter(v => v.flavour !== 'paragraph')
@@ -382,6 +386,7 @@ export class TriggerBtn {
   }
 
   ngOnDestroy() {
+    this._destroyed = true
     this.close()
   }
 
@@ -479,6 +484,10 @@ export class TriggerBtn {
 
   setValidBlockList() {
     if (!this.activeBlock?.parentBlock) return
+    if (!this.isBlockAlive(this.activeBlock)) {
+      this.close()
+      return
+    }
     const parentBlockSchema = this.doc.schemas.get(this.activeBlock.parentBlock.flavour)!
     this._validOtherBlockList = this.otherBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
     this._validBaseBlockList = this.baseBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
@@ -493,14 +502,17 @@ export class TriggerBtn {
   private computeIsMultiSelection(): boolean {
     const sel = this.doc.selection.value
     if (!sel || sel.isInSameBlock || !this._activeBlock) return false
-    const ids = this.doc.queryBlocksBetween(sel.firstBlock, sel.lastBlock, true)
-    return ids.includes(this._activeBlock.id)
+    try {
+      const ids = this.getSelectedBlockIds(sel)
+      return ids.length >= 2 && ids.includes(this._activeBlock.id)
+    } catch {
+      return false
+    }
   }
 
-  private getSelectedBlockIds(): string[] {
-    const sel = this.doc.selection.value
+  private getSelectedBlockIds(sel = this.doc.selection.value): string[] {
     if (!sel) return []
-    return this.doc.queryBlocksBetween(sel.firstBlock, sel.lastBlock, true)
+    return getSelectionCoveredBlockIds(sel, this.doc)
   }
 
   // Resolve the selected block ids for a multi-block menu action. Returns null
@@ -522,6 +534,31 @@ export class TriggerBtn {
     this.display = 'none'
     this.activeBlock = null
     this.cdr.markForCheck()
+  }
+
+  private isBlockAlive(block: BlockCraft.BlockComponent | null | undefined): block is BlockCraft.BlockComponent {
+    if (!block) return false
+    try {
+      return this.doc.getBlockById(block.id) === block
+    } catch {
+      return false
+    }
+  }
+
+  private restoreMenuEnabledOnNextTick() {
+    void nextTick().then(() => {
+      if (this._destroyed) return
+      this.menuDisabled = false
+      this.cdr.markForCheck()
+    })
+  }
+
+  private refreshMenuDataOnNextTick() {
+    void nextTick().then(() => {
+      if (this._destroyed) return
+      this.refreshMenuData()
+      this.cdr.markForCheck()
+    })
   }
 
   private refreshMenuData() {
@@ -597,6 +634,10 @@ export class TriggerBtn {
   private createMenuContext(): BlockMenuContext | null {
     const block = this.activeBlock
     if (!block) return null
+    if (!this.isBlockAlive(block)) {
+      this.close()
+      return null
+    }
     return {
       activeBlock: block,
       doc: this.doc,
@@ -617,10 +658,7 @@ export class TriggerBtn {
     const legacyTool = this.getLegacyTool(event.item)
     if (legacyTool) {
       this.handleToolItemClick(legacyTool)
-      nextTick().then(() => {
-        this.refreshMenuData()
-        this.cdr.markForCheck()
-      })
+      this.refreshMenuDataOnNextTick()
       return
     }
 
@@ -628,10 +666,7 @@ export class TriggerBtn {
     if (!ctx || !this.blockMenuActionHandler) return
     const handled = this.blockMenuActionHandler(event, ctx)
     if (!handled) return
-    nextTick().then(() => {
-      this.refreshMenuData()
-      this.cdr.markForCheck()
-    })
+    this.refreshMenuDataOnNextTick()
   }
 
   private getLegacyTool(item: BlockMenuItem): IContextMenuItem | null {
@@ -647,7 +682,7 @@ export class TriggerBtn {
       const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
       const targetBlock = this.activeBlock
       blockCreator.getParamsByScheme(item).then(params => {
-        if (!targetBlock || !params) return
+        if (this._destroyed || !this.isBlockAlive(targetBlock) || !params) return
         const newBlock = this.doc.schemas.createSnapshot(item.flavour, params as any)
         void this.doc.chain()
           .insertAfterSnapshots(targetBlock, [newBlock])
@@ -658,13 +693,13 @@ export class TriggerBtn {
 
     const replace = (flavour: BlockCraft.BlockFlavour) => {
       const block = this.activeBlock
-      if (!block || !this.doc.isEditable(block) || block.flavour === flavour) return
+      if (!this.isBlockAlive(block) || !this.doc.isEditable(block) || block.flavour === flavour) return
       const newBlock = this.doc.schemas.createSnapshot(flavour, [block.textDeltas(), {
         ...block.props,
         heading: undefined
       }])
       void this.doc.chain()
-        .replaceWithSnapshots(this.activeBlock!.id, [newBlock])
+        .replaceWithSnapshots(block.id, [newBlock])
         .nextTick()
         .setCursorAtBlock(newBlock.id, true)
         .run()
@@ -678,10 +713,13 @@ export class TriggerBtn {
       }
 
       this.menuDisabled = true
-      nextTick().then(() => {
-        this.menuDisabled = false
-      })
+      this.restoreMenuEnabledOnNextTick()
       return;
+    }
+
+    if (!this.isBlockAlive(this.activeBlock)) {
+      this.close()
+      return
     }
 
     if (this.doc.isEditable(this.activeBlock) && item.nodeType === BlockNodeType.editable) {
@@ -692,14 +730,18 @@ export class TriggerBtn {
 
     this.menuDisabled = true
 
-    nextTick().then(() => {
-      this.menuDisabled = false
-    })
+    this.restoreMenuEnabledOnNextTick()
   }
 
   handleToolItemClick(item: IContextMenuItem) {
+    const activeBlock = this.activeBlock
+    if (!this.isBlockAlive(activeBlock)) {
+      this.close()
+      return
+    }
+
     if (this.customToolHandler) {
-      const res = this.customToolHandler(item, this.activeBlock, this.doc)
+      const res = this.customToolHandler(item, activeBlock, this.doc)
       if (res) {
         this.close()
         return;
@@ -708,7 +750,7 @@ export class TriggerBtn {
 
     switch (item.name) {
       case 'align':
-        if (!this.activeBlock || !this.doc.isEditable(this.activeBlock)) return
+        if (!this.isBlockAlive(this.activeBlock) || !this.doc.isEditable(this.activeBlock)) return
         this.activeBlock.updateProps({ textAlign: item.value as any })
         break
       case 'cut': {
@@ -736,11 +778,13 @@ export class TriggerBtn {
           }
           // multi-selection collapsed → fall through to single-block cut
         }
-        if (!this.activeBlock) return;
-        this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
-          if (this.activeBlock) {
+        const block = this.activeBlock
+        if (!this.isBlockAlive(block)) return;
+        this.doc.clipboard.copyBlocksModel([block.toSnapshot()]).then(() => {
+          if (this._destroyed) return
+          if (this.isBlockAlive(block)) {
             void this.doc.chain()
-              .deleteById(this.activeBlock.id)
+              .deleteById(block.id)
               .animationFrame()
               .recalculateSelection()
               .tap(() => {
@@ -766,9 +810,10 @@ export class TriggerBtn {
           }
           // multi-selection collapsed → fall through to single-block delete
         }
-        if (this.activeBlock) {
+        const block = this.activeBlock
+        if (this.isBlockAlive(block)) {
           void this.doc.chain()
-            .deleteById(this.activeBlock.id)
+            .deleteById(block.id)
             .animationFrame()
             .recalculateSelection()
             .run()
@@ -792,22 +837,25 @@ export class TriggerBtn {
           }
           // multi-selection collapsed → fall through to single-block copy
         }
-        if (!this.activeBlock) return;
-        this.doc.clipboard.copyBlocksModel([this.activeBlock.toSnapshot()]).then(() => {
+        const block = this.activeBlock
+        if (!this.isBlockAlive(block)) return;
+        this.doc.clipboard.copyBlocksModel([block.toSnapshot()]).then(() => {
+          if (this._destroyed) return
           this.doc.messageService.success('已复制')
           this.close()
         })
       }
         break
       case 'heading': {
-        if (!this.activeBlock) return
-        if (!this.doc.isEditable(this.activeBlock)) {
+        const block = this.activeBlock
+        if (!this.isBlockAlive(block)) return
+        if (!this.doc.isEditable(block)) {
           const p = this.doc.schemas.createSnapshot('paragraph', [[], {
-            depth: this.activeBlock.props.depth,
+            depth: block.props.depth,
             heading: item.value
           }])
           void this.doc.chain()
-            .insertAfterSnapshots(this.activeBlock, [p])
+            .insertAfterSnapshots(block, [p])
             .tap(() => {
               this.menuDisabled = true
             })
@@ -820,23 +868,23 @@ export class TriggerBtn {
         // H1–H4 toggle off (item.value truthy); the explicit "普通段落" entry
         // (item.value === null) always reverts.
         const isActiveHeading = !!item.value
-          && (this.activeBlock.props.heading || '') + '' === (item.value || '') + ''
+          && (block.props.heading || '') + '' === (item.value || '') + ''
         const targetHeading = isActiveHeading ? null : item.value
-        if (this.activeBlock.flavour === 'ordered' && item.value) {
-          this.activeBlock.updateProps({ heading: targetHeading as any })
+        if (block.flavour === 'ordered' && item.value) {
+          block.updateProps({ heading: targetHeading as any })
           return;
         }
-        if (this.activeBlock.flavour !== 'paragraph') {
-          const p = this.doc.schemas.createSnapshot('paragraph', [this.activeBlock.textDeltas(), {
-            ...this.activeBlock.props,
+        if (block.flavour !== 'paragraph') {
+          const p = this.doc.schemas.createSnapshot('paragraph', [block.textDeltas(), {
+            ...block.props,
             heading: targetHeading
           }])
           void this.doc.chain()
-            .replaceWithSnapshots(this.activeBlock.id, [p])
+            .replaceWithSnapshots(block.id, [p])
             .selectOrSetCursorAtBlock(p.id, true)
             .run()
         } else {
-          this.activeBlock.updateProps({ heading: targetHeading as any })
+          block.updateProps({ heading: targetHeading as any })
         }
         break
       }

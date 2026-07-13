@@ -1,7 +1,8 @@
 import {DocPlugin, getPositionWithOffset} from "../../framework";
-import {Subject, Subscription} from "rxjs";
+import {Subject, Subscription, takeUntil} from "rxjs";
 import {OverlayRef} from "@angular/cdk/overlay";
 import {BookmarkBlockToolbar} from "./widgets/bookmark-toolbar";
+import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 
 export class BookmarkBlockExtensionPlugin extends DocPlugin {
   override name = "EmbedFrameExtensionPlugin";
@@ -12,11 +13,11 @@ export class BookmarkBlockExtensionPlugin extends DocPlugin {
 
   private _closeToolbar$ = new Subject<void>()
 
-  private _activeBlock: BlockCraft.IBlockComponents['attachment'] | null = null
+  private _activeBlock: BlockCraft.IBlockComponents['bookmark'] | null = null
 
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
-      if (!selection || !selection.isInSameBlock || selection.firstBlock?.flavour !== 'bookmark') {
+      if (!selection || !isSelectionAlive(selection as any, this.doc) || !selection.isInSameBlock || selection.firstBlock?.flavour !== 'bookmark' || selection.anchor.type !== 'selected' || selection.head.type !== 'selected') {
         this._toolbarRef && this.closeToolbar()
         return
       }
@@ -27,10 +28,23 @@ export class BookmarkBlockExtensionPlugin extends DocPlugin {
       if (this._toolbarRef && this._activeBlock === bookmarkBlock) return;
       this.closeToolbar()
 
-      setTimeout(() => {
+      this._timer = setTimeout(() => {
+        this._timer = null
         if (this._toolbarRef && this._activeBlock === bookmarkBlock) return;
+        const currentSelection = this.doc.selection.value
+        if (
+          !currentSelection ||
+          !isSelectionAlive(currentSelection as any, this.doc) ||
+          !currentSelection.isInSameBlock ||
+          currentSelection.firstBlock.id !== bookmarkBlock.id ||
+          currentSelection.anchor.type !== 'selected' ||
+          currentSelection.head.type !== 'selected' ||
+          !this._isBlockAlive(bookmarkBlock)
+        ) {
+          return
+        }
 
-        this._activeBlock = bookmarkBlock as any
+        this._activeBlock = bookmarkBlock as BlockCraft.IBlockComponents['bookmark']
 
         const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay({
           target: bookmarkBlock,
@@ -44,6 +58,10 @@ export class BookmarkBlockExtensionPlugin extends DocPlugin {
         componentRef.setInput('block', bookmarkBlock)
         componentRef.setInput('doc', this.doc)
         this._toolbarRef = overlayRef
+
+        bookmarkBlock.onDestroy$?.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
+          this.closeToolbar()
+        })
       }, 200)
 
     })
@@ -66,5 +84,14 @@ export class BookmarkBlockExtensionPlugin extends DocPlugin {
 
   destroy() {
     this._sub?.unsubscribe()
+    this.closeToolbar()
+  }
+
+  private _isBlockAlive(block: BlockCraft.BlockComponent): boolean {
+    try {
+      return this.doc.getBlockById(block.id) === block
+    } catch {
+      return false
+    }
   }
 }

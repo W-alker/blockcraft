@@ -1,5 +1,7 @@
 import {BlockNodeType, DeltaInsert, EditableBlockComponent, IEditableBlockProps, IInlineNodeAttrs} from "../block-std";
 import {getCommonAttributesFromDeltas, sliceDelta} from "../../global";
+import {getSelectionCoveredBlockIds} from "../modules/selection/covered-blocks";
+import {isSelectionAlive} from "../modules/selection/liveness";
 
 export interface ITextCommonAttrs {
   attrs: Map<string, any>
@@ -11,6 +13,19 @@ export interface ITextCommonAttrs {
 
 export class TextToolbarHelper {
   constructor(public readonly doc: BlockCraft.Doc) {
+  }
+
+  private emptyCommonAttrs(): ITextCommonAttrs {
+    return {
+      attrs: new Map(),
+      colors: {},
+      props: {},
+      allEditable: false,
+    }
+  }
+
+  private isSelectionAlive(selection: BlockCraft.Selection | null | undefined): selection is BlockCraft.Selection {
+    return isSelectionAlive(selection as any, this.doc)
   }
 
   private pickDeltaAttrsAt(deltas: DeltaInsert[], index: number) {
@@ -39,13 +54,15 @@ export class TextToolbarHelper {
   }
 
   getCurrentCommonAttrs(selection: BlockCraft.Selection): ITextCommonAttrs {
+    if (!this.isSelectionAlive(selection)) return this.emptyCommonAttrs()
+
     const attrs = new Map<string, any>()
     let colors: Record<string, string | null>
     let props: Partial<IEditableBlockProps> = JSON.parse(JSON.stringify(selection.firstBlock.props))
     let flavour: BlockCraft.BlockFlavour | undefined = selection.firstBlock.flavour
     let allEditable = selection.firstBlock.nodeType === BlockNodeType.editable
 
-    const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true).map(id => this.doc.getBlockById(id))
+    const between = getSelectionCoveredBlockIds(selection, this.doc).map(id => this.doc.getBlockById(id))
 
     const allDeltas: DeltaInsert[] = []
     if (selection.start.type === 'text' && selection.collapsed) {
@@ -120,6 +137,7 @@ export class TextToolbarHelper {
 
   formatText = (attrs: IInlineNodeAttrs, selection: BlockCraft.Selection | null = this.doc.selection.value) => {
     if (!selection) return
+    if (!this.isSelectionAlive(selection)) return
 
     const s = selection.start, e = selection.end
 
@@ -163,9 +181,19 @@ export class TextToolbarHelper {
       }
     }
 
-    const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock)
+    let between: string[]
+    try {
+      between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock)
+    } catch {
+      return
+    }
     for (const id of between) {
-      const block = this.doc.getBlockById(id)
+      let block: BlockCraft.BlockComponent
+      try {
+        block = this.doc.getBlockById(id)
+      } catch {
+        continue
+      }
       if (!this.doc.isEditable(block) || block.plainTextOnly) continue
       block.formatText(0, block.textLength, attrs)
     }
@@ -178,11 +206,22 @@ export class TextToolbarHelper {
 
   updateBlockProps(props: Partial<IEditableBlockProps>, selection: BlockCraft.Selection | null = this.doc.selection.value) {
     if (!selection) return
+    if (!this.isSelectionAlive(selection)) return
 
     this.doc.crud.transact(() => {
-      const between: string[] = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
+      let between: string[] = []
+      try {
+        between = getSelectionCoveredBlockIds(selection, this.doc)
+      } catch {
+        return
+      }
       for (const id of between) {
-        const block = this.doc.getBlockById(id)
+        let block: BlockCraft.BlockComponent
+        try {
+          block = this.doc.getBlockById(id)
+        } catch {
+          continue
+        }
         if (!this.doc.isEditable(block)) continue
         if (block.plainTextOnly) continue
         block.updateProps({...props})
@@ -192,8 +231,14 @@ export class TextToolbarHelper {
 
   transformBlocks(flavour: BlockCraft.BlockFlavour, selection: BlockCraft.Selection | null = this.doc.selection.value) {
     if (!selection) return
+    if (!this.isSelectionAlive(selection)) return
 
-    const between: string[] = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
+    let between: string[]
+    try {
+      between = getSelectionCoveredBlockIds(selection, this.doc)
+    } catch {
+      return
+    }
 
     // 切列表类型等批量替换：WKWebView 在 DOM 大批替换 + contenteditable=false
     // 子元素（todo/ordered/bullet 的 prefix）附近会同步发出大量 selectionchange，
@@ -208,7 +253,12 @@ export class TextToolbarHelper {
     void this.doc.chain()
       .transact(() => {
         between.forEach(id => {
-          const block = this.doc.getBlockById(id)
+          let block: BlockCraft.BlockComponent
+          try {
+            block = this.doc.getBlockById(id)
+          } catch {
+            return
+          }
           if (!this.doc.isEditable(block)) return
           if (block.plainTextOnly || block.flavour === flavour) return
           const newBlock = this.doc.schemas.createSnapshot(flavour, [block.textDeltas(), {

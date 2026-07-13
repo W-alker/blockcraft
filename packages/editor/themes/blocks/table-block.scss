@@ -19,7 +19,7 @@
     padding-bottom: 16px;
     width: fit-content;
     max-width: 100%;
-    overflow-x: hidden;
+    overflow: hidden;
 
     position: relative;
 
@@ -315,7 +315,7 @@
     }
 
     &:not(.selected) {
-      td.table-cell-block.selected::after {
+      td.table-cell-block.bc-table-cell-selected::after {
         z-index: 200;
         content: '';
         position: absolute;
@@ -437,7 +437,7 @@
 
       //tr.table-row-block,
       td.table-cell-block {
-        &.selected {
+        &.bc-table-cell-selected {
           background: unset;
         }
       }
@@ -623,6 +623,7 @@
 
     &:hover,
     &.active,
+    &:has(.bc-table-cell-selected),
     &:has(.selected),
     &:has(.focused) {
 

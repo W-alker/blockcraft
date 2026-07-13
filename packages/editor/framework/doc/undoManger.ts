@@ -1,18 +1,16 @@
 import * as Y from "yjs";
 import {YBlock} from "../block-std";
 import {ORIGIN_SKIP_SYNC} from "./crud";
-import type {IBlockSelectionJSON} from "../modules";
 import {BehaviorSubject, take} from "rxjs";
 import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
 import {nextTick} from "../../global";
-import type {ISelectionPoint} from "../modules/selection/types";
+import type {ISelectionJSON, ISelectionPoint, ISelectionPointJSON} from "../modules/selection/types";
 
 type UndoManagerEventName = 'stack-item-added' | 'stack-item-updated' | 'stack-item-popped' | 'stack-cleared'
 
 type IRelativeSelectionTextPoint = {
   type: 'text'
   blockId: string
-  length: number
   position: Y.RelativePosition
 }
 
@@ -25,14 +23,28 @@ type IRelativeSelectionGapPoint = {
   side: 'before' | 'after'
 }
 
+type IRelativeSelectionBoundaryPoint = {
+  type: 'boundary'
+  blockId: string
+  index: number
+  position: Y.RelativePosition
+}
+
+type IRelativeSelectionTableCellPoint = {
+  type: 'table-cell'
+  blockId: string
+  tableId: string
+}
+
 type IRelativeSelectionPoint = {
   type: 'selected'
   blockId: string
-} | IRelativeSelectionTextPoint | IRelativeSelectionGapPoint
+} | IRelativeSelectionTextPoint | IRelativeSelectionGapPoint | IRelativeSelectionBoundaryPoint | IRelativeSelectionTableCellPoint
 
 type IRelativeSelectionSnapshot = {
-  from: IRelativeSelectionPoint
-  to: IRelativeSelectionPoint | null
+  anchor: IRelativeSelectionPoint
+  head: IRelativeSelectionPoint
+  commonParent: string
 }
 
 export class DocUndoManger {
@@ -41,6 +53,9 @@ export class DocUndoManger {
 
   private _undoSelectionStack: Array<IRelativeSelectionSnapshot | null> = []
   private _redoSelectionStack: Array<IRelativeSelectionSnapshot | null> = []
+  private _selectionReplayVersion = 0
+  private _captureGroupDepth = 0
+  private _captureTimeoutBeforeGroup: number | null = null
   readonly undoRedoing$ = new BehaviorSubject(false)
 
   /**
@@ -74,6 +89,15 @@ export class DocUndoManger {
         }
       }
     })
+    this.on('stack-item-updated', (evt) => {
+      if (evt.type === 'undo') {
+        // A pre-captured snapshot belongs only to the next NEW stack item. If
+        // Yjs merges the transaction into the previous item, keep that item's
+        // original selection and discard the stale pending snapshot so it cannot
+        // leak into a later unrelated undo record.
+        this._pendingSnapshot = undefined
+      }
+    })
   }
 
   /**
@@ -90,6 +114,30 @@ export class DocUndoManger {
    * Use before a discrete user action that must be independently undoable.
    */
   stopCapturing() {
+    this._yUndoManager.stopCapturing()
+  }
+
+  /**
+   * Group several Yjs transactions into one undo item regardless of elapsed wall
+   * time. Used by IME flows where compositionStart materializes/deletes blocks and
+   * compositionEnd commits text after the user may have spent seconds in the IME.
+   */
+  beginCaptureGroup() {
+    if (this._captureGroupDepth++ > 0) return
+    this._captureTimeoutBeforeGroup = this._yUndoManager.captureTimeout
+    this._yUndoManager.stopCapturing()
+    this._yUndoManager.captureTimeout = Number.MAX_SAFE_INTEGER
+  }
+
+  endCaptureGroup() {
+    if (this._captureGroupDepth <= 0) return
+    this._captureGroupDepth -= 1
+    if (this._captureGroupDepth > 0) return
+    if (this._captureTimeoutBeforeGroup !== null) {
+      this._yUndoManager.captureTimeout = this._captureTimeoutBeforeGroup
+      this._captureTimeoutBeforeGroup = null
+    }
+    this._pendingSnapshot = undefined
     this._yUndoManager.stopCapturing()
   }
 
@@ -119,12 +167,15 @@ export class DocUndoManger {
 
   undo() {
     if (!this.isCanUndo() || this.undoRedoing$.value) return
+    const replayVersion = this._nextSelectionReplayVersion()
     this.undoRedoing$.next(true)
     try {
       this._redoSelectionStack.push(this._captureSelectionSnapshot())
+      this._clearLiveSelectionBeforeUndoRedo()
       this._yUndoManager.undo()
       const last = this._undoSelectionStack.pop()
-      if (last !== undefined) this._replaySelectionAfterUndoRedo(last)
+      this._focusEditingHostFromSnapshot(last)
+      if (last !== undefined) this._replaySelectionAfterUndoRedo(last, replayVersion)
     } finally {
       // The flag is normally cleared inside crud._syncYEvent during the undo
       // transaction. But if that observer throws before reaching the reset (e.g. a
@@ -136,14 +187,22 @@ export class DocUndoManger {
 
   redo() {
     if (!this.isCanRedo() || this.undoRedoing$.value) return
+    const replayVersion = this._nextSelectionReplayVersion()
     this.undoRedoing$.next(true)
     try {
+      this._clearLiveSelectionBeforeUndoRedo()
       this._yUndoManager.redo()
       const last = this._redoSelectionStack.pop()
-      if (last !== undefined) this._replaySelectionAfterUndoRedo(last)
+      this._focusEditingHostFromSnapshot(last)
+      if (last !== undefined) this._replaySelectionAfterUndoRedo(last, replayVersion)
     } finally {
       this.undoRedoing$.next(false)
     }
+  }
+
+  private _clearLiveSelectionBeforeUndoRedo() {
+    if (!this.doc.selection.value) return
+    this.doc.selection.replay(null)
   }
 
   private _clampIndex(index: number, min: number, max: number) {
@@ -152,25 +211,45 @@ export class DocUndoManger {
 
   private _capturePointSafe(
     blockId: string,
-    type: 'text' | 'selected' | 'gap',
+    type: 'text' | 'selected' | 'gap' | 'boundary' | 'table-cell',
     offset: number,
-    length: number,
     side?: 'before' | 'after',
+    tableId?: string,
   ): IRelativeSelectionPoint | null {
     if (type === 'gap') {
       return {type: 'gap', blockId, side: side ?? 'before'}
+    }
+    if (type === 'table-cell') {
+      if (!tableId) return null
+      try {
+        this.doc.getBlockById(blockId)
+        this.doc.getBlockById(tableId)
+      } catch {
+        return null
+      }
+      return {type: 'table-cell', blockId, tableId}
     }
     if (type === 'selected') {
       return {type: 'selected', blockId}
     }
     try {
       const block = this.doc.getBlockById(blockId)
+      if (type === 'boundary') {
+        if (block.nodeType === 'editable') return null
+        const yChildren = block.yBlock.get('children') as Y.Array<string>
+        const safeIndex = this._clampIndex(offset, 0, yChildren.length)
+        return {
+          type: 'boundary',
+          blockId,
+          index: safeIndex,
+          position: Y.createRelativePositionFromTypeIndex(yChildren, safeIndex),
+        }
+      }
       if (!this.doc.isEditable(block)) return null
       const safeIndex = this._clampIndex(offset, 0, block.textLength)
       return {
         type: 'text',
         blockId,
-        length,
         position: Y.createRelativePositionFromTypeIndex(block.yText, safeIndex)
       }
     } catch {
@@ -183,46 +262,35 @@ export class DocUndoManger {
     if (!sel) return null
 
     try {
-      const s = sel.start, e = sel.end
-
-      // gap is always a collapsed single point beside a void/container block.
-      // Capture its `side` so undo/redo restores "before vs after" precisely.
-      if (s.type === 'gap') {
-        const from = this._capturePointSafe(s.blockId, 'gap', 0, 0, s.side)
-        return from ? {from, to: null} : null
+      const capturePoint = (point: ISelectionPoint) => {
+        if (point.type === 'gap') {
+          return this._capturePointSafe(point.blockId, 'gap', 0, point.side)
+        }
+        if (point.type === 'boundary') {
+          return this._capturePointSafe(point.blockId, 'boundary', point.index)
+        }
+        if (point.type === 'table-cell') {
+          return this._capturePointSafe(point.blockId, 'table-cell', 0, undefined, point.tableId)
+        }
+        return this._capturePointSafe(
+          point.blockId,
+          point.type,
+          point.type === 'text' ? point.offset : 0,
+        )
       }
 
-      // text/selected are mutually exclusive with gap below this point.
-      const captureType = (t: 'text' | 'selected' | 'gap'): 'text' | 'selected' =>
-        t === 'text' ? 'text' : 'selected'
+      const anchor = capturePoint(sel.anchor)
+      if (!anchor) return null
+      const head = capturePoint(sel.head)
+      if (!head) return null
 
-      // Same-block: from captures [start.offset, end.offset)
-      if (sel.isInSameBlock) {
-        const len = s.type === 'text' && e.type === 'text' ? e.offset - s.offset : 0
-        const from = this._capturePointSafe(s.blockId, captureType(s.type), s.type === 'text' ? s.offset : 0, len)
-        return from ? {from, to: null} : null
-      }
-
-      // Cross-block:
-      // - from captures [start.offset, end of start block)
-      // - to captures [0, end.offset) in the end block
-      //   Note: to range always starts at offset 0 in the end block
-      const fromPoint = this._capturePointSafe(
-        s.blockId, captureType(s.type), s.type === 'text' ? s.offset : 0,
-        s.type === 'text' ? (s.block as any).textLength - s.offset : 0
-      )
-      if (!fromPoint) return null
-
-      const endLen = e.type === 'text' ? e.offset : 0
-      const toPoint = this._capturePointSafe(e.blockId, captureType(e.type), 0, endLen)
-
-      return {from: fromPoint, to: toPoint}
+      return {anchor, head, commonParent: sel.commonParent}
     } catch {
       return null
     }
   }
 
-  private _resolveSelectionPoint(point: IRelativeSelectionPoint): IBlockSelectionJSON['from'] | null {
+  private _resolveSelectionPoint(point: IRelativeSelectionPoint): ISelectionPointJSON | null {
     if (point.type === 'gap') {
       try {
         this.doc.getBlockById(point.blockId)
@@ -248,6 +316,40 @@ export class DocUndoManger {
       }
     }
 
+    if (point.type === 'boundary') {
+      let block: BlockCraft.BlockComponent
+      try {
+        block = this.doc.getBlockById(point.blockId)
+      } catch {
+        return null
+      }
+      if (block.nodeType === 'editable') return null
+      const yChildren = block.yBlock.get('children') as Y.Array<string>
+      const absPos = Y.createAbsolutePositionFromRelativePosition(point.position, this.doc.yDoc)
+      const index = absPos && absPos.type === yChildren
+        ? this._clampIndex(absPos.index, 0, yChildren.length)
+        : this._clampIndex(point.index, 0, yChildren.length)
+      return {
+        type: 'boundary',
+        blockId: point.blockId,
+        index,
+      }
+    }
+
+    if (point.type === 'table-cell') {
+      try {
+        this.doc.getBlockById(point.blockId)
+        this.doc.getBlockById(point.tableId)
+      } catch {
+        return null
+      }
+      return {
+        type: 'table-cell',
+        blockId: point.blockId,
+        tableId: point.tableId,
+      }
+    }
+
     let block: BlockCraft.BlockComponent
     try {
       block = this.doc.getBlockById(point.blockId)
@@ -261,71 +363,174 @@ export class DocUndoManger {
     if (!absPos || absPos.type !== block.yText) return null
 
     const index = this._clampIndex(absPos.index, 0, block.textLength)
-    const maxLength = Math.max(0, block.textLength - index)
-    const length = this._clampIndex(point.length, 0, maxLength)
-
     return {
       type: 'text',
       blockId: point.blockId,
-      index,
-      length
+      offset: index,
     }
   }
 
-  private _resolveSelectionSnapshot(snapshot: IRelativeSelectionSnapshot | null): IBlockSelectionJSON | null {
+  private _resolveSelectionSnapshot(snapshot: IRelativeSelectionSnapshot | null): ISelectionJSON | null {
     if (!snapshot) return null
 
-    const from = this._resolveSelectionPoint(snapshot.from)
-    if (!from) return null
-
-    const to = snapshot.to ? this._resolveSelectionPoint(snapshot.to) : null
-    if (snapshot.to && !to) return null
+    const anchor = this._resolveSelectionPoint(snapshot.anchor)
+    if (!anchor) return null
+    const head = this._resolveSelectionPoint(snapshot.head)
+    if (!head) return null
 
     return {
-      from,
-      to,
-      collapsed: !to && (from.type === 'gap' || (from.type === 'text' && from.length === 0)),
-      commonParent: from.blockId
+      anchor,
+      head,
+      commonParent: snapshot.commonParent,
     }
   }
 
-  private _replaySelectionAfterUndoRedo(snapshot: IRelativeSelectionSnapshot | null) {
+  private _nextSelectionReplayVersion() {
+    this._selectionReplayVersion += 1
+    return this._selectionReplayVersion
+  }
+
+  private _isCurrentSelectionReplay(version: number) {
+    return version === this._selectionReplayVersion
+  }
+
+  private _replaySelectionAfterUndoRedo(snapshot: IRelativeSelectionSnapshot | null, version = this._nextSelectionReplayVersion()) {
     this.undoRedoing$.pipe(take(1)).subscribe(() => {
       nextTick().then(() => {
-        try {
-          if (snapshot === null) {
-            this.doc.selection.replay(null)
-            return
-          }
-          const selection = this._resolveSelectionSnapshot(snapshot)
-          if (!selection) throw new Error('invalid undo selection')
-          // Undo/redo swaps content; when the removed nodes held the caret, the browser
-          // drops focus out of the contenteditable host. Since Ctrl+Z is bound to the
-          // root block, an unfocused editor makes the NEXT undo silently no-op. Re-focus
-          // the host before restoring the selection so keyboard undo keeps working.
-          this._focusEditingHost(selection.from?.blockId)
-          this.doc.selection.replay(selection)
-        } catch (e) {
-          this.doc.selection.recalculate()
-          this.doc.logger.warn('UNDO时选区出现问题')
-        }
+        if (!this._isCurrentSelectionReplay(version)) return
+        this._tryReplaySelectionAfterUndoRedo(snapshot, 3, version)
       })
     })
   }
 
+  private _tryReplaySelectionAfterUndoRedo(snapshot: IRelativeSelectionSnapshot | null, attemptsLeft: number, version: number) {
+    if (!this._isCurrentSelectionReplay(version)) return
+    try {
+      if (snapshot === null) {
+        this.doc.selection.replay(null)
+        return
+      }
+      const selection = this._resolveSelectionSnapshot(snapshot)
+      if (!selection) {
+        if (attemptsLeft > 0) {
+          requestAnimationFrame(() => this._tryReplaySelectionAfterUndoRedo(snapshot, attemptsLeft - 1, version))
+        } else {
+          this.doc.selection.replay(null)
+        }
+        return
+      }
+      this._replayResolvedSelectionAfterUndoRedo(selection, attemptsLeft, version)
+    } catch (e) {
+      if (attemptsLeft > 0) {
+        requestAnimationFrame(() => this._tryReplaySelectionAfterUndoRedo(snapshot, attemptsLeft - 1, version))
+      } else {
+        this.doc.selection.recalculate()
+      }
+    }
+  }
+
+  private _replayResolvedSelectionAfterUndoRedo(selection: ISelectionJSON, attemptsLeft: number, version: number) {
+    if (!this._isCurrentSelectionReplay(version)) return
+    try {
+      // Undo/redo swaps content; when the removed nodes held the caret, the browser
+      // can drop focus out of the contenteditable host. Since Ctrl+Z is bound to the
+      // root block, an unfocused editor makes the NEXT undo silently no-op.
+      this._focusEditingHost(selection.anchor?.blockId)
+      this.doc.selection.replay(selection)
+    } catch {
+      if (attemptsLeft > 0) {
+        requestAnimationFrame(() => this._replayResolvedSelectionAfterUndoRedo(selection, attemptsLeft - 1, version))
+      } else {
+        this.doc.selection.recalculate()
+      }
+      return
+    }
+
+    if (attemptsLeft <= 0) return
+    requestAnimationFrame(() => {
+      if (!this._isCurrentSelectionReplay(version)) return
+      if (!this._hasRestoredSelection(selection)) {
+        this._replayResolvedSelectionAfterUndoRedo(selection, attemptsLeft - 1, version)
+      }
+    })
+  }
+
+  private _hasRestoredSelection(expected: ISelectionJSON) {
+    const root = this.doc.root.hostElement
+    if (!this._hasExpectedModelSelection(expected)) return false
+    if (this._isModelOnlySelection(expected)) return true
+    if (!root.isConnected) return true
+
+    const active = document.activeElement
+    const hasEditorFocus = !!active && (active === root || root.contains(active))
+    if (!hasEditorFocus) return false
+
+    try {
+      const result = this.doc.selection.recalculate(false)
+      if (!result || !('value' in result)) return true
+      const domSelection = this._selectionValueToJSON(result.value)
+      return !!domSelection && this._sameSelectionJSON(domSelection, expected)
+    } catch {
+      return false
+    }
+  }
+
+  private _hasExpectedModelSelection(expected: ISelectionJSON) {
+    const liveSelection = this._selectionValueToJSON(this.doc.selection.value)
+    return !!liveSelection && this._sameSelectionJSON(liveSelection, expected)
+  }
+
+  private _isModelOnlySelection(selection: ISelectionJSON) {
+    return selection.anchor.type === 'table-cell' && selection.head.type === 'table-cell'
+  }
+
+  private _selectionValueToJSON(value: unknown): ISelectionJSON | null {
+    if (!value || typeof value !== 'object') return null
+    if ('toJSON' in value && typeof value.toJSON === 'function') {
+      return value.toJSON() as ISelectionJSON
+    }
+    if ('anchor' in value && 'head' in value && 'commonParent' in value) {
+      return value as ISelectionJSON
+    }
+    return null
+  }
+
+  private _sameSelectionJSON(a: ISelectionJSON, b: ISelectionJSON) {
+    return a.commonParent === b.commonParent &&
+      this._samePointJSON(a.anchor, b.anchor) &&
+      this._samePointJSON(a.head, b.head)
+  }
+
+  private _samePointJSON(a: ISelectionPointJSON, b: ISelectionPointJSON) {
+    return a.blockId === b.blockId &&
+      a.type === b.type &&
+      (a.offset ?? null) === (b.offset ?? null) &&
+      (a.side ?? null) === (b.side ?? null) &&
+      (a.index ?? null) === (b.index ?? null) &&
+      (a.tableId ?? null) === (b.tableId ?? null)
+  }
+
   /** Restore DOM focus to the editing host for a block, if it isn't already focused. */
   private _focusEditingHost(blockId?: string) {
-    if (!blockId) return
+    let host = this.doc.root.hostElement
     try {
-      const block = this.doc.getBlockById(blockId)
-      const host = (block.hostElement.closest('[contenteditable="true"]') as HTMLElement | null)
-        ?? this.doc.root.hostElement
-      if (host && document.activeElement !== host) {
-        host.focus({preventScroll: true})
+      if (blockId) {
+        const block = this.doc.getBlockById(blockId)
+        host = (block.hostElement.closest('[contenteditable="true"]') as HTMLElement | null)
+          ?? this.doc.root.hostElement
       }
     } catch {
-      // block no longer exists — nothing to focus
+      host = this.doc.root.hostElement
     }
+
+    const active = document.activeElement
+    if (host && active !== host && !host.contains(active)) {
+      host.focus({preventScroll: true})
+    }
+  }
+
+  private _focusEditingHostFromSnapshot(snapshot: IRelativeSelectionSnapshot | null | undefined) {
+    this._focusEditingHost(snapshot?.anchor?.blockId)
   }
 
   clearHistory() {
