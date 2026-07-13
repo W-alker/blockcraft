@@ -403,7 +403,7 @@ export class BlockCraftDoc {
         list.push({
           parent: parentId,
           index: 0,
-          length: index - 1,
+          length: index,
           parentBlock: parentComp,
           group: childrenIds.slice(0, index)
         })

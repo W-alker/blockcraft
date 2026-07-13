@@ -103,7 +103,8 @@ export const ColumnsBlockSchema: IBlockSchemaOptions<ColumnsBlockModel> = {
     icon: "bc_icon bc_fenlan",
     svgIcon: "bc_fenlan",
     description: "创建 2-6 栏的响应式布局，每栏可独立编辑",
-    includeChildren: ['column']
+    includeChildren: ['column'],
+    selectionScope: 'columns',
   }
 }
 

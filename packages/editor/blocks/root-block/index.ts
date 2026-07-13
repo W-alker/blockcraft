@@ -36,6 +36,7 @@ export const RootBlockSchema: IBlockSchemaOptions<RootBlockModel> = {
     label: "Root",
     includeChildren: ['*'],
     renderUnit: true,
+    selectionScope: 'document',
   }
 }
 

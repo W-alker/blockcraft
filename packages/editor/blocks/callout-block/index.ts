@@ -41,6 +41,7 @@ export const CalloutBlockSchema: IBlockSchemaOptions<CalloutBlockModel> = {
     svgIcon: 'bc_gaoliangkuai-color',
     renderUnit: true,
     includeChildren: ['paragraph', 'divider', 'todo', 'bullet', 'ordered', 'heading-*'],
+    selectionScope: 'container',
     // excludeChildren: ['callout', 'table*', 'image', 'code', 'attachment', '*-embed', 'bookmark']
   }
 }

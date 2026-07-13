@@ -2,13 +2,13 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-06-15
+> Last updated: 2026-07-13
 
 ## FloatTextToolbarPlugin
 
 > `plugins/float-text-toolbar/rich-text-toolbar.ts` — Floating rich-text formatting toolbar shown on text selection.
 
-Shows a formatting toolbar 350ms after user makes a non-collapsed text selection. Provides bold/italic/underline/strikethrough/code shortcuts and extensible custom buttons.
+Shows a formatting toolbar 350ms after user makes a non-collapsed text selection. Provides bold/italic/underline/strikethrough/code shortcuts and extensible custom buttons. Model-owned table-cell rectangle selections do not open this toolbar, and text-shaped selections that cross different table cells are also ignored so table rectangle UI cannot be mistaken for a rich-text range. Normal text selection inside a single table cell still opens the toolbar.
 
 ### Configuration
 

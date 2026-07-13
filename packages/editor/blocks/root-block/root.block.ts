@@ -42,6 +42,10 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
     return false
   }
 
+  private _isNativeTextSelectionStart(block: BlockCraft.BlockComponent | null) {
+    return block?.nodeType === BlockNodeType.editable
+  }
+
   private _markSelecting(block: BlockCraft.BlockComponent) {
     block.hostElement.classList.add('selecting')
     this.selectingBlocks.add(block)
@@ -103,6 +107,7 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
     if (!id) return
     const selectStartBlock = this.doc.getBlockById(id)
     if (this._isInsideTable(selectStartBlock)) return
+    if (this._isNativeTextSelectionStart(selectStartBlock)) return
 
     // 入口兜底：上一次 selection 若因任何原因（重入、selectEnd 漏触发、
     // takeUntil 提前打断订阅）残留了 `.selecting`，新会话开始前彻底清掉。

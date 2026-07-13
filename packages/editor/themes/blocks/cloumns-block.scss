@@ -62,8 +62,6 @@
       }
     }
 
-    &:has(.focused),
-    &:has(.selected),
     &:hover,
     &.drag-over {
       .column-block .column-content {

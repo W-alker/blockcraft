@@ -60,6 +60,7 @@ export const TableBlockSchema: IBlockSchemaOptions<TableBlockModel> = {
     includeChildren: ['table-row'],
     icon: "bc_icn bc_column-vertical",
     svgIcon: "bc_column-vertical",
+    selectionScope: 'table',
   }
 }
 

@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-07-08 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-07-13 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -224,6 +224,16 @@ doc.selection.getSelectedText()         // string
 // Non-collapsed boundary ranges that use a child block's gap text anchor or
 // void/container chrome round-trip back to parent boundary points; same-block
 // leading→trailing gap/chrome ranges stay selected.
+// Recalculated cross-parent DOM ranges are accepted only inside the same
+// semantic scope. Scopes come from schema `metadata.selectionScope`
+// (`document`, `table`, `columns`, `container`; omitted/`transparent` inherits
+// the nearest ancestor scope). root.id is the commonParent used to address
+// top-level children and is the topmost document scope.
+// When native drag crosses a closed scope, the internal endpoint is projected
+// to the scope block's parent boundary instead of collapsing the whole range.
+// Input/IME and selected-class behavior read SelectionScopePolicy; columns
+// preserves cross-column text tails, while table/columns use endpoint-only
+// generic selected classes for text-shaped ranges.
 
 // Type-narrowing example
 const sel = doc.selection.value

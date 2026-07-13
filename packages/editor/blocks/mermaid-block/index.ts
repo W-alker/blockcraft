@@ -44,6 +44,7 @@ export const MermaidBlockSchema: IBlockSchemaOptions<MermaidBlockModel> = {
     label: '代码绘图',
     svgIcon: 'bc_mermaid',
     icon: 'bf_icon bc_mermaid',
+    selectionScope: 'transparent',
   }
 }
 
@@ -56,7 +57,8 @@ export const MermaidTextareaBlockSchema: IBlockSchemaOptions<MermaidTextareaBloc
     version: 1,
     label: "Mermaid输入框",
     icon: "bc_icon bc_wenben",
-    isLeaf: true
+    isLeaf: true,
+    selectionScope: 'transparent',
   }
 }
 

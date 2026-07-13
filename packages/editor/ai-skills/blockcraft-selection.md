@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-07-08 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-07-13 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -39,6 +39,7 @@ This prevents stale toolbar state and accidental block-level keyboard handling w
 | `framework/modules/selection/blockSelection.ts` | `BlockSelection` — immutable anchor/head model |
 | `framework/modules/selection/types.ts` | `ISelectionPoint`, `ISelectionJSON`, deprecated legacy types |
 | `framework/modules/selection/normalize.ts` | `normalizeRange()` — DOM Range → endpoint pair |
+| `framework/modules/selection/scope.ts` | `SelectionScope` resolver + `SelectionScopePolicy` — semantic cross-parent guard and scope-owned input/visual policy |
 | `framework/modules/selection/liveness.ts` | Selection liveness guard — clears stale block refs before broadcast/input |
 | `framework/modules/selection/selection-keyboard.ts` | Arrow / Shift / Home / End / Ctrl+A / Escape handling |
 | `framework/modules/selection/selected-manager.ts` | DOM class management (`.selected`, `.focused`) |
@@ -141,7 +142,7 @@ A table-cell point represents one endpoint of a **model-owned rectangular table 
 - `SelectionManager.getSelectionRect()` and `getSelectionRects()` return `null` for table-cell selections. They are intentionally model-only, so toolbar/overlay code must not derive geometry from a synthetic DOM Range.
 - While the editor host keeps focus, an empty native `selectionchange` caused by that `removeAllRanges()` does not clear the model-owned table-cell selection; explicit `blur()` / `replay(null)` still clears it.
 
-`TableBlockComponent` remains responsible for merged-cell adjustment and the private `.bc-table-cell-selected` cell rectangle class. `TableBlockBinding` reads table-cell model selection first for copy/cut/paste/delete/arrow navigation, then falls back to the table component's explicit row/column/cell rectangle state for older paths. Plain Arrow over a model table-cell selection moves/collapses to the adjacent visible cell; Shift+Arrow keeps the anchor and extends the head. `InputTransformer` reads the same model selection for typing, printable keydown, Enter, Backspace/Delete fallback, and IME materialization: text goes into the anchor cell's fresh paragraph; delete-style input clears selected visible cells and keeps the rectangle selected. Undo/redo snapshots store table-cell anchor/head `{ blockId, tableId }` and restore the model selection if both cells and table still exist.
+`TableBlockComponent` remains responsible for merged-cell adjustment and the private `.bc-table-cell-selected` cell rectangle class. Generic selected/focused class painting ignores model-owned table-cell selections, and text-shaped fallback ranges that cross different cells do not mark `table-row` containers as `.selected`. `FloatTextToolbarPlugin` also ignores table-cell rectangles and cross-cell text-shaped ranges, while still allowing normal text selection inside one cell. `TableBlockBinding` reads table-cell model selection first for copy/cut/paste/delete/arrow navigation, then falls back to the table component's explicit row/column/cell rectangle state for older paths. Plain Arrow over a model table-cell selection moves/collapses to the adjacent visible cell; Shift+Arrow keeps the anchor and extends the head. `InputTransformer` reads the same model selection for typing, printable keydown, Enter, Backspace/Delete fallback, and IME materialization: text goes into the anchor cell's fresh paragraph; delete-style input clears selected visible cells and keeps the rectangle selected. Undo/redo snapshots store table-cell anchor/head `{ blockId, tableId }` and restore the model selection if both cells and table still exist.
 
 ### Gap Cursor (`type: 'gap'`)
 
@@ -334,6 +335,10 @@ fakeRange.dispose()  // remove the overlay
 DOM `selectionchange` event
   → SelectionManager._bindEvents() listener fires
   → Skip if isComposing (IME active) or _suppressRecalculate
+  → RootBlockComponent does not start its block-level pointerleave selection
+    chain when the mouse selection starts inside an editable block, so native
+    text drag ranges can cross semantic scopes such as columns and reach
+    normalizeRange().
   → recalculate()
       → document.getSelection().getRangeAt(0)
       → If selection escaped editor root → setNull
@@ -344,7 +349,8 @@ DOM `selectionchange` event
           → returns { start: ISelectionPoint, end: ISelectionPoint }
       → Detect direction via isSelectionBackward(nativeSelection)
       → anchor = backward ? end : start ; head = backward ? start : end
-      → Cross-parent guard: if anchor.parent !== head.parent → collapse, abort
+      → Scope guard: if physical parents differ, resolve semantic selection scope
+        and project closed-scope endpoints to parent boundary points
       → Build BlockSelection
   → _applyState()
       → validate lazy block references; stale ids become null
@@ -384,11 +390,28 @@ doc.selection.replay(json)
   → native Selection.addRange(range) // DOM view catches up under suppression
 ```
 
-### Cross-Parent Constraint
+### Selection Scope Guard
 
-`recalculate()` currently rejects selections whose anchor/head live under different parent blocks (e.g. one in a table cell, another outside). The selection collapses and the range is suppressed. This constraint prevents undo/redo edge cases that would otherwise need multi-parent transaction handling.
+`recalculate()` no longer treats "different physical parent block" as automatically invalid. If anchor/head have different physical containers, it resolves each endpoint through `selection/scope.ts`. The resolver walks up the block tree and reads each block's registered schema `metadata.selectionScope`; blocks with no declaration or `selectionScope: 'transparent'` inherit the nearest ancestor scope. Endpoints inside the same **semantic editing scope** are kept. When a drag crosses from one scope to another, the endpoint inside a closed scope is projected to that scope block's parent `boundary` point (`before` for document-ordered start, `after` for document-ordered end). Only ranges that still cannot be represented after projection are collapsed and ignored.
 
-> The constraint is documented as removable once `DocUndoManager` handles cross-parent selection snapshots — see memory observation 1148.
+Scope rules:
+
+- **Document/root scope** — `metadata.selectionScope: 'document'`; normal top-level text/blocks resolve to the topmost document scope. Their `commonParent` uses `root.id` so the editor can address the root child list; because root has no parent, it is never projected beyond itself.
+- **Table scope** — `metadata.selectionScope: 'table'`; descendants of table structural children, plus model-owned `table-cell` points, resolve to the owning table scope. A table cell and root paragraph are different scopes and are rejected.
+- **Columns scope** — `metadata.selectionScope: 'columns'`; descendants of transparent column children resolve to the owning columns scope, allowing native text ranges across columns while still keeping the whole columns block selection in the parent/document fallback.
+- **Container scope** — `metadata.selectionScope: 'container'`; content and boundary points resolve to that closed container. A container's internal text cannot be selected together with outside root text through `recalculate()`; selecting the whole container as a block is still parent-scope.
+- **Transparent containers** — no declaration or `metadata.selectionScope: 'transparent'`; descendants inherit the nearest ancestor scope, so blocks such as mermaid text can participate in document-level text selections and deletion paths.
+
+`SelectionScopePolicy` keeps scope-specific behavior out of callers:
+
+| Scope kind | Text beforeInput | Cross-text tail | Generic selected classes |
+|------------|------------------|-----------------|--------------------------|
+| `document` | use DOM target range when available | merge end tail into start block | text ranges use deep path coverage; structural ranges query covered blocks |
+| `columns` | use live model selection | preserve end-column tail | endpoint text blocks only |
+| `table` | use DOM target range unless model table-cell selection is active | merge if a text-shaped fallback is handled | endpoint text blocks only |
+| `container` | use DOM target range when available | merge end tail into start block | query covered blocks |
+
+The guard decides whether a DOM range can become a `BlockSelection` and what `commonParent` should be when physical parents differ. `SelectionScopePolicy` then tells input and visual layers how to handle text-shaped ranges in that scope, so callers do not hard-code individual flavours such as `columns`, `table-row`, or custom container flavours.
 
 ## normalizeRange Internals
 
@@ -482,7 +505,7 @@ const between = doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock
 - **Adding collaborative cursors**: `createFakeRange.ts`
 - **Changing DOM selection classes**: `selected-manager.ts`
 - **Adding a new selection point type**: `types.ts` + `blockSelection.ts` + `normalize.ts`
-- **Cross-parent selection support**: `SelectionManager.recalculate()` cross-parent guard + `DocUndoManager`
+- **Cross-parent selection support**: `SelectionManager.recalculate()` + `selection/scope.ts` semantic scope guard + `DocUndoManager`
 
 ## Related Skills
 

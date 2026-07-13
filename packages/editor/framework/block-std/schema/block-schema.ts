@@ -15,6 +15,12 @@ export type BlockPlaceholderConfig =
       heading?: { 1?: string; 2?: string; 3?: string }
     }
 
+export type BlockSelectionScopeKind = "document" | "table" | "columns" | "container"
+
+export type BlockSelectionScopeMetadata =
+  | BlockSelectionScopeKind
+  | "transparent"
+
 /**
  * Resolve the placeholder text for an editable block based on its Schema
  * placeholder config and current heading level.
@@ -72,6 +78,16 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
      * - omitted: no placeholder is rendered.
      */
     placeholder?: BlockPlaceholderConfig
+    /**
+     * Semantic selection scope owned by this block.
+     *
+     * - omitted / "transparent": descendants inherit the nearest ancestor scope.
+     * - "document": top-level document scope; normally used by root.
+     * - "table": table descendants share one closed table scope.
+     * - "columns": column descendants share one layout scope.
+     * - "container": closed generic container scope such as callout/highlight.
+     */
+    selectionScope?: BlockSelectionScopeMetadata
   }
 }
 

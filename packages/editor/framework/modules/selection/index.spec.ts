@@ -303,7 +303,10 @@ describe('SelectionManager DOM selection normalization', () => {
   it('retries replaying a gap cursor when the gap filler mounts after replay', () => {
     const {manager, blockHost} = createManager();
     let scheduled: FrameRequestCallback | null = null;
-    spyOn(window, 'requestAnimationFrame').and.callFake((callback: FrameRequestCallback) => {
+    const rafSpy = (window.requestAnimationFrame as any).and
+      ? window.requestAnimationFrame as jasmine.Spy
+      : spyOn(window, 'requestAnimationFrame');
+    rafSpy.and.callFake((callback: FrameRequestCallback) => {
       scheduled = callback;
       return 1;
     });

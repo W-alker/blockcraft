@@ -10,6 +10,13 @@ const waitFrames = async (count: number) => {
   }
 };
 
+beforeEach(() => {
+  spyOn(window, 'requestAnimationFrame').and.callFake((callback: FrameRequestCallback) => {
+    const id = window.setTimeout(() => callback(performance.now()), 0);
+    return id;
+  });
+});
+
 /**
  * Regression guard for the "second Ctrl+Z does nothing" bug.
  *
@@ -488,6 +495,56 @@ describe('DocUndoManger – text and boundary selection snapshots', () => {
 
   afterEach(() => ydoc.destroy());
 
+  const createEditableBlock = (id: string, text: string, hostElement = document.createElement('p')) => {
+    const yText = new Y.Text();
+    const yBlock = new Y.Map<any>();
+    yBlock.set('children', yText);
+    yBlockMap.set(id, yBlock);
+    yText.insert(0, text);
+    const block = {
+      id,
+      nodeType: BlockNodeType.editable,
+      yText,
+      textLength: text.length,
+      hostElement,
+    };
+    blocks[id] = block;
+    return block;
+  };
+
+  const createCrossColumnSelection = () => {
+    const rootHost = document.createElement('div');
+    const leftHost = document.createElement('p');
+    const rightHost = document.createElement('p');
+    rootHost.setAttribute('contenteditable', 'true');
+    rootHost.append(leftHost, rightHost);
+    const left = createEditableBlock('left-p', 'left text', leftHost);
+    const right = createEditableBlock('right-p', 'right text', rightHost);
+    blocks['columns-1'] = {
+      id: 'columns-1',
+      nodeType: BlockNodeType.block,
+      hostElement: rootHost,
+    };
+    const selection = new BlockSelection(
+      {blockId: left.id, type: 'text', offset: 2, block: left} as any,
+      {blockId: right.id, type: 'text', offset: 5, block: right} as any,
+      'columns-1',
+      id => blocks[id],
+      (a, b) => {
+        if (a === b) return 0;
+        return a === left.id
+          ? Node.DOCUMENT_POSITION_FOLLOWING
+          : Node.DOCUMENT_POSITION_PRECEDING;
+      },
+    );
+    const json = {
+      anchor: {blockId: left.id, type: 'text' as const, offset: 2},
+      head: {blockId: right.id, type: 'text' as const, offset: 5},
+      commonParent: 'columns-1',
+    };
+    return {rootHost, selection, json};
+  };
+
   it('preserves backward text anchor/head offsets', () => {
     const yText = new Y.Text();
     const yBlock = new Y.Map<any>();
@@ -517,6 +574,59 @@ describe('DocUndoManger – text and boundary selection snapshots', () => {
       head: {blockId: 'p1', type: 'text', offset: 1},
       commonParent: 'p1',
     });
+  });
+
+  it('replays cross-column text selection snapshots after undo', async () => {
+    const {rootHost, selection, json} = createCrossColumnSelection();
+    document.body.appendChild(rootHost);
+    mockDoc.root.hostElement = rootHost;
+    mgr.clearHistory();
+    mockDoc.selection.value = selection;
+    mockDoc.selection.recalculate.and.returnValue({value: json});
+
+    mgr.captureSelectionBeforeChange();
+    ydoc.transact(() => yBlockMap.set('changed', new Y.Map()), null);
+    mockDoc.selection.value = null;
+
+    mgr.undo();
+    await nextTick();
+    await waitFrames(1);
+
+    expect(mockDoc.selection.replay).toHaveBeenCalledWith(json);
+    expect(mockDoc.selection.recalculate).toHaveBeenCalledWith(false);
+    rootHost.remove();
+  });
+
+  it('retries cross-column text replay when DOM normalization is still stale', async () => {
+    const {rootHost, selection, json} = createCrossColumnSelection();
+    document.body.appendChild(rootHost);
+    mockDoc.root.hostElement = rootHost;
+    mockDoc.selection.value = selection;
+    const snapshot = (mgr as any)._captureSelectionSnapshot();
+    const staleDom = {
+      anchor: {blockId: 'left-p', type: 'text' as const, offset: 2},
+      head: {blockId: 'left-p', type: 'text' as const, offset: 2},
+      commonParent: 'left-p',
+    };
+    mockDoc.selection.recalculate.and.returnValues(
+      {value: staleDom},
+      {value: json},
+    );
+    let replayCount = 0;
+    mockDoc.selection.replay.and.callFake((selectionJson: any) => {
+      mockDoc.selection.value = selectionJson;
+      if (selectionJson) replayCount += 1;
+    });
+
+    (mgr as any)._replaySelectionAfterUndoRedo(snapshot);
+
+    await nextTick();
+    expect(replayCount).toBe(1);
+    await waitFrames(2);
+
+    expect(replayCount).toBe(2);
+    expect(mockDoc.selection.recalculate).toHaveBeenCalledTimes(2);
+    rootHost.remove();
   });
 
   it('resolves boundary points through children relative positions', () => {

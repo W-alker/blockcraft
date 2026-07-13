@@ -1,11 +1,28 @@
 import {InputTransformer} from "./index";
-import {BlockNodeType} from "../../block-std";
+import {BlockNodeType, BlockSelectionScopeMetadata} from "../../block-std";
 import {BlockSelection} from "../selection";
 import {CompositionEventState} from "../../block-std/event/state/compositionState";
 
 // `@DocEventRegister` validates `doc.event` and registers listeners in the
 // constructor, so every mock doc must expose a minimal event dispatcher stub.
 const eventStub = () => ({add() {}, bindHotkey() {}})
+
+const setSelectionScope = <T extends Record<string, any>>(
+  block: T,
+  selectionScope: BlockSelectionScopeMetadata,
+): T & {doc: any} => {
+  return Object.assign(block, {
+    doc: {
+    schemas: {
+      get: () => ({
+        metadata: {
+          selectionScope,
+        },
+      }),
+    },
+    },
+  })
+}
 
 const makeBoundarySelection = (host: any, from = 0, to = 2) => new BlockSelection(
   {blockId: host.id, type: 'boundary', index: from, block: host} as any,
@@ -476,8 +493,11 @@ const createWholeTableSelectionHarness = () => {
 }
 
 describe('InputTransformer beforeInput range resolution', () => {
-  const resolveRange = (selection: any, targetRange: any) => {
-    const transformer = new InputTransformer({event: eventStub()} as any) as any
+  const resolveRange = (selection: any, targetRange: any, blocks: Record<string, any> = {}) => {
+    const transformer = new InputTransformer({
+      event: eventStub(),
+      getBlockById: (id: string) => blocks[id],
+    } as any) as any
     return transformer['_resolveBeforeInputRange'](selection, targetRange)
   }
 
@@ -556,6 +576,24 @@ describe('InputTransformer beforeInput range resolution', () => {
     }
 
     expect(resolveRange(selection, targetRange)).toBe(targetRange)
+  })
+
+  it('prefers the model selection for cross-column text ranges', () => {
+    const selection = {
+      collapsed: false,
+      commonParent: 'columns-1',
+      start: {type: 'text', blockId: 'left-p', offset: 2},
+      end: {type: 'text', blockId: 'right-p', offset: 3},
+    }
+    const targetRange = {
+      from: {type: 'text', blockId: 'left-p', index: 2, length: 4},
+      to: {type: 'text', blockId: 'right-p', index: 0, length: 3},
+      collapsed: false,
+    }
+
+    expect(resolveRange(selection, targetRange, {
+      'columns-1': setSelectionScope({id: 'columns-1', flavour: 'columns'}, 'columns'),
+    })).toBe(selection)
   })
 
   it('prevents uncontrolled beforeInput when no model or DOM target range can be resolved', () => {
@@ -1357,6 +1395,119 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
     }
   }
 
+  const createCrossColumnTextRangeHarness = (throughPath: any[] = []) => {
+    const leftDelete = jasmine.createSpy('leftDelete')
+    const leftInsert = jasmine.createSpy('leftInsert')
+    const leftApplyDelta = jasmine.createSpy('leftApplyDelta')
+    const rightDelete = jasmine.createSpy('rightDelete')
+    const columns = setSelectionScope({id: 'columns-1', flavour: 'columns'}, 'columns')
+    const leftColumn = {
+      id: 'column-left',
+      flavour: 'column',
+      parentBlock: columns,
+      parentId: columns.id,
+      childrenIds: ['left-p', 'left-tail-a', 'left-tail-b'],
+    }
+    const middleColumn = {
+      id: 'column-middle',
+      flavour: 'column',
+      parentBlock: columns,
+      parentId: columns.id,
+      childrenIds: ['middle-p'],
+    }
+    const rightColumn = {
+      id: 'column-right',
+      flavour: 'column',
+      parentBlock: columns,
+      parentId: columns.id,
+      childrenIds: ['right-prefix', 'right-p'],
+    }
+    const leftBlock = {
+      id: 'left-p',
+      blockId: 'left-p',
+      flavour: 'paragraph',
+      textLength: 8,
+      parentBlock: leftColumn,
+      parentId: leftColumn.id,
+      textDeltas: () => [{insert: 'ABCDEFGH'}],
+      yText: {insert: leftInsert, delete: leftDelete, length: 8},
+      applyDeltaOperations: leftApplyDelta,
+    }
+    const rightBlock = {
+      id: 'right-p',
+      blockId: 'right-p',
+      flavour: 'paragraph',
+      textLength: 10,
+      parentBlock: rightColumn,
+      parentId: rightColumn.id,
+      textDeltas: () => [{insert: '0123456789'}],
+      yText: {delete: rightDelete},
+    }
+    const blocks: Record<string, any> = {
+      'columns-1': columns,
+      'column-left': leftColumn,
+      'column-middle': middleColumn,
+      'column-right': rightColumn,
+      'left-p': leftBlock,
+      'left-tail-a': {id: 'left-tail-a', flavour: 'paragraph'},
+      'left-tail-b': {id: 'left-tail-b', flavour: 'paragraph'},
+      'middle-p': {id: 'middle-p', flavour: 'paragraph'},
+      'right-prefix': {id: 'right-prefix', flavour: 'paragraph'},
+      'right-p': rightBlock,
+    }
+    const order = ['left-p', 'left-tail-a', 'left-tail-b', 'column-middle', 'right-prefix', 'right-p']
+    const selection = new BlockSelection(
+      {blockId: leftBlock.id, type: 'text', offset: 3, block: leftBlock} as any,
+      {blockId: rightBlock.id, type: 'text', offset: 4, block: rightBlock} as any,
+      columns.id,
+      id => blocks[id],
+      (a, b) => {
+        const aIndex = order.indexOf(a)
+        const bIndex = order.indexOf(b)
+        if (aIndex < bIndex) return Node.DOCUMENT_POSITION_FOLLOWING
+        if (aIndex > bIndex) return Node.DOCUMENT_POSITION_PRECEDING
+        return 0
+      },
+    )
+    const captureSelectionBeforeChange = jasmine.createSpy('captureSelectionBeforeChange')
+    const transact = jasmine.createSpy('transact').and.callFake((cb: () => void) => cb())
+    const doc = {
+      event: eventStub(),
+      selection: {
+        value: selection,
+        replay: jasmine.createSpy('replay'),
+        setCursorAt: jasmine.createSpy('setCursorAt'),
+        blur: jasmine.createSpy('blur'),
+      },
+      crud: {
+        undoManager: {
+          captureSelectionBeforeChange,
+          beginCaptureGroup: jasmine.createSpy('beginCaptureGroup'),
+          endCaptureGroup: jasmine.createSpy('endCaptureGroup'),
+        },
+        transact,
+        deleteBlocks: jasmine.createSpy('deleteBlocks'),
+        deleteBlockById: jasmine.createSpy('deleteBlockById'),
+      },
+      getBlockById: jasmine.createSpy('getBlockById').and.callFake((id: string) => blocks[id]),
+      isEditable: jasmine.createSpy('isEditable').and.callFake((block: any) => block?.flavour === 'paragraph'),
+      queryBlocksThroughPathDeeply: jasmine.createSpy('queryBlocksThroughPathDeeply').and.returnValue(throughPath),
+    }
+    return {
+      doc,
+      transformer: new InputTransformer(doc as any) as any,
+      selection,
+      leftBlock,
+      rightBlock,
+      leftDelete,
+      leftInsert,
+      leftApplyDelta,
+      rightDelete,
+      captureSelectionBeforeChange,
+      transact,
+    }
+  }
+
   it('_inheritedReplaceAttrs returns common attrs of a uniformly formatted range', () => {
     const transformer = new InputTransformer({event: eventStub()} as any) as any
     const block = {
@@ -1445,6 +1596,81 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
 
     expect(del).toHaveBeenCalledWith(2, 3)
     expect(insert).toHaveBeenCalledWith(2, 'Z', {'a:italic': true})
+  })
+
+  it('does not append the end block tail when replacing a cross-column text range', () => {
+    const {
+      doc,
+      transformer,
+      selection,
+      leftDelete,
+      leftInsert,
+      leftApplyDelta,
+      rightDelete,
+    } = createCrossColumnTextRangeHarness()
+
+    transformer['_replaceText'](selection, 'Z', true)
+
+    expect(leftDelete).toHaveBeenCalledWith(3, 5)
+    expect(leftInsert).toHaveBeenCalledWith(3, 'Z', undefined)
+    expect(rightDelete).toHaveBeenCalledWith(0, 4)
+    expect(leftApplyDelta).not.toHaveBeenCalled()
+    expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
+  })
+
+  it('deletes covered structural groups when replacing a cross-column text range', () => {
+    const throughPath = [
+      {parent: 'column-left', index: 1, length: 2},
+      {parent: 'column-right', index: 0, length: 1},
+      {parent: 'columns-1', index: 1, length: 1},
+    ]
+    const {
+      doc,
+      transformer,
+      selection,
+      leftBlock,
+      rightBlock,
+      captureSelectionBeforeChange,
+      transact,
+    } = createCrossColumnTextRangeHarness(throughPath)
+
+    transformer['_replaceText'](selection, 'Z', true)
+
+    expect(doc.queryBlocksThroughPathDeeply).toHaveBeenCalledWith(leftBlock, rightBlock)
+    expect(doc.crud.deleteBlocks.calls.allArgs()).toEqual([
+      ['column-left', 1, 2],
+      ['column-right', 0, 1],
+      ['columns-1', 1, 1],
+    ])
+    expect(doc.selection.replay).toHaveBeenCalledWith({
+      anchor: {blockId: leftBlock.id, type: 'text', offset: 3},
+      head: {blockId: leftBlock.id, type: 'text', offset: 3},
+      commonParent: leftBlock.id,
+    })
+    expect(captureSelectionBeforeChange).toHaveBeenCalled()
+    expect((captureSelectionBeforeChange.calls.mostRecent() as any).invocationOrder)
+      .toBeLessThan((doc.selection.replay.calls.mostRecent() as any).invocationOrder)
+    expect((doc.selection.replay.calls.mostRecent() as any).invocationOrder)
+      .toBeLessThan((transact.calls.mostRecent() as any).invocationOrder)
+  })
+
+  it('starts cross-column text IME without merging the end block tail', () => {
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const {doc, transformer, selection, leftBlock} = createCrossColumnTextRangeHarness()
+    spyOn(transformer, '_replaceText')
+    spyOn(transformer.compositionSession, 'start')
+
+    const result = transformer['_handleCompositionStart']({
+      preventDefault,
+      has: () => false,
+    } as any)
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(doc.crud.undoManager.beginCaptureGroup).toHaveBeenCalled()
+    expect(transformer['_replaceText']).toHaveBeenCalledWith(selection, null, false)
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(leftBlock, 3)
+    expect(transformer.compositionSession.start).toHaveBeenCalledWith(leftBlock, 3)
   })
 })
 

@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-06-08
+> Last updated: 2026-07-13
 
 ## Block Types
 
@@ -468,6 +468,42 @@ doc.chain()
 ```
 
 > Always prefer `DocChain` over calling `doc.crud` directly. The chain handles transaction grouping, undo history boundaries, and cursor restoration in one place.
+
+## Selection Scope (Schema field)
+
+Container-like blocks can declare how their descendants participate in
+cross-parent selection via `metadata.selectionScope`.
+
+```typescript
+metadata: {
+  // ...
+  selectionScope: 'container',
+}
+```
+
+Supported values:
+
+| Value | Meaning |
+|-------|---------|
+| `document` | Top-level document scope; normally only `root` declares this. |
+| `table` | Closed table scope. Descendants share one table selection domain. |
+| `columns` | Layout scope whose child columns are transparent to text selection. |
+| `container` | Closed generic container scope such as callout/highlight. |
+| `transparent` / omitted | This block does not create a scope; descendants inherit the nearest ancestor scope. |
+
+Built-in declarations:
+
+| Flavour | `selectionScope` |
+|---------|------------------|
+| `root` | `document` |
+| `table` | `table` |
+| `columns` | `columns` |
+| `callout` | `container` |
+| `mermaid` / `mermaid-textarea` | `transparent` |
+
+`SelectionManager` reads this field through the registered schema. Do not add
+flavour-specific checks in input, toolbar, or selection-class code; derive
+behavior from the resolved scope / `SelectionScopePolicy` instead.
 
 ## Editable Block Placeholder (Schema field)
 

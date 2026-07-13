@@ -16,6 +16,10 @@ import {
 import { BlockSelection, IBlockRange, IGapSelectionPoint, INormalizedRange } from "../selection";
 import { isSelectionAlive } from "../selection/liveness";
 import { endpointsToLegacy } from "../selection/normalize";
+import {
+  resolveSelectionScopePolicyForBlockId,
+  SelectionScopePolicy,
+} from "../selection/scope";
 import { isNativeInputTarget, isZeroSpace } from "../../utils";
 import {
   getCommonAttributesFromDeltas,
@@ -110,7 +114,8 @@ export class InputTransformer {
   /**
    * `beforeinput.getTargetRanges()` may shrink around read-only void/block
    * nodes, so keep trusting the editor model when the current selection
-   * includes whole-block endpoints.
+   * includes whole-block endpoints, model-owned structural endpoints, or a
+   * text range whose semantic scope policy is model-first.
    */
   private _shouldUseSelectionModelForBeforeInput(
     selection: BlockSelection | null,
@@ -121,7 +126,8 @@ export class InputTransformer {
         this._hasWholeBlockEndpoint(selection) ||
         selection.start.type === "boundary" ||
         selection.end.type === "boundary" ||
-        this._hasTableCellSelection(selection)
+        this._hasTableCellSelection(selection) ||
+        this._shouldUseModelForTextBeforeInput(selection)
       )
     );
   }
@@ -143,6 +149,29 @@ export class InputTransformer {
       !event.ctrlKey &&
       !event.altKey
     );
+  }
+
+  private _textRangeScopePolicy(selection: BlockSelection | null): SelectionScopePolicy | null {
+    if (!selection || selection.collapsed || selection.start.type !== "text" || selection.end.type !== "text") {
+      return null;
+    }
+    try {
+      return resolveSelectionScopePolicyForBlockId(
+        selection.commonParent,
+        id => this.doc.getBlockById(id) as any,
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  private _shouldUseModelForTextBeforeInput(selection: BlockSelection | null): boolean {
+    return this._textRangeScopePolicy(selection)?.useModelForTextBeforeInput ?? false;
+  }
+
+  private _shouldMergeTextRangeTail(range: INormalizedRange | BlockSelection): boolean {
+    if (!(range instanceof BlockSelection)) return true;
+    return this._textRangeScopePolicy(range)?.textRangeTailMode !== "preserve";
   }
 
   /**
@@ -1008,8 +1037,9 @@ export class InputTransformer {
     }
 
     if (!curSel.collapsed) {
-      const needsMerge = !curSel.isInSameBlock;
-      if (this._hasWholeBlockEndpoint(curSel) || needsMerge) {
+      const crossesBlocks = !curSel.isInSameBlock;
+      const needsMerge = crossesBlocks && this._shouldMergeTextRangeTail(curSel);
+      if (this._hasWholeBlockEndpoint(curSel) || crossesBlocks) {
         context.preventDefault();
         this._beginCompositionUndoGroup();
       }
@@ -1267,7 +1297,7 @@ export class InputTransformer {
 
     if (to) {
       ev.preventDefault();
-      this._replaceText(effectiveRange, text, true);
+      this._replaceText(effectiveRange, text, this._shouldMergeTextRangeTail(effectiveRange));
       const cursorPos =
         from.type === "text" ? from : to.type === "text" ? to : null;
       if (!cursorPos) {
@@ -1571,6 +1601,7 @@ export class InputTransformer {
     skipAppend = false,
   ) {
     if (range instanceof BlockSelection) {
+      merge = merge && this._shouldMergeTextRangeTail(range);
       range = endpointsToLegacy({ start: range.start, end: range.end });
     }
     const { from, to, collapsed } = range;

@@ -27,6 +27,12 @@ import {
   lazyTableCellPoint,
 } from "./normalize";
 import {isSelectionAlive} from "./liveness";
+import {
+  resolveCommonSelectionScope,
+  resolveSelectionContainerId,
+  resolveSelectionScope,
+  SelectionScope,
+} from "./scope";
 
 @DocEventRegister
 export class SelectionManager {
@@ -183,24 +189,33 @@ export class SelectionManager {
     try {
       // normalizeRange returns {start, end} in document order.
       // Determine real anchor/head from native Selection direction.
-      const endpoints = this._normalizeRange(range, options)
+      const rawEndpoints = this._normalizeRange(range, options)
+      const endpoints = this._repairCrossScopeEndpoints(rawEndpoints) ?? rawEndpoints
       const isBackward = isSelectionBackward(selection)
       const anchor = isBackward ? endpoints.end : endpoints.start
       const head = isBackward ? endpoints.start : endpoints.end
 
-      // Cross-parent constraint (kept for now)
+      // Cross-parent guard: reject ranges that leave their semantic editing
+      // scope, while allowing transparent child containers inside the same
+      // scope to span their physical parents.
+      let commonParent = anchor.blockId
       if (anchor.blockId !== head.blockId) {
-        const anchorParent = anchor.type === 'boundary' ? anchor.blockId : anchor.block.parentId
-        const headParent = head.type === 'boundary' ? head.blockId : head.block.parentId
+        commonParent = this._commonParentForPoints(anchor, head, range)
+        const anchorParent = resolveSelectionContainerId(anchor)
+        const headParent = resolveSelectionContainerId(head)
         if (anchorParent !== headParent) {
-          range.collapse()
-          return {value: null, next: () => {}}
+          const scope = resolveCommonSelectionScope(
+            anchor,
+            head,
+            id => this.doc.getBlockById(id) as any,
+          )
+          if (!scope) {
+            range.collapse()
+            return {value: null, next: () => {}}
+          }
+          commonParent = this._commonParentForPoints(anchor, head, range)
         }
       }
-
-      const commonParent = anchor.blockId !== head.blockId
-        ? closetBlockId(range.commonAncestorContainer)!
-        : anchor.blockId
 
       const r = this._createBlockSelection(anchor, head, commonParent)
       const next = () => this._applyState(r)
@@ -227,6 +242,60 @@ export class SelectionManager {
 
   private _normalizeRange(range: StaticRange, options?: { isComposing?: boolean }): INormalizedEndpoints {
     return _normalizeRange(range, id => this.doc.getBlockById(id) as any, options)
+  }
+
+  private _repairCrossScopeEndpoints(endpoints: INormalizedEndpoints): INormalizedEndpoints | null {
+    const getBlock = (id: string) => this.doc.getBlockById(id) as any
+    const startScope = resolveSelectionScope(endpoints.start, getBlock)
+    const endScope = resolveSelectionScope(endpoints.end, getBlock)
+    if (!startScope || !endScope || startScope.blockId === endScope.blockId) return null
+
+    const start = startScope.kind === 'document'
+      ? endpoints.start
+      : this._boundaryPointForScope(startScope, 'before') ?? endpoints.start
+    const end = endScope.kind === 'document'
+      ? endpoints.end
+      : this._boundaryPointForScope(endScope, 'after') ?? endpoints.end
+
+    if (start === endpoints.start && end === endpoints.end) return null
+    return {start, end}
+  }
+
+  private _boundaryPointForScope(
+    scope: SelectionScope,
+    side: 'before' | 'after',
+  ): ISelectionPoint | null {
+    const block = this.doc.getBlockById(scope.blockId)
+    const parent = block.parentBlock
+    if (!parent) return null
+    const childrenIds = parent.childrenIds ?? []
+    let index = childrenIds.indexOf(block.id)
+    if (index < 0 && typeof block.getIndexOfParent === 'function') {
+      index = block.getIndexOfParent()
+    }
+    if (index < 0) return null
+    return lazyBoundaryPoint(
+      parent.id,
+      side === 'before' ? index : index + 1,
+      id => this.doc.getBlockById(id) as any,
+    )
+  }
+
+  private _commonParentForPoints(
+    anchor: ISelectionPoint,
+    head: ISelectionPoint,
+    range: Range,
+  ): string {
+    if (anchor.blockId === head.blockId) return anchor.blockId
+    const anchorParent = resolveSelectionContainerId(anchor)
+    const headParent = resolveSelectionContainerId(head)
+    if (anchorParent === headParent) return anchorParent
+    const scope = resolveCommonSelectionScope(
+      anchor,
+      head,
+      id => this.doc.getBlockById(id) as any,
+    )
+    return scope?.blockId ?? closetBlockId(range.commonAncestorContainer)!
   }
 
   // ── Model state management ──

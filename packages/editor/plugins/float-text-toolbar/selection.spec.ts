@@ -57,6 +57,26 @@ describe("float text toolbar selection guard", () => {
     }),
   } as any);
 
+  const makeTableTextSelection = (sameCell = false) => {
+    const table = {id: "table-1", flavour: "table"};
+    const row = {id: "row-1", flavour: "table-row", parentBlock: table};
+    const cell1 = {id: "cell-1", flavour: "table-cell", parentBlock: row};
+    const cell2 = sameCell ? cell1 : {id: "cell-2", flavour: "table-cell", parentBlock: row};
+    const p1 = {id: "cell-1-p", flavour: "paragraph", nodeType: BlockNodeType.editable, parentBlock: cell1};
+    const p2 = {id: "cell-2-p", flavour: "paragraph", nodeType: BlockNodeType.editable, parentBlock: cell2};
+    return {
+      collapsed: false,
+      isAllSelected: false,
+      isEmpty: false,
+      isInSameBlock: false,
+      start: {blockId: p1.id, type: "text", offset: 0, block: p1},
+      end: {blockId: p2.id, type: "text", offset: 2, block: p2},
+      firstBlock: p1,
+      lastBlock: p2,
+      getDirection: () => "forward",
+    } as any;
+  };
+
   const makeBoundarySelection = () => ({
     collapsed: false,
     isAllSelected: false,
@@ -157,6 +177,14 @@ describe("float text toolbar selection guard", () => {
     expect(isFloatTextToolbarSelection(makeTableCellSelection())).toBeFalse();
     expect(isFloatTextToolbarSelection(makeBoundarySelection())).toBeFalse();
     expect(isFloatTextToolbarSelection(makeGapSelection())).toBeFalse();
+  });
+
+  it("rejects text-shaped selections that cross table cells", () => {
+    expect(isFloatTextToolbarSelection(makeTableTextSelection(false))).toBeFalse();
+  });
+
+  it("keeps text toolbar support inside one table cell", () => {
+    expect(isFloatTextToolbarSelection(makeTableTextSelection(true))).toBeTrue();
   });
 
   it("does not open rich text toolbar for table-cell selections", fakeAsync(() => {

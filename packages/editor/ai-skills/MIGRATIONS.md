@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-07-12 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-07-13 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,42 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-07-13 (patch) — DOM selection recalculation uses semantic scopes
+
+**Severity**: patch
+
+**What changed**: `IBlockSchemaOptions.metadata.selectionScope` now lets block schemas declare semantic selection scopes (`document`, `table`, `columns`, `container`, or `transparent`). `SelectionManager.recalculate()` resolves `SelectionScope` from that schema metadata when a native DOM range normalizes to endpoints with different physical parent blocks. Ranges are kept when both endpoints belong to the same scope. When native drag crosses a closed scope, the internal endpoint is projected to the scope block's parent `boundary` point, so the scope block is selected as a whole instead of collapsing the entire range. Built-in schemas declare `root → document`, `table → table`, `columns → columns`, `callout → container`, and `mermaid` / `mermaid-textarea → transparent`. `root.id` is the topmost document scope and the `commonParent` for top-level child-list operations. Whole-block `selected` and collapsed `gap` points still belong to the selected block's parent domain, so selecting a table/callout/columns block as a root child keeps the existing block-selection behavior. `SelectionScopePolicy` centralizes scope-owned text input and generic selected-class behavior: `columns` is model-first for text `beforeInput`, preserves the end-column tail, and paints endpoint text blocks only; `table` also paints endpoint text blocks only for text-shaped fallback ranges; document-scope text ranges paint endpoint text blocks plus fully covered middle groups from `queryBlocksThroughPathDeeply`, so transparent endpoint ancestors are not marked as whole-block selected. `RootBlockComponent` stops starting its block-level pointerleave selection chain when the mouse selection starts inside an editable block, so native text drag ranges can reach the scope resolver instead of being promoted to parent block selection first. `FloatTextToolbarPlugin` ignores table-cell rectangles and cross-cell text-shaped fallback ranges so table rows are not styled as block selections.
+
+**Why**: The previous same-physical-parent guard blocked legitimate structured selections, especially text selections across columns, while still not expressing why table/callout internals must not merge with outside root text. A semantic scope layer gives selection, input, and future deletion semantics a single domain boundary. Reading that boundary from schema metadata keeps the selection module from hard-coding individual flavours such as `columns`, `table-row`, or `table-cell`; non-scope blocks stay transparent and inherit the nearest configured scope's behavior.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — Quick Reference documents the semantic scope guard.
+- `blockcraft-block.md` — documents the `metadata.selectionScope` schema field.
+- `blockcraft-selection.md` — documents `selection/scope.ts`, scope rules, and the new recalculation guard.
+- `blockcraft-input.md` — documents cross-column text replacement / IME semantics.
+- `blockcraft-plugins-formatting.md` — documents FloatTextToolbarPlugin's table-cell selection guard.
+
+### New Internal APIs
+
+- `BlockSelectionScopeKind` and `BlockSelectionScopeMetadata` are exported from the block schema layer for schema metadata typing.
+- `IBlockSchemaOptions.metadata.selectionScope?: BlockSelectionScopeMetadata` declares the semantic scope owned by a block schema.
+- `SelectionScopePolicy` describes scope-owned `beforeInput`, cross-text-tail, and selected-class behavior.
+- `getSelectionScopePolicy(scope)`, `resolveSelectionScopeForBlock(...)`, `resolveSelectionScopeForBlockId(...)`, and `resolveSelectionScopePolicyForBlockId(...)` let framework modules derive behavior from the semantic scope instead of testing block flavours locally.
+
+### Behavior Changes
+
+- Native DOM selections whose endpoints are in different columns of the same `columns` block can now normalize into a `BlockSelection` with `commonParent` set to the `columns` block.
+- Native DOM selections from `mermaid-textarea` to surrounding root text can now normalize into a document-level `BlockSelection` whose `commonParent` is `root.id`.
+- Native DOM selections from table/callout/columns internals to outside root content project the internal endpoint to the table/callout/columns block's parent boundary, selecting that scope block as a whole instead of letting native selection reset anchor/focus inside the closed scope.
+- Document-scope text selections that start or end inside a transparent container no longer apply generic `.selected` styling to that endpoint ancestor container; only the endpoint text blocks and fully covered middle groups are marked.
+- Dragging from editable text no longer triggers root's block-level pointerleave promotion, so cross-column text selection is not interrupted before `selectionchange`.
+- Typing, deleting, or IME over a text range whose scope policy preserves text tails (`columns`) no longer merges the surviving end-column text tail into the start-column text block. Fully covered intermediate column/block content is still removed according to the selected range.
+- Model-owned table-cell rectangle selections and cross-cell text-shaped fallback ranges no longer open the floating rich-text toolbar or mark table-row containers through generic `.selected` painting.
+
+### Migration Recipe
+
+No application migration is required for built-in blocks. Custom block schemas that want closed selection behavior should declare `metadata.selectionScope: 'container'` (or a more specific built-in kind such as `columns` / `table` when matching those semantics). Blocks that should participate in the surrounding scope should omit the field or set `selectionScope: 'transparent'`. Plugins that inspect `selection.commonParent` should treat it as the operation host for cross-parent selections, not always the nearest DOM/common ancestor. At the document fallback level this host is still `root.id`; that does not mean root is a closed semantic scope. Plugins that need to know table rectangles should continue using `selection.getTableCellSelection()`.
 
 ### v?.?.? - 2026-07-12 (patch) — IME structural edits undo atomically
 
