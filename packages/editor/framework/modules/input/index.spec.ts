@@ -2747,6 +2747,37 @@ describe('InputTransformer gap deletion', () => {
     expect(doc.selection.replay).not.toHaveBeenCalled()
   })
 
+  it('Backspace from gap-before moves to the previous editable end without deleting the gap block', () => {
+    const prevBlock = {id: 'prev-p', nodeType: BlockNodeType.editable, textLength: 4}
+    const nextBlock = {id: 'next-p', nodeType: BlockNodeType.editable, textLength: 6}
+    const {transformer, context, doc, preventDefault} = createTransformer('before', BlockNodeType.block, {prevBlock, nextBlock})
+
+    const result = transformer['_handleBackspace'](context)
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
+    expect(doc.selection.replay).toHaveBeenCalledWith({
+      anchor: {blockId: prevBlock.id, type: 'text', offset: prevBlock.textLength},
+      head: {blockId: prevBlock.id, type: 'text', offset: prevBlock.textLength},
+      commonParent: prevBlock.id,
+    })
+  })
+
+  it('Backspace from gap-before moves to the previous non-editable trailing gap', () => {
+    const prevBlock = {id: 'prev-table', nodeType: BlockNodeType.block}
+    const nextBlock = {id: 'next-p', nodeType: BlockNodeType.editable, textLength: 6}
+    const {transformer, context, doc, preventDefault} = createTransformer('before', BlockNodeType.block, {prevBlock, nextBlock})
+
+    const result = transformer['_handleBackspace'](context)
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
+    expect(doc.selection.setGapCursor).toHaveBeenCalledWith(prevBlock, 'after')
+    expect(doc.selection.replay).not.toHaveBeenCalled()
+  })
+
   it('Delete deletes a container block from gap-before and uses the same adjacent restore policy', () => {
     const nextBlock = {id: 'next-p', nodeType: BlockNodeType.editable, textLength: 6}
     const {transformer, context, doc, preventDefault} = createTransformer('before', BlockNodeType.block, {nextBlock})
@@ -2761,6 +2792,37 @@ describe('InputTransformer gap deletion', () => {
       head: {blockId: nextBlock.id, type: 'text', offset: 0},
       commonParent: nextBlock.id,
     })
+  })
+
+  it('Delete from gap-after moves to the next editable start without deleting the gap block', () => {
+    const prevBlock = {id: 'prev-p', nodeType: BlockNodeType.editable, textLength: 4}
+    const nextBlock = {id: 'next-p', nodeType: BlockNodeType.editable, textLength: 6}
+    const {transformer, context, doc, preventDefault} = createTransformer('after', BlockNodeType.block, {prevBlock, nextBlock})
+
+    const result = transformer['_handleDelete'](context)
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
+    expect(doc.selection.replay).toHaveBeenCalledWith({
+      anchor: {blockId: nextBlock.id, type: 'text', offset: 0},
+      head: {blockId: nextBlock.id, type: 'text', offset: 0},
+      commonParent: nextBlock.id,
+    })
+  })
+
+  it('Delete from gap-after moves to the next non-editable leading gap', () => {
+    const prevBlock = {id: 'prev-table', nodeType: BlockNodeType.block}
+    const nextBlock = {id: 'next-table', nodeType: BlockNodeType.block}
+    const {transformer, context, doc, preventDefault} = createTransformer('after', BlockNodeType.block, {prevBlock, nextBlock})
+
+    const result = transformer['_handleDelete'](context)
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
+    expect(doc.selection.setGapCursor).toHaveBeenCalledWith(nextBlock, 'before')
+    expect(doc.selection.replay).not.toHaveBeenCalled()
   })
 
   it('focuses the auto-created fallback paragraph when deleting the only renderUnit child', () => {

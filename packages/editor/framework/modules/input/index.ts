@@ -1877,6 +1877,29 @@ export class InputTransformer {
     }
   }
 
+  private _moveGapCaretAway(
+    sel: BlockSelection,
+    side: "before" | "after",
+  ): boolean {
+    if (
+      !sel.collapsed ||
+      sel.start.type !== "gap" ||
+      sel.start.side !== side
+    ) {
+      return false;
+    }
+
+    const block = sel.start.block;
+    const sibling = side === "before"
+      ? this.doc.prevSibling(block)
+      : this.doc.nextSibling(block);
+
+    if (sibling) {
+      this._focusBlockEdge(sibling, side === "after");
+    }
+    return true;
+  }
+
   private _handleModelDeleteSelection(
     sel: BlockSelection,
     gapSide: "before" | "after",
@@ -1914,6 +1937,11 @@ export class InputTransformer {
   private _handleBackspace(context: UIEventStateContext) {
     const state = context.get("keyboardState");
     const sel = state.selection;
+
+    if (this._moveGapCaretAway(sel, "before")) {
+      context.preventDefault();
+      return true;
+    }
 
     // Gap-after + Backspace deletes the void/container block next to the caret,
     // then recalculates synchronously so the next render does not read a stale
@@ -2023,6 +2051,11 @@ export class InputTransformer {
   private _handleDelete(context: UIEventStateContext) {
     const state = context.get("keyboardState");
     const sel = state.selection;
+
+    if (this._moveGapCaretAway(sel, "after")) {
+      context.preventDefault();
+      return true;
+    }
 
     // Gap-before + Delete mirrors Backspace from gap-after.
     const modelDeleteResult = this._handleModelDeleteSelection(sel, "before");
