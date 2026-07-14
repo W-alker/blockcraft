@@ -527,7 +527,6 @@ export class DocCRUD {
         this._delete(parentComp, index, deletedLength)
         this._insertBySnapshots(parentComp, 0, [p])
       })
-      this.doc.selection.recalculate()
       return [{index, length: deletedLength}]
     }
 

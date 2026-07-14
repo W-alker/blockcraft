@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-07-12
+> Last updated: 2026-07-14
 
 ## Architecture Overview
 
@@ -94,6 +94,14 @@ doc.crud.transact(fn, origin?)
 // Access raw Yjs
 doc.crud.getYBlock(id): YBlock  // Y.Map
 ```
+
+`deleteBlocks()` is selection-neutral. When a non-forced deletion removes every
+child of a `renderUnit` container, DocCRUD synchronously inserts one empty
+paragraph to keep the container editable, but it does not sample or reposition
+the browser selection. The Input/plugin action that owns the mutation must place
+the final caret or range explicitly through `SelectionManager` (`setCursorAt()`,
+`setCursorAtBlock()`, `replay()`, etc.). Do not call `recalculate()` merely to
+confirm a programmatic write.
 
 ## IBlockSnapshot Format
 

@@ -67,6 +67,43 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-07-14 (patch) — cross-scope native drag endpoints stabilize on boundaries
+
+**Severity**: patch
+
+**What changed**: When native drag normalization projects an endpoint out of a closed selection scope, `SelectionManager` now publishes the repaired `BlockSelection` and immediately aligns the browser anchor/focus with the same gap-backed boundary while preserving forward/backward direction. Native endpoints are also validated against the editor root before normalization, preventing a Safari drag leaked into surrounding page DOM from entering block lookup. `SelectionSelectedManager` reconciles covered-block class sets instead of removing and re-adding unchanged `.selected` / `.focused` classes.
+
+**Why**: Safari/WebKit could retain the original table-internal DOM endpoint after the model had made the table atomic. Repeated `selectionchange` events then alternated between internal text and parent boundaries, making both the native highlight and whole-table virtual selection flash. Full class teardown additionally restarted table selection transitions even when the covered blocks had not changed.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — Quick Reference records cross-scope native endpoint stabilization.
+- `blockcraft-selection.md` — documents the native-drag projection exception, direction preservation, idempotence, and class reconciliation.
+
+### Behavior Changes
+
+- Native drags crossing table/container scopes now leave their closed-scope endpoint on the scope block's parent boundary in both model and DOM views.
+- The stabilizing DOM write runs only when scope repair changed an endpoint, does not read layout, and does not suppress subsequent pointer-driven `selectionchange` events.
+- A native Range with an endpoint outside root is never normalized. BlockCraft clears it only while the editor owns focus; external page/editor selections remain untouched, and model-owned table-cell rectangles are preserved.
+- Repeated equivalent selection broadcasts no longer toggle classes on unchanged covered blocks. No package version is changed until an explicit release decision.
+
+### v?.?.? - 2026-07-14 (patch) — DocCRUD render-unit deletion is selection-neutral
+
+**Severity**: patch
+
+**What changed**: `DocCRUD.deleteBlocks()` still synchronously replaces the final child of a non-forced `renderUnit` deletion with one empty paragraph, but it no longer calls `SelectionManager.recalculate()` afterward. Structural mutation and selection placement now have separate owners: DocCRUD updates Yjs/the block tree, while the Input or plugin action commits the intended caret/range through model-first Selection APIs.
+
+**Why**: The removed DOM read happened in the middle of higher-level replacement flows, before typed text and the final cursor recipe had been applied. It could publish a stale intermediate selection, add a forced layout/readback to a mutation hot path, and couple low-level data operations to mounted DOM availability.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — records the selection-neutral DocCRUD convention.
+- `blockcraft-data.md` — documents the render-unit fallback paragraph and explicit post-mutation selection ownership.
+
+### Behavior Changes
+
+- Direct callers of `deleteBlocks()` that expect a caret after deleting all children of a `renderUnit` must now call `setCursorAt()`, `setCursorAtBlock()`, `replay()`, or another explicit Selection API.
+- Data behavior is unchanged: the fallback empty paragraph is still created synchronously in the same Yjs transaction.
+- No package version is changed until an explicit release decision.
+
 ### v?.?.? - 2026-07-14 (patch) — transient selection projection failures preserve the model
 
 **Severity**: patch

@@ -460,12 +460,9 @@ export class TableBlockBinding extends DocPlugin {
       if (!liveTable || liveTable.flavour !== 'table') return
       const targetCell = liveTable.getCellByCoordinate(coordinate[0], coordinate[1])
       if (!targetCell || !this._getLiveBlockById(targetCell.id)) return
-      ;(liveTable as unknown as {_clearSelectionUiState: () => void})._clearSelectionUiState()
       this.doc.selection.setCursorAtBlock(targetCell, false, false)
-      this.doc.selection.recalculate()
     } catch (e) {
       this.doc.logger.warn('restoreTablePasteCursor error', e)
-      this.doc.selection.recalculate()
     }
   }
 

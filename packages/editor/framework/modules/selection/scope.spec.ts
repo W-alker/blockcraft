@@ -10,6 +10,7 @@ import {
 } from "./scope";
 import {SelectionManager} from "./index";
 import {Subject} from "rxjs";
+import {createBlockGapSpace} from "../../utils/zero-gap";
 
 describe("Selection scope", () => {
   const DEFAULT_SCOPE_BY_FLAVOUR: Record<string, BlockSelectionScopeMetadata> = {
@@ -82,6 +83,29 @@ describe("Selection scope", () => {
     const textNode = document.createTextNode(textContent)
     host.appendChild(textNode)
     return textNode
+  }
+
+  function attachInlineMapper(block: any, textNode: Text): void {
+    block.containerElement = block.hostElement
+    block.runtime = {
+      mapper: {
+        modelPointToDomPoint: (_container: HTMLElement, offset: number) => ({
+          node: textNode,
+          offset,
+        }),
+      },
+    }
+  }
+
+  function appendBlockGaps(block: any): {leading: Text; trailing: Text} {
+    const leading = createBlockGapSpace()
+    const trailing = createBlockGapSpace()
+    block.hostElement.prepend(leading)
+    block.hostElement.append(trailing)
+    return {
+      leading: leading.firstChild as Text,
+      trailing: trailing.firstChild as Text,
+    }
   }
 
   function createSelectionManager(root: any, blocks: Record<string, any>) {
@@ -316,6 +340,8 @@ describe("Selection scope", () => {
     const p1 = block("p1", "paragraph", BlockNodeType.editable, callout)
     const p0Text = appendEditable(p0.hostElement, "before")
     const p1Text = appendEditable(p1.hostElement, "inside")
+    attachInlineMapper(p0, p0Text)
+    attachInlineMapper(p1, p1Text)
     root.childrenIds = ["p0", "callout-1"]
     root.childrenLength = 2
     callout.childrenIds = ["p1"]
@@ -324,6 +350,7 @@ describe("Selection scope", () => {
     callout.getIndexOfParent = () => 1
     p1.getIndexOfParent = () => 0
     callout.hostElement.appendChild(p1.hostElement)
+    const calloutGaps = appendBlockGaps(callout)
     root.hostElement.append(p0.hostElement, callout.hostElement)
     document.body.appendChild(root.hostElement)
     const blocks = {root, p0, "callout-1": callout, p1}
@@ -334,13 +361,24 @@ describe("Selection scope", () => {
       end: text(p1, 3),
     })
 
+    const nativeSelection = document.getSelection()!
+    const setBaseAndExtent = spyOn(nativeSelection, "setBaseAndExtent").and.callThrough()
     const result = manager.recalculate(false)
+
+    expect(setBaseAndExtent).not.toHaveBeenCalled()
+    result.next?.()
 
     expect(result.value?.toJSON()).toEqual({
       anchor: {blockId: "p0", type: "text", offset: 2},
       head: {blockId: "root", type: "boundary", index: 2},
       commonParent: "root",
     })
+    expect(setBaseAndExtent).toHaveBeenCalledOnceWith(
+      p0Text,
+      2,
+      calloutGaps.trailing,
+      calloutGaps.trailing.length,
+    )
   })
 
   it("projects a closed container start endpoint to its parent boundary", () => {
@@ -352,6 +390,8 @@ describe("Selection scope", () => {
     const p2 = block("p2", "paragraph", BlockNodeType.editable, root)
     const p1Text = appendEditable(p1.hostElement, "inside")
     const p2Text = appendEditable(p2.hostElement, "after")
+    attachInlineMapper(p1, p1Text)
+    attachInlineMapper(p2, p2Text)
     root.childrenIds = ["callout-1", "p2"]
     root.childrenLength = 2
     callout.childrenIds = ["p1"]
@@ -360,23 +400,91 @@ describe("Selection scope", () => {
     p1.getIndexOfParent = () => 0
     p2.getIndexOfParent = () => 1
     callout.hostElement.appendChild(p1.hostElement)
+    const calloutGaps = appendBlockGaps(callout)
     root.hostElement.append(callout.hostElement, p2.hostElement)
     document.body.appendChild(root.hostElement)
     const blocks = {root, "callout-1": callout, p1, p2}
     const manager = createSelectionManager(root, blocks)
     setNativeRange(p1Text, p2Text)
-    spyOn<any>(manager, "_normalizeRange").and.returnValue({
+    const normalizeRange = spyOn<any>(manager, "_normalizeRange").and.returnValue({
       start: text(p1, 2),
       end: text(p2, 3),
     })
 
+    const nativeSelection = document.getSelection()!
+    const setBaseAndExtent = spyOn(nativeSelection, "setBaseAndExtent").and.callThrough()
     const result = manager.recalculate(false)
+
+    expect(setBaseAndExtent).not.toHaveBeenCalled()
+    result.next?.()
 
     expect(result.value?.toJSON()).toEqual({
       anchor: {blockId: "root", type: "boundary", index: 0},
       head: {blockId: "p2", type: "text", offset: 3},
       commonParent: "root",
     })
+    expect(setBaseAndExtent).toHaveBeenCalledOnceWith(
+      calloutGaps.leading,
+      0,
+      p2Text,
+      3,
+    )
+
+    normalizeRange.and.returnValue({
+      start: boundary(root, 0),
+      end: text(p2, 3),
+    })
+    manager.recalculate()
+
+    expect(setBaseAndExtent).toHaveBeenCalledTimes(1)
+  })
+
+  it("preserves backward direction when stabilizing a repaired scope endpoint", () => {
+    const root = block("root", "root", BlockNodeType.root)
+    root.hostElement.setAttribute("contenteditable", "true")
+    root.hostElement.setAttribute("data-selection-scope-test", "true")
+    const p0 = block("p0", "paragraph", BlockNodeType.editable, root)
+    const callout = block("callout-1", "callout", BlockNodeType.block, root)
+    const p1 = block("p1", "paragraph", BlockNodeType.editable, callout)
+    const p0Text = appendEditable(p0.hostElement, "before")
+    const p1Text = appendEditable(p1.hostElement, "inside")
+    attachInlineMapper(p0, p0Text)
+    attachInlineMapper(p1, p1Text)
+    root.childrenIds = ["p0", "callout-1"]
+    root.childrenLength = 2
+    callout.childrenIds = ["p1"]
+    callout.childrenLength = 1
+    p0.getIndexOfParent = () => 0
+    callout.getIndexOfParent = () => 1
+    p1.getIndexOfParent = () => 0
+    callout.hostElement.appendChild(p1.hostElement)
+    const calloutGaps = appendBlockGaps(callout)
+    root.hostElement.append(p0.hostElement, callout.hostElement)
+    document.body.appendChild(root.hostElement)
+    const blocks = {root, p0, "callout-1": callout, p1}
+    const manager = createSelectionManager(root, blocks)
+    const nativeSelection = document.getSelection()!
+    nativeSelection.setBaseAndExtent(p1Text, 3, p0Text, 2)
+    spyOn<any>(manager, "_normalizeRange").and.returnValue({
+      start: text(p0, 2),
+      end: text(p1, 3),
+    })
+    const setBaseAndExtent = spyOn(nativeSelection, "setBaseAndExtent").and.callThrough()
+
+    const result = manager.recalculate(false)
+    result.next?.()
+
+    expect(result.value?.toJSON()).toEqual({
+      anchor: {blockId: "root", type: "boundary", index: 2},
+      head: {blockId: "p0", type: "text", offset: 2},
+      commonParent: "root",
+    })
+    expect(setBaseAndExtent).toHaveBeenCalledOnceWith(
+      calloutGaps.trailing,
+      calloutGaps.trailing.length,
+      p0Text,
+      2,
+    )
   })
 
   it("allows recalculate from mermaid textarea content to root content", () => {

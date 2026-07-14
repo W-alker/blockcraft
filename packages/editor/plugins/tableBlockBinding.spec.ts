@@ -355,6 +355,63 @@ describe('TableBlockBinding paste helpers', () => {
     expect(parse).not.toHaveBeenCalled()
   })
 
+  it('restores the table paste cursor without resampling or manually clearing selection UI', () => {
+    const binding = new TableBlockBinding()
+    const targetCell = {id: 'cell-1'}
+    const liveTable = {
+      id: 'table-1',
+      flavour: 'table',
+      getCellByCoordinate: jasmine.createSpy('getCellByCoordinate').and.returnValue(targetCell),
+      _clearSelectionUiState: jasmine.createSpy('_clearSelectionUiState'),
+    }
+    const doc = {
+      logger: {warn: jasmine.createSpy('warn')},
+      selection: {
+        setCursorAtBlock: jasmine.createSpy('setCursorAtBlock'),
+        recalculate: jasmine.createSpy('recalculate'),
+      },
+      getBlockById: jasmine.createSpy('getBlockById').and.callFake((id: string) =>
+        id === liveTable.id ? liveTable : targetCell),
+    }
+    ;(binding as any).doc = doc
+
+    ;(binding as any)._restoreCursorInCell(liveTable, [1, 2])
+
+    expect(liveTable.getCellByCoordinate).toHaveBeenCalledWith(1, 2)
+    expect(doc.selection.setCursorAtBlock).toHaveBeenCalledOnceWith(targetCell, false, false)
+    expect(liveTable._clearSelectionUiState).not.toHaveBeenCalled()
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
+    expect(doc.logger.warn).not.toHaveBeenCalled()
+  })
+
+  it('keeps the current selection model when table paste cursor projection fails', () => {
+    const binding = new TableBlockBinding()
+    const targetCell = {id: 'cell-1'}
+    const projectionError = new Error('projection failed')
+    const liveTable = {
+      id: 'table-1',
+      flavour: 'table',
+      getCellByCoordinate: jasmine.createSpy('getCellByCoordinate').and.returnValue(targetCell),
+      _clearSelectionUiState: jasmine.createSpy('_clearSelectionUiState'),
+    }
+    const doc = {
+      logger: {warn: jasmine.createSpy('warn')},
+      selection: {
+        setCursorAtBlock: jasmine.createSpy('setCursorAtBlock').and.throwError(projectionError),
+        recalculate: jasmine.createSpy('recalculate'),
+      },
+      getBlockById: jasmine.createSpy('getBlockById').and.callFake((id: string) =>
+        id === liveTable.id ? liveTable : targetCell),
+    }
+    ;(binding as any).doc = doc
+
+    ;(binding as any)._restoreCursorInCell(liveTable, [0, 0])
+
+    expect(liveTable._clearSelectionUiState).not.toHaveBeenCalled()
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
+    expect(doc.logger.warn).toHaveBeenCalledOnceWith('restoreTablePasteCursor error', projectionError)
+  })
+
   it('skips table paste cursor restore when the table is stale before animation frame', () => {
     const binding = new TableBlockBinding()
     const doc = {

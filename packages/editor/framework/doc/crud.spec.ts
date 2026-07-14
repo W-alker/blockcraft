@@ -240,7 +240,7 @@ describe('DocCRUD', () => {
     expect(rootRef.instance.childrenIds).toEqual(['paragraph-1'])
   })
 
-  it('replaces the last render-unit child with a paragraph synchronously on delete', () => {
+  it('replaces the last render-unit child without sampling DOM selection', () => {
     const {crud, rootRef, selection, createdParagraphs} = createDocHarness()
     crud.insertBlocks(rootRef.instance.id, 0, [createEditableSnapshot('paragraph-1')])
 
@@ -258,7 +258,7 @@ describe('DocCRUD', () => {
     transaction.unsubscribe()
 
     expect(deleted).toEqual([{index: 0, length: 1}])
-    expect(selection.recalculate).toHaveBeenCalled()
+    expect(selection.recalculate).not.toHaveBeenCalled()
     expect(createdParagraphs.map(snapshot => snapshot.id)).toEqual(['paragraph-auto-1'])
     expect(rootRef.instance.childrenIds).toEqual(['paragraph-auto-1'])
   })

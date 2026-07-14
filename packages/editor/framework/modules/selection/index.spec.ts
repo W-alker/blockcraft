@@ -100,6 +100,56 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(blockHost.classList.contains('selected')).toBeTrue();
   });
 
+  it('rejects a native range that leaks outside the editor before normalization', () => {
+    const {manager, rootHost, blockHost, doc} = createManager();
+    const insideText = document.createTextNode('inside');
+    blockHost.appendChild(insideText);
+    const outside = document.createElement('div');
+    outside.setAttribute('data-selection-test-outside', 'true');
+    const outsideText = document.createTextNode('outside');
+    outside.appendChild(outsideText);
+    document.body.appendChild(outside);
+    rootHost.focus();
+    const range = document.createRange();
+    range.setStart(insideText, 0);
+    range.setEnd(outsideText, outsideText.length);
+    const nativeSelection = document.getSelection()!;
+    nativeSelection.removeAllRanges();
+    nativeSelection.addRange(range);
+    const normalizeRange = spyOn<any>(manager, '_normalizeRange').and.callThrough();
+
+    const result = manager.recalculate();
+
+    expect(result.value).toBeNull();
+    expect(manager.value).toBeNull();
+    expect(normalizeRange).not.toHaveBeenCalled();
+    expect(nativeSelection.rangeCount).toBe(0);
+    expect(doc.logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('does not clear a native selection wholly owned by an external editor', () => {
+    const {manager, doc} = createManager();
+    const outside = document.createElement('div');
+    outside.setAttribute('data-selection-test-outside', 'true');
+    outside.setAttribute('contenteditable', 'true');
+    const outsideText = document.createTextNode('outside');
+    outside.appendChild(outsideText);
+    document.body.appendChild(outside);
+    outside.focus();
+    const range = document.createRange();
+    range.selectNodeContents(outside);
+    const nativeSelection = document.getSelection()!;
+    nativeSelection.removeAllRanges();
+    nativeSelection.addRange(range);
+
+    const result = manager.recalculate();
+
+    expect(result.value).toBeNull();
+    expect(nativeSelection.rangeCount).toBe(1);
+    expect(nativeSelection.getRangeAt(0).toString()).toBe('outside');
+    expect(doc.logger.warn).not.toHaveBeenCalled();
+  });
+
   it('updates the canonical selection immediately when setting a gap cursor', () => {
     const {manager, block, blockHost} = createManager();
     const leading = createBlockGapSpace();
@@ -1096,7 +1146,7 @@ describe('SelectionManager DOM selection normalization', () => {
       logger: {warn: jasmine.createSpy('warn')},
     };
     const manager = new SelectionManager(doc as any);
-    return {manager, table, c1, c4};
+    return {manager, table, c1, c4, c1Host, rootHost, doc};
   }
 
   it('sets a model-only table-cell selection synchronously', () => {
@@ -1134,6 +1184,36 @@ describe('SelectionManager DOM selection normalization', () => {
       headCellId: 'cell-4',
     });
     expect(manager.value?.getTableCellSelection()?.headCellId).toBe('cell-4');
+  });
+
+  it('keeps a model-only table-cell selection when Safari leaks a range outside root', () => {
+    const {manager, table, c1, c4, c1Host, rootHost, doc} = createTableManager();
+    const outside = document.createElement('div');
+    outside.setAttribute('data-selection-test-outside', 'true');
+    const outsideText = document.createTextNode('outside');
+    outside.appendChild(outsideText);
+    document.body.appendChild(outside);
+    manager.setTableCellSelection(table, c1, c4);
+    rootHost.focus();
+    const range = document.createRange();
+    range.setStart(c1Host.firstChild!, 0);
+    range.setEnd(outsideText, outsideText.length);
+    const nativeSelection = document.getSelection()!;
+    nativeSelection.removeAllRanges();
+    nativeSelection.addRange(range);
+    const normalizeRange = spyOn<any>(manager, '_normalizeRange').and.callThrough();
+
+    const result = manager.recalculate();
+
+    expect(result.value?.getTableCellSelection()).toEqual({
+      tableId: 'table-1',
+      anchorCellId: 'cell-1',
+      headCellId: 'cell-4',
+    });
+    expect(manager.value?.getTableCellSelection()?.headCellId).toBe('cell-4');
+    expect(normalizeRange).not.toHaveBeenCalled();
+    expect(nativeSelection.rangeCount).toBe(0);
+    expect(doc.logger.warn).not.toHaveBeenCalled();
   });
 
   it('clears model-only table-cell selection when focus leaves the editor', () => {

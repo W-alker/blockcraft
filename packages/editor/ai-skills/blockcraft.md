@@ -218,6 +218,12 @@ doc.selection.getSelectedText()         // string
 // Shift+Arrow over void/container gap blocks, and Shift+Arrow leaving a
 // container from its first/last child, use parent boundary endpoints; the
 // derived DOM Range prefers the block's leading/trailing gap text anchors.
+// Native drags crossing a closed selection scope publish the repaired model
+// and stabilize native anchor/focus on those gap-backed boundaries while
+// preserving forward/backward direction.
+// DOM sampling validates both native endpoints against root before normalize;
+// a WebKit range leaked outside a focused editor is cleared, while a current
+// model-owned table-cell rectangle remains canonical.
 // Existing non-collapsed text anchors stay text points; InputTransformer safely
 // replaces supported mixed text+boundary ranges without falling back to DOM input.
 // Table rectangular selection can be model-owned as table-cell anchor/head:
@@ -316,6 +322,7 @@ onBold(ctx: UIEventStateContext) { ... }
 - Container blocks include a `<div class="children-render-container">` for child blocks
 - Editable blocks have an empty template; the inline runtime renders into the host element
 - All mutations go through Yjs transactions (via `DocCRUD` or `DocChain`)
+- `DocCRUD.deleteBlocks()` does not reposition selection after inserting the fallback paragraph for an emptied `renderUnit`. The owning Input/plugin action explicitly commits the final caret/range through model-first Selection APIs; it must not rely on write-after-`recalculate()` DOM sampling.
 - Global type declarations use `declare global { namespace BlockCraft { ... } }`
 - Icons use the iconfont class system: `<i class="bc_icon bc_xxx"></i>` (no PNGs, no inline SVGs except for multi-color)
 - Hotkey decorators use `shortKey: true` for cross-platform Cmd/Ctrl — never hardcode `metaKey`/`ctrlKey`

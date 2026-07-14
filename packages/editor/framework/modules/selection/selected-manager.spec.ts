@@ -3,6 +3,67 @@ import {BlockSelection} from "./blockSelection";
 import {SelectionSelectedManager} from "./selected-manager";
 
 describe("SelectionSelectedManager", () => {
+  it("reconciles stable selection classes without toggling unchanged blocks", () => {
+    const tableClassList = {
+      add: jasmine.createSpy("table.add"),
+      remove: jasmine.createSpy("table.remove"),
+    };
+    const p1ClassList = {
+      add: jasmine.createSpy("p1.add"),
+      remove: jasmine.createSpy("p1.remove"),
+    };
+    const p2ClassList = {
+      add: jasmine.createSpy("p2.add"),
+      remove: jasmine.createSpy("p2.remove"),
+    };
+    const blocks: Record<string, any> = {
+      table: {
+        id: "table",
+        nodeType: BlockNodeType.block,
+        hostElement: {classList: tableClassList},
+      },
+      p1: {
+        id: "p1",
+        nodeType: BlockNodeType.editable,
+        hostElement: {classList: p1ClassList},
+      },
+      p2: {
+        id: "p2",
+        nodeType: BlockNodeType.editable,
+        hostElement: {classList: p2ClassList},
+      },
+    };
+    const manager = new SelectionSelectedManager({
+      getBlockById: (id: string) => blocks[id],
+    } as any);
+    const selectionFor = (ids: string[]) => ({
+      getBoundarySelectedChildIds: () => ids,
+    });
+
+    manager.setSelected(selectionFor(["table", "p1"]) as any);
+
+    expect(tableClassList.add).toHaveBeenCalledOnceWith("selected");
+    expect(p1ClassList.add).toHaveBeenCalledOnceWith("focused");
+    tableClassList.add.calls.reset();
+    tableClassList.remove.calls.reset();
+    p1ClassList.add.calls.reset();
+    p1ClassList.remove.calls.reset();
+
+    manager.setSelected(selectionFor(["table", "p1"]) as any);
+
+    expect(tableClassList.add).not.toHaveBeenCalled();
+    expect(tableClassList.remove).not.toHaveBeenCalled();
+    expect(p1ClassList.add).not.toHaveBeenCalled();
+    expect(p1ClassList.remove).not.toHaveBeenCalled();
+
+    manager.setSelected(selectionFor(["table", "p2"]) as any);
+
+    expect(tableClassList.add).not.toHaveBeenCalled();
+    expect(tableClassList.remove).not.toHaveBeenCalled();
+    expect(p1ClassList.remove).toHaveBeenCalledOnceWith("focused");
+    expect(p2ClassList.add).toHaveBeenCalledOnceWith("focused");
+  });
+
   it("does not mark column containers selected for cross-column text selections", () => {
     const rootHost = document.createElement("div");
     const columnsHost = document.createElement("section");

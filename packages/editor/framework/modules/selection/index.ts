@@ -198,9 +198,23 @@ export class SelectionManager {
     }
 
     const range = selection?.getRangeAt(0)
-    if (!range ||
-      (document.activeElement !== this.doc.root.hostElement && !this.doc.root.hostElement.contains(range.commonAncestorContainer))
-    ) {
+    const rootHost = this.doc.root.hostElement
+    // A Range's common ancestor is inside root iff both endpoints are inside
+    // root, so one ancestor walk is enough for the ownership guard.
+    const rangeInsideRoot = !!range && rootHost.contains(range.commonAncestorContainer)
+    if (!rangeInsideRoot) {
+      const keepModelOnlySelection = this._shouldKeepModelOnlySelection()
+      const editorOwnsFocus = activeElement === rootHost ||
+        (!!activeElement && rootHost.contains(activeElement))
+      // Safari may keep extending a native drag beyond the contenteditable root
+      // after a model-owned table rectangle has taken over. Do not let that
+      // external endpoint enter normalization or leave a second visual selection.
+      if (editorOwnsFocus && selection.rangeCount) {
+        selection.removeAllRanges()
+      }
+      if (keepModelOnlySelection) {
+        return {value: this.value}
+      }
       const next = () => this._applyState(null)
       execNext && next()
       return {value: null, next: execNext ? undefined : next}
@@ -222,7 +236,8 @@ export class SelectionManager {
       // normalizeRange returns {start, end} in document order.
       // Determine real anchor/head from native Selection direction.
       const rawEndpoints = this._normalizeRange(range, options)
-      const endpoints = this._repairCrossScopeEndpoints(rawEndpoints) ?? rawEndpoints
+      const repairedEndpoints = this._repairCrossScopeEndpoints(rawEndpoints)
+      const endpoints = repairedEndpoints ?? rawEndpoints
       const isBackward = isSelectionBackward(selection)
       const anchor = isBackward ? endpoints.end : endpoints.start
       const head = isBackward ? endpoints.start : endpoints.end
@@ -251,7 +266,12 @@ export class SelectionManager {
 
       const r = this._createBlockSelection(anchor, head, commonParent)
       if (!r) throw new Error('Selection endpoints are disconnected')
-      const next = () => this._applyState(r)
+      const next = () => {
+        this._applyState(r)
+        if (repairedEndpoints) {
+          this._stabilizeCrossScopeDomSelection(r, selection)
+        }
+      }
       execNext && next()
       return {value: r, next: execNext ? undefined : next}
     } catch (e) {
@@ -419,6 +439,45 @@ export class SelectionManager {
     this._suppressProgrammaticSelectionChange()
     selection.removeAllRanges()
     selection.addRange(range)
+  }
+
+  private _stabilizeCrossScopeDomSelection(
+    selectionState: BlockSelection,
+    nativeSelection: globalThis.Selection,
+  ): void {
+    try {
+      const range = this._buildDomRange(
+        pointToLegacy(selectionState.start),
+        pointToLegacy(selectionState.end),
+      )
+      const backward = selectionState.direction === 'backward'
+      const anchorNode = backward ? range.endContainer : range.startContainer
+      const anchorOffset = backward ? range.endOffset : range.startOffset
+      const focusNode = backward ? range.startContainer : range.endContainer
+      const focusOffset = backward ? range.startOffset : range.endOffset
+
+      // Native drag must keep producing selectionchange events. The projected
+      // boundary range round-trips unchanged, so no suppression window is used.
+      if (typeof nativeSelection.setBaseAndExtent === 'function') {
+        nativeSelection.setBaseAndExtent(
+          anchorNode,
+          anchorOffset,
+          focusNode,
+          focusOffset,
+        )
+        return
+      }
+
+      nativeSelection.removeAllRanges()
+      if (backward && typeof nativeSelection.extend === 'function') {
+        nativeSelection.collapse(anchorNode, anchorOffset)
+        nativeSelection.extend(focusNode, focusOffset)
+      } else {
+        nativeSelection.addRange(range)
+      }
+    } catch (error) {
+      this.doc.logger.warn('crossScopeSelectionProjectionError: ', error)
+    }
   }
 
   private _applyDomRangeForSelection(
