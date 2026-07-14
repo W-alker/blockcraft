@@ -265,6 +265,10 @@ export class SelectionManager {
   /**
    * Public API returns legacy INormalizedRange for backward compat.
    * Internally use _normalizeRange() for new anchor/head format.
+   *
+   * @deprecated Use the exported pure `normalizeRange()` function and
+   * `INormalizedEndpoints`. This compatibility facade will be removed in a
+   * future breaking release.
    */
   normalizeRange(range: StaticRange, options?: { isComposing?: boolean }): INormalizedRange {
     return endpointsToLegacy(this._normalizeRange(range, options))

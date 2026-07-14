@@ -4,6 +4,7 @@ import {
   EventListen,
   getPositionWithOffset,
   INLINE_ELEMENT_TAG,
+  normalizeRange,
 } from "../../framework";
 import { Subject, Subscription, takeUntil } from "rxjs";
 import { FormulaBlockToolbar } from "./widgets/formula-toolbar";
@@ -138,12 +139,15 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
           return;
         }
         const range = this._tryGetEmbedRange(formulaEl);
-        if (!range || range.from.type !== "text") {
+        if (
+          !range ||
+          range.start.type !== "text" ||
+          range.start.blockId !== block.id
+        ) {
           this.closeToolbar();
           return;
         }
-        const { from } = range;
-        const embedIndex = from.index;
+        const embedIndex = range.start.offset;
         if (!newLatex) {
           block.applyDeltaOperations([{ retain: embedIndex }, { delete: 1 }]);
         } else {
@@ -172,9 +176,14 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
 
   getEmbedRange(target: HTMLElement) {
     const range = this.createEmbedRange(target);
-    const normalizedRange = this.doc.selection.normalizeRange(range);
-    range.detach();
-    return normalizedRange;
+    try {
+      return normalizeRange(
+        range,
+        id => this.doc.getBlockById(id) as any,
+      );
+    } finally {
+      range.detach();
+    }
   }
 
   private _getLiveBlockById(blockId: string): BlockCraft.BlockComponent | null {

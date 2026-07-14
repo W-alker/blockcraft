@@ -7,6 +7,7 @@ import {shikiService} from "./shiki-config";
 import type {BundledLanguage, ThemedToken} from 'shiki'
 import {TextBlot} from "../../framework/block-std/inline/blot/text-blot";
 import {EmbedBlot} from "../../framework/block-std/inline/blot/embed-blot";
+import type {INormalizedEndpoints} from "../../framework/modules/selection/normalize";
 
 // ─── Token utils ───
 
@@ -200,7 +201,7 @@ export class CodeInlineRuntime extends InlineRuntime {
   async diffHighLight(_ops: DeltaOperation[], opts?: {
     block: { id: string, textContent: () => string, setInlineRange: (idx: number) => void, textDeltas?: () => DeltaInsert[] },
     selectionValue: { start: { blockId: string, type: string, offset?: number } } | null,
-    normalizeRange: (range: Range) => { from: { type: string, index?: number } }
+    normalizeRange: (range: Range) => INormalizedEndpoints
   }) {
     let pos = 0
     let isHere = false
@@ -213,9 +214,13 @@ export class CodeInlineRuntime extends InlineRuntime {
           const range = sel.getRangeAt(0)
           try {
             const nr = opts.normalizeRange(range)
-            pos = nr?.from.type === 'text' ? nr.from.index ?? 0 : 0
+            if (nr.start.type === 'text' && nr.start.blockId === opts.block.id) {
+              pos = nr.start.offset
+            } else {
+              isHere = false
+            }
           } catch {
-            pos = 0
+            isHere = false
           }
         }
       }

@@ -81,7 +81,10 @@ const createBoundaryEditingHarness = (childrenIds = ['p1', 'p2']) => {
         host.childrenIds.splice(index, count)
         return [{index, length: count}]
       }),
-      insertBlocks: jasmine.createSpy('insertBlocks').and.callFake((_parentId: string, index: number) => {
+      insertBlocks: jasmine.createSpy('insertBlocks').and.callFake((_parentId: string, index: number, snapshots: any[]) => {
+        paragraph.textLength = snapshots[0]?.children
+          ?.map((op: any) => op.insert || '')
+          .join('').length ?? 0
         host.childrenIds.splice(index, 0, paragraph.id)
         blocks[paragraph.id] = paragraph
         return [paragraph]
@@ -166,6 +169,7 @@ const createMixedBoundaryEditingHarness = () => {
     selection: {
       value: selection,
       replay: jasmine.createSpy('replay'),
+      setCursorAt: jasmine.createSpy('setCursorAt'),
       setSelection: jasmine.createSpy('setSelection'),
       recalculate: jasmine.createSpy('recalculate'),
       blur: jasmine.createSpy('blur'),
@@ -247,6 +251,7 @@ const createMixedTextBoundaryEditingHarness = () => {
     selection: {
       value: selection,
       replay: jasmine.createSpy('replay'),
+      setCursorAt: jasmine.createSpy('setCursorAt'),
       setSelection: jasmine.createSpy('setSelection'),
       recalculate: jasmine.createSpy('recalculate'),
       blur: jasmine.createSpy('blur'),
@@ -395,6 +400,7 @@ const createTableCellEditingHarness = (
       normalizeRange: jasmine.createSpy('normalizeRange'),
       setSelection: jasmine.createSpy('setSelection'),
       setTableCellSelection: jasmine.createSpy('setTableCellSelection'),
+      setCursorAt: jasmine.createSpy('setCursorAt'),
       setCursorAtBlock: jasmine.createSpy('setCursorAtBlock'),
       recalculate: jasmine.createSpy('recalculate'),
       blur: jasmine.createSpy('blur'),
@@ -449,6 +455,7 @@ const createWholeTableSelectionHarness = () => {
       value: selection,
       normalizeRange: jasmine.createSpy('normalizeRange'),
       setCursorAtBlock: jasmine.createSpy('setCursorAtBlock'),
+      setCursorAt: jasmine.createSpy('setCursorAt'),
       setSelection: jasmine.createSpy('setSelection'),
       recalculate: jasmine.createSpy('recalculate'),
       blur: jasmine.createSpy('blur'),
@@ -458,7 +465,10 @@ const createWholeTableSelectionHarness = () => {
         flavour === 'root' ? {metadata: {renderUnit: true}} : undefined),
       isValidChildren: jasmine.createSpy('isValidChildren').and.callFake((child: string, parent: string) =>
         child === 'paragraph' && parent === 'root'),
-      createSnapshot: jasmine.createSpy('createSnapshot').and.returnValue(paragraph),
+      createSnapshot: jasmine.createSpy('createSnapshot').and.callFake((_flavour: string, params: any[] = []) => {
+        paragraph.textLength = typeof params[0] === 'string' ? params[0].length : 0
+        return paragraph
+      }),
     },
     crud: {
       undoManager: {
@@ -482,6 +492,7 @@ const createWholeTableSelectionHarness = () => {
       if (id === root.id) return root
       throw new Error(`Block not found: ${id}`)
     }),
+    isEditable: jasmine.createSpy('isEditable').and.callFake((block: any) => block?.flavour === 'paragraph'),
     logger: {
       warn: jasmine.createSpy('warn'),
     },
@@ -553,6 +564,7 @@ describe('InputTransformer beforeInput range resolution', () => {
       event: eventStub(),
       selection: {
         value: modelSelection,
+        setCursorAt: jasmine.createSpy('setCursorAt'),
         setSelection: jasmine.createSpy('setSelection'),
         replay: jasmine.createSpy('replay'),
         recalculate: jasmine.createSpy('recalculate'),
@@ -795,7 +807,7 @@ describe('InputTransformer beforeInput range resolution', () => {
       [jasmine.objectContaining({id: 'new-p', children: [{insert: 'x'}]})],
     )
     expect(doc.selection.setCursorAt).toHaveBeenCalledWith(paragraph, 1)
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
     expect(doc.selection.blur).not.toHaveBeenCalled()
   })
 
@@ -822,13 +834,8 @@ describe('InputTransformer beforeInput range resolution', () => {
     expect(doc.crud.undoManager.captureSelectionBeforeChange).toHaveBeenCalled()
     expect(doc.crud.deleteBlockById).toHaveBeenCalledWith(callout.id)
     expect(paragraph.replaceText).toHaveBeenCalledWith(0, 11, 'x', undefined)
-    expect(doc.selection.setSelection).toHaveBeenCalledWith({
-      blockId: paragraph.id,
-      type: 'text',
-      index: 1,
-      length: 0,
-    })
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(paragraph, 1)
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
     expect(doc.selection.blur).not.toHaveBeenCalled()
   })
 
@@ -861,13 +868,8 @@ describe('InputTransformer beforeInput range resolution', () => {
     expect(paragraph.yText.delete).toHaveBeenCalledWith(11, 5)
     expect(paragraph.yText.insert).toHaveBeenCalledWith(11, 'x', undefined)
     expect(doc.crud.deleteBlockById).toHaveBeenCalledWith(callout.id)
-    expect(doc.selection.setSelection).toHaveBeenCalledWith({
-      blockId: paragraph.id,
-      type: 'text',
-      index: 12,
-      length: 0,
-    })
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(paragraph, 12)
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
     expect(doc.selection.blur).not.toHaveBeenCalled()
   })
 
@@ -1007,7 +1009,7 @@ describe('InputTransformer beforeInput range resolution', () => {
       [jasmine.objectContaining({id: 'new-p', children: []})],
     )
     expect(doc.selection.setCursorAtBlock).toHaveBeenCalledWith(paragraph.id, true)
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
     expect(transformer.compositionSession.start).toHaveBeenCalledWith(paragraph, 0)
     expect(doc.selection.blur).not.toHaveBeenCalled()
   })
@@ -1030,6 +1032,7 @@ describe('InputTransformer beforeInput range resolution', () => {
       event: eventStub(),
       selection: {
         value: selection,
+        setCursorAt: jasmine.createSpy('setCursorAt'),
         recalculate: jasmine.createSpy('recalculate').and.returnValue({value: null}),
         blur: jasmine.createSpy('blur'),
       },
@@ -1290,12 +1293,7 @@ describe('InputTransformer beforeInput range resolution', () => {
     expect(doc.crud.undoManager.captureSelectionBeforeChange).toHaveBeenCalled()
     expect(doc.crud.deleteBlockById).toHaveBeenCalledWith(callout.id)
     expect(paragraph.replaceText).toHaveBeenCalledWith(0, 11, null, undefined)
-    expect(doc.selection.setSelection).toHaveBeenCalledWith({
-      blockId: paragraph.id,
-      type: 'text',
-      index: 0,
-      length: 0,
-    })
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(paragraph, 0)
     expect(doc.selection.blur).not.toHaveBeenCalled()
     expect(transformer.compositionSession.start).toHaveBeenCalledWith(paragraph, 0)
   })
@@ -1321,12 +1319,7 @@ describe('InputTransformer beforeInput range resolution', () => {
     expect(paragraph.yText.delete).toHaveBeenCalledWith(11, 5)
     expect(paragraph.yText.insert).not.toHaveBeenCalled()
     expect(doc.crud.deleteBlockById).toHaveBeenCalledWith(callout.id)
-    expect(doc.selection.setSelection).toHaveBeenCalledWith({
-      blockId: paragraph.id,
-      type: 'text',
-      index: 11,
-      length: 0,
-    })
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(paragraph, 11)
     expect(doc.selection.blur).not.toHaveBeenCalled()
     expect(transformer.compositionSession.start).toHaveBeenCalledWith(paragraph, 11)
   })
@@ -1366,12 +1359,7 @@ describe('InputTransformer beforeInput range resolution', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.deleteBlockById).toHaveBeenCalledWith('void-1')
     expect(blocks['paragraph-1'].replaceText).toHaveBeenCalledWith(0, 3, 'a', undefined)
-    expect(doc.selection.setSelection).toHaveBeenCalledWith({
-      blockId: 'paragraph-1',
-      type: 'text',
-      index: 1,
-      length: 0
-    })
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(blocks['paragraph-1'], 1)
   })
 
   it('keeps ordinary text keydown and delete fallback off the structural planner hot path', () => {
@@ -1432,12 +1420,7 @@ describe('InputTransformer beforeInput range resolution', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.deleteBlockById).toHaveBeenCalledWith('image-1')
     expect(blocks['paragraph-1'].replaceText).toHaveBeenCalledWith(0, 3, 'a', undefined)
-    expect(doc.selection.setSelection).toHaveBeenCalledWith({
-      blockId: 'paragraph-1',
-      type: 'text',
-      index: 1,
-      length: 0
-    })
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(blocks['paragraph-1'], 1)
   })
 
   it('falls back on keydown when a range ends with a selected block', () => {
@@ -1465,12 +1448,7 @@ describe('InputTransformer beforeInput range resolution', () => {
     expect(blocks['paragraph-1'].yText.delete).toHaveBeenCalledWith(2, 3)
     expect(blocks['paragraph-1'].yText.insert).toHaveBeenCalledWith(2, 'a', undefined)
     expect(doc.crud.deleteBlockById).toHaveBeenCalledWith('image-1')
-    expect(doc.selection.setSelection).toHaveBeenCalledWith({
-      blockId: 'paragraph-1',
-      type: 'text',
-      index: 3,
-      length: 0
-    })
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(blocks['paragraph-1'], 3)
   })
 })
 
@@ -1648,14 +1626,15 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
       end: {blockId: block.id, type: 'text', offset: 3, block},
     }
 
-    const setSelection = jasmine.createSpy('setSelection')
+    const setCursorAt = jasmine.createSpy('setCursorAt')
     const doc = {
       event: eventStub(),
       getBlockById: jasmine.createSpy('getBlockById').and.returnValue(block),
       isEditable: jasmine.createSpy('isEditable').and.returnValue(true),
       selection: {
         value: null,
-        setSelection,
+        setCursorAt,
+        blur: jasmine.createSpy('blur'),
       },
       crud: {
         undoManager: {captureSelectionBeforeChange: jasmine.createSpy('cap')},
@@ -1671,30 +1650,41 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
 
     expect(del).toHaveBeenCalledWith(1, 2)
     expect(insert).toHaveBeenCalledWith(1, 'X', {'a:bold': true})
-    expect(setSelection).toHaveBeenCalledWith({blockId: block.id, type: 'text', index: 2, length: 0})
+    expect(setCursorAt).toHaveBeenCalledWith(block, 2)
   })
 
   it('carries the from-block range format when typing over a cross-block range', () => {
     const insert = jasmine.createSpy('insert')
     const del = jasmine.createSpy('delete')
     const fromBlock = {
-      blockId: 'b1',
+      id: 'b1',
+      textLength: 5,
       textDeltas: () => [{insert: 'HELLO', attributes: {'a:italic': true}}],
       yText: {insert, delete: del, length: 5}
     }
     const toBlock = {
-      blockId: 'b2',
+      id: 'b2',
       textLength: 3,
       textDeltas: () => [{insert: 'XYZ'}],
       yText: {insert: jasmine.createSpy('toInsert'), delete: jasmine.createSpy('toDelete')}
     }
-    // select from index 2 to end of the italic from-block, through to end of to-block
-    const from = {type: 'text', index: 2, length: 3, block: fromBlock, blockId: 'b1'}
-    const to = {type: 'text', index: 0, length: 3, block: toBlock, blockId: 'b2'}
-    const range = {from, to, collapsed: false}
+    const plan = {
+      kind: 'range',
+      start: {kind: 'text', blockId: 'b1', from: 2, to: 5},
+      end: {kind: 'text', blockId: 'b2', from: 0, to: 3},
+      insertAt: {blockId: 'b1', offset: 2},
+      stabilizeAt: {blockId: 'b1', offset: 2},
+      tailMode: 'merge',
+    }
 
     const doc = {
       event: eventStub(),
+      getBlockById: (id: string) => id === 'b1' ? fromBlock : toBlock,
+      isEditable: () => true,
+      selection: {
+        replay: jasmine.createSpy('replay'),
+        blur: jasmine.createSpy('blur'),
+      },
       crud: {
         undoManager: {captureSelectionBeforeChange: jasmine.createSpy('cap')},
         transact: (cb: () => void) => cb(),
@@ -1703,7 +1693,7 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
       queryBlocksThroughPathDeeply: () => []
     }
     const transformer = new InputTransformer(doc as any) as any
-    transformer['_replaceText'](range, 'Z', true)
+    transformer['_replacePlannedRange'](plan, 'Z', true)
 
     expect(del).toHaveBeenCalledWith(2, 3)
     expect(insert).toHaveBeenCalledWith(2, 'Z', {'a:italic': true})
@@ -1799,12 +1789,8 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(leftDelete).toHaveBeenCalledWith(3, 5)
     expect(rightDelete).toHaveBeenCalledWith(0, 4)
-    expect(doc.selection.setSelection).toHaveBeenCalledWith({
-      blockId: leftBlock.id,
-      type: 'text',
-      index: 3,
-      length: 0,
-    })
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(leftBlock, 3)
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
     expect(doc.selection.blur).not.toHaveBeenCalled()
   })
 
@@ -1920,12 +1906,8 @@ describe('InputTransformer table-cell selection editing', () => {
     expect(doc.crud.deleteBlocks).toHaveBeenCalledTimes(4)
     expect(doc.crud.insertBlocks).toHaveBeenCalledTimes(4)
     expect(anchorParagraph.textContent()).toBe('你')
-    expect(doc.selection.setSelection).toHaveBeenCalledWith({
-      blockId: anchorParagraph.id,
-      type: 'text',
-      offset: 1,
-    })
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(anchorParagraph, 1)
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
     expect(doc.selection.setTableCellSelection).not.toHaveBeenCalled()
     expect(doc.selection.blur).not.toHaveBeenCalled()
   })
@@ -1976,7 +1958,7 @@ describe('InputTransformer table-cell selection editing', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.deleteBlocks).toHaveBeenCalledTimes(4)
     expect(doc.selection.setTableCellSelection).toHaveBeenCalledWith(table, cells[0], cells[3])
-    expect(doc.selection.setSelection).not.toHaveBeenCalled()
+    expect(doc.selection.setCursorAt).not.toHaveBeenCalled()
     expect(doc.selection.blur).not.toHaveBeenCalled()
   })
 
@@ -2023,7 +2005,7 @@ describe('InputTransformer table-cell selection editing', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.deleteBlocks).toHaveBeenCalledTimes(4)
     expect(doc.selection.setCursorAtBlock).toHaveBeenCalledWith(anchorParagraph.id, true)
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
     expect(transformer.compositionSession.start).toHaveBeenCalledWith(anchorParagraph, 0)
     expect(doc.selection.blur).not.toHaveBeenCalled()
   })
@@ -2067,12 +2049,8 @@ describe('InputTransformer table-cell selection editing', () => {
     expect(result).toBeTrue()
     expect(preventDefault).toHaveBeenCalled()
     expect(anchorParagraph.textContent()).toBe('a')
-    expect(doc.selection.setSelection).toHaveBeenCalledWith({
-      blockId: anchorParagraph.id,
-      type: 'text',
-      offset: 1,
-    })
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(anchorParagraph, 1)
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
   })
 
   it('replaces a collapsed single-cell selection from printable keydown fallback', () => {
@@ -2097,12 +2075,8 @@ describe('InputTransformer table-cell selection editing', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.deleteBlocks).toHaveBeenCalledTimes(1)
     expect(anchorParagraph.textContent()).toBe('b')
-    expect(doc.selection.setSelection).toHaveBeenCalledWith({
-      blockId: anchorParagraph.id,
-      type: 'text',
-      offset: 1,
-    })
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(anchorParagraph, 1)
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
     expect(doc.selection.blur).not.toHaveBeenCalled()
   })
 
@@ -2121,7 +2095,7 @@ describe('InputTransformer table-cell selection editing', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.deleteBlocks).toHaveBeenCalledTimes(4)
     expect(doc.selection.setCursorAtBlock).toHaveBeenCalledWith(anchorParagraph.id, true)
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
     expect(doc.selection.blur).not.toHaveBeenCalled()
   })
 })
@@ -2153,12 +2127,8 @@ describe('InputTransformer whole-table block selection editing', () => {
     expect(doc.schemas.createSnapshot).toHaveBeenCalledWith('paragraph', ['x'])
     expect(doc.crud.insertBlocksAfter).toHaveBeenCalledWith(table.id, [paragraph])
     expect(doc.crud.deleteBlockById).toHaveBeenCalledWith(table.id)
-    expect(doc.selection.setSelection).toHaveBeenCalledWith({
-      blockId: paragraph.id,
-      type: 'text',
-      offset: 1,
-    })
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(paragraph, 1)
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
     expect(doc.selection.setCursorAtBlock).not.toHaveBeenCalled()
     expect(table.confirmSelection).not.toHaveBeenCalled()
     expect(table.getCellsMatrixByCoordinates).not.toHaveBeenCalled()
@@ -2184,12 +2154,8 @@ describe('InputTransformer whole-table block selection editing', () => {
     expect(doc.schemas.createSnapshot).toHaveBeenCalledWith('paragraph', ['y'])
     expect(doc.crud.insertBlocksAfter).toHaveBeenCalledWith(table.id, [paragraph])
     expect(doc.crud.deleteBlockById).toHaveBeenCalledWith(table.id)
-    expect(doc.selection.setSelection).toHaveBeenCalledWith({
-      blockId: paragraph.id,
-      type: 'text',
-      offset: 1,
-    })
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.setCursorAt).toHaveBeenCalledWith(paragraph, 1)
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
     expect(doc.selection.blur).not.toHaveBeenCalled()
   })
 
@@ -2402,14 +2368,14 @@ describe('InputTransformer composition selection safety', () => {
     const preventDefault = jasmine.createSpy('preventDefault')
     const insert = jasmine.createSpy('insert')
     const rerender = jasmine.createSpy('rerender')
-    const setInlineRange = jasmine.createSpy('setInlineRange')
+    const setCursorAt = jasmine.createSpy('setCursorAt')
     const captureSelectionBeforeChange = jasmine.createSpy('captureSelectionBeforeChange')
     const replay = jasmine.createSpy('replay')
     const block = {
       id: 'p1',
+      textLength: 3,
       yText: {insert},
       rerender,
-      setInlineRange,
     }
     const anchorPoint = {block, index: 2}
     const compositionState = {
@@ -2425,7 +2391,9 @@ describe('InputTransformer composition selection safety', () => {
       },
       selection: {
         replay,
+        setCursorAt,
         recalculate: jasmine.createSpy('recalculate'),
+        blur: jasmine.createSpy('blur'),
       },
     }
     const transformer = new InputTransformer(doc as any) as any
@@ -2454,8 +2422,8 @@ describe('InputTransformer composition selection safety', () => {
       .toBeLessThan((doc.crud.transact.calls.mostRecent() as any).invocationOrder)
     expect(insert).toHaveBeenCalledWith(2, '中', undefined)
     expect(rerender).toHaveBeenCalled()
-    expect(setInlineRange).toHaveBeenCalledWith(3)
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(setCursorAt).toHaveBeenCalledWith(block, 3)
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
   })
 
   it('refocuses and reapplies the committed IME cursor if the browser drops focus', () => {
@@ -2469,8 +2437,8 @@ describe('InputTransformer composition selection safety', () => {
     const insert = jasmine.createSpy('insert')
     const rerender = jasmine.createSpy('rerender')
     const captureSelectionBeforeChange = jasmine.createSpy('captureSelectionBeforeChange')
-    const setInlineRange = jasmine.createSpy('setInlineRange').and.callFake(() => {
-      if (setInlineRange.calls.count() === 1) outside.focus()
+    const setCursorAt = jasmine.createSpy('setCursorAt').and.callFake(() => {
+      if (setCursorAt.calls.count() === 1) outside.focus()
     })
     const block = {
       id: 'p1',
@@ -2478,7 +2446,6 @@ describe('InputTransformer composition selection safety', () => {
       textLength: 3,
       yText: {insert},
       rerender,
-      setInlineRange,
     }
     const anchorPoint = {block, index: 2}
     const compositionState = {
@@ -2495,7 +2462,9 @@ describe('InputTransformer composition selection safety', () => {
       },
       selection: {
         replay: jasmine.createSpy('replay'),
+        setCursorAt,
         recalculate: jasmine.createSpy('recalculate'),
+        blur: jasmine.createSpy('blur'),
       },
     }
     const transformer = new InputTransformer(doc as any) as any
@@ -2510,10 +2479,10 @@ describe('InputTransformer composition selection safety', () => {
 
     expect(preventDefault).toHaveBeenCalled()
     expect(captureSelectionBeforeChange).toHaveBeenCalled()
-    expect(setInlineRange).toHaveBeenCalledTimes(2)
-    expect(setInlineRange).toHaveBeenCalledWith(3)
+    expect(setCursorAt).toHaveBeenCalledTimes(2)
+    expect(setCursorAt).toHaveBeenCalledWith(block, 3)
     expect(document.activeElement).toBe(rootHost)
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
     rootHost.remove()
     outside.remove()
   })
@@ -2810,7 +2779,7 @@ describe('InputTransformer boundary selection editing', () => {
     expect(doc.crud.deleteBlocks).toHaveBeenCalledWith('callout-1', 0, 2, true)
     expect(doc.crud.insertBlocks).toHaveBeenCalled()
     expect(doc.selection.setCursorAt).toHaveBeenCalledWith(paragraph, 1)
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
   })
 
   it('materializes a collapsed boundary cursor from printable keydown fallback', () => {
@@ -2834,7 +2803,7 @@ describe('InputTransformer boundary selection editing', () => {
     expect(doc.crud.deleteBlocks).not.toHaveBeenCalled()
     expect(doc.crud.insertBlocks).toHaveBeenCalledWith('callout-1', 1, [jasmine.any(Object)])
     expect(doc.selection.setCursorAt).toHaveBeenCalledWith(paragraph, 1)
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
   })
 
   it('Enter replaces boundary selection with an empty paragraph', async () => {
@@ -2855,7 +2824,7 @@ describe('InputTransformer boundary selection editing', () => {
       [jasmine.objectContaining({id: 'new-p', children: []})],
     )
     expect(doc.selection.setCursorAt).toHaveBeenCalledWith(paragraph, 0)
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
   })
 })
 

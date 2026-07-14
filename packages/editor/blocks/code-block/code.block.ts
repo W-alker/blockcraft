@@ -3,6 +3,7 @@ import {
   DeltaOperation,
   EditableBlockComponent,
   getPositionWithOffset, ORIGIN_SKIP_SYNC,
+  normalizeRange,
   STR_LINE_BREAK
 } from "../../framework";
 import { CodeBlockModel } from "./index";
@@ -112,7 +113,10 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
       this._codeRuntime.diffHighLight(e, {
         block: this,
         selectionValue: this.doc.selection.value,
-        normalizeRange: (range: Range) => this.doc.selection.normalizeRange(range)
+        normalizeRange: (range: Range) => normalizeRange(
+          range,
+          id => this.doc.getBlockById(id) as any,
+        )
       })
     })
   }, 200)

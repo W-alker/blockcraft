@@ -13,6 +13,7 @@ describe("CodeInlineRuntime diffHighLight selection restore", () => {
   };
 
   afterEach(() => {
+    document.getSelection()?.removeAllRanges();
     for (const container of containers.splice(0)) {
       container.remove();
     }
@@ -32,7 +33,10 @@ describe("CodeInlineRuntime diffHighLight selection restore", () => {
       selectionValue: {
         start: {blockId: "code-1", type: "text", offset: 0},
       },
-      normalizeRange: () => ({from: {type: "text", index: 0}}),
+      normalizeRange: () => ({
+        start: {blockId: "code-1", type: "text", offset: 0, block: block as any},
+        end: {blockId: "code-1", type: "text", offset: 0, block: block as any},
+      }),
     });
 
     expect(block.setInlineRange).toHaveBeenCalledOnceWith(0);
@@ -52,7 +56,36 @@ describe("CodeInlineRuntime diffHighLight selection restore", () => {
       selectionValue: {
         start: {blockId: "code-1", type: "selected"},
       },
-      normalizeRange: () => ({from: {type: "selected"}}),
+      normalizeRange: () => ({
+        start: {blockId: "code-1", type: "selected", block: block as any},
+        end: {blockId: "code-1", type: "selected", block: block as any},
+      }),
+    });
+
+    expect(block.setInlineRange).not.toHaveBeenCalled();
+  });
+
+  it("does not restore an inline cursor from an endpoint owned by another block", async () => {
+    const {runtime, container} = makeRuntime();
+    const block = {
+      id: "code-1",
+      textContent: () => "a",
+      textDeltas: () => [{insert: "a"}],
+      setInlineRange: jasmine.createSpy("setInlineRange"),
+    };
+    const nativeRange = document.createRange();
+    nativeRange.selectNodeContents(container);
+    document.getSelection()?.addRange(nativeRange);
+
+    await runtime.diffHighLight([], {
+      block,
+      selectionValue: {
+        start: {blockId: "code-1", type: "text", offset: 0},
+      },
+      normalizeRange: () => ({
+        start: {blockId: "code-2", type: "text", offset: 4, block: block as any},
+        end: {blockId: "code-2", type: "text", offset: 4, block: block as any},
+      }),
     });
 
     expect(block.setInlineRange).not.toHaveBeenCalled();

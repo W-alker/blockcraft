@@ -273,13 +273,22 @@ doc.selection.blur()                           // clear
 // Persist & restore
 doc.selection.value?.toJSON()                  // ISelectionJSON
 doc.selection.replay(savedJSON)                // ISelectionJSON updates value synchronously; legacy accepted
+
+// Explicit browser DOM -> model sampling. Use only at native event/mutation
+// boundaries, never to confirm a programmatic selection write.
+doc.selection.recalculate()
+
+// DOM adapter: prefer the exported pure normalizer and endpoint points.
+const endpoints = normalizeRange(staticRange, id => doc.getBlockById(id))
+// doc.selection.normalizeRange(staticRange) returns legacy INormalizedRange
+// and is deprecated compatibility only.
 ```
 
 > The legacy `selection.from / selection.to / selection.from.index` shape is **deprecated** but still parsed for backward compat. New code MUST use `anchor / head / start / end` and narrow on `point.type` before reading `offset`. See `blockcraft-selection.md` for details.
 
 ### Input (model-native edit planning)
 
-`InputTransformer` adapts a live `BlockSelection` (or normalized native target endpoints) into one pure, short-lived `SelectionEditPlan`, then executes that plan through Yjs. `beforeInput`, printable fallback, Backspace/Delete, Enter, and IME composition share this planner/executor boundary. Current model selections never convert through deprecated `from/to/index/length` ranges; the legacy shape remains only at explicit compatibility entry points. Unsupported or stale plans fail closed before native DOM mutation. See `blockcraft-input.md` for the plan kinds, IME ordering, undo grouping, and virtualization constraints.
+`InputTransformer` adapts a live `BlockSelection` (or normalized native target endpoints) into one pure, short-lived `SelectionEditPlan`, then executes that plan through Yjs. `beforeInput`, printable fallback, Backspace/Delete, Enter, and IME composition share this planner/executor boundary. `deleteByRange()` accepts only `BlockSelection`; browser `StaticRange` adapters use the pure `normalizeRange()` function and `INormalizedEndpoints`. Post-edit cursor recipes commit through model-first selection APIs without a confirming DOM `recalculate()`. Unsupported or stale plans fail closed before native DOM mutation. See `blockcraft-input.md` for the plan kinds, IME ordering, undo grouping, and virtualization constraints.
 
 ### Event Handling (in Plugin or Block)
 

@@ -265,7 +265,10 @@ doc.selection.changeObserve()          // Observable<BlockSelection | null>
 doc.selection.nextChangeObserve()      // Observable<BlockSelection | null>
 doc.selection.afterNextChange(fn)      // Subscribe sugar
 
-// Recalculate from current DOM state. Returns { value, next }.
+// Explicitly sample the current native DOM Selection into the model.
+// Use only at browser event/native-mutation boundaries. Never call this to
+// confirm setSelection()/setCursorAt()/replay(): those writes already commit
+// the canonical model synchronously before projecting the DOM view.
 // Pass execNext=false to defer the side-effect (emit + DOM class update).
 doc.selection.recalculate(execNext?, options?)
 //  → { value: BlockSelection | null, next?: () => void }
@@ -452,7 +455,27 @@ It walks the DOM range endpoints and:
 5. If the block is void/container and no boundary mapping applies, builds an `ISelectedSelectionPoint`.
 6. Handles the special **gap-space** case: zero-width spaces at the document boundary in the root block resolve to the first/last child's start/end (added to support Cmd+A from anywhere in the doc).
 
-The legacy `SelectionManager.normalizeRange()` public method wraps this and returns `INormalizedRange` (with `from`/`to`) for backward compatibility — **new code should not use it**.
+Framework DOM adapters should call the pure function directly and narrow the endpoint type before consuming its payload:
+
+```typescript
+import { normalizeRange } from '@ccc/blockcraft'
+
+const endpoints = normalizeRange(
+  staticRange,
+  id => doc.getBlockById(id),
+)
+if (endpoints.start.type === 'text') {
+  const offset = endpoints.start.offset
+}
+```
+
+The legacy `SelectionManager.normalizeRange()` public method wraps this and returns `INormalizedRange` (with `from`/`to`) for backward compatibility. It is marked `@deprecated`; **new code must use the pure function and `INormalizedEndpoints`**. The manager method is a compatibility facade, not the normalization boundary for framework internals.
+
+## DOM Sampling Boundary
+
+`recalculate()` means one thing: sample browser-owned native selection state and publish the resulting `BlockSelection`. Valid call sites are `selectionchange`, composition/native input fallback, and integrations whose browser API has just produced a `Range` without a model source.
+
+Programmatic selection APIs (`setSelection`, `setCursorAt`, `setCursorAtBlock`, `selectBlock`, `setGapCursor`, table-cell selection, `extendTo`, and `replay`) already perform model commit followed by DOM projection. Calling `recalculate()` immediately after them introduces an unnecessary DOM walk and lets browser-specific range interpretation overwrite the intent that was just committed. Input, undo, and plugin code should read `doc.selection.value` after a successful programmatic write instead.
 
 ## Backward Compatibility
 

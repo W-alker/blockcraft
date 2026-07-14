@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component } from "@angular/core";
-import { DeltaOperation, EditableBlockComponent, ORIGIN_SKIP_SYNC } from "../../framework";
+import { DeltaOperation, EditableBlockComponent, normalizeRange, ORIGIN_SKIP_SYNC } from "../../framework";
 import { MermaidTextareaBlockModel } from "./index";
 import { CodeInlineRuntime } from "../code-block/code-inline-runtime";
 import { debounce, nextTick } from "../../global";
@@ -54,7 +54,10 @@ export class MermaidTextareaBlockComponent extends EditableBlockComponent<Mermai
       this._codeRuntime.diffHighLight(op, {
         block: this,
         selectionValue: this.doc.selection.value,
-        normalizeRange: (range: Range) => this.doc.selection.normalizeRange(range)
+        normalizeRange: (range: Range) => normalizeRange(
+          range,
+          id => this.doc.getBlockById(id) as any,
+        )
       })
     })
   }, 200)

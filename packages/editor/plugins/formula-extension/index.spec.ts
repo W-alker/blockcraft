@@ -1,6 +1,6 @@
 import {fakeAsync} from "@angular/core/testing";
 import {Subject} from "rxjs";
-import {INLINE_ELEMENT_TAG} from "../../framework";
+import {BlockNodeType, EditableBlockComponent, INLINE_ELEMENT_TAG} from "../../framework";
 import {FormulaBlockExtensionPlugin} from "./index";
 
 describe("FormulaBlockExtensionPlugin inline range handling", () => {
@@ -22,6 +22,36 @@ describe("FormulaBlockExtensionPlugin inline range handling", () => {
     document.body.querySelectorAll("[data-formula-extension-test]").forEach(el => el.remove());
   });
 
+  it("normalizes an embed range through model endpoints instead of the legacy manager facade", () => {
+    const {blockHost, formula} = createInlineFormula();
+    const block = Object.create(EditableBlockComponent.prototype) as EditableBlockComponent;
+    Object.assign(block as any, {
+      _native: {id: "p1", flavour: "paragraph", nodeType: BlockNodeType.editable},
+      _containerElement: blockHost,
+      _runtime: {
+        mapper: {
+          domPointToModelPoint: jasmine.createSpy("domPointToModelPoint").and.returnValue(0),
+        },
+      },
+      hostElement: blockHost,
+    });
+    const normalizeRangeSpy = jasmine.createSpy("normalizeRange").and.throwError("legacy facade used");
+    const plugin = new FormulaBlockExtensionPlugin();
+    (plugin as any).doc = {
+      getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
+      selection: {normalizeRange: normalizeRangeSpy},
+    };
+
+    const endpoints = plugin.getEmbedRange(formula);
+
+    expect(endpoints.start).toEqual(jasmine.objectContaining({
+      blockId: "p1",
+      type: "text",
+      offset: 0,
+    }));
+    expect(normalizeRangeSpy).not.toHaveBeenCalled();
+  });
+
   it("closes inline editing without mutating data when the embed range cannot normalize", () => {
     const {formula} = createInlineFormula();
     const confirm = new Subject<string>();
@@ -38,7 +68,6 @@ describe("FormulaBlockExtensionPlugin inline range handling", () => {
       getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
       isEditable: jasmine.createSpy("isEditable").and.returnValue(true),
       selection: {
-        normalizeRange: jasmine.createSpy("normalizeRange").and.throwError("stale formula node"),
         setCursorAt: jasmine.createSpy("setCursorAt"),
       },
       overlayService: {
@@ -49,6 +78,7 @@ describe("FormulaBlockExtensionPlugin inline range handling", () => {
     };
     const plugin = new FormulaBlockExtensionPlugin();
     (plugin as any).doc = doc;
+    spyOn(plugin, "getEmbedRange").and.throwError("stale formula node");
 
     const consumed = plugin.onInlineClick({
       getDefaultEvent: () => ({target: formula}),
@@ -100,9 +130,6 @@ describe("FormulaBlockExtensionPlugin inline range handling", () => {
       getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
       isEditable: jasmine.createSpy("isEditable").and.returnValue(true),
       selection: {
-        normalizeRange: jasmine.createSpy("normalizeRange").and.returnValue({
-          from: {type: "text", index: 0},
-        }),
         setCursorAt: jasmine.createSpy("setCursorAt"),
       },
       overlayService: {
@@ -113,6 +140,10 @@ describe("FormulaBlockExtensionPlugin inline range handling", () => {
     };
     const plugin = new FormulaBlockExtensionPlugin();
     (plugin as any).doc = doc;
+    spyOn(plugin, "getEmbedRange").and.returnValue({
+      start: {blockId: "p1", type: "text", offset: 0, block: block as any},
+      end: {blockId: "p1", type: "text", offset: 0, block: block as any},
+    });
 
     plugin.onInlineClick({
       getDefaultEvent: () => ({target: formula}),
@@ -156,9 +187,6 @@ describe("FormulaBlockExtensionPlugin inline range handling", () => {
       getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
       isEditable: jasmine.createSpy("isEditable").and.returnValue(true),
       selection: {
-        normalizeRange: jasmine.createSpy("normalizeRange").and.returnValue({
-          from: {type: "text", index: 0},
-        }),
         setCursorAt: jasmine.createSpy("setCursorAt"),
       },
       overlayService: {
@@ -174,6 +202,10 @@ describe("FormulaBlockExtensionPlugin inline range handling", () => {
     });
     const plugin = new FormulaBlockExtensionPlugin();
     (plugin as any).doc = doc;
+    spyOn(plugin, "getEmbedRange").and.returnValue({
+      start: {blockId: "p1", type: "text", offset: 0, block: block as any},
+      end: {blockId: "p1", type: "text", offset: 0, block: block as any},
+    });
 
     plugin.onInlineClick({
       getDefaultEvent: () => ({target: formula}),

@@ -1,21 +1,27 @@
 import {
   closetBlockId,
   DocPlugin,
+  EditableBlockComponent,
   EventListen, FakeRange, getPositionWithOffset,
-  INLINE_TEXT_NODE_TAG, INLINE_ELEMENT_TAG
+  INLINE_TEXT_NODE_TAG, INLINE_ELEMENT_TAG,
+  normalizeRange,
 } from "../../framework";
 import {skip, Subject, Subscription, takeUntil} from "rxjs";
 import {InlineLinkToolbar} from "./widgets/inline-link-toolbar";
 import {nextTick, sliceDelta} from "../../global";
 import {UIEventStateContext, IBlockSnapshot} from "../../framework";
-import type {IBlockTextRange, INormalizedRange} from "../../framework";
 import {ComponentRef} from "@angular/core";
 import {LinkEditFloatDialog} from "./widgets/link-edit-dialog";
 import {OneShotRangeAnchor} from "../../framework/utils/one-shot-selection-anchor";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 
 type TextLinkInfo = {
-  textRange: INormalizedRange & {from: IBlockTextRange}
+  textRange: {
+    blockId: string
+    block: EditableBlockComponent
+    index: number
+    length: number
+  }
   text: string
 }
 
@@ -84,20 +90,36 @@ export class InlineLinkExtension extends DocPlugin {
     const endTextNode = nodeRange.end.firstElementChild!.firstChild as Text
     range.setStart(startTextNode, 0)
     range.setEnd(endTextNode, endTextNode.wholeText.length)
-    const normalizedRange = this.doc.selection.normalizeRange(range)
-    const text = range.toString()
-    range.detach()
-    return {
-      textRange: normalizedRange,
-      text
+    try {
+      const endpoints = normalizeRange(
+        range,
+        id => this.doc.getBlockById(id) as any,
+      )
+      const {start, end} = endpoints
+      if (
+        start.type !== 'text' ||
+        end.type !== 'text' ||
+        start.blockId !== end.blockId
+      ) {
+        throw new Error('Link DOM range must resolve to one text block')
+      }
+      return {
+        textRange: {
+          blockId: start.blockId,
+          block: start.block,
+          index: start.offset,
+          length: end.offset - start.offset,
+        },
+        text: range.toString(),
+      }
+    } finally {
+      range.detach()
     }
   }
 
   private _tryGetTextLinkInfo(target: HTMLElement): TextLinkInfo | null {
     try {
-      const linkInfo = this.getLinkInfo(target)
-      if (linkInfo.textRange.from.type !== 'text') return null
-      return linkInfo as TextLinkInfo
+      return this.getLinkInfo(target)
     } catch {
       return null
     }
@@ -131,9 +153,9 @@ export class InlineLinkExtension extends DocPlugin {
           break
         case 'unbind-link': {
           const linkInfo = this._tryGetTextLinkInfo(target)
-          if (!linkInfo || linkInfo.textRange.from.block !== block || !this._isBlockAlive(block)) return;
-          const {from} = linkInfo.textRange
-          block.formatText(from.index, from.length, {'a:link': null})
+          if (!linkInfo || linkInfo.textRange.block !== block || !this._isBlockAlive(block)) return;
+          const {index, length} = linkInfo.textRange
+          block.formatText(index, length, {'a:link': null})
           this.closeToolbar()
         }
           break
@@ -200,9 +222,9 @@ export class InlineLinkExtension extends DocPlugin {
     const rangeAnchor = new OneShotRangeAnchor(this.doc)
 
     const fallbackRange = {
-      block: linkInfo.textRange.from.block,
-      index: linkInfo.textRange.from.index,
-      length: linkInfo.textRange.from.length
+      block: linkInfo.textRange.block,
+      index: linkInfo.textRange.index,
+      length: linkInfo.textRange.length
     }
     rangeAnchor.capture(fallbackRange.block, fallbackRange.index, fallbackRange.length)
 
@@ -275,7 +297,7 @@ export class InlineLinkExtension extends DocPlugin {
     const linkInfo = this._tryGetTextLinkInfo(this._linkNode)
     if (!linkInfo) return
     const _range = linkInfo.textRange
-    const {block, index, length} = _range.from
+    const {block, index, length} = _range
     if (!this._isBlockAlive(block) || !this.doc.isEditable(block)) return
 
     const bookmark = this.doc.schemas.createSnapshot('bookmark', [link])

@@ -31,7 +31,9 @@ Input has one internal planning boundary:
 
 For performance, ordinary printable text keydown and ordinary text Backspace/Delete are rejected by an O(1) endpoint-type gate before planning; their authoritative work remains in `beforeInput` or the existing inline keyboard path. Planning performs no layout reads and resolves scope/tree data once per owned edit event.
 
-`INormalizedRange` remains only at explicit compatibility entry points such as the legacy overload of `deleteByRange()`. Current `BlockSelection` execution does not convert through deprecated `from/to/index/length` ranges. This distinction matters for virtual rendering: the planner is model-only and render-independent; only final DOM projection/focus requires a mounted editing surface.
+`InputTransformer.deleteByRange()` accepts only a live `BlockSelection`; the legacy `INormalizedRange` overload has been removed. Browser-owned `StaticRange` values are normalized at the event adapter boundary into `INormalizedEndpoints`, then planned without converting through deprecated `from/to/index/length` shapes. This distinction matters for virtual rendering: the planner is model-only and render-independent; only final DOM projection/focus requires a mounted editing surface.
+
+After an executor mutates Yjs, its cursor recipe resolves the live editable block by ID and commits through `SelectionManager.setCursorAt()` / `setCursorAtBlock()`. A successful programmatic write is authoritative and is not followed by `recalculate()`. Failure to resolve or project the intended cursor fails closed (`blur()` or a documented adjacent-block focus recipe); Input does not inspect the DOM to guess whether its own model write succeeded.
 
 ## Fail-Closed Input Guard
 
@@ -49,7 +51,7 @@ Composition has the same rule:
 
 - `compositionStart` tries to recover selection from `CompositionEventState.selectionResult`.
 - The recovered model selection is planned exactly once. Gap, boundary, table-cell, whole-block, mixed structural/text, cross-block text, and collapsed text composition all dispatch from that plan.
-- Once `compositionStart` accepts a model selection, `CompositionSession` captures its commit anchor directly from the accepted text point or the materialized paragraph (`gap` / `boundary` / `table-cell` / selected renderUnit). A follow-up `selection.recalculate()` may still run to settle editor UI, but IME commit no longer depends on that DOM-derived result.
+- Once `compositionStart` accepts a model selection, `CompositionSession` captures its commit anchor directly from the accepted text point or the materialized paragraph (`gap` / `boundary` / `table-cell` / selected renderUnit). Materialization commits its model cursor directly; it does not run a follow-up `selection.recalculate()`.
 - IME paths that materialize structure before commit (`gap`, `boundary`, `table-cell`, whole-block selected, mixed cross-block ranges) keep the structural transaction and the later `compositionEnd` text commit inside one `DocUndoManager` capture group. Undo therefore restores the pre-input selection and data atomically even when the user spends longer than Yjs' normal `captureTimeout` inside the input method.
 - While the session is active, composing `beforeinput` target ranges are treated as transient browser state and do not retarget the captured `OneShotCursorAnchor`.
 - If recovery fails, it prevents default, blurs editor selection, and does not start `CompositionSession`.
@@ -118,6 +120,7 @@ Manages the lifecycle of an active IME session:
 - Uses `OneShotCursorAnchor` (Yjs `RelativePosition`) to maintain cursor position during collaboration
 - Captures the anchor from the accepted model selection/materialized block at `compositionStart`; DOM selection jitter during IME startup must not retarget the eventual commit.
 - On commit: removes CursorBlot, inserts final text into Y.Text
+- Restores the committed caret with `setCursorAt()` after rerender; if WebKit drops focus during projection, the editor refocuses and reapplies the same model cursor without reading the DOM back into the model
 
 ## Cross-Block Operations
 

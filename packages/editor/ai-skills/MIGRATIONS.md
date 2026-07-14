@@ -67,6 +67,71 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-07-14 (major) — DOM adapters and input use canonical selection contracts
+
+**Severity**: major
+
+**What changed**: `InputTransformer.deleteByRange()` now accepts only a live `BlockSelection`; its deprecated `INormalizedRange` overload and legacy input executor have been removed. Framework DOM adapters normalize browser ranges through the exported pure `normalizeRange(staticRange, getBlockById, options?)` function and consume `INormalizedEndpoints.start/end`. `SelectionManager.normalizeRange()` remains available as a deprecated compatibility facade returning `INormalizedRange`. Input cursor restoration now commits through model-first selection APIs without immediately sampling the DOM through `recalculate()`.
+
+**Why**: Keeping current model selections, deprecated range shapes, and browser DOM readback active in the same execution path allowed one user intent to be reinterpreted more than once. That increased selection drift risk around IME, structure replacement, undo, Safari/WebKit projection, and future virtual rendering. The new boundary makes DOM normalization an explicit event adapter, keeps edit planning model-only, and treats successful programmatic selection writes as authoritative.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — Quick Reference distinguishes explicit DOM sampling, pure endpoint normalization, and model-first Input cursor recipes.
+- `blockcraft-selection.md` — documents the deprecated manager facade and the DOM sampling boundary.
+- `blockcraft-input.md` — documents the model-only `deleteByRange()` contract and post-edit cursor behavior.
+
+### Breaking Changes
+
+- `InputTransformer.deleteByRange(range: INormalizedRange, merge?)` has been removed. Pass a live `BlockSelection` instead.
+- Framework integrations that need to interpret a browser `StaticRange` must consume `INormalizedEndpoints`; the deprecated manager method's `from/to/index/length` result is not accepted by Input.
+
+### Deprecations
+
+- `SelectionManager.normalizeRange()` is deprecated with no removal date. Use the exported pure `normalizeRange()` function for DOM adapter code.
+
+### Migration Recipe
+
+For model-owned deletion:
+
+```typescript
+// before
+const range = doc.selection.normalizeRange(staticRange)
+doc.inputManger.deleteByRange(range, true)
+
+// after
+const selection = doc.selection.value
+if (selection) {
+  doc.inputManger.deleteByRange(selection, true)
+}
+```
+
+For browser DOM adapters:
+
+```typescript
+// before
+const range = doc.selection.normalizeRange(staticRange)
+if (range.from.type === 'text') {
+  useOffset(range.from.index)
+}
+
+// after
+const endpoints = normalizeRange(
+  staticRange,
+  id => doc.getBlockById(id),
+)
+if (endpoints.start.type === 'text') {
+  useOffset(endpoints.start.offset)
+}
+```
+
+Do not call `doc.selection.recalculate()` after `setSelection()`, `setCursorAt()`, `setCursorAtBlock()`, or `replay()` merely to confirm the write. Read `doc.selection.value` synchronously instead. The package version remains unchanged until an explicit release decision.
+
+### Behavior Changes
+
+- Input planning and deletion no longer execute deprecated range shapes or retain endpoint block references as mutation authority.
+- Programmatic cursor restoration after ordinary input, structural replacement, table-cell materialization, and IME commit no longer performs a redundant DOM-to-model walk.
+- IME commit still refocuses and reapplies the same model cursor when WebKit drops focus during DOM projection; it does not infer a new cursor from the browser selection.
+
 ### v?.?.? - 2026-07-14 (patch) — input edits use model-native plans
 
 **Severity**: patch

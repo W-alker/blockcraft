@@ -1,5 +1,10 @@
 import {fakeAsync, flushMicrotasks} from "@angular/core/testing";
-import {INLINE_ELEMENT_TAG, INLINE_TEXT_NODE_TAG} from "../../framework";
+import {
+  BlockNodeType,
+  EditableBlockComponent,
+  INLINE_ELEMENT_TAG,
+  INLINE_TEXT_NODE_TAG,
+} from "../../framework";
 import {InlineLinkExtension} from "./index";
 import * as Y from "yjs";
 import {Subject} from "rxjs";
@@ -27,23 +32,35 @@ describe("InlineLinkExtension range handling", () => {
   it("expands adjacent text nodes that share the same link", () => {
     const {host, elements, link} = createLinkRun(["foo", "bar"]);
     host.setAttribute("data-inline-link-extension-test", "true");
-    const block = {id: "p1"};
+    host.setAttribute("data-block-id", "p1");
+    const block = Object.create(EditableBlockComponent.prototype) as EditableBlockComponent;
+    Object.assign(block as any, {
+      _native: {id: "p1", flavour: "paragraph", nodeType: BlockNodeType.editable},
+      _containerElement: host,
+      _runtime: {
+        mapper: {
+          domPointToModelPoint: jasmine.createSpy("domPointToModelPoint")
+            .and.callFake((_root: Node, node: Node, offset: number) =>
+              node === elements[0].cText.firstChild ? offset : 3 + offset),
+        },
+      },
+      hostElement: host,
+    });
+    const legacyNormalize = jasmine.createSpy("normalizeRange").and.throwError("legacy facade used");
     const plugin = new InlineLinkExtension();
     (plugin as any).doc = {
-      selection: {
-        normalizeRange: jasmine.createSpy("normalizeRange").and.returnValue({
-          from: {blockId: "p1", type: "text", block, index: 0, length: 6},
-          to: null,
-          collapsed: false,
-          commonParent: "p1",
-        }),
-      },
+      getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
+      selection: {normalizeRange: legacyNormalize},
     };
 
     const info = plugin.getLinkInfo(elements[1].cText);
 
     expect(info.text).toBe("foobar");
-    expect((plugin as any).doc.selection.normalizeRange).toHaveBeenCalled();
+    expect(info.textRange.block).toBe(block);
+    expect(info.textRange.blockId).toBe("p1");
+    expect(info.textRange.index).toBe(0);
+    expect(info.textRange.length).toBe(6);
+    expect(legacyNormalize).not.toHaveBeenCalled();
     expect(plugin.tryGetLink(elements[0].cText)).toBe(link);
   });
 
@@ -61,13 +78,13 @@ describe("InlineLinkExtension range handling", () => {
     (plugin as any).doc = {
       isEditable: jasmine.createSpy("isEditable").and.returnValue(true),
       selection: {
-        normalizeRange: jasmine.createSpy("normalizeRange").and.throwError("stale inline node"),
         createFakeRange: jasmine.createSpy("createFakeRange"),
       },
       overlayService: {
         createConnectedOverlay: jasmine.createSpy("createConnectedOverlay"),
       },
     };
+    spyOn(plugin, "getLinkInfo").and.throwError("stale inline node");
 
     plugin.onEditLink(elements[0].cText, block as any);
 
@@ -126,12 +143,6 @@ describe("InlineLinkExtension range handling", () => {
       getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
       isEditable: jasmine.createSpy("isEditable").and.returnValue(true),
       selection: {
-        normalizeRange: jasmine.createSpy("normalizeRange").and.returnValue({
-          from: {blockId: "p1", type: "text", block, index: 0, length: 3},
-          to: null,
-          collapsed: false,
-          commonParent: "p1",
-        }),
         createFakeRange: jasmine.createSpy("createFakeRange"),
       },
       overlayService: {
@@ -145,6 +156,10 @@ describe("InlineLinkExtension range handling", () => {
     spyOn(window, "requestAnimationFrame").and.returnValue(0);
     const plugin = new InlineLinkExtension();
     (plugin as any).doc = doc;
+    spyOn(plugin, "getLinkInfo").and.returnValue({
+      textRange: {block: block as any, blockId: "p1", index: 0, length: 3},
+      text: "foo",
+    });
 
     plugin.onEditLink(elements[0].cText, block as any);
     expect(textObserver).toBeTruthy();
@@ -188,12 +203,6 @@ describe("InlineLinkExtension range handling", () => {
       getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
       isEditable: jasmine.createSpy("isEditable").and.returnValue(true),
       selection: {
-        normalizeRange: jasmine.createSpy("normalizeRange").and.returnValue({
-          from: {blockId: "p1", type: "text", block, index: 0, length: 3},
-          to: null,
-          collapsed: false,
-          commonParent: "p1",
-        }),
         createFakeRange: jasmine.createSpy("createFakeRange"),
       },
       overlayService: {
@@ -203,6 +212,10 @@ describe("InlineLinkExtension range handling", () => {
     spyOn(window, "requestAnimationFrame").and.returnValue(0);
     const plugin = new InlineLinkExtension();
     (plugin as any).doc = doc;
+    spyOn(plugin, "getLinkInfo").and.returnValue({
+      textRange: {block: block as any, blockId: "p1", index: 0, length: 3},
+      text: "foo",
+    });
 
     plugin.onEditLink(elements[0].cText, block as any);
     doc.getBlockById.and.throwError("missing");
@@ -219,14 +232,12 @@ describe("InlineLinkExtension range handling", () => {
     const plugin = new InlineLinkExtension();
     (plugin as any)._linkNode = elements[0].cText;
     (plugin as any).doc = {
-      selection: {
-        normalizeRange: jasmine.createSpy("normalizeRange").and.throwError("stale inline node"),
-      },
       schemas: {
         createSnapshot: jasmine.createSpy("createSnapshot"),
       },
       chain: jasmine.createSpy("chain"),
     };
+    spyOn(plugin, "getLinkInfo").and.throwError("stale inline node");
 
     plugin.switchView();
 
