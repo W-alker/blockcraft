@@ -23,10 +23,11 @@ Programmatic write (API / undo replay / keyboard command)
   → validate + publish BlockSelection synchronously
   → focus host + suppress native selectionchange
   → project model to DOM Range (or clear native Range for model-only selection)
+      → transient projection failure: keep model + bounded version-guarded retry
   → FakeRange (visual overlay for non-native selections, optional)
 ```
 
-**Key principle**: `BlockSelection` is the canonical truth. The DOM `Selection` is a derived view. Every programmatic write goes through one model-first commit path: `setSelection()`, `setCursorAt()`, `extendTo()`, editable block cursor helpers, `selectBlock()`, `setGapCursor()`, table-cell selection, and replay all publish `doc.selection.value` before DOM projection. `SelectionPositionResolver` resolves endpoint order and nearest common ancestry together from `parentId`, reading only the first divergent parent's `childrenIds`; it does not call `compareDocumentPosition()` or read layout. Immutable `BlockSelection` instances cache their derived direction, so repeated `direction` / `start` / `end` reads do not walk the model tree again. The derived DOM Range is applied under a short native `selectionchange` suppression window so browsers (notably Safari/WebKit) cannot immediately reinterpret a container/callout block range back into internal child text or boundary endpoints.
+**Key principle**: `BlockSelection` is the canonical truth. The DOM `Selection` is a derived view. Every programmatic write goes through one model-first commit path: `setSelection()`, `setCursorAt()`, `extendTo()`, editable block cursor helpers, `selectBlock()`, `setGapCursor()`, table-cell selection, and replay all publish `doc.selection.value` before DOM projection. `SelectionPositionResolver` resolves endpoint order and nearest common ancestry together from `parentId`, reading only the first divergent parent's `childrenIds`; it does not call `compareDocumentPosition()` or read layout. Immutable `BlockSelection` instances cache their derived direction, so repeated `direction` / `start` / `end` reads do not walk the model tree again. The derived DOM Range is applied under a short native `selectionchange` suppression window so browsers (notably Safari/WebKit) cannot immediately reinterpret a container/callout block range back into internal child text or boundary endpoints. If a live model selection reaches the view before its block DOM is mounted, projection failure does not call `blur()`: Selection keeps the model, removes any partial native range, and retries only while the projection version and expected JSON still match. A newer selection cancels the old task, and an explicitly focused external control is never stolen back.
 
 ### Input Consumer Contract
 
@@ -411,6 +412,7 @@ doc.selection.replay(json)
   → _applyState(selection)           // synchronous model update
   → _buildDomRange(start, end)       // skipped for model-only table-cell selection
   → native Selection.addRange(range) // DOM view catches up under suppression
+      → if DOM is not mounted: keep model and retry projection for this version
 ```
 
 ### Selection Scope Guard
@@ -476,6 +478,8 @@ The legacy `SelectionManager.normalizeRange()` public method wraps this and retu
 `recalculate()` means one thing: sample browser-owned native selection state and publish the resulting `BlockSelection`. Valid call sites are `selectionchange`, composition/native input fallback, and integrations whose browser API has just produced a `Range` without a model source.
 
 Programmatic selection APIs (`setSelection`, `setCursorAt`, `setCursorAtBlock`, `selectBlock`, `setGapCursor`, table-cell selection, `extendTo`, and `replay`) already perform model commit followed by DOM projection. Calling `recalculate()` immediately after them introduces an unnecessary DOM walk and lets browser-specific range interpretation overwrite the intent that was just committed. Input, undo, and plugin code should read `doc.selection.value` after a successful programmatic write instead.
+
+A valid model commit and a successful DOM projection are deliberately separate outcomes. If the target block exists in the model but its inline/container DOM is still mounting, Selection keeps `doc.selection.value`, keeps or restores editor focus only when focus naturally dropped to `body`, and retries projection for a bounded number of animation frames. Each task is guarded by a projection version plus exact selection JSON; later user intent cancels it. Exhaustion leaves the model intact and never samples unknown DOM state. Invalid or structurally stale model endpoints still fail closed, and explicit `blur()` / `replay(null)` still clear both model and native ranges.
 
 ## Backward Compatibility
 

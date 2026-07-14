@@ -77,6 +77,8 @@ describe('ClipboardManager – paste at gap', () => {
     const setCursorAt = jasmine.createSpy('setCursorAt');
     const setCursorAtBlock = jasmine.createSpy('setCursorAtBlock');
     const setGapCursor = jasmine.createSpy('setGapCursor');
+    const setSelection = jasmine.createSpy('setSelection');
+    const replay = jasmine.createSpy('replay');
     const deleteBlockById = jasmine.createSpy('deleteBlockById');
     const rootHost = {
       contains: jasmine.createSpy('contains').and.returnValue(false),
@@ -117,13 +119,15 @@ describe('ClipboardManager – paste at gap', () => {
         setCursorAt,
         setCursorAtBlock,
         setGapCursor,
+        setSelection,
+        replay,
         selectBlock: jasmine.createSpy('selectBlock'),
         recalculate: jasmine.createSpy('recalculate'),
       },
     };
 
     const manager = new ClipboardManager(doc as any);
-    return {manager, doc, calls, rootHost, setCursorAt, setCursorAtBlock, setGapCursor, deleteBlockById};
+    return {manager, doc, calls, liveBlocks, rootHost, replay, setCursorAt, setCursorAtBlock, setGapCursor, setSelection, deleteBlockById};
   };
 
   const gapSelection = (blockId: string, side: 'before' | 'after') => {
@@ -149,7 +153,7 @@ describe('ClipboardManager – paste at gap', () => {
   });
 
   it('inserts pasted text as siblings AFTER the void block for gap-after', async () => {
-    const {manager, calls, rootHost, setCursorAt, setCursorAtBlock} = createManager();
+    const {manager, doc, calls, rootHost, setCursorAt, setCursorAtBlock} = createManager();
     const selection = gapSelection('divider-1', 'after');
 
     const result = await (manager as any)._applyGapPaste(selection, textState('pasted 1\npasted 2'));
@@ -168,6 +172,7 @@ describe('ClipboardManager – paste at gap', () => {
     expect(setCursorAt).toHaveBeenCalledWith(
       jasmine.objectContaining({nodeType: BlockNodeType.editable}), 5,
     );
+    expect(doc.selection.recalculate).not.toHaveBeenCalled();
   });
 
   it('does not restore the caret when the inserted gap-paste block was removed before nextTick', async () => {
@@ -307,5 +312,55 @@ describe('ClipboardManager – paste at gap', () => {
 
     expect(block.setInlineRange).not.toHaveBeenCalled();
     expect(recalculate).not.toHaveBeenCalled();
+  });
+
+  it('restores a same-block text range through the canonical model without DOM readback', () => {
+    const {manager, doc, liveBlocks, setSelection} = createManager();
+    const block = {
+      id: 'p1',
+      nodeType: BlockNodeType.editable,
+      textLength: 4,
+      setInlineRange: jasmine.createSpy('setInlineRange'),
+    } as any;
+    liveBlocks.set(block.id, block);
+
+    (manager as any)._setTextRangeAndSync(block, 1, 2);
+
+    expect(setSelection).toHaveBeenCalledWith(
+      {blockId: block.id, type: 'text', offset: 1, block},
+      {blockId: block.id, type: 'text', offset: 3, block},
+    );
+    expect(block.setInlineRange).not.toHaveBeenCalled();
+    expect(doc.selection.recalculate).not.toHaveBeenCalled();
+  });
+
+  it('restores a cross-block range through live model points without DOM readback', () => {
+    const {manager, doc, liveBlocks, setSelection} = createManager();
+    const startBlock = {id: 'p1', nodeType: BlockNodeType.editable, textLength: 4} as any;
+    const endBlock = {id: 'p2', nodeType: BlockNodeType.editable, textLength: 3} as any;
+    liveBlocks.set(startBlock.id, startBlock);
+    liveBlocks.set(endBlock.id, endBlock);
+
+    (manager as any)._setCrossBlockRangeAndSync(startBlock, 2, endBlock);
+
+    expect(setSelection).toHaveBeenCalledWith(
+      {blockId: startBlock.id, type: 'text', offset: 2, block: startBlock},
+      {blockId: endBlock.id, type: 'text', offset: 3, block: endBlock},
+    );
+    expect(doc.selection.recalculate).not.toHaveBeenCalled();
+  });
+
+  it('replays a collapsed paste selection without confirming it through DOM', () => {
+    const {manager, doc, replay} = createManager();
+    const selection = {
+      anchor: {blockId: 'p1', type: 'text', offset: 1},
+      head: {blockId: 'p1', type: 'text', offset: 1},
+      commonParent: 'p1',
+    };
+
+    (manager as any)._restoreCollapsedSelectionAndSync(selection);
+
+    expect(replay).toHaveBeenCalledOnceWith(selection);
+    expect(doc.selection.recalculate).not.toHaveBeenCalled();
   });
 });

@@ -38,6 +38,8 @@ import {
   SelectionPositionResolver,
 } from "./position-resolver";
 
+const DOM_PROJECTION_RETRY_LIMIT = 8
+
 @DocEventRegister
 export class SelectionManager {
 
@@ -47,6 +49,7 @@ export class SelectionManager {
   private _keyboard = new SelectionKeyboard(this.doc)
   private _suppressRecalculate = false
   private _suppressProgrammaticSelectionChangeUntil = 0
+  private _projectionVersion = 0
   private readonly _positionResolver: SelectionPositionResolver
 
   constructor(public readonly doc: BlockCraft.Doc) {
@@ -353,6 +356,7 @@ export class SelectionManager {
   // ── Model state management ──
 
   private _publishState(selection: BlockSelection | null) {
+    this._projectionVersion += 1
     this.selectionChange$.next(selection)
     this.selectedManager.setSelected(selection)
   }
@@ -417,11 +421,19 @@ export class SelectionManager {
     selection.addRange(range)
   }
 
-  private _applyDomRangeForSelection(selectionState: BlockSelection, scrollIntoView?: boolean): Range | null {
+  private _applyDomRangeForSelection(
+    selectionState: BlockSelection,
+    scrollIntoView?: boolean,
+    projectionVersion = this._projectionVersion,
+  ): Range | null {
     if (this._shouldDeferGapDomRange(selectionState)) {
       this._suppressProgrammaticSelectionChange()
       document.getSelection()?.removeAllRanges()
-      this._retryGapDomRangeWhenReady(selectionState.toJSON(), scrollIntoView)
+      this._retryDomRangeWhenReady(
+        selectionState.toJSON(),
+        projectionVersion,
+        scrollIntoView,
+      )
       return null
     }
 
@@ -448,6 +460,7 @@ export class SelectionManager {
     }
 
     this._publishState(selectionState)
+    const projectionVersion = this._projectionVersion
     this.doc.root.hostElement.focus?.({preventScroll: true})
     this._suppressProgrammaticSelectionChange()
 
@@ -458,11 +471,20 @@ export class SelectionManager {
     }
 
     try {
-      return this._applyDomRangeForSelection(selectionState, options.scrollIntoView)
-    } catch (error) {
-      this.doc.logger.warn('selectionProjectionError: ', error)
-      this.blur()
-      throw error
+      return this._applyDomRangeForSelection(
+        selectionState,
+        options.scrollIntoView,
+        projectionVersion,
+      )
+    } catch {
+      this._suppressProgrammaticSelectionChange()
+      document.getSelection()?.removeAllRanges()
+      this._retryDomRangeWhenReady(
+        selectionState.toJSON(),
+        projectionVersion,
+        options.scrollIntoView,
+      )
+      return null
     }
   }
 
@@ -483,20 +505,60 @@ export class SelectionManager {
     return selection.start
   }
 
-  private _retryGapDomRangeWhenReady(expected: ISelectionJSON, scrollIntoView?: boolean, attempts = 3): void {
+  private _retryDomRangeWhenReady(
+    expected: ISelectionJSON,
+    projectionVersion: number,
+    scrollIntoView?: boolean,
+    attempts = DOM_PROJECTION_RETRY_LIMIT,
+  ): void {
     requestAnimationFrame(() => {
+      if (projectionVersion !== this._projectionVersion) return
       const current = this.value
       if (!current || !sameSelectionJSON(current.toJSON(), expected)) return
+      if (!isSelectionAlive(current, this.doc)) {
+        this._applyState(null)
+        return
+      }
+
+      const rootHost = this.doc.root.hostElement
+      const active = document.activeElement
+      const focusDroppedWithDom = !active || active === document.body || active === document.documentElement
+      if (
+        !focusDroppedWithDom &&
+        active !== rootHost &&
+        !rootHost.contains(active)
+      ) {
+        return
+      }
+      if (focusDroppedWithDom) {
+        rootHost.focus?.({preventScroll: true})
+      }
+      this._suppressProgrammaticSelectionChange()
       if (this._shouldDeferGapDomRange(current)) {
         if (attempts > 0) {
-          this._retryGapDomRangeWhenReady(expected, scrollIntoView, attempts - 1)
+          this._retryDomRangeWhenReady(
+            expected,
+            projectionVersion,
+            scrollIntoView,
+            attempts - 1,
+          )
         }
         return
       }
       try {
-        this._applyDomRangeForSelection(current, scrollIntoView)
-      } catch {
-        this.blur()
+        this._applyDomRangeForSelection(current, scrollIntoView, projectionVersion)
+      } catch (error) {
+        document.getSelection()?.removeAllRanges()
+        if (attempts > 0) {
+          this._retryDomRangeWhenReady(
+            expected,
+            projectionVersion,
+            scrollIntoView,
+            attempts - 1,
+          )
+        } else {
+          this.doc.logger.warn('selectionProjectionRetryError: ', error)
+        }
       }
     })
   }

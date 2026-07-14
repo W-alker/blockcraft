@@ -67,6 +67,25 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-07-14 (patch) — transient selection projection failures preserve the model
+
+**Severity**: patch
+
+**What changed**: Programmatic `SelectionManager` writes now keep a live canonical `BlockSelection` when its native DOM Range cannot be built or applied because block DOM is still mounting. Selection performs a bounded, projection-version-guarded retry; a newer selection or explicit external focus cancels the old task. Gap cursor readiness uses the same recovery path. Invalid/stale model endpoints and explicit `blur()` / `replay(null)` continue to clear selection.
+
+**Why**: Paste-format switches replace block DOM and create an independent Undo item. Undo can restore the Yjs data and block component before Angular/Safari has mounted the corresponding inline DOM. Treating that temporary projection gap as an invalid selection cleared the undo snapshot and left the editor without a caret across collapsed text, range, and gap paste entry points.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — Quick Reference documents delayed, model-preserving DOM projection.
+- `blockcraft-selection.md` — documents projection recovery, version cancellation, focus ownership, and exhaustion semantics.
+
+### Behavior Changes
+
+- `setCursorAt()`, `setSelection()`, `setCursorAtBlock()`, `selectBlock()`, `setGapCursor()`, `extendTo()`, and `replay()` no longer clear a live model selection solely because DOM Range projection is temporarily unavailable.
+- Projection retries run only on the failure/deferred path, do not call `recalculate()`, and do not republish the model selection.
+- Retry tasks do not steal focus from an explicitly focused external element. When DOM replacement naturally drops focus to `body`, they may refocus the editor host before projecting.
+- Code that intentionally wants to clear selection must call `doc.selection.blur()` or `doc.selection.replay(null)` explicitly. No package version is changed until an explicit release decision.
+
 ### v?.?.? - 2026-07-14 (major) — DOM adapters and input use canonical selection contracts
 
 **Severity**: major

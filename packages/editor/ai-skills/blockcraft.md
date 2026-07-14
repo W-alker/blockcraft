@@ -208,6 +208,9 @@ doc.selection.getSelectedText()         // string
 // helpers, block/gap/table selection, replay) synchronously publish this model
 // before deriving the native DOM Range. Cross-block order/common ancestry comes
 // from parentId/childrenIds, not DOM compareDocumentPosition or layout reads.
+// If a live selection cannot be projected because its DOM is still mounting,
+// the model remains canonical and SelectionManager performs a bounded,
+// version-guarded projection retry. Explicit blur/stale endpoints still clear it.
 // Non-collapsed container-boundary DOM endpoints normalize to boundary points:
 //   { blockId: container.id, type: 'boundary', index: childBoundaryIndex }
 // Same-container boundary ranges in paragraph-capable renderUnit containers
@@ -272,7 +275,7 @@ doc.selection.blur()                           // clear
 
 // Persist & restore
 doc.selection.value?.toJSON()                  // ISelectionJSON
-doc.selection.replay(savedJSON)                // ISelectionJSON updates value synchronously; legacy accepted
+doc.selection.replay(savedJSON)                // sync model commit; DOM projection may catch up asynchronously
 
 // Explicit browser DOM -> model sampling. Use only at native event/mutation
 // boundaries, never to confirm a programmatic selection write.

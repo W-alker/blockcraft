@@ -379,7 +379,6 @@ export class ClipboardManager {
     try {
       if (host && document.activeElement !== host) host.focus({preventScroll: true})
       this.doc.selection.replay({anchor: startJson, head: headJson, commonParent: startJson.blockId})
-      this.doc.selection.recalculate()
     } catch (e) {
       this.doc.logger.warn('finishSwitchSelection error', e)
     }
@@ -753,7 +752,6 @@ export class ClipboardManager {
 
     try {
       this.doc.selection.replay(selectionJSON)
-      this.doc.selection.recalculate()
     } catch (e) {
       this.doc.logger.warn('restoreCollapsedPasteSelection error', e)
     }
@@ -779,11 +777,25 @@ export class ClipboardManager {
 
   private _setInlineRangeIfAlive(block: EditableBlockComponent, index: number, length?: number) {
     if (!this._isBlockAlive(block)) return false
+    const rangeLength = length ?? 0
+    if (
+      !Number.isInteger(index) ||
+      !Number.isInteger(rangeLength) ||
+      index < 0 ||
+      rangeLength < 0 ||
+      index + rangeLength > block.textLength
+    ) {
+      return false
+    }
     try {
-      if (typeof length === 'number') {
-        block.setInlineRange(index, length)
+      this._focusEditingHostForBlock(block)
+      if (rangeLength > 0) {
+        this.doc.selection.setSelection(
+          {blockId: block.id, type: 'text', offset: index, block} as any,
+          {blockId: block.id, type: 'text', offset: index + rangeLength, block} as any,
+        )
       } else {
-        block.setInlineRange(index)
+        this.doc.selection.setCursorAt(block, index)
       }
       return true
     } catch (e) {
@@ -793,10 +805,7 @@ export class ClipboardManager {
   }
 
   private _setTextRangeAndSync(block: EditableBlockComponent, index: number, length: number) {
-    if (this._setInlineRangeIfAlive(block, index, length)) {
-      this._focusEditingHostForBlock(block)
-      this.doc.selection.recalculate()
-    }
+    this._setInlineRangeIfAlive(block, index, length)
   }
 
   private _setCrossBlockRangeAndSync(startBlock: EditableBlockComponent, startOffset: number, endBlock: BlockCraft.BlockComponent) {
@@ -805,19 +814,19 @@ export class ClipboardManager {
       this._focusEditingHostForBlock(startBlock)
       this.doc.selection.setSelection({
         blockId: startBlock.id,
-        index: startOffset,
-        length: startBlock.textLength - startOffset,
-        type: 'text'
-      }, this.doc.isEditable(endBlock) ? {
+        type: 'text',
+        offset: startOffset,
+        block: startBlock,
+      } as any, (this.doc.isEditable(endBlock) ? {
         blockId: endBlock.id,
-        index: 0,
-        length: endBlock.textLength,
-        type: 'text'
+        type: 'text',
+        offset: endBlock.textLength,
+        block: endBlock,
       } : {
         blockId: endBlock.id,
-        type: 'selected'
-      })
-      this.doc.selection.recalculate()
+        type: 'selected',
+        block: endBlock,
+      }) as any)
     } catch (e) {
       this.doc.logger.warn('setCrossBlockRange after paste failed', e)
     }
@@ -833,7 +842,6 @@ export class ClipboardManager {
       } else if (!focusBlockSelectionEdge(this.doc, block, !atEnd)) {
         this.doc.selection.setCursorAtBlock(block, !atEnd, false)
       }
-      this.doc.selection.recalculate()
     } catch (e) {
       this.doc.logger.warn('setCursor after paste failed', e)
     }
@@ -1116,18 +1124,19 @@ export class ClipboardManager {
       if (!collapsed) {
         this.doc.selection.setSelection({
           blockId: editableBlock.id,
-          index: fromIndex,
-          length: editableBlock.textLength,
-          type: 'text'
-        }, this.doc.isEditable(endBlock) ? {
+          type: 'text',
+          offset: fromIndex,
+          block: editableBlock,
+        } as any, (this.doc.isEditable(endBlock) ? {
           blockId: endBlock.id,
-          index: 0,
-          length: endBlock.textLength,
-          type: 'text'
+          type: 'text',
+          offset: endBlock.textLength,
+          block: endBlock,
         } : {
           blockId: endBlock.id,
-          type: 'selected'
-        })
+          type: 'selected',
+          block: endBlock,
+        }) as any)
       }
       emitFormatData('html', this._captureRegion(
         editableBlock.id, fromIndex,
@@ -1153,25 +1162,32 @@ export class ClipboardManager {
         return true
       }
 
+      const textLines = text.replace(/[\n\r]+$/, '').split('\n')
+      let finalCursorBlockId = editableBlock.id
+      let finalCursorOffset = fromIndex + textLines[0].length
       this.doc.crud.transact(() => {
-        const text_lines = text.replace(/[\n\r]+$/, '').split('\n')
         if (isInSameBlock) {
-          editableBlock.replaceText(fromIndex, fromLength, text_lines[0])
+          editableBlock.replaceText(fromIndex, fromLength, textLines[0])
         } else {
           this.deleteContentFromSelection(state.selection)
-          editableBlock.applyDeltaOperations([{retain: fromIndex}, {insert: text_lines[0]}])
+          editableBlock.applyDeltaOperations([{retain: fromIndex}, {insert: textLines[0]}])
         }
-        if (text_lines.length > 1) {
-          const snapshots = text_lines.slice(1).map(line => this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: editableBlock.props.depth}]))
-          this.doc.crud.insertBlocksAfter(editableBlock, snapshots)
+        if (textLines.length > 1) {
+          const snapshots = textLines.slice(1).map(line => this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: editableBlock.props.depth}]))
+          const inserted = this.doc.crud.insertBlocksAfter(editableBlock, snapshots)
+          const lastInserted = inserted[inserted.length - 1]
+          finalCursorBlockId = lastInserted?.id ?? snapshots[snapshots.length - 1].id
+          finalCursorOffset = textLines[textLines.length - 1].length
         }
       })
       requestAnimationFrame(() => {
-        try {
-          this.doc.selection.recalculate()
-        } catch (e) {
-          this.doc.logger.warn('paste selection recalculate failed', e)
-        }
+        const finalBlock = this._getBlockByIdSafe(finalCursorBlockId)
+        if (!finalBlock || !this.doc.isEditable(finalBlock)) return
+        this._setCursorAndSync(
+          finalBlock,
+          false,
+          Math.min(finalCursorOffset, finalBlock.textLength),
+        )
       })
       return true
     }

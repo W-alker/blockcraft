@@ -1182,7 +1182,10 @@ describe('SelectionManager DOM selection normalization', () => {
 });
 
 describe('SelectionManager programmatic model-first writes', () => {
-  function createProgrammaticManager(options?: {brokenMapperBlockId?: string}) {
+  function createProgrammaticManager(options?: {
+    brokenMapperBlockId?: string
+    projectionFailures?: number
+  }) {
     document.getSelection()?.removeAllRanges();
 
     const rootHost = document.createElement('div');
@@ -1217,6 +1220,7 @@ describe('SelectionManager programmatic model-first writes', () => {
       },
       childrenLength: 2,
     } as any;
+    let projectionFailures = options?.projectionFailures ?? Number.POSITIVE_INFINITY;
     const makeEditable = (id: string, hostElement: HTMLElement, textNode: Text, index: number) => ({
       id,
       flavour: 'paragraph',
@@ -1233,7 +1237,10 @@ describe('SelectionManager programmatic model-first writes', () => {
       runtime: {
         mapper: {
           modelPointToDomPoint: (_container: HTMLElement, offset: number) => {
-            if (options?.brokenMapperBlockId === id) throw new Error(`mapper failed: ${id}`);
+            if (options?.brokenMapperBlockId === id && projectionFailures > 0) {
+              projectionFailures -= 1;
+              throw new Error(`mapper failed: ${id}`);
+            }
             return {node: textNode, offset};
           },
         },
@@ -1286,6 +1293,7 @@ describe('SelectionManager programmatic model-first writes', () => {
   afterEach(() => {
     document.getSelection()?.removeAllRanges();
     document.querySelectorAll('[data-model-first-test]').forEach(element => element.remove());
+    document.querySelectorAll('[data-projection-outside]').forEach(element => element.remove());
   });
 
   it('publishes a collapsed text model synchronously from setCursorAt', () => {
@@ -1434,15 +1442,151 @@ describe('SelectionManager programmatic model-first writes', () => {
     });
   });
 
-  it('clears the canonical state when DOM projection fails', () => {
-    const {manager, p1, logger} = createProgrammaticManager({brokenMapperBlockId: 'model-p1'});
+  it('keeps the canonical state and retries when DOM projection fails transiently', () => {
+    const callbacks: FrameRequestCallback[] = [];
+    const rafSpy = (window.requestAnimationFrame as any).and
+      ? window.requestAnimationFrame as jasmine.Spy
+      : spyOn(window, 'requestAnimationFrame');
+    rafSpy.and.callFake((callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    const {manager, root, p1, p1Text, logger} = createProgrammaticManager({
+      brokenMapperBlockId: 'model-p1',
+      projectionFailures: 1,
+    });
 
-    expect(() => manager.setCursorAt(p1, 1)).toThrowError('mapper failed: model-p1');
+    expect(() => manager.setCursorAt(p1, 1)).not.toThrow();
 
-    expect(manager.value).toBeNull();
+    expect(manager.value?.toJSON()).toEqual({
+      anchor: {blockId: p1.id, type: 'text', offset: 1},
+      head: {blockId: p1.id, type: 'text', offset: 1},
+      commonParent: p1.id,
+    });
+    expect(document.activeElement).toBe(root.hostElement);
     expect(document.getSelection()?.rangeCount).toBe(0);
-    expect(logger.warn).toHaveBeenCalledWith(
-      'selectionProjectionError: ',
+    expect(callbacks.length).toBe(1);
+    expect(logger.warn).not.toHaveBeenCalled();
+
+    callbacks.shift()!(performance.now());
+
+    const range = document.getSelection()!.getRangeAt(0);
+    expect(range.startContainer).toBe(p1Text);
+    expect(range.startOffset).toBe(1);
+    expect(manager.value?.start.blockId).toBe(p1.id);
+  });
+
+  it('keeps an undo-style replay snapshot while its DOM projection is pending', () => {
+    const callbacks: FrameRequestCallback[] = [];
+    const rafSpy = (window.requestAnimationFrame as any).and
+      ? window.requestAnimationFrame as jasmine.Spy
+      : spyOn(window, 'requestAnimationFrame');
+    rafSpy.and.callFake((callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    const {manager, p1, p1Text} = createProgrammaticManager({
+      brokenMapperBlockId: 'model-p1',
+      projectionFailures: 1,
+    });
+    const snapshot = {
+      anchor: {blockId: p1.id, type: 'text' as const, offset: 3},
+      head: {blockId: p1.id, type: 'text' as const, offset: 3},
+      commonParent: p1.id,
+    };
+
+    manager.replay(snapshot);
+
+    expect(manager.value?.toJSON()).toEqual(snapshot);
+    expect(document.getSelection()?.rangeCount).toBe(0);
+
+    callbacks.shift()!(performance.now());
+
+    expect(manager.value?.toJSON()).toEqual(snapshot);
+    const range = document.getSelection()!.getRangeAt(0);
+    expect(range.startContainer).toBe(p1Text);
+    expect(range.startOffset).toBe(3);
+  });
+
+  it('cancels a stale projection retry after a newer selection is committed', () => {
+    const callbacks: FrameRequestCallback[] = [];
+    const rafSpy = (window.requestAnimationFrame as any).and
+      ? window.requestAnimationFrame as jasmine.Spy
+      : spyOn(window, 'requestAnimationFrame');
+    rafSpy.and.callFake((callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    const {manager, p1, p2, p2Text} = createProgrammaticManager({
+      brokenMapperBlockId: 'model-p1',
+      projectionFailures: 1,
+    });
+
+    manager.setCursorAt(p1, 1);
+    manager.setCursorAt(p2, 2);
+    callbacks.shift()!(performance.now());
+
+    expect(manager.value?.toJSON()).toEqual({
+      anchor: {blockId: p2.id, type: 'text', offset: 2},
+      head: {blockId: p2.id, type: 'text', offset: 2},
+      commonParent: p2.id,
+    });
+    const range = document.getSelection()!.getRangeAt(0);
+    expect(range.startContainer).toBe(p2Text);
+    expect(range.startOffset).toBe(2);
+  });
+
+  it('does not steal focus back when the user focuses outside before a retry', () => {
+    const callbacks: FrameRequestCallback[] = [];
+    const rafSpy = (window.requestAnimationFrame as any).and
+      ? window.requestAnimationFrame as jasmine.Spy
+      : spyOn(window, 'requestAnimationFrame');
+    rafSpy.and.callFake((callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    const {manager, p1} = createProgrammaticManager({
+      brokenMapperBlockId: 'model-p1',
+      projectionFailures: 1,
+    });
+    const outside = document.createElement('button');
+    outside.setAttribute('data-projection-outside', 'true');
+    document.body.appendChild(outside);
+
+    manager.setCursorAt(p1, 1);
+    outside.focus();
+    callbacks.shift()!(performance.now());
+
+    expect(document.activeElement).toBe(outside);
+    expect(document.getSelection()?.rangeCount).toBe(0);
+    expect(manager.value?.start.blockId).toBe(p1.id);
+  });
+
+  it('keeps the model and focus when projection retries are exhausted', () => {
+    const callbacks: FrameRequestCallback[] = [];
+    const rafSpy = (window.requestAnimationFrame as any).and
+      ? window.requestAnimationFrame as jasmine.Spy
+      : spyOn(window, 'requestAnimationFrame');
+    rafSpy.and.callFake((callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    const {manager, root, p1, logger} = createProgrammaticManager({brokenMapperBlockId: 'model-p1'});
+
+    manager.setCursorAt(p1, 1);
+    while (callbacks.length) {
+      callbacks.shift()!(performance.now());
+    }
+
+    expect(manager.value?.toJSON()).toEqual({
+      anchor: {blockId: p1.id, type: 'text', offset: 1},
+      head: {blockId: p1.id, type: 'text', offset: 1},
+      commonParent: p1.id,
+    });
+    expect(document.activeElement).toBe(root.hostElement);
+    expect(document.getSelection()?.rangeCount).toBe(0);
+    expect(logger.warn).toHaveBeenCalledOnceWith(
+      'selectionProjectionRetryError: ',
       jasmine.any(Error),
     );
   });

@@ -156,6 +156,41 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
     expect(mockDoc.logger.warn).not.toHaveBeenCalled();
   });
 
+  it('clears selection instead of sampling DOM when snapshot resolution keeps throwing', async () => {
+    spyOn<any>(mgr, '_resolveSelectionSnapshot').and.throwError('resolver failed');
+
+    (mgr as any)._replaySelectionAfterUndoRedo({
+      anchor: {type: 'selected', blockId: 'broken'},
+      head: {type: 'selected', blockId: 'broken'},
+      commonParent: 'broken',
+    });
+
+    await nextTick();
+    await waitFrames(3);
+
+    expect(mockDoc.selection.replay).toHaveBeenCalledWith(null);
+    expect(mockDoc.selection.recalculate).not.toHaveBeenCalled();
+  });
+
+  it('clears selection instead of sampling DOM when projection keeps throwing', async () => {
+    const selection = {
+      anchor: {type: 'selected' as const, blockId: 'broken'},
+      head: {type: 'selected' as const, blockId: 'broken'},
+      commonParent: 'broken',
+    };
+    mockDoc.selection.replay.and.callFake((value: any) => {
+      if (value) throw new Error('projection failed');
+      mockDoc.selection.value = null;
+    });
+
+    const version = (mgr as any)._nextSelectionReplayVersion();
+    (mgr as any)._replayResolvedSelectionAfterUndoRedo(selection, 3, version);
+    await waitFrames(3);
+
+    expect(mockDoc.selection.replay).toHaveBeenCalledWith(null);
+    expect(mockDoc.selection.recalculate).not.toHaveBeenCalled();
+  });
+
   it('retries undo selection replay until restored block components are available', async () => {
     const host = document.createElement('div');
     const blockHost = document.createElement('div');
@@ -377,6 +412,25 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
     change('merged-change');
 
     expect((mgr as any)._pendingSnapshot).toBeUndefined();
+  });
+
+  it('keeps the first pending selection when nested mutations capture again after blur', () => {
+    const beforeSelection = {
+      anchor: {type: 'selected' as const, blockId: 'before'},
+      head: {type: 'selected' as const, blockId: 'before'},
+      commonParent: 'before',
+    };
+    mockDoc.selection.value = beforeSelection;
+    mgr.captureSelectionBeforeChange();
+
+    // A nested delete path may blur the live selection and request another
+    // capture before the same Yjs stack item is created. It must not replace
+    // the outer action's before-selection with null.
+    mockDoc.selection.value = null;
+    mgr.captureSelectionBeforeChange();
+    change('nested-replace');
+
+    expect((mgr as any)._undoSelectionStack.at(-1)).toEqual(beforeSelection);
   });
 });
 

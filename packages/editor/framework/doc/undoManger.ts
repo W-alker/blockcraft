@@ -105,6 +105,11 @@ export class DocUndoManger {
    * Call this BEFORE a transaction that may delete blocks referenced by the current selection.
    */
   captureSelectionBeforeChange() {
+    // The earliest caller owns the before-selection for the next stack item.
+    // Nested mutation paths can capture again after the outer action has blurred
+    // or replaced the live selection; allowing that later capture to overwrite
+    // this slot would turn a valid snapshot into null (or a mid-action cursor).
+    if (this._pendingSnapshot !== undefined) return
     this._pendingSnapshot = this._captureSelectionSnapshot()
   }
 
@@ -424,7 +429,7 @@ export class DocUndoManger {
       if (attemptsLeft > 0) {
         requestAnimationFrame(() => this._tryReplaySelectionAfterUndoRedo(snapshot, attemptsLeft - 1, version))
       } else {
-        this.doc.selection.recalculate()
+        this.doc.selection.replay(null)
       }
     }
   }
@@ -441,7 +446,7 @@ export class DocUndoManger {
       if (attemptsLeft > 0) {
         requestAnimationFrame(() => this._replayResolvedSelectionAfterUndoRedo(selection, attemptsLeft - 1, version))
       } else {
-        this.doc.selection.recalculate()
+        this.doc.selection.replay(null)
       }
       return
     }
