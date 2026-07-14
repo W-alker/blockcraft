@@ -9,6 +9,8 @@ import {
 
 export class BlockSelection {
 
+  private _resolvedDirection: 'forward' | 'backward' | undefined
+
   constructor(
     readonly anchor: ISelectionPoint,
     readonly head: ISelectionPoint,
@@ -21,7 +23,9 @@ export class BlockSelection {
   // ── Core derived properties ──
 
   get direction(): 'forward' | 'backward' {
-    return this._comparePointOrder(this.anchor, this.head) <= 0 ? 'forward' : 'backward'
+    return this._resolvedDirection ??= this._comparePointOrder(this.anchor, this.head) <= 0
+      ? 'forward'
+      : 'backward'
   }
 
   get collapsed(): boolean {

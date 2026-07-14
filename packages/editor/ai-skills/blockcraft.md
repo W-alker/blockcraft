@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-07-13 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-07-14 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -204,6 +204,10 @@ doc.selection.getSelectedText()         // string
 //   .collapsed / .isInSameBlock / .isAllSelected / .isStartOfBlock / .isEndOfBlock
 //   .direction             — 'forward' | 'backward'
 //   .isAllSelected         — true only when both endpoints are whole-block selected points
+// Programmatic writes (`setSelection`, `setCursorAt`, `extendTo`, block cursor
+// helpers, block/gap/table selection, replay) synchronously publish this model
+// before deriving the native DOM Range. Cross-block order/common ancestry comes
+// from parentId/childrenIds, not DOM compareDocumentPosition or layout reads.
 // Non-collapsed container-boundary DOM endpoints normalize to boundary points:
 //   { blockId: container.id, type: 'boundary', index: childBoundaryIndex }
 // Same-container boundary ranges in paragraph-capable renderUnit containers
@@ -272,6 +276,10 @@ doc.selection.replay(savedJSON)                // ISelectionJSON updates value s
 ```
 
 > The legacy `selection.from / selection.to / selection.from.index` shape is **deprecated** but still parsed for backward compat. New code MUST use `anchor / head / start / end` and narrow on `point.type` before reading `offset`. See `blockcraft-selection.md` for details.
+
+### Input (model-native edit planning)
+
+`InputTransformer` adapts a live `BlockSelection` (or normalized native target endpoints) into one pure, short-lived `SelectionEditPlan`, then executes that plan through Yjs. `beforeInput`, printable fallback, Backspace/Delete, Enter, and IME composition share this planner/executor boundary. Current model selections never convert through deprecated `from/to/index/length` ranges; the legacy shape remains only at explicit compatibility entry points. Unsupported or stale plans fail closed before native DOM mutation. See `blockcraft-input.md` for the plan kinds, IME ordering, undo grouping, and virtualization constraints.
 
 ### Event Handling (in Plugin or Block)
 

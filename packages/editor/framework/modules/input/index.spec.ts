@@ -506,13 +506,68 @@ describe('InputTransformer beforeInput range resolution', () => {
   }
 
   const createTransformer = (selection: any) => {
+    const commonParent = {
+      id: selection.commonParent,
+      flavour: selection.commonParent === 'root' ? 'root' : 'columns',
+      childrenIds: [selection.start.blockId, selection.end.blockId],
+    }
+    const blocks: Record<string, any> = {
+      [commonParent.id]: commonParent,
+    }
+    const makeBlock = (point: any) => {
+      if (blocks[point.blockId]) return blocks[point.blockId]
+      const block = point.type === 'text'
+        ? {
+            id: point.blockId,
+            flavour: 'paragraph',
+            parentId: commonParent.id,
+            parentBlock: commonParent,
+            textLength: 5,
+            textDeltas: jasmine.createSpy(`${point.blockId}.textDeltas`).and.returnValue([{insert: 'abcde'}]),
+            replaceText: jasmine.createSpy(`${point.blockId}.replaceText`),
+            yText: {
+              delete: jasmine.createSpy(`${point.blockId}.delete`),
+              insert: jasmine.createSpy(`${point.blockId}.insert`),
+            },
+          }
+        : {
+            id: point.blockId,
+            flavour: 'image',
+            parentId: commonParent.id,
+            parentBlock: commonParent,
+          }
+      blocks[point.blockId] = block
+      return block
+    }
+    makeBlock(selection.start)
+    makeBlock(selection.end)
+    const modelSelection = new BlockSelection(
+      {...selection.start, block: blocks[selection.start.blockId]},
+      {...selection.end, block: blocks[selection.end.blockId]},
+      selection.commonParent,
+      id => blocks[id],
+      () => Node.DOCUMENT_POSITION_FOLLOWING,
+    )
     const doc = {
       rootId: 'root',
       event: eventStub(),
       selection: {
-        value: selection,
+        value: modelSelection,
         setSelection: jasmine.createSpy('setSelection'),
+        replay: jasmine.createSpy('replay'),
+        recalculate: jasmine.createSpy('recalculate'),
         blur: jasmine.createSpy('blur')
+      },
+      getBlockById: jasmine.createSpy('getBlockById').and.callFake((id: string) => blocks[id]),
+      isEditable: jasmine.createSpy('isEditable').and.callFake((block: any) => block?.flavour === 'paragraph'),
+      queryBlocksThroughPathDeeply: jasmine.createSpy('queryBlocksThroughPathDeeply').and.returnValue([]),
+      crud: {
+        undoManager: {
+          captureSelectionBeforeChange: jasmine.createSpy('captureSelectionBeforeChange'),
+        },
+        transact: jasmine.createSpy('transact').and.callFake((cb: () => void) => cb()),
+        deleteBlockById: jasmine.createSpy('deleteBlockById'),
+        deleteBlocks: jasmine.createSpy('deleteBlocks'),
       },
       schemas: {
         get: jasmine.createSpy('get').and.returnValue({metadata: {renderUnit: true}}),
@@ -521,6 +576,8 @@ describe('InputTransformer beforeInput range resolution', () => {
     }
     return {
       doc,
+      blocks,
+      selection: modelSelection,
       transformer: new InputTransformer(doc as any) as any
     }
   }
@@ -574,9 +631,8 @@ describe('InputTransformer beforeInput range resolution', () => {
       end: {type: 'text', blockId: 'paragraph-1', offset: 3}
     }
     const targetRange = {
-      from: {type: 'text', blockId: 'paragraph-1', index: 0, length: 3},
-      to: null,
-      collapsed: false
+      start: {type: 'text', blockId: 'paragraph-1', offset: 0},
+      end: {type: 'text', blockId: 'paragraph-1', offset: 3},
     }
 
     expect(resolveRange(selection, targetRange)).toBe(targetRange)
@@ -977,6 +1033,8 @@ describe('InputTransformer beforeInput range resolution', () => {
         recalculate: jasmine.createSpy('recalculate').and.returnValue({value: null}),
         blur: jasmine.createSpy('blur'),
       },
+      getBlockById: jasmine.createSpy('getBlockById').and.returnValue(block),
+      isEditable: jasmine.createSpy('isEditable').and.returnValue(true),
     }
     const transformer = new InputTransformer(doc as any) as any
     spyOn(transformer.compositionSession, 'start')
@@ -1024,6 +1082,7 @@ describe('InputTransformer beforeInput range resolution', () => {
         recalculate: jasmine.createSpy('recalculate').and.returnValue({value: null}),
         blur: jasmine.createSpy('blur'),
       },
+      getBlockById: jasmine.createSpy('getBlockById').and.returnValue(block),
       isEditable: jasmine.createSpy('isEditable').and.returnValue(true),
     }
     const transformer = new InputTransformer(doc as any) as any
@@ -1085,6 +1144,9 @@ describe('InputTransformer beforeInput range resolution', () => {
       queryBlocksThroughPathDeeply: jasmine.createSpy('queryBlocksThroughPathDeeply').and.returnValue([
         {parent: 'root', index: 1, length: 1},
       ]),
+      getBlockById: jasmine.createSpy('getBlockById').and.callFake((id: string) =>
+        id === selectedBlock.id ? selectedBlock : textBlock
+      ),
       isEditable: jasmine.createSpy('isEditable').and.callFake((block: any) => block?.flavour === 'paragraph'),
     }
     const transformer = new InputTransformer(doc as any) as any
@@ -1227,7 +1289,7 @@ describe('InputTransformer beforeInput range resolution', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.undoManager.captureSelectionBeforeChange).toHaveBeenCalled()
     expect(doc.crud.deleteBlockById).toHaveBeenCalledWith(callout.id)
-    expect(paragraph.replaceText).toHaveBeenCalledWith(0, 11, '', undefined)
+    expect(paragraph.replaceText).toHaveBeenCalledWith(0, 11, null, undefined)
     expect(doc.selection.setSelection).toHaveBeenCalledWith({
       blockId: paragraph.id,
       type: 'text',
@@ -1287,8 +1349,7 @@ describe('InputTransformer beforeInput range resolution', () => {
       start: {type: 'selected', blockId: 'void-1'},
       end: {type: 'text', blockId: 'paragraph-1', offset: 3}
     }
-    const {doc, transformer} = createTransformer(selection)
-    spyOn(transformer, '_replaceText')
+    const {doc, transformer, blocks} = createTransformer(selection)
     const preventDefault = jasmine.createSpy('preventDefault')
 
     const result = transformer['_handleSelectedStartPrintableFallback']({
@@ -1303,13 +1364,45 @@ describe('InputTransformer beforeInput range resolution', () => {
 
     expect(result).toBeTrue()
     expect(preventDefault).toHaveBeenCalled()
-    expect(transformer['_replaceText']).toHaveBeenCalledWith(selection, 'a', true)
+    expect(doc.crud.deleteBlockById).toHaveBeenCalledWith('void-1')
+    expect(blocks['paragraph-1'].replaceText).toHaveBeenCalledWith(0, 3, 'a', undefined)
     expect(doc.selection.setSelection).toHaveBeenCalledWith({
       blockId: 'paragraph-1',
       type: 'text',
       index: 1,
       length: 0
     })
+  })
+
+  it('keeps ordinary text keydown and delete fallback off the structural planner hot path', () => {
+    const block = {id: 'paragraph-1', flavour: 'paragraph', textLength: 5}
+    const selection = new BlockSelection(
+      {blockId: block.id, type: 'text', offset: 2, block} as any,
+      {blockId: block.id, type: 'text', offset: 2, block} as any,
+      block.id,
+      () => block as any,
+      () => 0,
+    )
+    const doc = {
+      event: eventStub(),
+      selection: {value: selection},
+    }
+    const transformer = new InputTransformer(doc as any) as any
+    spyOn(transformer, '_planSelectionEdit').and.callThrough()
+
+    const keydownResult = transformer['_handleSelectedStartPrintableFallback']({
+      getDefaultEvent: () => ({
+        key: 'a',
+        metaKey: false,
+        ctrlKey: false,
+        altKey: false,
+      }),
+    })
+    const deleteResult = transformer['_handleModelDeleteSelection'](selection, 'after')
+
+    expect(keydownResult).toBeUndefined()
+    expect(deleteResult).toBeNull()
+    expect(transformer['_planSelectionEdit']).not.toHaveBeenCalled()
   })
 
   // The `commonParent !== rootId` gate was intentionally removed in 551b10c
@@ -1322,8 +1415,7 @@ describe('InputTransformer beforeInput range resolution', () => {
       start: {type: 'selected', blockId: 'image-1'},
       end: {type: 'text', blockId: 'paragraph-1', offset: 3}
     }
-    const {doc, transformer} = createTransformer(selection)
-    spyOn(transformer, '_replaceText')
+    const {doc, transformer, blocks} = createTransformer(selection)
     const preventDefault = jasmine.createSpy('preventDefault')
 
     const result = transformer['_handleSelectedStartPrintableFallback']({
@@ -1338,7 +1430,8 @@ describe('InputTransformer beforeInput range resolution', () => {
 
     expect(result).toBeTrue()
     expect(preventDefault).toHaveBeenCalled()
-    expect(transformer['_replaceText']).toHaveBeenCalledWith(selection, 'a', true)
+    expect(doc.crud.deleteBlockById).toHaveBeenCalledWith('image-1')
+    expect(blocks['paragraph-1'].replaceText).toHaveBeenCalledWith(0, 3, 'a', undefined)
     expect(doc.selection.setSelection).toHaveBeenCalledWith({
       blockId: 'paragraph-1',
       type: 'text',
@@ -1354,8 +1447,7 @@ describe('InputTransformer beforeInput range resolution', () => {
       start: {type: 'text', blockId: 'paragraph-1', offset: 2},
       end: {type: 'selected', blockId: 'image-1'}
     }
-    const {doc, transformer} = createTransformer(selection)
-    spyOn(transformer, '_replaceText')
+    const {doc, transformer, blocks} = createTransformer(selection)
     const preventDefault = jasmine.createSpy('preventDefault')
 
     const result = transformer['_handleSelectedStartPrintableFallback']({
@@ -1370,7 +1462,9 @@ describe('InputTransformer beforeInput range resolution', () => {
 
     expect(result).toBeTrue()
     expect(preventDefault).toHaveBeenCalled()
-    expect(transformer['_replaceText']).toHaveBeenCalledWith(selection, 'a', true)
+    expect(blocks['paragraph-1'].yText.delete).toHaveBeenCalledWith(2, 3)
+    expect(blocks['paragraph-1'].yText.insert).toHaveBeenCalledWith(2, 'a', undefined)
+    expect(doc.crud.deleteBlockById).toHaveBeenCalledWith('image-1')
     expect(doc.selection.setSelection).toHaveBeenCalledWith({
       blockId: 'paragraph-1',
       type: 'text',
@@ -1480,7 +1574,9 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
       selection: {
         value: selection,
         replay: jasmine.createSpy('replay'),
+        setSelection: jasmine.createSpy('setSelection'),
         setCursorAt: jasmine.createSpy('setCursorAt'),
+        recalculate: jasmine.createSpy('recalculate'),
         blur: jasmine.createSpy('blur'),
       },
       crud: {
@@ -1538,33 +1634,44 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
   })
 
   it('carries the selected range format when typing over a same-block range', () => {
-    const replaceText = jasmine.createSpy('replaceText')
+    const insert = jasmine.createSpy('insert')
+    const del = jasmine.createSpy('delete')
     const block = {
+      id: 'p1',
+      flavour: 'paragraph',
+      textLength: 5,
       textDeltas: () => [{insert: 'ABCDE', attributes: {'a:bold': true}}],
-      replaceText
+      yText: {insert, delete: del, length: 5},
     }
-    const from = {type: 'text', index: 1, length: 2, block}
-    const range = {from, to: null, collapsed: false}
+    const endpoints = {
+      start: {blockId: block.id, type: 'text', offset: 1, block},
+      end: {blockId: block.id, type: 'text', offset: 3, block},
+    }
 
     const setSelection = jasmine.createSpy('setSelection')
     const doc = {
       event: eventStub(),
+      getBlockById: jasmine.createSpy('getBlockById').and.returnValue(block),
+      isEditable: jasmine.createSpy('isEditable').and.returnValue(true),
       selection: {
-        value: {start: {type: 'text'}, end: {type: 'text'}},
+        value: null,
         setSelection,
-        normalizeRange: () => range
       },
-      crud: {undoManager: {captureSelectionBeforeChange: jasmine.createSpy('cap')}}
+      crud: {
+        undoManager: {captureSelectionBeforeChange: jasmine.createSpy('cap')},
+        transact: jasmine.createSpy('transact').and.callFake((cb: () => void) => cb()),
+      },
     }
     const transformer = new InputTransformer(doc as any) as any
     spyOn(transformer.compositionSession, 'updateAnchorFromInputEvent')
-    spyOn(transformer, '_resolveBeforeInputRange').and.returnValue(range)
+    spyOn(transformer, '_resolveBeforeInputRange').and.returnValue(endpoints)
 
     const {context} = makeContext('X')
     transformer['_handleBeforeInput'](context)
 
-    expect(replaceText).toHaveBeenCalledWith(1, 2, 'X', {'a:bold': true})
-    expect(setSelection).toHaveBeenCalledWith({...from, index: 2, length: 0})
+    expect(del).toHaveBeenCalledWith(1, 2)
+    expect(insert).toHaveBeenCalledWith(1, 'X', {'a:bold': true})
+    expect(setSelection).toHaveBeenCalledWith({blockId: block.id, type: 'text', index: 2, length: 0})
   })
 
   it('carries the from-block range format when typing over a cross-block range', () => {
@@ -1613,13 +1720,109 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
       rightDelete,
     } = createCrossColumnTextRangeHarness()
 
-    transformer['_replaceText'](selection, 'Z', true)
+    const plan = transformer['_planSelectionEdit'](selection)
+    expect(plan.kind).toBe('range')
+    transformer['_replacePlannedRange'](plan, 'Z', true)
 
     expect(leftDelete).toHaveBeenCalledWith(3, 5)
     expect(leftInsert).toHaveBeenCalledWith(3, 'Z', undefined)
     expect(rightDelete).toHaveBeenCalledWith(0, 4)
     expect(leftApplyDelta).not.toHaveBeenCalled()
     expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
+  })
+
+  it('executes a model range without reading block refs from selection endpoints', () => {
+    const {
+      transformer,
+      selection,
+      leftDelete,
+      leftInsert,
+      rightDelete,
+    } = createCrossColumnTextRangeHarness()
+    const lazyPoint = (blockId: string, offset: number) => {
+      const value = {blockId, type: 'text', offset} as any
+      Object.defineProperty(value, 'block', {
+        get: () => {
+          throw new Error('selection endpoint block ref must not drive input execution')
+        },
+      })
+      return value
+    }
+    const modelSelection = new BlockSelection(
+      lazyPoint(selection.start.blockId, 3),
+      lazyPoint(selection.end.blockId, 4),
+      selection.commonParent,
+      (id: string) => (transformer.doc as any).getBlockById(id),
+      () => Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+
+    expect(() => {
+      const plan = transformer['_planSelectionEdit'](modelSelection)
+      expect(plan.kind).toBe('range')
+      transformer['_replacePlannedRange'](plan, 'Z', true)
+    }).not.toThrow()
+    expect(leftDelete).toHaveBeenCalledWith(3, 5)
+    expect(leftInsert).toHaveBeenCalledWith(3, 'Z', undefined)
+    expect(rightDelete).toHaveBeenCalledWith(0, 4)
+  })
+
+  it('routes deleteByRange through the model plan', () => {
+    const {
+      transformer,
+      selection,
+      leftDelete,
+      rightDelete,
+    } = createCrossColumnTextRangeHarness()
+
+    expect(transformer.deleteByRange(selection)).toBeTrue()
+    expect(leftDelete).toHaveBeenCalledWith(3, 5)
+    expect(rightDelete).toHaveBeenCalledWith(0, 4)
+  })
+
+  it('routes Enter over a cross-column text selection through the model plan', async () => {
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const {
+      doc,
+      transformer,
+      selection,
+      leftBlock,
+      leftDelete,
+      rightDelete,
+    } = createCrossColumnTextRangeHarness()
+
+    const result = await transformer['_handlerEnter']({
+      preventDefault,
+      get: () => ({selection, raw: {shiftKey: false, ctrlKey: false}}),
+    } as any)
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(leftDelete).toHaveBeenCalledWith(3, 5)
+    expect(rightDelete).toHaveBeenCalledWith(0, 4)
+    expect(doc.selection.setSelection).toHaveBeenCalledWith({
+      blockId: leftBlock.id,
+      type: 'text',
+      index: 3,
+      length: 0,
+    })
+    expect(doc.selection.blur).not.toHaveBeenCalled()
+  })
+
+  it('adjusts a zero-space delete to the preceding model character', () => {
+    const transformer = new InputTransformer({event: eventStub()} as any) as any
+
+    expect(transformer['_adjustZeroSpaceDeletePlan']({
+      kind: 'text-cursor',
+      blockId: 'p1',
+      offset: 3,
+    })).toEqual({
+      kind: 'range',
+      start: {kind: 'text', blockId: 'p1', from: 2, to: 3},
+      end: null,
+      insertAt: {blockId: 'p1', offset: 2},
+      stabilizeAt: null,
+      tailMode: 'merge',
+    })
   })
 
   it('deletes covered structural groups when replacing a cross-column text range', () => {
@@ -1638,7 +1841,9 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
       transact,
     } = createCrossColumnTextRangeHarness(throughPath)
 
-    transformer['_replaceText'](selection, 'Z', true)
+    const plan = transformer['_planSelectionEdit'](selection)
+    expect(plan.kind).toBe('range')
+    transformer['_replacePlannedRange'](plan, 'Z', true)
 
     expect(doc.queryBlocksThroughPathDeeply).toHaveBeenCalledWith(leftBlock, rightBlock)
     expect(doc.crud.deleteBlocks.calls.allArgs()).toEqual([
@@ -1660,8 +1865,14 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
 
   it('starts cross-column text IME without merging the end block tail', () => {
     const preventDefault = jasmine.createSpy('preventDefault')
-    const {doc, transformer, selection, leftBlock} = createCrossColumnTextRangeHarness()
-    spyOn(transformer, '_replaceText')
+    const {
+      doc,
+      transformer,
+      leftBlock,
+      rightBlock,
+      leftDelete,
+      rightDelete,
+    } = createCrossColumnTextRangeHarness()
     spyOn(transformer.compositionSession, 'start')
 
     const result = transformer['_handleCompositionStart']({
@@ -1672,7 +1883,9 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
     expect(result).toBeTrue()
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.undoManager.beginCaptureGroup).toHaveBeenCalled()
-    expect(transformer['_replaceText']).toHaveBeenCalledWith(selection, null, false)
+    expect(leftDelete).toHaveBeenCalledWith(3, 5)
+    expect(rightDelete).toHaveBeenCalledWith(0, 4)
+    expect(doc.crud.deleteBlockById).not.toHaveBeenCalledWith(rightBlock.id)
     expect(doc.selection.setCursorAt).toHaveBeenCalledWith(leftBlock, 3)
     expect(transformer.compositionSession.start).toHaveBeenCalledWith(leftBlock, 3)
   })
@@ -1934,7 +2147,7 @@ describe('InputTransformer whole-table block selection editing', () => {
 
     const result = transformer['_handleBeforeInput'](makeBeforeInputContext(event))
 
-    expect(result).toBeUndefined()
+    expect(result).toBeTrue()
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.undoManager.captureSelectionBeforeChange).toHaveBeenCalled()
     expect(doc.schemas.createSnapshot).toHaveBeenCalledWith('paragraph', ['x'])
@@ -2040,7 +2253,7 @@ describe('InputTransformer whole-table block selection editing', () => {
 
     const result = transformer['_handleBeforeInput'](makeBeforeInputContext(event))
 
-    expect(result).toBeUndefined()
+    expect(result).toBeTrue()
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.undoManager.captureSelectionBeforeChange).toHaveBeenCalled()
     expect(doc.yDoc.transact).toHaveBeenCalled()
@@ -2344,6 +2557,11 @@ describe('InputTransformer._insertParagraphAtGap', () => {
         blur: jasmine.createSpy('blur'),
         setCursorAt: jasmine.createSpy('setCursorAt'),
       },
+      getBlockById: jasmine.createSpy('getBlockById').and.callFake((id: string) => {
+        if (id === mockVoidBlock.id) return mockVoidBlock
+        if (id === mockNewParagraph.id) return mockNewParagraph
+        return null
+      }),
       isEditable: jasmine.createSpy('isEditable').and.callFake((block: any) => block?.id === mockNewParagraph.id),
       crud: {
         insertNewParagraph: jasmine.createSpy('insertNewParagraph').and.returnValue(mockNewParagraph),
@@ -2414,10 +2632,14 @@ describe('InputTransformer._insertParagraphAtGap', () => {
 
   it('does not materialize a gap paragraph from printable keydown', () => {
     const {doc, mockVoidBlock} = createTestDoc(1)
-    const selection = {
-      collapsed: true,
-      start: makeGap('after', mockVoidBlock),
-    }
+    const gap = makeGap('after', mockVoidBlock)
+    const selection = new BlockSelection(
+      gap as any,
+      gap as any,
+      mockVoidBlock.id,
+      () => mockVoidBlock as any,
+      () => 0,
+    )
     ;(doc.selection as any).value = selection
     const transformer = new InputTransformer(doc as any) as any
     const preventDefault = jasmine.createSpy('preventDefault')
@@ -2439,10 +2661,15 @@ describe('InputTransformer._insertParagraphAtGap', () => {
 
   it('still materializes a gap paragraph from non-composing beforeinput', () => {
     const {doc, mockVoidBlock} = createTestDoc(1)
-    const selection = {
-      collapsed: true,
-      start: makeGap('after', mockVoidBlock),
-    }
+    ;(doc as any).getBlockById = (id: string) => id === mockVoidBlock.id ? mockVoidBlock : null
+    const gap = makeGap('after', mockVoidBlock)
+    const selection = new BlockSelection(
+      gap as any,
+      gap as any,
+      mockVoidBlock.id,
+      () => mockVoidBlock as any,
+      () => 0,
+    )
     ;(doc.selection as any).value = selection
     const transformer = new InputTransformer(doc as any) as any
     spyOn(transformer.compositionSession, 'updateAnchorFromInputEvent')
@@ -2470,10 +2697,14 @@ describe('InputTransformer._insertParagraphAtGap', () => {
 
   it('starts gap IME composition from the materialized paragraph without recalculating', () => {
     const {doc, mockVoidBlock, mockNewParagraph} = createTestDoc(1)
-    const selection = {
-      collapsed: true,
-      start: makeGap('after', mockVoidBlock),
-    }
+    const gap = makeGap('after', mockVoidBlock)
+    const selection = new BlockSelection(
+      gap as any,
+      gap as any,
+      mockVoidBlock.id,
+      () => mockVoidBlock as any,
+      () => 0,
+    )
     ;(doc.selection as any).value = selection
     ;(doc.selection as any).recalculate = jasmine.createSpy('recalculate').and.returnValue({value: null})
     const transformer = new InputTransformer(doc as any) as any
@@ -2655,8 +2886,15 @@ describe('InputTransformer whole-block selection delete restore', () => {
       textLength: 3,
       parentBlock: parent,
     }
+    const blocks: Record<string, any> = {
+      [parent.id]: parent,
+      [prevBlock.id]: prevBlock,
+      [selectedBlock.id]: selectedBlock,
+      [nextBlock.id]: nextBlock,
+    }
     const doc = {
       event: eventStub(),
+      getBlockById: jasmine.createSpy('getBlockById').and.callFake((id: string) => blocks[id]),
       isEditable: jasmine.createSpy('isEditable').and.callFake((block: any) => block?.nodeType === BlockNodeType.editable),
       prevSibling: jasmine.createSpy('prevSibling').and.returnValue(prevBlock),
       nextSibling: jasmine.createSpy('nextSibling').and.returnValue(nextBlock),
@@ -2680,16 +2918,21 @@ describe('InputTransformer whole-block selection delete restore', () => {
       },
     }
     const transformer = new InputTransformer(doc as any) as any
-
-    const result = transformer['_deleteAllSelected']({
-      from: {
-        blockId: selectedBlock.id,
-        type: 'selected',
-        block: selectedBlock,
+    const selectedPoint = {blockId: selectedBlock.id, type: 'selected'} as any
+    Object.defineProperty(selectedPoint, 'block', {
+      get: () => {
+        throw new Error('model whole-block execution must resolve by id')
       },
-      to: null,
-      collapsed: false,
     })
+    const selection = new BlockSelection(
+      selectedPoint,
+      selectedPoint,
+      parent.id,
+      (id: string) => blocks[id],
+      () => 0,
+    )
+
+    const result = transformer['_deleteAllSelected'](selection)
 
     expect(result).toBeTrue()
     expect(doc.crud.undoManager.captureSelectionBeforeChange).toHaveBeenCalled()
@@ -2851,16 +3094,19 @@ describe('InputTransformer gap deletion', () => {
       fallbackBlock.parentId = parent.id
       blocks[fallbackBlock.id] = fallbackBlock
     }
-    const selection = {
-      isAllSelected: false,
-      collapsed: true,
-      start: {
-        blockId: block.id,
-        type: 'gap' as const,
-        side,
-        block,
-      },
+    const gapPoint = {
+      blockId: block.id,
+      type: 'gap' as const,
+      side,
+      block,
     }
+    const selection = new BlockSelection(
+      gapPoint as any,
+      gapPoint as any,
+      parent.id,
+      id => blocks[id],
+      () => 0,
+    )
     const doc = {
       event: eventStub(),
       isEditable: jasmine.createSpy('isEditable').and.callFake((candidate: any) => candidate?.nodeType === BlockNodeType.editable),

@@ -1,6 +1,6 @@
 # Selection Model-First Foundation Design
 
-> Status: approved direction, written spec pending user review
+> Status: approved; hot-path amendment approved 2026-07-14
 > Date: 2026-07-14
 > Branch: `ref-cursor`
 > Scope: the first architecture-convergence phase for `framework/modules/selection`
@@ -122,7 +122,14 @@ interface SelectionTreeReader {
 The implementation walks each endpoint to root once, compares the first
 diverging children under the common ancestor, and therefore costs
 `O(depth + siblings.indexOf)`. Editor nesting depth is small; no DOM or layout
-work occurs. A per-call path cache avoids walking the same endpoint twice.
+work occurs. Parent links are trusted while resolving the hot path; the
+diverging parent's `childrenIds` is read exactly once to establish sibling
+order. Stale replay/input safety remains guarded by the existing liveness
+checks.
+
+The resolver exposes one pair operation that returns order and common ancestor
+together. `SelectionManager` must not call separate compare and common-ancestor
+walks for the same endpoint pair.
 
 The resolver returns `-1 | 0 | 1`. `SelectionManager` adapts that result to the
 existing DOM-position bit values before passing it to `BlockSelection`, so the
@@ -223,9 +230,25 @@ The failure policy remains fail-closed.
 - Position comparison performs no DOM query and no layout read.
 - Programmatic APIs eliminate the extra `recalculate()` work currently needed
   by callers solely to synchronize model state.
-- This phase does not add work to native mouse-drag `selectionchange` handling.
+- One selection construction resolves its anchor/head tree relationship at
+  most once. The result supplies both common ancestor and endpoint order.
+- `BlockSelection.direction`, `start`, and `end` cache endpoint direction and
+  do not re-read the model tree after their first access.
+- `_commitSelection()` performs liveness validation once and publishes through
+  a validation-free internal state method. Generic `_applyState()` keeps its
+  defensive validation for delayed/native callbacks.
+- A resolver call reads each endpoint's parent link once per depth level and
+  reads `childrenIds` only once at the first divergent parent. This matters
+  because `BaseBlockComponent.childrenIds` currently materializes
+  `Y.Array.toArray()` on every read.
+- Cross-parent native `selectionchange` computes scope, pair order, and common
+  parent once. It must not invoke `_commonParentForPoints()` twice.
 - Equality-based broadcast deduplication is intentionally deferred; mixing it
   into this phase would alter toolbar timing and selected-class updates.
+
+These are regression-testable budgets, not benchmark claims. A focused unit
+test records reader calls so future changes cannot silently restore repeated
+tree walks. Full browser profiling remains a separate performance exercise.
 
 ## 9. Testing
 

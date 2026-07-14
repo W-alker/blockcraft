@@ -1180,3 +1180,285 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(document.getSelection()?.rangeCount).toBe(0);
   });
 });
+
+describe('SelectionManager programmatic model-first writes', () => {
+  function createProgrammaticManager(options?: {brokenMapperBlockId?: string}) {
+    document.getSelection()?.removeAllRanges();
+
+    const rootHost = document.createElement('div');
+    rootHost.setAttribute('data-block-id', 'model-root');
+    rootHost.setAttribute('data-model-first-test', 'true');
+    rootHost.setAttribute('contenteditable', 'true');
+    const p1Host = document.createElement('p');
+    const p2Host = document.createElement('p');
+    p1Host.setAttribute('data-block-id', 'model-p1');
+    p2Host.setAttribute('data-block-id', 'model-p2');
+    const p1Text = document.createTextNode('hello');
+    const p2Text = document.createTextNode('world');
+    p1Host.appendChild(p1Text);
+    p2Host.appendChild(p2Text);
+    rootHost.append(p1Host, p2Host);
+    document.body.appendChild(rootHost);
+
+    let rootChildrenIds = ['model-p1', 'model-p2'];
+    const childrenIdsRead = jasmine.createSpy('childrenIdsRead');
+    const root = {
+      id: 'model-root',
+      nodeType: BlockNodeType.root,
+      hostElement: rootHost,
+      parentId: null,
+      parentBlock: null,
+      get childrenIds() {
+        childrenIdsRead();
+        return rootChildrenIds;
+      },
+      set childrenIds(value: string[]) {
+        rootChildrenIds = value;
+      },
+      childrenLength: 2,
+    } as any;
+    const makeEditable = (id: string, hostElement: HTMLElement, textNode: Text, index: number) => ({
+      id,
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      hostElement,
+      containerElement: hostElement,
+      parentId: root.id,
+      parentBlock: root,
+      childrenIds: [],
+      childrenLength: 0,
+      textLength: textNode.length,
+      textContent: () => textNode.data,
+      getIndexOfParent: () => index,
+      runtime: {
+        mapper: {
+          modelPointToDomPoint: (_container: HTMLElement, offset: number) => {
+            if (options?.brokenMapperBlockId === id) throw new Error(`mapper failed: ${id}`);
+            return {node: textNode, offset};
+          },
+        },
+      },
+    });
+    const p1 = makeEditable('model-p1', p1Host, p1Text, 0) as any;
+    const p2 = makeEditable('model-p2', p2Host, p2Text, 1) as any;
+    const blocks: Record<string, any> = {
+      [root.id]: root,
+      [p1.id]: p1,
+      [p2.id]: p2,
+    };
+    const compareBlockPosition = jasmine.createSpy('compareBlockPosition').and.callFake(() => {
+      throw new Error('DOM block ordering must not be used');
+    });
+    const logger = {warn: jasmine.createSpy('warn')};
+    const queryBlocksBetween = jasmine.createSpy('queryBlocksBetween').and.returnValue([]);
+    const doc = {
+      root,
+      event: {add() {}, bindHotkey() {}},
+      afterInit() {},
+      onDestroy$: new Subject<void>(),
+      isEditable: (block: any) => block?.nodeType === BlockNodeType.editable,
+      getBlockById: (id: string) => {
+        const block = blocks[id];
+        if (!block) throw new Error(`missing block: ${id}`);
+        return block;
+      },
+      compareBlockPosition,
+      queryBlocksBetween,
+      queryBlocksThroughPathDeeply: () => [],
+      logger,
+    };
+
+    return {
+      manager: new SelectionManager(doc as any),
+      doc,
+      root,
+      p1,
+      p2,
+      p1Text,
+      p2Text,
+      logger,
+      compareBlockPosition,
+      childrenIdsRead,
+      queryBlocksBetween,
+    };
+  }
+
+  afterEach(() => {
+    document.getSelection()?.removeAllRanges();
+    document.querySelectorAll('[data-model-first-test]').forEach(element => element.remove());
+  });
+
+  it('publishes a collapsed text model synchronously from setCursorAt', () => {
+    const {manager, p1, p1Text} = createProgrammaticManager();
+
+    manager.setCursorAt(p1, 2);
+
+    expect(manager.value?.toJSON()).toEqual({
+      anchor: {blockId: p1.id, type: 'text', offset: 2},
+      head: {blockId: p1.id, type: 'text', offset: 2},
+      commonParent: p1.id,
+    });
+    const range = document.getSelection()!.getRangeAt(0);
+    expect(range.startContainer).toBe(p1Text);
+    expect(range.startOffset).toBe(2);
+  });
+
+  it('canonicalizes a single legacy text range without losing its length', () => {
+    const {manager, p1} = createProgrammaticManager();
+
+    const range = manager.setSelection({
+      blockId: p1.id,
+      type: 'text',
+      index: 1,
+      length: 3,
+    });
+
+    expect(manager.value?.toJSON()).toEqual({
+      anchor: {blockId: p1.id, type: 'text', offset: 1},
+      head: {blockId: p1.id, type: 'text', offset: 4},
+      commonParent: p1.id,
+    });
+    expect(range).toBe(document.getSelection()!.getRangeAt(0));
+  });
+
+  it('canonicalizes cross-block legacy end length and orders from the model tree', () => {
+    const {manager, p1, p2, compareBlockPosition} = createProgrammaticManager();
+
+    manager.setSelection(
+      {blockId: p1.id, type: 'text', index: 2, length: 0},
+      {blockId: p2.id, type: 'text', index: 1, length: 2},
+    );
+
+    expect(manager.value?.direction).toBe('forward');
+    expect(manager.value?.toJSON()).toEqual({
+      anchor: {blockId: p1.id, type: 'text', offset: 2},
+      head: {blockId: p2.id, type: 'text', offset: 3},
+      commonParent: 'model-root',
+    });
+    expect(compareBlockPosition).not.toHaveBeenCalled();
+  });
+
+  it('resolves and validates one cross-block commit only once', () => {
+    const {manager, p1, p2, childrenIdsRead, queryBlocksBetween} = createProgrammaticManager();
+
+    manager.setSelection(
+      {blockId: p1.id, type: 'text', offset: 1, block: p1},
+      {blockId: p2.id, type: 'text', offset: 2, block: p2},
+    );
+
+    expect(childrenIdsRead).toHaveBeenCalledTimes(1);
+    expect(queryBlocksBetween).toHaveBeenCalledTimes(1);
+
+    childrenIdsRead.calls.reset();
+    queryBlocksBetween.calls.reset();
+    expect(manager.value?.start.blockId).toBe(p1.id);
+    expect(manager.value?.end.blockId).toBe(p2.id);
+    expect(manager.value?.direction).toBe('forward');
+    expect(childrenIdsRead).not.toHaveBeenCalled();
+    expect(queryBlocksBetween).not.toHaveBeenCalled();
+  });
+
+  it('normalizes reversed legacy ranges to forward anchor and head', () => {
+    const {manager, p1, p2} = createProgrammaticManager();
+
+    manager.setSelection(
+      {blockId: p2.id, type: 'text', index: 2, length: 1},
+      {blockId: p1.id, type: 'text', index: 1, length: 2},
+    );
+
+    expect(manager.value?.direction).toBe('forward');
+    expect(manager.value?.toJSON()).toEqual({
+      anchor: {blockId: p1.id, type: 'text', offset: 3},
+      head: {blockId: p2.id, type: 'text', offset: 2},
+      commonParent: 'model-root',
+    });
+  });
+
+  it('preserves reversed intent for current selection points', () => {
+    const {manager, p1, p2} = createProgrammaticManager();
+
+    manager.setSelection(
+      {blockId: p2.id, type: 'text', offset: 2, block: p2},
+      {blockId: p1.id, type: 'text', offset: 3, block: p1},
+    );
+
+    expect(manager.value?.direction).toBe('backward');
+    expect(manager.value?.toJSON()).toEqual({
+      anchor: {blockId: p2.id, type: 'text', offset: 2},
+      head: {blockId: p1.id, type: 'text', offset: 3},
+      commonParent: 'model-root',
+    });
+  });
+
+  it('extends from the canonical anchor and replaces only the head', () => {
+    const {manager, p1, p2} = createProgrammaticManager();
+    manager.setCursorAt(p1, 3);
+
+    manager.extendTo(p2, 2);
+
+    expect(manager.value?.toJSON()).toEqual({
+      anchor: {blockId: p1.id, type: 'text', offset: 3},
+      head: {blockId: p2.id, type: 'text', offset: 2},
+      commonParent: 'model-root',
+    });
+  });
+
+  it('uses the model-first cursor path for editable setCursorAtBlock', () => {
+    const {manager, p1} = createProgrammaticManager();
+
+    manager.setCursorAtBlock(p1, false, false);
+
+    expect(manager.value?.toJSON()).toEqual({
+      anchor: {blockId: p1.id, type: 'text', offset: p1.textLength},
+      head: {blockId: p1.id, type: 'text', offset: p1.textLength},
+      commonParent: p1.id,
+    });
+  });
+
+  it('publishes the model before applying the derived native range', () => {
+    const {manager, p1} = createProgrammaticManager();
+    const nativeSelection = document.getSelection()!;
+    const originalAddRange = nativeSelection.addRange.bind(nativeSelection);
+    const valuesDuringAddRange: Array<BlockSelection | null> = [];
+    spyOn(nativeSelection, 'addRange').and.callFake((range: Range) => {
+      valuesDuringAddRange.push(manager.value);
+      originalAddRange(range);
+    });
+
+    manager.setCursorAt(p1, 1);
+
+    expect(valuesDuringAddRange[0]?.toJSON()).toEqual({
+      anchor: {blockId: p1.id, type: 'text', offset: 1},
+      head: {blockId: p1.id, type: 'text', offset: 1},
+      commonParent: p1.id,
+    });
+  });
+
+  it('clears the canonical state when DOM projection fails', () => {
+    const {manager, p1, logger} = createProgrammaticManager({brokenMapperBlockId: 'model-p1'});
+
+    expect(() => manager.setCursorAt(p1, 1)).toThrowError('mapper failed: model-p1');
+
+    expect(manager.value).toBeNull();
+    expect(document.getSelection()?.rangeCount).toBe(0);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'selectionProjectionError: ',
+      jasmine.any(Error),
+    );
+  });
+
+  it('rejects replay endpoints that are live but disconnected in the model tree', () => {
+    const {manager, root, p1, p2} = createProgrammaticManager();
+    root.childrenIds = [p1.id];
+    root.childrenLength = 1;
+
+    manager.replay({
+      anchor: {blockId: p1.id, type: 'text', offset: 1},
+      head: {blockId: p2.id, type: 'text', offset: 2},
+      commonParent: root.id,
+    });
+
+    expect(manager.value).toBeNull();
+    expect(document.getSelection()?.rangeCount).toBe(0);
+  });
+});

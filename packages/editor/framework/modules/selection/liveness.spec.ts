@@ -1,5 +1,5 @@
 import {BlockSelection} from "./blockSelection";
-import {isSelectionAlive} from "./liveness";
+import {hasLiveSelectionEndpoints, isSelectionAlive} from "./liveness";
 
 describe("isSelectionAlive", () => {
   const makeDoc = (blocks: Record<string, any>, between: string[] = []) => ({
@@ -95,6 +95,28 @@ describe("isSelectionAlive", () => {
     expect(isSelectionAlive(selection, doc as any)).toBeTrue();
 
     delete blocks["middle"];
+    expect(hasLiveSelectionEndpoints(selection, makeDoc(blocks, ["middle"]) as any)).toBeTrue();
     expect(isSelectionAlive(selection, makeDoc(blocks, ["middle"]) as any)).toBeFalse();
+  });
+
+  it("checks endpoint ids without resolving direction or covered blocks", () => {
+    const root = {id: "root"};
+    const p1 = {id: "p1"};
+    const p2 = {id: "p2"};
+    const blocks: Record<string, any> = {root, p1, p2};
+    const comparePosition = jasmine.createSpy("comparePosition");
+    const selection = new BlockSelection(
+      {blockId: "p1", type: "text", offset: 1, block: p1} as any,
+      {blockId: "p2", type: "text", offset: 2, block: p2} as any,
+      "root",
+      id => blocks[id],
+      comparePosition,
+    );
+
+    expect(hasLiveSelectionEndpoints(selection, makeDoc(blocks) as any)).toBeTrue();
+    expect(comparePosition).not.toHaveBeenCalled();
+
+    delete blocks["p2"];
+    expect(hasLiveSelectionEndpoints(selection, makeDoc(blocks) as any)).toBeFalse();
   });
 });

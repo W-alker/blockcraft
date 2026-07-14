@@ -9,6 +9,48 @@ type SelectionLivenessDoc = {
   ) => string[] | null | undefined
 }
 
+function hasBlock(doc: Pick<SelectionLivenessDoc, "getBlockById">, blockId: string): boolean {
+  try {
+    return !!blockId && !!doc.getBlockById?.(blockId)
+  } catch {
+    return false
+  }
+}
+
+/** Cheap guard for read hot paths. Structural consumers still use isSelectionAlive. */
+export function hasLiveSelectionEndpoints(
+  selection: BlockSelection | null | undefined,
+  doc: Pick<SelectionLivenessDoc, "getBlockById">,
+): selection is BlockSelection {
+  if (!selection) return false
+  if (typeof doc.getBlockById !== "function") return true
+
+  const anchorId = selection.anchor.blockId
+  const headId = selection.head.blockId
+  const commonParentId = selection.commonParent
+  if (!hasBlock(doc, anchorId)) return false
+  if (headId !== anchorId && !hasBlock(doc, headId)) return false
+  if (
+    commonParentId !== anchorId &&
+    commonParentId !== headId &&
+    !hasBlock(doc, commonParentId)
+  ) return false
+
+  if (selection.anchor.type === "table-cell") {
+    if (!hasBlock(doc, selection.anchor.tableId)) return false
+    if (
+      selection.head.type === "table-cell" &&
+      selection.head.tableId !== selection.anchor.tableId &&
+      !hasBlock(doc, selection.head.tableId)
+    ) {
+      return false
+    }
+  } else if (selection.head.type === "table-cell" && !hasBlock(doc, selection.head.tableId)) {
+    return false
+  }
+  return true
+}
+
 /**
  * Validate that a model selection can still resolve all lazy block references.
  *

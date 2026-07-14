@@ -16,7 +16,8 @@ import {
   PresentationController,
   SnapshotViewerComponent,
   createMarkdownStreamViewer,
-  generateId
+  generateId,
+  replaceSnapshotsIdDeeply
 } from '@ccc/blockcraft';
 import { debugTableMerge, fixTable } from '@ccc/blockcraft/blocks/table-block/callback';
 import { BlockCraftAwareness } from '@ccc/blockcraft/editor/awa';
@@ -43,6 +44,7 @@ type DebugActionId =
   | 'toggleCopyFilter'
   | 'importHtml'
   | 'importMarkdown'
+  | 'importBlockSnapshotTxt'
   | 'exportMarkdown'
   | 'exportPdf'
   | 'exportImage'
@@ -71,6 +73,82 @@ interface DebugMetaItem {
   value: string;
 }
 
+const BLOCK_SNAPSHOT_NODE_TYPES = new Set(['root', 'block', 'void', 'editable']);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function extractFirstJsonObject(source: string): string {
+  const input = source.trim().replace(/^\uFEFF/, '');
+  const start = input.indexOf('{');
+  if (start < 0) {
+    throw new Error('未找到 JSON 对象');
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < input.length; i += 1) {
+    const ch = input[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return input.slice(start, i + 1);
+      }
+    }
+  }
+
+  throw new Error('JSON 对象未闭合');
+}
+
+function isBlockSnapshotLike(value: unknown): value is IBlockSnapshot {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (
+    typeof value['id'] !== 'string' ||
+    typeof value['flavour'] !== 'string' ||
+    typeof value['nodeType'] !== 'string' ||
+    !BLOCK_SNAPSHOT_NODE_TYPES.has(value['nodeType']) ||
+    !isRecord(value['props']) ||
+    !isRecord(value['meta']) ||
+    !Array.isArray(value['children'])
+  ) {
+    return false;
+  }
+
+  if (value['nodeType'] === 'root' || value['nodeType'] === 'block') {
+    return value['children'].every(isBlockSnapshotLike);
+  }
+
+  return true;
+}
+
 const ACTION_SECTIONS: DebugSection[] = [
   {
     title: '文档与编辑',
@@ -86,6 +164,7 @@ const ACTION_SECTIONS: DebugSection[] = [
     actions: [
       { id: 'importHtml', label: '导入 HTML' },
       { id: 'importMarkdown', label: '导入 Markdown' },
+      { id: 'importBlockSnapshotTxt', label: '导入 TXT' },
       { id: 'exportMarkdown', label: '导出 Markdown' },
       { id: 'exportImage', label: '导出图片' }
     ]
@@ -1474,6 +1553,9 @@ graph TD
       case 'importMarkdown':
         void this.importMarkdown();
         return;
+      case 'importBlockSnapshotTxt':
+        void this.importBlockSnapshotTxt();
+        return;
       case 'exportMarkdown':
         this.exportMarkdown();
         return;
@@ -2024,6 +2106,71 @@ $$
     }
 
     editor.doc.crud.insertBlocks(editor.doc.rootId, 0, snapshot.children as IBlockSnapshot[]);
+  }
+
+  async importBlockSnapshotTxt() {
+    const editor = this.ensureEditorInitialized();
+    const files = await editor.doc.injector.get(DOC_FILE_SERVICE_TOKEN).inputFiles('.txt', false);
+    if (!files?.length) {
+      return;
+    }
+
+    try {
+      const text = await files[0]!.text();
+      const rootSnapshot = this.parseBlockSnapshotText(text);
+      const children = this.prepareImportedSnapshotChildren(rootSnapshot, editor.doc);
+
+      if (!children.length) {
+        editor.doc.messageService.warn('TXT 中没有可导入的 blocks');
+        return;
+      }
+
+      editor.doc.crud.insertBlocks(editor.doc.rootId, editor.doc.root.childrenLength, children);
+      editor.doc.messageService.success(`已导入 ${children.length} 个 blocks`);
+      this.editorInitialized = true;
+      this.cdr.markForCheck();
+    } catch (error) {
+      console.error('Import block snapshot txt failed:', error);
+      editor.doc.messageService.error(
+        error instanceof Error ? `导入失败：${error.message}` : '导入失败：无法解析 TXT Snapshot'
+      );
+    }
+  }
+
+  private parseBlockSnapshotText(text: string): IBlockSnapshot {
+    const jsonText = extractFirstJsonObject(text);
+    const value = JSON.parse(jsonText) as unknown;
+    if (!isBlockSnapshotLike(value) || value.flavour !== 'root' || value.nodeType !== 'root') {
+      throw new Error('文件内容不是 root BlockSnapshot');
+    }
+
+    return value;
+  }
+
+  private prepareImportedSnapshotChildren(rootSnapshot: IBlockSnapshot, doc: BlockCraft.Doc): IBlockSnapshot[] {
+    const unsupported = this.collectUnsupportedSnapshotFlavours(rootSnapshot, doc);
+    if (unsupported.length) {
+      throw new Error(`存在未注册 block：${unsupported.join(', ')}`);
+    }
+
+    const children = JSON.parse(JSON.stringify(rootSnapshot.children || [])) as IBlockSnapshot[];
+    replaceSnapshotsIdDeeply(children);
+    return children;
+  }
+
+  private collectUnsupportedSnapshotFlavours(rootSnapshot: IBlockSnapshot, doc: BlockCraft.Doc): string[] {
+    const unsupported = new Set<string>();
+    const visit = (snapshot: IBlockSnapshot) => {
+      if (!doc.schemas.has(snapshot.flavour)) {
+        unsupported.add(snapshot.flavour);
+      }
+      if (snapshot.nodeType === 'root' || snapshot.nodeType === 'block') {
+        snapshot.children.forEach(visit);
+      }
+    };
+
+    visit(rootSnapshot);
+    return [...unsupported];
   }
 
   fixTable() {

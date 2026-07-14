@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-07-13 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-07-14 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,55 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-07-14 (patch) — input edits use model-native plans
+
+**Severity**: patch
+
+**What changed**: `InputTransformer` now adapts current `BlockSelection` and normalized native target endpoints into one pure, short-lived edit plan before executing any model-owned input. `beforeInput`, printable keydown fallback, Backspace/Delete, Enter, and `compositionStart` share the same plan kinds for text cursors/ranges, whole-block ranges, gaps, container boundaries, and table-cell rectangles. Current model execution no longer converts through deprecated `INormalizedRange` `from/to/index/length` shapes; the legacy range branch remains only for explicit compatibility callers.
+
+**Why**: Point-shape branching had spread across input entry points, which made equivalent user intent take different deletion, cursor, IME, and undo paths. A pure planner gives Input one validated intent boundary, keeps Yjs mutation ordering centralized, removes DOM/lazy block references from planning, and allows future virtual rendering to preserve model input semantics without mounted block hosts.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — Quick Reference documents model-native input planning.
+- `blockcraft-selection.md` — documents the Selection-to-Input consumer boundary.
+- `blockcraft-input.md` — documents the adapter/planner/executor flow, compatibility boundary, fail-closed rules, IME dispatch, and virtualization constraint.
+
+### Behavior Changes
+
+- Equivalent model selections now choose the same edit semantics across `beforeInput`, keydown fallback, deletion, Enter, and composition startup.
+- Stale IDs, invalid text slices/boundary indexes, unsupported endpoint combinations, and live blocks that no longer match a plan fail closed before native DOM writes.
+- Cross-column tail preservation, structural IME undo groups, table rectangles, gap materialization, and boundary replacement retain their existing externally visible behavior.
+- Planning reads model IDs/ancestry/children/text lengths only; block components are resolved immediately before execution and DOM is used only for focus/projection adapters.
+- Ordinary text keydown and ordinary text Backspace/Delete skip the structural planner through an O(1) endpoint-type gate, so the new boundary does not add model-tree work to those hot paths.
+
+### Migration Recipe
+
+No application migration is required and no exported API was added or removed. Existing callers may continue using the deprecated `INormalizedRange` overload where already supported, but new code should pass/read current `BlockSelection` points. The package version remains unchanged until an explicit release decision.
+
+### v?.?.? - 2026-07-14 (minor) — programmatic selection writes are model-first
+
+**Severity**: minor
+
+**What changed**: `SelectionManager` now resolves endpoint order and nearest common ancestry from the BlockCraft model tree instead of DOM `compareDocumentPosition()`. All programmatic selection writers canonicalize current or deprecated point shapes, publish the canonical `BlockSelection` synchronously, and only then project it to a native DOM `Range`. This includes `setSelection()`, `setCursorAt()`, `extendTo()`, editable block cursor helpers, whole-block selection, gap cursors, table-cell selection, and replay. Model-only table-cell selections still clear the native Range, while gap projection keeps its delayed filler-readiness retry.
+
+**Why**: A programmatic DOM-first write left a timing window where Input, IME, toolbar, and undo code could still read the previous model selection until a browser-specific `selectionchange` arrived. DOM ordering also made model direction depend on rendered host nodes. One model-first commit invariant removes that drift and gives future input/undo convergence a stable selection primitive.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — Quick Reference documents synchronous programmatic writes and model-tree ordering.
+- `blockcraft-selection.md` — documents `SelectionPositionResolver`, canonicalization, and the unified commit path.
+
+### Behavior Changes
+
+- `setSelection()`, `setCursorAt()`, `extendTo()`, `setCursorAtBlock()`, and `selectOrSetCursorAtBlock()` expose the updated `doc.selection.value` before returning when they target editable content.
+- Existing `selectBlock()`, `setGapCursor()`, `setTableCellSelection()`, and replay paths now share the same validation, focus, suppression, and projection ordering.
+- Deprecated `index/length` range inputs preserve their exact end-offset semantics and normalize to forward document order. Current `ISelectionPoint` inputs and replay retain anchor/head direction.
+- Live block IDs whose parent/child chain is disconnected or inconsistent fail closed instead of deriving order from coincidental DOM placement.
+- DOM projection failures clear the canonical selection and native ranges after logging, rather than leaving a partially committed model/DOM pair.
+
+### Migration Recipe
+
+No call-site migration is required. Code that waited for a native `selectionchange` only to read back a programmatic selection can now read `doc.selection.value` immediately after the write. The package version remains unchanged until an explicit release decision.
 
 ### v?.?.? - 2026-07-13 (patch) — DOM selection recalculation uses semantic scopes
 

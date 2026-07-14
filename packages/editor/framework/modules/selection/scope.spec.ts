@@ -264,6 +264,7 @@ describe("Selection scope", () => {
     const column2 = block("column-2", "column", BlockNodeType.block, columns)
     const p1 = block("p1", "paragraph", BlockNodeType.editable, column1)
     const p2 = block("p2", "paragraph", BlockNodeType.editable, column2)
+    columns.childrenIds = ["column-1", "column-2"]
     const p1Text = appendEditable(p1.hostElement, "one")
     const p2Text = appendEditable(p2.hostElement, "two")
     column1.hostElement.appendChild(p1.hostElement)
@@ -385,6 +386,7 @@ describe("Selection scope", () => {
     const mermaid = block("mermaid-1", "mermaid", BlockNodeType.block, root)
     const textarea = block("textarea-1", "mermaid-textarea", BlockNodeType.editable, mermaid)
     const p = block("p1", "paragraph", BlockNodeType.editable, root)
+    root.childrenIds = ["mermaid-1", "p1"]
     const textareaText = appendEditable(textarea.hostElement, "graph TD")
     const pText = appendEditable(p.hostElement, "after")
     mermaid.hostElement.appendChild(textarea.hostElement)

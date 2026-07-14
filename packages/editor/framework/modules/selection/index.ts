@@ -26,13 +26,17 @@ import {
   lazyBoundaryPoint,
   lazyTableCellPoint,
 } from "./normalize";
-import {isSelectionAlive} from "./liveness";
+import {hasLiveSelectionEndpoints, isSelectionAlive} from "./liveness";
 import {
   resolveCommonSelectionScope,
   resolveSelectionContainerId,
   resolveSelectionScope,
   SelectionScope,
 } from "./scope";
+import {
+  SelectionPositionOrder,
+  SelectionPositionResolver,
+} from "./position-resolver";
 
 @DocEventRegister
 export class SelectionManager {
@@ -43,15 +47,40 @@ export class SelectionManager {
   private _keyboard = new SelectionKeyboard(this.doc)
   private _suppressRecalculate = false
   private _suppressProgrammaticSelectionChangeUntil = 0
+  private readonly _positionResolver: SelectionPositionResolver
 
   constructor(public readonly doc: BlockCraft.Doc) {
+    this._positionResolver = new SelectionPositionResolver({
+      getParentId: blockId => {
+        const block = this._readBlock(blockId)
+        return block ? block.parentId ?? null : undefined
+      },
+      getChildrenIds: blockId => {
+        const block = this._readBlock(blockId)
+        if (!block) return null
+        if (block.nodeType === BlockNodeType.editable) return []
+        try {
+          return block.childrenIds ?? null
+        } catch {
+          return null
+        }
+      },
+    })
     this.doc.afterInit(this._bindEvents)
+  }
+
+  private _readBlock(blockId: string): BlockCraft.BlockComponent | null {
+    try {
+      return this.doc.getBlockById(blockId) ?? null
+    } catch {
+      return null
+    }
   }
 
   get value() {
     const selection = this.selectionChange$.value
     if (!selection) return null
-    if (isSelectionAlive(selection, this.doc)) return selection
+    if (hasLiveSelectionEndpoints(selection, this.doc)) return selection
     this._applyState(null)
     return null
   }
@@ -200,24 +229,25 @@ export class SelectionManager {
       // scope to span their physical parents.
       let commonParent = anchor.blockId
       if (anchor.blockId !== head.blockId) {
-        commonParent = this._commonParentForPoints(anchor, head, range)
         const anchorParent = resolveSelectionContainerId(anchor)
         const headParent = resolveSelectionContainerId(head)
+        let commonScope: SelectionScope | null | undefined
         if (anchorParent !== headParent) {
-          const scope = resolveCommonSelectionScope(
+          commonScope = resolveCommonSelectionScope(
             anchor,
             head,
             id => this.doc.getBlockById(id) as any,
           )
-          if (!scope) {
+          if (!commonScope) {
             range.collapse()
             return {value: null, next: () => {}}
           }
-          commonParent = this._commonParentForPoints(anchor, head, range)
         }
+        commonParent = this._commonParentForPoints(anchor, head, range, commonScope)
       }
 
       const r = this._createBlockSelection(anchor, head, commonParent)
+      if (!r) throw new Error('Selection endpoints are disconnected')
       const next = () => this._applyState(r)
       execNext && next()
       return {value: r, next: execNext ? undefined : next}
@@ -285,33 +315,84 @@ export class SelectionManager {
     anchor: ISelectionPoint,
     head: ISelectionPoint,
     range: Range,
+    commonScope?: SelectionScope | null,
   ): string {
+    const modelCommonParent = this._commonParentFromModel(anchor, head, commonScope)
+    if (modelCommonParent) return modelCommonParent
+    return closetBlockId(range.commonAncestorContainer)!
+  }
+
+  private _commonParentFromModel(
+    anchor: ISelectionPoint,
+    head: ISelectionPoint,
+    resolvedScope?: SelectionScope | null,
+  ): string | null {
     if (anchor.blockId === head.blockId) return anchor.blockId
     const anchorParent = resolveSelectionContainerId(anchor)
     const headParent = resolveSelectionContainerId(head)
     if (anchorParent === headParent) return anchorParent
-    const scope = resolveCommonSelectionScope(
-      anchor,
-      head,
-      id => this.doc.getBlockById(id) as any,
-    )
-    return scope?.blockId ?? closetBlockId(range.commonAncestorContainer)!
+
+    try {
+      const scope = resolvedScope === undefined
+        ? resolveCommonSelectionScope(
+          anchor,
+          head,
+          id => this.doc.getBlockById(id) as any,
+        )
+        : resolvedScope
+      return scope?.blockId ?? null
+    } catch {
+      return null
+    }
   }
 
   // ── Model state management ──
 
-  private _applyState(sel: BlockSelection | null) {
-    const nextSelection = isSelectionAlive(sel, this.doc) ? sel : null
-    this.selectionChange$.next(nextSelection)
-    this.selectedManager.setSelected(nextSelection)
+  private _publishState(selection: BlockSelection | null) {
+    this.selectionChange$.next(selection)
+    this.selectedManager.setSelected(selection)
   }
 
-  private _createBlockSelection(anchor: ISelectionPoint, head: ISelectionPoint, commonParent: string): BlockSelection {
+  private _applyState(selection: BlockSelection | null) {
+    this._publishState(isSelectionAlive(selection, this.doc) ? selection : null)
+  }
+
+  private _createBlockSelection(
+    anchor: ISelectionPoint,
+    head: ISelectionPoint,
+    commonParent: string,
+  ): BlockSelection | null {
+    const position = anchor.blockId === head.blockId
+      ? {order: 0 as const, commonAncestor: anchor.blockId}
+      : this._positionResolver.resolve(anchor.blockId, head.blockId)
+    if (!position) return null
+
     return new BlockSelection(
       anchor, head, commonParent,
       id => this.doc.getBlockById(id) as any,
-      (a, b) => this.doc.compareBlockPosition(a, b),
+      (a, b) => {
+        if (a === anchor.blockId && b === head.blockId) {
+          return this._modelOrderToDomPosition(position.order)
+        }
+        if (a === head.blockId && b === anchor.blockId) {
+          const reverseOrder = position.order === 0 ? 0 : -position.order as SelectionPositionOrder
+          return this._modelOrderToDomPosition(reverseOrder)
+        }
+        return this._compareModelPosition(a, b)
+      },
     )
+  }
+
+  private _compareModelPosition(a: string, b: string): number {
+    const resolution = this._positionResolver.resolve(a, b)
+    if (!resolution) return Node.DOCUMENT_POSITION_DISCONNECTED
+    return this._modelOrderToDomPosition(resolution.order)
+  }
+
+  private _modelOrderToDomPosition(order: SelectionPositionOrder): number {
+    if (order < 0) return Node.DOCUMENT_POSITION_FOLLOWING
+    if (order > 0) return Node.DOCUMENT_POSITION_PRECEDING
+    return 0
   }
 
   private _getGapCaretDomPoint(
@@ -325,16 +406,6 @@ export class SelectionManager {
     return {node: span, offset: 0}
   }
 
-  private _setModelOnlySelection(selectionState: BlockSelection, scrollIntoView?: boolean) {
-    this._applyState(selectionState)
-    this._suppressProgrammaticSelectionChange()
-    this.doc.root.hostElement.focus?.({preventScroll: true})
-    document.getSelection()?.removeAllRanges()
-    if (scrollIntoView) {
-      this.scrollSelectionIntoView()
-    }
-  }
-
   private _applyDomRange(range: Range) {
     const selection = document.getSelection()!
     this._suppressProgrammaticSelectionChange()
@@ -342,12 +413,12 @@ export class SelectionManager {
     selection.addRange(range)
   }
 
-  private _applyDomRangeForSelection(selectionState: BlockSelection, scrollIntoView?: boolean): boolean {
+  private _applyDomRangeForSelection(selectionState: BlockSelection, scrollIntoView?: boolean): Range | null {
     if (this._shouldDeferGapDomRange(selectionState)) {
       this._suppressProgrammaticSelectionChange()
       document.getSelection()?.removeAllRanges()
       this._retryGapDomRangeWhenReady(selectionState.toJSON(), scrollIntoView)
-      return false
+      return null
     }
 
     const range = this._buildDomRange(
@@ -358,7 +429,37 @@ export class SelectionManager {
     if (scrollIntoView) {
       this.scrollSelectionIntoView()
     }
-    return true
+    return range
+  }
+
+  private _commitSelection(
+    selectionState: BlockSelection | null,
+    options: {scrollIntoView?: boolean; modelOnly?: boolean} = {},
+  ): Range | null {
+    if (
+      !isSelectionAlive(selectionState, this.doc)
+    ) {
+      this.blur()
+      return null
+    }
+
+    this._publishState(selectionState)
+    this.doc.root.hostElement.focus?.({preventScroll: true})
+    this._suppressProgrammaticSelectionChange()
+
+    if (options.modelOnly) {
+      document.getSelection()?.removeAllRanges()
+      if (options.scrollIntoView) this.scrollSelectionIntoView()
+      return null
+    }
+
+    try {
+      return this._applyDomRangeForSelection(selectionState, options.scrollIntoView)
+    } catch (error) {
+      this.doc.logger.warn('selectionProjectionError: ', error)
+      this.blur()
+      throw error
+    }
   }
 
   private _shouldDeferGapDomRange(selection: BlockSelection): boolean {
@@ -581,11 +682,75 @@ export class SelectionManager {
       : trailing() ?? leading()
   }
 
+  private _selectionFromWritePoints(
+    from: SelectionWritePoint,
+    to?: SelectionWritePoint | null,
+  ): BlockSelection | null {
+    try {
+      const anchor = this._pointFromJSON(this._writePointJSON(from, 'start'))
+      const hasExplicitHead = to !== null && to !== undefined
+      const head = this._pointFromJSON(this._writePointJSON(
+        to ?? from,
+        hasExplicitHead || this._isLegacyTextPoint(from) ? 'end' : 'start',
+      ))
+      const commonParent = this._commonParentFromModel(anchor, head)
+      if (!commonParent) return null
+
+      const selection = this._createBlockSelection(anchor, head, commonParent)
+      if (!selection) return null
+      const legacyWrite = this._isLegacyWritePoint(from) || (!!to && this._isLegacyWritePoint(to))
+      return legacyWrite && selection.direction === 'backward'
+        ? this._createBlockSelection(selection.start, selection.end, commonParent)
+        : selection
+    } catch {
+      return null
+    }
+  }
+
+  private _writePointJSON(
+    point: SelectionWritePoint,
+    edge: 'start' | 'end',
+  ): ISelectionPointJSON {
+    const value = point as any
+    if (value.type === 'text') {
+      const startOffset = typeof value.offset === 'number'
+        ? value.offset
+        : (value.index ?? 0)
+      const offset = typeof value.offset === 'number' || edge === 'start'
+        ? startOffset
+        : startOffset + (value.length ?? 0)
+      return {blockId: value.blockId, type: 'text', offset}
+    }
+    if (value.type === 'gap') {
+      if (value.side !== 'before' && value.side !== 'after') throw new Error('Invalid gap selection point')
+      return {blockId: value.blockId, type: 'gap', side: value.side}
+    }
+    if (value.type === 'boundary') {
+      return {blockId: value.blockId, type: 'boundary', index: value.index ?? 0}
+    }
+    if (value.type === 'table-cell') {
+      if (!value.tableId) throw new Error('Invalid table-cell selection point')
+      return {blockId: value.blockId, type: 'table-cell', tableId: value.tableId}
+    }
+    if (value.type === 'selected') {
+      return {blockId: value.blockId, type: 'selected'}
+    }
+    throw new Error('Invalid selection point')
+  }
+
+  private _isLegacyTextPoint(point: SelectionWritePoint): boolean {
+    return point.type === 'text' && typeof (point as any).offset !== 'number'
+  }
+
+  private _isLegacyWritePoint(point: SelectionWritePoint): boolean {
+    if (this._isLegacyTextPoint(point)) return true
+    return !('block' in point)
+  }
+
   // ── Public API: programmatic selection ──
 
   selectBlock(block: BlockCraft.BlockComponent | string) {
     block = typeof block === 'string' ? this.doc.getBlockById(block) : block
-    const range = document.createRange()
     let anchorBlock: BlockCraft.BlockComponent | null = null
     let headBlock: BlockCraft.BlockComponent | null = null
 
@@ -598,35 +763,48 @@ export class SelectionManager {
     }
     if (!anchorBlock || !headBlock) return
 
-    this._setWholeBlockRangeEndpoint(range, 'start', anchorBlock)
-    this._setWholeBlockRangeEndpoint(range, 'end', headBlock)
-
     const anchor = this._wholeBlockPoint(anchorBlock.id)
     const head = this._wholeBlockPoint(headBlock.id)
-    this._applyState(this._createBlockSelection(anchor, head, block.id))
-    this._applyDomRange(range)
+    this._commitSelection(this._createBlockSelection(anchor, head, block.id))
   }
 
   /** @deprecated Use setSelection with ISelectionPointJSON */
   setSelection(from: IBlockInlineRangeJSON, to?: IBlockInlineRangeJSON | null): Range
   setSelection(from: ISelectionPoint, to?: ISelectionPoint | null): Range
   setSelection(from: any, to?: any): Range {
-    const range = this._buildDomRange(from, to)
-    const selection = document.getSelection()!
-    selection.removeAllRanges()
-    selection.addRange(range)
-    return range
+    const selectionState = this._selectionFromWritePoints(from, to)
+    if (!selectionState) {
+      this.blur()
+      throw new Error('Invalid programmatic selection')
+    }
+    const range = this._commitSelection(selectionState, {
+      modelOnly: !!selectionState.getTableCellSelection(),
+    })
+    return range ?? this._buildDomRange(
+      pointToLegacy(selectionState.start),
+      pointToLegacy(selectionState.end),
+    )
   }
 
   setCursorAt(block: EditableBlockComponent, index: number) {
-    const startNodePos = block.runtime.mapper.modelPointToDomPoint(block.containerElement, index)
-    const selection = document.getSelection()!
-    selection.setPosition(startNodePos.node, startNodePos.offset)
+    const point = this._pointFromJSON({blockId: block.id, type: 'text', offset: index})
+    this._commitSelection(this._createBlockSelection(point, point, block.id))
   }
 
   extendTo(block: EditableBlockComponent, index: number) {
-    const pos = block.runtime.mapper.modelPointToDomPoint(block.containerElement, index)
-    document.getSelection()?.extend(pos.node, pos.offset)
+    const current = this.value
+    if (!current) {
+      this.setCursorAt(block, index)
+      return
+    }
+
+    const head = this._pointFromJSON({blockId: block.id, type: 'text', offset: index})
+    const commonParent = this._commonParentFromModel(current.anchor, head)
+    if (!commonParent) {
+      this.blur()
+      return
+    }
+    this._commitSelection(this._createBlockSelection(current.anchor, head, commonParent))
   }
 
   selectOrSetCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean, scrollIntoView = true) {
@@ -648,7 +826,7 @@ export class SelectionManager {
     } else {
       const children = searchEditableDescendant(block, atStart)
       if (!children) this.selectBlock(block)
-      else this.selectOrSetCursorAtBlock(children, atStart)
+      else this.selectOrSetCursorAtBlock(children, atStart, false)
     }
     scrollIntoView && this.scrollSelectionIntoView()
   }
@@ -683,9 +861,10 @@ export class SelectionManager {
       side,
       id => this.doc.getBlockById(id) as any,
     )
-    const selectionState = this._createBlockSelection(gapPoint, gapPoint, resolvedBlock.id)
-    this._applyState(selectionState)
-    this._applyDomRangeForSelection(selectionState, scrollIntoView)
+    this._commitSelection(
+      this._createBlockSelection(gapPoint, gapPoint, resolvedBlock.id),
+      {scrollIntoView},
+    )
   }
 
   public setTableCellSelection(
@@ -706,9 +885,9 @@ export class SelectionManager {
     const getBlock = (id: string) => this.doc.getBlockById(id) as any
     const anchor = lazyTableCellPoint(resolvedAnchor.id, resolvedTable.id, getBlock)
     const head = lazyTableCellPoint(resolvedHead.id, resolvedTable.id, getBlock)
-    this._setModelOnlySelection(
+    this._commitSelection(
       this._createBlockSelection(anchor, head, resolvedTable.id),
-      scrollIntoView,
+      {scrollIntoView, modelOnly: true},
     )
   }
 
@@ -726,12 +905,11 @@ export class SelectionManager {
         return
       }
       if (selectionState.getTableCellSelection()) {
-        this._setModelOnlySelection(selectionState)
+        this._commitSelection(selectionState, {modelOnly: true})
         return
       }
       try {
-        this._applyState(selectionState)
-        this._applyDomRangeForSelection(selectionState)
+        this._commitSelection(selectionState)
       } catch {
         this.blur()
       }
@@ -743,7 +921,7 @@ export class SelectionManager {
           head: {blockId: head.blockId, type: 'table-cell', tableId: head.tableId},
           commonParent: json.commonParent,
         })
-        if (selection) this._setModelOnlySelection(selection)
+        if (selection) this._commitSelection(selection, {modelOnly: true})
         return
       }
       // Legacy format
@@ -938,6 +1116,8 @@ type DomRangePointJSON =
   | ISelectionPointJSON
   | IBlockInlineRangeJSON
   | (Extract<IBlockInlineRangeJSON, { type: 'text' }> & { offset?: number })
+
+type SelectionWritePoint = ISelectionPoint | IBlockInlineRangeJSON
 
 function isWholeBlockSelectionPoint(point: Pick<ISelectionPointJSON, 'type'>): boolean {
   return point.type === 'selected'

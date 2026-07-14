@@ -31,6 +31,26 @@ function makeSelection(anchor: ISelectionPoint, head: ISelectionPoint, commonPar
   )
 }
 
+describe('BlockSelection - derived order', () => {
+  it('resolves endpoint direction only once', () => {
+    const comparePosition = jasmine.createSpy('comparePosition')
+      .and.returnValue(Node.DOCUMENT_POSITION_FOLLOWING)
+    const selection = new BlockSelection(
+      text('p1', 1),
+      text('p2', 2),
+      'root',
+      () => ({} as any),
+      comparePosition,
+    )
+
+    expect(selection.direction).toBe('forward')
+    expect(selection.start.blockId).toBe('p1')
+    expect(selection.end.blockId).toBe('p2')
+    expect(selection.direction).toBe('forward')
+    expect(comparePosition).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('BlockSelection - gap', () => {
   it('collapsed is true for two gap points with same blockId and side', () => {
     const g = gap('void-1', 'before')

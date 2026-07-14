@@ -2,25 +2,40 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-07-13
+> Last updated: 2026-07-14
 
 ## Architecture Overview
 
 ```
-DOM beforeInput event inside an editable block
+beforeInput / keydown / compositionStart
   → UIEventDispatcher routes to InputTransformer
-  → e.preventDefault() (ALWAYS — editor owns all mutations)
-  → InputTransformer classifies inputType
-  → Writes directly to Y.Text via EditableBlockComponent methods
-  → Y.Text fires Y.Event
-  → InlineRuntime.applyDelta() updates DOM
+  → source adapter chooses live BlockSelection or normalized StaticRange endpoints
+  → planSelectionEdit() creates one short-lived SelectionEditPlan
+  → InputTransformer dispatches by plan.kind and prevents owned native input
+  → executor mutates blocks / Y.Text in Yjs transactions
+  → post-edit cursor recipe updates the canonical model selection
+  → Y.Event drives InlineRuntime.applyDelta() and DOM projection
 ```
 
 **Key principle**: The editor intercepts `beforeInput` for `EditableBlockComponent` surfaces, prevents default browser behavior, and writes directly to Yjs. The DOM is never the source of truth for editable blocks — Yjs is.
 
+### Adapter / Planner / Executor
+
+Input has one internal planning boundary:
+
+- The **adapter** accepts the current `BlockSelection` when semantic model intent must win (gap, boundary, table-cell, whole-block, scoped text), or normalizes `beforeinput.getTargetRanges()` directly to current `INormalizedEndpoints` for ordinary native text input.
+- The pure **planner** in `selection-edit-plan.ts` reads only block IDs, `parentId`, `childrenIds`, and text lengths. It emits `text-cursor`, `range`, `block-range`, `gap`, `boundary`, `table-cell`, or `unsupported`; it never reads DOM, layout, or lazy endpoint `point.block` references.
+- The **executor** in `InputTransformer` resolves live blocks by ID immediately before mutation, validates half-open text slices, captures undo selection, performs Yjs transactions, and applies the plan's insertion/stabilization cursor recipe.
+
+`beforeInput`, printable keydown fallback, Backspace/Delete, Enter, and `compositionStart` each create at most one plan for the accepted model selection. Specialized table, boundary, gap, and whole-block behavior is an executor selected by `plan.kind`, not a separate point-shape pipeline.
+
+For performance, ordinary printable text keydown and ordinary text Backspace/Delete are rejected by an O(1) endpoint-type gate before planning; their authoritative work remains in `beforeInput` or the existing inline keyboard path. Planning performs no layout reads and resolves scope/tree data once per owned edit event.
+
+`INormalizedRange` remains only at explicit compatibility entry points such as the legacy overload of `deleteByRange()`. Current `BlockSelection` execution does not convert through deprecated `from/to/index/length` ranges. This distinction matters for virtual rendering: the planner is model-only and render-independent; only final DOM projection/focus requires a mounted editing surface.
+
 ## Fail-Closed Input Guard
 
-`InputTransformer` must run for editor-root `beforeInput` even when `doc.selection.value` is currently `null`. If neither the live `BlockSelection` nor `beforeinput.getTargetRanges()` can be normalized into a model range, the handler **must call `preventDefault()` and clear the editor selection** instead of returning silently.
+`InputTransformer` must run for editor-root `beforeInput` even when `doc.selection.value` is currently `null`. If neither the live `BlockSelection` nor `beforeinput.getTargetRanges()` can produce a valid edit plan, the handler **must call `preventDefault()` and clear the editor selection** instead of returning silently. Stale IDs, invalid offsets/indexes, unsupported endpoint combinations, or live blocks that no longer match the plan all fail closed before native DOM mutation.
 
 This protects complex native selections such as container-block / nested-block selections where the browser can paint a range but BlockCraft cannot yet express it safely. Until a selection is represented by `BlockSelection` (or a normalized target range), user input is not allowed to mutate DOM directly.
 
@@ -33,6 +48,7 @@ Text-shaped ranges can inherit behavior from `SelectionScopePolicy` (`selection/
 Composition has the same rule:
 
 - `compositionStart` tries to recover selection from `CompositionEventState.selectionResult`.
+- The recovered model selection is planned exactly once. Gap, boundary, table-cell, whole-block, mixed structural/text, cross-block text, and collapsed text composition all dispatch from that plan.
 - Once `compositionStart` accepts a model selection, `CompositionSession` captures its commit anchor directly from the accepted text point or the materialized paragraph (`gap` / `boundary` / `table-cell` / selected renderUnit). A follow-up `selection.recalculate()` may still run to settle editor UI, but IME commit no longer depends on that DOM-derived result.
 - IME paths that materialize structure before commit (`gap`, `boundary`, `table-cell`, whole-block selected, mixed cross-block ranges) keep the structural transaction and the later `compositionEnd` text commit inside one `DocUndoManager` capture group. Undo therefore restores the pre-input selection and data atomically even when the user spends longer than Yjs' normal `captureTimeout` inside the input method.
 - While the session is active, composing `beforeinput` target ranges are treated as transient browser state and do not retarget the captured `OneShotCursorAnchor`.
@@ -58,6 +74,7 @@ Composition has the same rule:
 | File | Purpose |
 |------|---------|
 | `framework/modules/input/index.ts` | `InputTransformer` — main input handler |
+| `framework/modules/input/selection-edit-plan.ts` | Pure model selection → edit intent planner |
 | `framework/modules/input/composition-session.ts` | `CompositionSession` — IME state machine |
 | `framework/block-std/event/control/` | Event controls (keyboard, mouse, composition) |
 
@@ -114,7 +131,7 @@ When selection spans multiple blocks:
 | Insert text / IME over mixed whole-block→text selection | Capture undo snapshot, collapse the model/native selection to the surviving editable text endpoint before deleting whole-block endpoints, delete covered blocks/text, then commit there |
 | Insert text over same-container boundary range | Delete covered child blocks, insert one paragraph at the boundary index, place caret after inserted text |
 | IME over same-container boundary range | Open one undo capture group, materialize an empty paragraph at the boundary index, then commit IME text into that paragraph at `compositionEnd` |
-| Insert text / IME over supported mixed text+boundary selection | Convert the boundary side to the covered direct child, delete selected blocks/text through Yjs, and keep the caret/composition on the surviving editable text endpoint |
+| Insert text / IME over supported mixed text+boundary selection | Lower the boundary side to explicit block/text plan edges, delete selected blocks/text through Yjs, and keep the caret/composition on the surviving editable text endpoint |
 | Insert text over table-cell rectangle | Clear selected visible cells, insert text into the anchor cell's fresh paragraph, place caret after text |
 | IME over table-cell rectangle | Open one undo capture group, clear selected visible cells, materialize the anchor paragraph, then commit IME text into that paragraph |
 | Backspace at block start | Merge current block into previous block |

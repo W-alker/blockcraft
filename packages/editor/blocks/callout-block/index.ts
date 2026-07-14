@@ -22,17 +22,17 @@ export const CalloutBlockSchema: IBlockSchemaOptions<CalloutBlockModel> = {
   createSnapshot: () => {
     return {
       id: generateId(),
-      flavour: 'callout',
+      flavour: "callout",
       nodeType: BlockNodeType.block,
       props: {
-        backColor: '#FFE6CD',
-        color: '#333',
-        borderColor: 'transparent',
-        prefix: '📢'
+        backColor: "#FFE6CD",
+        color: "#333",
+        borderColor: "transparent",
+        prefix: "📢",
       },
       meta: {},
-      children: [ParagraphBlockSchema.createSnapshot()]
-    }
+      children: [ParagraphBlockSchema.createSnapshot()],
+    };
   },
   metadata: {
     version: 1,

@@ -2,24 +2,37 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-07-13 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-07-14 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
 ```
-User interaction (click / keyboard / API)
+Browser interaction (click / drag / native keyboard selection)
   → focus into native input island? → SelectionManager.blur()
-  → DOM `selectionchange` event (or programmatic call)
+  → DOM `selectionchange` event
   → SelectionManager.recalculate()
       → normalizeRange(DOMRange)         // DOM → endpoints
       → BlockSelection (anchor/head)     // immutable model
       → discard stale model references    // missing block ids become null
   → selectionChange$.next(selection)     // BehaviorSubject
   → SelectedManager (DOM class updates: .selected, .focused)
+
+Programmatic write (API / undo replay / keyboard command)
+  → canonicalize current or legacy points
+  → resolve order/common parent from the block tree
+  → validate + publish BlockSelection synchronously
+  → focus host + suppress native selectionchange
+  → project model to DOM Range (or clear native Range for model-only selection)
   → FakeRange (visual overlay for non-native selections, optional)
 ```
 
-**Key principle**: `BlockSelection` is the canonical truth. The DOM `Selection` is a derived view. Programmatic mutations should update the model first, then build and apply a DOM `Range` via `Selection.addRange`. `selectBlock()`, `setGapCursor()`, and new-format `replay(ISelectionJSON)` follow this model-first path synchronously, so `doc.selection.value` is immediately updated after the call returns. The derived DOM Range is applied under a short native `selectionchange` suppression window so browsers (notably Safari/WebKit) cannot immediately reinterpret a container/callout block range back into internal child text or boundary endpoints.
+**Key principle**: `BlockSelection` is the canonical truth. The DOM `Selection` is a derived view. Every programmatic write goes through one model-first commit path: `setSelection()`, `setCursorAt()`, `extendTo()`, editable block cursor helpers, `selectBlock()`, `setGapCursor()`, table-cell selection, and replay all publish `doc.selection.value` before DOM projection. `SelectionPositionResolver` resolves endpoint order and nearest common ancestry together from `parentId`, reading only the first divergent parent's `childrenIds`; it does not call `compareDocumentPosition()` or read layout. Immutable `BlockSelection` instances cache their derived direction, so repeated `direction` / `start` / `end` reads do not walk the model tree again. The derived DOM Range is applied under a short native `selectionchange` suppression window so browsers (notably Safari/WebKit) cannot immediately reinterpret a container/callout block range back into internal child text or boundary endpoints.
+
+### Input Consumer Contract
+
+`InputTransformer` consumes current selections through the pure planner in `framework/modules/input/selection-edit-plan.ts`. The planner reads ordered `start/end` points plus model IDs, ancestry, child lists, and text lengths, then emits a short-lived edit plan. It does not convert current selections to deprecated `from/to/index/length` ranges and does not use endpoint `point.block` references as mutation authority. This keeps selection intent stable when DOM projection is absent, delayed, or virtualized; Input resolves live block components by ID only at execution time and fails closed if the model has become stale.
+
+Selection owns positions and semantic scope. Input owns lowering those positions into half-open text slices, structural block edges, Yjs mutations, undo capture, and post-edit cursor recipes. Plugins should continue reading `BlockSelection`; the internal edit plan is not a public selection type.
 
 ## Native Input Islands
 
@@ -39,8 +52,9 @@ This prevents stale toolbar state and accidental block-level keyboard handling w
 | `framework/modules/selection/blockSelection.ts` | `BlockSelection` — immutable anchor/head model |
 | `framework/modules/selection/types.ts` | `ISelectionPoint`, `ISelectionJSON`, deprecated legacy types |
 | `framework/modules/selection/normalize.ts` | `normalizeRange()` — DOM Range → endpoint pair |
+| `framework/modules/selection/position-resolver.ts` | Pure block-tree document ordering + nearest common ancestor validation |
 | `framework/modules/selection/scope.ts` | `SelectionScope` resolver + `SelectionScopePolicy` — semantic cross-parent guard and scope-owned input/visual policy |
-| `framework/modules/selection/liveness.ts` | Selection liveness guard — clears stale block refs before broadcast/input |
+| `framework/modules/selection/liveness.ts` | Endpoint guard for hot reads + structural liveness guard before broadcast/input |
 | `framework/modules/selection/selection-keyboard.ts` | Arrow / Shift / Home / End / Ctrl+A / Escape handling |
 | `framework/modules/selection/selected-manager.ts` | DOM class management (`.selected`, `.focused`) |
 | `framework/modules/selection/createFakeRange.ts` | Visual overlay for non-native selections (collab cursors, find/replace) |
@@ -235,7 +249,8 @@ interface ISelectionJSON {
 
 ```typescript
 // Current selection (synchronous)
-// Reads validate lazy block references; stale selections are cleared and return null.
+// Repeated reads cheaply validate endpoint/common-parent ids. Structural coverage
+// is validated before DOM recalculation, publication, input, and replay.
 doc.selection.value                    // BlockSelection | null
 
 // Observe changes (BehaviorSubject — emits current value immediately).
@@ -267,11 +282,13 @@ doc.selection.scrollSelectionIntoView()
 ### Programmatic Selection
 
 ```typescript
-// Set cursor at a specific text offset in an editable block
+// Set cursor at a specific text offset in an editable block.
+// The collapsed text BlockSelection is published synchronously, then projected.
 doc.selection.setCursorAt(editableBlock, offset)
 
 // Move the cursor to a block (auto-picks editable descendant or selects whole block)
-// atStart: true → cursor at offset 0; false → cursor at textLength
+// atStart: true → cursor at offset 0; false → cursor at textLength.
+// Editable branches use the same synchronous model-first cursor commit.
 doc.selection.setCursorAtBlock(block, atStart, scrollIntoView?)
 
 // Select an entire block (used for void/block-level selection)
@@ -292,7 +309,8 @@ doc.selection.setGapCursor(block, 'before' | 'after', scrollIntoView?)
 // the browser native Range is cleared and TableBlockComponent paints cells.
 doc.selection.setTableCellSelection(table, anchorCell, headCell?, scrollIntoView?)
 
-// Extend the current selection's head to a new point (used for shift+click)
+// Extend the canonical selection's head while preserving its anchor and direction.
+// Falls back to a collapsed cursor when no live model selection exists.
 doc.selection.extendTo(editableBlock, offset)
 
 // Select all children/content of a block.
@@ -301,7 +319,9 @@ doc.selection.extendTo(editableBlock, offset)
 // fall back to whole-block selected state.
 doc.selection.selectAllChildren(block)
 
-// Build a Range from points (new format) and apply it
+// Canonicalize points, publish BlockSelection synchronously, then derive/apply Range.
+// Legacy index/length calls remain forward; current ISelectionPoint calls retain
+// from/to direction. Returns the derived Range for compatibility.
 doc.selection.setSelection(anchor, head?)        // new ISelectionPoint
 doc.selection.setSelection(legacyFrom, legacyTo) // @deprecated legacy format
 
@@ -447,7 +467,7 @@ These types are still exported but marked `@deprecated` and will be removed:
 | `BlockSelection.getDirection()` | `BlockSelection.direction` (getter) |
 | `selection.from.type / selection.from.block / selection.from.index` | `selection.start.type / selection.start.block / selection.start.offset` |
 
-`SelectionManager.setSelection()`, `replay()`, and `createFakeRange()` all accept both old and new formats so existing plugins don't break — but **all new code must use the new shapes**. Boundary points cannot be represented by the deprecated `INormalizedRange` / `IBlockSelectionJSON` shape; use `BlockSelection` or `ISelectionJSON` when container boundaries matter.
+`SelectionManager.setSelection()`, `replay()`, and `createFakeRange()` all accept both old and new formats so existing plugins don't break — but **all new code must use the new shapes**. `setSelection()` maps legacy `index/length` inputs to canonical text offsets and normalizes their endpoints to forward document order; current `ISelectionPoint` inputs retain the supplied direction. Boundary points cannot be represented by the deprecated `INormalizedRange` / `IBlockSelectionJSON` shape; use `BlockSelection` or `ISelectionJSON` when container boundaries matter.
 
 ## Selection Check Recipes
 
