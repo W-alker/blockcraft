@@ -20,6 +20,11 @@ import {
   resolveSelectionScopePolicyForBlockId,
   SelectionScopePolicy,
 } from "../selection/scope";
+import {
+  focusBlockSelectionEdge,
+  moveGapCaretAway,
+  restoreSelectionAfterBlockDelete,
+} from "../selection/restore";
 import { isNativeInputTarget, isZeroSpace } from "../../utils";
 import {
   getCommonAttributesFromDeltas,
@@ -540,7 +545,9 @@ export class InputTransformer {
       this.doc.selection.recalculate();
       return;
     }
-    this.doc.selection.selectOrSetCursorAtBlock(child, atStart);
+    if (!focusBlockSelectionEdge(this.doc, child, atStart)) {
+      this.doc.selection.recalculate();
+    }
   }
 
   private _deleteBoundarySelection(selection: BlockSelection): boolean {
@@ -1741,22 +1748,10 @@ export class InputTransformer {
     // Pre-capture selection for undo BEFORE deleting blocks
     this.doc.crud.undoManager.captureSelectionBeforeChange();
 
-    const prevBlock = this.doc.prevSibling(range.from.block);
-    if (prevBlock) {
-      this.doc.selection.setCursorAtBlock(prevBlock, false);
-    } else {
-      const nextBlock = this.doc.nextSibling(
-        range.to?.block || range.from.block,
-      );
-      if (nextBlock) this.doc.selection.setCursorAtBlock(nextBlock, true);
-      // else {
-      //   const parent = range.from.block.parentBlock
-      //   if (parent) {
-      //     this.doc.selection.selectAllChildren(parent)
-      //   }
-      //   return true
-      // }
-    }
+    const parent = from.block.parentBlock;
+    const deletedIndex = this._blockIndexInParent(from.block, parent);
+    const prevBlock = this.doc.prevSibling(from.block);
+    const nextBlock = this.doc.nextSibling(to?.block || from.block);
     this.doc.yDoc.transact(() => {
       if (!to) {
         this.doc.crud.deleteBlockById(from.blockId);
@@ -1778,7 +1773,19 @@ export class InputTransformer {
       this.doc.crud.deleteBlockById(from.blockId);
       this.doc.crud.deleteBlockById(to.blockId);
     });
+    restoreSelectionAfterBlockDelete(this.doc, parent, deletedIndex, prevBlock, nextBlock, "previous");
     return true;
+  }
+
+  private _blockIndexInParent(
+    block: BlockCraft.BlockComponent,
+    parent: BlockCraft.BlockComponent | null | undefined,
+  ): number {
+    const index = parent?.childrenIds?.indexOf(block.id) ?? -1;
+    if (index >= 0) return index;
+    return typeof block.getIndexOfParent === "function"
+      ? block.getIndexOfParent()
+      : 0;
   }
 
   deleteByRange(range: INormalizedRange | BlockSelection, merge = false) {
@@ -1821,82 +1828,7 @@ export class InputTransformer {
 
     this.doc.crud.undoManager?.captureSelectionBeforeChange?.();
     this.doc.crud.deleteBlockById(block.id);
-    this._restoreSelectionAfterGapBlockDelete(parent, index, prevBlock, nextBlock);
-    return true;
-  }
-
-  private _restoreSelectionAfterGapBlockDelete(
-    parent: BlockCraft.BlockComponent | null | undefined,
-    deletedIndex: number,
-    prevBlock: BlockCraft.BlockComponent | null | undefined,
-    nextBlock: BlockCraft.BlockComponent | null | undefined,
-  ): void {
-    if (nextBlock && this._focusBlockEdge(nextBlock, true)) return;
-    if (prevBlock && this._focusBlockEdge(prevBlock, false)) return;
-
-    const fallback = this._childAt(parent, deletedIndex);
-    if (fallback && this._focusBlockEdge(fallback, true)) return;
-
-    this.doc.selection.blur();
-  }
-
-  private _childAt(
-    parent: BlockCraft.BlockComponent | null | undefined,
-    preferredIndex: number,
-  ): BlockCraft.BlockComponent | null {
-    if (!parent?.childrenLength) return null;
-    const index = Math.max(0, Math.min(preferredIndex, parent.childrenLength - 1));
-    const childId = parent.childrenIds?.[index];
-    return childId ? this._getLiveBlockById(childId) : null;
-  }
-
-  private _focusBlockEdge(
-    block: BlockCraft.BlockComponent,
-    atStart: boolean,
-  ): boolean {
-    try {
-      if (this.doc.isEditable(block)) {
-        const offset = atStart ? 0 : (block as EditableBlockComponent).textLength;
-        this.doc.selection.replay({
-          anchor: { blockId: block.id, type: "text", offset },
-          head: { blockId: block.id, type: "text", offset },
-          commonParent: block.id,
-        });
-        return true;
-      }
-
-      if (block.nodeType === BlockNodeType.void || block.nodeType === BlockNodeType.block) {
-        this.doc.selection.setGapCursor(block, atStart ? "before" : "after");
-        return true;
-      }
-
-      this.doc.selection.selectBlock(block);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private _moveGapCaretAway(
-    sel: BlockSelection,
-    side: "before" | "after",
-  ): boolean {
-    if (
-      !sel.collapsed ||
-      sel.start.type !== "gap" ||
-      sel.start.side !== side
-    ) {
-      return false;
-    }
-
-    const block = sel.start.block;
-    const sibling = side === "before"
-      ? this.doc.prevSibling(block)
-      : this.doc.nextSibling(block);
-
-    if (sibling) {
-      this._focusBlockEdge(sibling, side === "after");
-    }
+    restoreSelectionAfterBlockDelete(this.doc, parent, index, prevBlock, nextBlock);
     return true;
   }
 
@@ -1938,7 +1870,7 @@ export class InputTransformer {
     const state = context.get("keyboardState");
     const sel = state.selection;
 
-    if (this._moveGapCaretAway(sel, "before")) {
+    if (moveGapCaretAway(this.doc, sel, "before")) {
       context.preventDefault();
       return true;
     }
@@ -2041,7 +1973,9 @@ export class InputTransformer {
       return true;
     }
 
-    this.doc.selection.selectBlock(prevBlock);
+    if (!focusBlockSelectionEdge(this.doc, prevBlock, false)) {
+      this.doc.selection.selectBlock(prevBlock);
+    }
     !block.textLength && this.doc.crud.deleteBlockById(block.id);
     context.preventDefault();
     return true;
@@ -2052,7 +1986,7 @@ export class InputTransformer {
     const state = context.get("keyboardState");
     const sel = state.selection;
 
-    if (this._moveGapCaretAway(sel, "after")) {
+    if (moveGapCaretAway(this.doc, sel, "after")) {
       context.preventDefault();
       return true;
     }
@@ -2087,7 +2021,9 @@ export class InputTransformer {
         this.doc.selection.recalculate();
         return true;
       } else {
-        this.doc.selection.selectBlock(nextBlock);
+        if (!focusBlockSelectionEdge(this.doc, nextBlock, true)) {
+          this.doc.selection.selectBlock(nextBlock);
+        }
         context.preventDefault();
         return true;
       }

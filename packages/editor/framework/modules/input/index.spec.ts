@@ -89,9 +89,12 @@ const createBoundaryEditingHarness = (childrenIds = ['p1', 'p2']) => {
     },
     selection: {
       value: null as any,
+      replay: jasmine.createSpy('replay'),
       setCursorAt: jasmine.createSpy('setCursorAt'),
       setCursorAtBlock: jasmine.createSpy('setCursorAtBlock'),
       selectOrSetCursorAtBlock: jasmine.createSpy('selectOrSetCursorAtBlock'),
+      setGapCursor: jasmine.createSpy('setGapCursor'),
+      selectBlock: jasmine.createSpy('selectBlock'),
       recalculate: jasmine.createSpy('recalculate'),
       blur: jasmine.createSpy('blur'),
     },
@@ -105,6 +108,7 @@ const createBoundaryEditingHarness = (childrenIds = ['p1', 'p2']) => {
   return {
     doc,
     host,
+    blocks,
     paragraph,
     selection,
     transformer: new InputTransformer(doc as any) as any,
@@ -2506,10 +2510,11 @@ describe('InputTransformer boundary selection editing', () => {
     expect(doc.crud.undoManager.captureSelectionBeforeChange).toHaveBeenCalled()
     expect(doc.crud.deleteBlocks).toHaveBeenCalledWith('callout-1', 0, 2)
     expect(host.childrenIds).toEqual(['p3'])
-    expect(doc.selection.selectOrSetCursorAtBlock).toHaveBeenCalledWith(
-      jasmine.objectContaining({id: 'p3'}),
-      true,
-    )
+    expect(doc.selection.replay).toHaveBeenCalledWith({
+      anchor: {blockId: 'p3', type: 'text', offset: 0},
+      head: {blockId: 'p3', type: 'text', offset: 0},
+      commonParent: 'p3',
+    })
   })
 
   it('Delete deletes covered boundary children and moves selection to the previous child at the end', () => {
@@ -2526,10 +2531,32 @@ describe('InputTransformer boundary selection editing', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.deleteBlocks).toHaveBeenCalledWith('callout-1', 1, 2)
     expect(host.childrenIds).toEqual(['p1'])
-    expect(doc.selection.selectOrSetCursorAtBlock).toHaveBeenCalledWith(
-      jasmine.objectContaining({id: 'p1'}),
-      false,
-    )
+    expect(doc.selection.replay).toHaveBeenCalledWith({
+      anchor: {blockId: 'p1', type: 'text', offset: 0},
+      head: {blockId: 'p1', type: 'text', offset: 0},
+      commonParent: 'p1',
+    })
+  })
+
+  it('deletes covered boundary children and moves selection to a remaining non-editable child gap', () => {
+    const {doc, transformer, host, blocks} = createBoundaryEditingHarness(['p1', 'p2', 'table-1'])
+    blocks['table-1'] = {
+      id: 'table-1',
+      flavour: 'table',
+      nodeType: BlockNodeType.block,
+    }
+    const preventDefault = jasmine.createSpy('preventDefault')
+
+    const result = transformer['_handleBackspace']({
+      preventDefault,
+      get: () => ({selection: makeBoundarySelection(host, 0, 2)}),
+    } as any)
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(host.childrenIds).toEqual(['table-1'])
+    expect(doc.selection.setGapCursor).toHaveBeenCalledOnceWith(blocks['table-1'], 'before')
+    expect(doc.selection.replay).not.toHaveBeenCalled()
   })
 
   it('replaces boundary selection from printable keydown fallback', () => {
@@ -2598,6 +2625,180 @@ describe('InputTransformer boundary selection editing', () => {
     )
     expect(doc.selection.setCursorAt).toHaveBeenCalledWith(paragraph, 0)
     expect(doc.selection.recalculate).toHaveBeenCalled()
+  })
+})
+
+describe('InputTransformer whole-block selection delete restore', () => {
+  it('deletes a whole-block selection and restores to the previous non-editable trailing gap', () => {
+    const parent = {
+      id: 'root',
+      childrenIds: ['prev-table', 'selected-table', 'next-p'],
+      get childrenLength() {
+        return this.childrenIds.length
+      },
+    }
+    const prevBlock = {
+      id: 'prev-table',
+      nodeType: BlockNodeType.block,
+      parentBlock: parent,
+    }
+    const selectedBlock = {
+      id: 'selected-table',
+      nodeType: BlockNodeType.block,
+      parentBlock: parent,
+      getIndexOfParent: () => parent.childrenIds.indexOf(selectedBlock.id),
+    }
+    const nextBlock = {
+      id: 'next-p',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      textLength: 3,
+      parentBlock: parent,
+    }
+    const doc = {
+      event: eventStub(),
+      isEditable: jasmine.createSpy('isEditable').and.callFake((block: any) => block?.nodeType === BlockNodeType.editable),
+      prevSibling: jasmine.createSpy('prevSibling').and.returnValue(prevBlock),
+      nextSibling: jasmine.createSpy('nextSibling').and.returnValue(nextBlock),
+      queryBlocksThroughPathDeeply: jasmine.createSpy('queryBlocksThroughPathDeeply').and.returnValue([]),
+      yDoc: {
+        transact: jasmine.createSpy('transact').and.callFake((cb: () => void) => cb()),
+      },
+      crud: {
+        undoManager: {
+          captureSelectionBeforeChange: jasmine.createSpy('captureSelectionBeforeChange'),
+        },
+        deleteBlockById: jasmine.createSpy('deleteBlockById').and.callFake((id: string) => {
+          parent.childrenIds = parent.childrenIds.filter(childId => childId !== id)
+        }),
+      },
+      selection: {
+        replay: jasmine.createSpy('replay'),
+        setGapCursor: jasmine.createSpy('setGapCursor'),
+        selectBlock: jasmine.createSpy('selectBlock'),
+        blur: jasmine.createSpy('blur'),
+      },
+    }
+    const transformer = new InputTransformer(doc as any) as any
+
+    const result = transformer['_deleteAllSelected']({
+      from: {
+        blockId: selectedBlock.id,
+        type: 'selected',
+        block: selectedBlock,
+      },
+      to: null,
+      collapsed: false,
+    })
+
+    expect(result).toBeTrue()
+    expect(doc.crud.undoManager.captureSelectionBeforeChange).toHaveBeenCalled()
+    expect(doc.yDoc.transact).toHaveBeenCalled()
+    expect(doc.crud.deleteBlockById).toHaveBeenCalledOnceWith(selectedBlock.id)
+    expect(parent.childrenIds).toEqual(['prev-table', 'next-p'])
+    expect(doc.selection.setGapCursor).toHaveBeenCalledOnceWith(prevBlock, 'after')
+    expect(doc.selection.replay).not.toHaveBeenCalled()
+  })
+})
+
+describe('InputTransformer text boundary adjacent non-editable blocks', () => {
+  const createTransformer = (
+    options: {
+      textLength?: number
+      offset?: number
+      prevBlock?: any
+      nextBlock?: any
+    } = {},
+  ) => {
+    const parent = {id: 'root', nodeType: BlockNodeType.root}
+    const paragraph = {
+      id: 'p1',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      textLength: options.textLength ?? 3,
+      props: {},
+      parentBlock: parent,
+    }
+    const blocks: Record<string, any> = {
+      [paragraph.id]: paragraph,
+    }
+    if (options.prevBlock) blocks[options.prevBlock.id] = options.prevBlock
+    if (options.nextBlock) blocks[options.nextBlock.id] = options.nextBlock
+    const offset = options.offset ?? 0
+    const selection = new BlockSelection(
+      {blockId: paragraph.id, type: 'text', offset, block: paragraph} as any,
+      {blockId: paragraph.id, type: 'text', offset, block: paragraph} as any,
+      paragraph.id,
+      id => blocks[id],
+      () => 0,
+    )
+    const doc = {
+      event: eventStub(),
+      isEditable: jasmine.createSpy('isEditable').and.callFake((candidate: any) => candidate?.nodeType === BlockNodeType.editable),
+      prevSibling: jasmine.createSpy('prevSibling').and.returnValue(options.prevBlock ?? null),
+      nextSibling: jasmine.createSpy('nextSibling').and.returnValue(options.nextBlock ?? null),
+      selection: {
+        replay: jasmine.createSpy('replay'),
+        setGapCursor: jasmine.createSpy('setGapCursor'),
+        selectBlock: jasmine.createSpy('selectBlock'),
+        recalculate: jasmine.createSpy('recalculate'),
+      },
+      crud: {
+        deleteBlockById: jasmine.createSpy('deleteBlockById'),
+      },
+    }
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const context = {
+      preventDefault,
+      get: () => ({selection}),
+    }
+    return {
+      doc,
+      paragraph,
+      preventDefault,
+      context,
+      transformer: new InputTransformer(doc as any) as any,
+    }
+  }
+
+  it('Backspace at text start moves to the previous non-editable trailing gap', () => {
+    const prevBlock = {id: 'prev-table', nodeType: BlockNodeType.block}
+    const {transformer, context, doc, preventDefault} = createTransformer({prevBlock})
+
+    const result = transformer['_handleBackspace'](context)
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(doc.selection.setGapCursor).toHaveBeenCalledOnceWith(prevBlock, 'after')
+    expect(doc.selection.selectBlock).not.toHaveBeenCalled()
+    expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
+  })
+
+  it('Backspace at an empty text start removes the paragraph and keeps the previous trailing gap', () => {
+    const prevBlock = {id: 'prev-table', nodeType: BlockNodeType.block}
+    const {transformer, context, doc, paragraph} = createTransformer({prevBlock, textLength: 0})
+
+    const result = transformer['_handleBackspace'](context)
+
+    expect(result).toBeTrue()
+    expect(doc.selection.setGapCursor).toHaveBeenCalledOnceWith(prevBlock, 'after')
+    expect(doc.crud.deleteBlockById).toHaveBeenCalledOnceWith(paragraph.id)
+  })
+
+  it('Delete at text end moves to the next non-editable leading gap', () => {
+    const nextBlock = {id: 'next-table', nodeType: BlockNodeType.block}
+    const {transformer, context, doc, preventDefault} = createTransformer({
+      nextBlock,
+      textLength: 3,
+      offset: 3,
+    })
+
+    const result = transformer['_handleDelete'](context)
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(doc.selection.setGapCursor).toHaveBeenCalledOnceWith(nextBlock, 'before')
+    expect(doc.selection.selectBlock).not.toHaveBeenCalled()
   })
 })
 

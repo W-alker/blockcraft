@@ -1,6 +1,7 @@
 import {ClipboardManager} from "./index";
 import {ClipboardDataType} from "./types";
 import {BlockNodeType, DeltaInsert, IBlockSnapshot} from "../../block-std";
+import * as Y from "yjs";
 
 /**
  * P6: pasting at a gap cursor (collapsed selection beside a void/container block)
@@ -27,6 +28,15 @@ describe('ClipboardManager – paste at gap', () => {
     children: deltas,
   });
 
+  const makeVoidSnapshot = (flavour: string): IBlockSnapshot => ({
+    id: `${flavour}-${++snapshotSeq}`,
+    flavour: flavour as BlockCraft.BlockFlavour,
+    nodeType: BlockNodeType.void,
+    props: {},
+    meta: {},
+    children: [],
+  });
+
   const makeRootSnapshot = (children: IBlockSnapshot[]): IBlockSnapshot => ({
     id: `root-${++snapshotSeq}`,
     flavour: 'root' as BlockCraft.BlockFlavour,
@@ -40,14 +50,23 @@ describe('ClipboardManager – paste at gap', () => {
     snapshotSeq = 0;
     const calls: Array<{ method: 'before' | 'after'; blockId: string; snapshots: IBlockSnapshot[] }> = [];
     const liveBlocks = new Map<string, BlockCraft.BlockComponent>();
+    const yDoc = new Y.Doc();
 
     // Resolve inserted blocks from snapshots so `_applyGapPaste` can place the caret.
     const resolveInserted = (snapshots: IBlockSnapshot[]) => {
-      const inserted = snapshots.map(s => ({
-        id: s.id,
-        nodeType: s.nodeType,
-        textLength: 5,
-      })) as unknown as BlockCraft.BlockComponent[];
+      const inserted = snapshots.map(s => {
+        const block = {
+          id: s.id,
+          nodeType: s.nodeType,
+          textLength: 5,
+        } as unknown as BlockCraft.BlockComponent & { yText?: Y.Text };
+        if (s.nodeType === BlockNodeType.editable) {
+          const yText = yDoc.getText(s.id);
+          yText.insert(0, 'xxxxx');
+          block.yText = yText;
+        }
+        return block;
+      }) as unknown as BlockCraft.BlockComponent[];
       inserted.forEach(block => liveBlocks.set(block.id, block));
       if (options.removeInsertedBeforeCaretRestore) {
         inserted.forEach(block => liveBlocks.delete(block.id));
@@ -57,13 +76,20 @@ describe('ClipboardManager – paste at gap', () => {
 
     const setCursorAt = jasmine.createSpy('setCursorAt');
     const setCursorAtBlock = jasmine.createSpy('setCursorAtBlock');
+    const setGapCursor = jasmine.createSpy('setGapCursor');
     const deleteBlockById = jasmine.createSpy('deleteBlockById');
+    const rootHost = {
+      contains: jasmine.createSpy('contains').and.returnValue(false),
+      focus: jasmine.createSpy('focus'),
+    };
 
     const doc = {
       event: eventStub(),
       config: {},
       injector: {get: () => ({supportedAdapters: [], getAdapter: () => undefined})},
       logger: {warn: jasmine.createSpy('warn')},
+      root: {hostElement: rootHost},
+      yDoc,
       isEditable: (block: { nodeType: BlockNodeType }) => block.nodeType === BlockNodeType.editable,
       schemas: {
         createSnapshot: (flavour: string, args: unknown[]) =>
@@ -87,11 +113,17 @@ describe('ClipboardManager – paste at gap', () => {
         if (!block) throw new Error(`missing block ${id}`);
         return block;
       },
-      selection: {setCursorAt, setCursorAtBlock, recalculate: jasmine.createSpy('recalculate')},
+      selection: {
+        setCursorAt,
+        setCursorAtBlock,
+        setGapCursor,
+        selectBlock: jasmine.createSpy('selectBlock'),
+        recalculate: jasmine.createSpy('recalculate'),
+      },
     };
 
     const manager = new ClipboardManager(doc as any);
-    return {manager, doc, calls, setCursorAt, setCursorAtBlock, deleteBlockById};
+    return {manager, doc, calls, rootHost, setCursorAt, setCursorAtBlock, setGapCursor, deleteBlockById};
   };
 
   const gapSelection = (blockId: string, side: 'before' | 'after') => {
@@ -105,18 +137,24 @@ describe('ClipboardManager – paste at gap', () => {
     getData: (type: string) => (type === ClipboardDataType.TEXT ? text : null),
   });
 
-  const snapshotState = (snapshot: IBlockSnapshot) => ({
-    dataTypes: [ClipboardDataType.BLOCKCRAFT_SNAPSHOT],
-    getData: () => JSON.stringify(snapshot),
+  const snapshotState = (snapshot: IBlockSnapshot, plainText?: string) => ({
+    dataTypes: plainText
+      ? [ClipboardDataType.BLOCKCRAFT_SNAPSHOT, ClipboardDataType.TEXT]
+      : [ClipboardDataType.BLOCKCRAFT_SNAPSHOT],
+    getData: (type: string) => {
+      if (type === ClipboardDataType.BLOCKCRAFT_SNAPSHOT) return JSON.stringify(snapshot);
+      if (type === ClipboardDataType.TEXT) return plainText ?? null;
+      return null;
+    },
   });
 
   it('inserts pasted text as siblings AFTER the void block for gap-after', async () => {
-    const {manager, calls, setCursorAt, setCursorAtBlock} = createManager();
+    const {manager, calls, rootHost, setCursorAt, setCursorAtBlock} = createManager();
     const selection = gapSelection('divider-1', 'after');
 
-    const ok = await (manager as any)._applyGapPaste(selection, textState('pasted 1\npasted 2'));
+    const result = await (manager as any)._applyGapPaste(selection, textState('pasted 1\npasted 2'));
 
-    expect(ok).toBeTrue();
+    expect(result).toBeTruthy();
     expect(calls.length).toBe(1);
     expect(calls[0].method).toBe('after');
     expect(calls[0].blockId).toBe('divider-1');
@@ -126,6 +164,7 @@ describe('ClipboardManager – paste at gap', () => {
     // last inserted block is editable → caret goes via setCursorAt, not setCursorAtBlock
     expect(setCursorAtBlock).not.toHaveBeenCalled();
     // caret lands at the end of the last inserted editable block (textLength = 5).
+    expect(rootHost.focus).toHaveBeenCalledWith({preventScroll: true});
     expect(setCursorAt).toHaveBeenCalledWith(
       jasmine.objectContaining({nodeType: BlockNodeType.editable}), 5,
     );
@@ -135,9 +174,9 @@ describe('ClipboardManager – paste at gap', () => {
     const {manager, calls, setCursorAt, setCursorAtBlock} = createManager({removeInsertedBeforeCaretRestore: true});
     const selection = gapSelection('divider-1', 'after');
 
-    const ok = await (manager as any)._applyGapPaste(selection, textState('pasted'));
+    const result = await (manager as any)._applyGapPaste(selection, textState('pasted'));
 
-    expect(ok).toBeTrue();
+    expect(result).toBeTruthy();
     expect(calls.length).toBe(1);
     expect(setCursorAt).not.toHaveBeenCalled();
     expect(setCursorAtBlock).not.toHaveBeenCalled();
@@ -147,9 +186,9 @@ describe('ClipboardManager – paste at gap', () => {
     const {manager, calls, setCursorAt, setCursorAtBlock} = createManager();
     const selection = gapSelection('divider-1', 'before');
 
-    const ok = await (manager as any)._applyGapPaste(selection, textState('hello'));
+    const result = await (manager as any)._applyGapPaste(selection, textState('hello'));
 
-    expect(ok).toBeTrue();
+    expect(result).toBeTruthy();
     expect(calls.length).toBe(1);
     expect(calls[0].method).toBe('before');
     expect(calls[0].blockId).toBe('divider-1');
@@ -170,22 +209,45 @@ describe('ClipboardManager – paste at gap', () => {
       makeEditableSnapshot('paragraph', [{insert: 'two'}]),
     ]);
 
-    const ok = await (manager as any)._applyGapPaste(selection, snapshotState(payload));
+    const result = await (manager as any)._applyGapPaste(selection, snapshotState(payload));
 
-    expect(ok).toBeTrue();
+    expect(result).toBeTruthy();
     expect(calls.length).toBe(1);
     expect(calls[0].method).toBe('after');
     expect(calls[0].snapshots.length).toBe(2);
     expect(deleteBlockById).not.toHaveBeenCalled();
   });
 
+  it('places the caret after a pasted non-editable block using its trailing gap', async () => {
+    const {manager, calls, rootHost, setCursorAt, setCursorAtBlock, setGapCursor} = createManager();
+    const selection = gapSelection('divider-1', 'after');
+    const image = makeVoidSnapshot('image');
+    const payload = makeRootSnapshot([
+      makeEditableSnapshot('paragraph', [{insert: 'one'}]),
+      image,
+    ]);
+
+    const result = await (manager as any)._applyGapPaste(selection, snapshotState(payload));
+
+    expect(result).toBeTruthy();
+    expect(calls.length).toBe(1);
+    const insertedImageId = calls[0].snapshots[1].id;
+    expect(rootHost.focus).toHaveBeenCalledWith({preventScroll: true});
+    expect(setCursorAt).not.toHaveBeenCalled();
+    expect(setCursorAtBlock).not.toHaveBeenCalled();
+    expect(setGapCursor).toHaveBeenCalledOnceWith(
+      jasmine.objectContaining({id: insertedImageId, nodeType: BlockNodeType.void}),
+      'after',
+    );
+  });
+
   it('is a no-op (returns false) when the clipboard has nothing usable', async () => {
     const {manager, calls} = createManager();
     const selection = gapSelection('divider-1', 'after');
 
-    const ok = await (manager as any)._applyGapPaste(selection, {dataTypes: [], getData: () => null});
+    const result = await (manager as any)._applyGapPaste(selection, {dataTypes: [], getData: () => null});
 
-    expect(ok).toBeFalse();
+    expect(result).toBeNull();
     expect(calls.length).toBe(0);
   });
 
@@ -195,10 +257,33 @@ describe('ClipboardManager – paste at gap', () => {
     const point = {blockId: 'x', type: 'gap' as const, side: 'after' as const, block: orphan};
     const selection = {start: point, end: point, isInSameBlock: true} as unknown as BlockCraft.Selection;
 
-    const ok = await (manager as any)._applyGapPaste(selection, textState('hi'));
+    const result = await (manager as any)._applyGapPaste(selection, textState('hi'));
 
-    expect(ok).toBeFalse();
+    expect(result).toBeNull();
     expect(calls.length).toBe(0);
+  });
+
+  it('emits paste-format data for structured gap paste with a capturable text region', async () => {
+    const {manager} = createManager();
+    const selection = gapSelection('divider-1', 'after');
+    const payload = makeRootSnapshot([
+      makeEditableSnapshot('paragraph', [{insert: 'rich'}]),
+      makeEditableSnapshot('paragraph', [{insert: 'tail'}]),
+    ]);
+    const events: unknown[] = [];
+    manager.pasteFormatData$.subscribe(event => events.push(event));
+
+    const result = await (manager as any)._applyGapPaste(selection, snapshotState(payload, 'plain text'));
+
+    expect(result).toEqual(jasmine.objectContaining({region: jasmine.any(Object)}));
+    expect(events.length).toBe(1);
+    expect(events[0]).toEqual(jasmine.objectContaining({
+      anchorBlockId: (result as any).anchorBlockId,
+      appliedType: 'html',
+      plainText: 'plain text',
+      collapsed: true,
+      region: (result as any).region,
+    }));
   });
 
   it('skips inline range restore when the editable target is stale', () => {
