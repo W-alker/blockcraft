@@ -117,7 +117,10 @@ describe('TableBlockBinding paste helpers', () => {
       selection: {recalculate: () => {}, setCursorAtBlock: () => {}},
       getBlockById: (id: string) => targetCells.get(id),
     }
-    spyOn(window, 'requestAnimationFrame').and.returnValue(0)
+    const rafSpy = (window.requestAnimationFrame as any).and
+      ? window.requestAnimationFrame as jasmine.Spy
+      : spyOn(window, 'requestAnimationFrame')
+    rafSpy.and.returnValue(0)
 
     ;(binding as any)._fillTableFromSnapshot({
       rowLength: 2,
@@ -1290,7 +1293,7 @@ describe('TableBlockBinding table-cell arrow navigation', () => {
     expect(result).toBeTrue()
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.selection.setCursorAtBlock).toHaveBeenCalledWith(cells.get('cell-1'), false, false)
-    expect(doc.selection.recalculate).toHaveBeenCalled()
+    expect(doc.selection.recalculate).not.toHaveBeenCalled()
   })
 
   it('does not intercept ordinary text Escape inside a table cell', () => {

@@ -501,6 +501,96 @@ describe("FixedTextToolbarComponent link pad", () => {
   });
 });
 
+describe("FixedTextToolbarComponent model-owned commands", () => {
+  it("syncs toolbar state after a command without resampling the native selection", () => {
+    const selection = {anchor: {blockId: "p1"}} as any;
+    const recalculate = jasmine.createSpy("recalculate");
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", ["markForCheck"]);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = {
+      selection: {
+        value: selection,
+        recalculate,
+      },
+    } as any;
+    spyOn<any>(component, "restoreSelection");
+    spyOn<any>(component, "canFormatTextSelection").and.returnValue(true);
+    const syncToolbarState = spyOn<any>(component, "syncToolbarState");
+    const run = jasmine.createSpy("run");
+
+    (component as any).runWithSelection(run);
+
+    expect(run).toHaveBeenCalled();
+    expect(recalculate).not.toHaveBeenCalled();
+    expect(syncToolbarState).toHaveBeenCalledOnceWith(selection);
+    expect(cdr.markForCheck).toHaveBeenCalled();
+  });
+
+  it("syncs a columns command without resampling the native selection", async () => {
+    const selection = {anchor: {blockId: "p1"}} as any;
+    const recalculate = jasmine.createSpy("recalculate");
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", ["markForCheck"]);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.selectionJSON = {} as any;
+    component.doc = {
+      selection: {
+        value: selection,
+        recalculate,
+      },
+    } as any;
+    spyOn<any>(component, "restoreSelection");
+    spyOn<any>(component, "isLiveSelection").and.returnValue(true);
+    spyOn<any>(component, "canUseColumnPicker").and.returnValue(true);
+    spyOn<any>(component, "insertColumns").and.resolveTo({id: "columns-1"});
+    const syncToolbarState = spyOn<any>(component, "syncToolbarState");
+    const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>("BcOverlayTriggerDirective", ["closePanel"]);
+
+    await (component as any).insertColumnsBlock({count: 2}, trigger);
+
+    expect(trigger.closePanel).toHaveBeenCalled();
+    expect(recalculate).not.toHaveBeenCalled();
+    expect(syncToolbarState).toHaveBeenCalledOnceWith(selection);
+    expect(cdr.markForCheck).toHaveBeenCalled();
+  });
+
+  it("re-resolves selection ancestry after shrinking columns", () => {
+    const setSelection = jasmine.createSpy("setSelection");
+    const setCursorAtBlock = jasmine.createSpy("setCursorAtBlock");
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", ["markForCheck"]);
+    const component = new FixedTextToolbarComponent(cdr);
+    const selection = {
+      anchor: {blockId: "p1", type: "text", offset: 1},
+      head: {blockId: "p2", type: "text", offset: 2},
+    } as any;
+    component.doc = {
+      selection: {setSelection, setCursorAtBlock},
+    } as any;
+
+    (component as any).restoreSelectionAfterColumnShrink(selection, "column-keep");
+
+    expect(setSelection).toHaveBeenCalledOnceWith(selection.anchor, selection.head);
+    expect(setCursorAtBlock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the last retained column when a shrunk endpoint was deleted", () => {
+    const setSelection = jasmine.createSpy("setSelection").and.throwError("missing endpoint");
+    const setCursorAtBlock = jasmine.createSpy("setCursorAtBlock");
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", ["markForCheck"]);
+    const component = new FixedTextToolbarComponent(cdr);
+    const selection = {
+      anchor: {blockId: "deleted", type: "text", offset: 0},
+      head: {blockId: "deleted", type: "text", offset: 0},
+    } as any;
+    component.doc = {
+      selection: {setSelection, setCursorAtBlock},
+    } as any;
+
+    (component as any).restoreSelectionAfterColumnShrink(selection, "column-keep");
+
+    expect(setCursorAtBlock).toHaveBeenCalledOnceWith("column-keep", true);
+  });
+});
+
 describe("FixedTextToolbarComponent extension actions", () => {
   const makeTextSelection = (id = "p1", offset = 0) => {
     const hostElement = document.createElement("p");

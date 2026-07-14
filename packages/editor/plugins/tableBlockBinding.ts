@@ -331,7 +331,6 @@ export class TableBlockBinding extends DocPlugin {
     const endpoints = this._getTableCellSelectionEndpoints(table, selection)
     if (!endpoints) return false
     this.doc.selection.setCursorAtBlock(endpoints.anchorCell, false, false)
-    this.doc.selection.recalculate()
     return true
   }
 

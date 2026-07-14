@@ -93,4 +93,34 @@ describe("FloatTextToolbarComponent selection replay", () => {
     expect(result).toBeNull();
     expect(doc.selection.replay).toHaveBeenCalledWith(selectionJSON);
   });
+
+  it("formats picked colors without resampling the native selection", () => {
+    const component = new FloatTextToolbarComponent();
+    const recalculate = jasmine.createSpy("recalculate");
+    const formatText = jasmine.createSpy("formatText");
+    component.doc = {selection: {recalculate}} as any;
+    component.utils = {formatText} as any;
+
+    component.onColorPicked({type: "color", color: "#123456", group: {} as any});
+    component.onColorPicked({type: "backColor", color: "transparent", group: {} as any});
+
+    expect(formatText.calls.allArgs()).toEqual([
+      [{"s:color": "#123456"}],
+      [{"s:background": null}],
+    ]);
+    expect(recalculate).not.toHaveBeenCalled();
+  });
+
+  it("formats picked backgrounds without resampling the native selection", () => {
+    const component = new FloatTextToolbarComponent();
+    const recalculate = jasmine.createSpy("recalculate");
+    const formatText = jasmine.createSpy("formatText");
+    component.doc = {selection: {recalculate}} as any;
+    component.utils = {formatText} as any;
+
+    component.onBgGraphPicked("grid");
+
+    expect(formatText).toHaveBeenCalledOnceWith({"a:bg": "grid"});
+    expect(recalculate).not.toHaveBeenCalled();
+  });
 });

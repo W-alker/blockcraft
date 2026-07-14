@@ -145,7 +145,6 @@ export class CodeInlineEditorBinding extends DocPlugin {
 
     if (!deltas.length) return true
     block.applyDeltaOperations(deltas)
-    this.doc.selection.recalculate()
     return true
   }
 

@@ -70,4 +70,59 @@ describe("CodeInlineEditorBinding selection liveness", () => {
     expect(block.insertText).not.toHaveBeenCalled();
     expect(block.applyDeltaOperations).not.toHaveBeenCalled();
   });
+
+  it("keeps multiline Tab selection model-owned after applying deltas", () => {
+    const block = {
+      id: "code-1",
+      flavour: "code",
+      props: {},
+      textLength: 3,
+      textContent: jasmine.createSpy("textContent").and.returnValue("a\nb"),
+      applyDeltaOperations: jasmine.createSpy("applyDeltaOperations"),
+    };
+    const selection = {
+      anchor: {blockId: block.id, type: "text", offset: 0},
+      head: {blockId: block.id, type: "text", offset: 3},
+      start: {blockId: block.id, type: "text", offset: 0},
+      end: {blockId: block.id, type: "text", offset: 3},
+      commonParent: block.id,
+      isInSameBlock: true,
+      collapsed: false,
+      firstBlock: block,
+      lastBlock: block,
+    };
+    const doc = {
+      isReadonly: false,
+      getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
+      selection: {
+        recalculate: jasmine.createSpy("recalculate"),
+      },
+    };
+    const context = {
+      preventDefault: jasmine.createSpy("preventDefault"),
+      get: (name: string) => {
+        if (name === "keyboardState") {
+          return {
+            selection,
+            raw: {shiftKey: false},
+          };
+        }
+        throw new Error(`Unexpected state ${name}`);
+      },
+    };
+    const plugin = new CodeInlineEditorBinding();
+    (plugin as any).doc = doc;
+
+    const handled = plugin.handleTabKey(context as any);
+
+    expect(handled).toBeTrue();
+    expect(context.preventDefault).toHaveBeenCalled();
+    expect(block.applyDeltaOperations).toHaveBeenCalledOnceWith([
+      {retain: 0},
+      {insert: "\t"},
+      {retain: 2},
+      {insert: "\t"},
+    ]);
+    expect(doc.selection.recalculate).not.toHaveBeenCalled();
+  });
 });

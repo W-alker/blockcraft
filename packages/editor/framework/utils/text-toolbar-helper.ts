@@ -287,7 +287,6 @@ export class TextToolbarHelper {
             this.doc.selection.replay(remapped)
           } catch {}
           this.doc.selection.setSuppressRecalculate(false)
-          this.doc.selection.recalculate()
         })
       })
   }

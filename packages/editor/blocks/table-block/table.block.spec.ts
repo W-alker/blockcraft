@@ -217,4 +217,129 @@ describe("TableBlockComponent selection UI sync", () => {
       selectionKind: "cells",
     });
   });
+
+  it("keeps column-bar selection model-owned without resampling the DOM", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const firstCell = {id: "cell-0-1", props: {}};
+    const selectedCells = [firstCell, {id: "cell-1-1", props: {}}];
+    const selection = {anchor: {blockId: firstCell.id}};
+
+    Object.defineProperties(table, {
+      firstChildren: {
+        value: {
+          getChildrenByIndex: jasmine.createSpy("getChildrenByIndex").and.returnValue(firstCell),
+        },
+      },
+      rowLength: {value: 2},
+      colLength: {value: 3},
+    });
+    table._activeRowRange = [-1, -1];
+    table._activeColRange = [-1, -1];
+    table._clearSelected = jasmine.createSpy("_clearSelected");
+    table._showTableMenu = jasmine.createSpy("_showTableMenu");
+    table.selectCell = jasmine.createSpy("selectCell");
+    table.getCellsMatrixByCoordinates = jasmine.createSpy("getCellsMatrixByCoordinates").and.returnValue([
+      [selectedCells[0]],
+      [selectedCells[1]],
+    ]);
+    table.rowBarComponent = {
+      selectedRange: [-1, -1],
+      visibleHandleIndex: null,
+      changeDetectionRef: {markForCheck: jasmine.createSpy("rowMarkForCheck")},
+    };
+    table.colBarComponent = {
+      selectedRange: [-1, -1],
+      visibleHandleIndex: null,
+      changeDetectionRef: {markForCheck: jasmine.createSpy("colMarkForCheck")},
+    };
+    table.doc = {
+      selection: {
+        value: selection,
+        selectBlock: jasmine.createSpy("selectBlock"),
+        recalculate: jasmine.createSpy("recalculate"),
+      },
+    };
+
+    table.onColBarSelected([1, 1]);
+
+    expect(table.doc.selection.selectBlock).toHaveBeenCalledOnceWith(firstCell);
+    expect(table.doc.selection.recalculate).not.toHaveBeenCalled();
+    expect(table.selectCell).toHaveBeenCalledTimes(2);
+    expect(table._showTableMenu).toHaveBeenCalledWith({
+      rowIndex: 0,
+      rowCount: 2,
+      colIndex: 1,
+      colCount: 1,
+      selectionKind: "col",
+    });
+  });
+
+  it("keeps row-bar selection model-owned without resampling the DOM", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const firstCell = {id: "cell-1-0", props: {}};
+    const selectedCells = [firstCell, {id: "cell-1-1", props: {}}, {id: "cell-1-2", props: {}}];
+    const row = {
+      getChildrenByIndex: jasmine.createSpy("getChildrenByIndex").and.returnValue(firstCell),
+    };
+
+    table.getChildrenByIndex = jasmine.createSpy("getChildrenByIndex").and.returnValue(row);
+    Object.defineProperties(table, {
+      rowLength: {value: 3},
+      colLength: {value: 3},
+    });
+    table._activeRowRange = [-1, -1];
+    table._activeColRange = [-1, -1];
+    table._clearSelected = jasmine.createSpy("_clearSelected");
+    table._showTableMenu = jasmine.createSpy("_showTableMenu");
+    table.selectCell = jasmine.createSpy("selectCell");
+    table.getCellsMatrixByCoordinates = jasmine.createSpy("getCellsMatrixByCoordinates").and.returnValue([
+      selectedCells,
+    ]);
+    table.rowBarComponent = {
+      selectedRange: [-1, -1],
+      visibleHandleIndex: null,
+      changeDetectionRef: {markForCheck: jasmine.createSpy("rowMarkForCheck")},
+    };
+    table.colBarComponent = {
+      selectedRange: [-1, -1],
+      visibleHandleIndex: null,
+      changeDetectionRef: {markForCheck: jasmine.createSpy("colMarkForCheck")},
+    };
+    table.doc = {
+      selection: {
+        selectBlock: jasmine.createSpy("selectBlock"),
+        recalculate: jasmine.createSpy("recalculate"),
+      },
+    };
+
+    table.onRowBarSelected([1, 1]);
+
+    expect(table.doc.selection.selectBlock).toHaveBeenCalledOnceWith(firstCell);
+    expect(table.doc.selection.recalculate).not.toHaveBeenCalled();
+    expect(table.selectCell).toHaveBeenCalledTimes(3);
+    expect(table._showTableMenu).toHaveBeenCalledWith({
+      rowIndex: 1,
+      rowCount: 1,
+      colIndex: 0,
+      colCount: 3,
+      selectionKind: "row",
+    });
+  });
+
+  it("refreshes table menu state from the canonical model selection", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const selection = {anchor: {blockId: "cell-1"}};
+    table.doc = {
+      selection: {
+        value: selection,
+        recalculate: jasmine.createSpy("recalculate"),
+      },
+    };
+    table._syncTableFocusUi = jasmine.createSpy("_syncTableFocusUi");
+
+    table.refreshTableMenuFromSelection();
+
+    expect(table._syncTableFocusUi).toHaveBeenCalledOnceWith(selection);
+    expect(table.doc.selection.recalculate).not.toHaveBeenCalled();
+  });
 });

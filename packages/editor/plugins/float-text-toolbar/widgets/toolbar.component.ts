@@ -491,12 +491,10 @@ export class FloatTextToolbarComponent {
         this.formatText({'s:background': evt.color === 'transparent' ? null : evt.color})
         break
     }
-    this.doc.selection.recalculate()
   }
 
   onBgGraphPicked(bg: string | null) {
     this.formatText({'a:bg': bg})
-    this.doc.selection.recalculate()
   }
 
   onLink() {

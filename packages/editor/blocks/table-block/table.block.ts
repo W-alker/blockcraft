@@ -889,18 +889,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this._suppressFocusSync = false
     }
 
-    const syncSelectionUi = () => {
-      if (isMultiCell) {
-        this._syncTableFocusUi(this.doc.selection.value)
-      } else {
-        this._syncTableFocusUi(this.doc.selection.recalculate().value)
-      }
-    }
-
-    syncSelectionUi()
-    if (!isMultiCell) {
-      nextTick().then(syncSelectionUi)
-    }
+    this._syncTableFocusUi(this.doc.selection.value)
   }
 
   protected selectCell = (cell: TableCellBlockComponent) => {
@@ -1428,7 +1417,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   refreshTableMenuFromSelection() {
-    this._syncTableFocusUi(this.doc.selection.recalculate().value)
+    this._syncTableFocusUi(this.doc.selection.value)
   }
 
   private _disposeToolbar() {
@@ -1577,9 +1566,6 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     this.doc.selection.selectBlock(firstCell)
     applySelection()
-    nextTick().then(() => {
-      this.doc.selection.recalculate()
-    })
 
   }
 
@@ -1624,9 +1610,6 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     this.doc.selection.selectBlock(firstCell)
     applySelection()
-    nextTick().then(() => {
-      this.doc.selection.recalculate()
-    })
   }
 
   /**

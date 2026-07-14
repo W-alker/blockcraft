@@ -894,7 +894,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     const inserted = await this.insertTable(evt.rows, evt.cols, selection);
     if (!inserted) return;
     trigger.closePanel();
-    this.doc.selection.recalculate();
     this.syncToolbarState(this.doc.selection.value);
     this.cdr.markForCheck();
   }
@@ -915,7 +914,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     const changed = await this.insertColumns(evt.count, selection);
     trigger.closePanel();
     if (!changed) return;
-    this.doc.selection.recalculate();
     this.syncToolbarState(this.doc.selection.value);
     this.cdr.markForCheck();
   }
@@ -987,7 +985,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       fake.destroy();
       nextTick().then(() => {
         if (!this.replaySelection(selectionJSON)) return;
-        this.doc.selection.recalculate();
         this.syncToolbarState(this.doc.selection.value);
         this.cdr.markForCheck();
       });
@@ -1140,7 +1137,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (!canRun) return;
     run();
 
-    this.doc.selection.recalculate();
     const current = this.doc.selection.value;
     this.syncToolbarState(current);
     this.cdr.markForCheck();
@@ -1317,7 +1313,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     try {
       if (!selection) return false;
       await this.applyFormatBrushPayload(selection, this._formatBrushPayload);
-      this.doc.selection.recalculate();
       this.clearFormatBrush();
       this.syncToolbarState(this.doc.selection.value);
       this.cdr.markForCheck();
@@ -1360,7 +1355,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       const snapshot = this.doc.schemas.createSnapshot(flavour, params as any);
       await this.insertSnapshotsAtPlacement(placement, [snapshot]);
       this.doc.selection.selectOrSetCursorAtBlock(snapshot.id, true);
-      this.doc.selection.recalculate();
       this.syncToolbarState(this.doc.selection.value);
       this.cdr.markForCheck();
     } catch {
@@ -1399,7 +1393,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     // 选区在分栏内：调整当前分栏的栏数（目标 1 栏 = 取消分栏）
     const columnsBlock = this.findColumnsAncestor(selection.firstBlock);
     if (columnsBlock) {
-      return this.applyColumnCount(columnsBlock, safeCount);
+      return this.applyColumnCount(columnsBlock, safeCount, selection);
     }
 
     // 选区在分栏外：选 1 栏视为维持单栏、不处理；≥2 栏把当前选区（单块或多块）就地转成分栏
@@ -1429,6 +1423,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   private applyColumnCount(
     columnsBlock: BlockCraft.BlockComponent,
     targetCount: number,
+    selection: BlockCraft.Selection,
   ) {
     const current = columnsBlock.childrenLength;
     if (targetCount <= 1) return this.dissolveColumns(columnsBlock);
@@ -1464,7 +1459,22 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
         this.doc.crud.deleteBlockById(removeId);
       }
     });
+    this.restoreSelectionAfterColumnShrink(selection, keepLastId);
     return columnsBlock;
+  }
+
+  private restoreSelectionAfterColumnShrink(
+    selection: BlockCraft.Selection,
+    fallbackColumnId: string,
+  ) {
+    try {
+      this.doc.selection.setSelection(selection.anchor, selection.head);
+    } catch {
+      try {
+        this.doc.selection.setCursorAtBlock(fallbackColumnId, true);
+      } catch {
+      }
+    }
   }
 
   /**
