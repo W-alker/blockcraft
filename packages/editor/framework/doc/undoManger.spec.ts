@@ -403,7 +403,7 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
       commonParent: 'merged',
     };
     mgr.captureSelectionBeforeChange();
-    expect((mgr as any)._pendingSnapshot).toEqual({
+    expect((mgr as any)._pendingSnapshot.source).toEqual({
       anchor: {type: 'selected', blockId: 'merged'},
       head: {type: 'selected', blockId: 'merged'},
       commonParent: 'merged',
@@ -430,7 +430,7 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
     mgr.captureSelectionBeforeChange();
     change('nested-replace');
 
-    expect((mgr as any)._undoSelectionStack.at(-1)).toEqual(beforeSelection);
+    expect((mgr as any)._undoSelectionStack.at(-1).source).toEqual(beforeSelection);
   });
 });
 
@@ -484,7 +484,7 @@ describe('DocUndoManger – gap selection side round-trip', () => {
     expect(snapshot.anchor.side).toBe('before');
     expect(snapshot.head.type).toBe('gap');
     expect(snapshot.head.side).toBe('before');
-    expect(snapshot.commonParent).toBe('void-1');
+    expect(snapshot.source.commonParent).toBe('void-1');
   });
 
   it('resolves a captured gap snapshot back to a collapsed gap selection (side preserved)', () => {
@@ -558,6 +558,8 @@ describe('DocUndoManger – text and boundary selection snapshots', () => {
     const block = {
       id,
       nodeType: BlockNodeType.editable,
+      parentId: null as string | null,
+      parentBlock: null as any,
       yText,
       textLength: text.length,
       hostElement,
@@ -574,11 +576,17 @@ describe('DocUndoManger – text and boundary selection snapshots', () => {
     rootHost.append(leftHost, rightHost);
     const left = createEditableBlock('left-p', 'left text', leftHost);
     const right = createEditableBlock('right-p', 'right text', rightHost);
-    blocks['columns-1'] = {
+    const columns = {
       id: 'columns-1',
       nodeType: BlockNodeType.block,
       hostElement: rootHost,
+      childrenIds: ['left-p', 'right-p'],
     };
+    blocks['columns-1'] = columns;
+    left.parentId = 'columns-1';
+    left.parentBlock = columns;
+    right.parentId = 'columns-1';
+    right.parentBlock = columns;
     const selection = new BlockSelection(
       {blockId: left.id, type: 'text', offset: 2, block: left} as any,
       {blockId: right.id, type: 'text', offset: 5, block: right} as any,
@@ -753,6 +761,22 @@ describe('DocUndoManger – table-cell selection round-trip', () => {
       hostElement: tableHost,
       childrenIds: ['row-1', 'row-2'],
     };
+    const row1 = {
+      id: 'row-1',
+      flavour: 'table-row',
+      nodeType: BlockNodeType.block,
+      hostElement: row1Host,
+      parentId: 'table-1',
+      childrenIds: ['cell-1'],
+    };
+    const row2 = {
+      id: 'row-2',
+      flavour: 'table-row',
+      nodeType: BlockNodeType.block,
+      hostElement: row2Host,
+      parentId: 'table-1',
+      childrenIds: ['cell-4'],
+    };
     const cell1 = {
       id: 'cell-1',
       flavour: 'table-cell',
@@ -769,6 +793,8 @@ describe('DocUndoManger – table-cell selection round-trip', () => {
     };
     blocks = {
       'table-1': table,
+      'row-1': row1,
+      'row-2': row2,
       'cell-1': cell1,
       'cell-4': cell4,
     };

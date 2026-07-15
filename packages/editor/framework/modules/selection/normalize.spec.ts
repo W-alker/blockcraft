@@ -10,8 +10,8 @@ function makeGapHost(blockId: string): {host: HTMLElement; leading: HTMLElement;
   const host = document.createElement('div')
   host.setAttribute('data-block-id', blockId)
 
-  const leading = createBlockGapSpace()
-  const trailing = createBlockGapSpace()
+  const leading = createBlockGapSpace('before')
+  const trailing = createBlockGapSpace('after')
 
   // content between the two gap fillers
   const content = document.createElement('div')

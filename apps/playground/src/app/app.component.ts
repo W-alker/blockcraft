@@ -25,6 +25,7 @@ import { Subscription } from 'rxjs';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 import { demoJSON } from './demo.data';
+import { resolveCollaborationRoot } from './collaboration-root';
 
 type DebugActionId =
   | 'init'
@@ -1261,6 +1262,9 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   private _autoInitTimer: number | null = null;
   private _demoController: PresentationController | null = null;
   private _collabInitHandler?: () => void;
+  private _collabSyncHandler?: (isSynced: boolean) => void;
+  private _collabAmbiguousRootLogged = false;
+  private _awareness?: BlockCraftAwareness;
   private _selectionSub?: Subscription;
 
   readonly updateList: Uint8Array[] = [];
@@ -2188,32 +2192,76 @@ $$
   }
 
   enterRoom() {
-    const initFn = () => {
-      const yRoot = this.editor?.doc.yBlockMap?.get(this.editor?.docId)
-      if (yRoot) {
-        this.editor?.doc.initByYBlock(yRoot, this.editor?.container.nativeElement)
-        this.editor?.doc.yDoc.off('update', initFn)
-      }
-    }
+    if (this.provider) this.quitRoom();
 
-    this.editor?.doc.yDoc.on('update', initFn)
+    const editor = this.requireEditor();
+    this._collabAmbiguousRootLogged = false;
 
-    this.provider = new WebsocketProvider(
+    const provider = this.provider = new WebsocketProvider(
       // 'ws://ws-doc-v2.cses7.com/collaboration',
       "ws://localhost:1234",
       // 'ws://196.168.1.153:1234',
       // 'ws://ws-doc.cses7.com',
       // "ws://ws-doc-pre.cses7.com/collaboration",
       // 'ws://193.168.2.100:30204/collaborate',
-      this.editor!.docId,
-      this.editor!.doc.yDoc,
+      editor.docId,
+      editor.doc.yDoc,
       {
         disableBc: false,
       },
     );
 
+    const initializeFromCollaboration = () => {
+      if (this.provider !== provider) return;
+      if (editor.doc.isInitialized) {
+        this._completeCollaborationInitialization();
+        return;
+      }
+
+      const resolution = resolveCollaborationRoot(editor.doc.yBlockMap, editor.docId);
+      if (resolution.status === 'missing') return;
+      if (resolution.status === 'ambiguous') {
+        if (!this._collabAmbiguousRootLogged) {
+          this._collabAmbiguousRootLogged = true;
+          console.error(
+            'Collaboration room contains multiple root blocks; initialization aborted:',
+            resolution.rootIds,
+          );
+        }
+        return;
+      }
+
+      editor.doc.initByYBlock(resolution.root, this.editorContainer);
+      this.editorInitialized = editor.doc.isInitialized;
+      this.syncPageTheme();
+      this._subscribeSelection();
+      this.cdr.markForCheck();
+      this._completeCollaborationInitialization();
+    };
+
+    let initializationScheduled = false;
+    const scheduleInitialization = () => {
+      if (initializationScheduled) return;
+      initializationScheduled = true;
+      queueMicrotask(() => {
+        initializationScheduled = false;
+        initializeFromCollaboration();
+      });
+    };
+
+    this._collabInitHandler = scheduleInitialization;
+    editor.doc.yDoc.on('update', scheduleInitialization);
+
+    this._collabSyncHandler = isSynced => {
+      if (isSynced) scheduleInitialization();
+    };
+    provider.on('sync', this._collabSyncHandler);
+
+    // Handles data that was already present before provider listeners were attached.
+    scheduleInitialization();
+
     const uid = generateId(11)
-    const awa = new BlockCraftAwareness(this.editor!.doc, this.provider.awareness)
+    const awa = this._awareness = new BlockCraftAwareness(editor.doc, provider.awareness)
     awa.setLocalUser({
       id: uid,
       name: uid,
@@ -2221,14 +2269,27 @@ $$
   }
 
   quitRoom() {
+    this._clearCollaborationInitializationListeners();
+    this._awareness?.destroy();
+    this._awareness = undefined;
+    this.provider?.destroy();
+    this.provider = undefined;
+  }
+
+  private _completeCollaborationInitialization() {
+    this._clearCollaborationInitializationListeners();
+  }
+
+  private _clearCollaborationInitializationListeners() {
     const editor = this.editor;
     if (editor && this._collabInitHandler) {
       editor.doc.yDoc.off('update', this._collabInitHandler);
-      this._collabInitHandler = undefined;
     }
-
-    this.provider?.destroy();
-    this.provider = undefined;
+    if (this.provider && this._collabSyncHandler) {
+      this.provider.off('sync', this._collabSyncHandler);
+    }
+    this._collabInitHandler = undefined;
+    this._collabSyncHandler = undefined;
   }
 
   startDemo() {
@@ -2456,11 +2517,24 @@ $$
   }
 
   private performRandomOp() {
-    if (!this._shadowDoc) return;
+    const editor = this.editor;
+    if (!this._shadowDoc || !editor?.doc.isInitialized) return;
+
+    const activeEditableIds = new Set<string>();
+    const pendingBlockIds = [editor.doc.rootId];
+    while (pendingBlockIds.length) {
+      const block = editor.doc.getBlockById(pendingBlockIds.pop()!);
+      if (editor.doc.isEditable(block)) {
+        activeEditableIds.add(block.id);
+        continue;
+      }
+      pendingBlockIds.push(...block.childrenIds);
+    }
 
     const shadowBlockMap = this._shadowDoc.getMap<Y.Map<any>>('blocks');
     const editableEntries: { id: string; yText: Y.Text }[] = [];
     shadowBlockMap.forEach((yBlock, id) => {
+      if (!activeEditableIds.has(id)) return;
       try {
         const children = yBlock.get('children');
         if (children instanceof Y.Text) editableEntries.push({ id, yText: children });

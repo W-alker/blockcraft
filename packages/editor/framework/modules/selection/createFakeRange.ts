@@ -2,6 +2,7 @@ import {IBlockSelectionJSON} from "./types";
 import {EditableBlockComponent} from "../../block-std";
 import {BlockCraftError, ErrorCode} from "../../../global";
 import {BlockSelection} from "./blockSelection";
+import {getBlockGapCaretSpan} from "../../utils/zero-gap";
 
 export interface IFakeRangeConfig {
   bgColor?: string,
@@ -44,8 +45,16 @@ export class FakeRange {
 
     const s = sel.start, e = sel.end
     const startBlock = sel.firstBlock
+    if (
+      sel.collapsed &&
+      s.type === 'gap' &&
+      e.type === 'gap'
+    ) {
+      this._fakeSpans.push(this._createGapFakeSpan(startBlock, s.side))
+      return
+    }
     this._fakeSpans.push(
-      // gap and selected have no meaningful offset → render a whole-block fake span
+      // Non-collapsed gap endpoints and selected points cover the endpoint block.
       s.type !== 'text'
         ? this._createBlockFakeSpan(startBlock)
         : this._createTextFakeSpan(startBlock, s.offset, sel.isInSameBlock ? (e.type === 'text' ? e.offset - s.offset : 0) : (startBlock as EditableBlockComponent).textLength - s.offset)
@@ -103,6 +112,13 @@ export class FakeRange {
     return this._fakeSpans
   }
 
+  get hasLostRenderedSpans() {
+    return this._fakeSpans.some(span =>
+      span.getAttribute('data-fake-range-detached') !== 'true' &&
+      !span.isConnected
+    )
+  }
+
   setColor(options: { bgColor?: string, borderColor?: string }) {
     this._fakeSpans.forEach(span => {
       options.bgColor && span.style.setProperty('--bgColor', options.bgColor)
@@ -146,6 +162,64 @@ export class FakeRange {
     return span
   }
 
+  private _createGapFakeSpan(
+    block: BlockCraft.BlockComponent,
+    side: 'before' | 'after',
+  ) {
+    const host = block.hostElement
+    this._ensureOverlayContainingBlock(host)
+
+    const hostRect = host.getBoundingClientRect()
+    const gap = getBlockGapCaretSpan(host, side)
+    const gapRect = gap?.getBoundingClientRect()
+    const computed = gap ? getComputedStyle(gap) : getComputedStyle(host)
+    const parsedHeight = Number.parseFloat(computed.height)
+    const fallbackHeight = Number.parseFloat(computed.lineHeight)
+    const height = Math.max(
+      gapRect?.height || 0,
+      Number.isFinite(parsedHeight) ? parsedHeight : 0,
+      Number.isFinite(fallbackHeight) ? fallbackHeight : 0,
+      16,
+    )
+    const left = gapRect
+      ? gapRect.left - hostRect.left
+      : side === 'before' ? -2 : Math.max(0, hostRect.width - 1)
+    const top = gapRect
+      ? gapRect.top - hostRect.top
+      : side === 'before' ? 0 : Math.max(0, hostRect.height - height)
+
+    const span = document.createElement('span')
+    span.classList.add('blockcraft-cursor', 'blockcraft-cursor--gap')
+    span.setAttribute('data-fake-range-kind', 'gap')
+    span.setAttribute('data-gap-side', side)
+    span.style.cssText = `
+      position: absolute;
+      display: block;
+      inset: 0;
+      z-index: 100;
+      pointer-events: none;
+      overflow: visible;
+      --bgColor: ${this.config.bgColor || 'var(--bc-select-background-color)'};
+    `
+
+    const child = document.createElement('span')
+    child.style.cssText = `
+      position: absolute;
+      display: block;
+      width: ${Math.max(this.config.minCursorWidth || 2, 2)}px;
+      height: ${height}px;
+      left: ${left}px;
+      top: ${top}px;
+      box-sizing: border-box;
+      border: 0;
+      background-color: var(--bgColor);
+      box-shadow: none;
+    `
+    span.appendChild(child)
+    host.appendChild(span)
+    return span
+  }
+
   private _ensureOverlayContainingBlock(target: HTMLElement) {
     const existing = overlayContainingBlockState.get(target)
     if (existing) {
@@ -177,6 +251,7 @@ export class FakeRange {
   private _createDetachedFakeSpan() {
     const span = document.createElement('span');
     span.classList.add('blockcraft-cursor')
+    span.setAttribute('data-fake-range-detached', 'true')
     const child = document.createElement('span');
     span.appendChild(child)
     return span

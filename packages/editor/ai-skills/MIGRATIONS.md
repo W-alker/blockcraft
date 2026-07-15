@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-07-14 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-07-15 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,48 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-07-15 (patch) — collaboration cursors preserve gap semantics across rerenders
+
+**Severity**: patch
+
+**What changed**: `FakeRange` now renders a collapsed `gap` selection as a caret on its explicit `before` / `after` filler instead of degrading it to a whole-block border. Block gap fillers carry `data-block-gap-side`, so their geometry no longer depends on `:first-of-type` / `:last-of-type` and cannot be displaced by an appended collaboration overlay. `BlockCraftAwareness` also detects when a related inline full rerender detached a remote cursor and rebuilds only that lost overlay in a coalesced microtask. Remote user labels render in one shared fixed portal under `document.body`, projected from their caret rectangles, so block-level `overflow: hidden` cannot clip them. The portal mirrors the editor scroll viewport and uses `overflow: hidden`, preventing labels from painting outside that viewport. Scroll and resize refreshes are coalesced to one animation-frame pass. `BlockCraftAwareness.destroy()` explicitly releases its portal, overlays, subscriptions, awareness callback, and global listeners when a host leaves a room without destroying the document.
+
+**Why**: IME commit can call the inline runtime's full `rerender()`, which removes unmanaged `FakeRange` nodes from editable content even though the remote awareness coordinate did not change. Separately, treating `gap` as `selected` lost selection intent, and an appended cursor `span` could make the real trailing gap stop matching `:last-of-type`.
+
+### Behavior Changes
+
+- Remote text cursors survive local IME full rerenders. Incremental input that leaves the overlay connected performs no collaboration-cursor layout work.
+- A remote collapsed gap is drawn as a narrow caret at the selected side; explicit whole-block `selected` points retain the block border overlay.
+- Leading/trailing gap placement is keyed by `data-block-gap-side="before|after"`, independent of other sibling spans.
+- Remote user labels are outside editable/block DOM and therefore are not clipped by block overflow or included in inline rerenders. Their shared fixed portal matches the `doc.scrollContainer` client box and clips overflow natively; inner scrolling does not add a container-geometry read. One document-level scroll listener updates all labels once per frame, batching all geometry reads before style writes; no per-cursor listener or CDK overlay is created.
+- Hosts that replace a collaboration provider while retaining the document must call `BlockCraftAwareness.destroy()` before discarding the old manager.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — adds the collaboration cursor lifecycle quick reference.
+- `blockcraft-app.md` — documents host room cleanup with `BlockCraftAwareness.destroy()`.
+- `blockcraft-selection.md` — documents portal projection, bounded layout work, and cleanup ownership.
+
+### v?.?.? - 2026-07-14 (patch) — remote collaboration maps live selections through Yjs bookmarks
+
+**Severity**: patch
+
+**What changed**: The current local `BlockSelection` now has an internal revisioned Relative Selection Bookmark. Relevant remote text and children transactions resolve text/boundary endpoints through `Y.RelativePosition`, validate structural points, recompute `commonParent` from the current tree, and publish through the existing model-first `selection.replay()` path. `DocUndoManager` now uses the same bookmark codec instead of maintaining a second point-mapping implementation.
+
+**Why**: Remote sync previously relied on `recalculate()` after selected endpoint blocks changed. That made the canonical selection depend on mounted DOM and browser-specific Range state, could drift during Safari/WebKit updates, and duplicated the relative-position rules already needed by Undo. A shared model mapping path is deterministic, collaboration-safe, and compatible with delayed or virtualized rendering.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — Quick Reference records bookmark-first remote selection mapping.
+- `blockcraft-selection.md` — documents the shared codec, live tracker, structural relevance filter, focus guards, and DOM fallback.
+- `blockcraft-data.md` — documents the remote Yjs transaction to local Selection flow and Undo reuse.
+
+### Behavior Changes
+
+- Remote changes to a selected text block or boundary container map the local anchor/head in the current Yjs model and replay once; successful mapping no longer confirms itself through DOM `recalculate()`.
+- Ancestor-only transactions schedule reconciliation only when an endpoint's parent path or sibling index changed. Unrelated root/container inserts do no selection work.
+- Pending remote reconciliation is canceled when newer local selection intent is published or focus leaves the editor/native input island.
+- When mapping fails, DOM is sampled at most once and only if both native Range endpoints still belong to the current editor root; otherwise the stale model selection is cleared.
+- This is an internal patch behavior change. No new public API is exported, and no package version is changed until an explicit release decision.
 
 ### v?.?.? - 2026-07-14 (patch) — cross-scope native drag endpoints stabilize on boundaries
 

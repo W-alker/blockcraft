@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-07-14
+> Last updated: 2026-07-15
 
 ## Architecture Overview
 
@@ -28,6 +28,8 @@ BlockCraftDoc
 | `framework/doc/crud.ts` | `DocCRUD` — all Yjs mutations + observables |
 | `framework/doc/vm.ts` | `DocVM` — Angular component creation/lookup |
 | `framework/doc/undoManger.ts` | `DocUndoManager` — undo/redo with selection (note: filename is "Manger") |
+| `framework/modules/selection/relative-bookmark.ts` | Shared Yjs-relative selection bookmark codec |
+| `framework/modules/selection/live-bookmark-tracker.ts` | Revisioned current-selection bookmark used by remote sync |
 | `framework/block-std/reactive/block.ts` | `proxyMap`, `YBlock`, `NativeBlockModel` |
 
 ## Reactive Proxy System
@@ -69,6 +71,31 @@ Component template: {{ props.color }}
   → ProxyMap getter → yMap.get('color')
   → Returns current Yjs value
 ```
+
+## Remote Transactions and Local Selection
+
+DocCRUD maps the current local selection through relevant remote Yjs changes without treating DOM as the source of truth:
+
+```text
+selectionChange$ → revisioned live RelativeSelectionBookmark
+
+remote Y.Transaction
+  → snapshot bookmark before component/view sync
+  → _syncYEvent() updates model and mounted view
+  → collect affected block IDs
+  → direct endpoint hit, or changed endpoint ancestor path/index?
+       no  → no selection work
+       yes → one animation-frame reconciliation
+  → revision and editor focus still current?
+       no  → cancel
+       yes → resolve Y.RelativePosition + current commonParent
+              success → SelectionManager.replay(mapped JSON)
+              failure → one owned-native-Range recalculate, otherwise replay(null)
+```
+
+Text endpoints are relative to the owning `Y.Text`; boundary endpoints are relative to the container's children `Y.Array`. Selected/gap/table-cell points are validated structurally by ID. Ancestor dependency IDs provide a cheap candidate filter, then only captured structural edges owned by affected parents are checked; parent/sibling positions prevent unrelated root or container changes from replaying every local selection. The path performs no layout read; DOM normalization is a guarded failure fallback only.
+
+`DocUndoManager` uses the same relative bookmark codec for one-shot selection snapshots. Live collaboration and Undo have different lifecycles, but they share point affinity, liveness checks, current-tree `commonParent` resolution, and table/boundary semantics.
 
 ## DocCRUD API
 
@@ -137,7 +164,7 @@ doc.crud.undoManager.canUndo()
 doc.crud.undoManager.canRedo()
 ```
 
-Selection state is saved alongside undo items using `Y.RelativePosition` (collaboration-safe).
+Selection state is saved alongside undo items using the shared Relative Selection Bookmark codec (`Y.RelativePosition` for text/boundary points, structural IDs for selected/gap/table-cell points).
 
 IME flows that split one user intent across multiple Yjs transactions can temporarily open a capture group:
 

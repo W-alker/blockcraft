@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-07-14 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-07-15 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -25,11 +25,22 @@ Programmatic write (API / undo replay / keyboard command)
   → project model to DOM Range (or clear native Range for model-only selection)
       → transient projection failure: keep model + bounded version-guarded retry
   → FakeRange (visual overlay for non-native selections, optional)
+
+Remote Yjs transaction
+  → LiveSelectionBookmarkTracker snapshot (captured before view sync)
+  → DocCRUD syncs Yjs changes into the block/component tree
+  → affected block IDs + endpoint structural-position relevance check
+  → one revision/focus-guarded reconciliation per animation frame
+      → resolve Y.RelativePosition endpoints against the current model
+      → replay mapped ISelectionJSON through the model-first write path
+      → DOM recalculate only if resolution fails and root still owns a native Range
 ```
 
 **Key principle**: `BlockSelection` is the canonical truth. The DOM `Selection` is a derived view. Every programmatic write goes through one model-first commit path: `setSelection()`, `setCursorAt()`, `extendTo()`, editable block cursor helpers, `selectBlock()`, `setGapCursor()`, table-cell selection, and replay all publish `doc.selection.value` before DOM projection. `SelectionPositionResolver` resolves endpoint order and nearest common ancestry together from `parentId`, reading only the first divergent parent's `childrenIds`; it does not call `compareDocumentPosition()` or read layout. Immutable `BlockSelection` instances cache their derived direction, so repeated `direction` / `start` / `end` reads do not walk the model tree again. The derived DOM Range is applied under a short native `selectionchange` suppression window so browsers (notably Safari/WebKit) cannot immediately reinterpret a container/callout block range back into internal child text or boundary endpoints. Native drag is the deliberate exception: when DOM normalization repairs an endpoint that crossed a closed scope, Selection publishes the repaired model and immediately projects its anchor/focus back to the corresponding gap-backed boundary without opening the suppression window. The projection preserves forward/backward direction and round-trips idempotently, so subsequent pointer-driven events remain observable while WebKit cannot oscillate between internal text and whole-container endpoints. If a live model selection reaches the view before its block DOM is mounted, projection failure does not call `blur()`: Selection keeps the model, removes any partial native range, and retries only while the projection version and expected JSON still match. A newer selection cancels the old task, and an explicitly focused external control is never stolen back.
 
 `SelectionSelectedManager` is presentation-only. It reconciles the previous and next covered-block sets, so unchanged blocks do not lose and regain `.selected` / `.focused` classes on high-frequency `selectionchange` events; it does not reinterpret scope or mutate the model.
+
+Local selections also have an internal live relative bookmark. Text and boundary endpoints use `Y.RelativePosition`; selected, gap, and table-cell endpoints keep their structural IDs. Remote transactions therefore map the canonical model selection through Yjs first instead of reading the browser Range back into the model. Undo/redo uses the same bookmark codec, so one point-mapping rule owns both one-shot history restoration and live collaboration mapping.
 
 Before `normalizeRange()` runs, `recalculate()` verifies that both native Range endpoints belong to the current root. This is an ownership boundary, not an error fallback: an external page/editor selection is left untouched when BlockCraft does not own focus. If WebKit keeps extending a native drag outside root while BlockCraft still owns focus, Selection clears that leaked native Range before it can reach block lookup. A current model-owned `table-cell` rectangle remains canonical; other BlockCraft selections clear as an invalid cross-root DOM input.
 
@@ -58,6 +69,9 @@ This prevents stale toolbar state and accidental block-level keyboard handling w
 | `framework/modules/selection/types.ts` | `ISelectionPoint`, `ISelectionJSON`, deprecated legacy types |
 | `framework/modules/selection/normalize.ts` | `normalizeRange()` — DOM Range → endpoint pair |
 | `framework/modules/selection/position-resolver.ts` | Pure block-tree document ordering + nearest common ancestor validation |
+| `framework/modules/selection/common-parent.ts` | Shared pure common-parent rule used by SelectionManager and bookmarks |
+| `framework/modules/selection/relative-bookmark.ts` | Internal Yjs-relative selection capture/resolve and remote relevance rules |
+| `framework/modules/selection/live-bookmark-tracker.ts` | Revisioned live bookmark lifecycle for remote transaction reconciliation |
 | `framework/modules/selection/scope.ts` | `SelectionScope` resolver + `SelectionScopePolicy` — semantic cross-parent guard and scope-owned input/visual policy |
 | `framework/modules/selection/liveness.ts` | Endpoint guard for hot reads + structural liveness guard before broadcast/input |
 | `framework/modules/selection/selection-keyboard.ts` | Arrow / Shift / Home / End / Ctrl+A / Escape handling |
@@ -248,6 +262,23 @@ interface ISelectionJSON {
 
 > `toJSON()` / `replay()` round-trip anchor/head direction, gap `side`, boundary `index`, and table-cell `tableId`. `DocUndoManager` captures anchor/head as relative model points (text and boundary use Yjs relative positions) and replays `ISelectionJSON`, so undo/redo restores direction-sensitive selections without depending on DOM `selectionchange`. The deprecated legacy `IBlockSelectionJSON.from` union is widened with `{blockId, type:'gap', side}`, `{blockId, type:'boundary', index}`, and `{blockId, type:'table-cell', tableId}` variants for replay compatibility; `toLegacyJSON()` itself still degrades gap/boundary/table-cell selections to lossy `selected` points where the old format cannot express intent.
 
+## Live Relative Bookmarks
+
+`relative-bookmark.ts` is an internal Selection-domain codec shared by `DocUndoManager` and remote collaboration reconciliation. It captures anchor/head independently and preserves direction:
+
+- `text` stores the endpoint block ID plus a `Y.RelativePosition` in that block's `Y.Text`.
+- `boundary` stores the container ID, fallback index, and a `Y.RelativePosition` in its children `Y.Array`.
+- `selected` and `gap` store the live block ID plus gap side when applicable.
+- `table-cell` stores cell and table IDs and validates that the cell is still structurally inside that table.
+
+Text and boundary positions use `assoc = 0`, matching the existing Undo affinity. Resolution verifies that endpoints remain connected to the current block tree, clamps live text/boundary offsets, and recomputes `commonParent` through the same pure rule as `SelectionManager`. It never reads DOM or layout.
+
+`LiveSelectionBookmarkTracker` subscribes to `changeObserve()` and assigns a monotonically increasing revision to every published local selection intent. When Yjs has already moved a bookmark to the newly published caret, the tracker reuses its relative point objects and only refreshes source/dependency metadata. Independent pointer or keyboard movement captures new points. `null` clears the bookmark, and document destruction unsubscribes it.
+
+Remote reconciliation is relevance-filtered. Direct endpoint/container/table changes are relevant immediately. For ancestor-only hits, the codec checks only captured structural edges whose parent ID appears in the transaction and compares their `{blockId, parentId, siblingIndex}` against the current tree; an unrelated insertion after a caret therefore does not schedule replay, while insertion before it or reparenting does. Relevant transactions are coalesced to at most one animation-frame task and canceled if the selection revision changes, the editor loses focus, or a native input island owns focus.
+
+On success, DocCRUD calls `selection.replay(mappedJSON)` once and does not call `recalculate()`. If a bookmark cannot resolve, DocCRUD may sample DOM once only when both native endpoints still belong to the current root; otherwise it clears the stale model selection. This fallback is compatibility for endpoint deletion or temporarily inconsistent trees, not the normal collaboration path.
+
 ## SelectionManager Public API
 
 ### Reading Selection
@@ -348,6 +379,10 @@ doc.selection.blur()
 `FakeRange` paints highlight rectangles into the editor without using the native browser selection. Use cases: collaborative cursors, find/replace highlights, "ghost" selections that survive focus changes.
 
 For model-owned table-cell selections, `createFakeRange(selection)` paints a border-only focus ring on the anchor cell instead of rendering the full rectangle.
+
+A collapsed `gap` selection keeps its point semantics: `FakeRange` paints a narrow caret at the matching `data-block-gap-side="before|after"` filler. It does not reuse the whole-block `selected` border. Non-collapsed ranges whose gap endpoint covers a block may still use the block overlay for that covered endpoint.
+
+Awareness cursors retain their last model selection and covered block IDs. After a text transaction, `BlockCraftAwareness` checks only related cursors and rebuilds one only when its rendered `FakeRange` span was detached by an inline full rerender (notably IME commit). Normal incremental input leaves the span connected and performs no extra geometry read. Caret/range graphics remain block-local, while user-name labels live in one shared fixed portal under `document.body`; this prevents block `overflow` from clipping labels and keeps foreign label DOM out of editable/root child structure. The portal mirrors the position and client size of `doc.scrollContainer`, uses `overflow: hidden`, and stores label coordinates relative to that viewport, so labels can escape an individual block but cannot paint outside the editor scroll viewport. Scroll and resize events share one `requestAnimationFrame` scheduler, with one caret-rect read per visible remote cursor in that frame; all geometry reads complete before label style writes. The shared portal bounds are read at initialization and only refreshed when window resize or an outer scroll can move the container, not while `scrollContainer` itself scrolls. Hosts that leave a collaboration room without destroying the document must call `BlockCraftAwareness.destroy()` so the portal, cursor overlays, subscriptions, and global listeners are released.
 
 ```typescript
 // From a saved JSON (new or legacy format) or a live BlockSelection

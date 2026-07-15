@@ -14,8 +14,8 @@ import {STR_ZERO_WIDTH_SPACE} from '../block-std/inline'
 function makeGapHost(): {host: HTMLElement; leading: HTMLElement; trailing: HTMLElement} {
   const host = document.createElement('div')
   host.setAttribute('data-block-id', 'b1')
-  const leading = createBlockGapSpace()
-  const trailing = createBlockGapSpace()
+  const leading = createBlockGapSpace('before')
+  const trailing = createBlockGapSpace('after')
   const content = document.createElement('div')
   host.appendChild(leading)
   host.appendChild(content)
@@ -25,10 +25,11 @@ function makeGapHost(): {host: HTMLElement; leading: HTMLElement; trailing: HTML
 
 describe('createBlockGapSpace', () => {
   it('builds a contenteditable filler span containing only a zero-width text anchor', () => {
-    const span = createBlockGapSpace()
+    const span = createBlockGapSpace('before')
     expect(span.tagName).toBe('SPAN')
     expect(span.getAttribute('data-zero-space')).toBe('true')
     expect(span.getAttribute('data-block-zero-space')).toBe('true')
+    expect(span.getAttribute('data-block-gap-side')).toBe('before')
     expect(span.getAttribute('contenteditable')).toBe('true')
     expect(span.classList.contains('bc-block-gap')).toBe(true)
     expect(span.childNodes.length).toBe(1)

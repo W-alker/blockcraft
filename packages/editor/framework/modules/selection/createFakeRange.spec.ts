@@ -1,5 +1,78 @@
 import {FakeRange} from "./createFakeRange";
 import {BlockSelection} from "./blockSelection";
+import {createBlockGapSpace} from "../../utils/zero-gap";
+
+describe("FakeRange gap cursor", () => {
+  it("paints a caret on the requested gap side instead of a whole-block border", () => {
+    const hostElement = document.createElement("div");
+    hostElement.setAttribute("data-node-type", "block");
+    hostElement.setAttribute("data-block-id", "callout-1");
+    hostElement.style.position = "relative";
+    const leading = createBlockGapSpace("before");
+    const content = document.createElement("div");
+    const trailing = createBlockGapSpace("after");
+    hostElement.append(leading, content, trailing);
+    document.body.appendChild(hostElement);
+
+    spyOn(hostElement, "getBoundingClientRect").and.returnValue({
+      left: 10,
+      top: 20,
+      right: 330,
+      bottom: 120,
+      width: 320,
+      height: 100,
+    } as DOMRect);
+    spyOn(trailing, "getBoundingClientRect").and.returnValue({
+      left: 328,
+      top: 102,
+      right: 329,
+      bottom: 120,
+      width: 1,
+      height: 18,
+    } as DOMRect);
+
+    const block = {
+      id: "callout-1",
+      flavour: "callout",
+      hostElement,
+    };
+    const doc = {
+      getBlockById: () => block,
+      isEditable: () => false,
+      queryBlocksBetween: jasmine.createSpy("queryBlocksBetween").and.returnValue([]),
+    };
+    const selection = new BlockSelection(
+      {blockId: "callout-1", type: "gap", side: "after", block} as any,
+      {blockId: "callout-1", type: "gap", side: "after", block} as any,
+      "root",
+      () => block as any,
+      () => 0,
+    );
+
+    const fakeRange = new FakeRange(doc as any, selection, {
+      bgColor: "rgb(1, 2, 3)",
+      minCursorWidth: 3,
+    });
+
+    expect(fakeRange.fakeSpans.length).toBe(1);
+    const overlay = fakeRange.fakeSpans[0];
+    const caret = overlay.firstElementChild as HTMLElement;
+    expect(overlay.classList.contains("blockcraft-cursor--gap")).toBeTrue();
+    expect(overlay.getAttribute("data-fake-range-kind")).toBe("gap");
+    expect(overlay.getAttribute("data-gap-side")).toBe("after");
+    expect(caret.style.left).toBe("318px");
+    expect(caret.style.top).toBe("82px");
+    expect(caret.style.width).toBe("3px");
+    expect(caret.style.height).toBe("18px");
+    expect(caret.style.backgroundColor).toBe("var(--bgColor)");
+    expect(caret.style.boxShadow).toBe("none");
+    expect(doc.queryBlocksBetween).not.toHaveBeenCalled();
+
+    fakeRange.destroy();
+    expect(hostElement.querySelector(".blockcraft-cursor")).toBeNull();
+    hostElement.remove();
+  });
+});
 
 describe("FakeRange table-cell selection", () => {
   const makeHarness = () => {

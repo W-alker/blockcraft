@@ -37,6 +37,7 @@ import {
   SelectionPositionOrder,
   SelectionPositionResolver,
 } from "./position-resolver";
+import {resolveSelectionCommonParent} from "./common-parent";
 
 const DOM_PROJECTION_RETRY_LIMIT = 8
 
@@ -354,20 +355,13 @@ export class SelectionManager {
     head: ISelectionPoint,
     resolvedScope?: SelectionScope | null,
   ): string | null {
-    if (anchor.blockId === head.blockId) return anchor.blockId
-    const anchorParent = resolveSelectionContainerId(anchor)
-    const headParent = resolveSelectionContainerId(head)
-    if (anchorParent === headParent) return anchorParent
-
     try {
-      const scope = resolvedScope === undefined
-        ? resolveCommonSelectionScope(
-          anchor,
-          head,
-          id => this.doc.getBlockById(id) as any,
-        )
-        : resolvedScope
-      return scope?.blockId ?? null
+      return resolveSelectionCommonParent(
+        anchor,
+        head,
+        id => this.doc.getBlockById(id) as any,
+        resolvedScope,
+      )
     } catch {
       return null
     }

@@ -4,55 +4,21 @@ import {ORIGIN_SKIP_SYNC} from "./crud";
 import {BehaviorSubject, take} from "rxjs";
 import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
 import {nextTick} from "../../global";
-import type {ISelectionJSON, ISelectionPoint, ISelectionPointJSON} from "../modules/selection/types";
+import type {ISelectionJSON, ISelectionPointJSON} from "../modules/selection/types";
+import {
+  captureRelativeSelectionBookmark,
+  RelativeSelectionBookmark,
+  resolveRelativeSelectionBookmark,
+} from "../modules/selection/relative-bookmark";
 
 type UndoManagerEventName = 'stack-item-added' | 'stack-item-updated' | 'stack-item-popped' | 'stack-cleared'
-
-type IRelativeSelectionTextPoint = {
-  type: 'text'
-  blockId: string
-  position: Y.RelativePosition
-}
-
-// gap point captured for undo: a collapsed cursor beside a void/container block.
-// Round-trips the `side` so undo/redo restores "before vs after" exactly instead
-// of degrading to a whole-block `selected` snapshot.
-type IRelativeSelectionGapPoint = {
-  type: 'gap'
-  blockId: string
-  side: 'before' | 'after'
-}
-
-type IRelativeSelectionBoundaryPoint = {
-  type: 'boundary'
-  blockId: string
-  index: number
-  position: Y.RelativePosition
-}
-
-type IRelativeSelectionTableCellPoint = {
-  type: 'table-cell'
-  blockId: string
-  tableId: string
-}
-
-type IRelativeSelectionPoint = {
-  type: 'selected'
-  blockId: string
-} | IRelativeSelectionTextPoint | IRelativeSelectionGapPoint | IRelativeSelectionBoundaryPoint | IRelativeSelectionTableCellPoint
-
-type IRelativeSelectionSnapshot = {
-  anchor: IRelativeSelectionPoint
-  head: IRelativeSelectionPoint
-  commonParent: string
-}
 
 export class DocUndoManger {
   private _yUndoManager!: Y.UndoManager
   private _trackedOrigins = new Set<any>([ORIGIN_SKIP_SYNC, null])
 
-  private _undoSelectionStack: Array<IRelativeSelectionSnapshot | null> = []
-  private _redoSelectionStack: Array<IRelativeSelectionSnapshot | null> = []
+  private _undoSelectionStack: Array<RelativeSelectionBookmark | null> = []
+  private _redoSelectionStack: Array<RelativeSelectionBookmark | null> = []
   private _selectionReplayVersion = 0
   private _captureGroupDepth = 0
   private _captureTimeoutBeforeGroup: number | null = null
@@ -63,7 +29,7 @@ export class DocUndoManger {
    * This solves the timing issue where stack-item-added fires AFTER the transaction
    * has already deleted blocks, making the selection endpoints inaccessible.
    */
-  private _pendingSnapshot: IRelativeSelectionSnapshot | null | undefined = undefined
+  private _pendingSnapshot: RelativeSelectionBookmark | null | undefined = undefined
 
   constructor(private doc: BlockCraft.Doc, yBlockMap: Y.Map<YBlock>, options?: {
     trackedOrigins?: any[]
@@ -210,184 +176,12 @@ export class DocUndoManger {
     this.doc.selection.replay(null)
   }
 
-  private _clampIndex(index: number, min: number, max: number) {
-    return Math.max(min, Math.min(index, max))
+  private _captureSelectionSnapshot(): RelativeSelectionBookmark | null {
+    return captureRelativeSelectionBookmark(this.doc.selection.value, this.doc)
   }
 
-  private _capturePointSafe(
-    blockId: string,
-    type: 'text' | 'selected' | 'gap' | 'boundary' | 'table-cell',
-    offset: number,
-    side?: 'before' | 'after',
-    tableId?: string,
-  ): IRelativeSelectionPoint | null {
-    if (type === 'gap') {
-      return {type: 'gap', blockId, side: side ?? 'before'}
-    }
-    if (type === 'table-cell') {
-      if (!tableId) return null
-      try {
-        this.doc.getBlockById(blockId)
-        this.doc.getBlockById(tableId)
-      } catch {
-        return null
-      }
-      return {type: 'table-cell', blockId, tableId}
-    }
-    if (type === 'selected') {
-      return {type: 'selected', blockId}
-    }
-    try {
-      const block = this.doc.getBlockById(blockId)
-      if (type === 'boundary') {
-        if (block.nodeType === 'editable') return null
-        const yChildren = block.yBlock.get('children') as Y.Array<string>
-        const safeIndex = this._clampIndex(offset, 0, yChildren.length)
-        return {
-          type: 'boundary',
-          blockId,
-          index: safeIndex,
-          position: Y.createRelativePositionFromTypeIndex(yChildren, safeIndex),
-        }
-      }
-      if (!this.doc.isEditable(block)) return null
-      const safeIndex = this._clampIndex(offset, 0, block.textLength)
-      return {
-        type: 'text',
-        blockId,
-        position: Y.createRelativePositionFromTypeIndex(block.yText, safeIndex)
-      }
-    } catch {
-      return null
-    }
-  }
-
-  private _captureSelectionSnapshot(): IRelativeSelectionSnapshot | null {
-    const sel = this.doc.selection.value
-    if (!sel) return null
-
-    try {
-      const capturePoint = (point: ISelectionPoint) => {
-        if (point.type === 'gap') {
-          return this._capturePointSafe(point.blockId, 'gap', 0, point.side)
-        }
-        if (point.type === 'boundary') {
-          return this._capturePointSafe(point.blockId, 'boundary', point.index)
-        }
-        if (point.type === 'table-cell') {
-          return this._capturePointSafe(point.blockId, 'table-cell', 0, undefined, point.tableId)
-        }
-        return this._capturePointSafe(
-          point.blockId,
-          point.type,
-          point.type === 'text' ? point.offset : 0,
-        )
-      }
-
-      const anchor = capturePoint(sel.anchor)
-      if (!anchor) return null
-      const head = capturePoint(sel.head)
-      if (!head) return null
-
-      return {anchor, head, commonParent: sel.commonParent}
-    } catch {
-      return null
-    }
-  }
-
-  private _resolveSelectionPoint(point: IRelativeSelectionPoint): ISelectionPointJSON | null {
-    if (point.type === 'gap') {
-      try {
-        this.doc.getBlockById(point.blockId)
-      } catch {
-        return null
-      }
-      return {
-        type: 'gap',
-        blockId: point.blockId,
-        side: point.side,
-      }
-    }
-
-    if (point.type === 'selected') {
-      try {
-        this.doc.getBlockById(point.blockId)
-      } catch {
-        return null
-      }
-      return {
-        type: 'selected',
-        blockId: point.blockId
-      }
-    }
-
-    if (point.type === 'boundary') {
-      let block: BlockCraft.BlockComponent
-      try {
-        block = this.doc.getBlockById(point.blockId)
-      } catch {
-        return null
-      }
-      if (block.nodeType === 'editable') return null
-      const yChildren = block.yBlock.get('children') as Y.Array<string>
-      const absPos = Y.createAbsolutePositionFromRelativePosition(point.position, this.doc.yDoc)
-      const index = absPos && absPos.type === yChildren
-        ? this._clampIndex(absPos.index, 0, yChildren.length)
-        : this._clampIndex(point.index, 0, yChildren.length)
-      return {
-        type: 'boundary',
-        blockId: point.blockId,
-        index,
-      }
-    }
-
-    if (point.type === 'table-cell') {
-      try {
-        this.doc.getBlockById(point.blockId)
-        this.doc.getBlockById(point.tableId)
-      } catch {
-        return null
-      }
-      return {
-        type: 'table-cell',
-        blockId: point.blockId,
-        tableId: point.tableId,
-      }
-    }
-
-    let block: BlockCraft.BlockComponent
-    try {
-      block = this.doc.getBlockById(point.blockId)
-    } catch {
-      return null
-    }
-
-    if (!this.doc.isEditable(block)) return null
-
-    const absPos = Y.createAbsolutePositionFromRelativePosition(point.position, this.doc.yDoc)
-    if (!absPos || absPos.type !== block.yText) return null
-
-    const index = this._clampIndex(absPos.index, 0, block.textLength)
-    return {
-      type: 'text',
-      blockId: point.blockId,
-      offset: index,
-    }
-  }
-
-  private _resolveSelectionSnapshot(snapshot: IRelativeSelectionSnapshot | null): ISelectionJSON | null {
-    if (!snapshot) return null
-
-    const anchor = this._resolveSelectionPoint(snapshot.anchor)
-    if (!anchor) return null
-    const head = this._resolveSelectionPoint(snapshot.head)
-    if (!head) return null
-
-    return {
-      anchor,
-      head,
-      commonParent: snapshot.commonParent,
-    }
+  private _resolveSelectionSnapshot(snapshot: RelativeSelectionBookmark | null): ISelectionJSON | null {
+    return snapshot ? resolveRelativeSelectionBookmark(snapshot, this.doc) : null
   }
 
   private _nextSelectionReplayVersion() {
@@ -399,7 +193,7 @@ export class DocUndoManger {
     return version === this._selectionReplayVersion
   }
 
-  private _replaySelectionAfterUndoRedo(snapshot: IRelativeSelectionSnapshot | null, version = this._nextSelectionReplayVersion()) {
+  private _replaySelectionAfterUndoRedo(snapshot: RelativeSelectionBookmark | null, version = this._nextSelectionReplayVersion()) {
     this.undoRedoing$.pipe(take(1)).subscribe(() => {
       nextTick().then(() => {
         if (!this._isCurrentSelectionReplay(version)) return
@@ -408,7 +202,7 @@ export class DocUndoManger {
     })
   }
 
-  private _tryReplaySelectionAfterUndoRedo(snapshot: IRelativeSelectionSnapshot | null, attemptsLeft: number, version: number) {
+  private _tryReplaySelectionAfterUndoRedo(snapshot: RelativeSelectionBookmark | null, attemptsLeft: number, version: number) {
     if (!this._isCurrentSelectionReplay(version)) return
     try {
       if (snapshot === null) {
@@ -534,7 +328,7 @@ export class DocUndoManger {
     }
   }
 
-  private _focusEditingHostFromSnapshot(snapshot: IRelativeSelectionSnapshot | null | undefined) {
+  private _focusEditingHostFromSnapshot(snapshot: RelativeSelectionBookmark | null | undefined) {
     this._focusEditingHost(snapshot?.anchor?.blockId)
   }
 

@@ -152,8 +152,8 @@ describe('SelectionManager DOM selection normalization', () => {
 
   it('updates the canonical selection immediately when setting a gap cursor', () => {
     const {manager, block, blockHost} = createManager();
-    const leading = createBlockGapSpace();
-    const trailing = createBlockGapSpace();
+    const leading = createBlockGapSpace('before');
+    const trailing = createBlockGapSpace('after');
     const content = document.createElement('div');
     blockHost.append(leading, content, trailing);
     const rangeCountsOnSelectionChange: number[] = [];
@@ -185,8 +185,8 @@ describe('SelectionManager DOM selection normalization', () => {
 
   it('updates the canonical selection immediately when selecting a container block', () => {
     const {manager, block, blockHost} = createManager();
-    const leading = createBlockGapSpace();
-    const trailing = createBlockGapSpace();
+    const leading = createBlockGapSpace('before');
+    const trailing = createBlockGapSpace('after');
     const content = document.createElement('div');
     blockHost.append(leading, content, trailing);
 
@@ -209,8 +209,8 @@ describe('SelectionManager DOM selection normalization', () => {
 
   it('keeps a programmatic block selection when the native selectionchange is delayed', () => {
     const {manager, block, blockHost, dispatchSelectionChange} = createManager({bindEvents: true});
-    const leading = createBlockGapSpace();
-    const trailing = createBlockGapSpace();
+    const leading = createBlockGapSpace('before');
+    const trailing = createBlockGapSpace('after');
     const content = document.createElement('div');
     blockHost.append(leading, content, trailing);
     const recalculateSpy = spyOn(manager, 'recalculate').and.callThrough();
@@ -302,8 +302,8 @@ describe('SelectionManager DOM selection normalization', () => {
 
   it('measures a gap cursor from the filler span instead of the zero-width text range', () => {
     const {manager, block, blockHost} = createManager();
-    const leading = createBlockGapSpace();
-    const trailing = createBlockGapSpace();
+    const leading = createBlockGapSpace('before');
+    const trailing = createBlockGapSpace('after');
     const content = document.createElement('div');
     const expectedRect = new DOMRect(10, 20, 1, 24);
     blockHost.append(leading, content, trailing);
@@ -330,8 +330,8 @@ describe('SelectionManager DOM selection normalization', () => {
 
   it('replays gap JSON into the canonical selection synchronously', () => {
     const {manager, blockHost} = createManager();
-    const leading = createBlockGapSpace();
-    const trailing = createBlockGapSpace();
+    const leading = createBlockGapSpace('before');
+    const trailing = createBlockGapSpace('after');
     const content = document.createElement('div');
     blockHost.append(leading, content, trailing);
 
@@ -371,8 +371,8 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(document.getSelection()?.rangeCount).toBe(0);
     expect(scheduled).not.toBeNull();
 
-    const leading = createBlockGapSpace();
-    const trailing = createBlockGapSpace();
+    const leading = createBlockGapSpace('before');
+    const trailing = createBlockGapSpace('after');
     const content = document.createElement('div');
     blockHost.append(leading, content, trailing);
     scheduled!(performance.now());
@@ -594,9 +594,9 @@ describe('SelectionManager DOM selection normalization', () => {
     rootHost.setAttribute('contenteditable', 'true');
     const calloutHost = document.createElement('div');
     calloutHost.setAttribute('data-block-id', 'callout-1');
-    const leading = createBlockGapSpace();
+    const leading = createBlockGapSpace('before');
     const content = document.createElement('div');
-    const trailing = createBlockGapSpace();
+    const trailing = createBlockGapSpace('after');
     calloutHost.append(leading, content, trailing);
     rootHost.appendChild(calloutHost);
     document.body.appendChild(rootHost);
@@ -737,9 +737,9 @@ describe('SelectionManager DOM selection normalization', () => {
     p0Host.textContent = 'before';
     const calloutHost = document.createElement('div');
     calloutHost.setAttribute('data-block-id', 'callout-1');
-    const leading = createBlockGapSpace();
+    const leading = createBlockGapSpace('before');
     const calloutContent = document.createElement('div');
-    const trailing = createBlockGapSpace();
+    const trailing = createBlockGapSpace('after');
     calloutHost.append(leading, calloutContent, trailing);
     const p1Host = document.createElement('p');
     p1Host.setAttribute('data-block-id', 'p1');

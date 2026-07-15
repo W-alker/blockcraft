@@ -13,6 +13,15 @@ import {Subject} from "rxjs";
 import {isYArray, isYText} from "../utils/yAbstractType";
 import {DocUndoManger} from "./undoManger";
 import {ChildrenRepairer} from "./children-repair";
+import {isNativeInputTarget} from "../utils";
+import {
+  LiveSelectionBookmarkSnapshot,
+  LiveSelectionBookmarkTracker,
+} from "../modules/selection/live-bookmark-tracker";
+import {
+  remoteChangeAffectsRelativeSelectionBookmark,
+  resolveRelativeSelectionBookmark,
+} from "../modules/selection/relative-bookmark";
 
 // ORIGIN_* 已抽到零依赖叶子文件 ./origins（避免 base-block/reactive 经 doc barrel 成环）。
 // 这里 import 供 crud 内部使用，并 re-export 以保持 `export * from './crud'` 的公共导出面不变。
@@ -70,6 +79,9 @@ export class DocCRUD {
 
   // 保存 observer 引用，doc 销毁时需要 unobserveDeep；否则若宿主复用 yDoc，observer 会堆积
   private _yObserverHandler: ((events: Y.YEvent<any>[], tr: Y.Transaction) => void) | null = null
+  private _liveSelectionBookmarks: LiveSelectionBookmarkTracker | null = null
+  private _remoteSelectionFrame: number | null = null
+  private _pendingRemoteSelectionState: LiveSelectionBookmarkSnapshot | null = null
 
   // 远端 CRDT 合并可能让同一 block ID 重复出现（同父两次 / 跨父两处），仅远端事务触发检测
   private _childrenRepairer!: ChildrenRepairer
@@ -91,6 +103,7 @@ export class DocCRUD {
     this.doc.afterInit(() => {
 
       this.undoManager = new DocUndoManger(this.doc, this.yBlockMap)
+      this._liveSelectionBookmarks = new LiveSelectionBookmarkTracker(this.doc)
 
       // 注：children 完整性修复已前移到 initByYBlock 构建组件树【之前】执行
       // （见 repairChildRefsOnLoad）。afterInit 在构建之后，此处再修会让删除的
@@ -98,20 +111,13 @@ export class DocCRUD {
 
       this._yObserverHandler = (evt, tr) => {
         this.doc.ngZone.run(() => {
+          const bookmarkState = !tr.local
+            ? this._liveSelectionBookmarks?.snapshot() ?? null
+            : null
           this._syncYEvent(evt, tr)
-          if (!tr.local) {
-            // 远端改动到达时，只有当它触及本地选区所在的端点 block 才需要重算选区：
-            // 端点 block 的文本/结构变化会让原生 selection 与模型脱节。协同方在其它
-            // block 持续编辑时，若无条件 recalculate，selectionChange$ 会空转（重算出
-            // 逻辑相同的选区却仍 next() 一次），导致 float-text-toolbar 等订阅方被反复
-            // 开关。affected 必须在事务回调内同步采集（YEvent 仅在此刻有效）。
+          if (bookmarkState?.bookmark) {
             const affected = this._collectAffectedBlockIds(evt)
-            requestAnimationFrame(() => {
-              // doc 可能在 rAF 触发前被销毁；isInitialized 在 destroy() 中转为 false
-              if (!this.doc.isInitialized) return
-              if (!this._remoteChangeAffectsSelection(affected)) return
-              this.doc.selection.recalculate()
-            })
+            this._scheduleRemoteSelectionReconcile(bookmarkState, affected)
           }
         })
       }
@@ -122,6 +128,13 @@ export class DocCRUD {
       if (this._yObserverHandler) {
         this.yBlockMap.unobserveDeep(this._yObserverHandler)
         this._yObserverHandler = null
+      }
+      this._liveSelectionBookmarks?.destroy()
+      this._liveSelectionBookmarks = null
+      this._pendingRemoteSelectionState = null
+      if (this._remoteSelectionFrame !== null) {
+        cancelAnimationFrame(this._remoteSelectionFrame)
+        this._remoteSelectionFrame = null
       }
     })
   }
@@ -165,16 +178,53 @@ export class DocCRUD {
     return ids
   }
 
-  /**
-   * 远端改动是否影响当前选区：只要触及选区任一端点 block 即视为影响。
-   * 端点 block 的文本/结构变化才会让原生 selection 与模型脱节、需要重算；
-   * 选区跨越的中间 block 变化不会移动端点 DOM 节点，原生 selection 仍然有效。
-   * 无选区时（本地用户没有选区）远端改动无从影响，直接跳过。
-   */
-  private _remoteChangeAffectsSelection(affected: Set<string>): boolean {
-    const sel = this.doc.selection.value
-    if (!sel) return false
-    return affected.has(sel.anchor.blockId) || affected.has(sel.head.blockId)
+  private _scheduleRemoteSelectionReconcile(
+    state: LiveSelectionBookmarkSnapshot,
+    affectedBlockIds: ReadonlySet<string>,
+  ): void {
+    if (!state.bookmark || !remoteChangeAffectsRelativeSelectionBookmark(
+      state.bookmark,
+      affectedBlockIds,
+      this.doc,
+    )) return
+
+    this._pendingRemoteSelectionState = state
+    if (this._remoteSelectionFrame !== null) return
+    this._remoteSelectionFrame = requestAnimationFrame(() => {
+      this._remoteSelectionFrame = null
+      const pending = this._pendingRemoteSelectionState
+      this._pendingRemoteSelectionState = null
+      if (pending) this._reconcileRemoteSelection(pending)
+    })
+  }
+
+  private _reconcileRemoteSelection(state: LiveSelectionBookmarkSnapshot): void {
+    if (!this.doc.isInitialized || !state.bookmark) return
+    if (!this._liveSelectionBookmarks?.isCurrent(state.revision)) return
+
+    const root = this.doc.root.hostElement
+    const active = document.activeElement
+    const ownsFocus = active === root || (!!active && root.contains(active))
+    if (!ownsFocus || isNativeInputTarget(active)) return
+
+    const mapped = resolveRelativeSelectionBookmark(state.bookmark, this.doc)
+    if (mapped) {
+      this.doc.selection.replay(mapped)
+      return
+    }
+
+    const nativeSelection = document.getSelection()
+    const nativeAnchor = nativeSelection?.anchorNode ?? null
+    const nativeHead = nativeSelection?.focusNode ?? null
+    const hasOwnedNativeRange = !!nativeSelection?.rangeCount &&
+      !!nativeAnchor && !!nativeHead &&
+      (nativeAnchor === root || root.contains(nativeAnchor)) &&
+      (nativeHead === root || root.contains(nativeHead))
+    if (hasOwnedNativeRange) {
+      this.doc.selection.recalculate()
+    } else {
+      this.doc.selection.replay(null)
+    }
   }
 
   private _syncYEvent = (events: Y.YEvent<any>[], tr: Y.Transaction) => {

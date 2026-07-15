@@ -111,8 +111,8 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
       !!this.doc.schemas.get(this.flavour)?.metadata.isLeaf
     if (wantsGap && !isLeaf) {
       requestAnimationFrame(() => {
-        this.hostElement.prepend(createBlockGapSpace())
-        this.hostElement.appendChild(createBlockGapSpace())
+        this.hostElement.prepend(createBlockGapSpace('before'))
+        this.hostElement.appendChild(createBlockGapSpace('after'))
       })
     }
     this.changeDetectorRef.markForCheck()

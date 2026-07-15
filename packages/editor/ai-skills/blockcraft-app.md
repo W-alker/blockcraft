@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-05-29
+> Last updated: 2026-07-15
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -417,11 +417,18 @@ Connect a Yjs provider (`y-websocket`, `y-webrtc`, custom) to `doc.yDoc`. Initia
 
 ```typescript
 const provider = new WebsocketProvider(WS_URL, this.docId, this.doc.yDoc)
+const cursorAwareness = new BlockCraftAwareness(this.doc, provider.awareness)
 provider.once('synced', () => {
   const yRoot = this.doc.yDoc.getMap('blocks').get(this.rootId) as YBlock
   this.doc.initByYBlock(yRoot, this.containerRef.nativeElement)
 })
+
+// When leaving the room, release cursor overlays and global scroll/resize listeners.
+cursorAwareness.destroy()
+provider.destroy()
 ```
+
+Import `BlockCraftAwareness` from `@ccc/blockcraft/editor/awa`. A host that enters and leaves collaboration rooms without destroying the editor document must call `destroy()` before discarding the provider.
 
 ## Step 10 — Cleanup
 

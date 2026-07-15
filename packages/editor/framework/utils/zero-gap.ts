@@ -24,10 +24,13 @@ export const isZeroSpace = (node: Node | null | undefined) => {
  * it is the active block-level selection target). The data attributes are kept
  * for selection detection / styling.
  */
-export function createBlockGapSpace() {
+export type BlockGapSide = 'before' | 'after'
+
+export function createBlockGapSpace(side: BlockGapSide) {
   const span = document.createElement('span')
   span.setAttribute('data-zero-space', 'true')
   span.setAttribute('data-block-zero-space', 'true')
+  span.setAttribute('data-block-gap-side', side)
   // Explicitly editable so the gap can serve as a cursor anchor even when the
   // surrounding block is `contenteditable=false` (e.g. while it is the active
   // block-level selection target).

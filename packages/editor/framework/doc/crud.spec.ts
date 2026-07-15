@@ -1,7 +1,9 @@
 import "../../blocks"
 import * as Y from 'yjs'
-import { Subject } from 'rxjs'
+import {BehaviorSubject, Subject} from 'rxjs'
 import { BlockNodeType, IBlockSnapshot, NativeBlockModel, YBlock, native2YBlock } from "../block-std"
+import {BlockSelection} from '../modules/selection/blockSelection'
+import {lazyBoundaryPoint, lazyPoint} from '../modules/selection/normalize'
 import { DocCRUD } from "./crud"
 
 type MockBlockRef = {
@@ -23,8 +25,15 @@ class MockBlockInstance {
   readonly changeDetectorRef = {
     markForCheck: jasmine.createSpy('markForCheck')
   }
+  readonly hostElement = document.createElement('div')
+  readonly onTextChange = {
+    next: jasmine.createSpy('next')
+  }
+  readonly _applyDeltaToView = jasmine.createSpy('_applyDeltaToView')
+  readonly rerender = jasmine.createSpy('rerender')
   readonly childrenRenderRef: MockChildrenRenderRef
   _childrenIds: string[]
+  doc: any = null
 
   constructor(
     private readonly store: Map<string, MockBlockRef>,
@@ -36,6 +45,10 @@ class MockBlockInstance {
   ) {
     this.parentId = parentId
     this._childrenIds = nodeType === BlockNodeType.editable ? [] : (yBlock.get('children') as Y.Array<string>).toArray()
+    if (nodeType === BlockNodeType.root) {
+      this.hostElement.setAttribute('contenteditable', 'true')
+      this.hostElement.tabIndex = 0
+    }
 
     const items: MockBlockRef[] = []
     this.childrenRenderRef = {
@@ -52,19 +65,27 @@ class MockBlockInstance {
     return this._childrenIds.length
   }
 
+  get yText() {
+    return this.yBlock.get('children') as unknown as Y.Text
+  }
+
+  get textLength() {
+    return this.nodeType === BlockNodeType.editable ? this.yText.length : 0
+  }
+
   getIndexOfParent() {
     if (!this.parentId) return -1
     return this.store.get(this.parentId)?.instance.childrenIds.indexOf(this.id) ?? -1
   }
 }
 
-const createEditableSnapshot = (id: string): IBlockSnapshot => ({
+const createEditableSnapshot = (id: string, text = ''): IBlockSnapshot => ({
   id,
   flavour: 'paragraph',
   nodeType: BlockNodeType.editable,
   props: {depth: 0},
   meta: {},
-  children: []
+  children: text ? [{insert: text}] : []
 })
 
 const createRootSnapshot = (id: string, children: IBlockSnapshot[] = []): IBlockSnapshot => ({
@@ -134,28 +155,46 @@ const createDocHarness = () => {
       const created: Record<string, MockBlockRef> = {}
       Object.values(yBlocks).forEach(yBlock => {
         const ref = createBlockRef(store, yBlock)
+        ref.instance.doc = rootRef.instance.doc
         created[ref.instance.id] = ref
       })
       return created as unknown as Record<string, BlockCraft.BlockComponentRef>
     }
   }
 
-  const selection = {
-    value: null as { anchor: { blockId: string }, head: { blockId: string } } | null,
-    recalculate: jasmine.createSpy('recalculate')
+  const selectionChange$ = new BehaviorSubject<any>(null)
+  const selection: any = {
+    selectionChange$,
+    changeObserve: () => selectionChange$.asObservable(),
+    replay: jasmine.createSpy('replay').and.callFake((value: any) => selectionChange$.next(value)),
+    recalculate: jasmine.createSpy('recalculate'),
   }
+  Object.defineProperty(selection, 'value', {
+    get: () => selectionChange$.value,
+    set: (value: any) => selectionChange$.next(value),
+  })
+
+  const destroyCallbacks: Array<() => void> = []
 
   const doc = {
     yDoc,
     yBlockMap,
     vm,
     selection,
+    root: rootRef.instance,
     isInitialized: true,
     ngZone: {
       run: (fn: () => void) => fn()
     },
     logger: {
       warn: jasmine.createSpy('warn')
+    },
+    inputManger: {
+      compositionSession: {
+        shouldDeferPatch: jasmine.createSpy('shouldDeferPatch').and.returnValue(false),
+        deferPatch: jasmine.createSpy('deferPatch'),
+        handleBlocksDeleted: jasmine.createSpy('handleBlocksDeleted'),
+      },
     },
     messageService: {
       warn: jasmine.createSpy('warn')
@@ -185,18 +224,32 @@ const createDocHarness = () => {
     },
     isEditable: (block: { nodeType: BlockNodeType }) => block.nodeType === BlockNodeType.editable,
     onDestroy$: new Subject<void>(),
-    onDestroy: jasmine.createSpy('onDestroy')
+    onDestroy: (fn: () => void) => destroyCallbacks.push(fn)
   }
+
+  store.forEach(ref => ref.instance.doc = doc)
 
   const crud = new DocCRUD(doc as unknown as BlockCraft.Doc)
 
+  const destroy = () => {
+    doc.isInitialized = false
+    destroyCallbacks.forEach(fn => fn())
+    selectionChange$.complete()
+    rootRef.instance.hostElement.remove()
+    yDoc.destroy()
+  }
+
   return {
     crud,
+    doc,
     rootRef,
+    rootHost: rootRef.instance.hostElement,
     store,
     selection,
+    selectionChange$,
     createdParagraphs,
-    yDoc
+    yDoc,
+    destroy,
   }
 }
 
@@ -218,6 +271,16 @@ const applyRemoteUpdate = (yDoc: Y.Doc, mutate: (blocks: Y.Map<YBlock>) => void)
 }
 
 const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+
+const createTextSelection = (doc: any, blockId: string, offset: number) => {
+  const point = lazyPoint({blockId, type: 'text', offset}, doc.getBlockById)
+  return new BlockSelection(point, point, blockId, doc.getBlockById, () => 0)
+}
+
+const createBoundarySelection = (doc: any, blockId: string, index: number) => {
+  const point = lazyBoundaryPoint(blockId, index, doc.getBlockById)
+  return new BlockSelection(point, point, blockId, doc.getBlockById, () => 0)
+}
 
 describe('DocCRUD', () => {
   it('emits children updates synchronously for insert operations', () => {
@@ -264,12 +327,12 @@ describe('DocCRUD', () => {
   })
 
   it('does NOT recalculate selection when a remote change misses the selection blocks', async () => {
-    const {crud, rootRef, selection, yDoc} = createDocHarness()
+    const {crud, doc, rootRef, selection, yDoc} = createDocHarness()
     crud.insertBlocks(rootRef.instance.id, 0, [createEditableSnapshot('a'), createEditableSnapshot('b')])
 
-    // Local user has a selection inside block "a".
-    selection.value = {anchor: {blockId: 'a'}, head: {blockId: 'a'}}
+    selection.value = createTextSelection(doc, 'a', 0)
     selection.recalculate.calls.reset()
+    selection.replay.calls.reset()
 
     // A collaborator inserts a brand-new block "c" elsewhere — never touches "a".
     applyRemoteUpdate(yDoc, blocks => {
@@ -289,26 +352,177 @@ describe('DocCRUD', () => {
     await Promise.resolve()
 
     expect(selection.recalculate).not.toHaveBeenCalled()
+    expect(selection.replay).not.toHaveBeenCalled()
     expect(rootRef.instance.childrenIds).toEqual(['a', 'b', 'c'])
   })
 
-  it('recalculates selection when a remote change hits a selection endpoint block', async () => {
-    const {crud, rootRef, selection, yDoc} = createDocHarness()
-    crud.insertBlocks(rootRef.instance.id, 0, [createEditableSnapshot('a'), createEditableSnapshot('b')])
-
-    // Local selection endpoint is block "a".
-    selection.value = {anchor: {blockId: 'a'}, head: {blockId: 'a'}}
+  it('maps a caret through remote text insertion without DOM recalculation', async () => {
+    const {crud, doc, rootRef, rootHost, selection, yDoc} = createDocHarness()
+    crud.insertBlocks(rootRef.instance.id, 0, [createEditableSnapshot('a', 'ab')])
+    document.body.appendChild(rootHost)
+    rootHost.focus()
+    selection.value = createTextSelection(doc, 'a', 1)
     selection.recalculate.calls.reset()
+    selection.replay.calls.reset()
 
-    // A collaborator deletes block "a" out from under the selection.
+    applyRemoteUpdate(yDoc, blocks => {
+      ;(blocks.get('a')!.get('children') as unknown as Y.Text).insert(0, 'X')
+    })
+
+    await nextFrame()
+
+    expect(selection.replay).toHaveBeenCalledWith({
+      anchor: {blockId: 'a', type: 'text', offset: 2},
+      head: {blockId: 'a', type: 'text', offset: 2},
+      commonParent: 'a',
+    })
+    expect(selection.recalculate).not.toHaveBeenCalled()
+    rootHost.remove()
+  })
+
+  it('maps a container boundary through a remote children insertion', async () => {
+    const {crud, doc, rootRef, rootHost, selection, yDoc} = createDocHarness()
+    crud.insertBlocks(rootRef.instance.id, 0, [createEditableSnapshot('a'), createEditableSnapshot('b')])
+    document.body.appendChild(rootHost)
+    rootHost.focus()
+    selection.value = createBoundarySelection(doc, 'root', 1)
+    selection.recalculate.calls.reset()
+    selection.replay.calls.reset()
+
+    applyRemoteUpdate(yDoc, blocks => {
+      const cBlock = native2YBlock({
+        id: 'c',
+        flavour: 'paragraph',
+        nodeType: BlockNodeType.editable,
+        props: {depth: 0},
+        meta: {},
+        children: [],
+      } as unknown as NativeBlockModel)
+      blocks.set('c', cBlock)
+      ;(blocks.get('root')!.get('children') as Y.Array<string>).insert(0, ['c'])
+    })
+
+    await nextFrame()
+
+    expect(selection.replay).toHaveBeenCalledWith({
+      anchor: {blockId: 'root', type: 'boundary', index: 2},
+      head: {blockId: 'root', type: 'boundary', index: 2},
+      commonParent: 'root',
+    })
+    expect(selection.recalculate).not.toHaveBeenCalled()
+    rootHost.remove()
+  })
+
+  it('fails closed when a remote change deletes a selection endpoint block', async () => {
+    const {crud, doc, rootRef, rootHost, selection, yDoc} = createDocHarness()
+    crud.insertBlocks(rootRef.instance.id, 0, [createEditableSnapshot('a'), createEditableSnapshot('b')])
+    document.body.appendChild(rootHost)
+    rootHost.focus()
+    document.getSelection()?.removeAllRanges()
+
+    selection.value = createTextSelection(doc, 'a', 0)
+    selection.recalculate.calls.reset()
+    selection.replay.calls.reset()
+
     applyRemoteUpdate(yDoc, blocks => {
       blocks.delete('a')
       ;(blocks.get('root')!.get('children') as Y.Array<string>).delete(0, 1)
     })
 
     await nextFrame()
-    await Promise.resolve()
 
-    expect(selection.recalculate).toHaveBeenCalled()
+    expect(selection.replay).toHaveBeenCalledWith(null)
+    expect(selection.recalculate).not.toHaveBeenCalled()
+    rootHost.remove()
+  })
+
+  it('does not steal focus back when the user leaves before remote reconciliation', async () => {
+    const {crud, doc, rootRef, rootHost, selection, yDoc} = createDocHarness()
+    const outside = document.createElement('button')
+    crud.insertBlocks(rootRef.instance.id, 0, [createEditableSnapshot('a', 'ab')])
+    document.body.append(rootHost, outside)
+    rootHost.focus()
+    selection.value = createTextSelection(doc, 'a', 1)
+    selection.recalculate.calls.reset()
+    selection.replay.calls.reset()
+
+    applyRemoteUpdate(yDoc, blocks => {
+      ;(blocks.get('a')!.get('children') as unknown as Y.Text).insert(0, 'X')
+    })
+    outside.focus()
+    await nextFrame()
+
+    expect(selection.replay).not.toHaveBeenCalled()
+    expect(selection.recalculate).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(outside)
+    rootHost.remove()
+    outside.remove()
+  })
+
+  it('cancels a stale remote task after the local selection changes', async () => {
+    const {crud, doc, rootRef, rootHost, selection, yDoc} = createDocHarness()
+    crud.insertBlocks(rootRef.instance.id, 0, [createEditableSnapshot('a', 'ab')])
+    document.body.appendChild(rootHost)
+    rootHost.focus()
+    selection.value = createTextSelection(doc, 'a', 1)
+    selection.recalculate.calls.reset()
+    selection.replay.calls.reset()
+
+    applyRemoteUpdate(yDoc, blocks => {
+      ;(blocks.get('a')!.get('children') as unknown as Y.Text).insert(0, 'X')
+    })
+    selection.value = createTextSelection(doc, 'a', 0)
+    await nextFrame()
+
+    expect(selection.replay).not.toHaveBeenCalled()
+    expect(selection.recalculate).not.toHaveBeenCalled()
+    rootHost.remove()
+  })
+
+  it('coalesces multiple relevant remote transactions into one frame replay', async () => {
+    const {crud, doc, rootRef, rootHost, selection, yDoc} = createDocHarness()
+    crud.insertBlocks(rootRef.instance.id, 0, [createEditableSnapshot('a', 'ab')])
+    document.body.appendChild(rootHost)
+    rootHost.focus()
+    selection.value = createTextSelection(doc, 'a', 1)
+    selection.recalculate.calls.reset()
+    selection.replay.calls.reset()
+
+    applyRemoteUpdate(yDoc, blocks => {
+      ;(blocks.get('a')!.get('children') as unknown as Y.Text).insert(0, 'X')
+    })
+    applyRemoteUpdate(yDoc, blocks => {
+      ;(blocks.get('a')!.get('children') as unknown as Y.Text).insert(0, 'Y')
+    })
+
+    await nextFrame()
+
+    expect(selection.replay).toHaveBeenCalledTimes(1)
+    expect(selection.replay).toHaveBeenCalledWith({
+      anchor: {blockId: 'a', type: 'text', offset: 3},
+      head: {blockId: 'a', type: 'text', offset: 3},
+      commonParent: 'a',
+    })
+    expect(selection.recalculate).not.toHaveBeenCalled()
+    rootHost.remove()
+  })
+
+  it('cancels pending remote reconciliation when the document is destroyed', async () => {
+    const {crud, doc, rootRef, rootHost, selection, yDoc, destroy} = createDocHarness()
+    crud.insertBlocks(rootRef.instance.id, 0, [createEditableSnapshot('a', 'ab')])
+    document.body.appendChild(rootHost)
+    rootHost.focus()
+    selection.value = createTextSelection(doc, 'a', 1)
+    selection.recalculate.calls.reset()
+    selection.replay.calls.reset()
+
+    applyRemoteUpdate(yDoc, blocks => {
+      ;(blocks.get('a')!.get('children') as unknown as Y.Text).insert(0, 'X')
+    })
+    destroy()
+    await nextFrame()
+
+    expect(selection.replay).not.toHaveBeenCalled()
+    expect(selection.recalculate).not.toHaveBeenCalled()
   })
 })

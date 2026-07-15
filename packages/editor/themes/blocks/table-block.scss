@@ -23,13 +23,11 @@
 
     position: relative;
 
-    .bc-block-gap:first-of-type,
-    [data-block-zero-space="true"]:first-of-type {
+    [data-block-zero-space="true"][data-block-gap-side="before"] {
       left: 0;
     }
 
-    .bc-block-gap:last-of-type,
-    [data-block-zero-space="true"]:last-of-type {
+    [data-block-zero-space="true"][data-block-gap-side="after"] {
       right: 0;
     }
 

@@ -78,9 +78,9 @@ describe("DividerExtensionPlugin delayed toolbar", () => {
 
   it("lets divider gap anchors fall through to the gap cursor path", () => {
     const {plugin, doc, hostElement} = makeHarness();
-    const leadingGap = createBlockGapSpace();
+    const leadingGap = createBlockGapSpace('before');
     const content = document.createElement("div");
-    const trailingGap = createBlockGapSpace();
+    const trailingGap = createBlockGapSpace('after');
     hostElement.append(leadingGap, content, trailingGap);
     const preventDefault = jasmine.createSpy("preventDefault");
 

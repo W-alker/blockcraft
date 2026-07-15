@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-07-14 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-07-15 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -162,6 +162,18 @@ doc.chain()
   .run()
 ```
 
+### Collaboration Cursor Lifecycle
+
+```typescript
+import { BlockCraftAwareness } from '@ccc/blockcraft/editor/awa'
+
+const cursorAwareness = new BlockCraftAwareness(doc, provider.awareness)
+cursorAwareness.setLocalUser(currentUser)
+
+// Required when leaving a room without destroying the document.
+cursorAwareness.destroy()
+```
+
 ### Doc Services Index
 
 Key services accessible on `doc.*` (see `blockcraft-app.md` for full API details):
@@ -211,6 +223,12 @@ doc.selection.getSelectedText()         // string
 // If a live selection cannot be projected because its DOM is still mounting,
 // the model remains canonical and SelectionManager performs a bounded,
 // version-guarded projection retry. Explicit blur/stale endpoints still clear it.
+// A revisioned internal Relative Selection Bookmark maps the current local
+// selection through relevant remote Yjs text/children changes before DOM is
+// considered. Text/boundary endpoints use Y.RelativePosition; ancestor-only
+// changes replay only when the endpoint parent path or sibling index moved.
+// Successful mapping calls replay() once. recalculate() is a guarded failure
+// fallback only when the editor still owns both native Range endpoints.
 // Non-collapsed container-boundary DOM endpoints normalize to boundary points:
 //   { blockId: container.id, type: 'boundary', index: childBoundaryIndex }
 // Same-container boundary ranges in paragraph-capable renderUnit containers

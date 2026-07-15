@@ -98,8 +98,8 @@ describe("Selection scope", () => {
   }
 
   function appendBlockGaps(block: any): {leading: Text; trailing: Text} {
-    const leading = createBlockGapSpace()
-    const trailing = createBlockGapSpace()
+    const leading = createBlockGapSpace('before')
+    const trailing = createBlockGapSpace('after')
     block.hostElement.prepend(leading)
     block.hostElement.append(trailing)
     return {

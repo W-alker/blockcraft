@@ -132,14 +132,12 @@
     white-space: pre;
   }
 
-  .bc-block-gap:first-of-type,
-  [data-block-zero-space="true"]:first-of-type {
+  [data-block-zero-space="true"][data-block-gap-side="before"] {
     top: 0;
     left: -2px;
   }
 
-  .bc-block-gap:last-of-type,
-  [data-block-zero-space="true"]:last-of-type {
+  [data-block-zero-space="true"][data-block-gap-side="after"] {
     bottom: 0;
     right: -2px;
   }
@@ -387,29 +385,42 @@
       position: absolute;
     }
 
-    &-tag {
-      z-index: 100;
-      position: absolute;
-      top: 0;
-      left: 0;
-      transform: translate(0, calc(-100% - 2px));
-      max-width: 100px;
-      @include text-ellipsis(1);
-      @include user-select(none);
-      font-size: 10px;
-      line-height: 14px;
-      color: var(--bc-color, #fff);
-      background-color: var(--bc-mark-bg-color, rgba(0, 0, 0, 0.8));
-      // 背景取反色
-      box-shadow: var(--bc-shadow-sm);
-      border-radius: var(--bc-radius-sm);
-      padding: 0 2px;
-    }
   }
 
   .bc-scrollable-container {
     @include bc_scrollbar;
   }
+}
+
+.blockcraft-cursor-label-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 101;
+  overflow: hidden;
+  pointer-events: none;
+  @include user-select(none);
+  @include user-modify(read-only);
+}
+
+.blockcraft-cursor-tag {
+  z-index: 100;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(0, calc(-100% - 2px));
+  max-width: 100px;
+  @include text-ellipsis(1);
+  @include user-select(none);
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--bc-color, #fff);
+  background-color: var(--bc-mark-bg-color, rgba(0, 0, 0, 0.8));
+  box-shadow: var(--bc-shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.18));
+  border-radius: var(--bc-radius-sm, 2px);
+  padding: 0 2px;
 }
 
 .bc-scrollable-container {
