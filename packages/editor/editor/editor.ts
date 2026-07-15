@@ -70,6 +70,8 @@ import {TranslatePlugin} from "../plugins/translate";
 import {MyDocTranslationService} from "./services/doc-translation.service";
 import {PasteFormatSelectorPlugin} from "../plugins/paste-format-selector";
 import {PlaceholderPlugin} from "../plugins/placeholder";
+import {PageDividerBlockSchema} from "../blocks/page-divider-block";
+import {PaginationPlugin} from "../plugins/pagination";
 
 const mentionRequest = async (keyword: string, _type?: string) => {
   if (keyword === 'a') {
@@ -92,7 +94,7 @@ const schemas = new SchemaManager([
   ParagraphBlockSchema,
   OrderedBlockSchema, BulletBlockSchema, TodoBlockSchema, CalloutBlockSchema, CodeBlockSchema,
   CalloutBlockSchema,
-  DividerBlockSchema, ImageBlockSchema,
+  DividerBlockSchema, PageDividerBlockSchema, ImageBlockSchema,
   TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, AttachmentBlockSchema, BookmarkBlockSchema,
   FigmaEmbedBlockSchema, JuejinEmbedBlockSchema,
   CaptionBlockSchema, RootBlockSchema,
@@ -239,6 +241,12 @@ export class EditorComponent implements OnDestroy {
     ),
   );
 
+  private readonly paginationPlugin = new PaginationPlugin({
+    enabled: false,
+    pageSize: 'A4',
+    printShortcut: true,
+  });
+
   doc = new BlockCraftDoc({
     yDoc: new Y.Doc({
       guid: this.docId,
@@ -340,6 +348,7 @@ export class EditorComponent implements OnDestroy {
       new FindReplacePlugin(),
       this.translatePlugin,
       new BlockGapCreatorPlugin(),
+      this.paginationPlugin,
       // 代码块 / mermaid 源码的仅颜色工具栏：rich text 由上面的 FloatTextToolbarPlugin
       // 负责（它对 plainTextOnly 块会跳过），这里只补充这些 plainTextOnly 块的颜色覆盖，
       // 二者互不重叠。('mermaid-textarea' 是 mermaid 块里可编辑的源码子块)

@@ -7,3 +7,9 @@ html, body {
 body {
   background: #f7f8fb;
 }
+bc-pagination-settings.pagination-settings-float {
+  position: fixed;
+  right: 24px;
+  top: 88px;
+  z-index: 50;
+}

@@ -76,7 +76,9 @@
       overflow-y: auto;
       border-radius: 0;
       box-sizing: border-box;
-      margin: 0;
+      // 分页用内联 margin-top 下推页首块；全屏只临时屏蔽该视图偏移，
+      // 不清除内联值，使退出全屏后最新分页位置自动恢复。
+      margin: 0 !important;
       width: 100%;
 
       // 全屏视图下小表格在 viewport 内居中显示。
@@ -373,6 +375,17 @@
         }
       }
 
+      // 续页重复表头克隆：复用表头底色 + 加粗，但**不** sticky（它是流内静态重复行，不是吸顶表头）。
+      // 表头底色/加粗由上面的 `tr:first-child` 提供，克隆插在 tbody 中间不是 first-child、匹配不到，
+      // 故单独补——否则续页重复表头透明、无底色，与原表头视觉不一致。
+      tr.bc-pagination-header-clone {
+        font-weight: bold;
+
+        > td {
+          background: var(--bc-table-head-bg) !important;
+        }
+      }
+
       // 让 sticky 表头跳出 .table-scrollable 的滚动容器，直接相对外层（viewport / 页面）sticky。
       //   1. padding-top: 0 — 抹掉 .table-scrollable 默认 16px padding-top 把首行往下推的偏移
       //   2. overflow-y: clip — `clip` 跟 `hidden` 一样裁切超出，但**不创建滚动容器**；
@@ -391,6 +404,15 @@
         // row-bar 的 top: 1px 现在是全局默认（containing block 已改为 wrapper），
         // 不再需要 :not(.is-fullscreen) 单独覆盖。
       }
+    }
+
+    // 分页占位行（页缝）始终透明。**col-head 表格**里占位行的 `<td colspan=N>` 是 `td:first-child`，
+    // 命中 `.col-head td:first-child{background:var(--bc-table-head-bg)!important}` 被刷成表头灰 → 页缝不透明。
+    // 这里用更高特异度（含 .col-head/.row-head 前缀）+ !important 压过表头底色，保证页缝透出页间背景。
+    &.col-head tr.bc-pagination-spacer > td,
+    &.row-head tr.bc-pagination-spacer > td,
+    tr.bc-pagination-spacer > td {
+      background: transparent !important;
     }
 
     .table-scrollable {
@@ -779,6 +801,13 @@
       left: -7px;
       width: 8px;
       flex-direction: column;
+
+      // 屏幕分页页缝：与表格内 .bc-pagination-spacer 等高的占位，撑开手柄列、保持与被下推行对齐。
+      .handle-page-break {
+        flex: 0 0 auto;
+        width: 100%;
+        pointer-events: none;
+      }
 
       .handle {
         width: 8px;

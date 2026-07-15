@@ -239,10 +239,83 @@ const schemas = new SchemaManager([
   TodoBlockSchema,
   CodeBlockSchema,
   DividerBlockSchema,
+  PageDividerBlockSchema,  // optional manual page break
   ImageBlockSchema,
   // … pick what you need
 ])
 ```
+
+### Optional Pagination Plugin
+
+Pagination is a registered plugin, not a `BlockCraftDoc` service:
+
+```typescript
+const pagination = new PaginationPlugin({
+  enabled: false,
+  pageSize: 'A4',
+  printShortcut: true,
+})
+
+doc = new BlockCraftDoc({
+  // ...required config
+  schemas,
+  plugins: [pagination],
+})
+
+pagination.enable()
+pagination.updateConfig({
+  margins: {top: 72, right: 72, bottom: 72, left: 72},
+  header: {left: 'Document', right: '{page}/{total}'},
+})
+pagination.disable()
+```
+
+Do not add `pagination` to `DocConfig` and do not read `doc.pagination`. The plugin is the lifecycle owner and removes all layout DOM/CSS on disable or destroy. Host settings UI should read `pagination.config` and call `pagination.updateConfig(...)`; BlockCraft does not publish a pagination settings component.
+
+### Paginated PDF and Printing
+
+```typescript
+const exports = new DocExportManager(doc)
+
+// Browser: opens the system print dialog; the user can choose "Save as PDF".
+await exports.exportToPdf('document.pdf')
+
+// Explicit pagination means reflow export; it is not the current-view contract.
+await exports.exportToPdf('letter.pdf', {
+  pagination: {pageSize: 'Letter', orientation: 'landscape'},
+})
+
+// Screen-consistent in-page print; live breakpoints are reused when enabled.
+await pagination.print()
+```
+
+With an enabled plugin and no explicit `options.pagination`, `exportToPdf()` captures the current stable page result, then renders the same snapshot through a readonly `BlockCraftDoc`. This preserves page count, block placement and table fragments without cloning the focused editor or using snapshot-viewer. Passing `options.pagination` intentionally requests a new reflow. If the plugin is disabled, its config is used for an offscreen readonly reflow; without a plugin the fallback is A4.
+
+The PDF body is never rendered through `dom-to-image-more`. Browser export prints the fixed page boxes through a same-origin iframe. Browser code cannot silently save a PDF or reliably detect whether the user cancelled the dialog.
+
+### Tauri native backend
+
+Use a dedicated **top-level export WebView**, initialize a readonly BlockCraft document there, and pass a host backend. The backend runs while the current WebView's print mirror and `@page { margin: 0 }` rules are still mounted:
+
+```typescript
+const result = await exports.exportToPdf('document.pdf', {
+  backend: async ({suggestedName, page, pageCount, signal}) => {
+    const path = await choosePdfPath(suggestedName)
+    if (!path) return {status: 'cancelled'}
+
+    await invokeNativePdfPrint({
+      path,
+      pageWidthPt: page.widthPt,
+      pageHeightPt: page.heightPt,
+      pageCount,
+      signal,
+    })
+    return {status: 'saved', path}
+  },
+})
+```
+
+`choosePdfPath()` and `invokeNativePdfPrint()` belong to the host. A Tauri implementation can map the latter to `WKWebView` print operations on macOS and WebView2 `PrintToPdf` on Windows. BlockCraft does not import `@tauri-apps/*`, create windows, choose file paths, or infer the platform. Do not run this backend in an iframe: native WebView printing targets the current top-level WebView. Small font-hinting and color differences between platform print engines are expected; page size, margins, page count and block/fragment placement come from the shared fixed print surface.
 
 ## Step 4 — Create the Doc
 

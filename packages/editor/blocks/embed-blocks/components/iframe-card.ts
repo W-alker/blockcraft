@@ -10,7 +10,7 @@ import {IS_SAFARI} from "../../../global";
   template: `
     <div class="iframe-wrapper">
       <iframe loading="lazy" allowfullscreen #iframeEle
-              sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-popups allow-downloads allow-storage-access-by-user-activation"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-storage-access-by-user-activation"
               draggable="false"
               allow="encrypted-media;clipboard-read *;clipboard-write *;" referrerpolicy=""
               data-iframe-will-auto-focus="1"

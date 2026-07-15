@@ -67,6 +67,91 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-07-15 (minor) — pagination becomes an opt-in plugin
+
+**Severity**: minor
+
+**What changed**: BlockCraft now exports `PaginationPlugin`, the pure pagination layout/export primitives, and `PageDividerBlockSchema`. The plugin owns reversible live page layout, configuration commands, the optional Cmd/Ctrl+P binding, and a stable WYSIWYG print surface. Tables can render cross-page continuation spacers without changing Yjs data. `DocExportManager.exportToPdf()` opens browser native printing by default or invokes a host-provided native backend while the current top-level WebView print mirror is mounted. The PDF body uses readonly BlockCraft components and the captured live page result instead of snapshot-viewer or DOM rasterization. The playground owns its debug-only settings panel; it is not part of the package API.
+
+**Why**: The prototype on `feat/pagination` coupled pagination to `BlockCraftDoc` construction and its page-shaped playground. Making pagination a registered plugin keeps continuous layout as the default, lets hosts switch layouts at runtime, and gives pagination one symmetric `init()` / `destroy()` lifecycle without persisting presentation state into the document model.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — adds the pagination domain, registered schema, plugin and quick reference.
+- `blockcraft-plugin.md` — documents the reversible runtime plugin pattern.
+- `blockcraft-plugins-ref.md` — indexes `PaginationPlugin` in the utility category.
+- `blockcraft-plugins-util.md` — documents pagination options, APIs and settings integration.
+- `blockcraft-app.md` — documents host registration, layout switching and print/PDF usage.
+- `blockcraft-theme.md` — documents pagination CSS tokens and view classes.
+
+### New APIs / Features
+
+- `PaginationPlugin` and `PaginationPluginOptions`; the live layout defaults to disabled.
+- `PageDividerBlockSchema` for explicit manual page breaks.
+- Pure pagination layout, view and export types/functions under `framework/modules/pagination/`.
+- `DocExportManager.exportToPdf()` pagination configuration and `printPdf()` vector printing.
+- `PaginationPlugin.exportToPdf()` and `DocExportManager.exportToPdf()` return print metadata and reuse the current stable page result unless explicitly reflowed.
+- `PaginationPdfHostBackend`, `PaginationPdfHostContext`, `PaginationPdfHostResult`, `PaginationPdfOptions`, `PaginationPdfResult` and structured `PaginationExportError` for browser/Tauri-neutral integration.
+- Pagination theme tokens under the `--bc-pagination-*` namespace.
+- Legacy `exportToPdf()` options `paging` and `blockMargin` remain accepted as deprecated no-ops for source compatibility; the new engine always uses block-aware pagination.
+
+### Migration Recipe
+
+Do not copy the prototype branch's document-service wiring:
+
+```typescript
+// before (prototype only; never released as the target contract)
+const doc = new BlockCraftDoc({
+  pagination: {enabled: true, pageSize: 'A4'},
+})
+doc.pagination.updateConfig({orientation: 'landscape'})
+
+// after
+const pagination = new PaginationPlugin({
+  enabled: true,
+  pageSize: 'A4',
+})
+const doc = new BlockCraftDoc({
+  // ...required config
+  plugins: [pagination],
+})
+pagination.updateConfig({orientation: 'landscape'})
+pagination.disable() // return to continuous layout without rebuilding the doc
+```
+
+Register `PageDividerBlockSchema` only when the host wants explicit manual page breaks. Existing documents and hosts remain on continuous layout when the plugin is absent or disabled.
+
+To export the page layout currently visible on screen, stop passing a duplicate pagination config:
+
+```typescript
+// before: always reflows using this separate config
+await exports.exportToPdf('document.pdf', {
+  pagination: {pageSize: 'A4', margins: {top: 72, right: 72, bottom: 72, left: 72}},
+})
+
+// after: enabled PaginationPlugin supplies the current stable layout
+await exports.exportToPdf('document.pdf')
+
+// Tauri/host application: run this inside a dedicated top-level export WebView
+await exports.exportToPdf('document.pdf', {
+  backend: async ({suggestedName, page, pageCount}) => {
+    const path = await choosePdfPath(suggestedName)
+    if (!path) return {status: 'cancelled'}
+    await invokeNativePdfPrint({path, page, pageCount})
+    return {status: 'saved', path}
+  },
+})
+```
+
+### Behavior Changes
+
+- Continuous layout remains the default. Enabling or disabling pagination changes local DOM/CSS view state only and does not write Yjs or create Undo history.
+- Pagination observers and table continuation views are created lazily and are fully removed on disable/destroy.
+- With enabled pagination and no explicit override, PDF export captures the current stable layout and snapshot synchronously, then uses real readonly BlockCraft components. Explicit `options.pagination` requests a separate reflow; a disabled plugin uses its config; no plugin falls back to A4.
+- PDF body export no longer uses `dom-to-image-more` or `pdf-lib`. Browser calls a same-origin print iframe; Tauri/other shells inject a native backend that prints the current top-level export WebView. Platform print engines may have small font/color differences, while page boxes and breakpoints stay fixed.
+- `DocExportManager.exportToPdf()` no longer returns bytes or downloads a generated Blob. It returns `output/status/pageCount/layoutRevision/warnings/path?`; browser cancellation is not observable, while host backends return `saved` or `cancelled`.
+- iframe content remains in the native print DOM and no longer raises the raster-only `unsupported-resource` error. Tainted canvas and unstable resources can still fail according to `resourcePolicy`.
+- Cmd/Ctrl+P is consumed by pagination only when the plugin is enabled and `printShortcut` is true.
+
 ### v?.?.? - 2026-07-15 (patch) — collaboration cursors preserve gap semantics across rerenders
 
 **Severity**: patch

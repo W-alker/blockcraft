@@ -1,4 +1,5 @@
 import {SnapshotEnhancementTask} from "../types";
+import {IFRAME_SANDBOX_FLAGS} from '../../global/env/iframe-sandbox'
 
 export function createMediaSourceEnhancementTask(
   target: HTMLMediaElement,
@@ -38,7 +39,7 @@ export function createIframeEnhancementTask(
       iframe.setAttribute("allowfullscreen", "true")
       iframe.setAttribute(
         "sandbox",
-        "allow-scripts allow-same-origin allow-presentation allow-forms allow-popups allow-downloads allow-storage-access-by-user-activation"
+        IFRAME_SANDBOX_FLAGS
       )
       iframe.setAttribute("allow", "encrypted-media;clipboard-read *;clipboard-write *;")
       iframe.setAttribute("draggable", "false")

@@ -4,9 +4,9 @@
 >
 > For creating new plugins, see `blockcraft-plugin.md`.
 >
-> Last updated: 2026-06-08
+> Last updated: 2026-07-15
 
-This index covers all 23 built-in plugins. Pick the category file that matches your task — don't read all files at once.
+This index covers all 24 built-in plugins. Pick the category file that matches your task — don't read all files at once.
 
 ## Category Router
 
@@ -16,7 +16,7 @@ This index covers all 23 built-in plugins. Pick the category file that matches y
 | Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin |
 | Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
 | Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, CodeInlineEditorBinding, TableBlockBinding |
-| Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, TranslatePlugin |
+| Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, TranslatePlugin, PaginationPlugin |
 
 ## Quick Lookup
 
@@ -45,6 +45,7 @@ This index covers all 23 built-in plugins. Pick the category file that matches y
 | `PasteFormatSelectorPlugin` | `util` | none (zero-config) |
 | `DemoPresentationPlugin` | `util` | none (zero-config) |
 | `TranslatePlugin` | `util` | `service` (required), language options |
+| `PaginationPlugin` | `util` | page geometry, browser/host-native WYSIWYG PDF printing, runtime enable, print shortcut |
 
 ## Plugin Composition Pattern
 
@@ -74,6 +75,7 @@ const plugins = [
   new TableBlockBinding(),
   new FindReplacePlugin(),
   new PasteFormatSelectorPlugin(),
+  new PaginationPlugin({enabled: false, pageSize: 'A4'}),
   translatePlugin,
 ];
 ```

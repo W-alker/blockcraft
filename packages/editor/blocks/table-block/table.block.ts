@@ -25,6 +25,84 @@ function cssZoomDeclarationSupported(): boolean {
   return CSS.supports('zoom', '2')
 }
 
+/** 分页视图行（占位行 / 续页重复表头克隆）：均为视图层注入、不属于数据模型，观测/选区/行栏一律跳过。 */
+function isPaginationViewRow(node: Node): boolean {
+  return node instanceof HTMLElement
+    && (node.classList.contains('bc-pagination-spacer') || node.classList.contains('bc-pagination-header-clone'))
+}
+
+/**
+ * 续页重复表头克隆里 data-block-id 改写用的前缀：保留 [data-block-id] CSS 级联、又不与真实块 id 冲突。
+ */
+const PG_CLONE_ID_PREFIX = '__pgclone__'
+
+/**
+ * 构建「续页重复表头」克隆 `<tr>`：跨页拆分的表格在每个续页顶部重复一份表头（rowHead 行）。
+ * 克隆当前渲染的表头行，去掉 rowspan（克隆只占一行、不向下跨）、不可编辑/点选。纯视图层，不进数据模型。
+ *
+ * data-block-id **不能直接删除**：编辑器的块外边距归一化（base.scss `[data-block-id]{margin-bottom}` +
+ * `[data-block-id]:last-child{margin-bottom:0}`）依赖它。删掉后克隆里的块会回落到浏览器 UA 默认外边距
+ * （`<p>` 1em、标题更大）→ 克隆比原表头高、内容「塌成一坨」。改写成 `__pgclone__` 前缀的非模型 id：
+ * 完整保留 [data-block-id] CSS 级联（外边距/定位/caret），又不与真实块 id 冲突、不会被 getBlockById 命中
+ * （命中也返回 null，所有 closest('[data-block-id]') 调用方均已判空）。克隆全程 inert（pointer-events/
+ * user-select none + contenteditable false + aria-hidden），不会有事件/选区从其内部发起。
+ */
+function buildPaginationHeaderClone(headerRowEl: HTMLElement): HTMLTableRowElement {
+  const clone = headerRowEl.cloneNode(true) as HTMLTableRowElement
+  clone.classList.add('bc-pagination-header-clone')
+  clone.classList.remove('selected')
+  clone.setAttribute('contenteditable', 'false')
+  clone.setAttribute('aria-hidden', 'true')
+  clone.style.pointerEvents = 'none'
+  clone.style.userSelect = 'none'
+  const rescopeBlockId = (el: Element) => {
+    const id = el.getAttribute('data-block-id')
+    if (id != null) el.setAttribute('data-block-id', PG_CLONE_ID_PREFIX + id)
+  }
+  rescopeBlockId(clone)
+  clone.querySelectorAll('[data-block-id]').forEach(rescopeBlockId)
+  clone.querySelectorAll('td, th').forEach(cell => {
+    const c = cell as HTMLElement
+    c.style.pointerEvents = 'none'
+    c.style.userSelect = 'none'
+    c.classList.remove('selected')
+    c.removeAttribute('rowspan') // 克隆表头只占一行，不向下跨（合并表头降级为平表头）
+  })
+  return clone
+}
+
+/**
+ * 构建一个无边框、不可编辑、不响应指针的占位 `<tr>`，撑出页缝高度把后续行推到下一页。
+ *
+ * 关键：表格是 `border-collapse: collapse`，外框 `border-right` 画在 `<table>` 上、左框来自首列 cell。
+ * 占位 cell 用 `border:none` 时，`none` 在边框冲突里优先级最低，会被 `<table>` 的 `border-right` 压过 →
+ * 右侧出现一条贯穿页缝的竖线。改用 **左右 `border-style: hidden`**（collapse 冲突里 `hidden` 优先级最高、
+ * 直接抹掉该段边框），把页缝内的左右竖线都消掉；上下保持 `none`（让相邻数据行的边框赢，
+ * 各页表格部分的上/下沿正常闭合）。
+ */
+function buildPaginationSpacer(gap: number, colspan: number): HTMLTableRowElement {
+  const tr = document.createElement('tr')
+  tr.className = 'bc-pagination-spacer'
+  tr.setAttribute('contenteditable', 'false')
+  tr.setAttribute('aria-hidden', 'true')
+  tr.style.cssText = `height:${gap}px;`
+  const td = document.createElement('td')
+  td.setAttribute('colspan', `${Math.max(1, colspan)}`)
+  td.style.cssText =
+    `height:${gap}px; padding:0; background:transparent; pointer-events:none;` +
+    `user-select:none; -webkit-user-select:none;` +
+    `border-top:none; border-bottom:none; border-left-style:hidden; border-right-style:hidden;`
+  tr.appendChild(td)
+  return tr
+}
+
+function shallowEqualNumberRecord(a: Record<string, number>, b: Record<string, number>): boolean {
+  const ka = Object.keys(a)
+  const kb = Object.keys(b)
+  if (ka.length !== kb.length) return false
+  return ka.every(k => a[k] === b[k])
+}
+
 /**
  * CSS zoom 下至少有三套坐标语义需要分开探测：
  * 1. BCR 距离是否已经乘过 zoom；
@@ -264,8 +342,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private resizeObserver = new ResizeObserver(entries => {
     for (const entry of entries) {
+      // 分页占位行无 data-block-id，不进高度记录、不参与行栏对齐。
+      if (isPaginationViewRow(entry.target)) continue
       const id = entry.target.getAttribute('data-block-id')
-      this._rowHeightsRecord[id!] = entry.borderBoxSize[0].blockSize
+      if (!id) continue
+      this._rowHeightsRecord[id] = entry.borderBoxSize[0].blockSize
       this.rowBarComponent.changeDetectionRef.markForCheck()
     }
   })
@@ -274,17 +355,37 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     for (const record of records) {
       if (record.addedNodes.length) {
         record.addedNodes.forEach(row => {
+          if (isPaginationViewRow(row)) return // 占位行/表头克隆不观测（高度由分页层管理）
           this.resizeObserver.observe(row as HTMLElement, { box: "border-box" })
         })
       }
       if (record.removedNodes.length) {
         record.removedNodes.forEach(row => {
+          if (isPaginationViewRow(row)) return
           this.resizeObserver.unobserve(row as HTMLElement)
         })
       }
     }
     this.rowBarComponent.changeDetectionRef.markForCheck()
   })
+
+  /** 视图层分页断点：rowId → 该行上方需插入的页缝高度（px）。不写 Yjs、不进 Undo。 */
+  protected _pageBreakGaps: Record<string, number> = {}
+  /**
+   * 上次重建占位行/续页表头克隆时的「视图结构签名」（列数 + 表头行 DOM）。占位行 colspan 和表头克隆是
+   * **快照**，依赖列数与表头内容；这些变化不改页缝 gap，若只看 gapsChanged 重建会漏掉——加列后克隆/占位行
+   * 仍是旧列数 → 错位。签名变化时强制重建。
+   */
+  private _pageBreakSig = ''
+  /** 当前被分页拆分（视图层覆盖 rowspan/display）的单元格，供下一轮整体还原。 */
+  private _splitCells = new Set<TableCellBlockComponent>()
+  /**
+   * 合并源单元格 → 其被 un-hide 的「续段」单元格（视图层跨页拆分产物）。
+   * 用于把 `.selected` 高亮镜像到续段上：否则一个被拆到两页的合并单元格只有上半段
+   * 高亮、下半段（续段）不亮，看起来「半选中」——违反「同一数据同一视觉」。纯视图态，
+   * 每次 applyPaginationBreaks 重建。
+   */
+  private _continuationsOf = new Map<TableCellBlockComponent, TableCellBlockComponent[]>()
 
 
   /**
@@ -397,6 +498,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   override ngOnDestroy() {
     super.ngOnDestroy();
+    this.tableBody?.querySelectorAll(':scope > tr.bc-pagination-spacer, :scope > tr.bc-pagination-header-clone').forEach(el => el.remove())
+    this._clearCellOverrides()
     this.mutationObserver.disconnect()
     this.resizeObserver.disconnect()
     this.fullscreenController?.destroy()
@@ -895,12 +998,27 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   protected selectCell = (cell: TableCellBlockComponent) => {
     if (this._selectedCellSet.has(cell)) return
     this._selectedCellSet.add(cell)
-    cell.hostElement.classList.add(TABLE_CELL_SELECTED_CLASS)
+    this._toggleCellSelected(cell, true)
   }
 
   protected _clearSelected() {
-    this._selectedCellSet.forEach(cell => cell.hostElement.classList.remove(TABLE_CELL_SELECTED_CLASS))
+    this._selectedCellSet.forEach(cell => this._toggleCellSelected(cell, false))
     this._selectedCellSet.clear()
+  }
+
+  /**
+   * 给单元格加/去 `.selected`，并把同样状态镜像到它的分页续段单元格上。
+   * 续段是模型里 display:none、被分页 un-hide 的视觉接续；若不镜像，跨页合并单元格
+   * 只会高亮上半段。选区坐标仍只认模型（master cell），续段纯做视觉同步。
+   */
+  private _toggleCellSelected(cell: TableCellBlockComponent, on: boolean): void {
+    cell.hostElement?.classList.toggle(TABLE_CELL_SELECTED_CLASS, on)
+    const conts = this._continuationsOf?.get(cell)
+    if (conts) {
+      for (const continuation of conts) {
+        continuation.hostElement?.classList.toggle(TABLE_CELL_SELECTED_CLASS, on)
+      }
+    }
   }
 
   // 根据上下坐标设置矩形区间选中
@@ -947,12 +1065,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _applySelectedDiff(nextCells: Set<TableCellBlockComponent>) {
     this._selectedCellSet.forEach(cell => {
       if (!nextCells.has(cell)) {
-        cell.hostElement.classList.remove(TABLE_CELL_SELECTED_CLASS)
+        this._toggleCellSelected(cell, false)
       }
     })
     nextCells.forEach(cell => {
       if (!this._selectedCellSet.has(cell)) {
-        cell.hostElement.classList.add(TABLE_CELL_SELECTED_CLASS)
+        this._toggleCellSelected(cell, true)
       }
     })
     this._selectedCellSet = nextCells
@@ -1783,7 +1901,227 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private _getRowElements(): HTMLElement[] {
     if (!this.tableBody) return []
-    return Array.from(this.tableBody.querySelectorAll(':scope > tr')) as HTMLElement[]
+    // 排除分页占位行——行 reorder / 选区 / 几何只认真实数据行。
+    return Array.from(this.tableBody.querySelectorAll(':scope > tr:not(.bc-pagination-spacer):not(.bc-pagination-header-clone)')) as HTMLElement[]
+  }
+
+  // ───────── 分页协作 API（仅屏幕分页子系统调用；普通态 _pageBreakGaps 为空、零行为变化）─────────
+
+  /**
+   * 返回表格的「自然」几何（排除已施加的分页占位行高度），供分页引擎测量与定位行切点。
+   * - `naturalHeight`：host border-box 高度减去所有占位行高度。
+   * - `rows`：每行 host 相对 table host 顶的自然 top/bottom（已扣除其上方累计占位高度）。
+   *
+   * **测量反馈环防护**：占位行（spacer/clone）的影响由 accGap 扣掉，但**合并单元格跨页拆分**的视图覆盖
+   * （`_splitMergedCellsAtBreaks` 把 master rowspan 缩小、un-hide 续段）会真实改变**行高分配**——被拆合并
+   * 单元格的内容塞进首段、首段那几行被撑高，于是测到的行几何**依赖当前拆分结果** → 拆分→行高变→引擎选
+   * 不同切点→重拆→…… 疯狂重算抖动（content 高过行 span 时尤甚）。因此当存在 active 拆分覆盖（`_splitCells`）
+   * 时，先把分页视图态整体清掉、量「真·自然几何」（合并单元格完整、无占位行），量完**恢复原拆分态**
+   * （pure，无净副作用，打印测量路径同样安全）——使引擎输入与当前拆分无关、稳定收敛。
+   */
+  getPaginationGeometry(): { naturalHeight: number; headerHeight: number; rows: Array<{ id: string; top: number; bottom: number; coveredFromAbove: boolean; coveredByContentMerge: boolean }> } {
+    if (this._splitCells.size > 0) {
+      const snapshot = Object.entries(this._pageBreakGaps).map(([beforeRowId, gap]) => ({ beforeRowId, gap }))
+      this.applyPaginationBreaks([]) // 清空：合并单元格还原成整体、移除占位行/续页表头克隆
+      try {
+        return this._measureNaturalGeometry()
+      } finally {
+        this.applyPaginationBreaks(snapshot) // 恢复拆分态（含 spacer/clone/续段高亮镜像）
+      }
+    }
+    return this._measureNaturalGeometry()
+  }
+
+  private _measureNaturalGeometry(): { naturalHeight: number; headerHeight: number; rows: Array<{ id: string; top: number; bottom: number; coveredFromAbove: boolean; coveredByContentMerge: boolean }> } {
+    const host = this.hostElement
+    const hostTop = host.getBoundingClientRect().top
+    const rowBlocks = this.getChildrenBlocks()
+
+    // 逐行判定「是否被上方 rowspan 覆盖」：边界被合并单元格跨越则不可在此切（否则会腰斩合并单元格）。
+    // 并区分覆盖它的合并单元格**有没有内容**：带内容的合并单元格无法跨页拆（内容流不进空续段、必溢出），
+    // 这类边界连 splitOffsets 都不收 → keep-together；空合并单元格仍可拆。
+    const colCount = this.colLength
+    const covered = new Array<boolean>(rowBlocks.length).fill(false)
+    const coveredByContent = new Array<boolean>(rowBlocks.length).fill(false)
+    if (colCount > 0) {
+      const matrix = buildCellMatrix(rowBlocks, rowBlocks.length, colCount)
+      for (let r = 0; r < rowBlocks.length; r++) {
+        for (let c = 0; c < colCount; c++) {
+          const info = matrix[r]?.[c]
+          if (info && info.sourceRow < r) {
+            covered[r] = true
+            const cell = info.cell as TableCellBlockComponent
+            if (cell?.hasContent) coveredByContent[r] = true
+          }
+        }
+      }
+    }
+
+    // 表头高（rowHead 时 = 首行自然 border-box 高）；无表头为 0。供引擎预留续页重复表头空间。
+    const rowHead = this.props.rowHead && rowBlocks.length > 0
+    const headerHeight = rowHead ? (rowBlocks[0]?.hostElement?.offsetHeight ?? 0) : 0
+
+    // 按 DOM 顺序遍历 tbody 的 <tr>：累计「视图行」（占位行 + 续页表头克隆）的**实际**高度作为 accGap，
+    // 数据行的自然 top/bottom = DOM 位置 − accGap。用实际渲染高（而非估算）保证自然几何稳定、不形成测量反馈环
+    // （估算与克隆实际高有几像素差时，切点会漂移 → computeTableBreaks 的 2px 匹配失败 → 断点反复加/删抖动）。
+    const rows: Array<{ id: string; top: number; bottom: number; coveredFromAbove: boolean; coveredByContentMerge: boolean }> = []
+    let accGap = 0
+    let dataIdx = 0
+    const trList = this.tableBody
+      ? Array.from(this.tableBody.querySelectorAll(':scope > tr')) as HTMLElement[]
+      : []
+    for (const tr of trList) {
+      if (isPaginationViewRow(tr)) { accGap += tr.offsetHeight; continue }
+      const r = tr.getBoundingClientRect()
+      rows.push({
+        id: rowBlocks[dataIdx]?.id ?? (tr.getAttribute('data-block-id') ?? ''),
+        top: r.top - hostTop - accGap,
+        bottom: r.bottom - hostTop - accGap,
+        coveredFromAbove: covered[dataIdx] ?? false,
+        coveredByContentMerge: coveredByContent[dataIdx] ?? false,
+      })
+      dataIdx++
+    }
+    return { naturalHeight: host.offsetHeight - accGap, headerHeight, rows }
+  }
+
+  /**
+   * 施加/更新/清除分页断点（视图层占位行 + 行栏对齐间隙）。幂等：与当前一致则不动 DOM。
+   * 传 `[]` 清除全部。占位行无边框、无 data-block-id、不可编辑、不响应指针，纯撑高把后续行推到下一页。
+   */
+  applyPaginationBreaks(breaks: Array<{ beforeRowId: string; gap: number }>): void {
+    if (!this.tableBody) return
+    const next: Record<string, number> = {}
+    for (const b of breaks) {
+      if (b.gap > 0) next[b.beforeRowId] = b.gap
+    }
+    const gapsChanged = !shallowEqualNumberRecord(this._pageBreakGaps, next)
+
+    const rowBlocks = this.getChildrenBlocks()
+    const rowElById = new Map<string, HTMLElement>()
+    const indexById = new Map<string, number>()
+    rowBlocks.forEach((rowBlock, i) => {
+      if (rowBlock.hostElement) rowElById.set(rowBlock.id, rowBlock.hostElement)
+      indexById.set(rowBlock.id, i)
+    })
+
+    const breakIndices: number[] = []
+    for (const rowId of Object.keys(next)) {
+      const idx = indexById.get(rowId)
+      if (idx !== undefined && idx > 0) breakIndices.push(idx)
+    }
+    breakIndices.sort((a, b) => a - b)
+
+    // 合并单元格拆分：每次都按「当前合并结构」重算还原——合并/取消合并可能改了 rowspan 结构
+    // 却没改页缝 gap（不触发 spacer 重建），故不能放进下面的 gap 早退里。开销仅落在真正被拆的表格上。
+    this._clearCellOverrides()
+    this._splitMergedCellsAtBreaks(rowBlocks, breakIndices)
+
+    // 占位行 + 续页重复表头 DOM：在断点集合（gap）变化时重建——避免每次重算都删/插造成滚动抖动。
+    // 但占位行 colspan / 表头克隆是快照、依赖**列数 + 表头内容**，这些变化不改 gap；故再加一道「视图结构签名」
+    // （列数 + 表头行 innerHTML）：签名变化（加/删列、改表头）时也强制重建，否则克隆/占位行停留在旧列数 → 错位。
+    const headerRowEl = this.props.rowHead ? rowBlocks[0]?.hostElement ?? null : null
+    const viewSig = `${this.colLength}|${headerRowEl ? headerRowEl.innerHTML : ''}`
+    if (gapsChanged || viewSig !== this._pageBreakSig) {
+      this.tableBody.querySelectorAll(':scope > tr.bc-pagination-spacer, :scope > tr.bc-pagination-header-clone')
+        .forEach(el => el.remove())
+      // 带表头（rowHead）的表格：每个续页顶部（占位行之后、断点行之前）重复一份表头克隆。
+      for (const [rowId, gap] of Object.entries(next)) {
+        const rowEl = rowElById.get(rowId)
+        if (!rowEl) continue
+        this.tableBody.insertBefore(buildPaginationSpacer(gap, this.colLength), rowEl)
+        // [临时禁用 2026-06-30] 续页重复表头复制 bug 较多，先关掉。恢复：取消下面三行注释。
+        // if (headerRowEl && headerRowEl !== rowEl) {
+        //   this.tableBody.insertBefore(buildPaginationHeaderClone(headerRowEl), rowEl)
+        // }
+      }
+      this._pageBreakGaps = next
+      this._pageBreakSig = viewSig
+    }
+
+    this.rowBarComponent?.changeDetectionRef.markForCheck()
+  }
+
+  /**
+   * 对每个被 `breakIndices` 跨越的竖向合并单元格做视图层拆分（Word 式）：
+   * 源单元格 rowspan 缩到第一个断点，之后每段在断点行 un-hide 一个续段单元格（空、接续合并）。
+   * 续段单元格 = 该断点行在源列的占位（display:none）单元格——矩形网格里它一定存在。
+   */
+  private _splitMergedCellsAtBreaks(rowBlocks: BlockCraft.BlockComponent[], breakIndices: number[]): void {
+    if (!breakIndices.length) return
+    const colCount = this.colLength
+    if (!colCount) return
+    const matrix = buildCellMatrix(rowBlocks, rowBlocks.length, colCount)
+
+    for (let s = 0; s < rowBlocks.length; s++) {
+      for (let c = 0; c < colCount; c++) {
+        const info = matrix[s]?.[c]
+        if (!info || info.sourceRow !== s || info.sourceCol !== c) continue // 只在合并源处理一次
+        const span = info.cell.props.rowspan || 1
+        if (span <= 1) continue
+        const crossing = breakIndices.filter(b => b > s && b < s + span)
+        if (!crossing.length) continue
+
+        const colspan = info.cell.props.colspan || 1
+        const segStarts = [s, ...crossing]
+        const segEnds = [...crossing, s + span]
+        const master = info.cell as TableCellBlockComponent
+        // 段0：源单元格，rowspan 缩到第一个断点（仍带内容、本页）。缩到 1 行时置 null（移除 rowspan 属性，对齐模型约定）。
+        const srcRowspan = segEnds[0] - s
+        this._setCellOverride(master, { rowspan: srcRowspan > 1 ? srcRowspan : null })
+        // 段1..：每个断点行的占位单元格 un-hide 成续段（空、接续下页）。
+        // 续段是模型里 display:none 的「被覆盖」单元格，纯视觉接续——置 pointer-events:none，
+        // 避免被点选/编辑（否则会往一个模型态合并单元格里写内容）。
+        const conts: TableCellBlockComponent[] = []
+        for (let i = 1; i < segStarts.length; i++) {
+          const contCell = rowBlocks[segStarts[i]]?.getChildrenByIndex(c) as TableCellBlockComponent | undefined
+          if (!contCell) continue
+          this._setCellOverride(contCell, { display: '', rowspan: segEnds[i] - segStarts[i], colspan }, true)
+          conts.push(contCell)
+        }
+        if (conts.length) {
+          this._continuationsOf.set(master, conts)
+          // 若该合并源此刻正被选中，把高亮镜像到刚生成的续段上（分页在选区存活期间重算时）。
+          if (this._selectedCellSet.has(master)) {
+            for (const c2 of conts) c2.hostElement?.classList.add('selected')
+          }
+        }
+      }
+    }
+  }
+
+  private _setCellOverride(
+    cell: TableCellBlockComponent,
+    render: { rowspan?: number | null; colspan?: number | null; display?: string | null },
+    nonInteractive = false,
+  ): void {
+    cell.setPaginationRender(render)
+    if (nonInteractive && cell.hostElement) {
+      cell.hostElement.style.pointerEvents = 'none'
+      cell.hostElement.style.userSelect = 'none'
+    }
+    this._splitCells.add(cell)
+  }
+
+  private _clearCellOverrides(): void {
+    for (const cell of this._splitCells) {
+      cell.setPaginationRender(null)
+      if (cell.hostElement) {
+        cell.hostElement.style.pointerEvents = ''
+        cell.hostElement.style.userSelect = ''
+      }
+    }
+    // 续段重新隐藏（display:none），去掉镜像上去的 `.selected`，避免残留到下次 un-merge。
+    for (const conts of this._continuationsOf.values()) {
+      for (const c of conts) c.hostElement?.classList.remove('selected')
+    }
+    this._continuationsOf.clear()
+    this._splitCells.clear()
+  }
+
+  /** 清除全部分页占位行 + 还原拆分的合并单元格（分页关闭 / 组件销毁时调用）。 */
+  clearPaginationBreaks(): void {
+    this.applyPaginationBreaks([])
   }
 
   /**

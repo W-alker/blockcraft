@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-06-17
+> Last updated: 2026-07-15
 
 ## Theme Structure
 
@@ -135,6 +135,20 @@ body[blockcraft-theme="dark"] {
   --bc-table-fullscreen-bg: var(--bc-bg-primary, #171d24);
 }
 ```
+
+### Pagination View
+
+`PaginationPlugin` applies these public tokens only while live pagination is enabled:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `--bc-page-sheet-bg` | `#fff` | Sheet background |
+| `--bc-page-sheet-shadow` | subtle border/shadow | Sheet elevation |
+| `--bc-pagination-backdrop-bg` | `#f5f5f4` | Scroll-container background between sheets |
+| `--bc-page-chrome-color` | `#9b9b97` | Header/footer text color |
+| `--bc-page-chrome-fs` | `12px` | Header/footer font size |
+
+Runtime classes are `.bc-paginated` on the document root, `.bc-paginated-scroll` on the scroll container, `.bc-pagination-backdrop`, `.bc-page-sheet`, `.bc-page-header` and `.bc-page-footer`. They are plugin-owned state: host code may style them but must not add/remove them directly.
 
 ## Checklist
 

@@ -426,3 +426,76 @@
 .bc-scrollable-container {
   @include bc_scrollbar;
 }
+
+/* ───────── pagination（分页展示模式，默认不生效，由 controller 加类启用）───────── */
+.editor-container.bc-paginated-scroll {
+  position: relative;
+  /* 用 flex 居中正文列，而不是依赖 root 的 margin:auto——后者会被后载入的主题规则
+     把 margin-left 改成 0 而失效（中线偏移）。align-items:center 由容器侧居中，
+     不与 root 的 margin 特异度打架，且窄视口时正文与页框一起对称溢出、中线始终一致。
+     背景层是 absolute，不参与 flex 布局，仍按 padding box 定位。 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* !important 压过 editor 组件内 scoped 的 .editor-container 默认 padding/background。
+     横向 padding 必须为 0：页框背景层 absolute 定位于 padding box、会忽略 padding，
+     若容器留横向 padding，正文列与全宽居中的页框中线就会错开。 */
+  padding: 24px 0 !important;
+  background: var(--bc-pagination-backdrop-bg) !important;
+}
+
+.bc-pagination-backdrop {
+  position: absolute;
+  top: 24px;                        /* 与滚动容器上 padding 对齐 */
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  z-index: 0;                       /* 在内容之下：root 内容为后续兄弟、绘制在上 */
+  pointer-events: none;
+}
+
+.bc-page-sheet {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bc-page-sheet-bg);
+  box-shadow: var(--bc-page-sheet-shadow);
+  border-radius: 2px;
+}
+
+/* 页眉/页脚：左/中/右三段，绝对定位在每张纸的页边距带内（由 JS 设 top/height/left/right）。 */
+.bc-page-header,
+.bc-page-footer {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--bc-page-chrome-fs);
+  line-height: 1.2;
+  color: var(--bc-page-chrome-color);
+  pointer-events: none;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.bc-page-chrome-left { text-align: left; }
+.bc-page-chrome-center { text-align: center; }
+.bc-page-chrome-right { text-align: right; }
+
+[data-blockcraft-root="true"].bc-paginated {
+  position: relative;
+  z-index: 1;                       /* 内容绘制在背景纸之上 */
+  box-sizing: border-box;
+  width: var(--bc-page-width);
+  flex: 0 0 auto;                   /* flex 项不拉伸；横向由容器 align-items:center 居中 */
+  /* 纵向不要 margin-top：顶部留白由容器 padding-top(24px) 提供，与背景层 top:24px 一致，
+     否则 padding-top + margin-top 会把正文比页框多压 24px。 */
+  margin: 0;
+  padding: var(--bc-page-margin-top) var(--bc-page-margin-right) var(--bc-page-margin-bottom) var(--bc-page-margin-left);
+  background: transparent;          /* 纸张白底来自背景层 */
+}
+
+/* 分页模式下规整块间距：只用 margin-bottom，margin-top 归 0，
+   使 measure() 的高度稳定、gap 施加在干净的 margin-top 上，避免 margin 折叠误差。 */
+[data-blockcraft-root="true"].bc-paginated > [data-block-id] {
+  margin-top: 0;
+}

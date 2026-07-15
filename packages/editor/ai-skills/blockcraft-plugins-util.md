@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-06-08
+> Last updated: 2026-07-15
 
 ## PlaceholderPlugin
 
@@ -170,6 +170,56 @@ doc.enterDemoMode({ fontScale: 1.5, lineHeightScale: 1.2, segmentsGapScale: 1 })
 // No enlargement at all (presentation matches source exactly)
 doc.enterDemoMode({ fontScale: 1 });
 ```
+
+---
+
+## PaginationPlugin
+
+> `plugins/pagination/` — Optional Word-style live pagination, page settings and print/PDF coordination.
+
+### Configuration
+
+```typescript
+new PaginationPlugin(options?: PaginationPluginOptions)
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | `boolean` | `false` | Initial live-layout state; held by the plugin, not `DocConfig` |
+| `pageSize` | `PageSizeName \| {width, height}` | `'A4'` | Named PDF-point size or custom CSS-pixel dimensions |
+| `orientation` | `'portrait' \| 'landscape'` | `'portrait'` | Page orientation |
+| `margins` | `Partial<PageMargins>` | `72px` each side | Page margins |
+| `pageGap` | `number` | `24` | Screen gap between sheets |
+| `header` / `footer` | `PageChrome` | none | Left/center/right text; supports `{page}` and `{total}` |
+| `widowOrphanLines` | `number` | `2` | Minimum rows/lines on both sides of a safe split |
+| `printShortcut` | `boolean` | `false` | Route Cmd/Ctrl+P to plugin printing only while enabled |
+
+### Public API
+
+| Member | Description |
+|--------|-------------|
+| `enabled` | Current live-layout state |
+| `config` | Current pagination config (without enabled state) |
+| `enable()` / `disable()` | Apply or fully remove the reversible pagination view |
+| `updateConfig(partial)` | Merge config and schedule one frame-coalesced recompute |
+| `recompute()` | Request a manual recompute while enabled |
+| `print()` | Build WYSIWYG print pages; reuses live measurements when enabled |
+| `exportToPdf(name, options?)` | Browser print or host-native PDF; reuses the current stable page result unless `options.pagination` requests reflow |
+
+```typescript
+const pagination = new PaginationPlugin({enabled: false, printShortcut: true})
+const doc = new BlockCraftDoc({/* ... */ plugins: [pagination]})
+
+pagination.enable()
+pagination.updateConfig({
+  pageSize: 'A4',
+  footer: {center: '第 {page} / {total} 页'},
+})
+await pagination.exportToPdf('document.pdf')
+pagination.disable()
+```
+
+The plugin changes only local DOM/CSS view state. It never writes Yjs and produces no Undo item. `exportToPdf()` opens a browser print dialog by default, or invokes a `PaginationPdfHostBackend` while the current top-level WebView print mirror is mounted. It does not return PDF bytes and its body path does not use `dom-to-image-more`. The WYSIWYG path uses the same stable pagination result and readonly BlockCraft block components, not snapshot-viewer. Explicit `options.pagination` means a new reflow. Register `PageDividerBlockSchema` to expose manual page breaks. The package intentionally does not publish a settings component: host UI reads `plugin.config` and sends changes through `plugin.updateConfig(...)`; the playground keeps its own debug-only panel as an integration example.
 
 ---
 

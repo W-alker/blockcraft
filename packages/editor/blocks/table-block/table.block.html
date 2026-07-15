@@ -7,6 +7,7 @@
       不需要任何 JS 计算或同步。
     -->
     <table-row-bar [rowIds]="_childrenIds" [rowHeightsRecord]="_rowHeightsRecord"
+                   [pageBreakGaps]="_pageBreakGaps"
                    [visibleHandleIndex]="_visibleRowHandle"
                    [selectedRange]="_activeRowRange"
                    (hoveredHandleChange)="onRowHandleHovered($event)"

@@ -140,4 +140,11 @@
   --bc-scrollbar-thumb-color: #D9D9D9;
   --bc-scrollbar-thumb-hover-color: #BFBFBF;
   --bc-scrollbar-track-color: #fff;
+
+  // 分页展示相关
+  --bc-page-sheet-bg: #ffffff;
+  --bc-page-sheet-shadow: 0 1px 4px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--bc-border-color-light);
+  --bc-pagination-backdrop-bg: #f5f5f4;
+  --bc-page-chrome-color: #9b9b97;
+  --bc-page-chrome-fs: 12px;
 }

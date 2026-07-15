@@ -5,7 +5,7 @@
 > For configuring existing built-in plugins, see `blockcraft-plugins-ref.md`.
 > For event system internals, see L2: `blockcraft-event.md`.
 >
-> Last updated: 2026-05-29
+> Last updated: 2026-07-15
 
 ## Plugin Lifecycle
 
@@ -263,6 +263,34 @@ And export from `plugins/index.ts`:
 export { MyPlugin } from './my-feature';
 ```
 
+### Runtime-enabled plugin example: Pagination
+
+`PaginationPlugin` is registered once and can be enabled without rebuilding the document:
+
+```typescript
+const pagination = new PaginationPlugin({
+  enabled: false,
+  pageSize: 'A4',
+  printShortcut: true,
+})
+
+const doc = new BlockCraftDoc({
+  // ...other config
+  plugins: [pagination],
+})
+
+pagination.enable()
+pagination.updateConfig({
+  margins: {top: 72, right: 72, bottom: 72, left: 72},
+  footer: {center: '{page} / {total}'},
+})
+pagination.recompute()
+await pagination.exportToPdf('document.pdf') // current stable layout; browser print dialog
+pagination.disable()
+```
+
+The plugin owns all `ResizeObserver`, animation-frame, DOM-layer and print resources. `enable()`, `disable()` and `destroy()` are idempotent. Its `Cmd/Ctrl+P` binding uses `shortKey` and consumes the event only while pagination and `printShortcut` are both enabled. `exportToPdf()` serializes concurrent work, synchronously captures layout plus snapshot before the first await, and uses a readonly editor render surface rather than snapshot-viewer. Without a backend it opens browser print; a Tauri host can inject `PaginationPdfHostBackend` to print the current top-level export WebView.
+
 ## Checklist
 
 - [ ] Plugin extends `DocPlugin`
@@ -285,3 +313,4 @@ export { MyPlugin } from './my-feature';
 | Block transformation | `BlockTransformerPlugin` | `plugins/block-transformer/` |
 | Keyboard shortcuts | `FindReplacePlugin` | `plugins/findReplace/` |
 | Drag & hover | `BlockControllerPlugin` | `plugins/block-controller/` |
+| Reversible layout controller | `PaginationPlugin` | `plugins/pagination/` |

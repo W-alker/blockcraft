@@ -13,12 +13,14 @@ import {
   ISelectionJSON,
   MarkdownStreamViewer,
   MarkdownStreamRenderer,
+  PaginationPlugin,
   PresentationController,
   SnapshotViewerComponent,
   createMarkdownStreamViewer,
   generateId,
   replaceSnapshotsIdDeeply
 } from '@ccc/blockcraft';
+import {PaginationSettingsComponent} from './pagination-settings.component';
 import { debugTableMerge, fixTable } from '@ccc/blockcraft/blocks/table-block/callback';
 import { BlockCraftAwareness } from '@ccc/blockcraft/editor/awa';
 import { Subscription } from 'rxjs';
@@ -167,6 +169,7 @@ const ACTION_SECTIONS: DebugSection[] = [
       { id: 'importMarkdown', label: '导入 Markdown' },
       { id: 'importBlockSnapshotTxt', label: '导入 TXT' },
       { id: 'exportMarkdown', label: '导出 Markdown' },
+      { id: 'exportPdf', label: '导出 PDF' },
       { id: 'exportImage', label: '导出图片' }
     ]
   },
@@ -202,7 +205,7 @@ const ACTION_SECTIONS: DebugSection[] = [
 @Component({
   selector: 'bc-root',
   standalone: true,
-  imports: [EditorComponent, SnapshotViewerComponent],
+  imports: [EditorComponent, SnapshotViewerComponent, PaginationSettingsComponent],
   template: `
     <div class="app-shell">
       <aside class="sidebar">
@@ -316,6 +319,28 @@ const ACTION_SECTIONS: DebugSection[] = [
             <p>左侧面板负责调试控制，右侧可在完整编辑器与 snapshot-viewer demo 间切换。</p>
           </div>
           <div class="editor-header__actions">
+            @if (activeMainTab === 'editor') {
+              <div class="main-tabs" role="group" aria-label="编辑器布局切换">
+                <button
+                  class="main-tab"
+                  type="button"
+                  [disabled]="!editorInitialized"
+                  [attr.aria-pressed]="!paginationEnabled"
+                  [class.main-tab--active]="!paginationEnabled"
+                  (click)="setPaginationEnabled(false)">
+                  连续布局
+                </button>
+                <button
+                  class="main-tab"
+                  type="button"
+                  [disabled]="!editorInitialized"
+                  [attr.aria-pressed]="paginationEnabled"
+                  [class.main-tab--active]="paginationEnabled"
+                  (click)="setPaginationEnabled(true)">
+                  分页布局
+                </button>
+              </div>
+            }
             <div class="main-tabs" role="tablist" aria-label="主内容切换">
               <button
                 class="main-tab"
@@ -346,6 +371,13 @@ const ACTION_SECTIONS: DebugSection[] = [
           <section class="editor-stage">
             <block-craft-editor #editor [stickyTop]="0"></block-craft-editor>
           </section>
+        }
+
+        @if (activeMainTab === 'editor' && paginationEnabled && paginationPlugin) {
+          <bc-pagination-settings
+            class="pagination-settings-float"
+            [plugin]="paginationPlugin!">
+          </bc-pagination-settings>
         }
 
         @if (activeMainTab === 'viewer') {
@@ -1362,6 +1394,28 @@ graph TD
     return this.editor?.doc.isReadonly ?? true;
   }
 
+  get paginationPlugin(): PaginationPlugin | null {
+    return this.editor?.doc.plugins.find(
+      plugin => plugin instanceof PaginationPlugin,
+    ) ?? null;
+  }
+
+  get paginationEnabled(): boolean {
+    return this.paginationPlugin?.enabled ?? false;
+  }
+
+  setPaginationEnabled(enabled: boolean): void {
+    const editor = this.ensureEditorInitialized();
+    const plugin = editor.doc.plugins.find(
+      candidate => candidate instanceof PaginationPlugin,
+    );
+    if (!plugin) {
+      throw new Error('PaginationPlugin is not registered.');
+    }
+    enabled ? plugin.enable() : plugin.disable();
+    this.cdr.markForCheck();
+  }
+
   get currentTheme() {
     return this.editor?.doc.theme ?? 'light';
   }
@@ -1564,7 +1618,11 @@ graph TD
         this.exportMarkdown();
         return;
       case 'exportPdf':
-        this.exportPdf();
+        void this.exportPdf().catch(error => {
+          const message = error instanceof Error ? error.message : '未知错误';
+          this.ensureEditorInitialized().doc.messageService.error(`PDF 导出失败：${message}`);
+          console.warn('[playground] PDF export failed', error);
+        });
         return;
       case 'exportImage':
         this.exportImage();
@@ -2057,14 +2115,16 @@ $$
     this._markdownTestTimer = null;
   }
 
-  exportPdf() {
+  async exportPdf() {
     const editor = this.ensureEditorInitialized();
-    new DocExportManager(editor.doc).exportToPdf('blockcraft-export-test.pdf', {
-      bgcolor: '#fff',
-      scale: 1,
-      pdfPageSize: 'A2',
-      paging: true
+    const result = await new DocExportManager(editor.doc).exportToPdf('blockcraft-export-test.pdf', {
+      // 不传 pagination：分页启用时复用当前稳定布局；连续布局时复用插件当前配置重新排版。
     });
+    if (result.warnings.length) {
+      editor.doc.messageService.warn(
+        `PDF 打印面包含 ${result.warnings.length} 项降级资源`,
+      );
+    }
   }
 
   exportImage() {

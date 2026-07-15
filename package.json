@@ -63,7 +63,6 @@
     "micromark-util-combine-extensions": "^2.0.0",
     "nanoid": "^5.1.2",
     "ng-zorro-antd": "^20.0.0",
-    "pdf-lib": "^1.17.1",
     "prettier": "^3.5.3",
     "prism": "^4.1.2",
     "prismjs": "1.30.0",

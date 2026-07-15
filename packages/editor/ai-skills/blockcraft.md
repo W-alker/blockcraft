@@ -30,6 +30,7 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | **Inline** | Rich text within editable blocks; Blot tree on Y.Text | `InlineRuntime` in `framework/block-std/inline/` |
 | **Selection** | Anchor/head selection model over blocks | `SelectionManager` in `framework/modules/selection/` |
 | **Input** | Intercepts `beforeInput`, writes to Y.Text directly | `InputTransformer` in `framework/modules/input/` |
+| **Pagination** | Pure page layout + reversible live view + print/PDF | `PaginationPlugin` + `framework/modules/pagination/` |
 | **Event** | Three-tier event dispatcher (block→flavour→global) | `UIEventDispatcher` in `framework/block-std/event/` |
 | **Chain** | Fluent builder for sequencing mutations | `DocChain` in `framework/chain/` |
 | **Schema** | Block registration: flavour, component, createSnapshot | `SchemaManager` in `framework/block-std/schema/` |
@@ -50,7 +51,7 @@ Three `nodeType` categories:
 
 ### Currently Registered Block Schemas (from `editor/editor.ts`)
 
-`paragraph, ordered, bullet, todo, callout, code, divider, image, table, table-row, table-cell, attachment, bookmark, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio`
+`paragraph, ordered, bullet, todo, callout, code, divider, page-divider, image, table, table-row, table-cell, attachment, bookmark, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio`
 
 A host application can register a subset or extend this list — see `blockcraft-app.md`.
 
@@ -114,6 +115,26 @@ packages/editor/
 - **Stuck on a runtime error**: jump to `blockcraft-debug.md` for tracing strategies.
 
 ## Quick Reference: Common APIs
+
+### Pagination Plugin
+
+```typescript
+const pagination = new PaginationPlugin({
+  enabled: false,
+  pageSize: 'A4',
+  printShortcut: true,
+})
+
+plugins: [pagination]
+
+pagination.enable()
+pagination.updateConfig({orientation: 'landscape'})
+await pagination.exportToPdf('document.pdf') // browser print dialog; current stable page layout
+await pagination.print()
+pagination.disable()
+```
+
+分页启用状态属于插件，不属于 `DocConfig`；不要使用 `DocConfig.pagination` 或 `doc.pagination`。插件关闭时会移除页框、块间距、表格视图断点和高度锁定，且不会写入 Yjs。`exportToPdf()` 使用真实只读 BlockCraft 组件；不传 `pagination` override 时复用当前稳定分页结果，snapshot-viewer 不参与分页 PDF。浏览器走系统打印，Tauri 等宿主通过 `PaginationPdfHostBackend` 打印当前顶层导出 WebView；正文不经过 DOM 栅格化。
 
 ### Snapshot Viewer (Display Only)
 
@@ -371,6 +392,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `FindReplacePlugin` | `plugins/findReplace/` | Cmd+F find & replace |
 | `TranslatePlugin` | `plugins/translate/` | Block translation via DI service |
 | `PlaceholderPlugin` | `plugins/placeholder/` | Renders schema-declared placeholder on focused empty editable blocks; supports per-flavour overrides |
+| `PaginationPlugin` | `plugins/pagination/` | Opt-in live pagination, page settings, print shortcut and WYSIWYG printing |
 
 > A host app can pass any subset of these (plus its own custom plugins) into `DocConfig.plugins`. See `blockcraft-app.md`.
 

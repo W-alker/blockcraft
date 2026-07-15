@@ -2,6 +2,13 @@ import {downloadFile} from "../global";
 // @ts-ignore
 import domtoimage from 'dom-to-image-more'
 import {ClipboardDataType, DOC_ADAPTER_SERVICE_TOKEN} from "../framework";
+import {
+  exportDocumentToPdf,
+  PaginationPdfOptions,
+  PaginationPdfResult,
+} from "../framework/modules/pagination/export";
+import {PaginationConfig} from "../framework/modules/pagination/pagination.types";
+import {PaginationPlugin} from "../plugins/pagination";
 
 interface CorsImgOptions {
   url: string; // eg: https://cors-anywhere.herokuapp.com/
@@ -139,128 +146,52 @@ export class DocExportManager {
   }
 
   /**
-   * 导出为 PDF. 自动分页。但是要注意block之间块的margin需要设置
-   * @param name
-   * @param options
+   * 导出为 PDF（引擎分页、块感知防分割、页眉/页脚/页码）。
+   *
+   * 浏览器默认打开系统打印对话框；Tauri 等宿主传入 backend，在当前顶层导出 WebView 中
+   * 调用 WKWebView/WebView2 原生 PDF 打印。正文不经过 DOM 栅格化。
+   *
+   * 不传 pagination 时优先复用启用中的 PaginationPlugin 当前稳定布局；显式 pagination 表示重新排版。
    */
-  async exportToPdf(name: string, options?: Pick<RenderOptions, 'scale' | 'bgcolor'> & {
+  async exportToPdf(name: string, options?: PaginationPdfOptions & {
+    /** @deprecated 新分页引擎始终按块策略分页；保留此字段仅用于源码兼容。 */
     paging?: boolean
-    pdfPageSize?: PdfSizeName
+    /** @deprecated 块间距由分页测量结果决定；保留此字段仅用于源码兼容。 */
     blockMargin?: number
-  },) {
-    const rootDom = this.doc.root.hostElement;
-    const PDFLib = await import('pdf-lib');
-    const pdfDoc = await PDFLib.PDFDocument.create();
-
-    const {width: pageWidthPt, height: pageHeightPt} = pdfSizes[options?.pdfPageSize || 'A4'];
-
-    const {scale = 1, blockMargin = 8, paging = false} = options || {}
-
-    const canvas = await this._toCanvas(options);
-    const canvasWidth = canvas.width;
-    const canvasHeight = canvas.height;
-
-    const ctx = canvas.getContext('2d')!;
-
-    const pageHeightPx = Math.floor(canvasWidth * (pageHeightPt / pageWidthPt) * scale);
-
-    const slices: { start: number; height: number }[] = [];
-
-    if (paging) {
-      // 处理padding
-      const scrollContainerStyles = window.getComputedStyle(this.doc.scrollContainer!)
-
-      const paddingTop = parseInt(scrollContainerStyles.paddingTop)
-
-      // 计算所有子元素的高度（按canvas像素比例缩放）
-      const blockHeights = Array.from(rootDom.children).map(
-        child => (child.clientHeight + blockMargin) * scale
-      );
-      blockHeights.unshift(paddingTop * scale)
-
-      let currentStartY = 0;
-      let accumulatedHeight = 0;
-
-      // TODO: 优化分页算法
-      for (const blockHeight of blockHeights) {
-        // 单个块比一页高，硬切直至一页能容纳，存留剩余高度
-        if (blockHeight > pageHeightPx) {
-          if (accumulatedHeight > 0) {
-            slices.push({start: currentStartY, height: accumulatedHeight});
-            currentStartY += accumulatedHeight;
-            accumulatedHeight = 0;
-          }
-          let remaining = blockHeight;
-          while (remaining > 0) {
-            slices.push({start: currentStartY, height: Math.min(pageHeightPx, remaining)});
-            currentStartY += Math.min(pageHeightPx, remaining);
-            remaining -= pageHeightPx;
-          }
-        } else {
-          if (accumulatedHeight + blockHeight > pageHeightPx) {
-            // 填不下了，分页
-            slices.push({start: currentStartY, height: accumulatedHeight});
-            currentStartY += accumulatedHeight;
-            accumulatedHeight = blockHeight;
-          } else {
-            accumulatedHeight += blockHeight;
-          }
-        }
-      }
-      // 最后一页
-      if (accumulatedHeight > 0) {
-        slices.push({start: currentStartY, height: accumulatedHeight});
-      }
-
-    } else {
-      // 每页高度分隔
-      let currentStartY = 0;
-      let accumulatedHeight = 0;
-      while (accumulatedHeight < canvasHeight) {
-        slices.push({start: currentStartY, height: Math.min(pageHeightPx, canvasHeight - accumulatedHeight)});
-        currentStartY += Math.min(pageHeightPx, canvasHeight - accumulatedHeight);
-        accumulatedHeight += Math.min(pageHeightPx, canvasHeight - accumulatedHeight);
-      }
+    /** 分页配置覆盖（纸张/方向/边距/页眉页脚）。 */
+    pagination?: PaginationConfig
+    /** @deprecated 旧字段，等价于 pagination.pageSize。 */
+    pdfPageSize?: PdfSizeName
+  }): Promise<PaginationPdfResult> {
+    const plugin = this._paginationPlugin()
+    const explicitPagination = options?.pagination
+      ?? (options?.pdfPageSize ? {pageSize: options.pdfPageSize} : undefined)
+    const exportOptions: PaginationPdfOptions = {
+      pagination: explicitPagination,
+      resourcePolicy: options?.resourcePolicy,
+      signal: options?.signal,
+      backend: options?.backend,
     }
+    if (plugin) return plugin.exportToPdf(name, exportOptions)
 
-    for (const slice of slices) {
-      const page = pdfDoc.addPage([pageWidthPt, pageHeightPt]);
-
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = canvasWidth;
-      tempCanvas.height = slice.height;
-
-      const tempCtx = tempCanvas.getContext('2d')!;
-      tempCtx.fillStyle = options?.bgcolor || '#ffffff';
-      tempCtx.fillRect(0, 0, canvasWidth, slice.height);
-
-      tempCtx.drawImage(
-        canvas,
-        0, slice.start, canvasWidth, slice.height,
-        0, 0, canvasWidth, slice.height
-      );
-
-      const imgDataUrl = tempCanvas.toDataURL('image/png');
-      const embeddedImg = await pdfDoc.embedPng(imgDataUrl);
-
-      const scaleFactor = pageWidthPt / canvasWidth;
-      const drawHeight = slice.height * scaleFactor;
-
-      page.drawImage(embeddedImg, {
-        x: 0,
-        y: pageHeightPt - drawHeight,
-        width: pageWidthPt,
-        height: drawHeight
-      });
-
-      tempCanvas.remove();
-    }
-
-    const pdfBase64 = await pdfDoc.saveAsBase64({dataUri: true});
-    await downloadFile(pdfBase64, name);
+    const config = explicitPagination ?? {pageSize: 'A4'}
+    const snapshot = this.doc.root.toSnapshot()
+    return exportDocumentToPdf(this.doc, snapshot, config, name, exportOptions)
   }
 
+  /**
+   * @deprecated 使用 exportToPdf()。保留为浏览器打印源码兼容别名。
+   */
+  async printPdf(options?: {
+    pagination?: PaginationConfig
+    pdfPageSize?: PdfSizeName
+  }): Promise<PaginationPdfResult> {
+    return this.exportToPdf('document.pdf', options)
+  }
 
+  private _paginationPlugin(): PaginationPlugin | undefined {
+    return this.doc.plugins.find(
+      candidate => candidate instanceof PaginationPlugin,
+    ) as PaginationPlugin | undefined
+  }
 }
-
-
