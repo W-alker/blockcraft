@@ -219,7 +219,7 @@ await pagination.exportToPdf('document.pdf')
 pagination.disable()
 ```
 
-The plugin changes only local DOM/CSS view state. It never writes Yjs and produces no Undo item. `exportToPdf()` opens a browser print dialog by default, or invokes a `PaginationPdfHostBackend` while the current top-level WebView print mirror is mounted. It does not return PDF bytes and its body path does not use `dom-to-image-more`. The WYSIWYG path uses the same stable pagination result and readonly BlockCraft block components, not snapshot-viewer. Explicit `options.pagination` means a new reflow. Register `PageDividerBlockSchema` to expose manual page breaks. The package intentionally does not publish a settings component: host UI reads `plugin.config` and sends changes through `plugin.updateConfig(...)`; the playground keeps its own debug-only panel as an integration example.
+The plugin changes only local DOM/CSS view state. It never writes Yjs and produces no Undo item. `exportToPdf()` opens a browser print dialog by default, or invokes a `PaginationPdfHostBackend` while the current top-level WebView print mirror is mounted. It does not return PDF bytes. The WYSIWYG path uses the same stable pagination result and readonly BlockCraft block components, not snapshot-viewer or DOM rasterization. Explicit `options.pagination` means a new reflow. Register `PageDividerBlockSchema` to expose manual page breaks. The package intentionally does not publish a settings component: host UI reads `plugin.config` and sends changes through `plugin.updateConfig(...)`; the playground keeps its own debug-only panel as an integration example.
 
 ---
 

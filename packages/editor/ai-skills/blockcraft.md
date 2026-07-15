@@ -136,6 +136,8 @@ pagination.disable()
 
 分页启用状态属于插件，不属于 `DocConfig`；不要使用 `DocConfig.pagination` 或 `doc.pagination`。插件关闭时会移除页框、块间距、表格视图断点和高度锁定，且不会写入 Yjs。`exportToPdf()` 使用真实只读 BlockCraft 组件；不传 `pagination` override 时复用当前稳定分页结果，snapshot-viewer 不参与分页 PDF。浏览器走系统打印，Tauri 等宿主通过 `PaginationPdfHostBackend` 打印当前顶层导出 WebView；正文不经过 DOM 栅格化。
 
+`DocExportManager` 只提供 JSON、Markdown 与 PDF/打印导出，不再提供 `exportToJpeg()` 或 DOM-to-image 渲染配置。需要位图截图的宿主应在应用层选择并维护独立的截图方案。
+
 ### Snapshot Viewer (Display Only)
 
 ```typescript

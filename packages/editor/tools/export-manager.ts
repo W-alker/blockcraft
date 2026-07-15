@@ -1,6 +1,4 @@
 import {downloadFile} from "../global";
-// @ts-ignore
-import domtoimage from 'dom-to-image-more'
 import {ClipboardDataType, DOC_ADAPTER_SERVICE_TOKEN} from "../framework";
 import {
   exportDocumentToPdf,
@@ -9,79 +7,6 @@ import {
 } from "../framework/modules/pagination/export";
 import {PaginationConfig} from "../framework/modules/pagination/pagination.types";
 import {PaginationPlugin} from "../plugins/pagination";
-
-interface CorsImgOptions {
-  url: string; // eg: https://cors-anywhere.herokuapp.com/
-  method: 'get' | 'post';
-  headers?: Record<string, string>;
-  data?: Record<string, any>;
-}
-
-interface RenderOptions {
-  /**
-   * Should return true if passed node should be included in the output
-   * (excluding node means excluding its children as well). Not called on the root node.
-   */
-  filter?: (node: Node) => boolean;
-
-  /**
-   * Callback function which is called when the Document has been cloned for rendering,
-   * can be used to modify the contents that will be rendered without affecting the original source document.
-   */
-  onclone?: (clonedDocument: Document) => void;
-
-  /** Color for the background, any valid CSS color value. */
-  bgcolor?: string;
-
-  /** Width to be applied to node before rendering. */
-  width?: number;
-
-  /** Height to be applied to node before rendering. */
-  height?: number;
-
-  /** An object whose properties will be copied to node's style before rendering. */
-  style?: Partial<CSSStyleDeclaration>;
-
-  /** A Number between 0 and 1 indicating image quality (applicable to JPEG only), defaults to 1.0. */
-  quality?: number;
-
-  /** A Number multiplier to scale up the canvas before rendering to reduce fuzzy images, defaults to 1.0. */
-  scale?: number;
-
-  /** DataURL to use as a placeholder for failed images. */
-  imagePlaceholder?: string;
-
-  /** Set to true to cache bust by appending the time to the request URL. */
-  cacheBust?: boolean;
-
-  /** Set to 'strict' or 'relaxed' to select style caching rules. */
-  styleCaching?: 'strict' | 'relaxed';
-
-  /** Set to false to disable use of default styles of elements. */
-  copyDefaultStyles?: boolean;
-
-  /** Set to true to disable font embedding into the SVG output. */
-  disableEmbedFonts?: boolean;
-
-  /** When the image is restricted by the server from cross-domain requests, proxy options. */
-  corsImg?: CorsImgOptions;
-
-  /** Callback for adjustClonedNode event (to allow adjusting clone's properties). */
-  adjustClonedNode?: (clonedNode: HTMLElement) => void;
-
-  /** Should return true if passed propertyName should be included in the output */
-  filterStyles?: (propertyName: string) => boolean;
-}
-
-const DOC_EXPORT_OPTIONS = {
-  filter: (node: Node) => {
-    if (node instanceof HTMLElement && ['bc-drag-handle', 'blockcraft-cursor'].includes(node.localName)) {
-      return false;
-    }
-    return true;
-  },
-  quality: 1.0
-}
 
 const pdfSizes = {
   A0: {width: 2384, height: 3370},
@@ -100,7 +25,7 @@ type PdfSizeName = keyof typeof pdfSizes;
 
 export class DocExportManager {
 
-  constructor(private doc: BlockCraft.Doc, private exportOptions: RenderOptions = DOC_EXPORT_OPTIONS) {
+  constructor(private doc: BlockCraft.Doc) {
   }
 
   async exportToJson(name: string) {
@@ -120,29 +45,6 @@ export class DocExportManager {
     } catch (e) {
       this.doc.logger.error('export to markdown failed', e)
     }
-  }
-
-  async exportToJpeg(name: string, options?: Pick<RenderOptions, 'scale' | 'bgcolor'>) {
-    const canvas = await this._toCanvas(options);
-    const dataUrl = canvas.toDataURL('image/jpeg');
-    await downloadFile(dataUrl, name);
-  }
-
-  protected async _toCanvas(options?: Pick<RenderOptions, 'scale' | 'bgcolor' | 'width' | 'height'>) {
-    const dom = this.doc.scrollContainer!
-    const scale = options?.scale || 1
-    const canvas: HTMLCanvasElement = await domtoimage.toCanvas(dom, {
-      ...DOC_EXPORT_OPTIONS,
-      ...this.exportOptions,
-      ...options,
-      width: dom.scrollWidth * scale,
-      height: dom.scrollHeight * scale,
-      style: {
-        transform: `scale(${scale})`,
-        transformOrigin: 'top left',
-      },
-    });
-    return canvas
   }
 
   /**

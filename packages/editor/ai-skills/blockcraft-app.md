@@ -291,7 +291,7 @@ await pagination.print()
 
 With an enabled plugin and no explicit `options.pagination`, `exportToPdf()` captures the current stable page result, then renders the same snapshot through a readonly `BlockCraftDoc`. This preserves page count, block placement and table fragments without cloning the focused editor or using snapshot-viewer. Passing `options.pagination` intentionally requests a new reflow. If the plugin is disabled, its config is used for an offscreen readonly reflow; without a plugin the fallback is A4.
 
-The PDF body is never rendered through `dom-to-image-more`. Browser export prints the fixed page boxes through a same-origin iframe. Browser code cannot silently save a PDF or reliably detect whether the user cancelled the dialog.
+BlockCraft no longer exposes `DocExportManager.exportToJpeg()` or a DOM-to-image rendering dependency. Browser PDF export prints the fixed page boxes through a same-origin iframe; browser code cannot silently save a PDF or reliably detect whether the user cancelled the dialog. Hosts that need bitmap screenshots should own that application-specific rendering path separately.
 
 ### Tauri native backend
 

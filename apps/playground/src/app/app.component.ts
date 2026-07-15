@@ -50,7 +50,6 @@ type DebugActionId =
   | 'importBlockSnapshotTxt'
   | 'exportMarkdown'
   | 'exportPdf'
-  | 'exportImage'
   | 'enterRoom'
   | 'quitRoom'
   | 'demo'
@@ -169,8 +168,7 @@ const ACTION_SECTIONS: DebugSection[] = [
       { id: 'importMarkdown', label: '导入 Markdown' },
       { id: 'importBlockSnapshotTxt', label: '导入 TXT' },
       { id: 'exportMarkdown', label: '导出 Markdown' },
-      { id: 'exportPdf', label: '导出 PDF' },
-      { id: 'exportImage', label: '导出图片' }
+      { id: 'exportPdf', label: '导出 PDF' }
     ]
   },
   {
@@ -1624,9 +1622,6 @@ graph TD
           console.warn('[playground] PDF export failed', error);
         });
         return;
-      case 'exportImage':
-        this.exportImage();
-        return;
       case 'enterRoom':
         this.enterRoom();
         return;
@@ -2125,14 +2120,6 @@ $$
         `PDF 打印面包含 ${result.warnings.length} 项降级资源`,
       );
     }
-  }
-
-  exportImage() {
-    const editor = this.ensureEditorInitialized();
-    new DocExportManager(editor.doc).exportToJpeg('blockcraft-export-test.png', {
-      bgcolor: '#fff',
-      scale: 2
-    });
   }
 
   async importMarkdown() {

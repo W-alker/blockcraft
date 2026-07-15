@@ -67,6 +67,48 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-07-15 (major) — remove DOM-to-image JPEG export
+
+**Severity**: major
+
+**What changed**: BlockCraft removed `DocExportManager.exportToJpeg()`, the protected `_toCanvas()` hook, the constructor's DOM rendering options, and the `dom-to-image-more` peer dependency. `DocExportManager` now accepts only the document and remains responsible for JSON, Markdown, PDF, and print export.
+
+**Why**: DOM-to-image rendering was an isolated, high-memory path with browser and resource compatibility limits. Pagination PDF and printing already use readonly BlockCraft components and native print surfaces, so carrying a rasterization dependency solely for JPEG export was not justified.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — updates the export manager quick reference.
+- `blockcraft-app.md` — documents the remaining export surface and host ownership of bitmap screenshots.
+- `blockcraft-plugins-util.md` — removes the obsolete runtime dependency reference from pagination export guidance.
+
+### Breaking Changes
+
+- `DocExportManager.exportToJpeg(name, options?)` is removed.
+- `DocExportManager` no longer accepts a second DOM rendering options argument.
+- Subclasses can no longer override the protected `_toCanvas()` rasterization hook.
+- Consumers no longer need to install or provide `dom-to-image-more` for `@ccc/blockcraft`.
+
+### Migration Recipe
+
+Keep document export on the supported structured or print paths:
+
+```typescript
+// before
+const exports = new DocExportManager(doc, {scale: 2, bgcolor: '#fff'})
+await exports.exportToJpeg('document.jpg', {scale: 2})
+
+// after: BlockCraft-owned document/PDF export
+const exports = new DocExportManager(doc)
+await exports.exportToPdf('document.pdf')
+
+// If the product still requires bitmap screenshots, implement that concern in
+// the host application with explicitly chosen browser/resource semantics.
+```
+
+### Behavior Changes
+
+- JSON, Markdown, paginated PDF, and print behavior are unchanged.
+- BlockCraft no longer clones arbitrary editor DOM into a large canvas, reducing the package dependency surface and avoiding that path's memory peak.
+
 ### v?.?.? - 2026-07-15 (minor) — pagination becomes an opt-in plugin
 
 **Severity**: minor
