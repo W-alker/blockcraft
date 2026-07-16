@@ -67,6 +67,68 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-07-15 (minor) — add the model-first document query graph
+
+**Severity**: minor
+
+**What changed**: BlockCraft now exports `BlockModelGraph` and exposes one as
+`BlockCraftDoc.model`. The graph reads the complete root-reachable Yjs tree
+without requiring Angular Block components or DOM hosts. Document path,
+position, sibling interval and snapshot export calculations now use this model
+layer while existing component-returning APIs keep their mounted-view boundary.
+
+**Why**: `DocVM` previously acted as both the view registry and the only tree
+query surface. That made a temporarily unmounted block indistinguishable from a
+deleted block and prevented safe virtual rendering. Separating read-only model
+queries from mounted view lookup provides the first virtualization foundation
+without changing current full rendering.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — adds the model graph to core concepts and Quick Reference.
+- `blockcraft-data.md` — documents lifecycle, APIs, reachable-node semantics and mutation boundaries.
+
+### New APIs / Features
+
+- Exported `BlockModelGraph`.
+- `BlockCraftDoc.model` for DOM-free structure, order, text and snapshot reads.
+- Incremental Yjs structural reconciliation with missing/cyclic/duplicate edge tolerance.
+
+### Migration Recipe
+
+Use model queries when code needs document data but not component or DOM
+capabilities:
+
+```typescript
+// before: requires a mounted component
+const block = doc.getBlockById(blockId)
+const parentId = block.parentId
+const path = doc.getBlockPath(block)
+
+// after: works for any root-reachable YBlock, mounted or not
+const parentId = doc.model.getParentId(blockId)
+const path = doc.model.getPath(blockId)
+```
+
+Keep component lookup for view work:
+
+```typescript
+// unchanged: toolbar geometry, focus and DOM Range still need a mounted view
+const mountedBlock = doc.getBlockById(blockId)
+mountedBlock.hostElement.focus()
+```
+
+### Behavior Changes
+
+- `BlockCraftDoc.getBlockPath()`, sibling-ID reads, position comparison,
+  `queryBlocksBetween()` and `exportSnapshot()` no longer calculate through the
+  component tree.
+- `getBlockById()` / `getBlockRef()`, CRUD event payloads, plugin lifecycle and
+  current full-render behavior are unchanged.
+- This release does not add a virtual window, component unmounting, spacers or
+  pagination/virtualization integration.
+- `packages/editor/package.json` version is intentionally unchanged; release
+  numbering remains a user-owned decision.
+
 ### v?.?.? - 2026-07-15 (major) — remove DOM-to-image JPEG export
 
 **Severity**: major

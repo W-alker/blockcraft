@@ -19,6 +19,8 @@ import { DocDndService } from "../services/dnd.service";
 import { DocInternalDragController } from "../services/internal-drag.controller";
 import { DocChain } from "../chain/doc-chain";
 import * as Y from "yjs";
+import { BLOCK_POSITION } from "./block-position";
+import { BlockModelGraph } from "./model-graph";
 
 interface DocConfig {
   docId: string
@@ -52,6 +54,7 @@ export class BlockCraftDoc {
   public readonly readonlySwitch$ = new BehaviorSubject<boolean>(true)
   readonly themeChange$ = new Subject<string>()
 
+  readonly model = new BlockModelGraph(this)
   readonly crud = new DocCRUD(this)
   readonly vm = new DocVM(this)
   readonly event = new UIEventDispatcher(this)
@@ -141,6 +144,7 @@ export class BlockCraftDoc {
   ) {
     this._plugins = this.config.plugins || []
     this.onDestroy(() => {
+      this.model.destroy()
       this.dragController.destroy()
       this._subscriptions.unsubscribe()
     })
@@ -159,6 +163,7 @@ export class BlockCraftDoc {
     const comp = this.vm.createComponentBySnapshot(snapShot, (b) => {
       this.yBlockMap.set(b.instance.id, b.instance.yBlock)
     })
+    this.model.build(comp.instance.id)
     container.append(comp.location.nativeElement)
     this._initEditor(comp.instance as any)
   }
@@ -185,6 +190,7 @@ export class BlockCraftDoc {
     if (danglingRefs.length) this.crud.pruneChildRefs(danglingRefs)
 
     const root = comp[id]
+    this.model.build(id)
     container.append(root.location.nativeElement)
     this._initEditor(root.instance as any)
   }
@@ -277,36 +283,40 @@ export class BlockCraftDoc {
     return block instanceof EditableBlockComponent
   }
 
-  nextSibling(block: string | BlockCraft.BlockComponent) {
-    const comp = typeof block === 'string' ? this.getBlockById(block) : block
-    const parent = this.getBlockById(comp.parentId!)
-    const index = parent.childrenIds.indexOf(comp.id)
-    if (index === -1) throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${comp.id}`)
-    if (index === parent.childrenIds.length - 1) return null
-    return this.getBlockById(parent.childrenIds[index + 1])
+  private _getModelBlockId(block: string | BlockCraft.BlockComponent) {
+    const blockId = typeof block === 'string' ? block : block.id
+    if (typeof block === 'string' && !this.model.exists(blockId)) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${blockId}`)
+    }
+    return blockId
   }
 
-  prevSibling(id: string | BlockCraft.BlockComponent) {
-    const comp = typeof id === 'string' ? this.getBlockById(id) : id
-    // const prevElement = comp.hostElement.previousElementSibling
-    // if (!prevElement) return null
-    // return this.getBlockRef(prevElement.getAttribute('block-id')!).instance
-    const parent = this.getBlockById(comp.parentId!)
-    const childrenIds = parent.childrenIds
-    const index = childrenIds.indexOf(comp.id)
-    if (index === -1) throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${id}`)
-    if (index === 0) return null
-    return this.getBlockById(childrenIds[index - 1])
+  nextSibling(block: string | BlockCraft.BlockComponent) {
+    const siblingId = this.model.getNextSiblingId(this._getModelBlockId(block))
+    return siblingId === null ? null : this.getBlockById(siblingId)
+  }
+
+  prevSibling(block: string | BlockCraft.BlockComponent) {
+    const siblingId = this.model.getPreviousSiblingId(this._getModelBlockId(block))
+    return siblingId === null ? null : this.getBlockById(siblingId)
   }
 
   getBlockSiblingIds<T extends BlockCraft.BlockFlavour = BlockCraft.BlockFlavour>(id: string) {
-    const comp = this.getBlockById<T>(id)
-    return this.vm.get(comp.parentId!)!.instance.childrenIds
+    this._getModelBlockId(id)
+    const parentId = this.model.getParentId(id)
+    if (parentId === null) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block has no parent: ${id}`)
+    }
+    return [...this.model.getChildrenIds(parentId)]
   }
 
-  getBlockSiblings(id: string | BlockCraft.BlockComponent) {
-    const comp = typeof id === 'string' ? this.getBlockById(id) : id
-    return this.getBlockById(comp.parentId!).getChildrenBlocks()
+  getBlockSiblings(block: string | BlockCraft.BlockComponent) {
+    const blockId = this._getModelBlockId(block)
+    const parentId = this.model.getParentId(blockId)
+    if (parentId === null) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block has no parent: ${blockId}`)
+    }
+    return this.model.getChildrenIds(parentId).map(id => this.getBlockById(id))
   }
 
   /**
@@ -330,7 +340,10 @@ export class BlockCraftDoc {
   }
 
   getBlockPath(block: string | BlockCraft.BlockComponent) {
-    return this.queryAncestor(block).map(b => b.id)
+    const blockId = this._getModelBlockId(block)
+    const path = this.model.getPath(blockId)
+    if (!path) throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${blockId}`)
+    return [...path]
   }
 
   /**
@@ -340,9 +353,13 @@ export class BlockCraftDoc {
    * @return {@link BLOCK_POSITION}
    */
   compareBlockPosition(a: string | BlockCraft.BlockComponent, b: string | BlockCraft.BlockComponent): BLOCK_POSITION {
-    const aComp = typeof a === 'string' ? this.getBlockById(a) : a
-    const bComp = typeof b === 'string' ? this.getBlockById(b) : b
-    return aComp.hostElement.compareDocumentPosition(bComp.hostElement)
+    const aId = this._getModelBlockId(a)
+    const bId = this._getModelBlockId(b)
+    const position = this.model.comparePosition(aId, bId)
+    if (position === null) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Blocks cannot be compared: ${aId}, ${bId}`)
+    }
+    return position
   }
 
   /**
@@ -352,18 +369,9 @@ export class BlockCraftDoc {
    * @param contain whether to include the from and to blocks
    */
   queryBlocksBetween(from: string | BlockCraft.BlockComponent, to: string | BlockCraft.BlockComponent, contain = false) {
-    const fromComp = typeof from === 'string' ? this.getBlockById(from) : from
-    const toComp = typeof to === 'string' ? this.getBlockById(to) : to
-    if (fromComp === toComp && contain) return [fromComp.id]
-
-    const fromPath = this.getBlockPath(fromComp)
-    const toPath = this.getBlockPath(toComp)
-    const commonPath = getCommonPath(fromPath, toPath)
-    if (!commonPath.length) return []
-    const childrenPath = this.getBlockById(commonPath.at(-1)!).childrenIds
-    const index1 = childrenPath.indexOf(fromPath.slice(commonPath.length)[0])
-    const index2 = childrenPath.indexOf(toPath.slice(commonPath.length)[0])
-    return childrenPath.slice(Math.min(index1, index2) + (contain ? 0 : 1), Math.max(index1, index2) + (contain ? 1 : 0))
+    const fromId = this._getModelBlockId(from)
+    const toId = this._getModelBlockId(to)
+    return [...this.model.queryBetween(fromId, toId, contain)]
   }
 
   // block tree下，两个block经过的block集合
@@ -429,7 +437,7 @@ export class BlockCraftDoc {
   }
 
   exportSnapshot() {
-    return this.vm.get(this.rootId)?.instance.toSnapshot()
+    return this.model.toSnapshot(this.rootId) ?? undefined
   }
 
   toggleTheme(name: string) {
@@ -452,25 +460,11 @@ export class BlockCraftDoc {
 
 export * from './crud'
 export * from './vm'
+export * from './block-position'
+export * from './model-graph'
 
 declare global {
   namespace BlockCraft {
     type Doc = InstanceType<typeof BlockCraftDoc>
   }
-}
-
-/**
- * A block, b block\
- * BEFORE: b block is before a block\
- * AFTER: b block is after a block\
- * CONTAINS: b block contains a block\
- * CONTAINED_BY: a block contains b block\
- * SAME: b block and a block are the same block
- */
-export enum BLOCK_POSITION {
-  BEFORE = Node.DOCUMENT_POSITION_PRECEDING,
-  AFTER = Node.DOCUMENT_POSITION_FOLLOWING,
-  CONTAINS = Node.DOCUMENT_POSITION_CONTAINED_BY,
-  CONTAINED_BY = Node.DOCUMENT_POSITION_CONTAINS,
-  SAME = Node.DOCUMENT_POSITION_DISCONNECTED,
 }

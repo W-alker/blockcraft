@@ -8,6 +8,7 @@
 
 ```
 BlockCraftDoc
+  ├── model: BlockModelGraph                   derived, read-only reachable tree
   └── yDoc: Y.Doc
        └── yBlockMap: Y.Map<string, YBlock>    key = "blocks"
             └── YBlock: Y.Map
@@ -25,6 +26,7 @@ BlockCraftDoc
 | File | Purpose |
 |------|---------|
 | `framework/doc/index.ts` | `BlockCraftDoc` — owns `Y.Doc`, exposes services |
+| `framework/doc/model-graph.ts` | `BlockModelGraph` — DOM-free structure/order/text/snapshot reads |
 | `framework/doc/crud.ts` | `DocCRUD` — all Yjs mutations + observables |
 | `framework/doc/vm.ts` | `DocVM` — Angular component creation/lookup |
 | `framework/doc/undoManger.ts` | `DocUndoManager` — undo/redo with selection (note: filename is "Manger") |
@@ -70,7 +72,60 @@ block.updateProps({ color: 'red' })
 Component template: {{ props.color }}
   → ProxyMap getter → yMap.get('color')
   → Returns current Yjs value
+
+Model-first query: doc.model.getPath(blockId)
+  → BlockModelGraph reachable-tree index + current YBlock values
+  → Returns without ComponentRef, HTMLElement or layout reads
 ```
+
+`BlockModelGraph` is built from the root after the initial YBlockMap is complete
+and before mounted-view observers start. It observes structural Yjs changes,
+reconciles affected parents/subtrees incrementally, and is destroyed with the
+document. Props/text reads always come from the current YBlock; the graph does
+not duplicate mutable business state.
+
+## BlockModelGraph API
+
+```typescript
+doc.model.exists(blockId): boolean
+doc.model.getYBlock(blockId): YBlock | undefined
+doc.model.getParentId(blockId): string | null
+doc.model.getChildrenIds(blockId): readonly string[]
+doc.model.getPath(blockId): readonly string[] | null
+doc.model.indexInParent(blockId): number
+doc.model.getPreviousSiblingId(blockId): string | null
+doc.model.getNextSiblingId(blockId): string | null
+
+doc.model.getFlavour(blockId)
+doc.model.getNodeType(blockId)
+doc.model.getProps(blockId)
+doc.model.getText(blockId)
+doc.model.getTextLength(blockId)
+
+doc.model.comparePosition(aId, bId)
+doc.model.queryBetween(fromId, toId, contain?)
+doc.model.toSnapshot(blockId): IBlockSnapshot | null
+```
+
+Important boundaries:
+
+- `exists()` means reachable from the current document root. An orphan entry in
+  `yBlockMap` is not a document block and returns `false`.
+- The graph tolerates missing, cyclic and duplicate child references by skipping
+  invalid edges. It reports diagnostics but never repairs/writes Yjs; structural
+  repair ownership remains in CRUD/`ChildrenRepairer`.
+- `comparePosition()` preserves the numeric bitmask direction of the former DOM
+  `compareDocumentPosition()` implementation, including combined containment
+  and ordering bits.
+- `queryBetween()` preserves `BlockCraftDoc.queryBlocksBetween()` semantics: it
+  returns the sibling interval below the closest common parent, not a full-tree
+  preorder slice.
+- `toSnapshot()` preserves rich `Y.Text` deltas, props, meta and nested blocks,
+  and does not require mounted components.
+- Model APIs are queries only. Plugins must still mutate through `DocCRUD` or
+  `DocChain`; never write a returned YBlock or cached props object directly.
+- `doc.vm` and `getBlockById()` describe mounted Angular view state. Do not use
+  them as document-existence checks when model-only behavior is sufficient.
 
 ## Remote Transactions and Local Selection
 

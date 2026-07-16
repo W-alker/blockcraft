@@ -25,6 +25,7 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | Concept | Description | Key Class/File |
 |---------|-------------|----------------|
 | **Doc** | Central orchestrator; owns all subsystems | `BlockCraftDoc` in `framework/doc/` |
+| **Model Graph** | DOM-free, read-only Yjs tree queries for mounted or unmounted blocks | `BlockModelGraph` in `framework/doc/model-graph.ts` |
 | **Block** | A node in the document tree; has flavour, nodeType, props | `BaseBlockComponent` / `EditableBlockComponent` |
 | **Plugin** | Extends editor behavior; event handlers + hotkeys | `DocPlugin` in `framework/plugin/` |
 | **Inline** | Rich text within editable blocks; Blot tree on Y.Text | `InlineRuntime` in `framework/block-std/inline/` |
@@ -60,7 +61,7 @@ A host application can register a subset or extend this list — see `blockcraft
 ```
 packages/editor/
 ├── framework/              # Core engine
-│   ├── doc/                # BlockCraftDoc, DocCRUD, DocVM, DocUndoManager
+│   ├── doc/                # BlockCraftDoc, BlockModelGraph, DocCRUD, DocVM, DocUndoManager
 │   ├── block-std/          # BaseBlockComponent, EditableBlockComponent
 │   │   ├── block/          #   component base classes
 │   │   ├── event/          #   UIEventDispatcher, @EventListen, @BindHotKey
@@ -115,6 +116,24 @@ packages/editor/
 - **Stuck on a runtime error**: jump to `blockcraft-debug.md` for tracing strategies.
 
 ## Quick Reference: Common APIs
+
+### Model-First Document Reads
+
+```typescript
+// BlockModelGraph reads the complete reachable Yjs tree. A block does not need
+// an Angular component or DOM host to be queried here.
+const path = doc.model.getPath(blockId)
+const parentId = doc.model.getParentId(blockId)
+const childrenIds = doc.model.getChildrenIds(blockId)
+const textLength = doc.model.getTextLength(blockId)
+const snapshot = doc.model.toSnapshot(blockId)
+```
+
+`doc.model` is read-only. Use `DocCRUD` / `DocChain` for every mutation. Model
+existence means the YBlock is reachable from the current root; it does not mean
+`doc.vm` has mounted a component. `getBlockById()` keeps its mounted-component
+semantics and can still throw for an unmounted block. Structure/order/snapshot
+queries should prefer `doc.model` when component capabilities are not required.
 
 ### Pagination Plugin
 

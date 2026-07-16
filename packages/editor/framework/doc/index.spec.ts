@@ -1,4 +1,217 @@
 import {BlockCraftDoc} from "./index";
+import * as Y from "yjs";
+import {BlockNodeType, NativeBlockModel, YBlock, native2YBlock} from "../block-std";
+
+describe("BlockCraftDoc position contract", () => {
+  function component(id: string, hostElement: HTMLElement) {
+    return {id, hostElement} as any;
+  }
+
+  it("matches compareDocumentPosition for same, sibling and nested blocks", () => {
+    const root = document.createElement("div");
+    const first = document.createElement("div");
+    const nested = document.createElement("div");
+    const second = document.createElement("div");
+    first.append(nested);
+    root.append(first, second);
+
+    const elements: Record<string, HTMLElement> = {first, nested, second};
+    const doc = Object.setPrototypeOf({
+      model: {
+        comparePosition: (aId: string, bId: string) =>
+          elements[aId].compareDocumentPosition(elements[bId]),
+      },
+    }, BlockCraftDoc.prototype);
+
+    const compare = (aId: string, bId: string) =>
+      BlockCraftDoc.prototype.compareBlockPosition.call(
+        doc,
+        component(aId, elements[aId]),
+        component(bId, elements[bId]),
+      );
+
+    expect(compare("first", "first")).toBe(first.compareDocumentPosition(first));
+    expect(compare("first", "second")).toBe(first.compareDocumentPosition(second));
+    expect(compare("second", "first")).toBe(second.compareDocumentPosition(first));
+    expect(compare("first", "nested")).toBe(first.compareDocumentPosition(nested));
+    expect(compare("nested", "first")).toBe(nested.compareDocumentPosition(first));
+  });
+});
+
+describe("BlockCraftDoc model graph lifecycle", () => {
+  const rootSnapshot = {
+    id: "root",
+    flavour: "root",
+    nodeType: BlockNodeType.root,
+    props: {},
+    meta: {},
+    children: [],
+  } as any;
+
+  it("builds the model after snapshot YBlocks and before editor initialization", () => {
+    const calls: string[] = [];
+    const nativeElement = document.createElement("div");
+    const doc = {
+      _root: null,
+      yBlockMap: {
+        set: () => calls.push("set-yblock"),
+      },
+      vm: {
+        createComponentBySnapshot: (_snapshot: unknown, onCreate: (ref: any) => void) => {
+          onCreate({instance: {id: "root", yBlock: {}}});
+          return {instance: {id: "root"}, location: {nativeElement}};
+        },
+      },
+      model: {
+        build: (rootId: string) => calls.push(`build-model:${rootId}`),
+      },
+      _initEditor: () => calls.push("init-editor"),
+    };
+    const container = document.createElement("div");
+
+    BlockCraftDoc.prototype.initBySnapshot.call(doc, rootSnapshot, container);
+
+    expect(calls).toEqual(["set-yblock", "build-model:root", "init-editor"]);
+    expect(container.firstElementChild).toBe(nativeElement);
+  });
+
+  it("builds the model after dangling YBlock references are pruned", () => {
+    const yDoc = new Y.Doc();
+    const yBlockMap = yDoc.getMap<YBlock>("blocks");
+    const yRoot = native2YBlock({
+      id: "root",
+      flavour: "root",
+      nodeType: BlockNodeType.root,
+      props: {},
+      meta: {},
+      children: [],
+    } as NativeBlockModel);
+    yBlockMap.set("root", yRoot);
+    const calls: string[] = [];
+    const nativeElement = document.createElement("div");
+    const rootRef = {instance: {id: "root"}, location: {nativeElement}};
+    const doc = {
+      _root: null,
+      vm: {
+        createComponentByYBlocks: (
+          _blocks: unknown,
+          onMissing: (parentId: string, childId: string) => void,
+        ) => {
+          onMissing("root", "missing");
+          return {root: rootRef};
+        },
+      },
+      crud: {
+        pruneChildRefs: () => calls.push("prune"),
+      },
+      model: {
+        build: (rootId: string) => calls.push(`build-model:${rootId}`),
+      },
+      _initEditor: () => calls.push("init-editor"),
+    };
+    const container = document.createElement("div");
+
+    BlockCraftDoc.prototype.initByYBlock.call(doc, yRoot, container);
+
+    expect(calls).toEqual(["prune", "build-model:root", "init-editor"]);
+    expect(container.firstElementChild).toBe(nativeElement);
+  });
+});
+
+describe("BlockCraftDoc model-backed reads", () => {
+  function asDoc<T extends object>(doc: T): T {
+    return Object.setPrototypeOf(doc, BlockCraftDoc.prototype);
+  }
+
+  it("gets an unmounted block path without resolving a component", () => {
+    const doc = asDoc({
+      model: {
+        exists: jasmine.createSpy("exists").and.returnValue(true),
+        getPath: jasmine.createSpy("getPath").and.returnValue(["root", "offscreen"]),
+      },
+      getBlockById: jasmine.createSpy("getBlockById").and.throwError("component lookup is forbidden"),
+      queryAncestor: BlockCraftDoc.prototype.queryAncestor,
+    });
+
+    const path = BlockCraftDoc.prototype.getBlockPath.call(doc, "offscreen");
+
+    expect(path).toEqual(["root", "offscreen"]);
+    expect(doc.model.getPath).toHaveBeenCalledOnceWith("offscreen");
+    expect(doc.getBlockById).not.toHaveBeenCalled();
+  });
+
+  it("reads sibling ids from the model for an unmounted block", () => {
+    const doc = asDoc({
+      model: {
+        exists: jasmine.createSpy("exists").and.returnValue(true),
+        getParentId: jasmine.createSpy("getParentId").and.returnValue("root"),
+        getChildrenIds: jasmine.createSpy("getChildrenIds").and.returnValue(["a", "offscreen", "b"]),
+      },
+      getBlockById: jasmine.createSpy("getBlockById").and.throwError("component lookup is forbidden"),
+    });
+
+    const siblings = BlockCraftDoc.prototype.getBlockSiblingIds.call(doc, "offscreen");
+
+    expect(siblings).toEqual(["a", "offscreen", "b"]);
+    expect(doc.getBlockById).not.toHaveBeenCalled();
+  });
+
+  it("resolves sibling components only at the mounted API boundary", () => {
+    const previous = {id: "previous"};
+    const next = {id: "next"};
+    const doc = asDoc({
+      model: {
+        exists: jasmine.createSpy("exists").and.returnValue(true),
+        getPreviousSiblingId: jasmine.createSpy("getPreviousSiblingId").and.returnValue("previous"),
+        getNextSiblingId: jasmine.createSpy("getNextSiblingId").and.returnValue("next"),
+      },
+      getBlockById: jasmine.createSpy("getBlockById").and.callFake((id: string) => {
+        if (id === "previous") return previous;
+        if (id === "next") return next;
+        throw new Error(`unexpected component lookup: ${id}`);
+      }),
+    });
+
+    expect(BlockCraftDoc.prototype.prevSibling.call(doc, "offscreen")).toBe(previous as any);
+    expect(BlockCraftDoc.prototype.nextSibling.call(doc, "offscreen")).toBe(next as any);
+    expect(doc.getBlockById).toHaveBeenCalledTimes(2);
+  });
+
+  it("delegates position and interval calculations to the model", () => {
+    const doc = asDoc({
+      model: {
+        exists: jasmine.createSpy("exists").and.returnValue(true),
+        comparePosition: jasmine.createSpy("comparePosition").and.returnValue(4),
+        queryBetween: jasmine.createSpy("queryBetween").and.returnValue(["middle"]),
+      },
+      getBlockById: jasmine.createSpy("getBlockById").and.throwError("component lookup is forbidden"),
+    });
+
+    expect(BlockCraftDoc.prototype.compareBlockPosition.call(doc, "from", "to")).toBe(4);
+    expect(BlockCraftDoc.prototype.queryBlocksBetween.call(doc, "from", "to", true)).toEqual(["middle"]);
+    expect(doc.model.comparePosition).toHaveBeenCalledOnceWith("from", "to");
+    expect(doc.model.queryBetween).toHaveBeenCalledOnceWith("from", "to", true);
+    expect(doc.getBlockById).not.toHaveBeenCalled();
+  });
+
+  it("exports the model snapshot and preserves the undefined fallback", () => {
+    const snapshot = {id: "root"};
+    const doc = asDoc({
+      rootId: "root",
+      model: {
+        toSnapshot: jasmine.createSpy("toSnapshot").and.returnValues(snapshot, null),
+      },
+      vm: {
+        get: jasmine.createSpy("get").and.throwError("component lookup is forbidden"),
+      },
+    });
+
+    expect(BlockCraftDoc.prototype.exportSnapshot.call(doc)).toBe(snapshot as any);
+    expect(BlockCraftDoc.prototype.exportSnapshot.call(doc)).toBeUndefined();
+    expect(doc.model.toSnapshot).toHaveBeenCalledTimes(2);
+    expect(doc.vm.get).not.toHaveBeenCalled();
+  });
+});
 
 describe("BlockCraftDoc path queries", () => {
   function block(id: string, parentId: string | null, childrenIds: string[] = []) {
