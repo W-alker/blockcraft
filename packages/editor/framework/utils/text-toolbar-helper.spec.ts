@@ -1,7 +1,7 @@
 import {BlockNodeType} from "../block-std";
 import {BlockSelection} from "../modules/selection/blockSelection";
 import {TextToolbarHelper} from "./text-toolbar-helper";
-import {fakeAsync, flushMicrotasks} from "@angular/core/testing";
+import {fakeAsync, flushMicrotasks, tick} from "@angular/core/testing";
 
 describe("TextToolbarHelper boundary selections", () => {
   const makeHarness = () => {
@@ -232,6 +232,42 @@ describe("TextToolbarHelper boundary selections", () => {
       commonParent: "root",
     });
     expect(doc.selection.recalculate).not.toHaveBeenCalled();
+    rootHost.remove();
+  }));
+
+  it("releases selection suppression when the restore animation frame is missed", fakeAsync(() => {
+    const {helper, doc, p1, p2, rootHost, selection} = makeHarness();
+    const textSelection = selection(
+      {blockId: "p1", type: "text", offset: 0, block: p1},
+      {blockId: "p2", type: "text", offset: 3, block: p2},
+    );
+    const chain: any = {};
+    chain.transact = jasmine.createSpy("transact").and.callFake((run: () => void) => {
+      run();
+      return chain;
+    });
+    chain.run = jasmine.createSpy("run").and.resolveTo(undefined);
+    let nextId = 0;
+    doc.chain.and.returnValue(chain);
+    doc.schemas.createSnapshot.and.callFake(() => ({id: `replacement-${++nextId}`}));
+    const scheduled: {restoreFrame?: FrameRequestCallback} = {};
+    const rafSpy = (window.requestAnimationFrame as any).and
+      ? window.requestAnimationFrame as jasmine.Spy
+      : spyOn(window, "requestAnimationFrame");
+    rafSpy.and.callFake(callback => {
+      scheduled.restoreFrame = callback;
+      return 1;
+    });
+
+    helper.transformBlocks("bullet", textSelection as any);
+    flushMicrotasks();
+    tick(100);
+
+    expect(doc.selection.setSuppressRecalculate.calls.allArgs()).toEqual([[true], [false]]);
+    expect(doc.selection.replay).toHaveBeenCalledTimes(1);
+
+    scheduled.restoreFrame?.(0);
+    expect(doc.selection.replay).toHaveBeenCalledTimes(1);
     rootHost.remove();
   }));
 });

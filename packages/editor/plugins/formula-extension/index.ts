@@ -16,9 +16,14 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
 
   private _closeToolbar$ = new Subject<void>();
   private _activeBlock: BlockCraft.IBlockComponents["formula"] | null = null;
+  private _activeInlineBlock: BlockCraft.BlockComponent | null = null;
   private _activeInlineFormulaEl: HTMLElement | null = null;
   private _toolbarRef: ComponentRef<FormulaBlockToolbar> | null = null;
   private _sub = new Subscription();
+
+  private _isReadonly(block: BlockCraft.BlockComponent) {
+    return this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly;
+  }
 
   init() {
     this._sub.add(
@@ -28,6 +33,15 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
         }
       }),
     );
+    const stateChange$ = this.doc.readonlyManager?.stateChange$;
+    if (stateChange$) {
+      this._sub.add(stateChange$.subscribe(() => {
+        const active = this._activeBlock ?? this._activeInlineBlock;
+        if (active && (!this._isBlockAlive(active) || this._isReadonly(active))) {
+          this.closeToolbar();
+        }
+      }));
+    }
   }
 
   @EventListen("mouseDown", { flavour: "formula" })
@@ -45,6 +59,7 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
 
     const block = this._getLiveBlockById(blockId) as BlockCraft.IBlockComponents["formula"] | null;
     if (!block || block.flavour !== "formula") return;
+    if (this._isReadonly(block)) return;
     if (this._activeBlock === block) return;
 
     this.closeToolbar();
@@ -77,6 +92,10 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
           this.closeToolbar();
           return;
         }
+        if (this._isReadonly(block)) {
+          this.closeToolbar();
+          return;
+        }
         block.updateProps({ latex });
         this.closeToolbar();
       });
@@ -105,10 +124,12 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
     const block = this._getLiveBlockById(blockId);
     if (!block) return;
     if (!this.doc.isEditable(block)) return;
+    if (this._isReadonly(block)) return;
 
     const latex = formulaEl.getAttribute("data-latex") || "";
 
     this.closeToolbar();
+    this._activeInlineBlock = block;
     this._activeInlineFormulaEl = formulaEl;
     formulaEl.classList.add("editing");
 
@@ -135,6 +156,10 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
       .pipe(takeUntil(this._closeToolbar$))
       .subscribe((newLatex) => {
         if (!this._isBlockAlive(block)) {
+          this.closeToolbar();
+          return;
+        }
+        if (this._isReadonly(block)) {
           this.closeToolbar();
           return;
         }
@@ -216,6 +241,7 @@ export class FormulaBlockExtensionPlugin extends DocPlugin {
     this._activeInlineFormulaEl?.classList.remove("editing");
     this._closeToolbar$.next();
     this._activeBlock = null;
+    this._activeInlineBlock = null;
     this._activeInlineFormulaEl = null;
     this._toolbarRef = null;
   };

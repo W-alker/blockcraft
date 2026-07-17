@@ -51,7 +51,6 @@ export class BlockGapCreatorPlugin extends DocPlugin {
         evt.preventDefault()
         this._downHandled = true
         this._downOnGap = true
-        this.doc.selection.recalculate()
       })
     )
 
@@ -260,6 +259,7 @@ export class BlockGapCreatorPlugin extends DocPlugin {
     if (!docSelection) return false
     docSelection.removeAllRanges()
     docSelection.addRange(range)
+    this.doc.selection.recalculate()
     return true
   }
 

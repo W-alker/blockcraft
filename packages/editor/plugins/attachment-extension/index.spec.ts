@@ -196,6 +196,7 @@ describe("AttachmentExtensionPlugin click hit area", () => {
 describe("AttachmentExtensionPlugin delayed toolbar", () => {
   const makeHarness = () => {
     const selection$ = new Subject<any>();
+    const readonlyStateChange$ = new Subject<void>();
     const selectionValue = {current: null as any};
     const attachmentBlock = {
       id: "attachment-1",
@@ -242,10 +243,23 @@ describe("AttachmentExtensionPlugin delayed toolbar", () => {
         }),
       },
       getBlockById: jasmine.createSpy("getBlockById").and.returnValue(attachmentBlock),
+      isReadonly: false,
+      readonlyManager: {
+        stateChange$: readonlyStateChange$,
+        isReadonly: jasmine.createSpy("isReadonly").and.returnValue(false),
+      },
     };
     const plugin = new AttachmentExtensionPlugin();
     (plugin as any).doc = doc;
-    return {plugin, doc, selection$, selectionValue, attachmentSelection, attachmentGapSelection};
+    return {
+      plugin,
+      doc,
+      selection$,
+      readonlyStateChange$,
+      selectionValue,
+      attachmentSelection,
+      attachmentGapSelection,
+    };
   };
 
   it("rechecks the current selection before opening", fakeAsync(() => {
@@ -302,6 +316,34 @@ describe("AttachmentExtensionPlugin delayed toolbar", () => {
     onItemClick.next({name: "download"});
 
     expect(fileService.downloadAttachment).not.toHaveBeenCalled();
+    plugin.destroy();
+  }));
+
+  it("closes a selected attachment toolbar before querying readonly state for a removed block", fakeAsync(() => {
+    const {
+      plugin,
+      doc,
+      selection$,
+      readonlyStateChange$,
+      selectionValue,
+      attachmentSelection,
+    } = makeHarness();
+    plugin.init();
+
+    selectionValue.current = attachmentSelection;
+    selection$.next(attachmentSelection);
+    tick(250);
+    const {overlayRef} = doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue;
+
+    doc.readonlyManager.isReadonly.calls.reset();
+    doc.getBlockById.and.throwError("Block not found: attachment-1");
+    doc.readonlyManager.isReadonly.and.throwError(
+      new Error("readonly lookup received a removed block"),
+    );
+
+    expect(() => readonlyStateChange$.next()).not.toThrow();
+    expect(doc.readonlyManager.isReadonly).not.toHaveBeenCalled();
+    expect(overlayRef.dispose).toHaveBeenCalled();
     plugin.destroy();
   }));
 

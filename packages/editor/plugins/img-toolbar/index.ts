@@ -73,6 +73,9 @@ export class ImgToolbarPlugin extends DocPlugin {
 
     const np = this.doc.schemas.createSnapshot("paragraph", []);
     const imgBlock = block.flavour === "caption" ? block.parentBlock! : block;
+    if (this.doc.readonlyManager?.isReadonly(imgBlock) ?? this.doc.isReadonly) {
+      return true;
+    }
     void this.doc
       .chain()
       .insertSnapshots(
@@ -87,7 +90,6 @@ export class ImgToolbarPlugin extends DocPlugin {
 
   @EventListen("doubleClick", { flavour: "image" })
   onImageMouseDown(ctx: UIEventStateContext) {
-    if (!this.doc.isReadonly) return;
     const evt: MouseEvent = ctx.getDefaultEvent();
     const target = evt.target;
     if (
@@ -96,6 +98,10 @@ export class ImgToolbarPlugin extends DocPlugin {
       !target.classList.contains("img-wrapper")
     )
       return;
+    if (!this.doc.isReadonly) {
+      const blockId = closetBlockId(target);
+      if (!blockId || !this.doc.readonlyManager.isReadonly(blockId)) return;
+    }
     const img = target.querySelector("img")!;
     this.doc.injector.get(DOC_FILE_SERVICE_TOKEN).previewImg({ el: img });
     img.dispatchEvent(
@@ -124,6 +130,22 @@ export class ImgToolbarPlugin extends DocPlugin {
         }
       }),
     );
+
+    const stateChange$ = this.doc.readonlyManager?.stateChange$;
+    if (stateChange$) {
+      this._sub.add(stateChange$.subscribe(() => {
+        const selection = this.doc.selection.value;
+        if (!selection || !isSelectionAlive(selection as any, this.doc)) {
+          this.closeToolbar();
+          return;
+        }
+        const firstBlock = selection.firstBlock;
+        if (firstBlock.flavour === "image" && this.doc.readonlyManager.isReadonly(firstBlock)) {
+          this.clearOpenToolbarTimer();
+          this.closeToolbar();
+        }
+      }));
+    }
 
     // Image block drag via pointerdown (replaces former HTML5 dragstart path)
     // 重点：
@@ -163,11 +185,13 @@ export class ImgToolbarPlugin extends DocPlugin {
           this.doc.selection.selectBlock(block)
           this._confirmImageClickSelection(evt, block as BlockCraft.IBlockComponents["image"])
 
-          this.doc.dragController.startDrag(
-            evt,
-            { kind: 'origin-block', blockId },
-            { ghostLabel: '图片' },
-          )
+          if (!this.doc.readonlyManager.isReadonly(block)) {
+            this.doc.dragController.startDrag(
+              evt,
+              { kind: 'origin-block', blockId },
+              { ghostLabel: '图片' },
+            )
+          }
         })
     );
 
@@ -186,10 +210,14 @@ export class ImgToolbarPlugin extends DocPlugin {
       }
 
       const imgBlock = selection.firstBlock;
+      if (this.doc.readonlyManager.isReadonly(imgBlock)) {
+        this._toolbarRef && this.closeToolbar();
+        return;
+      }
       this.clearOpenToolbarTimer();
       this._openToolbarTimer = setTimeout(() => {
         this._openToolbarTimer = undefined;
-        if (this.doc.isReadonly) {
+        if (this.doc.isReadonly || this.doc.readonlyManager.isReadonly(imgBlock)) {
           this.closeToolbar();
           return;
         }
@@ -252,6 +280,10 @@ export class ImgToolbarPlugin extends DocPlugin {
           .pipe(takeUntil(this._closeToolbar$))
           .subscribe((v) => {
             if (!this._isBlockAlive(imgBlock)) {
+              this.closeToolbar();
+              return;
+            }
+            if (this.doc.readonlyManager.isReadonly(imgBlock) && v.name !== "download") {
               this.closeToolbar();
               return;
             }

@@ -12,6 +12,7 @@ import {OverlayRef} from "@angular/cdk/overlay";
 import {AttachmentBlockToolbar, IAttachmentToolbarItem} from "./widgets/attachment-toolbar";
 import {RenameInputPad} from "./widgets/rename-input-pad";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
+import {ComponentRef} from "@angular/core";
 
 type AttachmentBlock = BlockCraft.IBlockComponents['attachment']
 
@@ -72,10 +73,15 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   private _sub?: Subscription
   private _timer: number | null = null
   private _toolbarRef?: OverlayRef
+  private _toolbarComponentRef?: ComponentRef<AttachmentBlockToolbar>
 
   private _closeToolbar$ = new Subject<void>()
 
   private _activeBlock: AttachmentBlock | null = null
+
+  private _isReadonly(block: AttachmentBlock) {
+    return this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly
+  }
 
   constructor(private options?: AttachmentExtensionOptions) {
     super();
@@ -103,7 +109,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     // 空附件：编辑模式下打开文件选择
     if (!block.props.url) {
       state.preventDefault()
-      if (!this.doc.isReadonly) {
+      if (!this._isReadonly(block)) {
         block.inputLocalFile()
       }
       return true
@@ -117,7 +123,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     }
 
     // 只读模式下：选中块以便预览/下载
-    if (this.doc.isReadonly) {
+    if (this._isReadonly(block)) {
       state.preventDefault()
       this.doc.selection.selectBlock(blockId)
       return true
@@ -172,10 +178,12 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         }, this._closeToolbar$, this.closeToolbar)
 
         this._toolbarRef = overlayRef
+        this._toolbarComponentRef = componentRef
 
         const canUse = this._isCanUse(attachmentBlock)
         componentRef.setInput('doc', this.doc)
         componentRef.setInput('canUse', canUse)
+        componentRef.setInput('isReadonly', this._isReadonly(attachmentBlock))
         componentRef.setInput('showPreview', !!this.options?.onPreview)
         if (this.options?.previewIcon) {
           componentRef.setInput('previewIcon', this.options.previewIcon)
@@ -196,8 +204,10 @@ export class AttachmentExtensionPlugin extends DocPlugin {
             this.closeToolbar()
             return
           }
+          const readonly = this._isReadonly(attachmentBlock)
           switch (v.name) {
             case 'rename':
+              if (readonly) return
               this.onRename(attachmentBlock)
               break
             case 'download':
@@ -207,6 +217,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
               this.options?.onPreview?.(attachmentBlock, this.doc)
               break
             case 'delete':
+              if (readonly) return
               this.doc.crud.deleteBlockById(attachmentBlock.id)
               break
             default:
@@ -218,6 +229,18 @@ export class AttachmentExtensionPlugin extends DocPlugin {
       }, 200)
 
     })
+    const stateChange$ = this.doc.readonlyManager?.stateChange$
+    if (stateChange$) {
+      this._sub.add(stateChange$.subscribe(() => {
+        const activeBlock = this._activeBlock
+        if (!activeBlock || !this._toolbarComponentRef) return
+        if (!this._isBlockAlive(activeBlock)) {
+          this.closeToolbar()
+          return
+        }
+        this._toolbarComponentRef.setInput('isReadonly', this._isReadonly(activeBlock))
+      }))
+    }
   }
 
   /** 附件是否就绪：有 url 且已上传至远端（http(s) 协议） */
@@ -238,6 +261,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     this.clearTimer()
     this._toolbarRef?.dispose()
     this._toolbarRef = undefined
+    this._toolbarComponentRef = undefined
     this._activeBlock = null
   }
 
@@ -263,7 +287,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   }
 
   onRename(block: AttachmentBlock) {
-    if (!this._isBlockAlive(block)) return
+    if (!this._isBlockAlive(block) || this._isReadonly(block)) return
     const close$ = new Subject<void>()
 
     const close = () => {
@@ -302,6 +326,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     componentRef.instance.valueChange.pipe(takeUntil(close$)).subscribe(v => {
       close()
       if (!this._isBlockAlive(block)) return
+      if (this._isReadonly(block)) return
       block.updateProps({
         name: v
       })
@@ -330,6 +355,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
       this.doc.logger.warn('attachment paste target selection is stale, abort')
       return true
     }
+    if (this.doc.readonlyManager?.isSelectionReadonly(state.selection) ?? this.doc.isReadonly) return true
 
     // Create blocks with local object URLs IMMEDIATELY — image / attachment
     // block components detect a non-http(s) src in their `ngOnInit` and kick

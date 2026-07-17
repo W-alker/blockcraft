@@ -1091,9 +1091,13 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   protected onExtensionAction(action: IFixedToolbarExtensionAction) {
     if (this.readonly || action.disabled) return;
 
+    const resolvedSelection = this.resolveExtensionActionSelection();
+    const selection = this.doc.selection.value;
+    if (this.isLiveSelection(selection) && this.isReadonlySelection(selection)) return;
+
     this.extensionAction.emit({
       action,
-      selection: this.resolveExtensionActionSelection(),
+      selection: resolvedSelection,
       doc: this.doc,
     });
   }
@@ -1171,6 +1175,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     selection: BlockCraft.Selection | null = this.doc.selection.value,
   ) {
     if (!this.isLiveSelection(selection)) return false;
+    if (this.isReadonlySelection(selection)) return false;
     return !!this.resolveInsertPlacement(flavour, selection);
   }
 
@@ -1683,6 +1688,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   private canTransformSelection(selection: BlockCraft.Selection | null) {
     if (!this.isLiveSelection(selection) || selection.isAllSelected) return false;
+    if (this.isReadonlySelection(selection)) return false;
 
     let between: string[];
     try {
@@ -1723,6 +1729,10 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   private isLiveSelection(selection: BlockCraft.Selection | null | undefined): selection is BlockCraft.Selection {
     return isSelectionAlive(selection as any, this.doc);
+  }
+
+  private isReadonlySelection(selection: BlockCraft.Selection) {
+    return this.doc.readonlyManager?.isSelectionReadonly(selection) ?? this.doc.isReadonly
   }
 
   private get toolbarHelper() {

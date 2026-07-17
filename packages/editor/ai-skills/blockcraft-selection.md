@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-07-15 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-07-17 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -27,20 +27,35 @@ Programmatic write (API / undo replay / keyboard command)
   → FakeRange (visual overlay for non-native selections, optional)
 
 Remote Yjs transaction
-  → LiveSelectionBookmarkTracker snapshot (captured before view sync)
+  → DocCRUD publishes before-view-sync (affected IDs + transaction identity)
+  → RemoteSelectionReconciler captures LiveSelectionBookmarkTracker snapshot
   → DocCRUD syncs Yjs changes into the block/component tree
+  → DocCRUD publishes after-view-sync
   → affected block IDs + endpoint structural-position relevance check
   → one revision/focus-guarded reconciliation per animation frame
       → resolve Y.RelativePosition endpoints against the current model
       → replay mapped ISelectionJSON through the model-first write path
       → DOM recalculate only if resolution fails and root still owns a native Range
+
+Undo / redo
+  → RelativeSelectionBookmark stored on the matching Yjs StackItem.meta
+  → Y.UndoManager pops exactly that StackItem
+  → SelectionHistoryRestorer focuses, resolves and replays after view sync
+  → bounded frame verification repairs delayed mount, focus loss or DOM mismatch
+
+Browser surface
+  → SelectionSurfaceAdapter owns native Selection, focus, Range creation,
+    animation-frame scheduling and geometry reads
+  → SelectionManager remains the canonical model/state coordinator
 ```
 
 **Key principle**: `BlockSelection` is the canonical truth. The DOM `Selection` is a derived view. Every programmatic write goes through one model-first commit path: `setSelection()`, `setCursorAt()`, `extendTo()`, editable block cursor helpers, `selectBlock()`, `setGapCursor()`, table-cell selection, and replay all publish `doc.selection.value` before DOM projection. `SelectionPositionResolver` resolves endpoint order and nearest common ancestry together from `parentId`, reading only the first divergent parent's `childrenIds`; it does not call `compareDocumentPosition()` or read layout. Immutable `BlockSelection` instances cache their derived direction, so repeated `direction` / `start` / `end` reads do not walk the model tree again. The derived DOM Range is applied under a short native `selectionchange` suppression window so browsers (notably Safari/WebKit) cannot immediately reinterpret a container/callout block range back into internal child text or boundary endpoints. Native drag is the deliberate exception: when DOM normalization repairs an endpoint that crossed a closed scope, Selection publishes the repaired model and immediately projects its anchor/focus back to the corresponding gap-backed boundary without opening the suppression window. The projection preserves forward/backward direction and round-trips idempotently, so subsequent pointer-driven events remain observable while WebKit cannot oscillate between internal text and whole-container endpoints. If a live model selection reaches the view before its block DOM is mounted, projection failure does not call `blur()`: Selection keeps the model, removes any partial native range, and retries only while the projection version and expected JSON still match. A newer selection cancels the old task, and an explicitly focused external control is never stolen back.
 
 `SelectionSelectedManager` is presentation-only. It reconciles the previous and next covered-block sets, so unchanged blocks do not lose and regain `.selected` / `.focused` classes on high-frequency `selectionchange` events; it does not reinterpret scope or mutate the model.
 
-Local selections also have an internal live relative bookmark. Text and boundary endpoints use `Y.RelativePosition`; selected, gap, and table-cell endpoints keep their structural IDs. Remote transactions therefore map the canonical model selection through Yjs first instead of reading the browser Range back into the model. Undo/redo uses the same bookmark codec, so one point-mapping rule owns both one-shot history restoration and live collaboration mapping.
+Local selections also have an internal live relative bookmark. Text and boundary endpoints use `Y.RelativePosition`; selected, gap, and table-cell endpoints keep their structural IDs. Remote transactions therefore map the canonical model selection through Yjs first instead of reading the browser Range back into the model. Undo/redo stores the same bookmark directly on its owning Yjs `StackItem.meta`, so selection history cannot drift from the content stack when Yjs merges, truncates, clears, undoes or redoes items.
+
+`SelectionManager` owns model intent and orchestration; `SelectionSurfaceAdapter` is the browser anti-corruption layer. It has no cache or selection state and adds no model traversal: each call delegates to the current root's `ownerDocument`, native `Selection`/`Range`, focus API, animation frame, or geometry API. Remote reconciliation and history restoration use the same surface, which keeps iframe/multi-document and Safari-specific behavior out of DocCRUD and UndoManager.
 
 Before `normalizeRange()` runs, `recalculate()` verifies that both native Range endpoints belong to the current root. This is an ownership boundary, not an error fallback: an external page/editor selection is left untouched when BlockCraft does not own focus. If WebKit keeps extending a native drag outside root while BlockCraft still owns focus, Selection clears that leaked native Range before it can reach block lookup. A current model-owned `table-cell` rectangle remains canonical; other BlockCraft selections clear as an invalid cross-root DOM input.
 
@@ -72,6 +87,10 @@ This prevents stale toolbar state and accidental block-level keyboard handling w
 | `framework/modules/selection/common-parent.ts` | Shared pure common-parent rule used by SelectionManager and bookmarks |
 | `framework/modules/selection/relative-bookmark.ts` | Internal Yjs-relative selection capture/resolve and remote relevance rules |
 | `framework/modules/selection/live-bookmark-tracker.ts` | Revisioned live bookmark lifecycle for remote transaction reconciliation |
+| `framework/modules/selection/remote-selection-reconciler.ts` | Selection-owned remote transaction bookmark reconciliation |
+| `framework/modules/selection/history-restorer.ts` | Undo/redo bookmark resolution, focus and bounded DOM/model verification |
+| `framework/modules/selection/surface-adapter.ts` | Browser surface port for native selection, focus, frames and geometry |
+| `framework/doc/sync-lifecycle.ts` | Internal before/after remote view-sync lifecycle contract |
 | `framework/modules/selection/scope.ts` | `SelectionScope` resolver + `SelectionScopePolicy` — semantic cross-parent guard and scope-owned input/visual policy |
 | `framework/modules/selection/liveness.ts` | Endpoint guard for hot reads + structural liveness guard before broadcast/input |
 | `framework/modules/selection/selection-keyboard.ts` | Arrow / Shift / Home / End / Ctrl+A / Escape handling |
@@ -277,7 +296,24 @@ Text and boundary positions use `assoc = 0`, matching the existing Undo affinity
 
 Remote reconciliation is relevance-filtered. Direct endpoint/container/table changes are relevant immediately. For ancestor-only hits, the codec checks only captured structural edges whose parent ID appears in the transaction and compares their `{blockId, parentId, siblingIndex}` against the current tree; an unrelated insertion after a caret therefore does not schedule replay, while insertion before it or reparenting does. Relevant transactions are coalesced to at most one animation-frame task and canceled if the selection revision changes, the editor loses focus, or a native input island owns focus.
 
-On success, DocCRUD calls `selection.replay(mappedJSON)` once and does not call `recalculate()`. If a bookmark cannot resolve, DocCRUD may sample DOM once only when both native endpoints still belong to the current root; otherwise it clears the stale model selection. This fallback is compatibility for endpoint deletion or temporarily inconsistent trees, not the normal collaboration path.
+`DocCRUD` does not inspect or restore selections. It publishes an internal before/after view-sync lifecycle with transaction identity and affected block IDs. `RemoteSelectionReconciler` owns bookmark capture, relevance filtering and replay. On success it calls `selection.replay(mappedJSON)` once and does not call `recalculate()`. If a bookmark cannot resolve, it may sample DOM once only when `SelectionSurfaceAdapter` confirms both native endpoints still belong to the current root; otherwise it clears the stale model selection. This fallback is compatibility for endpoint deletion or temporarily inconsistent trees, not the normal collaboration path.
+
+## History Restoration
+
+`DocUndoManager` stores each pre-change `RelativeSelectionBookmark` in the same Yjs `StackItem.meta` as the content operation. During undo, the current selection is captured for the redo item Yjs is about to create; redo performs the symmetric capture for the new undo item. A merged stack item keeps its earliest pre-change bookmark. There are no parallel selection arrays to synchronize with Yjs stack operations.
+
+After Yjs pops an item, `SelectionHistoryRestorer` receives that item's bookmark. It focuses the relevant editing host synchronously, waits for the view microtask, resolves relative positions against the restored model, then replays through the normal model-first path. A small version-guarded frame budget covers delayed component mount, browser focus loss and DOM/model projection mismatch. A newer restore cancels older work; an unresolvable bookmark fails closed to `null`. Model-only table-cell selections skip native DOM verification.
+
+## Selection Surface Adapter
+
+`SelectionSurfaceAdapter` centralizes browser-only operations used by the Selection domain:
+
+- native `Selection` ownership/read/clear and `Range` creation
+- root or nearest editing-host focus and focus-loss checks
+- animation-frame request/cancel for bounded projection work
+- element/range geometry reads for overlays and scrolling
+
+The default `DOMSelectionSurfaceAdapter` always resolves through `root.hostElement.ownerDocument`, not global `document`. It deliberately performs no polling, caching, layout batching or model lookup beyond resolving the requested editing host. Plugins still use `SelectionManager`; they should not call the adapter or manipulate native selection directly.
 
 ## SelectionManager Public API
 

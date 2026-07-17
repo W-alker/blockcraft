@@ -18,6 +18,11 @@ import {
 
 export class TableBlockBinding extends DocPlugin {
 
+  private _isTableProtected(table: BlockCraft.IBlockComponents['table']): boolean {
+    const manager = this.doc.readonlyManager
+    return !!manager && (manager.isReadonly(table) || manager.containsReadonly(table))
+  }
+
   private _getLiveTableFromSelection(selection: BlockCraft.Selection): BlockCraft.IBlockComponents['table'] | null {
     try {
       const firstBlock = this._getSafeSelectionFirstBlock(selection)
@@ -53,6 +58,10 @@ export class TableBlockBinding extends DocPlugin {
 
     const table = this._getLiveTableFromSelection(selection)
     if (!table) return false
+    if (this._isTableProtected(table)) {
+      context.preventDefault()
+      return true
+    }
 
     if (!this._hasPastedTableData(state)) return false
 
@@ -64,6 +73,7 @@ export class TableBlockBinding extends DocPlugin {
       if (!tableSnapshot) return
       const liveTable = this._resolveParsedTablePasteTarget(table, selection, startCoordinate)
       if (!liveTable) return
+      if (this._isTableProtected(liveTable)) return
       this._fillTableFromSnapshot(liveTable, tableSnapshot, startCoordinate)
     })
     return true
@@ -473,6 +483,10 @@ export class TableBlockBinding extends DocPlugin {
 
     const table = this._getLiveTableFromSelection(selection)
     if (!table) return false
+    if (isCut && this._isTableProtected(table)) {
+      context.preventDefault()
+      return true
+    }
 
     const tableCellCoordinates = this._getTableCellSelectionCoordinates(table, selection)
     if (this._hasTableCellSelection(selection) && !tableCellCoordinates) return false
@@ -488,7 +502,7 @@ export class TableBlockBinding extends DocPlugin {
 
     void this.doc.clipboard.copyBlocksModel([legalSnapshot]).then(() => {
       this.doc.messageService.success('已复制')
-      if (isCut) {
+      if (isCut && !this._isTableProtected(table)) {
         this.clearCellContent(matrix.flat())
       }
     }).catch(e => {
@@ -563,6 +577,10 @@ export class TableBlockBinding extends DocPlugin {
 
     const table = this._getLiveTableFromSelection(selection)
     if (!table) return false
+    if (this._isTableProtected(table)) {
+      evt.preventDefault()
+      return true
+    }
 
     const tableCellCoordinates = this._getTableCellSelectionCoordinates(table, selection)
     if (this._hasTableCellSelection(selection) && !tableCellCoordinates) return false

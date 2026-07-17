@@ -2,6 +2,7 @@ import { BehaviorSubject, Observable, Subscription } from "rxjs"
 import { IBlockProps } from "../block-std"
 import { calcDragLineRect, calcPositionByRect, type DragLineRect, type DragPosition } from "./_dnd-geometry"
 import { closetBlockId } from "../utils"
+import { BlockReadonlyError, BlockReadonlyOperation } from "../doc/block-readonly.types"
 
 export type InternalDragState = 'idle' | 'armed' | 'dragging' | 'dropping'
 
@@ -120,6 +121,22 @@ export class DocInternalDragController {
       }
     }
 
+    if (normalized.kind === 'origin-block' || normalized.kind === 'origin-blocks') {
+      const blockIds = normalized.kind === 'origin-block'
+        ? [normalized.blockId]
+        : normalized.blockIds
+      try {
+        this.doc.readonlyManager.assertRemovable(
+          blockIds,
+          BlockReadonlyOperation.Move,
+          'drag',
+        )
+      } catch (error) {
+        if (error instanceof BlockReadonlyError) return
+        throw error
+      }
+    }
+
     // 不再调 setPointerCapture：
     // (1) 我们所有 pointermove/up/cancel 都挂在 window 上 capture phase，事件传递不依赖 capture
     // (2) 部分 Chrome 版本下，对 <img> / 子树 element 调 setPointerCapture 会阻塞 ancestor 的
@@ -154,6 +171,7 @@ export class DocInternalDragController {
     this._globalListenersAttached = true
     window.addEventListener('keydown', this._onWindowKeydown, true)
     window.addEventListener('blur', this._onWindowBlur)
+    window.addEventListener('pointerdown', this._onWindowPointerDown, true)
     // pointer 事件全部走 window capture phase，不依赖 setPointerCapture。
     // 原因：某些元素（<img>、<svg>、跨 shadow DOM 等）上 setPointerCapture 可能 silent fail，
     // 那 target 上挂的 listener 就收不到任何 pointermove/up，拖拽看上去完全没反应。
@@ -175,6 +193,7 @@ export class DocInternalDragController {
     this._globalListenersAttached = false
     window.removeEventListener('keydown', this._onWindowKeydown, true)
     window.removeEventListener('blur', this._onWindowBlur)
+    window.removeEventListener('pointerdown', this._onWindowPointerDown, true)
     window.removeEventListener('pointermove', this._onWindowPointerMove, true)
     window.removeEventListener('pointerup', this._onWindowPointerUp, true)
     window.removeEventListener('pointercancel', this._onWindowPointerCancel, true)
@@ -191,6 +210,12 @@ export class DocInternalDragController {
 
   private _onWindowBlur = (): void => {
     if (this._state$.value !== 'idle') this.cancel()
+  }
+
+  private _onWindowPointerDown = (evt: PointerEvent): void => {
+    if (this._state$.value === 'idle') return
+    if (!evt.isPrimary || evt.pointerId === this._activePointerId) return
+    this._teardown()
   }
 
   private _onSelectStart = (evt: Event): void => {

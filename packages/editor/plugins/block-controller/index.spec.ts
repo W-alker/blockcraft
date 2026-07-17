@@ -146,6 +146,7 @@ describe("BlockControllerPlugin selection range handling", () => {
     const cpr = {
       location: {nativeElement: triggerHost},
       instance: {
+        closed: new Subject<void>(),
         menuDisabled: false,
         cdr: {detectChanges: jasmine.createSpy("detectChanges")},
       },
@@ -229,6 +230,7 @@ describe("BlockControllerPlugin selection range handling", () => {
     const cpr = {
       location: {nativeElement: triggerHost},
       instance: {
+        closed: new Subject<void>(),
         menuDisabled: false,
         cdr: {detectChanges: jasmine.createSpy("detectChanges")},
       },
@@ -302,6 +304,7 @@ describe("BlockControllerPlugin selection range handling", () => {
     const cpr = {
       location: {nativeElement: triggerHost},
       instance: {
+        closed: new Subject<void>(),
         menuDisabled: false,
         cdr: {detectChanges: jasmine.createSpy("detectChanges")},
       },
@@ -345,7 +348,7 @@ describe("BlockControllerPlugin selection range handling", () => {
     rootHost.remove();
   });
 
-  it("does not start dragging when the active block became stale", () => {
+  it("does not start dragging when the active block became stale or protected", () => {
     const rootHost = document.createElement("div");
     const p1Host = document.createElement("p");
     const triggerHost = document.createElement("button");
@@ -373,6 +376,7 @@ describe("BlockControllerPlugin selection range handling", () => {
     const cpr = {
       location: {nativeElement: triggerHost},
       instance: {
+        closed: new Subject<void>(),
         menuDisabled: false,
         cdr: {detectChanges: jasmine.createSpy("detectChanges")},
       },
@@ -413,7 +417,100 @@ describe("BlockControllerPlugin selection range handling", () => {
 
     expect(doc.dragController.startDrag).not.toHaveBeenCalled();
     expect(cpr.setInput).toHaveBeenCalledWith("activeBlock", null);
+
+    doc.getBlockById.and.returnValue(p1);
+    (doc as any).readonlyManager = {
+      isReadonly: jasmine.createSpy("isReadonly").and.returnValue(true),
+      containsReadonly: jasmine.createSpy("containsReadonly").and.returnValue(false),
+    };
+    (plugin as any)._activeBlock = p1;
+    triggerHost.dispatchEvent(new PointerEvent("pointerdown", {button: 0, bubbles: true}));
+
+    expect(doc.dragController.startDrag).not.toHaveBeenCalled();
     plugin.destroy();
     rootHost.remove();
   });
+
+  it("reactivates the same hovered block after the trigger closes itself", fakeAsync(() => {
+    const rootHost = document.createElement("div");
+    const p1Host = document.createElement("p");
+    const triggerHost = document.createElement("button");
+    rootHost.appendChild(p1Host);
+    document.body.appendChild(rootHost);
+    p1Host.setAttribute("data-block-id", "p1");
+    p1Host.contentEditable = "true";
+
+    const root = {
+      id: "root",
+      flavour: "root",
+      nodeType: BlockNodeType.root,
+      hostElement: rootHost,
+      childrenIds: ["p1"],
+      childrenLength: 1,
+    };
+    const p1 = {
+      id: "p1",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      hostElement: p1Host,
+      parentId: "root",
+      parentBlock: root,
+      props: {depth: 0},
+      getIndexOfParent: () => 0,
+    };
+    const closed = new Subject<void>();
+    const cpr = {
+      location: {nativeElement: triggerHost},
+      instance: {
+        closed,
+        menuDisabled: false,
+        cdr: {detectChanges: jasmine.createSpy("detectChanges")},
+      },
+      setInput: jasmine.createSpy("setInput"),
+      destroy: jasmine.createSpy("destroy"),
+    };
+    const doc = {
+      isReadonly: false,
+      onDestroy$: new Subject<void>(),
+      injector: {get: jasmine.createSpy("get").and.returnValue({
+        createComponent: jasmine.createSpy("createComponent").and.returnValue(cpr),
+      })},
+      root,
+      schemas: {
+        get: jasmine.createSpy("get").and.returnValue({metadata: {isLeaf: false}}),
+      },
+      selection: {
+        value: null,
+        selectionChange$: new Subject<BlockSelection | null>(),
+      },
+      dragController: {
+        state$: new Subject<string>(),
+        startDrag: jasmine.createSpy("startDrag"),
+      },
+      subscribeReadonlyChange: jasmine.createSpy("subscribeReadonlyChange").and.returnValue({
+        unsubscribe: jasmine.createSpy("unsubscribeReadonly"),
+      }),
+      getBlockById: jasmine.createSpy("getBlockById").and.returnValue(p1),
+      queryBlocksBetween: jasmine.createSpy("queryBlocksBetween").and.returnValue([]),
+    };
+    const plugin = new BlockControllerPlugin();
+    (plugin as any).doc = doc;
+    plugin.init();
+
+    p1Host.dispatchEvent(new MouseEvent("mouseover", {bubbles: true}));
+    tick(1);
+    expect((plugin as any)._activeBlock).toBe(p1);
+
+    closed.next();
+    expect((plugin as any)._activeBlock).toBeNull();
+    expect(cpr.setInput).toHaveBeenCalledWith("activeBlock", null);
+
+    cpr.setInput.calls.reset();
+    p1Host.dispatchEvent(new MouseEvent("mouseover", {bubbles: true}));
+    tick(1);
+    expect(cpr.setInput).toHaveBeenCalledWith("activeBlock", p1);
+
+    plugin.destroy();
+    rootHost.remove();
+  }));
 });

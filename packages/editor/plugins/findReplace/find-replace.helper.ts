@@ -345,6 +345,7 @@ export class FindReplaceHelper {
           return
         }
         if (!this._isBlockAlive(block) || !this.doc.isEditable(block)) return
+        if (this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly) return
         block.applyDeltaOperations(delta)
       })
       this._destroyAllFakeRanges()
@@ -546,8 +547,8 @@ export class FindReplaceHelper {
 
   private _replaceMatch(match: FindReplaceMatch, replaceText: string) {
     if (!this._isBlockAlive(match.block) || !this.doc.isEditable(match.block)) return
-    match.block.yText.delete(match.index, match.length)
-    replaceText && match.block.yText.insert(match.index, replaceText)
+    if (this.doc.readonlyManager?.isReadonly(match.block) ?? this.doc.isReadonly) return
+    match.block.replaceText(match.index, match.length, replaceText)
   }
 
   private _isBlockAlive(block: BlockCraft.BlockComponent | null | undefined) {

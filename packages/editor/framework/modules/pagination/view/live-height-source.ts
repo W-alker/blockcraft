@@ -1,6 +1,7 @@
 // packages/editor/framework/modules/pagination/view/live-height-source.ts
 import {Subject} from "rxjs";
 import {BlockNodeType} from "../../../block-std/types/block.type";
+import {resolveBlockPolicy} from "../engine";
 import {BlockMeta, TableRowGeom} from "./item-builder";
 import {rowSplitOffsets} from "./split-points";
 
@@ -34,6 +35,15 @@ export class LiveHeightSource {
   readonly resize$ = new Subject<void>();
   private _ro: ResizeObserver;
   private _observed = new Set<Element>();
+  /**
+   * capHeight 块最近一次未被页高裁剪的可见高度。
+   *
+   * 代码块加锁后会通过 flex 把内部滚动容器压到一页内，导致宿主的 scrollHeight
+   * 也随之降到页高；若直接拿这个受约束值判断 oversized，就会在锁定/解锁之间
+   * 形成 ResizeObserver 反馈环。缓存只参与“仍顶满锁定高度”的状态；真实渲染高度
+   * 一旦低于页高，立即以新值覆盖，因此缩小块仍能正常解锁。
+   */
+  private _lastUncappedHeights = new WeakMap<HTMLElement, number>();
 
   constructor(private doc: BlockCraft.Doc) {
     this._ro = new ResizeObserver(() => this.resize$.next());
@@ -101,15 +111,21 @@ export class LiveHeightSource {
       }
 
       // capHeight 块（图片/视频/嵌入等原子块 + 代码块）超高时锁定最大高度到一页内、裁剪不溢出（不缩放）。
-      // 自然高度用 scrollHeight：HeightLockApplier 施加的 max-height + overflow:hidden 会裁剪 offsetHeight，
-      // 但 scrollHeight 仍是未裁剪的完整内容高，**对已锁定状态不变** → 无测量反馈环（不会锁/解锁来回抖）。
-      const capHeight = block.nodeType === BlockNodeType.void || block.flavour === 'code';
+      // 通常 scrollHeight 能保留未裁剪的完整内容高；代码块的 flex 内滚动布局会让它在锁定后
+      // 一起降到页高，因此再由 _resolveCapHeight 保留最后一次未受约束的高度，阻断锁/解锁反馈环。
+      const capHeight = resolveBlockPolicy({
+        flavour: block.flavour,
+        nodeType: block.nodeType,
+      }).capHeight;
       // Safari 中带固定高度子卡片的 iframe block 可能由 overflow 绘制：顶层 host.offsetHeight 只含
       // 品牌/链接（约 55px），而 host.scrollHeight 才包含屏幕上实际可见的整张卡片（约 464px）。
       // 原子块分页必须消费可见自然高度，否则 live 布局会与只读打印面分歧。
-      const naturalHeight = capHeight
+      const renderedHeight = capHeight
         ? Math.max(el.offsetHeight, el.scrollHeight)
         : el.offsetHeight;
+      const naturalHeight = capHeight
+        ? this._resolveCapHeight(el, renderedHeight, opts?.contentHeight)
+        : renderedHeight;
       if (capHeight && opts && opts.contentHeight > 0 && naturalHeight > opts.contentHeight) {
         metas.push({
           id,
@@ -146,6 +162,24 @@ export class LiveHeightSource {
     if (block?.nodeType !== BlockNodeType.editable) return false;
     // editable-block 暴露 get heading()；兜底读 model.props.heading
     return !!(block.heading ?? block.model?.props?.heading);
+  }
+
+  private _resolveCapHeight(
+    el: HTMLElement,
+    renderedHeight: number,
+    contentHeight?: number,
+  ): number {
+    const isSaturatedLock = el.classList.contains('bc-page-height-locked')
+      && contentHeight != null
+      && contentHeight > 0
+      && renderedHeight >= contentHeight - 1;
+
+    if (isSaturatedLock) {
+      return Math.max(renderedHeight, this._lastUncappedHeights.get(el) ?? renderedHeight);
+    }
+
+    this._lastUncappedHeights.set(el, renderedHeight);
+    return renderedHeight;
   }
 
   destroy(): void {

@@ -8,6 +8,7 @@ import {
 } from "../block-std"
 import { closetBlockId } from "../utils"
 import { BLOCK_POSITION } from "../doc"
+import { BlockReadonlyError, BlockReadonlyOperation } from "../doc/block-readonly.types"
 import { DOC_FILE_SERVICE_TOKEN } from "./file.service"
 import { BLOCK_CREATOR_SERVICE_TOKEN } from "./block-creator.service"
 import { calcDragLineRect, calcPositionByRect, type DragLineRect, type DragPosition } from "./_dnd-geometry"
@@ -232,6 +233,41 @@ export class DocDndService {
 
   // --- Commit 类方法：被 DocInternalDragController 和外部文件路径共同调用 ---
 
+  private _tryReadonlyCheck(check: () => void): boolean {
+    try {
+      check()
+      return true
+    } catch (error) {
+      if (error instanceof BlockReadonlyError) return false
+      throw error
+    }
+  }
+
+  private _tryAssertPropsWritable(blockId: string): boolean {
+    return this._tryReadonlyCheck(() => this.doc.readonlyManager.assertPropsWritable(
+      blockId,
+      BlockReadonlyOperation.Move,
+      'drag',
+    ))
+  }
+
+  private _tryAssertInsertable(parentId: string, operation = BlockReadonlyOperation.Move): boolean {
+    return this._tryReadonlyCheck(() => this.doc.readonlyManager.assertInsertable(
+      parentId,
+      operation,
+      'drag',
+    ))
+  }
+
+  private _tryAssertMovable(blockIds: readonly string[], targetParentId: string): boolean {
+    return this._tryReadonlyCheck(() => this.doc.readonlyManager.assertMovable(
+      blockIds,
+      targetParentId,
+      BlockReadonlyOperation.Move,
+      'drag',
+    ))
+  }
+
   private _handleSourceParentAfterMove(blockId: string) {
     const sourceParent = this.doc.getBlockById(blockId)
     if (sourceParent?.childrenLength === 0) {
@@ -249,10 +285,13 @@ export class DocDndService {
     const columnSchema = this.doc.schemas.get('column')
     if (!parent || !columnSchema) return
     if (parent.flavour === 'column') {
-      if (parent.parentBlock!.childrenLength >= 8) {
+      const columnsBlock = parent.parentBlock
+      if (!columnsBlock || columnsBlock.childrenLength >= 8) {
         this.doc.messageService.warn(`分栏最多支持8列`)
         return
       }
+
+      if (!this._tryAssertMovable([block.id], columnsBlock.id)) return
 
       const newColumn = this.doc.schemas.createSnapshot('column', [[]])
       const _insertIdx = parent.getIndexOfParent() + (position === 'left' ? 0 : 1)
@@ -267,6 +306,7 @@ export class DocDndService {
       this.doc.messageService.warn(`不允许的分栏内容`)
       return
     }
+    if (!targetBlock.parentId || !this._tryAssertMovable([block.id, targetBlock.id], targetBlock.parentId)) return
     const columns = this.doc.schemas.createSnapshot('columns', [2])
     const column1 = columns.children[0] as IBlockSnapshot
     const column2 = columns.children[1] as IBlockSnapshot
@@ -284,24 +324,30 @@ export class DocDndService {
   }
 
   onSortBlock(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: DragPosition) {
-    const isDepthEqual = block.props['depth'] === targetBlock.props['depth']
     if (!block || position === 'none' || targetBlock === block) return
+    const isDepthEqual = block.props['depth'] === targetBlock.props['depth']
     if (position === 'left' || position === 'right') {
       this.onSetColumn(block, targetBlock, position)
       return
     }
 
     if (block.hostElement.nextElementSibling === targetBlock.hostElement && position === 'before') {
-      !isDepthEqual && block.updateProps({ depth: targetBlock.props.depth })
+      if (!isDepthEqual && this._tryAssertPropsWritable(block.id)) {
+        block.updateProps({ depth: targetBlock.props.depth })
+      }
       return
     }
 
     if (block.hostElement.previousElementSibling === targetBlock.hostElement && position === 'after') {
-      !isDepthEqual && block.updateProps({ depth: targetBlock.props.depth })
+      if (!isDepthEqual && this._tryAssertPropsWritable(block.id)) {
+        block.updateProps({ depth: targetBlock.props.depth })
+      }
       return
     }
 
-    if (!this.doc.schemas.isValidChildren(block.flavour, targetBlock.parentBlock!.flavour)) {
+    const targetParent = targetBlock.parentBlock
+    if (!targetParent) return
+    if (!this.doc.schemas.isValidChildren(block.flavour, targetParent.flavour)) {
       this.doc.messageService.warn(`不允许的移动`)
       return
     }
@@ -314,6 +360,7 @@ export class DocDndService {
     if (position === 'after' && (targetBlock.parentId !== block.parentId || posRelationship === BLOCK_POSITION.BEFORE)) {
       targetIdx += 1
     }
+    if (!this._tryAssertMovable([block.id], targetParent.id)) return
 
     this.doc.crud.transact(() => {
       if (!isDepthEqual) {
@@ -322,7 +369,7 @@ export class DocDndService {
 
       const sourceParentId = block.parentId!
       this.doc.crud.moveBlocks(sourceParentId, block.getIndexOfParent(), 1,
-        targetBlock.parentId!, targetIdx)
+        targetParent.id, targetIdx)
 
       this._handleSourceParentAfterMove(sourceParentId)
     })
@@ -398,6 +445,7 @@ export class DocDndService {
     if (position === 'after') {
       targetIdx += 1
     }
+    if (!this._tryAssertMovable(sources.map(source => source.id), targetParent.id)) return
 
     const targetDepth = target.props['depth']
     this.doc.crud.transact(() => {
@@ -428,6 +476,7 @@ export class DocDndService {
         this.doc.messageService.warn(`分栏最多支持8列`)
         return
       }
+      if (!this._tryAssertMovable(sources.map(source => source.id), columnsBlock.id)) return
       const newColumn = this.doc.schemas.createSnapshot('column', [[]])
       const insertIdx = parent.getIndexOfParent() + (position === 'left' ? 0 : 1)
 
@@ -454,6 +503,10 @@ export class DocDndService {
       this.doc.messageService.warn(`不允许的分栏内容`)
       return
     }
+    if (!target.parentId || !this._tryAssertMovable(
+      [...sources.map(source => source.id), target.id],
+      target.parentId,
+    )) return
 
     const columns = this.doc.schemas.createSnapshot('columns', [2])
     const column1 = columns.children[0] as IBlockSnapshot
@@ -477,14 +530,17 @@ export class DocDndService {
   // TODO 文件处理应该交由插件
   onInsertFiles(files: FileList, targetBlock: BlockCraft.BlockComponent, position: DragPosition) {
     if (!files?.length || position === 'none') return
-    const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
+    const targetParent = targetBlock.parentBlock
+    if (!targetParent) return
     if (!files.length) return
     if (files.length === 1 && files[0].type.startsWith('image/')) {
-      if (!this.doc.schemas.isValidChildren('image', targetBlock.parentBlock!.flavour)) {
+      if (!this.doc.schemas.isValidChildren('image', targetParent.flavour)) {
         this.doc.messageService.warn(`此处不能添加图片`)
         return
       }
+      if (!this._tryAssertInsertable(targetParent.id, BlockReadonlyOperation.Insert)) return
 
+      const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
       const url = fileService.createObjectURL(files[0])
       this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0),
         [this.doc.schemas.createSnapshot('image', [url])])
@@ -492,7 +548,9 @@ export class DocDndService {
     }
 
     if (files.length === 1 && files[0].type.startsWith('video/')) {
-      if (this.doc.schemas.get('video') && this.doc.schemas.isValidChildren('video', targetBlock.parentBlock!.flavour)) {
+      if (this.doc.schemas.get('video') && this.doc.schemas.isValidChildren('video', targetParent.flavour)) {
+        if (!this._tryAssertInsertable(targetParent.id, BlockReadonlyOperation.Insert)) return
+        const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
         const url = fileService.createObjectURL(files[0])
         const snapshot = this.doc.schemas.createSnapshot('video', [{
           url,
@@ -508,7 +566,9 @@ export class DocDndService {
     }
 
     if (files.length === 1 && files[0].type.startsWith('audio/')) {
-      if (this.doc.schemas.get('audio') && this.doc.schemas.isValidChildren('audio', targetBlock.parentBlock!.flavour)) {
+      if (this.doc.schemas.get('audio') && this.doc.schemas.isValidChildren('audio', targetParent.flavour)) {
+        if (!this._tryAssertInsertable(targetParent.id, BlockReadonlyOperation.Insert)) return
+        const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
         const url = fileService.createObjectURL(files[0])
         const snapshot = this.doc.schemas.createSnapshot('audio', [{
           url,
@@ -523,12 +583,15 @@ export class DocDndService {
       }
     }
 
-    if (!this.doc.schemas.isValidChildren('attachment', targetBlock.parentBlock!.flavour)) {
+    if (!this.doc.schemas.isValidChildren('attachment', targetParent.flavour)) {
       this.doc.messageService.warn(`此处不能添加文件`)
       return
     }
 
     const _files = Array.from(files).filter(v => !v.type.startsWith('image/'))
+    if (!_files.length) return
+    if (!this._tryAssertInsertable(targetParent.id, BlockReadonlyOperation.Insert)) return
+    const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
     const _blocks: IBlockSnapshot[] = _files.map(f => {
       const url = fileService.createObjectURL(f)
       return this.doc.schemas.createSnapshot('attachment', [{
@@ -546,22 +609,33 @@ export class DocDndService {
   }
 
   onInsertNewBlock(flavour: BlockCraft.BlockFlavour, initProps: IBlockProps, targetBlock: BlockCraft.BlockComponent, position: DragPosition) {
-    if (!this.doc.schemas.isValidChildren(flavour, targetBlock.parentBlock!.flavour)) {
+    if (position === 'none') return
+    const targetParent = targetBlock.parentBlock
+    if (!targetParent) return
+    if (!this.doc.schemas.isValidChildren(flavour, targetParent.flavour)) {
       const newSchema = this.doc.schemas.get(flavour)
       this.doc.messageService.warn(`此处不能添加${newSchema?.metadata.label}`)
       return
     }
 
-    const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
     if (!this.doc.schemas.has(flavour)) return
+    if (!this._tryAssertInsertable(targetParent.id, BlockReadonlyOperation.Insert)) return
+    const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
     blockCreator.getParamsByScheme(this.doc.schemas.get(flavour)!).then(params => {
       if (!params) return
+      const currentParent = targetBlock.parentBlock
+      if (!currentParent) return
+      if (!this.doc.schemas.isValidChildren(flavour, currentParent.flavour)) return
+      if (!this._tryAssertInsertable(currentParent.id, BlockReadonlyOperation.Insert)) return
       const snapshot = this.doc.schemas.createSnapshot(flavour, <any>params)
       initProps && Object.assign(snapshot.props, initProps)
       void this.doc.chain()
-        .insertSnapshots(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), [snapshot])
+        .insertSnapshots(currentParent.id, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), [snapshot])
         .setCursorAtBlock(snapshot.id, true)
         .run()
+        .catch(error => {
+          if (!(error instanceof BlockReadonlyError)) throw error
+        })
     })
   }
 }

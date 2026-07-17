@@ -5,7 +5,7 @@ import {
   TemplateRef,
   ViewContainerRef,
   HostListener,
-  Output, EventEmitter
+  Output, EventEmitter, OnDestroy
 } from '@angular/core';
 import {Overlay, OverlayRef} from '@angular/cdk/overlay';
 import {TemplatePortal} from '@angular/cdk/portal';
@@ -21,7 +21,7 @@ import {fromEvent, takeUntil} from "rxjs";
     '[attr.data-float-binding]': 'true',
   }
 })
-export class BcOverlayTriggerDirective {
+export class BcOverlayTriggerDirective implements OnDestroy {
   @Input('bcOverlayTrigger') contentTemplate!: TemplateRef<any>;
   // 默认值： ['bottom-center', 'top-center']
   @Input() positions: OverlayPosition[] = ['bottom-center', 'top-center'];
@@ -35,7 +35,7 @@ export class BcOverlayTriggerDirective {
   @Input('bcOverlayDisabled')
   set overlayDisabled(disabled: boolean) {
     this._overlayDisabled = disabled
-    if (disabled) this.closeOverlay()
+    if (disabled) this.closePanel()
   }
 
   get overlayDisabled() {
@@ -76,20 +76,17 @@ export class BcOverlayTriggerDirective {
 
   @HostListener('mouseenter')
   showOverlay() {
-    if (this.overlayRef || !this.contentTemplate || this.overlayDisabled) {
+    if (this.overlayRef || this._openDelayTimer || !this.contentTemplate || this.overlayDisabled) {
       return;
     }
 
     this._openDelayTimer = setTimeout(() => {
-      this.openOverlay()
       this._openDelayTimer = undefined
+      this.openOverlay()
     }, this.delay)
 
     this.elementRef.nativeElement.addEventListener('mouseleave', () => {
-      if (this._openDelayTimer) {
-        clearTimeout(this._openDelayTimer)
-        this._openDelayTimer = undefined
-      }
+      this.clearOpenDelayTimer()
     }, {once: true})
   }
 
@@ -122,13 +119,23 @@ export class BcOverlayTriggerDirective {
   }
 
   private _timer?: number
+
+  private clearOpenDelayTimer() {
+    if (!this._openDelayTimer) return
+    clearTimeout(this._openDelayTimer)
+    this._openDelayTimer = undefined
+  }
+
+  private clearCloseDelayTimer() {
+    if (!this._timer) return
+    clearTimeout(this._timer)
+    this._timer = undefined
+  }
+
   hideOverlay = (evt: Event) => {
     if (!this.overlayRef) return
 
-    if (this._timer) {
-      clearTimeout(this._timer)
-      this._timer = undefined
-    }
+    this.clearCloseDelayTimer()
 
     let curTarget = evt.target as Node | null
 
@@ -162,6 +169,8 @@ export class BcOverlayTriggerDirective {
   }
 
   private closeOverlay() {
+    this.clearOpenDelayTimer()
+    this.clearCloseDelayTimer()
     if (!this.overlayRef) return
     this.overlayRef.dispose();
     this.overlayRef = null;
@@ -170,6 +179,10 @@ export class BcOverlayTriggerDirective {
   }
 
   closePanel() {
+    this.closeOverlay()
+  }
+
+  ngOnDestroy() {
     this.closeOverlay()
   }
 

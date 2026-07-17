@@ -37,7 +37,7 @@ import {
 } from "../../utils";
 import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
 import {copyBlocks} from "./copyBlocks";
-import {applyCopyFilters, resolveCopyFilters} from "./copy-filter";
+import {applyCopyFilters, resolveCopyFilters, stripReadonlyMetaDeep} from "./copy-filter";
 import {
   BLOCKCRAFT_WEB_SNAPSHOT_MIME,
   buildClipboardItems,
@@ -55,6 +55,10 @@ import {
   YNE_JSON_MIME,
 } from "../../../adapters/yne-adapter";
 import * as Y from "yjs";
+import {
+  BlockReadonlyError,
+  BlockReadonlyOperation,
+} from "../../doc/block-readonly.types";
 
 export * from './types'
 export * from './copy-filter'
@@ -106,6 +110,7 @@ export class ClipboardManager {
       rootSnapshot = applyCopyFilters(rootSnapshot, filters, {source: 'programmatic', readonly: this.doc.isReadonly}, this.doc.logger)
       if (!rootSnapshot.children.length) return Promise.reject('all blocks filtered out')
     }
+    rootSnapshot = stripReadonlyMetaDeep(rootSnapshot)
     return copyBlocks.call(this, rootSnapshot)
   }
 
@@ -130,14 +135,16 @@ export class ClipboardManager {
     opts?: { filter?: ClipboardCopyFilter | false }
   ) => {
     let {snapshot, plainText} = this._buildCopyPayload(selection)
+    const selectionReadonly = this._isSelectionReadonly(selection)
     const filters = resolveCopyFilters(this._copyFilters, opts?.filter)
     if (filters.length) {
-      snapshot = applyCopyFilters(snapshot, filters, {source: 'selection', readonly: this.doc.isReadonly}, this.doc.logger)
+      snapshot = applyCopyFilters(snapshot, filters, {source: 'selection', readonly: selectionReadonly}, this.doc.logger)
       if (!snapshot.children.length) return // all content filtered out → no-op, don't clobber clipboard
       plainText = snapshots2Text([snapshot])
     }
+    snapshot = stripReadonlyMetaDeep(snapshot)
 
-    if (this.doc.isReadonly) {
+    if (selectionReadonly) {
       // 只读模式：contenteditable=false 时 Chromium（特别是 Windows）会在
       // 同步 copy 事件 handler 返回后立刻解绑 event.clipboardData，await 之后
       // 的 setData 会被丢——之前 Windows 上只读复制完全拿不到内容就是这个
@@ -163,6 +170,33 @@ export class ClipboardManager {
     // 类型）都能直写到 event.clipboardData，粘贴到外部应用时格式完整。
     const items = await buildClipboardItems(this.adapter.supportedAdapters, snapshot, plainText)
     this._setClipboardData(clipboardData, items)
+  }
+
+  private _isSelectionReadonly(selection: BlockCraft.Selection): boolean {
+    if (this.doc.isReadonly) return true
+    const manager = this.doc.readonlyManager
+    if (!manager) return false
+
+    const boundaryChildIds = selection.getBoundarySelectedChildIds?.()
+    const blockIds = boundaryChildIds ?? (
+      selection.isInSameBlock
+        ? [selection.start.blockId]
+        : this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
+    )
+    return blockIds.some(blockId => manager.isReadonly(blockId))
+  }
+
+  private _assertClipboardSelection(
+    selection: BlockCraft.Selection,
+    operation: BlockReadonlyOperation,
+  ): boolean {
+    try {
+      this.doc.inputManger?.assertSelectionWritable(selection, operation, 'clipboard')
+      return true
+    } catch (error) {
+      if (!(error instanceof BlockReadonlyError)) throw error
+      return false
+    }
   }
 
   private _buildCopyPayload(selection: BlockCraft.Selection): {snapshot: IBlockSnapshot, plainText: string} {
@@ -285,6 +319,7 @@ export class ClipboardManager {
 
   async applyPasteOption(option: ClipboardPasteOption, selection: BlockCraft.Selection): Promise<ClipboardPasteApplyResult | null> {
     if (selection.start.type !== 'text') return null
+    if (!this._assertClipboardSelection(selection, BlockReadonlyOperation.Paste)) return null
     const originalCollapsedSelection = selection.collapsed ? selection.toJSON() : null
     this.doc.selection.blur()
 
@@ -320,6 +355,7 @@ export class ClipboardManager {
   async replacePasteRegion(region: PasteRegion, option: ClipboardPasteOption, collapsed = false): Promise<ClipboardPasteApplyResult | null> {
     const selection = this._resolveRegionToSelection(region)
     if (!selection || selection.start.type !== 'text') return null
+    if (!this._assertClipboardSelection(selection, BlockReadonlyOperation.Paste)) return null
 
     // Each switch is its own undo step: stopCapturing keeps Yjs from time-merging it
     // into the paste (or a prior switch).
@@ -625,6 +661,16 @@ export class ClipboardManager {
     if (!rootSnapshot || !rootSnapshot.children.length || rootSnapshot.nodeType !== BlockNodeType.root) {
       return null
     }
+    try {
+      this.doc.readonlyManager?.assertInsertable(
+        gapBlock.parentId,
+        BlockReadonlyOperation.Paste,
+        'clipboard',
+      )
+    } catch (error) {
+      if (!(error instanceof BlockReadonlyError)) throw error
+      return null
+    }
 
     const altPlainText = state.getData(ClipboardDataType.TEXT) || null
     const markdownText = getMarkdownClipboardText(state) || (altPlainText && looksLikeMarkdown(altPlainText) ? altPlainText : null)
@@ -879,10 +925,12 @@ export class ClipboardManager {
     context.preventDefault()
 
     const sel = state.selection
+    if (!this._assertClipboardSelection(sel, BlockReadonlyOperation.Cut)) return true
     const startType = sel.start.type
     const startBlockId = sel.start.blockId
     const startOffset = startType === 'text' ? sel.start.offset : 0
     this.copyFromSelection(sel, state.clipboardData!).then(() => {
+      if (!this._assertClipboardSelection(sel, BlockReadonlyOperation.Cut)) return
       // 异步复制期间端点块可能被远端删除：内容已入剪贴板，删除环节安全放弃，
       // 避免对悬空选区执行删除时未捕获异常中断整个 cut 流程
       const startAlive = !!this.doc.vm.get(startBlockId)
@@ -901,7 +949,7 @@ export class ClipboardManager {
     }).catch(e => {
       this.doc.logger.warn('cut: delete after copy failed', e)
     })
-
+    return true
   }
 
   @EventListen('paste')
@@ -914,6 +962,9 @@ export class ClipboardManager {
     logPasteFormats(state.clipboardData)
 
     const selection = state.selection
+    if (!this._assertClipboardSelection(selection, BlockReadonlyOperation.Paste)) {
+      return false
+    }
 
     // Gap cursor paste: insert clipboard blocks as siblings beside the void/container
     // block (keeping it), instead of the text-only paste path below.
@@ -1006,6 +1057,12 @@ export class ClipboardManager {
     const rehostMarkers = rootSnapshot ? collectAndStripRehostMarkers(rootSnapshot) : []
     if (rehostMarkers.length) {
       nextTick().then(() => rehostYneAttachments(this.doc, rehostMarkers))
+    }
+
+    // HTML parsing can yield to remote collaboration. Recheck immediately
+    // before the first mutation so a newly locked target cannot be changed.
+    if (!this._assertClipboardSelection(selection, BlockReadonlyOperation.Paste)) {
+      return false
     }
 
     // Collect alternative format data before mutations (plugin uses this for format selector)

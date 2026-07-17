@@ -42,6 +42,10 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     super();
   }
 
+  private _isSelectionReadonly(selection: BlockCraft.Selection) {
+    return this.doc.readonlyManager?.isSelectionReadonly(selection) ?? this.doc.isReadonly;
+  }
+
   init() {
     this.utils = new TextToolbarUtils(this.doc);
 
@@ -53,7 +57,10 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
     this._sub.add(
       this.doc.selection.changeObserve().subscribe(debounce(sel => {
-        if (this.doc.isReadonly || !isFloatTextToolbarSelection(sel) || !isSelectionAlive(sel as any, this.doc)) {
+        if (this.doc.isReadonly
+          || !isFloatTextToolbarSelection(sel)
+          || !isSelectionAlive(sel as any, this.doc)
+          || this._isSelectionReadonly(sel)) {
           if (this.toolbarOvr) this.closeToolbar();
           return;
         }
@@ -62,6 +69,16 @@ export class FloatTextToolbarPlugin extends DocPlugin {
         this.openToolbar();
       }, 350))
     );
+
+    const stateChange$ = this.doc.readonlyManager?.stateChange$;
+    if (stateChange$) {
+      this._sub.add(stateChange$.subscribe(() => {
+        const selection = this.doc.selection.value;
+        if (selection && this._isSelectionReadonly(selection) && this.toolbarOvr) {
+          this.closeToolbar();
+        }
+      }));
+    }
 
     // Close the toolbar whenever an internal block drag starts. During drag the
     // framework suppresses selection recalculation (see
@@ -86,6 +103,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   openToolbar() {
     const sel = this.doc.selection.value;
     if (!isFloatTextToolbarSelection(sel) || !isSelectionAlive(sel as any, this.doc)) return;
+    if (this._isSelectionReadonly(sel)) return;
 
     const position = this._calcPosition(sel);
     if (!position) return;
@@ -167,6 +185,8 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
   toggleFormatAttr = (ctx: UIEventStateContext, attrName: string) => {
     ctx.preventDefault();
+    const selection = this.doc.selection.value;
+    if (!selection || this._isSelectionReadonly(selection)) return true;
     const value = this.activeCommonAttrs.attrs.has(attrName);
     // @ts-ignore
     this.utils.formatText({ [`a:${attrName}`]: value ? null : true });

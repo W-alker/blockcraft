@@ -6,6 +6,7 @@ import {
   HostListener,
   Input,
   Output,
+  ViewChild,
 } from "@angular/core";
 import { NgIf, NgTemplateOutlet } from "@angular/common";
 import { Subscription, take } from "rxjs";
@@ -120,6 +121,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
     icon: 'bc_fuzhi',
     value: true,
     label: '复制',
+    readonlyBehavior: 'allow',
   },
   {
     type: 'tool',
@@ -135,6 +137,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
   standalone: true,
   template: `
     <div class="drag-handle"
+         #menuTrigger="bcOverlayTrigger"
          [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
          [bcOverlayDisabled]="menuDisabled" (open)="setValidBlockList()" [delay]="500"
          [withBackdrop]="false" activeClass="active"
@@ -158,7 +161,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
       <bc-float-toolbar style="display: block; width: 224px; padding-top: 4px;"
                         styles="max-height: 60vh; overflow-y: auto;"
                         direction="column">
-        @if (!isMultiSelection && activeBlock?.nodeType === BlockNodeType.editable) {
+        @if (!isMultiSelection && !activeBlockProtected && activeBlock?.nodeType === BlockNodeType.editable) {
           <h4 class="title">基础
             <i class="bc_icon bc_xinxi" style="cursor: pointer;"
                nz-tooltip="鼠标停留在内容块选项上一段时间以查看对应快捷键和快速转化语法"
@@ -185,7 +188,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
           <span class="bc-float-toolbar__divider"></span>
         }
 
-        @if (isEmpty) {
+        @if (isEmpty && !activeBlockProtected) {
           <ng-container *ngTemplateOutlet="moreBlocksTpl"></ng-container>
         } @else {
           <bc-block-menu [items]="primaryToolMenuItems"
@@ -209,7 +212,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
             }
           }
 
-          @if (!isMultiSelection) {
+          @if (!isMultiSelection && !activeBlockProtected) {
             <span class="bc-float-toolbar__divider"></span>
 
             <bc-float-toolbar-item class="append-more-btn" [expandable]="true" [bcOverlayTrigger]="blockAddList"
@@ -275,14 +278,19 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
 export class TriggerBtn {
   @Input() doc!: BlockCraft.Doc
 
+  @ViewChild('menuTrigger', {read: BcOverlayTriggerDirective})
+  private menuTrigger?: BcOverlayTriggerDirective
+
   @Input()
   set hidden(val: boolean) {
+    this._hidden = val
     this.menuDisabled = val
-    this.display = val ? 'none' : 'block'
+    this.display = val || !this._activeBlock ? 'none' : 'block'
     this.cdr.markForCheck()
   }
 
   private _activeBlock: BlockCraft.BlockComponent | null = null
+  private _hidden = false
   private _destroyed = false
 
   @Input()
@@ -291,6 +299,8 @@ export class TriggerBtn {
 
     this._activeBlock = val
     this._onDestroySub?.unsubscribe()
+    this._readonlyStateSub.unsubscribe()
+    this._readonlyStateSub = new Subscription()
     this.menuDisabled = true
     this.activeBlockIcon = undefined
 
@@ -322,6 +332,24 @@ export class TriggerBtn {
       this.close()
     })
 
+    const readonlyStreams = this.doc as unknown as {
+      onMetaUpdate$?: {subscribe(fn: (event: {transactions: Array<{changes: Map<string, unknown>}>}) => void): Subscription}
+      model?: {structureChange$?: {subscribe(fn: () => void): Subscription}}
+    }
+    if (readonlyStreams.onMetaUpdate$) {
+      this._readonlyStateSub.add(readonlyStreams.onMetaUpdate$.subscribe(event => {
+        if (!event.transactions.some(transaction => transaction.changes.has('readonly'))) return
+        this.refreshMenuData()
+        this.cdr.markForCheck()
+      }))
+    }
+    if (readonlyStreams.model?.structureChange$) {
+      this._readonlyStateSub.add(readonlyStreams.model.structureChange$.subscribe(() => {
+        this.refreshMenuData()
+        this.cdr.markForCheck()
+      }))
+    }
+
     const { top, left } = this.calcPos()
     const position = this.resolveHandlePosition({
       activeBlock: this._activeBlock,
@@ -329,10 +357,11 @@ export class TriggerBtn {
       left,
       top
     })
-    this.display = 'block'
-    this.host.nativeElement.style.transform = `
-      translate(${position.x}px, ${position.y}px)
-    `
+    const host = this.host.nativeElement
+    host.style.transform = ''
+    host.style.left = `${position.x}px`
+    host.style.top = `${position.y}px`
+    this.display = this._hidden ? 'none' : 'block'
     this.cdr.markForCheck()
   }
 
@@ -361,6 +390,9 @@ export class TriggerBtn {
     item: IContextMenuItem
   }>()
 
+  @Output()
+  closed = new EventEmitter<void>()
+
   constructor(
     public cdr: ChangeDetectorRef,
     private host: ElementRef<HTMLElement>,
@@ -387,6 +419,7 @@ export class TriggerBtn {
 
   ngOnDestroy() {
     this._destroyed = true
+    this._readonlyStateSub.unsubscribe()
     this.close()
   }
 
@@ -406,6 +439,7 @@ export class TriggerBtn {
   protected isEmpty = false
   private _isMultiSelection = false
   private _onDestroySub?: Subscription
+  private _readonlyStateSub = new Subscription()
 
   protected _validBaseBlockList: IBlockSchemaOptions[] = []
   protected _validOtherBlockList: IBlockSchemaOptions[] = []
@@ -531,15 +565,21 @@ export class TriggerBtn {
   }
 
   close() {
+    this.menuTrigger?.closePanel()
     this.display = 'none'
     this.activeBlock = null
+    this.closed.emit()
     this.cdr.markForCheck()
   }
 
   private isBlockAlive(block: BlockCraft.BlockComponent | null | undefined): block is BlockCraft.BlockComponent {
     if (!block) return false
+    const model = this.doc.model as {exists?: (blockId: string) => boolean} | undefined
+    if (model?.exists && !model.exists(block.id)) return false
     try {
-      return this.doc.getBlockById(block.id) === block
+      const liveBlock = this.doc.getBlockById(block.id)
+      if (model?.exists && !model.exists(block.id)) return false
+      return liveBlock === block
     } catch {
       return false
     }
@@ -562,24 +602,99 @@ export class TriggerBtn {
   }
 
   private refreshMenuData() {
+    if (this._activeBlock && !this.isBlockAlive(this._activeBlock)) {
+      this.close()
+      return
+    }
     this._isMultiSelection = this.computeIsMultiSelection()
     this.primaryToolMenuItems = this.buildPrimaryToolMenuItems()
     this.blockMenuSections = this.resolveBlockMenuSections()
   }
 
+  protected get activeBlockReadonly() {
+    return this.getActiveReadonlyResolution().readonly
+  }
+
+  protected get activeBlockProtected() {
+    const block = this.activeBlock
+    if (!block || !this.isBlockAlive(block)) return false
+    const manager = this.doc.readonlyManager
+    return this.getActiveReadonlyResolution().readonly
+      || !!manager?.containsReadonly(block)
+  }
+
+  private getActiveReadonlyResolution() {
+    const block = this.activeBlock
+    if (!block || !this.isBlockAlive(block)) return {readonly: false, source: null}
+    return this.doc.readonlyManager?.resolve(block) ?? {
+      readonly: !!block.isReadonly,
+      source: block.readonlySource ?? null,
+    }
+  }
+
+  private buildReadonlySwitchItem(): BlockMenuItem {
+    const block = this.activeBlock!
+    const resolution = this.getActiveReadonlyResolution()
+    const explicit = this.doc.readonlyManager?.isExplicitReadonly(block) ?? !!block.isExplicitReadonly
+    const inheritedOnly = resolution.readonly && !explicit
+    return {
+      type: 'switch',
+      name: 'block-readonly',
+      label: '锁定内容块',
+      icon: 'bc_quanxian',
+      checked: resolution.readonly,
+      disabled: inheritedOnly,
+      desc: inheritedOnly ? '由上级内容块锁定' : undefined,
+      readonlyBehavior: 'allow',
+    }
+  }
+
+  private buildLegacyToolItem(item: IContextMenuItem): BlockMenuItem {
+    return {
+      type: 'simple',
+      name: item.name,
+      label: item.label,
+      icon: item.icon,
+      desc: item.desc,
+      value: item.value,
+      readonlyBehavior: item.readonlyBehavior,
+      data: {legacyTool: item},
+    }
+  }
+
+  private isMultiSelectionProtected(): boolean {
+    if (!this._isMultiSelection) return false
+    try {
+      return this.getSelectedBlockIds().some(blockId =>
+        this.doc.readonlyManager?.isReadonly(blockId)
+        || this.doc.readonlyManager?.containsReadonly(blockId)
+      )
+    } catch {
+      return true
+    }
+  }
+
   private buildPrimaryToolMenuItems() {
-    if (!this.activeBlock || this.isEmpty) return []
+    if (!this.activeBlock) return []
 
     if (this._isMultiSelection) {
       // 多块模式：仅剪切/复制/删除，无 align 下拉、无 customTools
-      return BUILTIN_TOOL_LIST.map(item => ({
-        type: 'simple' as const,
-        name: item.name,
-        label: item.label,
-        icon: item.icon,
-        value: item.value,
-        data: { legacyTool: item }
-      }))
+      const tools = this.isMultiSelectionProtected()
+        ? BUILTIN_TOOL_LIST.filter(item => item.name === 'copy')
+        : BUILTIN_TOOL_LIST
+      return tools.map(item => this.buildLegacyToolItem(item))
+    }
+
+    if (this.activeBlockProtected) {
+      const copy = BUILTIN_TOOL_LIST.find(item => item.name === 'copy')!
+      const readonlyAllowedCustomTools = this.toolList.filter(item =>
+        !BUILTIN_TOOL_LIST.includes(item) && item.readonlyBehavior === 'allow'
+      )
+      return [
+        this.buildLegacyToolItem(copy),
+        this.buildReadonlySwitchItem(),
+        ...readonlyAllowedCustomTools.map(item => this.buildLegacyToolItem(item)),
+      ]
     }
 
     const items: BlockMenuItem[] = []
@@ -606,16 +721,10 @@ export class TriggerBtn {
     }
 
     this.toolList.forEach(item => {
-      items.push({
-        type: 'simple',
-        name: item.name,
-        label: item.label,
-        icon: item.icon,
-        desc: item.desc,
-        value: item.value,
-        data: { legacyTool: item }
-      })
+      items.push(this.buildLegacyToolItem(item))
     })
+
+    items.push(this.buildReadonlySwitchItem())
 
     return items
   }
@@ -626,7 +735,9 @@ export class TriggerBtn {
     return (this.blockMenuResolver(ctx) || [])
       .map(section => ({
         ...section,
-        items: section.items.filter(item => !item.hidden)
+        items: section.items
+          .map(item => this.applyReadonlyBehavior(item, ctx.readonly.readonly || this.activeBlockProtected))
+          .filter(item => !item.hidden)
       }))
       .filter(section => section.items.length > 0)
   }
@@ -641,8 +752,28 @@ export class TriggerBtn {
     return {
       activeBlock: block,
       doc: this.doc,
+      readonly: this.getActiveReadonlyResolution(),
       findClosestBlock: (flavour) => this.findClosestBlock(block, flavour)
     }
+  }
+
+  private applyReadonlyBehavior(item: BlockMenuItem, readonly: boolean): BlockMenuItem {
+    if (!readonly) return item
+    const behavior = item.readonlyBehavior ?? 'disable'
+    if (behavior === 'hide') return {...item, hidden: true}
+    if (item.type === 'divider') {
+      return behavior === 'allow' ? item : {...item, hidden: true}
+    }
+    if (behavior === 'disable') return {...item, disabled: true}
+    if (item.type === 'dropdown') {
+      return {
+        ...item,
+        items: item.items
+          .map(child => this.applyReadonlyBehavior(child, true))
+          .filter(child => !child.hidden),
+      }
+    }
+    return item
   }
 
   private findClosestBlock(start: BlockCraft.BlockComponent | null, flavour: BlockCraft.BlockFlavour | string) {
@@ -655,6 +786,18 @@ export class TriggerBtn {
   }
 
   handleMenuAction(event: BlockMenuActionEvent) {
+    if (event.item.name === 'block-readonly') {
+      const block = this.activeBlock
+      if (!this.isBlockAlive(block)) return
+      const explicit = this.doc.readonlyManager.isExplicitReadonly(block)
+      const resolution = this.doc.readonlyManager.resolve(block)
+      if (resolution.readonly && !explicit) return
+      this.doc.setBlockReadonly(block, !explicit)
+      this.refreshMenuDataOnNextTick()
+      return
+    }
+
+    if (this.activeBlockProtected && event.item.readonlyBehavior !== 'allow') return
     const legacyTool = this.getLegacyTool(event.item)
     if (legacyTool) {
       this.handleToolItemClick(legacyTool)
@@ -677,6 +820,7 @@ export class TriggerBtn {
 
   handleBlockItemClick(item: IBlockSchemaOptions) {
     if (!this.activeBlock) return
+    if (this.activeBlockProtected) return
 
     const insertAfter = () => {
       const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
@@ -739,6 +883,8 @@ export class TriggerBtn {
       this.close()
       return
     }
+
+    if (this.activeBlockProtected && item.name !== 'copy' && item.readonlyBehavior !== 'allow') return
 
     if (this.customToolHandler) {
       const res = this.customToolHandler(item, activeBlock, this.doc)

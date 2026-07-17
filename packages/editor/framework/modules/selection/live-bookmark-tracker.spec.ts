@@ -71,7 +71,7 @@ describe('LiveSelectionBookmarkTracker', () => {
   }
 
   it('increments revision for every published selection intent', () => {
-    const tracker = new LiveSelectionBookmarkTracker(doc)
+    const tracker = new LiveSelectionBookmarkTracker(doc, selection$)
     const initial = tracker.snapshot().revision
 
     selection$.next(selectionAt(1))
@@ -84,7 +84,7 @@ describe('LiveSelectionBookmarkTracker', () => {
   })
 
   it('reuses relative point bookmarks when Yjs already maps to the new caret', () => {
-    const tracker = new LiveSelectionBookmarkTracker(doc)
+    const tracker = new LiveSelectionBookmarkTracker(doc, selection$)
     selection$.next(selectionAt(1))
     const before = tracker.snapshot().bookmark!
 
@@ -99,7 +99,7 @@ describe('LiveSelectionBookmarkTracker', () => {
   })
 
   it('captures new point bookmarks when the user moves independently of Yjs', () => {
-    const tracker = new LiveSelectionBookmarkTracker(doc)
+    const tracker = new LiveSelectionBookmarkTracker(doc, selection$)
     selection$.next(selectionAt(1))
     const before = tracker.snapshot().bookmark!
 
@@ -112,7 +112,7 @@ describe('LiveSelectionBookmarkTracker', () => {
   })
 
   it('clears on null and stops observing after destroy', () => {
-    const tracker = new LiveSelectionBookmarkTracker(doc)
+    const tracker = new LiveSelectionBookmarkTracker(doc, selection$)
     selection$.next(selectionAt(1))
     selection$.next(null)
     const cleared = tracker.snapshot()

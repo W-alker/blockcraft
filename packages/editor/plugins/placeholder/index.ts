@@ -219,6 +219,7 @@ export class PlaceholderPlugin extends DocPlugin {
 
     const shouldShow =
       !this.doc.isReadonly &&
+      !(this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly) &&
       !this._isComposing &&
       block.textLength === 0
 

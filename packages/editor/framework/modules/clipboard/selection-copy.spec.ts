@@ -109,7 +109,7 @@ describe("ClipboardManager selection copy", () => {
     );
 
     document.body.appendChild(rootHost);
-    return {root, blocks, addBlock, manager, queryBlocksBetween, makeSelection, rootHost};
+    return {root, blocks, addBlock, manager, doc, queryBlocksBetween, makeSelection, rootHost};
   };
 
   it("copies a reversed mixed boundary-to-text selection in document order", () => {
@@ -157,6 +157,30 @@ describe("ClipboardManager selection copy", () => {
     ]);
     expect(queryBlocksBetween).toHaveBeenCalledOnceWith(first, last);
     expect(middle.toSnapshot).toHaveBeenCalled();
+    rootHost.remove();
+  });
+
+  it("uses the synchronous copy fallback for a block-readonly selection", async () => {
+    const {addBlock, manager, doc, makeSelection, rootHost} = makeHarness();
+    const paragraph = addBlock("locked", "locked text", BlockNodeType.editable);
+    const selection = makeSelection(
+      {blockId: "locked", type: "text", offset: 0, block: paragraph},
+      {blockId: "locked", type: "text", offset: 11, block: paragraph},
+    );
+    (doc as any).readonlyManager = {
+      isReadonly: (blockId: string) => blockId === "locked",
+    };
+    const clipboardData = {
+      setData: jasmine.createSpy("setData"),
+    } as unknown as DataTransfer;
+    spyOn<any>(manager, "_writeRichClipboardAsync").and.resolveTo();
+
+    await manager.copyFromSelection(selection, clipboardData);
+
+    expect(clipboardData.setData).toHaveBeenCalledWith(
+      "text/plain",
+      "locked text",
+    );
     rootHost.remove();
   });
 });

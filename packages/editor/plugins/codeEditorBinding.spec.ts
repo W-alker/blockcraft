@@ -71,6 +71,21 @@ describe("CodeInlineEditorBinding selection liveness", () => {
     expect(block.applyDeltaOperations).not.toHaveBeenCalled();
   });
 
+  it("consumes Tab without writing when the code block is readonly", () => {
+    const {plugin, doc, block, context} = makeHarness();
+    doc.getBlockById.and.returnValue(block);
+    (doc as any).readonlyManager = {
+      isReadonly: jasmine.createSpy("isReadonly").and.returnValue(true),
+    };
+
+    const handled = plugin.handleTabKey(context as any);
+
+    expect(handled).toBeTrue();
+    expect(context.preventDefault).toHaveBeenCalled();
+    expect(block.insertText).not.toHaveBeenCalled();
+    expect(block.applyDeltaOperations).not.toHaveBeenCalled();
+  });
+
   it("keeps multiline Tab selection model-owned after applying deltas", () => {
     const block = {
       id: "code-1",

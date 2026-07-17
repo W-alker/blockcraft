@@ -5,6 +5,7 @@ import {CalloutToolbarPlugin} from "./index";
 describe("CalloutToolbarPlugin delayed toolbar", () => {
   const makeHarness = () => {
     const selection$ = new Subject<any>();
+    const readonlyStateChange$ = new Subject<void>();
     const selectionValue = {current: null as any};
     const calloutBlock = {
       id: "callout-1",
@@ -38,6 +39,10 @@ describe("CalloutToolbarPlugin delayed toolbar", () => {
         },
       },
       getBlockById: jasmine.createSpy("getBlockById").and.returnValue(calloutBlock),
+      readonlyManager: {
+        stateChange$: readonlyStateChange$,
+        isReadonly: jasmine.createSpy("isReadonly").and.returnValue(false),
+      },
       overlayService: {
         createConnectedOverlay: jasmine.createSpy("createConnectedOverlay").and.returnValue({
           componentRef: {
@@ -52,7 +57,16 @@ describe("CalloutToolbarPlugin delayed toolbar", () => {
     };
     const plugin = new CalloutToolbarPlugin();
     (plugin as any).doc = doc;
-    return {plugin, doc, selection$, selectionValue, calloutSelection, calloutBoundarySelection};
+    return {
+      plugin,
+      doc,
+      selection$,
+      readonlyStateChange$,
+      selectionValue,
+      calloutBlock,
+      calloutSelection,
+      calloutBoundarySelection,
+    };
   };
 
   it("cancels delayed toolbar open when selection is cleared", fakeAsync(() => {
@@ -129,6 +143,34 @@ describe("CalloutToolbarPlugin delayed toolbar", () => {
     tick(250);
 
     expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    plugin.destroy();
+  }));
+
+  it("closes the toolbar before querying readonly state for a removed callout block", fakeAsync(() => {
+    const {
+      plugin,
+      doc,
+      selection$,
+      readonlyStateChange$,
+      selectionValue,
+      calloutSelection,
+    } = makeHarness();
+    plugin.init();
+
+    selectionValue.current = calloutSelection;
+    selection$.next(calloutSelection);
+    tick(250);
+    const {overlayRef} = doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue;
+
+    doc.readonlyManager.isReadonly.calls.reset();
+    doc.getBlockById.and.throwError("Block not found: callout-1");
+    doc.readonlyManager.isReadonly.and.throwError(
+      new Error("readonly lookup received a removed block"),
+    );
+
+    expect(() => readonlyStateChange$.next()).not.toThrow();
+    expect(doc.readonlyManager.isReadonly).not.toHaveBeenCalled();
+    expect(overlayRef.dispose).toHaveBeenCalled();
     plugin.destroy();
   }));
 });

@@ -17,6 +17,11 @@ body[blockcraft-theme="light"] {
   --bc-bg-hover: #F1F1EF;
   --bc-bg-muted: #f8fbfe;
 
+  // Block 级只读状态
+  --bc-readonly-border-color: #a8b5c2;
+  --bc-readonly-icon-color: #708397;
+  --bc-readonly-bg: rgba(139, 156, 173, 0.06);
+
   // 占位符颜色
   --bc-placeholder-color: #9B9A97;
 

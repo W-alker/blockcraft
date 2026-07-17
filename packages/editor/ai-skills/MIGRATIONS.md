@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-07-15 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-07-17 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,207 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-07-17 (patch) — show feedback for rejected readonly edits
+
+**Severity**: patch
+
+**What changed**: `BlockCraftDoc` now forwards readonly violations caused by
+direct user actions to the configured `DocMessageService` as a warning. Repeated
+violations are coalesced to one warning per second; programmatic `api` writes
+remain error-only and do not produce UI messages.
+
+**Why**: Write guards correctly prevented locked content from changing, but
+silent rejection made typing, IME, clipboard, drag and Undo/Redo attempts look
+unresponsive.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — documents the built-in feedback and API exclusion.
+- `blockcraft-app.md` — documents message-service behavior and throttling.
+
+### Behavior Changes
+
+- Hosts using the standard document runtime receive "内容已锁定，无法修改"
+  through `DocMessageService.warn` for rejected non-`api` writes.
+- Selection, copy, links, media preview and download remain silent and usable.
+- No API migration is required, and `packages/editor/package.json` remains
+  unchanged because release numbering is user-owned.
+
+### v?.?.? - 2026-07-17 (patch) — centralize selection synchronization boundaries
+
+**Severity**: patch
+
+**What changed**: Selection reconciliation around remote Yjs view sync moved
+out of `DocCRUD` into the Selection domain. Undo/Redo relative selection
+bookmarks now live on their owning Yjs `StackItem.meta`, while
+`SelectionHistoryRestorer` owns focus, relative-position resolution and bounded
+DOM/model verification. Native selection, focus, animation frames, Range
+creation and geometry access are centralized behind an internal
+`SelectionSurfaceAdapter`.
+
+**Why**: Content history and selection history must share Yjs stack identity;
+parallel arrays can drift when Yjs merges, truncates, clears or regenerates
+stack items. Data mutation code also should not own browser focus and DOM Range
+recovery. These boundaries keep DocCRUD data-only, Selection model-first, and
+browser compatibility replaceable without adding layout work to hot paths.
+
+**Affected ai-skills files**:
+- `blockcraft-selection.md` — documents reconciliation, history and surface ownership.
+- `blockcraft-data.md` — documents Yjs StackItem metadata and remote sync lifecycle.
+- `blockcraft.md` — updates the Selection quick reference.
+
+### Behavior Changes
+
+- No external migration is required; selection JSON and public editing APIs are unchanged.
+- Undo/Redo restoration follows the exact Yjs stack item rather than a parallel selection index.
+- Remote transactions expose internal before/after view-sync facts; DocCRUD no longer reads or replays browser selection.
+- The surface adapter delegates existing browser calls without caching, polling or extra model traversal.
+- `packages/editor/package.json` version is intentionally unchanged; release numbering remains a user-owned decision.
+
+### v?.?.? - 2026-07-16 (minor) — expose pagination content height as a CSS token
+
+**Severity**: minor
+
+**What changed**: Live and print pagination now publish the resolved page
+content height as `--bc-page-content-height`. Top-level void and code blocks use
+a predeclared `themes/plugins/pagination.scss` override to cap their height
+instead of receiving per-block inline `max-height` and `overflow` mutations.
+Code blocks constrain their internal content surface so the bottom resize
+control is not clipped; image blocks inset their horizontal resize controls
+inside the existing host clipping boundary.
+
+**Why**: The cap is page geometry shared by all atomic blocks, not block-owned
+state. Keeping it on the pagination root centralizes configuration, reduces DOM
+style churn during reflow, and gives live and print surfaces the same CSS
+contract while preserving natural-height measurement in JavaScript.
+
+**Affected ai-skills files**:
+- `blockcraft-theme.md` — documents the new pagination geometry token and ownership rule.
+
+### New APIs / Features
+
+- `--bc-page-content-height` on `.bc-paginated` roots and `.bc-print-content`.
+
+### Behavior Changes
+
+- Top-level void/code blocks are capped by the pagination stylesheet. Nested
+  atomic blocks are intentionally unaffected.
+- Code blocks scroll `.edit-container-wrapper` while the host remains visible;
+  image blocks preserve host crop semantics and natural-height measurement,
+  with resize controls inset into the clipping boundary.
+- Live `.bc-paginated` and print `.bc-print-content` consume the same late-loaded
+  pagination stylesheet instead of maintaining separate height-cap rules.
+- Pagination still measures natural height and records `lockHeight`; only the
+  presentation write moved from per-block inline styles to inherited CSS.
+- `packages/editor/package.json` version is intentionally unchanged; release
+  numbering remains a user-owned decision.
+
+### v?.?.? - 2026-07-16 (minor) — add persistent inherited block readonly
+
+**Severity**: minor
+
+**What changed**: BlockCraft now supports a synchronized, persistent readonly
+flag on any non-root block. `BlockReadonlyManager` resolves explicit,
+ancestor-inherited and whole-document protection from the model graph and
+enforces it across Block APIs, DocChain/DocCRUD, input/IME, clipboard, drag and
+drop, Undo/Redo, built-in Blocks, toolbars and Plugins. The Block Controller has
+a built-in lock switch and readonly-aware custom menu contracts.
+
+**Why**: Whole-document readonly could not protect an approved section while
+leaving the rest of a collaborative document editable. A UI-only flag would be
+easy to bypass and would fail for unmounted blocks, asynchronous commits and
+programmatic writes, so permission resolution and final enforcement now live at
+the model/data boundaries.
+
+**Affected ai-skills files**:
+- `blockcraft.md` — adds block readonly to core concepts and Quick Reference.
+- `blockcraft-app.md` — documents host APIs, inheritance, events and trust boundary.
+- `blockcraft-block.md` — documents Block readonly state and guarded mutation rules.
+- `blockcraft-plugins-block.md` — documents the built-in switch and `readonlyBehavior`.
+- `blockcraft-input.md` — documents write-footprint preflight and IME races.
+- `blockcraft-data.md` — documents Yjs metadata, model-derived caching, origins and history.
+
+### New APIs / Features
+
+- `IBaseMetadata.readonly?: boolean` persists an explicit non-root lock.
+- Exported `BlockReadonlyManager`, `BlockRef`, `BlockReadonlyResolution`,
+  `BlockReadonlySource`, `BlockReadonlyBlocker`, `BlockReadonlyOperation`,
+  `BlockReadonlyViolation`, `BlockReadonlyViolationTrigger` and
+  `BlockReadonlyError` contracts.
+- `BlockCraftDoc.readonlyManager`, `setBlockReadonly(blockOrId, readonly)` and
+  `isBlockReadonly(blockOrId)`.
+- `BaseBlockComponent.isReadonly`, `isExplicitReadonly` and `readonlySource`.
+- `BlockReadonlyManager.stateChange$` for effective permission-driven UI and
+  throttled `violation$` for rejected-action feedback.
+- `BlockMenuContext.readonly` and `BlockMenuItem.readonlyBehavior` with
+  `hide | disable | allow` policies.
+- `ORIGIN_BLOCK_READONLY_CONTROL` and the framework-reserved
+  `ORIGIN_SYSTEM_REPAIR` transaction origins.
+- `BlockModelGraph.structureRevision` / `structureChange$` support permission
+  cache invalidation without duplicating the tree index.
+
+### Migration Recipe
+
+Keep whole-document mode for a global viewer/editor switch:
+
+```typescript
+// unchanged global mode
+doc.toggleReadonly(true)
+```
+
+Use the block API for a persisted section lock:
+
+```typescript
+doc.setBlockReadonly(calloutId, true)
+
+if (doc.isBlockReadonly(paragraphInsideCalloutId)) {
+  // inherited from the callout
+}
+
+doc.setBlockReadonly(calloutId, false)
+```
+
+Make custom Block Controller items explicit about protected content:
+
+```typescript
+// before: all custom actions were treated uniformly
+{type: 'simple', name: 'inspect', label: '查看'}
+
+// after: read-only action remains available; omitted defaults to disabled
+{type: 'simple', name: 'inspect', label: '查看', readonlyBehavior: 'allow'}
+{type: 'simple', name: 'translate', label: '翻译', readonlyBehavior: 'disable'}
+```
+
+Custom Blocks/Plugins must use guarded mutation APIs:
+
+```typescript
+// do not: bypasses readonly/transaction ownership
+block.props.title = nextTitle
+block.yText.insert(index, text)
+
+// do
+block.updateProps({title: nextTitle})
+block.insertText(index, text)
+```
+
+### Behavior Changes
+
+- A block lock applies to its entire descendant subtree. An unlocked ancestor
+  containing a locked descendant cannot be deleted or moved.
+- Root persistent locking is rejected; use `toggleReadonly()` for document mode.
+- Guarded programmatic writes throw `BlockReadonlyError`. Owned input/clipboard/
+  drag UI prevents the event before mutation and reports the violation.
+- `setInitProps()` now performs the same block-permission check as
+  `updateProps()`; asynchronous loaders recheck after every await.
+- Selection, copy, link activation, media preview and download remain allowed.
+  Clipboard copies recursively strip readonly metadata, while persistence and
+  collaboration snapshots retain it.
+- A blocked Undo/Redo item is not popped and becomes available after unlock.
+- Remote updates and deterministic internal consistency repairs still apply and
+  render. Block readonly is a trusted-client editing policy, not server-side
+  authorization.
+- `packages/editor/package.json` version is intentionally unchanged; release
+  numbering remains a user-owned decision.
 
 ### v?.?.? - 2026-07-15 (minor) — add the model-first document query graph
 

@@ -1,25 +1,23 @@
 import * as Y from "yjs";
 import {YBlock} from "../block-std";
 import {ORIGIN_SKIP_SYNC} from "./crud";
-import {BehaviorSubject, take} from "rxjs";
-import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
-import {nextTick} from "../../global";
-import type {ISelectionJSON, ISelectionPointJSON} from "../modules/selection/types";
+import {BehaviorSubject} from "rxjs";
+import {StackItem, StackItemEvent} from "yjs/dist/src/utils/UndoManager";
 import {
   captureRelativeSelectionBookmark,
   RelativeSelectionBookmark,
-  resolveRelativeSelectionBookmark,
 } from "../modules/selection/relative-bookmark";
+import {BlockReadonlyError, BlockReadonlyOperation} from "./block-readonly.types";
 
 type UndoManagerEventName = 'stack-item-added' | 'stack-item-updated' | 'stack-item-popped' | 'stack-cleared'
+
+const BLOCK_READONLY_AFFECTED_IDS = Symbol('block-readonly-affected-ids')
+const SELECTION_BOOKMARK = Symbol('selection-bookmark')
 
 export class DocUndoManger {
   private _yUndoManager!: Y.UndoManager
   private _trackedOrigins = new Set<any>([ORIGIN_SKIP_SYNC, null])
 
-  private _undoSelectionStack: Array<RelativeSelectionBookmark | null> = []
-  private _redoSelectionStack: Array<RelativeSelectionBookmark | null> = []
-  private _selectionReplayVersion = 0
   private _captureGroupDepth = 0
   private _captureTimeoutBeforeGroup: number | null = null
   readonly undoRedoing$ = new BehaviorSubject(false)
@@ -29,9 +27,10 @@ export class DocUndoManger {
    * This solves the timing issue where stack-item-added fires AFTER the transaction
    * has already deleted blocks, making the selection endpoints inaccessible.
    */
-  private _pendingSnapshot: RelativeSelectionBookmark | null | undefined = undefined
+  private _pendingUndoSnapshot: RelativeSelectionBookmark | null | undefined = undefined
+  private _pendingRedoSnapshot: RelativeSelectionBookmark | null | undefined = undefined
 
-  constructor(private doc: BlockCraft.Doc, yBlockMap: Y.Map<YBlock>, options?: {
+  constructor(private doc: BlockCraft.Doc, private readonly yBlockMap: Y.Map<YBlock>, options?: {
     trackedOrigins?: any[]
     captureTimeout?: number
   }) {
@@ -41,27 +40,36 @@ export class DocUndoManger {
     })
 
     this.on('stack-item-added', (evt) => {
+      this._mergeAffectedBlockIds(evt)
+      const pending = evt.type === 'undo'
+        ? this._pendingUndoSnapshot
+        : this._pendingRedoSnapshot
+      if (!evt.stackItem.meta.has(SELECTION_BOOKMARK)) {
+        evt.stackItem.meta.set(
+          SELECTION_BOOKMARK,
+          pending !== undefined ? pending : this._captureSelectionSnapshot(),
+        )
+      }
       if (evt.type === 'undo') {
-        // Use pre-captured snapshot if available, otherwise capture now (may fail for deleted blocks)
-        const snapshot = this._pendingSnapshot !== undefined
-          ? this._pendingSnapshot
-          : this._captureSelectionSnapshot()
-        this._pendingSnapshot = undefined
-        this._undoSelectionStack.push(snapshot)
-        if (this._undoSelectionStack.length > 200) {
+        this._pendingUndoSnapshot = undefined
+        if (this._yUndoManager.undoStack.length > 200) {
           this._yUndoManager.undoStack.shift()
           this._yUndoManager.redoStack.shift()
-          this._undoSelectionStack.shift()
         }
+      } else {
+        this._pendingRedoSnapshot = undefined
       }
     })
     this.on('stack-item-updated', (evt) => {
+      this._mergeAffectedBlockIds(evt)
       if (evt.type === 'undo') {
         // A pre-captured snapshot belongs only to the next NEW stack item. If
         // Yjs merges the transaction into the previous item, keep that item's
         // original selection and discard the stale pending snapshot so it cannot
         // leak into a later unrelated undo record.
-        this._pendingSnapshot = undefined
+        this._pendingUndoSnapshot = undefined
+      } else {
+        this._pendingRedoSnapshot = undefined
       }
     })
   }
@@ -75,8 +83,8 @@ export class DocUndoManger {
     // Nested mutation paths can capture again after the outer action has blurred
     // or replaced the live selection; allowing that later capture to overwrite
     // this slot would turn a valid snapshot into null (or a mid-action cursor).
-    if (this._pendingSnapshot !== undefined) return
-    this._pendingSnapshot = this._captureSelectionSnapshot()
+    if (this._pendingUndoSnapshot !== undefined) return
+    this._pendingUndoSnapshot = this._captureSelectionSnapshot()
   }
 
   /**
@@ -108,7 +116,7 @@ export class DocUndoManger {
       this._yUndoManager.captureTimeout = this._captureTimeoutBeforeGroup
       this._captureTimeoutBeforeGroup = null
     }
-    this._pendingSnapshot = undefined
+    this._pendingUndoSnapshot = undefined
     this._yUndoManager.stopCapturing()
   }
 
@@ -138,16 +146,16 @@ export class DocUndoManger {
 
   undo() {
     if (!this.isCanUndo() || this.undoRedoing$.value) return
-    const replayVersion = this._nextSelectionReplayVersion()
+    if (!this._isHistoryItemWritable('undo')) return
     this.undoRedoing$.next(true)
     try {
-      this._redoSelectionStack.push(this._captureSelectionSnapshot())
+      this._pendingRedoSnapshot = this._captureSelectionSnapshot()
       this._clearLiveSelectionBeforeUndoRedo()
-      this._yUndoManager.undo()
-      const last = this._undoSelectionStack.pop()
-      this._focusEditingHostFromSnapshot(last)
-      if (last !== undefined) this._replaySelectionAfterUndoRedo(last, replayVersion)
+      const stackItem = this._yUndoManager.undo()
+      this._pendingRedoSnapshot = undefined
+      if (stackItem) this.doc.selection.restoreBookmark(this._selectionBookmark(stackItem))
     } finally {
+      this._pendingRedoSnapshot = undefined
       // The flag is normally cleared inside crud._syncYEvent during the undo
       // transaction. But if that observer throws before reaching the reset (e.g. a
       // children-sync hiccup while reverting a cross-block paste), it would stick
@@ -158,15 +166,16 @@ export class DocUndoManger {
 
   redo() {
     if (!this.isCanRedo() || this.undoRedoing$.value) return
-    const replayVersion = this._nextSelectionReplayVersion()
+    if (!this._isHistoryItemWritable('redo')) return
     this.undoRedoing$.next(true)
     try {
+      this._pendingUndoSnapshot = this._captureSelectionSnapshot()
       this._clearLiveSelectionBeforeUndoRedo()
-      this._yUndoManager.redo()
-      const last = this._redoSelectionStack.pop()
-      this._focusEditingHostFromSnapshot(last)
-      if (last !== undefined) this._replaySelectionAfterUndoRedo(last, replayVersion)
+      const stackItem = this._yUndoManager.redo()
+      this._pendingUndoSnapshot = undefined
+      if (stackItem) this.doc.selection.restoreBookmark(this._selectionBookmark(stackItem))
     } finally {
+      this._pendingUndoSnapshot = undefined
       this.undoRedoing$.next(false)
     }
   }
@@ -176,166 +185,107 @@ export class DocUndoManger {
     this.doc.selection.replay(null)
   }
 
-  private _captureSelectionSnapshot(): RelativeSelectionBookmark | null {
-    return captureRelativeSelectionBookmark(this.doc.selection.value, this.doc)
-  }
+  private _isHistoryItemWritable(type: 'undo' | 'redo'): boolean {
+    const stack = type === 'undo'
+      ? this._yUndoManager.undoStack
+      : this._yUndoManager.redoStack
+    const stackItem = stack.at(-1)
+    if (!stackItem) return false
 
-  private _resolveSelectionSnapshot(snapshot: RelativeSelectionBookmark | null): ISelectionJSON | null {
-    return snapshot ? resolveRelativeSelectionBookmark(snapshot, this.doc) : null
-  }
+    // Lightweight/model-only consumers created before block readonly existed
+    // may embed DocUndoManger without the document permission services.
+    if (!this.doc.model || !this.doc.readonlyManager) return true
 
-  private _nextSelectionReplayVersion() {
-    this._selectionReplayVersion += 1
-    return this._selectionReplayVersion
-  }
-
-  private _isCurrentSelectionReplay(version: number) {
-    return version === this._selectionReplayVersion
-  }
-
-  private _replaySelectionAfterUndoRedo(snapshot: RelativeSelectionBookmark | null, version = this._nextSelectionReplayVersion()) {
-    this.undoRedoing$.pipe(take(1)).subscribe(() => {
-      nextTick().then(() => {
-        if (!this._isCurrentSelectionReplay(version)) return
-        this._tryReplaySelectionAfterUndoRedo(snapshot, 3, version)
-      })
-    })
-  }
-
-  private _tryReplaySelectionAfterUndoRedo(snapshot: RelativeSelectionBookmark | null, attemptsLeft: number, version: number) {
-    if (!this._isCurrentSelectionReplay(version)) return
+    const affectedIds = stackItem.meta.get(BLOCK_READONLY_AFFECTED_IDS) as Set<string> | undefined
+    const reachableIds = [...(affectedIds ?? [])].filter(blockId => this.doc.model.exists(blockId))
     try {
-      if (snapshot === null) {
-        this.doc.selection.replay(null)
-        return
-      }
-      const selection = this._resolveSelectionSnapshot(snapshot)
-      if (!selection) {
-        if (attemptsLeft > 0) {
-          requestAnimationFrame(() => this._tryReplaySelectionAfterUndoRedo(snapshot, attemptsLeft - 1, version))
-        } else {
-          this.doc.selection.replay(null)
+      this.doc.readonlyManager.assertUndoRedoWritable(
+        reachableIds,
+        type === 'undo' ? BlockReadonlyOperation.Undo : BlockReadonlyOperation.Redo,
+      )
+      return true
+    } catch (error) {
+      if (error instanceof BlockReadonlyError) return false
+      throw error
+    }
+  }
+
+  private _mergeAffectedBlockIds(event: StackItemEvent): void {
+    const affectedIds = event.stackItem.meta.get(BLOCK_READONLY_AFFECTED_IDS) as Set<string> | undefined
+    const merged = affectedIds ?? new Set<string>()
+
+    event.changedParentTypes.forEach((events) => {
+      for (const yEvent of events) {
+        if (yEvent.target === this.yBlockMap && yEvent instanceof Y.YMapEvent) {
+          yEvent.changes.keys.forEach((_change, blockId) => merged.add(blockId))
+          continue
         }
-        return
-      }
-      this._replayResolvedSelectionAfterUndoRedo(selection, attemptsLeft, version)
-    } catch (e) {
-      if (attemptsLeft > 0) {
-        requestAnimationFrame(() => this._tryReplaySelectionAfterUndoRedo(snapshot, attemptsLeft - 1, version))
-      } else {
-        this.doc.selection.replay(null)
-      }
-    }
-  }
 
-  private _replayResolvedSelectionAfterUndoRedo(selection: ISelectionJSON, attemptsLeft: number, version: number) {
-    if (!this._isCurrentSelectionReplay(version)) return
-    try {
-      // Undo/redo swaps content; when the removed nodes held the caret, the browser
-      // can drop focus out of the contenteditable host. Since Ctrl+Z is bound to the
-      // root block, an unfocused editor makes the NEXT undo silently no-op.
-      this._focusEditingHost(selection.anchor?.blockId)
-      this.doc.selection.replay(selection)
-    } catch {
-      if (attemptsLeft > 0) {
-        requestAnimationFrame(() => this._replayResolvedSelectionAfterUndoRedo(selection, attemptsLeft - 1, version))
-      } else {
-        this.doc.selection.replay(null)
-      }
-      return
-    }
+        // A container's `children` array is an index of child ids. Updating it
+        // does not mutate the container subtree itself, so recording the parent
+        // would make an unrelated locked descendant block the whole undo item.
+        // Inserted ids still matter (notably for moves, where the block map does
+        // not change), while deleted blocks are covered by the yBlockMap event.
+        if (this._isBlockChildrenArray(yEvent.target)) {
+          for (const delta of yEvent.changes.delta) {
+            const inserted = 'insert' in delta ? delta.insert : undefined
+            if (!Array.isArray(inserted)) continue
+            inserted.forEach(value => {
+              if (typeof value === 'string') merged.add(value)
+            })
+          }
+          continue
+        }
 
-    if (attemptsLeft <= 0) return
-    requestAnimationFrame(() => {
-      if (!this._isCurrentSelectionReplay(version)) return
-      if (!this._hasRestoredSelection(selection)) {
-        this._replayResolvedSelectionAfterUndoRedo(selection, attemptsLeft - 1, version)
+        const targetId = this._findBlockIdForType(yEvent.target)
+        if (targetId) {
+          merged.add(targetId)
+          continue
+        }
+
+        // Yjs deep events expose a root-relative path while the event is being
+        // dispatched. Keep this fallback for custom AbstractType wrappers.
+        const pathBlockId = yEvent.path[0]
+        if (typeof pathBlockId === 'string') merged.add(pathBlockId)
       }
     })
+
+    event.stackItem.meta.set(BLOCK_READONLY_AFFECTED_IDS, merged)
   }
 
-  private _hasRestoredSelection(expected: ISelectionJSON) {
-    const root = this.doc.root.hostElement
-    if (!this._hasExpectedModelSelection(expected)) return false
-    if (this._isModelOnlySelection(expected)) return true
-    if (!root.isConnected) return true
-
-    const active = document.activeElement
-    const hasEditorFocus = !!active && (active === root || root.contains(active))
-    if (!hasEditorFocus) return false
-
-    try {
-      const result = this.doc.selection.recalculate(false)
-      if (!result || !('value' in result)) return true
-      const domSelection = this._selectionValueToJSON(result.value)
-      return !!domSelection && this._sameSelectionJSON(domSelection, expected)
-    } catch {
-      return false
-    }
+  private _isBlockChildrenArray(type: Y.AbstractType<any>): type is Y.Array<string> {
+    if (!(type instanceof Y.Array)) return false
+    const parentSub = (type as unknown as { _item?: { parentSub?: unknown } })._item?.parentSub
+    return parentSub === 'children'
   }
 
-  private _hasExpectedModelSelection(expected: ISelectionJSON) {
-    const liveSelection = this._selectionValueToJSON(this.doc.selection.value)
-    return !!liveSelection && this._sameSelectionJSON(liveSelection, expected)
-  }
-
-  private _isModelOnlySelection(selection: ISelectionJSON) {
-    return selection.anchor.type === 'table-cell' && selection.head.type === 'table-cell'
-  }
-
-  private _selectionValueToJSON(value: unknown): ISelectionJSON | null {
-    if (!value || typeof value !== 'object') return null
-    if ('toJSON' in value && typeof value.toJSON === 'function') {
-      return value.toJSON() as ISelectionJSON
-    }
-    if ('anchor' in value && 'head' in value && 'commonParent' in value) {
-      return value as ISelectionJSON
+  private _findBlockIdForType(type: Y.AbstractType<any>): string | null {
+    let current: Y.AbstractType<any> | null = type
+    while (current && current !== this.yBlockMap) {
+      const parent: Y.AbstractType<any> | null = current.parent
+      if (parent === this.yBlockMap) {
+        const parentSub = (current as unknown as { _item?: { parentSub?: unknown } })._item?.parentSub
+        return typeof parentSub === 'string' ? parentSub : null
+      }
+      current = parent
     }
     return null
   }
 
-  private _sameSelectionJSON(a: ISelectionJSON, b: ISelectionJSON) {
-    return a.commonParent === b.commonParent &&
-      this._samePointJSON(a.anchor, b.anchor) &&
-      this._samePointJSON(a.head, b.head)
+  private _captureSelectionSnapshot(): RelativeSelectionBookmark | null {
+    return captureRelativeSelectionBookmark(this.doc.selection.value, this.doc)
   }
 
-  private _samePointJSON(a: ISelectionPointJSON, b: ISelectionPointJSON) {
-    return a.blockId === b.blockId &&
-      a.type === b.type &&
-      (a.offset ?? null) === (b.offset ?? null) &&
-      (a.side ?? null) === (b.side ?? null) &&
-      (a.index ?? null) === (b.index ?? null) &&
-      (a.tableId ?? null) === (b.tableId ?? null)
-  }
-
-  /** Restore DOM focus to the editing host for a block, if it isn't already focused. */
-  private _focusEditingHost(blockId?: string) {
-    let host = this.doc.root.hostElement
-    try {
-      if (blockId) {
-        const block = this.doc.getBlockById(blockId)
-        host = (block.hostElement.closest('[contenteditable="true"]') as HTMLElement | null)
-          ?? this.doc.root.hostElement
-      }
-    } catch {
-      host = this.doc.root.hostElement
-    }
-
-    const active = document.activeElement
-    if (host && active !== host && !host.contains(active)) {
-      host.focus({preventScroll: true})
-    }
-  }
-
-  private _focusEditingHostFromSnapshot(snapshot: RelativeSelectionBookmark | null | undefined) {
-    this._focusEditingHost(snapshot?.anchor?.blockId)
+  private _selectionBookmark(stackItem: StackItem): RelativeSelectionBookmark | null {
+    return stackItem.meta.has(SELECTION_BOOKMARK)
+      ? stackItem.meta.get(SELECTION_BOOKMARK) as RelativeSelectionBookmark | null
+      : null
   }
 
   clearHistory() {
     this._yUndoManager.clear()
-    this._undoSelectionStack = []
-    this._redoSelectionStack = []
+    this._pendingUndoSnapshot = undefined
+    this._pendingRedoSnapshot = undefined
   }
 
 

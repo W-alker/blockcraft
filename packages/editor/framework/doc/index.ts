@@ -21,6 +21,8 @@ import { DocChain } from "../chain/doc-chain";
 import * as Y from "yjs";
 import { BLOCK_POSITION } from "./block-position";
 import { BlockModelGraph } from "./model-graph";
+import { BlockReadonlyManager } from "./block-readonly-manager";
+import { BlockRef } from "./block-readonly.types";
 
 interface DocConfig {
   docId: string
@@ -39,6 +41,9 @@ interface DocConfig {
 }
 
 export const Y_BLOCK_MAP_NAME = 'blocks'
+
+const BLOCK_READONLY_FEEDBACK_MESSAGE = '内容已锁定，无法修改'
+const BLOCK_READONLY_FEEDBACK_COOLDOWN_MS = 1_000
 
 export class BlockCraftDoc {
 
@@ -65,6 +70,8 @@ export class BlockCraftDoc {
   readonly onChildrenUpdate$ = this.crud.onChildrenUpdate$
   readonly onPropsUpdate$ = this.crud.onPropsUpdate$
   readonly onTextUpdate$ = this.crud.onTextUpdate$
+  readonly onMetaUpdate$ = this.crud.onMetaUpdate$
+  readonly readonlyManager = new BlockReadonlyManager(this)
 
   private readonly _plugins: DocPlugin[] = []
 
@@ -76,6 +83,7 @@ export class BlockCraftDoc {
   private _scrollContainer: HTMLElement | null = null
 
   private _subscriptions: Subscription = new Subscription()
+  private _lastReadonlyFeedbackAt = Number.NEGATIVE_INFINITY
 
   private _root: BlockCraft.IBlockComponents['root'] | null = null
   private _yBlockMap!: Y.Map<YBlock>
@@ -143,12 +151,30 @@ export class BlockCraftDoc {
     public readonly config: DocConfig
   ) {
     this._plugins = this.config.plugins || []
+    this._bindReadonlyViolationFeedback()
     this.onDestroy(() => {
       this.model.destroy()
       this.dragController.destroy()
       this._subscriptions.unsubscribe()
     })
     this._yBlockMap = this.yDoc.getMap<YBlock>(Y_BLOCK_MAP_NAME)
+  }
+
+  private _bindReadonlyViolationFeedback(): void {
+    this._subscriptions.add(
+      this.readonlyManager.violation$.subscribe(violation => {
+        // Programmatic writes already receive BlockReadonlyError. UI feedback
+        // is reserved for direct user actions so API consumers are not noisy.
+        if (violation.trigger === 'api') return
+
+        const now = Date.now()
+        const previous = this._lastReadonlyFeedbackAt ?? Number.NEGATIVE_INFINITY
+        if (now - previous < BLOCK_READONLY_FEEDBACK_COOLDOWN_MS) return
+
+        this._lastReadonlyFeedbackAt = now
+        this.messageService.warn(BLOCK_READONLY_FEEDBACK_MESSAGE)
+      }),
+    )
   }
 
   @performanceTest('Doc init', 300)
@@ -456,12 +482,22 @@ export class BlockCraftDoc {
     return sub
   }
 
+  setBlockReadonly(block: BlockRef, readonly: boolean) {
+    this.readonlyManager.set(block, readonly)
+  }
+
+  isBlockReadonly(block: BlockRef) {
+    return this.readonlyManager.isReadonly(block)
+  }
+
 }
 
 export * from './crud'
 export * from './vm'
 export * from './block-position'
 export * from './model-graph'
+export * from './block-readonly.types'
+export * from './block-readonly-manager'
 
 declare global {
   namespace BlockCraft {

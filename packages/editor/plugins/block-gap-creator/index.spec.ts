@@ -3,6 +3,18 @@ import {BlockNodeType} from "../../framework";
 import {BlockGapCreatorPlugin} from "./index";
 
 describe("BlockGapCreatorPlugin", () => {
+  const caretRangeDescriptor = Object.getOwnPropertyDescriptor(document, "caretRangeFromPoint")
+
+  afterEach(() => {
+    document.getSelection()?.removeAllRanges()
+    document.querySelectorAll('[data-block-id="root"]').forEach(element => element.remove())
+    if (caretRangeDescriptor) {
+      Object.defineProperty(document, "caretRangeFromPoint", caretRangeDescriptor)
+    } else {
+      delete (document as any).caretRangeFromPoint
+    }
+  })
+
   const rect = (left: number, top: number, right: number, bottom: number): DOMRect => ({
     left,
     top,
@@ -116,7 +128,7 @@ describe("BlockGapCreatorPlugin", () => {
 
     expect(down.defaultPrevented).toBeTrue()
     expect(selection.setGapCursor).toHaveBeenCalledOnceWith(voidBlock, "before")
-    expect(selection.recalculate).toHaveBeenCalled()
+    expect(selection.recalculate).not.toHaveBeenCalled()
 
     const click = new MouseEvent("click", {
       bubbles: true,
@@ -131,6 +143,29 @@ describe("BlockGapCreatorPlugin", () => {
     expect(selection.setCursorAtBlock).not.toHaveBeenCalled()
 
     plugin.destroy()
+  })
+
+  it("recalculates once after caretRangeFromPoint installs a native text caret", () => {
+    const {plugin, host, lastEditable, selection} = createHarness()
+    document.body.appendChild(host)
+    const text = document.createTextNode("hello")
+    lastEditable.hostElement.appendChild(text)
+    const range = document.createRange()
+    range.setStart(text, 3)
+    range.collapse(true)
+    Object.defineProperty(document, "caretRangeFromPoint", {
+      value: jasmine.createSpy("caretRangeFromPoint").and.returnValue(range),
+      configurable: true,
+      writable: true,
+    })
+
+    const handled = plugin._tryTextLineEndCaret(200, 320)
+
+    expect(handled).toBeTrue()
+    expect(selection.recalculate).toHaveBeenCalledTimes(1)
+    const nativeRange = document.getSelection()!.getRangeAt(0)
+    expect(nativeRange.startContainer).toBe(text)
+    expect(nativeRange.startOffset).toBe(3)
   })
 
   it("resolves block blank-area hits using the content rect", () => {
@@ -248,7 +283,7 @@ describe("BlockGapCreatorPlugin", () => {
 
     expect(down.defaultPrevented).toBeTrue()
     expect(selection.setGapCursor).toHaveBeenCalledOnceWith(voidBlock, "after")
-    expect(selection.recalculate).toHaveBeenCalled()
+    expect(selection.recalculate).not.toHaveBeenCalled()
 
     plugin.destroy()
   })

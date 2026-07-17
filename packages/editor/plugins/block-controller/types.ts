@@ -1,6 +1,8 @@
 import { TemplateRef, Type } from "@angular/core";
 import { SimpleValue } from "../../global";
-import { OverlayPosition } from "../../framework";
+import { BlockReadonlyResolution, OverlayPosition } from "../../framework";
+
+export type BlockMenuReadonlyBehavior = 'hide' | 'disable' | 'allow'
 
 export interface IContextMenuItem {
   type: 'tool'
@@ -9,6 +11,7 @@ export interface IContextMenuItem {
   icon: string
   label: string
   desc?: string
+  readonlyBehavior?: BlockMenuReadonlyBehavior
 }
 
 export type customToolHandler = (item: IContextMenuItem, block: BlockCraft.BlockComponent<any> | null, doc: BlockCraft.Doc) => boolean
@@ -23,6 +26,8 @@ interface BlockMenuItemBase {
   disabled?: boolean
   active?: boolean
   hidden?: boolean
+  /** Defaults to `disable` when the active block is readonly. */
+  readonlyBehavior?: BlockMenuReadonlyBehavior
 }
 
 export interface BlockMenuSimpleItem extends BlockMenuItemBase {
@@ -67,6 +72,7 @@ export interface BlockMenuDividerItem {
   type: 'divider'
   name: string
   hidden?: boolean
+  readonlyBehavior?: BlockMenuReadonlyBehavior
 }
 
 export type BlockMenuItem =
@@ -86,6 +92,7 @@ export interface BlockMenuSection {
 export interface BlockMenuContext {
   activeBlock: BlockCraft.BlockComponent
   doc: BlockCraft.Doc
+  readonly: BlockReadonlyResolution
   findClosestBlock: (flavour: BlockCraft.BlockFlavour | string) => BlockCraft.BlockComponent | null
 }
 

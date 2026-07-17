@@ -271,23 +271,38 @@ export class TextToolbarHelper {
       })
       .run()
       .finally(() => {
-        // 等 Angular 同步插入完成 + 一帧 layout 后再放开。
-        // 直接放开会让残留的 selectionchange 队列立刻进入 recalculate。
-        requestAnimationFrame(() => {
-          // 用 idMap remap 老选区，恢复焦点到对应的新块。
-          // 未被替换的块（已是目标 flavour / plainTextOnly）id 不变。
-          // textDeltas 完全克隆到新块，offset 仍然有效。
-          const remapId = (id: string) => idMap.get(id) ?? id
-          const remapped = {
-            anchor: { ...savedJson.anchor, blockId: remapId(savedJson.anchor.blockId) },
-            head: { ...savedJson.head, blockId: remapId(savedJson.head.blockId) },
-            commonParent: remapId(savedJson.commonParent),
-          }
+        // 等 Angular 同步插入完成 + 一帧 layout 后再放开。后台页或视图切换
+        // 可能长期不执行 RAF，因此再提供一个 timeout 终止保证；两条路径共享
+        // 同一个幂等 finalizer，避免重复 replay。
+        let done = false
+        let frameId: number | null = null
+        let timeoutId: ReturnType<typeof setTimeout> | null = null
+        const finishRestore = () => {
+          if (done) return
+          done = true
+          if (frameId !== null) cancelAnimationFrame(frameId)
+          if (timeoutId !== null) clearTimeout(timeoutId)
           try {
-            this.doc.selection.replay(remapped)
-          } catch {}
-          this.doc.selection.setSuppressRecalculate(false)
-        })
+            // 用 idMap remap 老选区，恢复焦点到对应的新块。
+            // 未被替换的块（已是目标 flavour / plainTextOnly）id 不变。
+            const remapId = (id: string) => idMap.get(id) ?? id
+            this.doc.selection.replay({
+              anchor: { ...savedJson.anchor, blockId: remapId(savedJson.anchor.blockId) },
+              head: { ...savedJson.head, blockId: remapId(savedJson.head.blockId) },
+              commonParent: remapId(savedJson.commonParent),
+            })
+          } catch {
+          } finally {
+            this.doc.selection.setSuppressRecalculate(false)
+          }
+        }
+
+        timeoutId = setTimeout(finishRestore, 100)
+        try {
+          frameId = requestAnimationFrame(finishRestore)
+        } catch {
+          finishRestore()
+        }
       })
   }
 }

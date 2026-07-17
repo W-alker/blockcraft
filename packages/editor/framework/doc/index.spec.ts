@@ -1,6 +1,40 @@
 import {BlockCraftDoc} from "./index";
+import {fakeAsync, tick} from "@angular/core/testing";
 import * as Y from "yjs";
 import {BlockNodeType, NativeBlockModel, YBlock, native2YBlock} from "../block-std";
+import {Subject, Subscription} from "rxjs";
+
+describe("BlockCraftDoc readonly violation feedback", () => {
+  it("warns for user actions, ignores API calls and throttles repeated feedback", fakeAsync(() => {
+    const violation$ = new Subject<{trigger: string}>();
+    const subscriptions = new Subscription();
+    const warn = jasmine.createSpy("warn");
+    const doc = {
+      readonlyManager: {violation$},
+      messageService: {warn},
+      _subscriptions: subscriptions,
+    };
+
+    (BlockCraftDoc.prototype as any)._bindReadonlyViolationFeedback.call(doc);
+
+    violation$.next({trigger: "input"});
+    violation$.next({trigger: "clipboard"});
+    violation$.next({trigger: "drag"});
+    expect(warn).toHaveBeenCalledOnceWith("内容已锁定，无法修改");
+
+    tick(1_000);
+    violation$.next({trigger: "undo"});
+    expect(warn).toHaveBeenCalledTimes(2);
+
+    tick(1_000);
+    violation$.next({trigger: "api"});
+    expect(warn).toHaveBeenCalledTimes(2);
+
+    subscriptions.unsubscribe();
+    violation$.next({trigger: "menu"});
+    expect(warn).toHaveBeenCalledTimes(2);
+  }));
+});
 
 describe("BlockCraftDoc position contract", () => {
   function component(id: string, hostElement: HTMLElement) {

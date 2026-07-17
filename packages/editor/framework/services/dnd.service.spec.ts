@@ -1,5 +1,5 @@
 import { DocDndService } from "./dnd.service"
-import { BLOCK_POSITION } from "../doc"
+import { BLOCK_POSITION, BlockReadonlyError, BlockReadonlyOperation } from "../doc"
 
 function makeBlock(id: string, parentId: string | null, flavour = 'paragraph', extra: Partial<any> = {}): any {
   const host = document.createElement('div')
@@ -29,6 +29,12 @@ function makeMockDoc(blocks: Record<string, any>): any {
     },
     getBlockById: (id: string) => blocks[id],
     compareBlockPosition: jasmine.createSpy('compareBlockPosition').and.returnValue(BLOCK_POSITION.AFTER),
+    readonlyManager: {
+      assertPropsWritable: jasmine.createSpy('assertPropsWritable'),
+      assertInsertable: jasmine.createSpy('assertInsertable'),
+      assertRemovable: jasmine.createSpy('assertRemovable'),
+      assertMovable: jasmine.createSpy('assertMovable'),
+    },
     messageService: { warn: (msg: string) => calls.warn.push(msg), success: () => {} },
     crud: {
       transact: (fn: () => void) => { calls.transact++; fn() },
@@ -42,6 +48,37 @@ function makeMockDoc(blocks: Record<string, any>): any {
 }
 
 describe('DocDndService.onSortBlocks — same parent reorder', () => {
+  it('rechecks readonly state before commit and leaves depth/structure untouched on rejection', () => {
+    const parent = makeBlock('p', null, 'root', { childrenIds: ['b1', 'b2', 't'] })
+    const b1 = makeBlock('b1', 'p', 'paragraph', { __index: 0 })
+    const b2 = makeBlock('b2', 'p', 'paragraph', { __index: 1 })
+    const target = makeBlock('t', 'p', 'paragraph', { __index: 2, props: { depth: 2 } })
+    b1.parentBlock = parent
+    b2.parentBlock = parent
+    target.parentBlock = parent
+
+    const doc = makeMockDoc({ p: parent, b1, b2, t: target })
+    doc.readonlyManager.assertMovable.and.throwError(new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Move,
+      blockIds: ['b1'],
+      source: { kind: 'self', blockId: 'b1' },
+    }))
+
+    const svc = new DocDndService(doc)
+    expect(() => svc.onSortBlocks([b1, b2], target, 'after')).not.toThrow()
+
+    expect(doc.readonlyManager.assertMovable).toHaveBeenCalledWith(
+      ['b1', 'b2'],
+      'p',
+      BlockReadonlyOperation.Move,
+      'drag',
+    )
+    expect(b1.updateProps).not.toHaveBeenCalled()
+    expect(b2.updateProps).not.toHaveBeenCalled()
+    expect(doc._calls.moveBlocks.length).toBe(0)
+    expect(doc._calls.transact).toBe(0)
+  })
+
   it('moves contiguous siblings as a single moveBlocks call', () => {
     const parent = makeBlock('p', null, 'root', { childrenIds: ['b1', 'b2', 'x2', 'x3', 'x4', 't'] })
     const b1 = makeBlock('b1', 'p', 'paragraph', { __index: 0 })
@@ -295,6 +332,36 @@ describe('DocDndService.onSortBlocks — column path', () => {
     expect(count).toBe(2)
   })
 
+  it('does not insert a column wrapper when readonly preflight rejects the source range', () => {
+    const root = makeBlock('root', null, 'root', { childrenLength: 3 })
+    const columnsBlock = makeBlock('cols', 'root', 'columns', { __index: 0, childrenLength: 2 })
+    const existingCol = makeBlock('col1', 'cols', 'column', { __index: 0, childrenLength: 2 })
+    const parentA = makeBlock('pa', 'root', 'section', { __index: 1 })
+    const b1 = makeBlock('b1', 'pa', 'paragraph', { __index: 0 })
+    const b2 = makeBlock('b2', 'pa', 'paragraph', { __index: 1 })
+    const targetInCol = makeBlock('t', 'col1', 'paragraph', { __index: 0 })
+    b1.parentBlock = parentA
+    b2.parentBlock = parentA
+    parentA.parentBlock = root
+    targetInCol.parentBlock = existingCol
+    existingCol.parentBlock = columnsBlock
+    columnsBlock.parentBlock = root
+
+    const doc = makeColumnMockDoc({ root, cols: columnsBlock, col1: existingCol, pa: parentA, b1, b2, t: targetInCol })
+    doc.readonlyManager.assertMovable.and.throwError(new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Move,
+      blockIds: ['b1'],
+      source: { kind: 'self', blockId: 'b1' },
+    }))
+
+    const svc = new DocDndService(doc)
+    expect(() => svc.onSortBlocks([b1, b2], targetInCol, 'right')).not.toThrow()
+
+    expect(doc.crud.insertBlocks).not.toHaveBeenCalled()
+    expect(doc._calls.moveBlocks.length).toBe(0)
+    expect(doc._calls.transact).toBe(0)
+  })
+
   it('rejects column drop when existing parent already has 8 columns', () => {
     const root = makeBlock('root', null, 'root')
     const columnsBlock = makeBlock('cols', 'root', 'columns', { childrenLength: 8 })
@@ -316,5 +383,63 @@ describe('DocDndService.onSortBlocks — column path', () => {
 
     expect(doc._calls.warn).toEqual(['分栏最多支持8列'])
     expect(doc._calls.moveBlocks.length).toBe(0)
+  })
+})
+
+describe('DocDndService readonly insertion preflight', () => {
+  it('does not create a file object URL when the target parent is readonly', () => {
+    const parent = makeBlock('p', null, 'root')
+    const target = makeBlock('t', 'p', 'paragraph', { __index: 0 })
+    target.parentBlock = parent
+    const doc = makeMockDoc({ p: parent, t: target })
+    const fileService = { createObjectURL: jasmine.createSpy('createObjectURL') }
+    doc.injector.get = () => fileService
+    doc.readonlyManager.assertInsertable.and.throwError(new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Insert,
+      blockIds: ['p'],
+      source: { kind: 'self', blockId: 'p' },
+    }))
+    const files = { length: 1, 0: new File(['x'], 'x.png', { type: 'image/png' }) } as unknown as FileList
+
+    const svc = new DocDndService(doc)
+    expect(() => svc.onInsertFiles(files, target, 'after')).not.toThrow()
+
+    expect(doc.readonlyManager.assertInsertable).toHaveBeenCalledWith(
+      'p',
+      BlockReadonlyOperation.Insert,
+      'drag',
+    )
+    expect(fileService.createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('rechecks an async new-block insertion after creator parameters resolve', async () => {
+    const parent = makeBlock('p', null, 'root')
+    const target = makeBlock('t', 'p', 'paragraph', { __index: 0 })
+    target.parentBlock = parent
+    const doc = makeMockDoc({ p: parent, t: target })
+    doc.schemas.has = () => true
+    doc.schemas.get = () => ({ metadata: { label: '测试块' } })
+    let resolveParams!: (value: unknown[]) => void
+    const blockCreator = {
+      getParamsByScheme: () => new Promise<unknown[]>(resolve => { resolveParams = resolve }),
+    }
+    doc.injector.get = () => blockCreator
+    doc.chain = jasmine.createSpy('chain')
+
+    const svc = new DocDndService(doc)
+    svc.onInsertNewBlock('paragraph', {}, target, 'after')
+    expect(doc.readonlyManager.assertInsertable).toHaveBeenCalledTimes(1)
+
+    doc.readonlyManager.assertInsertable.and.throwError(new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Insert,
+      blockIds: ['p'],
+      source: { kind: 'self', blockId: 'p' },
+    }))
+    resolveParams([])
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(doc.readonlyManager.assertInsertable).toHaveBeenCalledTimes(2)
+    expect(doc.chain).not.toHaveBeenCalled()
   })
 })

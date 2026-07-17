@@ -1,5 +1,6 @@
 import {TableBlockComponent} from "./table.block";
 import {BlockSelection} from "../../framework/modules/selection/blockSelection";
+import {BehaviorSubject} from "rxjs";
 
 describe("TableBlockComponent selection UI sync", () => {
   it("clears a stale rectangle when selection moves into anchor cell text", () => {
@@ -341,5 +342,54 @@ describe("TableBlockComponent selection UI sync", () => {
 
     expect(table._syncTableFocusUi).toHaveBeenCalledOnceWith(selection);
     expect(table.doc.selection.recalculate).not.toHaveBeenCalled();
+  });
+});
+
+describe("TableBlockComponent readonly resize", () => {
+  it("does not start a column resize for a readonly table", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const host = document.createElement("div");
+    const nativeTable = document.createElement("table");
+    const colGroup = document.createElement("colgroup");
+    const col = document.createElement("col");
+    colGroup.appendChild(col);
+    nativeTable.appendChild(colGroup);
+    host.appendChild(nativeTable);
+
+    table.hostElement = host;
+    table.doc = {
+      readonlyManager: {
+        isReadonly: jasmine.createSpy("isReadonly").and.returnValue(true),
+      },
+    };
+    table.hoveringCell = {
+      props: {colspan: 1},
+      getIndexOfParent: () => 0,
+    };
+    Object.defineProperty(table, "props", {value: {colWidths: [120]}});
+    table.resizingCol$ = new BehaviorSubject(false);
+    const resizeState = spyOn(table.resizingCol$, "next").and.callThrough();
+    table.colBarComponent = {
+      colWidths: [120],
+      changeDetectionRef: {markForCheck: jasmine.createSpy("markForCheck")},
+    };
+    table.updateProps = jasmine.createSpy("updateProps");
+    table._normalizeHorizontalScroll = jasmine.createSpy("_normalizeHorizontalScroll");
+
+    const event = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 120,
+    });
+    const stopPropagation = spyOn(event, "stopPropagation").and.callThrough();
+
+    table.onColResizerMousedown(event);
+    document.dispatchEvent(new MouseEvent("mouseup", {bubbles: true}));
+
+    expect(event.defaultPrevented).toBeTrue();
+    expect(stopPropagation).toHaveBeenCalled();
+    expect(resizeState).not.toHaveBeenCalled();
+    expect(table.updateProps).not.toHaveBeenCalled();
+    expect(col.style.width).toBe("");
   });
 });

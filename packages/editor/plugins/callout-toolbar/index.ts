@@ -16,8 +16,13 @@ export class CalloutToolbarPlugin extends DocPlugin {
 
   private _activeCalloutBlock: BlockCraft.BlockComponent | null = null
 
+  private _isReadonly(block: BlockCraft.BlockComponent) {
+    return this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly
+  }
+
   init() {
-    this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
+    this._sub = new Subscription()
+    this._sub.add(this.doc.selection.selectionChange$.subscribe(selection => {
       this.clearTimer()
 
       if (
@@ -34,6 +39,10 @@ export class CalloutToolbarPlugin extends DocPlugin {
       }
 
       const calloutBlock = selection.firstBlock.parentBlock
+      if (!this._isBlockAlive(calloutBlock) || this._isReadonly(calloutBlock)) {
+        this._overlayRef && this.closeToolbar()
+        return
+      }
 
       if (this._overlayRef && this._activeCalloutBlock === calloutBlock) return;
       this.closeToolbar()
@@ -49,14 +58,24 @@ export class CalloutToolbarPlugin extends DocPlugin {
           currentSelection.start.type !== 'text' ||
           currentSelection.end.type !== 'text' ||
           currentSelection.firstBlock.parentBlock?.id !== calloutBlock.id ||
-          !this._isBlockAlive(calloutBlock)
+          !this._isBlockAlive(calloutBlock) ||
+          this._isReadonly(calloutBlock)
         ) {
           return
         }
 
         this.openToolbar(calloutBlock)
       }, 200)
-    })
+    }))
+    const stateChange$ = this.doc.readonlyManager?.stateChange$
+    if (stateChange$) {
+      this._sub.add(stateChange$.subscribe(() => {
+        const activeBlock = this._activeCalloutBlock
+        if (activeBlock && (!this._isBlockAlive(activeBlock) || this._isReadonly(activeBlock))) {
+          this.closeToolbar()
+        }
+      }))
+    }
   }
 
   clearTimer() {
@@ -68,7 +87,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
 
   openToolbar = (calloutBlock: BlockCraft.BlockComponent) => {
     if (this._overlayRef && this._activeCalloutBlock === calloutBlock) return;
-    if (!this._isBlockAlive(calloutBlock)) return;
+    if (!this._isBlockAlive(calloutBlock) || this._isReadonly(calloutBlock)) return;
 
     this._activeCalloutBlock = calloutBlock
 

@@ -1,4 +1,5 @@
 import { DocInternalDragController, InternalDragState } from "./internal-drag.controller"
+import { BlockReadonlyError, BlockReadonlyOperation } from "../doc"
 
 function makeMockDoc(): any {
   return {
@@ -7,6 +8,9 @@ function makeMockDoc(): any {
     root: { hostElement: document.createElement('div') },
     getBlockById: () => null,
     schemas: { has: () => false, get: () => null },
+    readonlyManager: {
+      assertRemovable: jasmine.createSpy('assertRemovable'),
+    },
     selection: {
       setSuppressRecalculate: jasmine.createSpy('setSuppressRecalculate'),
       blur: jasmine.createSpy('blur'),
@@ -58,6 +62,26 @@ describe('DocInternalDragController state machine', () => {
     expect(ctrl.state).toBe('armed')
   })
 
+  it('does not arm an origin block when readonly protection rejects moving it', () => {
+    doc.readonlyManager.assertRemovable.and.throwError(new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Move,
+      blockIds: ['b1'],
+      source: { kind: 'self', blockId: 'b1' },
+    }))
+    const evt = makePointerEvent('pointerdown')
+    Object.defineProperty(evt, 'target', { value: target })
+
+    ctrl.startDrag(evt, { kind: 'origin-block', blockId: 'b1' })
+
+    expect(ctrl.state).toBe('idle')
+    expect(doc.readonlyManager.assertRemovable).toHaveBeenCalledWith(
+      ['b1'],
+      BlockReadonlyOperation.Move,
+      'drag',
+    )
+    expect(doc.selection.setSuppressRecalculate).not.toHaveBeenCalled()
+  })
+
   it('cancel from armed returns to idle', () => {
     const evt = makePointerEvent('pointerdown')
     Object.defineProperty(evt, 'target', { value: target })
@@ -75,6 +99,23 @@ describe('DocInternalDragController state machine', () => {
     ctrl.startDrag(evt2, { kind: 'origin-block', blockId: 'b2' })
     expect(ctrl.state).toBe('armed')
     // second startDrag should not overwrite activePointerId (still 1 from first call)
+  })
+
+  it('releases an orphaned drag when a new primary pointer starts', () => {
+    const evt = makePointerEvent('pointerdown', { pointerId: 1, isPrimary: true })
+    Object.defineProperty(evt, 'target', { value: target })
+    ctrl.startDrag(evt, { kind: 'origin-block', blockId: 'b1' })
+
+    window.dispatchEvent(makePointerEvent('pointerdown', {
+      pointerId: 2,
+      isPrimary: true,
+    }))
+
+    expect(ctrl.state).toBe('idle')
+    expect(doc.selection.setSuppressRecalculate.calls.allArgs()).toEqual([
+      [true],
+      [false],
+    ])
   })
 
   it('startDrag accepts origin-blocks variant with >= 2 ids', () => {

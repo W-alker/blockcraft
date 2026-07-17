@@ -54,8 +54,12 @@ export class SelectionControl {
       // Safari may miss pointer events during native text selection, so also
       // listen to legacy mouse/touch releases to guarantee selectEnd.
       this._listenOnceForFinish(window, 'pointerup')
+      this._listenOnceForFinish(window, 'pointercancel')
       this._listenOnceForFinish(window, 'mouseup')
       this._listenOnceForFinish(window, 'touchend')
+      this._listenOnceForFinish(window, 'touchcancel')
+      this._listenOnceForFinish(window, 'blur')
+      this._listenOnceForFinish(document, 'visibilitychange')
     }
   }
 

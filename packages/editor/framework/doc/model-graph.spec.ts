@@ -454,3 +454,117 @@ describe("BlockModelGraph Yjs synchronization", () => {
     expect(h.graph.getChildrenIds("root")).toEqual([]);
   });
 });
+
+describe("BlockModelGraph structure changes", () => {
+  it("emits one revision with the complete newly reachable subtree", () => {
+    const h = createHarness();
+    h.set({
+      root: structuralBlock("root", [], BlockNodeType.root),
+      orphan: structuralBlock("orphan", ["orphan-child"]),
+      "orphan-child": editableBlock("orphan-child", "detached"),
+    });
+    h.graph.build("root");
+    const changes: any[] = [];
+    h.graph.structureChange$.subscribe(change => changes.push(change));
+
+    h.yDoc.transact(() => {
+      const children = h.yBlockMap.get("root")!.get("children") as Y.Array<string>;
+      children.insert(0, ["orphan"]);
+    });
+
+    expect(h.graph.structureRevision).toBe(1);
+    expect(changes).toEqual([{
+      revision: 1,
+      reachableAddedIds: ["orphan", "orphan-child"],
+      reachableRemovedIds: [],
+      affectedParentIds: ["root"],
+    }]);
+  });
+
+  it("emits one structure event for a move without reporting reachability changes", () => {
+    const h = createHarness();
+    h.set({
+      root: structuralBlock("root", ["left", "right"], BlockNodeType.root),
+      left: structuralBlock("left", ["branch"]),
+      right: structuralBlock("right", []),
+      branch: structuralBlock("branch", ["leaf"]),
+      leaf: editableBlock("leaf", "kept"),
+    });
+    h.graph.build("root");
+    const changes: any[] = [];
+    h.graph.structureChange$.subscribe(change => changes.push(change));
+
+    h.yDoc.transact(() => {
+      const left = h.yBlockMap.get("left")!.get("children") as Y.Array<string>;
+      const right = h.yBlockMap.get("right")!.get("children") as Y.Array<string>;
+      left.delete(0, 1);
+      right.insert(0, ["branch"]);
+    });
+
+    expect(changes.length).toBe(1);
+    expect(changes[0].revision).toBe(1);
+    expect(changes[0].reachableAddedIds).toEqual([]);
+    expect(changes[0].reachableRemovedIds).toEqual([]);
+    expect(changes[0].affectedParentIds).toEqual(
+      jasmine.arrayWithExactContents(["left", "right"]),
+    );
+    expect(h.graph.getPath("leaf")).toEqual(["root", "right", "branch", "leaf"]);
+  });
+
+  it("reports the complete subtree when it becomes unreachable but YBlocks remain", () => {
+    const h = createHarness();
+    h.set({
+      root: structuralBlock("root", ["branch"], BlockNodeType.root),
+      branch: structuralBlock("branch", ["leaf"]),
+      leaf: editableBlock("leaf", "retained"),
+    });
+    h.graph.build("root");
+    let change: any = null;
+    h.graph.structureChange$.subscribe(value => change = value);
+
+    const children = h.yBlockMap.get("root")!.get("children") as Y.Array<string>;
+    children.delete(0, 1);
+
+    expect(change.reachableAddedIds).toEqual([]);
+    expect(change.reachableRemovedIds).toEqual(
+      jasmine.arrayWithExactContents(["branch", "leaf"]),
+    );
+    expect(h.yBlockMap.has("branch")).toBeTrue();
+    expect(h.yBlockMap.has("leaf")).toBeTrue();
+    expect(h.graph.exists("branch")).toBeFalse();
+    expect(h.graph.exists("leaf")).toBeFalse();
+  });
+
+  it("stays silent for text, props and meta changes", () => {
+    const h = createHarness();
+    h.set({
+      root: structuralBlock("root", ["p"], BlockNodeType.root),
+      p: editableBlock("p", "text"),
+    });
+    h.graph.build("root");
+    const next = jasmine.createSpy("next");
+    h.graph.structureChange$.subscribe(next);
+    const paragraph = h.yBlockMap.get("p")!;
+
+    h.yDoc.transact(() => {
+      (paragraph.get("children") as unknown as Y.Text).insert(4, " updated");
+      (paragraph.get("props") as Y.Map<unknown>).set("depth", 2);
+      (paragraph.get("meta") as Y.Map<unknown>).set("readonly", true);
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(h.graph.structureRevision).toBe(0);
+  });
+
+  it("completes the structure signal on destroy", () => {
+    const h = createHarness();
+    h.set({root: structuralBlock("root", [], BlockNodeType.root)});
+    h.graph.build("root");
+    const complete = jasmine.createSpy("complete");
+    h.graph.structureChange$.subscribe({complete});
+
+    h.graph.destroy();
+
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+});

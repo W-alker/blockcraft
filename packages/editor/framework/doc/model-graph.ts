@@ -7,6 +7,14 @@ import {
   yBlock2Native,
 } from "../block-std";
 import {BLOCK_POSITION} from "./block-position";
+import {Subject} from "rxjs";
+
+export interface IBlockModelStructureChange {
+  revision: number;
+  reachableAddedIds: readonly string[];
+  reachableRemovedIds: readonly string[];
+  affectedParentIds: readonly string[];
+}
 
 /**
  * Yjs-backed, read-only document graph. It never requires mounted components.
@@ -16,11 +24,17 @@ export class BlockModelGraph {
   private readonly parentById = new Map<string, string | null>();
   private readonly childrenById = new Map<string, readonly string[]>();
   private observing = false;
+  private _structureRevision = 0;
+  readonly structureChange$ = new Subject<IBlockModelStructureChange>();
   private readonly yObserver = (events: Y.YEvent<any>[]) => {
     this.reconcileEvents(events);
   };
 
   constructor(private readonly doc: BlockCraft.Doc) {}
+
+  get structureRevision(): number {
+    return this._structureRevision;
+  }
 
   build(rootId: string): void {
     this.rootId = rootId;
@@ -39,6 +53,7 @@ export class BlockModelGraph {
     this.rootId = null;
     this.parentById.clear();
     this.childrenById.clear();
+    this.structureChange$.complete();
   }
 
   private rebuildIndexes(): void {
@@ -207,6 +222,8 @@ export class BlockModelGraph {
 
     const affectedParents = new Set<string>();
     const addedTopLevelIds = new Set<string>();
+    const reachableAddedIds = new Set<string>();
+    const reachableRemovedIds = new Set<string>();
     let rootChanged = false;
     let hasChildrenEvent = false;
 
@@ -245,7 +262,19 @@ export class BlockModelGraph {
     }
 
     if (rootChanged) {
+      const previousIds = new Set(this.parentById.keys());
       this.rebuildIndexes();
+      this.parentById.forEach((_parentId, blockId) => {
+        if (!previousIds.has(blockId)) reachableAddedIds.add(blockId);
+      });
+      previousIds.forEach(blockId => {
+        if (!this.parentById.has(blockId)) reachableRemovedIds.add(blockId);
+      });
+      this.emitStructureChange(
+        reachableAddedIds,
+        reachableRemovedIds,
+        new Set(this.rootId === null ? [] : [this.rootId]),
+      );
       return;
     }
 
@@ -261,10 +290,31 @@ export class BlockModelGraph {
       }
     }
 
-    if (affectedParents.size) this.reconcileParents(affectedParents);
+    if (affectedParents.size) {
+      this.reconcileParents(affectedParents, reachableAddedIds, reachableRemovedIds);
+      this.emitStructureChange(reachableAddedIds, reachableRemovedIds, affectedParents);
+    }
   }
 
-  private reconcileParents(affectedParents: ReadonlySet<string>): void {
+  private emitStructureChange(
+    reachableAddedIds: ReadonlySet<string>,
+    reachableRemovedIds: ReadonlySet<string>,
+    affectedParentIds: ReadonlySet<string>,
+  ): void {
+    this._structureRevision++;
+    this.structureChange$.next({
+      revision: this._structureRevision,
+      reachableAddedIds: [...reachableAddedIds],
+      reachableRemovedIds: [...reachableRemovedIds],
+      affectedParentIds: [...affectedParentIds],
+    });
+  }
+
+  private reconcileParents(
+    affectedParents: ReadonlySet<string>,
+    reachableAddedIds: Set<string>,
+    reachableRemovedIds: Set<string>,
+  ): void {
     const reachableParents = [...affectedParents].filter(parentId =>
       this.parentById.has(parentId) && this.doc.yBlockMap.has(parentId),
     );
@@ -319,7 +369,7 @@ export class BlockModelGraph {
     // never temporarily interpreted as deleted.
     desiredOwner.forEach((parentId, childId) => {
       if (!this.parentById.has(childId)) {
-        this.indexSubtree(childId, parentId, new Set());
+        this.indexSubtree(childId, parentId, new Set(), reachableAddedIds);
       } else {
         this.parentById.set(childId, parentId);
       }
@@ -334,7 +384,7 @@ export class BlockModelGraph {
       if (desiredOwner.has(childId)) return;
       const owner = this.parentById.get(childId);
       if (owner !== undefined && owner !== null && affectedParents.has(owner)) {
-        this.unlinkSubtree(childId);
+        this.unlinkSubtree(childId, reachableRemovedIds);
       }
     });
   }
@@ -364,10 +414,11 @@ export class BlockModelGraph {
     return false;
   }
 
-  private unlinkSubtree(blockId: string): void {
+  private unlinkSubtree(blockId: string, removedIds?: Set<string>): void {
     const stack = [blockId];
     while (stack.length) {
       const current = stack.pop()!;
+      removedIds?.add(current);
       const children = this.childrenById.get(current) ?? [];
       children.forEach(childId => stack.push(childId));
       this.childrenById.delete(current);
@@ -390,6 +441,7 @@ export class BlockModelGraph {
     blockId: string,
     parentId: string | null,
     visiting: Set<string>,
+    addedIds?: Set<string>,
   ): boolean {
     if (visiting.has(blockId)) {
       this.warnInvalidEdge(parentId ?? blockId, blockId, "cyclic child reference");
@@ -407,12 +459,13 @@ export class BlockModelGraph {
 
     visiting.add(blockId);
     this.parentById.set(blockId, parentId);
+    addedIds?.add(blockId);
 
     const childIds: string[] = [];
     const children = yBlock.get("children");
     if (children instanceof Y.Array) {
       for (const childId of children.toArray() as string[]) {
-        if (this.indexSubtree(childId, blockId, visiting)) childIds.push(childId);
+        if (this.indexSubtree(childId, blockId, visiting, addedIds)) childIds.push(childId);
       }
     }
     this.childrenById.set(blockId, childIds);

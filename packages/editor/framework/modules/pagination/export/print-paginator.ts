@@ -139,12 +139,12 @@ export async function buildPaginatedPrintSurface(
     }
   }
 
-  // capHeight 块（图片/代码等超高块）的锁定高度：渲染时 max-height + overflow:hidden 裁剪到 ≤ 一页（不缩放）。
-  const lockById = new Map<string, number>();
+  // capHeight 块只在确实超页时标记，由主题按页面内容高变量裁剪。
+  const lockedIds = new Set<string>();
   // 带表头表格的续页重复表头高：续页片段（fromOffset>0）顶部多渲一份表头窗口。
   const repeatHeaderById = new Map<string, number>();
   for (const it of items) {
-    if (it.lockHeight != null && it.lockHeight > 0) lockById.set(it.id, it.lockHeight);
+    if (it.lockHeight != null && it.lockHeight > 0) lockedIds.add(it.id);
     if (it.repeatHeaderHeight != null && it.repeatHeaderHeight > 0) repeatHeaderById.set(it.id, it.repeatHeaderHeight);
   }
 
@@ -181,6 +181,7 @@ export async function buildPaginatedPrintSurface(
       `position:absolute; box-sizing:border-box; min-height:0; padding:0; overflow:hidden;` +
       `top:${margins.top + headerHeight}px; left:${margins.left}px; right:${margins.right}px;` +
       `bottom:${margins.bottom + footerHeight}px;`;
+    content.style.setProperty('--bc-page-content-height', `${geom.geometry.contentHeight}px`);
     for (const slot of page.slots) {
       const el = elById.get(slot.id);
       if (!el) continue;
@@ -193,12 +194,8 @@ export async function buildPaginatedPrintSurface(
         // 拆开的超大块：同块会落在多页，每个片段克隆一份，裁出 [fromOffset, toOffset] 纵向切片。
         content.appendChild(buildFragmentWindow(el, slot.fragment));
       } else {
-        // capHeight 超高块：max-height + overflow:hidden 裁剪到 ≤ 一页（不缩放；独占一页）。
-        const lock = lockById.get(slot.id);
-        if (lock && lock > 0) {
-          el.style.maxHeight = `${lock}px`;
-          el.style.overflow = 'hidden';
-        }
+        el.classList.toggle('bc-page-height-locked', lockedIds.has(slot.id));
+        // capHeight 块由锁定 class + 页面内容高变量统一裁剪。
         content.appendChild(el); // 整块：搬移（从离屏 root 移走，DOM 节点唯一）
       }
     }

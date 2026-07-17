@@ -2,10 +2,15 @@ import {InputTransformer} from "./index";
 import {BlockNodeType, BlockSelectionScopeMetadata} from "../../block-std";
 import {BlockSelection} from "../selection";
 import {CompositionEventState} from "../../block-std/event/state/compositionState";
+import {BlockReadonlyError, BlockReadonlyOperation} from "../../doc";
 
 // `@DocEventRegister` validates `doc.event` and registers listeners in the
 // constructor, so every mock doc must expose a minimal event dispatcher stub.
-const eventStub = () => ({add() {}, bindHotkey() {}})
+const eventStub = () => ({
+  add() {},
+  bindHotkey() {},
+  status: {isComposing: false},
+})
 
 const setSelectionScope = <T extends Record<string, any>>(
   block: T,
@@ -725,6 +730,39 @@ describe('InputTransformer beforeInput range resolution', () => {
     } as any)
 
     expect(preventDefault).toHaveBeenCalled()
+  })
+
+  it('resets an orphaned composition session before normal input', () => {
+    const transformer = new InputTransformer({event: eventStub()} as any) as any
+    spyOnProperty(transformer.compositionSession, 'isIdle', 'get').and.returnValue(false)
+    const resetSession = spyOn(transformer.compositionSession, 'reset')
+    const endUndoGroup = spyOn(transformer, '_endCompositionUndoGroup')
+    const resetOrphaned = transformer['_resetOrphanedCompositionSession'] as
+      ((event: Pick<InputEvent, 'isComposing'>) => void) | undefined
+
+    expect(resetOrphaned).toBeDefined()
+    if (!resetOrphaned) return
+    resetOrphaned.call(transformer, {isComposing: false})
+
+    expect(resetSession).toHaveBeenCalled()
+    expect(endUndoGroup).toHaveBeenCalled()
+  })
+
+  it('keeps the composition session while either event layer is composing', () => {
+    const doc = {event: eventStub()}
+    const transformer = new InputTransformer(doc as any) as any
+    spyOnProperty(transformer.compositionSession, 'isIdle', 'get').and.returnValue(false)
+    const resetSession = spyOn(transformer.compositionSession, 'reset')
+    const resetOrphaned = transformer['_resetOrphanedCompositionSession'] as
+      ((event: Pick<InputEvent, 'isComposing'>) => void) | undefined
+
+    expect(resetOrphaned).toBeDefined()
+    if (!resetOrphaned) return
+    resetOrphaned.call(transformer, {isComposing: true})
+    doc.event.status.isComposing = true
+    resetOrphaned.call(transformer, {isComposing: false})
+
+    expect(resetSession).not.toHaveBeenCalled()
   })
 
   it('prevents composing beforeInput without an active session even when a model selection exists', () => {
@@ -1452,6 +1490,110 @@ describe('InputTransformer beforeInput range resolution', () => {
   })
 })
 
+describe('InputTransformer readonly preflight', () => {
+  it('aborts native IME composition when its write footprint is readonly', () => {
+    const readonlyError = new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Replace,
+      blockIds: ['locked'],
+      source: {kind: 'self', blockId: 'locked'},
+    })
+    const blur = jasmine.createSpy('blur')
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const doc = {
+      event: eventStub(),
+      readonlyManager: {
+        assertTextWritable: jasmine.createSpy('assertTextWritable').and.throwError(readonlyError),
+        assertRemovable: jasmine.createSpy('assertRemovable'),
+        assertInsertable: jasmine.createSpy('assertInsertable'),
+      },
+      selection: {
+        value: {
+          start: {type: 'text', blockId: 'locked', offset: 1},
+          end: {type: 'text', blockId: 'locked', offset: 1},
+        },
+        blur,
+      },
+    }
+    const transformer = new InputTransformer(doc as any) as any
+    spyOn(transformer, '_planSelectionEdit').and.returnValue({
+      kind: 'text-cursor',
+      blockId: 'locked',
+      offset: 1,
+    })
+
+    const result = transformer['_handleCompositionStart']({
+      preventDefault,
+      has: () => false,
+    } as any)
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(blur).toHaveBeenCalled()
+    expect(transformer.compositionSession.isIdle).toBeTrue()
+    expect(transformer.compositionSession.consumeAbort()).toBeTrue()
+  })
+
+  it('rejects the complete model footprint before mutation and preserves selection', () => {
+    const children: Record<string, string[]> = {
+      root: ['start', 'middle', 'end'],
+    }
+    const parents: Record<string, string | null> = {
+      root: null,
+      start: 'root',
+      middle: 'root',
+      end: 'root',
+    }
+    const readonlyError = new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Replace,
+      blockIds: ['middle'],
+      source: {kind: 'self', blockId: 'middle'},
+    })
+    const readonlyManager = {
+      assertTextWritable: jasmine.createSpy('assertTextWritable'),
+      assertRemovable: jasmine.createSpy('assertRemovable').and.throwError(readonlyError),
+      assertInsertable: jasmine.createSpy('assertInsertable'),
+    }
+    const blur = jasmine.createSpy('blur')
+    const transformer = new InputTransformer({
+      event: eventStub(),
+      readonlyManager,
+      model: {
+        exists: (id: string) => Object.prototype.hasOwnProperty.call(parents, id),
+        getParentId: (id: string) => parents[id],
+        getChildrenIds: (id: string) => children[id] ?? [],
+        getTextLength: () => 10,
+      },
+      selection: {blur},
+    } as any) as any
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const plan = {
+      kind: 'range',
+      start: {kind: 'text', blockId: 'start', from: 2, to: 10},
+      end: {kind: 'text', blockId: 'end', from: 0, to: 3},
+      insertAt: {blockId: 'start', offset: 2},
+      stabilizeAt: {blockId: 'start', offset: 2},
+      tailMode: 'merge',
+    }
+
+    expect(transformer['_tryAssertInputPlan'](
+      {preventDefault},
+      plan,
+      BlockReadonlyOperation.Replace,
+    )).toBeFalse()
+    expect(readonlyManager.assertTextWritable.calls.allArgs()).toEqual([
+      ['start', BlockReadonlyOperation.Replace, 'input'],
+      ['end', BlockReadonlyOperation.Replace, 'input'],
+    ])
+    expect(readonlyManager.assertRemovable).toHaveBeenCalledWith(
+      ['middle', 'end'],
+      BlockReadonlyOperation.Replace,
+      'input',
+    )
+    expect(preventDefault).toHaveBeenCalled()
+    expect(blur).not.toHaveBeenCalled()
+  })
+})
+
 describe('InputTransformer typed-over-selection format inheritance', () => {
   // Builds a beforeInput context for a non-composing `insertText`.
   const makeContext = (data: string) => {
@@ -1847,6 +1989,42 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
       .toBeLessThan((doc.selection.replay.calls.mostRecent() as any).invocationOrder)
     expect((doc.selection.replay.calls.mostRecent() as any).invocationOrder)
       .toBeLessThan((transact.calls.mostRecent() as any).invocationOrder)
+  })
+
+  it('does not delete an end block twice when a structural range already removed it', () => {
+    const {
+      doc,
+      transformer,
+      selection,
+      rightBlock,
+      rightDelete,
+      transact,
+    } = createCrossColumnTextRangeHarness([
+      {parent: 'columns-1', index: 1, length: 2},
+    ])
+    let currentTransaction = 0
+    let structuralTransaction = -1
+    transact.and.callFake((cb: () => void) => {
+      currentTransaction += 1
+      cb()
+    })
+    doc.crud.deleteBlocks.and.callFake(() => {
+      structuralTransaction = currentTransaction
+    })
+    doc.crud.deleteBlockById.and.callFake((blockId: string) => {
+      if (blockId === rightBlock.id && currentTransaction === structuralTransaction) {
+        throw new Error(`Block not found: ${blockId}`)
+      }
+    })
+    const plan = {
+      ...transformer['_planSelectionEdit'](selection),
+      tailMode: 'merge',
+    }
+
+    expect(() => transformer['_replacePlannedRange'](plan, 'Z', true)).not.toThrow()
+    expect(doc.crud.deleteBlockById).toHaveBeenCalledOnceWith(rightBlock.id)
+    expect(transact).toHaveBeenCalledTimes(2)
+    expect(rightDelete).not.toHaveBeenCalled()
   })
 
   it('starts cross-column text IME without merging the end block tail', () => {

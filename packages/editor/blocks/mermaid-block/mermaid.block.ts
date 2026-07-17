@@ -11,7 +11,6 @@ import { MermaidTypeListComponent } from "./widgets/mermaid-type-list.component"
 import { IMermaidType, MermaidViewMode } from "./types";
 import { debounce, nextTick } from "../../global";
 import { MermaidViewSwitchComponent } from "./widgets/mermaid-view-switch.component";
-import { AsyncPipe } from "@angular/common";
 import { isFormatOnlyDelta } from "../code-block/color-merge";
 
 // import {ScaleRatioPipe} from "./ratio.pipe";
@@ -22,7 +21,7 @@ import { isFormatOnlyDelta } from "../code-block/color-merge";
     <div class="head" (mousedown)="onFocus($event)">
       <div class="btn">Mermaid</div>
 
-      @if (!(doc.readonlySwitch$ | async)) {
+      @if (!isReadonly) {
         <div class="template-btn btn" (click)="onShowList($event, 'prefix')" [hidden]="props.mode === 'graph'">类型
           <i class="bc_icon bc_xiajaintou" style="font-size: .8em"></i>
         </div>
@@ -44,7 +43,7 @@ import { isFormatOnlyDelta } from "../code-block/color-merge";
         <!--        <span class="text">缩放： {{ graphScale | scaleRatio }}</span>-->
       </div>
 
-      <div class="switch-btn btn icon-btn" [hidden]="doc.readonlySwitch$ | async" (mousedown)="onSwitchView($event)">
+      <div class="switch-btn btn icon-btn" [hidden]="isReadonly" (mousedown)="onSwitchView($event)">
         <i class="bc_icon bc_qiehuan"></i>
       </div>
     </div>
@@ -60,10 +59,6 @@ import { isFormatOnlyDelta } from "../code-block/color-merge";
     </div>
   `,
   standalone: true,
-  imports: [
-    AsyncPipe,
-    // ScaleRatioPipe
-  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel> {
@@ -168,6 +163,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   }
 
   onSwitchView($event: MouseEvent) {
+    if (this.isReadonly) return
     $event.preventDefault()
     $event.stopPropagation()
 
@@ -186,6 +182,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
 
     componentRef.instance.itemClicked.pipe(takeUntil(close$)).subscribe(v => {
       close$.next(true)
+      if (this.isReadonly) return
       this.updateProps({
         mode: v
       })
@@ -194,6 +191,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   }
 
   onShowList($event: MouseEvent, prefix: string) {
+    if (this.isReadonly) return
     $event.preventDefault()
     $event.stopPropagation()
 
@@ -211,6 +209,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
 
     componentRef.instance.itemClicked.pipe(takeUntil(close$)).subscribe(v => {
       close$.next(true)
+      if (this.isReadonly) return
       switch (prefix) {
         case 'prefix':
           this.addTypePrefix(v.prefix);

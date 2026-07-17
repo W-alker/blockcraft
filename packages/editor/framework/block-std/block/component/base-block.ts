@@ -21,6 +21,10 @@ import {createBlockGapSpace, generateId} from "../../../utils";
 import * as Y from 'yjs'
 import { STR_LINE_BREAK } from "../../inline";
 import { EditorEventName } from "../../event";
+import {
+  BlockReadonlyOperation,
+  BlockReadonlySource,
+} from "../../../doc/block-readonly.types";
 
 @Component({
   selector: 'base-block',
@@ -96,6 +100,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   ngAfterViewInit() {
     this.hostElement.setAttribute('data-block-id', this.id)
     this.hostElement.setAttribute('data-node-type', this.nodeType)
+    this._applyBaseReadonlyViewState()
     // Gap spaces give the native Selection an editable text node to anchor on
     // when the block itself is treated as `selected`. Without them Safari refuses
     // to dispatch `beforeinput` (the Range start lands on a contenteditable=false
@@ -142,8 +147,17 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
    * @protected
    */
   protected setInitProps(props: Partial<Model['props']>) {
+    const changedKeys = Object.keys(props).filter(key => {
+      const value = props[key]
+      return value == null
+        ? Object.prototype.hasOwnProperty.call(this._native.props, key)
+        : this._native.props[key] != value
+    })
+    if (!changedKeys.length) return
+    this.doc.readonlyManager.assertPropsWritable(this, BlockReadonlyOperation.Props)
     this.doc.crud.transact(() => {
-      for (const [key, value] of Object.entries(props)) {
+      for (const key of changedKeys) {
+        const value = props[key]
         if (value == null) {
           this._yProps.delete(key)
           Reflect.deleteProperty(this._native.props, key)
@@ -170,6 +184,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     this.yBlock = this.doc.crud.getYBlock(this.id)!
     this._init()
     this.changeDetectorRef.reattach()
+    this.applyReadonlyViewState()
   }
 
   /**
@@ -213,6 +228,37 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   get nodeType() {
     return this._native.nodeType
+  }
+
+  get isReadonly(): boolean {
+    return this.doc.readonlyManager?.isReadonly(this) ?? !!this.doc.isReadonly
+  }
+
+  get isExplicitReadonly(): boolean {
+    return this.doc.readonlyManager?.isExplicitReadonly(this) ?? false
+  }
+
+  get readonlySource(): BlockReadonlySource {
+    return this.doc.readonlyManager?.resolve(this).source
+      ?? (this.doc.isReadonly ? {kind: 'document'} : null)
+  }
+
+  /** Apply the effective permission state without changing pointer selection. */
+  applyReadonlyViewState() {
+    this._applyBaseReadonlyViewState()
+    this.changeDetectorRef.markForCheck()
+  }
+
+  private _applyBaseReadonlyViewState() {
+    // Lightweight render/test hosts created before BlockReadonlyManager existed
+    // may not provide it. A real BlockCraftDoc always does.
+    const resolution = this.doc.readonlyManager?.resolve(this)
+    if (!resolution?.readonly) {
+      this.hostElement.removeAttribute('data-bc-readonly')
+      return
+    }
+    this.hostElement.dataset['bcReadonly'] =
+      resolution.source?.kind === 'self' ? 'self' : 'inherited'
   }
 
   get parentBlock(): BlockCraft.BlockComponent | null {
@@ -297,10 +343,13 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   updateProps(props: Partial<Model['props']>) {
-    if (this.doc.isReadonly) return
+    const changedKeys = Object.keys(props).filter(key =>
+      this._native.props[key] != props[key]
+    )
+    if (!changedKeys.length) return
+    this.doc.readonlyManager.assertPropsWritable(this, BlockReadonlyOperation.Props)
     this.doc.crud.transact(() => {
-      for (const key in props) {
-        if (this._native.props[key] == props[key]) continue
+      for (const key of changedKeys) {
         if (props[key] === null) {
           this._yProps.delete(key)
           continue

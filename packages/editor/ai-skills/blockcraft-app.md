@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-07-15
+> Last updated: 2026-07-17
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -438,10 +438,11 @@ See `blockcraft-theme.md` for design tokens and how to customize colors/typograp
 
 ## Step 7 — Readonly Mode
 
+### Whole document
+
 ```typescript
-// Control readonly via the BehaviorSubject
-this.doc.readonlySwitch$.next(true)   // entering readonly mode
-this.doc.readonlySwitch$.next(false)  // back to editable
+this.doc.toggleReadonly(true)         // entering readonly mode
+this.doc.toggleReadonly(false)        // back to editable
 
 // Read current value
 this.doc.isReadonly                   // boolean
@@ -450,7 +451,46 @@ this.doc.isReadonly                   // boolean
 this.doc.readonlySwitch$.subscribe(readonly => { /* hide UI, etc. */ })
 ```
 
-`updateProps` and most CRUD operations short-circuit when `isReadonly === true`. Some plugins also check explicitly — see the readonly template in `blockcraft-plugin.md`.
+Prefer `toggleReadonly()` to writing `readonlySwitch$` directly because it also
+keeps `DocConfig.readonly` aligned.
+
+### A block and its subtree
+
+```typescript
+doc.setBlockReadonly(blockId, true)
+
+const effective = doc.isBlockReadonly(blockId)
+const detail = doc.readonlyManager.resolve(blockId)
+// { readonly: true, source: { kind: 'self' | 'ancestor' | 'document', ... } }
+
+doc.setBlockReadonly(blockId, false)
+```
+
+The persistent flag is `meta.readonly === true`; Yjs synchronizes it like other
+block metadata. Descendants inherit their nearest ancestor lock. The Root block
+cannot be persistently locked—use whole-document mode instead.
+
+Block readonly is a strong client-side write guard:
+
+- text, formatting, props, insert, delete, replace, move, cut, paste and affected
+  undo/redo are rejected with `BlockReadonlyError`;
+- an unlocked ancestor that contains a locked descendant cannot be deleted or
+  moved;
+- selection, copy, links, media preview and downloads remain available;
+- clipboard snapshots strip readonly metadata, so pasted copies are editable;
+- an undo/redo item blocked by the current lock stays on its stack and can run
+  after the block is unlocked.
+
+Subscribe to `doc.readonlyManager.stateChange$` for UI that depends on effective
+block permission. Standard `BlockCraftDoc` instances automatically forward
+non-`api` violations to `DocMessageService.warn` as "内容已锁定，无法修改";
+repeated feedback is coalesced to at most once per second. `violation$` remains
+available for analytics or custom feedback. Programmatic `api` writes do not
+show messages, while data-boundary methods still throw the typed error.
+
+This is a trusted-client collaboration policy, not access control. A malicious
+or outdated client can still write raw Yjs updates, so security-sensitive hosts
+must enforce authorization when accepting/persisting updates.
 
 ## Step 8 — Listening to Document Changes
 
@@ -519,6 +559,8 @@ ngOnDestroy() {
 
 ```typescript
 doc.crud                   // DocCRUD — low-level Yjs mutations (use sparingly)
+doc.model                  // BlockModelGraph — complete reachable Yjs tree queries
+doc.readonlyManager        // BlockReadonlyManager — inherited block permission
 doc.vm                     // DocVM — block ↔ Angular component bridge
 doc.event                  // UIEventDispatcher
 doc.selection              // SelectionManager
@@ -542,6 +584,9 @@ doc.yBlockMap              // Y.Map of all blocks (key: id)
 
 doc.chain()                // → DocChain (fluent transactions)
 doc.toggleTheme(name)
+doc.toggleReadonly(readonly)                 // whole-document mode
+doc.setBlockReadonly(blockOrId, readonly)    // persistent non-root block lock
+doc.isBlockReadonly(blockOrId)               // effective readonly state
 doc.afterInit(fn)          // run fn once root is ready
 ```
 

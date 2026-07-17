@@ -81,12 +81,15 @@ export class MentionPlugin extends DocPlugin {
     const block = startBlock
     const atIndex = startOffset
 
+    if (this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly) {
+      e.preventDefault()
+      return true
+    }
+
     this._isOpen = true
 
     // Insert trigger char via controlled rendering
-    this.doc.crud.transact(() => {
-      block.yText.insert(atIndex, this._trigger)
-    })
+    block.insertText(atIndex, this._trigger)
 
     this.doc.selection.setSelection({
       blockId: block.id,

@@ -33,6 +33,10 @@ export class TextMarkerPlugin extends DocPlugin {
     super();
   }
 
+  private _isSelectionReadonly(selection: BlockCraft.Selection) {
+    return this.doc.readonlyManager?.isSelectionReadonly(selection) ?? this.doc.isReadonly
+  }
+
   init() {
     this.utils = new TextToolbarUtils(this.doc)
 
@@ -50,11 +54,22 @@ export class TextMarkerPlugin extends DocPlugin {
         this.toolbarOvr && this.closeToolbar()
       })
     )
+
+    const stateChange$ = this.doc.readonlyManager?.stateChange$
+    if (stateChange$) {
+      this._sub.add(stateChange$.subscribe(() => {
+        const selection = this.doc.selection.value
+        if (selection && this._isSelectionReadonly(selection) && this.toolbarOvr) {
+          this.closeToolbar()
+        }
+      }))
+    }
   }
 
   onSelectEnd = () => {
     const sel = this.doc.selection.value!
     if (this.doc.isReadonly || !isFloatTextToolbarSelection(sel) || !sel.isInSameBlock || !isSelectionAlive(sel as any, this.doc)
+      || this._isSelectionReadonly(sel)
       // || this.doc.event.status.isSelecting
     ) {
       if (this.toolbarOvr) this.closeToolbar()
@@ -67,6 +82,7 @@ export class TextMarkerPlugin extends DocPlugin {
   openToolbar() {
     const sel = this.doc.selection.value
     if (!isFloatTextToolbarSelection(sel) || !sel.isInSameBlock || !isSelectionAlive(sel as any, this.doc)) return
+    if (this._isSelectionReadonly(sel)) return
 
     const position = calcFloatToolbarPosition(this.doc, sel)
     if (!position) return

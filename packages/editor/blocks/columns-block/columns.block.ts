@@ -1,7 +1,6 @@
 import { ChangeDetectionStrategy, Component } from "@angular/core";
-import { BaseBlockComponent } from "../../framework";
+import { BaseBlockComponent, ORIGIN_SYSTEM_REPAIR } from "../../framework";
 import { ColumnsBlockModel, ColumnBlockSchema } from "./index";
-import { AsyncPipe } from "@angular/common";
 import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 
 /**
@@ -22,7 +21,7 @@ import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
       </div>
 
       <!-- 列之间的可拖拽分割线 -->
-      @if (!(doc.readonlySwitch$ | async) && dividerArray.length > 0) {
+      @if (!isReadonly && dividerArray.length > 0) {
         @for (i of dividerArray; track i) {
           <div class="column-divider"
                [attr.data-divider-index]="i"
@@ -33,7 +32,7 @@ import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
           </div>
         }
       }
-      @if(dividerArray.length < 7) {
+      @if(!isReadonly && dividerArray.length < 7) {
         <div class="column-divider">
           <div class="add-point" nz-tooltip="添加列" (mousedown)="addColumn($event)"></div>
         </div>
@@ -42,9 +41,15 @@ import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AsyncPipe, NzTooltipDirective]
+  imports: [NzTooltipDirective]
 })
 export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel> {
+
+  override applyReadonlyViewState() {
+    super.applyReadonlyViewState()
+    this.applyColumnWidths()
+    this.changeDetectorRef.markForCheck()
+  }
 
   /**
    * 生成分割线数组（列数-1）
@@ -82,10 +87,14 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
     if (widths.length === 0 || widths.length !== actualColumnCount) {
       const avgWidth = parseFloat((100 / actualColumnCount).toFixed(2));
       widths = Array(actualColumnCount).fill(avgWidth);
-      this.updateProps({
-        columnCount: actualColumnCount,
-        columnWidths: widths
-      });
+      if (!this.doc.isReadonly) {
+        this.doc.crud.transact(() => {
+          this.updateProps({
+            columnCount: actualColumnCount,
+            columnWidths: widths
+          })
+        }, ORIGIN_SYSTEM_REPAIR)
+      }
     }
 
     // 设置 CSS 变量
@@ -102,6 +111,7 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
    */
   addColumn(event: MouseEvent, index = this.childrenLength) {
     event.preventDefault();
+    if (this.isReadonly) return;
     if (this.childrenLength >= 8) {
       this.doc.messageService.warn('最多支持8列');
       return
@@ -122,6 +132,7 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
    */
   removeColumn(event: MouseEvent, index = this.childrenLength - 1) {
     event.preventDefault();
+    if (this.isReadonly) return;
     if (index <= 2 || index >= this.childrenLength) return;
 
     // 获取最后一个column-block并删除
@@ -137,6 +148,7 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
   startResize(event: MouseEvent, dividerIndex: number) {
     event.preventDefault();
     event.stopPropagation();
+    if (this.isReadonly) return;
 
     const startX = event.clientX;
     const wrapper = this.hostElement.querySelector('.columns-wrapper') as HTMLElement;
@@ -176,6 +188,7 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
 
         // 保存到数据模型
         this.doc.ngZone.run(() => {
+          if (this.isReadonly) return
           const newWidths = [...widths];
 
           // 从 CSS 变量读取最终宽度（保留两位小数）

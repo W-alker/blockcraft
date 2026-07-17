@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-07-13
+> Last updated: 2026-07-16
 
 ## Block Types
 
@@ -112,7 +112,7 @@ import { MyBlockModel } from "./index";
 })
 export class MyBlockComponent extends BaseBlockComponent<MyBlockModel> {
   onClickPlaceholder() {
-    if (this.doc.isReadonly) return;
+    if (this.isReadonly) return;
     // Handle interaction...
     this.updateProps({ src: 'new-value' });
   }
@@ -351,16 +351,21 @@ this.flavour            // 'paragraph' | 'image' | ...
 this.nodeType           // BlockNodeType.editable | void | block | root
 this.doc                // BlockCraftDoc
 
-// ── Data (proxied through Yjs) ──
-this.props              // Typed props object — read & write through proxyMap
-this.meta               // Metadata object
+// ── Data (proxied through Yjs; treat as readonly from extensions) ──
+this.props              // Typed current props
+this.meta               // Current metadata
 this.yBlock             // Raw Y.Map<...>
 this._native            // Underlying NativeBlockModel (protected)
 
 // ── Mutations ──
 this.updateProps({ key: value })       // Creates undo history; respects readonly
-this.setInitProps({ key: value })      // No undo history; for setup
+this.setInitProps({ key: value })      // No undo history; still respects readonly
 this.updateMeta({ key: value })        // Mutates meta (ORIGIN_SKIP_SYNC, no broadcast)
+
+// ── Effective readonly ──
+this.isReadonly                         // self, ancestor, or document lock
+this.isExplicitReadonly                 // only this block's meta.readonly
+this.readonlySource                     // document | self | ancestor | null
 
 // ── Tree navigation ──
 this.parentId                          // string | null
@@ -398,6 +403,17 @@ this.detach()                          // Detach from change detection, fires on
 this.reattach()                        // Re-init from current Yjs state
 ```
 
+Do not assign `this.props.foo = ...`, mutate `this.meta`, or write raw
+`Y.Text`/`Y.Map` from a custom Block/Plugin. Use `updateProps()`, guarded inline
+methods, `DocChain`, or `DocCRUD`; these are the enforcement boundary for block
+readonly. To control the persistent lock itself, call
+`doc.setBlockReadonly(blockOrId, boolean)` rather than `updateMeta()`.
+
+Block readonly is inherited. A locked container protects all descendants, and
+an unlocked ancestor containing a locked descendant cannot be deleted or moved.
+Readonly blocks remain selectable/copyable and may keep read-only interactions
+such as links, previews and downloads. Root cannot be persistently locked.
+
 > **Gap-space behavior**: Void blocks (`nodeType === void`) automatically prepend and append a zero-width gap space element in `ngAfterViewInit`. This makes it possible for the cursor to land *before* and *after* the block. Container blocks (`block` nodeType) do not currently get gap spaces but the framework reserves the right to add them — see `createBlockGapSpace()` in `framework/utils/`.
 
 ## EditableBlockComponent Additional API
@@ -411,11 +427,11 @@ this.textLength                                  // number (yText.length)
 this.textDeltas()                                // DeltaInsert[] (yText.toDelta())
 
 // ── Inline mutations (write directly to yText) ──
-this.insertText(index, text, attrs?)
-this.deleteText(index, length?)                  // length defaults to textLength - index
-this.replaceText(index, length, text?, attrs?)   // applyDelta-based
-this.formatText(index, length, attrs)
-this.applyDeltaOperations(delta)                 // raw applyDelta passthrough
+this.insertText(index, text, attrs?)              // throws on effective readonly
+this.deleteText(index, length?)                   // throws on effective readonly
+this.replaceText(index, length, text?, attrs?)    // throws on effective readonly
+this.formatText(index, length, attrs)             // throws on effective readonly
+this.applyDeltaOperations(delta)                  // throws on effective readonly
 
 // ── Render ──
 this.rerender()                                  // Force runtime.render(textDeltas())

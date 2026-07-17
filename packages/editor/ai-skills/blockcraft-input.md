@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-07-14
+> Last updated: 2026-07-16
 
 ## Architecture Overview
 
@@ -62,6 +62,40 @@ Composition has the same rule:
 - A later `compositionEnd` without an accepted active session is ignored after `preventDefault()`.
 - `beforeInput` events with `isComposing === true` are prevented when no active `CompositionSession` owns them.
 
+## Block Readonly Write Footprint
+
+Before an input plan mutates Yjs, `readonly-write-footprint.ts` lowers the
+`SelectionEditPlan` to the blocks that the operation will write, insert into,
+remove, or structurally replace. `InputTransformer` asks
+`BlockReadonlyManager` to validate that footprint before the executor runs.
+This covers collapsed text, cross-block ranges, gap/boundary insertion,
+whole-block replacement, table-cell rectangles and scope-policy operations
+without reading DOM or layout.
+
+If any target is effectively readonly, or a removal/move target contains a
+locked descendant, input fails closed: the owned browser event is prevented,
+the model is unchanged, and a typed `BlockReadonlyError`/`violation$` signal is
+produced at the guard boundary. Selection itself remains legal so users can
+drag-select and copy protected content.
+
+Composition follows the same preflight:
+
+- `compositionStart` never materializes a paragraph or opens a session inside a
+  protected footprint;
+- when that preflight is rejected, Input clears the native/model selection as
+  part of aborting the session. Calling `preventDefault()` alone is insufficient
+  on some IME/browser combinations because native composition may otherwise
+  continue mutating the projected DOM even though Yjs commit is blocked;
+- an active session rechecks permission before `compositionEnd` commits, so a
+  local or remote lock arriving during IME cannot leak text into Yjs;
+- aborting for readonly closes the capture group without consuming unrelated
+  undo history.
+
+Native input islands bypass `InputTransformer`, so their owning Block/Plugin
+must hide/disable editing UI and recheck `block.isReadonly` immediately before
+every synchronous or awaited `updateProps()` commit. Read-only actions such as
+preview/download may remain enabled.
+
 ## Native Input Islands
 
 `InputTransformer` does **not** own native form controls embedded inside `void` / `block` nodes.
@@ -78,6 +112,7 @@ Composition has the same rule:
 | `framework/modules/input/index.ts` | `InputTransformer` — main input handler |
 | `framework/modules/input/selection-edit-plan.ts` | Pure model selection → edit intent planner |
 | `framework/modules/input/composition-session.ts` | `CompositionSession` — IME state machine |
+| `framework/modules/input/readonly-write-footprint.ts` | Pure plan → guarded block operation mapping |
 | `framework/block-std/event/control/` | Event controls (keyboard, mouse, composition) |
 
 ## Input Types Handled

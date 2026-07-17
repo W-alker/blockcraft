@@ -1,7 +1,6 @@
 import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from '@angular/core';
 import {BaseBlockComponent, DOC_FILE_SERVICE_TOKEN, DocFileService} from '../../framework';
 import {ImageBlockModel} from './index';
-import {AsyncPipe} from '@angular/common';
 import {ResizeContainerComponent} from '../../components/block-resizer';
 
 @Component({
@@ -10,7 +9,7 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
     <figure class="image-block__container" [attr.data-align]="props.align">
       <div class="img-wrapper">
         @if (!props.src) {
-          <div class="upload-hint" contenteditable="false" (click)="inputLocalFile()">
+          <div class="upload-hint" contenteditable="false" (click)="!isReadonly && inputLocalFile()">
             <i class="bc_icon bc_tianjiatupian"></i>
             <span>点击插入图片</span>
           </div>
@@ -26,7 +25,7 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
                contenteditable="false"
                draggable="false"
                #imgEle/>
-          @if (!(doc.readonlySwitch$ | async)) {
+          @if (!isReadonly) {
             <block-resizer [container]="imgEle"
                            [maxWidthContainer]="hostElement"
                            (widthChange)="onResized($event)"/>
@@ -46,7 +45,7 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AsyncPipe, ResizeContainerComponent],
+  imports: [ResizeContainerComponent],
   host: {
     '[attr.data-align]': 'props.align'
   },
@@ -177,14 +176,17 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     if (this.props.src && !this.props.width && this.imgEle) {
       const img = this.imgEle.nativeElement;
       img.addEventListener('load', () => {
+        if (this._isGone() || this.isReadonly) return;
         this.setInitProps({width: img.naturalWidth, height: img.naturalHeight});
       }, {once: true});
     }
   }
 
   inputLocalFile = async () => {
+    if (this.isReadonly) return;
     try {
       const files = await this.fileService.inputFiles('image/*');
+      if (this._isGone() || this.isReadonly) return;
       if (!files || files.length === 0) return;
       const file = files[0];
 
@@ -213,13 +215,13 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
 
     this.fileService.uploadImg(file, (p) => {
       // 上传期间块可能被本地/远端删除：detectChanges on destroyed view 会抛错
-      if (this._isGone()) return;
+      if (this._isGone() || this.isReadonly) return;
       this.uploadProgress = p;
       this.changeDetectorRef.detectChanges();
     }).then(resultUrl => {
       this.fileService.removeObjectURL(url);
       // 块已删：跳过 setInitProps（否则写入 detached Y.Map，undo 时复活孤儿块）
-      if (this._isGone()) return;
+      if (this._isGone() || this.isReadonly) return;
       this.setInitProps({src: resultUrl});
       this.uploadProgress = 100;
       this._previewUri = '';
@@ -227,7 +229,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     }).catch(() => {
       this.fileService.removeObjectURL(url);
       this.doc.messageService.warn('图片上传失败');
-      if (this._isGone()) return;
+      if (this._isGone() || this.isReadonly) return;
       this.setInitProps({src: ''});
       this.uploadProgress = 100;
       this._previewUri = '';

@@ -22,6 +22,11 @@ body[blockcraft-theme="dark"] {
   --bc-bg-gray2: #465767;
   --bc-bg-muted: #1e2731;
 
+  // Block 级只读状态
+  --bc-readonly-border-color: #526476;
+  --bc-readonly-icon-color: #91a5b8;
+  --bc-readonly-bg: rgba(127, 147, 166, 0.08);
+
   // 状态颜色
   --bc-warning-color: #f5a623;
   --bc-error-color: #ff6b6b;

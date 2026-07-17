@@ -441,6 +441,7 @@ describe('TableBlockBinding paste helpers', () => {
 describe('TableBlockBinding delete', () => {
   const createBinding = (tableBlock: any, options: {
     readonly?: boolean
+    blockReadonly?: boolean
     selection?: any
   } = {}) => {
     const binding = new TableBlockBinding()
@@ -450,6 +451,10 @@ describe('TableBlockBinding delete', () => {
         id === tableBlock.id ? tableBlock : null),
       crud: {
         transact: jasmine.createSpy('transact').and.callFake((callback: () => void) => callback()),
+      },
+      readonlyManager: {
+        isReadonly: jasmine.createSpy('isReadonly').and.returnValue(!!options.blockReadonly),
+        containsReadonly: jasmine.createSpy('containsReadonly').and.returnValue(false),
       },
     }
     ;(binding as any).doc = doc
@@ -506,6 +511,35 @@ describe('TableBlockBinding delete', () => {
     expect(tableBlock.getSelectedCoordinates).not.toHaveBeenCalled()
     expect(tableBlock.getCellsMatrixByCoordinates).toHaveBeenCalledWith([0, 0], [1, 1])
     cells.forEach(cell => expect(cell.clearContent).toHaveBeenCalled())
+  })
+
+  it('consumes Delete without clearing cells when the table is readonly', () => {
+    const cell = {id: 'cell-1', clearContent: jasmine.createSpy('clearContent')}
+    const tableBlock = {
+      id: 'table-1',
+      flavour: 'table',
+      getExplicitSelectedCoordinates: jasmine.createSpy('getExplicitSelectedCoordinates').and.returnValue({
+        start: [0, 0],
+        end: [0, 0],
+      }),
+      getSelectedCoordinates: jasmine.createSpy('getSelectedCoordinates'),
+      confirmSelection: jasmine.createSpy('confirmSelection').and.returnValue({start: [0, 0], end: [0, 0]}),
+      getCellsMatrixByCoordinates: jasmine.createSpy('getCellsMatrixByCoordinates').and.returnValue([[cell]]),
+    }
+    const {binding, context, preventDefault} = createBinding(tableBlock, {
+      blockReadonly: true,
+      selection: {
+        isAllSelected: false,
+        firstBlock: blockInTable('paragraph'),
+      },
+    })
+
+    const result = binding.handleDelete(context as any)
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(cell.clearContent).not.toHaveBeenCalled()
+    expect(tableBlock.getCellsMatrixByCoordinates).not.toHaveBeenCalled()
   })
 
   it('falls back to a single selected table cell when there is no explicit rectangle', () => {

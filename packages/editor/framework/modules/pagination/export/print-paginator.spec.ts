@@ -44,6 +44,50 @@ const CONTENT_HEIGHT = 200;
 const LONG_TEXT = Array.from({length: 400}, (_, i) => `word${i}`).join(" ");
 
 describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
+  it('uses the page content-height variable instead of per-block inline caps', async () => {
+    const snapshot = root([{
+      id: 'code-1',
+      flavour: 'code',
+      nodeType: BlockNodeType.editable,
+      meta: {},
+      props: {depth: 0},
+      children: [{insert: 'const value = 1;'}],
+    }]);
+    const items = [{
+      id: 'code-1',
+      height: CONTENT_HEIGHT,
+      breakable: false,
+      keepWithNext: false,
+      lockHeight: CONTENT_HEIGHT,
+    }];
+    const layout = createStablePaginationLayout(10, SMALL_PAGE, resolveScreenGeometry(SMALL_PAGE), items, {
+      pages: [{index: 0, usedHeight: CONTENT_HEIGHT, slots: [{id: 'code-1'}]}],
+      byBlock: new Map([['code-1', {pageIndex: 0}]]),
+    });
+    const offscreen = document.createElement('div');
+    const code = document.createElement('div');
+    code.dataset['blockId'] = 'code-1';
+    code.className = 'code-block';
+    offscreen.appendChild(code);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+      layout,
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      const content = pages.pages[0]!.querySelector<HTMLElement>('.bc-print-content')!;
+      const renderedCode = content.querySelector<HTMLElement>('[data-block-id="code-1"]')!;
+
+      expect(content.style.getPropertyValue('--bc-page-content-height')).toBe('200px');
+      expect(renderedCode.classList.contains('bc-page-height-locked')).toBeTrue();
+      expect(renderedCode.style.maxHeight).toBe('');
+      expect(renderedCode.style.overflow).toBe('');
+    } finally {
+      pages.dispose();
+    }
+  });
+
   it('uses the captured page result instead of paginating the readonly DOM again', async () => {
     const snapshot = root([paragraph('p1', 'first'), paragraph('p2', 'second')]);
     const config: PaginationConfig = {

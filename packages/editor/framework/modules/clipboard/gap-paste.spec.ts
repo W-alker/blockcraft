@@ -2,6 +2,7 @@ import {ClipboardManager} from "./index";
 import {ClipboardDataType} from "./types";
 import {BlockNodeType, DeltaInsert, IBlockSnapshot} from "../../block-std";
 import * as Y from "yjs";
+import {BlockReadonlyError, BlockReadonlyOperation} from "../../doc";
 
 /**
  * P6: pasting at a gap cursor (collapsed selection beside a void/container block)
@@ -92,6 +93,9 @@ describe('ClipboardManager – paste at gap', () => {
       logger: {warn: jasmine.createSpy('warn')},
       root: {hostElement: rootHost},
       yDoc,
+      readonlyManager: {
+        assertInsertable: jasmine.createSpy('assertInsertable'),
+      },
       isEditable: (block: { nodeType: BlockNodeType }) => block.nodeType === BlockNodeType.editable,
       schemas: {
         createSnapshot: (flavour: string, args: unknown[]) =>
@@ -173,6 +177,26 @@ describe('ClipboardManager – paste at gap', () => {
       jasmine.objectContaining({nodeType: BlockNodeType.editable}), 5,
     );
     expect(doc.selection.recalculate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a gap paste when the target parent becomes readonly', async () => {
+    const {manager, doc, calls} = createManager();
+    const selection = gapSelection('divider-1', 'after');
+    doc.readonlyManager.assertInsertable.and.throwError(new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Paste,
+      blockIds: ['root'],
+      source: {kind: 'self', blockId: 'root'},
+    }));
+
+    const result = await (manager as any)._applyGapPaste(selection, textState('blocked'));
+
+    expect(result).toBeNull();
+    expect(calls).toEqual([]);
+    expect(doc.readonlyManager.assertInsertable).toHaveBeenCalledWith(
+      'root',
+      BlockReadonlyOperation.Paste,
+      'clipboard',
+    );
   });
 
   it('does not restore the caret when the inserted gap-paste block was removed before nextTick', async () => {

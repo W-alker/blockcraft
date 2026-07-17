@@ -1,0 +1,117 @@
+/* ───────── pagination（分页展示模式，默认不生效，由 controller 加类启用）───────── */
+.editor-container.bc-paginated-scroll {
+  position: relative;
+  /* 用 flex 居中正文列，而不是依赖 root 的 margin:auto——后者会被后载入的主题规则
+     把 margin-left 改成 0 而失效（中线偏移）。align-items:center 由容器侧居中，
+     不与 root 的 margin 特异度打架，且窄视口时正文与页框一起对称溢出、中线始终一致。
+     背景层是 absolute，不参与 flex 布局，仍按 padding box 定位。 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* !important 压过 editor 组件内 scoped 的 .editor-container 默认 padding/background。
+     横向 padding 必须为 0：页框背景层 absolute 定位于 padding box、会忽略 padding，
+     若容器留横向 padding，正文列与全宽居中的页框中线就会错开。 */
+  padding: 24px 0 !important;
+  background: var(--bc-pagination-backdrop-bg) !important;
+}
+
+.bc-pagination-backdrop {
+  position: absolute;
+  top: 24px;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.bc-page-sheet {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bc-page-sheet-bg);
+  box-shadow: var(--bc-page-sheet-shadow);
+  border-radius: 2px;
+}
+
+.bc-page-header,
+.bc-page-footer {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--bc-page-chrome-fs);
+  line-height: 1.2;
+  color: var(--bc-page-chrome-color);
+  pointer-events: none;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.bc-page-chrome-left { text-align: left; }
+.bc-page-chrome-center { text-align: center; }
+.bc-page-chrome-right { text-align: right; }
+
+[data-blockcraft-root="true"].bc-paginated {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  width: var(--bc-page-width);
+  flex: 0 0 auto;
+  margin: 0;
+  padding: var(--bc-page-margin-top) var(--bc-page-margin-right) var(--bc-page-margin-bottom) var(--bc-page-margin-left);
+  background: transparent;
+
+  > [data-block-id] {
+    margin-top: 0;
+  }
+}
+
+/* live 与 print 共用同一块约束。只裁剪测量结果确认超页的顶层块。 */
+[data-blockcraft-root="true"].bc-paginated,
+[data-blockcraft-root="true"].bc-print-content {
+  > .bc-page-height-locked {
+    max-height: var(--bc-page-content-height);
+    overflow: hidden;
+
+    > [data-block-zero-space="true"][data-block-gap-side="before"] {
+      left: 1px;
+    }
+
+    > [data-block-zero-space="true"][data-block-gap-side="after"] {
+      right: 1px;
+    }
+  }
+
+  /* 超页图片/视频继续用宿主裁剪，以保留未裁剪 scrollHeight 给分页测量；
+     横向抓手收进裁剪边界，避免与图片内容一起被隐藏。 */
+  > .bc-page-height-locked.image-block,
+  > .bc-page-height-locked.video-block {
+    .block-resizer__bar--left {
+      left: 0;
+    }
+
+    .block-resizer__bar--right {
+      right: 0;
+    }
+  }
+
+  /* 代码块宿主不能裁剪绝对定位在底边外侧的 resize bar。
+     由 flex 收缩正文包装层，超高代码在内部滚动，标题与抓手保持可见。 */
+  > .bc-page-height-locked.code-block {
+    display: flex;
+    flex-direction: column;
+    max-height: var(--bc-page-content-height);
+    overflow: visible;
+
+    > .code-block__head {
+      flex: 0 0 auto;
+    }
+
+    > .edit-container-wrapper {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+    }
+  }
+}

@@ -10,3 +10,9 @@
 export const ORIGIN_SKIP_SYNC = Symbol('skip_sync')
 // This origin will not be recorded in undo/redo stack
 export const ORIGIN_NO_RECORD = Symbol('no_record')
+
+// Block readonly state is synchronized but excluded from normal content undo.
+export const ORIGIN_BLOCK_READONLY_CONTROL = Symbol('block_readonly_control')
+
+// Internal consistency repair may bypass user-facing readonly guards.
+export const ORIGIN_SYSTEM_REPAIR = Symbol('system_repair')

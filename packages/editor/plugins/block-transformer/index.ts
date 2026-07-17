@@ -38,6 +38,10 @@ export class BlockTransformerPlugin extends DocPlugin {
   private pendingInputTriggerSeq = 0;
   private destroyed = false;
 
+  private isReadonly(block: BlockCraft.BlockComponent) {
+    return this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly;
+  }
+
   constructor(
     readonly transformList: IBlockTransformConfig[] = blockTransforms,
   ) {
@@ -83,7 +87,8 @@ export class BlockTransformerPlugin extends DocPlugin {
           const block = selection.firstBlock as EditableBlockComponent<any>;
           if (
             block.flavour === item.flavour ||
-            !this.isBlockAlive(block)
+            !this.isBlockAlive(block) ||
+            this.isReadonly(block)
           )
             return;
           evt.preventDefault();
@@ -124,7 +129,8 @@ export class BlockTransformerPlugin extends DocPlugin {
     const block = selection.firstBlock as EditableBlockComponent<any>;
     if (
       !ALLOWED_HEADING_FLAVOURS.includes(block.flavour) ||
-      !this.isBlockAlive(block)
+      !this.isBlockAlive(block) ||
+      this.isReadonly(block)
     )
       return;
     // shortKey + 0~4 collide with native browser shortcuts (Cmd/Ctrl+0 resets
@@ -162,6 +168,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     const block = selection.firstBlock as any;
     if (!block || block.flavour !== "paragraph") return;
     if (!this.isBlockAlive(block)) return false;
+    if (this.isReadonly(block)) return false;
     const blockText = block.textContent();
     const prefixes = [
       blockText.slice(
@@ -237,7 +244,7 @@ export class BlockTransformerPlugin extends DocPlugin {
   private closeMenu$ = new Subject();
 
   openContextMenu(block: EditableBlockComponent) {
-    if (this.destroyed || !this.isBlockAlive(block)) return;
+    if (this.destroyed || !this.isBlockAlive(block) || this.isReadonly(block)) return;
     // 关掉可能还存在的旧菜单。textObserver 关菜单是 debounce 300ms 的，
     // 用户在 300ms 内"删除字符 → 重新输入 / 触发"会让旧菜单还活着、
     // 新菜单又叠上来。旧 menu 的 document keydown listener 先注册先派发，

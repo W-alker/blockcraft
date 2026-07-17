@@ -163,6 +163,9 @@ describe("float text toolbar selection guard", () => {
         add: jasmine.createSpy("add").and.returnValue(removeEvent),
       },
       subscribeReadonlyChange: jasmine.createSpy("subscribeReadonlyChange").and.returnValue(readonlySub),
+      readonlyManager: {
+        isSelectionReadonly: jasmine.createSpy("isSelectionReadonly").and.returnValue(false),
+      },
       queryBlocksBetween: jasmine.createSpy("queryBlocksBetween")
         .and.callFake(() => [selectionValue.current.firstBlock.id]),
       getBlockById: jasmine.createSpy("getBlockById")
@@ -231,6 +234,22 @@ describe("float text toolbar selection guard", () => {
 
     expect(doc.overlayService.createConnectedOverlay).toHaveBeenCalled();
     expect(getSelectionRects).toHaveBeenCalled();
+    plugin.destroy();
+  }));
+
+  it("does not open rich text toolbar for a readonly text selection", fakeAsync(() => {
+    const selectionValue = {current: makeTextSelection()};
+    const {doc, selection$, getSelectionRects} = makeDoc(selectionValue);
+    doc.readonlyManager.isSelectionReadonly.and.returnValue(true);
+    const plugin = new FloatTextToolbarPlugin();
+    (plugin as any).doc = doc;
+
+    plugin.init();
+    selection$.next(selectionValue.current);
+    tick(351);
+
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    expect(getSelectionRects).not.toHaveBeenCalled();
     plugin.destroy();
   }));
 

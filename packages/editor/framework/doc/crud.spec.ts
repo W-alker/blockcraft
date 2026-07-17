@@ -5,6 +5,9 @@ import { BlockNodeType, IBlockSnapshot, NativeBlockModel, YBlock, native2YBlock 
 import {BlockSelection} from '../modules/selection/blockSelection'
 import {lazyBoundaryPoint, lazyPoint} from '../modules/selection/normalize'
 import { DocCRUD } from "./crud"
+import {RemoteSelectionReconciler} from '../modules/selection/remote-selection-reconciler'
+import {DOMSelectionSurfaceAdapter} from '../modules/selection/surface-adapter'
+import {BlockReadonlyError, BlockReadonlyOperation} from "./block-readonly.types"
 
 type MockBlockRef = {
   instance: MockBlockInstance
@@ -176,9 +179,23 @@ const createDocHarness = () => {
 
   const destroyCallbacks: Array<() => void> = []
 
+  const readonlyManager = {
+    assertInsertable: jasmine.createSpy('assertInsertable'),
+    assertRemovable: jasmine.createSpy('assertRemovable'),
+    assertMovable: jasmine.createSpy('assertMovable'),
+  }
+
   const doc = {
     yDoc,
     yBlockMap,
+    readonlyManager,
+    model: {
+      exists: (id: string) => yBlockMap.has(id),
+      getChildrenIds: (id: string) => {
+        const children = yBlockMap.get(id)?.get('children')
+        return children instanceof Y.Array ? children.toArray() : []
+      },
+    },
     vm,
     selection,
     root: rootRef.instance,
@@ -230,8 +247,15 @@ const createDocHarness = () => {
   store.forEach(ref => ref.instance.doc = doc)
 
   const crud = new DocCRUD(doc as unknown as BlockCraft.Doc)
+  const remoteSelectionReconciler = new RemoteSelectionReconciler(
+    doc as unknown as BlockCraft.Doc,
+    crud.remoteSyncLifecycle$,
+    selectionChange$,
+    new DOMSelectionSurfaceAdapter(doc as unknown as BlockCraft.Doc),
+  )
 
   const destroy = () => {
+    remoteSelectionReconciler.destroy()
     doc.isInitialized = false
     destroyCallbacks.forEach(fn => fn())
     selectionChange$.complete()
@@ -283,6 +307,28 @@ const createBoundarySelection = (doc: any, blockId: string, index: number) => {
 }
 
 describe('DocCRUD', () => {
+  it('emits meta changes by block id when no component is mounted', () => {
+    const {crud, doc} = createDocHarness()
+    const yBlock = native2YBlock({
+      id: 'offscreen',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      props: {depth: 0},
+      meta: {},
+      children: [],
+    } as unknown as NativeBlockModel)
+    doc.yBlockMap.set('offscreen', yBlock)
+    let received: any = null
+    crud.onMetaUpdate$.subscribe(event => received = event)
+
+    ;(yBlock.get('meta') as Y.Map<unknown>).set('readonly', true)
+
+    expect(received?.transactions).toEqual([jasmine.objectContaining({
+      blockId: 'offscreen',
+    })])
+    expect(doc.logger.warn).not.toHaveBeenCalled()
+  })
+
   it('emits children updates synchronously for insert operations', () => {
     const {crud, rootRef} = createDocHarness()
     const snapshot = createEditableSnapshot('paragraph-1')
@@ -301,6 +347,76 @@ describe('DocCRUD', () => {
     expect(inserted.map(block => block.id)).toEqual(['paragraph-1'])
     expect(insertedIds).toEqual(['paragraph-1'])
     expect(rootRef.instance.childrenIds).toEqual(['paragraph-1'])
+  })
+
+  it('preflights insert, delete, replace and move before starting a transaction', () => {
+    const {crud, doc, rootRef} = createDocHarness()
+    crud.insertBlocks(rootRef.instance.id, 0, [
+      createEditableSnapshot('a'),
+      createEditableSnapshot('b'),
+    ])
+    const rootChildren = rootRef.instance.childrenIds.slice()
+    const error = new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Delete,
+      blockIds: ['a'],
+      source: {kind: 'self', blockId: 'a'},
+    })
+
+    doc.readonlyManager.assertRemovable.and.throwError(error)
+    expect(() => crud.deleteBlocks('root', 0, 2)).toThrowError(BlockReadonlyError)
+    expect(rootRef.instance.childrenIds).toEqual(rootChildren)
+    expect(doc.readonlyManager.assertRemovable).toHaveBeenCalledWith(
+      ['a', 'b'],
+      BlockReadonlyOperation.Delete,
+    )
+
+    doc.readonlyManager.assertRemovable.calls.reset()
+    expect(() => crud.replaceWithSnapshots('a', [createEditableSnapshot('replacement')]))
+      .toThrowError(BlockReadonlyError)
+    expect(doc.yBlockMap.has('replacement')).toBeFalse()
+
+    doc.readonlyManager.assertRemovable.and.stub()
+    doc.readonlyManager.assertMovable.and.throwError(new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Move,
+      blockIds: ['a'],
+      source: {kind: 'self', blockId: 'a'},
+    }))
+    expect(() => crud.moveBlocks('root', 0, 1, 'root', 2))
+      .toThrowError(BlockReadonlyError)
+    expect(rootRef.instance.childrenIds).toEqual(rootChildren)
+    expect(doc.readonlyManager.assertMovable).toHaveBeenCalledWith(
+      ['a'],
+      'root',
+      BlockReadonlyOperation.Move,
+    )
+
+    doc.readonlyManager.assertMovable.and.stub()
+    doc.readonlyManager.assertInsertable.and.throwError(new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Insert,
+      blockIds: ['root'],
+      source: {kind: 'document'},
+    }))
+    expect(() => crud.insertBlocks('root', 0, [createEditableSnapshot('blocked-insert')]))
+      .toThrowError(BlockReadonlyError)
+    expect(doc.yBlockMap.has('blocked-insert')).toBeFalse()
+  })
+
+  it('preflights the current delete range when the model index still contains a removed sibling', () => {
+    const {crud, doc, rootRef} = createDocHarness()
+    crud.insertBlocks(rootRef.instance.id, 0, [
+      createEditableSnapshot('a'),
+      createEditableSnapshot('b'),
+    ])
+    doc.readonlyManager.assertRemovable.calls.reset()
+    spyOn(doc.model, 'getChildrenIds').and.returnValue(['already-removed', 'a', 'b'])
+
+    crud.deleteBlocks(rootRef.instance.id, 0, 1)
+
+    expect(doc.readonlyManager.assertRemovable).toHaveBeenCalledOnceWith(
+      ['a'],
+      BlockReadonlyOperation.Delete,
+    )
+    expect(rootRef.instance.childrenIds).toEqual(['b'])
   })
 
   it('replaces the last render-unit child without sampling DOM selection', () => {

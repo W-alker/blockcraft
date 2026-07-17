@@ -3,10 +3,10 @@
   position: absolute;
   user-select: none;
   -webkit-user-select: none;
-  transition: all ease .2s;
+  // Avoid transform compositor ghosts while retaining a short block-to-block glide.
+  transition: left 160ms ease-out, top 160ms ease-out;
   top: 0;
   left: 0;
-  transform: translateX(-48px);
 
   > * {
     user-select: none;

@@ -2,14 +2,13 @@ import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from '@angula
 import {DomSanitizer, SafeHtml, SafeResourceUrl} from '@angular/platform-browser';
 import {BaseBlockComponent, DOC_FILE_SERVICE_TOKEN, DocFileService} from '../../framework';
 import {VideoBlockModel} from './index';
-import {AsyncPipe} from '@angular/common';
 import {ResizeContainerComponent} from '../../components/block-resizer';
 
 @Component({
   selector: 'div.video-block',
   template: `
     @if (!props.url) {
-      <div class="upload-hint" contenteditable="false" (click)="inputLocalFile()">
+      <div class="upload-hint" contenteditable="false" (click)="!isReadonly && inputLocalFile()">
         <i class="bc_icon bc_shipin"></i>
         <span>点击插入视频</span>
       </div>
@@ -93,7 +92,7 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
           }
         </div>
 
-        @if (!(doc.readonlySwitch$ | async)) {
+        @if (!isReadonly) {
           <block-resizer [container]="resizeContainer"
                          [maxWidthContainer]="hostElement"
                          (widthChange)="onResized($event)"
@@ -105,7 +104,7 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
   `,
   standalone: true,
   styleUrls: ['./video-block.scss'],
-  imports: [AsyncPipe, ResizeContainerComponent],
+  imports: [ResizeContainerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
@@ -352,8 +351,10 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
   }
 
   inputLocalFile = async () => {
+    if (this.isReadonly) return;
     try {
       const files = await this.fileService.inputFiles('video/*');
+      if (this._isGone() || this.isReadonly) return;
       if (!files || files.length === 0) return;
       const file = files[0];
 
@@ -388,13 +389,13 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
 
     this.fileService.uploadVideo(file, (p) => {
       // 上传期间块可能被本地/远端删除：detectChanges on destroyed view 会抛错
-      if (this._isGone()) return;
+      if (this._isGone() || this.isReadonly) return;
       this.uploadProgress = p;
       this.changeDetectorRef.detectChanges();
     }).then(info => {
       this.fileService.removeObjectURL(url);
       // 块已删：跳过 setInitProps（否则写入 detached Y.Map，undo 时复活孤儿块）
-      if (this._isGone()) return;
+      if (this._isGone() || this.isReadonly) return;
       this.setInitProps({
         url: info.url,
         name: info.name,
@@ -407,7 +408,7 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
     }).catch(() => {
       this.fileService.removeObjectURL(url);
       this.doc.messageService.warn('视频上传失败');
-      if (this._isGone()) return;
+      if (this._isGone() || this.isReadonly) return;
       this.setInitProps({url: '', name: '', size: 0, type: ''});
       this.uploadProgress = 100;
       this.changeDetectorRef.markForCheck();

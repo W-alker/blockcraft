@@ -146,6 +146,7 @@ export class TranslatePlugin extends DocPlugin {
   private blockMenuResolver: BlockMenuResolver = (ctx: BlockMenuContext): BlockMenuSection[] => {
     if (
       !this.translationService
+      || ctx.readonly.readonly
       || !this.doc.isEditable(ctx.activeBlock)
       || !this.isBlockAlive(ctx.activeBlock)
     ) return [];
@@ -169,7 +170,7 @@ export class TranslatePlugin extends DocPlugin {
     if (event.item.name !== TRANSLATE_MENU_NAMES.translateParagraph || event.source !== "simple") {
       return false;
     }
-    if (!this.doc.isEditable(ctx.activeBlock) || !this.isBlockAlive(ctx.activeBlock)) {
+    if (ctx.readonly.readonly || !this.doc.isEditable(ctx.activeBlock) || !this.isBlockAlive(ctx.activeBlock)) {
       return false;
     }
     void this.translateParagraph(ctx.activeBlock);
@@ -212,6 +213,10 @@ export class TranslatePlugin extends DocPlugin {
       });
       if (requestId !== this._translateRequestId) return;
       if (!this.isCurrentPreviewBlock(block)) return;
+      if (this.doc.readonlyManager.isReadonly(block)) {
+        this.closePreview();
+        return;
+      }
       const previewRef = this._previewRef;
       if (!previewRef) return;
       const resultText = (translated || "").trim();
@@ -307,6 +312,10 @@ export class TranslatePlugin extends DocPlugin {
       return;
     }
     const block = this._activeEditableBlock;
+    if (this.doc.readonlyManager.isReadonly(block)) {
+      this.closePreview();
+      return;
+    }
     block.replaceText(0, block.textLength, this._translatedText);
     block.setInlineRange(this._translatedText.length);
     this.doc.messageService.success("已替换为翻译结果");
@@ -325,6 +334,10 @@ export class TranslatePlugin extends DocPlugin {
     }
 
     const block = this._activeEditableBlock;
+    if (this.doc.readonlyManager.isReadonly(block)) {
+      this.closePreview();
+      return;
+    }
     const startIndex = block.textLength;
     const separator = startIndex > 0 && !block.textContent().endsWith(STR_LINE_BREAK)
       ? STR_LINE_BREAK

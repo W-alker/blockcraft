@@ -44,7 +44,7 @@ export class CalloutBlockComponent extends BaseBlockComponent<CalloutBlockModel>
   }
 
   onPickEmoji(e: Event) {
-    if (this.doc.isReadonly) return
+    if (this.isReadonly) return
     e.preventDefault();
     e.stopPropagation();
 
@@ -58,6 +58,10 @@ export class CalloutBlockComponent extends BaseBlockComponent<CalloutBlockModel>
     })
 
     componentRef.instance.emojiSelected.pipe(takeUntil(this._closePicker$)).subscribe(emoji => {
+      if (this.isReadonly) {
+        this._closePicker$.next(true)
+        return
+      }
       this.updateProps({
         prefix: emoji
       })

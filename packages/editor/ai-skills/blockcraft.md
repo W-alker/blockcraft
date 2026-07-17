@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-07-15 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-07-17 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -26,6 +26,7 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 |---------|-------------|----------------|
 | **Doc** | Central orchestrator; owns all subsystems | `BlockCraftDoc` in `framework/doc/` |
 | **Model Graph** | DOM-free, read-only Yjs tree queries for mounted or unmounted blocks | `BlockModelGraph` in `framework/doc/model-graph.ts` |
+| **Block Readonly** | Persistent, inherited write protection resolved from `meta.readonly` against the model graph | `BlockReadonlyManager` in `framework/doc/block-readonly-manager.ts` |
 | **Block** | A node in the document tree; has flavour, nodeType, props | `BaseBlockComponent` / `EditableBlockComponent` |
 | **Plugin** | Extends editor behavior; event handlers + hotkeys | `DocPlugin` in `framework/plugin/` |
 | **Inline** | Rich text within editable blocks; Blot tree on Y.Text | `InlineRuntime` in `framework/block-std/inline/` |
@@ -134,6 +135,37 @@ existence means the YBlock is reachable from the current root; it does not mean
 `doc.vm` has mounted a component. `getBlockById()` keeps its mounted-component
 semantics and can still throw for an unmounted block. Structure/order/snapshot
 queries should prefer `doc.model` when component capabilities are not required.
+
+### Block-Level Readonly
+
+```typescript
+doc.setBlockReadonly(blockId, true)
+
+doc.isBlockReadonly(blockId)                  // effective: self / ancestor / document
+doc.readonlyManager.isExplicitReadonly(blockId)
+doc.readonlyManager.resolve(blockId)          // { readonly, source }
+doc.readonlyManager.containsReadonly(blockId) // locked block anywhere in subtree
+
+doc.setBlockReadonly(blockId, false)
+```
+
+`meta.readonly === true` is persisted and synchronized through Yjs. A lock is
+inherited by every descendant. Text/format/props changes, insertion into the
+protected subtree, removal/move of the protected block, and removal/move of an
+unlocked ancestor containing a protected descendant are rejected with
+`BlockReadonlyError`. Selection, copy, link activation, media preview and
+download remain available; copied snapshots deliberately omit readonly
+metadata. Root cannot receive a persistent block lock—use
+`doc.toggleReadonly(true)` for whole-document mode.
+
+Rejected user writes (`input`, clipboard, drag, menu and undo/redo triggers)
+are forwarded once per second to `DocMessageService.warn` with the built-in
+"内容已锁定，无法修改" feedback. Programmatic `api` writes only throw
+`BlockReadonlyError` and do not create UI messages.
+
+Readonly is a trusted-client editing policy, not a server authorization
+boundary. Every collaborating client must run compatible guards; validate
+permissions again on the persistence/server boundary when security matters.
 
 ### Pagination Plugin
 
@@ -271,6 +303,11 @@ doc.selection.getSelectedText()         // string
 // changes replay only when the endpoint parent path or sibling index moved.
 // Successful mapping calls replay() once. recalculate() is a guarded failure
 // fallback only when the editor still owns both native Range endpoints.
+// DocCRUD only publishes before/after remote view-sync facts; Selection owns
+// bookmark capture/reconciliation. Undo bookmarks live on Yjs StackItem.meta,
+// and SelectionHistoryRestorer owns focus + bounded DOM/model verification.
+// Native Selection, focus, frame scheduling, Range creation and geometry are
+// centralized behind the internal zero-cache SelectionSurfaceAdapter.
 // Non-collapsed container-boundary DOM endpoints normalize to boundary points:
 //   { blockId: container.id, type: 'boundary', index: childBoundaryIndex }
 // Same-container boundary ranges in paragraph-capable renderUnit containers
@@ -382,6 +419,9 @@ onBold(ctx: UIEventStateContext) { ... }
 - Container blocks include a `<div class="children-render-container">` for child blocks
 - Editable blocks have an empty template; the inline runtime renders into the host element
 - All mutations go through Yjs transactions (via `DocCRUD` or `DocChain`)
+- Never write `block.props`, `block.meta`, `Y.Text`, or `Y.Map` directly from a
+  plugin. The guarded Block/DocChain/DocCRUD APIs enforce block readonly and
+  keep local, remote, undo, and rendering paths consistent.
 - `DocCRUD.deleteBlocks()` does not reposition selection after inserting the fallback paragraph for an emptied `renderUnit`. The owning Input/plugin action explicitly commits the final caret/range through model-first Selection APIs; it must not rely on write-after-`recalculate()` DOM sampling.
 - Global type declarations use `declare global { namespace BlockCraft { ... } }`
 - Icons use the iconfont class system: `<i class="bc_icon bc_xxx"></i>` (no PNGs, no inline SVGs except for multi-color)

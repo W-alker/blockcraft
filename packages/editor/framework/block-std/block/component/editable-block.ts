@@ -6,6 +6,7 @@ import { DeltaInsert, DeltaOperation } from "../../types";
 import { INLINE_CONTAINER_CLASS, TextBlot, BlotType } from "../../inline";
 import { InlineRuntime } from "../../inline/runtime/inline-runtime";
 import { Subject } from "rxjs";
+import {BlockReadonlyOperation} from "../../../doc/block-readonly.types";
 
 @Component({
   selector: 'editable-block',
@@ -37,6 +38,8 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   override ngAfterViewInit() {
     super.ngAfterViewInit();
     this._containerElement = this.hostElement.classList.contains(INLINE_CONTAINER_CLASS) ? this.hostElement : this.hostElement.querySelector(`.${INLINE_CONTAINER_CLASS}`)!
+
+    this.applyReadonlyViewState()
 
     this._initRuntime()
     this.rerender()
@@ -94,6 +97,24 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     return this._containerElement
   }
 
+  override applyReadonlyViewState() {
+    super.applyReadonlyViewState()
+    if (!this._containerElement) return
+
+    if (this.isReadonly) {
+      if (this._containerElement.getAttribute('contenteditable') !== 'false') {
+        this._containerElement.setAttribute('contenteditable', 'false')
+        this._containerElement.dataset['bcReadonlyEditable'] = 'true'
+      }
+      return
+    }
+
+    if (this._containerElement.dataset['bcReadonlyEditable'] === 'true') {
+      this._containerElement.removeAttribute('contenteditable')
+      this._containerElement.removeAttribute('data-bc-readonly-editable')
+    }
+  }
+
   @HostBinding('style.text-align')
   get textAlign() {
     return this._native.props['textAlign']
@@ -126,15 +147,19 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
   insertText(index: number, text: string, attributes?: DeltaInsert['attributes']) {
     if (!text) return
+    this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Text)
     this.yText.insert(index, text, attributes)
   }
 
   deleteText(index: number, length = this.textLength - index) {
     if (!length) return
+    this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Text)
     this.yText.delete(index, length)
   }
 
   replaceText(index: number, length: number, text?: string | null, attributes?: DeltaInsert['attributes']) {
+    if (length <= 0 && !text) return
+    this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Replace)
     const delta: DeltaOperation[] = []
     index > 0 && delta.push({ retain: index })
     length > 0 && delta.push({ delete: length })
@@ -143,10 +168,14 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   formatText(index: number, length: number, attributes: DeltaInsert['attributes']) {
+    if (!length || !Object.keys(attributes ?? {}).length) return
+    this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Format)
     this.yText.format(index, length, attributes as any)
   }
 
   applyDeltaOperations(delta: DeltaOperation[]) {
+    if (!delta.length) return
+    this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Text)
     this.yText.applyDelta(delta)
   }
 

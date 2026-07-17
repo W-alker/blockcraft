@@ -2,20 +2,12 @@ import * as Y from "yjs";
 import {DocUndoManger} from "./undoManger";
 import {BlockNodeType} from "../block-std";
 import {BlockSelection} from "../modules/selection";
-import {nextTick} from "../../global";
-
-const waitFrames = async (count: number) => {
-  for (let i = 0; i < count; i++) {
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-  }
-};
-
-beforeEach(() => {
-  spyOn(window, 'requestAnimationFrame').and.callFake((callback: FrameRequestCallback) => {
-    const id = window.setTimeout(() => callback(performance.now()), 0);
-    return id;
-  });
-});
+import {resolveRelativeSelectionBookmark} from "../modules/selection/relative-bookmark";
+import {
+  BlockReadonlyError,
+  BlockReadonlyOperation,
+} from "./block-readonly.types";
+import {ORIGIN_BLOCK_READONLY_CONTROL} from "./origins";
 
 /**
  * Regression guard for the "second Ctrl+Z does nothing" bug.
@@ -39,12 +31,21 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
     ydoc = new Y.Doc();
     yBlockMap = ydoc.getMap('blocks');
     mockDoc = {
-      selection: {value: null, replay: jasmine.createSpy('replay'), recalculate: jasmine.createSpy('recalculate')},
+      selection: {
+        value: null,
+        replay: jasmine.createSpy('replay'),
+        recalculate: jasmine.createSpy('recalculate'),
+        restoreBookmark: jasmine.createSpy('restoreBookmark'),
+      },
       logger: {warn: jasmine.createSpy('warn')},
       getBlockById: () => { throw new Error('no block in test'); },
       isEditable: () => false,
       root: {hostElement: document.createElement('div')},
       yDoc: ydoc,
+      model: {exists: (id: string) => yBlockMap.has(id)},
+      readonlyManager: {
+        assertUndoRedoWritable: jasmine.createSpy('assertUndoRedoWritable'),
+      },
     };
     mockDoc.selection.replay.and.callFake((selection: any) => {
       mockDoc.selection.value = selection;
@@ -63,6 +64,138 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
     mgr.undo();
 
     expect((mgr as any).undoRedoing$.value).toBeFalse();
+  });
+
+  it('keeps a blocked undo item on top and allows it after unlock', () => {
+    change('locked');
+    const error = new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Undo,
+      blockIds: ['locked'],
+      source: {kind: 'self', blockId: 'locked'},
+    });
+    mockDoc.readonlyManager.assertUndoRedoWritable.and.throwError(error);
+
+    mgr.undo();
+
+    expect(yBlockMap.has('locked')).toBeTrue();
+    expect(mgr.isCanUndo()).toBeTrue();
+    expect(mgr.isCanRedo()).toBeFalse();
+    expect(mockDoc.selection.replay).not.toHaveBeenCalled();
+    expect(mockDoc.readonlyManager.assertUndoRedoWritable).toHaveBeenCalledWith(
+      ['locked'],
+      BlockReadonlyOperation.Undo,
+    );
+
+    mockDoc.readonlyManager.assertUndoRedoWritable.and.stub();
+    mgr.undo();
+
+    expect(yBlockMap.has('locked')).toBeFalse();
+    expect(mgr.isCanUndo()).toBeFalse();
+    expect(mgr.isCanRedo()).toBeTrue();
+  });
+
+  it('keeps a blocked redo item and allows it after unlock', () => {
+    const yText = new Y.Text();
+    ydoc.transact(() => {
+      const yBlock = new Y.Map();
+      yBlock.set('children', yText);
+      yBlockMap.set('locked', yBlock);
+    }, ORIGIN_BLOCK_READONLY_CONTROL);
+    ydoc.transact(() => yText.insert(0, 'x'), null);
+    mgr.undo();
+    expect(mgr.isCanRedo()).toBeTrue();
+
+    mockDoc.readonlyManager.assertUndoRedoWritable.and.throwError(new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Redo,
+      blockIds: ['locked'],
+      source: {kind: 'self', blockId: 'locked'},
+    }));
+    mgr.redo();
+
+    expect(yText.toString()).toBe('');
+    expect(mgr.isCanRedo()).toBeTrue();
+
+    mockDoc.readonlyManager.assertUndoRedoWritable.and.stub();
+    mgr.redo();
+
+    expect(yText.toString()).toBe('x');
+    expect(mgr.isCanRedo()).toBeFalse();
+  });
+
+  it('does not add readonly-control transactions to the content undo stack', () => {
+    ydoc.transact(() => yBlockMap.set('lock-control', new Y.Map()), ORIGIN_BLOCK_READONLY_CONTROL);
+
+    expect(mgr.isCanUndo()).toBeFalse();
+  });
+
+  it('unions affected block ids when Yjs merges nested changes into one stack item', () => {
+    const textA = new Y.Text();
+    const textB = new Y.Text();
+    ydoc.transact(() => {
+      const blockA = new Y.Map();
+      blockA.set('children', textA);
+      yBlockMap.set('a', blockA);
+      const blockB = new Y.Map();
+      blockB.set('children', textB);
+      yBlockMap.set('b', blockB);
+    }, ORIGIN_BLOCK_READONLY_CONTROL);
+    ydoc.transact(() => textA.insert(0, 'a'), null);
+    ydoc.transact(() => textB.insert(0, 'b'), null);
+    mockDoc.readonlyManager.assertUndoRedoWritable.and.throwError(new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Undo,
+      blockIds: ['a'],
+      source: {kind: 'self', blockId: 'a'},
+    }));
+
+    mgr.undo();
+
+    expect(mockDoc.readonlyManager.assertUndoRedoWritable).toHaveBeenCalledWith(
+      ['a', 'b'],
+      BlockReadonlyOperation.Undo,
+    );
+    expect(textA.toString()).toBe('a');
+    expect(textB.toString()).toBe('b');
+    expect(mgr.isCanUndo()).toBeTrue();
+  });
+
+  it('does not treat a structural parent as affected when only unlocked children changed', () => {
+    const rootChildren = new Y.Array<string>();
+    const textA = new Y.Text();
+    ydoc.transact(() => {
+      const root = new Y.Map();
+      root.set('children', rootChildren);
+      yBlockMap.set('root', root);
+
+      const blockA = new Y.Map();
+      blockA.set('children', textA);
+      yBlockMap.set('a', blockA);
+      yBlockMap.set('b', new Y.Map());
+      yBlockMap.set('locked-sibling', new Y.Map());
+      rootChildren.insert(0, ['a', 'b', 'locked-sibling']);
+    }, ORIGIN_BLOCK_READONLY_CONTROL);
+
+    ydoc.transact(() => {
+      textA.insert(0, 'x');
+      rootChildren.delete(1, 1);
+      yBlockMap.delete('b');
+    }, null);
+    mockDoc.readonlyManager.assertUndoRedoWritable.and.callFake((blockIds: string[]) => {
+      if (!blockIds.includes('root')) return;
+      throw new BlockReadonlyError({
+        operation: BlockReadonlyOperation.Undo,
+        blockIds: ['root'],
+        source: {kind: 'descendant', blockId: 'locked-sibling'},
+      });
+    });
+
+    mgr.undo();
+
+    expect(mockDoc.readonlyManager.assertUndoRedoWritable).toHaveBeenCalledWith(
+      ['a'],
+      BlockReadonlyOperation.Undo,
+    );
+    expect(textA.toString()).toBe('');
+    expect(yBlockMap.has('b')).toBeTrue();
   });
 
   it('does not block a second undo across two stack items', () => {
@@ -141,181 +274,6 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
     expect(order).not.toContain('observer:live');
   });
 
-  it('clears selection without warning when an undo selection snapshot no longer resolves', async () => {
-    (mgr as any)._replaySelectionAfterUndoRedo({
-      anchor: {type: 'selected', blockId: 'gone'},
-      head: {type: 'selected', blockId: 'gone'},
-      commonParent: 'gone',
-    });
-
-    await nextTick();
-    await waitFrames(3);
-
-    expect(mockDoc.selection.replay).toHaveBeenCalledWith(null);
-    expect(mockDoc.selection.recalculate).not.toHaveBeenCalled();
-    expect(mockDoc.logger.warn).not.toHaveBeenCalled();
-  });
-
-  it('clears selection instead of sampling DOM when snapshot resolution keeps throwing', async () => {
-    spyOn<any>(mgr, '_resolveSelectionSnapshot').and.throwError('resolver failed');
-
-    (mgr as any)._replaySelectionAfterUndoRedo({
-      anchor: {type: 'selected', blockId: 'broken'},
-      head: {type: 'selected', blockId: 'broken'},
-      commonParent: 'broken',
-    });
-
-    await nextTick();
-    await waitFrames(3);
-
-    expect(mockDoc.selection.replay).toHaveBeenCalledWith(null);
-    expect(mockDoc.selection.recalculate).not.toHaveBeenCalled();
-  });
-
-  it('clears selection instead of sampling DOM when projection keeps throwing', async () => {
-    const selection = {
-      anchor: {type: 'selected' as const, blockId: 'broken'},
-      head: {type: 'selected' as const, blockId: 'broken'},
-      commonParent: 'broken',
-    };
-    mockDoc.selection.replay.and.callFake((value: any) => {
-      if (value) throw new Error('projection failed');
-      mockDoc.selection.value = null;
-    });
-
-    const version = (mgr as any)._nextSelectionReplayVersion();
-    (mgr as any)._replayResolvedSelectionAfterUndoRedo(selection, 3, version);
-    await waitFrames(3);
-
-    expect(mockDoc.selection.replay).toHaveBeenCalledWith(null);
-    expect(mockDoc.selection.recalculate).not.toHaveBeenCalled();
-  });
-
-  it('retries undo selection replay until restored block components are available', async () => {
-    const host = document.createElement('div');
-    const blockHost = document.createElement('div');
-    host.setAttribute('contenteditable', 'true');
-    host.appendChild(blockHost);
-    document.body.appendChild(host);
-    mockDoc.root.hostElement = host;
-    let attempts = 0;
-    mockDoc.getBlockById = jasmine.createSpy('getBlockById').and.callFake((id: string) => {
-      if (id !== 'late') throw new Error('missing');
-      if (attempts++ === 0) throw new Error('not mounted yet');
-      return {
-        id,
-        hostElement: blockHost,
-      };
-    });
-
-    (mgr as any)._replaySelectionAfterUndoRedo({
-      anchor: {type: 'selected', blockId: 'late'},
-      head: {type: 'selected', blockId: 'late'},
-      commonParent: 'late',
-    });
-
-    await nextTick();
-    expect(mockDoc.selection.replay).not.toHaveBeenCalledWith(null);
-    await waitFrames(1);
-
-    expect(mockDoc.selection.replay).toHaveBeenCalledWith({
-      anchor: {type: 'selected', blockId: 'late'},
-      head: {type: 'selected', blockId: 'late'},
-      commonParent: 'late',
-    });
-    host.remove();
-  });
-
-  it('replays restored selection again when the browser drops focus after undo', async () => {
-    const host = document.createElement('div');
-    const blockHost = document.createElement('div');
-    const outside = document.createElement('button');
-    host.setAttribute('contenteditable', 'true');
-    host.appendChild(blockHost);
-    document.body.append(host, outside);
-    mockDoc.root.hostElement = host;
-    mockDoc.getBlockById = jasmine.createSpy('getBlockById').and.callFake((id: string) => {
-      if (id !== 'block-1') throw new Error('missing');
-      return {
-        id,
-        hostElement: blockHost,
-      };
-    });
-    let replayCount = 0;
-    mockDoc.selection.replay.and.callFake((selection: any) => {
-      mockDoc.selection.value = selection;
-      if (selection) {
-        replayCount += 1;
-        if (replayCount === 1) outside.focus();
-      }
-    });
-
-    (mgr as any)._replaySelectionAfterUndoRedo({
-      anchor: {type: 'selected', blockId: 'block-1'},
-      head: {type: 'selected', blockId: 'block-1'},
-      commonParent: 'block-1',
-    });
-
-    await nextTick();
-    expect(replayCount).toBe(1);
-    await waitFrames(1);
-
-    expect(replayCount).toBe(2);
-    expect(document.activeElement).toBe(host);
-    host.remove();
-    outside.remove();
-  });
-
-  it('replays restored selection again when DOM normalization does not match the restored model', async () => {
-    const host = document.createElement('div');
-    const blockHost = document.createElement('div');
-    host.setAttribute('contenteditable', 'true');
-    host.appendChild(blockHost);
-    document.body.appendChild(host);
-    mockDoc.root.hostElement = host;
-    mockDoc.getBlockById = jasmine.createSpy('getBlockById').and.callFake((id: string) => {
-      if (id !== 'block-1') throw new Error('missing');
-      return {
-        id,
-        hostElement: blockHost,
-      };
-    });
-
-    const expected = {
-      anchor: {type: 'selected' as const, blockId: 'block-1'},
-      head: {type: 'selected' as const, blockId: 'block-1'},
-      commonParent: 'block-1',
-    };
-    const mismatchedDom = {
-      anchor: {type: 'text' as const, blockId: 'block-1', offset: 0},
-      head: {type: 'text' as const, blockId: 'block-1', offset: 0},
-      commonParent: 'block-1',
-    };
-    mockDoc.selection.recalculate.and.returnValues(
-      {value: mismatchedDom},
-      {value: expected},
-    );
-    let replayCount = 0;
-    mockDoc.selection.replay.and.callFake((selection: any) => {
-      mockDoc.selection.value = selection;
-      if (selection) replayCount += 1;
-    });
-
-    (mgr as any)._replaySelectionAfterUndoRedo({
-      anchor: {type: 'selected', blockId: 'block-1'},
-      head: {type: 'selected', blockId: 'block-1'},
-      commonParent: 'block-1',
-    });
-
-    await nextTick();
-    expect(replayCount).toBe(1);
-    await waitFrames(2);
-
-    expect(replayCount).toBe(2);
-    expect(mockDoc.selection.recalculate).toHaveBeenCalledTimes(2);
-    host.remove();
-  });
-
   it('groups transactions across the elapsed capture window and stops merging after the group', () => {
     const yUndoManager = (mgr as any)._yUndoManager as Y.UndoManager;
 
@@ -341,52 +299,6 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
     expect(yBlockMap.has('group-b')).toBeFalse();
   });
 
-  it('refocuses the editor synchronously after undo so rapid repeated undo is still captured', () => {
-    const host = document.createElement('div');
-    const outside = document.createElement('button');
-    host.setAttribute('contenteditable', 'true');
-    document.body.append(host, outside);
-    mockDoc.root.hostElement = host;
-    change('focus-drop');
-    yBlockMap.observe(() => outside.focus());
-
-    mgr.undo();
-
-    expect(document.activeElement).toBe(host);
-    host.remove();
-    outside.remove();
-  });
-
-  it('cancels stale async selection replay when a newer undo/redo restore starts', async () => {
-    const firstHost = document.createElement('div');
-    const secondHost = document.createElement('div');
-    mockDoc.getBlockById = jasmine.createSpy('getBlockById').and.callFake((id: string) => {
-      if (id === 'first') return {id, hostElement: firstHost};
-      if (id === 'second') return {id, hostElement: secondHost};
-      throw new Error('missing');
-    });
-    const replayed: string[] = [];
-    mockDoc.selection.replay.and.callFake((selection: any) => {
-      mockDoc.selection.value = selection;
-      if (selection) replayed.push(selection.anchor.blockId);
-    });
-
-    (mgr as any)._replaySelectionAfterUndoRedo({
-      anchor: {type: 'selected', blockId: 'first'},
-      head: {type: 'selected', blockId: 'first'},
-      commonParent: 'first',
-    });
-    (mgr as any)._replaySelectionAfterUndoRedo({
-      anchor: {type: 'selected', blockId: 'second'},
-      head: {type: 'selected', blockId: 'second'},
-      commonParent: 'second',
-    });
-
-    await nextTick();
-
-    expect(replayed).toEqual(['second']);
-  });
-
   it('clears a pending selection snapshot when Yjs merges into an existing undo item', () => {
     mockDoc.selection.value = {
       anchor: {type: 'selected', blockId: 'first'},
@@ -395,7 +307,7 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
     };
     mgr.captureSelectionBeforeChange();
     change('first-change');
-    expect((mgr as any)._pendingSnapshot).toBeUndefined();
+    expect((mgr as any)._pendingUndoSnapshot).toBeUndefined();
 
     mockDoc.selection.value = {
       anchor: {type: 'selected', blockId: 'merged'},
@@ -403,7 +315,7 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
       commonParent: 'merged',
     };
     mgr.captureSelectionBeforeChange();
-    expect((mgr as any)._pendingSnapshot.source).toEqual({
+    expect((mgr as any)._pendingUndoSnapshot.source).toEqual({
       anchor: {type: 'selected', blockId: 'merged'},
       head: {type: 'selected', blockId: 'merged'},
       commonParent: 'merged',
@@ -411,7 +323,7 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
 
     change('merged-change');
 
-    expect((mgr as any)._pendingSnapshot).toBeUndefined();
+    expect((mgr as any)._pendingUndoSnapshot).toBeUndefined();
   });
 
   it('keeps the first pending selection when nested mutations capture again after blur', () => {
@@ -430,7 +342,33 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
     mgr.captureSelectionBeforeChange();
     change('nested-replace');
 
-    expect((mgr as any)._undoSelectionStack.at(-1).source).toEqual(beforeSelection);
+    mgr.undo();
+
+    const bookmark = mockDoc.selection.restoreBookmark.calls.mostRecent().args[0];
+    expect(bookmark.source).toEqual(beforeSelection);
+  });
+
+  it('stores the pre-undo selection on the Yjs redo stack item', () => {
+    const beforeChange = {
+      anchor: {type: 'selected' as const, blockId: 'before'},
+      head: {type: 'selected' as const, blockId: 'before'},
+      commonParent: 'before',
+    };
+    const beforeUndo = {
+      anchor: {type: 'selected' as const, blockId: 'after'},
+      head: {type: 'selected' as const, blockId: 'after'},
+      commonParent: 'after',
+    };
+    mockDoc.selection.value = beforeChange;
+    mgr.captureSelectionBeforeChange();
+    change('history-change');
+    mockDoc.selection.value = beforeUndo;
+
+    mgr.undo();
+    expect(mockDoc.selection.restoreBookmark.calls.mostRecent().args[0].source).toEqual(beforeChange);
+
+    mgr.redo();
+    expect(mockDoc.selection.restoreBookmark.calls.mostRecent().args[0].source).toEqual(beforeUndo);
   });
 });
 
@@ -461,7 +399,12 @@ describe('DocUndoManger – gap selection side round-trip', () => {
     ydoc = new Y.Doc();
     yBlockMap = ydoc.getMap('blocks');
     mockDoc = {
-      selection: {value: null, replay: jasmine.createSpy('replay'), recalculate: jasmine.createSpy('recalculate')},
+      selection: {
+        value: null,
+        replay: jasmine.createSpy('replay'),
+        recalculate: jasmine.createSpy('recalculate'),
+        restoreBookmark: jasmine.createSpy('restoreBookmark'),
+      },
       logger: {warn: jasmine.createSpy('warn')},
       // gap blocks are non-editable; getBlockById must succeed for the resolve guard.
       getBlockById: (id: string) => ({id, nodeType: 'void'}),
@@ -490,24 +433,24 @@ describe('DocUndoManger – gap selection side round-trip', () => {
   it('resolves a captured gap snapshot back to a collapsed gap selection (side preserved)', () => {
     mockDoc.selection.value = gapSelection('void-1', 'after');
     const snapshot = (mgr as any)._captureSelectionSnapshot();
-    const resolved = (mgr as any)._resolveSelectionSnapshot(snapshot);
+    const resolved = resolveRelativeSelectionBookmark(snapshot, mockDoc);
 
     expect(resolved).not.toBeNull();
-    expect(resolved.anchor.type).toBe('gap');
-    expect(resolved.anchor.side).toBe('after');
-    expect(resolved.anchor.blockId).toBe('void-1');
-    expect(resolved.head.type).toBe('gap');
-    expect(resolved.head.side).toBe('after');
-    expect(resolved.commonParent).toBe('void-1');
+    expect(resolved!.anchor.type).toBe('gap');
+    expect(resolved!.anchor.side).toBe('after');
+    expect(resolved!.anchor.blockId).toBe('void-1');
+    expect(resolved!.head.type).toBe('gap');
+    expect(resolved!.head.side).toBe('after');
+    expect(resolved!.commonParent).toBe('void-1');
   });
 
   it('round-trips both sides distinctly', () => {
     for (const side of ['before', 'after'] as const) {
       mockDoc.selection.value = gapSelection('void-9', side);
       const snapshot = (mgr as any)._captureSelectionSnapshot();
-      const resolved = (mgr as any)._resolveSelectionSnapshot(snapshot);
-      expect(resolved.anchor.side).toBe(side);
-      expect(resolved.head.side).toBe(side);
+      const resolved = resolveRelativeSelectionBookmark(snapshot, mockDoc);
+      expect(resolved!.anchor.side).toBe(side);
+      expect(resolved!.head.side).toBe(side);
     }
   });
 
@@ -518,7 +461,7 @@ describe('DocUndoManger – gap selection side round-trip', () => {
     // capture still records the gap (block ref not needed to capture)…
     expect(snapshot.anchor.type).toBe('gap');
     // …but resolve returns null because the block is gone.
-    expect((mgr as any)._resolveSelectionSnapshot(snapshot)).toBeNull();
+    expect(resolveRelativeSelectionBookmark(snapshot, mockDoc)).toBeNull();
   });
 });
 
@@ -534,7 +477,12 @@ describe('DocUndoManger – text and boundary selection snapshots', () => {
     yBlockMap = ydoc.getMap('blocks');
     blocks = {};
     mockDoc = {
-      selection: {value: null, replay: jasmine.createSpy('replay'), recalculate: jasmine.createSpy('recalculate')},
+      selection: {
+        value: null,
+        replay: jasmine.createSpy('replay'),
+        recalculate: jasmine.createSpy('recalculate'),
+        restoreBookmark: jasmine.createSpy('restoreBookmark'),
+      },
       logger: {warn: jasmine.createSpy('warn')},
       getBlockById: (id: string) => blocks[id],
       isEditable: (block: any) => block.nodeType === BlockNodeType.editable,
@@ -629,7 +577,7 @@ describe('DocUndoManger – text and boundary selection snapshots', () => {
       () => 0,
     );
 
-    const resolved = (mgr as any)._resolveSelectionSnapshot((mgr as any)._captureSelectionSnapshot());
+    const resolved = resolveRelativeSelectionBookmark((mgr as any)._captureSelectionSnapshot(), mockDoc);
 
     expect(resolved).toEqual({
       anchor: {blockId: 'p1', type: 'text', offset: 5},
@@ -638,56 +586,21 @@ describe('DocUndoManger – text and boundary selection snapshots', () => {
     });
   });
 
-  it('replays cross-column text selection snapshots after undo', async () => {
+  it('binds cross-column text selection bookmarks to the undo stack item', () => {
     const {rootHost, selection, json} = createCrossColumnSelection();
     document.body.appendChild(rootHost);
     mockDoc.root.hostElement = rootHost;
     mgr.clearHistory();
     mockDoc.selection.value = selection;
-    mockDoc.selection.recalculate.and.returnValue({value: json});
-
     mgr.captureSelectionBeforeChange();
     ydoc.transact(() => yBlockMap.set('changed', new Y.Map()), null);
     mockDoc.selection.value = null;
 
     mgr.undo();
-    await nextTick();
-    await waitFrames(1);
 
-    expect(mockDoc.selection.replay).toHaveBeenCalledWith(json);
-    expect(mockDoc.selection.recalculate).toHaveBeenCalledWith(false);
-    rootHost.remove();
-  });
-
-  it('retries cross-column text replay when DOM normalization is still stale', async () => {
-    const {rootHost, selection, json} = createCrossColumnSelection();
-    document.body.appendChild(rootHost);
-    mockDoc.root.hostElement = rootHost;
-    mockDoc.selection.value = selection;
-    const snapshot = (mgr as any)._captureSelectionSnapshot();
-    const staleDom = {
-      anchor: {blockId: 'left-p', type: 'text' as const, offset: 2},
-      head: {blockId: 'left-p', type: 'text' as const, offset: 2},
-      commonParent: 'left-p',
-    };
-    mockDoc.selection.recalculate.and.returnValues(
-      {value: staleDom},
-      {value: json},
-    );
-    let replayCount = 0;
-    mockDoc.selection.replay.and.callFake((selectionJson: any) => {
-      mockDoc.selection.value = selectionJson;
-      if (selectionJson) replayCount += 1;
-    });
-
-    (mgr as any)._replaySelectionAfterUndoRedo(snapshot);
-
-    await nextTick();
-    expect(replayCount).toBe(1);
-    await waitFrames(2);
-
-    expect(replayCount).toBe(2);
-    expect(mockDoc.selection.recalculate).toHaveBeenCalledTimes(2);
+    const bookmark = mockDoc.selection.restoreBookmark.calls.mostRecent().args[0];
+    expect(bookmark.source).toEqual(json);
+    expect(mockDoc.selection.recalculate).not.toHaveBeenCalled();
     rootHost.remove();
   });
 
@@ -721,7 +634,7 @@ describe('DocUndoManger – text and boundary selection snapshots', () => {
 
     const snapshot = (mgr as any)._captureSelectionSnapshot();
     yChildren.delete(1, 1);
-    const resolved = (mgr as any)._resolveSelectionSnapshot(snapshot);
+    const resolved = resolveRelativeSelectionBookmark(snapshot, mockDoc);
 
     expect(resolved).toEqual({
       anchor: {blockId: 'callout-1', type: 'boundary', index: 1},
@@ -812,6 +725,7 @@ describe('DocUndoManger – table-cell selection round-trip', () => {
         value: selection,
         replay: jasmine.createSpy('replay'),
         recalculate: jasmine.createSpy('recalculate'),
+        restoreBookmark: jasmine.createSpy('restoreBookmark'),
       },
       logger: {warn: jasmine.createSpy('warn')},
       getBlockById: (id: string) => {
@@ -836,30 +750,30 @@ describe('DocUndoManger – table-cell selection round-trip', () => {
 
   it('captures and resolves table-cell endpoints with tableId', () => {
     const snapshot = (mgr as any)._captureSelectionSnapshot();
-    const resolved = (mgr as any)._resolveSelectionSnapshot(snapshot);
+    const resolved = resolveRelativeSelectionBookmark(snapshot, mockDoc);
 
-    expect(resolved.anchor).toEqual({
+    expect(resolved!.anchor).toEqual({
       type: 'table-cell',
       blockId: 'cell-4',
       tableId: 'table-1',
     });
-    expect(resolved.head).toEqual({
+    expect(resolved!.head).toEqual({
       type: 'table-cell',
       blockId: 'cell-1',
       tableId: 'table-1',
     });
-    expect(resolved.commonParent).toBe('table-1');
+    expect(resolved!.commonParent).toBe('table-1');
   });
 
-  it('replays table-cell selection after undo', async () => {
+  it('binds table-cell selection bookmarks to the undo stack item', () => {
     mgr.captureSelectionBeforeChange();
     ydoc.transact(() => yBlockMap.set('changed', new Y.Map()), null);
     mockDoc.selection.value = null;
 
     mgr.undo();
-    await nextTick();
 
-    expect(mockDoc.selection.replay).toHaveBeenCalledWith({
+    const bookmark = mockDoc.selection.restoreBookmark.calls.mostRecent().args[0];
+    expect(bookmark.source).toEqual({
       anchor: {
         type: 'table-cell',
         blockId: 'cell-4',
@@ -874,41 +788,14 @@ describe('DocUndoManger – table-cell selection round-trip', () => {
     });
   });
 
-  it('does not require DOM normalization for restored table-cell selections', async () => {
+  it('leaves table-cell DOM normalization to the selection domain', () => {
     mgr.captureSelectionBeforeChange();
     ydoc.transact(() => yBlockMap.set('changed', new Y.Map()), null);
     mockDoc.selection.value = null;
 
     mgr.undo();
-    await nextTick();
-    await waitFrames(1);
 
-    expect(mockDoc.selection.replay).toHaveBeenCalledWith({
-      anchor: {
-        type: 'table-cell',
-        blockId: 'cell-4',
-        tableId: 'table-1',
-      },
-      head: {
-        type: 'table-cell',
-        blockId: 'cell-1',
-        tableId: 'table-1',
-      },
-      commonParent: 'table-1',
-    });
+    expect(mockDoc.selection.restoreBookmark).toHaveBeenCalledTimes(1);
     expect(mockDoc.selection.recalculate).not.toHaveBeenCalled();
-  });
-
-  it('clears table-cell selection after undo when a captured cell no longer exists', async () => {
-    const snapshot = (mgr as any)._captureSelectionSnapshot();
-    delete blocks['cell-4'];
-
-    (mgr as any)._replaySelectionAfterUndoRedo(snapshot);
-    await nextTick();
-    await waitFrames(3);
-
-    expect(mockDoc.selection.replay).toHaveBeenCalledWith(null);
-    expect(mockDoc.selection.recalculate).not.toHaveBeenCalled();
-    expect(mockDoc.logger.warn).not.toHaveBeenCalled();
   });
 });

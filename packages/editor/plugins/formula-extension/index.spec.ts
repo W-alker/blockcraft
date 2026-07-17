@@ -219,6 +219,7 @@ describe("FormulaBlockExtensionPlugin inline range handling", () => {
 
 describe("FormulaBlockExtensionPlugin block hit area", () => {
   const makeHarness = () => {
+    const readonlyStateChange$ = new Subject<void>();
     const hostElement = document.createElement("div");
     hostElement.setAttribute("data-block-id", "formula-1");
     hostElement.setAttribute("data-formula-block-click-test", "true");
@@ -244,6 +245,11 @@ describe("FormulaBlockExtensionPlugin block hit area", () => {
     const doc = {
       isReadonly: false,
       getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
+      subscribeReadonlyChange: jasmine.createSpy("subscribeReadonlyChange"),
+      readonlyManager: {
+        stateChange$: readonlyStateChange$,
+        isReadonly: jasmine.createSpy("isReadonly").and.returnValue(false),
+      },
       overlayService: {
         createConnectedOverlay: jasmine.createSpy("createConnectedOverlay")
           .and.returnValue({componentRef}),
@@ -251,7 +257,7 @@ describe("FormulaBlockExtensionPlugin block hit area", () => {
     };
     const plugin = new FormulaBlockExtensionPlugin();
     (plugin as any).doc = doc;
-    return {plugin, doc, block, hostElement, display};
+    return {plugin, doc, block, readonlyStateChange$, hostElement, display};
   };
 
   afterEach(() => {
@@ -306,5 +312,24 @@ describe("FormulaBlockExtensionPlugin block hit area", () => {
     expect(consumed).toBeUndefined();
     expect(block.hostElement.classList.contains("editing")).toBeFalse();
     expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+  });
+
+  it("closes block editing before querying readonly state for a removed formula block", () => {
+    const {plugin, doc, block, readonlyStateChange$, display} = makeHarness();
+    plugin.init();
+    plugin.onBlockClick({
+      getDefaultEvent: () => ({target: display}),
+    } as any);
+
+    doc.readonlyManager.isReadonly.calls.reset();
+    doc.getBlockById.and.throwError("Block not found: formula-1");
+    doc.readonlyManager.isReadonly.and.throwError(
+      new Error("readonly lookup received a removed block"),
+    );
+
+    expect(() => readonlyStateChange$.next()).not.toThrow();
+    expect(doc.readonlyManager.isReadonly).not.toHaveBeenCalled();
+    expect(block.hostElement.classList.contains("editing")).toBeFalse();
+    plugin.destroy();
   });
 });

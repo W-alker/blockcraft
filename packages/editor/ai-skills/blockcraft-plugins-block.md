@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-06-30
+> Last updated: 2026-07-16
 
 ## BlockControllerPlugin
 
@@ -41,19 +41,20 @@ new BlockControllerPlugin(customTools?: IContextMenuItem[], customToolHandler?: 
 ```typescript
 new BlockControllerPlugin({
   blockMenuResolver: (ctx) => {
-    if (ctx.block.flavour === 'paragraph') {
+    if (ctx.activeBlock.flavour === 'paragraph') {
       return [{
+        key: 'ai',
         title: 'AI 操作',
         items: [
-          { key: 'summarize', label: '总结', icon: 'bc_icon bc_ai' },
-          { key: 'translate', label: '翻译', icon: 'bc_icon bc_fanyi' },
+          { type: 'simple', name: 'summarize', label: '总结', icon: 'bc_icon bc_ai' },
+          { type: 'simple', name: 'inspect', label: '查看', readonlyBehavior: 'allow' },
         ],
       }];
     }
     return [];
   },
   blockMenuActionHandler: (event, ctx) => {
-    if (event.key === 'summarize') {
+    if (event.item.name === 'summarize') {
       // handle...
       return true;
     }
@@ -64,8 +65,29 @@ new BlockControllerPlugin({
 
 ### Notes
 
-- Hidden in readonly mode
+- Whole-document readonly hides mutation affordances as before. Block readonly
+  keeps the trigger visible so the user can copy or unlock the block, but drag
+  start and protected mutations are blocked.
+- The built-in switch writes `meta.readonly`: an explicit lock can be removed;
+  an inherited lock is shown as inherited and must be removed at its source
+  ancestor. Root never exposes a persistent-lock action.
 - Interacts with `TranslatePlugin` which provides its own `blockMenuResolver`/`blockMenuActionHandler` pair via `createBlockControllerOptions()`
+
+### Readonly-aware custom menu items
+
+`BlockMenuContext.readonly` contains the effective `BlockReadonlyResolution`.
+Every custom item can declare `readonlyBehavior`:
+
+| Value | Protected active block |
+|-------|------------------------|
+| `disable` / omitted | Item remains visible but cannot run |
+| `hide` | Item is omitted |
+| `allow` | Item remains actionable; use only for true read operations |
+
+`allow` does not bypass the data boundary. If the handler attempts a guarded
+mutation, `BlockReadonlyError` is still thrown. Typical allowed actions are
+inspect, copy link, preview and download; translate, replace, delete, format and
+property changes should stay disabled/hidden.
 
 ### Multi-block drag (since v?.?.?)
 
@@ -103,6 +125,10 @@ unchanged. The multi/single judgment mirrors the drag dispatch: a cross-block
 selection whose range includes the active block (otherwise the single-block menu
 shows). If the multi-selection collapses to fewer than two blocks between opening
 the menu and clicking, the action falls back to the single-block path.
+
+When any selected block is effectively readonly, or a selected ancestor
+contains a locked descendant, multi-block mode keeps only **copy**. Cut, delete
+and drag cannot partially mutate the range.
 
 ---
 

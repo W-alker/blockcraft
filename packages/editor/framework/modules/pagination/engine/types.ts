@@ -38,7 +38,8 @@ export interface PaginationItem {
   splitStartsNewPage?: boolean;
   /**
    * 锁定最大高度（px）：capHeight 块超高时把渲染高度锁到 ≤ 一页（max-height + overflow:hidden 裁剪，**不缩放**）。
-   * 引擎用**已锁定后的** `height`（= lockHeight）定位（故这类块永远 ≤ 一页、整块放置）；渲染层据此设 max-height。
+   * 引擎用**已锁定后的** `height`（= lockHeight）定位（故这类块永远 ≤ 一页、整块放置）；视图层
+   * 只给命中的块增加锁定 class，再通过根级 `--bc-page-content-height` 变量设置 max-height。
    * 缺省 = 不锁定。
    */
   lockHeight?: number;

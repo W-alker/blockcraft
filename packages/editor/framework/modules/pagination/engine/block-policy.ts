@@ -35,6 +35,9 @@ export function resolveBlockPolicy(input: BlockPolicyInput): BlockPolicy {
   }
 
   switch (flavour) {
+    case 'image':
+      // 图片可带 caption 子块，因此 schema 是 block；分页仍把整张图片卡片视为原子块。
+      return {breakable: false, keepWithNext: false, capHeight: true};
     case 'paragraph':
       return {breakable: true, keepWithNext: isHeading, capHeight: false};
     case 'bullet':

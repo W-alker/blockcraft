@@ -1,4 +1,4 @@
-import { ORIGIN_NO_RECORD } from "./crud";
+import { ORIGIN_SYSTEM_REPAIR } from "./crud";
 import { isYArray } from "../utils/yAbstractType";
 
 interface ICrossParentMove {
@@ -19,7 +19,7 @@ interface ICrossParentMove {
  * 性能约定（务必维持）：
  * - 仅由远端事务触发，本地打字/本地结构操作零开销；
  * - 预检只做 O(children) 的 Set / includes 判断，绝不全文档扫描；
- * - 修复合并进一个微任务、单个 ORIGIN_NO_RECORD 事务（不进 undo 栈，
+ * - 修复合并进一个微任务、单个 ORIGIN_SYSTEM_REPAIR 事务（不进 undo 栈，
  *   视图与远端正常同步）；
  * - 修复规则确定（同父保留首个出现，跨父保留 parentId 字典序较小者），
  *   两端各自执行删的是同一批 Yjs item，幂等收敛、不会 ping-pong。
@@ -85,7 +85,7 @@ export class ChildrenRepairer {
           }
         }
       })
-    }, ORIGIN_NO_RECORD)
+    }, ORIGIN_SYSTEM_REPAIR)
 
     if (removed) {
       this.doc.logger.warn(`pruned ${removed} dangling child ref(s) encountered on load`)
@@ -205,7 +205,7 @@ export class ChildrenRepairer {
           realigns.push({ parentId: keepParentId, blockId: move.blockId })
         }
       }
-    }, ORIGIN_NO_RECORD)
+    }, ORIGIN_SYSTEM_REPAIR)
 
     // ── DOM 复位（纯本地操作，不产生 Yjs 写入）──
     // 修复事务的 children 事件已同步处理完、_compRefs 与模型一致；但 DOM 节点

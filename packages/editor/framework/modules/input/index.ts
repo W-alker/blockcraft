@@ -40,9 +40,16 @@ import { CompositionSession } from "./composition-session";
 import {
   planSelectionEdit,
   SelectionEditPlan,
+  SelectionEditReader,
   SelectionEditSource,
   SelectionReplaceEdge,
 } from "./selection-edit-plan";
+import {buildReadonlyWriteFootprint} from "./readonly-write-footprint";
+import {
+  BlockReadonlyError,
+  BlockReadonlyOperation,
+  BlockReadonlyViolationTrigger,
+} from "../../doc/block-readonly.types";
 
 const ALLOW_INPUT_TYPES = new Set([
   "insertText",
@@ -226,6 +233,74 @@ export class InputTransformer {
         return block && this.doc.isEditable(block) ? block.textLength : null;
       },
     }, {tailMode});
+  }
+
+  private _readonlyEditReader(): SelectionEditReader {
+    return {
+      getParentId: blockId => {
+        if (this.doc.model?.exists(blockId)) return this.doc.model.getParentId(blockId);
+        const block = this._getLiveBlockById(blockId);
+        return block ? block.parentId ?? null : undefined;
+      },
+      getChildrenIds: blockId => {
+        if (this.doc.model?.exists(blockId)) return this.doc.model.getChildrenIds(blockId);
+        const block = this._getLiveBlockById(blockId);
+        return block ? block.childrenIds ?? [] : null;
+      },
+      getTextLength: blockId => {
+        if (this.doc.model?.exists(blockId)) return this.doc.model.getTextLength(blockId);
+        const block = this._getLiveBlockById(blockId);
+        return block && this.doc.isEditable(block) ? block.textLength : null;
+      },
+    };
+  }
+
+  private _assertPlanWritable(
+    plan: SelectionEditPlan,
+    operation: BlockReadonlyOperation,
+    trigger: BlockReadonlyViolationTrigger = "input",
+  ): void {
+    const manager = this.doc.readonlyManager;
+    if (!manager) return;
+    const footprint = buildReadonlyWriteFootprint(plan, this._readonlyEditReader());
+    footprint.textBlockIds.forEach(blockId =>
+      manager.assertTextWritable(blockId, operation, trigger));
+
+    const removableIds = plan.kind === "gap" && operation !== BlockReadonlyOperation.Delete
+      ? []
+      : footprint.removableRootIds;
+    if (removableIds.length) {
+      manager.assertRemovable(removableIds, operation, trigger);
+    }
+
+    const insertParentIds = plan.kind === "gap" && operation === BlockReadonlyOperation.Delete
+      ? []
+      : footprint.insertParentIds;
+    insertParentIds.forEach(parentId =>
+      manager.assertInsertable(parentId, operation, trigger));
+  }
+
+  assertSelectionWritable(
+    selection: BlockCraft.Selection,
+    operation: BlockReadonlyOperation,
+    trigger: BlockReadonlyViolationTrigger = "input",
+  ): void {
+    this._assertPlanWritable(this._planSelectionEdit(selection), operation, trigger);
+  }
+
+  private _tryAssertInputPlan(
+    context: {preventDefault(): void},
+    plan: SelectionEditPlan,
+    operation: BlockReadonlyOperation,
+  ): boolean {
+    try {
+      this._assertPlanWritable(plan, operation);
+      return true;
+    } catch (error) {
+      if (!(error instanceof BlockReadonlyError)) throw error;
+      context.preventDefault();
+      return false;
+    }
   }
 
   private _adjustZeroSpaceDeletePlan(
@@ -663,8 +738,12 @@ export class InputTransformer {
   private _getLiveBlockById<T extends BlockCraft.BlockComponent = BlockCraft.BlockComponent>(
     id: string,
   ): T | null {
+    const model = this.doc.model as {exists?: (blockId: string) => boolean} | undefined;
+    if (model?.exists && !model.exists(id)) return null;
     try {
-      return (this.doc.getBlockById(id) as T | null) ?? null;
+      const block = (this.doc.getBlockById(id) as T | null) ?? null;
+      if (model?.exists && !model.exists(id)) return null;
+      return block;
     } catch {
       return null;
     }
@@ -852,6 +931,9 @@ export class InputTransformer {
 
     const plan = this._planSelectionEdit(curSel);
     if (plan.kind === "unsupported") {
+      return this._abortCompositionStart(context);
+    }
+    if (!this._tryAssertInputPlan(context, plan, BlockReadonlyOperation.Replace)) {
       return this._abortCompositionStart(context);
     }
 
@@ -1065,6 +1147,16 @@ export class InputTransformer {
       }
 
       const { block: insertBlock, index: insertIndex } = commitPoint;
+      try {
+        this.doc.readonlyManager?.assertTextWritable(
+          insertBlock.id,
+          BlockReadonlyOperation.Text,
+          "input",
+        );
+      } catch (error) {
+        if (!(error instanceof BlockReadonlyError)) throw error;
+        return;
+      }
       this._captureCompositionCommitUndoSelection(
         insertBlock as EditableBlockComponent,
         insertIndex,
@@ -1096,12 +1188,27 @@ export class InputTransformer {
     }
   }
 
+  private _resetOrphanedCompositionSession(
+    ev: Pick<InputEvent, "isComposing">,
+  ) {
+    if (
+      ev.isComposing ||
+      this.doc.event.status.isComposing ||
+      this.compositionSession.isIdle
+    ) {
+      return;
+    }
+    this.compositionSession.reset();
+    this._endCompositionUndoGroup();
+  }
+
   @EventListen("beforeInput")
   private _handleBeforeInput(context: BlockCraft.EventStateContext): boolean | void {
     const ev = context.get("defaultState").event as InputEvent;
     if (isNativeInputTarget(ev.target)) {
       return;
     }
+    this._resetOrphanedCompositionSession(ev);
     // compositionStart captures the accepted model/materialized target. During
     // IME updates, browser target ranges can be transient or stale; do not let
     // them retarget the commit anchor.
@@ -1162,6 +1269,23 @@ export class InputTransformer {
       return true;
     }
 
+    const isDelete = ev.inputType.startsWith("delete");
+    if (
+      isDelete &&
+      staticRange &&
+      staticRange.startContainer === staticRange.endContainer &&
+      isZeroSpace(staticRange.startContainer)
+    ) {
+      plan = this._adjustZeroSpaceDeletePlan(plan);
+    }
+    if (!this._tryAssertInputPlan(
+      ev,
+      plan,
+      text ? BlockReadonlyOperation.Replace : BlockReadonlyOperation.Delete,
+    )) {
+      return true;
+    }
+
     if (plan.kind === "gap") {
       ev.preventDefault();
       if (text && !this._insertParagraphAtGap(plan, text)) this.doc.selection.blur();
@@ -1193,16 +1317,6 @@ export class InputTransformer {
         : this._deleteAllSelected(plan);
       if (!handled) this.doc.selection.blur();
       return true;
-    }
-
-    const isDelete = ev.inputType.startsWith("delete");
-    if (
-      isDelete &&
-      staticRange &&
-      staticRange.startContainer === staticRange.endContainer &&
-      isZeroSpace(staticRange.startContainer)
-    ) {
-      plan = this._adjustZeroSpaceDeletePlan(plan);
     }
 
     if (plan.kind === "range") {
@@ -1352,7 +1466,13 @@ export class InputTransformer {
       return;
     }
 
-    if (this._handlePrintableModelSelection(selection, ev.key)) {
+    try {
+      if (this._handlePrintableModelSelection(selection, ev.key)) {
+        ev.preventDefault();
+        return true;
+      }
+    } catch (error) {
+      if (!(error instanceof BlockReadonlyError)) throw error;
       ev.preventDefault();
       return true;
     }
@@ -1438,6 +1558,7 @@ export class InputTransformer {
     text: string,
   ): boolean | undefined {
     const plan = this._planSelectionEdit(selection);
+    this._assertPlanWritable(plan, BlockReadonlyOperation.Replace);
 
     switch (plan.kind) {
       case "table-cell":
@@ -1545,20 +1666,38 @@ export class InputTransformer {
       }
     }
 
-    this.doc.crud.transact(() => {
-      if (end) {
-        const throughPath = this.doc.queryBlocksThroughPathDeeply(start.block, end.block);
+    const throughPath = end
+      ? this.doc.queryBlocksThroughPathDeeply(start.block, end.block)
+        .filter(through => through.length > 0)
+      : [];
+    if (throughPath.length) {
+      // Finish structural deletion first. Yjs deep observers update ModelGraph
+      // and component children caches only after this transaction closes; doing
+      // endpoint deletion in the same callback would use stale parent indexes.
+      this.doc.crud.transact(() => {
         throughPath.forEach(through => {
           this.doc.crud.deleteBlocks(through.parent, through.index, through.length);
         });
-      }
+      });
+    }
+
+    this.doc.crud.transact(() => {
+      // A cross-container path may already have removed an endpoint (or one of
+      // its ancestors). Resolve liveness after those structural deletions so the
+      // endpoint is not deleted/mutated a second time against a stale VM ref.
+      const liveStart = this._getLiveBlockById(start.blockId);
+      if (!liveStart) return;
 
       if (start.kind === "text") {
+        const liveStartText = liveStart as EditableBlockComponent;
         const deleteLength = start.to - start.from;
-        start.block.yText.delete(start.from, deleteLength);
-        if (text) start.block.yText.insert(start.from, text, insertAttrs);
+        liveStartText.yText.delete(start.from, deleteLength);
+        if (text) liveStartText.yText.insert(start.from, text, insertAttrs);
 
-        if (end) {
+        // Resolve the endpoint only after the structural transaction and its
+        // observers have settled; the earlier VM reference may now be stale.
+        const liveEnd = end ? this._getLiveBlockById(end.blockId) : null;
+        if (end && liveEnd) {
           if (shouldMergeTail) {
             this.doc.crud.deleteBlockById(end.blockId);
           } else if (
@@ -1567,14 +1706,16 @@ export class InputTransformer {
           ) {
             this.doc.crud.deleteBlockById(end.blockId);
           } else if (end.kind === "text" && (end.from > 0 || end.to > end.from)) {
-            end.block.yText.delete(end.from, end.to - end.from);
+            (liveEnd as EditableBlockComponent).yText.delete(end.from, end.to - end.from);
           }
         }
         return;
       }
 
       this.doc.crud.deleteBlockById(start.blockId);
-      insertionEnd!.block.replaceText(
+      const liveEnd = end ? this._getLiveBlockById(end.blockId) : null;
+      if (!liveEnd) return;
+      (liveEnd as EditableBlockComponent).replaceText(
         insertionEnd!.from,
         insertionEnd!.to - insertionEnd!.from,
         text,
@@ -1583,8 +1724,10 @@ export class InputTransformer {
     });
 
     if (remainingDelta?.length && start.kind === "text" && !skipAppend) {
-      start.block.applyDeltaOperations([
-        {retain: start.block.yText.length},
+      const liveStart = this._getLiveBlockById<EditableBlockComponent>(start.blockId);
+      if (!liveStart) return true;
+      liveStart.applyDeltaOperations([
+        {retain: liveStart.yText.length},
         ...remainingDelta,
       ]);
     }
@@ -1642,6 +1785,7 @@ export class InputTransformer {
 
   deleteByRange(range: BlockSelection, merge = false) {
     const plan = this._planSelectionEdit(range);
+    this._assertPlanWritable(plan, BlockReadonlyOperation.Delete);
     switch (plan.kind) {
       case "range":
         return this._replacePlannedRange(plan, null, merge);
@@ -1698,6 +1842,7 @@ export class InputTransformer {
       return null;
     }
     const plan = this._planSelectionEdit(sel);
+    this._assertPlanWritable(plan, BlockReadonlyOperation.Delete);
     switch (plan.kind) {
       case "block-range":
         return this._deleteAllSelected(plan);
@@ -1741,7 +1886,14 @@ export class InputTransformer {
     // Gap-after + Backspace deletes the void/container block next to the caret,
     // then recalculates synchronously so the next render does not read a stale
     // selection that still points at the deleted block.
-    const modelDeleteResult = this._handleModelDeleteSelection(sel, "after");
+    let modelDeleteResult: boolean | null;
+    try {
+      modelDeleteResult = this._handleModelDeleteSelection(sel, "after");
+    } catch (error) {
+      if (!(error instanceof BlockReadonlyError)) throw error;
+      context.preventDefault();
+      return true;
+    }
     if (modelDeleteResult !== null) {
       context.preventDefault();
       return modelDeleteResult;
@@ -1822,6 +1974,21 @@ export class InputTransformer {
     // 如果前一个兄弟块是可编辑块
     if (this.doc.isEditable(prevBlock)) {
       context.preventDefault();
+      try {
+        this.doc.readonlyManager?.assertTextWritable(
+          prevBlock.id,
+          BlockReadonlyOperation.Text,
+          "input",
+        );
+        this.doc.readonlyManager?.assertRemovable(
+          [block.id],
+          BlockReadonlyOperation.Delete,
+          "input",
+        );
+      } catch (error) {
+        if (!(error instanceof BlockReadonlyError)) throw error;
+        return true;
+      }
       // 「读取本块文本 → 并入前块 → 删除本块」必须是同一个 Yjs 事务：
       // 拆开时协同方会观察到文本已并入但本块仍存在的中间态。选区设置是
       // 纯本地副作用，放在事务外，避免 selectionChange$ 订阅者在事务中途执行。
@@ -1854,7 +2021,14 @@ export class InputTransformer {
     }
 
     // Gap-before + Delete mirrors Backspace from gap-after.
-    const modelDeleteResult = this._handleModelDeleteSelection(sel, "before");
+    let modelDeleteResult: boolean | null;
+    try {
+      modelDeleteResult = this._handleModelDeleteSelection(sel, "before");
+    } catch (error) {
+      if (!(error instanceof BlockReadonlyError)) throw error;
+      context.preventDefault();
+      return true;
+    }
     if (modelDeleteResult !== null) {
       context.preventDefault();
       return modelDeleteResult;
@@ -1872,6 +2046,21 @@ export class InputTransformer {
     if (nextBlock) {
       if (this.doc.isEditable(nextBlock)) {
         context.preventDefault();
+        try {
+          this.doc.readonlyManager?.assertTextWritable(
+            block.id,
+            BlockReadonlyOperation.Text,
+            "input",
+          );
+          this.doc.readonlyManager?.assertRemovable(
+            [nextBlock.id],
+            BlockReadonlyOperation.Delete,
+            "input",
+          );
+        } catch (error) {
+          if (!(error instanceof BlockReadonlyError)) throw error;
+          return true;
+        }
         // 与 Backspace 合并对称：读取、并入、删块放进同一事务，见上方说明。
         block.setInlineRange(block.textLength);
         this.doc.crud.transact(() => {
@@ -1958,6 +2147,9 @@ export class InputTransformer {
 
     context.preventDefault();
     const plan = this._planSelectionEdit(sel);
+    if (!this._tryAssertInputPlan(context, plan, BlockReadonlyOperation.Insert)) {
+      return true;
+    }
 
     // Handle gap-cursor Enter: insert a new empty paragraph at the gap, keep the
     // void/container block, and move the caret into the new paragraph.

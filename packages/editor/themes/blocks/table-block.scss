@@ -512,6 +512,16 @@
     }
   }
 
+  // Block-level readonly keeps table content selectable, but structural
+  // controls must match the document-readonly state and expose no write affordance.
+  .table-block[data-bc-readonly] {
+    .table-col-resize-bar,
+    table-col-bar,
+    table-row-bar {
+      display: none;
+    }
+  }
+
   .table-block {
     $ctrlBarSize: 16px;
 

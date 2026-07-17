@@ -53,6 +53,7 @@ describe("TranslatePlugin lifecycle", () => {
     const sections = options.blockMenuResolver!({
       activeBlock: block as any,
       doc: (plugin as any).doc,
+      readonly: {readonly: false, source: null},
       findClosestBlock: () => null,
     });
 
@@ -79,6 +80,7 @@ describe("TranslatePlugin lifecycle", () => {
     }, {
       activeBlock: block as any,
       doc: (plugin as any).doc,
+      readonly: {readonly: false, source: null},
       findClosestBlock: () => null,
     });
 
@@ -107,5 +109,41 @@ describe("TranslatePlugin lifecycle", () => {
     expect(block.replaceText).not.toHaveBeenCalled();
     expect(block.setInlineRange).not.toHaveBeenCalled();
     expect((plugin as any).doc.messageService.success).not.toHaveBeenCalled();
+  });
+
+  it("discards an awaited translation when the block becomes readonly", async () => {
+    let resolveTranslation!: (value: string) => void;
+    const service = createService();
+    (service.translate as jasmine.Spy).and.returnValue(new Promise<string>(resolve => {
+      resolveTranslation = resolve;
+    }));
+    const block = createEditableBlock();
+    const previewRef = {
+      setInput: jasmine.createSpy("setInput"),
+    };
+    const readonlyManager = {
+      isReadonly: jasmine.createSpy("isReadonly").and.returnValue(false),
+    };
+    const plugin = new TranslatePlugin({
+      persistLastTargetLang: false,
+      service,
+    });
+    (plugin as any).doc = {
+      getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
+      readonlyManager,
+      messageService: {
+        warn: jasmine.createSpy("warn"),
+      },
+    };
+    (plugin as any)._activeEditableBlock = block;
+    (plugin as any)._previewRef = previewRef;
+
+    const translation = (plugin as any).translateParagraph(block, {reusePreview: true});
+    readonlyManager.isReadonly.and.returnValue(true);
+    resolveTranslation("translated");
+    await translation;
+
+    expect((plugin as any)._translatedText).toBe("");
+    expect(previewRef.setInput).not.toHaveBeenCalledWith("translatedText", "translated");
   });
 });

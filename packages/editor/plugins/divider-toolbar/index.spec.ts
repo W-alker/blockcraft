@@ -39,6 +39,24 @@ describe("DividerExtensionPlugin delayed toolbar", () => {
     return {plugin, doc, selection$, selectionValue, hostElement, dividerBlock, dividerSelection};
   };
 
+  const attachOpenToolbar = (plugin: DividerExtensionPlugin, dividerBlock: any) => {
+    const overlayElement = document.createElement("div");
+    overlayElement.setAttribute("data-divider-toolbar-test", "true");
+    const input = document.createElement("input");
+    overlayElement.appendChild(input);
+    document.body.appendChild(overlayElement);
+    const dispose = jasmine.createSpy("dispose");
+    dividerBlock.hostElement.classList.add("divider-toolbar-active");
+    (plugin as any)._activeBlock = dividerBlock;
+    (plugin as any)._toolbarRef = {overlayElement, dispose};
+    input.focus();
+    return {overlayElement, input, dispose};
+  };
+
+  afterEach(() => {
+    document.querySelectorAll("[data-divider-toolbar-test]").forEach(element => element.remove());
+  });
+
   it("selects the divider itself on primary mouseDown", () => {
     const {plugin, doc, hostElement, dividerBlock} = makeHarness();
     const content = document.createElement("div");
@@ -95,6 +113,54 @@ describe("DividerExtensionPlugin delayed toolbar", () => {
 
     expect(preventDefault).not.toHaveBeenCalled();
     expect(doc.selection.selectBlock).not.toHaveBeenCalled();
+  });
+
+  it("closes an open toolbar when a non-divider selection arrives while the overlay owns focus", () => {
+    const {plugin, selection$, dividerBlock, hostElement} = makeHarness();
+    const {overlayElement, dispose} = attachOpenToolbar(plugin, dividerBlock);
+    plugin.init();
+    const paragraph = {id: "paragraph-1", flavour: "paragraph"};
+    const textSelection = {
+      anchor: {blockId: paragraph.id, type: "text", offset: 0},
+      head: {blockId: paragraph.id, type: "text", offset: 0},
+      commonParent: paragraph.id,
+      isInSameBlock: true,
+      firstBlock: paragraph,
+      lastBlock: paragraph,
+    };
+
+    selection$.next(textSelection);
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(hostElement.classList.contains("divider-toolbar-active")).toBeFalse();
+    overlayElement.remove();
+    plugin.destroy();
+  });
+
+  it("keeps an open toolbar for a null editor selection while the overlay owns focus", () => {
+    const {plugin, selection$, dividerBlock, hostElement} = makeHarness();
+    const {overlayElement, dispose} = attachOpenToolbar(plugin, dividerBlock);
+    plugin.init();
+
+    selection$.next(null);
+
+    expect(dispose).not.toHaveBeenCalled();
+    expect(hostElement.classList.contains("divider-toolbar-active")).toBeTrue();
+    plugin.destroy();
+    overlayElement.remove();
+  });
+
+  it("keeps an open toolbar for the active divider selection while the overlay owns focus", () => {
+    const {plugin, selection$, dividerBlock, dividerSelection, hostElement} = makeHarness();
+    const {overlayElement, dispose} = attachOpenToolbar(plugin, dividerBlock);
+    plugin.init();
+
+    selection$.next(dividerSelection);
+
+    expect(dispose).not.toHaveBeenCalled();
+    expect(hostElement.classList.contains("divider-toolbar-active")).toBeTrue();
+    plugin.destroy();
+    overlayElement.remove();
   });
 
   it("rechecks the current selection before opening", fakeAsync(() => {

@@ -48,17 +48,17 @@ export class DividerExtensionPlugin extends DocPlugin {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
       this.clearTimer()
 
-      // Keep the toolbar open while the user interacts with it (e.g. typing in the
-      // 文字装订 input): focusing the overlay input blurs the divider block and fires a
-      // selectionChange that would otherwise immediately close the toolbar.
-      // NOTE: a disposed OverlayRef has `overlayElement === null`, so use optional
-      // chaining — throwing here would permanently kill this subscription.
-      if (this._toolbarRef?.overlayElement?.contains(document.activeElement)) {
+      // Focusing an overlay input can temporarily clear the editor selection.
+      // Retain the toolbar only for that null-selection transition. A concrete
+      // new editor selection always wins, even if focus has not left the overlay yet.
+      if (!selection) {
+        const overlayOwnsFocus = !!this._toolbarRef?.overlayElement?.contains(document.activeElement)
+        if (overlayOwnsFocus) return
+        this._toolbarRef && this.closeToolbar()
         return
       }
 
       if (
-        !selection ||
         !isSelectionAlive(selection as any, this.doc) ||
         !selection.isInSameBlock ||
         selection.firstBlock?.flavour !== 'divider' ||

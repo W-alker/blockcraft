@@ -1,5 +1,5 @@
 import { take, takeUntil } from "rxjs";
-import { ORIGIN_NO_RECORD } from "../../framework";
+import { ORIGIN_SYSTEM_REPAIR } from "../../framework";
 import type { TableBlockComponent } from "./table.block";
 
 /**
@@ -12,7 +12,7 @@ import type { TableBlockComponent } from "./table.block";
  * - 仅订阅远端事务（e.local 过滤），本地编辑零额外开销；
  * - 触发后先做 O(rows) 预检（行长全等 + colWidths 长度比对），一致即返回——
  *   绝大多数远端事务到此为止；
- * - 修复合批进微任务，单 transact + ORIGIN_NO_RECORD（不进 undo 栈，视图与
+ * - 修复合批进微任务，单 transact + ORIGIN_SYSTEM_REPAIR（不进 undo 栈，视图与
  *   远端正常同步）；
  * - 目标列数取「多数行长度」（并列取较小）；裁剪只删「空且未参与合并」的尾格，
  *   否则放大目标改为补齐其他行——内容永不丢失。两端基于同一合并态算出同一
@@ -109,7 +109,8 @@ export function attachTableNormalizer(table: TableBlockComponent): void {
       })
 
       // updateProps / insertBlocks / deleteBlocks 内部各自有 transact()，但 Yjs
-      // 嵌套事务合并进外层，origin 保持 ORIGIN_NO_RECORD，整体不进 undo 栈。
+      // 嵌套事务合并进外层，origin 保持 ORIGIN_SYSTEM_REPAIR，整体不进 undo 栈，
+      // 且允许在 Block 锁定期间维护确定性模型一致性。
       const widths = [...(table.props.colWidths || [])]
       if (widths.length !== target) {
         const fallback = widths.length
@@ -119,7 +120,7 @@ export function attachTableNormalizer(table: TableBlockComponent): void {
         widths.length = target
         table.updateProps({ colWidths: widths })
       }
-    }, ORIGIN_NO_RECORD)
+    }, ORIGIN_SYSTEM_REPAIR)
 
     doc.logger.warn(`table normalize: repaired ${table.id} to ${target} column(s)`)
   }

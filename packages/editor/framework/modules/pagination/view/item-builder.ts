@@ -31,7 +31,7 @@ export interface BlockMeta {
   preferredSplitOffsets?: number[];
   /** 仅可屏幕拆分的表格：行自然几何，供切点→断点行映射。 */
   tableRows?: TableRowGeom[];
-  /** 锁定最大高度（px）：capHeight 块超高时由高度源算出，渲染层（HeightLockApplier / 打印）据此设 max-height。 */
+  /** 锁定最大高度（px）：capHeight 块超高时由高度源算出，视图层据此增量标记锁定 class。 */
   lockHeight?: number;
   /** 续页重复表头高（px）：带表头（rowHead）的表格跨页拆分时由高度源算出，引擎据此预留、渲染层据此插表头。 */
   repeatHeaderHeight?: number;

@@ -6,10 +6,14 @@ import {
   STR_TAB,
   UIEventStateContext
 } from "../framework";
+import {BlockReadonlyError, BlockReadonlyOperation} from "../framework/doc/block-readonly.types";
 import {BlockCraftError, ErrorCode, getLinesByRange, getScrollContainer} from "../global";
 import {isSelectionAlive} from "../framework/modules/selection/liveness";
 
 export class CodeInlineEditorBinding extends DocPlugin {
+  private _isBlockReadonly(block: BlockCraft.BlockComponent): boolean {
+    return this.doc.readonlyManager?.isReadonly(block) ?? !!block.isReadonly
+  }
   // private _compositionAnchor: OneShotCursorAnchor | null = null
 
   // private get compositionAnchor() {
@@ -40,6 +44,17 @@ export class CodeInlineEditorBinding extends DocPlugin {
 
       const {block, index} = point
 
+      try {
+        this.doc.readonlyManager.assertTextWritable(
+          block,
+          BlockReadonlyOperation.Text,
+          'input',
+        )
+      } catch (error) {
+        if (error instanceof BlockReadonlyError) return true
+        throw error
+      }
+
       this.doc.crud.transact(() => {
         text && block.yText.insert(index, text)
       }, ORIGIN_SKIP_SYNC)
@@ -65,6 +80,10 @@ export class CodeInlineEditorBinding extends DocPlugin {
     const sel = state.selection
     if (!isSelectionAlive(sel as any, this.doc) || !sel.isInSameBlock || sel.start.type !== 'text') return false
     const block = sel.firstBlock as any
+    if (this._isBlockReadonly(block)) {
+      context.preventDefault()
+      return true
+    }
     const offset = sel.start.offset
     const len = sel.end.type === 'text' ? sel.end.offset - offset : 0
 
@@ -105,6 +124,10 @@ export class CodeInlineEditorBinding extends DocPlugin {
     if (!isSelectionAlive(sel as any, this.doc) || !sel.isInSameBlock || sel.start.type !== 'text') return false
     context.preventDefault()
     const block = sel.firstBlock as any
+    if (this._isBlockReadonly(block)) {
+      context.preventDefault()
+      return true
+    }
     const offset = sel.start.offset
     const len = sel.end.type === 'text' ? sel.end.offset - offset : 0
 

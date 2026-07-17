@@ -9,12 +9,12 @@ import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerD
         <span>{{ link }}</span>
       </bc-float-toolbar-item>
       <span class="bc-float-toolbar__divider"></span>
-      @if (!doc.isReadonly) {
+      @if (!isReadOnly) {
         <bc-float-toolbar-item icon="bc_bianji" title="编辑链接" name="edit-link"></bc-float-toolbar-item>
         <bc-float-toolbar-item icon="bc_jiebang" title="解除链接" name="unbind-link"></bc-float-toolbar-item>
       }
       <bc-float-toolbar-item icon="bc_fuzhi" title="复制链接" name="copy-link"></bc-float-toolbar-item>
-      @if (!doc.isReadonly) {
+      @if (!isReadOnly) {
         <span class="bc-float-toolbar__divider"></span>
         <bc-float-toolbar-item [expandable]="true" [bcOverlayTrigger]="viewModeTpl"
                                [positions]="['bottom-left', 'bottom-right', 'top-right', 'top-left']" [offsetY]="8">
@@ -64,6 +64,9 @@ export class InlineLinkToolbar {
 
   @Input()
   link: string = ''
+
+  @Input()
+  isReadOnly = false
 
   @Output()
   itemClicked = new EventEmitter<BcFloatToolbarItemComponent>()

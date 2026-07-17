@@ -259,4 +259,37 @@ describe("InlineLinkExtension range handling", () => {
 
     expect(readonlySub.unsubscribe).toHaveBeenCalledTimes(1);
   });
+
+  it("closes the toolbar before querying readonly state for a removed link block", () => {
+    const readonlyStateChange$ = new Subject<void>();
+    const block = {id: "p1"};
+    const componentRef = {
+      setInput: jasmine.createSpy("setInput"),
+    };
+    const readonlyManager = {
+      stateChange$: readonlyStateChange$,
+      isReadonly: jasmine.createSpy("isReadonly").and.returnValue(false),
+    };
+    const doc = {
+      isReadonly: false,
+      getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
+      readonlyManager,
+      subscribeReadonlyChange: jasmine.createSpy("subscribeReadonlyChange"),
+    };
+    const plugin = new InlineLinkExtension();
+    (plugin as any).doc = doc;
+    (plugin as any)._activeBlock = block;
+    (plugin as any)._cpr = componentRef;
+    plugin.init();
+
+    doc.getBlockById.and.throwError("Block not found: p1");
+    readonlyManager.isReadonly.and.throwError(
+      new Error("readonly lookup received a removed block"),
+    );
+
+    expect(() => readonlyStateChange$.next()).not.toThrow();
+    expect(readonlyManager.isReadonly).not.toHaveBeenCalled();
+    expect((plugin as any)._cpr).toBeNull();
+    plugin.destroy();
+  });
 });

@@ -3,6 +3,7 @@ import {
   DocPlugin,
   EventListen,
   getPositionWithOffset,
+  ORIGIN_SYSTEM_REPAIR,
   UIEventStateContext
 } from "../../framework";
 import {Subject, Subscription, takeUntil} from "rxjs";
@@ -48,6 +49,7 @@ export class OrderedBlockPlugin extends DocPlugin {
     if (!blockId) return
     const orderedBlock = this.getLiveOrderedBlock(blockId)
     if (!orderedBlock) return
+    if (this.doc.readonlyManager?.isReadonly(orderedBlock) ?? this.doc.isReadonly) return
     const {componentRef} = this.doc.overlayService.createConnectedOverlay<OrderedPrefixToolbar>({
       target: evt.target,
       component: OrderedPrefixToolbar,
@@ -57,9 +59,15 @@ export class OrderedBlockPlugin extends DocPlugin {
     orderedBlock.onDestroy$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
       this._closeToolbar$.next(true)
     })
+    this.doc.readonlyManager?.stateChange$
+      .pipe(takeUntil(this._closeToolbar$))
+      .subscribe(() => {
+        if (this.isBlockWritable(orderedBlock)) return
+        this._closeToolbar$.next(true)
+      })
 
     componentRef.setInput('orderedBlock', orderedBlock)
-    componentRef.setInput('isBlockAlive', (block: BlockCraft.BlockComponent) => this.isBlockAlive(block))
+    componentRef.setInput('isBlockAlive', (block: BlockCraft.BlockComponent) => this.isBlockWritable(block))
     componentRef.instance.onPropsChanged$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
       if (!this.isBlockAlive(orderedBlock)) return
       this._scheduleParentOf(orderedBlock as unknown as OrderableBlock)
@@ -140,6 +148,11 @@ export class OrderedBlockPlugin extends DocPlugin {
     }
   }
 
+  private isBlockWritable(block: BlockCraft.BlockComponent | null | undefined): block is BlockCraft.BlockComponent {
+    return this.isBlockAlive(block) &&
+      !(this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly)
+  }
+
   private _ensureFlushScheduled() {
     if (this._flushScheduled) return
     this._flushScheduled = true
@@ -157,10 +170,11 @@ export class OrderedBlockPlugin extends DocPlugin {
         .filter(block => block.parentBlock && !fullParentSet.has(block.parentBlock))
       this._pendingParents.clear()
       this._pendingStartBlocks.clear()
+      if (this.doc.isReadonly) return
       this.doc.crud.transact(() => {
         parents.forEach(updateOrdersInParent)
         startBlocks.forEach(updateOrdersFromStartBlock)
-      })
+      }, ORIGIN_SYSTEM_REPAIR)
     })
   }
 }

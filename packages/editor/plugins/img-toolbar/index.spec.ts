@@ -20,6 +20,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
     const selection$ = new Subject<any>();
     const nextSelection$ = new Subject<any>();
     const onDestroy$ = new Subject<void>();
+    const readonlyState$ = new Subject<void>();
     const readonlySub = {
       unsubscribe: jasmine.createSpy("unsubscribeReadonly"),
     };
@@ -51,15 +52,16 @@ describe("ImgToolbarPlugin lifecycle", () => {
     };
     const dragState$ = new Subject<string>();
     const dragState = {current: "idle"};
+    const fileService = {
+      previewImg: jasmine.createSpy("previewImg"),
+      downloadAttachment: jasmine.createSpy("downloadAttachment"),
+    };
     const doc = {
       isReadonly: false,
       onDestroy$,
       root: {hostElement: rootHost},
       injector: {
-        get: jasmine.createSpy("get").and.returnValue({
-          previewImg: jasmine.createSpy("previewImg"),
-          downloadAttachment: jasmine.createSpy("downloadAttachment"),
-        }),
+        get: jasmine.createSpy("get").and.returnValue(fileService),
       },
       selection: {
         selectionChange$: selection$,
@@ -98,13 +100,30 @@ describe("ImgToolbarPlugin lifecycle", () => {
         }),
       },
       subscribeReadonlyChange: jasmine.createSpy("subscribeReadonlyChange").and.returnValue(readonlySub),
+      readonlyManager: {
+        isReadonly: jasmine.createSpy("isReadonly").and.returnValue(false),
+        stateChange$: readonlyState$,
+      },
       getBlockById: jasmine.createSpy("getBlockById").and.returnValue(imageBlock),
     };
     const plugin = new ImgToolbarPlugin();
     (plugin as any).doc = doc;
 
-    return {plugin, doc, rootHost, wrapper, imageHost, imageBlock, selection$, nextSelection$, selectionValue, imageSelection, imageGapSelection, readonlySub, dragState$, dragState};
+    return {plugin, doc, fileService, rootHost, wrapper, imageHost, imageBlock, selection$, nextSelection$, selectionValue, imageSelection, imageGapSelection, readonlySub, readonlyState$, dragState$, dragState};
   };
+
+  it("keeps image preview available for a readonly block", () => {
+    const {plugin, doc, fileService, rootHost, wrapper} = makeHarness();
+    doc.readonlyManager.isReadonly.and.returnValue(true);
+    const event = new MouseEvent("dblclick", {bubbles: true});
+    Object.defineProperty(event, "target", {value: wrapper});
+
+    expect(plugin.onImageMouseDown({
+      getDefaultEvent: () => event,
+    } as any)).toBeTrue();
+    expect(fileService.previewImg).toHaveBeenCalled();
+    rootHost.remove();
+  });
 
   it("selects an image from its own pointerdown path", () => {
     const {plugin, doc, rootHost, wrapper, imageBlock} = makeHarness();
@@ -190,6 +209,20 @@ describe("ImgToolbarPlugin lifecycle", () => {
     rootHost.remove();
   }));
 
+  it("does not open toolbar for readonly image blocks", fakeAsync(() => {
+    const {plugin, doc, rootHost, selection$, selectionValue, imageSelection} = makeHarness();
+    doc.readonlyManager.isReadonly.and.returnValue(true);
+    plugin.init();
+
+    selectionValue.current = imageSelection;
+    selection$.next(imageSelection);
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    plugin.destroy();
+    rootHost.remove();
+  }));
+
   it("does not open the delayed toolbar when the selected image block is stale", fakeAsync(() => {
     const {plugin, doc, rootHost, selection$, selectionValue, imageSelection} = makeHarness();
     plugin.init();
@@ -221,6 +254,27 @@ describe("ImgToolbarPlugin lifecycle", () => {
     plugin.destroy();
     rootHost.remove();
   }));
+
+  it("ignores readonly state changes while the live selection is stale", () => {
+    const {plugin, doc, rootHost, selectionValue, readonlyState$} = makeHarness();
+    const staleSelection = {
+      anchor: {blockId: "missing", type: "selected"},
+      head: {blockId: "missing", type: "selected"},
+      commonParent: "missing",
+    } as any;
+    Object.defineProperty(staleSelection, "firstBlock", {
+      get: () => {
+        throw new Error("Block not found: missing");
+      },
+    });
+    selectionValue.current = staleSelection;
+    plugin.init();
+
+    expect(() => readonlyState$.next()).not.toThrow();
+
+    plugin.destroy();
+    rootHost.remove();
+  });
 
   it("does not open toolbar for image gap cursor", fakeAsync(() => {
     const {plugin, doc, rootHost, selection$, selectionValue, imageGapSelection} = makeHarness();

@@ -1,4 +1,5 @@
-import {Subscription} from 'rxjs'
+import {Observable, Subscription} from 'rxjs'
+import {BlockSelection} from './blockSelection'
 import {
   captureRelativeSelectionBookmark,
   RelativeSelectionBookmark,
@@ -14,8 +15,11 @@ export class LiveSelectionBookmarkTracker {
   private bookmark: RelativeSelectionBookmark | null = null
   private readonly subscription: Subscription
 
-  constructor(private readonly doc: BlockCraft.Doc) {
-    this.subscription = doc.selection.changeObserve().subscribe(selection => {
+  constructor(
+    private readonly doc: BlockCraft.Doc,
+    selectionChanges$: Observable<BlockSelection | null>,
+  ) {
+    this.subscription = selectionChanges$.subscribe(selection => {
       this.revision += 1
       this.bookmark = captureRelativeSelectionBookmark(selection, doc, this.bookmark)
     })

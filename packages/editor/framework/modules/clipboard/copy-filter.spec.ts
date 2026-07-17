@@ -1,5 +1,5 @@
 import {BlockNodeType, DeltaInsert, IBlockSnapshot} from "../../block-std";
-import {applyCopyFilters, resolveCopyFilters} from "./copy-filter";
+import {applyCopyFilters, resolveCopyFilters, stripReadonlyMetaDeep} from "./copy-filter";
 import {ClipboardCopyFilter, CopyFilterContext} from "./types";
 import {ClipboardManager} from "./index";
 
@@ -19,6 +19,18 @@ const root = (children: IBlockSnapshot[]): IBlockSnapshot => ({
 });
 
 describe('applyCopyFilters', () => {
+  it('removes readonly metadata from a clipboard clone without touching the source', () => {
+    const tree = root([block('locked', 'callout', [editable('p', [{insert: 'text'}])])]);
+    const sourceChild = (tree.children as IBlockSnapshot[])[0];
+    sourceChild.meta.readonly = true;
+
+    const copied = stripReadonlyMetaDeep(tree);
+    const copiedChild = (copied.children as IBlockSnapshot[])[0];
+
+    expect(copiedChild.meta.readonly).toBeUndefined();
+    expect(sourceChild.meta.readonly).toBeTrue();
+  });
+
   it('returns the original tree unchanged when no filters', () => {
     const tree = root([editable('a', [{insert: 'hi'}])]);
     expect(applyCopyFilters(tree, [], CTX)).toBe(tree);

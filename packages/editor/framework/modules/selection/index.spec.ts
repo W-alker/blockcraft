@@ -5,7 +5,10 @@ import {SelectionManager} from './index';
 import {BlockSelection} from './blockSelection';
 
 describe('SelectionManager DOM selection normalization', () => {
-  function createManager(options?: {bindEvents?: boolean}) {
+  function createManager(options?: {
+    bindEvents?: boolean;
+    remoteSyncLifecycle$?: Subject<any>;
+  }) {
     document.getSelection()?.removeAllRanges();
 
     const rootHost = document.createElement('div');
@@ -56,6 +59,9 @@ describe('SelectionManager DOM selection normalization', () => {
         if (options?.bindEvents) fn(rootBlock);
       },
       onDestroy$: new Subject<void>(),
+      crud: options?.remoteSyncLifecycle$
+        ? {remoteSyncLifecycle$: options.remoteSyncLifecycle$.asObservable()}
+        : undefined,
       getBlockById: (id: string) => id === 'root' ? rootBlock : block,
       compareBlockPosition: () => 0,
       queryBlocksBetween: () => [],
@@ -77,6 +83,14 @@ describe('SelectionManager DOM selection normalization', () => {
     document.getSelection()?.removeAllRanges();
     document.querySelectorAll('[data-block-id="root"]').forEach(el => el.remove());
     document.querySelectorAll('[data-selection-test-outside]').forEach(el => el.remove());
+  });
+
+  it('constructs remote reconciliation without reading a partially assigned doc.selection', () => {
+    const remoteSyncLifecycle$ = new Subject<any>();
+
+    expect(() => createManager({remoteSyncLifecycle$})).not.toThrow();
+
+    remoteSyncLifecycle$.complete();
   });
 
   it('keeps a collapsed native range on a non-editable block host as a block selection', () => {
@@ -222,6 +236,97 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(recalculateSpy).not.toHaveBeenCalled();
     expect(manager.value).toBe(value);
     expect(manager.value?.isAllSelected).toBeTrue();
+  });
+
+  it('lets a new primary mousedown end the previous programmatic suppression window', () => {
+    const {manager, rootHost, block, blockHost, dispatchSelectionChange} = createManager({bindEvents: true});
+    const leading = createBlockGapSpace('before');
+    const trailing = createBlockGapSpace('after');
+    blockHost.append(leading, document.createElement('div'), trailing);
+    const recalculateSpy = spyOn(manager, 'recalculate').and.callThrough();
+
+    manager.selectBlock(block as any);
+    rootHost.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    }));
+    dispatchSelectionChange();
+
+    expect(recalculateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps explicit recalculate suppression across a primary mousedown', () => {
+    const {manager, rootHost, block, blockHost, dispatchSelectionChange} = createManager({bindEvents: true});
+    const leading = createBlockGapSpace('before');
+    const trailing = createBlockGapSpace('after');
+    blockHost.append(leading, document.createElement('div'), trailing);
+    const recalculateSpy = spyOn(manager, 'recalculate').and.callThrough();
+
+    manager.selectBlock(block as any);
+    manager.setSuppressRecalculate(true);
+    rootHost.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    }));
+    dispatchSelectionChange();
+    manager.setSuppressRecalculate(false);
+
+    expect(recalculateSpy).not.toHaveBeenCalled();
+  });
+
+  it('rechecks a selectionchange after the same event releases a stale composition gate', async () => {
+    const {manager, doc, dispatchSelectionChange} = createManager({bindEvents: true});
+    const recalculateSpy = spyOn(manager, 'recalculate').and.returnValue({value: null});
+
+    doc.event.status.isComposing = true;
+    dispatchSelectionChange();
+    // CompositionControl can run later than SelectionManager for the same
+    // native event, depending on afterInit listener registration order.
+    doc.event.status.isComposing = false;
+    await Promise.resolve();
+
+    expect(recalculateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rechecks when a later selectionchange listener releases the composition gate in a microtask', async () => {
+    const {manager, doc, dispatchSelectionChange} = createManager({bindEvents: true});
+    const recalculateSpy = spyOn(manager, 'recalculate').and.returnValue({value: null});
+
+    doc.event.status.isComposing = true;
+    dispatchSelectionChange();
+    queueMicrotask(() => {
+      doc.event.status.isComposing = false;
+    });
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    expect(recalculateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops bounded composition rechecks while a real composition remains active', async () => {
+    const {manager, doc, dispatchSelectionChange} = createManager({bindEvents: true});
+    const recalculateSpy = spyOn(manager, 'recalculate').and.returnValue({value: null});
+
+    doc.event.status.isComposing = true;
+    dispatchSelectionChange();
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    expect(recalculateSpy).not.toHaveBeenCalled();
+    expect((manager as any)._compositionSelectionRecheckTimer).toBeNull();
+  });
+
+  it('rechecks after a stale composition recovers inside the programmatic suppression window', async () => {
+    const {manager, doc, dispatchSelectionChange} = createManager({bindEvents: true});
+    const recalculateSpy = spyOn(manager, 'recalculate').and.returnValue({value: null});
+    (manager as any)._suppressProgrammaticSelectionChangeUntil = performance.now() + 10;
+
+    doc.event.status.isComposing = true;
+    dispatchSelectionChange();
+    doc.event.status.isComposing = false;
+    await new Promise(resolve => setTimeout(resolve, 30));
+
+    expect(recalculateSpy).toHaveBeenCalledTimes(1);
   });
 
   it('selects editable children through the canonical model immediately', () => {

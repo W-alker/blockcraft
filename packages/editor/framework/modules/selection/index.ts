@@ -38,6 +38,13 @@ import {
   SelectionPositionResolver,
 } from "./position-resolver";
 import {resolveSelectionCommonParent} from "./common-parent";
+import {RemoteSelectionReconciler} from './remote-selection-reconciler';
+import {RelativeSelectionBookmark} from './relative-bookmark';
+import {SelectionHistoryRestorer} from './history-restorer';
+import {
+  DOMSelectionSurfaceAdapter,
+  SelectionSurfaceAdapter,
+} from './surface-adapter';
 
 const DOM_PROJECTION_RETRY_LIMIT = 8
 
@@ -50,10 +57,33 @@ export class SelectionManager {
   private _keyboard = new SelectionKeyboard(this.doc)
   private _suppressRecalculate = false
   private _suppressProgrammaticSelectionChangeUntil = 0
+  private _compositionSelectionRecheckQueued = false
+  private _compositionSelectionRecheckTimer: ReturnType<typeof setTimeout> | null = null
+  private _compositionSelectionRecheckVersion = 0
   private _projectionVersion = 0
   private readonly _positionResolver: SelectionPositionResolver
+  private readonly _remoteSelectionReconciler: RemoteSelectionReconciler | null
+  private readonly _historyRestorer: SelectionHistoryRestorer
+  private readonly _surface: SelectionSurfaceAdapter
 
-  constructor(public readonly doc: BlockCraft.Doc) {
+  constructor(
+    public readonly doc: BlockCraft.Doc,
+    surface?: SelectionSurfaceAdapter,
+  ) {
+    this._surface = surface ?? new DOMSelectionSurfaceAdapter(doc)
+    this._remoteSelectionReconciler = this.doc.crud?.remoteSyncLifecycle$
+      ? new RemoteSelectionReconciler(
+        this.doc,
+        this.doc.crud.remoteSyncLifecycle$,
+        this.changeObserve(),
+        this._surface,
+      )
+      : null
+    this._historyRestorer = new SelectionHistoryRestorer(this.doc, {
+      replay: selection => this.replay(selection),
+      readModelSelection: () => this.value?.toJSON() ?? null,
+      readDomSelection: () => this.recalculate(false).value?.toJSON() ?? null,
+    }, this._surface)
     this._positionResolver = new SelectionPositionResolver({
       getParentId: blockId => {
         const block = this._readBlock(blockId)
@@ -71,6 +101,15 @@ export class SelectionManager {
       },
     })
     this.doc.afterInit(this._bindEvents)
+    this.doc.onDestroy$.pipe(take(1)).subscribe(() => {
+      this._cancelCompositionSelectionRecheck()
+      this._remoteSelectionReconciler?.destroy()
+      this._historyRestorer.destroy()
+    })
+  }
+
+  restoreBookmark(bookmark: RelativeSelectionBookmark | null): void {
+    this._historyRestorer.restore(bookmark)
   }
 
   private _readBlock(blockId: string): BlockCraft.BlockComponent | null {
@@ -91,7 +130,7 @@ export class SelectionManager {
 
   blur() {
     this._applyState(null)
-    document.getSelection()?.removeAllRanges()
+    this._surface.clearNativeSelection()
   }
 
   changeObserve() {
@@ -107,9 +146,17 @@ export class SelectionManager {
   }
 
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
-    this.doc.event.customListen(document, 'selectionchange').subscribe(e => {
-      if (this._shouldSuppressNativeSelectionChange()) return
-      if (this.doc.event.status.isComposing) return
+    this.doc.event.customListen(this._surface.ownerDocument, 'selectionchange').subscribe(e => {
+      // Explicit gates protect an active drag/transform and must stay hard.
+      // The short programmatic projection window is different: when an IME
+      // session recovers during that window, remember this native change and
+      // replay it once the window expires instead of dropping it forever.
+      if (this._suppressRecalculate) return
+      if (this.doc.event.status.isComposing) {
+        this._queueCompositionSelectionRecheck()
+        return
+      }
+      if (this._suppressProgrammaticSelectionChangeUntil > performance.now()) return
       this.recalculate()
     })
     this.doc.event.customListen<FocusEvent>(root.hostElement, 'focusin').subscribe(event => {
@@ -128,6 +175,13 @@ export class SelectionManager {
     fromEvent<MouseEvent>(root.hostElement, 'mousedown', {capture: true})
       .pipe(takeUntil(this.doc.onDestroy$))
       .subscribe(event => {
+        // A new primary-pointer intent must not inherit the short suppression
+        // window from the previous programmatic DOM projection. Any selection
+        // API invoked later in this mousedown will establish its own window.
+        if (event.button === 0) {
+          this._suppressProgrammaticSelectionChangeUntil = 0
+          this._cancelCompositionSelectionRecheck()
+        }
         if (event.detail !== 3) return
         if (isNativeInputTarget(event.target)) return
         const blockId = closetBlockId(event.target as Node)
@@ -152,18 +206,63 @@ export class SelectionManager {
    */
   setSuppressRecalculate(v: boolean) {
     this._suppressRecalculate = v
-  }
-
-  private _shouldSuppressNativeSelectionChange(): boolean {
-    if (this._suppressRecalculate) return true
-    return this._suppressProgrammaticSelectionChangeUntil > performance.now()
+    if (v) this._cancelCompositionSelectionRecheck()
   }
 
   private _suppressProgrammaticSelectionChange() {
+    this._cancelCompositionSelectionRecheck()
     this._suppressProgrammaticSelectionChangeUntil = Math.max(
       this._suppressProgrammaticSelectionChangeUntil,
       performance.now() + 80,
     )
+  }
+
+  private _queueCompositionSelectionRecheck() {
+    if (this._compositionSelectionRecheckQueued || this._compositionSelectionRecheckTimer !== null) return
+    this._compositionSelectionRecheckQueued = true
+    const version = ++this._compositionSelectionRecheckVersion
+    queueMicrotask(() => {
+      if (version !== this._compositionSelectionRecheckVersion) return
+      this._compositionSelectionRecheckQueued = false
+      this._runCompositionSelectionRecheck(version, 2)
+    })
+  }
+
+  private _runCompositionSelectionRecheck(version: number, composingRetryBudget = 0) {
+    if (version !== this._compositionSelectionRecheckVersion) return
+    if (this._suppressRecalculate) return
+    if (this.doc.event.status.isComposing) {
+      // CompositionControl clears a stale cross-block session after the native
+      // event finishes. Two bounded task hops cover either listener order; a
+      // genuinely active composition is then left untouched without polling.
+      if (composingRetryBudget <= 0) return
+      this._compositionSelectionRecheckTimer = setTimeout(() => {
+        if (version !== this._compositionSelectionRecheckVersion) return
+        this._compositionSelectionRecheckTimer = null
+        this._runCompositionSelectionRecheck(version, composingRetryBudget - 1)
+      }, 0)
+      return
+    }
+
+    const remaining = this._suppressProgrammaticSelectionChangeUntil - performance.now()
+    if (remaining > 0) {
+      this._compositionSelectionRecheckTimer = setTimeout(() => {
+        if (version !== this._compositionSelectionRecheckVersion) return
+        this._compositionSelectionRecheckTimer = null
+        this._runCompositionSelectionRecheck(version)
+      }, Math.ceil(remaining) + 1)
+      return
+    }
+    this.recalculate()
+  }
+
+  private _cancelCompositionSelectionRecheck() {
+    this._compositionSelectionRecheckVersion++
+    this._compositionSelectionRecheckQueued = false
+    if (this._compositionSelectionRecheckTimer !== null) {
+      clearTimeout(this._compositionSelectionRecheckTimer)
+      this._compositionSelectionRecheckTimer = null
+    }
   }
 
   // ── Read from DOM (user interaction path) ──
@@ -171,24 +270,21 @@ export class SelectionManager {
   private _shouldKeepModelOnlySelection(): boolean {
     const current = this.value
     if (!current?.getTableCellSelection()) return false
-    const activeElement = document.activeElement
-    return !!activeElement &&
-      (activeElement === this.doc.root.hostElement ||
-        this.doc.root.hostElement.contains(activeElement))
+    return this._surface.hasEditorFocus()
   }
 
   recalculate(execNext = true, options?: { isComposing?: boolean }, _depth = 0): {
     value: BlockSelection | null
     next?: () => void
   } {
-    const activeElement = document.activeElement
+    const activeElement = this._surface.getActiveElement()
     if (activeElement && this.doc.root.hostElement.contains(activeElement) && isNativeInputTarget(activeElement)) {
       const next = () => this._applyState(null)
       execNext && next()
       return {value: null, next: execNext ? undefined : next}
     }
 
-    const selection = document.getSelection()
+    const selection = this._surface.getNativeSelection()
     if (!selection || !selection.rangeCount) {
       if (this._shouldKeepModelOnlySelection()) {
         return {value: this.value}
@@ -429,7 +525,8 @@ export class SelectionManager {
   }
 
   private _applyDomRange(range: Range) {
-    const selection = document.getSelection()!
+    const selection = this._surface.getNativeSelection()
+    if (!selection) throw new Error('Native selection is unavailable')
     this._suppressProgrammaticSelectionChange()
     selection.removeAllRanges()
     selection.addRange(range)
@@ -481,7 +578,7 @@ export class SelectionManager {
   ): Range | null {
     if (this._shouldDeferGapDomRange(selectionState)) {
       this._suppressProgrammaticSelectionChange()
-      document.getSelection()?.removeAllRanges()
+      this._surface.clearNativeSelection()
       this._retryDomRangeWhenReady(
         selectionState.toJSON(),
         projectionVersion,
@@ -514,11 +611,11 @@ export class SelectionManager {
 
     this._publishState(selectionState)
     const projectionVersion = this._projectionVersion
-    this.doc.root.hostElement.focus?.({preventScroll: true})
+    this._surface.focusRoot()
     this._suppressProgrammaticSelectionChange()
 
     if (options.modelOnly) {
-      document.getSelection()?.removeAllRanges()
+      this._surface.clearNativeSelection()
       if (options.scrollIntoView) this.scrollSelectionIntoView()
       return null
     }
@@ -531,7 +628,7 @@ export class SelectionManager {
       )
     } catch {
       this._suppressProgrammaticSelectionChange()
-      document.getSelection()?.removeAllRanges()
+      this._surface.clearNativeSelection()
       this._retryDomRangeWhenReady(
         selectionState.toJSON(),
         projectionVersion,
@@ -564,7 +661,7 @@ export class SelectionManager {
     scrollIntoView?: boolean,
     attempts = DOM_PROJECTION_RETRY_LIMIT,
   ): void {
-    requestAnimationFrame(() => {
+    this._surface.requestFrame(() => {
       if (projectionVersion !== this._projectionVersion) return
       const current = this.value
       if (!current || !sameSelectionJSON(current.toJSON(), expected)) return
@@ -574,8 +671,8 @@ export class SelectionManager {
       }
 
       const rootHost = this.doc.root.hostElement
-      const active = document.activeElement
-      const focusDroppedWithDom = !active || active === document.body || active === document.documentElement
+      const active = this._surface.getActiveElement()
+      const focusDroppedWithDom = this._surface.isFocusDropped()
       if (
         !focusDroppedWithDom &&
         active !== rootHost &&
@@ -584,7 +681,7 @@ export class SelectionManager {
         return
       }
       if (focusDroppedWithDom) {
-        rootHost.focus?.({preventScroll: true})
+        this._surface.focusRoot()
       }
       this._suppressProgrammaticSelectionChange()
       if (this._shouldDeferGapDomRange(current)) {
@@ -601,7 +698,7 @@ export class SelectionManager {
       try {
         this._applyDomRangeForSelection(current, scrollIntoView, projectionVersion)
       } catch (error) {
-        document.getSelection()?.removeAllRanges()
+        this._surface.clearNativeSelection()
         if (attempts > 0) {
           this._retryDomRangeWhenReady(
             expected,
@@ -647,7 +744,7 @@ export class SelectionManager {
    * Works with both new ISelectionPointJSON and legacy IBlockInlineRangeJSON.
    */
   private _buildDomRange(startPoint: any, endPoint?: any | null): Range {
-    const range = document.createRange()
+    const range = this._surface.createRange()
     const fromBlock = this.doc.getBlockById(startPoint.blockId)
 
     if (startPoint.type === 'table-cell') {
@@ -1112,20 +1209,20 @@ export class SelectionManager {
     if (start && start.type === 'gap') {
       try {
         const span = getBlockGapCaretSpan(start.block.hostElement, start.side)
-        if (span) return span.getBoundingClientRect()
+        if (span) return this._surface.getElementRect(span)
       } catch {
         // fall through to the range-based path
       }
     }
     const range = this._rangeFromModel()
     if (!range) return null
-    return range.getBoundingClientRect()
+    return this._surface.getRangeRect(range)
   }
 
   getSelectionRects(): DOMRectList | null {
     const range = this._rangeFromModel()
     if (!range) return null
-    return range.getClientRects()
+    return this._surface.getRangeRects(range)
   }
 
   getSelectedText(): string {
@@ -1191,7 +1288,7 @@ export class SelectionManager {
     if (!rect || rect.height === 0) return
 
     const container = this.doc.scrollContainer!
-    const cRect = container.getBoundingClientRect()
+    const cRect = this._surface.getElementRect(container)
     const padding = 24
 
     if (rect.bottom > cRect.bottom) {

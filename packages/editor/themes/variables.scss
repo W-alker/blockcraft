@@ -39,6 +39,11 @@
   --bc-bg-gray2: #dddddd;
   --bc-bg-muted: #f8fbfe;
 
+  // Block 级只读状态
+  --bc-readonly-border-color: var(--bc-color-lighter);
+  --bc-readonly-icon-color: var(--bc-color-lighter);
+  --bc-readonly-bg: var(--bc-bg-muted);
+
   // 状态颜色
   --bc-warning-color: #f5a623;
   --bc-error-color: #e03131;

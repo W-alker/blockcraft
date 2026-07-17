@@ -799,7 +799,6 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   // Armed at capture-phase native mousedown on the table host. Native
   // listeners (not the framework dispatcher) so routing can't swallow events.
   private _handleNativeMouseDown(evt: MouseEvent) {
-    if (this.doc.isReadonly) return
     // Only react to primary (left) button. On Mac WebView / Safari the
     // trackpad's two-finger tap and force-touch can dispatch button=2
     // mousedown during an active left-button drag; on Chrome a stray
@@ -867,7 +866,6 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   private _handleNativeMouseOver(evt: MouseEvent) {
-    if (this.doc.isReadonly) return
     const id = this._closetCell(evt)
     if (!id || this.hoveringCell?.id === id) return
 
@@ -1317,7 +1315,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     colCount?: number,
     selectionKind?: 'cell' | 'cells' | 'row' | 'col',
   }) {
-    if (this.doc.isReadonly) {
+    if (this.isReadonly) {
       this._hideTableMenu()
       return
     }
@@ -1433,13 +1431,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   private _syncTableFocusUi(selection: BlockSelection | null) {
-    if (this.doc.isReadonly) {
+    if (this.isReadonly) {
       this._hideTableMenu()
-      this._visibleRowHandle = null
-      this._visibleColHandle = null
-      this._clearSelected()
-      this._activeCellsRange = null
-      return
     }
 
     if (this._syncFromTableCellSelection(selection)) return
@@ -1574,7 +1567,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   private _showTableMenuOverlay() {
-    if (this.doc.isReadonly || !this._tableMenu.visible || !this.tableMenuAnchor) {
+    if (this.isReadonly || !this._tableMenu.visible || !this.tableMenuAnchor) {
       this._disposeToolbar()
       return
     }
@@ -1792,7 +1785,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   onRowReorderStart(evt: RowReorderStartEvent) {
-    if (this.doc.isReadonly) return
+    if (this.isReadonly) return
     const rows = this._getRowElements()
     if (!rows.length) return
 
@@ -2243,7 +2236,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   onColReorderStart(evt: ColReorderStartEvent) {
-    if (this.doc.isReadonly) return
+    if (this.isReadonly) return
     const colCount = this.colLength
     if (!colCount) return
 
@@ -2508,6 +2501,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     evt.preventDefault()
     evt.stopPropagation()
 
+    if (this.isReadonly) return
     if (!this.hoveringCell) return
     this.resizingCol$.next(true)
 

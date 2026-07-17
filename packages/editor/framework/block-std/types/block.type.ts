@@ -17,6 +17,7 @@ export enum BlockNodeType {
 export interface IBaseMetadata {
   folded?: boolean
   selected?: boolean
+  readonly?: boolean
   createdTime?: number
   lastModified?: {
     time: number

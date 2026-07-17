@@ -1,6 +1,7 @@
 // packages/editor/framework/modules/pagination/view/paginated-view.controller.ts
 import {animationFrameScheduler, Subscription} from "rxjs";
 import {throttleTime} from "rxjs/operators";
+import {performanceTest} from "../../../../global";
 import {paginate, PaginationItem} from "../engine";
 import {PaginationConfig, ResolvedPaginationGeometry} from "../pagination.types";
 import {resolveScreenGeometry} from "./pagination-geometry";
@@ -132,6 +133,7 @@ export class PaginatedViewController {
     });
   }
 
+  @performanceTest('pagination view recompute', 16)
   private _recompute(): StablePaginationLayout | null {
     if (!this._enabled) return null;
     // measure() 已忽略 margin-top（gap），无需先清空 gap——少一次「清空→强制回流→重设」的布局抖动，
@@ -151,10 +153,11 @@ export class PaginatedViewController {
     );
     this._stableLayout = layout;
 
-    // 超高 capHeight 块（图片/代码等）锁定最大高度到一页内。measure 用 scrollHeight（裁剪无关）→ 无反馈环。
-    const locks = new Map<string, number>();
-    for (const m of metas) if (m.lockHeight != null) locks.set(m.id, m.lockHeight);
-    this._heightLockApplier.apply(locks);
+    const lockedIds = new Set<string>();
+    for (const meta of metas) {
+      if (meta.lockHeight != null && meta.lockHeight > 0) lockedIds.add(meta.id);
+    }
+    this._heightLockApplier.apply(lockedIds);
 
     const rects = computeSheetRects(result.pages.length, this._geom.sheetHeightPx, this._geom.pageGap);
     const totalHeight = computeBackdropHeight(result.pages.length, this._geom.sheetHeightPx, this._geom.pageGap);
@@ -182,6 +185,7 @@ export class PaginatedViewController {
     const {sheetWidthPx, margins, headerHeight, footerHeight} = this._geom;
     root.classList.add('bc-paginated');
     root.style.setProperty('--bc-page-width', `${sheetWidthPx}px`);
+    root.style.setProperty('--bc-page-content-height', `${this._geom.geometry.contentHeight}px`);
     // 正文上下内边距要把页眉/页脚带也让出来，使首块落在「页边距 + 页眉」之下、
     // 与背景层里 header 之下的内容区顶对齐（contentHeight 已扣除页眉/页脚）。
     root.style.setProperty('--bc-page-margin-top', `${margins.top + headerHeight}px`);
@@ -194,7 +198,7 @@ export class PaginatedViewController {
   private _removeContainerStyles(): void {
     const root = this.doc.root.hostElement;
     root.classList.remove('bc-paginated');
-    ['--bc-page-width', '--bc-page-margin-top', '--bc-page-margin-right', '--bc-page-margin-bottom', '--bc-page-margin-left']
+    ['--bc-page-width', '--bc-page-content-height', '--bc-page-margin-top', '--bc-page-margin-right', '--bc-page-margin-bottom', '--bc-page-margin-left']
       .forEach(p => root.style.removeProperty(p));
     this.scrollContainer.classList.remove('bc-paginated-scroll');
   }

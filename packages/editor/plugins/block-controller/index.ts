@@ -78,6 +78,18 @@ export class BlockControllerPlugin extends DocPlugin {
     this.doc.root.hostElement.appendChild(this._cpr.location.nativeElement)
 
     this._sub.add(
+      this._cpr.instance.closed
+        .pipe(takeUntil(this.doc.onDestroy$))
+        .subscribe(() => {
+          this.clearTimer()
+          // TriggerBtn closes itself from inside the component. Keep the
+          // ComponentRef input cache in sync as well, otherwise Angular skips
+          // the next setInput when the same block is hovered again.
+          this.clearActiveBlock()
+        })
+    )
+
+    this._sub.add(
       fromEvent<MouseEvent>(this.doc.root.hostElement, 'mouseover')
         .pipe(takeUntil(this.doc.onDestroy$))
         .subscribe(e => {
@@ -94,7 +106,8 @@ export class BlockControllerPlugin extends DocPlugin {
           if (!blockId || this._activeBlock?.id === blockId) return
           const block = this.doc.getBlockById(blockId)
           const schema = this.doc.schemas.get(block.flavour)
-          if (!schema || schema.metadata.isLeaf || (block.nodeType === 'block' && !target.isContentEditable)) return
+          const protectedBlock = this.isBlockProtected(block)
+          if (!schema || schema.metadata.isLeaf || (block.nodeType === 'block' && !target.isContentEditable && !protectedBlock)) return
 
           this._timer = setTimeout(() => {
             if (!this.isBlockAlive(block)) {
@@ -161,6 +174,13 @@ export class BlockControllerPlugin extends DocPlugin {
     }
   }
 
+  private isBlockProtected(block: BlockCraft.BlockComponent): boolean {
+    const manager = this.doc.readonlyManager
+    return manager
+      ? manager.isReadonly(block) || manager.containsReadonly(block)
+      : !!block.isReadonly
+  }
+
   private resolveDragData(activeBlock: BlockCraft.BlockComponent): InternalDragData {
     const sel = this.doc.selection.value
     if (!sel || !isSelectionAlive(sel as any, this.doc) || sel.isInSameBlock) {
@@ -190,6 +210,7 @@ export class BlockControllerPlugin extends DocPlugin {
             this.clearActiveBlock()
             return
           }
+          if (this.isBlockProtected(activeBlock)) return
 
           this._cpr.instance.menuDisabled = true
           this._cpr.instance.cdr.detectChanges()

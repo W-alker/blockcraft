@@ -8,6 +8,11 @@ describe('block-policy', () => {
       .toEqual({breakable: false, keepWithNext: false, capHeight: true});
   });
 
+  it('带 caption 子块的图片仍按原子块锁高', () => {
+    expect(resolveBlockPolicy({flavour: 'image', nodeType: BlockNodeType.block}))
+      .toEqual({breakable: false, keepWithNext: false, capHeight: true});
+  });
+
   it('代码块不按行拆、超高锁高（capHeight）', () => {
     expect(resolveBlockPolicy({flavour: 'code', nodeType: BlockNodeType.editable}))
       .toEqual({breakable: false, keepWithNext: false, capHeight: true});

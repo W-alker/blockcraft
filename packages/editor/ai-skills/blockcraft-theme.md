@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-07-15
+> Last updated: 2026-07-16
 
 ## Theme Structure
 
@@ -19,7 +19,8 @@ themes/
 │   ├── _callout.scss
 │   └── ...
 ├── components/         # Per-component styles (toolbar, pickers)
-└── plugins/            # Per-plugin styles (float toolbar, controllers)
+└── plugins/            # Per-plugin styles loaded after ordinary block styles
+    └── pagination.scss # Live/print pagination layout and block overrides
 ```
 
 ## Theme Switching
@@ -147,8 +148,24 @@ body[blockcraft-theme="dark"] {
 | `--bc-pagination-backdrop-bg` | `#f5f5f4` | Scroll-container background between sheets |
 | `--bc-page-chrome-color` | `#9b9b97` | Header/footer text color |
 | `--bc-page-chrome-fs` | `12px` | Header/footer font size |
+| `--bc-page-content-height` | runtime page content height | Maximum height inherited by top-level void/code blocks in live and print pagination |
 
 Runtime classes are `.bc-paginated` on the document root, `.bc-paginated-scroll` on the scroll container, `.bc-pagination-backdrop`, `.bc-page-sheet`, `.bc-page-header` and `.bc-page-footer`. They are plugin-owned state: host code may style them but must not add/remove them directly.
+
+`--bc-page-content-height` is geometry-owned: the pagination controller derives
+it from paper size, margins and header/footer bands. The theme predefines the
+top-level atomic/code-block cap with `max-height: var(--bc-page-content-height)`;
+hosts may read the token but should change page geometry through
+`PaginationPlugin.updateConfig()` rather than overriding it independently.
+
+Pagination overrides live in `themes/plugins/pagination.scss`, imported at the
+end of `base.scss` so they can safely override ordinary block styles. The cap
+is applied according to each block's measurement needs: code keeps its host
+overflow visible and scrolls `.edit-container-wrapper`; image retains host
+clipping so its uncapped `scrollHeight` remains available to pagination, and
+moves its horizontal resize handles inside the clipping boundary. Other
+top-level void blocks retain whole-host clipping. The same rules target `.bc-paginated` and
+`.bc-print-content`; do not create a separate host-only print variant.
 
 ## Checklist
 
@@ -165,4 +182,5 @@ For the current variable definitions and theme patterns, read:
 - `packages/editor/themes/variables.scss`
 - `packages/editor/themes/light.scss`
 - `packages/editor/themes/dark.scss`
+- `packages/editor/themes/plugins/pagination.scss`
 - Any existing block style file in `packages/editor/themes/blocks/` as reference

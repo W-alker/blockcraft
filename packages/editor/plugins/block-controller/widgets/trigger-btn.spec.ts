@@ -224,3 +224,145 @@ describe("TriggerBtn multi-selection state", () => {
     expect(blockMenuActionHandler).not.toHaveBeenCalled();
   });
 });
+
+describe("TriggerBtn block readonly menu", () => {
+  const makeHarness = (state: {explicit?: boolean; ancestor?: boolean; descendant?: boolean} = {}) => {
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", ["markForCheck", "detectChanges"]);
+    const component = new TriggerBtn(cdr, new ElementRef(document.createElement("div")));
+    const snapshot = {
+      id: "p1",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      meta: {},
+      props: {depth: 0},
+      children: [],
+    } as any;
+    const block = {
+      id: "p1",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      props: {depth: 0},
+      parentId: "root",
+      parentBlock: {id: "root", flavour: "root"},
+      toSnapshot: jasmine.createSpy("toSnapshot").and.returnValue(snapshot),
+    };
+    const resolution = () => state.explicit
+      ? {readonly: true, source: {kind: "self", blockId: "p1"}}
+      : state.ancestor
+        ? {readonly: true, source: {kind: "ancestor", blockId: "parent"}}
+        : {readonly: false, source: null};
+    const readonlyManager = {
+      resolve: jasmine.createSpy("resolve").and.callFake(resolution),
+      isReadonly: jasmine.createSpy("isReadonly").and.callFake(() => resolution().readonly),
+      isExplicitReadonly: jasmine.createSpy("isExplicitReadonly").and.callFake(() => !!state.explicit),
+      containsReadonly: jasmine.createSpy("containsReadonly").and.callFake(() => !!state.descendant),
+    };
+    component.doc = {
+      selection: {value: null},
+      readonlyManager,
+      getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
+      setBlockReadonly: jasmine.createSpy("setBlockReadonly"),
+      clipboard: {
+        copyBlocksModel: jasmine.createSpy("copyBlocksModel").and.returnValue(Promise.resolve()),
+      },
+      messageService: {
+        success: jasmine.createSpy("success"),
+      },
+    } as any;
+    (component as any)._activeBlock = block;
+    (component as any).isEmpty = false;
+    (component as any).refreshMenuData();
+    return {component, block, snapshot, state, readonlyManager};
+  };
+
+  const findPrimary = (component: TriggerBtn, name: string) =>
+    ((component as any).primaryToolMenuItems as any[]).find(item => item.name === name);
+
+  it("notifies the owner when the trigger closes", () => {
+    const {component} = makeHarness();
+    const closed = jasmine.createSpy("closed");
+    const closePanel = jasmine.createSpy("closePanel");
+    (component as any).menuTrigger = {closePanel};
+    (component as any).closed.subscribe(closed);
+
+    component.close();
+
+    expect(closePanel).toHaveBeenCalledTimes(1);
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows enabled unlock for a self lock and disabled lock for an inherited lock", () => {
+    const self = makeHarness({explicit: true});
+    expect(findPrimary(self.component, "block-readonly")).toEqual(jasmine.objectContaining({
+      checked: true,
+      disabled: false,
+    }));
+
+    const inherited = makeHarness({ancestor: true});
+    expect(findPrimary(inherited.component, "block-readonly")).toEqual(jasmine.objectContaining({
+      checked: true,
+      disabled: true,
+      desc: "由上级内容块锁定",
+    }));
+  });
+
+  it("lets a self+ancestor locked block remove its own marker", () => {
+    const {component, block, state} = makeHarness({explicit: true, ancestor: true});
+    const item = findPrimary(component, "block-readonly");
+
+    component.handleMenuAction({item, source: "switch", checked: false, path: []});
+
+    expect(component.doc.setBlockReadonly).toHaveBeenCalledWith(block as any, false);
+    state.explicit = false;
+  });
+
+  it("keeps copy and lock controls, and applies readonlyBehavior to custom actions", () => {
+    const {component} = makeHarness({explicit: true});
+    component.blockMenuResolver = () => [{
+      key: "custom",
+      items: [
+        {type: "simple", name: "inspect", label: "Inspect", readonlyBehavior: "allow"},
+        {type: "simple", name: "rename", label: "Rename"},
+        {type: "simple", name: "secret", label: "Secret", readonlyBehavior: "hide"},
+      ],
+    }];
+
+    (component as any).refreshMenuData();
+
+    expect(((component as any).primaryToolMenuItems as any[]).map(item => item.name))
+      .toEqual(["copy", "block-readonly"]);
+    const customItems = ((component as any).blockMenuSections[0].items as any[]);
+    expect(customItems.map(item => item.name)).toEqual(["inspect", "rename"]);
+    expect(customItems.find(item => item.name === "inspect").disabled).toBeFalsy();
+    expect(customItems.find(item => item.name === "rename").disabled).toBeTrue();
+  });
+
+  it("copies a protected block through the block menu", async () => {
+    const {component, block, snapshot} = makeHarness({explicit: true});
+    const copyItem = findPrimary(component, "copy");
+
+    component.handleMenuAction({item: copyItem, source: "simple", path: []});
+    await Promise.resolve();
+
+    expect(component.doc.clipboard.copyBlocksModel).toHaveBeenCalledOnceWith([snapshot]);
+    expect(block.toSnapshot).toHaveBeenCalledTimes(1);
+    expect(component.doc.messageService.success).toHaveBeenCalledOnceWith("已复制");
+  });
+
+  it("hides cut/delete for an unlocked ancestor containing a locked descendant", () => {
+    const {component} = makeHarness({descendant: true});
+
+    expect(((component as any).primaryToolMenuItems as any[]).map(item => item.name))
+      .toEqual(["copy", "block-readonly"]);
+  });
+
+  it("closes instead of resolving readonly state for a stale active block", () => {
+    const {component, readonlyManager} = makeHarness();
+    (component.doc as any).model = {exists: () => false};
+    readonlyManager.resolve.and.throwError("Block not found: p1");
+
+    expect(() => (component as any).refreshMenuData()).not.toThrow();
+    expect(component.activeBlock).toBeNull();
+    expect((component as any).primaryToolMenuItems).toEqual([]);
+  });
+});

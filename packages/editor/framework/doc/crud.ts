@@ -13,20 +13,23 @@ import {Subject} from "rxjs";
 import {isYArray, isYText} from "../utils/yAbstractType";
 import {DocUndoManger} from "./undoManger";
 import {ChildrenRepairer} from "./children-repair";
-import {isNativeInputTarget} from "../utils";
-import {
-  LiveSelectionBookmarkSnapshot,
-  LiveSelectionBookmarkTracker,
-} from "../modules/selection/live-bookmark-tracker";
-import {
-  remoteChangeAffectsRelativeSelectionBookmark,
-  resolveRelativeSelectionBookmark,
-} from "../modules/selection/relative-bookmark";
+import {IRemoteDocSyncLifecycleEvent} from "./sync-lifecycle";
 
 // ORIGIN_* 已抽到零依赖叶子文件 ./origins（避免 base-block/reactive 经 doc barrel 成环）。
 // 这里 import 供 crud 内部使用，并 re-export 以保持 `export * from './crud'` 的公共导出面不变。
-import { ORIGIN_SKIP_SYNC, ORIGIN_NO_RECORD } from "./origins";
-export { ORIGIN_SKIP_SYNC, ORIGIN_NO_RECORD };
+import {
+  ORIGIN_BLOCK_READONLY_CONTROL,
+  ORIGIN_SKIP_SYNC,
+  ORIGIN_NO_RECORD,
+  ORIGIN_SYSTEM_REPAIR,
+} from "./origins";
+import {BlockReadonlyOperation} from "./block-readonly.types";
+export {
+  ORIGIN_BLOCK_READONLY_CONTROL,
+  ORIGIN_SKIP_SYNC,
+  ORIGIN_NO_RECORD,
+  ORIGIN_SYSTEM_REPAIR,
+};
 
 export interface ITextChangeEvent {
   isUndoRedo: boolean,
@@ -65,6 +68,19 @@ export interface IPropsChangeEvent {
   }[]
 }
 
+export interface IMetaChangeEvent {
+  isUndoRedo: boolean
+  origin: unknown
+  local: boolean
+  transactions: {
+    blockId: string
+    changes: Map<string, {
+      oldValue: unknown
+      action: "add" | "update" | "delete"
+    }>
+  }[]
+}
+
 type BlockDeleteRange = {
   index: number,
   length: number
@@ -76,12 +92,13 @@ export class DocCRUD {
   readonly onChildrenUpdate$ = new Subject<IChildrenChangeEvent>()
   readonly onPropsUpdate$ = new Subject<IPropsChangeEvent>()
   readonly onTextUpdate$ = new Subject<ITextChangeEvent>()
+  readonly onMetaUpdate$ = new Subject<IMetaChangeEvent>()
+  private readonly _remoteSyncLifecycle$ = new Subject<IRemoteDocSyncLifecycleEvent>()
+  /** @internal Selection-domain hook around remote model-to-view synchronization. */
+  readonly remoteSyncLifecycle$ = this._remoteSyncLifecycle$.asObservable()
 
   // 保存 observer 引用，doc 销毁时需要 unobserveDeep；否则若宿主复用 yDoc，observer 会堆积
   private _yObserverHandler: ((events: Y.YEvent<any>[], tr: Y.Transaction) => void) | null = null
-  private _liveSelectionBookmarks: LiveSelectionBookmarkTracker | null = null
-  private _remoteSelectionFrame: number | null = null
-  private _pendingRemoteSelectionState: LiveSelectionBookmarkSnapshot | null = null
 
   // 远端 CRDT 合并可能让同一 block ID 重复出现（同父两次 / 跨父两处），仅远端事务触发检测
   private _childrenRepairer!: ChildrenRepairer
@@ -103,7 +120,6 @@ export class DocCRUD {
     this.doc.afterInit(() => {
 
       this.undoManager = new DocUndoManger(this.doc, this.yBlockMap)
-      this._liveSelectionBookmarks = new LiveSelectionBookmarkTracker(this.doc)
 
       // 注：children 完整性修复已前移到 initByYBlock 构建组件树【之前】执行
       // （见 repairChildRefsOnLoad）。afterInit 在构建之后，此处再修会让删除的
@@ -111,13 +127,25 @@ export class DocCRUD {
 
       this._yObserverHandler = (evt, tr) => {
         this.doc.ngZone.run(() => {
-          const bookmarkState = !tr.local
-            ? this._liveSelectionBookmarks?.snapshot() ?? null
-            : null
+          const affectedBlockIds = tr.local ? null : this._collectAffectedBlockIds(evt)
+          if (affectedBlockIds) {
+            this._remoteSyncLifecycle$.next({
+              phase: 'before-view-sync',
+              transaction: tr,
+              origin: tr.origin,
+              isUndoRedo: tr.origin instanceof Y.UndoManager,
+              affectedBlockIds,
+            })
+          }
           this._syncYEvent(evt, tr)
-          if (bookmarkState?.bookmark) {
-            const affected = this._collectAffectedBlockIds(evt)
-            this._scheduleRemoteSelectionReconcile(bookmarkState, affected)
+          if (affectedBlockIds) {
+            this._remoteSyncLifecycle$.next({
+              phase: 'after-view-sync',
+              transaction: tr,
+              origin: tr.origin,
+              isUndoRedo: tr.origin instanceof Y.UndoManager,
+              affectedBlockIds,
+            })
           }
         })
       }
@@ -129,13 +157,7 @@ export class DocCRUD {
         this.yBlockMap.unobserveDeep(this._yObserverHandler)
         this._yObserverHandler = null
       }
-      this._liveSelectionBookmarks?.destroy()
-      this._liveSelectionBookmarks = null
-      this._pendingRemoteSelectionState = null
-      if (this._remoteSelectionFrame !== null) {
-        cancelAnimationFrame(this._remoteSelectionFrame)
-        this._remoteSelectionFrame = null
-      }
+      this._remoteSyncLifecycle$.complete()
     })
   }
 
@@ -158,6 +180,10 @@ export class DocCRUD {
   }
 
   transact(fn: () => void, origin: any = null) {
+    const runSystemRepair = this.doc.readonlyManager?.runSystemRepair
+    if (origin === ORIGIN_SYSTEM_REPAIR && typeof runSystemRepair === 'function') {
+      return runSystemRepair.call(this.doc.readonlyManager, () => this.yDoc.transact(fn, origin))
+    }
     return this.yDoc.transact(fn, origin)
   }
 
@@ -178,55 +204,6 @@ export class DocCRUD {
     return ids
   }
 
-  private _scheduleRemoteSelectionReconcile(
-    state: LiveSelectionBookmarkSnapshot,
-    affectedBlockIds: ReadonlySet<string>,
-  ): void {
-    if (!state.bookmark || !remoteChangeAffectsRelativeSelectionBookmark(
-      state.bookmark,
-      affectedBlockIds,
-      this.doc,
-    )) return
-
-    this._pendingRemoteSelectionState = state
-    if (this._remoteSelectionFrame !== null) return
-    this._remoteSelectionFrame = requestAnimationFrame(() => {
-      this._remoteSelectionFrame = null
-      const pending = this._pendingRemoteSelectionState
-      this._pendingRemoteSelectionState = null
-      if (pending) this._reconcileRemoteSelection(pending)
-    })
-  }
-
-  private _reconcileRemoteSelection(state: LiveSelectionBookmarkSnapshot): void {
-    if (!this.doc.isInitialized || !state.bookmark) return
-    if (!this._liveSelectionBookmarks?.isCurrent(state.revision)) return
-
-    const root = this.doc.root.hostElement
-    const active = document.activeElement
-    const ownsFocus = active === root || (!!active && root.contains(active))
-    if (!ownsFocus || isNativeInputTarget(active)) return
-
-    const mapped = resolveRelativeSelectionBookmark(state.bookmark, this.doc)
-    if (mapped) {
-      this.doc.selection.replay(mapped)
-      return
-    }
-
-    const nativeSelection = document.getSelection()
-    const nativeAnchor = nativeSelection?.anchorNode ?? null
-    const nativeHead = nativeSelection?.focusNode ?? null
-    const hasOwnedNativeRange = !!nativeSelection?.rangeCount &&
-      !!nativeAnchor && !!nativeHead &&
-      (nativeAnchor === root || root.contains(nativeAnchor)) &&
-      (nativeHead === root || root.contains(nativeHead))
-    if (hasOwnedNativeRange) {
-      this.doc.selection.recalculate()
-    } else {
-      this.doc.selection.replay(null)
-    }
-  }
-
   private _syncYEvent = (events: Y.YEvent<any>[], tr: Y.Transaction) => {
     // local change with skip
     const isUndoRedo = tr.origin instanceof Y.UndoManager
@@ -236,6 +213,7 @@ export class DocCRUD {
 
     const propsChanges: IPropsChangeEvent['transactions'] = []
     const textChanges: ITextChangeEvent['transactions'] = []
+    const metaChanges: IMetaChangeEvent['transactions'] = []
 
     const delay_childrenEvent_handlers: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][] = []
 
@@ -265,8 +243,17 @@ export class DocCRUD {
 
       const blockId = path[0] as string
       const keyProp = path[1]
+      if (keyProp === 'meta') {
+        metaChanges.push({
+          blockId,
+          changes: changes.keys,
+        })
+      }
       const bm = this.vm.get(blockId)
-      if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
+      if (!bm) {
+        if (keyProp === 'meta') return
+        throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
+      }
 
       if (keyProp === "children") {
         if (isYArray(target)) {
@@ -373,6 +360,15 @@ export class DocCRUD {
         origin: tr.origin,
         transactions: textChanges,
         local: tr.local
+      })
+    }
+
+    if (metaChanges.length) {
+      this.onMetaUpdate$.next({
+        isUndoRedo,
+        origin: tr.origin,
+        transactions: metaChanges,
+        local: tr.local,
       })
     }
 
@@ -505,6 +501,7 @@ export class DocCRUD {
       this.doc.logger.warn(`parentComp ${parentId} not found`)
       return []
     }
+    this.doc.readonlyManager.assertInsertable(parentId, BlockReadonlyOperation.Insert)
 
     // 过滤不允许的blocks
     const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)!
@@ -564,6 +561,17 @@ export class DocCRUD {
       return []
     }
 
+    if (index + count > parentComp.instance.childrenLength) {
+      count = parentComp.instance.childrenLength - index
+    }
+    // Guard the exact range `_delete()` will consume. During a compound local
+    // transaction the ModelGraph observer can still expose the previous sibling
+    // list, while the mounted parent/Y.Array has already advanced to the next
+    // step. Reading the stale model index here can re-check an id deleted by the
+    // preceding step and raise `Block not found` halfway through the operation.
+    const removableIds = parentComp.instance.childrenIds.slice(index, index + count)
+    this.doc.readonlyManager.assertRemovable(removableIds, BlockReadonlyOperation.Delete)
+
     if (index === 0 && count >= parentComp.instance.childrenLength && !force) {
       const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)!
       // 如果父元素并非是可渲染任意块的元素
@@ -578,10 +586,6 @@ export class DocCRUD {
         this._insertBySnapshots(parentComp, 0, [p])
       })
       return [{index, length: deletedLength}]
-    }
-
-    if (index + count > parentComp.instance.childrenLength) {
-      count = parentComp.instance.childrenLength - index
     }
 
     this.transact(() => {
@@ -604,6 +608,10 @@ export class DocCRUD {
     if (!parentComp) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `parentComp ${parentId} not found`)
     }
+    this.doc.readonlyManager.assertRemovable([blockId], BlockReadonlyOperation.Replace)
+    if (snapshots?.length) {
+      this.doc.readonlyManager.assertInsertable(parentId, BlockReadonlyOperation.Replace)
+    }
     this.transact(() => {
       const yChildren = parentComp.instance.yBlock.get('children') as Y.Array<string>
       const flatIds = this.getFlatIds([blockId])
@@ -617,9 +625,18 @@ export class DocCRUD {
   }
 
   moveBlocks(parentId: string, index: number, count: number, targetId: string, targetIndex: number) {
+    if (count <= 0) return
     const parentComp = this.vm.get(parentId)
     const targetComp = this.vm.get(targetId)
     if (!parentComp || !targetComp) return
+
+    const movingIds = this.doc.model.getChildrenIds(parentId).slice(index, index + count)
+    if (!movingIds.length) return
+    this.doc.readonlyManager.assertMovable(
+      movingIds,
+      targetId,
+      BlockReadonlyOperation.Move,
+    )
 
     this.transact(() => {
         const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
