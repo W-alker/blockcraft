@@ -1,0 +1,19 @@
+[data-blockcraft-root="true"] .bc-inline-image-shell {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: text-bottom;
+}
+
+[data-blockcraft-root="true"] .bc-inline-image-shell--selected {
+  outline: 2px solid var(--bc-active-color);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+[data-blockcraft-root="true"] .bc-inline-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+}

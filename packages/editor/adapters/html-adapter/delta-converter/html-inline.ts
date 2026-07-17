@@ -2,6 +2,7 @@ import {HtmlASTToDeltaMatcher} from "../delta-converter";
 import {HtmlAST} from "../../types";
 import type { Element } from 'hast';
 import { collapseWhiteSpace } from 'collapse-white-space';
+import {createInlineImageDelta} from '../../../framework';
 
 const isElement = (ast: HtmlAST): ast is Element => {
   return ast.type === 'element';
@@ -30,6 +31,20 @@ export const htmlTextToDeltaMatcher: HtmlASTToDeltaMatcher = {
       ? collapseWhiteSpace(ast.value, { trim: options.trim })
       : collapseWhiteSpace(ast.value);
     return value ? [{ insert: value , attributes: {}}] : [];
+  },
+};
+
+export const htmlImageToDeltaMatcher: HtmlASTToDeltaMatcher = {
+  name: 'inline-image',
+  match: ast => isElement(ast) && ast.tagName === 'img',
+  toDelta: ast => {
+    if (!isElement(ast)) return [];
+    const delta = createInlineImageDelta(
+      ast.properties?.['src'],
+      ast.properties?.['width'] ?? ast.properties?.['dataWidth'],
+      ast.properties?.['height'] ?? ast.properties?.['dataHeight'],
+    );
+    return delta ? [delta] : [];
   },
 };
 
@@ -241,6 +256,7 @@ export const htmlMathInlineToDeltaMatcher: HtmlASTToDeltaMatcher = {
 };
 
 export const htmlInlineToDeltaMatchers: HtmlASTToDeltaMatcher[] = [
+  htmlImageToDeltaMatcher,
   htmlTextToDeltaMatcher,
   htmlTextLikeElementToDeltaMatcher,
   htmlStrongElementToDeltaMatcher,

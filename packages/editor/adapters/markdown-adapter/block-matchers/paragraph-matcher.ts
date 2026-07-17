@@ -6,8 +6,18 @@ import {isMediaMarkdownNode} from "./media-matcher";
 
 const PARAGRAPH_MDAST_TYPE = ['paragraph', 'html', 'heading', 'blockquote'];
 
+const isStandaloneImageParagraph = (node: MarkdownAST) => {
+  if (node.type !== 'paragraph') return false;
+  const meaningfulChildren = node.children.filter(child =>
+    child.type !== 'text' || child.value.trim().length > 0
+  );
+  return meaningfulChildren.length === 1 && meaningfulChildren[0].type === 'image';
+};
+
 const isParagraphMDASTType = (node: MarkdownAST) =>
-  PARAGRAPH_MDAST_TYPE.includes(node.type) && !isMediaMarkdownNode(node);
+  PARAGRAPH_MDAST_TYPE.includes(node.type) &&
+  !isStandaloneImageParagraph(node) &&
+  !isMediaMarkdownNode(node);
 
 export const paragraphBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher =
   {
@@ -49,6 +59,7 @@ export const paragraphBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher =
                 'children'
               )
               .closeNode();
+            walkerContext.skipAllChildren();
             break;
           }
           case 'heading': {

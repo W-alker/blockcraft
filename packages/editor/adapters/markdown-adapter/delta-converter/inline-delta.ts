@@ -1,5 +1,6 @@
 import type { PhrasingContent } from 'mdast';
 import {InlineDeltaToMarkdownAdapterMatcher} from "../delta-converter";
+import {DeltaInsertEmbed, readInlineImageDelta} from '../../../framework';
 
 export const boldDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatcher =
   {
@@ -96,8 +97,22 @@ export const latexDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMat
     }),
   };
 
+export const imageDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatcher = {
+  name: 'inline-image',
+  match: delta =>
+    !!delta.insert &&
+    typeof delta.insert === 'object' &&
+    'image' in delta.insert,
+  toAST: delta => ({
+    type: 'image',
+    url: readInlineImageDelta(delta as DeltaInsertEmbed).src,
+    alt: '',
+  }),
+};
+
 export const inlineDeltaToMarkdownAdapterMatchers: InlineDeltaToMarkdownAdapterMatcher[] =
   [
+    imageDeltaToMarkdownAdapterMatcher,
     latexDeltaToMarkdownAdapterMatcher,
     linkDeltaToMarkdownAdapterMatcher,
     inlineCodeDeltaToMarkdownAdapterMatcher,

@@ -43,6 +43,7 @@ const ALIGN_LIST = [
       }
 
       <span class="bc-float-toolbar__divider"></span>
+      <bc-float-toolbar-item icon="bc_qiehuan" name="inline" nz-tooltip="转为行内图片"></bc-float-toolbar-item>
       <bc-float-toolbar-item icon="bc_xiazai" name="download" nz-tooltip="下载图片"></bc-float-toolbar-item>
       <bc-float-toolbar-item icon="bc_tupianlianjie" name="copy-url" nz-tooltip="复制图片链接"></bc-float-toolbar-item>
 

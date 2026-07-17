@@ -4,7 +4,7 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-05-11
+> Last updated: 2026-07-17
 
 ## What is an Inline Embed?
 
@@ -70,6 +70,42 @@ export const myEmbedConverter: EmbedConverter = {
 
 ## Registration
 
+The `image` embed is built in and needs no registration:
+
+```typescript
+{
+  insert: { image: 'https://cdn.example.com/a.png' },
+  attributes: { width: 320, height: 180 },
+}
+```
+
+`width` and `height` are optional positive numbers. They are embed-semantic
+attributes rather than text formatting. BlockCraft exports
+`createInlineImageDelta`, `readInlineImageDelta`,
+`inlineImageEmbedConverter`, and `INLINE_IMAGE_EMBED_KEY` for hosts that need
+to create or inspect the default representation.
+
+The default renderer uses a stable `.bc-inline-image-shell[data-bc-inline-image]`
+around `img.bc-inline-image`. When `ImgToolbarPlugin` is registered, clicking
+this default shell exposes proportional resize handles, a theme-colored selection
+outline, and a reverse conversion action. The selection outline is an ephemeral
+DOM class and is removed with the controls; it is never stored in Delta attributes.
+Resize preview stays in the DOM during dragging; mouseup writes
+`width` / `height` once through the owning editable block's Y.Text. A custom
+same-key converter owns its own interaction UI and is not matched by the
+built-in plugin.
+
+Registering an `image` converter explicitly overrides the built-in renderer:
+
+```typescript
+const doc = new BlockCraftDoc({
+  // ...
+  embeds: [['image', customImageEmbedConverter]],
+});
+```
+
+Other custom embeds still use the normal registration path below.
+
 Register in the `DocConfig.embeds` array when creating `BlockCraftDoc`:
 
 ```typescript
@@ -119,8 +155,22 @@ if (block && block instanceof EditableBlockComponent) {
 
 | Embed Key | Converter Location | Description |
 |-----------|-------------------|-------------|
+| `image` | `framework/block-std/inline/image-embed.ts` | Built-in inline image; custom same-key converter wins |
 | `mention` | `editor/editor.ts` (inline) | @mention with user ID |
 | `latex` | `editor/editor.ts` (inline) | KaTeX formula rendering |
+
+## Inline Image Adapter Semantics
+
+- HTML paragraphs export/import inline images as `<img class="bc-inline-image">`.
+- `<figure><img></figure>` remains a block image.
+- Markdown images mixed with text remain inline embeds.
+- A Markdown paragraph containing only one image remains an image block for
+  backward compatibility.
+- Converting a mixed inline image back to a block splits its editable block into
+  `before text / image block / after text`, preserves text Delta attributes,
+  and does not infer a caption.
+- Reverse conversion is rejected when the parent Schema does not allow an
+  `image` child.
 
 ## Checklist
 

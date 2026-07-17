@@ -52,14 +52,29 @@ describe("ImgToolbarPlugin lifecycle", () => {
     };
     const dragState$ = new Subject<string>();
     const dragState = {current: "idle"};
+    const toolbarClicks = new Subject<any>();
     const fileService = {
       previewImg: jasmine.createSpy("previewImg"),
       downloadAttachment: jasmine.createSpy("downloadAttachment"),
     };
+    const run = jasmine.createSpy("run").and.resolveTo({lastResult: undefined, results: []});
+    const selectOrSetCursorAtBlock = jasmine.createSpy("selectOrSetCursorAtBlock");
+    const replaceWithSnapshots = jasmine.createSpy("replaceWithSnapshots");
+    const chain: any = {replaceWithSnapshots, selectOrSetCursorAtBlock, run};
+    replaceWithSnapshots.and.returnValue(chain);
+    selectOrSetCursorAtBlock.and.returnValue(chain);
     const doc = {
       isReadonly: false,
       onDestroy$,
       root: {hostElement: rootHost},
+      messageService: {
+        warn: jasmine.createSpy("warn"),
+        success: jasmine.createSpy("success"),
+      },
+      model: {
+        toSnapshot: jasmine.createSpy("toSnapshot"),
+      },
+      chain: jasmine.createSpy("chain").and.returnValue(chain),
       injector: {
         get: jasmine.createSpy("get").and.returnValue(fileService),
       },
@@ -90,7 +105,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
               cdr: {
                 markForCheck: jasmine.createSpy("markForCheck"),
               },
-              onItemClicked: new Subject<any>(),
+              onItemClicked: toolbarClicks,
             },
           },
           overlayRef: {
@@ -109,7 +124,28 @@ describe("ImgToolbarPlugin lifecycle", () => {
     const plugin = new ImgToolbarPlugin();
     (plugin as any).doc = doc;
 
-    return {plugin, doc, fileService, rootHost, wrapper, imageHost, imageBlock, selection$, nextSelection$, selectionValue, imageSelection, imageGapSelection, readonlySub, readonlyState$, dragState$, dragState};
+    return {
+      plugin,
+      doc,
+      fileService,
+      rootHost,
+      wrapper,
+      imageHost,
+      imageBlock,
+      selection$,
+      nextSelection$,
+      selectionValue,
+      imageSelection,
+      imageGapSelection,
+      readonlySub,
+      readonlyState$,
+      dragState$,
+      dragState,
+      toolbarClicks,
+      replaceWithSnapshots,
+      selectOrSetCursorAtBlock,
+      run,
+    };
   };
 
   it("keeps image preview available for a readonly block", () => {
@@ -253,6 +289,60 @@ describe("ImgToolbarPlugin lifecycle", () => {
     expect(imageBlock.updateProps).not.toHaveBeenCalled();
     plugin.destroy();
     rootHost.remove();
+  }));
+
+  it("replaces a live image with an inline-image paragraph and moves the caret to its end", fakeAsync(() => {
+    const h = makeHarness();
+    h.doc.model.toSnapshot.and.returnValue({
+      id: "img-1",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      props: {src: "https://example.com/a.png", width: 320, height: 180},
+      meta: {},
+      children: [],
+    });
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "inline"});
+
+    const paragraph = h.replaceWithSnapshots.calls.mostRecent().args[1][0];
+    expect(h.replaceWithSnapshots).toHaveBeenCalledOnceWith("img-1", [paragraph]);
+    expect(paragraph.children[0]).toEqual({
+      insert: {image: "https://example.com/a.png"},
+      attributes: {width: 320, height: 180},
+    });
+    expect(h.selectOrSetCursorAtBlock).toHaveBeenCalledOnceWith(paragraph.id, false);
+    expect(h.run).toHaveBeenCalledTimes(1);
+
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("keeps an empty-src image block unchanged", fakeAsync(() => {
+    const h = makeHarness();
+    h.doc.model.toSnapshot.and.returnValue({
+      id: "img-1",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      props: {src: ""},
+      meta: {},
+      children: [],
+    });
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "inline"});
+
+    expect(h.replaceWithSnapshots).not.toHaveBeenCalled();
+    expect(h.doc.messageService.warn).toHaveBeenCalledOnceWith("图片地址为空，无法转为行内图片");
+
+    h.plugin.destroy();
+    h.rootHost.remove();
   }));
 
   it("ignores readonly state changes while the live selection is stale", () => {

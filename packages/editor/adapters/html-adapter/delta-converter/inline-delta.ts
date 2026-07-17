@@ -1,5 +1,6 @@
 import {InlineDeltaToHtmlAdapterMatcher} from "../delta-converter";
 import {InlineHtmlAST} from "../../types";
+import {DeltaInsertEmbed, readInlineImageDelta} from "../../../framework";
 
 
 export const boldDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
@@ -171,8 +172,32 @@ export const latexDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher =
     },
   };
 
+export const imageDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
+  name: 'inline-image',
+  match: delta =>
+    !!delta.insert &&
+    typeof delta.insert === 'object' &&
+    'image' in delta.insert,
+  toAST: delta => {
+    const {src, width, height} = readInlineImageDelta(delta as DeltaInsertEmbed);
+    return {
+      type: 'element',
+      tagName: 'img',
+      properties: {
+        className: ['bc-inline-image'],
+        src,
+        alt: '',
+        ...(width === undefined ? {} : {width}),
+        ...(height === undefined ? {} : {height}),
+      },
+      children: [],
+    };
+  },
+};
+
 export const inlineDeltaToHtmlAdapterMatchers: InlineDeltaToHtmlAdapterMatcher[] =
   [
+    imageDeltaToHtmlAdapterMatcher,
     latexDeltaToHtmlAdapterMatcher,
     boldDeltaToHtmlAdapterMatcher,
     italicDeltaToHtmlAdapterMatcher,

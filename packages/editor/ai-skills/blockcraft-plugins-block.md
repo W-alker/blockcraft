@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-07-16
+> Last updated: 2026-07-17
 
 ## BlockControllerPlugin
 
@@ -129,6 +129,39 @@ the menu and clicking, the action falls back to the single-block path.
 When any selected block is effectively readonly, or a selected ancestor
 contains a locked descendant, multi-block mode keeps only **copy**. Cut, delete
 and drag cannot partially mutate the range.
+
+---
+
+## ImgToolbarPlugin
+
+> `plugins/img-toolbar/` — Image alignment, captions, download/copy actions,
+> and block-image conversion.
+
+The built-in **转为行内图片** action replaces the selected image block with a
+paragraph whose first delta is the default `image` inline embed. It preserves
+`src` and valid `width` / `height` values. If the image block has a caption, a
+space and the caption's original formatted deltas follow the embed. Block-level
+`align` is intentionally not copied because it has no stable inline equivalent.
+
+The replacement goes through `DocChain.replaceWithSnapshots()` and then places
+the caret at the end of the new paragraph. Empty-source, stale, and effectively
+readonly image blocks are not converted. Undo/Redo treats the replacement as a
+document mutation and restores the original image block structure.
+
+The same plugin also manages the default inline-image shell. A click mounts the
+existing `ResizeContainerComponent` handles and a compact size/conversion
+toolbar. While these controls are active, the shell receives the temporary
+`.bc-inline-image-shell--selected` theme outline; the unified close lifecycle
+removes it without changing Delta attributes. Dragging previews width in the DOM
+and commits `width` / `height` once on mouseup, preserving aspect ratio and
+avoiding high-frequency Yjs writes.
+
+**转为图片块** splits surrounding rich text into same-flavour editable
+snapshots, inserts an image block between them, preserves inline attributes and
+selects the new image. Empty text sides are omitted and no caption is inferred.
+The action is unavailable for readonly content and is rejected with feedback
+when the parent Schema does not accept image blocks. Custom `image` converters
+without the default shell marker remain host-owned.
 
 ---
 

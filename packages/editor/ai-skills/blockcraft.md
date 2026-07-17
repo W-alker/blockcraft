@@ -227,6 +227,31 @@ viewer.destroy()
 
 Use this path when the source arrives as Markdown chunks or full-text rewrites rather than prebuilt snapshots.
 
+### Default Inline Image Embed
+
+```typescript
+import {createInlineImageDelta} from '@ccc/blockcraft'
+
+const image = createInlineImageDelta(
+  'https://cdn.example.com/a.png',
+  320,
+  180,
+)
+// { insert: { image: url }, attributes: { width: 320, height: 180 } }
+```
+
+`image` is available without explicit `DocConfig.embeds` registration. A host
+can override the renderer by registering its own same-key converter. Mixed
+HTML/Markdown images round-trip as inline embeds; standalone Markdown images
+and `<figure><img></figure>` retain image-block semantics.
+
+With `ImgToolbarPlugin`, clicking the default inline image shows proportional
+resize handles, a temporary theme-colored selection outline, plus **转为图片块**.
+The outline is DOM-only; resize commits the short `width` / `height` attributes
+once on mouseup. Reverse conversion preserves the formatted text on both sides
+as separate editable blocks and inserts the image block between them; it does not
+create a caption.
+
 ### DocChain (Fluent Mutations)
 
 ```typescript
@@ -441,7 +466,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `OrderedBlockPlugin` | `plugins/ordered-extension/` | Auto-renumber ordered lists |
 | `CodeInlineEditorBinding` | `plugins/codeEditorBinding.ts` | Shiki syntax highlighting binding for code blocks |
 | `TableBlockBinding` | `plugins/tableBlockBinding.ts` | Table clipboard, model/explicit cell-range keyboard bindings, merge/split helpers |
-| `ImgToolbarPlugin` | `plugins/img-toolbar/` | Image alignment, caption, replace |
+| `ImgToolbarPlugin` | `plugins/img-toolbar/` | Block/inline image resize, toolbar actions, and bidirectional conversion |
 | `CalloutToolbarPlugin` | `plugins/callout-toolbar/` | Callout color/icon picker |
 | `DividerExtensionPlugin` | `plugins/divider-toolbar/` | Divider hover toolbar (style / size / optional text label + align) |
 | `AttachmentExtensionPlugin` | `plugins/attachment-extension/` | Attachment preview/download UI |

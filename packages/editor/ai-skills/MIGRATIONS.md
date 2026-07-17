@@ -67,6 +67,60 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-07-17 (minor) — add default inline image embed
+
+**Severity**: minor
+
+**What changed**: BlockCraft now includes a default, overridable `image` inline
+Embed. `ImgToolbarPlugin` supports bidirectional block/inline conversion and
+proportional resizing of the default inline renderer while preserving valid
+dimensions and surrounding formatted content. Active inline images also receive
+a temporary theme-colored selection outline that is cleared with their controls.
+
+**Why**: Images previously existed only as blocks, so documents could not mix
+an atomic image with surrounding inline text without a host-defined converter.
+
+**Affected ai-skills files**:
+- `blockcraft.md`
+- `blockcraft-embed.md`
+- `blockcraft-plugins-block.md`
+
+### New APIs / Features
+
+- `INLINE_IMAGE_EMBED_KEY`, `inlineImageEmbedConverter`,
+  `createInlineImageDelta`, `readInlineImageDelta`, and
+  `withDefaultEmbedConverters`.
+- `image` is present by default; a user-provided converter with the same key
+  wins without changing other configured embeds.
+- `ImgToolbarPlugin` exposes **转为行内图片** and preserves caption deltas.
+- The default inline shell exposes proportional resize handles and **转为图片块**
+  through the same plugin. Its selected outline is DOM-only and mouseup writes
+  only `width` / `height` once.
+
+### Migration Recipe
+
+No registration is required for the default renderer. Existing custom renderers
+continue to override it:
+
+```typescript
+new BlockCraftDoc({
+  // ...
+  embeds: [['image', customImageEmbedConverter]],
+})
+```
+
+### Behavior Changes
+
+- Mixed HTML/Markdown images can round-trip as inline embeds.
+- Standalone Markdown images and `<figure><img></figure>` remain image blocks.
+- Inline-to-block conversion splits formatted text around the new image block,
+  omits empty sides, creates no caption, and respects the parent Schema.
+- Clicking the default inline renderer adds
+  `.bc-inline-image-shell--selected` until the inline controls close; no Delta
+  attribute is added.
+- `packages/editor/package.json` remains unchanged because release numbering is
+  user-owned.
+
 ### v?.?.? - 2026-07-17 (patch) — show feedback for rejected readonly edits
 
 **Severity**: patch

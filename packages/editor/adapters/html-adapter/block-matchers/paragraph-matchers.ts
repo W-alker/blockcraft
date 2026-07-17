@@ -28,6 +28,12 @@ const headingBlockMatchTagsMap: Record<string, number> = {
   h6: 4,
 }
 
+const hasInlineContent = (node: Parameters<typeof HastUtils.hasTextContent>[0]) =>
+  HastUtils.hasTextContent(node) || (
+    HastUtils.isElement(node) &&
+    node.children.some(child => HastUtils.isElement(child) && child.tagName === 'img')
+  )
+
 // TODO 优化paragraph matcher
 export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   toMatch: o =>
@@ -70,7 +76,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           break;
         }
         case 'p': {
-          if (HastUtils.hasTextContent(o.node)) {
+          if (hasInlineContent(o.node)) {
             walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node)), 'children').closeNode()
             walkerContext.skipAllChildren()
           } else {

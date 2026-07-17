@@ -1,5 +1,6 @@
 import {MarkdownASTToDeltaMatcher} from "../delta-converter";
 import {isUrl} from "../../../global";
+import {createInlineImageDelta} from '../../../framework';
 
 export const markdownTextToDeltaMatcher: MarkdownASTToDeltaMatcher = {
   name: 'text',
@@ -9,6 +10,16 @@ export const markdownTextToDeltaMatcher: MarkdownASTToDeltaMatcher = {
       return [];
     }
     return [{insert: ast.value}];
+  },
+};
+
+export const markdownImageToDeltaMatcher: MarkdownASTToDeltaMatcher = {
+  name: 'inline-image',
+  match: ast => ast.type === 'image',
+  toDelta: ast => {
+    if (!('url' in ast)) return [];
+    const delta = createInlineImageDelta(ast.url);
+    return delta ? [delta] : [];
   },
 };
 
@@ -113,6 +124,7 @@ export const markdownInlineMathToDeltaMatcher: MarkdownASTToDeltaMatcher = {
 };
 
 export const markdownInlineToDeltaMatchers: MarkdownASTToDeltaMatcher[] = [
+  markdownImageToDeltaMatcher,
   markdownTextToDeltaMatcher,
   markdownInlineCodeToDeltaMatcher,
   markdownStrongToDeltaMatcher,

@@ -4,8 +4,10 @@ import {
   DOC_FILE_SERVICE_TOKEN,
   DocFileService,
   DocPlugin,
+  EditableBlockComponent,
   EventListen,
   getPositionWithOffset,
+  InlineImageData,
 } from "../../framework";
 import { UIEventStateContext } from "../../framework";
 import { fromEvent, Subject, Subscription, takeUntil } from "rxjs";
@@ -18,6 +20,24 @@ import {
 } from "../../global";
 import { OverlayRef } from "@angular/cdk/overlay";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
+import {imageBlockSnapshotToInlineParagraph} from "./inline-image-conversion";
+import {
+  calculateInlineImageSize,
+  inlineImageSnapshotToBlockSnapshots,
+  resolveInlineImageAtOffset,
+} from './inline-image-interaction';
+import {InlineImageToolbar} from './widgets/inline-image.toolbar';
+import {ResizeContainerComponent} from '../../components';
+import {ApplicationRef, ComponentRef, createComponent} from '@angular/core';
+
+interface ActiveInlineImageContext {
+  block: EditableBlockComponent;
+  blockId: string;
+  offset: number;
+  shell: HTMLElement;
+  image: HTMLImageElement;
+  data: InlineImageData;
+}
 
 export interface ImgToolbarPluginOptions {
   /**
@@ -50,6 +70,11 @@ export class ImgToolbarPlugin extends DocPlugin {
   private _pendingImageClickCleanup?: () => void;
 
   private _closeToolbar$ = new Subject<void>();
+  private _inlineClose$ = new Subject<void>();
+  private _inlineToolbarRef?: OverlayRef;
+  private _inlineResizerRef?: ComponentRef<ResizeContainerComponent>;
+  private _inlineAppRef?: ApplicationRef;
+  private _inlineContext?: ActiveInlineImageContext;
 
   @BindHotKey(
     {
@@ -127,6 +152,7 @@ export class ImgToolbarPlugin extends DocPlugin {
       this.doc.subscribeReadonlyChange((readonly) => {
         if (readonly) {
           this.closeToolbar();
+          this.closeInlineToolbar();
         }
       }),
     );
@@ -134,6 +160,18 @@ export class ImgToolbarPlugin extends DocPlugin {
     const stateChange$ = this.doc.readonlyManager?.stateChange$;
     if (stateChange$) {
       this._sub.add(stateChange$.subscribe(() => {
+        const inlineContext = this._inlineContext;
+        if (inlineContext) {
+          const liveInlineBlock = this._getLiveBlockById(inlineContext.blockId);
+          if (
+            this.doc.isReadonly ||
+            !liveInlineBlock ||
+            liveInlineBlock !== inlineContext.block ||
+            this.doc.readonlyManager.isReadonly(liveInlineBlock)
+          ) {
+            this.closeInlineToolbar();
+          }
+        }
         const selection = this.doc.selection.value;
         if (!selection || !isSelectionAlive(selection as any, this.doc)) {
           this.closeToolbar();
@@ -146,6 +184,12 @@ export class ImgToolbarPlugin extends DocPlugin {
         }
       }));
     }
+
+    this._sub.add(
+      fromEvent<MouseEvent>(this.doc.root.hostElement, 'mousedown', {capture: true})
+        .pipe(takeUntil(this.doc.onDestroy$))
+        .subscribe(event => this._onInlineImageMouseDown(event)),
+    );
 
     // Image block drag via pointerdown (replaces former HTML5 dragstart path)
     // 重点：
@@ -323,6 +367,25 @@ export class ImgToolbarPlugin extends DocPlugin {
                     this.doc.messageService.success("图片链接已复制到剪贴板");
                   });
                 break;
+              case "inline": {
+                const current = this.doc.model.toSnapshot(imgBlock.id);
+                if (!current) {
+                  this.closeToolbar();
+                  break;
+                }
+                const paragraph = imageBlockSnapshotToInlineParagraph(current);
+                if (!paragraph) {
+                  this.doc.messageService.warn("图片地址为空，无法转为行内图片");
+                  break;
+                }
+                this.closeToolbar();
+                void this.doc
+                  .chain()
+                  .replaceWithSnapshots(imgBlock.id, [paragraph])
+                  .selectOrSetCursorAtBlock(paragraph.id, false)
+                  .run();
+                break;
+              }
               default:
                 this.options?.onExtraItemClick?.(
                   v.name,
@@ -363,6 +426,205 @@ export class ImgToolbarPlugin extends DocPlugin {
     this._toolbarRef?.dispose();
     this._toolbarRef = undefined;
   };
+
+  closeInlineToolbar = () => {
+    this._inlineClose$.next();
+    this._inlineToolbarRef?.dispose();
+    this._inlineToolbarRef = undefined;
+    this._inlineContext?.shell.classList.remove('bc-inline-image-shell--selected');
+
+    const resizerRef = this._inlineResizerRef;
+    const appRef = this._inlineAppRef;
+    this._inlineResizerRef = undefined;
+    this._inlineAppRef = undefined;
+    this._inlineContext = undefined;
+    if (resizerRef) {
+      try { appRef?.detachView(resizerRef.hostView); } catch {}
+      resizerRef.destroy();
+    }
+  };
+
+  private _onInlineImageMouseDown(event: MouseEvent) {
+    if (event.button !== 0) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const shell = target.closest<HTMLElement>('.bc-inline-image-shell[data-bc-inline-image]');
+    if (!shell || !this.doc.root.hostElement.contains(shell)) {
+      this.closeInlineToolbar();
+      return;
+    }
+    if (this._inlineContext?.shell === shell) return;
+    if (this.doc.isReadonly) {
+      this.closeInlineToolbar();
+      return;
+    }
+
+    const blockId = closetBlockId(shell);
+    if (!blockId) return;
+    const block = this._getLiveBlockById(blockId);
+    if (
+      !block ||
+      !this.doc.isEditable(block) ||
+      this.doc.readonlyManager.isReadonly(block)
+    ) {
+      this.closeInlineToolbar();
+      return;
+    }
+
+    const editable = block as EditableBlockComponent;
+    let offset: number;
+    try {
+      offset = editable.runtime.domPointToModel(shell, 0);
+    } catch {
+      return;
+    }
+    const data = resolveInlineImageAtOffset(editable.textDeltas(), offset);
+    const image = shell.querySelector<HTMLImageElement>('img.bc-inline-image');
+    if (!data || !image) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.closeToolbar();
+    this.closeInlineToolbar();
+
+    const context: ActiveInlineImageContext = {
+      block: editable,
+      blockId,
+      offset,
+      shell,
+      image,
+      data,
+    };
+    this._inlineContext = context;
+    shell.classList.add('bc-inline-image-shell--selected');
+
+    const appRef = this.doc.injector.get(ApplicationRef);
+    const resizerRef = createComponent(ResizeContainerComponent, {
+      environmentInjector: appRef.injector,
+      elementInjector: this.doc.injector,
+    });
+    this._inlineAppRef = appRef;
+    this._inlineResizerRef = resizerRef;
+    resizerRef.setInput('container', image);
+    resizerRef.setInput('maxWidthContainer', editable.containerElement);
+    appRef.attachView(resizerRef.hostView);
+    shell.appendChild(resizerRef.location.nativeElement);
+    resizerRef.changeDetectorRef.detectChanges();
+    resizerRef.instance.widthChange
+      .pipe(takeUntil(this._inlineClose$))
+      .subscribe(width => this._commitInlineImageResize(context, width));
+
+    const rect = image.getBoundingClientRect();
+    const size = calculateInlineImageSize(
+      data.width ?? rect.width,
+      data,
+      {
+        naturalWidth: image.naturalWidth,
+        naturalHeight: image.naturalHeight,
+        renderedWidth: rect.width,
+        renderedHeight: rect.height,
+      },
+    );
+    const {overlayRef, componentRef} =
+      this.doc.overlayService.createConnectedOverlay<InlineImageToolbar>({
+        target: image,
+        positions: [
+          getPositionWithOffset('top-center', 0, 8),
+          getPositionWithOffset('bottom-center', 0, 8),
+        ],
+        component: InlineImageToolbar,
+      }, this._inlineClose$, this.closeInlineToolbar);
+    this._inlineToolbarRef = overlayRef;
+    componentRef.setInput('width', size.width);
+    componentRef.setInput('height', size.height);
+    componentRef.instance.onItemClicked
+      .pipe(takeUntil(this._inlineClose$))
+      .subscribe(item => {
+        if (item.name === 'block') {
+          this._convertInlineImageToBlock(context);
+        }
+      });
+  }
+
+  private _commitInlineImageResize(
+    context: ActiveInlineImageContext,
+    width: number,
+  ) {
+    const liveBlock = this._getLiveBlockById(context.blockId);
+    if (
+      this.doc.isReadonly ||
+      liveBlock !== context.block ||
+      !this.doc.isEditable(liveBlock) ||
+      this.doc.readonlyManager.isReadonly(liveBlock)
+    ) {
+      this.closeInlineToolbar();
+      return;
+    }
+    const current = resolveInlineImageAtOffset(
+      context.block.textDeltas(),
+      context.offset,
+      context.data.src,
+    );
+    if (!current) {
+      this.closeInlineToolbar();
+      return;
+    }
+
+    const rect = context.image.getBoundingClientRect();
+    const size = calculateInlineImageSize(width, current, {
+      naturalWidth: context.image.naturalWidth,
+      naturalHeight: context.image.naturalHeight,
+      renderedWidth: rect.width,
+      renderedHeight: rect.height,
+    });
+    this.closeInlineToolbar();
+    context.block.formatText(context.offset, 1, size);
+  }
+
+  private _convertInlineImageToBlock(context: ActiveInlineImageContext) {
+    const liveBlock = this._getLiveBlockById(context.blockId);
+    if (
+      this.doc.isReadonly ||
+      liveBlock !== context.block ||
+      !this.doc.isEditable(liveBlock) ||
+      this.doc.readonlyManager.isReadonly(liveBlock)
+    ) {
+      this.closeInlineToolbar();
+      return;
+    }
+    const current = resolveInlineImageAtOffset(
+      context.block.textDeltas(),
+      context.offset,
+      context.data.src,
+    );
+    if (!current) {
+      this.closeInlineToolbar();
+      return;
+    }
+
+    const parentId = this.doc.model.getParentId(context.blockId);
+    const parent = parentId ? this.doc.model.toSnapshot(parentId) : null;
+    if (!parent || !this.doc.schemas.isValidChildren('image', parent.flavour)) {
+      this.doc.messageService.warn('当前位置不支持图片块');
+      return;
+    }
+    const snapshot = this.doc.model.toSnapshot(context.blockId);
+    if (!snapshot) {
+      this.closeInlineToolbar();
+      return;
+    }
+    const result = inlineImageSnapshotToBlockSnapshots(snapshot, context.offset);
+    if (!result) {
+      this.closeInlineToolbar();
+      return;
+    }
+
+    this.closeInlineToolbar();
+    void this.doc.chain()
+      .replaceWithSnapshots(context.blockId, result.snapshots)
+      .selectOrSetCursorAtBlock(result.image.id, true)
+      .run();
+  }
 
   private clearOpenToolbarTimer() {
     if (this._openToolbarTimer === undefined) return;
@@ -436,6 +698,7 @@ export class ImgToolbarPlugin extends DocPlugin {
 
   destroy() {
     this.closeToolbar();
+    this.closeInlineToolbar();
     this._pendingImageClickCleanup?.();
     this._sub.unsubscribe();
   }
