@@ -34,6 +34,7 @@ export class BlockReadonlyManager {
   private permissionRevision = 0;
   private indexedPermissionRevision = -1;
   private indexedStructureRevision = -1;
+  private structureStateChangeQueued = false;
 
   readonly violation$: Observable<BlockReadonlyViolation> = this.violationSubject.pipe(
     throttleTime(300, asyncScheduler, {leading: true, trailing: false}),
@@ -347,7 +348,17 @@ export class BlockReadonlyManager {
     this.resolutionCache.clear();
     this.indexedStructureRevision = -1;
     event.affectedParentIds.forEach(blockId => this.refreshSubtree(blockId));
-    this.stateChangeSubject.next();
+    this.scheduleStructureStateChange();
+  }
+
+  private scheduleStructureStateChange(): void {
+    if (this.structureStateChangeQueued) return;
+    this.structureStateChangeQueued = true;
+    Promise.resolve().then(() => {
+      this.structureStateChangeQueued = false;
+      if (!this.initialized) return;
+      this.stateChangeSubject.next();
+    });
   }
 
   private readExplicit(blockId: string): boolean {

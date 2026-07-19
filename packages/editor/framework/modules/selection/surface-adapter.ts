@@ -1,3 +1,5 @@
+import {focusEditingHostForBlock} from './focus-editing-host';
+
 export interface SelectionSurfaceAdapter {
   readonly ownerDocument: Document
   getActiveElement(): Element | null
@@ -50,19 +52,15 @@ export class DOMSelectionSurfaceAdapter implements SelectionSurfaceAdapter {
   }
 
   focusEditingHost(blockId?: string): void {
-    let host = this.root
+    let block: BlockCraft.BlockComponent | null = null
     try {
       if (blockId) {
-        const block = this.doc.getBlockById(blockId)
-        host = (block.hostElement.closest('[contenteditable="true"]') as HTMLElement | null) ?? host
+        block = this.doc.getBlockById(blockId)
       }
     } catch {
       // Restored components can mount one frame after their Yjs data returns.
     }
-    const active = this.getActiveElement()
-    if (active !== host && !host.contains(active)) {
-      host.focus({preventScroll: true})
-    }
+    focusEditingHostForBlock(this.doc, block)
   }
 
   hasEditorFocus(): boolean {

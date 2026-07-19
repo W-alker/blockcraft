@@ -37,16 +37,29 @@ import {
   SelectionPositionOrder,
   SelectionPositionResolver,
 } from "./position-resolver";
+import {SelectionModelResolver} from "./model-resolver";
 import {resolveSelectionCommonParent} from "./common-parent";
 import {RemoteSelectionReconciler} from './remote-selection-reconciler';
-import {RelativeSelectionBookmark} from './relative-bookmark';
+import {
+  RelativeSelectionBookmark,
+  sameSelectionJSON,
+} from './relative-bookmark';
 import {SelectionHistoryRestorer} from './history-restorer';
 import {
   DOMSelectionSurfaceAdapter,
   SelectionSurfaceAdapter,
 } from './surface-adapter';
+import type {SelectionProjectionMountAdapter} from './projection-mount-adapter';
 
 const DOM_PROJECTION_RETRY_LIMIT = 8
+
+interface ProjectionMountRequest {
+  adapter: SelectionProjectionMountAdapter
+  controller: AbortController
+  expected: ISelectionJSON
+  projectionVersion: number
+  scrollIntoView?: boolean
+}
 
 @DocEventRegister
 export class SelectionManager {
@@ -54,14 +67,19 @@ export class SelectionManager {
   public readonly selectionChange$ = new BehaviorSubject<BlockSelection | null>(null)
 
   private selectedManager = new SelectionSelectedManager(this.doc)
-  private _keyboard = new SelectionKeyboard(this.doc)
+  private readonly _keyboard: SelectionKeyboard
   private _suppressRecalculate = false
   private _suppressProgrammaticSelectionChangeUntil = 0
   private _compositionSelectionRecheckQueued = false
   private _compositionSelectionRecheckTimer: ReturnType<typeof setTimeout> | null = null
   private _compositionSelectionRecheckVersion = 0
   private _projectionVersion = 0
+  private _projectionFrame: number | null = null
+  private _projectionMountAdapter: SelectionProjectionMountAdapter | null = null
+  private _projectionMountRegistrationVersion = 0
+  private _projectionMountRequest: ProjectionMountRequest | null = null
   private readonly _positionResolver: SelectionPositionResolver
+  private readonly _modelResolver: SelectionModelResolver | null
   private readonly _remoteSelectionReconciler: RemoteSelectionReconciler | null
   private readonly _historyRestorer: SelectionHistoryRestorer
   private readonly _surface: SelectionSurfaceAdapter
@@ -71,6 +89,10 @@ export class SelectionManager {
     surface?: SelectionSurfaceAdapter,
   ) {
     this._surface = surface ?? new DOMSelectionSurfaceAdapter(doc)
+    this._modelResolver = this.doc.model
+      ? new SelectionModelResolver(this.doc.model)
+      : null
+    this._keyboard = new SelectionKeyboard(this.doc, this._surface)
     this._remoteSelectionReconciler = this.doc.crud?.remoteSyncLifecycle$
       ? new RemoteSelectionReconciler(
         this.doc,
@@ -86,10 +108,16 @@ export class SelectionManager {
     }, this._surface)
     this._positionResolver = new SelectionPositionResolver({
       getParentId: blockId => {
+        if (this._modelResolver?.exists(blockId)) {
+          return this.doc.model.getParentId(blockId)
+        }
         const block = this._readBlock(blockId)
         return block ? block.parentId ?? null : undefined
       },
       getChildrenIds: blockId => {
+        if (this._modelResolver?.exists(blockId)) {
+          return this._modelResolver.getChildrenIds(blockId)
+        }
         const block = this._readBlock(blockId)
         if (!block) return null
         if (block.nodeType === BlockNodeType.editable) return []
@@ -103,9 +131,49 @@ export class SelectionManager {
     this.doc.afterInit(this._bindEvents)
     this.doc.onDestroy$.pipe(take(1)).subscribe(() => {
       this._cancelCompositionSelectionRecheck()
+      this._cancelProjectionFrame()
+      this._cancelProjectionMountRequest()
+      this._projectionMountRegistrationVersion += 1
+      this._projectionMountAdapter = null
       this._remoteSelectionReconciler?.destroy()
       this._historyRestorer.destroy()
     })
+  }
+
+  /**
+   * Register the renderer responsible for mounting the bounded DOM neighborhood
+   * required by native selection projection. Registering a replacement aborts
+   * any request owned by the previous adapter.
+   */
+  registerProjectionMountAdapter(adapter: SelectionProjectionMountAdapter): () => void {
+    const interruptedRequest = this._projectionMountRequest
+    this._cancelProjectionMountRequest()
+    const registrationVersion = ++this._projectionMountRegistrationVersion
+    this._projectionMountAdapter = adapter
+    if (interruptedRequest) {
+      this._recoverDomProjection(
+        interruptedRequest.expected,
+        interruptedRequest.projectionVersion,
+        interruptedRequest.scrollIntoView,
+      )
+    }
+    let disposed = false
+    return () => {
+      if (disposed) return
+      disposed = true
+      if (registrationVersion !== this._projectionMountRegistrationVersion) return
+      this._projectionMountRegistrationVersion += 1
+      const pendingRequest = this._projectionMountRequest
+      this._cancelProjectionMountRequest()
+      this._projectionMountAdapter = null
+      if (pendingRequest) {
+        this._retryDomRangeWhenReady(
+          pendingRequest.expected,
+          pendingRequest.projectionVersion,
+          pendingRequest.scrollIntoView,
+        )
+      }
+    }
   }
 
   restoreBookmark(bookmark: RelativeSelectionBookmark | null): void {
@@ -466,9 +534,34 @@ export class SelectionManager {
   // ── Model state management ──
 
   private _publishState(selection: BlockSelection | null) {
+    this._cancelProjectionFrame()
+    this._cancelProjectionMountRequest()
     this._projectionVersion += 1
     this.selectionChange$.next(selection)
     this.selectedManager.setSelected(selection)
+  }
+
+  private _cancelProjectionFrame(): void {
+    if (this._projectionFrame === null) return
+    this._surface.cancelFrame(this._projectionFrame)
+    this._projectionFrame = null
+  }
+
+  private _cancelProjectionMountRequest(): void {
+    const request = this._projectionMountRequest
+    if (!request) return
+    this._projectionMountRequest = null
+    request.controller.abort()
+  }
+
+  private _scheduleProjectionFrame(callback: FrameRequestCallback): void {
+    this._cancelProjectionFrame()
+    const frame = this._surface.requestFrame(timestamp => {
+      if (this._projectionFrame !== frame) return
+      this._projectionFrame = null
+      callback(timestamp)
+    })
+    this._projectionFrame = frame
   }
 
   private _applyState(selection: BlockSelection | null) {
@@ -498,6 +591,7 @@ export class SelectionManager {
         }
         return this._compareModelPosition(a, b)
       },
+      this._modelResolver ?? undefined,
     )
   }
 
@@ -575,15 +669,17 @@ export class SelectionManager {
     selectionState: BlockSelection,
     scrollIntoView?: boolean,
     projectionVersion = this._projectionVersion,
+    requestMount = true,
   ): Range | null {
     if (this._shouldDeferGapDomRange(selectionState)) {
       this._suppressProgrammaticSelectionChange()
       this._surface.clearNativeSelection()
-      this._retryDomRangeWhenReady(
-        selectionState.toJSON(),
-        projectionVersion,
-        scrollIntoView,
-      )
+      const expected = selectionState.toJSON()
+      if (requestMount) {
+        this._recoverDomProjection(expected, projectionVersion, scrollIntoView)
+      } else {
+        this._retryDomRangeWhenReady(expected, projectionVersion, scrollIntoView)
+      }
       return null
     }
 
@@ -629,7 +725,7 @@ export class SelectionManager {
     } catch {
       this._suppressProgrammaticSelectionChange()
       this._surface.clearNativeSelection()
-      this._retryDomRangeWhenReady(
+      this._recoverDomProjection(
         selectionState.toJSON(),
         projectionVersion,
         options.scrollIntoView,
@@ -655,13 +751,101 @@ export class SelectionManager {
     return selection.start
   }
 
+  private _recoverDomProjection(
+    expected: ISelectionJSON,
+    projectionVersion: number,
+    scrollIntoView?: boolean,
+  ): void {
+    const adapter = this._projectionMountAdapter
+    const current = this.value
+    if (!adapter || !current || !sameSelectionJSON(current.toJSON(), expected)) {
+      this._retryDomRangeWhenReady(expected, projectionVersion, scrollIntoView)
+      return
+    }
+
+    const blockIds = this._projectionMountTargetIds(current)
+    if (!blockIds.length) {
+      this._retryDomRangeWhenReady(expected, projectionVersion, scrollIntoView)
+      return
+    }
+
+    this._cancelProjectionMountRequest()
+    const request = {
+      adapter,
+      controller: new AbortController(),
+      expected,
+      projectionVersion,
+      scrollIntoView,
+    }
+    this._projectionMountRequest = request
+
+    let result: void | Promise<void>
+    try {
+      result = adapter.ensureMounted(blockIds, request.controller.signal)
+    } catch {
+      this._finishProjectionMountRequest(request)
+      return
+    }
+    void Promise.resolve(result).then(
+      () => this._finishProjectionMountRequest(request),
+      () => this._finishProjectionMountRequest(request),
+    )
+  }
+
+  private _finishProjectionMountRequest(request: ProjectionMountRequest): void {
+    if (
+      request.controller.signal.aborted ||
+      this._projectionMountRequest !== request ||
+      this._projectionMountAdapter !== request.adapter ||
+      request.projectionVersion !== this._projectionVersion
+    ) {
+      return
+    }
+    const current = this.value
+    if (!current || !sameSelectionJSON(current.toJSON(), request.expected)) {
+      this._projectionMountRequest = null
+      return
+    }
+
+    this._projectionMountRequest = null
+    this._retryDomRangeWhenReady(
+      request.expected,
+      request.projectionVersion,
+      request.scrollIntoView,
+    )
+  }
+
+  private _projectionMountTargetIds(selection: BlockSelection): string[] {
+    const blockIds = new Set<string>()
+    const addPoint = (point: ISelectionPoint) => {
+      blockIds.add(point.blockId)
+      if (point.type !== 'boundary' || !this._modelResolver) return
+
+      let children: readonly string[]
+      try {
+        children = this._modelResolver.getChildrenIds(point.blockId)
+      } catch {
+        return
+      }
+      const index = Math.max(0, Math.min(point.index, children.length))
+      const nextId = children[index]
+      const previousId = index > 0 ? children[index - 1] : undefined
+      if (nextId) blockIds.add(nextId)
+      if (previousId) blockIds.add(previousId)
+    }
+
+    addPoint(selection.start)
+    addPoint(selection.end)
+    return [...blockIds]
+  }
+
   private _retryDomRangeWhenReady(
     expected: ISelectionJSON,
     projectionVersion: number,
     scrollIntoView?: boolean,
     attempts = DOM_PROJECTION_RETRY_LIMIT,
   ): void {
-    this._surface.requestFrame(() => {
+    this._scheduleProjectionFrame(() => {
       if (projectionVersion !== this._projectionVersion) return
       const current = this.value
       if (!current || !sameSelectionJSON(current.toJSON(), expected)) return
@@ -696,7 +880,7 @@ export class SelectionManager {
         return
       }
       try {
-        this._applyDomRangeForSelection(current, scrollIntoView, projectionVersion)
+        this._applyDomRangeForSelection(current, scrollIntoView, projectionVersion, false)
       } catch (error) {
         this._surface.clearNativeSelection()
         if (attempts > 0) {
@@ -1156,17 +1340,13 @@ export class SelectionManager {
    * if either endpoint block no longer exists.
    */
   createSelection(json: ISelectionJSON): BlockSelection | null {
-    try {
-      this.doc.getBlockById(json.anchor.blockId)
-      this.doc.getBlockById(json.head.blockId)
-      if (json.commonParent) this.doc.getBlockById(json.commonParent)
-      if (json.anchor.type === 'table-cell' || json.head.type === 'table-cell') {
-        if (json.anchor.type !== 'table-cell' || json.head.type !== 'table-cell') return null
-        if (!json.anchor.tableId || json.anchor.tableId !== json.head.tableId) return null
-        this.doc.getBlockById(json.anchor.tableId)
-      }
-    } catch {
-      return null
+    if (!this._selectionModelBlockExists(json.anchor.blockId)) return null
+    if (!this._selectionModelBlockExists(json.head.blockId)) return null
+    if (json.commonParent && !this._selectionModelBlockExists(json.commonParent)) return null
+    if (json.anchor.type === 'table-cell' || json.head.type === 'table-cell') {
+      if (json.anchor.type !== 'table-cell' || json.head.type !== 'table-cell') return null
+      if (!json.anchor.tableId || json.anchor.tableId !== json.head.tableId) return null
+      if (!this._selectionModelBlockExists(json.anchor.tableId)) return null
     }
     const makePoint = (p: ISelectionPointJSON) => this._pointFromJSON(p)
     const selection = this._createBlockSelection(
@@ -1175,6 +1355,15 @@ export class SelectionManager {
       json.commonParent,
     )
     return isSelectionAlive(selection, this.doc) ? selection : null
+  }
+
+  private _selectionModelBlockExists(blockId: string): boolean {
+    if (this._modelResolver) return this._modelResolver.exists(blockId)
+    try {
+      return !!this.doc.getBlockById(blockId)
+    } catch {
+      return false
+    }
   }
 
   createFakeRange(source: Pick<IBlockSelectionJSON, 'from' | 'to'> | BlockSelection | ISelectionJSON, config: IFakeRangeConfig = {}) {
@@ -1343,21 +1532,6 @@ function wholeBlockSelectionPointJSON(blockId: string): ISelectionPointJSON {
   return {blockId, type: 'selected'}
 }
 
-function sameSelectionJSON(a: ISelectionJSON, b: ISelectionJSON): boolean {
-  return a.commonParent === b.commonParent &&
-    samePointJSON(a.anchor, b.anchor) &&
-    samePointJSON(a.head, b.head)
-}
-
-function samePointJSON(a: ISelectionPointJSON, b: ISelectionPointJSON): boolean {
-  return a.blockId === b.blockId &&
-    a.type === b.type &&
-    (a.offset ?? null) === (b.offset ?? null) &&
-    (a.side ?? null) === (b.side ?? null) &&
-    (a.index ?? null) === (b.index ?? null) &&
-    (a.tableId ?? null) === (b.tableId ?? null)
-}
-
 /** Convert new ISelectionPoint to legacy-compatible shape for _buildDomRange */
 function pointToLegacy(p: ISelectionPoint): DomRangePointJSON {
   if (p.type === 'gap') {
@@ -1391,5 +1565,7 @@ declare global {
 export * from './types'
 export * from './createFakeRange'
 export * from './blockSelection'
+export * from './model-resolver'
+export * from './projection-mount-adapter'
 export {normalizeRange} from './normalize'
 export type {INormalizedEndpoints} from './normalize'

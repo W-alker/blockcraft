@@ -43,7 +43,12 @@ export class SelectionSelectedManager {
 
     if (selection) {
       getSelectionCoveredBlockIds(selection, this.doc).forEach(id => {
-        const block = this.doc.getBlockById(id) as BaseBlockComponent<any>
+        let block: BaseBlockComponent<any>
+        try {
+          block = this.doc.getBlockById(id) as BaseBlockComponent<any>
+        } catch {
+          return
+        }
         if (block.nodeType === BlockNodeType.editable) {
           nextFocused.add(block as EditableBlockComponent<any>)
         } else {

@@ -99,7 +99,7 @@ export class FakeRange {
       const anchorCell = this.doc.getBlockById(tableCellSelection.anchorCellId) as BlockCraft.IBlockComponents['table-cell']
       if (anchorCell.props?.display !== 'none') {
         this._applyTableCellFakeStyle(anchorCell)
-        this._fakeSpans.push(this._createDetachedFakeSpan())
+        this._fakeSpans.push(this._createDetachedFakeSpan(anchorCell.hostElement.ownerDocument))
       }
     } catch {
       // The selection points may have been deleted by collaboration. Treat it
@@ -133,7 +133,8 @@ export class FakeRange {
       return this._createTextFakeSpan(block, 0, block.textLength)
     }
     this._ensureOverlayContainingBlock(block.hostElement)
-    const span = document.createElement('span');
+    const ownerDocument = block.hostElement.ownerDocument
+    const span = ownerDocument.createElement('span');
     span.classList.add('blockcraft-cursor')
     span.style.cssText = `
       position: absolute;
@@ -144,7 +145,7 @@ export class FakeRange {
       pointer-events: none;
       --bgColor: ${this.config.bgColor || 'var(--bc-select-background-color)'};
     `
-    const child = document.createElement('span');
+    const child = ownerDocument.createElement('span');
     child.style.cssText = `
       position: absolute;
       display: block;
@@ -167,12 +168,14 @@ export class FakeRange {
     side: 'before' | 'after',
   ) {
     const host = block.hostElement
+    const ownerDocument = host.ownerDocument
     this._ensureOverlayContainingBlock(host)
 
     const hostRect = host.getBoundingClientRect()
     const gap = getBlockGapCaretSpan(host, side)
     const gapRect = gap?.getBoundingClientRect()
-    const computed = gap ? getComputedStyle(gap) : getComputedStyle(host)
+    const computedStyle = ownerDocument.defaultView?.getComputedStyle.bind(ownerDocument.defaultView) ?? getComputedStyle
+    const computed = gap ? computedStyle(gap) : computedStyle(host)
     const parsedHeight = Number.parseFloat(computed.height)
     const fallbackHeight = Number.parseFloat(computed.lineHeight)
     const height = Math.max(
@@ -188,7 +191,7 @@ export class FakeRange {
       ? gapRect.top - hostRect.top
       : side === 'before' ? 0 : Math.max(0, hostRect.height - height)
 
-    const span = document.createElement('span')
+    const span = ownerDocument.createElement('span')
     span.classList.add('blockcraft-cursor', 'blockcraft-cursor--gap')
     span.setAttribute('data-fake-range-kind', 'gap')
     span.setAttribute('data-gap-side', side)
@@ -202,7 +205,7 @@ export class FakeRange {
       --bgColor: ${this.config.bgColor || 'var(--bc-select-background-color)'};
     `
 
-    const child = document.createElement('span')
+    const child = ownerDocument.createElement('span')
     child.style.cssText = `
       position: absolute;
       display: block;
@@ -227,7 +230,8 @@ export class FakeRange {
       this._styleCleanups.push(() => this._releaseOverlayContainingBlock(target, existing))
       return
     }
-    if (getComputedStyle(target).position !== 'static') return
+    const computedStyle = target.ownerDocument.defaultView?.getComputedStyle(target) ?? getComputedStyle(target)
+    if (computedStyle.position !== 'static') return
     const previousPosition = target.style.position
     target.style.position = 'relative'
     const state = {
@@ -248,11 +252,11 @@ export class FakeRange {
     overlayContainingBlockState.delete(target)
   }
 
-  private _createDetachedFakeSpan() {
-    const span = document.createElement('span');
+  private _createDetachedFakeSpan(ownerDocument: Document) {
+    const span = ownerDocument.createElement('span');
     span.classList.add('blockcraft-cursor')
     span.setAttribute('data-fake-range-detached', 'true')
-    const child = document.createElement('span');
+    const child = ownerDocument.createElement('span');
     span.appendChild(child)
     return span
   }
@@ -297,14 +301,15 @@ export class FakeRange {
       : eb.runtime.mapper.modelRangeToDomRange(container, index)
 
     const wrapper = block.containerElement
+    const ownerDocument = wrapper.ownerDocument
     const wrapRect = wrapper.getBoundingClientRect()
-    const span = document.createElement('span');
+    const span = ownerDocument.createElement('span');
     span.classList.add('blockcraft-cursor')
     span.style.setProperty('--bgColor', this.config.bgColor || 'var(--bc-select-background-color)')
     const _rRects = range.getClientRects();
 
     const createPart = (rect: DOMRect) => {
-      const span = document.createElement('span');
+      const span = ownerDocument.createElement('span');
       span.style.cssText = `
         width: ${Math.max(rect.width, this.config.minCursorWidth || 2)}px;
         height: ${rect.height}px;

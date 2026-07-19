@@ -1,4 +1,5 @@
 import {ErrorCode} from "../../global";
+import {fakeAsync, flushMicrotasks} from "@angular/core/testing";
 import {BlockNodeType, NativeBlockModel, YBlock, native2YBlock} from "../block-std";
 import {BehaviorSubject, Subject} from "rxjs";
 import * as Y from "yjs";
@@ -165,6 +166,31 @@ describe("Block readonly public contract", () => {
 });
 
 describe("BlockReadonlyManager", () => {
+  it("publishes structural state changes after model-to-view observers finish", fakeAsync(() => {
+    const {manager, yDoc, yBlockMap} = createReadonlyHarness();
+    let viewSynced = false;
+    const observedViewStates: boolean[] = [];
+    const viewObserver = () => {
+      viewSynced = true;
+    };
+    yBlockMap.observeDeep(viewObserver);
+    const subscription = manager.stateChange$.subscribe(() => {
+      observedViewStates.push(viewSynced);
+    });
+
+    yDoc.transact(() => {
+      const children = yBlockMap.get("root-a")!.get("children") as Y.Array<string>;
+      children.delete(0, 1);
+    });
+
+    expect(observedViewStates).toEqual([]);
+    flushMicrotasks();
+    expect(observedViewStates).toEqual([true]);
+
+    subscription.unsubscribe();
+    yBlockMap.unobserveDeep(viewObserver);
+  }));
+
   it("fails closed when a readonly query observes a selection whose block was just removed", () => {
     const {manager} = createReadonlyHarness();
     const staleSelection = {

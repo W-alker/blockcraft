@@ -1496,6 +1496,48 @@ describe('SelectionManager programmatic model-first writes', () => {
     expect(range.startOffset).toBe(2);
   });
 
+  it('creates and derives a selection from the model graph while endpoint components are unmounted', () => {
+    const parentById: Record<string, string | null> = {
+      'virtual-root': null,
+      'virtual-p1': 'virtual-root',
+      'virtual-p2': 'virtual-root',
+    };
+    const childrenById: Record<string, readonly string[]> = {
+      'virtual-root': ['virtual-p1', 'virtual-p2'],
+      'virtual-p1': [],
+      'virtual-p2': [],
+    };
+    const getBlockById = jasmine.createSpy('getBlockById').and.throwError('component is unmounted');
+    const doc = {
+      root: {id: 'virtual-root', hostElement: document.createElement('div')},
+      event: {add() {}, bindHotkey() {}},
+      afterInit() {},
+      onDestroy$: new Subject<void>(),
+      getBlockById,
+      model: {
+        exists: (blockId: string) => blockId in parentById,
+        getParentId: (blockId: string) => parentById[blockId],
+        getChildrenIds: (blockId: string) => childrenById[blockId] ?? [],
+        getTextLength: (blockId: string) => blockId === 'virtual-p2' ? 5 : 4,
+        queryBetween: () => [],
+      },
+      logger: {warn: jasmine.createSpy('warn')},
+    };
+    const manager = new SelectionManager(doc as any);
+
+    const selection = manager.createSelection({
+      anchor: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      head: {blockId: 'virtual-p2', type: 'text', offset: 5},
+      commonParent: 'virtual-root',
+    });
+
+    expect(selection?.direction).toBe('forward');
+    expect(selection?.firstBlockId).toBe('virtual-p1');
+    expect(selection?.lastBlockId).toBe('virtual-p2');
+    expect(selection?.isEndOfBlock).toBeTrue();
+    expect(getBlockById).not.toHaveBeenCalled();
+  });
+
   it('canonicalizes a single legacy text range without losing its length', () => {
     const {manager, p1} = createProgrammaticManager();
 
@@ -1694,23 +1736,32 @@ describe('SelectionManager programmatic model-first writes', () => {
   });
 
   it('cancels a stale projection retry after a newer selection is committed', () => {
-    const callbacks: FrameRequestCallback[] = [];
+    const callbacks = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
     const rafSpy = (window.requestAnimationFrame as any).and
       ? window.requestAnimationFrame as jasmine.Spy
       : spyOn(window, 'requestAnimationFrame');
     rafSpy.and.callFake((callback: FrameRequestCallback) => {
-      callbacks.push(callback);
-      return callbacks.length;
+      const frame = ++nextFrame;
+      callbacks.set(frame, callback);
+      return frame;
     });
+    const cancelRafSpy = (window.cancelAnimationFrame as any).and
+      ? window.cancelAnimationFrame as jasmine.Spy
+      : spyOn(window, 'cancelAnimationFrame');
+    cancelRafSpy.and.callFake((frame: number) => callbacks.delete(frame));
     const {manager, p1, p2, p2Text} = createProgrammaticManager({
       brokenMapperBlockId: 'model-p1',
       projectionFailures: 1,
     });
 
     manager.setCursorAt(p1, 1);
-    manager.setCursorAt(p2, 2);
-    callbacks.shift()!(performance.now());
+    expect(callbacks.size).toBe(1);
 
+    manager.setCursorAt(p2, 2);
+
+    expect(cancelRafSpy).toHaveBeenCalledOnceWith(1);
+    expect(callbacks.size).toBe(0);
     expect(manager.value?.toJSON()).toEqual({
       anchor: {blockId: p2.id, type: 'text', offset: 2},
       head: {blockId: p2.id, type: 'text', offset: 2},
@@ -1789,5 +1840,372 @@ describe('SelectionManager programmatic model-first writes', () => {
 
     expect(manager.value).toBeNull();
     expect(document.getSelection()?.rangeCount).toBe(0);
+  });
+});
+
+describe('SelectionManager projection mount coordination', () => {
+  function deferred<T = void>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+      resolve = resolvePromise;
+      reject = rejectPromise;
+    });
+    return {promise, resolve, reject};
+  }
+
+  function createProjectionMountManager() {
+    document.getSelection()?.removeAllRanges();
+
+    const rootHost = document.createElement('div');
+    rootHost.setAttribute('data-block-id', 'virtual-root');
+    rootHost.setAttribute('data-projection-mount-test', 'true');
+    rootHost.setAttribute('contenteditable', 'true');
+    document.body.appendChild(rootHost);
+
+    const childrenById: Record<string, readonly string[]> = {
+      'virtual-root': ['virtual-p0', 'virtual-callout', 'virtual-p1', 'virtual-p2'],
+      'virtual-p0': [],
+      'virtual-callout': [],
+      'virtual-p1': [],
+      'virtual-p2': [],
+    };
+    const parentById: Record<string, string | null> = {
+      'virtual-root': null,
+      'virtual-p0': 'virtual-root',
+      'virtual-callout': 'virtual-root',
+      'virtual-p1': 'virtual-root',
+      'virtual-p2': 'virtual-root',
+    };
+    const root = {
+      id: 'virtual-root',
+      nodeType: BlockNodeType.root,
+      hostElement: rootHost,
+      parentId: null,
+      parentBlock: null,
+      childrenIds: childrenById['virtual-root'],
+      childrenLength: childrenById['virtual-root'].length,
+    } as any;
+    const mountedBlocks = new Map<string, any>();
+    const mountedTextNodes = new Map<string, Text>();
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    const surface = {
+      ownerDocument: document,
+      getActiveElement: () => rootHost,
+      getNativeSelection: () => document.getSelection(),
+      clearNativeSelection: () => document.getSelection()?.removeAllRanges(),
+      createRange: () => document.createRange(),
+      focusRoot: jasmine.createSpy('focusRoot'),
+      focusEditingHost: jasmine.createSpy('focusEditingHost'),
+      hasEditorFocus: () => true,
+      isFocusDropped: () => false,
+      isRootConnected: () => true,
+      ownsNativeSelection: () => false,
+      requestFrame: (callback: FrameRequestCallback) => {
+        const frame = ++nextFrame;
+        frames.set(frame, callback);
+        return frame;
+      },
+      cancelFrame: (frame: number) => {
+        frames.delete(frame);
+      },
+      getElementRect: (element: Element) => element.getBoundingClientRect(),
+      getRangeRect: (range: Range) => range.getBoundingClientRect(),
+      getRangeRects: (range: Range) => range.getClientRects(),
+    };
+    const onDestroy$ = new Subject<void>();
+    const logger = {warn: jasmine.createSpy('warn')};
+    const doc = {
+      root,
+      event: {add() {}, bindHotkey() {}, status: {isComposing: false}},
+      afterInit() {},
+      onDestroy$,
+      model: {
+        exists: (blockId: string) => blockId in parentById,
+        getParentId: (blockId: string) => parentById[blockId] ?? null,
+        getChildrenIds: (blockId: string) => childrenById[blockId] ?? [],
+        getTextLength: (blockId: string) => blockId.startsWith('virtual-p') ? 8 : 0,
+        queryBetween: () => [],
+      },
+      getBlockById: (blockId: string) => {
+        if (blockId === root.id) return root;
+        const mounted = mountedBlocks.get(blockId);
+        if (mounted) return mounted;
+        throw new Error(`component is unmounted: ${blockId}`);
+      },
+      queryBlocksBetween: () => [],
+      queryBlocksThroughPathDeeply: () => [],
+      logger,
+    };
+
+    const mountEditable = (blockId: string) => {
+      const hostElement = document.createElement('p');
+      hostElement.setAttribute('data-block-id', blockId);
+      const textNode = document.createTextNode('mounted text');
+      hostElement.appendChild(textNode);
+      rootHost.appendChild(hostElement);
+      const block = {
+        id: blockId,
+        flavour: 'paragraph',
+        nodeType: BlockNodeType.editable,
+        hostElement,
+        containerElement: hostElement,
+        parentId: root.id,
+        parentBlock: root,
+        childrenIds: [],
+        childrenLength: 0,
+        textLength: textNode.length,
+        textContent: () => textNode.data,
+        runtime: {
+          mapper: {
+            modelPointToDomPoint: (_container: HTMLElement, offset: number) => ({
+              node: textNode,
+              offset,
+            }),
+          },
+        },
+      };
+      mountedBlocks.set(blockId, block);
+      mountedTextNodes.set(blockId, textNode);
+      return block;
+    };
+
+    return {
+      manager: new SelectionManager(doc as any, surface as any),
+      frames,
+      onDestroy$,
+      logger,
+      mountEditable,
+      mountedTextNodes,
+    };
+  }
+
+  function registerMountAdapter(
+    manager: SelectionManager,
+    adapter: {ensureMounted(blockIds: readonly string[], signal: AbortSignal): void | Promise<void>},
+  ): () => void {
+    const register = (manager as any).registerProjectionMountAdapter;
+    expect(typeof register).toBe('function');
+    return typeof register === 'function'
+      ? register.call(manager, adapter)
+      : () => {};
+  }
+
+  afterEach(() => {
+    document.getSelection()?.removeAllRanges();
+    document.querySelectorAll('[data-projection-mount-test]').forEach(element => element.remove());
+  });
+
+  it('requests only unmounted text endpoint blocks before retrying DOM projection', () => {
+    const {manager, frames} = createProjectionMountManager();
+    const ensureMounted = jasmine.createSpy('ensureMounted')
+      .and.returnValue(new Promise<void>(() => {}));
+    registerMountAdapter(manager, {ensureMounted});
+
+    manager.replay({
+      anchor: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      head: {blockId: 'virtual-p2', type: 'text', offset: 2},
+      commonParent: 'virtual-root',
+    });
+
+    expect(ensureMounted).toHaveBeenCalledTimes(1);
+    const [blockIds, signal] = ensureMounted.calls.mostRecent().args as [readonly string[], AbortSignal];
+    expect(blockIds).toEqual(['virtual-p1', 'virtual-p2']);
+    expect(signal.aborted).toBeFalse();
+    expect(frames.size).toBe(0);
+    expect(manager.value?.toJSON()).toEqual({
+      anchor: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      head: {blockId: 'virtual-p2', type: 'text', offset: 2},
+      commonParent: 'virtual-root',
+    });
+  });
+
+  it('requests boundary containers and only their adjacent children without duplicates', () => {
+    const {manager, frames} = createProjectionMountManager();
+    const ensureMounted = jasmine.createSpy('ensureMounted')
+      .and.returnValue(new Promise<void>(() => {}));
+    registerMountAdapter(manager, {ensureMounted});
+
+    manager.replay({
+      anchor: {blockId: 'virtual-root', type: 'boundary', index: 1},
+      head: {blockId: 'virtual-root', type: 'boundary', index: 3},
+      commonParent: 'virtual-root',
+    });
+
+    expect(ensureMounted).toHaveBeenCalledTimes(1);
+    const [blockIds] = ensureMounted.calls.mostRecent().args as [readonly string[], AbortSignal];
+    expect([...blockIds].sort()).toEqual([
+      'virtual-callout',
+      'virtual-p0',
+      'virtual-p1',
+      'virtual-p2',
+      'virtual-root',
+    ]);
+    expect(new Set(blockIds).size).toBe(blockIds.length);
+    expect(frames.size).toBe(0);
+  });
+
+  it('aborts a stale request and ignores its late resolution after a newer selection', async () => {
+    const {manager, frames} = createProjectionMountManager();
+    const first = deferred();
+    const second = deferred();
+    const ensureMounted = jasmine.createSpy('ensureMounted')
+      .and.returnValues(first.promise, second.promise);
+    registerMountAdapter(manager, {ensureMounted});
+
+    manager.replay({
+      anchor: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      head: {blockId: 'virtual-p2', type: 'text', offset: 2},
+      commonParent: 'virtual-root',
+    });
+    const firstSignal = ensureMounted.calls.argsFor(0)[1] as AbortSignal;
+
+    manager.replay({
+      anchor: {blockId: 'virtual-p2', type: 'text', offset: 3},
+      head: {blockId: 'virtual-p2', type: 'text', offset: 3},
+      commonParent: 'virtual-p2',
+    });
+    const secondSignal = ensureMounted.calls.argsFor(1)[1] as AbortSignal;
+
+    expect(firstSignal.aborted).toBeTrue();
+    expect(secondSignal.aborted).toBeFalse();
+    expect(frames.size).toBe(0);
+
+    first.resolve();
+    await Promise.resolve();
+    expect(frames.size).toBe(0);
+
+    second.resolve();
+    await Promise.resolve();
+    expect(frames.size).toBe(1);
+    expect(manager.value?.start.blockId).toBe('virtual-p2');
+  });
+
+  it('retries DOM projection after the requested endpoint mounts', async () => {
+    const {manager, frames, mountEditable, mountedTextNodes} = createProjectionMountManager();
+    const pending = deferred();
+    const ensureMounted = jasmine.createSpy('ensureMounted').and.returnValue(pending.promise);
+    registerMountAdapter(manager, {ensureMounted});
+
+    manager.replay({
+      anchor: {blockId: 'virtual-p1', type: 'text', offset: 2},
+      head: {blockId: 'virtual-p1', type: 'text', offset: 2},
+      commonParent: 'virtual-p1',
+    });
+    mountEditable('virtual-p1');
+    pending.resolve();
+    await Promise.resolve();
+
+    expect(frames.size).toBe(1);
+    const callback = [...frames.values()][0];
+    callback(performance.now());
+
+    const range = document.getSelection()!.getRangeAt(0);
+    expect(range.startContainer).toBe(mountedTextNodes.get('virtual-p1')!);
+    expect(range.startOffset).toBe(2);
+    expect(manager.value?.start.blockId).toBe('virtual-p1');
+  });
+
+  it('aborts an in-flight request when its registration is disposed', async () => {
+    const {manager, frames} = createProjectionMountManager();
+    const pending = deferred();
+    const ensureMounted = jasmine.createSpy('ensureMounted').and.returnValue(pending.promise);
+    const dispose = registerMountAdapter(manager, {ensureMounted});
+    manager.replay({
+      anchor: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      head: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      commonParent: 'virtual-p1',
+    });
+    const signal = ensureMounted.calls.mostRecent().args[1] as AbortSignal;
+
+    dispose();
+    expect(frames.size).toBe(1);
+    pending.resolve();
+    await Promise.resolve();
+
+    expect(signal.aborted).toBeTrue();
+    expect(frames.size).toBe(1);
+  });
+
+  it('hands an in-flight projection request to a replacement adapter', () => {
+    const {manager, frames} = createProjectionMountManager();
+    const firstPending = deferred();
+    const secondPending = deferred();
+    const firstEnsureMounted = jasmine.createSpy('firstEnsureMounted')
+      .and.returnValue(firstPending.promise);
+    const secondEnsureMounted = jasmine.createSpy('secondEnsureMounted')
+      .and.returnValue(secondPending.promise);
+    registerMountAdapter(manager, {ensureMounted: firstEnsureMounted});
+    manager.replay({
+      anchor: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      head: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      commonParent: 'virtual-p1',
+    });
+    const firstSignal = firstEnsureMounted.calls.mostRecent().args[1] as AbortSignal;
+
+    registerMountAdapter(manager, {ensureMounted: secondEnsureMounted});
+
+    expect(firstSignal.aborted).toBeTrue();
+    expect(secondEnsureMounted).toHaveBeenCalledTimes(1);
+    expect(secondEnsureMounted.calls.mostRecent().args[0]).toEqual(['virtual-p1']);
+    expect(frames.size).toBe(0);
+  });
+
+  it('does not let a stale disposer unregister a newer registration of the same adapter', () => {
+    const {manager} = createProjectionMountManager();
+    const ensureMounted = jasmine.createSpy('ensureMounted')
+      .and.returnValue(new Promise<void>(() => {}));
+    const adapter = {ensureMounted};
+    const disposeFirst = registerMountAdapter(manager, adapter);
+    const disposeSecond = registerMountAdapter(manager, adapter);
+
+    disposeFirst();
+    manager.replay({
+      anchor: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      head: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      commonParent: 'virtual-p1',
+    });
+
+    expect(ensureMounted).toHaveBeenCalledTimes(1);
+    disposeSecond();
+  });
+
+  it('aborts an in-flight request when the document is destroyed', async () => {
+    const {manager, frames, onDestroy$} = createProjectionMountManager();
+    const pending = deferred();
+    const ensureMounted = jasmine.createSpy('ensureMounted').and.returnValue(pending.promise);
+    registerMountAdapter(manager, {ensureMounted});
+    manager.replay({
+      anchor: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      head: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      commonParent: 'virtual-p1',
+    });
+    const signal = ensureMounted.calls.mostRecent().args[1] as AbortSignal;
+
+    onDestroy$.next();
+    pending.resolve();
+    await Promise.resolve();
+
+    expect(signal.aborted).toBeTrue();
+    expect(frames.size).toBe(0);
+  });
+
+  it('falls back to the bounded frame retry when mounting rejects', async () => {
+    const {manager, frames, logger} = createProjectionMountManager();
+    const pending = deferred();
+    const ensureMounted = jasmine.createSpy('ensureMounted').and.returnValue(pending.promise);
+    registerMountAdapter(manager, {ensureMounted});
+    manager.replay({
+      anchor: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      head: {blockId: 'virtual-p1', type: 'text', offset: 1},
+      commonParent: 'virtual-p1',
+    });
+
+    pending.reject(new Error('renderer declined mount'));
+    await Promise.resolve();
+
+    expect(frames.size).toBe(1);
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });

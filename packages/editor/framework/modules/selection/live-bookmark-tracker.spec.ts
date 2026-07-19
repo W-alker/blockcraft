@@ -83,6 +83,20 @@ describe('LiveSelectionBookmarkTracker', () => {
     tracker.destroy()
   })
 
+  it('increments revision when the same model selection is published again', () => {
+    const tracker = new LiveSelectionBookmarkTracker(doc, selection$)
+    selection$.next(selectionAt(1))
+    const first = tracker.snapshot()
+
+    selection$.next(selectionAt(1))
+    const repeated = tracker.snapshot()
+
+    expect(repeated.revision).toBe(first.revision + 1)
+    expect(repeated.bookmark?.anchor).toBe(first.bookmark?.anchor)
+    expect(repeated.bookmark?.head).toBe(first.bookmark?.head)
+    tracker.destroy()
+  })
+
   it('reuses relative point bookmarks when Yjs already maps to the new caret', () => {
     const tracker = new LiveSelectionBookmarkTracker(doc, selection$)
     selection$.next(selectionAt(1))

@@ -132,13 +132,36 @@ function installNativeSelection(focusBlockId: string | null, options: {isCollaps
   };
 }
 
+function createKeyboard(doc: any): any {
+  return new SelectionKeyboard(doc, {
+    getNativeSelection: () => document.getSelection(),
+  } as any) as any;
+}
+
+describe('SelectionKeyboard surface boundary', () => {
+  it('reads native selection from the injected surface instead of the global document', () => {
+    const doc = createMockDoc();
+    const nativeSelection = {isCollapsed: false};
+    const surface = {
+      getNativeSelection: jasmine.createSpy('getNativeSelection').and.returnValue(nativeSelection),
+    };
+    const globalSelection = spyOn(document, 'getSelection').and.returnValue(nativeSelection as any);
+    const keyboard = new SelectionKeyboard(doc as any, surface as any) as any;
+
+    keyboard._handlerNoEditable(ctxFor({}, 'ArrowLeft'));
+
+    expect(surface.getNativeSelection).toHaveBeenCalledTimes(1);
+    expect(globalSelection).not.toHaveBeenCalled();
+  });
+});
+
 describe('SelectionKeyboard – Left/Right gap navigation', () => {
   let doc: MockDoc;
   let keyboard: any;
 
   beforeEach(() => {
     doc = createMockDoc();
-    keyboard = new SelectionKeyboard(doc as any) as any;
+    keyboard = createKeyboard(doc);
   });
 
   describe('text edge → sibling', () => {
@@ -445,7 +468,7 @@ describe('SelectionKeyboard – Up/Down renderUnit navigation', () => {
 
   beforeEach(() => {
     doc = createMockDoc();
-    keyboard = new SelectionKeyboard(doc as any) as any;
+    keyboard = createKeyboard(doc);
   });
 
   it('ArrowDown at text-end into a table-cell enters its first editable child instead of gap', () => {
@@ -639,7 +662,7 @@ describe('SelectionKeyboard – Up/Down all-selected model fallback', () => {
 
   beforeEach(() => {
     doc = createMockDoc();
-    keyboard = new SelectionKeyboard(doc as any) as any;
+    keyboard = createKeyboard(doc);
   });
 
   it('moves from a whole-block void selection when native focus is missing', () => {
@@ -766,7 +789,7 @@ describe('SelectionKeyboard – Ctrl+A in table cells', () => {
         info: jasmine.createSpy('info'),
       },
     };
-    const keyboard = new SelectionKeyboard(doc as any) as any;
+    const keyboard = createKeyboard(doc);
     return {keyboard, doc, table, cell, paragraph};
   }
 
@@ -887,7 +910,7 @@ describe('SelectionKeyboard – Ctrl+A ladder', () => {
         info: jasmine.createSpy('info'),
       },
     };
-    const keyboard = new SelectionKeyboard(doc as any) as any;
+    const keyboard = createKeyboard(doc);
     return {keyboard, doc, root, callout, paragraph};
   }
 
@@ -957,7 +980,7 @@ describe('SelectionKeyboard – Shift extension follows the model head', () => {
 
   beforeEach(() => {
     doc = createMockDoc();
-    keyboard = new SelectionKeyboard(doc as any) as any;
+    keyboard = createKeyboard(doc);
   });
 
   it('extends Shift+Left inside a non-collapsed text range from the model head', () => {
@@ -1172,7 +1195,7 @@ describe('SelectionKeyboard – Shift+Arrow in table cells', () => {
     ]);
     const doc = createMockDoc();
     doc.getBlockById.and.callFake((id: string) => blocks.get(id));
-    const keyboard = new SelectionKeyboard(doc as any) as any;
+    const keyboard = createKeyboard(doc);
     return {keyboard, doc, table, cells, paragraph};
   }
 
@@ -1254,7 +1277,7 @@ describe('SelectionKeyboard – Shift+Arrow from gap cursor', () => {
 
   beforeEach(() => {
     doc = createMockDoc();
-    keyboard = new SelectionKeyboard(doc as any) as any;
+    keyboard = createKeyboard(doc);
   });
 
   it('selects a block boundary range when Shift+Left moves inward from gap-after', () => {
@@ -1869,7 +1892,7 @@ describe('SelectionKeyboard – Up/Down gap landing', () => {
 
   beforeEach(() => {
     doc = createMockDoc();
-    keyboard = new SelectionKeyboard(doc as any) as any;
+    keyboard = createKeyboard(doc);
   });
 
   it('ArrowDown from text-end into a void sibling lands on gap-before', () => {

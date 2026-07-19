@@ -132,6 +132,42 @@ describe('resolveBlockGapSide', () => {
   })
 })
 
+describe('zero-gap cross-realm lookup', () => {
+  it('recognizes gap spans created in an iframe document', () => {
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const ownerDocument = iframe.contentDocument!
+    const host = ownerDocument.createElement('div')
+    const makeGap = (side: 'before' | 'after') => {
+      const span = ownerDocument.createElement('span')
+      span.setAttribute('data-zero-space', 'true')
+      span.setAttribute('data-block-zero-space', 'true')
+      span.setAttribute('data-block-gap-side', side)
+      span.appendChild(ownerDocument.createTextNode(STR_ZERO_WIDTH_SPACE))
+      return span
+    }
+    const leading = makeGap('before')
+    const trailing = makeGap('after')
+    host.append(leading, ownerDocument.createElement('div'), trailing)
+    ownerDocument.body.appendChild(host)
+
+    try {
+      expect(isZeroSpace(leading)).toBe(leading)
+      expect(isZeroSpace(leading.firstChild!)).toBe(leading)
+      expect(getBlockGapCaretSpan(host, 'before')).toBe(leading)
+      expect(getBlockGapCaretSpan(host, 'after')).toBe(trailing)
+      expect(getBlockGapAnchor(host, 'trailing')).toEqual({
+        node: trailing.firstChild!,
+        offset: STR_ZERO_WIDTH_SPACE.length,
+      })
+      expect(resolveBlockGapSide(leading.firstChild!)).toBe('before')
+      expect(resolveBlockGapSide(trailing)).toBe('after')
+    } finally {
+      iframe.remove()
+    }
+  })
+})
+
 describe('resolveGapSideFromRect', () => {
   // Content box spanning x:[100,300], y:[100,200].
   const rect: IGapRect = {top: 100, bottom: 200, left: 100, right: 300}

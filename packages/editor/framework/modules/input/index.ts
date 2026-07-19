@@ -45,6 +45,7 @@ import {
   SelectionReplaceEdge,
 } from "./selection-edit-plan";
 import {buildReadonlyWriteFootprint} from "./readonly-write-footprint";
+import {focusEditingHostForBlock} from "../selection/focus-editing-host";
 import {
   BlockReadonlyError,
   BlockReadonlyOperation,
@@ -66,6 +67,10 @@ type BoundarySelectionTarget = {
   to: number;
   count: number;
 };
+
+function isElementNode(node: unknown): node is HTMLElement {
+  return !!node && typeof (node as Node).nodeType === "number" && (node as Node).nodeType === 1;
+}
 
 type ResolvedReplaceEdge =
   | {
@@ -492,35 +497,18 @@ export class InputTransformer {
     return applied;
   }
 
-  private _focusEditingHostForBlock(
-    block: BlockCraft.BlockComponent | null | undefined,
-  ): void {
-    let host = (this.doc as any).root?.hostElement as HTMLElement | undefined;
-    try {
-      const blockHost = block?.hostElement;
-      host = (blockHost?.closest?.('[contenteditable="true"]') as HTMLElement | null) ||
-        host;
-    } catch {
-      // Fall back to root host below.
-    }
-    const active = document.activeElement;
-    if (host && active !== host && !host.contains(active)) {
-      host.focus?.({ preventScroll: true });
-    }
-  }
-
   private _setCompositionTextCursor(
     block: EditableBlockComponent,
     offset: number,
   ): boolean {
     const safeOffset = Math.max(0, Math.min(offset, block.textLength ?? offset));
     try {
-      this._focusEditingHostForBlock(block);
+      focusEditingHostForBlock(this.doc, block);
       this.doc.selection.setCursorAt(block as any, safeOffset);
       const root = (this.doc as any).root?.hostElement as HTMLElement | undefined;
-      const active = document.activeElement;
+      const active = root?.ownerDocument.activeElement;
       if (root && root.isConnected && active && active !== root && !root.contains(active)) {
-        this._focusEditingHostForBlock(block);
+        focusEditingHostForBlock(this.doc, block);
         this.doc.selection.setCursorAt(block as any, safeOffset);
       }
       return true;
@@ -551,7 +539,7 @@ export class InputTransformer {
     };
 
     try {
-      this._focusEditingHostForBlock(block);
+      focusEditingHostForBlock(this.doc, block);
       const replay = (this.doc.selection as any).replay;
       if (typeof replay === "function") {
         replay.call(this.doc.selection, selection);
@@ -1364,8 +1352,9 @@ export class InputTransformer {
     if (staticRange && isZeroSpace(staticRange.startContainer)) {
       ev.preventDefault();
       const zeroTextEle = staticRange.startContainer.parentElement!;
+      const ownerDocument = zeroTextEle.ownerDocument;
       const textElement: HTMLElement =
-        document.createElement(INLINE_TEXT_NODE_TAG);
+        ownerDocument.createElement(INLINE_TEXT_NODE_TAG);
       textElement.textContent = text;
       // <c-element><embed></embed><c-zero-text>ZWS;↓</c-zero-text></c-element>
       if (zeroTextEle.parentElement?.localName === INLINE_ELEMENT_TAG) {
@@ -1376,7 +1365,7 @@ export class InputTransformer {
         zeroTextEle.parentElement.after(cloneElement);
       } else {
         // <paragraph><c-zero-text>ZWS;↓</c-zero-text></paragraph>
-        const cElement = document.createElement(INLINE_ELEMENT_TAG);
+        const cElement = ownerDocument.createElement(INLINE_ELEMENT_TAG);
         cElement.appendChild(textElement);
         zeroTextEle.after(cElement);
       }
@@ -1386,9 +1375,10 @@ export class InputTransformer {
     // in inline end break
     if (
       staticRange &&
-      staticRange.startContainer instanceof HTMLElement &&
+      isElementNode(staticRange.startContainer) &&
       staticRange.startContainer.classList.contains(INLINE_END_BREAK_CLASS)
     ) {
+      const ownerDocument = staticRange.startContainer.ownerDocument;
       const prevElement = staticRange.startContainer.previousElementSibling!;
       const child = prevElement.firstElementChild as HTMLElement | null;
       if (
@@ -1399,9 +1389,9 @@ export class InputTransformer {
         (child.firstChild as Text).insertData(len, text);
         ev.preventDefault();
       } else {
-        const cElement = document.createElement(INLINE_ELEMENT_TAG);
+        const cElement = ownerDocument.createElement(INLINE_ELEMENT_TAG);
         const textElement: HTMLElement =
-          document.createElement(INLINE_TEXT_NODE_TAG);
+          ownerDocument.createElement(INLINE_TEXT_NODE_TAG);
         textElement.textContent = text;
         cElement.appendChild(textElement);
         staticRange.startContainer.before(cElement);

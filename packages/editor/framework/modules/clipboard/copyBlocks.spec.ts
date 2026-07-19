@@ -7,6 +7,11 @@ import {
 } from "./internal-clipboard";
 
 type FakeClipboardManager = {
+  doc?: {
+    root?: {
+      hostElement: HTMLElement
+    }
+  }
   adapter: {
     supportedAdapters: Array<{
       type: ClipboardDataType
@@ -220,5 +225,47 @@ describe('copyBlocks', () => {
       ClipboardDataType.BLOCKCRAFT_SNAPSHOT,
       jasmine.stringMatching(/"flavour":"root"/)
     );
+  });
+
+  it('runs execCommand fallback in the editor ownerDocument', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    });
+    const iframe = document.createElement('iframe');
+    document.body.appendChild(iframe);
+    const ownerDocument = iframe.contentDocument!;
+    const rootHost = ownerDocument.createElement('div');
+    ownerDocument.body.appendChild(rootHost);
+    let copyListener: ((event: ClipboardEvent) => void) | undefined;
+    spyOn(ownerDocument.body, 'addEventListener').and.callFake(((type: string, listener: EventListenerOrEventListenerObject) => {
+      if (type === 'copy') copyListener = listener as (event: ClipboardEvent) => void;
+    }) as typeof ownerDocument.body.addEventListener);
+    const setData = jasmine.createSpy('setData');
+    ownerDocument.execCommand = jasmine.createSpy('execCommand').and.callFake(() => {
+      copyListener?.({
+        preventDefault() {},
+        stopPropagation() {},
+        clipboardData: {setData},
+      } as unknown as ClipboardEvent);
+      return true;
+    });
+    const manager: FakeClipboardManager = {
+      doc: {root: {hostElement: rootHost}},
+      adapter: {
+        supportedAdapters: [
+          {type: ClipboardDataType.HTML, fromSnapshot: async () => '<p>Hello world</p>'},
+        ],
+      },
+    };
+
+    try {
+      await copyBlocks.call(manager as any, snapshot);
+
+      expect(ownerDocument.execCommand).toHaveBeenCalledWith('copy');
+      expect(setData).toHaveBeenCalledWith(ClipboardDataType.TEXT, 'Hello world\n');
+    } finally {
+      iframe.remove();
+    }
   });
 });

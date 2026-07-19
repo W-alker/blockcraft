@@ -208,6 +208,37 @@ test('typing over selected blocks and undo never re-check removed block ids', as
   expect(blockErrors).toEqual([]);
 });
 
+test('typing over a selected attachment closes its toolbar without stale readonly queries', async ({page}) => {
+  const blockErrors: string[] = [];
+  page.on('pageerror', error => {
+    if (/Block not found|BlockCraftError/i.test(error.message)) blockErrors.push(error.message);
+  });
+  page.on('console', message => {
+    if (/Block not found|BlockCraftError/i.test(message.text())) blockErrors.push(message.text());
+  });
+
+  await initialize(page);
+  const attachment = page.locator(`${editorSelector} div.attachment-block`);
+  await attachment.evaluate((element, selector) => {
+    const editorElement = document.querySelector(selector);
+    const ngDebug = (window as unknown as {
+      ng: {getComponent: (element: Element) => {doc: any}};
+    }).ng;
+    if (!editorElement || !ngDebug) throw new Error('Angular editor debug API is unavailable');
+    const doc = ngDebug.getComponent(editorElement).doc;
+    const blockId = (element as HTMLElement).dataset['blockId'];
+    if (!blockId) throw new Error('Attachment block id is unavailable');
+    doc.selection.selectBlock(doc.getBlockById(blockId));
+  }, editorSelector);
+  await expect(page.locator('div.attachment-toolbar')).toBeVisible();
+
+  await page.keyboard.type('替');
+
+  await expect(attachment).toHaveCount(0);
+  await page.evaluate(() => Promise.resolve());
+  expect(blockErrors).toEqual([]);
+});
+
 test('block controller moves smoothly between protected complex blocks without a ghost handle', async ({page}) => {
   await initialize(page);
 

@@ -59,6 +59,8 @@ import {
   BlockReadonlyError,
   BlockReadonlyOperation,
 } from "../../doc/block-readonly.types";
+import {focusEditingHostForBlock} from "../selection/focus-editing-host";
+import {getClipboardNavigator} from "./dom-context";
 
 export * from './types'
 export * from './copy-filter'
@@ -96,7 +98,7 @@ export class ClipboardManager {
   }
 
   copyText(text: string) {
-    return navigator.clipboard.writeText(text)
+    return getClipboardNavigator(this.doc).clipboard.writeText(text)
   }
 
   copyBlocksModel = (
@@ -404,16 +406,15 @@ export class ClipboardManager {
     if (!startJson || startJson.type !== 'text') return
     const headJson = collapsed ? startJson : (this._resolveRegionPoint(region.end) ?? startJson)
 
-    let host: HTMLElement | null = this.doc.root.hostElement
+    let block: BlockCraft.BlockComponent | null = null
     try {
-      const block = this.doc.getBlockById(startJson.blockId)
-      host = (block.hostElement.closest('[contenteditable="true"]') as HTMLElement | null) ?? this.doc.root.hostElement
+      block = this.doc.getBlockById(startJson.blockId)
     } catch {
       // anchor block gone — fall back to the root editing host
     }
 
     try {
-      if (host && document.activeElement !== host) host.focus({preventScroll: true})
+      focusEditingHostForBlock(this.doc, block)
       this.doc.selection.replay({anchor: startJson, head: headJson, commonParent: startJson.blockId})
     } catch (e) {
       this.doc.logger.warn('finishSwitchSelection error', e)
@@ -834,7 +835,7 @@ export class ClipboardManager {
       return false
     }
     try {
-      this._focusEditingHostForBlock(block)
+      focusEditingHostForBlock(this.doc, block)
       if (rangeLength > 0) {
         this.doc.selection.setSelection(
           {blockId: block.id, type: 'text', offset: index, block} as any,
@@ -857,7 +858,7 @@ export class ClipboardManager {
   private _setCrossBlockRangeAndSync(startBlock: EditableBlockComponent, startOffset: number, endBlock: BlockCraft.BlockComponent) {
     if (!this._isBlockAlive(startBlock) || !this._isBlockAlive(endBlock)) return
     try {
-      this._focusEditingHostForBlock(startBlock)
+      focusEditingHostForBlock(this.doc, startBlock)
       this.doc.selection.setSelection({
         blockId: startBlock.id,
         type: 'text',
@@ -881,7 +882,7 @@ export class ClipboardManager {
   private _setCursorAndSync(block: BlockCraft.BlockComponent, atEnd = false, index?: number) {
     if (!this._isBlockAlive(block)) return
     try {
-      this._focusEditingHostForBlock(block)
+      focusEditingHostForBlock(this.doc, block)
       if (this.doc.isEditable(block)) {
         const offset = index ?? (atEnd ? block.textLength : 0)
         this.doc.selection.setCursorAt(block, offset)
@@ -890,24 +891,6 @@ export class ClipboardManager {
       }
     } catch (e) {
       this.doc.logger.warn('setCursor after paste failed', e)
-    }
-  }
-
-  private _focusEditingHostForBlock(
-    block: BlockCraft.BlockComponent | null | undefined,
-  ): void {
-    let host = (this.doc as any).root?.hostElement as HTMLElement | undefined
-    try {
-      const blockHost = block?.hostElement
-      host = (blockHost?.closest?.('[contenteditable="true"]') as HTMLElement | null) ||
-        host
-    } catch {
-      // Fall back to root host below.
-    }
-
-    const active = document.activeElement
-    if (host && active !== host && !host.contains(active)) {
-      host.focus?.({preventScroll: true})
     }
   }
 

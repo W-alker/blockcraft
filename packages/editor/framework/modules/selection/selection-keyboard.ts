@@ -11,10 +11,14 @@ import {IS_MAC} from "../../../global";
 import {closetBlockId, isZeroSpace, resolveBlockGapSide} from "../../utils";
 import {searchEditableDescendant} from "./index";
 import {IBoundarySelectionPoint, ISelectionPointJSON, ITextSelectionPoint} from "./types";
+import type {SelectionSurfaceAdapter} from './surface-adapter';
 
 @DocEventRegister
 export class SelectionKeyboard {
-  constructor(public readonly doc: BlockCraft.Doc) {}
+  constructor(
+    public readonly doc: BlockCraft.Doc,
+    private readonly surface: SelectionSurfaceAdapter,
+  ) {}
 
   private _getBlockByIdSafe(blockId: string | null | undefined): BlockCraft.BlockComponent | null {
     if (!blockId) return null
@@ -314,13 +318,13 @@ export class SelectionKeyboard {
 
   private _focusBlockForShiftSelection(
     sel: BlockCraft.Selection,
-    nativeSelection: globalThis.Selection,
+    nativeSelection: globalThis.Selection | null,
   ): BlockCraft.BlockComponent | null {
     if (!sel.collapsed && sel.head && sel.head.type !== 'gap' && sel.head.type !== 'boundary') {
       const headBlock = this._selectionHeadBlockSafe(sel)
       if (headBlock) return headBlock
     }
-    const focusBlockId = nativeSelection.focusNode ? closetBlockId(nativeSelection.focusNode) : null
+    const focusBlockId = nativeSelection?.focusNode ? closetBlockId(nativeSelection.focusNode) : null
     const focusBlock = this._getBlockByIdSafe(focusBlockId)
     if (focusBlock) return focusBlock
     return this._selectionHeadBlockSafe(sel)
@@ -514,8 +518,8 @@ export class SelectionKeyboard {
     ctx.preventDefault()
 
     const modelHeadBlock = this._selectionHeadBlockSafe(sel)
-    const docSelection = document.getSelection()!
-    const focusBlockId = docSelection.focusNode ? closetBlockId(docSelection.focusNode) : null
+    const docSelection = this.surface.getNativeSelection()
+    const focusBlockId = docSelection?.focusNode ? closetBlockId(docSelection.focusNode) : null
     const focusBlock = modelHeadBlock ?? this._getBlockByIdSafe(focusBlockId)
     if (!focusBlock) return true
 
@@ -728,7 +732,6 @@ export class SelectionKeyboard {
   private _handleShiftUpOrDown(ctx: UIEventStateContext) {
     ctx.preventDefault()
     const state = ctx.get('keyboardState')
-    const docSelection = document.getSelection()!
     const isBackward = state.raw.key === "ArrowUp"
     if (
       !state.selection.collapsed &&
@@ -738,12 +741,13 @@ export class SelectionKeyboard {
       return true
     }
 
+    const docSelection = this.surface.getNativeSelection()
     const focusBlock = this._focusBlockForShiftSelection(state.selection, docSelection)
     if (!focusBlock) {
       return true
     }
 
-    if (docSelection.isCollapsed && this.doc.isEditable(focusBlock) &&
+    if ((docSelection?.isCollapsed ?? state.selection.collapsed) && this.doc.isEditable(focusBlock) &&
       (isBackward ? !state.selection.isStartOfBlock : !state.selection.isEndOfBlock)
     ) {
       this._extendSelectionToTextEdge(state.selection, focusBlock as EditableBlockComponent, isBackward)
@@ -783,7 +787,6 @@ export class SelectionKeyboard {
   private _handleShiftLeftOrRight(ctx: UIEventStateContext) {
     const state = ctx.get('keyboardState')
     const sel = state.selection
-    const docSelection = document.getSelection()!
     const isBackward = state.raw.key === "ArrowLeft"
 
     if (sel.collapsed && sel.start.type === 'gap') {
@@ -827,6 +830,7 @@ export class SelectionKeyboard {
       }
     }
 
+    const docSelection = this.surface.getNativeSelection()
     const focusBlock = this._focusBlockForShiftSelection(sel, docSelection)
     if (!focusBlock) {
       ctx.preventDefault()
@@ -1005,7 +1009,8 @@ export class SelectionKeyboard {
   @EventListen('keyDown')
   private _handlerNoEditable(ctx: UIEventStateContext) {
     const state = ctx.get('keyboardState')
-    const selection = document.getSelection()!
+    const selection = this.surface.getNativeSelection()
+    if (!selection) return
     if (state.composing || !selection.isCollapsed) return;
 
     const activeNode = selection.focusNode

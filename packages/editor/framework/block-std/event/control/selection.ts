@@ -25,6 +25,14 @@ export class SelectionControl {
     return this._shiftKeyPressing;
   }
 
+  private get _ownerDocument(): Document {
+    return this._dispatcher.rootElement.ownerDocument
+  }
+
+  private get _ownerWindow(): EventTarget {
+    return this._ownerDocument.defaultView ?? this._ownerDocument
+  }
+
   private _finishSelection = (e: Event) => {
     if (!this._isSelecting) return;
     this._isSelecting = false;
@@ -53,13 +61,13 @@ export class SelectionControl {
 
       // Safari may miss pointer events during native text selection, so also
       // listen to legacy mouse/touch releases to guarantee selectEnd.
-      this._listenOnceForFinish(window, 'pointerup')
-      this._listenOnceForFinish(window, 'pointercancel')
-      this._listenOnceForFinish(window, 'mouseup')
-      this._listenOnceForFinish(window, 'touchend')
-      this._listenOnceForFinish(window, 'touchcancel')
-      this._listenOnceForFinish(window, 'blur')
-      this._listenOnceForFinish(document, 'visibilitychange')
+      this._listenOnceForFinish(this._ownerWindow, 'pointerup')
+      this._listenOnceForFinish(this._ownerWindow, 'pointercancel')
+      this._listenOnceForFinish(this._ownerWindow, 'mouseup')
+      this._listenOnceForFinish(this._ownerWindow, 'touchend')
+      this._listenOnceForFinish(this._ownerWindow, 'touchcancel')
+      this._listenOnceForFinish(this._ownerWindow, 'blur')
+      this._listenOnceForFinish(this._ownerDocument, 'visibilitychange')
     }
   }
 
@@ -91,16 +99,17 @@ export class SelectionControl {
     this._clearKeyboardSelectionEndListener()
 
     // Shift 键释放时结束选择
-    const keyupHandler = (e: KeyboardEvent) => {
+    const keyupHandler: EventListener = event => {
+      const e = event as KeyboardEvent
       this._keyboardSelectionEndCleanup = null
       if (!e.shiftKey && this._isSelecting) {
         this._isSelecting = false;
         this._dispatcher.run('selectEnd', this._buildContext(e));
       }
     };
-    window.addEventListener('keyup', keyupHandler, { once: true, capture: true });
+    this._ownerWindow.addEventListener('keyup', keyupHandler, { once: true, capture: true });
     this._keyboardSelectionEndCleanup = () => {
-      window.removeEventListener('keyup', keyupHandler, true)
+      this._ownerWindow.removeEventListener('keyup', keyupHandler, true)
     }
   }
 
@@ -125,7 +134,7 @@ export class SelectionControl {
    * 通过 selectionchange 检测程序化选择
    */
   private _handleSelectionChange = () => {
-    const selection = document.getSelection();
+    const selection = this._ownerDocument.getSelection();
     if (!selection || selection.rangeCount === 0) {
       // 选区清空
       if (this._lastSelectionString) {
@@ -190,6 +199,8 @@ export class SelectionControl {
   }
 
   listen(root: BlockCraft.IBlockComponents['root']) {
+    const ownerWindow = root.hostElement.ownerDocument.defaultView ?? root.hostElement.ownerDocument
+
     // 1. 监听原生 selectstart 事件（鼠标拖拽、双击、三击）
     fromEvent<MouseEvent>(root.hostElement, 'selectstart').pipe(takeUntil(root.onDestroy$)).subscribe(e => {
       if (isNativeInputTarget(e.target)) return
@@ -197,7 +208,7 @@ export class SelectionControl {
     });
 
     // 2. 监听键盘事件
-    fromEvent<KeyboardEvent>(window, 'keydown', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+    fromEvent<KeyboardEvent>(ownerWindow, 'keydown', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       if (isNativeInputTarget(evt.target)) return
       // 追踪 Shift 键状态
       if (evt.shiftKey) {
@@ -215,7 +226,7 @@ export class SelectionControl {
     })
 
     // 3. 键盘释放事件
-    fromEvent<KeyboardEvent>(window, 'keyup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+    fromEvent<KeyboardEvent>(ownerWindow, 'keyup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       if (!evt.shiftKey) {
         this._shiftKeyPressing = false;
       }
@@ -240,13 +251,13 @@ export class SelectionControl {
     })
 
     // 5. 监听鼠标释放（重置状态）
-    fromEvent<PointerEvent>(window, 'pointerup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+    fromEvent<PointerEvent>(ownerWindow, 'pointerup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       this._mouseDown = false;
     })
-    fromEvent<MouseEvent>(window, 'mouseup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(() => {
+    fromEvent<MouseEvent>(ownerWindow, 'mouseup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(() => {
       this._mouseDown = false;
     })
-    fromEvent<TouchEvent>(window, 'touchend', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(() => {
+    fromEvent<TouchEvent>(ownerWindow, 'touchend', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(() => {
       this._mouseDown = false;
     })
 

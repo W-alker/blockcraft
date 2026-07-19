@@ -1,5 +1,11 @@
 import {InputTransformer} from "./index";
-import {BlockNodeType, BlockSelectionScopeMetadata} from "../../block-std";
+import {
+  BlockNodeType,
+  BlockSelectionScopeMetadata,
+  EditableBlockComponent,
+  INLINE_ELEMENT_TAG,
+  INLINE_END_BREAK_CLASS,
+} from "../../block-std";
 import {BlockSelection} from "../selection";
 import {CompositionEventState} from "../../block-std/event/state/compositionState";
 import {BlockReadonlyError, BlockReadonlyOperation} from "../../doc";
@@ -1142,6 +1148,140 @@ describe('InputTransformer beforeInput range resolution', () => {
     expect(transformer.compositionSession.start).toHaveBeenCalledWith(block, 2)
     rootHost.remove()
     outside.remove()
+  })
+
+  it('does not refocus an editing host already active in its ownerDocument', () => {
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const ownerDocument = iframe.contentDocument!
+    const rootHost = ownerDocument.createElement('div')
+    const blockHost = ownerDocument.createElement('p')
+    rootHost.setAttribute('contenteditable', 'true')
+    rootHost.appendChild(blockHost)
+    ownerDocument.body.appendChild(rootHost)
+    rootHost.focus()
+    expect(ownerDocument.activeElement).toBe(rootHost)
+    const focusSpy = spyOn(rootHost, 'focus')
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const block = {
+      id: 'p1',
+      flavour: 'paragraph',
+      textLength: 5,
+      hostElement: blockHost,
+    }
+    const selection = new BlockSelection(
+      {blockId: block.id, type: 'text', offset: 2, block} as any,
+      {blockId: block.id, type: 'text', offset: 2, block} as any,
+      block.id,
+      () => block as any,
+      () => 0,
+    )
+    const doc = {
+      event: eventStub(),
+      root: {hostElement: rootHost},
+      selection: {
+        value: selection,
+        setCursorAt: jasmine.createSpy('setCursorAt'),
+        recalculate: jasmine.createSpy('recalculate').and.returnValue({value: null}),
+        blur: jasmine.createSpy('blur'),
+      },
+      getBlockById: jasmine.createSpy('getBlockById').and.returnValue(block),
+      isEditable: jasmine.createSpy('isEditable').and.returnValue(true),
+    }
+    const transformer = new InputTransformer(doc as any) as any
+    spyOn(transformer.compositionSession, 'start')
+
+    try {
+      const result = transformer['_handleCompositionStart']({
+        preventDefault,
+        has: () => false,
+      } as any)
+
+      expect(result).toBeTrue()
+      expect(focusSpy).not.toHaveBeenCalled()
+      expect(doc.selection.setCursorAt).toHaveBeenCalledTimes(1)
+    } finally {
+      iframe.remove()
+    }
+  })
+
+  it('materializes iframe end-break input in the block ownerDocument', () => {
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const ownerDocument = iframe.contentDocument!
+    const host = ownerDocument.createElement('div')
+    const container = ownerDocument.createElement('div')
+    const previous = ownerDocument.createElement(INLINE_ELEMENT_TAG)
+    const endBreak = ownerDocument.createElement('span')
+    host.dataset['blockId'] = 'p1'
+    host.dataset['nodeType'] = BlockNodeType.editable
+    container.className = 'edit-container'
+    endBreak.className = INLINE_END_BREAK_CLASS
+    container.append(previous, endBreak)
+    host.appendChild(container)
+    ownerDocument.body.appendChild(host)
+
+    const insert = jasmine.createSpy('insert')
+    const rerender = jasmine.createSpy('rerender')
+    const setInlineRange = jasmine.createSpy('setInlineRange')
+    const block = Object.create(EditableBlockComponent.prototype)
+    Object.defineProperties(block, {
+      id: {value: 'p1'},
+      flavour: {value: 'paragraph'},
+      nodeType: {value: BlockNodeType.editable},
+      hostElement: {value: host},
+      containerElement: {value: container},
+      textLength: {value: 4},
+      parentId: {value: null},
+      childrenIds: {value: []},
+      yText: {value: {insert}},
+      runtime: {value: {mapper: {domPointToModelPoint: jasmine.createSpy('domPointToModelPoint').and.returnValue(4)}}},
+      rerender: {value: rerender},
+      setInlineRange: {value: setInlineRange},
+    })
+    const selection = {
+      value: null,
+      setCursorAt: jasmine.createSpy('setCursorAt'),
+      blur: jasmine.createSpy('blur'),
+    }
+    const doc = {
+      event: eventStub(),
+      selection,
+      getBlockById: jasmine.createSpy('getBlockById').and.returnValue(block),
+      isEditable: jasmine.createSpy('isEditable').and.returnValue(true),
+      crud: {transact: jasmine.createSpy('transact').and.callFake((callback: () => void) => callback())},
+    }
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const event = {
+      target: endBreak,
+      inputType: 'insertText',
+      data: 'x',
+      isComposing: false,
+      defaultPrevented: false,
+      getTargetRanges: () => [new StaticRange({
+        startContainer: endBreak,
+        startOffset: 0,
+        endContainer: endBreak,
+        endOffset: 0,
+      })],
+      preventDefault,
+    }
+    const transformer = new InputTransformer(doc as any) as any
+
+    try {
+      transformer['_handleBeforeInput']({get: () => ({event})} as any)
+
+      const materialized = endBreak.previousElementSibling as HTMLElement
+      expect(materialized.localName).toBe(INLINE_ELEMENT_TAG)
+      expect(materialized).not.toBe(previous)
+      expect(materialized.ownerDocument).toBe(ownerDocument)
+      expect(materialized.textContent).toBe('x')
+      expect(insert).toHaveBeenCalledWith(4, 'x')
+      expect(rerender).toHaveBeenCalled()
+      expect(setInlineRange).toHaveBeenCalledWith(5)
+    } finally {
+      iframe.remove()
+    }
   })
 
   it('materializes a selected-to-text IME range without blurring the composition target', () => {

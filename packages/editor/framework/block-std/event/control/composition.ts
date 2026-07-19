@@ -2,7 +2,7 @@ import {fromEvent, take, takeUntil} from "rxjs";
 import {UIEventState, UIEventStateContext} from "../base";
 import {EventScopeSourceType, EventSourceState} from "../state";
 import {CompositionEventState} from "../state/compositionState";
-import {closetBlockId, isNativeInputTarget} from "../../../utils";
+import {isNativeInputTarget} from "../../../utils";
 
 export class CompositionControl {
 
@@ -32,10 +32,8 @@ export class CompositionControl {
     this._cancelQueuedReset()
     this._compositionVersion++
     this._isComposing = true
-    this._compositionBlockId = event.target instanceof Node
-      ? closetBlockId(event.target) ?? null
-      : null
     this._compositionBlockHost = this._resolveBlockHost(event.target)
+    this._compositionBlockId = this._compositionBlockHost?.dataset['blockId'] ?? null
     this._dispatcher.run('compositionStart', this._buildContext(event))
   }
 
@@ -72,24 +70,31 @@ export class CompositionControl {
   }
 
   private _resolveBlockHost(target: EventTarget | null): HTMLElement | null {
-    const element = target instanceof HTMLElement
-      ? target
-      : target instanceof Node
-        ? target.parentElement
-        : null
+    const element = this._resolveElement(target)
     return element?.closest<HTMLElement>('[data-block-id]') ?? null
   }
 
-  private _onSelectionChange = () => {
+  private _resolveNode(target: EventTarget | null): Node | null {
+    if (!target || typeof (target as Node).nodeType !== 'number') return null
+    return target as Node
+  }
+
+  private _resolveElement(target: EventTarget | null): Element | null {
+    const node = this._resolveNode(target)
+    if (!node) return null
+    return node.nodeType === 1 ? node as Element : node.parentElement
+  }
+
+  private _onSelectionChange = (ownerDocument: Document) => {
     if (!this._isComposing) return
     if (this._compositionBlockHost && !this._compositionBlockHost.isConnected) {
       this._queueReset()
       return
     }
 
-    const anchorNode = document.getSelection()?.anchorNode
+    const anchorNode = ownerDocument.getSelection()?.anchorNode
     if (!anchorNode || !this._compositionBlockId) return
-    const anchorBlockId = closetBlockId(anchorNode)
+    const anchorBlockId = this._resolveBlockHost(anchorNode)?.dataset['blockId']
     if (anchorBlockId && anchorBlockId !== this._compositionBlockId) {
       // Keep the state stable across the complete native event dispatch. Some
       // Zone/browser combinations run a microtask checkpoint between adjacent
@@ -104,6 +109,7 @@ export class CompositionControl {
   }
 
   listen(root: BlockCraft.IBlockComponents['root']) {
+    const ownerDocument = root.hostElement.ownerDocument
     root.onDestroy$.pipe(take(1)).subscribe(() => this._cancelQueuedReset())
     fromEvent<CompositionEvent>(root.hostElement, 'compositionstart').pipe(takeUntil(root.onDestroy$)).subscribe(this._start)
     fromEvent<CompositionEvent>(root.hostElement, 'compositionend').pipe(takeUntil(root.onDestroy$)).subscribe(this._end)
@@ -114,12 +120,13 @@ export class CompositionControl {
       .pipe(takeUntil(root.onDestroy$))
       .subscribe(event => {
         if (!this._isComposing) return
-        if (event.relatedTarget instanceof Node && root.hostElement.contains(event.relatedTarget)) return
+        const relatedNode = this._resolveNode(event.relatedTarget)
+        if (relatedNode && root.hostElement.contains(relatedNode)) return
         this._reset()
       })
-    fromEvent(document, 'selectionchange')
+    fromEvent(ownerDocument, 'selectionchange')
       .pipe(takeUntil(root.onDestroy$))
-      .subscribe(this._onSelectionChange)
+      .subscribe(() => this._onSelectionChange(ownerDocument))
   }
 
 }

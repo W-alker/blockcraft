@@ -2,14 +2,14 @@ import {Subject} from "rxjs";
 import {CompositionControl} from "./composition";
 
 describe("CompositionControl stale session recovery", () => {
-  function createHarness() {
-    const root = document.createElement("div");
-    const blockA = document.createElement("p");
-    const blockB = document.createElement("p");
-    const editA = document.createElement("span");
-    const editB = document.createElement("span");
-    const nativeInput = document.createElement("input");
-    const outside = document.createElement("button");
+  function createHarness(ownerDocument: Document = document) {
+    const root = ownerDocument.createElement("div");
+    const blockA = ownerDocument.createElement("p");
+    const blockB = ownerDocument.createElement("p");
+    const editA = ownerDocument.createElement("span");
+    const editB = ownerDocument.createElement("span");
+    const nativeInput = ownerDocument.createElement("input");
+    const outside = ownerDocument.createElement("button");
     const onDestroy$ = new Subject<void>();
 
     blockA.dataset["blockId"] = "a";
@@ -19,7 +19,7 @@ describe("CompositionControl stale session recovery", () => {
     blockA.append(editA, nativeInput);
     blockB.append(editB);
     root.append(blockA, blockB);
-    document.body.append(root, outside);
+    ownerDocument.body.append(root, outside);
 
     const dispatcher = {
       doc: {},
@@ -30,10 +30,10 @@ describe("CompositionControl stale session recovery", () => {
 
     const setNativeCursor = (element: HTMLElement, offset = 0) => {
       const text = element.firstChild!;
-      const range = document.createRange();
+      const range = ownerDocument.createRange();
       range.setStart(text, offset);
       range.collapse(true);
-      const selection = document.getSelection()!;
+      const selection = ownerDocument.getSelection()!;
       selection.removeAllRanges();
       selection.addRange(range);
     };
@@ -44,7 +44,7 @@ describe("CompositionControl stale session recovery", () => {
     const destroy = () => {
       onDestroy$.next();
       onDestroy$.complete();
-      document.getSelection()?.removeAllRanges();
+      ownerDocument.getSelection()?.removeAllRanges();
       root.remove();
       outside.remove();
     };
@@ -73,6 +73,26 @@ describe("CompositionControl stale session recovery", () => {
 
     expect(h.control.isComposing).toBeTrue();
     h.destroy();
+  });
+
+  it("tracks selectionchange in the root ownerDocument", async () => {
+    const iframe = document.createElement("iframe");
+    document.body.append(iframe);
+    const ownerDocument = iframe.contentDocument!;
+    const h = createHarness(ownerDocument);
+
+    try {
+      h.start();
+      expect((h.control as any)._compositionBlockId).toBe("a");
+      h.setNativeCursor(h.editB, 1);
+      ownerDocument.dispatchEvent(new Event("selectionchange"));
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(h.control.isComposing).toBeFalse();
+    } finally {
+      h.destroy();
+      iframe.remove();
+    }
   });
 
   it("recovers after every listener observes the composing state for the selectionchange", async () => {

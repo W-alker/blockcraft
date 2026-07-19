@@ -6,8 +6,10 @@ import {
   buildClipboardItems,
   supportsClipboardWriteType,
 } from "./internal-clipboard";
+import {getClipboardNavigator, getClipboardOwnerDocument} from "./dom-context";
 
 async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
+  const ownerNavigator = getClipboardNavigator(this.doc)
   const supportedAdapterTypes = new Set<string>();
   for (const adapter of this.adapter.supportedAdapters) {
     if (supportsClipboardWriteType(adapter.type)) {
@@ -39,7 +41,7 @@ async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
   }
 
   try {
-    return await navigator.clipboard.write([new ClipboardItem(itemData)])
+    return await ownerNavigator.clipboard.write([new ClipboardItem(itemData)])
   } catch (e) {
     return tryCommand.call(this, snapshot)
   }
@@ -48,9 +50,10 @@ async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
 async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) {
   return new Promise<void>(async (resolve, reject) => {
     const items = await buildClipboardItems(this.adapter.supportedAdapters, rootSnapshot, snapshots2Text([rootSnapshot]));
+    const ownerDocument = getClipboardOwnerDocument(this.doc)
 
     let range: Range | undefined
-    const selection = window.getSelection()
+    const selection = ownerDocument.getSelection()
     if (selection && selection.rangeCount) {
       range = selection.getRangeAt(0)?.cloneRange()
       selection.removeAllRanges()
@@ -60,8 +63,8 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
     const handler = (e: ClipboardEvent) => {
       copyHandled = true
       if (range) {
-        window.getSelection()?.removeAllRanges()
-        window.getSelection()?.addRange(range)
+        ownerDocument.getSelection()?.removeAllRanges()
+        ownerDocument.getSelection()?.addRange(range)
       }
 
       e.preventDefault()
@@ -76,28 +79,29 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
       }
       resolve()
     }
-    document.body.addEventListener('copy', handler, {once: true})
+    ownerDocument.body.addEventListener('copy', handler, {once: true})
 
     let success = false
     try {
-      success = document.execCommand('copy')
+      success = ownerDocument.execCommand('copy')
     } catch (e) {
       // execCommand 抛错时清理 listener，避免下次 copy 事件触发陈旧回调
-      document.body.removeEventListener('copy', handler)
+      ownerDocument.body.removeEventListener('copy', handler)
       reject(e)
       return
     }
     if (!copyHandled) {
-      // copy 事件未触发：listener 仍挂在 document.body 上，必须显式移除
+      // copy 事件未触发：listener 仍挂在 ownerDocument.body 上，必须显式移除
       // 否则会成为孤儿，下一次任意 copy 事件会以陈旧的 items/range 闭包错误地 resolve
-      document.body.removeEventListener('copy', handler)
+      ownerDocument.body.removeEventListener('copy', handler)
       reject(success ? 'copy event did not fire' : 'execCommand copy failed')
     }
   })
 }
 
 export function copyBlocks(this: ClipboardManager, snapshot: IBlockSnapshot) {
-  if (window.navigator?.clipboard) {
+  const ownerNavigator = getClipboardNavigator(this.doc)
+  if (ownerNavigator.clipboard) {
     return tryNavigator.call(this, snapshot)
   }
   return tryCommand.call(this, snapshot)

@@ -1,4 +1,5 @@
 import {BlockSelection} from './blockSelection';
+import {SelectionModelResolver} from './model-resolver';
 import {IBoundarySelectionPoint, IGapSelectionPoint, ISelectionPoint, ITableCellSelectionPoint} from './types';
 
 function gap(blockId: string, side: 'before' | 'after'): IGapSelectionPoint {
@@ -31,6 +32,38 @@ function makeSelection(anchor: ISelectionPoint, head: ISelectionPoint, commonPar
   )
 }
 
+function unmountedPoint<T extends {blockId: string}>(point: T): T & {block: never} {
+  Object.defineProperty(point, 'block', {
+    get: () => {
+      throw new Error(`component is unmounted: ${point.blockId}`)
+    },
+  })
+  return point as T & {block: never}
+}
+
+function makeModelResolver() {
+  const children: Record<string, readonly string[]> = {
+    root: ['p0', 'callout-1', 'p1'],
+    p0: [],
+    'callout-1': ['nested'],
+    nested: [],
+    p1: [],
+  }
+  const parents: Record<string, string | null> = {
+    root: null,
+    p0: 'root',
+    'callout-1': 'root',
+    nested: 'callout-1',
+    p1: 'root',
+  }
+  return new SelectionModelResolver({
+    exists: blockId => blockId in parents,
+    getParentId: blockId => parents[blockId] ?? null,
+    getChildrenIds: blockId => children[blockId] ?? [],
+    getTextLength: blockId => blockId === 'p1' ? 3 : 0,
+  })
+}
+
 describe('BlockSelection - derived order', () => {
   it('resolves endpoint direction only once', () => {
     const comparePosition = jasmine.createSpy('comparePosition')
@@ -48,6 +81,54 @@ describe('BlockSelection - derived order', () => {
     expect(selection.end.blockId).toBe('p2')
     expect(selection.direction).toBe('forward')
     expect(comparePosition).toHaveBeenCalledTimes(1)
+  })
+
+  it('orders mixed boundary and text endpoints without resolving block components', () => {
+    const comparePosition = jasmine.createSpy('comparePosition').and.throwError('component order fallback used')
+    const selection = new BlockSelection(
+      unmountedPoint({blockId: 'p1', type: 'text' as const, offset: 3}) as any,
+      unmountedPoint({blockId: 'root', type: 'boundary' as const, index: 1}) as any,
+      'root',
+      () => { throw new Error('component lookup used') },
+      comparePosition,
+      makeModelResolver(),
+    )
+
+    expect(selection.direction).toBe('backward')
+    expect(selection.firstBlockId).toBe('callout-1')
+    expect(selection.lastBlockId).toBe('p1')
+    expect(comparePosition).not.toHaveBeenCalled()
+  })
+
+  it('reads text boundaries from the model without resolving block components', () => {
+    const point = unmountedPoint({blockId: 'p1', type: 'text' as const, offset: 3})
+    const selection = new BlockSelection(
+      point as any,
+      point as any,
+      'p1',
+      () => { throw new Error('component lookup used') },
+      () => 0,
+      makeModelResolver(),
+    )
+
+    expect(selection.isEndOfBlock).toBeTrue()
+    expect(selection.toLegacyJSON().from).toEqual({blockId: 'p1', type: 'text', index: 3, length: 0})
+  })
+
+  it('reads boundary children from the model without resolving block components', () => {
+    const anchor = unmountedPoint({blockId: 'root', type: 'boundary' as const, index: 1})
+    const head = unmountedPoint({blockId: 'root', type: 'boundary' as const, index: 3})
+    const selection = new BlockSelection(
+      anchor as any,
+      head as any,
+      'root',
+      () => { throw new Error('component lookup used') },
+      () => 0,
+      makeModelResolver(),
+    )
+
+    expect(selection.getBoundarySelectedChildIds()).toEqual(['callout-1', 'p1'])
+    expect(selection.contains('nested')).toBeTrue()
   })
 })
 

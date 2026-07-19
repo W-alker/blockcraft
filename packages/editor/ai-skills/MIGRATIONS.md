@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-07-17 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-07-19 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,89 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-07-19 (minor) — make selection structure model-resolvable
+
+**Severity**: minor
+
+**What changed**: `BlockSelection` structural derivation now uses a
+`SelectionModelResolver` backed by `BlockModelGraph`. Selection liveness,
+document order, boundary coverage, text-edge predicates and content endpoint
+IDs no longer require mounted Angular block components. `firstBlockId` and
+`lastBlockId` expose model-safe content edges while the existing component
+accessors remain available for view code. Virtual renderers can optionally
+register a `SelectionProjectionMountAdapter`; when DOM projection fails,
+Selection requests only the endpoint neighborhood before replaying its existing
+bounded projection retry.
+
+**Why**: A canonical model selection must survive virtualization, delayed view
+mounts and remote/undo reconciliation. Treating `point.block` as model
+authority caused valid selections to be cleared whenever their components were
+temporarily absent from the VM. Model-safe state alone was not enough to make
+the native caret visible again; Selection also needed a bounded, cancellable
+way to ask the renderer for the minimum DOM required by projection.
+
+**Affected ai-skills files**:
+- `blockcraft-selection.md`
+- `blockcraft.md`
+
+### New APIs / Features
+
+- Exported `SelectionModelResolver` and `SelectionModelReader`.
+- Exported `SelectionProjectionMountAdapter` with
+  `ensureMounted(blockIds, signal)`.
+- `BlockSelection.firstBlockId` and `BlockSelection.lastBlockId`.
+- The optional `SelectionModelResolver` constructor argument for advanced
+  direct `BlockSelection` construction.
+- `SelectionManager.registerProjectionMountAdapter(adapter)` returns an
+  idempotent unregister function.
+
+### Migration Recipe
+
+Model/data code should use IDs without forcing component resolution:
+
+```typescript
+// before: requires the endpoint component to be mounted
+const startId = selection.firstBlock.id
+
+// after: valid for mounted and virtualized selections
+const startId = selection.firstBlockId
+```
+
+View code that needs `hostElement`, inline runtime or block methods may keep
+using `firstBlock` / `lastBlock` after ensuring the component is mounted.
+
+Virtual renderers may opt into projection recovery without pinning the selected
+middle range:
+
+```typescript
+const unregister = doc.selection.registerProjectionMountAdapter({
+  ensureMounted(blockIds, signal) {
+    return virtualRenderer.ensureBlocksMounted(blockIds, {signal})
+  },
+})
+```
+
+### Behavior Changes
+
+- `SelectionManager.createSelection()` accepts structurally valid JSON when
+  endpoint components are unmounted; missing model IDs still return `null`.
+- `doc.selection.value` liveness is determined by `BlockModelGraph`, not VM
+  component presence.
+- Selected/focused class reconciliation skips currently unmounted covered IDs
+  instead of invalidating or throwing from the model selection.
+- Failed DOM projection asks a registered adapter for deduplicated endpoint IDs;
+  boundary points additionally request only their immediate previous/next
+  children. Two boundary endpoints request at most six IDs.
+- Newer selection intent, adapter replacement/unregistration, and document
+  destruction abort an in-flight mount request. Replacement transfers the same
+  intent to the new adapter; unregistration falls back to frame retry; destroy
+  schedules no more work. Late completion is ignored.
+- Adapter resolution or rejection enters the existing bounded projection retry;
+  hosts without an adapter retain the previous retry behavior.
+- Existing selection JSON and programmatic write methods are unchanged.
+- `packages/editor/package.json` remains unchanged because release numbering is
+  user-owned.
 
 ### v?.?.? - 2026-07-17 (minor) — add default inline image embed
 

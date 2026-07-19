@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-07-17 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-07-19 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -304,24 +304,29 @@ block.updateProps({ style: 'dashed' })
 
 ```typescript
 // Read
-doc.selection.value                     // BlockSelection | null; stale block refs read back as null
-doc.selection.selectionChange$          // BehaviorSubject<BlockSelection | null>; stale block refs are cleared to null before emit
+doc.selection.value                     // BlockSelection | null; ids missing from BlockModelGraph read back as null
+doc.selection.selectionChange$          // BehaviorSubject<BlockSelection | null>; stale model ids are cleared before emit
 doc.selection.getSelectedText()         // string
 
 // A BlockSelection has:
 //   .anchor / .head        — discriminated ISelectionPoint (text | selected | gap | boundary | table-cell)
 //   .start / .end          — same points but document-ordered
-//   .firstBlock / .lastBlock
+//   .firstBlockId / .lastBlockId — model-safe content edge IDs
+//   .firstBlock / .lastBlock     — mounted component compatibility accessors
 //   .collapsed / .isInSameBlock / .isAllSelected / .isStartOfBlock / .isEndOfBlock
 //   .direction             — 'forward' | 'backward'
 //   .isAllSelected         — true only when both endpoints are whole-block selected points
 // Programmatic writes (`setSelection`, `setCursorAt`, `extendTo`, block cursor
 // helpers, block/gap/table selection, replay) synchronously publish this model
 // before deriving the native DOM Range. Cross-block order/common ancestry comes
-// from parentId/childrenIds, not DOM compareDocumentPosition or layout reads.
+// from BlockModelGraph parentId/childrenIds, not mounted components, DOM
+// compareDocumentPosition or layout reads. Liveness, boundary coverage and text
+// edge predicates also stay valid while endpoint components are virtualized.
 // If a live selection cannot be projected because its DOM is still mounting,
-// the model remains canonical and SelectionManager performs a bounded,
-// version-guarded projection retry. Explicit blur/stale endpoints still clear it.
+// the model remains canonical. An optional SelectionProjectionMountAdapter can
+// mount only endpoint IDs plus boundary-adjacent children before SelectionManager
+// performs its bounded, version-guarded projection retry. The middle selected
+// range is never pinned. Explicit blur/stale endpoints still clear it.
 // A revisioned internal Relative Selection Bookmark maps the current local
 // selection through relevant remote Yjs text/children changes before DOM is
 // considered. Text/boundary endpoints use Y.RelativePosition; ancestor-only
@@ -373,9 +378,11 @@ doc.selection.getSelectedText()         // string
 // Type-narrowing example
 const sel = doc.selection.value
 if (sel && sel.start.type === 'text') {
-  const editableBlock = sel.start.block        // EditableBlockComponent
+  const blockId = sel.firstBlockId             // safe even when component is unmounted
   const offset = sel.start.offset              // number
 }
+// point.block / firstBlock / lastBlock require a mounted block component and
+// may throw outside the rendered viewport. Use them only in view/DOM code.
 if (sel && sel.start.type === 'gap') {
   const voidBlock = sel.start.block            // BaseBlockComponent (void/container)
   const side = sel.start.side                  // 'before' | 'after'
@@ -400,6 +407,14 @@ doc.selection.extendTo(editableBlock, offset)  // shift+click
 doc.selection.selectAllChildren(block)         // editable text range; container/root boundary range
 // Ctrl+A ladder: partial text -> full text -> parent boundary range -> parent content
 doc.selection.blur()                           // clear
+
+// Optional virtual-renderer bridge. The disposer and AbortSignal cancel stale
+// work on renderer teardown, newer selection intent, or document destruction.
+const unregisterProjectionMount = doc.selection.registerProjectionMountAdapter({
+  ensureMounted(blockIds, signal) {
+    return virtualRenderer.ensureBlocksMounted(blockIds, {signal})
+  },
+})
 
 // Persist & restore
 doc.selection.value?.toJSON()                  // ISelectionJSON

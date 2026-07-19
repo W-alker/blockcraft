@@ -75,18 +75,18 @@ describe("FakeRange gap cursor", () => {
 });
 
 describe("FakeRange table-cell selection", () => {
-  const makeHarness = () => {
-    const tableHost = document.createElement("table");
-    const row1Host = document.createElement("tr");
-    const row2Host = document.createElement("tr");
+  const makeHarness = (ownerDocument: Document = document) => {
+    const tableHost = ownerDocument.createElement("table");
+    const row1Host = ownerDocument.createElement("tr");
+    const row2Host = ownerDocument.createElement("tr");
     const makeCell = (id: string, parentId: string, index: number) => {
-      const hostElement = document.createElement("td");
+      const hostElement = ownerDocument.createElement("td");
       hostElement.setAttribute("data-block-id", id);
       hostElement.className = "table-cell-block";
       hostElement.style.position = "relative";
       hostElement.style.width = "120px";
       hostElement.style.height = "40px";
-      const content = document.createElement("div");
+      const content = ownerDocument.createElement("div");
       content.className = "table-cell__children-wrapper children-render-container";
       content.textContent = id;
       hostElement.appendChild(content);
@@ -108,7 +108,7 @@ describe("FakeRange table-cell selection", () => {
     row1Host.append(cell1.hostElement, cell2.hostElement);
     row2Host.append(cell3.hostElement, cell4.hostElement);
     tableHost.append(row1Host, row2Host);
-    document.body.appendChild(tableHost);
+    ownerDocument.body.appendChild(tableHost);
 
     const rows = [[cell1, cell2], [cell3, cell4]];
     const table = {
@@ -175,6 +175,23 @@ describe("FakeRange table-cell selection", () => {
     expect(cells[0].hostElement.style.getPropertyValue("--bgColor")).toBe("");
     expect(tableHost.querySelector(".blockcraft-cursor")).toBeNull();
     tableHost.remove();
+  });
+
+  it("creates detached table selection spans in the table ownerDocument", () => {
+    const iframe = document.createElement("iframe");
+    document.body.appendChild(iframe);
+    const ownerDocument = iframe.contentDocument!;
+    const {doc, selection, tableHost} = makeHarness(ownerDocument);
+    const fakeRange = new FakeRange(doc as any, selection);
+
+    try {
+      expect(fakeRange.fakeSpans.length).toBe(1);
+      expect(fakeRange.fakeSpans[0].ownerDocument).toBe(ownerDocument);
+    } finally {
+      fakeRange.destroy();
+      tableHost.remove();
+      iframe.remove();
+    }
   });
 });
 

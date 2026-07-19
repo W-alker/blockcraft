@@ -64,6 +64,65 @@ describe("SelectionSelectedManager", () => {
     expect(p2ClassList.add).toHaveBeenCalledOnceWith("focused");
   });
 
+  it("reapplies classes when the same selected block is remounted", () => {
+    const oldClassList = {
+      add: jasmine.createSpy("old.add"),
+      remove: jasmine.createSpy("old.remove"),
+    };
+    const newClassList = {
+      add: jasmine.createSpy("new.add"),
+      remove: jasmine.createSpy("new.remove"),
+    };
+    const blocks: Record<string, any> = {
+      table: {
+        id: "table",
+        nodeType: BlockNodeType.block,
+        hostElement: {classList: oldClassList},
+      },
+    };
+    const manager = new SelectionSelectedManager({
+      getBlockById: (id: string) => blocks[id],
+    } as any);
+    const selection = {
+      getBoundarySelectedChildIds: () => ["table"],
+    } as any;
+
+    manager.setSelected(selection);
+    blocks["table"] = {
+      id: "table",
+      nodeType: BlockNodeType.block,
+      hostElement: {classList: newClassList},
+    };
+    manager.setSelected(selection);
+
+    expect(oldClassList.remove).toHaveBeenCalledOnceWith("selected");
+    expect(newClassList.add).toHaveBeenCalledOnceWith("selected");
+  });
+
+  it("paints only mounted covered blocks and keeps unmounted ids model-valid", () => {
+    const mountedClassList = {
+      add: jasmine.createSpy("mounted.add"),
+      remove: jasmine.createSpy("mounted.remove"),
+    };
+    const mounted = {
+      id: "p1",
+      nodeType: BlockNodeType.editable,
+      hostElement: {classList: mountedClassList},
+    };
+    const manager = new SelectionSelectedManager({
+      getBlockById: (id: string) => {
+        if (id === "p1") return mounted;
+        throw new Error(`component is unmounted: ${id}`);
+      },
+    } as any);
+    const selection = {
+      getBoundarySelectedChildIds: () => ["p1", "p2"],
+    } as any;
+
+    expect(() => manager.setSelected(selection)).not.toThrow();
+    expect(mountedClassList.add).toHaveBeenCalledOnceWith("focused");
+  });
+
   it("does not mark column containers selected for cross-column text selections", () => {
     const rootHost = document.createElement("div");
     const columnsHost = document.createElement("section");

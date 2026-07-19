@@ -9,10 +9,11 @@ export class ClipboardControl {
   }
 
   listen(root: BlockCraft.IBlockComponents['root']) {
+    const ownerDocument = root.hostElement.ownerDocument
     // When a block is in `selected` state we set its host to
     // `contenteditable=false` and let inner ZWS gap spans stay editable.
     // The browser then treats the ZWS span as the editing host and
-    // `document.activeElement` is no longer root itself — so we accept any
+    // `activeElement` is no longer root itself — so we accept any
     // active element that lives *inside* root.
     //
     // Readonly 模式下没有任何 contenteditable=true 的元素，activeElement 通常
@@ -20,9 +21,9 @@ export class ClipboardControl {
     // 只有整段选区都被 root 包含（commonAncestor 在 root 内）时才算编辑器持有，
     // 跨越编辑器边界的选区不会被误判。
     const isEditorFocused = () => {
-      const ae = document.activeElement
+      const ae = ownerDocument.activeElement
       if (ae && root.hostElement.contains(ae)) return true
-      const sel = document.getSelection()
+      const sel = ownerDocument.getSelection()
       if (!sel || sel.rangeCount === 0) return false
       try {
         const range = sel.getRangeAt(0)
@@ -32,15 +33,15 @@ export class ClipboardControl {
       }
     }
     const isNativeClipboardTarget = (ev: ClipboardEvent) =>
-      isNativeInputTarget(ev.target) || isNativeInputTarget(document.activeElement)
+      isNativeInputTarget(ev.target) || isNativeInputTarget(ownerDocument.activeElement)
 
-    fromEvent<ClipboardEvent>(document, 'copy').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
+    fromEvent<ClipboardEvent>(ownerDocument, 'copy').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
       if (isNativeClipboardTarget(ev)) return
       if (!isEditorFocused()) return
       // copy 不修改文档，readonly 模式也允许走 adapter 流程
       this._runWithSelection('copy', ev)
     })
-    fromEvent<ClipboardEvent>(document, 'cut').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
+    fromEvent<ClipboardEvent>(ownerDocument, 'cut').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
       if (isNativeClipboardTarget(ev)) return
       if (!isEditorFocused()) return
       if (this._dispatcher.status.isReadOnly) {
@@ -49,7 +50,7 @@ export class ClipboardControl {
       }
       this._runWithSelection('cut', ev, true)
     })
-    fromEvent<ClipboardEvent>(document, 'paste').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
+    fromEvent<ClipboardEvent>(ownerDocument, 'paste').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
       if (isNativeClipboardTarget(ev)) return
       if (!isEditorFocused()) return
       if (this._dispatcher.status.isReadOnly) {

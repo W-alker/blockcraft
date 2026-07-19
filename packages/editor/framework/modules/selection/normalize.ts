@@ -37,6 +37,10 @@ interface IDomEndpoint {
   readonly preserveSameBlockWholeSelection?: boolean
 }
 
+function isElementNode(node: unknown): node is HTMLElement {
+  return !!node && typeof (node as Node).nodeType === 'number' && (node as Node).nodeType === 1
+}
+
 /**
  * Convert a DOM StaticRange to model-level anchor/head selection points.
  *
@@ -163,7 +167,7 @@ export function normalizeRange(
   const resolveEditableTextPoint = (endpoint: IDomEndpoint): ISelectionPoint | null => {
     const {block, node, offset, side} = endpoint
     if (!(block instanceof EditableBlockComponent)) return null
-    if (node instanceof HTMLElement && node.classList.contains(INLINE_END_BREAK_CLASS)) {
+    if (isElementNode(node) && node.classList.contains(INLINE_END_BREAK_CLASS)) {
       return lazyPoint({blockId: block.id, type: 'text', offset: block.textLength}, getBlockById)
     }
     return lazyPoint({blockId: block.id, type: 'text', offset: getInlineOffset(block, node, offset, side)}, getBlockById)
@@ -172,7 +176,7 @@ export function normalizeRange(
   const resolveContainerBoundaryPoint = (endpoint: IDomEndpoint): ISelectionPoint | null => {
     const {block, node, offset, side} = endpoint
     if (block.nodeType !== BlockNodeType.block && block.nodeType !== BlockNodeType.root) return null
-    const element = node instanceof HTMLElement ? node : null
+    const element = isElementNode(node) ? node : null
     if (!element) return null
     const childrenContainer = element.classList.contains('children-render-container')
       ? element
@@ -238,11 +242,11 @@ export function normalizeRange(
   }
 
   const resolvePreviousBlockEndPoint = (): ISelectionPoint | undefined => {
-    if (!(endContainer instanceof HTMLElement && endContainer.classList.contains('edit-container') && endOffset === 0)) {
+    if (!(isElementNode(endContainer) && endContainer.classList.contains('edit-container') && endOffset === 0)) {
       return undefined
     }
     const prev = endContainer.closest('[data-node-type="editable"]')?.previousElementSibling
-    if (!(prev instanceof HTMLElement)) return undefined
+    if (!isElementNode(prev)) return undefined
     const id = prev.getAttribute('data-block-id')
     if (!id) return undefined
     endBlock = getBlockById(id) as BaseBlockComponent<any>

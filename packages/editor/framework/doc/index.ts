@@ -5,6 +5,7 @@ import { DocVM } from "./vm";
 import {
   IBlockSnapshot,
   EmbedConverter,
+  withDefaultEmbedConverters,
   UIEventDispatcher,
   EditableBlockComponent,
   YBlock
@@ -150,6 +151,7 @@ export class BlockCraftDoc {
   constructor(
     public readonly config: DocConfig
   ) {
+    this.config.embeds = withDefaultEmbedConverters(this.config.embeds)
     this._plugins = this.config.plugins || []
     this._bindReadonlyViolationFeedback()
     this.onDestroy(() => {

@@ -119,4 +119,29 @@ describe("isSelectionAlive", () => {
     delete blocks["p2"];
     expect(hasLiveSelectionEndpoints(selection, makeDoc(blocks) as any)).toBeFalse();
   });
+
+  it("keeps a model selection alive when graph nodes exist but components are unmounted", () => {
+    const mountedLookup = jasmine.createSpy("getBlockById").and.throwError("component is unmounted");
+    const exists = jasmine.createSpy("exists").and.callFake((id: string) =>
+      ["root", "p1", "middle", "p2"].includes(id),
+    );
+    const selection = new BlockSelection(
+      {blockId: "p1", type: "text", offset: 1, block: null} as any,
+      {blockId: "p2", type: "text", offset: 2, block: null} as any,
+      "root",
+      mountedLookup,
+      () => Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    const doc = {
+      model: {
+        exists,
+        queryBetween: () => ["middle"],
+      },
+      getBlockById: mountedLookup,
+    };
+
+    expect(hasLiveSelectionEndpoints(selection, doc as any)).toBeTrue();
+    expect(isSelectionAlive(selection, doc as any)).toBeTrue();
+    expect(mountedLookup).not.toHaveBeenCalled();
+  });
 });

@@ -1,5 +1,9 @@
 import {STR_ZERO_WIDTH_SPACE} from "../block-std/inline";
 
+function isElementNode(node: unknown): node is HTMLElement {
+  return !!node && typeof (node as Node).nodeType === 'number' && (node as Node).nodeType === 1
+}
+
 export function createZeroSpace() {
   const emptyNode = document.createElement('span')
   emptyNode.setAttribute('data-zero-space', 'true')
@@ -9,7 +13,7 @@ export function createZeroSpace() {
 
 export const isZeroSpace = (node: Node | null | undefined) => {
   if (!node) return null
-  let ele = node instanceof HTMLElement ? node : node.parentElement
+  const ele = isElementNode(node) ? node : node.parentElement
   if (ele?.getAttribute('data-zero-space') === 'true') return ele
   return null
 }
@@ -42,12 +46,12 @@ export function createBlockGapSpace(side: BlockGapSide) {
 
 function getDirectBlockGapSpans(hostElement: HTMLElement): HTMLElement[] {
   return Array.from(hostElement.querySelectorAll(':scope > [data-block-zero-space="true"]'))
-    .filter((node): node is HTMLElement => node instanceof HTMLElement)
+    .filter(isElementNode)
 }
 
 function getBlockGapTextNode(span: HTMLElement): Text | null {
   const node = span.firstChild
-  return node?.nodeType === Node.TEXT_NODE ? node as Text : null
+  return node?.nodeType === 3 ? node as Text : null
 }
 
 /**
@@ -104,9 +108,9 @@ export function getBlockGapCaretSpan(
  * node — uses `.closest` to climb to the owning gap span.
  */
 export function resolveBlockGapSide(node: Node): 'before' | 'after' | null {
-  const start = node instanceof HTMLElement ? node : node.parentElement
+  const start = isElementNode(node) ? node : node.parentElement
   const span = start?.closest('[data-block-zero-space="true"]')
-  if (!(span instanceof HTMLElement)) return null
+  if (!isElementNode(span)) return null
   const host = span.parentElement
   if (!host) return null
   // Enumerate the host's direct gap children explicitly. Using `:first-of-type` /

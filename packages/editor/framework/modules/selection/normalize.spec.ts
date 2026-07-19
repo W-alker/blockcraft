@@ -218,18 +218,18 @@ describe('normalizeRange - gap detection', () => {
 })
 
 describe('normalizeRange - editable shell endpoints', () => {
-  function makeEditableShellBlock(id: string, textLength = 8) {
-    const host = document.createElement('div')
+  function makeEditableShellBlock(id: string, textLength = 8, ownerDocument: Document = document) {
+    const host = ownerDocument.createElement('div')
     host.setAttribute('data-block-id', id)
     host.setAttribute('data-node-type', BlockNodeType.editable)
 
-    const head = document.createElement('div')
+    const head = ownerDocument.createElement('div')
     head.className = 'code-block__head'
-    const wrapper = document.createElement('div')
+    const wrapper = ownerDocument.createElement('div')
     wrapper.className = 'edit-container-wrapper'
-    const container = document.createElement('pre')
+    const container = ownerDocument.createElement('pre')
     container.className = 'edit-container'
-    const resize = document.createElement('div')
+    const resize = ownerDocument.createElement('div')
     resize.className = 'resize-bar-btm'
 
     wrapper.appendChild(container)
@@ -345,6 +345,34 @@ describe('normalizeRange - editable shell endpoints', () => {
     expect(result.end.type).toBe('text')
     expect((result.end as any).offset).toBe(12)
     expect(mapper).not.toHaveBeenCalled()
+  })
+
+  it('maps iframe inline end-break endpoints without crossing DOM realms', () => {
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const ownerDocument = iframe.contentDocument!
+    const {block, container, mapper} = makeEditableShellBlock('code-1', 12, ownerDocument)
+    const endBreak = ownerDocument.createElement('span')
+    endBreak.className = INLINE_END_BREAK_CLASS
+    container.appendChild(endBreak)
+    const range = new StaticRange({
+      startContainer: endBreak,
+      startOffset: 0,
+      endContainer: endBreak,
+      endOffset: 0,
+    })
+
+    try {
+      const result = normalizeRange(range, () => block as any)
+
+      expect(result.start.type).toBe('text')
+      expect((result.start as any).offset).toBe(12)
+      expect(result.end.type).toBe('text')
+      expect((result.end as any).offset).toBe(12)
+      expect(mapper).not.toHaveBeenCalled()
+    } finally {
+      iframe.remove()
+    }
   })
 
   it('continues to delegate real inline container points to the inline mapper', () => {

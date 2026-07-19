@@ -6,6 +6,7 @@ import {
   ISelectionPoint,
   ISelectionPointJSON,
 } from "./types";
+import {SelectionModelResolver} from "./model-resolver";
 
 export class BlockSelection {
 
@@ -17,6 +18,7 @@ export class BlockSelection {
     readonly commonParent: string,
     private readonly _getBlockById: (id: string) => BaseBlockComponent<any>,
     private readonly _comparePosition: (a: string, b: string) => number,
+    private readonly _modelResolver?: SelectionModelResolver,
   ) {
   }
 
@@ -75,6 +77,14 @@ export class BlockSelection {
     return this._contentBlockForPoint(this.end, 'end')
   }
 
+  get firstBlockId(): string {
+    return this._contentBlockIdForPoint(this.start, 'start')
+  }
+
+  get lastBlockId(): string {
+    return this._contentBlockIdForPoint(this.end, 'end')
+  }
+
   get isStartOfBlock(): boolean {
     const s = this.start
     if (s.type === 'table-cell') return true
@@ -87,10 +97,10 @@ export class BlockSelection {
   get isEndOfBlock(): boolean {
     const e = this.end
     if (e.type === 'table-cell') return true
-    if (e.type === 'boundary') return e.index === e.block.childrenLength
+    if (e.type === 'boundary') return e.index === this._childrenIdsForBoundary(e).length
     if (e.type === 'gap') return e.side === 'after'
     if (isWholeBlockPoint(e)) return true
-    return (e.block as EditableBlockComponent).textLength === e.offset
+    return this._textLengthForPoint(e) === e.offset
   }
 
   get isAllSelected(): boolean {
@@ -115,7 +125,7 @@ export class BlockSelection {
       const s = this.start
       const e = this.end
       if (s.type !== 'boundary' || e.type !== 'boundary') return false
-      const directIndex = this._directChildIndexUnder(this.start.blockId, this._getBlockById(blockId))
+      const directIndex = this._directChildIndexUnder(this.start.blockId, blockId)
       return directIndex !== null && directIndex >= s.index && directIndex < e.index
     }
 
@@ -149,9 +159,10 @@ export class BlockSelection {
     if (s.type !== 'boundary' || e.type !== 'boundary') return null
     if (s.blockId !== e.blockId) return null
     if (s.index === e.index) return []
+    const childrenIds = this._childrenIdsForBoundary(s)
     const from = Math.max(0, Math.min(s.index, e.index))
-    const to = Math.min(s.block.childrenLength, Math.max(s.index, e.index))
-    return s.block.childrenIds.slice(from, to)
+    const to = Math.min(childrenIds.length, Math.max(s.index, e.index))
+    return childrenIds.slice(from, to)
   }
 
   getTableCellSelection(): { tableId: string; anchorCellId: string; headCellId: string } | null {
@@ -203,7 +214,7 @@ export class BlockSelection {
 
     const startLen = this.isInSameBlock && s.type === 'text' && e.type === 'text'
       ? e.offset - s.offset
-      : (s.type === 'text' ? (s.block as EditableBlockComponent).textLength - s.offset : 0)
+      : (s.type === 'text' ? this._textLengthForPoint(s) - s.offset : 0)
     const endLen = e.type === 'text' ? e.offset : 0
 
     return {
@@ -227,11 +238,11 @@ export class BlockSelection {
     }
 
     if (a.type === 'boundary') {
-      const directIndex = this._directChildIndexUnder(a.blockId, b.block)
+      const directIndex = this._directChildIndexUnder(a.blockId, b.blockId)
       if (directIndex !== null) return a.index <= directIndex ? -1 : 1
     }
     if (b.type === 'boundary') {
-      const directIndex = this._directChildIndexUnder(b.blockId, a.block)
+      const directIndex = this._directChildIndexUnder(b.blockId, a.blockId)
       if (directIndex !== null) return directIndex < b.index ? -1 : 1
     }
 
@@ -241,7 +252,12 @@ export class BlockSelection {
     return 0
   }
 
-  private _directChildIndexUnder(parentId: string, block: BaseBlockComponent<any>): number | null {
+  private _directChildIndexUnder(parentId: string, blockId: string): number | null {
+    if (this._modelResolver) {
+      return this._modelResolver.directChildIndexUnder(parentId, blockId)
+    }
+
+    const block = this._getBlockById(blockId)
     let current: BaseBlockComponent<any> | null = block
     while (current && current.parentId && current.parentId !== parentId) {
       current = current.parentBlock as BaseBlockComponent<any> | null
@@ -251,13 +267,40 @@ export class BlockSelection {
   }
 
   private _contentBlockForPoint(point: ISelectionPoint, side: 'start' | 'end'): BaseBlockComponent<any> {
-    if (point.type !== 'boundary') return point.block
+    if (point.type !== 'boundary' && !this._modelResolver) return point.block
+    return this._getBlockById(this._contentBlockIdForPoint(point, side))
+  }
+
+  private _contentBlockIdForPoint(point: ISelectionPoint, side: 'start' | 'end'): string {
+    if (point.type !== 'boundary') return point.blockId
+    if (this._modelResolver) {
+      return this._modelResolver.contentBlockId(point.blockId, point.index, side)
+    }
+
     const ids = point.block.childrenIds
-    if (!ids.length) return point.block
+    if (!ids.length) return point.blockId
     const index = side === 'start'
-      ? Math.min(point.index, ids.length - 1)
-      : Math.max(0, point.index - 1)
-    return this._getBlockById(ids[index])
+      ? Math.min(Math.max(0, point.index), ids.length - 1)
+      : Math.max(0, Math.min(point.index, ids.length) - 1)
+    return ids[index]
+  }
+
+  private _childrenIdsForBoundary(
+    point: Extract<ISelectionPoint, {type: 'boundary'}>,
+  ): readonly string[] {
+    if (this._modelResolver) {
+      return this._modelResolver.getChildrenIds(point.blockId)
+    }
+    return point.block.childrenIds
+  }
+
+  private _textLengthForPoint(
+    point: Extract<ISelectionPoint, {type: 'text'}>,
+  ): number {
+    if (this._modelResolver) {
+      return this._modelResolver.getTextLength(point.blockId)
+    }
+    return (point.block as EditableBlockComponent).textLength
   }
 }
 

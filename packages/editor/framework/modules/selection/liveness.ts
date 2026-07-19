@@ -1,6 +1,11 @@
 import {BlockSelection} from "./blockSelection";
 
 type SelectionLivenessDoc = {
+  model?: {
+    exists: (blockId: string) => boolean
+    getChildrenIds?: (blockId: string) => readonly string[]
+    queryBetween?: (fromId: string, toId: string, contain?: boolean) => readonly string[]
+  }
   getBlockById?: (id: string) => BlockCraft.BlockComponent | null | undefined
   queryBlocksBetween?: (
     start: BlockCraft.BlockComponent,
@@ -9,9 +14,20 @@ type SelectionLivenessDoc = {
   ) => string[] | null | undefined
 }
 
-function hasBlock(doc: Pick<SelectionLivenessDoc, "getBlockById">, blockId: string): boolean {
+function hasBlock(
+  doc: Pick<SelectionLivenessDoc, "model" | "getBlockById">,
+  blockId: string,
+): boolean {
+  if (!blockId) return false
+  if (typeof doc.model?.exists === "function") {
+    try {
+      return doc.model.exists(blockId)
+    } catch {
+      return false
+    }
+  }
   try {
-    return !!blockId && !!doc.getBlockById?.(blockId)
+    return !!doc.getBlockById?.(blockId)
   } catch {
     return false
   }
@@ -20,10 +36,10 @@ function hasBlock(doc: Pick<SelectionLivenessDoc, "getBlockById">, blockId: stri
 /** Cheap guard for read hot paths. Structural consumers still use isSelectionAlive. */
 export function hasLiveSelectionEndpoints(
   selection: BlockSelection | null | undefined,
-  doc: Pick<SelectionLivenessDoc, "getBlockById">,
+  doc: Pick<SelectionLivenessDoc, "model" | "getBlockById">,
 ): selection is BlockSelection {
   if (!selection) return false
-  if (typeof doc.getBlockById !== "function") return true
+  if (typeof doc.model?.exists !== "function" && typeof doc.getBlockById !== "function") return true
 
   const anchorId = selection.anchor.blockId
   const headId = selection.head.blockId
@@ -63,6 +79,46 @@ export function isSelectionAlive(
   doc: SelectionLivenessDoc,
 ): selection is BlockSelection {
   if (!selection) return false
+
+  if (typeof doc.model?.exists === "function") {
+    if (!hasLiveSelectionEndpoints(selection, doc)) return false
+
+    const ids = new Set<string>([
+      selection.anchor.blockId,
+      selection.head.blockId,
+      selection.commonParent,
+    ])
+    const tableCellSelection = selection.getTableCellSelection()
+    if (tableCellSelection) {
+      ids.add(tableCellSelection.tableId)
+      ids.add(tableCellSelection.anchorCellId)
+      ids.add(tableCellSelection.headCellId)
+    }
+
+    const anchor = selection.anchor
+    const head = selection.head
+    if (
+      anchor.type === "boundary" &&
+      head.type === "boundary" &&
+      anchor.blockId === head.blockId
+    ) {
+      const children = doc.model.getChildrenIds?.(anchor.blockId) ?? []
+      const from = Math.max(0, Math.min(anchor.index, head.index))
+      const to = Math.min(children.length, Math.max(anchor.index, head.index))
+      children.slice(from, to).forEach(id => ids.add(id))
+    } else if (
+      anchor.blockId !== head.blockId &&
+      !tableCellSelection &&
+      typeof doc.model.queryBetween === "function"
+    ) {
+      doc.model.queryBetween(anchor.blockId, head.blockId, false).forEach(id => ids.add(id))
+    }
+
+    for (const id of ids) {
+      if (!hasBlock(doc, id)) return false
+    }
+    return true
+  }
 
   const candidate = selection as any
   const start = candidate.start ?? candidate.anchor
