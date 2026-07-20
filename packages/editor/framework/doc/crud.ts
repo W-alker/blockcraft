@@ -566,7 +566,7 @@ export class DocCRUD {
     })
     return this._resolveInsertedBlocks(snapshots)
   }
-
+  //两个 Y.Array<string>(块的 id 列表)之间搬家
   moveBlocks(parentId: string, index: number, count: number, targetId: string, targetIndex: number) {
     const parentComp = this.vm.get(parentId)
     const targetComp = this.vm.get(targetId)

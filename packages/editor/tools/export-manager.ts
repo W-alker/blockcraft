@@ -134,7 +134,7 @@ export class DocExportManager {
         transform: `scale(${scale})`,
         transformOrigin: 'top left',
       },
-    });
+    } as any);
     return canvas
   }
 

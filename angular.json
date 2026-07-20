@@ -37,7 +37,9 @@
               "packages/editor/themes/plugins/demo-presentation.scss",
               "packages/editor/assets/iconfont/bc-iconfont.css"
             ],
-            "scripts": []
+            "scripts": [
+              "packages/editor/assets/iconfont/bc-iconfont.js"
+            ]
           },
           "configurations": {
             "production": {
