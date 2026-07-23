@@ -36,6 +36,33 @@ async function exportBlockSnapshot(page: Page, blockId: string): Promise<unknown
   return find(snapshot);
 }
 
+async function revealFirstBlock(page: Page, flavour: string): Promise<string> {
+  const blockId = await page.evaluate(async ({selector, flavour}) => {
+    const editorElement = document.querySelector(selector);
+    const ngDebug = (window as unknown as {
+      ng: {getComponent: (element: Element) => {doc: any}};
+    }).ng;
+    if (!editorElement || !ngDebug) throw new Error('Angular editor debug API is unavailable');
+
+    const doc = ngDebug.getComponent(editorElement).doc;
+    const find = (block: any): string | null => {
+      if (block?.flavour === flavour) return block.id;
+      for (const child of block?.children ?? []) {
+        const match = find(child);
+        if (match) return match;
+      }
+      return null;
+    };
+    const id = find(doc.exportSnapshot());
+    if (!id) throw new Error(`Cannot resolve block flavour: ${flavour}`);
+    await doc.virtualization?.scrollToBlock?.(id);
+    return id;
+  }, {selector: editorSelector, flavour});
+
+  await expect(page.locator(`${editorSelector} [data-block-id="${blockId}"]`)).toBeVisible();
+  return blockId;
+}
+
 async function setBlockReadonly(page: Page, blockSelector: string, readonly: boolean): Promise<string> {
   return page.evaluate(({editorSelector, blockSelector, readonly}) => {
     const editorElement = document.querySelector(editorSelector);
@@ -149,7 +176,8 @@ test('block readonly protects writes while retaining read interactions and inher
   await expect(page.locator(calloutSelector)).toHaveAttribute('data-bc-readonly', 'self');
   await expect(page.locator(calloutChildSelector).first()).toHaveAttribute('data-bc-readonly', 'inherited');
 
-  const tableSelector = `${editorSelector} div.table-block`;
+  const tableId = await revealFirstBlock(page, 'table');
+  const tableSelector = `${editorSelector} div.table-block[data-block-id="${tableId}"]`;
   await setBlockReadonly(page, tableSelector, true);
   await page.locator(`${tableSelector} td.table-cell-block`).first().hover();
   await expect(page.locator(`${tableSelector} .table-col-resize-bar`)).toBeHidden();
@@ -218,7 +246,10 @@ test('typing over a selected attachment closes its toolbar without stale readonl
   });
 
   await initialize(page);
-  const attachment = page.locator(`${editorSelector} div.attachment-block`);
+  const attachmentId = await revealFirstBlock(page, 'attachment');
+  const attachment = page.locator(
+    `${editorSelector} div.attachment-block[data-block-id="${attachmentId}"]`,
+  );
   await attachment.evaluate((element, selector) => {
     const editorElement = document.querySelector(selector);
     const ngDebug = (window as unknown as {

@@ -134,4 +134,23 @@ describe('ScrollBlot offsetOf', () => {
       expect(scroll.offsetOf(breakBlot)).toBe(scroll.textLength);
     });
   });
+
+  describe('detachAll', () => {
+    it('removes retained DOM and destroys embeds exactly once', () => {
+      const onDestroy = jasmine.createSpy('onDestroy');
+      converters.set('test', {...testConverter, onDestroy});
+      const scroll = createScroll([
+        {insert: 'Hello'},
+        {insert: {test: 'v'}},
+      ]);
+
+      scroll.detachAll();
+      scroll.detachAll();
+
+      expect(container.childNodes.length).toBe(0);
+      expect(scroll.children.length).toBe(0);
+      expect(scroll.textLength).toBe(0);
+      expect(onDestroy).toHaveBeenCalledTimes(1);
+    });
+  });
 });

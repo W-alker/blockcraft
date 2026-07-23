@@ -3,6 +3,7 @@ import { DomSanitizer } from '@angular/platform-browser';
 import { MatIconRegistry } from '@angular/material/icon';
 import {
   BlockSelection,
+  BlockNodeType,
   ClipboardDataType,
   DOC_ADAPTER_SERVICE_TOKEN,
   DOC_FILE_SERVICE_TOKEN,
@@ -28,11 +29,22 @@ import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 import { demoJSON } from './demo.data';
 import { resolveCollaborationRoot } from './collaboration-root';
+import {
+  IME_SCENARIO_LABELS,
+  ImeCollaborationRunnerState,
+  ImeCollaborationScenario,
+  ImeCollaborationScenarioRunner,
+  ShadowCollaborationSession,
+  createInitialImeRunnerState,
+} from './collaboration-simulator';
+
+type CollaborationSimulationMode = 'random-text' | 'ime-race';
 
 type DebugActionId =
   | 'init'
   | 'theme'
   | 'readonly'
+  | 'toggleVirtualization'
   | 'insert'
   | 'undo'
   | 'redo'
@@ -158,6 +170,7 @@ const ACTION_SECTIONS: DebugSection[] = [
       { id: 'init', label: '初始化', tone: 'primary' },
       { id: 'theme', label: '主题' },
       { id: 'readonly', label: '只读' },
+      { id: 'toggleVirtualization', label: '虚拟渲染' },
       { id: 'addData', label: '追加段落' }
     ]
   },
@@ -238,6 +251,12 @@ const ACTION_SECTIONS: DebugSection[] = [
               <span class="status-item__label">复制过滤</span>
               <span class="status-pill" [class.status-pill--active]="copyFilterActive">{{ copyFilterActive ? '过滤链接' : '关闭' }}</span>
             </div>
+            <div class="status-item">
+              <span class="status-item__label">虚拟渲染</span>
+              <span class="status-pill" [class.status-pill--active]="virtualizationEnabled">
+                {{ virtualizationEnabled ? '开启' : '关闭' }}
+              </span>
+            </div>
             <div class="status-item status-item--wide">
               <span class="status-item__label">更新监听</span>
               <span class="status-pill" [class.status-pill--active]="isListeningUpdate">{{ updateStatus }}</span>
@@ -270,16 +289,63 @@ const ACTION_SECTIONS: DebugSection[] = [
 
           <div class="sim-controls">
             <span class="nav-label">模拟参数</span>
-            <div class="sim-row">
-              <span class="sim-label">用户数</span>
-              <input type="range" min="1" max="5" [value]="simUserCount" (input)="onSimSettingChange('users', $event)">
-              <span class="sim-value">{{ simUserCount }}</span>
+            <div class="sim-mode" role="tablist" aria-label="协同模拟模式">
+              <button
+                type="button"
+                class="sim-mode__button"
+                [class.sim-mode__button--active]="simulationMode === 'random-text'"
+                (click)="setSimulationMode('random-text')">
+                随机文本
+              </button>
+              <button
+                type="button"
+                class="sim-mode__button"
+                [class.sim-mode__button--active]="simulationMode === 'ime-race'"
+                (click)="setSimulationMode('ime-race')">
+                IME 竞态
+              </button>
             </div>
-            <div class="sim-row">
-              <span class="sim-label">间隔</span>
-              <input type="range" min="100" max="2000" step="100" [value]="simIntervalMs" (input)="onSimSettingChange('interval', $event)">
-              <span class="sim-value">{{ simIntervalMs }}ms</span>
-            </div>
+            @if (simulationMode === 'random-text') {
+              <div class="sim-row">
+                <span class="sim-label">用户数</span>
+                <input type="range" min="1" max="5" [value]="simUserCount" (input)="onSimSettingChange('users', $event)">
+                <span class="sim-value">{{ simUserCount }}</span>
+              </div>
+              <div class="sim-row">
+                <span class="sim-label">间隔</span>
+                <input type="range" min="100" max="2000" step="100" [value]="simIntervalMs" (input)="onSimSettingChange('interval', $event)">
+                <span class="sim-value">{{ simIntervalMs }}ms</span>
+              </div>
+            } @else {
+              <div class="sim-row">
+                <span class="sim-label">自动</span>
+                <label class="sim-toggle">
+                  <input type="checkbox" [checked]="imeAutoEnabled" (change)="onImeAutoChange($event)">
+                  <span class="sim-toggle__track" aria-hidden="true"></span>
+                  <span>{{ imeAutoEnabled ? '轮换' : '单步' }}</span>
+                </label>
+              </div>
+              <div class="sim-row">
+                <span class="sim-label">延迟</span>
+                <input type="range" min="0" max="2000" step="100" [value]="imeScenarioDelayMs" (input)="onImeDelayChange($event)">
+                <span class="sim-value">{{ imeScenarioDelayMs }}ms</span>
+              </div>
+              <div class="sim-state-grid">
+                <span>当前</span>
+                <strong>{{ imeScenarioLabel(imeRunnerState.pendingScenario ?? imeRunnerState.lastScenario) }}</strong>
+                <span>下一项</span>
+                <strong>{{ imeScenarioLabel(imeRunnerState.nextScenario) }}</strong>
+                <span>结果</span>
+                <strong>{{ imeRunnerState.appliedCount }} / {{ imeRunnerState.skippedCount }} / {{ imeRunnerState.errorCount }}</strong>
+              </div>
+              <div class="sim-message" [title]="imeRunnerState.message">{{ imeRunnerState.message }}</div>
+              <div class="sim-actions">
+                <button type="button" [disabled]="!canRunImeScenario" (pointerdown)="runImeScenario($event, 'remote-text-near-caret')">远端文本</button>
+                <button type="button" [disabled]="!canRunImeScenario" (pointerdown)="runImeScenario($event, 'insert-root-before')">上方插入</button>
+                <button type="button" [disabled]="!canRunImeScenario" (pointerdown)="runImeScenario($event, 'move-root-to-end')">移到末尾</button>
+                <button type="button" class="sim-action--danger" [disabled]="!canRunImeScenario" (pointerdown)="runImeScenario($event, 'delete-selection-scope')">删除 scope</button>
+              </div>
+            }
           </div>
         </section>
 
@@ -367,7 +433,19 @@ const ACTION_SECTIONS: DebugSection[] = [
 
         @if (activeMainTab === 'editor') {
           <section class="editor-stage">
-            <block-craft-editor #editor [stickyTop]="0"></block-craft-editor>
+            @if (virtualizationEnabled) {
+              <block-craft-editor
+                #editor
+                [stickyTop]="0"
+                [virtualizationEnabled]="true">
+              </block-craft-editor>
+            } @else {
+              <block-craft-editor
+                #editor
+                [stickyTop]="0"
+                [virtualizationEnabled]="false">
+              </block-craft-editor>
+            }
           </section>
         }
 
@@ -487,7 +565,11 @@ const ACTION_SECTIONS: DebugSection[] = [
               <span class="section-title">INLINE 一致性</span>
               <span class="monitor-stats">
                 @if (isSimulationRunning) {
-                  <span class="status-pill status-pill--active">{{ simUserCount }}人 · {{ simIntervalMs }}ms · {{ simOpCount }} ops</span>
+                  @if (simulationMode === 'random-text') {
+                    <span class="status-pill status-pill--active">{{ simUserCount }}人 · {{ simIntervalMs }}ms · {{ simOpCount }} ops</span>
+                  } @else {
+                    <span class="status-pill status-pill--active">IME · {{ imeRunnerState.phase }} · {{ imeRunnerState.appliedCount }} ops</span>
+                  }
                 }
                 @switch (monitorStatus) {
                   @case ('ok') { <span class="status-pill status-pill--active">✓ 一致</span> }
@@ -1300,6 +1382,7 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   readonly updateList: Uint8Array[] = [];
   editorInitialized = false;
   isListeningUpdate = false;
+  virtualizationEnabled = true;
 
   // 临时调试：复制时过滤行内链接属性（a:link），可开关
   copyFilterActive = false;
@@ -1349,9 +1432,13 @@ graph TD
   simOpCount = 0;
   simUserCount = 1;
   simIntervalMs = 800;
+  simulationMode: CollaborationSimulationMode = 'random-text';
+  imeAutoEnabled = true;
+  imeScenarioDelayMs = 500;
+  imeRunnerState: ImeCollaborationRunnerState = createInitialImeRunnerState();
   private _simTimer: ReturnType<typeof setInterval> | null = null;
-  private _shadowDoc: Y.Doc | null = null;
-  private _shadowCleanup: (() => void) | null = null;
+  private _shadowSession: ShadowCollaborationSession | null = null;
+  private _imeScenarioRunner: ImeCollaborationScenarioRunner | null = null;
 
   constructor() {
     this.iconRegistry.addSvgIconSet(
@@ -1567,6 +1654,9 @@ graph TD
       case 'readonly':
         this.toggleReadonly();
         return;
+      case 'toggleVirtualization':
+        this.toggleVirtualization();
+        return;
       case 'insert':
         this.insertTestText();
         return;
@@ -1725,6 +1815,16 @@ graph TD
     this.syncPageTheme();
     this._subscribeSelection();
     this.cdr.markForCheck();
+  }
+
+  toggleVirtualization() {
+    const editor = this.editor;
+    if (this.provider || editor?.doc.isInitialized) {
+      editor?.doc.messageService.warn('虚拟渲染模式只能在文档初始化前切换');
+      return;
+    }
+    this.virtualizationEnabled = !this.virtualizationEnabled;
+    this.cdr.detectChanges();
   }
 
   loadSnapshotViewerDemo() {
@@ -1953,7 +2053,7 @@ graph TD
     const snapshots = Array.from({ length: 100 }, (_, index) =>
       editor.doc.schemas.createSnapshot('paragraph', [[{ insert: `hello {${index}}` }]])
     );
-    editor.doc.crud.insertBlocks(editor.doc.rootId, 0, snapshots);
+    editor.doc.crud.insertBlockSnapshots(editor.doc.rootId, 0, snapshots);
   }
 
   logDocument() {
@@ -2156,7 +2256,7 @@ $$
       return;
     }
 
-    editor.doc.crud.insertBlocks(editor.doc.rootId, 0, snapshot.children as IBlockSnapshot[]);
+    editor.doc.crud.insertBlockSnapshots(editor.doc.rootId, 0, snapshot.children as IBlockSnapshot[]);
   }
 
   async importBlockSnapshotTxt() {
@@ -2176,7 +2276,7 @@ $$
         return;
       }
 
-      editor.doc.crud.insertBlocks(editor.doc.rootId, editor.doc.root.childrenLength, children);
+      editor.doc.crud.insertBlockSnapshots(editor.doc.rootId, editor.doc.root.childrenLength, children);
       editor.doc.messageService.success(`已导入 ${children.length} 个 blocks`);
       this.editorInitialized = true;
       this.cdr.markForCheck();
@@ -2246,7 +2346,7 @@ $$
 
     const provider = this.provider = new WebsocketProvider(
       // 'ws://ws-doc-v2.cses7.com/collaboration',
-      "ws://localhost:1234",
+      "ws://196.168.1.153:1234",
       // 'ws://196.168.1.153:1234',
       // 'ws://ws-doc.cses7.com',
       // "ws://ws-doc-pre.cses7.com/collaboration",
@@ -2508,40 +2608,81 @@ $$
     const val = +(event.target as HTMLInputElement).value;
     if (type === 'users') this.simUserCount = val;
     else this.simIntervalMs = val;
-    if (this.isSimulationRunning) this.restartSimTimer();
+    if (this.isSimulationRunning && this.simulationMode === 'random-text') {
+      this.restartSimTimer();
+    }
+  }
+
+  setSimulationMode(mode: CollaborationSimulationMode) {
+    if (mode === this.simulationMode) return;
+    const shouldRestart = this.isSimulationRunning;
+    if (shouldRestart) this.stopSimulation();
+    this.simulationMode = mode;
+    if (shouldRestart) this.startSimulation();
+  }
+
+  onImeAutoChange(event: Event) {
+    this.imeAutoEnabled = (event.target as HTMLInputElement).checked;
+    this._imeScenarioRunner?.setAutoEnabled(this.imeAutoEnabled);
+  }
+
+  onImeDelayChange(event: Event) {
+    this.imeScenarioDelayMs = +(event.target as HTMLInputElement).value;
+    this._imeScenarioRunner?.setDelayMs(this.imeScenarioDelayMs);
+  }
+
+  get canRunImeScenario() {
+    return this.isSimulationRunning &&
+      this.simulationMode === 'ime-race' &&
+      this.imeRunnerState.hasActiveComposition;
+  }
+
+  imeScenarioLabel(scenario: ImeCollaborationScenario | null) {
+    return scenario ? IME_SCENARIO_LABELS[scenario] : '等待 IME';
+  }
+
+  runImeScenario(event: PointerEvent, scenario: ImeCollaborationScenario) {
+    // Keep the native composition target focused while the sidebar command runs.
+    event.preventDefault();
+    this._imeScenarioRunner?.runNow(scenario);
   }
 
   startSimulation() {
     if (this.isSimulationRunning) return;
-    this.ensureEditorInitialized();
+    const editor = this.ensureEditorInitialized();
+    const session = new ShadowCollaborationSession(
+      editor.doc.yDoc,
+      (direction, error) => console.warn(`[playground] ${direction} bridge failed`, error),
+    );
 
-    const mainDoc = this.editor!.doc.yDoc;
-    this._shadowDoc = new Y.Doc();
-    Y.applyUpdate(this._shadowDoc, Y.encodeStateAsUpdate(mainDoc));
-
-    const syncToShadow = (update: Uint8Array, origin: any) => {
-      if (origin !== 'shadow') {
-        try { Y.applyUpdate(this._shadowDoc!, update, 'main'); } catch {}
-      }
-    };
-    const syncToMain = (update: Uint8Array, origin: any) => {
-      if (origin !== 'main') {
-        try { Y.applyUpdate(mainDoc, update, 'shadow'); } catch {}
-      }
-    };
-    mainDoc.on('update', syncToShadow);
-    this._shadowDoc.on('update', syncToMain);
-
-    this._shadowCleanup = () => {
-      mainDoc.off('update', syncToShadow);
-      this._shadowDoc?.off('update', syncToMain);
-      this._shadowDoc?.destroy();
-      this._shadowDoc = null;
-    };
-
+    this._shadowSession = session;
     this.isSimulationRunning = true;
     this.simOpCount = 0;
-    this.restartSimTimer();
+    try {
+      if (this.simulationMode === 'random-text') {
+        this.restartSimTimer();
+      } else {
+        this.imeRunnerState = createInitialImeRunnerState();
+        this._imeScenarioRunner = new ImeCollaborationScenarioRunner({
+          doc: editor.doc,
+          host: editor.doc.root.hostElement,
+          session,
+          autoEnabled: this.imeAutoEnabled,
+          delayMs: this.imeScenarioDelayMs,
+          onStateChange: state => {
+            this.imeRunnerState = state;
+            this.simOpCount = state.appliedCount;
+            this.cdr.markForCheck();
+          },
+          onError: error => console.warn('[playground] IME scenario failed', error),
+        });
+        this._imeScenarioRunner.start();
+      }
+    } catch (error) {
+      this.stopSimulation();
+      throw error;
+    }
+    this.cdr.markForCheck();
   }
 
   stopSimulation() {
@@ -2550,12 +2691,19 @@ $$
       clearInterval(this._simTimer);
       this._simTimer = null;
     }
-    this._shadowCleanup?.();
-    this._shadowCleanup = null;
+    this._imeScenarioRunner?.stop();
+    this._imeScenarioRunner = null;
+    this._shadowSession?.destroy();
+    this._shadowSession = null;
+    this.cdr.markForCheck();
   }
 
   private restartSimTimer() {
     if (this._simTimer) clearInterval(this._simTimer);
+    if (!this.isSimulationRunning || this.simulationMode !== 'random-text') {
+      this._simTimer = null;
+      return;
+    }
     this._simTimer = setInterval(() => {
       for (let i = 0; i < this.simUserCount; i++) {
         this.performRandomOp();
@@ -2565,20 +2713,22 @@ $$
 
   private performRandomOp() {
     const editor = this.editor;
-    if (!this._shadowDoc || !editor?.doc.isInitialized) return;
+    const session = this._shadowSession;
+    if (!session || !editor?.doc.isInitialized) return;
+    const shadowDoc = session.shadowDoc;
 
     const activeEditableIds = new Set<string>();
     const pendingBlockIds = [editor.doc.rootId];
     while (pendingBlockIds.length) {
-      const block = editor.doc.getBlockById(pendingBlockIds.pop()!);
-      if (editor.doc.isEditable(block)) {
-        activeEditableIds.add(block.id);
+      const blockId = pendingBlockIds.pop()!;
+      if (editor.doc.model.getNodeType(blockId) === BlockNodeType.editable) {
+        activeEditableIds.add(blockId);
         continue;
       }
-      pendingBlockIds.push(...block.childrenIds);
+      pendingBlockIds.push(...editor.doc.model.getChildrenIds(blockId));
     }
 
-    const shadowBlockMap = this._shadowDoc.getMap<Y.Map<any>>('blocks');
+    const shadowBlockMap = shadowDoc.getMap<Y.Map<any>>('blocks');
     const editableEntries: { id: string; yText: Y.Text }[] = [];
     shadowBlockMap.forEach((yBlock, id) => {
       if (!activeEditableIds.has(id)) return;
@@ -2602,7 +2752,7 @@ $$
     const textLen = target.yText.length;
     const chars = 'abcdefghij ';
 
-    this._shadowDoc.transact(() => {
+    session.transact(() => {
       if (textLen === 0 || Math.random() < 0.7) {
         const pos = Math.floor(Math.random() * (textLen + 1));
         const len = 1 + Math.floor(Math.random() * 3);

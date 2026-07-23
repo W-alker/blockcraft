@@ -336,12 +336,45 @@ describe("TableBlockComponent selection UI sync", () => {
         recalculate: jasmine.createSpy("recalculate"),
       },
     };
+    table._isGone = () => false;
     table._syncTableFocusUi = jasmine.createSpy("_syncTableFocusUi");
 
     table.refreshTableMenuFromSelection();
 
     expect(table._syncTableFocusUi).toHaveBeenCalledOnceWith(selection);
     expect(table.doc.selection.recalculate).not.toHaveBeenCalled();
+  });
+
+  it("ignores a delayed table menu refresh after the component is gone", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    table.doc = {selection: {value: {anchor: {blockId: "cell-1"}}}};
+    table._isGone = () => true;
+    table._syncTableFocusUi = jasmine.createSpy("_syncTableFocusUi");
+
+    table.refreshTableMenuFromSelection();
+
+    expect(table._syncTableFocusUi).not.toHaveBeenCalled();
+  });
+
+  it("drops a delayed table menu overlay after the table leaves the model graph", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    table.hostElement = host;
+    Object.defineProperty(table, "id", {value: "table-1"});
+    const readonlyLookup = jasmine.createSpy("isReadonly").and.throwError("stale readonly lookup");
+    table.doc = {
+      model: {exists: jasmine.createSpy("exists").and.returnValue(false)},
+      readonlyManager: {isReadonly: readonlyLookup},
+    };
+    table._disposeToolbar = jasmine.createSpy("_disposeToolbar");
+
+    table._showTableMenuOverlay();
+
+    expect(table.doc.model.exists).toHaveBeenCalledOnceWith("table-1");
+    expect(readonlyLookup).not.toHaveBeenCalled();
+    expect(table._disposeToolbar).toHaveBeenCalledTimes(1);
+    host.remove();
   });
 });
 

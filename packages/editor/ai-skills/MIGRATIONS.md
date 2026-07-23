@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-07-19 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-07-22 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,369 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-07-22 (minor) — add opt-in model-first root virtualization
+
+**Severity**: minor
+
+**What changed**: `DocConfig.virtualization` can now enable root-child view
+windowing. Yjs and `BlockModelGraph` stay complete while `DocVM` creates and
+mounts only viewport, overscan and selection-leased root subtrees. Spacer DOM,
+measured height correction and ID-based scroll anchoring preserve document
+geometry.
+
+**Why**: Selection and input no longer require every block component to exist,
+so large documents can reduce Angular/DOM cost without introducing a second
+data or selection model.
+
+**Affected ai-skills files**:
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-data.md`
+- `blockcraft-perf.md`
+- `blockcraft-plugins-block.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-selection.md`
+- `blockcraft-toolbar.md`
+
+### New APIs / Features
+
+- `DocConfig.virtualization?: VirtualizationConfig` with `enabled`, `overscan`,
+  `segmentMergeGap`, bounded `retainedViewLimit`, and per-flavour
+  `estimatedHeights`, plus optional `resolveViewRetention(context)` overrides.
+- Exported virtualization kernel types/utilities and
+  `RootVirtualizationManager`.
+- `BlockCraftDoc.virtualization` exposes the document-owned coordinator.
+- The bundled `EditorComponent.virtualizationEnabled` input selects whether its
+  internally constructed document enables virtualization. It defaults to
+  `true` and is applied once during component initialization.
+- `DocVM` supports root-only creation, retained subtree ensure/mount and sparse
+  root structural reconciliation.
+- `RootVirtualizationManager.ensureViewMounted(blockIds)` synchronously
+  materializes transient view capabilities without creating a persistent pin.
+- `RootVirtualizationManager.scrollToBlock(blockId)` resolves a stable nested or
+  root block ID, transiently mounts/pins its containing root unit, and returns a
+  promise that settles after bounded real-DOM center correction.
+- `RootVirtualizationManager.acquireBlockViewLease(blockIds)` synchronously
+  mounts and pins only the containing root units, follows stable IDs across
+  structure changes, and returns an idempotent release function.
+- `RootVirtualizationManager.viewChange$` emits deduplicated mounted root-ID
+  windows for view-bound plugin projection lifecycle.
+- `RootVirtualizationManager.acquireFullDocumentViewLease()` synchronously
+  mounts all root units for exact whole-document DOM capabilities and returns
+  an idempotent release function.
+- `BlockModelGraph.getTextDeltas(blockId)` and `textChange$` expose rich text
+  reads and changed block IDs without requiring mounted components.
+- `BlockModelGraph.synchronizeParentBeforeView(parentId)` is exported for
+  framework composition but marked `@internal`. It is the sparse-root write
+  pipeline's model-before-view barrier; extensions must continue to treat
+  `doc.model` as read-only.
+- `DocCRUD.replaceText(blockId, ...)` and `applyTextDelta(blockId, ...)` provide
+  readonly-guarded Yjs writes for reachable unmounted editable blocks.
+- `DocCRUD.formatText(blockId, index, length, attrs)` provides the corresponding
+  readonly-guarded rich-text formatting write without a ComponentRef.
+- `DocCRUD.updateBlockProps(blockId, patch)` provides the corresponding
+  readonly-guarded props write for reachable blocks without requiring a
+  ComponentRef. A `null` patch value deletes the key.
+- `DocCRUD.insertBlockSnapshots(parentId, index, snapshots)` inserts into a
+  reachable parent without requiring its ComponentRef and returns stable block
+  IDs without resolving inserted components for the caller. Existing parent
+  views still follow normal Yjs synchronization; `insertBlocks()` keeps its
+  synchronous component-returning contract.
+- `DocCRUD.replaceBlockSnapshots(blockId, snapshots)` replaces a reachable
+  non-root block and returns stable IDs without resolving replacement views.
+  `replaceWithSnapshots()` keeps its component-returning compatibility API.
+- `FindReplaceMatch.blockId` exposes stable model identity; its existing
+  `block` property remains available as a lazy view-materializing accessor.
+- `IBlockSchemaOptions.metadata.plainTextOnly?: boolean` declares an editable
+  flavour's model-level formatting capability. `BlockCraftDoc.isPlainTextBlock()`
+  resolves that capability without mounting the block; built-in `code` and
+  `mermaid-textarea` opt in.
+- `IBlockSchemaOptions.metadata.viewRetention?: 'virtual' | 'keep-alive'`
+  declares whether a materialized stateful block may leave the live document.
+  `BlockViewRetention`, `BlockViewRetentionContext`, and
+  `BlockViewRetentionResolver` are exported for custom schemas and host config.
+- `RootVirtualizationManager.bindBlockViewRetention(context)` binds the resolved
+  schema/host policy to one component lifetime. `BaseBlockComponent` invokes it
+  automatically; custom blocks normally only declare schema metadata.
+
+### Migration Recipe
+
+No migration is required because virtualization defaults to disabled. Opt in at
+document construction:
+
+```typescript
+new BlockCraftDoc({
+  // ...
+  virtualization: {
+    enabled: true,
+    overscan: 6,
+    retainedViewLimit: 12,
+    estimatedHeights: {paragraph: 32, table: 240},
+  },
+})
+```
+
+The bundled reference editor can opt out before initialization:
+
+```html
+<block-craft-editor [virtualizationEnabled]="false" />
+```
+
+Changing this input after `BlockCraftDoc` initialization is unsupported;
+destroy and recreate the component instead.
+
+Model-only integrations should use `doc.model`; `doc.vm` and
+`getBlockById()` continue to represent component availability.
+
+Custom editable flavours that set `component.plainTextOnly = true` should mirror
+that intrinsic capability in schema metadata so offscreen formatting commands
+can make the same decision:
+
+```typescript
+metadata: {
+  // ...
+  plainTextOnly: true,
+}
+```
+
+Custom iframe/media blocks that own browser-side state can opt in without
+writing lifecycle code:
+
+```typescript
+metadata: {
+  // ...
+  viewRetention: 'keep-alive',
+}
+```
+
+Hosts can override schema defaults globally:
+
+```typescript
+virtualization: {
+  enabled: true,
+  resolveViewRetention: ({flavour}) =>
+    flavour === 'video' ? 'virtual' : undefined,
+}
+```
+
+### Behavior Changes
+
+- With virtualization enabled, both `initByYBlock()` and `initBySnapshot()`
+  create only root initially. Snapshot input is fully materialized into Yjs and
+  `BlockModelGraph` before viewport children are created.
+- Healthy virtual reconciliation adds only constant-time local
+  revision/length checks. Detected height/index drift receives one cold rebuild;
+  a transient coordinator failure is retried for at most three consecutive
+  frames. Continued failure permanently switches that document to complete
+  root mounting and emits one message-service warning, favoring editability over
+  sparse-view memory until the document is disposed.
+- Direct root children are virtualization units. Nested subtrees are not
+  independently windowed.
+- Detached root component subtrees are retained in an LRU bounded by
+  `retainedViewLimit` (default 12, minimum 0). Eviction permanently destroys
+  the complete detached subtree; a later mount reconstructs it from current
+  Yjs state. Components synchronously returned by commands remain valid for the
+  current command but are not durable references across reconciliation frames.
+- Built-in `audio`, `video`, `embed`, `figma-embed`, and `juejin-embed` views
+  become keep-alive after first materialization. Their containing root unit
+  remains mounted until block deletion or document disposal, preserving iframe
+  and playback state. No initial scan/pre-mount occurs, active leases share one
+  pin source, and ordinary scroll frames perform no retention-policy work.
+- An active local selection pins only the direct root units containing its
+  ordered start/end while scrolling. Root boundary pairs keep their `[start,
+  end)` model semantics while intermediate units remain virtualized; a collapsed
+  root boundary pins only the adjacent caret-bearing unit, and a nested boundary
+  pins its containing root unit. Root-order transactions rebuild indices and
+  re-evaluate endpoint pins from stable IDs plus root boundary indices.
+- Local `.selected` / `.focused` presentation follows deduplicated mounted-root
+  windows and repaints newly mounted fragments from model coverage segments.
+  Selection liveness, copy, `getSelectedText()`, common-format reads and bulk
+  text/props formatting no longer require intermediate ComponentRefs.
+- A non-collapsed cross-root native Selection is reprojected after each
+  deduplicated mounted-root window change. Virtual-root boundary endpoints now
+  project inside the adjacent pinned block's inline/gap/host edge rather than
+  mutable root-container child offsets, so middle DOM mount/unmount cannot
+  rebase the browser live Range. Reprojection remains an endpoint-rerender
+  safety net, preserves backward anchor/focus, and is skipped only while a
+  primary pointer is actually held or during IME composition. A transient
+  dispatcher `isSelecting` flag from
+  programmatic full-select no longer blocks repair. While the matching bounded
+  endpoint mount/frame projection is pending, native `selectionchange` cannot
+  overwrite the canonical model range; a new primary pointer intent cancels
+  the retry. This does not add work to every raw scroll event or enumerate the
+  selected middle.
+- Internal block dragging acquires one targeted block-view lease for all source
+  blocks before clearing Selection. Edge auto-scroll can move beyond overscan
+  without detaching the source components, and every drop/cancel/destroy path
+  releases the lease through common teardown. Pointer movement performs no
+  additional lease calculation.
+- `DocOverlayService.createConnectedOverlay()` now treats an explicit
+  `BlockComponent` target as a block-owned interaction and automatically holds
+  its targeted view lease until close, CDK detach/dispose, creation rollback or
+  document teardown. `HTMLElement` targets keep their existing
+  close-on-disconnect behavior and acquire no lease. Open/close boundaries pay
+  the pin update; scroll and pointer paths do no additional lease work.
+- Collaborative `FakeRange` projections now follow the deduplicated virtual
+  root window. Offscreen remote endpoints stay model-only and reappear without
+  a new awareness message when mounted; cross-root remote selections paint only
+  mounted fragments. Remote positions acquire no local view lease, and each
+  window update checks only remote cursors against mounted root IDs rather than
+  scanning the document or complete selected ranges.
+- Root insert/delete/move/undo/redo captures one visible ID anchor across all
+  transactions coalesced into the next frame. The estimated target window is
+  mounted first, then the actual anchor host position supplies a final scroll
+  correction; ordinary scroll frames and nested-only structure changes do not
+  pay this work.
+- Undo/redo checks the restored head geometry before native Selection replay.
+  A head that is already fully visible leaves the viewport unchanged; an
+  offscreen or unavailable head delegates to virtual block navigation and is
+  centered when scroll bounds allow. This pre-replay check avoids mistaking the
+  browser's own minimal focus scroll for prior visibility.
+- Remote changes to uncreated blocks are model-only until mount and do not emit
+  missing-component warnings.
+- Deleting a temporary container and moving its child to another parent in one
+  transaction now destroys views by post-transaction model ownership. The
+  moved ComponentRef survives, and stale delayed events from the deleted parent
+  are ignored. This keeps drag-created columns undo/redo coherent without a
+  scroll-triggered rerender.
+- Imports and bulk writers can use `insertBlockSnapshots()` to avoid transient
+  Angular component creation for sparse-root/uncreated-parent inserts.
+  `insertBlocks()` delegates to the same validated Yjs write path, then
+  materializes views only to preserve its legacy return value. When that legacy
+  path runs inside an outer Yjs transaction, it synchronizes only the affected
+  parent into `BlockModelGraph` before Angular lifecycle hooks read the inserted
+  block; the later deep-observer pass detects the no-op and does not emit a
+  duplicate structure revision. Ordinary top-level inserts do not pay this
+  extra reconciliation.
+- `deleteBlocks()`, `deleteBlockById()` and `moveBlocks()` now resolve reachable
+  structure from Yjs/`BlockModelGraph`; source and target ComponentRefs are no
+  longer required. Offscreen mutations remain model-only, while mounted parents
+  still synchronize through the existing observer and preserve moved component
+  identity. Readonly guards, return values and root non-empty behavior remain
+  unchanged.
+- `nextSibling()` / `prevSibling()` materialize an adjacent virtual root unit
+  before returning its component, so keyboard navigation can cross an isolated
+  pinned segment or viewport boundary. This transient mount is reclaimed unless
+  the resulting Selection or viewport takes ownership.
+- Component-oriented programmatic Selection helpers materialize string targets
+  before resolving their block components. Table/cell targets are batched, and
+  `selectBlock(root)` materializes only its first/last endpoint units before the
+  endpoint selection lease takes ownership.
+- A virtualized Selection commit checks its bounded endpoint neighborhood and
+  synchronously materializes missing endpoint/boundary-adjacent views before
+  publishing `doc.selection.value`. Synchronous observers may therefore read
+  `firstBlock` / `lastBlock` without racing the next virtualization frame.
+  A retained but detached component counts as missing for DOM projection;
+  Selection uses the O(1) `DocVM.isMounted()` status before projecting an empty
+  caret, with no DOM connectivity or layout read.
+  Already-mounted commits do not trigger height, spacer, geometry, or
+  full-selection traversal; the endpoint lease remains frame-coalesced and
+  independent of selection length.
+- Undo/redo history restoration materializes only bookmark endpoint views before
+  relative-position resolution, including retained-but-detached and fully
+  LRU-evicted targets. It submits one scroll-visible model-first replay and waits
+  while that exact DOM projection is pending instead of republishing and
+  canceling it. After projection, the active selection head is revealed in the
+  editor viewport and bounded verification repairs only genuine focus or
+  DOM/model mismatch.
+- Find/replace scans and incrementally updates against the complete model. It
+  does not mount blocks while indexing or replacing all; active result
+  navigation materializes one root unit, and passive highlights follow the
+  mounted virtual window.
+- `OrderedBlockPlugin` queues stable IDs, computes numbering from the complete
+  `BlockModelGraph` sibling sequence, and writes derived `order` props through
+  `DocCRUD`. Missing offscreen components no longer abort a renumber pass, and
+  sorting does not materialize those components.
+- `MarkdownStreamRenderer` preserves its incremental ID-stable diff semantics,
+  but now reads complete structure/text/props from `BlockModelGraph` and writes
+  through `DocCRUD`. Streaming can patch, insert, delete or replace offscreen
+  root blocks without mounting them or accessing raw Yjs values.
+- `BlockCraftDoc` publishes the configured whole-document readonly policy before
+  `afterInit` callbacks and plugin registration. Initialization observers no
+  longer see the temporary protected bootstrap state, and immediate guarded
+  writes are checked against `DocConfig.readonly`.
+- Full-document JSON/Markdown/PDF export and pagination printing obtain their
+  snapshots through `doc.exportSnapshot()`. Offscreen virtual blocks remain in
+  the output without materializing their Angular views.
+- Root blank-area/gap hit-testing reads only mounted root views; it never walks
+  unmounted siblings to answer a DOM coordinate query.
+- Live pagination automatically owns a full-document view lease while enabled,
+  including root blocks inserted during the lease, and releases it after all
+  pagination view effects are cleared. Exact pagination therefore suspends
+  root virtualization's mount/memory savings until pagination is disabled.
+- Permanent full-mount fallback first repairs mounted root order from the
+  canonical model, clears all virtual spacers and disconnects height tracking.
+  Scroll/resize no longer schedules window work in fallback mode, and stale
+  estimated geometry cannot keep the document blank after a mount failure.
+- `packages/editor/package.json` remains unchanged because release numbering is
+  user-owned.
+
+### v?.?.? - 2026-07-19 (major) — separate retained views from permanent block destruction
+
+**Severity**: major
+
+**What changed**: `BaseBlockComponent.detach()` now enters an idempotent
+`retained` view state without emitting or completing `onDestroy$`.
+`reattach()` recreates view-only state from the current Yjs model and returns
+the block to `mounted`. Permanent Angular destruction remains the only source
+of `onDestroy$`.
+
+**Why**: Virtual rendering must temporarily remove expensive view state while
+keeping the component and its document subscriptions reusable. Treating a
+reversible detach as permanent destruction silently completed subscriptions,
+left inline/embed resources behind, and made a later reattach incomplete.
+
+**Affected ai-skills files**:
+- `blockcraft-block.md`
+
+### Breaking Changes
+
+- Code that relied on `detach()` emitting `onDestroy$` must move temporary
+  view cleanup to `onDetach$` or `beforeDetach()`.
+
+### New APIs / Features
+
+- Exported `BlockViewState` with `mounted`, `retained`, and `destroyed` states.
+- `BaseBlockComponent.viewState` and `isAttached`.
+- `BaseBlockComponent.onDetach$` and `onReattach$`.
+- Protected `beforeDetach()` and `afterReattach()` lifecycle hooks.
+
+### Migration Recipe
+
+Keep permanent subscriptions bound to component destruction, and separate
+temporary view resources explicitly:
+
+```typescript
+// before: detach() also completed this subscription
+source$.pipe(takeUntil(this.onDestroy$)).subscribe(...)
+
+// after: permanent document/component subscription remains alive
+source$.pipe(takeUntil(this.onDestroy$)).subscribe(...)
+
+// release and recreate only DOM/view resources across virtualization
+protected override beforeDetach() {
+  this.overlay?.dispose()
+}
+
+protected override afterReattach() {
+  this.renderFromCurrentModel()
+}
+```
+
+### Behavior Changes
+
+- Repeated `detach()` and `reattach()` calls are no-ops after the first valid
+  transition.
+- Permanent destruction of a still-mounted component invokes `beforeDetach()`
+  once before broadcasting `onDestroy$`.
+- `EditableBlockComponent` destroys its inline runtime while retained, ignores
+  detached DOM patches, and rebuilds from the latest Y.Text on reattach.
+- Inline teardown removes retained DOM and invokes each embed converter's
+  `onDestroy` exactly once.
+- `packages/editor/package.json` remains unchanged because release numbering is
+  user-owned.
 
 ### v?.?.? - 2026-07-19 (minor) — make selection structure model-resolvable
 

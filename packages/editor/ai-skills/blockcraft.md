@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-07-19 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-07-22 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -32,6 +32,7 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | **Inline** | Rich text within editable blocks; Blot tree on Y.Text | `InlineRuntime` in `framework/block-std/inline/` |
 | **Selection** | Anchor/head selection model over blocks | `SelectionManager` in `framework/modules/selection/` |
 | **Input** | Intercepts `beforeInput`, writes to Y.Text directly | `InputTransformer` in `framework/modules/input/` |
+| **Virtualization** | Optional model-first root-child windowing; nested subtrees stay atomic | `RootVirtualizationManager` in `framework/modules/virtualization/` |
 | **Pagination** | Pure page layout + reversible live view + print/PDF | `PaginationPlugin` + `framework/modules/pagination/` |
 | **Event** | Three-tier event dispatcher (block→flavour→global) | `UIEventDispatcher` in `framework/block-std/event/` |
 | **Chain** | Fluent builder for sequencing mutations | `DocChain` in `framework/chain/` |
@@ -69,7 +70,7 @@ packages/editor/
 │   │   ├── inline/         #   InlineRuntime, Blot tree, EmbedConverter
 │   │   ├── schema/         #   SchemaManager, IBlockSchemaOptions
 │   │   └── reactive/       #   proxyMap, YBlock, NativeBlockModel
-│   ├── modules/            # SelectionManager, InputTransformer, ClipboardManager
+│   ├── modules/            # Selection, Input, Clipboard, Pagination, Virtualization
 │   ├── plugin/             # DocPlugin base class
 │   ├── chain/              # DocChain fluent builder
 │   └── services/           # DI tokens (file, message, blockCreator, etc.)
@@ -127,7 +128,18 @@ const path = doc.model.getPath(blockId)
 const parentId = doc.model.getParentId(blockId)
 const childrenIds = doc.model.getChildrenIds(blockId)
 const textLength = doc.model.getTextLength(blockId)
+const richText = doc.model.getTextDeltas(blockId)
 const snapshot = doc.model.toSnapshot(blockId)
+const documentSnapshot = doc.exportSnapshot()
+
+// Model-first mutation: writes Yjs and returns stable IDs without requiring a
+// parent ComponentRef or resolving inserted child components.
+const insertedIds = doc.crud.insertBlockSnapshots(parentId, index, snapshots)
+
+// ID/index structural mutations also resolve against the complete model graph.
+doc.crud.deleteBlocks(parentId, index, count)
+doc.crud.deleteBlockById(blockId)
+doc.crud.moveBlocks(parentId, index, count, targetParentId, targetIndex)
 ```
 
 `doc.model` is read-only. Use `DocCRUD` / `DocChain` for every mutation. Model
@@ -135,6 +147,115 @@ existence means the YBlock is reachable from the current root; it does not mean
 `doc.vm` has mounted a component. `getBlockById()` keeps its mounted-component
 semantics and can still throw for an unmounted block. Structure/order/snapshot
 queries should prefer `doc.model` when component capabilities are not required.
+Use `doc.exportSnapshot()` for full-document persistence/export; it reads the
+complete model without mounting virtualized block views.
+Use `doc.crud.insertBlockSnapshots()` for imports or bulk/model workflows that
+only need inserted IDs. Existing parent views still synchronize through the
+normal Yjs observer. Keep `insertBlocks()` for interaction code that needs its
+synchronous `BlockComponent[]` compatibility result.
+`deleteBlocks()`, `deleteBlockById()` and `moveBlocks()` likewise operate on
+reachable YBlocks and do not require source or target ComponentRefs. Mounted
+views receive the same transaction through the normal observer; unmounted
+subtrees stay model-only until they are mounted.
+
+### Root Virtualization
+
+```typescript
+const doc = new BlockCraftDoc({
+  // ...required config
+  virtualization: {
+    enabled: true,
+    overscan: 6,
+    segmentMergeGap: 2,
+    retainedViewLimit: 12,
+    estimatedHeights: {paragraph: 32, table: 240},
+    resolveViewRetention: ({flavour}) =>
+      flavour === 'custom-player' ? 'keep-alive' : undefined,
+  },
+})
+```
+
+The bundled reference `<block-craft-editor>` accepts the initialization-only
+`[virtualizationEnabled]` input (default `true`). Recreate that component to
+change modes; direct framework integrations configure
+`DocConfig.virtualization` when constructing `BlockCraftDoc`.
+
+This is opt-in and disabled by default. Direct root children are windowed;
+their nested tables/columns/callouts remain complete atomic subtrees. Selection
+pins only the direct-root units containing its ordered start/end while it is
+active. For `boundary(i) -> boundary(j)`, those are the children adjacent to the
+two half-open edges; a collapsed root boundary owns the nearest caret-bearing
+unit, while a nested selection owns only its containing root unit. The selected
+middle remains virtualized and is represented by the canonical model range;
+small endpoint gaps may still be coalesced by `segmentMergeGap`. Both Snapshot
+and YBlock initialization build the complete Yjs/model tree before creating
+only the root view. Root-order transactions rebuild root indices and re-evaluate
+selection/projection leases from stable endpoint IDs plus root boundary indices,
+then restore the first visible block's viewport offset after
+insert/delete/move/undo/redo. Undo/redo and `doc.model` continue to cover the
+full document. History restoration transiently materializes only its bookmark
+endpoints before relative resolution and measures the resolved head before
+native Selection replay. A fully visible head leaves the viewport untouched;
+an offscreen or unavailable head is replayed and then centered through
+`doc.virtualization.scrollToBlock(head.blockId)`. Verification waits for that
+projection instead of restarting and canceling it.
+Component-oriented navigation and programmatic Selection helpers
+materialize only explicitly targeted root units. Their preflight distinguishes
+retained components from mounted DOM through `DocVM.isMounted()`, so a newly
+created empty block is mounted before its zero-offset caret is projected. This
+transient view does not become a persistent pin unless the resulting Selection
+or viewport owns it.
+Unmounted component subtrees are kept in a bounded LRU cache
+(`retainedViewLimit`, default `12`; use `0` for immediate destruction) and are
+rebuilt from current Yjs state after eviction. Do not retain component
+references across virtual reconciliation frames.
+Stateful schemas can set `metadata.viewRetention: 'keep-alive'`. Once such a
+view first materializes, its containing root render unit stays mounted until
+block deletion or document disposal; no initial document scan is performed.
+Built-in audio, video and iframe embed flavours opt in. Hosts can override a
+schema through `virtualization.resolveViewRetention(context)`, including forcing
+a built-in block back to `'virtual'`. Policy resolution and lease updates are
+cold mount/structure work and add no callback or layout read to scroll frames.
+Ordinary reconciliation also performs only constant-time local
+revision/length checks. Detected index/height drift is rebuilt on a cold path;
+three consecutive reconciliation failures permanently switch that document to
+complete root mounting and issue one host message warning, preserving editing
+when sparse rendering cannot recover. The fallback first reconciles canonical
+root order, clears all virtual spacers and stops height/scroll window work so a
+failed mount cannot leave stale blank geometry behind.
+`doc.virtualization.viewChange$` emits only when the mounted root-ID window
+actually changes, allowing view plugins to bind and release DOM projections
+without subscribing directly to scroll events.
+Local selection classes consume the same signal: only mounted covered blocks
+receive `.selected` / `.focused`, and newly mounted fragments are repainted
+from the current model selection without enumerating the complete range. A
+non-collapsed virtual-root boundary Range anchors inside its adjacent pinned
+block edges rather than mutable offsets on the root container, so replacing
+intermediate DOM cannot shrink it. The Range is also reasserted from the
+canonical model after each changed mounted-ID window as an endpoint-rerender
+safety net. The repair preserves
+anchor/head direction, touches only endpoint views, and is skipped during
+an actual held primary-pointer drag and IME composition. While its bounded
+endpoint projection is pending, transient browser `selectionchange` cannot
+shrink the canonical model selection; a new pointer intent cancels that retry.
+`doc.virtualization.scrollToBlock(blockId)` is the explicit stable-ID
+navigation API. It uses the height index for an estimated jump, mounts only the
+containing root unit, then measures the requested nested/root host until its
+center is stable (or bounded by the document edge). Navigation holds a
+transient pin only for that bounded operation.
+Collaboration cursors consume that deduplicated window to reproject only their
+mounted `FakeRange` fragments. Remote selections never pin local block views;
+scroll coordination is bounded by remote cursor count and mounted root count,
+not document or selected-range length.
+Temporary view-bound interactions can hold
+`doc.virtualization.acquireBlockViewLease(blockIds)`. The lease mounts only the
+containing root units, follows stable IDs across structure changes, and must be
+released from symmetric teardown. Internal block dragging uses it for sources
+after Selection is cleared, without adding work to pointer movement.
+Exact whole-document view consumers can hold
+`doc.virtualization.acquireFullDocumentViewLease()` and must release the
+returned function. Live pagination manages this automatically; ordinary
+model-only capabilities must stay on `doc.model` / `doc.exportSnapshot()`.
 
 ### Block-Level Readonly
 
@@ -185,7 +306,7 @@ await pagination.print()
 pagination.disable()
 ```
 
-分页启用状态属于插件，不属于 `DocConfig`；不要使用 `DocConfig.pagination` 或 `doc.pagination`。插件关闭时会移除页框、块间距、表格视图断点和高度锁定，且不会写入 Yjs。`exportToPdf()` 使用真实只读 BlockCraft 组件；不传 `pagination` override 时复用当前稳定分页结果，snapshot-viewer 不参与分页 PDF。浏览器走系统打印，Tauri 等宿主通过 `PaginationPdfHostBackend` 打印当前顶层导出 WebView；正文不经过 DOM 栅格化。
+分页启用状态属于插件，不属于 `DocConfig`；不要使用 `DocConfig.pagination` 或 `doc.pagination`。插件关闭时会移除页框、块间距、表格视图断点和高度锁定，且不会写入 Yjs。虚拟化开启时，实时分页会自动持有整文档视图租约以获得精确几何，关闭后恢复窗口化；超长文档因此会在分页启用期间承担全量视图成本。`exportToPdf()` 使用真实只读 BlockCraft 组件；不传 `pagination` override 时复用当前稳定分页结果，snapshot-viewer 不参与分页 PDF。浏览器走系统打印，Tauri 等宿主通过 `PaginationPdfHostBackend` 打印当前顶层导出 WebView；正文不经过 DOM 栅格化。
 
 `DocExportManager` 只提供 JSON、Markdown 与 PDF/打印导出，不再提供 `exportToJpeg()` 或 DOM-to-image 渲染配置。需要位图截图的宿主应在应用层选择并维护独立的截图方案。
 
@@ -269,6 +390,9 @@ import { BlockCraftAwareness } from '@ccc/blockcraft/editor/awa'
 const cursorAwareness = new BlockCraftAwareness(doc, provider.awareness)
 cursorAwareness.setLocalUser(currentUser)
 
+// With root virtualization, offscreen remote selections remain model-only and
+// reappear automatically when their root units enter this client's view.
+
 // Required when leaving a room without destroying the document.
 cursorAwareness.destroy()
 ```
@@ -322,11 +446,23 @@ doc.selection.getSelectedText()         // string
 // from BlockModelGraph parentId/childrenIds, not mounted components, DOM
 // compareDocumentPosition or layout reads. Liveness, boundary coverage and text
 // edge predicates also stay valid while endpoint components are virtualized.
+// Before broadcasting, SelectionManager checks only endpoint IDs plus
+// boundary-adjacent children and synchronously materializes that neighborhood
+// when a view is missing. This keeps firstBlock/lastBlock safe for synchronous
+// observers without mounting the full selected range on the input hot path.
 // If a live selection cannot be projected because its DOM is still mounting,
 // the model remains canonical. An optional SelectionProjectionMountAdapter can
 // mount only endpoint IDs plus boundary-adjacent children before SelectionManager
-// performs its bounded, version-guarded projection retry. The middle selected
-// range is never pinned. Explicit blur/stale endpoints still clear it.
+// performs its bounded, version-guarded projection retry. Root virtualization
+// additionally leases only the root render units containing the two endpoints.
+// Root boundary pairs keep [start, end) model semantics while their middle can
+// unmount; a collapsed root boundary leases the adjacent caret unit. Selection
+// changes or blur release units no longer owned. Copy, selected-text reads and
+// toolbar formatting resolve covered middle blocks from BlockModelGraph/Yjs.
+// Deduplicated mounted-window changes reassert non-collapsed cross-root DOM
+// anchor/focus from the model without scanning the selected middle or running
+// on every raw scroll event.
+// Explicit blur/stale endpoints still clear the canonical selection.
 // A revisioned internal Relative Selection Bookmark maps the current local
 // selection through relevant remote Yjs text/children changes before DOM is
 // considered. Text/boundary endpoints use Y.RelativePosition; ancestor-only
@@ -462,6 +598,9 @@ onBold(ctx: UIEventStateContext) { ... }
 - Never write `block.props`, `block.meta`, `Y.Text`, or `Y.Map` directly from a
   plugin. The guarded Block/DocChain/DocCRUD APIs enforce block readonly and
   keep local, remote, undo, and rendering paths consistent.
+- Full-document transforms must query `BlockModelGraph` and use model-first
+  `DocCRUD` mutations. `MarkdownStreamRenderer` follows this boundary so an
+  offscreen root block can be patched or replaced without component creation.
 - `DocCRUD.deleteBlocks()` does not reposition selection after inserting the fallback paragraph for an emptied `renderUnit`. The owning Input/plugin action explicitly commits the final caret/range through model-first Selection APIs; it must not rely on write-after-`recalculate()` DOM sampling.
 - Global type declarations use `declare global { namespace BlockCraft { ... } }`
 - Icons use the iconfont class system: `<i class="bc_icon bc_xxx"></i>` (no PNGs, no inline SVGs except for multi-color)
@@ -504,7 +643,7 @@ When you need deep historical/design context beyond the L1/L2 sub-skills, read t
 | Document | Path | Content |
 |----------|------|---------|
 | Full Architecture | `packages/editor/ARCHITECTURE.md` | Complete technical architecture (~1230 lines) |
-| Virtual Rendering | `packages/editor/VIRTUAL_RENDERING.md` | Planned virtual rendering design |
+| Virtual Rendering | `framework/modules/virtualization/` | Current model-first root virtualization implementation |
 | Synced Blocks | `packages/editor/SYNCED_BLOCK.md` | Planned shared content design |
 
 > The L2 deep-dive markdowns in this folder (`blockcraft-selection.md`, `blockcraft-input.md`, etc.) are the **current** source of truth for live mechanisms. The above ARCHITECTURE/SYNCED/VIRTUAL files are background and forward-looking design docs.

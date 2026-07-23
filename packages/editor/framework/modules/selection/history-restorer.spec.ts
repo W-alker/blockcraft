@@ -57,6 +57,11 @@ describe('SelectionHistoryRestorer', () => {
         'replay',
         'readModelSelection',
         'readDomSelection',
+        'isProjectionPending',
+        'isSelectionVisible',
+        'ensureViewMounted',
+        'scrollToBlock',
+        'scrollSelectionIntoView',
       ],
     )
     surface = jasmine.createSpyObj<SelectionSurfaceAdapter>(
@@ -71,6 +76,10 @@ describe('SelectionHistoryRestorer', () => {
     )
     surface.hasEditorFocus.and.returnValue(true)
     surface.isRootConnected.and.returnValue(true)
+    host.isProjectionPending.and.returnValue(false)
+    host.isSelectionVisible.and.returnValue(false)
+    host.ensureViewMounted.and.stub()
+    host.scrollToBlock.and.returnValue(false)
     surface.requestFrame.and.callFake(callback => requestAnimationFrame(callback))
     surface.cancelFrame.and.callFake(frame => cancelAnimationFrame(frame))
     host.replay.and.callFake((selection: ISelectionJSON | null) => {
@@ -91,6 +100,8 @@ describe('SelectionHistoryRestorer', () => {
     expect(host.replay).not.toHaveBeenCalled()
     await nextTick()
     expect(host.replay).toHaveBeenCalledWith(expected)
+    expect(host.scrollToBlock).toHaveBeenCalledOnceWith('first')
+    expect(host.scrollSelectionIntoView).toHaveBeenCalledTimes(1)
   })
 
   it('retries until a restored block component becomes available', async () => {
@@ -107,6 +118,45 @@ describe('SelectionHistoryRestorer', () => {
     await waitFrames(1)
 
     expect(host.replay).toHaveBeenCalledWith(expected)
+  })
+
+  it('mounts bookmark endpoints before resolving an evicted selection', async () => {
+    const expected = selected('late')
+    let mounted = false
+    doc.getBlockById = (id: string) => {
+      if (id !== 'late' || !mounted) throw new Error('view is not mounted')
+      return blocks['late']
+    }
+    host.ensureViewMounted.and.callFake(() => {
+      mounted = true
+    })
+
+    restorer.restore(bookmark(expected))
+    await nextTick()
+
+    expect(host.ensureViewMounted).toHaveBeenCalledOnceWith(['late'])
+    expect(host.replay).toHaveBeenCalledOnceWith(expected)
+  })
+
+  it('does not restart replay while the matching DOM projection is pending', async () => {
+    const expected = selected('first')
+    host.isProjectionPending.and.returnValue(true)
+    host.replay.and.callFake((selection: ISelectionJSON | null) => {
+      host.readModelSelection.and.returnValue(selection)
+      host.readDomSelection.and.returnValue(null)
+    })
+
+    restorer.restore(bookmark(expected))
+    await nextTick()
+    await waitFrames(2)
+
+    expect(host.replay).toHaveBeenCalledOnceWith(expected)
+
+    host.isProjectionPending.and.returnValue(false)
+    host.readDomSelection.and.returnValue(expected)
+    await waitFrames(1)
+
+    expect(host.replay).toHaveBeenCalledTimes(1)
   })
 
   it('reprojects when focus is dropped after the first replay', async () => {
@@ -140,6 +190,19 @@ describe('SelectionHistoryRestorer', () => {
     await waitFrames(2)
 
     expect(host.replay).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not steal a newer model selection during a delayed verification frame', async () => {
+    const expected = selected('first')
+    const newer = selected('second')
+
+    restorer.restore(bookmark(expected))
+    await nextTick()
+    host.readModelSelection.and.returnValue(newer)
+    host.readDomSelection.and.returnValue(newer)
+    await waitFrames(2)
+
+    expect(host.replay).toHaveBeenCalledOnceWith(expected)
   })
 
   it('keeps only the newest pending history restore', async () => {
@@ -179,5 +242,46 @@ describe('SelectionHistoryRestorer', () => {
 
     expect(host.replay).toHaveBeenCalledWith(tableSelection)
     expect(host.readDomSelection).not.toHaveBeenCalled()
+  })
+
+  it('delegates viewport placement to virtual block navigation only once', async () => {
+    const expected = selected('first')
+    host.scrollToBlock.and.returnValue(true)
+    let replayCount = 0
+    host.replay.and.callFake((selection: ISelectionJSON | null) => {
+      host.readModelSelection.and.returnValue(selection)
+      host.readDomSelection.and.returnValue(replayCount++ === 0 ? selected('second') : selection)
+    })
+
+    restorer.restore(bookmark(expected))
+    await nextTick()
+    await waitFrames(2)
+
+    expect(host.scrollToBlock).toHaveBeenCalledOnceWith('first')
+    expect(host.scrollSelectionIntoView).not.toHaveBeenCalled()
+    expect(host.replay).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the viewport stable when the restored selection was already visible', async () => {
+    const expected = selected('first')
+    const callOrder: string[] = []
+    host.isSelectionVisible.and.callFake(() => {
+      callOrder.push('visibility')
+      return true
+    })
+    host.replay.and.callFake((selection: ISelectionJSON | null) => {
+      callOrder.push('replay')
+      host.readModelSelection.and.returnValue(selection)
+      host.readDomSelection.and.returnValue(selection)
+    })
+
+    restorer.restore(bookmark(expected))
+    await nextTick()
+
+    expect(host.isSelectionVisible).toHaveBeenCalledOnceWith(expected)
+    expect(host.replay).toHaveBeenCalledOnceWith(expected)
+    expect(callOrder.slice(0, 2)).toEqual(['visibility', 'replay'])
+    expect(host.scrollToBlock).not.toHaveBeenCalled()
+    expect(host.scrollSelectionIntoView).not.toHaveBeenCalled()
   })
 })

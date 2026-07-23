@@ -1,4 +1,4 @@
-import {Component, ElementRef, Injector, Input, OnDestroy, ViewChild} from "@angular/core";
+import {Component, ElementRef, Injector, Input, OnDestroy, OnInit, ViewChild} from "@angular/core";
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
   BlockCraftDoc,
@@ -198,9 +198,10 @@ const schemas = new SchemaManager([
     MyCommentService,
   ],
 })
-export class EditorComponent implements OnDestroy {
+export class EditorComponent implements OnInit, OnDestroy {
   @ViewChild("container", { read: ElementRef }) container!: ElementRef;
   @Input() stickyTop = 0;
+  @Input() virtualizationEnabled = true;
   constructor(
     private injector: Injector,
     private logger: ConsoleLogger,
@@ -247,114 +248,140 @@ export class EditorComponent implements OnDestroy {
     printShortcut: true,
   });
 
-  doc = new BlockCraftDoc({
-    yDoc: new Y.Doc({
-      guid: this.docId,
-      gc: false,
-    }),
-    docId: this.docId,
-    schemas: schemas,
-    logger: this.logger,
-    injector: this.injector,
-    embeds: [
-      [
-        "mention",
-        {
-          toView: (embed) => {
-            const span = document.createElement("span");
-            span.textContent = embed.insert["mention"] as string;
-            // InlineManager.setAttrs(span, embed.attributes!)
-            span.setAttribute(
-              "data-mention-id",
-              (embed.attributes!["mentionId"] ||
-                embed.attributes!["d:mentionId"]) as string,
-            );
-            span.setAttribute(
-              "data-mention-type",
-              (embed.attributes!["mentionType"] ||
-                embed.attributes!["d:mentionType"]) as string,
-            );
-            return span;
-          },
-          toDelta: (ele) => {
-            return {
-              insert: { mention: ele.textContent! },
-              attributes: {
-                mentionId: ele.getAttribute("data-mention-id")!,
-                mentionType: ele.getAttribute("data-mention-type"),
-              },
-            };
-          },
-        },
-      ],
-      [
-        "latex",
-        {
-          toView: (embed) => {
-            const span = document.createElement("span");
-            span.classList.add("inline-formula");
-            const latex = (embed.insert["latex"] || "") as string;
-            span.setAttribute("data-latex", latex);
-            try {
-              katex.render(latex, span, {
-                output: "mathml",
-                throwOnError: false,
-              });
-            } catch {
-              span.textContent = latex;
-            }
-            return span;
-          },
-          toDelta: (ele) => {
-            return {
-              insert: {
-                latex: ele.getAttribute("data-latex") || ele.textContent || "",
-              },
-              attributes: InlineManager.getAttrs(ele),
-            };
-          },
-        },
-      ],
-    ],
-    plugins: [
-      new OrderedBlockPlugin(),
-      new CodeInlineEditorBinding(),
-      new FloatTextToolbarPlugin(),
-      new BlockTransformerPlugin(),
-      this.blockControllerPlugin,
-      new TableBlockBinding(),
-      new PasteFormatSelectorPlugin(),
-      new PlaceholderPlugin(),
-      new ImgToolbarPlugin(),
-      new CalloutToolbarPlugin(),
-      new AttachmentExtensionPlugin(),
-      new EmbedFrameExtensionPlugin(),
-      new BookmarkBlockExtensionPlugin(),
-      new FormulaBlockExtensionPlugin(),
-      new InlineLinkExtension((link) => {
-        if (link.startsWith("http://doc-pre.com")) {
-          window.open(
-            link.replace("http://doc-pre.com", "http://localhost:8081/test3"),
-            "_blank",
-          );
-        } else window.open(link, "_blank");
+  doc!: BlockCraftDoc;
+
+  private createDoc(): BlockCraftDoc {
+    return new BlockCraftDoc({
+      yDoc: new Y.Doc({
+        guid: this.docId,
+        gc: false,
       }),
-      new MentionPlugin({
-        panel: createDefaultMentionPanel({
-          request: mentionRequest,
+      docId: this.docId,
+      schemas: schemas,
+      logger: this.logger,
+      injector: this.injector,
+      virtualization: {
+        enabled: this.virtualizationEnabled,
+        overscan: 6,
+        segmentMergeGap: 2,
+        estimatedHeights: {
+          paragraph: 32,
+          ordered: 32,
+          bullet: 32,
+          todo: 36,
+          divider: 24,
+          callout: 120,
+          code: 160,
+          table: 240,
+          columns: 180,
+          image: 320,
+        },
+      },
+      embeds: [
+        [
+          "mention",
+          {
+            toView: (embed) => {
+              const span = document.createElement("span");
+              span.textContent = embed.insert["mention"] as string;
+              // InlineManager.setAttrs(span, embed.attributes!)
+              span.setAttribute(
+                "data-mention-id",
+                (embed.attributes!["mentionId"] ||
+                  embed.attributes!["d:mentionId"]) as string,
+              );
+              span.setAttribute(
+                "data-mention-type",
+                (embed.attributes!["mentionType"] ||
+                  embed.attributes!["d:mentionType"]) as string,
+              );
+              return span;
+            },
+            toDelta: (ele) => {
+              return {
+                insert: { mention: ele.textContent! },
+                attributes: {
+                  mentionId: ele.getAttribute("data-mention-id")!,
+                  mentionType: ele.getAttribute("data-mention-type"),
+                },
+              };
+            },
+          },
+        ],
+        [
+          "latex",
+          {
+            toView: (embed) => {
+              const span = document.createElement("span");
+              span.classList.add("inline-formula");
+              const latex = (embed.insert["latex"] || "") as string;
+              span.setAttribute("data-latex", latex);
+              try {
+                katex.render(latex, span, {
+                  output: "mathml",
+                  throwOnError: false,
+                });
+              } catch {
+                span.textContent = latex;
+              }
+              return span;
+            },
+            toDelta: (ele) => {
+              return {
+                insert: {
+                  latex:
+                    ele.getAttribute("data-latex") || ele.textContent || "",
+                },
+                attributes: InlineManager.getAttrs(ele),
+              };
+            },
+          },
+        ],
+      ],
+      plugins: [
+        new OrderedBlockPlugin(),
+        new CodeInlineEditorBinding(),
+        new FloatTextToolbarPlugin(),
+        new BlockTransformerPlugin(),
+        this.blockControllerPlugin,
+        new TableBlockBinding(),
+        new PasteFormatSelectorPlugin(),
+        new PlaceholderPlugin(),
+        new ImgToolbarPlugin(),
+        new CalloutToolbarPlugin(),
+        new AttachmentExtensionPlugin(),
+        new EmbedFrameExtensionPlugin(),
+        new BookmarkBlockExtensionPlugin(),
+        new FormulaBlockExtensionPlugin(),
+        new InlineLinkExtension((link) => {
+          if (link.startsWith("http://doc-pre.com")) {
+            window.open(
+              link.replace("http://doc-pre.com", "http://localhost:8081/test3"),
+              "_blank",
+            );
+          } else window.open(link, "_blank");
         }),
-      }),
-      new DividerExtensionPlugin(),
-      new FindReplacePlugin(),
-      this.translatePlugin,
-      new BlockGapCreatorPlugin(),
-      this.paginationPlugin,
-      // 代码块 / mermaid 源码的仅颜色工具栏：rich text 由上面的 FloatTextToolbarPlugin
-      // 负责（它对 plainTextOnly 块会跳过），这里只补充这些 plainTextOnly 块的颜色覆盖，
-      // 二者互不重叠。('mermaid-textarea' 是 mermaid 块里可编辑的源码子块)
-      new TextMarkerPlugin([], ["code", "mermaid-textarea"]),
-    ],
-  });
+        new MentionPlugin({
+          panel: createDefaultMentionPanel({
+            request: mentionRequest,
+          }),
+        }),
+        new DividerExtensionPlugin(),
+        new FindReplacePlugin(),
+        this.translatePlugin,
+        new BlockGapCreatorPlugin(),
+        this.paginationPlugin,
+        // 代码块 / mermaid 源码的仅颜色工具栏：rich text 由上面的 FloatTextToolbarPlugin
+        // 负责（它对 plainTextOnly 块会跳过），这里只补充这些 plainTextOnly 块的颜色覆盖，
+        // 二者互不重叠。('mermaid-textarea' 是 mermaid 块里可编辑的源码子块)
+        new TextMarkerPlugin([], ["code", "mermaid-textarea"]),
+      ],
+    });
+  }
+
+  ngOnInit() {
+    this.doc = this.createDoc();
+  }
 
   ngOnDestroy() {}
 

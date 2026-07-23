@@ -8,22 +8,37 @@ describe('PaginationPlugin', () => {
     rootHost.setAttribute('data-blockcraft-root', 'true')
     scrollContainer.appendChild(rootHost)
 
+    const exportSnapshot = jasmine.createSpy('exportSnapshot').and.returnValue({
+      id: 'root',
+      flavour: 'root',
+      nodeType: 'block',
+      props: {},
+      meta: {},
+      children: [],
+    })
+    const rootToSnapshot = jasmine.createSpy('toSnapshot')
+
     return {
       scrollContainer,
       rootHost,
+      exportSnapshot,
+      rootToSnapshot,
       doc: {
         isInitialized: true,
         config: {scrollContainer},
         root: {
           hostElement: rootHost,
           childrenIds: [],
+          toSnapshot: rootToSnapshot,
         },
+        exportSnapshot,
         event: {bindHotkey: jasmine.createSpy('bindHotkey')},
         ngZone: {runOutsideAngular: (fn: () => void) => fn()},
         onChildrenUpdate$: new Subject<void>(),
         onPropsUpdate$: new Subject<void>(),
         getBlockById: () => null,
         afterInit: (fn: () => void) => fn(),
+        logger: {warn: jasmine.createSpy('warn')},
       } as unknown as BlockCraft.Doc,
     }
   }
@@ -85,5 +100,119 @@ describe('PaginationPlugin', () => {
 
     plugin.destroy()
     expect(signal.aborted).toBeTrue()
+  })
+
+  it('takes print snapshots from the model without traversing the root view', async () => {
+    const {doc, exportSnapshot, rootToSnapshot} = createDoc()
+    exportSnapshot.and.throwError('stop-after-model-snapshot')
+    const plugin = new PaginationPlugin()
+    ;(plugin as unknown as {doc: BlockCraft.Doc}).doc = doc
+    plugin.init()
+
+    await plugin.print()
+
+    expect(exportSnapshot).toHaveBeenCalledTimes(1)
+    expect(rootToSnapshot).not.toHaveBeenCalled()
+    plugin.destroy()
+  })
+
+  it('holds exact full-document views only while live pagination is enabled', () => {
+    const {doc} = createDoc()
+    const release = jasmine.createSpy('releaseFullDocumentViewLease')
+    const acquire = jasmine.createSpy('acquireFullDocumentViewLease').and.returnValue(release)
+    ;(doc as any).virtualization = {
+      enabled: true,
+      acquireFullDocumentViewLease: acquire,
+    }
+    const plugin = new PaginationPlugin()
+    ;(plugin as unknown as {doc: BlockCraft.Doc}).doc = doc
+    plugin.init()
+
+    plugin.enable()
+    plugin.enable()
+    expect(acquire).toHaveBeenCalledTimes(1)
+
+    plugin.disable()
+    plugin.disable()
+    expect(release).toHaveBeenCalledTimes(1)
+    plugin.destroy()
+  })
+
+  it('rolls back the full-document lease when pagination enable fails', () => {
+    const {doc} = createDoc()
+    const release = jasmine.createSpy('releaseFullDocumentViewLease')
+    ;(doc as any).virtualization = {
+      enabled: true,
+      acquireFullDocumentViewLease: jasmine.createSpy('acquireFullDocumentViewLease')
+        .and.returnValue(release),
+    }
+    const controller = {
+      enable: jasmine.createSpy('enable').and.throwError('enable failed'),
+      disable: jasmine.createSpy('disable'),
+      destroy: jasmine.createSpy('destroy'),
+    }
+    const plugin = new PaginationPlugin()
+    ;(plugin as unknown as {doc: BlockCraft.Doc}).doc = doc
+    plugin.init()
+    ;(plugin as any)._controller = controller
+
+    expect(() => plugin.enable()).toThrowError('enable failed')
+
+    expect(plugin.enabled).toBeFalse()
+    expect(controller.destroy).toHaveBeenCalledTimes(1)
+    expect(release).toHaveBeenCalledTimes(1)
+    expect((plugin as any)._controller).toBeNull()
+    plugin.destroy()
+  })
+
+  it('releases the full-document lease when pagination disable fails', () => {
+    const {doc} = createDoc()
+    const release = jasmine.createSpy('releaseFullDocumentViewLease')
+    ;(doc as any).virtualization = {
+      enabled: true,
+      acquireFullDocumentViewLease: jasmine.createSpy('acquireFullDocumentViewLease')
+        .and.returnValue(release),
+    }
+    const controller = {
+      enable: jasmine.createSpy('enable'),
+      disable: jasmine.createSpy('disable').and.throwError('disable failed'),
+      destroy: jasmine.createSpy('destroy'),
+    }
+    const plugin = new PaginationPlugin()
+    ;(plugin as unknown as {doc: BlockCraft.Doc}).doc = doc
+    plugin.init()
+    ;(plugin as any)._controller = controller
+    plugin.enable()
+
+    expect(() => plugin.disable()).toThrowError('disable failed')
+
+    expect(plugin.enabled).toBeFalse()
+    expect(release).toHaveBeenCalledTimes(1)
+    plugin.destroy()
+  })
+
+  it('releases the full-document lease when pagination destroy fails', () => {
+    const {doc} = createDoc()
+    const release = jasmine.createSpy('releaseFullDocumentViewLease')
+    ;(doc as any).virtualization = {
+      enabled: true,
+      acquireFullDocumentViewLease: jasmine.createSpy('acquireFullDocumentViewLease')
+        .and.returnValue(release),
+    }
+    const controller = {
+      enable: jasmine.createSpy('enable'),
+      disable: jasmine.createSpy('disable'),
+      destroy: jasmine.createSpy('destroy').and.throwError('destroy failed'),
+    }
+    const plugin = new PaginationPlugin()
+    ;(plugin as unknown as {doc: BlockCraft.Doc}).doc = doc
+    plugin.init()
+    ;(plugin as any)._controller = controller
+    plugin.enable()
+
+    expect(() => plugin.destroy()).toThrowError('destroy failed')
+
+    expect(release).toHaveBeenCalledTimes(1)
+    expect((plugin as any)._controller).toBeNull()
   })
 })

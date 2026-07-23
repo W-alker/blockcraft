@@ -22,6 +22,13 @@ export type BlockSelectionScopeMetadata =
   | "transparent"
 
 /**
+ * Controls whether a materialized block view may leave the live document.
+ * `keep-alive` is intended for DOM-owned state such as iframe browsing
+ * contexts and media playback positions.
+ */
+export type BlockViewRetention = 'virtual' | 'keep-alive'
+
+/**
  * Resolve the placeholder text for an editable block based on its Schema
  * placeholder config and current heading level.
  *
@@ -78,6 +85,20 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
      * - omitted: no placeholder is rendered.
      */
     placeholder?: BlockPlaceholderConfig
+    /**
+     * Marks editable content whose model must not receive rich-text formatting.
+     * Components may still override `plainTextOnly`; declaring it here lets
+     * model-only commands preserve the same capability while the view is
+     * virtualized.
+     */
+    plainTextOnly?: boolean
+    /**
+     * Default root-virtualization retention for this flavour.
+     * - omitted / "virtual": the root unit may unmount outside the window.
+     * - "keep-alive": after first materialization, keep its root unit mounted
+     *   until this block is destroyed.
+     */
+    viewRetention?: BlockViewRetention
     /**
      * Semantic selection scope owned by this block.
      *

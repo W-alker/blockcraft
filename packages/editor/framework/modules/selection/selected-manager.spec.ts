@@ -123,6 +123,52 @@ describe("SelectionSelectedManager", () => {
     expect(mountedClassList.add).toHaveBeenCalledOnceWith("focused");
   });
 
+  it("replays a long boundary selection only across the currently mounted roots", () => {
+    const ids = ["p0", "p1", "p2"];
+    const mounted = new Set(["p0", "p2"]);
+    const classLists = Object.fromEntries(ids.map(id => [id, {
+      add: jasmine.createSpy(`${id}.add`),
+      remove: jasmine.createSpy(`${id}.remove`),
+    }]));
+    const blocks = Object.fromEntries(ids.map(id => [id, {
+      id,
+      nodeType: BlockNodeType.editable,
+      hostElement: {classList: classLists[id]},
+    }]));
+    const doc = {
+      model: {
+        getChildrenIds: (id: string) => id === "root" ? ids : [],
+        getParentId: (id: string) => ids.includes(id) ? "root" : null,
+        getPath: (id: string) => id === "root" ? ["root"] : ["root", id],
+        indexInParent: (id: string) => ids.indexOf(id),
+      },
+      vm: {
+        isMounted: (id: string) => mounted.has(id),
+      },
+      getBlockById: (id: string) => blocks[id],
+      queryBlocksBetween: jasmine.createSpy("queryBlocksBetween"),
+    };
+    const selection = {
+      start: {blockId: "root", type: "boundary", index: 0},
+      end: {blockId: "root", type: "boundary", index: ids.length},
+      getTableCellSelection: () => null,
+      collapsed: false,
+    } as any;
+    const manager = new SelectionSelectedManager(doc as any);
+
+    manager.setSelected(selection, ["p0", "p2"]);
+    expect(classLists["p0"].add).toHaveBeenCalledOnceWith("focused");
+    expect(classLists["p1"].add).not.toHaveBeenCalled();
+    expect(classLists["p2"].add).toHaveBeenCalledOnceWith("focused");
+
+    mounted.delete("p0");
+    mounted.add("p1");
+    manager.setSelected(selection, ["p1", "p2"]);
+    expect(classLists["p0"].remove).toHaveBeenCalledOnceWith("focused");
+    expect(classLists["p1"].add).toHaveBeenCalledOnceWith("focused");
+    expect(classLists["p2"].add).toHaveBeenCalledTimes(1);
+  });
+
   it("does not mark column containers selected for cross-column text selections", () => {
     const rootHost = document.createElement("div");
     const columnsHost = document.createElement("section");

@@ -21,20 +21,33 @@ export interface HotKeyTrigger {
 const SHORT_KEY = IS_MAC ? 'metaKey' : 'ctrlKey';
 
 export class KeyboardControl {
+  private readonly _hotKeyRegistrations = new Set<{
+    binding: HotKeyTrigger
+    handler: BlockCraft.EventHandler
+    options?: EventOptions
+  }>()
+
   constructor(private _dispatcher: BlockCraft.EventDispatcher) {
   }
 
   private _down = (event: KeyboardEvent) => {
     if (!this._shouldTrigger(event)) return;
-    const keyboardState = this._createKeyboardEventState(event, true)
-    if (!keyboardState) return
+    const keyboardState = this._createKeyboardEventState(event)
+    if (!keyboardState) {
+      if (this._runRootHotKeyWithoutSelection(event)) return
+      this._handleMissingSelection(event, true)
+      return
+    }
     this._dispatcher.run('keyDown', this._createContext(event, keyboardState));
   }
 
   private _up = (event: KeyboardEvent) => {
     if (!this._shouldTrigger(event)) return;
-    const keyboardState = this._createKeyboardEventState(event, false)
-    if (!keyboardState) return
+    const keyboardState = this._createKeyboardEventState(event)
+    if (!keyboardState) {
+      this._handleMissingSelection(event, false)
+      return
+    }
     this._dispatcher.run('keyUp', this._createContext(event, keyboardState))
   }
 
@@ -49,12 +62,9 @@ export class KeyboardControl {
       !event.altKey)
   };
 
-  private _createKeyboardEventState(event: KeyboardEvent, preventMutation: boolean): KeyboardEventState | null {
+  private _createKeyboardEventState(event: KeyboardEvent): KeyboardEventState | null {
     const selection = this._dispatcher.currentSelection
-    if (!selection) {
-      this._handleMissingSelection(event, preventMutation)
-      return null
-    }
+    if (!selection) return null
 
     try {
       return new KeyboardEventState({
@@ -62,9 +72,45 @@ export class KeyboardControl {
         selection
       })
     } catch {
-      this._handleMissingSelection(event, preventMutation)
       return null
     }
+  }
+
+  private _runRootHotKeyWithoutSelection(event: KeyboardEvent): boolean {
+    const root = this._dispatcher.doc.root
+    const rootId = this._dispatcher.doc.rootId ?? root?.id
+    if (!root || !rootId) return false
+
+    const matches = [...this._hotKeyRegistrations].filter(registration =>
+      registration.options?.blockId === rootId &&
+      this._isHotKeyMatch(registration.binding, event)
+    )
+    if (!matches.length) return false
+
+    const point = {blockId: rootId, type: 'selected', block: root}
+    const selection = {
+      start: point,
+      end: point,
+      commonParent: rootId,
+      collapsed: true,
+      isInSameBlock: true,
+      firstBlock: root,
+      lastBlock: root,
+    } as unknown as BlockCraft.Selection
+    const context = this._createContext(
+      event,
+      new KeyboardEventState({event, selection}),
+    )
+
+    for (const registration of matches) {
+      const result = registration.handler(context)
+      if (context.isStopPropagation) return true
+      if (result) {
+        context.stopPropagation()
+        return true
+      }
+    }
+    return false
   }
 
   private _handleMissingSelection(event: KeyboardEvent, preventMutation: boolean) {
@@ -109,11 +155,17 @@ export class KeyboardControl {
       _binding[SHORT_KEY] = binding.shortKey
       delete _binding.shortKey
     }
-    return this._dispatcher.add('keyDown', (context) => {
+    const registration = {binding: _binding, handler, options}
+    this._hotKeyRegistrations.add(registration)
+    const remove = this._dispatcher.add('keyDown', (context) => {
       const state = context.get('keyboardState')
       if (!this._isHotKeyMatch(_binding, state.raw)) return false
       return handler(context)
     }, options)
+    return () => {
+      this._hotKeyRegistrations.delete(registration)
+      remove()
+    }
   }
 
   listen(root: BlockCraft.IBlockComponents['root']) {

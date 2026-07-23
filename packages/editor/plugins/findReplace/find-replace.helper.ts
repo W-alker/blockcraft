@@ -3,12 +3,13 @@ import {deltaToString, nextTick, performanceTest} from "../../global";
 import {
   BlockNodeType,
   DeltaOperation,
-  EditableBlockComponent,
   FakeRange,
   STR_ZERO_WIDTH_SPACE
 } from "../../framework";
 
 export interface FindReplaceMatch {
+  /** Stable model identity; available even when the block view is unmounted. */
+  readonly blockId?: string
   block: BlockCraft.BlockComponent
   index: number
   length: number
@@ -34,9 +35,10 @@ const LAZY_THRESHOLD = 50
 /**
  * Headless find-replace helper.
  *
- * 混合策略：
- * - 匹配数 ≤ LAZY_THRESHOLD：全量创建 FakeRange，零 observer 开销
- * - 匹配数 > LAZY_THRESHOLD：IntersectionObserver 懒加载，只为视口内块创建 FakeRange
+ * Mixed strategy:
+ * - model scan always covers mounted and unmounted blocks
+ * - non-virtual documents with few matches create every FakeRange
+ * - virtual or high-match documents materialize only visible/current matches
  */
 export class FindReplaceHelper {
   matchIndex = 0
@@ -55,6 +57,9 @@ export class FindReplaceHelper {
   private _subs: Subscription[] = []
   private _blockOrder: string[] | null = null
   private _destroyed = false
+  private _refreshQueued = false
+  private _refreshAll = false
+  private _pendingTextBlockIds = new Set<string>()
 
   /** 当前搜索是否使用懒加载模式 */
   private _lazyMode = false
@@ -75,56 +80,11 @@ export class FindReplaceHelper {
     this._initObserver()
 
     this._subs.push(
-      this.doc.onChildrenUpdate$.subscribe(evt => {
-        if (!this.isActive) return
-        this.cancelHighlight()
-        this._blockOrder = null
-
-        nextTick().then(() => {
-          if (this._destroyed || !this.isActive) return
-          evt.transactions.forEach(t => {
-            if (t.deleted) {
-              const parentBlock = t.block
-              const childIdSet = new Set(parentBlock.childrenIds)
-              const toRemove: string[] = []
-              for (const [bid, m] of this.matchedBlockMap) {
-                if (m[0].block.parentId === parentBlock.id && !childIdSet.has(bid)) {
-                  toRemove.push(bid)
-                }
-              }
-              toRemove.forEach(id => this.clearOldMatchesMark(id))
-            }
-
-            if (t.inserted) {
-              t.inserted.forEach(block => {
-                if (!this.doc.isEditable(block)) return
-                if (!this._isBlockAlive(block)) return
-                this._matchBlockText(block)
-              })
-            }
-          })
-
-          this._resortMatches()
-          this.highlightCurrent(false)
-        })
+      this.doc.model.structureChange$.subscribe(() => this._queueModelRefresh()),
+      this.doc.model.textChange$.subscribe(evt => this._queueModelRefresh(evt.blockIds)),
+      this.doc.virtualization.viewChange$.subscribe(() => {
+        if (this.isActive && this._lazyMode) this._syncMountedMatchObservers()
       }),
-
-      this.doc.onTextUpdate$.subscribe(evt => {
-        if (!this.isActive) return
-        this.cancelHighlight()
-
-        nextTick().then(() => {
-          if (this._destroyed || !this.isActive) return
-          evt.transactions.forEach(t => {
-            const block = t.block
-            if (!this._isBlockAlive(block)) return
-            this.clearOldMatchesMark(block.id)
-            this._matchBlockText(block)
-          })
-          this._resortMatches()
-          this.highlightCurrent(false)
-        })
-      })
     )
   }
 
@@ -134,6 +94,9 @@ export class FindReplaceHelper {
     this._destroyObserver()
     this._subs.forEach(s => s.unsubscribe())
     this._subs = []
+    this._pendingTextBlockIds.clear()
+    this._refreshQueued = false
+    this._refreshAll = false
   }
 
   // ── IntersectionObserver ────────────────────────────────────
@@ -176,6 +139,7 @@ export class FindReplaceHelper {
     this._observer.unobserve(el)
     this._observedEls.delete(blockId)
     this._elToBlockId.delete(el)
+    this._visibleBlockIds.delete(blockId)
   }
 
   /** 为进入视口的块创建 FakeRange */
@@ -184,15 +148,19 @@ export class FindReplaceHelper {
     if (!matches) return
     const pending = [...matches]
     pending.forEach(m => this._ensureFakeRange(m))
+    const activeMatch = this.matchedList[this.matchIndex]
+    if (activeMatch && this._matchBlockId(activeMatch) === blockId) {
+      activeMatch.fakeRange?.setColor({bgColor: ACTIVE_COLOR})
+    }
   }
 
-  /** 为离开视口的块销毁 FakeRange（保留当前高亮项） */
-  private _dematerializeBlock(blockId: string) {
+  /** Destroy view highlights outside the observed window. */
+  private _dematerializeBlock(blockId: string, force = false) {
     const matches = this.matchedBlockMap.get(blockId)
     if (!matches) return
     const activeMatch = this.matchedList.length > 0 ? this.matchedList[this.matchIndex] : null
     matches.forEach(m => {
-      if (m.fakeRange && m !== activeMatch) {
+      if (m.fakeRange && (force || m !== activeMatch)) {
         m.fakeRange.destroy()
         m.fakeRange = null
       }
@@ -207,11 +175,12 @@ export class FindReplaceHelper {
     })
   }
 
-  /** 断开所有观察，但保留 _visibleBlockIds 供下次搜索复用 */
+  /** Disconnect every observed host before rebuilding the view projection. */
   private _resetObservation() {
     this._observer?.disconnect()
     this._observedEls.clear()
     this._elToBlockId.clear()
+    this._visibleBlockIds.clear()
   }
 
   private _destroyObserver() {
@@ -245,29 +214,12 @@ export class FindReplaceHelper {
     this.buildRegex(findText)
     this._blockOrder = null
 
-    // Phase 1: 纯文本扫描，收集匹配位置（不创建 FakeRange）
-    const walk = (b: BlockCraft.BlockComponent) => {
-      b.getChildrenBlocks().forEach(child => {
-        if (child.nodeType === 'void') return
-        if (child.nodeType === 'editable') {
-          this._collectBlockMatches(child as EditableBlockComponent)
-        } else {
-          walk(child)
-        }
-      })
-    }
-    walk(this.doc.root)
+    // Phase 1: scan the complete model without creating Angular views.
+    this._scanModel()
     this._resortMatches()
 
     // Phase 2: 根据匹配数量决定策略
-    this._lazyMode = this.matchedList.length > LAZY_THRESHOLD
-    if (this._lazyMode) {
-      // 懒加载：observer 按需创建
-      this._observeAndMaterializeVisible()
-    } else {
-      // 全量：直接创建所有 FakeRange
-      this._materializeAll()
-    }
+    this._syncMaterializationStrategy()
 
     if (this.matchedList.length) {
       this.highlightCurrent()
@@ -310,7 +262,18 @@ export class FindReplaceHelper {
       const match = this.matchedList[this.matchIndex]
       if (!this._ensureFakeRange(match)) continue
       match.fakeRange!.setColor({bgColor: ACTIVE_COLOR})
-      withScroll && match.block.hostElement.scrollIntoView({behavior: 'smooth', block: 'center', inline: 'center'})
+      if (withScroll) {
+        const blockId = this._matchBlockId(match)
+        if (this.doc.virtualization?.enabled) {
+          void this.doc.virtualization.scrollToBlock(blockId)
+        } else {
+          this._resolveBlockView(blockId, false)?.hostElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+            inline: 'center',
+          })
+        }
+      }
       return
     }
   }
@@ -320,9 +283,14 @@ export class FindReplaceHelper {
   replaceOne(replaceText: string) {
     if (!this.matchedList.length) return
     const match = this.matchedList[this.matchIndex]
-    if (!this._ensureFakeRange(match)) return
+    const blockId = this._matchBlockId(match)
+    if (!this._isBlockIdAlive(blockId)) {
+      this._dropMatch(match)
+      return
+    }
+    if (this.doc.readonlyManager?.isReadonly(blockId) ?? this.doc.isReadonly) return
     this.doc.crud.transact(() => {
-      this._replaceMatch(match, replaceText)
+      this.doc.crud.replaceText(blockId, match.index, match.length, replaceText)
     })
   }
 
@@ -338,15 +306,10 @@ export class FindReplaceHelper {
         if (replaceText) delta.push({insert: replaceText})
         cursor = m.index + m.length
       })
-        let block: BlockCraft.BlockComponent
-        try {
-          block = this.doc.getBlockById(bid)
-        } catch {
-          return
-        }
-        if (!this._isBlockAlive(block) || !this.doc.isEditable(block)) return
-        if (this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly) return
-        block.applyDeltaOperations(delta)
+        if (!this._isBlockIdAlive(bid)) return
+        if (this.doc.model.getNodeType(bid) !== BlockNodeType.editable) return
+        if (this.doc.readonlyManager?.isReadonly(bid) ?? this.doc.isReadonly) return
+        this.doc.crud.applyTextDelta(bid, delta)
       })
       this._destroyAllFakeRanges()
       this.matchedList = []
@@ -383,6 +346,8 @@ export class FindReplaceHelper {
     this.matchedBlockMap.clear()
     this._resetObservation()
     this._lazyMode = false
+    this._pendingTextBlockIds.clear()
+    this._refreshAll = false
   }
 
   private _destroyAllFakeRanges() {
@@ -397,13 +362,24 @@ export class FindReplaceHelper {
   }
 
   private _ensureFakeRange(match: FindReplaceMatch): boolean {
-    if (this._destroyed || !this._isBlockAlive(match.block)) {
+    const blockId = this._matchBlockId(match)
+    if (this._destroyed || !this._isBlockIdAlive(blockId)) {
       this._dropMatch(match)
       return false
     }
-    if (match.fakeRange) return true
+    if (match.fakeRange && !match.fakeRange.hasLostRenderedSpans) return true
+    if (match.fakeRange) {
+      match.fakeRange.destroy()
+      match.fakeRange = null
+    }
+    const block = this._resolveBlockView(blockId, true)
+    if (!block) {
+      this._dropMatch(match)
+      return false
+    }
     try {
       match.fakeRange = this._createFakeRange(match)
+      if (this._lazyMode) this._observeBlock(block)
       return true
     } catch {
       this._dropMatch(match)
@@ -412,13 +388,14 @@ export class FindReplaceHelper {
   }
 
   private _dropMatch(match: FindReplaceMatch) {
-    const blockMatches = this.matchedBlockMap.get(match.block.id)
+    const blockId = this._matchBlockId(match)
+    const blockMatches = this.matchedBlockMap.get(blockId)
     if (blockMatches) {
       const blockIndex = blockMatches.indexOf(match)
       if (blockIndex >= 0) blockMatches.splice(blockIndex, 1)
       if (!blockMatches.length) {
-        this.matchedBlockMap.delete(match.block.id)
-        this._unobserveBlock(match.block.id)
+        this.matchedBlockMap.delete(blockId)
+        this._unobserveBlock(blockId)
       }
     }
 
@@ -451,7 +428,7 @@ export class FindReplaceHelper {
   private _createFakeRange(match: FindReplaceMatch): FakeRange {
     return this.doc.selection.createFakeRange({
       from: {
-        blockId: match.block.id,
+        blockId: this._matchBlockId(match),
         index: match.index,
         length: match.length,
         type: 'text'
@@ -460,58 +437,42 @@ export class FindReplaceHelper {
     }, {bgColor: MATCH_COLOR})
   }
 
-  /** 纯数据收集，不创建 FakeRange，不 observe */
-  private _collectBlockMatches = (block: EditableBlockComponent): FindReplaceMatch[] | null => {
-    const text = deltaToString(block.textDeltas(), STR_ZERO_WIDTH_SPACE)
+  /** Pure model collection: no ComponentRef, DOM or observer work. */
+  private _collectBlockMatches = (blockId: string): FindReplaceMatch[] | null => {
+    const deltas = this.doc.model.getTextDeltas(blockId)
+    const text = deltas ? deltaToString(deltas, STR_ZERO_WIDTH_SPACE) : ''
     if (!text) return null
     const matches = text.matchAll(this.matchReg)
     const res: FindReplaceMatch[] = []
     for (const match of matches) {
-      res.push({
-        fakeRange: null,
-        index: match.index,
-        length: match[0].length,
-        block: block,
-      })
+      res.push(this._createMatch(blockId, match.index, match[0].length))
     }
     if (res.length) {
-      this.matchedBlockMap.set(block.id, res)
+      this.matchedBlockMap.set(blockId, res)
     }
     return res
-  }
-
-  /** 增量更新：扫描块文本 + 根据当前模式同步高亮 */
-  private _matchBlockText = (block: EditableBlockComponent): FindReplaceMatch[] | null => {
-    const res = this._collectBlockMatches(block)
-    if (res?.length) {
-      this._syncBlockHighlight(block)
-    }
-    return res
-  }
-
-  /** 根据当前模式为单个块同步高亮 */
-  private _syncBlockHighlight(block: BlockCraft.BlockComponent) {
-    if (!this._lazyMode) {
-      // 非懒加载：直接创建
-      this._materializeBlock(block.id)
-      return
-    }
-    // 懒加载：observe + 如果可见则立即创建
-    this._observeBlock(block)
-    if (this._visibleBlockIds.has(block.id)) {
-      this._materializeBlock(block.id)
-    }
   }
 
   /** 为所有已匹配块注册观察，并立即创建可见块的 FakeRange */
   private _observeAndMaterializeVisible() {
-    for (const [blockId, matches] of this.matchedBlockMap) {
-      const block = matches[0].block
-      this._observeBlock(block)
-      if (this._visibleBlockIds.has(blockId)) {
-        this._materializeBlock(blockId)
-      }
+    this._syncMountedMatchObservers()
+  }
+
+  private _syncMountedMatchObservers() {
+    for (const blockId of [...this._observedEls.keys()]) {
+      if (this.doc.vm.isMounted(blockId)) continue
+      this._unobserveBlock(blockId)
+      this._dematerializeBlock(blockId, true)
     }
+
+    const visit = (blockId: string) => {
+      if (this.matchedBlockMap.has(blockId) && !this._observedEls.has(blockId)) {
+        const block = this._resolveBlockView(blockId, false)
+        if (block) this._observeBlock(block)
+      }
+      this.doc.model.getChildrenIds(blockId).forEach(visit)
+    }
+    this.doc.vm.getMountedRootChildIds().forEach(visit)
   }
 
   private _resortMatches() {
@@ -528,35 +489,111 @@ export class FindReplaceHelper {
 
   private _computeBlockOrder(): string[] {
     const ids: string[] = []
-    const walk = (b: BlockCraft.BlockComponent) => {
-      for (const childId of b.childrenIds) {
+    const walk = (parentId: string) => {
+      for (const childId of this.doc.model.getChildrenIds(parentId)) {
         ids.push(childId)
-        try {
-          const child = this.doc.getBlockById(childId)
-          if (child.nodeType === BlockNodeType.block) {
-            walk(child)
-          }
-        } catch {
-          // block may have been destroyed between events
-        }
+        if (this.doc.model.getNodeType(childId) === BlockNodeType.block) walk(childId)
       }
     }
-    walk(this.doc.root)
+    walk(this.doc.rootId)
     return ids
   }
 
-  private _replaceMatch(match: FindReplaceMatch, replaceText: string) {
-    if (!this._isBlockAlive(match.block) || !this.doc.isEditable(match.block)) return
-    if (this.doc.readonlyManager?.isReadonly(match.block) ?? this.doc.isReadonly) return
-    match.block.replaceText(match.index, match.length, replaceText)
+  private _scanModel() {
+    this._blockOrder = this._computeBlockOrder()
+    for (const blockId of this._blockOrder) {
+      if (this.doc.model.getNodeType(blockId) === BlockNodeType.editable) {
+        this._collectBlockMatches(blockId)
+      }
+    }
   }
 
-  private _isBlockAlive(block: BlockCraft.BlockComponent | null | undefined) {
-    if (!block) return false
-    try {
-      return this.doc.getBlockById(block.id) === block
-    } catch {
-      return false
+  private _syncMaterializationStrategy() {
+    const nextLazyMode = !!this.doc.virtualization?.enabled || this.matchedList.length > LAZY_THRESHOLD
+    if (nextLazyMode !== this._lazyMode) {
+      this._destroyAllFakeRanges()
+      this._resetObservation()
+      this._lazyMode = nextLazyMode
     }
+    if (this._lazyMode) this._observeAndMaterializeVisible()
+    else this._materializeAll()
+  }
+
+  private _queueModelRefresh(blockIds?: readonly string[]) {
+    if (!this.isActive) return
+    if (blockIds) blockIds.forEach(blockId => this._pendingTextBlockIds.add(blockId))
+    else this._refreshAll = true
+    if (this._refreshQueued) return
+    this._refreshQueued = true
+
+    nextTick().then(() => {
+      this._refreshQueued = false
+      if (this._destroyed || !this.isActive) return
+      const previousIndex = this.matchIndex
+      const activeMatch = this.matchedList[previousIndex]
+      const activeKey = activeMatch ? {
+        blockId: this._matchBlockId(activeMatch),
+        index: activeMatch.index,
+        length: activeMatch.length,
+      } : null
+      this.cancelHighlight()
+
+      if (this._refreshAll) {
+        this._clearMatches()
+        this._scanModel()
+      } else {
+        const changedIds = [...this._pendingTextBlockIds]
+        changedIds.forEach(blockId => {
+          this.clearOldMatchesMark(blockId)
+          if (this.doc.model.getNodeType(blockId) === BlockNodeType.editable) {
+            this._collectBlockMatches(blockId)
+          }
+        })
+      }
+      this._refreshAll = false
+      this._pendingTextBlockIds.clear()
+      this._resortMatches()
+      const restoredIndex = activeKey ? this.matchedList.findIndex(match =>
+        this._matchBlockId(match) === activeKey.blockId &&
+        match.index === activeKey.index &&
+        match.length === activeKey.length
+      ) : -1
+      this.matchIndex = restoredIndex >= 0 ? restoredIndex : previousIndex
+      this._clampMatchIndex()
+      this._syncMaterializationStrategy()
+      this.highlightCurrent(false)
+    })
+  }
+
+  private _matchBlockId(match: FindReplaceMatch): string {
+    return match.blockId ?? match.block.id
+  }
+
+  private _createMatch(blockId: string, index: number, length: number): FindReplaceMatch {
+    const match = {
+      blockId,
+      index,
+      length,
+      fakeRange: null,
+    } as FindReplaceMatch
+    Object.defineProperty(match, 'block', {
+      enumerable: false,
+      get: () => {
+        const block = this._resolveBlockView(blockId, true)
+        if (!block) throw new Error(`Block view not found: ${blockId}`)
+        return block
+      },
+    })
+    return match
+  }
+
+  private _isBlockIdAlive(blockId: string): boolean {
+    return this.doc.model.exists(blockId)
+  }
+
+  private _resolveBlockView(blockId: string, materialize: boolean): BlockCraft.BlockComponent | null {
+    if (!this._isBlockIdAlive(blockId)) return null
+    if (materialize) this.doc.virtualization?.ensureViewMounted([blockId])
+    return this.doc.vm.get(blockId)?.instance ?? null
   }
 }

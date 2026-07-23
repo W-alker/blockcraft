@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-07-19 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-07-21 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -51,15 +51,56 @@ Browser surface
   → SelectionManager remains the canonical model/state coordinator
 ```
 
-**Key principle**: `BlockSelection` is the canonical truth. The DOM `Selection` is a derived view. Every programmatic write goes through one model-first commit path: `setSelection()`, `setCursorAt()`, `extendTo()`, editable block cursor helpers, `selectBlock()`, `setGapCursor()`, table-cell selection, and replay all publish `doc.selection.value` before DOM projection. `SelectionModelResolver` reads existence, ancestry, children and text length from `BlockModelGraph`, so liveness, boundary coverage, text-edge predicates and content endpoint IDs remain valid when the corresponding Angular block components are not mounted. `SelectionPositionResolver` resolves endpoint order and nearest common ancestry from the same model graph, reading only the first divergent parent's `childrenIds`; it does not call `compareDocumentPosition()` or read layout. Immutable `BlockSelection` instances cache their derived direction, so repeated `direction` / `start` / `end` reads do not walk the model tree again. The derived DOM Range is applied under a short native `selectionchange` suppression window so browsers (notably Safari/WebKit) cannot immediately reinterpret a container/callout block range back into internal child text or boundary endpoints. Native drag is the deliberate exception: when DOM normalization repairs an endpoint that crossed a closed scope, Selection publishes the repaired model and immediately projects its anchor/focus back to the corresponding gap-backed boundary without opening the suppression window. The projection preserves forward/backward direction and round-trips idempotently, so subsequent pointer-driven events remain observable while WebKit cannot oscillate between internal text and whole-container endpoints. If a live model selection reaches the view before its block DOM is mounted, projection failure does not call `blur()`: Selection keeps the model, removes any partial native range, and retries only while the projection version and expected JSON still match. A newer selection cancels the old task, and an explicitly focused external control is never stolen back.
+**Key principle**: `BlockSelection` is the canonical truth. The DOM `Selection` is a derived view. Every programmatic write goes through one model-first commit path: `setSelection()`, `setCursorAt()`, `extendTo()`, editable block cursor helpers, `selectBlock()`, `setGapCursor()`, table-cell selection, and replay all publish `doc.selection.value` before DOM projection. With virtualization enabled, that commit first checks the bounded endpoint neighborhood and synchronously materializes it only when a component is missing; boundary points include their immediate previous/next children. This is a view-capability preflight, not DOM sampling or a persistent range pin, and guarantees synchronous selection observers can safely read compatibility accessors such as `firstBlock` / `lastBlock`. Already-mounted writes perform only bounded component-availability lookups. `SelectionModelResolver` reads existence, ancestry, children and text length from `BlockModelGraph`, so liveness, boundary coverage, text-edge predicates and content endpoint IDs remain valid when the corresponding Angular block components are not mounted. `SelectionPositionResolver` resolves endpoint order and nearest common ancestry from the same model graph, reading only the first divergent parent's `childrenIds`; it does not call `compareDocumentPosition()` or read layout. Immutable `BlockSelection` instances cache their derived direction, so repeated `direction` / `start` / `end` reads do not walk the model tree again. The derived DOM Range is applied under a short native `selectionchange` suppression window so browsers (notably Safari/WebKit) cannot immediately reinterpret a container/callout block range back into internal child text or boundary endpoints. Native drag is the deliberate exception: when DOM normalization repairs an endpoint that crossed a closed scope, Selection publishes the repaired model and immediately projects its anchor/focus back to the corresponding gap-backed boundary without opening the suppression window. The projection preserves forward/backward direction and round-trips idempotently, so subsequent pointer-driven events remain observable while WebKit cannot oscillate between internal text and whole-container endpoints. If a live model selection still reaches projection before its inline/container DOM is ready, projection failure does not call `blur()`: Selection keeps the model, removes any partial native range, and retries only while the projection version and expected JSON still match. A newer selection cancels the old task, and an explicitly focused external control is never stolen back.
 
-`SelectionSelectedManager` is presentation-only. It reconciles the previous and next covered-block sets, so unchanged blocks do not lose and regain `.selected` / `.focused` classes on high-frequency `selectionchange` events; it does not reinterpret scope or mutate the model. Covered IDs whose components are currently unmounted are skipped and can be painted after remount without invalidating the model selection.
+Programmatic DOM projection applies the ordered Range with the model's actual
+anchor/head direction (`setBaseAndExtent`, or `collapse` + `extend` fallback),
+so a backward model selection does not become forward after replay or virtual
+window repair.
+
+`SelectionSelectedManager` is presentation-only. It reconciles the previous and next covered-block sets, so unchanged blocks do not lose and regain `.selected` / `.focused` classes on high-frequency `selectionchange` events; it does not reinterpret scope or mutate the model. Under root virtualization it consumes deduplicated `viewChange$` windows, tests only mounted component IDs against model coverage segments, and repaints newly mounted fragments without expanding a long selection into every intermediate ID.
+
+When root virtualization is enabled, the active local selection also owns a
+mount lease over only the direct-root units containing its ordered start and end.
+The native Range endpoints therefore remain connected while the selected middle
+continues to virtualize. A selection wholly inside a table, columns block, or
+other nested container leases only its owning root subtree. Root boundary pairs
+retain their `[start, end)` model meaning but pin only the children adjacent to
+those edges; a collapsed boundary pins the nearest caret-bearing unit. Changing,
+collapsing, or clearing the selection replaces/releases the lease. If a root
+transaction inserts, removes or moves siblings, endpoint indices are recomputed
+from stable IDs before the next coalesced frame. Copy, `getSelectedText()`, block
+formatting and class coverage resolve the middle from `BlockModelGraph`/Yjs, not
+from retained ComponentRefs.
+
+For a non-collapsed virtual-root boundary range, native endpoints are descendants
+of the adjacent pinned root units, never mutable child offsets on the root
+container. Editable endpoints use inline offset `0` / `textLength`, blocks with
+gaps use their leading / trailing gap text, and other blocks use their own host
+edge. Inserting or removing middle DOM therefore cannot rebase the browser's
+live Range. A deduplicated `viewChange$` epoch still reasserts cross-root DOM
+anchor/focus from the unchanged model as an endpoint-rerender safety net.
+The repair touches only two endpoints and is skipped only while the primary
+pointer is actually held, during explicit recalculation suppression, or during
+IME composition; a programmatic full-select's transient dispatcher
+`isSelecting` flag does not block it. While that exact endpoint mount/frame
+projection remains pending, browser `selectionchange` is transitional and
+cannot replace the canonical model range. A new primary pointer intent cancels
+the pending projection before native selection resumes. This is not a raw
+scroll listener.
 
 Local selections also have an internal live relative bookmark. Text and boundary endpoints use `Y.RelativePosition`; selected, gap, and table-cell endpoints keep their structural IDs. Remote transactions therefore map the canonical model selection through Yjs first instead of reading the browser Range back into the model. Undo/redo stores the same bookmark directly on its owning Yjs `StackItem.meta`, so selection history cannot drift from the content stack when Yjs merges, truncates, clears, undoes or redoes items.
 
 `SelectionManager` owns model intent and orchestration; `SelectionSurfaceAdapter` is the browser anti-corruption layer. It has no cache or selection state and adds no model traversal: each call delegates to the current root's `ownerDocument`, native `Selection`/`Range`, focus API, animation frame, or geometry API. Remote reconciliation and history restoration use the same surface, which keeps iframe/multi-document and Safari-specific behavior out of DocCRUD and UndoManager.
 
 Before `normalizeRange()` runs, `recalculate()` verifies that both native Range endpoints belong to the current root. This is an ownership boundary, not an error fallback: an external page/editor selection is left untouched when BlockCraft does not own focus. If WebKit keeps extending a native drag outside root while BlockCraft still owns focus, Selection clears that leaked native Range before it can reach block lookup. A current model-owned `table-cell` rectangle remains canonical; other BlockCraft selections clear as an invalid cross-root DOM input.
+
+**Mounted-view clarification**: a cached/retained component is not yet a valid
+native Selection endpoint. Projection preflight treats a view as available only
+when `DocVM.isMounted(blockId)` is true, and synchronously mounts a bounded
+endpoint neighborhood before projecting an empty zero-offset caret. This check
+is an O(1) VM-status lookup; it does not use `Node.isConnected`, query DOM
+geometry, or scan the document.
 
 ### Input Consumer Contract
 
@@ -310,7 +351,9 @@ Remote reconciliation is relevance-filtered. Direct endpoint/container/table cha
 
 `DocUndoManager` stores each pre-change `RelativeSelectionBookmark` in the same Yjs `StackItem.meta` as the content operation. During undo, the current selection is captured for the redo item Yjs is about to create; redo performs the symmetric capture for the new undo item. A merged stack item keeps its earliest pre-change bookmark. There are no parallel selection arrays to synchronize with Yjs stack operations.
 
-After Yjs pops an item, `SelectionHistoryRestorer` receives that item's bookmark. It focuses the relevant editing host synchronously, waits for the view microtask, resolves relative positions against the restored model, then replays through the normal model-first path. A small version-guarded frame budget covers delayed component mount, browser focus loss and DOM/model projection mismatch. A newer restore cancels older work; an unresolvable bookmark fails closed to `null`. Model-only table-cell selections skip native DOM verification.
+After Yjs pops an item, `SelectionHistoryRestorer` receives that item's bookmark. With root virtualization enabled, it first materializes only the bookmark endpoint block IDs (plus referenced table IDs); retained-but-detached and fully evicted endpoint views can therefore be rebuilt without pinning the selected middle range. It waits for the view microtask, resolves relative positions against the restored model, and measures the resolved head before native Selection replay. It then focuses the relevant editing host synchronously and replays once through the normal model-first path.
+
+While that exact Selection projection still has a mount request or animation-frame retry pending, history verification waits instead of publishing the same model selection again. This prevents verification from canceling its own DOM projection. Once projection settles, a small version-guarded frame budget repairs genuine browser focus loss or DOM/model mismatch. If the pre-replay head was fully visible, history leaves the viewport unchanged. If it was offscreen or had no usable geometry, virtualized history delegates once to `RootVirtualizationManager.scrollToBlock(head.blockId)` for bounded center alignment; non-virtualized history uses Selection's minimal geometry scroll. The check must happen before replay because focusing/applying a native Range may itself scroll an offscreen target into view. A newer restore cancels older work; an unresolvable bookmark fails closed to `null`. Model-only table-cell selections skip native DOM verification.
 
 ## Selection Surface Adapter
 
@@ -400,7 +443,7 @@ doc.selection.getSelectionRect(): DOMRect | null
 doc.selection.getSelectionRects(): DOMRectList | null
 doc.selection.getSelectedText(): string
 
-// Scroll the current selection into view (used after navigation)
+// Scroll the active head/caret into view, falling back to range geometry.
 doc.selection.scrollSelectionIntoView()
 
 // Optional virtual-renderer bridge. Returns an idempotent disposer.
@@ -413,6 +456,14 @@ const unregister = doc.selection.registerProjectionMountAdapter({
 })
 ```
 
+The projection adapter mounts only endpoint-local DOM. With root virtualization,
+the document-owned manager keeps those endpoint root units mounted while the
+middle remains sparse. Root boundary pairs preserve their structural half-open
+semantics (`[startIndex, endIndex)`), a collapsed root boundary pins the adjacent
+caret-bearing unit, and boundaries inside an atomic nested subtree pin only that
+subtree's direct root owner. Replaying full-document boundary JSON therefore
+projects the same first/last DOM edges on the first and subsequent calls.
+
 ### Programmatic Selection
 
 ```typescript
@@ -423,12 +474,16 @@ doc.selection.setCursorAt(editableBlock, offset)
 // Move the cursor to a block (auto-picks editable descendant or selects whole block)
 // atStart: true → cursor at offset 0; false → cursor at textLength.
 // Editable branches use the same synchronous model-first cursor commit.
+// With root virtualization, a string target synchronously materializes only its
+// containing root unit before the existing component-oriented command runs.
 doc.selection.setCursorAtBlock(block, atStart, scrollIntoView?)
 
 // Select an entire block (used for void/block-level selection)
 // Updates doc.selection.value synchronously before applying the derived DOM
 // Range. The follow-up native selectionchange from Selection.addRange() is
 // suppressed briefly, keeping whole-block container selections model-owned.
+// A string target is materialized transiently; selecting root materializes its
+// first/last endpoint units before the endpoint selection lease takes over.
 doc.selection.selectBlock(block)
 
 // Set a Yuque-style gap cursor beside a void/container block.
@@ -437,10 +492,12 @@ doc.selection.selectBlock(block)
 // matching gap filler span; the DOM Range itself is anchored inside that
 // filler's zero-width text node for WebKit caret visibility.
 // Updates doc.selection.value synchronously before applying the DOM Range.
+// String targets use the same transient view materialization boundary.
 doc.selection.setGapCursor(block, 'before' | 'after', scrollIntoView?)
 
 // Set a model-owned rectangular table-cell selection. This is model-only:
 // the browser native Range is cleared and TableBlockComponent paints cells.
+// String table/cell targets are materialized in one batch.
 doc.selection.setTableCellSelection(table, anchorCell, headCell?, scrollIntoView?)
 
 // Extend the canonical selection's head while preserving its anchor and direction.
@@ -477,7 +534,9 @@ For model-owned table-cell selections, `createFakeRange(selection)` paints a bor
 
 A collapsed `gap` selection keeps its point semantics: `FakeRange` paints a narrow caret at the matching `data-block-gap-side="before|after"` filler. It does not reuse the whole-block `selected` border. Non-collapsed ranges whose gap endpoint covers a block may still use the block overlay for that covered endpoint.
 
-Awareness cursors retain their last model selection and covered block IDs. After a text transaction, `BlockCraftAwareness` checks only related cursors and rebuilds one only when its rendered `FakeRange` span was detached by an inline full rerender (notably IME commit). Normal incremental input leaves the span connected and performs no extra geometry read. Caret/range graphics remain block-local, while user-name labels live in one shared fixed portal under `document.body`; this prevents block `overflow` from clipping labels and keeps foreign label DOM out of editable/root child structure. The portal mirrors the position and client size of `doc.scrollContainer`, uses `overflow: hidden`, and stores label coordinates relative to that viewport, so labels can escape an individual block but cannot paint outside the editor scroll viewport. Scroll and resize events share one `requestAnimationFrame` scheduler, with one caret-rect read per visible remote cursor in that frame; all geometry reads complete before label style writes. The shared portal bounds are read at initialization and only refreshed when window resize or an outer scroll can move the container, not while `scrollContainer` itself scrolls. Hosts that leave a collaboration room without destroying the document must call `BlockCraftAwareness.destroy()` so the portal, cursor overlays, subscriptions, and global listeners are released.
+With root virtualization enabled, `FakeRange` is a sparse view projection. It resolves endpoints by model ID, skips endpoints whose component is not mounted, and paints only selected root units reported by `DocVM.getMountedRootChildIds()`. A selection whose endpoints share one mounted root keeps exact nested/text rendering because that root subtree is atomic. Cross-root projection iterates only the mounted root window; it does not walk the complete selected range. With virtualization disabled, missing component references retain the existing strict failure behavior.
+
+Awareness cursors retain their last model selection and covered block IDs. `BlockCraftAwareness` consumes deduplicated `doc.virtualization.viewChange$` windows and rebuilds a cursor only when the mounted roots relevant to that selection change, or when an existing span disconnects. Structure changes re-normalize the remote model selection before projection. Remote positions never acquire a block view lease, so collaborators cannot expand the local resident DOM set; scroll-window coordination costs `O(remote cursors * mounted roots)`, independent of total document or remote range length. After a text transaction, Awareness checks only related cursors and rebuilds one only when its rendered `FakeRange` span was detached by an inline full rerender (notably IME commit). Normal incremental input leaves the span connected and performs no extra geometry read. Caret/range graphics remain block-local, while user-name labels live in one shared fixed portal under `document.body`; this prevents block `overflow` from clipping labels and keeps foreign label DOM out of editable/root child structure. The portal mirrors the position and client size of `doc.scrollContainer`, uses `overflow: hidden`, and stores label coordinates relative to that viewport, so labels can escape an individual block but cannot paint outside the editor scroll viewport. Scroll and resize events share one `requestAnimationFrame` scheduler, with one caret-rect read per visible remote cursor in that frame; all geometry reads complete before label style writes. The shared portal bounds are read at initialization and only refreshed when window resize or an outer scroll can move the container, not while `scrollContainer` itself scrolls. Hosts that leave a collaboration room without destroying the document must call `BlockCraftAwareness.destroy()` so the portal, cursor overlays, subscriptions, and global listeners are released.
 
 ```typescript
 // From a saved JSON (new or legacy format) or a live BlockSelection
@@ -615,7 +674,12 @@ The legacy `SelectionManager.normalizeRange()` public method wraps this and retu
 
 Programmatic selection APIs (`setSelection`, `setCursorAt`, `setCursorAtBlock`, `selectBlock`, `setGapCursor`, table-cell selection, `extendTo`, and `replay`) already perform model commit followed by DOM projection. Calling `recalculate()` immediately after them introduces an unnecessary DOM walk and lets browser-specific range interpretation overwrite the intent that was just committed. Input, undo, and plugin code should read `doc.selection.value` after a successful programmatic write instead.
 
-A valid model commit and a successful DOM projection are deliberately separate outcomes. If the target block exists in the model but its inline/container DOM is still mounting, Selection keeps `doc.selection.value`, keeps or restores editor focus only when focus naturally dropped to `body`, and asks a registered `SelectionProjectionMountAdapter` to mount only the endpoint neighborhood. Mount resolution or rejection then enters the existing bounded animation-frame projection retry; hosts without an adapter enter that retry immediately. Each request/task is guarded by a projection version plus exact selection JSON, and later user intent aborts it. Exhaustion leaves the model intact and never samples unknown DOM state. Invalid or structurally stale model endpoints still fail closed, and explicit `blur()` / `replay(null)` still clear both model and native ranges.
+A valid model commit and a successful DOM projection are deliberately separate outcomes. Before broadcasting a virtualized model commit, Selection synchronously requests only a missing endpoint neighborhood, so immediate observers never see a live model endpoint whose block component is absent. If the component exists but its inline/container DOM is still mounting, Selection keeps `doc.selection.value`, keeps or restores editor focus only when focus naturally dropped to `body`, and asks a registered `SelectionProjectionMountAdapter` to recover the same bounded neighborhood. Mount resolution or rejection then enters the existing bounded animation-frame projection retry; hosts without an adapter enter that retry immediately. Each request/task is guarded by a projection version plus exact selection JSON, and later user intent aborts it. Exhaustion leaves the model intact and never samples unknown DOM state. Invalid or structurally stale model endpoints still fail closed, and explicit `blur()` / `replay(null)` still clear both model and native ranges.
+
+For virtualized projection, "missing endpoint" includes an existing retained
+component whose DOM is detached. The mount adapter must restore that endpoint
+before the browser Range is written; component-cache presence alone must never
+be used as proof that a native caret can be hosted.
 
 ## Backward Compatibility
 

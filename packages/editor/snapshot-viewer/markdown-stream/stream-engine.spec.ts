@@ -179,6 +179,7 @@ describe("SnapshotViewerStreamEngine", () => {
 })
 
 async function flushPromises() {
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
   await Promise.resolve()
   await Promise.resolve()
   await Promise.resolve()

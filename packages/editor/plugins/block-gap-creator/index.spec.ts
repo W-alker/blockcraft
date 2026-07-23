@@ -75,12 +75,24 @@ describe("BlockGapCreatorPlugin", () => {
       setCursorAtBlock: jasmine.createSpy("setCursorAtBlock"),
       recalculate: jasmine.createSpy("recalculate"),
     }
+    const mountedBlocks = new Map([
+      ["void-1", voidBlock],
+      ["last", lastEditable],
+    ])
+    const getChildrenBlocks = jasmine.createSpy("getChildrenBlocks").and.returnValue([voidBlock, lastEditable])
     const doc = {
       isReadonly: false,
       root: {
         hostElement: host,
         lastChildren: lastEditable,
-        getChildrenBlocks: () => [voidBlock, lastEditable],
+        getChildrenBlocks,
+      },
+      vm: {
+        getMountedRootChildIds: () => [...mountedBlocks.keys()],
+        get: (id: string) => {
+          const instance = mountedBlocks.get(id)
+          return instance ? {instance} : undefined
+        },
       },
       event: {
         customListen: (target: EventTarget, eventName: string) => fromEvent(target, eventName),
@@ -101,7 +113,17 @@ describe("BlockGapCreatorPlugin", () => {
     const plugin = new BlockGapCreatorPlugin()
     ;(plugin as any).doc = doc
 
-    return {plugin: plugin as any, doc, host, voidHost, voidBlock, lastEditable, selection}
+    return {
+      plugin: plugin as any,
+      doc,
+      host,
+      voidHost,
+      voidBlock,
+      lastEditable,
+      mountedBlocks,
+      selection,
+      getChildrenBlocks,
+    }
   }
 
   it("resolves root side gutter by row before falling back to the last child", () => {
@@ -112,6 +134,38 @@ describe("BlockGapCreatorPlugin", () => {
     expect(handled).toBeTrue()
     expect(selection.setGapCursor).toHaveBeenCalledOnceWith(voidBlock, "before")
     expect(selection.setCursorAtBlock).not.toHaveBeenCalled()
+  })
+
+  it("hit-tests only mounted root views when virtual siblings are absent", () => {
+    const {plugin, voidBlock, selection, getChildrenBlocks} = createHarness()
+    getChildrenBlocks.and.throwError("unmounted sibling resolved")
+
+    const handled = plugin._resolveBlankAreaSelection(50, 150)
+
+    expect(handled).toBeTrue()
+    expect(selection.setGapCursor).toHaveBeenCalledOnceWith(voidBlock, "before")
+    expect(getChildrenBlocks).not.toHaveBeenCalled()
+  })
+
+  it("ignores a far offscreen pinned view when resolving root space below visible content", () => {
+    const {plugin, host, lastEditable, mountedBlocks, selection} = createHarness()
+    const pinnedHost = document.createElement("p")
+    pinnedHost.setAttribute("data-block-id", "pinned-far")
+    pinnedHost.setAttribute("data-node-type", BlockNodeType.editable)
+    pinnedHost.getBoundingClientRect = () => rect(100, 2000, 300, 2040)
+    host.appendChild(pinnedHost)
+    mountedBlocks.set("pinned-far", {
+      id: "pinned-far",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      hostElement: pinnedHost,
+      parentBlock: lastEditable.parentBlock,
+    })
+
+    const handled = plugin._resolveBlankAreaSelection(50, 400)
+
+    expect(handled).toBeTrue()
+    expect(selection.setCursorAtBlock).toHaveBeenCalledOnceWith(lastEditable, false, false)
   })
 
   it("sets a gap cursor on root-padding mousedown before native selection can land", () => {

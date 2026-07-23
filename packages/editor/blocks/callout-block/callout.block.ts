@@ -38,8 +38,7 @@ export class CalloutBlockComponent extends BaseBlockComponent<CalloutBlockModel>
   // }
   private _closePicker$ = new Subject()
 
-  override detach() {
-    super.detach();
+  protected override beforeDetach() {
     this._closePicker$.next(true)
   }
 

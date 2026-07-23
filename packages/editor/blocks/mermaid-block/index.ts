@@ -58,6 +58,7 @@ export const MermaidTextareaBlockSchema: IBlockSchemaOptions<MermaidTextareaBloc
     label: "Mermaid输入框",
     icon: "bc_icon bc_wenben",
     isLeaf: true,
+    plainTextOnly: true,
     selectionScope: 'transparent',
   }
 }

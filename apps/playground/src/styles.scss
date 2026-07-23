@@ -13,3 +13,139 @@ bc-pagination-settings.pagination-settings-float {
   top: 88px;
   z-index: 50;
 }
+
+.sim-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
+  background: var(--bc-bg-secondary);
+  border: 1px solid var(--bc-border-color-light);
+  border-radius: 7px;
+}
+
+.sim-mode__button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--bc-color-light);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sim-mode__button--active {
+  color: var(--bc-color);
+  background: var(--bc-bg-elevated);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.sim-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--bc-color);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sim-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sim-toggle__track {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--bc-border-color-light);
+  transition: background 0.15s ease;
+}
+
+.sim-toggle__track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--bc-bg-elevated);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
+  transition: transform 0.15s ease;
+}
+
+.sim-toggle input:checked + .sim-toggle__track {
+  background: var(--bc-active-color);
+}
+
+.sim-toggle input:checked + .sim-toggle__track::after {
+  transform: translateX(12px);
+}
+
+.sim-state-grid {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 5px 8px;
+  padding: 8px;
+  border: 1px solid var(--bc-border-color-light);
+  border-radius: 6px;
+  background: var(--bc-bg-secondary);
+  font-size: 10px;
+}
+
+.sim-state-grid span {
+  color: var(--bc-color-lighter);
+}
+
+.sim-state-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--bc-color);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sim-message {
+  min-height: 16px;
+  overflow: hidden;
+  color: var(--bc-color-light);
+  font-size: 10px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sim-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.sim-actions button {
+  min-height: 28px;
+  border: 1px solid var(--bc-border-color-light);
+  border-radius: 6px;
+  background: var(--bc-bg-secondary);
+  color: var(--bc-color);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sim-actions button:hover:not(:disabled) {
+  border-color: var(--bc-active-color-light);
+  background: var(--bc-bg-hover);
+}
+
+.sim-actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.sim-actions .sim-action--danger {
+  color: #be123c;
+}

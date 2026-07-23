@@ -332,6 +332,10 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
       head: {type: 'selected' as const, blockId: 'before'},
       commonParent: 'before',
     };
+    ydoc.transact(
+      () => yBlockMap.set('before', new Y.Map()),
+      ORIGIN_BLOCK_READONLY_CONTROL,
+    );
     mockDoc.selection.value = beforeSelection;
     mgr.captureSelectionBeforeChange();
 
@@ -359,6 +363,10 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
       head: {type: 'selected' as const, blockId: 'after'},
       commonParent: 'after',
     };
+    ydoc.transact(() => {
+      yBlockMap.set('before', new Y.Map());
+      yBlockMap.set('after', new Y.Map());
+    }, ORIGIN_BLOCK_READONLY_CONTROL);
     mockDoc.selection.value = beforeChange;
     mgr.captureSelectionBeforeChange();
     change('history-change');
@@ -369,6 +377,34 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
 
     mgr.redo();
     expect(mockDoc.selection.restoreBookmark.calls.mostRecent().args[0].source).toEqual(beforeUndo);
+  });
+
+  it('keeps the live selection when a remote delete invalidates the undo bookmark', () => {
+    const beforeChange = {
+      anchor: {type: 'selected' as const, blockId: 'deleted'},
+      head: {type: 'selected' as const, blockId: 'deleted'},
+      commonParent: 'deleted',
+    };
+    const beforeUndo = {
+      anchor: {type: 'selected' as const, blockId: 'live'},
+      head: {type: 'selected' as const, blockId: 'live'},
+      commonParent: 'live',
+    };
+    ydoc.transact(() => {
+      yBlockMap.set('deleted', new Y.Map());
+      yBlockMap.set('live', new Y.Map());
+    }, ORIGIN_BLOCK_READONLY_CONTROL);
+    mockDoc.selection.value = beforeChange;
+    mgr.captureSelectionBeforeChange();
+    change('history-change');
+
+    ydoc.transact(() => yBlockMap.delete('deleted'), ORIGIN_BLOCK_READONLY_CONTROL);
+    mockDoc.selection.value = beforeUndo;
+    mgr.undo();
+
+    const bookmark = mockDoc.selection.restoreBookmark.calls.mostRecent().args[0];
+    expect(bookmark.source).toEqual(beforeUndo);
+    expect(yBlockMap.has('deleted')).toBeFalse();
   });
 });
 

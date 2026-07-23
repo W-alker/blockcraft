@@ -2,6 +2,7 @@ import { DocInternalDragController, InternalDragState } from "./internal-drag.co
 import { BlockReadonlyError, BlockReadonlyOperation } from "../doc"
 
 function makeMockDoc(): any {
+  const releaseBlockViewLease = jasmine.createSpy('releaseBlockViewLease')
   return {
     isReadonly: false,
     onDestroy$: { subscribe: () => ({ unsubscribe: () => {} }) },
@@ -15,6 +16,12 @@ function makeMockDoc(): any {
       setSuppressRecalculate: jasmine.createSpy('setSuppressRecalculate'),
       blur: jasmine.createSpy('blur'),
     },
+    virtualization: {
+      acquireBlockViewLease: jasmine.createSpy('acquireBlockViewLease')
+        .and.returnValue(releaseBlockViewLease),
+    },
+    logger: {warn: jasmine.createSpy('warn')},
+    releaseBlockViewLease,
     dndService: {
       dragStatus$: { next: jasmine.createSpy('next'), value: 'end' },
       onSortBlock: jasmine.createSpy('onSortBlock'),
@@ -60,6 +67,7 @@ describe('DocInternalDragController state machine', () => {
     Object.defineProperty(evt, 'target', { value: target })
     ctrl.startDrag(evt, { kind: 'origin-block', blockId: 'b1' })
     expect(ctrl.state).toBe('armed')
+    expect(doc.virtualization.acquireBlockViewLease).not.toHaveBeenCalled()
   })
 
   it('does not arm an origin block when readonly protection rejects moving it', () => {
@@ -88,6 +96,8 @@ describe('DocInternalDragController state machine', () => {
     ctrl.startDrag(evt, { kind: 'origin-block', blockId: 'b1' })
     ctrl.cancel()
     expect(ctrl.state).toBe('idle')
+    expect(doc.virtualization.acquireBlockViewLease).not.toHaveBeenCalled()
+    expect(doc.releaseBlockViewLease).not.toHaveBeenCalled()
   })
 
   it('ignores second startDrag while not idle', () => {
@@ -202,6 +212,81 @@ describe('DocInternalDragController state machine', () => {
     expect(doc.selection.blur).toHaveBeenCalledTimes(1)
   })
 
+  it('acquires one source view lease before clearing Selection and releases it on teardown', () => {
+    const order: string[] = []
+    const release = jasmine.createSpy('release').and.callFake(() => order.push('release'))
+    doc.virtualization.acquireBlockViewLease.and.callFake((ids: readonly string[]) => {
+      order.push(`acquire:${ids.join(',')}`)
+      return release
+    })
+    doc.selection.blur.and.callFake(() => order.push('blur'))
+
+    const evt = makePointerEvent('pointerdown', { clientX: 100, clientY: 100 })
+    Object.defineProperty(evt, 'target', { value: target })
+    ctrl.startDrag(evt, { kind: 'origin-blocks', blockIds: ['a', 'b'] })
+    dispatchPointerMove(target, 110, 110)
+
+    expect(order).toEqual(['acquire:a,b', 'blur'])
+    expect(doc.virtualization.acquireBlockViewLease).toHaveBeenCalledOnceWith(['a', 'b'])
+
+    dispatchPointerCancel(target)
+    ctrl.destroy()
+    expect(release).toHaveBeenCalledTimes(1)
+    expect(order).toEqual(['acquire:a,b', 'blur', 'release'])
+  })
+
+  it('releases the source lease when entering drag mode fails', () => {
+    spyOn<any>(ctrl, '_createGhost').and.throwError('ghost failed')
+    const evt = makePointerEvent('pointerdown', {clientX: 100, clientY: 100})
+    Object.defineProperty(evt, 'target', {value: target})
+    ctrl.startDrag(evt, {kind: 'origin-block', blockId: 'b1'})
+
+    expect(() => (ctrl as any)._enterDragging(
+      makePointerEvent('pointermove', {clientX: 110, clientY: 110}),
+    )).toThrowError('ghost failed')
+
+    expect(doc.releaseBlockViewLease).toHaveBeenCalledTimes(1)
+    expect(doc.selection.setSuppressRecalculate).toHaveBeenCalledWith(false)
+    expect(ctrl.state).toBe('idle')
+  })
+
+  it('releases the source lease when the drop callback fails', () => {
+    const sourceElement = document.createElement('div')
+    document.body.appendChild(sourceElement)
+    const source = makeBlock('b1', sourceElement)
+    const destination = makeBlock('b2', target)
+    doc.getBlockById = () => source
+    doc.dndService.onSortBlock.and.throwError('drop failed')
+    const evt = makePointerEvent('pointerdown', {clientX: 100, clientY: 100})
+    Object.defineProperty(evt, 'target', {value: target})
+    ctrl.startDrag(evt, {kind: 'origin-block', blockId: 'b1'})
+    ;(ctrl as any)._enterDragging(
+      makePointerEvent('pointermove', {clientX: 110, clientY: 110}),
+    )
+    ;(ctrl as any)._prevBlock = destination
+    ;(ctrl as any)._prevDragPosition = 'after'
+
+    expect(() => (ctrl as any)._onWindowPointerUp(
+      makePointerEvent('pointerup', {pointerId: 1}),
+    )).toThrowError('drop failed')
+
+    expect(doc.releaseBlockViewLease).toHaveBeenCalledTimes(1)
+    expect(ctrl.state).toBe('idle')
+    sourceElement.remove()
+  })
+
+  it('does not acquire a block view lease for a new-block drag', () => {
+    const evt = makePointerEvent('pointerdown', {clientX: 100, clientY: 100})
+    Object.defineProperty(evt, 'target', {value: target})
+    ctrl.startDrag(evt, {kind: 'new-block', flavour: 'paragraph'})
+
+    dispatchPointerMove(target, 110, 110)
+
+    expect(ctrl.state).toBe('dragging')
+    expect(doc.virtualization.acquireBlockViewLease).not.toHaveBeenCalled()
+    dispatchPointerCancel(target)
+  })
+
   it('uses 8px threshold for touch input', () => {
     const evt = makePointerEvent('pointerdown', { clientX: 100, clientY: 100, pointerType: 'touch' })
     Object.defineProperty(evt, 'target', { value: target })
@@ -250,6 +335,7 @@ describe('DocInternalDragController state machine', () => {
     expect(ctrl.state).toBe('dragging')
     dispatchPointerCancel(target)
     expect(ctrl.state).toBe('idle')
+    expect(doc.releaseBlockViewLease).toHaveBeenCalledTimes(1)
   })
 
   it('dropping state transitions to idle after pointerup', () => {
@@ -260,6 +346,7 @@ describe('DocInternalDragController state machine', () => {
     expect(ctrl.state).toBe('dragging')
     dispatchPointerUp(target)
     expect(ctrl.state).toBe('idle')
+    expect(doc.releaseBlockViewLease).toHaveBeenCalledTimes(1)
   })
 
   it('ESC keydown during dragging cancels', () => {

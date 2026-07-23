@@ -35,6 +35,7 @@ export const FigmaEmbedBlockSchema: IBlockSchemaOptions<FigmaEmbedBlockModel> = 
   },
   metadata: {
     version: 1,
+    viewRetention: 'keep-alive',
     label: "Figma",
     svgIcon: "bc_Figma",
     icon: "bc_icon bc_Figma"

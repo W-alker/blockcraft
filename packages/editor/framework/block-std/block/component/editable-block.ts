@@ -18,9 +18,9 @@ import {BlockReadonlyOperation} from "../../../doc/block-readonly.types";
 export class EditableBlockComponent<Model extends EditableBlockNative = EditableBlockNative> extends BaseBlockComponent<Model> {
   plainTextOnly = false
 
-  private _yText!: Y.Text
+  private _yText: Y.Text | undefined
   get yText() {
-    return this._yText ||= this.yBlock.get('children') as Y.Text
+    return this._yText ??= this.yBlock.get('children') as Y.Text
   }
 
   protected _runtime!: InlineRuntime
@@ -86,9 +86,18 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     this._runtime = new InlineRuntime(this._containerElement, embedConverters)
   }
 
-  override reattach() {
-    super.reattach();
+  /** Detached blocks accept model updates but never patch a stale blot tree. */
+  dirtyWhileDetached = false
+
+  protected override beforeDetach(): void {
+    this._runtime?.destroy()
+  }
+
+  protected override afterReattach(): void {
+    this._yText = undefined
+    this._initRuntime()
     this.rerender()
+    this.dirtyWhileDetached = false
   }
 
   protected _containerElement!: HTMLElement
@@ -192,6 +201,10 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
    * Y.Text 脱节，后续光标定位与写入全部错位。
    */
   protected _applyDeltaToView(deltas: DeltaOperation[]) {
+    if (!this.isAttached) {
+      this.dirtyWhileDetached = true
+      return
+    }
     try {
       this._runtime.applyDelta(deltas)
       if (!this._verifyBlotConsistency()) {

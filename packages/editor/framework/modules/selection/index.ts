@@ -5,6 +5,7 @@ import {
 } from "../../block-std";
 import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
 import {closetBlockId, getBlockGapAnchor, getBlockGapCaretSpan, isNativeInputTarget} from "../../utils";
+import {deltaToString} from "../../../global";
 import {SelectionSelectedManager} from "./selected-manager";
 import {SelectionKeyboard} from "./selection-keyboard";
 import {FakeRange, IFakeRangeConfig} from "./createFakeRange";
@@ -73,6 +74,7 @@ export class SelectionManager {
   private _compositionSelectionRecheckQueued = false
   private _compositionSelectionRecheckTimer: ReturnType<typeof setTimeout> | null = null
   private _compositionSelectionRecheckVersion = 0
+  private _primaryPointerDown = false
   private _projectionVersion = 0
   private _projectionFrame: number | null = null
   private _projectionMountAdapter: SelectionProjectionMountAdapter | null = null
@@ -102,9 +104,18 @@ export class SelectionManager {
       )
       : null
     this._historyRestorer = new SelectionHistoryRestorer(this.doc, {
-      replay: selection => this.replay(selection),
+      replay: selection => this._replay(selection),
       readModelSelection: () => this.value?.toJSON() ?? null,
       readDomSelection: () => this.recalculate(false).value?.toJSON() ?? null,
+      isProjectionPending: selection => this._isDomProjectionPending(selection),
+      isSelectionVisible: selection => this._isSelectionVisibleInViewport(selection),
+      ensureViewMounted: blockIds => this._ensureViewMounted(blockIds),
+      scrollToBlock: blockId => {
+        if (!this.doc.virtualization?.enabled) return false
+        void this.doc.virtualization.scrollToBlock(blockId)
+        return true
+      },
+      scrollSelectionIntoView: () => this.scrollSelectionIntoView(),
     }, this._surface)
     this._positionResolver = new SelectionPositionResolver({
       getParentId: blockId => {
@@ -135,6 +146,7 @@ export class SelectionManager {
       this._cancelProjectionMountRequest()
       this._projectionMountRegistrationVersion += 1
       this._projectionMountAdapter = null
+      this._primaryPointerDown = false
       this._remoteSelectionReconciler?.destroy()
       this._historyRestorer.destroy()
     })
@@ -214,6 +226,16 @@ export class SelectionManager {
   }
 
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
+    const virtualizationViewChange$ = this.doc.virtualization?.viewChange$
+    virtualizationViewChange$?.pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(({mountedRootIds}) => {
+        const selection = this.selectionChange$.value
+        this.selectedManager.setSelected(
+          selection,
+          mountedRootIds,
+        )
+        this._reprojectAfterVirtualViewChange(selection)
+      })
     this.doc.event.customListen(this._surface.ownerDocument, 'selectionchange').subscribe(e => {
       // Explicit gates protect an active drag/transform and must stay hard.
       // The short programmatic projection window is different: when an IME
@@ -224,6 +246,8 @@ export class SelectionManager {
         this._queueCompositionSelectionRecheck()
         return
       }
+      const current = this.selectionChange$.value
+      if (current && this._isDomProjectionPending(current.toJSON())) return
       if (this._suppressProgrammaticSelectionChangeUntil > performance.now()) return
       this.recalculate()
     })
@@ -247,8 +271,7 @@ export class SelectionManager {
         // window from the previous programmatic DOM projection. Any selection
         // API invoked later in this mousedown will establish its own window.
         if (event.button === 0) {
-          this._suppressProgrammaticSelectionChangeUntil = 0
-          this._cancelCompositionSelectionRecheck()
+          this._beginPrimaryPointerIntent()
         }
         if (event.detail !== 3) return
         if (isNativeInputTarget(event.target)) return
@@ -259,6 +282,31 @@ export class SelectionManager {
         event.preventDefault()
         this.selectAllChildren(block)
       })
+
+    const ownerWindow = this._surface.ownerDocument.defaultView ?? this._surface.ownerDocument
+    fromEvent<PointerEvent>(root.hostElement, 'pointerdown', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(event => {
+        if (event.isPrimary && event.button === 0) this._beginPrimaryPointerIntent()
+      })
+    const releasePrimaryPointer = () => {
+      this._primaryPointerDown = false
+    }
+    fromEvent<PointerEvent>(ownerWindow, 'pointerup', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(releasePrimaryPointer)
+    fromEvent<PointerEvent>(ownerWindow, 'pointercancel', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(releasePrimaryPointer)
+    fromEvent<MouseEvent>(ownerWindow, 'mouseup', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(releasePrimaryPointer)
+    fromEvent<TouchEvent>(ownerWindow, 'touchend', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(releasePrimaryPointer)
+    fromEvent<TouchEvent>(ownerWindow, 'touchcancel', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(releasePrimaryPointer)
   }
 
   /**
@@ -331,6 +379,14 @@ export class SelectionManager {
       clearTimeout(this._compositionSelectionRecheckTimer)
       this._compositionSelectionRecheckTimer = null
     }
+  }
+
+  private _beginPrimaryPointerIntent(): void {
+    this._primaryPointerDown = true
+    this._suppressProgrammaticSelectionChangeUntil = 0
+    this._cancelCompositionSelectionRecheck()
+    this._cancelProjectionFrame()
+    this._cancelProjectionMountRequest()
   }
 
   // ── Read from DOM (user interaction path) ──
@@ -538,7 +594,12 @@ export class SelectionManager {
     this._cancelProjectionMountRequest()
     this._projectionVersion += 1
     this.selectionChange$.next(selection)
-    this.selectedManager.setSelected(selection)
+    this.selectedManager.setSelected(
+      selection,
+      this.doc.virtualization?.enabled && typeof this.doc.vm?.getMountedRootChildIds === 'function'
+        ? this.doc.vm.getMountedRootChildIds()
+        : undefined,
+    )
   }
 
   private _cancelProjectionFrame(): void {
@@ -552,6 +613,14 @@ export class SelectionManager {
     if (!request) return
     this._projectionMountRequest = null
     request.controller.abort()
+  }
+
+  private _isDomProjectionPending(expected: ISelectionJSON): boolean {
+    const current = this.value
+    if (!current || !sameSelectionJSON(current.toJSON(), expected)) return false
+    const mountRequest = this._projectionMountRequest
+    if (mountRequest && sameSelectionJSON(mountRequest.expected, expected)) return true
+    return this._projectionFrame !== null
   }
 
   private _scheduleProjectionFrame(callback: FrameRequestCallback): void {
@@ -618,10 +687,32 @@ export class SelectionManager {
     return {node: span, offset: 0}
   }
 
-  private _applyDomRange(range: Range) {
+  private _applyDomRange(
+    range: Range,
+    direction: 'forward' | 'backward' = 'forward',
+  ) {
     const selection = this._surface.getNativeSelection()
     if (!selection) throw new Error('Native selection is unavailable')
     this._suppressProgrammaticSelectionChange()
+
+    if (direction === 'backward') {
+      if (typeof selection.setBaseAndExtent === 'function') {
+        selection.setBaseAndExtent(
+          range.endContainer,
+          range.endOffset,
+          range.startContainer,
+          range.startOffset,
+        )
+        return
+      }
+      if (typeof selection.extend === 'function') {
+        selection.removeAllRanges()
+        selection.collapse(range.endContainer, range.endOffset)
+        selection.extend(range.startContainer, range.startOffset)
+        return
+      }
+    }
+
     selection.removeAllRanges()
     selection.addRange(range)
   }
@@ -687,11 +778,64 @@ export class SelectionManager {
       pointToLegacy(selectionState.start),
       pointToLegacy(selectionState.end),
     )
-    this._applyDomRange(range)
+    this._applyDomRange(range, selectionState.direction)
     if (scrollIntoView) {
       this.scrollSelectionIntoView()
     }
     return range
+  }
+
+  /**
+   * Reassert a cross-root native range after the virtual window rewrites its
+   * intermediate DOM. The model range stays canonical; this repair runs only
+   * on deduplicated mounted-window epochs, never on every scroll event.
+   */
+  private _reprojectAfterVirtualViewChange(selection: BlockSelection | null): void {
+    if (!selection || selection.collapsed || !this.doc.virtualization?.enabled) return
+    if (
+      this._suppressRecalculate ||
+      this.doc.event.status.isComposing ||
+      this._primaryPointerDown
+    ) {
+      return
+    }
+    if (!this._selectionCrossesRootRenderUnits(selection)) return
+    if (!this._surface.hasEditorFocus() && !this._surface.ownsNativeSelection()) return
+
+    const expected = selection.toJSON()
+    const projectionVersion = this._projectionVersion
+    try {
+      this._applyDomRangeForSelection(selection, false, projectionVersion, false)
+    } catch {
+      this._surface.clearNativeSelection()
+      this._recoverDomProjection(expected, projectionVersion)
+    }
+  }
+
+  private _selectionCrossesRootRenderUnits(selection: BlockSelection): boolean {
+    const startUnit = this._rootRenderUnitForPoint(selection.start, 'start')
+    const endUnit = this._rootRenderUnitForPoint(selection.end, 'end')
+    return !!startUnit && !!endUnit && startUnit !== endUnit
+  }
+
+  private _rootRenderUnitForPoint(
+    point: ISelectionPoint,
+    edge: 'start' | 'end',
+  ): string | null {
+    const model = this.doc.model
+    const rootId = this.doc.root.id
+    if (!model) return null
+
+    if (point.type === 'boundary' && point.blockId === rootId) {
+      const children = model.getChildrenIds(rootId)
+      const index = Math.max(0, Math.min(point.index, children.length))
+      return edge === 'start'
+        ? children[index] ?? children[index - 1] ?? null
+        : children[index - 1] ?? children[index] ?? null
+    }
+
+    const path = model.getPath(point.blockId)
+    return path?.[0] === rootId ? path[1] ?? null : null
   }
 
   private _commitSelection(
@@ -705,6 +849,7 @@ export class SelectionManager {
       return null
     }
 
+    this._ensureSelectionViewMounted(selectionState)
     this._publishState(selectionState)
     const projectionVersion = this._projectionVersion
     this._surface.focusRoot()
@@ -940,9 +1085,18 @@ export class SelectionManager {
     }
 
     if (startPoint.type === 'boundary') {
-      const point = this._getBoundaryDomPoint(startPoint, 'start')
+      const collapsedBoundary = !endPoint || (
+        endPoint.blockId === startPoint.blockId &&
+        endPoint.type === 'boundary' &&
+        endPoint.index === startPoint.index
+      )
+      const point = this._getBoundaryDomPoint(
+        startPoint,
+        'start',
+        !collapsedBoundary,
+      )
       range.setStart(point.node, point.offset)
-      if (!endPoint || (endPoint.blockId === startPoint.blockId && endPoint.type === 'boundary' && endPoint.index === startPoint.index)) {
+      if (collapsedBoundary) {
         range.collapse(true)
         return range
       }
@@ -1011,7 +1165,7 @@ export class SelectionManager {
     }
 
     if (endPoint.type === 'boundary') {
-      const point = this._getBoundaryDomPoint(endPoint, 'end')
+      const point = this._getBoundaryDomPoint(endPoint, 'end', true)
       range.setEnd(point.node, point.offset)
       return range
     }
@@ -1039,7 +1193,11 @@ export class SelectionManager {
     return range
   }
 
-  private _getBoundaryDomPoint(point: { blockId: string; index: number }, side: 'start' | 'end'): {node: Node; offset: number} {
+  private _getBoundaryDomPoint(
+    point: { blockId: string; index: number },
+    side: 'start' | 'end',
+    useStableChildEdge = false,
+  ): {node: Node; offset: number} {
     const block = this.doc.getBlockById(point.blockId)
     const container =
       block.childrenRenderRef?.containerElement ??
@@ -1047,39 +1205,72 @@ export class SelectionManager {
       block.hostElement
     const childIds = block.childrenIds ?? []
     const index = Math.max(0, Math.min(point.index ?? 0, childIds.length))
-    const gapPoint = this._getBoundaryGapDomPoint(childIds, index, side)
-    if (gapPoint) return gapPoint
+    // Root child offsets are live and rebase when virtual siblings mount. Keep
+    // non-collapsed endpoints inside the pinned adjacent block instead.
+    const stableChildEdge = useStableChildEdge &&
+      !!this.doc.virtualization?.enabled &&
+      point.blockId === this.doc.root.id
     const childNodes = Array.from(container.childNodes)
-    const childAt = childIds[index] ? this.doc.getBlockById(childIds[index]) : null
-    const nextDomIndex = childAt ? childNodes.indexOf(childAt.hostElement) : -1
-    if (nextDomIndex >= 0) return {node: container, offset: nextDomIndex}
-    const prevChild = index > 0 && childIds[index - 1] ? this.doc.getBlockById(childIds[index - 1]) : null
-    const prevDomIndex = prevChild ? childNodes.indexOf(prevChild.hostElement) : -1
-    if (prevDomIndex >= 0) return {node: container, offset: prevDomIndex + 1}
+    const candidates = side === 'start'
+      ? [
+          {childId: childIds[index], edge: 'start' as const},
+          {childId: index > 0 ? childIds[index - 1] : undefined, edge: 'end' as const},
+        ]
+      : [
+          {childId: index > 0 ? childIds[index - 1] : undefined, edge: 'end' as const},
+          {childId: childIds[index], edge: 'start' as const},
+        ]
+
+    for (const candidate of candidates) {
+      if (!candidate.childId) continue
+      const child = this._readBlock(candidate.childId)
+      if (!child) continue
+      const gapPoint = getBlockGapAnchor(
+        child.hostElement,
+        candidate.edge === 'start' ? 'leading' : 'trailing',
+      )
+      if (gapPoint) return gapPoint
+      if (stableChildEdge) {
+        return this._getStableBlockEdgeDomPoint(child, candidate.edge)
+      }
+
+      const domIndex = childNodes.indexOf(child.hostElement)
+      if (domIndex >= 0) {
+        return {
+          node: container,
+          offset: candidate.edge === 'start' ? domIndex : domIndex + 1,
+        }
+      }
+    }
+
+    if (useStableChildEdge && candidates.some(candidate => !!candidate.childId)) {
+      throw new Error('Boundary endpoint view is not mounted')
+    }
     return {node: container, offset: Math.min(index, childNodes.length)}
   }
 
-  private _getBoundaryGapDomPoint(
-    childIds: string[],
-    index: number,
-    side: 'start' | 'end',
-  ): {node: Node; offset: number} | null {
-    const getChild = (childIndex: number): BlockCraft.BlockComponent | null => {
-      const childId = childIds[childIndex]
-      return childId ? this.doc.getBlockById(childId) : null
-    }
-    const leading = () => {
-      const child = getChild(index)
-      return child ? getBlockGapAnchor(child.hostElement, 'leading') : null
-    }
-    const trailing = () => {
-      const child = getChild(index - 1)
-      return child ? getBlockGapAnchor(child.hostElement, 'trailing') : null
+  private _getStableBlockEdgeDomPoint(
+    block: BlockCraft.BlockComponent,
+    edge: 'start' | 'end',
+  ): {node: Node; offset: number} {
+    if (block.nodeType === BlockNodeType.editable) {
+      const editable = block as EditableBlockComponent
+      try {
+        const offset = edge === 'start' ? 0 : editable.textLength
+        return editable.runtime.mapper.modelPointToDomPoint(
+          editable.containerElement,
+          offset,
+        )
+      } catch {
+        // A newly mounted inline runtime can settle after its host. The host
+        // edge remains descendant-stable until the next bounded reprojection.
+      }
     }
 
-    return side === 'start'
-      ? leading() ?? trailing()
-      : trailing() ?? leading()
+    return {
+      node: block.hostElement,
+      offset: edge === 'start' ? 0 : block.hostElement.childNodes.length,
+    }
   }
 
   private _selectionFromWritePoints(
@@ -1147,16 +1338,51 @@ export class SelectionManager {
     return !('block' in point)
   }
 
+  private _ensureViewMounted(blockIds: readonly string[]): void {
+    this.doc.virtualization?.ensureViewMounted(blockIds)
+  }
+
+  private _ensureSelectionViewMounted(selection: BlockSelection): void {
+    const blockIds = this._projectionMountTargetIds(selection)
+    if (blockIds.every(blockId => this._hasBlockView(blockId))) return
+    this._ensureViewMounted(blockIds)
+  }
+
+  private _hasBlockView(blockId: string): boolean {
+    try {
+      if (!this.doc.getBlockById(blockId)) return false
+      const isMounted = this.doc.vm?.isMounted
+      return typeof isMounted !== 'function' || isMounted.call(this.doc.vm, blockId)
+    } catch {
+      return false
+    }
+  }
+
+  private _resolveBlockView(block: string | BlockCraft.BlockComponent): BlockCraft.BlockComponent {
+    if (typeof block !== 'string') return block
+    this._ensureViewMounted([block])
+    return this.doc.getBlockById(block)
+  }
+
   // ── Public API: programmatic selection ──
 
   selectBlock(block: BlockCraft.BlockComponent | string) {
-    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    block = this._resolveBlockView(block)
     let anchorBlock: BlockCraft.BlockComponent | null = null
     let headBlock: BlockCraft.BlockComponent | null = null
 
     if (block.nodeType === 'root') {
-      anchorBlock = block.firstChildren ?? null
-      headBlock = block.lastChildren ?? null
+      const childIds = this._modelResolver?.getChildrenIds(block.id) ?? block.childrenIds
+      const firstId = childIds?.[0]
+      const lastId = childIds?.[childIds.length - 1]
+      if (firstId && lastId) {
+        this._ensureViewMounted(firstId === lastId ? [firstId] : [firstId, lastId])
+        anchorBlock = this.doc.getBlockById(firstId)
+        headBlock = this.doc.getBlockById(lastId)
+      } else {
+        anchorBlock = block.firstChildren ?? null
+        headBlock = block.lastChildren ?? null
+      }
     } else {
       anchorBlock = block
       headBlock = block
@@ -1208,7 +1434,7 @@ export class SelectionManager {
   }
 
   selectOrSetCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean, scrollIntoView = true) {
-    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    block = this._resolveBlockView(block)
     if (this.doc.isEditable(block)) {
       this.setCursorAt(block, atStart ? 0 : block.textLength)
     } else {
@@ -1218,7 +1444,7 @@ export class SelectionManager {
   }
 
   setCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean, scrollIntoView = true) {
-    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    block = this._resolveBlockView(block)
     if (this.doc.isEditable(block)) {
       this.setCursorAt(block, atStart ? 0 : block.textLength)
     } else if (block.nodeType === BlockNodeType.void) {
@@ -1232,7 +1458,7 @@ export class SelectionManager {
   }
 
   selectAllChildren(block: string | BlockCraft.BlockComponent) {
-    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    block = this._resolveBlockView(block)
     if (this.doc.isEditable(block)) {
       this.replay({
         anchor: {blockId: block.id, type: 'text', offset: 0},
@@ -1255,7 +1481,7 @@ export class SelectionManager {
    * `side: 'before'` anchors inside the leading gap span, `'after'` the trailing one.
    */
   public setGapCursor(block: string | BlockCraft.BlockComponent, side: 'before' | 'after', scrollIntoView?: boolean): void {
-    const resolvedBlock = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    const resolvedBlock = this._resolveBlockView(block)
     const gapPoint = lazyGapPoint(
       resolvedBlock.id,
       side,
@@ -1273,6 +1499,11 @@ export class SelectionManager {
     headCell?: string | BlockCraft.IBlockComponents['table-cell'],
     scrollIntoView?: boolean,
   ): void {
+    this._ensureViewMounted([
+      typeof table === 'string' ? table : table.id,
+      typeof anchorCell === 'string' ? anchorCell : anchorCell.id,
+      typeof headCell === 'string' ? headCell : headCell?.id,
+    ].filter((id): id is string => !!id))
     const resolvedTable = typeof table === 'string'
       ? this.doc.getBlockById(table) as BlockCraft.IBlockComponents['table']
       : table
@@ -1293,6 +1524,12 @@ export class SelectionManager {
 
   /** @deprecated Use replay with ISelectionJSON */
   replay(json: IBlockSelectionJSON | ISelectionJSON | null) {
+    this._replay(json)
+  }
+
+  private _replay(
+    json: IBlockSelectionJSON | ISelectionJSON | null,
+  ): void {
     if (!json) {
       this.blur()
       return
@@ -1445,35 +1682,62 @@ export class SelectionManager {
     }
     const boundaryChildIds = sel.getBoundarySelectedChildIds()
     if (boundaryChildIds) {
-      return boundaryChildIds.map(id => this.doc.getBlockById(id).textContent()).join('\n')
+      return boundaryChildIds.map(id => this._selectionBlockText(id)).join('\n')
     }
     const s = sel.start, e = sel.end
-    const startBlock = sel.firstBlock, endBlock = sel.lastBlock
+    const startId = sel.firstBlockId
+    const endId = sel.lastBlockId
 
     if (sel.isInSameBlock) {
       if (s.type === 'gap') return ''
-      if (s.type !== 'text') return startBlock.textContent()
-      const eOff = e.type === 'text' ? e.offset : (startBlock as any).textLength
-      return startBlock.textContent().slice(s.offset, eOff)
+      const text = this._selectionBlockText(startId)
+      if (s.type !== 'text') return text
+      const eOff = e.type === 'text' ? e.offset : text.length
+      return text.slice(s.offset, eOff)
     }
 
     let text = s.type === 'text'
-      ? startBlock.textContent().slice(s.offset)
-      : startBlock.textContent()
-    const betweenBlocks = this.doc.queryBlocksBetween(startBlock, endBlock)
+      ? this._selectionBlockText(startId).slice(s.offset)
+      : this._selectionBlockText(startId)
+    const modelBacked = typeof (this.doc as any).model?.exists === 'function'
+    const betweenBlocks = modelBacked
+      ? this.doc.queryBlocksBetween(startId, endId)
+      : this.doc.queryBlocksBetween(sel.firstBlock, sel.lastBlock)
     for (const bid of betweenBlocks) {
-      text += '\n' + this.doc.getBlockById(bid).textContent()
+      text += '\n' + this._selectionBlockText(bid)
     }
     if (e.type === 'text') {
-      text += '\n' + endBlock.textContent().slice(0, e.offset)
+      text += '\n' + this._selectionBlockText(endId).slice(0, e.offset)
     } else {
-      text += '\n' + endBlock.textContent()
+      text += '\n' + this._selectionBlockText(endId)
     }
     return text
   }
 
+  private _selectionBlockText(blockId: string, visiting = new Set<string>()): string {
+    const model = (this.doc as any).model
+    if (typeof model?.exists === 'function' && model.exists(blockId)) {
+      if (visiting.has(blockId)) return ''
+      const deltas = model.getTextDeltas?.(blockId)
+      if (deltas) return deltaToString(deltas)
+      if (model.getNodeType?.(blockId) === BlockNodeType.void) return ''
+
+      visiting.add(blockId)
+      const text = (model.getChildrenIds?.(blockId) ?? [])
+        .map((id: string) => this._selectionBlockText(id, visiting))
+        .join('\n')
+      visiting.delete(blockId)
+      return text
+    }
+    try {
+      return this.doc.getBlockById(blockId).textContent()
+    } catch {
+      return ''
+    }
+  }
+
   scrollSelectionIntoView() {
-    const rect = this.getSelectionRect()
+    const rect = this._getSelectionHeadRect() ?? this.getSelectionRect()
     if (!rect || rect.height === 0) return
 
     const container = this.doc.scrollContainer!
@@ -1484,6 +1748,47 @@ export class SelectionManager {
       container.scrollTop += rect.bottom - cRect.bottom + padding
     } else if (rect.top < cRect.top) {
       container.scrollTop -= cRect.top - rect.top + padding
+    }
+  }
+
+  private _isSelectionVisibleInViewport(selection: ISelectionJSON): boolean {
+    const container = this.doc.scrollContainer
+    if (!container?.isConnected) return false
+    const rect = this._getSelectionPointRect(selection.head)
+    if (!rect || (!rect.width && !rect.height)) return false
+
+    const viewport = this._surface.getElementRect(container)
+    return rect.top >= viewport.top && rect.bottom <= viewport.bottom
+  }
+
+  private _getSelectionHeadRect(): DOMRect | null {
+    const head = this.value?.head
+    if (!head) return null
+    return this._getSelectionPointRect(head)
+  }
+
+  private _getSelectionPointRect(
+    point: ISelectionPoint | ISelectionPointJSON,
+  ): DOMRect | null {
+    const block = this._readBlock(point.blockId)
+    if (!block) return null
+    if (point.type === 'gap') {
+      try {
+        const span = getBlockGapCaretSpan(block.hostElement, point.side!)
+        return span ? this._surface.getElementRect(span) : null
+      } catch {
+        return null
+      }
+    }
+    if (point.type === 'selected' || point.type === 'table-cell') {
+      return this._surface.getElementRect(block.hostElement)
+    }
+    try {
+      const legacyPoint = pointToLegacy(point as ISelectionPoint)
+      const range = this._buildDomRange(legacyPoint, legacyPoint)
+      return this._surface.getRangeRect(range)
+    } catch {
+      return null
     }
   }
 

@@ -160,6 +160,46 @@ describe("ClipboardManager selection copy", () => {
     rootHost.remove();
   });
 
+  it("copies an unmounted middle block from the model graph", () => {
+    const {addBlock, blocks, manager, doc, makeSelection, rootHost} = makeHarness();
+    const first = addBlock("first", "one", BlockNodeType.editable);
+    const middle = addBlock("middle", "middle", BlockNodeType.editable);
+    const last = addBlock("last", "three", BlockNodeType.editable);
+    const texts: Record<string, string> = {first: "one", middle: "middle", last: "three"};
+    (doc as any).model = {
+      exists: (id: string) => id in texts,
+      getNodeType: () => BlockNodeType.editable,
+      getChildrenIds: () => [],
+      getTextDeltas: (id: string) => [{insert: texts[id]}],
+      toSnapshot: (id: string) => ({
+        id,
+        flavour: "paragraph",
+        nodeType: BlockNodeType.editable,
+        props: {depth: 0},
+        meta: {},
+        children: [{insert: texts[id]}],
+      }),
+    };
+    (doc as any).getBlockById = jasmine.createSpy("getBlockById").and.throwError("component is unmounted");
+    const selection = makeSelection(
+      {blockId: "first", type: "text", offset: 1, block: first},
+      {blockId: "last", type: "text", offset: 2, block: last},
+    );
+
+    const payload = (manager as any)._buildCopyPayload(selection);
+
+    expect(payload.plainText).toBe("ne\nmiddle\nth");
+    expect(payload.snapshot.children.map((snapshot: IBlockSnapshot) => snapshot.id)).toEqual([
+      "first",
+      "middle",
+      "last",
+    ]);
+    expect(middle.toSnapshot).not.toHaveBeenCalled();
+    expect((doc as any).getBlockById).not.toHaveBeenCalled();
+    void blocks;
+    rootHost.remove();
+  });
+
   it("uses the synchronous copy fallback for a block-readonly selection", async () => {
     const {addBlock, manager, doc, makeSelection, rootHost} = makeHarness();
     const paragraph = addBlock("locked", "locked text", BlockNodeType.editable);

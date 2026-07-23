@@ -11,6 +11,7 @@ import {nextTick} from "../../global";
 import {OrderedPrefixToolbar} from "./widgets/ordered-prefix-toolbar";
 
 type OrderableBlock = {
+  id: string
   flavour: string
   props: {
     depth?: number | string | null
@@ -18,12 +19,10 @@ type OrderableBlock = {
     order?: number | string | null
     start?: number | string | null
   } & Record<string, unknown>
-  parentBlock: OrderableParent | null
-  updateProps: (props: {order: number}) => void
 }
 
 type OrderableParent = {
-  getChildrenBlocks: () => OrderableBlock[]
+  id: string
 }
 
 export class OrderedBlockPlugin extends DocPlugin {
@@ -31,9 +30,9 @@ export class OrderedBlockPlugin extends DocPlugin {
 
   private _closeToolbar$ = new Subject()
 
-  private _pendingParents = new Set<OrderableParent>()
+  private _pendingParentIds = new Set<string>()
 
-  private _pendingStartBlocks = new Set<OrderableBlock>()
+  private _pendingStartBlockIds = new Set<string>()
 
   private _flushScheduled = false
 
@@ -107,25 +106,25 @@ export class OrderedBlockPlugin extends DocPlugin {
   override destroy() {
     this._destroyed = true
     this._sub.unsubscribe()
-    this._pendingParents.clear()
-    this._pendingStartBlocks.clear()
+    this._pendingParentIds.clear()
+    this._pendingStartBlockIds.clear()
     this._closeToolbar$.next(true)
   }
 
-  private _scheduleParentOf(block: OrderableBlock) {
-    const parent = block.parentBlock
-    if (!parent) return
-    this._scheduleParent(parent)
+  private _scheduleParentOf(block: Pick<OrderableBlock, 'id'>) {
+    const parentId = this.doc.model.getParentId(block.id)
+    if (!parentId) return
+    this._scheduleParent(parentId)
   }
 
-  private _scheduleParent(parent: OrderableParent) {
-    this._pendingParents.add(parent)
+  private _scheduleParent(parent: OrderableParent | string) {
+    this._pendingParentIds.add(typeof parent === 'string' ? parent : parent.id)
     this._ensureFlushScheduled()
   }
 
-  private _scheduleStartBlock(block: OrderableBlock) {
+  private _scheduleStartBlock(block: Pick<OrderableBlock, 'id' | 'flavour'>) {
     if (block.flavour !== 'ordered') return
-    this._pendingStartBlocks.add(block)
+    this._pendingStartBlockIds.add(block.id)
     this._ensureFlushScheduled()
   }
 
@@ -159,21 +158,24 @@ export class OrderedBlockPlugin extends DocPlugin {
     nextTick().then(() => {
       this._flushScheduled = false
       if (this._destroyed) {
-        this._pendingParents.clear()
-        this._pendingStartBlocks.clear()
+        this._pendingParentIds.clear()
+        this._pendingStartBlockIds.clear()
         return
       }
 
-      const parents = [...this._pendingParents]
-      const fullParentSet = new Set(parents)
-      const startBlocks = [...this._pendingStartBlocks]
-        .filter(block => block.parentBlock && !fullParentSet.has(block.parentBlock))
-      this._pendingParents.clear()
-      this._pendingStartBlocks.clear()
+      const parentIds = [...this._pendingParentIds]
+      const fullParentSet = new Set(parentIds)
+      const startBlockIds = [...this._pendingStartBlockIds]
+        .filter(blockId => {
+          const parentId = this.doc.model.getParentId(blockId)
+          return parentId !== null && !fullParentSet.has(parentId)
+        })
+      this._pendingParentIds.clear()
+      this._pendingStartBlockIds.clear()
       if (this.doc.isReadonly) return
       this.doc.crud.transact(() => {
-        parents.forEach(updateOrdersInParent)
-        startBlocks.forEach(updateOrdersFromStartBlock)
+        parentIds.forEach(parentId => updateOrdersInParent(this.doc, parentId))
+        startBlockIds.forEach(blockId => updateOrdersFromStartBlock(this.doc, blockId))
       }, ORIGIN_SYSTEM_REPAIR)
     })
   }
@@ -185,13 +187,28 @@ type OrderCounter = {
   nextOrder: number
 }
 
-const updateOrdersInParent = (parent: OrderableParent) => {
-  let parentChildren: OrderableBlock[]
-  try {
-    parentChildren = parent.getChildrenBlocks()
-  } catch {
-    return
+const getOrderableBlock = (
+  doc: BlockCraft.Doc,
+  blockId: string,
+): OrderableBlock | null => {
+  const flavour = doc.model.getFlavour(blockId)
+  const props = doc.model.getProps(blockId)
+  if (!flavour || !props) return null
+  return {
+    id: blockId,
+    flavour,
+    props: props as OrderableBlock['props'],
   }
+}
+
+const getOrderableChildren = (doc: BlockCraft.Doc, parentId: string): OrderableBlock[] => {
+  return doc.model.getChildrenIds(parentId)
+    .map(blockId => getOrderableBlock(doc, blockId))
+    .filter((block): block is OrderableBlock => !!block)
+}
+
+const updateOrdersInParent = (doc: BlockCraft.Doc, parentId: string) => {
+  const parentChildren = getOrderableChildren(doc, parentId)
 
   const counters = new Map<string, OrderCounter>()
 
@@ -207,7 +224,7 @@ const updateOrdersInParent = (parent: OrderableParent) => {
     const order = startOrder ?? counters.get(key)?.nextOrder ?? 0
 
     if (!isOrderEqual(orderedBlock.props.order, order)) {
-      orderedBlock.updateProps({order})
+      doc.crud.updateBlockProps(orderedBlock.id, {order})
     }
 
     counters.set(key, {
@@ -218,18 +235,14 @@ const updateOrdersInParent = (parent: OrderableParent) => {
   }
 }
 
-const updateOrdersFromStartBlock = (block: OrderableBlock) => {
-  const parent = block.parentBlock
-  if (!parent || block.flavour !== 'ordered') return
+const updateOrdersFromStartBlock = (doc: BlockCraft.Doc, blockId: string) => {
+  const block = getOrderableBlock(doc, blockId)
+  if (!block || block.flavour !== 'ordered') return
+  const parentId = doc.model.getParentId(blockId)
+  if (!parentId) return
 
-  let parentChildren: OrderableBlock[]
-  try {
-    parentChildren = parent.getChildrenBlocks()
-  } catch {
-    return
-  }
-
-  const startIndex = parentChildren.indexOf(block)
+  const parentChildren = getOrderableChildren(doc, parentId)
+  const startIndex = parentChildren.findIndex(current => current.id === blockId)
   if (startIndex === -1) return
 
   const depth = getDepth(block)
@@ -244,7 +257,7 @@ const updateOrdersFromStartBlock = (block: OrderableBlock) => {
     if (i > startIndex && getStartOrder(current) !== null) break
 
     if (!isOrderEqual(current.props.order, order)) {
-      current.updateProps({order})
+      doc.crud.updateBlockProps(current.id, {order})
     }
     order++
   }

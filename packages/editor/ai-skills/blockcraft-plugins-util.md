@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-07-15
+> Last updated: 2026-07-20
 
 ## PlaceholderPlugin
 
@@ -83,6 +83,18 @@ ph.setOverrideFor('callout', undefined)    // revert to schema default
 > `plugins/findReplace/findReplace.ts` — Find and replace dialog.
 
 Binds `Cmd/Ctrl+F` to open a global overlay find-and-replace dialog. Also exposes a `FindReplaceHelper` for programmatic use.
+
+Search indexes the complete `BlockModelGraph`, including virtualized blocks
+without Angular components. In virtual mode only the active result and matched
+blocks inside mounted windows receive `FakeRange` DOM highlights. Navigation
+materializes the active root unit; replacement writes through block-ID based
+`DocCRUD` methods, so replace-all does not mount the document.
+
+Model text updates are coalesced and rescan only affected block IDs. Structural
+changes are a cold path and rebuild model order without DOM traversal. A
+`FindReplaceMatch` created by the helper always includes stable `blockId`;
+reading its compatibility `block` property materializes and resolves the view,
+so model-only integrations should use `blockId`.
 
 ### Configuration
 
@@ -219,7 +231,7 @@ await pagination.exportToPdf('document.pdf')
 pagination.disable()
 ```
 
-The plugin changes only local DOM/CSS view state. It never writes Yjs and produces no Undo item. `exportToPdf()` opens a browser print dialog by default, or invokes a `PaginationPdfHostBackend` while the current top-level WebView print mirror is mounted. It does not return PDF bytes. The WYSIWYG path uses the same stable pagination result and readonly BlockCraft block components, not snapshot-viewer or DOM rasterization. Explicit `options.pagination` means a new reflow. Register `PageDividerBlockSchema` to expose manual page breaks. The package intentionally does not publish a settings component: host UI reads `plugin.config` and sends changes through `plugin.updateConfig(...)`; the playground keeps its own debug-only panel as an integration example.
+The plugin changes only local DOM/CSS view state. It never writes Yjs and produces no Undo item. `print()` and `exportToPdf()` obtain the complete document through `doc.exportSnapshot()`, so virtualized offscreen blocks are included without mounting editor views merely to serialize them. Live pagination is different: exact page/table geometry requires every root view, so `enable()` automatically acquires a full-document virtualization lease and `disable()` releases it after view cleanup. Very large documents therefore pay full view mount/memory cost only while live pagination is enabled. `exportToPdf()` opens a browser print dialog by default, or invokes a `PaginationPdfHostBackend` while the current top-level WebView print mirror is mounted. It does not return PDF bytes. The WYSIWYG path uses the same stable pagination result and readonly BlockCraft block components, not snapshot-viewer or DOM rasterization. Explicit `options.pagination` means a new reflow. Register `PageDividerBlockSchema` to expose manual page breaks. The package intentionally does not publish a settings component: host UI reads `plugin.config` and sends changes through `plugin.updateConfig(...)`; the playground keeps its own debug-only panel as an integration example.
 
 ---
 

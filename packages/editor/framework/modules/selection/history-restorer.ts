@@ -11,6 +11,11 @@ export interface SelectionHistoryRestoreHost {
   replay(selection: ISelectionJSON | null): void
   readModelSelection(): ISelectionJSON | null
   readDomSelection(): ISelectionJSON | null
+  isProjectionPending(selection: ISelectionJSON): boolean
+  isSelectionVisible(selection: ISelectionJSON): boolean
+  ensureViewMounted(blockIds: readonly string[]): void
+  scrollToBlock(blockId: string): boolean
+  scrollSelectionIntoView(): void
 }
 
 export class SelectionHistoryRestorer {
@@ -54,6 +59,7 @@ export class SelectionHistoryRestorer {
 
     let selection: ISelectionJSON | null = null
     try {
+      this.host.ensureViewMounted(bookmarkTargetIds(bookmark))
       selection = resolveRelativeSelectionBookmark(bookmark, this.doc)
     } catch {
       // A restored block may not be mounted in the component tree yet.
@@ -73,14 +79,19 @@ export class SelectionHistoryRestorer {
     selection: ISelectionJSON,
     attemptsLeft: number,
     version: number,
+    reveal = true,
   ): void {
     if (!this.isCurrent(version)) return
     try {
+      const wasVisible = reveal && this.host.isSelectionVisible(selection)
       this.surface.focusEditingHost(selection.anchor.blockId)
       this.host.replay(selection)
+      if (reveal && !wasVisible && !this.host.scrollToBlock(selection.head.blockId)) {
+        this.host.scrollSelectionIntoView()
+      }
     } catch {
       if (attemptsLeft > 0) {
-        this.scheduleFrame(() => this.replayResolved(selection, attemptsLeft - 1, version))
+        this.scheduleFrame(() => this.replayResolved(selection, attemptsLeft - 1, version, reveal))
       } else {
         this.host.replay(null)
       }
@@ -88,12 +99,27 @@ export class SelectionHistoryRestorer {
     }
 
     if (attemptsLeft <= 0) return
-    this.scheduleFrame(() => {
-      if (!this.isCurrent(version)) return
-      if (!this.hasRestoredSelection(selection)) {
-        this.replayResolved(selection, attemptsLeft - 1, version)
-      }
-    })
+    this.scheduleFrame(() => this.verifyRestoredSelection(selection, attemptsLeft, version))
+  }
+
+  private verifyRestoredSelection(
+    selection: ISelectionJSON,
+    attemptsLeft: number,
+    version: number,
+  ): void {
+    if (!this.isCurrent(version)) return
+    if (this.host.isProjectionPending(selection)) {
+      this.scheduleFrame(() => this.verifyRestoredSelection(selection, attemptsLeft, version))
+      return
+    }
+    // A newer user/programmatic selection supersedes this history restore.
+    // Retry only when the canonical model still matches and the DOM projection
+    // is the part that failed; otherwise an old Undo frame can steal the next
+    // caret or IME session under load.
+    if (!sameSelectionJSON(this.host.readModelSelection(), selection)) return
+    if (!this.hasRestoredSelection(selection)) {
+      this.replayResolved(selection, attemptsLeft - 1, version, false)
+    }
   }
 
   private hasRestoredSelection(expected: ISelectionJSON): boolean {
@@ -123,4 +149,14 @@ export class SelectionHistoryRestorer {
 
 function isModelOnlySelection(selection: ISelectionJSON): boolean {
   return selection.anchor.type === 'table-cell' && selection.head.type === 'table-cell'
+}
+
+function bookmarkTargetIds(bookmark: RelativeSelectionBookmark): string[] {
+  const ids = new Set<string>([
+    bookmark.anchor.blockId,
+    bookmark.head.blockId,
+  ])
+  if (bookmark.anchor.type === 'table-cell') ids.add(bookmark.anchor.tableId)
+  if (bookmark.head.type === 'table-cell') ids.add(bookmark.head.tableId)
+  return [...ids]
 }

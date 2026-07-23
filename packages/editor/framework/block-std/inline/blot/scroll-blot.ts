@@ -265,11 +265,13 @@ export class ScrollBlot implements IScrollBlot {
    * Remove all children and clear the container DOM.
    */
   detachAll() {
-    for (const child of this._children) {
-      child.parent = null
-    }
+    const children = this._children
     this._children = []
     this._invalidateIndex()
+    for (const child of children) {
+      child.detach()
+    }
+    this.domNode.replaceChildren()
   }
 
   // ─── Public blot management APIs ───

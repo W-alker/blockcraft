@@ -223,6 +223,47 @@ describe("TriggerBtn multi-selection state", () => {
 
     expect(blockMenuActionHandler).not.toHaveBeenCalled();
   });
+
+  it("copies a virtualized multi-block selection from the model graph", async () => {
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", ["markForCheck", "detectChanges"]);
+    const component = new TriggerBtn(cdr, new ElementRef(document.createElement("div")));
+    const activeBlock = {id: "p1", isReadonly: false};
+    const snapshots = [
+      {id: "p1", flavour: "paragraph"},
+      {id: "p2", flavour: "paragraph"},
+      {id: "p3", flavour: "paragraph"},
+    ];
+    const getBlockById = jasmine.createSpy("getBlockById").and.callFake((id: string) => {
+      if (id === activeBlock.id) return activeBlock;
+      throw new Error(`view not mounted: ${id}`);
+    });
+    component.doc = {
+      model: {
+        exists: jasmine.createSpy("exists").and.returnValue(true),
+        toSnapshot: jasmine.createSpy("toSnapshot").and.callFake((id: string) =>
+          snapshots.find(snapshot => snapshot.id === id) ?? null
+        ),
+      },
+      getBlockById,
+      clipboard: {
+        copyBlocksModel: jasmine.createSpy("copyBlocksModel").and.returnValue(Promise.resolve()),
+      },
+      messageService: {
+        success: jasmine.createSpy("success"),
+      },
+    } as any;
+    (component as any)._activeBlock = activeBlock;
+    (component as any)._isMultiSelection = true;
+    spyOn<any>(component, "resolveMultiActionIds").and.returnValue(["p1", "p2", "p3"]);
+
+    component.handleToolItemClick({name: "copy"} as any);
+    await Promise.resolve();
+
+    expect(component.doc.clipboard.copyBlocksModel).toHaveBeenCalledOnceWith(snapshots as any);
+    expect(component.doc.model.toSnapshot).toHaveBeenCalledTimes(3);
+    expect(getBlockById).not.toHaveBeenCalledWith("p2");
+    expect(getBlockById).not.toHaveBeenCalledWith("p3");
+  });
 });
 
 describe("TriggerBtn block readonly menu", () => {

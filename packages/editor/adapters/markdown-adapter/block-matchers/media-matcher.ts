@@ -103,6 +103,15 @@ const getMediaInfoFromLink = (link: Link): MediaInfo | null => {
 
 const getMediaInfoFromParagraph = (node: Paragraph): MediaInfo | null => {
   const meaningfulChildren = getMeaningfulChildren(node);
+  if (meaningfulChildren.length === 0) return null;
+
+  if (meaningfulChildren.every(child => child.type === 'html')) {
+    return getMediaInfoFromHtml({
+      type: 'html',
+      value: meaningfulChildren.map(child => child.value).join(''),
+    });
+  }
+
   if (meaningfulChildren.length !== 1) return null;
 
   const [child] = meaningfulChildren;

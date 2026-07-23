@@ -149,11 +149,17 @@ export class DocUndoManger {
     if (!this._isHistoryItemWritable('undo')) return
     this.undoRedoing$.next(true)
     try {
-      this._pendingRedoSnapshot = this._captureSelectionSnapshot()
+      const fallbackBookmark = this._captureSelectionSnapshot()
+      this._pendingRedoSnapshot = fallbackBookmark
       this._clearLiveSelectionBeforeUndoRedo()
       const stackItem = this._yUndoManager.undo()
       this._pendingRedoSnapshot = undefined
-      if (stackItem) this.doc.selection.restoreBookmark(this._selectionBookmark(stackItem))
+      if (stackItem) {
+        this.doc.selection.restoreBookmark(this._historyRestoreBookmark(
+          this._selectionBookmark(stackItem),
+          fallbackBookmark,
+        ))
+      }
     } finally {
       this._pendingRedoSnapshot = undefined
       // The flag is normally cleared inside crud._syncYEvent during the undo
@@ -169,11 +175,17 @@ export class DocUndoManger {
     if (!this._isHistoryItemWritable('redo')) return
     this.undoRedoing$.next(true)
     try {
-      this._pendingUndoSnapshot = this._captureSelectionSnapshot()
+      const fallbackBookmark = this._captureSelectionSnapshot()
+      this._pendingUndoSnapshot = fallbackBookmark
       this._clearLiveSelectionBeforeUndoRedo()
       const stackItem = this._yUndoManager.redo()
       this._pendingUndoSnapshot = undefined
-      if (stackItem) this.doc.selection.restoreBookmark(this._selectionBookmark(stackItem))
+      if (stackItem) {
+        this.doc.selection.restoreBookmark(this._historyRestoreBookmark(
+          this._selectionBookmark(stackItem),
+          fallbackBookmark,
+        ))
+      }
     } finally {
       this._pendingUndoSnapshot = undefined
       this.undoRedoing$.next(false)
@@ -280,6 +292,23 @@ export class DocUndoManger {
     return stackItem.meta.has(SELECTION_BOOKMARK)
       ? stackItem.meta.get(SELECTION_BOOKMARK) as RelativeSelectionBookmark | null
       : null
+  }
+
+  private _historyRestoreBookmark(
+    target: RelativeSelectionBookmark | null,
+    fallback: RelativeSelectionBookmark | null,
+  ): RelativeSelectionBookmark | null {
+    if (!target || !this.doc.model) return target
+    const targetIds = new Set<string>([
+      target.anchor.blockId,
+      target.head.blockId,
+    ])
+    if (target.anchor.type === 'table-cell') targetIds.add(target.anchor.tableId)
+    if (target.head.type === 'table-cell') targetIds.add(target.head.tableId)
+    for (const blockId of targetIds) {
+      if (!this.doc.model.exists(blockId)) return fallback
+    }
+    return target
   }
 
   clearHistory() {

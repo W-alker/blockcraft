@@ -340,8 +340,7 @@ export class BlockGapCreatorPlugin extends DocPlugin {
    * block — those are left to the adjacent-block fallback (Case C).
    */
   private _resolveRowBlockByPoint(x: number, y: number): { block: BlockCraft.BlockComponent; side: 'before' | 'after'; gutter: boolean } | null {
-    const children = this.doc.root.getChildrenBlocks()
-    for (const block of children) {
+    for (const block of this._mountedRootBlocks()) {
       const rect = block.hostElement.getBoundingClientRect()
       if (rect.height === 0) continue
       if (y >= rect.top && y <= rect.bottom) {
@@ -364,13 +363,36 @@ export class BlockGapCreatorPlugin extends DocPlugin {
     const below = this._probeForBlock(x, y + PROBE)
     const above = this._probeForBlock(x, y - PROBE)
 
-    // Fallback: click is below all blocks → treat the last child as "above".
-    if (!below && !above) {
-      const lastChild = this.doc.root.lastChildren
-      if (lastChild) return {above: lastChild, below: null}
+    if (below || above) return {above, below}
+
+    // A sparse root can also contain offscreen selection/keep-alive views.
+    // Model order is therefore not visual proximity; resolve the nearest
+    // mounted rect on either side of the pointer instead.
+    let nearestAbove: BlockCraft.BlockComponent | null = null
+    let nearestBelow: BlockCraft.BlockComponent | null = null
+    let nearestAboveBottom = Number.NEGATIVE_INFINITY
+    let nearestBelowTop = Number.POSITIVE_INFINITY
+    for (const block of this._mountedRootBlocks()) {
+      const rect = block.hostElement.getBoundingClientRect()
+      if (rect.height === 0) continue
+      if (rect.bottom <= y && rect.bottom > nearestAboveBottom) {
+        nearestAbove = block
+        nearestAboveBottom = rect.bottom
+      }
+      if (rect.top >= y && rect.top < nearestBelowTop) {
+        nearestBelow = block
+        nearestBelowTop = rect.top
+      }
     }
 
-    return {above, below}
+    return {above: nearestAbove, below: nearestBelow}
+  }
+
+  private _mountedRootBlocks(): BlockCraft.BlockComponent[] {
+    return this.doc.vm.getMountedRootChildIds().flatMap(id => {
+      const block = this.doc.vm.get(id)?.instance
+      return block ? [block] : []
+    })
   }
 
   /** Find a root-level block at the given viewport coordinates. */

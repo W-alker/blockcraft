@@ -114,8 +114,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     })
   }
 
-  override detach() {
-    super.detach();
+  protected override beforeDetach() {
     this.intersectionObserver.unobserve(this.hostElement)
     this.isIntersecting = false
   }

@@ -10,7 +10,14 @@ import {
   EditableBlockComponent,
   YBlock
 } from "../block-std";
-import { ClipboardManager, InputTransformer, SelectionManager, ClipboardCopyFilter } from "../modules";
+import {
+  ClipboardManager,
+  InputTransformer,
+  SelectionManager,
+  ClipboardCopyFilter,
+  RootVirtualizationManager,
+  VirtualizationConfig,
+} from "../modules";
 import { BehaviorSubject, Subject, Subscription, take } from "rxjs";
 import { getCommonPath } from "../utils";
 import { DocPlugin } from "../plugin";
@@ -24,8 +31,9 @@ import { BLOCK_POSITION } from "./block-position";
 import { BlockModelGraph } from "./model-graph";
 import { BlockReadonlyManager } from "./block-readonly-manager";
 import { BlockRef } from "./block-readonly.types";
+import {writeSnapshotsToYBlockMap} from './snapshot-yblock'
 
-interface DocConfig {
+export interface DocConfig {
   docId: string
   schemas: BlockCraft.SchemaManager
   logger: Logger
@@ -39,6 +47,8 @@ interface DocConfig {
   copyFilter?: ClipboardCopyFilter
   // 如果不传递，会尝试向上遍历获取
   scrollContainer?: HTMLElement
+  /** Optional root-child view virtualization. Disabled by default. */
+  virtualization?: VirtualizationConfig
 }
 
 export const Y_BLOCK_MAP_NAME = 'blocks'
@@ -67,6 +77,7 @@ export class BlockCraftDoc {
   readonly selection = new SelectionManager(this)
   readonly clipboard = new ClipboardManager(this)
   readonly inputManger = new InputTransformer(this)
+  readonly virtualization = new RootVirtualizationManager(this, this.config.virtualization)
 
   readonly onChildrenUpdate$ = this.crud.onChildrenUpdate$
   readonly onPropsUpdate$ = this.crud.onPropsUpdate$
@@ -155,6 +166,7 @@ export class BlockCraftDoc {
     this._plugins = this.config.plugins || []
     this._bindReadonlyViolationFeedback()
     this.onDestroy(() => {
+      this.virtualization.dispose()
       this.model.destroy()
       this.dragController.destroy()
       this._subscriptions.unsubscribe()
@@ -188,9 +200,21 @@ export class BlockCraftDoc {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `Invalid root snapshot`)
     }
 
-    const comp = this.vm.createComponentBySnapshot(snapShot, (b) => {
-      this.yBlockMap.set(b.instance.id, b.instance.yBlock)
-    })
+    let comp: BlockCraft.BlockComponentRef
+    if (this.virtualization?.enabled) {
+      let yRoot!: YBlock
+      const writeSnapshot = () => {
+        yRoot = writeSnapshotsToYBlockMap(this.yBlockMap, [snapShot])[0]
+      }
+      const yDoc = this.yBlockMap.doc
+      if (yDoc) yDoc.transact(writeSnapshot)
+      else writeSnapshot()
+      comp = this.vm.createRootOnlyByYBlock(yRoot)
+    } else {
+      comp = this.vm.createComponentBySnapshot(snapShot, (b) => {
+        this.yBlockMap.set(b.instance.id, b.instance.yBlock)
+      })
+    }
     this.model.build(comp.instance.id)
     container.append(comp.location.nativeElement)
     this._initEditor(comp.instance as any)
@@ -204,26 +228,33 @@ export class BlockCraftDoc {
     }
 
     const id = yRoot.get('id')
-    // 「遇到才兜底」：构建组件树时收集实际遇到的悬空 child 引用（历史协同
-    // 「移动 vs 删除」遗留的孤儿引用，无对应 yBlock）。干净文档一个都不会触发，
-    // 不做任何全文档扫描。
-    const danglingRefs: { parentId: string, childId: string }[] = []
-    const comp = this.vm.createComponentByYBlocks(
-      { [id]: yRoot },
-      (parentId, childId) => danglingRefs.push({ parentId, childId }),
-    )
-    // 构建后、observer 挂载前剪除遇到的悬空引用：构建时它们被跳过渲染，
-    // _compRefs 比模型短，此处剪掉模型里的悬空引用使两者重新对齐；此刻 observer
-    // 未挂，删除不会触发按模型下标 splice（否则会删错有效组件）。
-    if (danglingRefs.length) this.crud.pruneChildRefs(danglingRefs)
-
-    const root = comp[id]
+    let root: BlockCraft.BlockComponentRef
+    if (this.virtualization?.enabled) {
+      root = this.vm.createRootOnlyByYBlock(yRoot)
+    } else {
+      // 「遇到才兜底」：构建组件树时收集实际遇到的悬空 child 引用（历史协同
+      // 「移动 vs 删除」遗留的孤儿引用，无对应 yBlock）。干净文档一个都不会触发，
+      // 不做任何全文档扫描。
+      const danglingRefs: { parentId: string, childId: string }[] = []
+      const comp = this.vm.createComponentByYBlocks(
+        { [id]: yRoot },
+        (parentId, childId) => danglingRefs.push({ parentId, childId }),
+      )
+      // 构建后、observer 挂载前剪除遇到的悬空引用：构建时它们被跳过渲染，
+      // _compRefs 比模型短，此处剪掉模型里的悬空引用使两者重新对齐；此刻 observer
+      // 未挂，删除不会触发按模型下标 splice（否则会删错有效组件）。
+      if (danglingRefs.length) this.crud.pruneChildRefs(danglingRefs)
+      root = comp[id]
+    }
     this.model.build(id)
     container.append(root.location.nativeElement)
     this._initEditor(root.instance as any)
   }
 
   private _initEditor(comp: BlockCraft.IBlockComponents['root']) {
+    // Publish the configured policy before afterInit callbacks and plugins can
+    // issue guarded model writes. The initial `true` only protects bootstrap.
+    this.readonlySwitch$.next(this.config.readonly ?? false)
 
     // exec after init functions
     this.afterInit$.next(this._root = comp)
@@ -244,10 +275,9 @@ export class BlockCraftDoc {
     nextTick().then(() => {
       // init scroll container
       this._scrollContainer = this.config.scrollContainer ?? getScrollContainer(comp.hostElement)
-      // init readonly
-      this.readonlySwitch$.next(this.config.readonly || false)
       // init theme
       this.toggleTheme(this.config.theme || 'light')
+      this._scrollContainer && this.virtualization.init(this._scrollContainer)
     })
 
     // init hotkeys
@@ -311,6 +341,16 @@ export class BlockCraftDoc {
     return block instanceof EditableBlockComponent
   }
 
+  /** Resolve plain-text formatting capability without requiring a mounted view. */
+  isPlainTextBlock(blockId: string): boolean {
+    const retained = this.vm.get(blockId)?.instance
+    if (retained instanceof EditableBlockComponent) return retained.plainTextOnly
+
+    const flavour = this.model.getFlavour(blockId)
+    if (!flavour) return false
+    return this.schemas.get(flavour, false)?.metadata.plainTextOnly === true
+  }
+
   private _getModelBlockId(block: string | BlockCraft.BlockComponent) {
     const blockId = typeof block === 'string' ? block : block.id
     if (typeof block === 'string' && !this.model.exists(blockId)) {
@@ -319,14 +359,19 @@ export class BlockCraftDoc {
     return blockId
   }
 
+  private _getNavigationBlock(id: string) {
+    this.virtualization?.ensureViewMounted([id])
+    return this.getBlockById(id)
+  }
+
   nextSibling(block: string | BlockCraft.BlockComponent) {
     const siblingId = this.model.getNextSiblingId(this._getModelBlockId(block))
-    return siblingId === null ? null : this.getBlockById(siblingId)
+    return siblingId === null ? null : this._getNavigationBlock(siblingId)
   }
 
   prevSibling(block: string | BlockCraft.BlockComponent) {
     const siblingId = this.model.getPreviousSiblingId(this._getModelBlockId(block))
-    return siblingId === null ? null : this.getBlockById(siblingId)
+    return siblingId === null ? null : this._getNavigationBlock(siblingId)
   }
 
   getBlockSiblingIds<T extends BlockCraft.BlockFlavour = BlockCraft.BlockFlavour>(id: string) {

@@ -28,7 +28,8 @@ export const CodeBlockSchema: IBlockSchemaOptions<CodeBlockModel> = {
     version: 1,
     label: "代码块",
     svgIcon: "bc_daimakuai1",
-    icon: "bc_icon bc_daimakuai1"
+    icon: "bc_icon bc_daimakuai1",
+    plainTextOnly: true,
   }
 }
 

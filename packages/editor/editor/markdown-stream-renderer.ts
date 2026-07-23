@@ -1,12 +1,10 @@
-import * as Y from 'yjs';
 import {
   BlockNodeType,
   DeltaInsert,
   DeltaOperation,
-  EditableBlockComponent,
   IAdapter,
+  IBlockProps,
   IBlockSnapshot,
-  native2YBlock,
   ORIGIN_NO_RECORD,
 } from "../framework";
 
@@ -237,11 +235,10 @@ export class MarkdownStreamRenderer {
   }
 
   private syncChildren(parentId: string, nextChildren: IBlockSnapshot[]) {
+    const currentIds = [...this.doc.model.getChildrenIds(parentId)];
     let index = 0;
 
     while (true) {
-      const parent = this.doc.getBlockById(parentId);
-      const currentIds = parent.childrenIds;
       const currentId = currentIds[index];
       const nextSnapshot = nextChildren[index];
 
@@ -251,112 +248,104 @@ export class MarkdownStreamRenderer {
 
       if (!currentId && nextSnapshot) {
         this.insertSnapshots(parentId, index, [nextSnapshot]);
+        currentIds.splice(index, 0, nextSnapshot.id);
         index++;
         continue;
       }
 
       if (currentId && !nextSnapshot) {
         this.deleteChildren(parentId, index, 1);
+        currentIds.splice(index, 1);
         continue;
       }
 
-      const currentBlock = this.doc.getBlockById(currentId!);
-      if (this.canPatchInPlace(currentBlock, nextSnapshot!)) {
-        this.patchBlock(currentBlock, nextSnapshot!);
+      if (this.canPatchInPlace(currentId!, nextSnapshot!)) {
+        this.patchBlock(currentId!, nextSnapshot!);
         index++;
         continue;
       }
 
       const nextCurrentId = currentIds[index + 1];
-      if (nextCurrentId) {
-        const nextCurrentBlock = this.doc.getBlockById(nextCurrentId);
-        if (this.canPatchInPlace(nextCurrentBlock, nextSnapshot!)) {
-          this.deleteChildren(parentId, index, 1);
-          continue;
-        }
+      if (nextCurrentId && this.canPatchInPlace(nextCurrentId, nextSnapshot!)) {
+        this.deleteChildren(parentId, index, 1);
+        currentIds.splice(index, 1);
+        continue;
       }
 
       const followingSnapshot = nextChildren[index + 1];
-      if (followingSnapshot && this.canPatchInPlace(currentBlock, followingSnapshot)) {
+      if (followingSnapshot && this.canPatchInPlace(currentId!, followingSnapshot)) {
         this.insertSnapshots(parentId, index, [nextSnapshot!]);
+        currentIds.splice(index, 0, nextSnapshot!.id);
         index++;
         continue;
       }
 
-      this.replaceChild(parentId, index, nextSnapshot!);
+      this.replaceChild(currentId!, nextSnapshot!);
+      currentIds[index] = nextSnapshot!.id;
       index++;
     }
   }
 
-  private canPatchInPlace(block: BlockCraft.BlockComponent, snapshot: IBlockSnapshot) {
-    return block.flavour === snapshot.flavour && block.nodeType === snapshot.nodeType;
+  private canPatchInPlace(blockId: string, snapshot: IBlockSnapshot) {
+    return this.doc.model.getFlavour(blockId) === snapshot.flavour &&
+      this.doc.model.getNodeType(blockId) === snapshot.nodeType;
   }
 
-  private patchBlock(block: BlockCraft.BlockComponent, snapshot: IBlockSnapshot) {
-    this.syncProps(block, snapshot.props);
+  private patchBlock(blockId: string, snapshot: IBlockSnapshot) {
+    this.syncProps(blockId, snapshot.props);
+    const nodeType = this.doc.model.getNodeType(blockId);
 
-    if (block.nodeType === BlockNodeType.editable && snapshot.nodeType === BlockNodeType.editable) {
-      this.patchEditableBlock(block as EditableBlockComponent, snapshot.children);
+    if (nodeType === BlockNodeType.editable && snapshot.nodeType === BlockNodeType.editable) {
+      this.patchEditableBlock(blockId, snapshot.children);
       return;
     }
 
     if (
-      (block.nodeType === BlockNodeType.block || block.nodeType === BlockNodeType.root) &&
+      (nodeType === BlockNodeType.block || nodeType === BlockNodeType.root) &&
       (snapshot.nodeType === BlockNodeType.block || snapshot.nodeType === BlockNodeType.root)
     ) {
-      this.syncChildren(block.id, snapshot.children);
+      this.syncChildren(blockId, snapshot.children);
     }
   }
 
-  private patchEditableBlock(block: EditableBlockComponent, nextDelta: DeltaInsert[]) {
-    const operations = buildDeltaPatch(block.textDeltas(), nextDelta);
+  private patchEditableBlock(blockId: string, nextDelta: DeltaInsert[]) {
+    const operations = buildDeltaPatch(this.doc.model.getTextDeltas(blockId) ?? [], nextDelta);
     if (operations.length === 0) {
       return;
     }
 
-    block.applyDeltaOperations(operations);
+    this.doc.crud.applyTextDelta(blockId, operations);
   }
 
-  private syncProps(block: BlockCraft.BlockComponent, nextProps: IBlockSnapshot['props']) {
-    if (blockPropsEqual(block.props, nextProps)) {
+  private syncProps(blockId: string, nextProps: IBlockSnapshot['props']) {
+    const currentProps = this.doc.model.getProps(blockId) ?? {};
+    if (blockPropsEqual(currentProps as IBlockSnapshot['props'], nextProps)) {
       return;
     }
 
-    const yProps = block.yBlock.get('props') as Y.Map<unknown>;
-    const currentKeys = new Set(Object.keys(block.props));
+    const patch: Partial<IBlockProps> = {};
+    const currentKeys = new Set(Object.keys(currentProps));
 
     Object.entries(nextProps).forEach(([key, value]) => {
       currentKeys.delete(key);
-      if (JSON.stringify(block.props[key]) === JSON.stringify(value)) {
+      if (JSON.stringify(currentProps[key]) === JSON.stringify(value)) {
         return;
       }
-      yProps.set(key, value);
+      patch[key] = value;
     });
 
     currentKeys.forEach((key) => {
-      yProps.delete(key);
+      patch[key] = null;
     });
+    this.doc.crud.updateBlockProps(blockId, patch);
   }
 
   private insertSnapshots(parentId: string, index: number, snapshots: IBlockSnapshot[]) {
-    const parent = this.doc.getBlockById(parentId);
-    const yChildren = parent.yBlock.get('children') as Y.Array<string>;
-    snapshots.forEach((snapshot) => this.mountSnapshot(snapshot));
-    yChildren.insert(index, snapshots.map((snapshot) => snapshot.id));
+    this.doc.crud.insertBlockSnapshots(parentId, index, snapshots);
   }
 
-  private replaceChild(parentId: string, index: number, snapshot: IBlockSnapshot) {
-    const parent = this.doc.getBlockById(parentId);
-    const yChildren = parent.yBlock.get('children') as Y.Array<string>;
-    const currentId = parent.childrenIds[index];
-
-    if (currentId) {
-      this.deleteBlockTree(currentId);
-      yChildren.delete(index, 1);
-    }
-
-    this.mountSnapshot(snapshot);
-    yChildren.insert(index, [snapshot.id]);
+  private replaceChild(blockId: string, snapshot: IBlockSnapshot) {
+    this.doc.crud.replaceBlockSnapshots(blockId, [snapshot]);
   }
 
   private deleteChildren(parentId: string, index: number, count: number) {
@@ -364,46 +353,6 @@ export class MarkdownStreamRenderer {
       return;
     }
 
-    const parent = this.doc.getBlockById(parentId);
-    const yChildren = parent.yBlock.get('children') as Y.Array<string>;
-    const removingIds = parent.childrenIds.slice(index, index + count);
-
-    removingIds.forEach((id) => this.deleteBlockTree(id));
-    yChildren.delete(index, count);
-  }
-
-  private deleteBlockTree(blockId: string) {
-    const yBlock = this.doc.yBlockMap.get(blockId);
-    if (!yBlock) {
-      return;
-    }
-
-    const children = yBlock.get('children');
-    if (children instanceof Y.Array) {
-      children.toArray().forEach((childId) => {
-        this.deleteBlockTree(childId as string);
-      });
-    }
-
-    this.doc.yBlockMap.delete(blockId);
-  }
-
-  private mountSnapshot(snapshot: IBlockSnapshot) {
-    const nativeBlock =
-      snapshot.nodeType === BlockNodeType.editable
-        ? snapshot
-        : {
-          ...snapshot,
-          children: snapshot.children.map((child) => child.id),
-        };
-
-    this.doc.yBlockMap.set(
-      snapshot.id,
-      native2YBlock(nativeBlock as never),
-    );
-
-    if (snapshot.nodeType === BlockNodeType.block || snapshot.nodeType === BlockNodeType.root) {
-      snapshot.children.forEach((child) => this.mountSnapshot(child));
-    }
+    this.doc.crud.deleteBlocks(parentId, index, count, true);
   }
 }

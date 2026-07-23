@@ -1,4 +1,4 @@
-import {BaseBlockComponent, EditableBlockComponent, HotKeyTrigger, IBlockProps, ORIGIN_SKIP_SYNC} from "../../framework";
+import {EditableBlockComponent, HotKeyTrigger, IBlockProps} from "../../framework";
 import {IS_MAC, sliceDelta} from "../../global";
 
 export interface IBlockTransformConfig {
@@ -46,7 +46,7 @@ export const blockTransforms: IBlockTransformConfig[] = [
     hotkey: {key: ['o', 'O'], shortKey: true, shiftKey: true},
     onConvert: (doc, from, matchedString) => {
       const o = doc.schemas.createSnapshot('ordered', [sliceDelta(from.textDeltas(), matchedString.length), from.props])
-      const prevOrdered = findPreviousOrderedForContinuation(from as unknown as BaseBlockComponent<any>)
+      const prevOrdered = findPreviousOrderedForContinuation(doc, from)
       if (prevOrdered) {
         o.props['order'] = prevOrdered.props['order'] || 0
       } else {
@@ -112,16 +112,29 @@ export const blockTransforms: IBlockTransformConfig[] = [
   }
 ]
 
-const findPreviousOrderedForContinuation = (block: BaseBlockComponent<any>) => {
-  const parent = block.parentBlock
-  if (!parent) return null
+type OrderedContinuationBlock = {
+  id: string
+  flavour: string
+  props: IBlockProps
+}
 
-  const siblings = parent.getChildrenBlocks()
-  const index = siblings.indexOf(block)
+const findPreviousOrderedForContinuation = (
+  doc: BlockCraft.Doc,
+  block: OrderedContinuationBlock,
+) => {
+  const parentId = doc.model.getParentId(block.id)
+  if (!parentId) return null
+
+  const siblings = doc.model.getChildrenIds(parentId)
+  const index = siblings.indexOf(block.id)
   if (index === -1) return null
 
   for (let i = index - 1; i >= 0; i--) {
-    const prevBlock = siblings[i]
+    const siblingId = siblings[i]
+    const flavour = doc.model.getFlavour(siblingId)
+    const props = doc.model.getProps(siblingId) as IBlockProps | undefined
+    if (!flavour || !props) continue
+    const prevBlock = {id: siblingId, flavour, props}
     if (isHeadingBoundary(prevBlock)) {
       break
     }
@@ -142,18 +155,21 @@ const findPreviousOrderedForContinuation = (block: BaseBlockComponent<any>) => {
   return null
 }
 
-const getDepth = (block: BlockCraft.BlockComponent) => {
+const getDepth = (block: Pick<OrderedContinuationBlock, 'props'>) => {
   return (block.props['depth'] || 0) as number
 }
 
-const getHeadingLevel = (block: BlockCraft.BlockComponent) => {
+const getHeadingLevel = (block: Pick<OrderedContinuationBlock, 'props'>) => {
   return (block.props['heading'] || 0) as number
 }
 
-const isSameHeadingLevel = (left: BlockCraft.BlockComponent, right: BlockCraft.BlockComponent) => {
+const isSameHeadingLevel = (
+  left: Pick<OrderedContinuationBlock, 'props'>,
+  right: Pick<OrderedContinuationBlock, 'props'>,
+) => {
   return getHeadingLevel(left) === getHeadingLevel(right)
 }
 
-const isHeadingBoundary = (block: BlockCraft.BlockComponent) => {
+const isHeadingBoundary = (block: Pick<OrderedContinuationBlock, 'props'>) => {
   return getHeadingLevel(block) > 0
 }

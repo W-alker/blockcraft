@@ -69,10 +69,28 @@ export class RemoteSelectionReconciler {
 
   private reconcile(state: LiveSelectionBookmarkSnapshot): void {
     if (this.destroyed || !this.doc.isInitialized || !state.bookmark) return
-    if (!this.bookmarkTracker.isCurrent(state.revision)) return
+
+    // CompositionSession owns the insertion anchor until compositionend. The
+    // Y.Text may already include a remote patch while the composing DOM/blot
+    // view intentionally still reflects the pre-patch text. Replaying the
+    // mapped bookmark here would project a new model offset into that stale DOM
+    // and can dismiss the native IME or clear its selection. compositionend
+    // resolves the same Yjs-relative anchor and performs one final projection.
+    if (this.doc.inputManger?.compositionSession?.isActive) return
 
     const active = this.surface.getActiveElement()
     if (!this.surface.hasEditorFocus() || isNativeInputTarget(active)) return
+
+    if (!this.bookmarkTracker.isCurrent(state.revision)) {
+      // Removing the selected scope can invalidate and publish a null model
+      // selection during view sync, while the browser places a new caret in a
+      // surviving editing host. Recover that native fallback, but never replace
+      // a newer live model selection created by user or programmatic intent.
+      if (!this.doc.selection.value && this.surface.ownsNativeSelection()) {
+        this.doc.selection.recalculate()
+      }
+      return
+    }
 
     const mapped = resolveRelativeSelectionBookmark(state.bookmark, this.doc)
     if (mapped) {

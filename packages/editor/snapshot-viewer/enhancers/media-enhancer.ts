@@ -26,7 +26,6 @@ export function createIframeEnhancementTask(
   return {
     key,
     target,
-    policy: "visible",
     load: () => src,
     apply: (value) => {
       const existing = target.querySelector("iframe")

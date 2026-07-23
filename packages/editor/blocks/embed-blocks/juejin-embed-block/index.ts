@@ -30,6 +30,7 @@ export const JuejinEmbedBlockSchema: IBlockSchemaOptions<JuejinEmbedBlockModel> 
   },
   metadata: {
     version: 1,
+    viewRetention: 'keep-alive',
     label: "掘金",
     svgIcon: "bc_juejin",
     icon: "bc_icon bc_juejin"

@@ -37,6 +37,7 @@ export const VideoBlockSchema: IBlockSchemaOptions<VideoBlockModel> = {
   },
   metadata: {
     version: 1,
+    viewRetention: 'keep-alive',
     label: '视频',
     description: '插入视频，支持链接、本地上传',
     svgIcon: 'bc_shipin',

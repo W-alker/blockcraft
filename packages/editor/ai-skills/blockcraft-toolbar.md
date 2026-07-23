@@ -2,13 +2,13 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-07-20
 
 ## Overlay Service
 
 All floating UI in BlockCraft uses Angular CDK Overlay via `doc.overlayService`. Two main patterns:
 
-### 1. Connected Overlay (Anchored to Element)
+### 1. Connected Overlay (Anchored to Element or Block)
 
 ```typescript
 const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<MyComponent>({
@@ -30,6 +30,22 @@ componentRef.instance.myEvent
   .pipe(takeUntil(closeSubject$))
   .subscribe(value => { /* handle */ });
 ```
+
+Choose the target by ownership, not only by geometry:
+
+- `target: blockComponent` creates a block-owned overlay. With root
+  virtualization enabled, `DocOverlayService` automatically holds a targeted
+  block view lease until `close$`, `OverlayRef.detach()` / `dispose()`, or
+  document destruction. The stable block ID is re-resolved after structure
+  changes, and disabled virtualization makes the lease a no-op.
+- `target: anchorElement` creates an element-owned overlay. It acquires no block
+  lease and closes when that exact element disconnects. Use this for inline
+  links, temporary range markers, toolbar buttons and other ephemeral anchors.
+
+Lease acquisition and release happen only at overlay open/close boundaries;
+scroll and pointer events perform no lease work. Always emit `closeSubject$.next()`
+from the owning plugin's common teardown even if it also disposes the returned
+OverlayRef directly.
 
 ### 2. Global Overlay (Centered/Custom Position)
 
@@ -85,7 +101,7 @@ export class MyBlockToolbarPlugin extends DocPlugin {
       this._activeBlock = block;
 
       const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<MyToolbarComponent>({
-        target: block.hostElement,
+        target: block, // Block-owned: keeps its virtualized root unit mounted
         component: MyToolbarComponent,
         positions: [
           getPositionWithOffset("top-left", 0, 8),
@@ -190,6 +206,8 @@ this._close$.next();  // triggers all takeUntil subscriptions to complete
 
 - [ ] Overlay component is `standalone: true` with `OnPush`
 - [ ] `createConnectedOverlay` receives a `close$` Subject
+- [ ] Block-owned overlays pass the BlockComponent itself as `target`
+- [ ] Ephemeral element-owned overlays intentionally pass an `HTMLElement`
 - [ ] `closeToolbar` function resets all state
 - [ ] `destroy()` calls `closeToolbar()` and unsubscribes
 - [ ] Readonly mode checked before showing interactive UI

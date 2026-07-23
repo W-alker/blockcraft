@@ -1,6 +1,7 @@
 import * as Y from "yjs";
 import {
   BlockNodeType,
+  DeltaInsert,
   IBlockSnapshot,
   NativeBlockModel,
   YBlock,
@@ -16,6 +17,13 @@ export interface IBlockModelStructureChange {
   affectedParentIds: readonly string[];
 }
 
+export interface IBlockModelTextChange {
+  blockIds: readonly string[];
+  origin: unknown;
+  local: boolean;
+  isUndoRedo: boolean;
+}
+
 /**
  * Yjs-backed, read-only document graph. It never requires mounted components.
  */
@@ -23,11 +31,15 @@ export class BlockModelGraph {
   private rootId: string | null = null;
   private readonly parentById = new Map<string, string | null>();
   private readonly childrenById = new Map<string, readonly string[]>();
+  private readonly siblingIndexById = new Map<string, number>();
+  private readonly deferredProjectionParentIds = new Set<string>();
   private observing = false;
   private _structureRevision = 0;
   readonly structureChange$ = new Subject<IBlockModelStructureChange>();
-  private readonly yObserver = (events: Y.YEvent<any>[]) => {
+  readonly textChange$ = new Subject<IBlockModelTextChange>();
+  private readonly yObserver = (events: Y.YEvent<any>[], transaction: Y.Transaction) => {
     this.reconcileEvents(events);
+    this.emitTextChange(events, transaction);
   };
 
   constructor(private readonly doc: BlockCraft.Doc) {}
@@ -53,12 +65,51 @@ export class BlockModelGraph {
     this.rootId = null;
     this.parentById.clear();
     this.childrenById.clear();
+    this.siblingIndexById.clear();
+    this.deferredProjectionParentIds.clear();
     this.structureChange$.complete();
+    this.textChange$.complete();
+  }
+
+  /**
+   * Synchronize one reachable parent's structural projection before a view is
+   * created inside an outer Yjs transaction. Deep observers run only when the
+   * outer transaction commits, while Angular component lifecycle hooks may
+   * need the inserted block path earlier.
+   *
+   * @internal Document write pipeline only.
+   */
+  synchronizeParentBeforeView(parentId: string): void {
+    if (
+      this.rootId === null ||
+      !this.parentById.has(parentId) ||
+      !this.doc.yBlockMap.has(parentId)
+    ) {
+      return;
+    }
+
+    const affectedParents = new Set([parentId]);
+    const reachableAddedIds = new Set<string>();
+    const reachableRemovedIds = new Set<string>();
+    const changed = this.reconcileParents(
+      affectedParents,
+      reachableAddedIds,
+      reachableRemovedIds,
+    );
+    if (changed) {
+      this.emitStructureChange(
+        reachableAddedIds,
+        reachableRemovedIds,
+        affectedParents,
+      );
+    }
   }
 
   private rebuildIndexes(): void {
     this.parentById.clear();
     this.childrenById.clear();
+    this.siblingIndexById.clear();
+    this.deferredProjectionParentIds.clear();
     if (this.rootId !== null) this.indexSubtree(this.rootId, null, new Set());
   }
 
@@ -93,17 +144,16 @@ export class BlockModelGraph {
   }
 
   indexInParent(blockId: string): number {
-    const parentId = this.getParentId(blockId);
-    return parentId === null
+    return this.getParentId(blockId) === null
       ? -1
-      : (this.childrenById.get(parentId) ?? []).indexOf(blockId);
+      : (this.siblingIndexById.get(blockId) ?? -1);
   }
 
   getPreviousSiblingId(blockId: string): string | null {
     const parentId = this.getParentId(blockId);
     if (parentId === null) return null;
     const siblings = this.childrenById.get(parentId) ?? [];
-    const index = siblings.indexOf(blockId);
+    const index = this.siblingIndexById.get(blockId) ?? -1;
     return index > 0 ? siblings[index - 1] : null;
   }
 
@@ -111,7 +161,7 @@ export class BlockModelGraph {
     const parentId = this.getParentId(blockId);
     if (parentId === null) return null;
     const siblings = this.childrenById.get(parentId) ?? [];
-    const index = siblings.indexOf(blockId);
+    const index = this.siblingIndexById.get(blockId) ?? -1;
     return index >= 0 && index < siblings.length - 1 ? siblings[index + 1] : null;
   }
 
@@ -132,6 +182,13 @@ export class BlockModelGraph {
     if (!yBlock || yBlock.get("nodeType") !== BlockNodeType.editable) return undefined;
     const children = yBlock.get("children");
     return children instanceof Y.Text ? children.toString() : undefined;
+  }
+
+  getTextDeltas(blockId: string): DeltaInsert[] | undefined {
+    const yBlock = this.getYBlock(blockId);
+    if (!yBlock || yBlock.get("nodeType") !== BlockNodeType.editable) return undefined;
+    const children = yBlock.get("children");
+    return children instanceof Y.Text ? children.toDelta() as DeltaInsert[] : undefined;
   }
 
   getTextLength(blockId: string): number {
@@ -164,10 +221,8 @@ export class BlockModelGraph {
     }
     if (commonLength === 0) return null;
 
-    const commonParentId = aPath[commonLength - 1];
-    const siblings = this.childrenById.get(commonParentId) ?? [];
-    const aIndex = siblings.indexOf(aPath[commonLength]);
-    const bIndex = siblings.indexOf(bPath[commonLength]);
+    const aIndex = this.siblingIndexById.get(aPath[commonLength]) ?? -1;
+    const bIndex = this.siblingIndexById.get(bPath[commonLength]) ?? -1;
     if (aIndex === -1 || bIndex === -1) return null;
     return aIndex < bIndex ? BLOCK_POSITION.AFTER : BLOCK_POSITION.BEFORE;
   }
@@ -190,8 +245,8 @@ export class BlockModelGraph {
 
     const commonParentId = fromPath[commonLength - 1];
     const children = this.childrenById.get(commonParentId) ?? [];
-    const fromIndex = children.indexOf(fromPath[commonLength]);
-    const toIndex = children.indexOf(toPath[commonLength]);
+    const fromIndex = this.siblingIndexById.get(fromPath[commonLength]) ?? -1;
+    const toIndex = this.siblingIndexById.get(toPath[commonLength]) ?? -1;
     if (fromIndex === -1 || toIndex === -1) return [];
 
     const start = Math.min(fromIndex, toIndex);
@@ -291,9 +346,52 @@ export class BlockModelGraph {
     }
 
     if (affectedParents.size) {
-      this.reconcileParents(affectedParents, reachableAddedIds, reachableRemovedIds);
-      this.emitStructureChange(reachableAddedIds, reachableRemovedIds, affectedParents);
+      const changed = this.reconcileParents(
+        affectedParents,
+        reachableAddedIds,
+        reachableRemovedIds,
+      );
+      if (changed) {
+        this.emitStructureChange(reachableAddedIds, reachableRemovedIds, affectedParents);
+      }
     }
+  }
+
+  private emitTextChange(
+    events: readonly Y.YEvent<any>[],
+    transaction: Y.Transaction,
+  ): void {
+    const blockIds = new Set<string>();
+    for (const event of events) {
+      const blockId = event.path[0];
+      if (typeof blockId !== "string") continue;
+
+      if (event.path[1] === "children" && event.target instanceof Y.Text) {
+        blockIds.add(blockId);
+        continue;
+      }
+
+      if (
+        event.path.length === 1 &&
+        event.target instanceof Y.Map &&
+        event.changes.keys.has("children") &&
+        event.target.get("children") instanceof Y.Text
+      ) {
+        blockIds.add(blockId);
+      }
+    }
+
+    const reachableEditableIds = [...blockIds].filter(blockId =>
+      this.getNodeType(blockId) === BlockNodeType.editable,
+    );
+    if (!reachableEditableIds.length) return;
+
+    this.textChange$.next({
+      blockIds: reachableEditableIds,
+      origin: transaction.origin,
+      local: transaction.local,
+      isUndoRedo: transaction.origin instanceof Y.UndoManager,
+    });
   }
 
   private emitStructureChange(
@@ -311,10 +409,11 @@ export class BlockModelGraph {
   }
 
   private reconcileParents(
-    affectedParents: ReadonlySet<string>,
+    affectedParents: Set<string>,
     reachableAddedIds: Set<string>,
     reachableRemovedIds: Set<string>,
-  ): void {
+    allowDeferredRetry = true,
+  ): boolean {
     const reachableParents = [...affectedParents].filter(parentId =>
       this.parentById.has(parentId) && this.doc.yBlockMap.has(parentId),
     );
@@ -323,6 +422,7 @@ export class BlockModelGraph {
     );
     const desiredChildren = new Map<string, string[]>();
     const desiredOwner = new Map<string, string>();
+    let changed = false;
 
     reachableParents.sort((a, b) => this.compareIndexedOrder(a, b));
     for (const parentId of reachableParents) {
@@ -351,10 +451,12 @@ export class BlockModelGraph {
           currentOwner !== parentId &&
           !affectedParents.has(currentOwner)
         ) {
+          this.deferredProjectionParentIds.add(parentId);
           this.warnInvalidEdge(parentId, childId, `already owned by ${currentOwner}`);
           continue;
         }
         if (desiredOwner.has(childId)) {
+          this.deferredProjectionParentIds.add(parentId);
           this.warnInvalidEdge(parentId, childId, `already claimed by ${desiredOwner.get(childId)}`);
           continue;
         }
@@ -369,13 +471,45 @@ export class BlockModelGraph {
     // never temporarily interpreted as deleted.
     desiredOwner.forEach((parentId, childId) => {
       if (!this.parentById.has(childId)) {
-        this.indexSubtree(childId, parentId, new Set(), reachableAddedIds);
-      } else {
+        if (
+          this.indexSubtree(
+            childId,
+            parentId,
+            new Set(),
+            reachableAddedIds,
+            affectedParents,
+            desiredOwner,
+          )
+        ) {
+          changed = true;
+        }
+      } else if (this.parentById.get(childId) !== parentId) {
         this.parentById.set(childId, parentId);
+        changed = true;
       }
     });
     desiredChildren.forEach((children, parentId) => {
+      const previous = previousChildren.get(parentId) ?? [];
+      if (
+        previous.length !== children.length ||
+        previous.some((childId, index) => childId !== children[index])
+      ) {
+        changed = true;
+      }
       this.childrenById.set(parentId, children);
+    });
+    previousChildren.forEach((children, parentId) => {
+      children.forEach(childId => {
+        // A newly indexed wrapper can take ownership and assign the child's new
+        // sibling index before the old parent's cached list is cleaned up.
+        // Only clear indices for edges the previous parent still owns.
+        if (this.parentById.get(childId) === parentId) {
+          this.siblingIndexById.delete(childId);
+        }
+      });
+    });
+    desiredChildren.forEach(children => {
+      children.forEach((childId, index) => this.siblingIndexById.set(childId, index));
     });
 
     const removedCandidates = new Set<string>();
@@ -385,8 +519,36 @@ export class BlockModelGraph {
       const owner = this.parentById.get(childId);
       if (owner !== undefined && owner !== null && affectedParents.has(owner)) {
         this.unlinkSubtree(childId, reachableRemovedIds);
+        changed = true;
       }
     });
+    if (allowDeferredRetry && this.deferredProjectionParentIds.size) {
+      const retryParents = this.collectDeferredRetryParents();
+      if (retryParents.size) {
+        retryParents.forEach(parentId => affectedParents.add(parentId));
+        if (
+          this.reconcileParents(
+            retryParents,
+            reachableAddedIds,
+            reachableRemovedIds,
+            false,
+          )
+        ) {
+          changed = true;
+        }
+        this.pruneResolvedDeferredParents(retryParents);
+      }
+    }
+    if (allowDeferredRetry) {
+      const retainedIds = [...reachableAddedIds].filter(blockId =>
+        reachableRemovedIds.has(blockId),
+      );
+      retainedIds.forEach(blockId => {
+        reachableAddedIds.delete(blockId);
+        reachableRemovedIds.delete(blockId);
+      });
+    }
+    return changed;
   }
 
   private compareIndexedOrder(aId: string, bId: string): number {
@@ -396,11 +558,44 @@ export class BlockModelGraph {
     const length = Math.min(aPath.length, bPath.length);
     for (let index = 1; index < length; index++) {
       if (aPath[index] === bPath[index]) continue;
-      const parentId = aPath[index - 1];
-      const siblings = this.childrenById.get(parentId) ?? [];
-      return siblings.indexOf(aPath[index]) - siblings.indexOf(bPath[index]);
+      return (this.siblingIndexById.get(aPath[index]) ?? -1) -
+        (this.siblingIndexById.get(bPath[index]) ?? -1);
     }
     return aPath.length - bPath.length;
+  }
+
+  private collectDeferredRetryParents(): Set<string> {
+    const retryParents = new Set<string>();
+    this.pruneResolvedDeferredParents(this.deferredProjectionParentIds, retryParents);
+    return retryParents;
+  }
+
+  private pruneResolvedDeferredParents(
+    parentIds: Iterable<string>,
+    retryParents?: Set<string>,
+  ): void {
+    for (const parentId of [...parentIds]) {
+      if (!this.parentById.has(parentId) || !this.doc.yBlockMap.has(parentId)) {
+        this.deferredProjectionParentIds.delete(parentId);
+        continue;
+      }
+      const indexedChildren = new Set(this.childrenById.get(parentId) ?? []);
+      const missingChildren = this.readRawChildren(parentId).filter(childId =>
+        this.doc.yBlockMap.has(childId) && !indexedChildren.has(childId),
+      );
+      if (!missingChildren.length) {
+        this.deferredProjectionParentIds.delete(parentId);
+        continue;
+      }
+      if (
+        missingChildren.some(childId =>
+          !this.parentById.has(childId) ||
+          this.parentById.get(childId) === parentId
+        )
+      ) {
+        retryParents?.add(parentId);
+      }
+    }
   }
 
   private wouldCreateCycle(parentId: string, childId: string): boolean {
@@ -420,9 +615,18 @@ export class BlockModelGraph {
       const current = stack.pop()!;
       removedIds?.add(current);
       const children = this.childrenById.get(current) ?? [];
-      children.forEach(childId => stack.push(childId));
+      // A single transaction can move a descendant to a surviving parent and
+      // delete its old ancestor (column creation followed by Undo is the common
+      // case). `parentById` is updated before removals, while the old ancestor's
+      // cached children list still contains the moved id. Only unlink edges the
+      // current node still owns, otherwise the moved subtree is removed from the
+      // index even though its new parent's children projection contains it.
+      children.forEach(childId => {
+        if (this.parentById.get(childId) === current) stack.push(childId);
+      });
       this.childrenById.delete(current);
       this.parentById.delete(current);
+      this.siblingIndexById.delete(current);
     }
   }
 
@@ -442,12 +646,31 @@ export class BlockModelGraph {
     parentId: string | null,
     visiting: Set<string>,
     addedIds?: Set<string>,
+    transferableOwners?: ReadonlySet<string>,
+    claimedOwners?: ReadonlyMap<string, string>,
   ): boolean {
     if (visiting.has(blockId)) {
       this.warnInvalidEdge(parentId ?? blockId, blockId, "cyclic child reference");
       return false;
     }
     if (this.parentById.has(blockId)) {
+      const currentOwner = this.parentById.get(blockId);
+      if (
+        parentId !== null &&
+        currentOwner !== undefined &&
+        currentOwner !== null &&
+        currentOwner !== parentId &&
+        transferableOwners?.has(currentOwner) &&
+        !claimedOwners?.has(blockId)
+      ) {
+        if (this.wouldCreateCycle(parentId, blockId)) {
+          this.warnInvalidEdge(parentId, blockId, "cyclic child reference");
+          return false;
+        }
+        this.parentById.set(blockId, parentId);
+        return true;
+      }
+      if (parentId !== null) this.deferredProjectionParentIds.add(parentId);
       this.warnInvalidEdge(parentId ?? blockId, blockId, "duplicate child reference");
       return false;
     }
@@ -465,10 +688,22 @@ export class BlockModelGraph {
     const children = yBlock.get("children");
     if (children instanceof Y.Array) {
       for (const childId of children.toArray() as string[]) {
-        if (this.indexSubtree(childId, blockId, visiting, addedIds)) childIds.push(childId);
+        if (
+          this.indexSubtree(
+            childId,
+            blockId,
+            visiting,
+            addedIds,
+            transferableOwners,
+            claimedOwners,
+          )
+        ) {
+          childIds.push(childId);
+        }
       }
     }
     this.childrenById.set(blockId, childIds);
+    childIds.forEach((childId, index) => this.siblingIndexById.set(childId, index));
     visiting.delete(blockId);
     return true;
   }

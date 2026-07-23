@@ -123,8 +123,9 @@ describe("isSelectionAlive", () => {
   it("keeps a model selection alive when graph nodes exist but components are unmounted", () => {
     const mountedLookup = jasmine.createSpy("getBlockById").and.throwError("component is unmounted");
     const exists = jasmine.createSpy("exists").and.callFake((id: string) =>
-      ["root", "p1", "middle", "p2"].includes(id),
+      ["root", "p1", "p2"].includes(id),
     );
+    const queryBetween = jasmine.createSpy("queryBetween").and.returnValue(["middle"]);
     const selection = new BlockSelection(
       {blockId: "p1", type: "text", offset: 1, block: null} as any,
       {blockId: "p2", type: "text", offset: 2, block: null} as any,
@@ -135,7 +136,7 @@ describe("isSelectionAlive", () => {
     const doc = {
       model: {
         exists,
-        queryBetween: () => ["middle"],
+        queryBetween,
       },
       getBlockById: mountedLookup,
     };
@@ -143,5 +144,6 @@ describe("isSelectionAlive", () => {
     expect(hasLiveSelectionEndpoints(selection, doc as any)).toBeTrue();
     expect(isSelectionAlive(selection, doc as any)).toBeTrue();
     expect(mountedLookup).not.toHaveBeenCalled();
+    expect(queryBetween).not.toHaveBeenCalled();
   });
 });

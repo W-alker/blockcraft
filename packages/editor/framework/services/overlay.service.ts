@@ -121,6 +121,11 @@ export type OverlayPosition =
   | 'right-bottom';
 
 export interface IConnectOverlayCreateOptions {
+  /**
+   * Pass a BlockComponent when the overlay owns a block-level interaction: its
+   * virtualized root unit stays mounted until the overlay closes or detaches.
+   * HTMLElement targets keep close-on-disconnect behavior and acquire no lease.
+   */
   target: HTMLElement | BlockCraft.BlockComponent;
   component: ComponentType<any>;
   positions?: ConnectedPosition[];
@@ -167,6 +172,28 @@ export class DocOverlayService {
   public readonly overlay = this.doc.injector.get(Overlay);
 
   constructor(private readonly doc: BlockCraft.Doc) {}
+
+  private _acquireTargetViewLease(
+    params: IGlobalOverlayCreateOptions | IConnectOverlayCreateOptions,
+  ): () => void {
+    if (!('target' in params) || params.target instanceof HTMLElement) {
+      return () => undefined;
+    }
+
+    const release = this.doc.virtualization.acquireBlockViewLease([
+      params.target.id,
+    ]);
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      try {
+        release();
+      } catch (error) {
+        this.doc.logger.warn('overlayTargetViewLeaseReleaseError: ', error);
+      }
+    };
+  }
 
   private _createOverlayPosition(
     params: IGlobalOverlayCreateOptions | IConnectOverlayCreateOptions,
@@ -223,7 +250,11 @@ export class DocOverlayService {
     clampTo?: HTMLElement,
   ) {
     const scrollContainer = this.doc.scrollContainer;
-    if (!scrollContainer?.isConnected) return;
+    if (!scrollContainer?.isConnected || !overlayRef.hasAttached()) return;
+
+    const overlayElement = overlayRef.overlayElement;
+    const hostElement = overlayRef.hostElement;
+    if (!overlayElement?.isConnected || !hostElement?.isConnected) return;
 
     const scrollRect = scrollContainer.getBoundingClientRect();
     const clampRect = clampTo?.isConnected
@@ -262,9 +293,6 @@ export class DocOverlayService {
       maxWidth: `${maxWidth}px`,
       maxHeight: `${maxHeight}px`,
     });
-
-    const overlayElement = overlayRef.overlayElement;
-    const hostElement = overlayRef.hostElement;
 
     overlayElement.style.overflowX =
       overlayElement.scrollWidth > maxWidth ? 'auto' : '';
@@ -340,26 +368,52 @@ export class DocOverlayService {
     close$: Subject<any>,
     onDestroy?: () => void,
   ) {
-    // 根据情况设置
-    const portal = new ComponentPortal(
-      params.component,
-      null,
-      this.doc.injector,
-    );
-    const positionStrategy = this._createOverlayPosition(params);
+    const releaseTargetView = this._acquireTargetViewLease(params);
+    const {overlayRef, componentRef, positionStrategy} = (() => {
+      let partialOverlayRef: OverlayRef | undefined;
+      try {
+        const portal = new ComponentPortal(
+          params.component,
+          null,
+          this.doc.injector,
+        );
+        const positionStrategy = this._createOverlayPosition(params);
+        partialOverlayRef = this.overlay.create({
+          positionStrategy,
+          hasBackdrop: params.backdrop,
+          backdropClass: 'cdk-overlay-transparent-backdrop',
+        });
+        const componentRef: ComponentRef<T> = partialOverlayRef.attach(portal);
+        return {
+          overlayRef: partialOverlayRef,
+          componentRef,
+          positionStrategy,
+        };
+      } catch (error) {
+        partialOverlayRef?.dispose();
+        releaseTargetView();
+        throw error;
+      }
+    })();
 
-    const overlayRef = this.overlay.create({
-      positionStrategy,
-      hasBackdrop: params.backdrop,
-      backdropClass: 'cdk-overlay-transparent-backdrop',
+    merge(close$, overlayRef.detachments())
+      .pipe(take(1))
+      .subscribe(releaseTargetView);
+
+    let closed = false;
+    close$.pipe(take(1)).subscribe(() => {
+      closed = true;
+      onDestroy?.();
+      overlayRef.dispose();
+      releaseTargetView();
     });
 
-    const componentRef: ComponentRef<T> = overlayRef.attach(portal);
-
     if ('target' in params) {
+      let clampFrame: number | null = null;
       const scheduleClamp = () => {
-        requestAnimationFrame(() => {
-          if (!overlayRef.hasAttached()) return;
+        if (clampFrame !== null || !overlayRef.hasAttached()) return;
+        clampFrame = requestAnimationFrame(() => {
+          clampFrame = null;
           this._clampConnectedOverlay(
             overlayRef,
             'target' in params ? params.clampTo : undefined,
@@ -381,6 +435,8 @@ export class DocOverlayService {
       }
 
       close$.pipe(take(1)).subscribe(() => {
+        if (clampFrame !== null) cancelAnimationFrame(clampFrame);
+        clampFrame = null;
         resizeObserver?.disconnect();
       });
 
@@ -399,7 +455,8 @@ export class DocOverlayService {
       .pipe(takeUntil(close$))
       .subscribe(
         throttle(() => {
-          overlayRef && overlayRef.updatePosition();
+          if (!overlayRef.hasAttached()) return;
+          overlayRef.updatePosition();
           'target' in params &&
             this._clampConnectedOverlay(overlayRef, params.clampTo);
         }, 200),
@@ -414,7 +471,7 @@ export class DocOverlayService {
     // root 节点被临时从 DOM 移除（如宿主路由切换/隐藏）时，关闭 overlay。
     // 复用 createConnectedOverlay 中 MutationObserver 的同款机制，但以 doc.root 为基准，
     // 覆盖 BlockComponent target、global overlay 等所有路径。
-    if (this.doc.isInitialized) {
+    if (this.doc.isInitialized && !closed) {
       const rootHost = this.doc.root.hostElement;
       if (!rootHost.isConnected) {
         close$.next(true);
@@ -430,11 +487,6 @@ export class DocOverlayService {
         });
       }
     }
-
-    close$.pipe(take(1)).subscribe(() => {
-      onDestroy?.();
-      overlayRef.dispose();
-    });
 
     return {
       overlayRef,

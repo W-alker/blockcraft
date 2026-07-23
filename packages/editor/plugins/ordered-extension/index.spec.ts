@@ -52,21 +52,27 @@ const createPluginHarness = () => {
   const onChildrenUpdate$ = new Subject<any>()
   const onPropsUpdate$ = new Subject<any>()
   const plugin = new OrderedBlockPlugin()
-  const pluginWithDoc = plugin as unknown as {
-    doc: {
-      onChildrenUpdate$: Subject<any>
-      onPropsUpdate$: Subject<any>
-      crud: {
-        transact: (fn: () => void) => void
-      }
-    }
-  }
+  const blocksById = new Map<string, MockBlock>()
+  const parentByBlockId = new Map<string, string>()
+  const childrenByParentId = new Map<string, string[]>()
+  const pluginWithDoc = plugin as any
+  const updateBlockProps = jasmine.createSpy('updateBlockProps').and.callFake(
+    (blockId: string, patch: IBlockProps) => blocksById.get(blockId)?.updateProps(patch),
+  )
 
   pluginWithDoc.doc = {
+    isReadonly: false,
     onChildrenUpdate$,
     onPropsUpdate$,
+    model: {
+      getParentId: (blockId: string) => parentByBlockId.get(blockId) ?? null,
+      getChildrenIds: (parentId: string) => childrenByParentId.get(parentId) ?? [],
+      getFlavour: (blockId: string) => blocksById.get(blockId)?.flavour,
+      getProps: (blockId: string) => blocksById.get(blockId)?.props,
+    },
     crud: {
-      transact: (fn: () => void) => fn()
+      transact: (fn: () => void) => fn(),
+      updateBlockProps,
     }
   }
 
@@ -75,7 +81,15 @@ const createPluginHarness = () => {
   return {
     onChildrenUpdate$,
     onPropsUpdate$,
-    plugin
+    plugin,
+    updateBlockProps,
+    registerParent: (parent: MockParent, blocks: MockBlock[]) => {
+      childrenByParentId.set(parent.id, blocks.map(block => block.id))
+      blocks.forEach(block => {
+        blocksById.set(block.id, block)
+        parentByBlockId.set(block.id, parent.id)
+      })
+    },
   }
 }
 
@@ -148,14 +162,37 @@ const createPrefixMouseDownContext = (blockId: string) => {
 }
 
 describe('OrderedBlockPlugin', () => {
+  it('renumbers virtual root siblings from the model without traversing child components', async () => {
+    const {onChildrenUpdate$, plugin, registerParent, updateBlockProps} = createPluginHarness()
+    const blocks = [
+      createOrderedBlock('ordered-1', {order: 0}),
+      createBlock('offscreen-paragraph'),
+      createOrderedBlock('offscreen-ordered-2', {order: 9}),
+    ]
+    const parent = attachToParent(blocks)
+    parent.getChildrenBlocks = jasmine.createSpy('getChildrenBlocks').and.throwError(
+      'offscreen child component is not mounted',
+    )
+    registerParent(parent, blocks)
+
+    triggerInserted(onChildrenUpdate$, parent, blocks[2])
+    await waitForAutoOrder()
+
+    expect(parent.getChildrenBlocks).not.toHaveBeenCalled()
+    expect(blocks[2].props['order']).toBe(1)
+    expect(updateBlockProps).toHaveBeenCalledWith('offscreen-ordered-2', {order: 1})
+    plugin.destroy()
+  })
+
   it('renumbers sibling ordered heading blocks with the same heading level', async () => {
-    const {onChildrenUpdate$, plugin} = createPluginHarness()
+    const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [
       createOrderedBlock('ordered-1', {heading: 1}),
       createOrderedBlock('ordered-2', {heading: 1}),
       createOrderedBlock('ordered-3', {heading: 1})
     ]
     const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
 
     triggerInserted(onChildrenUpdate$, parent, blocks[2])
 
@@ -166,13 +203,14 @@ describe('OrderedBlockPlugin', () => {
   })
 
   it('does not let lower-level ordered headings split higher-level numbering', async () => {
-    const {onChildrenUpdate$, plugin} = createPluginHarness()
+    const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [
       createOrderedBlock('ordered-1', {heading: 1}),
       createOrderedBlock('ordered-2', {heading: 2}),
       createOrderedBlock('ordered-3', {heading: 1})
     ]
     const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
 
     triggerInserted(onChildrenUpdate$, parent, blocks[2])
 
@@ -183,13 +221,14 @@ describe('OrderedBlockPlugin', () => {
   })
 
   it('renumbers following ordered blocks when one ordered heading changes', async () => {
-    const {onPropsUpdate$, plugin} = createPluginHarness()
+    const {onPropsUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [
       createOrderedBlock('ordered-1', {heading: 1, order: 0}),
       createOrderedBlock('ordered-2', {heading: 2, order: 1}),
       createOrderedBlock('ordered-3', {heading: 1, order: 2})
     ]
-    attachToParent(blocks)
+    const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
 
     triggerPropsChanged(onPropsUpdate$, blocks[1], ['heading'])
 
@@ -200,13 +239,14 @@ describe('OrderedBlockPlugin', () => {
   })
 
   it('continues ordered numbering across non-ordered siblings at the same depth', async () => {
-    const {onChildrenUpdate$, plugin} = createPluginHarness()
+    const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [
       createOrderedBlock('ordered-1', {order: 0}),
       createBlock('paragraph-1'),
       createOrderedBlock('ordered-2', {order: 0})
     ]
     const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
 
     triggerInserted(onChildrenUpdate$, parent, blocks[2])
 
@@ -217,7 +257,7 @@ describe('OrderedBlockPlugin', () => {
   })
 
   it('restarts nested ordered numbering after returning to a shallower depth', async () => {
-    const {onChildrenUpdate$, plugin} = createPluginHarness()
+    const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [
       createOrderedBlock('ordered-1', {depth: 0, order: 0}),
       createOrderedBlock('ordered-1-1', {depth: 1, order: 0}),
@@ -226,6 +266,7 @@ describe('OrderedBlockPlugin', () => {
       createOrderedBlock('ordered-2-1', {depth: 1, order: 9})
     ]
     const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
 
     triggerInserted(onChildrenUpdate$, parent, blocks[4])
 
@@ -236,13 +277,14 @@ describe('OrderedBlockPlugin', () => {
   })
 
   it('honors explicit start numbers and continues from them', async () => {
-    const {onChildrenUpdate$, plugin} = createPluginHarness()
+    const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [
       createOrderedBlock('ordered-1', {order: 0}),
       createOrderedBlock('ordered-2', {start: 3, order: 0}),
       createOrderedBlock('ordered-3', {order: 0})
     ]
     const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
 
     triggerInserted(onChildrenUpdate$, parent, blocks[2])
 
@@ -253,7 +295,7 @@ describe('OrderedBlockPlugin', () => {
   })
 
   it('uses an explicit following start as a boundary for start-only changes', async () => {
-    const {onPropsUpdate$, plugin} = createPluginHarness()
+    const {onPropsUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [
       createOrderedBlock('ordered-1', {order: 0}),
       createOrderedBlock('ordered-2', {start: 5, order: 4}),
@@ -261,7 +303,8 @@ describe('OrderedBlockPlugin', () => {
       createOrderedBlock('ordered-4', {start: 20, order: 19}),
       createOrderedBlock('ordered-5', {order: 20})
     ]
-    attachToParent(blocks)
+    const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
 
     blocks.forEach(block => block.updateProps.calls.reset())
     blocks[1].props['start'] = 8
@@ -277,12 +320,13 @@ describe('OrderedBlockPlugin', () => {
   })
 
   it('renumbers remaining ordered siblings after deletion', async () => {
-    const {onChildrenUpdate$, plugin} = createPluginHarness()
+    const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [
       createOrderedBlock('ordered-1', {order: 0}),
       createOrderedBlock('ordered-3', {order: 2})
     ]
     const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
 
     triggerDeleted(onChildrenUpdate$, parent, 1)
 

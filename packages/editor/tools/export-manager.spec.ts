@@ -3,6 +3,35 @@ import {PaginationPlugin} from '../plugins/pagination'
 import {DocExportManager} from './export-manager'
 
 describe('DocExportManager pagination PDF', () => {
+  it('exports JSON from the model snapshot without traversing the root view', async () => {
+    const snapshot = {
+      id: 'root',
+      flavour: 'root',
+      nodeType: 'block',
+      props: {},
+      meta: {},
+      children: [],
+    }
+    const exportSnapshot = jasmine.createSpy('exportSnapshot').and.returnValue(snapshot)
+    const rootToSnapshot = jasmine.createSpy('toSnapshot')
+    const createObjectURL = spyOn(URL, 'createObjectURL').and.returnValue('blob:blockcraft-test')
+    const revokeObjectURL = spyOn(URL, 'revokeObjectURL')
+    const click = spyOn(HTMLAnchorElement.prototype, 'click')
+    const doc = {
+      exportSnapshot,
+      root: {toSnapshot: rootToSnapshot},
+      plugins: [],
+    } as unknown as BlockCraft.Doc
+
+    await new DocExportManager(doc).exportToJson('document.json')
+
+    expect(exportSnapshot).toHaveBeenCalledTimes(1)
+    expect(rootToSnapshot).not.toHaveBeenCalled()
+    expect(createObjectURL).toHaveBeenCalled()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:blockcraft-test')
+    expect(click).toHaveBeenCalledTimes(1)
+  })
+
   it('delegates the host backend to the pagination plugin without taking another snapshot', async () => {
     const plugin = new PaginationPlugin()
     const expected: PaginationPdfResult = {

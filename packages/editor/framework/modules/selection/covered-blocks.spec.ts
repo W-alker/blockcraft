@@ -1,4 +1,7 @@
-import {getSelectionCoveredBlockIds} from "./covered-blocks";
+import {
+  getMountedSelectionCoveredBlockIds,
+  getSelectionCoveredBlockIds,
+} from "./covered-blocks";
 
 describe("getSelectionCoveredBlockIds", () => {
   const setSelectionScope = <T extends Record<string, any>>(block: T, selectionScope: string): T & {doc: any} => {
@@ -299,6 +302,91 @@ describe("getSelectionCoveredBlockIds", () => {
     } as any;
 
     expect(getSelectionCoveredBlockIds(selection, doc as any)).toEqual([]);
+    expect(doc.queryBlocksBetween).not.toHaveBeenCalled();
+  });
+
+  it("filters a long model boundary range against mounted candidates only", () => {
+    const children = Array.from({length: 100}, (_, index) => `p${index}`);
+    const indexById = new Map(children.map((id, index) => [id, index]));
+    const doc = {
+      model: {
+        getChildrenIds: (id: string) => id === "root" ? children : [],
+        getParentId: (id: string) => indexById.has(id) ? "root" : null,
+        getPath: (id: string) => id === "root" ? ["root"] : ["root", id],
+        indexInParent: (id: string) => indexById.get(id) ?? -1,
+      },
+      queryBlocksBetween: jasmine.createSpy("queryBlocksBetween"),
+    };
+    const selection = {
+      start: {blockId: "root", type: "boundary", index: 10},
+      end: {blockId: "root", type: "boundary", index: 90},
+      getTableCellSelection: () => null,
+      collapsed: false,
+    } as any;
+
+    expect(getMountedSelectionCoveredBlockIds(
+      selection,
+      doc as any,
+      ["p0", "p10", "p50", "p89", "p90", "p99"],
+    )).toEqual(["p10", "p50", "p89"]);
+    expect(doc.queryBlocksBetween).not.toHaveBeenCalled();
+  });
+
+  it("materializes deep text coverage from the model without block components", () => {
+    const children: Record<string, string[]> = {
+      root: ["callout", "middle", "p2"],
+      callout: ["p1", "callout-tail"],
+      p1: [],
+      "callout-tail": [],
+      middle: [],
+      p2: [],
+    };
+    const parent: Record<string, string | null> = {
+      root: null,
+      callout: "root",
+      p1: "callout",
+      "callout-tail": "callout",
+      middle: "root",
+      p2: "root",
+    };
+    const path = (id: string): string[] => {
+      const result: string[] = [];
+      let current: string | null = id;
+      while (current) {
+        result.unshift(current);
+        current = parent[current];
+      }
+      return result;
+    };
+    const doc = {
+      model: {
+        getChildrenIds: (id: string) => children[id] ?? [],
+        getParentId: (id: string) => parent[id] ?? null,
+        getPath: path,
+        indexInParent: (id: string) => {
+          const parentId = parent[id];
+          return parentId ? children[parentId].indexOf(id) : -1;
+        },
+      },
+      queryBlocksBetween: jasmine.createSpy("queryBlocksBetween"),
+    };
+    const selection = {
+      start: {blockId: "p1", type: "text", offset: 1},
+      end: {blockId: "p2", type: "text", offset: 1},
+      firstBlockId: "p1",
+      lastBlockId: "p2",
+      commonParent: "root",
+      getTableCellSelection: () => null,
+      collapsed: false,
+      isInSameBlock: false,
+    } as any;
+
+    expect(getSelectionCoveredBlockIds(selection, doc as any)).toEqual([
+      "p1",
+      "callout-tail",
+      "middle",
+      "p2",
+    ]);
     expect(doc.queryBlocksBetween).not.toHaveBeenCalled();
   });
 });

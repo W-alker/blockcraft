@@ -36,7 +36,7 @@ import {
   performanceTest,
   sliceDelta,
 } from "../../../global";
-import { CompositionSession } from "./composition-session";
+import {CompositionSession} from "./composition-session";
 import {
   planSelectionEdit,
   SelectionEditPlan,
@@ -527,6 +527,29 @@ export class InputTransformer {
     }
   }
 
+  private _restoreAbortedCompositionSelection(
+    target: {blockId: string; atStart: boolean} | null,
+  ): void {
+    if (target) {
+      try {
+        this.doc.virtualization?.ensureViewMounted?.([target.blockId]);
+        const block = this._getLiveBlockById(target.blockId);
+        if (block && focusBlockSelectionEdge(this.doc, block, target.atStart)) {
+          return;
+        }
+      } catch {
+        // Fall through to the browser's surviving native boundary.
+      }
+    }
+
+    try {
+      if (this.doc.selection.recalculate().value) return;
+    } catch {
+      // No valid native fallback remains.
+    }
+    this.doc.selection.blur();
+  }
+
   private _captureCompositionCommitUndoSelection(
     block: EditableBlockComponent,
     index: number,
@@ -830,10 +853,28 @@ export class InputTransformer {
   }
 
   private _setTextSelectionWhenReady(blockId: string, index: number): void {
+    const replayFromModel = () => {
+      try {
+        this.doc.selection.replay({
+          anchor: {blockId, type: "text", offset: index},
+          head: {blockId, type: "text", offset: index},
+          commonParent: blockId,
+        });
+        const current = this.doc.selection.value?.toJSON();
+        return current?.anchor.blockId === blockId &&
+          current.anchor.type === "text" &&
+          current.anchor.offset === index &&
+          current.head.blockId === blockId &&
+          current.head.type === "text" &&
+          current.head.offset === index;
+      } catch {
+        return false;
+      }
+    };
     const apply = () => {
       try {
         (this.doc as any).root?.hostElement?.focus?.({ preventScroll: true });
-        return this._setTextCursor(blockId, index);
+        return this._setTextCursor(blockId, index) || replayFromModel();
       } catch {
         return false;
       }
@@ -1112,6 +1153,11 @@ export class InputTransformer {
     // 此时提交点只能落在 detached Y.Text 或 DOM fallback 出的无关块上，
     // 两者都会造成静默错写，直接丢弃本次组合提交。
     if (this.compositionSession.consumeAbort()) {
+      const recovery = this.compositionSession.consumeAbortRecovery();
+      if (recovery) {
+        this.doc.virtualization?.settleCompositionView?.();
+        this._restoreAbortedCompositionSelection(recovery.target);
+      }
       this._endCompositionUndoGroup();
       return;
     }
@@ -1159,6 +1205,7 @@ export class InputTransformer {
       this.doc.crud.transact(() => {
         insertBlock.yText.insert(insertIndex, text, insertAttrs);
         insertBlock.rerender();
+        this.doc.virtualization?.settleCompositionView?.();
         // Set cursor synchronously after rerender to avoid selectionchange race.
         // queueMicrotask would leave a gap where selectionchange fires with
         // invalid DOM selection (isComposing is already false), resetting cursor to 0.
@@ -1171,6 +1218,7 @@ export class InputTransformer {
       this.compositionSession.drainDeferredPatches();
 
     } finally {
+      this.doc.virtualization?.settleCompositionView?.();
       this.compositionSession.end();
       this._endCompositionUndoGroup();
     }

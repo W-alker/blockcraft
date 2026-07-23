@@ -167,6 +167,46 @@ describe("TextToolbarHelper boundary selections", () => {
     rootHost.remove();
   });
 
+  it("formats an unmounted middle block through model-first CRUD", () => {
+    const {helper, doc, root, p1, p2, outside, rootHost, selection} = makeHarness();
+    const ids = ["p1", "p2", "outside"];
+    const text: Record<string, string> = {p1: "one", p2: "two", outside: "out"};
+    (doc as any).model = {
+      exists: (id: string) => id === "root" || ids.includes(id),
+      getNodeType: (id: string) => id === "root" ? BlockNodeType.root : BlockNodeType.editable,
+      getFlavour: (id: string) => id === "root" ? "root" : "paragraph",
+      getProps: (id: string) => id === "root" ? {} : {depth: 0},
+      getTextDeltas: (id: string) => id in text ? [{insert: text[id]}] : undefined,
+      getTextLength: (id: string) => text[id]?.length ?? 0,
+      getChildrenIds: (id: string) => id === "root" ? ids : [],
+      getParentId: (id: string) => ids.includes(id) ? "root" : null,
+      getPath: (id: string) => id === "root" ? ["root"] : ["root", id],
+      indexInParent: (id: string) => ids.indexOf(id),
+    };
+    (doc as any).isPlainTextBlock = () => false;
+    (doc.crud as any).formatText = jasmine.createSpy("formatText");
+    const mountedLookup = doc.getBlockById;
+    (doc as any).getBlockById = jasmine.createSpy("getBlockById").and.callFake((id: string) => {
+      if (id === "p2") throw new Error("component is unmounted");
+      return mountedLookup(id);
+    });
+    const textSelection = selection(
+      {blockId: "p1", type: "text", offset: 1, block: p1},
+      {blockId: "outside", type: "text", offset: 2, block: outside},
+    );
+
+    helper.formatText({"a:bold": true}, textSelection as any);
+
+    expect((doc.crud as any).formatText.calls.allArgs()).toEqual([
+      ["p1", 1, 2, {"a:bold": true}],
+      ["outside", 0, 2, {"a:bold": true}],
+      ["p2", 0, 3, {"a:bold": true}],
+    ]);
+    expect(p2.formatText).not.toHaveBeenCalled();
+    void root;
+    rootHost.remove();
+  });
+
   it("does not update block props for a stale selection", () => {
     const {helper, doc, p1, p2, rootHost, selection} = makeHarness();
     const boundarySelection = selection(

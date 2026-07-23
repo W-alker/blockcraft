@@ -26,6 +26,8 @@ import {
   BlockReadonlySource,
 } from "../../../doc/block-readonly.types";
 
+export type BlockViewState = 'mounted' | 'retained' | 'destroyed'
+
 @Component({
   selector: 'base-block',
   template: ``,
@@ -57,6 +59,19 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   readonly onViewInit$ = new Subject<boolean>();
   public readonly onDestroy$ = new Subject<boolean>()
+  public readonly onDetach$ = new Subject<void>()
+  public readonly onReattach$ = new Subject<void>()
+
+  private _viewState: BlockViewState = 'mounted'
+  private _releaseViewRetention: (() => void) | null = null
+
+  get viewState(): BlockViewState {
+    return this._viewState
+  }
+
+  get isAttached(): boolean {
+    return this._viewState === 'mounted'
+  }
 
   @Output()
   readonly onPropsChange = new EventEmitter<Map<keyof Model['props'], {
@@ -101,6 +116,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     this.hostElement.setAttribute('data-block-id', this.id)
     this.hostElement.setAttribute('data-node-type', this.nodeType)
     this._applyBaseReadonlyViewState()
+    this._bindViewRetention()
     // Gap spaces give the native Selection an editable text node to anchor on
     // when the block itself is treated as `selected`. Without them Safari refuses
     // to dispatch `beforeinput` (the Range start lands on a contenteditable=false
@@ -125,7 +141,16 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   ngOnDestroy() {
+    if (this._viewState === 'destroyed') return
+    this._releaseViewRetention?.()
+    this._releaseViewRetention = null
+    if (this._viewState === 'mounted') this.beforeDetach()
+    this._viewState = 'destroyed'
     this.onDestroy$.next(true)
+    this.onDestroy$.complete()
+    this.onDetach$.complete()
+    this.onReattach$.complete()
+    this.onViewInit$.complete()
   }
 
   /**
@@ -169,22 +194,48 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     }, ORIGIN_NO_RECORD)
   }
 
-  /**
-   * 从页面卸载，但不会即时销毁
-   */
+  /** Detach view-side resources without ending the component lifetime. */
   detach() {
+    if (this._viewState !== 'mounted') return
+    this.beforeDetach()
     this.changeDetectorRef.detach()
-    this.onDestroy$.next(true)
+    this._viewState = 'retained'
+    this.onDetach$.next()
   }
 
-  /**
-   * 重新挂载，会重新初始化
-   */
+  /** Rebuild a retained view from the current Yjs block. */
   reattach() {
-    this.yBlock = this.doc.crud.getYBlock(this.id)!
+    if (this._viewState !== 'retained') return
+    const yBlock = this.doc.crud.getYBlock(this.id)
+    if (!yBlock) return
+    this.yBlock = yBlock
     this._init()
+    this.afterReattach()
     this.changeDetectorRef.reattach()
+    this._viewState = 'mounted'
     this.applyReadonlyViewState()
+    this.onReattach$.next()
+  }
+
+  /** Release resources that are meaningful only while the host is mounted. */
+  protected beforeDetach(): void {}
+
+  /** Recreate view-side resources before reattach is broadcast. */
+  protected afterReattach(): void {}
+
+  /** Bind view retention once for the full Angular component lifetime. */
+  private _bindViewRetention(): void {
+    const virtualization = this.doc.virtualization
+    if (!virtualization?.enabled) return
+
+    const schemaRetention =
+      this.doc.schemas?.get(this.flavour, false)?.metadata.viewRetention ?? 'virtual'
+    this._releaseViewRetention = virtualization.bindBlockViewRetention({
+      blockId: this.id,
+      flavour: this.flavour,
+      nodeType: this.nodeType,
+      schemaRetention,
+    })
   }
 
   /**

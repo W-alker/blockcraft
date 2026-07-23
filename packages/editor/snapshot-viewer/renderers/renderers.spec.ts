@@ -1,5 +1,5 @@
 import {BlockNodeType, IBlockSnapshot} from "../../framework/block-std/types/block.type";
-import {DocLinkPreviewerService} from "../../framework/services/link-previewer.service";
+import {shikiService} from "../../blocks/code-block/shiki-config";
 import {createSnapshotRenderer} from "../create-snapshot-renderer";
 import {createAllBlocksFixture} from "../testing/fixtures/all-blocks.fixture";
 
@@ -15,7 +15,7 @@ describe("snapshot-viewer renderers", () => {
     const host = renderFixture([fixture.bullet, fixture.ordered, fixture.todo])
 
     expect(host.querySelector(".bullet-block-prefix .circle")).not.toBeNull()
-    expect(host.querySelector(".ordered-block-prefix")?.textContent).toContain("2.")
+    expect(host.querySelector(".ordered-block-prefix")?.textContent).toContain("3.")
     expect(host.querySelector(".todo-block.is-checked")).not.toBeNull()
   })
 
@@ -120,17 +120,20 @@ describe("snapshot-viewer renderers", () => {
   })
 
   it("uses the default bookmark preview fetcher when no custom enhancer is provided", async () => {
-    const querySpy = spyOn(DocLinkPreviewerService.prototype, "query").and.resolveTo({
-      title: "Angular",
-      description: "Framework",
-      icon: "https://cdn.example.com/icon.png",
-      image: "https://cdn.example.com/banner.png",
-    })
+    const fetchSpy = spyOn(window, "fetch").and.resolveTo({
+      ok: true,
+      json: async () => ({
+        title: "Angular",
+        description: "Framework",
+        favicons: ["https://cdn.example.com/icon.png"],
+        images: ["https://cdn.example.com/banner.png"],
+      }),
+    } as Response)
 
     const host = renderFixture(createAllBlocksFixture().bookmark)
     await flushPromises()
 
-    expect(querySpy).toHaveBeenCalled()
+    expect(fetchSpy).toHaveBeenCalled()
     expect(host.textContent).toContain("Angular")
     expect(host.querySelector(".bookmark-icon img")?.getAttribute("src")).toBe("https://cdn.example.com/icon.png")
     expect(host.querySelector(".bookmark-banner img")?.getAttribute("src")).toBe("https://cdn.example.com/banner.png")
@@ -157,6 +160,7 @@ describe("snapshot-viewer renderers", () => {
   it("applies async syntax highlighting to code and mermaid text blocks", async () => {
     const fixture = createAllBlocksFixture()
     const host = renderFixture([fixture.code, fixture.mermaid])
+    await shikiService.getHighlighter()
     await flushPromises()
 
     expect(host.querySelector('.code-block .edit-container c-element[style*="color"]')).not.toBeNull()
@@ -200,6 +204,7 @@ function renderFixture(snapshot: IBlockSnapshot | IBlockSnapshot[], options = {}
 }
 
 async function flushPromises() {
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
   await Promise.resolve()
   await Promise.resolve()
 }

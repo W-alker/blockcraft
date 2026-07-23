@@ -255,6 +255,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private toolbarOvr?: OverlayRef
   private toolbarRef?: ComponentRef<TableStructureToolbarComponent>
   private _closeToolbar$ = new Subject()
+  private readonly _tableMenuFrameIds = new Set<number>()
 
   private tableBody!: HTMLElement
 
@@ -498,6 +499,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   override ngOnDestroy() {
     super.ngOnDestroy();
+    this._cancelTableMenuFrames()
     this.tableBody?.querySelectorAll(':scope > tr.bc-pagination-spacer, :scope > tr.bc-pagination-header-clone').forEach(el => el.remove())
     this._clearCellOverrides()
     this.mutationObserver.disconnect()
@@ -1315,6 +1317,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     colCount?: number,
     selectionKind?: 'cell' | 'cells' | 'row' | 'col',
   }) {
+    if (!this._isTableUiLive()) {
+      this._disposeToolbar()
+      return
+    }
     if (this.isReadonly) {
       this._hideTableMenu()
       return
@@ -1368,14 +1374,16 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
     this.hostElement.classList.add('active')
     this.changeDetectorRef.markForCheck()
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
+    this._cancelTableMenuFrames()
+    this._scheduleTableMenuFrame(() => {
+      this._scheduleTableMenuFrame(() => {
         this._showTableMenuOverlay()
       })
     })
   }
 
   private _hideTableMenu() {
+    this._cancelTableMenuFrames()
     // 真正"用户离开了表格"时才走这里：销毁 CDK overlay + 隐藏内联 toolbar。
     // 切换单元格不再触发这里（_clearSelectionUiState 不再 hide），
     // 因此 selection 切换时工具栏只更新位置/内容，不会重建。
@@ -1528,6 +1536,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   refreshTableMenuFromSelection() {
+    if (this._isGone()) return
     this._syncTableFocusUi(this.doc.selection.value)
   }
 
@@ -1567,6 +1576,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   private _showTableMenuOverlay() {
+    if (!this._isTableUiLive()) {
+      this._disposeToolbar()
+      return
+    }
     if (this.isReadonly || !this._tableMenu.visible || !this.tableMenuAnchor) {
       this._disposeToolbar()
       return
@@ -1590,7 +1603,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       // reposition.
       this.toolbarRef.changeDetectorRef.detectChanges()
       const overlay = this.toolbarOvr
-      requestAnimationFrame(() => {
+      this._scheduleTableMenuFrame(() => {
         if (this.toolbarOvr !== overlay) return
         const strategy = overlay.getConfig().positionStrategy as FlexibleConnectedPositionStrategy | undefined
         if (strategy) {
@@ -1629,6 +1642,23 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.toolbarOvr = overlayRef
     this.toolbarRef = componentRef
     this._applyToolbarInputs(componentRef)
+  }
+
+  private _isTableUiLive(): boolean {
+    return this.hostElement.isConnected && this.doc.model.exists(this.id)
+  }
+
+  private _scheduleTableMenuFrame(callback: () => void): void {
+    const frameId = requestAnimationFrame(() => {
+      this._tableMenuFrameIds.delete(frameId)
+      callback()
+    })
+    this._tableMenuFrameIds.add(frameId)
+  }
+
+  private _cancelTableMenuFrames(): void {
+    this._tableMenuFrameIds.forEach(frameId => cancelAnimationFrame(frameId))
+    this._tableMenuFrameIds.clear()
   }
 
   private _applyToolbarInputs(ref: ComponentRef<TableStructureToolbarComponent>) {

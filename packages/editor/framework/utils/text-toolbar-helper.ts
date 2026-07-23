@@ -28,6 +28,97 @@ export class TextToolbarHelper {
     return isSelectionAlive(selection as any, this.doc)
   }
 
+  private hasModelBlock(blockId: string): boolean {
+    return typeof (this.doc as any).model?.exists === 'function' && this.doc.model.exists(blockId)
+  }
+
+  private firstBlockId(selection: BlockCraft.Selection): string {
+    return (selection as BlockCraft.Selection & {firstBlockId?: string}).firstBlockId ?? selection.firstBlock.id
+  }
+
+  private lastBlockId(selection: BlockCraft.Selection): string {
+    return (selection as BlockCraft.Selection & {lastBlockId?: string}).lastBlockId ?? selection.lastBlock.id
+  }
+
+  private blockNodeType(blockId: string): BlockNodeType | undefined {
+    if (this.hasModelBlock(blockId)) return this.doc.model.getNodeType(blockId)
+    try {
+      return this.doc.getBlockById(blockId).nodeType
+    } catch {
+      return undefined
+    }
+  }
+
+  private blockProps(blockId: string): Partial<IEditableBlockProps> {
+    if (this.hasModelBlock(blockId)) {
+      return (this.doc.model.getProps(blockId) ?? {}) as Partial<IEditableBlockProps>
+    }
+    try {
+      return this.doc.getBlockById(blockId).props as Partial<IEditableBlockProps>
+    } catch {
+      return {}
+    }
+  }
+
+  private blockFlavour(blockId: string): BlockCraft.BlockFlavour | undefined {
+    if (this.hasModelBlock(blockId)) return this.doc.model.getFlavour(blockId)
+    try {
+      return this.doc.getBlockById(blockId).flavour
+    } catch {
+      return undefined
+    }
+  }
+
+  private blockDeltas(blockId: string): DeltaInsert[] {
+    if (this.hasModelBlock(blockId)) return this.doc.model.getTextDeltas(blockId) ?? []
+    try {
+      return (this.doc.getBlockById(blockId) as EditableBlockComponent).textDeltas()
+    } catch {
+      return []
+    }
+  }
+
+  private blockTextLength(blockId: string): number {
+    if (this.hasModelBlock(blockId)) return this.doc.model.getTextLength(blockId)
+    try {
+      return (this.doc.getBlockById(blockId) as EditableBlockComponent).textLength
+    } catch {
+      return 0
+    }
+  }
+
+  private isPlainTextBlock(blockId: string): boolean {
+    if (typeof (this.doc as any).isPlainTextBlock === 'function') {
+      return this.doc.isPlainTextBlock(blockId)
+    }
+    try {
+      return !!(this.doc.getBlockById(blockId) as EditableBlockComponent).plainTextOnly
+    } catch {
+      return false
+    }
+  }
+
+  private formatBlockText(
+    blockId: string,
+    index: number,
+    length: number,
+    attrs: IInlineNodeAttrs,
+  ): void {
+    if (this.hasModelBlock(blockId) && typeof (this.doc.crud as any).formatText === 'function') {
+      this.doc.crud.formatText(blockId, index, length, attrs)
+      return
+    }
+    ;(this.doc.getBlockById(blockId) as EditableBlockComponent).formatText(index, length, attrs)
+  }
+
+  private updateBlockPropsById(blockId: string, props: Partial<IEditableBlockProps>): void {
+    if (this.hasModelBlock(blockId) && typeof (this.doc.crud as any).updateBlockProps === 'function') {
+      this.doc.crud.updateBlockProps(blockId, props)
+      return
+    }
+    this.doc.getBlockById(blockId).updateProps({...props})
+  }
+
   private pickDeltaAttrsAt(deltas: DeltaInsert[], index: number) {
     let offset = 0
     for (const op of deltas) {
@@ -41,11 +132,11 @@ export class TextToolbarHelper {
     return null
   }
 
-  private getCollapsedAttrs(block: EditableBlockComponent, index: number) {
-    const deltas = block.textDeltas()
+  private getCollapsedAttrs(blockId: string, index: number) {
+    const deltas = this.blockDeltas(blockId)
     if (!deltas.length) return {}
 
-    const textLength = block.textLength
+    const textLength = this.blockTextLength(blockId)
     const safeIndex = Math.max(0, Math.min(index, textLength))
     const prevAttrs = safeIndex > 0 ? this.pickDeltaAttrsAt(deltas, safeIndex - 1) : null
     const curAttrs = this.pickDeltaAttrsAt(deltas, safeIndex)
@@ -56,22 +147,23 @@ export class TextToolbarHelper {
   getCurrentCommonAttrs(selection: BlockCraft.Selection): ITextCommonAttrs {
     if (!this.isSelectionAlive(selection)) return this.emptyCommonAttrs()
 
+    const firstId = this.firstBlockId(selection)
+    const lastId = this.lastBlockId(selection)
     const attrs = new Map<string, any>()
     let colors: Record<string, string | null>
-    let props: Partial<IEditableBlockProps> = JSON.parse(JSON.stringify(selection.firstBlock.props))
-    let flavour: BlockCraft.BlockFlavour | undefined = selection.firstBlock.flavour
-    let allEditable = selection.firstBlock.nodeType === BlockNodeType.editable
+    let props: Partial<IEditableBlockProps> = JSON.parse(JSON.stringify(this.blockProps(firstId)))
+    let flavour: BlockCraft.BlockFlavour | undefined = this.blockFlavour(firstId)
+    let allEditable = this.blockNodeType(firstId) === BlockNodeType.editable && !this.isPlainTextBlock(firstId)
 
-    const between = getSelectionCoveredBlockIds(selection, this.doc).map(id => this.doc.getBlockById(id))
+    const between = getSelectionCoveredBlockIds(selection, this.doc)
 
     const allDeltas: DeltaInsert[] = []
     if (selection.start.type === 'text' && selection.collapsed) {
-      const startBlock = selection.firstBlock as EditableBlockComponent
       const startOffset = selection.start.offset
       const collapsedAttrs = this.doc.inputManger.peekNextInsertAttrs({
         blockId: selection.start.blockId,
         index: startOffset
-      }) || this.getCollapsedAttrs(startBlock, startOffset)
+      }) || this.getCollapsedAttrs(firstId, startOffset)
       colors = {
         color: (collapsedAttrs['s:color'] as string | null) ?? null,
         backColor: (collapsedAttrs['s:background'] as string | null) ?? null
@@ -89,32 +181,33 @@ export class TextToolbarHelper {
     }
 
     if (selection.start.type === 'text') {
-      const startBlock = selection.firstBlock as EditableBlockComponent
       const startOffset = selection.start.offset
       const endOffset = selection.isInSameBlock && selection.end.type === 'text'
         ? selection.end.offset
-        : startBlock.textLength
-      allDeltas.push(...sliceDelta(startBlock.textDeltas(), startOffset, endOffset))
+        : this.blockTextLength(firstId)
+      allDeltas.push(...sliceDelta(this.blockDeltas(firstId), startOffset, endOffset))
     }
 
-    between.slice(1).forEach((block, i) => {
-      if (!this.doc.isEditable(block) || block.plainTextOnly) {
+    between.filter(id => id !== firstId).forEach(blockId => {
+      if (this.blockNodeType(blockId) !== BlockNodeType.editable || this.isPlainTextBlock(blockId)) {
         allEditable = false
         return
       }
-      if (props.textAlign !== null && block.props.textAlign !== props.textAlign) {
+      const blockProps = this.blockProps(blockId)
+      const blockFlavour = this.blockFlavour(blockId)
+      if (props.textAlign !== null && blockProps.textAlign !== props.textAlign) {
         props.textAlign = undefined
       }
-      if (props.heading !== null && block.props.heading !== props.heading) {
+      if (props.heading !== null && blockProps.heading !== props.heading) {
         props.heading = undefined
       }
-      if (block.flavour !== null && block.flavour !== flavour) {
+      if (blockFlavour !== flavour) {
         flavour = undefined
       }
-      if (i === between.length - 2 && !selection.isInSameBlock && selection.end.type === 'text') {
-        allDeltas.push(...sliceDelta(block.textDeltas(), 0, selection.end.offset))
+      if (blockId === lastId && !selection.isInSameBlock && selection.end.type === 'text') {
+        allDeltas.push(...sliceDelta(this.blockDeltas(blockId), 0, selection.end.offset))
       } else {
-        allDeltas.push(...block.textDeltas())
+        allDeltas.push(...this.blockDeltas(blockId))
       }
     })
 
@@ -140,11 +233,12 @@ export class TextToolbarHelper {
     if (!this.isSelectionAlive(selection)) return
 
     const s = selection.start, e = selection.end
+    const startId = this.firstBlockId(selection)
+    const endId = this.lastBlockId(selection)
 
     if (selection.collapsed && s.type === 'text') {
-      const startBlock = selection.firstBlock as EditableBlockComponent
       const nextAttrs: Record<string, any> = {
-        ...this.getCollapsedAttrs(startBlock, s.offset)
+        ...this.getCollapsedAttrs(startId, s.offset)
       }
       Object.entries(attrs).forEach(([key, value]) => {
         if (value === null || value === undefined) {
@@ -159,44 +253,38 @@ export class TextToolbarHelper {
       })
     }
 
-    if (s.type === 'text') {
-      const startBlock = selection.firstBlock as EditableBlockComponent
-      if (!startBlock.plainTextOnly) {
-        const len = selection.isInSameBlock && e.type === 'text' ? e.offset - s.offset : startBlock.textLength - s.offset
-        startBlock.formatText(s.offset, len, attrs)
+    const coveredIds = getSelectionCoveredBlockIds(selection, this.doc)
+    this.doc.crud.transact(() => {
+      if (
+        s.type === 'text' &&
+        this.blockNodeType(startId) === BlockNodeType.editable &&
+        !this.isPlainTextBlock(startId)
+      ) {
+        const len = selection.isInSameBlock && e.type === 'text'
+          ? e.offset - s.offset
+          : this.blockTextLength(startId) - s.offset
+        this.formatBlockText(startId, s.offset, len, attrs)
       }
-    }
-    if (selection.isInSameBlock) {
-      // Restore selection after DOM restructuring from format (e.g., text node splits)
-      if (!selection.collapsed) {
-        this.doc.selection.setSelection(s, e)
-      }
-      return
-    }
 
-    if (e.type === 'text') {
-      const endBlock = selection.lastBlock as EditableBlockComponent
-      if (!endBlock.plainTextOnly && e.offset > 0) {
-        endBlock.formatText(0, e.offset, attrs)
+      if (!selection.isInSameBlock && e.type === 'text') {
+        if (
+          this.blockNodeType(endId) === BlockNodeType.editable &&
+          !this.isPlainTextBlock(endId) &&
+          e.offset > 0
+        ) {
+          this.formatBlockText(endId, 0, e.offset, attrs)
+        }
       }
-    }
 
-    let between: string[]
-    try {
-      between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock)
-    } catch {
-      return
-    }
-    for (const id of between) {
-      let block: BlockCraft.BlockComponent
-      try {
-        block = this.doc.getBlockById(id)
-      } catch {
-        continue
+      if (!selection.isInSameBlock) {
+        for (const blockId of coveredIds) {
+          if (blockId === startId || blockId === endId) continue
+          if (this.blockNodeType(blockId) !== BlockNodeType.editable) continue
+          if (this.isPlainTextBlock(blockId)) continue
+          this.formatBlockText(blockId, 0, this.blockTextLength(blockId), attrs)
+        }
       }
-      if (!this.doc.isEditable(block) || block.plainTextOnly) continue
-      block.formatText(0, block.textLength, attrs)
-    }
+    })
 
     // Restore selection after DOM restructuring from format
     if (!selection.collapsed) {
@@ -216,15 +304,9 @@ export class TextToolbarHelper {
         return
       }
       for (const id of between) {
-        let block: BlockCraft.BlockComponent
-        try {
-          block = this.doc.getBlockById(id)
-        } catch {
-          continue
-        }
-        if (!this.doc.isEditable(block)) continue
-        if (block.plainTextOnly) continue
-        block.updateProps({...props})
+        if (this.blockNodeType(id) !== BlockNodeType.editable) continue
+        if (this.isPlainTextBlock(id)) continue
+        this.updateBlockPropsById(id, props)
       }
     })
   }
@@ -253,17 +335,12 @@ export class TextToolbarHelper {
     void this.doc.chain()
       .transact(() => {
         between.forEach(id => {
-          let block: BlockCraft.BlockComponent
-          try {
-            block = this.doc.getBlockById(id)
-          } catch {
-            return
-          }
-          if (!this.doc.isEditable(block)) return
-          if (block.plainTextOnly || block.flavour === flavour) return
-          const newBlock = this.doc.schemas.createSnapshot(flavour, [block.textDeltas(), {
-            ...block.props,
-            heading: flavour === 'ordered' ? block.props.heading : null
+          if (this.blockNodeType(id) !== BlockNodeType.editable) return
+          if (this.isPlainTextBlock(id) || this.blockFlavour(id) === flavour) return
+          const blockProps = this.blockProps(id)
+          const newBlock = this.doc.schemas.createSnapshot(flavour, [this.blockDeltas(id), {
+            ...blockProps,
+            heading: flavour === 'ordered' ? blockProps.heading : null
           }])
           idMap.set(id, newBlock.id)
           this.doc.crud.replaceWithSnapshots(id, [newBlock])

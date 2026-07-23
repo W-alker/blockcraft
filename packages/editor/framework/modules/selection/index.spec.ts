@@ -1,6 +1,7 @@
 import {Subject} from 'rxjs';
 import {BlockNodeType} from '../../block-std';
 import {createBlockGapSpace} from '../../utils';
+import {nextTick} from '../../../global';
 import {SelectionManager} from './index';
 import {BlockSelection} from './blockSelection';
 
@@ -27,6 +28,7 @@ describe('SelectionManager DOM selection normalization', () => {
       nodeType: BlockNodeType.root,
       hostElement: rootHost,
       childrenLength: 1,
+      childrenIds: ['block-1'],
     };
     const block = {
       id: 'block-1',
@@ -221,6 +223,28 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(range.endContainer).toBe(trailing.firstChild!);
   });
 
+  it('materializes a virtual string target before selecting its block view', () => {
+    const {manager, block, blockHost, doc} = createManager();
+    const leading = createBlockGapSpace('before');
+    const trailing = createBlockGapSpace('after');
+    blockHost.append(leading, document.createElement('div'), trailing);
+    let mounted = false;
+    const ensureViewMounted = jasmine.createSpy('ensureViewMounted').and.callFake(() => {
+      mounted = true;
+    });
+    (doc as any).virtualization = {ensureViewMounted};
+    (doc as any).getBlockById = jasmine.createSpy('getBlockById').and.callFake((id: string) => {
+      if (id === 'block-1' && !mounted) throw new Error('view is not mounted');
+      return id === 'root' ? doc.root : block;
+    });
+
+    manager.selectBlock('block-1');
+
+    expect(ensureViewMounted).toHaveBeenCalledOnceWith(['block-1']);
+    expect(manager.value?.start.blockId).toBe('block-1');
+    expect(manager.value?.isAllSelected).toBeTrue();
+  });
+
   it('keeps a programmatic block selection when the native selectionchange is delayed', () => {
     const {manager, block, blockHost, dispatchSelectionChange} = createManager({bindEvents: true});
     const leading = createBlockGapSpace('before');
@@ -253,6 +277,31 @@ describe('SelectionManager DOM selection normalization', () => {
     }));
     dispatchSelectionChange();
 
+    expect(recalculateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a pending DOM projection authoritative until a new pointer intent cancels it', () => {
+    const {manager, rootHost, block, blockHost, dispatchSelectionChange} = createManager({bindEvents: true});
+    const leading = createBlockGapSpace('before');
+    const trailing = createBlockGapSpace('after');
+    blockHost.append(leading, document.createElement('div'), trailing);
+    const recalculateSpy = spyOn(manager, 'recalculate').and.callThrough();
+
+    manager.selectBlock(block as any);
+    (manager as any)._suppressProgrammaticSelectionChangeUntil = 0;
+    (manager as any)._projectionFrame = 987654;
+    dispatchSelectionChange();
+
+    expect(recalculateSpy).not.toHaveBeenCalled();
+
+    rootHost.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    }));
+    dispatchSelectionChange();
+
+    expect((manager as any)._projectionFrame).toBeNull();
     expect(recalculateSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -417,6 +466,107 @@ describe('SelectionManager DOM selection normalization', () => {
     manager.setGapCursor(block as any, 'after');
 
     expect(manager.getSelectionRect()).toBe(expectedRect);
+  });
+
+  it('delegates virtualized history placement to block navigation', async () => {
+    const {manager, blockHost, doc} = createManager();
+    const leading = createBlockGapSpace('before');
+    const trailing = createBlockGapSpace('after');
+    blockHost.append(leading, document.createElement('div'), trailing);
+    const source = {
+      anchor: {blockId: 'block-1', type: 'gap' as const, side: 'after' as const},
+      head: {blockId: 'block-1', type: 'gap' as const, side: 'after' as const},
+      commonParent: 'block-1',
+    };
+    const scrollIntoView = spyOn(manager, 'scrollSelectionIntoView');
+    const scrollToBlock = jasmine.createSpy('scrollToBlock').and.returnValue(Promise.resolve(true));
+    let mounted = false;
+    const ensureViewMounted = jasmine.createSpy('ensureViewMounted').and.callFake(() => {
+      mounted = true;
+    });
+    (doc as any).virtualization = {enabled: true, ensureViewMounted, scrollToBlock};
+    (doc as any).getBlockById = (id: string) => {
+      if (id === 'root') return doc.root;
+      if (!mounted) throw new Error('view is not mounted');
+      return {
+        id: 'block-1',
+        nodeType: BlockNodeType.block,
+        hostElement: blockHost,
+        parentId: 'root',
+        parentBlock: doc.root,
+        textContent: () => 'void text',
+      };
+    };
+
+    manager.restoreBookmark({
+      anchor: {type: 'gap', blockId: 'block-1', side: 'after'},
+      head: {type: 'gap', blockId: 'block-1', side: 'after'},
+      source,
+      dependencyBlockIds: new Set(['root', 'block-1']),
+      structuralPositions: [],
+    });
+    await nextTick();
+
+    expect(ensureViewMounted).toHaveBeenCalledOnceWith(['block-1']);
+    expect(scrollToBlock).toHaveBeenCalledOnceWith('block-1');
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    doc.onDestroy$.next();
+  });
+
+  it('keeps the viewport stable when a restored virtualized selection is already visible', async () => {
+    const {manager, blockHost, rootHost, doc} = createManager();
+    const leading = createBlockGapSpace('before');
+    const trailing = createBlockGapSpace('after');
+    blockHost.append(leading, document.createElement('div'), trailing);
+    const source = {
+      anchor: {blockId: 'block-1', type: 'gap' as const, side: 'after' as const},
+      head: {blockId: 'block-1', type: 'gap' as const, side: 'after' as const},
+      commonParent: 'block-1',
+    };
+    Object.defineProperty(rootHost, 'scrollTop', {value: 80, writable: true});
+    spyOn(rootHost, 'getBoundingClientRect').and.returnValue(new DOMRect(0, 100, 300, 200));
+    spyOn(trailing, 'getBoundingClientRect').and.returnValue(new DOMRect(20, 160, 1, 24));
+    const scrollToBlock = jasmine.createSpy('scrollToBlock').and.returnValue(Promise.resolve(true));
+    (doc as any).scrollContainer = rootHost;
+    (doc as any).virtualization = {
+      enabled: true,
+      ensureViewMounted: jasmine.createSpy('ensureViewMounted'),
+      scrollToBlock,
+    };
+
+    manager.restoreBookmark({
+      anchor: {type: 'gap', blockId: 'block-1', side: 'after'},
+      head: {type: 'gap', blockId: 'block-1', side: 'after'},
+      source,
+      dependencyBlockIds: new Set(['root', 'block-1']),
+      structuralPositions: [],
+    });
+    await nextTick();
+
+    expect(scrollToBlock).not.toHaveBeenCalled();
+    expect(rootHost.scrollTop).toBe(80);
+    doc.onDestroy$.next();
+  });
+
+  it('scrolls toward the active head instead of the ordered range start', () => {
+    const {manager, blockHost, rootHost, doc} = createManager();
+    const leading = createBlockGapSpace('before');
+    const trailing = createBlockGapSpace('after');
+    blockHost.append(leading, document.createElement('div'), trailing);
+    Object.defineProperty(rootHost, 'scrollTop', {value: 0, writable: true});
+    spyOn(rootHost, 'getBoundingClientRect').and.returnValue(new DOMRect(0, 0, 300, 100));
+    spyOn(leading, 'getBoundingClientRect').and.returnValue(new DOMRect(0, 8, 1, 24));
+    spyOn(trailing, 'getBoundingClientRect').and.returnValue(new DOMRect(0, 180, 1, 24));
+    (doc as any).scrollContainer = rootHost;
+
+    manager.replay({
+      anchor: {blockId: 'block-1', type: 'gap', side: 'before'},
+      head: {blockId: 'block-1', type: 'gap', side: 'after'},
+      commonParent: 'block-1',
+    });
+    manager.scrollSelectionIntoView();
+
+    expect(rootHost.scrollTop).toBe(128);
   });
 
   it('does not report block text for a collapsed gap cursor', () => {
@@ -1888,6 +2038,7 @@ describe('SelectionManager projection mount coordination', () => {
     } as any;
     const mountedBlocks = new Map<string, any>();
     const mountedTextNodes = new Map<string, Text>();
+    const eventStreams = new Map<string, Subject<Event>>();
     const frames = new Map<number, FrameRequestCallback>();
     let nextFrame = 0;
     const surface = {
@@ -1918,15 +2069,34 @@ describe('SelectionManager projection mount coordination', () => {
     const logger = {warn: jasmine.createSpy('warn')};
     const doc = {
       root,
-      event: {add() {}, bindHotkey() {}, status: {isComposing: false}},
+      event: {
+        add() {},
+        bindHotkey() {},
+        status: {isComposing: false, isSelecting: false},
+        customListen(_target: EventTarget, eventName: string) {
+          let stream = eventStreams.get(eventName);
+          if (!stream) {
+            stream = new Subject<Event>();
+            eventStreams.set(eventName, stream);
+          }
+          return stream;
+        },
+      },
       afterInit() {},
       onDestroy$,
       model: {
         exists: (blockId: string) => blockId in parentById,
         getParentId: (blockId: string) => parentById[blockId] ?? null,
         getChildrenIds: (blockId: string) => childrenById[blockId] ?? [],
+        getPath: (blockId: string) => blockId === root.id
+          ? [root.id]
+          : blockId in parentById ? [root.id, blockId] : null,
         getTextLength: (blockId: string) => blockId.startsWith('virtual-p') ? 8 : 0,
         queryBetween: () => [],
+      },
+      vm: {
+        isMounted: (blockId: string) => blockId === root.id ||
+          !!mountedBlocks.get(blockId)?.hostElement.isConnected,
       },
       getBlockById: (blockId: string) => {
         if (blockId === root.id) return root;
@@ -1978,6 +2148,11 @@ describe('SelectionManager projection mount coordination', () => {
       logger,
       mountEditable,
       mountedTextNodes,
+      rootHost,
+      doc,
+      dispatchSelectionChange: () => {
+        eventStreams.get('selectionchange')?.next(new Event('selectionchange'));
+      },
     };
   }
 
@@ -1995,6 +2170,215 @@ describe('SelectionManager projection mount coordination', () => {
   afterEach(() => {
     document.getSelection()?.removeAllRanges();
     document.querySelectorAll('[data-projection-mount-test]').forEach(element => element.remove());
+  });
+
+  it('mounts the endpoint neighborhood before broadcasting an offscreen boundary selection', () => {
+    const {manager, mountEditable, mountedTextNodes} = createProjectionMountManager();
+    const ensureViewMounted = jasmine.createSpy('ensureViewMounted').and.callFake((blockIds: readonly string[]) => {
+      blockIds.forEach(blockId => {
+        if (blockId.startsWith('virtual-p') && !mountedTextNodes.has(blockId)) {
+          mountEditable(blockId);
+        }
+      });
+    });
+    (manager as any).doc.virtualization = {ensureViewMounted};
+    let firstEndpointMountedWhenPublished = false;
+    manager.changeObserve().subscribe(selection => {
+      if (!selection) return;
+      const firstSelectedId = selection.getBoundarySelectedChildIds()?.[0];
+      firstEndpointMountedWhenPublished = !!firstSelectedId && mountedTextNodes.has(firstSelectedId);
+    });
+
+    manager.replay({
+      anchor: {blockId: 'virtual-root', type: 'boundary', index: 2},
+      head: {blockId: 'virtual-root', type: 'boundary', index: 3},
+      commonParent: 'virtual-root',
+    });
+
+    expect(ensureViewMounted).toHaveBeenCalledOnceWith([
+      'virtual-root',
+      'virtual-p1',
+      'virtual-callout',
+      'virtual-p2',
+    ]);
+    expect(firstEndpointMountedWhenPublished).toBeTrue();
+    expect(manager.value?.firstBlock.id).toBe('virtual-p1');
+  });
+
+  it('projects a full-document boundary range identically on the first and second replay', () => {
+    const {manager, mountEditable, mountedTextNodes, rootHost} = createProjectionMountManager();
+    const ensureViewMounted = jasmine.createSpy('ensureViewMounted').and.callFake((blockIds: readonly string[]) => {
+      blockIds.forEach(blockId => {
+        if (blockId.startsWith('virtual-p') && !mountedTextNodes.has(blockId)) {
+          mountEditable(blockId);
+        }
+      });
+    });
+    (manager as any).doc.virtualization = {enabled: true, ensureViewMounted};
+    const fullSelection = {
+      anchor: {blockId: 'virtual-root', type: 'boundary' as const, index: 0},
+      head: {blockId: 'virtual-root', type: 'boundary' as const, index: 4},
+      commonParent: 'virtual-root',
+    };
+
+    manager.replay(fullSelection);
+    const first = document.getSelection()!.getRangeAt(0).cloneRange();
+    manager.replay(fullSelection);
+    const second = document.getSelection()!.getRangeAt(0);
+
+    expect(ensureViewMounted).toHaveBeenCalledTimes(1);
+    expect(ensureViewMounted).toHaveBeenCalledWith([
+      'virtual-root',
+      'virtual-p0',
+      'virtual-p2',
+    ]);
+    const firstText = mountedTextNodes.get('virtual-p0')!;
+    const lastText = mountedTextNodes.get('virtual-p2')!;
+    expect(first.startContainer).toBe(firstText);
+    expect(first.startOffset).toBe(0);
+    expect(first.endContainer).toBe(lastText);
+    expect(first.endOffset).toBe(lastText.length);
+    expect(second.startContainer).toBe(first.startContainer);
+    expect(second.startOffset).toBe(first.startOffset);
+    expect(second.endContainer).toBe(first.endContainer);
+    expect(second.endOffset).toBe(first.endOffset);
+
+    const transientMiddle = document.createElement('div');
+    rootHost.insertBefore(transientMiddle, lastText.parentElement);
+    const liveRange = document.getSelection()!.getRangeAt(0);
+    expect(liveRange.startContainer).toBe(firstText);
+    expect(liveRange.startOffset).toBe(0);
+    expect(liveRange.endContainer).toBe(lastText);
+    expect(liveRange.endOffset).toBe(lastText.length);
+    transientMiddle.remove();
+    expect(liveRange.startContainer).toBe(firstText);
+    expect(liveRange.endContainer).toBe(lastText);
+  });
+
+  it('reprojects a full-document boundary range after the mounted window changes', () => {
+    const {manager, mountEditable, mountedTextNodes, rootHost, doc} = createProjectionMountManager();
+    const viewChange$ = new Subject<{mountedRootIds: readonly string[]}>();
+    const ensureViewMounted = jasmine.createSpy('ensureViewMounted').and.callFake((blockIds: readonly string[]) => {
+      blockIds.forEach(blockId => {
+        if (blockId.startsWith('virtual-p') && !mountedTextNodes.has(blockId)) {
+          mountEditable(blockId);
+        }
+      });
+    });
+    (doc as any).virtualization = {enabled: true, ensureViewMounted, viewChange$};
+    (manager as any)._bindEvents(doc.root);
+
+    const fullSelection = {
+      anchor: {blockId: 'virtual-root', type: 'boundary' as const, index: 0},
+      head: {blockId: 'virtual-root', type: 'boundary' as const, index: 4},
+      commonParent: 'virtual-root',
+    };
+    manager.replay(fullSelection);
+
+    const nativeSelection = document.getSelection()!;
+    const wrongRange = document.createRange();
+    const lastText = mountedTextNodes.get('virtual-p2')!;
+    wrongRange.setStart(lastText, 1);
+    wrongRange.collapse(true);
+    nativeSelection.removeAllRanges();
+    nativeSelection.addRange(wrongRange);
+    const applyDomRange = spyOn<any>(manager, '_applyDomRange').and.callThrough();
+    doc.event.status.isSelecting = true;
+
+    viewChange$.next({mountedRootIds: ['virtual-p0', 'virtual-p2']});
+
+    expect(applyDomRange).toHaveBeenCalledTimes(1);
+    const repaired = nativeSelection.getRangeAt(0);
+    expect(repaired.startContainer).toBe(mountedTextNodes.get('virtual-p0')!);
+    expect(repaired.startOffset).toBe(0);
+    expect(repaired.endContainer).toBe(lastText);
+    expect(repaired.endOffset).toBe(lastText.length);
+    expect(manager.value?.toJSON()).toEqual(fullSelection);
+    doc.onDestroy$.next();
+  });
+
+  it('keeps a full-document model range while its initial virtual endpoints are still mounting', async () => {
+    const {
+      manager,
+      mountEditable,
+      frames,
+      rootHost,
+      doc,
+      dispatchSelectionChange,
+    } = createProjectionMountManager();
+    const viewChange$ = new Subject<{mountedRootIds: readonly string[]}>();
+    const endpointMount = deferred<void>();
+    const ensureMounted = jasmine.createSpy('ensureMounted').and.returnValue(endpointMount.promise);
+    (doc as any).virtualization = {
+      enabled: true,
+      ensureViewMounted: jasmine.createSpy('ensureViewMounted'),
+      viewChange$,
+    };
+    registerMountAdapter(manager, {ensureMounted});
+    (manager as any)._bindEvents(doc.root);
+
+    const fullSelection = {
+      anchor: {blockId: 'virtual-root', type: 'boundary' as const, index: 0},
+      head: {blockId: 'virtual-root', type: 'boundary' as const, index: 4},
+      commonParent: 'virtual-root',
+    };
+    manager.replay(fullSelection);
+
+    const publishTransientCollapsedRange = () => {
+      const transient = document.createRange();
+      transient.setStart(rootHost, 0);
+      transient.collapse(true);
+      const nativeSelection = document.getSelection()!;
+      nativeSelection.removeAllRanges();
+      nativeSelection.addRange(transient);
+      (manager as any)._suppressProgrammaticSelectionChangeUntil = 0;
+      dispatchSelectionChange();
+    };
+
+    publishTransientCollapsedRange();
+    viewChange$.next({mountedRootIds: []});
+    publishTransientCollapsedRange();
+
+    expect(manager.value?.toJSON()).toEqual(fullSelection);
+    expect(ensureMounted).toHaveBeenCalledTimes(2);
+
+    mountEditable('virtual-p0');
+    mountEditable('virtual-p2');
+    endpointMount.resolve();
+    await endpointMount.promise;
+    await Promise.resolve();
+    expect(frames.size).toBe(1);
+    const [frame] = frames.values();
+    frame(performance.now());
+
+    expect(manager.value?.toJSON()).toEqual(fullSelection);
+    const repaired = document.getSelection()!.getRangeAt(0);
+    expect(repaired.startContainer).toBe(rootHost.firstChild!.firstChild!);
+    expect(repaired.startOffset).toBe(0);
+    expect(repaired.endContainer).toBe(rootHost.lastChild!.firstChild!);
+    expect(repaired.endOffset).toBe(rootHost.lastChild!.firstChild!.textContent!.length);
+    doc.onDestroy$.next();
+  });
+
+  it('mounts a retained endpoint component before projecting an empty text cursor', () => {
+    const {manager, mountEditable, mountedTextNodes} = createProjectionMountManager();
+    const retained = mountEditable('virtual-p1');
+    retained.hostElement.remove();
+    const ensureViewMounted = jasmine.createSpy('ensureViewMounted').and.callFake(() => {
+      (manager as any).doc.root.hostElement.appendChild(retained.hostElement);
+    });
+    (manager as any).doc.virtualization = {ensureViewMounted};
+
+    manager.replay({
+      anchor: {blockId: 'virtual-p1', type: 'text', offset: 0},
+      head: {blockId: 'virtual-p1', type: 'text', offset: 0},
+      commonParent: 'virtual-p1',
+    });
+
+    expect(ensureViewMounted).toHaveBeenCalledOnceWith(['virtual-p1']);
+    const range = document.getSelection()!.getRangeAt(0);
+    expect(range.startContainer).toBe(mountedTextNodes.get('virtual-p1')!);
+    expect(range.startOffset).toBe(0);
   });
 
   it('requests only unmounted text endpoint blocks before retrying DOM projection', () => {

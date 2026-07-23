@@ -1,5 +1,6 @@
-import {OneShotCursorAnchor, ITextCursorPoint} from "../../utils/one-shot-selection-anchor";
-import {EditableBlockComponent, DeltaOperation} from "../../block-std";
+import * as Y from 'yjs'
+import {OneShotCursorAnchor, ITextCursorPoint} from '../../utils/one-shot-selection-anchor'
+import {EditableBlockComponent, DeltaOperation} from '../../block-std'
 
 /**
  * Composition session lifecycle phases:
@@ -26,6 +27,21 @@ export const enum CompositionPhase {
 export interface IDeferredPatch {
   blockId: string
   delta: DeltaOperation[]
+}
+
+interface CompositionRecoveryTarget {
+  blockId: string
+  atStart: boolean
+}
+
+interface CompositionAbortRecovery {
+  target: CompositionRecoveryTarget | null
+}
+
+interface CompositionRecoveryLevel {
+  parentId: string
+  fallbackIndex: number
+  position: Y.RelativePosition
 }
 
 /**
@@ -63,6 +79,9 @@ export class CompositionSession {
   private _anchor: OneShotCursorAnchor
   private _activeBlockId: string | null = null
   private _deferredPatches: IDeferredPatch[] = []
+  private _recoveryLevels: CompositionRecoveryLevel[] = []
+  private _abortRecoveryTarget: CompositionRecoveryTarget | null = null
+  private _abortRecoveryPending = false
   /** 组合期间宿主块被删除（通常来自远端协同）后置位；compositionEnd 据此丢弃本次提交 */
   private _abortedByBlockRemoval = false
 
@@ -105,6 +124,9 @@ export class CompositionSession {
     this._activeBlockId = block.id
     this._deferredPatches = []
     this._abortedByBlockRemoval = false
+    this._abortRecoveryTarget = null
+    this._abortRecoveryPending = false
+    this._recoveryLevels = this._captureRecoveryLevels(block.id)
     this._anchor.capture(block, anchorIndex)
   }
 
@@ -196,7 +218,10 @@ export class CompositionSession {
   handleBlocksDeleted(deletedIds: ReadonlySet<string>) {
     if (this._phase !== CompositionPhase.Active) return
     if (!this._activeBlockId || !deletedIds.has(this._activeBlockId)) return
+    const recoveryTarget = this._resolveRecoveryTarget()
     this.end()
+    this._abortRecoveryTarget = recoveryTarget
+    this._abortRecoveryPending = true
     // end() 之后置位：abort 标记要存活到 compositionEnd 事件被消费为止
     this._abortedByBlockRemoval = true
   }
@@ -210,6 +235,8 @@ export class CompositionSession {
    */
   abortPendingCommit() {
     this.end()
+    this._abortRecoveryTarget = null
+    this._abortRecoveryPending = false
     this._abortedByBlockRemoval = true
   }
 
@@ -223,6 +250,14 @@ export class CompositionSession {
     return aborted
   }
 
+  consumeAbortRecovery(): CompositionAbortRecovery | null {
+    if (!this._abortRecoveryPending) return null
+    const recovery = {target: this._abortRecoveryTarget}
+    this._abortRecoveryPending = false
+    this._abortRecoveryTarget = null
+    return recovery
+  }
+
   /**
    * End the session and return to idle.
    */
@@ -230,6 +265,7 @@ export class CompositionSession {
     this._phase = CompositionPhase.Idle
     this._activeBlockId = null
     this._deferredPatches = []
+    this._recoveryLevels = []
     this._anchor.reset()
   }
 
@@ -241,5 +277,71 @@ export class CompositionSession {
   reset() {
     this.end()
     this._abortedByBlockRemoval = false
+    this._abortRecoveryTarget = null
+    this._abortRecoveryPending = false
+  }
+
+  private _captureRecoveryLevels(blockId: string): CompositionRecoveryLevel[] {
+    const levels: CompositionRecoveryLevel[] = []
+    const visited = new Set<string>()
+    let currentId: string | null = blockId
+
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId)
+      let parentId: string | null
+      try {
+        parentId = this.doc.model?.getParentId?.(currentId) ?? null
+      } catch {
+        break
+      }
+      if (!parentId) break
+
+      try {
+        const siblings = this.doc.model.getChildrenIds(parentId)
+        const index = siblings.indexOf(currentId)
+        const children = this.doc.model.getYBlock(parentId)?.get('children')
+        if (index >= 0 && children instanceof Y.Array) {
+          levels.push({
+            parentId,
+            fallbackIndex: index,
+            position: Y.createRelativePositionFromTypeIndex(children, index),
+          })
+        }
+      } catch {
+        // The next ancestor may still provide a usable structural fallback.
+      }
+      currentId = parentId
+    }
+    return levels
+  }
+
+  private _resolveRecoveryTarget(): CompositionRecoveryTarget | null {
+    for (const level of this._recoveryLevels) {
+      try {
+        if (!this.doc.model.exists(level.parentId)) continue
+        const children = this.doc.model.getYBlock(level.parentId)?.get('children')
+        if (!(children instanceof Y.Array)) continue
+        const absolute = Y.createAbsolutePositionFromRelativePosition(
+          level.position,
+          this.doc.yDoc,
+        )
+        const siblings = this.doc.model.getChildrenIds(level.parentId)
+        const index = Math.max(0, Math.min(
+          absolute?.type === children ? absolute.index : level.fallbackIndex,
+          siblings.length,
+        ))
+        const nextId = siblings[index]
+        if (nextId && this.doc.model.exists(nextId)) {
+          return {blockId: nextId, atStart: true}
+        }
+        const previousId = index > 0 ? siblings[index - 1] : null
+        if (previousId && this.doc.model.exists(previousId)) {
+          return {blockId: previousId, atStart: false}
+        }
+      } catch {
+        // Continue outward when this parent was concurrently removed/repaired.
+      }
+    }
+    return null
   }
 }

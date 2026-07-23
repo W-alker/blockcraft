@@ -38,6 +38,7 @@ export class PaginationPlugin extends DocPlugin {
   private _printing = false
   private _exportQueue: Promise<void> = Promise.resolve()
   private _exportAbort = new AbortController()
+  private _releaseFullDocumentViewLease: (() => void) | null = null
 
   constructor(options: PaginationPluginOptions = {}) {
     super()
@@ -70,7 +71,11 @@ export class PaginationPlugin extends DocPlugin {
   disable(): void {
     if (!this._enabled) return
     this._enabled = false
-    this._controller?.disable()
+    try {
+      this._controller?.disable()
+    } finally {
+      this._releaseFullDocumentViews()
+    }
   }
 
   updateConfig(partial: Partial<PaginationConfig>): void {
@@ -96,7 +101,7 @@ export class PaginationPlugin extends DocPlugin {
       const layout = this._enabled
         ? this._controller?.captureStableLayout() ?? undefined
         : undefined
-      const snapshot = this.doc.root.toSnapshot()
+      const snapshot = this._snapshot()
       pages = await buildPrintPages(snapshot, this._config, {
         layout,
         render: readonlyDocRenderProvider(this.doc, snapshot),
@@ -130,7 +135,7 @@ export class PaginationPlugin extends DocPlugin {
       const layout = !options.pagination && this._enabled
         ? this._controller?.captureStableLayout() ?? undefined
         : undefined
-      const snapshot = this.doc.root.toSnapshot()
+      const snapshot = this._snapshot()
       const config = options.pagination ?? this._config
       const linkedAbort = linkAbortSignals(this._exportAbort.signal, options.signal)
       try {
@@ -167,8 +172,12 @@ export class PaginationPlugin extends DocPlugin {
     this._registered = false
     this._enabled = false
     this._exportAbort.abort()
-    this._controller?.destroy()
-    this._controller = null
+    try {
+      this._controller?.destroy()
+    } finally {
+      this._controller = null
+      this._releaseFullDocumentViews()
+    }
   }
 
   private _enableController(): void {
@@ -178,16 +187,47 @@ export class PaginationPlugin extends DocPlugin {
       })
       return
     }
-    if (!this._controller) {
-      const scrollContainer = this.doc.config.scrollContainer
-        ?? getScrollContainer(this.doc.root.hostElement)
-      this._controller = new PaginatedViewController(
-        this.doc,
-        this._config,
-        scrollContainer,
+    try {
+      this._releaseFullDocumentViewLease ??=
+        this.doc.virtualization?.acquireFullDocumentViewLease() ?? null
+      if (!this._controller) {
+        const scrollContainer = this.doc.config.scrollContainer
+          ?? getScrollContainer(this.doc.root.hostElement)
+        this._controller = new PaginatedViewController(
+          this.doc,
+          this._config,
+          scrollContainer,
+        )
+      }
+      this._controller.enable()
+    } catch (error) {
+      this._enabled = false
+      try {
+        this._controller?.destroy()
+      } catch (cleanupError) {
+        this.doc.logger.warn('pagination controller rollback failed: ', cleanupError)
+      }
+      this._controller = null
+      this._releaseFullDocumentViews()
+      throw error
+    }
+  }
+
+  private _releaseFullDocumentViews(): void {
+    this._releaseFullDocumentViewLease?.()
+    this._releaseFullDocumentViewLease = null
+  }
+
+  private _snapshot() {
+    const snapshot = this.doc.exportSnapshot()
+    if (!snapshot) {
+      throw new PaginationExportError(
+        'layout-not-ready',
+        '文档模型尚未准备好，无法生成分页快照',
+        {stage: 'layout'},
       )
     }
-    this._controller.enable()
+    return snapshot
   }
 }
 

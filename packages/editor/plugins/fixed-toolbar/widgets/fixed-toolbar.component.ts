@@ -13,6 +13,7 @@ import {
 } from "../../../components";
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
+  BlockNodeType,
   IBlockSnapshot,
   IEditableBlockProps,
   IInlineNodeAttrs,
@@ -1698,6 +1699,10 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     }
     if (!between.length) return false;
     return between.every((id) => {
+      if (typeof (this.doc as any).model?.exists === "function" && this.doc.model.exists(id)) {
+        return this.doc.model.getNodeType(id) === BlockNodeType.editable &&
+          !this.doc.isPlainTextBlock(id);
+      }
       try {
         const block = this.doc.getBlockById(id);
         return this.doc.isEditable(block) && !block.plainTextOnly;

@@ -129,6 +129,43 @@ const createBoundaryEditingHarness = (childrenIds = ['p1', 'p2']) => {
   }
 }
 
+describe('InputTransformer virtual text cursor recovery', () => {
+  it('publishes the model cursor before an inserted block view is available', () => {
+    const hostElement = document.createElement('div')
+    hostElement.tabIndex = 0
+    document.body.append(hostElement)
+    const selection: any = {
+      value: null,
+      replay: jasmine.createSpy('replay').and.callFake((json: any) => {
+        selection.value = {toJSON: () => json}
+      }),
+    }
+    const doc = {
+      event: eventStub(),
+      root: {hostElement},
+      model: {exists: () => true},
+      selection,
+      getBlockById: () => null,
+      isEditable: () => false,
+      logger: {warn: jasmine.createSpy('warn')},
+    }
+    const transformer = new InputTransformer(doc as any) as any
+
+    transformer['_setTextSelectionWhenReady']('inserted-paragraph', 2)
+
+    expect(selection.replay).toHaveBeenCalledOnceWith({
+      anchor: {blockId: 'inserted-paragraph', type: 'text', offset: 2},
+      head: {blockId: 'inserted-paragraph', type: 'text', offset: 2},
+      commonParent: 'inserted-paragraph',
+    })
+    expect(selection.value.toJSON().anchor.blockId).toBe('inserted-paragraph')
+    expect(document.activeElement).toBe(hostElement)
+    expect(doc.logger.warn).not.toHaveBeenCalled()
+
+    hostElement.remove()
+  })
+})
+
 const createMixedBoundaryEditingHarness = () => {
   const root = {
     id: 'root',

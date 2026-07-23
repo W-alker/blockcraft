@@ -33,11 +33,12 @@ describe('KeyboardControl stale selection guard', () => {
     };
   };
 
-  const dispatchKeyDown = (key: string) => {
+  const dispatchKeyDown = (key: string, init: KeyboardEventInit = {}) => {
     const event = new KeyboardEvent('keydown', {
       key,
       bubbles: true,
       cancelable: true,
+      ...init,
     });
     host.dispatchEvent(event);
     return event;
@@ -51,7 +52,14 @@ describe('KeyboardControl stale selection guard', () => {
     dispatcher = {
       currentSelection: staleSelection(),
       run: jasmine.createSpy('run'),
+      add: jasmine.createSpy('add').and.returnValue(() => {}),
       doc: {
+        rootId: 'root',
+        root: {
+          id: 'root',
+          flavour: 'root',
+          textContent: () => '',
+        },
         selection: {
           blur: jasmine.createSpy('blur'),
         },
@@ -107,5 +115,26 @@ describe('KeyboardControl stale selection guard', () => {
     const [name, context] = dispatcher.run.calls.mostRecent().args;
     expect(name).toBe('keyDown');
     expect(context.get('keyboardState').selection).toBe(dispatcher.currentSelection);
+  });
+
+  it('runs a matching root hotkey while the model selection is temporarily missing', () => {
+    dispatcher.currentSelection = null;
+    const handler = jasmine.createSpy('undo').and.callFake(context => {
+      context.preventDefault();
+      return true;
+    });
+    control.bindHotKey(
+      {key: 'z', shortKey: true},
+      handler,
+      {blockId: 'root'},
+    );
+
+    const event = dispatchKeyDown('z', {metaKey: true, ctrlKey: true});
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.calls.mostRecent().args[0].get('keyboardState').raw).toBe(event);
+    expect(event.defaultPrevented).toBeTrue();
+    expect(dispatcher.doc.selection.blur).not.toHaveBeenCalled();
+    expect(dispatcher.run).not.toHaveBeenCalled();
   });
 });

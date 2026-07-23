@@ -38,56 +38,157 @@ export class FakeRange {
     const boundaryChildIds = sel.getBoundarySelectedChildIds()
     if (boundaryChildIds) {
       boundaryChildIds.forEach(id => {
-        this._fakeSpans.push(this._createBlockFakeSpan(this.doc.getBlockById(id)))
+        const block = this._resolveBlock(id)
+        if (block) this._fakeSpans.push(this._createBlockFakeSpan(block))
       })
       return
     }
 
     const s = sel.start, e = sel.end
-    const startBlock = sel.firstBlock
+    const startBlockId = sel.firstBlockId
+    const endBlockId = sel.lastBlockId
+    const startBlock = this._resolveBlock(startBlockId)
     if (
       sel.collapsed &&
       s.type === 'gap' &&
       e.type === 'gap'
     ) {
-      this._fakeSpans.push(this._createGapFakeSpan(startBlock, s.side))
+      if (startBlock) {
+        this._fakeSpans.push(this._createGapFakeSpan(startBlock, s.side))
+      }
       return
     }
-    this._fakeSpans.push(
-      // Non-collapsed gap endpoints and selected points cover the endpoint block.
-      s.type !== 'text'
-        ? this._createBlockFakeSpan(startBlock)
-        : this._createTextFakeSpan(startBlock, s.offset, sel.isInSameBlock ? (e.type === 'text' ? e.offset - s.offset : 0) : (startBlock as EditableBlockComponent).textLength - s.offset)
-    )
+    if (startBlock) {
+      this._fakeSpans.push(
+        // Non-collapsed gap endpoints and selected points cover the endpoint block.
+        s.type !== 'text'
+          ? this._createBlockFakeSpan(startBlock)
+          : this._createTextFakeSpan(startBlock, s.offset, sel.isInSameBlock ? (e.type === 'text' ? e.offset - s.offset : 0) : (startBlock as EditableBlockComponent).textLength - s.offset)
+      )
+    }
     if (sel.isInSameBlock) return
 
-    const endBlock = sel.lastBlock
-    if (e.type === 'text') {
-      e.offset > 0 && this._fakeSpans.push(this._createTextFakeSpan(endBlock, 0, e.offset))
-    } else {
-      this._fakeSpans.push(this._createBlockFakeSpan(endBlock))
+    const endBlock = this._resolveBlock(endBlockId)
+    if (endBlock) {
+      if (e.type === 'text') {
+        e.offset > 0 && this._fakeSpans.push(this._createTextFakeSpan(endBlock, 0, e.offset))
+      } else {
+        this._fakeSpans.push(this._createBlockFakeSpan(endBlock))
+      }
     }
-    const between = this.doc.queryBlocksBetween(startBlock, endBlock)
-    between.forEach(id => {
-      this._fakeSpans.push(this._createBlockFakeSpan(this.doc.getBlockById(id)))
+    this._selectedIntermediateBlockIds(
+      sel,
+      startBlockId,
+      endBlockId,
+      startBlock,
+      endBlock,
+    ).forEach(id => {
+      const block = this._resolveBlock(id)
+      if (block) this._fakeSpans.push(this._createBlockFakeSpan(block))
     })
   }
 
   private _buildFromLegacyJSON(json: Pick<IBlockSelectionJSON, 'from' | 'to'>) {
     const {from, to} = json
-    const fromBlock = this.doc.getBlockById(from.blockId)
+    const fromBlock = this._resolveBlock(from.blockId)
     // gap and selected legacy variants have no index/length → whole-block fake span
-    this._fakeSpans.push(from.type !== 'text' ? this._createBlockFakeSpan(fromBlock) : this._createTextFakeSpan(fromBlock, from.index, from.length))
-    if (!to) return
-    const toBlock = this.doc.getBlockById(to.blockId)
-    if (to.type === 'text') {
-      to.length > 0 && this._fakeSpans.push(this._createTextFakeSpan(toBlock, to.index, to.length))
-    } else {
-      this._fakeSpans.push(this._createBlockFakeSpan(toBlock))
+    if (fromBlock) {
+      this._fakeSpans.push(from.type !== 'text' ? this._createBlockFakeSpan(fromBlock) : this._createTextFakeSpan(fromBlock, from.index, from.length))
     }
-    const between = this.doc.queryBlocksBetween(from.blockId, to.blockId)
-    between.forEach(id => {
-      this._fakeSpans.push(this._createBlockFakeSpan(this.doc.getBlockById(id)))
+    if (!to) return
+    const toBlock = this._resolveBlock(to.blockId)
+    if (toBlock) {
+      if (to.type === 'text') {
+        to.length > 0 && this._fakeSpans.push(this._createTextFakeSpan(toBlock, to.index, to.length))
+      } else {
+        this._fakeSpans.push(this._createBlockFakeSpan(toBlock))
+      }
+    }
+    this._legacyIntermediateBlockIds(
+      from.blockId,
+      to.blockId,
+      fromBlock,
+      toBlock,
+    ).forEach(id => {
+      const block = this._resolveBlock(id)
+      if (block) this._fakeSpans.push(this._createBlockFakeSpan(block))
+    })
+  }
+
+  private _isSparseView(): boolean {
+    return this.doc.virtualization?.enabled === true
+  }
+
+  private _resolveBlock(blockId: string): BlockCraft.BlockComponent | null {
+    if (this._isSparseView() && !this.doc.vm.isMounted(blockId)) return null
+    try {
+      return this.doc.getBlockById(blockId)
+    } catch (error) {
+      if (this._isSparseView()) return null
+      throw error
+    }
+  }
+
+  private _rootUnitId(blockId: string): string | null {
+    const path = this.doc.model.getPath(blockId)
+    if (!path || path[0] !== this.doc.rootId) return null
+    return path[1] ?? (blockId === this.doc.rootId ? this.doc.rootId : null)
+  }
+
+  private _selectedIntermediateBlockIds(
+    selection: BlockSelection,
+    startBlockId: string,
+    endBlockId: string,
+    startBlock: BlockCraft.BlockComponent | null,
+    endBlock: BlockCraft.BlockComponent | null,
+  ): readonly string[] {
+    if (!this._isSparseView()) {
+      return this.doc.queryBlocksBetween(startBlock!, endBlock!)
+    }
+
+    const startRootId = this._rootUnitId(startBlockId)
+    const endRootId = this._rootUnitId(endBlockId)
+    if (!startRootId || !endRootId) return []
+    if (startRootId === endRootId) {
+      if (!startBlock || !endBlock) return []
+      return this.doc.queryBlocksBetween(startBlockId, endBlockId)
+    }
+
+    return this.doc.vm.getMountedRootChildIds().filter(rootId => {
+      if (rootId === startRootId || rootId === endRootId) return false
+      try {
+        return selection.contains(rootId)
+      } catch {
+        return false
+      }
+    })
+  }
+
+  private _legacyIntermediateBlockIds(
+    startBlockId: string,
+    endBlockId: string,
+    startBlock: BlockCraft.BlockComponent | null,
+    endBlock: BlockCraft.BlockComponent | null,
+  ): readonly string[] {
+    if (!this._isSparseView()) {
+      return this.doc.queryBlocksBetween(startBlock!, endBlock!)
+    }
+
+    const startRootId = this._rootUnitId(startBlockId)
+    const endRootId = this._rootUnitId(endBlockId)
+    if (!startRootId || !endRootId) return []
+    if (startRootId === endRootId) {
+      if (!startBlock || !endBlock) return []
+      return this.doc.queryBlocksBetween(startBlockId, endBlockId)
+    }
+
+    return this.doc.vm.getMountedRootChildIds().filter(rootId => {
+      if (rootId === startRootId || rootId === endRootId) return false
+      const afterStart = this.doc.model.comparePosition(startBlockId, rootId)
+      const beforeEnd = this.doc.model.comparePosition(rootId, endBlockId)
+      return afterStart !== null && beforeEnd !== null &&
+        !!(afterStart & Node.DOCUMENT_POSITION_FOLLOWING) &&
+        !!(beforeEnd & Node.DOCUMENT_POSITION_FOLLOWING)
     })
   }
 

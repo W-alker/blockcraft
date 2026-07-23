@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-07-17
+> Last updated: 2026-07-22
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -146,6 +146,14 @@ Method semantics:
 - `replace(fullMarkdown)` — replace the current full Markdown text, useful when the producer rewrites prior content
 - `finish()` — flush pending complex blocks such as fenced code, tables, and mermaid blocks
 - `destroy()` — clear viewer resources
+
+Use the exported `MarkdownStreamRenderer` only when progressive Markdown must
+mutate an initialized, editable `BlockCraftDoc`. It preserves compatible block
+IDs, computes props/text/structure patches from `BlockModelGraph`, and writes
+through `DocCRUD` in an `ORIGIN_NO_RECORD` transaction. Root blocks that are
+offscreen under virtualization remain model-only; streaming does not acquire a
+full-document view lease or materialize their components. The standalone stream
+viewer above remains the preferred path for display-only output.
 
 ## Step 2 — Provide DI Services
 
@@ -342,6 +350,15 @@ doc = new BlockCraftDoc({
   ],
   readonly: false,            // optional — initial readonly state
   scrollContainer: undefined, // optional — auto-detected if not given
+  virtualization: {           // optional — disabled by default
+    enabled: true,
+    overscan: 6,
+    segmentMergeGap: 2,
+    retainedViewLimit: 12,
+    estimatedHeights: {paragraph: 32, table: 240},
+    resolveViewRetention: ({flavour}) =>
+      flavour === 'custom-player' ? 'keep-alive' : undefined,
+  },
   theme: 'light',             // optional — initial theme
 })
 ```
@@ -361,8 +378,114 @@ interface DocConfig {
   readonly?: boolean                      // default: true (set false on init or via switch later)
   copyFilter?: ClipboardCopyFilter        // global copy filter; seeds ClipboardManager registry. Omit = no filtering
   scrollContainer?: HTMLElement           // walked upward if omitted
+  virtualization?: VirtualizationConfig   // root-child view virtualization; default disabled
 }
 ```
+
+The configured `readonly` value is published synchronously before `afterInit`
+callbacks run and before plugins register. The initial protected bootstrap state
+is therefore never exposed as the initialized document policy; immediate model
+writes from initialization observers are accepted or rejected against
+`DocConfig.readonly`.
+
+### Root Virtualization
+
+`virtualization.enabled` virtualizes direct root children only. Each root child
+and its nested subtree is one atomic render unit, so tables, columns and other
+container internals keep their existing selection/input semantics. Yjs and
+`BlockModelGraph` remain complete; only Angular components and DOM are sparse.
+
+The bundled reference `<block-craft-editor>` exposes the initialization-only
+`virtualizationEnabled` input (default `true`) and forwards it into the
+document config when the component creates its `BlockCraftDoc` in `ngOnInit`:
+
+```html
+<block-craft-editor [virtualizationEnabled]="false" />
+```
+
+This input is a construction choice, not a live mode switch. Recreate the
+component to change it, and do so before initializing or attaching a
+collaboration provider. Direct `BlockCraftDoc` consumers continue to use
+`DocConfig.virtualization`; its framework default remains disabled.
+
+- `overscan` keeps direct root children above and below the viewport mounted
+  (minimum 2, default 5).
+- `segmentMergeGap` merges nearby viewport/selection leases (default 2).
+- `retainedViewLimit` bounds detached root-component subtrees in an LRU cache
+  (minimum 0, default 12). `0` destroys every detached subtree after the next
+  reconciliation frame; a later mount rebuilds it from current Yjs state.
+- `estimatedHeights` supplies per-flavour heights until `ResizeObserver`
+  measures a mounted block. Missing flavours use 48px.
+- `resolveViewRetention(context)` can override a schema's `metadata.viewRetention`
+  when that block view materializes. Return `'keep-alive'`, `'virtual'`, or
+  `undefined` to preserve the schema policy. The context contains `blockId`,
+  `flavour`, `nodeType`, and `schemaRetention`.
+- Both `initByYBlock()` and `initBySnapshot()` create only the root component
+  initially. Snapshot initialization writes the complete tree into Yjs/model in
+  one transaction before the viewport mounts any root-child views.
+- A local selection leases only the direct-root units containing its anchor
+  and head. The selected middle remains model-only and virtualized while
+  scrolling. Nested selections still lease only their owning root subtree.
+- A temporary interaction that must keep specific block views alive can call
+  `doc.virtualization.acquireBlockViewLease(blockIds)`. It synchronously mounts
+  only the containing root units, follows stable IDs across structure changes,
+  and returns an idempotent release function. Always release it from the
+  interaction's common teardown; internal block dragging does this for its
+  sources before clearing Selection.
+- Live `PaginationPlugin` acquires an exact full-document view lease while
+  enabled and releases it after pagination DOM cleanup. This preserves exact
+  block/table geometry but intentionally removes virtualization's memory and
+  mount-time benefit for the duration of live pagination.
+- A schema with `metadata.viewRetention: 'keep-alive'` acquires a long-lived
+  lease only after its view first materializes. Nested blocks pin their
+  containing direct-root render unit. Built-in iframe/media schemas opt in so
+  scrolling does not reset browsing context or playback; deletion and document
+  disposal release the lease. These leases share one aggregated pin source and
+  add no schema lookup, callback, or layout read to ordinary scroll frames.
+
+Hosts can override built-in defaults when memory is more important than DOM
+state continuity:
+
+```typescript
+virtualization: {
+  enabled: true,
+  resolveViewRetention: ({flavour}) =>
+    flavour === 'video' ? 'virtual' : undefined,
+}
+```
+
+Every materialized keep-alive block permanently increases mounted DOM and
+Angular view cost until deletion. Use the policy for genuinely stateful blocks,
+not as a general remount optimization.
+
+The coordinator performs only constant-time revision/length checks on ordinary
+reconciliation frames. A detected model/index/height mismatch triggers one cold
+model rebuild. If mounting or reconciliation still fails for three consecutive
+frames, that document switches permanently to complete root mounting and emits
+one message-service warning. The fallback favors editability over memory and is
+reset only when the document is disposed/recreated. Entering fallback first
+reconciles the sparse root against canonical model order, removes every virtual
+spacer and disconnects height observation; scroll/resize events no longer run
+window reconciliation. This prevents stale estimated geometry from leaving a
+mostly blank document if an individual full-mount attempt also fails.
+
+Component-returning commands preserve their synchronous return value for the
+current command, but an offscreen component can enter the retained LRU and be
+permanently destroyed on a later reconciliation frame. Keep block IDs or model
+data for long-lived work; resolve a fresh component only when a view capability
+is actually needed.
+
+```typescript
+const release = doc.virtualization.acquireBlockViewLease([blockId])
+try {
+  runViewBoundInteraction()
+} finally {
+  release()
+}
+```
+
+The configured `scrollContainer` must be the element that actually scrolls.
+When omitted, BlockCraft uses its existing ancestor auto-detection.
 
 ### 复制过滤（Copy Filter）
 
@@ -515,8 +638,9 @@ BlockCraft does **not** persist on its own. The host owns that. Two common patte
 ### A) Snapshot-based persistence (offline / single-user)
 
 ```typescript
-// Save: walk from the root and serialize
-const json = this.doc.root.toSnapshot(true)   // deep snapshot tree
+// Save: serialize the complete model without requiring mounted block views
+const json = this.doc.exportSnapshot()
+if (!json) throw new Error('Document model is not initialized')
 await this.api.save(this.docId, json)
 
 // Load: pass to initBySnapshot
@@ -628,7 +752,7 @@ doc.dragController.isDragging  // boolean
 | Subscribing to `selectionChange$` without `takeUntil(doc.onDestroy$)` | Memory leak. Always tie subscriptions to a destroy signal. |
 | Skipping `RootBlockSchema` in `SchemaManager` | Init throws. Root is required. |
 | Constructing `BlockCraftDoc` outside an Angular component | The constructor needs an `Injector`. Inject one (or use `EnvironmentInjector`). |
-| Saving via `JSON.stringify(doc)` | Serialize via `doc.root.toSnapshot(true)` instead — Yjs internals are not JSON-safe. |
+| Saving via `JSON.stringify(doc)` | Serialize via `doc.exportSnapshot()` instead — Yjs internals are not JSON-safe, and component traversal is incomplete under virtualization. |
 | Hardcoding `metaKey`/`ctrlKey` in your custom plugin hotkeys | Use `shortKey: true` for cross-platform Cmd/Ctrl mapping. |
 | `transform` / `filter` / `will-change` / `perspective` on an ancestor of the BlockCraft host | Traps `position: fixed` in that ancestor, so table block's **fullscreen view** (which uses `position: fixed; inset: 0`) cannot truly fill the viewport. Move animations to sibling/descendant levels of the editor host, not above it. |
 

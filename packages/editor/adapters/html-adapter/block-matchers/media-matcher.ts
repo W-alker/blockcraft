@@ -36,11 +36,24 @@ const getNumberProperty = (
   node: Element | undefined,
   ...keys: string[]
 ): number | undefined => {
-  const value = getStringProperty(node, ...keys);
-  if (!value) return undefined;
+  if (!node) return undefined;
 
-  const next = Number(value);
-  return Number.isFinite(next) ? next : undefined;
+  for (const key of keys) {
+    const value = node.properties?.[key];
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : undefined;
+    }
+    if (typeof value === 'string' && value) {
+      const next = Number(value);
+      return Number.isFinite(next) ? next : undefined;
+    }
+    if (Array.isArray(value) && value.length > 0) {
+      const next = Number(value[0]);
+      return Number.isFinite(next) ? next : undefined;
+    }
+  }
+
+  return undefined;
 };
 
 const getSourceChild = (node: Element) =>

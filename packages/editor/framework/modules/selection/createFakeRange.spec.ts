@@ -455,3 +455,121 @@ describe("FakeRange whole-block table selection", () => {
     hostElement.remove();
   });
 });
+
+describe("FakeRange virtualized sparse projection", () => {
+  const makeHarness = (enabled: boolean, mountedRootIds: readonly string[]) => {
+    const order = new Map([
+      ["a", 0],
+      ["b", 1],
+      ["c", 2],
+    ]);
+    const hosts = new Map<string, HTMLElement>();
+    const blocks = new Map<string, any>();
+
+    mountedRootIds.forEach(id => {
+      const hostElement = document.createElement("div");
+      hostElement.setAttribute("data-block-id", id);
+      hostElement.style.position = "relative";
+      hostElement.style.width = "200px";
+      hostElement.style.height = "40px";
+      document.body.appendChild(hostElement);
+      hosts.set(id, hostElement);
+      blocks.set(id, {
+        id,
+        flavour: "callout",
+        parentId: "root",
+        hostElement,
+      });
+    });
+
+    const getBlockById = jasmine.createSpy("getBlockById").and.callFake((id: string) => {
+      const block = blocks.get(id);
+      if (!block) throw new Error(`Block not found: ${id}`);
+      return block;
+    });
+    const doc = {
+      rootId: "root",
+      virtualization: {enabled},
+      vm: {
+        isMounted: (id: string) => blocks.has(id),
+        getMountedRootChildIds: () => [...mountedRootIds],
+      },
+      model: {
+        getPath: (id: string) => order.has(id) ? ["root", id] : null,
+        comparePosition: (a: string, b: string) => compare(a, b),
+      },
+      getBlockById,
+      isEditable: () => false,
+      queryBlocksBetween: jasmine.createSpy("queryBlocksBetween").and.returnValue(["b"]),
+    };
+    const compare = (a: string, b: string) => {
+      const aIndex = order.get(a) ?? -1;
+      const bIndex = order.get(b) ?? -1;
+      if (aIndex === bIndex) return 0;
+      return aIndex < bIndex
+        ? Node.DOCUMENT_POSITION_FOLLOWING
+        : Node.DOCUMENT_POSITION_PRECEDING;
+    };
+    const selection = (anchorId: string, headId: string) => new BlockSelection(
+      {blockId: anchorId, type: "selected"} as any,
+      {blockId: headId, type: "selected"} as any,
+      "root",
+      getBlockById,
+      compare,
+      {} as any,
+    );
+    const cleanup = () => hosts.forEach(host => host.remove());
+
+    return {cleanup, doc, getBlockById, selection};
+  };
+
+  it("returns an empty projection when a collapsed endpoint is not mounted", () => {
+    const {cleanup, doc, getBlockById, selection} = makeHarness(true, ["b"]);
+
+    let fakeRange: FakeRange | null = null;
+    expect(() => {
+      fakeRange = new FakeRange(doc as any, selection("a", "a"));
+    }).not.toThrow();
+
+    expect(fakeRange!.fakeSpans).toEqual([]);
+    expect(getBlockById).not.toHaveBeenCalledWith("a");
+    fakeRange!.destroy();
+    cleanup();
+  });
+
+  it("projects only mounted intermediate root units for a cross-root selection", () => {
+    const {cleanup, doc, getBlockById, selection} = makeHarness(true, ["b"]);
+
+    const fakeRange = new FakeRange(doc as any, selection("a", "c"));
+
+    expect(fakeRange.fakeSpans.length).toBe(1);
+    expect(doc.queryBlocksBetween).not.toHaveBeenCalled();
+    expect(getBlockById.calls.allArgs()).toEqual([["b"]]);
+    expect(doc.getBlockById("b").hostElement.contains(fakeRange.fakeSpans[0])).toBeTrue();
+    fakeRange.destroy();
+    cleanup();
+  });
+
+  it("bounds legacy cross-root projection to mounted root units", () => {
+    const {cleanup, doc, getBlockById} = makeHarness(true, ["b"]);
+
+    const fakeRange = new FakeRange(doc as any, {
+      from: {blockId: "a", type: "selected"},
+      to: {blockId: "c", type: "selected"},
+    } as any);
+
+    expect(fakeRange.fakeSpans.length).toBe(1);
+    expect(doc.queryBlocksBetween).not.toHaveBeenCalled();
+    expect(getBlockById.calls.allArgs()).toEqual([["b"]]);
+    fakeRange.destroy();
+    cleanup();
+  });
+
+  it("preserves strict missing-component errors when virtualization is disabled", () => {
+    const {cleanup, doc, selection} = makeHarness(false, ["b"]);
+
+    expect(() => new FakeRange(doc as any, selection("a", "a")))
+      .toThrowError("Block not found: a");
+    cleanup();
+  });
+});

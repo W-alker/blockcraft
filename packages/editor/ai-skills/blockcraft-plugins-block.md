@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-07-17
+> Last updated: 2026-07-20
 
 ## BlockControllerPlugin
 
@@ -266,6 +266,9 @@ new OrderedBlockPlugin()
 ### Notes
 
 - Subscribes to `doc.onChildrenUpdate$` and `doc.onPropsUpdate$` for automatic renumbering
+- Queues stable parent/block IDs, reads the complete sibling sequence from
+  `BlockModelGraph`, and writes `order` through `DocCRUD.updateBlockProps()`;
+  offscreen root children are renumbered without materializing their components
 - Recalculates the affected parent block as one sibling sequence after local child changes, or after ordered block `depth` / `heading` / `start` prop changes
 - Numbering is grouped by sibling `depth` + `heading`; changing one ordered block's `heading` renumbers following ordered siblings in the same parent
 - Explicit `start` restarts the sequence from that number; following same-depth/same-heading ordered blocks continue from it

@@ -1,5 +1,8 @@
 import {BaseBlockComponent, BlockNodeType, EditableBlockComponent} from "../../block-std";
-import {getSelectionCoveredBlockIds} from "./covered-blocks";
+import {
+  getMountedSelectionCoveredBlockIds,
+  getSelectionCoveredBlockIds,
+} from "./covered-blocks";
 
 export class SelectionSelectedManager {
 
@@ -37,12 +40,22 @@ export class SelectionSelectedManager {
     this._focusedSet = nextFocused
   }
 
-  setSelected(selection: BlockCraft.Selection | null) {
+  setSelected(
+    selection: BlockCraft.Selection | null,
+    mountedRootIds?: readonly string[],
+  ) {
     const nextSelected = new Set<BaseBlockComponent<any>>()
     const nextFocused = new Set<EditableBlockComponent<any>>()
 
     if (selection) {
-      getSelectionCoveredBlockIds(selection, this.doc).forEach(id => {
+      const coveredIds = mountedRootIds
+        ? getMountedSelectionCoveredBlockIds(
+          selection,
+          this.doc,
+          this._collectMountedBlockIds(mountedRootIds),
+        )
+        : getSelectionCoveredBlockIds(selection, this.doc)
+      coveredIds.forEach(id => {
         let block: BaseBlockComponent<any>
         try {
           block = this.doc.getBlockById(id) as BaseBlockComponent<any>
@@ -58,5 +71,23 @@ export class SelectionSelectedManager {
     }
 
     this._reconcileClasses(nextSelected, nextFocused)
+  }
+
+  private _collectMountedBlockIds(rootIds: readonly string[]): string[] {
+    const ids: string[] = []
+    const stack = [...rootIds].reverse()
+    const visited = new Set<string>()
+    while (stack.length) {
+      const blockId = stack.pop()!
+      if (visited.has(blockId)) continue
+      visited.add(blockId)
+      if (!this.doc.vm.isMounted(blockId)) continue
+      ids.push(blockId)
+      const children = this.doc.model.getChildrenIds(blockId)
+      for (let index = children.length - 1; index >= 0; index--) {
+        stack.push(children[index])
+      }
+    }
+    return ids
   }
 }

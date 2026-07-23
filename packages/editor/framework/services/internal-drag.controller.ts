@@ -68,6 +68,7 @@ export class DocInternalDragController {
   private _lastX = 0
   private _lastY = 0
   private _sourceMarkers: HTMLElement[] = []
+  private _releaseSourceViewLease: (() => void) | null = null
   // drag-over chain：从当前 prevBlock 向上到 root 之前的所有 block hostElement。
   // 任意 block 都可通过 SCSS 的 `&.drag-over { ... }` 订阅这个状态做高亮反馈。
   private _dragOverChain: HTMLElement[] = []
@@ -256,8 +257,11 @@ export class DocInternalDragController {
     if (evt.pointerId !== this._activePointerId) return
     const state = this._state$.value
     if (state === 'idle') return
-    if (state === 'dragging') this._commitDrop(evt)
-    this._teardown()
+    try {
+      if (state === 'dragging') this._commitDrop(evt)
+    } finally {
+      this._teardown()
+    }
   }
 
   private _onWindowPointerCancel = (evt: PointerEvent): void => {
@@ -267,6 +271,7 @@ export class DocInternalDragController {
   }
 
   private _teardown(): void {
+    this._releaseSourceViewLeaseSafely()
     this._removeGhost()
     this._removeDropLine()
     this._stopAutoScroll()
@@ -319,36 +324,61 @@ export class DocInternalDragController {
     return this._pointerType === 'touch' ? DEFAULT_TOUCH_THRESHOLD : DEFAULT_MOUSE_THRESHOLD
   }
 
-  private _enterDragging(evt: PointerEvent): void {
-    // Release IME / cursor before entering drag mode.
-    // 注意：曾经在这里设过 root.hostElement.style.pointerEvents = 'none'，但那会让
-    // 整个 BlockCraft 子树（包括 capture target drag-handle 自身）继承 pointer-events: none，
-    // setPointerCapture 也无法绕过 CSS 拦截，导致 pointermove 收不到、hit-test 不跑、dropLine 不出现。
-    // 改用 selectstart preventDefault 阻止文本选中，pointer-events 完全不动。
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur()
+  private _acquireSourceViewLease(): void {
+    if (!this._data || this._data.kind === 'new-block') return
+    const blockIds = this._data.kind === 'origin-block'
+      ? [this._data.blockId]
+      : this._data.blockIds
+    this._releaseSourceViewLease = this.doc.virtualization.acquireBlockViewLease(blockIds)
+  }
+
+  private _releaseSourceViewLeaseSafely(): void {
+    const release = this._releaseSourceViewLease
+    this._releaseSourceViewLease = null
+    if (!release) return
+    try {
+      release()
+    } catch (error) {
+      this.doc.logger.warn('dragSourceViewLeaseReleaseError: ', error)
     }
-    // 主动清除现有 selection。Safari 在 pointermove 期间会"延伸"已有 native selection，
-    // 跨 contenteditable 块（table cell / column 内段落都是独立 contenteditable）拖动时
-    // selection 会乱跳。selectstart preventDefault 拦不住这种延伸，必须清空起点。
-    //
-    // 用 selection.blur() 而不是 document.getSelection().removeAllRanges()：blur()
-    // 还会同步把 framework 的 BlockSelection（selectionChange$.value）清成 null，
-    // 触发 SelectionSelectedManager._clearAllClass 立刻摘掉 .selected / .focused。
-    // 否则 setSuppressRecalculate(true) 会让 selectionchange→recalculate 短路，
-    // 框架侧的 BlockSelection 保持在 pre-drag 的跨块值不变，非 editable 块（image /
-    // divider 等）上的 .selected 视觉就会一直挂着直到下一次真实的 selectionchange。
-    // _applyState 不走 suppress 通道，所以 blur() 直接生效。
-    try { this.doc.selection.blur() } catch {}
-    this._createGhost()
-    this._updateGhostLabel()
-    this._moveGhost(evt.clientX, evt.clientY)
-    this._createDropLine()
-    this._refreshRootRect()
-    this._applySourceMarker()
-    this._state$.next('dragging')
-    this.doc.dndService.dragStatus$.next('moving' as any)
-    this._hitTest(evt.clientX, evt.clientY)
+  }
+
+  private _enterDragging(evt: PointerEvent): void {
+    try {
+      this._acquireSourceViewLease()
+      // Release IME / cursor before entering drag mode.
+      // 注意：曾经在这里设过 root.hostElement.style.pointerEvents = 'none'，但那会让
+      // 整个 BlockCraft 子树（包括 capture target drag-handle 自身）继承 pointer-events: none，
+      // setPointerCapture 也无法绕过 CSS 拦截，导致 pointermove 收不到、hit-test 不跑、dropLine 不出现。
+      // 改用 selectstart preventDefault 阻止文本选中，pointer-events 完全不动。
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur()
+      }
+      // 主动清除现有 selection。Safari 在 pointermove 期间会"延伸"已有 native selection，
+      // 跨 contenteditable 块（table cell / column 内段落都是独立 contenteditable）拖动时
+      // selection 会乱跳。selectstart preventDefault 拦不住这种延伸，必须清空起点。
+      //
+      // 用 selection.blur() 而不是 document.getSelection().removeAllRanges()：blur()
+      // 还会同步把 framework 的 BlockSelection（selectionChange$.value）清成 null，
+      // 触发 SelectionSelectedManager._clearAllClass 立刻摘掉 .selected / .focused。
+      // 否则 setSuppressRecalculate(true) 会让 selectionchange→recalculate 短路，
+      // 框架侧的 BlockSelection 保持在 pre-drag 的跨块值不变，非 editable 块（image /
+      // divider 等）上的 .selected 视觉就会一直挂着直到下一次真实的 selectionchange。
+      // _applyState 不走 suppress 通道，所以 blur() 直接生效。
+      try { this.doc.selection.blur() } catch {}
+      this._createGhost()
+      this._updateGhostLabel()
+      this._moveGhost(evt.clientX, evt.clientY)
+      this._createDropLine()
+      this._refreshRootRect()
+      this._applySourceMarker()
+      this._state$.next('dragging')
+      this.doc.dndService.dragStatus$.next('moving' as any)
+      this._hitTest(evt.clientX, evt.clientY)
+    } catch (error) {
+      this._teardown()
+      throw error
+    }
   }
 
   private _commitDrop(_evt: PointerEvent): void {
@@ -384,9 +414,12 @@ export class DocInternalDragController {
   }
 
   destroy(): void {
-    this.cancel()
-    this._subs.unsubscribe()
-    this._state$.complete()
+    try {
+      this.cancel()
+    } finally {
+      this._subs.unsubscribe()
+      this._state$.complete()
+    }
   }
 
   private _createGhost(): HTMLElement {

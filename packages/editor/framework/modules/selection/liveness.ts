@@ -3,8 +3,6 @@ import {BlockSelection} from "./blockSelection";
 type SelectionLivenessDoc = {
   model?: {
     exists: (blockId: string) => boolean
-    getChildrenIds?: (blockId: string) => readonly string[]
-    queryBetween?: (fromId: string, toId: string, contain?: boolean) => readonly string[]
   }
   getBlockById?: (id: string) => BlockCraft.BlockComponent | null | undefined
   queryBlocksBetween?: (
@@ -81,43 +79,12 @@ export function isSelectionAlive(
   if (!selection) return false
 
   if (typeof doc.model?.exists === "function") {
-    if (!hasLiveSelectionEndpoints(selection, doc)) return false
-
-    const ids = new Set<string>([
-      selection.anchor.blockId,
-      selection.head.blockId,
-      selection.commonParent,
-    ])
-    const tableCellSelection = selection.getTableCellSelection()
-    if (tableCellSelection) {
-      ids.add(tableCellSelection.tableId)
-      ids.add(tableCellSelection.anchorCellId)
-      ids.add(tableCellSelection.headCellId)
-    }
-
-    const anchor = selection.anchor
-    const head = selection.head
-    if (
-      anchor.type === "boundary" &&
-      head.type === "boundary" &&
-      anchor.blockId === head.blockId
-    ) {
-      const children = doc.model.getChildrenIds?.(anchor.blockId) ?? []
-      const from = Math.max(0, Math.min(anchor.index, head.index))
-      const to = Math.min(children.length, Math.max(anchor.index, head.index))
-      children.slice(from, to).forEach(id => ids.add(id))
-    } else if (
-      anchor.blockId !== head.blockId &&
-      !tableCellSelection &&
-      typeof doc.model.queryBetween === "function"
-    ) {
-      doc.model.queryBetween(anchor.blockId, head.blockId, false).forEach(id => ids.add(id))
-    }
-
-    for (const id of ids) {
-      if (!hasBlock(doc, id)) return false
-    }
-    return true
+    // A range remains live when its stable endpoints and structural owner are
+    // present in the model. Intermediate blocks are derived from the current
+    // graph at consumption time; validating every one here both duplicates the
+    // graph's reachability guarantee and would force full-range view retention
+    // under virtualization.
+    return hasLiveSelectionEndpoints(selection, doc)
   }
 
   const candidate = selection as any

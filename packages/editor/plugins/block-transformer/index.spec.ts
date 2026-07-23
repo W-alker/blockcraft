@@ -1,5 +1,57 @@
 import {fakeAsync, flushMicrotasks} from "@angular/core/testing";
 import {BlockTransformerPlugin} from "./index";
+import {blockTransforms} from './const'
+
+describe('BlockTransformerPlugin ordered continuation', () => {
+  it('reads virtual root siblings from the model without materializing every component', () => {
+    const orderedTransform = blockTransforms.find(transform => transform.flavour === 'ordered')!
+    const parent = {
+      getChildrenBlocks: jasmine.createSpy('getChildrenBlocks').and.throwError(
+        'offscreen sibling component is not mounted',
+      ),
+    }
+    const from = {
+      id: 'current',
+      flavour: 'paragraph',
+      props: {depth: 0, heading: 0},
+      parentBlock: parent,
+      textDeltas: () => [{insert: '1. current'}],
+    }
+    const replacement = {
+      id: 'replacement',
+      flavour: 'ordered',
+      props: {} as Record<string, unknown>,
+    }
+    const chain = {
+      replaceWithSnapshots: jasmine.createSpy('replaceWithSnapshots'),
+      nextTick: jasmine.createSpy('nextTick'),
+      selectOrSetCursorAtBlock: jasmine.createSpy('selectOrSetCursorAtBlock'),
+      recalculateSelection: jasmine.createSpy('recalculateSelection'),
+      run: jasmine.createSpy('run'),
+    }
+    Object.values(chain).forEach(spy => spy.and.returnValue(chain))
+    const doc = {
+      model: {
+        getParentId: (blockId: string) => blockId === 'current' ? 'root' : null,
+        getChildrenIds: () => ['offscreen-ordered', 'current'],
+        getFlavour: (blockId: string) => blockId === 'offscreen-ordered' ? 'ordered' : 'paragraph',
+        getProps: (blockId: string) => blockId === 'offscreen-ordered'
+          ? {depth: 0, heading: 0, order: 7}
+          : from.props,
+      },
+      schemas: {
+        createSnapshot: jasmine.createSpy('createSnapshot').and.returnValue(replacement),
+      },
+      chain: () => chain,
+    }
+
+    expect(() => orderedTransform.onConvert!(doc as any, from as any, '1. ')).not.toThrow()
+
+    expect(parent.getChildrenBlocks).not.toHaveBeenCalled()
+    expect(replacement.props['order']).toBe(7)
+    expect(chain.replaceWithSnapshots).toHaveBeenCalledOnceWith('current', [replacement])
+  })
+})
 
 describe('BlockTransformerPlugin beforeInput', () => {
   function stubNextTick() {

@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-07-16
+> Last updated: 2026-07-21
 
 ## Block Types
 
@@ -72,6 +72,7 @@ export const MyBlockSchema: IBlockSchemaOptions<MyBlockModel> = {
     version: 1,
     label: "My Block",
     icon: "bc_icon bc_my-block",
+    // viewRetention: 'keep-alive', // preserve DOM-owned state after first mount
     // svgIcon: "bc_my-block-color",  // optional colored icon
   },
 };
@@ -223,9 +224,15 @@ export class MyEditableBlockComponent extends EditableBlockComponent<MyEditableB
   //   this.deleteText(index, length)
   //   this.formatText(index, length, attributes)
   //   this.setInlineRange(index, length?)
-  //   this.plainTextOnly  — set to true to disable rich formatting
+  //   this.plainTextOnly  — runtime view flag for disabling rich formatting
 }
 ```
+
+When an editable flavour is intrinsically plain text, also declare
+`metadata.plainTextOnly: true` in its schema. The component flag controls its
+mounted view; schema metadata lets model-first selection/toolbar commands make
+the same decision while the component is virtualized. Built-in `code` and
+`mermaid-textarea` declare both.
 
 ---
 
@@ -389,7 +396,11 @@ this.bindEvent('click', handler, { flavour?, global? })
 
 // ── Lifecycle ──
 this.onViewInit$                       // Subject<boolean> — fires after ngAfterViewInit
-this.onDestroy$                        // Subject<boolean> — fires in ngOnDestroy
+this.onDetach$                         // Subject<void> — fires when a mounted view becomes retained
+this.onReattach$                       // Subject<void> — fires after a retained view is remounted
+this.onDestroy$                        // Subject<boolean> — fires only in permanent ngOnDestroy
+this.viewState                         // 'mounted' | 'retained' | 'destroyed'
+this.isAttached                        // true only while viewState === 'mounted'
 this.onPropsChange                     // EventEmitter<Map> — props mutation events
 this.onChildrenChange?                 // Optional callback assigned by subclasses
 
@@ -399,9 +410,49 @@ this.changeDetectorRef                 // ChangeDetectorRef (use markForCheck())
 this.destroyRef                        // DestroyRef (for takeUntilDestroyed)
 
 // ── Detach / reattach (used by virtual rendering) ──
-this.detach()                          // Detach from change detection, fires onDestroy$
-this.reattach()                        // Re-init from current Yjs state
+this.detach()                          // Idempotently enter retained state; does not destroy the component
+this.reattach()                        // Idempotently re-init from current Yjs state and remount
 ```
+
+`detach()` and `reattach()` describe a reversible view lifecycle. Permanent
+subscriptions and document-owned resources should still use `onDestroy$` or
+`DestroyRef`. View-only resources that must stop while virtualized should use
+`onDetach$`, and recreate themselves from current Yjs state on `onReattach$`.
+Custom block subclasses can override the protected `beforeDetach()` and
+`afterReattach()` hooks for the same purpose. `beforeDetach()` also runs once
+when a still-mounted component is permanently destroyed, so view resources use
+one cleanup path regardless of whether deletion happens onscreen or offscreen.
+Both operations are idempotent; `reattach()` after permanent destruction is
+ignored. A retained root subtree is an LRU cache entry, not a durable component
+handle: root virtualization may evict it according to `retainedViewLimit` and
+then emit permanent `ngOnDestroy` / `onDestroy$`. Store stable block IDs for
+work that outlives the current event or reconciliation frame, and reacquire the
+component when a mounted view is required.
+
+### Stateful View Retention
+
+Blocks whose state is owned by browser DOM rather than Yjs can opt out of
+root-view eviction after their first materialization:
+
+```typescript
+metadata: {
+  version: 1,
+  label: 'Custom player',
+  viewRetention: 'keep-alive',
+}
+```
+
+`viewRetention` accepts `'virtual'` (the default) or `'keep-alive'`. A
+keep-alive block pins its containing direct-root render unit for the remaining
+component lifetime, including when the block is nested. It does not force an
+initial full-document mount: the lease begins only after that block first enters
+the virtual window. Deletion or document disposal releases it automatically.
+
+Use this only for state that would be lost by DOM removal, such as iframe
+browsing contexts or active media playback. Ordinary blocks should remain
+virtual. Built-in `audio`, `video`, `embed`, `figma-embed`, and `juejin-embed`
+schemas opt in. A host can override any schema policy through
+`DocConfig.virtualization.resolveViewRetention`; see `blockcraft-app.md`.
 
 Do not assign `this.props.foo = ...`, mutate `this.meta`, or write raw
 `Y.Text`/`Y.Map` from a custom Block/Plugin. Use `updateProps()`, guarded inline
@@ -520,6 +571,33 @@ Built-in declarations:
 `SelectionManager` reads this field through the registered schema. Do not add
 flavour-specific checks in input, toolbar, or selection-class code; derive
 behavior from the resolved scope / `SelectionScopePolicy` instead.
+
+## Plain-Text Formatting Capability (Schema field)
+
+Editable flavours that prohibit rich formatting must declare the capability in
+both their view class and schema:
+
+```typescript
+export class MySourceBlock extends EditableBlockComponent<MySourceModel> {
+  override plainTextOnly = true
+}
+
+export const MySourceSchema: IBlockSchemaOptions<MySourceModel> = {
+  // ...
+  metadata: {
+    version: 1,
+    label: 'Source',
+    plainTextOnly: true,
+  },
+}
+```
+
+The component property governs mounted rendering. The optional
+`metadata.plainTextOnly` field is the model-only capability used by
+`doc.isPlainTextBlock(blockId)`, fixed/floating toolbar eligibility, and
+`TextToolbarHelper` while the block is outside the virtual viewport. Formatting
+writes use readonly-guarded `doc.crud.formatText(blockId, index, length, attrs)`;
+do not resolve a ComponentRef solely to mutate an offscreen `Y.Text`.
 
 ## Editable Block Placeholder (Schema field)
 

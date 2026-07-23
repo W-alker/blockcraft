@@ -1,7 +1,13 @@
 import { Awareness } from 'y-protocols/awareness';
 import { Subject, takeUntil } from 'rxjs';
 import {debounce, getRandomDarkColor, getScrollContainer} from "../global";
-import {FakeRange, ISelectionJSON} from "../framework";
+import {
+  BlockSelection,
+  EditableBlockComponent,
+  FakeRange,
+  ISelectionJSON,
+  ISelectionPointJSON,
+} from "../framework";
 
 interface Config {
   throttleTime?: number;
@@ -132,8 +138,12 @@ class Cursor {
   private _color = getRandomDarkColor(.4);
   private _fakeCursor: FakeRange | null = null;
   private _selection: ISelectionJSON | null = null;
+  private _normalizedSelection: BlockSelection | null = null;
   private _coveredBlockIds = new Set<string>();
   private _labelAnchor: HTMLElement | null = null;
+  private _mountedRootIds: readonly string[] | null = null;
+  private _projectionKey: string | null = null;
+  private _projectionDeferredForView = false;
 
   constructor(
     private readonly doc: BlockCraft.Doc,
@@ -151,31 +161,72 @@ class Cursor {
     this._color = color;
   }
 
-  updatePosition(selection: ISelectionJSON | null) {
-    this._selection = selection;
-    this._coveredBlockIds = this._collectCoveredBlockIds(selection);
-    this._render();
+  updatePosition(
+    selection: ISelectionJSON | null,
+    mountedRootIds: readonly string[] | null = null,
+  ) {
+    this._selection = this._clampSelectionToModel(selection);
+    this._mountedRootIds = mountedRootIds;
+    this._normalizedSelection = this._normalizeSelection(this._selection);
+    this._coveredBlockIds = this._collectCoveredBlockIds(this._selection);
+    this._render(true);
   }
 
   refreshAfterTextViewChange(affectedBlockIds: ReadonlySet<string>) {
-    if (!this._selection || !this._fakeCursor) return;
+    if (!this._selection) return;
     for (const id of affectedBlockIds) {
       if (!this._coveredBlockIds.has(id)) continue;
-      if (this._fakeCursor.hasLostRenderedSpans) this._render();
+      const projectionNeedsRetry = this._projectionDeferredForView;
+      this._selection = this._clampSelectionToModel(this._selection);
+      this._normalizedSelection = this._normalizeSelection(this._selection);
+      this._coveredBlockIds = this._collectCoveredBlockIds(this._selection);
+      if (
+        projectionNeedsRetry ||
+        !this._fakeCursor ||
+        this._fakeCursor.hasLostRenderedSpans
+      ) {
+        this._render(true);
+      }
       return;
     }
   }
 
-  private _render() {
+  refreshAfterViewChange(mountedRootIds: readonly string[]) {
+    this._mountedRootIds = mountedRootIds;
+    this._render(false);
+  }
+
+  refreshAfterStructureChange() {
+    if (!this._selection) return;
+    this._selection = this._clampSelectionToModel(this._selection);
+    this._normalizedSelection = this._normalizeSelection(this._selection);
+    this._coveredBlockIds = this._collectCoveredBlockIds(this._selection);
+    this._render(true);
+  }
+
+  private _render(force: boolean) {
+    const projectionKey = this._projectionSignature();
+    if (!force && projectionKey === this._projectionKey) {
+      if (this._fakeCursor && !this._fakeCursor.hasLostRenderedSpans) return;
+      if (!this._fakeCursor && !projectionKey) return;
+    }
+    this._projectionKey = projectionKey;
+
     this.getLabelLayer()?.detach(this._nameSpan);
     this._labelAnchor = null;
     if (this._fakeCursor) {
       this._fakeCursor.destroy();
       this._fakeCursor = null;
     }
-    if (!this._selection) return;
+    this._projectionDeferredForView = false;
+    if (!this._selection || (this._isSparseView() && !projectionKey)) return;
     try {
-      this._fakeCursor = this.doc.selection.createFakeRange(this._selection, {
+      const projectionSelection = this._normalizedSelection;
+      if (!projectionSelection || !this._canProjectSelection(projectionSelection)) {
+        this._projectionDeferredForView = !!projectionSelection;
+        return;
+      }
+      this._fakeCursor = this.doc.selection.createFakeRange(projectionSelection, {
         bgColor: this._color,
         minCursorWidth: 2
       });
@@ -187,6 +238,137 @@ class Cursor {
     } catch (e) {
       this.doc.logger.warn(`update cursor error: ${e}`);
     }
+  }
+
+  private _isSparseView() {
+    return this.doc.virtualization?.enabled === true;
+  }
+
+  private _normalizeSelection(selection: ISelectionJSON | null) {
+    if (!selection) return null;
+    try {
+      return this.doc.selection.createSelection(selection);
+    } catch {
+      return null;
+    }
+  }
+
+  private _clampSelectionToModel(
+    selection: ISelectionJSON | null,
+  ): ISelectionJSON | null {
+    if (!selection) return null;
+    const anchor = this._clampPointToModel(selection.anchor);
+    const head = this._clampPointToModel(selection.head);
+    if (anchor === selection.anchor && head === selection.head) return selection;
+    return {...selection, anchor, head};
+  }
+
+  private _clampPointToModel(point: ISelectionPointJSON): ISelectionPointJSON {
+    try {
+      if (point.type === 'text') {
+        const length = this.doc.model?.getTextLength?.(point.blockId);
+        if (!Number.isFinite(length)) return point;
+        const offset = Math.max(0, Math.min(point.offset ?? 0, length));
+        return offset === point.offset ? point : {...point, offset};
+      }
+      if (point.type === 'boundary') {
+        const children = this.doc.model?.getChildrenIds?.(point.blockId);
+        if (!children) return point;
+        const index = Math.max(0, Math.min(point.index ?? 0, children.length));
+        return index === point.index ? point : {...point, index};
+      }
+    } catch {
+      // A concurrent deletion can invalidate the endpoint between awareness
+      // delivery and projection. Existing liveness checks will hide it.
+    }
+    return point;
+  }
+
+  private _canProjectTextThrough(blockId: string, requiredOffset: number): boolean {
+    try {
+      if (this._isSparseView() && !this.doc.vm.isMounted(blockId)) return true;
+      const block = this.doc.getBlockById(blockId);
+      if (!this.doc.isEditable(block)) return true;
+      const length = (block as EditableBlockComponent).runtime?.textLength;
+      return Number.isFinite(length) && requiredOffset <= length;
+    } catch {
+      return false;
+    }
+  }
+
+  private _canProjectSelection(selection: BlockSelection): boolean {
+    try {
+      const start = selection.start;
+      const end = selection.end;
+      const firstBlockId = selection.firstBlockId;
+      const lastBlockId = selection.lastBlockId;
+
+      if (start.type === 'text') {
+        const requiredOffset = selection.isInSameBlock && end.type === 'text'
+          ? end.offset
+          : start.block.textLength;
+        if (!this._canProjectTextThrough(firstBlockId, requiredOffset)) return false;
+      }
+      if (
+        !selection.isInSameBlock &&
+        end.type === 'text' &&
+        !this._canProjectTextThrough(lastBlockId, end.offset)
+      ) {
+        return false;
+      }
+
+      for (const blockId of this._coveredBlockIds) {
+        if (blockId === firstBlockId || blockId === lastBlockId) continue;
+        if (this._isSparseView() && !this.doc.vm.isMounted(blockId)) continue;
+        const block = this.doc.getBlockById(blockId);
+        if (
+          this.doc.isEditable(block) &&
+          !this._canProjectTextThrough(blockId, block.textLength)
+        ) {
+          return false;
+        }
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private _projectionSignature(): string | null {
+    if (!this._isSparseView()) return null;
+    const selection = this._normalizedSelection;
+    if (!selection || !this._mountedRootIds?.length) return '';
+
+    let startRootId: string | null;
+    let endRootId: string | null;
+    try {
+      startRootId = this._rootUnitId(selection.firstBlockId);
+      endRootId = this._rootUnitId(selection.lastBlockId);
+    } catch {
+      return '';
+    }
+    if (!startRootId || !endRootId) return '';
+
+    const relevant: string[] = [];
+    for (const rootId of this._mountedRootIds) {
+      if (rootId === startRootId || rootId === endRootId) {
+        relevant.push(rootId);
+        continue;
+      }
+      if (startRootId === endRootId) continue;
+      try {
+        if (selection.contains(rootId)) relevant.push(rootId);
+      } catch {
+        // A concurrent structure change can invalidate one remote endpoint.
+      }
+    }
+    return relevant.join('\u0000');
+  }
+
+  private _rootUnitId(blockId: string): string | null {
+    const path = this.doc.model.getPath(blockId);
+    if (!path || path[0] !== this.doc.rootId) return null;
+    return path[1] ?? (blockId === this.doc.rootId ? this.doc.rootId : null);
   }
 
   refreshLabelPosition() {
@@ -216,8 +398,12 @@ class Cursor {
 
   destroy() {
     this._selection = null;
+    this._normalizedSelection = null;
     this._coveredBlockIds.clear();
     this._labelAnchor = null;
+    this._mountedRootIds = null;
+    this._projectionKey = null;
+    this._projectionDeferredForView = false;
     this.getLabelLayer()?.detach(this._nameSpan);
     this._fakeCursor?.destroy();
     this._fakeCursor = null;
@@ -236,6 +422,7 @@ export class BlockCraftAwareness {
   private _labelLayer: CursorLabelLayer | null = null;
   private _labelRefreshFrame: number | null = null;
   private _labelViewportRefreshPending = false;
+  private _mountedRootIds: readonly string[] | null = null;
 
   private _localUser?: IAwarenessState['user'];
 
@@ -269,6 +456,9 @@ export class BlockCraftAwareness {
 
     this.doc.afterInit(root => {
       if (this._destroyed) return;
+      if (this.doc.virtualization?.enabled) {
+        this._mountedRootIds = this.doc.vm.getMountedRootChildIds();
+      }
       const scrollContainer = this.doc.scrollContainer ??
         this.doc.config?.scrollContainer ??
         getScrollContainer(root.hostElement);
@@ -278,6 +468,25 @@ export class BlockCraftAwareness {
     document.addEventListener('scroll', this._handleScroll, true);
     window.addEventListener('resize', this._handleResize, {passive: true});
     this.doc.onDestroy$.pipe(takeUntil(this._destroy$)).subscribe(() => this.destroy());
+
+    if (this.doc.virtualization?.enabled) {
+      if (this.doc.isInitialized) {
+        this._mountedRootIds = this.doc.vm.getMountedRootChildIds();
+      }
+      this.doc.virtualization.viewChange$.pipe(
+        takeUntil(this._destroy$),
+        takeUntil(this.doc.onDestroy$),
+      ).subscribe(({mountedRootIds}) => {
+        this._mountedRootIds = mountedRootIds;
+        this.cursors.forEach(cursor => cursor.refreshAfterViewChange(mountedRootIds));
+      });
+      this.doc.model.structureChange$.pipe(
+        takeUntil(this._destroy$),
+        takeUntil(this.doc.onDestroy$),
+      ).subscribe(() => {
+        this.cursors.forEach(cursor => cursor.refreshAfterStructureChange());
+      });
+    }
 
     this._states = this.awareness.getStates() as Map<clientId, IAwarenessState>;
 
@@ -289,7 +498,7 @@ export class BlockCraftAwareness {
 
             if ('cursor' in state) {
               this.doc.afterInit(() => {
-                this.cursors.get(id)?.updatePosition(state['cursor']);
+                this.cursors.get(id)?.updatePosition(state['cursor'], this._mountedRootIds);
               });
             }
           });
@@ -304,7 +513,7 @@ export class BlockCraftAwareness {
             if (!this.cursors.has(id)) {
               this.addCursor(id);
             }
-            this.cursors.get(id)?.updatePosition(state['cursor']);
+            this.cursors.get(id)?.updatePosition(state['cursor'], this._mountedRootIds);
           });
         }
 
@@ -409,6 +618,7 @@ export class BlockCraftAwareness {
       this._labelRefreshFrame = null;
     }
     this._pendingTextViewChanges.clear();
+    this._mountedRootIds = null;
     this.cursors.forEach(cursor => cursor.destroy());
     this.cursors.clear();
     this._labelLayer?.destroy();

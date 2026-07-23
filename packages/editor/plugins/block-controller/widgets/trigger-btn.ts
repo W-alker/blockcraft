@@ -11,8 +11,7 @@ import {
 import { NgIf, NgTemplateOutlet } from "@angular/common";
 import { Subscription, take } from "rxjs";
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective } from "../../../components";
-import { BlockNodeType } from "../../../framework";
-import { IBlockSchemaOptions } from "../../../framework";
+import { BlockNodeType, IBlockSchemaOptions, IBlockSnapshot } from "../../../framework";
 import {getSelectionCoveredBlockIds} from "../../../framework/modules/selection/covered-blocks";
 import { MatIcon } from "@angular/material/icon";
 import { IS_MAC, nextTick } from "../../../global";
@@ -557,11 +556,25 @@ export class TriggerBtn {
     try {
       const ids = this.getSelectedBlockIds()
       if (ids.length < 2) return null
-      ids.forEach(id => this.doc.getBlockById(id))  // surface a concurrently-deleted id as a throw
+      if (typeof (this.doc as any).model?.exists === 'function') {
+        if (ids.some(id => !this.doc.model.exists(id))) return null
+      } else {
+        ids.forEach(id => this.doc.getBlockById(id))
+      }
       return ids
     } catch {
       return null
     }
+  }
+
+  private resolveMultiActionSnapshots(ids: readonly string[]): IBlockSnapshot[] | null {
+    const snapshots: IBlockSnapshot[] = []
+    for (const id of ids) {
+      const snapshot = this.doc.model.toSnapshot(id)
+      if (!snapshot) return null
+      snapshots.push(snapshot)
+    }
+    return snapshots
   }
 
   close() {
@@ -903,7 +916,11 @@ export class TriggerBtn {
         if (this._isMultiSelection) {
           const ids = this.resolveMultiActionIds()
           if (ids) {
-            const snapshots = ids.map(id => this.doc.getBlockById(id).toSnapshot())
+            const snapshots = this.resolveMultiActionSnapshots(ids)
+            if (!snapshots) {
+              this.close()
+              return
+            }
             this.doc.clipboard.copyBlocksModel(snapshots)
               .then(() => {
                 void this.doc.chain()
@@ -969,7 +986,11 @@ export class TriggerBtn {
         if (this._isMultiSelection) {
           const ids = this.resolveMultiActionIds()
           if (ids) {
-            const snapshots = ids.map(id => this.doc.getBlockById(id).toSnapshot())
+            const snapshots = this.resolveMultiActionSnapshots(ids)
+            if (!snapshots) {
+              this.close()
+              return
+            }
             this.doc.clipboard.copyBlocksModel(snapshots)
               .then(() => {
                 this.doc.messageService.success('已复制')

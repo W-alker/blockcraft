@@ -29,7 +29,7 @@ export class DocExportManager {
   }
 
   async exportToJson(name: string) {
-    const json = this.doc.root.toSnapshot()
+    const json = this._snapshot()
     const jsonStr = JSON.stringify(json, null, 2); // 格式化输出
     const blob = new Blob([jsonStr], {type: 'application/json'})
     await downloadFile(blob, name)
@@ -39,7 +39,7 @@ export class DocExportManager {
     try {
       const mdAdapter = this.doc.injector.get(DOC_ADAPTER_SERVICE_TOKEN)?.getAdapter(ClipboardDataType.RTF)
       if (!mdAdapter) return
-      const text = await mdAdapter.fromSnapshot(this.doc.root.toSnapshot())
+      const text = await mdAdapter.fromSnapshot(this._snapshot())
       const blob = new Blob([text], {type: 'text/markdown'})
       await downloadFile(blob, name)
     } catch (e) {
@@ -77,7 +77,7 @@ export class DocExportManager {
     if (plugin) return plugin.exportToPdf(name, exportOptions)
 
     const config = explicitPagination ?? {pageSize: 'A4'}
-    const snapshot = this.doc.root.toSnapshot()
+    const snapshot = this._snapshot()
     return exportDocumentToPdf(this.doc, snapshot, config, name, exportOptions)
   }
 
@@ -95,5 +95,11 @@ export class DocExportManager {
     return this.doc.plugins.find(
       candidate => candidate instanceof PaginationPlugin,
     ) as PaginationPlugin | undefined
+  }
+
+  private _snapshot() {
+    const snapshot = this.doc.exportSnapshot()
+    if (!snapshot) throw new Error('Document model is not ready for export')
+    return snapshot
   }
 }

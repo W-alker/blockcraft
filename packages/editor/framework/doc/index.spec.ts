@@ -2,7 +2,48 @@ import {BlockCraftDoc} from "./index";
 import {fakeAsync, tick} from "@angular/core/testing";
 import * as Y from "yjs";
 import {BlockNodeType, NativeBlockModel, YBlock, native2YBlock} from "../block-std";
-import {Subject, Subscription} from "rxjs";
+import {BehaviorSubject, Subject, Subscription} from "rxjs";
+
+describe("BlockCraftDoc initialization state", () => {
+  it("publishes configured readonly state before afterInit observers run", fakeAsync(() => {
+    const rootDestroy$ = new Subject<void>();
+    const readonlySwitch$ = new BehaviorSubject(true);
+    let readonlySeenAfterInit: boolean | undefined;
+    const root = {
+      id: "root",
+      hostElement: document.createElement("div"),
+      onDestroy$: rootDestroy$,
+    };
+    const doc = Object.setPrototypeOf({
+      _root: null,
+      _scrollContainer: null,
+      config: {readonly: false, theme: "light"},
+      readonlySwitch$,
+      afterInit$: new BehaviorSubject<any>(null),
+      afterInitFnStack: new Set([
+        () => { readonlySeenAfterInit = readonlySwitch$.value; },
+      ]),
+      _plugins: [],
+      onDestroy$: new Subject<void>(),
+      vm: {clear: jasmine.createSpy("clear")},
+      event: {bindHotkey: jasmine.createSpy("bindHotkey")},
+      crud: {
+        undoManager: {
+          undo: jasmine.createSpy("undo"),
+          redo: jasmine.createSpy("redo"),
+        },
+      },
+      virtualization: {init: jasmine.createSpy("init")},
+      toggleTheme: jasmine.createSpy("toggleTheme"),
+    }, BlockCraftDoc.prototype);
+
+    (BlockCraftDoc.prototype as any)._initEditor.call(doc, root);
+
+    expect(readonlySeenAfterInit).toBeFalse();
+    expect(readonlySwitch$.value).toBeFalse();
+    tick();
+  }));
+});
 
 describe("BlockCraftDoc readonly violation feedback", () => {
   it("warns for user actions, ignores API calls and throttles repeated feedback", fakeAsync(() => {
@@ -109,6 +150,54 @@ describe("BlockCraftDoc model graph lifecycle", () => {
     expect(container.firstElementChild).toBe(nativeElement);
   });
 
+  it("materializes the full snapshot model but creates only root view when virtualization is enabled", () => {
+    const yDoc = new Y.Doc();
+    const yBlockMap = yDoc.getMap<YBlock>("blocks");
+    const snapshot = {
+      ...rootSnapshot,
+      children: [{
+        id: "paragraph-1",
+        flavour: "paragraph",
+        nodeType: BlockNodeType.editable,
+        props: {},
+        meta: {},
+        children: [{insert: "hello"}],
+      }],
+    } as any;
+    const nativeElement = document.createElement("div");
+    const rootRef = {instance: {id: "root"}, location: {nativeElement}};
+    const calls: string[] = [];
+    const doc = {
+      _root: null,
+      virtualization: {enabled: true},
+      yBlockMap,
+      vm: {
+        createRootOnlyByYBlock: jasmine.createSpy("createRootOnlyByYBlock").and.callFake((yRoot: YBlock) => {
+          calls.push(`create-root:${yRoot.get("id")}`);
+          return rootRef;
+        }),
+        createComponentBySnapshot: jasmine.createSpy("createComponentBySnapshot"),
+      },
+      model: {
+        build: jasmine.createSpy("build").and.callFake((rootId: string) => {
+          calls.push(`build-model:${rootId}:${yBlockMap.size}`);
+        }),
+      },
+      _initEditor: jasmine.createSpy("_initEditor"),
+    };
+    const container = document.createElement("div");
+
+    BlockCraftDoc.prototype.initBySnapshot.call(doc, snapshot, container);
+
+    expect(doc.vm.createComponentBySnapshot).not.toHaveBeenCalled();
+    expect(doc.vm.createRootOnlyByYBlock).toHaveBeenCalledOnceWith(yBlockMap.get("root"));
+    expect(yBlockMap.size).toBe(2);
+    expect(yBlockMap.get("root")?.get("children").toArray()).toEqual(["paragraph-1"]);
+    expect((yBlockMap.get("paragraph-1")?.get("children") as unknown as Y.Text).toDelta()).toEqual([{insert: "hello"}]);
+    expect(calls).toEqual(["create-root:root", "build-model:root:2"]);
+    expect(container.firstElementChild).toBe(nativeElement);
+  });
+
   it("builds the model after dangling YBlock references are pruned", () => {
     const yDoc = new Y.Doc();
     const yBlockMap = yDoc.getMap<YBlock>("blocks");
@@ -148,6 +237,40 @@ describe("BlockCraftDoc model graph lifecycle", () => {
     BlockCraftDoc.prototype.initByYBlock.call(doc, yRoot, container);
 
     expect(calls).toEqual(["prune", "build-model:root", "init-editor"]);
+    expect(container.firstElementChild).toBe(nativeElement);
+  });
+
+  it("uses root-only component creation when virtualization is enabled", () => {
+    const yDoc = new Y.Doc();
+    const yRoot = native2YBlock({
+      id: "root",
+      flavour: "root",
+      nodeType: BlockNodeType.root,
+      props: {},
+      meta: {},
+      children: [],
+    } as NativeBlockModel);
+    yDoc.getMap<YBlock>("blocks").set("root", yRoot);
+    const nativeElement = document.createElement("div");
+    const rootRef = {instance: {id: "root"}, location: {nativeElement}};
+    const doc = {
+      _root: null,
+      virtualization: {enabled: true},
+      vm: {
+        createRootOnlyByYBlock: jasmine.createSpy("createRootOnlyByYBlock").and.returnValue(rootRef),
+        createComponentByYBlocks: jasmine.createSpy("createComponentByYBlocks"),
+      },
+      crud: {pruneChildRefs: jasmine.createSpy("pruneChildRefs")},
+      model: {build: jasmine.createSpy("build")},
+      _initEditor: jasmine.createSpy("_initEditor"),
+    };
+    const container = document.createElement("div");
+
+    BlockCraftDoc.prototype.initByYBlock.call(doc, yRoot, container);
+
+    expect(doc.vm.createRootOnlyByYBlock).toHaveBeenCalledOnceWith(yRoot);
+    expect(doc.vm.createComponentByYBlocks).not.toHaveBeenCalled();
+    expect(doc.model.build).toHaveBeenCalledOnceWith("root");
     expect(container.firstElementChild).toBe(nativeElement);
   });
 });
@@ -209,6 +332,30 @@ describe("BlockCraftDoc model-backed reads", () => {
     expect(BlockCraftDoc.prototype.prevSibling.call(doc, "offscreen")).toBe(previous as any);
     expect(BlockCraftDoc.prototype.nextSibling.call(doc, "offscreen")).toBe(next as any);
     expect(doc.getBlockById).toHaveBeenCalledTimes(2);
+  });
+
+  it("mounts an adjacent virtual view before resolving its component", () => {
+    const next = {id: "next"};
+    let mounted = false;
+    const doc = asDoc({
+      model: {
+        exists: jasmine.createSpy("exists").and.returnValue(true),
+        getNextSiblingId: jasmine.createSpy("getNextSiblingId").and.returnValue("next"),
+      },
+      virtualization: {
+        ensureViewMounted: jasmine.createSpy("ensureViewMounted").and.callFake(() => {
+          mounted = true;
+        }),
+      },
+      getBlockById: jasmine.createSpy("getBlockById").and.callFake(() => {
+        if (!mounted) throw new Error("view is not mounted");
+        return next;
+      }),
+    });
+
+    expect(BlockCraftDoc.prototype.nextSibling.call(doc, "offscreen")).toBe(next as any);
+    expect(doc.virtualization.ensureViewMounted).toHaveBeenCalledOnceWith(["next"]);
+    expect(doc.getBlockById).toHaveBeenCalledOnceWith("next");
   });
 
   it("delegates position and interval calculations to the model", () => {

@@ -125,6 +125,42 @@ export class ClipboardManager {
     return this.doc.schemas.createSnapshot('root', [generateId(), snapshots])
   }
 
+  private _hasModelBlock(blockId: string): boolean {
+    return typeof (this.doc as any).model?.exists === 'function' && this.doc.model.exists(blockId)
+  }
+
+  private _copyBlockSnapshot(blockId: string): IBlockSnapshot {
+    if (this._hasModelBlock(blockId)) {
+      const snapshot = this.doc.model.toSnapshot(blockId)
+      if (snapshot) return snapshot
+    }
+    return this.doc.getBlockById(blockId).toSnapshot()
+  }
+
+  private _copyBlockDeltas(blockId: string): DeltaInsert[] {
+    if (this._hasModelBlock(blockId)) {
+      return this.doc.model.getTextDeltas(blockId) ?? []
+    }
+    return (this.doc.getBlockById(blockId) as EditableBlockComponent).textDeltas()
+  }
+
+  private _copyBlockText(blockId: string, visiting = new Set<string>()): string {
+    if (this._hasModelBlock(blockId)) {
+      if (visiting.has(blockId)) return ''
+      const deltas = this.doc.model.getTextDeltas(blockId)
+      if (deltas) return deltaToString(deltas)
+      if (this.doc.model.getNodeType(blockId) === BlockNodeType.void) return ''
+
+      visiting.add(blockId)
+      const text = this.doc.model.getChildrenIds(blockId)
+        .map(id => this._copyBlockText(id, visiting))
+        .join(STR_LINE_BREAK)
+      visiting.delete(blockId)
+      return text
+    }
+    return this.doc.getBlockById(blockId).textContent()
+  }
+
   private _setClipboardData(clipboardData: DataTransfer, items: Record<string, string>) {
     for (const [type, value] of Object.entries(items)) {
       clipboardData.setData(type, value)
@@ -204,7 +240,7 @@ export class ClipboardManager {
   private _buildCopyPayload(selection: BlockCraft.Selection): {snapshot: IBlockSnapshot, plainText: string} {
     const boundaryChildIds = selection.getBoundarySelectedChildIds()
     if (boundaryChildIds) {
-      const snapshots = boundaryChildIds.map(id => this.doc.getBlockById(id).toSnapshot())
+      const snapshots = boundaryChildIds.map(id => this._copyBlockSnapshot(id))
       return {
         snapshot: this._wrapSnapshotsByRoot(snapshots),
         plainText: snapshots2Text(snapshots),
@@ -212,61 +248,66 @@ export class ClipboardManager {
     }
 
     const s = selection.start, e = selection.end
-    const startBlock = selection.firstBlock
-    const endBlock = selection.lastBlock
+    const startId = (selection as BlockCraft.Selection & {firstBlockId?: string}).firstBlockId ?? selection.firstBlock.id
+    const endId = (selection as BlockCraft.Selection & {lastBlockId?: string}).lastBlockId ?? selection.lastBlock.id
+    const modelBacked = this._hasModelBlock(startId) && this._hasModelBlock(endId)
 
     if (selection.isInSameBlock) {
       if (s.type === 'text') {
-        const eOff = (e.type === 'text' ? e.offset : (startBlock as EditableBlockComponent).textLength)
-        const sliceDeltas = sliceDelta((startBlock as EditableBlockComponent).textDeltas(), s.offset, eOff)
+        const deltas = this._copyBlockDeltas(startId)
+        const eOff = e.type === 'text' ? e.offset : deltaStrLength(deltas)
+        const sliceDeltas = sliceDelta(deltas, s.offset, eOff)
         return {
           snapshot: this._wrapDeltaByRoot(sliceDeltas),
           plainText: deltaToString(sliceDeltas),
         }
       }
       return {
-        snapshot: this._wrapSnapshotsByRoot([startBlock.toSnapshot()]),
-        plainText: startBlock.textContent(),
+        snapshot: this._wrapSnapshotsByRoot([this._copyBlockSnapshot(startId)]),
+        plainText: this._copyBlockText(startId),
       }
     }
 
     const snapshots: IBlockSnapshot[] = []
     const plainTextParts: string[] = []
-    const betweenBlocks = this.doc.queryBlocksBetween(startBlock, endBlock)
-    const pushSnapshot = (block: BlockCraft.BlockComponent, plainText: string) => {
-      snapshots.push(block.toSnapshot())
-      plainTextParts.push(plainText)
+    const startBlock = modelBacked ? null : selection.firstBlock
+    const endBlock = modelBacked ? null : selection.lastBlock
+    const betweenBlocks = modelBacked
+      ? this.doc.queryBlocksBetween(startId, endId)
+      : this.doc.queryBlocksBetween(startBlock!, endBlock!)
+    const pushSnapshot = (blockId: string) => {
+      snapshots.push(this._copyBlockSnapshot(blockId))
+      plainTextParts.push(this._copyBlockText(blockId))
     }
 
     if (s.type === 'text') {
-      const sBlock = startBlock as EditableBlockComponent
-      if (s.offset < sBlock.textLength) {
-        const sliceDeltas = sliceDelta(sBlock.textDeltas(), s.offset, sBlock.textLength)
-        const sn = sBlock.toSnapshot()
+      const deltas = this._copyBlockDeltas(startId)
+      const textLength = deltaStrLength(deltas)
+      if (s.offset < textLength) {
+        const sliceDeltas = sliceDelta(deltas, s.offset, textLength)
+        const sn = this._copyBlockSnapshot(startId)
         sn.children = sliceDeltas
         snapshots.push(sn)
         plainTextParts.push(deltaToString(sliceDeltas))
       }
     } else {
-      pushSnapshot(startBlock, startBlock.textContent())
+      pushSnapshot(startId)
     }
 
     for (const bid of betweenBlocks) {
-      const block = this.doc.getBlockById(bid)
-      pushSnapshot(block, block.textContent())
+      pushSnapshot(bid)
     }
 
     if (e.type === 'text') {
       if (e.offset > 0) {
-        const eBlock = endBlock as EditableBlockComponent
-        const sliceDeltas = sliceDelta(eBlock.textDeltas(), 0, e.offset)
-        const sn = eBlock.toSnapshot()
+        const sliceDeltas = sliceDelta(this._copyBlockDeltas(endId), 0, e.offset)
+        const sn = this._copyBlockSnapshot(endId)
         sn.children = sliceDeltas
         snapshots.push(sn)
         plainTextParts.push(deltaToString(sliceDeltas))
       }
     } else {
-      pushSnapshot(endBlock, endBlock.textContent())
+      pushSnapshot(endId)
     }
 
     return {
