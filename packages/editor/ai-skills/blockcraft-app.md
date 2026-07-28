@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-07-22
+> Last updated: 2026-07-28
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -475,6 +475,37 @@ permanently destroyed on a later reconciliation frame. Keep block IDs or model
 data for long-lived work; resolve a fresh component only when a view capability
 is actually needed.
 
+### Stable Block Navigation
+
+Use the document-level API for copied block links, search results, comments,
+outline items, and history restoration:
+
+```typescript
+const revealed = await doc.navigateToBlock(blockId)
+if (!revealed) {
+  // The ID is missing/stale, the document was destroyed, or a newer request won.
+}
+```
+
+The call is rendering-mode independent. With virtualization enabled it performs
+an estimated jump, mounts only the target's root render unit, and corrects to
+the real nested block geometry. With full rendering it centers the mounted host.
+Calls made before `initBySnapshot()` / `initByYBlock()` wait for initialization;
+rapid calls are latest-wins. The method does not change model Selection, native
+DOM Selection, or focus, so hosts can reveal a reference without interrupting
+typing.
+
+The bundled `EditorComponent` copies the current page URL with its `blockId`
+query parameter replaced. Activating a same-document link navigates directly
+without changing the current URL or history. An initial URL target is queued but
+does not initialize the document; after the user or host explicitly initializes
+it, the pending request reveals the target. `popstate` targets follow the same
+path, and successful navigation adds a short-lived target outline. Host
+applications with their own routing should parse the stable ID and delegate to
+`doc.navigateToBlock()`.
+`doc.virtualization.scrollToBlock()` is the low-level virtual-mode primitive;
+host code should normally use the document-level method.
+
 ```typescript
 const release = doc.virtualization.acquireBlockViewLease([blockId])
 try {
@@ -711,6 +742,7 @@ doc.toggleTheme(name)
 doc.toggleReadonly(readonly)                 // whole-document mode
 doc.setBlockReadonly(blockOrId, readonly)    // persistent non-root block lock
 doc.isBlockReadonly(blockOrId)               // effective readonly state
+doc.navigateToBlock(blockId)                 // Promise<boolean>; reveal stable ID without moving selection/focus
 doc.afterInit(fn)          // run fn once root is ready
 ```
 

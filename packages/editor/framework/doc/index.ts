@@ -32,6 +32,7 @@ import { BlockModelGraph } from "./model-graph";
 import { BlockReadonlyManager } from "./block-readonly-manager";
 import { BlockRef } from "./block-readonly.types";
 import {writeSnapshotsToYBlockMap} from './snapshot-yblock'
+import {BlockNavigationManager} from './block-navigation-manager'
 
 export interface DocConfig {
   docId: string
@@ -78,6 +79,7 @@ export class BlockCraftDoc {
   readonly clipboard = new ClipboardManager(this)
   readonly inputManger = new InputTransformer(this)
   readonly virtualization = new RootVirtualizationManager(this, this.config.virtualization)
+  private readonly blockNavigation = new BlockNavigationManager(this)
 
   readonly onChildrenUpdate$ = this.crud.onChildrenUpdate$
   readonly onPropsUpdate$ = this.crud.onPropsUpdate$
@@ -96,6 +98,7 @@ export class BlockCraftDoc {
 
   private _subscriptions: Subscription = new Subscription()
   private _lastReadonlyFeedbackAt = Number.NEGATIVE_INFINITY
+  private _subsystemsDisposed = false
 
   private _root: BlockCraft.IBlockComponents['root'] | null = null
   private _yBlockMap!: Y.Map<YBlock>
@@ -159,19 +162,33 @@ export class BlockCraftDoc {
     return new DocChain(this)
   }
 
+  /**
+   * Reveal and center a stable block ID without changing selection or focus.
+   * Calls made before document/view initialization wait for readiness. A newer
+   * request supersedes an unfinished older request.
+   */
+  navigateToBlock(blockId: string): Promise<boolean> {
+    return this.blockNavigation.navigateToBlock(blockId)
+  }
+
   constructor(
     public readonly config: DocConfig
   ) {
     this.config.embeds = withDefaultEmbedConverters(this.config.embeds)
     this._plugins = this.config.plugins || []
     this._bindReadonlyViolationFeedback()
-    this.onDestroy(() => {
-      this.virtualization.dispose()
-      this.model.destroy()
-      this.dragController.destroy()
-      this._subscriptions.unsubscribe()
-    })
+    this.onDestroy(() => this._disposeSubsystems())
     this._yBlockMap = this.yDoc.getMap<YBlock>(Y_BLOCK_MAP_NAME)
+  }
+
+  private _disposeSubsystems(): void {
+    if (this._subsystemsDisposed) return
+    this._subsystemsDisposed = true
+    this.blockNavigation.destroy()
+    this.virtualization.dispose()
+    this.model.destroy()
+    this.dragController.destroy()
+    this._subscriptions.unsubscribe()
   }
 
   private _bindReadonlyViolationFeedback(): void {
@@ -295,9 +312,14 @@ export class BlockCraftDoc {
   }
 
   destroy() {
-    if (!this._root) return
+    this.blockNavigation.destroy()
+    if (!this._root) {
+      this._disposeSubsystems()
+      return
+    }
     this.vm.clear()
     this.afterInit$.next(this._root = null)
+    this._disposeSubsystems()
   }
 
   afterInit(fn: (root: BlockCraft.IBlockComponents['root']) => void) {

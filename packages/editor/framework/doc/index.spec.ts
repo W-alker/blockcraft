@@ -45,6 +45,18 @@ describe("BlockCraftDoc initialization state", () => {
   }));
 });
 
+describe("BlockCraftDoc block navigation facade", () => {
+  it("delegates stable block navigation to the document-owned manager", async () => {
+    const navigateToBlock = jasmine.createSpy("navigateToBlock").and.resolveTo(true);
+    const doc = Object.setPrototypeOf({
+      blockNavigation: {navigateToBlock},
+    }, BlockCraftDoc.prototype);
+
+    expect(await doc.navigateToBlock("target")).toBeTrue();
+    expect(navigateToBlock).toHaveBeenCalledOnceWith("target");
+  });
+});
+
 describe("BlockCraftDoc readonly violation feedback", () => {
   it("warns for user actions, ignores API calls and throttles repeated feedback", fakeAsync(() => {
     const violation$ = new Subject<{trigger: string}>();

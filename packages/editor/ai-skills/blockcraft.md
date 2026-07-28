@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-07-22 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-07-28 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -33,6 +33,7 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | **Selection** | Anchor/head selection model over blocks | `SelectionManager` in `framework/modules/selection/` |
 | **Input** | Intercepts `beforeInput`, writes to Y.Text directly | `InputTransformer` in `framework/modules/input/` |
 | **Virtualization** | Optional model-first root-child windowing; nested subtrees stay atomic | `RootVirtualizationManager` in `framework/modules/virtualization/` |
+| **Block Navigation** | Mode-independent stable-ID reveal without changing selection or focus | `BlockCraftDoc.navigateToBlock()` |
 | **Pagination** | Pure page layout + reversible live view + print/PDF | `PaginationPlugin` + `framework/modules/pagination/` |
 | **Event** | Three-tier event dispatcher (block→flavour→global) | `UIEventDispatcher` in `framework/block-std/event/` |
 | **Chain** | Fluent builder for sequencing mutations | `DocChain` in `framework/chain/` |
@@ -140,6 +141,9 @@ const insertedIds = doc.crud.insertBlockSnapshots(parentId, index, snapshots)
 doc.crud.deleteBlocks(parentId, index, count)
 doc.crud.deleteBlockById(blockId)
 doc.crud.moveBlocks(parentId, index, count, targetParentId, targetIndex)
+
+// Rendering-mode-independent reveal; preserves model/native selection + focus.
+const revealed = await doc.navigateToBlock(blockId)
 ```
 
 `doc.model` is read-only. Use `DocCRUD` / `DocChain` for every mutation. Model
@@ -197,7 +201,7 @@ full document. History restoration transiently materializes only its bookmark
 endpoints before relative resolution and measures the resolved head before
 native Selection replay. A fully visible head leaves the viewport untouched;
 an offscreen or unavailable head is replayed and then centered through
-`doc.virtualization.scrollToBlock(head.blockId)`. Verification waits for that
+`doc.navigateToBlock(head.blockId)`. Verification waits for that
 projection instead of restarting and canceling it.
 Component-oriented navigation and programmatic Selection helpers
 materialize only explicitly targeted root units. Their preflight distinguishes
@@ -238,11 +242,16 @@ anchor/head direction, touches only endpoint views, and is skipped during
 an actual held primary-pointer drag and IME composition. While its bounded
 endpoint projection is pending, transient browser `selectionchange` cannot
 shrink the canonical model selection; a new pointer intent cancels that retry.
-`doc.virtualization.scrollToBlock(blockId)` is the explicit stable-ID
-navigation API. It uses the height index for an estimated jump, mounts only the
-containing root unit, then measures the requested nested/root host until its
-center is stable (or bounded by the document edge). Navigation holds a
-transient pin only for that bounded operation.
+`await doc.navigateToBlock(blockId)` is the public stable-ID navigation API for
+both full and virtual rendering. It can be called before document
+initialization, waits for the view lifecycle, and resolves `true` only when the
+reachable target is mounted and revealed. A newer request supersedes an older
+one; missing, stale, or destroyed targets resolve `false`. Navigation never
+writes model/native Selection or focus. In virtual mode it delegates to the
+lower-level `doc.virtualization.scrollToBlock(blockId)`, which uses the height
+index for an estimated jump, mounts only the containing root unit, then measures
+the requested nested/root host until its center is stable (or bounded by the
+document edge). The operation owns only a bounded transient pin.
 Collaboration cursors consume that deduplicated window to reproject only their
 mounted `FakeRange` fragments. Remote selections never pin local block views;
 scroll coordination is bounded by remote cursor count and mounted root count,

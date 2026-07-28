@@ -36,6 +36,7 @@ interface RootSelectionEndpoint {
 interface BlockNavigationTask {
   readonly blockId: string
   readonly resolve: (success: boolean) => void
+  started: boolean
   frame: number | null
   frames: number
   stableFrames: number
@@ -126,6 +127,8 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       scrollContainer.addEventListener('scroll', this.onScroll, {passive: true})
       this.ownerWindow?.addEventListener('resize', this.onResize, {passive: true})
     })
+    const pendingNavigation = this.blockNavigationTask
+    if (pendingNavigation) this.startBlockNavigation(pendingNavigation)
     this.schedule()
   }
 
@@ -183,18 +186,9 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
    */
   scrollToBlock(blockId: string): Promise<boolean> {
     this.cancelBlockNavigation()
-    if (!this.enabled || this.disposed || !this.scrollContainer) {
+    if (!this.enabled || this.disposed) {
       return Promise.resolve(false)
     }
-    if (!this.blockIds.length) this.rebuildModel()
-
-    let rootIndex: number | undefined
-    try {
-      rootIndex = this.resolveRootIndex(blockId)
-    } catch {
-      return Promise.resolve(false)
-    }
-    if (rootIndex === undefined) return Promise.resolve(false)
 
     let settle!: (success: boolean) => void
     const result = new Promise<boolean>(resolve => {
@@ -203,11 +197,44 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     const task: BlockNavigationTask = {
       blockId,
       resolve: settle,
+      started: false,
       frame: null,
       frames: 0,
       stableFrames: 0,
     }
     this.blockNavigationTask = task
+    if (this.scrollContainer) this.startBlockNavigation(task)
+    return result
+  }
+
+  private startBlockNavigation(task: BlockNavigationTask): void {
+    if (
+      this.blockNavigationTask !== task ||
+      task.started ||
+      !this.scrollContainer
+    ) {
+      return
+    }
+    task.started = true
+
+    try {
+      if (!this.blockIds.length) this.rebuildModel()
+    } catch (error) {
+      this.failBlockNavigation(task, error)
+      return
+    }
+    let rootIndex: number | undefined
+    try {
+      rootIndex = this.resolveRootIndex(task.blockId)
+    } catch {
+      this.finishBlockNavigation(task, false)
+      return
+    }
+    if (rootIndex === undefined) {
+      this.finishBlockNavigation(task, false)
+      return
+    }
+
     try {
       // Explicit navigation owns viewport placement over a pending structural
       // anchor captured before the target was requested.
@@ -216,7 +243,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       this.centerEstimatedRootIndex(rootIndex)
       this.mountRootIndices([rootIndex])
 
-      const correction = this.readBlockCenterCorrection(blockId)
+      const correction = this.readBlockCenterCorrection(task.blockId)
       if (correction !== null) {
         this.scrollContainer.scrollTop += correction
       }
@@ -225,7 +252,6 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     } catch (error) {
       this.failBlockNavigation(task, error)
     }
-    return result
   }
 
   /**

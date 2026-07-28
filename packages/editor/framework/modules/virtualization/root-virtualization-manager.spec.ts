@@ -516,6 +516,50 @@ describe('RootVirtualizationManager', () => {
     })
   })
 
+  it('waits for initialization when block navigation starts before init', async () => {
+    const h = createHarness(0)
+    let settled = false
+    const pending = h.manager.scrollToBlock('b12').then(result => {
+      settled = true
+      return result
+    })
+
+    await Promise.resolve()
+    expect(settled).toBeFalse()
+
+    h.manager.init(h.scrollContainer)
+
+    expect(await pending).toBeTrue()
+    expect(h.mounted.has('b12')).toBeTrue()
+    expect(centerY(h.vm.get('b12').instance.hostElement.getBoundingClientRect()))
+      .toBe(centerY(h.scrollContainer.getBoundingClientRect()))
+    h.manager.dispose()
+  })
+
+  it('lets the newest pre-init block navigation supersede the previous one', async () => {
+    const h = createHarness()
+    const first = h.manager.scrollToBlock('b12')
+    const second = h.manager.scrollToBlock('b15')
+
+    h.manager.init(h.scrollContainer)
+
+    const [firstResult, secondResult] = await Promise.all([first, second])
+    expect(firstResult).toBeFalse()
+    expect(secondResult).toBeTrue()
+    expect(centerY(h.vm.get('b15').instance.hostElement.getBoundingClientRect()))
+      .toBe(centerY(h.scrollContainer.getBoundingClientRect()))
+    h.manager.dispose()
+  })
+
+  it('settles a pre-init block navigation when disposed', async () => {
+    const h = createHarness()
+    const pending = h.manager.scrollToBlock('b12')
+
+    h.manager.dispose()
+
+    expect(await pending).toBeFalse()
+  })
+
   it('centers an offscreen block that has no retained component view', async () => {
     const h = createHarness(0)
     h.manager.init(h.scrollContainer)
@@ -660,6 +704,21 @@ describe('RootVirtualizationManager', () => {
     h.scrollContainer.dispatchEvent(new Event('scroll'))
     await nextAnimationFrame()
     expect(h.mounted.has('b12')).toBeFalse()
+    h.manager.dispose()
+  })
+
+  it('settles navigation when rebuilding the virtual model throws', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    ;(h.manager as any).blockIds = []
+    spyOn<any>(h.manager as any, 'rebuildModel').and.throwError('rebuild failed')
+
+    expect(await h.manager.scrollToBlock('b12')).toBeFalse()
+    expect(h.doc.logger.warn).toHaveBeenCalledWith(
+      'blockNavigationError: ',
+      jasmine.any(Error),
+    )
     h.manager.dispose()
   })
 

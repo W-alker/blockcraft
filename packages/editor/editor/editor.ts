@@ -72,6 +72,7 @@ import {PasteFormatSelectorPlugin} from "../plugins/paste-format-selector";
 import {PlaceholderPlugin} from "../plugins/placeholder";
 import {PageDividerBlockSchema} from "../blocks/page-divider-block";
 import {PaginationPlugin} from "../plugins/pagination";
+import {BlockLinkNavigator} from "./block-link-navigator";
 
 const mentionRequest = async (keyword: string, _type?: string) => {
   if (keyword === 'a') {
@@ -146,6 +147,11 @@ const schemas = new SchemaManager([
       }
 
       ::ng-deep {
+        [data-bc-block-link-target="true"] {
+          outline: 2px solid var(--bc-active-color);
+          outline-offset: 3px;
+        }
+
         [data-blockcraft-root="true"] {
           box-sizing: border-box;
           min-height: 100%;
@@ -249,6 +255,7 @@ export class EditorComponent implements OnInit, OnDestroy {
   });
 
   doc!: BlockCraftDoc;
+  private blockLinkNavigator: BlockLinkNavigator | null = null;
 
   private createDoc(): BlockCraftDoc {
     return new BlockCraftDoc({
@@ -354,12 +361,9 @@ export class EditorComponent implements OnInit, OnDestroy {
         new BookmarkBlockExtensionPlugin(),
         new FormulaBlockExtensionPlugin(),
         new InlineLinkExtension((link) => {
-          if (link.startsWith("http://doc-pre.com")) {
-            window.open(
-              link.replace("http://doc-pre.com", "http://localhost:8081/test3"),
-              "_blank",
-            );
-          } else window.open(link, "_blank");
+          if (!this.blockLinkNavigator?.openBlockLink(link)) {
+            window.open(link, "_blank");
+          }
         }),
         new MentionPlugin({
           panel: createDefaultMentionPanel({
@@ -381,15 +385,26 @@ export class EditorComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.doc = this.createDoc();
+    this.blockLinkNavigator = new BlockLinkNavigator(this.doc);
+    this.blockLinkNavigator.start();
   }
 
-  ngOnDestroy() {}
+  ngOnDestroy() {
+    this.blockLinkNavigator?.destroy();
+    this.blockLinkNavigator = null;
+    this.doc?.destroy();
+  }
 
   copyBlockLink(block: BlockCraft.BlockComponent) {
-    const url = "http://doc-pre.com" + "?blockId=" + block.id;
-    this.doc.clipboard.copyText(url).then(() => {
-      this.doc.messageService.success("已复制链接");
-    });
+    const url = this.blockLinkNavigator?.createBlockLink(block.id);
+    if (!url) return;
+    void this.doc.clipboard.copyText(url)
+      .then(() => {
+        this.doc.messageService.success("已复制链接");
+      })
+      .catch(() => {
+        this.doc.messageService.error("复制链接失败");
+      });
   }
 
   onContainerMousedown(evt: MouseEvent) {

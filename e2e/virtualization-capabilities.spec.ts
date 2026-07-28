@@ -173,6 +173,251 @@ test('find next materializes and centers an unmounted virtual block', async ({pa
   expect(fatal).toEqual([])
 })
 
+test('a copied block link waits for explicit initialization before revealing its target', async ({page}) => {
+  const fatal = observeFatalDiagnostics(page)
+  page.on('console', message => {
+    const detail = message.text()
+    const source = message.location().url
+    if (
+      !externalResourcePattern.test(`${source} ${detail}`) &&
+      fatalConsolePattern.test(detail)
+    ) {
+      fatal.push(detail)
+    }
+  })
+  const targetId = 'demo-20-2-2-0'
+
+  await page.goto('/')
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await waitForEditor(page)
+  const copiedUrl = await page.evaluate(async ({selector, targetId}) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {
+        copyBlockLink: (block: {id: string}) => void
+        doc: {clipboard: {copyText: (value: string) => Promise<void>}}
+      }}
+    }).ng
+    const component = debug.getComponent(editor!)
+    let copied = ''
+    component.doc.clipboard.copyText = async value => {
+      copied = value
+    }
+    component.copyBlockLink({id: targetId})
+    await Promise.resolve()
+    return copied
+  }, {selector: editorSelector, targetId})
+  const copiedTarget = new URL(copiedUrl)
+  expect(copiedTarget.origin + copiedTarget.pathname).toBe(
+    new URL(page.url()).origin + new URL(page.url()).pathname,
+  )
+  expect(copiedTarget.searchParams.get('blockId')).toBe(targetId)
+
+  await page.goto(copiedUrl)
+  await page.waitForFunction((selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng?: {getComponent: (target: Element) => {doc?: unknown}}
+    }).ng
+    return !!editor && !!debug?.getComponent(editor)?.doc
+  }, editorSelector)
+  await page.evaluate(() => new Promise<void>(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  }))
+  expect(await page.evaluate((selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: {isInitialized: boolean}}}
+    }).ng
+    return debug.getComponent(editor!).doc.isInitialized
+  }, editorSelector)).toBe(false)
+
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await waitForEditor(page)
+
+  await expect.poll(() => page.evaluate(({selector, targetId}) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const block = doc.vm.get(targetId)?.instance
+    const viewport = doc.scrollContainer?.getBoundingClientRect()
+    const rect = block?.hostElement?.getBoundingClientRect()
+    return {
+      modelExists: doc.model.exists(targetId),
+      visible: !!viewport && !!rect &&
+        rect.bottom > viewport.top && rect.top < viewport.bottom,
+      scrolled: (doc.scrollContainer?.scrollTop ?? 0) > 0,
+      selection: doc.selection.value?.toJSON() ?? null,
+      sparse: doc.vm.getMountedRootChildIds().length <
+        doc.model.getChildrenIds(doc.rootId).length,
+    }
+  }, {selector: editorSelector, targetId}), {timeout: 10_000}).toEqual({
+    modelExists: true,
+    visible: true,
+    scrolled: true,
+    selection: null,
+    sparse: true,
+  })
+
+  expect(fatal).toEqual([])
+})
+
+test('rapid block-link navigation keeps only the latest unmounted target and preserves selection', async ({page}) => {
+  const fatal = observeFatalDiagnostics(page)
+  page.on('console', message => {
+    const detail = message.text()
+    const source = message.location().url
+    if (
+      !externalResourcePattern.test(`${source} ${detail}`) &&
+      fatalConsolePattern.test(detail)
+    ) {
+      fatal.push(detail)
+    }
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await waitForEditor(page)
+
+  const prepared = await page.evaluate(async (selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const firstId = (doc.model.getChildrenIds(doc.rootId) as string[])
+      .find(id => doc.model.getNodeType(id) === 'editable')
+    if (!firstId) throw new Error('No root text block is available')
+
+    const snapshots = Array.from({length: 220}, (_, index) =>
+      doc.schemas.createSnapshot('paragraph', [[{
+        insert: `block-link navigation filler ${index}`,
+      }]]),
+    )
+    const insertedIds = doc.crud.insertBlockSnapshots(
+      doc.rootId,
+      doc.model.getChildrenIds(doc.rootId).length,
+      snapshots,
+    ) as string[]
+    const jumpIds = [
+      insertedIds[30],
+      insertedIds[185],
+      insertedIds[55],
+      insertedIds[165],
+      insertedIds[80],
+      insertedIds[145],
+      insertedIds[105],
+      insertedIds[125],
+    ]
+
+    await doc.navigateToBlock(firstId)
+    doc.selection.setCursorAtBlock(firstId, true, false)
+    await new Promise<void>(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    })
+
+    const blockIdForNode = (node: Node | null): string | null => {
+      const element = node instanceof Element ? node : node?.parentElement
+      return element?.closest<HTMLElement>('[data-block-id]')?.dataset['blockId'] ?? null
+    }
+    const nativeSelection = document.getSelection()
+    const activeElement = document.activeElement
+
+    return {
+      firstId,
+      finalId: jumpIds[jumpIds.length - 1],
+      jumpIds,
+      modelSelection: doc.selection.value?.toJSON() ?? null,
+      nativeSelection: {
+        anchorBlockId: blockIdForNode(nativeSelection?.anchorNode ?? null),
+        anchorOffset: nativeSelection?.anchorOffset ?? null,
+        focusBlockId: blockIdForNode(nativeSelection?.focusNode ?? null),
+        focusOffset: nativeSelection?.focusOffset ?? null,
+      },
+      activeBlockId: blockIdForNode(activeElement),
+      targetsInitiallyUnmounted: jumpIds.every(id => !doc.vm.get(id)),
+    }
+  }, editorSelector)
+
+  expect(prepared.targetsInitiallyUnmounted).toBe(true)
+  const urlBeforeNavigation = page.url()
+
+  await page.evaluate(async ({selector, jumpIds}) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {
+        blockLinkNavigator: {openBlockLink: (link: string) => boolean}
+      }}
+    }).ng
+    const navigator = debug.getComponent(editor!).blockLinkNavigator
+    for (const blockId of jumpIds) {
+      const url = new URL(window.location.href)
+      url.searchParams.set('blockId', blockId)
+      navigator.openBlockLink(url.href)
+      await Promise.resolve()
+    }
+  }, {selector: editorSelector, jumpIds: prepared.jumpIds})
+
+  expect(page.url()).toBe(urlBeforeNavigation)
+
+  await expect.poll(() => page.evaluate(({selector, finalId}) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const block = doc.vm.get(finalId)?.instance
+    const viewport = doc.scrollContainer?.getBoundingClientRect()
+    const rect = block?.hostElement?.getBoundingClientRect()
+    return {
+      centered: !!viewport && !!rect &&
+        Math.abs((rect.top + rect.bottom - viewport.top - viewport.bottom) / 2) < 12,
+      highlightedId: doc.root.hostElement
+        .querySelector<HTMLElement>('[data-bc-block-link-target="true"]')
+        ?.dataset['blockId'] ?? null,
+      sparse: doc.vm.getMountedRootChildIds().length <
+        doc.model.getChildrenIds(doc.rootId).length,
+    }
+  }, {
+    selector: editorSelector,
+    finalId: prepared.finalId,
+  }), {timeout: 10_000}).toEqual({
+    centered: true,
+    highlightedId: prepared.finalId,
+    sparse: true,
+  })
+
+  const after = await page.evaluate((selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const blockIdForNode = (node: Node | null): string | null => {
+      const element = node instanceof Element ? node : node?.parentElement
+      return element?.closest<HTMLElement>('[data-block-id]')?.dataset['blockId'] ?? null
+    }
+    const nativeSelection = document.getSelection()
+    return {
+      modelSelection: doc.selection.value?.toJSON() ?? null,
+      nativeSelection: {
+        anchorBlockId: blockIdForNode(nativeSelection?.anchorNode ?? null),
+        anchorOffset: nativeSelection?.anchorOffset ?? null,
+        focusBlockId: blockIdForNode(nativeSelection?.focusNode ?? null),
+        focusOffset: nativeSelection?.focusOffset ?? null,
+      },
+      activeBlockId: blockIdForNode(document.activeElement),
+    }
+  }, editorSelector)
+
+  expect(after.modelSelection).toEqual(prepared.modelSelection)
+  expect(after.nativeSelection).toEqual(prepared.nativeSelection)
+  expect(after.activeBlockId).toBe(prepared.activeBlockId)
+  expect(fatal).toEqual([])
+})
+
 test('pagination releases its full-document lease back to a sparse window', async ({page}) => {
   const fatal = observeFatalDiagnostics(page)
   await page.goto('/')

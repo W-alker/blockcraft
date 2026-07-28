@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-07-22 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-07-28 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -66,6 +66,55 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-07-28 (minor) — add mode-independent stable block navigation
+
+**Severity**: minor
+
+**What changed**: `BlockCraftDoc.navigateToBlock(blockId)` now reveals a
+reachable stable block ID in both full and virtual rendering. It waits for
+document initialization, uses latest-request-wins cancellation, and resolves a
+boolean without changing model Selection, native DOM Selection, or focus. The
+bundled editor's copied block links now preserve the current document URL and
+can reveal an initially unmounted target after reload or same-document history
+navigation.
+
+**Why**: Hosts need one navigation contract for copied links, search, comments,
+outline entries, and history restoration. Calling the virtualization subsystem
+directly leaked rendering mode and could race document initialization.
+
+**Affected ai-skills files**:
+- `blockcraft.md`
+- `blockcraft-app.md`
+
+### New APIs / Features
+
+- `BlockCraftDoc.navigateToBlock(blockId: string): Promise<boolean>` reveals a
+  stable target in either rendering mode. `true` means the latest request
+  reached a mounted target; missing/stale/destroyed/superseded requests resolve
+  `false`.
+
+### Migration Recipe
+
+```typescript
+// before: virtual-mode-only host integration
+const revealed = await doc.virtualization.scrollToBlock(blockId)
+
+// after: works before init and in either rendering mode
+const revealed = await doc.navigateToBlock(blockId)
+```
+
+### Behavior Changes
+
+- `RootVirtualizationManager.scrollToBlock(blockId)` now keeps a pre-init
+  request pending until the manager is initialized. A newer request or disposal
+  settles that pending request with `false`.
+- Copied links from the bundled editor replace only the copied URL's `blockId`
+  query parameter instead of using a hard-coded document origin.
+- Activating a same-document block link navigates directly without writing the
+  current URL or browser history.
+- An initial URL `blockId` queues navigation but does not initialize the bundled
+  Playground editor; the target is revealed after explicit initialization.
 
 ### v?.?.? - 2026-07-22 (minor) — add opt-in model-first root virtualization
 

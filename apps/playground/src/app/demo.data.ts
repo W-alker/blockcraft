@@ -25,6 +25,14 @@ import {
 
 const ROOT_ID = '689ac2b31a9abe3ae8a6788d';
 
+const assignStableDemoIds = (block: IBlockSnapshot, path: readonly number[] = []) => {
+  if (path.length) block.id = `demo-${path.join('-')}`;
+  if (block.nodeType !== 'block' && block.nodeType !== 'root') return;
+  (block.children as IBlockSnapshot[]).forEach((child, index) => {
+    assignStableDemoIds(child, [...path, index]);
+  });
+};
+
 const setEditableText = (block: IBlockSnapshot, text: unknown[]) => {
   block.children = text as never;
   return block;
@@ -229,7 +237,7 @@ const createDocument = (): IBlockSnapshot => {
   const video = createVideo();
   const audio = createAudio();
 
-  return RootBlockSchema.createSnapshot(ROOT_ID, [
+  const root = RootBlockSchema.createSnapshot(ROOT_ID, [
     intro,
     overview,
     callout,
@@ -249,6 +257,8 @@ const createDocument = (): IBlockSnapshot => {
     columns,
     table
   ]);
+  assignStableDemoIds(root);
+  return root;
 };
 
 export const demoJSON = createDocument();

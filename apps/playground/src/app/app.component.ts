@@ -1,4 +1,4 @@
-import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, NgZone, OnDestroy, ViewChild, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, NgZone, OnDestroy, ViewChild, inject } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import { MatIconRegistry } from '@angular/material/icon';
 import {
@@ -1359,7 +1359,7 @@ const ACTION_SECTIONS: DebugSection[] = [
     }
   `]
 })
-export class AppComponent implements AfterViewInit, OnDestroy {
+export class AppComponent implements OnDestroy {
   @ViewChild('editor') editor?: EditorComponent;
   @ViewChild('markdownStreamHost') markdownStreamHost?: ElementRef<HTMLElement>;
 
@@ -1444,16 +1444,6 @@ graph TD
     this.iconRegistry.addSvgIconSet(
       this.sanitizer.bypassSecurityTrustResourceUrl('https://at.alicdn.com/t/c/font_4682833_9f8nqslb5uf.js')
     );
-  }
-
-  ngAfterViewInit(): void {
-    // queueMicrotask(() => {
-    //   try {
-    //     this.initializeEditor();
-    //   } catch (error) {
-    //     console.error('Auto init editor failed:', error);
-    //   }
-    // });
   }
 
   ngOnDestroy(): void {
