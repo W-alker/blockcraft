@@ -89,6 +89,18 @@ describe("BlockCraftDoc readonly violation feedback", () => {
   }));
 });
 
+describe("BlockCraftDoc block lock facade", () => {
+  it("delegates unlock permission queries to the document-owned manager", () => {
+    const canUnlock = jasmine.createSpy("canUnlock").and.returnValue(true);
+    const doc = Object.setPrototypeOf({
+      readonlyManager: {canUnlock},
+    }, BlockCraftDoc.prototype);
+
+    expect(doc.canUnlockBlock("p1")).toBeTrue();
+    expect(canUnlock).toHaveBeenCalledOnceWith("p1");
+  });
+});
+
 describe("BlockCraftDoc position contract", () => {
   function component(id: string, hostElement: HTMLElement) {
     return {id, hostElement} as any;

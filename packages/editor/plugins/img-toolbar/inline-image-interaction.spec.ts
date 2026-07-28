@@ -19,7 +19,7 @@ const paragraphSnapshot = (children = mixedDeltas()): IBlockSnapshot => ({
   flavour: 'paragraph',
   nodeType: BlockNodeType.editable,
   props: {depth: 2, textAlign: 'center'},
-  meta: {readonly: false},
+  meta: {},
   children,
 });
 

@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-07-22
+> Last updated: 2026-07-28
 
 ## Architecture Overview
 
@@ -224,32 +224,47 @@ same Yjs transaction and observer path.
 
 ## Persistent Block Readonly
 
-`IBaseMetadata.readonly?: boolean` is the only persisted lock flag. A value of
-`true` is an explicit lock; absence means no explicit lock. Do not persist a
-separate inherited flag—`BlockReadonlyManager` resolves inheritance from
-`BlockModelGraph` and caches only derived permission state.
+`IBaseMetadata.lock?: string` persists the explicit lock owner's non-empty user
+ID. Absence means no explicit lock. Do not persist a separate boolean or
+inherited flag—`BlockReadonlyManager` resolves inheritance from
+`BlockModelGraph` and caches only derived permission state. Legacy
+`meta.readonly` is not read or migrated.
 
 ```typescript
+const doc = new BlockCraftDoc({
+  // ...
+  currentUserId: currentUser.id,
+  canUnlockBlock: ({currentUserId}) =>
+    currentUserId !== null && permissions.isAdmin(currentUserId),
+})
+
 doc.setBlockReadonly(blockId, true)
 
 doc.readonlyManager.resolve(blockId)
 doc.readonlyManager.isExplicitReadonly(blockId)
+doc.readonlyManager.getExplicitLockUserId(blockId)
 doc.readonlyManager.containsReadonly(blockId)
+doc.canUnlockBlock(blockId)
 
 doc.setBlockReadonly(blockId, false)
 ```
 
-Readonly control uses `ORIGIN_BLOCK_READONLY_CONTROL`: it synchronizes and
-persists but is excluded from normal content Undo/Redo. Root cannot receive this
-flag. `ORIGIN_SYSTEM_REPAIR` is reserved for deterministic internal consistency
-repairs (children de-duplication, table normalization, ordered numbering); it
-may bypass user-facing block guards but is not an authorization escape hatch for
-host or plugin mutations.
+Lock control uses `ORIGIN_BLOCK_READONLY_CONTROL`: it synchronizes and persists
+but is excluded from normal content Undo/Redo. `DocConfig.currentUserId` is
+captured at document construction and owns new locks. Unlock requires the same
+user or an additional synchronous `canUnlockBlock` grant; missing identity
+disables lock control without making unlocked content readonly. Root cannot
+receive this field. `ORIGIN_SYSTEM_REPAIR` is reserved for deterministic
+internal consistency repairs (children de-duplication, table normalization,
+ordered numbering); it may bypass user-facing block guards but is not an
+authorization escape hatch for host or plugin mutations.
 
-The manager intentionally does not copy `parentById` or any other structure
-index. Effective lookup walks `doc.model.getPath()` once and caches the result;
-subtree lock counts are rebuilt lazily from explicit lock paths after a model
-revision. Queries never read DOM/layout and work for reachable unmounted blocks.
+The manager indexes explicit owners as `Map<blockId, userId>` and intentionally
+does not copy `parentById` or any other structure index. Effective lookup walks
+`doc.model.getPath()` once and caches the result; subtree lock counts are
+rebuilt lazily from explicit lock paths after a model revision. Queries never
+read DOM/layout and work for reachable unmounted blocks. The host unlock policy
+is not called from input/write-guard hot paths.
 
 Remote Yjs updates are still applied and rendered—the guard is for local user,
 plugin, chain, CRUD and history entry points. This makes block readonly a
@@ -363,10 +378,10 @@ Snapshots are the serialization format used for:
 - HTML/Markdown import/export
 - Document persistence
 
-Persistence/export snapshots retain `meta.readonly`. Clipboard serialization is
-the deliberate exception: copy clones the snapshot and recursively removes the
-readonly metadata before producing BlockSnapshot/HTML/Markdown/plain payloads,
-so pasting protected content never recreates permission state.
+Persistence/export snapshots retain `meta.lock`. Clipboard serialization is the
+deliberate exception: copy clones the snapshot and recursively removes the lock
+owner before producing BlockSnapshot/HTML/Markdown/plain payloads, so pasting
+protected content never recreates permission state.
 
 ## Undo/Redo
 

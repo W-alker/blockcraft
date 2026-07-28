@@ -21,6 +21,7 @@ function createEditableHarness() {
     resolve: jasmine.createSpy("resolve").and.callFake(() => ({
       readonly: source !== null,
       source,
+      lockUserId: source ? "user-1" : null,
     })),
     isReadonly: jasmine.createSpy("isReadonly").and.callFake(() => source !== null),
     isExplicitReadonly: jasmine.createSpy("isExplicitReadonly").and.callFake(

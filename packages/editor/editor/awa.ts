@@ -1,6 +1,6 @@
 import { Awareness } from 'y-protocols/awareness';
 import { Subject, takeUntil } from 'rxjs';
-import {debounce, getRandomDarkColor, getScrollContainer} from "../global";
+import {debounce, getScrollContainer} from "../global";
 import {
   BlockSelection,
   EditableBlockComponent,
@@ -8,6 +8,15 @@ import {
   ISelectionJSON,
   ISelectionPointJSON,
 } from "../framework";
+import {
+  resolveCollaborationCursorColor,
+} from "./collaboration-cursor-color";
+import type {
+  CollaborationCursorColors,
+  CollaborationUser,
+} from "./collaboration-cursor-color";
+
+export type {CollaborationUser} from "./collaboration-cursor-color";
 
 interface Config {
   throttleTime?: number;
@@ -15,10 +24,7 @@ interface Config {
 
 interface IAwarenessState {
   cursor: ISelectionJSON | null;
-  user: {
-    id: string,
-    name: string
-  };
+  user: CollaborationUser;
 
   [key: string]: any
 }
@@ -135,7 +141,8 @@ class CursorLabelLayer {
 class Cursor {
 
   private _nameSpan: HTMLElement;
-  private _color = getRandomDarkColor(.4);
+  private _user: CollaborationUser;
+  private _colors: CollaborationCursorColors;
   private _fakeCursor: FakeRange | null = null;
   private _selection: ISelectionJSON | null = null;
   private _normalizedSelection: BlockSelection | null = null;
@@ -147,18 +154,33 @@ class Cursor {
 
   constructor(
     private readonly doc: BlockCraft.Doc,
-    private user: { id: string, name: string },
+    user: CollaborationUser,
     private readonly getLabelLayer: () => CursorLabelLayer | null,
   ) {
+    this._user = {...user};
+    this._colors = resolveCollaborationCursorColor(user);
     const nameSpan = document.createElement('span');
     nameSpan.innerText = user.name;
     nameSpan.classList.add('blockcraft-cursor-tag');
-    nameSpan.style.cssText = ` background-color: ${this._color};`;
+    nameSpan.style.backgroundColor = this._colors.solid;
+    nameSpan.style.color = '#fff';
     this._nameSpan = nameSpan;
   }
 
-  public setColor(color: string) {
-    this._color = color;
+  updateUser(user: CollaborationUser) {
+    const nameChanged = user.name !== this._user.name;
+    const colorChanged =
+      user.id !== this._user.id ||
+      user.color !== this._user.color;
+    if (!nameChanged && !colorChanged) return;
+
+    this._user = {...user};
+    if (nameChanged) this._nameSpan.innerText = user.name;
+    if (!colorChanged) return;
+
+    this._colors = resolveCollaborationCursorColor(user);
+    this._nameSpan.style.backgroundColor = this._colors.solid;
+    this._fakeCursor?.setColor({bgColor: this._getRangeColor()});
   }
 
   updatePosition(
@@ -227,7 +249,7 @@ class Cursor {
         return;
       }
       this._fakeCursor = this.doc.selection.createFakeRange(projectionSelection, {
-        bgColor: this._color,
+        bgColor: this._getRangeColor(),
         minCursorWidth: 2
       });
       const labelHost = this._fakeCursor.fakeSpans[0]?.firstElementChild;
@@ -242,6 +264,12 @@ class Cursor {
 
   private _isSparseView() {
     return this.doc.virtualization?.enabled === true;
+  }
+
+  private _getRangeColor() {
+    return this._normalizedSelection?.collapsed
+      ? this._colors.solid
+      : this._colors.selection;
   }
 
   private _normalizeSelection(selection: ISelectionJSON | null) {
@@ -510,10 +538,16 @@ export class BlockCraftAwareness {
           changes.updated.forEach((id: number) => {
             const state = this._states.get(id);
             if (!state || !state.user) return;
+            if (this._localUser?.id === state.user.id) {
+              this.removeCursor(id);
+              return;
+            }
             if (!this.cursors.has(id)) {
               this.addCursor(id);
             }
-            this.cursors.get(id)?.updatePosition(state['cursor'], this._mountedRootIds);
+            const cursor = this.cursors.get(id);
+            cursor?.updateUser(state.user);
+            cursor?.updatePosition(state['cursor'], this._mountedRootIds);
           });
         }
 

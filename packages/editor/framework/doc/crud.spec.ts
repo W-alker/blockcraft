@@ -491,7 +491,7 @@ describe('DocCRUD', () => {
     let received: any = null
     crud.onMetaUpdate$.subscribe(event => received = event)
 
-    ;(yBlock.get('meta') as Y.Map<unknown>).set('readonly', true)
+    ;(yBlock.get('meta') as Y.Map<unknown>).set('lock', 'user-1')
 
     expect(received?.transactions).toEqual([jasmine.objectContaining({
       blockId: 'offscreen',
@@ -522,7 +522,7 @@ describe('DocCRUD', () => {
     applyRemoteUpdate(yDoc, blocks => {
       ;(blocks.get('offscreen')!.get('children') as unknown as Y.Text).insert(1, 'y')
       ;(blocks.get('offscreen')!.get('props') as Y.Map<unknown>).set('depth', 1)
-      ;(blocks.get('offscreen')!.get('meta') as Y.Map<unknown>).set('readonly', true)
+      ;(blocks.get('offscreen')!.get('meta') as Y.Map<unknown>).set('lock', 'user-1')
       ;(blocks.get('mounted')!.get('children') as unknown as Y.Text).insert(1, 'b')
     })
 

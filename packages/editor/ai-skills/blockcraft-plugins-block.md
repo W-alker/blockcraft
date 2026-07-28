@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-07-20
+> Last updated: 2026-07-28
 
 ## BlockControllerPlugin
 
@@ -68,8 +68,10 @@ new BlockControllerPlugin({
 - Whole-document readonly hides mutation affordances as before. Block readonly
   keeps the trigger visible so the user can copy or unlock the block, but drag
   start and protected mutations are blocked.
-- The built-in switch writes `meta.readonly`: an explicit lock can be removed;
-  an inherited lock is shown as inherited and must be removed at its source
+- The built-in switch writes the current `DocConfig.currentUserId` to
+  `meta.lock`. An explicit lock can be removed only by its owner or a host
+  `canUnlockBlock` override. Another user's switch is disabled; missing identity
+  disables lock control; an inherited lock must be removed at its source
   ancestor. Root never exposes a persistent-lock action.
 - Interacts with `TranslatePlugin` which provides its own `blockMenuResolver`/`blockMenuActionHandler` pair via `createBlockControllerOptions()`
 

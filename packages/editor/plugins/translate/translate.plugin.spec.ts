@@ -53,7 +53,7 @@ describe("TranslatePlugin lifecycle", () => {
     const sections = options.blockMenuResolver!({
       activeBlock: block as any,
       doc: (plugin as any).doc,
-      readonly: {readonly: false, source: null},
+      readonly: {readonly: false, source: null, lockUserId: null},
       findClosestBlock: () => null,
     });
 
@@ -80,7 +80,7 @@ describe("TranslatePlugin lifecycle", () => {
     }, {
       activeBlock: block as any,
       doc: (plugin as any).doc,
-      readonly: {readonly: false, source: null},
+      readonly: {readonly: false, source: null, lockUserId: null},
       findClosestBlock: () => null,
     });
 

@@ -67,6 +67,174 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-07-28 (minor) — stabilize collaboration cursor colors
+
+**Severity**: minor
+
+**What changed**: `BlockCraftAwareness.setLocalUser()` now accepts an optional
+`color` on the user object. A valid concrete CSS color is used for that user's
+remote cursor; otherwise the stable user ID maps to a curated collaboration
+palette. Labels and collapsed carets use the solid color, while non-collapsed
+ranges use the same color at 18% opacity.
+
+**Why**: the previous `getRandomDarkColor(.4)` fallback could create muddy,
+nearly black, or visually adjacent colors. It also assigned the same user a
+different color on different clients and reconnects, while using a translucent
+color for the name label reduced text contrast.
+
+**Affected ai-skills files**:
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- The exported `CollaborationUser` shape is
+  `{id: string, name: string, color?: string}`.
+- `setLocalUser({id, name, color})` publishes an optional host-selected
+  concrete CSS color through Awareness.
+
+### Migration Recipe
+
+Existing integrations remain valid:
+
+```typescript
+cursorAwareness.setLocalUser({
+  id: currentUser.id,
+  name: currentUser.name,
+})
+```
+
+To preserve a product/account color:
+
+```typescript
+cursorAwareness.setLocalUser({
+  id: currentUser.id,
+  name: currentUser.name,
+  color: currentUser.profileColor,
+})
+```
+
+### Behavior Changes
+
+- Missing or invalid explicit colors now fall back to a deterministic palette
+  entry derived from `user.id`; `Math.random()` is no longer used.
+- The same user ID keeps the same fallback color across clients and reconnects.
+- Cursor name labels use white text on an opaque solid background.
+- Non-collapsed remote selections use an 18%-opacity version of the same color.
+- Color parsing and hashing run only when a remote user is created or its
+  identity/color changes, not on selection, text, scroll, resize, or virtual
+  view refresh paths.
+
+### v?.?.? - 2026-07-28 (major) — make persistent block locks owner-aware
+
+**Severity**: major
+
+**What changed**: the persistent block-level readonly bit was replaced by an
+owner user ID. `meta.lock?: string` now represents both explicit lock presence
+and ownership. `DocConfig.currentUserId` owns new locks, and only the same user
+or a synchronous host `canUnlockBlock` grant can remove them.
+
+**Why**: `meta.readonly?: boolean` could prevent content writes but could not
+distinguish the user who created a lock from any other collaborator, so every
+compatible client could expose an unrestricted unlock action.
+
+**Affected ai-skills files**:
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-data.md`
+- `blockcraft-plugins-block.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- `IBaseMetadata.readonly?: boolean` was removed and replaced by
+  `IBaseMetadata.lock?: string`.
+- Legacy `meta.readonly` values are not read or migrated; old locked blocks load
+  as unlocked until the host performs its own data migration.
+- `BlockReadonlyResolution` now includes required
+  `lockUserId: string | null`.
+- `setBlockReadonly(block, true)` now throws `BlockLockError` when the document
+  has no valid `DocConfig.currentUserId`.
+- `setBlockReadonly(block, false)` now throws `BlockLockError` unless the
+  current user owns the explicit lock or the host grants additional permission.
+
+### Deprecations
+
+- `stripReadonlyMetaDeep()` remains as an alias with no removal date. New code
+  should use `stripBlockLockMetaDeep()`.
+
+### New APIs / Features
+
+- `DocConfig.currentUserId?: string` supplies the stable identity captured by
+  the document's block-lock manager.
+- `DocConfig.canUnlockBlock?: (context: BlockUnlockContext) => boolean`
+  synchronously grants additional unlock permission, typically for admins.
+- `BlockCraftDoc.canUnlockBlock(blockOrId)` exposes the current unlock decision.
+- `BlockReadonlyResolution.lockUserId` exposes the effective explicit owner's
+  ID for self or ancestor locks.
+- `BlockReadonlyManager.currentUserId`,
+  `getExplicitLockUserId()`, `canLock()` and `canUnlock()` expose owner-aware
+  permission state.
+- `BlockLockError`, `BlockLockErrorReason` and `BlockUnlockContext` are exported
+  for typed host integration.
+
+### Migration Recipe
+
+Before:
+
+```typescript
+const doc = new BlockCraftDoc({
+  // ...
+})
+
+// persisted metadata
+block.meta.readonly = true
+
+doc.setBlockReadonly(block.id, true)
+doc.setBlockReadonly(block.id, false) // any compatible client could unlock
+```
+
+After:
+
+```typescript
+const doc = new BlockCraftDoc({
+  // ...
+  currentUserId: currentUser.id,
+  canUnlockBlock: ({currentUserId}) =>
+    currentUserId !== null && permissions.isDocumentAdmin(currentUserId),
+})
+
+// persisted metadata after locking
+block.meta.lock === currentUser.id
+
+doc.setBlockReadonly(block.id, true)
+if (doc.canUnlockBlock(block.id)) {
+  doc.setBlockReadonly(block.id, false)
+}
+```
+
+BlockCraft intentionally performs no automatic legacy migration. If existing
+`meta.readonly === true` data must stay protected, migrate it before document
+initialization by assigning an application-defined owner ID to `meta.lock`.
+
+### Behavior Changes
+
+- Missing identity disables lock/unlock controls but does not make unlocked
+  content readonly.
+- Another user's explicit lock cannot be overwritten by calling
+  `setBlockReadonly(block, true)`.
+- Owners always retain unlock permission; `canUnlockBlock` only adds permission
+  and cannot deny the owner.
+- The BlockController switch distinguishes owner, other-user, inherited and
+  missing-identity states and rechecks authorization when clicked.
+- Full document snapshots retain `meta.lock`; clipboard serialization removes
+  it so pasted copies are editable.
+- Owner-aware checks remain a trusted-client policy. Raw Yjs updates still need
+  server/persistence authorization when they cross a security boundary.
+
 ### v?.?.? - 2026-07-28 (minor) — add mode-independent stable block navigation
 
 **Severity**: minor

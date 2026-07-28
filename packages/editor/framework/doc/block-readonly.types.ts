@@ -15,6 +15,8 @@ export type BlockReadonlyBlocker =
 export interface BlockReadonlyResolution {
   readonly: boolean;
   source: BlockReadonlySource;
+  /** Effective explicit lock owner. Document readonly and unlocked blocks return null. */
+  lockUserId: string | null;
 }
 
 export enum BlockReadonlyOperation {
@@ -29,6 +31,8 @@ export enum BlockReadonlyOperation {
   Cut = "cut",
   Undo = "undo",
   Redo = "redo",
+  Lock = "lock",
+  Unlock = "unlock",
 }
 
 export type BlockReadonlyViolationTrigger =
@@ -71,5 +75,52 @@ export class BlockReadonlyError extends BlockCraftError {
 
   get source(): BlockReadonlyBlocker {
     return this.detail.source;
+  }
+}
+
+export interface BlockUnlockContext {
+  blockId: string;
+  lockUserId: string;
+  currentUserId: string | null;
+}
+
+export type BlockLockErrorReason =
+  | "missing-user"
+  | "root"
+  | "inherited"
+  | "owned-by-other"
+  | "unauthorized";
+
+export interface BlockLockErrorDetail {
+  operation: BlockReadonlyOperation.Lock | BlockReadonlyOperation.Unlock;
+  reason: BlockLockErrorReason;
+  blockId: string;
+  lockUserId?: string | null;
+  source?: BlockReadonlySource;
+}
+
+export class BlockLockError extends BlockCraftError {
+  constructor(readonly detail: BlockLockErrorDetail) {
+    super(
+      ErrorCode.BlockReadonlyError,
+      `Block lock rejected ${detail.operation}: ${detail.blockId} (${detail.reason})`,
+    );
+    this.name = "BlockLockError";
+  }
+
+  get operation(): BlockReadonlyOperation.Lock | BlockReadonlyOperation.Unlock {
+    return this.detail.operation;
+  }
+
+  get reason(): BlockLockErrorReason {
+    return this.detail.reason;
+  }
+
+  get blockId(): string {
+    return this.detail.blockId;
+  }
+
+  get lockUserId(): string | null {
+    return this.detail.lockUserId ?? null;
   }
 }

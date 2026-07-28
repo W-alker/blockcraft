@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-07-16
+> Last updated: 2026-07-28
 
 ## Theme Structure
 
@@ -30,6 +30,22 @@ themes/
 doc.toggleTheme('dark');   // Sets body[blockcraft-theme="dark"]
 doc.toggleTheme('light');  // Sets body[blockcraft-theme="light"]
 ```
+
+## Collaboration Cursor Colors
+
+`BlockCraftAwareness.setLocalUser()` accepts an optional concrete CSS
+`color`. When omitted or invalid, the stable user ID maps to a curated
+medium-dark palette. The runtime applies:
+
+- the solid color to the 2px remote caret and `.blockcraft-cursor-tag`;
+- the same color at 18% opacity to non-collapsed remote ranges;
+- white label text, so it does not inherit the light theme's dark
+  `--bc-color`.
+
+Color is written to the collaboration overlay as runtime user state rather than
+a theme token. A host that needs a product/account color should send
+`{id, name, color}` through Awareness; ordinary theme overrides should focus on
+the tag's typography, radius and shadow.
 
 ## Snapshot Viewer Styling
 

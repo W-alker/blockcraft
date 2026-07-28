@@ -264,6 +264,7 @@ export class EditorComponent implements OnInit, OnDestroy {
         gc: false,
       }),
       docId: this.docId,
+      currentUserId: "demo-user",
       schemas: schemas,
       logger: this.logger,
       injector: this.injector,

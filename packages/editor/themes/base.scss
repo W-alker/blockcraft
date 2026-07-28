@@ -444,7 +444,7 @@
   @include user-select(none);
   font-size: 10px;
   line-height: 14px;
-  color: var(--bc-color, #fff);
+  color: #fff;
   background-color: var(--bc-mark-bg-color, rgba(0, 0, 0, 0.8));
   box-shadow: var(--bc-shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.18));
   border-radius: var(--bc-radius-sm, 2px);

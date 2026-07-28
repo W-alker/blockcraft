@@ -30,7 +30,7 @@ import * as Y from "yjs";
 import { BLOCK_POSITION } from "./block-position";
 import { BlockModelGraph } from "./model-graph";
 import { BlockReadonlyManager } from "./block-readonly-manager";
-import { BlockRef } from "./block-readonly.types";
+import { BlockRef, BlockUnlockContext } from "./block-readonly.types";
 import {writeSnapshotsToYBlockMap} from './snapshot-yblock'
 import {BlockNavigationManager} from './block-navigation-manager'
 
@@ -44,6 +44,10 @@ export interface DocConfig {
   embeds?: [string, EmbedConverter][]
   plugins?: DocPlugin[]
   readonly?: boolean
+  /** Stable current user id used to own block locks. Omit to disable lock control. */
+  currentUserId?: string
+  /** Additional synchronous authorization for unlocking another user's block. */
+  canUnlockBlock?: (context: BlockUnlockContext) => boolean
   /** Global copy filter; seeded into ClipboardManager's registry. Omit = no filtering. */
   copyFilter?: ClipboardCopyFilter
   // 如果不传递，会尝试向上遍历获取
@@ -557,6 +561,10 @@ export class BlockCraftDoc {
 
   isBlockReadonly(block: BlockRef) {
     return this.readonlyManager.isReadonly(block)
+  }
+
+  canUnlockBlock(block: BlockRef) {
+    return this.readonlyManager.canUnlock(block)
   }
 
 }

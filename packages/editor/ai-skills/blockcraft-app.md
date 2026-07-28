@@ -349,6 +349,9 @@ doc = new BlockCraftDoc({
     // … any subset of bundled or custom plugins
   ],
   readonly: false,            // optional — initial readonly state
+  currentUserId: currentUser.id, // optional — required for block lock control
+  canUnlockBlock: ({currentUserId}) =>
+    currentUserId !== null && permissions.isAdmin(currentUserId), // optional additional unlock grant
   scrollContainer: undefined, // optional — auto-detected if not given
   virtualization: {           // optional — disabled by default
     enabled: true,
@@ -376,6 +379,8 @@ interface DocConfig {
   embeds?: [string, EmbedConverter][]     // inline embed converters
   plugins?: DocPlugin[]
   readonly?: boolean                      // default: true (set false on init or via switch later)
+  currentUserId?: string                  // stable block-lock owner identity
+  canUnlockBlock?: (context: BlockUnlockContext) => boolean // synchronous owner override
   copyFilter?: ClipboardCopyFilter        // global copy filter; seeds ClipboardManager registry. Omit = no filtering
   scrollContainer?: HTMLElement           // walked upward if omitted
   virtualization?: VirtualizationConfig   // root-child view virtualization; default disabled
@@ -614,15 +619,25 @@ keeps `DocConfig.readonly` aligned.
 doc.setBlockReadonly(blockId, true)
 
 const effective = doc.isBlockReadonly(blockId)
+const canUnlock = doc.canUnlockBlock(blockId)
 const detail = doc.readonlyManager.resolve(blockId)
-// { readonly: true, source: { kind: 'self' | 'ancestor' | 'document', ... } }
+// {
+//   readonly: true,
+//   source: { kind: 'self' | 'ancestor' | 'document', ... },
+//   lockUserId: string | null,
+// }
 
 doc.setBlockReadonly(blockId, false)
 ```
 
-The persistent flag is `meta.readonly === true`; Yjs synchronizes it like other
-block metadata. Descendants inherit their nearest ancestor lock. The Root block
-cannot be persistently locked—use whole-document mode instead.
+The persistent owner is `meta.lock?: string`; Yjs synchronizes the non-empty
+user ID like other block metadata. `DocConfig.currentUserId` is captured when
+the document is constructed and owns new locks. Only that owner or an additional
+synchronous `canUnlockBlock(context)` grant can unlock. Without a current user,
+unlocked content remains editable but lock/unlock controls are unavailable.
+Descendants inherit their nearest ancestor lock. The Root block cannot be
+persistently locked—use whole-document mode instead. Legacy `meta.readonly`
+is not read or migrated.
 
 Block readonly is a strong client-side write guard:
 
@@ -631,9 +646,12 @@ Block readonly is a strong client-side write guard:
 - an unlocked ancestor that contains a locked descendant cannot be deleted or
   moved;
 - selection, copy, links, media preview and downloads remain available;
-- clipboard snapshots strip readonly metadata, so pasted copies are editable;
+- clipboard snapshots strip `meta.lock`, so pasted copies are editable;
 - an undo/redo item blocked by the current lock stays on its stack and can run
   after the block is unlocked.
+
+Unauthorized lock control throws `BlockLockError`. Content mutations still use
+`BlockReadonlyError`.
 
 Subscribe to `doc.readonlyManager.stateChange$` for UI that depends on effective
 block permission. Standard `BlockCraftDoc` instances automatically forward
@@ -686,6 +704,11 @@ Connect a Yjs provider (`y-websocket`, `y-webrtc`, custom) to `doc.yDoc`. Initia
 ```typescript
 const provider = new WebsocketProvider(WS_URL, this.docId, this.doc.yDoc)
 const cursorAwareness = new BlockCraftAwareness(this.doc, provider.awareness)
+cursorAwareness.setLocalUser({
+  id: currentUser.id,
+  name: currentUser.name,
+  color: currentUser.profileColor, // optional concrete CSS color
+})
 provider.once('synced', () => {
   const yRoot = this.doc.yDoc.getMap('blocks').get(this.rootId) as YBlock
   this.doc.initByYBlock(yRoot, this.containerRef.nativeElement)
@@ -697,6 +720,10 @@ provider.destroy()
 ```
 
 Import `BlockCraftAwareness` from `@ccc/blockcraft/editor/awa`. A host that enters and leaves collaboration rooms without destroying the editor document must call `destroy()` before discarding the provider.
+`setLocalUser()` accepts `{id, name, color?: string}`. A valid concrete CSS
+`color` is used for the remote label/caret; otherwise BlockCraft maps `id`
+deterministically to its curated palette. Solid label/caret color and the
+18%-opacity range color are resolved only when remote user identity changes.
 
 ## Step 10 — Cleanup
 
@@ -742,6 +769,7 @@ doc.toggleTheme(name)
 doc.toggleReadonly(readonly)                 // whole-document mode
 doc.setBlockReadonly(blockOrId, readonly)    // persistent non-root block lock
 doc.isBlockReadonly(blockOrId)               // effective readonly state
+doc.canUnlockBlock(blockOrId)                // owner or host override
 doc.navigateToBlock(blockId)                 // Promise<boolean>; reveal stable ID without moving selection/focus
 doc.afterInit(fn)          // run fn once root is ready
 ```
@@ -798,6 +826,7 @@ doc.dragController.isDragging  // boolean
 - [ ] Persistence wired up (snapshot save/load OR Yjs provider)
 - [ ] Subscriptions tied to `doc.onDestroy$`
 - [ ] Readonly state hooked into UI mode switching (if applicable)
+- [ ] `currentUserId` supplied when block lock control is enabled
 
 ## Reference Implementation
 

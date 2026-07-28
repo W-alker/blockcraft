@@ -150,7 +150,11 @@ test('block readonly protects writes while retaining read interactions and inher
   await expect(paragraph).toHaveAttribute('data-bc-readonly', 'self');
   await expect(paragraph).toHaveAttribute('contenteditable', 'false');
 
-  const lockedSnapshot = await exportBlockSnapshot(page, paragraphId);
+  const lockedSnapshot = await exportBlockSnapshot(page, paragraphId) as {
+    meta: {lock?: string; readonly?: boolean};
+  };
+  expect(lockedSnapshot.meta.lock).toBe('demo-user');
+  expect(lockedSnapshot.meta.readonly).toBeUndefined();
   await selectParagraphText(page, paragraphSelector);
   expect(await dispatchCompositionStart(page, paragraphSelector)).toEqual({
     defaultPrevented: true,

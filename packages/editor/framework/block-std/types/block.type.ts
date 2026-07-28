@@ -17,7 +17,8 @@ export enum BlockNodeType {
 export interface IBaseMetadata {
   folded?: boolean
   selected?: boolean
-  readonly?: boolean
+  /** Non-empty user id of the block's explicit lock owner. */
+  lock?: string
   createdTime?: number
   lastModified?: {
     time: number

@@ -26,7 +26,7 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 |---------|-------------|----------------|
 | **Doc** | Central orchestrator; owns all subsystems | `BlockCraftDoc` in `framework/doc/` |
 | **Model Graph** | DOM-free, read-only Yjs tree queries for mounted or unmounted blocks | `BlockModelGraph` in `framework/doc/model-graph.ts` |
-| **Block Readonly** | Persistent, inherited write protection resolved from `meta.readonly` against the model graph | `BlockReadonlyManager` in `framework/doc/block-readonly-manager.ts` |
+| **Block Readonly** | Owner-aware, inherited write protection resolved from `meta.lock` against the model graph | `BlockReadonlyManager` in `framework/doc/block-readonly-manager.ts` |
 | **Block** | A node in the document tree; has flavour, nodeType, props | `BaseBlockComponent` / `EditableBlockComponent` |
 | **Plugin** | Extends editor behavior; event handlers + hotkeys | `DocPlugin` in `framework/plugin/` |
 | **Inline** | Rich text within editable blocks; Blot tree on Y.Text | `InlineRuntime` in `framework/block-std/inline/` |
@@ -269,24 +269,38 @@ model-only capabilities must stay on `doc.model` / `doc.exportSnapshot()`.
 ### Block-Level Readonly
 
 ```typescript
+const doc = new BlockCraftDoc({
+  // ...
+  currentUserId: currentUser.id,
+  canUnlockBlock: ({currentUserId}) =>
+    currentUserId !== null && permissions.isAdmin(currentUserId),
+})
+
 doc.setBlockReadonly(blockId, true)
 
 doc.isBlockReadonly(blockId)                  // effective: self / ancestor / document
+doc.canUnlockBlock(blockId)                   // explicit owner or host override
 doc.readonlyManager.isExplicitReadonly(blockId)
-doc.readonlyManager.resolve(blockId)          // { readonly, source }
+doc.readonlyManager.resolve(blockId)          // { readonly, source, lockUserId }
 doc.readonlyManager.containsReadonly(blockId) // locked block anywhere in subtree
 
 doc.setBlockReadonly(blockId, false)
 ```
 
-`meta.readonly === true` is persisted and synchronized through Yjs. A lock is
+`meta.lock?: string` persists the explicit lock owner's non-empty user ID and
+is synchronized through Yjs. `DocConfig.currentUserId` owns new locks; only the
+same user or a host `canUnlockBlock` override can remove them. Without a current
+user, unlocked content remains editable but lock control is disabled. A lock is
 inherited by every descendant. Text/format/props changes, insertion into the
 protected subtree, removal/move of the protected block, and removal/move of an
 unlocked ancestor containing a protected descendant are rejected with
-`BlockReadonlyError`. Selection, copy, link activation, media preview and
-download remain available; copied snapshots deliberately omit readonly
-metadata. Root cannot receive a persistent block lock—use
+`BlockReadonlyError`. Unauthorized lock control throws `BlockLockError`.
+Selection, copy, link activation, media preview and download remain available;
+copied snapshots deliberately omit `meta.lock`. Root cannot receive a
+persistent block lock—use
 `doc.toggleReadonly(true)` for whole-document mode.
+
+Legacy `meta.readonly` is not read or migrated.
 
 Rejected user writes (`input`, clipboard, drag, menu and undo/redo triggers)
 are forwarded once per second to `DocMessageService.warn` with the built-in
@@ -397,7 +411,11 @@ doc.chain()
 import { BlockCraftAwareness } from '@ccc/blockcraft/editor/awa'
 
 const cursorAwareness = new BlockCraftAwareness(doc, provider.awareness)
-cursorAwareness.setLocalUser(currentUser)
+cursorAwareness.setLocalUser({
+  id: currentUser.id,
+  name: currentUser.name,
+  color: currentUser.profileColor, // optional concrete CSS color
+})
 
 // With root virtualization, offscreen remote selections remain model-only and
 // reappear automatically when their root units enter this client's view.
@@ -405,6 +423,12 @@ cursorAwareness.setLocalUser(currentUser)
 // Required when leaving a room without destroying the document.
 cursorAwareness.destroy()
 ```
+
+When `color` is omitted or invalid, the user ID maps deterministically to the
+built-in collaboration palette. The same user therefore keeps the same color
+across clients and reconnects. Labels and collapsed carets use the solid color;
+remote ranges use the same color at 18% opacity. Color resolution is cold
+user-state work and never runs from selection, scroll, or view refresh paths.
 
 ### Doc Services Index
 

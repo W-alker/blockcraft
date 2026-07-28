@@ -37,7 +37,7 @@ import {
 } from "../../utils";
 import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
 import {copyBlocks} from "./copyBlocks";
-import {applyCopyFilters, resolveCopyFilters, stripReadonlyMetaDeep} from "./copy-filter";
+import {applyCopyFilters, resolveCopyFilters, stripBlockLockMetaDeep} from "./copy-filter";
 import {
   BLOCKCRAFT_WEB_SNAPSHOT_MIME,
   buildClipboardItems,
@@ -112,7 +112,7 @@ export class ClipboardManager {
       rootSnapshot = applyCopyFilters(rootSnapshot, filters, {source: 'programmatic', readonly: this.doc.isReadonly}, this.doc.logger)
       if (!rootSnapshot.children.length) return Promise.reject('all blocks filtered out')
     }
-    rootSnapshot = stripReadonlyMetaDeep(rootSnapshot)
+    rootSnapshot = stripBlockLockMetaDeep(rootSnapshot)
     return copyBlocks.call(this, rootSnapshot)
   }
 
@@ -180,7 +180,7 @@ export class ClipboardManager {
       if (!snapshot.children.length) return // all content filtered out → no-op, don't clobber clipboard
       plainText = snapshots2Text([snapshot])
     }
-    snapshot = stripReadonlyMetaDeep(snapshot)
+    snapshot = stripBlockLockMetaDeep(snapshot)
 
     if (selectionReadonly) {
       // 只读模式：contenteditable=false 时 Chromium（特别是 Windows）会在

@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-07-21
+> Last updated: 2026-07-28
 
 ## Block Types
 
@@ -371,7 +371,7 @@ this.updateMeta({ key: value })        // Mutates meta (ORIGIN_SKIP_SYNC, no bro
 
 // ── Effective readonly ──
 this.isReadonly                         // self, ancestor, or document lock
-this.isExplicitReadonly                 // only this block's meta.readonly
+this.isExplicitReadonly                 // only this block's meta.lock
 this.readonlySource                     // document | self | ancestor | null
 
 // ── Tree navigation ──
@@ -459,6 +459,9 @@ Do not assign `this.props.foo = ...`, mutate `this.meta`, or write raw
 methods, `DocChain`, or `DocCRUD`; these are the enforcement boundary for block
 readonly. To control the persistent lock itself, call
 `doc.setBlockReadonly(blockOrId, boolean)` rather than `updateMeta()`.
+The explicit lock owner is persisted as `meta.lock?: string`; the host supplies
+`DocConfig.currentUserId`, and only that owner or `canUnlockBlock` override can
+remove it. Legacy `meta.readonly` is not interpreted.
 
 Block readonly is inherited. A locked container protects all descendants, and
 an unlocked ancestor containing a locked descendant cannot be deleted or moved.

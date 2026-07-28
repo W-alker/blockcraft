@@ -586,4 +586,122 @@ describe('BlockCraftAwareness cursor view reconciliation', () => {
       structureChange$.complete()
     }
   })
+
+  it('uses stable solid cursor chrome and a translucent remote range', () => {
+    const selectionChange$ = new Subject<any>()
+    const onTextUpdate$ = new Subject<any>()
+    const onDestroy$ = new Subject<void>()
+    const rootHost = document.createElement('div')
+    document.body.appendChild(rootHost)
+    const editableBlock = {
+      id: 'p1',
+      textLength: 4,
+      runtime: {textLength: 4},
+    }
+    const createSelection = jasmine.createSpy('createSelection').and.callFake(
+      (selection: ISelectionJSON) => ({
+        ...selection,
+        start: {...selection.anchor, block: editableBlock},
+        end: {...selection.head, block: editableBlock},
+        firstBlockId: 'p1',
+        lastBlockId: 'p1',
+        isInSameBlock: true,
+        collapsed:
+          selection.anchor.type === 'text' &&
+          selection.head.type === 'text' &&
+          selection.anchor.offset === selection.head.offset,
+      }),
+    )
+    const rangeColors: jasmine.Spy[] = []
+    const createFakeRange = jasmine.createSpy('createFakeRange').and.callFake(
+      (_selection: any, _config: any) => {
+        const overlay = document.createElement('span')
+        overlay.appendChild(document.createElement('span'))
+        rootHost.appendChild(overlay)
+        const setColor = jasmine.createSpy('setColor')
+        rangeColors.push(setColor)
+        return {
+          fakeSpans: [overlay],
+          hasLostRenderedSpans: false,
+          setColor,
+          destroy: () => overlay.remove(),
+        }
+      },
+    )
+    const doc = {
+      selection: {selectionChange$, createSelection, createFakeRange},
+      crud: {onTextUpdate$},
+      onDestroy$,
+      afterInit: (callback: (root: any) => void) => callback({hostElement: rootHost}),
+      scrollContainer: null,
+      config: {},
+      model: {
+        getTextLength: () => 4,
+      },
+      getBlockById: () => editableBlock,
+      isEditable: () => true,
+      queryBlocksBetween: jasmine.createSpy('queryBlocksBetween').and.returnValue([]),
+      logger: {warn: jasmine.createSpy('warn')},
+    }
+    const awareness = new AwarenessHarness()
+    const manager = new BlockCraftAwareness(doc as any, awareness as any)
+    manager.setLocalUser({id: 'local', name: 'Local'})
+
+    try {
+      awareness.states.set(7, {
+        user: {id: 'remote', name: 'Remote', color: '#2563EB'},
+        cursor: {
+          anchor: {blockId: 'p1', type: 'text', offset: 2},
+          head: {blockId: 'p1', type: 'text', offset: 2},
+          commonParent: 'p1',
+        },
+      })
+      awareness.emitChange({added: [7], updated: [], removed: []})
+
+      expect(createFakeRange.calls.mostRecent().args[1]).toEqual({
+        bgColor: '#2563EB',
+        minCursorWidth: 2,
+      })
+      const label = document.body.querySelector<HTMLElement>('.blockcraft-cursor-tag')
+      expect(label?.innerText).toBe('Remote')
+      expect(label?.style.backgroundColor).toBe('rgb(37, 99, 235)')
+      expect(label?.style.color).toBe('rgb(255, 255, 255)')
+
+      awareness.states.set(7, {
+        user: {id: 'remote', name: 'Remote', color: '#2563EB'},
+        cursor: {
+          anchor: {blockId: 'p1', type: 'text', offset: 1},
+          head: {blockId: 'p1', type: 'text', offset: 3},
+          commonParent: 'p1',
+        },
+      })
+      awareness.emitChange({added: [], updated: [7], removed: []})
+      expect(createFakeRange.calls.mostRecent().args[1].bgColor)
+        .toBe('rgba(37, 99, 235, 0.18)')
+
+      awareness.states.set(7, {
+        user: {id: 'remote', name: 'Remote renamed', color: '#0F766E'},
+        cursor: {
+          anchor: {blockId: 'p1', type: 'text', offset: 1},
+          head: {blockId: 'p1', type: 'text', offset: 3},
+          commonParent: 'p1',
+        },
+      })
+      awareness.emitChange({added: [], updated: [7], removed: []})
+
+      expect(rangeColors[1]).toHaveBeenCalledOnceWith({
+        bgColor: 'rgba(15, 118, 110, 0.18)',
+      })
+      expect(createFakeRange.calls.mostRecent().args[1].bgColor)
+        .toBe('rgba(15, 118, 110, 0.18)')
+      expect(label?.innerText).toBe('Remote renamed')
+      expect(label?.style.backgroundColor).toBe('rgb(15, 118, 110)')
+    } finally {
+      manager.destroy()
+      rootHost.remove()
+      selectionChange$.complete()
+      onTextUpdate$.complete()
+      onDestroy$.complete()
+    }
+  })
 })

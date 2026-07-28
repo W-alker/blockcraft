@@ -11,7 +11,12 @@ import {
 import { NgIf, NgTemplateOutlet } from "@angular/common";
 import { Subscription, take } from "rxjs";
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective } from "../../../components";
-import { BlockNodeType, IBlockSchemaOptions, IBlockSnapshot } from "../../../framework";
+import {
+  BlockLockError,
+  BlockNodeType,
+  IBlockSchemaOptions,
+  IBlockSnapshot,
+} from "../../../framework";
 import {getSelectionCoveredBlockIds} from "../../../framework/modules/selection/covered-blocks";
 import { MatIcon } from "@angular/material/icon";
 import { IS_MAC, nextTick } from "../../../global";
@@ -337,7 +342,7 @@ export class TriggerBtn {
     }
     if (readonlyStreams.onMetaUpdate$) {
       this._readonlyStateSub.add(readonlyStreams.onMetaUpdate$.subscribe(event => {
-        if (!event.transactions.some(transaction => transaction.changes.has('readonly'))) return
+        if (!event.transactions.some(transaction => transaction.changes.has('lock'))) return
         this.refreshMenuData()
         this.cdr.markForCheck()
       }))
@@ -638,28 +643,47 @@ export class TriggerBtn {
 
   private getActiveReadonlyResolution() {
     const block = this.activeBlock
-    if (!block || !this.isBlockAlive(block)) return {readonly: false, source: null}
+    if (!block || !this.isBlockAlive(block)) {
+      return {readonly: false, source: null, lockUserId: null}
+    }
     return this.doc.readonlyManager?.resolve(block) ?? {
       readonly: !!block.isReadonly,
       source: block.readonlySource ?? null,
+      lockUserId: typeof block.meta?.lock === 'string' ? block.meta.lock : null,
     }
   }
 
   private buildReadonlySwitchItem(): BlockMenuItem {
     const block = this.activeBlock!
+    const manager = this.doc.readonlyManager
     const resolution = this.getActiveReadonlyResolution()
-    const explicit = this.doc.readonlyManager?.isExplicitReadonly(block) ?? !!block.isExplicitReadonly
+    const explicit = manager?.isExplicitReadonly(block) ?? !!block.isExplicitReadonly
     const inheritedOnly = resolution.readonly && !explicit
+    const canToggle = explicit
+      ? !!manager?.canUnlock(block)
+      : !!manager?.canLock(block)
+    const hasCurrentUser = this.hasCurrentUserId()
+    const desc = inheritedOnly
+      ? '由上级内容块锁定'
+      : canToggle
+        ? undefined
+        : hasCurrentUser && explicit
+          ? '由其他用户锁定'
+          : '未识别当前用户'
     return {
       type: 'switch',
       name: 'block-readonly',
       label: '锁定内容块',
       icon: 'bc_quanxian',
       checked: resolution.readonly,
-      disabled: inheritedOnly,
-      desc: inheritedOnly ? '由上级内容块锁定' : undefined,
+      disabled: inheritedOnly || !canToggle,
+      desc,
       readonlyBehavior: 'allow',
     }
+  }
+
+  private hasCurrentUserId(): boolean {
+    return !!this.doc.readonlyManager?.currentUserId
   }
 
   private buildLegacyToolItem(item: IContextMenuItem): BlockMenuItem {
@@ -805,7 +829,12 @@ export class TriggerBtn {
       const explicit = this.doc.readonlyManager.isExplicitReadonly(block)
       const resolution = this.doc.readonlyManager.resolve(block)
       if (resolution.readonly && !explicit) return
-      this.doc.setBlockReadonly(block, !explicit)
+      try {
+        this.doc.setBlockReadonly(block, !explicit)
+      } catch (error) {
+        if (!(error instanceof BlockLockError)) throw error
+        this.doc.messageService.warn(this.getBlockLockErrorMessage(error))
+      }
       this.refreshMenuDataOnNextTick()
       return
     }
@@ -823,6 +852,21 @@ export class TriggerBtn {
     const handled = this.blockMenuActionHandler(event, ctx)
     if (!handled) return
     this.refreshMenuDataOnNextTick()
+  }
+
+  private getBlockLockErrorMessage(error: BlockLockError): string {
+    switch (error.reason) {
+      case 'missing-user':
+        return '未识别当前用户，无法操作锁'
+      case 'inherited':
+        return '请在上级内容块解除锁定'
+      case 'root':
+        return '根内容块不能锁定'
+      case 'owned-by-other':
+        return '无法覆盖其他用户的锁'
+      case 'unauthorized':
+        return '无权解除其他用户的锁'
+    }
   }
 
   private getLegacyTool(item: BlockMenuItem): IContextMenuItem | null {

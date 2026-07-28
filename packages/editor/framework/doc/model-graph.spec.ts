@@ -781,7 +781,7 @@ describe("BlockModelGraph structure changes", () => {
     h.yDoc.transact(() => {
       (paragraph.get("children") as unknown as Y.Text).insert(4, " updated");
       (paragraph.get("props") as Y.Map<unknown>).set("depth", 2);
-      (paragraph.get("meta") as Y.Map<unknown>).set("readonly", true);
+      (paragraph.get("meta") as Y.Map<unknown>).set("lock", "user-1");
     });
 
     expect(next).not.toHaveBeenCalled();

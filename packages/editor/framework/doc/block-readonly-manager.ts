@@ -2,6 +2,8 @@ import {asyncScheduler, Observable, Subject, Subscription, throttleTime} from "r
 import * as Y from "yjs";
 import {BlockCraftError, ErrorCode} from "../../global";
 import {
+  BlockLockError,
+  BlockLockErrorReason,
   BlockReadonlyBlocker,
   BlockReadonlyError,
   BlockReadonlyOperation,
@@ -14,6 +16,10 @@ import {IMetaChangeEvent} from "./crud";
 import {IBlockModelStructureChange} from "./model-graph";
 import {ORIGIN_BLOCK_READONLY_CONTROL} from "./origins";
 
+function normalizeUserId(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
 /**
  * Resolves persistent block locks against the model graph.
  *
@@ -22,7 +28,7 @@ import {ORIGIN_BLOCK_READONLY_CONTROL} from "./origins";
  * Angular component in order to be protected.
  */
 export class BlockReadonlyManager {
-  private readonly explicitIds = new Set<string>();
+  private readonly explicitLocks = new Map<string, string>();
   private readonly subtreeLockCount = new Map<string, number>();
   private readonly resolutionCache = new Map<string, BlockReadonlyResolution>();
   private readonly subscriptions = new Subscription();
@@ -35,6 +41,7 @@ export class BlockReadonlyManager {
   private indexedPermissionRevision = -1;
   private indexedStructureRevision = -1;
   private structureStateChangeQueued = false;
+  private readonly configuredCurrentUserId: string | null;
 
   readonly violation$: Observable<BlockReadonlyViolation> = this.violationSubject.pipe(
     throttleTime(300, asyncScheduler, {leading: true, trailing: false}),
@@ -52,6 +59,7 @@ export class BlockReadonlyManager {
   }
 
   constructor(private readonly doc: BlockCraft.Doc) {
+    this.configuredCurrentUserId = normalizeUserId(doc.config.currentUserId);
     // BlockCraftDoc creates this service before its Y block map and root view
     // are ready. Defer every model/Yjs read until the document is initialized.
     this.doc.afterInit(() => this.init());
@@ -60,7 +68,29 @@ export class BlockReadonlyManager {
 
   isExplicitReadonly(block: BlockRef): boolean {
     const blockId = this.getBlockId(block);
-    return this.explicitIds.has(blockId);
+    return this.explicitLocks.has(blockId);
+  }
+
+  getExplicitLockUserId(block: BlockRef): string | null {
+    const blockId = this.getBlockId(block);
+    return this.explicitLocks.get(blockId) ?? null;
+  }
+
+  canUnlock(block: BlockRef): boolean {
+    const blockId = this.getBlockId(block);
+    const lockUserId = this.explicitLocks.get(blockId);
+    if (!lockUserId) return false;
+    const currentUserId = this.currentUserId;
+    if (!currentUserId) return false;
+    return this.canUnlockWith(blockId, lockUserId, currentUserId);
+  }
+
+  canLock(block: BlockRef): boolean {
+    const blockId = this.getBlockId(block);
+    if (blockId === this.doc.rootId || !this.currentUserId) return false;
+    const lockUserId = this.explicitLocks.get(blockId);
+    if (lockUserId) return false;
+    return this.findNearestAncestorLock(blockId) === null;
   }
 
   resolve(block: BlockRef): BlockReadonlyResolution {
@@ -68,20 +98,22 @@ export class BlockReadonlyManager {
     // that short bootstrap window readonlySwitch$ is deliberately true, so the
     // document policy can be answered without asking an index that is not ready.
     if (!this.initialized && this.doc.isReadonly) {
-      return {readonly: true, source: {kind: "document"}};
+      return {readonly: true, source: {kind: "document"}, lockUserId: null};
     }
     const blockId = this.getBlockId(block);
     if (this.doc.isReadonly) {
-      return {readonly: true, source: {kind: "document"}};
+      return {readonly: true, source: {kind: "document"}, lockUserId: null};
     }
 
     const cached = this.resolutionCache.get(blockId);
     if (cached) return cached;
 
-    if (this.explicitIds.has(blockId)) {
+    const explicitLockUserId = this.explicitLocks.get(blockId);
+    if (explicitLockUserId) {
       const resolution: BlockReadonlyResolution = {
         readonly: true,
         source: {kind: "self", blockId},
+        lockUserId: explicitLockUserId,
       };
       this.resolutionCache.set(blockId, resolution);
       return resolution;
@@ -91,17 +123,23 @@ export class BlockReadonlyManager {
     if (!path) this.throwMissingBlock(blockId);
     for (let index = path.length - 2; index >= 0; index--) {
       const ancestorId = path[index];
-      if (this.explicitIds.has(ancestorId)) {
+      const lockUserId = this.explicitLocks.get(ancestorId);
+      if (lockUserId) {
         const resolution: BlockReadonlyResolution = {
           readonly: true,
           source: {kind: "ancestor", blockId: ancestorId},
+          lockUserId,
         };
         this.resolutionCache.set(blockId, resolution);
         return resolution;
       }
     }
 
-    const resolution: BlockReadonlyResolution = {readonly: false, source: null};
+    const resolution: BlockReadonlyResolution = {
+      readonly: false,
+      source: null,
+      lockUserId: null,
+    };
     this.resolutionCache.set(blockId, resolution);
     return resolution;
   }
@@ -167,26 +205,83 @@ export class BlockReadonlyManager {
       );
     }
 
-    if (blockId === this.doc.rootId && readonly) {
-      this.reject(
-        BlockReadonlyOperation.Props,
-        [blockId],
+    const persistedLockUserId = this.readLockUserId(yMeta.get("lock"));
+    if (readonly) {
+      if (blockId === this.doc.rootId) {
+        this.rejectLock(BlockReadonlyOperation.Lock, "root", blockId);
+      }
+
+      const currentUserId = this.requireCurrentUserId(
+        BlockReadonlyOperation.Lock,
+        blockId,
+      );
+      if (persistedLockUserId === currentUserId) return;
+      if (persistedLockUserId) {
+        this.rejectLock(
+          BlockReadonlyOperation.Lock,
+          "owned-by-other",
+          blockId,
+          persistedLockUserId,
+        );
+      }
+
+      const inherited = this.findNearestAncestorLock(blockId);
+      if (inherited) {
+        this.rejectLock(
+          BlockReadonlyOperation.Lock,
+          "inherited",
+          blockId,
+          inherited.lockUserId,
+          {kind: "ancestor", blockId: inherited.blockId},
+        );
+      }
+
+      this.doc.crud.transact(() => {
+        yMeta.set("lock", currentUserId);
+      }, ORIGIN_BLOCK_READONLY_CONTROL);
+
+      const changed = this.updateExplicit(blockId, currentUserId);
+      this.refreshSubtree(blockId);
+      if (changed) this.stateChangeSubject.next();
+      return;
+    }
+
+    if (!persistedLockUserId) {
+      const inherited = this.findNearestAncestorLock(blockId);
+      if (inherited) {
+        this.rejectLock(
+          BlockReadonlyOperation.Unlock,
+          "inherited",
+          blockId,
+          inherited.lockUserId,
+          {kind: "ancestor", blockId: inherited.blockId},
+        );
+      }
+      return;
+    }
+
+    const currentUserId = this.requireCurrentUserId(
+      BlockReadonlyOperation.Unlock,
+      blockId,
+      persistedLockUserId,
+    );
+    if (!this.canUnlockWith(blockId, persistedLockUserId, currentUserId)) {
+      this.rejectLock(
+        BlockReadonlyOperation.Unlock,
+        "unauthorized",
+        blockId,
+        persistedLockUserId,
         {kind: "self", blockId},
-        "api",
       );
     }
 
-    const current = yMeta.get("readonly") === true;
-    if (current === readonly) return;
-
     this.doc.crud.transact(() => {
-      if (readonly) yMeta.set("readonly", true);
-      else yMeta.delete("readonly");
+      yMeta.delete("lock");
     }, ORIGIN_BLOCK_READONLY_CONTROL);
 
     // DocCRUD emits synchronously in a real document. Keeping this idempotent
     // update also makes the manager correct for lightweight/model-only hosts.
-    const changed = this.updateExplicit(blockId, readonly && blockId !== this.doc.rootId);
+    const changed = this.updateExplicit(blockId, null);
     this.refreshSubtree(blockId);
     if (changed) this.stateChangeSubject.next();
   }
@@ -290,7 +385,7 @@ export class BlockReadonlyManager {
     this.subscriptions.unsubscribe();
     this.violationSubject.complete();
     this.stateChangeSubject.complete();
-    this.explicitIds.clear();
+    this.explicitLocks.clear();
     this.subtreeLockCount.clear();
     this.resolutionCache.clear();
     this.initialized = false;
@@ -300,8 +395,11 @@ export class BlockReadonlyManager {
     const stack = [this.doc.rootId];
     while (stack.length) {
       const blockId = stack.pop()!;
-      if (blockId !== this.doc.rootId && this.readExplicit(blockId)) {
-        this.explicitIds.add(blockId);
+      const lockUserId = blockId === this.doc.rootId
+        ? null
+        : this.readExplicit(blockId);
+      if (lockUserId) {
+        this.explicitLocks.set(blockId, lockUserId);
       }
       const children = this.doc.model.getChildrenIds(blockId);
       for (let index = children.length - 1; index >= 0; index--) {
@@ -315,11 +413,13 @@ export class BlockReadonlyManager {
     let changed = false;
     const refreshIds = new Set<string>();
     for (const transaction of event.transactions) {
-      if (!transaction.changes.has("readonly")) continue;
+      if (!transaction.changes.has("lock")) continue;
       const blockId = transaction.blockId;
       if (!this.doc.model.exists(blockId)) continue;
-      const readonly = blockId !== this.doc.rootId && this.readExplicit(blockId);
-      if (this.setExplicitMembership(blockId, readonly)) changed = true;
+      const lockUserId = blockId === this.doc.rootId
+        ? null
+        : this.readExplicit(blockId);
+      if (this.setExplicitMembership(blockId, lockUserId)) changed = true;
       refreshIds.add(blockId);
     }
     if (changed) this.invalidatePermissionState();
@@ -330,15 +430,17 @@ export class BlockReadonlyManager {
   private onStructureChange(event: IBlockModelStructureChange): void {
     let permissionChanged = false;
     for (const blockId of event.reachableRemovedIds) {
-      if (this.explicitIds.delete(blockId)) permissionChanged = true;
+      if (this.explicitLocks.delete(blockId)) permissionChanged = true;
     }
     for (const blockId of event.reachableAddedIds) {
+      const lockUserId = blockId === this.doc.rootId
+        ? null
+        : this.readExplicit(blockId);
       if (
-        blockId !== this.doc.rootId &&
-        this.readExplicit(blockId) &&
-        !this.explicitIds.has(blockId)
+        lockUserId &&
+        this.explicitLocks.get(blockId) !== lockUserId
       ) {
-        this.explicitIds.add(blockId);
+        this.explicitLocks.set(blockId, lockUserId);
         permissionChanged = true;
       }
     }
@@ -361,26 +463,28 @@ export class BlockReadonlyManager {
     });
   }
 
-  private readExplicit(blockId: string): boolean {
+  private readExplicit(blockId: string): string | null {
     const yMeta = this.doc.model.getYBlock(blockId)?.get("meta");
-    return yMeta instanceof Y.Map && yMeta.get("readonly") === true;
+    return yMeta instanceof Y.Map
+      ? this.readLockUserId(yMeta.get("lock"))
+      : null;
   }
 
-  private updateExplicit(blockId: string, readonly: boolean): boolean {
-    const changed = this.setExplicitMembership(blockId, readonly);
+  private updateExplicit(blockId: string, lockUserId: string | null): boolean {
+    const changed = this.setExplicitMembership(blockId, lockUserId);
     if (changed) {
       this.invalidatePermissionState();
     }
     return changed;
   }
 
-  private setExplicitMembership(blockId: string, readonly: boolean): boolean {
-    if (readonly) {
-      if (this.explicitIds.has(blockId)) return false;
-      this.explicitIds.add(blockId);
+  private setExplicitMembership(blockId: string, lockUserId: string | null): boolean {
+    if (lockUserId) {
+      if (this.explicitLocks.get(blockId) === lockUserId) return false;
+      this.explicitLocks.set(blockId, lockUserId);
       return true;
     }
-    return this.explicitIds.delete(blockId);
+    return this.explicitLocks.delete(blockId);
   }
 
   private invalidatePermissionState(): void {
@@ -398,7 +502,7 @@ export class BlockReadonlyManager {
     }
 
     this.subtreeLockCount.clear();
-    this.explicitIds.forEach(blockId => {
+    this.explicitLocks.forEach((_lockUserId, blockId) => {
       const path = this.doc.model.getPath(blockId);
       if (!path) return;
       path.forEach(pathId => {
@@ -413,12 +517,80 @@ export class BlockReadonlyManager {
   }
 
   private findLockedDescendant(blockId: string): string | null {
-    for (const explicitId of this.explicitIds) {
+    for (const explicitId of this.explicitLocks.keys()) {
       if (explicitId === blockId) continue;
       const path = this.doc.model.getPath(explicitId);
       if (path?.includes(blockId)) return explicitId;
     }
     return null;
+  }
+
+  private findNearestAncestorLock(
+    blockId: string,
+  ): {blockId: string; lockUserId: string} | null {
+    const path = this.doc.model.getPath(blockId);
+    if (!path) this.throwMissingBlock(blockId);
+    for (let index = path.length - 2; index >= 0; index--) {
+      const ancestorId = path[index];
+      const lockUserId = this.explicitLocks.get(ancestorId);
+      if (lockUserId) return {blockId: ancestorId, lockUserId};
+    }
+    return null;
+  }
+
+  get currentUserId(): string | null {
+    return this.configuredCurrentUserId;
+  }
+
+  private requireCurrentUserId(
+    operation: BlockReadonlyOperation.Lock | BlockReadonlyOperation.Unlock,
+    blockId: string,
+    lockUserId?: string | null,
+  ): string {
+    const currentUserId = this.currentUserId;
+    if (currentUserId) return currentUserId;
+    return this.rejectLock(
+      operation,
+      "missing-user",
+      blockId,
+      lockUserId,
+    );
+  }
+
+  private canUnlockWith(
+    blockId: string,
+    lockUserId: string,
+    currentUserId: string,
+  ): boolean {
+    if (lockUserId === currentUserId) return true;
+    const policy = this.doc.config.canUnlockBlock;
+    if (!policy) return false;
+    try {
+      return policy({blockId, lockUserId, currentUserId}) === true;
+    } catch (error) {
+      this.doc.logger.warn("Block unlock policy failed; denying access", error);
+      return false;
+    }
+  }
+
+  private readLockUserId(value: unknown): string | null {
+    return normalizeUserId(value);
+  }
+
+  private rejectLock(
+    operation: BlockReadonlyOperation.Lock | BlockReadonlyOperation.Unlock,
+    reason: BlockLockErrorReason,
+    blockId: string,
+    lockUserId?: string | null,
+    source?: BlockReadonlyResolution["source"],
+  ): never {
+    throw new BlockLockError({
+      operation,
+      reason,
+      blockId,
+      lockUserId,
+      source,
+    });
   }
 
   private assertEffectiveWritable(

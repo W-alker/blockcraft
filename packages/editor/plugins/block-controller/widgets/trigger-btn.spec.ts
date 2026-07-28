@@ -1,5 +1,9 @@
 import {ChangeDetectorRef, ElementRef} from "@angular/core";
-import {BlockNodeType} from "../../../framework";
+import {
+  BlockLockError,
+  BlockNodeType,
+  BlockReadonlyOperation,
+} from "../../../framework";
 import {BlockSelection} from "../../../framework/modules/selection/blockSelection";
 import {TriggerBtn} from "./trigger-btn";
 
@@ -267,7 +271,14 @@ describe("TriggerBtn multi-selection state", () => {
 });
 
 describe("TriggerBtn block readonly menu", () => {
-  const makeHarness = (state: {explicit?: boolean; ancestor?: boolean; descendant?: boolean} = {}) => {
+  const makeHarness = (state: {
+    explicit?: boolean;
+    ancestor?: boolean;
+    descendant?: boolean;
+    lockUserId?: string;
+    currentUserId?: string | null;
+    canUnlock?: boolean;
+  } = {}) => {
     const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", ["markForCheck", "detectChanges"]);
     const component = new TriggerBtn(cdr, new ElementRef(document.createElement("div")));
     const snapshot = {
@@ -287,18 +298,38 @@ describe("TriggerBtn block readonly menu", () => {
       parentBlock: {id: "root", flavour: "root"},
       toSnapshot: jasmine.createSpy("toSnapshot").and.returnValue(snapshot),
     };
+    const currentUserId = state.currentUserId === undefined
+      ? "user-1"
+      : state.currentUserId;
     const resolution = () => state.explicit
-      ? {readonly: true, source: {kind: "self", blockId: "p1"}}
+      ? {
+        readonly: true,
+        source: {kind: "self", blockId: "p1"},
+        lockUserId: state.lockUserId ?? "user-1",
+      }
       : state.ancestor
-        ? {readonly: true, source: {kind: "ancestor", blockId: "parent"}}
-        : {readonly: false, source: null};
+        ? {
+          readonly: true,
+          source: {kind: "ancestor", blockId: "parent"},
+          lockUserId: state.lockUserId ?? "ancestor-user",
+        }
+        : {readonly: false, source: null, lockUserId: null};
     const readonlyManager = {
+      currentUserId,
       resolve: jasmine.createSpy("resolve").and.callFake(resolution),
       isReadonly: jasmine.createSpy("isReadonly").and.callFake(() => resolution().readonly),
       isExplicitReadonly: jasmine.createSpy("isExplicitReadonly").and.callFake(() => !!state.explicit),
       containsReadonly: jasmine.createSpy("containsReadonly").and.callFake(() => !!state.descendant),
+      canLock: jasmine.createSpy("canLock").and.callFake(() =>
+        !!currentUserId && !state.explicit && !state.ancestor,
+      ),
+      canUnlock: jasmine.createSpy("canUnlock").and.callFake(() =>
+        state.canUnlock ??
+        (!!state.explicit && !!currentUserId && resolution().lockUserId === currentUserId),
+      ),
     };
     component.doc = {
+      config: currentUserId ? {currentUserId} : {},
       selection: {value: null},
       readonlyManager,
       getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
@@ -308,6 +339,7 @@ describe("TriggerBtn block readonly menu", () => {
       },
       messageService: {
         success: jasmine.createSpy("success"),
+        warn: jasmine.createSpy("warn"),
       },
     } as any;
     (component as any)._activeBlock = block;
@@ -347,6 +379,46 @@ describe("TriggerBtn block readonly menu", () => {
     }));
   });
 
+  it("disables lock control without identity and for another user's lock", () => {
+    const anonymous = makeHarness({currentUserId: null});
+    expect(findPrimary(anonymous.component, "block-readonly")).toEqual(
+      jasmine.objectContaining({
+        checked: false,
+        disabled: true,
+        desc: "未识别当前用户",
+      }),
+    );
+
+    const other = makeHarness({
+      explicit: true,
+      lockUserId: "user-2",
+      currentUserId: "user-1",
+    });
+    expect(findPrimary(other.component, "block-readonly")).toEqual(
+      jasmine.objectContaining({
+        checked: true,
+        disabled: true,
+        desc: "由其他用户锁定",
+      }),
+    );
+  });
+
+  it("enables another user's lock when the host grants override permission", () => {
+    const admin = makeHarness({
+      explicit: true,
+      lockUserId: "user-2",
+      currentUserId: "admin-1",
+      canUnlock: true,
+    });
+
+    expect(findPrimary(admin.component, "block-readonly")).toEqual(
+      jasmine.objectContaining({
+        checked: true,
+        disabled: false,
+      }),
+    );
+  });
+
   it("lets a self+ancestor locked block remove its own marker", () => {
     const {component, block, state} = makeHarness({explicit: true, ancestor: true});
     const item = findPrimary(component, "block-readonly");
@@ -355,6 +427,28 @@ describe("TriggerBtn block readonly menu", () => {
 
     expect(component.doc.setBlockReadonly).toHaveBeenCalledWith(block as any, false);
     state.explicit = false;
+  });
+
+  it("reports a lock permission failure and keeps the menu stable", () => {
+    const {component} = makeHarness({
+      explicit: true,
+      lockUserId: "user-2",
+      currentUserId: "user-1",
+    });
+    (component.doc.setBlockReadonly as jasmine.Spy).and.throwError(
+      new BlockLockError({
+        operation: BlockReadonlyOperation.Unlock,
+        reason: "unauthorized",
+        blockId: "p1",
+        lockUserId: "user-2",
+      }),
+    );
+    const item = findPrimary(component, "block-readonly");
+
+    component.handleMenuAction({item, source: "switch", checked: false, path: []});
+
+    expect(component.doc.messageService.warn)
+      .toHaveBeenCalledOnceWith("无权解除其他用户的锁");
   });
 
   it("keeps copy and lock controls, and applies readonlyBehavior to custom actions", () => {

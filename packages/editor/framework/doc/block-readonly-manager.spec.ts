@@ -4,8 +4,10 @@ import {BlockNodeType, NativeBlockModel, YBlock, native2YBlock} from "../block-s
 import {BehaviorSubject, Subject} from "rxjs";
 import * as Y from "yjs";
 import {
+  BlockLockError,
   BlockReadonlyError,
   BlockReadonlyOperation,
+  BlockUnlockContext,
 } from "./block-readonly.types";
 import {BlockModelGraph} from "./model-graph";
 import {BlockReadonlyManager} from "./block-readonly-manager";
@@ -37,7 +39,12 @@ function editableBlock(id: string): YBlock {
   } as unknown as NativeBlockModel);
 }
 
-function createReadonlyHarness() {
+function createReadonlyHarness(
+  config: {
+    currentUserId?: string;
+    canUnlockBlock?: (context: BlockUnlockContext) => boolean;
+  } = {currentUserId: "user-1"},
+) {
   const yDoc = new Y.Doc();
   const yBlockMap = yDoc.getMap<YBlock>("blocks");
   const readonlySwitch$ = new BehaviorSubject(false);
@@ -46,6 +53,8 @@ function createReadonlyHarness() {
   const destroyCallbacks: Array<() => void> = [];
   const transactionOrigins: unknown[] = [];
   const doc: any = {
+    config,
+    logger: {warn: jasmine.createSpy("logger.warn")},
     yDoc,
     yBlockMap,
     readonlySwitch$,
@@ -107,6 +116,8 @@ function createLargeReadonlyHarness() {
   const readonlySwitch$ = new BehaviorSubject(false);
   const afterInitCallbacks: Array<() => void> = [];
   const doc: any = {
+    config: {currentUserId: "user-1"},
+    logger: {warn: jasmine.createSpy("logger.warn")},
     yDoc,
     yBlockMap,
     readonlySwitch$,
@@ -129,7 +140,7 @@ function createLargeReadonlyHarness() {
     );
     const branch = structuralBlock(branchId, leafIds);
     yBlockMap.set(branchId, branch);
-    (branch.get("meta") as Y.Map<unknown>).set("readonly", true);
+    (branch.get("meta") as Y.Map<unknown>).set("lock", "user-1");
     leafIds.forEach(leafId => yBlockMap.set(leafId, editableBlock(leafId)));
   });
 
@@ -162,6 +173,20 @@ describe("Block readonly public contract", () => {
     expect(error.code).toBe(ErrorCode.BlockReadonlyError);
     expect(error.blockIds).toEqual(["locked-1"]);
     expect(error.message).not.toContain("document text");
+  });
+
+  it("exposes a typed lock-control error without leaking the lock owner", () => {
+    const error = new BlockLockError({
+      operation: BlockReadonlyOperation.Unlock,
+      reason: "unauthorized",
+      blockId: "locked-1",
+      lockUserId: "private-user-id",
+    });
+
+    expect(error.code).toBe(ErrorCode.BlockReadonlyError);
+    expect(error.reason).toBe("unauthorized");
+    expect(error.lockUserId).toBe("private-user-id");
+    expect(error.message).not.toContain("private-user-id");
   });
 });
 
@@ -260,6 +285,7 @@ describe("BlockReadonlyManager", () => {
     expect(manager.resolve("p-in")).toEqual({
       readonly: true,
       source: {kind: "ancestor", blockId: "callout"},
+      lockUserId: "user-1",
     });
     expect(manager.containsReadonly("root-a")).toBeTrue();
 
@@ -275,7 +301,7 @@ describe("BlockReadonlyManager", () => {
     manager.set("offscreen-p", true);
 
     expect(doc.vm.get).not.toHaveBeenCalled();
-    expect(yMeta("offscreen-p").get("readonly")).toBeTrue();
+    expect(yMeta("offscreen-p").get("lock")).toBe("user-1");
     expect(transactionOrigins.at(-1)).toBe(ORIGIN_BLOCK_READONLY_CONTROL);
     expect(manager.resolve("offscreen-p").source).toEqual({
       kind: "self",
@@ -283,30 +309,140 @@ describe("BlockReadonlyManager", () => {
     });
   });
 
+  it("lets only the owner unlock and prevents lock ownership takeover", () => {
+    const {manager, onMetaUpdate$, yMeta} = createReadonlyHarness({
+      currentUserId: "user-2",
+    });
+    yMeta("offscreen-p").set("lock", "user-1");
+    onMetaUpdate$.next({
+      transactions: [{
+        blockId: "offscreen-p",
+        changes: new Map([["lock", {oldValue: undefined, action: "add"}]]),
+      }],
+    });
+
+    expect(manager.canLock("offscreen-p")).toBeFalse();
+    expect(manager.canUnlock("offscreen-p")).toBeFalse();
+    expect(() => manager.set("offscreen-p", true))
+      .toThrowError(BlockLockError);
+    expect(() => manager.set("offscreen-p", false))
+      .toThrowError(BlockLockError);
+    expect(yMeta("offscreen-p").get("lock")).toBe("user-1");
+  });
+
+  it("allows the owner or an additionally authorized host policy to unlock", () => {
+    const owner = createReadonlyHarness({currentUserId: "user-1"});
+    owner.manager.set("offscreen-p", true);
+    expect(owner.manager.canUnlock("offscreen-p")).toBeTrue();
+    owner.manager.set("offscreen-p", false);
+    expect(owner.yMeta("offscreen-p").has("lock")).toBeFalse();
+
+    const policy = jasmine.createSpy("canUnlockBlock").and.returnValue(true);
+    const admin = createReadonlyHarness({
+      currentUserId: "admin-1",
+      canUnlockBlock: policy,
+    });
+    admin.yMeta("offscreen-p").set("lock", "user-1");
+    admin.onMetaUpdate$.next({
+      transactions: [{
+        blockId: "offscreen-p",
+        changes: new Map([["lock", {oldValue: undefined, action: "add"}]]),
+      }],
+    });
+
+    expect(admin.manager.canUnlock("offscreen-p")).toBeTrue();
+    admin.manager.set("offscreen-p", false);
+    expect(policy).toHaveBeenCalledWith({
+      blockId: "offscreen-p",
+      lockUserId: "user-1",
+      currentUserId: "admin-1",
+    });
+    expect(admin.yMeta("offscreen-p").has("lock")).toBeFalse();
+  });
+
+  it("captures the current user identity when the document manager is constructed", () => {
+    const harness = createReadonlyHarness({currentUserId: "user-1"});
+    harness.doc.config.currentUserId = "user-2";
+
+    harness.manager.set("offscreen-p", true);
+
+    expect(harness.yMeta("offscreen-p").get("lock")).toBe("user-1");
+    expect(harness.manager.currentUserId).toBe("user-1");
+  });
+
+  it("fails closed when identity is missing or the host policy throws", () => {
+    const anonymous = createReadonlyHarness({});
+    expect(anonymous.manager.canLock("offscreen-p")).toBeFalse();
+    expect(() => anonymous.manager.set("offscreen-p", true))
+      .toThrowError(BlockLockError);
+
+    anonymous.yMeta("offscreen-p").set("lock", "user-1");
+    anonymous.onMetaUpdate$.next({
+      transactions: [{
+        blockId: "offscreen-p",
+        changes: new Map([["lock", {oldValue: undefined, action: "add"}]]),
+      }],
+    });
+    expect(() => anonymous.manager.set("offscreen-p", false))
+      .toThrowError(BlockLockError);
+
+    const policyFailure = createReadonlyHarness({
+      currentUserId: "admin-1",
+      canUnlockBlock: () => {
+        throw new Error("policy unavailable");
+      },
+    });
+    policyFailure.yMeta("offscreen-p").set("lock", "user-1");
+    policyFailure.onMetaUpdate$.next({
+      transactions: [{
+        blockId: "offscreen-p",
+        changes: new Map([["lock", {oldValue: undefined, action: "add"}]]),
+      }],
+    });
+    expect(policyFailure.manager.canUnlock("offscreen-p")).toBeFalse();
+    expect(policyFailure.doc.logger.warn).toHaveBeenCalled();
+  });
+
+  it("ignores legacy readonly and invalid lock metadata", () => {
+    const {manager, onMetaUpdate$, yMeta} = createReadonlyHarness();
+    yMeta("offscreen-p").set("readonly", true);
+    yMeta("p-in").set("lock", true);
+    onMetaUpdate$.next({
+      transactions: [{
+        blockId: "p-in",
+        changes: new Map([["lock", {oldValue: undefined, action: "add"}]]),
+      }],
+    });
+
+    expect(manager.isReadonly("offscreen-p")).toBeFalse();
+    expect(manager.isReadonly("p-in")).toBeFalse();
+  });
+
   it("rejects persistent locking of the root block", () => {
     const {manager} = createReadonlyHarness();
 
-    expect(() => manager.set("root", true)).toThrowError(BlockReadonlyError);
+    expect(() => manager.set("root", true)).toThrowError(BlockLockError);
   });
 
   it("applies remote metadata changes and preserves nearest-lock precedence", () => {
     const {manager, onMetaUpdate$, yMeta} = createReadonlyHarness();
     manager.set("callout", true);
-    yMeta("p-in").set("readonly", true);
+    yMeta("p-in").set("lock", "remote-user");
     onMetaUpdate$.next({
       transactions: [{
         blockId: "p-in",
-        changes: new Map([["readonly", {oldValue: undefined, action: "add"}]]),
+        changes: new Map([["lock", {oldValue: undefined, action: "add"}]]),
       }],
     });
 
     expect(manager.resolve("p-in").source).toEqual({kind: "self", blockId: "p-in"});
+    expect(manager.resolve("p-in").lockUserId).toBe("remote-user");
 
-    yMeta("p-in").delete("readonly");
+    yMeta("p-in").delete("lock");
     onMetaUpdate$.next({
       transactions: [{
         blockId: "p-in",
-        changes: new Map([["readonly", {oldValue: true, action: "delete"}]]),
+        changes: new Map([["lock", {oldValue: "remote-user", action: "delete"}]]),
       }],
     });
 
@@ -322,7 +458,7 @@ describe("BlockReadonlyManager", () => {
     const lockedLeaf = editableBlock("late-leaf");
     yBlockMap.set("late-branch", lockedBranch);
     yBlockMap.set("late-leaf", lockedLeaf);
-    (lockedLeaf.get("meta") as Y.Map<unknown>).set("readonly", true);
+    (lockedLeaf.get("meta") as Y.Map<unknown>).set("lock", "remote-user");
 
     yDoc.transact(() => {
       const children = yBlockMap.get("root-a")!.get("children") as Y.Array<string>;
@@ -389,6 +525,7 @@ describe("BlockReadonlyManager", () => {
     expect(manager.resolve("callout")).toEqual({
       readonly: true,
       source: {kind: "document"},
+      lockUserId: null,
     });
   });
 });
