@@ -1710,6 +1710,51 @@ describe('InputTransformer readonly preflight', () => {
     expect(transformer.compositionSession.consumeAbort()).toBeTrue()
   })
 
+  it('consumes readonly text-range deletion keys before native browser behavior', () => {
+    const readonlyError = new BlockReadonlyError({
+      operation: BlockReadonlyOperation.Delete,
+      blockIds: ['locked'],
+      source: {kind: 'self', blockId: 'locked'},
+    })
+    const selection = {
+      collapsed: false,
+      isInSameBlock: true,
+      start: {type: 'text', blockId: 'locked', offset: 0},
+      end: {type: 'text', blockId: 'locked', offset: 4},
+    }
+    const plan = {
+      kind: 'range',
+      start: {kind: 'text', blockId: 'locked', from: 0, to: 4},
+      insertAt: {blockId: 'locked', offset: 0},
+      stabilizeAt: {blockId: 'locked', offset: 0},
+      tailMode: 'merge',
+    }
+    const readonlyManager = {
+      isSelectionReadonly: jasmine.createSpy('isSelectionReadonly').and.returnValue(true),
+    }
+    const transformer = new InputTransformer({
+      event: eventStub(),
+      isReadonly: false,
+      readonlyManager,
+    } as any) as any
+    spyOn(transformer, '_planSelectionEdit').and.returnValue(plan)
+    spyOn(transformer, '_assertPlanWritable').and.throwError(readonlyError)
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const context = {
+      get: () => ({selection}),
+      preventDefault,
+    }
+
+    expect(transformer['_handleBackspace'](context as any)).toBeTrue()
+    expect(transformer['_handleDelete'](context as any)).toBeTrue()
+    expect(preventDefault).toHaveBeenCalledTimes(2)
+    expect(readonlyManager.isSelectionReadonly).toHaveBeenCalledTimes(2)
+    expect(transformer['_assertPlanWritable'].calls.allArgs()).toEqual([
+      [plan, BlockReadonlyOperation.Delete],
+      [plan, BlockReadonlyOperation.Delete],
+    ])
+  })
+
   it('rejects the complete model footprint before mutation and preserves selection', () => {
     const children: Record<string, string[]> = {
       root: ['start', 'middle', 'end'],

@@ -83,9 +83,12 @@ async function setBlockReadonly(page: Page, blockSelector: string, readonly: boo
 
 async function selectParagraphText(page: Page, paragraphSelector: string): Promise<void> {
   await page.evaluate((selector) => {
-    const paragraph = document.querySelector(selector);
+    const paragraph = document.querySelector<HTMLElement>(selector);
     const selection = window.getSelection();
     if (!paragraph || !selection) throw new Error('Paragraph selection target is unavailable');
+    const editorRoot = paragraph.closest<HTMLElement>('[data-blockcraft-root]');
+    if (!editorRoot) throw new Error('Editor focus target is unavailable');
+    editorRoot.focus({preventScroll: true});
     const range = document.createRange();
     range.selectNodeContents(paragraph);
     selection.removeAllRanges();
@@ -156,6 +159,7 @@ test('block readonly protects writes while retaining read interactions and inher
   await selectParagraphText(page, paragraphSelector);
   await page.keyboard.type('blocked');
   await page.keyboard.press('Backspace');
+  await expect(page).toHaveURL('/');
   await dispatchClipboard(page, paragraphSelector, 'paste', 'blocked paste');
   expect(await exportBlockSnapshot(page, paragraphId)).toEqual(lockedSnapshot);
 

@@ -308,6 +308,34 @@ export class InputTransformer {
     }
   }
 
+  private _consumeReadonlyTextDeleteKey(
+    context: {preventDefault(): void},
+    selection: BlockCraft.Selection,
+  ): boolean {
+    if (selection.start.type !== "text" || selection.end.type !== "text") {
+      return false;
+    }
+    const manager = this.doc.readonlyManager;
+    const isReadonly = manager
+      ? manager.isSelectionReadonly(selection)
+      : this.doc.isReadonly;
+    if (!isReadonly) return false;
+
+    // WebKit may navigate backward/forward for deletion keys on a protected
+    // text range instead of emitting beforeinput. Keep the ordinary writable
+    // text path in beforeinput and plan only this rare readonly rejection.
+    const plan = this._planSelectionEdit(selection);
+    if (!this._tryAssertInputPlan(
+      context,
+      plan,
+      BlockReadonlyOperation.Delete,
+    )) {
+      return true;
+    }
+    context.preventDefault();
+    return true;
+  }
+
   private _adjustZeroSpaceDeletePlan(
     plan: SelectionEditPlan,
   ): SelectionEditPlan {
@@ -1920,6 +1948,7 @@ export class InputTransformer {
       context.preventDefault();
       return true;
     }
+    if (this._consumeReadonlyTextDeleteKey(context, sel)) return true;
 
     // Gap-after + Backspace deletes the void/container block next to the caret,
     // then recalculates synchronously so the next render does not read a stale
@@ -2057,6 +2086,7 @@ export class InputTransformer {
       context.preventDefault();
       return true;
     }
+    if (this._consumeReadonlyTextDeleteKey(context, sel)) return true;
 
     // Gap-before + Delete mirrors Backspace from gap-after.
     let modelDeleteResult: boolean | null;
