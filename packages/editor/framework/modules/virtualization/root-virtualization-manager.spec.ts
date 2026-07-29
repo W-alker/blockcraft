@@ -1,6 +1,12 @@
 import {BehaviorSubject, Subject} from 'rxjs'
 import {BlockNodeType} from '../../block-std/types'
-import {RootVirtualizationManager} from './root-virtualization-manager'
+import {HeightMap} from './height-map'
+import {ContinuousLayoutProjection} from './layout-projection'
+import type {VerticalLayoutProjection} from './layout-projection'
+import {
+  registerRootLayoutProjection,
+  RootVirtualizationManager,
+} from './root-virtualization-manager'
 import type {VirtualizationConfig} from './types'
 
 describe('RootVirtualizationManager', () => {
@@ -161,6 +167,338 @@ describe('RootVirtualizationManager', () => {
       h.manager.dispose()
       done()
     })
+  })
+
+  it('derives the mounted viewport from the active layout projection', (done) => {
+    const h = createHarness()
+    const projectedHeights = new HeightMap()
+    projectedHeights.bulkInit(Array.from({length: h.ids.length}, () => 200))
+    const projection = new ContinuousLayoutProjection(projectedHeights)
+    ;(h.manager as any).layoutProjection = projection
+
+    h.manager.init(h.scrollContainer)
+
+    requestAnimationFrame(() => {
+      expect([...h.mounted]).toEqual(h.ids.slice(0, 3))
+      h.manager.dispose()
+      projection.dispose()
+      done()
+    })
+  })
+
+  it('atomically registers one custom projection and restores continuous layout on release', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 200))
+    const projection = customProjection(h.ids, heights)
+    const beforeDeactivate = jasmine.createSpy('beforeDeactivate')
+    const release = registerRootLayoutProjection(h.manager, projection, {beforeDeactivate})
+
+    await nextAnimationFrame()
+    expect([...h.mounted]).toEqual(h.ids.slice(0, 3))
+
+    release()
+    release()
+    await nextAnimationFrame()
+
+    expect(beforeDeactivate).toHaveBeenCalledTimes(1)
+    expect([...h.mounted]).toEqual(h.ids.slice(0, 5))
+    h.manager.dispose()
+    projection.dispose()
+  })
+
+  it('captures the old coordinate anchor before activation side effects', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 100))
+    const projection = customProjection(h.ids, heights)
+    const order: string[] = []
+    spyOn<any>(h.manager, 'captureCurrentStructureAnchor').and.callFake(() => {
+      order.push('capture')
+      return null
+    })
+
+    const release = registerRootLayoutProjection(h.manager, projection, {
+      beforeActivate: () => order.push('activate'),
+    })
+
+    expect(order).toEqual(['capture', 'activate'])
+    release()
+    h.manager.dispose()
+    projection.dispose()
+  })
+
+  it('cleans custom projection view state when the manager disposes first', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 100))
+    const projection = customProjection(h.ids, heights)
+    const beforeDeactivate = jasmine.createSpy('beforeDeactivate')
+    const release = registerRootLayoutProjection(h.manager, projection, {beforeDeactivate})
+
+    h.manager.dispose()
+    release()
+
+    expect(beforeDeactivate).toHaveBeenCalledTimes(1)
+    projection.dispose()
+  })
+
+  it('rejects mismatched and concurrent custom projections', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    const invalidHeights = new HeightMap()
+    invalidHeights.bulkInit(h.ids.map(() => 48))
+    const invalid = customProjection([...h.ids].reverse(), invalidHeights)
+    expect(() => registerRootLayoutProjection(h.manager, invalid))
+      .toThrowError(/block order/)
+
+    const firstHeights = new HeightMap()
+    firstHeights.bulkInit(h.ids.map(() => 48))
+    const first = customProjection(h.ids, firstHeights)
+    const release = registerRootLayoutProjection(h.manager, first)
+    const second = customProjection(h.ids, firstHeights)
+    expect(() => registerRootLayoutProjection(h.manager, second))
+      .toThrowError(/already registered/)
+
+    release()
+    h.manager.dispose()
+    first.dispose()
+    second.dispose()
+    invalid.dispose()
+  })
+
+  it('reconciles projection changes and falls back before an invalid order can mount', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 200))
+    let projectedIds = [...h.ids]
+    const projection = customProjection(() => projectedIds, heights)
+    const beforeDeactivate = jasmine.createSpy('beforeDeactivate')
+    const onInvalid = jasmine.createSpy('onInvalid')
+    registerRootLayoutProjection(h.manager, projection, {beforeDeactivate, onInvalid})
+    await nextAnimationFrame()
+    expect([...h.mounted]).toEqual(h.ids.slice(0, 3))
+
+    projectedIds = [...h.ids].reverse()
+    projection.notifyChange()
+    await nextAnimationFrames(3)
+
+    expect(beforeDeactivate).toHaveBeenCalledTimes(1)
+    expect(onInvalid).toHaveBeenCalledTimes(1)
+    expect(h.doc.logger.warn).toHaveBeenCalledWith(
+      'layoutProjectionInvalid: ',
+      jasmine.any(Error),
+    )
+    await nextAnimationFrame()
+    expect([...h.mounted]).toEqual(h.ids.slice(0, 5))
+    h.manager.dispose()
+    projection.dispose()
+  })
+
+  it('waits one bounded frame for a structure-driven custom projection update', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    let projectedIds = [...h.ids]
+    const projection = customProjection(() => projectedIds, heights)
+    const onInvalid = jasmine.createSpy('onInvalid')
+    const release = registerRootLayoutProjection(h.manager, projection, {onInvalid})
+    await nextAnimationFrame()
+
+    h.replaceRootIds([...h.ids, 'inserted'])
+    requestAnimationFrame(() => {
+      projectedIds = [...h.ids]
+      heights.bulkInit(projectedIds.map(() => 120))
+      projection.notifyChange()
+    })
+    await nextAnimationFrames(3)
+
+    expect(onInvalid).not.toHaveBeenCalled()
+    expect(h.doc.logger.warn).not.toHaveBeenCalledWith(
+      'layoutProjectionInvalid: ',
+      jasmine.anything(),
+    )
+    expect(h.mounted.size).toBeLessThan(10)
+
+    release()
+    h.manager.dispose()
+    projection.dispose()
+  })
+
+  it('mounts a newly inserted selection target without reading stale projection geometry', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    let projectedIds = [...h.ids]
+    const projection = customProjection(() => projectedIds, heights)
+    const rangeHeight = spyOn(projection, 'rangeHeight').and.callThrough()
+    const onInvalid = jasmine.createSpy('onInvalid')
+    const release = registerRootLayoutProjection(h.manager, projection, {onInvalid})
+    await nextAnimationFrame()
+    rangeHeight.calls.reset()
+
+    h.replaceRootIds([...h.ids, 'inserted'])
+
+    expect(() => h.manager.ensureViewMounted(['inserted'])).not.toThrow()
+    expect(h.mounted.has('inserted')).toBeTrue()
+    expect(rangeHeight).not.toHaveBeenCalled()
+
+    projectedIds = [...h.ids]
+    heights.bulkInit(projectedIds.map(() => 120))
+    projection.notifyChange()
+    await nextAnimationFrames(2)
+
+    expect(onInvalid).not.toHaveBeenCalled()
+    expect(h.doc.logger.warn).not.toHaveBeenCalledWith(
+      'layoutProjectionInvalid: ',
+      jasmine.anything(),
+    )
+
+    release()
+    h.manager.dispose()
+    projection.dispose()
+  })
+
+  it('does not contaminate continuous heights while a custom projection is active', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const continuous = (h.manager as any)
+      .continuousLayoutProjection as ContinuousLayoutProjection
+    const revision = continuous.revision
+
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const release = registerRootLayoutProjection(h.manager, projection)
+    ;(h.manager as any).applyMeasurements([['b0', 999]])
+
+    expect(continuous.revision).toBe(revision)
+    release()
+    h.manager.dispose()
+    projection.dispose()
+  })
+
+  it('captures a custom projection anchor on willChange before new geometry commits', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const willChange$ = new Subject<{revision: number}>()
+    Object.defineProperty(projection, 'willChange$', {
+      value: willChange$.asObservable(),
+    })
+    const release = registerRootLayoutProjection(h.manager, projection)
+    await nextAnimationFrame()
+    const capture = spyOn<any>(h.manager, 'captureCurrentStructureAnchor')
+      .and.callThrough()
+
+    willChange$.next({revision: projection.revision + 1})
+
+    expect(capture).toHaveBeenCalledTimes(1)
+    release()
+    h.manager.dispose()
+    projection.dispose()
+    willChange$.complete()
+  })
+
+  it('lets a newer viewport scroll replace a pending projection anchor', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const willChange$ = new Subject<{revision: number}>()
+    Object.defineProperty(projection, 'willChange$', {
+      value: willChange$.asObservable(),
+    })
+    const release = registerRootLayoutProjection(h.manager, projection)
+    await nextAnimationFrame()
+
+    willChange$.next({revision: projection.revision + 1})
+    expect((h.manager as any).pendingStructureAnchor.blockId).toBe('b0')
+
+    h.scrollContainer.scrollTop = 1_200
+    h.scrollContainer.dispatchEvent(new Event('scroll'))
+
+    expect((h.manager as any).pendingStructureAnchor.blockId).toBe('b10')
+    release()
+    h.manager.dispose()
+    projection.dispose()
+    willChange$.complete()
+  })
+
+  it('keeps a 1000-root custom projection mounted window bounded while scrolling', async () => {
+    const h = createHarness(4, 1000, {overscan: 2})
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 160))
+    const projection = customProjection(h.ids, heights)
+    const release = registerRootLayoutProjection(h.manager, projection)
+    await nextAnimationFrame()
+    expect(h.mounted.size).toBeLessThan(10)
+
+    h.scrollContainer.scrollTop = 80_000
+    h.scrollContainer.dispatchEvent(new Event('scroll'))
+    await nextAnimationFrame()
+
+    expect(h.mounted.size).toBeLessThan(10)
+    expect([...h.mounted].some(id => Number(id.slice(1)) >= 495)).toBeTrue()
+
+    release()
+    h.manager.dispose()
+    projection.dispose()
+  })
+
+  it('publishes one continuous-layout revision for a measurement batch', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const projection = (h.manager as any)
+      .continuousLayoutProjection as ContinuousLayoutProjection
+    const previousRevision = projection.revision
+
+    ;(h.manager as any).applyMeasurements([
+      ['b0', 60],
+      ['b1', 72],
+    ])
+
+    expect(projection.revision).toBe(previousRevision + 1)
+    h.manager.dispose()
+  })
+
+  it('completes the continuous layout projection once on disposal', () => {
+    const h = createHarness()
+    const complete = jasmine.createSpy('complete')
+    ;(h.manager as any).continuousLayoutProjection.change$.subscribe({complete})
+
+    h.manager.dispose()
+    h.manager.dispose()
+
+    expect(complete).toHaveBeenCalledTimes(1)
   })
 
   it('settles sparse root ownership once per structure batch, never on scroll-only frames', async () => {
@@ -573,6 +911,43 @@ describe('RootVirtualizationManager', () => {
     expect(h.mounted.has('b12')).toBeTrue()
     expect(centerY(h.vm.get('b12').instance.hostElement.getBoundingClientRect()))
       .toBe(centerY(h.scrollContainer.getBoundingClientRect()))
+    h.manager.dispose()
+  })
+
+  it('keeps projected gaps out of the estimated block-navigation jump', async () => {
+    const h = createHarness(0)
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const changes = new Subject<{revision: number}>()
+    const extentAt = jasmine.createSpy('extentAt').and.returnValue(1600)
+    const projection: VerticalLayoutProjection = {
+      revision: 1,
+      length: h.ids.length,
+      totalHeight: 10000,
+      change$: changes.asObservable(),
+      offsetAt: index => index * 100 + 1000,
+      contentOffsetAt: index => index * 100,
+      extentAt,
+      rangeHeight: (start, end) => (end - start + 1) * 100,
+      indexAtOffset: offset => Math.max(
+        0,
+        Math.min(h.ids.length - 1, Math.floor(offset / 100)),
+      ),
+    }
+    ;(h.manager as any).layoutProjection = projection
+    let estimatedScrollTop: number | null = null
+    h.vm.mountRootChild.and.callFake((id: string) => {
+      if (id === 'b12') estimatedScrollTop = h.scrollContainer.scrollTop
+      return h.mountRootChild(id)
+    })
+
+    expect(await h.manager.scrollToBlock('b12')).toBeTrue()
+
+    expect(projection.offsetAt(12)).toBe(2200)
+    expect(projection.contentOffsetAt(12)).toBe(1200)
+    expect(estimatedScrollTop as number | null).toBe(1152)
+    expect(extentAt).not.toHaveBeenCalled()
+    changes.complete()
     h.manager.dispose()
   })
 
@@ -1527,6 +1902,19 @@ describe('RootVirtualizationManager', () => {
     })
   })
 })
+
+function customProjection(
+  blockIds: readonly string[] | (() => readonly string[]),
+  heights: HeightMap,
+): ContinuousLayoutProjection & {readonly blockIds: readonly string[]} {
+  const projection = new ContinuousLayoutProjection(heights) as
+    ContinuousLayoutProjection & {readonly blockIds: readonly string[]}
+  Object.defineProperty(projection, 'blockIds', {
+    configurable: true,
+    get: () => typeof blockIds === 'function' ? blockIds() : blockIds,
+  })
+  return projection
+}
 
 function createRect(top: number, height: number): DOMRect {
   return {

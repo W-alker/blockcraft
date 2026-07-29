@@ -1,6 +1,10 @@
+import {EMPTY} from 'rxjs'
 import {HeightMap} from './height-map'
+import {VerticalLayoutProjection} from './layout-projection'
 import {
+  captureProjectedScrollAnchor,
   captureScrollAnchor,
+  restoreProjectedScrollAnchor,
   restoreScrollAnchor,
   ScrollAnchorSnapshot,
 } from './scroll-anchor'
@@ -21,6 +25,30 @@ describe('scroll anchor math', () => {
     const after = createHeightMap([50, 30, 40])
 
     expect(restoreScrollAnchor(snapshot, indexResolver(['a', 'b', 'c']), after, 25, 40)).toEqual({
+      anchorBlockId: 'b',
+      scrollTop: 55,
+      correctionPx: 30,
+    })
+  })
+
+  it('captures and restores through projected content offsets', () => {
+    const before = fakeProjection([0, 15, 45], [0, 20, 50], 90)
+    expect(before.offsetAt(1)).toBe(15)
+    expect(before.contentOffsetAt(1)).toBe(20)
+
+    const snapshot = captureProjectedScrollAnchor(['a', 'b', 'c'], before, 25)!
+    const after = fakeProjection([0, 45, 75], [0, 50, 80], 120)
+    expect(after.offsetAt(1)).toBe(45)
+    expect(after.contentOffsetAt(1)).toBe(50)
+
+    expect(snapshot).toEqual({blockId: 'b', relativeOffset: -5})
+    expect(restoreProjectedScrollAnchor(
+      snapshot,
+      indexResolver(['a', 'b', 'c']),
+      after,
+      25,
+      40,
+    )).toEqual({
       anchorBlockId: 'b',
       scrollTop: 55,
       correctionPx: 30,
@@ -102,4 +130,29 @@ function createHeightMap(values: readonly number[]): HeightMap {
 function indexResolver(ids: readonly string[]): (blockId: string) => number {
   const byId = new Map(ids.map((id, index) => [id, index]))
   return blockId => byId.get(blockId) ?? -1
+}
+
+function fakeProjection(
+  offsets: readonly number[],
+  contentOffsets: readonly number[],
+  totalHeight: number,
+): VerticalLayoutProjection {
+  return {
+    revision: 0,
+    length: offsets.length,
+    totalHeight,
+    change$: EMPTY,
+    offsetAt: index => offsets[index] ?? totalHeight,
+    contentOffsetAt: index => contentOffsets[index] ?? totalHeight,
+    extentAt: index =>
+      (offsets[index + 1] ?? totalHeight) - (offsets[index] ?? totalHeight),
+    rangeHeight: (start, end) =>
+      (offsets[end + 1] ?? totalHeight) - (offsets[start] ?? totalHeight),
+    indexAtOffset: offset => {
+      for (let index = offsets.length - 1; index > 0; index--) {
+        if ((offsets[index] ?? 0) <= offset) return index
+      }
+      return offsets.length ? 0 : -1
+    },
+  }
 }

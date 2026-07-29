@@ -47,4 +47,26 @@ describe('HeightLockApplier', () => {
     expect(oldHost.classList.contains('bc-page-height-locked')).toBeFalse();
     expect(newHost.classList.contains('bc-page-height-locked')).toBeTrue();
   });
+
+  it('clears an unmounted host and replays the desired lock on remount', () => {
+    const oldHost = document.createElement('div');
+    const newHost = document.createElement('div');
+    let block = {hostElement: oldHost};
+    const getBlockById = jasmine.createSpy('getBlockById').and.callFake(() => block);
+    const applier = new HeightLockApplier({getBlockById} as unknown as BlockCraft.Doc);
+
+    applier.syncMounted(['image-1']);
+    applier.apply(new Set(['image-1']));
+    expect(oldHost.classList.contains('bc-page-height-locked')).toBeTrue();
+
+    applier.syncMounted([]);
+    expect(oldHost.classList.contains('bc-page-height-locked')).toBeFalse();
+    getBlockById.calls.reset();
+    applier.apply(new Set(['image-1']));
+    expect(getBlockById).not.toHaveBeenCalled();
+
+    block = {hostElement: newHost};
+    applier.syncMounted(['image-1']);
+    expect(newHost.classList.contains('bc-page-height-locked')).toBeTrue();
+  });
 });

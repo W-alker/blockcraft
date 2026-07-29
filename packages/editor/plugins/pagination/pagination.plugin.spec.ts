@@ -1,4 +1,8 @@
 import {Subject} from 'rxjs'
+import {
+  IBlockModelContentChange,
+  IBlockModelStructureChange,
+} from '../../framework/doc/model-graph'
 import {PaginationPlugin} from './pagination.plugin'
 
 describe('PaginationPlugin', () => {
@@ -17,6 +21,14 @@ describe('PaginationPlugin', () => {
       children: [],
     })
     const rootToSnapshot = jasmine.createSpy('toSnapshot')
+    const contentChange$ = new Subject<IBlockModelContentChange>()
+    const structureChange$ = new Subject<IBlockModelStructureChange>()
+    const themeChange$ = new Subject<string>()
+    const config = {
+      scrollContainer,
+      theme: 'light',
+      virtualization: {estimatedHeights: {}},
+    }
 
     return {
       scrollContainer,
@@ -25,7 +37,11 @@ describe('PaginationPlugin', () => {
       rootToSnapshot,
       doc: {
         isInitialized: true,
-        config: {scrollContainer},
+        rootId: 'root',
+        config,
+        get theme() {
+          return config.theme || 'light'
+        },
         root: {
           hostElement: rootHost,
           childrenIds: [],
@@ -34,6 +50,16 @@ describe('PaginationPlugin', () => {
         exportSnapshot,
         event: {bindHotkey: jasmine.createSpy('bindHotkey')},
         ngZone: {runOutsideAngular: (fn: () => void) => fn()},
+        model: {
+          contentChange$,
+          structureChange$,
+          getChildrenIds: () => [],
+          getPath: () => null,
+          getFlavour: () => undefined,
+          getNodeType: () => undefined,
+          getProps: () => undefined,
+        },
+        themeChange$,
         onChildrenUpdate$: new Subject<void>(),
         onPropsUpdate$: new Subject<void>(),
         getBlockById: () => null,
@@ -131,11 +157,64 @@ describe('PaginationPlugin', () => {
     plugin.enable()
     plugin.enable()
     expect(acquire).toHaveBeenCalledTimes(1)
+    const controller = (plugin as any)._controller
+    controller.captureStableLayout()
+    expect(controller.captureShadowLayout()).not.toBeNull()
 
     plugin.disable()
     plugin.disable()
     expect(release).toHaveBeenCalledTimes(1)
     plugin.destroy()
+  })
+
+  it('uses the experimental sparse projection path without acquiring a full-document lease', () => {
+    const {doc} = createDoc()
+    const releaseProjection = jasmine.createSpy('releaseLayoutProjection')
+    const registerLayoutProjection = jasmine.createSpy('registerLayoutProjection')
+      .and.callFake((_projection: unknown, hooks: any) => {
+        hooks?.beforeActivate?.()
+        return () => {
+          hooks?.beforeDeactivate?.()
+          releaseProjection()
+        }
+      })
+    const acquireFullDocumentViewLease = jasmine.createSpy('acquireFullDocumentViewLease')
+    ;(doc as any).vm = {getMountedRootChildIds: () => []}
+    ;(doc as any).virtualization = {
+      enabled: true,
+      viewChange$: new Subject<{mountedRootIds: readonly string[]}>(),
+      registerLayoutProjection,
+      acquireFullDocumentViewLease,
+    }
+    const plugin = new PaginationPlugin({experimentalSparseView: true})
+    ;(plugin as unknown as {doc: BlockCraft.Doc}).doc = doc
+    plugin.init()
+
+    plugin.enable()
+
+    expect(registerLayoutProjection).toHaveBeenCalledTimes(1)
+    expect(acquireFullDocumentViewLease).not.toHaveBeenCalled()
+
+    plugin.disable()
+    expect(releaseProjection).toHaveBeenCalledTimes(1)
+    plugin.destroy()
+  })
+
+  it('does not reuse estimated sparse layout for print or PDF export', () => {
+    const plugin = new PaginationPlugin({experimentalSparseView: true})
+    const layout = {revision: 1}
+    const controller = {
+      captureStableLayout: jasmine.createSpy('captureStableLayout')
+        .and.returnValue(layout),
+      captureShadowLayout: jasmine.createSpy('captureShadowLayout')
+        .and.returnValue({exact: false}),
+    }
+    ;(plugin as any)._controller = controller
+
+    expect((plugin as any)._captureReusableLayout()).toBeUndefined()
+
+    controller.captureShadowLayout.and.returnValue({exact: true})
+    expect((plugin as any)._captureReusableLayout()).toBe(layout)
   })
 
   it('rolls back the full-document lease when pagination enable fails', () => {

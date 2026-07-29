@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-07-22
+> Last updated: 2026-07-28
 
 ## Core Performance Principles
 
@@ -69,6 +69,41 @@ path. A normal scroll frame touches the mounted window, not every document
 block. `ResizeObserver` corrects estimates and
 records each mounted block's layout stride, including inter-block spacing, then
 restores an ID-based scroll anchor. Nested subtrees are atomic in this phase.
+
+Pagination/virtualization Phase A introduced a package-internal
+`VerticalLayoutProjection` query seam while retaining the same Fenwick-backed
+continuous `HeightMap`. Phase B added a stable-ID GeometryIndex,
+LayoutCoordinator, paginated Projection and bounded legacy/shadow comparator.
+These implementation types remain absent from the public barrel.
+
+Phase C adds an internal exclusive Projection registration to
+`RootVirtualizationManager`. Registration and release capture an ID-based
+scroll anchor in the old coordinate system, pause reconciliation, validate
+root order, switch viewport/spacer reads, then restore the anchor in the new
+coordinate system. While a custom Projection is active, continuous
+`HeightObserver` input is disconnected so pagination gaps cannot contaminate
+the default `HeightMap`. A transient root-order mismatch skips that frame;
+three consecutive invalid states disable the sparse pagination view and return
+to continuous virtualization instead of triggering full mount.
+
+`PaginationPlugin({experimentalSparseView: true})` enables this path only when
+root virtualization is active. The default remains `false`, so the compatible
+product path still uses an exact full-document lease. In sparse mode,
+Gap/TableBreak/HeightLock appliers cache complete layout facts but query and
+mutate only the mounted-ID diff. `LiveHeightSource` observes and measures only
+the mounted window; unmounted records keep flavour estimates. A remounted root
+immediately replays its cached pagination state before its next measurement.
+
+Sparse content/structure/props events all schedule at most one recomputation
+per animation frame because an offscreen text mutation has no
+`ResizeObserver`. The current pagination engine performs an `O(N)` scan of
+cached numbers, but that scan contains no DOM queries. Projection offset,
+range-height and viewport lookup remain Fenwick-backed `O(log N)` operations;
+ordinary scrolling only diffs the mounted window. Tests with 1000 root blocks
+keep the mounted count below ten while traversing projected page geometry.
+Printing/PDF do not consume a sparse state whose `exact` flag is false; they
+fall back to the complete readonly reflow.
+
 Each frame adds only constant-time checks for local height/index lengths and the
 model structure revision. A mismatch performs one cold `O(N)` rebuild. A
 transient reconciliation failure receives bounded frame retries; after three
@@ -190,11 +225,12 @@ repair remains only a bounded endpoint-rerender safety net.
 `RootVirtualizationManager.acquireFullDocumentViewLease()` is the explicit
 escape hatch for capabilities that require exact DOM geometry for every root
 unit. It synchronously mounts all root views, includes root blocks inserted
-while held, and returns an idempotent release function. Live pagination uses
-this lease because estimated offscreen heights cannot produce exact page and
-table-row breaks. This intentionally suspends virtualization benefits until
-pagination is disabled; model-only search/export/collaboration code must not
-use the lease.
+while held, and returns an idempotent release function. The default live
+pagination compatibility path uses this lease because estimated offscreen
+heights cannot produce exact page and table-row breaks. Experimental sparse
+pagination deliberately does not use it; non-exact print/export work is
+reflowed in the complete readonly renderer. Model-only
+search/export/collaboration code must not use the lease.
 
 Find/replace follows this split explicitly: indexing scans `doc.model` and
 creates no components; text changes rescan only the changed block IDs; virtual

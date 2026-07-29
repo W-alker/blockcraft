@@ -3,16 +3,36 @@ import {animationFrameScheduler, Subscription} from "rxjs";
 import {throttleTime} from "rxjs/operators";
 import {performanceTest} from "../../../../global";
 import {paginate, PaginationItem} from "../engine";
+import {
+  PaginationLayoutCoordinator,
+  PaginationLayoutState,
+} from "../layout/pagination-layout-coordinator";
+import {
+  comparePaginationShadow,
+  shadowMismatchSignature,
+} from "../layout/pagination-shadow-comparator";
 import {PaginationConfig, ResolvedPaginationGeometry} from "../pagination.types";
 import {resolveScreenGeometry} from "./pagination-geometry";
 import {computeBackdropHeight, computeBlockGaps, computeSheetRects} from "./sheet-layout";
-import {buildPaginationItems} from "./item-builder";
+import {BlockMeta, buildPaginationItems} from "./item-builder";
 import {LiveHeightSource} from "./live-height-source";
 import {PageFrameLayer} from "./page-frame-layer";
 import {GapApplier} from "./gap-applier";
 import {TableBreakApplier} from "./table-break-applier";
 import {HeightLockApplier} from "./height-lock-applier";
 import {createStablePaginationLayout, StablePaginationLayout} from "./stable-pagination-layout";
+import {registerRootLayoutProjection} from "../../virtualization/root-virtualization-manager";
+
+interface FontLoadingEventTarget {
+  addEventListener(type: "loadingdone", listener: EventListener): void;
+  removeEventListener(type: "loadingdone", listener: EventListener): void;
+}
+
+/** @internal Phase C rollout controls; PaginationPlugin owns the public flag. */
+export interface PaginatedViewControllerOptions {
+  readonly sparseView?: boolean;
+  readonly onSparseViewFailure?: (error: unknown) => void;
+}
 
 export class PaginatedViewController {
   private _config: PaginationConfig;
@@ -26,16 +46,35 @@ export class PaginatedViewController {
   private _containerRO: ResizeObserver | null = null;
   private _rafId = 0;
   private _enabled = false;
+  private _destroyed = false;
   private _layoutRevision = 0;
   private _stableLayout: StablePaginationLayout | null = null;
+  private _shadowLayout: PaginationLayoutState | null = null;
+  private _lastShadowMismatchSignature: string | null = null;
+  private _lastShadowErrorSignature: string | null = null;
+  private _fontEpoch = 0;
+  private _theme: string;
+  private _fontEventTarget: FontLoadingEventTarget | null = null;
+  private _releaseLayoutProjection: (() => void) | null = null;
+  private _sparseFailureCount = 0;
+  private _pendingSparseContainerStyles = false;
+  private readonly _onFontsLoadingDone: EventListener = () => {
+    if (!this._enabled) return;
+    this._fontEpoch++;
+    this._runShadowMutation('font-context', () => this._syncMeasureContext());
+    this.scheduleRecompute();
+  };
 
   constructor(
     private doc: BlockCraft.Doc,
     config: PaginationConfig,
     private scrollContainer: HTMLElement,
+    private readonly layoutCoordinator = new PaginationLayoutCoordinator(doc),
+    private readonly options: PaginatedViewControllerOptions = {},
   ) {
     this._config = config;
     this._geom = resolveScreenGeometry(config);
+    this._theme = doc.theme;
     this._heightSource = new LiveHeightSource(doc);
     this._frameLayer = new PageFrameLayer(scrollContainer);
     this._gapApplier = new GapApplier(doc);
@@ -62,19 +101,34 @@ export class PaginatedViewController {
     };
     this._geom = resolveScreenGeometry(this._config);
     if (this._enabled) {
-      this._applyContainerStyles();
+      if (this.options.sparseView) {
+        // Defer the CSS geometry mutation until after virtualization captures
+        // the old-coordinate anchor from projection.willChange$.
+        this._pendingSparseContainerStyles = true;
+      } else {
+        this._applyContainerStyles();
+      }
+      this._runShadowMutation('config-context', () => this._syncMeasureContext());
       this.scheduleRecompute();
     }
   }
 
   enable(): void {
-    if (this._enabled) return;
+    if (this._destroyed || this._enabled) return;
     this._enabled = true;
 
     this.doc.ngZone.runOutsideAngular(() => {
-      this._applyContainerStyles();
-      this._frameLayer.mount();
-      this._heightSource.syncObserved();
+      if (!this.options.sparseView) {
+        this._applyContainerStyles();
+        this._frameLayer.mount();
+      }
+      this._syncMountedViews(this._mountedRootIds());
+      this._theme = this.doc.theme;
+      this._runShadowMutation('enable-context', () => {
+        this.layoutCoordinator.syncRootOrder();
+        this._syncMeasureContext();
+      });
+      this._addFontListener();
 
       this._subs.add(
         this._heightSource.resize$
@@ -82,22 +136,58 @@ export class PaginatedViewController {
           .subscribe(() => this.scheduleRecompute()),
       );
       this._subs.add(
-        this.doc.onChildrenUpdate$.subscribe(() => {
-          this._heightSource.syncObserved();
+        this.doc.model.contentChange$.subscribe(change => {
+          this._shadowLayout = null;
+          this._runShadowMutation('content-change', () =>
+            this.layoutCoordinator.applyContentChange(change),
+          );
+          // Legacy live views receive text geometry through ResizeObserver. Sparse
+          // views have no DOM for offscreen roots, so model changes must also
+          // invalidate the projected layout directly.
+          if (this.options.sparseView || change.kinds.includes('props')) {
+            this.scheduleRecompute();
+          }
+        }),
+      );
+      this._subs.add(
+        this.doc.model.structureChange$.subscribe(change => {
+          this._runShadowMutation('structure-change', () =>
+            this.layoutCoordinator.applyStructureChange(change),
+          );
+          this._syncMountedViews(this._mountedRootIds());
           this.scheduleRecompute();
         }),
       );
-      // 属性变更也要重排：合并/取消合并单元格（rowspan/display）、列宽、对齐等只改 props，
-      // **不触发 onChildrenUpdate$**，且空单元格合并不改行高（ResizeObserver 也不响应）→ 不重算 → 视图卡在旧分页
-      //（用户实测：刚合并跨页空单元格视图错位，选中表格触发别的重排后才正确）。订阅 onPropsUpdate$ 补上。
-      // scheduleRecompute 走 rAF 合并，一帧内多次 props 变更只重算一次；打字走 onTextUpdate$、不在此列。
       this._subs.add(
-        this.doc.onPropsUpdate$.subscribe(() => this.scheduleRecompute()),
+        this.doc.themeChange$.subscribe(() => {
+          this._theme = this.doc.theme;
+          this._runShadowMutation('theme-context', () => this._syncMeasureContext());
+          this.scheduleRecompute();
+        }),
       );
+      // Phase B 中该视图信号只同步 ResizeObserver；重算由 ModelGraph.structureChange$ 调度。
+      this._subs.add(
+        this.doc.onChildrenUpdate$.subscribe(() => {
+          this._syncMountedViews(this._mountedRootIds());
+        }),
+      );
+      const viewChange$ = this.doc.virtualization?.viewChange$;
+      if (viewChange$) {
+        this._subs.add(
+          viewChange$.subscribe(change => {
+            this._syncMountedViews(change.mountedRootIds);
+            if (this.options.sparseView) this.scheduleRecompute();
+          }),
+        );
+      }
       this._containerRO = new ResizeObserver(() => this.scheduleRecompute());
       this._containerRO.observe(this.scrollContainer);
 
-      this.scheduleRecompute();
+      if (this.options.sparseView) {
+        this._activateSparseLayout();
+      } else {
+        this.scheduleRecompute();
+      }
     });
   }
 
@@ -124,8 +214,14 @@ export class PaginatedViewController {
     return this._recompute();
   }
 
+  /** @internal Phase B diagnostic snapshot; never drives the live view. */
+  captureShadowLayout(): PaginationLayoutState | null {
+    return this._shadowLayout;
+  }
+
   scheduleRecompute(): void {
     if (!this._enabled) return;
+    this._shadowLayout = null;
     if (this._rafId) cancelAnimationFrame(this._rafId);
     this._rafId = requestAnimationFrame(() => {
       this._rafId = 0;
@@ -136,6 +232,19 @@ export class PaginatedViewController {
   @performanceTest('pagination view recompute', 16)
   private _recompute(): StablePaginationLayout | null {
     if (!this._enabled) return null;
+    let measurementRevision: number | null = null;
+    try {
+      this.layoutCoordinator.syncRootOrder();
+      this._syncMeasureContext();
+      measurementRevision = this.layoutCoordinator.geometryRevision;
+    } catch (error) {
+      this._failShadow('prepare', error);
+    }
+
+    if (this.options.sparseView) {
+      return this._recomputeSparse(measurementRevision);
+    }
+
     // measure() 已忽略 margin-top（gap），无需先清空 gap——少一次「清空→强制回流→重设」的布局抖动，
     // 同时保留浏览器原生 overflow-anchor 对视口上方内容变化的滚动补偿（实测能稳住编辑滚动）。
     const metas = this._heightSource.measure({
@@ -153,6 +262,167 @@ export class PaginatedViewController {
     );
     this._stableLayout = layout;
 
+    this._applyLayoutView(layout, metas);
+
+    // Phase B shadow 永远最后运行，任何失败都不能阻断上面的 legacy DOM 输出。
+    if (measurementRevision !== null) {
+      this._reconcileShadow(layout, metas, measurementRevision);
+    }
+    return layout;
+  }
+
+  private _activateSparseLayout(): void {
+    try {
+      this.layoutCoordinator.syncRootOrder();
+      this._syncMeasureContext();
+      const state = this.layoutCoordinator.compute(this._config, this._geom);
+      const layout = this._stableLayoutFromState(state);
+      const virtualization = this.doc.virtualization;
+      if (!virtualization?.enabled) {
+        throw new Error('Sparse pagination requires root virtualization');
+      }
+      this._releaseLayoutProjection = registerRootLayoutProjection(
+        virtualization,
+        state.projection,
+        {
+          beforeActivate: () => {
+            try {
+              this._applyContainerStyles();
+              this._frameLayer.mount();
+            } catch (error) {
+              this._clearPaginationView();
+              throw error;
+            }
+          },
+          beforeDeactivate: () => this._clearPaginationView(),
+          onInvalid: error => {
+            this.disable();
+            this.options.onSparseViewFailure?.(error);
+          },
+        },
+      );
+      if (state.projection.willChange$) {
+        this._subs.add(
+          state.projection.willChange$.subscribe(() => {
+            if (!this._pendingSparseContainerStyles || !this._enabled) return;
+            this._applyContainerStyles();
+            this._pendingSparseContainerStyles = false;
+          }),
+        );
+      }
+      this._shadowLayout = state;
+      this._stableLayout = layout;
+      this._applyLayoutView(layout, this._metasFromState(state));
+      this.scheduleRecompute();
+    } catch (error) {
+      const releaseLayoutProjection = this._releaseLayoutProjection;
+      this._releaseLayoutProjection = null;
+      releaseLayoutProjection?.();
+      this._clearPaginationView();
+      throw error;
+    }
+  }
+
+  private _recomputeSparse(
+    measurementRevision: number | null,
+  ): StablePaginationLayout | null {
+    try {
+      if (measurementRevision === null) {
+        throw new Error('Sparse pagination measurement revision is unavailable');
+      }
+      if (this._pendingSparseContainerStyles) {
+        // The updated measure context has already invalidated natural geometry.
+        // Commit an estimated projection first; its willChange$ applies the new
+        // page CSS after virtualization captures the old scroll anchor. Measure
+        // mounted roots against the new width on the following frame.
+        const state = this.layoutCoordinator.compute(this._config, this._geom);
+        const layout = this._stableLayoutFromState(state);
+        this._shadowLayout = state;
+        this._stableLayout = layout;
+        this._applyLayoutView(layout, this._metasFromState(state));
+        this._sparseFailureCount = 0;
+        this.scheduleRecompute();
+        return layout;
+      }
+      const mountedIds = this._mountedRootIds();
+      this._syncMountedViews(mountedIds);
+      const measurements = this._heightSource.measure(
+        {
+          contentHeight: this._geom.geometry.contentHeight,
+          widowOrphanLines: this._config.widowOrphanLines ?? 2,
+        },
+        mountedIds,
+      );
+      const accepted = this.layoutCoordinator.applyMeasured(
+        measurements,
+        measurementRevision,
+      );
+      if (!accepted) {
+        this.scheduleRecompute();
+        return null;
+      }
+
+      const state = this.layoutCoordinator.compute(this._config, this._geom);
+      const layout = this._stableLayoutFromState(state);
+      this._shadowLayout = state;
+      this._stableLayout = layout;
+      this._applyLayoutView(layout, this._metasFromState(state));
+      this._sparseFailureCount = 0;
+      return layout;
+    } catch (error) {
+      this._sparseFailureCount++;
+      if (this._sparseFailureCount < 3) {
+        this._warn('paginationSparseReconcileError: ', {
+          attempt: this._sparseFailureCount,
+          error,
+        });
+        this.scheduleRecompute();
+        return null;
+      }
+      this._sparseFailureCount = 0;
+      const releaseLayoutProjection = this._releaseLayoutProjection;
+      this._releaseLayoutProjection = null;
+      releaseLayoutProjection?.();
+      this.disable();
+      this.options.onSparseViewFailure?.(error);
+      return null;
+    }
+  }
+
+  private _stableLayoutFromState(
+    state: PaginationLayoutState,
+  ): StablePaginationLayout {
+    return createStablePaginationLayout(
+      ++this._layoutRevision,
+      this._config,
+      this._geom,
+      state.items,
+      state.result,
+    );
+  }
+
+  private _metasFromState(state: PaginationLayoutState): BlockMeta[] {
+    return state.entries.map(entry => ({
+      id: entry.blockId,
+      flavour: entry.flavour,
+      nodeType: entry.nodeType,
+      isHeading: entry.isHeading,
+      height: entry.lockHeight ?? entry.naturalHeight,
+      splitOffsets: entry.splitOffsets ? [...entry.splitOffsets] : undefined,
+      preferredSplitOffsets: entry.preferredSplitOffsets
+        ? [...entry.preferredSplitOffsets]
+        : undefined,
+      tableRows: entry.tableRows?.map(row => ({...row})),
+      lockHeight: entry.lockHeight,
+      repeatHeaderHeight: entry.repeatHeaderHeight,
+    }));
+  }
+
+  private _applyLayoutView(
+    layout: StablePaginationLayout,
+    metas: BlockMeta[],
+  ): void {
+    const result = layout.result;
     const lockedIds = new Set<string>();
     for (const meta of metas) {
       if (meta.lockHeight != null && meta.lockHeight > 0) lockedIds.add(meta.id);
@@ -174,10 +444,163 @@ export class PaginatedViewController {
 
     const gaps = computeBlockGaps(result, this._geom.sheetHeightPx, this._geom.pageGap);
     this._gapApplier.apply(gaps);
-
-    // 表格按行跨页：把引擎拆分结果落成表格内的视图层页缝（占位行 + 行栏对齐）。
     this._tableBreaks.apply(metas, result, this._geom.sheetHeightPx, this._geom.pageGap);
-    return layout;
+  }
+
+  private _mountedRootIds(): readonly string[] {
+    try {
+      if (this.doc.virtualization?.enabled) {
+        return this.doc.vm.getMountedRootChildIds();
+      }
+      return this.doc.model.getChildrenIds(this.doc.rootId);
+    } catch {
+      return [...this.doc.root.childrenIds];
+    }
+  }
+
+  private _syncMountedViews(mountedRootIds: readonly string[]): void {
+    this._heightSource.syncObserved(mountedRootIds);
+    this._gapApplier.syncMounted(mountedRootIds);
+    this._tableBreaks.syncMounted(mountedRootIds);
+    this._heightLockApplier.syncMounted(mountedRootIds);
+  }
+
+  private _reconcileShadow(
+    legacy: StablePaginationLayout,
+    measurements: ReturnType<LiveHeightSource["measure"]>,
+    measurementRevision: number,
+  ): void {
+    let stage = 'apply-measured';
+    try {
+      const accepted = this.layoutCoordinator.applyMeasured(
+        measurements,
+        measurementRevision,
+      );
+      if (!accepted) {
+        this._shadowLayout = null;
+        this._lastShadowMismatchSignature = null;
+        this._lastShadowErrorSignature = null;
+        this.scheduleRecompute();
+        return;
+      }
+
+      stage = 'compute';
+      const shadow = this.layoutCoordinator.compute(this._config, this._geom);
+      stage = 'compare';
+      const mismatches = comparePaginationShadow(legacy, measurements, shadow);
+
+      this._shadowLayout = shadow;
+      this._lastShadowErrorSignature = null;
+      if (!mismatches.length) {
+        this._lastShadowMismatchSignature = null;
+        return;
+      }
+
+      stage = 'signature';
+      const signature = this._createShadowMismatchSignature(mismatches);
+      if (signature === this._lastShadowMismatchSignature) return;
+      this._lastShadowMismatchSignature = signature;
+      stage = 'logger';
+      this._warn('paginationShadowMismatch: ', {
+        legacyRevision: legacy.revision,
+        shadowRevision: shadow.revision,
+        mismatches,
+      });
+    } catch (error) {
+      this._failShadow(stage, error);
+    }
+  }
+
+  private _createShadowMismatchSignature(
+    mismatches: ReturnType<typeof comparePaginationShadow>,
+  ): string {
+    return shadowMismatchSignature(mismatches);
+  }
+
+  private _syncMeasureContext(): void {
+    const contentWidth = Math.max(
+      1,
+      this._geom.sheetWidthPx - this._geom.margins.left - this._geom.margins.right,
+    );
+    this.layoutCoordinator.updateMeasureContext({
+      contentWidth,
+      theme: this._theme,
+      fontEpoch: this._fontEpoch,
+      rendererRevision: 0,
+    });
+  }
+
+  private _runShadowMutation(stage: string, mutation: () => void): void {
+    try {
+      mutation();
+    } catch (error) {
+      this._failShadow(stage, error);
+    }
+  }
+
+  private _failShadow(stage: string, error: unknown): void {
+    this._shadowLayout = null;
+    this._lastShadowMismatchSignature = null;
+    let message = 'Unprintable shadow error';
+    try {
+      const rawMessage = error instanceof Error
+        ? `${error.name}: ${error.message}`
+        : String(error);
+      message = rawMessage.slice(0, 500);
+    } catch {
+      // Keep the bounded fallback above; hostile values must not escape diagnostics.
+    }
+    const signature = `${stage}|${message}`;
+    if (signature === this._lastShadowErrorSignature) return;
+    this._lastShadowErrorSignature = signature;
+    this._warn('paginationShadowLayoutError: ', {stage, message});
+  }
+
+  private _warn(message: string, detail: unknown): void {
+    try {
+      const logger = (
+        this.doc as unknown as {
+          logger?: {warn?: (message: string, detail: unknown) => void};
+        }
+      ).logger;
+      logger?.warn?.(message, detail);
+    } catch {
+      // Shadow diagnostics must never enter the authoritative legacy path.
+    }
+  }
+
+  private _addFontListener(): void {
+    if (this._fontEventTarget) return;
+    try {
+      const fonts = (
+        this.scrollContainer.ownerDocument as unknown as {
+          fonts?: Partial<FontLoadingEventTarget>;
+        }
+      ).fonts;
+      if (
+        !fonts ||
+        typeof fonts.addEventListener !== 'function' ||
+        typeof fonts.removeEventListener !== 'function'
+      ) {
+        return;
+      }
+      const target = fonts as FontLoadingEventTarget;
+      target.addEventListener('loadingdone', this._onFontsLoadingDone);
+      this._fontEventTarget = target;
+    } catch (error) {
+      this._failShadow('font-listener-add', error);
+    }
+  }
+
+  private _removeFontListener(): void {
+    const target = this._fontEventTarget;
+    this._fontEventTarget = null;
+    if (!target) return;
+    try {
+      target.removeEventListener('loadingdone', this._onFontsLoadingDone);
+    } catch (error) {
+      this._failShadow('font-listener-remove', error);
+    }
   }
 
   private _applyContainerStyles(): void {
@@ -212,18 +635,38 @@ export class PaginatedViewController {
     this._subs = new Subscription();
     this._containerRO?.disconnect();
     this._containerRO = null;
+    this._removeFontListener();
+    const releaseLayoutProjection = this._releaseLayoutProjection;
+    this._releaseLayoutProjection = null;
+    releaseLayoutProjection?.();
+    this._clearPaginationView();
+    this._stableLayout = null;
+    this._shadowLayout = null;
+    this._sparseFailureCount = 0;
+    this._pendingSparseContainerStyles = false;
+    this._lastShadowMismatchSignature = null;
+    this._lastShadowErrorSignature = null;
+  }
+
+  private _clearPaginationView(): void {
     this._gapApplier.clear();
     this._tableBreaks.clear();
     this._heightLockApplier.clear();
     this._frameLayer.destroy();
     this._removeContainerStyles();
-    this._stableLayout = null;
   }
 
   destroy(): void {
+    if (this._destroyed) return;
+    this._destroyed = true;
     this.disable();
     this._heightSource.destroy();
     this._gapApplier.destroy();
     this._heightLockApplier.destroy();
+    try {
+      this.layoutCoordinator.dispose();
+    } catch (error) {
+      this._failShadow('dispose', error);
+    }
   }
 }

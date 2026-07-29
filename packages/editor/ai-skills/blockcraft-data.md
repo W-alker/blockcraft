@@ -142,6 +142,7 @@ doc.model.queryBetween(fromId, toId, contain?)
 doc.model.toSnapshot(blockId): IBlockSnapshot | null
 doc.model.structureRevision: number
 doc.model.structureChange$: Observable<IBlockModelStructureChange>
+doc.model.contentChange$: Observable<IBlockModelContentChange>
 doc.model.textChange$: Observable<IBlockModelTextChange>
 
 // @internal: DocCRUD view-materialization barrier for an open outer transaction
@@ -172,6 +173,10 @@ Important boundaries:
   coalesced changed block IDs for mounted or unmounted editable blocks. Use
   these for model-wide indexes such as search; `onTextUpdate$` remains a
   component/view update stream and intentionally omits uncreated views.
+- `contentChange$` is the broader model-level invalidation stream. It reports
+  reachable text, inline-attribute and props changes without requiring mounted
+  views; see the contract below. Existing `textChange$` subscribers keep their
+  original filtering and transaction context unchanged.
 - Model APIs are queries only. Plugins must still mutate through `DocCRUD` or
   `DocChain`; never write a returned YBlock or cached props object directly.
 - `synchronizeParentBeforeView()` is the one internal exception to the query
@@ -180,6 +185,49 @@ Important boundaries:
   Extensions must not call it or treat it as a mutation API.
 - `doc.vm` and `getBlockById()` describe mounted Angular view state. Do not use
   them as document-existence checks when model-only behavior is sufficient.
+
+### Model Change Streams
+
+```typescript
+export type BlockModelContentChangeKind = "text" | "props"
+
+export interface IBlockModelContentChange {
+  readonly blockIds: readonly string[]
+  readonly kinds: readonly BlockModelContentChangeKind[]
+  readonly origin: unknown
+  readonly local: boolean
+  readonly isUndoRedo: boolean
+}
+
+export interface IBlockModelStructureChange {
+  revision: number
+  reachableAddedIds: readonly string[]
+  reachableRemovedIds: readonly string[]
+  affectedParentIds: readonly string[]
+  readonly affectedRootIds?: readonly string[]
+}
+```
+
+`contentChange$` emits at most once per Yjs transaction for changed blocks that
+remain reachable from the document root. It covers editable text mutations,
+inline attribute changes, nested `props` mutations, `children`/`props`
+replacement and whole reachable block replacement. `meta`-only changes and
+unreachable/orphan blocks are excluded. `kinds` is the transaction-coalesced
+set of `"text"` and `"props"`; `origin`, `local` and `isUndoRedo` preserve the
+same transaction context used by `textChange$`.
+
+`textChange$` remains fully compatible: it still emits only reachable editable
+text block IDs and keeps its previous transaction metadata. Existing search or
+text-index subscriptions do not need to migrate. Use `contentChange$` only
+when props or non-view model invalidation also matters.
+
+`structureChange$.affectedRootIds` identifies direct-root render units whose
+content/layout ownership changed, including nested moves and deletes. The field
+is optional so existing constructed mocks and consumers remain source
+compatible, but current runtimes always emit it. Direct-root additions and
+removals include the affected IDs; a pure direct-root reorder emits `[]`
+because order synchronization is already represented by the structure event
+and does not invalidate measured block geometry.
 
 ## Sparse View Synchronization
 

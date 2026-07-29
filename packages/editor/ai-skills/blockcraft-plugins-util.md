@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-07-20
+> Last updated: 2026-07-28
 
 ## PlaceholderPlugin
 
@@ -205,6 +205,7 @@ new PaginationPlugin(options?: PaginationPluginOptions)
 | `header` / `footer` | `PageChrome` | none | Left/center/right text; supports `{page}` and `{total}` |
 | `widowOrphanLines` | `number` | `2` | Minimum rows/lines on both sides of a safe split |
 | `printShortcut` | `boolean` | `false` | Route Cmd/Ctrl+P to plugin printing only while enabled |
+| `experimentalSparseView` | `boolean` | `false` | Phase C opt-in: let paginated Projection drive root virtualization instead of acquiring the full-document view lease |
 
 ### Public API
 
@@ -219,7 +220,11 @@ new PaginationPlugin(options?: PaginationPluginOptions)
 | `exportToPdf(name, options?)` | Browser print or host-native PDF; reuses the current stable page result unless `options.pagination` requests reflow |
 
 ```typescript
-const pagination = new PaginationPlugin({enabled: false, printShortcut: true})
+const pagination = new PaginationPlugin({
+  enabled: false,
+  printShortcut: true,
+  experimentalSparseView: true,
+})
 const doc = new BlockCraftDoc({/* ... */ plugins: [pagination]})
 
 pagination.enable()
@@ -231,7 +236,11 @@ await pagination.exportToPdf('document.pdf')
 pagination.disable()
 ```
 
-The plugin changes only local DOM/CSS view state. It never writes Yjs and produces no Undo item. `print()` and `exportToPdf()` obtain the complete document through `doc.exportSnapshot()`, so virtualized offscreen blocks are included without mounting editor views merely to serialize them. Live pagination is different: exact page/table geometry requires every root view, so `enable()` automatically acquires a full-document virtualization lease and `disable()` releases it after view cleanup. Very large documents therefore pay full view mount/memory cost only while live pagination is enabled. `exportToPdf()` opens a browser print dialog by default, or invokes a `PaginationPdfHostBackend` while the current top-level WebView print mirror is mounted. It does not return PDF bytes. The WYSIWYG path uses the same stable pagination result and readonly BlockCraft block components, not snapshot-viewer or DOM rasterization. Explicit `options.pagination` means a new reflow. Register `PageDividerBlockSchema` to expose manual page breaks. The package intentionally does not publish a settings component: host UI reads `plugin.config` and sends changes through `plugin.updateConfig(...)`; the playground keeps its own debug-only panel as an integration example.
+The plugin changes only local DOM/CSS view state. It never writes Yjs and produces no Undo item. `print()` and `exportToPdf()` obtain the complete document through `doc.exportSnapshot()`, so virtualized offscreen blocks are included without mounting editor views merely to serialize them.
+
+The default `experimentalSparseView: false` path preserves the existing exact live behavior: `enable()` acquires a full-document virtualization lease and `disable()` releases it after view cleanup. With `experimentalSparseView: true` and root virtualization enabled, the paginated Projection drives viewport/spacer geometry without that lease. Mounted roots are measured; offscreen roots use configured flavour estimates until mounted. Gap, table-break and height-lock state is cached as pure layout data and replayed only for mounted roots. Model text/props/structure updates are frame-coalesced; the current pagination engine still performs an `O(N)` scan of cached numbers.
+
+The sparse option is a Phase C rollout switch, not yet the default exact live-pagination mode. A non-exact sparse result is not reused for `print()` or `exportToPdf()`; those operations use the complete readonly reflow path. `exportToPdf()` opens a browser print dialog by default, or invokes a `PaginationPdfHostBackend` while the current top-level WebView print mirror is mounted. It does not return PDF bytes. The readonly path uses BlockCraft block components, not snapshot-viewer or DOM rasterization. Explicit `options.pagination` means a new reflow. Register `PageDividerBlockSchema` to expose manual page breaks. The package intentionally does not publish a settings component: host UI reads `plugin.config` and sends changes through `plugin.updateConfig(...)`; the playground keeps its own debug-only panel as an integration example.
 
 ---
 

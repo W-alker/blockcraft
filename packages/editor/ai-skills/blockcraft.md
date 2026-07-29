@@ -162,6 +162,15 @@ reachable YBlocks and do not require source or target ComponentRefs. Mounted
 views receive the same transaction through the normal observer; unmounted
 subtrees stay model-only until they are mounted.
 
+`BlockModelGraph` also exposes transaction-coalesced model change facts for
+view-independent consumers. `contentChange$` reports reachable text changes
+(including inline attribute changes), nested props changes and whole-block
+replacement as `"text"` / `"props"` kinds, together with Yjs `origin`, `local`
+and `isUndoRedo` context. The existing `textChange$` contract is unchanged.
+`structureChange$` adds optional `affectedRootIds`, which current runtimes
+always populate with the direct-root render units whose layout content was
+affected; a pure direct-root reorder reports an empty array.
+
 ### Root Virtualization
 
 ```typescript
@@ -179,10 +188,35 @@ const doc = new BlockCraftDoc({
 })
 ```
 
+Pagination/virtualization Phase A introduced the package-internal
+`VerticalLayoutProjection` read seam and its continuous `HeightMap` adapter.
+Phase B added a stable-ID GeometryIndex, LayoutCoordinator, paginated
+Projection and bounded legacy/shadow comparison. These implementation types
+remain absent from the public barrel.
+
+Phase C adds an internal exclusive Projection transition to
+`RootVirtualizationManager`. The transition captures the old-coordinate scroll
+anchor before paginated DOM changes, validates root ID order, pauses continuous
+height observation while the custom Projection is active, and restores the
+continuous Projection on release or bounded failure. Gap, table-break and
+height-lock appliers cache pure layout state but touch only mounted root IDs;
+their state is replayed when a root view remounts.
+
+`PaginationPlugin({experimentalSparseView: true})` opts into this Phase C path
+when root virtualization is enabled. The paginated Projection drives viewport
+range and spacers, mounted roots upgrade from estimated to measured geometry,
+and offscreen model text/props changes schedule one animation-frame-coalesced
+pure recomputation without DOM lookup. The first implementation still performs
+an `O(N)` scan of cached numbers and keeps all lightweight page-frame DOM.
+The option defaults to `false`: the product compatibility path continues to
+hold an exact full-document view lease until Phase D. Printing/PDF never reuse
+a non-exact sparse layout; they fall back to the complete readonly reflow path.
+
 The bundled reference `<block-craft-editor>` accepts the initialization-only
-`[virtualizationEnabled]` input (default `true`). Recreate that component to
-change modes; direct framework integrations configure
-`DocConfig.virtualization` when constructing `BlockCraftDoc`.
+`[virtualizationEnabled]` input (default `true`) and
+`[paginationSparseView]` input (default `false`). Recreate that component to
+change either construction mode; direct framework integrations configure
+`DocConfig.virtualization` and `PaginationPlugin.experimentalSparseView`.
 
 This is opt-in and disabled by default. Direct root children are windowed;
 their nested tables/columns/callouts remain complete atomic subtrees. Selection
@@ -263,7 +297,8 @@ released from symmetric teardown. Internal block dragging uses it for sources
 after Selection is cleared, without adding work to pointer movement.
 Exact whole-document view consumers can hold
 `doc.virtualization.acquireFullDocumentViewLease()` and must release the
-returned function. Live pagination manages this automatically; ordinary
+returned function. The default live-pagination compatibility path manages this
+automatically; experimental sparse pagination does not acquire it. Ordinary
 model-only capabilities must stay on `doc.model` / `doc.exportSnapshot()`.
 
 ### Block-Level Readonly
@@ -318,6 +353,7 @@ const pagination = new PaginationPlugin({
   enabled: false,
   pageSize: 'A4',
   printShortcut: true,
+  experimentalSparseView: true, // Phase C opt-in; requires root virtualization
 })
 
 plugins: [pagination]
@@ -329,7 +365,7 @@ await pagination.print()
 pagination.disable()
 ```
 
-分页启用状态属于插件，不属于 `DocConfig`；不要使用 `DocConfig.pagination` 或 `doc.pagination`。插件关闭时会移除页框、块间距、表格视图断点和高度锁定，且不会写入 Yjs。虚拟化开启时，实时分页会自动持有整文档视图租约以获得精确几何，关闭后恢复窗口化；超长文档因此会在分页启用期间承担全量视图成本。`exportToPdf()` 使用真实只读 BlockCraft 组件；不传 `pagination` override 时复用当前稳定分页结果，snapshot-viewer 不参与分页 PDF。浏览器走系统打印，Tauri 等宿主通过 `PaginationPdfHostBackend` 打印当前顶层导出 WebView；正文不经过 DOM 栅格化。
+分页启用状态属于插件，不属于 `DocConfig`；不要使用 `DocConfig.pagination` 或 `doc.pagination`。插件关闭时会移除页框、块间距、表格视图断点和高度锁定，且不会写入 Yjs。`experimentalSparseView` 默认 `false`，默认路径仍持有整文档视图租约以保证实时精确几何；设为 `true` 且开启根虚拟化后，分页 Projection 驱动窗口与 spacer，离屏块允许先用估算几何并在挂载后收敛。该实验路径不会把非 exact 结果交给打印/PDF，而会使用完整只读重排。`exportToPdf()` 使用真实只读 BlockCraft 组件，snapshot-viewer 不参与分页 PDF；浏览器走系统打印，Tauri 等宿主通过 `PaginationPdfHostBackend` 打印当前顶层导出 WebView，正文不经过 DOM 栅格化。
 
 `DocExportManager` 只提供 JSON、Markdown 与 PDF/打印导出，不再提供 `exportToJpeg()` 或 DOM-to-image 渲染配置。需要位图截图的宿主应在应用层选择并维护独立的截图方案。
 

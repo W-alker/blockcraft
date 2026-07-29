@@ -426,3 +426,139 @@ describe("TableBlockComponent readonly resize", () => {
     expect(col.style.width).toBe("");
   });
 });
+
+describe("TableBlockComponent equal column widths", () => {
+  function createHarness({
+    columns,
+    parentClientWidth,
+    paddingLeft = 0,
+    paddingRight = 0,
+    tableClientWidth = 180,
+    overhead = 0,
+  }: {
+    columns: number;
+    parentClientWidth: number;
+    paddingLeft?: number;
+    paddingRight?: number;
+    tableClientWidth?: number;
+    overhead?: number;
+  }) {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const parentHost = document.createElement("div");
+    const parentContent = document.createElement("div");
+    const tableHost = document.createElement("div");
+    const tableScroller = document.createElement("div");
+
+    parentContent.style.paddingLeft = `${paddingLeft}px`;
+    parentContent.style.paddingRight = `${paddingRight}px`;
+    Object.defineProperty(parentContent, "clientWidth", {
+      configurable: true,
+      value: parentClientWidth,
+    });
+    Object.defineProperty(tableScroller, "clientWidth", {
+      configurable: true,
+      value: tableClientWidth,
+    });
+    parentContent.appendChild(tableHost);
+    parentHost.appendChild(parentContent);
+    document.body.appendChild(parentHost);
+
+    const parent = {
+      hostElement: parentHost,
+      childrenRenderRef: {containerElement: parentContent},
+    };
+    table.hostElement = tableHost;
+    table.parentId = "parent-1";
+    table.doc = {
+      getBlockById: (id: string) => id === "parent-1" ? parent : null,
+    };
+    table.tableScrollable = {nativeElement: tableScroller};
+    Object.defineProperty(table, "props", {
+      value: {colWidths: Array.from({length: columns}, () => 100)},
+    });
+    table.updateProps = jasmine.createSpy("updateProps");
+    table._clearColInlineWidths = jasmine.createSpy("_clearColInlineWidths");
+    table._normalizeHorizontalScroll = jasmine.createSpy("_normalizeHorizontalScroll");
+    spyOn(table, "_getTableHorizontalOverhead").and.returnValue(overhead);
+
+    return {
+      table,
+      dispose: () => parentHost.remove(),
+    };
+  }
+
+  it("fills the direct parent children content box instead of the current table width", () => {
+    const {table, dispose} = createHarness({
+      columns: 3,
+      parentClientWidth: 630,
+      paddingLeft: 10,
+      paddingRight: 20,
+      tableClientWidth: 180,
+      overhead: 3,
+    });
+
+    table.setEqualColumnWidths();
+
+    expect(table.updateProps).toHaveBeenCalledOnceWith({
+      colWidths: [199, 199, 199],
+    });
+    expect(table._normalizeHorizontalScroll).toHaveBeenCalledOnceWith(true);
+    dispose();
+  });
+
+  it("distributes an indivisible pixel remainder without shrinking the table", () => {
+    const {table, dispose} = createHarness({
+      columns: 3,
+      parentClientWidth: 604,
+      paddingLeft: 2,
+      paddingRight: 2,
+      overhead: 1,
+    });
+
+    table.setEqualColumnWidths();
+
+    expect(table.updateProps).toHaveBeenCalledOnceWith({
+      colWidths: [200, 200, 199],
+    });
+    dispose();
+  });
+
+  it("keeps the minimum column width when the parent content box is narrower", () => {
+    const {table, dispose} = createHarness({
+      columns: 3,
+      parentClientWidth: 120,
+      overhead: 1,
+    });
+
+    table.setEqualColumnWidths();
+
+    expect(table.updateProps).toHaveBeenCalledOnceWith({
+      colWidths: [50, 50, 50],
+    });
+    dispose();
+  });
+
+  it("measures table overhead without relying on col bounding boxes", () => {
+    const component = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const host = document.createElement("div");
+    const table = document.createElement("table");
+    const colgroup = document.createElement("colgroup");
+    const cols = Array.from({length: 7}, () => document.createElement("col"));
+    colgroup.append(...cols);
+    table.appendChild(colgroup);
+    host.appendChild(table);
+    component.hostElement = host;
+    Object.defineProperty(component, "props", {
+      value: {colWidths: Array.from({length: 7}, () => 100)},
+    });
+    spyOn(table, "getBoundingClientRect").and.returnValue({width: 701} as DOMRect);
+    const colRectSpies = cols.map(col =>
+      spyOn(col, "getBoundingClientRect").and.returnValue({width: 0} as DOMRect),
+    );
+    component._layoutDistanceFromBcr = jasmine.createSpy("_layoutDistanceFromBcr")
+      .and.callFake((distance: number) => distance);
+
+    expect(component._getTableHorizontalOverhead()).toBe(1);
+    expect(colRectSpies.every(spy => !spy.calls.any())).toBeTrue();
+  });
+});

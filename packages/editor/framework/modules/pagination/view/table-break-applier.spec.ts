@@ -65,4 +65,28 @@ describe("TableBreakApplier - 缺块兜底（getBlockById 抛错不炸 _recomput
     const meta: any = {id: "ghost", tableRows: rows(4)};
     expect(() => applier.apply([meta], splitResult("ghost", [80, 160], [80, 80]), 120, 20)).not.toThrow();
   });
+
+  it("只查询 mounted 表格，并在卸载/重挂后从缓存布局重放断点", () => {
+    const first = fakeTable();
+    const remounted = fakeTable();
+    let live = first;
+    const getBlockById = jasmine.createSpy("getBlockById").and.callFake(() => live);
+    const applier = new TableBreakApplier({getBlockById} as unknown as BlockCraft.Doc);
+    const meta: any = {id: "table", tableRows: rows(6)};
+    const result = splitResult("table", [80, 160, 240], [80, 80, 80]);
+
+    applier.syncMounted([]);
+    applier.apply([meta], result, 120, 20);
+    expect(getBlockById).not.toHaveBeenCalled();
+
+    applier.syncMounted(["table"]);
+    expect(first.applyPaginationBreaks).toHaveBeenCalledTimes(1);
+
+    applier.syncMounted([]);
+    expect(first.clearPaginationBreaks).toHaveBeenCalledTimes(1);
+
+    live = remounted;
+    applier.syncMounted(["table"]);
+    expect(remounted.applyPaginationBreaks).toHaveBeenCalledTimes(1);
+  });
 });

@@ -3,17 +3,25 @@ import type {SelectionProjectionMountAdapter} from '../selection/projection-moun
 import type {ISelectionJSON, ISelectionPointJSON} from '../selection/types'
 import {HeightMap} from './height-map'
 import {HeightMeasurement, HeightObserver} from './height-observer'
+import {
+  ContinuousLayoutProjection,
+  VerticalLayoutProjection,
+} from './layout-projection'
 import {PinRegistry} from './pin-registry'
 import {mergeToSegments} from './segment-merger'
-import {captureScrollAnchor, restoreScrollAnchor, ScrollAnchorSnapshot} from './scroll-anchor'
-import {SpacerLayer} from './spacer-layer'
+import {
+  captureProjectedScrollAnchor,
+  restoreProjectedScrollAnchor,
+  ScrollAnchorSnapshot,
+} from './scroll-anchor'
+import {ProjectionSpacerLayer} from './spacer-layer'
 import {
   BlockViewRetentionContext,
   resolveVirtualizationConfig,
   RenderedSegment,
   VirtualizationConfig,
 } from './types'
-import {calculateViewportRange} from './viewport-range'
+import {calculateProjectedViewportRange} from './viewport-range'
 
 const DEFAULT_ESTIMATED_HEIGHT = 48
 const BLOCK_NAVIGATION_PIN = 'block-navigation'
@@ -22,6 +30,7 @@ const BLOCK_NAVIGATION_EPSILON = 1
 const BLOCK_NAVIGATION_STABLE_FRAMES = 2
 const BLOCK_NAVIGATION_MAX_FRAMES = 8
 const MAX_RECONCILE_FAILURES = 3
+const MAX_CUSTOM_PROJECTION_FAILURES = 3
 const FULL_MOUNT_FALLBACK_MESSAGE = '虚拟渲染异常，已切换为完整渲染'
 
 type SelectionPinSnapshot = Pick<ISelectionJSON, 'anchor' | 'head'>
@@ -39,6 +48,7 @@ interface BlockNavigationTask {
   started: boolean
   frame: number | null
   frames: number
+  projectionWaitFrames: number
   stableFrames: number
 }
 
@@ -46,15 +56,41 @@ export interface VirtualizationViewChange {
   mountedRootIds: readonly string[]
 }
 
+/** @internal Lifecycle hooks for one exclusive custom layout projection. */
+export interface LayoutProjectionRegistrationHooks {
+  /**
+   * Runs after the continuous-coordinate anchor is captured and before the
+   * custom projection becomes active.
+   */
+  readonly beforeActivate?: () => void
+  /**
+   * Runs after the old-coordinate anchor is captured and before continuous
+   * layout becomes active again. Pagination uses this to remove reversible
+   * DOM geometry while the transition is paused.
+   */
+  readonly beforeDeactivate?: () => void
+  /** Called after a broken custom projection has fallen back to continuous layout. */
+  readonly onInvalid?: (error: unknown) => void
+}
+
+type LayoutProjectionRegistrar = (
+  projection: VerticalLayoutProjection,
+  hooks?: LayoutProjectionRegistrationHooks,
+) => () => void
+
+const layoutProjectionRegistrars = new WeakMap<object, LayoutProjectionRegistrar>()
+
 export class RootVirtualizationManager implements SelectionProjectionMountAdapter {
   private readonly config
   private readonly heights = new HeightMap()
+  private readonly continuousLayoutProjection = new ContinuousLayoutProjection(this.heights)
+  private layoutProjection: VerticalLayoutProjection = this.continuousLayoutProjection
   private readonly pins = new PinRegistry()
   private readonly heightObserver = new HeightObserver((values) => this.applyMeasurements(values))
   private readonly subscriptions = new Subscription()
   private blockIds: string[] = []
   private indexById = new Map<string, number>()
-  private spacerLayer: SpacerLayer | null = null
+  private spacerLayer: ProjectionSpacerLayer | null = null
   private scrollContainer: HTMLElement | null = null
   private ownerWindow: Window | null = null
   private viewportResizeObserver: ResizeObserver | null = null
@@ -76,10 +112,22 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   private reconcileFailureCount = 0
   private fullMountFallback = false
   private fallbackMountFailureLogged = false
+  private customLayoutProjection: VerticalLayoutProjection | null = null
+  private customLayoutProjectionSubscription: Subscription | null = null
+  private customLayoutProjectionHooks: LayoutProjectionRegistrationHooks | null = null
+  private customProjectionValidationPending = false
+  private customProjectionFailureCount = 0
 
   readonly viewChange$ = new Subject<VirtualizationViewChange>()
 
   private readonly onScroll = () => {
+    if (this.pendingStructureAnchor && !this.blockNavigationTask) {
+      // A projection/structure update may capture an anchor one frame before
+      // reconciliation. If the viewport moves in that interval, the newer
+      // viewport position owns restoration; replaying the stale anchor would
+      // snap a user scroll back to its previous location.
+      this.pendingStructureAnchor = this.captureCurrentStructureAnchor()
+    }
     if (!this.fullMountFallback) this.schedule()
   }
   private readonly onResize = () => {
@@ -91,6 +139,10 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     config?: VirtualizationConfig,
   ) {
     this.config = resolveVirtualizationConfig(config)
+    layoutProjectionRegistrars.set(
+      this,
+      (projection, hooks) => this.registerLayoutProjection(projection, hooks),
+    )
   }
 
   get enabled(): boolean {
@@ -107,7 +159,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       this.viewportResizeObserver = observer
       observer.observe(scrollContainer)
     }
-    this.spacerLayer = new SpacerLayer(this.doc.root.childrenRenderRef!.containerElement)
+    this.spacerLayer = new ProjectionSpacerLayer(this.doc.root.childrenRenderRef!.containerElement)
     this.rebuildModel()
     this.markStructureRevisionSynchronized()
     this.unregisterSelectionAdapter = this.doc.selection.registerProjectionMountAdapter(this)
@@ -135,6 +187,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    layoutProjectionRegistrars.delete(this)
     if (this.frame !== null) this.cancelFrame(this.frame)
     this.frame = null
     this.cancelBlockNavigation()
@@ -146,6 +199,18 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     this.viewportResizeObserver?.disconnect()
     this.viewportResizeObserver = null
     this.heightObserver.disconnect()
+    try {
+      this.customLayoutProjectionHooks?.beforeDeactivate?.()
+    } catch (error) {
+      this.doc.logger.warn('layoutProjectionCleanupError: ', error)
+    }
+    this.customLayoutProjectionSubscription?.unsubscribe()
+    this.customLayoutProjectionSubscription = null
+    this.customLayoutProjection = null
+    this.customLayoutProjectionHooks = null
+    this.customProjectionValidationPending = false
+    this.customProjectionFailureCount = 0
+    this.continuousLayoutProjection.dispose()
     this.pins.clear()
     this.selectionSnapshot = null
     this.projectionBlockIds = []
@@ -182,7 +247,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   /**
    * Center a stable block ID in the virtual scroll viewport. The target's root
    * render unit is mounted transiently, then its real host geometry corrects
-   * the estimated HeightMap jump.
+   * the estimated projected-layout jump.
    */
   scrollToBlock(blockId: string): Promise<boolean> {
     this.cancelBlockNavigation()
@@ -200,6 +265,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       started: false,
       frame: null,
       frames: 0,
+      projectionWaitFrames: 0,
       stableFrames: 0,
     }
     this.blockNavigationTask = task
@@ -213,6 +279,10 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       task.started ||
       !this.scrollContainer
     ) {
+      return
+    }
+    if (!this.isLayoutProjectionGeometryReady()) {
+      this.scheduleBlockNavigationProjectionWait(task)
       return
     }
     task.started = true
@@ -365,6 +435,72 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     }
   }
 
+  /**
+   * Install one exclusive custom vertical layout projection.
+   *
+   * @internal Pagination is currently the only package-internal owner. The
+   * projection must expose stable blockIds matching the canonical root order.
+   */
+  private registerLayoutProjection(
+    projection: VerticalLayoutProjection,
+    hooks: LayoutProjectionRegistrationHooks = {},
+  ): () => void {
+    if (!this.enabled || this.disposed) return () => undefined
+    if (projection === this.continuousLayoutProjection) {
+      throw new Error('Continuous layout projection is managed internally')
+    }
+    if (this.customLayoutProjection) {
+      throw new Error('A custom layout projection is already registered')
+    }
+
+    this.validateProjection(projection)
+    const anchor = this.pendingStructureAnchor ?? this.captureCurrentStructureAnchor()
+    this.cancelScheduledReconcile()
+    this.heightObserver.disconnect()
+    try {
+      hooks.beforeActivate?.()
+    } catch (error) {
+      try {
+        hooks.beforeDeactivate?.()
+      } catch (cleanupError) {
+        this.doc.logger.warn('layoutProjectionCleanupError: ', cleanupError)
+      }
+      this.pendingStructureAnchor = anchor
+      this.syncHeightObserver()
+      this.schedule()
+      throw error
+    }
+    this.customLayoutProjection = projection
+    this.customLayoutProjectionHooks = hooks
+    this.layoutProjection = projection
+    this.customProjectionValidationPending = false
+    this.customProjectionFailureCount = 0
+    const projectionSubscription = new Subscription()
+    if (projection.willChange$) {
+      projectionSubscription.add(projection.willChange$.subscribe(() => {
+        if (this.customLayoutProjection !== projection || this.disposed) return
+        this.pendingStructureAnchor ??= this.captureCurrentStructureAnchor()
+        this.cancelScheduledReconcile()
+      }))
+    }
+    projectionSubscription.add(projection.change$.subscribe(() => {
+      if (this.customLayoutProjection !== projection || this.disposed) return
+      this.customProjectionValidationPending = true
+      this.schedule()
+    }))
+    this.customLayoutProjectionSubscription = projectionSubscription
+    this.pendingStructureAnchor = anchor
+    this.schedule()
+
+    let active = true
+    return () => {
+      if (!active) return
+      active = false
+      if (this.customLayoutProjection !== projection || this.disposed) return
+      this.deactivateCustomLayoutProjection()
+    }
+  }
+
   /** @internal Finish a sparse-root move deferred to protect native IME state. */
   settleCompositionView(): void {
     try {
@@ -415,6 +551,21 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       }
     }
     if (!this.scrollContainer) return
+    if (this.customProjectionValidationPending) {
+      try {
+        this.validateProjection(this.layoutProjection)
+        this.customProjectionValidationPending = false
+        this.customProjectionFailureCount = 0
+      } catch (error) {
+        this.customProjectionFailureCount++
+        if (this.customProjectionFailureCount < MAX_CUSTOM_PROJECTION_FAILURES) {
+          this.schedule()
+        } else {
+          this.invalidateCustomLayoutProjection(error)
+        }
+        return
+      }
+    }
     const settledSparseRoot = this.sparseRootReconcilePending
     if (settledSparseRoot) {
       this.doc.vm._reconcileSparseRootChildren(this.blockIds)
@@ -439,17 +590,17 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     const viewportRect = this.scrollContainer.getBoundingClientRect()
     const currentScrollTop = Math.max(0, viewportRect.top - rootRect.top)
     const structureRestore = this.pendingStructureAnchor
-      ? restoreScrollAnchor(
+      ? restoreProjectedScrollAnchor(
           this.pendingStructureAnchor,
           (id) => this.indexById.get(id) ?? -1,
-          this.heights,
+          this.layoutProjection,
           currentScrollTop,
           this.scrollContainer.clientHeight || viewportRect.height,
         )
       : null
     const scrollTop = structureRestore?.scrollTop ?? currentScrollTop
-    const viewport = calculateViewportRange(
-      this.heights,
+    const viewport = calculateProjectedViewportRange(
+      this.layoutProjection,
       scrollTop,
       this.scrollContainer.clientHeight || viewportRect.height,
       this.config.overscan,
@@ -473,8 +624,17 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     })
     this.syncRetainedRootViews()
     if (!this.fullMountFallback) {
-      this.syncHeightObserver()
-      this.spacerLayer?.sync(this.blockIds, segments, this.heights, (id) => this.doc.vm.get(id)?.instance.hostElement)
+      if (this.layoutProjection === this.continuousLayoutProjection) {
+        this.syncHeightObserver()
+      } else {
+        this.heightObserver.disconnect()
+      }
+      this.spacerLayer?.sync(
+        this.blockIds,
+        segments,
+        this.layoutProjection,
+        (id) => this.doc.vm.get(id)?.instance.hostElement,
+      )
     }
     this.restorePendingStructureAnchor(structureRestore)
     this.publishViewChange()
@@ -495,6 +655,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
         return flavour ? (this.config.estimatedHeights[flavour] ?? DEFAULT_ESTIMATED_HEIGHT) : DEFAULT_ESTIMATED_HEIGHT
       }),
     )
+    this.continuousLayoutProjection.notifyChange()
   }
 
   private resolveRootIndices(blockIds: readonly string[]): number[] {
@@ -532,8 +693,17 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       this.spacerLayer?.clear()
       this.heightObserver.disconnect()
     } else {
-      this.syncHeightObserver()
-      this.syncSpacersFromMounted()
+      if (this.layoutProjection === this.continuousLayoutProjection) {
+        this.syncHeightObserver()
+      } else {
+        this.heightObserver.disconnect()
+      }
+      // A structure transaction updates blockIds before a custom projection
+      // owner can commit matching geometry. Selection may still synchronously
+      // mount the inserted block, but stale range reads must wait for change$.
+      if (this.isLayoutProjectionGeometryReady()) {
+        this.syncSpacersFromMounted()
+      }
     }
     this.publishViewChange()
   }
@@ -629,6 +799,9 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       : -1
 
     this.rebuildModel(nextBlockIds)
+    if (this.customLayoutProjection) {
+      this.customProjectionValidationPending = true
+    }
     this.pruneRetainedRootViews()
     if (this.pendingStructureAnchor && !this.indexById.has(this.pendingStructureAnchor.blockId)) {
       const fallbackId = findNearestSurvivingId(previousBlockIds, previousAnchorIndex, this.indexById)
@@ -839,7 +1012,11 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
 
   private captureCurrentStructureAnchor(): ScrollAnchorSnapshot | null {
     if (!this.scrollContainer) return null
-    const snapshot = captureScrollAnchor(this.blockIds, this.heights, this.getViewportTop())
+    const snapshot = captureProjectedScrollAnchor(
+      this.blockIds,
+      this.layoutProjection,
+      this.getViewportTop(),
+    )
     if (!snapshot) return null
 
     const host = this.doc.vm.get(snapshot.blockId)?.instance.hostElement
@@ -848,7 +1025,9 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     return Number.isFinite(relativeOffset) ? {...snapshot, relativeOffset} : snapshot
   }
 
-  private restorePendingStructureAnchor(estimated: ReturnType<typeof restoreScrollAnchor>): void {
+  private restorePendingStructureAnchor(
+    estimated: ReturnType<typeof restoreProjectedScrollAnchor>,
+  ): void {
     const snapshot = this.pendingStructureAnchor
     this.pendingStructureAnchor = null
     if (!snapshot || !this.scrollContainer || !estimated) return
@@ -884,7 +1063,17 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       if (last && index === last[1] + 1) segments[segments.length - 1] = [last[0], index]
       else segments.push([index, index])
     }
-    this.spacerLayer?.sync(this.blockIds, segments, this.heights, (id) => this.doc.vm.get(id)?.instance.hostElement)
+    this.spacerLayer?.sync(
+      this.blockIds,
+      segments,
+      this.layoutProjection,
+      (id) => this.doc.vm.get(id)?.instance.hostElement,
+    )
+  }
+
+  private isLayoutProjectionGeometryReady(): boolean {
+    return this.layoutProjection === this.continuousLayoutProjection ||
+      !this.customProjectionValidationPending
   }
 
   private syncHeightObserver(): void {
@@ -892,9 +1081,19 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   }
 
   private applyMeasurements(measurements: HeightMeasurement[]): void {
-    if (!this.scrollContainer || !measurements.length) return
+    if (
+      !this.scrollContainer ||
+      !measurements.length ||
+      this.layoutProjection !== this.continuousLayoutProjection
+    ) {
+      return
+    }
     const viewportTop = this.getViewportTop()
-    const anchor = captureScrollAnchor(this.blockIds, this.heights, viewportTop)
+    const anchor = captureProjectedScrollAnchor(
+      this.blockIds,
+      this.layoutProjection,
+      viewportTop,
+    )
     let changed = false
     measurements.forEach(([id, height]) => {
       const index = this.indexById.get(id)
@@ -903,12 +1102,13 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       changed = true
     })
     if (!changed) return
+    this.continuousLayoutProjection.notifyChange()
 
     if (anchor && !this.blockNavigationTask) {
-      const restored = restoreScrollAnchor(
+      const restored = restoreProjectedScrollAnchor(
         anchor,
         (id) => this.indexById.get(id) ?? -1,
-        this.heights,
+        this.layoutProjection,
         viewportTop,
         this.scrollContainer.clientHeight,
       )
@@ -925,6 +1125,61 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     return Math.max(0, this.scrollContainer.getBoundingClientRect().top - rootContainer.getBoundingClientRect().top)
   }
 
+  private validateProjection(projection: VerticalLayoutProjection): void {
+    if (projection.length !== this.blockIds.length) {
+      throw new Error(
+        `Layout projection length mismatch: expected ${this.blockIds.length}, received ${projection.length}`,
+      )
+    }
+    const projectedIds = projection.blockIds
+    if (!projectedIds || !arraysEqual(projectedIds, this.blockIds)) {
+      throw new Error('Layout projection block order does not match the document root')
+    }
+  }
+
+  private cancelScheduledReconcile(): void {
+    if (this.frame === null) return
+    this.cancelFrame(this.frame)
+    this.frame = null
+  }
+
+  private deactivateCustomLayoutProjection(): void {
+    const projection = this.customLayoutProjection
+    if (!projection) return
+    const anchor = this.pendingStructureAnchor ?? this.captureCurrentStructureAnchor()
+    this.cancelScheduledReconcile()
+    this.customLayoutProjectionSubscription?.unsubscribe()
+    this.customLayoutProjectionSubscription = null
+    const hooks = this.customLayoutProjectionHooks
+    this.customLayoutProjection = null
+    this.customLayoutProjectionHooks = null
+    this.customProjectionValidationPending = false
+    this.customProjectionFailureCount = 0
+    try {
+      hooks?.beforeDeactivate?.()
+    } finally {
+      this.layoutProjection = this.continuousLayoutProjection
+      this.pendingStructureAnchor = anchor
+      this.syncHeightObserver()
+      this.schedule()
+    }
+  }
+
+  private invalidateCustomLayoutProjection(error: unknown): void {
+    const hooks = this.customLayoutProjectionHooks
+    try {
+      this.deactivateCustomLayoutProjection()
+    } catch (cleanupError) {
+      this.doc.logger.warn('layoutProjectionCleanupError: ', cleanupError)
+    }
+    this.doc.logger.warn('layoutProjectionInvalid: ', error)
+    try {
+      hooks?.onInvalid?.(error)
+    } catch (callbackError) {
+      this.doc.logger.warn('layoutProjectionInvalidCallbackError: ', callbackError)
+    }
+  }
+
   private centerEstimatedRootIndex(index: number): void {
     const container = this.scrollContainer
     if (!container) return
@@ -932,11 +1187,14 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     const viewportHeight = container.clientHeight || viewportRect.height
     if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return
 
-    const targetCenter = this.heights.getOffset(index) + this.heights.get(index) / 2
-    const maxViewportTop = Math.max(0, this.heights.totalHeight - viewportHeight)
+    const targetPosition = this.layoutProjection.contentOffsetAt(index)
+    const maxViewportTop = Math.max(
+      0,
+      this.layoutProjection.totalHeight - viewportHeight,
+    )
     const desiredViewportTop = Math.max(
       0,
-      Math.min(targetCenter - viewportHeight / 2, maxViewportTop),
+      Math.min(targetPosition - viewportHeight / 2, maxViewportTop),
     )
     const correction = desiredViewportTop - this.getViewportTop()
     if (Number.isFinite(correction) && Math.abs(correction) >= BLOCK_NAVIGATION_EPSILON) {
@@ -1003,6 +1261,24 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     }
   }
 
+  private scheduleBlockNavigationProjectionWait(task: BlockNavigationTask): void {
+    if (task.frame !== null) return
+    try {
+      task.frame = this.requestFrame(() => {
+        if (this.blockNavigationTask !== task) return
+        task.frame = null
+        task.projectionWaitFrames++
+        if (task.projectionWaitFrames >= BLOCK_NAVIGATION_MAX_FRAMES) {
+          this.finishBlockNavigation(task, false)
+          return
+        }
+        this.startBlockNavigation(task)
+      })
+    } catch (error) {
+      this.failBlockNavigation(task, error)
+    }
+  }
+
   private cancelBlockNavigation(): void {
     const task = this.blockNavigationTask
     if (!task) return
@@ -1038,6 +1314,28 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       this.doc.logger.warn('blockNavigationReconcileScheduleError: ', error)
     }
   }
+}
+
+/**
+ * @internal Package-private bridge used by Pagination without extending the
+ * public RootVirtualizationManager contract.
+ */
+export function registerRootLayoutProjection(
+  manager: RootVirtualizationManager,
+  projection: VerticalLayoutProjection,
+  hooks: LayoutProjectionRegistrationHooks = {},
+): () => void {
+  const registrar = layoutProjectionRegistrars.get(manager)
+  if (registrar) return registrar(projection, hooks)
+
+  // Narrow compatibility seam for controller tests and older internal mocks.
+  const compatible = manager as unknown as {
+    registerLayoutProjection?: LayoutProjectionRegistrar
+  }
+  if (typeof compatible.registerLayoutProjection === 'function') {
+    return compatible.registerLayoutProjection(projection, hooks)
+  }
+  throw new Error('Root layout projection registration is unavailable')
 }
 
 function arraysEqual(left: readonly string[], right: readonly string[]): boolean {

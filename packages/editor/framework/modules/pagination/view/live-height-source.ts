@@ -22,6 +22,12 @@ export interface MeasureOptions {
   widowOrphanLines: number;
 }
 
+/** @internal Live DOM measurement consumed by pagination shadow geometry. */
+export interface LivePaginationMeasurement extends BlockMeta {
+  /** Unlocked full block stride, including margin-bottom and excluding margin-top. */
+  naturalHeight: number;
+}
+
 /**
  * 自有 ResizeObserver（BlockActiveTracker 的 heightMap 是 private 不可复用）。
  * 观测 root 顶层块 host，测量「offsetHeight + 上下外边距」作为块高度，
@@ -50,8 +56,8 @@ export class LiveHeightSource {
   }
 
   /** 根据当前 root 子块同步 observe 集合（增 observe、删 unobserve）。 */
-  syncObserved(): void {
-    const hosts = new Set<Element>(this._childHosts());
+  syncObserved(rootIds?: readonly string[]): void {
+    const hosts = new Set<Element>(this._childHosts(rootIds));
     for (const el of Array.from(this._observed)) {
       if (!hosts.has(el)) {
         this._ro.unobserve(el);
@@ -71,10 +77,13 @@ export class LiveHeightSource {
    * 表格（实现了分页协作 API）用「自然几何」测高、读行边界：oversized 时产出按行切点，
    * 供引擎在屏幕上跨页拆分。读自然值（排除已施加的占位行）保证不形成测量反馈环。
    */
-  measure(opts?: MeasureOptions): BlockMeta[] {
-    const metas: BlockMeta[] = [];
-    for (const id of this.doc.root.childrenIds) {
-      const block = this.doc.getBlockById(id);
+  measure(
+    opts?: MeasureOptions,
+    rootIds?: readonly string[],
+  ): LivePaginationMeasurement[] {
+    const metas: LivePaginationMeasurement[] = [];
+    for (const id of rootIds ?? this.doc.root.childrenIds) {
+      const block = this._safeBlock(id);
       if (!block) continue;
       const el = block.hostElement;
       const cs = getComputedStyle(el);
@@ -82,7 +91,7 @@ export class LiveHeightSource {
       const mb = parseFloat(cs.marginBottom) || 0;
 
       const table = asPaginatedTable(block);
-      if (table && opts) {
+      if (table) {
         const geom = table.getPaginationGeometry();
         const height = geom.naturalHeight + mb;
         // 表格按「整表最大高度」keep-together：能放进一整页就整块走（放不下当前页剩余则跳下一页），
@@ -90,7 +99,7 @@ export class LiveHeightSource {
         let splitOffsets: number[] | undefined;
         let preferredSplitOffsets: number[] | undefined;
         let repeatHeaderHeight: number | undefined;
-        if (geom.rows.length && height > opts.contentHeight) {
+        if (opts && geom.rows.length && height > opts.contentHeight) {
           const bottoms = geom.rows.map(r => r.bottom);
           // splitOffsets = 可断边界，**排除带内容合并单元格内部**（这类不可拆、拆开必溢出页底 → keep-together）；
           // 空合并单元格内部仍可断（续段为空、不溢出）。无内容合并时与 widowOrphanCuts 等价。
@@ -104,8 +113,16 @@ export class LiveHeightSource {
           // if (geom.headerHeight > 0) repeatHeaderHeight = geom.headerHeight;
         }
         metas.push({
-          id, flavour: block.flavour, nodeType: block.nodeType,
-          isHeading: false, height, splitOffsets, preferredSplitOffsets, repeatHeaderHeight, tableRows: geom.rows,
+          id,
+          flavour: block.flavour,
+          nodeType: block.nodeType,
+          isHeading: false,
+          naturalHeight: height,
+          height,
+          splitOffsets,
+          preferredSplitOffsets,
+          repeatHeaderHeight,
+          tableRows: geom.rows,
         });
         continue;
       }
@@ -123,15 +140,17 @@ export class LiveHeightSource {
       const renderedHeight = capHeight
         ? Math.max(el.offsetHeight, el.scrollHeight)
         : el.offsetHeight;
-      const naturalHeight = capHeight
+      const naturalContentHeight = capHeight
         ? this._resolveCapHeight(el, renderedHeight, opts?.contentHeight)
         : renderedHeight;
-      if (capHeight && opts && opts.contentHeight > 0 && naturalHeight > opts.contentHeight) {
+      const naturalHeight = naturalContentHeight + mb;
+      if (capHeight && opts && opts.contentHeight > 0 && naturalContentHeight > opts.contentHeight) {
         metas.push({
           id,
           flavour: block.flavour,
           nodeType: block.nodeType,
           isHeading: false,
+          naturalHeight,
           height: opts.contentHeight,            // 锁定后整块占一页
           lockHeight: opts.contentHeight,
         });
@@ -143,19 +162,30 @@ export class LiveHeightSource {
         flavour: block.flavour,
         nodeType: block.nodeType,
         isHeading: this._isHeading(block),
-        height: naturalHeight + mb,
+        naturalHeight,
+        height: naturalHeight,
       });
     }
     return metas;
   }
 
-  private _childHosts(): HTMLElement[] {
+  private _childHosts(rootIds?: readonly string[]): HTMLElement[] {
     const hosts: HTMLElement[] = [];
-    for (const id of this.doc.root.childrenIds) {
-      const el = this.doc.getBlockById(id)?.hostElement;
+    for (const id of rootIds ?? this.doc.root.childrenIds) {
+      const el = this._safeBlock(id)?.hostElement;
       if (el) hosts.push(el);
     }
     return hosts;
+  }
+
+  private _safeBlock(id: string): any | null {
+    let missing = false;
+    try {
+      const block = this.doc.getBlockById(id, () => { missing = true; });
+      return missing ? null : block;
+    } catch {
+      return null;
+    }
   }
 
   private _isHeading(block: any): boolean {

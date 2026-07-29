@@ -21,6 +21,11 @@ import {
 
 export interface PaginationPluginOptions extends PaginationConfig {
   enabled?: boolean
+  /**
+   * Phase C rollout flag: let the paginated Projection drive sparse root
+   * virtualization instead of holding a full-document view lease.
+   */
+  experimentalSparseView?: boolean
 }
 
 /**
@@ -39,11 +44,17 @@ export class PaginationPlugin extends DocPlugin {
   private _exportQueue: Promise<void> = Promise.resolve()
   private _exportAbort = new AbortController()
   private _releaseFullDocumentViewLease: (() => void) | null = null
+  private readonly _experimentalSparseView: boolean
 
   constructor(options: PaginationPluginOptions = {}) {
     super()
-    const {enabled = false, ...config} = options
+    const {
+      enabled = false,
+      experimentalSparseView = false,
+      ...config
+    } = options
     this._enabled = enabled
+    this._experimentalSparseView = experimentalSparseView
     this._config = config
   }
 
@@ -99,7 +110,7 @@ export class PaginationPlugin extends DocPlugin {
     let pages: PrintPages | null = null
     try {
       const layout = this._enabled
-        ? this._controller?.captureStableLayout() ?? undefined
+        ? this._captureReusableLayout()
         : undefined
       const snapshot = this._snapshot()
       pages = await buildPrintPages(snapshot, this._config, {
@@ -133,7 +144,7 @@ export class PaginationPlugin extends DocPlugin {
       }
       // 这两次读取之间不 await：layout 与 snapshot 对应同一个主线程文档版本。
       const layout = !options.pagination && this._enabled
-        ? this._controller?.captureStableLayout() ?? undefined
+        ? this._captureReusableLayout()
         : undefined
       const snapshot = this._snapshot()
       const config = options.pagination ?? this._config
@@ -188,8 +199,11 @@ export class PaginationPlugin extends DocPlugin {
       return
     }
     try {
-      this._releaseFullDocumentViewLease ??=
-        this.doc.virtualization?.acquireFullDocumentViewLease() ?? null
+      const sparseView = this._canUseSparseView()
+      if (!sparseView) {
+        this._releaseFullDocumentViewLease ??=
+          this.doc.virtualization?.acquireFullDocumentViewLease() ?? null
+      }
       if (!this._controller) {
         const scrollContainer = this.doc.config.scrollContainer
           ?? getScrollContainer(this.doc.root.hostElement)
@@ -197,6 +211,16 @@ export class PaginationPlugin extends DocPlugin {
           this.doc,
           this._config,
           scrollContainer,
+          undefined,
+          {
+            sparseView,
+            onSparseViewFailure: error => {
+              this._enabled = false
+              this._releaseFullDocumentViews()
+              this.doc.logger.warn('pagination sparse view disabled: ', error)
+              this.doc.messageService?.warn?.('分页布局异常，已恢复连续虚拟布局')
+            },
+          },
         )
       }
       this._controller.enable()
@@ -216,6 +240,28 @@ export class PaginationPlugin extends DocPlugin {
   private _releaseFullDocumentViews(): void {
     this._releaseFullDocumentViewLease?.()
     this._releaseFullDocumentViewLease = null
+  }
+
+  private _canUseSparseView(): boolean {
+    const virtualization = this.doc.virtualization
+    return this._experimentalSparseView === true &&
+      virtualization?.enabled === true
+  }
+
+  /**
+   * 稀疏分页的离屏几何允许来自模型估算，但打印/PDF 不能静默复用估算断点。
+   * 返回 undefined 会让只读导出文档完整挂载并重新测量，得到 exact 布局。
+   */
+  private _captureReusableLayout(): ReturnType<
+    PaginatedViewController['captureStableLayout']
+  > extends infer Layout
+    ? NonNullable<Layout> | undefined
+    : never {
+    const layout = this._controller?.captureStableLayout() ?? undefined
+    if (!layout || !this._experimentalSparseView) return layout
+    return this._controller?.captureShadowLayout()?.exact === false
+      ? undefined
+      : layout
   }
 
   private _snapshot() {

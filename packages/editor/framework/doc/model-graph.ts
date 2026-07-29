@@ -15,6 +15,8 @@ export interface IBlockModelStructureChange {
   reachableAddedIds: readonly string[];
   reachableRemovedIds: readonly string[];
   affectedParentIds: readonly string[];
+  /** Always emitted by current runtimes; optional preserves older constructed mocks. */
+  readonly affectedRootIds?: readonly string[];
 }
 
 export interface IBlockModelTextChange {
@@ -22,6 +24,16 @@ export interface IBlockModelTextChange {
   origin: unknown;
   local: boolean;
   isUndoRedo: boolean;
+}
+
+export type BlockModelContentChangeKind = "text" | "props";
+
+export interface IBlockModelContentChange {
+  readonly blockIds: readonly string[];
+  readonly kinds: readonly BlockModelContentChangeKind[];
+  readonly origin: unknown;
+  readonly local: boolean;
+  readonly isUndoRedo: boolean;
 }
 
 /**
@@ -36,10 +48,11 @@ export class BlockModelGraph {
   private observing = false;
   private _structureRevision = 0;
   readonly structureChange$ = new Subject<IBlockModelStructureChange>();
+  readonly contentChange$ = new Subject<IBlockModelContentChange>();
   readonly textChange$ = new Subject<IBlockModelTextChange>();
   private readonly yObserver = (events: Y.YEvent<any>[], transaction: Y.Transaction) => {
     this.reconcileEvents(events);
-    this.emitTextChange(events, transaction);
+    this.emitContentChange(events, transaction);
   };
 
   constructor(private readonly doc: BlockCraft.Doc) {}
@@ -68,6 +81,7 @@ export class BlockModelGraph {
     this.siblingIndexById.clear();
     this.deferredProjectionParentIds.clear();
     this.structureChange$.complete();
+    this.contentChange$.complete();
     this.textChange$.complete();
   }
 
@@ -91,16 +105,25 @@ export class BlockModelGraph {
     const affectedParents = new Set([parentId]);
     const reachableAddedIds = new Set<string>();
     const reachableRemovedIds = new Set<string>();
+    const affectedRootIds = new Set<string>();
+    const previousRootChildIds = this.directRootChildSet();
+    this.addCurrentRootOwners(affectedRootIds, affectedParents);
     const changed = this.reconcileParents(
       affectedParents,
       reachableAddedIds,
       reachableRemovedIds,
     );
     if (changed) {
+      this.addCurrentRootOwners(affectedRootIds, affectedParents);
+      this.addDirectRootSymmetricDifference(
+        affectedRootIds,
+        previousRootChildIds,
+      );
       this.emitStructureChange(
         reachableAddedIds,
         reachableRemovedIds,
         affectedParents,
+        affectedRootIds,
       );
     }
   }
@@ -316,23 +339,6 @@ export class BlockModelGraph {
       }
     }
 
-    if (rootChanged) {
-      const previousIds = new Set(this.parentById.keys());
-      this.rebuildIndexes();
-      this.parentById.forEach((_parentId, blockId) => {
-        if (!previousIds.has(blockId)) reachableAddedIds.add(blockId);
-      });
-      previousIds.forEach(blockId => {
-        if (!this.parentById.has(blockId)) reachableRemovedIds.add(blockId);
-      });
-      this.emitStructureChange(
-        reachableAddedIds,
-        reachableRemovedIds,
-        new Set(this.rootId === null ? [] : [this.rootId]),
-      );
-      return;
-    }
-
     // A late-arriving YBlock can satisfy an existing dangling child reference
     // without changing the parent's Y.Array. This is a corruption/merge
     // fallback only; ordinary inserts include a children event and stay local.
@@ -345,6 +351,35 @@ export class BlockModelGraph {
       }
     }
 
+    if (!rootChanged && !affectedParents.size) return;
+
+    const affectedRootIds = new Set<string>();
+    const previousRootChildIds = this.directRootChildSet();
+    this.addCurrentRootOwners(affectedRootIds, affectedParents);
+
+    if (rootChanged) {
+      const previousIds = new Set(this.parentById.keys());
+      this.rebuildIndexes();
+      this.parentById.forEach((_parentId, blockId) => {
+        if (!previousIds.has(blockId)) reachableAddedIds.add(blockId);
+      });
+      previousIds.forEach(blockId => {
+        if (!this.parentById.has(blockId)) reachableRemovedIds.add(blockId);
+      });
+      this.addCurrentRootOwners(affectedRootIds, affectedParents);
+      this.addDirectRootSymmetricDifference(
+        affectedRootIds,
+        previousRootChildIds,
+      );
+      this.emitStructureChange(
+        reachableAddedIds,
+        reachableRemovedIds,
+        new Set(this.rootId === null ? [] : [this.rootId]),
+        affectedRootIds,
+      );
+      return;
+    }
+
     if (affectedParents.size) {
       const changed = this.reconcileParents(
         affectedParents,
@@ -352,45 +387,116 @@ export class BlockModelGraph {
         reachableRemovedIds,
       );
       if (changed) {
-        this.emitStructureChange(reachableAddedIds, reachableRemovedIds, affectedParents);
+        this.addCurrentRootOwners(affectedRootIds, affectedParents);
+        this.addDirectRootSymmetricDifference(
+          affectedRootIds,
+          previousRootChildIds,
+        );
+        this.emitStructureChange(
+          reachableAddedIds,
+          reachableRemovedIds,
+          affectedParents,
+          affectedRootIds,
+        );
       }
     }
   }
 
-  private emitTextChange(
+  private emitContentChange(
     events: readonly Y.YEvent<any>[],
     transaction: Y.Transaction,
   ): void {
-    const blockIds = new Set<string>();
+    const kindsByBlockId = new Map<string, Set<BlockModelContentChangeKind>>();
+    const textBlockIds = new Set<string>();
+    const record = (blockId: string, kind: BlockModelContentChangeKind) => {
+      let kinds = kindsByBlockId.get(blockId);
+      if (!kinds) {
+        kinds = new Set<BlockModelContentChangeKind>();
+        kindsByBlockId.set(blockId, kinds);
+      }
+      kinds.add(kind);
+      if (kind === "text") textBlockIds.add(blockId);
+    };
+
     for (const event of events) {
+      if (event.path.length === 0) {
+        event.changes.keys.forEach((change, blockId) => {
+          if (change.action !== "update") return;
+          const previousBlock = change.oldValue;
+          const currentBlock = this.doc.yBlockMap.get(blockId);
+          if (!(currentBlock instanceof Y.Map)) return;
+
+          if (
+            (previousBlock instanceof Y.Map &&
+              previousBlock.get("children") instanceof Y.Text) ||
+            currentBlock.get("children") instanceof Y.Text
+          ) {
+            record(blockId, "text");
+          }
+          record(blockId, "props");
+        });
+        continue;
+      }
+
       const blockId = event.path[0];
       if (typeof blockId !== "string") continue;
 
       if (event.path[1] === "children" && event.target instanceof Y.Text) {
-        blockIds.add(blockId);
-        continue;
+        record(blockId, "text");
+      }
+
+      if (event.path[1] === "props") {
+        record(blockId, "props");
       }
 
       if (
         event.path.length === 1 &&
-        event.target instanceof Y.Map &&
-        event.changes.keys.has("children") &&
-        event.target.get("children") instanceof Y.Text
+        event.target instanceof Y.Map
       ) {
-        blockIds.add(blockId);
+        if (
+          event.changes.keys.has("children") &&
+          event.target.get("children") instanceof Y.Text
+        ) {
+          record(blockId, "text");
+        }
+        if (event.changes.keys.has("props")) {
+          record(blockId, "props");
+        }
       }
     }
 
-    const reachableEditableIds = [...blockIds].filter(blockId =>
+    const reachableBlockIds = [...kindsByBlockId.keys()].filter(blockId =>
+      this.exists(blockId),
+    );
+    const kinds: BlockModelContentChangeKind[] = [];
+    if (reachableBlockIds.some(blockId => kindsByBlockId.get(blockId)!.has("text"))) {
+      kinds.push("text");
+    }
+    if (reachableBlockIds.some(blockId => kindsByBlockId.get(blockId)!.has("props"))) {
+      kinds.push("props");
+    }
+
+    const changeContext = {
+      origin: transaction.origin,
+      local: transaction.local,
+      isUndoRedo: transaction.origin instanceof Y.UndoManager,
+    };
+    if (reachableBlockIds.length) {
+      this.contentChange$.next({
+        blockIds: reachableBlockIds,
+        kinds,
+        ...changeContext,
+      });
+    }
+
+    const reachableEditableIds = [...textBlockIds].filter(blockId =>
       this.getNodeType(blockId) === BlockNodeType.editable,
     );
     if (!reachableEditableIds.length) return;
 
     this.textChange$.next({
       blockIds: reachableEditableIds,
-      origin: transaction.origin,
-      local: transaction.local,
-      isUndoRedo: transaction.origin instanceof Y.UndoManager,
+      ...changeContext,
     });
   }
 
@@ -398,6 +504,7 @@ export class BlockModelGraph {
     reachableAddedIds: ReadonlySet<string>,
     reachableRemovedIds: ReadonlySet<string>,
     affectedParentIds: ReadonlySet<string>,
+    affectedRootIds: ReadonlySet<string>,
   ): void {
     this._structureRevision++;
     this.structureChange$.next({
@@ -405,6 +512,42 @@ export class BlockModelGraph {
       reachableAddedIds: [...reachableAddedIds],
       reachableRemovedIds: [...reachableRemovedIds],
       affectedParentIds: [...affectedParentIds],
+      affectedRootIds: [...affectedRootIds],
+    });
+  }
+
+  private rootOwnerFromCurrentIndex(blockId: string): string | null {
+    if (this.rootId === null || blockId === this.rootId) return null;
+    const path = this.getPath(blockId);
+    return path && path[0] === this.rootId ? path[1] ?? null : null;
+  }
+
+  private addCurrentRootOwners(
+    target: Set<string>,
+    blockIds: Iterable<string>,
+  ): void {
+    for (const blockId of blockIds) {
+      const owner = this.rootOwnerFromCurrentIndex(blockId);
+      if (owner !== null) target.add(owner);
+    }
+  }
+
+  private directRootChildSet(): Set<string> {
+    return new Set(
+      this.rootId === null ? [] : this.childrenById.get(this.rootId) ?? [],
+    );
+  }
+
+  private addDirectRootSymmetricDifference(
+    target: Set<string>,
+    previousIds: ReadonlySet<string>,
+  ): void {
+    const currentIds = this.directRootChildSet();
+    previousIds.forEach(blockId => {
+      if (!currentIds.has(blockId)) target.add(blockId);
+    });
+    currentIds.forEach(blockId => {
+      if (!previousIds.has(blockId)) target.add(blockId);
     });
   }
 

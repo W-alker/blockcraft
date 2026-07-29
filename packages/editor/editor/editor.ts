@@ -208,6 +208,7 @@ export class EditorComponent implements OnInit, OnDestroy {
   @ViewChild("container", { read: ElementRef }) container!: ElementRef;
   @Input() stickyTop = 0;
   @Input() virtualizationEnabled = true;
+  @Input() paginationSparseView = false;
   constructor(
     private injector: Injector,
     private logger: ConsoleLogger,
@@ -248,16 +249,18 @@ export class EditorComponent implements OnInit, OnDestroy {
     ),
   );
 
-  private readonly paginationPlugin = new PaginationPlugin({
-    enabled: false,
-    pageSize: 'A4',
-    printShortcut: true,
-  });
+  private paginationPlugin!: PaginationPlugin;
 
   doc!: BlockCraftDoc;
   private blockLinkNavigator: BlockLinkNavigator | null = null;
 
   private createDoc(): BlockCraftDoc {
+    this.paginationPlugin = new PaginationPlugin({
+      enabled: false,
+      pageSize: 'A4',
+      printShortcut: true,
+      experimentalSparseView: this.paginationSparseView,
+    });
     return new BlockCraftDoc({
       yDoc: new Y.Doc({
         guid: this.docId,

@@ -67,6 +67,198 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-07-28 (minor) — add experimental sparse live pagination
+
+**Severity**: minor
+
+**What changed**: `PaginationPluginOptions` adds the opt-in
+`experimentalSparseView` flag, and the bundled reference
+`<block-craft-editor>` adds the initialization-only `paginationSparseView`
+input. When both sparse pagination and root virtualization are enabled, an
+internal paginated Projection drives root viewport/spacer geometry without a
+full-document view lease. Pagination gap, table-break and height-lock effects
+now cache complete layout state while reading and mutating only mounted root
+views.
+
+**Why**: exact live pagination previously required mounting every root Block,
+which removed the memory and mount-time benefit of root virtualization. Phase C
+introduces a guarded sparse path so large-document behavior can be exercised
+before it becomes the default in a later phase.
+
+**Affected ai-skills files**:
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-perf.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `PaginationPluginOptions.experimentalSparseView?: boolean` defaults to
+  `false`. With root virtualization enabled, `true` activates the Phase C
+  sparse Projection path.
+- The bundled reference editor accepts
+  `<block-craft-editor [paginationSparseView]="true">`. Like
+  `virtualizationEnabled`, it is read during component construction.
+- The sparse path keeps mounted root count proportional to viewport,
+  overscan and existing pins. Offscreen roots use model-derived estimates;
+  mounted roots upgrade to live measurements.
+
+### Migration Recipe
+
+No migration is required. Existing applications retain the exact
+full-document-lease behavior because the new option defaults to `false`.
+Opt in explicitly for large-document validation:
+
+```typescript
+const pagination = new PaginationPlugin({
+  enabled: true,
+  experimentalSparseView: true,
+})
+
+const doc = new BlockCraftDoc({
+  // ...
+  virtualization: {enabled: true},
+  plugins: [pagination],
+})
+```
+
+For the bundled reference editor:
+
+```html
+<block-craft-editor
+  [virtualizationEnabled]="true"
+  [paginationSparseView]="true" />
+```
+
+### Behavior Changes
+
+- Default behavior is unchanged: live pagination still holds the exact
+  full-document view lease while enabled.
+- In experimental sparse mode, the paginated Projection owns viewport/spacer
+  coordinates; continuous height observation is paused so page gaps cannot
+  pollute the continuous `HeightMap`.
+- Offscreen text/props/structure updates invalidate model geometry and schedule
+  one frame-coalesced `O(N)` scan of cached numbers. DOM reads remain bounded
+  to mounted roots.
+- Unmounted page gaps, table breaks and height locks are replayed when their
+  root view remounts and are cleared idempotently on disable/destroy.
+- A non-exact sparse layout is not reused for print/PDF; export falls back to
+  the complete readonly reflow. The Phase E background `ensureExact()` queue is
+  not part of this release.
+- Repeated invalid Projection order/length disables sparse pagination and
+  restores continuous virtualization; it does not force a full-document mount.
+
+### v?.?.? - 2026-07-28 (minor) — expose model layout invalidation facts
+
+**Severity**: minor
+
+**What changed**: `BlockModelGraph` now exposes the additive
+`contentChange$` stream with `IBlockModelContentChange` and
+`BlockModelContentChangeKind`. Structure events add optional
+`affectedRootIds` for direct-root layout invalidation. Phase B also introduces
+a package-internal stable-ID pagination GeometryIndex, LayoutCoordinator,
+paginated Projection and bounded shadow comparator; these internals compare
+against the legacy live pagination result and are not exported.
+
+**Why**: pagination and future sparse layout work need model-level content and
+root-impact facts that remain valid for unmounted blocks. The internal shadow
+path can now validate model-derived pagination geometry before it is allowed to
+control mounting or DOM presentation.
+
+**Affected ai-skills files**:
+- `blockcraft.md`
+- `blockcraft-data.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `BlockModelGraph.contentChange$` emits transaction-coalesced reachable block
+  IDs, `"text"` / `"props"` kinds and Yjs `origin`, `local` and `isUndoRedo`
+  context.
+- Exported `IBlockModelContentChange` and
+  `BlockModelContentChangeKind = "text" | "props"` describe that stream.
+- `IBlockModelStructureChange.affectedRootIds?: readonly string[]` reports the
+  direct-root render units affected by structural layout changes. Current
+  runtimes always populate the optional field; pure direct-root reorder emits
+  an empty array.
+
+### Migration Recipe
+
+No migration is required for existing text-only consumers. `textChange$`
+retains its original filtering and transaction context:
+
+```typescript
+// Existing code remains valid.
+doc.model.textChange$.subscribe(({blockIds, local, origin, isUndoRedo}) => {
+  updateTextIndex(blockIds)
+})
+
+// Opt in only when text, inline attributes or props should invalidate work.
+doc.model.contentChange$.subscribe(({blockIds, kinds}) => {
+  invalidateModelDerivedState(blockIds, kinds)
+})
+
+// The new structure field is optional for source-compatible mocks/consumers.
+doc.model.structureChange$.subscribe(change => {
+  invalidateRootLayout(change.affectedRootIds ?? [])
+})
+```
+
+### Behavior Changes
+
+- `contentChange$` includes reachable text mutations, inline attribute changes,
+  nested props changes, `children`/`props` replacement and whole reachable
+  block replacement. It ignores `meta`-only changes and unreachable blocks.
+- Every runtime structure event now carries `affectedRootIds`, while the public
+  field remains optional.
+- Phase B pagination remains diagnostic-only: legacy DOM appliers and the
+  full-document view lease are still authoritative. Text-only changes mark
+  geometry dirty and rely on `ResizeObserver`; props, structure, theme, font
+  and content-width changes schedule coalesced animation-frame recomputation.
+  Each actual recomputation temporarily performs legacy and shadow pagination,
+  both linear in document size.
+
+### v?.?.? - 2026-07-28 (patch) — prepare internal vertical layout projection seams
+
+**Severity**: patch
+
+**What changed**: Phase A added the package-internal
+`VerticalLayoutProjection` query contract, its continuous-layout
+`ContinuousLayoutProjection` adapter, and parallel projected viewport and
+scroll-anchor helpers. `RootVirtualizationManager` now routes viewport,
+scroll-anchor, spacer and stable-navigation layout reads through its internal
+active Projection. `HeightMap` remains the mutable continuous-layout index, and
+all existing exported entry points retain their current signatures.
+
+**Why**: later pagination/virtualization integration needs read-only projected
+geometry without making the still-evolving Projection lifecycle a public
+extension contract. This patch is internal architecture preparation only and
+has no external API or runtime behavior impact.
+
+**Affected ai-skills files**:
+- `blockcraft.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+### Migration Recipe
+
+No migration is required. Existing `HeightMap`, viewport, scroll-anchor,
+virtualization and pagination calls continue to work unchanged. The new
+Projection types and projected helpers are not exported from the
+virtualization public barrel.
+
+### Behavior Changes
+
+None externally. The active Projection is fixed to
+`ContinuousLayoutProjection`, which reads the same `HeightMap`; continuous
+layout coordinates and runtime behavior remain equivalent. Custom Projection
+registration, `change$`-driven switching and continuous/paginated Projection
+transitions are not implemented. Live `PaginationPlugin` still acquires a
+full-document view lease while enabled, so the pagination/virtualization
+conflict is not resolved in Phase A.
+
 ### v?.?.? - 2026-07-28 (minor) — stabilize collaboration cursor colors
 
 **Severity**: minor

@@ -437,13 +437,15 @@ const ACTION_SECTIONS: DebugSection[] = [
               <block-craft-editor
                 #editor
                 [stickyTop]="0"
-                [virtualizationEnabled]="true">
+                [virtualizationEnabled]="true"
+                [paginationSparseView]="true">
               </block-craft-editor>
             } @else {
               <block-craft-editor
                 #editor
                 [stickyTop]="0"
-                [virtualizationEnabled]="false">
+                [virtualizationEnabled]="false"
+                [paginationSparseView]="false">
               </block-craft-editor>
             }
           </section>

@@ -1,5 +1,6 @@
 import {HeightMap} from './height-map'
-import {SpacerLayer} from './spacer-layer'
+import {ContinuousLayoutProjection} from './layout-projection'
+import {ProjectionSpacerLayer, SpacerLayer} from './spacer-layer'
 
 describe('SpacerLayer', () => {
   it('renders one inert spacer for every unmounted root-child interval', () => {
@@ -76,5 +77,45 @@ describe('SpacerLayer', () => {
 
     expect(createElement).toHaveBeenCalledWith('div')
     expect(container.firstElementChild?.ownerDocument).toBe(ownerDocument)
+  })
+
+  it('reads projected interval heights while preserving spacer reuse and cleanup', () => {
+    const container = document.createElement('div')
+    const host = document.createElement('div')
+    host.dataset['blockId'] = 'c'
+    container.append(host)
+    const heights = new HeightMap()
+    heights.bulkInit([100, 200, 30])
+    const projection = new ContinuousLayoutProjection(heights)
+    const rangeHeight = spyOn(projection, 'rangeHeight').and.callThrough()
+    const layer = new ProjectionSpacerLayer(container)
+
+    layer.sync(['a', 'b', 'c'], [[2, 2]], projection, () => host)
+    const spacer = container.firstElementChild as HTMLElement
+
+    expect(rangeHeight).toHaveBeenCalledWith(0, 1)
+    expect(spacer.style.height).toBe('300px')
+
+    const insertBefore = spyOn(container, 'insertBefore').and.callThrough()
+    const append = spyOn(container, 'append').and.callThrough()
+    heights.update(0, 120)
+    layer.sync(['a', 'b', 'c'], [[2, 2]], projection, () => host)
+
+    expect(container.firstElementChild).toBe(spacer)
+    expect(spacer.style.height).toBe('320px')
+    expect(insertBefore).not.toHaveBeenCalled()
+    expect(append).not.toHaveBeenCalled()
+
+    const spacerBeforeClear = container.firstElementChild
+    layer.clear()
+    expect(container.querySelectorAll('[data-bc-virtual-spacer]').length).toBe(0)
+
+    layer.sync(['a', 'b', 'c'], [[2, 2]], projection, () => host)
+    expect(container.firstElementChild).not.toBe(spacerBeforeClear)
+
+    layer.clear()
+    expect(container.querySelectorAll('[data-bc-virtual-spacer]').length).toBe(0)
+
+    projection.dispose()
   })
 })

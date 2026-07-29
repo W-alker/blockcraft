@@ -103,6 +103,32 @@ function shallowEqualNumberRecord(a: Record<string, number>, b: Record<string, n
   return ka.every(k => a[k] === b[k])
 }
 
+function elementContentWidth(element: HTMLElement): number {
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element)
+  const paddingLeft = Number.parseFloat(style?.paddingLeft ?? '') || 0
+  const paddingRight = Number.parseFloat(style?.paddingRight ?? '') || 0
+  return Math.max(0, element.clientWidth - paddingLeft - paddingRight)
+}
+
+function equalTableColumnWidths(
+  columnCount: number,
+  containerWidth: number,
+  minWidth: number,
+  horizontalOverhead: number,
+): number[] {
+  const availableWidth = Math.max(
+    columnCount * minWidth,
+    Math.floor(containerWidth - Math.max(0, horizontalOverhead)),
+  )
+  const eachWidth = Math.floor(availableWidth / columnCount)
+  const remainder = availableWidth - eachWidth * columnCount
+
+  return Array.from(
+    {length: columnCount},
+    (_, index) => eachWidth + (index < remainder ? 1 : 0),
+  )
+}
+
 /**
  * CSS zoom 下至少有三套坐标语义需要分开探测：
  * 1. BCR 距离是否已经乘过 zoom；
@@ -733,13 +759,18 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   setEqualColumnWidths(minWidth = 50) {
     if (!this.colLength) return
 
-    const containerWidth = (this.tableScrollable?.nativeElement?.clientWidth
+    const normalizedMinWidth = Math.max(1, Math.ceil(minWidth))
+    const containerWidth = this._getParentContentWidth()
+      || this.tableScrollable?.nativeElement?.clientWidth
       || this.hostElement.clientWidth
-      || this.colLength * minWidth) - 6
+      || this.colLength * normalizedMinWidth
     const overhead = this._getTableHorizontalOverhead()
-    const availableWidth = Math.max(this.colLength * minWidth, containerWidth - overhead)
-    const eachWidth = Math.max(minWidth, Math.floor(availableWidth / this.colLength))
-    const nextWidths = Array.from({ length: this.colLength }, () => eachWidth)
+    const nextWidths = equalTableColumnWidths(
+      this.colLength,
+      containerWidth,
+      normalizedMinWidth,
+      overhead,
+    )
 
     this.updateProps({
       colWidths: nextWidths
@@ -2599,12 +2630,18 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _getTableHorizontalOverhead() {
     const table = this.hostElement.querySelector('table') as HTMLElement | null
     if (!table) return 0
-    const colEls = table.querySelectorAll('col')
-    if (!colEls.length) return 0
-    const colsTotal = Array.from(colEls).reduce((sum, col) => {
-      return sum + (col as HTMLElement).getBoundingClientRect().width
-    }, 0)
-    return Math.max(0, Math.ceil(table.getBoundingClientRect().width - colsTotal))
+    const colsTotal = this.props.colWidths.reduce((sum, width) => sum + width, 0)
+    if (!colsTotal) return 0
+    return Math.max(
+      0,
+      Math.ceil(this._layoutDistanceFromBcr(table.getBoundingClientRect().width) - colsTotal),
+    )
+  }
+
+  private _getParentContentWidth() {
+    const parent = this.parentBlock
+    const container = parent?.childrenRenderRef?.containerElement ?? parent?.hostElement
+    return container ? elementContentWidth(container) : 0
   }
 
   private _normalizeHorizontalScroll(resetToStart = false) {

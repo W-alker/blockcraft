@@ -7,7 +7,11 @@ import {
   YBlock,
   native2YBlock,
 } from "../block-std";
-import {BlockModelGraph} from "./model-graph";
+import {
+  BlockModelGraph,
+  IBlockModelContentChange,
+  IBlockModelStructureChange,
+} from "./model-graph";
 
 function structuralBlock(
   id: string,
@@ -353,6 +357,42 @@ describe("BlockModelGraph Yjs synchronization", () => {
       reachableAddedIds: ["a", "a1"],
       reachableRemovedIds: [],
       affectedParentIds: ["root"],
+      affectedRootIds: ["a"],
+    }]);
+  });
+
+  it("synchronizes nested structure root impact before view creation", () => {
+    const h = createHarness();
+    h.set({
+      root: structuralBlock("root", ["unit"], BlockNodeType.root),
+      unit: structuralBlock("unit", ["container"]),
+      container: structuralBlock("container", []),
+    });
+    h.graph.build("root");
+    const changes: IBlockModelStructureChange[] = [];
+    h.graph.structureChange$.subscribe(change => changes.push(change));
+
+    h.yDoc.transact(() => {
+      h.yBlockMap.set("leaf", editableBlock("leaf", "new"));
+      childrenOf(h, "container").insert(0, ["leaf"]);
+
+      h.graph.synchronizeParentBeforeView("container");
+
+      expect(h.graph.getPath("leaf")).toEqual([
+        "root",
+        "unit",
+        "container",
+        "leaf",
+      ]);
+      expect(changes.length).toBe(1);
+    });
+
+    expect(changes).toEqual([{
+      revision: 1,
+      reachableAddedIds: ["leaf"],
+      reachableRemovedIds: [],
+      affectedParentIds: ["container"],
+      affectedRootIds: ["unit"],
     }]);
   });
 
@@ -405,6 +445,198 @@ describe("BlockModelGraph Yjs synchronization", () => {
     remote.destroy();
   });
 
+  it("coalesces text and props into one model content event without mounted views", () => {
+    const h = createHarness();
+    h.set({
+      root: structuralBlock("root", ["p"], BlockNodeType.root),
+      p: editableBlock("p", "old"),
+    });
+    h.graph.build("root");
+    const changes: IBlockModelContentChange[] = [];
+    h.graph.contentChange$.subscribe(change => changes.push(change));
+
+    h.yDoc.transact(() => {
+      const block = h.yBlockMap.get("p")!;
+      (block.get("children") as unknown as Y.Text).insert(3, " text");
+      (block.get("props") as Y.Map<unknown>).set("depth", 2);
+    }, "combined-content");
+
+    expect(changes).toEqual([{
+      blockIds: ["p"],
+      kinds: ["text", "props"],
+      origin: "combined-content",
+      local: true,
+      isUndoRedo: false,
+    }]);
+  });
+
+  it("treats inline attributes and nested props as content changes", () => {
+    const h = createHarness();
+    h.set({
+      root: structuralBlock("root", ["p"], BlockNodeType.root),
+      p: editableBlock("p", "old"),
+    });
+    h.graph.build("root");
+    const block = h.yBlockMap.get("p")!;
+    const props = block.get("props") as Y.Map<unknown>;
+    const appearance = new Y.Map<unknown>();
+    props.set("appearance", appearance);
+    const changes: IBlockModelContentChange[] = [];
+    h.graph.contentChange$.subscribe(change => changes.push(change));
+
+    h.yDoc.transact(() => {
+      (block.get("children") as unknown as Y.Text).format(0, 3, {bold: true});
+      appearance.set("tone", "accent");
+    }, "nested-content");
+
+    expect(changes).toEqual([{
+      blockIds: ["p"],
+      kinds: ["text", "props"],
+      origin: "nested-content",
+      local: true,
+      isUndoRedo: false,
+    }]);
+  });
+
+  it("recognizes children and props replacements on a reachable block", () => {
+    const h = createHarness();
+    h.set({
+      root: structuralBlock("root", ["p"], BlockNodeType.root),
+      p: editableBlock("p", "old"),
+    });
+    h.graph.build("root");
+    const changes: IBlockModelContentChange[] = [];
+    h.graph.contentChange$.subscribe(change => changes.push(change));
+
+    h.yDoc.transact(() => {
+      const replacementText = new Y.Text("replacement");
+      const replacementProps = new Y.Map<unknown>();
+      replacementProps.set("depth", 4);
+      const block = h.yBlockMap.get("p")!;
+      block.set("children", replacementText);
+      block.set("props", replacementProps);
+    }, "replace-content");
+
+    expect(changes).toEqual([{
+      blockIds: ["p"],
+      kinds: ["text", "props"],
+      origin: "replace-content",
+      local: true,
+      isUndoRedo: false,
+    }]);
+  });
+
+  it("broadcasts a reachable whole YBlock replacement as content", () => {
+    const h = createHarness();
+    h.set({
+      root: structuralBlock("root", ["p"], BlockNodeType.root),
+      p: editableBlock("p", "old"),
+    });
+    h.graph.build("root");
+    const contentChanges: IBlockModelContentChange[] = [];
+    const textChanges: any[] = [];
+    h.graph.contentChange$.subscribe(change => contentChanges.push(change));
+    h.graph.textChange$.subscribe(change => textChanges.push(change));
+
+    h.yBlockMap.set("p", editableBlock("p", "replacement", {depth: 4}));
+
+    expect(contentChanges).toEqual([{
+      blockIds: ["p"],
+      kinds: ["text", "props"],
+      origin: null,
+      local: true,
+      isUndoRedo: false,
+    }]);
+    expect(textChanges).toEqual([{
+      blockIds: ["p"],
+      origin: null,
+      local: true,
+      isUndoRedo: false,
+    }]);
+  });
+
+  it("does not report newly reachable blocks as content changes", () => {
+    const h = createHarness();
+    h.set({root: structuralBlock("root", [], BlockNodeType.root)});
+    h.graph.build("root");
+    const contentNext = jasmine.createSpy("contentNext");
+    h.graph.contentChange$.subscribe(contentNext);
+
+    h.yDoc.transact(() => {
+      h.yBlockMap.set("p", editableBlock("p", "new"));
+      childrenOf(h, "root").insert(0, ["p"]);
+    });
+
+    expect(h.graph.exists("p")).toBeTrue();
+    expect(contentNext).not.toHaveBeenCalled();
+  });
+
+  it("does not snapshot root children for a content-only transaction", () => {
+    const h = createHarness();
+    h.set({
+      root: structuralBlock("root", ["p"], BlockNodeType.root),
+      p: editableBlock("p", "old"),
+    });
+    h.graph.build("root");
+    const directRootChildSet = spyOn(
+      h.graph as unknown as {directRootChildSet(): Set<string>},
+      "directRootChildSet",
+    ).and.callThrough();
+
+    (h.yBlockMap.get("p")!.get("children") as unknown as Y.Text)
+      .insert(3, " updated");
+
+    expect(directRootChildSet).not.toHaveBeenCalled();
+  });
+
+  it("does not treat meta-only writes as model content changes", () => {
+    const h = createHarness();
+    h.set({
+      root: structuralBlock("root", ["p"], BlockNodeType.root),
+      p: editableBlock("p", "old"),
+    });
+    h.graph.build("root");
+    const contentNext = jasmine.createSpy("contentNext");
+    const textNext = jasmine.createSpy("textNext");
+    h.graph.contentChange$.subscribe(contentNext);
+    h.graph.textChange$.subscribe(textNext);
+
+    (h.yBlockMap.get("p")!.get("meta") as Y.Map<unknown>)
+      .set("lock", "user-1");
+
+    expect(contentNext).not.toHaveBeenCalled();
+    expect(textNext).not.toHaveBeenCalled();
+  });
+
+  it("marks props changes applied from another Y.Doc as remote", () => {
+    const h = createHarness();
+    h.set({
+      root: structuralBlock("root", ["p"], BlockNodeType.root),
+      p: editableBlock("p", "old"),
+    });
+    h.graph.build("root");
+    const remote = new Y.Doc();
+    Y.applyUpdate(remote, Y.encodeStateAsUpdate(h.yDoc));
+    let update: Uint8Array | null = null;
+    remote.on("update", value => update = value);
+    const remoteProps = remote.getMap<YBlock>("blocks").get("p")!
+      .get("props") as Y.Map<unknown>;
+    remoteProps.set("depth", 7);
+    const changes: IBlockModelContentChange[] = [];
+    h.graph.contentChange$.subscribe(change => changes.push(change));
+
+    Y.applyUpdate(h.yDoc, update!);
+
+    expect(changes).toEqual([{
+      blockIds: ["p"],
+      kinds: ["props"],
+      origin: null,
+      local: false,
+      isUndoRedo: false,
+    }]);
+    remote.destroy();
+  });
+
   it("removes a deleted subtree from the reachable graph", () => {
     const h = createHarness();
     h.set({
@@ -435,6 +667,8 @@ describe("BlockModelGraph Yjs synchronization", () => {
       c: editableBlock("c", "c"),
     });
     h.graph.build("root");
+    const changes: IBlockModelStructureChange[] = [];
+    h.graph.structureChange$.subscribe(change => changes.push(change));
 
     h.yDoc.transact(() => {
       const children = childrenOf(h, "root");
@@ -445,6 +679,13 @@ describe("BlockModelGraph Yjs synchronization", () => {
     expect(h.graph.getChildrenIds("root")).toEqual(["c", "a", "b"]);
     expect(h.graph.indexInParent("a")).toBe(1);
     expect(h.graph.getNextSiblingId("c")).toBe("a");
+    expect(changes).toEqual([{
+      revision: 1,
+      reachableAddedIds: [],
+      reachableRemovedIds: [],
+      affectedParentIds: ["root"],
+      affectedRootIds: [],
+    }]);
   });
 
   ["target-first", "source-first"].forEach(order => {
@@ -710,6 +951,7 @@ describe("BlockModelGraph structure changes", () => {
       reachableAddedIds: ["orphan", "orphan-child"],
       reachableRemovedIds: [],
       affectedParentIds: ["root"],
+      affectedRootIds: ["orphan"],
     }]);
   });
 
@@ -740,7 +982,29 @@ describe("BlockModelGraph structure changes", () => {
     expect(changes[0].affectedParentIds).toEqual(
       jasmine.arrayWithExactContents(["left", "right"]),
     );
+    expect(changes[0].affectedRootIds).toEqual(
+      jasmine.arrayWithExactContents(["left", "right"]),
+    );
     expect(h.graph.getPath("leaf")).toEqual(["root", "right", "branch", "leaf"]);
+  });
+
+  it("reports the previous root owner when a nested branch is deleted", () => {
+    const h = createHarness();
+    h.set({
+      root: structuralBlock("root", ["unit"], BlockNodeType.root),
+      unit: structuralBlock("unit", ["container"]),
+      container: structuralBlock("container", ["branch"]),
+      branch: editableBlock("branch", "retained"),
+    });
+    h.graph.build("root");
+    const changes: IBlockModelStructureChange[] = [];
+    h.graph.structureChange$.subscribe(value => changes.push(value));
+
+    (h.yBlockMap.get("container")!.get("children") as Y.Array<string>)
+      .delete(0, 1);
+
+    expect(changes[0].reachableRemovedIds).toEqual(["branch"]);
+    expect(changes[0].affectedRootIds).toEqual(["unit"]);
   });
 
   it("reports the complete subtree when it becomes unreachable but YBlocks remain", () => {
@@ -761,6 +1025,7 @@ describe("BlockModelGraph structure changes", () => {
     expect(change.reachableRemovedIds).toEqual(
       jasmine.arrayWithExactContents(["branch", "leaf"]),
     );
+    expect(change.affectedRootIds).toEqual(["branch"]);
     expect(h.yBlockMap.has("branch")).toBeTrue();
     expect(h.yBlockMap.has("leaf")).toBeTrue();
     expect(h.graph.exists("branch")).toBeFalse();
@@ -788,16 +1053,23 @@ describe("BlockModelGraph structure changes", () => {
     expect(h.graph.structureRevision).toBe(0);
   });
 
-  it("completes the structure signal on destroy", () => {
+  it("completes every model signal exactly once on destroy", () => {
     const h = createHarness();
     h.set({root: structuralBlock("root", [], BlockNodeType.root)});
     h.graph.build("root");
-    const complete = jasmine.createSpy("complete");
-    h.graph.structureChange$.subscribe({complete});
+    const structureComplete = jasmine.createSpy("structureComplete");
+    const contentComplete = jasmine.createSpy("contentComplete");
+    const textComplete = jasmine.createSpy("textComplete");
+    h.graph.structureChange$.subscribe({complete: structureComplete});
+    h.graph.contentChange$.subscribe({complete: contentComplete});
+    h.graph.textChange$.subscribe({complete: textComplete});
 
     h.graph.destroy();
+    h.graph.destroy();
 
-    expect(complete).toHaveBeenCalledTimes(1);
+    expect(structureComplete).toHaveBeenCalledTimes(1);
+    expect(contentComplete).toHaveBeenCalledTimes(1);
+    expect(textComplete).toHaveBeenCalledTimes(1);
   });
 });
 

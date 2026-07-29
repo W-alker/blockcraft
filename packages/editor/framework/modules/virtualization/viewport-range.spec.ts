@@ -1,5 +1,9 @@
 import {HeightMap} from './height-map'
-import {calculateViewportRange} from './viewport-range'
+import {ContinuousLayoutProjection} from './layout-projection'
+import {
+  calculateProjectedViewportRange,
+  calculateViewportRange,
+} from './viewport-range'
 
 describe('calculateViewportRange', () => {
   it('returns an empty interval for an empty document', () => {
@@ -10,6 +14,15 @@ describe('calculateViewportRange', () => {
     const heights = createHeightMap([10, 10, 10, 10, 10, 10, 10])
 
     expect(calculateViewportRange(heights, 20, 20, 1)).toEqual([1, 5])
+  })
+
+  it('accepts query-only projected geometry', () => {
+    const heights = createHeightMap([100, 100, 100, 100])
+    const projection = new ContinuousLayoutProjection(heights)
+
+    expect(calculateProjectedViewportRange(projection, 100, 100, 0)).toEqual([1, 2])
+
+    projection.dispose()
   })
 
   it('clamps elastic negative scrolling to the first block', () => {

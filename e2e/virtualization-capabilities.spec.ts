@@ -1,7 +1,7 @@
 import {expect, test, type Page} from '@playwright/test'
 
 const editorSelector = 'block-craft-editor'
-const fatalConsolePattern = /Block not found|Cannot read properties|virtualization(?:Reconcile|Fallback|FullMount)Error|unhandled|\bERROR\b/i
+const fatalConsolePattern = /Block not found|Cannot read properties|virtualization(?:Reconcile|Fallback|FullMount)Error|paginationSparse|layoutProjectionInvalid|unhandled|\bERROR\b/i
 const externalResourcePattern = /figma\.com|juejin\.cn|zijieapi\.com|byte(?:dance|replay)|youtube\.com|youtu\.be|googlevideo\.com|unsplash\.com|example\.com|angular\.dev/i
 
 async function waitForEditor(page: Page): Promise<void> {
@@ -24,6 +24,366 @@ function observeFatalDiagnostics(page: Page): string[] {
   })
   return fatal
 }
+
+test('experimental pagination keeps root mounting sparse across scroll and config changes', async ({page}) => {
+  test.setTimeout(60_000)
+  const fatal = observeFatalDiagnostics(page)
+  page.on('console', message => {
+    const detail = message.text()
+    const source = message.location().url
+    if (
+      !externalResourcePattern.test(`${source} ${detail}`) &&
+      fatalConsolePattern.test(detail)
+    ) {
+      fatal.push(detail)
+    }
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await waitForEditor(page)
+
+  await page.evaluate(async (selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const snapshots = Array.from({length: 240}, (_, index) =>
+      doc.schemas.createSnapshot('paragraph', [[{
+        insert: `sparse pagination filler ${index}`,
+      }]]),
+    )
+    doc.crud.insertBlockSnapshots(
+      doc.rootId,
+      doc.model.getChildrenIds(doc.rootId).length,
+      snapshots,
+    )
+    const pagination = doc.plugins.find((plugin: any) => plugin.name === 'pagination')
+    if (!pagination) throw new Error('PaginationPlugin is unavailable')
+    pagination.enable()
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+  }, editorSelector)
+
+  const readState = () => page.evaluate((selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const rootIds = doc.model.getChildrenIds(doc.rootId) as string[]
+    const mountedIds = doc.vm.getMountedRootChildIds() as string[]
+    const pagination = doc.plugins.find((plugin: any) => plugin.name === 'pagination')
+    return {
+      enabled: pagination?.enabled === true,
+      paginated: doc.root.hostElement.classList.contains('bc-paginated'),
+      pageWidth: doc.root.hostElement.style.getPropertyValue('--bc-page-width'),
+      sheets: doc.scrollContainer.querySelectorAll('.bc-page-sheet').length,
+      scrollTop: doc.scrollContainer.scrollTop,
+      scrollHeight: doc.scrollContainer.scrollHeight,
+      clientHeight: doc.scrollContainer.clientHeight,
+      mountedCount: mountedIds.length,
+      totalCount: rootIds.length,
+      furthestMountedIndex: Math.max(
+        -1,
+        ...mountedIds.map(id => rootIds.indexOf(id)),
+      ),
+    }
+  }, editorSelector)
+
+  await expect.poll(readState).toMatchObject({
+    enabled: true,
+    paginated: true,
+  })
+  const initial = await readState()
+  expect(initial.sheets).toBeGreaterThan(1)
+  expect(initial.mountedCount).toBeLessThan(40)
+  expect(initial.mountedCount).toBeLessThan(initial.totalCount)
+
+  await page.evaluate((selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    doc.scrollContainer.scrollTop = doc.scrollContainer.scrollHeight
+    doc.scrollContainer.dispatchEvent(new Event('scroll'))
+  }, editorSelector)
+
+  await expect.poll(
+    async () => (await readState()).furthestMountedIndex,
+    {timeout: 10_000},
+  ).toBeGreaterThan(180)
+  const scrolled = await readState()
+  expect(scrolled.scrollTop).toBeGreaterThan(scrolled.clientHeight)
+  expect(scrolled.mountedCount).toBeLessThan(40)
+
+  for (const [index, width] of [720, 900, 760, 860, 700, 820].entries()) {
+    const scrollToEnd = index % 2 === 0
+    await page.evaluate(({selector, nextWidth, end}) => {
+      const editor = document.querySelector(selector)
+      const debug = (window as unknown as {
+        ng: {getComponent: (target: Element) => {doc: any}}
+      }).ng
+      const doc = debug.getComponent(editor!).doc
+      doc.plugins
+        .find((plugin: any) => plugin.name === 'pagination')
+        .updateConfig({pageSize: {width: nextWidth, height: 1100}})
+      doc.scrollContainer.scrollTop = end ? doc.scrollContainer.scrollHeight : 0
+      doc.scrollContainer.dispatchEvent(new Event('scroll'))
+    }, {selector: editorSelector, nextWidth: width, end: scrollToEnd})
+
+    await expect.poll(async () => {
+      const state = await readState()
+      return {
+        pageWidth: state.pageWidth,
+        atTarget: scrollToEnd
+          ? state.furthestMountedIndex > 180
+          : state.furthestMountedIndex < 50,
+        sparse: state.mountedCount < 40,
+      }
+    }, {timeout: 10_000}).toEqual({
+      pageWidth: `${width}px`,
+      atTarget: true,
+      sparse: true,
+    })
+  }
+
+  for (let cycle = 0; cycle < 2; cycle++) {
+    await page.evaluate((selector) => {
+      const editor = document.querySelector(selector)
+      const debug = (window as unknown as {
+        ng: {getComponent: (target: Element) => {doc: any}}
+      }).ng
+      const doc = debug.getComponent(editor!).doc
+      doc.plugins.find((plugin: any) => plugin.name === 'pagination').disable()
+    }, editorSelector)
+    await expect.poll(readState).toMatchObject({
+      enabled: false,
+      paginated: false,
+      pageWidth: '',
+      sheets: 0,
+    })
+
+    await page.evaluate((selector) => {
+      const editor = document.querySelector(selector)
+      const debug = (window as unknown as {
+        ng: {getComponent: (target: Element) => {doc: any}}
+      }).ng
+      const doc = debug.getComponent(editor!).doc
+      doc.plugins.find((plugin: any) => plugin.name === 'pagination').enable()
+    }, editorSelector)
+    await expect.poll(async () => {
+      const state = await readState()
+      return {
+        enabled: state.enabled,
+        paginated: state.paginated,
+        sparse: state.mountedCount < 40,
+      }
+    }).toEqual({enabled: true, paginated: true, sparse: true})
+  }
+
+  await page.evaluate((selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    doc.plugins.find((plugin: any) => plugin.name === 'pagination').disable()
+  }, editorSelector)
+
+  await expect.poll(readState).toMatchObject({
+    enabled: false,
+    paginated: false,
+    pageWidth: '',
+    sheets: 0,
+  })
+  expect((await readState()).mountedCount).toBeLessThan(40)
+  expect(fatal).toEqual([])
+})
+
+test('sparse pagination keeps offscreen input, IME and history selection coherent through layout churn', async ({page}) => {
+  test.setTimeout(60_000)
+  const fatal = observeFatalDiagnostics(page)
+  page.on('console', message => {
+    const detail = message.text()
+    const source = message.location().url
+    if (
+      !externalResourcePattern.test(`${source} ${detail}`) &&
+      fatalConsolePattern.test(detail)
+    ) {
+      fatal.push(detail)
+    }
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await waitForEditor(page)
+
+  const prepared = await page.evaluate(async (selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const snapshots = Array.from({length: 180}, (_, index) =>
+      doc.schemas.createSnapshot('paragraph', [[{
+        insert: `sparse history target ${index}`,
+      }]]),
+    )
+    const insertedIds = doc.crud.insertBlockSnapshots(
+      doc.rootId,
+      doc.model.getChildrenIds(doc.rootId).length,
+      snapshots,
+    ) as string[]
+    const targetId = insertedIds[140]
+    const pagination = doc.plugins.find((plugin: any) => plugin.name === 'pagination')
+    if (!pagination || !targetId) throw new Error('Sparse pagination target is unavailable')
+    pagination.enable()
+    await doc.virtualization.scrollToBlock(targetId)
+    doc.crud.undoManager.clearHistory()
+    const baseline = doc.model.getYBlock(targetId).get('children').toString()
+    doc.selection.setCursorAt(doc.getBlockById(targetId), baseline.length)
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    return {targetId, baseline}
+  }, editorSelector)
+
+  const readEditingState = () => page.evaluate(({selector, targetId}) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const nativeSelection = document.getSelection()
+    const blockIdForNode = (node: Node | null): string | null => {
+      const element = node instanceof Element ? node : node?.parentElement
+      return element
+        ?.closest<HTMLElement>('[data-block-id]')
+        ?.dataset['blockId'] ?? null
+    }
+    let recalculated: any = null
+    try {
+      recalculated = doc.selection.recalculate(
+        false,
+        {isComposing: doc.event.status.isComposing},
+      ).value?.toJSON() ?? null
+    } catch {
+      recalculated = null
+    }
+    const block = doc.vm.get(targetId)?.instance
+    const viewport = doc.scrollContainer.getBoundingClientRect()
+    const rect = block?.hostElement.getBoundingClientRect()
+    const active = document.activeElement
+    return {
+      text: doc.model.getYBlock(targetId)?.get('children')?.toString?.() ?? null,
+      modelSelection: doc.selection.value?.toJSON() ?? null,
+      recalculatedSelection: recalculated,
+      nativeAnchorBlockId: blockIdForNode(nativeSelection?.anchorNode ?? null),
+      nativeFocusBlockId: blockIdForNode(nativeSelection?.focusNode ?? null),
+      nativeRangeCount: nativeSelection?.rangeCount ?? 0,
+      focusInsideEditor: !!active && (
+        active === doc.root.hostElement || doc.root.hostElement.contains(active)
+      ),
+      compositionPhase: doc.inputManger.compositionSession.phase,
+      eventComposing: doc.event.status.isComposing,
+      visible: !!rect && rect.bottom > viewport.top && rect.top < viewport.bottom,
+      mounted: doc.vm.getMountedRootChildIds().includes(targetId),
+      mountedCount: doc.vm.getMountedRootChildIds().length,
+      totalCount: doc.model.getChildrenIds(doc.rootId).length,
+      pageWidth: doc.root.hostElement.style.getPropertyValue('--bc-page-width'),
+    }
+  }, {selector: editorSelector, targetId: prepared.targetId})
+
+  const expectCoherentTargetSelection = async (expectedText: string) => {
+    await expect.poll(readEditingState, {timeout: 10_000}).toMatchObject({
+      text: expectedText,
+      nativeAnchorBlockId: prepared.targetId,
+      nativeFocusBlockId: prepared.targetId,
+      nativeRangeCount: 1,
+      focusInsideEditor: true,
+      compositionPhase: 'idle',
+      eventComposing: false,
+      visible: true,
+      mounted: true,
+    })
+    const state = await readEditingState()
+    expect(state.modelSelection).toEqual(state.recalculatedSelection)
+    expect(state.modelSelection?.anchor.blockId).toBe(prepared.targetId)
+    expect(state.modelSelection?.head.blockId).toBe(prepared.targetId)
+    expect(state.mountedCount).toBeLessThan(40)
+    expect(state.mountedCount).toBeLessThan(state.totalCount)
+  }
+
+  await expectCoherentTargetSelection(prepared.baseline)
+  await page.keyboard.type('A')
+  await expectCoherentTargetSelection(`${prepared.baseline}A`)
+  await page.keyboard.press('ControlOrMeta+z')
+  await expectCoherentTargetSelection(prepared.baseline)
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expectCoherentTargetSelection(`${prepared.baseline}A`)
+  await page.keyboard.press('ControlOrMeta+z')
+  await expectCoherentTargetSelection(prepared.baseline)
+
+  const duringComposition = await page.evaluate(({selector, targetId}) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const target = doc.getBlockById(targetId).containerElement
+    target.dispatchEvent(new CompositionEvent('compositionstart', {
+      bubbles: true,
+      cancelable: true,
+      data: '',
+    }))
+    doc.plugins
+      .find((plugin: any) => plugin.name === 'pagination')
+      .updateConfig({pageSize: {width: 845, height: 1100}})
+    return {
+      phase: doc.inputManger.compositionSession.phase,
+      composing: doc.event.status.isComposing,
+    }
+  }, {selector: editorSelector, targetId: prepared.targetId})
+  expect(duringComposition).toEqual({phase: 'active', composing: true})
+  await expect.poll(async () => (await readEditingState()).pageWidth).toBe('845px')
+
+  await page.evaluate(({selector, targetId}) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    doc.getBlockById(targetId).containerElement.dispatchEvent(
+      new CompositionEvent('compositionend', {
+        bubbles: true,
+        cancelable: true,
+        data: '中',
+      }),
+    )
+  }, {selector: editorSelector, targetId: prepared.targetId})
+  await expectCoherentTargetSelection(`${prepared.baseline}中`)
+
+  await page.evaluate((selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    doc.scrollContainer.scrollTop = 0
+    doc.scrollContainer.dispatchEvent(new Event('scroll'))
+  }, editorSelector)
+  await expect.poll(async () => (await readEditingState()).visible).toBe(false)
+
+  await page.keyboard.press('ControlOrMeta+z')
+  await expectCoherentTargetSelection(prepared.baseline)
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expectCoherentTargetSelection(`${prepared.baseline}中`)
+  expect(fatal).toEqual([])
+})
 
 test('find next materializes and centers an unmounted virtual block', async ({page}) => {
   const fatal = observeFatalDiagnostics(page)
@@ -418,7 +778,334 @@ test('rapid block-link navigation keeps only the latest unmounted target and pre
   expect(fatal).toEqual([])
 })
 
-test('pagination releases its full-document lease back to a sparse window', async ({page}) => {
+test('sparse pagination keeps large mounted blocks out of page gaps', async ({page}) => {
+  test.setTimeout(60_000)
+  const fatal = observeFatalDiagnostics(page)
+  page.on('console', message => {
+    const detail = message.text()
+    const source = message.location().url
+    if (
+      !externalResourcePattern.test(`${source} ${detail}`) &&
+      fatalConsolePattern.test(detail)
+    ) {
+      fatal.push(detail)
+    }
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await waitForEditor(page)
+
+  const targetIds = await page.evaluate(async (selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const body = '分页大块测试内容'.repeat(110)
+    const snapshots = Array.from({length: 48}, (_, index) =>
+      doc.schemas.createSnapshot('ordered', [[{
+        insert: `${index + 1} ${body}`,
+      }]]),
+    )
+    doc.crud.insertBlockSnapshots(
+      doc.rootId,
+      doc.model.getChildrenIds(doc.rootId).length,
+      snapshots,
+    )
+    const pagination = doc.plugins.find((plugin: any) => plugin.name === 'pagination')
+    if (!pagination) throw new Error('PaginationPlugin is unavailable')
+    pagination.enable()
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    return snapshots
+      .filter((_, index) => index % 6 === 0 || index === snapshots.length - 1)
+      .map(snapshot => snapshot.id)
+  }, editorSelector)
+
+  const inspectVisibleGeometry = () => page.evaluate((selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const containerRect = doc.scrollContainer.getBoundingClientRect()
+    const sheets = Array.from(
+      doc.scrollContainer.querySelectorAll<HTMLElement>('.bc-page-sheet'),
+    ).map(sheet => {
+      const rect = sheet.getBoundingClientRect()
+      return {top: rect.top, bottom: rect.bottom}
+    })
+    const visibleBlocks = Array.from(
+      doc.root.hostElement.querySelectorAll<HTMLElement>(':scope > [data-block-id]'),
+    ).filter(host => {
+      const rect = host.getBoundingClientRect()
+      return rect.bottom > containerRect.top && rect.top < containerRect.bottom
+    })
+    const blocksInPageGaps = visibleBlocks.flatMap(host => {
+      const rect = host.getBoundingClientRect()
+      const center = (rect.top + rect.bottom) / 2
+      return sheets.some(sheet => center >= sheet.top && center <= sheet.bottom)
+        ? []
+        : [host.dataset['blockId']]
+    })
+    return {
+      blocksInPageGaps,
+      blocksWithPaginationMargin: visibleBlocks
+        .filter(host => host.style.marginTop !== '')
+        .map(host => host.dataset['blockId']),
+      pageGapSpacers: doc.root.hostElement
+        .querySelectorAll('[data-bc-page-gap-spacer]').length,
+    }
+  }, editorSelector)
+
+  for (const targetId of targetIds) {
+    await page.evaluate(async ({selector, blockId}) => {
+      const editor = document.querySelector(selector)
+      const debug = (window as unknown as {
+        ng: {getComponent: (target: Element) => {doc: any}}
+      }).ng
+      const doc = debug.getComponent(editor!).doc
+      await doc.virtualization.scrollToBlock(blockId, {align: 'center'})
+    }, {selector: editorSelector, blockId: targetId})
+
+    await expect.poll(inspectVisibleGeometry, {timeout: 10_000}).toEqual({
+      blocksInPageGaps: [],
+      blocksWithPaginationMargin: [],
+      pageGapSpacers: expect.any(Number),
+    })
+    expect((await inspectVisibleGeometry()).pageGapSpacers).toBeGreaterThan(0)
+  }
+
+  expect(fatal).toEqual([])
+})
+
+test('gap input stays in one paragraph while sparse pagination catches up', async ({page}) => {
+  test.setTimeout(60_000)
+  const fatal = observeFatalDiagnostics(page)
+  page.on('console', message => {
+    const detail = message.text()
+    const source = message.location().url
+    if (
+      !externalResourcePattern.test(`${source} ${detail}`) &&
+      fatalConsolePattern.test(detail)
+    ) {
+      fatal.push(detail)
+    }
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await waitForEditor(page)
+
+  const prepared = await page.evaluate(async (selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const rootIds = doc.model.getChildrenIds(doc.rootId) as string[]
+    const insertionIndex = Math.min(1, rootIds.length)
+    const nextId = rootIds[insertionIndex] ?? null
+    const divider = doc.schemas.createSnapshot('divider', [])
+    doc.crud.insertBlocks(doc.rootId, insertionIndex, [divider])
+    const pagination = doc.plugins.find((plugin: any) => plugin.name === 'pagination')
+    if (!pagination) throw new Error('PaginationPlugin is unavailable')
+    pagination.enable()
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    doc.selection.setGapCursor(divider.id, 'after')
+    return {dividerId: divider.id, nextId}
+  }, editorSelector)
+
+  const payload = 'abcdefghijklmnopqrstuvwxyz'.repeat(4)
+  await page.keyboard.type(payload, {delay: 0})
+
+  await expect.poll(() => page.evaluate(({selector, dividerId, nextId}) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const rootIds = doc.model.getChildrenIds(doc.rootId) as string[]
+    const from = rootIds.indexOf(dividerId) + 1
+    const nextIndex = nextId ? rootIds.indexOf(nextId) : rootIds.length
+    const to = nextIndex >= from ? nextIndex : rootIds.length
+    const inserted = rootIds.slice(from, to).map(blockId => ({
+      blockId,
+      flavour: doc.model.getFlavour(blockId),
+      text: (doc.model.getTextDeltas(blockId) ?? [])
+        .map((op: {insert: unknown}) => typeof op.insert === 'string' ? op.insert : '')
+        .join(''),
+    }))
+    const selection = doc.selection.value?.toJSON() ?? null
+    return {
+      inserted: inserted.map(({flavour, text}) => ({flavour, text})),
+      selectionOwnsInsertedBlock:
+        inserted.length === 1 && selection?.head?.blockId === inserted[0]!.blockId,
+      selectionOffset: selection?.head?.type === 'text' ? selection.head.offset : null,
+      paginationEnabled:
+        doc.plugins.find((plugin: any) => plugin.name === 'pagination')?.enabled === true,
+      paginated: doc.root.hostElement.classList.contains('bc-paginated'),
+    }
+  }, {
+    selector: editorSelector,
+    dividerId: prepared.dividerId,
+    nextId: prepared.nextId,
+  }), {timeout: 10_000}).toEqual({
+    inserted: [{flavour: 'paragraph', text: payload}],
+    selectionOwnsInsertedBlock: true,
+    selectionOffset: payload.length,
+    paginationEnabled: true,
+    paginated: true,
+  })
+
+  expect(fatal).toEqual([])
+})
+
+test('gap IME stays attached while sparse pagination catches up', async ({page}) => {
+  test.setTimeout(60_000)
+  const fatal = observeFatalDiagnostics(page)
+  page.on('console', message => {
+    const detail = message.text()
+    const source = message.location().url
+    if (
+      !externalResourcePattern.test(`${source} ${detail}`) &&
+      fatalConsolePattern.test(detail)
+    ) {
+      fatal.push(detail)
+    }
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await waitForEditor(page)
+
+  const prepared = await page.evaluate(async (selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const rootIds = doc.model.getChildrenIds(doc.rootId) as string[]
+    const insertionIndex = Math.min(1, rootIds.length)
+    const nextId = rootIds[insertionIndex] ?? null
+    const divider = doc.schemas.createSnapshot('divider', [])
+    doc.crud.insertBlocks(doc.rootId, insertionIndex, [divider])
+    const pagination = doc.plugins.find((plugin: any) => plugin.name === 'pagination')
+    if (!pagination) throw new Error('PaginationPlugin is unavailable')
+    pagination.enable()
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    doc.selection.setGapCursor(divider.id, 'after')
+    const nativeSelection = document.getSelection()
+    const compositionTarget = nativeSelection?.anchorNode instanceof Element
+      ? nativeSelection.anchorNode
+      : nativeSelection?.anchorNode?.parentElement
+    if (!compositionTarget) throw new Error('Gap composition target is unavailable')
+    compositionTarget.dispatchEvent(
+      new CompositionEvent('compositionstart', {
+        bubbles: true,
+        cancelable: true,
+        data: '',
+      }),
+    )
+    const updatedRootIds = doc.model.getChildrenIds(doc.rootId) as string[]
+    const paragraphId = updatedRootIds[updatedRootIds.indexOf(divider.id) + 1]
+    return {
+      dividerId: divider.id,
+      nextId,
+      paragraphId,
+      phase: doc.inputManger.compositionSession.phase,
+      composing: doc.event.status.isComposing,
+    }
+  }, editorSelector)
+
+  expect(prepared.phase).toBe('active')
+  expect(prepared.composing).toBe(true)
+  expect(prepared.paragraphId).toBeTruthy()
+
+  await page.evaluate(({selector, paragraphId}) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const nativeSelection = document.getSelection()
+    const compositionTarget = nativeSelection?.anchorNode instanceof Element
+      ? nativeSelection.anchorNode
+      : nativeSelection?.anchorNode?.parentElement
+    if (!compositionTarget) throw new Error('Paragraph composition target is unavailable')
+    compositionTarget.dispatchEvent(
+      new CompositionEvent('compositionend', {
+        bubbles: true,
+        cancelable: true,
+        data: '中文输入',
+      }),
+    )
+  }, {selector: editorSelector, paragraphId: prepared.paragraphId})
+
+  await expect.poll(() => page.evaluate(({
+    selector,
+    dividerId,
+    nextId,
+    paragraphId,
+  }) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const rootIds = doc.model.getChildrenIds(doc.rootId) as string[]
+    const from = rootIds.indexOf(dividerId) + 1
+    const nextIndex = nextId ? rootIds.indexOf(nextId) : rootIds.length
+    const to = nextIndex >= from ? nextIndex : rootIds.length
+    const inserted = rootIds.slice(from, to).map(blockId => ({
+      blockId,
+      flavour: doc.model.getFlavour(blockId),
+      text: (doc.model.getTextDeltas(blockId) ?? [])
+        .map((op: {insert: unknown}) => typeof op.insert === 'string' ? op.insert : '')
+        .join(''),
+    }))
+    const selection = doc.selection.value?.toJSON() ?? null
+    return {
+      inserted,
+      selectionBlockId: selection?.head?.blockId ?? null,
+      selectionOffset: selection?.head?.type === 'text' ? selection.head.offset : null,
+      paragraphMounted: doc.vm.getMountedRootChildIds().includes(paragraphId),
+      phase: doc.inputManger.compositionSession.phase,
+      composing: doc.event.status.isComposing,
+      paginationEnabled:
+        doc.plugins.find((plugin: any) => plugin.name === 'pagination')?.enabled === true,
+      paginated: doc.root.hostElement.classList.contains('bc-paginated'),
+    }
+  }, {
+    selector: editorSelector,
+    dividerId: prepared.dividerId,
+    nextId: prepared.nextId,
+    paragraphId: prepared.paragraphId,
+  }), {timeout: 10_000}).toEqual({
+    inserted: [{
+      blockId: prepared.paragraphId,
+      flavour: 'paragraph',
+      text: '中文输入',
+    }],
+    selectionBlockId: prepared.paragraphId,
+    selectionOffset: 4,
+    paragraphMounted: true,
+    phase: 'idle',
+    composing: false,
+    paginationEnabled: true,
+    paginated: true,
+  })
+
+  expect(fatal).toEqual([])
+})
+
+test('sparse pagination never acquires a full-document lease and cleans up on disable', async ({page}) => {
   const fatal = observeFatalDiagnostics(page)
   await page.goto('/')
   await page.getByRole('button', {name: '初始化', exact: true}).click()
@@ -469,12 +1156,16 @@ test('pagination releases its full-document lease back to a sparse window', asyn
       ng: {getComponent: (target: Element) => {doc: any}}
     }).ng
     const doc = debug.getComponent(editor!).doc
+    const mountedRoots = doc.vm.getMountedRootChildIds().length
     return {
-      mountedRoots: doc.vm.getMountedRootChildIds().length,
+      sparse: mountedRoots < doc.model.getChildrenIds(doc.rootId).length,
+      fullDocumentLeases:
+        doc.virtualization.fullDocumentViewLeaseCount ?? null,
       paginated: doc.root.hostElement.classList.contains('bc-paginated'),
     }
   }, editorSelector), {timeout: 10_000}).toEqual({
-    mountedRoots: totalRoots,
+    sparse: true,
+    fullDocumentLeases: 0,
     paginated: true,
   })
 

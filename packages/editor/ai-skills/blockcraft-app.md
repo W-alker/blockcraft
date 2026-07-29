@@ -262,6 +262,8 @@ const pagination = new PaginationPlugin({
   enabled: false,
   pageSize: 'A4',
   printShortcut: true,
+  // Phase C opt-in; keep false when exact live pagination is required.
+  experimentalSparseView: true,
 })
 
 doc = new BlockCraftDoc({
@@ -278,7 +280,7 @@ pagination.updateConfig({
 pagination.disable()
 ```
 
-Do not add `pagination` to `DocConfig` and do not read `doc.pagination`. The plugin is the lifecycle owner and removes all layout DOM/CSS on disable or destroy. Host settings UI should read `pagination.config` and call `pagination.updateConfig(...)`; BlockCraft does not publish a pagination settings component.
+Do not add `pagination` to `DocConfig` and do not read `doc.pagination`. The plugin is the lifecycle owner and removes all layout DOM/CSS on disable or destroy. Host settings UI should read `pagination.config` and call `pagination.updateConfig(...)`; BlockCraft does not publish a pagination settings component. `experimentalSparseView` is a construction-time rollout option, is not included in `pagination.config`, defaults to `false`, and is effective only when root virtualization is enabled.
 
 ### Paginated PDF and Printing
 
@@ -297,7 +299,7 @@ await exports.exportToPdf('letter.pdf', {
 await pagination.print()
 ```
 
-With an enabled plugin and no explicit `options.pagination`, `exportToPdf()` captures the current stable page result, then renders the same snapshot through a readonly `BlockCraftDoc`. This preserves page count, block placement and table fragments without cloning the focused editor or using snapshot-viewer. Passing `options.pagination` intentionally requests a new reflow. If the plugin is disabled, its config is used for an offscreen readonly reflow; without a plugin the fallback is A4.
+With an enabled plugin and no explicit `options.pagination`, `exportToPdf()` captures the current stable page result, then renders the same snapshot through a readonly `BlockCraftDoc`. This preserves page count, block placement and table fragments without cloning the focused editor or using snapshot-viewer. In experimental sparse mode, an estimated (`exact: false`) live result is never reused: export falls back to the complete readonly reflow. Passing `options.pagination` intentionally requests a new reflow. If the plugin is disabled, its config is used for an offscreen readonly reflow; without a plugin the fallback is A4.
 
 BlockCraft no longer exposes `DocExportManager.exportToJpeg()` or a DOM-to-image rendering dependency. Browser PDF export prints the fixed page boxes through a same-origin iframe; browser code cannot silently save a PDF or reliably detect whether the user cancelled the dialog. Hosts that need bitmap screenshots should own that application-specific rendering path separately.
 
@@ -401,17 +403,22 @@ container internals keep their existing selection/input semantics. Yjs and
 `BlockModelGraph` remain complete; only Angular components and DOM are sparse.
 
 The bundled reference `<block-craft-editor>` exposes the initialization-only
-`virtualizationEnabled` input (default `true`) and forwards it into the
-document config when the component creates its `BlockCraftDoc` in `ngOnInit`:
+`virtualizationEnabled` input (default `true`) and `paginationSparseView`
+input (default `false`). It forwards them when it creates `BlockCraftDoc` and
+`PaginationPlugin` in `ngOnInit`:
 
 ```html
-<block-craft-editor [virtualizationEnabled]="false" />
+<block-craft-editor
+  [virtualizationEnabled]="true"
+  [paginationSparseView]="true" />
 ```
 
 This input is a construction choice, not a live mode switch. Recreate the
-component to change it, and do so before initializing or attaching a
+component to change either input, and do so before initializing or attaching a
 collaboration provider. Direct `BlockCraftDoc` consumers continue to use
-`DocConfig.virtualization`; its framework default remains disabled.
+`DocConfig.virtualization` plus
+`PaginationPlugin({experimentalSparseView: true})`; their framework defaults
+remain disabled/false respectively.
 
 - `overscan` keeps direct root children above and below the viewport mounted
   (minimum 2, default 5).
@@ -437,10 +444,12 @@ collaboration provider. Direct `BlockCraftDoc` consumers continue to use
   and returns an idempotent release function. Always release it from the
   interaction's common teardown; internal block dragging does this for its
   sources before clearing Selection.
-- Live `PaginationPlugin` acquires an exact full-document view lease while
-  enabled and releases it after pagination DOM cleanup. This preserves exact
-  block/table geometry but intentionally removes virtualization's memory and
-  mount-time benefit for the duration of live pagination.
+- By default, live `PaginationPlugin` acquires an exact full-document view
+  lease while enabled and releases it after pagination DOM cleanup.
+  `experimentalSparseView: true` instead lets the paginated Projection drive
+  the root window: offscreen geometry may be estimated, mounted-only page gaps
+  and table breaks replay after remount, and non-exact layouts are not reused
+  for print/PDF.
 - A schema with `metadata.viewRetention: 'keep-alive'` acquires a long-lived
   lease only after its view first materializes. Nested blocks pin their
   containing direct-root render unit. Built-in iframe/media schemas opt in so
