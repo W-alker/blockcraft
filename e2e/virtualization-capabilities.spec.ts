@@ -2,7 +2,7 @@ import {expect, test, type Page} from '@playwright/test'
 
 const editorSelector = 'block-craft-editor'
 const fatalConsolePattern = /Block not found|Cannot read properties|virtualization(?:Reconcile|Fallback|FullMount)Error|paginationSparse|layoutProjectionInvalid|unhandled|\bERROR\b/i
-const externalResourcePattern = /figma\.com|juejin\.cn|zijieapi\.com|byte(?:dance|replay)|youtube\.com|youtu\.be|googlevideo\.com|unsplash\.com|example\.com|angular\.dev/i
+const externalResourcePattern = /figma\.com|juejin\.cn|zijieapi\.com|byte(?:dance|replay)|youtube\.com|youtu\.be|googlevideo\.com|unsplash\.com|example\.com|angular\.dev|affine-worker\.toeverything\.workers\.dev|api\.translate\.zvo\.cn/i
 
 async function waitForEditor(page: Page): Promise<void> {
   await page.waitForFunction((selector) => {
