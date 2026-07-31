@@ -42,6 +42,7 @@ function editableBlock(id: string): YBlock {
 function createReadonlyHarness(
   config: {
     currentUserId?: string;
+    defaultBlockLockKind?: "user" | "template";
     canUnlockBlock?: (context: BlockUnlockContext) => boolean;
   } = {currentUserId: "user-1"},
 ) {
@@ -286,6 +287,7 @@ describe("BlockReadonlyManager", () => {
       readonly: true,
       source: {kind: "ancestor", blockId: "callout"},
       lockUserId: "user-1",
+      lockKind: "user",
     });
     expect(manager.containsReadonly("root-a")).toBeTrue();
 
@@ -355,9 +357,61 @@ describe("BlockReadonlyManager", () => {
     expect(policy).toHaveBeenCalledWith({
       blockId: "offscreen-p",
       lockUserId: "user-1",
+      lockKind: "user",
       currentUserId: "admin-1",
     });
     expect(admin.yMeta("offscreen-p").has("lock")).toBeFalse();
+  });
+
+  it("persists template lock kind and requires explicit host authorization to unlock", () => {
+    const owner = createReadonlyHarness({currentUserId: "user-1"});
+    owner.manager.set("offscreen-p", true, {kind: "template"});
+
+    expect(owner.yMeta("offscreen-p").get("lock")).toBe("user-1");
+    expect(owner.yMeta("offscreen-p").get("lockKind")).toBe("template");
+    expect(owner.manager.resolve("offscreen-p")).toEqual({
+      readonly: true,
+      source: {kind: "self", blockId: "offscreen-p"},
+      lockUserId: "user-1",
+      lockKind: "template",
+    });
+    expect(owner.manager.canUnlock("offscreen-p")).toBeFalse();
+    expect(() => owner.manager.set("offscreen-p", false))
+      .toThrowError(BlockLockError);
+
+    const policy = jasmine.createSpy("canUnlockBlock").and.callFake(
+      (context: BlockUnlockContext) =>
+        context.lockKind === "template"
+        && context.currentUserId === context.lockUserId,
+    );
+    const authoring = createReadonlyHarness({
+      currentUserId: "user-1",
+      canUnlockBlock: policy,
+    });
+    authoring.manager.set("offscreen-p", true, {kind: "template"});
+
+    expect(authoring.manager.canUnlock("offscreen-p")).toBeTrue();
+    authoring.manager.set("offscreen-p", false);
+    expect(policy).toHaveBeenCalledWith({
+      blockId: "offscreen-p",
+      lockUserId: "user-1",
+      lockKind: "template",
+      currentUserId: "user-1",
+    });
+    expect(authoring.yMeta("offscreen-p").has("lock")).toBeFalse();
+    expect(authoring.yMeta("offscreen-p").has("lockKind")).toBeFalse();
+  });
+
+  it("uses the document default kind for generic lock controls", () => {
+    const authoring = createReadonlyHarness({
+      currentUserId: "user-1",
+      defaultBlockLockKind: "template",
+    });
+
+    authoring.manager.set("offscreen-p", true);
+
+    expect(authoring.yMeta("offscreen-p").get("lockKind")).toBe("template");
+    expect(authoring.manager.resolve("offscreen-p").lockKind).toBe("template");
   });
 
   it("captures the current user identity when the document manager is constructed", () => {
@@ -418,6 +472,28 @@ describe("BlockReadonlyManager", () => {
     expect(manager.isReadonly("p-in")).toBeFalse();
   });
 
+  it("falls back unknown lock kinds to user locks and cleans orphan kinds", () => {
+    const {manager, onMetaUpdate$, yMeta} = createReadonlyHarness();
+    yMeta("offscreen-p").set("lock", "user-1");
+    yMeta("offscreen-p").set("lockKind", "future-kind");
+    onMetaUpdate$.next({
+      transactions: [{
+        blockId: "offscreen-p",
+        changes: new Map([
+          ["lock", {oldValue: undefined, action: "add"}],
+          ["lockKind", {oldValue: undefined, action: "add"}],
+        ]),
+      }],
+    });
+
+    expect(manager.resolve("offscreen-p").lockKind).toBe("user");
+
+    yMeta("p-in").set("lockKind", "template");
+    manager.set("p-in", false);
+    expect(yMeta("p-in").has("lockKind")).toBeFalse();
+    expect(manager.isReadonly("p-in")).toBeFalse();
+  });
+
   it("rejects persistent locking of the root block", () => {
     const {manager} = createReadonlyHarness();
 
@@ -428,15 +504,29 @@ describe("BlockReadonlyManager", () => {
     const {manager, onMetaUpdate$, yMeta} = createReadonlyHarness();
     manager.set("callout", true);
     yMeta("p-in").set("lock", "remote-user");
+    yMeta("p-in").set("lockKind", "template");
     onMetaUpdate$.next({
       transactions: [{
         blockId: "p-in",
-        changes: new Map([["lock", {oldValue: undefined, action: "add"}]]),
+        changes: new Map([
+          ["lock", {oldValue: undefined, action: "add"}],
+          ["lockKind", {oldValue: undefined, action: "add"}],
+        ]),
       }],
     });
 
     expect(manager.resolve("p-in").source).toEqual({kind: "self", blockId: "p-in"});
     expect(manager.resolve("p-in").lockUserId).toBe("remote-user");
+    expect(manager.resolve("p-in").lockKind).toBe("template");
+
+    yMeta("p-in").delete("lockKind");
+    onMetaUpdate$.next({
+      transactions: [{
+        blockId: "p-in",
+        changes: new Map([["lockKind", {oldValue: "template", action: "delete"}]]),
+      }],
+    });
+    expect(manager.resolve("p-in").lockKind).toBe("user");
 
     yMeta("p-in").delete("lock");
     onMetaUpdate$.next({
@@ -526,6 +616,7 @@ describe("BlockReadonlyManager", () => {
       readonly: true,
       source: {kind: "document"},
       lockUserId: null,
+      lockKind: null,
     });
   });
 });

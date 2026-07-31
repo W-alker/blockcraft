@@ -1,8 +1,10 @@
 import {TestBed} from '@angular/core/testing';
+import {By} from '@angular/platform-browser';
+import {NzTooltipDirective} from 'ng-zorro-antd/tooltip';
 import {InlineImageToolbar} from './inline-image.toolbar';
 
 describe('InlineImageToolbar', () => {
-  it('shows the current size and emits the block conversion action', () => {
+  it('shows inline-only wrap plus the existing block layout actions', () => {
     const fixture = TestBed.configureTestingModule({
       imports: [InlineImageToolbar],
     }).createComponent(InlineImageToolbar);
@@ -14,10 +16,63 @@ describe('InlineImageToolbar', () => {
       .toBe('120 × 60');
 
     let action: string | undefined;
-    fixture.componentInstance.onItemClicked.subscribe(item => action = item.name);
-    fixture.nativeElement.querySelector('bc-float-toolbar-item[name="block"]')
+    let value: unknown;
+    fixture.componentInstance.onItemClicked.subscribe(item => {
+      action = item.name;
+      value = item.value;
+    });
+    fixture.nativeElement
+      .querySelectorAll('bc-float-toolbar-item[name="object-layout"]')[2]
       .dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
 
-    expect(action).toBe('block');
+    expect(action).toBe('object-layout');
+    expect(value).toBe('top-bottom');
+    expect(fixture.nativeElement.querySelectorAll(
+      'bc-float-toolbar-item[name="object-layout"]',
+    ).length).toBe(5);
+    const items = Array.from<HTMLElement>(
+      fixture.nativeElement.querySelectorAll(
+        'bc-float-toolbar-item[name="object-layout"]',
+      ),
+    );
+    expect(items.map(item =>
+      Array.from(
+        item.querySelector('i.bc_icon')?.classList ?? [],
+      ).find(className => className !== 'bc_icon'),
+    )).toEqual([
+      'bc_fuwenben-qianruzuo',
+      'bc_sizhouhuanrao',
+      'bc_fuwenben-shangxia',
+      'bc_cengji-xia',
+      'bc_cengji-shang',
+    ]);
+  });
+
+  it('shows typed wrap-side controls only for square wrapping', () => {
+    const fixture = TestBed.configureTestingModule({
+      imports: [InlineImageToolbar],
+    }).createComponent(InlineImageToolbar);
+    fixture.componentRef.setInput('layout', 'wrap');
+    fixture.componentRef.setInput('side', 'left');
+    fixture.detectChanges();
+
+    const sideItems = Array.from<HTMLElement>(
+      fixture.nativeElement.querySelectorAll(
+        'bc-float-toolbar-item[name="inline-wrap-side"]',
+      ),
+    );
+    expect(sideItems.length).toBe(3);
+    expect(fixture.debugElement.queryAll(
+      By.directive(NzTooltipDirective),
+    ).length).toBe(8);
+    expect(sideItems[1].classList.contains('active')).toBeTrue();
+
+    let value: unknown;
+    fixture.componentInstance.onItemClicked.subscribe(item => value = item.value);
+    sideItems[2].dispatchEvent(new MouseEvent(
+      'mousedown',
+      {bubbles: true, cancelable: true},
+    ));
+    expect(value).toBe('right');
   });
 });

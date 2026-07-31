@@ -1,7 +1,10 @@
 import {BlockNodeType, DeltaInsert, IBlockSnapshot} from '../../framework';
 import {
   calculateInlineImageSize,
+  disableInlineImageWrap,
+  enableInlineImageWrap,
   inlineImageSnapshotToBlockSnapshots,
+  resolveInlineImageDragPreview,
   resolveInlineImageAtOffset,
 } from './inline-image-interaction';
 
@@ -51,6 +54,68 @@ describe('inline image interaction helpers', () => {
     })).toEqual({width: 90, height: 60});
   });
 
+  it('enables and disables square wrapping without touching image size', () => {
+    expect(enableInlineImageWrap({
+      src: 'a.png',
+      width: 120,
+      height: 60,
+    })).toEqual({
+      wrap: true,
+      side: 'auto',
+      x: 0,
+    });
+    expect(enableInlineImageWrap({
+      src: 'a.png',
+      width: 120,
+      height: 60,
+      wrap: true,
+      side: 'left',
+      x: .4,
+      gap: 0,
+    })).toEqual({
+      wrap: true,
+      side: 'left',
+      x: .4,
+      gap: 0,
+    });
+    expect(disableInlineImageWrap()).toEqual({
+      wrap: null,
+      side: null,
+      x: null,
+      gap: null,
+    });
+  });
+
+  it('turns pointer-space image coordinates into a clamped wrap preview', () => {
+    const preview = resolveInlineImageDragPreview({
+      containerWidth: 600,
+      imageWidth: 180,
+      imageHeight: 108,
+      imageX: 420,
+      side: 'auto',
+      gap: 12,
+    });
+
+    expect(preview.geometry.resolvedTextSide).toBe('left');
+    expect(preview.attributes).toEqual({
+      wrap: true,
+      side: 'auto',
+      x: .7,
+      gap: 12,
+    });
+
+    const clamped = resolveInlineImageDragPreview({
+      containerWidth: 600,
+      imageWidth: 180,
+      imageHeight: 108,
+      imageX: -100,
+      side: 'right',
+      gap: 12,
+    });
+    expect(clamped.geometry.imageX).toBe(0);
+    expect(clamped.attributes.x).toBe(0);
+  });
+
   it('splits formatted text around the image and preserves block props', () => {
     const result = inlineImageSnapshotToBlockSnapshots(paragraphSnapshot(), 1)!;
 
@@ -71,6 +136,30 @@ describe('inline image interaction helpers', () => {
     expect(result.snapshots[2].children).toEqual([
       {insert: '后', attributes: {'s:color': 'red'}},
     ]);
+  });
+
+  it('drops wrap-only attributes when converting to an image block', () => {
+    const wrapped = mixedDeltas();
+    wrapped[1] = {
+      ...wrapped[1],
+      attributes: {
+        ...wrapped[1].attributes,
+        wrap: true,
+        side: 'left',
+        x: .4,
+        gap: 12,
+      },
+    };
+    const result = inlineImageSnapshotToBlockSnapshots(
+      paragraphSnapshot(wrapped),
+      1,
+    )!;
+
+    expect(result.image.props).toEqual({
+      src: 'https://cdn.example.com/a.png',
+      width: 120,
+      height: 60,
+    });
   });
 
   it('omits empty text sides and supports an image-only paragraph', () => {

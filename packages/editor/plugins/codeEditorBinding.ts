@@ -11,6 +11,8 @@ import {BlockCraftError, ErrorCode, getLinesByRange, getScrollContainer} from ".
 import {isSelectionAlive} from "../framework/modules/selection/liveness";
 
 export class CodeInlineEditorBinding extends DocPlugin {
+  override name = 'code-inline-editor-binding'
+
   private _isBlockReadonly(block: BlockCraft.BlockComponent): boolean {
     return this.doc.readonlyManager?.isReadonly(block) ?? !!block.isReadonly
   }

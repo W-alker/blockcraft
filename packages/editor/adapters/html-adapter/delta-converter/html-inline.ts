@@ -2,7 +2,10 @@ import {HtmlASTToDeltaMatcher} from "../delta-converter";
 import {HtmlAST} from "../../types";
 import type { Element } from 'hast';
 import { collapseWhiteSpace } from 'collapse-white-space';
-import {createInlineImageDelta} from '../../../framework';
+import {
+  createInlineImageDelta,
+  InlineImageWrapSide,
+} from '../../../framework';
 
 const isElement = (ast: HtmlAST): ast is Element => {
   return ast.type === 'element';
@@ -39,10 +42,21 @@ export const htmlImageToDeltaMatcher: HtmlASTToDeltaMatcher = {
   match: ast => isElement(ast) && ast.tagName === 'img',
   toDelta: ast => {
     if (!isElement(ast)) return [];
+    const wrapSide = ast.properties?.['dataBcWrapSide'];
     const delta = createInlineImageDelta(
       ast.properties?.['src'],
       ast.properties?.['width'] ?? ast.properties?.['dataWidth'],
       ast.properties?.['height'] ?? ast.properties?.['dataHeight'],
+      ast.properties?.['dataBcWrap'] === 'square'
+        ? {
+            wrap: true,
+            side: typeof wrapSide === 'string'
+              ? wrapSide as InlineImageWrapSide
+              : undefined,
+            x: Number(ast.properties?.['dataBcWrapX']),
+            gap: Number(ast.properties?.['dataBcWrapGap']),
+          }
+        : undefined,
     );
     return delta ? [delta] : [];
   },

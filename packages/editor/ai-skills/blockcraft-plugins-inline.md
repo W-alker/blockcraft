@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-07-08
+> Last updated: 2026-07-30
 
 ## Inline Extensions
 
@@ -123,6 +123,7 @@ new MentionPlugin({
 ### CodeInlineEditorBinding
 
 > `plugins/codeEditorBinding.ts` — Keyboard bindings for code and mermaid blocks.
+> Runtime plugin ID: `code-inline-editor-binding`.
 
 Handles Enter (newline with indent preservation or block splitting with Shift), Tab/Shift+Tab (insert/remove tabs), and IME composition end for `code` and `mermaid-textarea` blocks.
 
@@ -147,6 +148,7 @@ new CodeInlineEditorBinding()
 ### TableBlockBinding
 
 > `plugins/tableBlockBinding.ts` — Keyboard and clipboard bindings for table blocks.
+> Runtime plugin ID: `table-block-binding`.
 
 Handles copy/cut of selected cell ranges, table-shaped paste into existing cells, Arrow/Shift+Arrow movement for model-owned cell rectangles, Delete/Backspace to clear cells, and Cmd+A to select entire table.
 

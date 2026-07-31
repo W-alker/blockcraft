@@ -93,7 +93,11 @@ export class BcOverlayTriggerDirective implements OnDestroy {
   private _openDelayTimer?: number
 
   openOverlay() {
-    if(this.overlayDisabled || !this.elementRef.nativeElement.isConnected) return
+    if (
+      this.overlayRef ||
+      this.overlayDisabled ||
+      !this.elementRef.nativeElement.isConnected
+    ) return
     const positionStrategy = this.overlay.position()
       .flexibleConnectedTo(this.elementRef)
       .withPositions(this.positions.map(position => getPositionWithOffset(position, this.offsetX, this.offsetY)))

@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-06-15
+> Last updated: 2026-07-31
 
 ## Architecture Overview
 
@@ -111,6 +111,41 @@ The mapper walks the blot tree, accumulating lengths, to find the target positio
 | `applyDelta(ops)` | Incremental edits | O(delta) — patches existing DOM |
 
 After every `applyDelta`, the system performs a **consistency check**: it compares the blot tree against `yText.toDelta()`. If there's a mismatch, it falls back to full `render()`.
+
+## Embed Lifecycle and Default Inline Images
+
+`EmbedConverter.onDestroy(element, delta)` is the teardown boundary for
+DOM-owned listeners/controllers. `EmbedBlot.detach()` invokes it, and a
+semantic attribute update invokes it for the old view before replacing that
+view with `converter.toView(nextDelta)`. A converter that allocates resources
+must make `onDestroy` idempotent.
+
+The built-in `image` converter wraps its `<img>` in
+`.bc-inline-image-shell > .bc-inline-image-frame`, reserves persisted
+`width/height`, and falls back to `320 × 240` (4:3) when either dimension is
+missing. The frame owns the visible resource and its loading/error/retry
+controller; the outer shell remains the atomic one-length Embed. On the first
+successful load it emits an internal bubbling size event; `ImgToolbarPlugin`
+resolves the embed's current model offset and fills only missing
+`width/height` attributes inside `ORIGIN_NO_RECORD`. The model remains the
+source of truth, including while the editable block is offscreen.
+
+When an image Delta has `wrap: true`, the shell projects
+`data-bc-inline-float` and persisted `side/x/gap` data. Each
+`InlineRuntime` owns one package-internal `InlineFloatLayoutController`. After
+full render or incremental Delta application, it derives
+`data-bc-inline-float-owner` on the editable container, applies one contained
+CSS float geometry, and observes only owner-size changes. The marker establishes
+a `flow-root`, so the float cannot affect later sibling blocks or escape a
+virtualized/paginated render unit. Resize reconciliation is animation-frame
+batched and never reads layout from a scroll handler.
+
+Native CSS still owns line breaking, caret movement, selection and IME.
+`ImgToolbarPlugin` changes `wrap/side/x/gap` through one Embed
+`formatText()` transaction. Horizontal pointer movement updates only the
+shell/frame CSS preview; pointerup writes normalized `x` once, while
+pointercancel, Escape, detach and readonly transitions restore model-derived
+geometry.
 
 ## Attributes
 

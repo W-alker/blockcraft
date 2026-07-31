@@ -157,6 +157,162 @@ describe('RootVirtualizationManager', () => {
     }
   }
 
+  it('refreshes offscreen object estimates when root content width changes', () => {
+    const h = createHarness(12, 3)
+    const width$ = new BehaviorSubject(800)
+    let resolvedHeight = 200
+    ;(h.doc.model as any).getChildrenIds = (blockId: string) =>
+      blockId === 'root' ? [...h.ids] : []
+    ;(h.doc.model as any).getFlavour = () => 'image'
+    ;(h.doc.model as any).getProps = () => ({wr: 50, ar: 2})
+    ;(h.doc as any).schemas = {
+      get: () => ({
+        metadata: {
+          objectSizing: {defaultWr: 100, defaultAr: 4 / 3},
+        },
+      }),
+    }
+    ;(h.doc as any).objectSizing = {
+      widthChange$: width$,
+      resolve: () => ({
+        width: resolvedHeight * 2,
+        height: resolvedHeight,
+        wr: 50,
+        ar: 2,
+        source: 'ratio',
+        exact: true,
+      }),
+    }
+
+    h.manager.init(h.scrollContainer)
+    expect((h.manager as any).heights.get(0)).toBe(200)
+
+    resolvedHeight = 250
+    width$.next(1000)
+    expect((h.manager as any).heights.get(0)).toBe(250)
+
+    h.manager.dispose()
+  })
+
+  it('mounts a cold zero-height placement layout from absolute child geometry', async () => {
+    const h = createHarness(12, 20)
+    const contentChange$ = new Subject<any>()
+    const rootIds = [
+      ...Array.from({length: 20}, (_, index) => `p${index}`),
+      'layout',
+    ]
+    h.replaceRootIds(rootIds)
+    let imageY = 40
+    ;(h.doc.model as any).contentChange$ = contentChange$
+    ;(h.doc.model as any).getChildrenIds = (blockId: string) => {
+      if (blockId === 'root') return [...h.ids]
+      if (blockId === 'layout') return ['image']
+      return []
+    }
+    ;(h.doc.model as any).getFlavour = (blockId: string) => {
+      if (blockId === 'layout') return 'placement-layout'
+      if (blockId === 'image') return 'image'
+      return 'paragraph'
+    }
+    ;(h.doc.model as any).getProps = (blockId: string) =>
+      blockId === 'image'
+        ? {
+            placement: {mode: 'absolute', x: 10, y: imageY},
+            wr: 50,
+            ar: 2,
+          }
+        : {}
+    ;(h.doc.model as any).getPath = (blockId: string) =>
+      blockId === 'image'
+        ? ['root', 'layout', 'image']
+        : ['root', blockId]
+    ;(h.doc as any).objectSizing = {
+      rootContentWidth: 800,
+      resolve: (flavour: string) =>
+        flavour === 'image'
+          ? {
+              width: 400,
+              height: 200,
+              wr: 50,
+              ar: 2,
+              source: 'ratio',
+              exact: true,
+            }
+          : null,
+    }
+
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    expect(h.mounted.has('layout')).toBeTrue()
+
+    imageY = 800
+    contentChange$.next({
+      blockIds: ['image'],
+      kinds: ['props'],
+      origin: null,
+      local: true,
+      isUndoRedo: false,
+    })
+    await nextAnimationFrame()
+    expect(h.mounted.has('layout')).toBeFalse()
+
+    imageY = 20
+    contentChange$.next({
+      blockIds: ['image'],
+      kinds: ['props'],
+      origin: null,
+      local: true,
+      isUndoRedo: false,
+    })
+    await nextAnimationFrame()
+    expect(h.mounted.has('layout')).toBeTrue()
+
+    h.manager.dispose()
+    contentChange$.complete()
+  })
+
+  it('mounts an initially offscreen placement layout when scrolling into its y range', async () => {
+    const h = createHarness(12, 20)
+    h.replaceRootIds([
+      ...Array.from({length: 20}, (_, index) => `p${index}`),
+      'layout',
+    ])
+    ;(h.doc.model as any).getChildrenIds = (blockId: string) => {
+      if (blockId === 'root') return [...h.ids]
+      if (blockId === 'layout') return ['shape']
+      return []
+    }
+    ;(h.doc.model as any).getFlavour = (blockId: string) => {
+      if (blockId === 'layout') return 'placement-layout'
+      if (blockId === 'shape') return 'shape'
+      return 'paragraph'
+    }
+    ;(h.doc.model as any).getProps = (blockId: string) =>
+      blockId === 'shape'
+        ? {
+            placement: {mode: 'absolute', x: 10, y: 600},
+            width: 180,
+            height: 100,
+          }
+        : {}
+    ;(h.doc.model as any).getPath = (blockId: string) =>
+      blockId === 'shape'
+        ? ['root', 'layout', 'shape']
+        : ['root', blockId]
+
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    expect(h.mounted.has('layout')).toBeFalse()
+
+    h.scrollContainer.scrollTop = 450
+    h.scrollContainer.dispatchEvent(new Event('scroll'))
+    await nextAnimationFrame()
+
+    expect(h.mounted.has('layout')).toBeTrue()
+    h.manager.dispose()
+  })
+
   it('coalesces initial work and mounts only the estimated viewport window', (done) => {
     const h = createHarness()
     h.manager.init(h.scrollContainer)

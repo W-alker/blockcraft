@@ -199,6 +199,57 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(rangeCountsOnSelectionChange[1]).toBe(0);
   });
 
+  it('degrades a disallowed absolute-object gap cursor to block selection', () => {
+    const {manager, block, blockHost, doc} = createManager();
+    blockHost.append(
+      createBlockGapSpace('before'),
+      document.createElement('div'),
+      createBlockGapSpace('after'),
+    );
+    (doc as any).placement = {
+      allowsGapCursor: jasmine.createSpy('allowsGapCursor')
+        .and.returnValue(false),
+    };
+
+    manager.setGapCursor(block as any, 'after');
+
+    expect(manager.value?.start.type).toBe('selected');
+    expect(manager.value?.end.type).toBe('selected');
+    expect(manager.value?.start.blockId).toBe(block.id);
+  });
+
+  it('coerces a stale native gap on placement-layout to block selection', () => {
+    const {manager, block, blockHost, doc} = createManager();
+    const leading = createBlockGapSpace('before');
+    blockHost.append(
+      leading,
+      document.createElement('div'),
+      createBlockGapSpace('after'),
+    );
+    (block as any).flavour = 'placement-layout';
+    (doc as any).placement = {
+      allowsGapCursor: jasmine.createSpy('allowsGapCursor')
+        .and.callFake((blockOrId: string | {flavour?: string}) =>
+          typeof blockOrId === 'string'
+            ? blockOrId !== block.id
+            : blockOrId.flavour !== 'placement-layout'),
+    };
+    const range = document.createRange();
+    range.setStart(leading.firstChild!, 0);
+    range.collapse(true);
+    const nativeSelection = document.getSelection()!;
+    nativeSelection.removeAllRanges();
+    nativeSelection.addRange(range);
+
+    const result = manager.recalculate();
+
+    expect(result.value?.start.type).toBe('selected');
+    expect(result.value?.end.type).toBe('selected');
+    expect(result.value?.start.blockId).toBe(block.id);
+    expect((doc as any).placement.allowsGapCursor)
+      .toHaveBeenCalledWith(block.id);
+  });
+
   it('updates the canonical selection immediately when selecting a container block', () => {
     const {manager, block, blockHost} = createManager();
     const leading = createBlockGapSpace('before');

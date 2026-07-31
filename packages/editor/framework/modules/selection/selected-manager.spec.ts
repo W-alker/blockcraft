@@ -64,6 +64,27 @@ describe("SelectionSelectedManager", () => {
     expect(p2ClassList.add).toHaveBeenCalledOnceWith("focused");
   });
 
+  it("marks a selected editable WordArt block as focused", () => {
+    const hostElement = document.createElement("div");
+    hostElement.className = "word-art-block";
+    const block = {
+      id: "word-art-1",
+      flavour: "word-art",
+      nodeType: BlockNodeType.editable,
+      hostElement,
+    };
+    const manager = new SelectionSelectedManager({
+      getBlockById: () => block,
+    } as any);
+
+    manager.setSelected({
+      getBoundarySelectedChildIds: () => [block.id],
+    } as any);
+
+    expect(hostElement.classList.contains("focused")).toBeTrue();
+    expect(hostElement.classList.contains("selected")).toBeFalse();
+  });
+
   it("reapplies classes when the same selected block is remounted", () => {
     const oldClassList = {
       add: jasmine.createSpy("old.add"),

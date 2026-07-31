@@ -8,7 +8,7 @@ import {
   Output,
   ViewChild,
 } from "@angular/core";
-import { NgIf, NgTemplateOutlet } from "@angular/common";
+import { NgTemplateOutlet } from "@angular/common";
 import { Subscription, take } from "rxjs";
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective } from "../../../components";
 import {
@@ -18,7 +18,6 @@ import {
   IBlockSnapshot,
 } from "../../../framework";
 import {getSelectionCoveredBlockIds} from "../../../framework/modules/selection/covered-blocks";
-import { MatIcon } from "@angular/material/icon";
 import { IS_MAC, nextTick } from "../../../global";
 import { BLOCK_CREATOR_SERVICE_TOKEN } from "../../../framework";
 import {
@@ -155,7 +154,10 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
 
     <ng-template #icon let-item>
       @if (item?.svgIcon) {
-        <mat-icon [svgIcon]="item.svgIcon" style="width: 1em; height: 1em"></mat-icon>
+        <svg class="bc-block-svg-icon" aria-hidden="true">
+          <use [attr.href]="'#' + item.svgIcon"
+               [attr.xlink:href]="'#' + item.svgIcon"></use>
+        </svg>
       } @else {
         <i [class]="item?.icon" style="color: var(--bc-active-color);"></i>
       }
@@ -272,7 +274,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
     </ng-template>
   `,
   styleUrls: ['./trigger-btn.scss'],
-  imports: [NgIf, NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, MatIcon, BcOverlayTriggerDirective, NzTooltipDirective, BlockMenuComponent],
+  imports: [NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective, NzTooltipDirective, BlockMenuComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.contenteditable]': 'false',
@@ -526,10 +528,10 @@ export class TriggerBtn {
       this.close()
       return
     }
-    const parentBlockSchema = this.doc.schemas.get(this.activeBlock.parentBlock.flavour)!
-    this._validOtherBlockList = this.otherBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
-    this._validBaseBlockList = this.baseBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
-    this._validEmbeddedBlockList = this.embeddedBlockList.filter(item => this.doc.schemas.isValidChildren(item.flavour, parentBlockSchema))
+    const parentId = this.activeBlock.parentBlock.id
+    this._validOtherBlockList = this.otherBlockList.filter(item => this.doc.canInsertChild(parentId, item.flavour))
+    this._validBaseBlockList = this.baseBlockList.filter(item => this.doc.canInsertChild(parentId, item.flavour))
+    this._validEmbeddedBlockList = this.embeddedBlockList.filter(item => this.doc.canInsertChild(parentId, item.flavour))
     this.refreshMenuData()
   }
 
@@ -644,12 +646,16 @@ export class TriggerBtn {
   private getActiveReadonlyResolution() {
     const block = this.activeBlock
     if (!block || !this.isBlockAlive(block)) {
-      return {readonly: false, source: null, lockUserId: null}
+      return {readonly: false, source: null, lockUserId: null, lockKind: null}
     }
+    const lockUserId = typeof block.meta?.lock === 'string' ? block.meta.lock : null
     return this.doc.readonlyManager?.resolve(block) ?? {
       readonly: !!block.isReadonly,
       source: block.readonlySource ?? null,
-      lockUserId: typeof block.meta?.lock === 'string' ? block.meta.lock : null,
+      lockUserId,
+      lockKind: lockUserId
+        ? block.meta?.lockKind === 'template' ? 'template' : 'user'
+        : null,
     }
   }
 
@@ -668,7 +674,9 @@ export class TriggerBtn {
       : canToggle
         ? undefined
         : hasCurrentUser && explicit
-          ? '由其他用户锁定'
+          ? resolution.lockKind === 'template'
+            ? '模板内容已锁定'
+            : '由其他用户锁定'
           : '未识别当前用户'
     return {
       type: 'switch',
@@ -692,6 +700,7 @@ export class TriggerBtn {
       name: item.name,
       label: item.label,
       icon: item.icon,
+      svgIcon: item.svgIcon,
       desc: item.desc,
       value: item.value,
       readonlyBehavior: item.readonlyBehavior,

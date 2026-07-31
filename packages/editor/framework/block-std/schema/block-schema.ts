@@ -1,5 +1,12 @@
 import { Type } from "@angular/core";
-import { BlockNodeType, IBlockProps, IBlockSnapshot, IEditableBlockProps, InlineModel } from "../types";
+import {
+  BlockNodeType,
+  BlockPlacementMode,
+  IBlockProps,
+  IBlockSnapshot,
+  IEditableBlockProps,
+  InlineModel,
+} from "../types";
 import { NativeBlockModel } from "../index";
 import { BlockCraftError, ErrorCode } from "../../../global";
 import { generateId } from "../../utils";
@@ -27,6 +34,22 @@ export type BlockSelectionScopeMetadata =
  * contexts and media playback positions.
  */
 export type BlockViewRetention = 'virtual' | 'keep-alive'
+
+export interface BlockPlacementCapability {
+  modes: readonly BlockPlacementMode[]
+}
+
+export interface BlockObjectSizingCapability {
+  /** Default width as a percentage of the root content box. */
+  defaultWr: number
+  /** Default aspect ratio expressed as width / height. */
+  defaultAr: number
+}
+
+export interface BlockInstanceMetaCapability {
+  /** Lets `meta.incl` / `meta.excl` narrow this container's direct children. */
+  childConstraints?: boolean
+}
 
 /**
  * Resolve the placeholder text for an editable block based on its Schema
@@ -109,6 +132,29 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
      * - "container": closed generic container scope such as callout/highlight.
      */
     selectionScope?: BlockSelectionScopeMetadata
+    /**
+     * Opts this flavour into the framework block-placement capability.
+     * Omitted schemas remain flow-only even if stale props contain placement.
+     */
+    placement?: BlockPlacementCapability
+    /**
+     * Opts this flavour into root-relative object sizing.
+     *
+     * Sized blocks persist `props.wr` (root width percentage) and `props.ar`
+     * (width / height). Renderers use these defaults when either value has not
+     * been materialized yet.
+     */
+    objectSizing?: BlockObjectSizingCapability
+    /**
+     * Opts this Schema into generic instance metadata capabilities.
+     * Omitted capabilities keep persisted fields inert.
+     */
+    instanceMeta?: BlockInstanceMetaCapability
+    /**
+     * Preserve this container when its last child is deleted.
+     * Existing Schemas keep their historical fallback behavior by default.
+     */
+    allowEmptyChildren?: boolean
   }
 }
 

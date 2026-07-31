@@ -8,7 +8,8 @@ export interface IContextMenuItem {
   type: 'tool'
   name: string
   value: SimpleValue
-  icon: string
+  icon?: string
+  svgIcon?: string
   label: string
   desc?: string
   readonlyBehavior?: BlockMenuReadonlyBehavior
@@ -20,6 +21,7 @@ interface BlockMenuItemBase {
   name: string
   label?: string
   icon?: string
+  svgIcon?: string
   desc?: string
   value?: SimpleValue
   data?: unknown
@@ -43,6 +45,7 @@ export interface BlockMenuSortAction {
   key: string
   label?: string
   icon?: string
+  svgIcon?: string
   value?: SimpleValue
   active?: boolean
   disabled?: boolean

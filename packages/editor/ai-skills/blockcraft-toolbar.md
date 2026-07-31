@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-07-20
+> Last updated: 2026-07-29
 
 ## Overlay Service
 
@@ -30,6 +30,12 @@ componentRef.instance.myEvent
   .pipe(takeUntil(closeSubject$))
   .subscribe(value => { /* handle */ });
 ```
+
+Connected overlays use exact dimensions by default
+(`flexibleDimensions: false`). This keeps fixed-width toolbars centered on
+their origin when scrolling triggers `OverlayRef.updatePosition()`. Set
+`flexibleDimensions: true` explicitly only for overlays that need CDK to
+shrink or grow the pane within the viewport, such as long pickers.
 
 Choose the target by ownership, not only by geometry:
 

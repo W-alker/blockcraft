@@ -179,7 +179,15 @@ export const imageDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
     typeof delta.insert === 'object' &&
     'image' in delta.insert,
   toAST: delta => {
-    const {src, width, height} = readInlineImageDelta(delta as DeltaInsertEmbed);
+    const {
+      src,
+      width,
+      height,
+      wrap,
+      side,
+      x,
+      gap,
+    } = readInlineImageDelta(delta as DeltaInsertEmbed);
     return {
       type: 'element',
       tagName: 'img',
@@ -189,6 +197,14 @@ export const imageDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
         alt: '',
         ...(width === undefined ? {} : {width}),
         ...(height === undefined ? {} : {height}),
+        ...(wrap
+          ? {
+              dataBcWrap: 'square',
+              dataBcWrapSide: side,
+              dataBcWrapX: x,
+              ...(gap === undefined ? {} : {dataBcWrapGap: gap}),
+            }
+          : {}),
       },
       children: [],
     };

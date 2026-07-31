@@ -14,11 +14,38 @@ export enum BlockNodeType {
   editable = 'editable'
 }
 
+export type BlockPlaceholderMode = 'focused' | 'always'
+
 export interface IBaseMetadata {
   folded?: boolean
   selected?: boolean
+  /**
+   * Per-block placeholder override for editable blocks.
+   * An empty string explicitly disables the placeholder for this block.
+   */
+  plh?: string
+  /**
+   * Placeholder visibility for this block.
+   * Omitted is equivalent to the legacy focused-only behavior.
+   */
+  plhMode?: BlockPlaceholderMode
+  /**
+   * Instance-level direct-child allow patterns.
+   * Only interpreted by Schemas that opt into instance child constraints.
+   */
+  incl?: string[]
+  /**
+   * Instance-level direct-child deny patterns. Deny wins over `incl`.
+   * Only interpreted by Schemas that opt into instance child constraints.
+   */
+  excl?: string[]
   /** Non-empty user id of the block's explicit lock owner. */
   lock?: string
+  /**
+   * Business origin of the explicit lock. Omitted/invalid values are treated
+   * as a normal user lock; only template locks need a persisted marker.
+   */
+  lockKind?: 'template'
   createdTime?: number
   lastModified?: {
     time: number
@@ -28,9 +55,34 @@ export interface IBaseMetadata {
 
 export type IMetadata = IBaseMetadata & SimpleRecord
 
+export type BlockPlacementMode = 'relative' | 'absolute'
+export type BlockPlacementLayer = 'under' | 'over'
+
+/**
+ * Persistent block placement. The omitted value is equivalent to
+ * `{ mode: 'relative' }`.
+ *
+ * `x` is a percentage of the direct children render container width while
+ * `y` is a CSS pixel offset from that container's top edge.
+ */
+export type BlockPositionState = {
+  mode: BlockPlacementMode
+  x?: number
+  y?: number
+  layer?: BlockPlacementLayer
+}
+
+export type ResolvedBlockPosition = {
+  mode: BlockPlacementMode
+  x: number
+  y: number
+  layer: BlockPlacementLayer
+}
+
 export interface IBlockProps {
   textAlign?: 'center' | 'right'
   depth?: number
+  placement?: BlockPositionState
 
   [key: string]: SimpleValue
 }

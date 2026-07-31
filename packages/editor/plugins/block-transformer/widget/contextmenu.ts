@@ -133,7 +133,6 @@ export class BlockTransformContextMenu {
       queueMicrotask(() => this.close$.next(true));
       return;
     }
-    const parentBlockSchema = this.doc.schemas.get(parentBlock.flavour)!;
     const blocks: IContextMenuOption[] = this.doc.schemas
       .getSchemaList()
       .filter(
@@ -141,7 +140,7 @@ export class BlockTransformContextMenu {
           !v.metadata.isLeaf &&
           !v.metadata.hideInInsertMenu &&
           !["paragraph", "root"].includes(v.flavour) &&
-          this.doc.schemas.isValidChildren(v.flavour, parentBlockSchema),
+          this.doc.canInsertChild(parentBlock.id, v.flavour),
       )
       .map((v) => ({
         flavour: v.flavour,

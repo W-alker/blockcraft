@@ -22,13 +22,23 @@ describe('applyCopyFilters', () => {
   it('removes lock metadata from a clipboard clone without touching the source', () => {
     const tree = root([block('locked', 'callout', [editable('p', [{insert: 'text'}])])]);
     const sourceChild = (tree.children as IBlockSnapshot[])[0];
+    const sourceGrandchild = (sourceChild.children as IBlockSnapshot[])[0];
     sourceChild.meta.lock = 'owner-1';
+    sourceChild.meta.lockKind = 'template';
+    sourceGrandchild.meta.lock = 'owner-2';
+    sourceGrandchild.meta.lockKind = 'template';
 
     const copied = stripBlockLockMetaDeep(tree);
     const copiedChild = (copied.children as IBlockSnapshot[])[0];
+    const copiedGrandchild = (copiedChild.children as IBlockSnapshot[])[0];
 
     expect(copiedChild.meta.lock).toBeUndefined();
+    expect(copiedChild.meta.lockKind).toBeUndefined();
+    expect(copiedGrandchild.meta.lock).toBeUndefined();
+    expect(copiedGrandchild.meta.lockKind).toBeUndefined();
     expect(sourceChild.meta.lock).toBe('owner-1');
+    expect(sourceChild.meta.lockKind).toBe('template');
+    expect(sourceGrandchild.meta.lockKind).toBe('template');
   });
 
   it('returns the original tree unchanged when no filters', () => {

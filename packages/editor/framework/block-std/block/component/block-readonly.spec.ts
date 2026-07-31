@@ -17,11 +17,13 @@ function createEditableHarness() {
   } as unknown as NativeBlockModel));
   const yBlock = yBlocks.get("p")!;
   let source: any = null;
+  let lockKind: "user" | "template" | null = null;
   const readonlyManager = {
     resolve: jasmine.createSpy("resolve").and.callFake(() => ({
       readonly: source !== null,
       source,
       lockUserId: source ? "user-1" : null,
+      lockKind: source ? lockKind ?? "user" : null,
     })),
     isReadonly: jasmine.createSpy("isReadonly").and.callFake(() => source !== null),
     isExplicitReadonly: jasmine.createSpy("isExplicitReadonly").and.callFake(
@@ -60,6 +62,7 @@ function createEditableHarness() {
     host,
     readonlyManager,
     setSource(value: any) { source = value; },
+    setLockKind(value: "user" | "template" | null) { lockKind = value; },
   };
 }
 
@@ -74,6 +77,7 @@ describe("Block readonly API", () => {
     expect(h.block.isExplicitReadonly).toBeTrue();
     expect(h.block.readonlySource).toEqual({kind: "self", blockId: "p"});
     expect(h.host.dataset["bcReadonly"]).toBe("self");
+    expect(h.host.dataset["bcLockKind"]).toBe("user");
     expect(h.block.containerElement.getAttribute("contenteditable")).toBe("false");
     expect(() => h.block.insertText(0, "x")).toThrowError(BlockReadonlyError);
     expect(() => h.block.updateProps({textAlign: "center"})).toThrowError(BlockReadonlyError);
@@ -111,6 +115,22 @@ describe("Block readonly API", () => {
     h.setSource(null);
     h.block.applyReadonlyViewState();
     expect(h.host.getAttribute("contenteditable")).toBe("false");
+  });
+
+  it("projects template lock kind and clears it with readonly state", () => {
+    const h = createEditableHarness();
+    h.setSource({kind: "self", blockId: "p"});
+    h.setLockKind("template");
+
+    h.block.applyReadonlyViewState();
+    expect(h.host.dataset["bcReadonly"]).toBe("self");
+    expect(h.host.dataset["bcLockKind"]).toBe("template");
+
+    h.setSource(null);
+    h.setLockKind(null);
+    h.block.applyReadonlyViewState();
+    expect(h.host.hasAttribute("data-bc-readonly")).toBeFalse();
+    expect(h.host.hasAttribute("data-bc-lock-kind")).toBeFalse();
   });
 
   it("does not reject no-op text or props calls", () => {

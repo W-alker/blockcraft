@@ -820,6 +820,57 @@ export class DocCRUD {
     children.insert(index, snapshots.map(v => v.id))
   }
 
+  private _readYBlockMeta(yBlock: YBlock): Record<string, unknown> {
+    const meta = yBlock.get('meta')
+    return meta instanceof Y.Map
+      ? meta.toJSON() as Record<string, unknown>
+      : {}
+  }
+
+  /**
+   * Validate opt-in instance constraints inside a detached snapshot tree.
+   * Existing Schema-only trees retain their historical compatibility; only
+   * containers that explicitly opt into instance constraints are inspected.
+   */
+  private _isSnapshotInstanceTreeValid(snapshot: IBlockSnapshot): boolean {
+    if (
+      snapshot.nodeType !== BlockNodeType.block &&
+      snapshot.nodeType !== BlockNodeType.root
+    ) {
+      return true
+    }
+
+    const schema = this.doc.schemas.get(snapshot.flavour)
+    if (!schema) return false
+    if (schema.metadata.instanceMeta?.childConstraints) {
+      for (const child of snapshot.children) {
+        if (!this.doc.schemas.isValidChildrenForInstance(
+          child.flavour,
+          schema,
+          snapshot.meta,
+        )) {
+          return false
+        }
+      }
+    }
+
+    return snapshot.children.every(child =>
+      this._isSnapshotInstanceTreeValid(child),
+    )
+  }
+
+  private _isSnapshotAllowedInParent(
+    parentYBlock: YBlock,
+    snapshot: IBlockSnapshot,
+  ): boolean {
+    const parentSchema = this.doc.schemas.get(parentYBlock.get('flavour'))!
+    return this.doc.schemas.isValidChildrenForInstance(
+      snapshot.flavour,
+      parentSchema,
+      this._readYBlockMeta(parentYBlock),
+    ) && this._isSnapshotInstanceTreeValid(snapshot)
+  }
+
   /** Insert snapshots through the model layer and return IDs without resolving component views. */
   insertBlockSnapshots(parentId: string, index: number, snapshots: IBlockSnapshot[]): string[] {
     if (!snapshots.length) return []
@@ -827,7 +878,9 @@ export class DocCRUD {
       this.doc.logger.warn(`insertBlocks: index ${index} out of range`)
       return []
     }
-    const parentYBlock = this.doc.model.getYBlock(parentId)
+    // The target may have been created earlier in the caller's outer Yjs
+    // transaction and not be reachable from BlockModelGraph yet.
+    const parentYBlock = this.getYBlock(parentId)
     if (!parentYBlock) {
       this.doc.logger.warn(`parent block ${parentId} not found`)
       return []
@@ -838,7 +891,9 @@ export class DocCRUD {
     this.doc.readonlyManager.assertInsertable(parentId, BlockReadonlyOperation.Insert)
 
     const parentSchema = this.doc.schemas.get(parentYBlock.get('flavour'))!
-    const validSnapshots = snapshots.filter(s => this.doc.schemas.isValidChildren(s.flavour, parentSchema))
+    const validSnapshots = snapshots.filter(snapshot =>
+      this._isSnapshotAllowedInParent(parentYBlock, snapshot),
+    )
     if (!validSnapshots.length) {
       if (snapshots.length === 1) {
         const snapshot = snapshots[0]
@@ -919,7 +974,7 @@ export class DocCRUD {
     }
 
     if (count === 0) return []
-    const parentYBlock = this.doc.model.getYBlock(parent)
+    const parentYBlock = this.getYBlock(parent)
     if (!parentYBlock) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `Parent block not found: ${parent}`)
     }
@@ -941,10 +996,22 @@ export class DocCRUD {
     // step. Reading the stale model index here can re-check an id deleted by the
     // preceding step and raise `Block not found` halfway through the operation.
     const removableIds = children.toArray().slice(index, index + count)
+    this.doc.mutationPolicy?.assert({
+      operation: 'delete',
+      blockIds: removableIds,
+      parentId: parent,
+    })
     this.doc.readonlyManager.assertRemovable(removableIds, BlockReadonlyOperation.Delete)
 
     if (index === 0 && count >= children.length && !force) {
       const parentSchema = this.doc.schemas.get(parentYBlock.get('flavour'))!
+      if (parentSchema.metadata.allowEmptyChildren) {
+        const deletedLength = children.length
+        this.transact(() => {
+          this._delete(parentYBlock, index, deletedLength)
+        })
+        return [{index, length: deletedLength}]
+      }
       // 如果父元素并非是可渲染任意块的元素
       if (!parentSchema.metadata.renderUnit) {
         return this.deleteBlockById(parent)
@@ -982,16 +1049,16 @@ export class DocCRUD {
     if (!this.doc.model.exists(blockId)) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${blockId}`)
     }
-    const parentId = this.doc.model.getParentId(blockId)
+    const parentId = this.resolveLiveParentId(blockId)
     if (!parentId) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `Cannot replace root or orphan block: ${blockId}`)
     }
-    const parentYBlock = this.doc.model.getYBlock(parentId)
+    const parentYBlock = this.getYBlock(parentId)
     if (!parentYBlock) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `Parent block not found: ${parentId}`)
     }
     const yChildren = parentYBlock.get('children')
-    if (!isYArray(yChildren)) {
+    if (!yChildren || !isYArray(yChildren)) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block ${parentId} cannot contain block children`)
     }
     // Use the live Y.Array rather than the cached model index. A caller may
@@ -1002,9 +1069,22 @@ export class DocCRUD {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block ${blockId} is not a child of ${parentId}`)
     }
 
+    this.doc.mutationPolicy?.assert({
+      operation: 'replace',
+      blockIds: [blockId],
+      parentId,
+    })
     this.doc.readonlyManager.assertRemovable([blockId], BlockReadonlyOperation.Replace)
     if (snapshots?.length) {
       this.doc.readonlyManager.assertInsertable(parentId, BlockReadonlyOperation.Replace)
+      if (!snapshots.every(snapshot =>
+        this._isSnapshotAllowedInParent(parentYBlock, snapshot),
+      )) {
+        throw new BlockCraftError(
+          ErrorCode.ModelCRUDError,
+          `replaceBlocks: invalid child for parent ${parentId}`,
+        )
+      }
     }
     this.transact(() => {
       this._delete(parentYBlock, index, 1)
@@ -1016,7 +1096,10 @@ export class DocCRUD {
   }
 
   replaceWithSnapshots(blockId: string, snapshots: IBlockSnapshot[]): BlockCraft.BlockComponent[] {
-    const parentId = this.doc.model.getParentId(blockId)
+    // A caller may have moved the block earlier in the same outer transaction.
+    // Use the live tree so sparse-root mounting targets the destination parent
+    // instead of the ModelGraph parent that is stale until transaction commit.
+    const parentId = this.resolveLiveParentId(blockId)
     const insertedIds = this.replaceBlockSnapshots(blockId, snapshots)
     if (parentId) {
       this.doc.virtualization?.ensureViewMounted([parentId])
@@ -1034,10 +1117,41 @@ export class DocCRUD {
       .filter((block): block is BlockCraft.BlockComponent => !!block)
   }
 
+  private resolveLiveParentId(blockId: string): string | null {
+    const indexedParentId = this.doc.model.getParentId(blockId)
+    if (indexedParentId) {
+      const indexedChildren = this.getYBlock(indexedParentId)?.get('children')
+      if (
+        indexedChildren instanceof Y.Array &&
+        indexedChildren.toArray().includes(blockId)
+      ) {
+        return indexedParentId
+      }
+    }
+
+    // Exceptional cold path for a move followed by another structural change
+    // in one outer transaction. ModelGraph publishes its new parent index only
+    // after the transaction commits, while the Y.Arrays already contain the
+    // authoritative structure.
+    for (const [candidateId, candidate] of this.yBlockMap.entries()) {
+      const candidateChildren = candidate.get('children')
+      if (
+        candidateChildren instanceof Y.Array &&
+        candidateChildren.toArray().includes(blockId)
+      ) {
+        return candidateId
+      }
+    }
+    return null
+  }
+
   moveBlocks(parentId: string, index: number, count: number, targetId: string, targetIndex: number) {
     if (count <= 0) return
-    const parentYBlock = this.doc.model.getYBlock(parentId)
-    const targetYBlock = this.doc.model.getYBlock(targetId)
+    // Read the live Y.Map directly. A caller may create a target container and
+    // move children into it in the same outer transaction, before ModelGraph's
+    // observer has published the newly reachable node.
+    const parentYBlock = this.getYBlock(parentId)
+    const targetYBlock = this.getYBlock(targetId)
     if (!parentYBlock || !targetYBlock) return
     const sourceChildren = parentYBlock.get('children')
     const targetChildren = targetYBlock.get('children')
@@ -1045,11 +1159,42 @@ export class DocCRUD {
 
     const movingIds = sourceChildren.toArray().slice(index, index + count)
     if (!movingIds.length) return
-    this.doc.readonlyManager.assertMovable(
-      movingIds,
+    this.doc.mutationPolicy?.assert({
+      operation: 'move',
+      blockIds: movingIds,
+      parentId,
       targetId,
-      BlockReadonlyOperation.Move,
-    )
+    })
+    const invalidMovingId = movingIds.find(id => {
+      const movingYBlock = this.getYBlock(id)
+      if (!movingYBlock) return true
+      const flavour = movingYBlock.get('flavour') as BlockCraft.BlockFlavour
+      return !this.doc.schemas.isValidChildrenForInstance(
+        flavour,
+        targetYBlock.get('flavour'),
+        this._readYBlockMeta(targetYBlock),
+      )
+    })
+    if (invalidMovingId) {
+      throw new BlockCraftError(
+        ErrorCode.ModelCRUDError,
+        `moveBlocks: block ${invalidMovingId} is not allowed in parent ${targetId}`,
+      )
+    }
+    if (this.doc.model.exists(targetId)) {
+      this.doc.readonlyManager.assertMovable(
+        movingIds,
+        targetId,
+        BlockReadonlyOperation.Move,
+      )
+    } else {
+      // A target created in this transaction has no persisted lock ancestry
+      // yet. Its parent insertion was already guarded by insertBlockSnapshots.
+      this.doc.readonlyManager.assertRemovable(
+        movingIds,
+        BlockReadonlyOperation.Move,
+      )
+    }
 
     this.transact(() => {
       const sliceIds = sourceChildren.toArray().slice(index, index + count)

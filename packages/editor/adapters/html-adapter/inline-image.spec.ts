@@ -89,6 +89,68 @@ describe('HtmlAdapter inline images', () => {
     ]);
   });
 
+  it('preserves normalized square-wrap metadata in HTML', async () => {
+    const snapshot = rootSnapshot([{
+      id: 'p-wrap',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      props: {depth: 0},
+      meta: {},
+      children: [{
+        insert: {image: 'https://cdn.example.com/wrapped.png'},
+        attributes: {
+          width: 176,
+          height: 106,
+          wrap: true,
+          side: 'auto',
+          x: 0.24,
+          gap: 12,
+        },
+      }],
+    }]);
+
+    const html = await adapter.toHtml(snapshot);
+    const exported = new DOMParser()
+      .parseFromString(html, 'text/html')
+      .querySelector('img.bc-inline-image')!;
+    expect(exported.getAttribute('data-bc-wrap')).toBe('square');
+    expect(exported.getAttribute('data-bc-wrap-side')).toBe('auto');
+    expect(exported.getAttribute('data-bc-wrap-x')).toBe('0.24');
+    expect(exported.getAttribute('data-bc-wrap-gap')).toBe('12');
+
+    const imported = await adapter.toBlockSnapshot(html);
+    const paragraph = (imported.children as IBlockSnapshot[])[0];
+    expect(paragraph.children).toEqual([{
+      insert: {image: 'https://cdn.example.com/wrapped.png'},
+      attributes: {
+        width: 176,
+        height: 106,
+        wrap: true,
+        side: 'auto',
+        x: 0.24,
+        gap: 12,
+      },
+    }]);
+  });
+
+  it('normalizes invalid HTML wrap metadata without throwing', async () => {
+    const imported = await adapter.toBlockSnapshot(
+      '<p><img src="a.png" data-bc-wrap="square" ' +
+      'data-bc-wrap-side="diagonal" data-bc-wrap-x="2" ' +
+      'data-bc-wrap-gap="-4"></p>',
+    );
+    const paragraph = (imported.children as IBlockSnapshot[])[0];
+
+    expect(paragraph.children).toEqual([{
+      insert: {image: 'a.png'},
+      attributes: {
+        wrap: true,
+        side: 'auto',
+        x: 1,
+      },
+    }]);
+  });
+
   it('continues to export image blocks with figure semantics', async () => {
     const html = await adapter.toHtml(rootSnapshot([{
       id: 'image-1',

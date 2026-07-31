@@ -15,8 +15,13 @@ import {BlockCraftError, ErrorCode, performanceTest} from "../../../../global";
 // （否则 rollup 会把 BaseBlockComponent 排到子类之后 → 启动 TDZ / "superclass is not a constructor"）。
 import { ORIGIN_NO_RECORD, ORIGIN_SKIP_SYNC } from "../../../doc/origins";
 import type { BlockChildrenRenderRef } from "../../../doc/vm";
-import { BlockNodeType, IBlockProps, IBlockSnapshot } from "../../types";
-import { Subject } from "rxjs";
+import {
+  BlockNodeType,
+  BlockPlacementLayer,
+  IBlockProps,
+  IBlockSnapshot,
+} from "../../types";
+import { Subject, Subscription } from "rxjs";
 import {createBlockGapSpace, generateId} from "../../../utils";
 import * as Y from 'yjs'
 import { STR_LINE_BREAK } from "../../inline";
@@ -25,6 +30,7 @@ import {
   BlockReadonlyOperation,
   BlockReadonlySource,
 } from "../../../doc/block-readonly.types";
+import {resolveBlockPlacement} from "../../../services/block-placement.manager";
 
 export type BlockViewState = 'mounted' | 'retained' | 'destroyed'
 
@@ -64,6 +70,12 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   private _viewState: BlockViewState = 'mounted'
   private _releaseViewRetention: (() => void) | null = null
+  private _releasePlacementRetention: (() => void) | null = null
+  private _releasePlacementPicking: (() => void) | null = null
+  private _placementRetentionSub: Subscription | null = null
+  private _placementRetentionSyncQueued = false
+  private _blockGapSub: Subscription | null = null
+  private _blockGapFrame: number | null = null
 
   get viewState(): BlockViewState {
     return this._viewState
@@ -81,7 +93,56 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   @HostBinding('style.margin-left')
   get marginLeft() {
+    if (this.resolvedPlacement.mode === 'absolute') return '0'
     return `${(this._native.props.depth || 0) * 2 * 16}px`
+  }
+
+  @HostBinding('attr.data-bc-placement')
+  get placementAttribute(): 'relative' | 'absolute' {
+    return this.resolvedPlacement.mode
+  }
+
+  @HostBinding('style.position')
+  get placementPosition(): 'absolute' | null {
+    return this.resolvedPlacement.mode === 'absolute' ? 'absolute' : null
+  }
+
+  @HostBinding('style.left.%')
+  get placementLeft(): number | null {
+    const placement = this.resolvedPlacement
+    return placement.mode === 'absolute' ? placement.x : null
+  }
+
+  @HostBinding('style.top.px')
+  get placementTop(): number | null {
+    const placement = this.resolvedPlacement
+    return placement.mode === 'absolute' ? placement.y : null
+  }
+
+  @HostBinding('attr.data-bc-placement-layer')
+  get placementLayerAttribute(): BlockPlacementLayer | null {
+    const placement = this.resolvedPlacement
+    return placement.mode === 'absolute' ? placement.layer : null
+  }
+
+  @HostBinding('style.z-index')
+  get placementZIndex(): number | null {
+    const placement = this.resolvedPlacement
+    if (placement.mode !== 'absolute') return null
+    return placement.layer === 'under' ? 0 : 2
+  }
+
+  @HostBinding('style.margin')
+  get placementMargin(): string | null {
+    return this.resolvedPlacement.mode === 'absolute' ? '0' : null
+  }
+
+  private get resolvedPlacement() {
+    const capability = this.doc?.schemas?.get(this.flavour, false)?.metadata.placement
+    if (!capability?.modes.includes('absolute')) {
+      return {mode: 'relative' as const, x: 0, y: 0, layer: 'over' as const}
+    }
+    return resolveBlockPlacement(this._native?.props?.placement)
   }
 
   childrenRenderRef?: BlockChildrenRenderRef
@@ -117,25 +178,12 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     this.hostElement.setAttribute('data-node-type', this.nodeType)
     this._applyBaseReadonlyViewState()
     this._bindViewRetention()
-    // Gap spaces give the native Selection an editable text node to anchor on
-    // when the block itself is treated as `selected`. Without them Safari refuses
-    // to dispatch `beforeinput` (the Range start lands on a contenteditable=false
-    // wrapper). Apply to both leaf voids and container blocks; CSS already
-    // positions `[data-block-zero-space]` absolutely so layout is unaffected.
-    // Skip `isLeaf` blocks — they're structural sub-blocks (table-row /
-    // table-cell / column) that don't render independently or participate in
-    // normal block-level selection.
-    const wantsGap =
-      this.nodeType === BlockNodeType.void ||
-      this.nodeType === BlockNodeType.block
-    const isLeaf =
-      !!this.doc.schemas.get(this.flavour)?.metadata.isLeaf
-    if (wantsGap && !isLeaf) {
-      requestAnimationFrame(() => {
-        this.hostElement.prepend(createBlockGapSpace('before'))
-        this.hostElement.appendChild(createBlockGapSpace('after'))
-      })
-    }
+    this._bindPlacementViewRetention()
+    this._releasePlacementPicking =
+      this.doc.placement?.registerBlockView?.(
+        this as unknown as BlockCraft.BlockComponent,
+      ) ?? null
+    this._bindBlockGapSpaces()
     this.changeDetectorRef.markForCheck()
     this.onViewInit$.next(true)
   }
@@ -144,6 +192,19 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     if (this._viewState === 'destroyed') return
     this._releaseViewRetention?.()
     this._releaseViewRetention = null
+    this._placementRetentionSub?.unsubscribe()
+    this._placementRetentionSub = null
+    this._blockGapSub?.unsubscribe()
+    this._blockGapSub = null
+    if (this._blockGapFrame !== null) {
+      const ownerWindow = this.hostElement?.ownerDocument?.defaultView
+      ownerWindow?.cancelAnimationFrame(this._blockGapFrame)
+      this._blockGapFrame = null
+    }
+    this._releasePlacementPicking?.()
+    this._releasePlacementPicking = null
+    this._releasePlacementRetention?.()
+    this._releasePlacementRetention = null
     if (this._viewState === 'mounted') this.beforeDetach()
     this._viewState = 'destroyed'
     this.onDestroy$.next(true)
@@ -239,6 +300,110 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   /**
+   * Gap spaces are a normal-flow editing affordance. Absolute objects and the
+   * root placement-layout stay object-selected and must never expose editable
+   * filler spans. The binding is dynamic because object layout can switch
+   * between absolute and relative without remounting the component.
+   */
+  private _bindBlockGapSpaces(): void {
+    const scheduleSync = () => {
+      if (this._viewState === 'destroyed') return
+      const ownerWindow = this.hostElement.ownerDocument.defaultView
+      if (!ownerWindow) {
+        this._syncBlockGapSpaces()
+        return
+      }
+      if (this._blockGapFrame !== null) {
+        ownerWindow.cancelAnimationFrame(this._blockGapFrame)
+      }
+      this._blockGapFrame = ownerWindow.requestAnimationFrame(() => {
+        this._blockGapFrame = null
+        this._syncBlockGapSpaces()
+      })
+    }
+
+    this._blockGapSub = new Subscription()
+    this._blockGapSub.add(this.onPropsChange.subscribe(changes => {
+      if (changes.has('placement' as keyof Model['props'])) scheduleSync()
+    }))
+    this._blockGapSub.add(this.onReattach$.subscribe(scheduleSync))
+    scheduleSync()
+  }
+
+  private _syncBlockGapSpaces(): void {
+    const existing = Array.from(this.hostElement.querySelectorAll<HTMLElement>(
+      ':scope > [data-block-zero-space="true"]',
+    ))
+    const wantsGap =
+      (
+        this.nodeType === BlockNodeType.void ||
+        this.nodeType === BlockNodeType.block
+      ) &&
+      !this.doc.schemas?.get?.(this.flavour, false)?.metadata.isLeaf &&
+      this.doc.placement?.allowsGapCursor?.(
+        this as unknown as BlockCraft.BlockComponent,
+      ) !== false
+
+    if (!wantsGap) {
+      existing.forEach(gap => gap.remove())
+      return
+    }
+    const leading = existing.find(
+      gap => gap.getAttribute('data-block-gap-side') === 'before',
+    )
+    const trailing = existing.find(
+      gap => gap.getAttribute('data-block-gap-side') === 'after',
+    )
+    if (!leading) this.hostElement.prepend(createBlockGapSpace('before'))
+    if (!trailing) this.hostElement.appendChild(createBlockGapSpace('after'))
+  }
+
+  /**
+   * Legacy/custom absolute blocks outside the root placement layout still need
+   * an individual root lease. Standard absolute objects are nested below the
+   * model-projected placement-layout render unit and must not acquire
+   * duplicate per-object leases.
+   */
+  private _bindPlacementViewRetention(): void {
+    const capability = this.doc.schemas?.get(this.flavour, false)?.metadata.placement
+    if (!capability?.modes.includes('absolute') || !this.doc.virtualization?.enabled) return
+
+    const scheduleSync = () => {
+      if (this._placementRetentionSyncQueued || this._viewState === 'destroyed') return
+      this._placementRetentionSyncQueued = true
+      queueMicrotask(() => {
+        this._placementRetentionSyncQueued = false
+        if (this._viewState === 'destroyed') return
+        const needsIndividualLease =
+          this.resolvedPlacement.mode === 'absolute' &&
+          !this.doc.placement?.isInAbsoluteLayout?.(
+            this as unknown as BlockCraft.BlockComponent,
+          )
+        if (needsIndividualLease && !this._releasePlacementRetention) {
+          try {
+            this._releasePlacementRetention =
+              this.doc.virtualization.acquireBlockViewLease([this.id])
+          } catch (error) {
+            this.doc.logger.warn('blockPlacementRetentionLeaseError: ', error)
+          }
+        } else if (!needsIndividualLease && this._releasePlacementRetention) {
+          try {
+            this._releasePlacementRetention()
+          } catch (error) {
+            this.doc.logger.warn('blockPlacementRetentionLeaseReleaseError: ', error)
+          }
+          this._releasePlacementRetention = null
+        }
+      })
+    }
+
+    this._placementRetentionSub = this.onPropsChange.subscribe(changes => {
+      if (changes.has('placement')) scheduleSync()
+    })
+    scheduleSync()
+  }
+
+  /**
    * 异步副作用安全护栏：块是否已「消失」——被移出 vm（本地/远端删除）或宿主
    * 视图已销毁。上传完成、语法高亮等 await 之后的回调应先查它再写：否则
    * setInitProps 会写入 detached Y.Map（undo 时复活孤儿块），detectChanges
@@ -306,10 +471,16 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     const resolution = this.doc.readonlyManager?.resolve(this)
     if (!resolution?.readonly) {
       this.hostElement.removeAttribute('data-bc-readonly')
+      this.hostElement.removeAttribute('data-bc-lock-kind')
       return
     }
     this.hostElement.dataset['bcReadonly'] =
       resolution.source?.kind === 'self' ? 'self' : 'inherited'
+    if (resolution.lockKind) {
+      this.hostElement.dataset['bcLockKind'] = resolution.lockKind
+    } else {
+      this.hostElement.removeAttribute('data-bc-lock-kind')
+    }
   }
 
   get parentBlock(): BlockCraft.BlockComponent | null {
@@ -411,9 +582,23 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     )
   }
 
-  updateMeta(meta: Partial<Model['meta']>) {
+  updateMeta(meta: {
+    [Key in keyof Model['meta']]?: Model['meta'][Key] | null
+  }) {
+    const changedKeys = Object.keys(meta).filter(key => {
+      const next = meta[key]
+      return next === null
+        ? Object.prototype.hasOwnProperty.call(this._native.meta, key)
+        : this._native.meta[key] !== next
+    })
+    if (!changedKeys.length) return
+    this.doc.mutationPolicy?.assert({
+      operation: 'update-meta',
+      blockIds: [this.id],
+      metaKeys: changedKeys,
+    })
     this.doc.crud.transact(() => {
-      for (const key in meta) {
+      for (const key of changedKeys) {
         if (meta[key] === null) {
           delete this._native.meta[key]
           this._yMeta.delete(key)

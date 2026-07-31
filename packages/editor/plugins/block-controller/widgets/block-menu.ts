@@ -34,7 +34,7 @@ import {
             </div>
           </bc-float-toolbar-item>
         } @else if (item.type === "dropdown") {
-          <bc-float-toolbar-item [icon]="item.icon" [title]="item.desc || item.label"
+          <bc-float-toolbar-item [icon]="item.icon" [svgIcon]="item.svgIcon" [title]="item.desc || item.label"
                                  [disabled]="isDisabled(item)"
                                  [bcOverlayDisabled]="isDisabled(item)"
                                  [expandable]="true"
@@ -50,7 +50,7 @@ import {
             </bc-float-toolbar>
           </ng-template>
         } @else if (item.type === "switch") {
-          <bc-float-toolbar-item [icon]="item.icon" [title]="item.desc || item.label"
+          <bc-float-toolbar-item [icon]="item.icon" [svgIcon]="item.svgIcon" [title]="item.desc || item.label"
                                  [disabled]="isDisabled(item)"
                                  [active]="item.checked"
                                  (mousedown)="onSwitchItemClick(item, path, $event)">
@@ -58,7 +58,7 @@ import {
             <i class="bc_icon bc_duihao switch-check" [class.checked]="item.checked"></i>
           </bc-float-toolbar-item>
         } @else if (item.type === "sort") {
-          <bc-float-toolbar-item class="sort-item" [icon]="item.icon" [title]="item.desc || item.label"
+          <bc-float-toolbar-item class="sort-item" [icon]="item.icon" [svgIcon]="item.svgIcon" [title]="item.desc || item.label"
                                  [disabled]="isDisabled(item)">
             <span>{{ item.label }}</span>
             <div class="sort-actions">
@@ -68,7 +68,12 @@ import {
                         [class.disabled]="!!action.disabled"
                         [attr.title]="action.label"
                         (mousedown)="onSortActionClick(item, action, path, $event)">
-                  @if (action.icon) {
+                  @if (action.svgIcon) {
+                    <svg class="sort-action-svg" aria-hidden="true">
+                      <use [attr.href]="'#' + action.svgIcon"
+                           [attr.xlink:href]="'#' + action.svgIcon"></use>
+                    </svg>
+                  } @else if (action.icon) {
                     <i [class]="['bc_icon', action.icon]"></i>
                   } @else {
                     <span>{{ action.label || action.key }}</span>
@@ -78,7 +83,7 @@ import {
             </div>
           </bc-float-toolbar-item>
         } @else {
-          <bc-float-toolbar-item [icon]="item.icon" [title]="item.desc || item.label"
+          <bc-float-toolbar-item [icon]="item.icon" [svgIcon]="item.svgIcon" [title]="item.desc || item.label"
                                  [disabled]="isDisabled(item)"
                                  [active]="!!item.active"
                                  (mousedown)="onSimpleItemClick(item, path, $event)">
@@ -128,6 +133,11 @@ import {
       display: inline-flex;
       gap: 2px;
       align-items: center;
+    }
+
+    .sort-action-svg {
+      width: 1em;
+      height: 1em;
     }
 
     .sort-action {

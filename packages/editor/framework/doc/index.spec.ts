@@ -90,6 +90,17 @@ describe("BlockCraftDoc readonly violation feedback", () => {
 });
 
 describe("BlockCraftDoc block lock facade", () => {
+  it("forwards the requested lock kind to the document-owned manager", () => {
+    const set = jasmine.createSpy("set");
+    const doc = Object.setPrototypeOf({
+      readonlyManager: {set},
+    }, BlockCraftDoc.prototype);
+
+    doc.setBlockReadonly("p1", true, {kind: "template"});
+
+    expect(set).toHaveBeenCalledOnceWith("p1", true, {kind: "template"});
+  });
+
   it("delegates unlock permission queries to the document-owned manager", () => {
     const canUnlock = jasmine.createSpy("canUnlock").and.returnValue(true);
     const doc = Object.setPrototypeOf({
@@ -380,6 +391,40 @@ describe("BlockCraftDoc model-backed reads", () => {
     expect(BlockCraftDoc.prototype.nextSibling.call(doc, "offscreen")).toBe(next as any);
     expect(doc.virtualization.ensureViewMounted).toHaveBeenCalledOnceWith(["next"]);
     expect(doc.getBlockById).toHaveBeenCalledOnceWith("next");
+  });
+
+  it("skips the root placement layout during ordinary sibling navigation", () => {
+    const previous = {id: "previous"};
+    const next = {id: "next"};
+    const nextById: Record<string, string | null> = {
+      previous: "placement",
+      placement: "next",
+      next: null,
+    };
+    const previousById: Record<string, string | null> = {
+      previous: null,
+      placement: "previous",
+      next: "placement",
+    };
+    const doc = asDoc({
+      model: {
+        exists: jasmine.createSpy("exists").and.returnValue(true),
+        getNextSiblingId: (id: string) => nextById[id] ?? null,
+        getPreviousSiblingId: (id: string) => previousById[id] ?? null,
+      },
+      placement: {
+        isPlacementLayout: (id: string) => id === "placement",
+      },
+      getBlockById: jasmine.createSpy("getBlockById").and.callFake((id: string) => {
+        if (id === "previous") return previous;
+        if (id === "next") return next;
+        throw new Error(`infrastructure block must not be mounted: ${id}`);
+      }),
+    });
+
+    expect(BlockCraftDoc.prototype.nextSibling.call(doc, "previous")).toBe(next as any);
+    expect(BlockCraftDoc.prototype.prevSibling.call(doc, "next")).toBe(previous as any);
+    expect(doc.getBlockById).not.toHaveBeenCalledWith("placement");
   });
 
   it("delegates position and interval calculations to the model", () => {

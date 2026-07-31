@@ -3,6 +3,7 @@ import {EmbedConverterMap} from "../blot/scroll-blot";
 import {InlinePositionMapper, PointAffinity, IDomPoint} from "../position/inline-position-mapper";
 import {DeltaInsert, DeltaOperation, InlineModel} from "../../types";
 import type {EmbedConverter} from "../index";
+import {InlineFloatLayoutController} from './inline-float-layout'
 
 /**
  * InlineRuntime is the per-block coordinator that owns a ScrollBlot tree
@@ -29,6 +30,7 @@ import type {EmbedConverter} from "../index";
 export class InlineRuntime {
   private _scrollBlot: ScrollBlot
   private readonly _mapper: InlinePositionMapper
+  private readonly _inlineFloatLayout: InlineFloatLayoutController
 
   constructor(
     readonly container: HTMLElement,
@@ -37,6 +39,7 @@ export class InlineRuntime {
     this._scrollBlot = new ScrollBlot(container, embedConverters)
     this._mapper = new InlinePositionMapper()
     this._mapper.setScrollBlot(this._scrollBlot)
+    this._inlineFloatLayout = new InlineFloatLayoutController(container)
   }
 
   get scrollBlot(): ScrollBlot {
@@ -57,6 +60,7 @@ export class InlineRuntime {
    */
   render(deltas: InlineModel) {
     this._scrollBlot.build(deltas)
+    this._inlineFloatLayout.sync()
   }
 
   /**
@@ -65,6 +69,7 @@ export class InlineRuntime {
    */
   applyDelta(ops: DeltaOperation[]) {
     this._scrollBlot.applyDelta(ops)
+    this._inlineFloatLayout.sync()
   }
 
   /**
@@ -113,6 +118,7 @@ export class InlineRuntime {
    * Tear down and clean up.
    */
   destroy() {
+    this._inlineFloatLayout.destroy()
     this._scrollBlot.detachAll()
   }
 }

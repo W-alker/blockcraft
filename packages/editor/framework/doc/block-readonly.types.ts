@@ -2,6 +2,12 @@ import {BlockCraftError, ErrorCode} from "../../global";
 
 export type BlockRef = string | {readonly id: string};
 
+export type BlockLockKind = "user" | "template";
+
+export interface SetBlockReadonlyOptions {
+  kind?: BlockLockKind;
+}
+
 export type BlockReadonlySource =
   | {kind: "document"}
   | {kind: "self"; blockId: string}
@@ -17,6 +23,8 @@ export interface BlockReadonlyResolution {
   source: BlockReadonlySource;
   /** Effective explicit lock owner. Document readonly and unlocked blocks return null. */
   lockUserId: string | null;
+  /** Effective lock origin. Document readonly and unlocked blocks return null. */
+  lockKind: BlockLockKind | null;
 }
 
 export enum BlockReadonlyOperation {
@@ -81,6 +89,7 @@ export class BlockReadonlyError extends BlockCraftError {
 export interface BlockUnlockContext {
   blockId: string;
   lockUserId: string;
+  lockKind: BlockLockKind;
   currentUserId: string | null;
 }
 

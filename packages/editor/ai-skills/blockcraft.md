@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-07-28 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-07-31 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -27,17 +27,22 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | **Doc** | Central orchestrator; owns all subsystems | `BlockCraftDoc` in `framework/doc/` |
 | **Model Graph** | DOM-free, read-only Yjs tree queries for mounted or unmounted blocks | `BlockModelGraph` in `framework/doc/model-graph.ts` |
 | **Block Readonly** | Owner-aware, inherited write protection resolved from `meta.lock` against the model graph | `BlockReadonlyManager` in `framework/doc/block-readonly-manager.ts` |
+| **Mutation Policy** | Optional host-defined guard for structural, instance-meta and undo/redo mutations | `BlockMutationPolicyManager` in `framework/doc/block-mutation-policy.ts` |
 | **Block** | A node in the document tree; has flavour, nodeType, props | `BaseBlockComponent` / `EditableBlockComponent` |
 | **Plugin** | Extends editor behavior; event handlers + hotkeys | `DocPlugin` in `framework/plugin/` |
 | **Inline** | Rich text within editable blocks; Blot tree on Y.Text | `InlineRuntime` in `framework/block-std/inline/` |
 | **Selection** | Anchor/head selection model over blocks | `SelectionManager` in `framework/modules/selection/` |
 | **Input** | Intercepts `beforeInput`, writes to Y.Text directly | `InputTransformer` in `framework/modules/input/` |
 | **Virtualization** | Optional model-first root-child windowing; nested subtrees stay atomic | `RootVirtualizationManager` in `framework/modules/virtualization/` |
+| **Object Layout** | Word-like inline/top-bottom/under/over object states projected onto Schema-gated block placement | `BlockPlacementManager` in `framework/services/` |
+| **Object Sizing** | Root-relative `wr/ar` sizing with legacy pixel compatibility | `BlockObjectSizingManager` in `framework/services/` |
+| **Resource Placeholder** | Reusable image/video/iframe loading, failure, retry and intrinsic-size coordination | `BcResourcePlaceholderDirective` in `components/resource-placeholder/` |
 | **Block Navigation** | Mode-independent stable-ID reveal without changing selection or focus | `BlockCraftDoc.navigateToBlock()` |
 | **Pagination** | Pure page layout + reversible live view + print/PDF | `PaginationPlugin` + `framework/modules/pagination/` |
 | **Event** | Three-tier event dispatcher (block→flavour→global) | `UIEventDispatcher` in `framework/block-std/event/` |
 | **Chain** | Fluent builder for sequencing mutations | `DocChain` in `framework/chain/` |
 | **Schema** | Block registration: flavour, component, createSnapshot | `SchemaManager` in `framework/block-std/schema/` |
+| **Bundled Capabilities** | Fresh full-editor schemas, embeds, plugins and insert-material projection for each Doc/surface | `createBundledEditorCapabilities()` in `editor/bundled-capabilities.ts` |
 | **Adapter** | HTML/Markdown ↔ BlockSnapshot conversion | `adapters/html-adapter/`, `adapters/markdown-adapter/` |
 
 ## Block Types Taxonomy
@@ -46,18 +51,23 @@ Three `nodeType` categories:
 
 | nodeType | Description | Base Class | Examples |
 |----------|-------------|------------|----------|
-| `editable` | Has inline text (Y.Text), no children | `EditableBlockComponent` | paragraph, code, bullet, ordered, todo, blockquote, caption, mermaid-textarea |
+| `editable` | Has inline text (Y.Text), no children | `EditableBlockComponent` | paragraph, code, bullet, ordered, todo, blockquote, caption, mermaid-textarea, word-art |
 | `void` | No children, no text | `BaseBlockComponent` | divider, image, bookmark, attachment, formula, video, audio, mermaid, embed-blocks (figma, juejin) |
-| `block` | Has block children | `BaseBlockComponent` | callout, columns, column, table, table-row, table-cell, frame |
+| `block` | Has block children | `BaseBlockComponent` | callout, columns, column, table, table-row, table-cell, frame, shape, render-unit, placement-layout (infrastructure) |
 | `root` | Special — top-level container | `BaseBlockComponent` (root-block) | root |
 
 > **Heading is a prop, not a flavour.** H1/H2/H3 styles live in `props.heading` on `paragraph` blocks. There is no `heading-block` flavour.
 
-### Currently Registered Block Schemas (from `editor/editor.ts`)
+### Currently Registered Block Schemas (from `editor/bundled-capabilities.ts`)
 
-`paragraph, ordered, bullet, todo, callout, code, divider, page-divider, image, table, table-row, table-cell, attachment, bookmark, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio`
+`paragraph, ordered, bullet, todo, callout, code, divider, page-divider, image, table, table-row, table-cell, attachment, bookmark, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio, shape, shape-text, word-art, placement-layout, render-unit`
 
 A host application can register a subset or extend this list — see `blockcraft-app.md`.
+Hosts that need the complete reference-editor surface should call
+`createBundledEditorCapabilities()` instead of copying this list. The factory
+creates new stateful Plugin/converter instances for every Doc and validates
+duplicate block flavours, embed names and plugin names. Never reuse one
+factory result across multiple documents.
 
 ## Project File Structure
 
@@ -136,6 +146,7 @@ const documentSnapshot = doc.exportSnapshot()
 // Model-first mutation: writes Yjs and returns stable IDs without requiring a
 // parent ComponentRef or resolving inserted child components.
 const insertedIds = doc.crud.insertBlockSnapshots(parentId, index, snapshots)
+const allowed = doc.canInsertChild(parentId, childFlavour)
 
 // ID/index structural mutations also resolve against the complete model graph.
 doc.crud.deleteBlocks(parentId, index, count)
@@ -254,6 +265,79 @@ Built-in audio, video and iframe embed flavours opt in. Hosts can override a
 schema through `virtualization.resolveViewRetention(context)`, including forcing
 a built-in block back to `'virtual'`. Policy resolution and lease updates are
 cold mount/structure work and add no callback or layout read to scroll frames.
+Schemas can independently opt into free block positioning with
+`metadata.placement: {modes: ['relative', 'absolute']}`. Placement is persisted
+in `props.placement`; absolute state can also carry
+`layer: 'under' | 'over'` (`over` is the default and is omitted when persisted).
+`doc.placement.setMode()` preserves the current visual position when switching
+to absolute. The standard transition is root-only: it lazily moves the object
+under one hidden, zero-height `placement-layout` at the end of `root.children`.
+`doc.placement.insertAbsoluteSnapshot()` creates a new object directly in that
+layout. When materializing the first layout, it inserts the layout and object as
+one nested snapshot, so no temporary root-flow object exists.
+That infrastructure block is registered by the bundled editor, excluded from
+ordinary sibling navigation and BlockController, and removed after its final
+object returns to flow. Nested container objects do not support absolute mode.
+When returning an absolute block to relative flow, the manager uses the
+block's current visual center to find the nearest mounted ordinary flow sibling
+and inserts before/after that sibling's midpoint instead of jumping back to the
+old logical position. `resolveFlowAnchor()` and `reanchorToFlow()` expose the
+same stable-id operation for atomic conversions such as block image → inline
+image. Within the root placement layout, `under` and `over` each use
+`placement-layout.children` order from back to front, with ordinary flow
+content acting as a virtual boundary between the two tiers.
+`canMoveForward()` / `canMoveBackward()` query the total stack, while
+`moveForward()` / `moveBackward()` persist one adjacent step. Moving the
+highest `under` object forward crosses it to the lowest `over` position;
+moving the lowest `over` object backward crosses it to the highest `under`
+position. Same-tier movement changes only child order; boundary movement
+changes order and layer in one Yjs transaction. `setLayer()` remains the
+low-level direct tier setter, and `startDrag()`
+previews with a transform before committing one `updateProps()` write on
+pointer release. Object positioning never uses native HTML5 drag/drop:
+`pointercancel`, Escape and window blur all abort through the same cleanup.
+These geometry reads only occur on explicit conversion, not
+on drag or render hot paths. A host with its own layout domain can adapt mode transitions
+through `DocConfig.placement.transitionMode`; returning `true` means the host
+completed the transition. With root virtualization enabled, a model-only
+vertical index projects each absolute child's root-relative `placement.y` and
+estimated height. The zero-height layout mounts when any projected band
+intersects the root-relative viewport plus one viewport of pre-rendering, and
+can detach when no band or interaction lease owns it. This projection does not
+change the normal-flow `HeightMap` and performs no child DOM reads on scroll.
+The layout remains one atomic root render unit, so one visible absolute child
+currently materializes all of its layout siblings; descendants do not acquire
+duplicate per-object leases.
+Schemas can independently opt into responsive object sizing with
+`metadata.objectSizing: {defaultWr, defaultAr}`. Such blocks persist `props.wr`
+as a percentage of the root children content width and `props.ar` as
+width/height. `doc.objectSizing` owns the single root `ResizeObserver`, resolves
+live dimensions for mounted blocks, and supplies model-only height estimates to
+virtualization and sparse pagination. Built-in image and video blocks opt in;
+legacy pixel `width/height` remains visually stable until the first completed
+resize migrates it to `wr/ar`.
+Visual resource loading is composed on top of that stable frame through
+`BcResourcePlaceholderDirective`; it is not a `DocConfig`, Schema or
+`doc.*` capability. The built-in image/video blocks and Snapshot Viewer show
+the same neutral skeleton while loading and preserve the frame on error with
+an in-place retry action. Local image creation reads intrinsic dimensions
+before insertion. Remote and legacy images without a stored ratio start from
+the Schema default and backfill the first successful ratio without adding Undo
+history. Continuous virtualization and sparse pagination share one DOM-free
+model estimator for `wr/ar` media and inline-image `width/height`. Wrapped
+inline images additionally reserve their contained image-plus-gap height and
+estimate constrained-side text lines from persisted `side/x/gap`; ordinary
+measured text heights are not overwritten by fallback estimates.
+The layout and absolute descendants have no gap-cursor eligibility. Stale gap
+selection snapshots degrade to whole-object selection, and normal gaps are
+restored when an object returns to relative flow. While a whole absolute object
+is selected, ordinary typing, IME, Enter, Tab and paste are isolated from the
+document input path; Delete/Backspace and object tools remain available.
+Under-content blocks can be selected again from a narrow
+visible edge band through model selection. Placement containers use explicit
+background / under / flow / over tiers, so under blocks remain visible and
+over blocks stay above text, image, video, audio and bookmark blocks regardless
+of DOM order. The built-in image Schema opts in.
 Ordinary reconciliation also performs only constant-time local
 revision/length checks. Detected index/height drift is rebuilt on a cold path;
 three consecutive reconciliation failures permanently switch that document to
@@ -307,33 +391,49 @@ model-only capabilities must stay on `doc.model` / `doc.exportSnapshot()`.
 const doc = new BlockCraftDoc({
   // ...
   currentUserId: currentUser.id,
-  canUnlockBlock: ({currentUserId}) =>
-    currentUserId !== null && permissions.isAdmin(currentUserId),
+  defaultBlockLockKind: 'user', // optional; template authoring hosts may use 'template'
+  canUnlockBlock: ({currentUserId, lockKind}) =>
+    lockKind === 'template'
+      ? templatePermissions.canEditTemplate(currentUserId)
+      : currentUserId !== null && permissions.isAdmin(currentUserId),
 })
 
 doc.setBlockReadonly(blockId, true)
+doc.setBlockReadonly(templateRegionId, true, {kind: 'template'})
 
 doc.isBlockReadonly(blockId)                  // effective: self / ancestor / document
-doc.canUnlockBlock(blockId)                   // explicit owner or host override
+doc.canUnlockBlock(blockId)                   // resolved owner / host permission
 doc.readonlyManager.isExplicitReadonly(blockId)
-doc.readonlyManager.resolve(blockId)          // { readonly, source, lockUserId }
+doc.readonlyManager.resolve(blockId)          // { readonly, source, lockUserId, lockKind }
 doc.readonlyManager.containsReadonly(blockId) // locked block anywhere in subtree
 
 doc.setBlockReadonly(blockId, false)
 ```
 
 `meta.lock?: string` persists the explicit lock owner's non-empty user ID and
-is synchronized through Yjs. `DocConfig.currentUserId` owns new locks; only the
-same user or a host `canUnlockBlock` override can remove them. Without a current
-user, unlocked content remains editable but lock control is disabled. A lock is
-inherited by every descendant. Text/format/props changes, insertion into the
+is synchronized through Yjs. `meta.lockKind?: 'template'` distinguishes a
+template-authored invariant from an ordinary user lock; missing or unknown
+values resolve as `'user'` for backward compatibility. `DocConfig.currentUserId`
+owns new locks. An ordinary user lock can be removed by the same user or a host
+`canUnlockBlock` grant. A template lock always requires that host grant—even
+when `currentUserId === lockUserId`—so an instantiated document cannot become
+unlockable merely because the template creator later uses it.
+`DocConfig.defaultBlockLockKind` changes the kind created by generic editor
+lock controls; an explicit `setBlockReadonly(..., {kind})` wins. Without a
+current user, unlocked content remains editable but lock control is disabled.
+A lock is inherited by every descendant. Text/format/props changes, insertion into the
 protected subtree, removal/move of the protected block, and removal/move of an
 unlocked ancestor containing a protected descendant are rejected with
 `BlockReadonlyError`. Unauthorized lock control throws `BlockLockError`.
 Selection, copy, link activation, media preview and download remain available;
-copied snapshots deliberately omit `meta.lock`. Root cannot receive a
-persistent block lock—use
+copied snapshots deliberately omit both `meta.lock` and `meta.lockKind`. Root
+cannot receive a persistent block lock—use
 `doc.toggleReadonly(true)` for whole-document mode.
+
+Rendered block hosts expose `data-bc-readonly` plus
+`data-bc-lock-kind="user|template"`. The base theme decorates ordinary explicit
+locks. Template locks remain visually neutral unless an authoring ancestor has
+`data-bc-reveal-template-locks`, while their write guards remain identical.
 
 Legacy `meta.readonly` is not read or migrated.
 
@@ -416,8 +516,15 @@ const image = createInlineImageDelta(
   'https://cdn.example.com/a.png',
   320,
   180,
+  {wrap: true, side: 'auto', x: 0.24, gap: 12},
 )
-// { insert: { image: url }, attributes: { width: 320, height: 180 } }
+// {
+//   insert: { image: url },
+//   attributes: {
+//     width: 320, height: 180,
+//     wrap: true, side: 'auto', x: 0.24, gap: 12,
+//   },
+// }
 ```
 
 `image` is available without explicit `DocConfig.embeds` registration. A host
@@ -425,12 +532,33 @@ can override the renderer by registering its own same-key converter. Mixed
 HTML/Markdown images round-trip as inline embeds; standalone Markdown images
 and `<figure><img></figure>` retain image-block semantics.
 
+The optional fourth argument enables square text wrapping for the existing
+one-length inline Embed. `side` is `'auto' | 'left' | 'right'`, `x` is the
+normalized horizontal start inside the owning editable container, and `gap`
+is a non-negative CSS-pixel distance. Missing `wrap` keeps the previous
+ordinary inline behavior. HTML preserves these fields as `data-bc-wrap*`;
+Markdown intentionally degrades to a normal inline image.
+
+An inline image reserves its persisted `width/height` immediately. Missing
+dimensions reserve `320 × 240` (4:3) until the first successful load, then
+`ImgToolbarPlugin` backfills both short delta attributes in an
+`ORIGIN_NO_RECORD` transaction. Loading failure keeps that frame visible and
+offers the same retry control as block media. Embed teardown destroys the
+resource controller both on blot detach and when semantic attributes replace
+the embed view.
+
 With `ImgToolbarPlugin`, clicking the default inline image shows proportional
-resize handles, a temporary theme-colored selection outline, plus **转为图片块**.
+resize handles, a temporary theme-colored selection outline, plus the shared
+object-layout choices: **嵌入型 / 四周型环绕 / 上下型 / 衬于文字下方 /
+浮于文字上方**. Four-sided wrapping stays inside the same editable block:
+`InlineRuntime` marks that owner as a `flow-root`, native CSS float owns line
+breaking, and a horizontal Pointer Events gesture previews only DOM geometry
+before committing normalized `x` once on pointerup.
 The outline is DOM-only; resize commits the short `width` / `height` attributes
 once on mouseup. Reverse conversion preserves the formatted text on both sides
-as separate editable blocks and inserts the image block between them; it does not
-create a caption.
+as separate editable blocks and inserts the image block between them; it does
+not create a caption. Choosing under/over creates the block directly at the
+inline image's current visual coordinates.
 
 ### DocChain (Fluent Mutations)
 
@@ -474,6 +602,7 @@ Key services accessible on `doc.*` (see `blockcraft-app.md` for full API details
 |---------|-------------|-------------|
 | `doc.dragController` | 内部 block 拖拽（PointerEvents） | `framework/services/internal-drag.controller.ts` |
 | `doc.dndService`     | 外部文件拖入 + commit 类方法分发  | `framework/services/dnd.service.ts` |
+| `doc.objectSizing`   | root 相对对象尺寸解析与宽度观测 | `framework/services/block-object-sizing.manager.ts` |
 | `doc.overlayService` | CDK Overlay wrapper | `framework/services/overlay.service.ts` |
 | `doc.clipboard`      | ClipboardManager | `framework/modules/clipboard/` |
 | `doc.selection`      | SelectionManager (anchor/head model) | `framework/modules/selection/` |
@@ -672,11 +801,24 @@ onBold(ctx: UIEventStateContext) { ... }
   offscreen root block can be patched or replaced without component creation.
 - `DocCRUD.deleteBlocks()` does not reposition selection after inserting the fallback paragraph for an emptied `renderUnit`. The owning Input/plugin action explicitly commits the final caret/range through model-first Selection APIs; it must not rely on write-after-`recalculate()` DOM sampling.
 - Global type declarations use `declare global { namespace BlockCraft { ... } }`
-- Icons use the iconfont class system: `<i class="bc_icon bc_xxx"></i>` (no PNGs, no inline SVGs except for multi-color)
+- Icons use the iconfont class system: `<i class="bc_icon bc_xxx"></i>` (no PNGs,
+  no inline SVGs except for multi-color). The built-in shape picker is a narrow
+  geometry-preview exception: its exported `ShapeIconComponent` renders the
+  same trusted `ShapeDefinition.path` used by the actual shape, so it does not
+  maintain duplicate icon resources.
 - Hotkey decorators use `shortKey: true` for cross-platform Cmd/Ctrl — never hardcode `metaKey`/`ctrlKey`
-- Empty editable blocks show placeholder text from `metadata.placeholder` on focus (see `blockcraft-block.md` → Editable Block Placeholder)
+- Empty editable blocks can show placeholder text on focus; `meta.plhMode:
+  'always'` makes it persist while the block is empty. Content regions keep
+  these fields on an empty editable child rather than on the container.
+  Resolution starts at per-block `meta.plh`, then falls back to the Plugin
+  flavour override and Schema
+  `metadata.placeholder` (see `blockcraft-block.md` → Block Instance Metadata).
+- For insertion affordances, query `doc.canInsertChild(parentId, flavour)`.
+  It combines the Schema's static child contract with opted-in instance
+  `meta.incl` / `meta.excl`; instance metadata can narrow, never widen, the
+  Schema.
 
-## Plugins Currently Bundled (from `editor/editor.ts`)
+## Plugins Currently Bundled (from `editor/bundled-capabilities.ts`)
 
 | Plugin | File | Purpose |
 |--------|------|---------|
@@ -690,6 +832,8 @@ onBold(ctx: UIEventStateContext) { ... }
 | `CodeInlineEditorBinding` | `plugins/codeEditorBinding.ts` | Shiki syntax highlighting binding for code blocks |
 | `TableBlockBinding` | `plugins/tableBlockBinding.ts` | Table clipboard, model/explicit cell-range keyboard bindings, merge/split helpers |
 | `ImgToolbarPlugin` | `plugins/img-toolbar/` | Block/inline image resize, toolbar actions, and bidirectional conversion |
+| `ShapeToolbarPlugin` | `plugins/shape-toolbar/` | Word-like shape selection, style controls, object layout, drag, resize and rotation |
+| `WordArtToolbarPlugin` | `plugins/word-art-toolbar/` | Editable WordArt presets, object/edit mode, style controls, placement, drag, resize and rotation |
 | `CalloutToolbarPlugin` | `plugins/callout-toolbar/` | Callout color/icon picker |
 | `DividerExtensionPlugin` | `plugins/divider-toolbar/` | Divider hover toolbar (style / size / optional text label + align) |
 | `AttachmentExtensionPlugin` | `plugins/attachment-extension/` | Attachment preview/download UI |
@@ -700,10 +844,13 @@ onBold(ctx: UIEventStateContext) { ... }
 | `MentionPlugin` | `plugins/mention/` | `@`-trigger with pluggable panel factory |
 | `FindReplacePlugin` | `plugins/findReplace/` | Cmd+F find & replace |
 | `TranslatePlugin` | `plugins/translate/` | Block translation via DI service |
-| `PlaceholderPlugin` | `plugins/placeholder/` | Renders schema-declared placeholder on focused empty editable blocks; supports per-flavour overrides |
+| `PlaceholderPlugin` | `plugins/placeholder/` | Renders focused or persistent placeholders on empty editable blocks; supports per-block `meta.plh` / `meta.plhMode`, per-flavour overrides and Schema defaults |
 | `PaginationPlugin` | `plugins/pagination/` | Opt-in live pagination, page settings, print shortcut and WYSIWYG printing |
 
 > A host app can pass any subset of these (plus its own custom plugins) into `DocConfig.plugins`. See `blockcraft-app.md`.
+> Hosts that want this exact stack should use
+> `createBundledEditorCapabilities()`; manually constructing a subset remains
+> supported.
 
 ## Architecture Docs (Background Reading)
 
@@ -730,7 +877,7 @@ packages/editor/ai-skills/         # also shipped at node_modules/@ccc/blockcraf
 ├── blockcraft-plugins-ref.md # L1: built-in插件索引 + 路由（按分类指向下方子文件）
 ├── blockcraft-plugins-formatting.md # L1: 文本格式化插件（FloatTextToolbar, TextMarker, FixedToolbar）
 ├── blockcraft-plugins-block.md      # L1: 块管理插件（BlockController, GapCreator, Transformer, Ordered）
-├── blockcraft-plugins-toolbar.md    # L1: 块工具栏插件（Attachment, Img, Bookmark, Callout, Divider, Embed, Formula）
+├── blockcraft-plugins-toolbar.md    # L1: 块工具栏插件（Attachment, Img, Shape, Bookmark, Callout, Divider, Embed, Formula）
 ├── blockcraft-plugins-inline.md     # L1: 行内扩展 + 键盘绑定（InlineLink, Mention, Code, Table）
 ├── blockcraft-plugins-util.md       # L1: 工具类插件（Placeholder, FindReplace, PasteFormat, Demo, Translate）
 ├── blockcraft-plugin.md    # L1: create plugins

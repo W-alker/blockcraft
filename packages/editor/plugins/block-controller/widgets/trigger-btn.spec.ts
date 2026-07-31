@@ -276,6 +276,7 @@ describe("TriggerBtn block readonly menu", () => {
     ancestor?: boolean;
     descendant?: boolean;
     lockUserId?: string;
+    lockKind?: "user" | "template";
     currentUserId?: string | null;
     canUnlock?: boolean;
   } = {}) => {
@@ -306,14 +307,16 @@ describe("TriggerBtn block readonly menu", () => {
         readonly: true,
         source: {kind: "self", blockId: "p1"},
         lockUserId: state.lockUserId ?? "user-1",
+        lockKind: state.lockKind ?? "user",
       }
       : state.ancestor
         ? {
           readonly: true,
           source: {kind: "ancestor", blockId: "parent"},
           lockUserId: state.lockUserId ?? "ancestor-user",
+          lockKind: state.lockKind ?? "user",
         }
-        : {readonly: false, source: null, lockUserId: null};
+        : {readonly: false, source: null, lockUserId: null, lockKind: null};
     const readonlyManager = {
       currentUserId,
       resolve: jasmine.createSpy("resolve").and.callFake(resolution),
@@ -325,7 +328,12 @@ describe("TriggerBtn block readonly menu", () => {
       ),
       canUnlock: jasmine.createSpy("canUnlock").and.callFake(() =>
         state.canUnlock ??
-        (!!state.explicit && !!currentUserId && resolution().lockUserId === currentUserId),
+        (
+          state.lockKind !== "template"
+          && !!state.explicit
+          && !!currentUserId
+          && resolution().lockUserId === currentUserId
+        ),
       ),
     };
     component.doc = {
@@ -399,6 +407,23 @@ describe("TriggerBtn block readonly menu", () => {
         checked: true,
         disabled: true,
         desc: "由其他用户锁定",
+      }),
+    );
+  });
+
+  it("identifies a template lock when owner identity matches but the host grants no unlock", () => {
+    const template = makeHarness({
+      explicit: true,
+      lockKind: "template",
+      lockUserId: "user-1",
+      currentUserId: "user-1",
+    });
+
+    expect(findPrimary(template.component, "block-readonly")).toEqual(
+      jasmine.objectContaining({
+        checked: true,
+        disabled: true,
+        desc: "模板内容已锁定",
       }),
     );
   });

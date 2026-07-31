@@ -1,7 +1,13 @@
 import {fromEvent, Subscription, takeUntil} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {TriggerBtn} from "./widgets/trigger-btn";
-import {closetBlockId, DocPlugin, EventListen} from "../../framework";
+import {
+  BLOCK_OBJECT_LAYOUT_OPTIONS,
+  BlockObjectLayout,
+  closetBlockId,
+  DocPlugin,
+  EventListen,
+} from "../../framework";
 import {getSelectionCoveredBlockIds} from "../../framework/modules/selection/covered-blocks";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 import type {InternalDragData} from "../../framework/services/internal-drag.controller";
@@ -24,6 +30,20 @@ const TABLE_MENU_NAMES = {
   colHead: "table-col-head",
   fix: 'table-fix',
 } as const;
+
+const PLACEMENT_MENU_NAMES = {
+  inline: 'block-object-layout-inline',
+  topBottom: 'block-object-layout-top-bottom',
+  under: 'block-object-layout-under',
+  over: 'block-object-layout-over',
+} as const
+
+const objectLayoutMenuName = (layout: BlockObjectLayout): string => ({
+  inline: PLACEMENT_MENU_NAMES.inline,
+  'top-bottom': PLACEMENT_MENU_NAMES.topBottom,
+  under: PLACEMENT_MENU_NAMES.under,
+  over: PLACEMENT_MENU_NAMES.over,
+})[layout]
 
 export class BlockControllerPlugin extends DocPlugin {
   override name = 'block-controller'
@@ -107,10 +127,21 @@ export class BlockControllerPlugin extends DocPlugin {
           const block = this.doc.getBlockById(blockId)
           const schema = this.doc.schemas.get(block.flavour)
           const protectedBlock = this.isBlockProtected(block)
-          if (!schema || schema.metadata.isLeaf || (block.nodeType === 'block' && !target.isContentEditable && !protectedBlock)) return
+          const placementBlock = !!schema?.metadata.placement
+          if (
+            !schema ||
+            !this.isControllerEligible(block) ||
+            schema.metadata.isLeaf ||
+            (
+              block.nodeType === 'block' &&
+              !target.isContentEditable &&
+              !protectedBlock &&
+              !placementBlock
+            )
+          ) return
 
           this._timer = setTimeout(() => {
-            if (!this.isBlockAlive(block)) {
+            if (!this.isBlockAlive(block) || !this.isControllerEligible(block)) {
               this.clearTimer()
               return
             }
@@ -125,7 +156,13 @@ export class BlockControllerPlugin extends DocPlugin {
         .pipe(takeUntil(this.doc.onDestroy$))
         .subscribe(v => {
           if (this.doc.isReadonly) return
-          if (this._activeBlock && !this.isBlockAlive(this._activeBlock)) {
+          if (
+            this._activeBlock &&
+            (
+              !this.isBlockAlive(this._activeBlock) ||
+              !this.isControllerEligible(this._activeBlock)
+            )
+          ) {
             this.clearActiveBlock()
           }
           // Cross-block selection: anchor the handle on the first selected block so the
@@ -159,7 +196,9 @@ export class BlockControllerPlugin extends DocPlugin {
     if (!ids.length) return null
     try {
       const block = this.doc.getBlockById(ids[0])
-      return this.isBlockAlive(block) ? block : null
+      return this.isBlockAlive(block) && this.isControllerEligible(block)
+        ? block
+        : null
     } catch {
       return null
     }
@@ -179,6 +218,14 @@ export class BlockControllerPlugin extends DocPlugin {
     return manager
       ? manager.isReadonly(block) || manager.containsReadonly(block)
       : !!block.isReadonly
+  }
+
+  private isControllerEligible(block: BlockCraft.BlockComponent): boolean {
+    const placement = this.doc.placement
+    if (!placement) return true
+    return !placement.isPlacementLayout?.(block) &&
+      !placement.isInAbsoluteLayout?.(block) &&
+      placement.getState?.(block)?.mode !== 'absolute'
   }
 
   private resolveDragData(activeBlock: BlockCraft.BlockComponent): InternalDragData {
@@ -210,16 +257,30 @@ export class BlockControllerPlugin extends DocPlugin {
             this.clearActiveBlock()
             return
           }
+          if (!this.isControllerEligible(activeBlock)) {
+            this.clearActiveBlock()
+            return
+          }
           if (this.isBlockProtected(activeBlock)) return
 
           this._cpr.instance.menuDisabled = true
           this._cpr.instance.cdr.detectChanges()
 
-          const data = this.resolveDragData(activeBlock)
-          this.doc.dragController.startDrag(evt, data)
+          const dragState$ = this.doc.dragController.state$
+          const started =
+            (this.doc.dragController.startDrag(
+              evt,
+              this.resolveDragData(activeBlock),
+            ), true)
+
+          if (!started) {
+            this._cpr.instance.menuDisabled = false
+            this._cpr.instance.cdr.markForCheck()
+            return
+          }
 
           // Re-enable menu after drag ends (success or cancel)
-          const sub = this.doc.dragController.state$
+          const sub = dragState$
             .pipe(takeUntil(this.doc.onDestroy$))
             .subscribe(state => {
               if (state === 'idle') {
@@ -254,15 +315,66 @@ export class BlockControllerPlugin extends DocPlugin {
   }
 
   private resolveBlockMenus = (ctx: BlockMenuContext): BlockMenuSection[] => {
-    const builtinSections = this.resolveTableMenu(ctx)
+    const builtinSections = [
+      ...this.resolvePlacementMenu(ctx),
+      ...this.resolveTableMenu(ctx),
+    ]
     const customSections = this.blockMenuResolver?.(ctx) || []
     return [...builtinSections, ...customSections]
   }
 
   private handleBlockMenuAction = (event: BlockMenuActionEvent, ctx: BlockMenuContext): boolean => {
+    if (this.handlePlacementMenuAction(event, ctx)) return true
+    if (this.handleTableMenuAction(event, ctx)) return true
     const customHandled = this.blockMenuActionHandler?.(event, ctx)
     if (customHandled) return true
-    return this.handleTableMenuAction(event, ctx)
+    return false
+  }
+
+  private resolvePlacementMenu(ctx: BlockMenuContext): BlockMenuSection[] {
+    const block = ctx.activeBlock
+    const current = this.doc.placement.getObjectLayout(block)
+    const layoutItems = BLOCK_OBJECT_LAYOUT_OPTIONS
+      .filter(option => this.doc.placement.supportsObjectLayout(block, option.value))
+      .map(option => ({
+        type: 'simple' as const,
+        name: objectLayoutMenuName(option.value),
+        icon: option.icon,
+        label: option.label,
+        value: option.value,
+        active: current === option.value,
+      }))
+    if (!layoutItems.length) return []
+
+    const items: BlockMenuSection['items'] = [{
+      type: 'dropdown',
+      name: 'block-object-layout',
+      icon: layoutItems.find(item => item.active)?.icon ?? 'bc_fuwenben-shangxia',
+      label: '文字环绕',
+      items: layoutItems,
+    }]
+    return [{
+      key: 'block-placement',
+      title: '布局',
+      items,
+    }]
+  }
+
+  private handlePlacementMenuAction(event: BlockMenuActionEvent, ctx: BlockMenuContext): boolean {
+    const layout = BLOCK_OBJECT_LAYOUT_OPTIONS.find(
+      option => objectLayoutMenuName(option.value) === event.item.name,
+    )?.value
+    if (layout) {
+      const handled = this.doc.placement.setObjectLayout(ctx.activeBlock, layout)
+      if (
+        handled &&
+        this.doc.placement.isInAbsoluteLayout?.(ctx.activeBlock.id)
+      ) {
+        this.clearActiveBlock()
+      }
+      return handled
+    }
+    return false
   }
 
   private resolveTableMenu(ctx: BlockMenuContext): BlockMenuSection[] {

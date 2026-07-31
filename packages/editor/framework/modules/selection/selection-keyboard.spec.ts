@@ -153,6 +153,25 @@ describe('SelectionKeyboard surface boundary', () => {
     expect(surface.getNativeSelection).toHaveBeenCalledTimes(1);
     expect(globalSelection).not.toHaveBeenCalled();
   });
+
+  it('does not treat an absolute object as a keyboard gap target', () => {
+    const doc = createMockDoc() as MockDoc & {
+      placement: {allowsGapCursor: jasmine.Spy};
+    };
+    doc.placement = {
+      allowsGapCursor: jasmine.createSpy('allowsGapCursor')
+        .and.returnValue(false),
+    };
+    const keyboard = createKeyboard(doc);
+    const shape = {
+      id: 'shape-absolute',
+      flavour: 'shape',
+      nodeType: BlockNodeType.block,
+    };
+
+    expect(keyboard._supportsBlockGap(shape)).toBeFalse();
+    expect(doc.placement.allowsGapCursor).toHaveBeenCalledOnceWith(shape);
+  });
 });
 
 describe('SelectionKeyboard – Left/Right gap navigation', () => {

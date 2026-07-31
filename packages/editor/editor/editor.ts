@@ -7,72 +7,20 @@ import {
   DOC_LINK_PREVIEWER_SERVICE_TOKEN,
   DOC_MESSAGE_SERVICE_TOKEN,
   DocLinkPreviewerService,
-  InlineManager,
-  SchemaManager,
   generateId
 } from "../framework";
-import {
-  AttachmentBlockSchema,
-  BookmarkBlockSchema,
-  CalloutBlockSchema,
-  CaptionBlockSchema,
-  CodeBlockSchema,
-  ColumnsBlockSchema,
-  DividerBlockSchema,
-  FigmaEmbedBlockSchema,
-  ImageBlockSchema,
-  JuejinEmbedBlockSchema,
-  OrderedBlockSchema,
-  ParagraphBlockSchema,
-  RootBlockSchema,
-  TableBlockSchema,
-  TableCellBlockSchema,
-  TableRowBlockSchema,
-  TodoBlockSchema,
-  VideoBlockSchema,
-  AudioBlockSchema
-} from "../blocks";
 import {ConsoleLogger} from "../global";
-import {BulletBlockSchema} from "../blocks/bullet-block";
-import {FormulaBlockSchema} from "../blocks/formula-block";
 import {FixedTextToolbarComponent} from "../plugins/fixed-toolbar";
-import {BlockTransformerPlugin} from "../plugins/block-transformer";
-import {BlockControllerPlugin, mergeBlockControllerOptions} from "../plugins/block-controller";
-import {ImgToolbarPlugin} from "../plugins/img-toolbar";
 import {MyDocFileService} from "./services/doc-file-service";
 import {MyDocMessageService} from "./services/doc-message.service";
-import {CalloutToolbarPlugin} from "../plugins/callout-toolbar";
-import {AttachmentExtensionPlugin} from "../plugins/attachment-extension";
 import {MyBlockCreatorService} from "./services/block-creator.service";
-import {EmbedFrameExtensionPlugin} from "../plugins/embed-frame-extension";
-import {BookmarkBlockExtensionPlugin} from "../plugins/bookmark-frame-extension";
-import {FormulaBlockExtensionPlugin} from "../plugins/formula-extension";
-import {InlineLinkExtension} from "../plugins/inline-link-extension";
 import {MyCommentService} from "./services/comment.service";
 import {AdapterService} from "./services/adapter.service";
-import {MermaidBlockSchema, MermaidTextareaBlockSchema} from "../blocks/mermaid-block";
-import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
-import katex from 'katex'
-import {MentionPlugin, createDefaultMentionPanel} from "../plugins/mention";
+import {createDefaultMentionPanel} from "../plugins/mention";
 import * as Y from 'yjs'
-import {DividerExtensionPlugin} from "../plugins/divider-toolbar";
-import {
-  CodeInlineEditorBinding,
-  FloatTextToolbarPlugin,
-  TableBlockBinding,
-  OrderedBlockPlugin,
-  TextMarkerPlugin
-} from "../plugins";
-import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
-import {BlockGapCreatorPlugin} from "../plugins/block-gap-creator";
-import {ColumnBlockSchema} from "../blocks/columns-block";
-import {TranslatePlugin} from "../plugins/translate";
 import {MyDocTranslationService} from "./services/doc-translation.service";
-import {PasteFormatSelectorPlugin} from "../plugins/paste-format-selector";
-import {PlaceholderPlugin} from "../plugins/placeholder";
-import {PageDividerBlockSchema} from "../blocks/page-divider-block";
-import {PaginationPlugin} from "../plugins/pagination";
 import {BlockLinkNavigator} from "./block-link-navigator";
+import {createBundledEditorCapabilities} from './bundled-capabilities'
 
 const mentionRequest = async (keyword: string, _type?: string) => {
   if (keyword === 'a') {
@@ -90,20 +38,6 @@ const mentionRequest = async (keyword: string, _type?: string) => {
     list
   }
 }
-
-const schemas = new SchemaManager([
-  ParagraphBlockSchema,
-  OrderedBlockSchema, BulletBlockSchema, TodoBlockSchema, CalloutBlockSchema, CodeBlockSchema,
-  CalloutBlockSchema,
-  DividerBlockSchema, PageDividerBlockSchema, ImageBlockSchema,
-  TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, AttachmentBlockSchema, BookmarkBlockSchema,
-  FigmaEmbedBlockSchema, JuejinEmbedBlockSchema,
-  CaptionBlockSchema, RootBlockSchema,
-  MermaidTextareaBlockSchema, MermaidBlockSchema, BlockquoteBlockSchema,
-  ColumnsBlockSchema, ColumnBlockSchema,
-  FormulaBlockSchema,
-  VideoBlockSchema, AudioBlockSchema
-])
 
 @Component({
   selector: "block-craft-editor",
@@ -217,16 +151,23 @@ export class EditorComponent implements OnInit, OnDestroy {
   docId = "111";
   rootId = "111";
 
-  private readonly translatePlugin = new TranslatePlugin({
-    sourceLang: "auto",
-    defaultTargetLang: "chinese_simplified",
-    targetLangWhenSourceIsChinese: "chinese_simplified",
-    service: new MyDocTranslationService(),
-  });
+  doc!: BlockCraftDoc;
+  private blockLinkNavigator: BlockLinkNavigator | null = null;
 
-  private readonly blockControllerPlugin = new BlockControllerPlugin(
-    mergeBlockControllerOptions(
-      {
+  private createDoc(): BlockCraftDoc {
+    const capabilities = createBundledEditorCapabilities({
+      mention: {
+        panel: createDefaultMentionPanel({
+          request: mentionRequest,
+        }),
+      },
+      translate: {
+        sourceLang: "auto",
+        defaultTargetLang: "chinese_simplified",
+        targetLangWhenSourceIsChinese: "chinese_simplified",
+        service: new MyDocTranslationService(),
+      },
+      blockController: {
         customTools: [
           {
             type: "tool",
@@ -237,30 +178,23 @@ export class EditorComponent implements OnInit, OnDestroy {
           },
         ],
         customToolHandler: (item, block) => {
-          switch (item.name) {
-            case "copyBlockLink":
-              this.copyBlockLink(block);
-              return true;
-          }
-          return false;
+          if (item.name !== "copyBlockLink") return false;
+          this.copyBlockLink(block);
+          return true;
         },
       },
-      this.translatePlugin.createBlockControllerOptions(),
-    ),
-  );
-
-  private paginationPlugin!: PaginationPlugin;
-
-  doc!: BlockCraftDoc;
-  private blockLinkNavigator: BlockLinkNavigator | null = null;
-
-  private createDoc(): BlockCraftDoc {
-    this.paginationPlugin = new PaginationPlugin({
-      enabled: false,
-      pageSize: 'A4',
-      printShortcut: true,
-      experimentalSparseView: this.paginationSparseView,
-    });
+      openLink: link => {
+        if (!this.blockLinkNavigator?.openBlockLink(link)) {
+          window.open(link, "_blank");
+        }
+      },
+      pagination: {
+        enabled: false,
+        pageSize: 'A4',
+        printShortcut: true,
+        experimentalSparseView: this.paginationSparseView,
+      },
+    })
     return new BlockCraftDoc({
       yDoc: new Y.Doc({
         guid: this.docId,
@@ -268,7 +202,7 @@ export class EditorComponent implements OnInit, OnDestroy {
       }),
       docId: this.docId,
       currentUserId: "demo-user",
-      schemas: schemas,
+      schemas: capabilities.schemas,
       logger: this.logger,
       injector: this.injector,
       virtualization: {
@@ -286,104 +220,12 @@ export class EditorComponent implements OnInit, OnDestroy {
           table: 240,
           columns: 180,
           image: 320,
+          shape: 120,
+          "word-art": 96,
         },
       },
-      embeds: [
-        [
-          "mention",
-          {
-            toView: (embed) => {
-              const span = document.createElement("span");
-              span.textContent = embed.insert["mention"] as string;
-              // InlineManager.setAttrs(span, embed.attributes!)
-              span.setAttribute(
-                "data-mention-id",
-                (embed.attributes!["mentionId"] ||
-                  embed.attributes!["d:mentionId"]) as string,
-              );
-              span.setAttribute(
-                "data-mention-type",
-                (embed.attributes!["mentionType"] ||
-                  embed.attributes!["d:mentionType"]) as string,
-              );
-              return span;
-            },
-            toDelta: (ele) => {
-              return {
-                insert: { mention: ele.textContent! },
-                attributes: {
-                  mentionId: ele.getAttribute("data-mention-id")!,
-                  mentionType: ele.getAttribute("data-mention-type"),
-                },
-              };
-            },
-          },
-        ],
-        [
-          "latex",
-          {
-            toView: (embed) => {
-              const span = document.createElement("span");
-              span.classList.add("inline-formula");
-              const latex = (embed.insert["latex"] || "") as string;
-              span.setAttribute("data-latex", latex);
-              try {
-                katex.render(latex, span, {
-                  output: "mathml",
-                  throwOnError: false,
-                });
-              } catch {
-                span.textContent = latex;
-              }
-              return span;
-            },
-            toDelta: (ele) => {
-              return {
-                insert: {
-                  latex:
-                    ele.getAttribute("data-latex") || ele.textContent || "",
-                },
-                attributes: InlineManager.getAttrs(ele),
-              };
-            },
-          },
-        ],
-      ],
-      plugins: [
-        new OrderedBlockPlugin(),
-        new CodeInlineEditorBinding(),
-        new FloatTextToolbarPlugin(),
-        new BlockTransformerPlugin(),
-        this.blockControllerPlugin,
-        new TableBlockBinding(),
-        new PasteFormatSelectorPlugin(),
-        new PlaceholderPlugin(),
-        new ImgToolbarPlugin(),
-        new CalloutToolbarPlugin(),
-        new AttachmentExtensionPlugin(),
-        new EmbedFrameExtensionPlugin(),
-        new BookmarkBlockExtensionPlugin(),
-        new FormulaBlockExtensionPlugin(),
-        new InlineLinkExtension((link) => {
-          if (!this.blockLinkNavigator?.openBlockLink(link)) {
-            window.open(link, "_blank");
-          }
-        }),
-        new MentionPlugin({
-          panel: createDefaultMentionPanel({
-            request: mentionRequest,
-          }),
-        }),
-        new DividerExtensionPlugin(),
-        new FindReplacePlugin(),
-        this.translatePlugin,
-        new BlockGapCreatorPlugin(),
-        this.paginationPlugin,
-        // 代码块 / mermaid 源码的仅颜色工具栏：rich text 由上面的 FloatTextToolbarPlugin
-        // 负责（它对 plainTextOnly 块会跳过），这里只补充这些 plainTextOnly 块的颜色覆盖，
-        // 二者互不重叠。('mermaid-textarea' 是 mermaid 块里可编辑的源码子块)
-        new TextMarkerPlugin([], ["code", "mermaid-textarea"]),
-      ],
+      embeds: [...capabilities.embeds],
+      plugins: [...capabilities.plugins],
     });
   }
 

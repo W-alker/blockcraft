@@ -25,7 +25,12 @@
             "tsConfig": "apps/playground/tsconfig.app.json",
             "inlineStyleLanguage": "scss",
             "assets": [
-              "apps/playground/src/assets"
+              "apps/playground/src/assets",
+              {
+                "glob": "bc-iconfont.js",
+                "input": "packages/editor/assets/iconfont",
+                "output": "assets/blockcraft-iconfont"
+              }
             ],
             "styles": [
               "apps/playground/src/styles.scss",

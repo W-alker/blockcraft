@@ -84,6 +84,61 @@ describe("BlockControllerPlugin selection range handling", () => {
     rootHost.remove();
   });
 
+  it("does not activate a whole-block selected absolute block", () => {
+    const {plugin, doc, p1, rootHost} = makeHarness();
+    (doc as any).placement = {
+      getState: jasmine.createSpy("getState").and.returnValue({
+        mode: "absolute",
+        x: 0,
+        y: 0,
+        layer: "under",
+      }),
+    };
+    const selected = new BlockSelection(
+      {blockId: p1.id, type: "selected", block: p1} as any,
+      {blockId: p1.id, type: "selected", block: p1} as any,
+      "root",
+      id => ({root: p1.parentBlock, [p1.id]: p1} as Record<string, any>)[id],
+      () => 0,
+    );
+
+    expect((plugin as any).resolveSelectionActiveBlock(selected)).toBeNull();
+    rootHost.remove();
+  });
+
+  it("exposes and handles the Word-like object layouts", () => {
+    const {plugin, doc, p1, rootHost} = makeHarness();
+    const setObjectLayout = jasmine.createSpy("setObjectLayout").and.returnValue(true);
+    (doc as any).placement = {
+      supportsObjectLayout: jasmine.createSpy("supportsObjectLayout")
+        .and.callFake((_block: any, layout: string) => layout !== "inline"),
+      getObjectLayout: jasmine.createSpy("getObjectLayout").and.returnValue("over"),
+      setObjectLayout,
+    };
+    const ctx = {activeBlock: p1} as any;
+
+    const sections = (plugin as any).resolvePlacementMenu(ctx);
+    const layoutMenu = sections[0].items.find(
+      (item: {name: string}) => item.name === "block-object-layout",
+    );
+    expect(layoutMenu.items.map((item: {label: string}) => item.label))
+      .toEqual(["上下型", "衬于文字下方", "浮于文字上方"]);
+    expect(layoutMenu.items.map((item: {icon: string}) => item.icon))
+      .toEqual(["bc_fuwenben-shangxia", "bc_cengji-xia", "bc_cengji-shang"]);
+    expect(layoutMenu.items[2].active).toBeTrue();
+
+    expect((plugin as any).handlePlacementMenuAction({
+      item: {name: "block-object-layout-under"},
+    }, ctx)).toBeTrue();
+    expect(setObjectLayout).toHaveBeenCalledOnceWith(p1, "under");
+
+    expect((plugin as any).handlePlacementMenuAction({
+      item: {name: "block-object-layout-over"},
+    }, ctx)).toBeTrue();
+    expect(setObjectLayout).toHaveBeenCalledWith(p1, "over");
+    rootHost.remove();
+  });
+
   it("ignores stale selection range blocks that were deleted", () => {
     const {plugin, rootHost, selection, queryBlocksBetween} = makeHarness();
     const sel = selection(0, 2);

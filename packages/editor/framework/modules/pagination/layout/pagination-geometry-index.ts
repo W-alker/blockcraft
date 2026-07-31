@@ -16,6 +16,11 @@ export interface PaginationGeometrySeed {
   readonly estimatedHeight: number
 }
 
+export interface PaginationGeometryEstimate {
+  readonly blockId: string
+  readonly height: number
+}
+
 export interface PaginationGeometryEntry {
   readonly blockId: string
   readonly flavour: string
@@ -244,6 +249,35 @@ export class PaginationGeometryIndex {
       changed = true
     }
 
+    if (changed) this.revisionValue++
+    return changed
+  }
+
+  applyEstimatedHeights(
+    estimates: readonly PaginationGeometryEstimate[],
+  ): boolean {
+    let changed = false
+    for (const estimate of estimates) {
+      assertNonNegativeFinite(
+        estimate.height,
+        `estimatedHeight for ${estimate.blockId}`,
+      )
+      const current = this.entries.get(estimate.blockId)
+      if (!current) continue
+      this.measuredGeometryIds.delete(estimate.blockId)
+      if (
+        current.source === 'estimated' &&
+        current.naturalHeight === estimate.height
+      ) {
+        continue
+      }
+      this.entries.set(estimate.blockId, {
+        ...current,
+        source: 'estimated',
+        naturalHeight: estimate.height,
+      })
+      changed = true
+    }
     if (changed) this.revisionValue++
     return changed
   }

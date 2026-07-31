@@ -19,10 +19,13 @@
 @import "blocks/blockquote-block";
 @import "blocks/cloumns-block";
 @import "blocks/formula-block";
+@import "blocks/word-art-block";
+@import "blocks/render-unit-block";
 
 @import "components/color-picker";
 @import "components/float-toolbar";
 @import "components/snapshot-viewer";
+@import "components/resource-placeholder";
 
 // 内部 block 拖拽期间，源 block 加 .bc-drag-source 标记（由 DocInternalDragController 添加 / 移除）。
 .bc-drag-source {
@@ -110,13 +113,49 @@
     }
   }
 
+  // The root block is itself the direct-root children placement container;
+  // nested container blocks expose a descendant container. Cover both shapes.
+  &[data-bc-placement-container],
+  [data-bc-placement-container] {
+    position: relative;
+    isolation: isolate;
+
+    // Explicit document-content tier. Absolute placement uses under=0 and
+    // over=2, so flow blocks stay between them regardless of DOM order or
+    // media elements establishing their own compositing layers.
+    > [data-block-id]:not([data-bc-placement='absolute']):not([data-bc-placement-layer-bridge]) {
+      z-index: 1;
+    }
+  }
+
+  [data-block-id][data-bc-placement='absolute'] {
+    margin: 0;
+  }
+
+  // The root placement layout is an infrastructure surface, not an editable
+  // document block. It must not intercept the pointer, while each positioned
+  // object remains independently interactive.
+  [data-bc-placement-layout] {
+    overflow: visible;
+
+    > [data-block-zero-space],
+    > .children-render-container > [data-block-zero-space] {
+      display: none;
+    }
+
+    > .children-render-container > [data-block-id] {
+      pointer-events: auto;
+    }
+  }
+
   // Block-level readonly preserves pointer interaction and native selection;
   // only the caret/editing surface is disabled by the component.
   [data-bc-readonly] {
     caret-color: transparent;
   }
 
-  [data-bc-readonly='self'] {
+  [data-bc-readonly='self']:not([data-bc-lock-kind='template']),
+  [data-bc-reveal-template-locks] & [data-bc-readonly='self'][data-bc-lock-kind='template'] {
     outline: 1px solid var(--bc-readonly-border-color);
     outline-offset: 2px;
     border-radius: 2px;
@@ -212,34 +251,22 @@
     }
   }
 
-  [data-node-type="editable"] {
-    //transition: all .1s ease;
-
-    &.empty {
-      // Match both self-as-edit-container (e.g. paragraph: host element has
-      // `.edit-container` class directly) and descendant edit-container
-      // (e.g. bullet/todo/blockquote: host contains a child `.edit-container`).
-      &.edit-container::before,
-      .edit-container::before {
-        content: attr(data-placeholder);
-        color: var(--bc-color);
-        opacity: .3;
-        // Absolute positioning takes the placeholder out of the inline flow,
-        // so the caret stays at the container's start instead of being pushed
-        // to the right of the placeholder text. The positioning context is
-        // the `.edit-container` itself (see `position: relative` rule below),
-        // which sits to the right of any block prefix (bullet/todo checkbox/etc).
-        position: absolute;
-        top: 0;
-        left: 0;
-        pointer-events: none;
-        // `nowrap` prevents the placeholder from collapsing into a vertical
-        // single-character column when the parent `.edit-container` is a
-        // shrink-to-fit flex item (bullet/ordered/todo hosts use
-        // `display: flex`, so an empty edit-container has near-zero width).
-        white-space: nowrap;
-      }
+  .bc-placeholder-empty {
+    &.bc-placeholder-target::before,
+    .bc-placeholder-target::before {
+      content: attr(data-placeholder);
+      color: var(--bc-placeholder-color, var(--bc-color));
+      opacity: .72;
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      white-space: nowrap;
     }
+  }
+
+  .bc-placeholder-target {
+    position: relative;
   }
 
   .edit-container {

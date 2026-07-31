@@ -26,6 +26,8 @@ type OrderableParent = {
 }
 
 export class OrderedBlockPlugin extends DocPlugin {
+  override name = 'ordered-block'
+
   private _sub = new Subscription()
 
   private _closeToolbar$ = new Subject()

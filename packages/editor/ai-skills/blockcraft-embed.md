@@ -4,7 +4,7 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-07-17
+> Last updated: 2026-07-31
 
 ## What is an Inline Embed?
 
@@ -75,7 +75,14 @@ The `image` embed is built in and needs no registration:
 ```typescript
 {
   insert: { image: 'https://cdn.example.com/a.png' },
-  attributes: { width: 320, height: 180 },
+  attributes: {
+    width: 320,
+    height: 180,
+    wrap: true,
+    side: 'auto',
+    x: 0.24,
+    gap: 12,
+  },
 }
 ```
 
@@ -83,15 +90,25 @@ The `image` embed is built in and needs no registration:
 attributes rather than text formatting. BlockCraft exports
 `createInlineImageDelta`, `readInlineImageDelta`,
 `inlineImageEmbedConverter`, and `INLINE_IMAGE_EMBED_KEY` for hosts that need
-to create or inspect the default representation.
+to create or inspect the default representation. It also exports
+`InlineImageWrapOptions`, `InlineImageWrapSide` and
+`normalizeInlineImageWrapOptions`. The optional fourth
+`createInlineImageDelta(src, width, height, wrapOptions)` argument enables
+square wrapping without changing existing three-argument calls. `x` is
+normalized to `[0, 1]`, `gap` must be non-negative, and missing `side`
+normalizes to `auto`.
 
 The default renderer uses a stable `.bc-inline-image-shell[data-bc-inline-image]`
-around `img.bc-inline-image`. When `ImgToolbarPlugin` is registered, clicking
-this default shell exposes proportional resize handles, a theme-colored selection
-outline, and a reverse conversion action. The selection outline is an ephemeral
-DOM class and is removed with the controls; it is never stored in Delta attributes.
-Resize preview stays in the DOM during dragging; mouseup writes
-`width` / `height` once through the owning editable block's Y.Text. A custom
+around a stable `.bc-inline-image-frame > img.bc-inline-image`. The frame owns
+the visible size, loading placeholder, selection outline and resize controls;
+the shell remains the atomic Embed and, while wrapped, owns the float exclusion
+geometry. `InlineRuntime` contains the float by deriving
+`data-bc-inline-float-owner` on the editable container. When
+`ImgToolbarPlugin` is registered, clicking this default shell exposes
+proportional resize handles, the ordinary/wrapped layout switch, text-side
+controls and reverse block conversion. Horizontal Pointer Events dragging
+previews CSS locally and writes `x` once on pointerup. The selection outline is
+an ephemeral DOM class and is never stored in Delta attributes. A custom
 same-key converter owns its own interaction UI and is not matched by the
 built-in plugin.
 
@@ -162,8 +179,11 @@ if (block && block instanceof EditableBlockComponent) {
 ## Inline Image Adapter Semantics
 
 - HTML paragraphs export/import inline images as `<img class="bc-inline-image">`.
+  Square wrapping is preserved through `data-bc-wrap="square"` plus
+  `data-bc-wrap-side`, `data-bc-wrap-x` and optional `data-bc-wrap-gap`.
 - `<figure><img></figure>` remains a block image.
-- Markdown images mixed with text remain inline embeds.
+- Markdown images mixed with text remain inline embeds, but Markdown does not
+  preserve `wrap/side/x/gap`.
 - A Markdown paragraph containing only one image remains an image block for
   backward compatibility.
 - Converting a mixed inline image back to a block splits its editable block into

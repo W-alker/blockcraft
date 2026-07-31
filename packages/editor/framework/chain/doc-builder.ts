@@ -2,7 +2,7 @@ import { Injector } from "@angular/core"
 import * as Y from "yjs"
 import { Logger } from "../../global"
 import { EmbedConverter, IBlockSnapshot, YBlock } from "../block-std"
-import { BlockCraftDoc, BlockUnlockContext } from "../doc"
+import { BlockCraftDoc, BlockLockKind, BlockUnlockContext } from "../doc"
 import { DocPlugin } from "../plugin"
 
 interface DocBuilderConfig {
@@ -16,6 +16,7 @@ interface DocBuilderConfig {
   plugins?: DocPlugin[]
   readonly?: boolean
   currentUserId?: string
+  defaultBlockLockKind?: BlockLockKind
   canUnlockBlock?: (context: BlockUnlockContext) => boolean
   scrollContainer?: HTMLElement
 }
@@ -41,6 +42,7 @@ export class BlockCraftDocBuilder {
     cloned.config.theme = this.config.theme
     cloned.config.readonly = this.config.readonly
     cloned.config.currentUserId = this.config.currentUserId
+    cloned.config.defaultBlockLockKind = this.config.defaultBlockLockKind
     cloned.config.canUnlockBlock = this.config.canUnlockBlock
     cloned.config.scrollContainer = this.config.scrollContainer
     cloned.config.embeds = this.config.embeds ? [...this.config.embeds] : []
@@ -89,6 +91,11 @@ export class BlockCraftDocBuilder {
   ) {
     this.config.currentUserId = userId
     this.config.canUnlockBlock = canUnlockBlock
+    return this
+  }
+
+  defaultBlockLockKind(kind: BlockLockKind) {
+    this.config.defaultBlockLockKind = kind
     return this
   }
 
@@ -143,6 +150,7 @@ export class BlockCraftDocBuilder {
       theme: this.config.theme,
       readonly: this.config.readonly,
       currentUserId: this.config.currentUserId,
+      defaultBlockLockKind: this.config.defaultBlockLockKind,
       canUnlockBlock: this.config.canUnlockBlock,
       scrollContainer: this.config.scrollContainer,
       embeds: this.config.embeds ? [...this.config.embeds] : [],

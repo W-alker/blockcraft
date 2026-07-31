@@ -33,6 +33,7 @@ export interface SnapshotRenderContext {
   renderBlock(snapshot: IBlockSnapshot): HTMLElement
   createInlineContent(model: InlineModel): DocumentFragment
   scheduleEnhancement(task: SnapshotEnhancementTask): void
+  registerDisposable?(target: Element, cleanup: () => void): void
   options: SnapshotViewerOptions
 }
 

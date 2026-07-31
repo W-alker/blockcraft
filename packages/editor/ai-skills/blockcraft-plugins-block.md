@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-07-28
+> Last updated: 2026-07-30
 
 ## BlockControllerPlugin
 
@@ -73,6 +73,21 @@ new BlockControllerPlugin({
   `canUnlockBlock` override. Another user's switch is disabled; missing identity
   disables lock control; an inherited lock must be removed at its source
   ancestor. Root never exposes a persistent-lock action.
+- For a placement-capable Schema, the built-in **文字环绕** menu exposes
+  **上下型 / 衬于文字下方 / 浮于文字上方**. If the flavour plugin registers
+  a `BlockObjectLayoutAdapter`, it also exposes **嵌入型**. These actions call
+  `doc.placement.setObjectLayout()`; under/over automatically enter absolute
+  placement and top-bottom automatically returns to flow. Once an object enters
+  the root placement layout, BlockController clears its active state and no
+  longer renders or responds for that object. Image/shape-specific toolbars own
+  its layer, return-to-flow, delete, resize and Pointer Events positioning.
+- A whole-block model selection can activate BlockController without hover only
+  for ordinary flow blocks. The `placement-layout` host and all descendants are
+  rejected by the same centralized eligibility check.
+- `svgIcon` values are SVG symbol IDs and render through
+  `<svg><use href="#…"></use></svg>` in the trigger and nested block menus.
+  Register the symbol once in the document (the bundled `bc_*` sprite is loaded
+  globally). Use `icon` for single-color iconfont classes.
 - Interacts with `TranslatePlugin` which provides its own `blockMenuResolver`/`blockMenuActionHandler` pair via `createBlockControllerOptions()`
 
 ### Readonly-aware custom menu items
@@ -139,7 +154,7 @@ and drag cannot partially mutate the range.
 > `plugins/img-toolbar/` — Image alignment, captions, download/copy actions,
 > and block-image conversion.
 
-The built-in **转为行内图片** action replaces the selected image block with a
+The built-in **嵌入型** action replaces the selected image block with a
 paragraph whose first delta is the default `image` inline embed. It preserves
 `src` and valid `width` / `height` values. If the image block has a caption, a
 space and the caption's original formatted deltas follow the embed. Block-level
@@ -158,12 +173,16 @@ removes it without changing Delta attributes. Dragging previews width in the DOM
 and commits `width` / `height` once on mouseup, preserving aspect ratio and
 avoiding high-frequency Yjs writes.
 
-**转为图片块** splits surrounding rich text into same-flavour editable
-snapshots, inserts an image block between them, preserves inline attributes and
-selects the new image. Empty text sides are omitted and no caption is inferred.
-The action is unavailable for readonly content and is rejected with feedback
-when the parent Schema does not accept image blocks. Custom `image` converters
-without the default shell marker remain host-owned.
+Choosing **上下型** from an inline image splits surrounding rich text into
+same-flavour editable snapshots, inserts a relative image block between them,
+preserves inline attributes and selects the new image. Choosing
+**衬于文字下方** or **浮于文字上方** performs the same split but measures the
+inline image against the target children container first and creates the image
+block directly at that visual position with the matching absolute layer. Empty
+text sides are omitted and no caption is inferred. The action is unavailable
+for readonly content and is rejected with feedback when the parent Schema does
+not accept image blocks. Custom `image` converters without the default shell
+marker remain host-owned.
 
 ---
 
@@ -176,6 +195,13 @@ Detects clicks in blank areas that the browser wouldn't otherwise place a caret 
 - **Beside a void/container block** (inside the block's host but outside its `[data-gap-anchor]` content box) → drops a **gap cursor** (`setGapCursor(block, 'before' | 'after')`, side by click position). Typing there inserts an adjacent paragraph and **keeps** the block (it no longer eagerly creates an empty paragraph on click).
 - **Right of a text line** (block padding, outside `.edit-container`) → places a text caret at that line's end (feature-detected `caretRangeFromPoint`).
 - **Root gutter / below all content** → focuses the nearest root-level child: editable → its text end/start; void → its `gap-after`/`gap-before`.
+
+The root `placement-layout` and its absolute descendants are never gap targets.
+The plugin consults `BlockPlacementManager.allowsGapCursor()` and falls back to
+an eligible editable/root-flow neighbor rather than creating a selection beside
+an absolute object. The same policy is shared with host gap rendering and
+keyboard navigation, including dynamic restoration after an object returns to
+relative flow.
 
 Includes a mousedown+click same-target anti-drag guard so a drag-select never drops a gap cursor. Content clicks pass through to native handling unchanged.
 
@@ -254,6 +280,7 @@ new BlockTransformerPlugin([
 ## OrderedBlockPlugin
 
 > `plugins/ordered-extension/` — Auto-numbering for ordered list blocks.
+> Runtime plugin ID: `ordered-block`.
 
 Maintains correct sequential numbering across ordered list blocks. Recalculates `order` props when blocks are inserted, deleted, or have `depth`/`heading` changed. Also shows a prefix-click toolbar to change list style and start number.
 

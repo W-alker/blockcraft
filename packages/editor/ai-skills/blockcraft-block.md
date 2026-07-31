@@ -5,15 +5,15 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-07-28
+> Last updated: 2026-07-31
 
 ## Block Types
 
-| nodeType | Base Class | Has Inline Text? | Has Children? | Template Pattern |
-|----------|------------|-------------------|---------------|-----------------|
-| `void` | `BaseBlockComponent` | No | No | Custom template with `contenteditable="false"` |
-| `editable` | `EditableBlockComponent` | Yes (Y.Text) | No | Empty template, host has `edit-container` class |
-| `block` | `BaseBlockComponent` | No | Yes | Template with `children-render-container` div |
+| nodeType   | Base Class               | Has Inline Text? | Has Children? | Template Pattern                                |
+| ---------- | ------------------------ | ---------------- | ------------- | ----------------------------------------------- |
+| `void`     | `BaseBlockComponent`     | No               | No            | Custom template with `contenteditable="false"`  |
+| `editable` | `EditableBlockComponent` | Yes (Y.Text)     | No            | Empty template, host has `edit-container` class |
+| `block`    | `BaseBlockComponent`     | No               | Yes           | Template with `children-render-container` div   |
 
 ## Choosing Between Editable Text and Native Inputs
 
@@ -47,7 +47,7 @@ import { MyBlockComponent } from "./my.block";
 
 // 1. Define the model interface
 export interface MyBlockModel extends NoEditableBlockNative {
-  flavour: 'my-block';
+  flavour: "my-block";
   nodeType: BlockNodeType.void;
   props: {
     src?: string;
@@ -57,12 +57,12 @@ export interface MyBlockModel extends NoEditableBlockNative {
 
 // 2. Define the schema
 export const MyBlockSchema: IBlockSchemaOptions<MyBlockModel> = {
-  flavour: 'my-block',
+  flavour: "my-block",
   nodeType: BlockNodeType.void,
   component: MyBlockComponent,
   createSnapshot: (src?: string) => ({
     id: generateId(),
-    flavour: 'my-block',
+    flavour: "my-block",
     nodeType: BlockNodeType.void,
     props: { src },
     meta: {},
@@ -81,10 +81,10 @@ export const MyBlockSchema: IBlockSchemaOptions<MyBlockModel> = {
 declare global {
   namespace BlockCraft {
     interface IBlockComponents {
-      'my-block': MyBlockComponent;
+      "my-block": MyBlockComponent;
     }
     interface IBlockCreateParameters {
-      'my-block': [string?];  // matches createSnapshot params
+      "my-block": [string?]; // matches createSnapshot params
     }
   }
 }
@@ -98,7 +98,7 @@ import { BaseBlockComponent } from "../../framework";
 import { MyBlockModel } from "./index";
 
 @Component({
-  selector: 'div.my-block',
+  selector: "div.my-block",
   template: `
     <div class="my-block-content" contenteditable="false">
       @if (props.src) {
@@ -115,7 +115,7 @@ export class MyBlockComponent extends BaseBlockComponent<MyBlockModel> {
   onClickPlaceholder() {
     if (this.isReadonly) return;
     // Handle interaction...
-    this.updateProps({ src: 'new-value' });
+    this.updateProps({ src: "new-value" });
   }
 }
 ```
@@ -124,7 +124,7 @@ export class MyBlockComponent extends BaseBlockComponent<MyBlockModel> {
 
 ```typescript
 @Component({
-  selector: 'div.embed-config-block',
+  selector: "div.embed-config-block",
   template: `
     <div class="embed-config" contenteditable="false">
       <input
@@ -170,31 +170,33 @@ import {
 import { MyEditableBlockComponent } from "./my-editable.block";
 
 export interface MyEditableBlockModel extends EditableBlockNative {
-  flavour: 'my-editable';
+  flavour: "my-editable";
   nodeType: BlockNodeType.editable;
   // Add custom props if needed:
   // props: EditableBlockNative['props'] & { level?: number };
 }
 
-export const MyEditableBlockSchema: IBlockSchemaOptions<MyEditableBlockModel> = {
-  flavour: 'my-editable',
-  nodeType: BlockNodeType.editable,
-  component: MyEditableBlockComponent,
-  createSnapshot: editableBlockCreateSnapShotFn<MyEditableBlockModel>('my-editable'),
-  metadata: {
-    version: 1,
-    label: "My Editable Block",
-    icon: "bc_icon bc_my-editable",
-  },
-};
+export const MyEditableBlockSchema: IBlockSchemaOptions<MyEditableBlockModel> =
+  {
+    flavour: "my-editable",
+    nodeType: BlockNodeType.editable,
+    component: MyEditableBlockComponent,
+    createSnapshot:
+      editableBlockCreateSnapShotFn<MyEditableBlockModel>("my-editable"),
+    metadata: {
+      version: 1,
+      label: "My Editable Block",
+      icon: "bc_icon bc_my-editable",
+    },
+  };
 
 declare global {
   namespace BlockCraft {
     interface IBlockComponents {
-      'my-editable': MyEditableBlockComponent;
+      "my-editable": MyEditableBlockComponent;
     }
     interface IBlockCreateParameters {
-      'my-editable': EditableBlockCreateSnapshotParams;
+      "my-editable": EditableBlockCreateSnapshotParams;
     }
   }
 }
@@ -208,11 +210,11 @@ import { EditableBlockComponent } from "../../framework";
 import { MyEditableBlockModel } from "./index";
 
 @Component({
-  selector: 'div.my-editable-block',
-  template: ``,  // Empty! InlineRuntime renders into host element
+  selector: "div.my-editable-block",
+  template: ``, // Empty! InlineRuntime renders into host element
   standalone: true,
   host: {
-    '[class.edit-container]': 'true',  // REQUIRED for InlineRuntime
+    "[class.edit-container]": "true", // REQUIRED for InlineRuntime
   },
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -247,7 +249,7 @@ import { ParagraphBlockSchema } from "../paragraph-block";
 import { MyContainerComponent } from "./my-container.block";
 
 export interface MyContainerModel extends NoEditableBlockNative {
-  flavour: 'my-container';
+  flavour: "my-container";
   nodeType: BlockNodeType.block;
   props: {
     backgroundColor?: string;
@@ -256,26 +258,26 @@ export interface MyContainerModel extends NoEditableBlockNative {
 }
 
 export const MyContainerSchema: IBlockSchemaOptions<MyContainerModel> = {
-  flavour: 'my-container',
+  flavour: "my-container",
   nodeType: BlockNodeType.block,
   component: MyContainerComponent,
   createSnapshot: () => ({
     id: generateId(),
-    flavour: 'my-container',
+    flavour: "my-container",
     nodeType: BlockNodeType.block,
     props: {
-      backgroundColor: '#f5f5f5',
-      icon: '📌',
+      backgroundColor: "#f5f5f5",
+      icon: "📌",
     },
     meta: {},
-    children: [ParagraphBlockSchema.createSnapshot()],  // Pre-seed with a paragraph
+    children: [ParagraphBlockSchema.createSnapshot()], // Pre-seed with a paragraph
   }),
   metadata: {
     version: 1,
     label: "My Container",
     icon: "bc_icon bc_my-container",
-    renderUnit: true,  // Standalone render unit
-    includeChildren: ['paragraph', 'divider', 'bullet', 'ordered', 'todo'],
+    renderUnit: true, // Standalone render unit
+    includeChildren: ["paragraph", "divider", "bullet", "ordered", "todo"],
     // excludeChildren: ['table'],  // Takes priority over includeChildren
   },
 };
@@ -283,10 +285,10 @@ export const MyContainerSchema: IBlockSchemaOptions<MyContainerModel> = {
 declare global {
   namespace BlockCraft {
     interface IBlockComponents {
-      'my-container': MyContainerComponent;
+      "my-container": MyContainerComponent;
     }
     interface IBlockCreateParameters {
-      'my-container': [];
+      "my-container": [];
     }
   }
 }
@@ -300,7 +302,7 @@ import { BaseBlockComponent } from "../../framework";
 import { MyContainerModel } from "./index";
 
 @Component({
-  selector: 'div.my-container-block',
+  selector: "div.my-container-block",
   template: `
     <span class="container-icon" contenteditable="false">{{ props.icon }}</span>
     <div class="container-content children-render-container">
@@ -310,15 +312,17 @@ import { MyContainerModel } from "./index";
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    '[style.background-color]': 'props.backgroundColor',
+    "[style.background-color]": "props.backgroundColor",
   },
 })
 export class MyContainerComponent extends BaseBlockComponent<MyContainerModel> {
   // Optional callback hook: called whenever the Y.Array<string> children list mutates.
   // Receives the YEvent delta describing what was added/removed.
-  override onChildrenChange = (delta: Y.YEvent<Y.Array<string>>['changes']['delta']) => {
+  override onChildrenChange = (
+    delta: Y.YEvent<Y.Array<string>>["changes"]["delta"],
+  ) => {
     // Called when children array changes
-  }
+  };
 }
 ```
 
@@ -329,7 +333,7 @@ export class MyContainerComponent extends BaseBlockComponent<MyContainerModel> {
 ### 1. Export from `blocks/index.ts`
 
 ```typescript
-export { MyBlockSchema, MyBlockComponent } from './my-block';
+export { MyBlockSchema, MyBlockComponent } from "./my-block";
 ```
 
 ### 2. Add schema to SchemaManager
@@ -338,7 +342,7 @@ export { MyBlockSchema, MyBlockComponent } from './my-block';
 // Where schemas are constructed (usually in editor.ts)
 const schemas = new SchemaManager([
   ParagraphBlockSchema,
-  MyBlockSchema,  // Add here
+  MyBlockSchema, // Add here
   // ...
 ]);
 ```
@@ -367,7 +371,7 @@ this._native            // Underlying NativeBlockModel (protected)
 // ── Mutations ──
 this.updateProps({ key: value })       // Creates undo history; respects readonly
 this.setInitProps({ key: value })      // No undo history; still respects readonly
-this.updateMeta({ key: value })        // Mutates meta (ORIGIN_SKIP_SYNC, no broadcast)
+this.updateMeta({ key: value })        // Yjs meta mutation; null deletes a key
 
 // ── Effective readonly ──
 this.isReadonly                         // self, ancestor, or document lock
@@ -442,6 +446,10 @@ metadata: {
 }
 ```
 
+Custom schema assemblies that use the standard absolute path must register
+`PlacementLayoutBlockSchema` once alongside their positionable blocks. The
+bundled editor already includes it.
+
 `viewRetention` accepts `'virtual'` (the default) or `'keep-alive'`. A
 keep-alive block pins its containing direct-root render unit for the remaining
 component lifetime, including when the block is nested. It does not force an
@@ -453,6 +461,365 @@ browsing contexts or active media playback. Ordinary blocks should remain
 virtual. Built-in `audio`, `video`, `embed`, `figma-embed`, and `juejin-embed`
 schemas opt in. A host can override any schema policy through
 `DocConfig.virtualization.resolveViewRetention`; see `blockcraft-app.md`.
+
+### Object Layout and Placement
+
+Positioning is an opt-in Schema capability. Add `placement` to the block props
+type and declare the supported modes:
+
+```typescript
+import type {BlockPositionState} from '@ccc/blockcraft'
+
+props: {
+  // block-specific props...
+  placement?: BlockPositionState
+}
+
+metadata: {
+  version: 1,
+  label: 'My visual block',
+  placement: {modes: ['relative', 'absolute']},
+}
+```
+
+An omitted `props.placement` means relative flow. Absolute state is persisted as
+`{mode: 'absolute', x, y, layer?}`, where `x` is a percentage of the root
+children render container width, `y` is a CSS pixel offset from its top, and
+`layer` is `'under' | 'over'`. The default `over` tier is omitted when
+persisted. The base block host applies `position/left/top` only when the Schema
+supports absolute. Standard absolute placement is root-only. The manager moves
+all absolute image/shape objects under one hidden `placement-layout` at the end
+of `root.children`; relative objects remain direct root flow children:
+
+```text
+root
+├─ paragraph
+├─ image                 # relative / top-bottom
+└─ placement-layout      # infrastructure, zero height
+   ├─ image              # absolute
+   └─ shape              # absolute
+```
+
+The renderer uses explicit non-negative tiers: background, `under` (`0`),
+ordinary flow children (`1`), then `over` (`2`). This keeps an under block above
+the page background and an over block above text and media regardless of DOM
+order. The layout creates no stacking context and does not intercept pointers.
+Stale placement props on a flow-only Schema are ignored. A nested object cannot
+enter absolute placement in this phase. The infrastructure Schema accepts
+future custom positionable flavours; normalization keeps a child there only
+when its own Schema declares absolute capability and its placement is absolute.
+
+Use the user-facing object-layout API rather than exposing positioning modes:
+
+```typescript
+doc.placement.setObjectLayout(block, "under"); // lifts to absolute + under
+doc.placement.insertAbsoluteSnapshot(snapshot, {
+  anchorRect: doc.selection.getSelectionRect(),
+  layer: "over",
+});
+doc.placement.updateAbsolute(block, { x: 25, y: 120 });
+doc.placement.startDrag(pointerEvent, block);
+doc.placement.setObjectLayout(block, "over");
+doc.placement.setObjectLayout(block, "top-bottom"); // returns to relative flow
+```
+
+`insertAbsoluteSnapshot()` is the direct-creation path for new positionable
+objects. It normalizes the snapshot placement and returns the inserted block
+ID. If the root layout already exists, it appends the object there. If no
+layout exists yet, it inserts one nested snapshot whose initial child is the
+object; it does not create the parent and then try to look it up during the
+same Yjs transaction. The object therefore never appears as a temporary
+ordinary root-flow child.
+
+`startDrag()` accepts the initiating `PointerEvent`. It uses
+`pointermove / pointerup / pointercancel` on the capture path, previews movement
+with a transform and performs one Yjs props write on release. Do not add native
+`draggable`, `dragstart`, `dragover`, or `drop` handling for object positioning.
+
+The shared UI descriptors are exported as `BLOCK_OBJECT_LAYOUT_OPTIONS`:
+
+| State        | Label        | Icon                    |
+| ------------ | ------------ | ----------------------- |
+| `inline`     | 嵌入型       | `bc_fuwenben-qianruzuo` |
+| `top-bottom` | 上下型       | `bc_fuwenben-shangxia`  |
+| `under`      | 衬于文字下方 | `bc_cengji-xia`         |
+| `over`       | 浮于文字上方 | `bc_cengji-shang`       |
+
+The manager can apply the three block states directly. A plugin that owns an
+inline representation registers `BlockObjectLayoutAdapter.toInline()` for its
+flavour; this is how image blocks and future custom shapes expose the same
+**嵌入型** action without putting flavour-specific conversion logic in
+BlockController.
+
+Placement props pass through `BlockComponent.updateProps()` and structural
+moves pass through `DocCRUD`, so readonly enforcement, Yjs collaboration and
+undo/redo use the normal data path.
+On absolute → top-bottom, `setObjectLayout()` uses `setMode()` to read the
+current visual center once,
+chooses the nearest mounted ordinary root-flow sibling, inserts before
+or after that sibling's midpoint, and clears `placement` in one transaction.
+It falls back to the end of root flow, before the layout, when no valid geometry
+exists. It does not persist or restore the object's old logical position.
+`resolveFlowAnchor()` returns a transient stable-ID
+`{parentId, anchorBlockId, side}` descriptor and `reanchorToFlow()` lets
+conversion code reuse the same move without clearing props; call both only on
+explicit conversion paths because anchor resolution reads DOM geometry.
+`getRootFlowChildIds()`, `getAbsoluteBlockIds()`, `isPlacementLayout()` and
+`isInAbsoluteLayout()` expose model-first classification for integrations.
+`allowsGapCursor()` is the shared eligibility policy used by block hosts,
+selection keyboard handling and `BlockGapCreatorPlugin`; it rejects both the
+layout and absolute objects. `isAbsoluteObjectSelection()` recognizes the
+whole-object selection that Input must isolate from ordinary text entry.
+Under root virtualization, the zero-height `placement-layout` is not
+keep-alive. The virtualizer builds a model-only vertical index from each
+child's root-relative `placement.y` and estimated height, including `wr/ar`
+media dimensions and rotated fixed-size shape bounds. If any band intersects
+the viewport plus one viewport of pre-rendering, the layout root unit mounts;
+otherwise it may detach unless Selection, drag, resize or another interaction
+owns a lease. The normal-flow height map is unchanged and scrolling performs
+no child DOM measurements. Because the layout is one root render unit, one
+visible child currently materializes all absolute siblings. A materialized
+`under` block remains recoverable through a narrow edge hit band; recovery
+publishes a whole-block model selection instead of relying on DOM hit testing
+through the content above it.
+
+### Root-Relative Object Sizing
+
+Use Schema `objectSizing` for image-, video- or iframe-like blocks whose width
+must follow the root content box:
+
+```typescript
+interface PreviewModel extends NoEditableBlockNative {
+  flavour: "preview";
+  props: BlockObjectSizeProps & { url: string };
+}
+
+const PreviewSchema: IBlockSchemaOptions<PreviewModel> = {
+  // flavour, nodeType, component and createSnapshot omitted
+  metadata: {
+    version: 1,
+    label: "Preview",
+    objectSizing: {
+      defaultWr: 100,
+      defaultAr: 16 / 9,
+    },
+  },
+} as IBlockSchemaOptions<PreviewModel>;
+```
+
+`wr` is the percentage of the root children content width; `ar` is
+`width / height`. Resolve dimensions through the document-owned manager:
+
+```typescript
+const dimensions = this.doc.objectSizing.resolve(this.flavour, this.props);
+// null until a responsive root width is measurable
+```
+
+The exported pure helpers `normalizeObjectSize()`,
+`resolveObjectDimensions()` and `deriveObjectSizeFromPixels()` are available to
+model-only renderers and adapters. They clamp `wr` to `[1, 100]`, reject invalid
+ratios and report whether dimensions came from `ratio`, `legacy` or `default`.
+Do not add a `ResizeObserver` per block or read root geometry during change
+detection.
+
+New built-in images and videos start at `wr: 100`; intrinsic metadata fills a
+missing `ar`. Legacy `width/height` remains a compatibility input and is not
+rewritten on load. The first completed Pointer Events resize writes `wr/ar`
+once and clears the old fields in the same `updateProps()` transaction. The
+gesture captures its root-width basis, so a concurrent container resize cannot
+change the committed ratio.
+
+### Visual Resource Placeholder Extension
+
+Use the standalone `BcResourcePlaceholderDirective` when a custom block has an
+image-, video- or iframe-like resource. It composes with the stable frame and
+`block-resizer`; it does not add a Schema field or document service:
+
+```typescript
+import {
+  BaseBlockComponent,
+  BcResourcePlaceholderDirective,
+  ResourceIntrinsicSize,
+  ResizeContainerComponent,
+} from "@ccc/blockcraft";
+
+@Component({
+  // ...
+  imports: [BcResourcePlaceholderDirective, ResizeContainerComponent],
+  template: `
+    <div
+      #frame
+      bcResourcePlaceholder
+      [resourceElement]="media"
+      [resourceKey]="props.url"
+      (resourceIntrinsicSize)="onIntrinsicSize($event)"
+    >
+      <img #media [src]="props.url" />
+      <block-resizer [container]="frame" />
+    </div>
+  `,
+})
+export class PreviewBlockComponent extends BaseBlockComponent<PreviewModel> {
+  onIntrinsicSize(size: ResourceIntrinsicSize) {
+    if (this.props.ar == null) this.setInitProps({ ar: size.ar });
+  }
+}
+```
+
+The default adapter is inferred from `img`, `video` or `iframe`. Hosts can pass
+`resourceAdapter` for another element contract and `resourceTimeoutMs` for a
+bounded load. `resourceStateChange` emits `idle | loading | ready | error`;
+the directive exposes `retry()` for custom UI. The exported
+`imageResourcePlaceholderAdapter`, `videoResourcePlaceholderAdapter` and
+`iframeResourcePlaceholderAdapter` can also be composed by non-Angular
+surfaces. Always keep the frame's size in model/CSS state—the directive owns
+loading presentation, not geometry.
+
+For local images, read metadata before creating the persisted snapshot:
+
+```typescript
+const size = await readImageIntrinsicSize(file);
+const localUrl = fileService.createObjectURL(file);
+const snapshot = ImageBlockSchema.createSnapshot({
+  src: localUrl,
+  wr: 100,
+  ...(size ? { ar: size.ar } : {}),
+});
+```
+
+`ImageBlockCreateInput` is the short object form `{src, wr?, ar?}`. The legacy
+positional `createSnapshot(src, width?, height?, caption?)` form remains
+supported. `readImageIntrinsicSize()` prefers `createImageBitmap` for
+`Blob/File` and falls back to temporary Object URL + `HTMLImageElement` for
+WebKit compatibility; failure returns `null`, so callers should retain their
+Schema fallback ratio.
+
+### Built-in Word-like Shape Block
+
+The built-in shape feature is a `shape` container block with zero or one
+collaborative `shape-text` editable child. Register both schemas together:
+
+```typescript
+import {
+  ShapeBlockSchema,
+  ShapeTextBlockSchema,
+  ShapeToolbarPlugin,
+} from "@ccc/blockcraft";
+
+const schemas = new SchemaManager([
+  // ...
+  ShapeBlockSchema,
+  ShapeTextBlockSchema,
+]);
+
+const plugins = [
+  // ...
+  new ShapeToolbarPlugin(),
+];
+```
+
+`ShapeBlockSchema.createSnapshot(shapeType?, text?)` accepts one of the 12
+exported `SHAPE_KINDS`: rectangle, rounded rectangle, ellipse, triangle,
+diamond, star, right arrow, left-right arrow, parallelogram, hexagon, speech
+bubble, or notched right arrow. `ShapeBlockProps` persists width/height, fill,
+outline, text color/alignment, optional `rotation` in degrees and optional
+placement. `normalizeShapeProps()` returns `NormalizedShapeBlockProps`, which
+guarantees a finite rotation normalized into `[0, 360)`. Rendering uses
+normalized static SVG paths. `ShapeDefinition` stores `type`, `label`, `path`
+and `textInsets`; it does not carry a second iconfont class. The exported
+`ShapeIconComponent` renders that trusted path as a `currentColor` outline for
+the fixed toolbar's 12-item shape picker, so shape previews remain identical to
+their inserted geometry. The fixed **插入形状** button and other toolbar/menu
+glyphs continue to use iconfont classes.
+
+An empty shape snapshot has no child block. Passing non-empty text or deltas
+creates the single `shape-text` child; double-clicking an empty shape creates
+that child through `DocChain` and focuses it. This keeps insertion snapshots
+free of placeholder paragraphs while preserving normal Y.Text collaboration
+once the user starts editing.
+
+The block supports eight-direction resizing, drag rotation and only the three
+block object layouts: **上下型**, **衬于文字下方**, and **浮于文字上方**.
+Under/over enter absolute placement; top-bottom returns to relative flow.
+Selecting an unlocked shape shows one rotation handle above the resize outline.
+It uses Pointer Events, previews outside Angular through one animation frame,
+snaps to 15° while Shift is held, and commits one `updateProps()` write on
+pointerup. Rotated resize deltas are converted into the shape's local axes and
+west/north compensation is converted back to page coordinates before absolute
+placement is updated. Shape text remains a normal Y.Text editing surface and
+therefore participates in collaboration, undo/redo and inline formatting while
+rotating visually with its parent shape.
+
+`ShapeRotateCommit`, `calculateShapeRotation()`, `rotateShapeVector()` and
+`normalizeShapeRotation()` are exported for custom shape UI and testing.
+Pointer cancel, Escape, window blur and component destruction restore the
+pre-gesture transform without writing props.
+
+`ShapeResizerComponent` also accepts optional `resizeCalculator`,
+`previewMirror`, `rotationLabel` and `borderDraggable` inputs. The defaults
+preserve shape behavior. Fixed-size editable objects such as WordArt can reuse
+the same handles while supplying their own resize policy; enabling
+`borderDraggable` adds four invisible edge hit regions without covering the
+object's editable interior.
+
+The bundled fixed toolbar creates a shape through
+`insertAbsoluteSnapshot()`, so the first persisted state is a direct child of
+the root `placement-layout` with the default `over` tier. The nested
+`shape-text` editing surface is visually part of the shape: it has no separate
+border, outline, shadow, background or block margin.
+
+### Built-in Editable WordArt Block
+
+The built-in `word-art` flavour is an `editable` block, not a container. Its
+text is stored directly in the block's Y.Text and participates in the normal
+Input/IME, collaboration and undo path; it never creates a `shape-text` child.
+Register the Schema and object toolbar together:
+
+```typescript
+import { WordArtBlockSchema, WordArtToolbarPlugin } from "@ccc/blockcraft";
+
+const schemas = new SchemaManager([
+  // ...
+  WordArtBlockSchema,
+  PlacementLayoutBlockSchema,
+]);
+
+const plugins = [
+  // ...
+  new WordArtToolbarPlugin(),
+];
+```
+
+`WordArtBlockSchema.createSnapshot(text?, props?)` defaults to `艺术字`. The
+exported flat `WordArtBlockProps` stores fixed width/height, rotation,
+typography, solid or linear-gradient fill, outline, shadow, alignment, a safe
+affine/perspective effect and optional placement. Gradient colors/stops use
+parallel primitive arrays so props remain valid BlockCraft `SimpleValue`
+records. `normalizeWordArtProps()` clamps external values and
+`resolveWordArtPresentation()` resolves portable CSS without accepting raw CSS
+expressions. `WORD_ART_PRESETS`, `WORD_ART_FONT_OPTIONS`,
+`getWordArtPreset()` and `wordArtPresentationToInlineStyle()` are public.
+
+The interaction is object/edit dual-state. Clicking text or blank space enters
+its direct text surface; normal clicks inside an active editor keep native
+caret placement. Enter also enters editing, while Escape returns to the
+whole-object selection. Object movement starts only from the four invisible
+hit regions on the visible outline—there is no separate move handle. The
+bundled fixed toolbar inserts an absolute `over` WordArt near the saved
+selection. Its **插入艺术字** control is a five-card visual preset dropdown;
+choosing a card applies that preset while creating the default `艺术字`,
+navigates to its mounted view and selects all text. The object toolbar exposes
+classic presets, safe font families, solid/gradient fill,
+outline, shadow toggle, letter spacing, iconfont horizontal/vertical alignment
+submenus, effects, object layout, stack order and deletion. Its range controls
+share the shape toolbar's track, thumb and keyboard-focus treatment.
+
+The eight handles and rotation control reuse `ShapeResizerComponent`. Corners
+scale width, height and font size proportionally; left/right handles change
+width for text reflow; top/bottom handles change height. Pointer preview stays
+DOM-only and one `updateProps()` write is committed on release. WordArt
+supports the same **上下型 / 衬于文字下方 / 浮于文字上方** placement states
+as shapes and has no inline representation.
 
 Do not assign `this.props.foo = ...`, mutate `this.meta`, or write raw
 `Y.Text`/`Y.Map` from a custom Block/Plugin. Use `updateProps()`, guarded inline
@@ -468,7 +835,14 @@ an unlocked ancestor containing a locked descendant cannot be deleted or moved.
 Readonly blocks remain selectable/copyable and may keep read-only interactions
 such as links, previews and downloads. Root cannot be persistently locked.
 
-> **Gap-space behavior**: Void blocks (`nodeType === void`) automatically prepend and append a zero-width gap space element in `ngAfterViewInit`. This makes it possible for the cursor to land *before* and *after* the block. Container blocks (`block` nodeType) do not currently get gap spaces but the framework reserves the right to add them — see `createBlockGapSpace()` in `framework/utils/`.
+> **Gap-space behavior**: Eligible non-leaf void/container blocks dynamically
+> receive direct before/after zero-width gap spaces so a caret can land beside
+> them. The root `placement-layout` and blocks whose persisted placement is
+> absolute never receive those gaps. A mounted object removes them when it
+> enters absolute placement and restores them when it returns to relative flow.
+> `SelectionManager` also degrades stale disallowed gap snapshots to a
+> whole-block selection. See `createBlockGapSpace()` in `framework/utils/` and
+> `BlockPlacementManager.allowsGapCursor()`.
 
 ## EditableBlockComponent Additional API
 
@@ -508,33 +882,46 @@ this.onTextChange  // Subject<{ op: DeltaOperation[]; tr: Y.Transaction }>
 
 ```typescript
 // Insert relative to an existing block (parent inferred)
-doc.chain().insertAfter(existingBlock, 'my-block', ...params).run()
-doc.chain().insertBefore(existingBlock, 'paragraph', 'Hello').run()
+doc
+  .chain()
+  .insertAfter(existingBlock, "my-block", ...params)
+  .run();
+doc.chain().insertBefore(existingBlock, "paragraph", "Hello").run();
 
 // Insert at a specific child index inside a parent
-doc.chain().insert(parentId, index, 'my-block', ...params).run()
+doc
+  .chain()
+  .insert(parentId, index, "my-block", ...params)
+  .run();
 
 // Insert pre-built snapshots (no schema params)
-doc.chain().insertSnapshots(parentId, index, [snapshotA, snapshotB]).run()
+doc.chain().insertSnapshots(parentId, index, [snapshotA, snapshotB]).run();
 
 // Replace a block
-doc.chain().replaceWith(blockId, 'my-block', ...params).run()
+doc
+  .chain()
+  .replaceWith(blockId, "my-block", ...params)
+  .run();
 
 // Delete
-doc.chain().deleteById(blockId).run()
+doc.chain().deleteById(blockId).run();
 
 // Cursor positioning (queued, runs after the mutations land)
-doc.chain()
-  .insertAfter(block, 'paragraph', 'New paragraph')
-  .setCursorAtBlock(newBlockId, true)   // atStart
-  .run()
+doc
+  .chain()
+  .insertAfter(block, "paragraph", "New paragraph")
+  .setCursorAtBlock(newBlockId, true) // atStart
+  .run();
 
 // Custom async work between steps
-doc.chain()
-  .insertAfter(block, 'paragraph', 'New paragraph')
-  .task(async ctx => { await fetchSomething(); })
+doc
+  .chain()
+  .insertAfter(block, "paragraph", "New paragraph")
+  .task(async (ctx) => {
+    await fetchSomething();
+  })
   .setCursorAtBlock(newBlockId, false)
-  .run()
+  .run();
 ```
 
 > Always prefer `DocChain` over calling `doc.crud` directly. The chain handles transaction grouping, undo history boundaries, and cursor restoration in one place.
@@ -553,23 +940,23 @@ metadata: {
 
 Supported values:
 
-| Value | Meaning |
-|-------|---------|
-| `document` | Top-level document scope; normally only `root` declares this. |
-| `table` | Closed table scope. Descendants share one table selection domain. |
-| `columns` | Layout scope whose child columns are transparent to text selection. |
-| `container` | Closed generic container scope such as callout/highlight. |
+| Value                   | Meaning                                                                             |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| `document`              | Top-level document scope; normally only `root` declares this.                       |
+| `table`                 | Closed table scope. Descendants share one table selection domain.                   |
+| `columns`               | Layout scope whose child columns are transparent to text selection.                 |
+| `container`             | Closed generic container scope such as callout/highlight.                           |
 | `transparent` / omitted | This block does not create a scope; descendants inherit the nearest ancestor scope. |
 
 Built-in declarations:
 
-| Flavour | `selectionScope` |
-|---------|------------------|
-| `root` | `document` |
-| `table` | `table` |
-| `columns` | `columns` |
-| `callout` | `container` |
-| `mermaid` / `mermaid-textarea` | `transparent` |
+| Flavour                        | `selectionScope` |
+| ------------------------------ | ---------------- |
+| `root`                         | `document`       |
+| `table`                        | `table`          |
+| `columns`                      | `columns`        |
+| `callout`                      | `container`      |
+| `mermaid` / `mermaid-textarea` | `transparent`    |
 
 `SelectionManager` reads this field through the registered schema. Do not add
 flavour-specific checks in input, toolbar, or selection-class code; derive
@@ -582,17 +969,17 @@ both their view class and schema:
 
 ```typescript
 export class MySourceBlock extends EditableBlockComponent<MySourceModel> {
-  override plainTextOnly = true
+  override plainTextOnly = true;
 }
 
 export const MySourceSchema: IBlockSchemaOptions<MySourceModel> = {
   // ...
   metadata: {
     version: 1,
-    label: 'Source',
+    label: "Source",
     plainTextOnly: true,
   },
-}
+};
 ```
 
 The component property governs mounted rendering. The optional
@@ -602,12 +989,63 @@ The component property governs mounted rendering. The optional
 writes use readonly-guarded `doc.crud.formatText(blockId, index, length, attrs)`;
 do not resolve a ComponentRef solely to mutate an offscreen `Y.Text`.
 
-## Editable Block Placeholder (Schema field)
+## Block Instance Metadata
+
+BlockCraft exposes a small, generic instance-metadata contract for editable
+placeholders and container direct-child constraints:
+
+```typescript
+interface IBaseMetadata {
+  plh?: string;
+  plhMode?: "focused" | "always";
+  incl?: string[];
+  excl?: string[];
+}
+```
+
+`incl` / `excl` are intentionally abbreviated persistent keys. A Schema must
+explicitly opt a non-editable container into instance child constraints:
+
+```typescript
+metadata: {
+  // The Schema remains the immutable upper bound.
+  includeChildren: ['paragraph', 'image', 'callout'],
+  excludeChildren: ['table-*'],
+  instanceMeta: {
+    childConstraints: true,
+  },
+  allowEmptyChildren: true,
+}
+```
+
+- Editable blocks support `plh` and `plhMode` without a Schema opt-in.
+- Non-editable containers do not render placeholder metadata. A content region
+  should persist `plh` / `plhMode` on an empty editable child.
+- `incl` / `excl` are interpreted only when
+  `instanceMeta.childConstraints: true`.
+- `allowEmptyChildren: true` preserves an empty container when its final child
+  is deleted.
+- Persisted `incl` / `excl` on a Schema that did not opt in are inert. The
+  built-in `table-cell`, `column`, and `callout` Schemas do not opt in.
+
+Instance metadata can narrow but never widen the Schema contract. `excl` wins
+over `incl`; an explicitly empty `incl` allows no direct child. Patterns use
+the existing Schema syntax (`*`, `table-*`, `*-embed`), and malformed rules
+fail closed.
+
+Use `doc.canInsertChild(parentId, childFlavour)` for menus and drag/drop.
+`DocCRUD` enforces the same rule for insert, move and replace. The bundled
+`render-unit` block is the generic container for host-defined content regions;
+it opts into child constraints. Template hosts should create it together with
+an empty editable child that owns any persistent placeholder.
+
+## Editable Block Placeholder (Schema and instance fields)
 
 Editable blocks declare a placeholder via `metadata.placeholder` on their
 schema. The text is rendered by `PlaceholderPlugin` at runtime — see
 `blockcraft-plugins-util.md` → "PlaceholderPlugin" for the rendering /
-override APIs. This section documents only the schema-side field.
+override APIs. A particular block can override the flavour-level configuration
+with persistent `meta.plh`.
 
 ```typescript
 import { BlockPlaceholderConfig } from "../../framework";
@@ -628,31 +1066,72 @@ metadata: {
 }
 ```
 
+### Per-block override
+
+`IBaseMetadata.plh?: string` is the instance-level field. It persists through
+Yjs and Snapshot import/export:
+
+```typescript
+// Set before insertion.
+const snapshot = ParagraphBlockSchema.createSnapshot();
+snapshot.meta.plh = "请输入摘要";
+snapshot.meta.plhMode = "always";
+
+// Update an existing mounted block.
+block.updateMeta({ plh: "请输入摘要" });
+block.updateMeta({ plhMode: "always" });
+block.updateMeta({ plhMode: "focused" });
+block.updateMeta({ plh: "" }); // Explicitly disable this block's placeholder.
+block.updateMeta({ plh: null }); // Delete the key and restore fallback resolution.
+```
+
+`updateMeta()` accepts `null` as a deletion command for any metadata key; it
+does not persist the null value. Once a Snapshot has been inserted, do not
+assign `block.meta.plh` directly.
+
+`meta.plh` deliberately accepts only a string. It does not duplicate the
+Schema's heading map: when `plh` is absent, the existing Schema configuration
+still resolves against `props.heading`.
+
+**Plugin resolution order**:
+
+1. Valid string `block.meta.plh` (`''` explicitly disables).
+2. `PlaceholderPluginOptions.overrides[flavour]`.
+3. `schema.metadata.placeholder`.
+4. No placeholder.
+
+Malformed persisted non-string `plh` values are ignored and fall through
+without throwing or rewriting the document.
+
+`plhMode` omitted (or `'focused'`) preserves focused-only behavior.
+`'always'` displays a non-empty instance `plh` while the block is semantically
+empty, including in readonly mode.
+
 **Resolution rules** (`resolvePlaceholderText` pure helper, exported from
 `framework/block-std/schema/block-schema.ts`):
 
-| Config | `props.heading` | Result |
-|--------|-----------------|--------|
-| `undefined` | any | `''` (not rendered) |
-| `'foo'` | any | `'foo'` |
-| `{ default: 'A' }` | undefined | `'A'` |
-| `{ default: 'A' }` | 1 | `'A'` (no matching heading entry) |
-| `{ default: 'A', heading: { 1: 'H1' } }` | 1 | `'H1'` |
-| `{ default: 'A', heading: { 1: 'H1' } }` | 2 | `'A'` (fallback to default) |
-| `{ heading: { 1: 'H1' } }` | undefined | `''` (no default) |
+| Config                                   | `props.heading` | Result                            |
+| ---------------------------------------- | --------------- | --------------------------------- |
+| `undefined`                              | any             | `''` (not rendered)               |
+| `'foo'`                                  | any             | `'foo'`                           |
+| `{ default: 'A' }`                       | undefined       | `'A'`                             |
+| `{ default: 'A' }`                       | 1               | `'A'` (no matching heading entry) |
+| `{ default: 'A', heading: { 1: 'H1' } }` | 1               | `'H1'`                            |
+| `{ default: 'A', heading: { 1: 'H1' } }` | 2               | `'A'` (fallback to default)       |
+| `{ heading: { 1: 'H1' } }`               | undefined       | `''` (no default)                 |
 
 **Built-in defaults** (configured on shipped schemas):
 
-| Flavour | placeholder |
-|---------|-------------|
-| `paragraph` | `{ default: '输入"/"呼出菜单', heading: { 1: '一级标题', 2: '二级标题', 3: '三级标题' } }` |
-| `bullet` / `ordered` | `'列表项'` |
-| `todo` | `'待办事项'` |
-| `blockquote` | _none_ (uses its own `::before` for the left quote rule) |
+| Flavour              | placeholder                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------ |
+| `paragraph`          | `{ default: '输入"/"呼出菜单', heading: { 1: '一级标题', 2: '二级标题', 3: '三级标题' } }` |
+| `bullet` / `ordered` | `'列表项'`                                                                                 |
+| `todo`               | `'待办事项'`                                                                               |
+| `blockquote`         | _none_ (uses its own `::before` for the left quote rule)                                   |
 
-**Caveat — blocks with their own `::before`**:
-- `PlaceholderPlugin` writes a `::before` pseudo-element on `.edit-container`. If your block already styles its own `::before` on the same element (e.g. `blockquote` does for the left quote rule), the two pseudo-elements collide.
-- In that case **omit `metadata.placeholder` entirely** from the schema, OR pass `{ overrides: { '<flavour>': null } }` to `PlaceholderPlugin`. `blockquote` is the built-in example: its schema has no placeholder for this reason.
+`PlaceholderPlugin` targets `.bc-placeholder-target::before` on editable
+blocks. Do not claim `::before` on the same target; place decorative chrome on
+the host or a sibling.
 
 > Without `PlaceholderPlugin` in the `DocConfig.plugins` array, the schema
 > field is inert — nothing is rendered. The plugin is part of the default
@@ -671,4 +1150,5 @@ metadata: {
 - [ ] Global type declarations in `declare global { namespace BlockCraft { ... } }`
 - [ ] Schema exported from `blocks/index.ts`
 - [ ] Schema added to `SchemaManager` constructor
+- [ ] Visual blocks that need free positioning declare `props.placement` + `metadata.placement`
 - [ ] Styles added in `themes/blocks/` if needed

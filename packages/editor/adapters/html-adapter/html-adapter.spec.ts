@@ -137,5 +137,48 @@ describe('HtmlAdapter', () => {
       expect(children[1]?.props['name']).toBe('Theme song');
       expect(children[1]?.props['size']).toBe(2048);
     });
+
+    it('round-trips responsive video wr/ar while keeping legacy width support', async () => {
+      const snapshot = createRootSnapshot([
+        createVoidSnapshot('video-responsive', 'video', {
+          url: 'https://cdn.example.com/responsive.mp4',
+          sourceType: 'link',
+          wr: 62.5,
+          ar: 16 / 9,
+        }),
+      ]);
+
+      const html = await adapter.toHtml(snapshot);
+      expect(html).toContain('data-bc-wr="62.5"');
+      expect(html).toContain(`data-bc-ar="${16 / 9}"`);
+      expect(html).toContain('width: 62.5%');
+
+      const imported = await adapter.toBlockSnapshot(html);
+      const video = (imported.children as IBlockSnapshot[])[0];
+      expect(video.props['wr']).toBe(62.5);
+      expect(video.props['ar']).toBeCloseTo(16 / 9);
+      expect(video.props['width']).toBeUndefined();
+    });
+
+    it('exports responsive image sizing without legacy pixel attributes', async () => {
+      const image: IBlockSnapshot = {
+        id: 'image-responsive',
+        flavour: 'image',
+        nodeType: BlockNodeType.block,
+        props: {
+          src: 'https://cdn.example.com/image.png',
+          wr: 45,
+          ar: 3 / 2,
+        },
+        meta: {},
+        children: [],
+      };
+
+      const html = await adapter.toHtml(createRootSnapshot([image]));
+      expect(html).toContain('data-bc-wr="45"');
+      expect(html).toContain('data-bc-ar="1.5"');
+      expect(html).toContain('width: 45%');
+      expect(html).not.toMatch(/<img[^>]*width="45"/);
+    });
   });
 });

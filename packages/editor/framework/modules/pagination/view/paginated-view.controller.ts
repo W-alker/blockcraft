@@ -135,6 +135,17 @@ export class PaginatedViewController {
           .pipe(throttleTime(0, animationFrameScheduler, {leading: false, trailing: true}))
           .subscribe(() => this.scheduleRecompute()),
       );
+      const objectSizing = this.doc.objectSizing;
+      if (objectSizing?.widthChange$) {
+        this._subs.add(
+          objectSizing.widthChange$.subscribe(() => {
+            this._runShadowMutation('object-sizing-change', () =>
+              this.layoutCoordinator.refreshObjectSizingEstimates(),
+            );
+            this.scheduleRecompute();
+          }),
+        );
+      }
       this._subs.add(
         this.doc.model.contentChange$.subscribe(change => {
           this._shadowLayout = null;

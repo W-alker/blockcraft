@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-07-28
+> Last updated: 2026-07-30
 
 ## Architecture Overview
 
@@ -406,6 +406,24 @@ the final caret or range explicitly through `SelectionManager` (`setCursorAt()`,
 `setCursorAtBlock()`, `replay()`, etc.). Do not call `recalculate()` merely to
 confirm a programmatic write.
 
+### Per-block placeholder metadata
+
+`IBaseMetadata.plh?: string` stores an editable block's instance-level
+placeholder override. An empty string explicitly disables the placeholder for
+that block; absence lets `PlaceholderPlugin` fall back to its flavour override
+and then Schema `metadata.placeholder`.
+
+Set the field on a Snapshot before insertion, or call
+`block.updateMeta({plh: value})` on a mounted block. `updateMeta({plh: null})`
+deletes the key and restores fallback resolution. The method's public patch
+type now describes its existing runtime rule that `null` deletes any metadata
+key. Do not mutate `block.meta` or a raw Y.Map directly.
+
+DocCRUD's existing `onMetaUpdate$` stream reports local, remote and Undo/Redo
+changes by stable block ID. `PlaceholderPlugin` keeps one doc-level
+subscription and filters it to the active block and `plh` key; metadata remains
+excluded from `BlockModelGraph.contentChange$`.
+
 ## IBlockSnapshot Format
 
 ```typescript
@@ -426,10 +444,12 @@ Snapshots are the serialization format used for:
 - HTML/Markdown import/export
 - Document persistence
 
-Persistence/export snapshots retain `meta.lock`. Clipboard serialization is the
-deliberate exception: copy clones the snapshot and recursively removes the lock
-owner before producing BlockSnapshot/HTML/Markdown/plain payloads, so pasting
-protected content never recreates permission state.
+Persistence/export snapshots retain `meta.plh` and `meta.lock`. The native
+BlockCraft Snapshot clipboard payload also preserves `plh`; HTML/Markdown/plain
+retention remains adapter-dependent. `lock` is the deliberate copy exception:
+copy clones the source snapshot and recursively removes the lock owner before
+producing any clipboard payload, so a native BlockCraft paste keeps its
+placeholder but never recreates permission state.
 
 ## Undo/Redo
 

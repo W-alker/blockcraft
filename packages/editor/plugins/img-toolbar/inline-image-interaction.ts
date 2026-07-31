@@ -6,8 +6,15 @@ import {
   generateId,
   IBlockSnapshot,
   InlineImageData,
+  InlineImageWrapOptions,
+  InlineImageWrapSide,
+  normalizeInlineImageWrapOptions,
   readInlineImageDelta,
 } from '../../framework';
+import {
+  InlineFloatGeometry,
+  resolveInlineFloatGeometry,
+} from '../../framework/block-std/inline/runtime/inline-float-layout';
 import {sliceDelta} from '../../global';
 
 const deltaLength = (delta: DeltaInsert) =>
@@ -68,6 +75,80 @@ export function calculateInlineImageSize(
     : Math.max(1, Math.round(positiveNumber(fallback.renderedHeight) ?? width));
 
   return {width, height};
+}
+
+export interface InlineImageWrapAttributes {
+  wrap: true
+  side: InlineImageWrapSide
+  x: number
+  gap?: number
+}
+
+export function enableInlineImageWrap(
+  current: Partial<InlineImageData>,
+  defaults: Partial<InlineImageWrapOptions> = {},
+): InlineImageWrapAttributes {
+  const normalized = normalizeInlineImageWrapOptions({
+    wrap: true,
+    side: current.side ?? defaults.side,
+    x: current.x ?? defaults.x,
+    gap: current.gap ?? defaults.gap,
+  });
+  return normalized as InlineImageWrapAttributes;
+}
+
+export function disableInlineImageWrap(): {
+  wrap: null
+  side: null
+  x: null
+  gap: null
+} {
+  return {
+    wrap: null,
+    side: null,
+    x: null,
+    gap: null,
+  };
+}
+
+export interface InlineImageDragPreviewInput {
+  containerWidth: number
+  imageWidth: number
+  imageHeight: number
+  imageX: number
+  side?: InlineImageWrapSide
+  gap?: number
+}
+
+export interface InlineImageDragPreview {
+  geometry: InlineFloatGeometry
+  attributes: InlineImageWrapAttributes
+}
+
+export function resolveInlineImageDragPreview(
+  input: InlineImageDragPreviewInput,
+): InlineImageDragPreview {
+  const requestedX =
+    input.containerWidth > 0
+      ? input.imageX / input.containerWidth
+      : 0;
+  const geometry = resolveInlineFloatGeometry({
+    containerWidth: input.containerWidth,
+    imageWidth: input.imageWidth,
+    imageHeight: input.imageHeight,
+    x: requestedX,
+    side: input.side,
+    gap: input.gap,
+  });
+  return {
+    geometry,
+    attributes: enableInlineImageWrap({
+      wrap: true,
+      side: input.side,
+      x: geometry.normalizedX,
+      gap: input.gap,
+    }),
+  };
 }
 
 export function inlineImageSnapshotToBlockSnapshots(

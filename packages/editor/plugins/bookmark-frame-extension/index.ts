@@ -5,7 +5,7 @@ import {BookmarkBlockToolbar} from "./widgets/bookmark-toolbar";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 
 export class BookmarkBlockExtensionPlugin extends DocPlugin {
-  override name = "EmbedFrameExtensionPlugin";
+  override name = "bookmark-block-extension";
 
   private _sub?: Subscription
   private _timer: number | null = null

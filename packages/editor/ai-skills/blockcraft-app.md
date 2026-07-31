@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-07-28
+> Last updated: 2026-07-31
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -11,7 +11,7 @@ This guide explains how to **consume** BlockCraft as a library inside an Angular
 ```
 Host Angular component
   ├── Provides DI tokens (file, message, block-creator, link-previewer, adapter)
-  ├── Builds a SchemaManager with the block schemas it wants to support
+  ├── Creates the full bundled capability set, or builds a subset SchemaManager
   ├── Constructs a BlockCraftDoc({ yDoc, docId, schemas, plugins, embeds, … })
   ├── Calls doc.initBySnapshot(snapshot, containerEl) OR doc.initByYBlock(yRoot, containerEl)
   └── Loads a theme stylesheet (light, dark, …)
@@ -117,6 +117,16 @@ The snapshot viewer is:
 - display-only
 - independent from `BlockCraftDoc`, plugins, Yjs, selection, and input modules
 - optimized for snapshot-first rendering, not editing
+
+Snapshot Viewer recognizes responsive image/video `props.wr/ar`. It applies
+the width relative to its own root content container and uses CSS
+`aspect-ratio`; legacy pixel `width/height` snapshots keep their previous
+display. No media metadata load is required to establish the initial geometry.
+Image/video resources use the same neutral loading skeleton and stable
+failure/retry frame as the editor. `renderer.update()` replaces resource frames
+atomically so live listeners are never cloned into inert markup, and
+`renderer.destroy()` disposes all block and inline-image resource controllers.
+`resourcePolicy: 'off'` continues to avoid mounting iframe resources.
 
 ## Markdown Stream Viewer
 
@@ -238,6 +248,44 @@ Wraps the bundled `HtmlAdapter` and `MarkdownAdapter`. The host can subclass it 
 
 Pick the block flavours your app supports. **`RootBlockSchema` is mandatory.**
 
+For the same complete capability set as `<block-craft-editor>`, use the public
+factory. Call it once per Doc because Plugins and embed converters are
+stateful:
+
+```typescript
+const capabilities = createBundledEditorCapabilities({
+  mention: {
+    panel: myMentionPanel,
+    onMentionClick: handleMentionClick,
+  },
+  translate: {service: myTranslateService},
+  blockController: {
+    blockMenuResolver: resolveHostBlockMenu,
+  },
+  placeholder: {
+    overrides: {paragraph: '输入正文…'},
+  },
+  pagination: {enabled: false, pageSize: 'A4'},
+  openLink: link => router.open(link),
+  additionalSchemas: [MyCustomBlockSchema],
+  additionalEmbeds: [['my-embed', myEmbedConverter]],
+})
+
+const doc = new BlockCraftDoc({
+  // ...required config
+  schemas: capabilities.schemas,
+  embeds: [...capabilities.embeds],
+  plugins: [...capabilities.plugins],
+})
+```
+
+The result also exposes `schemaDefinitions`, `blockMaterials`,
+`paginationPlugin` and `translatePlugin`. `blockMaterials` is the
+BlockController-aligned projection for insertion UIs; internal child schemas,
+root and infrastructure blocks remain registered but hidden. The factory
+throws on duplicate block flavours, embed names or plugin names, including
+duplicates introduced through `additionalSchemas` / `additionalEmbeds`.
+
 ```typescript
 const schemas = new SchemaManager([
   RootBlockSchema,           // required
@@ -352,8 +400,19 @@ doc = new BlockCraftDoc({
   ],
   readonly: false,            // optional — initial readonly state
   currentUserId: currentUser.id, // optional — required for block lock control
-  canUnlockBlock: ({currentUserId}) =>
-    currentUserId !== null && permissions.isAdmin(currentUserId), // optional additional unlock grant
+  defaultBlockLockKind: 'user',  // optional — use 'template' in template authoring
+  canUnlockBlock: ({currentUserId, lockKind}) =>
+    lockKind === 'template'
+      ? templatePermissions.canEdit(currentUserId)
+      : currentUserId !== null && permissions.isAdmin(currentUserId),
+  blockMutationPolicy: context => {
+    // Optional host-owned synchronous document invariant.
+    if (context.operation === 'delete' &&
+        context.blockIds.some(id => templateShellIds.has(id))) {
+      return {allowed: false, message: '模板结构不可删除'}
+    }
+    return true
+  },
   scrollContainer: undefined, // optional — auto-detected if not given
   virtualization: {           // optional — disabled by default
     enabled: true,
@@ -363,6 +422,13 @@ doc = new BlockCraftDoc({
     estimatedHeights: {paragraph: 32, table: 240},
     resolveViewRetention: ({flavour}) =>
       flavour === 'custom-player' ? 'keep-alive' : undefined,
+  },
+  placement: {                // optional — adapt mode changes to a host layout domain
+    transitionMode: ({block, to}) => {
+      if (!isHostLayoutBlock(block)) return false
+      moveInHostLayout(block, to)
+      return true             // complete transition handled by the host
+    },
   },
   theme: 'light',             // optional — initial theme
 })
@@ -382,10 +448,13 @@ interface DocConfig {
   plugins?: DocPlugin[]
   readonly?: boolean                      // default: true (set false on init or via switch later)
   currentUserId?: string                  // stable block-lock owner identity
-  canUnlockBlock?: (context: BlockUnlockContext) => boolean // synchronous owner override
+  defaultBlockLockKind?: BlockLockKind     // generic lock controls; default: 'user'
+  canUnlockBlock?: (context: BlockUnlockContext) => boolean // synchronous additional grant
+  blockMutationPolicy?: BlockMutationPolicy // synchronous structural/meta invariant
   copyFilter?: ClipboardCopyFilter        // global copy filter; seeds ClipboardManager registry. Omit = no filtering
   scrollContainer?: HTMLElement           // walked upward if omitted
   virtualization?: VirtualizationConfig   // root-child view virtualization; default disabled
+  placement?: BlockPlacementConfig        // optional synchronous mode-transition adapter
 }
 ```
 
@@ -394,6 +463,17 @@ callbacks run and before plugins register. The initial protected bootstrap state
 is therefore never exposed as the initialized document policy; immediate model
 writes from initialization observers are accepted or rejected against
 `DocConfig.readonly`.
+
+`blockMutationPolicy` is a host-owned document invariant evaluated before a
+Yjs mutation or undo/redo replay. Its operation is one of `delete`, `move`,
+`replace`, `update-meta`, `undo`, or `redo`; the context includes directly
+targeted block IDs and relevant parent, destination, or metadata-key details.
+Return `true` / `{allowed: true}` to continue, or `false` /
+`{allowed: false, message}` to reject with `BlockMutationPolicyError`.
+
+Keep the policy synchronous and model-first. It is suitable for protecting a
+template shell while leaving children inside its content regions editable. It
+is a trusted-client invariant, not server-side authorization.
 
 ### Root Virtualization
 
@@ -456,6 +536,16 @@ remain disabled/false respectively.
   scrolling does not reset browsing context or playback; deletion and document
   disposal release the lease. These leases share one aggregated pin source and
   add no schema lookup, callback, or layout read to ordinary scroll frames.
+- The hidden zero-height root `placement-layout` is projected separately from
+  normal flow. A model-only index compares each child's root-relative
+  `placement.y` plus estimated height with the root-relative viewport and one
+  viewport of pre-rendering. A hit mounts the layout root unit; no hit allows
+  it to detach unless Selection or an interaction lease owns it. The index
+  reuses `wr/ar` media sizing, includes rotated fixed-size shape bounds and
+  performs no child DOM reads on scroll.
+- `placement-layout` remains one atomic root render unit in this phase. One
+  visible absolute child therefore materializes all absolute siblings, while
+  none of those descendants acquires a duplicate per-object lease.
 
 Hosts can override built-in defaults when memory is more important than DOM
 state continuity:
@@ -626,6 +716,7 @@ keeps `DocConfig.readonly` aligned.
 
 ```typescript
 doc.setBlockReadonly(blockId, true)
+doc.setBlockReadonly(templateRegionId, true, {kind: 'template'})
 
 const effective = doc.isBlockReadonly(blockId)
 const canUnlock = doc.canUnlockBlock(blockId)
@@ -634,16 +725,24 @@ const detail = doc.readonlyManager.resolve(blockId)
 //   readonly: true,
 //   source: { kind: 'self' | 'ancestor' | 'document', ... },
 //   lockUserId: string | null,
+//   lockKind: 'user' | 'template' | null,
 // }
 
 doc.setBlockReadonly(blockId, false)
 ```
 
 The persistent owner is `meta.lock?: string`; Yjs synchronizes the non-empty
-user ID like other block metadata. `DocConfig.currentUserId` is captured when
-the document is constructed and owns new locks. Only that owner or an additional
-synchronous `canUnlockBlock(context)` grant can unlock. Without a current user,
-unlocked content remains editable but lock/unlock controls are unavailable.
+user ID like other block metadata. `meta.lockKind?: 'template'` records a
+template lock; absence and unknown values resolve as the backward-compatible
+`'user'` kind. `DocConfig.currentUserId` is captured when the document is
+constructed and owns new locks. Ordinary locks allow that owner or an additional
+synchronous `canUnlockBlock(context)` grant to unlock. Template locks always
+require the grant—even when owner IDs match—so permissions survive template
+instantiation independently of the current screen or route.
+`DocConfig.defaultBlockLockKind` controls locks created by generic editor
+controls; `setBlockReadonly(..., {kind})` can override it for one operation.
+Without a current user, unlocked content remains editable but lock/unlock
+controls are unavailable.
 Descendants inherit their nearest ancestor lock. The Root block cannot be
 persistently locked—use whole-document mode instead. Legacy `meta.readonly`
 is not read or migrated.
@@ -655,7 +754,8 @@ Block readonly is a strong client-side write guard:
 - an unlocked ancestor that contains a locked descendant cannot be deleted or
   moved;
 - selection, copy, links, media preview and downloads remain available;
-- clipboard snapshots strip `meta.lock`, so pasted copies are editable;
+- clipboard snapshots strip `meta.lock` and `meta.lockKind`, so pasted copies
+  are editable;
 - an undo/redo item blocked by the current lock stays on its stack and can run
   after the block is unlocked.
 
@@ -752,6 +852,7 @@ ngOnDestroy() {
 doc.crud                   // DocCRUD — low-level Yjs mutations (use sparingly)
 doc.model                  // BlockModelGraph — complete reachable Yjs tree queries
 doc.readonlyManager        // BlockReadonlyManager — inherited block permission
+doc.mutationPolicy         // BlockMutationPolicyManager — host-owned document invariant
 doc.vm                     // DocVM — block ↔ Angular component bridge
 doc.event                  // UIEventDispatcher
 doc.selection              // SelectionManager
@@ -760,6 +861,8 @@ doc.inputManger            // InputTransformer (sic — note typo in field name)
 doc.overlayService         // DocOverlayService — CDK Overlay wrapper
 doc.dndService             // DocDndService — 外部文件拖入 + commit 类方法分发
 doc.dragController         // DocInternalDragController — 内部 block 拖拽（PointerEvents 实现）
+doc.placement              // BlockPlacementManager — Word-like object layout + free positioning
+doc.objectSizing           // BlockObjectSizingManager — root-relative wr/ar resolution
 doc.messageService         // DocMessageService (resolved from DI token)
 doc.schemas                // SchemaManager
 doc.injector               // Angular Injector
@@ -776,12 +879,129 @@ doc.yBlockMap              // Y.Map of all blocks (key: id)
 doc.chain()                // → DocChain (fluent transactions)
 doc.toggleTheme(name)
 doc.toggleReadonly(readonly)                 // whole-document mode
-doc.setBlockReadonly(blockOrId, readonly)    // persistent non-root block lock
+doc.setBlockReadonly(blockOrId, readonly, {kind?: 'user' | 'template'})
+                                               // persistent non-root block lock
 doc.isBlockReadonly(blockOrId)               // effective readonly state
-doc.canUnlockBlock(blockOrId)                // owner or host override
+doc.canUnlockBlock(blockOrId)                // resolved owner / host permission
+doc.canInsertChild(parentId, childFlavour)    // Schema + opted-in instance incl/excl
 doc.navigateToBlock(blockId)                 // Promise<boolean>; reveal stable ID without moving selection/focus
 doc.afterInit(fn)          // run fn once root is ready
 ```
+
+`doc.objectSizing.rootContentWidth` is the cached root children content-box
+width. `widthChange$` emits deduplicated width changes and
+`resolve(flavour, props)` returns responsive or legacy pixel dimensions for a
+Schema that declares `metadata.objectSizing`; it returns `null` for other
+flavours or before a responsive width can be measured. The document owns and
+disposes this service automatically.
+
+`doc.placement` is always constructed by `BlockCraftDoc`; hosts do not register
+it as a plugin. The optional `DocConfig.placement` only adapts mode transitions
+to a host layout domain. Its synchronous `transitionMode(context)` hook may call
+`context.applyDefault()` or perform a complete host transition and return
+`true`; `false`/`void` falls back to the standard props transition. The hook is
+offered even when the current core mode equals the requested mode, so a host may
+refine multiple domain states that map to core relative flow.
+
+A block only becomes positionable when its Schema declares
+`metadata.placement: {modes: ['relative', 'absolute']}`. The built-in image
+and shape Schemas already do so. A custom schema assembly that enables standard
+absolute placement must also register `PlacementLayoutBlockSchema`; the bundled
+editor does this automatically. User-facing controls should use object-layout
+semantics instead of exposing relative/absolute directly:
+
+```typescript
+const schemas = new SchemaManager([
+  // existing schemas...
+  PlacementLayoutBlockSchema,
+  ImageBlockSchema,
+  ShapeBlockSchema,
+  ShapeTextBlockSchema,
+])
+```
+
+```typescript
+doc.placement.getObjectLayout(block) // 'top-bottom' | 'under' | 'over'
+doc.placement.setObjectLayout(block, 'under') // automatically absolute
+doc.placement.setObjectLayout(block, 'over')  // automatically absolute
+doc.placement.setObjectLayout(block, 'top-bottom') // automatically relative
+doc.placement.updateAbsolute(block, {x: 25, y: 120})
+doc.placement.startDrag(pointerEvent, block)
+
+doc.placement.canMoveForward(block)
+doc.placement.canMoveBackward(block)
+doc.placement.moveForward(block)
+doc.placement.moveBackward(block)
+```
+
+The default implementation only lifts direct root children. It creates one
+zero-height `placement-layout` as the final root child and moves all absolute
+objects below it. Its child contract is intentionally flavour-agnostic for
+future custom shapes, but normalization retains only blocks whose own Schema
+supports absolute placement. The layout is hidden from insertion, ordinary
+sibling navigation, Gap selection and BlockController. `under` and `over`
+children remain pointer-interactive and share the root coordinate/stacking scope.
+Returning to top-bottom moves the object back near its current visual position;
+an empty layout is removed after the model graph settles.
+
+Absolute objects form one total back-to-front stack: `under` children, ordinary
+flow content as a virtual boundary, then `over` children. Sibling order inside
+the placement layout defines order within each tier. The one-step movement APIs
+swap adjacent objects in the same tier; the highest `under` object moving
+forward becomes the lowest `over` object, and the lowest `over` object moving
+backward becomes the highest `under` object. These crossings update child order
+and `placement.layer` in one Yjs transaction. The lowest `under` and highest
+`over` objects are the disabled outer boundaries.
+
+`startDrag()` is Pointer Events-only. The initiating `pointerdown` arms the
+interaction, `pointermove` previews via `translate3d`, and `pointerup` commits
+one coordinate update. `pointercancel`, Escape and window blur abort. Do not
+wire object positioning to native `dragstart / dragover / drop`; native HTML5
+drag/drop remains reserved for external browser/file interoperability.
+
+`BLOCK_OBJECT_LAYOUT_OPTIONS` is the shared UI vocabulary and icon mapping:
+`嵌入型 / bc_fuwenben-qianruzuo`, `上下型 / bc_fuwenben-shangxia`,
+`衬于文字下方 / bc_cengji-xia`, and
+`浮于文字上方 / bc_cengji-shang`.
+
+`inline` changes representation rather than placement. A block plugin can
+register that capability for its flavour:
+
+```typescript
+const release = doc.placement.registerObjectLayoutAdapter('my-shape', {
+  toInline: ({doc, block}) => {
+    // atomically replace block with the flavour's inline representation
+    return true
+  },
+})
+```
+
+Registration is document-local and `release()` must run with the plugin
+lifecycle. BlockController shows **嵌入型** only while such an adapter is
+registered. Low-level `setMode()` / `setLayer()` remain available for host
+adapters and coordinate tooling, but normal UI should call
+`setObjectLayout()`.
+
+Returning an absolute block to relative flow first resolves its current visual
+center against mounted ordinary root-flow siblings, then moves it before/after
+the nearest sibling and clears `placement` in one transaction.
+When implementing another atomic conversion, resolve the stable-id anchor
+before changing DOM/model state and consume it inside the conversion
+transaction:
+
+```typescript
+const anchor = doc.placement.resolveFlowAnchor(block)
+doc.crud.transact(() => {
+  doc.placement.reanchorToFlow(block, anchor)
+  // clear placement or replace the reanchored block here
+})
+```
+
+Absolute siblings and structural hosts marked
+`data-bc-placement-layer-bridge` are not flow anchors. If no mounted flow
+sibling exists or the anchor disappears concurrently, reanchoring returns
+`false`; the default relative transition uses the end of root flow before the
+layout as its safe fallback.
 
 ## doc.dragController
 
@@ -829,6 +1049,7 @@ doc.dragController.isDragging  // boolean
 
 - [ ] All 5 DI tokens provided with concrete implementations
 - [ ] `RootBlockSchema` included in `SchemaManager`
+- [ ] A fresh bundled capability result is used per Doc (if using the factory)
 - [ ] `BlockCraftDoc` constructed with `yDoc`, `docId`, `schemas`, `logger`, `injector`
 - [ ] Container element passed to `initBySnapshot` or `initByYBlock`
 - [ ] Theme stylesheet imported
@@ -839,7 +1060,9 @@ doc.dragController.isDragging  // boolean
 
 ## Reference Implementation
 
-`packages/editor/editor/editor.ts` is the bundled demo editor — read it as a complete, working example. It shows:
+`packages/editor/editor/bundled-capabilities.ts` is the full capability
+catalog, while `packages/editor/editor/editor.ts` shows how the bundled
+component consumes it. Together they show:
 - All 5 DI providers wired up (`MyDocFileService`, `MyDocMessageService`, `MyBlockCreatorService`, …)
 - Full schema list
 - All 2 reference embed converters (mention, latex)

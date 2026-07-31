@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-07-28
+> Last updated: 2026-07-31
 
 ## Theme Structure
 
@@ -30,6 +30,55 @@ themes/
 doc.toggleTheme('dark');   // Sets body[blockcraft-theme="dark"]
 doc.toggleTheme('light');  // Sets body[blockcraft-theme="light"]
 ```
+
+## Placeholder Styling Contract
+
+`PlaceholderPlugin` uses this DOM contract for editable blocks:
+
+- block host: `.bc-placeholder-empty` plus compatibility `.empty`;
+- target element: `.bc-placeholder-target[data-placeholder]`;
+- text color: `--bc-placeholder-color`, falling back to `--bc-color`.
+
+The base theme renders
+`.bc-placeholder-empty .bc-placeholder-target::before`. A block that supports
+placeholder rendering should not reuse `::before` on that target for
+decorative chrome. Put the decoration on the host or a sibling, or use a
+non-conflicting property such as an inset `box-shadow`.
+
+```scss
+[data-blockcraft-root='true'] {
+  --bc-placeholder-color: color-mix(
+    in srgb,
+    var(--bc-color) 72%,
+    transparent
+  );
+}
+```
+
+## Block Lock Styling Contract
+
+The editor projects effective block lock state onto each block host:
+
+- `data-bc-readonly="self|inherited"` identifies the effective lock scope;
+- `data-bc-lock-kind="user|template"` identifies the persisted lock origin;
+- document-level readonly has no lock kind.
+
+The base theme decorates an explicit user lock with the readonly border,
+background and lock icon. An explicit template lock keeps the same readonly
+behavior but is visually neutral by default. Template-authoring surfaces can
+reveal that decoration by placing `data-bc-reveal-template-locks` on any
+ancestor of the document root:
+
+```html
+<section data-bc-reveal-template-locks>
+  <div data-blockcraft-root="true">...</div>
+</section>
+```
+
+Do not remove or rewrite `data-bc-lock-kind` to change permissions. It is a
+rendered projection of Yjs metadata; use
+`doc.setBlockReadonly(blockId, readonly, {kind})` for model changes. Likewise,
+the reveal attribute changes only appearance and never grants unlock access.
 
 ## Collaboration Cursor Colors
 

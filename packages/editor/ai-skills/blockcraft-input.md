@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-07-16
+> Last updated: 2026-07-30
 
 ## Architecture Overview
 
@@ -40,6 +40,23 @@ After an executor mutates Yjs, its cursor recipe resolves the live editable bloc
 `InputTransformer` must run for editor-root `beforeInput` even when `doc.selection.value` is currently `null`. If neither the live `BlockSelection` nor `beforeinput.getTargetRanges()` can produce a valid edit plan, the handler **must call `preventDefault()` and clear the editor selection** instead of returning silently. Stale IDs, invalid offsets/indexes, unsupported endpoint combinations, or live blocks that no longer match the plan all fail closed before native DOM mutation.
 
 This protects complex native selections such as container-block / nested-block selections where the browser can paint a range but BlockCraft cannot yet express it safely. Until a selection is represented by `BlockSelection` (or a normalized target range), user input is not allowed to mutate DOM directly.
+
+### Absolute Object Selection
+
+A same-block whole selection whose persisted placement is absolute is an object
+selection, not a request to replace that block with text.
+`BlockPlacementManager.isAbsoluteObjectSelection()` is the centralized semantic
+check used by Input. In this state printable keydown fallback, non-deletion
+`beforeinput`, IME composition start, Enter, Tab and paste are prevented while
+the model selection remains on the object. Input must not materialize a
+paragraph, create a composition session or let native contenteditable mutate
+the DOM.
+
+This is input isolation, not readonly. Delete/Backspace still follows the
+whole-block deletion path, and object drag, resize, styling and layout
+transitions remain legal. Once a shape double-click focuses its nested
+`shape-text` editable child, the selection is text-shaped and the normal
+InputTransformer/CompositionSession pipeline applies.
 
 Boundary selections (`ISelectionPoint.type === 'boundary'`) are model-recognized and editable when both endpoints are in the same `renderUnit` container that can host paragraphs. In that case typing / printable keydown replaces the covered child range with one paragraph, IME first materializes an empty paragraph so the composition commits into `Y.Text`, Backspace/Delete delete the covered child range, and Enter replaces the range with an empty paragraph. Supported mixed `text + boundary` ranges under the same direct parent are replaced through the Yjs-owned text path, preserving the surviving text endpoint for typing and IME instead of blurring or letting native DOM input mutate content. Boundary selections in containers that cannot safely host a paragraph still fail closed (`preventDefault()` + clear selection).
 

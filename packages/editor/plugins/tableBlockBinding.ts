@@ -17,6 +17,7 @@ import {
 } from "../framework/modules/clipboard/paste-utils";
 
 export class TableBlockBinding extends DocPlugin {
+  override name = 'table-block-binding'
 
   private _isTableProtected(table: BlockCraft.IBlockComponents['table']): boolean {
     const manager = this.doc.readonlyManager

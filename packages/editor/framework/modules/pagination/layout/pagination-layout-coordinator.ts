@@ -21,6 +21,10 @@ import {
   PaginatedLayoutProjection,
   ProjectedBlockPlacement,
 } from "./paginated-layout-projection";
+import {
+  estimateModelBlockHeight,
+  estimateModelBlockHeightDetails,
+} from "../../virtualization/model-height-estimator";
 
 const DEFAULT_ESTIMATED_HEIGHT = 48;
 
@@ -122,7 +126,9 @@ export class PaginationLayoutCoordinator {
       const path = this.doc.model.getPath(blockId);
       if (path?.[0] === this.doc.rootId && path[1]) rootIds.add(path[1]);
     }
-    this.geometryIndex.markContentDirty([...rootIds]);
+    const affectedRootIds = [...rootIds];
+    this.geometryIndex.markContentDirty(affectedRootIds);
+    this.refreshObjectSizingEstimates(affectedRootIds);
   }
 
   applyStructureChange(change: IBlockModelStructureChange): void {
@@ -134,6 +140,25 @@ export class PaginationLayoutCoordinator {
   updateMeasureContext(context: PaginationMeasureContext): void {
     if (this.disposed) return;
     this.geometryIndex.setMeasureContext(context);
+  }
+
+  refreshObjectSizingEstimates(rootIds?: readonly string[]): void {
+    if (this.disposed) return;
+    const candidates =
+      rootIds ?? this.doc.model.getChildrenIds(this.doc.rootId);
+    const estimates = candidates.flatMap(blockId => {
+      const estimate = estimateModelBlockHeightDetails(this.doc, blockId, {
+        estimatedHeights:
+          this.doc.config.virtualization?.estimatedHeights ?? {},
+        defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
+      });
+      if (!estimate.modelDriven) return [];
+      return [{
+        blockId,
+        height: estimate.height,
+      }];
+    });
+    this.geometryIndex.applyEstimatedHeights(estimates);
   }
 
   applyMeasured(
@@ -228,12 +253,29 @@ export class PaginationLayoutCoordinator {
       flavour,
       nodeType,
       isHeading: nodeType === BlockNodeType.editable && !!props?.["heading"],
-      estimatedHeight:
-        flavour === "page-divider"
-          ? 0
-          : (this.doc.config.virtualization?.estimatedHeights?.[flavour] ??
-            DEFAULT_ESTIMATED_HEIGHT),
+      estimatedHeight: this.resolveEstimatedHeight(blockId, {
+        flavour,
+        nodeType,
+        props,
+      }),
     };
+  }
+
+  private resolveEstimatedHeight(
+    blockId: string,
+    rootFacts?: {
+      flavour: string;
+      nodeType: BlockNodeType;
+      props?: Record<string, unknown>;
+    },
+  ): number {
+    const configured =
+      this.doc.config.virtualization?.estimatedHeights ?? {};
+    return estimateModelBlockHeight(this.doc, blockId, {
+      estimatedHeights: configured,
+      defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
+      rootFacts,
+    });
   }
 
   private syncSnapshot(snapshot: RootSnapshot): void {

@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-07-21 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-07-30 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -680,6 +680,48 @@ For virtualized projection, "missing endpoint" includes an existing retained
 component whose DOM is detached. The mount adapter must restore that endpoint
 before the browser Range is written; component-cache presence alone must never
 be used as proof that a native caret can be hosted.
+
+## Under-Content Block Recovery
+
+An absolute block in the standard `under` placement tier may be covered by
+normal document content, so ordinary target-based DOM picking cannot reliably
+focus it. `BlockPlacementManager` keeps a cold-path registry of materialized
+under-content views and installs one capture-phase root `pointerdown` listener.
+Only a narrow visible edge band participates (6 CSS px for mouse/pen, 10 px for
+touch), with reverse document order resolving overlaps.
+
+Recovery calls `SelectionManager.selectBlock(block)` and therefore publishes a
+whole-block model selection before the image/shape toolbar reacts.
+Readonly/frozen blocks remain selectable, but their mutation and drag paths
+still reject through the existing readonly boundary. This does not add DOM
+queries to `selectionchange`, scroll, or reconciliation hot paths.
+
+## Root Placement Layout Boundaries
+
+Standard absolute objects are children of the final root
+`placement-layout`, not ordinary root-flow siblings. Ordinary drag selection,
+Shift+Arrow, range copy/delete and `doc.nextSibling()` / `prevSibling()` skip
+that infrastructure node, so typing or navigation at the final paragraph does
+not enter an absolute object.
+
+The layout and every currently absolute descendant are also ineligible for gap
+cursors. Mounted hosts remove direct gap DOM when entering absolute placement
+and restore it after returning to relative flow. `SelectionKeyboard`,
+`BlockGapCreatorPlugin` and block hosts all consult
+`BlockPlacementManager.allowsGapCursor()` instead of duplicating flavour
+checks. `setGapCursor()` and JSON selection replay degrade a stale disallowed
+gap endpoint to the object's whole-block selected state.
+
+Repeated Ctrl/Cmd+A that promotes to the root boundary still covers the entire
+`root.children` interval, including the layout subtree. Full-document
+copy/cut/delete therefore preserves or removes absolute objects through the
+normal recursive snapshot/delete path. The layout host itself never becomes a
+Gap cursor, whole-block toolbar target or BlockController target. Clicking an
+absolute object may still create a whole-block model selection for its
+object-specific toolbar and Delete/Backspace handling. In that whole-object
+state ordinary printable input, IME, Enter, Tab and paste are prevented without
+clearing the selection; object tools and deletion remain available. A nested
+editable child such as `shape-text` keeps ordinary text-selection behavior.
 
 ## Backward Compatibility
 

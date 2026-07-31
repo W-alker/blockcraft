@@ -1,17 +1,20 @@
 import {generateId, NoEditableBlockNative} from "../../framework";
-import {BlockNodeType, IBlockSchemaOptions} from "../../framework";
+import {
+  BlockNodeType,
+  BlockObjectSizeProps,
+  IBlockSchemaOptions,
+} from "../../framework";
 import {VideoBlockComponent} from "./video.block";
 
 export interface VideoBlockModel extends NoEditableBlockNative {
   flavour: 'video',
   nodeType: BlockNodeType.void,
-  props: {
+  props: BlockObjectSizeProps & {
     url: string;
     name?: string;
     type?: string;
     size?: number;
     sourceType: 'link' | 'local' | 'embed';
-    width?: number;
     poster?: string;
   }
 }
@@ -21,6 +24,8 @@ export const VideoBlockSchema: IBlockSchemaOptions<VideoBlockModel> = {
   nodeType: BlockNodeType.void,
   component: VideoBlockComponent,
   createSnapshot: (params) => {
+    const hasLegacyWidth =
+      Number.isFinite(params.width) && Number(params.width) > 0
     return {
       id: generateId(),
       flavour: 'video',
@@ -29,7 +34,10 @@ export const VideoBlockSchema: IBlockSchemaOptions<VideoBlockModel> = {
         url: params.url || '',
         sourceType: params.sourceType || 'link',
         type: params.type || '',
-        width: params.width || 0,
+        ...(hasLegacyWidth ? {width: params.width} : {wr: params.wr ?? 100}),
+        ...(Number.isFinite(params.ar) && Number(params.ar) > 0
+          ? {ar: params.ar}
+          : {}),
       },
       meta: {},
       children: []
@@ -41,7 +49,11 @@ export const VideoBlockSchema: IBlockSchemaOptions<VideoBlockModel> = {
     label: '视频',
     description: '插入视频，支持链接、本地上传',
     svgIcon: 'bc_shipin',
-    icon: 'bc_icon bc_shipin'
+    icon: 'bc_icon bc_shipin',
+    objectSizing: {
+      defaultWr: 100,
+      defaultAr: 16 / 9,
+    },
   }
 };
 
@@ -59,6 +71,8 @@ declare global {
         type?: string;
         sourceType: 'link' | 'local' | 'embed';
         width?: number;
+        wr?: number;
+        ar?: number;
         poster?: string;
       }]
     }

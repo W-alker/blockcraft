@@ -147,6 +147,66 @@ function geometry(
 }
 
 describe("PaginationLayoutCoordinator", () => {
+  it("seeds responsive object height from wr/ar without mounting the block", () => {
+    const facts = new Map<string, ModelFact>([
+      [
+        "image",
+        fact("image", {
+          flavour: "image",
+          nodeType: BlockNodeType.block,
+          props: {wr: 50, ar: 2},
+        }),
+      ],
+    ]);
+    const {doc} = createHarness(["image"], facts);
+    (doc as any).schemas = {
+      get: () => ({
+        metadata: {
+          objectSizing: {defaultWr: 100, defaultAr: 4 / 3},
+        },
+      }),
+    };
+    let resolvedHeight = 200;
+    (doc as any).objectSizing = {
+      resolve: () => ({
+        width: resolvedHeight * 2,
+        height: resolvedHeight,
+        wr: 50,
+        ar: 2,
+        source: "ratio",
+        exact: true,
+      }),
+    };
+
+    const coordinator = new PaginationLayoutCoordinator(doc);
+    const state = coordinator.compute(config(), geometry());
+
+    expect(state.entries[0]).toEqual(jasmine.objectContaining({
+      blockId: "image",
+      naturalHeight: 200,
+      source: "estimated",
+    }));
+
+    coordinator.applyMeasured(
+      [{
+        id: "image",
+        flavour: "image",
+        nodeType: BlockNodeType.block,
+        isHeading: false,
+        naturalHeight: 210,
+        height: 210,
+      }],
+      coordinator.geometryRevision,
+    );
+    resolvedHeight = 250;
+    coordinator.refreshObjectSizingEstimates();
+    const resizedState = coordinator.compute(config(), geometry());
+    expect(resizedState.entries[0]).toEqual(jasmine.objectContaining({
+      naturalHeight: 250,
+      source: "estimated",
+    }));
+  });
+
   it("maps nested content changes to one direct-root geometry record", () => {
     const facts = new Map<string, ModelFact>([
       [

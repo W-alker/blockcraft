@@ -42,4 +42,16 @@ describe("BcOverlayTriggerDirective lifecycle", () => {
     expect(overlayRef.dispose).toHaveBeenCalledTimes(1);
     host.remove();
   });
+
+  it("does not attach a duplicate overlay when click follows hover", () => {
+    const {directive, host} = makeDirective();
+    const overlayRef = {
+      dispose: jasmine.createSpy("dispose"),
+    };
+    (directive as any).overlayRef = overlayRef;
+
+    expect(() => directive.openOverlay()).not.toThrow();
+    expect((directive as any).overlayRef).toBe(overlayRef);
+    host.remove();
+  });
 });

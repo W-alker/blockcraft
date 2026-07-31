@@ -1,15 +1,26 @@
 import {generateId, NoEditableBlockNative} from "../../framework";
-import {BlockNodeType, DeltaInsert, IBlockSchemaOptions} from "../../framework";
+import {
+  BlockNodeType,
+  BlockObjectSizeProps,
+  BlockPositionState,
+  DeltaInsert,
+  IBlockSchemaOptions,
+} from "../../framework";
 import {ImageBlockComponent} from "./image.block";
 import {CaptionBlockSchema} from "../caption-block";
 
+export interface ImageBlockCreateInput {
+  src: string
+  wr?: number
+  ar?: number
+}
+
 export interface ImageBlockModel extends NoEditableBlockNative {
   flavour: 'image',
-  props: {
+  props: BlockObjectSizeProps & {
     src: string;
-    width?: number | null;
-    height?: number | null;
     align?: 'center' | 'right'
+    placement?: BlockPositionState
   }
 }
 
@@ -17,16 +28,34 @@ export const ImageBlockSchema: IBlockSchemaOptions<ImageBlockModel> = {
   flavour: "image",
   nodeType: BlockNodeType.block,
   component: ImageBlockComponent,
-  createSnapshot: (src, w, h, title) => {
+  createSnapshot: (source, w, h, title) => {
+    const input: ImageBlockCreateInput = typeof source === 'string'
+      ? {src: source}
+      : source
+    const hasLegacyWidth = Number.isFinite(w) && Number(w) > 0
+    const hasLegacyHeight = Number.isFinite(h) && Number(h) > 0
+    const wr = Number.isFinite(input.wr) && Number(input.wr) > 0
+      ? Number(input.wr)
+      : 100
+    const ar = Number.isFinite(input.ar) && Number(input.ar) > 0
+      ? Number(input.ar)
+      : null
     return {
       id: generateId(),
       flavour: "image",
       nodeType: BlockNodeType.block,
       meta: {},
       props: {
-        src,
-        width: w,
-        height: h,
+        src: input.src,
+        ...(hasLegacyWidth
+          ? {
+              width: w,
+              ...(hasLegacyHeight ? {height: h} : {}),
+            }
+          : {
+              wr,
+              ...(ar == null ? {} : {ar}),
+            }),
       },
       children: title ? [CaptionBlockSchema.createSnapshot(title)] : []
     }
@@ -36,7 +65,12 @@ export const ImageBlockSchema: IBlockSchemaOptions<ImageBlockModel> = {
     label: "图片",
     includeChildren: ['caption'],
     icon: 'bc_icon bc_tupian-color',
-    svgIcon: 'bc_tupian-color'
+    svgIcon: 'bc_tupian-color',
+    objectSizing: {
+      defaultWr: 100,
+      defaultAr: 4 / 3,
+    },
+    placement: {modes: ['relative', 'absolute']}
   }
 }
 
@@ -47,7 +81,7 @@ declare global {
     }
 
     interface IBlockCreateParameters {
-      image: [string, number?, number?, (string | DeltaInsert[])?]
+      image: [string | ImageBlockCreateInput, number?, number?, (string | DeltaInsert[])?]
     }
   }
 }

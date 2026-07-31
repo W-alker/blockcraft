@@ -1,0 +1,60 @@
+[data-blockcraft-root="true"] .word-art-block,
+.bc-snapshot-viewer .word-art-block {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+  background: transparent;
+
+  &.selected {
+    background: transparent;
+  }
+
+  &.focused shape-resizer {
+    display: block;
+  }
+
+  .word-art-block__surface {
+    position: relative;
+    display: flex;
+    box-sizing: border-box;
+    max-width: 100%;
+    transform-origin: center center;
+    touch-action: none;
+  }
+
+  .word-art-block__editor {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-height: 100%;
+    margin: 0;
+    padding: 0.08em 0.12em;
+    overflow: hidden;
+    overflow: clip;
+    outline: 0;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    transform-origin: center center;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .word-art-block__editor::before {
+    color: var(--bc-color-secondary);
+    background: none;
+    -webkit-text-stroke: 0;
+    text-shadow: none;
+  }
+
+  .word-art-block__editor * {
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    background: transparent;
+    -webkit-text-stroke: inherit;
+    text-shadow: inherit;
+  }
+}

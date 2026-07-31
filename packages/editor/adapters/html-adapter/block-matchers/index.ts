@@ -17,8 +17,12 @@ import {
 } from "./table-matcher";
 import {formulaBlockHtmlAdapterMatcher} from "./formula-matcher";
 import {mediaBlockHtmlAdapterMatcher} from "./media-matcher";
+import {shapeBlockHtmlAdapterMatcher} from "./shape-matcher";
+import {wordArtBlockHtmlAdapterMatcher} from "./word-art-matcher";
 
 export const DEFAULT_BLOCK_MATCHERS: BlockHtmlAdapterMatcher[] = [
+  shapeBlockHtmlAdapterMatcher,
+  wordArtBlockHtmlAdapterMatcher,
   paragraphBlockHtmlAdapterMatcher,
   listBlockAdapterMatcher,
   codeBlockHtmlAdapterMatcher,

@@ -85,7 +85,7 @@ export class BookmarkBlockToolbar {
         if (!this.embedType) return
         const blockParent = this.block.parentBlock!
         console.log(blockParent)
-        if (!this.doc.schemas.isValidChildren(this.embedType, blockParent.flavour)) {
+        if (!this.doc.canInsertChild(blockParent.id, this.embedType)) {
           this.doc.messageService.warn(`当前位置无法插入嵌入视图`)
           return
         }
@@ -95,6 +95,13 @@ export class BookmarkBlockToolbar {
           .run()
         break
       case 'inline':
+        if (
+          !this.block.parentId ||
+          !this.doc.canInsertChild(this.block.parentId, 'paragraph')
+        ) {
+          this.doc.messageService.warn(`当前位置无法插入行内链接`)
+          return
+        }
         const paragraph = this.doc.schemas.createSnapshot('paragraph', [
           [{ insert: this.block.props.url, attributes: { 'a:link': this.block.props.url } }], this.block.props]
         )

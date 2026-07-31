@@ -12,6 +12,7 @@ import { BlockReadonlyError, BlockReadonlyOperation } from "../doc/block-readonl
 import { DOC_FILE_SERVICE_TOKEN } from "./file.service"
 import { BLOCK_CREATOR_SERVICE_TOKEN } from "./block-creator.service"
 import { calcDragLineRect, calcPositionByRect, type DragLineRect, type DragPosition } from "./_dnd-geometry"
+import {readImageIntrinsicSize} from "../../global"
 
 export enum DocDndDataTypes {
   /** @deprecated 内部 block 拖拽改走 DocInternalDragController + InternalDragData，本枚举值不再使用。 */
@@ -306,6 +307,10 @@ export class DocDndService {
       this.doc.messageService.warn(`不允许的分栏内容`)
       return
     }
+    if (!this.doc.canInsertChild(parent.id, 'columns')) {
+      this.doc.messageService.warn(`当前位置不允许添加分栏`)
+      return
+    }
     if (!targetBlock.parentId || !this._tryAssertMovable([block.id, targetBlock.id], targetBlock.parentId)) return
     const columns = this.doc.schemas.createSnapshot('columns', [2])
     const column1 = columns.children[0] as IBlockSnapshot
@@ -347,7 +352,7 @@ export class DocDndService {
 
     const targetParent = targetBlock.parentBlock
     if (!targetParent) return
-    if (!this.doc.schemas.isValidChildren(block.flavour, targetParent.flavour)) {
+    if (!this.doc.canInsertChild(targetParent.id, block.flavour)) {
       this.doc.messageService.warn(`不允许的移动`)
       return
     }
@@ -406,7 +411,7 @@ export class DocDndService {
     }
 
     for (const s of sources) {
-      if (!this.doc.schemas.isValidChildren(s.flavour, targetParent.flavour)) {
+      if (!this.doc.canInsertChild(targetParent.id, s.flavour)) {
         this.doc.messageService.warn(`不允许的移动`)
         return
       }
@@ -503,6 +508,13 @@ export class DocDndService {
       this.doc.messageService.warn(`不允许的分栏内容`)
       return
     }
+    if (
+      !target.parentId ||
+      !this.doc.canInsertChild(target.parentId, 'columns')
+    ) {
+      this.doc.messageService.warn(`当前位置不允许添加分栏`)
+      return
+    }
     if (!target.parentId || !this._tryAssertMovable(
       [...sources.map(source => source.id), target.id],
       target.parentId,
@@ -534,21 +546,22 @@ export class DocDndService {
     if (!targetParent) return
     if (!files.length) return
     if (files.length === 1 && files[0].type.startsWith('image/')) {
-      if (!this.doc.schemas.isValidChildren('image', targetParent.flavour)) {
-        this.doc.messageService.warn(`此处不能添加图片`)
+      if (!this.doc.canInsertChild(targetParent.id, 'image')) {
+        this.doc.messageService.warn('此处不能添加图片')
         return
       }
-      if (!this._tryAssertInsertable(targetParent.id, BlockReadonlyOperation.Insert)) return
-
-      const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
-      const url = fileService.createObjectURL(files[0])
-      this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0),
-        [this.doc.schemas.createSnapshot('image', [url])])
+      if (!this._tryAssertInsertable(
+        targetParent.id,
+        BlockReadonlyOperation.Insert,
+      )) {
+        return
+      }
+      void this._insertImageFile(files[0], targetBlock.id, position)
       return
     }
 
     if (files.length === 1 && files[0].type.startsWith('video/')) {
-      if (this.doc.schemas.get('video') && this.doc.schemas.isValidChildren('video', targetParent.flavour)) {
+      if (this.doc.schemas.get('video') && this.doc.canInsertChild(targetParent.id, 'video')) {
         if (!this._tryAssertInsertable(targetParent.id, BlockReadonlyOperation.Insert)) return
         const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
         const url = fileService.createObjectURL(files[0])
@@ -566,7 +579,7 @@ export class DocDndService {
     }
 
     if (files.length === 1 && files[0].type.startsWith('audio/')) {
-      if (this.doc.schemas.get('audio') && this.doc.schemas.isValidChildren('audio', targetParent.flavour)) {
+      if (this.doc.schemas.get('audio') && this.doc.canInsertChild(targetParent.id, 'audio')) {
         if (!this._tryAssertInsertable(targetParent.id, BlockReadonlyOperation.Insert)) return
         const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
         const url = fileService.createObjectURL(files[0])
@@ -583,7 +596,7 @@ export class DocDndService {
       }
     }
 
-    if (!this.doc.schemas.isValidChildren('attachment', targetParent.flavour)) {
+    if (!this.doc.canInsertChild(targetParent.id, 'attachment')) {
       this.doc.messageService.warn(`此处不能添加文件`)
       return
     }
@@ -608,11 +621,56 @@ export class DocDndService {
     this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), _blocks)
   }
 
+  private async _insertImageFile(
+    file: File,
+    targetBlockId: string,
+    position: DragPosition,
+  ): Promise<void> {
+    const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
+    if (fileService.isOverMaxSize(file.size)) {
+      this.doc.messageService.warn('图片过大')
+      return
+    }
+
+    const intrinsicSize = await readImageIntrinsicSize(file)
+    if (!this.doc.model.exists(targetBlockId)) return
+
+    const parentId = this.doc.model.getParentId(targetBlockId)
+    const targetIndex = this.doc.model.indexInParent(targetBlockId)
+    if (!parentId || targetIndex < 0) return
+    if (!this.doc.canInsertChild(parentId, 'image')) {
+      this.doc.messageService.warn('此处不能添加图片')
+      return
+    }
+    if (!this._tryAssertInsertable(parentId, BlockReadonlyOperation.Insert)) return
+
+    const url = fileService.createObjectURL(file)
+    const snapshot = this.doc.schemas.createSnapshot('image', [{
+      src: url,
+      ...(intrinsicSize ? {ar: intrinsicSize.ar} : {}),
+    }])
+    const targetProps = this.doc.model.getProps(targetBlockId)
+    const depth = targetProps?.['depth']
+    if (typeof depth === 'number') {
+      snapshot.props.depth = depth
+    }
+    try {
+      this.doc.crud.insertBlocks(
+        parentId,
+        targetIndex + (position === 'after' ? 1 : 0),
+        [snapshot],
+      )
+    } catch {
+      fileService.removeObjectURL(url)
+      this.doc.messageService.warn('图片插入失败')
+    }
+  }
+
   onInsertNewBlock(flavour: BlockCraft.BlockFlavour, initProps: IBlockProps, targetBlock: BlockCraft.BlockComponent, position: DragPosition) {
     if (position === 'none') return
     const targetParent = targetBlock.parentBlock
     if (!targetParent) return
-    if (!this.doc.schemas.isValidChildren(flavour, targetParent.flavour)) {
+    if (!this.doc.canInsertChild(targetParent.id, flavour)) {
       const newSchema = this.doc.schemas.get(flavour)
       this.doc.messageService.warn(`此处不能添加${newSchema?.metadata.label}`)
       return
@@ -625,7 +683,7 @@ export class DocDndService {
       if (!params) return
       const currentParent = targetBlock.parentBlock
       if (!currentParent) return
-      if (!this.doc.schemas.isValidChildren(flavour, currentParent.flavour)) return
+      if (!this.doc.canInsertChild(currentParent.id, flavour)) return
       if (!this._tryAssertInsertable(currentParent.id, BlockReadonlyOperation.Insert)) return
       const snapshot = this.doc.schemas.createSnapshot(flavour, <any>params)
       initProps && Object.assign(snapshot.props, initProps)

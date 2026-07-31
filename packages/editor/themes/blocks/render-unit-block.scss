@@ -1,0 +1,9 @@
+[data-blockcraft-root="true"] {
+  .render-unit-block {
+    min-height: calc(var(--bc-lh) * var(--bc-fs));
+  }
+
+  .render-unit-content {
+    min-height: inherit;
+  }
+}

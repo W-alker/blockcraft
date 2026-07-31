@@ -110,6 +110,30 @@
     min-width: 0;
   }
 
+  .image-block .img-wrapper[data-bc-object-sizing] {
+    max-width: 100%;
+
+    > img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+  }
+
+  .video-block .video-block__wrapper[data-bc-object-sizing] {
+    .video-block__container,
+    .video-wrapper {
+      width: 100%;
+      height: 100%;
+    }
+
+    .embed-container {
+      height: 100%;
+      padding-bottom: 0;
+    }
+  }
+
   .columns-block .columns-wrapper,
   .columns-block .columns-layout,
   .column-block,

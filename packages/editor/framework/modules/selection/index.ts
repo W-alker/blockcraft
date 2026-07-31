@@ -460,13 +460,23 @@ export class SelectionManager {
       const repairedEndpoints = this._repairCrossScopeEndpoints(rawEndpoints)
       const endpoints = repairedEndpoints ?? rawEndpoints
       const isBackward = isSelectionBackward(selection)
-      const anchor = isBackward ? endpoints.end : endpoints.start
-      const head = isBackward ? endpoints.start : endpoints.end
+      const rawAnchor = isBackward ? endpoints.end : endpoints.start
+      const rawHead = isBackward ? endpoints.start : endpoints.end
+      const disallowedGapBlockId =
+        this._disallowedCollapsedGapBlockId(rawAnchor, rawHead)
+      const selectedPoint = disallowedGapBlockId
+        ? this._pointFromJSON({
+            blockId: disallowedGapBlockId,
+            type: 'selected',
+          })
+        : null
+      const anchor = selectedPoint ?? rawAnchor
+      const head = selectedPoint ?? rawHead
 
       // Cross-parent guard: reject ranges that leave their semantic editing
       // scope, while allowing transparent child containers inside the same
       // scope to span their physical parents.
-      let commonParent = anchor.blockId
+      let commonParent = disallowedGapBlockId ?? anchor.blockId
       if (anchor.blockId !== head.blockId) {
         const anchorParent = resolveSelectionContainerId(anchor)
         const headParent = resolveSelectionContainerId(head)
@@ -1482,6 +1492,10 @@ export class SelectionManager {
    */
   public setGapCursor(block: string | BlockCraft.BlockComponent, side: 'before' | 'after', scrollIntoView?: boolean): void {
     const resolvedBlock = this._resolveBlockView(block)
+    if (this.doc.placement?.allowsGapCursor?.(resolvedBlock) === false) {
+      this.selectBlock(resolvedBlock)
+      return
+    }
     const gapPoint = lazyGapPoint(
       resolvedBlock.id,
       side,
@@ -1585,11 +1599,19 @@ export class SelectionManager {
       if (!json.anchor.tableId || json.anchor.tableId !== json.head.tableId) return null
       if (!this._selectionModelBlockExists(json.anchor.tableId)) return null
     }
+    const disallowedCollapsedGap =
+      this._disallowedCollapsedGapBlockId(json.anchor, json.head) !== null
+    const anchorJSON: ISelectionPointJSON = disallowedCollapsedGap
+      ? {blockId: json.anchor.blockId, type: 'selected'}
+      : json.anchor
+    const headJSON: ISelectionPointJSON = disallowedCollapsedGap
+      ? {blockId: json.head.blockId, type: 'selected'}
+      : json.head
     const makePoint = (p: ISelectionPointJSON) => this._pointFromJSON(p)
     const selection = this._createBlockSelection(
-      makePoint(json.anchor),
-      makePoint(json.head),
-      json.commonParent,
+      makePoint(anchorJSON),
+      makePoint(headJSON),
+      disallowedCollapsedGap ? json.anchor.blockId : json.commonParent,
     )
     return isSelectionAlive(selection, this.doc) ? selection : null
   }
@@ -1601,6 +1623,22 @@ export class SelectionManager {
     } catch {
       return false
     }
+  }
+
+  private _disallowedCollapsedGapBlockId(
+    anchor: Pick<ISelectionPointJSON, 'blockId' | 'type'>,
+    head: Pick<ISelectionPointJSON, 'blockId' | 'type'>,
+  ): string | null {
+    if (
+      anchor.type !== 'gap' ||
+      head.type !== 'gap' ||
+      anchor.blockId !== head.blockId
+    ) {
+      return null
+    }
+    return this.doc.placement?.allowsGapCursor?.(anchor.blockId) === false
+      ? anchor.blockId
+      : null
   }
 
   createFakeRange(source: Pick<IBlockSelectionJSON, 'from' | 'to'> | BlockSelection | ISelectionJSON, config: IFakeRangeConfig = {}) {

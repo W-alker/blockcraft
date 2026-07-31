@@ -82,6 +82,18 @@
       pointer-events: none;
     }
   }
+
+  &[data-bc-object-sizing] {
+    .embed-container {
+      height: 100%;
+      padding-bottom: 0;
+    }
+
+    .video-wrapper {
+      width: 100%;
+      height: 100%;
+    }
+  }
 }
 
 .video-block__container {

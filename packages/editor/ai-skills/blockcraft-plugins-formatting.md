@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-07-13
+> Last updated: 2026-07-29
 
 ## FloatTextToolbarPlugin
 
@@ -111,7 +111,7 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
 
 > `plugins/fixed-toolbar/widgets/fixed-toolbar.component.ts` — Fixed-position toolbar embedded in host app template.
 
-**Not a `DocPlugin`** — this is an Angular standalone component (`<bc-fixed-toolbar>`) meant to be placed directly in the host application's template. Provides heading selection, inline formatting, color pickers, font scaling (relative ratio), alignment, list conversion, table/column insertion, image insertion, video/audio insertion, and link editing.
+**Not a `DocPlugin`** — this is an Angular standalone component (`<bc-fixed-toolbar>`) meant to be placed directly in the host application's template. Provides heading selection, inline formatting, color pickers, font scaling (relative ratio), alignment, list conversion, shape/table/column insertion, image insertion, video/audio insertion, and link editing.
 
 ### Font Scale
 
@@ -124,6 +124,16 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
 
 ### Insertion Actions
 
+- When the document registers `ShapeBlockSchema`, the toolbar shows an
+  **插入形状** button using the existing `bc_tuxing` iconfont glyph. Click or
+  keyboard activation opens a 4-column picker backed by the 12 shared
+  `SHAPE_DEFINITIONS`; each item renders its actual `definition.path` through
+  `ShapeIconComponent` instead of an iconfont approximation.
+- Picking a shape restores the saved editor selection, resolves the same legal
+  nearby placement used by the other block insert actions, inserts the chosen
+  `ShapeKind`, and whole-block selects the new shape. The entry is hidden when
+  the document does not register the shape Schema and disabled for readonly or
+  invalid insertion contexts.
 - Table and column actions use picker overlays from the fixed toolbar.
 - Image insertion supports either a direct image URL or local image upload.
 - Video and audio insertion are grouped under one dropdown entry and reuse the shared media-creator flow.

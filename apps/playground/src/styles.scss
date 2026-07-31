@@ -7,6 +7,7 @@ html, body {
 body {
   background: #f7f8fb;
 }
+
 bc-pagination-settings.pagination-settings-float {
   position: fixed;
   right: 24px;
@@ -149,3 +150,148 @@ bc-pagination-settings.pagination-settings-float {
 .sim-actions .sim-action--danger {
   color: #be123c;
 }
+
+/* ───────── 模板装饰 demo styles（全局，可穿透 block 组件的 Emulated 封装） ───────── */
+/* 行内日期（随文 embed）：渲染显真实日期，编辑预览今天 + 点击选字段（创建/修改时间） */
+.tpl-inline{ padding:0 2px; font-size:12px; color:#999 }   /* 对齐 cses 文档页日期：灰 12px */
+.tpl-inline.is-editable{ cursor:pointer }                  /* 仅设计页可点开字段菜单 */
+
+/* 随文图标 embed（可设大小）：默认蓝色，字号由 attributes.size 决定（行内 style） */
+.tpl-icon-embed{ display:inline-flex; align-items:center; vertical-align:middle; line-height:1; color:#4857E2 }
+.tpl-icon-embed.is-editable{ cursor:pointer }      /* 仅设计页可点开设置 */
+.tpl-icon-embed i{ display:inline-block; line-height:1 }
+/* 随文图片 embed：行内位图 + 空态占位（宽度由 attributes.width 决定） */
+.tpl-inline-img{ display:inline; vertical-align:middle; line-height:0 }
+.tpl-inline-img.is-editable{ cursor:pointer }      /* 仅设计页可选图/改宽度 */
+.tpl-inline-img.is-empty{ line-height:1 }
+.tpl-inline-img__img{ display:inline-block; max-width:100%; border-radius:4px; vertical-align:middle }
+.tpl-inline-img__hint{ display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border:1px dashed #cdd2e3; border-radius:4px; background:#f7f8fb; color:#9aa1b5; font-size:12px }
+.tpl-inline-img__hint i{ font-size:14px }
+.tpl-inline-img.is-editable.is-empty:hover .tpl-inline-img__hint{ border-color:#4857E2; color:#4857E2 }
+/* 图标/图片共用的 尺寸·选择浮层（裸 DOM，挂 body） */
+.tpl-inline-pop{ display:flex; flex-direction:column; gap:8px; padding:10px; border-radius:12px; background:#fff; box-shadow:0 14px 40px rgba(31,43,92,.18); border:1px solid #eef0f6 }
+.tpl-inline-pop__row{ display:flex; gap:6px; align-items:center }
+.tpl-inline-pop__icon{ width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #e6e8f0; border-radius:8px; background:#fff; color:#4b5168; cursor:pointer; font-size:16px }
+.tpl-inline-pop__icon:hover{ border-color:#4857E2; color:#4857E2 }
+.tpl-inline-pop__icon.is-active{ border-color:#4857E2; color:#4857E2; background:#f5f5ff }
+.tpl-inline-pop__size{ padding:4px 10px; border:1px solid #e6e8f0; border-radius:999px; background:#fff; color:#4b5168; font-size:12px; cursor:pointer }
+.tpl-inline-pop__size:hover{ border-color:#4857E2; color:#4857E2 }
+.tpl-inline-pop__size.is-active{ background:#4857E2; border-color:#4857E2; color:#fff }
+.tpl-inline-pop__btn{ padding:5px 12px; border:1px solid #e6e8f0; border-radius:8px; background:#fff; color:#4b5168; font-size:12px; cursor:pointer }
+.tpl-inline-pop__btn:hover{ border-color:#4857E2; color:#4857E2 }
+/* 菜单项（随文日期：创建/修改时间） */
+.tpl-inline-pop__opt{ padding:6px 14px; border:0; border-radius:6px; background:transparent; color:#4b5168; font-size:13px; text-align:left; white-space:nowrap; cursor:pointer }
+.tpl-inline-pop__opt:hover{ background:#f5f5ff; color:#4857E2 }
+.tpl-inline-pop__opt.is-active{ color:#4857E2; font-weight:600 }
+/* 尺寸控件：档位 + 滑块 + 数字输入（图标/图片共用） */
+.tpl-size{ display:flex; flex-direction:column; gap:8px; min-width:200px }
+.tpl-size__presets{ display:flex; gap:6px }
+.tpl-size__preset{ flex:1; padding:4px 0; border:1px solid #e6e8f0; border-radius:999px; background:#fff; color:#4b5168; font-size:12px; cursor:pointer }
+.tpl-size__preset:hover{ border-color:#4857E2; color:#4857E2 }
+.tpl-size__preset.is-active{ background:#4857E2; border-color:#4857E2; color:#fff }
+.tpl-size__slider-row{ display:flex; align-items:center; gap:8px }
+.tpl-size__range{ flex:1; accent-color:#4857E2; cursor:pointer; border:none; outline:none; background:transparent; min-width:0 }
+.tpl-size__range:focus{ outline:none }
+.tpl-size__num{ width:52px; padding:3px 6px; border:1px solid #e6e8f0; border-radius:6px; font-size:12px; color:#4b5168; text-align:center }
+
+/* 天气 chip（cses 风格）：weather-mark + 温度 + 城市·天气；内部定死 px，整体 zoom 跟列宽自适应 */
+.tpl-weather-chip{ position:relative; display:inline-flex; align-items:center; gap:8px; padding:5px 9px; border-radius:12px; background:#fff; box-shadow:inset 0 0 0 1px rgba(72,87,226,.1), 0 6px 18px rgba(31,43,92,.06); vertical-align:middle }
+.tpl-weather-chip__copy{ display:flex; flex-direction:column; align-items:flex-start; gap:1px; min-width:0 }
+.tpl-weather-chip__temp{ font-size:16px; line-height:18px; font-weight:760; color:#202637; font-variant-numeric:tabular-nums }
+.tpl-weather-chip__meta{ max-width:120px; font-size:11px; line-height:14px; color:#7c8298; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+
+/* 人员：行内 embed（精确复刻 cses dl-user-profile）—— 头像 + .info(.name + .desc=部门/公司) */
+.tpl-person{ display:inline-flex; align-items:center; gap:4px; vertical-align:middle; white-space:nowrap }
+.tpl-avatar{ width:28px; height:28px; border-radius:50%; background:#f5f5f5;  }
+.tpl-person__info{ display:flex; gap:4px }
+.tpl-person__info > span{ line-height:20px }
+.tpl-person__name{ font-size:14px; color:#333 }
+.tpl-person__desc{ font-size:10px; color:#999 }
+/* 编辑态：占位文字灰化弱提示 */
+.tpl-person.tpl-edit .tpl-person__name,
+.tpl-person.tpl-edit .tpl-person__desc{ color:#9ca3af }
+
+/* logo/图片：选图 + 缩放（镜像 ImageBlock） */
+.tpl-img{ display:block; width:100%; height:100%; object-fit:contain; border-radius:4px; cursor:move }   /* 尺寸由 host 的 wr/ar 统一解析；图片只填满尺寸盒。 */
+.tpl-img-wrap{ position:relative; display:block; width:100%; height:100%; line-height:0 }
+.tpl-img-hint{ display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; min-width:120px; min-height:84px; padding:12px 16px; border:1px dashed #d1d5db; border-radius:10px; background:#fafafa; color:#9ca3af; font-size:13px; cursor:pointer }
+.tpl-img-hint:hover{ border-color:#4857E2; background:#f5f5ff; color:#4857E2 }
+.tpl-img-hint__icon{ width:30px; height:30px; display:block }
+.tpl-empty{ color:#9ca3af; font-size:13px }
+
+/* 模板工作台页面骨架（/template 编辑页 + /template/use 使用页共用） */
+.tpl-page{ display:flex; flex-direction:column; height:100vh; background:#f3f4f6 }
+.tpl-page__bar{ display:flex; align-items:center; gap:12px; padding:8px 16px; background:#fff; border-bottom:1px solid #e5e7eb; flex:none }
+.tpl-page__back{ color:#4857E2; text-decoration:none; font-size:13px }
+.tpl-page__back:hover{ text-decoration:underline }
+.tpl-page__title{ font-size:14px; font-weight:600; color:#374151 }
+.tpl-page__action{ margin-left:auto; padding:6px 16px; border:0; border-radius:6px; background:#4857E2; color:#fff; font-size:13px; cursor:pointer }
+.tpl-page__action:disabled{ background:#c7cbf0; cursor:default }
+.tpl-page__body{ flex:1; min-height:0; display:flex }
+.tpl-page__editor{ flex:1; min-width:0; display:flex }
+.tpl-page__editor > *{ flex:1; min-width:0 }
+/* 模板分页背景：PageFrameLayer 的页框由原生 DOM 动态创建，不带 Angular
+   emulated scope attribute，因此必须放在全局样式。变量挂在 editor-scroll，
+   每张 A4 页框独立从同一原点 cover，关闭分页后该规则自然失效。 */
+.tpl-page .editor-scroll.bc-paginated-scroll .bc-page-sheet{
+  background-color:#fff;
+  background-image:var(--tpl-page-background, none);
+  background-position:center;
+  background-size:cover;
+  background-repeat:no-repeat;
+}
+.tpl-page__panel{ position:relative; width:280px; flex:none; display:flex; flex-direction:column; background:#fff; transition:width .2s ease }
+.tpl-page__panel--left{ width:320px; border-right:1px solid #e5e7eb }
+.tpl-page__panel--right{ border-left:1px solid #e5e7eb }
+.tpl-page__panel.is-collapsed{ width:40px }
+.tpl-page__panel.is-resizing{ transition:none }                 /* 拖拽中关掉宽度过渡，跟手 */
+/* 左侧调试栏右边缘拖拽条 */
+.tpl-panel__resizer{ position:absolute; top:0; right:0; width:6px; height:100%; cursor:col-resize; z-index:5 }
+.tpl-panel__resizer::after{ content:''; position:absolute; top:0; right:0; width:2px; height:100%; background:transparent; transition:background .15s }
+.tpl-panel__resizer:hover::after, .tpl-page__panel.is-resizing .tpl-panel__resizer::after{ background:#4857E2 }
+.tpl-page__panel > template-debug-panel,
+.tpl-page__panel > deco-insert-panel{ flex:1; min-height:0 }
+.tpl-page__panel > template-region-inspector{ flex:none }
+.tpl-panel__head{ display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #f0f0f0; flex:none }
+.tpl-panel__title{ font-size:13px; font-weight:600; color:#374151 }
+.tpl-panel__toggle{ border:0; background:transparent; color:#6b7280; cursor:pointer; padding:4px; font-size:16px; line-height:1 }
+.tpl-panel__toggle:hover{ color:#4857E2 }
+/* 标题行的区块显隐开关（调试标题右侧，勾选=显示对应调试块） */
+.tpl-panel__checks{ display:flex; align-items:center; gap:10px; margin-left:auto; margin-right:6px }
+.tpl-panel__check{ display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#6b7280; cursor:pointer; user-select:none }
+.tpl-panel__check input{ margin:0; accent-color:#4857E2; cursor:pointer }
+.tpl-panel__expand{ width:100%; padding:12px 0; display:flex; justify-content:center; border:0; background:transparent; color:#6b7280; cursor:pointer; font-size:16px }
+.tpl-panel__expand:hover{ color:#4857E2 }
+
+/* BlockCraft 挂载点：编辑 surface 与使用 surface 共用 */
+.surface-host{ min-height:200px }
+
+/* 设计页给通用 render-unit 一条非持久化的编辑边界；使用页保持无框。 */
+template-edit-surface [data-bc-render-unit]{
+  box-sizing:border-box;
+  padding:8px 12px;
+  border:1px dashed rgba(72,87,226,.42);
+  border-radius:3px;
+}
+template-edit-surface [data-bc-render-unit].selected{
+  border-color:#4857e2;
+}
+
+/* 环绕物料旁的空段占位提示（「输入 / 唤起命令」）：框架默认 absolute + left:0，钉在段落盒左缘——
+   段落盒在 float 图旁是全宽的，提示就压到图上，而光标(行盒)尊重 float 让位，两者错位。
+   不能用 left:auto 取"静态位置"兜：规范允许浏览器计算 abspos 静态位置时忽略 float，Chrome 正是如此。
+   改用零高左浮动（Tiptap 空段占位同款）：float 脱离行内流所以不把光标顶开（框架原设计意图保留），
+   height:0 不撑行高不挡后续行盒，而后来的左浮动必须排在先前左浮动（环绕图）右侧 → 提示与光标同落点。
+   只兜模板页，不动框架。 */
+/* 多叠一层 .editor-container：框架规则前缀带 [data-blockcraft-root]，特异性 (0,4,1) 和两层写法打平、
+   后加载者胜——加到 (0,5,1) 才能稳赢，不靠加载顺序。 */
+.tpl-page .editor-container [data-node-type="editable"].empty{
+  &.edit-container::before, .edit-container::before{ position:static; float:left; height:0 }
+}
+
+/* 分栏宿主建立 BFC：环绕物料（float）在分栏上方时，分栏内部的 flex 布局(.columns-layout)会避让浮动、
+   被整体推到浮动下方，但宿主和 .columns-wrapper 是普通块**不避让**——absolute 的列分割线以 wrapper 的
+   top:0 为起点，就从浮动区域顶上一路画下来（"分栏上方超出"）。flow-root 让整个分栏块作为一个整体避让
+   浮动（旁边放得下就并排、放不下整体下移），分割线随之归位。正解在框架的 cloumns-block.scss，
+   这里先在模板页兜底验证效果；确认后再走框架修复流程。 */
+.tpl-page .columns-block{ display:flow-root }

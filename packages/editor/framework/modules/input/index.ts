@@ -389,13 +389,13 @@ export class InputTransformer {
     if (
       parent &&
       this.doc.schemas.get(parent.flavour)?.metadata.renderUnit &&
-      this.doc.schemas.isValidChildren("paragraph", parent.flavour)
+      this.doc.canInsertChild(parent.id, "paragraph")
     ) {
       return { host: parent, mode: "sibling" };
     }
     if (
       this.doc.schemas.get(block.flavour)?.metadata.renderUnit &&
-      this.doc.schemas.isValidChildren("paragraph", block.flavour)
+      this.doc.canInsertChild(block.id, "paragraph")
     ) {
       return { host: block, mode: "inside" };
     }
@@ -684,6 +684,12 @@ export class InputTransformer {
     return recovered;
   }
 
+  private _isAbsoluteObjectSelection(
+    selection: BlockCraft.Selection | null | undefined,
+  ): boolean {
+    return this.doc.placement?.isAbsoluteObjectSelection?.(selection) === true;
+  }
+
   private _resolveBoundarySelection(
     plan: BoundaryEditPlan,
   ): BoundarySelectionTarget | null {
@@ -704,7 +710,7 @@ export class InputTransformer {
     const schema = this.doc.schemas.get(target.host.flavour);
     return (
       !!schema?.metadata.renderUnit &&
-      this.doc.schemas.isValidChildren("paragraph", target.host.flavour)
+      this.doc.canInsertChild(target.host.id, "paragraph")
     );
   }
 
@@ -984,6 +990,10 @@ export class InputTransformer {
 
     if (!curSel) {
       return this._abortCompositionStart(context);
+    }
+    if (this._isAbsoluteObjectSelection(curSel)) {
+      context.preventDefault();
+      return true;
     }
 
     const plan = this._planSelectionEdit(curSel);
@@ -1272,6 +1282,13 @@ export class InputTransformer {
     if (isNativeInputTarget(ev.target)) {
       return;
     }
+    if (
+      this._isAbsoluteObjectSelection(this.doc.selection.value) &&
+      !ev.inputType.startsWith("delete")
+    ) {
+      ev.preventDefault();
+      return true;
+    }
     this._resetOrphanedCompositionSession(ev);
     // compositionStart captures the accepted model/materialized target. During
     // IME updates, browser target ranges can be transient or stale; do not let
@@ -1524,6 +1541,10 @@ export class InputTransformer {
     const selection = this.doc.selection.value;
 
     if (!selection) return;
+    if (this._isAbsoluteObjectSelection(selection)) {
+      ev.preventDefault();
+      return true;
+    }
     if (
       !this._hasWholeBlockEndpoint(selection) &&
       !this._hasBoundaryEndpoint(selection) &&
@@ -2162,6 +2183,7 @@ export class InputTransformer {
 
     context.preventDefault();
     const sel = state.selection;
+    if (this._isAbsoluteObjectSelection(sel)) return true;
     const firstBlock = sel.firstBlock;
 
     const prevBlock = this.doc.prevSibling(firstBlock);
@@ -2214,6 +2236,7 @@ export class InputTransformer {
     const sel = state.selection;
 
     context.preventDefault();
+    if (this._isAbsoluteObjectSelection(sel)) return true;
     const plan = this._planSelectionEdit(sel);
     if (!this._tryAssertInputPlan(context, plan, BlockReadonlyOperation.Insert)) {
       return true;

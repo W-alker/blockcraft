@@ -5,7 +5,7 @@
 > For configuring existing built-in plugins, see `blockcraft-plugins-ref.md`.
 > For event system internals, see L2: `blockcraft-event.md`.
 >
-> Last updated: 2026-07-15
+> Last updated: 2026-07-31
 
 ## Plugin Lifecycle
 
@@ -37,6 +37,12 @@ export class MyFeaturePlugin extends DocPlugin {
   }
 }
 ```
+
+`name` is a runtime identity, not a display label. Every Plugin instance in one
+Doc must have a stable, unique name. The full reference-editor factory calls
+`validateBundledEditorCapabilities()` and throws before Doc construction when
+two Plugins share a name; do not inherit the base `"custom"` name in a
+production Plugin.
 
 ## Template: Plugin with Event Listeners
 
@@ -313,4 +319,6 @@ The plugin owns all `ResizeObserver`, animation-frame, DOM-layer and print resou
 | Block transformation | `BlockTransformerPlugin` | `plugins/block-transformer/` |
 | Keyboard shortcuts | `FindReplacePlugin` | `plugins/findReplace/` |
 | Drag & hover | `BlockControllerPlugin` | `plugins/block-controller/` |
+| Object selection + connected toolbar | `ShapeToolbarPlugin` | `plugins/shape-toolbar/` |
+| Editable object/edit dual-state + in-block transform affordance | `WordArtToolbarPlugin` | `plugins/word-art-toolbar/` |
 | Reversible layout controller | `PaginationPlugin` | `plugins/pagination/` |

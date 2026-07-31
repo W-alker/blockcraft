@@ -173,7 +173,8 @@ export class SelectionKeyboard {
     const metadata = this._schemaMetadata(block)
     return (
       (block.nodeType === BlockNodeType.void || block.nodeType === BlockNodeType.block) &&
-      !metadata?.isLeaf
+      !metadata?.isLeaf &&
+      this.doc.placement?.allowsGapCursor?.(block) !== false
     )
   }
 

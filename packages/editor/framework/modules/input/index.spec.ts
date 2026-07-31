@@ -892,6 +892,45 @@ describe('InputTransformer beforeInput range resolution', () => {
     expect(doc.selection.blur).not.toHaveBeenCalled()
   })
 
+  it('keeps Backspace object deletion available for an absolute object selection', () => {
+    const shape = {
+      id: 'shape-absolute',
+      flavour: 'shape',
+      nodeType: BlockNodeType.block,
+      parentId: 'placement-layout',
+      props: {placement: {mode: 'absolute', x: 20, y: 40}},
+      childrenIds: [],
+    }
+    const selection = new BlockSelection(
+      {blockId: shape.id, type: 'selected', block: shape} as any,
+      {blockId: shape.id, type: 'selected', block: shape} as any,
+      shape.id,
+      () => shape as any,
+      () => 0,
+    )
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const doc = {
+      event: eventStub(),
+      selection: {value: selection},
+      placement: {
+        isAbsoluteObjectSelection:
+          jasmine.createSpy('isAbsoluteObjectSelection').and.returnValue(true),
+      },
+    }
+    const transformer = new InputTransformer(doc as any) as any
+    spyOn(transformer, '_handleModelDeleteSelection').and.returnValue(true)
+
+    const result = transformer['_handleBackspace']({
+      preventDefault,
+      get: () => ({selection}),
+    } as any)
+
+    expect(result).toBeTrue()
+    expect(transformer['_handleModelDeleteSelection'])
+      .toHaveBeenCalledOnceWith(selection, 'after')
+    expect(preventDefault).toHaveBeenCalled()
+  })
+
   it('replaces a mixed boundary-to-text model selection from beforeInput', () => {
     const preventDefault = jasmine.createSpy('preventDefault')
     const {doc, transformer, callout, paragraph} = createMixedBoundaryEditingHarness()
@@ -1575,6 +1614,73 @@ describe('InputTransformer beforeInput range resolution', () => {
     expect(doc.crud.deleteBlockById).toHaveBeenCalledWith('void-1')
     expect(blocks['paragraph-1'].replaceText).toHaveBeenCalledWith(0, 3, 'a', undefined)
     expect(doc.selection.setCursorAt).toHaveBeenCalledWith(blocks['paragraph-1'], 1)
+  })
+
+  it('isolates an absolute object selection from printable input, Enter and IME', async () => {
+    const shape = {
+      id: 'shape-absolute',
+      flavour: 'shape',
+      nodeType: BlockNodeType.block,
+      parentId: 'placement-layout',
+      props: {placement: {mode: 'absolute', x: 20, y: 40}},
+      childrenIds: [],
+    }
+    const selection = new BlockSelection(
+      {blockId: shape.id, type: 'selected', block: shape} as any,
+      {blockId: shape.id, type: 'selected', block: shape} as any,
+      shape.id,
+      () => shape as any,
+      () => 0,
+    )
+    const preventPrintable = jasmine.createSpy('preventPrintable')
+    const preventEnter = jasmine.createSpy('preventEnter')
+    const preventComposition = jasmine.createSpy('preventComposition')
+    const doc = {
+      event: eventStub(),
+      selection: {
+        value: selection,
+        recalculate: jasmine.createSpy('recalculate')
+          .and.returnValue({value: selection}),
+        blur: jasmine.createSpy('blur'),
+      },
+      placement: {
+        isAbsoluteObjectSelection:
+          jasmine.createSpy('isAbsoluteObjectSelection').and.returnValue(true),
+      },
+      getBlockById: () => shape,
+    }
+    const transformer = new InputTransformer(doc as any) as any
+    spyOn(transformer.compositionSession, 'start')
+    spyOn(transformer, '_planSelectionEdit').and.callThrough()
+
+    const printableResult =
+      transformer['_handleSelectedStartPrintableFallback']({
+        getDefaultEvent: () => ({
+          key: 'a',
+          metaKey: false,
+          ctrlKey: false,
+          altKey: false,
+          preventDefault: preventPrintable,
+        }),
+      })
+    const enterResult = await transformer['_handlerEnter']({
+      preventDefault: preventEnter,
+      get: () => ({selection, raw: {shiftKey: false, ctrlKey: false}}),
+    } as any)
+    const compositionResult = transformer['_handleCompositionStart']({
+      preventDefault: preventComposition,
+      has: () => false,
+    } as any)
+
+    expect(printableResult).toBeTrue()
+    expect(enterResult).toBeTrue()
+    expect(compositionResult).toBeTrue()
+    expect(preventPrintable).toHaveBeenCalled()
+    expect(preventEnter).toHaveBeenCalled()
+    expect(preventComposition).toHaveBeenCalled()
+    expect(transformer['_planSelectionEdit']).not.toHaveBeenCalled()
+    expect(transformer.compositionSession.start).not.toHaveBeenCalled()
+    expect(doc.selection.blur).not.toHaveBeenCalled()
   })
 
   it('keeps ordinary text keydown and delete fallback off the structural planner hot path', () => {

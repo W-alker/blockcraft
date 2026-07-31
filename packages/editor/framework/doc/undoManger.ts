@@ -8,6 +8,7 @@ import {
   RelativeSelectionBookmark,
 } from "../modules/selection/relative-bookmark";
 import {BlockReadonlyError, BlockReadonlyOperation} from "./block-readonly.types";
+import {BlockMutationPolicyError} from "./block-mutation-policy";
 
 type UndoManagerEventName = 'stack-item-added' | 'stack-item-updated' | 'stack-item-popped' | 'stack-cleared'
 
@@ -211,13 +212,22 @@ export class DocUndoManger {
     const affectedIds = stackItem.meta.get(BLOCK_READONLY_AFFECTED_IDS) as Set<string> | undefined
     const reachableIds = [...(affectedIds ?? [])].filter(blockId => this.doc.model.exists(blockId))
     try {
+      this.doc.mutationPolicy?.assert({
+        operation: type,
+        blockIds: reachableIds,
+      })
       this.doc.readonlyManager.assertUndoRedoWritable(
         reachableIds,
         type === 'undo' ? BlockReadonlyOperation.Undo : BlockReadonlyOperation.Redo,
       )
       return true
     } catch (error) {
-      if (error instanceof BlockReadonlyError) return false
+      if (
+        error instanceof BlockReadonlyError ||
+        error instanceof BlockMutationPolicyError
+      ) {
+        return false
+      }
       throw error
     }
   }

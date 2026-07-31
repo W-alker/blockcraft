@@ -280,7 +280,14 @@ export class BlockGapCreatorPlugin extends DocPlugin {
   /** A block is gap-eligible when it is a non-leaf void or container block. */
   private _isGapEligible(block: BlockCraft.BlockComponent): boolean {
     const isLeaf = !!this.doc.schemas.get(block.flavour)?.metadata.isLeaf
-    return !isLeaf && (block.nodeType === BlockNodeType.void || block.nodeType === BlockNodeType.block)
+    return (
+      !isLeaf &&
+      this.doc.placement?.allowsGapCursor?.(block) !== false &&
+      (
+        block.nodeType === BlockNodeType.void ||
+        block.nodeType === BlockNodeType.block
+      )
+    )
   }
 
   /**

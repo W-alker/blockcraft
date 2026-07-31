@@ -100,6 +100,10 @@ describe("BlockGapCreatorPlugin", () => {
       schemas: {
         get: () => ({metadata: {isLeaf: false}}),
       },
+      placement: {
+        allowsGapCursor: jasmine.createSpy("allowsGapCursor")
+          .and.returnValue(true),
+      },
       getBlockById: (id: string) => {
         if (id === "root") return rootBlock
         if (id === "void-1") return voidBlock
@@ -134,6 +138,32 @@ describe("BlockGapCreatorPlugin", () => {
     expect(handled).toBeTrue()
     expect(selection.setGapCursor).toHaveBeenCalledOnceWith(voidBlock, "before")
     expect(selection.setCursorAtBlock).not.toHaveBeenCalled()
+  })
+
+  it("does not create a gap cursor for an absolute object", () => {
+    const {plugin, doc, voidBlock, selection} = createHarness()
+    doc.placement.allowsGapCursor.and.callFake(
+      (block: {id: string}) => block.id !== voidBlock.id,
+    )
+
+    const handled = plugin._resolveBlankAreaSelection(50, 150)
+
+    expect(handled).toBeTrue()
+    expect(selection.setGapCursor).not.toHaveBeenCalled()
+  })
+
+  it("does not create a gap cursor for placement-layout", () => {
+    const {plugin, doc, voidBlock, selection} = createHarness()
+    voidBlock.flavour = "placement-layout"
+    voidBlock.nodeType = BlockNodeType.block
+    doc.placement.allowsGapCursor.and.callFake(
+      (block: {flavour: string}) => block.flavour !== "placement-layout",
+    )
+
+    plugin._resolveBlankAreaSelection(50, 150)
+
+    expect(selection.setGapCursor).not.toHaveBeenCalled()
+    expect(doc.placement.allowsGapCursor).toHaveBeenCalledWith(voidBlock)
   })
 
   it("hit-tests only mounted root views when virtual siblings are absent", () => {

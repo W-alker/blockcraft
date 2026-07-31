@@ -1,13 +1,33 @@
 import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from '@angular/core';
-import {BaseBlockComponent, DOC_FILE_SERVICE_TOKEN, DocFileService} from '../../framework';
+import {
+  BaseBlockComponent,
+  deriveObjectSizeFromPixels,
+  DOC_FILE_SERVICE_TOKEN,
+  DocFileService,
+} from '../../framework';
 import {ImageBlockModel} from './index';
-import {ResizeContainerComponent} from '../../components/block-resizer';
+import {
+  BcResourcePlaceholderDirective,
+  BlockResizeCommit,
+  ResourceIntrinsicSize,
+  ResizeContainerComponent,
+} from '../../components';
+import {takeUntil} from 'rxjs';
+import {readImageIntrinsicSize} from '../../global';
 
 @Component({
   selector: 'div.image-block',
   template: `
     <figure class="image-block__container" [attr.data-align]="props.align">
-      <div class="img-wrapper">
+      <div
+        class="img-wrapper"
+        #imgWrapper
+        bcResourcePlaceholder
+        [resourceKey]="resourcePreviewUrl"
+        (resourceIntrinsicSize)="onImageIntrinsicSize($event)"
+        [style.width.px]="renderedWidth"
+        [style.aspect-ratio]="renderedAspectRatio"
+        [attr.data-bc-object-sizing]="usesRatioSizing ? '' : null">
         @if (!props.src) {
           <div class="upload-hint" contenteditable="false" (click)="!isReadonly && inputLocalFile()">
             <i class="bc_icon bc_tianjiatupian"></i>
@@ -20,15 +40,17 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
           </div>
         } @else {
           <img [src]="_previewUri || props.src"
-               [style.width.px]="props.width"
                loading="lazy"
                contenteditable="false"
-               draggable="false"
-               #imgEle/>
+               draggable="false"/>
           @if (!isReadonly) {
-            <block-resizer [container]="imgEle"
-                           [maxWidthContainer]="hostElement"
-                           (widthChange)="onResized($event)"/>
+            <block-resizer
+              [container]="imgWrapper"
+              [maxWidthContainer]="sizingContainer"
+              [maxWidth]="rootContentWidth || undefined"
+              [referenceWidth]="rootContentWidth || undefined"
+              [preserveRightEdge]="isAbsolute"
+              (resizeCommit)="onResized($event)"/>
           }
         }
         @if (uploadProgress !== 100) {
@@ -45,7 +67,7 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ResizeContainerComponent],
+  imports: [ResizeContainerComponent, BcResourcePlaceholderDirective],
   host: {
     '[attr.data-align]': 'props.align'
   },
@@ -54,6 +76,15 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
       img {
         width: 100%;
       }
+    }
+
+    .img-wrapper {
+      max-width: 100%;
+    }
+
+    .img-wrapper[data-bc-object-sizing] img {
+      height: 100%;
+      object-fit: contain;
     }
 
     .upload-hint, .peer-uploading {
@@ -99,7 +130,7 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
         font-size: 13px;
       }
 
-      &__spinner {
+      .peer-uploading__spinner {
         width: 24px;
         height: 24px;
         border: 3px solid var(--bc-border-color, #E9E9E7);
@@ -144,8 +175,8 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
   `]
 })
 export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
-  @ViewChild('imgEle')
-  imgEle!: ElementRef<HTMLImageElement>;
+  @ViewChild('imgWrapper')
+  imgWrapper!: ElementRef<HTMLElement>;
 
   protected uploadProgress = 100;
   protected _previewUri = '';
@@ -161,6 +192,42 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     return !!src && this.fileService.isLocalObjectURL(src) && !this.fileService.getFileByObjectURL(src);
   }
 
+  get objectDimensions() {
+    return this.doc.objectSizing.resolve(this.flavour, this.props)
+  }
+
+  get renderedWidth(): number | null {
+    return this.objectDimensions?.width ?? null
+  }
+
+  get renderedAspectRatio(): string | null {
+    const dimensions = this.objectDimensions
+    return dimensions && dimensions.source !== 'legacy'
+      ? `${dimensions.ar}`
+      : null
+  }
+
+  get usesRatioSizing(): boolean {
+    const dimensions = this.objectDimensions
+    return !!dimensions && dimensions.source !== 'legacy'
+  }
+
+  get rootContentWidth(): number {
+    return this.doc.objectSizing.rootContentWidth
+  }
+
+  get sizingContainer(): HTMLElement {
+    return this.doc.objectSizing.rootContentElement ?? this.hostElement
+  }
+
+  get isAbsolute(): boolean {
+    return this.props.placement?.mode === 'absolute'
+  }
+
+  get resourcePreviewUrl(): string {
+    return this._previewUri || this.props.src
+  }
+
   override ngOnInit() {
     super.ngOnInit();
     if (!this.props.src) return;
@@ -172,14 +239,20 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
+    this.doc.objectSizing.widthChange$
+      .pipe(takeUntil(this.onDestroy$))
+      .subscribe(() => this.changeDetectorRef.markForCheck())
+  }
 
-    if (this.props.src && !this.props.width && this.imgEle) {
-      const img = this.imgEle.nativeElement;
-      img.addEventListener('load', () => {
-        if (this._isGone() || this.isReadonly) return;
-        this.setInitProps({width: img.naturalWidth, height: img.naturalHeight});
-      }, {once: true});
+  onImageIntrinsicSize(size: ResourceIntrinsicSize) {
+    if (
+      this._isGone() ||
+      this.isReadonly ||
+      this.props.ar != null
+    ) {
+      return
     }
+    this.setInitProps({ar: size.ar})
   }
 
   inputLocalFile = async () => {
@@ -195,8 +268,13 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
         return;
       }
 
+      const intrinsicSize = await readImageIntrinsicSize(file)
+      if (this._isGone() || this.isReadonly) return
       const url = this.fileService.createObjectURL(file);
-      this.setInitProps({src: url});
+      this.setInitProps({
+        src: url,
+        ...(intrinsicSize ? {ar: intrinsicSize.ar} : {}),
+      });
       this.uploadImage(url);
     } catch (e) {
       console.error('选择图片失败', e);
@@ -237,8 +315,35 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     });
   }
 
-  onResized(width: number) {
-    this.updateProps({width});
+  onResized(event: BlockResizeCommit) {
+    if (this.isReadonly) return
+    const derived = deriveObjectSizeFromPixels(
+      event.width,
+      event.height,
+      event.basisWidth,
+    )
+    if (!derived) return
+    const currentAr =
+      typeof this.props.ar === 'number' &&
+      Number.isFinite(this.props.ar) &&
+      this.props.ar > 0
+        ? this.props.ar
+        : derived.ar
+    const placement = this.props.placement
+    this.updateProps({
+      wr: derived.wr,
+      ar: currentAr,
+      width: null,
+      height: null,
+      ...(placement?.mode === 'absolute' && event.offsetX !== 0
+        ? {
+            placement: {
+              ...placement,
+              x: (placement.x ?? 0) + event.offsetX / event.basisWidth * 100,
+            },
+          }
+        : {}),
+    });
     this.changeDetectorRef.markForCheck();
   }
 }

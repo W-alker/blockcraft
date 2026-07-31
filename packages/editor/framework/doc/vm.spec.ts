@@ -142,7 +142,12 @@ describe('DocVM sparse root mounts', () => {
         },
       },
       readonlyManager: {
-        resolve: () => ({readonly: false, source: null, lockUserId: null}),
+        resolve: () => ({
+          readonly: false,
+          source: null,
+          lockUserId: null,
+          lockKind: null,
+        }),
         isReadonly: () => false,
         isExplicitReadonly: () => false,
       },

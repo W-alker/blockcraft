@@ -2,6 +2,7 @@ import {BlockNodeType, IBlockSnapshot} from "../../framework/block-std/types/blo
 import {shikiService} from "../../blocks/code-block/shiki-config";
 import {createSnapshotRenderer} from "../create-snapshot-renderer";
 import {createAllBlocksFixture} from "../testing/fixtures/all-blocks.fixture";
+import {WordArtBlockSchema} from "../../blocks";
 
 describe("snapshot-viewer renderers", () => {
   it("renders a callout prefix and nested paragraph children", () => {
@@ -26,6 +27,35 @@ describe("snapshot-viewer renderers", () => {
     expect(host.querySelector('.paragraph-block[data-heading="2"]')).not.toBeNull()
     expect(host.querySelector(".blockquote-block .edit-container")).not.toBeNull()
     expect(host.querySelector("figcaption.caption-block")).not.toBeNull()
+  })
+
+  it("renders editable word art with whole-block presentation styles", () => {
+    const wordArt = WordArtBlockSchema.createSnapshot("新品发布", {
+      width: 360,
+      height: 110,
+      rotation: 15,
+      fontSize: 54,
+      fillType: "linear-gradient",
+      gradientColors: ["#00FFFF", "#0000FF"],
+      gradientStops: [0, 1],
+      outlineColor: "#111111",
+      outlineWidthEm: 0.05,
+      effect: "slant-right",
+    })
+    const host = renderFixture(wordArt)
+    const surface = host.querySelector(
+      ".word-art-block__surface",
+    ) as HTMLElement
+    const content = surface.querySelector(
+      ".word-art-block__editor",
+    ) as HTMLElement
+
+    expect(surface.style.width).toBe("360px")
+    expect(surface.style.transform).toBe("rotate(15deg)")
+    expect(content.textContent).toBe("新品发布")
+    expect(content.style.fontSize).toBe("54px")
+    expect(content.style.backgroundImage).toContain("linear-gradient")
+    expect(content.style.transform).toBe("skewX(10deg)")
   })
 
   it("renders divider and columns shells", () => {
@@ -71,6 +101,114 @@ describe("snapshot-viewer renderers", () => {
     expect(host.querySelector(".audio-block audio")).not.toBeNull()
     expect(host.querySelector(".attachment-block__name")?.textContent).toContain("Guide.pdf")
     expect(host.querySelector('.attachment-block__icon-wrapper mat-icon[data-mat-icon-type="svg"]')).not.toBeNull()
+  })
+
+  it("renders wr/ar media sizing and preserves legacy pixel sizing", () => {
+    const host = renderFixture([
+      {
+        id: "image-ratio",
+        flavour: "image",
+        nodeType: BlockNodeType.block,
+        meta: {},
+        props: {src: "https://cdn.example.com/image.png", wr: 40, ar: 2},
+        children: [],
+      },
+      {
+        id: "video-ratio",
+        flavour: "video",
+        nodeType: BlockNodeType.void,
+        meta: {},
+        props: {
+          url: "https://cdn.example.com/video.mp4",
+          sourceType: "link",
+          wr: 60,
+          ar: 16 / 9,
+        },
+        children: [],
+      },
+      {
+        id: "image-legacy",
+        flavour: "image",
+        nodeType: BlockNodeType.block,
+        meta: {},
+        props: {
+          src: "https://cdn.example.com/legacy.png",
+          width: 320,
+          height: 180,
+        },
+        children: [],
+      },
+    ])
+
+    const ratioImageFigure = host.querySelector(
+      '[data-block-id="image-ratio"] .image-block__container',
+    ) as HTMLElement
+    const ratioImage = host.querySelector(
+      '[data-block-id="image-ratio"] .img-wrapper',
+    ) as HTMLElement
+    const ratioVideo = host.querySelector(
+      '[data-block-id="video-ratio"] .video-block__wrapper',
+    ) as HTMLElement
+    const legacyImage = host.querySelector(
+      '[data-block-id="image-legacy"] img',
+    ) as HTMLImageElement
+
+    expect(ratioImageFigure.style.width).toBe("40%")
+    expect(ratioImage.style.width).toBe("100%")
+    expect(Number.parseFloat(ratioImage.style.aspectRatio)).toBe(2)
+    expect(ratioVideo.style.width).toBe("60%")
+    expect(Number.parseFloat(ratioVideo.style.aspectRatio)).toBeCloseTo(16 / 9, 4)
+    expect(legacyImage.style.width).toBe("320px")
+    expect(legacyImage.style.height).toBe("180px")
+  })
+
+  it("keeps a stable image placeholder and disposes it with the renderer", async () => {
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer()
+    renderer.render(host, {
+      id: "image-placeholder",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      meta: {},
+      props: {
+        src: "https://cdn.example.com/image.png",
+        wr: 50,
+        ar: 2,
+      },
+      children: [],
+    })
+    await flushPromises()
+
+    const frame = host.querySelector(".img-wrapper") as HTMLElement
+    const image = frame.querySelector("img") as HTMLImageElement
+    expect(frame.dataset["bcResourceState"]).toBe("loading")
+    expect(Number.parseFloat(frame.style.aspectRatio)).toBe(2)
+
+    image.dispatchEvent(new Event("error"))
+    expect(frame.dataset["bcResourceState"]).toBe("error")
+
+    renderer.update({
+      id: "image-placeholder",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      meta: {},
+      props: {
+        src: "https://cdn.example.com/image-next.png",
+        wr: 50,
+        ar: 2,
+      },
+      children: [],
+    })
+    await flushPromises()
+    const nextFrame = host.querySelector(".img-wrapper") as HTMLElement
+    const nextImage = nextFrame.querySelector("img") as HTMLImageElement
+    expect(nextFrame).not.toBe(frame)
+    expect(nextFrame.dataset["bcResourceState"]).toBe("loading")
+    nextImage.dispatchEvent(new Event("error"))
+    expect(nextFrame.dataset["bcResourceState"]).toBe("error")
+
+    renderer.destroy()
+    expect(nextFrame.querySelector(".bc-resource-placeholder")).toBeNull()
   })
 
   it("uses dedicated empty states for video/audio without playable resources", () => {

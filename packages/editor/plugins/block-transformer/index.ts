@@ -216,20 +216,20 @@ export class BlockTransformerPlugin extends DocPlugin {
       },
     ]);
 
-    if (
-      !this.doc.schemas.isValidChildren(
-        newBlock.flavour,
-        block.parentBlock!.flavour,
-      )
-    ) {
-      return;
-    }
-
     const appendBlocks = [newBlock];
     if (newBlock.nodeType === "void") {
       appendBlocks.push(
         this.doc.schemas.createSnapshot("paragraph", [[], block.props]),
       );
+    }
+    const parentId = block.parentId;
+    if (
+      !parentId ||
+      appendBlocks.some(snapshot =>
+        !this.doc.canInsertChild(parentId, snapshot.flavour),
+      )
+    ) {
+      return;
     }
     void this.doc
       .chain()

@@ -1,4 +1,13 @@
-import {ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, OnDestroy, OnInit, Output} from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  EventEmitter,
+  Input,
+  OnDestroy,
+  OnInit,
+  Output,
+} from "@angular/core";
 import {
   BcColumnCountPickerComponent,
   BcFloatToolbarComponent,
@@ -9,7 +18,7 @@ import {
   ColorGroup,
   ColorPickerComponent,
   IColumnCountPickedEvent,
-  ITableSizePickedEvent
+  ITableSizePickedEvent,
 } from "../../../components";
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
@@ -18,100 +27,117 @@ import {
   IEditableBlockProps,
   IInlineNodeAttrs,
   ISelectionJSON,
-  TextToolbarHelper
+  TextToolbarHelper,
 } from "../../../framework";
-import {fromEvent, merge, Subscription} from "rxjs";
-import {debounce, IS_MAC, nextTick} from "../../../global";
-import {Overlay} from "@angular/cdk/overlay";
-import {ComponentPortal} from "@angular/cdk/portal";
-import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
-import {LinkInputPad} from "../../float-text-toolbar/widgets/link-input-pad";
-import {getSelectionCoveredBlockIds} from "../../../framework/modules/selection/covered-blocks";
-import {isSelectionAlive} from "../../../framework/modules/selection/liveness";
+import { fromEvent, merge, Subscription } from "rxjs";
+import { debounce, IS_MAC, nextTick } from "../../../global";
+import { Overlay } from "@angular/cdk/overlay";
+import { ComponentPortal } from "@angular/cdk/portal";
+import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
+import { LinkInputPad } from "../../float-text-toolbar/widgets/link-input-pad";
+import { getSelectionCoveredBlockIds } from "../../../framework/modules/selection/covered-blocks";
+import { isSelectionAlive } from "../../../framework/modules/selection/liveness";
+import {
+  SHAPE_DEFINITIONS,
+  ShapeIconComponent,
+  type ShapeKind,
+} from "../../../blocks/shape-block";
+import {
+  getWordArtPreset,
+  type WordArtPresetId,
+} from "../../../blocks/word-art-block";
+import { WordArtPresetPickerComponent } from "./word-art-preset-picker.component";
 
-type TInlineToggle = 'bold' | 'italic' | 'underline' | 'strike' | 'code' | 'sup' | 'sub'
-type TAlignValue = 'left' | 'center' | 'right'
-type TListFlavour = 'ordered' | 'bullet' | 'todo'
+type TInlineToggle =
+  | "bold"
+  | "italic"
+  | "underline"
+  | "strike"
+  | "code"
+  | "sup"
+  | "sub";
+type TAlignValue = "left" | "center" | "right";
+type TListFlavour = "ordered" | "bullet" | "todo";
 interface IStyleMenuItem {
-  name: string
-  value: any
-  intro: string
+  name: string;
+  value: any;
+  intro: string;
 }
 
 interface IToolbarIconAction<T extends string = string> {
-  value: T
-  icon: string
-  title: string
+  value: T;
+  icon: string;
+  title: string;
 }
 
 interface IFormatBrushPayload {
-  inlineAttrs: IInlineNodeAttrs
+  inlineAttrs: IInlineNodeAttrs;
 }
 
 type InsertPlacement =
   | { kind: "before"; anchor: BlockCraft.BlockComponent }
   | { kind: "after"; anchor: BlockCraft.BlockComponent }
-  | { kind: "index"; parentId: string; index: number }
+  | { kind: "index"; parentId: string; index: number };
 
 export interface IFixedToolbarExtensionAction {
-  key: string
-  icon: string
-  title: string
-  active?: boolean
-  disabled?: boolean
-  dividerBefore?: boolean
+  key: string;
+  icon: string;
+  title: string;
+  active?: boolean;
+  disabled?: boolean;
+  dividerBefore?: boolean;
 }
 
 export interface IFixedToolbarExtensionActionContext {
-  action: IFixedToolbarExtensionAction
-  selection: ISelectionJSON | null
-  doc: BlockCraft.Doc
+  action: IFixedToolbarExtensionAction;
+  selection: ISelectionJSON | null;
+  doc: BlockCraft.Doc;
 }
 
 const HEADING_MENU_LIST: IStyleMenuItem[] = [
-  {name: 'heading', intro: '正文', value: null},
-  {name: 'heading', value: 1, intro: '一级标题'},
-  {name: 'heading', value: 2, intro: '二级标题'},
-  {name: 'heading', value: 3, intro: '三级标题'},
-  {name: 'heading', value: 4, intro: '四级标题'},
-]
+  { name: "heading", intro: "正文", value: null },
+  { name: "heading", value: 1, intro: "一级标题" },
+  { name: "heading", value: 2, intro: "二级标题" },
+  { name: "heading", value: 3, intro: "三级标题" },
+  { name: "heading", value: 4, intro: "四级标题" },
+];
 
 const INLINE_TOGGLE_ACTIONS: IToolbarIconAction<TInlineToggle>[] = [
-  {value: 'bold', icon: 'bc_jiacu', title: '加粗'},
-  {value: 'italic', icon: 'bc_xieti', title: '斜体'},
-  {value: 'underline', icon: 'bc_xiahuaxian', title: '下划线'},
-  {value: 'strike', icon: 'bc_shanchuxian', title: '删除线'},
-  {value: 'code', icon: 'bc_daimakuai', title: '行内代码'},
-  {value: 'sup', icon: 'bc_shangbiao', title: '上标'},
-  {value: 'sub', icon: 'bc_xiabiao', title: '下标'}
-]
+  { value: "bold", icon: "bc_jiacu", title: "加粗" },
+  { value: "italic", icon: "bc_xieti", title: "斜体" },
+  { value: "underline", icon: "bc_xiahuaxian", title: "下划线" },
+  { value: "strike", icon: "bc_shanchuxian", title: "删除线" },
+  { value: "code", icon: "bc_daimakuai", title: "行内代码" },
+  { value: "sup", icon: "bc_shangbiao", title: "上标" },
+  { value: "sub", icon: "bc_xiabiao", title: "下标" },
+];
 
 const LIST_ACTIONS: IToolbarIconAction<TListFlavour>[] = [
-  {value: 'todo', icon: 'bc_gongzuoshixiang', title: '待办事项'},
-  {value: 'bullet', icon: 'bc_wuxuliebiao', title: '无序列表'},
-  {value: 'ordered', icon: 'bc_youxuliebiao', title: '有序列表'}
-]
+  { value: "todo", icon: "bc_gongzuoshixiang", title: "待办事项" },
+  { value: "bullet", icon: "bc_wuxuliebiao", title: "无序列表" },
+  { value: "ordered", icon: "bc_youxuliebiao", title: "有序列表" },
+];
 
 const ALIGN_ACTIONS: IToolbarIconAction<TAlignValue>[] = [
-  {value: 'left', icon: 'bc_zuoduiqi', title: '左对齐'},
-  {value: 'center', icon: 'bc_juzhongduiqi', title: '居中'},
-  {value: 'right', icon: 'bc_youduiqi', title: '右对齐'}
-]
+  { value: "left", icon: "bc_zuoduiqi", title: "左对齐" },
+  { value: "center", icon: "bc_juzhongduiqi", title: "居中" },
+  { value: "right", icon: "bc_youduiqi", title: "右对齐" },
+];
 
 const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
   {
     attr: null,
-    class: 'none'
+    class: "none",
   },
   {
-    attr: 'r1',
-    class: 'radius-1'
+    attr: "r1",
+    class: "radius-1",
   },
   {
-    attr: 'rb',
-    class: 'right-border'
-  }
-]
+    attr: "rb",
+    class: "right-border",
+  },
+];
 
 @Component({
   selector: "bc-fixed-toolbar",
@@ -262,6 +288,36 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
     <button
       class="toolbar-btn toolbar-btn--dropdown"
+      title="插入形状"
+      aria-label="插入形状"
+      [hidden]="!doc.schemas.has('shape')"
+      [disabled]="readonly || !canInsertBlock('shape')"
+      [bcOverlayTrigger]="shapePicker"
+      [bcOverlayDisabled]="readonly || !canInsertBlock('shape')"
+      (click)="shapeTrigger.openOverlay()"
+      #shapeTrigger="bcOverlayTrigger"
+    >
+      <i class="bc_icon bc_tuxing"></i>
+      <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+    </button>
+
+    <button
+      class="toolbar-btn toolbar-btn--dropdown"
+      title="插入艺术字"
+      aria-label="插入艺术字"
+      [hidden]="!doc.schemas.has('word-art')"
+      [disabled]="readonly || !canInsertBlock('word-art')"
+      [bcOverlayTrigger]="wordArtPicker"
+      [bcOverlayDisabled]="readonly || !canInsertBlock('word-art')"
+      (click)="wordArtTrigger.openOverlay()"
+      #wordArtTrigger="bcOverlayTrigger"
+    >
+      <i class="bc_icon bc_yishuzishengcheng"></i>
+      <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+    </button>
+
+    <button
+      class="toolbar-btn toolbar-btn--dropdown"
       title="插入表格"
       [disabled]="readonly || !canInsertBlock('table')"
       [bcOverlayTrigger]="quickTablePicker"
@@ -297,9 +353,13 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     <button
       class="toolbar-btn toolbar-btn--dropdown"
       title="插入视频或音频"
-      [disabled]="readonly || (!canInsertBlock('video') && !canInsertBlock('audio'))"
+      [disabled]="
+        readonly || (!canInsertBlock('video') && !canInsertBlock('audio'))
+      "
       [bcOverlayTrigger]="mediaTypePicker"
-      [bcOverlayDisabled]="readonly || (!canInsertBlock('video') && !canInsertBlock('audio'))"
+      [bcOverlayDisabled]="
+        readonly || (!canInsertBlock('video') && !canInsertBlock('audio'))
+      "
       #mediaTypeTrigger="bcOverlayTrigger"
     >
       <i class="bc_icon bc_shipin"></i>
@@ -395,6 +455,30 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       </bc-float-toolbar>
     </ng-template>
 
+    <ng-template #shapePicker>
+      <div class="shape-picker" role="menu" aria-label="选择要插入的形状">
+        @for (definition of shapeDefinitions; track definition.type) {
+          <button
+            type="button"
+            class="shape-picker__item"
+            role="menuitem"
+            [title]="definition.label"
+            (mousedown)="onActionMouseDown($event)"
+            (click)="insertShape(definition.type, shapeTrigger)"
+          >
+            <bc-shape-icon [path]="definition.path"></bc-shape-icon>
+            <span>{{ definition.label }}</span>
+          </button>
+        }
+      </div>
+    </ng-template>
+
+    <ng-template #wordArtPicker>
+      <bc-word-art-preset-picker
+        (pick)="insertWordArt($event, wordArtTrigger)"
+      ></bc-word-art-preset-picker>
+    </ng-template>
+
     <ng-template #styleDropdown>
       <bc-float-toolbar
         [direction]="'column'"
@@ -481,7 +565,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
       .toolbar-btn__caret {
         font-size: 10px !important;
-        opacity: .6;
+        opacity: 0.6;
         flex-shrink: 0;
       }
 
@@ -518,6 +602,57 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         background: var(--bc-float-toolbar-divider-color);
         margin: 0 2px;
         flex-shrink: 0;
+      }
+
+      .shape-picker {
+        display: grid;
+        grid-template-columns: repeat(4, 58px);
+        gap: 4px;
+        width: max-content;
+        padding: 8px;
+        border: 1px solid var(--bc-float-toolbar-divider-color);
+        border-radius: 8px;
+        background: var(--bc-float-toolbar-bg);
+        box-shadow: var(
+          --bc-fixed-toolbar-shadow,
+          0 6px 16px rgba(15, 15, 15, 0.08)
+        );
+      }
+
+      .shape-picker__item {
+        width: 58px;
+        min-height: 52px;
+        padding: 6px 4px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--bc-float-toolbar-item-color);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        cursor: pointer;
+      }
+
+      .shape-picker__item:hover,
+      .shape-picker__item:focus-visible {
+        background: var(--bc-float-toolbar-item-hover-bg);
+        outline: none;
+      }
+
+      .shape-picker__item > bc-shape-icon {
+        width: 24px;
+        height: 24px;
+      }
+
+      .shape-picker__item > span {
+        max-width: 100%;
+        overflow: hidden;
+        font-size: 11px;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .bg-list {
@@ -586,6 +721,8 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     BcTableSizePickerComponent,
     BcColumnCountPickerComponent,
     BcFontScalePickerComponent,
+    ShapeIconComponent,
+    WordArtPresetPickerComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -671,6 +808,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   protected readonly listActions = LIST_ACTIONS;
   protected readonly alignActions = ALIGN_ACTIONS;
   protected readonly bgGraphList = BG_GRAPH_LIST;
+  protected readonly shapeDefinitions = SHAPE_DEFINITIONS;
   protected formatBrushActive = false;
   private _destroyed = false;
 
@@ -906,7 +1044,10 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (this.readonly || !this.selectionJSON) return;
     this.restoreSelection();
     const selection = this.doc.selection.value;
-    if (!this.isLiveSelection(selection) || !this.canUseColumnPicker(selection)) {
+    if (
+      !this.isLiveSelection(selection) ||
+      !this.canUseColumnPicker(selection)
+    ) {
       trigger.closePanel();
       this.syncToolbarState(selection);
       return;
@@ -927,6 +1068,83 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (item.value === "video" || item.value === "audio") {
       void this.insertSchemaBlock(item.value);
     }
+  }
+
+  protected async insertShape(
+    shapeType: ShapeKind,
+    trigger: BcOverlayTriggerDirective,
+  ) {
+    trigger.closePanel();
+    if (this.readonly || !this.selectionJSON) return;
+
+    const schema = this.doc.schemas.get("shape", false);
+    if (!schema) return;
+
+    this.restoreSelection();
+    const selection = this.doc.selection.value;
+    if (!this.isLiveSelection(selection)) return;
+
+    const snapshot = this.doc.schemas.createSnapshot("shape", [shapeType]);
+    const insertedId = this.doc.placement.insertAbsoluteSnapshot(snapshot, {
+      anchorRect: this.doc.selection.getSelectionRect(),
+      layer: "over",
+    });
+    if (!insertedId) {
+      this.doc.messageService.warn(`此处不能添加${schema.metadata.label}`);
+      return;
+    }
+    this.doc.selection.selectOrSetCursorAtBlock(insertedId, true);
+    this.syncToolbarState(this.doc.selection.value);
+    this.cdr.markForCheck();
+  }
+
+  protected async insertWordArt(
+    presetId: WordArtPresetId,
+    trigger: BcOverlayTriggerDirective,
+  ) {
+    trigger.closePanel();
+    if (this.readonly || !this.selectionJSON) return;
+
+    const schema = this.doc.schemas.get("word-art", false);
+    if (!schema) return;
+
+    this.restoreSelection();
+    const selection = this.doc.selection.value;
+    if (!this.isLiveSelection(selection)) return;
+
+    const preset = getWordArtPreset(presetId);
+    const presetProps = {
+      ...preset.props,
+      gradientColors: [...preset.props.gradientColors],
+      gradientStops: [...preset.props.gradientStops],
+    };
+    const snapshot = this.doc.schemas.createSnapshot("word-art", [
+      "艺术字",
+      presetProps,
+    ]);
+    const insertedId = this.doc.placement.insertAbsoluteSnapshot(snapshot, {
+      anchorRect: this.doc.selection.getSelectionRect(),
+      layer: "over",
+    });
+    if (!insertedId) {
+      this.doc.messageService.warn(`此处不能添加${schema.metadata.label}`);
+      return;
+    }
+
+    this.doc.selection.selectOrSetCursorAtBlock(insertedId, true);
+    const revealed = await this.doc.navigateToBlock(insertedId);
+    if (revealed) {
+      try {
+        const block = this.doc.getBlockById(insertedId);
+        if (block.flavour === "word-art") {
+          (block as BlockCraft.IBlockComponents["word-art"]).enterEditing(true);
+        }
+      } catch {
+        // 视图可能在协同更新中被移除；保留已建立的对象选区即可。
+      }
+    }
+    this.syncToolbarState(this.doc.selection.value);
+    this.cdr.markForCheck();
   }
 
   protected onLinkAction() {
@@ -1001,7 +1219,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
         close();
         if (!this.replaySelection(selectionJSON)) return;
         const liveSelection = this.doc.selection.value;
-        if (!this.isLiveSelection(liveSelection) || liveSelection.start.type !== "text") return;
+        if (
+          !this.isLiveSelection(liveSelection) ||
+          liveSelection.start.type !== "text"
+        )
+          return;
         const startBlock = liveSelection.firstBlock as any;
         const startOff = liveSelection.start.offset;
         const len =
@@ -1016,7 +1238,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (!this.hasTextSelection) return;
     this.runWithSelection(() => {
       const selection = this.doc.selection.value;
-      if (!this.isLiveSelection(selection) || selection.start.type !== "text") return;
+      if (!this.isLiveSelection(selection) || selection.start.type !== "text")
+        return;
       const block = selection.firstBlock as any;
       const index = selection.start.offset;
       const length =
@@ -1094,7 +1317,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
     const resolvedSelection = this.resolveExtensionActionSelection();
     const selection = this.doc.selection.value;
-    if (this.isLiveSelection(selection) && this.isReadonlySelection(selection)) return;
+    if (this.isLiveSelection(selection) && this.isReadonlySelection(selection))
+      return;
 
     this.extensionAction.emit({
       action,
@@ -1116,7 +1340,9 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   private isNativeInputTarget(target: EventTarget | null) {
-    return target instanceof HTMLElement && !!target.closest("input,textarea,select");
+    return (
+      target instanceof HTMLElement && !!target.closest("input,textarea,select")
+    );
   }
 
   private isFormatBrushHotkey(evt: KeyboardEvent) {
@@ -1235,15 +1461,31 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
     const start = selection.start;
     const end = selection.end;
-    if (start.type === "boundary" && end.type === "boundary" && start.blockId === end.blockId) {
-      return this.resolveContainerInsertPlacement(flavour, start.block, Math.max(start.index, end.index));
+    if (
+      start.type === "boundary" &&
+      end.type === "boundary" &&
+      start.blockId === end.blockId
+    ) {
+      return this.resolveContainerInsertPlacement(
+        flavour,
+        start.block,
+        Math.max(start.index, end.index),
+      );
     }
 
     if (selection.collapsed && start.type === "gap") {
-      return this.resolveBlockInsertPlacement(flavour, start.block, start.side === "before" ? "before" : "after");
+      return this.resolveBlockInsertPlacement(
+        flavour,
+        start.block,
+        start.side === "before" ? "before" : "after",
+      );
     }
 
-    return this.resolveBlockInsertPlacement(flavour, selection.lastBlock, "after");
+    return this.resolveBlockInsertPlacement(
+      flavour,
+      selection.lastBlock,
+      "after",
+    );
   }
 
   private resolveContainerInsertPlacement(
@@ -1251,7 +1493,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     container: BlockCraft.BlockComponent,
     index: number,
   ): InsertPlacement | null {
-    if (!this.doc.schemas.isValidChildren(flavour, container.flavour)) return null;
+    if (!this.doc.canInsertChild(container.id, flavour)) return null;
     return {
       kind: "index",
       parentId: container.id,
@@ -1267,18 +1509,18 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     let anchor: BlockCraft.BlockComponent | null = block;
     while (
       anchor?.parentBlock &&
-      !this.doc.schemas.isValidChildren(flavour, anchor.parentBlock.flavour)
+      !this.doc.canInsertChild(anchor.parentBlock.id, flavour)
     ) {
       anchor = anchor.parentBlock;
     }
     if (
       !anchor ||
       !anchor.parentBlock ||
-      !this.doc.schemas.isValidChildren(flavour, anchor.parentBlock.flavour)
+      !this.doc.canInsertChild(anchor.parentBlock.id, flavour)
     ) {
       return null;
     }
-    return {kind: side, anchor};
+    return { kind: side, anchor };
   }
 
   private insertSnapshotsAtPlacement(
@@ -1286,12 +1528,21 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     snapshots: IBlockSnapshot[],
   ) {
     if (placement.kind === "index") {
-      return this.doc.chain().insertSnapshots(placement.parentId, placement.index, snapshots).run();
+      return this.doc
+        .chain()
+        .insertSnapshots(placement.parentId, placement.index, snapshots)
+        .run();
     }
     if (placement.kind === "before") {
-      return this.doc.chain().insertBeforeSnapshots(placement.anchor, snapshots).run();
+      return this.doc
+        .chain()
+        .insertBeforeSnapshots(placement.anchor, snapshots)
+        .run();
     }
-    return this.doc.chain().insertAfterSnapshots(placement.anchor, snapshots).run();
+    return this.doc
+      .chain()
+      .insertAfterSnapshots(placement.anchor, snapshots)
+      .run();
   }
 
   private async tryApplyFormatBrush(selection: BlockCraft.Selection | null) {
@@ -1363,8 +1614,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       this.doc.selection.selectOrSetCursorAtBlock(snapshot.id, true);
       this.syncToolbarState(this.doc.selection.value);
       this.cdr.markForCheck();
-    } catch {
-    }
+    } catch {}
   }
 
   private async insertTable(
@@ -1453,7 +1703,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       for (const removeId of removeIds) {
         const removeCol = this.doc.getBlockById(removeId);
         if (removeCol && !this.isColumnEffectivelyEmpty(removeCol)) {
-          const keepLen = this.doc.getBlockById(keepLastId)?.childrenLength ?? 0;
+          const keepLen =
+            this.doc.getBlockById(keepLastId)?.childrenLength ?? 0;
           this.doc.crud.moveBlocks(
             removeId,
             0,
@@ -1478,8 +1729,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     } catch {
       try {
         this.doc.selection.setCursorAtBlock(fallbackColumnId, true);
-      } catch {
-      }
+      } catch {}
     }
   }
 
@@ -1577,7 +1827,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (
       !sameParent ||
       !allValidChildren ||
-      !this.doc.schemas.isValidChildren("columns", parent.flavour)
+      !this.doc.canInsertChild(parent.id, "columns")
     ) {
       return null;
     }
@@ -1688,7 +1938,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   private canTransformSelection(selection: BlockCraft.Selection | null) {
-    if (!this.isLiveSelection(selection) || selection.isAllSelected) return false;
+    if (!this.isLiveSelection(selection) || selection.isAllSelected)
+      return false;
     if (this.isReadonlySelection(selection)) return false;
 
     let between: string[];
@@ -1699,9 +1950,14 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     }
     if (!between.length) return false;
     return between.every((id) => {
-      if (typeof (this.doc as any).model?.exists === "function" && this.doc.model.exists(id)) {
-        return this.doc.model.getNodeType(id) === BlockNodeType.editable &&
-          !this.doc.isPlainTextBlock(id);
+      if (
+        typeof (this.doc as any).model?.exists === "function" &&
+        this.doc.model.exists(id)
+      ) {
+        return (
+          this.doc.model.getNodeType(id) === BlockNodeType.editable &&
+          !this.doc.isPlainTextBlock(id)
+        );
       }
       try {
         const block = this.doc.getBlockById(id);
@@ -1732,12 +1988,17 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     );
   }
 
-  private isLiveSelection(selection: BlockCraft.Selection | null | undefined): selection is BlockCraft.Selection {
+  private isLiveSelection(
+    selection: BlockCraft.Selection | null | undefined,
+  ): selection is BlockCraft.Selection {
     return isSelectionAlive(selection as any, this.doc);
   }
 
   private isReadonlySelection(selection: BlockCraft.Selection) {
-    return this.doc.readonlyManager?.isSelectionReadonly(selection) ?? this.doc.isReadonly
+    return (
+      this.doc.readonlyManager?.isSelectionReadonly(selection) ??
+      this.doc.isReadonly
+    );
   }
 
   private get toolbarHelper() {

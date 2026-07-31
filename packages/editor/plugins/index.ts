@@ -21,3 +21,5 @@ export * from "./block-gap-creator";
 export * from './paste-format-selector'
 export * from './placeholder'
 export * from './pagination'
+export * from './shape-toolbar'
+export * from './word-art-toolbar'

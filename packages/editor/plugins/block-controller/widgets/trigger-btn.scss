@@ -14,14 +14,11 @@
   }
 }
 
-::ng-deep mat-icon {
+.bc-block-svg-icon {
   width: 1em;
   height: 1em;
-  font-size: 1em;
-
-  > svg {
-    vertical-align: top;
-  }
+  flex: none;
+  overflow: visible;
 }
 
 .drag-handle {

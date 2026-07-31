@@ -316,6 +316,7 @@ const createDocHarness = () => {
         }
       })),
       isValidChildren: jasmine.createSpy('isValidChildren').and.returnValue(true),
+      isValidChildrenForInstance: jasmine.createSpy('isValidChildrenForInstance').and.returnValue(true),
       createSnapshot: jasmine.createSpy('createSnapshot').and.callFake((flavour: string) => {
         const snapshot = createEditableSnapshot(`${flavour}-auto-${createdParagraphs.length + 1}`)
         createdParagraphs.push(snapshot)
@@ -643,6 +644,29 @@ describe('DocCRUD', () => {
     expect(rootRef.instance.childrenIds).toEqual(['visible-model'])
   })
 
+  it('filters inserts through opt-in instance child constraints', () => {
+    const {crud, doc, rootRef} = createDocHarness()
+    ;(doc.schemas.isValidChildrenForInstance as jasmine.Spy)
+      .and.callFake((flavour: string, _schema: unknown, meta: Record<string, unknown>) =>
+        !Array.isArray(meta['incl']) ||
+        (meta['incl'] as string[]).includes(flavour),
+      )
+    ;(rootRef.instance.yBlock.get('meta') as Y.Map<unknown>)
+      .set('incl', ['paragraph'])
+
+    const insertedIds = crud.insertBlockSnapshots('root', 0, [
+      createEditableSnapshot('allowed'),
+      {
+        ...createEditableSnapshot('rejected'),
+        flavour: 'todo',
+      },
+    ])
+
+    expect(insertedIds).toEqual(['allowed'])
+    expect(doc.yBlockMap.has('allowed')).toBeTrue()
+    expect(doc.yBlockMap.has('rejected')).toBeFalse()
+  })
+
   it('inserts snapshots into an unmounted model parent', () => {
     const {crud, doc, rootRef, store} = createDocHarness()
     doc.vm.usesSparseRoot = true
@@ -832,6 +856,52 @@ describe('DocCRUD', () => {
       'move-a',
     ])
     expect(store.get('move-a')).toBe(movedRef)
+  })
+
+  it('mounts a sparse-root replacement after moving it out of a container in the same transaction', () => {
+    const {crud, doc, rootRef, store} = createDocHarness()
+    doc.vm.usesSparseRoot = true
+    const image = createEditableSnapshot('absolute-image')
+    const layout = native2YBlock({
+      id: 'placement-layout',
+      flavour: 'callout',
+      nodeType: BlockNodeType.block,
+      props: {},
+      meta: {},
+      children: [image.id],
+    } as NativeBlockModel)
+    doc.yDoc.transact(() => {
+      doc.yBlockMap.set(image.id, native2YBlock({
+        ...image,
+        children: image.children,
+      } as unknown as NativeBlockModel))
+      doc.yBlockMap.set('placement-layout', layout)
+      ;(rootRef.instance.yBlock.get('children') as Y.Array<string>)
+        .insert(0, ['placement-layout'])
+    })
+    expect(store.has(image.id)).toBeFalse()
+
+    // ModelGraph still reports the pre-move parent until the outer transaction
+    // commits, matching absolute image -> inline image conversion.
+    const getParentId = doc.model.getParentId
+    spyOn(doc.model, 'getParentId').and.callFake((id: string) =>
+      id === image.id ? 'placement-layout' : getParentId(id),
+    )
+    doc.vm.ensureRootChildComponent.calls.reset()
+    const replacement = createEditableSnapshot('inline-image-paragraph')
+
+    crud.transact(() => {
+      crud.moveBlocks('placement-layout', 0, 1, rootRef.instance.id, 1)
+      crud.replaceWithSnapshots(image.id, [replacement])
+    })
+
+    expect((layout.get('children') as Y.Array<string>).toArray()).toEqual([])
+    expect(rootRef.instance.childrenIds).toEqual([
+      'placement-layout',
+      replacement.id,
+    ])
+    expect(doc.vm.ensureRootChildComponent).toHaveBeenCalledWith(replacement.id)
+    expect(store.has(replacement.id)).toBeTrue()
   })
 
   it('settles a moved component into sparse-root retention before view observers run', () => {
@@ -1574,6 +1644,26 @@ describe('DocCRUD', () => {
     expect(selection.recalculate).not.toHaveBeenCalled()
     expect(createdParagraphs.map(snapshot => snapshot.id)).toEqual(['paragraph-auto-1'])
     expect(rootRef.instance.childrenIds).toEqual(['paragraph-auto-1'])
+  })
+
+  it('preserves an allow-empty container after deleting its last child', () => {
+    const {crud, doc, rootRef, createdParagraphs} = createDocHarness()
+    ;(doc.schemas.get as jasmine.Spy).and.callFake((flavour: string) => ({
+      flavour,
+      metadata: {
+        label: flavour,
+        renderUnit: flavour === 'root',
+        allowEmptyChildren: flavour === 'root',
+      },
+    }))
+    crud.insertBlocks(rootRef.instance.id, 0, [
+      createEditableSnapshot('only-child'),
+    ])
+
+    crud.deleteBlocks(rootRef.instance.id, 0, 1)
+
+    expect(rootRef.instance.childrenIds).toEqual([])
+    expect(createdParagraphs).toEqual([])
   })
 
   it('does NOT recalculate selection when a remote change misses the selection blocks', async () => {

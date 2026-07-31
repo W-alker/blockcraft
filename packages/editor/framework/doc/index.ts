@@ -30,9 +30,23 @@ import * as Y from "yjs";
 import { BLOCK_POSITION } from "./block-position";
 import { BlockModelGraph } from "./model-graph";
 import { BlockReadonlyManager } from "./block-readonly-manager";
-import { BlockRef, BlockUnlockContext } from "./block-readonly.types";
+import {
+  BlockLockKind,
+  BlockRef,
+  BlockUnlockContext,
+  SetBlockReadonlyOptions,
+} from "./block-readonly.types";
 import {writeSnapshotsToYBlockMap} from './snapshot-yblock'
 import {BlockNavigationManager} from './block-navigation-manager'
+import {
+  BlockPlacementConfig,
+  BlockPlacementManager,
+} from '../services/block-placement.manager'
+import {BlockObjectSizingManager} from '../services/block-object-sizing.manager'
+import {
+  BlockMutationPolicy,
+  BlockMutationPolicyManager,
+} from './block-mutation-policy'
 
 export interface DocConfig {
   docId: string
@@ -46,7 +60,12 @@ export interface DocConfig {
   readonly?: boolean
   /** Stable current user id used to own block locks. Omit to disable lock control. */
   currentUserId?: string
-  /** Additional synchronous authorization for unlocking another user's block. */
+  /** Default origin for new block locks created by generic editor controls. */
+  defaultBlockLockKind?: BlockLockKind
+  /**
+   * Additional synchronous unlock authorization. Template locks require this
+   * grant even when the current user matches the persisted lock owner.
+   */
   canUnlockBlock?: (context: BlockUnlockContext) => boolean
   /** Global copy filter; seeded into ClipboardManager's registry. Omit = no filtering. */
   copyFilter?: ClipboardCopyFilter
@@ -54,6 +73,13 @@ export interface DocConfig {
   scrollContainer?: HTMLElement
   /** Optional root-child view virtualization. Disabled by default. */
   virtualization?: VirtualizationConfig
+  /** Optional host orchestration for placement mode transitions. */
+  placement?: BlockPlacementConfig
+  /**
+   * Optional synchronous host policy for structural, instance-meta and history
+   * mutations. The policy runs before a Yjs transaction is applied.
+   */
+  blockMutationPolicy?: BlockMutationPolicy
 }
 
 export const Y_BLOCK_MAP_NAME = 'blocks'
@@ -90,6 +116,7 @@ export class BlockCraftDoc {
   readonly onTextUpdate$ = this.crud.onTextUpdate$
   readonly onMetaUpdate$ = this.crud.onMetaUpdate$
   readonly readonlyManager = new BlockReadonlyManager(this)
+  readonly mutationPolicy = new BlockMutationPolicyManager(this)
 
   private readonly _plugins: DocPlugin[] = []
 
@@ -97,6 +124,8 @@ export class BlockCraftDoc {
   public readonly overlayService = new DocOverlayService(this)
   public readonly dndService = new DocDndService(this)
   public readonly dragController = new DocInternalDragController(this)
+  public readonly placement = new BlockPlacementManager(this)
+  public readonly objectSizing = new BlockObjectSizingManager(this)
 
   private _scrollContainer: HTMLElement | null = null
 
@@ -136,6 +165,35 @@ export class BlockCraftDoc {
 
   get schemas() {
     return this.config.schemas
+  }
+
+  /**
+   * Model-first direct-child eligibility. Unlike SchemaManager's static query,
+   * this also applies opt-in instance `meta.incl` / `meta.excl`.
+   */
+  canInsertChild(
+    parentId: string,
+    childFlavour: BlockCraft.BlockFlavour,
+  ): boolean {
+    const parentYBlock =
+      this._yBlockMap?.get(parentId) ??
+      this.model.getYBlock(parentId)
+    if (!parentYBlock) return false
+    const parentFlavour = parentYBlock.get('flavour')
+    const parentMeta = parentYBlock.get('meta')
+    if (
+      typeof parentFlavour !== 'string' ||
+      !(parentMeta instanceof Y.Map)
+    ) {
+      return false
+    }
+    const parentSchema = this.schemas.get(parentFlavour, false)
+    if (!parentSchema) return false
+    return this.schemas.isValidChildrenForInstance(
+      childFlavour,
+      parentSchema,
+      parentMeta.toJSON() as Record<string, unknown>,
+    )
   }
 
   get injector() {
@@ -190,7 +248,9 @@ export class BlockCraftDoc {
     this._subsystemsDisposed = true
     this.blockNavigation.destroy()
     this.virtualization.dispose()
+    this.objectSizing.destroy()
     this.model.destroy()
+    this.placement.destroy()
     this.dragController.destroy()
     this._subscriptions.unsubscribe()
   }
@@ -277,8 +337,15 @@ export class BlockCraftDoc {
     // issue guarded model writes. The initial `true` only protects bootstrap.
     this.readonlySwitch$.next(this.config.readonly ?? false)
 
+    // Establish the single root-content width source before plugins and
+    // afterInit callbacks resolve responsive object geometry.
+    this._root = comp
+    this.objectSizing?.init(
+      comp.childrenRenderRef?.containerElement ?? comp.hostElement,
+    )
+
     // exec after init functions
-    this.afterInit$.next(this._root = comp)
+    this.afterInit$.next(comp)
     this.afterInitFnStack.forEach(fn => fn(this.root))
     // this.afterInitFnStack.clear()
 
@@ -390,13 +457,36 @@ export class BlockCraftDoc {
     return this.getBlockById(id)
   }
 
+  private _getNavigableSiblingId(
+    blockId: string,
+    direction: 'next' | 'previous',
+  ): string | null {
+    const getSiblingId = direction === 'next'
+      ? (id: string) => this.model.getNextSiblingId(id)
+      : (id: string) => this.model.getPreviousSiblingId(id)
+    let siblingId = getSiblingId(blockId)
+    while (
+      siblingId !== null &&
+      this.placement?.isPlacementLayout?.(siblingId)
+    ) {
+      siblingId = getSiblingId(siblingId)
+    }
+    return siblingId
+  }
+
   nextSibling(block: string | BlockCraft.BlockComponent) {
-    const siblingId = this.model.getNextSiblingId(this._getModelBlockId(block))
+    const siblingId = this._getNavigableSiblingId(
+      this._getModelBlockId(block),
+      'next',
+    )
     return siblingId === null ? null : this._getNavigationBlock(siblingId)
   }
 
   prevSibling(block: string | BlockCraft.BlockComponent) {
-    const siblingId = this.model.getPreviousSiblingId(this._getModelBlockId(block))
+    const siblingId = this._getNavigableSiblingId(
+      this._getModelBlockId(block),
+      'previous',
+    )
     return siblingId === null ? null : this._getNavigationBlock(siblingId)
   }
 
@@ -555,8 +645,12 @@ export class BlockCraftDoc {
     return sub
   }
 
-  setBlockReadonly(block: BlockRef, readonly: boolean) {
-    this.readonlyManager.set(block, readonly)
+  setBlockReadonly(
+    block: BlockRef,
+    readonly: boolean,
+    options?: SetBlockReadonlyOptions,
+  ) {
+    this.readonlyManager.set(block, readonly, options)
   }
 
   isBlockReadonly(block: BlockRef) {
@@ -575,6 +669,7 @@ export * from './block-position'
 export * from './model-graph'
 export * from './block-readonly.types'
 export * from './block-readonly-manager'
+export * from './block-mutation-policy'
 
 declare global {
   namespace BlockCraft {

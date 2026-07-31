@@ -1,5 +1,12 @@
 import { resolvePlaceholderText } from "./block-schema"
 import type { BlockPlaceholderConfig } from "./block-schema"
+import {
+  evaluateInstanceChildConstraints,
+  matchesBlockFlavourPattern,
+  SchemaManager,
+} from "./index"
+import {BlockNodeType} from "../types"
+import type {IBlockSchemaOptions} from "./block-schema"
 
 describe('resolvePlaceholderText', () => {
   it('returns empty string when config is undefined', () => {
@@ -51,5 +58,122 @@ describe('resolvePlaceholderText', () => {
   it('returns heading-specific text even when default is absent', () => {
     const config: BlockPlaceholderConfig = { heading: { 1: 'H1' } }
     expect(resolvePlaceholderText(config, 1)).toBe('H1')
+  })
+})
+
+describe('block flavour patterns', () => {
+  it('matches exact and wildcard patterns with the existing Schema semantics', () => {
+    expect(matchesBlockFlavourPattern('paragraph', 'paragraph')).toBeTrue()
+    expect(matchesBlockFlavourPattern('table-row', 'table-*')).toBeTrue()
+    expect(matchesBlockFlavourPattern('figma-embed', '*-embed')).toBeTrue()
+    expect(matchesBlockFlavourPattern('image', '*')).toBeTrue()
+    expect(matchesBlockFlavourPattern('table', 'table-*')).toBeFalse()
+  })
+})
+
+describe('evaluateInstanceChildConstraints', () => {
+  it('does not narrow children when incl/excl are both absent', () => {
+    expect(evaluateInstanceChildConstraints('image', {})).toEqual({
+      allowed: true,
+      malformed: false,
+    })
+  })
+
+  it('allows only incl matches and treats an empty incl as deny-all', () => {
+    expect(evaluateInstanceChildConstraints('paragraph', {
+      incl: ['paragraph', 'table-*'],
+    }).allowed).toBeTrue()
+    expect(evaluateInstanceChildConstraints('image', {
+      incl: ['paragraph', 'table-*'],
+    }).allowed).toBeFalse()
+    expect(evaluateInstanceChildConstraints('paragraph', {incl: []}).allowed)
+      .toBeFalse()
+  })
+
+  it('lets excl win over incl', () => {
+    expect(evaluateInstanceChildConstraints('table-row', {
+      incl: ['*'],
+      excl: ['table-*'],
+    })).toEqual({
+      allowed: false,
+      malformed: false,
+    })
+  })
+
+  it('fails closed for malformed persisted rules', () => {
+    expect(evaluateInstanceChildConstraints('paragraph', {
+      incl: 'paragraph',
+    } as unknown as Record<string, unknown>)).toEqual({
+      allowed: false,
+      malformed: true,
+    })
+    expect(evaluateInstanceChildConstraints('paragraph', {
+      excl: [''],
+    })).toEqual({
+      allowed: false,
+      malformed: true,
+    })
+  })
+})
+
+describe('SchemaManager instance child constraints', () => {
+  const schema = (
+    flavour: BlockCraft.BlockFlavour,
+    nodeType: BlockNodeType,
+    metadata: Partial<IBlockSchemaOptions['metadata']> = {},
+  ): IBlockSchemaOptions => ({
+    flavour,
+    nodeType,
+    component: class {} as never,
+    createSnapshot: (() => ({
+      id: flavour,
+      flavour,
+      nodeType,
+      props: {},
+      meta: {},
+      children: [],
+    })) as never,
+    metadata: {
+      version: 1,
+      label: flavour,
+      ...metadata,
+    },
+  })
+
+  it('never lets instance metadata widen the static Schema', () => {
+    const manager = new SchemaManager([
+      schema('callout', BlockNodeType.block, {
+        includeChildren: ['paragraph'],
+        instanceMeta: {childConstraints: true},
+      }),
+      schema('paragraph', BlockNodeType.editable),
+      schema('image', BlockNodeType.void),
+    ])
+
+    expect(manager.isValidChildrenForInstance(
+      'paragraph',
+      'callout',
+      {incl: ['*']},
+    )).toBeTrue()
+    expect(manager.isValidChildrenForInstance(
+      'image',
+      'callout',
+      {incl: ['*']},
+    )).toBeFalse()
+  })
+
+  it('keeps persisted incl/excl inert when the Schema did not opt in', () => {
+    const manager = new SchemaManager([
+      schema('columns', BlockNodeType.block, {
+        includeChildren: ['paragraph'],
+      }),
+      schema('paragraph', BlockNodeType.editable),
+    ])
+
+    expect(manager.isValidChildrenForInstance(
+      'paragraph',
+      'columns',
+      {incl: [], excl: ['paragraph']},
+    )).toBeTrue()
   })
 })

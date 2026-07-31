@@ -28,6 +28,7 @@ import { Subscription } from 'rxjs';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 import { demoJSON } from './demo.data';
+import { RouterLink } from '@angular/router';
 import { resolveCollaborationRoot } from './collaboration-root';
 import {
   IME_SCENARIO_LABELS,
@@ -214,9 +215,9 @@ const ACTION_SECTIONS: DebugSection[] = [
 ];
 
 @Component({
-  selector: 'bc-root',
+  selector: 'playground-home',
   standalone: true,
-  imports: [EditorComponent, SnapshotViewerComponent, PaginationSettingsComponent],
+  imports: [EditorComponent, SnapshotViewerComponent, PaginationSettingsComponent, RouterLink],
   template: `
     <div class="app-shell">
       <aside class="sidebar">
@@ -423,6 +424,12 @@ const ACTION_SECTIONS: DebugSection[] = [
                 [class.main-tab--active]="activeMainTab === 'viewer'"
                 (click)="setMainTab('viewer')">
                 Snapshot Viewer
+              </button>
+              <button
+                class="main-tab"
+                type="button"
+                routerLink="/template">
+                模板装饰 →
               </button>
             </div>
             <span class="editor-header__hint">

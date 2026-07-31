@@ -113,6 +113,7 @@ describe('DocOverlayService', () => {
       order,
       overlay,
       overlayRef,
+      flexiblePosition,
       releaseBlockViewLease,
       service,
       targetElement,
@@ -137,6 +138,33 @@ describe('DocOverlayService', () => {
     expect(h.releaseBlockViewLease).toHaveBeenCalledTimes(1)
     expect(h.overlayRef.dispose).toHaveBeenCalledTimes(1)
     h.cleanup()
+  })
+
+  it('uses exact dimensions by default and preserves explicit flexible sizing', () => {
+    const defaultHarness = createOverlayHarness()
+
+    defaultHarness.service.createConnectedOverlay({
+      target: defaultHarness.targetElement,
+      component: TestOverlayComponent,
+    }, defaultHarness.close$)
+
+    expect(
+      defaultHarness.flexiblePosition.withFlexibleDimensions,
+    ).toHaveBeenCalledOnceWith(false)
+    defaultHarness.cleanup()
+
+    const flexibleHarness = createOverlayHarness()
+
+    flexibleHarness.service.createConnectedOverlay({
+      target: flexibleHarness.targetElement,
+      component: TestOverlayComponent,
+      flexibleDimensions: true,
+    }, flexibleHarness.close$)
+
+    expect(
+      flexibleHarness.flexiblePosition.withFlexibleDimensions,
+    ).toHaveBeenCalledOnceWith(true)
+    flexibleHarness.cleanup()
   })
 
   it('releases a BlockComponent target lease when OverlayRef is disposed directly', () => {

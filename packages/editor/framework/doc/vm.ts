@@ -621,7 +621,12 @@ export class DocVM {
 export class BlockChildrenRenderRef {
   private _containerElement?: HTMLElement
   get containerElement() {
-    return this._containerElement ??= (this.block.hostElement.querySelector('.children-render-container') || this.block.hostElement)
+    if (!this._containerElement) {
+      this._containerElement =
+        (this.block.hostElement.querySelector('.children-render-container') || this.block.hostElement) as HTMLElement
+      this._containerElement.setAttribute('data-bc-placement-container', '')
+    }
+    return this._containerElement
   }
 
   private _compRefs: BlockCraft.BlockComponentRef[] = []

@@ -4,6 +4,7 @@ import {SnapshotBlockRenderer, SnapshotRenderContext} from "../types";
 
 const STRUCTURAL_FLAVOURS = new Set([
   "root",
+  "placement-layout",
   "callout",
   "divider",
   "columns",
@@ -35,12 +36,45 @@ export function createStructuralRenderers(): SnapshotBlockRenderer[] {
           return renderTableRow(snapshot, ctx)
         case "table-cell":
           return renderTableCell(snapshot, ctx)
+        case "placement-layout":
+          return renderPlacementLayout(snapshot, ctx)
         case "root":
         default:
           return renderRoot(snapshot, ctx)
       }
     },
   }]
+}
+
+function renderPlacementLayout(
+  snapshot: IBlockSnapshot,
+  ctx: SnapshotRenderContext,
+) {
+  const element = createBlockShell(snapshot)
+  element.setAttribute("data-bc-placement-layer-bridge", "")
+  element.setAttribute("data-bc-placement-layout", "")
+  Object.assign(element.style, {
+    position: "absolute",
+    top: "0",
+    left: "0",
+    width: "100%",
+    height: "0",
+    margin: "0",
+    pointerEvents: "none",
+    overflow: "visible",
+  })
+  const content = document.createElement("div")
+  content.classList.add("children-render-container")
+  content.setAttribute("data-bc-placement-container", "")
+  content.style.position = "relative"
+  content.style.isolation = "auto"
+  content.style.pointerEvents = "none"
+  appendChildren(content, ctx, snapshot.children)
+  for (const child of Array.from(content.children)) {
+    if (child instanceof HTMLElement) child.style.pointerEvents = "auto"
+  }
+  element.append(content)
+  return {element}
 }
 
 function renderRoot(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {

@@ -33,6 +33,12 @@
 
     .edit-container {
       width: fit-content;
+
+      &[data-bc-inline-float-owner] {
+        flex: 1 1 auto;
+        width: auto;
+        min-width: 0;
+      }
     }
   }
 }

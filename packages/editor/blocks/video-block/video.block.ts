@@ -1,8 +1,19 @@
 import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from '@angular/core';
 import {DomSanitizer, SafeHtml, SafeResourceUrl} from '@angular/platform-browser';
-import {BaseBlockComponent, DOC_FILE_SERVICE_TOKEN, DocFileService} from '../../framework';
+import {
+  BaseBlockComponent,
+  deriveObjectSizeFromPixels,
+  DOC_FILE_SERVICE_TOKEN,
+  DocFileService,
+} from '../../framework';
 import {VideoBlockModel} from './index';
-import {ResizeContainerComponent} from '../../components/block-resizer';
+import {
+  BcResourcePlaceholderDirective,
+  BlockResizeCommit,
+  ResourceIntrinsicSize,
+  ResizeContainerComponent,
+} from '../../components';
+import {takeUntil} from 'rxjs';
 
 @Component({
   selector: 'div.video-block',
@@ -19,7 +30,13 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
       </div>
     } @else {
       <div class="video-block__wrapper resizable-container" contenteditable="false"
-           [style.width.px]="props.width || null" #resizeContainer>
+           bcResourcePlaceholder
+           [resourceKey]="props.url"
+           (resourceIntrinsicSize)="onResourceIntrinsicSize($event)"
+           [style.width.px]="renderedWidth"
+           [style.aspect-ratio]="renderedAspectRatio"
+           [attr.data-bc-object-sizing]="usesRatioSizing ? '' : null"
+           #resizeContainer>
         <div class="video-block__container">
           @if (isEmbedPlatformUrl) {
             <div class="embed-container" style="background: #1a1a1a;">
@@ -28,36 +45,15 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
                 style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none;"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
                 allowfullscreen="true"
-                referrerpolicy="no-referrer"
-                (load)="onIframeLoad()"
-                (error)="onIframeError()">
+                referrerpolicy="no-referrer">
               </iframe>
-              @if (iframeLoading) {
-                <div class="iframe-loading">
-                  <div class="loading-spinner"></div>
-                  <span>加载中...</span>
-                </div>
-              }
-              @if (iframeError) {
-                <div class="iframe-fallback">
-                  <i class="bc_icon bc_shipin"></i>
-                  <div class="fallback-text">视频无法嵌入播放</div>
-                  <div class="fallback-hint">可能是网络限制或平台不支持嵌入</div>
-                  <a class="fallback-link" [href]="props.url" target="_blank"
-                     rel="noopener noreferrer">
-                    <i class="bc_icon bc_lianjie"></i>
-                    在浏览器中打开
-                  </a>
-                </div>
-              }
             </div>
           } @else if (isDirectVideoUrl) {
             <div class="video-wrapper">
               <video [src]="props.url"
                      controls
                      [poster]="posterUrl"
-                     preload="metadata"
-                     (error)="onVideoError()">
+                     preload="metadata">
                 您的浏览器不支持视频播放
               </video>
             </div>
@@ -73,15 +69,6 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
               </div>
             </div>
           }
-
-          @if (videoError) {
-            <div class="video-error">
-              <i class="bc_icon bc_jinggao"></i>
-              <span>视频加载失败</span>
-              <a [href]="props.url" target="_blank" rel="noopener noreferrer">在新窗口打开</a>
-            </div>
-          }
-
           @if (uploadProgress < 100 && uploadProgress >= 0) {
             <div class="upload-progress">
               <div class="upload-progress-bar">
@@ -94,8 +81,10 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
 
         @if (!isReadonly) {
           <block-resizer [container]="resizeContainer"
-                         [maxWidthContainer]="hostElement"
-                         (widthChange)="onResized($event)"
+                         [maxWidthContainer]="sizingContainer"
+                         [maxWidth]="rootContentWidth || undefined"
+                         [referenceWidth]="rootContentWidth || undefined"
+                         (resizeCommit)="onResized($event)"
                          (resizeStart)="resizeContainer.classList.add('is-resizing')"
                          (resizeEnd)="resizeContainer.classList.remove('is-resizing')"/>
         }
@@ -104,7 +93,7 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
   `,
   standalone: true,
   styleUrls: ['./video-block.scss'],
-  imports: [ResizeContainerComponent],
+  imports: [ResizeContainerComponent, BcResourcePlaceholderDirective],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
@@ -113,10 +102,7 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
   protected embedUrl: SafeResourceUrl = '';
   protected isEmbedPlatformUrl = false;
   protected isDirectVideoUrl = false;
-  protected iframeLoading = true;
-  protected iframeError = false;
   protected posterUrl = '';
-  protected videoError = false;
 
   private _fileService?: DocFileService;
 
@@ -133,6 +119,34 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
     return !!url && this.fileService.isLocalObjectURL(url) && !this.fileService.getFileByObjectURL(url);
   }
 
+  get objectDimensions() {
+    return this.doc.objectSizing.resolve(this.flavour, this.props)
+  }
+
+  get renderedWidth(): number | null {
+    return this.objectDimensions?.width ?? null
+  }
+
+  get renderedAspectRatio(): string | null {
+    const dimensions = this.objectDimensions
+    return dimensions && dimensions.source !== 'legacy'
+      ? `${dimensions.ar}`
+      : null
+  }
+
+  get usesRatioSizing(): boolean {
+    const dimensions = this.objectDimensions
+    return !!dimensions && dimensions.source !== 'legacy'
+  }
+
+  get rootContentWidth(): number {
+    return this.doc.objectSizing.rootContentWidth
+  }
+
+  get sizingContainer(): HTMLElement {
+    return this.doc.objectSizing.rootContentElement ?? this.hostElement
+  }
+
   override ngOnInit() {
     super.ngOnInit();
     this.processEmbedContent();
@@ -146,9 +160,39 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
     this.changeDetectorRef.markForCheck();
   }
 
-  onResized(width: number) {
-    this.updateProps({width});
+  override ngAfterViewInit() {
+    super.ngAfterViewInit()
+    this.doc.objectSizing.widthChange$
+      .pipe(takeUntil(this.onDestroy$))
+      .subscribe(() => this.changeDetectorRef.markForCheck())
+  }
+
+  onResized(event: BlockResizeCommit) {
+    if (this.isReadonly) return
+    const derived = deriveObjectSizeFromPixels(
+      event.width,
+      event.height,
+      event.basisWidth,
+    )
+    if (!derived) return
+    const currentAr =
+      typeof this.props.ar === 'number' &&
+      Number.isFinite(this.props.ar) &&
+      this.props.ar > 0
+        ? this.props.ar
+        : derived.ar
+    this.updateProps({
+      wr: derived.wr,
+      ar: currentAr,
+      width: null,
+      height: null,
+    });
     this.changeDetectorRef.markForCheck();
+  }
+
+  onResourceIntrinsicSize(size: ResourceIntrinsicSize) {
+    if (this.props.ar != null || this.isReadonly || this._isGone()) return
+    this.setInitProps({ar: size.ar})
   }
 
   processEmbedContent() {
@@ -157,15 +201,6 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
 
       if (!this.isEmbedPlatformUrl) {
         this.isDirectVideoUrl = this.checkIsDirectVideoUrl(this.props.url);
-      } else {
-        this.iframeLoading = true;
-        this.iframeError = false;
-        setTimeout(() => {
-          if (this.iframeLoading) {
-            this.iframeLoading = false;
-            this.changeDetectorRef.markForCheck();
-          }
-        }, 10000);
       }
     }
   }
@@ -187,23 +222,6 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
     }
 
     return false;
-  }
-
-  onVideoError() {
-    if (!this.props.url.startsWith('http')) return;
-    this.videoError = true;
-    this.changeDetectorRef.markForCheck();
-  }
-
-  onIframeLoad() {
-    this.iframeLoading = false;
-    this.changeDetectorRef.markForCheck();
-  }
-
-  onIframeError() {
-    this.iframeLoading = false;
-    this.iframeError = true;
-    this.changeDetectorRef.markForCheck();
   }
 
   checkAndConvertToEmbed(url: string) {

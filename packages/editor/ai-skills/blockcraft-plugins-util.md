@@ -2,13 +2,32 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-07-28
+> Last updated: 2026-07-31
 
 ## PlaceholderPlugin
 
-> `plugins/placeholder/index.ts` — Renders schema-declared placeholder text on the currently focused empty editable block.
+> `plugins/placeholder/index.ts` — Renders focused and opt-in persistent placeholders on empty editable blocks.
 
-Reads `IBlockSchemaOptions.metadata.placeholder` (see `blockcraft-block.md` → "Editable Block Placeholder (Schema field)") and renders the resolved text via a `::before` pseudo-element. Holds **constant** doc-wide subscriptions regardless of how many editable blocks exist — selection / readonly / IME composition each fan-in through a single handler, and only the currently focused block's `onTextChange` / `onPropsChange` are subscribed at any one time.
+Resolves per-block `meta.plh`, Plugin flavour overrides and
+`IBlockSchemaOptions.metadata.placeholder` (see `blockcraft-block.md` →
+"Block Instance Metadata") and renders the result via the generic
+`.bc-placeholder-target::before` contract.
+
+The plugin holds a constant set of doc-wide subscriptions regardless of block
+count. Persistent mode maintains only a `Set` of opted-in mounted block IDs;
+text, props, meta, structure and virtualization events fan into those IDs. It
+does not allocate one observer per document block.
+
+### Resolution order
+
+1. `block.meta.plh` when it is a string.
+2. `overrides[block.flavour]`.
+3. `schema.metadata.placeholder`.
+4. Nothing rendered.
+
+An empty `meta.plh` explicitly disables the current block's placeholder.
+Deleting the key restores flavour/Schema fallback. Malformed persisted
+non-string values are ignored safely.
 
 ### Configuration
 
@@ -61,20 +80,46 @@ ph.setOverrides(getOverridesForLocale('zh'))
 ph.setOverrideFor('paragraph', { default: 'Write something…' })
 ph.setOverrideFor('callout', null)         // disable
 ph.setOverrideFor('callout', undefined)    // revert to schema default
+
+// Per-block persistent override
+const snapshot = ParagraphBlockSchema.createSnapshot()
+snapshot.meta.plh = '请输入摘要'
+snapshot.meta.plhMode = 'always'
+
+block.updateMeta({plh: '请输入摘要'})
+block.updateMeta({plhMode: 'always'}) // persistent while semantically empty
+block.updateMeta({plhMode: 'focused'})
+block.updateMeta({plh: ''})    // disable only this block
+block.updateMeta({plh: null})  // delete instance override and restore fallback
+
 ```
 
 ### Display Contract
 
-- Visible only when: current selection is `type: 'text'`, `start.blockId === block.id`, `sel.isInSameBlock`, AND `textLength === 0`.
+- Focused mode is visible only when the current selection is a same-block text
+  selection in an empty editable block and that block is writable.
+- Persistent mode requires `meta.plhMode === 'always'` plus a non-empty string
+  `meta.plh` on an editable block. Non-editable containers do not render
+  placeholders; content regions should put these fields on their empty
+  editable child.
+- Persistent hints remain visible in readonly mode. Both modes hide during IME
+  composition.
+- Emptiness is model-first and checks the editable block's `Y.Text` length,
+  including while its view is outside the virtualized window.
+- `meta.plh`, `meta.plhMode`, text, relevant props, structure and root
+  mount/unmount changes refresh affected placeholders.
 - Hidden during IME composition — plugin listens to native `compositionstart` / `compositionend` on the root host in capture phase (bypassing the framework dispatcher because `InputTransformer._handleCompositionStart` is a global handler that stops propagation).
-- Hidden in readonly mode (`doc.isReadonly === true` OR `doc.readonlySwitch$` emits `true`).
-- DOM state: `data-placeholder` attribute on `.edit-container` (the element the CSS `::before` targets) + `.empty` class on the host element (matches the `[data-node-type="editable"].empty` selector).
+- DOM state: `data-placeholder` and `.bc-placeholder-target` on the editable
+  container;
+  `.bc-placeholder-empty` and compatibility `.empty` on the block host.
 
 ### Notes
 
 - Bundled in the default editor preset (`editor/editor.ts`). To disable, omit it from `DocConfig.plugins`.
-- Schema field (`metadata.placeholder`) and runtime override are decoupled: overrides do not modify the Schema, so non-presentation consumers reading the Schema still see the original declared text.
-- Blocks with their own `::before` styling (e.g. `blockquote`) must not declare `placeholder` in their schema — or pass `overrides[flavour] = null` to suppress at the plugin level.
+- Instance metadata, runtime flavour overrides and Schema defaults are
+  decoupled; neither higher-priority layer mutates the lower-priority source.
+- Avoid using `::before` for other decoration on the same
+  `.bc-placeholder-target`; put block chrome on the host or a sibling element.
 
 ---
 

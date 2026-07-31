@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-06-16
+> Last updated: 2026-07-31
 
 ## Architecture
 
@@ -240,6 +240,71 @@ export const blockMarkdownAdapterMatchers: BlockMarkdownAdapterMatcher[] = [
 - **Markdown import**: Recognize the media hint title first. If there is no hint, fall back to URL heuristics such as common media extensions or known video platform hosts.
 - **Paragraph matcher interaction**: If your markdown/html paragraph matcher also accepts raw `html`, `div`, or `paragraph` nodes, explicitly exclude media-only nodes so both matchers do not consume the same source node.
 
+Responsive object blocks preserve root-relative sizing in HTML with
+`data-bc-wr` and `data-bc-ar`; CSS `width`/`aspect-ratio` is emitted for
+portable display:
+
+```html
+<video
+  src="https://cdn.example.com/demo.mp4"
+  data-bc-wr="60"
+  data-bc-ar="1.7777777778"
+  style="width: 60%; aspect-ratio: 1.7777777778"></video>
+```
+
+Import prefers valid `data-bc-wr/data-bc-ar`, then falls back to legacy
+`width/height` or `data-width`. Standard Markdown does not gain private size
+syntax; an imported Markdown image therefore uses its Schema defaults.
+
+## Shape Block Mapping
+
+`placement-layout` is a BlockCraft-internal snapshot container. HTML/Markdown
+walkers deliberately do not emit a visible wrapper for it; they continue into
+its children. HTML therefore preserves an equivalent recoverable structure on
+the object itself:
+
+- image blocks emit `<figure data-bc-block="image">` with
+  `data-image-placement-mode/x/y/layer`;
+- shape blocks keep the placement fields described below;
+- importing those objects produces root-level absolute snapshots, and
+  `BlockPlacementManager` normalizes them below the root layout when the
+  document initializes.
+
+Markdown has no portable absolute-layout primitive and continues to use the
+existing readable degradation. Internal BlockCraft snapshot copy/paste retains
+the complete `placement-layout` subtree.
+
+The built-in `shape` matcher uses
+`<figure data-bc-block="shape">` as a lossless HTML envelope. Shape type,
+dimensions, fill, outline, text styling and absolute placement are stored in
+`data-shape-*` attributes. Rotation is stored in
+`data-shape-rotation="<degrees>"`; the collaborative child deltas are
+serialized inside `<div data-bc-shape-text>`. Empty shapes omit that element,
+and HTML import keeps them childless; non-empty text creates the single
+`shape-text` child. Import passes untrusted attributes, including rotation,
+through `normalizeShapeProps()` before creating the snapshot.
+
+Markdown has no portable shape primitive. Export therefore degrades a shape to
+one readable paragraph built from its `shape-text` deltas; importing that
+Markdown produces a normal paragraph rather than attempting to reconstruct
+geometry.
+
+## WordArt Block Mapping
+
+The built-in editable `word-art` matcher uses
+`<figure data-bc-block="word-art">`. Its direct plain-text deltas live in
+`<div data-bc-word-art-text>`; dimensions, typography, fill, gradient arrays,
+outline, shadow, safe effect and absolute placement are stored in bounded
+`data-word-art-*` attributes. Export also emits sanitized inline presentation
+CSS so the HTML remains visually useful without BlockCraft themes.
+
+HTML import ignores raw presentation CSS and rebuilds props only from the
+allowlisted data attributes through `normalizeWordArtProps()`. Inline
+formatting and embeds are stripped because WordArt styling is whole-block and
+the Schema is `plainTextOnly`. Markdown has no portable WordArt primitive, so
+export produces a readable paragraph and reimport intentionally produces a
+normal paragraph.
+
 ## Checklist
 
 - [ ] `toMatch` correctly identifies the source AST node type
@@ -260,6 +325,8 @@ export const blockMarkdownAdapterMatchers: BlockMarkdownAdapterMatcher[] = [
 | Image | `html-adapter/block-matchers/image-matcher.ts` | `markdown-adapter/block-matchers/image-matcher.ts` |
 | Code | `html-adapter/block-matchers/code-matcher.ts` | `markdown-adapter/block-matchers/code-matcher.ts` |
 | Video / Audio | `html-adapter/block-matchers/media-matcher.ts` | `markdown-adapter/block-matchers/media-matcher.ts` |
+| Shape | `html-adapter/block-matchers/shape-matcher.ts` | `markdown-adapter/block-matchers/shape-matcher.ts` |
+| WordArt | `html-adapter/block-matchers/word-art-matcher.ts` | `markdown-adapter/block-matchers/word-art-matcher.ts` |
 
 ## 有道云笔记 `text/yne-json` 剪贴板适配器
 

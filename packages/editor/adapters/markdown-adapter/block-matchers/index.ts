@@ -15,9 +15,13 @@ import {
 } from "./table-matcher";
 import {formulaBlockMarkdownAdapterMatcher} from "./formula-matcher";
 import {mediaBlockMarkdownAdapterMatcher} from "./media-matcher";
+import {shapeBlockMarkdownAdapterMatcher} from "./shape-matcher";
+import {wordArtBlockMarkdownAdapterMatcher} from "./word-art-matcher";
 
 export const defaultBlockMarkdownAdapterMatchers = [
   mediaBlockMarkdownAdapterMatcher,
+  shapeBlockMarkdownAdapterMatcher,
+  wordArtBlockMarkdownAdapterMatcher,
   paragraphBlockMarkdownAdapterMatcher,
   listBlockMarkdownAdapterMatcher,
   tableBlockMarkdownAdapterMatcher,

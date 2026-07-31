@@ -102,7 +102,7 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
               tagName: 'label',
               properties: {
                 style: 'margin-right: 3px;',
-                className: 'todo-list'
+                className: ['todo-list']
               },
               children: [],
             },

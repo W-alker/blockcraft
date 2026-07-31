@@ -68,4 +68,39 @@ describe('MarkdownAdapter inline images', () => {
 
     expect((imported.children as IBlockSnapshot[])[0].flavour).toBe('image');
   });
+
+  it('intentionally drops square-wrap metadata during Markdown round-trip', async () => {
+    const snapshot = rootSnapshot([{
+      id: 'p-wrap',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      props: {depth: 0},
+      meta: {},
+      children: [
+        {insert: 'before '},
+        {
+          insert: {image: 'https://cdn.example.com/wrapped.png'},
+          attributes: {
+            width: 176,
+            height: 106,
+            wrap: true,
+            side: 'left',
+            x: 0.24,
+            gap: 12,
+          },
+        },
+        {insert: ' after'},
+      ],
+    }]);
+
+    const markdown = await adapter.toMarkdown(snapshot);
+    const imported = await adapter.toBlockSnapshot(markdown);
+    const paragraph = (imported.children as IBlockSnapshot[])[0];
+    const image = (paragraph.children as any[])
+      .find(delta => typeof delta.insert === 'object');
+
+    expect(image).toEqual({
+      insert: {image: 'https://cdn.example.com/wrapped.png'},
+    });
+  });
 });

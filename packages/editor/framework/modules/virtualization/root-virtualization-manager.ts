@@ -22,6 +22,11 @@ import {
   VirtualizationConfig,
 } from './types'
 import {calculateProjectedViewportRange} from './viewport-range'
+import {
+  estimateModelBlockHeight,
+  estimateModelBlockHeightDetails,
+} from './model-height-estimator'
+import {AbsolutePlacementVisibilityIndex} from './absolute-placement-visibility-index'
 
 const DEFAULT_ESTIMATED_HEIGHT = 48
 const BLOCK_NAVIGATION_PIN = 'block-navigation'
@@ -32,6 +37,7 @@ const BLOCK_NAVIGATION_MAX_FRAMES = 8
 const MAX_RECONCILE_FAILURES = 3
 const MAX_CUSTOM_PROJECTION_FAILURES = 3
 const FULL_MOUNT_FALLBACK_MESSAGE = '虚拟渲染异常，已切换为完整渲染'
+const ABSOLUTE_PLACEMENT_OVERSCAN_VIEWPORTS = 1
 
 type SelectionPinSnapshot = Pick<ISelectionJSON, 'anchor' | 'head'>
 
@@ -87,6 +93,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   private layoutProjection: VerticalLayoutProjection = this.continuousLayoutProjection
   private readonly pins = new PinRegistry()
   private readonly heightObserver = new HeightObserver((values) => this.applyMeasurements(values))
+  private readonly absolutePlacementVisibility: AbsolutePlacementVisibilityIndex
   private readonly subscriptions = new Subscription()
   private blockIds: string[] = []
   private indexById = new Map<string, number>()
@@ -139,6 +146,8 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     config?: VirtualizationConfig,
   ) {
     this.config = resolveVirtualizationConfig(config)
+    this.absolutePlacementVisibility =
+      new AbsolutePlacementVisibilityIndex(this.doc, this.config.estimatedHeights)
     layoutProjectionRegistrars.set(
       this,
       (projection, hooks) => this.registerLayoutProjection(projection, hooks),
@@ -167,6 +176,25 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     this.syncBlockViewLeases()
     this.syncFullDocumentViewLease()
     this.subscriptions.add(this.doc.model.structureChange$.subscribe(() => this.handleStructureChange()))
+    const objectSizing = this.doc.objectSizing
+    if (objectSizing?.widthChange$) {
+      this.subscriptions.add(
+        objectSizing.widthChange$.subscribe(() => {
+          this.refreshModelEstimates()
+        }),
+      )
+    }
+    const contentChange$ = this.doc.model.contentChange$
+    if (contentChange$) {
+      this.subscriptions.add(
+        contentChange$.subscribe(change => {
+          this.refreshModelEstimates(
+            change.blockIds,
+            change.kinds?.includes('props') ?? true,
+          )
+        }),
+      )
+    }
     this.subscriptions.add(
       this.doc.selection.changeObserve().subscribe((selection) => {
         this.projectionBlockIds = []
@@ -599,17 +627,30 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
         )
       : null
     const scrollTop = structureRestore?.scrollTop ?? currentScrollTop
+    const viewportHeight =
+      this.scrollContainer.clientHeight || viewportRect.height
     const viewport = calculateProjectedViewportRange(
       this.layoutProjection,
       scrollTop,
-      this.scrollContainer.clientHeight || viewportRect.height,
+      viewportHeight,
       this.config.overscan,
     )
+    const visibleAbsoluteLayouts = this.absolutePlacementVisibility
+      .visibleLayoutIds(
+        scrollTop,
+        viewportHeight,
+        viewportHeight * ABSOLUTE_PLACEMENT_OVERSCAN_VIEWPORTS,
+      )
+    const mountIndices = new Set(this.pins.snapshot())
+    visibleAbsoluteLayouts.forEach(id => {
+      const index = this.indexById.get(id)
+      if (index !== undefined) mountIndices.add(index)
+    })
     const segments: RenderedSegment[] = this.fullMountFallback
       ? [[0, this.blockIds.length - 1]]
       : mergeToSegments(
           viewport,
-          this.pins.snapshot(),
+          mountIndices,
           this.config.segmentMergeGap,
           this.blockIds.length,
         )
@@ -651,11 +692,53 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       this.blockIds.map((id) => {
         const retained = previous.get(id)
         if (retained != null) return retained
-        const flavour = this.doc.model.getFlavour(id)
-        return flavour ? (this.config.estimatedHeights[flavour] ?? DEFAULT_ESTIMATED_HEIGHT) : DEFAULT_ESTIMATED_HEIGHT
+        return this.resolveEstimatedHeight(id)
       }),
     )
+    this.absolutePlacementVisibility.rebuild(this.blockIds)
     this.continuousLayoutProjection.notifyChange()
+  }
+
+  private resolveEstimatedHeight(blockId: string): number {
+    return estimateModelBlockHeight(this.doc, blockId, {
+      estimatedHeights: this.config.estimatedHeights,
+      defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
+    })
+  }
+
+  private refreshModelEstimates(
+    changedBlockIds?: readonly string[],
+    refreshAbsoluteVisibility = changedBlockIds === undefined,
+  ): void {
+    if (!this.scrollContainer || !this.blockIds.length) return
+    const rootIds = changedBlockIds
+      ? new Set(changedBlockIds.flatMap(blockId => {
+          const path = this.doc.model.getPath(blockId)
+          const rootId = path?.[0] === this.doc.rootId ? path[1] : undefined
+          return rootId ? [rootId] : []
+        }))
+      : new Set(this.blockIds)
+    const absoluteVisibilityChanged =
+      refreshAbsoluteVisibility &&
+      [...rootIds].some(
+        blockId =>
+          this.doc.model.getFlavour(blockId) === 'placement-layout',
+      )
+    if (absoluteVisibilityChanged) {
+      this.absolutePlacementVisibility.rebuild(this.blockIds)
+    }
+    const measurements: HeightMeasurement[] = []
+    rootIds.forEach(blockId => {
+      const estimate = estimateModelBlockHeightDetails(this.doc, blockId, {
+        estimatedHeights: this.config.estimatedHeights,
+        defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
+      })
+      if (estimate.modelDriven) {
+        measurements.push([blockId, estimate.height])
+      }
+    })
+    this.applyMeasurements(measurements)
+    if (absoluteVisibilityChanged) this.schedule()
   }
 
   private resolveRootIndices(blockIds: readonly string[]): number[] {
@@ -785,6 +868,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     if (!force && arraysEqual(this.blockIds, nextBlockIds)) {
       // Nested blocks can move between existing root render units without
       // changing the direct-root list. Every stable-ID owner must follow them.
+      this.absolutePlacementVisibility.rebuild(nextBlockIds)
       this.syncStableViewPins()
       this.markStructureRevisionSynchronized()
       return false

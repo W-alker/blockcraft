@@ -4,9 +4,9 @@
 >
 > For creating new plugins, see `blockcraft-plugin.md`.
 >
-> Last updated: 2026-07-15
+> Last updated: 2026-07-31
 
-This index covers all 24 built-in plugins. Pick the category file that matches your task — don't read all files at once.
+This index covers all 26 built-in plugins. Pick the category file that matches your task — don't read all files at once.
 
 ## Category Router
 
@@ -14,7 +14,7 @@ This index covers all 24 built-in plugins. Pick the category file that matches y
 |----------|------|---------|
 | Text Formatting | `blockcraft-plugins-formatting.md` | FloatTextToolbarPlugin, TextMarkerPlugin, FixedTextToolbarComponent |
 | Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin |
-| Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
+| Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, ShapeToolbarPlugin, WordArtToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
 | Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, CodeInlineEditorBinding, TableBlockBinding |
 | Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, TranslatePlugin, PaginationPlugin |
 
@@ -31,6 +31,8 @@ This index covers all 24 built-in plugins. Pick the category file that matches y
 | `OrderedBlockPlugin` | `block` | none (zero-config) |
 | `AttachmentExtensionPlugin` | `toolbar` | `extraItems`, `onPreview`, `onExtraItemClick` |
 | `ImgToolbarPlugin` | `toolbar` | `extraItems`, `onExtraItemClick` |
+| `ShapeToolbarPlugin` | `toolbar` | none (zero-config) |
+| `WordArtToolbarPlugin` | `toolbar` | none (zero-config) |
 | `BookmarkBlockExtensionPlugin` | `toolbar` | none (zero-config) |
 | `CalloutToolbarPlugin` | `toolbar` | none (zero-config) |
 | `DividerExtensionPlugin` | `toolbar` | none (zero-config) |
@@ -40,7 +42,7 @@ This index covers all 24 built-in plugins. Pick the category file that matches y
 | `MentionPlugin` | `inline` | `panel` (required), `trigger`, `onMentionClick` |
 | `CodeInlineEditorBinding` | `inline` | none (zero-config) |
 | `TableBlockBinding` | `inline` | none (zero-config) |
-| `PlaceholderPlugin` | `util` | `overrides` (optional per-flavour text override map) |
+| `PlaceholderPlugin` | `util` | `overrides`; supports instance `plh` / `plhMode` on editable blocks |
 | `FindReplacePlugin` | `util` | none (zero-config) |
 | `PasteFormatSelectorPlugin` | `util` | none (zero-config) |
 | `DemoPresentationPlugin` | `util` | none (zero-config) |
@@ -64,6 +66,8 @@ const plugins = [
   new OrderedBlockPlugin(),
   new AttachmentExtensionPlugin({ onPreview: handlePreview }),
   new ImgToolbarPlugin(),
+  new ShapeToolbarPlugin(),
+  new WordArtToolbarPlugin(),
   new BookmarkBlockExtensionPlugin(),
   new CalloutToolbarPlugin(),
   new DividerExtensionPlugin(),
@@ -79,6 +83,18 @@ const plugins = [
   translatePlugin,
 ];
 ```
+
+The bundled composition is also available as
+`createBundledEditorCapabilities()`. It creates fresh instances and validates
+unique runtime names. The stable IDs for the bindings that historically
+inherited/collided are:
+
+| Plugin | `name` |
+|--------|--------|
+| `OrderedBlockPlugin` | `ordered-block` |
+| `CodeInlineEditorBinding` | `code-inline-editor-binding` |
+| `TableBlockBinding` | `table-block-binding` |
+| `BookmarkBlockExtensionPlugin` | `bookmark-block-extension` |
 
 ## Checklist
 

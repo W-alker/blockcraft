@@ -95,13 +95,20 @@ const buildMediaSnapshot = (
   }
 
   if (flavour === 'video') {
+    const wr = getNumberProperty(node, 'dataBcWr', 'data-bc-wr');
+    const ar = getNumberProperty(node, 'dataBcAr', 'data-bc-ar');
     const width = getNumberProperty(node, 'width', 'dataWidth', 'data-width');
     const poster = getStringProperty(node, 'poster');
     const type =
       getStringProperty(node, 'dataType', 'data-type') ||
       getStringProperty(sourceNode, 'type');
 
-    if (width !== undefined) {
+    if (wr !== undefined && wr > 0) {
+      props['wr'] = wr;
+      if (ar !== undefined && ar > 0) {
+        props['ar'] = ar;
+      }
+    } else if (width !== undefined) {
       props['width'] = width;
     }
     if (poster) {
@@ -149,11 +156,24 @@ const createMediaElement = (o: {node: IBlockSnapshot, flavour: MediaFlavour}): E
   }
 
   if (o.flavour === 'video') {
+    const wr = o.node.props['wr'];
+    const ar = o.node.props['ar'];
     const width = o.node.props['width'];
     const poster = o.node.props['poster'];
     const type = o.node.props['type'];
 
-    if (typeof width === 'number' && width > 0) {
+    if (typeof wr === 'number' && Number.isFinite(wr) && wr > 0) {
+      properties['dataBcWr'] = wr;
+      if (typeof ar === 'number' && Number.isFinite(ar) && ar > 0) {
+        properties['dataBcAr'] = ar;
+      }
+      properties['style'] = [
+        `width: ${wr}%`,
+        ...(typeof ar === 'number' && Number.isFinite(ar) && ar > 0
+          ? [`aspect-ratio: ${ar}`]
+          : []),
+      ].join('; ') + ';';
+    } else if (typeof width === 'number' && width > 0) {
       properties['width'] = width;
     }
     if (typeof poster === 'string' && poster) {

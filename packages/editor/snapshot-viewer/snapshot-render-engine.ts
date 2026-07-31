@@ -13,6 +13,9 @@ import {
   SnapshotRenderer,
   SnapshotViewerOptions
 } from "./types";
+import {
+  destroyResourcePlaceholder,
+} from "../global/resource-placeholder";
 
 export class SnapshotRenderEngine implements SnapshotRenderer {
   private container: HTMLElement | null = null
@@ -21,6 +24,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
   private readonly enhancementCache = new Map<string, unknown>()
   private readonly activeEnhancements = new Map<string, AbortController>()
   private readonly enhancementCleanups = new Set<() => void>()
+  private readonly renderDisposables = new Map<Element, () => void>()
   private mountedRoot: MountedSnapshotNode | null = null
 
   constructor(options: SnapshotViewerOptions = {}) {
@@ -42,6 +46,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
 
   destroy(): void {
     this.cancelEnhancements()
+    this.disposeAllRenderedResources()
     if (this.container) {
       this.container.replaceChildren()
     }
@@ -60,6 +65,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     const mountedRoot = this.mountNode(normalized.root, renderContext)
     this.container!.replaceChildren(mountedRoot.element)
     this.mountedRoot = mountedRoot
+    this.disposeDetachedRenderedResources()
     this.flushEnhancements(enhancementQueue)
   }
 
@@ -80,6 +86,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
       const mountedRoot = this.mountNode(normalized.root, renderContext)
       this.container.replaceChildren(mountedRoot.element)
       this.mountedRoot = mountedRoot
+      this.disposeDetachedRenderedResources()
       this.flushEnhancements(enhancementQueue)
       return
     }
@@ -88,6 +95,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     if (this.container.firstElementChild !== this.mountedRoot.element) {
       this.container.replaceChildren(this.mountedRoot.element)
     }
+    this.disposeDetachedRenderedResources()
     this.flushEnhancements(enhancementQueue)
   }
 
@@ -123,8 +131,24 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
   private createRenderContext(): SnapshotRenderContext {
     const renderContext: SnapshotRenderContext = {
       renderBlock: (snapshot) => this.renderBlock(snapshot, renderContext),
-      createInlineContent: (model: InlineModel) => renderInline(model),
+      createInlineContent: (model: InlineModel) => {
+        const fragment = renderInline(model)
+        fragment
+          .querySelectorAll<HTMLElement>('.bc-resource-placeholder-frame')
+          .forEach(frame => {
+            renderContext.registerDisposable?.(
+              frame,
+              () => destroyResourcePlaceholder(frame),
+            )
+          })
+        return fragment
+      },
       scheduleEnhancement: () => {
+      },
+      registerDisposable: (target, cleanup) => {
+        const previous = this.renderDisposables.get(target)
+        if (previous && previous !== cleanup) previous()
+        this.renderDisposables.set(target, cleanup)
       },
       options: this.options,
     }
@@ -170,7 +194,27 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     }
 
     const fresh = this.renderBlock(next, renderContext)
-    this.syncElement(current.element, fresh, false)
+    const freshChildContainer = resolveChildContainer(fresh, next)
+    if (
+      currentChildContainer === current.element ||
+      !freshChildContainer ||
+      freshChildContainer === fresh
+    ) {
+      this.syncElement(current.element, fresh, false)
+    } else {
+      currentChildContainer.setAttribute(
+        'data-bc-snapshot-preserve-children',
+        '',
+      )
+      freshChildContainer.setAttribute(
+        'data-bc-snapshot-preserve-children',
+        '',
+      )
+      this.syncElement(current.element, fresh)
+      currentChildContainer.removeAttribute(
+        'data-bc-snapshot-preserve-children',
+      )
+    }
 
     const childContainer = resolveChildContainer(current.element, next)
     if (!childContainer) {
@@ -258,6 +302,20 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     this.activeEnhancements.clear()
     this.enhancementCleanups.forEach((cleanup) => cleanup())
     this.enhancementCleanups.clear()
+  }
+
+  private disposeDetachedRenderedResources(): void {
+    const container = this.container
+    this.renderDisposables.forEach((cleanup, target) => {
+      if (container?.contains(target)) return
+      cleanup()
+      this.renderDisposables.delete(target)
+    })
+  }
+
+  private disposeAllRenderedResources(): void {
+    this.renderDisposables.forEach(cleanup => cleanup())
+    this.renderDisposables.clear()
   }
 
   private getBlockChildren(snapshot: IBlockSnapshot): IBlockSnapshot[] {
@@ -357,6 +415,20 @@ function syncChildNodes(target: Node, source: Node) {
       const targetEl = targetChild as Element
       if (sourceEl.tagName !== targetEl.tagName) {
         target.replaceChild(sourceChild.cloneNode(true), targetChild)
+        continue
+      }
+      // Resource frames own live listeners, retry controls, and controller
+      // cleanup. Treat them as atomic nodes so patching moves the prepared
+      // frame into the live tree instead of cloning inert markup.
+      if (sourceEl.classList.contains('bc-resource-placeholder-frame')) {
+        target.replaceChild(sourceEl, targetEl)
+        continue
+      }
+      if (
+        sourceEl.hasAttribute('data-bc-snapshot-preserve-children') &&
+        targetEl.hasAttribute('data-bc-snapshot-preserve-children')
+      ) {
+        syncAttributes(targetEl, sourceEl)
         continue
       }
       syncAttributes(targetEl, sourceEl)

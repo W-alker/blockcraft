@@ -8,8 +8,23 @@ import {
   createImageEnhancementTask,
   createMediaSourceEnhancementTask,
   createMermaidEnhancementTask,
+  createSnapshotIframeElement,
 } from "../enhancers";
 import {SnapshotBlockRenderer, SnapshotRenderContext} from "../types";
+import {
+  BlockObjectSizeProps,
+  normalizeObjectSize,
+} from "../../framework/services";
+import type {BlockObjectSizingCapability} from "../../framework/block-std/schema/block-schema";
+import {
+  destroyResourcePlaceholder,
+  iframeResourcePlaceholderAdapter,
+  imageResourcePlaceholderAdapter,
+  ResourcePlaceholderAdapter,
+  ResourcePlaceholderController,
+  ResourcePlaceholderElement,
+  videoResourcePlaceholderAdapter,
+} from "../../global/resource-placeholder";
 
 const MEDIA_FLAVOURS = new Set([
   "image",
@@ -19,6 +34,14 @@ const MEDIA_FLAVOURS = new Set([
   "formula",
   "mermaid",
 ]);
+const IMAGE_OBJECT_SIZING: BlockObjectSizingCapability = {
+  defaultWr: 100,
+  defaultAr: 4 / 3,
+};
+const VIDEO_OBJECT_SIZING: BlockObjectSizingCapability = {
+  defaultWr: 100,
+  defaultAr: 16 / 9,
+};
 
 export function createMediaRenderers(): SnapshotBlockRenderer[] {
   return [{
@@ -57,16 +80,24 @@ function renderImage(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
   const img = document.createElement("img")
   img.loading = "lazy"
-  if (props["width"]) {
-    img.style.width = `${props["width"]}px`
-  }
-  if (props["height"]) {
-    img.style.height = `${props["height"]}px`
-  }
+  applySnapshotObjectSizing(
+    figure,
+    wrapper,
+    img,
+    props,
+    IMAGE_OBJECT_SIZING,
+  )
   wrapper.append(img)
 
   const src = resolveUrl(`${props["src"] || ""}`, ctx.options.baseUrl)
   if (src) {
+    attachSnapshotResourcePlaceholder(
+      ctx,
+      wrapper,
+      img,
+      imageResourcePlaceholderAdapter,
+      src,
+    )
     ctx.scheduleEnhancement(createImageEnhancementTask(img, src, `image:${snapshot.id}:${src}`))
   } else {
     const placeholder = document.createElement("div")
@@ -96,9 +127,13 @@ function renderVideo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
   const wrapper = document.createElement("div")
   wrapper.classList.add("video-block__wrapper", "resizable-container")
-  if (props["width"]) {
-    wrapper.style.width = `${props["width"]}px`
-  }
+  applySnapshotObjectSizing(
+    wrapper,
+    wrapper,
+    wrapper,
+    props,
+    VIDEO_OBJECT_SIZING,
+  )
 
   const container = document.createElement("div")
   container.classList.add("video-block__container")
@@ -109,7 +144,16 @@ function renderVideo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
     container.append(embed)
 
     const embedUrl = toVideoEmbedUrl(url)
-    if (embedUrl) {
+    if (embedUrl && ctx.options.resourcePolicy !== "off") {
+      const iframe = createSnapshotIframeElement()
+      embed.append(iframe)
+      attachSnapshotResourcePlaceholder(
+        ctx,
+        wrapper,
+        iframe,
+        iframeResourcePlaceholderAdapter,
+        embedUrl,
+      )
       ctx.scheduleEnhancement(createIframeEnhancementTask(embed, embedUrl, `video-iframe:${snapshot.id}:${embedUrl}`))
     }
   } else if (isDirectVideo(url, props["type"])) {
@@ -123,6 +167,13 @@ function renderVideo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
     }
     videoWrapper.append(video)
     container.append(videoWrapper)
+    attachSnapshotResourcePlaceholder(
+      ctx,
+      wrapper,
+      video,
+      videoResourcePlaceholderAdapter,
+      url,
+    )
     ctx.scheduleEnhancement(createMediaSourceEnhancementTask(video, url, `video:${snapshot.id}:${url}`))
   } else {
     const preview = document.createElement("div")
@@ -134,6 +185,54 @@ function renderVideo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   wrapper.append(container)
   element.append(wrapper)
   return {element}
+}
+
+function attachSnapshotResourcePlaceholder(
+  ctx: SnapshotRenderContext,
+  frame: HTMLElement,
+  element: ResourcePlaceholderElement,
+  adapter: ResourcePlaceholderAdapter,
+  resourceKey: string,
+): void {
+  const controller = new ResourcePlaceholderController(frame)
+  controller.bind({element, adapter, resourceKey})
+  ctx.registerDisposable?.(
+    frame,
+    () => destroyResourcePlaceholder(frame),
+  )
+}
+
+function applySnapshotObjectSizing(
+  widthTarget: HTMLElement,
+  ratioTarget: HTMLElement,
+  legacyTarget: HTMLElement,
+  props: Record<string, unknown>,
+  capability: BlockObjectSizingCapability,
+): void {
+  const normalized = normalizeObjectSize(
+    props as BlockObjectSizeProps,
+    capability,
+  )
+  if (normalized.source === "legacy") {
+    const width = Number(props["width"])
+    const height = Number(props["height"])
+    if (Number.isFinite(width) && width > 0) {
+      legacyTarget.style.width = `${width}px`
+    }
+    if (
+      legacyTarget !== widthTarget &&
+      Number.isFinite(height) &&
+      height > 0
+    ) {
+      legacyTarget.style.height = `${height}px`
+    }
+    return
+  }
+
+  ratioTarget.dataset["bcObjectSizing"] = ""
+  widthTarget.style.width = `${normalized.wr}%`
+  ratioTarget.style.aspectRatio = `${normalized.ar}`
+  if (ratioTarget !== widthTarget) ratioTarget.style.width = "100%"
 }
 
 function renderAudio(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
