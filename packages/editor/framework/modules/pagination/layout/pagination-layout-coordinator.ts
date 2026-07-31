@@ -24,6 +24,7 @@ import {
 import {
   estimateModelBlockHeight,
   estimateModelBlockHeightDetails,
+  modelHeightEstimateAffectedByContentChange,
 } from "../../virtualization/model-height-estimator";
 
 const DEFAULT_ESTIMATED_HEIGHT = 48;
@@ -128,7 +129,9 @@ export class PaginationLayoutCoordinator {
     }
     const affectedRootIds = [...rootIds];
     this.geometryIndex.markContentDirty(affectedRootIds);
-    this.refreshObjectSizingEstimates(affectedRootIds);
+    this.refreshObjectSizingEstimates(affectedRootIds.filter(blockId =>
+      modelHeightEstimateAffectedByContentChange(this.doc, blockId, change),
+    ));
   }
 
   applyStructureChange(change: IBlockModelStructureChange): void {

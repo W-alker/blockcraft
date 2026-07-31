@@ -25,8 +25,10 @@ import {calculateProjectedViewportRange} from './viewport-range'
 import {
   estimateModelBlockHeight,
   estimateModelBlockHeightDetails,
+  modelHeightEstimateAffectedByContentChange,
 } from './model-height-estimator'
 import {AbsolutePlacementVisibilityIndex} from './absolute-placement-visibility-index'
+import type {IBlockModelStructureChange} from '../../doc/model-graph'
 
 const DEFAULT_ESTIMATED_HEIGHT = 48
 const BLOCK_NAVIGATION_PIN = 'block-navigation'
@@ -175,7 +177,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     this.unregisterPins = this.pins.subscribe(() => this.schedule())
     this.syncBlockViewLeases()
     this.syncFullDocumentViewLease()
-    this.subscriptions.add(this.doc.model.structureChange$.subscribe(() => this.handleStructureChange()))
+    this.subscriptions.add(this.doc.model.structureChange$.subscribe(change => this.handleStructureChange(change)))
     const objectSizing = this.doc.objectSizing
     if (objectSizing?.widthChange$) {
       this.subscriptions.add(
@@ -191,6 +193,11 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
           this.refreshModelEstimates(
             change.blockIds,
             change.kinds?.includes('props') ?? true,
+            blockId => modelHeightEstimateAffectedByContentChange(
+              this.doc,
+              blockId,
+              change,
+            ),
           )
         }),
       )
@@ -709,6 +716,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   private refreshModelEstimates(
     changedBlockIds?: readonly string[],
     refreshAbsoluteVisibility = changedBlockIds === undefined,
+    shouldRefreshHeight: (blockId: string) => boolean = () => true,
   ): void {
     if (!this.scrollContainer || !this.blockIds.length) return
     const rootIds = changedBlockIds
@@ -729,6 +737,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     }
     const measurements: HeightMeasurement[] = []
     rootIds.forEach(blockId => {
+      if (!shouldRefreshHeight(blockId)) return
       const estimate = estimateModelBlockHeightDetails(this.doc, blockId, {
         estimatedHeights: this.config.estimatedHeights,
         defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
@@ -850,9 +859,14 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     this.pins.pin('selection', this.resolveSelectionIndices(this.selectionSnapshot))
   }
 
-  private handleStructureChange(): void {
+  private handleStructureChange(
+    change?: Pick<IBlockModelStructureChange, 'affectedRootIds'>,
+  ): void {
     try {
       this.synchronizeRootModel(false)
+      if (change?.affectedRootIds?.length) {
+        this.refreshModelEstimates(change.affectedRootIds)
+      }
       this.schedule()
     } catch (error) {
       this.handleReconcileFailure(error)

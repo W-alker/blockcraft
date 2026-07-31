@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-07-31 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-01 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -228,6 +228,16 @@ The bundled reference `<block-craft-editor>` accepts the initialization-only
 `[paginationSparseView]` input (default `false`). Recreate that component to
 change either construction mode; direct framework integrations configure
 `DocConfig.virtualization` and `PaginationPlugin.experimentalSparseView`.
+
+Before a built-in table mounts, continuous virtualization and sparse
+pagination estimate its model height from direct `table-row` children instead
+of treating every table as one fixed-height card. Each row uses a positive
+`props.height`, then `estimatedHeights['table-row']`, then the built-in 60px
+fallback; `estimatedHeights.table` remains a floor for the total. This is an
+`O(rows)` cold calculation on initial projection, table-row structure changes
+and direct row-height prop changes. Nested cell text/props changes do not rescan
+the rows on each keystroke. The estimate is not exact print geometry and does
+not yet virtualize the table's nested row/cell Component subtree.
 
 This is opt-in and disabled by default. Direct root children are windowed;
 their nested tables/columns/callouts remain complete atomic subtrees. Selection

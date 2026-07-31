@@ -7,11 +7,13 @@ import {
 import {
   resolveInlineFloatGeometry,
 } from '../../block-std/inline/runtime/inline-float-layout'
+import type {IBlockModelContentChange} from '../../doc/model-graph'
 
 const DEFAULT_INLINE_IMAGE_WIDTH = 320
 const DEFAULT_INLINE_IMAGE_HEIGHT = 240
 const DEFAULT_ESTIMATED_LINE_HEIGHT = 24
 const DEFAULT_ESTIMATED_CHARACTER_WIDTH = 8
+const DEFAULT_TABLE_ROW_HEIGHT = 60
 const LINEAR_ESTIMATED_CONTAINERS = new Set(['callout'])
 
 export interface ModelHeightEstimatorOptions {
@@ -59,6 +61,29 @@ export function estimateModelBlockHeightDetails(
     options,
     new Set(),
     options.rootFacts,
+  )
+}
+
+/**
+ * Whether a model content change can affect this block's model-only height.
+ *
+ * Table estimates deliberately depend only on the table's own props, direct
+ * row structure, and row height props. Nested cell text/props changes receive
+ * live DOM measurement when mounted, but must not rescan thousands of rows on
+ * every keystroke.
+ */
+export function modelHeightEstimateAffectedByContentChange(
+  doc: BlockCraft.Doc,
+  blockId: string,
+  change: IBlockModelContentChange,
+): boolean {
+  if (doc.model.getFlavour(blockId) !== 'table') return true
+  if (!change.kinds.includes('props')) return false
+  return change.blockIds.some(changedId =>
+    changedId === blockId || (
+      doc.model.getFlavour(changedId) === 'table-row' &&
+      doc.model.getParentId(changedId) === blockId
+    ),
   )
 }
 
@@ -123,6 +148,10 @@ function estimateBlock(
       }
     }
 
+    if (flavour === 'table') {
+      return estimateTableHeight(doc, blockId, options, fallback)
+    }
+
     if (LINEAR_ESTIMATED_CONTAINERS.has(flavour)) {
       const children = doc.model.getChildrenIds(blockId)
       if (!children.length) {
@@ -147,6 +176,31 @@ function estimateBlock(
   } finally {
     visiting.delete(blockId)
   }
+}
+
+function estimateTableHeight(
+  doc: BlockCraft.Doc,
+  tableId: string,
+  options: ModelHeightEstimatorOptions,
+  fallback: number,
+): ModelHeightEstimate {
+  const rowFallback =
+    positiveNumber(options.estimatedHeights?.['table-row']) ??
+    DEFAULT_TABLE_ROW_HEIGHT
+  let rowCount = 0
+  let height = 0
+
+  for (const rowId of doc.model.getChildrenIds(tableId)) {
+    if (doc.model.getFlavour(rowId) !== 'table-row') continue
+    rowCount++
+    height +=
+      positiveNumber(doc.model.getProps(rowId)?.['height']) ??
+      rowFallback
+  }
+
+  return rowCount
+    ? {height: Math.max(fallback, height), modelDriven: true}
+    : {height: fallback, modelDriven: false}
 }
 
 function estimateInlineImageLineHeight(

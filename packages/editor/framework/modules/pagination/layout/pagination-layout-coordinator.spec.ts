@@ -15,6 +15,7 @@ interface ModelFact {
   readonly nodeType: BlockNodeType;
   readonly props?: Record<string, unknown>;
   readonly path: readonly string[];
+  readonly children?: readonly string[];
 }
 
 class ModelHarness {
@@ -35,7 +36,14 @@ class ModelHarness {
 
   getChildrenIds(blockId: string): readonly string[] {
     this.reads.children++;
-    return blockId === "root" ? [...this.rootIds] : [];
+    return blockId === "root"
+      ? [...this.rootIds]
+      : [...(this.facts.get(blockId)?.children ?? [])];
+  }
+
+  getParentId(blockId: string): string | null {
+    const path = this.facts.get(blockId)?.path;
+    return path && path.length > 1 ? path.at(-2) ?? null : null;
   }
 
   getPath(blockId: string): readonly string[] | null {
@@ -65,6 +73,7 @@ function fact(blockId: string, overrides: Partial<ModelFact> = {}): ModelFact {
     nodeType: BlockNodeType.editable,
     props: {},
     path: ["root", blockId],
+    children: [],
     ...overrides,
   };
 }
@@ -105,10 +114,13 @@ function measurement(
   };
 }
 
-function contentChange(blockIds: readonly string[]): IBlockModelContentChange {
+function contentChange(
+  blockIds: readonly string[],
+  kinds: IBlockModelContentChange['kinds'] = ["text", "props"],
+): IBlockModelContentChange {
   return {
     blockIds,
-    kinds: ["text", "props"],
+    kinds,
     origin: null,
     local: true,
     isUndoRedo: false,
@@ -247,6 +259,50 @@ describe("PaginationLayoutCoordinator", () => {
         naturalHeight: 80,
       }),
     ]);
+  });
+
+  it("does not rescan table rows for cell text but refreshes direct row height props", () => {
+    const rowIds = Array.from({length: 5}, (_, index) => `row-${index}`);
+    const facts = new Map<string, ModelFact>([
+      ["table", fact("table", {
+        flavour: "table",
+        nodeType: BlockNodeType.block,
+        children: rowIds,
+      })],
+      ...rowIds.map((rowId, index) => [rowId, fact(rowId, {
+        flavour: "table-row",
+        nodeType: BlockNodeType.block,
+        props: {height: 60},
+        path: ["root", "table", rowId],
+        children: index === 0 ? ["paragraph"] : [],
+      })] as const),
+      ["paragraph", fact("paragraph", {
+        path: ["root", "table", "row-0", "paragraph"],
+      })],
+    ]);
+    const {doc, model} = createHarness(["table"], facts, {table: 240});
+    const coordinator = new PaginationLayoutCoordinator(doc);
+    coordinator.syncRootOrder();
+    expect(coordinator.compute(config(), geometry()).entries[0].naturalHeight)
+      .toBe(300);
+    model.reads.children = 0;
+
+    coordinator.applyContentChange(contentChange(["paragraph"], ["text"]));
+    expect(model.reads.children).toBe(0);
+    expect(coordinator.compute(config(), geometry()).entries[0].naturalHeight)
+      .toBe(300);
+
+    facts.set("row-0", fact("row-0", {
+      flavour: "table-row",
+      nodeType: BlockNodeType.block,
+      props: {height: 100},
+      path: ["root", "table", "row-0"],
+      children: ["paragraph"],
+    }));
+    coordinator.applyContentChange(contentChange(["row-0"], ["props"]));
+    expect(model.reads.children).toBeGreaterThan(0);
+    expect(coordinator.compute(config(), geometry()).entries[0].naturalHeight)
+      .toBe(340);
   });
 
   it("reuses geometry for root reorders and invalidates both nested move owners", () => {

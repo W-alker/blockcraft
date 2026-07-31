@@ -194,6 +194,97 @@ describe('RootVirtualizationManager', () => {
     h.manager.dispose()
   })
 
+  it('refreshes table estimates for row structure/height without rescanning on cell text', () => {
+    const h = createHarness(12, 1, {
+      estimatedHeights: {table: 240},
+    })
+    const contentChange$ = new Subject<any>()
+    const tableId = h.ids[0]
+    const rowIds = Array.from({length: 5}, (_, index) => `row-${index}`)
+    const rowHeights = new Map(rowIds.map(id => [id, 60]))
+    let tableChildrenReads = 0
+    ;(h.doc.model as any).contentChange$ = contentChange$
+    ;(h.doc.model as any).getChildrenIds = (blockId: string) => {
+      if (blockId === 'root') return [...h.ids]
+      if (blockId === tableId) {
+        tableChildrenReads++
+        return [...rowIds]
+      }
+      return []
+    }
+    ;(h.doc.model as any).getFlavour = (blockId: string) => {
+      if (blockId === tableId) return 'table'
+      if (rowHeights.has(blockId)) return 'table-row'
+      return 'paragraph'
+    }
+    ;(h.doc.model as any).getNodeType = (blockId: string) =>
+      blockId === tableId || rowHeights.has(blockId)
+        ? BlockNodeType.block
+        : BlockNodeType.editable
+    ;(h.doc.model as any).getProps = (blockId: string) =>
+      rowHeights.has(blockId) ? {height: rowHeights.get(blockId)} : {}
+    ;(h.doc.model as any).getParentId = (blockId: string) =>
+      rowHeights.has(blockId) ? tableId : null
+    ;(h.doc.model as any).getPath = (blockId: string) => {
+      if (h.ids.includes(blockId)) return ['root', blockId]
+      if (rowHeights.has(blockId)) return ['root', tableId, blockId]
+      return ['root', tableId, 'row-0', 'cell-0', blockId]
+    }
+
+    h.manager.init(h.scrollContainer)
+    expect((h.manager as any).heights.get(0)).toBe(300)
+    tableChildrenReads = 0
+
+    contentChange$.next({
+      blockIds: ['paragraph'],
+      kinds: ['text'],
+      origin: null,
+      local: true,
+      isUndoRedo: false,
+    })
+    expect(tableChildrenReads).toBe(0)
+    expect((h.manager as any).heights.get(0)).toBe(300)
+
+    rowHeights.set('row-0', 100)
+    contentChange$.next({
+      blockIds: ['row-0'],
+      kinds: ['props'],
+      origin: null,
+      local: true,
+      isUndoRedo: false,
+    })
+    expect(tableChildrenReads).toBe(1)
+    expect((h.manager as any).heights.get(0)).toBe(340)
+
+    rowIds.push('row-5')
+    rowHeights.set('row-5', 60)
+    h.advanceStructureRevision()
+    ;(h.structureChange$ as Subject<any>).next({
+      revision: 1,
+      reachableAddedIds: ['row-5'],
+      reachableRemovedIds: [],
+      affectedParentIds: [tableId],
+      affectedRootIds: [tableId],
+    })
+    expect((h.manager as any).heights.get(0)).toBe(400)
+
+    rowIds.push('row-6')
+    rowHeights.set('row-6', 60)
+    h.ids.push('new-root')
+    h.advanceStructureRevision()
+    ;(h.structureChange$ as Subject<any>).next({
+      revision: 2,
+      reachableAddedIds: ['row-6', 'new-root'],
+      reachableRemovedIds: [],
+      affectedParentIds: [tableId, 'root'],
+      affectedRootIds: [tableId, 'new-root'],
+    })
+    expect((h.manager as any).heights.get(0)).toBe(460)
+
+    h.manager.dispose()
+    contentChange$.complete()
+  })
+
   it('mounts a cold zero-height placement layout from absolute child geometry', async () => {
     const h = createHarness(12, 20)
     const contentChange$ = new Subject<any>()

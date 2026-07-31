@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-07-31 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-01 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -73,6 +73,55 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-08-01 (patch) — estimate offscreen table height from row models
+
+**Severity**: patch
+
+**What changed**: Root virtualization and sparse pagination now estimate a
+built-in table's pre-mount height from its direct `table-row` models. Positive
+row `props.height` values are summed, invalid heights use the configured
+`table-row` estimate or the built-in 60px fallback, and the configured `table`
+estimate remains a minimum total height.
+
+**Why**: Treating every unmounted table as one fixed-height card made the main
+scroll range and model-only navigation severely underestimate tables with
+hundreds or thousands of rows.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No downstream code changes are required. Existing height configuration remains
+valid; the table value is now a floor and an optional row fallback can refine
+invalid/missing row heights:
+
+```typescript
+virtualization: {
+  enabled: true,
+  estimatedHeights: {
+    table: 240,
+    'table-row': 60,
+  },
+}
+```
+
+#### Behavior Changes
+
+- A non-empty unmounted table can reserve more vertical space than its static
+  `estimatedHeights.table` value when its row sum is larger.
+- Empty/malformed tables retain the previous flavour fallback.
+- Initial and row-structure estimation is `O(rows)` and reads no cell content
+  or DOM.
+- Nested cell text/props changes do not rescan all rows per keystroke; direct
+  table-row height props and row structure changes refresh the estimate.
+- The value remains non-exact for pagination/printing, and table row/cell views
+  are not virtualized by this patch.
+- No package version was changed by this source update.
 
 ### v?.?.? - 2026-07-31 (patch) — restore immediate local-image upload preview
 

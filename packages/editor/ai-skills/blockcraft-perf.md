@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-07-28
+> Last updated: 2026-08-01
 
 ## Core Performance Principles
 
@@ -69,6 +69,17 @@ path. A normal scroll frame touches the mounted window, not every document
 block. `ResizeObserver` corrects estimates and
 records each mounted block's layout stride, including inter-block spacing, then
 restores an ID-based scroll anchor. Nested subtrees are atomic in this phase.
+
+Built-in tables receive a model-first total-height estimate before their root
+view mounts. The estimator sums direct `table-row` heights in `O(rows)` using
+this precedence for each row: positive `row.props.height`, configured
+`estimatedHeights['table-row']`, then 60px. The configured
+`estimatedHeights.table` value remains the minimum total estimate. Empty or
+malformed tables keep the old flavour fallback. Nested cell text/props changes
+do not rescan the table on each keystroke; only table-row structure and direct
+row-height props refresh the sum. The estimate improves scroll projection and
+sparse pagination seeds but remains non-exact until DOM measurement. Table
+rows/cells are still an atomic eagerly rendered nested subtree in this phase.
 
 Pagination/virtualization Phase A introduced a package-internal
 `VerticalLayoutProjection` query seam while retaining the same Fenwick-backed
