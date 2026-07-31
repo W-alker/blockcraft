@@ -13,7 +13,31 @@ import {
   ResizeContainerComponent,
 } from '../../components';
 import {takeUntil} from 'rxjs';
-import {readImageIntrinsicSize} from '../../global';
+
+export function deriveInitialImageObjectSize(
+  size: ResourceIntrinsicSize,
+  parentAvailableWidth: number,
+  rootContentWidth: number,
+): {wr: number; ar: number} | null {
+  if (
+    !Number.isFinite(size.width) ||
+    !Number.isFinite(size.height) ||
+    size.width <= 0 ||
+    size.height <= 0 ||
+    !Number.isFinite(parentAvailableWidth) ||
+    parentAvailableWidth <= 0
+  ) {
+    return null
+  }
+  const displayWidth = Math.min(size.width, parentAvailableWidth)
+  const ar = size.width / size.height
+  const derived = deriveObjectSizeFromPixels(
+    displayWidth,
+    displayWidth / ar,
+    rootContentWidth,
+  )
+  return derived ? {wr: derived.wr, ar} : null
+}
 
 @Component({
   selector: 'div.image-block',
@@ -46,8 +70,7 @@ import {readImageIntrinsicSize} from '../../global';
           @if (!isReadonly) {
             <block-resizer
               [container]="imgWrapper"
-              [maxWidthContainer]="sizingContainer"
-              [maxWidth]="rootContentWidth || undefined"
+              [maxWidthContainer]="resizeMaxWidthContainer"
               [referenceWidth]="rootContentWidth || undefined"
               [preserveRightEdge]="isAbsolute"
               (resizeCommit)="onResized($event)"/>
@@ -182,6 +205,8 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
   protected _previewUri = '';
 
   private _fileService?: DocFileService;
+  private _awaitingLocalPreviewSize = false
+  private _pendingLocalPreviewSize: ResourceIntrinsicSize | null = null
 
   private get fileService() {
     return this._fileService ??= this.doc.injector.get<DocFileService>(DOC_FILE_SERVICE_TOKEN);
@@ -216,12 +241,14 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     return this.doc.objectSizing.rootContentWidth
   }
 
-  get sizingContainer(): HTMLElement {
-    return this.doc.objectSizing.rootContentElement ?? this.hostElement
-  }
-
   get isAbsolute(): boolean {
     return this.props.placement?.mode === 'absolute'
+  }
+
+  get resizeMaxWidthContainer(): HTMLElement {
+    return this.isAbsolute
+      ? this.doc.objectSizing.rootContentElement ?? this.hostElement
+      : this.hostElement
   }
 
   get resourcePreviewUrl(): string {
@@ -241,7 +268,10 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     super.ngAfterViewInit();
     this.doc.objectSizing.widthChange$
       .pipe(takeUntil(this.onDestroy$))
-      .subscribe(() => this.changeDetectorRef.markForCheck())
+      .subscribe(() => {
+        this.commitPendingLocalPreviewSize()
+        this.changeDetectorRef.markForCheck()
+      })
   }
 
   onImageIntrinsicSize(size: ResourceIntrinsicSize) {
@@ -250,6 +280,11 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
       this.isReadonly ||
       this.props.ar != null
     ) {
+      return
+    }
+    if (this._awaitingLocalPreviewSize) {
+      this._pendingLocalPreviewSize = size
+      this.commitPendingLocalPreviewSize()
       return
     }
     this.setInitProps({ar: size.ar})
@@ -268,12 +303,13 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
         return;
       }
 
-      const intrinsicSize = await readImageIntrinsicSize(file)
-      if (this._isGone() || this.isReadonly) return
       const url = this.fileService.createObjectURL(file);
       this.setInitProps({
         src: url,
-        ...(intrinsicSize ? {ar: intrinsicSize.ar} : {}),
+        wr: 100,
+        ar: null,
+        width: null,
+        height: null,
       });
       this.uploadImage(url);
     } catch (e) {
@@ -287,6 +323,18 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     const file = this.fileService.getFileByObjectURL(url);
     if (!file) return;
 
+    const hasLegacyWidth =
+      typeof this.props.width === 'number' &&
+      Number.isFinite(this.props.width) &&
+      this.props.width > 0
+    const hasCustomWr =
+      typeof this.props.wr === 'number' &&
+      Number.isFinite(this.props.wr) &&
+      this.props.wr > 0 &&
+      this.props.wr !== 100
+    this._awaitingLocalPreviewSize =
+      this.props.ar == null && !hasLegacyWidth && !hasCustomWr
+    this._pendingLocalPreviewSize = null
     this._previewUri = this.fileService.getFilePreviewURLByObjectURL(url);
     this.uploadProgress = 0;
     this.changeDetectorRef.markForCheck();
@@ -308,7 +356,15 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
       this.fileService.removeObjectURL(url);
       this.doc.messageService.warn('图片上传失败');
       if (this._isGone() || this.isReadonly) return;
-      this.setInitProps({src: ''});
+      this._awaitingLocalPreviewSize = false
+      this._pendingLocalPreviewSize = null
+      this.setInitProps({
+        src: '',
+        wr: 100,
+        ar: null,
+        width: null,
+        height: null,
+      });
       this.uploadProgress = 100;
       this._previewUri = '';
       this.changeDetectorRef.markForCheck();
@@ -330,6 +386,8 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
         ? this.props.ar
         : derived.ar
     const placement = this.props.placement
+    this._awaitingLocalPreviewSize = false
+    this._pendingLocalPreviewSize = null
     this.updateProps({
       wr: derived.wr,
       ar: currentAr,
@@ -345,5 +403,34 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
         : {}),
     });
     this.changeDetectorRef.markForCheck();
+  }
+
+  private commitPendingLocalPreviewSize(): boolean {
+    const size = this._pendingLocalPreviewSize
+    if (this.props.ar != null) {
+      this._awaitingLocalPreviewSize = false
+      this._pendingLocalPreviewSize = null
+      return false
+    }
+    if (
+      !this._awaitingLocalPreviewSize ||
+      !size ||
+      this._isGone() ||
+      this.isReadonly
+    ) {
+      return false
+    }
+    const initialSize = deriveInitialImageObjectSize(
+      size,
+      this.isAbsolute
+        ? this.rootContentWidth
+        : this.hostElement.clientWidth,
+      this.rootContentWidth,
+    )
+    if (!initialSize) return false
+    this.setInitProps(initialSize)
+    this._awaitingLocalPreviewSize = false
+    this._pendingLocalPreviewSize = null
+    return true
   }
 }

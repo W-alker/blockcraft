@@ -7,7 +7,6 @@ import {EmbedFrameCreator} from "./embed-frame-creator";
 import {MediaCreatorComponent, MediaCreatorResult} from "../../components/media-creator";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
-import {readImageIntrinsicSize} from "../../global";
 
 @Injectable()
 export class MyBlockCreatorService extends BlockCreatorService {
@@ -119,7 +118,7 @@ export class MyBlockCreatorService extends BlockCreatorService {
       ovr.backdropClick()
         .pipe(takeUntilDestroyed(cpr.instance.destroyer))
         .subscribe(() => finish(null))
-      cpr.instance.onSubmit.pipe(takeUntilDestroyed(cpr.instance.destroyer)).subscribe(async (result: MediaCreatorResult) => {
+      cpr.instance.onSubmit.pipe(takeUntilDestroyed(cpr.instance.destroyer)).subscribe((result: MediaCreatorResult) => {
         if (mediaType === 'image') {
           switch (result.type) {
             case 'link':
@@ -132,11 +131,8 @@ export class MyBlockCreatorService extends BlockCreatorService {
                   reject(new Error('图片过大'))
                   return
                 }
-                const intrinsicSize = await readImageIntrinsicSize(result.file)
-                if (settled) return
                 finish({
                   src: this.fileService.createObjectURL(result.file),
-                  ...(intrinsicSize ? {ar: intrinsicSize.ar} : {}),
                 })
                 return
               }

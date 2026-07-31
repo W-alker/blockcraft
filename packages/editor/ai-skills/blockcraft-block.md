@@ -622,12 +622,18 @@ ratios and report whether dimensions came from `ratio`, `legacy` or `default`.
 Do not add a `ResizeObserver` per block or read root geometry during change
 detection.
 
-New built-in images and videos start at `wr: 100`; intrinsic metadata fills a
-missing `ar`. Legacy `width/height` remains a compatibility input and is not
-rewritten on load. The first completed Pointer Events resize writes `wr/ar`
-once and clears the old fields in the same `updateProps()` transaction. The
-gesture captures its root-width basis, so a concurrent container resize cannot
-change the committed ratio.
+Remote built-in images and new videos start at `wr: 100`; intrinsic metadata
+fills a missing `ar`. A built-in local image is inserted immediately with its
+Object URL and upload-progress preview. On the first successful preview load it
+sets `ar` from the intrinsic dimensions and sets `wr` from
+`min(intrinsicWidth, parentAvailableWidth) / rootContentWidth`, so small images
+are not enlarged and nested images do not exceed their parent. Legacy
+`width/height` remains a compatibility input and is not rewritten on load.
+The first completed Pointer Events resize writes `wr/ar` once and clears the
+old fields in the same `updateProps()` transaction. The gesture captures the
+root-width basis for persistence but uses the current parent content width as
+its visual maximum, so a concurrent container resize cannot change the
+committed ratio.
 
 ### Visual Resource Placeholder Extension
 
@@ -675,24 +681,24 @@ the directive exposes `retry()` for custom UI. The exported
 surfaces. Always keep the frame's size in model/CSS state—the directive owns
 loading presentation, not geometry.
 
-For local images, read metadata before creating the persisted snapshot:
+For the built-in image block, create the local Object URL and Snapshot
+immediately. The mounted preview initializes `wr/ar` without adding Undo
+history:
 
 ```typescript
-const size = await readImageIntrinsicSize(file);
 const localUrl = fileService.createObjectURL(file);
 const snapshot = ImageBlockSchema.createSnapshot({
   src: localUrl,
-  wr: 100,
-  ...(size ? { ar: size.ar } : {}),
 });
 ```
 
 `ImageBlockCreateInput` is the short object form `{src, wr?, ar?}`. The legacy
 positional `createSnapshot(src, width?, height?, caption?)` form remains
-supported. `readImageIntrinsicSize()` prefers `createImageBitmap` for
-`Blob/File` and falls back to temporary Object URL + `HTMLImageElement` for
-WebKit compatibility; failure returns `null`, so callers should retain their
-Schema fallback ratio.
+supported. `readImageIntrinsicSize()` remains available to hosts that require
+a fully sized Snapshot before any view mounts; it prefers `createImageBitmap`
+for `Blob/File` and falls back to temporary Object URL + `HTMLImageElement` for
+WebKit compatibility. Do not put that await in an interactive built-in image
+insertion path because it delays the upload-preview state.
 
 ### Built-in Word-like Shape Block
 

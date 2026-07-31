@@ -28,6 +28,7 @@ function makeMockDoc(blocks: Record<string, any>): any {
       createSnapshot: () => null,
     },
     getBlockById: (id: string) => blocks[id],
+    canInsertChild: jasmine.createSpy('canInsertChild').and.returnValue(true),
     compareBlockPosition: jasmine.createSpy('compareBlockPosition').and.returnValue(BLOCK_POSITION.AFTER),
     readonlyManager: {
       assertPropsWritable: jasmine.createSpy('assertPropsWritable'),
@@ -220,7 +221,9 @@ describe('DocDndService.onSortBlocks — cross parent', () => {
     target.parentBlock = parentB
 
     const doc = makeMockDoc({ pa: parentA, pb: parentB, b1, b2, t: target })
-    ;(doc.schemas.isValidChildren as jasmine.Spy).and.callFake((flavour: string) => flavour !== 'image')
+    ;(doc.canInsertChild as jasmine.Spy).and.callFake(
+      (_parentId: string, flavour: string) => flavour !== 'image',
+    )
 
     const svc = new DocDndService(doc)
     svc.onSortBlocks([b1, b2], target, 'before')
@@ -387,6 +390,33 @@ describe('DocDndService.onSortBlocks — column path', () => {
 })
 
 describe('DocDndService readonly insertion preflight', () => {
+  it('inserts an image preview synchronously without waiting for intrinsic metadata', () => {
+    const parent = makeBlock('p', null, 'root')
+    const target = makeBlock('t', 'p', 'paragraph', { __index: 0 })
+    target.parentBlock = parent
+    const doc = makeMockDoc({ p: parent, t: target })
+    const snapshot = { props: {} }
+    doc.schemas.createSnapshot = jasmine.createSpy('createSnapshot').and.returnValue(snapshot)
+    doc.crud.insertBlocks = jasmine.createSpy('insertBlocks')
+    const fileService = {
+      isOverMaxSize: jasmine.createSpy('isOverMaxSize').and.returnValue(false),
+      createObjectURL: jasmine.createSpy('createObjectURL').and.returnValue('local://image'),
+      removeObjectURL: jasmine.createSpy('removeObjectURL'),
+    }
+    doc.injector.get = () => fileService
+    const file = new File(['x'], 'x.png', { type: 'image/png' })
+    const files = { length: 1, 0: file } as unknown as FileList
+
+    const svc = new DocDndService(doc)
+    svc.onInsertFiles(files, target, 'after')
+
+    expect(fileService.createObjectURL).toHaveBeenCalledWith(file)
+    expect(doc.schemas.createSnapshot).toHaveBeenCalledWith('image', [{
+      src: 'local://image',
+    }])
+    expect(doc.crud.insertBlocks).toHaveBeenCalledWith('p', 1, [snapshot])
+  })
+
   it('does not create a file object URL when the target parent is readonly', () => {
     const parent = makeBlock('p', null, 'root')
     const target = makeBlock('t', 'p', 'paragraph', { __index: 0 })

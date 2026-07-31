@@ -12,7 +12,6 @@ import { BlockReadonlyError, BlockReadonlyOperation } from "../doc/block-readonl
 import { DOC_FILE_SERVICE_TOKEN } from "./file.service"
 import { BLOCK_CREATOR_SERVICE_TOKEN } from "./block-creator.service"
 import { calcDragLineRect, calcPositionByRect, type DragLineRect, type DragPosition } from "./_dnd-geometry"
-import {readImageIntrinsicSize} from "../../global"
 
 export enum DocDndDataTypes {
   /** @deprecated 内部 block 拖拽改走 DocInternalDragController + InternalDragData，本枚举值不再使用。 */
@@ -556,7 +555,7 @@ export class DocDndService {
       )) {
         return
       }
-      void this._insertImageFile(files[0], targetBlock.id, position)
+      this._insertImageFile(files[0], targetBlock, position)
       return
     }
 
@@ -621,43 +620,29 @@ export class DocDndService {
     this.doc.crud.insertBlocks(targetBlock.parentId!, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), _blocks)
   }
 
-  private async _insertImageFile(
+  private _insertImageFile(
     file: File,
-    targetBlockId: string,
+    targetBlock: BlockCraft.BlockComponent,
     position: DragPosition,
-  ): Promise<void> {
+  ): void {
     const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
     if (fileService.isOverMaxSize(file.size)) {
       this.doc.messageService.warn('图片过大')
       return
     }
 
-    const intrinsicSize = await readImageIntrinsicSize(file)
-    if (!this.doc.model.exists(targetBlockId)) return
-
-    const parentId = this.doc.model.getParentId(targetBlockId)
-    const targetIndex = this.doc.model.indexInParent(targetBlockId)
-    if (!parentId || targetIndex < 0) return
-    if (!this.doc.canInsertChild(parentId, 'image')) {
-      this.doc.messageService.warn('此处不能添加图片')
-      return
-    }
-    if (!this._tryAssertInsertable(parentId, BlockReadonlyOperation.Insert)) return
-
     const url = fileService.createObjectURL(file)
     const snapshot = this.doc.schemas.createSnapshot('image', [{
       src: url,
-      ...(intrinsicSize ? {ar: intrinsicSize.ar} : {}),
     }])
-    const targetProps = this.doc.model.getProps(targetBlockId)
-    const depth = targetProps?.['depth']
+    const depth = targetBlock.props['depth']
     if (typeof depth === 'number') {
       snapshot.props.depth = depth
     }
     try {
       this.doc.crud.insertBlocks(
-        parentId,
-        targetIndex + (position === 'after' ? 1 : 0),
+        targetBlock.parentId!,
+        targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0),
         [snapshot],
       )
     } catch {

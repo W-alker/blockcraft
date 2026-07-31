@@ -320,14 +320,17 @@ Visual resource loading is composed on top of that stable frame through
 `BcResourcePlaceholderDirective`; it is not a `DocConfig`, Schema or
 `doc.*` capability. The built-in image/video blocks and Snapshot Viewer show
 the same neutral skeleton while loading and preserve the frame on error with
-an in-place retry action. Local image creation reads intrinsic dimensions
-before insertion. Remote and legacy images without a stored ratio start from
-the Schema default and backfill the first successful ratio without adding Undo
-history. Continuous virtualization and sparse pagination share one DOM-free
-model estimator for `wr/ar` media and inline-image `width/height`. Wrapped
-inline images additionally reserve their contained image-plus-gap height and
-estimate constrained-side text lines from persisted `side/x/gap`; ordinary
-measured text heights are not overwritten by fallback estimates.
+an in-place retry action. Built-in local image creation inserts the block
+immediately, preserves the local preview plus upload-progress state, then uses
+the first successful preview dimensions to persist `ar` and a root-relative
+`wr` capped by the current parent content width. Remote and legacy images
+without a stored ratio start from the Schema default and backfill the first
+successful ratio without adding Undo history. Continuous virtualization and
+sparse pagination share one DOM-free model estimator for `wr/ar` media and
+inline-image `width/height`. Wrapped inline images additionally reserve their
+contained image-plus-gap height and estimate constrained-side text lines from
+persisted `side/x/gap`; ordinary measured text heights are not overwritten by
+fallback estimates.
 The layout and absolute descendants have no gap-cursor eligibility. Stale gap
 selection snapshots degrade to whole-object selection, and normal gaps are
 restored when an object returns to relative flow. While a whole absolute object

@@ -74,6 +74,66 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-07-31 (patch) — restore immediate local-image upload preview
+
+**Severity**: patch
+
+**What changed**: Built-in local block-image insertion no longer waits for
+intrinsic metadata before creating the block. The block immediately shows its
+local preview and upload progress, then initializes root-relative `wr/ar` from
+the first successful preview load. Initial display width and later pointer
+resize are capped by the current parent content width while `wr` remains based
+on the root content width.
+
+**Why**: Waiting for image decoding before insertion hid the established upload
+state and made selecting or dropping an image feel unresponsive. The mounted
+preview already exposes reliable browser-normalized intrinsic dimensions and
+can initialize responsive sizing without blocking document insertion.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No downstream code changes are required. Custom interactive insertion paths
+that copied the old built-in pre-read pattern can insert immediately:
+
+```typescript
+// before: delays insertion until metadata decoding finishes
+const size = await readImageIntrinsicSize(file)
+const snapshot = ImageBlockSchema.createSnapshot({
+  src: fileService.createObjectURL(file),
+  wr: 100,
+  ...(size ? {ar: size.ar} : {}),
+})
+
+// after: the mounted built-in image preview initializes wr/ar
+const snapshot = ImageBlockSchema.createSnapshot({
+  src: fileService.createObjectURL(file),
+})
+```
+
+`readImageIntrinsicSize()` remains available for model-only workflows that
+must provide explicit dimensions before mounting.
+
+#### Behavior Changes
+
+- Media-panel selection, empty-image selection and file drop insert the local
+  image before intrinsic metadata decoding.
+- The first successful local preview writes `wr/ar` through the no-history
+  initialization path. Upload completion changes only `src`.
+- Small images retain intrinsic width; large or nested images are capped at
+  the current parent width. Persisted `wr` remains root-relative for
+  virtualization, pagination and responsive rendering.
+- Image pointer resizing uses the parent width as its maximum and the root
+  width as its persistence basis.
+- Remote/legacy image initialization, peer “同步中…” presentation and upload
+  failure behavior are unchanged.
+- No package version was changed by this source update.
+
 ### v?.?.? - 2026-07-31 (minor) — add square wrapping for inline images
 
 **Severity**: minor
