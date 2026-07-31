@@ -4,9 +4,18 @@ import {
   DEFAULT_INLINE_IMAGE_WRAP_GAP,
   InlineImageWrapSide,
 } from '../image-embed'
+import {EmbedBlot, ScrollBlot} from '../blot'
+import {
+  buildInlineFragmentPlan,
+  InlineDualFragmentPlan,
+  InlineFragmentProjection,
+  InlineRangeMeasurer,
+} from './inline-fragment-layout'
 
 export const INLINE_FLOAT_OWNER_ATTRIBUTE = 'data-bc-inline-float-owner'
 export const INLINE_FLOAT_PREVIEW_ATTRIBUTE = 'data-bc-inline-float-preview'
+export const INLINE_FLOAT_LOGICAL_ANCHOR_ATTRIBUTE =
+  'data-bc-inline-logical-anchor'
 export const DEFAULT_INLINE_WRAP_MIN_TEXT_WIDTH = 96
 
 export interface InlineFloatGeometryInput {
@@ -21,6 +30,7 @@ export interface InlineFloatGeometryInput {
 
 export interface InlineFloatGeometry {
   containerWidth: number
+  layoutMode: 'single' | 'dual'
   resolvedTextSide: Exclude<InlineImageWrapSide, 'auto'>
   floatDirection: 'left' | 'right'
   imageX: number
@@ -30,7 +40,16 @@ export interface InlineFloatGeometry {
   exclusionWidth: number
   exclusionHeight: number
   frameLeft: number
+  leftTextWidth: number
+  rightTextWidth: number
+  textIntervals: InlineFloatTextInterval[]
   availableTextWidth: number
+}
+
+export interface InlineFloatTextInterval {
+  side: Exclude<InlineImageWrapSide, 'auto'>
+  start: number
+  width: number
 }
 
 const finite = (value: unknown, fallback = 0): number =>
@@ -47,9 +66,7 @@ const nonNegative = (value: unknown, fallback: number): number =>
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value))
 
-const normalizeSide = (
-  value: unknown,
-): InlineImageWrapSide =>
+const normalizeSide = (value: unknown): InlineImageWrapSide =>
   value === 'left' || value === 'right' ? value : 'auto'
 
 export function resolveInlineFloatGeometry(
@@ -59,6 +76,7 @@ export function resolveInlineFloatGeometry(
   if (containerWidth <= 0) {
     return {
       containerWidth: 0,
+      layoutMode: 'single',
       resolvedTextSide: 'right',
       floatDirection: 'left',
       imageX: 0,
@@ -68,6 +86,9 @@ export function resolveInlineFloatGeometry(
       exclusionWidth: 0,
       exclusionHeight: 0,
       frameLeft: 0,
+      leftTextWidth: 0,
+      rightTextWidth: 0,
+      textIntervals: [],
       availableTextWidth: 0,
     }
   }
@@ -75,7 +96,7 @@ export function resolveInlineFloatGeometry(
   const sourceWidth = positive(input.imageWidth, DEFAULT_INLINE_IMAGE_WIDTH)
   const sourceHeight = positive(input.imageHeight, DEFAULT_INLINE_IMAGE_HEIGHT)
   const imageWidth = Math.min(sourceWidth, containerWidth)
-  const imageHeight = sourceHeight * imageWidth / sourceWidth
+  const imageHeight = (sourceHeight * imageWidth) / sourceWidth
   const gap = nonNegative(input.gap, DEFAULT_INLINE_IMAGE_WRAP_GAP)
   const minTextWidth = Math.min(
     containerWidth,
@@ -83,41 +104,68 @@ export function resolveInlineFloatGeometry(
   )
   const normalizedStart = clamp(finite(input.x, 0), 0, 1)
   const maxImageX = Math.max(0, containerWidth - imageWidth)
-  let imageX = clamp(
-    normalizedStart * containerWidth,
-    0,
-    maxImageX,
-  )
+  let imageX = clamp(normalizedStart * containerWidth, 0, maxImageX)
 
-  const widerSide =
-    imageX - gap >= containerWidth - imageX - imageWidth - gap
-      ? 'left'
-      : 'right'
+  let leftTextWidth = Math.max(0, imageX - gap)
+  let rightTextWidth = Math.max(0, containerWidth - imageX - imageWidth - gap)
+  const widerSide = leftTextWidth >= rightTextWidth ? 'left' : 'right'
   const requestedSide = normalizeSide(input.side)
-  const resolvedTextSide =
-    requestedSide === 'auto' ? widerSide : requestedSide
-  const canReserveText =
-    containerWidth - imageWidth - gap >= minTextWidth
+  const resolvedTextSide = requestedSide === 'auto' ? widerSide : requestedSide
+  const layoutMode =
+    requestedSide === 'auto' &&
+    leftTextWidth >= minTextWidth &&
+    rightTextWidth >= minTextWidth
+      ? 'dual'
+      : 'single'
+  const canReserveText = containerWidth - imageWidth - gap >= minTextWidth
 
-  if (canReserveText && resolvedTextSide === 'right') {
-    imageX = Math.min(
-      imageX,
-      containerWidth - imageWidth - gap - minTextWidth,
-    )
-  } else if (canReserveText && resolvedTextSide === 'left') {
+  if (
+    layoutMode === 'single' &&
+    canReserveText &&
+    resolvedTextSide === 'right'
+  ) {
+    imageX = Math.min(imageX, containerWidth - imageWidth - gap - minTextWidth)
+  } else if (
+    layoutMode === 'single' &&
+    canReserveText &&
+    resolvedTextSide === 'left'
+  ) {
     imageX = Math.max(imageX, gap + minTextWidth)
   }
   imageX = clamp(imageX, 0, maxImageX)
+  leftTextWidth = Math.max(0, imageX - gap)
+  rightTextWidth = Math.max(0, containerWidth - imageX - imageWidth - gap)
 
-  const exclusionWidth = resolvedTextSide === 'right'
-    ? clamp(imageX + imageWidth + gap, 0, containerWidth)
-    : clamp(containerWidth - imageX + gap, 0, containerWidth)
-  const shellStart = resolvedTextSide === 'right'
-    ? 0
-    : containerWidth - exclusionWidth
+  const textIntervals: InlineFloatTextInterval[] =
+    layoutMode === 'dual'
+      ? [
+          {side: 'left', start: 0, width: leftTextWidth},
+          {
+            side: 'right',
+            start: imageX + imageWidth + gap,
+            width: rightTextWidth,
+          },
+        ]
+      : resolvedTextSide === 'right'
+        ? [
+            {
+              side: 'right',
+              start: imageX + imageWidth + gap,
+              width: rightTextWidth,
+            },
+          ]
+        : [{side: 'left', start: 0, width: leftTextWidth}]
+
+  const exclusionWidth =
+    resolvedTextSide === 'right'
+      ? clamp(imageX + imageWidth + gap, 0, containerWidth)
+      : clamp(containerWidth - imageX + gap, 0, containerWidth)
+  const shellStart =
+    resolvedTextSide === 'right' ? 0 : containerWidth - exclusionWidth
 
   return {
     containerWidth,
+    layoutMode,
     resolvedTextSide,
     floatDirection: resolvedTextSide === 'right' ? 'left' : 'right',
     imageX,
@@ -127,7 +175,15 @@ export function resolveInlineFloatGeometry(
     exclusionWidth,
     exclusionHeight: imageHeight + gap,
     frameLeft: imageX - shellStart,
-    availableTextWidth: Math.max(0, containerWidth - exclusionWidth),
+    leftTextWidth,
+    rightTextWidth,
+    textIntervals,
+    availableTextWidth:
+      layoutMode === 'dual'
+        ? leftTextWidth + rightTextWidth
+        : resolvedTextSide === 'right'
+          ? rightTextWidth
+          : leftTextWidth,
   }
 }
 
@@ -173,13 +229,10 @@ export function applyInlineImageFloatLayout(
   const geometry = resolveInlineFloatGeometry(input)
   const frame = shell.querySelector<HTMLElement>('.bc-inline-image-frame')
 
-  shell.dataset['bcInlineImageResolvedTextSide'] =
-    geometry.resolvedTextSide
+  shell.removeAttribute(INLINE_FLOAT_LOGICAL_ANCHOR_ATTRIBUTE)
+  shell.dataset['bcInlineImageResolvedTextSide'] = geometry.resolvedTextSide
   shell.style.setProperty('--bc-inline-image-x', `${geometry.imageX}px`)
-  shell.style.setProperty(
-    '--bc-inline-image-width',
-    `${geometry.imageWidth}px`,
-  )
+  shell.style.setProperty('--bc-inline-image-width', `${geometry.imageWidth}px`)
   shell.style.setProperty(
     '--bc-inline-image-height',
     `${geometry.imageHeight}px`,
@@ -192,21 +245,73 @@ export function applyInlineImageFloatLayout(
     '--bc-inline-image-exclusion-height',
     `${geometry.exclusionHeight}px`,
   )
-  shell.style.cssFloat = geometry.containerWidth > 0
-    ? geometry.floatDirection
-    : 'none'
+  shell.style.cssFloat =
+    geometry.containerWidth > 0 ? geometry.floatDirection : 'none'
   shell.style.width = `${geometry.exclusionWidth}px`
   shell.style.height = `${geometry.exclusionHeight}px`
   shell.style.removeProperty('aspect-ratio')
 
   if (frame) {
+    frame.style.removeProperty('visibility')
     frame.style.left = `${geometry.frameLeft}px`
     frame.style.width = `${geometry.imageWidth}px`
     frame.style.height = `${geometry.imageHeight}px`
-    frame.style.aspectRatio =
-      `${geometry.imageWidth} / ${geometry.imageHeight}`
+    frame.style.aspectRatio = `${geometry.imageWidth} / ${geometry.imageHeight}`
   }
   return geometry
+}
+
+function clearInlineImageFloatLayout(shell: HTMLElement): void {
+  shell.removeAttribute(INLINE_FLOAT_LOGICAL_ANCHOR_ATTRIBUTE)
+  delete shell.dataset['bcInlineImageResolvedTextSide']
+  for (const property of [
+    'float',
+    'width',
+    'height',
+    'position',
+    'display',
+    'overflow',
+    'aspect-ratio',
+    '--bc-inline-image-x',
+    '--bc-inline-image-width',
+    '--bc-inline-image-height',
+    '--bc-inline-image-exclusion-width',
+    '--bc-inline-image-exclusion-height',
+  ]) {
+    shell.style.removeProperty(property)
+  }
+  const frame = shell.querySelector<HTMLElement>('.bc-inline-image-frame')
+  if (!frame) return
+  for (const property of [
+    'left',
+    'top',
+    'height',
+    'position',
+    'visibility',
+    'z-index',
+    'transform',
+  ]) {
+    frame.style.removeProperty(property)
+  }
+}
+
+function prepareInlineImageLogicalAnchor(
+  shell: HTMLElement,
+  geometry: InlineFloatGeometry,
+): void {
+  clearInlineImageFloatLayout(shell)
+  shell.setAttribute(INLINE_FLOAT_LOGICAL_ANCHOR_ATTRIBUTE, '')
+  shell.style.cssFloat = 'none'
+  shell.style.width = '0px'
+  shell.style.height = '0px'
+  const frame = shell.querySelector<HTMLElement>('.bc-inline-image-frame')
+  if (!frame) return
+  frame.style.position = 'absolute'
+  frame.style.left = `${geometry.imageX}px`
+  frame.style.top = '0'
+  frame.style.width = `${geometry.imageWidth}px`
+  frame.style.height = `${geometry.imageHeight}px`
+  frame.style.visibility = 'hidden'
 }
 
 export class InlineFloatLayoutController {
@@ -214,8 +319,34 @@ export class InlineFloatLayoutController {
   private _scheduledFrame?: number
   private _lastObservedWidth?: number
   private _destroyed = false
+  private _freezeCount = 0
+  private _dirtyWhileFrozen = false
+  private readonly _projection?: InlineFragmentProjection
+  private readonly _measurer?: InlineRangeMeasurer
 
-  constructor(readonly container: HTMLElement) {}
+  constructor(
+    readonly container: HTMLElement,
+    private readonly _scroll?: ScrollBlot,
+    private readonly _selectionProjection?: {
+      beginProjection?: () => () => void
+    },
+  ) {
+    if (_scroll) {
+      this._projection = new InlineFragmentProjection(_scroll)
+      this._measurer = new InlineRangeMeasurer(
+        container,
+        _scroll,
+        (start, end) => {
+          const range = document.createRange()
+          const startPoint = this._modelPoint(start)
+          const endPoint = this._modelPoint(end)
+          range.setStart(startPoint.node, startPoint.offset)
+          range.setEnd(endPoint.node, endPoint.offset)
+          return range
+        },
+      )
+    }
+  }
 
   sync(): void {
     if (this._destroyed) return
@@ -224,18 +355,64 @@ export class InlineFloatLayoutController {
     this.container.toggleAttribute(INLINE_FLOAT_OWNER_ATTRIBUTE, hasFloats)
 
     if (!hasFloats) {
+      this._revokeProjection()
       this._disconnectObserver()
       return
     }
     this._ensureObserver()
-    this.refresh(shells)
+    if (this._freezeCount > 0) {
+      this._dirtyWhileFrozen = true
+      return
+    }
+    // Mounted layout measurement may flush browser style/layout. Coalesce it
+    // into the next pre-paint frame instead of doing that work in the Yjs
+    // render/applyDelta call stack. Detached runtimes retain synchronous
+    // behavior so model-only/test hosts do not depend on a browser frame.
+    if (this.container.isConnected) this._scheduleRefresh()
+    else this.refresh(shells)
   }
 
   refresh(shells = this._shells()): void {
     if (this._destroyed || !shells.length) return
+    if (this._freezeCount > 0) {
+      this._dirtyWhileFrozen = true
+      return
+    }
+    if (!this._scroll || !this._projection || !this._measurer) {
+      this._refreshSingleSide(shells)
+      return
+    }
+    this._layoutFragments(shells)
+  }
+
+  /** Restore canonical direct-Blot DOM before an incremental Delta patch. */
+  beforeMutation(): void {
+    if (this._destroyed) return
+    this._revokeProjection()
+  }
+
+  /**
+   * Freeze fragment boundaries for IME or pointer drag. The returned release
+   * function is idempotent and schedules one deferred refresh.
+   */
+  acquireFreeze(): () => void {
+    if (this._destroyed) return () => undefined
+    this._freezeCount++
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this._freezeCount = Math.max(0, this._freezeCount - 1)
+      if (this._freezeCount === 0 && this._dirtyWhileFrozen) {
+        this._dirtyWhileFrozen = false
+        this._scheduleRefresh()
+      }
+    }
+  }
+
+  private _refreshSingleSide(shells: HTMLElement[]): void {
     const width =
-      this.container.clientWidth ||
-      this.container.getBoundingClientRect().width
+      this.container.clientWidth || this.container.getBoundingClientRect().width
     for (const shell of shells) {
       if (shell.hasAttribute(INLINE_FLOAT_PREVIEW_ATTRIBUTE)) continue
       applyInlineImageFloatLayout(
@@ -245,9 +422,127 @@ export class InlineFloatLayoutController {
     }
   }
 
+  private _layoutFragments(shells: HTMLElement[]): void {
+    const releaseSelectionGuard = this._selectionProjection?.beginProjection?.()
+    try {
+      this._projection!.revoke()
+      for (const shell of shells) clearInlineImageFloatLayout(shell)
+
+      const width =
+        this.container.clientWidth ||
+        this.container.getBoundingClientRect().width
+      if (width <= 0) return
+      this._measurer!.beginLayoutPass()
+
+      const anchors = this._scroll!.leaves.filter(
+        (leaf): leaf is EmbedBlot =>
+          leaf instanceof EmbedBlot &&
+          leaf.embedElement.matches(
+            '[data-bc-inline-float][data-bc-inline-image-layout="wrap"]',
+          ),
+      )
+        .map(anchor => ({
+          anchor,
+          shell: anchor.embedElement,
+          offset: this._scroll!.offsetOf(anchor),
+        }))
+        .sort((a, b) => a.offset - b.offset)
+
+      const candidates = anchors.map(item => ({
+        ...item,
+        geometry: resolveInlineFloatGeometry(
+          readInlineImageFloatInput(item.shell, width),
+        ),
+      }))
+      for (const candidate of candidates) {
+        if (candidate.geometry.layoutMode === 'single') {
+          applyInlineImageFloatLayout(
+            candidate.shell,
+            readInlineImageFloatInput(candidate.shell, width),
+          )
+        } else {
+          prepareInlineImageLogicalAnchor(candidate.shell, candidate.geometry)
+        }
+      }
+
+      const plans: InlineDualFragmentPlan[] = []
+      let previousEnd = 0
+      const lineHeight = this._measurer!.lineHeight()
+      for (let index = 0; index < candidates.length; index++) {
+        const candidate = candidates[index]
+        if (candidate.geometry.layoutMode !== 'dual') continue
+        const nextAnchor = candidates
+          .slice(index + 1)
+          .find(next => next.offset > candidate.offset)
+        const endOffset = Math.max(
+          candidate.offset + candidate.anchor.length,
+          nextAnchor?.offset ?? this._scroll!.textLength,
+        )
+        const lineStart = Math.max(
+          previousEnd,
+          this._measurer!.findLineStart(candidate.offset, previousEnd),
+        )
+        const plan = buildInlineFragmentPlan({
+          anchor: candidate.anchor,
+          anchorOffset: candidate.offset,
+          lineStart,
+          endOffset,
+          lineHeight,
+          geometry: candidate.geometry,
+          fitFragment: (start, end, intervalWidth, measureAdvance) =>
+            this._measurer!.fitFragment(
+              start,
+              end,
+              intervalWidth,
+              measureAdvance,
+            ),
+          nextOffset: (offset, end) => this._measurer!.nextOffset(offset, end),
+        })
+        if (!plan) {
+          clearInlineImageFloatLayout(candidate.shell)
+          applyInlineImageFloatLayout(
+            candidate.shell,
+            readInlineImageFloatInput(candidate.shell, width),
+          )
+          continue
+        }
+        plans.push(plan)
+        previousEnd = plan.endOffset
+      }
+
+      if (!this._projection!.apply(plans)) {
+        for (const candidate of candidates) {
+          clearInlineImageFloatLayout(candidate.shell)
+          applyInlineImageFloatLayout(
+            candidate.shell,
+            readInlineImageFloatInput(candidate.shell, width),
+          )
+        }
+      }
+    } catch {
+      this._projection!.revoke()
+      const width =
+        this.container.clientWidth ||
+        this.container.getBoundingClientRect().width
+      for (const shell of shells) {
+        if (shell.hasAttribute(INLINE_FLOAT_PREVIEW_ATTRIBUTE)) continue
+        clearInlineImageFloatLayout(shell)
+        applyInlineImageFloatLayout(
+          shell,
+          readInlineImageFloatInput(shell, width),
+        )
+      }
+    } finally {
+      this._measurer?.endLayoutPass()
+      releaseSelectionGuard?.()
+    }
+  }
+
   destroy(): void {
     if (this._destroyed) return
     this._destroyed = true
+    this._revokeProjection()
+    for (const shell of this._shells()) clearInlineImageFloatLayout(shell)
     this.container.removeAttribute(INLINE_FLOAT_OWNER_ATTRIBUTE)
     this._disconnectObserver()
   }
@@ -261,37 +556,24 @@ export class InlineFloatLayoutController {
   }
 
   private _ensureObserver(): void {
-    if (
-      this._resizeObserver ||
-      typeof ResizeObserver === 'undefined'
-    ) {
+    if (this._resizeObserver || typeof ResizeObserver === 'undefined') {
       return
     }
     this._resizeObserver = new ResizeObserver(entries => {
       const observedWidth = entries.find(
         entry => entry.target === this.container,
       )?.contentRect.width
-      if (
-        typeof observedWidth === 'number' &&
-        Number.isFinite(observedWidth)
-      ) {
+      if (typeof observedWidth === 'number' && Number.isFinite(observedWidth)) {
         if (
           this._lastObservedWidth !== undefined &&
-          Math.abs(this._lastObservedWidth - observedWidth) < .5
+          Math.abs(this._lastObservedWidth - observedWidth) < 0.5
         ) {
           return
         }
         this._lastObservedWidth = observedWidth
       }
       if (this._scheduledFrame !== undefined) return
-      if (typeof requestAnimationFrame === 'undefined') {
-        this.refresh()
-        return
-      }
-      this._scheduledFrame = requestAnimationFrame(() => {
-        this._scheduledFrame = undefined
-        this.refresh()
-      })
+      this._scheduleRefresh()
     })
     this._resizeObserver.observe(this.container)
   }
@@ -307,5 +589,55 @@ export class InlineFloatLayoutController {
       cancelAnimationFrame(this._scheduledFrame)
     }
     this._scheduledFrame = undefined
+  }
+
+  private _scheduleRefresh(): void {
+    if (this._destroyed || this._scheduledFrame !== undefined) return
+    if (typeof requestAnimationFrame === 'undefined') {
+      this.refresh()
+      return
+    }
+    this._scheduledFrame = requestAnimationFrame(() => {
+      this._scheduledFrame = undefined
+      this.refresh()
+    })
+  }
+
+  private _revokeProjection(): void {
+    if (!this._projection?.active) return
+    const releaseSelectionGuard = this._selectionProjection?.beginProjection?.()
+    try {
+      this._projection.revoke()
+    } finally {
+      releaseSelectionGuard?.()
+    }
+  }
+
+  private _modelPoint(index: number): {node: Node; offset: number} {
+    if (index <= 0) {
+      const leading = this.container.firstElementChild?.firstChild
+      return leading
+        ? {node: leading, offset: 0}
+        : {node: this.container, offset: 0}
+    }
+    let remaining = index
+    for (const leaf of this._scroll!.leaves) {
+      if (remaining <= leaf.length) {
+        if (leaf instanceof EmbedBlot) {
+          if (remaining === 0) {
+            return {node: leaf.cElement, offset: 0}
+          }
+          return {node: leaf.gapNode.firstChild ?? leaf.gapNode, offset: 0}
+        }
+        return {node: leaf.textNode, offset: remaining}
+      }
+      remaining -= leaf.length
+    }
+    const breakNode = this._scroll!.children.find(
+      child => child.type === 'break',
+    )?.domNode
+    return breakNode
+      ? {node: breakNode, offset: 0}
+      : {node: this.container, offset: this.container.childNodes.length}
   }
 }

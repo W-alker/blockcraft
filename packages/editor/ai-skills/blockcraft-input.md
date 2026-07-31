@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-07-30
+> Last updated: 2026-08-01
 
 ## Architecture Overview
 
@@ -149,7 +149,14 @@ The `beforeInput` event's `inputType` determines behavior:
 | `deleteSoftLineForward` | Cmd+Delete — delete to line end |
 | `insertFromPaste` | Handled by ClipboardManager |
 | `insertReplacementText` | Autocorrect/spell check replacement |
+| `deleteByDrag` | Rejected fail-closed; BlockCraft object/inline-image movement uses model-owned Pointer transactions |
+| `insertFromDrop` | Rejected fail-closed; external files use `DndService`, not browser contenteditable insertion |
 | `formatBold/Italic/...` | Format shortcuts (browser-initiated) |
+
+The default inline-image renderer additionally prevents native HTML DnD at
+`dragstart`, so its normal Pointer move path does not emit either drag input
+type. The InputTransformer rejection remains a last-resort DOM consistency
+guard for browser, extension or script anomalies.
 
 ## IME / Composition
 
@@ -173,6 +180,7 @@ Manages the lifecycle of an active IME session:
 - Captures the anchor from the accepted model selection/materialized block at `compositionStart`; DOM selection jitter during IME startup must not retarget the eventual commit.
 - On commit: removes CursorBlot, inserts final text into Y.Text
 - Restores the committed caret with `setCursorAt()` after rerender; if WebKit drops focus during projection, the editor refocuses and reapplies the same model cursor without reading the DOM back into the model
+- If the active editable block owns wrapped-image line fragments, acquires one idempotent InlineRuntime layout-freeze lease before native composition starts. Resize/content invalidations stay dirty-only until the final Y.Text write, rerender and caret restoration finish; `end()`, abort, block deletion and reset all release the same lease.
 
 ## Cross-Block Operations
 

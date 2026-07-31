@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-07-31
+> Last updated: 2026-08-01
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -128,12 +128,31 @@ The default inline-image converter additionally exposes an inline-only
 Choosing it keeps the image as the same one-length Embed and persists
 `wrap: true`, `side: 'auto' | 'left' | 'right'`, normalized `x`, and optional
 pixel `gap`. **嵌入型** removes those four attributes without moving the Embed.
-The secondary controls are **较宽一侧 / 文字在左 / 文字在右**. The visible
-`.bc-inline-image-frame` is the resize and connected-overlay target, while its
-shell owns the contained CSS-float exclusion. Dragging a selected wrapped
-frame horizontally uses Pointer Events outside Angular: pointermove changes
-only local CSS, pointerup commits one Yjs transaction, and cancel/Escape/blur
-restores the model state.
+The secondary controls are **自动环绕（auto） / 文字在左 / 文字在右**.
+Eligible `auto` geometry lays real editable text on both sides; near-edge auto
+and explicit left/right use one side. The visible `.bc-inline-image-frame` is
+the resize and connected-overlay target. Both ordinary and wrapped inline-image
+resize gestures keep that committed frame and the owning editable layout fixed,
+while an inert body-level outline with a live `width × height` label previews
+the proportional target size. The opposite horizontal edge stays fixed, the
+preview is clamped to the owning editable content width, and pointerup commits
+one `width/height` Delta format; wrapped images also update their existing
+normalized `x` when the preview's left edge moves. Escape, pointercancel,
+window blur, readonly or
+stale-anchor teardown cancels without a model write and releases the layout and
+virtual-view leases. Dragging a selected wrapped frame
+uses Pointer Events outside Angular and holds both an InlineRuntime
+layout-freeze lease and a source virtual-view lease. The committed frame,
+selection and text fragments stay fixed while an accessibility-inert,
+RAF-coalesced proxy follows x/y outside contenteditable. Pointerup converts the
+proxy x to normalized `x` and y to a Delta anchor. The anchor may move within
+the paragraph or to another compatible mounted editable block; block gaps and
+non-editable hits snap to the nearest compatible editable, while an
+editor-external drop cancels. Same/cross-block writes use one Yjs transaction
+and preserve the complete Embed payload. Cancel/Escape/blur/readonly teardown
+removes the proxy and releases both leases without a model write.
+Themes may refine the presentation-only proxy through
+`.bc-inline-image-drag-proxy`; it is never part of serialized editor content.
 
 ### Dependencies
 

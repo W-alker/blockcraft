@@ -5,6 +5,84 @@ import {
 } from './inline-float-layout'
 
 describe('inline float layout', () => {
+  it('exposes both readable text intervals for a centered auto image', () => {
+    const result = resolveInlineFloatGeometry({
+      containerWidth: 600,
+      imageWidth: 180,
+      imageHeight: 108,
+      x: .35,
+      side: 'auto',
+      gap: 12,
+    })
+
+    expect(result.layoutMode).toBe('dual')
+    expect(result.leftTextWidth).toBe(198)
+    expect(result.rightTextWidth).toBe(198)
+    expect(result.availableTextWidth).toBe(396)
+    expect(result.textIntervals).toEqual([
+      {side: 'left', start: 0, width: 198},
+      {side: 'right', start: 402, width: 198},
+    ])
+  })
+
+  it('requires both auto intervals to meet the minimum readable width', () => {
+    const eligible = resolveInlineFloatGeometry({
+      containerWidth: 404,
+      imageWidth: 188,
+      imageHeight: 94,
+      x: 108 / 404,
+      side: 'auto',
+      gap: 12,
+      minTextWidth: 96,
+    })
+    expect(eligible.leftTextWidth).toBeCloseTo(96, 5)
+    expect(eligible.rightTextWidth).toBeCloseTo(96, 5)
+    expect(eligible.layoutMode).toBe('dual')
+
+    const fallback = resolveInlineFloatGeometry({
+      containerWidth: 404,
+      imageWidth: 188,
+      imageHeight: 94,
+      x: .265,
+      side: 'auto',
+      gap: 12,
+      minTextWidth: 96,
+    })
+    expect(fallback.layoutMode).toBe('single')
+    expect(fallback.resolvedTextSide).toBe('right')
+    expect(fallback.textIntervals).toEqual([
+      jasmine.objectContaining({side: 'right'}),
+    ])
+  })
+
+  it('keeps explicit side modes single-sided even when both sides fit', () => {
+    const left = resolveInlineFloatGeometry({
+      containerWidth: 600,
+      imageWidth: 180,
+      imageHeight: 108,
+      x: .35,
+      side: 'left',
+      gap: 12,
+    })
+    const right = resolveInlineFloatGeometry({
+      containerWidth: 600,
+      imageWidth: 180,
+      imageHeight: 108,
+      x: .35,
+      side: 'right',
+      gap: 12,
+    })
+
+    expect(left.layoutMode).toBe('single')
+    expect(left.textIntervals).toEqual([
+      {side: 'left', start: 0, width: 198},
+    ])
+    expect(right.layoutMode).toBe('single')
+    expect(right.textIntervals).toEqual([
+      {side: 'right', start: 402, width: 198},
+    ])
+  })
+
   it('resolves right-side text with a left float exclusion', () => {
     expect(resolveInlineFloatGeometry({
       containerWidth: 600,
@@ -83,6 +161,8 @@ describe('inline float layout', () => {
     expect(result.exclusionWidth).toBe(0)
     expect(result.imageWidth).toBe(0)
     expect(result.normalizedX).toBe(0)
+    expect(result.layoutMode).toBe('single')
+    expect(result.textIntervals).toEqual([])
   })
 
   it('discovers the real EmbedBlot wrapper and contains the float owner', () => {

@@ -34,7 +34,7 @@ const INLINE_IMAGE_WRAP_SIDE_OPTIONS: readonly {
 }[] = [
   {
     value: 'auto',
-    label: '较宽一侧',
+    label: '自动环绕',
     icon: 'bc_duiqifangshi',
   },
   {

@@ -338,9 +338,11 @@ without a stored ratio start from the Schema default and backfill the first
 successful ratio without adding Undo history. Continuous virtualization and
 sparse pagination share one DOM-free model estimator for `wr/ar` media and
 inline-image `width/height`. Wrapped inline images additionally reserve their
-contained image-plus-gap height and estimate constrained-side text lines from
-persisted `side/x/gap`; ordinary measured text heights are not overwritten by
-fallback estimates.
+contained image-plus-gap height and estimate constrained text lines from
+persisted `side/x/gap`. Eligible centered `side: 'auto'` images use the
+combined left-plus-right interval capacity; sequential wrapped anchors reserve
+non-overlapping exclusion bands. Ordinary measured text heights are not
+overwritten by fallback estimates.
 The layout and absolute descendants have no gap-cursor eligibility. Stale gap
 selection snapshots degrade to whole-object selection, and normal gaps are
 restored when an object returns to relative flow. While a whole absolute object
@@ -552,23 +554,43 @@ is a non-negative CSS-pixel distance. Missing `wrap` keeps the previous
 ordinary inline behavior. HTML preserves these fields as `data-bc-wrap*`;
 Markdown intentionally degrades to a normal inline image.
 
+`side: 'auto'` uses Word-like text flow on both sides when both intervals are
+at least 96 CSS pixels wide; near an edge it falls back to the wider side.
+Explicit `left` and `right` remain single-sided. Multiple anchors are processed
+in Delta order, and a later overlapping exclusion band is pushed below the
+earlier one without changing either Embed offset.
+
 An inline image reserves its persisted `width/height` immediately. Missing
 dimensions reserve `320 × 240` (4:3) until the first successful load, then
 `ImgToolbarPlugin` backfills both short delta attributes in an
 `ORIGIN_NO_RECORD` transaction. Loading failure keeps that frame visible and
 offers the same retry control as block media. Embed teardown destroys the
 resource controller both on blot detach and when semantic attributes replace
-the embed view.
+the embed view. The default renderer marks the real `<img>` non-draggable and
+capture-cancels residual native `dragstart`; inline-image movement never relies
+on browser `deleteByDrag` / `insertFromDrop` DOM mutation.
 
 With `ImgToolbarPlugin`, clicking the default inline image shows proportional
 resize handles, a temporary theme-colored selection outline, plus the shared
 object-layout choices: **嵌入型 / 四周型环绕 / 上下型 / 衬于文字下方 /
 浮于文字上方**. Four-sided wrapping stays inside the same editable block:
-`InlineRuntime` marks that owner as a `flow-root`, native CSS float owns line
-breaking, and a horizontal Pointer Events gesture previews only DOM geometry
-before committing normalized `x` once on pointerup.
-The outline is DOM-only; resize commits the short `width` / `height` attributes
-once on mouseup. Reverse conversion preserves the formatted text on both sides
+`InlineRuntime` moves real TextBlot DOM into reversible local left/right row
+fragments while the image remains the same one-length Delta anchor. Unsafe or
+explicit single-side cases use the contained CSS-float fallback. Selection is
+reprojected from the unchanged anchor/head model; IME, native pointer selection
+and image dragging hold layout-freeze leases. Wrapped-image dragging moves only
+an inert translucent proxy while the committed frame and text layout stay
+fixed. The proxy follows both x/y. Pointerup persists normalized `x` and maps y
+to a Delta anchor in the same or another compatible editable block, with a
+single Yjs transaction; no pixel `y` is stored. Drops on block gaps snap to the
+nearest compatible editable block, and drops outside the editor cancel.
+Inline-image resize also keeps the committed frame and text layout frozen. An
+inert body-level outline with a live `width × height` label follows the target
+proportional size without entering the editable row fragments; pointerup commits
+the short `width` / `height` attributes once and, for a moved wrapped left edge,
+updates the existing normalized `x`. Escape, pointercancel, window blur,
+readonly and stale-anchor teardown cancel without a model write. Reverse
+conversion preserves the formatted text on both sides
 as separate editable blocks and inserts the image block between them; it does
 not create a caption. Choosing under/over creates the block directly at the
 inline image's current visual coordinates.

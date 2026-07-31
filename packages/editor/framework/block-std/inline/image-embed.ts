@@ -15,6 +15,7 @@ export const DEFAULT_INLINE_IMAGE_HEIGHT = 240
 export const DEFAULT_INLINE_IMAGE_WRAP_GAP = 12
 const inlineImageControllers =
   new WeakMap<HTMLElement, ResourcePlaceholderController>()
+const inlineImageNativeDragGuards = new WeakMap<HTMLElement, EventListener>()
 
 export type InlineImageWrapSide = 'auto' | 'left' | 'right'
 
@@ -141,6 +142,9 @@ export const inlineImageEmbedConverter: EmbedConverter = {
     }
     image.classList.add(INLINE_IMAGE_CLASS)
     image.alt = ''
+    // Pointer drag is the only model-owned positioning path. Native image DnD
+    // can otherwise emit deleteByDrag/insertFromDrop inside contenteditable.
+    image.draggable = false
     if (data.src) image.setAttribute('src', data.src)
     if (data.width !== undefined) image.setAttribute('width', String(data.width))
     if (data.height !== undefined) image.setAttribute('height', String(data.height))
@@ -165,6 +169,12 @@ export const inlineImageEmbedConverter: EmbedConverter = {
       adapter: imageResourcePlaceholderAdapter,
       resourceKey: data.src,
     })
+    const preventNativeDrag: EventListener = event => {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    shell.addEventListener('dragstart', preventNativeDrag, true)
+    inlineImageNativeDragGuards.set(shell, preventNativeDrag)
     inlineImageControllers.set(shell, controller)
     return shell
   },
@@ -192,6 +202,11 @@ export const inlineImageEmbedConverter: EmbedConverter = {
     ) ?? {insert: {[INLINE_IMAGE_EMBED_KEY]: ''}}
   },
   onDestroy: element => {
+    const preventNativeDrag = inlineImageNativeDragGuards.get(element)
+    if (preventNativeDrag) {
+      element.removeEventListener('dragstart', preventNativeDrag, true)
+      inlineImageNativeDragGuards.delete(element)
+    }
     inlineImageControllers.get(element)?.destroy()
     inlineImageControllers.delete(element)
   },

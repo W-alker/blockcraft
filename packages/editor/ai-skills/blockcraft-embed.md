@@ -4,7 +4,7 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-07-31
+> Last updated: 2026-08-01
 
 ## What is an Inline Embed?
 
@@ -107,10 +107,15 @@ geometry. `InlineRuntime` contains the float by deriving
 `ImgToolbarPlugin` is registered, clicking this default shell exposes
 proportional resize handles, the ordinary/wrapped layout switch, text-side
 controls and reverse block conversion. Horizontal Pointer Events dragging
-previews CSS locally and writes `x` once on pointerup. The selection outline is
-an ephemeral DOM class and is never stored in Delta attributes. A custom
-same-key converter owns its own interaction UI and is not matched by the
-built-in plugin.
+uses a body-level inert x/y proxy while the committed frame stays fixed;
+pointerup may update normalized `x` and move the one-length Delta anchor in the
+same or another compatible editable block through one Yjs transaction. The
+default `<img>` has `draggable="false"`, and its shell capture-cancels any
+residual native `dragstart` before it reaches editor DnD/Input handling. Native
+`deleteByDrag` / `insertFromDrop` therefore never own inline-image movement.
+The selection outline is an ephemeral DOM class and is never stored in Delta
+attributes. A custom same-key converter owns its own interaction UI and is not
+matched by the built-in plugin.
 
 Registering an `image` converter explicitly overrides the built-in renderer:
 

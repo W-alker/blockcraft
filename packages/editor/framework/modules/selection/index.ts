@@ -70,11 +70,14 @@ export class SelectionManager {
   private selectedManager = new SelectionSelectedManager(this.doc)
   private readonly _keyboard: SelectionKeyboard
   private _suppressRecalculate = false
+  private _inlineLayoutProjectionGuardDepth = 0
+  private _suppressBeforeInlineLayoutProjection = false
   private _suppressProgrammaticSelectionChangeUntil = 0
   private _compositionSelectionRecheckQueued = false
   private _compositionSelectionRecheckTimer: ReturnType<typeof setTimeout> | null = null
   private _compositionSelectionRecheckVersion = 0
   private _primaryPointerDown = false
+  private _releasePrimaryPointerLayoutFreeze: (() => void) | null = null
   private _projectionVersion = 0
   private _projectionFrame: number | null = null
   private _projectionMountAdapter: SelectionProjectionMountAdapter | null = null
@@ -147,6 +150,7 @@ export class SelectionManager {
       this._projectionMountRegistrationVersion += 1
       this._projectionMountAdapter = null
       this._primaryPointerDown = false
+      this._releasePrimaryPointerFreeze()
       this._remoteSelectionReconciler?.destroy()
       this._historyRestorer.destroy()
     })
@@ -271,7 +275,7 @@ export class SelectionManager {
         // window from the previous programmatic DOM projection. Any selection
         // API invoked later in this mousedown will establish its own window.
         if (event.button === 0) {
-          this._beginPrimaryPointerIntent()
+          this._beginPrimaryPointerIntent(event.target)
         }
         if (event.detail !== 3) return
         if (isNativeInputTarget(event.target)) return
@@ -287,10 +291,13 @@ export class SelectionManager {
     fromEvent<PointerEvent>(root.hostElement, 'pointerdown', {capture: true})
       .pipe(takeUntil(this.doc.onDestroy$))
       .subscribe(event => {
-        if (event.isPrimary && event.button === 0) this._beginPrimaryPointerIntent()
+        if (event.isPrimary && event.button === 0) {
+          this._beginPrimaryPointerIntent(event.target)
+        }
       })
     const releasePrimaryPointer = () => {
       this._primaryPointerDown = false
+      this._releasePrimaryPointerFreeze()
     }
     fromEvent<PointerEvent>(ownerWindow, 'pointerup', {capture: true})
       .pipe(takeUntil(this.doc.onDestroy$))
@@ -321,8 +328,70 @@ export class SelectionManager {
    * 因此调用方应在批量操作结束后手动 `recalculate()` 一次收敛。
    */
   setSuppressRecalculate(v: boolean) {
+    if (this._inlineLayoutProjectionGuardDepth > 0) {
+      this._suppressBeforeInlineLayoutProjection = v
+      this._suppressRecalculate = true
+      if (v) this._cancelCompositionSelectionRecheck()
+      return
+    }
     this._suppressRecalculate = v
     if (v) this._cancelCompositionSelectionRecheck()
+  }
+
+  /**
+   * Guard a view-only inline layout rewrite and then rebuild the native Range
+   * from the unchanged canonical BlockSelection.
+   *
+   * @internal InlineRuntime only. The release callback is idempotent.
+   */
+  acquireInlineLayoutProjectionGuard(): () => void {
+    if (this._inlineLayoutProjectionGuardDepth++ === 0) {
+      this._suppressBeforeInlineLayoutProjection = this._suppressRecalculate
+      this._suppressRecalculate = true
+      this._cancelCompositionSelectionRecheck()
+    }
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this._inlineLayoutProjectionGuardDepth = Math.max(
+        0,
+        this._inlineLayoutProjectionGuardDepth - 1,
+      )
+      if (this._inlineLayoutProjectionGuardDepth > 0) return
+
+      this._suppressRecalculate = this._suppressBeforeInlineLayoutProjection
+      if (
+        this._suppressRecalculate ||
+        this.doc.event.status.isComposing ||
+        this._primaryPointerDown
+      ) {
+        return
+      }
+      const selection = this.value
+      if (
+        !selection ||
+        (!this._surface.hasEditorFocus() &&
+          !this._surface.ownsNativeSelection())
+      ) {
+        return
+      }
+      const projectionVersion = this._projectionVersion
+      try {
+        this._applyDomRangeForSelection(
+          selection,
+          false,
+          projectionVersion,
+          false,
+        )
+      } catch {
+        this._surface.clearNativeSelection()
+        this._recoverDomProjection(
+          selection.toJSON(),
+          projectionVersion,
+        )
+      }
+    }
   }
 
   private _suppressProgrammaticSelectionChange() {
@@ -381,12 +450,32 @@ export class SelectionManager {
     }
   }
 
-  private _beginPrimaryPointerIntent(): void {
+  private _beginPrimaryPointerIntent(target?: EventTarget | null): void {
     this._primaryPointerDown = true
     this._suppressProgrammaticSelectionChangeUntil = 0
     this._cancelCompositionSelectionRecheck()
     this._cancelProjectionFrame()
     this._cancelProjectionMountRequest()
+    if (this._releasePrimaryPointerLayoutFreeze || !(target instanceof Node)) {
+      return
+    }
+    const blockId = closetBlockId(target)
+    if (!blockId) return
+    try {
+      const block = this.doc.getBlockById(blockId) as BlockCraft.BlockComponent & {
+        runtime?: {acquireFloatLayoutFreeze?: () => (() => void)}
+      }
+      this._releasePrimaryPointerLayoutFreeze =
+        block?.runtime?.acquireFloatLayoutFreeze?.() ?? null
+    } catch {
+      // A virtualized/deleted pointer target has no layout lease to hold.
+    }
+  }
+
+  private _releasePrimaryPointerFreeze(): void {
+    const release = this._releasePrimaryPointerLayoutFreeze
+    this._releasePrimaryPointerLayoutFreeze = null
+    release?.()
   }
 
   // ── Read from DOM (user interaction path) ──

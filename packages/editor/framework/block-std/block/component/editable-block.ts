@@ -83,7 +83,10 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
    */
   protected _initRuntime() {
     const embedConverters = new Map(this.doc.config.embeds || [])
-    this._runtime = new InlineRuntime(this._containerElement, embedConverters)
+    this._runtime = new InlineRuntime(this._containerElement, embedConverters, {
+      beginSelectionProjection: () =>
+        this.doc.selection.acquireInlineLayoutProjectionGuard(),
+    })
   }
 
   /** Detached blocks accept model updates but never patch a stale blot tree. */

@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-07-30 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-07-31 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -409,6 +409,16 @@ Without an adapter, behavior remains the same bounded frame retry used by
 non-virtualized hosts.
 
 ## SelectionManager Public API
+
+InlineRuntime uses a package-internal projection guard when wrapped-image
+layout reparents or splits real TextBlots. The guard suppresses native
+`selectionchange` recalculation only for the bounded rewrite, then rebuilds the
+native Range from the unchanged canonical `BlockSelection` without scrolling
+or publishing a new model selection. Existing backward-selection projection
+continues through `setBaseAndExtent()` / `extend()`. A primary pointer gesture
+also holds the target editable block's layout-freeze lease until pointerup or
+cancel, so native drag endpoints are never detached mid-gesture. These methods
+are renderer coordination seams, not supported host/plugin APIs.
 
 ### Reading Selection
 

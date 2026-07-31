@@ -3,6 +3,7 @@ import {
   BlockNodeType,
   DeltaInsert,
   DeltaInsertEmbed,
+  DeltaOperation,
   generateId,
   IBlockSnapshot,
   InlineImageData,
@@ -51,6 +52,146 @@ export function resolveInlineImageAtOffset(
     if (currentOffset > offset) return null;
   }
   return null;
+}
+
+/**
+ * Resolves the exact embed delta at a model offset. Drag-and-drop uses this
+ * instead of rebuilding the image payload so custom embed attributes survive
+ * an anchor move unchanged.
+ */
+export function resolveInlineImageDeltaAtOffset(
+  deltas: DeltaInsert[],
+  offset: number,
+  expectedSrc?: string,
+): DeltaInsertEmbed | null {
+  if (!Number.isInteger(offset) || offset < 0) return null;
+
+  let currentOffset = 0;
+  for (const delta of deltas) {
+    if (currentOffset === offset && typeof delta.insert === 'object') {
+      const image = readInlineImageDelta(delta as DeltaInsertEmbed);
+      if (!image.src || (expectedSrc !== undefined && image.src !== expectedSrc)) {
+        return null;
+      }
+      return {
+        insert: {...delta.insert},
+        ...(delta.attributes ? {attributes: {...delta.attributes}} : {}),
+      } as DeltaInsertEmbed;
+    }
+    currentOffset += deltaLength(delta);
+    if (currentOffset > offset) return null;
+  }
+  return null;
+}
+
+export interface InlineImageAnchorMoveInput {
+  sourceBlockId: string
+  sourceOffset: number
+  sourceLength: number
+  targetBlockId: string
+  targetOffset: number
+  targetLength: number
+  delta: DeltaInsertEmbed
+  normalizedX: number
+}
+
+export type InlineImageAnchorMovePlan =
+  | {kind: 'noop'}
+  | {kind: 'format'; sourceOperations: DeltaOperation[]}
+  | {kind: 'same-block'; sourceOperations: DeltaOperation[]}
+  | {
+    kind: 'cross-block'
+    sourceOperations: DeltaOperation[]
+    targetOperations: DeltaOperation[]
+  };
+
+const retain = (length: number): DeltaOperation[] =>
+  length > 0 ? [{retain: length}] : [];
+
+/**
+ * Builds the minimal Y.Text deltas for moving one embed anchor. Target offsets
+ * are measured before deletion, so forward moves in the same block compensate
+ * for the removed embed.
+ */
+export function planInlineImageAnchorMove(
+  input: InlineImageAnchorMoveInput,
+): InlineImageAnchorMovePlan {
+  if (
+    !Number.isInteger(input.sourceOffset) ||
+    input.sourceOffset < 0 ||
+    input.sourceOffset >= input.sourceLength
+  ) {
+    return {kind: 'noop'};
+  }
+
+  const targetOffset = Math.max(
+    0,
+    Math.min(Math.trunc(input.targetOffset), input.targetLength),
+  );
+  const attributes = {
+    ...(input.delta.attributes ?? {}),
+    x: input.normalizedX,
+  };
+  const movedDelta: DeltaOperation = {
+    insert: {...input.delta.insert},
+    attributes,
+  };
+
+  if (input.sourceBlockId !== input.targetBlockId) {
+    return {
+      kind: 'cross-block',
+      sourceOperations: [
+        ...retain(input.sourceOffset),
+        {delete: 1},
+      ],
+      targetOperations: [
+        ...retain(targetOffset),
+        movedDelta,
+      ],
+    };
+  }
+
+  const insertOffset = targetOffset > input.sourceOffset
+    ? targetOffset - 1
+    : targetOffset;
+  if (insertOffset === input.sourceOffset) {
+    const oldX = input.delta.attributes?.['x'];
+    if (
+      typeof oldX === 'number' &&
+      Math.abs(oldX - input.normalizedX) < 0.000001
+    ) {
+      return {kind: 'noop'};
+    }
+    return {
+      kind: 'format',
+      sourceOperations: [
+        ...retain(input.sourceOffset),
+        {retain: 1, attributes: {x: input.normalizedX}},
+      ],
+    };
+  }
+
+  if (insertOffset < input.sourceOffset) {
+    return {
+      kind: 'same-block',
+      sourceOperations: [
+        ...retain(insertOffset),
+        movedDelta,
+        ...retain(input.sourceOffset - insertOffset),
+        {delete: 1},
+      ],
+    };
+  }
+
+  return {
+    kind: 'same-block',
+    sourceOperations: [
+      ...retain(input.sourceOffset),
+      {delete: 1},
+      ...retain(insertOffset - input.sourceOffset),
+      movedDelta,
+    ],
+  };
 }
 
 export function calculateInlineImageSize(

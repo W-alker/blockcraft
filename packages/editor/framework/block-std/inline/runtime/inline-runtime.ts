@@ -34,12 +34,20 @@ export class InlineRuntime {
 
   constructor(
     readonly container: HTMLElement,
-    embedConverters: EmbedConverterMap
+    embedConverters: EmbedConverterMap,
+    options?: {
+      /** @internal SelectionManager-backed DOM projection guard. */
+      beginSelectionProjection?: () => (() => void)
+    },
   ) {
     this._scrollBlot = new ScrollBlot(container, embedConverters)
     this._mapper = new InlinePositionMapper()
     this._mapper.setScrollBlot(this._scrollBlot)
-    this._inlineFloatLayout = new InlineFloatLayoutController(container)
+    this._inlineFloatLayout = new InlineFloatLayoutController(
+      container,
+      this._scrollBlot,
+      {beginProjection: options?.beginSelectionProjection},
+    )
   }
 
   get scrollBlot(): ScrollBlot {
@@ -59,6 +67,7 @@ export class InlineRuntime {
    * Replaces all existing blots and DOM.
    */
   render(deltas: InlineModel) {
+    this._inlineFloatLayout.beforeMutation()
     this._scrollBlot.build(deltas)
     this._inlineFloatLayout.sync()
   }
@@ -68,8 +77,14 @@ export class InlineRuntime {
    * Updates the blot tree and patches the DOM in-place.
    */
   applyDelta(ops: DeltaOperation[]) {
+    this._inlineFloatLayout.beforeMutation()
     this._scrollBlot.applyDelta(ops)
     this._inlineFloatLayout.sync()
+  }
+
+  /** @internal Used by IME and wrapped-image pointer interactions. */
+  acquireFloatLayoutFreeze(): () => void {
+    return this._inlineFloatLayout.acquireFreeze()
   }
 
   /**

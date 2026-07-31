@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-07-31
+> Last updated: 2026-08-01
 
 ## Architecture Overview
 
@@ -20,6 +20,8 @@ Y.Text (Yjs, source of truth)
 |------|---------|
 | `framework/block-std/inline/index.ts` | `InlineManager` (static utils) + `EmbedConverter` type |
 | `framework/block-std/inline/runtime/` | `InlineRuntime` — per-block blot coordinator |
+| `framework/block-std/inline/runtime/inline-float-layout.ts` | Wrapped-image geometry, controller and single-side fallback |
+| `framework/block-std/inline/runtime/inline-fragment-layout.ts` | Range measurement, grapheme-safe planner and reversible dual-side projection |
 | `framework/block-std/inline/blot/scroll-blot.ts` | `ScrollBlot` — root container blot |
 | `framework/block-std/inline/blot/text-blot.ts` | `TextBlot` — renders text with attributes |
 | `framework/block-std/inline/blot/embed-blot.ts` | `EmbedBlot` — renders inline embeds (length=1) |
@@ -68,6 +70,9 @@ class InlineRuntime {
   domPointToModel(node: Node, offset: number); // DOM → char offset
 
   getLength(): number;                     // Total text length
+
+  // Package-internal IME/pointer coordination; host plugins should not call it.
+  acquireFloatLayoutFreeze(): () => void;
 }
 ```
 
@@ -128,24 +133,47 @@ controller; the outer shell remains the atomic one-length Embed. On the first
 successful load it emits an internal bubbling size event; `ImgToolbarPlugin`
 resolves the embed's current model offset and fills only missing
 `width/height` attributes inside `ORIGIN_NO_RECORD`. The model remains the
-source of truth, including while the editable block is offscreen.
+source of truth, including while the editable block is offscreen. The renderer
+sets the real `<img>` to `draggable="false"`; the shell also capture-cancels
+residual native `dragstart` and removes that listener through the same
+idempotent `onDestroy()` boundary. Inline-image position changes consequently
+cannot fall through to browser `deleteByDrag` / `insertFromDrop` DOM edits.
 
 When an image Delta has `wrap: true`, the shell projects
 `data-bc-inline-float` and persisted `side/x/gap` data. Each
-`InlineRuntime` owns one package-internal `InlineFloatLayoutController`. After
-full render or incremental Delta application, it derives
-`data-bc-inline-float-owner` on the editable container, applies one contained
-CSS float geometry, and observes only owner-size changes. The marker establishes
-a `flow-root`, so the float cannot affect later sibling blocks or escape a
-virtualized/paginated render unit. Resize reconciliation is animation-frame
-batched and never reads layout from a scroll handler.
+`InlineRuntime` owns one package-internal `InlineFloatLayoutController`.
+`side: 'auto'` produces dual-side geometry only when both text intervals are
+at least 96 CSS pixels; explicit `left/right` and unsafe auto positions keep
+the contained CSS-float fallback. Dual mode measures browser Range geometry,
+splits TextBlots only at grapheme-safe model offsets, and moves the real Blot
+nodes into local inline row spans in left-then-right model order. The right
+fragment uses a measured `margin-inline-start` so both sides share one browser
+line box without relying on CSS Grid. Layout wrappers have zero model length
+and never serialize. Multiple anchors are processed in Delta order; block-flow
+fragment groups push a later overlapping exclusion band below the previous one.
 
-Native CSS still owns line breaking, caret movement, selection and IME.
+Before `render()` or `applyDelta()`, the controller revokes its projection,
+restores direct canonical Blot DOM, and merges only the TextBlot splits recorded
+by that projection. The normal Y.Text patch then runs and a fresh projection is
+built. Any measurement/projection failure falls back view-only to the contained
+single-side float. Content and owner-resize reconciliation are animation-frame
+batched and never read layout from a scroll handler; runtime destroy revokes fragments,
+observers, frames and leases so virtual reattach rebuilds from the latest Delta.
+
+Caret/selection mapping still uses real Blots. SelectionManager suppresses
+native recalculation during a projection rewrite and restores the unchanged
+anchor/head Range afterward. CompositionSession, native pointer selection and
+wrapped-image dragging hold ref-counted layout leases; while frozen,
+invalidations only mark the controller dirty.
 `ImgToolbarPlugin` changes `wrap/side/x/gap` through one Embed
-`formatText()` transaction. Horizontal pointer movement updates only the
-shell/frame CSS preview; pointerup writes normalized `x` once, while
-pointercancel, Escape, detach and readonly transitions restore model-derived
-geometry.
+`formatText()` transaction. Wrapped-image drag leaves the committed frame and
+fragment boundaries unchanged while a fixed, inert proxy follows x/y outside
+contenteditable. Pointerup maps proxy x to normalized `x` and pointer y to a
+model anchor, then performs one same-block or cross-block Yjs transaction.
+The exact one-length Embed payload and non-position attributes are preserved;
+no pixel `y` is serialized. Pointercancel, Escape, detach, editor-external drop
+and readonly transitions remove the proxy and restore model-derived geometry
+without mutation.
 
 ## Attributes
 

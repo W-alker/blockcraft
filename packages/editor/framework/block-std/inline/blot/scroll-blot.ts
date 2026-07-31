@@ -36,6 +36,7 @@ export class ScrollBlot implements IScrollBlot {
   // ─── Cached index structures ───
   private _cachedLeaves: (TextBlot | EmbedBlot)[] | null = null
   private _prefixSums: number[] | null = null
+  private _offsetByBlot: Map<IBlot, number> | null = null
 
   constructor(
     readonly domNode: HTMLElement,
@@ -49,6 +50,7 @@ export class ScrollBlot implements IScrollBlot {
   private _invalidateIndex() {
     this._cachedLeaves = null
     this._prefixSums = null
+    this._offsetByBlot = null
   }
 
   /**
@@ -57,11 +59,15 @@ export class ScrollBlot implements IScrollBlot {
   private _ensureIndex() {
     if (this._cachedLeaves !== null) return
     const leaves: (TextBlot | EmbedBlot)[] = []
+    const offsetByBlot = new Map<IBlot, number>()
+    let offset = 0
     for (let ci = 0; ci < this._children.length; ci++) {
       const b = this._children[ci]
       ;(b as any)._childIndex = ci
+      offsetByBlot.set(b, offset)
       if (b.type === BlotType.Text || b.type === BlotType.Embed) {
         leaves.push(b as TextBlot | EmbedBlot)
+        offset += b.length
       }
     }
     const sums = new Array<number>(leaves.length + 1)
@@ -71,6 +77,7 @@ export class ScrollBlot implements IScrollBlot {
     }
     this._cachedLeaves = leaves
     this._prefixSums = sums
+    this._offsetByBlot = offsetByBlot
   }
 
   /**
@@ -235,7 +242,7 @@ export class ScrollBlot implements IScrollBlot {
 
   /**
    * Get the model offset of a given blot.
-   * O(n) worst-case for identity scan, but offset lookup is O(1) once found.
+   * O(1) through the same lazily rebuilt index used by `findByOffset()`.
    *
    * Zero-length blots (CursorBlot, BreakBlot) occupy no model characters;
    * their offset is the cumulative length of the leaves preceding them in
@@ -244,21 +251,7 @@ export class ScrollBlot implements IScrollBlot {
    */
   offsetOf(blot: IBlot): number {
     this._ensureIndex()
-    const leaves = this._cachedLeaves!
-    const sums = this._prefixSums!
-    for (let i = 0; i < leaves.length; i++) {
-      if (leaves[i] === blot) return sums[i]
-    }
-    const childIdx = this._childIndexOf(blot)
-    if (childIdx < 0) return -1
-    let offset = 0
-    for (let i = 0; i < childIdx; i++) {
-      const b = this._children[i]
-      if (b.type === BlotType.Text || b.type === BlotType.Embed) {
-        offset += b.length
-      }
-    }
-    return offset
+    return this._offsetByBlot!.get(blot) ?? -1
   }
 
   /**
@@ -324,6 +317,83 @@ export class ScrollBlot implements IScrollBlot {
   }
 
   /**
+   * Split a TextBlot at an absolute model offset for a reversible view-only
+   * layout projection.
+   *
+   * @internal InlineFragmentProjection only. This does not mutate Y.Text and
+   * callers must pair every successful split with `mergeLayoutTextSplit()`.
+   */
+  splitTextForLayout(modelOffset: number): [TextBlot, TextBlot] | null {
+    if (modelOffset <= 0 || modelOffset >= this.textLength) return null
+    const info = this.findByOffset(modelOffset)
+    if (
+      !info ||
+      !(info.blot instanceof TextBlot) ||
+      info.localOffset <= 0 ||
+      info.localOffset >= info.blot.length
+    ) {
+      return null
+    }
+
+    const left = info.blot
+    const right = left.split(info.localOffset)
+    const childIndex = this._childIndexOf(left)
+    const parentNode = left.domNode.parentNode
+    if (childIndex < 0 || !parentNode) {
+      // `split()` already changed the left blot. Restore it before failing so
+      // a disconnected/stale layout pass cannot alter the canonical view.
+      left.mergeWith(right)
+      return null
+    }
+
+    right.parent = this
+    parentNode.insertBefore(right.domNode, left.domNode.nextSibling)
+    this._children.splice(childIndex + 1, 0, right)
+    this._invalidateIndex()
+    return [left, right]
+  }
+
+  /**
+   * Reverse one split created by `splitTextForLayout()`.
+   *
+   * @internal InlineFragmentProjection only. The identity and adjacency
+   * checks deliberately prevent this from merging unrelated semantic runs.
+   */
+  mergeLayoutTextSplit(split: readonly [TextBlot, TextBlot]): boolean {
+    const [left, right] = split
+    const leftIndex = this._childIndexOf(left)
+    if (
+      leftIndex < 0 ||
+      this._children[leftIndex + 1] !== right ||
+      left.parent !== this ||
+      right.parent !== this
+    ) {
+      return false
+    }
+    if (!left.mergeWith(right)) return false
+    this._children.splice(leftIndex + 1, 1)
+    this._invalidateIndex()
+    return true
+  }
+
+  /**
+   * Put every Blot DOM node back under the canonical editable container in
+   * `_children` order. Zero-length layout wrappers are intentionally not
+   * represented in `_children` and can then be removed by their owner.
+   *
+   * @internal InlineFragmentProjection only.
+   */
+  restoreCanonicalDomOrder(): void {
+    const breakBlot = this._children.find(child => child.type === BlotType.Break)
+    const breakNode = breakBlot?.domNode ?? null
+    for (const child of this._children) {
+      if (child === breakBlot) continue
+      this.domNode.insertBefore(child.domNode, breakNode)
+    }
+    if (breakNode) this.domNode.appendChild(breakNode)
+  }
+
+  /**
    * Batch replace: remove leaves in [startIdx, startIdx+deleteCount),
    * then insert newBlots at that position.
    * Indices are relative to `this.leaves` (not `this._children`).
@@ -386,6 +456,7 @@ export class ScrollBlot implements IScrollBlot {
         this._children.push(cursor)
         this.domNode.appendChild(cursor.domNode)
       }
+      this._invalidateIndex()
       return
     }
 
@@ -409,6 +480,7 @@ export class ScrollBlot implements IScrollBlot {
         blot.domNode.parentNode!.insertBefore(cursor.domNode, blot.domNode.nextSibling)
       }
     }
+    this._invalidateIndex()
   }
 
   /**

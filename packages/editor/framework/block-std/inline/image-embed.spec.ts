@@ -25,10 +25,48 @@ describe('inlineImageEmbedConverter', () => {
     expect(image.getAttribute('src')).toBe('https://cdn.example.com/a.png');
     expect(image.getAttribute('width')).toBe('320');
     expect(image.getAttribute('height')).toBe('180');
+    expect(image.draggable).toBeFalse();
+    expect(image.getAttribute('draggable')).toBe('false');
     expect(inlineImageEmbedConverter.toDelta(view)).toEqual(delta);
     expect(inlineImageEmbedConverter.toDelta(frame)).toEqual(delta);
     expect(inlineImageEmbedConverter.toDelta(image)).toEqual(delta);
     inlineImageEmbedConverter.onDestroy?.(view, delta);
+  });
+
+  it('cancels native image drag at the embed boundary and removes the guard on destroy', () => {
+    const delta = createInlineImageDelta(
+      'https://cdn.example.com/native-drag.png',
+      320,
+      180,
+      {wrap: true, side: 'auto', x: .25},
+    )!;
+    const root = document.createElement('div');
+    const view = inlineImageEmbedConverter.toView(delta);
+    const image = view.querySelector<HTMLImageElement>('img.bc-inline-image')!;
+    const rootDragStart = jasmine.createSpy('rootDragStart');
+    root.addEventListener('dragstart', rootDragStart);
+    root.appendChild(view);
+
+    const guardedEvent = new DragEvent('dragstart', {
+      bubbles: true,
+      cancelable: true,
+    });
+    image.dispatchEvent(guardedEvent);
+
+    expect(guardedEvent.defaultPrevented).toBeTrue();
+    expect(rootDragStart).not.toHaveBeenCalled();
+
+    inlineImageEmbedConverter.onDestroy?.(view, delta);
+    inlineImageEmbedConverter.onDestroy?.(view, delta);
+    const afterDestroyEvent = new DragEvent('dragstart', {
+      bubbles: true,
+      cancelable: true,
+    });
+    image.dispatchEvent(afterDestroyEvent);
+
+    expect(afterDestroyEvent.defaultPrevented).toBeFalse();
+    expect(rootDragStart).toHaveBeenCalledTimes(1);
+    root.remove();
   });
 
   it('reserves a stable 4:3 frame before an unsized image loads', () => {

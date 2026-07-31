@@ -331,6 +331,37 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(recalculateSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('holds the pointer target inline layout while native selection may be dragging', () => {
+    const {manager, rootHost, block} = createManager({bindEvents: true});
+    const release = jasmine.createSpy('releaseFloatLayoutFreeze');
+    (block as any).runtime = {
+      acquireFloatLayoutFreeze: jasmine.createSpy(
+        'acquireFloatLayoutFreeze',
+      ).and.returnValue(release),
+    };
+
+    rootHost.querySelector('[data-block-id="block-1"]')!.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        isPrimary: true,
+        pointerId: 7,
+      }),
+    );
+    expect((block as any).runtime.acquireFloatLayoutFreeze)
+      .toHaveBeenCalledTimes(1);
+    expect(release).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true,
+      isPrimary: true,
+      pointerId: 7,
+    }));
+
+    expect(release).toHaveBeenCalledTimes(1);
+    void manager;
+  });
+
   it('keeps a pending DOM projection authoritative until a new pointer intent cancels it', () => {
     const {manager, rootHost, block, blockHost, dispatchSelectionChange} = createManager({bindEvents: true});
     const leading = createBlockGapSpace('before');
@@ -374,6 +405,33 @@ describe('SelectionManager DOM selection normalization', () => {
     manager.setSuppressRecalculate(false);
 
     expect(recalculateSpy).not.toHaveBeenCalled();
+  });
+
+  it('suppresses native recalculation during an inline layout projection lease', () => {
+    const {manager, dispatchSelectionChange} = createManager({bindEvents: true});
+    const recalculateSpy = spyOn(manager, 'recalculate').and.returnValue({value: null});
+
+    const release = manager.acquireInlineLayoutProjectionGuard();
+    dispatchSelectionChange();
+    release();
+    release();
+    dispatchSelectionChange();
+
+    expect(recalculateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves an explicit suppression state changed inside the layout guard', () => {
+    const {manager, dispatchSelectionChange} = createManager({bindEvents: true});
+    const recalculateSpy = spyOn(manager, 'recalculate').and.returnValue({value: null});
+
+    const release = manager.acquireInlineLayoutProjectionGuard();
+    manager.setSuppressRecalculate(true);
+    release();
+    dispatchSelectionChange();
+    manager.setSuppressRecalculate(false);
+    dispatchSelectionChange();
+
+    expect(recalculateSpy).toHaveBeenCalledTimes(1);
   });
 
   it('rechecks a selectionchange after the same event releases a stale composition gate', async () => {

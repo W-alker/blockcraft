@@ -18,6 +18,32 @@
 }
 
 [data-blockcraft-root="true"]
+  [data-bc-inline-float-owner]
+  c-element:has(.bc-inline-image-shell[data-bc-inline-logical-anchor]) {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  overflow: visible;
+
+  > span[contenteditable='false'] {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    margin: 0;
+    overflow: visible;
+  }
+}
+
+[data-blockcraft-root="true"]
+  .bc-inline-image-shell[data-bc-inline-logical-anchor] {
+  position: static;
+  display: inline-block;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: visible;
+}
+
+[data-blockcraft-root="true"]
   .bc-inline-image-shell[data-bc-inline-image-layout="wrap"] {
   display: block;
   max-width: none;
@@ -31,7 +57,7 @@
   }
 
   &.bc-inline-image-shell--selected > .bc-inline-image-frame {
-    cursor: ew-resize;
+    cursor: move;
     touch-action: none;
   }
 }
@@ -48,4 +74,23 @@
   height: 100%;
   max-width: 100%;
   object-fit: contain;
+}
+
+.bc-inline-image-drag-proxy {
+  z-index: 2147483646;
+  box-sizing: border-box;
+  overflow: hidden;
+  opacity: 0.46;
+  pointer-events: none;
+  user-select: none;
+  contain: layout paint style;
+  will-change: transform;
+
+  > .bc-inline-image-frame {
+    box-sizing: border-box;
+    overflow: hidden;
+    outline: 2px dashed var(--bc-active-color, currentColor);
+    outline-offset: -2px;
+    border-radius: 3px;
+  }
 }

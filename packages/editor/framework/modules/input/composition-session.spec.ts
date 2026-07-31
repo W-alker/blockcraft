@@ -16,7 +16,16 @@ function createHarness(order: string[]) {
     text.insert(0, id)
     block.set('children', text)
     blocks.set(id, block)
-    blockViews.set(id, {id, yText: text, textLength: text.length})
+    blockViews.set(id, {
+      id,
+      yText: text,
+      textLength: text.length,
+      runtime: {
+        acquireFloatLayoutFreeze: jasmine.createSpy(
+          'acquireFloatLayoutFreeze',
+        ).and.callFake(() => jasmine.createSpy('releaseFloatLayoutFreeze')),
+      },
+    })
   })
   rootChildren.insert(0, order)
 
@@ -35,6 +44,23 @@ function createHarness(order: string[]) {
 }
 
 describe('CompositionSession structural recovery', () => {
+  it('holds one inline-layout freeze lease until the session ends', () => {
+    const h = createHarness(['active'])
+    const block = h.blockViews.get('active')
+    const session = new CompositionSession(h.doc as any)
+
+    session.start(block, 1)
+    const release = block.runtime.acquireFloatLayoutFreeze
+      .calls.mostRecent().returnValue
+    expect(block.runtime.acquireFloatLayoutFreeze).toHaveBeenCalledTimes(1)
+    expect(release).not.toHaveBeenCalled()
+
+    session.end()
+    session.reset()
+
+    expect(release).toHaveBeenCalledTimes(1)
+  })
+
   it('recovers at the next sibling start after the composing block is removed', () => {
     const h = createHarness(['previous', 'active', 'next'])
     const session = new CompositionSession(h.doc as any)

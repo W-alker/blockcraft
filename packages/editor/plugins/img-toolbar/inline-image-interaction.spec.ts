@@ -1,10 +1,17 @@
-import {BlockNodeType, DeltaInsert, IBlockSnapshot} from '../../framework';
+import {
+  BlockNodeType,
+  DeltaInsert,
+  DeltaInsertEmbed,
+  IBlockSnapshot,
+} from '../../framework';
 import {
   calculateInlineImageSize,
   disableInlineImageWrap,
   enableInlineImageWrap,
   inlineImageSnapshotToBlockSnapshots,
+  planInlineImageAnchorMove,
   resolveInlineImageDragPreview,
+  resolveInlineImageDeltaAtOffset,
   resolveInlineImageAtOffset,
 } from './inline-image-interaction';
 
@@ -35,6 +42,106 @@ describe('inline image interaction helpers', () => {
     });
     expect(resolveInlineImageAtOffset(mixedDeltas(), 0)).toBeNull();
     expect(resolveInlineImageAtOffset(mixedDeltas(), 1, 'stale.png')).toBeNull();
+  });
+
+  it('clones the exact image delta so custom payload and attributes survive moves', () => {
+    const imageDelta: DeltaInsertEmbed = {
+      insert: {image: 'a.png', assetId: 'asset-1'},
+      attributes: {width: 120, wrap: true, x: .2, custom: 'keep'},
+    };
+    const deltas: DeltaInsert[] = [imageDelta];
+    const resolved = resolveInlineImageDeltaAtOffset(deltas, 0, 'a.png')!;
+
+    expect(resolved).toEqual(imageDelta);
+    expect(resolved).not.toBe(imageDelta);
+    expect(resolved.insert).not.toBe(imageDelta.insert);
+    expect(resolved.attributes).not.toBe(imageDelta.attributes);
+  });
+
+  it('plans same-block anchor moves with forward offset compensation', () => {
+    const plan = planInlineImageAnchorMove({
+      sourceBlockId: 'a',
+      sourceOffset: 1,
+      sourceLength: 6,
+      targetBlockId: 'a',
+      targetOffset: 5,
+      targetLength: 6,
+      delta: {
+        insert: {image: 'a.png'},
+        attributes: {width: 120, wrap: true, x: .2},
+      },
+      normalizedX: .6,
+    });
+
+    expect(plan).toEqual({
+      kind: 'same-block',
+      sourceOperations: [
+        {retain: 1},
+        {delete: 1},
+        {retain: 3},
+        {
+          insert: {image: 'a.png'},
+          attributes: {width: 120, wrap: true, x: .6},
+        },
+      ],
+    });
+  });
+
+  it('plans a same-block backward anchor move before deleting the source', () => {
+    const plan = planInlineImageAnchorMove({
+      sourceBlockId: 'a',
+      sourceOffset: 4,
+      sourceLength: 7,
+      targetBlockId: 'a',
+      targetOffset: 1,
+      targetLength: 7,
+      delta: {
+        insert: {image: 'a.png'},
+        attributes: {wrap: true, x: .8},
+      },
+      normalizedX: .1,
+    });
+
+    expect(plan).toEqual({
+      kind: 'same-block',
+      sourceOperations: [
+        {retain: 1},
+        {
+          insert: {image: 'a.png'},
+          attributes: {wrap: true, x: .1},
+        },
+        {retain: 3},
+        {delete: 1},
+      ],
+    });
+  });
+
+  it('plans an atomic cross-block delete and insert without losing metadata', () => {
+    const plan = planInlineImageAnchorMove({
+      sourceBlockId: 'a',
+      sourceOffset: 2,
+      sourceLength: 5,
+      targetBlockId: 'b',
+      targetOffset: 3,
+      targetLength: 7,
+      delta: {
+        insert: {image: 'a.png', assetId: 'asset-1'},
+        attributes: {height: 60, side: 'auto', custom: true},
+      },
+      normalizedX: .4,
+    });
+
+    expect(plan).toEqual({
+      kind: 'cross-block',
+      sourceOperations: [{retain: 2}, {delete: 1}],
+      targetOperations: [
+        {retain: 3},
+        {
+          insert: {image: 'a.png', assetId: 'asset-1'},
+          attributes: {height: 60, side: 'auto', custom: true, x: .4},
+        },
+      ],
+    });
   });
 
   it('keeps the aspect ratio and uses natural or rendered fallbacks', () => {

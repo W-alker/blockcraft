@@ -74,6 +74,85 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v?.?.? - 2026-08-01 (patch) — suppress native HTML drag for default inline images
+
+**Severity**: patch
+
+**What changed**: The built-in inline-image Embed now renders its real `<img>`
+with `draggable="false"` and capture-cancels residual native `dragstart` at the
+atomic image shell. The guard is removed through `EmbedConverter.onDestroy()`.
+The existing InputTransformer rejection of `deleteByDrag` and
+`insertFromDrop` remains the last-resort consistency boundary.
+
+**Why**: A browser could start native image DnD alongside the model-owned
+Pointer proxy and dispatch drag input types inside contenteditable even though
+BlockCraft later prevented their default DOM mutation.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-embed.md`
+- `blockcraft-inline.md`
+- `blockcraft-input.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No downstream code or stored-document migration is required. Hosts using the
+default image converter now receive Pointer-only inline-image movement. A host
+that intentionally needs native/cross-application image dragging must continue
+to provide its own same-key `image` EmbedConverter.
+
+#### Behavior Changes
+
+- Default inline images no longer start native HTML DnD or drag out of the
+  editor; `ImgToolbarPlugin` Pointer movement remains unchanged.
+- The shell guard stops only dragstart events originating in that Embed subtree;
+  ordinary text selection drag, block handles and external file drops remain
+  available.
+- Unexpected drag input types are still prevented without a Yjs/model write.
+- No public API, Delta field, theme token or package version changed.
+
+### v?.?.? - 2026-08-01 (patch) — isolate inline-image resize preview from text layout
+
+**Severity**: patch
+
+**What changed**: Ordinary and wrapped inline images no longer preview a resize
+by changing the committed frame inside contenteditable. Their left/right handles
+now freeze the frame, text fragments, selection and connected toolbar while an
+accessibility-inert body-level outline displays the proportional target bounds
+and live pixel dimensions. Pointerup still writes the existing short
+`width/height` Delta attributes once.
+
+**Why**: A live frame resize could enter or cross projected wrap text while the
+fragment boundaries still represented the committed size, making the visual
+resize feedback become obscured or disappear.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No downstream code or stored document migration is required. The existing
+inline-image Delta fields and `ImgToolbarPlugin` construction remain unchanged.
+
+#### Behavior Changes
+
+- The real inline-image frame and editable text layout stay fixed for the whole
+  resize gesture; only the inert body overlay updates on animation frames.
+- The left handle fixes the committed right edge and the right handle fixes the
+  committed left edge. Target width is clamped to the owning editable content
+  bounds, height keeps the resolved image ratio, and wrapped left-edge resizes
+  update the existing normalized `x` so the final frame matches the preview.
+- Escape, pointercancel, window blur, toolbar close, readonly changes and stale
+  Delta anchors remove the outline and release layout/virtual-view leases
+  without writing model data.
+- Block-image, shape and WordArt resize behavior is unchanged.
+- No public API, theme token, serialized field or package version changed.
+
 ### v?.?.? - 2026-08-01 (patch) — estimate offscreen table height from row models
 
 **Severity**: patch
@@ -121,6 +200,85 @@ virtualization: {
   table-row height props and row structure changes refresh the estimate.
 - The value remains non-exact for pagination/printing, and table row/cell views
   are not virtualized by this patch.
+- No package version was changed by this source update.
+
+### v?.?.? - 2026-07-31 (minor) — add dual-sided Word-like inline-image wrapping
+
+**Severity**: minor
+
+**What changed**: Wrapped inline images with `side: 'auto'` now place real
+editable text on both sides when both intervals are at least 96 CSS pixels.
+The mounted editable block uses reversible local TextBlot row fragments while
+retaining the same one-length Delta Embed and persisted `wrap/side/x/gap`
+fields. Explicit left/right and unsafe auto positions keep the contained
+single-side float fallback. Multiple anchors use deterministic Delta-order
+push-down, and virtual height estimates use combined dual-side capacity.
+Wrapped-image dragging now keeps the committed frame in place and moves an
+inert x/y proxy; pointerup maps y to a same- or cross-block Delta anchor and
+commits the preserved Embed payload in one transaction.
+
+**Why**: A native CSS float can reserve only one edge-connected exclusion and
+cannot reproduce Word-style text on both sides of a centered image. Local real
+Blot fragments provide dual-side layout without introducing a cloned editor,
+new model fields or cross-block exclusions.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-inline.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-input.md`
+- `blockcraft-selection.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- Eligible `side: 'auto'` dual-side line-fragment projection
+- Grapheme-safe Range fitting and projection-owned TextBlot split rollback
+- Delta-order multi-image exclusion-band push-down
+- Package-internal selection, IME and pointer layout-freeze coordination
+- Word-style x/y drag proxy with same/cross-editable-block anchor movement
+- Presentation-only `.bc-inline-image-drag-proxy` theme hook
+
+#### Migration Recipe
+
+No data or host-code migration is required. To force the prior one-sided
+presentation, persist an explicit side instead of `auto`:
+
+```typescript
+// before: auto selected the wider single side
+createInlineImageDelta(url, 320, 180, {
+  wrap: true,
+  side: 'auto',
+  x: 0.3,
+})
+
+// after: explicit side preserves single-sided wrapping
+createInlineImageDelta(url, 320, 180, {
+  wrap: true,
+  side: 'right',
+  x: 0.3,
+})
+```
+
+#### Behavior Changes
+
+- `auto` uses both sides only when each side is at least 96 CSS pixels; it
+  otherwise falls back to the wider side. Ties remain deterministic.
+- Explicit `left/right` behavior and all serialized Delta/HTML fields remain
+  unchanged.
+- During drag, fragment boundaries, selection and the committed image stay
+  frozen while an accessibility-inert proxy follows x/y outside contenteditable.
+  Pointerup commits normalized `x` plus the resolved Delta anchor once; no
+  pixel `y` is added to the schema.
+- Same-block moves compensate forward offsets after deleting the one-length
+  Embed. Cross-block moves delete and insert the exact Embed payload inside one
+  Yjs transaction. Gaps/non-editable hits snap to the nearest compatible
+  mounted editable block; editor-external drops cancel.
+- IME and native pointer selection defer fragment rewrites until their active
+  gesture ends. Selection is reprojected from the existing anchor/head model.
+- Runtime detach/destroy removes projections, observers, scheduled frames and
+  leases; reattach rebuilds from current Y.Text.
 - No package version was changed by this source update.
 
 ### v?.?.? - 2026-07-31 (patch) — restore immediate local-image upload preview
@@ -190,8 +348,9 @@ must provide explicit dimensions before mounting.
 **What changed**: The built-in one-length `image` inline Embed now supports
 optional square text wrapping. New typed wrap attributes round-trip through
 the default converter and HTML adapter, the image toolbar can switch and
-horizontally position the wrapped image, and virtualization/sparse pagination
-reserve a model-derived contained height before the DOM mounts.
+position the wrapped image with a Word-style x/y proxy, and
+virtualization/sparse pagination reserve a model-derived contained height
+before the DOM mounts.
 
 **Why**: Inline images need Word-like four-sided text flow without becoming
 block images or absolute placement objects, while retaining native caret/IME
@@ -213,7 +372,7 @@ behavior and predictable virtual geometry.
   `createInlineImageDelta(src, width, height, wrapOptions)` argument
 - `normalizeInlineImageWrapOptions()`
 - Stable `.bc-inline-image-frame` inside the existing inline-image shell
-- Inline-only **四周型环绕** toolbar action and horizontal Pointer Events
+- Inline-only **四周型环绕** toolbar action and proxy-based Pointer Events
   positioning
 - HTML `data-bc-wrap*` preservation and model-only wrapped-height estimation
 
@@ -242,8 +401,9 @@ createInlineImageDelta(url, 320, 180, {
   affect later blocks.
 - HTML preserves `wrap/side/x/gap`; Markdown intentionally drops those layout
   fields while keeping the image URL.
-- Wrapped resize and horizontal drag each create one final model write; pointer
-  previews remain DOM-only.
+- Wrapped resize creates one final model write. Drag previews remain DOM-only;
+  release creates one transaction that may update `x`, the Delta anchor, or
+  both.
 - No package version was changed by this source update.
 
 ### v?.?.? - 2026-07-31 (patch) — simplify the WordArt floating toolbar

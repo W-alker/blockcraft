@@ -82,6 +82,7 @@ export class CompositionSession {
   private _recoveryLevels: CompositionRecoveryLevel[] = []
   private _abortRecoveryTarget: CompositionRecoveryTarget | null = null
   private _abortRecoveryPending = false
+  private _releaseInlineLayoutFreeze: (() => void) | null = null
   /** 组合期间宿主块被删除（通常来自远端协同）后置位；compositionEnd 据此丢弃本次提交 */
   private _abortedByBlockRemoval = false
 
@@ -120,6 +121,9 @@ export class CompositionSession {
    * and any non-collapsed selection replacement.
    */
   start(block: EditableBlockComponent, anchorIndex: number) {
+    this._releaseLayoutFreeze()
+    this._releaseInlineLayoutFreeze =
+      block.runtime?.acquireFloatLayoutFreeze?.() ?? null
     this._phase = CompositionPhase.Active
     this._activeBlockId = block.id
     this._deferredPatches = []
@@ -127,7 +131,12 @@ export class CompositionSession {
     this._abortRecoveryTarget = null
     this._abortRecoveryPending = false
     this._recoveryLevels = this._captureRecoveryLevels(block.id)
-    this._anchor.capture(block, anchorIndex)
+    try {
+      this._anchor.capture(block, anchorIndex)
+    } catch (error) {
+      this.end()
+      throw error
+    }
   }
 
   /**
@@ -267,6 +276,7 @@ export class CompositionSession {
     this._deferredPatches = []
     this._recoveryLevels = []
     this._anchor.reset()
+    this._releaseLayoutFreeze()
   }
 
   /**
@@ -313,6 +323,12 @@ export class CompositionSession {
       currentId = parentId
     }
     return levels
+  }
+
+  private _releaseLayoutFreeze(): void {
+    const release = this._releaseInlineLayoutFreeze
+    this._releaseInlineLayoutFreeze = null
+    release?.()
   }
 
   private _resolveRecoveryTarget(): CompositionRecoveryTarget | null {

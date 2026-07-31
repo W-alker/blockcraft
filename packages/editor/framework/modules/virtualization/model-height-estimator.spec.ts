@@ -145,6 +145,35 @@ describe('estimateModelBlockHeight', () => {
     expect(estimateModelBlockHeight(doc as any, 'paragraph')).toBe(120)
   })
 
+  it('uses both readable intervals for centered auto-wrap estimation', () => {
+    const doc = createDoc({
+      paragraph: {
+        flavour: 'paragraph',
+        nodeType: BlockNodeType.editable,
+        props: {},
+        children: [],
+        deltas: [
+          {insert: '字'.repeat(120)},
+          {
+            insert: {image: 'image.png'},
+            attributes: {
+              width: 100,
+              height: 96,
+              wrap: true,
+              side: 'auto',
+              x: 0.375,
+              gap: 12,
+            },
+          },
+        ],
+      },
+    })
+    doc.objectSizing.resolve.and.returnValue(null)
+    doc.objectSizing.rootContentWidth = 400
+
+    expect(estimateModelBlockHeight(doc as any, 'paragraph')).toBe(108)
+  })
+
   it('clamps oversized wrapped images to the root content width', () => {
     const doc = createDoc({
       paragraph: {

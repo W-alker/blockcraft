@@ -37,13 +37,25 @@ import {
   disableInlineImageWrap,
   enableInlineImageWrap,
   inlineImageSnapshotToBlockSnapshots,
+  planInlineImageAnchorMove,
   resolveInlineImageDragPreview,
+  resolveInlineImageDeltaAtOffset,
   resolveInlineImageAtOffset,
 } from './inline-image-interaction';
-import {InlineImageToolbar} from './widgets/inline-image.toolbar';
-import {ResizeContainerComponent} from '../../components';
 import {
-  applyInlineImageFloatLayout,
+  InlineImageDragProxy,
+  resolveInlineImageDropTarget,
+} from './inline-image-drag';
+import {
+  InlineImageResizeSession,
+} from './inline-image-resize';
+import type {
+  InlineImageResizeCommit,
+  InlineImageResizeSide,
+} from './inline-image-resize';
+import {InlineImageToolbar} from './widgets/inline-image.toolbar';
+import {InlineImageResizerComponent} from './widgets/inline-image-resizer';
+import {
   INLINE_FLOAT_PREVIEW_ATTRIBUTE,
 } from '../../framework/block-std/inline/runtime/inline-float-layout';
 import {
@@ -102,10 +114,11 @@ export class ImgToolbarPlugin extends DocPlugin {
   private _closeToolbar$ = new Subject<void>();
   private _inlineClose$ = new Subject<void>();
   private _inlineToolbarRef?: OverlayRef;
-  private _inlineResizerRef?: ComponentRef<ResizeContainerComponent>;
+  private _inlineResizerRef?: ComponentRef<InlineImageResizerComponent>;
   private _inlineAppRef?: ApplicationRef;
   private _inlineContext?: ActiveInlineImageContext;
   private _inlineWrapDragCancel?: () => void;
+  private _inlineResizeSession?: InlineImageResizeSession;
   private _pendingInlineConversions = new Map<string, Subscription>();
 
   @BindHotKey(
@@ -275,7 +288,9 @@ export class ImgToolbarPlugin extends DocPlugin {
           if (!(target instanceof Element)) return
           if (!this.doc.root.hostElement.contains(target)) return
           // 排除调宽度的 resize 句柄、占位插图按钮等
-          if (target.closest('block-resizer')) return
+          if (target.closest(
+            'block-resizer, [data-bc-inline-image-resizer]',
+          )) return
           if (target.closest('.upload-hint')) return
           const imageContent = target.closest('.img-wrapper')
           if (!imageContent || !this.doc.root.hostElement.contains(imageContent)) return
@@ -515,6 +530,9 @@ export class ImgToolbarPlugin extends DocPlugin {
 
   closeInlineToolbar = () => {
     this._inlineWrapDragCancel?.();
+    const resizeSession = this._inlineResizeSession;
+    this._inlineResizeSession = undefined;
+    resizeSession?.cancel();
     this._inlineClose$.next();
     this._inlineToolbarRef?.dispose();
     this._inlineToolbarRef = undefined;
@@ -588,20 +606,21 @@ export class ImgToolbarPlugin extends DocPlugin {
     shell.classList.add('bc-inline-image-shell--selected');
 
     const appRef = this.doc.injector.get(ApplicationRef);
-    const resizerRef = createComponent(ResizeContainerComponent, {
+    const resizerRef = createComponent(InlineImageResizerComponent, {
       environmentInjector: appRef.injector,
       elementInjector: this.doc.injector,
     });
     this._inlineAppRef = appRef;
     this._inlineResizerRef = resizerRef;
     resizerRef.setInput('container', frame);
-    resizerRef.setInput('maxWidthContainer', editable.containerElement);
     appRef.attachView(resizerRef.hostView);
     frame.appendChild(resizerRef.location.nativeElement);
     resizerRef.changeDetectorRef.detectChanges();
-    resizerRef.instance.widthChange
+    resizerRef.instance.handlePointerDown
       .pipe(takeUntil(this._inlineClose$))
-      .subscribe(width => this._commitInlineImageResize(context, width));
+      .subscribe(({event: pointerEvent, side}) => {
+        this._startInlineImageResize(context, pointerEvent, side);
+      });
 
     const rect = frame.getBoundingClientRect();
     const size = calculateInlineImageSize(
@@ -740,12 +759,16 @@ export class ImgToolbarPlugin extends DocPlugin {
     if (
       event.button !== 0 ||
       event.isPrimary === false ||
-      this.doc.isReadonly
+      this.doc.isReadonly ||
+      this.doc.event.status.isComposing
     ) {
       return;
     }
     const target = event.target;
-    if (!(target instanceof Element) || target.closest('block-resizer')) return;
+    if (
+      !(target instanceof Element) ||
+      target.closest('block-resizer, [data-bc-inline-image-resizer]')
+    ) return;
     const frame = target.closest<HTMLElement>('.bc-inline-image-frame');
     const context = this._inlineContext;
     if (
@@ -759,33 +782,49 @@ export class ImgToolbarPlugin extends DocPlugin {
     const current = this._resolveLiveInlineImage(context);
     if (!current?.wrap) return;
 
-    const owner = context.block.containerElement;
-    const ownerRect = owner.getBoundingClientRect();
     const frameRect = frame.getBoundingClientRect();
-    const containerWidth = owner.clientWidth || ownerRect.width;
-    if (containerWidth <= 0 || frameRect.width <= 0) return;
+    if (frameRect.width <= 0 || frameRect.height <= 0) return;
 
     event.preventDefault();
     event.stopPropagation();
     this._inlineWrapDragCancel?.();
     context.shell.setAttribute(INLINE_FLOAT_PREVIEW_ATTRIBUTE, '');
+    const releaseLayoutFreeze =
+      context.block.runtime.acquireFloatLayoutFreeze?.() ?? (() => undefined);
+    let releaseViewLease: () => void = () => undefined;
+    try {
+      releaseViewLease = this.doc.virtualization.acquireBlockViewLease([
+        context.blockId,
+      ]);
+    } catch {
+      context.shell.removeAttribute(INLINE_FLOAT_PREVIEW_ATTRIBUTE);
+      releaseLayoutFreeze();
+      return;
+    }
+
+    let proxy: InlineImageDragProxy;
+    try {
+      proxy = new InlineImageDragProxy(
+        frame,
+        frameRect,
+        event.clientX,
+        event.clientY,
+      );
+    } catch {
+      context.shell.removeAttribute(INLINE_FLOAT_PREVIEW_ATTRIBUTE);
+      releaseViewLease();
+      releaseLayoutFreeze();
+      return;
+    }
 
     const pointerId = event.pointerId;
-    const grabOffset = event.clientX - frameRect.left;
-    let preview: ReturnType<typeof resolveInlineImageDragPreview> | undefined;
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
+    let moved = false;
     let cleaned = false;
+    let released = false;
     const zone = this.doc.injector.get(NgZone);
 
-    const restore = () => {
-      applyInlineImageFloatLayout(context.shell, {
-        containerWidth,
-        imageWidth: current.width ?? frameRect.width,
-        imageHeight: current.height ?? frameRect.height,
-        x: current.x,
-        side: current.side,
-        gap: current.gap,
-      });
-    };
     const cleanup = () => {
       if (cleaned) return;
       cleaned = true;
@@ -794,7 +833,9 @@ export class ImgToolbarPlugin extends DocPlugin {
       window.removeEventListener('pointercancel', onPointerCancel, true);
       window.removeEventListener('blur', onBlur, true);
       document.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('selectstart', onSelectStart, true);
       context.shell.removeAttribute(INLINE_FLOAT_PREVIEW_ATTRIBUTE);
+      proxy.destroy();
       try {
         if (frame.hasPointerCapture(pointerId)) {
           frame.releasePointerCapture(pointerId);
@@ -804,50 +845,117 @@ export class ImgToolbarPlugin extends DocPlugin {
         this._inlineWrapDragCancel = undefined;
       }
     };
+    const releaseDragResources = () => {
+      if (released) return;
+      released = true;
+      try {
+        releaseViewLease();
+      } catch (error) {
+        this.doc.logger.warn('inlineImageDragViewLeaseReleaseError: ', error);
+      }
+      try {
+        releaseLayoutFreeze();
+      } catch (error) {
+        this.doc.logger.warn('inlineImageDragLayoutFreezeReleaseError: ', error);
+      }
+    };
     const cancel = () => {
       cleanup();
-      if (context.shell.isConnected) restore();
+      releaseDragResources();
     };
     const onPointerMove = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
       moveEvent.preventDefault();
-      const imageX = moveEvent.clientX - ownerRect.left - grabOffset;
-      preview = resolveInlineImageDragPreview({
-        containerWidth,
-        imageWidth: current.width ?? frameRect.width,
-        imageHeight: current.height ?? frameRect.height,
-        imageX,
-        side: current.side,
-        gap: current.gap,
-      });
-      applyInlineImageFloatLayout(context.shell, {
-        containerWidth,
-        imageWidth: preview.geometry.imageWidth,
-        imageHeight: preview.geometry.imageHeight,
-        x: preview.attributes.x,
-        side: preview.attributes.side,
-        gap: preview.attributes.gap,
-      });
+      moved = moved || Math.hypot(
+        moveEvent.clientX - startClientX,
+        moveEvent.clientY - startClientY,
+      ) >= 2;
+      proxy.move(moveEvent.clientX, moveEvent.clientY);
     };
     const onPointerUp = (upEvent: PointerEvent) => {
       if (upEvent.pointerId !== pointerId) return;
-      const committed = preview;
+      moved = moved || Math.hypot(
+        upEvent.clientX - startClientX,
+        upEvent.clientY - startClientY,
+      ) >= 2;
+      proxy.move(upEvent.clientX, upEvent.clientY);
+      const proxyPosition = proxy.position();
       cleanup();
-      if (!committed) return;
-      const live = this._resolveLiveInlineImage(context);
-      if (!live?.wrap) {
-        restore();
-        this.closeInlineToolbar();
+      if (!moved) {
+        releaseDragResources();
         return;
       }
-      this.closeInlineToolbar();
-      this.doc.crud.transact(() => {
-        context.block.formatText(
-          context.offset,
-          1,
-          committed.attributes as unknown as IInlineNodeAttrs,
-        );
+      const live = this._resolveLiveInlineImage(context);
+      const sourceDelta = resolveInlineImageDeltaAtOffset(
+        context.block.textDeltas(),
+        context.offset,
+        context.data.src,
+      );
+      let target = resolveInlineImageDropTarget(
+        this.doc,
+        upEvent.clientX,
+        upEvent.clientY,
+      );
+      if (!live?.wrap || !sourceDelta) {
+        this.closeInlineToolbar();
+        releaseDragResources();
+        return;
+      }
+      if (!target) {
+        releaseDragResources();
+        return;
+      }
+
+      const targetRect = target.block.containerElement.getBoundingClientRect();
+      const targetWidth = target.block.containerElement.clientWidth ||
+        targetRect.width;
+      if (targetWidth <= 0) {
+        releaseDragResources();
+        return;
+      }
+      if (
+        target.block === context.block &&
+        Math.abs(proxyPosition.top - frameRect.top) < 1
+      ) {
+        target = {...target, offset: context.offset};
+      }
+      const placement = resolveInlineImageDragPreview({
+        containerWidth: targetWidth,
+        imageWidth: live.width ?? frameRect.width,
+        imageHeight: live.height ?? frameRect.height,
+        imageX: proxyPosition.left - targetRect.left,
+        side: live.side,
+        gap: live.gap,
       });
+      const plan = planInlineImageAnchorMove({
+        sourceBlockId: context.blockId,
+        sourceOffset: context.offset,
+        sourceLength: context.block.textLength,
+        targetBlockId: target.block.id,
+        targetOffset: target.offset,
+        targetLength: target.block.textLength,
+        delta: sourceDelta,
+        normalizedX: placement.attributes.x,
+      });
+      this.closeInlineToolbar();
+      try {
+        if (plan.kind !== 'noop') {
+          this.doc.crud.transact(() => {
+            this.doc.crud.applyTextDelta(
+              context.blockId,
+              plan.sourceOperations,
+            );
+            if (plan.kind === 'cross-block') {
+              this.doc.crud.applyTextDelta(
+                target.block.id,
+                plan.targetOperations,
+              );
+            }
+          });
+        }
+      } finally {
+        releaseDragResources();
+      }
     };
     const onPointerCancel = (cancelEvent?: PointerEvent) => {
       if (cancelEvent && cancelEvent.pointerId !== pointerId) return;
@@ -859,6 +967,7 @@ export class ImgToolbarPlugin extends DocPlugin {
       keyEvent.preventDefault();
       cancel();
     };
+    const onSelectStart = (selectEvent: Event) => selectEvent.preventDefault();
 
     this._inlineWrapDragCancel = cancel;
     zone.runOutsideAngular(() => {
@@ -870,13 +979,86 @@ export class ImgToolbarPlugin extends DocPlugin {
       window.addEventListener('pointercancel', onPointerCancel, true);
       window.addEventListener('blur', onBlur, true);
       document.addEventListener('keydown', onKeyDown, true);
+      document.addEventListener('selectstart', onSelectStart, true);
       try { frame.setPointerCapture(pointerId); } catch {}
     });
   }
 
+  private _startInlineImageResize(
+    context: ActiveInlineImageContext,
+    event: PointerEvent,
+    side: InlineImageResizeSide,
+  ): void {
+    if (
+      event.button !== 0 ||
+      event.isPrimary === false ||
+      this.doc.isReadonly ||
+      this.doc.event.status.isComposing ||
+      this._inlineContext !== context ||
+      !context.frame.isConnected ||
+      !context.block.containerElement.isConnected
+    ) {
+      return;
+    }
+    const current = this._resolveLiveInlineImage(context);
+    if (!current) {
+      this.closeInlineToolbar();
+      return;
+    }
+
+    const frameRect = context.frame.getBoundingClientRect();
+    if (frameRect.width <= 0 || frameRect.height <= 0) return;
+    const startSize = calculateInlineImageSize(
+      current.width ?? frameRect.width,
+      current,
+      {
+        naturalWidth: context.image.naturalWidth,
+        naturalHeight: context.image.naturalHeight,
+        renderedWidth: frameRect.width,
+        renderedHeight: frameRect.height,
+      },
+    );
+    const aspectRatio = startSize.width / startSize.height;
+
+    event.preventDefault();
+    event.stopPropagation();
+    this._inlineWrapDragCancel?.();
+    this._inlineResizeSession?.cancel();
+    const zone = this.doc.injector.get(NgZone);
+    let session: InlineImageResizeSession | undefined;
+    try {
+      session = zone.runOutsideAngular(() => new InlineImageResizeSession({
+        event,
+        side,
+        frame: context.frame,
+        bounds: context.block.containerElement,
+        aspectRatio,
+        acquireLayoutFreeze: () =>
+          context.block.runtime.acquireFloatLayoutFreeze?.() ??
+          (() => undefined),
+        acquireViewLease: () =>
+          this.doc.virtualization.acquireBlockViewLease([context.blockId]),
+        onCommit: result => {
+          this._commitInlineImageResize(context, result);
+        },
+        onFinish: () => {
+          if (session && this._inlineResizeSession === session) {
+            this._inlineResizeSession = undefined;
+          }
+        },
+        onError: error => {
+          this.doc.logger.warn('inlineImageResizeError: ', error);
+        },
+      }));
+      this._inlineResizeSession = session;
+    } catch (error) {
+      this.doc.logger.warn('inlineImageResizeStartError: ', error);
+    }
+  }
+
   private _commitInlineImageResize(
     context: ActiveInlineImageContext,
-    width: number,
+    result: InlineImageResizeCommit,
   ) {
     const liveBlock = this._getLiveBlockById(context.blockId);
     if (
@@ -899,15 +1081,30 @@ export class ImgToolbarPlugin extends DocPlugin {
     }
 
     const rect = context.frame.getBoundingClientRect();
-    const size = calculateInlineImageSize(width, current, {
+    const size = calculateInlineImageSize(result.width, current, {
       naturalWidth: context.image.naturalWidth,
       naturalHeight: context.image.naturalHeight,
       renderedWidth: rect.width,
       renderedHeight: rect.height,
     });
-    const attributes = current.wrap
-      ? {...size, ...enableInlineImageWrap(current)}
-      : size;
+    let attributes: {width: number; height: number} &
+      Partial<ReturnType<typeof enableInlineImageWrap>> = size;
+    if (current.wrap) {
+      const boundsRect = context.block.containerElement.getBoundingClientRect();
+      const containerWidth = context.block.containerElement.clientWidth ||
+        boundsRect.width;
+      attributes = {
+        ...size,
+        ...resolveInlineImageDragPreview({
+          containerWidth,
+          imageWidth: size.width,
+          imageHeight: size.height,
+          imageX: result.left - boundsRect.left,
+          side: current.side,
+          gap: current.gap,
+        }).attributes,
+      };
+    }
     this.closeInlineToolbar();
     context.block.formatText(
       context.offset,
