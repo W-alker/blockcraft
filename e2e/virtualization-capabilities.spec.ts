@@ -1,7 +1,7 @@
 import {expect, test, type Page} from '@playwright/test'
 
 const editorSelector = 'block-craft-editor'
-const fatalConsolePattern = /Block not found|Cannot read properties|virtualization(?:Reconcile|Fallback|FullMount)Error|paginationSparse|layoutProjectionInvalid|unhandled|\bERROR\b/i
+const fatalConsolePattern = /Block not found|Doc not init yet|Cannot read properties|virtualization(?:Reconcile|Fallback|FullMount)Error|paginationSparse|layoutProjectionInvalid|unhandled|\bERROR\b/i
 const externalResourcePattern = /figma\.com|juejin\.cn|zijieapi\.com|byte(?:dance|replay)|youtube\.com|youtu\.be|googlevideo\.com|unsplash\.com|example\.com|angular\.dev|affine-worker\.toeverything\.workers\.dev|api\.translate\.zvo\.cn/i
 
 async function waitForEditor(page: Page): Promise<void> {
@@ -24,6 +24,69 @@ function observeFatalDiagnostics(page: Page): string[] {
   })
   return fatal
 }
+
+test('full rendering initializes the model and root before mounting placeable block views', async ({page}) => {
+  const fatal = observeFatalDiagnostics(page)
+  const initPerformanceLogs: string[] = []
+  page.on('console', message => {
+    const detail = message.text()
+    const source = message.location().url
+    if (/\[Async\].*Doc init took/.test(detail)) {
+      initPerformanceLogs.push(detail)
+    }
+    if (
+      !externalResourcePattern.test(`${source} ${detail}`) &&
+      fatalConsolePattern.test(detail)
+    ) {
+      fatal.push(detail)
+    }
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', {name: '虚拟渲染', exact: true}).click()
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await waitForEditor(page)
+
+  const state = await page.evaluate((selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const rootIds = doc.model.getChildrenIds(doc.rootId) as string[]
+    const mountedIds = doc.vm.getMountedRootChildIds() as string[]
+    const imageId = rootIds.find(id => doc.model.getFlavour(id) === 'image')
+    const image = imageId ? doc.getBlockById(imageId) : null
+    return {
+      initialized: doc.isInitialized,
+      virtualizationEnabled: doc.virtualization.enabled,
+      sparseRoot: doc.vm.usesSparseRoot,
+      totalRootChildren: rootIds.length,
+      mountedRootChildren: mountedIds.length,
+      imageMounted: !!image,
+      imageParentId: image?.parentId ?? null,
+      imageSupportsAbsolutePlacement: image
+        ? doc.placement.supports(image, 'absolute')
+        : false,
+    }
+  }, editorSelector)
+
+  expect(state).toEqual({
+    initialized: true,
+    virtualizationEnabled: false,
+    sparseRoot: false,
+    totalRootChildren: 21,
+    mountedRootChildren: 21,
+    imageMounted: true,
+    imageParentId: '689ac2b31a9abe3ae8a6788d',
+    imageSupportsAbsolutePlacement: true,
+  })
+  await expect.poll(() => initPerformanceLogs.length).toBe(1)
+  expect(initPerformanceLogs[0]).toMatch(
+    /\[Async\] initBy(?:Snapshot|YBlock): Doc init took [\d.]+ms/,
+  )
+  expect(fatal).toEqual([])
+})
 
 test('experimental pagination keeps root mounting sparse across scroll and config changes', async ({page}) => {
   test.setTimeout(60_000)

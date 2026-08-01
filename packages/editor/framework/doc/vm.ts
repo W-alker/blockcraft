@@ -102,6 +102,7 @@ export class DocVM {
 
     const yChildren = yBlock.get('children')
     if (recursive && yBlock.get('nodeType') !== BlockNodeType.editable && yChildren.length) {
+      if (useModelProjection) this._reportMissingChildRefs(yBlock, onMissingChild)
       const childIds = useModelProjection
         ? this.doc.model.getChildrenIds(id)
         : yChildren.toArray()
@@ -156,19 +157,77 @@ export class DocVM {
   /** Create the permanent root component without eagerly creating its children. */
   createRootOnlyByYBlock(
     yRoot: YBlock,
-    onMissingChild?: (parentId: string, childId: string) => void,
+    options: {sparse?: boolean} = {},
   ): BlockCraft.BlockComponentRef {
     return this._withCreationRollback(createdIds => {
       const root = this._createComponentByYBlock(
         yRoot,
         null,
         {[yRoot.get('id')]: yRoot},
-        onMissingChild,
+        undefined,
         false,
         createdIds,
       )
-      this.enableSparseRootMode(yRoot.get('id'))
+      if (options.sparse !== false) this.enableSparseRootMode(yRoot.get('id'))
       return root
+    })
+  }
+
+  /**
+   * Materialize every reachable root-child subtree after the model graph and
+   * bootstrap root are ready. Full rendering uses this path so block lifecycle
+   * hooks observe the same initialized model/root contract as virtual mounts.
+   */
+  mountAllRootChildren(
+    onMissingChild?: (parentId: string, childId: string) => void,
+  ): BlockCraft.BlockComponentRef[] {
+    if (this._sparseRoot) {
+      throw new BlockCraftError(
+        ErrorCode.ModelCRUDError,
+        'Cannot eagerly mount every root child while sparse root mode is enabled',
+      )
+    }
+
+    const rootRef = this.get(this.root.id)
+    if (!rootRef?.instance.childrenRenderRef) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, 'Root block has no children renderer')
+    }
+    if (rootRef.instance.childrenRenderRef.length) {
+      return []
+    }
+
+    this._reportMissingChildRefs(rootRef.instance.yBlock, onMissingChild)
+    return this._withCreationRollback(createdIds => {
+      const children = this.doc.model.getChildrenIds(rootRef.instance.id).map(id => {
+        const yBlock = this.doc.crud.getYBlock(id)
+        if (!yBlock) {
+          onMissingChild?.(rootRef.instance.id, id)
+          return null
+        }
+        return this._createComponentByYBlock(
+          yBlock,
+          rootRef,
+          {[id]: yBlock},
+          onMissingChild,
+          true,
+          createdIds,
+        )
+      }).filter((child): child is BlockCraft.BlockComponentRef => child !== null)
+      this.insert(rootRef, 0, children)
+      return children
+    })
+  }
+
+  private _reportMissingChildRefs(
+    yBlock: YBlock,
+    onMissingChild?: (parentId: string, childId: string) => void,
+  ): void {
+    if (!onMissingChild || yBlock.get('nodeType') === BlockNodeType.editable) return
+    const children = yBlock.get('children')
+    if (!(children instanceof Y.Array)) return
+    const parentId = yBlock.get('id')
+    children.toArray().forEach(childId => {
+      if (!this.doc.crud.getYBlock(childId)) onMissingChild(parentId, childId)
     })
   }
 
@@ -614,6 +673,7 @@ export class DocVM {
     this.retainedRootIds.clear()
     this.deferredSparseRootOrder = null
     this.deferredSparseRootIds.clear()
+    this._sparseRoot = false
   }
 
 }

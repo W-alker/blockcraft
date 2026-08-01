@@ -45,6 +45,47 @@ describe("BlockCraftDoc initialization state", () => {
   }));
 });
 
+describe("BlockCraftDoc initialization performance timing", () => {
+  it("reports Doc init only after the editor has crossed two animation frames", async () => {
+    const frameCallbacks: FrameRequestCallback[] = [];
+    spyOn(window, "requestAnimationFrame").and.callFake(callback => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    });
+    spyOn(performance, "now").and.returnValue(125);
+    const log = spyOn(console, "log");
+    const root = {
+      hostElement: document.createElement("div"),
+    };
+    const doc = Object.setPrototypeOf({
+      _root: root,
+    }, BlockCraftDoc.prototype);
+
+    const completion = (BlockCraftDoc.prototype as any)
+      ._reportDocInitAfterFirstVisibleFrame.call(
+        doc,
+        root,
+        "initBySnapshot",
+        25,
+      );
+
+    expect(frameCallbacks.length).toBe(1);
+    expect(log).not.toHaveBeenCalled();
+
+    frameCallbacks.shift()!(16);
+    expect(frameCallbacks.length).toBe(1);
+    expect(log).not.toHaveBeenCalled();
+
+    frameCallbacks.shift()!(32);
+    await completion;
+
+    expect(log).toHaveBeenCalledOnceWith(
+      "%c[Async] initBySnapshot: Doc init took 100ms",
+      "",
+    );
+  });
+});
+
 describe("BlockCraftDoc block navigation facade", () => {
   it("delegates stable block navigation to the document-owned manager", async () => {
     const navigateToBlock = jasmine.createSpy("navigateToBlock").and.resolveTo(true);
@@ -149,6 +190,10 @@ describe("BlockCraftDoc position contract", () => {
 });
 
 describe("BlockCraftDoc model graph lifecycle", () => {
+  function asDoc<T extends object>(doc: T): T {
+    return Object.setPrototypeOf(doc, BlockCraftDoc.prototype);
+  }
+
   const rootSnapshot = {
     id: "root",
     flavour: "root",
@@ -158,30 +203,61 @@ describe("BlockCraftDoc model graph lifecycle", () => {
     children: [],
   } as any;
 
-  it("builds the model after snapshot YBlocks and before editor initialization", () => {
+  it("materializes snapshot data before building the model and mounting the complete root view", () => {
     const calls: string[] = [];
+    const yDoc = new Y.Doc();
+    const yBlockMap = yDoc.getMap<YBlock>("blocks");
     const nativeElement = document.createElement("div");
-    const doc = {
+    const rootRef = {instance: {id: "root"}, location: {nativeElement}};
+    const doc = asDoc({
       _root: null,
-      yBlockMap: {
-        set: () => calls.push("set-yblock"),
-      },
+      virtualization: {enabled: false},
+      yBlockMap,
       vm: {
-        createComponentBySnapshot: (_snapshot: unknown, onCreate: (ref: any) => void) => {
-          onCreate({instance: {id: "root", yBlock: {}}});
-          return {instance: {id: "root"}, location: {nativeElement}};
+        createRootOnlyByYBlock: (yRoot: YBlock, options: {sparse: boolean}) => {
+          calls.push(`create-root:${yRoot.get("id")}:${options.sparse}`);
+          return rootRef;
         },
+        mountAllRootChildren: jasmine.createSpy("mountAllRootChildren"),
       },
       model: {
-        build: (rootId: string) => calls.push(`build-model:${rootId}`),
+        build: (rootId: string) => calls.push(`build-model:${rootId}:${yBlockMap.size}`),
       },
-      _initEditor: () => calls.push("init-editor"),
-    };
+      crud: {pruneChildRefs: jasmine.createSpy("pruneChildRefs")},
+      _initEditor: jasmine.createSpy("_initEditor"),
+    });
+    const runtimeDoc = doc as unknown as BlockCraftDoc;
+    doc.vm.mountAllRootChildren.and.callFake(() => {
+      expect(runtimeDoc.rootId).toBe("root");
+      calls.push("mount-all");
+    });
+    doc._initEditor.and.callFake(() => {
+      calls.push("init-editor");
+    });
     const container = document.createElement("div");
+    const snapshot = {
+      ...rootSnapshot,
+      children: [{
+        id: "paragraph-1",
+        flavour: "paragraph",
+        nodeType: BlockNodeType.editable,
+        props: {},
+        meta: {},
+        children: [{insert: "hello"}],
+      }],
+    } as any;
 
-    BlockCraftDoc.prototype.initBySnapshot.call(doc, rootSnapshot, container);
+    BlockCraftDoc.prototype.initBySnapshot.call(doc, snapshot, container);
 
-    expect(calls).toEqual(["set-yblock", "build-model:root", "init-editor"]);
+    expect(calls).toEqual([
+      "create-root:root:false",
+      "build-model:root:2",
+      "mount-all",
+      "init-editor",
+    ]);
+    expect(yBlockMap.get("root")?.get("children").toArray()).toEqual(["paragraph-1"]);
+    expect((yBlockMap.get("paragraph-1")?.get("children") as unknown as Y.Text).toDelta())
+      .toEqual([{insert: "hello"}]);
     expect(container.firstElementChild).toBe(nativeElement);
   });
 
@@ -202,7 +278,7 @@ describe("BlockCraftDoc model graph lifecycle", () => {
     const nativeElement = document.createElement("div");
     const rootRef = {instance: {id: "root"}, location: {nativeElement}};
     const calls: string[] = [];
-    const doc = {
+    const doc = asDoc({
       _root: null,
       virtualization: {enabled: true},
       yBlockMap,
@@ -211,7 +287,7 @@ describe("BlockCraftDoc model graph lifecycle", () => {
           calls.push(`create-root:${yRoot.get("id")}`);
           return rootRef;
         }),
-        createComponentBySnapshot: jasmine.createSpy("createComponentBySnapshot"),
+        mountAllRootChildren: jasmine.createSpy("mountAllRootChildren"),
       },
       model: {
         build: jasmine.createSpy("build").and.callFake((rootId: string) => {
@@ -219,13 +295,14 @@ describe("BlockCraftDoc model graph lifecycle", () => {
         }),
       },
       _initEditor: jasmine.createSpy("_initEditor"),
-    };
+    });
     const container = document.createElement("div");
 
     BlockCraftDoc.prototype.initBySnapshot.call(doc, snapshot, container);
 
-    expect(doc.vm.createComponentBySnapshot).not.toHaveBeenCalled();
-    expect(doc.vm.createRootOnlyByYBlock).toHaveBeenCalledOnceWith(yBlockMap.get("root"));
+    expect(doc.vm.createRootOnlyByYBlock)
+      .toHaveBeenCalledOnceWith(yBlockMap.get("root"), {sparse: true});
+    expect(doc.vm.mountAllRootChildren).not.toHaveBeenCalled();
     expect(yBlockMap.size).toBe(2);
     expect(yBlockMap.get("root")?.get("children").toArray()).toEqual(["paragraph-1"]);
     expect((yBlockMap.get("paragraph-1")?.get("children") as unknown as Y.Text).toDelta()).toEqual([{insert: "hello"}]);
@@ -233,7 +310,7 @@ describe("BlockCraftDoc model graph lifecycle", () => {
     expect(container.firstElementChild).toBe(nativeElement);
   });
 
-  it("builds the model after dangling YBlock references are pruned", () => {
+  it("prunes dangling YBlock references before editor observers are initialized", () => {
     const yDoc = new Y.Doc();
     const yBlockMap = yDoc.getMap<YBlock>("blocks");
     const yRoot = native2YBlock({
@@ -248,15 +325,16 @@ describe("BlockCraftDoc model graph lifecycle", () => {
     const calls: string[] = [];
     const nativeElement = document.createElement("div");
     const rootRef = {instance: {id: "root"}, location: {nativeElement}};
-    const doc = {
+    const doc = asDoc({
       _root: null,
+      virtualization: {enabled: false},
       vm: {
-        createComponentByYBlocks: (
-          _blocks: unknown,
+        createRootOnlyByYBlock: () => rootRef,
+        mountAllRootChildren: (
           onMissing: (parentId: string, childId: string) => void,
         ) => {
+          calls.push("mount-all");
           onMissing("root", "missing");
-          return {root: rootRef};
         },
       },
       crud: {
@@ -266,12 +344,12 @@ describe("BlockCraftDoc model graph lifecycle", () => {
         build: (rootId: string) => calls.push(`build-model:${rootId}`),
       },
       _initEditor: () => calls.push("init-editor"),
-    };
+    });
     const container = document.createElement("div");
 
     BlockCraftDoc.prototype.initByYBlock.call(doc, yRoot, container);
 
-    expect(calls).toEqual(["prune", "build-model:root", "init-editor"]);
+    expect(calls).toEqual(["build-model:root", "mount-all", "prune", "init-editor"]);
     expect(container.firstElementChild).toBe(nativeElement);
   });
 
@@ -288,23 +366,24 @@ describe("BlockCraftDoc model graph lifecycle", () => {
     yDoc.getMap<YBlock>("blocks").set("root", yRoot);
     const nativeElement = document.createElement("div");
     const rootRef = {instance: {id: "root"}, location: {nativeElement}};
-    const doc = {
+    const doc = asDoc({
       _root: null,
       virtualization: {enabled: true},
       vm: {
         createRootOnlyByYBlock: jasmine.createSpy("createRootOnlyByYBlock").and.returnValue(rootRef),
-        createComponentByYBlocks: jasmine.createSpy("createComponentByYBlocks"),
+        mountAllRootChildren: jasmine.createSpy("mountAllRootChildren"),
       },
       crud: {pruneChildRefs: jasmine.createSpy("pruneChildRefs")},
       model: {build: jasmine.createSpy("build")},
       _initEditor: jasmine.createSpy("_initEditor"),
-    };
+    });
     const container = document.createElement("div");
 
     BlockCraftDoc.prototype.initByYBlock.call(doc, yRoot, container);
 
-    expect(doc.vm.createRootOnlyByYBlock).toHaveBeenCalledOnceWith(yRoot);
-    expect(doc.vm.createComponentByYBlocks).not.toHaveBeenCalled();
+    expect(doc.vm.createRootOnlyByYBlock)
+      .toHaveBeenCalledOnceWith(yRoot, {sparse: true});
+    expect(doc.vm.mountAllRootChildren).not.toHaveBeenCalled();
     expect(doc.model.build).toHaveBeenCalledOnceWith("root");
     expect(container.firstElementChild).toBe(nativeElement);
   });

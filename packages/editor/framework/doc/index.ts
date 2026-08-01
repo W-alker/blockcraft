@@ -1,6 +1,6 @@
 import { DocCRUD } from "./crud";
 import { ComponentRef, Injector, NgZone, ViewContainerRef } from "@angular/core";
-import { BlockCraftError, ErrorCode, getScrollContainer, Logger, nextTick, performanceTest } from "../../global";
+import { BlockCraftError, ErrorCode, getScrollContainer, Logger, nextTick } from "../../global";
 import { DocVM } from "./vm";
 import {
   IBlockSnapshot,
@@ -86,6 +86,9 @@ export const Y_BLOCK_MAP_NAME = 'blocks'
 
 const BLOCK_READONLY_FEEDBACK_MESSAGE = '内容已锁定，无法修改'
 const BLOCK_READONLY_FEEDBACK_COOLDOWN_MS = 1_000
+const DOC_INIT_PERFORMANCE_ALARM_MS = 300
+
+type DocInitMethod = 'initBySnapshot' | 'initByYBlock'
 
 export class BlockCraftDoc {
 
@@ -155,7 +158,8 @@ export class BlockCraftDoc {
     return this._yBlockMap
   }
 
-  // If after init, return root, otherwise throw error
+  // The root is published before child views mount so block lifecycle hooks can
+  // resolve the document during synchronous bootstrap.
   get root() {
     if (!this._root) {
       throw new BlockCraftError(ErrorCode.NoRootError, `Doc not init yet`)
@@ -272,67 +276,78 @@ export class BlockCraftDoc {
     )
   }
 
-  @performanceTest('Doc init', 300)
   // init from a snapshot as root
   initBySnapshot(snapShot: IBlockSnapshot, container: HTMLElement) {
     if (this._root) return
+    const startedAt = performance.now()
 
     if (snapShot.flavour !== 'root') {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `Invalid root snapshot`)
     }
 
-    let comp: BlockCraft.BlockComponentRef
-    if (this.virtualization?.enabled) {
-      let yRoot!: YBlock
-      const writeSnapshot = () => {
-        yRoot = writeSnapshotsToYBlockMap(this.yBlockMap, [snapShot])[0]
-      }
-      const yDoc = this.yBlockMap.doc
-      if (yDoc) yDoc.transact(writeSnapshot)
-      else writeSnapshot()
-      comp = this.vm.createRootOnlyByYBlock(yRoot)
-    } else {
-      comp = this.vm.createComponentBySnapshot(snapShot, (b) => {
-        this.yBlockMap.set(b.instance.id, b.instance.yBlock)
-      })
+    let yRoot!: YBlock
+    const writeSnapshot = () => {
+      yRoot = writeSnapshotsToYBlockMap(this.yBlockMap, [snapShot])[0]
     }
-    this.model.build(comp.instance.id)
-    container.append(comp.location.nativeElement)
-    this._initEditor(comp.instance as any)
+    const yDoc = this.yBlockMap.doc
+    if (yDoc) yDoc.transact(writeSnapshot)
+    else writeSnapshot()
+    this._initByPreparedYRoot(yRoot, container, 'initBySnapshot', startedAt)
   }
 
-  @performanceTest('Doc init', 300)
   initByYBlock(yRoot: YBlock, container: HTMLElement) {
     if (this._root) return
+    const startedAt = performance.now()
     if (yRoot.get('flavour') !== 'root') {
       throw new BlockCraftError(ErrorCode.DefaultFatalError, `Invalid root yBlock`)
     }
 
-    const id = yRoot.get('id')
-    let root: BlockCraft.BlockComponentRef
-    if (this.virtualization?.enabled) {
-      root = this.vm.createRootOnlyByYBlock(yRoot)
-    } else {
-      // 「遇到才兜底」：构建组件树时收集实际遇到的悬空 child 引用（历史协同
-      // 「移动 vs 删除」遗留的孤儿引用，无对应 yBlock）。干净文档一个都不会触发，
-      // 不做任何全文档扫描。
-      const danglingRefs: { parentId: string, childId: string }[] = []
-      const comp = this.vm.createComponentByYBlocks(
-        { [id]: yRoot },
-        (parentId, childId) => danglingRefs.push({ parentId, childId }),
-      )
-      // 构建后、observer 挂载前剪除遇到的悬空引用：构建时它们被跳过渲染，
-      // _compRefs 比模型短，此处剪掉模型里的悬空引用使两者重新对齐；此刻 observer
-      // 未挂，删除不会触发按模型下标 splice（否则会删错有效组件）。
-      if (danglingRefs.length) this.crud.pruneChildRefs(danglingRefs)
-      root = comp[id]
-    }
-    this.model.build(id)
-    container.append(root.location.nativeElement)
-    this._initEditor(root.instance as any)
+    this._initByPreparedYRoot(yRoot, container, 'initByYBlock', startedAt)
   }
 
-  private _initEditor(comp: BlockCraft.IBlockComponents['root']) {
+  /**
+   * Bootstrap both rendering modes through the same model-first root lifecycle.
+   * Virtualization controls only how many root children are mounted, never when
+   * child component lifecycle hooks are allowed to observe the document.
+   */
+  private _initByPreparedYRoot(
+    yRoot: YBlock,
+    container: HTMLElement,
+    initMethod: DocInitMethod,
+    startedAt: number,
+  ): void {
+    const id = yRoot.get('id')
+    const sparse = this.virtualization.enabled
+    const root = this.vm.createRootOnlyByYBlock(yRoot, {sparse})
+    this.model.build(id)
+
+    // Child lifecycle hooks may resolve doc.root/rootId and the model graph.
+    this._root = root.instance as BlockCraft.IBlockComponents['root']
+
+    if (!sparse) {
+      // 「遇到才兜底」：完整挂载创建子树时顺便收集实际遇到的悬空引用，
+      // 不增加第二次全文档扫描。CRUD observer 仍未启动，因此剪除不会按
+      // 模型下标错误地同步到尚在 bootstrap 的组件树。
+      const danglingRefs: {parentId: string, childId: string}[] = []
+      this.vm.mountAllRootChildren((parentId, childId) => {
+        danglingRefs.push({parentId, childId})
+      })
+      if (danglingRefs.length) this.crud.pruneChildRefs(danglingRefs)
+    }
+
+    container.append(root.location.nativeElement)
+    this._initEditor(
+      root.instance as BlockCraft.IBlockComponents['root'],
+      initMethod,
+      startedAt,
+    )
+  }
+
+  private _initEditor(
+    comp: BlockCraft.IBlockComponents['root'],
+    initMethod?: DocInitMethod,
+    startedAt?: number,
+  ) {
     // Publish the configured policy before afterInit callbacks and plugins can
     // issue guarded model writes. The initial `true` only protects bootstrap.
     this.readonlySwitch$.next(this.config.readonly ?? false)
@@ -366,6 +381,9 @@ export class BlockCraftDoc {
       // init theme
       this.toggleTheme(this.config.theme || 'light')
       this._scrollContainer && this.virtualization.init(this._scrollContainer)
+      if (initMethod && startedAt !== undefined) {
+        void this._reportDocInitAfterFirstVisibleFrame(comp, initMethod, startedAt)
+      }
     })
 
     // init hotkeys
@@ -380,6 +398,36 @@ export class BlockCraftDoc {
       return true
     }, { blockId: this.rootId })
 
+  }
+
+  private async _reportDocInitAfterFirstVisibleFrame(
+    comp: BlockCraft.IBlockComponents['root'],
+    initMethod: DocInitMethod,
+    startedAt: number,
+  ): Promise<void> {
+    await this._waitForFirstVisibleFrame(comp.hostElement)
+    if (this._root !== comp) return
+
+    const duration = performance.now() - startedAt
+    console.log(
+      `%c[Async] ${initMethod}: Doc init took ${duration}ms`,
+      duration > DOC_INIT_PERFORMANCE_ALARM_MS ? 'color: red; ' : '',
+    )
+  }
+
+  /**
+   * The first frame lets virtualization reconcile its initial viewport. The
+   * second frame runs only after the browser had a paint opportunity for that
+   * DOM, which is the closest local signal for the editor's first visible frame.
+   */
+  private _waitForFirstVisibleFrame(hostElement: HTMLElement): Promise<void> {
+    const ownerWindow = hostElement.ownerDocument.defaultView
+    const requestFrame = ownerWindow?.requestAnimationFrame.bind(ownerWindow)
+    if (!requestFrame) return new Promise(resolve => setTimeout(resolve, 0))
+
+    return new Promise(resolve => {
+      requestFrame(() => requestFrame(() => resolve()))
+    })
   }
 
   destroy() {

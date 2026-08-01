@@ -140,6 +140,12 @@ describe('DocVM sparse root mounts', () => {
           }
           return null
         },
+        getChildrenIds: (id: string) => {
+          const children = yBlocks.get(id)?.get('children')
+          return children instanceof Y.Array
+            ? children.toArray().filter(childId => yBlocks.has(childId))
+            : []
+        },
       },
       readonlyManager: {
         resolve: () => ({
@@ -153,6 +159,7 @@ describe('DocVM sparse root mounts', () => {
       },
       config: {embeds: []},
       event: {status: {isComposing: false}},
+      isInitialized: true,
       isReadonly: false,
     }
     vm = new DocVM(doc)
@@ -174,6 +181,39 @@ describe('DocVM sparse root mounts', () => {
     expect(root.instance.childrenRenderRef?.length).toBe(0)
     expect(vm.has('a')).toBeFalse()
     expect(vm.has('b')).toBeFalse()
+  })
+
+  it('mounts every reachable root subtree when sparse root mode is disabled', () => {
+    const root = vm.createRootOnlyByYBlock(yBlocks.get('root')!, {sparse: false})
+
+    const children = vm.mountAllRootChildren()
+
+    expect(vm.usesSparseRoot).toBeFalse()
+    expect(children.map(child => child.instance.id)).toEqual(['a', 'b'])
+    expect(root.instance.childrenRenderRef?.ids).toEqual(['a', 'b'])
+    expect(vm.get('a')?.instance.parentId).toBe('root')
+    expect(vm.get('a1')?.instance.parentId).toBe('a')
+    expect(vm.get('b')?.instance.parentId).toBe('root')
+  })
+
+  it('reports dangling child refs while mounting a complete root view', () => {
+    const rootChildren = yBlocks.get('root')!.get('children') as Y.Array<string>
+    const nestedChildren = yBlocks.get('a')!.get('children') as Y.Array<string>
+    rootChildren.insert(1, ['missing'])
+    nestedChildren.insert(0, ['nested-missing'])
+    vm.createRootOnlyByYBlock(yBlocks.get('root')!, {sparse: false})
+    const missing: Array<{parentId: string; childId: string}> = []
+
+    vm.mountAllRootChildren((parentId, childId) => {
+      missing.push({parentId, childId})
+    })
+
+    expect(missing).toEqual([
+      {parentId: 'root', childId: 'missing'},
+      {parentId: 'a', childId: 'nested-missing'},
+    ])
+    expect(vm.getMountedRootChildIds()).toEqual(['a', 'b'])
+    expect(vm.get('a')?.instance.childrenRenderRef?.ids).toEqual(['a1'])
   })
 
   it('ensures one complete root-child subtree without mounting it', () => {
