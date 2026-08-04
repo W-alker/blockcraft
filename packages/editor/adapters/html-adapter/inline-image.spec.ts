@@ -5,6 +5,12 @@ import {
   IBlockSnapshot,
 } from '../../framework';
 import {HtmlAdapter} from './html-adapter';
+import {
+  createInlineShapeDelta,
+  createInlineWordArtDelta,
+  readInlineShapeDelta,
+  readInlineWordArtDelta,
+} from '../../blocks';
 
 class InlineImageTestFileService extends DocFileService {
   uploadImg(): Promise<string> { return Promise.resolve(''); }
@@ -164,5 +170,62 @@ describe('HtmlAdapter inline images', () => {
     expect(new DOMParser().parseFromString(html, 'text/html')
       .querySelector('figure > img')?.getAttribute('src'))
       .toBe('https://cdn.example.com/block.png');
+  });
+
+  it('losslessly round-trips inline shapes and WordArt', async () => {
+    const shape = createInlineShapeDelta({
+      shapeType: 'star',
+      width: 180,
+      height: 120,
+      rotation: 15,
+    }, [{insert: '重点'}], {
+      wrap: true,
+      side: 'right',
+      x: 0.2,
+      gap: 12,
+    })
+    const wordArt = createInlineWordArtDelta({
+      width: 260,
+      height: 84,
+      fontFamily: 'serif',
+      fontSize: 40,
+    }, [{insert: '新品'}])
+    const html = await adapter.toHtml(rootSnapshot([{
+      id: 'inline-objects',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      props: {depth: 0},
+      meta: {},
+      children: [{insert: '前 '}, shape, {insert: ' 中 '}, wordArt],
+    }]))
+    const exported = new DOMParser().parseFromString(html, 'text/html')
+    expect(exported.querySelector(
+      '[data-bc-inline-object="shape"][data-bc-wrap="square"]',
+    )).not.toBeNull()
+    expect(exported.querySelector(
+      '[data-bc-inline-object="word-art"]',
+    )?.textContent).toBe('新品')
+
+    const imported = await adapter.toBlockSnapshot(html)
+    const deltas = (imported.children[0] as IBlockSnapshot).children as any[]
+    const importedShape = deltas.find(delta => delta.insert?.shape)
+    const importedWordArt = deltas.find(delta => delta.insert?.['word-art'])
+    expect(readInlineShapeDelta(importedShape)).toEqual(
+      jasmine.objectContaining({
+        width: 180,
+        height: 120,
+        wrap: true,
+        side: 'right',
+        x: 0.2,
+        text: [{insert: '重点'}],
+      }),
+    )
+    expect(readInlineWordArtDelta(importedWordArt)).toEqual(
+      jasmine.objectContaining({
+        width: 260,
+        height: 84,
+        text: [{insert: '新品'}],
+      }),
+    )
   });
 });

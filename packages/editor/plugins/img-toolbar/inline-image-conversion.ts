@@ -4,6 +4,7 @@ import {
   createInlineImageDelta,
   DeltaInsert,
   IBlockSnapshot,
+  InlineImageWrapOptions,
 } from '../../framework';
 
 const hasCaptionContent = (deltas: DeltaInsert[]) => deltas.some(delta =>
@@ -14,6 +15,7 @@ const hasCaptionContent = (deltas: DeltaInsert[]) => deltas.some(delta =>
 
 export function imageBlockSnapshotToInlineParagraph(
   snapshot: IBlockSnapshot,
+  wrap?: InlineImageWrapOptions,
 ): IBlockSnapshot | null {
   if (
     snapshot.flavour !== 'image' ||
@@ -26,6 +28,7 @@ export function imageBlockSnapshotToInlineParagraph(
     snapshot.props['src'],
     snapshot.props['width'],
     snapshot.props['height'],
+    wrap,
   );
   if (!image) return null;
 

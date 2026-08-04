@@ -44,10 +44,12 @@ describe('ShapeToolbarComponent', () => {
     return component
   }
 
-  it('offers only the three block layouts and never inline', () => {
+  it('offers inline and square-wrap layouts together with block layouts', () => {
     const component = createComponent()
 
     expect(component.layoutOptions.map(item => item.value)).toEqual([
+      'inline',
+      'wrap',
       'top-bottom',
       'under',
       'over',
@@ -137,6 +139,8 @@ describe('ShapeToolbarComponent', () => {
       '轮廓颜色',
       '轮廓粗细',
       '实线/虚线',
+      '嵌入型',
+      '四周型环绕',
       '上下型',
       '衬于文字下方',
       '浮于文字上方',

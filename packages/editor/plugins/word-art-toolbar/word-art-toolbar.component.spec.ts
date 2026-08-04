@@ -27,6 +27,18 @@ describe("WordArtToolbarComponent", () => {
     } as any;
   }
 
+  it("offers inline and square-wrap layouts", () => {
+    const component = new WordArtToolbarComponent({} as any);
+    component.wordArtBlock = createBlock();
+    expect(component.layoutOptions.map((item) => item.value)).toEqual([
+      "inline",
+      "wrap",
+      "top-bottom",
+      "under",
+      "over",
+    ]);
+  });
+
   it("keeps only local style overlay menus and the semantic shadow icon", async () => {
     await TestBed.configureTestingModule({
       imports: [WordArtToolbarComponent],

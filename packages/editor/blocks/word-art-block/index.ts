@@ -13,6 +13,7 @@ import {
 } from './word-art.types'
 
 export * from './word-art.presets'
+export * from './word-art-embed'
 export * from './word-art-resize'
 export * from './word-art.types'
 export {WordArtBlockComponent} from './word-art.block'

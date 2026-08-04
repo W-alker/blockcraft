@@ -17,6 +17,13 @@ export const INLINE_FLOAT_PREVIEW_ATTRIBUTE = 'data-bc-inline-float-preview'
 export const INLINE_FLOAT_LOGICAL_ANCHOR_ATTRIBUTE =
   'data-bc-inline-logical-anchor'
 export const DEFAULT_INLINE_WRAP_MIN_TEXT_WIDTH = 96
+const INLINE_FLOAT_SELECTOR =
+  '[data-bc-inline-float][data-bc-inline-float-layout="wrap"], ' +
+  '[data-bc-inline-float][data-bc-inline-image-layout="wrap"]'
+
+const inlineFloatFrame = (shell: HTMLElement): HTMLElement | null =>
+  shell.querySelector<HTMLElement>('[data-bc-inline-float-frame]') ??
+  shell.querySelector<HTMLElement>('.bc-inline-image-frame')
 
 export interface InlineFloatGeometryInput {
   containerWidth: number
@@ -204,19 +211,34 @@ export function readInlineImageFloatInput(
     containerWidth,
     imageWidth: datasetNumber(
       shell,
-      'bcInlineImageWidth',
+      shell.dataset['bcInlineFloatWidth'] !== undefined
+        ? 'bcInlineFloatWidth'
+        : 'bcInlineImageWidth',
       DEFAULT_INLINE_IMAGE_WIDTH,
     ),
     imageHeight: datasetNumber(
       shell,
-      'bcInlineImageHeight',
+      shell.dataset['bcInlineFloatHeight'] !== undefined
+        ? 'bcInlineFloatHeight'
+        : 'bcInlineImageHeight',
       DEFAULT_INLINE_IMAGE_HEIGHT,
     ),
-    x: datasetNumber(shell, 'bcInlineImageWrapX', 0),
-    side: normalizeSide(shell.dataset['bcInlineImageWrapSide']),
+    x: datasetNumber(
+      shell,
+      shell.dataset['bcInlineFloatX'] !== undefined
+        ? 'bcInlineFloatX'
+        : 'bcInlineImageWrapX',
+      0,
+    ),
+    side: normalizeSide(
+      shell.dataset['bcInlineFloatSide'] ??
+      shell.dataset['bcInlineImageWrapSide'],
+    ),
     gap: datasetNumber(
       shell,
-      'bcInlineImageWrapGap',
+      shell.dataset['bcInlineFloatGap'] !== undefined
+        ? 'bcInlineFloatGap'
+        : 'bcInlineImageWrapGap',
       DEFAULT_INLINE_IMAGE_WRAP_GAP,
     ),
   }
@@ -227,7 +249,7 @@ export function applyInlineImageFloatLayout(
   input: InlineFloatGeometryInput,
 ): InlineFloatGeometry {
   const geometry = resolveInlineFloatGeometry(input)
-  const frame = shell.querySelector<HTMLElement>('.bc-inline-image-frame')
+  const frame = inlineFloatFrame(shell)
 
   shell.removeAttribute(INLINE_FLOAT_LOGICAL_ANCHOR_ATTRIBUTE)
   shell.dataset['bcInlineImageResolvedTextSide'] = geometry.resolvedTextSide
@@ -280,7 +302,7 @@ function clearInlineImageFloatLayout(shell: HTMLElement): void {
   ]) {
     shell.style.removeProperty(property)
   }
-  const frame = shell.querySelector<HTMLElement>('.bc-inline-image-frame')
+  const frame = inlineFloatFrame(shell)
   if (!frame) return
   for (const property of [
     'left',
@@ -289,7 +311,6 @@ function clearInlineImageFloatLayout(shell: HTMLElement): void {
     'position',
     'visibility',
     'z-index',
-    'transform',
   ]) {
     frame.style.removeProperty(property)
   }
@@ -304,7 +325,7 @@ function prepareInlineImageLogicalAnchor(
   shell.style.cssFloat = 'none'
   shell.style.width = '0px'
   shell.style.height = '0px'
-  const frame = shell.querySelector<HTMLElement>('.bc-inline-image-frame')
+  const frame = inlineFloatFrame(shell)
   if (!frame) return
   frame.style.position = 'absolute'
   frame.style.left = `${geometry.imageX}px`
@@ -438,7 +459,7 @@ export class InlineFloatLayoutController {
         (leaf): leaf is EmbedBlot =>
           leaf instanceof EmbedBlot &&
           leaf.embedElement.matches(
-            '[data-bc-inline-float][data-bc-inline-image-layout="wrap"]',
+            INLINE_FLOAT_SELECTOR,
           ),
       )
         .map(anchor => ({
@@ -550,7 +571,7 @@ export class InlineFloatLayoutController {
   private _shells(): HTMLElement[] {
     return Array.from(
       this.container.querySelectorAll<HTMLElement>(
-        '[data-bc-inline-float][data-bc-inline-image-layout="wrap"]',
+        INLINE_FLOAT_SELECTOR,
       ),
     )
   }

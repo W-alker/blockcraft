@@ -217,15 +217,31 @@ function estimateInlineImageLineHeight(
     DEFAULT_INLINE_IMAGE_WIDTH
 
   for (const delta of deltas) {
-    if (
-      typeof delta.insert !== 'object' ||
-      delta.insert === null ||
-      typeof delta.insert['image'] !== 'string'
-    ) {
+    if (typeof delta.insert !== 'object' || delta.insert === null) {
       continue
     }
-
-    const data = readInlineImageDelta(delta as DeltaInsertEmbed)
+    const isImage = typeof delta.insert['image'] === 'string'
+    const isInlineObject =
+      typeof delta.insert['shape'] === 'string' ||
+      typeof delta.insert['word-art'] === 'string'
+    if (!isImage && !isInlineObject) continue
+    const data = isImage
+      ? readInlineImageDelta(delta as DeltaInsertEmbed)
+      : {
+          width: positiveNumber(delta.attributes?.['width']) ?? undefined,
+          height: positiveNumber(delta.attributes?.['height']) ?? undefined,
+          wrap: delta.attributes?.['wrap'] === true,
+          side: delta.attributes?.['side'] === 'left' ||
+              delta.attributes?.['side'] === 'right'
+            ? delta.attributes['side']
+            : 'auto',
+          x: typeof delta.attributes?.['x'] === 'number'
+            ? delta.attributes['x']
+            : undefined,
+          gap: typeof delta.attributes?.['gap'] === 'number'
+            ? delta.attributes['gap']
+            : undefined,
+        }
     const rawWidth = positiveNumber(data.width)
     const rawHeight = positiveNumber(data.height)
     const width =
@@ -250,7 +266,7 @@ function estimateInlineImageLineHeight(
       imageWidth: width,
       imageHeight: height,
       x: data.x,
-      side: data.side,
+      side: data.side as 'auto' | 'left' | 'right' | undefined,
       gap: data.gap,
     })
     wrappedExclusionHeight += geometry.exclusionHeight

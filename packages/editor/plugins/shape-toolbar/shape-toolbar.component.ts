@@ -8,7 +8,7 @@ import {
 } from '@angular/core'
 import {
   BLOCK_OBJECT_LAYOUT_OPTIONS,
-  type BlockObjectBlockLayout,
+  type BlockObjectLayout,
 } from '../../framework'
 import {
   BcFloatToolbarComponent,
@@ -22,6 +22,11 @@ import {
   type ShapeVerticalAlign,
 } from '../../blocks/shape-block'
 import {NzTooltipDirective} from 'ng-zorro-antd/tooltip'
+import {
+  INLINE_OBJECT_WRAP_LAYOUT_OPTION,
+} from '../object-layout/inline-object-toolbar.component'
+
+export type ShapeObjectLayout = BlockObjectLayout | 'wrap'
 
 export type ShapeToolbarAction =
   | {name: 'shape-type'; value: ShapeKind}
@@ -33,7 +38,7 @@ export type ShapeToolbarAction =
   | {name: 'text-color'; value: string}
   | {name: 'text-align'; value: ShapeTextAlign}
   | {name: 'vertical-align'; value: ShapeVerticalAlign}
-  | {name: 'object-layout'; value: BlockObjectBlockLayout}
+  | {name: 'object-layout'; value: ShapeObjectLayout}
   | {name: 'move-forward'}
   | {name: 'move-backward'}
   | {name: 'delete'}
@@ -355,10 +360,11 @@ export class ShapeToolbarComponent {
   @Output()
   readonly action = new EventEmitter<ShapeToolbarAction>()
 
-  readonly layoutOptions = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
-    (item): item is typeof item & {value: BlockObjectBlockLayout} =>
-      item.value !== 'inline',
-  )
+  readonly layoutOptions = [
+    BLOCK_OBJECT_LAYOUT_OPTIONS[0],
+    INLINE_OBJECT_WRAP_LAYOUT_OPTION,
+    ...BLOCK_OBJECT_LAYOUT_OPTIONS.slice(1),
+  ] as const
   readonly strokeWidthOptions = [
     {value: 0, label: '无'},
     {value: 1, label: '1 px'},
@@ -370,7 +376,7 @@ export class ShapeToolbarComponent {
 
   constructor(readonly cdr: ChangeDetectorRef) {}
 
-  get objectLayout(): BlockObjectBlockLayout {
+  get objectLayout(): BlockObjectLayout {
     return this.shapeBlock.doc.placement.getObjectLayout(this.shapeBlock)
   }
 

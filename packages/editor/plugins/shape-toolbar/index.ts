@@ -16,6 +16,9 @@ import {
   ShapeToolbarComponent,
   type ShapeToolbarAction,
 } from './shape-toolbar.component'
+import {
+  InlineObjectInteractionController,
+} from '../object-layout/inline-object-interaction'
 
 export * from './shape-toolbar.component'
 
@@ -28,8 +31,15 @@ export class ShapeToolbarPlugin extends DocPlugin {
   private readonly _closeToolbar$ = new Subject<void>()
   private _toolbarRef?: OverlayRef
   private _pendingShapeClickCleanup?: () => void
+  private _inlineObject?: InlineObjectInteractionController
 
   init(): void {
+    this._inlineObject = new InlineObjectInteractionController(
+      this.doc,
+      'shape',
+      this.closeToolbar,
+    )
+    this._inlineObject.init()
     this._subscription.add(
       this.doc.subscribeReadonlyChange(readonly => {
         if (readonly) this.closeToolbar()
@@ -68,6 +78,8 @@ export class ShapeToolbarPlugin extends DocPlugin {
   }
 
   destroy(): void {
+    this._inlineObject?.destroy()
+    this._inlineObject = undefined
     this.closeToolbar()
     this._pendingShapeClickCleanup?.()
     this._subscription.unsubscribe()
@@ -154,6 +166,10 @@ export class ShapeToolbarPlugin extends DocPlugin {
       return
     }
     if (action.name === 'object-layout') {
+      if (action.value === 'wrap') {
+        this._inlineObject?.convertBlockToInline(block, true)
+        return
+      }
       this.doc.placement.setObjectLayout(block, action.value)
       this.closeToolbar()
       return

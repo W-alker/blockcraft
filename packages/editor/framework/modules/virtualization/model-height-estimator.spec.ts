@@ -46,6 +46,49 @@ describe('estimateModelBlockHeight', () => {
     expect(estimateModelBlockHeight(doc as any, 'paragraph')).toBe(300)
   })
 
+  it('reserves model height for wrapped inline shapes and WordArt', () => {
+    const shapeDoc = createDoc({
+      paragraph: {
+        flavour: 'paragraph',
+        nodeType: BlockNodeType.editable,
+        props: {},
+        children: [],
+        deltas: [{
+          insert: {shape: '{}'},
+          attributes: {
+            width: 180,
+            height: 120,
+            wrap: true,
+            side: 'right',
+            x: 0,
+            gap: 12,
+          },
+        }],
+      },
+    })
+    const wordArtDoc = createDoc({
+      paragraph: {
+        flavour: 'paragraph',
+        nodeType: BlockNodeType.editable,
+        props: {},
+        children: [],
+        deltas: [{
+          insert: {'word-art': '{}'},
+          attributes: {width: 260, height: 84},
+        }],
+      },
+    })
+    shapeDoc.objectSizing.resolve.and.returnValue(null)
+    shapeDoc.objectSizing.rootContentWidth = 600
+    wordArtDoc.objectSizing.resolve.and.returnValue(null)
+    wordArtDoc.objectSizing.rootContentWidth = 600
+
+    expect(estimateModelBlockHeight(shapeDoc as any, 'paragraph'))
+      .toBeGreaterThanOrEqual(132)
+    expect(estimateModelBlockHeight(wordArtDoc as any, 'paragraph'))
+      .toBeGreaterThanOrEqual(84)
+  })
+
   it('uses the shared 4:3 fallback for unsized inline images', () => {
     const doc = createDoc({
       paragraph: {

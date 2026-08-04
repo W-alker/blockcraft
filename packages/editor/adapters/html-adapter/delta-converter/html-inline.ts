@@ -4,8 +4,17 @@ import type { Element } from 'hast';
 import { collapseWhiteSpace } from 'collapse-white-space';
 import {
   createInlineImageDelta,
+  type DeltaInsertEmbed,
   InlineImageWrapSide,
 } from '../../../framework';
+import {
+  INLINE_SHAPE_EMBED_KEY,
+  INLINE_WORD_ART_EMBED_KEY,
+  createInlineShapeDelta,
+  createInlineWordArtDelta,
+  readInlineShapeDelta,
+  readInlineWordArtDelta,
+} from '../../../blocks';
 
 const isElement = (ast: HtmlAST): ast is Element => {
   return ast.type === 'element';
@@ -59,6 +68,55 @@ export const htmlImageToDeltaMatcher: HtmlASTToDeltaMatcher = {
         : undefined,
     );
     return delta ? [delta] : [];
+  },
+};
+
+export const htmlInlineObjectToDeltaMatcher: HtmlASTToDeltaMatcher = {
+  name: 'inline-object',
+  match: ast =>
+    isElement(ast) &&
+    ast.tagName === 'span' &&
+    (
+      ast.properties?.['dataBcInlineObject'] === 'shape' ||
+      ast.properties?.['dataBcInlineObject'] === 'word-art'
+    ),
+  toDelta: ast => {
+    if (!isElement(ast)) return []
+    const kind = ast.properties?.['dataBcInlineObject']
+    const payload = ast.properties?.['dataBcInlineObjectPayload']
+    if (
+      (kind !== 'shape' && kind !== 'word-art') ||
+      typeof payload !== 'string'
+    ) return []
+    const width = Number(ast.properties?.['dataBcInlineObjectWidth'])
+    const height = Number(ast.properties?.['dataBcInlineObjectHeight'])
+    const side = ast.properties?.['dataBcWrapSide']
+    const attributes = {
+      ...(Number.isFinite(width) && width > 0 ? {width} : {}),
+      ...(Number.isFinite(height) && height > 0 ? {height} : {}),
+      ...(ast.properties?.['dataBcWrap'] === 'square'
+        ? {
+            wrap: true as const,
+            side: typeof side === 'string'
+              ? side as InlineImageWrapSide
+              : undefined,
+            x: Number(ast.properties?.['dataBcWrapX']),
+            gap: Number(ast.properties?.['dataBcWrapGap']),
+          }
+        : {}),
+    }
+    if (kind === 'shape') {
+      const data = readInlineShapeDelta({
+        insert: {[INLINE_SHAPE_EMBED_KEY]: payload},
+        attributes,
+      } as DeltaInsertEmbed)
+      return [createInlineShapeDelta(data.props, data.text, data)]
+    }
+    const data = readInlineWordArtDelta({
+      insert: {[INLINE_WORD_ART_EMBED_KEY]: payload},
+      attributes,
+    } as DeltaInsertEmbed)
+    return [createInlineWordArtDelta(data.props, data.text, data)]
   },
 };
 
@@ -270,6 +328,7 @@ export const htmlMathInlineToDeltaMatcher: HtmlASTToDeltaMatcher = {
 };
 
 export const htmlInlineToDeltaMatchers: HtmlASTToDeltaMatcher[] = [
+  htmlInlineObjectToDeltaMatcher,
   htmlImageToDeltaMatcher,
   htmlTextToDeltaMatcher,
   htmlTextLikeElementToDeltaMatcher,

@@ -5,6 +5,10 @@ import {
   IBlockSnapshot,
 } from '../../framework';
 import {MarkdownAdapter} from './markdown-adapter';
+import {
+  createInlineShapeDelta,
+  createInlineWordArtDelta,
+} from '../../blocks';
 
 class InlineImageTestFileService extends DocFileService {
   uploadImg(): Promise<string> { return Promise.resolve('uploaded-image'); }
@@ -102,5 +106,23 @@ describe('MarkdownAdapter inline images', () => {
     expect(image).toEqual({
       insert: {image: 'https://cdn.example.com/wrapped.png'},
     });
+  });
+
+  it('degrades inline shapes and WordArt to readable text', async () => {
+    const markdown = await adapter.toMarkdown(rootSnapshot([{
+      id: 'inline-objects',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      props: {depth: 0},
+      meta: {},
+      children: [
+        {insert: '流程：'},
+        createInlineShapeDelta({shapeType: 'diamond'}, [{insert: '判断'}]),
+        {insert: ' '},
+        createInlineWordArtDelta({}, [{insert: '完成'}]),
+      ],
+    }]))
+
+    expect(markdown.trim()).toBe('流程：判断 完成')
   });
 });

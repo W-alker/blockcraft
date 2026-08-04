@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-03
+> Last updated: 2026-08-04
 
 ## Theme Structure
 
@@ -201,6 +201,25 @@ body[blockcraft-theme="dark"] {
   --bc-table-fullscreen-bg: var(--bc-bg-primary, #171d24);
 }
 ```
+
+### Inline Object Views
+
+Bundled inline shapes and WordArt share
+`.bc-inline-object-shell > .bc-inline-object-frame`. The frame is also marked
+with `[data-bc-inline-float-frame]`; wrapped shells use
+`[data-bc-inline-float-layout="wrap"]`. Shape-specific presentation uses
+`.bc-inline-shape-frame`, `.bc-inline-shape__geometry` and
+`.bc-inline-shape__text`; WordArt uses `.bc-inline-word-art-frame` and
+`.bc-inline-word-art__text`.
+
+`.bc-inline-object-shell--selected` is ephemeral Plugin UI state and controls
+the default active-color outline. Host themes may refine that outline and the
+presentation classes, but must not change the frame's positioned geometry,
+remove the data attributes or add/remove the selected class directly.
+During a Shape/WordArt Embed drag, the presentation-only
+`.bc-inline-object-drag-proxy` is appended under `body`. Themes may refine its
+opacity/outline, but it must remain inert and must not participate in editor
+layout or serialization.
 
 ### Pagination View
 

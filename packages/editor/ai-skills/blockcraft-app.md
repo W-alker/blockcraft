@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-07-31
+> Last updated: 2026-08-04
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -285,6 +285,13 @@ BlockController-aligned projection for insertion UIs; internal child schemas,
 root and infrastructure blocks remain registered but hidden. The factory
 throws on duplicate block flavours, embed names or plugin names, including
 duplicates introduced through `additionalSchemas` / `additionalEmbeds`.
+
+The bundled `embeds` list includes fresh `shape` and `word-art` converters, so
+the bundled Shape/WordArt toolbar Plugins can switch those blocks to inline or
+square-wrap representations. A manually assembled host must pair each Plugin
+with `createInlineShapeEmbedConverter()` or
+`createInlineWordArtEmbedConverter()` in `DocConfig.embeds`; without the
+converter the Plugin warns and does not write an unrenderable Delta.
 
 ```typescript
 const schemas = new SchemaManager([

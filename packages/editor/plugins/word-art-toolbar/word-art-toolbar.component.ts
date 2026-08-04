@@ -9,7 +9,7 @@ import {
 import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 import {
   BLOCK_OBJECT_LAYOUT_OPTIONS,
-  type BlockObjectBlockLayout,
+  type BlockObjectLayout,
 } from "../../framework";
 import {
   BcFloatToolbarComponent,
@@ -23,10 +23,15 @@ import {
   type WordArtHorizontalAlign,
   type WordArtVerticalAlign,
 } from "../../blocks/word-art-block";
+import {
+  INLINE_OBJECT_WRAP_LAYOUT_OPTION,
+} from "../object-layout/inline-object-toolbar.component";
+
+export type WordArtObjectLayout = BlockObjectLayout | "wrap";
 
 export type WordArtToolbarAction =
   | { name: "update-props"; value: Partial<WordArtBlockProps> }
-  | { name: "object-layout"; value: BlockObjectBlockLayout }
+  | { name: "object-layout"; value: WordArtObjectLayout }
   | { name: "move-forward" }
   | { name: "move-backward" }
   | { name: "delete" };
@@ -555,10 +560,11 @@ export class WordArtToolbarComponent {
     { value: "perspective-left", label: "左透视" },
     { value: "perspective-right", label: "右透视" },
   ];
-  readonly layoutOptions = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
-    (item): item is typeof item & { value: BlockObjectBlockLayout } =>
-      item.value !== "inline",
-  );
+  readonly layoutOptions = [
+    BLOCK_OBJECT_LAYOUT_OPTIONS[0],
+    INLINE_OBJECT_WRAP_LAYOUT_OPTION,
+    ...BLOCK_OBJECT_LAYOUT_OPTIONS.slice(1),
+  ] as const;
   readonly horizontalAligns: ReadonlyArray<{
     value: WordArtHorizontalAlign;
     label: string;
@@ -584,7 +590,7 @@ export class WordArtToolbarComponent {
     return this.wordArtBlock.wordArtProps;
   }
 
-  get objectLayout(): BlockObjectBlockLayout {
+  get objectLayout(): BlockObjectLayout {
     return this.wordArtBlock.doc.placement.getObjectLayout(this.wordArtBlock);
   }
 

@@ -16,6 +16,7 @@ import {
 } from './shape.types'
 
 export * from './shape-definitions'
+export * from './shape-embed'
 export * from './shape-icon.component'
 export * from './shape-resizer.component'
 export * from './shape.types'

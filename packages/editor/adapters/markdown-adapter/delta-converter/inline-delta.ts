@@ -1,6 +1,13 @@
 import type { PhrasingContent } from 'mdast';
 import {InlineDeltaToMarkdownAdapterMatcher} from "../delta-converter";
 import {DeltaInsertEmbed, readInlineImageDelta} from '../../../framework';
+import {
+  INLINE_SHAPE_EMBED_KEY,
+  INLINE_WORD_ART_EMBED_KEY,
+  inlineObjectPlainText,
+  readInlineShapeDelta,
+  readInlineWordArtDelta,
+} from '../../../blocks';
 
 export const boldDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatcher =
   {
@@ -110,8 +117,28 @@ export const imageDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMat
   }),
 };
 
+export const inlineObjectDeltaToMarkdownAdapterMatcher:
+  InlineDeltaToMarkdownAdapterMatcher = {
+    name: 'inline-object',
+    match: delta =>
+      !!delta.insert &&
+      typeof delta.insert === 'object' &&
+      (
+        INLINE_SHAPE_EMBED_KEY in delta.insert ||
+        INLINE_WORD_ART_EMBED_KEY in delta.insert
+      ),
+    toAST: delta => {
+      const embed = delta as DeltaInsertEmbed
+      const data = INLINE_SHAPE_EMBED_KEY in embed.insert
+        ? readInlineShapeDelta(embed)
+        : readInlineWordArtDelta(embed)
+      return {type: 'text', value: inlineObjectPlainText(data.text)}
+    },
+  };
+
 export const inlineDeltaToMarkdownAdapterMatchers: InlineDeltaToMarkdownAdapterMatcher[] =
   [
+    inlineObjectDeltaToMarkdownAdapterMatcher,
     imageDeltaToMarkdownAdapterMatcher,
     latexDeltaToMarkdownAdapterMatcher,
     linkDeltaToMarkdownAdapterMatcher,

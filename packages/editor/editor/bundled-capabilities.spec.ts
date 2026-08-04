@@ -17,6 +17,8 @@ describe('bundled editor capabilities', () => {
     expect(pluginNames).toContain('EmbedFrameExtensionPlugin')
     expect(pluginNames).toContain('bookmark-block-extension')
     expect(pluginNames).toContain('word-art-toolbar')
+    expect(capabilities.embeds.map(([name]) => name)).toContain('shape')
+    expect(capabilities.embeds.map(([name]) => name)).toContain('word-art')
   })
 
   it('creates fresh stateful instances for every document', () => {

@@ -4,7 +4,7 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-08-01
+> Last updated: 2026-08-04
 
 ## What is an Inline Embed?
 
@@ -178,6 +178,8 @@ if (block && block instanceof EditableBlockComponent) {
 | Embed Key | Converter Location | Description |
 |-----------|-------------------|-------------|
 | `image` | `framework/block-std/inline/image-embed.ts` | Built-in inline image; custom same-key converter wins |
+| `shape` | `blocks/shape-block/shape-embed.ts` | Bundled inline/wrapped shape with lossless props + nested text payload |
+| `word-art` | `blocks/word-art-block/word-art-embed.ts` | Bundled inline/wrapped WordArt with lossless presentation + text payload |
 | `mention` | `editor/editor.ts` (inline) | @mention with user ID |
 | `latex` | `editor/editor.ts` (inline) | KaTeX formula rendering |
 
@@ -196,6 +198,40 @@ if (block && block instanceof EditableBlockComponent) {
   and does not infer a caption.
 - Reverse conversion is rejected when the parent Schema does not allow an
   `image` child.
+
+## Bundled Shape and WordArt Embeds
+
+`createBundledEditorCapabilities()` registers fresh `shape` and `word-art`
+converters together with `ShapeToolbarPlugin` and `WordArtToolbarPlugin`.
+Manual host assembly must register the matching converter and Plugin:
+
+```typescript
+const doc = new BlockCraftDoc({
+  // ...
+  embeds: [
+    ['shape', createInlineShapeEmbedConverter()],
+    ['word-art', createInlineWordArtEmbedConverter()],
+  ],
+  plugins: [new ShapeToolbarPlugin(), new WordArtToolbarPlugin()],
+})
+```
+
+Both payloads are JSON strings because `DeltaInsertEmbed` values stay within
+the primitive `SimpleBasicType` contract. Short Delta attributes carry
+`width/height` and optional `wrap/side/x/gap`, allowing the shared float layout
+and model-only virtualization estimator to work without parsing presentation
+payloads. Each object remains one model unit.
+
+The generated view uses
+`.bc-inline-object-shell[data-bc-inline-object="shape|word-art"]` and
+`.bc-inline-object-frame[data-bc-inline-float-frame]`. A wrapped shell also
+projects `data-bc-inline-float-layout="wrap"`. Clicking it calls
+`EditableBlockComponent.setInlineRange(offset, 1)`, keeping copy/cut and native
+selection aligned. The inline toolbar changes layout and text side; detailed
+shape/WordArt editing is restored by converting back to a block.
+
+HTML uses a `<span data-bc-inline-object>` with the lossless payload and wrap
+metadata. Markdown deliberately emits only readable object text.
 
 ## Checklist
 

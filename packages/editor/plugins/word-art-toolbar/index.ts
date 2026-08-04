@@ -14,6 +14,9 @@ import {
   WordArtToolbarComponent,
   type WordArtToolbarAction,
 } from './word-art-toolbar.component'
+import {
+  InlineObjectInteractionController,
+} from '../object-layout/inline-object-interaction'
 
 export * from './word-art-toolbar.component'
 export * from './word-art-transform-overlay.component'
@@ -31,8 +34,15 @@ export class WordArtToolbarPlugin extends DocPlugin {
   private _activeResizer?: HTMLElement
   private _toolbarPointerActive = false
   private _closing = false
+  private _inlineObject?: InlineObjectInteractionController
 
   init(): void {
+    this._inlineObject = new InlineObjectInteractionController(
+      this.doc,
+      'word-art',
+      this.closeOverlays,
+    )
+    this._inlineObject.init()
     this._subscription.add(
       this.doc.subscribeReadonlyChange((readonly) => {
         if (!readonly) return
@@ -67,6 +77,8 @@ export class WordArtToolbarPlugin extends DocPlugin {
   }
 
   destroy(): void {
+    this._inlineObject?.destroy()
+    this._inlineObject = undefined
     this.closeOverlays()
     this._subscription.unsubscribe()
     this._closeOverlays$.complete()
@@ -181,6 +193,10 @@ export class WordArtToolbarPlugin extends DocPlugin {
       return
     }
     if (action.name === 'object-layout') {
+      if (action.value === 'wrap') {
+        this._inlineObject?.convertBlockToInline(block, true)
+        return
+      }
       this.doc.placement.setObjectLayout(block, action.value)
       this.closeOverlays()
       return

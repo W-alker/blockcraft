@@ -1,6 +1,13 @@
 import {InlineDeltaToHtmlAdapterMatcher} from "../delta-converter";
 import {InlineHtmlAST} from "../../types";
 import {DeltaInsertEmbed, readInlineImageDelta} from "../../../framework";
+import {
+  INLINE_SHAPE_EMBED_KEY,
+  INLINE_WORD_ART_EMBED_KEY,
+  inlineObjectPlainText,
+  readInlineShapeDelta,
+  readInlineWordArtDelta,
+} from '../../../blocks';
 
 
 export const boldDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
@@ -211,8 +218,57 @@ export const imageDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
   },
 };
 
+export const inlineObjectDeltaToHtmlAdapterMatcher:
+  InlineDeltaToHtmlAdapterMatcher = {
+    name: 'inline-object',
+    match: delta =>
+      !!delta.insert &&
+      typeof delta.insert === 'object' &&
+      (
+        INLINE_SHAPE_EMBED_KEY in delta.insert ||
+        INLINE_WORD_ART_EMBED_KEY in delta.insert
+      ),
+    toAST: delta => {
+      const embed = delta as DeltaInsertEmbed
+      const kind = INLINE_SHAPE_EMBED_KEY in embed.insert
+        ? 'shape'
+        : 'word-art'
+      const data = kind === 'shape'
+        ? readInlineShapeDelta(embed)
+        : readInlineWordArtDelta(embed)
+      const payload = String(embed.insert[
+        kind === 'shape'
+          ? INLINE_SHAPE_EMBED_KEY
+          : INLINE_WORD_ART_EMBED_KEY
+      ] ?? '')
+      return {
+        type: 'element',
+        tagName: 'span',
+        properties: {
+          className: ['bc-inline-object', `bc-inline-${kind}`],
+          dataBcInlineObject: kind,
+          dataBcInlineObjectPayload: payload,
+          dataBcInlineObjectWidth: data.width,
+          dataBcInlineObjectHeight: data.height,
+          ...(data.wrap
+            ? {
+                dataBcWrap: 'square',
+                dataBcWrapSide: data.side,
+                dataBcWrapX: data.x,
+                ...(data.gap === undefined
+                  ? {}
+                  : {dataBcWrapGap: data.gap}),
+              }
+            : {}),
+        },
+        children: [{type: 'text', value: inlineObjectPlainText(data.text)}],
+      };
+    },
+  };
+
 export const inlineDeltaToHtmlAdapterMatchers: InlineDeltaToHtmlAdapterMatcher[] =
   [
+    inlineObjectDeltaToHtmlAdapterMatcher,
     imageDeltaToHtmlAdapterMatcher,
     latexDeltaToHtmlAdapterMatcher,
     boldDeltaToHtmlAdapterMatcher,

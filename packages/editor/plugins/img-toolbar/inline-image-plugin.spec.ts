@@ -161,6 +161,7 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
       },
       textDeltas: jasmine.createSpy('textDeltas').and.callFake(() => deltas),
       textLength: 3,
+      setInlineRange: jasmine.createSpy('setInlineRange'),
       formatText: jasmine.createSpy('formatText'),
     };
     const rootBlock = {
@@ -307,6 +308,15 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
       }), jasmine.any(Subject), jasmine.any(Function));
     expect(h.shell.querySelector('inline-image-resizer')).not.toBeNull();
     expect(h.shell.classList.contains('bc-inline-image-shell--selected')).toBeTrue();
+    expect(h.paragraphBlock.setInlineRange).toHaveBeenCalledOnceWith(1, 1);
+
+    h.image.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true,
+      button: 0,
+      cancelable: true,
+    }));
+    expect(h.paragraphBlock.setInlineRange).toHaveBeenCalledTimes(2);
+    expect(h.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
 
     h.plugin.closeInlineToolbar();
 
@@ -322,6 +332,7 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
 
     expect(h.doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
     expect(h.shell.querySelector('inline-image-resizer')).toBeNull();
+    expect(h.paragraphBlock.setInlineRange).toHaveBeenCalledOnceWith(1, 1);
     h.destroy();
   });
 

@@ -41,6 +41,20 @@ describe("float text toolbar selection guard", () => {
     } as any;
   };
 
+  const makeInlineEmbedSelection = (mixed = false) => {
+    const selection = makeTextSelection();
+    const block = selection.firstBlock;
+    block.textLength = 3;
+    block.textDeltas = () => [
+      {insert: "前"},
+      {insert: {image: "https://cdn.example.com/a.png"}},
+      {insert: "后"},
+    ];
+    selection.start.offset = mixed ? 0 : 1;
+    selection.end.offset = 2;
+    return selection;
+  };
+
   const makeTableCellSelection = () => ({
     collapsed: false,
     isAllSelected: false,
@@ -177,6 +191,8 @@ describe("float text toolbar selection guard", () => {
 
   it("accepts only real text-range selections", () => {
     expect(isFloatTextToolbarSelection(makeTextSelection())).toBeTrue();
+    expect(isFloatTextToolbarSelection(makeInlineEmbedSelection())).toBeFalse();
+    expect(isFloatTextToolbarSelection(makeInlineEmbedSelection(true))).toBeTrue();
     expect(isFloatTextToolbarSelection(makeTableCellSelection())).toBeFalse();
     expect(isFloatTextToolbarSelection(makeBoundarySelection())).toBeFalse();
     expect(isFloatTextToolbarSelection(makeGapSelection())).toBeFalse();
@@ -192,6 +208,21 @@ describe("float text toolbar selection guard", () => {
 
   it("does not open rich text toolbar for table-cell selections", fakeAsync(() => {
     const selectionValue = {current: makeTableCellSelection()};
+    const {doc, selection$, getSelectionRects} = makeDoc(selectionValue);
+    const plugin = new FloatTextToolbarPlugin();
+    (plugin as any).doc = doc;
+
+    plugin.init();
+    selection$.next(selectionValue.current);
+    tick(351);
+
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    expect(getSelectionRects).not.toHaveBeenCalled();
+    plugin.destroy();
+  }));
+
+  it("does not open rich text toolbar for an inline-image-only range", fakeAsync(() => {
+    const selectionValue = {current: makeInlineEmbedSelection()};
     const {doc, selection$, getSelectionRects} = makeDoc(selectionValue);
     const plugin = new FloatTextToolbarPlugin();
     (plugin as any).doc = doc;

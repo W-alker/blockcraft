@@ -45,6 +45,7 @@ import {
 import {
   InlineImageDragProxy,
   resolveInlineImageDropTarget,
+  resolveInlineImageOverlapTarget,
 } from './inline-image-drag';
 import {
   InlineImageResizeSession,
@@ -79,6 +80,12 @@ interface InlineImageIntrinsicSizeEventDetail {
   src: string
   width: number
   height: number
+}
+
+interface WrappedInlineTextTarget {
+  block: EditableBlockComponent
+  offset: number
+  normalizedX: number
 }
 
 export interface ImgToolbarPluginOptions {
@@ -436,7 +443,12 @@ export class ImgToolbarPlugin extends DocPlugin {
                 });
                 break;
               case "object-layout":
-                if (
+                if (v.value === 'wrap') {
+                  this._convertImageBlockToInline(
+                    imgBlock as BlockCraft.IBlockComponents['image'],
+                    true,
+                  );
+                } else if (
                   v.value === 'inline' ||
                   v.value === 'top-bottom' ||
                   v.value === 'under' ||
@@ -558,19 +570,14 @@ export class ImgToolbarPlugin extends DocPlugin {
       this.closeInlineToolbar();
       return;
     }
-    if (this._inlineContext?.shell === shell) return;
-    if (this.doc.isReadonly) {
-      this.closeInlineToolbar();
-      return;
-    }
+    const alreadyActive = this._inlineContext?.shell === shell;
 
     const blockId = closetBlockId(shell);
     if (!blockId) return;
     const block = this._getLiveBlockById(blockId);
     if (
       !block ||
-      !this.doc.isEditable(block) ||
-      this.doc.readonlyManager.isReadonly(block)
+      !this.doc.isEditable(block)
     ) {
       this.closeInlineToolbar();
       return;
@@ -590,6 +597,28 @@ export class ImgToolbarPlugin extends DocPlugin {
 
     event.preventDefault();
     event.stopPropagation();
+    // The shell's contenteditable=false wrapper prevents the browser from
+    // creating a useful native selection, and preventDefault above deliberately
+    // suppresses its fallback caret placement. Select the one-character Embed
+    // through SelectionManager so the canonical model selection and DOM Range
+    // move together; copy/cut can then operate on the image delta.
+    try {
+      editable.setInlineRange(offset, 1);
+    } catch {
+      this.closeInlineToolbar();
+      return;
+    }
+    if (
+      this.doc.isReadonly ||
+      this.doc.readonlyManager.isReadonly(block)
+    ) {
+      this.closeInlineToolbar();
+      return;
+    }
+    // A repeated click must still restore the Embed selection, but does not
+    // need to tear down and rebuild the already connected controls.
+    if (alreadyActive) return;
+
     this.closeToolbar();
     this.closeInlineToolbar();
 
@@ -1241,6 +1270,7 @@ export class ImgToolbarPlugin extends DocPlugin {
 
   private _convertImageBlockToInline(
     imgBlock: BlockCraft.IBlockComponents['image'],
+    wrap = false,
   ): boolean {
     if (
       !this._isBlockAlive(imgBlock) ||
@@ -1260,14 +1290,15 @@ export class ImgToolbarPlugin extends DocPlugin {
       typeof src === 'string' &&
       this.fileService.isLocalObjectURL(src)
     ) {
-      this._deferImageBlockToInline(imgBlock);
+      this._deferImageBlockToInline(imgBlock, wrap);
       return true;
     }
-    return this._commitImageBlockToInline(imgBlock, current);
+    return this._commitImageBlockToInline(imgBlock, current, wrap);
   }
 
   private _deferImageBlockToInline(
     imgBlock: BlockCraft.IBlockComponents['image'],
+    wrap: boolean,
   ) {
     if (this._pendingInlineConversions.has(imgBlock.id)) {
       this.closeToolbar();
@@ -1275,7 +1306,11 @@ export class ImgToolbarPlugin extends DocPlugin {
     }
 
     this.closeToolbar();
-    this.doc.messageService.warn('图片正在上传，完成后将自动转为嵌入型');
+    this.doc.messageService.warn(
+      wrap
+        ? '图片正在上传，完成后将自动转为四周型环绕'
+        : '图片正在上传，完成后将自动转为嵌入型',
+    );
     const pending = imgBlock.onPropsChange
       .pipe(
         takeUntil(imgBlock.onDestroy$),
@@ -1294,10 +1329,14 @@ export class ImgToolbarPlugin extends DocPlugin {
 
         pending.unsubscribe();
         if (typeof src !== 'string' || !src.trim()) {
-          this.doc.messageService.warn('图片上传失败，未转换为嵌入型');
+          this.doc.messageService.warn(
+            wrap
+              ? '图片上传失败，未转换为四周型环绕'
+              : '图片上传失败，未转换为嵌入型',
+          );
           return;
         }
-        this._convertImageBlockToInline(imgBlock);
+        this._convertImageBlockToInline(imgBlock, wrap);
       });
 
     this._pendingInlineConversions.set(imgBlock.id, pending);
@@ -1312,6 +1351,7 @@ export class ImgToolbarPlugin extends DocPlugin {
   private _commitImageBlockToInline(
     imgBlock: BlockCraft.IBlockComponents['image'],
     current: IBlockSnapshot,
+    wrap: boolean,
   ): boolean {
     const dimensions = this.doc.objectSizing?.resolve(
       current.flavour,
@@ -1327,12 +1367,34 @@ export class ImgToolbarPlugin extends DocPlugin {
           },
         }
       : current;
-    const paragraph = imageBlockSnapshotToInlineParagraph(inlineSource);
+    const placement = this.doc.placement.getState(imgBlock);
+    const textTarget = wrap && placement.mode === 'absolute'
+      ? this._resolveWrappedInlineTextTarget(
+          imgBlock,
+          dimensions?.width ?? current.props['width'],
+          dimensions?.height ?? current.props['height'],
+        )
+      : null;
+    const paragraph = imageBlockSnapshotToInlineParagraph(
+      inlineSource,
+      wrap
+        ? {
+            wrap: true,
+            side: 'auto',
+            x: textTarget?.normalizedX ??
+              Math.max(0, Math.min(1, placement.x / 100)),
+            gap: DEFAULT_INLINE_IMAGE_WRAP_GAP,
+          }
+        : undefined,
+    );
     if (!paragraph) {
       this.doc.messageService.warn("图片地址为空，无法转换为嵌入型");
       return false;
     }
-    const placement = this.doc.placement.getState(imgBlock);
+    if (
+      textTarget &&
+      this._insertImageBlockIntoText(imgBlock, paragraph, textTarget)
+    ) return true;
     const needsReanchor = placement.mode === "absolute";
     const flowAnchor = needsReanchor
       ? this.doc.placement.resolveFlowAnchor(imgBlock)
@@ -1357,6 +1419,86 @@ export class ImgToolbarPlugin extends DocPlugin {
       .chain()
       .nextTick()
       .selectOrSetCursorAtBlock(paragraph.id, false)
+      .run();
+    return true;
+  }
+
+  private _resolveWrappedInlineTextTarget(
+    imgBlock: BlockCraft.IBlockComponents['image'],
+    imageWidth: unknown,
+    imageHeight: unknown,
+  ): WrappedInlineTextTarget | null {
+    const visual = imgBlock.hostElement.querySelector<HTMLElement>('.img-wrapper') ??
+      imgBlock.hostElement;
+    const imageRect = visual.getBoundingClientRect();
+    const target = resolveInlineImageOverlapTarget(
+      this.doc,
+      imgBlock.id,
+      imageRect,
+    );
+    if (!target) return null;
+
+    const targetRect = target.block.containerElement.getBoundingClientRect();
+    const containerWidth = target.block.containerElement.clientWidth ||
+      targetRect.width;
+    const width = typeof imageWidth === 'number' && imageWidth > 0
+      ? imageWidth
+      : imageRect.width;
+    const height = typeof imageHeight === 'number' && imageHeight > 0
+      ? imageHeight
+      : imageRect.height;
+    if (containerWidth <= 0 || width <= 0 || height <= 0) return null;
+
+    const preview = resolveInlineImageDragPreview({
+      containerWidth,
+      imageWidth: width,
+      imageHeight: height,
+      imageX: imageRect.left - targetRect.left,
+      side: 'auto',
+      gap: DEFAULT_INLINE_IMAGE_WRAP_GAP,
+    });
+    return {
+      ...target,
+      normalizedX: preview.attributes.x ?? 0,
+    };
+  }
+
+  private _insertImageBlockIntoText(
+    imgBlock: BlockCraft.IBlockComponents['image'],
+    paragraph: IBlockSnapshot,
+    target: WrappedInlineTextTarget,
+  ): boolean {
+    const parentId = this.doc.model.getParentId(imgBlock.id);
+    const sourceIndex = this.doc.model.indexInParent(imgBlock.id);
+    if (!parentId || sourceIndex < 0) return false;
+
+    const deltas = paragraph.nodeType === 'editable'
+      ? paragraph.children
+      : [];
+    if (!deltas.length) return false;
+    const insertionLength = deltas.reduce((length, delta) =>
+      length + (typeof delta.insert === 'string' ? delta.insert.length : 1), 0);
+    const operations = [
+      ...(target.offset > 0 ? [{retain: target.offset}] : []),
+      ...deltas,
+    ];
+
+    this.closeToolbar();
+    this.doc.crud.transact(() => {
+      this.doc.crud.applyTextDelta(target.block.id, operations);
+      // `force` prevents an empty placement-layout from manufacturing a
+      // paragraph before its normalizer removes the infrastructure block.
+      this.doc.crud.deleteBlocks(parentId, sourceIndex, 1, true);
+    });
+    void this.doc
+      .chain()
+      .nextTick()
+      .setSelection({
+        blockId: target.block.id,
+        type: 'text',
+        index: target.offset + insertionLength,
+        length: 0,
+      })
       .run();
     return true;
   }

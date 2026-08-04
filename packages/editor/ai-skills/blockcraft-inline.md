@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-08-03
+> Last updated: 2026-08-04
 
 ## Architecture Overview
 
@@ -145,7 +145,10 @@ cannot fall through to browser `deleteByDrag` / `insertFromDrop` DOM edits.
 When an image Delta has `wrap: true`, the shell projects
 `data-bc-inline-float` and persisted `side/x/gap` data. Each
 `InlineRuntime` owns one package-internal `InlineFloatLayoutController`.
-`side: 'auto'` produces dual-side geometry only when both text intervals are
+The same float controller recognizes bundled Shape/WordArt shells through the
+generic `data-bc-inline-float-layout`, `data-bc-inline-float-frame`, size,
+side, x and gap dataset contract. Image-specific attributes remain supported
+for backward compatibility. `side: 'auto'` produces dual-side geometry only when both text intervals are
 at least 96 CSS pixels; explicit `left/right` and unsafe auto positions keep
 the contained CSS-float fallback. Dual mode measures browser Range geometry,
 splits TextBlots only at grapheme-safe model offsets, and moves the real Blot
@@ -192,6 +195,16 @@ The exact one-length Embed payload and non-position attributes are preserved;
 no pixel `y` is serialized. Pointercancel, Escape, detach, editor-external drop
 and readonly transitions remove the proxy and restore model-derived geometry
 without mutation.
+
+Bundled inline Shape/WordArt use the same frozen-layout Pointer Events gesture
+for both plain inline and wrapped modes. The inert
+`.bc-inline-object-drag-proxy` preserves the object's visual transform while
+moving outside contenteditable. Release moves the exact one-length Embed Delta
+to the resolved same- or cross-editable-block anchor in one transaction. A
+plain inline object preserves its attributes without adding float coordinates;
+a wrapped object additionally recalculates normalized `x`. The first primary
+pointerdown both selects the Embed and arms the gesture, so no second click is
+required.
 
 ## Attributes
 

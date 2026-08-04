@@ -39,7 +39,7 @@ export class ClipboardControl {
       if (isNativeClipboardTarget(ev)) return
       if (!isEditorFocused()) return
       // copy 不修改文档，readonly 模式也允许走 adapter 流程
-      this._runWithSelection('copy', ev)
+      this._runWithSelection('copy', ev, root)
     })
     fromEvent<ClipboardEvent>(ownerDocument, 'cut').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
       if (isNativeClipboardTarget(ev)) return
@@ -48,7 +48,7 @@ export class ClipboardControl {
         ev.preventDefault()
         return
       }
-      this._runWithSelection('cut', ev, true)
+      this._runWithSelection('cut', ev, root, true)
     })
     fromEvent<ClipboardEvent>(ownerDocument, 'paste').pipe(takeUntil(root.onDestroy$)).subscribe(ev => {
       if (isNativeClipboardTarget(ev)) return
@@ -57,11 +57,17 @@ export class ClipboardControl {
         ev.preventDefault()
         return
       }
-      this._runWithSelection('paste', ev, true)
+      this._runWithSelection('paste', ev, root, true)
     })
   }
 
-  private _runWithSelection(name: 'copy' | 'cut' | 'paste', event: ClipboardEvent, preventDefaultIfMissing = false) {
+  private _runWithSelection(
+    name: 'copy' | 'cut' | 'paste',
+    event: ClipboardEvent,
+    root: BlockCraft.IBlockComponents['root'],
+    preventDefaultIfMissing = false,
+  ) {
+    this._syncNativeSelectionAtClipboardBoundary(root)
     const selection = this._dispatcher.currentSelection
     if (!selection) {
       if (preventDefaultIfMissing) event.preventDefault()
@@ -73,6 +79,32 @@ export class ClipboardControl {
       return
     }
     this._dispatcher.run(name, this._createContext(event, selection))
+  }
+
+  /**
+   * Clipboard commands are native event boundaries. A browser can dispatch
+   * copy/cut/paste before its latest `selectionchange` notification reaches
+   * SelectionManager, so sample an editor-owned native Range once here rather
+   * than consuming a stale (often collapsed) model selection.
+   *
+   * Model-only selections deliberately have no native Range and stay on the
+   * canonical dispatcher state without a DOM read-back.
+   */
+  private _syncNativeSelectionAtClipboardBoundary(
+    root: BlockCraft.IBlockComponents['root'],
+  ): void {
+    const ownerDocument = root.hostElement.ownerDocument
+    const nativeSelection = ownerDocument.getSelection()
+    if (!nativeSelection?.rangeCount) return
+
+    try {
+      const range = nativeSelection.getRangeAt(0)
+      if (!root.hostElement.contains(range.commonAncestorContainer)) return
+      this._dispatcher.doc?.selection?.recalculate?.()
+    } catch {
+      // SelectionManager owns normalization and fail-closed logging. If the
+      // browser Range disappeared between reads, retain the canonical model.
+    }
   }
 
   private _createContext(event: ClipboardEvent, selection: BlockCraft.Selection) {

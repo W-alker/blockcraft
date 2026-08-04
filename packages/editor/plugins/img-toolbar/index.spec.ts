@@ -67,7 +67,10 @@ describe("ImgToolbarPlugin lifecycle", () => {
     const run = jasmine.createSpy("run").and.resolveTo({lastResult: undefined, results: []});
     const nextTick = jasmine.createSpy("nextTick");
     const selectOrSetCursorAtBlock = jasmine.createSpy("selectOrSetCursorAtBlock");
+    const setSelection = jasmine.createSpy("setSelection");
     const replaceWithSnapshots = jasmine.createSpy("replaceWithSnapshots");
+    const applyTextDelta = jasmine.createSpy("applyTextDelta");
+    const deleteBlocks = jasmine.createSpy("deleteBlocks");
     const crudTransact = jasmine.createSpy("crudTransact")
       .and.callFake((executor: () => unknown) => executor());
     let doc: any;
@@ -75,9 +78,16 @@ describe("ImgToolbarPlugin lifecycle", () => {
       executor(doc);
       return chain;
     });
-    const chain: any = {transact, nextTick, selectOrSetCursorAtBlock, run};
+    const chain: any = {
+      transact,
+      nextTick,
+      selectOrSetCursorAtBlock,
+      setSelection,
+      run,
+    };
     nextTick.and.returnValue(chain);
     selectOrSetCursorAtBlock.and.returnValue(chain);
+    setSelection.and.returnValue(chain);
     doc = {
       isReadonly: false,
       onDestroy$,
@@ -88,10 +98,15 @@ describe("ImgToolbarPlugin lifecycle", () => {
       },
       model: {
         toSnapshot: jasmine.createSpy("toSnapshot"),
+        getParentId: jasmine.createSpy("getParentId").and.returnValue("placement-layout"),
+        indexInParent: jasmine.createSpy("indexInParent").and.returnValue(0),
+        getPath: jasmine.createSpy("getPath").and.returnValue(["root", "paragraph-1"]),
       },
       crud: {
         transact: crudTransact,
         replaceWithSnapshots,
+        applyTextDelta,
+        deleteBlocks,
       },
       chain: jasmine.createSpy("chain").and.returnValue(chain),
       injector: {
@@ -215,7 +230,10 @@ describe("ImgToolbarPlugin lifecycle", () => {
       crudTransact,
       nextTick,
       replaceWithSnapshots,
+      applyTextDelta,
+      deleteBlocks,
       selectOrSetCursorAtBlock,
+      setSelection,
       run,
     };
   };
@@ -642,6 +660,126 @@ describe("ImgToolbarPlugin lifecycle", () => {
     );
     expect(h.replaceWithSnapshots).toHaveBeenCalledTimes(1);
     expect(h.selectOrSetCursorAtBlock).toHaveBeenCalledTimes(1);
+
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("falls back to a wrapped paragraph when an absolute image covers no text", fakeAsync(() => {
+    const h = makeHarness();
+    h.placementMode.current = "absolute";
+    h.doc.placement.getState.and.returnValue({
+      mode: "absolute",
+      x: 36,
+      y: 32,
+      layer: "over",
+    });
+    h.doc.model.toSnapshot.and.returnValue({
+      id: "img-1",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      props: {src: "https://example.com/a.png", width: 320, height: 180},
+      meta: {},
+      children: [],
+    });
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "object-layout", value: "wrap"});
+
+    const paragraph = h.replaceWithSnapshots.calls.mostRecent().args[1][0];
+    expect(paragraph.children[0]).toEqual({
+      insert: {image: "https://example.com/a.png"},
+      attributes: {
+        width: 320,
+        height: 180,
+        wrap: true,
+        side: "auto",
+        x: 0.36,
+        gap: 12,
+      },
+    });
+    expect(h.doc.placement.resolveFlowAnchor).toHaveBeenCalledOnceWith(h.imageBlock);
+    expect(h.doc.placement.reanchorToFlow).toHaveBeenCalledTimes(1);
+    expect(h.doc.placement.setObjectLayout).not.toHaveBeenCalled();
+
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("inserts an absolute image into the covered text line when enabling wrapping", fakeAsync(() => {
+    const h = makeHarness();
+    const textBlock = {
+      id: "paragraph-1",
+      textLength: 8,
+      containerElement: document.createElement("div"),
+    };
+    h.placementMode.current = "absolute";
+    h.doc.placement.getState.and.returnValue({
+      mode: "absolute",
+      x: 36,
+      y: 32,
+      layer: "over",
+    });
+    h.doc.model.toSnapshot.and.returnValue({
+      id: "img-1",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      props: {src: "https://example.com/a.png", width: 320, height: 180},
+      meta: {},
+      children: [{
+        id: "caption-1",
+        flavour: "caption",
+        nodeType: BlockNodeType.editable,
+        props: {},
+        meta: {},
+        children: [{insert: "说明", attributes: {bold: true}}],
+      }],
+    });
+    spyOn(h.plugin as any, "_resolveWrappedInlineTextTarget").and.returnValue({
+      block: textBlock,
+      offset: 3,
+      normalizedX: 0.25,
+    });
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "object-layout", value: "wrap"});
+
+    expect(h.applyTextDelta).toHaveBeenCalledOnceWith("paragraph-1", [
+      {retain: 3},
+      {
+        insert: {image: "https://example.com/a.png"},
+        attributes: {
+          width: 320,
+          height: 180,
+          wrap: true,
+          side: "auto",
+          x: 0.25,
+          gap: 12,
+        },
+      },
+      {insert: " "},
+      {insert: "说明", attributes: {bold: true}},
+    ]);
+    expect(h.deleteBlocks).toHaveBeenCalledOnceWith(
+      "placement-layout",
+      0,
+      1,
+      true,
+    );
+    expect(h.replaceWithSnapshots).not.toHaveBeenCalled();
+    expect(h.doc.placement.reanchorToFlow).not.toHaveBeenCalled();
+    expect(h.setSelection).toHaveBeenCalledOnceWith({
+      blockId: "paragraph-1",
+      type: "text",
+      index: 7,
+      length: 0,
+    });
 
     h.plugin.destroy();
     h.rootHost.remove();

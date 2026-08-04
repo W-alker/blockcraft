@@ -14,16 +14,13 @@ import {
   BLOCK_OBJECT_LAYOUT_OPTIONS,
   InlineImageWrapSide,
 } from '../../../framework';
+import {INLINE_IMAGE_WRAP_LAYOUT_OPTION} from './inline-image-layout-options';
 
 export type InlineImageToolbarLayout = 'inline' | 'wrap';
 
 const INLINE_IMAGE_LAYOUT_OPTIONS = [
   BLOCK_OBJECT_LAYOUT_OPTIONS[0],
-  {
-    value: 'wrap',
-    label: '四周型环绕',
-    icon: 'bc_sizhouhuanrao',
-  },
+  INLINE_IMAGE_WRAP_LAYOUT_OPTION,
   ...BLOCK_OBJECT_LAYOUT_OPTIONS.slice(1),
 ] as const;
 

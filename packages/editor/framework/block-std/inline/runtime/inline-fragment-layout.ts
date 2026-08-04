@@ -527,7 +527,9 @@ export class InlineRangeMeasurer {
       } else {
         const clone = leaf.cElement.cloneNode(true) as HTMLElement
         for (const frame of Array.from(
-          clone.querySelectorAll('.bc-inline-image-frame'),
+          clone.querySelectorAll(
+            '[data-bc-inline-float-frame], .bc-inline-image-frame',
+          ),
         )) {
           frame.remove()
         }
@@ -791,10 +793,12 @@ export class InlineFragmentProjection {
     group: HTMLElement,
   ): void {
     const shell = plan.anchor.embedElement
-    const frame = shell.querySelector<HTMLElement>('.bc-inline-image-frame')
+    const frame =
+      shell.querySelector<HTMLElement>('[data-bc-inline-float-frame]') ??
+      shell.querySelector<HTMLElement>('.bc-inline-image-frame')
     const wrapper = shell.parentElement
     const cElement = plan.anchor.cElement
-    if (!frame || !wrapper) throw new Error('Inline image frame is missing')
+    if (!frame || !wrapper) throw new Error('Inline float frame is missing')
 
     for (const element of [cElement, wrapper, shell, frame]) {
       this._styleSnapshots.push({

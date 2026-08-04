@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-07-31
+> Last updated: 2026-08-04
 
 ## Architecture
 
@@ -304,6 +304,14 @@ formatting and embeds are stripped because WordArt styling is whole-block and
 the Schema is `plainTextOnly`. Markdown has no portable WordArt primitive, so
 export produces a readable paragraph and reimport intentionally produces a
 normal paragraph.
+
+Inline `shape` and `word-art` representations use a separate lossless HTML
+envelope: `<span data-bc-inline-object="shape|word-art">`. The payload remains
+the primitive JSON string stored in the Embed, while `width/height` and
+optional square-wrap fields are emitted as bounded `data-bc-*` attributes.
+Import normalizes the payload through the matching `read/createInline*Delta`
+helpers. Markdown cannot reconstruct object presentation and emits only the
+embedded shape/WordArt text as ordinary inline text.
 
 ## Checklist
 

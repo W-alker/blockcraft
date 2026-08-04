@@ -25,6 +25,10 @@ import {
   RootBlockSchema,
   ShapeBlockSchema,
   ShapeTextBlockSchema,
+  INLINE_SHAPE_EMBED_KEY,
+  INLINE_WORD_ART_EMBED_KEY,
+  createInlineShapeEmbedConverter,
+  createInlineWordArtEmbedConverter,
   TableBlockSchema,
   TableCellBlockSchema,
   TableRowBlockSchema,
@@ -235,6 +239,8 @@ export function validateBundledEditorCapabilities(input: {
 
 function createBundledInlineEmbeds(): [string, EmbedConverter][] {
   return [
+    [INLINE_SHAPE_EMBED_KEY, createInlineShapeEmbedConverter()],
+    [INLINE_WORD_ART_EMBED_KEY, createInlineWordArtEmbedConverter()],
     [
       'mention',
       {

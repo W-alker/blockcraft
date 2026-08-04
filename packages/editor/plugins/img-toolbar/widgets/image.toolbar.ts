@@ -5,6 +5,7 @@ import {
   BLOCK_OBJECT_LAYOUT_OPTIONS,
   BlockObjectLayout,
 } from "../../../framework";
+import {INLINE_IMAGE_WRAP_LAYOUT_OPTION} from './inline-image-layout-options';
 
 export interface IImageToolbarItem {
   name: string
@@ -54,14 +55,16 @@ const ALIGN_LIST = [
 
       <span class="bc-float-toolbar__divider"></span>
       @for (item of LAYOUT_OPTIONS; track item.value) {
-        <bc-float-toolbar-item
-          [icon]="item.icon"
-          name="object-layout"
-          [value]="item.value"
-          [nz-tooltip]="item.label"
-          [attr.aria-label]="item.label"
-          [active]="objectLayout === item.value">
-        </bc-float-toolbar-item>
+        @if (item.value !== 'wrap' || isAbsolute) {
+          <bc-float-toolbar-item
+            [icon]="item.icon"
+            name="object-layout"
+            [value]="item.value"
+            [nz-tooltip]="item.label"
+            [attr.aria-label]="item.label"
+            [active]="objectLayout === item.value">
+          </bc-float-toolbar-item>
+        }
       }
 
       @if (isAbsolute) {
@@ -159,5 +162,9 @@ export class ImageToolbar {
   }
 
   protected readonly ALIGN_LIST = ALIGN_LIST;
-  protected readonly LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS;
+  protected readonly LAYOUT_OPTIONS = [
+    BLOCK_OBJECT_LAYOUT_OPTIONS[0],
+    INLINE_IMAGE_WRAP_LAYOUT_OPTION,
+    ...BLOCK_OBJECT_LAYOUT_OPTIONS.slice(1),
+  ] as const;
 }

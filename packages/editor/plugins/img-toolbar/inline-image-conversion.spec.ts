@@ -52,6 +52,25 @@ describe('imageBlockSnapshotToInlineParagraph', () => {
     ]);
   });
 
+  it('creates a square-wrapped inline image when wrap options are supplied', () => {
+    expect(imageBlockSnapshotToInlineParagraph(
+      imageSnapshot('https://cdn.example.com/wrapped.png'),
+      {wrap: true, side: 'auto', x: 0.36, gap: 12},
+    )!.children).toEqual([
+      {
+        insert: {image: 'https://cdn.example.com/wrapped.png'},
+        attributes: {
+          width: 320,
+          height: 180,
+          wrap: true,
+          side: 'auto',
+          x: 0.36,
+          gap: 12,
+        },
+      },
+    ]);
+  });
+
   it('rejects empty src and non-image snapshots', () => {
     expect(imageBlockSnapshotToInlineParagraph(imageSnapshot(''))).toBeNull();
     expect(imageBlockSnapshotToInlineParagraph({

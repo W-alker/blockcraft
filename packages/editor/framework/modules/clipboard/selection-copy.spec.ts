@@ -86,14 +86,24 @@ describe("ClipboardManager selection copy", () => {
       injector: {get: () => ({supportedAdapters: [], getAdapter: () => undefined})},
       logger: {warn: jasmine.createSpy("warn")},
       schemas: {
-        createSnapshot: (flavour: BlockCraft.BlockFlavour, params: any[]): IBlockSnapshot => ({
-          id: params[0],
-          flavour,
-          nodeType: BlockNodeType.root,
-          props: {},
-          meta: {},
-          children: params[1],
-        } as IBlockSnapshot),
+        createSnapshot: (flavour: BlockCraft.BlockFlavour, params: any[]): IBlockSnapshot =>
+          flavour === "paragraph"
+            ? ({
+                id: "generated-paragraph",
+                flavour,
+                nodeType: BlockNodeType.editable,
+                props: {depth: 0},
+                meta: {},
+                children: params[0],
+              } as IBlockSnapshot)
+            : ({
+                id: params[0],
+                flavour,
+                nodeType: BlockNodeType.root,
+                props: {},
+                meta: {},
+                children: params[1],
+              } as IBlockSnapshot),
       },
       getBlockById,
       isEditable: (block: {nodeType: BlockNodeType}) => block.nodeType === BlockNodeType.editable,
@@ -157,6 +167,39 @@ describe("ClipboardManager selection copy", () => {
     ]);
     expect(queryBlocksBetween).toHaveBeenCalledOnceWith(first, last);
     expect(middle.toSnapshot).toHaveBeenCalled();
+    rootHost.remove();
+  });
+
+  it("copies a one-character inline image selection as its embed delta", () => {
+    const {addBlock, manager, makeSelection, rootHost} = makeHarness();
+    const paragraph = addBlock("p1", "", BlockNodeType.editable);
+    const deltas: DeltaInsert[] = [
+      {insert: "前"},
+      {
+        insert: {image: "https://cdn.example.com/a.png"},
+        attributes: {width: 120, height: 60},
+      },
+      {insert: "后"},
+    ];
+    paragraph.textLength = 3;
+    paragraph.textDeltas = () => deltas;
+    paragraph.toSnapshot.and.returnValue({
+      id: "p1",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      props: {depth: 0},
+      meta: {},
+      children: deltas,
+    });
+    const selection = makeSelection(
+      {blockId: "p1", type: "text", offset: 1, block: paragraph},
+      {blockId: "p1", type: "text", offset: 2, block: paragraph},
+    );
+
+    const payload = (manager as any)._buildCopyPayload(selection);
+
+    expect(payload.plainText).toBe("");
+    expect(payload.snapshot.children[0].children).toEqual([deltas[1]]);
     rootHost.remove();
   });
 

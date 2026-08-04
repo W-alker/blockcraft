@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-03 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-04 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -351,8 +351,8 @@ the first successful preview dimensions to persist `ar` and a root-relative
 without a stored ratio start from the Schema default and backfill the first
 successful ratio without adding Undo history. Continuous virtualization and
 sparse pagination share one DOM-free model estimator for `wr/ar` media and
-inline-image `width/height`. Wrapped inline images additionally reserve their
-contained image-plus-gap height and estimate constrained text lines from
+inline-object `width/height`. Wrapped inline images, shapes and WordArt additionally reserve their
+contained object-plus-gap height and estimate constrained text lines from
 persisted `side/x/gap`. Eligible centered `side: 'auto'` images use the
 combined left-plus-right interval capacity; sequential wrapped anchors reserve
 non-overlapping exclusion bands. Ordinary measured text heights are not
@@ -610,6 +610,22 @@ conversion preserves the formatted text on both sides
 as separate editable blocks and inserts the image block between them; it does
 not create a caption. Choosing under/over creates the block directly at the
 inline image's current visual coordinates.
+
+### Bundled Inline Shape and WordArt
+
+`createBundledEditorCapabilities()` includes fresh `shape` and `word-art`
+Embed converters. `ShapeToolbarPlugin` and `WordArtToolbarPlugin` expose
+**嵌入型 / 四周型环绕** in addition to their block layouts. The conversion
+stores normalized object props and text Delta in one primitive JSON Embed value
+and keeps `width/height/wrap/side/x/gap` as short attributes. An absolute object
+visibly covering editable text enters that covered line directly; otherwise it
+uses the nearest visual flow anchor.
+
+Clicking either inline object calls `setInlineRange(offset, 1)`, so the
+canonical selection and DOM Range both cover the Embed for copy/cut. The
+layout-only toolbar can change wrap side or restore a top-bottom/under/over
+block; detailed object editing resumes on that restored block. HTML preserves
+the payload and wrap metadata, while Markdown degrades to readable text.
 
 ### DocChain (Fluent Mutations)
 
@@ -886,8 +902,8 @@ onBold(ctx: UIEventStateContext) { ... }
 | `CodeInlineEditorBinding` | `plugins/codeEditorBinding.ts` | Shiki syntax highlighting binding for code blocks |
 | `TableBlockBinding` | `plugins/tableBlockBinding.ts` | Table clipboard, model/explicit cell-range keyboard bindings, merge/split helpers |
 | `ImgToolbarPlugin` | `plugins/img-toolbar/` | Block/inline image resize, toolbar actions, and bidirectional conversion |
-| `ShapeToolbarPlugin` | `plugins/shape-toolbar/` | Word-like shape selection, style controls, object layout, drag, resize and rotation |
-| `WordArtToolbarPlugin` | `plugins/word-art-toolbar/` | Editable WordArt presets, object/edit mode, style controls, placement, drag, resize and rotation |
+| `ShapeToolbarPlugin` | `plugins/shape-toolbar/` | Shape block/inline selection, styling, inline/wrap conversion, placement, drag, resize and rotation |
+| `WordArtToolbarPlugin` | `plugins/word-art-toolbar/` | WordArt block/inline selection, styling, inline/wrap conversion, placement, drag, resize and rotation |
 | `CalloutToolbarPlugin` | `plugins/callout-toolbar/` | Callout color/icon picker |
 | `DividerExtensionPlugin` | `plugins/divider-toolbar/` | Divider hover toolbar (style / size / optional text label + align) |
 | `AttachmentExtensionPlugin` | `plugins/attachment-extension/` | Attachment preview/download UI |

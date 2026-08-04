@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-01
+> Last updated: 2026-08-04
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -73,7 +73,16 @@ HTML5 drag/drop is not used for either position adjustment. An `under`
 image selected from its visible edge opens the same toolbar. Returning a
 floating image to top-bottom flow and converting it to an inline image both
 resolve the same nearest visual flow anchor, so neither jumps back to the
-pre-floating model position. Absolute images also expose one-step
+pre-floating model position. Absolute images additionally expose a direct
+**四周型环绕** action. When the image visually overlaps a compatible editable
+text block, the action inserts the wrapped image Embed at that covered text
+line in one Yjs transaction, recalculates normalized `x` against the target
+text container, and preserves a non-empty image caption as following inline
+text. Merely being the nearest block is insufficient, and editable descendants
+of the source image are excluded. If no text block is actually covered, the
+action falls back to a new wrapped paragraph at the nearest visual flow anchor.
+Both paths start with `side: 'auto'` plus the standard gap.
+Absolute images also expose one-step
 **上移一层 / 下移一层** controls using `bc_cengji-shangyi` and
 `bc_cengji-xiayi`. The controls traverse one total stack and can cross ordinary
 flow content; they are disabled only at the highest `over` and lowest `under`
@@ -106,6 +115,7 @@ new ImgToolbarPlugin(options?: ImgToolbarPluginOptions)
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `align`                     | Set image alignment (left/center/right)                                                                           |
 | `object-layout: inline`     | Convert to **嵌入型** near the current visual flow anchor                                                         |
+| `object-layout: wrap`       | On an absolute image, insert **四周型环绕** into covered text; otherwise create it near the visual flow anchor   |
 | `object-layout: top-bottom` | Use **上下型** and automatically return to relative flow                                                          |
 | `object-layout: under`      | Use **衬于文字下方** and automatically enter absolute placement                                                   |
 | `object-layout: over`       | Use **浮于文字上方** and automatically enter absolute placement                                                   |
@@ -118,6 +128,13 @@ new ImgToolbarPlugin(options?: ImgToolbarPluginOptions)
 The inline-image toolbar emits the same `object-layout` action. Switching an
 inline image directly to under/over measures its current DOM box before
 replacement and persists those coordinates on the new image block.
+Clicking an inline image selects its one-character Embed range through
+`EditableBlockComponent.setInlineRange(offset, 1)`. This updates the canonical
+`BlockSelection` and native DOM Range together, so copy/cut act on the inline
+image rather than a stale text cursor. Readonly documents create the same
+selection for copy, but do not open editing controls.
+An Embed-only inline selection does not open FloatTextToolbar or TextMarker;
+mixed text-plus-Embed ranges retain the normal text toolbar behavior.
 Inline images without persisted dimensions reserve a 4:3 frame while loading.
 On first success this Plugin fills only missing `width/height` delta attributes
 inside an `ORIGIN_NO_RECORD` transaction, so the correction is collaborative
@@ -181,7 +198,7 @@ new ImgToolbarPlugin({
 
 Registers pointer selection and connected-toolbar behavior for the built-in
 `shape` block. The compact object toolbar exposes fill color and opacity,
-outline color/width/style, deletion, and the three supported block layouts.
+outline color/width/style, deletion, and the complete object-layout set.
 Shape type is chosen only from the fixed toolbar's **插入形状** picker. Text
 color and horizontal/vertical alignment remain compatible block properties but
 are not shown in the default object toolbar. An absolute shape additionally
@@ -197,18 +214,30 @@ column `BcFloatToolbarComponent`; the shape toolbar contains no native
 new ShapeToolbarPlugin();
 ```
 
-The layout actions are deliberately limited to:
+The layout actions are:
 
 | Action          | Behavior                                                                                        |
 | --------------- | ----------------------------------------------------------------------------------------------- |
+| `inline`        | **嵌入型**; serializes shape props plus its `shape-text` Delta into one `shape` Embed           |
+| `wrap`          | **四周型环绕**; creates the same Embed with `wrap/side/x/gap`; an overlapping absolute shape enters the covered text line directly |
 | `top-bottom`    | **上下型**; clears absolute coordinates and reanchors to relative flow                          |
 | `under`         | **衬于文字下方**; enters absolute placement below ordinary content                              |
 | `over`          | **浮于文字上方**; enters absolute placement above ordinary content                              |
 | `move-forward`  | Move an absolute shape one step toward the foreground, including crossing ordinary flow content |
 | `move-backward` | Move an absolute shape one step toward the background, including crossing ordinary flow content |
 
-There is no inline-shape representation. Clicking the object edge selects the
-whole shape and opens the toolbar. While that absolute whole-object selection
+Clicking an inline shape selects its one-character Embed in both
+`BlockSelection` and the native Range, then opens a layout-only toolbar with
+inline/wrap, text-side and reverse block conversion actions. The Embed keeps
+all shape props and nested text Delta; detailed text/style editing stays on the
+block representation, so switch back to top-bottom/under/over to edit it.
+Both plain inline and wrapped shapes can be dragged immediately from their
+selected frame. The Pointer Events proxy maps release x/y back to a same- or
+cross-editable-block Delta anchor in one Yjs transaction; wrapped shapes also
+update normalized `x`, while plain inline shapes keep no float coordinates.
+HTML preserves the object payload and wrap metadata; Markdown emits readable
+shape text. Clicking the block object edge selects the whole shape and opens
+the styling toolbar. While that absolute whole-object selection
 is active, printable input, IME, Enter, Tab and paste are isolated from the
 normal document input pipeline; Delete/Backspace and object toolbar operations
 remain available. A newly inserted shape has no placeholder text child;
@@ -225,8 +254,9 @@ keeps clearance for the rotation handle; pointerdown inside `shape-resizer`
 never starts object movement.
 
 Register `PlacementLayoutBlockSchema`, `ShapeBlockSchema`,
-`ShapeTextBlockSchema`, and `ShapeToolbarPlugin` together. The bundled editor
-already does this.
+`ShapeTextBlockSchema`, `ShapeToolbarPlugin`, and a fresh
+`createInlineShapeEmbedConverter()` together. The bundled editor already does
+this.
 When `ShapeBlockSchema` is registered, the bundled
 `FixedTextToolbarComponent` also exposes a visible **插入形状** button. Its
 picker uses the same 12 `SHAPE_DEFINITIONS` and creates the selected type
@@ -262,7 +292,7 @@ controls.
 
 The connected toolbar exposes font size, solid/linear-gradient fills, outline,
 shadow toggle, letter spacing, horizontal/vertical alignment, safe
-affine/perspective effects, the three block object layouts, absolute stack
+affine/perspective effects, inline/wrap plus the three block object layouts, absolute stack
 order and deletion. Preset and font-family selection live only in the fixed
 toolbar's **插入艺术字** visual dropdown, avoiding duplicate controls in the
 object toolbar. The shadow toggle uses the `bc_wenziyinying` iconfont glyph.
@@ -283,11 +313,22 @@ toolbar's fill, effect and alignment choices use the shared overlay menu
 components rather than native selects.
 
 Register `WordArtBlockSchema`, `PlacementLayoutBlockSchema` and
-`WordArtToolbarPlugin` together. The bundled capability factory already does
-this, and the bundled fixed toolbar exposes the **插入艺术字** visual preset
+`WordArtToolbarPlugin` together with a fresh
+`createInlineWordArtEmbedConverter()`. The bundled capability factory already
+does this, and the bundled fixed toolbar exposes the **插入艺术字** visual preset
 dropdown only when the Schema is registered. Its five `A` cards reuse the
 production WordArt presentation resolver. Choosing a preset creates the
 default `艺术字` with that presentation, enters editing and selects all text.
+
+Choosing **嵌入型** or **四周型环绕** serializes normalized whole-object props
+and plain-text Delta into one `word-art` Embed. An absolute object that visibly
+overlaps editable text is inserted at that covered line; otherwise it falls
+back to the nearest flow anchor. Clicking the Embed selects its length-one
+range and opens the same layout-only inline-object toolbar used by shapes.
+The selected frame supports the same immediate Pointer Events drag in both
+plain inline and wrapped modes, including cross-paragraph anchor movement.
+Top-bottom/under/over restores a WordArt block without losing presentation or
+text. HTML round-trips the payload; Markdown degrades to readable text.
 
 ---
 

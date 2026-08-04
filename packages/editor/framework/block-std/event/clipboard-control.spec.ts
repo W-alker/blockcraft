@@ -50,6 +50,7 @@ describe('ClipboardControl', () => {
       doc: {
         selection: {
           blur: jasmine.createSpy('blur'),
+          recalculate: jasmine.createSpy('recalculate'),
         },
       },
     };
@@ -112,6 +113,46 @@ describe('ClipboardControl', () => {
     dispatchDocumentClipboardEvent('cut');
 
     expect(dispatcher.run.calls.allArgs().map((args: unknown[]) => args[0])).toEqual(['copy', 'cut']);
+  });
+
+  it('samples an editor-owned native range before dispatching a clipboard command', () => {
+    const staleCollapsed = dispatcher.currentSelection;
+    const refreshedRange = {
+      ...liveSelection(),
+      start: {blockId: 'p1', type: 'text', offset: 0},
+      end: {blockId: 'p1', type: 'text', offset: 8},
+      anchor: {blockId: 'p1', type: 'text', offset: 0},
+      head: {blockId: 'p1', type: 'text', offset: 8},
+      collapsed: false,
+    };
+    rootHost.textContent = 'selection';
+    rootHost.focus();
+    const nativeRange = document.createRange();
+    nativeRange.setStart(rootHost.firstChild!, 0);
+    nativeRange.setEnd(rootHost.firstChild!, 8);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(nativeRange);
+    dispatcher.doc.selection.recalculate.and.callFake(() => {
+      dispatcher.currentSelection = refreshedRange;
+      return {value: refreshedRange};
+    });
+
+    dispatchDocumentClipboardEvent('cut');
+
+    expect(dispatcher.doc.selection.recalculate).toHaveBeenCalledTimes(1);
+    const context = dispatcher.run.calls.mostRecent().args[1];
+    expect(context.get('clipboardState').selection).toBe(refreshedRange);
+    expect(context.get('clipboardState').selection).not.toBe(staleCollapsed);
+  });
+
+  it('does not sample DOM for a model-only selection without a native range', () => {
+    rootHost.focus();
+    document.getSelection()?.removeAllRanges();
+
+    dispatchDocumentClipboardEvent('copy');
+
+    expect(dispatcher.doc.selection.recalculate).not.toHaveBeenCalled();
+    expect(dispatcher.run).toHaveBeenCalledTimes(1);
   });
 
   it('prevents readonly document-level cut while the editor host is focused', () => {

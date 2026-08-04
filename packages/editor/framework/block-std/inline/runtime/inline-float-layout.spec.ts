@@ -207,6 +207,35 @@ describe('inline float layout', () => {
     controller.destroy()
   })
 
+  it('uses the generic inline-object float contract', () => {
+    const owner = document.createElement('div')
+    const shell = document.createElement('span')
+    const frame = document.createElement('span')
+    shell.dataset['bcInlineFloat'] = 'true'
+    shell.dataset['bcInlineFloatLayout'] = 'wrap'
+    shell.dataset['bcInlineFloatSide'] = 'right'
+    shell.dataset['bcInlineFloatX'] = '.1'
+    shell.dataset['bcInlineFloatGap'] = '10'
+    shell.dataset['bcInlineFloatWidth'] = '160'
+    shell.dataset['bcInlineFloatHeight'] = '80'
+    frame.setAttribute('data-bc-inline-float-frame', '')
+    shell.appendChild(frame)
+    owner.appendChild(shell)
+    Object.defineProperty(owner, 'clientWidth', {
+      configurable: true,
+      value: 500,
+    })
+
+    const controller = new InlineFloatLayoutController(owner)
+    controller.sync()
+
+    expect(owner.hasAttribute('data-bc-inline-float-owner')).toBeTrue()
+    expect(shell.style.cssFloat).toBe('left')
+    expect(frame.style.width).toBe('160px')
+    expect(frame.style.height).toBe('80px')
+    controller.destroy()
+  })
+
   it('can preview a shell without mutating persisted data attributes', () => {
     const shell = document.createElement('span')
     const frame = document.createElement('span')

@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-03 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-04 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -73,6 +73,146 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v0.3.0-alpha.0 - 2026-08-04 (minor) — add inline and wrapped Shape/WordArt objects
+
+**Severity**: minor
+
+**What changed**: The bundled editor now registers `shape` and `word-art`
+inline Embed converters. `ShapeToolbarPlugin` and `WordArtToolbarPlugin` expose
+**嵌入型** and **四周型环绕**, preserve the complete object presentation and
+text payload during block/inline conversion, and restore top-bottom/under/over
+blocks from mixed text without losing adjacent Delta formatting. The shared
+inline float layout now accepts a generic object-frame dataset contract in
+addition to the existing image contract. HTML round-trips inline object
+payloads and wrapping metadata; Markdown degrades them to readable text. Plain
+inline and wrapped Shape/WordArt frames also support immediate Pointer Events
+drag with same- or cross-editable-block Delta reanchoring.
+
+**Why**: Shapes and WordArt previously supported only block flow and absolute
+layers, so they could not participate in a text line or Word-like square text
+wrapping. Reusing the one-length Embed and float projection model keeps
+selection, clipboard, collaboration, virtualization and adapter behavior
+consistent with inline images.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-embed.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-inline.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `INLINE_SHAPE_EMBED_KEY`, `createInlineShapeDelta()`,
+  `readInlineShapeDelta()`, `createInlineShapeEmbedConverter()` and
+  `inlineShapeEmbedConverter`.
+- `INLINE_WORD_ART_EMBED_KEY`, `createInlineWordArtDelta()`,
+  `readInlineWordArtDelta()`, `createInlineWordArtEmbedConverter()` and
+  `inlineWordArtEmbedConverter`.
+- Shared inline-object payload/layout types and DOM helpers are exported from
+  `blocks/inline-object/`.
+- `.bc-inline-object-shell`, `.bc-inline-object-frame`,
+  `.bc-inline-object-drag-proxy`,
+  `[data-bc-inline-float-frame]` and
+  `[data-bc-inline-float-layout="wrap"]` form the generic object view/theme
+  contract.
+
+#### Migration Recipe
+
+Hosts using `createBundledEditorCapabilities()` need no code change. Hosts that
+manually assemble Shape/WordArt capabilities should register a fresh converter
+beside each existing Plugin:
+
+```typescript
+// before
+plugins: [new ShapeToolbarPlugin(), new WordArtToolbarPlugin()]
+
+// after
+embeds: [
+  ['shape', createInlineShapeEmbedConverter()],
+  ['word-art', createInlineWordArtEmbedConverter()],
+],
+plugins: [new ShapeToolbarPlugin(), new WordArtToolbarPlugin()]
+```
+
+No stored-document rewrite or package version change was made in this worktree.
+Existing block Shape/WordArt snapshots and image Embed attributes remain
+compatible.
+
+#### Behavior Changes
+
+- An absolute Shape/WordArt switched directly to wrapping enters the editable
+  text line it visibly covers. Without a covered editable block it falls back
+  to the nearest visual flow anchor.
+- Clicking an inline Shape/WordArt selects the exact one-character Embed in the
+  model and native DOM Range before opening its layout-only toolbar, so
+  copy/cut target the object rather than a stale text cursor.
+- Inline Shape/WordArt detailed editing is intentionally not nested inside the
+  atomic Embed; switching to top-bottom/under/over restores the editable block.
+- Dragging a selected inline Shape/WordArt moves its exact Embed payload in one
+  Yjs transaction. Wrapped objects also update normalized `x`; plain inline
+  objects do not gain float coordinates. Cancel/Escape/blur/readonly teardown
+  leaves the model unchanged.
+- Model-only virtualization height estimation now accounts for their persisted
+  dimensions and square-wrap exclusion height.
+
+### v?.?.? - 2026-08-04 (patch) — convert absolute images directly to text wrapping
+
+**Severity**: patch
+
+**What changed**: `ImgToolbarPlugin` now shows **四周型环绕** directly in the
+toolbar for an absolute image. If the image visually overlaps a compatible
+editable text block, the action inserts the wrapped image Embed into that
+covered text line and removes the absolute image in one Yjs transaction. Its
+normalized `x` is recalculated against the target text container, and a
+non-empty image caption is preserved as following inline content. If no text
+block is actually covered, conversion falls back to a new wrapped paragraph at
+the nearest visual flow anchor while translating the absolute `placement.x`.
+Clipboard copy/cut/paste event boundaries also resample an editor-owned native
+Range before dispatch, so a browser `selectionchange` delay cannot leave those
+commands operating on an older collapsed model cursor. Clicking an inline
+image now explicitly selects its one-character Embed range in both
+`BlockSelection` and the native DOM selection; readonly documents allow this
+selection for copy without opening image editing controls.
+
+**Why**: A floating image previously required two toolbar actions to reach text
+wrapping. Separately, browsers can dispatch a clipboard shortcut before the
+latest native drag selection has propagated into `BlockSelection`; copy then
+produced empty content and cut deleted a zero-length range.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No host code, plugin configuration, stored document migration or package
+version change is required. Existing image and inline-image snapshots remain
+compatible.
+
+#### Behavior Changes
+
+- The block image toolbar shows **四周型环绕** only while the selected image is
+  absolute; relative block images keep the existing four layout actions.
+- Direct wrapping only enters an editable block whose visual rectangle actually
+  intersects the image. A merely nearby block is not used, and the source
+  image's own caption cannot become the target.
+- A local image still uploading remembers the requested wrap target and
+  completes the same conversion after its final URL becomes available.
+- Clipboard commands with a native Range inside the editor synchronously sample
+  that Range at the browser event boundary. Model-only selections with no
+  native Range continue using the canonical `BlockSelection` directly.
+- Clicking an inline image produces a length-one text selection covering its
+  Embed. Repeated clicks restore that selection without rebuilding the toolbar.
+- An Embed-only inline range does not open the floating text/marker toolbar;
+  mixed text-plus-Embed selections continue to open it.
+- No exported API, option, schema, theme token or package version changed.
 
 ### v?.?.? - 2026-08-03 (patch) — preview table column resize with a guide
 

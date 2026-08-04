@@ -92,7 +92,7 @@ export interface InlineImageAnchorMoveInput {
   targetOffset: number
   targetLength: number
   delta: DeltaInsertEmbed
-  normalizedX: number
+  normalizedX?: number
 }
 
 export type InlineImageAnchorMovePlan =
@@ -130,7 +130,9 @@ export function planInlineImageAnchorMove(
   );
   const attributes = {
     ...(input.delta.attributes ?? {}),
-    x: input.normalizedX,
+    ...(typeof input.normalizedX === 'number'
+      ? {x: input.normalizedX}
+      : {}),
   };
   const movedDelta: DeltaOperation = {
     insert: {...input.delta.insert},
@@ -155,6 +157,7 @@ export function planInlineImageAnchorMove(
     ? targetOffset - 1
     : targetOffset;
   if (insertOffset === input.sourceOffset) {
+    if (typeof input.normalizedX !== 'number') return {kind: 'noop'};
     const oldX = input.delta.attributes?.['x'];
     if (
       typeof oldX === 'number' &&

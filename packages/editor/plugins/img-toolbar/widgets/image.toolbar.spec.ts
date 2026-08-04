@@ -41,6 +41,24 @@ describe('ImageToolbar', () => {
     expect(toolbar.canMoveBackward).toBeFalse()
   })
 
+  it('shows the direct wrap action only for absolute images', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImageToolbar],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(ImageToolbar)
+
+    fixture.componentRef.setInput('imgBlock', makeBlock('relative'))
+    fixture.detectChanges()
+    expect(fixture.nativeElement.querySelector('.bc_sizhouhuanrao')).toBeNull()
+
+    fixture.componentRef.setInput('imgBlock', makeBlock('absolute'))
+    fixture.detectChanges()
+    expect(fixture.nativeElement.querySelector('.bc_sizhouhuanrao')).not.toBeNull()
+
+    fixture.destroy()
+    TestBed.resetTestingModule()
+  })
+
   it('renders the specified stack icons and disabled boundary', async () => {
     await TestBed.configureTestingModule({
       imports: [ImageToolbar],
@@ -78,6 +96,7 @@ describe('ImageToolbar', () => {
       '居中',
       '右对齐',
       '嵌入型',
+      '四周型环绕',
       '上下型',
       '衬于文字下方',
       '浮于文字上方',

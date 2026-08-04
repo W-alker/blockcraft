@@ -1,11 +1,13 @@
-[data-blockcraft-root="true"] .bc-inline-image-shell {
+[data-blockcraft-root="true"] .bc-inline-image-shell,
+[data-blockcraft-root="true"] .bc-inline-object-shell {
   position: relative;
   display: inline-block;
   max-width: 100%;
   vertical-align: text-bottom;
 }
 
-[data-blockcraft-root="true"] .bc-inline-image-frame {
+[data-blockcraft-root="true"] .bc-inline-image-frame,
+[data-blockcraft-root="true"] .bc-inline-object-frame {
   position: relative;
   display: block;
   max-width: 100%;
@@ -19,7 +21,7 @@
 
 [data-blockcraft-root="true"]
   [data-bc-inline-float-owner]
-  c-element:has(.bc-inline-image-shell[data-bc-inline-logical-anchor]) {
+  c-element:has([data-bc-inline-logical-anchor]) {
   display: inline-block;
   width: 0;
   height: 0;
@@ -35,7 +37,7 @@
 }
 
 [data-blockcraft-root="true"]
-  .bc-inline-image-shell[data-bc-inline-logical-anchor] {
+  [data-bc-inline-logical-anchor] {
   position: static;
   display: inline-block;
   width: 0 !important;
@@ -62,6 +64,74 @@
   }
 }
 
+[data-blockcraft-root="true"]
+  .bc-inline-object-shell[data-bc-inline-float-layout="wrap"] {
+  display: block;
+  max-width: none;
+  margin: 0;
+  overflow: visible;
+  vertical-align: top;
+
+  > .bc-inline-object-frame {
+    position: absolute;
+    top: 0;
+  }
+
+  &.bc-inline-object-shell--selected > .bc-inline-object-frame {
+    cursor: move;
+    touch-action: none;
+  }
+}
+
+[data-blockcraft-root="true"]
+  .bc-inline-object-shell--selected > .bc-inline-object-frame {
+  outline: 2px solid var(--bc-active-color);
+  outline-offset: 2px;
+  border-radius: 3px;
+  cursor: move;
+  touch-action: none;
+}
+
+[data-blockcraft-root="true"] .bc-inline-shape-frame {
+  position: relative;
+  overflow: visible;
+  transform-origin: center;
+}
+
+[data-blockcraft-root="true"] .bc-inline-shape__geometry {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+[data-blockcraft-root="true"] .bc-inline-shape__text {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
+[data-blockcraft-root="true"] .bc-inline-word-art-frame {
+  display: flex;
+  overflow: visible;
+  transform-origin: center;
+}
+
+[data-blockcraft-root="true"] .bc-inline-word-art__text {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
 [data-blockcraft-root="true"] .bc-inline-image-shell--selected .bc-inline-image-frame {
   outline: 2px solid var(--bc-active-color);
   outline-offset: 2px;
@@ -76,7 +146,8 @@
   object-fit: contain;
 }
 
-.bc-inline-image-drag-proxy {
+.bc-inline-image-drag-proxy,
+.bc-inline-object-drag-proxy {
   z-index: 2147483646;
   box-sizing: border-box;
   overflow: hidden;
@@ -86,7 +157,8 @@
   contain: layout paint style;
   will-change: transform;
 
-  > .bc-inline-image-frame {
+  > .bc-inline-image-frame,
+  > .bc-inline-object-frame {
     box-sizing: border-box;
     overflow: hidden;
     outline: 2px dashed var(--bc-active-color, currentColor);

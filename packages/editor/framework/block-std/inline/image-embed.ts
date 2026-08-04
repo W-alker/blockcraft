@@ -124,6 +124,7 @@ export const inlineImageEmbedConverter: EmbedConverter = {
     shell.classList.add(INLINE_IMAGE_SHELL_CLASS)
     shell.dataset['bcInlineImage'] = 'true'
     frame.classList.add(INLINE_IMAGE_FRAME_CLASS)
+    frame.setAttribute('data-bc-inline-float-frame', '')
     frame.style.width = `${width}px`
     frame.style.aspectRatio = `${width} / ${height}`
     if (data.wrap) {
