@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-07-31
+> Last updated: 2026-08-03
 
 ## Theme Structure
 
@@ -216,6 +216,16 @@ body[blockcraft-theme="dark"] {
 | `--bc-page-content-height` | runtime page content height | Maximum height inherited by top-level void/code blocks in live and print pagination |
 
 Runtime classes are `.bc-paginated` on the document root, `.bc-paginated-scroll` on the scroll container, `.bc-pagination-backdrop`, `.bc-page-sheet`, `.bc-page-header` and `.bc-page-footer`. They are plugin-owned state: host code may style them but must not add/remove them directly.
+
+Oversized table-cell continuation additionally owns
+`.bc-pagination-cell-flow-gap`, `.bc-pagination-table-flow-mask`,
+`[data-bc-inline-pagination-gap]` and `.bc-page-nested-height-locked`. The first
+three create sheet/background bands inside the unique live table DOM; the last
+caps only an irreducible nested atomic child to the page content height. These
+classes/attributes are reversible plugin state, not document data. Host themes
+may change their inherited page colors through `--bc-page-sheet-bg` and
+`--bc-pagination-backdrop-bg`, but must not attach, remove, resize or make the
+gap nodes interactive.
 
 `--bc-page-content-height` is geometry-owned: the pagination controller derives
 it from paper size, margins and header/footer bands. The theme predefines the

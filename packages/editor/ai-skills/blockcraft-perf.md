@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-01
+> Last updated: 2026-08-03
 
 ## Core Performance Principles
 
@@ -114,6 +114,38 @@ ordinary scrolling only diffs the mounted window. Tests with 1000 root blocks
 keep the mounted count below ten while traversing projected page geometry.
 Printing/PDF do not consume a sparse state whose `exact` flag is false; they
 fall back to the complete readonly reflow.
+
+Table rectangle commands use a cached `TableModelGrid`. A cold build is
+`O(rows × columns)` over direct row/cell facts only; it does not descend into
+cell content or read DOM. Table/cell geometry props and table/row structure
+invalidate the cache, while ordinary text input and row-height changes keep it.
+Pointer movement, Arrow/Tab, copy/cut/delete/paste target lookup and selected
+text then use array/Map lookups over stable IDs. Visual selection diffs only
+currently mounted master-cell components and never mounts the rectangle middle.
+
+Table column resizing keeps the committed `<col>` widths fixed during the
+gesture. The hot `mousemove` path performs one body-level guide
+`style.transform` write outside Angular. The guide is not clipped by the
+current wrapper width when the last column grows, and it does not trigger table layout, row `ResizeObserver`,
+pagination measurement or Yjs. Mouse release re-resolves the stable source
+cell against the current `TableModelGrid` and commits one `colWidths` props
+update; cancellation performs no model write.
+Outside a gesture, delegated cell `mousemove` keeps the single resize handle
+attached after pagination projection. Same-cell events compare DOM/model
+identity and return before pagination-mask geometry is read.
+The Safari/WebKit td-hit fallback reads one cell boundary only on primary
+mousedown; it adds no geometry work to mousemove or scrolling.
+
+Oversized table-cell flow is measured lazily: ordinary tables still read only
+row geometry, and visual text-line discovery runs only after a physical table
+row exceeds `contentHeight`. Planning is pure and linear in the supplied safe
+anchors. Its immutable plan is carried through GeometryIndex, the stable live
+layout and readonly printing. Sparse Projection uses the plan's virtual content
+height plus every internal sheet gap—not the smaller natural table height—so
+the next root Block receives the correct offset without a DOM query. Screen
+projection application is signature-idempotent, all reads remain outside
+Angular change detection, and IME composition skips recomputation until the
+model-owned composition completes.
 
 Each frame adds only constant-time checks for local height/index lengths and the
 model structure revision. A mismatch performs one cold `O(N)` rebuild. A

@@ -1,6 +1,7 @@
 import {TableBlockComponent} from "./table.block";
 import {BlockSelection} from "../../framework/modules/selection/blockSelection";
-import {BehaviorSubject} from "rxjs";
+import {BehaviorSubject, Subject} from "rxjs";
+import {isNativeInputTarget} from "../../framework/utils/node-search";
 
 describe("TableBlockComponent selection UI sync", () => {
   it("clears a stale rectangle when selection moves into anchor cell text", () => {
@@ -137,7 +138,7 @@ describe("TableBlockComponent selection UI sync", () => {
     expect(table._activeCellsRange).toBeNull();
   });
 
-  it("syncs a non-square model table-cell selection with the correct column range", () => {
+  it("syncs a model rectangle while painting only mounted cell components", () => {
     const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
     const tableHost = document.createElement("div");
     const cells: Record<string, any> = {};
@@ -176,9 +177,38 @@ describe("TableBlockComponent selection UI sync", () => {
       id: {value: "table-1"},
       childrenIds: {value: ["row-0", "row-1"]},
     });
+    const parentIds: Record<string, string | null> = {
+      "table-1": null,
+      "row-0": "table-1",
+      "row-1": "table-1",
+    };
+    Object.values(rows).forEach((row: any) => {
+      row.childrenIds.forEach((cellId: string) => {
+        parentIds[cellId] = row.id;
+      });
+    });
     table.doc = {
       isReadonly: false,
-      getBlockById: (id: string) => blocks[id],
+      getBlockById: jasmine.createSpy("getBlockById").and.callFake((id: string) =>
+        id === "cell-0-1" ? null : blocks[id]),
+      vm: {
+        isMounted: (id: string) => id !== "cell-0-1",
+      },
+      model: {
+        getFlavour: (id: string) => {
+          if (id === "table-1") return "table";
+          if (rows[id]) return "table-row";
+          return cells[id] ? "table-cell" : undefined;
+        },
+        getProps: (id: string) => id === "table-1"
+          ? {colWidths: [100, 100, 100]}
+          : {},
+        getChildrenIds: (id: string) => {
+          if (id === "table-1") return ["row-0", "row-1"];
+          return [...(rows[id]?.childrenIds ?? [])];
+        },
+        getParentId: (id: string) => parentIds[id] ?? null,
+      },
     };
     table.changeDetectorRef = {
       markForCheck: jasmine.createSpy("markForCheck"),
@@ -203,13 +233,14 @@ describe("TableBlockComponent selection UI sync", () => {
 
     table._syncTableFocusUi(selection);
 
-    expect(table.confirmSelection).toHaveBeenCalledOnceWith([0, 0], [1, 2]);
+    expect(table.confirmSelection).not.toHaveBeenCalled();
     expect(table._activeCellsRange).toEqual({
       start: [0, 0],
       end: [1, 2],
       anchorId: "cell-0-0",
     });
-    expect(table._selectedCellSet.size).toBe(6);
+    expect(table._selectedCellSet.size).toBe(5);
+    expect(table.doc.getBlockById).not.toHaveBeenCalledWith("cell-0-1");
     expect(table._showTableMenu).toHaveBeenCalledWith({
       rowIndex: 0,
       rowCount: 2,
@@ -378,7 +409,78 @@ describe("TableBlockComponent selection UI sync", () => {
   });
 });
 
-describe("TableBlockComponent readonly resize", () => {
+describe("TableBlockComponent column resize", () => {
+  function createResizeHarness(colWidths = [120, 140]) {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const host = document.createElement("div");
+    const wrapper = document.createElement("div");
+    const nativeTable = document.createElement("table");
+    const colGroup = document.createElement("colgroup");
+    const cols = colWidths.map(() => document.createElement("col"));
+    const tbody = document.createElement("tbody");
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    const resizeBar = document.createElement("div");
+    resizeBar.setAttribute("data-bc-native-input", "");
+    cell.dataset["blockId"] = "cell-1";
+    row.appendChild(cell);
+    tbody.appendChild(row);
+    cols.forEach(col => colGroup.appendChild(col));
+    nativeTable.append(colGroup, tbody);
+    wrapper.append(nativeTable, resizeBar);
+    host.appendChild(wrapper);
+    document.body.appendChild(host);
+
+    wrapper.getBoundingClientRect = () => new DOMRect(10, 20, 300, 220);
+    nativeTable.getBoundingClientRect = () => new DOMRect(10, 30, 260, 200);
+    cell.getBoundingClientRect = () => new DOMRect(10, 30, 120, 60);
+
+    const onDestroy$ = new Subject<void>();
+    table.hostElement = host;
+    table.doc = {
+      readonlyManager: {
+        isReadonly: jasmine.createSpy("isReadonly").and.returnValue(false),
+      },
+      ngZone: {runOutsideAngular: (run: () => void) => run()},
+    };
+    table.hoveringCell = {
+      id: "cell-1",
+      hostElement: cell,
+      props: {colspan: 1},
+      getIndexOfParent: () => 0,
+    };
+    table.tableWrapper = {nativeElement: wrapper};
+    table.colResizeBar = {nativeElement: resizeBar};
+    table._columnResizeHandleAnchor = {
+      cellId: "cell-1",
+      boundaryCell: cell,
+    };
+    table.resizingCol$ = new BehaviorSubject(false);
+    table.onDestroy$ = onDestroy$;
+    table.colBarComponent = {
+      colWidths: [...colWidths],
+      changeDetectionRef: {markForCheck: jasmine.createSpy("markForCheck")},
+    };
+    Object.defineProperty(table, "props", {value: {colWidths: [...colWidths]}});
+    table.updateProps = jasmine.createSpy("updateProps");
+    table._normalizeHorizontalScroll = jasmine.createSpy("_normalizeHorizontalScroll");
+
+    return {
+      table,
+      host,
+      cell,
+      resizeBar,
+      cols,
+      onDestroy$,
+      destroy: () => {
+        table._finishColumnResize(false);
+        onDestroy$.next();
+        onDestroy$.complete();
+        host.remove();
+      },
+    };
+  }
+
   it("does not start a column resize for a readonly table", () => {
     const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
     const host = document.createElement("div");
@@ -417,13 +519,376 @@ describe("TableBlockComponent readonly resize", () => {
     const stopPropagation = spyOn(event, "stopPropagation").and.callThrough();
 
     table.onColResizerMousedown(event);
-    document.dispatchEvent(new MouseEvent("mouseup", {bubbles: true}));
+    document.dispatchEvent(new MouseEvent("mouseup", {
+      button: 0,
+      bubbles: true,
+    }));
 
     expect(event.defaultPrevented).toBeTrue();
     expect(stopPropagation).toHaveBeenCalled();
     expect(resizeState).not.toHaveBeenCalled();
     expect(table.updateProps).not.toHaveBeenCalled();
     expect(col.style.width).toBe("");
+  });
+
+  it("isolates the resize handle from root selection and mouse controls", () => {
+    const harness = createResizeHarness();
+    harness.table._clearSelectionUiState = jasmine.createSpy("_clearSelectionUiState");
+    harness.table._isInsideCellFlowMask = jasmine.createSpy("_isInsideCellFlowMask")
+      .and.returnValue(true);
+    harness.table._getTableModelGrid = jasmine.createSpy("_getTableModelGrid")
+      .and.returnValue({getSpan: () => ({start: [0, 0], end: [0, 0]})});
+
+    try {
+      expect(isNativeInputTarget(harness.resizeBar)).toBeTrue();
+      harness.host.addEventListener("mousedown", event => {
+        harness.table._handleNativeMouseDown(event);
+      }, {capture: true, once: true});
+      harness.resizeBar.dispatchEvent(new MouseEvent("mousedown", {
+        button: 0,
+        bubbles: true,
+        cancelable: true,
+      }));
+
+      expect(harness.table._clearSelectionUiState).not.toHaveBeenCalled();
+      expect(harness.table._pendingStart).toBeFalsy();
+      expect(harness.table._isInsideCellFlowMask).not.toHaveBeenCalled();
+      expect(document.body.querySelector(
+        "[data-bc-table-col-resize-preview]",
+      )).not.toBeNull();
+      window.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape"}));
+    } finally {
+      harness.destroy();
+    }
+  });
+
+  it("starts resize when Safari hit-tests the boundary as the table cell", () => {
+    const harness = createResizeHarness();
+    harness.table._clearSelectionUiState = jasmine.createSpy("_clearSelectionUiState");
+    harness.table._isInsideCellFlowMask = jasmine.createSpy("_isInsideCellFlowMask")
+      .and.returnValue(true);
+    harness.table._getTableModelGrid = jasmine.createSpy("_getTableModelGrid")
+      .and.returnValue({getSpan: () => ({start: [0, 0], end: [0, 0]})});
+
+    try {
+      harness.host.addEventListener("mousedown", event => {
+        harness.table._handleNativeMouseDown(event);
+      }, {capture: true, once: true});
+      // The handle owns x=118..130, but WebKit reports the td as event.target.
+      harness.cell.dispatchEvent(new MouseEvent("mousedown", {
+        button: 0,
+        bubbles: true,
+        cancelable: true,
+        clientX: 128,
+        clientY: 40,
+      }));
+
+      expect(harness.table._clearSelectionUiState).not.toHaveBeenCalled();
+      expect(harness.table._pendingStart).toBeFalsy();
+      expect(harness.table._isInsideCellFlowMask).not.toHaveBeenCalled();
+      expect(document.body.querySelector(
+        "[data-bc-table-col-resize-preview]",
+      )).not.toBeNull();
+      window.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape"}));
+    } finally {
+      harness.destroy();
+    }
+  });
+
+  it("resolves Safari's exact boundary hit back to the cell on the left", () => {
+    const harness = createResizeHarness();
+    const rightCell = document.createElement("td");
+    rightCell.dataset["blockId"] = "cell-2";
+    rightCell.getBoundingClientRect = () => new DOMRect(130, 30, 120, 60);
+    harness.cell.parentElement!.appendChild(rightCell);
+    // Reproduce a cold/fallback hit before the overlay anchor has been
+    // positioned: the exact separator pixel was assigned to the right cell.
+    harness.table._columnResizeHandleAnchor = null;
+    const elementFromPoint = spyOn(document, "elementFromPoint")
+      .and.callFake((x: number) => x < 130 ? harness.cell : rightCell);
+
+    try {
+      const anchor = harness.table._resolveColumnResizePointerAnchor({
+        target: rightCell,
+        button: 0,
+        clientX: 130,
+        clientY: 40,
+      } as unknown as MouseEvent);
+
+      expect(elementFromPoint).toHaveBeenCalledWith(126, 40);
+      expect(anchor).toEqual({cellId: "cell-1", boundaryCell: harness.cell});
+    } finally {
+      harness.destroy();
+    }
+  });
+
+  it("starts from the handle DOM anchor without hover state and commits one width", () => {
+    const harness = createResizeHarness();
+    const gridAtStart = {getSpan: () => ({start: [0, 0], end: [0, 0]})};
+    const gridAtCommit = {getSpan: () => ({start: [0, 1], end: [0, 1]})};
+    harness.table._getTableModelGrid = jasmine.createSpy("_getTableModelGrid")
+      .and.returnValues(gridAtStart, gridAtCommit);
+    // Pagination/Angular projection can reset transient hover state before
+    // mousedown. The handle's actual cell DOM remains the gesture source.
+    harness.table.hoveringCell = null;
+
+    try {
+      harness.table.onColResizerMousedown(new MouseEvent("mousedown", {
+        button: 0,
+        bubbles: true,
+        cancelable: true,
+        clientX: 130,
+      }));
+
+      const previewLine = document.body.querySelector<HTMLElement>(
+        "[data-bc-table-col-resize-preview]",
+      );
+      expect(previewLine).not.toBeNull();
+      expect(previewLine!.style.transform).toBe("translate3d(129px, 0px, 0px)");
+      expect(harness.host.contains(previewLine)).toBeFalse();
+
+      // Move past wrapper.right (310px). A wrapper-local guide would be
+      // clipped here, which made rightward last-column resize look inert.
+      document.dispatchEvent(new MouseEvent("mousemove", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 360,
+      }));
+
+      expect(previewLine!.style.transform).toBe("translate3d(359px, 0px, 0px)");
+      expect(harness.cols.every(col => col.style.width === "")).toBeTrue();
+      expect(harness.table.colBarComponent.colWidths).toEqual([120, 140]);
+      expect(harness.table.updateProps).not.toHaveBeenCalled();
+
+      document.dispatchEvent(new MouseEvent("mouseup", {
+        button: 0,
+        bubbles: true,
+        cancelable: true,
+        clientX: 360,
+      }));
+
+      // The stable cell anchor moved to column 1 during the gesture, so the
+      // one final write follows that model column instead of the stale index 0.
+      expect(harness.table.updateProps).toHaveBeenCalledOnceWith({
+        colWidths: [120, 350],
+      });
+      expect(harness.table._normalizeHorizontalScroll).toHaveBeenCalledTimes(1);
+      expect(previewLine!.isConnected).toBeFalse();
+      expect(harness.table.resizingCol$.value).toBeFalse();
+    } finally {
+      harness.destroy();
+    }
+  });
+
+  it("repairs a stale overlay anchor on idle mousemove when hover id did not change", () => {
+    const harness = createResizeHarness();
+    const hoveringCell = harness.table.hoveringCell;
+    harness.table._columnResizeHandleAnchor = null;
+    harness.resizeBar.classList.remove("is-visible");
+    harness.table._isInsideCellFlowMask = jasmine.createSpy("_isInsideCellFlowMask")
+      .and.returnValue(false);
+
+    try {
+      const move = {
+        target: harness.cell,
+        clientX: 129,
+        clientY: 40,
+        buttons: 0,
+      } as unknown as MouseEvent;
+      harness.table._handleIdleCellMouseMove(move);
+
+      expect(harness.table.hoveringCell).toBe(hoveringCell);
+      expect(harness.resizeBar.parentElement).toBe(harness.table.tableWrapper.nativeElement);
+      expect(harness.table._columnResizeHandleAnchor).toEqual({
+        cellId: "cell-1",
+        boundaryCell: harness.cell,
+      });
+      expect(harness.resizeBar.classList.contains("is-visible")).toBeTrue();
+      expect(harness.resizeBar.style.left).toBe("114px");
+
+      // Same-cell movement stays on the layout-free identity fast path.
+      harness.table._isInsideCellFlowMask.calls.reset();
+      harness.table._handleIdleCellMouseMove(move);
+      expect(harness.table._isInsideCellFlowMask).not.toHaveBeenCalled();
+    } finally {
+      harness.destroy();
+    }
+  });
+
+  it("maps a paginated continuation handle back to the master model cell", () => {
+    const harness = createResizeHarness();
+    harness.cell.setAttribute("data-bc-pagination-master-cell-id", "master-cell");
+    harness.table._positionColumnResizeHandle("master-cell", harness.cell);
+    const grid = {
+      getSpan: jasmine.createSpy("getSpan")
+        .and.callFake((id: string) => id === "master-cell"
+          ? {start: [0, 0], end: [0, 0]}
+          : null),
+    };
+    harness.table._getTableModelGrid = jasmine.createSpy("_getTableModelGrid")
+      .and.returnValue(grid);
+
+    try {
+      harness.table.onColResizerMousedown(new MouseEvent("mousedown", {
+        button: 0,
+        cancelable: true,
+        clientX: 130,
+      }));
+
+      expect(grid.getSpan).toHaveBeenCalledWith("master-cell");
+      expect(document.body.querySelector(
+        "[data-bc-table-col-resize-preview]",
+      )).not.toBeNull();
+
+      window.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape"}));
+      expect(harness.table.updateProps).not.toHaveBeenCalled();
+    } finally {
+      harness.destroy();
+    }
+  });
+
+  it("resolves a merged-cell resize boundary without building the full table grid", () => {
+    const harness = createResizeHarness([120, 140, 160]);
+    Object.defineProperty(harness.table, "id", {value: "table-1"});
+    harness.table.doc.model = {
+      getParentId: (id: string) => ({
+        "cell-1": "row-1",
+        "row-1": "table-1",
+      } as Record<string, string>)[id] ?? null,
+      getChildrenIds: (id: string) => id === "row-1"
+        ? ["cell-1", "cell-covered", "cell-3"]
+        : [],
+      getFlavour: (id: string) => id === "row-1"
+        ? "table-row"
+        : id === "cell-1"
+          ? "table-cell"
+          : undefined,
+      getProps: (id: string) => id === "cell-1" ? {colspan: 2} : {},
+    };
+    harness.table._getTableModelGrid = jasmine.createSpy("_getTableModelGrid")
+      .and.throwError("a distant legacy merge makes the strict grid invalid");
+
+    try {
+      harness.table.onColResizerMousedown(new MouseEvent("mousedown", {
+        button: 0,
+        cancelable: true,
+        clientX: 130,
+      }));
+
+      expect(harness.table._getTableModelGrid).not.toHaveBeenCalled();
+      expect(document.body.querySelector(
+        "[data-bc-table-col-resize-preview]",
+      )).not.toBeNull();
+
+      document.dispatchEvent(new MouseEvent("mousemove", {
+        cancelable: true,
+        clientX: 170,
+      }));
+      document.dispatchEvent(new MouseEvent("mouseup", {
+        button: 0,
+        cancelable: true,
+        clientX: 170,
+      }));
+
+      expect(harness.table.updateProps).toHaveBeenCalledOnceWith({
+        colWidths: [120, 180, 160],
+      });
+    } finally {
+      harness.destroy();
+    }
+  });
+
+  it("uses a diagnostic projection when a collaborative parent edge is unavailable", () => {
+    const harness = createResizeHarness([120, 140]);
+    Object.defineProperty(harness.table, "id", {value: "table-1"});
+    const facts: Record<string, {
+      flavour: string;
+      props: Record<string, unknown>;
+      children: string[];
+    }> = {
+      "table-1": {
+        flavour: "table",
+        props: {colWidths: [120, 140]},
+        children: ["row-1", "row-2"],
+      },
+      "row-1": {
+        flavour: "table-row",
+        props: {},
+        children: ["cell-1", "cell-2"],
+      },
+      "row-2": {
+        flavour: "table-row",
+        props: {},
+        children: ["orphan-hidden", "cell-4"],
+      },
+      "cell-1": {flavour: "table-cell", props: {}, children: []},
+      "cell-2": {flavour: "table-cell", props: {}, children: []},
+      "orphan-hidden": {
+        flavour: "table-cell",
+        props: {display: "none"},
+        children: [],
+      },
+      "cell-4": {flavour: "table-cell", props: {}, children: []},
+    };
+    harness.table.doc.model = {
+      getParentId: () => null,
+      getChildrenIds: (id: string) => [...(facts[id]?.children ?? [])],
+      getFlavour: (id: string) => facts[id]?.flavour,
+      getProps: (id: string) => facts[id]?.props,
+    };
+    harness.table._getTableModelGrid = jasmine.createSpy("_getTableModelGrid")
+      .and.returnValue(null);
+
+    try {
+      harness.table.onColResizerMousedown(new MouseEvent("mousedown", {
+        button: 0,
+        cancelable: true,
+        clientX: 130,
+      }));
+
+      expect(document.body.querySelector(
+        "[data-bc-table-col-resize-preview]",
+      )).not.toBeNull();
+      expect(harness.table._getTableModelGrid).not.toHaveBeenCalled();
+      window.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape"}));
+    } finally {
+      harness.destroy();
+    }
+  });
+
+  it("cancels the guide without a model write on Escape", () => {
+    const harness = createResizeHarness();
+    harness.table._getTableModelGrid = jasmine.createSpy("_getTableModelGrid")
+      .and.returnValue({getSpan: () => ({start: [0, 0], end: [0, 0]})});
+
+    try {
+      harness.table.onColResizerMousedown(new MouseEvent("mousedown", {
+        button: 0,
+        cancelable: true,
+        clientX: 130,
+      }));
+      const previewLine = document.body.querySelector<HTMLElement>(
+        "[data-bc-table-col-resize-preview]",
+      );
+      expect(previewLine).not.toBeNull();
+      document.dispatchEvent(new MouseEvent("mousemove", {
+        cancelable: true,
+        clientX: -100,
+      }));
+      expect(previewLine!.style.transform).toBe("translate3d(59px, 0px, 0px)");
+
+      window.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape"}));
+      document.dispatchEvent(new MouseEvent("mouseup", {
+        button: 0,
+      }));
+
+      expect(harness.table.updateProps).not.toHaveBeenCalled();
+      expect(previewLine!.isConnected).toBeFalse();
+      expect(harness.host.classList.contains("is-resizing-col")).toBeFalse();
+      expect(harness.table.resizingCol$.value).toBeFalse();
+    } finally {
+      harness.destroy();
+    }
   });
 });
 
@@ -560,5 +1025,311 @@ describe("TableBlockComponent equal column widths", () => {
 
     expect(component._getTableHorizontalOverhead()).toBe(1);
     expect(colRectSpies.every(spy => !spy.calls.any())).toBeTrue();
+  });
+});
+
+describe("TableBlockComponent cell drag native-selection handoff", () => {
+  it("cancels native range growth after a document move promotes the model drag", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    table._startSelectingCell = null;
+    table._handleNativeMouseOver = jasmine.createSpy("_handleNativeMouseOver")
+      .and.callFake(() => {
+        table._startSelectingCell = {id: "cell-0-0"};
+      });
+    table._clearNativeSelectionWhileCellDragging = jasmine.createSpy(
+      "_clearNativeSelectionWhileCellDragging",
+    );
+    const event = new MouseEvent("pointermove", {
+      buttons: 1,
+      cancelable: true,
+    });
+
+    table._handleNativeCellDragMove(event);
+
+    expect(table._handleNativeMouseOver).toHaveBeenCalledOnceWith(event);
+    expect(event.defaultPrevented).toBeTrue();
+    expect(table._clearNativeSelectionWhileCellDragging).toHaveBeenCalled();
+  });
+
+  it("leaves ordinary same-cell text selection native before drag promotion", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    table._startSelectingCell = null;
+    table._handleNativeMouseOver = jasmine.createSpy("_handleNativeMouseOver");
+    table._clearNativeSelectionWhileCellDragging = jasmine.createSpy(
+      "_clearNativeSelectionWhileCellDragging",
+    );
+    const event = new MouseEvent("pointermove", {
+      buttons: 1,
+      cancelable: true,
+    });
+
+    table._handleNativeCellDragMove(event);
+
+    expect(event.defaultPrevented).toBeFalse();
+    expect(table._clearNativeSelectionWhileCellDragging).not.toHaveBeenCalled();
+  });
+
+  it("does not read pagination masks again while pointermove stays in the same cell", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    table.hoveringCell = {id: "cell-0-0"};
+    table._startSelectingCell = {id: "cell-0-0"};
+    table._closetCell = jasmine.createSpy("_closetCell").and.returnValue("cell-0-0");
+    table._handleNativeMouseOver = jasmine.createSpy("_handleNativeMouseOver");
+    table._clearNativeSelectionWhileCellDragging = jasmine.createSpy(
+      "_clearNativeSelectionWhileCellDragging",
+    );
+    const event = new MouseEvent("pointermove", {buttons: 1, cancelable: true});
+
+    table._handleNativeCellDragMove(event);
+
+    expect(table._handleNativeMouseOver).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBeTrue();
+  });
+
+  it("coalesces crossed cells to the last target in one animation frame", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    table.hostElement = document.createElement("div");
+    table._startSelectingCell = {id: "cell-0-0"};
+    table._lastSelectingCell = null;
+    table._pendingDragCell = null;
+    table._dragSelectionFrame = null;
+    table._setRectangleSelected = jasmine.createSpy("_setRectangleSelected");
+    let frame: FrameRequestCallback | null = null;
+    spyOn(window, "requestAnimationFrame").and.callFake(callback => {
+      frame = callback;
+      return 17;
+    });
+
+    table._queueDragSelection({id: "cell-0-1"});
+    table._queueDragSelection({id: "cell-0-2"});
+
+    expect(window.requestAnimationFrame).toHaveBeenCalledTimes(1);
+    expect(table._setRectangleSelected).not.toHaveBeenCalled();
+    frame!(0);
+    expect(table._lastSelectingCell.id).toBe("cell-0-2");
+    expect(table._setRectangleSelected).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the native-selection guard alive through pointerup until mouseup", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const host = document.createElement("table");
+    const cellHost = document.createElement("td");
+    cellHost.setAttribute("data-block-id", "cell-0-0");
+    host.appendChild(cellHost);
+    document.body.appendChild(host);
+    const cell = {id: "cell-0-0", hostElement: cellHost};
+    table.hostElement = host;
+    table._startSelectingCell = null;
+    table._pendingDragCell = null;
+    table._dragSelectionFrame = null;
+    table._clearSelectionUiState = jasmine.createSpy("_clearSelectionUiState");
+    table._isInsideCellFlowMask = jasmine.createSpy("_isInsideCellFlowMask").and.returnValue(false);
+    table._getTableModelGrid = jasmine.createSpy("_getTableModelGrid").and.returnValue(null);
+    table._clearNativeSelectionWhileCellDragging = jasmine.createSpy(
+      "_clearNativeSelectionWhileCellDragging",
+    );
+    table.onEndSelect = jasmine.createSpy("onEndSelect");
+    table.onDestroy$ = new Subject<void>();
+    table.doc = {
+      ngZone: {runOutsideAngular: (callback: () => unknown) => callback()},
+      getBlockById: () => cell,
+    };
+    host.addEventListener("mousedown", event => table._handleNativeMouseDown(event), {once: true});
+    cellHost.dispatchEvent(new MouseEvent("mousedown", {button: 0, bubbles: true}));
+    expect(table._clearSelectionUiState).toHaveBeenCalledTimes(1);
+    expect(table._pendingStart).toBe(cell);
+    table._startSelectingCell = cell;
+
+    window.dispatchEvent(new PointerEvent("pointerup", {button: 0}));
+    expect(table.onEndSelect).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new MouseEvent("mouseup", {button: 0}));
+    expect(table.onEndSelect).toHaveBeenCalledTimes(1);
+    host.remove();
+  });
+
+  it("routes a paginated rowspan continuation drag to its master cell", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const host = document.createElement("table");
+    const masterHost = document.createElement("td");
+    const continuationHost = document.createElement("td");
+    masterHost.setAttribute("data-block-id", "master");
+    continuationHost.setAttribute("data-block-id", "continuation");
+    host.append(masterHost, continuationHost);
+    document.body.appendChild(host);
+
+    const master = {id: "master", hostElement: masterHost};
+    const continuation = {
+      id: "continuation",
+      hostElement: continuationHost,
+      setPaginationRender: jasmine.createSpy("setPaginationRender"),
+    };
+    table.hostElement = host;
+    table._splitCells = new Set();
+    table._continuationsOf = new Map([[master, [continuation]]]);
+    table._selectedCellSet = new Set();
+    table.selectCell = (cell: any) => {
+      table._selectedCellSet.add(cell);
+      table._toggleCellSelected(cell, true);
+    };
+    table._startSelectingCell = null;
+    table._lastSelectingCell = null;
+    table._pendingDragCell = null;
+    table._dragSelectionFrame = null;
+    table._clearSelectionUiState = jasmine.createSpy("_clearSelectionUiState");
+    table._isInsideCellFlowMask = jasmine.createSpy("_isInsideCellFlowMask").and.returnValue(false);
+    table._getTableModelGrid = jasmine.createSpy("_getTableModelGrid").and.returnValue({
+      getCellCoordinate: (id: string) => id === "master" ? [0, 0] : null,
+    });
+    table._clearNativeSelectionWhileCellDragging = jasmine.createSpy(
+      "_clearNativeSelectionWhileCellDragging",
+    );
+    table._flushPendingDragSelection = jasmine.createSpy("_flushPendingDragSelection");
+    table.onEndSelect = jasmine.createSpy("onEndSelect");
+    table.onDestroy$ = new Subject<void>();
+    table.doc = {
+      ngZone: {runOutsideAngular: (callback: () => unknown) => callback()},
+      getBlockById: (id: string) => id === "master" ? master : null,
+      selection: {blur: jasmine.createSpy("blur")},
+    };
+
+    table._setCellOverride(continuation, {display: "", rowspan: 2}, master.id);
+    host.addEventListener("mousedown", event => table._handleNativeMouseDown(event), {once: true});
+    const down = new MouseEvent("mousedown", {
+      button: 0,
+      bubbles: true,
+      cancelable: true,
+    });
+    continuationHost.dispatchEvent(down);
+
+    expect(down.defaultPrevented).toBeTrue();
+    expect(continuationHost.style.pointerEvents).toBe("auto");
+    expect(continuationHost.getAttribute("contenteditable")).toBe("false");
+    expect(table._closetCell({target: continuationHost} as unknown as Event)).toBe("master");
+    expect(table._startSelectingCell).toBe(master);
+    expect(table._selectedCellSet.has(master)).toBeTrue();
+    expect(masterHost.classList.contains("bc-table-cell-selected")).toBeTrue();
+    expect(continuationHost.classList.contains("bc-table-cell-selected")).toBeTrue();
+
+    const selectStart = new Event("selectstart", {bubbles: true, cancelable: true});
+    continuationHost.dispatchEvent(selectStart);
+    expect(selectStart.defaultPrevented).toBeTrue();
+    expect(table._clearNativeSelectionWhileCellDragging).toHaveBeenCalled();
+
+    window.dispatchEvent(new MouseEvent("mouseup", {button: 0, cancelable: true}));
+    expect(table.onEndSelect).toHaveBeenCalledTimes(1);
+
+    table._clearCellOverrides();
+    expect(continuationHost.style.pointerEvents).toBe("");
+    expect(continuationHost.hasAttribute("contenteditable")).toBeFalse();
+    host.remove();
+  });
+
+  it("clears a Safari native range through SelectionManager without losing sync guards", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const host = document.createElement("div");
+    const text = document.createTextNode("native table range");
+    host.appendChild(text);
+    document.body.appendChild(host);
+    const nativeSelection = document.getSelection()!;
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    nativeSelection.removeAllRanges();
+    nativeSelection.addRange(range);
+
+    table.hostElement = host;
+    table._startSelectingCell = {id: "cell-0-0"};
+    table._suppressFocusSync = false;
+    table.doc = {
+      selection: {
+        blur: jasmine.createSpy("blur").and.callFake(() => nativeSelection.removeAllRanges()),
+      },
+    };
+
+    table._clearNativeSelectionWhileCellDragging();
+
+    expect(table.doc.selection.blur).toHaveBeenCalledTimes(1);
+    expect(table._suppressFocusSync).toBeFalse();
+    expect(nativeSelection.rangeCount).toBe(0);
+    host.remove();
+  });
+
+  it("expands a 100-row rectangle by one column using only the new edge", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const cells = new Map<string, any>();
+    for (let row = 0; row < 100; row++) {
+      const id = `cell-${row}-99`;
+      cells.set(id, {
+        id,
+        flavour: "table-cell",
+        hostElement: document.createElement("td"),
+        getIndexOfParent: () => 99,
+      });
+    }
+    const getMasterCellIdAt = jasmine.createSpy("getMasterCellIdAt")
+      .and.callFake((row: number, col: number) => `cell-${row}-${col}`);
+    table.doc = {
+      vm: {isMounted: () => true},
+      getBlockById: (id: string) => cells.get(id) ?? null,
+    };
+    table._selectedCellSet = new Set();
+    table._continuationsOf = new Map();
+
+    table._applyRectangleSelectionDiff(
+      {getMasterCellIdAt} as any,
+      {start: [0, 0], end: [99, 98]},
+      {start: [0, 0], end: [99, 99]},
+    );
+
+    expect(getMasterCellIdAt).toHaveBeenCalledTimes(100);
+    expect(table._selectedCellSet.size).toBe(100);
+  });
+});
+
+describe("TableBlockComponent pagination hot-path caches", () => {
+  it("reuses model rowspan facts and ignores hidden continuation cells", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const master = {
+      id: "master",
+      flavour: "table-cell",
+      hasContent: true,
+      getIndexOfParent: () => 0,
+    };
+    const getSpan = jasmine.createSpy("getSpan").and.returnValue({
+      start: [0, 0],
+      end: [1, 1],
+    });
+    const grid = {
+      rowCount: 2,
+      rowIds: ["row-0", "row-1"],
+      getMasterCellId: (id: string) => id === "master" ? "master" : "master",
+      getSpan,
+    };
+    table._paginationRowspanCache = null;
+    table._getTableModelGrid = () => grid;
+    table.doc = {
+      model: {
+        getChildrenIds: (rowId: string) => rowId === "row-0"
+          ? ["master", "hidden-0"]
+          : ["hidden-1", "hidden-2"],
+      },
+      getBlockById: (id: string) => id === "master" ? master : null,
+    };
+
+    const first = table._getPaginationRowCoverage([{}, {}]);
+    const second = table._getPaginationRowCoverage([{}, {}]);
+
+    expect(first.covered).toEqual([false, true]);
+    expect(first.coveredByContent).toEqual([false, true]);
+    expect(second).toEqual(first);
+    expect(getSpan).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not inspect cell subtrees when there are no oversized candidate rows", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    table._nestedAtomicLocks = new Set();
+
+    expect(table._syncNestedAtomicLocks(800, [])).toBeFalse();
+    expect(table._nestedAtomicLocks.size).toBe(0);
   });
 });

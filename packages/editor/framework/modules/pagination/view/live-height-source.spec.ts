@@ -3,10 +3,14 @@ import type {PaginationGeometryMeasurement} from '../layout/pagination-geometry-
 import {buildPaginationItems} from './item-builder'
 import type {TableRowGeom} from './item-builder'
 import {LiveHeightSource} from './live-height-source'
+import {planTableCellFlow, TableCellFlowPlan} from '../engine/table-cell-flow'
+import {getTableCellFlowPlan} from '../engine/table-cell-flow-metadata'
+import {registerTablePaginationAccess} from './table-pagination-access'
 
 describe('LiveHeightSource atomic block measurement', () => {
   let source: LiveHeightSource
   let host: HTMLElement
+  let releaseTableAccess: (() => void) | undefined
 
   function createSource(
     offsetHeight: number,
@@ -17,6 +21,7 @@ describe('LiveHeightSource atomic block measurement', () => {
       naturalHeight: number
       headerHeight: number
       rows: TableRowGeom[]
+      cellFlowPlan?: TableCellFlowPlan
     },
   ): LiveHeightSource {
     host = document.createElement('div')
@@ -28,7 +33,13 @@ describe('LiveHeightSource atomic block measurement', () => {
       hostElement: host,
       nodeType,
       flavour,
-      ...(tableGeometry ? {getPaginationGeometry: () => tableGeometry} : {}),
+    }
+    if (tableGeometry) {
+      releaseTableAccess = registerTablePaginationAccess(block, {
+        measure: () => tableGeometry,
+        apply: () => undefined,
+        clear: () => undefined,
+      })
     }
     const doc = {
       root: {childrenIds: ['embed-1']},
@@ -39,6 +50,8 @@ describe('LiveHeightSource atomic block measurement', () => {
 
   afterEach(() => {
     source?.destroy()
+    releaseTableAccess?.()
+    releaseTableAccess = undefined
     host?.remove()
   })
 
@@ -118,6 +131,35 @@ describe('LiveHeightSource atomic block measurement', () => {
     expect(meta?.preferredSplitOffsets).toBeUndefined()
   })
 
+  it('uses an oversized-cell flow plan as the table virtual layout height', () => {
+    const flowPlan = planTableCellFlow([{
+      kind: 'cell-flow',
+      rowId: 'row-1',
+      cells: [{
+        cellId: 'cell-1',
+        points: [
+          {offset: 80, anchor: {kind: 'text', blockId: 'p1', offset: 4}},
+          {offset: 160, anchor: {kind: 'text', blockId: 'p1', offset: 8}},
+          {offset: 240, anchor: {kind: 'cell-end'}},
+        ],
+      }],
+    }], 100)
+    source = createSource(500, 500, 'table', BlockNodeType.block, {
+      naturalHeight: 240,
+      headerHeight: 0,
+      rows: [{id: 'row-1', top: 0, bottom: 240, coveredFromAbove: false}],
+      cellFlowPlan: flowPlan,
+    })
+
+    const [meta] = source.measure({contentHeight: 100, widowOrphanLines: 2})
+
+    expect(meta.height).toBe(248)
+    expect(meta.naturalHeight).toBe(248)
+    expect(meta.splitOffsets).toEqual([80, 160])
+    expect(getTableCellFlowPlan(meta)?.paginationHeight).toBe(248)
+    expect(getTableCellFlowPlan(buildPaginationItems([meta])[0])?.paginationHeight).toBe(248)
+  })
+
   it('remains structurally compatible with pagination consumers', () => {
     source = createSource(55, 464)
 
@@ -151,6 +193,73 @@ describe('LiveHeightSource atomic block measurement', () => {
     const [afterRealShrink] = source.measure({contentHeight: 900, widowOrphanLines: 2})
     expect(afterRealShrink?.height).toBe(542)
     expect(afterRealShrink?.lockHeight).toBeUndefined()
+  })
+
+  it('filters the ResizeObserver echo of a pagination-owned table projection', () => {
+    source = createSource(500, 500, 'table', BlockNodeType.block, {
+      naturalHeight: 500,
+      headerHeight: 0,
+      rows: [{id: 'row-1', top: 0, bottom: 500, coveredFromAbove: false}],
+    })
+    source.syncObserved()
+    spyOn(host, 'getBoundingClientRect').and.returnValue({height: 640} as DOMRect)
+    const resize = jasmine.createSpy('resize')
+    source.resize$.subscribe(resize)
+
+    source.captureLayoutOwnedResize(['embed-1'])
+    ;(source as unknown as {
+      _handleResize(entries: readonly ResizeObserverEntry[]): void
+    })._handleResize([{
+      target: host,
+      borderBoxSize: [{blockSize: 640}],
+    } as unknown as ResizeObserverEntry])
+
+    expect(resize).not.toHaveBeenCalled()
+  })
+
+  it('still emits when content changes a block beyond the pagination-owned size', () => {
+    source = createSource(500, 500, 'table', BlockNodeType.block, {
+      naturalHeight: 500,
+      headerHeight: 0,
+      rows: [{id: 'row-1', top: 0, bottom: 500, coveredFromAbove: false}],
+    })
+    source.syncObserved()
+    spyOn(host, 'getBoundingClientRect').and.returnValue({height: 640} as DOMRect)
+    const resize = jasmine.createSpy('resize')
+    source.resize$.subscribe(resize)
+
+    source.captureLayoutOwnedResize(['embed-1'])
+    ;(source as unknown as {
+      _handleResize(entries: readonly ResizeObserverEntry[]): void
+    })._handleResize([{
+      target: host,
+      borderBoxSize: [{blockSize: 612}],
+    } as unknown as ResizeObserverEntry])
+
+    expect(resize).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears an unconsumed projection size when the model changes', () => {
+    source = createSource(500, 500, 'table', BlockNodeType.block, {
+      naturalHeight: 500,
+      headerHeight: 0,
+      rows: [{id: 'row-1', top: 0, bottom: 500, coveredFromAbove: false}],
+    })
+    source.syncObserved()
+    spyOn(host, 'getBoundingClientRect').and.returnValue({height: 640} as DOMRect)
+    const resize = jasmine.createSpy('resize')
+    source.resize$.subscribe(resize)
+
+    source.captureLayoutOwnedResize(['embed-1'])
+    source.clearLayoutOwnedResize()
+    ;(source as unknown as {
+      _handleResize(entries: readonly ResizeObserverEntry[]): void
+    })._handleResize([{
+      target: host,
+      borderBoxSize: [{blockSize: 640}],
+    } as unknown as ResizeObserverEntry])
+
+    expect(resize).toHaveBeenCalledTimes(1)
   })
 
   it('measures only mounted IDs without querying an offscreen block', () => {

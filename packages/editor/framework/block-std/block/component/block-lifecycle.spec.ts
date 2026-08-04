@@ -101,6 +101,28 @@ describe('BaseBlockComponent view lifecycle', () => {
     block.ngOnDestroy()
     expect(releaseViewRetention).toHaveBeenCalledTimes(1)
   })
+
+  it('does not schedule block-gap work for schema leaf blocks', () => {
+    const block = createLifecycleBlock()
+    Object.assign((block as any)._native, {
+      flavour: 'table-cell',
+      nodeType: 'block',
+    })
+    Object.assign(block, {
+      hostElement: document.createElement('td'),
+      doc: {
+        schemas: {
+          get: () => ({metadata: {isLeaf: true}}),
+        },
+      },
+    })
+    const requestFrame = spyOn(window, 'requestAnimationFrame')
+
+    ;(block as any)._bindBlockGapSpaces()
+
+    expect(requestFrame).not.toHaveBeenCalled()
+    expect((block as any)._blockGapSub).toBeUndefined()
+  })
 })
 
 class LifecycleBlock extends BaseBlockComponent {

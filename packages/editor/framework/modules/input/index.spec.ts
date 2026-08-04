@@ -329,7 +329,7 @@ const createMixedTextBoundaryEditingHarness = () => {
 
 const createTableCellEditingHarness = (
   selectionCells: {anchor: string; head: string} = {anchor: 'cell-1', head: 'cell-4'},
-  options: {missingBlocks?: string[]} = {},
+  options: {missingBlocks?: string[]; unmountedBlocks?: string[]} = {},
 ) => {
   let paragraphSeq = 0
   const blocks: Record<string, any> = {}
@@ -338,6 +338,7 @@ const createTableCellEditingHarness = (
     const paragraph = {
       id,
       flavour: 'paragraph',
+      props: {},
       textLength: text.length,
       textContent: () => text,
       yText: {
@@ -373,8 +374,8 @@ const createTableCellEditingHarness = (
     return cell
   }
 
-  const row1 = {id: 'row-1', flavour: 'table-row', childrenIds: ['cell-1', 'cell-2']}
-  const row2 = {id: 'row-2', flavour: 'table-row', childrenIds: ['cell-3', 'cell-4']}
+  const row1 = {id: 'row-1', flavour: 'table-row', props: {}, parentId: 'table-1', childrenIds: ['cell-1', 'cell-2']}
+  const row2 = {id: 'row-2', flavour: 'table-row', props: {}, parentId: 'table-1', childrenIds: ['cell-3', 'cell-4']}
   const cell1 = makeCell('cell-1', 'row-1', 0)
   const cell2 = makeCell('cell-2', 'row-1', 1)
   const cell3 = makeCell('cell-3', 'row-2', 0)
@@ -383,6 +384,7 @@ const createTableCellEditingHarness = (
   const table = {
     id: 'table-1',
     flavour: 'table',
+    props: {colWidths: [100, 100]},
     childrenIds: ['row-1', 'row-2'],
     confirmSelection: jasmine.createSpy('confirmSelection').and.callFake((start: number[], end: number[]) => ({start, end})),
     getCellsMatrixByCoordinates: jasmine.createSpy('getCellsMatrixByCoordinates').and.callFake((start: number[], end: number[]) =>
@@ -400,10 +402,39 @@ const createTableCellEditingHarness = (
     () => 0,
   )
 
+  const isModelBlock = (id: string) => !!blocks[id] && !options.missingBlocks?.includes(id)
+  const insertSnapshots = (parentId: string, index: number, snapshots: any[]) => {
+    const cell = blocks[parentId]
+    const inserted = snapshots.map(snapshot => {
+      const text = snapshot.children?.map((op: any) => op.insert || '').join('') || ''
+      const paragraph = makeParagraph(snapshot.id, text)
+      paragraph.parentId = parentId
+      paragraph.parentBlock = cell
+      return paragraph
+    })
+    cell.children.splice(index, 0, ...inserted)
+    return inserted
+  }
+
   const doc = {
     event: eventStub(),
     getBlockById: jasmine.createSpy('getBlockById').and.callFake((id: string) =>
-      options.missingBlocks?.includes(id) ? null : blocks[id]),
+      options.missingBlocks?.includes(id) || options.unmountedBlocks?.includes(id)
+        ? null
+        : blocks[id]),
+    model: {
+      exists: jasmine.createSpy('model.exists').and.callFake(isModelBlock),
+      getFlavour: jasmine.createSpy('model.getFlavour').and.callFake((id: string) =>
+        isModelBlock(id) ? blocks[id]?.flavour : undefined),
+      getProps: jasmine.createSpy('model.getProps').and.callFake((id: string) =>
+        isModelBlock(id) ? blocks[id]?.props ?? {} : undefined),
+      getChildrenIds: jasmine.createSpy('model.getChildrenIds').and.callFake((id: string) =>
+        isModelBlock(id) ? [...(blocks[id]?.childrenIds ?? [])] : []),
+      getParentId: jasmine.createSpy('model.getParentId').and.callFake((id: string) =>
+        isModelBlock(id) ? blocks[id]?.parentId ?? null : null),
+      getTextLength: jasmine.createSpy('model.getTextLength').and.callFake((id: string) =>
+        isModelBlock(id) ? blocks[id]?.textLength ?? 0 : 0),
+    },
     isEditable: jasmine.createSpy('isEditable').and.callFake((block: any) => block?.flavour === 'paragraph'),
     schemas: {
       createSnapshot: jasmine.createSpy('createSnapshot').and.callFake((_flavour: string, params: any[] = []) => {
@@ -430,18 +461,11 @@ const createTableCellEditingHarness = (
         }
         return [{index: 0, length: count}]
       }),
-      insertBlocks: jasmine.createSpy('insertBlocks').and.callFake((parentId: string, _index: number, snapshots: any[]) => {
-        const cell = blocks[parentId]
-        const inserted = snapshots.map(snapshot => {
-          const text = snapshot.children?.map((op: any) => op.insert || '').join('') || ''
-          const paragraph = makeParagraph(snapshot.id, text)
-          paragraph.parentId = parentId
-          paragraph.parentBlock = cell
-          return paragraph
-        })
-        cell.children.splice(_index, 0, ...inserted)
-        return inserted
-      }),
+      insertBlocks: jasmine.createSpy('insertBlocks').and.callFake(insertSnapshots),
+      insertBlockSnapshots: jasmine.createSpy('insertBlockSnapshots').and.callFake(
+        (parentId: string, index: number, snapshots: any[]) =>
+          insertSnapshots(parentId, index, snapshots).map(block => block.id),
+      ),
     },
     selection: {
       value: selection,
@@ -2389,7 +2413,9 @@ describe('InputTransformer table-cell selection editing', () => {
   }) as any
 
   it('replaces a table-cell selection with typed text in the anchor cell', () => {
-    const harness = createTableCellEditingHarness()
+    const harness = createTableCellEditingHarness(undefined, {
+      unmountedBlocks: ['cell-2', 'cell-3'],
+    })
     const {doc, transformer} = harness
     spyOn(transformer.compositionSession, 'updateAnchorFromInputEvent')
     const preventDefault = jasmine.createSpy('preventDefault')
@@ -2410,7 +2436,9 @@ describe('InputTransformer table-cell selection editing', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.undoManager.captureSelectionBeforeChange).toHaveBeenCalled()
     expect(doc.crud.deleteBlocks).toHaveBeenCalledTimes(4)
-    expect(doc.crud.insertBlocks).toHaveBeenCalledTimes(4)
+    expect(doc.crud.insertBlockSnapshots).toHaveBeenCalledTimes(4)
+    expect(doc.getBlockById).not.toHaveBeenCalledWith('cell-2')
+    expect(doc.getBlockById).not.toHaveBeenCalledWith('cell-3')
     expect(anchorParagraph.textContent()).toBe('你')
     expect(doc.selection.setCursorAt).toHaveBeenCalledWith(anchorParagraph, 1)
     expect(doc.selection.recalculate).not.toHaveBeenCalled()
@@ -2440,12 +2468,14 @@ describe('InputTransformer table-cell selection editing', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.undoManager.captureSelectionBeforeChange).not.toHaveBeenCalled()
     expect(doc.crud.deleteBlocks).not.toHaveBeenCalled()
-    expect(doc.crud.insertBlocks).not.toHaveBeenCalled()
+    expect(doc.crud.insertBlockSnapshots).not.toHaveBeenCalled()
     expect(doc.selection.blur).toHaveBeenCalled()
   })
 
   it('clears a table-cell selection for delete beforeInput and keeps the rectangle selected', () => {
-    const {doc, transformer, table, cells} = createTableCellEditingHarness()
+    const {doc, transformer} = createTableCellEditingHarness(undefined, {
+      unmountedBlocks: ['cell-2', 'cell-3'],
+    })
     spyOn(transformer.compositionSession, 'updateAnchorFromInputEvent')
     const preventDefault = jasmine.createSpy('preventDefault')
     const event = {
@@ -2463,7 +2493,9 @@ describe('InputTransformer table-cell selection editing', () => {
     expect(result).toBeTrue()
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.deleteBlocks).toHaveBeenCalledTimes(4)
-    expect(doc.selection.setTableCellSelection).toHaveBeenCalledWith(table, cells[0], cells[3])
+    expect(doc.selection.setTableCellSelection).toHaveBeenCalledWith('table-1', 'cell-1', 'cell-4')
+    expect(doc.getBlockById).not.toHaveBeenCalledWith('cell-2')
+    expect(doc.getBlockById).not.toHaveBeenCalledWith('cell-3')
     expect(doc.selection.setCursorAt).not.toHaveBeenCalled()
     expect(doc.selection.blur).not.toHaveBeenCalled()
   })

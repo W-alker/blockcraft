@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-07-31
+> Last updated: 2026-08-03
 
 ## PlaceholderPlugin
 
@@ -282,6 +282,10 @@ pagination.disable()
 ```
 
 The plugin changes only local DOM/CSS view state. It never writes Yjs and produces no Undo item. `print()` and `exportToPdf()` obtain the complete document through `doc.exportSnapshot()`, so virtualized offscreen blocks are included without mounting editor views merely to serialize them.
+
+An actual table row taller than `contentHeight` is no longer treated as one overflowing fragment. The live measurement path derives safe continuation anchors from direct child-Block boundaries and complete visual text lines, then runs every logical cell as a parallel flow. Screen pagination installs reversible zero-model-length gaps into the real editable DOM; the stable print layout installs a readonly compressed projection and uses the same fragment offsets. The table's virtual flow height and every internal sheet gap are included in sparse Projection extents, so blocks after the table start at the same sheet coordinate in exact live, sparse live and print layouts. Composition keeps the previous stable projection until `compositionend`.
+
+This cell-flow path is activated only when one physical `<tr>` is itself oversized. Ordinary rowspan/colspan tables keep the existing row-boundary policy; a content-bearing rowspan spanning several otherwise normal-height rows remains keep-together at the covered row boundaries. An irreducible nested atomic block is capped locally to `--bc-page-content-height` with clipping and no cell-level scroll container.
 
 The default `experimentalSparseView: false` path preserves the existing exact live behavior: `enable()` acquires a full-document virtualization lease and `disable()` releases it after view cleanup. With `experimentalSparseView: true` and root virtualization enabled, the paginated Projection drives viewport/spacer geometry without that lease. Mounted roots are measured; offscreen roots use configured flavour estimates until mounted. Gap, table-break and height-lock state is cached as pure layout data and replayed only for mounted roots. Model text/props/structure updates are frame-coalesced; the current pagination engine still performs an `O(N)` scan of cached numbers.
 

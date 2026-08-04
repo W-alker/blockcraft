@@ -51,6 +51,7 @@ import {
   SelectionSurfaceAdapter,
 } from './surface-adapter';
 import type {SelectionProjectionMountAdapter} from './projection-mount-adapter';
+import {resolveTableCellSelectionTarget} from '../table';
 
 const DOM_PROJECTION_RETRY_LIMIT = 8
 
@@ -1783,29 +1784,11 @@ export class SelectionManager {
     if (!sel) return ''
     const tableCellSelection = sel.getTableCellSelection()
     if (tableCellSelection) {
-      try {
-        const table = this.doc.getBlockById(tableCellSelection.tableId) as BlockCraft.IBlockComponents['table']
-        const anchorCell = this.doc.getBlockById(tableCellSelection.anchorCellId) as BlockCraft.IBlockComponents['table-cell']
-        const headCell = this.doc.getBlockById(tableCellSelection.headCellId) as BlockCraft.IBlockComponents['table-cell']
-        const anchor = {
-          rowIdx: table.childrenIds.indexOf(anchorCell.parentId!),
-          colIdx: anchorCell.getIndexOfParent(),
-        }
-        const head = {
-          rowIdx: table.childrenIds.indexOf(headCell.parentId!),
-          colIdx: headCell.getIndexOfParent(),
-        }
-        if (anchor.rowIdx < 0 || anchor.colIdx < 0 || head.rowIdx < 0 || head.colIdx < 0) return ''
-        const coordinates = table.confirmSelection(
-          [Math.min(anchor.rowIdx, head.rowIdx), Math.min(anchor.colIdx, head.colIdx)],
-          [Math.max(anchor.rowIdx, head.rowIdx), Math.max(anchor.colIdx, head.colIdx)],
-        )
-        return table.getCellsMatrixByCoordinates(coordinates.start, coordinates.end)
-          .map(row => row.map(cell => cell.textContent()).join('\t'))
-          .join('\n')
-      } catch {
-        return ''
-      }
+      const target = resolveTableCellSelectionTarget(this.doc, tableCellSelection)
+      if (!target) return ''
+      return target.physicalCellIds
+        .map(row => row.map(cellId => this._selectionBlockText(cellId)).join('\t'))
+        .join('\n')
     }
     const boundaryChildIds = sel.getBoundarySelectedChildIds()
     if (boundaryChildIds) {

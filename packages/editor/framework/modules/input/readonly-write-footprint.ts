@@ -136,6 +136,14 @@ function collectTableCells(
   plan: Extract<SelectionEditPlan, {kind: "table-cell"}>,
   reader: SelectionEditReader,
 ): string[] {
+  if (reader.resolveTableCellIds) {
+    return [...(reader.resolveTableCellIds(
+      plan.tableId,
+      plan.anchorCellId,
+      plan.headCellId,
+    ) ?? [])];
+  }
+
   const rowIds = safeChildrenIds(reader, plan.tableId);
   const anchorRowId = safeParentId(reader, plan.anchorCellId);
   const headRowId = safeParentId(reader, plan.headCellId);

@@ -3,6 +3,12 @@ import {
   withDefaultEmbedConverters,
 } from '../image-embed'
 import {InlineRuntime} from './inline-runtime'
+import {INLINE_PAGINATION_GAP_ATTRIBUTE} from './inline-pagination-projection'
+import {
+  applyInlinePaginationGaps,
+  clearInlinePaginationGaps,
+  measureInlinePaginationLineStarts,
+} from './inline-pagination-access'
 
 describe('InlineRuntime inline float lifecycle', () => {
   afterEach(() => {
@@ -53,6 +59,118 @@ describe('InlineRuntime inline float lifecycle', () => {
     ])
 
     expect(container.hasAttribute('data-bc-inline-float-owner')).toBeFalse()
+    runtime.destroy()
+  })
+
+  it('projects and revokes zero-model-length pagination gaps without changing offsets', () => {
+    const container = document.createElement('div')
+    const runtime = new InlineRuntime(container, new Map())
+    runtime.render([{insert: 'abcdef'}])
+
+    expect(applyInlinePaginationGaps(runtime, [{
+      offset: 3,
+      height: 140,
+      backdropOffset: 80,
+      backdropHeight: 20,
+    }])).toBeTrue()
+    const marker = container.querySelector<HTMLElement>(
+      `[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`,
+    )
+    expect(marker).not.toBeNull()
+    expect(marker!.style.height).toBe('140px')
+    expect(runtime.textLength).toBe(6)
+    expect(runtime.scrollBlot.leaves.length).toBe(2)
+    expect(runtime.modelPointToDom(3).node.textContent).toBe('abc')
+
+    // Boundary lies after leading-gap + left blot + pagination marker, but
+    // the marker contributes zero model characters.
+    const markerIndex = Array.from(container.childNodes).indexOf(marker!)
+    expect(runtime.domPointToModel(container, markerIndex + 1)).toBe(3)
+
+    clearInlinePaginationGaps(runtime)
+    expect(container.querySelector(`[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`)).toBeNull()
+    expect(runtime.scrollBlot.leaves.length).toBe(1)
+    expect(runtime.textLength).toBe(6)
+    runtime.destroy()
+  })
+
+  it('keeps fit-content line wrapping stable while a pagination gap splits text', () => {
+    const host = document.createElement('div')
+    const prefix = document.createElement('span')
+    const container = document.createElement('div')
+    host.dataset['inlineRuntimeTestHost'] = 'true'
+    host.style.cssText = 'display:flex;width:200px;'
+    prefix.style.cssText = 'flex:0 0 30px;'
+    container.style.cssText = [
+      'width:fit-content',
+      'max-width:170px',
+      'font:16px/20px monospace',
+      'white-space:break-spaces',
+      'word-break:break-all',
+    ].join(';')
+    host.append(prefix, container)
+    document.body.appendChild(host)
+    const runtime = new InlineRuntime(container, new Map())
+    runtime.render([{insert: 'abcdefghijklmnopqrstuvwx012345'}])
+    const naturalWidth = container.getBoundingClientRect().width
+
+    applyInlinePaginationGaps(runtime, [{
+      offset: 15,
+      height: 100,
+      backdropOffset: 70,
+      backdropHeight: 20,
+    }])
+
+    expect(container.getBoundingClientRect().width).toBeCloseTo(naturalWidth, 1)
+    expect(container.style.width).toBe(`${container.clientWidth}px`)
+    clearInlinePaginationGaps(runtime)
+    expect(container.style.width).toBe('fit-content')
+    runtime.destroy()
+  })
+
+  it('clears a pagination projection before an incremental model patch', () => {
+    const container = document.createElement('div')
+    const runtime = new InlineRuntime(container, new Map())
+    runtime.render([{insert: 'abcdef'}])
+    applyInlinePaginationGaps(runtime, [{
+      offset: 3,
+      height: 100,
+      backdropOffset: 70,
+      backdropHeight: 20,
+    }])
+
+    runtime.applyDelta([{retain: 6}, {insert: '!'}])
+
+    expect(container.querySelector(`[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`)).toBeNull()
+    expect(runtime.textLength).toBe(7)
+    expect(runtime.scrollBlot.leaves.map(leaf => leaf.domNode.textContent).join('')).toBe('abcdef!')
+    runtime.destroy()
+  })
+
+  it('measures safe model offsets at visual line starts', () => {
+    const host = document.createElement('div')
+    const container = document.createElement('div')
+    host.dataset['inlineRuntimeTestHost'] = 'true'
+    host.style.width = '100px'
+    container.style.cssText = [
+      'width:100px',
+      'font:16px/20px monospace',
+      'white-space:pre-wrap',
+      'word-break:break-all',
+    ].join(';')
+    host.appendChild(container)
+    document.body.appendChild(host)
+    const runtime = new InlineRuntime(container, new Map())
+    runtime.render([{insert: 'abcdefghijklmnopqrstuvwx'}])
+
+    const points = measureInlinePaginationLineStarts(runtime)
+
+    expect(points.length).toBeGreaterThan(1)
+    expect(points.every((point, index) =>
+      point.offset > (points[index - 1]?.offset ?? 0)
+      && point.top > (points[index - 1]?.top ?? -1),
+    )).toBeTrue()
+    expect(points.every(point => point.offset > 0 && point.offset < runtime.textLength)).toBeTrue()
     runtime.destroy()
   })
 

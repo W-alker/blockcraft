@@ -1,8 +1,10 @@
 // packages/editor/framework/modules/pagination/view/paginated-view.controller.ts
-import {animationFrameScheduler, Subscription} from "rxjs";
-import {throttleTime} from "rxjs/operators";
+import {fromEvent, Subscription} from "rxjs";
 import {performanceTest} from "../../../../global";
+import {isNativeInputTarget} from "../../../utils";
 import {paginate, PaginationItem} from "../engine";
+import {cloneTableCellFlowPlan} from "../engine/table-cell-flow";
+import {setTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
 import {
   PaginationLayoutCoordinator,
   PaginationLayoutState,
@@ -45,6 +47,7 @@ export class PaginatedViewController {
   private _subs = new Subscription();
   private _containerRO: ResizeObserver | null = null;
   private _rafId = 0;
+  private _compositionRecomputePending = false;
   private _enabled = false;
   private _destroyed = false;
   private _layoutRevision = 0;
@@ -58,6 +61,8 @@ export class PaginatedViewController {
   private _releaseLayoutProjection: (() => void) | null = null;
   private _sparseFailureCount = 0;
   private _pendingSparseContainerStyles = false;
+  /** 上一轮会直接改变根块 border-box 的分页投影，用于覆盖本轮的移除操作。 */
+  private _layoutOwnedRootIds = new Set<string>();
   private readonly _onFontsLoadingDone: EventListener = () => {
     if (!this._enabled) return;
     this._fontEpoch++;
@@ -132,7 +137,9 @@ export class PaginatedViewController {
 
       this._subs.add(
         this._heightSource.resize$
-          .pipe(throttleTime(0, animationFrameScheduler, {leading: false, trailing: true}))
+          // scheduleRecompute 自身已经是 trailing rAF 合并器。这里再套一层
+          // animationFrameScheduler 会把结构删除的直接调度和尺寸通知拆到相邻两帧，
+          // 恰好造成跨页单元格删除后的二次重排与可见抖动。
           .subscribe(() => this.scheduleRecompute()),
       );
       const objectSizing = this.doc.objectSizing;
@@ -148,6 +155,7 @@ export class PaginatedViewController {
       }
       this._subs.add(
         this.doc.model.contentChange$.subscribe(change => {
+          this._heightSource.clearLayoutOwnedResize();
           this._shadowLayout = null;
           this._runShadowMutation('content-change', () =>
             this.layoutCoordinator.applyContentChange(change),
@@ -162,6 +170,7 @@ export class PaginatedViewController {
       );
       this._subs.add(
         this.doc.model.structureChange$.subscribe(change => {
+          this._heightSource.clearLayoutOwnedResize();
           this._runShadowMutation('structure-change', () =>
             this.layoutCoordinator.applyStructureChange(change),
           );
@@ -193,6 +202,16 @@ export class PaginatedViewController {
       }
       this._containerRO = new ResizeObserver(() => this.scheduleRecompute());
       this._containerRO.observe(this.scrollContainer);
+      this._subs.add(
+        fromEvent<CompositionEvent>(
+          this.doc.root.hostElement,
+          'compositionend',
+          {capture: true},
+        ).subscribe(event => {
+          if (isNativeInputTarget(event.target)) return;
+          this._flushCompositionRecompute();
+        }),
+      );
 
       if (this.options.sparseView) {
         this._activateSparseLayout();
@@ -233,6 +252,13 @@ export class PaginatedViewController {
   scheduleRecompute(): void {
     if (!this._enabled) return;
     this._shadowLayout = null;
+    if (this._isCompositionInProgress()) {
+      this._compositionRecomputePending = true;
+      if (this._rafId) cancelAnimationFrame(this._rafId);
+      this._rafId = 0;
+      return;
+    }
+    this._compositionRecomputePending = false;
     if (this._rafId) cancelAnimationFrame(this._rafId);
     this._rafId = requestAnimationFrame(() => {
       this._rafId = 0;
@@ -243,6 +269,13 @@ export class PaginatedViewController {
   @performanceTest('pagination view recompute', 16)
   private _recompute(): StablePaginationLayout | null {
     if (!this._enabled) return null;
+    // IME 组合期间 DOM 含浏览器管理的临时文本节点；此时重建分页投影会破坏组合范围。
+    // 表格选区实体化可能替换 compositionstart 的宿主，使原生状态提前复位；
+    // 模型会话覆盖 active/committing 全周期，必须同时作为分页重排的权威门禁。
+    if (this._isCompositionInProgress()) {
+      this._compositionRecomputePending = true;
+      return this._stableLayout;
+    }
     let measurementRevision: number | null = null;
     try {
       this.layoutCoordinator.syncRootOrder();
@@ -280,6 +313,31 @@ export class PaginatedViewController {
       this._reconcileShadow(layout, metas, measurementRevision);
     }
     return layout;
+  }
+
+  private _isCompositionInProgress(): boolean {
+    return !!this.doc.event?.status?.isComposing
+      || !(this.doc.inputManger?.compositionSession?.isIdle ?? true);
+  }
+
+  private _flushCompositionRecompute(): void {
+    // compositionend 的模型写入、规范 DOM 重建和光标恢复都在同一原生事件内同步完成。
+    // 推迟到监听器链结束后再刷新，既不会读取中间 DOM，也能覆盖文字等高但分页投影
+    // 已被 InlineRuntime.render() 撤销的情况。
+    queueMicrotask(() => {
+      if (!this._enabled) return;
+      if (this._isCompositionInProgress()) {
+        this._compositionRecomputePending = true;
+        return;
+      }
+      // 每次被编辑器接管的 compositionend 都保证存在一次恢复。仅依赖 pending 会漏掉
+      // 等高文本提交，因为它不一定产生 ResizeObserver 通知；如果提交路径已排好一帧，
+      // 则直接复用，避免同一 compositionend 重复取消/创建动画帧。
+      const hadDeferredRecompute = this._compositionRecomputePending;
+      this._compositionRecomputePending = false;
+      if (!hadDeferredRecompute && this._rafId) return;
+      this.scheduleRecompute();
+    });
   }
 
   private _activateSparseLayout(): void {
@@ -346,7 +404,9 @@ export class PaginatedViewController {
         // Commit an estimated projection first; its willChange$ applies the new
         // page CSS after virtualization captures the old scroll anchor. Measure
         // mounted roots against the new width on the following frame.
-        const state = this.layoutCoordinator.compute(this._config, this._geom);
+        const state = this.layoutCoordinator.compute(this._config, this._geom, {
+          forceProjectionUpdate: true,
+        });
         const layout = this._stableLayoutFromState(state);
         this._shadowLayout = state;
         this._stableLayout = layout;
@@ -413,20 +473,31 @@ export class PaginatedViewController {
   }
 
   private _metasFromState(state: PaginationLayoutState): BlockMeta[] {
-    return state.entries.map(entry => ({
-      id: entry.blockId,
-      flavour: entry.flavour,
-      nodeType: entry.nodeType,
-      isHeading: entry.isHeading,
-      height: entry.lockHeight ?? entry.naturalHeight,
-      splitOffsets: entry.splitOffsets ? [...entry.splitOffsets] : undefined,
-      preferredSplitOffsets: entry.preferredSplitOffsets
-        ? [...entry.preferredSplitOffsets]
-        : undefined,
-      tableRows: entry.tableRows?.map(row => ({...row})),
-      lockHeight: entry.lockHeight,
-      repeatHeaderHeight: entry.repeatHeaderHeight,
-    }));
+    return state.entries.map(entry => {
+      const meta: BlockMeta = {
+        id: entry.blockId,
+        flavour: entry.flavour,
+        nodeType: entry.nodeType,
+        isHeading: entry.isHeading,
+        height: entry.lockHeight
+          ?? entry.tableCellFlowPlan?.paginationHeight
+          ?? entry.naturalHeight,
+        splitOffsets: entry.splitOffsets ? [...entry.splitOffsets] : undefined,
+        preferredSplitOffsets: entry.preferredSplitOffsets
+          ? [...entry.preferredSplitOffsets]
+          : undefined,
+        tableRows: entry.tableRows?.map(row => ({...row})),
+        lockHeight: entry.lockHeight,
+        repeatHeaderHeight: entry.repeatHeaderHeight,
+      };
+      setTableCellFlowPlan(
+        meta,
+        entry.tableCellFlowPlan
+          ? cloneTableCellFlowPlan(entry.tableCellFlowPlan)
+          : undefined,
+      );
+      return meta;
+    });
   }
 
   private _applyLayoutView(
@@ -435,9 +506,24 @@ export class PaginatedViewController {
   ): void {
     const result = layout.result;
     const lockedIds = new Set<string>();
+    const nextLayoutOwnedIds = new Set<string>();
     for (const meta of metas) {
-      if (meta.lockHeight != null && meta.lockHeight > 0) lockedIds.add(meta.id);
+      if (meta.lockHeight != null && meta.lockHeight > 0) {
+        lockedIds.add(meta.id);
+        nextLayoutOwnedIds.add(meta.id);
+      }
+      // 小表格不会插断点 DOM，不需要为它增加一次最终尺寸读取。
+      if (
+        meta.flavour === 'table'
+        && meta.height > this._geom.geometry.contentHeight
+      ) {
+        nextLayoutOwnedIds.add(meta.id);
+      }
     }
+    const layoutOwnedIds = new Set([
+      ...this._layoutOwnedRootIds,
+      ...nextLayoutOwnedIds,
+    ]);
     this._heightLockApplier.apply(lockedIds);
 
     const rects = computeSheetRects(result.pages.length, this._geom.sheetHeightPx, this._geom.pageGap);
@@ -455,7 +541,17 @@ export class PaginatedViewController {
 
     const gaps = computeBlockGaps(result, this._geom.sheetHeightPx, this._geom.pageGap);
     this._gapApplier.apply(gaps);
-    this._tableBreaks.apply(metas, result, this._geom.sheetHeightPx, this._geom.pageGap);
+    this._tableBreaks.apply(
+      metas,
+      result,
+      this._geom.sheetHeightPx,
+      this._geom.pageGap,
+      this._geom.margins.top + this._geom.headerHeight,
+    );
+    // 表格断点/单元格流投影和高度锁会改变根块 border-box。登记提交后的
+    // 最终尺寸，避免它们的异步 ResizeObserver 回声再启动一轮分页。
+    this._heightSource.captureLayoutOwnedResize(layoutOwnedIds);
+    this._layoutOwnedRootIds = nextLayoutOwnedIds;
   }
 
   private _mountedRootIds(): readonly string[] {
@@ -647,14 +743,17 @@ export class PaginatedViewController {
     this._containerRO?.disconnect();
     this._containerRO = null;
     this._removeFontListener();
+    this._heightSource.clearLayoutOwnedResize();
     const releaseLayoutProjection = this._releaseLayoutProjection;
     this._releaseLayoutProjection = null;
     releaseLayoutProjection?.();
     this._clearPaginationView();
     this._stableLayout = null;
     this._shadowLayout = null;
+    this._compositionRecomputePending = false;
     this._sparseFailureCount = 0;
     this._pendingSparseContainerStyles = false;
+    this._layoutOwnedRootIds.clear();
     this._lastShadowMismatchSignature = null;
     this._lastShadowErrorSignature = null;
   }

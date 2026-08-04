@@ -35,6 +35,8 @@ interface Harness {
   readonly themeChange$: Subject<string>;
   readonly onChildrenUpdate$: Subject<void>;
   readonly onPropsUpdate$: Subject<void>;
+  readonly compositionSession: { isIdle: boolean };
+  readonly eventStatus: { isComposing: boolean };
   readonly logger: { warn: jasmine.Spy };
   destroy(): void;
 }
@@ -97,6 +99,8 @@ function createHarness(): Harness {
   const onChildrenUpdate$ = new Subject<void>();
   const onPropsUpdate$ = new Subject<void>();
   const logger = { warn: jasmine.createSpy("warn") };
+  const compositionSession = { isIdle: true };
+  const eventStatus = { isComposing: false };
   const block = {
     id: "root-block",
     flavour: "paragraph",
@@ -136,6 +140,8 @@ function createHarness(): Harness {
     themeChange$,
     onChildrenUpdate$,
     onPropsUpdate$,
+    inputManger: { compositionSession },
+    event: { status: eventStatus },
     ngZone: { runOutsideAngular: (fn: () => void) => fn() },
     getBlockById: (blockId: string) =>
       blockId === "root-block" ? block : null,
@@ -152,6 +158,8 @@ function createHarness(): Harness {
     themeChange$,
     onChildrenUpdate$,
     onPropsUpdate$,
+    compositionSession,
+    eventStatus,
     logger,
     destroy: () => {
       contentChange$.complete();
@@ -278,6 +286,118 @@ describe("PaginatedViewController shadow layout", () => {
       expect(cancelFrame).toHaveBeenCalledTimes(2);
       expect(callbacks.size).toBe(1);
       callbacks.forEach((callback) => callback(performance.now()));
+      expect(recompute).toHaveBeenCalledTimes(1);
+    } finally {
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
+  it("defers pagination frames for the full model-owned IME session and flushes once", async () => {
+    const harness = createHarness();
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+    );
+
+    try {
+      controller.enable();
+      controller.captureStableLayout();
+      const callbacks = new Map<number, FrameRequestCallback>();
+      let nextFrameId = 0;
+      const requestFrame = spyOn(window, "requestAnimationFrame").and.callFake(
+        callback => {
+          const frameId = ++nextFrameId;
+          callbacks.set(frameId, callback);
+          return frameId;
+        },
+      );
+      spyOn(window, "cancelAnimationFrame").and.callFake(frameId => {
+        callbacks.delete(frameId);
+      });
+      const applyLayout = spyOn(
+        controller as unknown as {_applyLayoutView(...args: unknown[]): void},
+        "_applyLayoutView",
+      ).and.callThrough();
+
+      // A frame queued before compositionstart must also be stopped when it runs.
+      controller.scheduleRecompute();
+      harness.compositionSession.isIdle = false;
+      callbacks.forEach(callback => callback(performance.now()));
+      callbacks.clear();
+      expect(applyLayout).not.toHaveBeenCalled();
+
+      // A replaced table-cell host can make the raw event state false here. The
+      // model-owned session still keeps every resize/structure echo buffered.
+      harness.eventStatus.isComposing = false;
+      controller.scheduleRecompute();
+      controller.scheduleRecompute();
+      expect(requestFrame).toHaveBeenCalledTimes(1);
+
+      harness.blockHost.dispatchEvent(new CompositionEvent("compositionend", {
+        bubbles: true,
+      }));
+      harness.compositionSession.isIdle = true;
+      await Promise.resolve();
+
+      expect(requestFrame).toHaveBeenCalledTimes(2);
+      expect(callbacks.size).toBe(1);
+      callbacks.forEach(callback => callback(performance.now()));
+      expect(applyLayout).toHaveBeenCalledTimes(1);
+    } finally {
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
+  it("coalesces a structural deletion and its resize notification into one frame", () => {
+    const harness = createHarness();
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+    );
+
+    try {
+      controller.enable();
+      controller.captureStableLayout();
+      const callbacks = new Map<number, FrameRequestCallback>();
+      let nextFrameId = 0;
+      spyOn(window, "requestAnimationFrame").and.callFake(callback => {
+        const frameId = ++nextFrameId;
+        callbacks.set(frameId, callback);
+        return frameId;
+      });
+      spyOn(window, "cancelAnimationFrame").and.callFake(frameId => {
+        callbacks.delete(frameId);
+      });
+      const recompute = spyOn(
+        controller as unknown as {_recompute(): unknown},
+        "_recompute",
+      ).and.callThrough();
+      const heightSource = (
+        controller as unknown as {
+          _heightSource: {
+            _handleResize(entries: readonly ResizeObserverEntry[]): void;
+          };
+        }
+      )._heightSource;
+
+      harness.structureChange$.next({
+        revision: 1,
+        reachableAddedIds: [],
+        reachableRemovedIds: ["nested"],
+        affectedParentIds: ["root-block"],
+        affectedRootIds: ["root-block"],
+      });
+      heightSource._handleResize([{
+        target: harness.blockHost,
+        borderBoxSize: [{blockSize: 40}],
+      } as unknown as ResizeObserverEntry]);
+
+      expect(callbacks.size).toBe(1);
+      callbacks.forEach(callback => callback(performance.now()));
       expect(recompute).toHaveBeenCalledTimes(1);
     } finally {
       controller.destroy();

@@ -51,6 +51,10 @@ import {
   BlockReadonlyOperation,
   BlockReadonlyViolationTrigger,
 } from "../../doc/block-readonly.types";
+import {
+  resolveTableCellSelectionTarget,
+  TableCellSelectionModelTarget,
+} from "../table";
 
 const ALLOW_INPUT_TYPES = new Set([
   "insertText",
@@ -96,13 +100,6 @@ type BlockRangeEditPlan = Extract<SelectionEditPlan, {kind: "block-range"}>;
 type GapEditPlan = Extract<SelectionEditPlan, {kind: "gap"}>;
 type RangeEditPlan = Extract<SelectionEditPlan, {kind: "range"}>;
 type TableCellEditPlan = Extract<SelectionEditPlan, {kind: "table-cell"}>;
-
-type TableCellSelectionTarget = {
-  table: BlockCraft.IBlockComponents["table"];
-  anchorCell: BlockCraft.IBlockComponents["table-cell"];
-  headCell: BlockCraft.IBlockComponents["table-cell"];
-  cells: BlockCraft.IBlockComponents["table-cell"][];
-};
 
 @DocEventRegister
 export class InputTransformer {
@@ -226,14 +223,17 @@ export class InputTransformer {
 
     return planSelectionEdit(source, {
       getParentId: blockId => {
+        if (this.doc.model?.exists(blockId)) return this.doc.model.getParentId(blockId);
         const block = this._getLiveBlockById(blockId);
         return block ? block.parentId ?? null : undefined;
       },
       getChildrenIds: blockId => {
+        if (this.doc.model?.exists(blockId)) return this.doc.model.getChildrenIds(blockId);
         const block = this._getLiveBlockById(blockId);
         return block ? block.childrenIds ?? [] : null;
       },
       getTextLength: blockId => {
+        if (this.doc.model?.exists(blockId)) return this.doc.model.getTextLength(blockId);
         const block = this._getLiveBlockById(blockId);
         return block && this.doc.isEditable(block) ? block.textLength : null;
       },
@@ -257,6 +257,12 @@ export class InputTransformer {
         const block = this._getLiveBlockById(blockId);
         return block && this.doc.isEditable(block) ? block.textLength : null;
       },
+      resolveTableCellIds: (tableId, anchorCellId, headCellId) =>
+        resolveTableCellSelectionTarget(this.doc, {
+          tableId,
+          anchorCellId,
+          headCellId,
+        })?.visibleCellIds ?? null,
     };
   }
 
@@ -389,13 +395,13 @@ export class InputTransformer {
     if (
       parent &&
       this.doc.schemas.get(parent.flavour)?.metadata.renderUnit &&
-      this.doc.canInsertChild(parent.id, "paragraph")
+      ((this.doc as any).canInsertChild?.(parent.id, "paragraph") ?? true)
     ) {
       return { host: parent, mode: "sibling" };
     }
     if (
       this.doc.schemas.get(block.flavour)?.metadata.renderUnit &&
-      this.doc.canInsertChild(block.id, "paragraph")
+      ((this.doc as any).canInsertChild?.(block.id, "paragraph") ?? true)
     ) {
       return { host: block, mode: "inside" };
     }
@@ -710,7 +716,7 @@ export class InputTransformer {
     const schema = this.doc.schemas.get(target.host.flavour);
     return (
       !!schema?.metadata.renderUnit &&
-      this.doc.canInsertChild(target.host.id, "paragraph")
+      ((this.doc as any).canInsertChild?.(target.host.id, "paragraph") ?? true)
     );
   }
 
@@ -794,73 +800,10 @@ export class InputTransformer {
     }
   }
 
-  private _isLiveTable(block: unknown): block is BlockCraft.IBlockComponents["table"] {
-    return !!block &&
-      (block as BlockCraft.BlockComponent).flavour === "table" &&
-      Array.isArray((block as BlockCraft.IBlockComponents["table"]).childrenIds) &&
-      typeof (block as BlockCraft.IBlockComponents["table"]).confirmSelection === "function" &&
-      typeof (block as BlockCraft.IBlockComponents["table"]).getCellsMatrixByCoordinates === "function";
-  }
-
-  private _isLiveTableCell(block: unknown): block is BlockCraft.IBlockComponents["table-cell"] {
-    return !!block &&
-      (block as BlockCraft.BlockComponent).flavour === "table-cell" &&
-      typeof (block as BlockCraft.IBlockComponents["table-cell"]).getIndexOfParent === "function";
-  }
-
   private _resolveTableCellSelection(
     tableCellSelection: TableCellEditPlan,
-  ): TableCellSelectionTarget | null {
-    const table = this._getLiveBlockById<BlockCraft.IBlockComponents["table"]>(tableCellSelection.tableId);
-    const anchorCell = this._getLiveBlockById<BlockCraft.IBlockComponents["table-cell"]>(tableCellSelection.anchorCellId);
-    const headCell = this._getLiveBlockById<BlockCraft.IBlockComponents["table-cell"]>(tableCellSelection.headCellId);
-    if (!this._isLiveTable(table) || !this._isLiveTableCell(anchorCell) || !this._isLiveTableCell(headCell)) return null;
-
-    let anchor: { rowIdx: number; colIdx: number };
-    let head: { rowIdx: number; colIdx: number };
-    try {
-      anchor = {
-        rowIdx: table.childrenIds.indexOf(anchorCell.parentId!),
-        colIdx: anchorCell.getIndexOfParent(),
-      };
-      head = {
-        rowIdx: table.childrenIds.indexOf(headCell.parentId!),
-        colIdx: headCell.getIndexOfParent(),
-      };
-    } catch {
-      return null;
-    }
-    if (anchor.rowIdx < 0 || anchor.colIdx < 0 || head.rowIdx < 0 || head.colIdx < 0) {
-      return null;
-    }
-
-    let cells: BlockCraft.IBlockComponents["table-cell"][];
-    try {
-      const coordinates = table.confirmSelection(
-        [Math.min(anchor.rowIdx, head.rowIdx), Math.min(anchor.colIdx, head.colIdx)],
-        [Math.max(anchor.rowIdx, head.rowIdx), Math.max(anchor.colIdx, head.colIdx)],
-      );
-      cells = table.getCellsMatrixByCoordinates(coordinates.start, coordinates.end)
-        .flat(1)
-        .filter(cell => this._isLiveTableCell(cell) && cell.props?.display !== "none");
-    } catch {
-      return null;
-    }
-    if (!cells.length) return null;
-
-    const effectiveAnchor = cells.some(cell => cell.id === anchorCell.id)
-      ? anchorCell
-      : cells[0];
-    const effectiveHead = cells.some(cell => cell.id === headCell.id)
-      ? headCell
-      : cells[cells.length - 1];
-
-    return {
-      table,
-      anchorCell: effectiveAnchor,
-      headCell: effectiveHead,
-      cells,
-    };
+  ): TableCellSelectionModelTarget | null {
+    return resolveTableCellSelectionTarget(this.doc, tableCellSelection);
   }
 
   private _hasTableCellSelection(selection: BlockSelection): boolean {
@@ -869,21 +812,26 @@ export class InputTransformer {
   }
 
   private _replaceTableCellWithParagraph(
-    cell: BlockCraft.IBlockComponents["table-cell"],
+    cellId: string,
     text: string | null,
   ): string | null {
-    if (cell.props?.display === "none") return null;
+    if (
+      this.doc.model.getFlavour(cellId) !== "table-cell" ||
+      this.doc.model.getProps(cellId)?.["display"] === "none"
+    ) {
+      return null;
+    }
 
-    const oldChildrenLength = cell.childrenLength;
+    const oldChildrenLength = this.doc.model.getChildrenIds(cellId).length;
     const paragraph = this.doc.schemas.createSnapshot(
       "paragraph",
       text ? [text] : [],
     );
-    this.doc.crud.insertBlocks(cell.id, 0, [paragraph]);
+    const insertedIds = this.doc.crud.insertBlockSnapshots(cellId, 0, [paragraph]);
     if (oldChildrenLength > 0) {
-      this.doc.crud.deleteBlocks(cell.id, 1, oldChildrenLength, true);
+      this.doc.crud.deleteBlocks(cellId, 1, oldChildrenLength, true);
     }
-    return paragraph.id;
+    return insertedIds[0] ?? paragraph.id;
   }
 
   private _setTextSelectionWhenReady(blockId: string, index: number): void {
@@ -953,12 +901,12 @@ export class InputTransformer {
     const anchorRef: { blockId: string | null } = { blockId: null };
 
     this.doc.crud.transact(() => {
-      target.cells.forEach(cell => {
+      target.visibleCellIds.forEach(cellId => {
         const blockId = this._replaceTableCellWithParagraph(
-          cell,
-          cell.id === target.anchorCell.id ? text : null,
+          cellId,
+          cellId === target.anchorCellId ? text : null,
         );
-        if (cell.id === target.anchorCell.id) {
+        if (cellId === target.anchorCellId) {
           anchorRef.blockId = blockId;
         }
       });
@@ -973,9 +921,9 @@ export class InputTransformer {
       this._setCursorAtBlockWhenReady(anchorBlockId, true);
     } else {
       this.doc.selection.setTableCellSelection(
-        target.table,
-        target.anchorCell,
-        target.headCell,
+        target.tableId,
+        target.anchorCellId,
+        target.headCellId,
       );
     }
 

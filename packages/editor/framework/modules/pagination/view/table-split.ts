@@ -6,13 +6,41 @@
 //
 // 纯逻辑，可单测。视图层 controller 拿结果调 table.applyPaginationBreaks。
 
-import {PaginationResult} from "../engine";
+import {
+  PaginationResult,
+} from "../engine";
+import {
+  TableCellFlowAnchor,
+  TableCellFlowPlan,
+} from "../engine/table-cell-flow";
 import {TableRowGeom} from "./item-builder";
 
-export interface TableBreak {
+export interface TableRowBreak {
   beforeRowId: string;
   gap: number;
 }
+
+export interface TableCellFlowViewGap {
+  cellId: string;
+  anchor: TableCellFlowAnchor;
+  gap: number;
+  backdropOffset: number;
+  backdropHeight: number;
+}
+
+export interface TableCellFlowViewBreak {
+  kind: "cell-flow";
+  rowId: string;
+  cells: TableCellFlowViewGap[];
+  mask: {
+    top: number;
+    height: number;
+    backdropOffset: number;
+    backdropHeight: number;
+  };
+}
+
+export type TableBreak = TableRowBreak | TableCellFlowViewBreak;
 
 /** 切点偏移→行的匹配容差（px）：cuts 来自行底边、行连续，理论精确，留 2px 抗 border-collapse 边线与亚像素。 */
 const ROW_MATCH_TOLERANCE = 2;
@@ -31,14 +59,57 @@ export function computeTableBreaks(
   result: PaginationResult,
   sheetHeightPx: number,
   pageGap: number,
+  cellFlowPlan?: TableCellFlowPlan,
+  contentTop = 0,
 ): TableBreak[] {
   const breaks: TableBreak[] = [];
+  const firstTablePage = result.pages.findIndex(page =>
+    page.slots.some(slot => slot.id === tableId));
   for (let i = 1; i < result.pages.length; i++) {
     const first = result.pages[i].slots[0];
     if (!first || first.id !== tableId) continue;
     if (!first.fragment || first.fragment.fromOffset <= 0) continue;
 
     const fromOffset = first.fragment.fromOffset;
+    const flowBreak = cellFlowPlan?.segments.find(segment =>
+      Math.abs(segment.toOffset - fromOffset) <= ROW_MATCH_TOLERANCE,
+    )?.breakAfter;
+    if (flowBreak?.kind === "cell-flow") {
+      const previous = result.pages[i - 1];
+      const maskHeight = sheetHeightPx + pageGap - previous.usedHeight;
+      if (maskHeight <= 0) continue;
+      const previousTablePage = Math.max(0, i - 1 - Math.max(0, firstTablePage));
+      breaks.push({
+        kind: "cell-flow",
+        rowId: flowBreak.rowId,
+        cells: flowBreak.continuations.map(continuation => ({
+          cellId: continuation.cellId,
+          anchor: {...continuation.anchor},
+          gap: Math.max(0, sheetHeightPx + pageGap - continuation.pageOffset),
+          backdropOffset: Math.max(
+            0,
+            sheetHeightPx - contentTop - continuation.pageOffset,
+          ),
+          backdropHeight: pageGap,
+        })),
+        mask: {
+          top: previousTablePage * (sheetHeightPx + pageGap) + previous.usedHeight,
+          height: maskHeight,
+          backdropOffset: Math.max(
+            0,
+            sheetHeightPx - contentTop - previous.usedHeight,
+          ),
+          backdropHeight: pageGap,
+        },
+      });
+      continue;
+    }
+    if (flowBreak?.kind === "row") {
+      const gap = sheetHeightPx + pageGap - result.pages[i - 1].usedHeight;
+      if (gap > 0) breaks.push({beforeRowId: flowBreak.beforeRowId, gap});
+      continue;
+    }
+
     const row = rows.find(r => Math.abs(r.top - fromOffset) <= ROW_MATCH_TOLERANCE);
     if (!row) continue;
 

@@ -2,6 +2,7 @@
 import {computeTableBreaks} from "./table-split";
 import {TableRowGeom} from "./item-builder";
 import {PaginationResult} from "../engine";
+import {planTableCellFlow} from "../engine/table-cell-flow";
 
 function rows(n: number, h = 40): TableRowGeom[] {
   return Array.from({length: n}, (_, i) => ({id: `r${i}`, top: i * h, bottom: (i + 1) * h, coveredFromAbove: false}));
@@ -55,4 +56,50 @@ describe("computeTableBreaks", () => {
     const result = splitResult("t", [140, 240], [140, 100]); // 120+20−140=0
     expect(computeTableBreaks("t", rows(6), result, 120, 20)).toEqual([]);
   });
+
+  it("超高单元格使用同源 flow plan 生成各列页缝与整表遮罩", () => {
+    const plan = planTableCellFlow([{
+      kind: "cell-flow",
+      rowId: "r0",
+      cells: [{
+        cellId: "c0",
+        points: [
+          {offset: 80, anchor: {kind: "text", blockId: "p0", offset: 10}},
+          {offset: 160, anchor: {kind: "text", blockId: "p0", offset: 20}},
+          {offset: 240, anchor: {kind: "cell-end"}},
+        ],
+      }],
+    }], 100);
+    const result = splitResult("t", [80, 160, 240], [80, 80, 80]);
+
+    const breaks = computeTableBreaks("t", rows(1, 240), result, 120, 20, plan, 10);
+
+    expect(breaks).toEqual([
+      {
+        kind: "cell-flow",
+        rowId: "r0",
+        cells: [{
+          cellId: "c0",
+          anchor: {kind: "text", blockId: "p0", offset: 10},
+          gap: 60,
+          backdropOffset: 30,
+          backdropHeight: 20,
+        }],
+        mask: {top: 80, height: 60, backdropOffset: 30, backdropHeight: 20},
+      },
+      {
+        kind: "cell-flow",
+        rowId: "r0",
+        cells: [{
+          cellId: "c0",
+          anchor: {kind: "text", blockId: "p0", offset: 20},
+          gap: 60,
+          backdropOffset: 30,
+          backdropHeight: 20,
+        }],
+        mask: {top: 220, height: 60, backdropOffset: 30, backdropHeight: 20},
+      },
+    ]);
+  });
+
 });

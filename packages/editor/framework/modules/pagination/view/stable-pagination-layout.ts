@@ -1,4 +1,6 @@
 import {PaginationItem, PaginationResult} from '../engine'
+import {cloneTableCellFlowPlan} from '../engine/table-cell-flow'
+import {copyTableCellFlowPlan} from '../engine/table-cell-flow-metadata'
 import {PaginationConfig, ResolvedPaginationGeometry} from '../pagination.types'
 
 /**
@@ -59,11 +61,13 @@ function cloneGeometry(geometry: ResolvedPaginationGeometry): ResolvedPagination
 }
 
 function cloneItem(item: PaginationItem): PaginationItem {
-  return {
+  const clone: PaginationItem = {
     ...item,
     splitOffsets: item.splitOffsets ? [...item.splitOffsets] : undefined,
     preferredSplitOffsets: item.preferredSplitOffsets
       ? [...item.preferredSplitOffsets]
       : undefined,
   }
+  copyTableCellFlowPlan(item, clone, cloneTableCellFlowPlan)
+  return clone
 }

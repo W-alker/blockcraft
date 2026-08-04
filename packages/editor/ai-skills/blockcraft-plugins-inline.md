@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-07-30
+> Last updated: 2026-08-03
 
 ## Inline Extensions
 
@@ -152,7 +152,26 @@ new CodeInlineEditorBinding()
 
 Handles copy/cut of selected cell ranges, table-shaped paste into existing cells, Arrow/Shift+Arrow movement for model-owned cell rectangles, Delete/Backspace to clear cells, and Cmd+A to select entire table.
 
-Table rectangular selection is model-owned when possible: drag-selected cells are written as `table-cell` anchor/head points via `SelectionManager.setTableCellSelection(table, anchorCell, headCell)`. `TableBlockComponent` turns that model selection into adjusted table coordinates and paints cells with its private `.bc-table-cell-selected` class. Row ranges, column ranges, and older transient paths still live as explicit table coordinates, so `TableBlockBinding` reads the table-cell model first and then falls back to `table.getExplicitSelectedCoordinates()` for destructive keyboard actions. Arrow keys over a model table-cell selection update the model directly: plain Arrow moves/collapses to the adjacent visible cell, while Shift+Arrow keeps the anchor and extends the head. Delete/Backspace therefore clears every selected cell instead of only the anchor cell, while ordinary text deletion inside a cell is still left to `InputTransformer`.
+Table rectangular selection is model-owned when possible: drag-selected cells are written as `table-cell` anchor/head points via `SelectionManager.setTableCellSelection(table, anchorCell, headCell)`. `TableBlockBinding` resolves that intent through the package-internal `TableModelGrid`, so copy/cut/paste/delete/Arrow/Tab use stable cell IDs and model snapshots even when intermediate cell components are not mounted. `TableBlockComponent` only projects the resolved rectangle onto currently mounted master cells with its private `.bc-table-cell-selected` class; it does not build a Component-owned full-table master map. Row ranges, column ranges, and older transient paths still live as explicit table coordinates, so nonstandard documents without a usable model graph retain the bounded component fallback. Malformed real model grids fail closed. Plain Arrow moves/collapses to the adjacent visible source cell, while Shift+Arrow keeps the anchor and extends the head. Delete/Backspace therefore clears every selected master cell instead of only the anchor cell, while ordinary text deletion inside a cell is still left to `InputTransformer`.
+
+The built-in `TableBlockComponent` previews column resizing with an inert blue
+viewport guide outside the clipped table subtree instead of changing live
+`<col>` widths. Dragging therefore leaves cell content, row heights and
+pagination geometry unchanged. Mouse release resolves
+the stable source-cell anchor through the current model grid and writes
+`colWidths` once; Escape, window blur, a readonly release or
+a stale anchor cancel without a write. This behavior has no configuration
+option and does not change the `TableBlockBinding` constructor or public API.
+The resize handle is a `data-bc-native-input` UI island, so root mouse and
+selection controls do not arm a competing text/rectangle-selection gesture
+before the table starts resizing. The table capture boundary gives that handle
+priority over pagination flow masks and rectangle-selection arming, then stops
+the mousedown from reaching later selection handlers. Idle cell `mousemove`
+repairs the handle's actual DOM ownership after pagination/Angular projection;
+same-cell movement exits through identity checks without reading layout.
+At capture time the built-in table also recognizes the narrow right-edge cell
+geometry as resize ownership. This covers Safari/WebKit table-cell hit testing,
+where a painted absolute handle may still be reported as its `td` or content.
 
 #### Configuration
 
@@ -178,7 +197,7 @@ new TableBlockBinding()
 
 | Method | Description |
 |--------|-------------|
-| `clearCellContent(cells)` | Clear content of given table cells |
+| `clearCellContent(cells)` | Clear content of given mounted table-cell components; built-in model commands use a private stable-ID write path |
 
 #### Related Table Component API
 

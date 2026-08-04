@@ -1002,7 +1002,13 @@ describe('TableBlockBinding table-cell arrow navigation', () => {
     selectionCells: {anchor: string; head: string},
     key: string,
     shiftKey = false,
-    options: {hiddenCells?: string[]; missingTable?: boolean; missingCells?: string[]} = {},
+    options: {
+      hiddenCells?: string[]
+      missingTable?: boolean
+      missingCells?: string[]
+      modelFirst?: boolean
+      unmountedCells?: string[]
+    } = {},
   ) => {
     const binding = new TableBlockBinding()
     const preventDefault = jasmine.createSpy('preventDefault')
@@ -1037,17 +1043,45 @@ describe('TableBlockBinding table-cell arrow navigation', () => {
       getCellByCoordinate: jasmine.createSpy('getCellByCoordinate').and.callFake((rowIdx: number, colIdx: number) =>
         cells.get(cellIds[rowIdx]?.[colIdx])),
     }
-    const doc = {
+    const doc: any = {
       getBlockById: jasmine.createSpy('getBlockById').and.callFake((id: string) =>
         id === tableBlock.id
           ? (options.missingTable ? null : tableBlock)
-          : (options.missingCells?.includes(id) ? null : cells.get(id))),
+          : (options.missingCells?.includes(id) || options.unmountedCells?.includes(id) ? null : cells.get(id))),
       selection: {
         setTableCellSelection: jasmine.createSpy('setTableCellSelection'),
         setCursorAtBlock: jasmine.createSpy('setCursorAtBlock'),
         selectBlock: jasmine.createSpy('selectBlock'),
         recalculate: jasmine.createSpy('recalculate'),
       },
+    }
+    if (options.modelFirst) {
+      const parents = new Map<string, string | null>([
+        ['table-1', null],
+        ['row-1', 'table-1'],
+        ['row-2', 'table-1'],
+        ['cell-1', 'row-1'],
+        ['cell-2', 'row-1'],
+        ['cell-3', 'row-2'],
+        ['cell-4', 'row-2'],
+      ])
+      doc.model = {
+        getFlavour: (id: string) => {
+          if (id === 'table-1') return 'table'
+          if (rows.includes(id)) return 'table-row'
+          return cells.has(id) ? 'table-cell' : undefined
+        },
+        getProps: (id: string) => {
+          if (id === 'table-1') return {colWidths: [100, 100]}
+          return cells.get(id)?.props ?? {}
+        },
+        getChildrenIds: (id: string) => {
+          if (id === 'table-1') return rows
+          const rowIndex = rows.indexOf(id)
+          return rowIndex >= 0 ? cellIds[rowIndex] : []
+        },
+        getParentId: (id: string) => parents.get(id) ?? null,
+      }
     }
     ;(binding as any).doc = doc
     const rawPreventDefault = jasmine.createSpy('rawPreventDefault')
@@ -1080,10 +1114,30 @@ describe('TableBlockBinding table-cell arrow navigation', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.selection.setTableCellSelection).toHaveBeenCalledWith(
       tableBlock,
-      cells.get('cell-2'),
-      cells.get('cell-2'),
+      'cell-2',
+      'cell-2',
       true,
     )
+  })
+
+  it('navigates by stable ID when the target cell component is not mounted', () => {
+    const {binding, context, doc, tableBlock} =
+      createArrowHarness({anchor: 'cell-1', head: 'cell-1'}, 'ArrowRight', false, {
+        modelFirst: true,
+        unmountedCells: ['cell-2'],
+      })
+
+    const result = binding.handleArrow(context as any)
+
+    expect(result).toBeTrue()
+    expect(doc.selection.setTableCellSelection).toHaveBeenCalledWith(
+      tableBlock,
+      'cell-2',
+      'cell-2',
+      true,
+    )
+    expect(tableBlock.getCellByCoordinate).not.toHaveBeenCalled()
+    expect(doc.getBlockById).not.toHaveBeenCalledWith('cell-2')
   })
 
   it('extends the table-cell selection head with shift arrows', () => {
@@ -1095,8 +1149,8 @@ describe('TableBlockBinding table-cell arrow navigation', () => {
     expect(result).toBeTrue()
     expect(doc.selection.setTableCellSelection).toHaveBeenCalledWith(
       tableBlock,
-      cells.get('cell-1'),
-      cells.get('cell-4'),
+      'cell-1',
+      'cell-4',
       true,
     )
   })
@@ -1183,8 +1237,8 @@ describe('TableBlockBinding table-cell arrow navigation', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.selection.setTableCellSelection).toHaveBeenCalledWith(
       tableBlock,
-      cells.get('cell-3'),
-      cells.get('cell-3'),
+      'cell-3',
+      'cell-3',
       true,
     )
   })
@@ -1199,8 +1253,8 @@ describe('TableBlockBinding table-cell arrow navigation', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.selection.setTableCellSelection).toHaveBeenCalledWith(
       tableBlock,
-      cells.get('cell-2'),
-      cells.get('cell-2'),
+      'cell-2',
+      'cell-2',
       true,
     )
   })
@@ -1216,8 +1270,8 @@ describe('TableBlockBinding table-cell arrow navigation', () => {
     expect(result).toBeTrue()
     expect(doc.selection.setTableCellSelection).toHaveBeenCalledWith(
       tableBlock,
-      cells.get('cell-3'),
-      cells.get('cell-3'),
+      'cell-3',
+      'cell-3',
       true,
     )
   })
@@ -1326,7 +1380,7 @@ describe('TableBlockBinding table-cell arrow navigation', () => {
 
     expect(result).toBeTrue()
     expect(preventDefault).toHaveBeenCalled()
-    expect(doc.selection.setCursorAtBlock).toHaveBeenCalledWith(cells.get('cell-1'), false, false)
+    expect(doc.selection.setCursorAtBlock).toHaveBeenCalledWith('cell-1', false, false)
     expect(doc.selection.recalculate).not.toHaveBeenCalled()
   })
 

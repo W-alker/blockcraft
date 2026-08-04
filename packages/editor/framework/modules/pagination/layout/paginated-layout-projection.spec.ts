@@ -1,5 +1,11 @@
 import { BlockNodeType } from "../../../block-std/types/block.type";
-import { PageSlotFragment, PaginationItem, PaginationResult } from "../engine";
+import {
+  PageSlotFragment,
+  PaginationItem,
+  PaginationResult,
+} from "../engine";
+import {planTableCellFlow} from "../engine/table-cell-flow";
+import {setTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
 import { ResolvedPaginationGeometry } from "../pagination.types";
 import { PaginationGeometryEntry } from "./pagination-geometry-index";
 import {
@@ -139,6 +145,46 @@ describe("PaginatedLayoutProjection", () => {
 
     projection.update([placement("a")]);
     projection.update([placement("a", { projectedHostHeight: 20 })]);
+
+    expect(revisions).toEqual([1, 2]);
+    expect(projection.revision).toBe(2);
+  });
+
+  it("does not publish an idempotent projection update", () => {
+    const projection = new PaginatedLayoutProjection();
+    const revisions: number[] = [];
+    const willChangeRevisions: number[] = [];
+    projection.change$.subscribe((change) => revisions.push(change.revision));
+    projection.willChange$.subscribe((change) =>
+      willChangeRevisions.push(change.revision),
+    );
+    const first = placement("table", {
+      beforeGap: 40,
+      projectedHostHeight: 120,
+      internalPageGap: 60,
+      fragments: [{ fromOffset: 0, toOffset: 120 }],
+    });
+
+    projection.update([first]);
+    projection.update([{
+      ...first,
+      fragments: first.fragments.map(fragment => ({...fragment})),
+    }]);
+
+    expect(revisions).toEqual([1]);
+    expect(willChangeRevisions).toEqual([1]);
+    expect(projection.revision).toBe(1);
+    expect(projection.totalHeight).toBe(220);
+  });
+
+  it("can force an idempotent update for an external layout transaction", () => {
+    const projection = new PaginatedLayoutProjection();
+    const revisions: number[] = [];
+    projection.change$.subscribe((change) => revisions.push(change.revision));
+    const stablePlacement = placement("a", {projectedHostHeight: 20});
+
+    projection.update([stablePlacement]);
+    projection.update([stablePlacement], {force: true});
 
     expect(revisions).toEqual([1, 2]);
     expect(projection.revision).toBe(2);
@@ -355,6 +401,90 @@ describe("buildProjectedBlockPlacements", () => {
     );
 
     expect(placements[3]!.internalPageGap).toBe(60);
+  });
+
+  it("uses the virtual cell-flow extent so blocks after an oversized cell start on the computed sheet", () => {
+    const plan = planTableCellFlow([{
+      kind: "cell-flow",
+      rowId: "row-0",
+      cells: [
+        {
+          cellId: "left",
+          points: [
+            {offset: 90, anchor: {kind: "text", blockId: "left-p", offset: 10}},
+            {offset: 180, anchor: {kind: "cell-end"}},
+          ],
+        },
+        {
+          cellId: "right",
+          points: [
+            {offset: 60, anchor: {kind: "text", blockId: "right-p", offset: 10}},
+            {offset: 150, anchor: {kind: "text", blockId: "right-p", offset: 20}},
+            {offset: 240, anchor: {kind: "cell-end"}},
+          ],
+        },
+      ],
+    }], 100);
+    expect(plan.paginationHeight).toBe(270);
+
+    const result: PaginationResult = {
+      pages: [
+        {index: 0, slots: [{id: "table", fragment: {fromOffset: 0, toOffset: 90}}], usedHeight: 90},
+        {index: 1, slots: [{id: "table", fragment: {fromOffset: 90, toOffset: 180}}], usedHeight: 90},
+        {index: 2, slots: [{id: "table", fragment: {fromOffset: 180, toOffset: 270}}], usedHeight: 90},
+        {index: 3, slots: [{id: "after"}], usedHeight: 30},
+      ],
+      byBlock: new Map([
+        ["table", {pageIndex: 0}],
+        ["after", {pageIndex: 3}],
+      ]),
+    };
+    const tableEntry = entry("table", 240, {
+      flavour: "table",
+      nodeType: BlockNodeType.block,
+      tableRows: [{id: "row-0", top: 0, bottom: 240, coveredFromAbove: false}],
+      tableCellFlowPlan: plan,
+    });
+    const tableItem = item("table", 270, {
+      splitOffsets: plan.splitOffsets,
+      splitStartsNewPage: true,
+    });
+    setTableCellFlowPlan(tableItem, plan);
+    const placements = buildProjectedBlockPlacements(
+      ["table", "after"],
+      [
+        tableEntry,
+        entry("after", 30),
+      ],
+      [
+        tableItem,
+        item("after", 30),
+      ],
+      result,
+      geometry(),
+    );
+
+    expect(placements).toEqual([
+      placement("table", {
+        projectedHostHeight: 270,
+        internalPageGap: 100,
+        fragments: [
+          {fromOffset: 0, toOffset: 90},
+          {fromOffset: 90, toOffset: 180},
+          {fromOffset: 180, toOffset: 270},
+        ],
+      }),
+      placement("after", {
+        firstPageIndex: 3,
+        beforeGap: 50,
+        projectedHostHeight: 30,
+      }),
+    ]);
+
+    const projection = new PaginatedLayoutProjection();
+    projection.update(placements);
+    // 三张纸的内容起点分别为 0/140/280；后续块应从第 4 张纸内容顶 420 开始。
+    expect(projection.contentOffsetAt(1)).toBe(420);
   });
 
   it("rejects duplicate and missing IDs before returning a partial layout", () => {

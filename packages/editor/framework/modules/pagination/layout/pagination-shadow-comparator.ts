@@ -1,7 +1,9 @@
 import { PaginationResult } from "../engine";
+import {TableCellFlowPlan} from "../engine/table-cell-flow";
+import {getTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
 import { computeBlockGaps } from "../view/sheet-layout";
 import { StablePaginationLayout } from "../view/stable-pagination-layout";
-import { TableBreak } from "../view/table-split";
+import { computeTableBreaks, TableBreak } from "../view/table-split";
 import {
   PaginationGeometryEntry,
   PaginationGeometryMeasurement,
@@ -9,7 +11,6 @@ import {
 import { PaginationLayoutState } from "./pagination-layout-coordinator";
 
 const NUMERIC_TOLERANCE = 0.01;
-const ROW_MATCH_TOLERANCE = 2;
 const MAX_DIAGNOSTICS = 20;
 
 export type PaginationShadowMismatchKind =
@@ -27,10 +28,12 @@ export interface PaginationShadowMismatch {
   readonly shadow: unknown;
 }
 
-type TableGeometry = Pick<
-  PaginationGeometryMeasurement,
-  "id" | "flavour" | "tableRows"
->;
+interface TableGeometry {
+  readonly id: string;
+  readonly flavour: string;
+  readonly tableRows?: PaginationGeometryMeasurement['tableRows'];
+  readonly tableCellFlowPlan?: TableCellFlowPlan;
+}
 
 function numbersEqual(left: number, right: number): boolean {
   return Math.abs(left - right) <= NUMERIC_TOLERANCE;
@@ -70,7 +73,12 @@ function tableGeometryById(
   const byId = new Map<string, TableGeometry>();
   for (const value of values) {
     if (value.flavour === "table" && value.tableRows) {
-      byId.set(value.id, value);
+      byId.set(value.id, {
+        id: value.id,
+        flavour: value.flavour,
+        tableRows: value.tableRows,
+        tableCellFlowPlan: getTableCellFlowPlan(value),
+      });
     }
   }
   return byId;
@@ -86,37 +94,11 @@ function shadowTableGeometryById(
         id: entry.blockId,
         flavour: entry.flavour,
         tableRows: entry.tableRows,
+        tableCellFlowPlan: entry.tableCellFlowPlan,
       });
     }
   }
   return byId;
-}
-
-interface TableRowCursor {
-  index: number;
-  previousOffset: number;
-}
-
-function matchTableRowId(
-  geometry: TableGeometry,
-  fromOffset: number,
-  cursor: TableRowCursor,
-): string | null {
-  const rows = geometry.tableRows;
-  if (!rows?.length) return null;
-  if (fromOffset < cursor.previousOffset) cursor.index = 0;
-  cursor.previousOffset = fromOffset;
-
-  while (
-    cursor.index < rows.length &&
-    rows[cursor.index]!.top < fromOffset - ROW_MATCH_TOLERANCE
-  ) {
-    cursor.index++;
-  }
-  const row = rows[cursor.index];
-  return row && Math.abs(row.top - fromOffset) <= ROW_MATCH_TOLERANCE
-    ? row.id
-    : null;
 }
 
 function normalizedTableBreaksById(
@@ -124,33 +106,20 @@ function normalizedTableBreaksById(
   result: PaginationResult,
   sheetHeightPx: number,
   pageGap: number,
+  contentTop: number,
 ): ReadonlyMap<string, readonly TableBreak[]> {
   const breaksById = new Map<string, TableBreak[]>();
-  const cursors = new Map<string, TableRowCursor>();
-  for (let pageIndex = 1; pageIndex < result.pages.length; pageIndex++) {
-    const first = result.pages[pageIndex]!.slots[0];
-    if (!first?.fragment || first.fragment.fromOffset <= 0) continue;
-    const tableGeometry = geometryById.get(first.id);
-    if (!tableGeometry) continue;
-
-    const cursor = cursors.get(first.id) ?? {
-      index: 0,
-      previousOffset: Number.NEGATIVE_INFINITY,
-    };
-    cursors.set(first.id, cursor);
-    const beforeRowId = matchTableRowId(
-      tableGeometry,
-      first.fragment.fromOffset,
-      cursor,
-    );
-    if (!beforeRowId) continue;
-
-    const gap =
-      sheetHeightPx + pageGap - result.pages[pageIndex - 1]!.usedHeight;
-    if (gap <= 0) continue;
-    const tableBreaks = breaksById.get(first.id) ?? [];
-    tableBreaks.push({ beforeRowId, gap });
-    breaksById.set(first.id, tableBreaks);
+  for (const [tableId, geometry] of geometryById) {
+    if (!geometry.tableRows) continue;
+    breaksById.set(tableId, computeTableBreaks(
+      tableId,
+      [...geometry.tableRows],
+      result,
+      sheetHeightPx,
+      pageGap,
+      geometry.tableCellFlowPlan,
+      contentTop,
+    ));
   }
   return breaksById;
 }
@@ -276,6 +245,7 @@ export function comparePaginationShadow(
   }
 
   const { sheetHeightPx, pageGap } = legacy.geometry;
+  const contentTop = legacy.geometry.margins.top + legacy.geometry.headerHeight;
   const legacyGaps = computeBlockGaps(legacy.result, sheetHeightPx, pageGap);
   const shadowGaps = computeBlockGaps(shadow.result, sheetHeightPx, pageGap);
   for (const blockId of sortedUnion(legacyGaps.keys(), shadowGaps.keys())) {
@@ -307,12 +277,14 @@ export function comparePaginationShadow(
     legacy.result,
     sheetHeightPx,
     pageGap,
+    contentTop,
   );
   const shadowBreaksById = normalizedTableBreaksById(
     shadowTables,
     shadow.result,
     sheetHeightPx,
     pageGap,
+    contentTop,
   );
   for (const tableId of sortedUnion(
     legacyBreaksById.keys(),
@@ -337,24 +309,36 @@ export function comparePaginationShadow(
         }
         continue;
       }
-      if (
-        legacyBreak.beforeRowId !== shadowBreak.beforeRowId &&
-        !add(
+      if ('beforeRowId' in legacyBreak && 'beforeRowId' in shadowBreak) {
+        if (
+          legacyBreak.beforeRowId !== shadowBreak.beforeRowId
+          && !add(
+            "table-break",
+            `tableBreaks[${JSON.stringify(tableId)}][${breakIndex}].beforeRowId`,
+            legacyBreak.beforeRowId,
+            shadowBreak.beforeRowId,
+          )
+        ) {
+          return mismatches;
+        }
+        if (
+          !numbersEqual(legacyBreak.gap, shadowBreak.gap)
+          && !add(
+            "table-break",
+            `tableBreaks[${JSON.stringify(tableId)}][${breakIndex}].gap`,
+            legacyBreak.gap,
+            shadowBreak.gap,
+          )
+        ) {
+          return mismatches;
+        }
+      } else if (
+        stableValue(legacyBreak) !== stableValue(shadowBreak)
+        && !add(
           "table-break",
-          `tableBreaks[${JSON.stringify(tableId)}][${breakIndex}].beforeRowId`,
-          legacyBreak.beforeRowId,
-          shadowBreak.beforeRowId,
-        )
-      ) {
-        return mismatches;
-      }
-      if (
-        !numbersEqual(legacyBreak.gap, shadowBreak.gap) &&
-        !add(
-          "table-break",
-          `tableBreaks[${JSON.stringify(tableId)}][${breakIndex}].gap`,
-          legacyBreak.gap,
-          shadowBreak.gap,
+          `tableBreaks[${JSON.stringify(tableId)}][${breakIndex}]`,
+          legacyBreak,
+          shadowBreak,
         )
       ) {
         return mismatches;

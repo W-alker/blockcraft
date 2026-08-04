@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-08-01
+> Last updated: 2026-08-03
 
 ## Architecture Overview
 
@@ -22,6 +22,8 @@ Y.Text (Yjs, source of truth)
 | `framework/block-std/inline/runtime/` | `InlineRuntime` — per-block blot coordinator |
 | `framework/block-std/inline/runtime/inline-float-layout.ts` | Wrapped-image geometry, controller and single-side fallback |
 | `framework/block-std/inline/runtime/inline-fragment-layout.ts` | Range measurement, grapheme-safe planner and reversible dual-side projection |
+| `framework/block-std/inline/runtime/inline-pagination-access.ts` | Package-internal access registry; keeps pagination off the public InlineRuntime API |
+| `framework/block-std/inline/runtime/inline-pagination-projection.ts` | Zero-model-length text-line gaps for oversized table-cell pagination |
 | `framework/block-std/inline/blot/scroll-blot.ts` | `ScrollBlot` — root container blot |
 | `framework/block-std/inline/blot/text-blot.ts` | `TextBlot` — renders text with attributes |
 | `framework/block-std/inline/blot/embed-blot.ts` | `EmbedBlot` — renders inline embeds (length=1) |
@@ -73,6 +75,7 @@ class InlineRuntime {
 
   // Package-internal IME/pointer coordination; host plugins should not call it.
   acquireFloatLayoutFreeze(): () => void;
+
 }
 ```
 
@@ -165,6 +168,21 @@ native recalculation during a projection rewrite and restores the unchanged
 anchor/head Range afterward. CompositionSession, native pointer selection and
 wrapped-image dragging hold ref-counted layout leases; while frozen,
 invalidations only mark the controller dirty.
+
+Oversized table-cell pagination uses a second reversible layout projection.
+The package-internal `inline-pagination-access.ts` seam measures complete
+visual-line boundaries as revision-scoped Y.Text UTF-16 offsets and applies
+gaps without adding methods to the public `InlineRuntime` contract. The
+projection splits only real TextBlots at those offsets and inserts block-like markers carrying
+`data-bc-inline-pagination-gap`; markers have zero model length, are ignored by
+DOM/model mapping, selection and serialization, and are merged away by
+projection cleanup. Pagination temporarily revokes the float projection
+before taking ownership of the same real Blot DOM. `render()`, `applyDelta()`
+and `destroy()` always revoke pagination first, so stale anchors cannot survive
+a model mutation or component teardown. Selection projection guards preserve
+the current anchor/head, while the pagination controller defers all projection
+rewrites during IME composition.
+
 `ImgToolbarPlugin` changes `wrap/side/x/gap` through one Embed
 `formatText()` transaction. Wrapped-image drag leaves the committed frame and
 fragment boundaries unchanged while a fixed, inert proxy follows x/y outside

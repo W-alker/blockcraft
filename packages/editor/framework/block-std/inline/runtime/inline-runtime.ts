@@ -4,6 +4,15 @@ import {InlinePositionMapper, PointAffinity, IDomPoint} from "../position/inline
 import {DeltaInsert, DeltaOperation, InlineModel} from "../../types";
 import type {EmbedConverter} from "../index";
 import {InlineFloatLayoutController} from './inline-float-layout'
+import {
+  InlinePaginationGap,
+  InlinePaginationProjection,
+} from './inline-pagination-projection'
+import {InlineRangeMeasurer} from './inline-fragment-layout'
+import {
+  InlinePaginationLineStart,
+  registerInlinePaginationAccess,
+} from './inline-pagination-access'
 
 /**
  * InlineRuntime is the per-block coordinator that owns a ScrollBlot tree
@@ -31,6 +40,12 @@ export class InlineRuntime {
   private _scrollBlot: ScrollBlot
   private readonly _mapper: InlinePositionMapper
   private readonly _inlineFloatLayout: InlineFloatLayoutController
+  private readonly _paginationProjection: InlinePaginationProjection
+  private _releaseFloatForPagination?: () => void
+  private _releasePaginationAccess: () => void = () => undefined
+  private readonly _paginationOptions?: {
+    beginSelectionProjection?: () => (() => void)
+  }
 
   constructor(
     readonly container: HTMLElement,
@@ -40,14 +55,21 @@ export class InlineRuntime {
       beginSelectionProjection?: () => (() => void)
     },
   ) {
+    this._paginationOptions = options
     this._scrollBlot = new ScrollBlot(container, embedConverters)
     this._mapper = new InlinePositionMapper()
     this._mapper.setScrollBlot(this._scrollBlot)
+    this._paginationProjection = new InlinePaginationProjection(this._scrollBlot)
     this._inlineFloatLayout = new InlineFloatLayoutController(
       container,
       this._scrollBlot,
-      {beginProjection: options?.beginSelectionProjection},
+      {beginProjection: this._paginationOptions?.beginSelectionProjection},
     )
+    this._releasePaginationAccess = registerInlinePaginationAccess(this, {
+      apply: gaps => this._applyPaginationGaps(gaps),
+      clear: () => this._clearPaginationGaps(),
+      measureLineStarts: limit => this._measurePaginationLineStarts(limit),
+    })
   }
 
   get scrollBlot(): ScrollBlot {
@@ -67,6 +89,7 @@ export class InlineRuntime {
    * Replaces all existing blots and DOM.
    */
   render(deltas: InlineModel) {
+    this._clearPaginationGaps()
     this._inlineFloatLayout.beforeMutation()
     this._scrollBlot.build(deltas)
     this._inlineFloatLayout.sync()
@@ -77,6 +100,7 @@ export class InlineRuntime {
    * Updates the blot tree and patches the DOM in-place.
    */
   applyDelta(ops: DeltaOperation[]) {
+    this._clearPaginationGaps()
     this._inlineFloatLayout.beforeMutation()
     this._scrollBlot.applyDelta(ops)
     this._inlineFloatLayout.sync()
@@ -85,6 +109,108 @@ export class InlineRuntime {
   /** @internal Used by IME and wrapped-image pointer interactions. */
   acquireFloatLayoutFreeze(): () => void {
     return this._inlineFloatLayout.acquireFreeze()
+  }
+
+  /**
+   * @internal Pagination view only. Apply zero-model-length gaps at Y.Text offsets.
+   */
+  private _applyPaginationGaps(gaps: readonly InlinePaginationGap[]): boolean {
+    if (!gaps.length) {
+      this._clearPaginationGaps()
+      return true
+    }
+    const releaseSelectionGuard = this._beginSelectionProjection?.()
+    try {
+      if (!this._releaseFloatForPagination) {
+        this._releaseFloatForPagination = this._inlineFloatLayout.acquireFreeze()
+      }
+      // Inline float projection and pagination projection both temporarily
+      // rearrange real Blot nodes; pagination owns the visible projection while active.
+      this._inlineFloatLayout.beforeMutation()
+      const applied = this._paginationProjection.apply(gaps)
+      if (!applied) this._clearPaginationGaps()
+      return applied
+    } finally {
+      releaseSelectionGuard?.()
+    }
+  }
+
+  /** @internal Pagination view only. */
+  private _clearPaginationGaps(): void {
+    const hadProjection = this._paginationProjection.active
+      || !!this._releaseFloatForPagination
+    if (!hadProjection) return
+
+    const releaseSelectionGuard = this._beginSelectionProjection?.()
+    try {
+      this._paginationProjection.revoke()
+      const releaseFloat = this._releaseFloatForPagination
+      this._releaseFloatForPagination = undefined
+      // Mark the float layout dirty while its lease is still held, then let
+      // release coalesce one canonical refresh into the next animation frame.
+      this._inlineFloatLayout.sync()
+      releaseFloat?.()
+    } finally {
+      releaseSelectionGuard?.()
+    }
+  }
+
+  /**
+   * 测出自然行盒的续排锚点。每一项都指向“下一行行首”，因此投影页缝不会切开字素或视觉行。
+   * 带双侧环绕投影的段落暂不混合两套 DOM 投影，调用方应把该块当作原子内容降级。
+   *
+   * @internal Pagination measurement only.
+   */
+  private _measurePaginationLineStarts(limit = 2048): InlinePaginationLineStart[] {
+    if (
+      !this.container.isConnected
+      || this.textLength <= 0
+      || this.container.hasAttribute('data-bc-inline-float-owner')
+    ) {
+      return []
+    }
+
+    const width = this.container.clientWidth
+      || this.container.getBoundingClientRect().width
+    if (!Number.isFinite(width) || width <= 0) return []
+
+    const measurer = new InlineRangeMeasurer(
+      this.container,
+      this._scrollBlot,
+      (start, end) => this.modelRangeToDomRange(start, end),
+    )
+    const containerTop = this.container.getBoundingClientRect().top
+    const points: InlinePaginationLineStart[] = []
+    let cursor = 0
+
+    measurer.beginLayoutPass()
+    try {
+      while (cursor < this.textLength && points.length < limit) {
+        const fitted = measurer.fitFragment(
+          cursor,
+          this.textLength,
+          width,
+          false,
+        )
+        const next = fitted.end > cursor
+          ? fitted.end
+          : measurer.nextOffset(cursor, this.textLength)
+        if (next <= cursor || next >= this.textLength) break
+
+        const nextAfter = measurer.nextOffset(next, this.textLength)
+        const rect = this.modelRangeToClientRects(next, nextAfter).find(
+          candidate => candidate.width > 0.01 || candidate.height > 0.01,
+        )
+        if (!rect) break
+        points.push({offset: next, top: rect.top - containerTop})
+        cursor = next
+      }
+    } catch {
+      return []
+    } finally {
+      measurer.endLayoutPass()
+    }
+    return points
   }
 
   /**
@@ -133,7 +259,14 @@ export class InlineRuntime {
    * Tear down and clean up.
    */
   destroy() {
+    this._clearPaginationGaps()
+    this._releasePaginationAccess()
+    this._releasePaginationAccess = () => undefined
     this._inlineFloatLayout.destroy()
     this._scrollBlot.detachAll()
+  }
+
+  private get _beginSelectionProjection(): (() => (() => void)) | undefined {
+    return this._paginationOptions?.beginSelectionProjection
   }
 }

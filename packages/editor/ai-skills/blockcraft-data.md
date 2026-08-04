@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-07-30
+> Last updated: 2026-08-03
 
 ## Architecture Overview
 
@@ -38,6 +38,7 @@ BlockCraftDoc
 | `framework/modules/selection/live-bookmark-tracker.ts` | Revisioned current-selection bookmark used by remote sync |
 | `framework/modules/selection/remote-selection-reconciler.ts` | Selection-owned remote bookmark reconciliation |
 | `framework/modules/selection/history-restorer.ts` | Selection-owned Undo/Redo bookmark restoration |
+| `framework/modules/table/` | Package-internal table topology/selection projections over stable model IDs |
 | `framework/block-std/reactive/block.ts` | `proxyMap`, `YBlock`, `NativeBlockModel` |
 
 ## Reactive Proxy System
@@ -183,6 +184,23 @@ Important boundaries:
   surface. `DocCRUD` uses it only when a sparse-root insert must synchronously
   return a component before an outer Yjs transaction can notify deep observers.
   Extensions must not call it or treat it as a mutation API.
+
+### Table Model Projection
+
+`framework/modules/table/TableModelGrid` is a package-internal read model over
+the direct `table → table-row → table-cell` topology. It builds stable-ID
+coordinate, physical-cell, visible-master and rowspan/colspan indexes without
+reading ComponentRefs, descendants, text or layout. `TableModelProjectionStore`
+caches that grid per document/table and invalidates it only for table/cell prop
+changes, table/row child-structure changes, table removal or document destroy;
+ordinary cell text and row-height changes retain the projection.
+
+The projection is read-only and diagnostic. A malformed grid never repairs Yjs
+or guesses from the mounted view. Table selection, input and table keyboard /
+clipboard commands resolve their complete target set from this model, then send
+stable IDs to `DocCRUD` or obtain snapshots through `doc.model.toSnapshot()`.
+Component lookup remains a view capability for focus and mounted-cell painting,
+not mutation authority.
 - `doc.vm` and `getBlockById()` describe mounted Angular view state. Do not use
   them as document-existence checks when model-only behavior is sufficient.
 

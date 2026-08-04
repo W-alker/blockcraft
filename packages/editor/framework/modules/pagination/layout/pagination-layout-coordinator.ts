@@ -3,7 +3,16 @@ import {
   IBlockModelContentChange,
   IBlockModelStructureChange,
 } from "../../../doc/model-graph";
-import { paginate, PaginationItem, PaginationResult } from "../engine";
+import {
+  paginate,
+  PaginationItem,
+  PaginationResult,
+} from "../engine";
+import {cloneTableCellFlowPlan} from "../engine/table-cell-flow";
+import {
+  copyTableCellFlowPlan,
+  setTableCellFlowPlan,
+} from "../engine/table-cell-flow-metadata";
 import {
   PaginationConfig,
   ResolvedPaginationGeometry,
@@ -48,12 +57,14 @@ interface RootSnapshot {
 }
 
 function entryToMeta(entry: PaginationGeometryEntry): BlockMeta {
-  return {
+  const meta: BlockMeta = {
     id: entry.blockId,
     flavour: entry.flavour,
     nodeType: entry.nodeType,
     isHeading: entry.isHeading,
-    height: entry.lockHeight ?? entry.naturalHeight,
+    height: entry.lockHeight
+      ?? entry.tableCellFlowPlan?.paginationHeight
+      ?? entry.naturalHeight,
     splitOffsets: entry.splitOffsets ? [...entry.splitOffsets] : undefined,
     preferredSplitOffsets: entry.preferredSplitOffsets
       ? [...entry.preferredSplitOffsets]
@@ -61,16 +72,25 @@ function entryToMeta(entry: PaginationGeometryEntry): BlockMeta {
     lockHeight: entry.lockHeight,
     repeatHeaderHeight: entry.repeatHeaderHeight,
   };
+  setTableCellFlowPlan(
+    meta,
+    entry.tableCellFlowPlan
+      ? cloneTableCellFlowPlan(entry.tableCellFlowPlan)
+      : undefined,
+  );
+  return meta;
 }
 
 function cloneItem(item: PaginationItem): PaginationItem {
-  return {
+  const clone: PaginationItem = {
     ...item,
     splitOffsets: item.splitOffsets ? [...item.splitOffsets] : undefined,
     preferredSplitOffsets: item.preferredSplitOffsets
       ? [...item.preferredSplitOffsets]
       : undefined,
   };
+  copyTableCellFlowPlan(item, clone, cloneTableCellFlowPlan);
+  return clone;
 }
 
 function cloneResult(result: PaginationResult): PaginationResult {
@@ -181,6 +201,7 @@ export class PaginationLayoutCoordinator {
   compute(
     config: PaginationConfig,
     geometry: ResolvedPaginationGeometry,
+    options: {readonly forceProjectionUpdate?: boolean} = {},
   ): PaginationLayoutState {
     if (this.disposed) {
       throw new Error("PaginationLayoutCoordinator has been disposed");
@@ -209,7 +230,9 @@ export class PaginationLayoutCoordinator {
       result,
       geometry,
     );
-    this.layoutProjection.update(placements);
+    this.layoutProjection.update(placements, {
+      force: options.forceProjectionUpdate,
+    });
 
     return {
       revision: ++this.revisionValue,
@@ -223,6 +246,9 @@ export class PaginationLayoutCoordinator {
           ? [...entry.preferredSplitOffsets]
           : undefined,
         tableRows: entry.tableRows?.map((row) => ({ ...row })),
+        tableCellFlowPlan: entry.tableCellFlowPlan
+          ? cloneTableCellFlowPlan(entry.tableCellFlowPlan)
+          : undefined,
       })),
       items: items.map(cloneItem),
       result: cloneResult(result),

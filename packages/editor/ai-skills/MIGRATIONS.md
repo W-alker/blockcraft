@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-01 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-03 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -73,6 +73,151 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v?.?.? - 2026-08-03 (patch) — preview table column resize with a guide
+
+**Severity**: patch
+
+**What changed**: Built-in table column resizing no longer mutates the live
+`<col>` width and column bar on every mouse move. The committed table remains
+fixed while an inert body-level active-color vertical guide previews the target
+boundary without being clipped by the current table width; mouse release
+re-resolves the source cell against the current model grid and writes
+`colWidths` once.
+
+**Why**: Live width preview forced the full table to reflow throughout the
+gesture. On large paginated tables that repeatedly changed row heights, woke
+`ResizeObserver`, invalidated pagination geometry and made the drag lag or
+jitter.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-perf.md`
+- `blockcraft-plugins-inline.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No host code, stored document or plugin configuration migration is required.
+Existing `colWidths` data and `TableBlockBinding` construction are unchanged.
+No package version was changed.
+
+#### Behavior Changes
+
+- Mouse movement updates only the visual guide and performs no Yjs/model write,
+  live table-width mutation or Angular change detection.
+- Primary mouse release commits one final `colWidths` update and therefore one
+  normal table/pagination reflow.
+- Escape, window blur, a readonly release and a stale
+  stable-cell anchor cancel the gesture without changing column widths.
+- The built-in resize handle is isolated from root mouse/selection capture via
+  the existing `data-bc-native-input` UI-island contract, preventing a
+  competing selection gesture from being armed before resize starts. Table
+  capture gives resize priority over pagination flow-mask and rectangle checks.
+- Idle delegated `mousemove` repairs a handle left at the table host after view
+  projection; repeated movement in the same cell uses a layout-free identity
+  fast path.
+- Safari/WebKit may paint the absolute handle while hit-testing the same point
+  as its `td`; primary mousedown therefore recognizes the narrow right-edge
+  cell geometry without adding reads to the move path.
+- A concurrent column reorder is handled by resolving the captured cell ID at
+  commit time instead of applying the width to a stale numeric column index.
+- No public API, option, stored schema, theme token or package version changed.
+
+### v?.?.? - 2026-08-03 (patch) — make table rectangle editing model-first
+
+**Severity**: patch
+
+**What changed**: Table rectangular selection now resolves coordinates,
+rowspan/colspan closure, physical snapshot shape and visible edit targets from a
+cached, DOM-free model grid. Input, selected-text extraction and table
+copy/cut/paste/delete/Arrow/Tab commands operate on stable cell IDs and model
+snapshots. `TableBlockComponent` projects that rectangle only onto currently
+mounted cell components.
+
+**Why**: A model-owned `table-cell` selection could remain live while its
+intermediate cells lacked ComponentRefs, but subsequent editing still rebuilt
+the range from the mounted Component matrix. Rectangular selection followed by
+typing or deletion could therefore miss cells or use stale coordinates.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-selection.md`
+- `blockcraft-input.md`
+- `blockcraft-data.md`
+- `blockcraft-perf.md`
+- `blockcraft-plugins-inline.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No host code or stored-document migration is required. Continue using
+`SelectionManager.setTableCellSelection()` and `TableBlockBinding`; built-in
+commands automatically use the complete model. No package version was changed.
+
+#### Behavior Changes
+
+- Rectangular typing, IME materialization, delete, selected-text extraction and
+  table clipboard/navigation commands no longer require every selected cell to
+  have a mounted ComponentRef.
+- Merged coverage cells preserve physical TSV/snapshot shape but are edited only
+  once through their visible master cell.
+- Table selection highlighting touches only mounted master cells and does not
+  materialize offscreen cells.
+- Malformed real table grids fail closed instead of guessing a destructive
+  target from partial component state.
+- No public option, method signature, stored schema or package version changed.
+
+### v?.?.? - 2026-08-03 (patch) — continue oversized table cells across pages
+
+**Severity**: patch
+
+**What changed**: Live pagination now creates safe, editable continuations when
+one physical table row is taller than the page content area. Direct child-Block
+boundaries and complete visual text lines become cell-local continuation
+anchors; a pure planner advances different columns independently and stores one
+stable plan for exact live layout, sparse Projection and readonly printing.
+Screen gaps and table masks are zero-model-length view state. The table's
+virtual flow height and internal sheet gaps now also position every following
+root Block, preventing content below the table from drifting into the wrong
+sheet. IME composition retains the previous stable projection until completion.
+
+**Why**: Row-only table splitting had no legal cut inside a single oversized
+`<tr>`. The engine could advance its page count while the live DOM retained the
+natural table height, so the table crossed sheet gaps and all later blocks used
+a stale vertical origin.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-inline.md`
+- `blockcraft-theme.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No host code, stored document or pagination configuration migration is
+required. Existing `PaginationPlugin` registrations automatically receive the
+corrected behavior. Pagination remains opt-in and continuous layout is
+unchanged.
+
+#### Behavior Changes
+
+- A physical table row taller than one content area continues at complete
+  Block/text-line boundaries instead of overflowing as one fragment.
+- Continuation gaps do not write Yjs, change Delta length or enter Undo history;
+  selection mapping ignores them and IME projection is frozen while composing.
+- Exact live, sparse live and print layouts share one immutable cell-flow plan;
+  blocks after the table use its virtual projected extent.
+- Irreducible nested atomic content is clipped locally to the page content
+  height without adding a cell scroll container.
+- Content-bearing rowspans across several otherwise normal-height physical rows
+  retain the existing keep-together row-boundary behavior.
+- No public option/signature or package version changed.
 
 ### v?.?.? - 2026-08-01 (patch) — suppress native HTML drag for default inline images
 

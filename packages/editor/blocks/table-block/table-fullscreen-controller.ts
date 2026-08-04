@@ -2,6 +2,16 @@ import { BehaviorSubject } from 'rxjs'
 
 const HOST_CLASS = 'is-fullscreen'
 const BODY_CLASS = 'bc-table-fullscreen-lock'
+const PLACEHOLDER_CLASS = 'bc-table-fullscreen-placeholder'
+const VIEW_ANCHOR_EPSILON = 0.5
+const VIEW_ANCHOR_STABLE_FRAMES = 2
+const VIEW_ANCHOR_MAX_FRAMES = 8
+
+interface FullscreenViewAnchor {
+  scrollContainer: HTMLElement
+  /** Table top relative to the editor viewport before it leaves normal flow. */
+  relativeTop: number
+}
 
 /**
  * Manages the local "fullscreen view" state for a TableBlockComponent.
@@ -51,6 +61,11 @@ export class TableFullscreenController {
   readonly zoom$ = new BehaviorSubject<number>(1)
 
   private isImeComposing = false
+  private viewAnchor: FullscreenViewAnchor | null = null
+  private viewAnchorFrame: number | null = null
+  private viewAnchorFrames = 0
+  private viewAnchorStableFrames = 0
+  private flowPlaceholder: HTMLElement | null = null
 
   private readonly compositionStartHandler = (): void => {
     this.isImeComposing = true
@@ -80,7 +95,10 @@ export class TableFullscreenController {
     this.setZoom(this.zoom$.value + direction * TableFullscreenController.ZOOM_STEP)
   }
 
-  constructor(private readonly host: HTMLElement) {
+  constructor(
+    private readonly host: HTMLElement,
+    private readonly resolveScrollContainer: () => HTMLElement | null = () => null,
+  ) {
     this.host.addEventListener('compositionstart', this.compositionStartHandler, { capture: true })
     this.host.addEventListener('compositionend', this.compositionEndHandler, { capture: true })
   }
@@ -109,12 +127,15 @@ export class TableFullscreenController {
     if (this.state$.value === value) return
 
     if (value) {
+      this.cancelViewAnchorRestore()
       const prev = TableFullscreenController.current?.deref()
       if (prev && prev !== this) {
         // Recursively exits previous; safe because that call hits the early-return
         // (state$.value === false matches its setter input false → no-op for it after first exit).
         prev.set(false)
       }
+      const normalFlowRect = this.captureViewAnchor()
+      this.installFlowPlaceholder(normalFlowRect)
       TableFullscreenController.current = new WeakRef(this)
     } else if (TableFullscreenController.current?.deref() === this) {
       TableFullscreenController.current = null
@@ -126,12 +147,20 @@ export class TableFullscreenController {
       document.addEventListener('keydown', this.escHandler, { capture: true })
       this.host.addEventListener('wheel', this.wheelHandler, { passive: false, capture: true })
     } else {
+      // 占位符移除与 fixed class 撤销之间不做任何布局读取，浏览器只会看到
+      // 最终的普通流，不会在中间态先 clamp scrollTop。
+      this.removeFlowPlaceholder()
       this.host.classList.remove(HOST_CLASS)
       document.body.classList.remove(BODY_CLASS)
       document.removeEventListener('keydown', this.escHandler, { capture: true })
       this.host.removeEventListener('wheel', this.wheelHandler, { capture: true })
       // 退出全屏 → 重置缩放
       if (this.zoom$.value !== 1) this.zoom$.next(1)
+      // `position: fixed` 恢复为普通流后，先在本帧恢复一次，避免退出时先闪到
+      // 浏览器因 scrollHeight 缩小而 clamp 后的位置。分页 / 虚拟化还会在后续 RAF
+      // 提交几何，因此继续用同一视图锚点做有界收敛。
+      this.restoreViewAnchor()
+      this.scheduleViewAnchorRestore()
     }
 
     this.state$.next(value)
@@ -165,6 +194,121 @@ export class TableFullscreenController {
     this.setZoom(1)
   }
 
+  private captureViewAnchor(): DOMRect | null {
+    this.viewAnchor = null
+    if (!this.host.isConnected) return null
+
+    const hostRect = this.host.getBoundingClientRect()
+    const scrollContainer = this.resolveScrollContainer()
+    if (!scrollContainer?.isConnected) return hostRect
+
+    const relativeTop = hostRect.top - scrollContainer.getBoundingClientRect().top
+    if (!Number.isFinite(relativeTop)) return hostRect
+    this.viewAnchor = { scrollContainer, relativeTop }
+    return hostRect
+  }
+
+  /**
+   * `position: fixed` removes the table from normal flow. A tall table can therefore
+   * shrink the editor's scrollHeight enough for the browser to clamp scrollTop and for
+   * root virtualization to recalculate against the wrong viewport. Keep a zero-content
+   * local-view placeholder at the exact flow position while fullscreen is open.
+   */
+  private installFlowPlaceholder(rect: DOMRect | null): void {
+    this.removeFlowPlaceholder()
+    if (!rect || !Number.isFinite(rect.height) || rect.height <= 0 || !this.host.parentNode) return
+
+    const view = this.host.ownerDocument.defaultView
+    if (!view) return
+    const hostStyle = view.getComputedStyle(this.host)
+    const placeholder = this.host.ownerDocument.createElement('div')
+    placeholder.className = PLACEHOLDER_CLASS
+    placeholder.setAttribute('aria-hidden', 'true')
+    placeholder.setAttribute('contenteditable', 'false')
+    placeholder.style.display = hostStyle.display === 'inline' ? 'block' : hostStyle.display
+    placeholder.style.boxSizing = 'border-box'
+    placeholder.style.width = `${rect.width}px`
+    placeholder.style.height = `${rect.height}px`
+    placeholder.style.minHeight = `${rect.height}px`
+    placeholder.style.maxHeight = `${rect.height}px`
+    placeholder.style.marginTop = hostStyle.marginTop
+    placeholder.style.marginRight = hostStyle.marginRight
+    placeholder.style.marginBottom = hostStyle.marginBottom
+    placeholder.style.marginLeft = hostStyle.marginLeft
+    placeholder.style.flexShrink = '0'
+    placeholder.style.visibility = 'hidden'
+    placeholder.style.pointerEvents = 'none'
+    placeholder.style.overflowAnchor = 'none'
+    this.host.parentNode.insertBefore(placeholder, this.host)
+    this.flowPlaceholder = placeholder
+  }
+
+  private removeFlowPlaceholder(): void {
+    this.flowPlaceholder?.remove()
+    this.flowPlaceholder = null
+  }
+
+  private restoreViewAnchor(): boolean {
+    const anchor = this.viewAnchor
+    if (
+      !anchor
+      || !anchor.scrollContainer.isConnected
+      || !this.host.isConnected
+    ) {
+      return true
+    }
+
+    const currentRelativeTop = this.host.getBoundingClientRect().top
+      - anchor.scrollContainer.getBoundingClientRect().top
+    const correction = currentRelativeTop - anchor.relativeTop
+    if (!Number.isFinite(correction) || Math.abs(correction) < VIEW_ANCHOR_EPSILON) {
+      return true
+    }
+
+    anchor.scrollContainer.scrollTop += correction
+    return false
+  }
+
+  private scheduleViewAnchorRestore(): void {
+    if (!this.viewAnchor || this.viewAnchorFrame !== null) return
+    this.viewAnchorFrames = 0
+    this.viewAnchorStableFrames = 0
+    const view = this.host.ownerDocument.defaultView
+    if (!view) {
+      this.viewAnchor = null
+      return
+    }
+
+    const settle = (): void => {
+      this.viewAnchorFrame = null
+      this.viewAnchorFrames++
+      if (this.restoreViewAnchor()) {
+        this.viewAnchorStableFrames++
+      } else {
+        this.viewAnchorStableFrames = 0
+      }
+      if (
+        this.viewAnchorStableFrames >= VIEW_ANCHOR_STABLE_FRAMES
+        || this.viewAnchorFrames >= VIEW_ANCHOR_MAX_FRAMES
+      ) {
+        this.viewAnchor = null
+        return
+      }
+      this.viewAnchorFrame = view.requestAnimationFrame(settle)
+    }
+    this.viewAnchorFrame = view.requestAnimationFrame(settle)
+  }
+
+  private cancelViewAnchorRestore(): void {
+    if (this.viewAnchorFrame !== null) {
+      this.host.ownerDocument.defaultView?.cancelAnimationFrame(this.viewAnchorFrame)
+      this.viewAnchorFrame = null
+    }
+    this.viewAnchor = null
+    this.viewAnchorFrames = 0
+    this.viewAnchorStableFrames = 0
+  }
+
   /**
    * Clean up. Exits fullscreen if active and detaches all listeners.
    * Idempotent — safe to call multiple times.
@@ -173,6 +317,8 @@ export class TableFullscreenController {
     if (this.state$.value) {
       this.set(false)
     }
+    this.cancelViewAnchorRestore()
+    this.removeFlowPlaceholder()
     this.host.removeEventListener('compositionstart', this.compositionStartHandler, { capture: true })
     this.host.removeEventListener('compositionend', this.compositionEndHandler, { capture: true })
     if (!this.state$.closed) {

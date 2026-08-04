@@ -2,25 +2,20 @@
 import {Subject} from "rxjs";
 import {BlockNodeType} from "../../../block-std/types/block.type";
 import {resolveBlockPolicy} from "../engine";
-import {BlockMeta, TableRowGeom} from "./item-builder";
+import {
+  cloneTableCellFlowPlan,
+  TableCellFlowPlan,
+} from "../engine/table-cell-flow";
+import {setTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
+import {BlockMeta} from "./item-builder";
 import {rowSplitOffsets} from "./split-points";
-
-/** 与 table.block.ts 的分页协作方法做结构化对接（不直接 import 块，保持框架→块解耦）。 */
-interface PaginatedTableBlock {
-  getPaginationGeometry(): {naturalHeight: number; headerHeight: number; rows: TableRowGeom[]};
-  applyPaginationBreaks(breaks: Array<{beforeRowId: string; gap: number}>): void;
-  clearPaginationBreaks(): void;
-}
-
-function asPaginatedTable(block: any): PaginatedTableBlock | null {
-  return block && typeof block.getPaginationGeometry === 'function' ? block as PaginatedTableBlock : null;
-}
+import {
+  measureTablePaginationGeometry,
+  TablePaginationMeasureOptions,
+} from "./table-pagination-access";
 
 /** 测量时传入：每页内容高（判定 oversized）+ widow/orphan 最少行。 */
-export interface MeasureOptions {
-  contentHeight: number;
-  widowOrphanLines: number;
-}
+export interface MeasureOptions extends TablePaginationMeasureOptions {}
 
 /** @internal Live DOM measurement consumed by pagination shadow geometry. */
 export interface LivePaginationMeasurement extends BlockMeta {
@@ -42,6 +37,14 @@ export class LiveHeightSource {
   private _ro: ResizeObserver;
   private _observed = new Set<Element>();
   /**
+   * 分页投影本身会改变表格/高度锁定块的 border-box。ResizeObserver 的通知晚于
+   * 同步 DOM 提交到达，因此单纯用“正在 apply”的布尔锁挡不住下一帧反馈。
+   *
+   * 这里记录本轮分页提交后的最终尺寸：observer 若看到的正是该尺寸，说明只是
+   * 自有投影回声；若尺寸不同，仍按真实内容变化继续重算。
+   */
+  private _layoutOwnedBlockSizes = new Map<Element, number>();
+  /**
    * capHeight 块最近一次未被页高裁剪的可见高度。
    *
    * 代码块加锁后会通过 flex 把内部滚动容器压到一页内，导致宿主的 scrollHeight
@@ -52,7 +55,27 @@ export class LiveHeightSource {
   private _lastUncappedHeights = new WeakMap<HTMLElement, number>();
 
   constructor(private doc: BlockCraft.Doc) {
-    this._ro = new ResizeObserver(() => this.resize$.next());
+    this._ro = new ResizeObserver(entries => this._handleResize(entries));
+  }
+
+  /**
+   * 在分页视图完成 DOM 提交后登记其最终 border-box，过滤异步到达的自反馈。
+   * 只读取会被分页投影直接改高的根块，避免为普通段落增加额外布局读取。
+   */
+  captureLayoutOwnedResize(rootIds: Iterable<string>): void {
+    for (const id of rootIds) {
+      const el = this._safeBlock(id)?.hostElement as HTMLElement | undefined;
+      if (!el || !this._observed.has(el)) continue;
+      const height = el.getBoundingClientRect().height;
+      if (Number.isFinite(height) && height >= 0) {
+        this._layoutOwnedBlockSizes.set(el, height);
+      }
+    }
+  }
+
+  /** 模型内容已经变化；后续 resize 必须重新作为自然尺寸输入处理。 */
+  clearLayoutOwnedResize(): void {
+    this._layoutOwnedBlockSizes.clear();
   }
 
   /** 根据当前 root 子块同步 observe 集合（增 observe、删 unobserve）。 */
@@ -62,6 +85,7 @@ export class LiveHeightSource {
       if (!hosts.has(el)) {
         this._ro.unobserve(el);
         this._observed.delete(el);
+        this._layoutOwnedBlockSizes.delete(el);
       }
     }
     for (const el of hosts) {
@@ -90,40 +114,52 @@ export class LiveHeightSource {
       // 忽略 margin-top（它要么是 0，要么是 gap-applier 施加的下推间隙，都不算块自身高度）。
       const mb = parseFloat(cs.marginBottom) || 0;
 
-      const table = asPaginatedTable(block);
-      if (table) {
-        const geom = table.getPaginationGeometry();
-        const height = geom.naturalHeight + mb;
+      const geom = measureTablePaginationGeometry(block, opts);
+      if (geom) {
+        const naturalHeight = geom.naturalHeight + mb;
+        const cellFlowPlan = geom.cellFlowPlan
+          ? appendTrailingHeight(geom.cellFlowPlan, mb)
+          : undefined;
+        const height = cellFlowPlan?.paginationHeight ?? naturalHeight;
         // 表格按「整表最大高度」keep-together：能放进一整页就整块走（放不下当前页剩余则跳下一页），
         // **只有整表高过一整页才带按行切点、拆分**——不再 Word 式拆开填当前页。
         let splitOffsets: number[] | undefined;
         let preferredSplitOffsets: number[] | undefined;
         let repeatHeaderHeight: number | undefined;
         if (opts && geom.rows.length && height > opts.contentHeight) {
-          const bottoms = geom.rows.map(r => r.bottom);
+          if (cellFlowPlan) {
+            splitOffsets = [...cellFlowPlan.splitOffsets];
+            preferredSplitOffsets = cellFlowPlan.segments
+              .filter(segment => segment.breakAfter?.kind === 'row')
+              .map(segment => segment.toOffset);
+          } else {
+            const bottoms = geom.rows.map(r => r.bottom);
           // splitOffsets = 可断边界，**排除带内容合并单元格内部**（这类不可拆、拆开必溢出页底 → keep-together）；
           // 空合并单元格内部仍可断（续段为空、不溢出）。无内容合并时与 widowOrphanCuts 等价。
-          const splittable = rowSplitOffsets(bottoms, geom.rows.map(r => r.coveredByContentMerge ?? false), opts.widowOrphanLines);
-          if (splittable.length) splitOffsets = splittable;
+            const splittable = rowSplitOffsets(bottoms, geom.rows.map(r => r.coveredByContentMerge ?? false), opts.widowOrphanLines);
+            if (splittable.length) splitOffsets = splittable;
           // 优先「干净」边界（不跨任何合并单元格）；引擎优先选这些、实在不行才切空合并单元格的边界。
-          const clean = rowSplitOffsets(bottoms, geom.rows.map(r => r.coveredFromAbove), opts.widowOrphanLines);
-          if (clean.length) preferredSplitOffsets = clean;
+            const clean = rowSplitOffsets(bottoms, geom.rows.map(r => r.coveredFromAbove), opts.widowOrphanLines);
+            if (clean.length) preferredSplitOffsets = clean;
+          }
           // [临时禁用 2026-06-30] 续页重复表头复制 bug 较多，先关掉（屏幕不插表头克隆、引擎不预留续页表头高）。
           // 恢复：取消下行注释 + table.block.ts applyPaginationBreaks 的克隆插入 + print-paginator.ts 的表头高读取。
           // if (geom.headerHeight > 0) repeatHeaderHeight = geom.headerHeight;
         }
-        metas.push({
+        const meta: LivePaginationMeasurement = {
           id,
           flavour: block.flavour,
           nodeType: block.nodeType,
           isHeading: false,
-          naturalHeight: height,
+          naturalHeight,
           height,
           splitOffsets,
           preferredSplitOffsets,
           repeatHeaderHeight,
           tableRows: geom.rows,
-        });
+        };
+        setTableCellFlowPlan(meta, cellFlowPlan);
+        metas.push(meta);
         continue;
       }
 
@@ -194,6 +230,25 @@ export class LiveHeightSource {
     return !!(block.heading ?? block.model?.props?.heading);
   }
 
+  private _handleResize(entries: readonly ResizeObserverEntry[]): void {
+    let hasNaturalResize = false;
+    for (const entry of entries) {
+      const expected = this._layoutOwnedBlockSizes.get(entry.target);
+      if (expected === undefined) {
+        hasNaturalResize = true;
+        continue;
+      }
+
+      // 每个期望值只消费一次；后续变化必须重新进入分页测量。
+      this._layoutOwnedBlockSizes.delete(entry.target);
+      const actual = resizeEntryBlockSize(entry);
+      if (!Number.isFinite(actual) || Math.abs(actual - expected) > 0.5) {
+        hasNaturalResize = true;
+      }
+    }
+    if (hasNaturalResize) this.resize$.next();
+  }
+
   private _resolveCapHeight(
     el: HTMLElement,
     renderedHeight: number,
@@ -215,6 +270,30 @@ export class LiveHeightSource {
   destroy(): void {
     this._ro.disconnect();
     this._observed.clear();
+    this._layoutOwnedBlockSizes.clear();
     this.resize$.complete();
   }
+}
+
+function resizeEntryBlockSize(entry: ResizeObserverEntry): number {
+  const borderBox = entry.borderBoxSize as unknown as
+    | readonly ResizeObserverSize[]
+    | ResizeObserverSize
+    | undefined;
+  const size = Array.isArray(borderBox) ? borderBox[0] : borderBox;
+  if (size && Number.isFinite(size.blockSize)) return size.blockSize;
+  return entry.target.getBoundingClientRect().height;
+}
+
+function appendTrailingHeight(
+  source: TableCellFlowPlan,
+  trailing: number,
+): TableCellFlowPlan {
+  const plan = cloneTableCellFlowPlan(source);
+  if (trailing <= 0 || !plan.segments.length) return plan;
+  const last = plan.segments[plan.segments.length - 1];
+  last.height += trailing;
+  last.toOffset += trailing;
+  plan.paginationHeight += trailing;
+  return plan;
 }

@@ -103,6 +103,23 @@ describe("readonly write footprint", () => {
     });
   });
 
+  it("uses a model-resolved merged-cell target set when available", () => {
+    const resolveTableCellIds = jasmine.createSpy("resolveTableCellIds")
+      .and.returnValue(["c11", "c22"]);
+
+    expect(buildReadonlyWriteFootprint({
+      kind: "table-cell",
+      tableId: "table",
+      anchorCellId: "c11",
+      headCellId: "c22",
+    }, {...reader, resolveTableCellIds})).toEqual({
+      textBlockIds: [],
+      removableRootIds: ["p11", "p22"],
+      insertParentIds: ["c11", "c22"],
+    });
+    expect(resolveTableCellIds).toHaveBeenCalledOnceWith("table", "c11", "c22");
+  });
+
   it("returns an empty footprint for unsupported plans", () => {
     expect(buildReadonlyWriteFootprint({kind: "unsupported", reason: "stale"}, reader))
       .toEqual({textBlockIds: [], removableRootIds: [], insertParentIds: []});

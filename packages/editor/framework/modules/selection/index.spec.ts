@@ -1454,12 +1454,13 @@ describe('SelectionManager DOM selection normalization', () => {
       parentBlock: rootBlock,
       childrenIds: ['row-1', 'row-2'],
       childrenLength: 2,
-      confirmSelection: (start: number[], end: number[]) => ({start, end}),
-      getCellsMatrixByCoordinates(start: number[], end: number[]) {
+      props: {colWidths: [100, 100]},
+      confirmSelection: jasmine.createSpy('confirmSelection').and.callFake((start: number[], end: number[]) => ({start, end})),
+      getCellsMatrixByCoordinates: jasmine.createSpy('getCellsMatrixByCoordinates').and.callFake((start: number[], end: number[]) => {
         const rows = [row1, row2];
         return rows.slice(start[0], end[0] + 1)
           .map(row => row.children.slice(start[1], end[1] + 1));
-      },
+      }),
       textContent: () => 'A\tB\nC\tD',
     } as any;
     const row1 = {
@@ -1499,12 +1500,67 @@ describe('SelectionManager DOM selection normalization', () => {
     row1.children = [c1, c2];
     row2.children = [c3, c4];
     const blocks: Record<string, any> = {root: rootBlock, 'table-1': table, 'row-1': row1, 'row-2': row2, 'cell-1': c1, 'cell-2': c2, 'cell-3': c3, 'cell-4': c4};
+    const modelChildren: Record<string, string[]> = {
+      root: ['table-1'],
+      'table-1': ['row-1', 'row-2'],
+      'row-1': ['cell-1', 'cell-2'],
+      'row-2': ['cell-3', 'cell-4'],
+      'cell-1': ['paragraph-1'],
+      'cell-2': ['paragraph-2'],
+      'cell-3': ['paragraph-3'],
+      'cell-4': ['paragraph-4'],
+      'paragraph-1': [],
+      'paragraph-2': [],
+      'paragraph-3': [],
+      'paragraph-4': [],
+    };
+    const modelParent: Record<string, string | null> = {
+      root: null,
+      'table-1': 'root',
+      'row-1': 'table-1',
+      'row-2': 'table-1',
+      'cell-1': 'row-1',
+      'cell-2': 'row-1',
+      'cell-3': 'row-2',
+      'cell-4': 'row-2',
+      'paragraph-1': 'cell-1',
+      'paragraph-2': 'cell-2',
+      'paragraph-3': 'cell-3',
+      'paragraph-4': 'cell-4',
+    };
+    const modelText: Record<string, string> = {
+      'paragraph-1': 'A',
+      'paragraph-2': 'B',
+      'paragraph-3': 'C',
+      'paragraph-4': 'D',
+    };
+    const modelFlavour = (id: string) => {
+      if (id === 'root') return 'root';
+      if (id === 'table-1') return 'table';
+      if (id.startsWith('row-')) return 'table-row';
+      if (id.startsWith('cell-')) return 'table-cell';
+      if (id.startsWith('paragraph-')) return 'paragraph';
+      return undefined;
+    };
     const doc = {
       root: rootBlock,
       event: {add() {}, bindHotkey() {}},
       afterInit() {},
       onDestroy$: new Subject<void>(),
-      getBlockById: (id: string) => blocks[id],
+      getBlockById: jasmine.createSpy('getBlockById').and.callFake((id: string) =>
+        id === 'cell-2' || id === 'cell-3' ? undefined : blocks[id]),
+      model: {
+        exists: (id: string) => id in modelChildren,
+        getParentId: (id: string) => modelParent[id] ?? null,
+        getChildrenIds: (id: string) => [...(modelChildren[id] ?? [])],
+        getTextLength: (id: string) => modelText[id]?.length ?? 0,
+        getFlavour: modelFlavour,
+        getProps: (id: string) => id === 'table-1' ? {colWidths: [100, 100]} : {},
+        getNodeType: (id: string) => id.startsWith('paragraph-')
+          ? BlockNodeType.editable
+          : BlockNodeType.block,
+        getTextDeltas: (id: string) => id in modelText ? [{insert: modelText[id]}] : undefined,
+      },
       compareBlockPosition: (a: string, b: string) => blocks[a].hostElement.compareDocumentPosition(blocks[b].hostElement),
       queryBlocksBetween: () => [],
       logger: {warn: jasmine.createSpy('warn')},
@@ -1596,7 +1652,7 @@ describe('SelectionManager DOM selection normalization', () => {
   });
 
   it('replays table-cell JSON as a model selection', () => {
-    const {manager} = createTableManager();
+    const {manager, table} = createTableManager();
 
     manager.replay({
       anchor: {blockId: 'cell-1', type: 'table-cell', tableId: 'table-1'},
@@ -1608,6 +1664,10 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(document.getSelection()?.rangeCount).toBe(0);
     expect(manager.getSelectionRects()).toBeNull();
     expect(manager.getSelectedText()).toBe('A\tB\nC\tD');
+    expect(table.confirmSelection).not.toHaveBeenCalled();
+    expect(table.getCellsMatrixByCoordinates).not.toHaveBeenCalled();
+    expect(manager.doc.getBlockById).not.toHaveBeenCalledWith('cell-2');
+    expect(manager.doc.getBlockById).not.toHaveBeenCalledWith('cell-3');
   });
 
   it('clears a replayed table-cell selection when replaying null', () => {

@@ -15,7 +15,7 @@ import {IS_SAFARI} from "../../../global";
               allow="encrypted-media;clipboard-read *;clipboard-write *;" referrerpolicy=""
               data-iframe-will-auto-focus="1"
               frameborder="0" data-aha-samesite=""></iframe>
-      <div class="iframe-mask"></div>
+      <div class="iframe-mask" #iframeMask></div>
     </div>
     <div class="iframe-brand" *ngIf="brand">
       <mat-icon [svgIcon]="brand.icon"></mat-icon>
@@ -56,11 +56,15 @@ export class IframeCardComponent implements AfterViewInit, OnDestroy {
   @ViewChild('iframeEle', {read: ElementRef})
   iframe!: ElementRef<HTMLIFrameElement>
 
+  @ViewChild('iframeMask', {read: ElementRef})
+  iframeMask!: ElementRef<HTMLDivElement>
+
   isViewInit = false
   private readonly _enableSafariPerfMode = IS_SAFARI
   private _isNearViewport = true
   private _isActivated = !this._enableSafariPerfMode
   private _observer?: IntersectionObserver
+  private _hitTestObserver?: IntersectionObserver
   private _mountedSrc = ''
 
   @Input()
@@ -72,12 +76,15 @@ export class IframeCardComponent implements AfterViewInit, OnDestroy {
   ngAfterViewInit() {
     this.isViewInit = true
     this.initSafariViewportObserver()
+    this.initSafariHitTestObserver()
     this.syncIframeSrc()
   }
 
   ngOnDestroy() {
     this._observer?.disconnect()
     this._observer = undefined
+    this._hitTestObserver?.disconnect()
+    this._hitTestObserver = undefined
   }
 
   private initSafariViewportObserver() {
@@ -108,8 +115,46 @@ export class IframeCardComponent implements AfterViewInit, OnDestroy {
   }
 
   private getScrollRoot() {
-    const root = this.iframe.nativeElement.closest('[data-blockcraft-root="true"]')
-    return root instanceof HTMLElement ? root : null
+    const documentRoot = this.iframe.nativeElement.closest('[data-blockcraft-root="true"]')
+    let candidate = documentRoot?.parentElement
+    while (candidate) {
+      const style = getComputedStyle(candidate)
+      if (/(auto|scroll|overlay)/.test(`${style.overflow} ${style.overflowY}`)) {
+        return candidate
+      }
+      candidate = candidate.parentElement
+    }
+    return null
+  }
+
+  /**
+   * Safari can retain an iframe compositing layer's old hit-test region after
+   * paginated scrolling. The transparent mask then intercepts events over a
+   * completely different block (for example a table several pages below).
+   * Keep offscreen iframe layers non-interactive; restore their normal editor
+   * selection/activation behavior as soon as they re-enter the viewport.
+   */
+  private initSafariHitTestObserver() {
+    if (!this._enableSafariPerfMode) return
+    if (typeof IntersectionObserver === 'undefined') return
+    this._setSafariHitTesting(false)
+    this._hitTestObserver = new IntersectionObserver((entries) => {
+      const entry = entries[0]
+      this._setSafariHitTesting(Boolean(
+        entry && entry.isIntersecting && entry.intersectionRatio > 0,
+      ))
+    }, {
+      root: this.getScrollRoot(),
+      rootMargin: '0px',
+      threshold: 0,
+    })
+    this._hitTestObserver.observe(this.iframe.nativeElement)
+  }
+
+  private _setSafariHitTesting(enabled: boolean) {
+    const pointerEvents = enabled ? '' : 'none'
+    this.iframe.nativeElement.style.pointerEvents = pointerEvents
+    this.iframeMask.nativeElement.style.pointerEvents = pointerEvents
   }
 
   private syncIframeSrc() {

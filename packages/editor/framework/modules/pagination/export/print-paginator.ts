@@ -1,7 +1,18 @@
 // packages/editor/framework/modules/pagination/export/print-paginator.ts
 import {createSnapshotRenderer} from "../../../../snapshot-viewer";
 import {IBlockSnapshot} from "../../../block-std/types/block.type";
-import {isManualBreak, paginate, PageSlotFragment, PaginationItem, resolveBlockPolicy} from "../engine";
+import {
+  isManualBreak,
+  paginate,
+  PageSlotFragment,
+  PaginationItem,
+  resolveBlockPolicy,
+} from "../engine";
+import {
+  TableCellFlowAnchor,
+  TableCellFlowPlan,
+} from "../engine/table-cell-flow";
+import {getTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
 import {PageChrome, PaginationConfig} from "../pagination.types";
 import {resolveScreenGeometry} from "../view/pagination-geometry";
 import {resolveChromeSegments} from "../view/chrome-tokens";
@@ -126,6 +137,17 @@ export async function buildPaginatedPrintSurface(
   const items: readonly PaginationItem[] = override?.layout?.items
     ?? override?.items
     ?? measureItemsFromDom(topSnapshots, elById, geom.geometry.contentHeight, effectiveConfig);
+  const itemById = new Map(items.map(item => [item.id, item]));
+
+  // 只读打印 DOM 没有 live TableBlockComponent；按稳定快照里的同一组锚点插入“压缩页缝”——
+  // 只补齐各列在同一页片段中的高度差，不包含屏幕纸间距。这样表格 DOM 的线性高度正好等于
+  // tableCellFlowPlan.paginationHeight，下面通用 fragment window 可直接复用同一 from/toOffset。
+  for (const item of items) {
+    const tableCellFlowPlan = getTableCellFlowPlan(item);
+    if (!tableCellFlowPlan) continue;
+    const element = elById.get(item.id);
+    if (element) applyPrintTableCellFlowProjection(element, tableCellFlowPlan);
+  }
 
   // 3) 分页
   const result = override?.layout?.result ?? paginate([...items], geom.geometry);
@@ -192,7 +214,13 @@ export async function buildPaginatedPrintSurface(
           content.appendChild(buildFragmentWindow(el, {fromOffset: 0, toOffset: headerH}));
         }
         // 拆开的超大块：同块会落在多页，每个片段克隆一份，裁出 [fromOffset, toOffset] 纵向切片。
-        content.appendChild(buildFragmentWindow(el, slot.fragment));
+        content.appendChild(buildFragmentWindow(
+          el,
+          slot.fragment,
+          itemById.get(slot.id)
+            ? getTableCellFlowPlan(itemById.get(slot.id)!)
+            : undefined,
+        ));
       } else {
         el.classList.toggle('bc-page-height-locked', lockedIds.has(slot.id));
         // capHeight 块由锁定 class + 页面内容高变量统一裁剪。
@@ -274,13 +302,13 @@ function validateStableLayout(
     }
     const maxFragment = maxFragmentById.get(item.id);
     const naturalHeight = Math.max(el.offsetHeight, el.scrollHeight);
-    if (maxFragment != null && maxFragment > naturalHeight + tolerance) {
+    const marginBottom = parseFloat(getComputedStyle(el).marginBottom) || 0;
+    if (maxFragment != null && maxFragment > naturalHeight + marginBottom + tolerance) {
       reportLayoutDivergence(item.id, '只读打印面的块高度不足以覆盖当前分页片段', policy, warnings);
       continue;
     }
     // capHeight 的 stable height 是裁剪后的页高，不能与自然 scrollHeight 做等值比较。
     if (item.lockHeight != null) continue;
-    const marginBottom = parseFloat(getComputedStyle(el).marginBottom) || 0;
     const renderedHeight = el.offsetHeight + marginBottom;
     if (Math.abs(renderedHeight - item.height) > tolerance) {
       reportLayoutDivergence(
@@ -407,7 +435,11 @@ function buildChrome(
  * 窗口 overflow:hidden 限定可见高，内部克隆整块并 translateY(-fromOffset) 上移露出对应片段。
  * 克隆（非搬移）：同块的不同片段要分别出现在多页。margin 归零，确保 translate 以 border-box 顶对齐。
  */
-function buildFragmentWindow(el: HTMLElement, frag: PageSlotFragment): HTMLElement {
+function buildFragmentWindow(
+  el: HTMLElement,
+  frag: PageSlotFragment,
+  cellFlowPlan?: TableCellFlowPlan,
+): HTMLElement {
   const height = frag.toOffset - frag.fromOffset;
   const win = document.createElement('div');
   win.className = 'bc-print-frag';
@@ -418,7 +450,122 @@ function buildFragmentWindow(el: HTMLElement, frag: PageSlotFragment): HTMLEleme
   clone.style.marginBottom = '0';
   clone.style.transform = `translateY(${-frag.fromOffset}px)`;
   win.appendChild(clone);
+  if (cellFlowPlan) decorateTableCellFlowFragment(win, el, frag, cellFlowPlan);
   return win;
+}
+
+function applyPrintTableCellFlowProjection(
+  tableRoot: HTMLElement,
+  plan: TableCellFlowPlan,
+): void {
+  for (const segment of plan.segments) {
+    const pageBreak = segment.breakAfter;
+    if (pageBreak?.kind !== 'cell-flow') continue;
+    for (const continuation of pageBreak.continuations) {
+      const padding = Math.max(0, segment.height - continuation.pageOffset);
+      if (padding <= 0.01) continue;
+      const cell = tableRoot.querySelector<HTMLElement>(
+        `[data-block-id="${continuation.cellId}"]`,
+      );
+      if (!cell) continue;
+      const marker = document.createElement('div');
+      marker.setAttribute('data-bc-print-cell-flow-pad', 'true');
+      marker.setAttribute('aria-hidden', 'true');
+      marker.style.cssText =
+        `display:block;height:${padding}px;margin:0;padding:0;` +
+        `pointer-events:none;user-select:none;-webkit-user-select:none;`;
+      insertPrintCellFlowMarker(cell, continuation.anchor, marker);
+    }
+  }
+}
+
+function insertPrintCellFlowMarker(
+  cell: HTMLElement,
+  anchor: TableCellFlowAnchor,
+  marker: HTMLElement,
+): void {
+  const wrapper = cell.querySelector<HTMLElement>(
+    ':scope > .table-cell__children-wrapper',
+  ) ?? cell;
+  if (anchor.kind === 'cell-end') return;
+  if (anchor.kind === 'cell-start') {
+    wrapper.insertBefore(marker, wrapper.firstChild);
+    return;
+  }
+
+  const block = cell.querySelector<HTMLElement>(
+    `[data-block-id="${anchor.blockId}"]`,
+  );
+  if (!block) return;
+  if (anchor.kind === 'block') {
+    block.parentNode?.insertBefore(marker, block);
+    return;
+  }
+
+  const inlineAnchor = splitReadonlyInlineAtOffset(block, anchor.offset);
+  if (inlineAnchor?.parentNode) {
+    inlineAnchor.parentNode.insertBefore(marker, inlineAnchor);
+  }
+}
+
+/** 在只读打印克隆里按 Y.Text offset 拆一个 c-element；该 DOM 不回写模型，也无需撤销。 */
+function splitReadonlyInlineAtOffset(
+  block: HTMLElement,
+  offset: number,
+): Node | null {
+  const firstInline = block.querySelector<HTMLElement>('c-element');
+  const container = firstInline?.parentElement;
+  if (!container) return null;
+  const elements = Array.from(container.children)
+    .filter((element): element is HTMLElement => element.localName === 'c-element');
+  let remaining = Math.max(0, offset);
+
+  for (const element of elements) {
+    const textNode = element.querySelector('c-text')?.firstChild;
+    const isBreak = element.classList.contains('bc-end-break');
+    const length = textNode instanceof Text
+      ? textNode.data.length
+      : isBreak ? 0 : 1;
+    if (remaining === 0) return element;
+    if (textNode instanceof Text && remaining < length) {
+      const right = element.cloneNode(true) as HTMLElement;
+      const rightText = right.querySelector('c-text')?.firstChild;
+      if (!(rightText instanceof Text)) return null;
+      rightText.data = textNode.data.slice(remaining);
+      textNode.data = textNode.data.slice(0, remaining);
+      element.after(right);
+      return right;
+    }
+    remaining -= length;
+  }
+  return elements.find(element => element.classList.contains('bc-end-break'))
+    ?? null;
+}
+
+function decorateTableCellFlowFragment(
+  win: HTMLElement,
+  source: HTMLElement,
+  fragment: PageSlotFragment,
+  plan: TableCellFlowPlan,
+): void {
+  const table = source.querySelector<HTMLElement>('table');
+  if (!table) return;
+  const sourceRect = source.getBoundingClientRect();
+  const tableRect = table.getBoundingClientRect();
+  const left = Math.max(0, tableRect.left - sourceRect.left);
+  const width = table.offsetWidth || tableRect.width;
+  const addEdge = (side: 'top' | 'bottom') => {
+    const edge = document.createElement('div');
+    edge.className = `bc-print-table-flow-edge bc-print-table-flow-edge--${side}`;
+    edge.setAttribute('aria-hidden', 'true');
+    edge.style.cssText =
+      `position:absolute;left:${left}px;width:${width}px;height:1px;${side}:0;` +
+      `background:var(--bc-table-border-color,var(--bc-border-color,#d9d9d9));` +
+      `pointer-events:none;z-index:2;`;
+    win.appendChild(edge);
+  };
+  if (fragment.fromOffset > 0) addEdge('top');
+  if (fragment.toOffset < plan.paginationHeight) addEdge('bottom');
 }
 
 /** 等待离屏内容的图片/字体加载、布局稳定。 */

@@ -217,6 +217,48 @@ describe("BlockReadonlyManager", () => {
     yBlockMap.unobserveDeep(viewObserver);
   }));
 
+  it("does not walk mounted subtrees for structure changes when no block lock exists", fakeAsync(() => {
+    const {doc, manager, yDoc, yBlockMap} = createReadonlyHarness();
+    const applyReadonlyViewState = jasmine.createSpy("applyReadonlyViewState");
+    doc.vm.has = jasmine.createSpy("vm.has").and.returnValue(true);
+    doc.vm.get = jasmine.createSpy("vm.get").and.returnValue({
+      instance: {applyReadonlyViewState},
+    });
+    let stateChanges = 0;
+    const subscription = manager.stateChange$.subscribe(() => stateChanges++);
+
+    yDoc.transact(() => {
+      const inserted = editableBlock("inserted-p");
+      yBlockMap.set("inserted-p", inserted);
+      const children = yBlockMap.get("root-a")!.get("children") as Y.Array<string>;
+      children.insert(children.length, ["inserted-p"]);
+    });
+
+    expect(applyReadonlyViewState).not.toHaveBeenCalled();
+    flushMicrotasks();
+    expect(stateChanges).toBe(1);
+    subscription.unsubscribe();
+  }));
+
+  it("still refreshes affected mounted subtrees when block locks exist", () => {
+    const {doc, manager, yDoc, yBlockMap} = createReadonlyHarness();
+    manager.set("root-a", true);
+    const applyReadonlyViewState = jasmine.createSpy("applyReadonlyViewState");
+    doc.vm.has = jasmine.createSpy("vm.has").and.returnValue(true);
+    doc.vm.get = jasmine.createSpy("vm.get").and.returnValue({
+      instance: {applyReadonlyViewState},
+    });
+
+    yDoc.transact(() => {
+      const inserted = editableBlock("locked-inserted-p");
+      yBlockMap.set("locked-inserted-p", inserted);
+      const children = yBlockMap.get("root-a")!.get("children") as Y.Array<string>;
+      children.insert(children.length, ["locked-inserted-p"]);
+    });
+
+    expect(applyReadonlyViewState).toHaveBeenCalled();
+  });
+
   it("fails closed when a readonly query observes a selection whose block was just removed", () => {
     const {manager} = createReadonlyHarness();
     const staleSelection = {

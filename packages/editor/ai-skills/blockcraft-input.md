@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-08-01
+> Last updated: 2026-08-03
 
 ## Architecture Overview
 
@@ -60,7 +60,7 @@ InputTransformer/CompositionSession pipeline applies.
 
 Boundary selections (`ISelectionPoint.type === 'boundary'`) are model-recognized and editable when both endpoints are in the same `renderUnit` container that can host paragraphs. In that case typing / printable keydown replaces the covered child range with one paragraph, IME first materializes an empty paragraph so the composition commits into `Y.Text`, Backspace/Delete delete the covered child range, and Enter replaces the range with an empty paragraph. Supported mixed `text + boundary` ranges under the same direct parent are replaced through the Yjs-owned text path, preserving the surviving text endpoint for typing and IME instead of blurring or letting native DOM input mutate content. Boundary selections in containers that cannot safely host a paragraph still fail closed (`preventDefault()` + clear selection).
 
-Table-cell selections (`ISelectionPoint.type === 'table-cell'`) are also model-recognized and **do not rely on a native DOM Range**. Typing or printable keydown clears every selected visible cell, inserts text into a fresh paragraph in the anchor cell, and moves the caret after the inserted text. IME first clears the selected cells, materializes a fresh empty anchor paragraph, moves the caret there, then starts `CompositionSession` so the committed text is written to `Y.Text`. Backspace/Delete clear every selected visible cell and restore the table-cell rectangle selection. Enter clears the selected cells and places the caret in the anchor cell's fresh empty paragraph.
+Table-cell selections (`ISelectionPoint.type === 'table-cell'`) are also model-recognized and **do not rely on a native DOM Range or a complete cell Component matrix**. `resolveTableCellSelectionTarget()` resolves anchor/head stable IDs through `TableModelGrid`, expands merged-cell closure, and returns unique visible master IDs. Typing or printable keydown replaces each target cell's children through `DocCRUD.insertBlockSnapshots()` / `deleteBlocks()`, inserts text into the anchor cell's fresh paragraph, and moves the caret after the inserted text. IME first performs the same stable-ID structural materialization, moves the caret to the fresh anchor paragraph, then starts `CompositionSession` so the committed text is written to `Y.Text`. Backspace/Delete clear every selected visible master and restore the table-cell rectangle selection. Enter clears the selected cells and places the caret in the anchor cell's fresh empty paragraph. Intermediate cells may be unmounted; invalid/malformed model targets fail closed instead of falling back to partial DOM state.
 
 Text-shaped ranges can inherit behavior from `SelectionScopePolicy` (`selection/scope.ts`). The scope is resolved from the nearest ancestor block schema with `metadata.selectionScope`; blocks with no declaration or `selectionScope: 'transparent'` are transparent. The built-in `columns` policy is model-first for `beforeInput`: it deletes the selected content and any fully covered intermediate column/block content, but it does **not** append the surviving tail of the end-column text block into the start-column text block. IME follows the same rule: composition still prevents native DOM mutation and starts from the surviving start text endpoint, but cross-column replacement does not merge text across column boundaries.
 

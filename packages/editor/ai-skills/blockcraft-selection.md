@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-07-31 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-08-03 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -135,6 +135,8 @@ This prevents stale toolbar state and accidental block-level keyboard handling w
 | `framework/modules/selection/history-restorer.ts` | Undo/redo bookmark resolution, focus and bounded DOM/model verification |
 | `framework/modules/selection/surface-adapter.ts` | Browser surface port for native selection, focus, frames and geometry |
 | `framework/modules/selection/projection-mount-adapter.ts` | Optional renderer port for mounting the bounded DOM projection neighborhood |
+| `framework/modules/table/table-model-grid.ts` | Package-internal DOM-free table coordinate/master/span projection |
+| `framework/modules/table/table-cell-selection-target.ts` | Resolves stable table-cell endpoint IDs into one immutable model rectangle |
 | `framework/doc/sync-lifecycle.ts` | Internal before/after remote view-sync lifecycle contract |
 | `framework/modules/selection/scope.ts` | `SelectionScope` resolver + `SelectionScopePolicy` — semantic cross-parent guard and scope-owned input/visual policy |
 | `framework/modules/selection/liveness.ts` | Endpoint guard for hot reads + structural liveness guard before broadcast/input |
@@ -239,7 +241,9 @@ A table-cell point represents one endpoint of a **model-owned rectangular table 
 - `SelectionManager.getSelectionRect()` and `getSelectionRects()` return `null` for table-cell selections. They are intentionally model-only, so toolbar/overlay code must not derive geometry from a synthetic DOM Range.
 - While the editor host keeps focus, an empty native `selectionchange` caused by that `removeAllRanges()` does not clear the model-owned table-cell selection; explicit `blur()` / `replay(null)` still clears it.
 
-`TableBlockComponent` remains responsible for merged-cell adjustment and the private `.bc-table-cell-selected` cell rectangle class. Generic selected/focused class painting ignores model-owned table-cell selections, and text-shaped fallback ranges that cross different cells do not mark `table-row` containers as `.selected`. `FloatTextToolbarPlugin` also ignores table-cell rectangles and cross-cell text-shaped ranges, while still allowing normal text selection inside one cell. `TableBlockBinding` reads table-cell model selection first for copy/cut/paste/delete/arrow navigation, then falls back to the table component's explicit row/column/cell rectangle state for older paths. Plain Arrow over a model table-cell selection moves/collapses to the adjacent visible cell; Shift+Arrow keeps the anchor and extends the head. `InputTransformer` reads the same model selection for typing, printable keydown, Enter, Backspace/Delete fallback, and IME materialization: text goes into the anchor cell's fresh paragraph; delete-style input clears selected visible cells and keeps the rectangle selected. Undo/redo snapshots store table-cell anchor/head `{ blockId, tableId }` and restore the model selection if both cells and table still exist.
+`TableModelGrid` now owns coordinate lookup, hidden-coverage → master mapping, rowspan/colspan closure, physical snapshot shape, and the unique visible edit targets. It reads only `BlockModelGraph`; selected middle cells therefore do not need a ComponentRef. `TableBlockComponent` is presentation-only for this selection: it applies the already-resolved rectangle to currently mounted master-cell components and does not materialize missing cells merely to paint selection. Generic selected/focused class painting ignores model-owned table-cell selections, and text-shaped fallback ranges that cross different cells do not mark `table-row` containers as `.selected`. `FloatTextToolbarPlugin` also ignores table-cell rectangles and cross-cell text-shaped ranges, while still allowing normal text selection inside one cell.
+
+`SelectionManager.getSelectedText()` reads the rectangle's physical cell-ID matrix and recursively extracts model text, preserving TSV shape without mounting cell components. `TableBlockBinding` uses the same model target for copy/cut/paste/delete/Arrow/Tab, then falls back to the table component's explicit row/column/cell rectangle only for legacy/nonstandard documents that have no usable model graph. Plain Arrow over a model table-cell selection moves/collapses to the adjacent visible source cell; Shift+Arrow keeps the anchor and extends the head. `InputTransformer` reads the same model selection for typing, printable keydown, Enter, Backspace/Delete fallback, and IME materialization: it writes fresh paragraph snapshots through `DocCRUD` by stable cell ID, so unmounted middle cells are edited consistently. Undo/redo snapshots store table-cell anchor/head `{ blockId, tableId }` and restore the model selection if both cells and table still exist. A malformed model grid fails closed; Component state is not used to guess a destructive target.
 
 ### Gap Cursor (`type: 'gap'`)
 

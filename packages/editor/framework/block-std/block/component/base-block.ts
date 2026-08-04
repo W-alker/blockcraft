@@ -179,10 +179,18 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     this._applyBaseReadonlyViewState()
     this._bindViewRetention()
     this._bindPlacementViewRetention()
-    this._releasePlacementPicking =
-      this.doc.placement?.registerBlockView?.(
-        this as unknown as BlockCraft.BlockComponent,
-      ) ?? null
+    // Placement picking only tracks schemas that can actually become absolute
+    // objects. Table row/cell/paragraph materialization is a very hot path; do
+    // not route every newly-created nested block through the placement manager
+    // just for it to reject the schema again.
+    const placementCapability =
+      this.doc.schemas?.get(this.flavour, false)?.metadata.placement
+    if (placementCapability?.modes.includes('absolute')) {
+      this._releasePlacementPicking =
+        this.doc.placement?.registerBlockView?.(
+          this as unknown as BlockCraft.BlockComponent,
+        ) ?? null
+    }
     this._bindBlockGapSpaces()
     this.changeDetectorRef.markForCheck()
     this.onViewInit$.next(true)
@@ -306,6 +314,21 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
    * between absolute and relative without remounting the component.
    */
   private _bindBlockGapSpaces(): void {
+    // Leaf/container-internal blocks can never own the before/after editing
+    // affordance. Previously they still scheduled one rAF each and only found
+    // that out inside the callback. Inserting a column into a long table creates
+    // one cell and one default paragraph per row, so that turned one model
+    // transaction into hundreds/thousands of redundant frame callbacks.
+    if (
+      (
+        this.nodeType !== BlockNodeType.void &&
+        this.nodeType !== BlockNodeType.block
+      ) ||
+      this.doc.schemas?.get?.(this.flavour, false)?.metadata.isLeaf
+    ) {
+      return
+    }
+
     const scheduleSync = () => {
       if (this._viewState === 'destroyed') return
       const ownerWindow = this.hostElement.ownerDocument.defaultView

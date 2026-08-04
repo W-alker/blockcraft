@@ -2,6 +2,7 @@
 import {TableBreakApplier} from "./table-break-applier";
 import {TableRowGeom} from "./item-builder";
 import {PaginationResult} from "../engine";
+import {registerTablePaginationAccess} from "./table-pagination-access";
 
 function rows(n: number, h = 40): TableRowGeom[] {
   return Array.from({length: n}, (_, i) => ({id: `r${i}`, top: i * h, bottom: (i + 1) * h, coveredFromAbove: false}));
@@ -17,10 +18,16 @@ function splitResult(tableId: string, cuts: number[], usedHeights: number[]): Pa
 }
 
 function fakeTable() {
-  return {
+  const table = {
     applyPaginationBreaks: jasmine.createSpy("applyPaginationBreaks"),
     clearPaginationBreaks: jasmine.createSpy("clearPaginationBreaks"),
   };
+  registerTablePaginationAccess(table, {
+    measure: () => ({naturalHeight: 0, headerHeight: 0, rows: []}),
+    apply: breaks => table.applyPaginationBreaks(breaks),
+    clear: () => table.clearPaginationBreaks(),
+  });
+  return table;
 }
 
 describe("TableBreakApplier - 缺块兜底（getBlockById 抛错不炸 _recompute）", () => {

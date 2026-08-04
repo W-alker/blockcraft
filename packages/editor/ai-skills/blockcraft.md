@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-01 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-03 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -33,6 +33,7 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | **Inline** | Rich text within editable blocks; Blot tree on Y.Text | `InlineRuntime` in `framework/block-std/inline/` |
 | **Selection** | Anchor/head selection model over blocks | `SelectionManager` in `framework/modules/selection/` |
 | **Input** | Intercepts `beforeInput`, writes to Y.Text directly | `InputTransformer` in `framework/modules/input/` |
+| **Table Model** | DOM-free table coordinates, merged-cell closure and stable-ID rectangle targets | package-internal `framework/modules/table/` |
 | **Virtualization** | Optional model-first root-child windowing; nested subtrees stay atomic | `RootVirtualizationManager` in `framework/modules/virtualization/` |
 | **Object Layout** | Word-like inline/top-bottom/under/over object states projected onto Schema-gated block placement | `BlockPlacementManager` in `framework/services/` |
 | **Object Sizing** | Root-relative `wr/ar` sizing with legacy pixel compatibility | `BlockObjectSizingManager` in `framework/services/` |
@@ -168,6 +169,19 @@ Use `doc.crud.insertBlockSnapshots()` for imports or bulk/model workflows that
 only need inserted IDs. Existing parent views still synchronize through the
 normal Yjs observer. Keep `insertBlocks()` for interaction code that needs its
 synchronous `BlockComponent[]` compatibility result.
+
+Built-in table rectangle selection and editing use a package-internal
+`TableModelGrid` derived from `doc.model`. Coordinates, merged-cell closure,
+TSV/snapshot shape and edit targets remain valid when selected middle cells have
+no ComponentRef. TableBlock paints only mounted cells; malformed grids fail
+closed. This is an internal domain projection, not a public host API.
+Column resizing also preserves the committed model and table layout throughout
+the gesture: mouse movement updates only an inert active-color viewport guide
+outside the clipped table subtree, then mouse release resolves the stable
+source-cell ID against the current model grid and writes `colWidths` once.
+Escape, window blur, a readonly release and stale model anchors cancel without
+a model write. No live `<col>` width or Angular change detection runs on the
+mouse-move path.
 `deleteBlocks()`, `deleteBlockById()` and `moveBlocks()` likewise operate on
 reachable YBlocks and do not require source or target ComponentRefs. Mounted
 views receive the same transaction through the normal observer; unmounted
@@ -482,6 +496,8 @@ pagination.disable()
 
 分页启用状态属于插件，不属于 `DocConfig`；不要使用 `DocConfig.pagination` 或 `doc.pagination`。插件关闭时会移除页框、块间距、表格视图断点和高度锁定，且不会写入 Yjs。`experimentalSparseView` 默认 `false`，默认路径仍持有整文档视图租约以保证实时精确几何；设为 `true` 且开启根虚拟化后，分页 Projection 驱动窗口与 spacer，离屏块允许先用估算几何并在挂载后收敛。该实验路径不会把非 exact 结果交给打印/PDF，而会使用完整只读重排。`exportToPdf()` 使用真实只读 BlockCraft 组件，snapshot-viewer 不参与分页 PDF；浏览器走系统打印，Tauri 等宿主通过 `PaginationPdfHostBackend` 打印当前顶层导出 WebView，正文不经过 DOM 栅格化。
 
+当一个真实表格行因超长单元格而高过页面内容区时，分页器会惰性收集单元格直属 Block 边界和 Editable Block 的视觉行首，在同一逻辑单元格内生成可逆续排。各列可以在不同安全锚点换页，屏幕投影只插入零模型长度页缝，不拆 Yjs 行/单元格，也不创建 Undo 历史。表格的虚拟内容高度、屏幕内部页缝和后续顶层 Block 共同进入同一布局坐标系，因此表格下方内容不会再沿用表格的自然高度而向上漂移。IME composition 期间保留上一版稳定布局，结束后再重排；打印/PDF 消费同一稳定锚点快照。
+
 `DocExportManager` 只提供 JSON、Markdown 与 PDF/打印导出，不再提供 `exportToJpeg()` 或 DOM-to-image 渲染配置。需要位图截图的宿主应在应用层选择并维护独立的截图方案。
 
 ### Snapshot Viewer (Display Only)
@@ -726,6 +742,9 @@ doc.selection.getSelectedText()         // string
 //   { blockId: cell.id, type: 'table-cell', tableId: table.id }
 // Read the rectangle intent via selection.getTableCellSelection(). Empty native
 // selectionchange events do not clear it while the editor host keeps focus.
+// Rectangle coordinates/merged-cell closure and data commands resolve against
+// doc.model stable IDs; unmounted middle cell components are not required.
+// TableBlock only paints mounted cells, and malformed model grids fail closed.
 // getSelectionRect()/getSelectionRects() return null for table-cell selections
 // because they are model-only and do not expose a derived DOM Range.
 // Gap cursor is model-owned as a gap point; the derived DOM Range anchors inside

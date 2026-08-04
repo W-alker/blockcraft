@@ -79,6 +79,30 @@ function clonePlacement(
   };
 }
 
+function placementsEqual(
+  left: readonly ProjectedBlockPlacement[],
+  right: readonly ProjectedBlockPlacement[],
+): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  return left.every((placement, index) => {
+    const other = right[index];
+    return !!other
+      && placement.blockId === other.blockId
+      && placement.firstPageIndex === other.firstPageIndex
+      && placement.beforeGap === other.beforeGap
+      && placement.projectedHostHeight === other.projectedHostHeight
+      && placement.internalPageGap === other.internalPageGap
+      && placement.fragments.length === other.fragments.length
+      && placement.fragments.every((fragment, fragmentIndex) => {
+        const otherFragment = other.fragments[fragmentIndex];
+        return !!otherFragment
+          && fragment.fromOffset === otherFragment.fromOffset
+          && fragment.toOffset === otherFragment.toOffset;
+      });
+  });
+}
+
 function uniqueMap<T>(
   values: readonly T[],
   idOf: (value: T) => string,
@@ -98,8 +122,18 @@ function sumTablePageGaps(
   entry: PaginationGeometryEntry,
   continuations: readonly TableContinuation[] | undefined,
 ): number {
+  if (!continuations?.length) return 0;
+
+  // 超高单元格的 fragment offset 属于规划器生成的“虚拟内容流”，不会与
+  // 自然 tableRows.top 重合。此时每个续页 gap 都已经由真实 PaginationResult
+  // 算出，必须全量计入根投影；否则稀疏分页会仍用表格自然高度定位后续块，
+  // 使表格下方内容逐页向上漂移。
+  if (entry.tableCellFlowPlan) {
+    return continuations.reduce((total, continuation) => total + continuation.gap, 0);
+  }
+
   const rows = entry.tableRows;
-  if (!rows?.length || !continuations?.length) return 0;
+  if (!rows?.length) return 0;
 
   let previousTop = Number.NEGATIVE_INFINITY;
   for (const row of rows) {
@@ -270,7 +304,11 @@ export function buildProjectedBlockPlacements(
       beforeGap: blockGaps.get(rootId) ?? 0,
       projectedHostHeight: isManualBreak
         ? 0
-        : (entry.lockHeight ?? entry.naturalHeight),
+        : (
+          entry.lockHeight
+          ?? entry.tableCellFlowPlan?.paginationHeight
+          ?? entry.naturalHeight
+        ),
       internalPageGap:
         entry.flavour === "table"
           ? sumTablePageGaps(entry, tableContinuations.get(rootId))
@@ -311,7 +349,10 @@ export class PaginatedLayoutProjection implements VerticalLayoutProjection {
     return this.blockIdsValue;
   }
 
-  update(placements: readonly ProjectedBlockPlacement[]): void {
+  update(
+    placements: readonly ProjectedBlockPlacement[],
+    options: {readonly force?: boolean} = {},
+  ): void {
     if (this.disposed) return;
 
     const seen = new Set<string>();
@@ -341,6 +382,20 @@ export class PaginatedLayoutProjection implements VerticalLayoutProjection {
       }
       nextExtents.push(extent);
     });
+
+    // Sparse pagination recomputes when the mounted virtual window changes.
+    // Once the newly mounted roots have already contributed the same measured
+    // geometry, publishing another projection revision is not only wasted work:
+    // it opens a scroll-anchor transaction with no layout change. Safari can
+    // deliver the corresponding scroll event after the restore frame, causing
+    // that stale anchor to pull the viewport back on every scroll attempt.
+    if (
+      !options.force
+      && this.revisionValue > 0
+      && placementsEqual(this.placements, nextPlacements)
+    ) {
+      return;
+    }
 
     const revision = this.revisionValue + 1;
     this.willChanges.next({ revision });

@@ -477,6 +477,13 @@
           user-select: none;
           -webkit-user-select: none;
 
+          // 分页中不可拆的巨大原子子块（媒体/代码/嵌入）局部锁到一页高。
+          // 不加滚动容器、不改模型；可拆文字仍走单元格流式续排。
+          > .bc-page-nested-height-locked {
+            max-height: var(--bc-page-content-height) !important;
+            overflow: hidden !important;
+          }
+
           &[data-align="center"] {
             text-align: center;
 
@@ -507,7 +514,7 @@
       .table-col-resize-bar,
       table-col-bar,
       table-row-bar {
-        display: none;
+        display: none !important;
       }
     }
   }
@@ -518,12 +525,22 @@
     .table-col-resize-bar,
     table-col-bar,
     table-row-bar {
-      display: none;
+      display: none !important;
     }
   }
 
   .table-block {
     $ctrlBarSize: 16px;
+
+    // 手柄是 wrapper 内独立于 table painting layer 的 overlay。只有 hover
+    // 已解析到真实模型 cell 后才显示，避免分页重绘时孤立手柄误抢选区。
+    .table-wrapper > .table-col-resize-bar {
+      display: none;
+
+      &.is-visible {
+        display: block;
+      }
+    }
 
     .table-col-resize-bar,
     table-col-bar,
@@ -542,7 +559,7 @@
     &.is-reordering-col {
 
       .table-col-resize-bar {
-        display: none;
+        display: none !important;
       }
     }
 
@@ -558,6 +575,14 @@
       position: absolute;
       z-index: 102;
       cursor: col-resize;
+    }
+
+    &.is-resizing-col {
+      cursor: col-resize;
+
+      .table-col-resize-bar > .bar {
+        opacity: 0;
+      }
     }
 
     .table-menu-anchor {
@@ -613,16 +638,14 @@
       outline: 1px solid var(--bc-active-color);
     }
 
-    // Resize bar 现在是「悬停 cell」的 DOM 子节点（由 JS appendChild 切换归属）。
-    // 用 CSS 自动定位到 cell 右边界，跨浏览器 / 任何 zoom / 任何 border-spacing 都
-    // 不需要 JS 数学计算。详细原因见 TableBlockComponent._handleNativeMouseOver
-    // 旁的注释。
+    // Resize bar 位于 table 之后的 wrapper overlay 层，避免 Safari 在
+    // border-collapse 边界把右侧 td 绘制到手柄之上。
     .table-col-resize-bar {
       top: 0;
-      right: -6px;
+      right: auto;
+      left: 0;
       width: 12px;
-      height: 100%;
-      left: auto;
+      height: 1px;
 
       &:hover {
         > .bar {
@@ -634,11 +657,11 @@
         opacity: 0;
         position: absolute;
         top: 0;
-        // 改用 50% + translateX 居中，让宽度变化时也精确居中在 cell.right 边界上。
+        right: auto;
         left: 50%;
-        transform: translateX(-50%);
         height: 100%;
         width: 3px;
+        transform: translateX(-50%);
         background: var(--bc-active-color);
         border-radius: 1px;
       }

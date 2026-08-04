@@ -4,6 +4,8 @@ import {BlockNodeType, IBlockSnapshot} from "../../../block-std/types/block.type
 import {PaginationConfig} from "../pagination.types";
 import {resolveScreenGeometry} from '../view/pagination-geometry';
 import {createStablePaginationLayout} from '../view/stable-pagination-layout';
+import {planTableCellFlow} from '../engine/table-cell-flow';
+import {setTableCellFlowPlan} from '../engine/table-cell-flow-metadata';
 
 function paragraph(id: string, text: string): IBlockSnapshot {
   return {id, flavour: "paragraph", nodeType: BlockNodeType.editable, meta: {}, props: {depth: 0}, children: [{insert: text}]};
@@ -204,6 +206,105 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
           expect(rr.bottom).toBeLessThanOrEqual(fRect.bottom + 1);
         }
       }
+    } finally {
+      pages.dispose();
+    }
+  });
+
+  it('打印复用超高单元格 flow plan，并把错位列压缩到相同片段边界', async () => {
+    const snapshot = root([table('flow-table', 1)]);
+    const plan = planTableCellFlow([{
+      kind: 'cell-flow',
+      rowId: 'flow-table-r0',
+      cells: [
+        {
+          cellId: 'flow-table-r0-c1',
+          points: [
+            {offset: 180, anchor: {kind: 'block', blockId: 'left-2'}},
+            {offset: 360, anchor: {kind: 'cell-end'}},
+          ],
+        },
+        {
+          cellId: 'flow-table-r0-c2',
+          points: [
+            {offset: 120, anchor: {kind: 'block', blockId: 'right-2'}},
+            {offset: 300, anchor: {kind: 'block', blockId: 'right-3'}},
+            {offset: 480, anchor: {kind: 'cell-end'}},
+          ],
+        },
+      ],
+    }], CONTENT_HEIGHT);
+    expect(plan.paginationHeight).toBe(540);
+
+    const item = {
+      id: 'flow-table',
+      height: plan.paginationHeight,
+      breakable: true,
+      keepWithNext: false,
+      splitStartsNewPage: true,
+      splitOffsets: plan.splitOffsets,
+    };
+    setTableCellFlowPlan(item, plan);
+    const result = {
+      pages: [
+        {index: 0, usedHeight: 180, slots: [{id: 'flow-table', fragment: {fromOffset: 0, toOffset: 180}}]},
+        {index: 1, usedHeight: 180, slots: [{id: 'flow-table', fragment: {fromOffset: 180, toOffset: 360}}]},
+        {index: 2, usedHeight: 180, slots: [{id: 'flow-table', fragment: {fromOffset: 360, toOffset: 540}}]},
+      ],
+      byBlock: new Map([['flow-table', {pageIndex: 0}]]),
+    };
+    const layout = createStablePaginationLayout(
+      11,
+      SMALL_PAGE,
+      resolveScreenGeometry(SMALL_PAGE),
+      [item],
+      result,
+    );
+
+    const offscreen = document.createElement('div');
+    offscreen.style.cssText = 'position:absolute;left:-99999px;top:0;';
+    const host = document.createElement('div');
+    host.dataset['blockId'] = 'flow-table';
+    const tableElement = document.createElement('table');
+    tableElement.style.cssText = 'border-collapse:collapse;border-spacing:0;';
+    const tr = document.createElement('tr');
+    const makeCell = (id: string, blocks: Array<[string, number]>) => {
+      const td = document.createElement('td');
+      td.dataset['blockId'] = id;
+      td.style.cssText = 'padding:0;vertical-align:top;border:0;';
+      const wrapper = document.createElement('div');
+      wrapper.className = 'table-cell__children-wrapper';
+      for (const [blockId, height] of blocks) {
+        const block = document.createElement('div');
+        block.dataset['blockId'] = blockId;
+        block.style.height = `${height}px`;
+        wrapper.appendChild(block);
+      }
+      td.appendChild(wrapper);
+      return td;
+    };
+    tr.append(
+      makeCell('flow-table-r0-c1', [['left-1', 180], ['left-2', 180]]),
+      makeCell('flow-table-r0-c2', [['right-1', 120], ['right-2', 180], ['right-3', 180]]),
+    );
+    tableElement.appendChild(tr);
+    host.appendChild(tableElement);
+    offscreen.appendChild(host);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+      layout,
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      expect(pages.pageCount).toBe(3);
+      const fragments = Array.from(pages.container.querySelectorAll<HTMLElement>('.bc-print-frag'));
+      expect(fragments.map(fragment => fragment.offsetHeight)).toEqual([180, 180, 180]);
+      expect(fragments.every(fragment =>
+        fragment.querySelector('[data-bc-print-cell-flow-pad="true"]') !== null,
+      )).toBeTrue();
+      expect(pages.container.querySelectorAll('.bc-print-table-flow-edge--top').length).toBe(2);
+      expect(pages.container.querySelectorAll('.bc-print-table-flow-edge--bottom').length).toBe(2);
     } finally {
       pages.dispose();
     }

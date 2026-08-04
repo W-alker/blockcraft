@@ -6,6 +6,11 @@ export interface SelectionEditReader {
   getParentId(blockId: string): string | null | undefined
   getChildrenIds(blockId: string): readonly string[] | null
   getTextLength(blockId: string): number | null
+  resolveTableCellIds?(
+    tableId: string,
+    anchorCellId: string,
+    headCellId: string,
+  ): readonly string[] | null
 }
 
 export type SelectionEditTailMode = "merge" | "preserve";

@@ -1,8 +1,8 @@
 # BlockCraft 表格行级虚拟渲染实施计划
 
 > 日期：2026-08-01
-> 状态：实施中
-> 分支：`codex/table-row-virtualization`
+> 状态：Phase B 交互基础已完成，行级虚拟渲染尚未开始
+> 当前分支：`refactor`（设计参考 `codex/table-row-virtualization-workbench`，未整体合并）
 > 设计：`docs/plans/2026-07-31-table-row-virtualization-design.md`
 
 ## 实施原则
@@ -48,23 +48,24 @@
 
 ### B1. 只读模型投影
 
-- [ ] 新增 `TableModelGrid` 及纯单元测试。
-- [ ] 建立 row/cell stable-ID 坐标、master-cell、span rectangle 和诊断。
+- [x] 新增 `TableModelGrid` 及纯单元测试。
+- [x] 建立 row/cell stable-ID 坐标、master-cell、span rectangle 和诊断。
 - [ ] 新增 `TableRowBandIndex`，覆盖 rowspan 传递闭包。
-- [ ] 将 grid/band rebuild 合并到 transaction/frame 冷路径。
+- [x] 将 grid rebuild 收敛到 transaction-invalidated 冷路径；band 等 Phase D 再接入。
 
 ### B2. 交互读路径迁移
 
-- [ ] 矩形选区调整改用 model grid。
-- [ ] Copy/Cut/Delete/Paste 目标集合改用 stable IDs/snapshots。
-- [ ] Arrow/Tab 目标解析改为 model-first。
+- [x] 矩形选区调整改用 model grid。
+- [x] Copy/Cut/Delete/Paste 目标集合改用 stable IDs/snapshots。
+- [x] Arrow/Tab 目标解析改为 model-first。
 - [ ] 行列增删、合并/取消合并的结构读取移除 Component 全表依赖。
 - [ ] table normalizer 预检改用模型。
 
 ### B3. 对照验证
 
-- [ ] sparse rows 仍关闭，运行现有完整表格行为测试。
-- [ ] 增加远端结构事务、undo/redo 和损坏矩阵测试。
+- [x] sparse rows 仍关闭，完整 editor 测试 `2044 SUCCESS`，editor build 通过。
+- [x] 增加 grid 缓存结构失效、未挂载单元格和损坏矩阵测试。
+- [ ] 在真正开启 sparse rows 前补真实远端 Yjs 结构事务与 undo/redo 端到端测试。
 
 ## Phase C：通用窗口内核与稀疏子视图
 

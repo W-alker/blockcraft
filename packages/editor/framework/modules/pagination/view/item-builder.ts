@@ -1,6 +1,10 @@
 // packages/editor/framework/modules/pagination/view/item-builder.ts
 import {BlockNodeType} from "../../../block-std/types/block.type";
 import {isManualBreak, PaginationItem, resolveBlockPolicy} from "../engine";
+import {
+  getTableCellFlowPlan,
+  setTableCellFlowPlan,
+} from "../engine/table-cell-flow-metadata";
 
 /** 表格行的自然几何（相对表格 host 顶，已扣除分页占位高度），用于把切点映射回行。 */
 export interface TableRowGeom {
@@ -54,6 +58,8 @@ export function buildPaginationItems(metas: BlockMeta[]): PaginationItem[] {
     if (m.lockHeight != null) item.lockHeight = m.lockHeight; // capHeight 块的锁定高度
     if (m.flavour === 'table') item.splitStartsNewPage = true; // 表格拆分独占新页起
     if (m.repeatHeaderHeight != null && m.repeatHeaderHeight > 0) item.repeatHeaderHeight = m.repeatHeaderHeight;
+    const tableCellFlowPlan = getTableCellFlowPlan(m);
+    if (tableCellFlowPlan) setTableCellFlowPlan(item, tableCellFlowPlan);
     return item;
   });
 }

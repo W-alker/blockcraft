@@ -64,6 +64,111 @@ describe('TableFullscreenController', () => {
       expect(host.classList.contains('is-fullscreen')).toBe(false)
       expect(document.body.classList.contains('bc-table-fullscreen-lock')).toBe(false)
     })
+
+    it('keeps an inert normal-flow placeholder only while fullscreen is open', () => {
+      spyOn(host, 'getBoundingClientRect').and.returnValue({
+        top: 100,
+        right: 520,
+        bottom: 400,
+        left: 20,
+        width: 500,
+        height: 300,
+        x: 20,
+        y: 100,
+        toJSON: () => undefined,
+      })
+
+      controller.set(true)
+
+      const placeholder = host.previousElementSibling as HTMLElement | null
+      expect(placeholder?.classList.contains('bc-table-fullscreen-placeholder')).toBe(true)
+      expect(placeholder?.style.height).toBe('300px')
+      expect(placeholder?.contentEditable).toBe('false')
+
+      controller.set(false)
+      expect(document.querySelector('.bc-table-fullscreen-placeholder')).toBeNull()
+    })
+  })
+
+  describe('editor scroll anchor', () => {
+    let scrollContainer: HTMLElement
+    let frameCallbacks: FrameRequestCallback[]
+    let documentTop: number
+
+    beforeEach(() => {
+      controller.destroy()
+      scrollContainer = document.createElement('div')
+      scrollContainer.appendChild(host)
+      document.body.appendChild(scrollContainer)
+      let scrollTop = 1_000
+      Object.defineProperty(scrollContainer, 'scrollTop', {
+        configurable: true,
+        get: () => scrollTop,
+        set: value => { scrollTop = value },
+      })
+      documentTop = 1_200
+      frameCallbacks = []
+
+      spyOn(scrollContainer, 'getBoundingClientRect').and.returnValue({
+        top: 0,
+        right: 800,
+        bottom: 600,
+        left: 0,
+        width: 800,
+        height: 600,
+        x: 0,
+        y: 0,
+        toJSON: () => undefined,
+      })
+      spyOn(host, 'getBoundingClientRect').and.callFake(() => ({
+        top: host.classList.contains('is-fullscreen') ? 0 : documentTop - scrollContainer.scrollTop,
+        right: 800,
+        bottom: 400,
+        left: 0,
+        width: 800,
+        height: 200,
+        x: 0,
+        y: host.classList.contains('is-fullscreen') ? 0 : documentTop - scrollContainer.scrollTop,
+        toJSON: () => undefined,
+      }))
+      spyOn(window, 'requestAnimationFrame').and.callFake(callback => {
+        frameCallbacks.push(callback)
+        return frameCallbacks.length
+      })
+      spyOn(window, 'cancelAnimationFrame')
+      controller = new TableFullscreenController(host, () => scrollContainer)
+    })
+
+    afterEach(() => {
+      scrollContainer.remove()
+    })
+
+    it('restores the pre-fullscreen visual position after the table re-enters normal flow', () => {
+      controller.set(true)
+      // A very tall fixed table leaves normal flow, so the browser can clamp the
+      // editor to the now much smaller scrollHeight while fullscreen is open.
+      scrollContainer.scrollTop = 300
+
+      controller.set(false)
+
+      expect(scrollContainer.scrollTop).toBe(1_000)
+    })
+
+    it('keeps correcting the same anchor while pagination settles on later frames', () => {
+      controller.set(true)
+      scrollContainer.scrollTop = 300
+      controller.set(false)
+      expect(scrollContainer.scrollTop).toBe(1_000)
+
+      // Pagination restores page gaps after the fullscreen class is removed.
+      documentTop += 80
+      frameCallbacks.shift()!(0)
+      expect(scrollContainer.scrollTop).toBe(1_080)
+
+      frameCallbacks.shift()!(16)
+      frameCallbacks.shift()!(32)
+      expect(frameCallbacks).toHaveSize(0)
+    })
   })
 
   describe('destroy', () => {

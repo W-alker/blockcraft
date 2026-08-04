@@ -507,6 +507,25 @@ export class BlockReadonlyManager {
     if (permissionChanged) this.permissionRevision++;
     this.resolutionCache.clear();
     this.indexedStructureRevision = -1;
+
+    // With no explicit block lock, changing parent/child edges cannot change
+    // any block's effective readonly state: it is determined solely by the
+    // document switch, whose own subscription refreshes the root separately.
+    // Newly materialized components apply that switch in ngAfterViewInit.
+    //
+    // This fast path matters for tables. A row insertion marks the table parent
+    // as affected; a column insertion marks every row parent. Walking each
+    // affected subtree used to revisit the entire mounted table (and call
+    // markForCheck on every cell/paragraph) even though no permission existed
+    // that could have changed.
+    // If this same transaction removed the final lock, existing descendants
+    // may have escaped that deleted/moved ancestor and still need their DOM
+    // readonly attributes cleared, so keep the normal refresh in that case.
+    if (!this.explicitLocks.size && !permissionChanged) {
+      this.scheduleStructureStateChange();
+      return;
+    }
+
     event.affectedParentIds.forEach(blockId => this.refreshSubtree(blockId));
     this.scheduleStructureStateChange();
   }

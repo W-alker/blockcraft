@@ -45,6 +45,19 @@
       </tbody>
     </table>
 
+    <!--
+      独立于 td 的命中层。若把手柄 append 到 table-cell，WebKit 在
+      border-collapse 边界会让右侧 td 的 painting layer 覆盖它，导致视觉上
+      对准分隔线、实际事件目标却是单元格。overlay 作为 wrapper 的后置子层
+      始终位于 table 之上，mousemove 时仅更新一次位置。
+    -->
+    <div class="table-col-resize-bar"
+         contenteditable="false"
+         data-bc-native-input
+         #colResizeBar>
+      <div class="bar"></div>
+    </div>
+
     @if (_rowReorder) {
       <div class="table-row-drop-line"
            [style.top.px]="_rowReorder.dropLineTop"></div>
@@ -63,10 +76,6 @@
            [style.height.px]="_colReorder.previewHeight"></div>
     }
   </div>
-</div>
-
-<div class="table-col-resize-bar" contenteditable="false" #colResizeBar (mousedown)="onColResizerMousedown($event)">
-  <div class="bar"></div>
 </div>
 
 @if (!isFullscreen) {

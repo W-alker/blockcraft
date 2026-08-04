@@ -1,5 +1,11 @@
 import {BlockNodeType} from '../../../block-std/types/block.type'
 import {TableRowGeom} from '../view/item-builder'
+import {
+  cloneTableCellFlowPlan,
+  TableCellFlowAnchor,
+  TableCellFlowPlan,
+} from '../engine/table-cell-flow'
+import {getTableCellFlowPlan} from '../engine/table-cell-flow-metadata'
 
 export interface PaginationMeasureContext {
   readonly contentWidth: number
@@ -35,6 +41,7 @@ export interface PaginationGeometryEntry {
   readonly tableRows?: readonly TableRowGeom[]
   readonly lockHeight?: number
   readonly repeatHeaderHeight?: number
+  readonly tableCellFlowPlan?: TableCellFlowPlan
 }
 
 export interface PaginationGeometryMeasurement {
@@ -105,6 +112,9 @@ function cloneEntry(entry: PaginationGeometryEntry): PaginationGeometryEntry {
     splitOffsets: entry.splitOffsets ? [...entry.splitOffsets] : undefined,
     preferredSplitOffsets: entry.preferredSplitOffsets ? [...entry.preferredSplitOffsets] : undefined,
     tableRows: cloneRows(entry.tableRows),
+    tableCellFlowPlan: entry.tableCellFlowPlan
+      ? cloneTableCellFlowPlan(entry.tableCellFlowPlan)
+      : undefined,
   }
 }
 
@@ -127,6 +137,61 @@ function rowsEqual(left: readonly TableRowGeom[] | undefined, right: readonly Ta
   })
 }
 
+function anchorsEqual(
+  left: TableCellFlowAnchor,
+  right: TableCellFlowAnchor,
+): boolean {
+  if (left.kind !== right.kind) return false
+  if (left.kind === 'block' && right.kind === 'block') {
+    return left.blockId === right.blockId
+  }
+  if (left.kind === 'text' && right.kind === 'text') {
+    return left.blockId === right.blockId && left.offset === right.offset
+  }
+  return true
+}
+
+function plansEqual(
+  left: TableCellFlowPlan | undefined,
+  right: TableCellFlowPlan | undefined,
+): boolean {
+  if (left === right) return true
+  if (!left || !right) return false
+  if (
+    left.paginationHeight !== right.paginationHeight
+    || !arraysEqual(left.splitOffsets, right.splitOffsets)
+    || left.segments.length !== right.segments.length
+  ) return false
+
+  return left.segments.every((segment, index) => {
+    const other = right.segments[index]
+    if (
+      !other
+      || segment.fromOffset !== other.fromOffset
+      || segment.toOffset !== other.toOffset
+      || segment.height !== other.height
+      || segment.breakAfter?.kind !== other.breakAfter?.kind
+    ) return false
+
+    const split = segment.breakAfter
+    const otherSplit = other.breakAfter
+    if (!split || !otherSplit) return split === otherSplit
+    if (split.kind === 'row' && otherSplit.kind === 'row') {
+      return split.beforeRowId === otherSplit.beforeRowId
+    }
+    if (split.kind !== 'cell-flow' || otherSplit.kind !== 'cell-flow') return false
+    return split.rowId === otherSplit.rowId
+      && split.continuations.length === otherSplit.continuations.length
+      && split.continuations.every((continuation, continuationIndex) => {
+        const otherContinuation = otherSplit.continuations[continuationIndex]
+        return !!otherContinuation
+          && continuation.cellId === otherContinuation.cellId
+          && continuation.pageOffset === otherContinuation.pageOffset
+          && anchorsEqual(continuation.anchor, otherContinuation.anchor)
+      })
+  })
+}
+
 function entriesEqual(left: PaginationGeometryEntry, right: PaginationGeometryEntry): boolean {
   return left.blockId === right.blockId
     && left.flavour === right.flavour
@@ -141,6 +206,7 @@ function entriesEqual(left: PaginationGeometryEntry, right: PaginationGeometryEn
     && arraysEqual(left.splitOffsets, right.splitOffsets)
     && arraysEqual(left.preferredSplitOffsets, right.preferredSplitOffsets)
     && rowsEqual(left.tableRows, right.tableRows)
+    && plansEqual(left.tableCellFlowPlan, right.tableCellFlowPlan)
 }
 
 function contextsEqual(left: PaginationMeasureContext | null, right: PaginationMeasureContext): boolean {
@@ -324,6 +390,7 @@ export class PaginationGeometryIndex {
       const blockId = measurement.id
       const current = this.entries.get(blockId)
       if (!current) continue
+      const tableCellFlowPlan = getTableCellFlowPlan(measurement)
       const next: PaginationGeometryEntry = {
         blockId,
         flavour: current.flavour,
@@ -338,6 +405,9 @@ export class PaginationGeometryIndex {
         tableRows: cloneRows(measurement.tableRows),
         lockHeight: measurement.lockHeight,
         repeatHeaderHeight: measurement.repeatHeaderHeight,
+        tableCellFlowPlan: tableCellFlowPlan
+          ? cloneTableCellFlowPlan(tableCellFlowPlan)
+          : undefined,
       }
       if (!entriesEqual(current, next)) updates.set(blockId, next)
     }
