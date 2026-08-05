@@ -12,6 +12,8 @@ export interface FrameRenderInput {
   margins: PageMargins;
   headerHeight: number;
   footerHeight: number;
+  headerDistance: number;
+  footerDistance: number;
   header?: PageChrome;
   footer?: PageChrome;
 }
@@ -42,7 +44,18 @@ export class PageFrameLayer {
 
   render(input: FrameRenderInput): void {
     if (!this._root) return;
-    const {rects, sheetWidthPx, totalHeight, margins, headerHeight, footerHeight, header, footer} = input;
+    const {
+      rects,
+      sheetWidthPx,
+      totalHeight,
+      margins,
+      headerHeight,
+      footerHeight,
+      headerDistance,
+      footerDistance,
+      header,
+      footer,
+    } = input;
     this._root.style.height = `${totalHeight}px`;
 
     const total = rects.length;
@@ -63,10 +76,10 @@ export class PageFrameLayer {
       s.replaceChildren();
       const page = i + 1;
       if (headerHeight > 0) {
-        s.appendChild(this._chromeEl('bc-page-header', resolveChromeSegments(header, page, total), margins.top, headerHeight, margins));
+        s.appendChild(this._chromeEl('bc-page-header', resolveChromeSegments(header, page, total), headerDistance, headerHeight, margins));
       }
       if (footerHeight > 0) {
-        const top = r.height - margins.bottom - footerHeight;
+        const top = r.height - footerDistance - footerHeight;
         s.appendChild(this._chromeEl('bc-page-footer', resolveChromeSegments(footer, page, total), top, footerHeight, margins));
       }
     });

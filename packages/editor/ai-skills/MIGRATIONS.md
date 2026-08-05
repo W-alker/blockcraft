@@ -74,6 +74,60 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v0.3.0-alpha.6 - 2026-08-05 (minor) — independent page chrome distance and styled page-number tokens
+
+**Severity**: minor (additive prerelease API)
+
+**What changed**: `PageChrome` adds an optional `distance` field so headers and
+footers can be positioned independently from body margins. Pagination token
+substitution now supports decimal, upper/lower Roman and Chinese page numbers.
+Resolved pagination geometry exposes the effective chrome distances and body
+insets, and live pagination plus print/PDF consume those same resolved values.
+
+**Why**: Word-compatible page setup treats “header from top” and “footer from
+bottom” as independent settings. Host applications also need page-number
+presets such as Roman numerals, Chinese numerals, decorated numbers and
+“current / total” without implementing a second live/print formatter.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `PageChrome.distance?: number` measures from the top edge for a header and
+  from the bottom edge for a footer.
+- `PageNumberTokenStyle`, `formatPageNumber()` and styled `{page:*}` /
+  `{total:*}` tokens: `decimal`, `roman-upper`, `roman-lower`, `chinese`.
+- `ResolvedPaginationGeometry` includes `headerDistance`, `footerDistance`,
+  `contentTop` and `contentBottom` when produced by `resolveScreenGeometry()`.
+
+#### Migration Recipe
+
+No migration is required. Existing configs without `distance` retain their
+previous margin-plus-chrome-height layout. To opt in to Word-like page chrome:
+
+```typescript
+pagination.updateConfig({
+  margins: {top: 72, right: 72, bottom: 72, left: 72},
+  header: {center: '{page:roman-upper}', distance: 48},
+  footer: {
+    right: '第 {page:chinese} 页 共 {total:chinese} 页',
+    distance: 48,
+  },
+})
+```
+
+#### Behavior Changes
+
+- An explicit `distance` places chrome inside the body margin band whenever it
+  fits; only chrome crossing the body boundary reduces page content height.
+- Live page frames and print/PDF pages resolve identical edge distances and
+  number tokens.
+
 ### v0.3.0-alpha.5 - 2026-08-05 (minor) — add host-controlled document scaling and margin header placement
 
 **Severity**: minor (additive prerelease API)

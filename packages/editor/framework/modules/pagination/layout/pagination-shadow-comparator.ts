@@ -245,7 +245,8 @@ export function comparePaginationShadow(
   }
 
   const { sheetHeightPx, pageGap } = legacy.geometry;
-  const contentTop = legacy.geometry.margins.top + legacy.geometry.headerHeight;
+  const contentTop = legacy.geometry.contentTop
+    ?? legacy.geometry.margins.top + legacy.geometry.headerHeight;
   const legacyGaps = computeBlockGaps(legacy.result, sheetHeightPx, pageGap);
   const shadowGaps = computeBlockGaps(shadow.result, sheetHeightPx, pageGap);
   for (const blockId of sortedUnion(legacyGaps.keys(), shadowGaps.keys())) {

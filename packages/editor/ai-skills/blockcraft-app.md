@@ -336,10 +336,17 @@ doc = new BlockCraftDoc({
 pagination.enable()
 pagination.updateConfig({
   margins: {top: 72, right: 72, bottom: 72, left: 72},
-  header: {left: 'Document', right: '{page}/{total}'},
+  header: {left: 'Document', right: '{page}/{total}', distance: 48},
+  footer: {center: '第 {page:chinese} 页', distance: 48},
 })
 pagination.disable()
 ```
+
+`header.distance` 从纸张顶边计算，`footer.distance` 从纸张底边计算，二者与正文
+`margins.top` / `margins.bottom` 独立。页眉/页脚位于正文页边距带内时不会额外
+减少正文容量；越过正文边界时只扣除越界部分。省略 `distance` 会回退对应正文
+页边距并保持旧版本布局。页码 token 支持 `{page}` / `{total}`，也支持
+`{page:roman-upper}`、`{page:roman-lower}`、`{page:chinese}`，`total` 语法相同。
 
 Do not add `pagination` to `DocConfig` and do not read `doc.pagination`. The plugin is the lifecycle owner and removes all layout DOM/CSS on disable or destroy. Host settings UI should read `pagination.config` and call `pagination.updateConfig(...)`; BlockCraft does not publish a pagination settings component. `experimentalSparseView` is a construction-time rollout option, is not included in `pagination.config`, defaults to `false`, and is effective only when root virtualization is enabled.
 

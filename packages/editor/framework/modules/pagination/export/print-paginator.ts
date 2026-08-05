@@ -82,7 +82,17 @@ export async function buildPaginatedPrintSurface(
 ): Promise<PrintPages> {
   const effectiveConfig = override?.layout?.config ?? config;
   const geom = override?.layout?.geometry ?? resolveScreenGeometry(effectiveConfig);
-  const {sheetWidthPx, sheetHeightPx, margins, headerHeight, footerHeight} = geom;
+  const {
+    sheetWidthPx,
+    sheetHeightPx,
+    margins,
+    headerHeight,
+    footerHeight,
+  } = geom;
+  const headerDistance = geom.headerDistance ?? margins.top;
+  const footerDistance = geom.footerDistance ?? margins.bottom;
+  const contentTop = geom.contentTop ?? margins.top + headerHeight;
+  const contentBottom = geom.contentBottom ?? margins.bottom + footerHeight;
   const contentWidthPx = sheetWidthPx - margins.left - margins.right;
 
   // pt 尺寸（宿主打印元数据）：命名纸张回到标准 pt，自定义按 px≈pt 处理。
@@ -188,10 +198,10 @@ export async function buildPaginatedPrintSurface(
 
     const pageNo = page.index + 1;
     if (headerHeight > 0) {
-      pageEl.appendChild(buildChrome(effectiveConfig.header, pageNo, total, margins.top, headerHeight, margins));
+      pageEl.appendChild(buildChrome(effectiveConfig.header, pageNo, total, headerDistance, headerHeight, margins));
     }
     if (footerHeight > 0) {
-      const top = sheetHeightPx - margins.bottom - footerHeight;
+      const top = sheetHeightPx - footerDistance - footerHeight;
       pageEl.appendChild(buildChrome(effectiveConfig.footer, pageNo, total, top, footerHeight, margins));
     }
 
@@ -201,8 +211,8 @@ export async function buildPaginatedPrintSurface(
     content.className = 'readonly bc-print-content';
     content.style.cssText =
       `position:absolute; box-sizing:border-box; min-height:0; padding:0; overflow:hidden;` +
-      `top:${margins.top + headerHeight}px; left:${margins.left}px; right:${margins.right}px;` +
-      `bottom:${margins.bottom + footerHeight}px;`;
+      `top:${contentTop}px; left:${margins.left}px; right:${margins.right}px;` +
+      `bottom:${contentBottom}px;`;
     content.style.setProperty('--bc-page-content-height', `${geom.geometry.contentHeight}px`);
     for (const slot of page.slots) {
       const el = elById.get(slot.id);

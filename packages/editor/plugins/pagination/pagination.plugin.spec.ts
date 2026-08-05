@@ -192,6 +192,31 @@ describe('PaginationPlugin', () => {
     plugin.destroy()
   })
 
+  it('positions header and footer from independent page-edge distances', () => {
+    const {doc, rootHost, scrollContainer} = createDoc()
+    const plugin = new PaginationPlugin({
+      pageSize: {width: 800, height: 1000},
+      margins: {top: 72, right: 72, bottom: 72, left: 72},
+      header: {center: '{page}', height: 24, distance: 48},
+      footer: {center: '{page}', height: 24, distance: 36},
+    })
+    ;(plugin as unknown as {doc: BlockCraft.Doc}).doc = doc
+    plugin.init()
+    plugin.enable()
+
+    const controller = (plugin as unknown as {
+      _controller: {captureStableLayout(): unknown}
+    })._controller
+    controller.captureStableLayout()
+
+    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('72px')
+    expect(rootHost.style.getPropertyValue('--bc-page-margin-bottom')).toBe('72px')
+    expect(scrollContainer.querySelector<HTMLElement>('.bc-page-header')?.style.top).toBe('48px')
+    expect(scrollContainer.querySelector<HTMLElement>('.bc-page-footer')?.style.top).toBe('940px')
+
+    plugin.destroy()
+  })
+
   it('projects a custom document header into the root surface and restores it on disable', () => {
     const {doc, rootHost, scrollContainer} = createDoc()
     const documentHeader = document.createElement('section')

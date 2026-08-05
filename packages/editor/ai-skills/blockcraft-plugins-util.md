@@ -247,7 +247,7 @@ new PaginationPlugin(options?: PaginationPluginOptions)
 | `orientation` | `'portrait' \| 'landscape'` | `'portrait'` | Page orientation |
 | `margins` | `Partial<PageMargins>` | `72px` each side | Page margins |
 | `pageGap` | `number` | `24` | Screen gap between sheets |
-| `header` / `footer` | `PageChrome` | none | Left/center/right text; supports `{page}` and `{total}` |
+| `header` / `footer` | `PageChrome` | none | Left/center/right text, independent edge `distance`, and styled page-number tokens |
 | `documentHeader` | `PaginationDocumentHeaderOptions` | none | Live host element projected into and measured on the first page |
 | `widowOrphanLines` | `number` | `2` | Minimum rows/lines on both sides of a safe split |
 | `printShortcut` | `boolean` | `false` | Route Cmd/Ctrl+P to plugin printing only while enabled |
@@ -276,7 +276,9 @@ const doc = new BlockCraftDoc({/* ... */ plugins: [pagination]})
 pagination.enable()
 pagination.updateConfig({
   pageSize: 'A4',
-  footer: {center: '第 {page} / {total} 页'},
+  margins: {top: 72, right: 72, bottom: 72, left: 72},
+  header: {center: '{page:roman-upper}', distance: 48},
+  footer: {center: '第 {page:chinese} 页 共 {total:chinese} 页', distance: 48},
 })
 await pagination.exportToPdf('document.pdf')
 pagination.disable()
@@ -291,11 +293,16 @@ parent becomes the page-frame layout surface. This keeps page sheets aligned
 with content even when host-owned headers or wrappers precede the editor.
 
 `header` / `footer` customize fixed-height page chrome through the
-`left` / `center` / `right` text segments and `{page}` / `{total}` tokens.
-Their `height` is deducted from every page's content capacity and a runtime
-`updateConfig()` immediately updates both the root padding and pagination
-geometry. Non-finite or negative heights fall back to the 24px default instead
-of corrupting the layout. Page chrome is intentionally non-wrapping. Arbitrary
+`left` / `center` / `right` text segments. `{page}` / `{total}` render decimal
+numbers; `:roman-upper`, `:roman-lower` and `:chinese` modifiers provide Word-like
+number styles (for example `{page:roman-upper}`). `distance` measures a header
+from the top sheet edge and a footer from the bottom edge, independently of body
+margins. Chrome inside the margin band does not consume extra body capacity;
+only the part crossing the body boundary is deducted. Omitting `distance`
+falls back to the matching top/bottom margin and preserves the previous
+margin-plus-height layout. Runtime `updateConfig()` immediately updates both
+the root padding and pagination geometry. Non-finite or negative heights fall
+back to the 24px default instead of corrupting the layout. Page chrome is intentionally non-wrapping. Arbitrary
 Angular/DOM content that belongs only to the first page uses the separate
 `documentHeader` option. The plugin temporarily projects that original element
 into the root pagination surface, constrains it to content width and tracks its

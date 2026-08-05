@@ -556,6 +556,8 @@ export class PaginatedViewController {
       margins: this._geom.margins,
       headerHeight: this._geom.headerHeight,
       footerHeight: this._geom.footerHeight,
+      headerDistance: this._geom.headerDistance ?? this._geom.margins.top,
+      footerDistance: this._geom.footerDistance ?? this._geom.margins.bottom,
       header: this._config.header,
       footer: this._config.footer,
     });
@@ -567,7 +569,7 @@ export class PaginatedViewController {
       result,
       this._geom.sheetHeightPx,
       this._geom.pageGap,
-      this._geom.margins.top + this._geom.headerHeight,
+      this._geom.contentTop ?? this._geom.margins.top + this._geom.headerHeight,
     );
     // 表格断点/单元格流投影和高度锁会改变根块 border-box。登记提交后的
     // 最终尺寸，避免它们的异步 ResizeObserver 回声再启动一轮分页。
@@ -675,7 +677,7 @@ export class PaginatedViewController {
 
   private _documentHeaderTop(): number {
     if (this.options.documentHeader?.placement !== 'top-margin') {
-      return this._geom.margins.top + this._geom.headerHeight;
+      return this._geom.contentTop ?? this._geom.margins.top + this._geom.headerHeight;
     }
     const topInset = this.options.documentHeader.topInset ?? 20;
     return Number.isFinite(topInset) && topInset >= 0 ? topInset : 20;
@@ -687,7 +689,7 @@ export class PaginatedViewController {
     if (this.options.documentHeader?.placement !== 'top-margin') {
       return this._documentHeaderHeight + gap;
     }
-    const bodyTop = this._geom.margins.top + this._geom.headerHeight;
+    const bodyTop = this._geom.contentTop ?? this._geom.margins.top + this._geom.headerHeight;
     const headerEnd = this._documentHeaderTop() + this._documentHeaderHeight + gap;
     return Math.max(0, headerEnd - bodyTop);
   }
@@ -791,17 +793,20 @@ export class PaginatedViewController {
 
   private _applyContainerStyles(): void {
     const root = this.doc.root.hostElement;
-    const {sheetWidthPx, margins, headerHeight, footerHeight} = this._geom;
+    const {sheetWidthPx, margins} = this._geom;
     root.classList.add('bc-paginated');
     root.style.setProperty('--bc-page-width', `${sheetWidthPx}px`);
     root.style.setProperty('--bc-page-content-height', `${this._geom.geometry.contentHeight}px`);
     // 正文上下内边距要把页眉/页脚带也让出来，使首块落在「页边距 + 页眉」之下、
     // 与背景层里 header 之下的内容区顶对齐（contentHeight 已扣除页眉/页脚）。
     const documentHeaderOffset = this._documentHeaderExtraTop();
-    const contentOriginY = margins.top + headerHeight + documentHeaderOffset;
+    const contentOriginY = (this._geom.contentTop ?? margins.top + this._geom.headerHeight) + documentHeaderOffset;
     root.style.setProperty('--bc-page-margin-top', `${contentOriginY}px`);
     root.style.setProperty('--bc-placement-content-origin-y', `${contentOriginY}px`);
-    root.style.setProperty('--bc-page-margin-bottom', `${margins.bottom + footerHeight}px`);
+    root.style.setProperty(
+      '--bc-page-margin-bottom',
+      `${this._geom.contentBottom ?? margins.bottom + this._geom.footerHeight}px`,
+    );
     root.style.setProperty('--bc-page-margin-right', `${margins.right}px`);
     root.style.setProperty('--bc-page-margin-left', `${margins.left}px`);
     this.scrollContainer.classList.add('bc-paginated-scroll');

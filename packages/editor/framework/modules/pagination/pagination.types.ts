@@ -1,7 +1,13 @@
 // packages/editor/framework/modules/pagination/pagination.types.ts
 import {PageGeometry, PageMargins, PageSizeName} from "./engine";
 
-/** 页眉/页脚的三段文本（支持 `{page}` / `{total}` 占位符）。 */
+/**
+ * 页眉/页脚的三段文本。
+ *
+ * 支持 `{page}` / `{total}`，以及带数字样式的
+ * `{page:roman-upper}` / `{page:roman-lower}` / `{page:chinese}`；`total`
+ * 使用相同语法。
+ */
 export interface PageChromeSegments {
   left?: string;
   center?: string;
@@ -11,7 +17,14 @@ export interface PageChromeSegments {
 /** 页眉或页脚配置。 */
 export interface PageChrome extends PageChromeSegments {
   /**
-   * 高度（px），参与每页 contentHeight 计算。
+   * 页眉距纸张顶部、或页脚距纸张底部的距离（px）。
+   *
+   * 缺省时沿用对应的上/下页边距，以保持旧配置的布局结果。页眉/页脚会尽量
+   * 放在页边距带内；只有越过正文起点时，超出的部分才会压缩正文区。
+   */
+  distance?: number;
+  /**
+   * 高度（px）。仅当页眉/页脚越过正文页边距时，越界部分参与 contentHeight 计算。
    * 缺省、非有限值或负数在存在文本时使用默认高度（24px）。
    */
   height?: number;
@@ -74,6 +87,14 @@ export interface ResolvedPaginationGeometry {
   headerHeight: number;
   /** 页脚高度（px，无页脚 = 0）。 */
   footerHeight: number;
-  /** 引擎用的每页可用内容高（px，已扣除页眉/页脚）。 */
+  /** 页眉距纸张顶部的解析值（px）。 */
+  headerDistance?: number;
+  /** 页脚距纸张底部的解析值（px）。 */
+  footerDistance?: number;
+  /** 正文相对纸张顶部的实际起点（px，已处理页眉与页边距重叠）。 */
+  contentTop?: number;
+  /** 正文相对纸张底部的实际留白（px，已处理页脚与页边距重叠）。 */
+  contentBottom?: number;
+  /** 引擎用的每页可用内容高（px，已扣除正文边距及页眉/页脚越界部分）。 */
   geometry: PageGeometry;
 }

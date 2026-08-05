@@ -57,6 +57,42 @@ describe('pagination-geometry', () => {
     expect(g.geometry.contentHeight).toBe(925);
   });
 
+  it('页眉页脚距离可独立于正文页边距，位于页边距带内时不额外压缩正文', () => {
+    const g = resolveScreenGeometry({
+      pageSize: {width: 800, height: 1000},
+      margins: {top: 72, bottom: 72},
+      header: {center: '{page}', height: 24, distance: 48},
+      footer: {center: '{page}', height: 24, distance: 48},
+    });
+    expect(g.headerDistance).toBe(48);
+    expect(g.footerDistance).toBe(48);
+    expect(g.contentTop).toBe(72);
+    expect(g.contentBottom).toBe(72);
+    expect(g.geometry.contentHeight).toBe(856);
+  });
+
+  it('页眉页脚越过正文页边距时仅扣除越界部分', () => {
+    const g = resolveScreenGeometry({
+      pageSize: {width: 800, height: 1000},
+      margins: {top: 50, bottom: 50},
+      header: {center: '{page}', height: 24, distance: 40},
+      footer: {center: '{page}', height: 30, distance: 40},
+    });
+    expect(g.contentTop).toBe(64);
+    expect(g.contentBottom).toBe(70);
+    expect(g.geometry.contentHeight).toBe(866);
+  });
+
+  it('无页眉页脚文本时 distance 不改变正文几何', () => {
+    const g = resolveScreenGeometry({
+      pageSize: {width: 800, height: 1000},
+      margins: {top: 50, bottom: 50},
+      header: {distance: 200},
+      footer: {distance: 200},
+    });
+    expect(g.geometry.contentHeight).toBe(900);
+  });
+
   it('自定义页眉高度非法时回退默认值，不污染分页几何', () => {
     for (const height of [Number.NaN, Number.POSITIVE_INFINITY, -20]) {
       const g = resolveScreenGeometry({

@@ -6,6 +6,10 @@ import {chromeHeight} from "./chrome-tokens";
 const DEFAULT_MARGIN = 72;   // px (~0.75in @96dpi)
 const DEFAULT_PAGE_GAP = 24; // px
 
+function resolveChromeDistance(value: number | undefined, fallback: number): number {
+  return Number.isFinite(value) && value! >= 0 ? value! : fallback;
+}
+
 export function resolveMargins(m?: Partial<PageMargins>): PageMargins {
   return {
     top: Math.max(0, m?.top ?? DEFAULT_MARGIN),
@@ -30,12 +34,32 @@ export function resolveScreenGeometry(
   const pageGap = Math.max(0, config.pageGap ?? DEFAULT_PAGE_GAP);
   const headerHeight = chromeHeight(config.header);
   const footerHeight = chromeHeight(config.footer);
+  const headerDistance = resolveChromeDistance(config.header?.distance, margins.top);
+  const footerDistance = resolveChromeDistance(config.footer?.distance, margins.bottom);
+  // Word 式页眉/页脚优先占用页边距带；仅超出正文边界的部分压缩正文。
+  // distance 缺省时等于旧实现的 margin，因此仍得到 margin + chromeHeight。
+  const contentTop = headerHeight > 0
+    ? Math.max(margins.top, headerDistance + headerHeight)
+    : margins.top;
+  const contentBottom = footerHeight > 0
+    ? Math.max(margins.bottom, footerDistance + footerHeight)
+    : margins.bottom;
   const geometry = resolveGeometry({
     pageHeightPx: sheetHeightPx,
-    margins,
-    headerHeight,
-    footerHeight,
+    margins: {...margins, top: contentTop, bottom: contentBottom},
     firstPageExtraTop: runtime.firstPageExtraTop,
   });
-  return {sheetWidthPx, sheetHeightPx, margins, pageGap, headerHeight, footerHeight, geometry};
+  return {
+    sheetWidthPx,
+    sheetHeightPx,
+    margins,
+    pageGap,
+    headerHeight,
+    footerHeight,
+    headerDistance,
+    footerDistance,
+    contentTop,
+    contentBottom,
+    geometry,
+  };
 }

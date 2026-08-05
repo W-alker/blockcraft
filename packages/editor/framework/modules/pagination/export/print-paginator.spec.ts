@@ -147,6 +147,46 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     }
   });
 
+  it('prints independent chrome distances and styled page-number tokens with live geometry', async () => {
+    const snapshot = root([paragraph('p1', 'first')]);
+    const config: PaginationConfig = {
+      pageSize: {width: 800, height: 1000},
+      margins: {top: 72, right: 72, bottom: 72, left: 72},
+      header: {center: '{page:roman-upper}', height: 24, distance: 48},
+      footer: {right: '第 {page:chinese} 页 共 {total:chinese} 页', height: 24, distance: 36},
+    };
+    const layout = createStablePaginationLayout(12, config, resolveScreenGeometry(config), [{
+      id: 'p1', height: 40, breakable: false, keepWithNext: false,
+    }], {
+      pages: [{index: 0, usedHeight: 40, slots: [{id: 'p1'}]}],
+      byBlock: new Map([['p1', {pageIndex: 0}]]),
+    });
+    const offscreen = document.createElement('div');
+    const paragraphElement = document.createElement('div');
+    paragraphElement.dataset['blockId'] = 'p1';
+    offscreen.appendChild(paragraphElement);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, config, {
+      layout,
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      const page = pages.pages[0]!;
+      const chrome = page.querySelectorAll<HTMLElement>('.bc-print-chrome');
+      const content = page.querySelector<HTMLElement>('.bc-print-content')!;
+
+      expect(chrome[0]!.style.top).toBe('48px');
+      expect(chrome[0]!.children[1]?.textContent).toBe('I');
+      expect(chrome[1]!.style.top).toBe('940px');
+      expect(chrome[1]!.children[2]?.textContent).toBe('第 一 页 共 一 页');
+      expect(content.style.top).toBe('72px');
+      expect(content.style.bottom).toBe('72px');
+    } finally {
+      pages.dispose();
+    }
+  });
+
   it("高过一整页的段落被拆成多页的裁剪窗口，且无单片溢出整页", async () => {
     const pages = await buildPrintPages(root([paragraph("p-long", LONG_TEXT)]), SMALL_PAGE);
     try {

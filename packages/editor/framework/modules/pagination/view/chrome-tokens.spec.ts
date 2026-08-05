@@ -1,5 +1,12 @@
 // packages/editor/framework/modules/pagination/view/chrome-tokens.spec.ts
-import {chromeHeight, hasChromeText, resolveChromeSegments, substituteTokens, DEFAULT_CHROME_HEIGHT} from "./chrome-tokens";
+import {
+  chromeHeight,
+  DEFAULT_CHROME_HEIGHT,
+  formatPageNumber,
+  hasChromeText,
+  resolveChromeSegments,
+  substituteTokens,
+} from "./chrome-tokens";
 
 describe('chrome-tokens', () => {
   describe('substituteTokens', () => {
@@ -13,6 +20,15 @@ describe('chrome-tokens', () => {
     it('undefined / 空串返回空串', () => {
       expect(substituteTokens(undefined, 1, 1)).toBe('');
       expect(substituteTokens('', 1, 1)).toBe('');
+    });
+    it('支持 Word 风格的罗马数字与中文数字 token', () => {
+      expect(substituteTokens('{page:roman-upper} / {total:roman-lower}', 14, 20)).toBe('XIV / xx');
+      expect(substituteTokens('第 {page:chinese} 页 共 {total:chinese} 页', 12, 105))
+        .toBe('第 十二 页 共 一百零五 页');
+    });
+    it('格式化越界罗马数字时安全回退十进制', () => {
+      expect(formatPageNumber(4000, 'roman-upper')).toBe('4000');
+      expect(formatPageNumber(0, 'chinese')).toBe('零');
     });
   });
 

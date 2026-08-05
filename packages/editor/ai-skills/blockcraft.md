@@ -513,6 +513,9 @@ permissions again on the persistence/server boundary when security matters.
 const pagination = new PaginationPlugin({
   enabled: false,
   pageSize: 'A4',
+  margins: {top: 72, right: 72, bottom: 72, left: 72},
+  header: {center: '{page:roman-upper}', distance: 48},
+  footer: {right: '第 {page:chinese} 页 共 {total:chinese} 页', distance: 48},
   printShortcut: true,
   experimentalSparseView: true, // Phase C opt-in; requires root virtualization
 })
@@ -525,6 +528,11 @@ await pagination.exportToPdf('document.pdf') // browser print dialog; current st
 await pagination.print()
 pagination.disable()
 ```
+
+`PageChrome.distance` 独立表示页眉距纸张顶部、或页脚距纸张底部的像素距离。
+缺省时继续沿用对应上/下页边距以兼容旧布局；显式距离让页眉/页脚优先占用页边距带，
+只有越过正文边界的部分才压缩正文。除 `{page}` / `{total}` 外，数字 token 还支持
+`:roman-upper`、`:roman-lower`、`:chinese` 样式，live、打印和 PDF 使用同一套解析。
 
 分页启用状态属于插件，不属于 `DocConfig`；不要使用 `DocConfig.pagination` 或 `doc.pagination`。插件关闭时会移除页框、块间距、表格视图断点和高度锁定，且不会写入 Yjs。`experimentalSparseView` 默认 `false`，默认路径仍持有整文档视图租约以保证实时精确几何；设为 `true` 且开启根虚拟化后，分页 Projection 驱动窗口与 spacer，离屏块允许先用估算几何并在挂载后收敛。该实验路径不会把非 exact 结果交给打印/PDF，而会使用完整只读重排。`exportToPdf()` 使用真实只读 BlockCraft 组件，snapshot-viewer 不参与分页 PDF；浏览器走系统打印，Tauri 等宿主通过 `PaginationPdfHostBackend` 打印当前顶层导出 WebView，正文不经过 DOM 栅格化。
 
