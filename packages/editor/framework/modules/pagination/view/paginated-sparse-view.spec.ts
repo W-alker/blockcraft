@@ -26,8 +26,12 @@ describe('PaginatedViewController sparse view', () => {
     const themeChange$ = new Subject<string>()
     const childrenChange$ = new Subject<void>()
     const releaseProjection = jasmine.createSpy('releaseProjection')
+    let registeredProjection: any = null
+    let registrationHooks: any = null
     const registerLayoutProjection = jasmine.createSpy('registerLayoutProjection')
-      .and.callFake((_projection: unknown, hooks: any) => {
+      .and.callFake((projection: unknown, hooks: any) => {
+        registeredProjection = projection
+        registrationHooks = hooks
         hooks.beforeActivate?.()
         return () => {
           hooks.beforeDeactivate?.()
@@ -57,6 +61,8 @@ describe('PaginatedViewController sparse view', () => {
         estimatedHeights: {paragraph: 160},
       },
     }
+    const compositionSession = {isIdle: true}
+    const eventStatus = {isComposing: false}
     const doc = {
       rootId: 'root',
       root: {
@@ -85,6 +91,8 @@ describe('PaginatedViewController sparse view', () => {
         viewChange$,
         registerLayoutProjection,
       },
+      inputManger: {compositionSession},
+      event: {status: eventStatus},
       ngZone: {runOutsideAngular: (run: () => void) => run()},
       logger: {warn: jasmine.createSpy('warn')},
     } as unknown as BlockCraft.Doc
@@ -103,6 +111,7 @@ describe('PaginatedViewController sparse view', () => {
     try {
       controller.enable()
       expect(registerLayoutProjection).toHaveBeenCalledTimes(1)
+      expect(registrationHooks?.isValidationDeferred?.()).toBeFalse()
       expect(gapBefore(hosts.get('b')!)).toBeNull()
       expect(controller.captureStableLayout()).not.toBeNull()
       const entries = controller.captureShadowLayout()!.entries
@@ -113,6 +122,22 @@ describe('PaginatedViewController sparse view', () => {
       expect(rootHost.style.getPropertyValue('--bc-page-width')).toBe('400px')
       expect(controller.captureStableLayout()).not.toBeNull()
       expect(rootHost.style.getPropertyValue('--bc-page-width')).toBe('500px')
+
+      const projectionRevision = registeredProjection.revision
+      eventStatus.isComposing = true
+      compositionSession.isIdle = false
+      controller.scheduleRecompute()
+      expect(registrationHooks.isValidationDeferred()).toBeTrue()
+
+      // Raw/model composition has ended, but the trailing sparse projection
+      // recompute has not committed yet.
+      eventStatus.isComposing = false
+      compositionSession.isIdle = true
+      expect(registrationHooks.isValidationDeferred()).toBeTrue()
+
+      controller.captureStableLayout()
+      expect(registrationHooks.isValidationDeferred()).toBeFalse()
+      expect(registeredProjection.revision).toBeGreaterThan(projectionRevision)
 
       const scheduleRecompute = spyOn(controller, 'scheduleRecompute')
       contentChange$.next({

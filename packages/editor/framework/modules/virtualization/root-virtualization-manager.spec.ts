@@ -41,6 +41,7 @@ describe('RootVirtualizationManager', () => {
     } as DOMRect)
     const structureChange$ = new Subject<void>()
     const selection$ = new BehaviorSubject<any>(null)
+    const compositionSession = {isIdle: true}
     let structureRevision = 0
     let deferredSparseRootOrder = false
     let adapter: any = null
@@ -116,6 +117,7 @@ describe('RootVirtualizationManager', () => {
       },
       ngZone: {runOutsideAngular: (fn: () => void) => fn()},
       event: {status: {isComposing: false}},
+      inputManger: {compositionSession},
       logger: {warn: jasmine.createSpy('warn')},
       messageService: {warn: jasmine.createSpy('messageWarn')},
     }
@@ -138,6 +140,7 @@ describe('RootVirtualizationManager', () => {
     }
     return {
       adapter: () => adapter,
+      compositionSession,
       doc,
       ids,
       advanceStructureRevision: () => structureRevision++,
@@ -581,6 +584,67 @@ describe('RootVirtualizationManager', () => {
       jasmine.anything(),
     )
     expect(h.mounted.size).toBeLessThan(10)
+
+    release()
+    h.manager.dispose()
+    projection.dispose()
+  })
+
+  it('defers structure-driven custom projection validation for the full IME session', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    let projectedIds = [...h.ids]
+    let projectionUpdateDeferred = true
+    const projection = customProjection(() => projectedIds, heights)
+    const onInvalid = jasmine.createSpy('onInvalid')
+    const release = registerRootLayoutProjection(h.manager, projection, {
+      isValidationDeferred: () => projectionUpdateDeferred,
+      onInvalid,
+    })
+    await nextAnimationFrame()
+
+    h.doc.event.status.isComposing = true
+    h.compositionSession.isIdle = false
+    h.replaceRootIds([...h.ids, 'ime-paragraph'])
+    await nextAnimationFrames(4)
+
+    expect(onInvalid).not.toHaveBeenCalled()
+    expect((h.manager as any).customProjectionFailureCount).toBe(0)
+
+    // Replacing a composition host can release the raw browser flag before the
+    // model-owned CompositionSession finishes. Projection validation must stay
+    // frozen across that remaining commit window as well.
+    h.doc.event.status.isComposing = false
+    h.manager.settleCompositionView()
+    await nextAnimationFrames(4)
+
+    expect(onInvalid).not.toHaveBeenCalled()
+    expect((h.manager as any).customProjectionFailureCount).toBe(0)
+
+    // The browser/model composition flags can both clear before pagination's
+    // trailing recompute commits its new projection. The owner hook keeps that
+    // post-composition handoff from consuming the corruption fallback budget.
+    h.compositionSession.isIdle = true
+    h.manager.settleCompositionView()
+    await nextAnimationFrames(4)
+
+    expect(onInvalid).not.toHaveBeenCalled()
+    expect((h.manager as any).customProjectionFailureCount).toBe(0)
+
+    projectedIds = [...h.ids]
+    heights.bulkInit(projectedIds.map(() => 120))
+    projection.notifyChange()
+    projectionUpdateDeferred = false
+    h.manager.settleCompositionView()
+    await nextAnimationFrames(2)
+
+    expect(onInvalid).not.toHaveBeenCalled()
+    expect((h.manager as any).customProjectionValidationPending).toBeFalse()
+    expect((h.manager as any).customProjectionFailureCount).toBe(0)
 
     release()
     h.manager.dispose()

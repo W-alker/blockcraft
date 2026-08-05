@@ -56,6 +56,7 @@ export class PaginatedViewController {
   private _containerRO: ResizeObserver | null = null;
   private _rafId = 0;
   private _compositionRecomputePending = false;
+  private _sparseProjectionUpdateDeferred = false;
   private _enabled = false;
   private _destroyed = false;
   private _layoutRevision = 0;
@@ -275,6 +276,9 @@ export class PaginatedViewController {
     this._shadowLayout = null;
     if (this._isCompositionInProgress()) {
       this._compositionRecomputePending = true;
+      if (this.options.sparseView) {
+        this._sparseProjectionUpdateDeferred = true;
+      }
       if (this._rafId) cancelAnimationFrame(this._rafId);
       this._rafId = 0;
       return;
@@ -295,6 +299,9 @@ export class PaginatedViewController {
     // 模型会话覆盖 active/committing 全周期，必须同时作为分页重排的权威门禁。
     if (this._isCompositionInProgress()) {
       this._compositionRecomputePending = true;
+      if (this.options.sparseView) {
+        this._sparseProjectionUpdateDeferred = true;
+      }
       return this._stableLayout;
     }
     let measurementRevision: number | null = null;
@@ -385,6 +392,9 @@ export class PaginatedViewController {
             }
           },
           beforeDeactivate: () => this._clearPaginationView(),
+          isValidationDeferred: () =>
+            this._sparseProjectionUpdateDeferred ||
+            this._isCompositionInProgress(),
           onInvalid: error => {
             this.disable();
             this.options.onSparseViewFailure?.(error);
@@ -428,6 +438,7 @@ export class PaginatedViewController {
         const state = this.layoutCoordinator.compute(this._config, this._geom, {
           forceProjectionUpdate: true,
         });
+        this._sparseProjectionUpdateDeferred = false;
         const layout = this._stableLayoutFromState(state);
         this._shadowLayout = state;
         this._stableLayout = layout;
@@ -454,7 +465,13 @@ export class PaginatedViewController {
         return null;
       }
 
-      const state = this.layoutCoordinator.compute(this._config, this._geom);
+      const state = this.layoutCoordinator.compute(this._config, this._geom, {
+        // A structure-changing IME can return the model to geometry equal to
+        // the last stable layout. Publish one completion revision anyway so
+        // virtualization resumes its deferred root-order validation.
+        forceProjectionUpdate: this._sparseProjectionUpdateDeferred,
+      });
+      this._sparseProjectionUpdateDeferred = false;
       const layout = this._stableLayoutFromState(state);
       this._shadowLayout = state;
       this._stableLayout = layout;
@@ -839,6 +856,7 @@ export class PaginatedViewController {
     this._stableLayout = null;
     this._shadowLayout = null;
     this._compositionRecomputePending = false;
+    this._sparseProjectionUpdateDeferred = false;
     this._sparseFailureCount = 0;
     this._pendingSparseContainerStyles = false;
     this._layoutOwnedRootIds.clear();

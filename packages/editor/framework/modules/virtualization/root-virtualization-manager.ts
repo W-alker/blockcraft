@@ -77,6 +77,11 @@ export interface LayoutProjectionRegistrationHooks {
    * DOM geometry while the transition is paused.
    */
   readonly beforeDeactivate?: () => void
+  /**
+   * Returns true while the owner intentionally keeps the previous projection
+   * stable across an asynchronous model/layout transition.
+   */
+  readonly isValidationDeferred?: () => boolean
   /** Called after a broken custom projection has fallen back to continuous layout. */
   readonly onInvalid?: (error: unknown) => void
 }
@@ -543,10 +548,14 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     }
   }
 
-  /** @internal Finish a sparse-root move deferred to protect native IME state. */
+  /** @internal Resume sparse-root reconciliation after native IME releases the DOM. */
   settleCompositionView(): void {
     try {
-      if (!this.doc.vm._flushDeferredSparseRootOrder()) return
+      this.doc.vm._flushDeferredSparseRootOrder()
+      // A structure-changing composition (gap/boundary/table materialization)
+      // can leave a custom layout projection intentionally behind the model
+      // until pagination recomputes after compositionend. Always schedule once
+      // so a pending validation is resumed even when no DOM reorder was queued.
       this.schedule()
     } catch (error) {
       this.sparseRootReconcilePending = true
@@ -594,6 +603,13 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     }
     if (!this.scrollContainer) return
     if (this.customProjectionValidationPending) {
+      // Pagination deliberately freezes its last stable projection for the
+      // complete model-owned IME session. Gap/boundary/table composition may
+      // synchronously change root order before that projection is allowed to
+      // update, so the mismatch is expected and must not consume the bounded
+      // corruption-fallback budget. Do not poll each frame; compositionend and
+      // the eventual projection change both schedule reconciliation.
+      if (this.isCustomProjectionValidationDeferred()) return
       try {
         this.validateProjection(this.layoutProjection)
         this.customProjectionValidationPending = false
@@ -1273,6 +1289,16 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     if (!projectedIds || !arraysEqual(projectedIds, this.blockIds)) {
       throw new Error('Layout projection block order does not match the document root')
     }
+  }
+
+  private isCustomProjectionValidationDeferred(): boolean {
+    if (
+      this.doc.event?.status?.isComposing ||
+      !(this.doc.inputManger?.compositionSession?.isIdle ?? true)
+    ) {
+      return true
+    }
+    return this.customLayoutProjectionHooks?.isValidationDeferred?.() === true
   }
 
   private cancelScheduledReconcile(): void {
