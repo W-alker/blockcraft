@@ -8,6 +8,7 @@ import { DocCRUD } from "./crud"
 import {RemoteSelectionReconciler} from '../modules/selection/remote-selection-reconciler'
 import {DOMSelectionSurfaceAdapter} from '../modules/selection/surface-adapter'
 import {BlockReadonlyError, BlockReadonlyOperation} from "./block-readonly.types"
+import {ORIGIN_READONLY_VIEW_PROJECTION} from "./origins"
 
 type MockBlockRef = {
   instance: MockBlockInstance
@@ -243,6 +244,9 @@ const createDocHarness = () => {
   const destroyCallbacks: Array<() => void> = []
 
   const readonlyManager = {
+    runSystemRepair: jasmine.createSpy('runSystemRepair').and.callFake(
+      <T>(mutation: () => T) => mutation(),
+    ),
     assertTextWritable: jasmine.createSpy('assertTextWritable'),
     assertPropsWritable: jasmine.createSpy('assertPropsWritable'),
     assertInsertable: jasmine.createSpy('assertInsertable'),
@@ -400,6 +404,30 @@ const createBoundarySelection = (doc: any, blockId: string, index: number) => {
 }
 
 describe('DocCRUD', () => {
+  it('scopes readonly-view projection transactions without affecting normal transactions', () => {
+    const {crud, doc} = createDocHarness()
+    const calls: string[] = []
+    doc.readonlyManager.runSystemRepair.and.callFake((mutation: () => void) => {
+      calls.push('scope:start')
+      try {
+        mutation()
+      } finally {
+        calls.push('scope:end')
+      }
+    })
+
+    crud.transact(() => calls.push('projection'), ORIGIN_READONLY_VIEW_PROJECTION)
+    crud.transact(() => calls.push('normal'))
+
+    expect(calls).toEqual([
+      'scope:start',
+      'projection',
+      'scope:end',
+      'normal',
+    ])
+    expect(doc.readonlyManager.runSystemRepair).toHaveBeenCalledTimes(1)
+  })
+
   it('writes block props by model id without a mounted component', () => {
     const {crud, doc, store} = createDocHarness()
     const yBlock = native2YBlock({

@@ -1,18 +1,19 @@
-:root {
+.presentation-stage {
   --preview-bg: rgba(0, 0, 0, 0.95);
   --preview-close-color: #ffffff;
   --preview-close-hover: #ff4757;
 }
 
-.demo-root[data-blockcraft-root="true"] {
+.presentation-stage > .demo-root[data-blockcraft-root="true"][data-bc-surface="presentation"] {
   width: 100%;
   // --bc-fs / --bc-lh / --bc-segments-gap 由 PresentationController 根据源文档
   // 对应变量 × 各自 scale（config.fontScale / lineHeightScale / segmentsGapScale）
   // 注入到 .presentation-stage 父容器，子级（含 demo-root）通过 CSS 变量继承。
   // 这里不再 calc 派生，避免 stylesheet 规则覆盖父级注入的继承值。
 
-  margin: 0 auto;
-  min-height: calc(100% - 20vh);
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -31,10 +32,22 @@
     cursor: default !important;
   }
 
-  > [data-block-id] {
-    opacity: 0;
-    transform: translateY(20px);
-    animation: slideIn 600ms ease forwards;
+  // Editing-only gap/caret affordances are created by ordinary block
+  // components but have no place on a presentation surface.
+  .bc-block-gap,
+  [data-block-zero-space="true"] {
+    display: none !important;
+  }
+
+  > .children-render-container {
+    width: 100%;
+    min-width: 0;
+
+    > [data-block-id] {
+      opacity: 0;
+      transform: translateY(20px);
+      animation: slideIn 600ms ease forwards;
+    }
   }
 
   .page-divider-block {
@@ -247,7 +260,7 @@
 
 /* 高对比度模式 */
 @media (prefers-contrast: more) {
-  :root {
+  .presentation-stage {
     --preview-bg: rgba(0, 0, 0, 0.98);
     --preview-close-color: #ffffff;
     --preview-close-hover: #ff0000;

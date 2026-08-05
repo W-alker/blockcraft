@@ -1,7 +1,14 @@
 import {ApplicationRef, ComponentRef, createComponent} from "@angular/core";
 import {DemoControlBarComponent} from "./widgets/demo-control-bar.component";
 import {nextTick, throttle} from "../../global";
-import {BlockCraftDoc, IBlockSnapshot, SchemaManager} from "../../framework";
+import {
+  BlockCraftDoc,
+  DocConfig,
+  IBlockSnapshot,
+  SchemaManager,
+  stripBlockLockMetaDeep,
+} from "../../framework";
+import {ORIGIN_READONLY_VIEW_PROJECTION} from "../../framework/doc/origins";
 import {analyzePages} from "./page-analyzer";
 import * as Y from 'yjs';
 import {DemoCoverBlockModel, DemoCoverBlockSchema, DemoRootBlockSchema, DemoRootComponent} from "./blocks";
@@ -56,6 +63,9 @@ export class PresentationController {
   private controlBarRef: ComponentRef<DemoControlBarComponent> | null = null;
   private eventCleanups: (() => void)[] = [];
   private presentationContainer: HTMLElement | null = null;
+  private bodyThemeBeforePresentation: string | null = null;
+  private presentationTheme: string | null = null;
+  private bodyThemeCaptured = false;
 
   private drawingCanvas: DrawingCanvas | null = null;
   private drawingToolbarRef: ComponentRef<DrawingToolbarComponent> | null = null;
@@ -74,7 +84,9 @@ export class PresentationController {
   }
 
   start() {
-    const rootSnapshot = this.originDoc.exportSnapshot()!;
+    // 演示文档是独立的临时只读投影，不应显示或传播源文档的持久锁权限。
+    // 文档级 readonly 仍会完整保留，负责阻断所有用户输入与普通 CRUD 调用。
+    const rootSnapshot = stripBlockLockMetaDeep(this.originDoc.exportSnapshot()!);
 
     this.pages = analyzePages(rootSnapshot.children as IBlockSnapshot[]);
 
@@ -107,18 +119,10 @@ export class PresentationController {
     const schemaStore = new SchemaManager(schemas)
     // 重新注册根block
     schemaStore.register(DemoRootBlockSchema)
-    this._demoDoc = new BlockCraftDoc({
-      ...this.originDoc.config,
-      plugins: [],
-      yDoc: new Y.Doc(),
-      theme: 'light',
-      schemas: schemaStore,
-      readonly: true,
-    })
     rootSnapshot.children = []
-    this.presentationContainer = document.createElement('div')
-    this.presentationContainer.className = 'presentation-stage';
-    this.presentationContainer.style.cssText = `
+    const presentationContainer = document.createElement('div')
+    presentationContainer.className = 'presentation-stage';
+    presentationContainer.style.cssText = `
       position: fixed;
       top: 0;
       left: 0;
@@ -139,19 +143,70 @@ export class PresentationController {
     // --bc-lh 现为无单位比例（line-height ratio），不是 px 长度。
     const sourceLhRatio = this.readSourceCssLength('--bc-lh', 1.5);
     const sourceGap = this.readSourceCssLength('--bc-segments-gap', 10);
-    this.presentationContainer.style.setProperty('--bc-fs', `${sourceFs * this.getFontScale()}px`);
+    presentationContainer.style.setProperty('--bc-fs', `${sourceFs * this.getFontScale()}px`);
     // 无单位比例自身随字号等比放大，默认（lineHeightScale === fontScale）保持源比例不变；
     // 仅当 lineHeightScale ≠ fontScale 时按两者之比调整行距松紧。最终视觉行高
     // = ratio × demo--bc-fs = (sourceLhRatio·LHS/FS) × (sourceFs·FS) = sourceLhRatio·sourceFs·LHS，
     // 与旧的 `sourceLhPx × LHS` 完全等价。保持无单位是为了兼容 WebKit 的 CSS zoom。
-    this.presentationContainer.style.setProperty(
+    presentationContainer.style.setProperty(
       '--bc-lh',
       `${sourceLhRatio * this.getLineHeightScale() / this.getFontScale()}`,
     );
-    this.presentationContainer.style.setProperty('--bc-segments-gap', `${sourceGap * this.getSegmentsGapScale()}px`);
+    presentationContainer.style.setProperty('--bc-segments-gap', `${sourceGap * this.getSegmentsGapScale()}px`);
 
-    document.body.appendChild(this.presentationContainer);
-    this._demoDoc.initBySnapshot(rootSnapshot, this.presentationContainer);
+    this.captureBodyTheme();
+    this.presentationContainer = presentationContainer;
+    this._demoDoc = new BlockCraftDoc(
+      this.createDemoDocConfig(schemaStore, presentationContainer),
+    );
+    document.body.appendChild(presentationContainer);
+    this._demoDoc.initBySnapshot(rootSnapshot, presentationContainer);
+  }
+
+  /** Build an isolated runtime config for the transient presentation surface. */
+  private createDemoDocConfig(
+    schemas: SchemaManager,
+    scrollContainer: HTMLElement,
+  ): DocConfig {
+    const theme = this.bodyThemeBeforePresentation
+      ?? this.originDoc.config.theme
+      ?? 'light';
+    this.presentationTheme = theme;
+    return {
+      ...this.originDoc.config,
+      plugins: [],
+      yDoc: new Y.Doc(),
+      // A page is one exact presentation unit. Sparse root mounting can hide
+      // page content and invalidates drawing/transition geometry.
+      virtualization: {enabled: false},
+      // Never reuse the authoring editor's scroll container in the overlay.
+      scrollContainer,
+      // Match the currently active global theme instead of forcing body to light.
+      theme,
+      schemas,
+      readonly: true,
+    };
+  }
+
+  private captureBodyTheme(): void {
+    if (this.bodyThemeCaptured) return;
+    this.bodyThemeBeforePresentation = document.body.getAttribute('blockcraft-theme');
+    this.bodyThemeCaptured = true;
+  }
+
+  private restoreBodyTheme(): void {
+    if (!this.bodyThemeCaptured) return;
+    // Do not overwrite a host theme change that happened while presenting.
+    if (document.body.getAttribute('blockcraft-theme') === this.presentationTheme) {
+      if (this.bodyThemeBeforePresentation === null) {
+        document.body.removeAttribute('blockcraft-theme');
+      } else {
+        document.body.setAttribute('blockcraft-theme', this.bodyThemeBeforePresentation);
+      }
+    }
+    this.bodyThemeBeforePresentation = null;
+    this.presentationTheme = null;
+    this.bodyThemeCaptured = false;
   }
 
   private tryReenterFullscreen() {
@@ -379,12 +434,22 @@ export class PresentationController {
   }
 
   private updatePageContent(index: number) {
-    if (!this._demoDoc?.root) return;
+    const demoDoc = this._demoDoc;
+    if (!demoDoc?.root) return;
 
     const currentPage = this.scaleTableColWidths(this.pages[index]);
 
-    this._demoDoc.crud.deleteBlocks(this._demoDoc.rootId, 0, this._demoDoc.root.childrenLength, true)
-    this._demoDoc.crud.insertBlocks(this._demoDoc.rootId, 0, currentPage)
+    // 演示文档及 DOM 始终保持只读；只有框架内置的页面投影事务可以替换
+    // 临时根内容。该 origin 不进入 undo，也不会向 readonlySwitch$ 广播可写状态。
+    demoDoc.crud.transact(() => {
+      demoDoc.crud.deleteBlocks(
+        demoDoc.rootId,
+        0,
+        demoDoc.root.childrenLength,
+        true,
+      );
+      demoDoc.crud.insertBlocks(demoDoc.rootId, 0, currentPage);
+    }, ORIGIN_READONLY_VIEW_PROJECTION);
 
     // 滚动到顶部
     if (this.presentationContainer) {
@@ -723,5 +788,6 @@ export class PresentationController {
     this._demoDoc = null;
     this.presentationContainer?.remove();
     this.presentationContainer = null;
+    this.restoreBodyTheme();
   }
 }

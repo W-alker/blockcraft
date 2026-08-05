@@ -21,6 +21,7 @@ import {
   ORIGIN_BLOCK_READONLY_CONTROL,
   ORIGIN_SKIP_SYNC,
   ORIGIN_NO_RECORD,
+  ORIGIN_READONLY_VIEW_PROJECTION,
   ORIGIN_SYSTEM_REPAIR,
 } from "./origins";
 import {BlockReadonlyOperation} from "./block-readonly.types";
@@ -193,9 +194,15 @@ export class DocCRUD {
   }
 
   transact(fn: () => void, origin: any = null) {
-    const runSystemRepair = this.doc.readonlyManager?.runSystemRepair
-    if (origin === ORIGIN_SYSTEM_REPAIR && typeof runSystemRepair === 'function') {
-      return runSystemRepair.call(this.doc.readonlyManager, () => this.yDoc.transact(fn, origin))
+    const runInternalMutation = this.doc.readonlyManager?.runSystemRepair
+    if (
+      (origin === ORIGIN_SYSTEM_REPAIR || origin === ORIGIN_READONLY_VIEW_PROJECTION) &&
+      typeof runInternalMutation === 'function'
+    ) {
+      return runInternalMutation.call(
+        this.doc.readonlyManager,
+        () => this.yDoc.transact(fn, origin),
+      )
     }
     return this.yDoc.transact(fn, origin)
   }

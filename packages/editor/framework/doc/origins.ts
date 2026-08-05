@@ -16,3 +16,8 @@ export const ORIGIN_BLOCK_READONLY_CONTROL = Symbol('block_readonly_control')
 
 // Internal consistency repair may bypass user-facing readonly guards.
 export const ORIGIN_SYSTEM_REPAIR = Symbol('system_repair')
+
+// Internal readonly-view projection updates model content without exposing a
+// writable document state to DOM input, commands, or external CRUD calls.
+// Package-internal: do not re-export from the public framework barrel.
+export const ORIGIN_READONLY_VIEW_PROJECTION = Symbol('readonly_view_projection')

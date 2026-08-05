@@ -54,7 +54,7 @@ export class BlockReadonlyManager {
   private readonly stateChangeSubject = new Subject<void>();
 
   private initialized = false;
-  private systemRepairDepth = 0;
+  private internalMutationDepth = 0;
   private permissionRevision = 0;
   private indexedPermissionRevision = -1;
   private indexedStructureRevision = -1;
@@ -67,13 +67,16 @@ export class BlockReadonlyManager {
   );
   readonly stateChange$: Observable<void> = this.stateChangeSubject.asObservable();
 
-  /** Internal transaction scope for deterministic model consistency repair. */
+  /**
+   * @internal Guard-bypass scope used only by DocCRUD-recognized framework
+   * origins (consistency repair and readonly-view projection).
+   */
   runSystemRepair<T>(repair: () => T): T {
-    this.systemRepairDepth++;
+    this.internalMutationDepth++;
     try {
       return repair();
     } finally {
-      this.systemRepairDepth--;
+      this.internalMutationDepth--;
     }
   }
 
@@ -371,7 +374,7 @@ export class BlockReadonlyManager {
     operation: BlockReadonlyOperation,
     trigger: BlockReadonlyViolationTrigger = "api",
   ): void {
-    if (this.systemRepairDepth > 0) return;
+    if (this.internalMutationDepth > 0) return;
     for (const block of blocks) {
       const blockId = this.getBlockId(block);
       const resolution = this.resolve(blockId);
@@ -692,7 +695,7 @@ export class BlockReadonlyManager {
     operation: BlockReadonlyOperation,
     trigger: BlockReadonlyViolationTrigger,
   ): void {
-    if (this.systemRepairDepth > 0) return;
+    if (this.internalMutationDepth > 0) return;
     const blockId = this.getBlockId(block);
     const resolution = this.resolve(blockId);
     if (resolution.readonly && resolution.source) {

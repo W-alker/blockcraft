@@ -1,10 +1,10 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
-import {RootBlockComponent} from "../../../blocks/root-block/root.block";
-import {BlockNodeType, IBlockSchemaOptions} from "../../../framework";
+import {RootBlockModel} from "../../../blocks/root-block";
+import {BaseBlockComponent, IBlockSchemaOptions} from "../../../framework";
 import {RootBlockSchema} from "../../../blocks";
 
 @Component({
-  selector: `div.root-block.demo-root[data-blockcraft-root="true"]`,
+  selector: `div.demo-root[data-blockcraft-root="true"][data-bc-surface="presentation"]`,
   template: `
     <div class="children-render-container"></div>
   `,
@@ -12,13 +12,18 @@ import {RootBlockSchema} from "../../../blocks";
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [],
   host: {
+    'contenteditable': 'false',
+    'aria-readonly': 'true',
     '[style.font-family]': 'props.ff',
   }
 })
-export class DemoRootComponent extends RootBlockComponent{
+export class DemoRootComponent extends BaseBlockComponent<RootBlockModel>{
 }
 
-export const DemoRootBlockSchema: IBlockSchemaOptions = {
+export const DemoRootBlockSchema: IBlockSchemaOptions<RootBlockModel> = {
   ...RootBlockSchema,
-  component: DemoRootComponent,
+  // The public root flavour maps to RootBlockComponent globally, while this
+  // private presentation surface deliberately supplies a BaseBlock-compatible
+  // root without editor-root interaction behavior.
+  component: DemoRootComponent as unknown as IBlockSchemaOptions<RootBlockModel>['component'],
 }
