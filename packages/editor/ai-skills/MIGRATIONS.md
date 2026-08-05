@@ -74,7 +74,7 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
-### v0.3.0-alpha.3 - 2026-08-05 (patch) — align nested-host pagination surfaces
+### v0.3.0-alpha.4 - 2026-08-05 (patch) — align nested-host pagination surfaces
 
 **Severity**: patch
 
