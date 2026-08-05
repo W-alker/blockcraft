@@ -60,7 +60,7 @@ describe('ImageBlockComponent local preview sizing', () => {
       value: parentWidth,
     })
     component._awaitingLocalPreviewSize = true
-    component._pendingLocalPreviewSize = null
+    component._pendingIntrinsicSize = null
     spyOn(component, '_isGone').and.returnValue(false)
     const setInitProps = spyOn(component, 'setInitProps')
     return {component, setInitProps}
@@ -94,8 +94,85 @@ describe('ImageBlockComponent local preview sizing', () => {
     expect(setInitProps).not.toHaveBeenCalled()
 
     rootWidth = 800
-    expect((component as any).commitPendingLocalPreviewSize()).toBeTrue()
+    expect((component as any).commitPendingIntrinsicSize()).toBeTrue()
     expect(setInitProps).toHaveBeenCalledOnceWith({wr: 40, ar: 1.6})
+  })
+
+  it('backfills complete wr/ar for legacy data without responsive sizing', () => {
+    const {component, setInitProps} = createComponent(() => 800, 600)
+    ;(component as any)._props = {
+      src: 'https://cdn.example.com/legacy.png',
+    }
+    ;(component as any)._awaitingLocalPreviewSize = false
+
+    component.onImageIntrinsicSize({
+      width: 320,
+      height: 200,
+      ar: 1.6,
+    })
+
+    expect(setInitProps).toHaveBeenCalledOnceWith({
+      wr: 40,
+      ar: 1.6,
+    })
+  })
+
+  it('migrates legacy pixels without changing the current visual width', () => {
+    const {component, setInitProps} = createComponent(() => 800, 480)
+    ;(component as any)._props = {
+      src: 'https://cdn.example.com/legacy.png',
+      width: 640,
+      height: 360,
+    }
+    ;(component as any)._awaitingLocalPreviewSize = false
+
+    component.onImageIntrinsicSize({
+      width: 1280,
+      height: 720,
+      ar: 16 / 9,
+    })
+
+    expect(setInitProps).toHaveBeenCalledOnceWith({
+      wr: 60,
+      ar: 16 / 9,
+      width: null,
+      height: null,
+    })
+  })
+
+  it('keeps an existing wr and only backfills a missing ar', () => {
+    const {component, setInitProps} = createComponent(() => 800, 480)
+    ;(component as any)._props = {
+      src: 'https://cdn.example.com/image.png',
+      wr: 75,
+    }
+    ;(component as any)._awaitingLocalPreviewSize = false
+
+    component.onImageIntrinsicSize({
+      width: 1200,
+      height: 600,
+      ar: 2,
+    })
+
+    expect(setInitProps).toHaveBeenCalledOnceWith({ar: 2})
+  })
+
+  it('does not rewrite complete responsive sizing', () => {
+    const {component, setInitProps} = createComponent(() => 800, 480)
+    ;(component as any)._props = {
+      src: 'https://cdn.example.com/image.png',
+      wr: 75,
+      ar: 2,
+    }
+    ;(component as any)._awaitingLocalPreviewSize = false
+
+    component.onImageIntrinsicSize({
+      width: 1200,
+      height: 600,
+      ar: 2,
+    })
+
+    expect(setInitProps).not.toHaveBeenCalled()
   })
 })
 

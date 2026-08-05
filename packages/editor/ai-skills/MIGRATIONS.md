@@ -74,6 +74,43 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v0.3.0-alpha.7 - 2026-08-05 (patch) — backfill complete responsive image sizing
+
+**Severity**: patch
+
+**What changed**: A mounted built-in image whose persisted data lacks `wr` now
+uses the first successful intrinsic-size load to write complete `wr/ar` sizing.
+Existing pixel `width/height` is converted using the current root and parent
+content widths, then removed in the same no-history Yjs transaction. Images
+that already have `wr` continue to backfill only a missing `ar`.
+
+**Why**: Virtualization and sparse pagination can estimate media geometry from
+model-only responsive sizing. Previously old image data could acquire `ar`
+while permanently retaining no `wr`, leaving persistence only partially
+normalized after the image had already mounted and loaded successfully.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No host-code migration is required. Loading an editable legacy image once is
+enough to normalize its responsive dimensions. Offscreen images remain on the
+existing model fallback until mounted, and readonly images remain unchanged.
+
+#### Behavior Changes
+
+- A successfully loaded, writable legacy image now writes `wr/ar` through
+  `ORIGIN_NO_RECORD`; the compatibility write synchronizes and persists but
+  does not add an Undo item.
+- A legacy pixel width is capped by the current parent width before conversion,
+  so the initial responsive frame matches the mounted visual width.
+- Once backfilled props arrive, continuous virtualization and sparse pagination
+  refresh their shared model-only height estimate from the persisted `wr/ar`.
+
 ### v0.3.0-alpha.6 - 2026-08-05 (minor) — independent page chrome distance and styled page-number tokens
 
 **Severity**: minor (additive prerelease API)

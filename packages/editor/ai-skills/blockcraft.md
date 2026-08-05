@@ -370,8 +370,10 @@ as a percentage of the root children content width and `props.ar` as
 width/height. `doc.objectSizing` owns the single root `ResizeObserver`, resolves
 live dimensions for mounted blocks, and supplies model-only height estimates to
 virtualization and sparse pagination. Built-in image and video blocks opt in;
-legacy pixel `width/height` remains visually stable until the first completed
-resize migrates it to `wr/ar`.
+mounted legacy images migrate pixel `width/height` to `wr/ar` after their first
+successful intrinsic-size load while preserving the current capped visual
+width. Other object types retain legacy pixels until their own explicit
+migration path.
 Visual resource loading is composed on top of that stable frame through
 `BcResourcePlaceholderDirective`; it is not a `DocConfig`, Schema or
 `doc.*` capability. The built-in image/video blocks and Snapshot Viewer show
@@ -380,8 +382,9 @@ an in-place retry action. Built-in local image creation inserts the block
 immediately, preserves the local preview plus upload-progress state, then uses
 the first successful preview dimensions to persist `ar` and a root-relative
 `wr` capped by the current parent content width. Remote and legacy images
-without a stored ratio start from the Schema default and backfill the first
-successful ratio without adding Undo history. Continuous virtualization and
+without stored responsive dimensions start from the Schema default and
+backfill complete `wr/ar` on the first successful mounted load without adding
+Undo history. Continuous virtualization and
 sparse pagination share one DOM-free model estimator for `wr/ar` media and
 inline-object `width/height`. Wrapped inline images, shapes and WordArt additionally reserve their
 contained object-plus-gap height and estimate constrained text lines from

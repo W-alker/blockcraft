@@ -18,6 +18,7 @@ export function deriveInitialImageObjectSize(
   size: ResourceIntrinsicSize,
   parentAvailableWidth: number,
   rootContentWidth: number,
+  preferredWidth = size.width,
 ): {wr: number; ar: number} | null {
   if (
     !Number.isFinite(size.width) ||
@@ -29,7 +30,10 @@ export function deriveInitialImageObjectSize(
   ) {
     return null
   }
-  const displayWidth = Math.min(size.width, parentAvailableWidth)
+  const sourceWidth = Number.isFinite(preferredWidth) && preferredWidth > 0
+    ? preferredWidth
+    : size.width
+  const displayWidth = Math.min(sourceWidth, parentAvailableWidth)
   const ar = size.width / size.height
   const derived = deriveObjectSizeFromPixels(
     displayWidth,
@@ -210,7 +214,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
 
   private _fileService?: DocFileService;
   private _awaitingLocalPreviewSize = false
-  private _pendingLocalPreviewSize: ResourceIntrinsicSize | null = null
+  private _pendingIntrinsicSize: ResourceIntrinsicSize | null = null
 
   private get fileService() {
     return this._fileService ??= this.doc.injector.get<DocFileService>(DOC_FILE_SERVICE_TOKEN);
@@ -278,7 +282,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     this.doc.objectSizing.widthChange$
       .pipe(takeUntil(this.onDestroy$))
       .subscribe(() => {
-        this.commitPendingLocalPreviewSize()
+        this.commitPendingIntrinsicSize()
         this.changeDetectorRef.markForCheck()
       })
   }
@@ -286,17 +290,12 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
   onImageIntrinsicSize(size: ResourceIntrinsicSize) {
     if (
       this._isGone() ||
-      this.isReadonly ||
-      this.props.ar != null
+      this.isReadonly
     ) {
       return
     }
-    if (this._awaitingLocalPreviewSize) {
-      this._pendingLocalPreviewSize = size
-      this.commitPendingLocalPreviewSize()
-      return
-    }
-    this.setInitProps({ar: size.ar})
+    this._pendingIntrinsicSize = size
+    this.commitPendingIntrinsicSize()
   }
 
   inputLocalFile = async () => {
@@ -343,7 +342,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
       this.props.wr !== 100
     this._awaitingLocalPreviewSize =
       this.props.ar == null && !hasLegacyWidth && !hasCustomWr
-    this._pendingLocalPreviewSize = null
+    this._pendingIntrinsicSize = null
     this._previewUri = this.fileService.getFilePreviewURLByObjectURL(url);
     this.uploadProgress = 0;
     this.changeDetectorRef.markForCheck();
@@ -366,7 +365,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
       this.doc.messageService.warn('图片上传失败');
       if (this._isGone() || this.isReadonly) return;
       this._awaitingLocalPreviewSize = false
-      this._pendingLocalPreviewSize = null
+      this._pendingIntrinsicSize = null
       this.setInitProps({
         src: '',
         wr: 100,
@@ -396,7 +395,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
         : derived.ar
     const placement = this.props.placement
     this._awaitingLocalPreviewSize = false
-    this._pendingLocalPreviewSize = null
+    this._pendingIntrinsicSize = null
     this.updateProps({
       wr: derived.wr,
       ar: currentAr,
@@ -414,32 +413,71 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     this.changeDetectorRef.markForCheck();
   }
 
-  private commitPendingLocalPreviewSize(): boolean {
-    const size = this._pendingLocalPreviewSize
-    if (this.props.ar != null) {
-      this._awaitingLocalPreviewSize = false
-      this._pendingLocalPreviewSize = null
-      return false
-    }
+  private commitPendingIntrinsicSize(): boolean {
+    const size = this._pendingIntrinsicSize
     if (
-      !this._awaitingLocalPreviewSize ||
       !size ||
       this._isGone() ||
       this.isReadonly
     ) {
       return false
     }
+    const currentWr =
+      typeof this.props.wr === 'number' &&
+      Number.isFinite(this.props.wr) &&
+      this.props.wr > 0
+        ? this.props.wr
+        : null
+    const currentAr =
+      typeof this.props.ar === 'number' &&
+      Number.isFinite(this.props.ar) &&
+      this.props.ar > 0
+        ? this.props.ar
+        : null
+    if (currentWr !== null && currentAr !== null) {
+      this._awaitingLocalPreviewSize = false
+      this._pendingIntrinsicSize = null
+      return false
+    }
+    const shouldDeriveWr = this._awaitingLocalPreviewSize || currentWr === null
+    if (!shouldDeriveWr) {
+      this._pendingIntrinsicSize = null
+      if (currentAr !== null) return false
+      this.setInitProps({ar: size.ar})
+      return true
+    }
+
+    const legacyWidth =
+      typeof this.props.width === 'number' &&
+      Number.isFinite(this.props.width) &&
+      this.props.width > 0
+        ? this.props.width
+        : undefined
     const initialSize = deriveInitialImageObjectSize(
       size,
       this.isAbsolute
         ? this.rootContentWidth
         : this.hostElement.clientWidth,
       this.rootContentWidth,
+      legacyWidth,
     )
     if (!initialSize) return false
-    this.setInitProps(initialSize)
+    const hasLegacyWidth = Object.prototype.hasOwnProperty.call(
+      this.props,
+      'width',
+    )
+    const hasLegacyHeight = Object.prototype.hasOwnProperty.call(
+      this.props,
+      'height',
+    )
+    this.setInitProps({
+      wr: initialSize.wr,
+      ar: currentAr ?? initialSize.ar,
+      ...(hasLegacyWidth ? {width: null} : {}),
+      ...(hasLegacyHeight ? {height: null} : {}),
+    })
     this._awaitingLocalPreviewSize = false
-    this._pendingLocalPreviewSize = null
+    this._pendingIntrinsicSize = null
     return true
   }
 }

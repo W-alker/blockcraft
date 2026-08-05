@@ -676,17 +676,23 @@ Do not add a `ResizeObserver` per block or read root geometry during change
 detection.
 
 Remote built-in images and new videos start at `wr: 100`; intrinsic metadata
-fills a missing `ar`. A built-in local image is inserted immediately with its
-Object URL and upload-progress preview. On the first successful preview load it
-sets `ar` from the intrinsic dimensions and sets `wr` from
+fills a missing `ar`. A mounted legacy image that lacks `wr` uses its existing
+pixel width when available, otherwise its intrinsic width, and writes complete
+`wr/ar` on the first successful resource load. The write uses
+`ORIGIN_NO_RECORD`, removes legacy `width/height`, and caps the migrated visual
+width by the current parent so the mounted image does not jump during migration.
+An offscreen image remains on model-only legacy/default estimates until it first
+mounts, and readonly images are never rewritten. A built-in local image is
+inserted immediately with its Object URL and upload-progress preview. On the
+first successful preview load it sets `ar` from the intrinsic dimensions and
+sets `wr` from
 `min(intrinsicWidth, parentAvailableWidth) / rootContentWidth`, so small images
-are not enlarged and nested images do not exceed their parent. Legacy
-`width/height` remains a compatibility input and is not rewritten on load.
-The first completed Pointer Events resize writes `wr/ar` once and clears the
-old fields in the same `updateProps()` transaction. The gesture captures the
-root-width basis for persistence but uses the current parent content width as
-its visual maximum, so a concurrent container resize cannot change the
-committed ratio.
+are not enlarged and nested images do not exceed their parent. For any legacy
+object type that has not migrated on load, the first completed Pointer Events
+resize writes `wr/ar` once and clears the old fields in the same
+`updateProps()` transaction. The gesture captures the root-width basis for
+persistence but uses the current parent content width as its visual maximum, so
+a concurrent container resize cannot change the committed ratio.
 
 ### Visual Resource Placeholder Extension
 
