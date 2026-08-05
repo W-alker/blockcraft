@@ -17,6 +17,14 @@ ALL block components use `ChangeDetectionStrategy.OnPush`. Angular only re-rende
 
 **Rule**: Never use `Default` change detection in block components.
 
+Whole-document scaling is applied once at the host surface by
+`doc.viewScale`; do not rewrite font sizes or per-block transforms. Scale
+changes invalidate virtualization estimates through the existing scheduled
+window refresh, while measurement converts visual `getBoundingClientRect()`
+values back to layout pixels. Host fit-width/fit-page observers should coalesce
+their own resize callbacks (for example with one `requestAnimationFrame`) before
+calling `setScale()`.
+
 ### 2. NgZone Optimization
 
 Performance-critical code runs outside Angular's zone:

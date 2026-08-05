@@ -8,11 +8,24 @@ export const resolvePlacementContainerBox = (
   container: HTMLElement,
 ): PlacementBox => {
   const rect = container.getBoundingClientRect()
+  const measuredScale = container.clientWidth > 0
+    ? rect.width / container.clientWidth
+    : 1
+  const visualScale = Number.isFinite(measuredScale) && measuredScale > 0
+    ? measuredScale
+    : 1
+  const configuredOriginY = Number.parseFloat(
+    container.style.getPropertyValue('--bc-placement-content-origin-y'),
+  )
+  const contentOriginY = Number.isFinite(configuredOriginY)
+    ? configuredOriginY
+    : 0
   return {
     container,
-    originX: rect.left + container.clientLeft,
-    originY: rect.top + container.clientTop,
+    originX: rect.left + container.clientLeft * visualScale,
+    originY: rect.top + (container.clientTop + contentOriginY) * visualScale,
     width: container.clientWidth || rect.width || 1,
+    visualScale,
   }
 }
 
@@ -36,8 +49,8 @@ export function measureObjectPlacement(
   const rect = element.getBoundingClientRect()
   return {
     mode: 'absolute',
-    x: Math.round(((rect.left - box.originX) / box.width) * 1000) / 10,
-    y: Math.round(rect.top - box.originY),
+    x: Math.round((((rect.left - box.originX) / box.visualScale) / box.width) * 1000) / 10,
+    y: Math.round((rect.top - box.originY) / box.visualScale),
     layer,
   }
 }

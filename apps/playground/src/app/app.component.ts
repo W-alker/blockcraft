@@ -22,6 +22,7 @@ import {
   replaceSnapshotsIdDeeply
 } from '@ccc/blockcraft';
 import {PaginationSettingsComponent} from './pagination-settings.component';
+import {DocumentScaleSettingsComponent} from './document-scale-settings.component';
 import { debugTableMerge, fixTable } from '@ccc/blockcraft/blocks/table-block/callback';
 import { BlockCraftAwareness } from '@ccc/blockcraft/editor/awa';
 import { Subscription } from 'rxjs';
@@ -217,7 +218,13 @@ const ACTION_SECTIONS: DebugSection[] = [
 @Component({
   selector: 'playground-home',
   standalone: true,
-  imports: [EditorComponent, SnapshotViewerComponent, PaginationSettingsComponent, RouterLink],
+  imports: [
+    EditorComponent,
+    SnapshotViewerComponent,
+    PaginationSettingsComponent,
+    DocumentScaleSettingsComponent,
+    RouterLink,
+  ],
   template: `
     <div class="app-shell">
       <aside class="sidebar">
@@ -463,6 +470,23 @@ const ACTION_SECTIONS: DebugSection[] = [
             class="pagination-settings-float"
             [plugin]="paginationPlugin!">
           </bc-pagination-settings>
+        }
+
+        @if (
+          activeMainTab === 'editor' &&
+          editorInitialized &&
+          editor &&
+          documentScaleViewport &&
+          documentScaleStage &&
+          documentScaleSurface
+        ) {
+          <bc-document-scale-settings
+            class="document-scale-settings-float"
+            [manager]="editor.doc.viewScale"
+            [viewport]="documentScaleViewport"
+            [stage]="documentScaleStage"
+            [surface]="documentScaleSurface">
+          </bc-document-scale-settings>
         }
 
         @if (activeMainTab === 'viewer') {
@@ -1392,6 +1416,9 @@ export class AppComponent implements OnDestroy {
   editorInitialized = false;
   isListeningUpdate = false;
   virtualizationEnabled = true;
+  documentScaleViewport: HTMLElement | null = null;
+  documentScaleStage: HTMLElement | null = null;
+  documentScaleSurface: HTMLElement | null = null;
 
   // 临时调试：复制时过滤行内链接属性（a:link），可开关
   copyFilterActive = false;
@@ -1749,6 +1776,40 @@ graph TD
     return editor.container.nativeElement as HTMLElement;
   }
 
+  /**
+   * Playground 的文档缩放面：外层 editorContainer 保持固定并负责滚动，分页
+   * 背景与 root 一起挂在内层 surface，避免缩放时把滚动视口本身也缩小。
+   */
+  private get editorDocumentSurface(): HTMLElement {
+    const editor = this.requireEditor();
+    const viewport = this.editorContainer;
+    let stage = viewport.querySelector<HTMLElement>(':scope > .playground-scale-stage');
+    let surface = stage?.querySelector<HTMLElement>(':scope > .playground-scale-surface') ?? null;
+
+    if (!stage) {
+      stage = viewport.ownerDocument.createElement('div');
+      stage.className = 'playground-scale-stage';
+      stage.style.position = 'relative';
+      stage.style.boxSizing = 'border-box';
+      viewport.appendChild(stage);
+    }
+    if (!surface) {
+      surface = viewport.ownerDocument.createElement('div');
+      surface.className = 'playground-scale-surface';
+      surface.style.position = 'relative';
+      surface.style.boxSizing = 'border-box';
+      stage.appendChild(surface);
+    }
+
+    // 虚拟渲染监听固定视口；分页纸张定位面则跟 root 一起留在 surface。
+    viewport.style.overflowX = 'auto';
+    editor.doc.config.scrollContainer = viewport;
+    this.documentScaleViewport = viewport;
+    this.documentScaleStage = stage;
+    this.documentScaleSurface = surface;
+    return surface;
+  }
+
   private createDemoSnapshot(): IBlockSnapshot {
     return JSON.parse(JSON.stringify(demoJSON)) as IBlockSnapshot;
   }
@@ -1756,7 +1817,7 @@ graph TD
   private ensureEditorInitialized(snapshot: IBlockSnapshot = this.createDemoSnapshot()) {
     const editor = this.requireEditor();
     if (!editor.doc.isInitialized) {
-      editor.doc.initBySnapshot(snapshot, this.editorContainer);
+      editor.doc.initBySnapshot(snapshot, this.editorDocumentSurface);
     }
     return editor;
   }
@@ -1768,7 +1829,7 @@ graph TD
         editor.rootId,
         [editor.doc.schemas.createSnapshot('paragraph', [])]
       ]);
-      editor.doc.initBySnapshot(rootSnapshot, this.editorContainer);
+      editor.doc.initBySnapshot(rootSnapshot, this.editorDocumentSurface);
     }
     return editor;
   }
@@ -2377,7 +2438,7 @@ $$
         return;
       }
 
-      editor.doc.initByYBlock(resolution.root, this.editorContainer);
+      editor.doc.initByYBlock(resolution.root, this.editorDocumentSurface);
       this.editorInitialized = editor.doc.isInitialized;
       this.syncPageTheme();
       this._subscribeSelection();

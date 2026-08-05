@@ -94,7 +94,11 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   private readonly continuousLayoutProjection = new ContinuousLayoutProjection(this.heights)
   private layoutProjection: VerticalLayoutProjection = this.continuousLayoutProjection
   private readonly pins = new PinRegistry()
-  private readonly heightObserver = new HeightObserver((values) => this.applyMeasurements(values))
+  private readonly heightObserver = new HeightObserver(
+    (values) => this.applyMeasurements(values),
+    undefined,
+    () => this.doc.viewScale?.geometryScale ?? 1,
+  )
   private readonly absolutePlacementVisibility: AbsolutePlacementVisibilityIndex
   private readonly subscriptions = new Subscription()
   private blockIds: string[] = []
@@ -178,6 +182,9 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     this.syncBlockViewLeases()
     this.syncFullDocumentViewLease()
     this.subscriptions.add(this.doc.model.structureChange$.subscribe(change => this.handleStructureChange(change)))
+    if (this.doc.viewScale?.scale$) {
+      this.subscriptions.add(this.doc.viewScale.scale$.subscribe(() => this.schedule()))
+    }
     const objectSizing = this.doc.objectSizing
     if (objectSizing?.widthChange$) {
       this.subscriptions.add(
@@ -623,28 +630,42 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     const rootContainer = this.doc.root.childrenRenderRef!.containerElement
     const rootRect = rootContainer.getBoundingClientRect()
     const viewportRect = this.scrollContainer.getBoundingClientRect()
-    const currentScrollTop = Math.max(0, viewportRect.top - rootRect.top)
+    const currentScrollTop = this._visualToLayout(
+      Math.max(0, viewportRect.top - rootRect.top),
+    )
+    const layoutViewportHeight = this._visualToLayout(
+      this.scrollContainer.clientHeight || viewportRect.height,
+    )
     const structureRestore = this.pendingStructureAnchor
       ? restoreProjectedScrollAnchor(
           this.pendingStructureAnchor,
           (id) => this.indexById.get(id) ?? -1,
           this.layoutProjection,
           currentScrollTop,
-          this.scrollContainer.clientHeight || viewportRect.height,
+          layoutViewportHeight,
         )
       : null
     const scrollTop = structureRestore?.scrollTop ?? currentScrollTop
-    const viewportHeight =
-      this.scrollContainer.clientHeight || viewportRect.height
+    const viewportHeight = layoutViewportHeight
     const viewport = calculateProjectedViewportRange(
       this.layoutProjection,
       scrollTop,
       viewportHeight,
       this.config.overscan,
     )
+    const configuredPlacementOriginY = Number.parseFloat(
+      rootContainer.style.getPropertyValue(
+        '--bc-placement-content-origin-y',
+      ),
+    )
+    const absoluteViewportTop = scrollTop - (
+      Number.isFinite(configuredPlacementOriginY)
+        ? configuredPlacementOriginY
+        : 0
+    )
     const visibleAbsoluteLayouts = this.absolutePlacementVisibility
       .visibleLayoutIds(
-        scrollTop,
+        absoluteViewportTop,
         viewportHeight,
         viewportHeight * ABSOLUTE_PLACEMENT_OVERSCAN_VIEWPORTS,
       )
@@ -1136,7 +1157,9 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     const measuredCorrection = host
       ? host.getBoundingClientRect().top - this.scrollContainer.getBoundingClientRect().top - snapshot.relativeOffset
       : Number.NaN
-    const correction = Number.isFinite(measuredCorrection) ? measuredCorrection : estimated.correctionPx
+    const correction = Number.isFinite(measuredCorrection)
+      ? measuredCorrection
+      : this._layoutToVisual(estimated.correctionPx)
     if (Math.abs(correction) < 0.5) return
 
     this.scrollContainer.scrollTop += correction
@@ -1210,10 +1233,12 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
         (id) => this.indexById.get(id) ?? -1,
         this.layoutProjection,
         viewportTop,
-        this.scrollContainer.clientHeight,
+        this._visualToLayout(this.scrollContainer.clientHeight),
       )
       if (restored && Math.abs(restored.correctionPx) >= 0.5) {
-        this.scrollContainer.scrollTop += restored.correctionPx
+        this.scrollContainer.scrollTop += this._layoutToVisual(
+          restored.correctionPx,
+        )
       }
     }
     this.schedule()
@@ -1222,7 +1247,20 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   private getViewportTop(): number {
     if (!this.scrollContainer) return 0
     const rootContainer = this.doc.root.childrenRenderRef!.containerElement
-    return Math.max(0, this.scrollContainer.getBoundingClientRect().top - rootContainer.getBoundingClientRect().top)
+    return this._visualToLayout(
+      Math.max(
+        0,
+        this.scrollContainer.getBoundingClientRect().top - rootContainer.getBoundingClientRect().top,
+      ),
+    )
+  }
+
+  private _visualToLayout(value: number): number {
+    return this.doc.viewScale?.visualToLayout(value) ?? value
+  }
+
+  private _layoutToVisual(value: number): number {
+    return this.doc.viewScale?.layoutToVisual(value) ?? value
   }
 
   private validateProjection(projection: VerticalLayoutProjection): void {
@@ -1284,7 +1322,9 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     const container = this.scrollContainer
     if (!container) return
     const viewportRect = container.getBoundingClientRect()
-    const viewportHeight = container.clientHeight || viewportRect.height
+    const viewportHeight = this._visualToLayout(
+      container.clientHeight || viewportRect.height,
+    )
     if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return
 
     const targetPosition = this.layoutProjection.contentOffsetAt(index)
@@ -1298,7 +1338,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     )
     const correction = desiredViewportTop - this.getViewportTop()
     if (Number.isFinite(correction) && Math.abs(correction) >= BLOCK_NAVIGATION_EPSILON) {
-      container.scrollTop += correction
+      container.scrollTop += this._layoutToVisual(correction)
     }
   }
 

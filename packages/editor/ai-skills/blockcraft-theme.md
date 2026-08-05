@@ -174,6 +174,19 @@ Read `themes/base.scss` and `themes/variables.scss` for the current variable lis
 > - Headings use `line-height: var(--bc-lh)` directly — the ratio already scales against each
 >   heading's enlarged `font-size`, so no `* N` multiplier is needed.
 
+### Whole-document visual scale
+
+`doc.viewScale.attach(surface)` applies an inline CSS `zoom` plus the public
+`data-bc-view-scale` attribute to the supplied host surface. The surface is
+host-owned and should wrap only document chrome/content that must scale; fixed
+toolbars and zoom controls should remain outside it. Do not add a competing
+`transform: scale(...)` or CSS `zoom` to BlockCraft roots, pagination surfaces
+or root block hosts—the manager uses the browser's effective layout/visual
+ratio to keep virtualization and pointer placement coordinates consistent.
+
+BlockCraft restores the surface's previous inline `zoom` value and attribute on
+detach/destroy. Print and PDF rendering do not inherit this live-view scale.
+
 ### Table Block Fullscreen View
 
 Defined in `themes/variables.scss`; theme-neutral defaults (override per theme if needed):
@@ -181,9 +194,9 @@ Defined in `themes/variables.scss`; theme-neutral defaults (override per theme i
 | Variable | Default | Purpose |
 |---|---|---|
 | `--bc-table-fullscreen-z` | `800` | z-index of the fullscreen table container (kept below `1000` so CDK Overlay panes — structure-toolbar, float-toolbar, mention panel — naturally float above the table) |
-| `--bc-table-fullscreen-mask-z` | `799` | z-index of the dimming mask (just below the table) |
-| `--bc-table-fullscreen-overlay-bg` | `rgba(0, 0, 0, 0.55)` | Dimming color over the underlying document |
-| `--bc-table-fullscreen-padding` | `40px` | Inner padding between viewport edge and the table |
+| `--bc-table-fullscreen-mask-z` | `799` | Reserved compatibility token for the former dimming-mask implementation |
+| `--bc-table-fullscreen-overlay-bg` | `rgba(0, 0, 0, 0.55)` | Reserved compatibility token for the former dimming-mask implementation |
+| `--bc-table-fullscreen-padding` | `24px` | Horizontal padding between viewport edge and the table |
 | `--bc-table-fullscreen-radius` | `8px` | Corner radius (overridden to `0` in the default `is-fullscreen` rule) |
 | `--bc-table-fullscreen-bg` | `var(--bc-bg-elevated, #fff)` | Background color behind the table while fullscreen |
 
@@ -193,11 +206,19 @@ Companion class names (also part of the public CSS contract):
 - `.bc-table-fullscreen-btn` — hover button at the top-right of every table block
 - `body.bc-table-fullscreen-lock` — applied to `<body>` to suppress background scrolling while a table is fullscreen
 
-Override examples (dark theme could darken the mask, adjust bg):
+Fullscreen is a viewport-isolated view: while the body lock is active, the host
+application tree is hidden with inherited `visibility` and only the active table
+is restored. The table remains at its Angular-owned DOM position so pagination,
+virtualization and collaborative block reconciliation keep ownership of the same
+node. A host document scale attached through `doc.viewScale` is cancelled on the
+fullscreen table host and restored exactly on exit; table-local fullscreen zoom
+continues to work independently. CDK overlay containers remain visible for menus
+opened from the table.
+
+Override example (dark theme can adjust the isolated fullscreen background):
 
 ```scss
 body[blockcraft-theme="dark"] {
-  --bc-table-fullscreen-overlay-bg: rgba(0, 0, 0, 0.7);
   --bc-table-fullscreen-bg: var(--bc-bg-primary, #171d24);
 }
 ```
@@ -244,6 +265,14 @@ element, but need not be: the former owns scrolling/background while the latter
 owns page/content centering and their shared coordinate origin. These are
 plugin-owned states: host code may style them but must not add/remove them
 directly.
+
+Absolute block placement remains relative to the root children container in
+both continuous and paginated views. Pagination publishes the deterministic
+`--bc-placement-content-origin-y` runtime value, equal to the root's effective
+top content padding, and placement rendering, pointer geometry and virtual
+visibility all consume that same origin. Themes must not override it. A
+projected host `documentHeader` must never introduce a separately measured
+offset.
 
 Oversized table-cell continuation additionally owns
 `.bc-pagination-cell-flow-gap`, `.bc-pagination-table-flow-mask`,

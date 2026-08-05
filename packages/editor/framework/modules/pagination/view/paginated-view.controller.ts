@@ -659,19 +659,37 @@ export class PaginatedViewController {
   }
 
   private _refreshGeometry(): void {
-    const extraTop = this._documentHeaderHeight
-      + (this._documentHeaderHeight > 0 ? this._documentHeaderLayer?.gap ?? 0 : 0);
+    const extraTop = this._documentHeaderExtraTop();
     this._geom = resolveScreenGeometry(this._config, {firstPageExtraTop: extraTop});
   }
 
   private _documentHeaderLayout(): {top: number; width: number} {
     return {
-      top: 24 + this._geom.margins.top + this._geom.headerHeight,
+      top: 24 + this._documentHeaderTop(),
       width: Math.max(
         1,
         this._geom.sheetWidthPx - this._geom.margins.left - this._geom.margins.right,
       ),
     };
+  }
+
+  private _documentHeaderTop(): number {
+    if (this.options.documentHeader?.placement !== 'top-margin') {
+      return this._geom.margins.top + this._geom.headerHeight;
+    }
+    const topInset = this.options.documentHeader.topInset ?? 20;
+    return Number.isFinite(topInset) && topInset >= 0 ? topInset : 20;
+  }
+
+  private _documentHeaderExtraTop(): number {
+    if (this._documentHeaderHeight <= 0) return 0;
+    const gap = this._documentHeaderLayer?.gap ?? 0;
+    if (this.options.documentHeader?.placement !== 'top-margin') {
+      return this._documentHeaderHeight + gap;
+    }
+    const bodyTop = this._geom.margins.top + this._geom.headerHeight;
+    const headerEnd = this._documentHeaderTop() + this._documentHeaderHeight + gap;
+    return Math.max(0, headerEnd - bodyTop);
   }
 
   private _mountDocumentHeader(): void {
@@ -779,12 +797,10 @@ export class PaginatedViewController {
     root.style.setProperty('--bc-page-content-height', `${this._geom.geometry.contentHeight}px`);
     // 正文上下内边距要把页眉/页脚带也让出来，使首块落在「页边距 + 页眉」之下、
     // 与背景层里 header 之下的内容区顶对齐（contentHeight 已扣除页眉/页脚）。
-    const documentHeaderOffset = this._documentHeaderHeight
-      + (this._documentHeaderHeight > 0 ? this._documentHeaderLayer?.gap ?? 0 : 0);
-    root.style.setProperty(
-      '--bc-page-margin-top',
-      `${margins.top + headerHeight + documentHeaderOffset}px`,
-    );
+    const documentHeaderOffset = this._documentHeaderExtraTop();
+    const contentOriginY = margins.top + headerHeight + documentHeaderOffset;
+    root.style.setProperty('--bc-page-margin-top', `${contentOriginY}px`);
+    root.style.setProperty('--bc-placement-content-origin-y', `${contentOriginY}px`);
     root.style.setProperty('--bc-page-margin-bottom', `${margins.bottom + footerHeight}px`);
     root.style.setProperty('--bc-page-margin-right', `${margins.right}px`);
     root.style.setProperty('--bc-page-margin-left', `${margins.left}px`);
@@ -795,7 +811,7 @@ export class PaginatedViewController {
   private _removeContainerStyles(): void {
     const root = this.doc.root.hostElement;
     root.classList.remove('bc-paginated');
-    ['--bc-page-width', '--bc-page-content-height', '--bc-page-margin-top', '--bc-page-margin-right', '--bc-page-margin-bottom', '--bc-page-margin-left']
+    ['--bc-page-width', '--bc-page-content-height', '--bc-page-margin-top', '--bc-page-margin-right', '--bc-page-margin-bottom', '--bc-page-margin-left', '--bc-placement-content-origin-y']
       .forEach(p => root.style.removeProperty(p));
     this.scrollContainer.classList.remove('bc-paginated-scroll');
   }

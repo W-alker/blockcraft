@@ -72,7 +72,12 @@ export class DocumentHeaderLayer {
   }
 
   measure(): number {
-    const height = this.element?.getBoundingClientRect().height ?? 0;
+    // offsetHeight / ResizeObserver borderBoxSize 都是 layout px，不受外层
+    // DocumentViewScaleManager 的视觉缩放影响。
+    const offsetHeight = this.element?.offsetHeight ?? 0;
+    const height = offsetHeight > 0
+      ? offsetHeight
+      : this.element?.getBoundingClientRect().height ?? 0;
     this.setHeight(height);
     return this.height;
   }

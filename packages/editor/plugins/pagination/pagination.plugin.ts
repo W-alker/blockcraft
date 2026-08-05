@@ -47,6 +47,7 @@ export class PaginationPlugin extends DocPlugin {
   private _exportQueue: Promise<void> = Promise.resolve()
   private _exportAbort = new AbortController()
   private _releaseFullDocumentViewLease: (() => void) | null = null
+  private _deferredEnableFrame = 0
   private readonly _experimentalSparseView: boolean
   private readonly _documentHeader?: PaginationDocumentHeaderOptions
 
@@ -88,6 +89,7 @@ export class PaginationPlugin extends DocPlugin {
   disable(): void {
     if (!this._enabled) return
     this._enabled = false
+    this._cancelDeferredEnable()
     try {
       this._controller?.disable()
     } finally {
@@ -188,6 +190,7 @@ export class PaginationPlugin extends DocPlugin {
     this._destroyed = true
     this._registered = false
     this._enabled = false
+    this._cancelDeferredEnable()
     this._exportAbort.abort()
     try {
       this._controller?.destroy()
@@ -200,7 +203,22 @@ export class PaginationPlugin extends DocPlugin {
   private _enableController(): void {
     if (!this.doc.isInitialized) {
       this.doc.afterInit(() => {
-        if (this._enabled && !this._destroyed) this._enableController()
+        if (!this._enabled || this._destroyed) return
+        // Root virtualization finishes wiring its continuous projection during
+        // document initialization. Initial sparse pagination must take over in
+        // the next frame instead of re-entering that initialization callback.
+        const view = this.doc.root.hostElement.ownerDocument.defaultView
+        if (!view) {
+          queueMicrotask(() => {
+            if (this._enabled && !this._destroyed) this._enableController()
+          })
+          return
+        }
+        this._cancelDeferredEnable()
+        this._deferredEnableFrame = view.requestAnimationFrame(() => {
+          this._deferredEnableFrame = 0
+          if (this._enabled && !this._destroyed) this._enableController()
+        })
       })
       return
     }
@@ -242,6 +260,13 @@ export class PaginationPlugin extends DocPlugin {
       this._releaseFullDocumentViews()
       throw error
     }
+  }
+
+  private _cancelDeferredEnable(): void {
+    if (!this._deferredEnableFrame) return
+    const view = this.doc?.root?.hostElement?.ownerDocument?.defaultView
+    view?.cancelAnimationFrame(this._deferredEnableFrame)
+    this._deferredEnableFrame = 0
   }
 
   private _releaseFullDocumentViews(): void {

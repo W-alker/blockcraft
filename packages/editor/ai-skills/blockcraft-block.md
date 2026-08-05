@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-04
+> Last updated: 2026-08-05
 
 ## Block Types
 
@@ -556,6 +556,11 @@ Stale placement props on a flow-only Schema are ignored. A nested object cannot
 enter absolute placement in this phase. The infrastructure Schema accepts
 future custom positionable flavours; normalization keeps a child there only
 when its own Schema declares absolute capability and its placement is absolute.
+Live pagination moves the placement-layout to the root's effective content
+origin through the runtime `--bc-placement-content-origin-y` value. The same
+deterministic value is used by pointer geometry and virtual visibility; it is
+derived from page margins/header bands rather than DOM displacement and is
+never stored in `placement.y`.
 
 Use the user-facing object-layout API rather than exposing positioning modes:
 

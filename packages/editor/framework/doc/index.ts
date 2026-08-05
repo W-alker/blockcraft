@@ -43,6 +43,7 @@ import {
   BlockPlacementManager,
 } from '../services/block-placement.manager'
 import {BlockObjectSizingManager} from '../services/block-object-sizing.manager'
+import {DocumentViewScaleManager} from '../services/document-view-scale.manager'
 import {
   BlockMutationPolicy,
   BlockMutationPolicyManager,
@@ -111,6 +112,7 @@ export class BlockCraftDoc {
   readonly selection = new SelectionManager(this)
   readonly clipboard = new ClipboardManager(this)
   readonly inputManger = new InputTransformer(this)
+  readonly viewScale = new DocumentViewScaleManager()
   readonly virtualization = new RootVirtualizationManager(this, this.config.virtualization)
   private readonly blockNavigation = new BlockNavigationManager(this)
 
@@ -252,6 +254,7 @@ export class BlockCraftDoc {
     this._subsystemsDisposed = true
     this.blockNavigation.destroy()
     this.virtualization.dispose()
+    this.viewScale.destroy()
     this.objectSizing.destroy()
     this.model.destroy()
     this.placement.destroy()

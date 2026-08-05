@@ -877,22 +877,30 @@
   }
 }
 
-// 表格全屏期间 body 锁滚动 + 全屏遮罩
+// 表格全屏期间锁定 body，并把宿主应用的其余视觉层隔离出去。
 //
-// 遮罩放在 body 层而不是表格内的 ::before，因为表格 .is-fullscreen 自己是
-// position: fixed + z-index: 800 → 会建立独立的 stacking context；
-// 内部的 ::before 即便 z-index 设很低，也只在「该子 context」内排序，
-// 反而会盖到表格内容上。body ::before 是兜底背景，z-index 在全局 stacking
-// 里低于表格容器，所以表格内容能正确地浮在遮罩之上。
+// 不能只依赖 z-index：宿主的分页纸张、文档缩放面、绝对定位对象和固定工具栏
+// 可能各自在独立 stacking context 内。全屏表格仍留在 Angular / 虚拟渲染拥有的
+// 原 DOM 位置（不能 portal，否则块树重排会把它抢回去），因此这里用 visibility
+// 建立视图隔离；visibility 允许全屏表格子树显式恢复可见，同时不改变宿主布局、
+// scrollHeight 或分页测量。CDK overlay container 保留，供表格内下拉菜单使用。
 body.bc-table-fullscreen-lock {
   overflow: hidden;
-  //
-  //&::before {
-  //  content: '';
-  //  position: fixed;
-  //  inset: 0;
-  //  background: var(--bc-table-fullscreen-overlay-bg);
-  //  z-index: var(--bc-table-fullscreen-mask-z);
-  //  pointer-events: none;
-  //}
+  background: var(--bc-table-fullscreen-bg);
+
+  > :not(.cdk-overlay-container) {
+    visibility: hidden !important;
+  }
+
+  // Fullscreen table stays inside the hidden application tree so Angular,
+  // pagination and virtualization retain DOM ownership. Restore only this subtree.
+  .table-block.is-fullscreen {
+    visibility: visible !important;
+  }
+
+  // CDK overlays created by table controls must remain usable above the table.
+  > .cdk-overlay-container {
+    visibility: visible !important;
+    z-index: calc(var(--bc-table-fullscreen-z) + 1);
+  }
 }

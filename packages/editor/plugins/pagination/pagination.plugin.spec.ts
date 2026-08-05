@@ -77,6 +77,40 @@ describe('PaginationPlugin', () => {
     expect(plugin.config.margins).toEqual({top: 40, left: 20, bottom: 30})
   })
 
+  it('applies an initially enabled view when document initialization completes', () => {
+    const {doc, rootHost} = createDoc()
+    const afterInitCallbacks: Array<() => void> = []
+    const mutableDoc = doc as unknown as {
+      isInitialized: boolean
+      afterInit(callback: () => void): void
+    }
+    mutableDoc.isInitialized = false
+    mutableDoc.afterInit = callback => afterInitCallbacks.push(callback)
+    let deferredEnable: FrameRequestCallback | undefined
+    spyOn(window, 'requestAnimationFrame').and.callFake(callback => {
+      deferredEnable = callback
+      return 1
+    })
+    const plugin = new PaginationPlugin({enabled: true})
+    ;(plugin as unknown as {doc: BlockCraft.Doc}).doc = doc
+
+    plugin.init()
+
+    expect(plugin.enabled).toBeTrue()
+    expect(rootHost.classList.contains('bc-paginated')).toBeFalse()
+    expect(afterInitCallbacks.length).toBe(1)
+
+    mutableDoc.isInitialized = true
+    afterInitCallbacks[0]()
+
+    expect(rootHost.classList.contains('bc-paginated')).toBeFalse()
+    expect(deferredEnable).toBeDefined()
+    deferredEnable!(0)
+
+    expect(rootHost.classList.contains('bc-paginated')).toBeTrue()
+    plugin.destroy()
+  })
+
   it('enables and disables idempotently without leaving pagination DOM', () => {
     const {doc, rootHost, scrollContainer} = createDoc()
     const plugin = new PaginationPlugin()
@@ -189,6 +223,8 @@ describe('PaginationPlugin', () => {
     expect(documentHeader.style.width).toBe('649px')
     expect(documentHeader.style.top).toBe('96px')
     expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('208px')
+    // 绝对块使用与正文 padding 完全相同的确定性内容起点；不依赖投影前后测量。
+    expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('208px')
     expect(layoutSurface.querySelector(':scope > .bc-pagination-backdrop')).not.toBeNull()
     expect(scrollContainer.contains(layoutSurface)).toBeTrue()
 
@@ -198,6 +234,40 @@ describe('PaginationPlugin', () => {
     expect(documentHeader.nextElementSibling).toBe(editorWrapper)
     expect(documentHeader.classList.contains('bc-pagination-document-header')).toBeFalse()
     expect(documentHeader.style.cssText).toBe('')
+
+    plugin.enable()
+    expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('208px')
+    plugin.disable()
+    expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('')
+    plugin.destroy()
+    scrollContainer.remove()
+  })
+
+  it('can place a custom document header inside the first-page top margin', () => {
+    const {doc, rootHost, scrollContainer} = createDoc()
+    const documentHeader = document.createElement('section')
+    scrollContainer.prepend(documentHeader)
+    document.body.append(scrollContainer)
+    Object.defineProperty(documentHeader, 'offsetHeight', {value: 120})
+    const plugin = new PaginationPlugin({
+      pageSize: {width: 793, height: 1123},
+      margins: {top: 96, right: 96, bottom: 96, left: 96},
+      documentHeader: {
+        element: documentHeader,
+        placement: 'top-margin',
+        topInset: 20,
+        gap: 16,
+      },
+    })
+    ;(plugin as unknown as {doc: BlockCraft.Doc}).doc = doc
+    plugin.init()
+    plugin.enable()
+
+    expect(documentHeader.style.top).toBe('44px')
+    // body top = 96；header end = 20 + 120 + 16，因此只额外扣除 60。
+    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('156px')
+    expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('156px')
+
     plugin.destroy()
     scrollContainer.remove()
   })

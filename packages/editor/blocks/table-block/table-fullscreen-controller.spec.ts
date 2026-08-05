@@ -65,6 +65,54 @@ describe('TableFullscreenController', () => {
       expect(document.body.classList.contains('bc-table-fullscreen-lock')).toBe(false)
     })
 
+    it('keeps Angular DOM ownership, editability and focus across fullscreen', () => {
+      const parent = document.createElement('section')
+      const before = document.createElement('div')
+      const editor = document.createElement('div')
+      editor.contentEditable = 'true'
+      parent.append(before, host)
+      host.appendChild(editor)
+      document.body.appendChild(parent)
+      editor.focus()
+
+      controller.set(true)
+      expect(host.parentElement).toBe(parent)
+      expect(host.previousElementSibling?.classList.contains('bc-table-fullscreen-placeholder')).toBe(true)
+      expect(editor.contentEditable).toBe('true')
+      expect(document.activeElement).toBe(editor)
+
+      controller.set(false)
+      expect(host.parentElement).toBe(parent)
+      expect(host.previousElementSibling).toBe(before)
+      expect(editor.contentEditable).toBe('true')
+      expect(document.activeElement).toBe(editor)
+
+      parent.remove()
+    })
+
+    it('cancels host document zoom only while fullscreen is open', () => {
+      controller.destroy()
+      host.style.zoom = '1.25'
+      controller = new TableFullscreenController(host, () => null, () => 0.5)
+
+      controller.set(true)
+      expect(Number(host.style.zoom)).toBeCloseTo(2.5, 4)
+
+      controller.set(false)
+      expect(host.style.zoom).toBe('1.25')
+    })
+
+    it('removes temporary zoom when the host had no inline zoom', () => {
+      controller.destroy()
+      controller = new TableFullscreenController(host, () => null, () => 0.8)
+
+      controller.set(true)
+      expect(Number(host.style.zoom)).toBeCloseTo(1.25, 4)
+      controller.set(false)
+
+      expect(host.style.getPropertyValue('zoom')).toBe('')
+    })
+
     it('keeps an inert normal-flow placeholder only while fullscreen is open', () => {
       spyOn(host, 'getBoundingClientRect').and.returnValue({
         top: 100,

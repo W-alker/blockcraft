@@ -319,6 +319,8 @@ const pagination = new PaginationPlugin({
   printShortcut: true,
   documentHeader: {
     element: () => hostDocumentHeader.nativeElement,
+    placement: 'top-margin',
+    topInset: 20,
     gap: 16,
   },
   // Phase C opt-in; keep false when exact live pagination is required.
@@ -341,13 +343,54 @@ pagination.disable()
 
 Do not add `pagination` to `DocConfig` and do not read `doc.pagination`. The plugin is the lifecycle owner and removes all layout DOM/CSS on disable or destroy. Host settings UI should read `pagination.config` and call `pagination.updateConfig(...)`; BlockCraft does not publish a pagination settings component. `experimentalSparseView` is a construction-time rollout option, is not included in `pagination.config`, defaults to `false`, and is effective only when root virtualization is enabled.
 
+When constructed with `enabled: true`, pagination waits until document
+initialization completes and activates on the following animation frame. This
+prevents sparse pagination from re-entering root virtualization while its
+continuous projection is still being wired. Hosts may keep their loading mask
+until that first paginated frame is painted.
+
 `documentHeader` is a construction-time live-layout option. It accepts an
-element or lazy resolver plus an optional gap. On enable the plugin temporarily
+element or lazy resolver plus an optional gap. `placement: 'content'` keeps the
+legacy behavior: the document header precedes and deducts from first-page body
+content. `placement: 'top-margin'` positions it from the sheet top using
+`topInset` (default 20px); only the part extending past the ordinary body start
+is deducted, so a compact host header can live entirely inside the top margin.
+On enable the plugin temporarily
 moves the connected element into the root pagination surface, constrains it to
 page content width, observes its border-box height and deducts that height only
 from the first page. Disable/destroy restores the original parent, sibling
 position and inline style; host code must not reparent it while pagination is
-enabled.
+enabled. If removing the header from its original normal flow moves the root,
+the plugin measures that displacement once and applies it only to the live
+`placement-layout` origin. Persisted root-relative `placement.x/y`, undo history
+and collaborative data are not rewritten when the view changes.
+
+### Whole-document view scale
+
+Visual zoom is a document service rather than pagination configuration. Attach
+the host-owned element that contains the document header and editor surface:
+
+```typescript
+doc.viewScale.attach(documentPage.nativeElement, {wheel: true})
+doc.viewScale.setScale(1.1)
+
+const subscription = doc.viewScale.change$.subscribe(change => {
+  // Persist per-user/per-document preferences in the host application.
+  console.log(change.scale, change.source)
+})
+```
+
+`setScale()` accepts a ratio and clamps it to 0.5–2.0. `zoomIn()`, `zoomOut()`
+and `reset()` use 10% steps. `scale$`, `change$`, `value` and `geometryScale`
+are public reads. `layoutToVisual()` / `visualToLayout()` are available for
+host-owned pointer geometry; BlockCraft's virtualization and placement paths
+already normalize themselves. Call `attach()` again to move ownership to a new
+surface, or destroy the document to restore the original inline `zoom` style
+and wheel listener. Print/PDF use a separate readonly render and remain at 100%.
+
+Fit-width and fit-page are intentionally not framework modes because available
+space belongs to the host chrome. Persist the mode in the host, observe its
+viewport, recompute the ratio, and pass it to `setScale()`.
 
 ### Paginated PDF and Printing
 

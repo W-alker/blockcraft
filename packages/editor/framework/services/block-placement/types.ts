@@ -90,6 +90,8 @@ export interface PlacementBox {
   originX: number
   originY: number
   width: number
+  /** 实测 visual px / layout px，比配置值更能覆盖 WebKit 的 CSS zoom 差异。 */
+  visualScale: number
 }
 
 /**

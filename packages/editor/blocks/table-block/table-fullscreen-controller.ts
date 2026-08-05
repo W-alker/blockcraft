@@ -25,9 +25,9 @@ interface FullscreenViewAnchor {
  * - `KeyboardEvent.key === 'Escape'` is consistent across Chrome / Safari / Firefox / Edge.
  * - `compositionstart` / `compositionend` are observed on the host with capture phase so
  *   any descendant composing (e.g. cell editor) is detected.
- * - `position: fixed` for the host (applied via the CSS class) is interpreted relative to
- *   viewport unless an ancestor has `transform` / `filter` / `will-change` / `perspective`;
- *   host integration documentation calls this out.
+ * - The host remains in its Angular-owned DOM position. Fullscreen isolation is handled by
+ *   the body lock stylesheet, while an inverse host `zoom` cancels a host-owned document
+ *   view scale. This avoids reparenting the block out of pagination / virtualization trees.
  *
  * Lifetime is tied to the owning component: call {@link destroy} from the component's
  * destroy hook to guarantee body-class cleanup (otherwise a destroyed-while-fullscreen
@@ -66,6 +66,7 @@ export class TableFullscreenController {
   private viewAnchorFrames = 0
   private viewAnchorStableFrames = 0
   private flowPlaceholder: HTMLElement | null = null
+  private originalHostZoom: string | null = null
 
   private readonly compositionStartHandler = (): void => {
     this.isImeComposing = true
@@ -89,8 +90,14 @@ export class TableFullscreenController {
    * `passive: false` 是为了 preventDefault 拦截浏览器的页面缩放。
    */
   private readonly wheelHandler = (e: WheelEvent): void => {
+    const target = e.target
+    if (!(target instanceof Node) || !this.host.contains(target)) return
     if (!(e.ctrlKey || e.metaKey)) return
     e.preventDefault()
+    // This listener runs on document capture, before a host document-scale surface.
+    // A fullscreen table owns Ctrl/Cmd+wheel exclusively; otherwise one gesture would
+    // change both the table zoom and the document zoom underneath it.
+    e.stopImmediatePropagation()
     const direction = e.deltaY < 0 ? 1 : -1
     this.setZoom(this.zoom$.value + direction * TableFullscreenController.ZOOM_STEP)
   }
@@ -98,6 +105,7 @@ export class TableFullscreenController {
   constructor(
     private readonly host: HTMLElement,
     private readonly resolveScrollContainer: () => HTMLElement | null = () => null,
+    private readonly resolveDocumentScale: () => number = () => 1,
   ) {
     this.host.addEventListener('compositionstart', this.compositionStartHandler, { capture: true })
     this.host.addEventListener('compositionend', this.compositionEndHandler, { capture: true })
@@ -143,17 +151,19 @@ export class TableFullscreenController {
 
     if (value) {
       this.host.classList.add(HOST_CLASS)
+      this.installDocumentScaleCompensation()
       document.body.classList.add(BODY_CLASS)
       document.addEventListener('keydown', this.escHandler, { capture: true })
-      this.host.addEventListener('wheel', this.wheelHandler, { passive: false, capture: true })
+      document.addEventListener('wheel', this.wheelHandler, { passive: false, capture: true })
     } else {
       // 占位符移除与 fixed class 撤销之间不做任何布局读取，浏览器只会看到
       // 最终的普通流，不会在中间态先 clamp scrollTop。
       this.removeFlowPlaceholder()
       this.host.classList.remove(HOST_CLASS)
+      this.removeDocumentScaleCompensation()
       document.body.classList.remove(BODY_CLASS)
       document.removeEventListener('keydown', this.escHandler, { capture: true })
-      this.host.removeEventListener('wheel', this.wheelHandler, { capture: true })
+      document.removeEventListener('wheel', this.wheelHandler, { capture: true })
       // 退出全屏 → 重置缩放
       if (this.zoom$.value !== 1) this.zoom$.next(1)
       // `position: fixed` 恢复为普通流后，先在本帧恢复一次，避免退出时先闪到
@@ -164,6 +174,32 @@ export class TableFullscreenController {
     }
 
     this.state$.next(value)
+  }
+
+  /**
+   * A BlockCraft document can be visually scaled by a host surface using CSS `zoom`.
+   * A fixed descendant still inherits that scale, so a nominal viewport-sized table
+   * becomes a small sheet floating over the document. Apply the reciprocal scale to
+   * the fullscreen host only; normal-flow rendering is restored byte-for-byte on exit.
+   */
+  private installDocumentScaleCompensation(): void {
+    if (this.originalHostZoom !== null) return
+    this.originalHostZoom = this.host.style.getPropertyValue('zoom')
+    const scale = this.resolveDocumentScale()
+    if (!Number.isFinite(scale) || scale <= 0 || Math.abs(scale - 1) < 0.0001) return
+    const ownZoom = parseFloat(this.host.ownerDocument.defaultView
+      ?.getComputedStyle(this.host).zoom ?? '') || 1
+    this.host.style.setProperty('zoom', String(ownZoom / scale))
+  }
+
+  private removeDocumentScaleCompensation(): void {
+    if (this.originalHostZoom === null) return
+    if (this.originalHostZoom) {
+      this.host.style.setProperty('zoom', this.originalHostZoom)
+    } else {
+      this.host.style.removeProperty('zoom')
+    }
+    this.originalHostZoom = null
   }
 
   /**
@@ -319,6 +355,7 @@ export class TableFullscreenController {
     }
     this.cancelViewAnchorRestore()
     this.removeFlowPlaceholder()
+    this.removeDocumentScaleCompensation()
     this.host.removeEventListener('compositionstart', this.compositionStartHandler, { capture: true })
     this.host.removeEventListener('compositionend', this.compositionEndHandler, { capture: true })
     if (!this.state$.closed) {

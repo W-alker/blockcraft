@@ -215,8 +215,11 @@ export class BlockPlacementInteractionController {
         } catch {}
       }
       moveEvent.preventDefault()
+      const scale = Math.max(0.0001, this.doc.viewScale?.value ?? 1)
+      const layoutDx = dx / scale
+      const layoutDy = dy / scale
       host.style.transform =
-        `translate3d(${dx}px, ${dy}px, 0)` +
+        `translate3d(${layoutDx}px, ${layoutDy}px, 0)` +
         `${originalTransform ? ` ${originalTransform}` : ''}`
     }
     const onPointerUp = (upEvent: PointerEvent) => {
@@ -224,9 +227,10 @@ export class BlockPlacementInteractionController {
       const shouldCommit = moved && isLiveWritable()
       cleanup()
       if (!shouldCommit) return
+      const scale = Math.max(0.0001, this.doc.viewScale?.value ?? 1)
       this.updateAbsolute(block, {
-        x: start.x + (dx / box.width) * 100,
-        y: start.y + dy,
+        x: start.x + ((dx / scale) / box.width) * 100,
+        y: start.y + dy / scale,
       })
     }
     const onPointerCancel = (cancelEvent: PointerEvent) => {

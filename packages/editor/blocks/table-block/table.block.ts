@@ -582,6 +582,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     grid: TableModelGrid
     spans: Array<{cellId: string; startRow: number; endRow: number}>
   } | null = null
+  /**
+   * 全屏是纯视图 overlay，不能让 fixed/padding/zoom 后的 DOM 尺寸污染分页 GeometryIndex。
+   * 进入前保留最后一份普通流自然几何；全屏期间所有分页测量复用该快照。
+   */
+  private _normalFlowPaginationGeometry: TablePaginationGeometry | null = null
   private _releaseTablePaginationAccess = registerTablePaginationAccess(this, {
     measure: options => this._getPaginationGeometry(options),
     apply: breaks => this._applyPaginationBreaks(breaks),
@@ -612,6 +617,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.fullscreenController = new TableFullscreenController(
       this.hostElement,
       () => this.doc.scrollContainer,
+      () => this.doc.viewScale?.value ?? 1,
     )
     // 进入/退出全屏：
     //  1. 销毁任何 CDK Overlay 形式的结构工具栏（普通态 → 全屏：切换到模板内联渲染；
@@ -620,7 +626,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     //  3. 根据当前选区重新触发 menu 状态同步，保证切换后 toolbar 立即可见
     this.fullscreenController.state$
       .pipe(takeUntil(this.onDestroy$))
-      .subscribe(() => {
+      .subscribe(isFullscreen => {
+        // state$ 在 controller 完成 class/zoom 切换后发出。退出时立即放开快照，
+        // 后续 ResizeObserver 只需提交一次真实普通流几何。
+        if (!isFullscreen) this._normalFlowPaginationGeometry = null
         this._disposeToolbar()
         this.cdrLocal.markForCheck()
         Promise.resolve().then(() => this.refreshTableMenuFromSelection())
@@ -743,11 +752,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   /** 切换全屏视图。 */
   toggleFullscreen(): void {
+    if (!this.isFullscreen) this._captureNormalFlowPaginationGeometry()
     this.fullscreenController?.toggle()
   }
 
   /** 显式设置全屏视图状态。 */
   setFullscreen(value: boolean): void {
+    if (value && !this.isFullscreen) this._captureNormalFlowPaginationGeometry()
     this.fullscreenController?.set(value)
   }
 
@@ -2393,7 +2404,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private _actualCssZoom(): number {
     if (!cssZoomDeclarationSupported()) return 1
-    return this.fullscreenController?.zoom$.value ?? 1
+    const fullscreenZoom = this.fullscreenController?.zoom$.value ?? 1
+    const documentZoom = this.doc.viewScale?.value ?? 1
+    // FullscreenController cancels the host document zoom on the fixed table host,
+    // so only the table-local zoom remains in the visual coordinate system.
+    return this.fullscreenController?.isFullscreen
+      ? fullscreenZoom
+      : documentZoom
   }
 
   private _zoomFactorForBcrMeasure(): number {
@@ -2577,6 +2594,28 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   private _getPaginationGeometry(
+    options?: TablePaginationMeasureOptions,
+  ): TablePaginationGeometry {
+    // 全屏 DOM 的 fixed box、64px padding 和用户 zoom 都不是文档流几何。
+    // 若把它们送进分页引擎，退出时会先恢复分页投影、再恢复 viewport anchor，
+    // 与虚拟化自己的 anchor transaction 形成多帧互相修正。
+    if (this.fullscreenController?.isFullscreen && this._normalFlowPaginationGeometry) {
+      return this._normalFlowPaginationGeometry
+    }
+
+    const geometry = this._measurePaginationGeometryWithoutFullscreen(options)
+    if (!this.fullscreenController?.isFullscreen) {
+      this._normalFlowPaginationGeometry = geometry
+    }
+    return geometry
+  }
+
+  private _captureNormalFlowPaginationGeometry(): void {
+    if (this._normalFlowPaginationGeometry || !this.hostElement?.isConnected) return
+    this._normalFlowPaginationGeometry = this._measurePaginationGeometryWithoutFullscreen()
+  }
+
+  private _measurePaginationGeometryWithoutFullscreen(
     options?: TablePaginationMeasureOptions,
   ): TablePaginationGeometry {
     if (
@@ -3865,8 +3904,20 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     )
     const handleVisualWidth = TABLE_COL_RESIZE_HIT_WIDTH
       * this._zoomFactorForVisualSize()
+    const wrapperVisualWidth = this._visualDistanceFromBcr(wrapperRect.width)
+    // The hit target is normally centred on the column boundary. At the last
+    // column that would leave half of its 12px box outside the wrapper, and an
+    // absolutely positioned descendant still expands the ancestor's
+    // scrollable overflow area. Clamp the whole hit target into the wrapper so
+    // a table that already fits does not gain a 6px horizontal scrollbar.
+    // Geometry-based capture still accepts the pointer just outside the visual
+    // boundary, so this does not narrow Safari's resize ownership seam.
+    const handleVisualLeft = Math.min(
+      Math.max(0, boundaryVisual - handleVisualWidth / 2),
+      Math.max(0, wrapperVisualWidth - handleVisualWidth),
+    )
     const handleLeft = this._stylePositionFromVisualDistance(
-      boundaryVisual - handleVisualWidth / 2,
+      handleVisualLeft,
     )
     bar.style.left = `${handleLeft}px`
     bar.style.right = 'auto'

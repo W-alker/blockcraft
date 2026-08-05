@@ -9,6 +9,7 @@ export class HeightObserver {
   constructor(
     private readonly onMeasurements: (measurements: HeightMeasurement[]) => void,
     factory: ResizeObserverFactory = (callback) => new ResizeObserver(callback),
+    private readonly readVisualScale: () => number = () => 1,
   ) {
     this.observer = typeof ResizeObserver === 'undefined' ? null : factory((entries) => this.handleEntries(entries))
   }
@@ -73,6 +74,12 @@ export class HeightObserver {
       return rect
     }
     const stride = readRect(next).top - readRect(target).top
-    return Number.isFinite(stride) && stride > 0 ? stride : undefined
+    const visualScale = this.readVisualScale()
+    const layoutStride = stride / (
+      Number.isFinite(visualScale) && visualScale > 0 ? visualScale : 1
+    )
+    return Number.isFinite(layoutStride) && layoutStride > 0
+      ? layoutStride
+      : undefined
   }
 }

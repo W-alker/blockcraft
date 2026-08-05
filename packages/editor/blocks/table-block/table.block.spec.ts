@@ -716,6 +716,28 @@ describe("TableBlockComponent column resize", () => {
     }
   });
 
+  it("keeps the last-column resize hit target inside the table wrapper", () => {
+    const harness = createResizeHarness();
+    // wrapper: x=10..310; the hovered cell ends exactly at the wrapper's
+    // right edge. Centring a 12px hit target there used to place it at x=304
+    // and expand the scroller by the remaining 6px.
+    harness.cell.getBoundingClientRect = () => new DOMRect(190, 30, 120, 60);
+
+    try {
+      harness.table._positionColumnResizeHandle("cell-1", harness.cell);
+
+      expect(harness.resizeBar.style.left).toBe("288px");
+      expect(Number.parseFloat(harness.resizeBar.style.left) + 12).toBe(300);
+      expect(harness.resizeBar.classList.contains("is-visible")).toBeTrue();
+      expect(harness.table._columnResizeHandleAnchor).toEqual({
+        cellId: "cell-1",
+        boundaryCell: harness.cell,
+      });
+    } finally {
+      harness.destroy();
+    }
+  });
+
   it("maps a paginated continuation handle back to the master model cell", () => {
     const harness = createResizeHarness();
     harness.cell.setAttribute("data-bc-pagination-master-cell-id", "master-cell");
@@ -1288,6 +1310,40 @@ describe("TableBlockComponent cell drag native-selection handoff", () => {
 });
 
 describe("TableBlockComponent pagination hot-path caches", () => {
+  it("keeps normal-flow pagination geometry stable while fullscreen is active", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const normalGeometry = {
+      naturalHeight: 1_200,
+      headerHeight: 0,
+      rows: [{id: "row-0", top: 0, bottom: 1_200, coveredFromAbove: false}],
+    };
+    const fullscreenGeometry = {
+      naturalHeight: 600,
+      headerHeight: 0,
+      rows: [{id: "row-0", top: 0, bottom: 600, coveredFromAbove: false}],
+    };
+    let fullscreen = false;
+    table.fullscreenController = {get isFullscreen() { return fullscreen; }};
+    table._normalFlowPaginationGeometry = null;
+    table._splitCells = new Set();
+    table._cellFlowMarkers = new Set();
+    table._cellFlowMasks = new Set();
+    const measure = spyOn(table, "_measurePaginationGeometryWithoutFullscreen")
+      .and.returnValues(normalGeometry, fullscreenGeometry);
+
+    expect(table._getPaginationGeometry({contentHeight: 800, widowOrphanLines: 2}))
+      .toBe(normalGeometry);
+    fullscreen = true;
+    expect(table._getPaginationGeometry({contentHeight: 800, widowOrphanLines: 2}))
+      .toBe(normalGeometry);
+    expect(measure).toHaveBeenCalledTimes(1);
+
+    fullscreen = false;
+    expect(table._getPaginationGeometry({contentHeight: 800, widowOrphanLines: 2}))
+      .toBe(fullscreenGeometry);
+    expect(measure).toHaveBeenCalledTimes(2);
+  });
+
   it("reuses model rowspan facts and ignores hidden continuation cells", () => {
     const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
     const master = {

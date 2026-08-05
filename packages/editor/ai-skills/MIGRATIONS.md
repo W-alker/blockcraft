@@ -74,6 +74,79 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v0.3.0-alpha.5 - 2026-08-05 (minor) — add host-controlled document scaling and margin header placement
+
+**Severity**: minor (additive prerelease API)
+
+**What changed**: `BlockCraftDoc` now exposes a `DocumentViewScaleManager` as
+`doc.viewScale`. It can attach one host-owned document surface, apply a clamped
+50%–200% visual scale, handle Ctrl/Cmd+wheel and publish scale changes while
+normalizing virtualization, block placement and table-fullscreen coordinates.
+`PaginationDocumentHeaderOptions` also adds `placement: 'top-margin'` and
+`topInset` so host document chrome can occupy the first sheet's top margin
+without automatically consuming the same height from body content.
+
+**Why**: Host applications need Word-like whole-document zoom without changing
+stored font sizes, and custom document headers must share one coordinate system
+with live sheets while preserving ordinary page margins.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-theme.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `DocumentViewScaleManager`, `DocumentViewScaleAttachOptions`,
+  `DocumentViewScaleChange` and `DocumentViewScaleChangeSource`.
+- `doc.viewScale` with `attach`, `detach`, `setScale`, `zoomIn`, `zoomOut`,
+  `reset`, `layoutToVisual`, `visualToLayout`, `scale$` and `change$`.
+- `PaginationDocumentHeaderOptions.placement` and `.topInset`.
+
+#### Migration Recipe
+
+No migration is required. To opt in:
+
+```typescript
+doc.viewScale.attach(documentPageElement, {wheel: true})
+doc.viewScale.setScale(1.25)
+
+const pagination = new PaginationPlugin({
+  documentHeader: {
+    element: documentHeaderElement,
+    placement: 'top-margin',
+    topInset: 20,
+  },
+})
+```
+
+#### Behavior Changes
+
+- Layout-facing measurements used by root virtualization and block placement
+  are normalized while a view scale is attached. At scale 1 the existing
+  behavior is unchanged.
+- A top-margin document header deducts only its overflow beyond the configured
+  body start. The existing default `placement: 'content'` remains unchanged.
+- Projecting a host document header keeps absolute objects strictly relative to
+  the root content coordinate system. Rendering, pointer measurement and
+  virtual visibility share the deterministic `--bc-placement-content-origin-y`
+  value (the effective paginated top padding), so objects follow body content
+  without using a projection-time DOM delta; persisted `placement.x/y` remains
+  unchanged.
+- `PaginationPlugin({enabled: true})` now defers controller activation to the
+  first frame after document initialization. This avoids sparse-projection
+  re-entry during root virtualization setup while preserving the requested
+  initial mode.
+- Table fullscreen now isolates the active table from host document chrome,
+  pagination sheets, absolute objects and fixed host toolbars without reparenting
+  the block. It also cancels the host document scale for the duration of fullscreen,
+  so table fullscreen and table-local zoom remain viewport-correct at any document
+  zoom level. Existing fullscreen classes and CSS tokens remain compatible.
+
 ### v0.3.0-alpha.4 - 2026-08-05 (patch) — align nested-host pagination surfaces
 
 **Severity**: patch

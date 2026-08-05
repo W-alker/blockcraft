@@ -492,6 +492,24 @@ describe('BlockPlacementManager', () => {
     container.remove()
   })
 
+  it('measures paginated absolute coordinates from the deterministic content origin', () => {
+    const root = document.createElement('div')
+    const host = document.createElement('div')
+    root.style.setProperty('--bc-placement-content-origin-y', '120px')
+    root.appendChild(host)
+    document.body.appendChild(root)
+    setRect(root, {left: 100, top: 50, width: 500})
+    setRect(host, {left: 225, top: 210, width: 100, height: 80})
+    Object.defineProperty(root, 'clientWidth', {configurable: true, value: 500})
+    Object.defineProperty(root, 'clientLeft', {configurable: true, value: 0})
+    Object.defineProperty(root, 'clientTop', {configurable: true, value: 0})
+
+    expect(measureObjectPlacement(host, root))
+      .toEqual({mode: 'absolute', x: 25, y: 40, layer: 'over'})
+
+    root.remove()
+  })
+
   it('inserts a new object directly into the root placement layout', () => {
     const rootHost = document.createElement('div')
     document.body.appendChild(rootHost)

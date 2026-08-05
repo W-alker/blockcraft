@@ -27,6 +27,13 @@ export interface PaginationDocumentHeaderOptions {
   element: PaginationElementTarget;
   /** 文档头与首个文档块的间距（px），默认 0。 */
   gap?: number;
+  /**
+   * `content`（默认）把文档头排在正文上边距之后；`top-margin` 把它放进
+   * 首页上边距，并只扣除超出正文起点的部分，避免宿主标题与页边距重复留白。
+   */
+  placement?: 'content' | 'top-margin';
+  /** `top-margin` 下相对纸张顶部的距离（px），默认 20。 */
+  topInset?: number;
 }
 
 /** 分页计算、视图与导出共享的配置；启用状态由 PaginationPlugin 单独管理。 */

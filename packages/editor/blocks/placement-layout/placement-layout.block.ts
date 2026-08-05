@@ -17,7 +17,8 @@ import type {PlacementLayoutBlockModel} from './index'
   host: {
     '[attr.contenteditable]': "'false'",
     '[style.position]': "'absolute'",
-    '[style.top.px]': '0',
+    // 分页只改变 root 的视图内容起点，不改 placement 数据；连续流回退为 0。
+    '[style.top]': "'var(--bc-placement-content-origin-y, 0px)'",
     '[style.left.px]': '0',
     '[style.width.%]': '100',
     '[style.height.px]': '0',

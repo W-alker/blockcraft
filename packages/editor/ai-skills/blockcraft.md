@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-04 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-05 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -25,6 +25,7 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | Concept | Description | Key Class/File |
 |---------|-------------|----------------|
 | **Doc** | Central orchestrator; owns all subsystems | `BlockCraftDoc` in `framework/doc/` |
+| **View Scale** | Host-controlled 50%–200% visual scale with normalized editor geometry | `DocumentViewScaleManager` at `doc.viewScale` |
 | **Model Graph** | DOM-free, read-only Yjs tree queries for mounted or unmounted blocks | `BlockModelGraph` in `framework/doc/model-graph.ts` |
 | **Block Readonly** | Owner-aware, inherited write protection resolved from `meta.lock` against the model graph | `BlockReadonlyManager` in `framework/doc/block-readonly-manager.ts` |
 | **Mutation Policy** | Optional host-defined guard for structural, instance-meta and undo/redo mutations | `BlockMutationPolicyManager` in `framework/doc/block-mutation-policy.ts` |
@@ -169,6 +170,23 @@ Use `doc.crud.insertBlockSnapshots()` for imports or bulk/model workflows that
 only need inserted IDs. Existing parent views still synchronize through the
 normal Yjs observer. Keep `insertBlocks()` for interaction code that needs its
 synchronous `BlockComponent[]` compatibility result.
+
+The host may attach the document's visual surface to `doc.viewScale` and keep
+its own user preference. The manager applies CSS `zoom`, normalizes
+virtualization/placement geometry, and optionally handles Ctrl/Cmd+wheel:
+
+```typescript
+doc.viewScale.attach(documentPageElement, {wheel: true})
+doc.viewScale.setScale(1.25) // clamped to 0.5–2.0
+doc.viewScale.zoomIn()
+doc.viewScale.zoomOut()
+doc.viewScale.reset()
+doc.viewScale.change$.subscribe(({scale, source}) => savePreference(scale, source))
+```
+
+Fit-width and fit-page are host layout policies: measure the available viewport,
+derive a scale, then call `setScale()`. Do not persist dynamic fitting as a
+single percentage if it should react to later viewport changes.
 
 Built-in table rectangle selection and editing use a package-internal
 `TableModelGrid` derived from `doc.model`. Coordinates, merged-cell closure,
@@ -335,7 +353,9 @@ pointer release. Object positioning never uses native HTML5 drag/drop:
 These geometry reads only occur on explicit conversion, not
 on drag or render hot paths. A host with its own layout domain can adapt mode transitions
 through `DocConfig.placement.transitionMode`; returning `true` means the host
-completed the transition. With root virtualization enabled, a model-only
+completed the transition. A paginated host `documentHeader` that moves the root
+when projected receives a view-only placement-origin correction; it never
+rewrites root-relative `placement.x/y`. With root virtualization enabled, a model-only
 vertical index projects each absolute child's root-relative `placement.y` and
 estimated height. The zero-height layout mounts when any projected band
 intersects the root-relative viewport plus one viewport of pre-rendering, and
@@ -682,6 +702,7 @@ Key services accessible on `doc.*` (see `blockcraft-app.md` for full API details
 | `doc.dragController` | 内部 block 拖拽（PointerEvents） | `framework/services/internal-drag.controller.ts` |
 | `doc.dndService`     | 外部文件拖入 + commit 类方法分发  | `framework/services/dnd.service.ts` |
 | `doc.objectSizing`   | root 相对对象尺寸解析与宽度观测 | `framework/services/block-object-sizing.manager.ts` |
+| `doc.viewScale`      | 文档视觉缩放、快捷滚轮与布局/视觉坐标换算 | `framework/services/document-view-scale.manager.ts` |
 | `doc.overlayService` | CDK Overlay wrapper | `framework/services/overlay.service.ts` |
 | `doc.clipboard`      | ClipboardManager | `framework/modules/clipboard/` |
 | `doc.selection`      | SelectionManager (anchor/head model) | `framework/modules/selection/` |
