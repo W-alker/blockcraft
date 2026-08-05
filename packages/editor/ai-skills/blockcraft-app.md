@@ -485,7 +485,7 @@ doc = new BlockCraftDoc({
   scrollContainer: undefined, // optional — auto-detected if not given
   virtualization: {           // optional — disabled by default
     enabled: true,
-    overscan: 6,
+    overscanViewports: 1,
     segmentMergeGap: 2,
     retainedViewLimit: 12,
     estimatedHeights: {paragraph: 32, table: 240},
@@ -522,6 +522,10 @@ interface DocConfig {
   blockMutationPolicy?: BlockMutationPolicy // synchronous structural/meta invariant
   copyFilter?: ClipboardCopyFilter        // global copy filter; seeds ClipboardManager registry. Omit = no filtering
   scrollContainer?: HTMLElement           // walked upward if omitted
+  layoutMetrics?: {                       // resolved document typography in CSS px
+    baseFontSize?: number                 // --bc-fs; measured once when omitted
+    lineHeight?: number                   // resolved root line-box height
+  }
   virtualization?: VirtualizationConfig   // root-child view virtualization; default disabled
   placement?: BlockPlacementConfig        // optional synchronous mode-transition adapter
 }
@@ -532,6 +536,25 @@ callbacks run and before plugins register. The initial protected bootstrap state
 is therefore never exposed as the initialized document policy; immediate model
 writes from initialization observers are accepted or rejected against
 `DocConfig.readonly`.
+
+`layoutMetrics` is the document-wide typography source for model-first height
+projection. When omitted, BlockCraft reads the initialized root's computed
+`font-size` and `line-height` exactly once. Estimators never call
+`getComputedStyle()` themselves. A host that changes `--bc-fs` / `--bc-lh`
+after initialization must use one of the explicit refresh paths:
+
+```typescript
+// Make the supplied pixel metrics authoritative and update the root CSS vars.
+doc.updateLayoutMetrics({baseFontSize: 18, lineHeight: 27})
+
+// Or change CSS externally first, then perform one deliberate computed read.
+doc.refreshLayoutMetrics()
+```
+
+Both APIs invalidate continuous virtualization and sparse pagination estimates;
+mounted blocks still converge through their normal `ResizeObserver` path.
+Schema `metadata.virtualization.estimateHeight(context)` callbacks receive the
+same `baseFontSize` and `lineHeight` facts alongside `rootContentWidth`.
 
 `blockMutationPolicy` is a host-owned document invariant evaluated before a
 Yjs mutation or undo/redo replay. Its operation is one of `delete`, `move`,
@@ -569,9 +592,15 @@ collaboration provider. Direct `BlockCraftDoc` consumers continue to use
 `PaginationPlugin({experimentalSparseView: true})`; their framework defaults
 remain disabled/false respectively.
 
-- `overscan` keeps direct root children above and below the viewport mounted
-  (minimum 2, default 5).
-- `segmentMergeGap` merges nearby viewport/selection leases (default 2).
+- `overscanViewports` sets the projected-height budget on each side of the
+  visible viewport (minimum 0, default 1; fractions are allowed). The default
+  yields a three-viewport mounted window. Near a document edge the unavailable
+  side's budget shifts to the other side. It never expands by root count, so a
+  pair of oversized tables consumes the height budget instead of forcing both
+  complete subtrees into the DOM.
+- `segmentMergeGap` merges nearby viewport/selection leases by omitted root
+  count (default 2), but the manager rejects a merge whose projected gap is
+  taller than one quarter of the viewport.
 - `retainedViewLimit` bounds detached root-component subtrees in an LRU cache
   (minimum 0, default 12). `0` destroys every detached subtree after the next
   reconciliation frame; a later mount rebuilds it from current Yjs state.

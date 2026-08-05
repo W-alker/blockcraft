@@ -1447,4 +1447,54 @@ describe("TableBlockComponent pagination hot-path caches", () => {
     expect(measure).not.toHaveBeenCalled();
     expect(budget.continuations).toBe(0);
   });
+
+  it("keeps the first Block boundary for a vertically aligned short cell", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const childElement = document.createElement("div");
+    childElement.getBoundingClientRect = () => new DOMRect(0, 1_500, 100, 50);
+    const cell = {
+      id: "cell-short",
+      getChildrenBlocks: () => [{id: "first-child", hostElement: childElement}],
+    };
+    const budget = {continuations: 0, safeAnchors: 0};
+
+    const input = table._measureSingleCellFlow(
+      cell,
+      0,
+      2_000,
+      0,
+      979,
+      2,
+      budget,
+    );
+
+    expect(input).toEqual({
+      cellId: "cell-short",
+      points: [
+        {offset: 1_500, anchor: {kind: "block", blockId: "first-child"}},
+        {offset: 1_550, anchor: {kind: "cell-end"}},
+      ],
+    });
+  });
+
+  it("finishes an empty visible cell without reserving the oversized row stride", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const budget = {continuations: 0, safeAnchors: 0};
+
+    const input = table._measureSingleCellFlow(
+      {id: "empty-cell", getChildrenBlocks: () => []},
+      0,
+      2_000,
+      0,
+      979,
+      2,
+      budget,
+    );
+
+    expect(input).toEqual({
+      cellId: "empty-cell",
+      points: [{offset: 1, anchor: {kind: "cell-end"}}],
+    });
+    expect(budget.safeAnchors).toBe(1);
+  });
 });

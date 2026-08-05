@@ -207,7 +207,7 @@ export class EditorComponent implements OnInit, OnDestroy {
       injector: this.injector,
       virtualization: {
         enabled: this.virtualizationEnabled,
-        overscan: 6,
+        overscanViewports: 1,
         segmentMergeGap: 2,
         estimatedHeights: {
           paragraph: 32,

@@ -45,6 +45,10 @@ import {
 import {BlockObjectSizingManager} from '../services/block-object-sizing.manager'
 import {DocumentViewScaleManager} from '../services/document-view-scale.manager'
 import {
+  DocumentLayoutMetricsConfig,
+  DocumentLayoutMetricsManager,
+} from '../services/document-layout-metrics.manager'
+import {
   BlockMutationPolicy,
   BlockMutationPolicyManager,
 } from './block-mutation-policy'
@@ -74,6 +78,11 @@ export interface DocConfig {
   scrollContainer?: HTMLElement
   /** Optional root-child view virtualization. Disabled by default. */
   virtualization?: VirtualizationConfig
+  /**
+   * Optional document-wide typography facts in CSS pixels. When omitted, the
+   * editor reads computed root font-size/line-height once during init.
+   */
+  layoutMetrics?: DocumentLayoutMetricsConfig
   /** Optional host orchestration for placement mode transitions. */
   placement?: BlockPlacementConfig
   /**
@@ -113,6 +122,9 @@ export class BlockCraftDoc {
   readonly clipboard = new ClipboardManager(this)
   readonly inputManger = new InputTransformer(this)
   readonly viewScale = new DocumentViewScaleManager()
+  readonly layoutMetrics = new DocumentLayoutMetricsManager(
+    this.config.layoutMetrics,
+  )
   readonly virtualization = new RootVirtualizationManager(this, this.config.virtualization)
   private readonly blockNavigation = new BlockNavigationManager(this)
 
@@ -255,6 +267,7 @@ export class BlockCraftDoc {
     this.blockNavigation.destroy()
     this.virtualization.dispose()
     this.viewScale.destroy()
+    this.layoutMetrics.destroy()
     this.objectSizing.destroy()
     this.model.destroy()
     this.placement.destroy()
@@ -358,6 +371,7 @@ export class BlockCraftDoc {
     // Establish the single root-content width source before plugins and
     // afterInit callbacks resolve responsive object geometry.
     this._root = comp
+    this.layoutMetrics.init(comp.hostElement)
     this.objectSizing?.init(
       comp.childrenRenderRef?.containerElement ?? comp.hostElement,
     )
@@ -683,6 +697,20 @@ export class BlockCraftDoc {
   toggleTheme(name: string) {
     document.body.setAttribute('blockcraft-theme', this.config.theme = name)
     this.themeChange$.next(this.config.theme)
+  }
+
+  /**
+   * Update document-wide typography and invalidate all model-first geometry.
+   * Values are resolved CSS pixels; the matching `--bc-fs` / `--bc-lh`
+   * variables are written on the root element.
+   */
+  updateLayoutMetrics(metrics: DocumentLayoutMetricsConfig): void {
+    this.layoutMetrics.update(metrics)
+  }
+
+  /** Re-read root computed typography after an external CSS-variable change. */
+  refreshLayoutMetrics(): void {
+    this.layoutMetrics.refresh()
   }
 
   toggleReadonly(readonly: boolean) {

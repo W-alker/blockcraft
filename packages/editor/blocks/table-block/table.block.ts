@@ -2964,10 +2964,29 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const points: TableCellFlowPoint[] = []
     const children = cell.getChildrenBlocks()
 
+    // A visible but empty cell contributes no indivisible content. Mark it as
+    // completed near the row origin; the table-level mask paints page bands
+    // across that column. Treating the whole row stride as its only cell-end
+    // point would make an otherwise splittable oversized row fail closed.
+    if (!children.length) {
+      if (budget.safeAnchors >= TABLE_CELL_FLOW_MAX_SAFE_ANCHORS) return null
+      budget.safeAnchors++
+      return {
+        cellId: cell.id,
+        points: [{
+          offset: Math.min(1, rowStride),
+          anchor: {kind: 'cell-end'},
+        }],
+      }
+    }
+
     for (let childIndex = 0; childIndex < children.length; childIndex++) {
       const child = children[childIndex]
       const childRect = child.hostElement.getBoundingClientRect()
-      if (childIndex > 0) {
+      // Keep the first child's top as an explicit boundary too. A short cell
+      // may be vertically centered inside a multi-page row, leaving more than
+      // one page of safe empty prefix before this boundary.
+      if (childIndex > 0 || childRect.top - hostTop - rowOrigin > 0.01) {
         if (budget.safeAnchors >= TABLE_CELL_FLOW_MAX_SAFE_ANCHORS) return null
         budget.safeAnchors++
         points.push({

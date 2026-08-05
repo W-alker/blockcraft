@@ -175,6 +175,17 @@ export class PaginatedViewController {
           }),
         );
       }
+      const layoutMetricsChange$ = this.doc.layoutMetrics?.change$;
+      if (layoutMetricsChange$) {
+        this._subs.add(
+          layoutMetricsChange$.subscribe(() => {
+            this._runShadowMutation('layout-metrics-change', () =>
+              this.layoutCoordinator.refreshObjectSizingEstimates(),
+            );
+            this.scheduleRecompute();
+          }),
+        );
+      }
       this._subs.add(
         this.doc.model.contentChange$.subscribe(change => {
           this._heightSource.clearLayoutOwnedResize();

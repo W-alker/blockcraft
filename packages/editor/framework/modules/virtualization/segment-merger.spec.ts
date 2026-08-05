@@ -23,6 +23,22 @@ describe('mergeToSegments', () => {
     ])
   })
 
+  it('keeps a short index gap sparse when its projected height is expensive', () => {
+    const canMergeGap = jasmine.createSpy('canMergeGap').and.returnValue(false)
+
+    expect(mergeToSegments(
+      [10, 15],
+      new Set([18]),
+      2,
+      100,
+      canMergeGap,
+    )).toEqual([
+      [10, 15],
+      [18, 18],
+    ])
+    expect(canMergeGap).toHaveBeenCalledOnceWith(16, 17)
+  })
+
   it('keeps distant pins as separate segments', () => {
     expect(mergeToSegments([40, 50], new Set([2, 54, 90]), 2, 100)).toEqual([
       [2, 2],

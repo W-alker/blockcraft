@@ -108,6 +108,48 @@ describe("planTableCellFlow", () => {
     });
   });
 
+  it("垂直居中短单元格可跨页消费首个 Block 前的空白", () => {
+    const plan = planTableCellFlow([{
+      kind: "cell-flow",
+      rowId: "r1",
+      cells: [
+        {
+          cellId: "short",
+          points: [
+            {offset: 230, anchor: {kind: "block", blockId: "short-p"}},
+            {offset: 260, anchor: {kind: "cell-end"}},
+          ],
+        },
+        {
+          cellId: "tall",
+          points: [
+            {offset: 80, anchor: {kind: "text", blockId: "tall-p", offset: 1}},
+            {offset: 160, anchor: {kind: "text", blockId: "tall-p", offset: 2}},
+            {offset: 240, anchor: {kind: "cell-end"}},
+          ],
+        },
+      ],
+    }], 100);
+
+    expect(plan.segments.map(segment => segment.height)).toEqual([100, 100, 80]);
+    expect(plan.segments[0].breakAfter).toEqual({
+      kind: "cell-flow",
+      rowId: "r1",
+      continuations: [
+        {cellId: "short", anchor: {kind: "cell-start"}, pageOffset: 100},
+        {cellId: "tall", anchor: {kind: "text", blockId: "tall-p", offset: 1}, pageOffset: 80},
+      ],
+    });
+    expect(plan.segments[1].breakAfter).toEqual({
+      kind: "cell-flow",
+      rowId: "r1",
+      continuations: [
+        {cellId: "short", anchor: {kind: "cell-start"}, pageOffset: 100},
+        {cellId: "tall", anchor: {kind: "text", blockId: "tall-p", offset: 2}, pageOffset: 80},
+      ],
+    });
+  });
+
   it("整页内没有任何安全进展时显式失败，让调用方对不可拆原子内容降级锁高", () => {
     expect(() => planTableCellFlow([
       tallRow("r1", [{cellId: "c1", points: [120]}]),

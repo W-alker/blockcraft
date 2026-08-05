@@ -88,6 +88,14 @@ interface CellCursor {
   ended: boolean;
 }
 
+interface PointSelection {
+  point?: TableCellFlowPoint;
+  pointIndex: number;
+  delta: number;
+  /** Advance only through the empty prefix before the first child block. */
+  emptyPrefix?: boolean;
+}
+
 /**
  * 用同一页的剩余高度并行推进每个单元格：各列可落在不同安全锚点，片段高度取本轮最大推进量。
  * 这样不会切断块或文字行，也不会要求不同单元格恰好拥有相同 y 的切点。
@@ -161,8 +169,11 @@ export function planTableCellFlow(
       }
 
       selections.forEach((selection, index) => {
-        if (!selection.point) return;
         const cursor = cursors[index];
+        if (!selection.point) {
+          if (selection.emptyPrefix) cursor.offset += selection.delta;
+          return;
+        }
         cursor.pointIndex = selection.pointIndex;
         cursor.offset = selection.point.offset;
         cursor.anchor = cloneAnchor(selection.point.anchor);
@@ -209,7 +220,7 @@ export function cloneTableCellFlowPlan(plan: TableCellFlowPlan): TableCellFlowPl
 function selectPoint(
   cursor: CellCursor,
   remaining: number,
-): {point?: TableCellFlowPoint; pointIndex: number; delta: number} {
+): PointSelection {
   if (cursor.ended) return {pointIndex: cursor.pointIndex, delta: 0};
 
   let selectedIndex = cursor.pointIndex;
@@ -219,6 +230,24 @@ function selectPoint(
     selectedIndex = index;
   }
   if (selectedIndex === cursor.pointIndex) {
+    const nextPoint = cursor.input.points[cursor.pointIndex + 1];
+    // A vertically aligned short cell can have more than one page of empty
+    // space before its first child. That prefix is safe to consume page by
+    // page while the continuation stays anchored at cell-start. This is
+    // deliberately limited to the first block boundary: applying the same
+    // rule between later points could split a real oversized atomic child.
+    if (
+      remaining > EPSILON
+      && cursor.anchor.kind === "cell-start"
+      && nextPoint?.anchor.kind === "block"
+      && nextPoint.offset - cursor.offset > remaining + EPSILON
+    ) {
+      return {
+        pointIndex: cursor.pointIndex,
+        delta: remaining,
+        emptyPrefix: true,
+      };
+    }
     return {pointIndex: cursor.pointIndex, delta: 0};
   }
   const point = cursor.input.points[selectedIndex];

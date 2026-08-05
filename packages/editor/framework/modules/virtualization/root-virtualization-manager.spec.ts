@@ -123,7 +123,7 @@ describe('RootVirtualizationManager', () => {
     }
     const manager = new RootVirtualizationManager(doc as any, {
       enabled: true,
-      overscan: 2,
+      overscanViewports: 1,
       retainedViewLimit,
       ...config,
       estimatedHeights: {
@@ -197,7 +197,7 @@ describe('RootVirtualizationManager', () => {
     h.manager.dispose()
   })
 
-  it('refreshes table estimates for row structure/height without rescanning on cell text', () => {
+  it('refreshes table estimates for row structure without rescanning on cell text', () => {
     const h = createHarness(12, 1, {
       estimatedHeights: {table: 240},
     })
@@ -257,7 +257,7 @@ describe('RootVirtualizationManager', () => {
       isUndoRedo: false,
     })
     expect(tableChildrenReads).toBe(1)
-    expect((h.manager as any).heights.get(0)).toBe(340)
+    expect((h.manager as any).heights.get(0)).toBe(300)
 
     rowIds.push('row-5')
     rowHeights.set('row-5', 60)
@@ -269,7 +269,7 @@ describe('RootVirtualizationManager', () => {
       affectedParentIds: [tableId],
       affectedRootIds: [tableId],
     })
-    expect((h.manager as any).heights.get(0)).toBe(400)
+    expect((h.manager as any).heights.get(0)).toBe(360)
 
     rowIds.push('row-6')
     rowHeights.set('row-6', 60)
@@ -282,7 +282,7 @@ describe('RootVirtualizationManager', () => {
       affectedParentIds: [tableId, 'root'],
       affectedRootIds: [tableId, 'new-root'],
     })
-    expect((h.manager as any).heights.get(0)).toBe(460)
+    expect((h.manager as any).heights.get(0)).toBe(420)
 
     h.manager.dispose()
     contentChange$.complete()
@@ -412,8 +412,8 @@ describe('RootVirtualizationManager', () => {
     h.manager.init(h.scrollContainer)
 
     requestAnimationFrame(() => {
-      expect([...h.mounted]).toEqual(h.ids.slice(0, 5))
-      expect(h.vm.mountRootChild).toHaveBeenCalledTimes(5)
+      expect([...h.mounted]).toEqual(h.ids.slice(0, 7))
+      expect(h.vm.mountRootChild).toHaveBeenCalledTimes(7)
       h.manager.dispose()
       done()
     })
@@ -429,7 +429,7 @@ describe('RootVirtualizationManager', () => {
     h.manager.init(h.scrollContainer)
 
     requestAnimationFrame(() => {
-      expect([...h.mounted]).toEqual(h.ids.slice(0, 3))
+      expect([...h.mounted]).toEqual(h.ids.slice(0, 2))
       h.manager.dispose()
       projection.dispose()
       done()
@@ -448,14 +448,14 @@ describe('RootVirtualizationManager', () => {
     const release = registerRootLayoutProjection(h.manager, projection, {beforeDeactivate})
 
     await nextAnimationFrame()
-    expect([...h.mounted]).toEqual(h.ids.slice(0, 3))
+    expect([...h.mounted]).toEqual(h.ids.slice(0, 2))
 
     release()
     release()
     await nextAnimationFrame()
 
     expect(beforeDeactivate).toHaveBeenCalledTimes(1)
-    expect([...h.mounted]).toEqual(h.ids.slice(0, 5))
+    expect([...h.mounted]).toEqual(h.ids.slice(0, 7))
     h.manager.dispose()
     projection.dispose()
   })
@@ -539,7 +539,7 @@ describe('RootVirtualizationManager', () => {
     const onInvalid = jasmine.createSpy('onInvalid')
     registerRootLayoutProjection(h.manager, projection, {beforeDeactivate, onInvalid})
     await nextAnimationFrame()
-    expect([...h.mounted]).toEqual(h.ids.slice(0, 3))
+    expect([...h.mounted]).toEqual(h.ids.slice(0, 2))
 
     projectedIds = [...h.ids].reverse()
     projection.notifyChange()
@@ -552,7 +552,7 @@ describe('RootVirtualizationManager', () => {
       jasmine.any(Error),
     )
     await nextAnimationFrame()
-    expect([...h.mounted]).toEqual(h.ids.slice(0, 5))
+    expect([...h.mounted]).toEqual(h.ids.slice(0, 7))
     h.manager.dispose()
     projection.dispose()
   })
@@ -761,7 +761,7 @@ describe('RootVirtualizationManager', () => {
   })
 
   it('keeps a 1000-root custom projection mounted window bounded while scrolling', async () => {
-    const h = createHarness(4, 1000, {overscan: 2})
+    const h = createHarness(4, 1000, {overscanViewports: 1})
     h.manager.init(h.scrollContainer)
     await nextAnimationFrame()
 
@@ -780,6 +780,31 @@ describe('RootVirtualizationManager', () => {
     expect([...h.mounted].some(id => Number(id.slice(1)) >= 495)).toBeTrue()
 
     release()
+    h.manager.dispose()
+    projection.dispose()
+  })
+
+  it('does not merge oversized projected gaps between the viewport and a lease', async () => {
+    const h = createHarness(12, 8, {segmentMergeGap: 2})
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 1_000))
+    const projection = customProjection(h.ids, heights)
+    const releaseProjection = registerRootLayoutProjection(h.manager, projection)
+    await nextAnimationFrame()
+
+    expect([...h.mounted]).toEqual(['b0'])
+    const releaseLease = h.manager.acquireBlockViewLease(['b3'])
+
+    expect(h.mounted.has('b0')).toBeTrue()
+    expect(h.mounted.has('b1')).toBeFalse()
+    expect(h.mounted.has('b2')).toBeFalse()
+    expect(h.mounted.has('b3')).toBeTrue()
+
+    releaseLease()
+    releaseProjection()
     h.manager.dispose()
     projection.dispose()
   })
@@ -838,14 +863,14 @@ describe('RootVirtualizationManager', () => {
     h.manager.init(h.scrollContainer)
 
     requestAnimationFrame(() => {
-      expect(windows).toEqual([h.ids.slice(0, 5)])
+      expect(windows).toEqual([h.ids.slice(0, 7)])
 
       h.manager.ensureViewMounted(['b12'])
       h.manager.ensureViewMounted(['b12'])
 
       expect(windows).toEqual([
-        h.ids.slice(0, 5),
-        [...h.ids.slice(0, 5), 'b12'],
+        h.ids.slice(0, 7),
+        [...h.ids.slice(0, 7), 'b12'],
       ])
       h.manager.dispose()
       done()
@@ -884,7 +909,7 @@ describe('RootVirtualizationManager', () => {
 
     expect(h.mounted.has('b12')).toBeTrue()
     expect(h.mounted.has('b15')).toBeFalse()
-    expect(windows).toEqual([[...h.ids.slice(0, 5), 'b12']])
+    expect(windows).toEqual([[...h.ids.slice(0, 7), 'b12']])
     h.manager.dispose()
   })
 
@@ -1096,7 +1121,7 @@ describe('RootVirtualizationManager', () => {
     h.manager.init(h.scrollContainer)
 
     requestAnimationFrame(() => {
-      expect(windows).toEqual([h.ids.slice(0, 5)])
+      expect(windows).toEqual([h.ids.slice(0, 7)])
       expect(h.vm.isMounted).not.toHaveBeenCalled()
       h.manager.dispose()
       done()
@@ -1836,13 +1861,13 @@ describe('RootVirtualizationManager', () => {
       requestAnimationFrame(() => {
         expect(h.mounted.has('b3')).toBeTrue()
         expect(h.mounted.has('b12')).toBeTrue()
-        expect(h.ids.slice(5, 12).every((id) => !h.mounted.has(id))).toBeTrue()
+        expect(h.ids.slice(7, 12).every((id) => !h.mounted.has(id))).toBeTrue()
         h.scrollContainer.dispatchEvent(new Event('scroll'))
 
         requestAnimationFrame(() => {
           expect(h.mounted.has('b3')).toBeTrue()
           expect(h.mounted.has('b12')).toBeTrue()
-          expect(h.ids.slice(5, 12).every((id) => !h.mounted.has(id))).toBeTrue()
+          expect(h.ids.slice(7, 12).every((id) => !h.mounted.has(id))).toBeTrue()
           h.selection$.next({
             toJSON: () => ({
               anchor: {blockId: 'b3', type: 'text', offset: 1},
@@ -1877,7 +1902,7 @@ describe('RootVirtualizationManager', () => {
       requestAnimationFrame(() => {
         expect(h.mounted.has('b3')).toBeTrue()
         expect(h.mounted.has('b12')).toBeTrue()
-        expect(h.ids.slice(5, 12).every((id) => !h.mounted.has(id))).toBeTrue()
+        expect(h.ids.slice(7, 12).every((id) => !h.mounted.has(id))).toBeTrue()
         expect(h.mounted.has('b13')).toBeFalse()
         h.scrollContainer.scrollTop = 720
         h.scrollContainer.dispatchEvent(new Event('scroll'))
@@ -1908,7 +1933,7 @@ describe('RootVirtualizationManager', () => {
       requestAnimationFrame(() => {
         expect(h.mounted.has('b3')).toBeTrue()
         expect(h.mounted.has('b12')).toBeTrue()
-        expect(h.ids.slice(5, 12).every((id) => !h.mounted.has(id))).toBeTrue()
+        expect(h.ids.slice(7, 12).every((id) => !h.mounted.has(id))).toBeTrue()
         expect(h.mounted.has('b13')).toBeFalse()
         h.manager.dispose()
         done()
@@ -1964,7 +1989,7 @@ describe('RootVirtualizationManager', () => {
       requestAnimationFrame(() => {
         expect(h.mounted.has('b0')).toBeTrue()
         expect(h.mounted.has('b19')).toBeTrue()
-        expect(h.ids.slice(5, 19).every((id) => !h.mounted.has(id))).toBeTrue()
+        expect(h.ids.slice(7, 19).every((id) => !h.mounted.has(id))).toBeTrue()
 
         h.scrollContainer.scrollTop = 480
         h.scrollContainer.dispatchEvent(new Event('scroll'))
@@ -2102,7 +2127,7 @@ describe('RootVirtualizationManager', () => {
         release()
 
         requestAnimationFrame(() => {
-          expect([...h.mounted]).toEqual(h.ids.slice(0, 5))
+          expect([...h.mounted]).toEqual(h.ids.slice(0, 7))
           h.manager.dispose()
           done()
         })
@@ -2139,7 +2164,7 @@ describe('RootVirtualizationManager', () => {
 
     h.vm.mountRootChild.and.callFake(h.mountRootChild)
     await nextAnimationFrame()
-    expect([...h.mounted]).toEqual(h.ids.slice(0, 5))
+    expect([...h.mounted]).toEqual(h.ids.slice(0, 7))
 
     const release = h.manager.acquireFullDocumentViewLease()
     expect(h.ids.every(id => h.mounted.has(id))).toBeTrue()
@@ -2181,12 +2206,14 @@ describe('RootVirtualizationManager', () => {
       h.scrollContainer.dispatchEvent(new Event('scroll'))
 
       requestAnimationFrame(() => {
-        expect(h.vm.destroyRetainedRootChild).toHaveBeenCalledTimes(3)
+        expect(h.vm.destroyRetainedRootChild).toHaveBeenCalledTimes(5)
         expect(h.refs.has('b0')).toBeFalse()
         expect(h.refs.has('b1')).toBeFalse()
         expect(h.refs.has('b2')).toBeFalse()
-        expect(h.refs.has('b3')).toBeTrue()
-        expect(h.refs.has('b4')).toBeTrue()
+        expect(h.refs.has('b3')).toBeFalse()
+        expect(h.refs.has('b4')).toBeFalse()
+        expect(h.refs.has('b5')).toBeTrue()
+        expect(h.refs.has('b6')).toBeTrue()
         h.manager.dispose()
         done()
       })

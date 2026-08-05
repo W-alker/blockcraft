@@ -17,8 +17,8 @@ export type BlockViewRetentionResolver = (
 
 export interface VirtualizationConfig {
   enabled?: boolean
-  /** Direct root children kept mounted above and below the viewport. */
-  overscan?: number
+  /** Viewport heights kept mounted above and below the visible viewport. */
+  overscanViewports?: number
   /** Unmounted indices tolerated between two segments before they are merged. */
   segmentMergeGap?: number
   /** Recently unmounted root subtrees retained for fast remount before eviction. */
@@ -31,7 +31,7 @@ export interface VirtualizationConfig {
 
 export interface ResolvedVirtualizationConfig {
   enabled: boolean
-  overscan: number
+  overscanViewports: number
   segmentMergeGap: number
   retainedViewLimit: number
   estimatedHeights: Partial<Record<string, number>>
@@ -41,7 +41,7 @@ export interface ResolvedVirtualizationConfig {
 export const DEFAULT_VIRTUALIZATION_CONFIG: Readonly<ResolvedVirtualizationConfig> =
   Object.freeze({
     enabled: false,
-    overscan: 5,
+    overscanViewports: 1,
     segmentMergeGap: 2,
     retainedViewLimit: 12,
     estimatedHeights: Object.freeze({}),
@@ -53,10 +53,9 @@ export function resolveVirtualizationConfig(
 ): ResolvedVirtualizationConfig {
   return {
     enabled: config?.enabled ?? DEFAULT_VIRTUALIZATION_CONFIG.enabled,
-    overscan: resolveInteger(
-      config?.overscan,
-      DEFAULT_VIRTUALIZATION_CONFIG.overscan,
-      2,
+    overscanViewports: resolveNonNegativeNumber(
+      config?.overscanViewports,
+      DEFAULT_VIRTUALIZATION_CONFIG.overscanViewports,
     ),
     segmentMergeGap: resolveInteger(
       config?.segmentMergeGap,
@@ -71,6 +70,14 @@ export function resolveVirtualizationConfig(
     estimatedHeights: {...config?.estimatedHeights},
     resolveViewRetention: config?.resolveViewRetention,
   }
+}
+
+function resolveNonNegativeNumber(
+  value: number | undefined,
+  fallback: number,
+): number {
+  if (value === undefined || !Number.isFinite(value)) return fallback
+  return Math.max(0, value)
 }
 
 function resolveInteger(

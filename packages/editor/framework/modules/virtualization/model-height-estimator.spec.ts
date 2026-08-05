@@ -31,6 +31,8 @@ describe('estimateModelBlockHeight', () => {
       layoutMode: 'paginated',
       fallbackHeight: 48,
       rootContentWidth: 800,
+      baseFontSize: 16,
+      lineHeight: 24,
     }))
   })
 
@@ -344,11 +346,11 @@ describe('estimateModelBlockHeight', () => {
     expect(estimateModelBlockHeight(doc as any, 'paragraph')).toBe(120)
   })
 
-  it('estimates a table from its direct physical row heights', () => {
+  it('ignores legacy row height props in the dual-layout estimate', () => {
     const doc = createDoc({
       table: block('table', BlockNodeType.block, {}, ['row-1', 'row-2']),
-      'row-1': block('table-row', BlockNodeType.block, {height: 72}),
-      'row-2': block('table-row', BlockNodeType.block, {height: 48}),
+      'row-1': block('table-row', BlockNodeType.block, {height: 720}),
+      'row-2': block('table-row', BlockNodeType.block, {height: 4}),
     })
 
     expect(estimateModelBlockHeightDetails(doc as any, 'table')).toEqual({
@@ -385,10 +387,91 @@ describe('estimateModelBlockHeight', () => {
       paragraph: block('paragraph', BlockNodeType.editable),
       row: block('table-row', BlockNodeType.block, {height: 80}),
     })
-    expect(estimateModelBlockHeight(malformed as any, 'table')).toBe(80)
+    expect(estimateModelBlockHeight(malformed as any, 'table')).toBe(60)
   })
 
-  it('scans only direct rows for a 3000-row table estimate', () => {
+  it('estimates narrow-cell wrapping from text length and column width', () => {
+    const doc = createDoc({
+      table: block('table', BlockNodeType.block, {colWidths: [100]}, ['row']),
+      row: block('table-row', BlockNodeType.block, {height: 999}, ['cell']),
+      cell: block('table-cell', BlockNodeType.block, {}, ['paragraph']),
+      paragraph: {
+        ...block('paragraph', BlockNodeType.editable),
+        deltas: [{insert: '中'.repeat(30)}],
+      },
+    })
+
+    expect(estimateModelBlockHeight(doc as any, 'table')).toBe(144)
+  })
+
+  it('derives glyph width and line height from document layout metrics', () => {
+    const doc = createDoc({
+      table: block('table', BlockNodeType.block, {colWidths: [100]}, ['row']),
+      row: block('table-row', BlockNodeType.block, {}, ['cell']),
+      cell: block('table-cell', BlockNodeType.block, {}, ['paragraph']),
+      paragraph: {
+        ...block('paragraph', BlockNodeType.editable),
+        deltas: [{insert: 'a'.repeat(30)}],
+      },
+    })
+    doc.layoutMetrics.baseFontSize = 32
+    doc.layoutMetrics.lineHeight = 48
+
+    expect(estimateModelBlockHeight(doc as any, 'table')).toBe(456)
+  })
+
+  it('uses colspan width and rowspan coverage for merged-cell content', () => {
+    const doc = createDoc({
+      table: block('table', BlockNodeType.block, {colWidths: [100, 100]}, [
+        'row-1',
+        'row-2',
+      ]),
+      'row-1': block('table-row', BlockNodeType.block, {}, [
+        'master',
+        'covered-1',
+      ]),
+      'row-2': block('table-row', BlockNodeType.block, {}, [
+        'covered-2',
+        'covered-3',
+      ]),
+      master: block('table-cell', BlockNodeType.block, {
+        colspan: 2,
+        rowspan: 2,
+      }, ['paragraph']),
+      'covered-1': block('table-cell', BlockNodeType.block, {display: 'none'}),
+      'covered-2': block('table-cell', BlockNodeType.block, {display: 'none'}),
+      'covered-3': block('table-cell', BlockNodeType.block, {display: 'none'}),
+      paragraph: {
+        ...block('paragraph', BlockNodeType.editable),
+        deltas: [{insert: '中'.repeat(100)}],
+      },
+    })
+
+    // 200px colspan - 16px horizontal padding = 184px content width. The
+    // model-only path uses a conservative 12px average glyph width.
+    expect(estimateModelBlockHeight(doc as any, 'table')).toBe(192)
+  })
+
+  it('uses O(1) text length for very long cell content without materializing deltas', () => {
+    const doc = createDoc({
+      table: block('table', BlockNodeType.block, {colWidths: [100]}, ['row']),
+      row: block('table-row', BlockNodeType.block, {}, ['cell']),
+      cell: block('table-cell', BlockNodeType.block, {}, ['paragraph']),
+      paragraph: {
+        ...block('paragraph', BlockNodeType.editable),
+        deltas: [{insert: '中'.repeat(100_000)}],
+      },
+    })
+    const lengthReads = spyOn(doc.model, 'getTextLength').and.callThrough()
+    const deltaReads = spyOn(doc.model, 'getTextDeltas').and.callThrough()
+
+    expect(estimateModelBlockHeight(doc as any, 'table'))
+      .toBeGreaterThan(300_000)
+    expect(lengthReads).toHaveBeenCalledOnceWith('paragraph')
+    expect(deltaReads).not.toHaveBeenCalled()
+  })
+
+  it('bounds nested content reads for a 3000-row table estimate', () => {
     const rowIds = Array.from({length: 3000}, (_, index) => `row-${index}`)
     const blocks = Object.fromEntries([
       ['table', block('table', BlockNodeType.block, {}, rowIds)],
@@ -398,10 +481,11 @@ describe('estimateModelBlockHeight', () => {
     const childrenReads = spyOn(doc.model, 'getChildrenIds').and.callThrough()
 
     expect(estimateModelBlockHeight(doc as any, 'table')).toBe(180000)
-    expect(childrenReads).toHaveBeenCalledOnceWith('table')
+    expect(childrenReads.calls.count()).toBeLessThanOrEqual(97)
+    expect(childrenReads).toHaveBeenCalledWith('table')
   })
 
-  it('refreshes table estimates only for table/direct-row props changes', () => {
+  it('refreshes table estimates for descendant props but not nested text', () => {
     const doc = createDoc({
       table: block('table', BlockNodeType.block, {}, ['row']),
       row: block('table-row', BlockNodeType.block, {height: 60}, ['cell']),
@@ -422,7 +506,14 @@ describe('estimateModelBlockHeight', () => {
       origin: null,
       local: true,
       isUndoRedo: false,
-    })).toBeFalse()
+    })).toBeTrue()
+    expect(modelHeightEstimateAffectedByContentChange(doc as any, 'table', {
+      blockIds: ['paragraph'],
+      kinds: ['props'],
+      origin: null,
+      local: true,
+      isUndoRedo: false,
+    })).toBeTrue()
     expect(modelHeightEstimateAffectedByContentChange(doc as any, 'table', {
       blockIds: ['table'],
       kinds: ['props'],
@@ -468,10 +559,18 @@ function createDoc(
       getParentId: (id: string) => Object.entries(blocks)
         .find(([, value]) => value.children.includes(id))?.[0] ?? null,
       getTextDeltas: (id: string) => blocks[id]?.deltas,
+      getTextLength: (id: string) => (blocks[id]?.deltas ?? [])
+        .reduce((length, delta) => length + (
+          typeof delta.insert === 'string' ? delta.insert.length : 1
+        ), 0),
     },
     objectSizing: {
       rootContentWidth: 800,
       resolve: jasmine.createSpy('resolve'),
+    },
+    layoutMetrics: {
+      baseFontSize: 16,
+      lineHeight: 24,
     },
     schemas: {
       get: (flavour: string) => estimators[flavour]

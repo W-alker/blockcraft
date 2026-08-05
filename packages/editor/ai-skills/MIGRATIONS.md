@@ -74,6 +74,109 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v0.3.0-alpha.9 - 2026-08-05 (minor) — explicit document layout metrics
+
+**Severity**: minor (additive prerelease API)
+
+**What changed**: `DocConfig.layoutMetrics` can now provide resolved document
+`baseFontSize` and `lineHeight` values. `BlockCraftDoc` exposes
+`updateLayoutMetrics()` and `refreshLayoutMetrics()` so runtime CSS typography
+changes explicitly invalidate model-first virtualization and sparse pagination
+geometry. Built-in table estimates now ignore legacy `table-row.props.height`
+and use bounded cell-content projection based on O(1) text length.
+
+**Why**: Table placeholder geometry must follow `--bc-fs` / `--bc-lh`, but
+estimators cannot safely call `getComputedStyle()` or traverse rich-text deltas.
+One document-owned measurement plus explicit host updates keeps the hot and
+offscreen paths deterministic.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `DocConfig.layoutMetrics?: {baseFontSize?: number; lineHeight?: number}`
+- `doc.layoutMetrics` (`DocumentLayoutMetricsManager`)
+- `doc.updateLayoutMetrics(metrics)`
+- `doc.refreshLayoutMetrics()`
+- `BlockModelHeightEstimateContext.baseFontSize` / `.lineHeight`
+
+#### Migration Recipe
+
+Existing hosts require no change; root typography is measured once at init.
+Hosts that mutate typography after init must make the invalidation explicit:
+
+```typescript
+root.style.setProperty('--bc-fs', '18px')
+root.style.setProperty('--bc-lh', '1.5')
+doc.refreshLayoutMetrics()
+
+// Or let BlockCraft update both metrics and CSS variables:
+doc.updateLayoutMetrics({baseFontSize: 18, lineHeight: 27})
+```
+
+#### Behavior Changes
+
+- `table-row.props.height` no longer contributes to model-only table height.
+- Table text projection uses `Y.Text.length` rather than `toDelta()` or
+  per-character inspection.
+- Runtime typography changes do not auto-poll computed style; the host must
+  call one of the explicit APIs above.
+
+### v0.3.0-alpha.8 - 2026-08-05 (major) — height-budgeted virtualization overscan
+
+**Severity**: major (breaking prerelease configuration rename)
+
+**What changed**: Root virtualization replaces the root-count-based `overscan`
+option with `overscanViewports`. The mounted window is now calculated entirely
+from projected height. Its default value `1` reserves one viewport above and
+below the visible viewport, for a three-viewport total window. Sparse segment
+merging also refuses to bridge an omitted projected gap taller than one quarter
+of the viewport.
+
+**Why**: Expanding by root count cannot bound DOM work: two adjacent roots may
+be two very large tables. A height budget makes the amount of materialized
+layout proportional to the scroll container while keeping small-block documents
+smooth during scrolling.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### Breaking Changes
+
+- `VirtualizationConfig.overscan` and
+  `ResolvedVirtualizationConfig.overscan` are replaced by
+  `overscanViewports`.
+
+#### Migration Recipe
+
+```typescript
+// before: six root children on each side
+virtualization: {enabled: true, overscan: 6}
+
+// after: one viewport of projected height on each side (three total)
+virtualization: {enabled: true, overscanViewports: 1}
+```
+
+#### Behavior Changes
+
+- Fractions such as `overscanViewports: 0.5` are supported; negative values
+  clamp to zero.
+- At the start or end of a long document, unavailable preload budget shifts to
+  the other side so the mounted window still targets three viewport heights.
+- A root taller than the target window is mounted as one atomic subtree, but
+  no additional roots are added merely to satisfy an item count.
+- `segmentMergeGap` remains a root-count cap and now also has a projected-height
+  veto, preventing sparse leases from pulling giant omitted roots into the DOM.
+
 ### v0.3.0-alpha.7 - 2026-08-05 (patch) — backfill complete responsive image sizing
 
 **Severity**: patch

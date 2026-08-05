@@ -268,7 +268,7 @@ describe("PaginationLayoutCoordinator", () => {
     ]);
   });
 
-  it("does not rescan table rows for cell text but refreshes direct row height props", () => {
+  it("does not rescan table rows for cell text and ignores legacy row height props", () => {
     const rowIds = Array.from({length: 5}, (_, index) => `row-${index}`);
     const facts = new Map<string, ModelFact>([
       ["table", fact("table", {
@@ -309,7 +309,7 @@ describe("PaginationLayoutCoordinator", () => {
     coordinator.applyContentChange(contentChange(["row-0"], ["props"]));
     expect(model.reads.children).toBeGreaterThan(0);
     expect(coordinator.compute(config(), geometry()).entries[0].naturalHeight)
-      .toBe(340);
+      .toBe(300);
   });
 
   it("reuses geometry for root reorders and invalidates both nested move owners", () => {

@@ -18,7 +18,7 @@ describe('resolveVirtualizationConfig', () => {
   it('preserves enabled and fills omitted fields from defaults', () => {
     expect(resolveVirtualizationConfig({enabled: true})).toEqual({
       enabled: true,
-      overscan: 5,
+      overscanViewports: 1,
       segmentMergeGap: 2,
       retainedViewLimit: 12,
       estimatedHeights: {},
@@ -26,28 +26,33 @@ describe('resolveVirtualizationConfig', () => {
     })
   })
 
-  it('clamps numeric fields to safe integer minimums', () => {
+  it('normalizes numeric fields while preserving fractional viewport overscan', () => {
     const config = resolveVirtualizationConfig({
       enabled: true,
-      overscan: 1.8,
+      overscanViewports: 1.5,
       segmentMergeGap: -3,
       retainedViewLimit: -4,
     })
 
-    expect(config.overscan).toBe(2)
+    expect(config.overscanViewports).toBe(1.5)
     expect(config.segmentMergeGap).toBe(0)
     expect(config.retainedViewLimit).toBe(0)
+  })
+
+  it('clamps negative viewport overscan to zero', () => {
+    expect(resolveVirtualizationConfig({overscanViewports: -1.8}).overscanViewports)
+      .toBe(0)
   })
 
   it('falls back when numeric fields are not finite', () => {
     const config = resolveVirtualizationConfig({
       enabled: true,
-      overscan: Number.NaN,
+      overscanViewports: Number.NaN,
       segmentMergeGap: Number.POSITIVE_INFINITY,
       retainedViewLimit: Number.NaN,
     })
 
-    expect(config.overscan).toBe(DEFAULT_VIRTUALIZATION_CONFIG.overscan)
+    expect(config.overscanViewports).toBe(DEFAULT_VIRTUALIZATION_CONFIG.overscanViewports)
     expect(config.segmentMergeGap).toBe(DEFAULT_VIRTUALIZATION_CONFIG.segmentMergeGap)
     expect(config.retainedViewLimit).toBe(DEFAULT_VIRTUALIZATION_CONFIG.retainedViewLimit)
   })

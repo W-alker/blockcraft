@@ -121,7 +121,7 @@ describe("PresentationController", () => {
     const presentationStage = document.createElement("div");
     const controller = new PresentationController({
       config: {
-        virtualization: {enabled: true, overscan: 9},
+        virtualization: {enabled: true, overscanViewports: 1},
         scrollContainer: authoringScroller,
         theme: "dark",
       },

@@ -6,6 +6,7 @@ export function mergeToSegments(
   pinnedIndices: ReadonlySet<number>,
   mergeGap: number,
   documentLength: number,
+  canMergeGap: (start: number, end: number) => boolean = () => true,
 ): RenderedSegment[] {
   if (!Number.isFinite(documentLength) || documentLength <= 0) return []
   const length = Math.floor(documentLength)
@@ -39,7 +40,10 @@ export function mergeToSegments(
   for (let index = 1; index < candidates.length; index++) {
     const next = candidates[index]
     const omittedCount = next[0] - currentEnd - 1
-    if (omittedCount <= gap) {
+    if (
+      omittedCount <= gap &&
+      (omittedCount <= 0 || canMergeGap(currentEnd + 1, next[0] - 1))
+    ) {
       currentEnd = Math.max(currentEnd, next[1])
       continue
     }

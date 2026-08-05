@@ -221,7 +221,7 @@ const doc = new BlockCraftDoc({
   // ...required config
   virtualization: {
     enabled: true,
-    overscan: 6,
+    overscanViewports: 1,
     segmentMergeGap: 2,
     retainedViewLimit: 12,
     estimatedHeights: {paragraph: 32, table: 240},
@@ -261,20 +261,30 @@ The bundled reference `<block-craft-editor>` accepts the initialization-only
 change either construction mode; direct framework integrations configure
 `DocConfig.virtualization` and `PaginationPlugin.experimentalSparseView`.
 
-Before a built-in table mounts, continuous virtualization and sparse
-pagination estimate its model height from direct `table-row` children instead
-of treating every table as one fixed-height card. Each row uses a positive
-`props.height`, then `estimatedHeights['table-row']`, then the built-in 60px
-fallback; `estimatedHeights.table` remains a floor for the total. This is an
-`O(rows)` cold calculation on initial projection, table-row structure changes
-and direct row-height prop changes. Nested cell text/props changes do not rescan
-the rows on each keystroke. The estimate is not exact print geometry and does
-not yet virtualize the table's nested row/cell Component subtree.
+Before a built-in table mounts, continuous virtualization and sparse pagination
+use a bounded content-aware model estimate instead of treating the table as one
+fixed-height card. The estimator intentionally ignores legacy
+`table-row.props.height`: it is not stable geometry in the dual continuous /
+paginated layout. It samples at most 96 rows, 24 cells per sampled row and 12
+children per sampled cell; `colWidths`, cell padding, visible merge masters,
+`colspan` / `rowspan` and child counts participate in the projection. Editable
+children use O(1) `Y.Text.length`, with average glyph width derived from the
+document `baseFontSize` and line height taken from document layout metrics.
+Nested text input does not rescan the table on every keystroke; mounted DOM
+measurement remains the exact correction path.
+
+`DocConfig.layoutMetrics` can provide `{baseFontSize, lineHeight}` in resolved
+CSS pixels. Otherwise BlockCraft reads root computed typography once during
+document initialization. After changing `--bc-fs` / `--bc-lh`, hosts must call
+`doc.updateLayoutMetrics(...)` or change CSS and call
+`doc.refreshLayoutMetrics()`; the update invalidates virtualization and sparse
+pagination estimates without adding computed-style reads to estimator paths.
 
 Custom Schemas can participate in the same DOM-free path through
 `metadata.virtualization.estimateHeight(context)`. The context supplies
 readonly props, direct child IDs, a cycle-safe child estimator, cached root
-width and the requesting `layoutMode` (`'flow' | 'paginated'`). Finite
+width, document `baseFontSize` / `lineHeight`, and the requesting `layoutMode`
+(`'flow' | 'paginated'`). Finite
 non-negative results are model-driven and refresh while offscreen; invalid
 results and thrown errors fall back to object-sizing, built-in rules and
 `DocConfig.virtualization.estimatedHeights`. Keep callbacks synchronous and
@@ -289,7 +299,12 @@ active. For `boundary(i) -> boundary(j)`, those are the children adjacent to the
 two half-open edges; a collapsed root boundary owns the nearest caret-bearing
 unit, while a nested selection owns only its containing root unit. The selected
 middle remains virtualized and is represented by the canonical model range;
-small endpoint gaps may still be coalesced by `segmentMergeGap`. Both Snapshot
+small endpoint gaps may still be coalesced by `segmentMergeGap`, but only when
+their projected height is at most one quarter of the viewport. The default
+`overscanViewports: 1` uses a pure height budget: one viewport before and after
+the visible viewport, for a three-viewport mounted window. It never expands by
+root count, so adjacent oversized tables do not accidentally become a full-DOM
+window. Both Snapshot
 and YBlock initialization build the complete Yjs/model tree before creating
 only the root view. Root-order transactions rebuild root indices and re-evaluate
 selection/projection leases from stable endpoint IDs plus root boundary indices,

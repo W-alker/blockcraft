@@ -164,6 +164,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     const offscreen = document.createElement('div');
     const paragraphElement = document.createElement('div');
     paragraphElement.dataset['blockId'] = 'p1';
+    paragraphElement.style.height = '40px';
     offscreen.appendChild(paragraphElement);
     document.body.appendChild(offscreen);
 

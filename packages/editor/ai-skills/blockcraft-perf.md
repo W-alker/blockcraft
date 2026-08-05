@@ -61,7 +61,7 @@ Large documents can opt into model-first root virtualization through
 ```typescript
 virtualization: {
   enabled: true,
-  overscan: 6,
+  overscanViewports: 1,
   segmentMergeGap: 2,
   retainedViewLimit: 12,
   estimatedHeights: {paragraph: 32, table: 240},
@@ -74,14 +74,22 @@ Scroll and pin changes are coalesced into one animation frame. Height lookup
 uses incremental Fenwick-tree prefix sums: measurement updates, range sums and
 offset lookup stay `O(log N)`, while structural rebuilds remain a cold `O(N)`
 path. A normal scroll frame touches the mounted window, not every document
-block. `ResizeObserver` corrects estimates and
+block. `overscanViewports` is a projected-height budget, not a root-count
+budget: the default `1` mounts one viewport above and below the visible area
+(three viewport heights total), redistributing unavailable budget at document
+edges. An oversized root consumes the budget by its full projected height.
+`segmentMergeGap` can coalesce a small number of omitted roots between sparse
+leases, but the omitted projected height is additionally capped at one quarter
+of the viewport so giant tables cannot bypass the height window.
+`ResizeObserver` corrects estimates and
 records each mounted block's layout stride, including inter-block spacing, then
 restores an ID-based scroll anchor. Nested subtrees are atomic in this phase.
 
 Custom blocks can provide a model-driven estimate through
 `schema.metadata.virtualization.estimateHeight(context)`. It runs before
 object-sizing and per-flavour fallback rules and receives readonly props,
-direct child IDs, a lazy `estimateChildHeight()` helper, cached root width, and
+direct child IDs, a lazy `estimateChildHeight()` helper, cached root width,
+document `baseFontSize` / `lineHeight`, and
 `layoutMode: 'flow' | 'paginated'`. A finite non-negative result (including
 zero) participates in offscreen content/structure refreshes; invalid results or
 errors fall back safely. The callback must be synchronous, deterministic and
@@ -89,16 +97,24 @@ DOM/network free. Persist async layout facts such as row count or height in
 props, and keep the common path `O(1)` unless the block genuinely owns a bounded
 child-height aggregation.
 
-Built-in tables receive a model-first total-height estimate before their root
-view mounts. The estimator sums direct `table-row` heights in `O(rows)` using
-this precedence for each row: positive `row.props.height`, configured
-`estimatedHeights['table-row']`, then 60px. The configured
-`estimatedHeights.table` value remains the minimum total estimate. Empty or
-malformed tables keep the old flavour fallback. Nested cell text/props changes
-do not rescan the table on each keystroke; only table-row structure and direct
-row-height props refresh the sum. The estimate improves scroll projection and
-sparse pagination seeds but remains non-exact until DOM measurement. Table
-rows/cells are still an atomic eagerly rendered nested subtree in this phase.
+Built-in tables receive a bounded content-aware model estimate before their
+root view mounts. Legacy `table-row.props.height` is deliberately ignored
+because it is not stable intrinsic geometry across continuous and paginated
+layout. The cold path samples no more than 96 rows, 24 cells per sampled row and
+12 children per sampled cell, then projects the representative content delta.
+It uses model `colWidths`, cell padding, visible merge masters,
+`colspan` / `rowspan`, child count and O(1) `Y.Text.length`; it never materializes
+rich deltas or walks characters merely to estimate text height. Average glyph
+width is `0.75 × baseFontSize`, while line boxes use the document's resolved
+`lineHeight`. Mounted DOM measurement remains authoritative.
+
+The two typography facts come from `DocConfig.layoutMetrics` or from one
+computed-style read during document initialization. Estimation code performs no
+DOM read. If a host changes `--bc-fs` / `--bc-lh` at runtime, it must call
+`doc.updateLayoutMetrics({baseFontSize, lineHeight})`, or apply external CSS and
+call `doc.refreshLayoutMetrics()`. That one explicit update refreshes continuous
+virtualization and sparse pagination projections. Ordinary nested text input
+continues to avoid whole-table estimate recomputation.
 
 Pagination/virtualization Phase A introduced a package-internal
 `VerticalLayoutProjection` query seam while retaining the same Fenwick-backed
@@ -320,7 +336,7 @@ does **not** need its own `IntersectionObserver` just to delay the first data
 request. Start the request from `ngAfterViewInit()`, stop view-bound realtime
 subscriptions from `beforeDetach()`, and restore them from `afterReattach()`.
 The virtual window already limits this work to mounted root units (viewport plus
-overscan), while the detach hooks also cover retained LRU views that have left
+height-budgeted overscan), while the detach hooks also cover retained LRU views that have left
 the window.
 
 Do not combine root virtualization with a second `getBoundingClientRect()` +
@@ -328,8 +344,8 @@ Do not combine root virtualization with a second `getBoundingClientRect()` +
 tracking, can use the wrong scroll root, and leaves retained components with an
 unclear subscription lifetime.
 
-Mounted is deliberately broader than browser-visible: overscan materializes a
-small nearby window, and nested subtrees are atomic. Keep an
+Mounted is deliberately broader than browser-visible: height-budgeted overscan
+materializes a small nearby window, and nested subtrees are atomic. Keep an
 `IntersectionObserver` only when the feature truly needs **exact intersection**
 rather than materialization—for example pausing an expensive animation inside
 a tall nested container, activating an iframe only when painted, or projecting

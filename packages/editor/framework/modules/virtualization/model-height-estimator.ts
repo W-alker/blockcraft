@@ -17,7 +17,15 @@ const DEFAULT_INLINE_IMAGE_WIDTH = 320
 const DEFAULT_INLINE_IMAGE_HEIGHT = 240
 const DEFAULT_ESTIMATED_LINE_HEIGHT = 24
 const DEFAULT_ESTIMATED_CHARACTER_WIDTH = 8
+const TABLE_ESTIMATED_CHARACTER_WIDTH_RATIO = 0.75
+const TABLE_ESTIMATED_LINE_HEIGHT_RATIO = 1.5
 const DEFAULT_TABLE_ROW_HEIGHT = 60
+const DEFAULT_TABLE_COLUMN_WIDTH = 100
+const TABLE_CELL_HORIZONTAL_PADDING = 16
+const TABLE_CELL_VERTICAL_PADDING = 24
+const MAX_TABLE_CONTENT_SAMPLE_ROWS = 96
+const MAX_TABLE_CONTENT_SAMPLE_CELLS_PER_ROW = 24
+const MAX_TABLE_CONTENT_SAMPLE_CHILDREN = 12
 const LINEAR_ESTIMATED_CONTAINERS = new Set(['callout'])
 
 export interface ModelHeightEstimatorOptions {
@@ -77,10 +85,11 @@ export function estimateModelBlockHeightDetails(
 /**
  * Whether a model content change can affect this block's model-only height.
  *
- * Table estimates deliberately depend only on the table's own props, direct
- * row structure, and row height props. Nested cell text/props changes receive
- * live DOM measurement when mounted, but must not rescan thousands of rows on
- * every keystroke.
+ * Table estimates deliberately ignore nested text changes. Mounted tables are
+ * corrected by live DOM measurement, while an unmounted table must not rescan
+ * sampled cell contents on every keystroke. Persisted props changes are rare
+ * enough to refresh the bounded model-first estimate (column widths, merge
+ * structure, media sizing, heading level, and so on).
  */
 export function modelHeightEstimateAffectedByContentChange(
   doc: BlockCraft.Doc,
@@ -90,10 +99,7 @@ export function modelHeightEstimateAffectedByContentChange(
   if (doc.model.getFlavour(blockId) !== 'table') return true
   if (!change.kinds.includes('props')) return false
   return change.blockIds.some(changedId =>
-    changedId === blockId || (
-      doc.model.getFlavour(changedId) === 'table-row' &&
-      doc.model.getParentId(changedId) === blockId
-    ),
+    changedId === blockId || isDescendantOf(doc, changedId, blockId),
   )
 }
 
@@ -138,6 +144,8 @@ function estimateBlock(
           layoutMode: options.layoutMode ?? 'flow',
           fallbackHeight: fallback,
           rootContentWidth: doc.objectSizing?.rootContentWidth ?? 0,
+          baseFontSize: doc.layoutMetrics?.baseFontSize ?? 16,
+          lineHeight: doc.layoutMetrics?.lineHeight ?? 24,
           estimateChildHeight: (childId: string) =>
             estimateBlock(doc, childId, options, visiting).height,
         } as BlockModelHeightEstimateContext
@@ -187,7 +195,7 @@ function estimateBlock(
     }
 
     if (flavour === 'table') {
-      return estimateTableHeight(doc, blockId, options, fallback)
+      return estimateTableHeight(doc, blockId, options, fallback, visiting)
     }
 
     if (LINEAR_ESTIMATED_CONTAINERS.has(flavour)) {
@@ -221,24 +229,248 @@ function estimateTableHeight(
   tableId: string,
   options: ModelHeightEstimatorOptions,
   fallback: number,
+  visiting: Set<string>,
 ): ModelHeightEstimate {
   const rowFallback =
     positiveNumber(options.estimatedHeights?.['table-row']) ??
     DEFAULT_TABLE_ROW_HEIGHT
-  let rowCount = 0
-  let height = 0
-
-  for (const rowId of doc.model.getChildrenIds(tableId)) {
-    if (doc.model.getFlavour(rowId) !== 'table-row') continue
-    rowCount++
-    height +=
-      positiveNumber(doc.model.getProps(rowId)?.['height']) ??
-      rowFallback
+  const rowIds = doc.model.getChildrenIds(tableId)
+    .filter(rowId => doc.model.getFlavour(rowId) === 'table-row')
+  if (!rowIds.length) {
+    return {height: fallback, modelDriven: false}
   }
 
-  return rowCount
-    ? {height: Math.max(fallback, height), modelDriven: true}
-    : {height: fallback, modelDriven: false}
+  const tableProps = doc.model.getProps(tableId) ?? {}
+  const rawColumnWidths = tableProps['colWidths']
+  const columnWidths = Array.isArray(rawColumnWidths)
+    ? rawColumnWidths.map(width =>
+        positiveNumber(width) ?? DEFAULT_TABLE_COLUMN_WIDTH)
+    : []
+  const sampledRowIndices = stratifiedSampleIndices(
+    rowIds.length,
+    MAX_TABLE_CONTENT_SAMPLE_ROWS,
+  )
+  const sampledRowExtras = sampledRowIndices.map(rowIndex =>
+    estimateTableRowContentExtra(
+      doc,
+      rowIds,
+      rowIndex,
+      columnWidths,
+      rowFallback,
+      options,
+      visiting,
+    ),
+  )
+  const projectedContentExtra = projectSampledTotal(
+    sampledRowExtras,
+    rowIds.length,
+  )
+
+  // `table-row.props.height` is intentionally not read here. In the current
+  // dual continuous/paginated layout it is neither bound to the rendered row
+  // nor a stable intrinsic measurement. Treating the legacy/import field as
+  // geometry makes placeholder error accumulate once per row.
+  return {
+    height: Math.max(
+      fallback,
+      rowIds.length * rowFallback + projectedContentExtra,
+    ),
+    modelDriven: true,
+  }
+}
+
+function estimateTableRowContentExtra(
+  doc: BlockCraft.Doc,
+  rowIds: readonly string[],
+  rowIndex: number,
+  columnWidths: readonly number[],
+  rowFallback: number,
+  options: ModelHeightEstimatorOptions,
+  visiting: Set<string>,
+): number {
+  const cellIds = doc.model.getChildrenIds(rowIds[rowIndex])
+  if (!cellIds.length) return 0
+  const sampledCellIndices = stratifiedSampleIndices(
+    cellIds.length,
+    MAX_TABLE_CONTENT_SAMPLE_CELLS_PER_ROW,
+  )
+  let requiredExtra = 0
+
+  for (const columnIndex of sampledCellIndices) {
+    const cellId = cellIds[columnIndex]
+    if (doc.model.getFlavour(cellId) !== 'table-cell') continue
+    const props = doc.model.getProps(cellId) ?? {}
+    if (props['display'] === 'none') continue
+    const colspan = positiveInteger(props['colspan']) ?? 1
+    const rowspan = Math.min(
+      rowIds.length - rowIndex,
+      positiveInteger(props['rowspan']) ?? 1,
+    )
+    const cellWidth = estimateTableCellWidth(
+      columnWidths,
+      columnIndex,
+      colspan,
+    )
+    const contentHeight = estimateTableCellContentHeight(
+      doc,
+      cellId,
+      Math.max(1, cellWidth - TABLE_CELL_HORIZONTAL_PADDING),
+      options,
+      visiting,
+    )
+    requiredExtra = Math.max(
+      requiredExtra,
+      contentHeight - rowFallback * rowspan,
+    )
+  }
+
+  return Math.max(0, requiredExtra)
+}
+
+function estimateTableCellWidth(
+  columnWidths: readonly number[],
+  columnIndex: number,
+  colspan: number,
+): number {
+  let width = 0
+  for (let index = columnIndex; index < columnIndex + colspan; index++) {
+    width += columnWidths[index] ?? DEFAULT_TABLE_COLUMN_WIDTH
+  }
+  return width
+}
+
+function estimateTableCellContentHeight(
+  doc: BlockCraft.Doc,
+  cellId: string,
+  contentWidth: number,
+  options: ModelHeightEstimatorOptions,
+  visiting: Set<string>,
+): number {
+  const childIds = doc.model.getChildrenIds(cellId)
+  if (!childIds.length) return TABLE_CELL_VERTICAL_PADDING
+  const sampledChildIndices = stratifiedSampleIndices(
+    childIds.length,
+    MAX_TABLE_CONTENT_SAMPLE_CHILDREN,
+  )
+  const sampledChildHeights = sampledChildIndices.map(index =>
+    estimateTableCellChildHeight(
+      doc,
+      childIds[index],
+      contentWidth,
+      options,
+      visiting,
+    ),
+  )
+  return TABLE_CELL_VERTICAL_PADDING + projectSampledTotal(
+    sampledChildHeights,
+    childIds.length,
+  )
+}
+
+function estimateTableCellChildHeight(
+  doc: BlockCraft.Doc,
+  childId: string,
+  contentWidth: number,
+  options: ModelHeightEstimatorOptions,
+  visiting: Set<string>,
+): number {
+  if (doc.model.getNodeType?.(childId) !== BlockNodeType.editable) {
+    return estimateBlock(doc, childId, options, visiting).height
+  }
+
+  // Height projection needs a cheap placeholder, not browser-equivalent line
+  // breaking. Y.Text.length is O(1); getTextDeltas()/toDelta plus per-character
+  // inspection would make a large sampled table pay for rich-text materialize
+  // work before it mounts. DOM measurement remains the exact correction path.
+  const textLength = Math.max(0, doc.model.getTextLength?.(childId) ?? 0)
+  const rootFontSize =
+    positiveNumber(doc.layoutMetrics?.baseFontSize) ?? 16
+  const rootLineHeight =
+    positiveNumber(doc.layoutMetrics?.lineHeight) ??
+    rootFontSize * TABLE_ESTIMATED_LINE_HEIGHT_RATIO
+  const fontScale = estimateEditableBlockFontScale(
+    doc.model.getProps(childId),
+  )
+  const characterWidth = rootFontSize *
+    TABLE_ESTIMATED_CHARACTER_WIDTH_RATIO * fontScale
+  const lineHeight = rootLineHeight * fontScale
+  const lineCount = Math.max(
+    1,
+    Math.ceil(
+      textLength * characterWidth /
+      Math.max(1, contentWidth),
+    ),
+  )
+  return lineCount * lineHeight
+}
+
+function estimateEditableBlockFontScale(
+  props: Record<string, unknown> | undefined,
+): number {
+  const heading = props?.['heading']
+  if (heading === 1) return 2
+  if (heading === 2) return 1.8
+  if (heading === 3) return 1.6
+  if (heading === 4) return 1.4
+  return 1
+}
+
+function projectSampledTotal(
+  sampledValues: readonly number[],
+  populationSize: number,
+): number {
+  if (!sampledValues.length || populationSize <= 0) return 0
+  if (sampledValues.length >= populationSize) {
+    return sampledValues.reduce((sum, value) => sum + value, 0)
+  }
+
+  // A 10% trimmed mean prevents one isolated giant sampled cell from being
+  // multiplied across thousands of otherwise short rows, while still
+  // projecting uniformly content-heavy tables accurately.
+  const sorted = [...sampledValues].sort((left, right) => left - right)
+  const trim = Math.floor(sorted.length * 0.1)
+  const representative = sorted.slice(trim, sorted.length - trim)
+  const average = representative.reduce((sum, value) => sum + value, 0) /
+    Math.max(1, representative.length)
+  return average * populationSize
+}
+
+function stratifiedSampleIndices(
+  populationSize: number,
+  limit: number,
+): number[] {
+  if (populationSize <= 0 || limit <= 0) return []
+  if (populationSize <= limit) {
+    return Array.from({length: populationSize}, (_, index) => index)
+  }
+  if (limit === 1) return [Math.floor((populationSize - 1) / 2)]
+
+  const indices = new Set<number>()
+  for (let index = 0; index < limit; index++) {
+    indices.add(Math.round(index * (populationSize - 1) / (limit - 1)))
+  }
+  return [...indices]
+}
+
+function positiveInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : null
+}
+
+function isDescendantOf(
+  doc: BlockCraft.Doc,
+  blockId: string,
+  ancestorId: string,
+): boolean {
+  const seen = new Set<string>()
+  let currentId: string | null = blockId
+  while (currentId && !seen.has(currentId)) {
+    seen.add(currentId)
+    currentId = doc.model.getParentId(currentId)
+    if (currentId === ancestorId) return true
+  }
+  return false
 }
 
 function estimateInlineImageLineHeight(

@@ -40,6 +40,7 @@ const MAX_RECONCILE_FAILURES = 3
 const MAX_CUSTOM_PROJECTION_FAILURES = 3
 const FULL_MOUNT_FALLBACK_MESSAGE = '虚拟渲染异常，已切换为完整渲染'
 const ABSOLUTE_PLACEMENT_OVERSCAN_VIEWPORTS = 1
+const SEGMENT_MERGE_MAX_VIEWPORT_RATIO = 0.25
 
 type SelectionPinSnapshot = Pick<ISelectionJSON, 'anchor' | 'head'>
 
@@ -194,6 +195,14 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     if (objectSizing?.widthChange$) {
       this.subscriptions.add(
         objectSizing.widthChange$.subscribe(() => {
+          this.refreshModelEstimates()
+        }),
+      )
+    }
+    const layoutMetricsChange$ = this.doc.layoutMetrics?.change$
+    if (layoutMetricsChange$) {
+      this.subscriptions.add(
+        layoutMetricsChange$.subscribe(() => {
           this.refreshModelEstimates()
         }),
       )
@@ -667,7 +676,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       this.layoutProjection,
       scrollTop,
       viewportHeight,
-      this.config.overscan,
+      this.config.overscanViewports,
     )
     const configuredPlacementOriginY = Number.parseFloat(
       rootContainer.style.getPropertyValue(
@@ -697,6 +706,8 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
           mountIndices,
           this.config.segmentMergeGap,
           this.blockIds.length,
+          (start, end) => this.layoutProjection.rangeHeight(start, end) <=
+            viewportHeight * SEGMENT_MERGE_MAX_VIEWPORT_RATIO,
         )
     const target = this.expandSegments(segments)
     const mounted = new Set(this.doc.vm.getMountedRootChildIds())

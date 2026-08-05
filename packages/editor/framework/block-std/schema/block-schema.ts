@@ -73,6 +73,8 @@ export interface BlockModelHeightEstimateContext<
   readonly layoutMode: BlockVirtualizationLayoutMode
   readonly fallbackHeight: number
   readonly rootContentWidth: number
+  readonly baseFontSize: number
+  readonly lineHeight: number
   readonly estimateChildHeight: (childId: string) => number
 }
 
