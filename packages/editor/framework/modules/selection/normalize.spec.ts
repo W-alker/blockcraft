@@ -196,6 +196,65 @@ describe('normalizeRange - gap detection', () => {
     expect((result.end as any).index).toBe(2)
   })
 
+  it('maps a root endpoint beside a pagination spacer to the adjacent model boundary', () => {
+    const rootHost = document.createElement('div')
+    rootHost.setAttribute('data-block-id', 'root')
+    rootHost.setAttribute('data-node-type', BlockNodeType.root)
+
+    const first = makeGapHost('block-1')
+    const second = makeGapHost('block-2')
+    const pageGap = document.createElement('div')
+    pageGap.dataset['bcPageGapSpacer'] = 'block-2'
+    pageGap.contentEditable = 'false'
+    rootHost.append(first.host, pageGap, second.host)
+
+    const root = {
+      id: 'root',
+      nodeType: BlockNodeType.root,
+      hostElement: rootHost,
+      childrenIds: ['block-1', 'block-2'],
+      childrenLength: 2,
+    } as any
+    const firstBlock = {
+      id: 'block-1',
+      nodeType: BlockNodeType.block,
+      hostElement: first.host,
+      parentId: 'root',
+      parentBlock: root,
+      childrenIds: [],
+      childrenLength: 0,
+    } as any
+    const secondBlock = {
+      id: 'block-2',
+      nodeType: BlockNodeType.block,
+      hostElement: second.host,
+      parentId: 'root',
+      parentBlock: root,
+      childrenIds: [],
+      childrenLength: 0,
+    } as any
+    const blocks: Record<string, any> = {
+      root,
+      'block-1': firstBlock,
+      'block-2': secondBlock,
+    }
+    const range = new StaticRange({
+      startContainer: first.leading.firstChild!,
+      startOffset: 0,
+      // DOM offset 2 is after [block-1, page-gap], but still before block-2.
+      endContainer: rootHost,
+      endOffset: 2,
+    })
+
+    const result = normalizeRange(range, id => blocks[id])
+
+    expect(result.start.type).toBe('boundary')
+    expect((result.start as any).index).toBe(0)
+    expect(result.end.type).toBe('boundary')
+    expect(result.end.blockId).toBe('root')
+    expect((result.end as any).index).toBe(1)
+  })
+
   it('does NOT treat a gap span on an editable block as a gap point', () => {
     // Guard: gap detection only applies to void/block nodeType.
     const {host, leading} = makeGapHost('editable-1')

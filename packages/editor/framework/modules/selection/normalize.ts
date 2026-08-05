@@ -110,17 +110,25 @@ export function normalizeRange(
     side: EndpointSide,
   ): number => {
     const childNodes = Array.from(container.childNodes)
-    const children = (block.childrenIds ?? [])
-      .map(id => getBlockById(id))
-      .map(child => ({child, domIndex: childNodes.indexOf(child.hostElement)}))
-      .filter(item => item.domIndex >= 0)
-      .sort((a, b) => a.domIndex - b.domIndex)
+    const childrenIds = block.childrenIds ?? []
+    const modelIndexes = new Map(childrenIds.map((id, index) => [id, index]))
+    // View-only children (pagination gaps / virtual spacers) deliberately have
+    // no block id. Resolve the adjacent real block hosts from the DOM first so
+    // those nodes do not skew the model boundary index. This also avoids
+    // resolving every model child component when root virtualization is active.
+    const children = childNodes.flatMap((node, domIndex) => {
+      if (!isElementNode(node)) return []
+      const childId = node.getAttribute('data-block-id')
+      if (!childId) return []
+      const modelIndex = modelIndexes.get(childId)
+      return modelIndex !== undefined ? [{modelIndex, domIndex}] : []
+    })
     if (side === 'start') {
       const nextIndex = children.findIndex(item => item.domIndex >= offset)
-      return nextIndex >= 0 ? nextIndex : children.length
+      return nextIndex >= 0 ? children[nextIndex].modelIndex : childrenIds.length
     }
     for (let i = children.length - 1; i >= 0; i--) {
-      if (children[i].domIndex < offset) return i + 1
+      if (children[i].domIndex < offset) return children[i].modelIndex + 1
     }
     return 0
   }
@@ -178,9 +186,14 @@ export function normalizeRange(
     if (block.nodeType !== BlockNodeType.block && block.nodeType !== BlockNodeType.root) return null
     const element = isElementNode(node) ? node : null
     if (!element) return null
-    const childrenContainer = element.classList.contains('children-render-container')
-      ? element
-      : element.querySelector<HTMLElement>('.children-render-container')
+    let childrenContainer: HTMLElement | null
+    if (element.classList.contains('children-render-container')) {
+      childrenContainer = element
+    } else if (element === block.hostElement && block.nodeType === BlockNodeType.root) {
+      childrenContainer = element
+    } else {
+      childrenContainer = element.querySelector<HTMLElement>('.children-render-container')
+    }
     if (element !== block.hostElement && !childrenContainer) return null
 
     const index = childrenContainer === element

@@ -1,5 +1,5 @@
 import {Subject} from 'rxjs';
-import {BlockNodeType} from '../../block-std';
+import {BlockNodeType, EditableBlockComponent} from '../../block-std';
 import {createBlockGapSpace} from '../../utils';
 import {nextTick} from '../../../global';
 import {SelectionManager} from './index';
@@ -114,6 +114,50 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(result.value!.end.blockId).toBe('block-1');
     expect(manager.value).toBe(result.value);
     expect(blockHost.classList.contains('selected')).toBeTrue();
+  });
+
+  it('keeps a non-collapsed drag when its head lands on a paginated root gap', () => {
+    const {manager, rootHost, blockHost, block} = createManager();
+    const editContainer = document.createElement('span');
+    editContainer.className = 'edit-container';
+    const text = document.createTextNode('paragraph');
+    editContainer.appendChild(text);
+    blockHost.setAttribute('data-node-type', BlockNodeType.editable);
+    blockHost.appendChild(editContainer);
+    block.nodeType = BlockNodeType.editable;
+    Object.setPrototypeOf(block, EditableBlockComponent.prototype);
+    Object.defineProperties(block, {
+      containerElement: {value: editContainer},
+      textLength: {value: text.length},
+      runtime: {
+        value: {
+          mapper: {
+            domPointToModelPoint: (_container: Node, _node: Node, offset: number) => offset,
+          },
+        },
+      },
+    });
+    const pageGap = document.createElement('div');
+    pageGap.dataset['bcPageGapSpacer'] = 'next-page-block';
+    pageGap.contentEditable = 'false';
+    rootHost.appendChild(pageGap);
+
+    const range = document.createRange();
+    range.setStart(text, 3);
+    range.setEnd(rootHost, 1);
+    const nativeSelection = document.getSelection()!;
+    nativeSelection.removeAllRanges();
+    nativeSelection.addRange(range);
+
+    const result = manager.recalculate();
+
+    expect(result.value).not.toBeNull();
+    expect(result.value!.collapsed).toBeFalse();
+    expect(result.value!.start.type).toBe('text');
+    expect((result.value!.start as any).offset).toBe(3);
+    expect(result.value!.end.type).toBe('boundary');
+    expect((result.value!.end as any).index).toBe(1);
+    expect(nativeSelection.getRangeAt(0).collapsed).toBeFalse();
   });
 
   it('rejects a native range that leaks outside the editor before normalization', () => {

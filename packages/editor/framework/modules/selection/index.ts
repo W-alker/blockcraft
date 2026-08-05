@@ -572,7 +572,13 @@ export class SelectionManager {
       return {value: this.value}
     }
 
-    if (range.startContainer === this.doc.root.hostElement || range.endContainer === this.doc.root.hostElement) {
+    if (
+      range.collapsed &&
+      (range.startContainer === rootHost || range.endContainer === rootHost)
+    ) {
+      // A collapsed blank-root click still needs a concrete native caret.
+      // Non-collapsed drag endpoints are valid structural boundaries; moving
+      // those would collapse the user's range, especially over page spacers.
       // selection.modify 在边界处可能无法推进 range，原代码同步自递归会栈溢出；
       // 限制重试深度，超出后视为无效选区。
       if (_depth >= 3) {
