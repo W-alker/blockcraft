@@ -79,7 +79,9 @@ describe('BaseBlockComponent view lifecycle', () => {
     })
     Object.assign((block as any).doc, {
       schemas: {
-        get: () => ({metadata: {viewRetention: 'keep-alive'}}),
+        get: () => ({
+          metadata: {virtualization: {viewRetention: 'keep-alive'}},
+        }),
       },
       virtualization: {
         enabled: true,

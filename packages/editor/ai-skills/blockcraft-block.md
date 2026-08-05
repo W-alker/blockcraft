@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-07-31
+> Last updated: 2026-08-04
 
 ## Block Types
 
@@ -72,7 +72,9 @@ export const MyBlockSchema: IBlockSchemaOptions<MyBlockModel> = {
     version: 1,
     label: "My Block",
     icon: "bc_icon bc_my-block",
-    // viewRetention: 'keep-alive', // preserve DOM-owned state after first mount
+    // virtualization: {
+    //   viewRetention: 'keep-alive', // preserve DOM-owned state after first mount
+    // },
     // svgIcon: "bc_my-block-color",  // optional colored icon
   },
 };
@@ -442,7 +444,9 @@ root-view eviction after their first materialization:
 metadata: {
   version: 1,
   label: 'Custom player',
-  viewRetention: 'keep-alive',
+  virtualization: {
+    viewRetention: 'keep-alive',
+  },
 }
 ```
 
@@ -450,7 +454,8 @@ Custom schema assemblies that use the standard absolute path must register
 `PlacementLayoutBlockSchema` once alongside their positionable blocks. The
 bundled editor already includes it.
 
-`viewRetention` accepts `'virtual'` (the default) or `'keep-alive'`. A
+`metadata.virtualization.viewRetention` accepts `'virtual'` (the default) or
+`'keep-alive'`. A
 keep-alive block pins its containing direct-root render unit for the remaining
 component lifetime, including when the block is nested. It does not force an
 initial full-document mount: the lease begins only after that block first enters
@@ -461,6 +466,49 @@ browsing contexts or active media playback. Ordinary blocks should remain
 virtual. Built-in `audio`, `video`, `embed`, `figma-embed`, and `juejin-embed`
 schemas opt in. A host can override any schema policy through
 `DocConfig.virtualization.resolveViewRetention`; see `blockcraft-app.md`.
+
+### Model-Only Virtual Height Estimation
+
+Custom Schemas can own their offscreen height rule instead of relying on one
+fixed `DocConfig.virtualization.estimatedHeights[flavour]` value:
+
+```typescript
+metadata: {
+  version: 1,
+  label: 'Task list',
+  virtualization: {
+    estimateHeight: ({props, layoutMode}) =>
+      layoutMode === 'paginated' ? 0 : props.height ?? 600,
+  },
+}
+```
+
+`estimateHeight(context)` receives only model/layout facts: `blockId`,
+`flavour`, `nodeType`, readonly `props`, direct `childIds`, `layoutMode`
+(`'flow' | 'paginated'`), `fallbackHeight`, cached `rootContentWidth`, and a
+cycle-safe `estimateChildHeight(childId)` helper. Return a finite non-negative
+CSS-pixel height; zero is valid. Invalid results and thrown errors fall through
+to framework object-sizing/built-in/flavour fallback rules. A successful value
+is marked model-driven, so offscreen props/content/structure changes can update
+continuous virtualization and sparse pagination before the view mounts.
+
+The estimator can run many times during model reconciliation. Keep it
+deterministic, synchronous and DOM/network free. If remote or asynchronous
+business data changes the visual height, persist a compact layout fact such as
+`height`, `rowCount`, collapsed state or aspect ratio in block props. Do not
+query a service or cache owned only by the Angular component. Use
+`estimateChildHeight()` only for children that contribute to vertical extent;
+large custom containers should avoid an unconditional deep traversal.
+
+The built-in `page-divider` demonstrates layout-specific geometry: it reserves
+a compact marker height in flow layout and returns zero in paginated layout,
+where the same model node acts as a manual break.
+
+`viewRetention` and `estimateHeight` intentionally share the same
+`metadata.virtualization` capability object: the former owns the materialized
+view lifecycle, while the latter owns model-only geometry before or between
+materializations. Document-wide windowing, LRU limits and host overrides remain
+under `DocConfig.virtualization`.
 
 ### Object Layout and Placement
 

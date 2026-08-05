@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-04
+> Last updated: 2026-08-05
 
 ## Theme Structure
 
@@ -234,7 +234,16 @@ layout or serialization.
 | `--bc-page-chrome-fs` | `12px` | Header/footer font size |
 | `--bc-page-content-height` | runtime page content height | Maximum height inherited by top-level void/code blocks in live and print pagination |
 
-Runtime classes are `.bc-paginated` on the document root, `.bc-paginated-scroll` on the scroll container, `.bc-pagination-backdrop`, `.bc-page-sheet`, `.bc-page-header` and `.bc-page-footer`. They are plugin-owned state: host code may style them but must not add/remove them directly.
+Runtime classes are `.bc-paginated` on the document root,
+`.bc-paginated-scroll` on the actual scroll container,
+`.bc-pagination-surface` on the root's direct parent, plus
+`.bc-pagination-backdrop`, `.bc-page-sheet`, `.bc-page-header` and
+`.bc-page-footer`. A configured first-page host header additionally receives
+`.bc-pagination-document-header` while projected. The scroll container and pagination surface can be the same
+element, but need not be: the former owns scrolling/background while the latter
+owns page/content centering and their shared coordinate origin. These are
+plugin-owned states: host code may style them but must not add/remove them
+directly.
 
 Oversized table-cell continuation additionally owns
 `.bc-pagination-cell-flow-gap`, `.bc-pagination-table-flow-mask`,

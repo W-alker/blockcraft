@@ -1242,6 +1242,142 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(range.endContainer).toBe(content);
   });
 
+  it('projects and recovers a full-root range between the outer flow block edges', async () => {
+    const rootHost = document.createElement('div');
+    rootHost.setAttribute('data-block-id', 'root');
+    rootHost.setAttribute('contenteditable', 'true');
+    const flow1Host = document.createElement('p');
+    flow1Host.setAttribute('data-block-id', 'flow-1');
+    const flow1Text = document.createTextNode('flow one');
+    flow1Host.appendChild(flow1Text);
+    const layoutHost = document.createElement('div');
+    layoutHost.setAttribute('data-block-id', 'layout');
+    layoutHost.setAttribute('data-bc-placement-layout', '');
+    const absoluteHost = document.createElement('div');
+    absoluteHost.textContent = 'absolute object';
+    layoutHost.appendChild(absoluteHost);
+    const flow2Host = document.createElement('div');
+    flow2Host.setAttribute('data-block-id', 'flow-2');
+    const flow2Leading = createBlockGapSpace('before');
+    const flow2Trailing = createBlockGapSpace('after');
+    flow2Host.append(flow2Leading, document.createElement('div'), flow2Trailing);
+    rootHost.append(flow1Host, flow2Host, layoutHost);
+    document.body.appendChild(rootHost);
+
+    const rootBlock = {
+      id: 'root',
+      nodeType: BlockNodeType.root,
+      hostElement: rootHost,
+      childrenLength: 3,
+      childrenIds: ['flow-1', 'flow-2', 'layout'],
+    } as any;
+    const blocks: Record<string, any> = {
+      root: rootBlock,
+      'flow-1': {
+        id: 'flow-1',
+        flavour: 'paragraph',
+        nodeType: BlockNodeType.editable,
+        hostElement: flow1Host,
+        containerElement: flow1Host,
+        parentId: 'root',
+        parentBlock: rootBlock,
+        textLength: flow1Text.length,
+        runtime: {
+          mapper: {
+            modelPointToDomPoint: (_container: HTMLElement, offset: number) => ({
+              node: flow1Text,
+              offset,
+            }),
+          },
+        },
+      },
+      layout: {
+        id: 'layout',
+        flavour: 'placement-layout',
+        nodeType: BlockNodeType.block,
+        hostElement: layoutHost,
+        parentId: 'root',
+        parentBlock: rootBlock,
+      },
+      'flow-2': {
+        id: 'flow-2',
+        nodeType: BlockNodeType.block,
+        hostElement: flow2Host,
+        parentId: 'root',
+        parentBlock: rootBlock,
+      },
+    };
+    const doc = {
+      root: rootBlock,
+      event: {add() {}, bindHotkey() {}},
+      afterInit() {},
+      onDestroy$: new Subject<void>(),
+      placement: {
+        getRootFlowChildIds: () => ['flow-1', 'flow-2'],
+      },
+      getBlockById: (id: string) => blocks[id],
+      compareBlockPosition: () => Node.DOCUMENT_POSITION_FOLLOWING,
+      queryBlocksBetween: () => [],
+      logger: {warn: jasmine.createSpy('warn')},
+    };
+    const manager = new SelectionManager(doc as any);
+
+    manager.replay({
+      anchor: {blockId: 'root', type: 'boundary', index: 0},
+      head: {blockId: 'root', type: 'boundary', index: 3},
+      commonParent: 'root',
+    });
+
+    expect(manager.value?.getBoundarySelectedChildIds()).toEqual([
+      'flow-1',
+      'flow-2',
+      'layout',
+    ]);
+
+    const range = document.getSelection()!.getRangeAt(0);
+    expect(range.startContainer).toBe(flow1Text);
+    expect(range.startOffset).toBe(0);
+    expect(range.endContainer).toBe(flow2Trailing.firstChild!);
+    expect(range.endOffset).toBe(flow2Trailing.firstChild!.textContent!.length);
+    expect(range.toString()).not.toContain('absolute object');
+
+    const modelSelection = manager.value;
+    (manager as any)._suppressProgrammaticSelectionChangeUntil = 0;
+    manager.recalculate();
+    expect(manager.value?.toJSON()).toEqual(modelSelection?.toJSON());
+    const roundTrippedRange = document.getSelection()!.getRangeAt(0);
+    expect(roundTrippedRange.startContainer).toBe(flow1Text);
+    expect(roundTrippedRange.startOffset).toBe(0);
+    expect(roundTrippedRange.endContainer).toBe(flow2Trailing.firstChild!);
+    expect(roundTrippedRange.endOffset)
+      .toBe(flow2Trailing.firstChild!.textContent!.length);
+
+    document.getSelection()!.removeAllRanges();
+    const recovered = manager.recalculate();
+
+    expect(recovered.value?.toJSON()).toEqual(modelSelection?.toJSON());
+    expect(manager.value?.toJSON()).toEqual(modelSelection?.toJSON());
+
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+    const recoveredRange = document.getSelection()!.getRangeAt(0);
+    expect(recoveredRange.startContainer).toBe(flow1Text);
+    expect(recoveredRange.startOffset).toBe(0);
+    expect(recoveredRange.endContainer).toBe(flow2Trailing.firstChild!);
+    expect(recoveredRange.endOffset)
+      .toBe(flow2Trailing.firstChild!.textContent!.length);
+
+    const outsideButton = document.createElement('button');
+    outsideButton.setAttribute('data-selection-test-outside', 'true');
+    document.body.appendChild(outsideButton);
+    outsideButton.focus();
+    document.getSelection()!.removeAllRanges();
+
+    expect(manager.recalculate().value).toBeNull();
+    expect(manager.value).toBeNull();
+    doc.onDestroy$.next();
+  });
+
   it('replays reversed boundary JSON without normalizing canonical anchor/head', () => {
     const {manager, content} = createBoundaryBridgeManager();
 
@@ -2319,6 +2455,7 @@ describe('SelectionManager projection mount coordination', () => {
       mountedTextNodes,
       rootHost,
       doc,
+      surface,
       dispatchSelectionChange: () => {
         eventStreams.get('selectionchange')?.next(new Event('selectionchange'));
       },
@@ -2463,6 +2600,105 @@ describe('SelectionManager projection mount coordination', () => {
     expect(repaired.endContainer).toBe(lastText);
     expect(repaired.endOffset).toBe(lastText.length);
     expect(manager.value?.toJSON()).toEqual(fullSelection);
+    doc.onDestroy$.next();
+  });
+
+  it('retries when Chrome silently rejects a range during virtual reprojection', () => {
+    const {
+      manager,
+      mountEditable,
+      mountedTextNodes,
+      frames,
+      doc,
+    } = createProjectionMountManager();
+    const viewChange$ = new Subject<{mountedRootIds: readonly string[]}>();
+    const ensureViewMounted = jasmine.createSpy('ensureViewMounted').and.callFake((blockIds: readonly string[]) => {
+      blockIds.forEach(blockId => {
+        if (blockId.startsWith('virtual-p') && !mountedTextNodes.has(blockId)) {
+          mountEditable(blockId);
+        }
+      });
+    });
+    (doc as any).virtualization = {enabled: true, ensureViewMounted, viewChange$};
+    (manager as any)._bindEvents(doc.root);
+
+    const fullSelection = {
+      anchor: {blockId: 'virtual-root', type: 'boundary' as const, index: 0},
+      head: {blockId: 'virtual-root', type: 'boundary' as const, index: 4},
+      commonParent: 'virtual-root',
+    };
+    manager.replay(fullSelection);
+
+    const nativeSelection = document.getSelection()!;
+    const originalAddRange = nativeSelection.addRange.bind(nativeSelection);
+    let rejectNextRange = true;
+    spyOn(nativeSelection, 'addRange').and.callFake((range: Range) => {
+      if (rejectNextRange) {
+        rejectNextRange = false;
+        return;
+      }
+      originalAddRange(range);
+    });
+
+    viewChange$.next({mountedRootIds: ['virtual-p0', 'virtual-p2']});
+
+    expect(manager.value?.toJSON()).toEqual(fullSelection);
+    expect(nativeSelection.rangeCount).toBe(0);
+    expect(frames.size).toBe(1);
+
+    const [retry] = frames.values();
+    retry(performance.now());
+
+    expect(manager.value?.toJSON()).toEqual(fullSelection);
+    const repaired = nativeSelection.getRangeAt(0);
+    expect(repaired.startContainer).toBe(mountedTextNodes.get('virtual-p0')!);
+    expect(repaired.startOffset).toBe(0);
+    expect(repaired.endContainer).toBe(mountedTextNodes.get('virtual-p2')!);
+    expect(repaired.endOffset).toBe(mountedTextNodes.get('virtual-p2')!.length);
+    doc.onDestroy$.next();
+  });
+
+  it('restores a full-document range when a virtual rewrite drops focus and native selection', () => {
+    const {
+      manager,
+      mountEditable,
+      mountedTextNodes,
+      doc,
+      surface,
+    } = createProjectionMountManager();
+    const viewChange$ = new Subject<{mountedRootIds: readonly string[]}>();
+    const ensureViewMounted = jasmine.createSpy('ensureViewMounted').and.callFake((blockIds: readonly string[]) => {
+      blockIds.forEach(blockId => {
+        if (blockId.startsWith('virtual-p') && !mountedTextNodes.has(blockId)) {
+          mountEditable(blockId);
+        }
+      });
+    });
+    (doc as any).virtualization = {enabled: true, ensureViewMounted, viewChange$};
+    (manager as any)._bindEvents(doc.root);
+
+    const fullSelection = {
+      anchor: {blockId: 'virtual-root', type: 'boundary' as const, index: 0},
+      head: {blockId: 'virtual-root', type: 'boundary' as const, index: 4},
+      commonParent: 'virtual-root',
+    };
+    manager.replay(fullSelection);
+
+    document.getSelection()!.removeAllRanges();
+    surface.focusRoot.calls.reset();
+    surface.hasEditorFocus = () => false;
+    surface.ownsNativeSelection = () => false;
+    surface.isFocusDropped = () => true;
+
+    viewChange$.next({mountedRootIds: ['virtual-p0', 'virtual-p2']});
+
+    expect(surface.focusRoot).toHaveBeenCalledTimes(1);
+    expect(manager.value?.toJSON()).toEqual(fullSelection);
+    const restored = document.getSelection()!.getRangeAt(0);
+    expect(restored.startContainer).toBe(mountedTextNodes.get('virtual-p0')!);
+    expect(restored.startOffset).toBe(0);
+    expect(restored.endContainer).toBe(mountedTextNodes.get('virtual-p2')!);
+    expect(restored.endOffset).toBe(mountedTextNodes.get('virtual-p2')!.length);
     doc.onDestroy$.next();
   });
 

@@ -31,7 +31,7 @@ export const EmbedBlockSchema: IBlockSchemaOptions<EmbedBlockModel> = {
   },
   metadata: {
     version: 1,
-    viewRetention: 'keep-alive',
+    virtualization: {viewRetention: 'keep-alive'},
     label: "网页嵌入",
     svgIcon: "bc_Figma",
     icon: "bc_icon bc_Figma"

@@ -4,6 +4,10 @@ import {
   DeltaInsertEmbed,
   readInlineImageDelta,
 } from '../../block-std'
+import type {
+  BlockModelHeightEstimateContext,
+  BlockVirtualizationLayoutMode,
+} from '../../block-std'
 import {
   resolveInlineFloatGeometry,
 } from '../../block-std/inline/runtime/inline-float-layout'
@@ -19,6 +23,7 @@ const LINEAR_ESTIMATED_CONTAINERS = new Set(['callout'])
 export interface ModelHeightEstimatorOptions {
   estimatedHeights?: Readonly<Partial<Record<string, number>>>
   defaultHeight?: number
+  layoutMode?: BlockVirtualizationLayoutMode
   rootFacts?: {
     flavour: string
     nodeType: BlockNodeType
@@ -33,6 +38,11 @@ export interface ModelHeightEstimate {
 
 const positiveNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : null
+
+const nonNegativeNumber = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? value
     : null
 
@@ -102,7 +112,7 @@ function estimateBlock(
 
   const flavour = knownFacts?.flavour ?? doc.model.getFlavour(blockId)
   if (!flavour) return {height: defaultHeight, modelDriven: false}
-  if (flavour === 'placement-layout' || flavour === 'page-divider') {
+  if (flavour === 'placement-layout') {
     return {height: 0, modelDriven: true}
   }
 
@@ -111,6 +121,34 @@ function estimateBlock(
     defaultHeight
   visiting.add(blockId)
   try {
+    const schemaEstimator = doc.schemas
+      ?.get(flavour, false)
+      ?.metadata.virtualization
+      ?.estimateHeight
+    if (schemaEstimator) {
+      try {
+        const props = knownFacts?.props ?? doc.model.getProps(blockId) ?? {}
+        const nodeType = knownFacts?.nodeType ?? doc.model.getNodeType?.(blockId)
+        const context = {
+          blockId,
+          flavour,
+          nodeType,
+          props,
+          childIds: doc.model.getChildrenIds(blockId),
+          layoutMode: options.layoutMode ?? 'flow',
+          fallbackHeight: fallback,
+          rootContentWidth: doc.objectSizing?.rootContentWidth ?? 0,
+          estimateChildHeight: (childId: string) =>
+            estimateBlock(doc, childId, options, visiting).height,
+        } as BlockModelHeightEstimateContext
+        const estimate = schemaEstimator(context)
+        const height = nonNegativeNumber(estimate)
+        if (height !== null) return {height, modelDriven: true}
+      } catch (error) {
+        doc.logger?.warn('blockModelHeightEstimatorError: ', error)
+      }
+    }
+
     const dimensions = doc.objectSizing?.resolve(
       flavour,
       knownFacts?.props ?? doc.model.getProps(blockId),

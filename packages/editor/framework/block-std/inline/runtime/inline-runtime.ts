@@ -8,11 +8,98 @@ import {
   InlinePaginationGap,
   InlinePaginationProjection,
 } from './inline-pagination-projection'
-import {InlineRangeMeasurer} from './inline-fragment-layout'
+import {
+  graphemeBoundaries,
+  InlineRangeMeasurer,
+} from './inline-fragment-layout'
 import {
   InlinePaginationLineStart,
   registerInlinePaginationAccess,
 } from './inline-pagination-access'
+
+const PAGINATION_LINE_TOLERANCE = 0.75
+const PAGINATION_EXACT_LINE_LIMIT = 64
+
+/**
+ * Collapse the client rects of rich inline runs into visual lines.
+ *
+ * A single line can contain text, emoji and differently formatted c-elements.
+ * Their ink tops routinely differ by several pixels, so de-duplicating only by
+ * `rect.top` turns one visual line into multiple pagination candidates. A cut
+ * resolved from such a false candidate lands in the middle of the line and
+ * leaves its leading text painted across the page gap.
+ */
+function visualLineTops(rects: readonly DOMRect[]): number[] {
+  const visible = rects
+    .filter(rect =>
+      (rect.width > 0.01 || rect.height > 0.01)
+      && Number.isFinite(rect.top)
+      && Number.isFinite(rect.bottom),
+    )
+    .sort((left, right) => left.top - right.top || left.left - right.left)
+  const lines: Array<{top: number; bottom: number}> = []
+
+  for (const rect of visible) {
+    const rectBottom = Math.max(rect.top, rect.bottom)
+    let line = lines[lines.length - 1]
+    const overlapsLastLine = line
+      && (
+        Math.min(line.bottom, rectBottom)
+          - Math.max(line.top, rect.top)
+          > PAGINATION_LINE_TOLERANCE
+      )
+    if (!overlapsLastLine) {
+      line = {top: rect.top, bottom: rectBottom}
+      lines.push(line)
+      continue
+    }
+    line.top = Math.min(line.top, rect.top)
+    line.bottom = Math.max(line.bottom, rectBottom)
+  }
+
+  return lines
+    .sort((left, right) => left.top - right.top)
+    .map(line => line.top)
+}
+
+/** Keep line candidates distributed across the full natural block height. */
+function sampleLineTops(tops: readonly number[], limit: number): number[] {
+  if (tops.length <= limit) return [...tops]
+  const sampled: number[] = []
+  for (let index = 1; index <= limit; index++) {
+    const sourceIndex = Math.min(
+      tops.length - 1,
+      Math.floor(index * tops.length / (limit + 1)),
+    )
+    const top = tops[sourceIndex]
+    if (sampled[sampled.length - 1] !== top) sampled.push(top)
+  }
+  return sampled
+}
+
+function estimatedLineTops(
+  containerTop: number,
+  containerHeight: number,
+  lineHeight: number,
+  estimatedLineCount: number,
+  limit: number,
+): number[] {
+  const sampleCount = Math.min(limit, Math.max(0, estimatedLineCount - 1))
+  const tops: number[] = []
+  for (let index = 1; index <= sampleCount; index++) {
+    const lineIndex = Math.max(
+      1,
+      Math.min(
+        estimatedLineCount - 1,
+        Math.floor(index * estimatedLineCount / (sampleCount + 1)),
+      ),
+    )
+    const top = containerTop
+      + lineIndex * containerHeight / estimatedLineCount
+    if (tops[tops.length - 1] !== top) tops.push(top)
+  }
+  return tops
+}
 
 /**
  * InlineRuntime is the per-block coordinator that owns a ScrollBlot tree
@@ -162,48 +249,76 @@ export class InlineRuntime {
    * @internal Pagination measurement only.
    */
   private _measurePaginationLineStarts(limit = 2048): InlinePaginationLineStart[] {
+    const safeLimit = Math.max(0, Math.floor(limit))
     if (
-      !this.container.isConnected
+      safeLimit === 0
+      || !this.container.isConnected
       || this.textLength <= 0
       || this.container.hasAttribute('data-bc-inline-float-owner')
     ) {
       return []
     }
 
-    const width = this.container.clientWidth
-      || this.container.getBoundingClientRect().width
-    if (!Number.isFinite(width) || width <= 0) return []
-
     const measurer = new InlineRangeMeasurer(
       this.container,
       this._scrollBlot,
       (start, end) => this.modelRangeToDomRange(start, end),
     )
-    const containerTop = this.container.getBoundingClientRect().top
+    const containerRect = this.container.getBoundingClientRect()
+    const containerTop = containerRect.top
+    const lineHeight = measurer.lineHeight()
+    if (!Number.isFinite(lineHeight) || lineHeight <= 0) return []
+    const estimatedLineCount = Math.max(
+      1,
+      Math.round(containerRect.height / lineHeight),
+    )
+    // Exact native Range rect enumeration is cheap for ordinary paragraphs,
+    // but becomes a main-thread trap when repeated across many rich cells.
+    // Large blocks resolve a bounded set of vertical targets instead.
+    const sampledTops = estimatedLineCount <= PAGINATION_EXACT_LINE_LIMIT
+      ? sampleLineTops(
+        visualLineTops(this.modelRangeToClientRects(0, this.textLength)).slice(1),
+        safeLimit,
+      )
+      : estimatedLineTops(
+        containerTop,
+        containerRect.height,
+        lineHeight,
+        estimatedLineCount,
+        safeLimit,
+      )
+    if (!sampledTops.length) return []
+
     const points: InlinePaginationLineStart[] = []
-    let cursor = 0
+    let minimumOffset = 1
 
     measurer.beginLayoutPass()
     try {
-      while (cursor < this.textLength && points.length < limit) {
-        const fitted = measurer.fitFragment(
-          cursor,
-          this.textLength,
-          width,
-          false,
+      for (const targetTop of sampledTops) {
+        const offset = this._findPaginationOffsetAtTop(
+          targetTop,
+          minimumOffset,
+          measurer,
         )
-        const next = fitted.end > cursor
-          ? fitted.end
-          : measurer.nextOffset(cursor, this.textLength)
-        if (next <= cursor || next >= this.textLength) break
-
-        const nextAfter = measurer.nextOffset(next, this.textLength)
-        const rect = this.modelRangeToClientRects(next, nextAfter).find(
-          candidate => candidate.width > 0.01 || candidate.height > 0.01,
-        )
-        if (!rect) break
-        points.push({offset: next, top: rect.top - containerTop})
-        cursor = next
+        if (offset === null || offset >= this.textLength) continue
+        const rect = this._paginationRectAt(offset, measurer)
+        if (!rect) continue
+        // Range rects describe glyph ink, not the CSS line box. Using the ink
+        // top as consumed height lets the preceding fragment extend into the
+        // page backdrop when line-height contains leading. Project against the
+        // estimated line-box top so the entire next line moves as one unit.
+        const top = rect.top
+          - Math.max(0, (lineHeight - rect.height) / 2)
+          - containerTop
+        const previous = points[points.length - 1]
+        if (
+          offset <= (previous?.offset ?? 0)
+          || top <= (previous?.top ?? Number.NEGATIVE_INFINITY) + PAGINATION_LINE_TOLERANCE
+        ) {
+          continue
+        }
+        points.push({offset, top})
+        minimumOffset = offset + 1
       }
     } catch {
       return []
@@ -211,6 +326,62 @@ export class InlineRuntime {
       measurer.endLayoutPass()
     }
     return points
+  }
+
+  private _findPaginationOffsetAtTop(
+    targetTop: number,
+    minimumOffset: number,
+    measurer: InlineRangeMeasurer,
+  ): number | null {
+    let low = Math.max(1, minimumOffset)
+    let high = this.textLength - 1
+    let best = -1
+
+    // Natural inline y is monotonic in model order. Resolve only the sampled
+    // sheet-scale targets, rather than cloning and fitting once per visual line.
+    while (low <= high) {
+      const middle = (low + high) >>> 1
+      const rect = this._paginationRectAt(middle, measurer)
+      if (!rect) {
+        low = middle + 1
+        continue
+      }
+      if (rect.top >= targetTop - PAGINATION_LINE_TOLERANCE) {
+        best = middle
+        high = middle - 1
+      } else {
+        low = middle + 1
+      }
+    }
+    if (best < 0) return null
+
+    return this._graphemeStartAtOrBefore(best)
+  }
+
+  private _paginationRectAt(
+    offset: number,
+    measurer: InlineRangeMeasurer,
+  ): DOMRect | undefined {
+    if (offset < 0 || offset >= this.textLength) return undefined
+    const end = measurer.nextOffset(offset, this.textLength)
+    if (end <= offset) return undefined
+    return this.modelRangeToClientRects(offset, end).find(
+      candidate => candidate.width > 0.01 || candidate.height > 0.01,
+    )
+  }
+
+  private _graphemeStartAtOrBefore(offset: number): number {
+    const info = this._scrollBlot.findByOffset(offset)
+    if (!(info?.blot instanceof TextBlot)) return offset
+    if (info.localOffset <= 0 || info.localOffset >= info.blot.length) return offset
+
+    const leafStart = this._scrollBlot.offsetOf(info.blot)
+    const windowStart = Math.max(0, info.localOffset - 128)
+    const text = info.blot.text.slice(windowStart, info.localOffset + 128)
+    const localBoundary = graphemeBoundaries(text)
+      .filter(boundary => boundary <= info.localOffset - windowStart)
+      .pop()
+    return leafStart + windowStart + (localBoundary ?? 0)
   }
 
   /**

@@ -51,6 +51,17 @@ describe('paginate - 基础', () => {
     // 首页 150、常规 300，块各 100：首页放 a，b/c 到常规页
     const r = paginate([para('a'), para('b'), para('c')], geo(300, 150));
     expect(pageIds(r)).toEqual([['a'], ['b', 'c']]);
+    // 首页额外顶部属于真实布局高度，必须进入 usedHeight，
+    // 才能让第二页前的 spacer 抵消这段偏移。
+    expect(r.pages[0].usedHeight).toBe(250);
+    expect(r.pages[1].usedHeight).toBe(200);
+  });
+
+  it('首页文档头占满剩余空间时，首个块下推但后续页恢复常规容量', () => {
+    const r = paginate([para('a', 200), para('b', 100)], geo(300, 150));
+    expect(pageIds(r)).toEqual([[], ['a', 'b']]);
+    expect(r.pages[0].usedHeight).toBe(150);
+    expect(r.pages[1].usedHeight).toBe(300);
   });
 
   // ─── 手动分页符：镜像 analyzePages 语义（像素化）───
@@ -201,5 +212,18 @@ describe('paginate - 超大块', () => {
   it('byBlock 对拆开块记录首片所在页', () => {
     const r = paginate([para('a', 40), breakBlock('t', 200, [50, 120])], geo(100));
     expect(r.byBlock.get('t')!.pageIndex).toBe(0); // 首片 0-50 在页0
+  });
+
+  it('大量安全切点仍能按序线性推进，不反复扫描完整切点集', () => {
+    const cutCount = 4096;
+    const cuts = Array.from({length: cutCount - 1}, (_, index) => index + 1);
+    const r = paginate([breakBlock('huge', cutCount, cuts)], geo(1));
+
+    expect(r.pages.length).toBe(cutCount);
+    expect(r.pages[0].slots[0].fragment).toEqual({fromOffset: 0, toOffset: 1});
+    expect(r.pages[cutCount - 1].slots[0].fragment).toEqual({
+      fromOffset: cutCount - 1,
+      toOffset: cutCount,
+    });
   });
 });

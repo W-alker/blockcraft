@@ -710,6 +710,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     return estimateModelBlockHeight(this.doc, blockId, {
       estimatedHeights: this.config.estimatedHeights,
       defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
+      layoutMode: 'flow',
     })
   }
 
@@ -741,6 +742,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       const estimate = estimateModelBlockHeightDetails(this.doc, blockId, {
         estimatedHeights: this.config.estimatedHeights,
         defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
+        layoutMode: 'flow',
       })
       if (estimate.modelDriven) {
         measurements.push([blockId, estimate.height])

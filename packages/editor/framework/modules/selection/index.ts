@@ -487,6 +487,31 @@ export class SelectionManager {
     return this._surface.hasEditorFocus()
   }
 
+  private _recoverableMissingRootProjection(): BlockSelection | null {
+    const current = this.value
+    const rootId = this.doc.root.id
+    if (
+      !current ||
+      current.collapsed ||
+      current.start.type !== 'boundary' ||
+      current.end.type !== 'boundary' ||
+      current.start.blockId !== rootId ||
+      current.end.blockId !== rootId
+    ) {
+      return null
+    }
+
+    const active = this._surface.getActiveElement()
+    const rootHost = this.doc.root.hostElement
+    const editorStillOwnsFocus = active === rootHost ||
+      (!!active && rootHost.contains(active))
+    const documentFocusWasDropped =
+      this._surface.isFocusDropped() &&
+      !this._surface.ownerDocument.hasFocus()
+
+    return editorStillOwnsFocus || documentFocusWasDropped ? current : null
+  }
+
   recalculate(execNext = true, options?: { isComposing?: boolean }, _depth = 0): {
     value: BlockSelection | null
     next?: () => void
@@ -502,6 +527,15 @@ export class SelectionManager {
     if (!selection || !selection.rangeCount) {
       if (this._shouldKeepModelOnlySelection()) {
         return {value: this.value}
+      }
+      const recoverableRootProjection =
+        this._recoverableMissingRootProjection()
+      if (recoverableRootProjection) {
+        this._recoverDomProjection(
+          recoverableRootProjection.toJSON(),
+          this._projectionVersion,
+        )
+        return {value: recoverableRootProjection}
       }
       const next = () => this._applyState(null)
       execNext && next()
@@ -529,6 +563,13 @@ export class SelectionManager {
       const next = () => this._applyState(null)
       execNext && next()
       return {value: null, next: execNext ? undefined : next}
+    }
+
+    // Root boundary selections may deliberately project to descendant text/gap
+    // points so the browser paints only normal-flow content. Preserve the
+    // canonical model selection when selectionchange reports that exact Range.
+    if (this._matchesCurrentRootBoundaryProjection(range)) {
+      return {value: this.value}
     }
 
     if (range.startContainer === this.doc.root.hostElement || range.endContainer === this.doc.root.hostElement) {
@@ -803,18 +844,39 @@ export class SelectionManager {
           range.startContainer,
           range.startOffset,
         )
+        this._assertNativeRangeApplied(selection, range)
         return
       }
       if (typeof selection.extend === 'function') {
         selection.removeAllRanges()
         selection.collapse(range.endContainer, range.endOffset)
         selection.extend(range.startContainer, range.startOffset)
+        this._assertNativeRangeApplied(selection, range)
         return
       }
     }
 
     selection.removeAllRanges()
     selection.addRange(range)
+    this._assertNativeRangeApplied(selection, range)
+  }
+
+  private _assertNativeRangeApplied(
+    selection: globalThis.Selection,
+    expected: Range,
+  ): void {
+    if (!selection.rangeCount) {
+      throw new Error('Native selection rejected the DOM range')
+    }
+    const actual = selection.getRangeAt(0)
+    if (
+      actual.startContainer !== expected.startContainer ||
+      actual.startOffset !== expected.startOffset ||
+      actual.endContainer !== expected.endContainer ||
+      actual.endOffset !== expected.endOffset
+    ) {
+      throw new Error('Native selection normalized the DOM range unexpectedly')
+    }
   }
 
   private _stabilizeCrossScopeDomSelection(
@@ -900,7 +962,17 @@ export class SelectionManager {
       return
     }
     if (!this._selectionCrossesRootRenderUnits(selection)) return
-    if (!this._surface.hasEditorFocus() && !this._surface.ownsNativeSelection()) return
+    const focusDroppedWithDom = this._surface.isFocusDropped()
+    if (
+      !focusDroppedWithDom &&
+      !this._surface.hasEditorFocus() &&
+      !this._surface.ownsNativeSelection()
+    ) {
+      return
+    }
+    if (focusDroppedWithDom) {
+      this._surface.focusRoot()
+    }
 
     const expected = selection.toJSON()
     const projectionVersion = this._projectionVersion
@@ -929,9 +1001,14 @@ export class SelectionManager {
     if (point.type === 'boundary' && point.blockId === rootId) {
       const children = model.getChildrenIds(rootId)
       const index = Math.max(0, Math.min(point.index, children.length))
+      const neighbours = this._getBoundaryProjectionNeighbours(
+        point.blockId,
+        children,
+        index,
+      )
       return edge === 'start'
-        ? children[index] ?? children[index - 1] ?? null
-        : children[index - 1] ?? children[index] ?? null
+        ? neighbours.nextId ?? neighbours.previousId ?? null
+        : neighbours.previousId ?? neighbours.nextId ?? null
     }
 
     const path = model.getPath(point.blockId)
@@ -984,6 +1061,30 @@ export class SelectionManager {
     if (!gap) return false
     try {
       return !this._getGapCaretDomPoint(gap.block.hostElement, gap.side)
+    } catch {
+      return false
+    }
+  }
+
+  private _matchesCurrentRootBoundaryProjection(range: Range): boolean {
+    const current = this.value
+    const rootId = this.doc.root.id
+    if (
+      !current ||
+      current.start.type !== 'boundary' ||
+      current.end.type !== 'boundary' ||
+      current.start.blockId !== rootId ||
+      current.end.blockId !== rootId
+    ) {
+      return false
+    }
+    try {
+      const start = this._getBoundaryDomPoint(current.start, 'start', true)
+      const end = this._getBoundaryDomPoint(current.end, 'end', true)
+      return range.startContainer === start.node &&
+        range.startOffset === start.offset &&
+        range.endContainer === end.node &&
+        range.endOffset === end.offset
     } catch {
       return false
     }
@@ -1073,10 +1174,13 @@ export class SelectionManager {
         return
       }
       const index = Math.max(0, Math.min(point.index, children.length))
-      const nextId = children[index]
-      const previousId = index > 0 ? children[index - 1] : undefined
-      if (nextId) blockIds.add(nextId)
-      if (previousId) blockIds.add(previousId)
+      const neighbours = this._getBoundaryProjectionNeighbours(
+        point.blockId,
+        children,
+        index,
+      )
+      if (neighbours.nextId) blockIds.add(neighbours.nextId)
+      if (neighbours.previousId) blockIds.add(neighbours.previousId)
     }
 
     addPoint(selection.start)
@@ -1311,15 +1415,52 @@ export class SelectionManager {
       !!this.doc.virtualization?.enabled &&
       point.blockId === this.doc.root.id
     const childNodes = Array.from(container.childNodes)
+    const neighbours = this._getBoundaryProjectionNeighbours(
+      point.blockId,
+      childIds,
+      index,
+    )
     const candidates = side === 'start'
       ? [
-          {childId: childIds[index], edge: 'start' as const},
-          {childId: index > 0 ? childIds[index - 1] : undefined, edge: 'end' as const},
+          {childId: neighbours.nextId, edge: 'start' as const},
+          {childId: neighbours.previousId, edge: 'end' as const},
         ]
       : [
-          {childId: index > 0 ? childIds[index - 1] : undefined, edge: 'end' as const},
-          {childId: childIds[index], edge: 'start' as const},
+          {childId: neighbours.previousId, edge: 'end' as const},
+          {childId: neighbours.nextId, edge: 'start' as const},
         ]
+
+    // Placement children participate in the model range, but native endpoints
+    // belong to the first/last flow block. Editable blocks project to their
+    // inline text edge; non-editable blocks project to their gap affordance.
+    // Keep the host/container edge only as a malformed/leaf fallback.
+    if (
+      point.blockId === this.doc.root.id &&
+      this._getRootFlowIdSet(childIds).size < childIds.length
+    ) {
+      for (const candidate of candidates) {
+        if (!candidate.childId) continue
+        const child = this._readBlock(candidate.childId)
+        if (!child) continue
+        if (child.nodeType === BlockNodeType.editable) {
+          return this._getStableBlockEdgeDomPoint(child, candidate.edge)
+        }
+        const gapPoint = getBlockGapAnchor(
+          child.hostElement,
+          candidate.edge === 'start' ? 'leading' : 'trailing',
+        )
+        if (gapPoint) return gapPoint
+        const domIndex = childNodes.indexOf(child.hostElement)
+        if (domIndex < 0) continue
+        return {
+          node: container,
+          offset: candidate.edge === 'start' ? domIndex : domIndex + 1,
+        }
+      }
+      if (useStableChildEdge && candidates.some(candidate => !!candidate.childId)) {
+        throw new Error('Boundary endpoint view is not mounted')
+      }
+    }
 
     for (const candidate of candidates) {
       if (!candidate.childId) continue
@@ -1347,6 +1488,54 @@ export class SelectionManager {
       throw new Error('Boundary endpoint view is not mounted')
     }
     return {node: container, offset: Math.min(index, childNodes.length)}
+  }
+
+  /**
+   * Native ranges represent only the root's normal-flow projection. The model
+   * boundary still counts placement-layout/absolute children so document-wide
+   * copy, cut and delete keep their full semantics. Resolving both neighbours
+   * from the model-first flow list also keeps mount targets and the final DOM
+   * projection stable after placement normalization settles.
+   */
+  private _getBoundaryProjectionNeighbours(
+    blockId: string,
+    childIds: readonly string[],
+    index: number,
+  ): {previousId?: string; nextId?: string} {
+    if (blockId !== this.doc.root.id) {
+      return {
+        previousId: index > 0 ? childIds[index - 1] : undefined,
+        nextId: childIds[index],
+      }
+    }
+
+    const flowIds = this._getRootFlowIdSet(childIds)
+    let previousId: string | undefined
+    for (let cursor = index - 1; cursor >= 0; cursor--) {
+      if (!flowIds.has(childIds[cursor])) continue
+      previousId = childIds[cursor]
+      break
+    }
+    let nextId: string | undefined
+    for (let cursor = index; cursor < childIds.length; cursor++) {
+      if (!flowIds.has(childIds[cursor])) continue
+      nextId = childIds[cursor]
+      break
+    }
+    return {previousId, nextId}
+  }
+
+  private _getRootFlowIdSet(childIds: readonly string[]): Set<string> {
+    const placement = this.doc.placement
+    const configuredFlowIds = placement?.getRootFlowChildIds?.(childIds)
+    return new Set<string>(
+      Array.isArray(configuredFlowIds)
+        ? configuredFlowIds
+        : childIds.filter(id =>
+            placement?.isPlacementLayout?.(id) !== true &&
+            placement?.allowsGapCursor?.(id) !== false,
+          ),
+    )
   }
 
   private _getStableBlockEdgeDomPoint(

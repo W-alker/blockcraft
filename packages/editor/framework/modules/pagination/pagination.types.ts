@@ -10,8 +10,23 @@ export interface PageChromeSegments {
 
 /** 页眉或页脚配置。 */
 export interface PageChrome extends PageChromeSegments {
-  /** 高度（px），参与每页 contentHeight 计算。缺省时若有任一段文本则用默认高度（24px）。 */
+  /**
+   * 高度（px），参与每页 contentHeight 计算。
+   * 缺省、非有限值或负数在存在文本时使用默认高度（24px）。
+   */
   height?: number;
+}
+
+export type PaginationElementTarget =
+  | HTMLElement
+  | (() => HTMLElement | null);
+
+/** 宿主自定义的首页文档头；只属于 live 布局，不写入 Yjs。 */
+export interface PaginationDocumentHeaderOptions {
+  /** 直接元素或延迟解析器；启用分页时元素必须已连接 DOM。 */
+  element: PaginationElementTarget;
+  /** 文档头与首个文档块的间距（px），默认 0。 */
+  gap?: number;
 }
 
 /** 分页计算、视图与导出共享的配置；启用状态由 PaginationPlugin 单独管理。 */

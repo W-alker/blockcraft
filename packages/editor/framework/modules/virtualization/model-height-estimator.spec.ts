@@ -6,6 +6,81 @@ import {
 } from './model-height-estimator'
 
 describe('estimateModelBlockHeight', () => {
+  it('lets a custom Schema estimate height from persisted props', () => {
+    const estimator = jasmine.createSpy('estimateHeight')
+      .and.callFake(({props, layoutMode}) =>
+        layoutMode === 'paginated' ? 0 : props['height'])
+    const doc = createDoc({
+      widget: block('custom-widget', BlockNodeType.void, {height: 640}),
+    }, {
+      'custom-widget': estimator,
+    })
+
+    expect(estimateModelBlockHeightDetails(doc as any, 'widget', {
+      layoutMode: 'flow',
+    })).toEqual({height: 640, modelDriven: true})
+    expect(estimateModelBlockHeightDetails(doc as any, 'widget', {
+      layoutMode: 'paginated',
+    })).toEqual({height: 0, modelDriven: true})
+    expect(estimator.calls.mostRecent().args[0]).toEqual(jasmine.objectContaining({
+      blockId: 'widget',
+      flavour: 'custom-widget',
+      nodeType: BlockNodeType.void,
+      props: {height: 640},
+      childIds: [],
+      layoutMode: 'paginated',
+      fallbackHeight: 48,
+      rootContentWidth: 800,
+    }))
+  })
+
+  it('lets a custom container estimate only the child heights it owns', () => {
+    const doc = createDoc({
+      container: block('custom-container', BlockNodeType.block, {}, [
+        'first',
+        'second',
+      ]),
+      first: block('paragraph', BlockNodeType.editable),
+      second: block('paragraph', BlockNodeType.editable),
+    }, {
+      'custom-container': ({childIds, estimateChildHeight}: {
+        childIds: readonly string[]
+        estimateChildHeight: (childId: string) => number
+      }) =>
+        childIds.reduce(
+          (height: number, childId: string) =>
+            height + estimateChildHeight(childId),
+          12,
+        ),
+    })
+
+    expect(estimateModelBlockHeightDetails(doc as any, 'container')).toEqual({
+      height: 108,
+      modelDriven: true,
+    })
+  })
+
+  it('falls back when a custom Schema returns an invalid height or throws', () => {
+    const invalid = createDoc({
+      widget: block('invalid-widget', BlockNodeType.void),
+    }, {
+      'invalid-widget': () => Number.NaN,
+    })
+    expect(estimateModelBlockHeightDetails(invalid as any, 'widget', {
+      estimatedHeights: {'invalid-widget': 72},
+    })).toEqual({height: 72, modelDriven: false})
+
+    const failed = createDoc({
+      widget: block('failed-widget', BlockNodeType.void),
+    }, {
+      'failed-widget': () => {
+        throw new Error('estimate failed')
+      },
+    })
+    expect(estimateModelBlockHeight(failed as any, 'widget')).toBe(48)
+    expect(failed.logger.warn).toHaveBeenCalled()
+  })
+
   it('uses persisted wr/ar for media without reading DOM', () => {
     const doc = createDoc({
       image: {
@@ -382,6 +457,7 @@ function createDoc(
     children: string[]
     deltas?: any[]
   }>,
+  estimators: Record<string, (context: any) => number | undefined> = {},
 ) {
   return {
     model: {
@@ -396,6 +472,14 @@ function createDoc(
     objectSizing: {
       rootContentWidth: 800,
       resolve: jasmine.createSpy('resolve'),
+    },
+    schemas: {
+      get: (flavour: string) => estimators[flavour]
+        ? {metadata: {virtualization: {estimateHeight: estimators[flavour]}}}
+        : null,
+    },
+    logger: {
+      warn: jasmine.createSpy('warn'),
     },
   }
 }

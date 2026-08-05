@@ -15,7 +15,10 @@ export function resolveMargins(m?: Partial<PageMargins>): PageMargins {
   };
 }
 
-export function resolveScreenGeometry(config: PaginationConfig): ResolvedPaginationGeometry {
+export function resolveScreenGeometry(
+  config: PaginationConfig,
+  runtime: {firstPageExtraTop?: number} = {},
+): ResolvedPaginationGeometry {
   const pageSize = config.pageSize ?? 'A4';
   const isNamed = typeof pageSize === 'string';
   const rawDims = resolvePageDimensions(pageSize, config.orientation ?? 'portrait');
@@ -27,6 +30,12 @@ export function resolveScreenGeometry(config: PaginationConfig): ResolvedPaginat
   const pageGap = Math.max(0, config.pageGap ?? DEFAULT_PAGE_GAP);
   const headerHeight = chromeHeight(config.header);
   const footerHeight = chromeHeight(config.footer);
-  const geometry = resolveGeometry({pageHeightPx: sheetHeightPx, margins, headerHeight, footerHeight});
+  const geometry = resolveGeometry({
+    pageHeightPx: sheetHeightPx,
+    margins,
+    headerHeight,
+    footerHeight,
+    firstPageExtraTop: runtime.firstPageExtraTop,
+  });
   return {sheetWidthPx, sheetHeightPx, margins, pageGap, headerHeight, footerHeight, geometry};
 }

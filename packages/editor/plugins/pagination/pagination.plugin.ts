@@ -5,6 +5,7 @@ import {
 } from '../../framework'
 import {getScrollContainer} from '../../global'
 import {
+  PaginationDocumentHeaderOptions,
   PaginationConfig,
 } from '../../framework/modules/pagination'
 import {PaginatedViewController} from '../../framework/modules/pagination/view/paginated-view.controller'
@@ -21,6 +22,8 @@ import {
 
 export interface PaginationPluginOptions extends PaginationConfig {
   enabled?: boolean
+  /** 可选宿主文档头；分页期间自动投影到首页并测量高度。 */
+  documentHeader?: PaginationDocumentHeaderOptions
   /**
    * Phase C rollout flag: let the paginated Projection drive sparse root
    * virtualization instead of holding a full-document view lease.
@@ -45,16 +48,19 @@ export class PaginationPlugin extends DocPlugin {
   private _exportAbort = new AbortController()
   private _releaseFullDocumentViewLease: (() => void) | null = null
   private readonly _experimentalSparseView: boolean
+  private readonly _documentHeader?: PaginationDocumentHeaderOptions
 
   constructor(options: PaginationPluginOptions = {}) {
     super()
     const {
       enabled = false,
       experimentalSparseView = false,
+      documentHeader,
       ...config
     } = options
     this._enabled = enabled
     this._experimentalSparseView = experimentalSparseView
+    this._documentHeader = documentHeader
     this._config = config
   }
 
@@ -214,6 +220,7 @@ export class PaginationPlugin extends DocPlugin {
           undefined,
           {
             sparseView,
+            documentHeader: this._documentHeader,
             onSparseViewFailure: error => {
               this._enabled = false
               this._releaseFullDocumentViews()

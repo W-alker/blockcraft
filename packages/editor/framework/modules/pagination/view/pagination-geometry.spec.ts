@@ -56,4 +56,25 @@ describe('pagination-geometry', () => {
     // 1123 - 72 - 72 - 24 - 30 = 925
     expect(g.geometry.contentHeight).toBe(925);
   });
+
+  it('自定义页眉高度非法时回退默认值，不污染分页几何', () => {
+    for (const height of [Number.NaN, Number.POSITIVE_INFINITY, -20]) {
+      const g = resolveScreenGeometry({
+        pageSize: {width: 800, height: 1000},
+        margins: {top: 50, bottom: 50},
+        header: {left: 'Custom header', height},
+      });
+      expect(g.headerHeight).toBe(24);
+      expect(g.geometry.contentHeight).toBe(876);
+    }
+  });
+
+  it('宿主文档头只扣减首页容量', () => {
+    const g = resolveScreenGeometry({
+      pageSize: {width: 800, height: 1000},
+      margins: {top: 50, bottom: 50},
+    }, {firstPageExtraTop: 180});
+    expect(g.geometry.contentHeight).toBe(900);
+    expect(g.geometry.firstPageContentHeight).toBe(720);
+  });
 });

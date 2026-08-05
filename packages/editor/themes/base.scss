@@ -34,6 +34,8 @@
 
 [data-blockcraft-root="true"] {
   position: relative;
+  box-sizing: border-box;
+  width: 100%;
   outline: none;
   font-size: var(--bc-fs);
   line-height: var(--bc-lh);

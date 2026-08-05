@@ -1,5 +1,11 @@
 /* ───────── pagination（分页展示模式，默认不生效，由 controller 加类启用）───────── */
-.editor-container.bc-paginated-scroll {
+.bc-paginated-scroll {
+  background: var(--bc-pagination-backdrop-bg) !important;
+}
+
+/* root 的直接父容器是页框和正文共享的定位面。scrollContainer 可以
+   是更外层的祖先，不应对它的其他子节点施加 flex 布局。 */
+.bc-pagination-surface {
   position: relative;
   /* 用 flex 居中正文列，而不是依赖 root 的 margin:auto——后者会被后载入的主题规则
      把 margin-left 改成 0 而失效（中线偏移）。align-items:center 由容器侧居中，
@@ -12,7 +18,8 @@
      横向 padding 必须为 0：页框背景层 absolute 定位于 padding box、会忽略 padding，
      若容器留横向 padding，正文列与全宽居中的页框中线就会错开。 */
   padding: 24px 0 !important;
-  background: var(--bc-pagination-backdrop-bg) !important;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .bc-pagination-backdrop {
@@ -21,6 +28,11 @@
   left: 0;
   right: 0;
   margin: 0 auto;
+  /* backdrop 是绝对定位元素，它的 height 会直接成为滚动溢出边界；
+     surface 自身的 padding-bottom 不会继续扩展这段 overflow。
+     因此在 backdrop 末端显式补一份与顶部相同的画布留白，避免末页触底。 */
+  box-sizing: content-box;
+  padding-bottom: 24px;
   z-index: 0;
   pointer-events: none;
 }

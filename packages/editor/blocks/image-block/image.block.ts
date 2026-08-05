@@ -105,6 +105,10 @@ export function deriveInitialImageObjectSize(
       max-width: 100%;
     }
 
+    .image-block__container {
+      max-width: 100%;
+    }
+
     .img-wrapper[data-bc-object-sizing] img {
       height: 100%;
       object-fit: contain;
@@ -222,7 +226,12 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
   }
 
   get renderedWidth(): number | null {
-    return this.objectDimensions?.width ?? null
+    const width = this.objectDimensions?.width
+    if (width == null) return null
+    const rootContentWidth = this.rootContentWidth
+    return Number.isFinite(rootContentWidth) && rootContentWidth > 0
+      ? Math.min(width, rootContentWidth)
+      : width
   }
 
   get renderedAspectRatio(): string | null {

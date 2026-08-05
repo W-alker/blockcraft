@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-03
+> Last updated: 2026-08-05
 
 ## Core Performance Principles
 
@@ -69,6 +69,17 @@ path. A normal scroll frame touches the mounted window, not every document
 block. `ResizeObserver` corrects estimates and
 records each mounted block's layout stride, including inter-block spacing, then
 restores an ID-based scroll anchor. Nested subtrees are atomic in this phase.
+
+Custom blocks can provide a model-driven estimate through
+`schema.metadata.virtualization.estimateHeight(context)`. It runs before
+object-sizing and per-flavour fallback rules and receives readonly props,
+direct child IDs, a lazy `estimateChildHeight()` helper, cached root width, and
+`layoutMode: 'flow' | 'paginated'`. A finite non-negative result (including
+zero) participates in offscreen content/structure refreshes; invalid results or
+errors fall back safely. The callback must be synchronous, deterministic and
+DOM/network free. Persist async layout facts such as row count or height in
+props, and keep the common path `O(1)` unless the block genuinely owns a bounded
+child-height aggregation.
 
 Built-in tables receive a model-first total-height estimate before their root
 view mounts. The estimator sums direct `table-row` heights in `O(rows)` using
@@ -165,7 +176,7 @@ if it is mounted again. Set the limit to `0` to trade remount work for minimum
 retained-view memory.
 
 Stateful iframe/media flavours can declare
-`metadata.viewRetention: 'keep-alive'`, and hosts can override that decision
+`metadata.virtualization.viewRetention: 'keep-alive'`, and hosts can override that decision
 with `virtualization.resolveViewRetention(context)`. The policy is evaluated
 when a component first mounts, outside the scroll hot path. Activation is
 deferred until the current Angular mount transaction finishes, and all active
@@ -294,9 +305,29 @@ this.doc.onTextUpdate$.pipe(debounceTime(300)).subscribe(...)
 scrollEvent$.pipe(throttleTime(16)).subscribe(...)  // ~60fps
 ```
 
-### 5. IntersectionObserver
+### 5. Mounted View Lifecycle vs IntersectionObserver
 
-For blocks that need visibility awareness (lazy loading, etc.):
+When root virtualization is enabled, a direct-root business block normally
+does **not** need its own `IntersectionObserver` just to delay the first data
+request. Start the request from `ngAfterViewInit()`, stop view-bound realtime
+subscriptions from `beforeDetach()`, and restore them from `afterReattach()`.
+The virtual window already limits this work to mounted root units (viewport plus
+overscan), while the detach hooks also cover retained LRU views that have left
+the window.
+
+Do not combine root virtualization with a second `getBoundingClientRect()` +
+`IntersectionObserver` gate for the same request. That duplicates viewport
+tracking, can use the wrong scroll root, and leaves retained components with an
+unclear subscription lifetime.
+
+Mounted is deliberately broader than browser-visible: overscan materializes a
+small nearby window, and nested subtrees are atomic. Keep an
+`IntersectionObserver` only when the feature truly needs **exact intersection**
+rather than materialization—for example pausing an expensive animation inside
+a tall nested container, activating an iframe only when painted, or projecting
+visible find/replace ranges. In that case use the editor scroll container as
+the root and disconnect the observer from `beforeDetach()` as well as permanent
+destroy:
 
 ```typescript
 const observer = new IntersectionObserver((entries) => {

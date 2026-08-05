@@ -253,6 +253,17 @@ and direct row-height prop changes. Nested cell text/props changes do not rescan
 the rows on each keystroke. The estimate is not exact print geometry and does
 not yet virtualize the table's nested row/cell Component subtree.
 
+Custom Schemas can participate in the same DOM-free path through
+`metadata.virtualization.estimateHeight(context)`. The context supplies
+readonly props, direct child IDs, a cycle-safe child estimator, cached root
+width and the requesting `layoutMode` (`'flow' | 'paginated'`). Finite
+non-negative results are model-driven and refresh while offscreen; invalid
+results and thrown errors fall back to object-sizing, built-in rules and
+`DocConfig.virtualization.estimatedHeights`. Keep callbacks synchronous and
+persist every async layout fact in model props. The built-in `page-divider`
+uses this seam to reserve its visual marker in flow layout while remaining a
+zero-height manual break in paginated layout.
+
 This is opt-in and disabled by default. Direct root children are windowed;
 their nested tables/columns/callouts remain complete atomic subtrees. Selection
 pins only the direct-root units containing its ordered start/end while it is
@@ -282,7 +293,8 @@ Unmounted component subtrees are kept in a bounded LRU cache
 (`retainedViewLimit`, default `12`; use `0` for immediate destruction) and are
 rebuilt from current Yjs state after eviction. Do not retain component
 references across virtual reconciliation frames.
-Stateful schemas can set `metadata.viewRetention: 'keep-alive'`. Once such a
+Stateful schemas can set
+`metadata.virtualization.viewRetention: 'keep-alive'`. Once such a
 view first materializes, its containing root render unit stays mounted until
 block deletion or document disposal; no initial document scan is performed.
 Built-in audio, video and iframe embed flavours opt in. Hosts can override a

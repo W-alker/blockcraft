@@ -14,7 +14,7 @@ describe('stateful built-in block view retention', () => {
       JuejinEmbedBlockSchema,
     ]
 
-    expect(schemas.map(schema => schema.metadata.viewRetention)).toEqual([
+    expect(schemas.map(schema => schema.metadata.virtualization?.viewRetention)).toEqual([
       'keep-alive',
       'keep-alive',
       'keep-alive',

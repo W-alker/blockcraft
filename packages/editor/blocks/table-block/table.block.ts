@@ -46,6 +46,17 @@ const TABLE_MIN_COLUMN_WIDTH = 50
 const TABLE_COL_RESIZE_HIT_WIDTH = 12
 const TABLE_COL_RESIZE_OUTER_TOLERANCE = 2
 const TABLE_COL_RESIZE_ADJACENT_TOLERANCE = 4
+const TABLE_PAGINATION_BOUNDARY_TOLERANCE = 2
+/**
+ * Extreme rich-cell tables must degrade to the existing atomic-row overflow
+ * semantics before live pagination can monopolize the main thread. These are
+ * view-planning budgets, not document/model limits.
+ */
+const TABLE_CELL_FLOW_MAX_PAGES_PER_ROW = 256
+const TABLE_CELL_FLOW_MAX_CONTINUATIONS = 1024
+const TABLE_CELL_FLOW_MAX_SAFE_ANCHORS = 2048
+const TABLE_CELL_FLOW_MIN_LINE_SAMPLES = 64
+const TABLE_CELL_FLOW_LINE_SAMPLES_PER_PAGE = 8
 /**
  * 分页拆分 rowspan 时，续页段借用模型里的隐藏占位 cell 来承载视图。
  * 该属性把续页段的命中重新路由到真正的 master cell；不能使用续页 cell
@@ -150,6 +161,11 @@ type TablePaginationBreak =
         backdropHeight: number
       }
     }
+
+interface TableCellFlowMeasurementBudget {
+  continuations: number
+  safeAnchors: number
+}
 
 function applyPaginationGapStyle(
   element: HTMLElement,
@@ -2622,6 +2638,14 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       })
       dataIdx++
     }
+    const refinedContentCoverage = this._refinePaginationContentMergeCoverage(
+      rows,
+      coveredByContent,
+      hostTop,
+    )
+    rows.forEach((row, index) => {
+      row.coveredByContentMerge = refinedContentCoverage[index] ?? false
+    })
     const naturalHeight = host.offsetHeight - accGap
     if (options && naturalHeight > options.contentHeight) {
       const oversizedRows: BlockCraft.BlockComponent[] = []
@@ -2709,6 +2733,59 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     return {covered, coveredByContent}
   }
 
+  /**
+   * `rowspan` 有内容不代表它跨过的每个行边界都不可分页。典型分类列只在合并
+   * 单元格顶部放一个短标题，后续几十行仍可在标题之后安全拆开。若把整段都标成
+   * content-covered，分页引擎找不到行切点，只能让整段穿过纸张页缝。
+   *
+   * 这里只收紧 model-grid 路径：边界仍处于 rowspan 内，但仅当 master cell 的
+   * 实际内容底边越过该边界时才禁止拆分。视图拆分会把原内容留在首段、后续段用
+   * 隐藏 continuation cell 承接，因此内容已经结束的边界无需 cell-flow。
+   */
+  private _refinePaginationContentMergeCoverage(
+    rows: Array<{top: number}>,
+    conservative: readonly boolean[],
+    hostTop: number,
+  ): boolean[] {
+    const grid = this._getTableModelGrid()
+    const spans = this._paginationRowspanCache?.grid === grid
+      ? this._paginationRowspanCache.spans
+      : null
+    if (!grid || !spans) return [...conservative]
+
+    const refined = new Array<boolean>(rows.length).fill(false)
+    for (const span of spans) {
+      const cell = this._getLiveBlockById<TableCellBlockComponent>(span.cellId)
+      if (!this._isTableCellBlock(cell) || !cell.hasContent) continue
+
+      const children = cell.getChildrenBlocks()
+      let contentBottom = Number.NEGATIVE_INFINITY
+      for (const child of children) {
+        const element = child.hostElement
+        if (!element) continue
+        const rect = element.getBoundingClientRect()
+        if (!Number.isFinite(rect.bottom)) continue
+        contentBottom = Math.max(contentBottom, rect.bottom - hostTop)
+      }
+
+      // 缺失/断连 DOM 时保持旧的保守语义，不能凭空允许一个可能腰斩内容的切点。
+      if (!Number.isFinite(contentBottom)) {
+        for (let row = span.startRow + 1; row <= span.endRow; row++) {
+          if (row < refined.length) refined[row] = true
+        }
+        continue
+      }
+
+      const end = Math.min(rows.length - 1, span.endRow)
+      for (let row = span.startRow + 1; row <= end; row++) {
+        if (contentBottom > rows[row].top + TABLE_PAGINATION_BOUNDARY_TOLERANCE) {
+          refined[row] = true
+        }
+      }
+    }
+    return refined
+  }
+
   private _buildCellFlowPlan(
     rows: Array<{id: string; top: number; bottom: number}>,
     rowBlocks: BlockCraft.BlockComponent[],
@@ -2717,6 +2794,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     options: {contentHeight: number; widowOrphanLines: number},
   ): TableCellFlowPlan | undefined {
     const inputs: TableFlowRowInput[] = []
+    const budget: TableCellFlowMeasurementBudget = {
+      continuations: 0,
+      safeAnchors: 0,
+    }
     let previousBottom = 0
     let hasOversizedRow = false
 
@@ -2730,7 +2811,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
           previousBottom,
           row.bottom,
           hostTop,
+          options.contentHeight,
           options.widowOrphanLines,
+          budget,
         )
         if (!cells.length) return undefined
         inputs.push({kind: 'cell-flow', rowId: row.id, cells})
@@ -2765,7 +2848,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     rowOrigin: number,
     rowBottom: number,
     hostTop: number,
+    contentHeight: number,
     widowOrphanLines: number,
+    budget: TableCellFlowMeasurementBudget,
   ): TableCellFlowInput[] {
     if (!rowBlock) return []
     const rowStride = Math.max(0, rowBottom - rowOrigin)
@@ -2779,14 +2864,30 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         cells.push(candidate as unknown as TableCellBlockComponent)
       }
     }
-    const measured = cells.map(cell =>
-      this._measureSingleCellFlow(
+    const pageCount = Math.max(1, Math.ceil(rowStride / contentHeight))
+    const continuationCost = pageCount * cells.length
+    if (
+      pageCount > TABLE_CELL_FLOW_MAX_PAGES_PER_ROW
+      || budget.continuations + continuationCost > TABLE_CELL_FLOW_MAX_CONTINUATIONS
+    ) {
+      return []
+    }
+    budget.continuations += continuationCost
+
+    const measured: TableCellFlowInput[] = []
+    for (const cell of cells) {
+      const input = this._measureSingleCellFlow(
         cell,
         rowOrigin,
         rowStride,
         hostTop,
+        contentHeight,
         widowOrphanLines,
-      ))
+        budget,
+      )
+      if (!input) return []
+      measured.push(input)
+    }
     if (!measured.length) return []
 
     // collapsed table border 会让内容底与行底差少量像素。只把自然最低的那列延长到真实行底，
@@ -2817,8 +2918,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     rowOrigin: number,
     rowStride: number,
     hostTop: number,
+    contentHeight: number,
     widowOrphanLines: number,
-  ): TableCellFlowInput {
+    budget: TableCellFlowMeasurementBudget,
+  ): TableCellFlowInput | null {
     const points: TableCellFlowPoint[] = []
     const children = cell.getChildrenBlocks()
 
@@ -2826,6 +2929,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       const child = children[childIndex]
       const childRect = child.hostElement.getBoundingClientRect()
       if (childIndex > 0) {
+        if (budget.safeAnchors >= TABLE_CELL_FLOW_MAX_SAFE_ANCHORS) return null
+        budget.safeAnchors++
         points.push({
           offset: childRect.top - hostTop - rowOrigin,
           anchor: {kind: 'block', blockId: child.id},
@@ -2833,7 +2938,21 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       }
 
       if (child instanceof EditableBlockComponent) {
-        const lines = measureInlinePaginationLineStarts(child.runtime)
+        const requestedLineSamples = Math.max(
+          TABLE_CELL_FLOW_MIN_LINE_SAMPLES,
+          Math.ceil(Math.max(0, childRect.height) / contentHeight)
+            * TABLE_CELL_FLOW_LINE_SAMPLES_PER_PAGE,
+        )
+        const availableLineSamples = Math.min(
+          requestedLineSamples,
+          TABLE_CELL_FLOW_MAX_SAFE_ANCHORS - budget.safeAnchors,
+        )
+        if (availableLineSamples <= 0) return null
+        const lines = measureInlinePaginationLineStarts(
+          child.runtime,
+          availableLineSamples,
+        )
+        budget.safeAnchors += lines.length
         const totalLines = lines.length + 1
         const minimum = Math.max(1, widowOrphanLines)
         const widowSafe = lines.filter((_line, lineIndex) => {
@@ -2845,8 +2964,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         })
         // 若严格 widow/orphan 后一个点都不剩，优先放宽排版美观约束，不能退回整行溢出。
         const usableLines = widowSafe.length ? widowSafe : lines
+        const containerTop = child.containerElement.getBoundingClientRect().top
         usableLines.forEach(line => {
-          const containerTop = child.containerElement.getBoundingClientRect().top
           points.push({
             offset: containerTop + line.top - hostTop - rowOrigin,
             anchor: {kind: 'text', blockId: child.id, offset: line.offset},
@@ -2855,6 +2974,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       }
     }
 
+    if (budget.safeAnchors >= TABLE_CELL_FLOW_MAX_SAFE_ANCHORS) return null
+    budget.safeAnchors++
     let contentEnd = Math.min(rowStride, Math.max(0, rowStride))
     const lastChild = children[children.length - 1]
     if (lastChild?.hostElement) {

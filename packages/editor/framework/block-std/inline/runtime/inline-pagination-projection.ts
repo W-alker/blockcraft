@@ -47,9 +47,10 @@ export class InlinePaginationProjection {
         if (split) this._splits.push(split)
       }
 
+      const anchors = this._nodesAtOffsets(normalized.map(gap => gap.offset))
       for (const gap of normalized) {
         const marker = buildMarker(gap)
-        const anchor = this._nodeAtOffset(gap.offset)
+        const anchor = anchors.get(gap.offset) ?? null
         this._scroll.domNode.insertBefore(marker, anchor)
         this._markers.push(marker)
       }
@@ -116,18 +117,25 @@ export class InlinePaginationProjection {
     }
   }
 
-  private _nodeAtOffset(offset: number): Node | null {
-    if (offset <= 0) {
-      return this._scroll.leaves[0]?.domNode
-        ?? this._scroll.children.find(child => child.type === 'break')?.domNode
-        ?? null
+  /** Resolve all insertion anchors in one monotonic pass over the split leaves. */
+  private _nodesAtOffsets(offsets: readonly number[]): Map<number, Node | null> {
+    const result = new Map<number, Node | null>()
+    const targets = [...new Set(offsets)].sort((left, right) => left - right)
+    const leaves = this._scroll.leaves
+    const breakNode = this._scroll.children.find(
+      child => child.type === 'break',
+    )?.domNode ?? null
+    let leafIndex = 0
+    let leafOffset = 0
+
+    for (const target of targets) {
+      while (leafIndex < leaves.length && leafOffset < target) {
+        leafOffset += leaves[leafIndex].length
+        leafIndex++
+      }
+      result.set(target, leaves[leafIndex]?.domNode ?? breakNode)
     }
-    const leaf = this._scroll.leaves.find(
-      candidate => this._scroll.offsetOf(candidate) >= offset,
-    )
-    return leaf?.domNode
-      ?? this._scroll.children.find(child => child.type === 'break')?.domNode
-      ?? null
+    return result
   }
 }
 

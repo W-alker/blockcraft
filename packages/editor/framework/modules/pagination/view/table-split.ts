@@ -65,15 +65,26 @@ export function computeTableBreaks(
   const breaks: TableBreak[] = [];
   const firstTablePage = result.pages.findIndex(page =>
     page.slots.some(slot => slot.id === tableId));
+  const flowSegments = cellFlowPlan?.segments ?? [];
+  let flowSegmentIndex = 0;
+  let rowIndex = 0;
   for (let i = 1; i < result.pages.length; i++) {
     const first = result.pages[i].slots[0];
     if (!first || first.id !== tableId) continue;
     if (!first.fragment || first.fragment.fromOffset <= 0) continue;
 
     const fromOffset = first.fragment.fromOffset;
-    const flowBreak = cellFlowPlan?.segments.find(segment =>
-      Math.abs(segment.toOffset - fromOffset) <= ROW_MATCH_TOLERANCE,
-    )?.breakAfter;
+    while (
+      flowSegmentIndex < flowSegments.length
+      && flowSegments[flowSegmentIndex].toOffset < fromOffset - ROW_MATCH_TOLERANCE
+    ) {
+      flowSegmentIndex++;
+    }
+    const flowSegment = flowSegments[flowSegmentIndex];
+    const flowBreak = flowSegment
+      && Math.abs(flowSegment.toOffset - fromOffset) <= ROW_MATCH_TOLERANCE
+      ? flowSegment.breakAfter
+      : undefined;
     if (flowBreak?.kind === "cell-flow") {
       const previous = result.pages[i - 1];
       const maskHeight = sheetHeightPx + pageGap - previous.usedHeight;
@@ -110,7 +121,17 @@ export function computeTableBreaks(
       continue;
     }
 
-    const row = rows.find(r => Math.abs(r.top - fromOffset) <= ROW_MATCH_TOLERANCE);
+    while (
+      rowIndex < rows.length
+      && rows[rowIndex].top < fromOffset - ROW_MATCH_TOLERANCE
+    ) {
+      rowIndex++;
+    }
+    const candidateRow = rows[rowIndex];
+    const row = candidateRow
+      && Math.abs(candidateRow.top - fromOffset) <= ROW_MATCH_TOLERANCE
+      ? candidateRow
+      : undefined;
     if (!row) continue;
 
     const gap = sheetHeightPx + pageGap - result.pages[i - 1].usedHeight;

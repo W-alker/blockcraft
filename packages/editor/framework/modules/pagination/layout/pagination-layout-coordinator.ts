@@ -174,6 +174,7 @@ export class PaginationLayoutCoordinator {
         estimatedHeights:
           this.doc.config.virtualization?.estimatedHeights ?? {},
         defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
+        layoutMode: 'paginated',
       });
       if (!estimate.modelDriven) return [];
       return [{
@@ -303,6 +304,7 @@ export class PaginationLayoutCoordinator {
     return estimateModelBlockHeight(this.doc, blockId, {
       estimatedHeights: configured,
       defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
+      layoutMode: 'paginated',
       rootFacts,
     });
   }

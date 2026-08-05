@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-03
+> Last updated: 2026-08-05
 
 ## PlaceholderPlugin
 
@@ -248,6 +248,7 @@ new PaginationPlugin(options?: PaginationPluginOptions)
 | `margins` | `Partial<PageMargins>` | `72px` each side | Page margins |
 | `pageGap` | `number` | `24` | Screen gap between sheets |
 | `header` / `footer` | `PageChrome` | none | Left/center/right text; supports `{page}` and `{total}` |
+| `documentHeader` | `PaginationDocumentHeaderOptions` | none | Live host element projected into and measured on the first page |
 | `widowOrphanLines` | `number` | `2` | Minimum rows/lines on both sides of a safe split |
 | `printShortcut` | `boolean` | `false` | Route Cmd/Ctrl+P to plugin printing only while enabled |
 | `experimentalSparseView` | `boolean` | `false` | Phase C opt-in: let paginated Projection drive root virtualization instead of acquiring the full-document view lease |
@@ -282,6 +283,25 @@ pagination.disable()
 ```
 
 The plugin changes only local DOM/CSS view state. It never writes Yjs and produces no Undo item. `print()` and `exportToPdf()` obtain the complete document through `doc.exportSnapshot()`, so virtualized offscreen blocks are included without mounting editor views merely to serialize them.
+
+Live pagination supports a configured scroll container that is an outer
+ancestor rather than the root's direct parent. The actual scroll container
+continues to drive viewport observation and virtualization; the root's direct
+parent becomes the page-frame layout surface. This keeps page sheets aligned
+with content even when host-owned headers or wrappers precede the editor.
+
+`header` / `footer` customize fixed-height page chrome through the
+`left` / `center` / `right` text segments and `{page}` / `{total}` tokens.
+Their `height` is deducted from every page's content capacity and a runtime
+`updateConfig()` immediately updates both the root padding and pagination
+geometry. Non-finite or negative heights fall back to the 24px default instead
+of corrupting the layout. Page chrome is intentionally non-wrapping. Arbitrary
+Angular/DOM content that belongs only to the first page uses the separate
+`documentHeader` option. The plugin temporarily projects that original element
+into the root pagination surface, constrains it to content width and tracks its
+border-box with one `ResizeObserver`; measured height plus the configured gap
+participates in first-page capacity and page-gap projection. Disable/destroy
+restores the element exactly.
 
 An actual table row taller than `contentHeight` is no longer treated as one overflowing fragment. The live measurement path derives safe continuation anchors from direct child-Block boundaries and complete visual text lines, then runs every logical cell as a parallel flow. Screen pagination installs reversible zero-model-length gaps into the real editable DOM; the stable print layout installs a readonly compressed projection and uses the same fragment offsets. The table's virtual flow height and every internal sheet gap are included in sparse Projection extents, so blocks after the table start at the same sheet coordinate in exact live, sparse live and print layouts. Composition keeps the previous stable projection until `compositionend`.
 

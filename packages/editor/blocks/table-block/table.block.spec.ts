@@ -1,4 +1,5 @@
 import {TableBlockComponent} from "./table.block";
+import {TableCellBlockComponent} from "./table-cell.block";
 import {BlockSelection} from "../../framework/modules/selection/blockSelection";
 import {BehaviorSubject, Subject} from "rxjs";
 import {isNativeInputTarget} from "../../framework/utils/node-search";
@@ -1325,11 +1326,69 @@ describe("TableBlockComponent pagination hot-path caches", () => {
     expect(getSpan).toHaveBeenCalledTimes(1);
   });
 
+  it("allows a rowspan boundary after the merged cell content has ended", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const grid = {};
+    const content = document.createElement("div");
+    content.getBoundingClientRect = () => new DOMRect(0, 20, 100, 130);
+    const master = {
+      id: "master",
+      hasContent: true,
+      getChildrenBlocks: () => [{hostElement: content}],
+    };
+    table._paginationRowspanCache = {
+      grid,
+      spans: [{cellId: "master", startRow: 0, endRow: 2}],
+    };
+    table._getTableModelGrid = () => grid;
+    table._getLiveBlockById = () => master;
+    table._isTableCellBlock = () => true;
+
+    const coverage = table._refinePaginationContentMergeCoverage(
+      [{top: 0}, {top: 100}, {top: 200}],
+      [false, true, true],
+      0,
+    );
+
+    // 内容底 150px：100px 边界仍会腰斩内容；200px 边界已在内容之后，可安全拆分。
+    expect(coverage).toEqual([false, true, false]);
+  });
+
   it("does not inspect cell subtrees when there are no oversized candidate rows", () => {
     const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
     table._nestedAtomicLocks = new Set();
 
     expect(table._syncNestedAtomicLocks(800, [])).toBeFalse();
     expect(table._nestedAtomicLocks.size).toBe(0);
+  });
+
+  it("fails closed before measuring a rich row beyond the continuation budget", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const cells = Array.from({length: 9}, (_, index) => {
+      const cell = Object.create(TableCellBlockComponent.prototype);
+      Object.defineProperties(cell, {
+        props: {value: {display: "table-cell"}},
+        hostElement: {value: document.createElement("td")},
+        id: {value: `cell-${index}`},
+      });
+      return cell;
+    });
+    const row = {getChildrenBlocks: () => cells};
+    const measure = spyOn(table, "_measureSingleCellFlow");
+    const budget = {continuations: 0, safeAnchors: 0};
+
+    const result = table._measureCellFlowInputs(
+      row,
+      0,
+      50_000,
+      0,
+      100,
+      2,
+      budget,
+    );
+
+    expect(result).toEqual([]);
+    expect(measure).not.toHaveBeenCalled();
+    expect(budget.continuations).toBe(0);
   });
 });

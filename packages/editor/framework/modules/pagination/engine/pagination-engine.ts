@@ -17,24 +17,50 @@ function candidateCuts(splitOffsets: number[] | undefined, total: number): numbe
  *   2. 退而求其次：区间内最大的普通切点；
  *   3. 区间内无候选：> fragStart 的最小候选（保证进展，允许溢出）；
  *   4. 再无：total。
- * cuts 已升序；preferredSet 为 preferred 切点集合（总含 total，因 candidateCuts 无条件加 total）。
+ * cuts / preferredCuts 均已升序，且总含 total（candidateCuts 无条件追加）。
  */
-function pickCut(cuts: number[], preferredSet: Set<number>, fragStart: number, limit: number, total: number): number {
-  let best = -1;
-  let bestPreferred = -1;
-  let smallestBeyond = -1;
-  for (const c of cuts) {
-    if (c <= fragStart) continue;
-    if (smallestBeyond < 0) smallestBeyond = c; // 升序：首个 > fragStart 即最小
-    if (c <= limit) {
-      if (c > best) best = c;
-      if (preferredSet.has(c) && c > bestPreferred) bestPreferred = c;
-    }
-  }
-  if (bestPreferred > 0) return bestPreferred; // 优先干净边界
-  if (best > 0) return best;
-  if (smallestBeyond > 0) return smallestBeyond;
+function pickCut(
+  cuts: readonly number[],
+  preferredCuts: readonly number[],
+  fragStart: number,
+  limit: number,
+  total: number,
+): number {
+  const bestPreferred = lastGreaterThanAndAtMost(
+    preferredCuts,
+    fragStart,
+    limit,
+  );
+  if (bestPreferred !== undefined) return bestPreferred;
+
+  const best = lastGreaterThanAndAtMost(cuts, fragStart, limit);
+  if (best !== undefined) return best;
+
+  const smallestBeyond = cuts[upperBound(cuts, fragStart)];
+  if (smallestBeyond !== undefined) return smallestBeyond;
   return total;
+}
+
+function lastGreaterThanAndAtMost(
+  values: readonly number[],
+  lowerExclusive: number,
+  upperInclusive: number,
+): number | undefined {
+  const index = upperBound(values, upperInclusive) - 1;
+  const value = values[index];
+  return value !== undefined && value > lowerExclusive ? value : undefined;
+}
+
+/** Index of the first value strictly greater than target. */
+function upperBound(values: readonly number[], target: number): number {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (values[middle] <= target) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 /** 从 from 起的首个非 manualBreak 块。 */
@@ -61,9 +87,14 @@ export function paginate(items: PaginationItem[], geometry: PageGeometry): Pagin
   const byBlock = new Map<string, BlockPlacement>();
 
   let slots: PageSlot[] = [];
-  let cursor = 0;
+  // 首页宿主文档头不是 Block，但它必须进入 usedHeight；否则第二页前的
+  // spacer 不会抵消这段高度，root 会从第二页起永久偏移。
+  const firstPageLeadingHeight = Math.max(0, regularH - firstH);
+  let cursor = firstPageLeadingHeight;
 
-  const capacity = (): number => (pages.length === 0 ? firstH : regularH);
+  const capacity = (): number => regularH;
+  const hasPageContent = (): boolean =>
+    slots.length > 0 || (pages.length === 0 && cursor > 0);
 
   const commit = (): void => {
     pages.push({index: pages.length, slots, usedHeight: cursor});
@@ -110,11 +141,11 @@ export function paginate(items: PaginationItem[], geometry: PageGeometry): Pagin
       && (it.splitOffsets?.some(o => o > 0 && o <= remaining) ?? false);
     if (it.breakable && (it.height > capacity() || safeCutFitsRemaining)) {
       // 拆分独占新页起（表格）：当前页已有内容则先 commit，让被拆块从新页顶开始、不拼前一页剩余。
-      if (it.splitStartsNewPage && slots.length > 0) commit();
+      if (it.splitStartsNewPage && hasPageContent()) commit();
       const total = it.height;
       const cuts = candidateCuts(it.splitOffsets, total);
       // 优先切点集合：在合法区间内优先选这些（表格的「干净」行边界），选不到再退普通切点。
-      const preferredSet = new Set(candidateCuts(it.preferredSplitOffsets, total));
+      const preferredCuts = candidateCuts(it.preferredSplitOffsets, total);
       const headerH = it.repeatHeaderHeight ?? 0; // 带表头表格：续页重复表头高
       let fragStart = 0;
       let guard = 0;
@@ -124,10 +155,10 @@ export function paginate(items: PaginationItem[], geometry: PageGeometry): Pagin
         // 首片（fragStart=0）含原表头（行0），不额外预留。
         const headerReserve = fragStart > 0 ? headerH : 0;
         const avail = capacity() - cursor - headerReserve;
-        const cut = pickCut(cuts, preferredSet, fragStart, fragStart + avail, total);
+        const cut = pickCut(cuts, preferredCuts, fragStart, fragStart + avail, total);
         // pickCut 区间内有候选时片段必 ≤ avail；否则返回越界候选（片段 > avail）。
         const fits = cut - fragStart <= avail;
-        if (!fits && slots.length > 0) {
+        if (!fits && hasPageContent()) {
           // 当前页（已有内容/已满）放不下任何安全片 → 换页重试，不把超额片塞进去
           commit();
           continue;
@@ -144,7 +175,7 @@ export function paginate(items: PaginationItem[], geometry: PageGeometry): Pagin
 
     // 情况2：放不下整块、且不在剩余空间内安全拆 → 整块下推到下一页（keep-together）
     if (it.height <= capacity()) {
-      if (slots.length > 0) commit();
+      if (hasPageContent()) commit();
       recordFirstPage(it.id);
       slots.push({id: it.id});
       cursor = it.height;
@@ -152,7 +183,7 @@ export function paginate(items: PaginationItem[], geometry: PageGeometry): Pagin
     }
 
     // 情况3b：超大原子块（不可拆，v1 允许溢出）→ 独占新页起，占满一页逼下个块换页
-    if (slots.length > 0) commit();
+    if (hasPageContent()) commit();
     recordFirstPage(it.id);
     slots.push({id: it.id});
     cursor = capacity();

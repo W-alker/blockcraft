@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-04 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-05 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -73,6 +73,193 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v0.3.0-alpha.3 - 2026-08-05 (patch) — align nested-host pagination surfaces
+
+**Severity**: patch
+
+**What changed**: Live pagination now distinguishes the actual scroll
+container from the root layout surface. `.bc-paginated-scroll` remains on the
+configured scrolling ancestor, while the new plugin-owned
+`.bc-pagination-surface` class is applied to the root's direct parent and owns
+page/content centering. The ordinary editor root also defaults to
+`box-sizing: border-box; width: 100%` outside paginated mode. The additive
+`PaginationPluginOptions.documentHeader` contract projects and measures a
+host-owned first-page header on that same surface.
+
+**Why**: Host applications can place a document header or other wrappers
+between the scrolling viewport and the editor root. Mounting page sheets on
+the viewport made their origin differ from the root's origin, while host
+padding combined with content-box sizing could make the flow root overflow its
+declared container width.
+
+**Affected ai-skills files**:
+
+- `blockcraft-app.md`
+- `blockcraft-theme.md`
+- `blockcraft-plugins-util.md`
+
+### Behavior Changes
+
+- Pagination sheets are mounted under the root's direct parent instead of an
+  outer configured scroll ancestor. Host code must continue treating the
+  generated backdrop and runtime classes as plugin-owned. The final sheet now
+  retains the same 24px canvas clearance as the first sheet instead of ending
+  directly at the scroll overflow boundary.
+- Non-paginated roots fill the inline size of their immediate container by
+  default. A host that intentionally needs a narrower root should set that
+  width explicitly in its theme.
+- Invalid custom page-chrome heights (`NaN`, infinity or negative values) now
+  use the 24px default, so `header` / `footer` customization cannot produce
+  invalid page geometry.
+- `documentHeader` temporarily reparents the configured live element while
+  pagination is enabled, observes its height and includes it in first-page
+  capacity and subsequent page-gap geometry. Disable/destroy restores the
+  original DOM position and inline styles.
+
+### v0.3.0-alpha.2 - 2026-08-04 (major) — consolidate Schema virtualization capabilities
+
+**Severity**: major (breaking prerelease API cleanup)
+
+**What changed**: The block-level view-retention policy moved from
+`IBlockSchemaOptions.metadata.viewRetention` to
+`IBlockSchemaOptions.metadata.virtualization.viewRetention`. The existing
+`estimateHeight` callback remains in that same `virtualization` capability
+object. The former top-level Schema field has been removed. Built-in audio,
+video and iframe-style Schemas were migrated without changing their runtime
+keep-alive behavior.
+
+**Why**: View retention and model-only height estimation are both policies by
+which one block flavour participates in root virtualization. Keeping one at the
+Schema metadata root and one under `virtualization` exposed a historical
+implementation split rather than a coherent public domain boundary. The alpha
+line is the appropriate point to remove that inconsistency before consumers
+rely on both spellings.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### Breaking Changes
+
+- Removed `IBlockSchemaOptions.metadata.viewRetention`.
+- Schema-owned retention is now declared as
+  `IBlockSchemaOptions.metadata.virtualization.viewRetention`.
+
+#### New APIs / Features
+
+- `BlockVirtualizationCapability<T>.viewRetention?: BlockViewRetention`
+  groups the materialized-view lifecycle policy with the existing model-only
+  `estimateHeight` geometry policy.
+
+#### Migration Recipe
+
+Move the existing field into the Schema's virtualization capability object:
+
+```typescript
+// before (0.3.0-alpha.1 and earlier)
+metadata: {
+  version: 1,
+  label: 'Custom player',
+  viewRetention: 'keep-alive',
+}
+
+// after (0.3.0-alpha.2)
+metadata: {
+  version: 1,
+  label: 'Custom player',
+  virtualization: {
+    viewRetention: 'keep-alive',
+    estimateHeight: ({props}) => props.height ?? 320,
+  },
+}
+```
+
+`DocConfig.virtualization.resolveViewRetention`, `retainedViewLimit` and the
+other document-wide runtime options do not move.
+
+#### Behavior Changes
+
+- None. Keep-alive still begins only after first materialization and pins the
+  containing direct-root render unit until deletion or document disposal.
+
+### v0.3.0-alpha.1 - 2026-08-04 (minor) — let custom Schemas estimate virtual height
+
+**Severity**: minor
+
+**What changed**: `IBlockSchemaOptions.metadata.virtualization.estimateHeight`
+lets a custom block return a pure model-only height for continuous root
+virtualization and sparse pagination. Its typed context includes block identity,
+readonly props, direct child IDs, a cycle-safe child estimator, cached root
+content width, fallback height and `layoutMode: 'flow' | 'paginated'`. Finite
+non-negative values, including zero, are treated as model-driven geometry and
+refresh after relevant offscreen model changes. Invalid values or exceptions
+fall through to the existing sizing/built-in/flavour estimate path.
+
+**Why**: Host-specific cards and data views previously had only one fixed
+per-flavour estimate. Even when a block persisted an exact `props.height`, it
+could not supply that value before mounting. A Schema-owned contract keeps
+height rules in the block's domain and also lets semantic blocks such as manual
+page breaks distinguish continuous-flow presentation from paginated geometry.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `BlockVirtualizationLayoutMode`
+- `BlockModelHeightEstimateContext<T>`
+- `BlockModelHeightEstimator<T>`
+- `BlockVirtualizationCapability<T>`
+- Optional `IBlockSchemaOptions.metadata.virtualization.estimateHeight`
+
+#### Migration Recipe
+
+Existing hosts require no changes. A custom block that previously relied on a
+fixed flavour estimate can move the rule into its Schema:
+
+```typescript
+// before
+new BlockCraftDoc({
+  // ...
+  virtualization: {
+    enabled: true,
+    estimatedHeights: {'task-list': 600},
+  },
+})
+
+// after
+const TaskListSchema: IBlockSchemaOptions<TaskListModel> = {
+  // ...
+  metadata: {
+    version: 1,
+    label: 'Task list',
+    virtualization: {
+      estimateHeight: ({props}) => props.height ?? 600,
+    },
+  },
+}
+```
+
+The callback must not read DOM or request external data. Persist a compact
+layout fact in props when asynchronous content changes height.
+
+#### Behavior Changes
+
+- The bundled `page-divider` estimates `32px` in flow layout and `0px` in
+  paginated layout. Its flavour and manual-break semantics are unchanged.
+- Schema estimates take precedence over object-sizing, built-in estimates and
+  `estimatedHeights[flavour]`; mounted `ResizeObserver` measurements still
+  provide exact live geometry.
 
 ### v0.3.0-alpha.0 - 2026-08-04 (minor) — add inline and wrapped Shape/WordArt objects
 

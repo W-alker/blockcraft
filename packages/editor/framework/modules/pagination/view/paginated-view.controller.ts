@@ -13,7 +13,11 @@ import {
   comparePaginationShadow,
   shadowMismatchSignature,
 } from "../layout/pagination-shadow-comparator";
-import {PaginationConfig, ResolvedPaginationGeometry} from "../pagination.types";
+import {
+  PaginationConfig,
+  PaginationDocumentHeaderOptions,
+  ResolvedPaginationGeometry,
+} from "../pagination.types";
 import {resolveScreenGeometry} from "./pagination-geometry";
 import {computeBackdropHeight, computeBlockGaps, computeSheetRects} from "./sheet-layout";
 import {BlockMeta, buildPaginationItems} from "./item-builder";
@@ -24,6 +28,7 @@ import {TableBreakApplier} from "./table-break-applier";
 import {HeightLockApplier} from "./height-lock-applier";
 import {createStablePaginationLayout, StablePaginationLayout} from "./stable-pagination-layout";
 import {registerRootLayoutProjection} from "../../virtualization/root-virtualization-manager";
+import {DocumentHeaderLayer} from './document-header-layer';
 
 interface FontLoadingEventTarget {
   addEventListener(type: "loadingdone", listener: EventListener): void;
@@ -34,6 +39,7 @@ interface FontLoadingEventTarget {
 export interface PaginatedViewControllerOptions {
   readonly sparseView?: boolean;
   readonly onSparseViewFailure?: (error: unknown) => void;
+  readonly documentHeader?: PaginationDocumentHeaderOptions;
 }
 
 export class PaginatedViewController {
@@ -41,6 +47,8 @@ export class PaginatedViewController {
   private _geom: ResolvedPaginationGeometry;
   private _heightSource: LiveHeightSource;
   private _frameLayer: PageFrameLayer;
+  private _documentHeaderLayer: DocumentHeaderLayer | null = null;
+  private _documentHeaderHeight = 0;
   private _gapApplier: GapApplier;
   private _tableBreaks: TableBreakApplier;
   private _heightLockApplier: HeightLockApplier;
@@ -81,7 +89,18 @@ export class PaginatedViewController {
     this._geom = resolveScreenGeometry(config);
     this._theme = doc.theme;
     this._heightSource = new LiveHeightSource(doc);
-    this._frameLayer = new PageFrameLayer(scrollContainer);
+    // 滚动视口可以是 root 外层的任意祖先（例如它还包含文档头）。
+    // 页框必须和 root 共享定位面，否则两者会分别相对不同的坐标原点。
+    const layoutSurface = doc.root.hostElement.parentElement ?? scrollContainer;
+    this._frameLayer = new PageFrameLayer(layoutSurface);
+    if (options.documentHeader) {
+      this._documentHeaderLayer = new DocumentHeaderLayer(
+        layoutSurface,
+        doc.root.hostElement,
+        options.documentHeader,
+        height => this._onDocumentHeaderHeightChange(height),
+      );
+    }
     this._gapApplier = new GapApplier(doc);
     this._tableBreaks = new TableBreakApplier(doc);
     this._heightLockApplier = new HeightLockApplier(doc);
@@ -104,8 +123,9 @@ export class PaginatedViewController {
         ? {...this._config.margins, ...partial.margins}
         : this._config.margins,
     };
-    this._geom = resolveScreenGeometry(this._config);
+    this._refreshGeometry();
     if (this._enabled) {
+      this._layoutDocumentHeader();
       if (this.options.sparseView) {
         // Defer the CSS geometry mutation until after virtualization captures
         // the old-coordinate anchor from projection.willChange$.
@@ -123,6 +143,7 @@ export class PaginatedViewController {
     this._enabled = true;
 
     this.doc.ngZone.runOutsideAngular(() => {
+      this._mountDocumentHeader();
       if (!this.options.sparseView) {
         this._applyContainerStyles();
         this._frameLayer.mount();
@@ -637,6 +658,46 @@ export class PaginatedViewController {
     });
   }
 
+  private _refreshGeometry(): void {
+    const extraTop = this._documentHeaderHeight
+      + (this._documentHeaderHeight > 0 ? this._documentHeaderLayer?.gap ?? 0 : 0);
+    this._geom = resolveScreenGeometry(this._config, {firstPageExtraTop: extraTop});
+  }
+
+  private _documentHeaderLayout(): {top: number; width: number} {
+    return {
+      top: 24 + this._geom.margins.top + this._geom.headerHeight,
+      width: Math.max(
+        1,
+        this._geom.sheetWidthPx - this._geom.margins.left - this._geom.margins.right,
+      ),
+    };
+  }
+
+  private _mountDocumentHeader(): void {
+    const layer = this._documentHeaderLayer;
+    if (!layer) return;
+    layer.mount(this._documentHeaderLayout());
+    this._documentHeaderHeight = layer.measure();
+    this._refreshGeometry();
+    layer.updateLayout(this._documentHeaderLayout());
+  }
+
+  private _layoutDocumentHeader(): void {
+    this._documentHeaderLayer?.updateLayout(this._documentHeaderLayout());
+  }
+
+  private _onDocumentHeaderHeightChange(height: number): void {
+    if (Math.abs(height - this._documentHeaderHeight) < 0.5) return;
+    this._documentHeaderHeight = height;
+    this._refreshGeometry();
+    if (!this._enabled) return;
+    if (this.options.sparseView && !this._releaseLayoutProjection) return;
+    this._applyContainerStyles();
+    this._runShadowMutation('document-header-height', () => this._syncMeasureContext());
+    this.scheduleRecompute();
+  }
+
   private _runShadowMutation(stage: string, mutation: () => void): void {
     try {
       mutation();
@@ -718,11 +779,17 @@ export class PaginatedViewController {
     root.style.setProperty('--bc-page-content-height', `${this._geom.geometry.contentHeight}px`);
     // 正文上下内边距要把页眉/页脚带也让出来，使首块落在「页边距 + 页眉」之下、
     // 与背景层里 header 之下的内容区顶对齐（contentHeight 已扣除页眉/页脚）。
-    root.style.setProperty('--bc-page-margin-top', `${margins.top + headerHeight}px`);
+    const documentHeaderOffset = this._documentHeaderHeight
+      + (this._documentHeaderHeight > 0 ? this._documentHeaderLayer?.gap ?? 0 : 0);
+    root.style.setProperty(
+      '--bc-page-margin-top',
+      `${margins.top + headerHeight + documentHeaderOffset}px`,
+    );
     root.style.setProperty('--bc-page-margin-bottom', `${margins.bottom + footerHeight}px`);
     root.style.setProperty('--bc-page-margin-right', `${margins.right}px`);
     root.style.setProperty('--bc-page-margin-left', `${margins.left}px`);
     this.scrollContainer.classList.add('bc-paginated-scroll');
+    this._layoutDocumentHeader();
   }
 
   private _removeContainerStyles(): void {
@@ -763,6 +830,7 @@ export class PaginatedViewController {
     this._tableBreaks.clear();
     this._heightLockApplier.clear();
     this._frameLayer.destroy();
+    this._documentHeaderLayer?.destroy();
     this._removeContainerStyles();
   }
 

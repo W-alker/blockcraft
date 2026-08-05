@@ -87,16 +87,119 @@ describe('PaginationPlugin', () => {
     plugin.enable()
     expect(plugin.enabled).toBeTrue()
     expect(rootHost.classList.contains('bc-paginated')).toBeTrue()
+    expect(scrollContainer.classList.contains('bc-pagination-surface')).toBeTrue()
     expect(scrollContainer.querySelectorAll('.bc-pagination-backdrop').length).toBe(1)
 
     plugin.disable()
     plugin.disable()
     expect(plugin.enabled).toBeFalse()
     expect(rootHost.classList.contains('bc-paginated')).toBeFalse()
+    expect(scrollContainer.classList.contains('bc-pagination-surface')).toBeFalse()
     expect(scrollContainer.querySelector('.bc-pagination-backdrop')).toBeNull()
 
     plugin.destroy()
     plugin.destroy()
+  })
+
+  it('keeps page frames on the root layout surface when the scroll container is an ancestor', () => {
+    const {doc, rootHost, scrollContainer} = createDoc()
+    const header = document.createElement('header')
+    const editorWrapper = document.createElement('div')
+    const layoutSurface = document.createElement('div')
+    rootHost.remove()
+    layoutSurface.append(rootHost)
+    editorWrapper.append(layoutSurface)
+    scrollContainer.append(header, editorWrapper)
+    const plugin = new PaginationPlugin()
+    ;(plugin as unknown as {doc: BlockCraft.Doc}).doc = doc
+    plugin.init()
+
+    plugin.enable()
+
+    expect(scrollContainer.classList.contains('bc-paginated-scroll')).toBeTrue()
+    expect(scrollContainer.classList.contains('bc-pagination-surface')).toBeFalse()
+    expect(layoutSurface.classList.contains('bc-pagination-surface')).toBeTrue()
+    expect(layoutSurface.querySelector(':scope > .bc-pagination-backdrop')).not.toBeNull()
+    expect(scrollContainer.querySelector(':scope > .bc-pagination-backdrop')).toBeNull()
+
+    plugin.disable()
+    expect(layoutSurface.classList.contains('bc-pagination-surface')).toBeFalse()
+    expect(layoutSurface.querySelector('.bc-pagination-backdrop')).toBeNull()
+    plugin.destroy()
+  })
+
+  it('recomputes page geometry and chrome when custom header content changes', () => {
+    const {doc, rootHost, scrollContainer} = createDoc()
+    const plugin = new PaginationPlugin({margins: {top: 20}})
+    ;(plugin as unknown as {doc: BlockCraft.Doc}).doc = doc
+    plugin.init()
+    plugin.enable()
+
+    plugin.updateConfig({
+      header: {left: 'Project', center: '第 {page}/{total} 页', height: 40},
+    })
+    const controller = (plugin as unknown as {
+      _controller: {captureStableLayout(): unknown}
+    })._controller
+    controller.captureStableLayout()
+
+    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('60px')
+    const header = scrollContainer.querySelector<HTMLElement>('.bc-page-header')!
+    expect(header.style.height).toBe('40px')
+    expect(header.querySelector('.bc-page-chrome-left')?.textContent).toBe('Project')
+    expect(header.querySelector('.bc-page-chrome-center')?.textContent).toBe('第 1/1 页')
+
+    plugin.updateConfig({header: {right: 'Updated', height: 64}})
+    controller.captureStableLayout()
+    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('84px')
+    expect(scrollContainer.querySelector<HTMLElement>('.bc-page-header')?.style.height).toBe('64px')
+    expect(scrollContainer.querySelector('.bc-page-chrome-right')?.textContent).toBe('Updated')
+
+    plugin.destroy()
+  })
+
+  it('projects a custom document header into the root surface and restores it on disable', () => {
+    const {doc, rootHost, scrollContainer} = createDoc()
+    const documentHeader = document.createElement('section')
+    const editorWrapper = document.createElement('div')
+    const layoutSurface = document.createElement('div')
+    rootHost.remove()
+    scrollContainer.prepend(documentHeader)
+    layoutSurface.append(rootHost)
+    editorWrapper.append(layoutSurface)
+    scrollContainer.append(editorWrapper)
+    document.body.append(scrollContainer)
+    spyOn(documentHeader, 'getBoundingClientRect').and.returnValue({
+      x: 0, y: 0, top: 0, right: 649, bottom: 120,
+      left: 0, width: 649, height: 120, toJSON: () => ({}),
+    })
+    const plugin = new PaginationPlugin({
+      pageSize: {width: 793, height: 1123},
+      margins: {top: 72, right: 72, bottom: 72, left: 72},
+      documentHeader: {element: documentHeader, gap: 16},
+    })
+    ;(plugin as unknown as {doc: BlockCraft.Doc}).doc = doc
+    plugin.init()
+
+    plugin.enable()
+
+    expect(documentHeader.parentElement).toBe(layoutSurface)
+    expect(documentHeader.nextElementSibling).toBe(rootHost)
+    expect(documentHeader.classList.contains('bc-pagination-document-header')).toBeTrue()
+    expect(documentHeader.style.width).toBe('649px')
+    expect(documentHeader.style.top).toBe('96px')
+    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('208px')
+    expect(layoutSurface.querySelector(':scope > .bc-pagination-backdrop')).not.toBeNull()
+    expect(scrollContainer.contains(layoutSurface)).toBeTrue()
+
+    plugin.disable()
+
+    expect(documentHeader.parentElement).toBe(scrollContainer)
+    expect(documentHeader.nextElementSibling).toBe(editorWrapper)
+    expect(documentHeader.classList.contains('bc-pagination-document-header')).toBeFalse()
+    expect(documentHeader.style.cssText).toBe('')
+    plugin.destroy()
+    scrollContainer.remove()
   })
 
   it('only consumes the print shortcut while enabled and configured', () => {

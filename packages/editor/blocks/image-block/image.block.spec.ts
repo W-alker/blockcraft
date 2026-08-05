@@ -98,3 +98,26 @@ describe('ImageBlockComponent local preview sizing', () => {
     expect(setInitProps).toHaveBeenCalledOnceWith({wr: 40, ar: 1.6})
   })
 })
+
+describe('ImageBlockComponent rendered width', () => {
+  function createComponent(width: number, rootContentWidth: number) {
+    const component = Object.create(ImageBlockComponent.prototype) as any
+    component._native = {flavour: 'image'}
+    component._props = {src: 'https://cdn.example.com/image.png'}
+    component.doc = {
+      objectSizing: {
+        rootContentWidth,
+        resolve: () => ({width}),
+      },
+    }
+    return component as ImageBlockComponent
+  }
+
+  it('caps legacy and responsive image widths at the root content width', () => {
+    expect(createComponent(1200, 800).renderedWidth).toBe(800)
+  })
+
+  it('keeps narrower image widths unchanged', () => {
+    expect(createComponent(480, 800).renderedWidth).toBe(480)
+  })
+})

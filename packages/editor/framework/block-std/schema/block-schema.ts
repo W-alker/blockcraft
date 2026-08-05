@@ -51,6 +51,55 @@ export interface BlockInstanceMetaCapability {
   childConstraints?: boolean
 }
 
+/** Rendering coordinate system requesting a model-only block-height estimate. */
+export type BlockVirtualizationLayoutMode = 'flow' | 'paginated'
+
+/**
+ * Pure model facts available to a Schema-owned height estimator.
+ *
+ * The callback runs while the block view may be unmounted. It must stay
+ * deterministic and DOM/network free. Persist every layout-affecting fact in
+ * block props and use `estimateChildHeight()` only for children that contribute
+ * to this block's vertical extent.
+ */
+export interface BlockModelHeightEstimateContext<
+  T extends NativeBlockModel = NativeBlockModel,
+> {
+  readonly blockId: string
+  readonly flavour: T['flavour']
+  readonly nodeType: T['nodeType']
+  readonly props: Readonly<T['props']>
+  readonly childIds: readonly string[]
+  readonly layoutMode: BlockVirtualizationLayoutMode
+  readonly fallbackHeight: number
+  readonly rootContentWidth: number
+  readonly estimateChildHeight: (childId: string) => number
+}
+
+export type BlockModelHeightEstimator<
+  T extends NativeBlockModel = NativeBlockModel,
+> = {
+  bivarianceHack(
+    context: BlockModelHeightEstimateContext<T>,
+  ): number
+}['bivarianceHack']
+
+export interface BlockVirtualizationCapability<
+  T extends NativeBlockModel = NativeBlockModel,
+> {
+  /**
+   * Controls whether this block's root render unit may unmount after its view
+   * first materializes. Omitted / "virtual" keeps the normal windowed policy;
+   * "keep-alive" preserves DOM-owned state until deletion or document disposal.
+   */
+  viewRetention?: BlockViewRetention
+  /**
+   * Return a finite non-negative CSS-pixel height from model state.
+   * Invalid values and thrown errors fall back to framework rules.
+   */
+  estimateHeight?: BlockModelHeightEstimator<T>
+}
+
 /**
  * Resolve the placeholder text for an editable block based on its Schema
  * placeholder config and current heading level.
@@ -115,13 +164,8 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
      * virtualized.
      */
     plainTextOnly?: boolean
-    /**
-     * Default root-virtualization retention for this flavour.
-     * - omitted / "virtual": the root unit may unmount outside the window.
-     * - "keep-alive": after first materialization, keep its root unit mounted
-     *   until this block is destroyed.
-     */
-    viewRetention?: BlockViewRetention
+    /** Block-owned root-virtualization lifecycle and model-only geometry. */
+    virtualization?: BlockVirtualizationCapability<T>
     /**
      * Semantic selection scope owned by this block.
      *

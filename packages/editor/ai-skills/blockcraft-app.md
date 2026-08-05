@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-04
+> Last updated: 2026-08-05
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -317,6 +317,10 @@ const pagination = new PaginationPlugin({
   enabled: false,
   pageSize: 'A4',
   printShortcut: true,
+  documentHeader: {
+    element: () => hostDocumentHeader.nativeElement,
+    gap: 16,
+  },
   // Phase C opt-in; keep false when exact live pagination is required.
   experimentalSparseView: true,
 })
@@ -336,6 +340,14 @@ pagination.disable()
 ```
 
 Do not add `pagination` to `DocConfig` and do not read `doc.pagination`. The plugin is the lifecycle owner and removes all layout DOM/CSS on disable or destroy. Host settings UI should read `pagination.config` and call `pagination.updateConfig(...)`; BlockCraft does not publish a pagination settings component. `experimentalSparseView` is a construction-time rollout option, is not included in `pagination.config`, defaults to `false`, and is effective only when root virtualization is enabled.
+
+`documentHeader` is a construction-time live-layout option. It accepts an
+element or lazy resolver plus an optional gap. On enable the plugin temporarily
+moves the connected element into the root pagination surface, constrains it to
+page content width, observes its border-box height and deducts that height only
+from the first page. Disable/destroy restores the original parent, sibling
+position and inline style; host code must not reparent it while pagination is
+enabled.
 
 ### Paginated PDF and Printing
 
@@ -515,7 +527,15 @@ remain disabled/false respectively.
   reconciliation frame; a later mount rebuilds it from current Yjs state.
 - `estimatedHeights` supplies per-flavour heights until `ResizeObserver`
   measures a mounted block. Missing flavours use 48px.
-- `resolveViewRetention(context)` can override a schema's `metadata.viewRetention`
+- A custom Schema can take precedence with
+  `metadata.virtualization.estimateHeight(context)`. The callback receives
+  readonly model props, direct child IDs, `estimateChildHeight()`, cached root
+  width and `layoutMode: 'flow' | 'paginated'`; it must return a synchronous,
+  DOM-free finite non-negative height. Persist async layout facts in props so
+  offscreen model changes can invalidate the estimate. Invalid results or
+  thrown errors use the normal object-sizing / `estimatedHeights` fallback.
+- `resolveViewRetention(context)` can override a schema's
+  `metadata.virtualization.viewRetention`
   when that block view materializes. Return `'keep-alive'`, `'virtual'`, or
   `undefined` to preserve the schema policy. The context contains `blockId`,
   `flavour`, `nodeType`, and `schemaRetention`.
@@ -537,7 +557,7 @@ remain disabled/false respectively.
   the root window: offscreen geometry may be estimated, mounted-only page gaps
   and table breaks replay after remount, and non-exact layouts are not reused
   for print/PDF.
-- A schema with `metadata.viewRetention: 'keep-alive'` acquires a long-lived
+- A schema with `metadata.virtualization.viewRetention: 'keep-alive'` acquires a long-lived
   lease only after its view first materializes. Nested blocks pin their
   containing direct-root render unit. Built-in iframe/media schemas opt in so
   scrolling does not reset browsing context or playback; deletion and document
@@ -628,6 +648,12 @@ try {
 
 The configured `scrollContainer` must be the element that actually scrolls.
 When omitted, BlockCraft uses its existing ancestor auto-detection.
+It may be any ancestor of the editor root and may contain host-owned siblings,
+such as a document header. Live pagination keeps scrolling and virtualization
+bound to that element, but mounts page sheets on the root's direct parent so
+the sheets and content share one coordinate surface. Hosts do not need to move
+their header into the editor container or make the root a direct child of the
+scroll container.
 
 ### 复制过滤（Copy Filter）
 

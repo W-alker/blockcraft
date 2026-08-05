@@ -14,9 +14,8 @@ export interface TableRowGeom {
   /** 该行是否被上方 rowspan 单元格覆盖（其顶边界被合并单元格跨越，断在此会拆分该合并单元格）。 */
   coveredFromAbove: boolean;
   /**
-   * 该行是否被上方**带内容**的合并单元格覆盖。带内容的竖向合并单元格无法跨页拆分——内容全留在首段、
-   * 无法流入续段（空单元格），拆开必溢出页底。故这类边界**完全不可断**（连 splitOffsets 都不收），
-   * 让带内容合并单元格 keep-together（整体跳页）；空合并单元格（如分类标签）仍可拆（续段为空、不溢出）。
+   * 该行顶边界是否仍被上方 rowspan 单元格的**实际内容**跨越。此时内容无法流入空续段，
+   * 边界不可断；若 master 内容已经在该边界之前结束，则可安全拆开 rowspan，后续段保持为空。
    */
   coveredByContentMerge?: boolean;
 }

@@ -9,10 +9,14 @@ export function hasChromeText(c?: PageChrome): boolean {
   return !!(c && (c.left || c.center || c.right));
 }
 
-/** 页眉/页脚高度（px）：无文本 = 0；有文本用 `c.height ?? 默认高度`。 */
+/** 页眉/页脚高度（px）：无文本 = 0；有文本且未给出合法高度时用默认高度。 */
 export function chromeHeight(c?: PageChrome): number {
   if (!hasChromeText(c)) return 0;
-  return c!.height ?? DEFAULT_CHROME_HEIGHT;
+  const height = c!.height;
+  if (height === undefined) return DEFAULT_CHROME_HEIGHT;
+  return Number.isFinite(height) && height >= 0
+    ? height
+    : DEFAULT_CHROME_HEIGHT;
 }
 
 /** 替换 `{page}` / `{total}` 占位符（page 为 1 起页码）。 */

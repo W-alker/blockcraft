@@ -1,4 +1,5 @@
 import { BlockNodeType } from "../../../block-std/types/block.type";
+import { PageDividerBlockSchema } from "../../../../blocks/page-divider-block";
 import {
   IBlockModelContentChange,
   IBlockModelStructureChange,
@@ -88,6 +89,12 @@ function createHarness(
     rootId: "root",
     model,
     config: { virtualization: { estimatedHeights } },
+    schemas: {
+      get: (flavour: string) =>
+        flavour === PageDividerBlockSchema.flavour
+          ? PageDividerBlockSchema
+          : null,
+    },
     get vm(): never {
       throw new Error("Coordinator must not read doc.vm");
     },

@@ -34,7 +34,7 @@ export const AudioBlockSchema: IBlockSchemaOptions<AudioBlockModel> = {
   },
   metadata: {
     version: 1,
-    viewRetention: 'keep-alive',
+    virtualization: {viewRetention: 'keep-alive'},
     label: '音频',
     description: '插入音频，支持链接、本地上传',
     svgIcon: 'bc_yinpin',

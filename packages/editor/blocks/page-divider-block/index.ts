@@ -25,7 +25,12 @@ export const PageDividerBlockSchema: IBlockSchemaOptions<PageDividerBlockModel> 
   metadata: {
     version: 1,
     label: "分页符",
-    icon: "bc_icon bc_fenyefu"
+    icon: "bc_icon bc_fenyefu",
+    virtualization: {
+      // Continuous layout paints a compact marker; paginated layout treats the
+      // same model node as a zero-height manual page break.
+      estimateHeight: ({layoutMode}) => layoutMode === 'paginated' ? 0 : 32,
+    },
   }
 }
 

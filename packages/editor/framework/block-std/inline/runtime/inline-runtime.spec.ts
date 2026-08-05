@@ -4,6 +4,7 @@ import {
 } from '../image-embed'
 import {InlineRuntime} from './inline-runtime'
 import {INLINE_PAGINATION_GAP_ATTRIBUTE} from './inline-pagination-projection'
+import {InlineRangeMeasurer} from './inline-fragment-layout'
 import {
   applyInlinePaginationGaps,
   clearInlinePaginationGaps,
@@ -162,15 +163,130 @@ describe('InlineRuntime inline float lifecycle', () => {
     document.body.appendChild(host)
     const runtime = new InlineRuntime(container, new Map())
     runtime.render([{insert: 'abcdefghijklmnopqrstuvwx'}])
+    const hiddenFit = spyOn(
+      InlineRangeMeasurer.prototype,
+      'fitFragment',
+    ).and.callThrough()
 
-    const points = measureInlinePaginationLineStarts(runtime)
+    const points = measureInlinePaginationLineStarts(runtime, 2)
 
     expect(points.length).toBeGreaterThan(1)
+    expect(points.length).toBeLessThanOrEqual(2)
+    expect(hiddenFit).not.toHaveBeenCalled()
     expect(points.every((point, index) =>
       point.offset > (points[index - 1]?.offset ?? 0)
       && point.top > (points[index - 1]?.top ?? -1),
     )).toBeTrue()
     expect(points.every(point => point.offset > 0 && point.offset < runtime.textLength)).toBeTrue()
+    runtime.destroy()
+  })
+
+  it('inserts many pagination gaps in model order without changing text', () => {
+    const container = document.createElement('div')
+    const runtime = new InlineRuntime(container, new Map())
+    runtime.render([{insert: 'abcdefghijkl'}])
+
+    expect(applyInlinePaginationGaps(runtime, [3, 6, 9].map(offset => ({
+      offset,
+      height: 100,
+      backdropOffset: 70,
+      backdropHeight: 20,
+    })))).toBeTrue()
+
+    const markers = Array.from(container.querySelectorAll(
+      `[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`,
+    ))
+    expect(markers.length).toBe(3)
+    expect(runtime.scrollBlot.leaves.map(leaf => leaf.domNode.textContent).join(''))
+      .toBe('abcdefghijkl')
+    expect(runtime.textLength).toBe(12)
+    runtime.destroy()
+  })
+
+  it('does not enumerate every native line rect for a very long paragraph', () => {
+    const host = document.createElement('div')
+    const container = document.createElement('div')
+    host.dataset['inlineRuntimeTestHost'] = 'true'
+    host.style.width = '100px'
+    container.style.cssText = [
+      'width:100px',
+      'font:16px/20px monospace',
+      'white-space:pre-wrap',
+      'word-break:break-all',
+    ].join(';')
+    host.appendChild(container)
+    document.body.appendChild(host)
+    const runtime = new InlineRuntime(container, new Map())
+    runtime.render([{insert: 'abcdefghij'.repeat(500)}])
+    const rectReads = spyOn(runtime, 'modelRangeToClientRects').and.callThrough()
+
+    const points = measureInlinePaginationLineStarts(runtime, 4)
+
+    expect(points.length).toBeLessThanOrEqual(4)
+    expect(rectReads.calls.allArgs().some(
+      ([start, end]) => start === 0 && end === runtime.textLength,
+    )).toBeFalse()
+    runtime.destroy()
+  })
+
+  it('keeps every line anchor for an ordinary multiline rich cell', () => {
+    const host = document.createElement('div')
+    const container = document.createElement('div')
+    host.dataset['inlineRuntimeTestHost'] = 'true'
+    container.style.cssText = [
+      'width:240px',
+      'font:24px/40px sans-serif',
+      'white-space:pre-wrap',
+    ].join(';')
+    host.appendChild(container)
+    document.body.appendChild(host)
+    const runtime = new InlineRuntime(container, new Map())
+    runtime.render([{insert: Array.from(
+      {length: 10},
+      (_, index) => `第 ${index + 1} 行 ⭐`,
+    ).join('\n')}])
+
+    const points = measureInlinePaginationLineStarts(runtime, 64)
+    const secondLineInkTop = runtime
+      .modelRangeToClientRects(points[0].offset, points[0].offset + 1)[0]
+      .top - container.getBoundingClientRect().top
+
+    expect(points.length).toBe(9)
+    expect(points[0].top).toBeLessThan(secondLineInkTop - 2)
+    expect(points.every((point, index) =>
+      point.offset > (points[index - 1]?.offset ?? 0)
+      && point.top > (points[index - 1]?.top ?? -1),
+    )).toBeTrue()
+    runtime.destroy()
+  })
+
+  it('does not treat mixed-format and emoji ink tops as extra visual lines', () => {
+    const host = document.createElement('div')
+    const container = document.createElement('div')
+    host.dataset['inlineRuntimeTestHost'] = 'true'
+    container.style.cssText = [
+      'width:420px',
+      'font:24px/40px sans-serif',
+      'white-space:pre-wrap',
+    ].join(';')
+    host.appendChild(container)
+    document.body.appendChild(host)
+    const runtime = new InlineRuntime(container, new Map())
+    runtime.render([
+      {insert: '普通文字 '},
+      {insert: '强调', attributes: {bold: true}},
+      {insert: ' ⭐\n第二行 '},
+      {insert: '斜体', attributes: {italic: true}},
+      {insert: ' ⭐\n第三行'},
+    ])
+
+    const points = measureInlinePaginationLineStarts(runtime, 64)
+
+    expect(points.length).toBe(2)
+    expect(points.map(point => point.offset)).toEqual([
+      '普通文字 强调 ⭐\n'.length,
+      '普通文字 强调 ⭐\n第二行 斜体 ⭐\n'.length,
+    ])
     runtime.destroy()
   })
 

@@ -298,7 +298,8 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     if (!virtualization?.enabled) return
 
     const schemaRetention =
-      this.doc.schemas?.get(this.flavour, false)?.metadata.viewRetention ?? 'virtual'
+      this.doc.schemas?.get(this.flavour, false)?.metadata.virtualization
+        ?.viewRetention ?? 'virtual'
     this._releaseViewRetention = virtualization.bindBlockViewRetention({
       blockId: this.id,
       flavour: this.flavour,
