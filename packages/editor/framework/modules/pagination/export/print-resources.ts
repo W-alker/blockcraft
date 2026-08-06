@@ -77,10 +77,18 @@ function stripEditingState(root: HTMLElement): void {
     '.drag-handle',
     '.bc-float-toolbar',
     '.code-block .btn-collapse',
-    '.code-block .head-btn__group > .head-btn:last-child',
     '[data-bc-print-exclude="true"]',
   ].join(',')
   root.querySelectorAll(excluded).forEach(node => node.remove())
+
+  // block-gap 是 WebKit 光标锚点，不属于文档内容。用 display:none 而不是 remove：
+  // 业务块可能依赖 :first-child/:last-child 结构选择器，删节点会让只读副本
+  // 与 live DOM 出现新的样式分支。隐藏后它们不再扩大 scrollWidth，结构语义仍保持。
+  root.querySelectorAll<HTMLElement>('[data-block-zero-space="true"]')
+    .forEach(el => {
+      el.style.setProperty('display', 'none', 'important')
+      el.style.setProperty('pointer-events', 'none', 'important')
+    })
 
   // 表格结构控件会参与其自然几何，不能 remove；只关闭绘制与交互，保持分页测量不变。
   const geometryChrome = [

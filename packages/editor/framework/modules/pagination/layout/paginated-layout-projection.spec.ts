@@ -43,6 +43,7 @@ function entry(
     measureContextRevision: 0,
     source: "measured",
     naturalHeight,
+    effectiveHeight: naturalHeight,
     ...overrides,
   };
 }

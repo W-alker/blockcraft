@@ -285,6 +285,9 @@ describe('PaginationGeometryIndex', () => {
       measurement('b', Number.NaN),
       measurement('b', 20, {height: -1}),
       measurement('b', 20, {lockHeight: Number.POSITIVE_INFINITY}),
+      measurement('b', 20, {fitScale: 0}),
+      measurement('b', 20, {fitScale: Number.NaN}),
+      measurement('b', 20, {fitScale: 1.01}),
       measurement('b', 20, {repeatHeaderHeight: -1}),
       measurement('b', 20, {splitOffsets: [10, -1]}),
       measurement('b', 20, {preferredSplitOffsets: [Number.NaN]}),
@@ -317,6 +320,33 @@ describe('PaginationGeometryIndex', () => {
     expect(index.applyMeasured([measured])).toBeTrue()
     const revision = index.revision
     expect(index.applyMeasured([measured])).toBeFalse()
+    expect(index.revision).toBe(revision)
+  })
+
+  it('retains width-only fit scale and effective height in measured geometry', () => {
+    const index = new PaginationGeometryIndex()
+    index.syncRootOrder([seed('wide', 80, {
+      flavour: 'bookmark',
+      nodeType: BlockNodeType.void,
+    })])
+    const fitted = measurement('wide', 80, {
+      flavour: 'bookmark',
+      nodeType: BlockNodeType.void,
+      height: 40,
+      fitScale: 0.5,
+    })
+
+    expect(index.applyMeasured([fitted])).toBeTrue()
+    expect(index.get('wide')).toEqual(jasmine.objectContaining({
+      naturalHeight: 80,
+      effectiveHeight: 40,
+      fitScale: 0.5,
+      lockHeight: undefined,
+      source: 'measured',
+    }))
+
+    const revision = index.revision
+    expect(index.applyMeasured([fitted])).toBeFalse()
     expect(index.revision).toBe(revision)
   })
 

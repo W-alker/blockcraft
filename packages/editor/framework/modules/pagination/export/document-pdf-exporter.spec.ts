@@ -14,6 +14,8 @@ describe('exportPrintPagesToPdf host backend', () => {
       container,
       pages: [],
       pageCount: 2,
+      pageWidthCss: '210mm',
+      pageHeightCss: '297mm',
       pageWidthPx: 793,
       pageHeightPx: 1123,
       pageWidthPt: 595,
@@ -23,6 +25,22 @@ describe('exportPrintPagesToPdf host backend', () => {
       dispose,
     }
   }
+
+  it('prints the default browser path through the top-level mirror', async () => {
+    const pages = createPages()
+    const print = spyOn(window, 'print').and.callFake(() => {
+      queueMicrotask(() => window.dispatchEvent(new Event('afterprint')))
+    })
+
+    const result = await exportPrintPagesToPdf(pages, config, 'report.pdf')
+
+    expect(print).toHaveBeenCalledTimes(1)
+    expect(result.output).toBe('browser-print')
+    expect(result.status).toBe('completed')
+    expect(pages.dispose).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('.bc-print-mirror')).toBeNull()
+    expect(document.head.querySelector('[data-bc-print-mirror-style]')).toBeNull()
+  })
 
   it('calls the backend while the current-page print mirror is mounted', async () => {
     const pages = createPages()

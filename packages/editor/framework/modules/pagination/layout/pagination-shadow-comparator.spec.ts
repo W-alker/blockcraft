@@ -90,6 +90,7 @@ function tableEntry(
     measureContextRevision: 0,
     source: "measured",
     naturalHeight: 100,
+    effectiveHeight: 100,
     tableRows: rows,
   };
 }

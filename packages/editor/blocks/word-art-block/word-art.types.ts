@@ -417,6 +417,7 @@ export function wordArtPresentationToInlineStyle(
     `line-height:${props.lineHeight}`,
     `text-align:${props.horizontalAlign}`,
     `color:${presentation.textColor}`,
+    `-webkit-text-fill-color:${presentation.textColor}`,
     `caret-color:${presentation.fallbackColor}`,
     `background-image:${presentation.backgroundImage}`,
     'background-clip:text',

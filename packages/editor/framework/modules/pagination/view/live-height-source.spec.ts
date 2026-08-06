@@ -65,6 +65,17 @@ describe('LiveHeightSource atomic block measurement', () => {
     expect(meta?.lockHeight).toBeUndefined()
   })
 
+  it('does not count clipped atomic overflow as page stride', () => {
+    source = createSource(176, 180)
+    host.style.overflow = 'hidden'
+
+    const [meta] = source.measure({contentHeight: 900, widowOrphanLines: 2})
+
+    expect(meta?.height).toBe(184)
+    expect(meta?.naturalHeight).toBe(184)
+    expect(meta?.lockHeight).toBeUndefined()
+  })
+
   it('reports the natural stride when measure options are omitted', () => {
     source = createSource(55, 464)
 
@@ -195,6 +206,163 @@ describe('LiveHeightSource atomic block measurement', () => {
     expect(afterRealShrink?.lockHeight).toBeUndefined()
   })
 
+  it('fits an oversized image into one page instead of dropping its tail', () => {
+    source = createSource(1200, 1200, 'image', BlockNodeType.block)
+
+    const [image] = source.measure({contentHeight: 900, widowOrphanLines: 2})
+
+    expect(image?.height).toBe(900)
+    expect(image?.lockHeight).toBe(900)
+    expect(image?.fitScale).toBeCloseTo(900 / 1208, 6)
+    expect(buildPaginationItems([image!])[0]?.fitScale).toBe(image?.fitScale)
+  })
+
+  it('uses the smaller visual height when an oversized image is constrained more by width', () => {
+    source = createSource(1200, 1200, 'image', BlockNodeType.block)
+    Object.defineProperty(host, 'offsetWidth', {configurable: true, value: 1300})
+    Object.defineProperty(host, 'scrollWidth', {configurable: true, value: 1300})
+
+    const [image] = source.measure({
+      contentHeight: 900,
+      contentWidth: 650,
+      widowOrphanLines: 2,
+    })
+
+    expect(image?.naturalHeight).toBe(1208)
+    expect(image?.lockHeight).toBe(900)
+    expect(image?.fitScale).toBe(0.5)
+    expect(image?.height).toBe(604)
+    expect(buildPaginationItems([image!])[0]?.height).toBe(604)
+  })
+
+  it('uses responsive wr/ar geometry as the image body height', () => {
+    source = createSource(1200, 1200, 'image', BlockNodeType.block)
+    ;(source as any).doc.objectSizing = {
+      resolve: () => ({
+        width: 600,
+        height: 400,
+        wr: 75,
+        ar: 1.5,
+        source: 'ratio',
+        exact: true,
+      }),
+    }
+
+    const [image] = source.measure({
+      contentHeight: 900,
+      contentWidth: 800,
+      widowOrphanLines: 2,
+    })
+
+    expect(image?.naturalHeight).toBe(408)
+    expect(image?.height).toBe(408)
+    expect(image?.fitScale).toBeUndefined()
+  })
+
+  it('does not feed a fitted auto-width host back into the next image fit', () => {
+    source = createSource(1200, 1200, 'image', BlockNodeType.block)
+    Object.defineProperty(host, 'offsetWidth', {configurable: true, value: 650})
+    Object.defineProperty(host, 'scrollWidth', {configurable: true, value: 650})
+
+    const [initial] = source.measure({
+      contentHeight: 900,
+      contentWidth: 650,
+      widowOrphanLines: 2,
+    })
+    host.classList.add('bc-page-height-fitted')
+    // Chromium 会把 zoom:.75 的 auto-width layout box 反向扩张到约 867px。
+    Object.defineProperty(host, 'offsetWidth', {configurable: true, value: 900})
+    Object.defineProperty(host, 'scrollWidth', {configurable: true, value: 900})
+
+    const [next] = source.measure({
+      contentHeight: 900,
+      contentWidth: 650,
+      widowOrphanLines: 2,
+    })
+
+    expect(next?.fitScale).toBeCloseTo(initial!.fitScale!, 6)
+  })
+
+  it('ignores the trailing block-gap caret when deciding whether a void block is too wide', () => {
+    source = createSource(185, 185, 'kr-list', BlockNodeType.void)
+    host.style.marginBottom = '10px'
+    const trailingGap = document.createElement('span')
+    trailingGap.setAttribute('data-block-zero-space', 'true')
+    trailingGap.setAttribute('data-block-gap-side', 'after')
+    host.appendChild(trailingGap)
+    Object.defineProperty(host, 'offsetWidth', {configurable: true, value: 650})
+    Object.defineProperty(host, 'scrollWidth', {
+      configurable: true,
+      get: () => trailingGap.style.display === 'none' ? 650 : 652,
+    })
+
+    const [measurement] = source.measure({
+      contentHeight: 900,
+      contentWidth: 649.7007874015749,
+      widowOrphanLines: 2,
+    })
+
+    expect(measurement?.naturalHeight).toBe(195)
+    expect(measurement?.height).toBe(195)
+    expect(measurement?.fitScale).toBeUndefined()
+    expect(trailingGap.style.display).toBe('')
+  })
+
+  it('does not feed a fitted host height back into its natural measurement', () => {
+    source = createSource(185, 185, 'wide-embed', BlockNodeType.void)
+    host.style.marginBottom = '10px'
+    Object.defineProperty(host, 'offsetHeight', {
+      configurable: true,
+      get: () => host.classList.contains('bc-page-height-fitted') ? 181 : 185,
+    })
+    Object.defineProperty(host, 'scrollHeight', {
+      configurable: true,
+      get: () => host.classList.contains('bc-page-height-fitted') ? 181 : 185,
+    })
+    Object.defineProperty(host, 'offsetWidth', {configurable: true, value: 652})
+    Object.defineProperty(host, 'scrollWidth', {configurable: true, value: 652})
+    const options = {
+      contentHeight: 900,
+      contentWidth: 649.7007874015749,
+      widowOrphanLines: 2,
+    }
+
+    const [initial] = source.measure(options)
+    host.classList.add('bc-page-height-fitted')
+    const [next] = source.measure(options)
+
+    const expectedScale = 649.7007874015749 / 652
+    expect(initial?.naturalHeight).toBe(195)
+    expect(next?.naturalHeight).toBe(195)
+    expect(initial?.fitScale).toBeCloseTo(expectedScale, 12)
+    expect(next?.fitScale).toBeCloseTo(expectedScale, 12)
+    expect(initial?.height).toBeCloseTo(195 * expectedScale, 12)
+    expect(next?.height).toBeCloseTo(initial!.height, 12)
+    expect(host.classList.contains('bc-page-height-fitted')).toBeTrue()
+  })
+
+  it('measures the natural width when a virtualized image reattaches already fitted', () => {
+    source = createSource(1200, 1200, 'image', BlockNodeType.block)
+    host.classList.add('bc-page-height-fitted')
+    Object.defineProperty(host, 'offsetWidth', {
+      configurable: true,
+      get: () => host.classList.contains('bc-page-height-fitted') ? 900 : 650,
+    })
+    Object.defineProperty(host, 'scrollWidth', {
+      configurable: true,
+      get: () => host.classList.contains('bc-page-height-fitted') ? 900 : 650,
+    })
+
+    const [measurement] = source.measure({
+      contentHeight: 900,
+      contentWidth: 650,
+      widowOrphanLines: 2,
+    })
+
+    expect(measurement?.fitScale).toBeCloseTo(900 / 1208, 6)
+    expect(host.classList.contains('bc-page-height-fitted')).toBeTrue()
+  })
+
   it('filters the ResizeObserver echo of a pagination-owned table projection', () => {
     source = createSource(500, 500, 'table', BlockNodeType.block, {
       naturalHeight: 500,
@@ -202,7 +370,7 @@ describe('LiveHeightSource atomic block measurement', () => {
       rows: [{id: 'row-1', top: 0, bottom: 500, coveredFromAbove: false}],
     })
     source.syncObserved()
-    spyOn(host, 'getBoundingClientRect').and.returnValue({height: 640} as DOMRect)
+    Object.defineProperty(host, 'offsetHeight', {configurable: true, value: 640})
     const resize = jasmine.createSpy('resize')
     source.resize$.subscribe(resize)
 
@@ -224,7 +392,7 @@ describe('LiveHeightSource atomic block measurement', () => {
       rows: [{id: 'row-1', top: 0, bottom: 500, coveredFromAbove: false}],
     })
     source.syncObserved()
-    spyOn(host, 'getBoundingClientRect').and.returnValue({height: 640} as DOMRect)
+    Object.defineProperty(host, 'offsetHeight', {configurable: true, value: 640})
     const resize = jasmine.createSpy('resize')
     source.resize$.subscribe(resize)
 
@@ -246,7 +414,7 @@ describe('LiveHeightSource atomic block measurement', () => {
       rows: [{id: 'row-1', top: 0, bottom: 500, coveredFromAbove: false}],
     })
     source.syncObserved()
-    spyOn(host, 'getBoundingClientRect').and.returnValue({height: 640} as DOMRect)
+    Object.defineProperty(host, 'offsetHeight', {configurable: true, value: 640})
     const resize = jasmine.createSpy('resize')
     source.resize$.subscribe(resize)
 

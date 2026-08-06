@@ -10,6 +10,7 @@ import {
   getWordArtPreset,
   normalizeWordArtProps,
   resolveWordArtPresentation,
+  wordArtPresentationToInlineStyle,
 } from './index'
 
 @Component({
@@ -106,6 +107,8 @@ describe('Word art block domain', () => {
       ) as HTMLElement
 
       expect(placementShell.isContentEditable).toBeFalse()
+      expect(editor.style.webkitTextFillColor).toBe('transparent')
+      expect(editor.style.backgroundClip).toBe('text')
       expect(editor.getAttribute('contenteditable')).toBe('true')
       expect(editor.isContentEditable).toBeTrue()
       expect(
@@ -244,6 +247,9 @@ describe('Word art block domain', () => {
     expect(presentation.textShadow).toContain('rgba(0, 0, 0, 0.4)')
     expect(presentation.effectTransform).toBe(
       'perspective(600px) rotateY(-12deg)',
+    )
+    expect(wordArtPresentationToInlineStyle(presentation.props)).toContain(
+      '-webkit-text-fill-color:transparent',
     )
   })
 

@@ -41,6 +41,7 @@ export function createWordArtRenderers(): SnapshotBlockRenderer[] {
       content.style.lineHeight = `${props.lineHeight}`
       content.style.textAlign = props.horizontalAlign
       content.style.color = presentation.textColor
+      content.style.webkitTextFillColor = presentation.textColor
       content.style.caretColor = presentation.fallbackColor
       content.style.backgroundImage = presentation.backgroundImage
       content.style.backgroundClip = 'text'

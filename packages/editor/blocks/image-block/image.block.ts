@@ -455,9 +455,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
         : undefined
     const initialSize = deriveInitialImageObjectSize(
       size,
-      this.isAbsolute
-        ? this.rootContentWidth
-        : this.hostElement.clientWidth,
+      this.initialAvailableWidth,
       this.rootContentWidth,
       legacyWidth,
     )
@@ -479,5 +477,17 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     this._awaitingLocalPreviewSize = false
     this._pendingIntrinsicSize = null
     return true
+  }
+
+  /** 首次 wr/ar 迁移只读取未缩放的 layout 宽度。 */
+  private get initialAvailableWidth(): number {
+    const rootWidth = this.rootContentWidth
+    if (this.isAbsolute) return rootWidth
+    const hostWidth = this.hostElement.clientWidth
+    if (!Number.isFinite(hostWidth) || hostWidth <= 0) return rootWidth
+    if (!Number.isFinite(rootWidth) || rootWidth <= 0) return hostWidth
+    // CSS zoom 可能让 auto-width 图片宿主的 clientWidth 反向扩张；root
+    // content width 是响应式 wr 的权威分母，也同时是顶层图片的最大可用宽度。
+    return Math.min(hostWidth, rootWidth)
   }
 }

@@ -28,8 +28,11 @@ export function resolveScreenGeometry(
   const rawDims = resolvePageDimensions(pageSize, config.orientation ?? 'portrait');
   const dims = {width: Math.max(1, rawDims.width), height: Math.max(1, rawDims.height)};
   // 命名尺寸是 pt → 转 px；自定义尺寸视为已是 px。
-  const sheetWidthPx = isNamed ? Math.round(ptToPx(dims.width)) : dims.width;
-  const sheetHeightPx = isNamed ? Math.round(ptToPx(dims.height)) : dims.height;
+  // 保留物理纸张换算后的亚像素精度。若这里取整，A4 会从实际的
+  // 793.701×1122.520px 变成 794×1123px；完整页盒进入打印引擎后多出的尺寸
+  // 可能被分到下一张物理纸，形成稳定的隔页空白。
+  const sheetWidthPx = isNamed ? ptToPx(dims.width) : dims.width;
+  const sheetHeightPx = isNamed ? ptToPx(dims.height) : dims.height;
   const margins = resolveMargins(config.margins);
   const pageGap = Math.max(0, config.pageGap ?? DEFAULT_PAGE_GAP);
   const headerHeight = chromeHeight(config.header);

@@ -1,6 +1,11 @@
 // packages/editor/framework/modules/pagination/export/print-readonly-render.ts
 import {IBlockSnapshot} from "../../../block-std/types/block.type";
 import {appendFlowSentinel} from './print-dom';
+import {
+  PaginationExportError,
+  PaginationPdfOptions,
+  throwIfPaginationExportAborted,
+} from './pdf-export.types'
 import type {PrintRenderProvider} from "./print-paginator";
 
 /** 每次只读打印渲染用一个独立 docId，避免与 live doc / 上次打印 doc 撞键。 */
@@ -20,7 +25,11 @@ let _printDocSeq = 0;
  * 不直接 import `BlockCraftDoc`（会与 doc→pagination→export 形成循环依赖）：用 `doc.constructor`
  * 构造同类实例。打印结束（dispose）时 destroy 该 doc，销毁其全部组件与监听。
  */
-export function readonlyDocRenderProvider(doc: BlockCraft.Doc, snapshot: IBlockSnapshot): PrintRenderProvider {
+export function readonlyDocRenderProvider(
+  doc: BlockCraft.Doc,
+  snapshot: IBlockSnapshot,
+  options: Pick<PaginationPdfOptions, 'prepareDocument' | 'signal'> = {},
+): PrintRenderProvider {
   return async (contentWidthPx: number) => {
     const off = document.createElement('div');
     off.setAttribute('data-bc-print-offscreen', 'true');
@@ -42,34 +51,55 @@ export function readonlyDocRenderProvider(doc: BlockCraft.Doc, snapshot: IBlockS
       plugins: [],
       // 不传 pagination：避免只读 doc 又递归启用一个分页子系统。
     });
-    printDoc.initBySnapshot(snapshot, off);
-
-    // 等 initBySnapshot 内 _initEditor 的 nextTick（应用 readonly / theme）跑完。
-    // 字体、图片、canvas/iframe 的稳定与策略由统一 print-resources 层处理。
-    await new Promise<void>(r => setTimeout(r, 0));
-    await new Promise<void>(res => requestAnimationFrame(() => requestAnimationFrame(() => res())));
-
-    const root = off.querySelector<HTMLElement>('[data-blockcraft-root="true"]') ?? off;
-    root.classList.add('bc-pagination-print-source');
-    root.style.width = `${contentWidthPx}px`;
-    root.style.maxWidth = 'none';
-    root.style.margin = '0';
-    root.style.padding = '0';
-    for (const child of Array.from(root.querySelectorAll<HTMLElement>(':scope > [data-block-id]'))) {
-      child.style.marginTop = '0';
+    const dispose = () => {
+      try {
+        printDoc.destroy?.();
+      } catch {
+        /* ignore */
+      }
+      off.remove();
     }
-    appendFlowSentinel(root);
 
-    return {
-      root,
-      dispose: () => {
+    try {
+      printDoc.initBySnapshot(snapshot, off);
+
+      // 等 initBySnapshot 内 _initEditor 的 nextTick（应用 readonly / theme）跑完。
+      // 字体、图片、canvas/iframe 的稳定与策略由统一 print-resources 层处理。
+      await new Promise<void>(r => setTimeout(r, 0));
+      await new Promise<void>(res => requestAnimationFrame(() => requestAnimationFrame(() => res())));
+      throwIfPaginationExportAborted(options.signal)
+
+      const root = off.querySelector<HTMLElement>('[data-blockcraft-root="true"]') ?? off;
+      root.classList.add('bc-pagination-print-source');
+      root.style.width = `${contentWidthPx}px`;
+      root.style.maxWidth = 'none';
+      root.style.margin = '0';
+      root.style.padding = '0';
+      for (const child of Array.from(root.querySelectorAll<HTMLElement>(':scope > [data-block-id]'))) {
+        child.style.marginTop = '0';
+      }
+
+      if (options.prepareDocument) {
         try {
-          printDoc.destroy?.();
-        } catch {
-          /* ignore */
+          await options.prepareDocument({doc: printDoc, root, signal: options.signal})
+        } catch (error) {
+          throwIfPaginationExportAborted(options.signal)
+          if (error instanceof PaginationExportError) throw error
+          throw new PaginationExportError(
+            'layout-not-ready',
+            '导出副本文档的业务视图准备失败',
+            {stage: 'layout'},
+            error,
+          )
         }
-        off.remove();
-      },
-    };
+      }
+      throwIfPaginationExportAborted(options.signal)
+      appendFlowSentinel(root);
+
+      return {root, dispose};
+    } catch (error) {
+      dispose()
+      throw error
+    }
   };
 }

@@ -6,6 +6,7 @@ import {resolveScreenGeometry} from '../view/pagination-geometry';
 import {createStablePaginationLayout} from '../view/stable-pagination-layout';
 import {planTableCellFlow} from '../engine/table-cell-flow';
 import {setTableCellFlowPlan} from '../engine/table-cell-flow-metadata';
+import {paginate} from '../engine';
 
 function paragraph(id: string, text: string): IBlockSnapshot {
   return {id, flavour: "paragraph", nodeType: BlockNodeType.editable, meta: {}, props: {depth: 0}, children: [{insert: text}]};
@@ -13,6 +14,28 @@ function paragraph(id: string, text: string): IBlockSnapshot {
 
 function root(children: IBlockSnapshot[]): IBlockSnapshot {
   return {id: "root", flavour: "root", nodeType: BlockNodeType.root, meta: {}, props: {}, children};
+}
+
+function placementLayout(id: string, children: IBlockSnapshot[]): IBlockSnapshot {
+  return {
+    id,
+    flavour: 'placement-layout',
+    nodeType: BlockNodeType.block,
+    meta: {},
+    props: {},
+    children,
+  };
+}
+
+function absoluteShape(id: string, y: number): IBlockSnapshot {
+  return {
+    id,
+    flavour: 'shape',
+    nodeType: BlockNodeType.void,
+    meta: {},
+    props: {placement: {mode: 'absolute', x: 0, y}},
+    children: [],
+  };
 }
 
 function cell(id: string, text: string): IBlockSnapshot {
@@ -82,11 +105,328 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       const renderedCode = content.querySelector<HTMLElement>('[data-block-id="code-1"]')!;
 
       expect(content.style.getPropertyValue('--bc-page-content-height')).toBe('200px');
+      expect(content.style.overflow).toBe('visible');
+      expect(content.style.clipPath).toBe('');
       expect(renderedCode.classList.contains('bc-page-height-locked')).toBeTrue();
       expect(renderedCode.style.maxHeight).toBe('');
       expect(renderedCode.style.overflow).toBe('');
     } finally {
       pages.dispose();
+    }
+  });
+
+  it('marks an oversized image for whole-object fitting instead of clipping its content', async () => {
+    const imageSnapshot = root([{
+      id: 'image-1',
+      flavour: 'image',
+      nodeType: BlockNodeType.block,
+      meta: {},
+      props: {},
+      children: [],
+    }]);
+    const offscreen = document.createElement('div');
+    const image = document.createElement('div');
+    image.dataset['blockId'] = 'image-1';
+    Object.defineProperty(image, 'offsetWidth', {value: 380});
+    Object.defineProperty(image, 'scrollWidth', {value: 380});
+    Object.defineProperty(image, 'offsetHeight', {value: 400});
+    Object.defineProperty(image, 'scrollHeight', {value: 400});
+    offscreen.appendChild(image);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(imageSnapshot, SMALL_PAGE, {
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      const rendered = pages.pages[0]!.querySelector<HTMLElement>('[data-block-id="image-1"]')!;
+      expect(rendered.classList.contains('bc-page-height-fitted')).toBeTrue();
+      expect(Number(rendered.style.getPropertyValue('--bc-page-fit-scale'))).toBeCloseTo(0.5, 6);
+    } finally {
+      pages.dispose();
+    }
+  });
+
+  it('fits a wide atomic business block to the page content width', async () => {
+    const snapshot = root([{
+      id: 'embed-1',
+      flavour: 'bookmark',
+      nodeType: BlockNodeType.void,
+      meta: {},
+      props: {},
+      children: [],
+    }]);
+    const offscreen = document.createElement('div');
+    const embed = document.createElement('div');
+    embed.dataset['blockId'] = 'embed-1';
+    Object.defineProperty(embed, 'offsetWidth', {value: 760});
+    Object.defineProperty(embed, 'scrollWidth', {value: 760});
+    Object.defineProperty(embed, 'offsetHeight', {value: 80});
+    Object.defineProperty(embed, 'scrollHeight', {value: 80});
+    offscreen.appendChild(embed);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      const rendered = pages.pages[0]!.querySelector<HTMLElement>('[data-block-id="embed-1"]')!;
+      expect(rendered.classList.contains('bc-page-height-fitted')).toBeTrue();
+      expect(Number(rendered.style.getPropertyValue('--bc-page-fit-scale'))).toBeCloseTo(0.5, 6);
+    } finally {
+      pages.dispose();
+    }
+  });
+
+  it('does not fit an atomic block only because its editor caret extends scrollWidth', async () => {
+    const snapshot = root([{
+      id: 'kr-list-1',
+      flavour: 'bookmark',
+      nodeType: BlockNodeType.void,
+      meta: {},
+      props: {},
+      children: [],
+    }]);
+    const offscreen = document.createElement('div');
+    const krList = document.createElement('div');
+    krList.dataset['blockId'] = 'kr-list-1';
+    const trailingGap = document.createElement('span');
+    trailingGap.setAttribute('data-block-zero-space', 'true');
+    trailingGap.setAttribute('data-block-gap-side', 'after');
+    krList.appendChild(trailingGap);
+    Object.defineProperty(krList, 'offsetWidth', {value: 380});
+    Object.defineProperty(krList, 'scrollWidth', {
+      get: () => trailingGap.style.display === 'none' ? 380 : 382,
+    });
+    Object.defineProperty(krList, 'offsetHeight', {value: 80});
+    Object.defineProperty(krList, 'scrollHeight', {value: 80});
+    offscreen.appendChild(krList);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      const rendered = pages.pages[0]!.querySelector<HTMLElement>('[data-block-id="kr-list-1"]')!;
+      expect(rendered.classList.contains('bc-page-height-fitted')).toBeFalse();
+      expect(
+        rendered.querySelector<HTMLElement>('[data-block-zero-space="true"]')!.style.display,
+      ).toBe('none');
+    } finally {
+      pages.dispose();
+    }
+  });
+
+  it('validates a stable width-only fitted block using its visual height', async () => {
+    const snapshot = root([{
+      id: 'embed-stable',
+      flavour: 'bookmark',
+      nodeType: BlockNodeType.void,
+      meta: {},
+      props: {},
+      children: [],
+    }]);
+    const geometry = resolveScreenGeometry(SMALL_PAGE);
+    const items = [{
+      id: 'embed-stable',
+      height: 40,
+      naturalHeight: 80,
+      fitScale: 0.5,
+      breakable: false,
+      keepWithNext: false,
+    }];
+    const layout = createStablePaginationLayout(
+      8,
+      SMALL_PAGE,
+      geometry,
+      items,
+      paginate(items, geometry.geometry),
+    );
+    const offscreen = document.createElement('div');
+    const embed = document.createElement('div');
+    embed.dataset['blockId'] = 'embed-stable';
+    Object.defineProperty(embed, 'offsetWidth', {value: 760});
+    Object.defineProperty(embed, 'scrollWidth', {value: 760});
+    Object.defineProperty(embed, 'offsetHeight', {value: 80});
+    Object.defineProperty(embed, 'scrollHeight', {value: 80});
+    offscreen.appendChild(embed);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+      layout,
+      resourcePolicy: 'strict',
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      const rendered = pages.pages[0]!.querySelector<HTMLElement>('[data-block-id="embed-stable"]')!;
+      expect(rendered.classList.contains('bc-page-height-fitted')).toBeTrue();
+      expect(rendered.style.getPropertyValue('--bc-page-fit-scale')).toBe('0.5');
+    } finally {
+      pages.dispose();
+    }
+  });
+
+  it('validates clipped atomic overflow using the same visual stride as live pagination', async () => {
+    const snapshot = root([{
+      id: 'clipped-atomic-stable',
+      flavour: 'bookmark',
+      nodeType: BlockNodeType.void,
+      meta: {},
+      props: {},
+      children: [],
+    }]);
+    const geometry = resolveScreenGeometry(SMALL_PAGE);
+    const items = [{
+      id: 'clipped-atomic-stable',
+      height: 184,
+      naturalHeight: 184,
+      breakable: false,
+      keepWithNext: false,
+    }];
+    const layout = createStablePaginationLayout(
+      9,
+      SMALL_PAGE,
+      geometry,
+      items,
+      paginate(items, geometry.geometry),
+    );
+    const offscreen = document.createElement('div');
+    const taskCard = document.createElement('div');
+    taskCard.dataset['blockId'] = 'clipped-atomic-stable';
+    taskCard.style.marginBottom = '8px';
+    taskCard.style.overflow = 'hidden';
+    Object.defineProperty(taskCard, 'offsetHeight', {value: 176});
+    Object.defineProperty(taskCard, 'scrollHeight', {value: 180});
+    offscreen.appendChild(taskCard);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+      layout,
+      resourcePolicy: 'strict',
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      expect(pages.pageCount).toBe(1);
+      expect(pages.pages[0]!.querySelector('[data-block-id="clipped-atomic-stable"]')).not.toBeNull();
+    } finally {
+      pages.dispose();
+    }
+  });
+
+  it('validates visibly overflowing atomic content using its painted height', async () => {
+    const snapshot = root([{
+      id: 'visible-atomic-stable',
+      flavour: 'bookmark',
+      nodeType: BlockNodeType.void,
+      meta: {},
+      props: {},
+      children: [],
+    }]);
+    const geometry = resolveScreenGeometry(SMALL_PAGE);
+    const items = [{
+      id: 'visible-atomic-stable',
+      height: 188,
+      naturalHeight: 188,
+      breakable: false,
+      keepWithNext: false,
+    }];
+    const layout = createStablePaginationLayout(
+      10,
+      SMALL_PAGE,
+      geometry,
+      items,
+      paginate(items, geometry.geometry),
+    );
+    const offscreen = document.createElement('div');
+    const embed = document.createElement('div');
+    embed.dataset['blockId'] = 'visible-atomic-stable';
+    embed.style.marginBottom = '8px';
+    embed.style.overflow = 'visible';
+    Object.defineProperty(embed, 'offsetHeight', {value: 176});
+    Object.defineProperty(embed, 'scrollHeight', {value: 180});
+    offscreen.appendChild(embed);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+      layout,
+      resourcePolicy: 'strict',
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      expect(pages.pageCount).toBe(1);
+      expect(pages.pages[0]!.querySelector('[data-block-id="visible-atomic-stable"]')).not.toBeNull();
+    } finally {
+      pages.dispose();
+    }
+  });
+
+  it('normalizes the readonly root tail before validating the captured block stride', async () => {
+    const style = document.createElement('style');
+    style.textContent = `
+      [data-test-print-flow-root] > [data-block-id] {
+        margin-bottom: 4px;
+      }
+      [data-test-print-flow-root] > [data-block-id]:last-child {
+        margin-bottom: 0;
+      }
+    `;
+    document.head.appendChild(style);
+
+    const snapshot = root([{
+      id: 'tail-task-card',
+      // BlockCraft 基包用同样的 void/card 策略模拟宿主 task 业务块。
+      flavour: 'bookmark',
+      nodeType: BlockNodeType.void,
+      meta: {},
+      props: {},
+      children: [],
+    }]);
+    const geometry = resolveScreenGeometry(SMALL_PAGE);
+    const items = [{
+      id: 'tail-task-card',
+      height: 188,
+      naturalHeight: 188,
+      breakable: false,
+      keepWithNext: false,
+    }];
+    const layout = createStablePaginationLayout(
+      11,
+      SMALL_PAGE,
+      geometry,
+      items,
+      paginate(items, geometry.geometry),
+    );
+    const offscreen = document.createElement('div');
+    offscreen.setAttribute('data-test-print-flow-root', '');
+    // 模拟 provider 早期加过哨兵，后续又追加了业务块；统一入口必须把它重归一到末尾。
+    const staleSentinel = document.createElement('span');
+    staleSentinel.className = 'bc-print-flow-sentinel';
+    offscreen.appendChild(staleSentinel);
+    const taskCard = document.createElement('div');
+    taskCard.dataset['blockId'] = 'tail-task-card';
+    taskCard.style.overflow = 'hidden';
+    Object.defineProperty(taskCard, 'offsetHeight', {value: 184});
+    Object.defineProperty(taskCard, 'scrollHeight', {value: 184});
+    offscreen.appendChild(taskCard);
+    document.body.appendChild(offscreen);
+
+    try {
+      // 自定义 provider 返回的纯 root 会让末块命中 :last-child，尾距暂时为 0。
+      expect(getComputedStyle(taskCard).marginBottom).toBe('0px');
+      const pages = await buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+        layout,
+        resourcePolicy: 'strict',
+        render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+      });
+      try {
+        expect(pages.pageCount).toBe(1);
+        expect(pages.pages[0]!.querySelector('[data-block-id="tail-task-card"]')).not.toBeNull();
+        expect(pages.pages[0]!.querySelectorAll('.bc-print-flow-sentinel').length).toBe(1);
+      } finally {
+        pages.dispose();
+      }
+    } finally {
+      style.remove();
+      offscreen.remove();
     }
   });
 
@@ -115,6 +455,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       const el = document.createElement('div');
       el.dataset['blockId'] = id;
       el.style.height = '40px';
+      el.style.marginTop = '12px';
       offscreen.appendChild(el);
     }
     document.body.appendChild(offscreen);
@@ -135,13 +476,328 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       const content = pages.pages[0]!.querySelector<HTMLElement>('.bc-print-content');
       expect(content).not.toBeNull();
       expect(content!.getAttribute('data-blockcraft-root')).toBe('true');
+      expect(content!.getAttribute('data-bc-placement-container')).toBe('');
       expect(content!.style.top).toBe('10px');
       expect(content!.style.right).toBe('10px');
       expect(content!.style.bottom).toBe('10px');
       expect(content!.style.left).toBe('10px');
+      expect(content!.style.width).toBe('auto');
+      expect(content!.style.minWidth).toBe('0px');
+      expect(content!.style.maxWidth).toBe('none');
       expect(content!.style.padding).toBe('0px');
       expect(content!.style.minHeight).toBe('0px');
       expect(content!.style.boxSizing).toBe('border-box');
+      expect(content!.querySelector<HTMLElement>('[data-block-id="p1"]')!.style.marginTop).toBe('0px');
+      expect(pages.pages[0]!.style.width).toBe('400px');
+      expect(pages.pages[0]!.style.height).toBe('220px');
+    } finally {
+      pages.dispose();
+    }
+  });
+
+  it('projects the tail placement layout through every page instead of moving it to the last slot page', async () => {
+    const pageGap = 24;
+    const pageStride = 220 + pageGap;
+    const placement = placementLayout('placement', [
+      absoluteShape('shape-first', 20),
+      absoluteShape('shape-second', pageStride + 20),
+    ]);
+    const snapshot = root([
+      paragraph('p1', 'first page'),
+      paragraph('p2', 'second page'),
+      placement,
+    ]);
+    const config: PaginationConfig = {
+      ...SMALL_PAGE,
+      pageGap,
+    };
+    const geometry = resolveScreenGeometry(config);
+    const items = [
+      {id: 'p1', height: CONTENT_HEIGHT, breakable: false, keepWithNext: false},
+      {id: 'p2', height: 40, breakable: false, keepWithNext: false},
+      {id: 'placement', height: 0, breakable: false, keepWithNext: false},
+    ];
+    // placement-layout 是 root 尾部零高节点，live result 会把它记录在末页；
+    // 打印不能据此把整个 absolute 坐标平面搬到末页。
+    const layout = createStablePaginationLayout(13, config, geometry, items, {
+      pages: [
+        {index: 0, usedHeight: CONTENT_HEIGHT, slots: [{id: 'p1'}]},
+        {index: 1, usedHeight: 40, slots: [{id: 'p2'}, {id: 'placement'}]},
+      ],
+      byBlock: new Map([
+        ['p1', {pageIndex: 0}],
+        ['p2', {pageIndex: 1}],
+        ['placement', {pageIndex: 1}],
+      ]),
+    });
+    const offscreen = document.createElement('div');
+    offscreen.style.cssText = 'position:absolute;left:-99999px;top:0;width:380px;';
+    const appendFlowBlock = (id: string, height: number) => {
+      const element = document.createElement('div');
+      element.dataset['blockId'] = id;
+      element.style.cssText = `height:${height}px;margin:0;`;
+      offscreen.appendChild(element);
+    };
+    appendFlowBlock('p1', CONTENT_HEIGHT);
+    appendFlowBlock('p2', 40);
+    const placementElement = document.createElement('div');
+    placementElement.dataset['blockId'] = 'placement';
+    placementElement.setAttribute('data-bc-placement-layer-bridge', '');
+    placementElement.setAttribute('data-bc-placement-layout', '');
+    placementElement.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:0;margin:0;';
+    const placementChildren = document.createElement('div');
+    placementChildren.className = 'children-render-container';
+    placementChildren.style.position = 'relative';
+    for (const [id, top] of [['shape-first', 20], ['shape-second', pageStride + 20]] as const) {
+      const child = document.createElement('div');
+      child.dataset['blockId'] = id;
+      child.dataset['bcPlacement'] = 'absolute';
+      child.style.cssText = `position:absolute;top:${top}px;left:0;width:40px;height:20px;margin:0;`;
+      placementChildren.appendChild(child);
+    }
+    placementElement.appendChild(placementChildren);
+    offscreen.appendChild(placementElement);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, config, {
+      layout,
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      const firstContent = pages.pages[0]!.querySelector<HTMLElement>('.bc-print-content')!;
+      const secondContent = pages.pages[1]!.querySelector<HTMLElement>('.bc-print-content')!;
+      const firstPlane = firstContent.querySelector<HTMLElement>('[data-bc-print-placement-plane="true"]')!;
+      const secondPlane = secondContent.querySelector<HTMLElement>('[data-bc-print-placement-plane="true"]')!;
+
+      expect(firstPlane).not.toBeNull();
+      expect(secondPlane).not.toBeNull();
+      expect(firstPlane.style.top).toBe('0px');
+      expect(secondPlane.style.top).toBe(`-${pageStride}px`);
+      expect(placementElement.parentElement).toBe(offscreen);
+
+      const firstShape = firstPlane.querySelector<HTMLElement>('[data-block-id="shape-first"]')!;
+      const secondShape = secondPlane.querySelector<HTMLElement>('[data-block-id="shape-second"]')!;
+      expect(Math.round(firstShape.getBoundingClientRect().top - firstContent.getBoundingClientRect().top)).toBe(20);
+      expect(Math.round(secondShape.getBoundingClientRect().top - secondContent.getBoundingClientRect().top)).toBe(20);
+    } finally {
+      pages.dispose();
+    }
+  });
+
+  it('keeps absolute placement x coordinates relative to the full sheet with asymmetric margins', async () => {
+    const config: PaginationConfig = {
+      ...SMALL_PAGE,
+      margins: {top: 10, right: 10, bottom: 10, left: 30},
+    };
+    const placement = placementLayout('placement', [absoluteShape('shape', 20)]);
+    const snapshot = root([paragraph('p1', 'flow'), placement]);
+    const geometry = resolveScreenGeometry(config);
+    const items = [
+      {id: 'p1', height: 40, breakable: false, keepWithNext: false},
+      {id: 'placement', height: 0, breakable: false, keepWithNext: false},
+    ];
+    const layout = createStablePaginationLayout(16, config, geometry, items, {
+      pages: [{index: 0, usedHeight: 40, slots: [{id: 'p1'}, {id: 'placement'}]}],
+      byBlock: new Map([
+        ['p1', {pageIndex: 0}],
+        ['placement', {pageIndex: 0}],
+      ]),
+    });
+    const offscreen = document.createElement('div');
+    offscreen.style.cssText = 'position:absolute;left:-99999px;top:0;width:360px;';
+    const flow = document.createElement('div');
+    flow.dataset['blockId'] = 'p1';
+    flow.style.cssText = 'height:40px;margin:0;';
+    offscreen.appendChild(flow);
+    const placementElement = document.createElement('div');
+    placementElement.dataset['blockId'] = 'placement';
+    placementElement.setAttribute('data-bc-placement-layout', '');
+    placementElement.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:0;margin:0;';
+    const placementChildren = document.createElement('div');
+    placementChildren.className = 'children-render-container';
+    placementChildren.style.cssText = 'position:relative;width:100%;';
+    const shape = document.createElement('div');
+    shape.dataset['blockId'] = 'shape';
+    shape.dataset['bcPlacement'] = 'absolute';
+    shape.style.cssText = 'position:absolute;left:50%;top:20px;width:20px;height:20px;margin:0;';
+    placementChildren.appendChild(shape);
+    placementElement.appendChild(placementChildren);
+    offscreen.appendChild(placementElement);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, config, {
+      layout,
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      const page = pages.pages[0]!;
+      const plane = page.querySelector<HTMLElement>('[data-bc-print-placement-plane="true"]')!;
+      const renderedShape = plane.querySelector<HTMLElement>('[data-block-id="shape"]')!;
+      expect(plane.style.left).toBe('-30px');
+      expect(plane.style.width).toBe('400px');
+      expect(Math.round(renderedShape.getBoundingClientRect().left - page.getBoundingClientRect().left)).toBe(200);
+    } finally {
+      pages.dispose();
+    }
+  });
+
+  it('fails strict export when a non-empty placement layout is missing from the readonly DOM', async () => {
+    const snapshot = root([
+      paragraph('p1', 'flow'),
+      placementLayout('placement', [absoluteShape('shape', 20)]),
+    ]);
+    const offscreen = document.createElement('div');
+    const flow = document.createElement('div');
+    flow.dataset['blockId'] = 'p1';
+    flow.style.cssText = 'height:40px;margin:0;';
+    offscreen.appendChild(flow);
+    document.body.appendChild(offscreen);
+
+    await expectAsync(buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+      resourcePolicy: 'strict',
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    })).toBeRejectedWith(jasmine.objectContaining({
+      code: 'layout-diverged',
+      context: jasmine.objectContaining({blockId: 'placement'}),
+    }));
+  });
+
+  it('keeps the document-header leading offset in every placement-plane projection', async () => {
+    const pageGap = 24;
+    const firstPageExtraTop = 36;
+    const pageStride = 220 + pageGap;
+    const placement = placementLayout('placement', [absoluteShape('shape', 20)]);
+    const snapshot = root([
+      paragraph('p1', 'first page'),
+      paragraph('p2', 'second page'),
+      placement,
+    ]);
+    const config: PaginationConfig = {...SMALL_PAGE, pageGap};
+    const geometry = resolveScreenGeometry(config, {firstPageExtraTop});
+    const items = [
+      {id: 'p1', height: CONTENT_HEIGHT - firstPageExtraTop, breakable: false, keepWithNext: false},
+      {id: 'p2', height: 40, breakable: false, keepWithNext: false},
+      {id: 'placement', height: 0, breakable: false, keepWithNext: false},
+    ];
+    const layout = createStablePaginationLayout(14, config, geometry, items, {
+      pages: [
+        {index: 0, usedHeight: CONTENT_HEIGHT, slots: [{id: 'p1'}]},
+        {index: 1, usedHeight: 40, slots: [{id: 'p2'}, {id: 'placement'}]},
+      ],
+      byBlock: new Map([
+        ['p1', {pageIndex: 0}],
+        ['p2', {pageIndex: 1}],
+        ['placement', {pageIndex: 1}],
+      ]),
+    });
+    const offscreen = document.createElement('div');
+    offscreen.style.cssText = 'position:absolute;left:-99999px;top:0;width:380px;';
+    for (const [id, height] of [['p1', CONTENT_HEIGHT - firstPageExtraTop], ['p2', 40]] as const) {
+      const element = document.createElement('div');
+      element.dataset['blockId'] = id;
+      element.style.cssText = `height:${height}px;margin:0;`;
+      offscreen.appendChild(element);
+    }
+    const placementElement = document.createElement('div');
+    placementElement.dataset['blockId'] = 'placement';
+    placementElement.setAttribute('data-bc-placement-layout', '');
+    placementElement.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:0;margin:0;';
+    offscreen.appendChild(placementElement);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, config, {
+      layout,
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      const planes = pages.pages.map(page =>
+        page.querySelector<HTMLElement>('[data-bc-print-placement-plane="true"]')!,
+      );
+      expect(planes[0]!.style.top).toBe(`${firstPageExtraTop}px`);
+      expect(planes[1]!.style.top).toBe(`${firstPageExtraTop - pageStride}px`);
+    } finally {
+      pages.dispose();
+    }
+  });
+
+  it('reuses a stable first-page layout and mounts host leading content without a synthetic block', async () => {
+    const pageGap = 24;
+    const headerHeight = 36;
+    const headerGap = 16;
+    const leadingHeight = headerHeight + headerGap;
+    const pageStride = 220 + pageGap;
+    const placement = placementLayout('placement', [absoluteShape('shape', 20)]);
+    const snapshot = root([
+      paragraph('p1', 'first page'),
+      paragraph('p2', 'second page'),
+      placement,
+    ]);
+    const config: PaginationConfig = {...SMALL_PAGE, pageGap};
+    const geometry = resolveScreenGeometry(config);
+    geometry.geometry.firstPageContentHeight = CONTENT_HEIGHT - leadingHeight;
+    const items = [
+      {id: 'p1', height: CONTENT_HEIGHT - leadingHeight, breakable: false, keepWithNext: false},
+      {id: 'p2', height: 40, breakable: false, keepWithNext: false},
+      {id: 'placement', height: 0, breakable: false, keepWithNext: false},
+    ];
+    const layout = createStablePaginationLayout(
+      15,
+      config,
+      geometry,
+      items,
+      paginate(items, geometry.geometry),
+    );
+    const offscreen = document.createElement('div');
+    offscreen.style.cssText = 'position:absolute;left:-99999px;top:0;width:380px;';
+    const header = document.createElement('div');
+    header.textContent = 'document header';
+    Object.defineProperty(header, 'offsetHeight', {value: headerHeight});
+    for (const [id, height] of [['p1', CONTENT_HEIGHT - leadingHeight], ['p2', 40]] as const) {
+      const element = document.createElement('div');
+      element.dataset['blockId'] = id;
+      element.style.cssText = `height:${height}px;margin:0;`;
+      offscreen.appendChild(element);
+    }
+    const placementElement = document.createElement('div');
+    placementElement.dataset['blockId'] = 'placement';
+    placementElement.setAttribute('data-bc-placement-layout', '');
+    placementElement.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:0;margin:0;';
+    const shapeElement = document.createElement('div');
+    shapeElement.dataset['blockId'] = 'shape';
+    shapeElement.style.cssText =
+      `position:absolute;top:${pageStride - leadingHeight + 20}px;left:0;width:10px;height:10px;`;
+    placementElement.appendChild(shapeElement);
+    offscreen.appendChild(placementElement);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, config, {
+      layout,
+      render: async () => ({
+        root: offscreen,
+        dispose: () => offscreen.remove(),
+        leadingContent: {element: header, gap: headerGap},
+      }),
+    });
+    try {
+      const contents = pages.pages.map(page => page.querySelector<HTMLElement>('.bc-print-content')!);
+      const leadingHost = pages.pages[0]!.querySelector<HTMLElement>('.bc-print-leading-content')!;
+      const planes = pages.pages.map(page =>
+        page.querySelector<HTMLElement>('[data-bc-print-placement-plane="true"]')!,
+      );
+      expect(leadingHost.firstElementChild).toBe(header);
+      expect(leadingHost.style.top).toBe('10px');
+      expect(leadingHost.style.zIndex).toBe('2');
+      expect(contents[0]!.style.top).toBe(`${10 + leadingHeight}px`);
+      expect(contents[0]!.style.zIndex).toBe('1');
+      expect(contents[1]!.contains(header)).toBeFalse();
+      expect(header.style.margin).toBe('0px');
+      expect(planes[0]!.style.top).toBe('0px');
+      expect(planes[1]!.style.top).toBe(`${leadingHeight - pageStride}px`);
+      const pageTwoShape = planes[1]!.querySelector<HTMLElement>('[data-block-id="shape"]')!;
+      expect(Math.round(
+        pageTwoShape.getBoundingClientRect().top
+          - pages.pages[1]!.getBoundingClientRect().top,
+      )).toBe(30);
     } finally {
       pages.dispose();
     }

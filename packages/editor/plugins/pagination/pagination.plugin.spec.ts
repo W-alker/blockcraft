@@ -228,10 +228,11 @@ describe('PaginationPlugin', () => {
     editorWrapper.append(layoutSurface)
     scrollContainer.append(editorWrapper)
     document.body.append(scrollContainer)
-    spyOn(documentHeader, 'getBoundingClientRect').and.returnValue({
-      x: 0, y: 0, top: 0, right: 649, bottom: 120,
-      left: 0, width: 649, height: 120, toJSON: () => ({}),
-    })
+    let documentHeaderHeight = 120
+    spyOn(documentHeader, 'getBoundingClientRect').and.callFake(() => ({
+      x: 0, y: 0, top: 0, right: 649, bottom: documentHeaderHeight,
+      left: 0, width: 649, height: documentHeaderHeight, toJSON: () => ({}),
+    }))
     const plugin = new PaginationPlugin({
       pageSize: {width: 793, height: 1123},
       margins: {top: 72, right: 72, bottom: 72, left: 72},
@@ -253,6 +254,12 @@ describe('PaginationPlugin', () => {
     expect(layoutSurface.querySelector(':scope > .bc-pagination-backdrop')).not.toBeNull()
     expect(scrollContainer.contains(layoutSurface)).toBeTrue()
 
+    // captureStableLayout 是 Word 式同步屏障：即使 ResizeObserver 尚未投递，也必须
+    // 主动读取最终 header 高度并把它写入同一次稳定分页 geometry。
+    documentHeaderHeight = 144
+    plugin.captureStableLayout()
+    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('232px')
+
     plugin.disable()
 
     expect(documentHeader.parentElement).toBe(scrollContainer)
@@ -261,7 +268,7 @@ describe('PaginationPlugin', () => {
     expect(documentHeader.style.cssText).toBe('')
 
     plugin.enable()
-    expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('208px')
+    expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('232px')
     plugin.disable()
     expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('')
     plugin.destroy()
@@ -409,10 +416,15 @@ describe('PaginationPlugin', () => {
     }
     ;(plugin as any)._controller = controller
 
-    expect((plugin as any)._captureReusableLayout()).toBeUndefined()
+    ;(plugin as any)._registered = true
+    ;(plugin as any)._enabled = true
+    ;(plugin as any)._destroyed = false
+    ;(plugin as any).doc = {isInitialized: true}
+
+    expect(plugin.captureStableLayout()).toBeUndefined()
 
     controller.captureShadowLayout.and.returnValue({exact: true})
-    expect((plugin as any)._captureReusableLayout()).toBe(layout)
+    expect(plugin.captureStableLayout()).toBe(layout as any)
   })
 
   it('rolls back the full-document lease when pagination enable fails', () => {

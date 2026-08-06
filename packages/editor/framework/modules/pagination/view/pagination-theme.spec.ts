@@ -39,6 +39,31 @@ import {LiveHeightSource} from './live-height-source';
         </figure>
       </div>
 
+      <div class="image-block bc-page-height-locked bc-page-height-fitted"
+           data-block-id="image-fitted" data-node-type="block"
+           style="--bc-page-fit-scale: 0.5; height: 400px">
+        fitted image
+      </div>
+
+      <div class="table-block">
+        <table><tbody><tr class="table-row-block"><td class="table-cell-block">
+          <div class="table-cell__children-wrapper">
+            <div class="code-block bc-page-nested-height-locked"
+                 data-block-id="nested-code" data-node-type="editable">
+              <div class="code-block__head">nested header</div>
+              <div class="edit-container-wrapper">
+                <pre class="edit-container" style="height: 600px">nested code</pre>
+              </div>
+              <div class="resize-bar-btm"><div class="bar-drag"></div></div>
+            </div>
+            <div class="image-block bc-page-nested-height-locked"
+                 data-block-id="nested-image" data-node-type="block">
+              <div style="height: 600px">nested image</div>
+            </div>
+          </div>
+        </td></tr></tbody></table>
+      </div>
+
       <div class="divider-block" data-block-id="divider-1" data-node-type="void">divider</div>
       <div class="divider-block bc-page-height-locked" data-block-id="divider-2" data-node-type="void">
         <span data-zero-space="true" data-block-zero-space="true" data-block-gap-side="before">&#8203;</span>
@@ -74,6 +99,9 @@ describe('pagination theme block constraints', () => {
     const lockedDivider = host.querySelector<HTMLElement>('[data-block-id="divider-2"]')!;
     const lockedGapBefore = lockedDivider.querySelector<HTMLElement>('[data-block-gap-side="before"]')!;
     const lockedGapAfter = lockedDivider.querySelector<HTMLElement>('[data-block-gap-side="after"]')!;
+    const nestedCode = host.querySelector<HTMLElement>('[data-block-id="nested-code"]')!;
+    const nestedCodeBody = nestedCode.querySelector<HTMLElement>('.edit-container-wrapper')!;
+    const nestedImage = host.querySelector<HTMLElement>('[data-block-id="nested-image"]')!;
 
     expect(getComputedStyle(code).overflow).toBe('visible');
     expect(getComputedStyle(code).display).toBe('flex');
@@ -96,6 +124,20 @@ describe('pagination theme block constraints', () => {
     expect(getComputedStyle(lockedDivider).maxHeight).toBe('200px');
     expect(getComputedStyle(lockedGapBefore).left).toBe('1px');
     expect(getComputedStyle(lockedGapAfter).right).toBe('1px');
+    expect(getComputedStyle(nestedCode).display).toBe('flex');
+    expect(getComputedStyle(nestedCode).maxHeight).toBe('200px');
+    expect(getComputedStyle(nestedCode).overflow).toBe('visible');
+    expect(getComputedStyle(nestedCodeBody).overflowY).toBe('auto');
+    expect(getComputedStyle(nestedImage).maxHeight).toBe('200px');
+    expect(getComputedStyle(nestedImage).overflow).toBe('hidden');
+  });
+
+  it('uses layout zoom to preserve the whole oversized media block', () => {
+    const fitted = (fixture.nativeElement as HTMLElement)
+      .querySelector<HTMLElement>('[data-block-id="image-fitted"]')!;
+
+    expect(getComputedStyle(fitted).zoom).toBe('0.5');
+    expect(fitted.getBoundingClientRect().height).toBeCloseTo(200, 1);
   });
 
   it('keeps the resized code block locked after flex layout collapses its scroll height', () => {

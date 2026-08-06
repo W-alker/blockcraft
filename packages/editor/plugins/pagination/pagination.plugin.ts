@@ -9,6 +9,7 @@ import {
   PaginationConfig,
 } from '../../framework/modules/pagination'
 import {PaginatedViewController} from '../../framework/modules/pagination/view/paginated-view.controller'
+import {StablePaginationLayout} from '../../framework/modules/pagination/view/stable-pagination-layout'
 import {
   buildPrintPages,
   PaginationExportError,
@@ -110,6 +111,19 @@ export class PaginationPlugin extends DocPlugin {
 
   recompute(): void {
     if (this._enabled) this._controller?.scheduleRecompute()
+  }
+
+  /**
+   * 同步捕获当前分页视图正在使用的稳定布局。
+   *
+   * 宿主可在隔离只读文档完成业务取数和资源稳定后调用，再把该布局交给打印面；
+   * 这样屏幕页盒与 PDF 消费同一组断点，不会在导出阶段走另一套近似分页。
+   */
+  captureStableLayout(): StablePaginationLayout | undefined {
+    if (!this._registered || !this._enabled || !this.doc.isInitialized || this._destroyed) {
+      return undefined
+    }
+    return this._captureReusableLayout()
   }
 
   async print(): Promise<void> {

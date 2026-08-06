@@ -173,23 +173,52 @@ function applyPaginationGapStyle(
   backdropOffset: number,
   backdropHeight: number,
 ): void {
-  const safeHeight = Math.max(0, height)
-  const bandStart = Math.max(0, Math.min(safeHeight, backdropOffset))
-  const bandEnd = Math.max(
-    bandStart,
-    Math.min(safeHeight, bandStart + Math.max(0, backdropHeight)),
-  )
-  element.style.height = `${safeHeight}px`
-  element.style.background = [
-    'linear-gradient(to bottom',
-    `var(--bc-page-sheet-bg, #fff) 0 ${bandStart}px`,
-    `var(--bc-pagination-backdrop-bg, #f3f4f6) ${bandStart}px ${bandEnd}px`,
-    `var(--bc-page-sheet-bg, #fff) ${bandEnd}px 100%)`,
-  ].join(', ')
+  applyPaginationGapSequenceStyle(element, [{gap: height, backdropOffset, backdropHeight}])
+}
+
+function applyPaginationGapSequenceStyle(
+  element: HTMLElement,
+  gaps: readonly Pick<TableCellFlowRenderGap, 'gap' | 'backdropOffset' | 'backdropHeight'>[],
+): void {
+  const ranges: Array<{start: number; end: number; backdrop: boolean}> = []
+  let offset = 0
+  const append = (start: number, end: number, backdrop: boolean): void => {
+    if (end <= start) return
+    const previous = ranges[ranges.length - 1]
+    if (previous && previous.backdrop === backdrop && Math.abs(previous.end - start) <= 0.01) {
+      previous.end = end
+      return
+    }
+    ranges.push({start, end, backdrop})
+  }
+
+  for (const gap of gaps) {
+    const safeHeight = Math.max(0, gap.gap)
+    const bandStart = Math.max(0, Math.min(safeHeight, gap.backdropOffset))
+    const bandEnd = Math.max(
+      bandStart,
+      Math.min(safeHeight, bandStart + Math.max(0, gap.backdropHeight)),
+    )
+    append(offset, offset + bandStart, false)
+    append(offset + bandStart, offset + bandEnd, true)
+    append(offset + bandEnd, offset + safeHeight, false)
+    offset += safeHeight
+  }
+
+  element.style.height = `${offset}px`
+  const stops = ranges.map(range => {
+    const color = range.backdrop
+      ? 'var(--bc-pagination-backdrop-bg, #f3f4f6)'
+      : 'var(--bc-page-sheet-bg, #fff)'
+    return `${color} ${range.start}px ${range.end}px`
+  })
+  element.style.background = stops.length
+    ? `linear-gradient(to bottom, ${stops.join(', ')})`
+    : ''
 }
 
 function buildCellPaginationGap(
-  gap: TableCellFlowRenderGap,
+  gaps: readonly TableCellFlowRenderGap[],
 ): HTMLDivElement {
   const marker = document.createElement('div')
   marker.className = 'bc-pagination-cell-flow-gap'
@@ -200,12 +229,7 @@ function buildCellPaginationGap(
   marker.style.pointerEvents = 'none'
   marker.style.userSelect = 'none'
   marker.style.webkitUserSelect = 'none'
-  applyPaginationGapStyle(
-    marker,
-    gap.gap,
-    gap.backdropOffset,
-    gap.backdropHeight,
-  )
+  applyPaginationGapSequenceStyle(marker, gaps)
   return marker
 }
 
@@ -3179,6 +3203,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       backdropOffset: number
       backdropHeight: number
     }>>()
+    const blockGapGroups = new Map<string, {
+      wrapper: HTMLElement
+      target: Node | null
+      gaps: TableCellFlowRenderGap[]
+    }>()
 
     for (const pageBreak of breaks) {
       for (const gap of pageBreak.cells) {
@@ -3210,10 +3239,25 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         const target = anchor.kind === 'block'
           ? children.find(child => child.id === anchor.blockId)?.hostElement ?? null
           : children[0]?.hostElement ?? wrapper.firstChild
-        const marker = buildCellPaginationGap(gap)
-        wrapper.insertBefore(marker, target)
-        this._cellFlowMarkers.add(marker)
+        const anchorKey = anchor.kind === 'block'
+          ? `block:${anchor.blockId}`
+          : 'cell-start'
+        const groupKey = `${cell.id}\u0000${anchorKey}`
+        const group = blockGapGroups.get(groupKey)
+        if (group) {
+          group.gaps.push(gap)
+        } else {
+          blockGapGroups.set(groupKey, {wrapper, target, gaps: [gap]})
+        }
       }
+    }
+
+    // 同一单元格可能在首个 Block 前跨越很多页。分页几何仍逐页保留，
+    // 但同一锚点只投影一个 marker，避免按页数向内容 DOM 注入兄弟节点。
+    for (const {wrapper, target, gaps} of blockGapGroups.values()) {
+      const marker = buildCellPaginationGap(gaps)
+      wrapper.insertBefore(marker, target)
+      this._cellFlowMarkers.add(marker)
     }
 
     for (const [runtime, gaps] of runtimeGaps) {

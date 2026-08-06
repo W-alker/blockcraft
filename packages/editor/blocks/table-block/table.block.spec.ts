@@ -1497,4 +1497,76 @@ describe("TableBlockComponent pagination hot-path caches", () => {
     });
     expect(budget.safeAnchors).toBe(1);
   });
+
+  it("coalesces repeated page gaps at the same cell anchor into one view node", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const wrapper = document.createElement("div");
+    wrapper.className = "table-cell__children-wrapper";
+    const paragraph = document.createElement("p");
+    wrapper.appendChild(paragraph);
+    const cellHost = document.createElement("td");
+    cellHost.appendChild(wrapper);
+    const cell = Object.create(TableCellBlockComponent.prototype);
+    Object.defineProperties(cell, {
+      id: {value: "cell-1"},
+      hostElement: {value: cellHost},
+    });
+    cell.getChildrenBlocks = () => [{id: "paragraph-1", hostElement: paragraph}];
+    table.getChildrenBlocks = () => [{getChildrenBlocks: () => [cell]}];
+    table._cellFlowSig = "";
+    table._cellFlowMarkers = new Set();
+    table._cellFlowMasks = new Set();
+    table._cellFlowRuntimes = new Set();
+    table.tableWrapper = {nativeElement: document.createElement("div")};
+
+    table._applyCellFlowProjection([
+      {
+        kind: "cell-flow",
+        rowId: "row-1",
+        cells: [{
+          cellId: "cell-1",
+          anchor: {kind: "block", blockId: "paragraph-1"},
+          gap: 60,
+          backdropOffset: 30,
+          backdropHeight: 20,
+        }],
+        mask: {top: 0, height: 60, backdropOffset: 30, backdropHeight: 20},
+      },
+      {
+        kind: "cell-flow",
+        rowId: "row-1",
+        cells: [{
+          cellId: "cell-1",
+          anchor: {kind: "block", blockId: "paragraph-1"},
+          gap: 60,
+          backdropOffset: 30,
+          backdropHeight: 20,
+        }],
+        mask: {top: 120, height: 60, backdropOffset: 30, backdropHeight: 20},
+      },
+      {
+        kind: "cell-flow",
+        rowId: "row-1",
+        cells: [{
+          cellId: "cell-1",
+          anchor: {kind: "block", blockId: "paragraph-1"},
+          gap: 60,
+          backdropOffset: 30,
+          backdropHeight: 20,
+        }],
+        mask: {top: 240, height: 60, backdropOffset: 30, backdropHeight: 20},
+      },
+    ]);
+
+    const markers = wrapper.querySelectorAll<HTMLElement>(".bc-pagination-cell-flow-gap");
+    expect(markers.length).toBe(1);
+    expect(markers[0].style.height).toBe("180px");
+    expect(markers[0].style.background).toContain("30px 50px");
+    expect(markers[0].style.background).toContain("90px 110px");
+    expect(markers[0].style.background).toContain("150px 170px");
+    expect(wrapper.lastElementChild).toBe(paragraph);
+
+    table._clearCellFlowProjection();
+    expect(wrapper.querySelector(".bc-pagination-cell-flow-gap")).toBeNull();
+  });
 });

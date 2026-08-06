@@ -36,10 +36,14 @@ export interface PaginationGeometryEntry {
   readonly measureContextRevision: number
   readonly source: 'estimated' | 'measured'
   readonly naturalHeight: number
+  /** 分页实际占位高度；宽度/高度 fit 后可小于 naturalHeight。 */
+  readonly effectiveHeight: number
   readonly splitOffsets?: readonly number[]
   readonly preferredSplitOffsets?: readonly number[]
   readonly tableRows?: readonly TableRowGeom[]
   readonly lockHeight?: number
+  /** 整体缩放比例；用于让 sparse 视图与完整 DOM 测量使用同一视觉尺寸。 */
+  readonly fitScale?: number
   readonly repeatHeaderHeight?: number
   readonly tableCellFlowPlan?: TableCellFlowPlan
 }
@@ -55,6 +59,7 @@ export interface PaginationGeometryMeasurement {
   readonly preferredSplitOffsets?: readonly number[]
   readonly tableRows?: readonly TableRowGeom[]
   readonly lockHeight?: number
+  readonly fitScale?: number
   readonly repeatHeaderHeight?: number
 }
 
@@ -87,6 +92,12 @@ function validateMeasurement(measurement: PaginationGeometryMeasurement): void {
   assertNonNegativeFinite(measurement.height, `height for ${measurement.id}`)
   if (measurement.lockHeight != null) {
     assertNonNegativeFinite(measurement.lockHeight, `lockHeight for ${measurement.id}`)
+  }
+  if (
+    measurement.fitScale != null &&
+    (!Number.isFinite(measurement.fitScale) || measurement.fitScale <= 0 || measurement.fitScale > 1)
+  ) {
+    throw new RangeError(`fitScale for ${measurement.id} must be within (0, 1]`)
   }
   if (measurement.repeatHeaderHeight != null) {
     assertNonNegativeFinite(measurement.repeatHeaderHeight, `repeatHeaderHeight for ${measurement.id}`)
@@ -201,7 +212,9 @@ function entriesEqual(left: PaginationGeometryEntry, right: PaginationGeometryEn
     && left.measureContextRevision === right.measureContextRevision
     && left.source === right.source
     && left.naturalHeight === right.naturalHeight
+    && left.effectiveHeight === right.effectiveHeight
     && left.lockHeight === right.lockHeight
+    && left.fitScale === right.fitScale
     && left.repeatHeaderHeight === right.repeatHeaderHeight
     && arraysEqual(left.splitOffsets, right.splitOffsets)
     && arraysEqual(left.preferredSplitOffsets, right.preferredSplitOffsets)
@@ -262,6 +275,7 @@ export class PaginationGeometryIndex {
           measureContextRevision: this.measureContextRevisionValue,
           source: 'estimated',
           naturalHeight: seed.estimatedHeight,
+          effectiveHeight: seed.estimatedHeight,
         })
         this.measuredGeometryIds.delete(seed.blockId)
         changed = true
@@ -281,6 +295,7 @@ export class PaginationGeometryIndex {
           measureContextRevision: this.measureContextRevisionValue,
           source: 'estimated',
           naturalHeight: seed.estimatedHeight,
+          effectiveHeight: seed.estimatedHeight,
         })
         this.measuredGeometryIds.delete(seed.blockId)
         changed = true
@@ -293,6 +308,7 @@ export class PaginationGeometryIndex {
         this.entries.set(seed.blockId, {
           ...current,
           naturalHeight: seed.estimatedHeight,
+          effectiveHeight: seed.estimatedHeight,
         })
         changed = true
       }
@@ -341,6 +357,7 @@ export class PaginationGeometryIndex {
         ...current,
         source: 'estimated',
         naturalHeight: estimate.height,
+        effectiveHeight: estimate.height,
       })
       changed = true
     }
@@ -400,10 +417,12 @@ export class PaginationGeometryIndex {
         measureContextRevision: this.measureContextRevisionValue,
         source: 'measured',
         naturalHeight: measurement.naturalHeight,
+        effectiveHeight: measurement.height,
         splitOffsets: measurement.splitOffsets ? [...measurement.splitOffsets] : undefined,
         preferredSplitOffsets: measurement.preferredSplitOffsets ? [...measurement.preferredSplitOffsets] : undefined,
         tableRows: cloneRows(measurement.tableRows),
         lockHeight: measurement.lockHeight,
+        fitScale: measurement.fitScale,
         repeatHeaderHeight: measurement.repeatHeaderHeight,
         tableCellFlowPlan: tableCellFlowPlan
           ? cloneTableCellFlowPlan(tableCellFlowPlan)

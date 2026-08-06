@@ -25,6 +25,7 @@ describe('inline WordArt embed', () => {
     expect(text.textContent).toBe('发布会')
     expect(text.style.fontSize).toBe('42px')
     expect(text.style.color).toBe('rgb(255, 0, 0)')
+    expect(text.style.webkitTextFillColor).toBe('rgb(255, 0, 0)')
 
     const data = readInlineWordArtDelta(
       inlineWordArtEmbedConverter.toDelta(view),
@@ -37,4 +38,3 @@ describe('inline WordArt embed', () => {
     expect(data.height).toBe(88)
   })
 })
-

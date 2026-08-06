@@ -10,13 +10,11 @@ describe('pagination-geometry', () => {
     expect(resolveMargins({top: 40, bottom: 40})).toEqual({top: 40, right: 72, bottom: 40, left: 72});
   });
 
-  it('A4 命名尺寸转像素（pt→px @96dpi，四舍五入）', () => {
+  it('A4 命名尺寸转像素时保留物理页的亚像素精度', () => {
     const g = resolveScreenGeometry({pageSize: 'A4'});
-    // A4 = 595×842 pt → ptToPx: 595*96/72=793.33→793, 842*96/72=1122.67→1123
-    expect(g.sheetWidthPx).toBe(793);
-    expect(g.sheetHeightPx).toBe(1123);
-    // contentHeight = 1123 - 72 - 72 = 979
-    expect(g.geometry.contentHeight).toBe(979);
+    expect(g.sheetWidthPx).toBeCloseTo(210 * 96 / 25.4, 6);
+    expect(g.sheetHeightPx).toBeCloseTo(297 * 96 / 25.4, 6);
+    expect(g.geometry.contentHeight).toBeCloseTo(297 * 96 / 25.4 - 144, 6);
   });
 
   it('自定义像素尺寸按原值（不做 pt 转换）', () => {
@@ -28,8 +26,8 @@ describe('pagination-geometry', () => {
 
   it('landscape 交换宽高', () => {
     const g = resolveScreenGeometry({pageSize: 'A4', orientation: 'landscape'});
-    expect(g.sheetWidthPx).toBe(1123);
-    expect(g.sheetHeightPx).toBe(793);
+    expect(g.sheetWidthPx).toBeCloseTo(297 * 96 / 25.4, 6);
+    expect(g.sheetHeightPx).toBeCloseTo(210 * 96 / 25.4, 6);
   });
 
   it('pageGap 缺省 24，可覆盖', () => {
@@ -41,8 +39,7 @@ describe('pagination-geometry', () => {
     const g = resolveScreenGeometry({pageSize: 'A4'});
     expect(g.headerHeight).toBe(0);
     expect(g.footerHeight).toBe(0);
-    // A4 contentHeight = 1123 - 72 - 72 = 979
-    expect(g.geometry.contentHeight).toBe(979);
+    expect(g.geometry.contentHeight).toBeCloseTo(297 * 96 / 25.4 - 144, 6);
   });
 
   it('有页眉页脚时高度计入、contentHeight 相应扣除', () => {
@@ -53,8 +50,7 @@ describe('pagination-geometry', () => {
     });
     expect(g.headerHeight).toBe(24);
     expect(g.footerHeight).toBe(30);
-    // 1123 - 72 - 72 - 24 - 30 = 925
-    expect(g.geometry.contentHeight).toBe(925);
+    expect(g.geometry.contentHeight).toBeCloseTo(297 * 96 / 25.4 - 198, 6);
   });
 
   it('页眉页脚距离可独立于正文页边距，位于页边距带内时不额外压缩正文', () => {

@@ -31,7 +31,10 @@ import { isFormatOnlyDelta } from "./color-merge";
           <span class="lang">{{ props.lang }}</span>
           <i class="bc_icon bc_xiajaintou" [hidden]="isReadonly"></i>
         </div>
-        <div class="head-btn" (mousedown)="onCopyText($event)"><i class="bc_icon bc_fuzhi"></i> 复制</div>
+        <div
+          class="head-btn"
+          data-bc-print-exclude="true"
+          (mousedown)="onCopyText($event)"><i class="bc_icon bc_fuzhi"></i> 复制</div>
       </div>
     </div>
 

@@ -509,6 +509,13 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       throw new Error('A custom layout projection is already registered')
     }
 
+    // Pagination can be enabled from a host's initial-view input in the short
+    // interval after the model/root exist but before virtualization.init()
+    // installs the scroll container. Its projection is already canonical at
+    // that point, while this manager's lazy model index is still empty.
+    // Synchronize model-only state before strict validation; this does not
+    // mount views or weaken genuinely stale projection detection.
+    if (!this.blockIds.length && projection.length) this.rebuildModel()
     this.validateProjection(projection)
     const anchor = this.pendingStructureAnchor ?? this.captureCurrentStructureAnchor()
     this.cancelScheduledReconcile()

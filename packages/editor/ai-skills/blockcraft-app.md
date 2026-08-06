@@ -412,13 +412,70 @@ await exports.exportToPdf('letter.pdf', {
   pagination: {pageSize: 'Letter', orientation: 'landscape'},
 })
 
+// Business blocks may reload fresh data inside the isolated export copy.
+await exports.exportToPdf('document.pdf', {
+  prepareDocument: async ({doc, root, signal}) => {
+    await businessExportCoordinator.reloadAndWait(doc, {root, signal})
+  },
+  stability: {quietFrames: 2, timeoutMs: 10000},
+})
+
 // Screen-consistent in-page print; live breakpoints are reused when enabled.
 await pagination.print()
 ```
 
 With an enabled plugin and no explicit `options.pagination`, `exportToPdf()` captures the current stable page result, then renders the same snapshot through a readonly `BlockCraftDoc`. This preserves page count, block placement and table fragments without cloning the focused editor or using snapshot-viewer. In experimental sparse mode, an estimated (`exact: false`) live result is never reused: export falls back to the complete readonly reflow. Passing `options.pagination` intentionally requests a new reflow. If the plugin is disabled, its config is used for an offscreen readonly reflow; without a plugin the fallback is A4.
 
-BlockCraft no longer exposes `DocExportManager.exportToJpeg()` or a DOM-to-image rendering dependency. Browser PDF export prints the fixed page boxes through a same-origin iframe; browser code cannot silently save a PDF or reliably detect whether the user cancelled the dialog. Hosts that need bitmap screenshots should own that application-specific rendering path separately.
+`prepareDocument` runs after that readonly copy is initialized and receives only
+the copy's `doc` and `root`. Use it to trigger and await business-block data/view
+readiness; it may fetch fresh data and must not depend on the live collaborative
+document. After it resolves, BlockCraft prepares images/fonts and waits for DOM
+and block dimensions to remain quiet before measuring. `stability` tunes that
+generic quiet barrier; it does not replace the semantic ready Promise required
+for blocks whose empty state is otherwise indistinguishable from “not loaded”.
+
+BlockCraft no longer exposes `DocExportManager.exportToJpeg()` or a DOM-to-image rendering dependency. Browser PDF export installs the fixed page boxes as a print-only mirror in the current top-level document; this preserves the business blocks' viewport and container-query context. Browser code cannot silently save a PDF or reliably detect whether the user cancelled the dialog. `printPagesVector()` remains available as an explicit iframe-oriented low-level API, but it is not the default export path. Hosts that need bitmap screenshots should own that application-specific rendering path separately.
+
+The print surface is the only owner of pagination paper geometry and chrome:
+hosts must not layer a second export margin/header/footer/page-number config over
+it. Every named `PageSizeName`, including A0/A1/A2 and Tabloid, is emitted as
+explicit standard physical CSS dimensions (`mm` for ISO A sizes, `in` for US
+sizes), so browser print cannot silently fall back to A4 because of unsupported
+paper keywords. Native backend metadata still uses exact physical point values
+(for example A4 is `595.28 × 841.89pt`) while screen layout retains subpixel
+geometry. Forward `page.widthPt` / `page.heightPt` unchanged. The print mirror
+uses the same explicit physical `mm`/`in` width as `@page`; do not replace it
+with `100%` of the WebView viewport. A native backend printing this already
+paginated surface must preserve `1:1` scale and disable shrink-to-fit (for
+example, use AppKit horizontal pagination `clip`). Otherwise the horizontal
+scale also changes the slot height, so later logical pages drift across physical
+paper boundaries and may create a trailing blank page. Fixed-height slots already
+advance naturally at the physical page edge; adding a sibling `break-before` or
+`break-after` advances again and creates alternating blank pages in WebKit.
+
+Root-level `placement-layout` is a global absolute-position plane, not a flow
+block. The print surface projects a clone into every paper box and subtracts the
+screen stride (`sheetHeight + pageGap`) for each page. Hosts must leave these
+projected planes inside the page's relative, clipped containing block; moving the
+tail zero-height layout by its pagination slot would relocate all absolute blocks
+to the last page. For a host document header, return the real DOM through
+`PrintRenderResult.leadingContent`. BlockCraft stages it inside the final paper
+and content width, waits for resources and dimensions to stabilize, checks that
+height against the captured `firstPageContentHeight`, then mounts it as a z=2
+leading layer above the z=1 body. This keeps wrapping, internal absolute elements,
+and placement origin aligned with the live page; do not create a synthetic flow
+block or pre-measure the header in the host window.
+The generated `.bc-print-content` remains a `data-bc-placement-container`, so
+hosts must not strip that attribute when mounting or cloning print pages; it
+owns the normal under/flow/over stacking tiers. BlockCraft expands the plane
+from the narrower content box back to full sheet width before applying
+percentage x coordinates. A non-empty placement snapshot without its readonly
+DOM plane is a strict `layout-diverged` failure, not a silent content drop.
+
+The print surface fits an oversized image/video and an over-wide non-breakable
+atomic block into the page content box as a whole. It does not apply that policy
+to normal paragraphs or tables, whose own split/overflow policies remain in
+control.
 
 ### Tauri native backend
 
@@ -442,7 +499,7 @@ const result = await exports.exportToPdf('document.pdf', {
 })
 ```
 
-`choosePdfPath()` and `invokeNativePdfPrint()` belong to the host. A Tauri implementation can map the latter to `WKWebView` print operations on macOS and WebView2 `PrintToPdf` on Windows. BlockCraft does not import `@tauri-apps/*`, create windows, choose file paths, or infer the platform. Do not run this backend in an iframe: native WebView printing targets the current top-level WebView. Small font-hinting and color differences between platform print engines are expected; page size, margins, page count and block/fragment placement come from the shared fixed print surface.
+`choosePdfPath()` and `invokeNativePdfPrint()` belong to the host. A Tauri implementation can map the latter to `WKWebView` print operations on macOS and WebView2 `PrintToPdf` on Windows. A host that requires pixel-identical paginated output can instead capture each mounted `.bc-print-page` through a native WebView snapshot API and let Rust create exactly one PDF page per capture; this avoids asking the platform print engine to paginate the fixed boxes again. Do not substitute `html2canvas`: it is a second CSS renderer and cannot guarantee parity for arbitrary business blocks. BlockCraft does not import `@tauri-apps/*`, create windows, choose file paths, or infer the platform. Do not run this backend in an iframe: native WebView printing/snapshot APIs target the current top-level WebView.
 
 ## Step 4 — Create the Doc
 

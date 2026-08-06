@@ -478,10 +478,28 @@
           -webkit-user-select: none;
 
           // 分页中不可拆的巨大原子子块（媒体/代码/嵌入）局部锁到一页高。
-          // 不加滚动容器、不改模型；可拆文字仍走单元格流式续排。
+          // 不改模型；可拆文字仍走单元格流式续排。
           > .bc-page-nested-height-locked {
             max-height: var(--bc-page-content-height) !important;
             overflow: hidden !important;
+          }
+
+          // 代码块不能像媒体一样直接裁掉正文。标题保持可见，正文区域在
+          // 单页上限内滚动；分页关闭后 nested lock 被清除并恢复自然高度。
+          > .bc-page-nested-height-locked.code-block {
+            display: flex;
+            flex-direction: column;
+            overflow: visible !important;
+
+            > .code-block__head {
+              flex: 0 0 auto;
+            }
+
+            > .edit-container-wrapper {
+              flex: 1 1 auto;
+              min-height: 0;
+              overflow-y: auto;
+            }
           }
 
           &[data-align="center"] {

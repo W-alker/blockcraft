@@ -278,7 +278,9 @@ Oversized table-cell continuation additionally owns
 `.bc-pagination-cell-flow-gap`, `.bc-pagination-table-flow-mask`,
 `[data-bc-inline-pagination-gap]` and `.bc-page-nested-height-locked`. The first
 three create sheet/background bands inside the unique live table DOM; the last
-caps only an irreducible nested atomic child to the page content height. These
+caps only an irreducible nested atomic child to the page content height. Nested
+media and embeds are clipped at that boundary; nested code blocks keep their
+header visible and scroll `.edit-container-wrapper` inside the one-page cap. These
 classes/attributes are reversible plugin state, not document data. Host themes
 may change their inherited page colors through `--bc-page-sheet-bg` and
 `--bc-pagination-backdrop-bg`, but must not attach, remove, resize or make the
@@ -298,6 +300,11 @@ clipping so its uncapped `scrollHeight` remains available to pagination, and
 moves its horizontal resize handles inside the clipping boundary. Other
 top-level void blocks retain whole-host clipping. The same rules target `.bc-paginated` and
 `.bc-print-content`; do not create a separate host-only print variant.
+
+Live pagination normalizes every direct root block to `margin-top: 0`; the fixed
+print compositor repeats that invariant after reparenting blocks into page boxes.
+Themes must not reintroduce a direct-child top margin under `.bc-print-content`,
+because the stable item heights and page breaks were measured without it.
 
 ## Checklist
 

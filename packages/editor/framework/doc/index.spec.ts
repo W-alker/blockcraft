@@ -34,6 +34,7 @@ describe("BlockCraftDoc initialization state", () => {
         },
       },
       virtualization: {init: jasmine.createSpy("init")},
+      layoutMetrics: {init: jasmine.createSpy("init")},
       toggleTheme: jasmine.createSpy("toggleTheme"),
     }, BlockCraftDoc.prototype);
 

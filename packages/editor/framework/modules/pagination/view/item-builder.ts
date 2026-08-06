@@ -36,6 +36,8 @@ export interface BlockMeta {
   tableRows?: TableRowGeom[];
   /** 锁定最大高度（px）：capHeight 块超高时由高度源算出，视图层据此增量标记锁定 class。 */
   lockHeight?: number;
+  /** 超高图片/视频整体缩放到一页内，避免 max-height 裁掉媒体内容。 */
+  fitScale?: number;
   /** 续页重复表头高（px）：带表头（rowHead）的表格跨页拆分时由高度源算出，引擎据此预留、渲染层据此插表头。 */
   repeatHeaderHeight?: number;
 }
@@ -55,6 +57,7 @@ export function buildPaginationItems(metas: BlockMeta[]): PaginationItem[] {
     if (m.splitOffsets) item.splitOffsets = m.splitOffsets; // 可拆块才带切点
     if (m.preferredSplitOffsets) item.preferredSplitOffsets = m.preferredSplitOffsets;
     if (m.lockHeight != null) item.lockHeight = m.lockHeight; // capHeight 块的锁定高度
+    if (m.fitScale != null) item.fitScale = m.fitScale;
     if (m.flavour === 'table') item.splitStartsNewPage = true; // 表格拆分独占新页起
     if (m.repeatHeaderHeight != null && m.repeatHeaderHeight > 0) item.repeatHeaderHeight = m.repeatHeaderHeight;
     const tableCellFlowPlan = getTableCellFlowPlan(m);

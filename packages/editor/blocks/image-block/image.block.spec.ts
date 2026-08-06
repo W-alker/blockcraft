@@ -98,6 +98,12 @@ describe('ImageBlockComponent local preview sizing', () => {
     expect(setInitProps).toHaveBeenCalledOnceWith({wr: 40, ar: 1.6})
   })
 
+  it('caps an inverse-expanded host width at the unscaled root width', () => {
+    const {component} = createComponent(() => 800, 1200)
+
+    expect((component as any).initialAvailableWidth).toBe(800)
+  })
+
   it('backfills complete wr/ar for legacy data without responsive sizing', () => {
     const {component, setInitProps} = createComponent(() => 800, 600)
     ;(component as any)._props = {

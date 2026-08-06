@@ -460,6 +460,22 @@ describe('RootVirtualizationManager', () => {
     projection.dispose()
   })
 
+  it('synchronizes the lazy model index when pagination registers before virtualization init', async () => {
+    const h = createHarness()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 200))
+    const projection = customProjection(h.ids, heights)
+
+    const release = registerRootLayoutProjection(h.manager, projection)
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    expect([...h.mounted]).toEqual(h.ids.slice(0, 2))
+    release()
+    h.manager.dispose()
+    projection.dispose()
+  })
+
   it('captures the old coordinate anchor before activation side effects', async () => {
     const h = createHarness()
     h.manager.init(h.scrollContainer)

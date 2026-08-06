@@ -80,7 +80,7 @@
 
 }
 
-/* live 与 print 共用同一块约束。只裁剪测量结果确认超页的顶层块。 */
+/* live 与 print 共用同一块约束。媒体/超宽原子块可整体 fit，其余确认超页的块才裁剪。 */
 [data-blockcraft-root="true"].bc-paginated,
 [data-blockcraft-root="true"].bc-print-content {
   > .bc-page-height-locked {
@@ -96,8 +96,18 @@
     }
   }
 
-  /* 超页图片/视频继续用宿主裁剪，以保留未裁剪 scrollHeight 给分页测量；
-     横向抓手收进裁剪边界，避免与图片内容一起被隐藏。 */
+  /* 图片/视频不能像可滚动代码块那样裁出一页窗口；整体缩放后同时收窄，
+     保留全部媒体内容，并让 live 分页与固定打印页盒使用同一视觉尺寸。 */
+  > .bc-page-height-fitted {
+    zoom: var(--bc-page-fit-scale);
+  }
+
+  > .bc-page-height-locked.bc-page-height-fitted {
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* 未进入 fit 的兼容媒体仍可能使用宿主锁高；横向抓手收进锁定边界。 */
   > .bc-page-height-locked.image-block,
   > .bc-page-height-locked.video-block {
     .block-resizer__bar--left {

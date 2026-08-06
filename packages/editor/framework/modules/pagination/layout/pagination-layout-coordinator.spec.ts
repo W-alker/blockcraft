@@ -10,6 +10,7 @@ import {
 } from "../pagination.types";
 import { PaginationGeometryMeasurement } from "./pagination-geometry-index";
 import { PaginationLayoutCoordinator } from "./pagination-layout-coordinator";
+import {buildPaginationItems} from '../view/item-builder';
 
 interface ModelFact {
   readonly flavour: string;
@@ -166,6 +167,67 @@ function geometry(
 }
 
 describe("PaginationLayoutCoordinator", () => {
+  it("keeps sparse width-only fit pagination identical to the legacy measured path", () => {
+    const facts = new Map<string, ModelFact>([
+      ["wide", fact("wide", {
+        flavour: "bookmark",
+        nodeType: BlockNodeType.void,
+      })],
+      ["body", fact("body")],
+    ]);
+    const {doc} = createHarness(["wide", "body"], facts);
+    const coordinator = new PaginationLayoutCoordinator(doc);
+    coordinator.syncRootOrder();
+    const wide = measurement("wide", 80, {
+      flavour: "bookmark",
+      nodeType: BlockNodeType.void,
+      height: 40,
+      fitScale: 0.5,
+    });
+    const body = measurement("body", 60);
+    coordinator.applyMeasured([wide, body], coordinator.geometryRevision);
+
+    const sparse = coordinator.compute(config(), geometry());
+    const legacy = buildPaginationItems([
+      {
+        id: wide.id,
+        flavour: wide.flavour,
+        nodeType: wide.nodeType,
+        isHeading: wide.isHeading,
+        height: wide.height,
+        fitScale: wide.fitScale,
+      },
+      {
+        id: body.id,
+        flavour: body.flavour,
+        nodeType: body.nodeType,
+        isHeading: body.isHeading,
+        height: body.height,
+      },
+    ]);
+
+    expect(sparse.entries[0]).toEqual(jasmine.objectContaining({
+      naturalHeight: 80,
+      effectiveHeight: 40,
+      fitScale: 0.5,
+    }));
+    const paginationFields = ({
+      id,
+      height,
+      fitScale,
+      breakable,
+      keepWithNext,
+    }: (typeof sparse.items)[number]) => ({
+      id,
+      height,
+      fitScale,
+      breakable,
+      keepWithNext,
+    });
+    expect(sparse.items.map(paginationFields)).toEqual(legacy.map(paginationFields));
+    expect(sparse.result.pages.length).toBe(1);
+  });
+
   it("seeds responsive object height from wr/ar without mounting the block", () => {
     const facts = new Map<string, ModelFact>([
       [

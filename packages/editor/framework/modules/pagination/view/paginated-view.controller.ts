@@ -2,7 +2,7 @@
 import {fromEvent, Subscription} from "rxjs";
 import {performanceTest} from "../../../../global";
 import {isNativeInputTarget} from "../../../utils";
-import {paginate, PaginationItem} from "../engine";
+import {fitsOversizedMedia, paginate, PaginationItem} from "../engine";
 import {cloneTableCellFlowPlan} from "../engine/table-cell-flow";
 import {setTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
 import {
@@ -75,6 +75,7 @@ export class PaginatedViewController {
   private readonly _onFontsLoadingDone: EventListener = () => {
     if (!this._enabled) return;
     this._fontEpoch++;
+    this._heightSource.invalidateNaturalMeasurements();
     this._runShadowMutation('font-context', () => this._syncMeasureContext());
     this.scheduleRecompute();
   };
@@ -168,6 +169,7 @@ export class PaginatedViewController {
       if (objectSizing?.widthChange$) {
         this._subs.add(
           objectSizing.widthChange$.subscribe(() => {
+            this._heightSource.invalidateNaturalMeasurements();
             this._runShadowMutation('object-sizing-change', () =>
               this.layoutCoordinator.refreshObjectSizingEstimates(),
             );
@@ -179,6 +181,7 @@ export class PaginatedViewController {
       if (layoutMetricsChange$) {
         this._subs.add(
           layoutMetricsChange$.subscribe(() => {
+            this._heightSource.invalidateNaturalMeasurements();
             this._runShadowMutation('layout-metrics-change', () =>
               this.layoutCoordinator.refreshObjectSizingEstimates(),
             );
@@ -214,6 +217,7 @@ export class PaginatedViewController {
       this._subs.add(
         this.doc.themeChange$.subscribe(() => {
           this._theme = this.doc.theme;
+          this._heightSource.invalidateNaturalMeasurements();
           this._runShadowMutation('theme-context', () => this._syncMeasureContext());
           this.scheduleRecompute();
         }),
@@ -261,6 +265,7 @@ export class PaginatedViewController {
   computePrintItems(): PaginationItem[] {
     const metas = this._heightSource.measure({
       contentHeight: this._geom.geometry.contentHeight,
+      contentWidth: this._contentWidth(),
       widowOrphanLines: this._config.widowOrphanLines ?? 2,
     });
     return buildPaginationItems(metas);
@@ -272,6 +277,13 @@ export class PaginatedViewController {
    */
   captureStableLayout(): StablePaginationLayout | null {
     if (!this._enabled) return null;
+    // 导出捕获是同步屏障：ResizeObserver 的投递可能仍排在本帧后面，不能让最新
+    // documentHeader 高度落在 layout/snapshot 之后。先主动测量，回调会同步刷新 geometry。
+    this._documentHeaderLayer?.measure();
+    // 业务块可在不改变 host border-box 的情况下异步改变内部 scrollWidth。
+    // ResizeObserver 不会为这类变化投递，因此导出同步屏障必须强制丢弃
+    // fit 前快照，在用户确认稳定的当前 DOM 上重读一次自然几何。
+    this._heightSource.invalidateNaturalMeasurements();
     if (this._rafId) cancelAnimationFrame(this._rafId);
     this._rafId = 0;
     return this._recompute();
@@ -332,6 +344,7 @@ export class PaginatedViewController {
     // 同时保留浏览器原生 overflow-anchor 对视口上方内容变化的滚动补偿（实测能稳住编辑滚动）。
     const metas = this._heightSource.measure({
       contentHeight: this._geom.geometry.contentHeight,
+      contentWidth: this._contentWidth(),
       widowOrphanLines: this._config.widowOrphanLines ?? 2,
     });
     const items = buildPaginationItems(metas);
@@ -463,6 +476,7 @@ export class PaginatedViewController {
       const measurements = this._heightSource.measure(
         {
           contentHeight: this._geom.geometry.contentHeight,
+          contentWidth: this._contentWidth(),
           widowOrphanLines: this._config.widowOrphanLines ?? 2,
         },
         mountedIds,
@@ -523,20 +537,27 @@ export class PaginatedViewController {
 
   private _metasFromState(state: PaginationLayoutState): BlockMeta[] {
     return state.entries.map(entry => {
+      const fitScale = entry.fitScale ?? (entry.lockHeight != null
+        && entry.naturalHeight > entry.lockHeight
+        && fitsOversizedMedia(entry.flavour)
+          ? Math.max(0.01, Math.min(1, entry.lockHeight / entry.naturalHeight))
+          : undefined)
       const meta: BlockMeta = {
         id: entry.blockId,
         flavour: entry.flavour,
         nodeType: entry.nodeType,
         isHeading: entry.isHeading,
-        height: entry.lockHeight
-          ?? entry.tableCellFlowPlan?.paginationHeight
-          ?? entry.naturalHeight,
+        height: entry.tableCellFlowPlan?.paginationHeight
+          ?? (entry.lockHeight != null && fitScale == null
+            ? entry.lockHeight
+            : entry.effectiveHeight),
         splitOffsets: entry.splitOffsets ? [...entry.splitOffsets] : undefined,
         preferredSplitOffsets: entry.preferredSplitOffsets
           ? [...entry.preferredSplitOffsets]
           : undefined,
         tableRows: entry.tableRows?.map(row => ({...row})),
         lockHeight: entry.lockHeight,
+        fitScale,
         repeatHeaderHeight: entry.repeatHeaderHeight,
       };
       setTableCellFlowPlan(
@@ -555,10 +576,16 @@ export class PaginatedViewController {
   ): void {
     const result = layout.result;
     const lockedIds = new Set<string>();
+    const fitScales = new Map<string, number>();
     const nextLayoutOwnedIds = new Set<string>();
     for (const meta of metas) {
       if (meta.lockHeight != null && meta.lockHeight > 0) {
         lockedIds.add(meta.id);
+        nextLayoutOwnedIds.add(meta.id);
+      }
+      if (meta.fitScale != null) {
+        fitScales.set(meta.id, meta.fitScale);
+        // `zoom` 会改变宿主 border-box；宽度单独触发的 fit 也属于分页投影自有 resize。
         nextLayoutOwnedIds.add(meta.id);
       }
       // 小表格不会插断点 DOM，不需要为它增加一次最终尺寸读取。
@@ -573,7 +600,7 @@ export class PaginatedViewController {
       ...this._layoutOwnedRootIds,
       ...nextLayoutOwnedIds,
     ]);
-    this._heightLockApplier.apply(lockedIds);
+    this._heightLockApplier.apply(lockedIds, fitScales);
 
     const rects = computeSheetRects(result.pages.length, this._geom.sheetHeightPx, this._geom.pageGap);
     const totalHeight = computeBackdropHeight(result.pages.length, this._geom.sheetHeightPx, this._geom.pageGap);
@@ -676,16 +703,20 @@ export class PaginatedViewController {
   }
 
   private _syncMeasureContext(): void {
-    const contentWidth = Math.max(
-      1,
-      this._geom.sheetWidthPx - this._geom.margins.left - this._geom.margins.right,
-    );
+    const contentWidth = this._contentWidth();
     this.layoutCoordinator.updateMeasureContext({
       contentWidth,
       theme: this._theme,
       fontEpoch: this._fontEpoch,
       rendererRevision: 0,
     });
+  }
+
+  private _contentWidth(): number {
+    return Math.max(
+      1,
+      this._geom.sheetWidthPx - this._geom.margins.left - this._geom.margins.right,
+    )
   }
 
   private _refreshGeometry(): void {

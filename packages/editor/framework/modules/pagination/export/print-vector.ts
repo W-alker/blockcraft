@@ -1,6 +1,7 @@
 // packages/editor/framework/modules/pagination/export/print-vector.ts
 import {PaginationConfig} from "../pagination.types";
 import {PrintPages} from "./print-paginator";
+import {resolvePrintPageDimensions} from './print-page-geometry'
 
 /**
  * 矢量浏览器打印：把逐页 A4 页盒放进打印 iframe，`@page{margin:0}` 让每个页盒 = 一张物理页。
@@ -9,7 +10,7 @@ import {PrintPages} from "./print-paginator";
  * 页盒由独立只读 BlockCraftDoc 渲染（非 contenteditable/非聚焦），importNode 进 iframe 不触发
  * 聚焦编辑器 host 的克隆问题。
  */
-export async function printPagesVector(pages: PrintPages, config: PaginationConfig): Promise<void> {
+export async function printPagesVector(pages: PrintPages, _config: PaginationConfig): Promise<void> {
   const iframe = document.createElement('iframe');
   iframe.setAttribute('aria-hidden', 'true');
   iframe.style.cssText = 'position:fixed; right:0; bottom:0; width:0; height:0; border:0;';
@@ -30,7 +31,7 @@ export async function printPagesVector(pages: PrintPages, config: PaginationConf
   // @page 尺寸 + 0 边距（页盒自身已含边距/页眉页脚），逐页分页
   const style = idoc.createElement('style');
   style.textContent = `
-    @page { size: ${cssPageSize(config)}; margin: 0; }
+    @page { size: ${pages.pageWidthCss} ${pages.pageHeightCss}; margin: 0; }
     html, body { margin: 0; padding: 0; background: #fff; }
     @media print {
       html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -75,19 +76,8 @@ export async function printPagesVector(pages: PrintPages, config: PaginationConf
 
 /** CSS @page size 关键字（命名纸张）或自定义像素尺寸 + 方向。 */
 export function cssPageSize(config: PaginationConfig): string {
-  const orient = config.orientation === 'landscape' ? 'landscape' : 'portrait';
-  const size = config.pageSize ?? 'A4';
-  if (typeof size === 'string') {
-    // CSS 支持的命名尺寸：A3/A4/A5/B4/B5/letter/legal/ledger（大小写不敏感）
-    const named: Record<string, string> = {
-      A3: 'A3', A4: 'A4', A5: 'A5', A6: 'A6', Letter: 'letter', Legal: 'legal', Tabloid: 'ledger',
-    };
-    return `${named[size] ?? 'A4'} ${orient}`;
-  }
-  // 自定义像素尺寸（@page size 接受长度）
-  const w = orient === 'landscape' ? size.height : size.width;
-  const h = orient === 'landscape' ? size.width : size.height;
-  return `${w}px ${h}px`;
+  const page = resolvePrintPageDimensions(config)
+  return `${page.widthCss} ${page.heightCss}`
 }
 
 /** 复制主文档样式表到打印文档（块主题样式）。带 try/catch 跳过 CORS 受限表。 */

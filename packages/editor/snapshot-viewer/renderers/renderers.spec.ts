@@ -55,6 +55,7 @@ describe("snapshot-viewer renderers", () => {
     expect(content.textContent).toBe("新品发布")
     expect(content.style.fontSize).toBe("54px")
     expect(content.style.backgroundImage).toContain("linear-gradient")
+    expect(content.style.webkitTextFillColor).toBe("transparent")
     expect(content.style.transform).toBe("skewX(10deg)")
   })
 

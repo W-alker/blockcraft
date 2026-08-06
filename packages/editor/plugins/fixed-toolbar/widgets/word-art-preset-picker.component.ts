@@ -46,6 +46,7 @@ import {
                 item.presentation.props.letterSpacingEm
               "
               [style.color]="item.presentation.textColor"
+              [style.-webkit-text-fill-color]="item.presentation.textColor"
               [style.background-image]="item.presentation.backgroundImage"
               [style.-webkit-text-stroke]="item.presentation.textStroke"
               [style.text-shadow]="item.presentation.textShadow"

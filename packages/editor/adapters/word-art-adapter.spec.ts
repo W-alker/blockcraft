@@ -74,6 +74,9 @@ describe('Word art adapters', () => {
     expect(figure?.querySelector<HTMLElement>(
       '[data-bc-word-art-text]',
     )?.style.backgroundImage).toContain('linear-gradient')
+    expect(figure?.querySelector<HTMLElement>(
+      '[data-bc-word-art-text]',
+    )?.style.webkitTextFillColor).toBe('transparent')
 
     const importedRoot = await htmlAdapter.toBlockSnapshot(html)
     const imported = importedRoot.children[0] as IBlockSnapshot

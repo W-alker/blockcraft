@@ -3,7 +3,8 @@ import {PAGE_SIZES, ptToPx, resolvePageDimensions, resolveGeometry} from "./page
 
 describe('page-geometry', () => {
   it('A4 标准尺寸（pt）与 pdfSizes 对齐', () => {
-    expect(PAGE_SIZES.A4).toEqual({width: 595, height: 842});
+    expect(PAGE_SIZES.A4.width).toBeCloseTo(595.2755906, 6);
+    expect(PAGE_SIZES.A4.height).toBeCloseTo(841.8897638, 6);
   });
 
   it('ptToPx 默认 96dpi：72pt=96px', () => {
@@ -12,7 +13,9 @@ describe('page-geometry', () => {
   });
 
   it('resolvePageDimensions landscape 交换宽高', () => {
-    expect(resolvePageDimensions('A4', 'landscape')).toEqual({width: 842, height: 595});
+    const page = resolvePageDimensions('A4', 'landscape');
+    expect(page.width).toBeCloseTo(841.8897638, 6);
+    expect(page.height).toBeCloseTo(595.2755906, 6);
   });
 
   it('resolvePageDimensions 自定义尺寸 portrait 原样返回', () => {

@@ -7,10 +7,9 @@ import {
   PaginationPdfResult,
   throwIfPaginationExportAborted,
 } from './pdf-export.types'
-import {mountPrintPagesInPage} from './print-live'
+import {mountPrintPagesInPage, printPagesInPage} from './print-live'
 import {buildPaginatedPrintSurface, PrintPages} from './print-paginator'
 import {readonlyDocRenderProvider} from './print-readonly-render'
-import {printPagesVector} from './print-vector'
 
 /**
  * 从真实只读 BlockCraft 组件构建固定分页打印面，并交给浏览器或宿主原生打印后端。
@@ -27,9 +26,10 @@ export async function exportDocumentToPdf(
   const effectiveConfig = layout?.config ?? config
   const pages = await buildPaginatedPrintSurface(snapshot, effectiveConfig, {
     layout,
-    render: readonlyDocRenderProvider(doc, snapshot),
+    render: readonlyDocRenderProvider(doc, snapshot, options),
     resourcePolicy: options.resourcePolicy,
     signal: options.signal,
+    stability: options.stability,
   })
 
   return exportPrintPagesToPdf(pages, effectiveConfig, suggestedName, options)
@@ -46,7 +46,9 @@ export async function exportPrintPagesToPdf(
     throwIfPaginationExportAborted(options.signal)
     if (!options.backend) {
       try {
-        await printPagesVector(pages, config)
+        // 默认在当前顶层文档安装 print mirror。0×0 iframe 会改变 vw/container-query
+        // 等响应式上下文，使业务块在打印前发生第二次布局并产生横向裁剪。
+        await printPagesInPage(pages, config)
       } catch (error) {
         throw new PaginationExportError(
           'print-failed',

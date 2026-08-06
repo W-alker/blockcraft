@@ -284,6 +284,26 @@ await pagination.exportToPdf('document.pdf')
 pagination.disable()
 ```
 
+Async business blocks can prepare the isolated export copy before measurement:
+
+```typescript
+await pagination.exportToPdf('document.pdf', {
+  prepareDocument: async ({doc, root, signal}) => {
+    await businessExportCoordinator.reloadAndWait(doc, {root, signal})
+  },
+  stability: {quietFrames: 2, timeoutMs: 10000},
+})
+```
+
+`prepareDocument` never receives the live collaborative document. It runs only
+after the readonly snapshot copy has initialized and must resolve when business
+views are semantically ready to measure. Business blocks may fetch fresh data;
+they do not need to freeze their payload. BlockCraft then prepares images/fonts
+and waits for DOM plus block-size quiet frames before pagination. Rejecting the
+hook fails export with `layout-not-ready`; `resourcePolicy: 'best-effort'` only
+converts the final generic stability timeout to a warning and does not swallow a
+business preparation failure.
+
 The plugin changes only local DOM/CSS view state. It never writes Yjs and produces no Undo item. `print()` and `exportToPdf()` obtain the complete document through `doc.exportSnapshot()`, so virtualized offscreen blocks are included without mounting editor views merely to serialize them.
 
 Live pagination supports a configured scroll container that is an outer
@@ -316,7 +336,26 @@ This cell-flow path is activated only when one physical `<tr>` is itself oversiz
 
 The default `experimentalSparseView: false` path preserves the existing exact live behavior: `enable()` acquires a full-document virtualization lease and `disable()` releases it after view cleanup. With `experimentalSparseView: true` and root virtualization enabled, the paginated Projection drives viewport/spacer geometry without that lease. Mounted roots are measured; offscreen roots use configured flavour estimates until mounted. Gap, table-break and height-lock state is cached as pure layout data and replayed only for mounted roots. Model text/props/structure updates are frame-coalesced; the current pagination engine still performs an `O(N)` scan of cached numbers.
 
-The sparse option is a Phase C rollout switch, not yet the default exact live-pagination mode. A non-exact sparse result is not reused for `print()` or `exportToPdf()`; those operations use the complete readonly reflow path. `exportToPdf()` opens a browser print dialog by default, or invokes a `PaginationPdfHostBackend` while the current top-level WebView print mirror is mounted. It does not return PDF bytes. The readonly path uses BlockCraft block components, not snapshot-viewer or DOM rasterization. Explicit `options.pagination` means a new reflow. Register `PageDividerBlockSchema` to expose manual page breaks. The package intentionally does not publish a settings component: host UI reads `plugin.config` and sends changes through `plugin.updateConfig(...)`; the playground keeps its own debug-only panel as an integration example.
+The sparse option is a Phase C rollout switch, not yet the default exact live-pagination mode. A non-exact sparse result is not reused for `print()` or `exportToPdf()`; those operations use the complete readonly reflow path. A host that creates its own isolated readonly export copy should wait until that copy is exact and call `captureStableLayout()` synchronously with its snapshot capture. That stable layout—not a second print-time measurement—is the authoritative page model. `exportToPdf()` opens a browser print dialog by default, or invokes a `PaginationPdfHostBackend` while the current top-level WebView print mirror is mounted. It does not return PDF bytes. The readonly path uses BlockCraft block components, not snapshot-viewer or DOM rasterization. Explicit `options.pagination` means a new reflow. Register `PageDividerBlockSchema` to expose manual page breaks. The package intentionally does not publish a settings component: host UI reads `plugin.config` and sends changes through `plugin.updateConfig(...)`; the playground keeps its own debug-only panel as an integration example.
+
+Atomic block height follows painted overflow, not raw internal scroll geometry. When the top-level host's effective vertical overflow is `visible`, pagination includes `max(offsetHeight, scrollHeight)` so Safari iframe/embed cards that paint beyond their host remain intact. For `hidden`, `clip`, `auto` or `scroll`, pagination uses `offsetHeight` because the excess is clipped or contained. Live measurement, export fallback measurement and stable-layout validation all use this same rule; hosts should express intentional clipping/scrolling on the block host instead of compensating with export-only margins.
+
+The mounted mirror already owns exact physical paper geometry. Each fixed-height
+slot naturally occupies one physical page; never add an adjacent-slot forced
+page break, because a browser that has already advanced at the slot boundary will
+emit an empty page for the second break. A native `PaginationPdfHostBackend` must
+print it at `1:1` and disable horizontal shrink-to-fit; otherwise page width
+fitting also rescales slot height and breaks the captured page boundaries. The
+root `placement-layout` is projected as a global absolute plane on every print
+page rather than moved with its zero-height tail slot. Pass a real host document
+header through `PrintRenderResult.leadingContent`. BlockCraft stages that exact
+DOM inside the final paper/content width, waits for it to stabilize, validates it
+against the captured first-page geometry, and mounts it at z=2 above body z=1;
+do not synthesize a replacement block or measure the header in a wider host.
+Keep `data-bc-placement-container` on `.bc-print-content` so under/flow/over
+stacking remains identical to the editor. The print projector restores the
+plane to full sheet width before resolving percentage x positions; strict mode
+reports `layout-diverged` if a non-empty plane has no readonly DOM.
 
 ---
 

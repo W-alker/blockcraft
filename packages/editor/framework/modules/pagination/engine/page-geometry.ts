@@ -1,15 +1,22 @@
 // packages/editor/framework/modules/pagination/engine/page-geometry.ts
 import {PageGeometry, PageMargins, PageSizeName} from "./types";
 
-/** 标准纸张尺寸（PDF 点 pt，竖向 width×height，与 tools/export-manager pdfSizes 对齐）。 */
+const MM_TO_PT = 72 / 25.4;
+const mmPage = (width: number, height: number): {width: number; height: number} => ({
+  width: width * MM_TO_PT,
+  height: height * MM_TO_PT,
+});
+
+/** 标准纸张尺寸（PDF 点 pt，竖向 width×height，由标准 mm/in 尺寸精确换算）。 */
 export const PAGE_SIZES: Record<PageSizeName, {width: number; height: number}> = {
-  A0: {width: 2384, height: 3370},
-  A1: {width: 1684, height: 2384},
-  A2: {width: 1191, height: 1684},
-  A3: {width: 842, height: 1191},
-  A4: {width: 595, height: 842},
-  A5: {width: 420, height: 595},
-  A6: {width: 298, height: 420},
+  // 不预先保留两位小数：screen px、CSS mm 与原生 pt 必须来自同一个物理值。
+  A0: mmPage(841, 1189),
+  A1: mmPage(594, 841),
+  A2: mmPage(420, 594),
+  A3: mmPage(297, 420),
+  A4: mmPage(210, 297),
+  A5: mmPage(148, 210),
+  A6: mmPage(105, 148),
   Letter: {width: 612, height: 792},
   Legal: {width: 612, height: 1008},
   Tabloid: {width: 792, height: 1224},

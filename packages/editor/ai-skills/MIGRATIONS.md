@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-05 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-06 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -73,6 +73,147 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v0.3.0-alpha.11 - 2026-08-05 (minor) — isolated PDF preparation and stability barrier
+
+**Severity**: minor (additive prerelease API)
+
+**What changed**: Paginated PDF options now accept a `prepareDocument` hook
+that runs against the internally created readonly snapshot copy before
+measurement. A generic DOM/ResizeObserver quiet barrier runs after print
+resources settle and can be tuned through `stability`.
+Named pagination paper sizes are also emitted as explicit physical dimensions
+for browser/native print mirrors, including A0/A1/A2 and Tabloid. Browser CSS
+uses the paper standards' native `mm`/`in` values while native PDF metadata keeps
+the exact PostScript-point values; fixed page boxes no longer round through
+screen pixels. Oversized image/video
+blocks and over-wide non-breakable atomic blocks are fitted into the content
+box instead of being hard-cropped.
+Live pagination, isolated export measurement and stable-layout validation now
+share one atomic-block visual-height rule: `overflow: visible` contributes the
+painted `scrollHeight`, while `hidden`, `clip`, `auto` and `scroll` use the host
+border box. Clipped internal overflow therefore no longer creates phantom page
+stride or a 4px live/export mismatch.
+
+**Why**: Async business blocks may need to fetch fresh data in the export copy.
+Pagination must not guess whether an empty view is loaded, nor measure while
+that view, its images, fonts or dimensions are still changing.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `PaginationPdfOptions.prepareDocument`
+- `PaginationPrintDocumentContext`
+- `PaginationPrintDocumentPreparer`
+- `PaginationPdfOptions.stability`
+- `PaginationRenderStabilityOptions`
+- `waitForPaginationRenderStable()`
+
+#### Migration Recipe
+
+Existing exports require no change. Hosts with async business blocks can opt in:
+
+```typescript
+await pagination.exportToPdf('document.pdf', {
+  prepareDocument: async ({doc, root, signal}) => {
+    await businessExportCoordinator.reloadAndWait(doc, {root, signal})
+  },
+  stability: {quietFrames: 2, timeoutMs: 10000},
+})
+```
+
+The hook must operate on the supplied readonly `doc`; it must not read or mutate
+the live collaborative document.
+
+#### Behavior Changes
+
+- PDF reflow waits for two quiet DOM/size frames after images and fonts settle.
+- A rejected business hook fails with `layout-not-ready` and destroys the copy.
+- `resourcePolicy: 'best-effort'` converts only the generic stability timeout to
+  a warning; semantic preparation failures remain fatal.
+- Named page geometry keeps standard CSS `mm`/`in` values and exact physical pt metadata;
+  hosts should forward `page.widthPt` / `page.heightPt` without rounding.
+- Physical page flow slots and the print root now use the same explicit standard
+  `mm`/`in` width as `@page`; they do not resolve paper width through `100%` of a
+  WebView viewport. A fixed-height slot naturally consumes exactly one physical
+  page; no adjacent-slot `break-before` / `break-after` is emitted, because a
+  second forced advance creates alternating blank pages in WebKit. A `0.01px`
+  negative height tolerance absorbs only the device-pixel rounding tail and
+  avoids cumulative one-pixel drift.
+  Hosts printing an already paginated surface must keep scale at `1:1` (for
+  example `NSPrintInfo.horizontalPagination = clip`) rather than shrink-to-fit;
+  continuous-flow exports may continue to use fit.
+- Default browser PDF export now prints a top-level print mirror instead of a
+  zero-sized iframe. Non-splitting flow slots map one deterministic BlockCraft
+  page to one browser sheet; `@page`, the mirror and every slot share one physical
+  width/height contract so a host print backend cannot silently derive a second
+  viewport-sized paper box.
+- Browser print uses a minimally short flow slot with `overflow:hidden`; the real
+  page keeps its exact physical height inside it. Page descendants can no longer
+  extend the slot's fragment and make WebKit emit an intervening blank sheet.
+  The inner `.bc-print-content` root explicitly uses `width:auto`: its left and
+  right offsets are the sole content-width constraints. This overrides the base
+  editor root's `width:100%`, which otherwise discards the right inset and clips
+  one full right margin from every wide block.
+  Print content is no longer clipped at the inner content-box edge; fragment
+  windows and height locks clip their own content, then the physical page is the
+  final clipping boundary. Shadows and business controls may therefore extend
+  into the configured margin exactly as they do in the paginated screen view.
+- The zero-height root `placement-layout` is excluded from normal flow pagination.
+  Its global absolute-placement plane is cloned into every print page and shifted
+  by the screen page stride (`paper height + pageGap`), so an object keeps its
+  original visual page and crossing objects are clipped by adjacent paper boxes
+  instead of the whole plane being moved to the last slot page.
+  A custom `PrintRenderProvider` supplies host-owned leading content through
+  `leadingContent`. BlockCraft mounts that exact DOM in a final-paper-width
+  staging page, waits for resources and layout stability, validates its height
+  against the stable first-page geometry, then mounts it at z=2 above the z=1
+  body. It must not be synthesized as a normal block or measured in a wider host.
+  This keeps persisted `placement.y` relative to the same post-header origin as
+  the live paginated view. Each print content root
+  also retains `data-bc-placement-container`, preserving the theme's
+  `under(0) / flow(1) / over(2)` stacking contract. The projected plane is
+  widened back from the content box to the full sheet width, so percentage x
+  coordinates retain the live root's sheet-relative coordinate system even
+  with asymmetric margins. Strict export now fails with `layout-diverged` when
+  a non-empty placement plane is missing from the readonly DOM.
+- Oversized media and non-breakable atomic blocks may receive
+  `--bc-page-fit-scale`; the theme applies this with CSS `zoom` so the complete
+  block remains visible inside the page content width/height.
+- The unified print surface now idempotently adds its zero-size flow sentinel
+  before resource settling and stable-layout validation, including for custom
+  render providers. A provider that returns a pagination-disabled document root
+  can no longer make its tail block newly match `:last-child`, drop the theme's
+  bottom gap, and fail strict export with a false 4px height divergence.
+
+### v0.3.0-alpha.10 - 2026-08-05 (patch) — cap oversized atomic table-cell content
+
+**Severity**: patch
+
+**What changed**: Live pagination now consistently limits oversized atomic
+children inside table cells to the page content height. Nested media and embeds
+remain clipped, while nested code blocks keep their header visible and expose an
+internally scrollable code body.
+
+**Why**: An image, code block or embed taller than one page must not expand its
+table row through a sheet boundary. Code still needs an accessible live editing
+surface after the atomic one-page cap is applied.
+
+**Affected ai-skills files**:
+
+- `blockcraft-theme.md`
+
+### Behavior Changes
+
+- `.bc-page-nested-height-locked.code-block` now uses a one-page flex shell and
+  scrolls `.edit-container-wrapper`; other nested atomic blocks retain clipped
+  overflow. The class remains reversible pagination-only view state.
 
 ### v0.3.0-alpha.9 - 2026-08-05 (minor) — explicit document layout metrics
 

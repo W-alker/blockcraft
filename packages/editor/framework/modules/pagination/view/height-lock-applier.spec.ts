@@ -48,6 +48,25 @@ describe('HeightLockApplier', () => {
     expect(newHost.classList.contains('bc-page-height-locked')).toBeTrue();
   });
 
+  it('applies and clears an exact media fit scale without clipping ownership leaks', () => {
+    const host = document.createElement('div');
+    const doc = {
+      getBlockById: () => ({hostElement: host}),
+    } as unknown as BlockCraft.Doc;
+    const applier = new HeightLockApplier(doc);
+
+    applier.apply(new Set(['image-1']), new Map([['image-1', 0.625]]));
+
+    expect(host.classList.contains('bc-page-height-locked')).toBeTrue();
+    expect(host.classList.contains('bc-page-height-fitted')).toBeTrue();
+    expect(host.style.getPropertyValue('--bc-page-fit-scale')).toBe('0.625');
+
+    applier.apply(new Set());
+
+    expect(host.classList.contains('bc-page-height-fitted')).toBeFalse();
+    expect(host.style.getPropertyValue('--bc-page-fit-scale')).toBe('');
+  });
+
   it('clears an unmounted host and replays the desired lock on remount', () => {
     const oldHost = document.createElement('div');
     const newHost = document.createElement('div');

@@ -554,6 +554,29 @@ pagination.disable()
 
 分页启用状态属于插件，不属于 `DocConfig`；不要使用 `DocConfig.pagination` 或 `doc.pagination`。插件关闭时会移除页框、块间距、表格视图断点和高度锁定，且不会写入 Yjs。`experimentalSparseView` 默认 `false`，默认路径仍持有整文档视图租约以保证实时精确几何；设为 `true` 且开启根虚拟化后，分页 Projection 驱动窗口与 spacer，离屏块允许先用估算几何并在挂载后收敛。该实验路径不会把非 exact 结果交给打印/PDF，而会使用完整只读重排。`exportToPdf()` 使用真实只读 BlockCraft 组件，snapshot-viewer 不参与分页 PDF；浏览器走系统打印，Tauri 等宿主通过 `PaginationPdfHostBackend` 打印当前顶层导出 WebView，正文不经过 DOM 栅格化。
 
+宿主业务块若需要在导出副本中重新取数，应传入
+`PaginationPdfOptions.prepareDocument({doc, root, signal})`：该回调只接收由同步快照创建的
+readonly 隔离文档，并且必须在所有业务视图达到可测量状态后 resolve。BlockCraft 随后统一等待
+图片、字体以及 DOM/块尺寸连续静默，再开始分页计算；不要让回调读取或等待 live doc。
+
+Word 式一致性下，页面稳定布局是唯一分页真相：宿主可在隔离副本上调用
+`PaginationPlugin.captureStableLayout()`，并把它原样传给打印面。确定页槽本身已占满一张物理纸，
+所以只依靠固定槽高自然分页，严禁再给相邻槽叠加 `break-before` / `break-after`，否则 WebKit 会在
+每两个逻辑页之间生成一张空白纸。`@page`、镜像根和页槽共用同一物理 `mm`/`in` 尺寸；宿主原生
+后端必须保持 1:1，不能再做 shrink-to-fit。
+统一打印面会在资源等待和稳定布局校验前，幂等地给每个 render provider 的根流补入
+零尺寸尾哨兵。宿主因此无需自己伪造辅助节点；即使自定义 provider 返回的是关闭分页后的纯文档
+root，末个块也不会因重新命中 `:last-child` 而在校验前丢失 `margin-bottom`。
+
+root 尾部的 `placement-layout` 是全局 absolute 平面，导出会按 `sheetHeight + pageGap` 逐页投影，
+不作为普通零高 slot 搬到末页。宿主文档头通过 `PrintRenderResult.leadingContent` 传入；BlockCraft 会
+先把同一 DOM 挂进最终纸张、最终正文宽度的 staging context，等待资源与尺寸稳定，再与
+`firstPageContentHeight` 校验，并以独立 z=2 层放回首页。不要复制成 synthetic block，也不要在宽度
+不同的宿主容器里提前测高。打印正文根保留
+`data-bc-placement-container`，确保 under / flow / over 层级与编辑界面一致；plane 会从正文盒向左
+扩回整张纸宽，百分比 x 继续相对 live sheet。非空 placement 快照缺少只读 DOM 时，strict 导出以
+`layout-diverged` 失败，不能静默丢对象。
+
 当一个真实表格行因超长单元格而高过页面内容区时，分页器会惰性收集单元格直属 Block 边界和 Editable Block 的视觉行首，在同一逻辑单元格内生成可逆续排。各列可以在不同安全锚点换页，屏幕投影只插入零模型长度页缝，不拆 Yjs 行/单元格，也不创建 Undo 历史。表格的虚拟内容高度、屏幕内部页缝和后续顶层 Block 共同进入同一布局坐标系，因此表格下方内容不会再沿用表格的自然高度而向上漂移。IME composition 期间保留上一版稳定布局，结束后再重排；打印/PDF 消费同一稳定锚点快照。
 
 `DocExportManager` 只提供 JSON、Markdown 与 PDF/打印导出，不再提供 `exportToJpeg()` 或 DOM-to-image 渲染配置。需要位图截图的宿主应在应用层选择并维护独立的截图方案。

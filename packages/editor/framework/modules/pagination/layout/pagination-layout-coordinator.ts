@@ -5,6 +5,7 @@ import {
 } from "../../../doc/model-graph";
 import {
   paginate,
+  fitsOversizedMedia,
   PaginationItem,
   PaginationResult,
 } from "../engine";
@@ -57,19 +58,26 @@ interface RootSnapshot {
 }
 
 function entryToMeta(entry: PaginationGeometryEntry): BlockMeta {
+  const fitScale = entry.fitScale ?? (entry.lockHeight != null
+    && entry.naturalHeight > entry.lockHeight
+    && fitsOversizedMedia(entry.flavour)
+      ? Math.max(0.01, Math.min(1, entry.lockHeight / entry.naturalHeight))
+      : undefined)
   const meta: BlockMeta = {
     id: entry.blockId,
     flavour: entry.flavour,
     nodeType: entry.nodeType,
     isHeading: entry.isHeading,
-    height: entry.lockHeight
-      ?? entry.tableCellFlowPlan?.paginationHeight
-      ?? entry.naturalHeight,
+    height: entry.tableCellFlowPlan?.paginationHeight
+      ?? (entry.lockHeight != null && fitScale == null
+        ? entry.lockHeight
+        : entry.effectiveHeight),
     splitOffsets: entry.splitOffsets ? [...entry.splitOffsets] : undefined,
     preferredSplitOffsets: entry.preferredSplitOffsets
       ? [...entry.preferredSplitOffsets]
       : undefined,
     lockHeight: entry.lockHeight,
+    fitScale,
     repeatHeaderHeight: entry.repeatHeaderHeight,
   };
   setTableCellFlowPlan(
