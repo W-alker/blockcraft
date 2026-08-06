@@ -30,6 +30,7 @@ import {
   PaginationResourcePolicy,
 } from "./pdf-export.types";
 import {appendFlowSentinel} from './print-dom';
+import {materializeWordArtForPrint} from './print-word-art'
 import {preparePrintResources} from "./print-resources";
 import {waitForPaginationRenderStable} from './render-stability'
 import {resolvePrintPageDimensions} from './print-page-geometry'
@@ -204,6 +205,15 @@ export async function buildPaginatedPrintSurface(
         override?.stability,
         override?.signal,
       );
+    }
+    // WKWebView 原生 PDF 不实现 CSS background-clip:text。资源和字体稳定后，
+    // 仅在只读打印树中把艺术字物化为等尺寸 SVG；原编辑 DOM 与分页模型不受影响。
+    if (materializeWordArtForPrint(renderRoot) > 0) {
+      await waitForPaginationRenderStable(
+        renderRoot,
+        override?.stability,
+        override?.signal,
+      )
     }
   } catch (error) {
     if (

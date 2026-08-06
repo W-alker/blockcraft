@@ -1,0 +1,465 @@
+const SVG_NS = 'http://www.w3.org/2000/svg'
+const XML_NS = 'http://www.w3.org/XML/1998/namespace'
+const PRINT_PROPS_ATTR = 'data-bc-word-art-print-props'
+
+interface WordArtPrintProps {
+  fillType: 'solid' | 'linear-gradient'
+  fillColor: string
+  gradientAngle: number
+  gradientColors: string[]
+  gradientStops: number[]
+  outlineColor: string
+  outlineWidthEm: number
+  shadowEnabled: boolean
+  shadowColor: string
+  shadowOpacity: number
+  shadowOffsetXEm: number
+  shadowOffsetYEm: number
+  shadowBlurEm: number
+}
+
+interface VisualGlyph {
+  text: string
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+interface VisualLine {
+  text: string
+  left: number
+  right: number
+  top: number
+  bottom: number
+  graphemeCount: number
+}
+
+interface SvgTextLine {
+  element: SVGTextElement
+  width: number
+  graphemeCount: number
+}
+
+let vectorSequence = 0
+
+/**
+ * WKWebView 的原生 PDF painter 会把 CSS `background-clip:text` 错误拆成完整渐变矩形
+ * 与黑色字形蒙版。这里只改已经稳定的只读打印树：用同一字体、实际视觉行坐标和 WordArt
+ * 参数生成纯 SVG，保留外层块的尺寸、旋转、placement 与分页断点。
+ */
+export function materializeWordArtForPrint(root: HTMLElement): number {
+  const targets = [
+    ...(root.matches(`[${PRINT_PROPS_ATTR}]`) ? [root] : []),
+    ...Array.from(root.querySelectorAll<HTMLElement>(`[${PRINT_PROPS_ATTR}]`)),
+  ]
+  let count = 0
+  for (const target of targets) {
+    const props = parsePrintProps(target.getAttribute(PRINT_PROPS_ATTR))
+    if (!props) {
+      throw new Error('艺术字打印参数缺失或无效')
+    }
+    materializeTarget(target, props)
+    count += 1
+  }
+  return count
+}
+
+function materializeTarget(
+  target: HTMLElement,
+  props: WordArtPrintProps,
+): void {
+  const computed = getComputedStyle(target)
+  const targetTransform = target.style.transform
+  const transformOwner = target.closest<HTMLElement>(
+    '.word-art-block__surface, .bc-inline-word-art-frame',
+  )
+  const ownerTransform = transformOwner?.style.transform ?? ''
+
+  // Range 返回 viewport 坐标。先去掉 WordArt 自己的视觉变换（不参与 flow 几何），
+  // 量完后把 effect 放到 SVG、rotation 还给外层 surface/frame。
+  target.style.transform = 'none'
+  if (transformOwner) transformOwner.style.transform = 'none'
+
+  try {
+    const width = target.offsetWidth
+    const height = target.offsetHeight
+    if (width <= 0 || height <= 0) {
+      throw new Error(`艺术字打印盒尺寸无效：${width}x${height}`)
+    }
+
+    const targetRect = target.getBoundingClientRect()
+    const scaleX = targetRect.width > 0 ? targetRect.width / width : 1
+    const scaleY = targetRect.height > 0 ? targetRect.height / height : 1
+    const lines = collectVisualLines(target, targetRect, scaleX, scaleY, computed)
+    const {svg, textLines} = buildSvg(
+      target,
+      props,
+      computed,
+      width,
+      height,
+      lines,
+      targetTransform,
+    )
+
+    target.replaceWith(svg)
+    fitSvgTextLines(textLines)
+  } finally {
+    if (target.isConnected) target.style.transform = targetTransform
+    if (transformOwner) transformOwner.style.transform = ownerTransform
+  }
+}
+
+function collectVisualLines(
+  target: HTMLElement,
+  targetRect: DOMRect,
+  scaleX: number,
+  scaleY: number,
+  computed: CSSStyleDeclaration,
+): VisualLine[] {
+  const glyphs: VisualGlyph[] = []
+  const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT)
+  let node = walker.nextNode()
+  while (node) {
+    const textNode = node as Text
+    const parent = textNode.parentElement
+    if (
+      textNode.data
+      && parent
+      && !parent.closest('svg')
+      && !parent.closest('[aria-hidden="true"]')
+      && !parent.closest('.bc-end-break')
+    ) {
+      for (const segment of segmentGraphemes(textNode.data)) {
+        if (segment.text === '\n' || segment.text === '\r') continue
+        const range = document.createRange()
+        range.setStart(textNode, segment.start)
+        range.setEnd(textNode, segment.end)
+        // Safari may expose a zero-width boundary rect before the glyph's real
+        // visual rect. This collector feeds SVG geometry, so only a painted
+        // rect is usable; taking the first positive-height rect moves the line
+        // origin to the boundary and loses the glyph's measured width.
+        const rect = Array.from(range.getClientRects())
+          .find(item => item.height > 0 && item.width > 0)
+        range.detach()
+        if (!rect) continue
+        glyphs.push({
+          text: segment.text,
+          left: (rect.left - targetRect.left) / Math.max(scaleX, 0.0001),
+          right: (rect.right - targetRect.left) / Math.max(scaleX, 0.0001),
+          top: (rect.top - targetRect.top) / Math.max(scaleY, 0.0001),
+          bottom: (rect.bottom - targetRect.top) / Math.max(scaleY, 0.0001),
+        })
+      }
+    }
+    node = walker.nextNode()
+  }
+
+  const lines: VisualLine[] = []
+  for (const glyph of glyphs) {
+    const center = (glyph.top + glyph.bottom) / 2
+    let line = lines.find(candidate => {
+      const candidateCenter = (candidate.top + candidate.bottom) / 2
+      return Math.abs(candidateCenter - center) <= 1.5
+    })
+    if (!line) {
+      line = {
+        text: '',
+        left: glyph.left,
+        right: glyph.right,
+        top: glyph.top,
+        bottom: glyph.bottom,
+        graphemeCount: 0,
+      }
+      lines.push(line)
+    }
+    line.text += glyph.text
+    line.left = Math.min(line.left, glyph.left)
+    line.right = Math.max(line.right, glyph.right)
+    line.top = Math.min(line.top, glyph.top)
+    line.bottom = Math.max(line.bottom, glyph.bottom)
+    line.graphemeCount += 1
+  }
+
+  if (lines.length > 0) return lines.sort((a, b) => a.top - b.top)
+
+  // 无布局实现的测试环境或空 Range 兜底；真实打印路径一定走上面的视觉行。
+  const sourceLines = (target.textContent ?? '').split(/\r?\n/)
+  const fontSize = parseFloat(computed.fontSize) || 16
+  const lineHeight = parseFloat(computed.lineHeight) || fontSize * 1.2
+  const left = parseFloat(computed.paddingLeft) || 0
+  const top = parseFloat(computed.paddingTop) || 0
+  return sourceLines
+    .filter(text => text.length > 0)
+    .map((text, index) => ({
+      text,
+      left,
+      right: Math.max(left, target.clientWidth - (parseFloat(computed.paddingRight) || 0)),
+      top: top + index * lineHeight,
+      bottom: top + (index + 1) * lineHeight,
+      graphemeCount: segmentGraphemes(text).length,
+    }))
+}
+
+function buildSvg(
+  target: HTMLElement,
+  props: WordArtPrintProps,
+  computed: CSSStyleDeclaration,
+  width: number,
+  height: number,
+  lines: VisualLine[],
+  targetTransform: string,
+): {svg: SVGSVGElement; textLines: SvgTextLine[]} {
+  const sequence = ++vectorSequence
+  const svg = createSvgElement('svg')
+  svg.setAttribute('width', `${width}`)
+  svg.setAttribute('height', `${height}`)
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`)
+  svg.setAttribute('preserveAspectRatio', 'none')
+  svg.setAttribute('role', 'img')
+  svg.setAttribute('aria-label', target.textContent ?? '')
+  svg.setAttribute('data-bc-print-word-art-vector', 'true')
+  svg.style.cssText = [
+    'display:block',
+    'box-sizing:border-box',
+    `width:${width}px`,
+    `height:${height}px`,
+    'max-width:100%',
+    'overflow:hidden',
+    `transform:${targetTransform || 'none'}`,
+    `transform-origin:${computed.transformOrigin || 'center center'}`,
+    `align-self:${computed.alignSelf || 'auto'}`,
+    `vertical-align:${computed.verticalAlign || 'baseline'}`,
+  ].join(';')
+
+  const title = createSvgElement('title')
+  title.textContent = target.textContent ?? ''
+  svg.appendChild(title)
+
+  const defs = createSvgElement('defs')
+  let fill = props.fillColor
+  if (
+    props.fillType === 'linear-gradient'
+    && props.gradientColors.length > 0
+  ) {
+    const gradientId = `bc-word-art-gradient-${sequence}`
+    const gradient = createLinearGradient(
+      gradientId,
+      props,
+      width,
+      height,
+    )
+    defs.appendChild(gradient)
+    fill = `url(#${gradientId})`
+  }
+
+  let filterId = ''
+  if (props.shadowEnabled && props.shadowOpacity > 0) {
+    filterId = `bc-word-art-shadow-${sequence}`
+    defs.appendChild(createShadowFilter(filterId, props, computed, width, height))
+  }
+  if (defs.childNodes.length > 0) svg.appendChild(defs)
+
+  const group = createSvgElement('g')
+  if (filterId) group.setAttribute('filter', `url(#${filterId})`)
+  svg.appendChild(group)
+
+  const fontSize = parseFloat(computed.fontSize) || 16
+  const {ascent, descent} = measureFont(computed, fontSize)
+  const strokeWidth = Math.max(0, props.outlineWidthEm * fontSize)
+  const direction = computed.direction || 'ltr'
+  const textLines: SvgTextLine[] = []
+
+  for (const line of lines) {
+    if (!line.text) continue
+    const element = createSvgElement('text')
+    const lineHeight = Math.max(0, line.bottom - line.top)
+    const baseline = line.top + Math.max(0, (lineHeight - ascent - descent) / 2) + ascent
+    const lineWidth = Math.max(0, line.right - line.left)
+    element.textContent = line.text
+    element.setAttributeNS(XML_NS, 'xml:space', 'preserve')
+    element.setAttribute('x', `${direction === 'rtl' ? line.right : line.left}`)
+    element.setAttribute('y', `${baseline}`)
+    element.setAttribute('fill', fill)
+    element.setAttribute('stroke', props.outlineColor)
+    element.setAttribute('stroke-width', `${strokeWidth}`)
+    element.setAttribute('stroke-linejoin', 'round')
+    element.setAttribute('paint-order', 'stroke fill')
+    element.setAttribute('font-family', computed.fontFamily)
+    element.setAttribute('font-size', `${fontSize}`)
+    element.setAttribute('font-weight', computed.fontWeight)
+    element.setAttribute('font-style', computed.fontStyle)
+    element.setAttribute('letter-spacing', computed.letterSpacing)
+    element.setAttribute('direction', direction)
+    element.setAttribute('text-anchor', direction === 'rtl' ? 'end' : 'start')
+    element.style.unicodeBidi = computed.unicodeBidi
+    group.appendChild(element)
+    textLines.push({element, width: lineWidth, graphemeCount: line.graphemeCount})
+  }
+
+  return {svg, textLines}
+}
+
+function fitSvgTextLines(lines: SvgTextLine[]): void {
+  for (const line of lines) {
+    if (line.width <= 0) continue
+    let measured = 0
+    try {
+      measured = line.element.getComputedTextLength()
+    } catch {
+      measured = 0
+    }
+    if (measured > 0 && Math.abs(measured - line.width) <= 0.5) continue
+    line.element.setAttribute('textLength', `${line.width}`)
+    line.element.setAttribute(
+      'lengthAdjust',
+      line.graphemeCount > 1 ? 'spacing' : 'spacingAndGlyphs',
+    )
+  }
+}
+
+function createLinearGradient(
+  id: string,
+  props: WordArtPrintProps,
+  width: number,
+  height: number,
+): SVGLinearGradientElement {
+  const gradient = createSvgElement('linearGradient')
+  gradient.id = id
+  gradient.setAttribute('gradientUnits', 'userSpaceOnUse')
+  const radians = props.gradientAngle * Math.PI / 180
+  const dx = Math.sin(radians)
+  const dy = -Math.cos(radians)
+  const length = Math.abs(width * dx) + Math.abs(height * dy)
+  const half = length / 2
+  const centerX = width / 2
+  const centerY = height / 2
+  gradient.setAttribute('x1', `${centerX - dx * half}`)
+  gradient.setAttribute('y1', `${centerY - dy * half}`)
+  gradient.setAttribute('x2', `${centerX + dx * half}`)
+  gradient.setAttribute('y2', `${centerY + dy * half}`)
+
+  props.gradientColors.forEach((color, index) => {
+    const stop = createSvgElement('stop')
+    const offset = clamp(props.gradientStops[index] ?? index / Math.max(1, props.gradientColors.length - 1), 0, 1)
+    stop.setAttribute('offset', `${offset * 100}%`)
+    stop.setAttribute('stop-color', color)
+    gradient.appendChild(stop)
+  })
+  return gradient
+}
+
+function createShadowFilter(
+  id: string,
+  props: WordArtPrintProps,
+  computed: CSSStyleDeclaration,
+  width: number,
+  height: number,
+): SVGFilterElement {
+  const fontSize = parseFloat(computed.fontSize) || 16
+  const dx = props.shadowOffsetXEm * fontSize
+  const dy = props.shadowOffsetYEm * fontSize
+  const deviation = Math.max(0, props.shadowBlurEm * fontSize / 2)
+  const stroke = Math.max(0, props.outlineWidthEm * fontSize)
+  const padding = Math.max(1, Math.abs(dx), Math.abs(dy)) + deviation * 3 + stroke
+  const filter = createSvgElement('filter')
+  filter.id = id
+  filter.setAttribute('filterUnits', 'userSpaceOnUse')
+  filter.setAttribute('x', `${-padding}`)
+  filter.setAttribute('y', `${-padding}`)
+  filter.setAttribute('width', `${width + padding * 2}`)
+  filter.setAttribute('height', `${height + padding * 2}`)
+  const shadow = createSvgElement('feDropShadow')
+  shadow.setAttribute('dx', `${dx}`)
+  shadow.setAttribute('dy', `${dy}`)
+  shadow.setAttribute('stdDeviation', `${deviation}`)
+  shadow.setAttribute('flood-color', props.shadowColor)
+  shadow.setAttribute('flood-opacity', `${clamp(props.shadowOpacity, 0, 1)}`)
+  filter.appendChild(shadow)
+  return filter
+}
+
+function measureFont(
+  computed: CSSStyleDeclaration,
+  fontSize: number,
+): {ascent: number; descent: number} {
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+  if (!context) return {ascent: fontSize * 0.8, descent: fontSize * 0.2}
+  context.font = [
+    computed.fontStyle,
+    computed.fontWeight,
+    `${fontSize}px`,
+    computed.fontFamily,
+  ].filter(Boolean).join(' ')
+  const metrics = context.measureText('Mg国') as TextMetrics & {
+    fontBoundingBoxAscent?: number
+    fontBoundingBoxDescent?: number
+  }
+  return {
+    ascent: metrics.fontBoundingBoxAscent ?? metrics.actualBoundingBoxAscent ?? fontSize * 0.8,
+    descent: metrics.fontBoundingBoxDescent ?? metrics.actualBoundingBoxDescent ?? fontSize * 0.2,
+  }
+}
+
+function parsePrintProps(value: string | null): WordArtPrintProps | null {
+  if (!value) return null
+  try {
+    const props = JSON.parse(value) as Partial<WordArtPrintProps>
+    if (
+      (props.fillType !== 'solid' && props.fillType !== 'linear-gradient')
+      || typeof props.fillColor !== 'string'
+      || !Number.isFinite(props.gradientAngle)
+      || !Array.isArray(props.gradientColors)
+      || !Array.isArray(props.gradientStops)
+      || typeof props.outlineColor !== 'string'
+      || !Number.isFinite(props.outlineWidthEm)
+      || typeof props.shadowEnabled !== 'boolean'
+      || typeof props.shadowColor !== 'string'
+      || !Number.isFinite(props.shadowOpacity)
+      || !Number.isFinite(props.shadowOffsetXEm)
+      || !Number.isFinite(props.shadowOffsetYEm)
+      || !Number.isFinite(props.shadowBlurEm)
+    ) return null
+    return props as WordArtPrintProps
+  } catch {
+    return null
+  }
+}
+
+function segmentGraphemes(value: string): Array<{
+  text: string
+  start: number
+  end: number
+}> {
+  const Segmenter = (Intl as typeof Intl & {
+    Segmenter?: new (
+      locales?: string | string[],
+      options?: {granularity: 'grapheme'},
+    ) => {segment(input: string): Iterable<{segment: string; index: number}>}
+  }).Segmenter
+  if (Segmenter) {
+    return Array.from(new Segmenter(undefined, {granularity: 'grapheme'}).segment(value))
+      .map(item => ({
+        text: item.segment,
+        start: item.index,
+        end: item.index + item.segment.length,
+      }))
+  }
+  let offset = 0
+  return Array.from(value).map(text => {
+    const start = offset
+    offset += text.length
+    return {text, start, end: offset}
+  })
+}
+
+function createSvgElement<K extends keyof SVGElementTagNameMap>(
+  tag: K,
+): SVGElementTagNameMap[K] {
+  return document.createElementNS(SVG_NS, tag)
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}

@@ -137,6 +137,7 @@ export const createInlineWordArtEmbedConverter = (): EmbedConverter => ({
 
     const text = document.createElement('span')
     text.classList.add('bc-inline-word-art__text')
+    text.dataset['bcWordArtPrintProps'] = JSON.stringify(props)
     text.textContent = inlineObjectPlainText(data.text)
     text.style.fontFamily = presentation.fontFamily
     text.style.fontSize = `${props.fontSize}px`

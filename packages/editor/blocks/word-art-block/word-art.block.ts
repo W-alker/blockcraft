@@ -47,6 +47,7 @@ const rotationTransform = (rotation: number): string =>
     >
       <div
         class="word-art-block__editor edit-container"
+        [attr.data-bc-word-art-print-props]="printProps"
         [attr.contenteditable]="isReadonly ? 'false' : 'true'"
         [style.font-family]="presentation.fontFamily"
         [style.font-weight]="wordArtProps.fontWeight"
@@ -103,6 +104,11 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
 
   get presentation(): WordArtPresentation {
     return resolveWordArtPresentation(this.props)
+  }
+
+  /** 打印副本用的确定性视觉参数；分页打印层只消费隔离 DOM，不回写文档模型。 */
+  get printProps(): string {
+    return JSON.stringify(this.wordArtProps)
   }
 
   get surfaceTransform(): string {

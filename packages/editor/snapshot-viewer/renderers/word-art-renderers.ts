@@ -33,6 +33,7 @@ export function createWordArtRenderers(): SnapshotBlockRenderer[] {
 
       const content = document.createElement('div')
       content.classList.add('word-art-block__editor', 'edit-container')
+      content.dataset['bcWordArtPrintProps'] = JSON.stringify(props)
       content.style.fontFamily = presentation.fontFamily
       content.style.fontSize = `${props.fontSize}px`
       content.style.fontWeight = `${props.fontWeight}`
