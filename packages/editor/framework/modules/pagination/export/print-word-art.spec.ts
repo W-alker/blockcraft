@@ -1,5 +1,6 @@
 import {
   materializeWordArtForPrint,
+  mutationAffectsWordArtVector,
   refreshWordArtVectorMirror,
 } from './print-word-art'
 
@@ -149,6 +150,151 @@ describe('materializeWordArtForPrint', () => {
     expect(surface.querySelector('svg')).toBe(vector)
     expect(vector.hasAttribute('data-bc-word-art-vector-mirror')).toBeFalse()
     expect(vector.getAttribute('data-bc-print-word-art-vector')).toBe('true')
+  })
+
+  it('preserves Chrome subpixel flex geometry for the editable SVG mirror', () => {
+    const surface = document.createElement('div')
+    surface.className = 'word-art-block__surface'
+    surface.style.cssText = [
+      'position:relative',
+      'display:flex',
+      'width:320px',
+      'height:96px',
+      'align-items:center',
+    ].join(';')
+    const target = document.createElement('div')
+    target.className = 'word-art-block__editor'
+    target.setAttribute('data-bc-word-art-print-props', JSON.stringify({
+      fillType: 'solid',
+      fillColor: '#14b8a6',
+      gradientAngle: 180,
+      gradientColors: ['#5eead4', '#0f766e'],
+      gradientStops: [0, 1],
+      outlineColor: '#134e4a',
+      outlineWidthEm: 0,
+      shadowEnabled: false,
+      shadowColor: '#0f766e',
+      shadowOpacity: 0,
+      shadowOffsetXEm: 0,
+      shadowOffsetYEm: 0,
+      shadowBlurEm: 0,
+    }))
+    target.style.cssText = [
+      'display:block',
+      'box-sizing:border-box',
+      'width:320px',
+      'height:60.46875px',
+      'font:700 48px/1.1 Arial',
+    ].join(';')
+    target.textContent = '艺术字'
+    surface.appendChild(target)
+    root.appendChild(surface)
+
+    const targetHeight = parseFloat(getComputedStyle(target).height)
+    spyOn(surface, 'getBoundingClientRect').and.returnValue({
+      x: 100,
+      y: 200,
+      top: 200,
+      right: 420,
+      bottom: 296,
+      left: 100,
+      width: 320,
+      height: 96,
+      toJSON: () => ({}),
+    })
+    spyOn(target, 'getBoundingClientRect').and.returnValue({
+      x: 100,
+      y: 217.765625,
+      top: 217.765625,
+      right: 420,
+      bottom: 217.765625 + targetHeight,
+      left: 100,
+      width: 320,
+      height: targetHeight,
+      toJSON: () => ({}),
+    })
+
+    expect(refreshWordArtVectorMirror(target)).toBeTrue()
+
+    const vector = surface.querySelector<SVGSVGElement>(
+      ':scope > [data-bc-word-art-vector-mirror="true"]',
+    )!
+    expect(parseFloat(vector.style.top)).toBeCloseTo(17.765625, 4)
+    expect(parseFloat(vector.style.left)).toBe(0)
+    expect(parseFloat(vector.style.height)).toBeCloseTo(targetHeight, 4)
+    expect(vector.height.baseVal.value).toBeCloseTo(targetHeight, 4)
+  })
+
+  it('excludes virtual cursor content from the WordArt vector source', () => {
+    const surface = document.createElement('div')
+    surface.className = 'word-art-block__surface'
+    surface.style.cssText =
+      'position:relative;display:flex;width:240px;height:72px;align-items:center;'
+    const target = document.createElement('div')
+    target.className = 'word-art-block__editor'
+    target.setAttribute('data-bc-word-art-print-props', JSON.stringify({
+      fillType: 'solid',
+      fillColor: '#14b8a6',
+      gradientAngle: 180,
+      gradientColors: ['#5eead4', '#0f766e'],
+      gradientStops: [0, 1],
+      outlineColor: '#134e4a',
+      outlineWidthEm: 0,
+      shadowEnabled: false,
+      shadowColor: '#0f766e',
+      shadowOpacity: 0,
+      shadowOffsetXEm: 0,
+      shadowOffsetYEm: 0,
+      shadowBlurEm: 0,
+    }))
+    target.style.cssText =
+      'display:block;width:180px;height:56px;font:700 36px/1.2 Arial;'
+    target.append('艺')
+    const fakeCursor = document.createElement('span')
+    fakeCursor.className = 'blockcraft-cursor'
+    fakeCursor.style.position = 'absolute'
+    const fakeCursorPart = document.createElement('span')
+    fakeCursorPart.textContent = '虚拟光标'
+    fakeCursor.appendChild(fakeCursorPart)
+    target.append(fakeCursor, '术字')
+    surface.appendChild(target)
+    root.appendChild(surface)
+
+    expect(refreshWordArtVectorMirror(target)).toBeTrue()
+
+    expect(
+      surface.querySelector('svg[data-bc-word-art-vector-mirror] text')
+        ?.textContent,
+    ).toBe('艺术字')
+  })
+
+  it('does not invalidate the WordArt vector when a virtual cursor mounts or unmounts', () => {
+    const target = document.createElement('div')
+    root.appendChild(target)
+    const observer = new MutationObserver(() => undefined)
+    observer.observe(target, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    })
+    const fakeCursor = document.createElement('span')
+    fakeCursor.className = 'blockcraft-cursor'
+    const part = document.createElement('span')
+    part.textContent = 'remote selection'
+    fakeCursor.appendChild(part)
+
+    target.appendChild(fakeCursor)
+    expect(mutationAffectsWordArtVector(observer.takeRecords())).toBeFalse()
+
+    part.firstChild!.textContent = 'updated remote selection'
+    expect(mutationAffectsWordArtVector(observer.takeRecords())).toBeFalse()
+
+    fakeCursor.remove()
+    expect(mutationAffectsWordArtVector(observer.takeRecords())).toBeFalse()
+
+    target.append('real content')
+    expect(mutationAffectsWordArtVector(observer.takeRecords())).toBeTrue()
+    observer.disconnect()
   })
 
   it('ignores a Safari zero-width boundary rect before the visual glyph rect', () => {

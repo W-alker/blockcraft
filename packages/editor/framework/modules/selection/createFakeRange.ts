@@ -14,6 +14,8 @@ const overlayContainingBlockState = new WeakMap<HTMLElement, {
   previousPosition: string
 }>()
 
+const FAKE_RANGE_OVERLAY_HOST_ATTR = 'data-bc-fake-range-overlay-host'
+
 export class FakeRange {
 
   private _fakeSpans: HTMLElement[] = []
@@ -403,7 +405,10 @@ export class FakeRange {
 
     const wrapper = block.containerElement
     const ownerDocument = wrapper.ownerDocument
-    const wrapRect = wrapper.getBoundingClientRect()
+    const overlayHost = wrapper.closest<HTMLElement>(
+      `[${FAKE_RANGE_OVERLAY_HOST_ATTR}]`,
+    ) ?? wrapper
+    const wrapRect = overlayHost.getBoundingClientRect()
     const span = ownerDocument.createElement('span');
     span.classList.add('blockcraft-cursor')
     span.style.setProperty('--bgColor', this.config.bgColor || 'var(--bc-select-background-color)')
@@ -436,7 +441,7 @@ export class FakeRange {
       }
     }
 
-    wrapper.appendChild(span)
+    overlayHost.appendChild(span)
     return span
   }
 

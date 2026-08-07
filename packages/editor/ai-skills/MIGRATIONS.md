@@ -167,6 +167,11 @@ cursorAwareness.setLocalCursorEnabled(presenceStatus === 'editing')
 visual layer; the contenteditable element remains only as a transparent input,
 caret and selection host. Its inline styles keep only text/input geometry;
 fill, gradient, outline, shadow and effect transforms are SVG-owned.
+Collapsed fake-range overlays now mount on the opt-in WordArt surface instead
+of inside the geometry-constrained contenteditable host, and transient editor UI
+is excluded from SVG text collection and invalidation. SVG materialization also
+preserves fractional border-box and local-position geometry instead of rounding
+through integer `offsetWidth` / `offsetHeight` values.
 Native `::selection` keeps the themed highlight background but forces the
 interaction-layer glyph color transparent, so selecting text cannot paint a
 second black glyph run above SVG. The SVG-ready paint rule is keyed directly
@@ -186,7 +191,9 @@ fixed PDF page assembly.
 contexts after a host document header and page surface have been projected.
 Recomputing that origin during export can add the leading offset twice. A
 print-only CSS-to-SVG conversion also left screen and native PDF on different
-visual DOM paths.
+visual DOM paths. In Chromium, inserting a fake cursor inside the transparent
+editable host could additionally enlarge that host, rebuild the SVG from a
+different box, and move WordArt even though the document model had not changed.
 
 **Affected ai-skills files**:
 
@@ -199,6 +206,12 @@ visual DOM paths.
 
 - Hosts that already render WordArt need no migration. Screen and print now
   consume the same SVG visual node automatically.
+- Local and collaborative fake cursors remain visible without participating in
+  WordArt measurement, SVG text extraction or export invalidation. Chromium no
+  longer changes WordArt geometry merely because a virtual cursor is present.
+- Fractional WordArt dimensions and local offsets are retained across live,
+  readonly and print SVG materialization, avoiding subpixel drift between the
+  editor surface and native PDF output.
 - Hosts rebuilding fixed pages from a projected isolated document should pass
   `placementOriginY`; omitted values preserve the geometry-derived fallback.
 

@@ -22,7 +22,10 @@ import {
   type WordArtBlockProps,
   type WordArtPresentation,
 } from './word-art.types'
-import {refreshWordArtVectorMirror} from '../../framework/modules/pagination/export/print-word-art'
+import {
+  mutationAffectsWordArtVector,
+  refreshWordArtVectorMirror,
+} from '../../framework/modules/pagination/export/print-word-art'
 
 const rotationTransform = (rotation: number): string =>
   rotation === 0 ? '' : `rotate(${rotation}deg)`
@@ -36,6 +39,7 @@ const rotationTransform = (rotation: number): string =>
     <div
       #surface
       class="word-art-block__surface"
+      data-bc-fake-range-overlay-host
       data-bc-scale-font-on-corner
       [attr.data-bc-resize-preview-anchor]="
         wordArtProps.placement?.mode === 'absolute' ? null : 'layout'
@@ -205,7 +209,9 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
       })
     }
 
-    this._vectorTextObserver = new MutationObserver(schedule)
+    this._vectorTextObserver = new MutationObserver(mutations => {
+      if (mutationAffectsWordArtVector(mutations)) schedule()
+    })
     this._vectorTextObserver.observe(editor, {
       childList: true,
       characterData: true,

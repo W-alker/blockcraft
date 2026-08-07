@@ -4,6 +4,11 @@ const PRINT_PROPS_ATTR = 'data-bc-word-art-print-props'
 const EFFECT_TRANSFORM_ATTR = 'data-bc-word-art-effect-transform'
 const VECTOR_MIRROR_ATTR = 'data-bc-word-art-vector-mirror'
 const VECTOR_READY_ATTR = 'data-bc-word-art-vector-ready'
+const TRANSIENT_EDITOR_UI_SELECTOR = [
+  '.blockcraft-cursor',
+  '[data-cursor-blot="true"]',
+  '[data-blockcraft-cursor-label-layer="true"]',
+].join(',')
 
 interface WordArtPrintProps {
   fillType: 'solid' | 'linear-gradient'
@@ -42,6 +47,13 @@ interface SvgTextLine {
   element: SVGTextElement
   width: number
   graphemeCount: number
+}
+
+interface WordArtVectorGeometry {
+  width: number
+  height: number
+  left: number
+  top: number
 }
 
 let vectorSequence = 0
@@ -87,12 +99,12 @@ export function refreshWordArtVectorMirror(target: HTMLElement): boolean {
     `:scope > [${VECTOR_MIRROR_ATTR}]`,
   )
   try {
-    const {svg, textLines} = buildVectorFromTarget(target, props)
+    const {svg, textLines, geometry} = buildVectorFromTarget(target, props)
     svg.setAttribute(VECTOR_MIRROR_ATTR, 'true')
     svg.setAttribute('aria-hidden', 'true')
     svg.style.position = 'absolute'
-    svg.style.left = `${target.offsetLeft}px`
-    svg.style.top = `${target.offsetTop}px`
+    svg.style.left = `${geometry.left}px`
+    svg.style.top = `${geometry.top}px`
     svg.style.pointerEvents = 'none'
     if (previous) previous.replaceWith(svg)
     else target.insertAdjacentElement('afterend', svg)
@@ -102,6 +114,30 @@ export function refreshWordArtVectorMirror(target: HTMLElement): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * 选区 FakeRange、协同光标与 IME CursorBlot 都是编辑器瞬态 UI，不属于艺术字内容。
+ * 它们挂载/卸载时不能让 SVG 视觉层重新采样，否则 WebKit 在活跃选区下返回的
+ * Range 几何可能与静止态不同，造成用户看到艺术字在“出现虚拟光标”时跳动。
+ */
+export function mutationAffectsWordArtVector(
+  mutations: readonly MutationRecord[],
+): boolean {
+  return mutations.some(mutation => {
+    if (mutation.type === 'characterData') {
+      return !isTransientEditorUiNode(mutation.target)
+    }
+    if (mutation.type !== 'childList') return true
+    if (isTransientEditorUiNode(mutation.target)) return false
+
+    const changedNodes = [
+      ...Array.from(mutation.addedNodes),
+      ...Array.from(mutation.removedNodes),
+    ]
+    return changedNodes.length === 0
+      || changedNodes.some(node => !isTransientEditorUiNode(node))
+  })
 }
 
 function reuseVectorMirrorForPrint(target: HTMLElement): boolean {
@@ -133,7 +169,11 @@ function materializeTarget(
 function buildVectorFromTarget(
   target: HTMLElement,
   props: WordArtPrintProps,
-): {svg: SVGSVGElement; textLines: SvgTextLine[]} {
+): {
+  svg: SVGSVGElement
+  textLines: SvgTextLine[]
+  geometry: WordArtVectorGeometry
+} {
   const computed = getComputedStyle(target)
   const sourceTransform = target.style.transform
   const targetTransform =
@@ -149,17 +189,17 @@ function buildVectorFromTarget(
   if (transformOwner) transformOwner.style.transform = 'none'
 
   try {
-    const width = target.offsetWidth
-    const height = target.offsetHeight
+    const targetRect = target.getBoundingClientRect()
+    const width = readBorderBoxSize(target, computed, 'width', targetRect.width)
+    const height = readBorderBoxSize(target, computed, 'height', targetRect.height)
     if (width <= 0 || height <= 0) {
       throw new Error(`艺术字打印盒尺寸无效：${width}x${height}`)
     }
 
-    const targetRect = target.getBoundingClientRect()
     const scaleX = targetRect.width > 0 ? targetRect.width / width : 1
     const scaleY = targetRect.height > 0 ? targetRect.height / height : 1
     const lines = collectVisualLines(target, targetRect, scaleX, scaleY, computed)
-    return buildSvg(
+    const vector = buildSvg(
       target,
       props,
       computed,
@@ -168,10 +208,91 @@ function buildVectorFromTarget(
       lines,
       targetTransform,
     )
+    return {
+      ...vector,
+      geometry: {
+        width,
+        height,
+        ...readLocalPosition(target, transformOwner, targetRect),
+      },
+    }
 
   } finally {
     if (target.isConnected) target.style.transform = sourceTransform
     if (transformOwner) transformOwner.style.transform = ownerTransform
+  }
+}
+
+function readBorderBoxSize(
+  target: HTMLElement,
+  computed: CSSStyleDeclaration,
+  axis: 'width' | 'height',
+  rectSize: number,
+): number {
+  const value = parseFloat(computed[axis])
+  if (Number.isFinite(value) && value > 0) {
+    if (computed.boxSizing === 'border-box') return value
+    const isWidth = axis === 'width'
+    const startPadding = parseFloat(
+      isWidth ? computed.paddingLeft : computed.paddingTop,
+    ) || 0
+    const endPadding = parseFloat(
+      isWidth ? computed.paddingRight : computed.paddingBottom,
+    ) || 0
+    const startBorder = parseFloat(
+      isWidth ? computed.borderLeftWidth : computed.borderTopWidth,
+    ) || 0
+    const endBorder = parseFloat(
+      isWidth ? computed.borderRightWidth : computed.borderBottomWidth,
+    ) || 0
+    return value + startPadding + endPadding + startBorder + endBorder
+  }
+
+  const offsetSize = axis === 'width' ? target.offsetWidth : target.offsetHeight
+  return rectSize > 0 ? rectSize : offsetSize
+}
+
+function readLocalPosition(
+  target: HTMLElement,
+  owner: HTMLElement | null,
+  targetRect: DOMRect,
+): {left: number; top: number} {
+  if (!owner) {
+    return {left: target.offsetLeft, top: target.offsetTop}
+  }
+
+  const ownerRect = owner.getBoundingClientRect()
+  const ownerComputed = getComputedStyle(owner)
+  const ownerWidth = readBorderBoxSize(
+    owner,
+    ownerComputed,
+    'width',
+    ownerRect.width,
+  )
+  const ownerHeight = readBorderBoxSize(
+    owner,
+    ownerComputed,
+    'height',
+    ownerRect.height,
+  )
+  const scaleX = ownerRect.width > 0 && ownerWidth > 0
+    ? ownerRect.width / ownerWidth
+    : 1
+  const scaleY = ownerRect.height > 0 && ownerHeight > 0
+    ? ownerRect.height / ownerHeight
+    : 1
+  const borderLeft = parseFloat(ownerComputed.borderLeftWidth) || 0
+  const borderTop = parseFloat(ownerComputed.borderTopWidth) || 0
+
+  // offsetLeft/offsetTop 会把 flex/grid 的子像素布局取整。Chrome 在中文字体、
+  // 非整数行高与页面缩放组合下经常产生 0.1~0.5px 误差，SVG 因此无法与承载
+  // 光标/选区的透明 HTML 字形重合。用同一帧的 DOMRect 换算回 containing block
+  // 坐标，保留子像素并同时抵消祖先 zoom/transform。
+  return {
+    left: (targetRect.left - ownerRect.left) / Math.max(scaleX, 0.0001)
+      - borderLeft + owner.scrollLeft,
+    top: (targetRect.top - ownerRect.top) / Math.max(scaleY, 0.0001)
+      - borderTop + owner.scrollTop,
   }
 }
 
@@ -194,6 +315,7 @@ function collectVisualLines(
       && !parent.closest('svg')
       && !parent.closest('[aria-hidden="true"]')
       && !parent.closest('.bc-end-break')
+      && !parent.closest(TRANSIENT_EDITOR_UI_SELECTOR)
     ) {
       for (const segment of segmentGraphemes(textNode.data)) {
         if (segment.text === '\n' || segment.text === '\r') continue
@@ -249,7 +371,7 @@ function collectVisualLines(
   if (lines.length > 0) return lines.sort((a, b) => a.top - b.top)
 
   // 无布局实现的测试环境或空 Range 兜底；真实打印路径一定走上面的视觉行。
-  const sourceLines = (target.textContent ?? '').split(/\r?\n/)
+  const sourceLines = readRenderableText(target).split(/\r?\n/)
   const fontSize = parseFloat(computed.fontSize) || 16
   const lineHeight = parseFloat(computed.lineHeight) || fontSize * 1.2
   const left = parseFloat(computed.paddingLeft) || 0
@@ -264,6 +386,33 @@ function collectVisualLines(
       bottom: top + (index + 1) * lineHeight,
       graphemeCount: segmentGraphemes(text).length,
     }))
+}
+
+function isTransientEditorUiNode(node: Node): boolean {
+  const element = node.nodeType === Node.ELEMENT_NODE
+    ? node as Element
+    : node.parentElement
+  return !!element?.closest(TRANSIENT_EDITOR_UI_SELECTOR)
+}
+
+function readRenderableText(target: HTMLElement): string {
+  const parts: string[] = []
+  const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT)
+  let node = walker.nextNode()
+  while (node) {
+    const parent = node.parentElement
+    if (
+      parent
+      && !parent.closest('svg')
+      && !parent.closest('[aria-hidden="true"]')
+      && !parent.closest('.bc-end-break')
+      && !parent.closest(TRANSIENT_EDITOR_UI_SELECTOR)
+    ) {
+      parts.push(node.textContent ?? '')
+    }
+    node = walker.nextNode()
+  }
+  return parts.join('')
 }
 
 function buildSvg(
@@ -282,7 +431,8 @@ function buildSvg(
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`)
   svg.setAttribute('preserveAspectRatio', 'none')
   svg.setAttribute('role', 'img')
-  svg.setAttribute('aria-label', target.textContent ?? '')
+  const vectorText = lines.map(line => line.text).join('\n')
+  svg.setAttribute('aria-label', vectorText)
   svg.setAttribute('data-bc-word-art-vector', 'true')
   svg.style.cssText = [
     'display:block',
@@ -298,7 +448,7 @@ function buildSvg(
   ].join(';')
 
   const title = createSvgElement('title')
-  title.textContent = target.textContent ?? ''
+  title.textContent = vectorText
   svg.appendChild(title)
 
   const defs = createSvgElement('defs')

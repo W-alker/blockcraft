@@ -74,6 +74,77 @@ describe("FakeRange gap cursor", () => {
   });
 });
 
+describe("FakeRange text overlay host", () => {
+  it("keeps an opted-in transient overlay outside a constrained editable host", () => {
+    const surface = document.createElement("div");
+    surface.setAttribute("data-bc-fake-range-overlay-host", "");
+    surface.style.cssText = "position:relative;width:320px;height:96px";
+    const editor = document.createElement("div");
+    editor.style.cssText = "position:relative;max-height:100%";
+    editor.textContent = "艺术字";
+    surface.appendChild(editor);
+    document.body.appendChild(surface);
+
+    spyOn(surface, "getBoundingClientRect").and.returnValue({
+      left: 100,
+      top: 200,
+      right: 420,
+      bottom: 296,
+      width: 320,
+      height: 96,
+    } as DOMRect);
+    const textRect = {
+      left: 188.5,
+      top: 195.8359375,
+      right: 332.5,
+      bottom: 263.8359375,
+      width: 144,
+      height: 68,
+    } as DOMRect;
+    const block = {
+      id: "word-art-1",
+      flavour: "word-art",
+      hostElement: surface,
+      containerElement: editor,
+      textLength: 3,
+      runtime: {
+        mapper: {
+          modelRangeToDomRange: jasmine.createSpy("modelRangeToDomRange")
+            .and.returnValue({getClientRects: () => [textRect]}),
+        },
+      },
+    };
+    const doc = {
+      getBlockById: () => block,
+      isEditable: () => true,
+      queryBlocksBetween: jasmine.createSpy("queryBlocksBetween").and.returnValue([]),
+    };
+
+    const fakeRange = new FakeRange(doc as any, {
+      from: {
+        blockId: block.id,
+        index: 0,
+        length: 3,
+        type: "text",
+      },
+      to: null,
+    });
+
+    const overlay = fakeRange.fakeSpans[0];
+    const part = overlay.firstElementChild as HTMLElement;
+    expect(overlay.parentElement).toBe(surface);
+    expect(editor.querySelector(".blockcraft-cursor")).toBeNull();
+    expect(part.style.left).toBe("88.5px");
+    expect(parseFloat(part.style.top)).toBeCloseTo(-4.1640625, 4);
+    expect(part.style.width).toBe("144px");
+    expect(part.style.height).toBe("68px");
+
+    fakeRange.destroy();
+    expect(surface.querySelector(".blockcraft-cursor")).toBeNull();
+    surface.remove();
+  });
+});
+
 describe("FakeRange table-cell selection", () => {
   const makeHarness = (ownerDocument: Document = document) => {
     const tableHost = ownerDocument.createElement("table");
