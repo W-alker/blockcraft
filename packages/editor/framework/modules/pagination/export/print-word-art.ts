@@ -1,6 +1,9 @@
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const XML_NS = 'http://www.w3.org/XML/1998/namespace'
 const PRINT_PROPS_ATTR = 'data-bc-word-art-print-props'
+const EFFECT_TRANSFORM_ATTR = 'data-bc-word-art-effect-transform'
+const VECTOR_MIRROR_ATTR = 'data-bc-word-art-vector-mirror'
+const VECTOR_READY_ATTR = 'data-bc-word-art-vector-ready'
 
 interface WordArtPrintProps {
   fillType: 'solid' | 'linear-gradient'
@@ -44,9 +47,9 @@ interface SvgTextLine {
 let vectorSequence = 0
 
 /**
- * WKWebView 的原生 PDF painter 会把 CSS `background-clip:text` 错误拆成完整渐变矩形
- * 与黑色字形蒙版。这里只改已经稳定的只读打印树：用同一字体、实际视觉行坐标和 WordArt
- * 参数生成纯 SVG，保留外层块的尺寸、旋转、placement 与分页断点。
+ * 打印面直接复用可编辑、只读与 snapshot 已经稳定的 SVG 视觉节点；旧宿主没有视觉节点时，
+ * 才用同一字体、实际视觉行坐标和 WordArt 参数原地生成 SVG。这样仍保留外层块的尺寸、
+ * 旋转、placement 与分页断点，也不再让 WKWebView 绘制 CSS `background-clip:text`。
  */
 export function materializeWordArtForPrint(root: HTMLElement): number {
   const targets = [
@@ -59,18 +62,82 @@ export function materializeWordArtForPrint(root: HTMLElement): number {
     if (!props) {
       throw new Error('艺术字打印参数缺失或无效')
     }
-    materializeTarget(target, props)
+    if (!reuseVectorMirrorForPrint(target)) {
+      materializeTarget(target, props)
+    }
     count += 1
   }
   return count
+}
+
+/**
+ * 给可编辑 WordArt 保留真实 contenteditable，同时挂载与 PDF 完全相同的 SVG 视觉层。
+ * HTML 字形在 SVG 就绪后保持透明，聚焦时也只由它承载光标和选区。
+ */
+export function refreshWordArtVectorMirror(target: HTMLElement): boolean {
+  if (!target.isConnected) return false
+  const props = parsePrintProps(target.getAttribute(PRINT_PROPS_ATTR))
+  if (!props) return false
+  const owner = target.closest<HTMLElement>(
+    '.word-art-block__surface, .bc-inline-word-art-frame',
+  )
+  if (!owner) return false
+
+  const previous = owner.querySelector<SVGSVGElement>(
+    `:scope > [${VECTOR_MIRROR_ATTR}]`,
+  )
+  try {
+    const {svg, textLines} = buildVectorFromTarget(target, props)
+    svg.setAttribute(VECTOR_MIRROR_ATTR, 'true')
+    svg.setAttribute('aria-hidden', 'true')
+    svg.style.position = 'absolute'
+    svg.style.left = `${target.offsetLeft}px`
+    svg.style.top = `${target.offsetTop}px`
+    svg.style.pointerEvents = 'none'
+    if (previous) previous.replaceWith(svg)
+    else target.insertAdjacentElement('afterend', svg)
+    fitSvgTextLines(textLines)
+    owner.setAttribute(VECTOR_READY_ATTR, 'true')
+    return true
+  } catch {
+    return false
+  }
+}
+
+function reuseVectorMirrorForPrint(target: HTMLElement): boolean {
+  const owner = target.closest<HTMLElement>(
+    '.word-art-block__surface, .bc-inline-word-art-frame',
+  )
+  const mirror = owner?.querySelector<SVGSVGElement>(
+    `:scope > [${VECTOR_MIRROR_ATTR}]`,
+  )
+  if (!owner || !mirror) return false
+  target.remove()
+  owner.removeAttribute(VECTOR_READY_ATTR)
+  mirror.removeAttribute(VECTOR_MIRROR_ATTR)
+  mirror.removeAttribute('aria-hidden')
+  mirror.setAttribute('data-bc-print-word-art-vector', 'true')
+  return true
 }
 
 function materializeTarget(
   target: HTMLElement,
   props: WordArtPrintProps,
 ): void {
+  const {svg, textLines} = buildVectorFromTarget(target, props)
+  svg.setAttribute('data-bc-print-word-art-vector', 'true')
+  target.replaceWith(svg)
+  fitSvgTextLines(textLines)
+}
+
+function buildVectorFromTarget(
+  target: HTMLElement,
+  props: WordArtPrintProps,
+): {svg: SVGSVGElement; textLines: SvgTextLine[]} {
   const computed = getComputedStyle(target)
-  const targetTransform = target.style.transform
+  const sourceTransform = target.style.transform
+  const targetTransform =
+    target.getAttribute(EFFECT_TRANSFORM_ATTR) ?? sourceTransform
   const transformOwner = target.closest<HTMLElement>(
     '.word-art-block__surface, .bc-inline-word-art-frame',
   )
@@ -92,7 +159,7 @@ function materializeTarget(
     const scaleX = targetRect.width > 0 ? targetRect.width / width : 1
     const scaleY = targetRect.height > 0 ? targetRect.height / height : 1
     const lines = collectVisualLines(target, targetRect, scaleX, scaleY, computed)
-    const {svg, textLines} = buildSvg(
+    return buildSvg(
       target,
       props,
       computed,
@@ -102,10 +169,8 @@ function materializeTarget(
       targetTransform,
     )
 
-    target.replaceWith(svg)
-    fitSvgTextLines(textLines)
   } finally {
-    if (target.isConnected) target.style.transform = targetTransform
+    if (target.isConnected) target.style.transform = sourceTransform
     if (transformOwner) transformOwner.style.transform = ownerTransform
   }
 }
@@ -218,7 +283,7 @@ function buildSvg(
   svg.setAttribute('preserveAspectRatio', 'none')
   svg.setAttribute('role', 'img')
   svg.setAttribute('aria-label', target.textContent ?? '')
-  svg.setAttribute('data-bc-print-word-art-vector', 'true')
+  svg.setAttribute('data-bc-word-art-vector', 'true')
   svg.style.cssText = [
     'display:block',
     'box-sizing:border-box',

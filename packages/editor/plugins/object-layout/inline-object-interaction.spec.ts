@@ -5,9 +5,49 @@ import {
   createInlineWordArtDelta,
   type InlineObjectKind,
 } from '../../blocks'
+import {InlineImageDragProxy} from '../img-toolbar/inline-image-drag'
 import {InlineObjectInteractionController} from './inline-object-interaction'
 
 describe('InlineObjectInteractionController', () => {
+  it('keeps the SVG-ready WordArt contract when its drag proxy moves under body', () => {
+    const frame = document.createElement('span')
+    frame.className = 'bc-inline-object-frame bc-inline-word-art-frame'
+    frame.setAttribute('data-bc-word-art-vector-ready', 'true')
+    const text = document.createElement('span')
+    text.className = 'bc-inline-word-art__text'
+    text.setAttribute('data-bc-word-art-print-props', '{}')
+    text.textContent = '艺术字'
+    const vector = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    vector.setAttribute('data-bc-word-art-vector-mirror', 'true')
+    frame.append(text, vector)
+
+    const proxy = new InlineImageDragProxy(
+      frame,
+      new DOMRect(100, 20, 240, 80),
+      120,
+      40,
+      {
+        className: 'bc-inline-object-drag-proxy',
+        attribute: 'data-bc-inline-object-drag-proxy',
+        preserveTransform: true,
+      },
+    )
+
+    try {
+      const clone = proxy.element.querySelector<HTMLElement>(
+        '.bc-inline-word-art-frame',
+      )!
+      expect(proxy.element.parentElement).toBe(document.body)
+      expect(clone.hasAttribute('data-bc-word-art-vector-ready')).toBeTrue()
+      expect(clone.querySelector('[data-bc-word-art-vector-mirror]'))
+        .not.toBeNull()
+      expect(clone.querySelector('.bc-inline-word-art__text')
+        ?.hasAttribute('data-bc-word-art-print-props')).toBeTrue()
+    } finally {
+      proxy.destroy()
+    }
+  })
+
   it('selects the one-character Embed in both selection models on click', () => {
     const root = document.createElement('div')
     const host = document.createElement('div')

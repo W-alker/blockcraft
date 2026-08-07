@@ -471,6 +471,17 @@ owns the normal under/flow/over stacking tiers. BlockCraft expands the plane
 from the narrower content box back to full sheet width before applying
 percentage x coordinates. A non-empty placement snapshot without its readonly
 DOM plane is a strict `layout-diverged` failure, not a silent content drop.
+When the host rebuilds print pages from an already projected isolated view,
+capture the computed top of its root `placement-layout` before disabling
+pagination and return it as `PrintRenderResult.placementOriginY`. This makes the
+print plane consume the actual layout origin rather than recomputing one from
+the same config and host-header height.
+
+WordArt display is SVG-native in editable, readonly and snapshot surfaces. Its
+HTML contenteditable keeps only input-geometry and caret styles as a transparent
+interaction layer; fill, gradient, outline, shadow and effect transforms belong
+to SVG. Print
+reuses the same vector node instead of performing a second visual conversion.
 
 The print surface fits an oversized image/video and an over-wide non-breakable
 atomic block into the page content box as a whole. It does not apply that policy

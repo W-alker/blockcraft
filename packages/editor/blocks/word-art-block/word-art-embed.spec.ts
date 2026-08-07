@@ -24,8 +24,12 @@ describe('inline WordArt embed', () => {
     const text = view.querySelector<HTMLElement>('.bc-inline-word-art__text')!
     expect(text.textContent).toBe('发布会')
     expect(text.style.fontSize).toBe('42px')
-    expect(text.style.color).toBe('rgb(255, 0, 0)')
-    expect(text.style.webkitTextFillColor).toBe('rgb(255, 0, 0)')
+    expect(text.style.color).toBe('')
+    expect(text.style.webkitTextFillColor).toBe('')
+    expect(text.style.backgroundImage).toBe('')
+    expect(text.style.getPropertyValue('-webkit-text-stroke')).toBe('')
+    expect(text.style.textShadow).toBe('')
+    expect(text.style.transform).toBe('')
 
     const data = readInlineWordArtDelta(
       inlineWordArtEmbedConverter.toDelta(view),

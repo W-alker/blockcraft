@@ -950,6 +950,74 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     }
   });
 
+  it('projects placement planes from the captured live origin instead of recomputing it from leading content', async () => {
+    const pageGap = 24;
+    const headerHeight = 36;
+    const headerGap = 16;
+    const leadingHeight = headerHeight + headerGap;
+    const capturedOriginY = 34;
+    const pageStride = 220 + pageGap;
+    const placement = placementLayout('placement', [absoluteShape('shape', 0)]);
+    const snapshot = root([
+      paragraph('p1', 'first page'),
+      paragraph('p2', 'second page'),
+      placement,
+    ]);
+    const config: PaginationConfig = {...SMALL_PAGE, pageGap};
+    const geometry = resolveScreenGeometry(config);
+    geometry.geometry.firstPageContentHeight = CONTENT_HEIGHT - leadingHeight;
+    const items = [
+      {id: 'p1', height: CONTENT_HEIGHT - leadingHeight, breakable: false, keepWithNext: false},
+      {id: 'p2', height: 40, breakable: false, keepWithNext: false},
+      {id: 'placement', height: 0, breakable: false, keepWithNext: false},
+    ];
+    const layout = createStablePaginationLayout(
+      16,
+      config,
+      geometry,
+      items,
+      paginate(items, geometry.geometry),
+    );
+    const offscreen = document.createElement('div');
+    offscreen.style.cssText = 'position:absolute;left:-99999px;top:0;width:380px;';
+    const header = document.createElement('div');
+    Object.defineProperty(header, 'offsetHeight', {value: headerHeight});
+    for (const [id, height] of [['p1', CONTENT_HEIGHT - leadingHeight], ['p2', 40]] as const) {
+      const element = document.createElement('div');
+      element.dataset['blockId'] = id;
+      element.style.cssText = `height:${height}px;margin:0;`;
+      offscreen.appendChild(element);
+    }
+    const placementElement = document.createElement('div');
+    placementElement.dataset['blockId'] = 'placement';
+    placementElement.setAttribute('data-bc-placement-layout', '');
+    placementElement.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:0;margin:0;';
+    offscreen.appendChild(placementElement);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, config, {
+      layout,
+      render: async () => ({
+        root: offscreen,
+        placementOriginY: capturedOriginY,
+        leadingContent: {element: header, gap: headerGap},
+        dispose: () => offscreen.remove(),
+      }),
+    });
+    try {
+      const contents = pages.pages.map(page => page.querySelector<HTMLElement>('.bc-print-content')!);
+      const planes = pages.pages.map(page =>
+        page.querySelector<HTMLElement>('[data-bc-print-placement-plane="true"]')!,
+      );
+      expect(planes[0]!.style.top).toBe(`${capturedOriginY - 10 - leadingHeight}px`);
+      expect(planes[1]!.style.top).toBe(`${capturedOriginY - 10 - pageStride}px`);
+      expect(contents[0]!.style.top).toBe(`${10 + leadingHeight}px`);
+      expect(contents[1]!.style.top).toBe('10px');
+    } finally {
+      pages.dispose();
+    }
+  });
+
   it('prints independent chrome distances and styled page-number tokens with live geometry', async () => {
     const snapshot = root([paragraph('p1', 'first')]);
     const config: PaginationConfig = {

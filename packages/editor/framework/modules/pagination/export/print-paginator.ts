@@ -60,6 +60,14 @@ export interface PrintRenderResult {
    * 重新测量，所以使用 resolver，而不是 render() 返回时就冻结一次高度。
    */
   resolvePlacementOriginOffset?(): number;
+  /**
+   * 分页视图中 placement-layout 相对分页 root 的实际 Y 原点（layout px）。
+   *
+   * `PaginationConfig` 只能推导理论内容起点；宿主 documentHeader、页面 surface
+   * 或主题若改变了最终 formatting context，导出必须消费隔离分页视图已经投影出的
+   * 真实原点，不能再用同一组配置重复猜一次。
+   */
+  placementOriginY?: number;
 }
 
 export type PrintRenderProvider = (contentWidthPx: number) => Promise<PrintRenderResult>;
@@ -144,6 +152,7 @@ export async function buildPaginatedPrintSurface(
   let renderRoot: HTMLElement;
   let disposeRender: () => void;
   let resolvePlacementOriginOffset: (() => number) | undefined;
+  let capturedPlacementOriginY: number | undefined;
   let leadingContent: PrintRenderResult['leadingContent'];
   let leadingStage: {root: HTMLElement; host: HTMLElement} | undefined;
   if (override?.render) {
@@ -151,6 +160,7 @@ export async function buildPaginatedPrintSurface(
     renderRoot = r.root;
     disposeRender = r.dispose;
     resolvePlacementOriginOffset = r.resolvePlacementOriginOffset;
+    capturedPlacementOriginY = r.placementOriginY;
     leadingContent = r.leadingContent;
   } else {
     const offscreen = document.createElement('div');
@@ -362,6 +372,10 @@ export async function buildPaginatedPrintSurface(
   const firstPageLeadingHeight = override?.layout
     ? geometryLeadingHeight
     : Math.max(geometryLeadingHeight, renderedLeadingHeight);
+  const fallbackPlacementOriginY = contentTop + firstPageLeadingHeight;
+  const placementOriginY = Number.isFinite(capturedPlacementOriginY)
+    ? Math.max(0, capturedPlacementOriginY ?? fallbackPlacementOriginY)
+    : fallbackPlacementOriginY;
   const screenPageStride = sheetHeightPx + geom.pageGap;
   for (const page of result.pages) {
     const pageEl = document.createElement('div');
@@ -451,7 +465,10 @@ export async function buildPaginatedPrintSurface(
     appendPlacementPlanes(
       content,
       placementPlanes,
-      firstPageLeadingHeight - page.index * screenPageStride - pageLeadingHeight,
+      placementOriginY
+        - contentTop
+        - pageLeadingHeight
+        - page.index * screenPageStride,
       -margins.left,
       sheetWidthPx,
     );

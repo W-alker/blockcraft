@@ -105,10 +105,25 @@ describe('Word art block domain', () => {
       const editor = fixture.nativeElement.querySelector(
         '.word-art-block__editor',
       ) as HTMLElement
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      const vector = fixture.nativeElement.querySelector(
+        'svg[data-bc-word-art-vector-mirror="true"]',
+      ) as SVGSVGElement | null
 
       expect(placementShell.isContentEditable).toBeFalse()
-      expect(editor.style.webkitTextFillColor).toBe('transparent')
-      expect(editor.style.backgroundClip).toBe('text')
+      expect(vector).not.toBeNull()
+      expect(vector?.querySelector('text')?.textContent).toBe('艺术字')
+      expect(
+        fixture.nativeElement.querySelector('.word-art-block__surface')
+          ?.hasAttribute('data-bc-word-art-vector-ready'),
+      ).toBeTrue()
+      expect(editor.style.color).toBe('')
+      expect(editor.style.webkitTextFillColor).toBe('')
+      expect(editor.style.backgroundImage).toBe('')
+      expect(editor.style.backgroundClip).toBe('')
+      expect(editor.style.getPropertyValue('-webkit-text-stroke')).toBe('')
+      expect(editor.style.textShadow).toBe('')
+      expect(editor.style.transform).toBe('')
       expect(editor.getAttribute('contenteditable')).toBe('true')
       expect(editor.isContentEditable).toBeTrue()
       expect(

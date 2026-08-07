@@ -1,4 +1,7 @@
-import {materializeWordArtForPrint} from './print-word-art'
+import {
+  materializeWordArtForPrint,
+  refreshWordArtVectorMirror,
+} from './print-word-art'
 
 describe('materializeWordArtForPrint', () => {
   let root: HTMLElement
@@ -96,6 +99,56 @@ describe('materializeWordArtForPrint', () => {
     expect(svg.querySelector('linearGradient')).toBeNull()
     expect(svg.querySelector('text')?.getAttribute('fill')).toBe('#14b8a6')
     expect(svg.querySelector('filter')).toBeNull()
+  })
+
+  it('keeps contenteditable as the input host while screen and print reuse one SVG node', () => {
+    const surface = document.createElement('div')
+    surface.className = 'word-art-block__surface'
+    surface.style.cssText =
+      'position:relative;display:flex;width:240px;height:72px;align-items:center;'
+    const target = document.createElement('div')
+    target.className = 'word-art-block__editor'
+    target.contentEditable = 'true'
+    target.setAttribute('data-bc-word-art-print-props', JSON.stringify({
+      fillType: 'solid',
+      fillColor: '#14b8a6',
+      gradientAngle: 180,
+      gradientColors: ['#5eead4', '#0f766e'],
+      gradientStops: [0, 1],
+      outlineColor: '#134e4a',
+      outlineWidthEm: 0.025,
+      shadowEnabled: false,
+      shadowColor: '#0f766e',
+      shadowOpacity: 0.24,
+      shadowOffsetXEm: 0.06,
+      shadowOffsetYEm: 0.1,
+      shadowBlurEm: 0.08,
+    }))
+    target.style.cssText =
+      'display:block;width:180px;height:56px;font:700 36px/1.2 Arial;'
+    target.dataset['bcWordArtEffectTransform'] = 'skewX(10deg)'
+    target.textContent = 'SVG 编辑'
+    surface.appendChild(target)
+    root.appendChild(surface)
+
+    expect(refreshWordArtVectorMirror(target)).toBeTrue()
+    const vector = surface.querySelector<SVGSVGElement>(
+      ':scope > [data-bc-word-art-vector-mirror="true"]',
+    )!
+    expect(vector).not.toBeNull()
+    expect(vector.querySelector('text')?.textContent).toBe('SVG 编辑')
+    expect(vector.style.transform).toBe('skewX(10deg)')
+    expect(target.style.transform).toBe('')
+    expect(surface.hasAttribute('data-bc-word-art-vector-ready')).toBeTrue()
+    expect(target.isConnected).toBeTrue()
+    expect(target.isContentEditable).toBeTrue()
+
+    expect(materializeWordArtForPrint(root)).toBe(1)
+    expect(target.isConnected).toBeFalse()
+    expect(surface.querySelectorAll('svg').length).toBe(1)
+    expect(surface.querySelector('svg')).toBe(vector)
+    expect(vector.hasAttribute('data-bc-word-art-vector-mirror')).toBeFalse()
+    expect(vector.getAttribute('data-bc-print-word-art-vector')).toBe('true')
   })
 
   it('ignores a Safari zero-width boundary rect before the visual glyph rect', () => {

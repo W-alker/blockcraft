@@ -74,6 +74,49 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### Unreleased - 2026-08-07 (patch) — make WordArt SVG-native and preserve the projected placement origin
+
+**Severity**: patch
+
+**What changed**: Editable, readonly and snapshot WordArt now share one SVG
+visual layer; the contenteditable element remains only as a transparent input,
+caret and selection host. Its inline styles keep only text/input geometry;
+fill, gradient, outline, shadow and effect transforms are SVG-owned.
+Native `::selection` keeps the themed highlight background but forces the
+interaction-layer glyph color transparent, so selecting text cannot paint a
+second black glyph run above SVG. The SVG-ready paint rule is keyed directly
+off the WordArt surface/frame instead of an editor-root ancestor, so an inline
+drag proxy cloned under `document.body` cannot restore gray HTML glyphs beside
+the cloned SVG. Its selection selector also includes the WordArt print-props
+attribute, keeping sufficient specificity against host-level
+`.no-native-selection ...::selection { color: HighlightText !important; }`
+rules. Standard `::selection` and Firefox `::-moz-selection` live in separate
+rules; combining them makes Chromium reject the complete selector list.
+`PrintRenderResult` also accepts the optional
+`placementOriginY`, allowing a host that captured an isolated stable pagination
+layout to pass the placement plane's actual root-relative layout origin into
+fixed PDF page assembly.
+
+**Why**: Equal pagination settings do not guarantee equal final formatting
+contexts after a host document header and page surface have been projected.
+Recomputing that origin during export can add the leading offset twice. A
+print-only CSS-to-SVG conversion also left screen and native PDF on different
+visual DOM paths.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### Behavior Changes
+
+- Hosts that already render WordArt need no migration. Screen and print now
+  consume the same SVG visual node automatically.
+- Hosts rebuilding fixed pages from a projected isolated document should pass
+  `placementOriginY`; omitted values preserve the geometry-derived fallback.
+
 ### v0.3.0-alpha.13 - 2026-08-07 (patch) — stabilize paginated WordArt and registry-backed SVG icons
 
 **Severity**: patch

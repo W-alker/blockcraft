@@ -356,11 +356,17 @@ Keep `data-bc-placement-container` on `.bc-print-content` so under/flow/over
 stacking remains identical to the editor. The print projector restores the
 plane to full sheet width before resolving percentage x positions; strict mode
 reports `layout-diverged` if a non-empty plane has no readonly DOM.
-WKWebView PDF export materializes CSS gradient WordArt as SVG only after the
-fixed page boxes and per-page placement-plane clones are mounted. This keeps
-the framework-owned readonly source untouched and makes Range coordinates come
-from the exact tree consumed by native printing; live-print and iframe mounts
-repeat the operation idempotently after their final layout quiet period. SVG
+If a host captures stable pagination before rebuilding fixed page boxes, it may
+also pass the live projected plane origin as `PrintRenderResult.placementOriginY`.
+This value is relative to the paginated root in layout pixels and prevents host
+header/surface offsets from being inferred a second time.
+WordArt now uses SVG as its final visual layer in editable, readonly and
+snapshot rendering. The contenteditable host retains only font/layout metrics,
+wrapping, alignment and caret styles for input and selection; fill, gradient,
+outline, shadow and effect transforms are SVG-owned. Print reuses that
+already-stable SVG node. Legacy/custom renderers
+without a vector layer are still materialized after the fixed page boxes and
+per-page placement-plane clones are mounted. SVG
 text lines are anchored from the source Range's visual top with
 `dominant-baseline="text-before-edge"`; do not rederive an alphabetic baseline
 from Canvas font metrics, because native PDF painters interpret that y

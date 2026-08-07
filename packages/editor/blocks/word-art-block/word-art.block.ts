@@ -22,6 +22,7 @@ import {
   type WordArtBlockProps,
   type WordArtPresentation,
 } from './word-art.types'
+import {refreshWordArtVectorMirror} from '../../framework/modules/pagination/export/print-word-art'
 
 const rotationTransform = (rotation: number): string =>
   rotation === 0 ? '' : `rotate(${rotation}deg)`
@@ -55,15 +56,8 @@ const rotationTransform = (rotation: number): string =>
         [style.letter-spacing.em]="wordArtProps.letterSpacingEm"
         [style.line-height]="wordArtProps.lineHeight"
         [style.text-align]="wordArtProps.horizontalAlign"
-        [style.color]="presentation.textColor"
-        [style.-webkit-text-fill-color]="presentation.textColor"
         [style.caret-color]="presentation.fallbackColor"
-        [style.background-image]="presentation.backgroundImage"
-        [style.background-clip]="'text'"
-        [style.-webkit-background-clip]="'text'"
-        [style.-webkit-text-stroke]="presentation.textStroke"
-        [style.text-shadow]="presentation.textShadow"
-        [style.transform]="presentation.effectTransform"
+        [attr.data-bc-word-art-effect-transform]="presentation.effectTransform"
       ></div>
       @if (!isReadonly) {
         <shape-resizer
@@ -85,6 +79,9 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
   override plainTextOnly = true
   readonly resizeCalculator = calculateWordArtResize
   private readonly _ngZone = inject(NgZone)
+  private _vectorFrame = 0
+  private _vectorTextObserver?: MutationObserver
+  private _vectorSizeObserver?: ResizeObserver
 
   @ViewChild('surface', {read: ElementRef})
   private readonly _surface?: ElementRef<HTMLElement>
@@ -95,6 +92,7 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
       fromEvent(this.containerElement, 'scroll', {passive: true})
         .pipe(takeUntil(this.onDestroy$))
         .subscribe(() => this._resetEditorScroll())
+      this._installVectorRenderer()
     })
   }
 
@@ -195,5 +193,40 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
     const editor = this.containerElement
     if (editor.scrollTop !== 0) editor.scrollTop = 0
     if (editor.scrollLeft !== 0) editor.scrollLeft = 0
+  }
+
+  private _installVectorRenderer(): void {
+    const editor = this.containerElement
+    const schedule = () => {
+      if (this._vectorFrame) return
+      this._vectorFrame = requestAnimationFrame(() => {
+        this._vectorFrame = 0
+        refreshWordArtVectorMirror(editor)
+      })
+    }
+
+    this._vectorTextObserver = new MutationObserver(schedule)
+    this._vectorTextObserver.observe(editor, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    })
+    this._vectorSizeObserver = new ResizeObserver(schedule)
+    this._vectorSizeObserver.observe(editor)
+    this.onPropsChange
+      .pipe(takeUntil(this.onDestroy$))
+      .subscribe(schedule)
+
+    const fonts = editor.ownerDocument.fonts
+    const onFontsLoaded = () => schedule()
+    fonts?.addEventListener?.('loadingdone', onFontsLoaded)
+    this.destroyRef.onDestroy(() => {
+      if (this._vectorFrame) cancelAnimationFrame(this._vectorFrame)
+      this._vectorFrame = 0
+      this._vectorTextObserver?.disconnect()
+      this._vectorSizeObserver?.disconnect()
+      fonts?.removeEventListener?.('loadingdone', onFontsLoaded)
+    })
+    schedule()
   }
 }
