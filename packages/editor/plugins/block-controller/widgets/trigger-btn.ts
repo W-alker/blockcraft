@@ -33,6 +33,7 @@ import {
 } from "../types";
 import { parseInt } from "lib0/number";
 import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
+import { MatIcon } from "@angular/material/icon";
 import { BlockMenuComponent } from "./block-menu";
 
 const ALIGN_LIST: IContextMenuItem[] = [
@@ -154,10 +155,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
 
     <ng-template #icon let-item>
       @if (item?.svgIcon) {
-        <svg class="bc-block-svg-icon" aria-hidden="true">
-          <use [attr.href]="'#' + item.svgIcon"
-               [attr.xlink:href]="'#' + item.svgIcon"></use>
-        </svg>
+        <mat-icon class="bc-block-svg-icon" [svgIcon]="item.svgIcon"></mat-icon>
       } @else {
         <i [class]="item?.icon" style="color: var(--bc-active-color);"></i>
       }
@@ -274,7 +272,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
     </ng-template>
   `,
   styleUrls: ['./trigger-btn.scss'],
-  imports: [NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective, NzTooltipDirective, BlockMenuComponent],
+  imports: [NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective, NzTooltipDirective, MatIcon, BlockMenuComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.contenteditable]': 'false',

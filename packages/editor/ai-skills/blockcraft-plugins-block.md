@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-07-30
+> Last updated: 2026-08-07
 
 ## BlockControllerPlugin
 
@@ -84,10 +84,11 @@ new BlockControllerPlugin({
 - A whole-block model selection can activate BlockController without hover only
   for ordinary flow blocks. The `placement-layout` host and all descendants are
   rejected by the same centralized eligibility check.
-- `svgIcon` values are SVG symbol IDs and render through
-  `<svg><use href="#…"></use></svg>` in the trigger and nested block menus.
-  Register the symbol once in the document (the bundled `bc_*` sprite is loaded
-  globally). Use `icon` for single-color iconfont classes.
+- `svgIcon` values are names registered with Angular Material's
+  `MatIconRegistry` and render through `<mat-icon [svgIcon]="…">` in the
+  trigger and nested block menus. Register the icon set before mounting the
+  editor; no global SVG symbol sprite is required. Use `icon` for single-color
+  iconfont classes.
 - Interacts with `TranslatePlugin` which provides its own `blockMenuResolver`/`blockMenuActionHandler` pair via `createBlockControllerOptions()`
 
 ### Readonly-aware custom menu items

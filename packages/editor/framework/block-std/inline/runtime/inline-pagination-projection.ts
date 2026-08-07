@@ -176,13 +176,9 @@ function buildMarker(gap: InlinePaginationGap): HTMLElement {
   marker.style.pointerEvents = 'none'
   marker.style.userSelect = 'none'
   marker.style.webkitUserSelect = 'none'
-
-  const bandEnd = gap.backdropOffset + gap.backdropHeight
-  marker.style.background = [
-    'linear-gradient(to bottom',
-    `var(--bc-page-sheet-bg, #fff) 0 ${gap.backdropOffset}px`,
-    `var(--bc-pagination-backdrop-bg, #f3f4f6) ${gap.backdropOffset}px ${bandEnd}px`,
-    `var(--bc-page-sheet-bg, #fff) ${bandEnd}px 100%)`,
-  ].join(', ')
+  // 这里只负责把后续文字推到下一页。纸张/页间背景必须由表格级 mask
+  // 在统一坐标系中绘制；若每个文字锚点各画一份渐变，多列切点不同时就会
+  // 在页内暴露彼此错位的灰色条带。
+  marker.style.background = 'transparent'
   return marker
 }

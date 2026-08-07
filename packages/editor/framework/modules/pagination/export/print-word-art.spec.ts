@@ -46,6 +46,10 @@ describe('materializeWordArtForPrint', () => {
     target.textContent = '非常帅气'
     root.appendChild(target)
     const originalSize = [target.offsetWidth, target.offsetHeight]
+    const sourceRange = document.createRange()
+    sourceRange.selectNodeContents(target)
+    const sourceRect = sourceRange.getBoundingClientRect()
+    sourceRange.detach()
 
     expect(materializeWordArtForPrint(root)).toBe(1)
 
@@ -59,6 +63,9 @@ describe('materializeWordArtForPrint', () => {
     expect(svg!.querySelector('text')?.getAttribute('fill')).toMatch(/^url\(#bc-word-art-gradient-/)
     expect(svg!.querySelector('text')?.getAttribute('stroke')).toBe('#9a3412')
     expect(svg!.querySelector('feDropShadow')).not.toBeNull()
+    const vectorRect = svg!.querySelector('text')!.getBoundingClientRect()
+    expect(Math.abs(vectorRect.left - sourceRect.left)).toBeLessThan(1)
+    expect(Math.abs(vectorRect.top - sourceRect.top)).toBeLessThan(1)
     expect(root.querySelector('[data-bc-word-art-print-props]')).toBeNull()
   })
 
@@ -162,6 +169,8 @@ describe('materializeWordArtForPrint', () => {
 
     const text = root.querySelector('svg text')!
     expect(text.getAttribute('x')).toBe('12')
+    expect(text.getAttribute('y')).toBe('8')
+    expect(text.getAttribute('dominant-baseline')).toBe('text-before-edge')
     expect(text.getAttribute('textLength')).toBe('20')
   })
 })

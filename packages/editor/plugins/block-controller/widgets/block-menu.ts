@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from "@angular/core";
 import { NgComponentOutlet, NgTemplateOutlet } from "@angular/common";
+import { MatIcon } from "@angular/material/icon";
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective } from "../../../components";
 import {
   BlockMenuActionEvent,
@@ -69,10 +70,7 @@ import {
                         [attr.title]="action.label"
                         (mousedown)="onSortActionClick(item, action, path, $event)">
                   @if (action.svgIcon) {
-                    <svg class="sort-action-svg" aria-hidden="true">
-                      <use [attr.href]="'#' + action.svgIcon"
-                           [attr.xlink:href]="'#' + action.svgIcon"></use>
-                    </svg>
+                    <mat-icon class="sort-action-svg" [svgIcon]="action.svgIcon"></mat-icon>
                   } @else if (action.icon) {
                     <i [class]="['bc_icon', action.icon]"></i>
                   } @else {
@@ -180,6 +178,7 @@ import {
     BcFloatToolbarComponent,
     BcFloatToolbarItemComponent,
     BcOverlayTriggerDirective,
+    MatIcon,
     NgTemplateOutlet,
     NgComponentOutlet
   ],

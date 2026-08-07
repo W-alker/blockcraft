@@ -2,6 +2,7 @@
 import {PaginationConfig} from "../pagination.types";
 import {PrintPages} from "./print-paginator";
 import {rasterizeCanvases} from "./print-vector";
+import {materializeWordArtForPrint} from './print-word-art'
 
 /** 注入的 @media print 样式标记，便于清理与去重。 */
 const MIRROR_STYLE_ATTR = 'data-bc-print-mirror-style';
@@ -149,6 +150,9 @@ export async function mountPrintPagesInPage(
       /* ignore */
     }
     await new Promise(r => setTimeout(r, 50));
+    // 页盒挂载后的短暂静默可能触发宿主持有的只读组件补渲染。原生打印开始前
+    // 再幂等收口一次，保证最终 print mirror 里不存在 CSS gradient WordArt。
+    materializeWordArtForPrint(container)
   } catch (error) {
     dispose();
     throw error;

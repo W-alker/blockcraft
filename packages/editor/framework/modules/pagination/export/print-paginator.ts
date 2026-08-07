@@ -206,15 +206,6 @@ export async function buildPaginatedPrintSurface(
         override?.signal,
       );
     }
-    // WKWebView 原生 PDF 不实现 CSS background-clip:text。资源和字体稳定后，
-    // 仅在只读打印树中把艺术字物化为等尺寸 SVG；原编辑 DOM 与分页模型不受影响。
-    if (materializeWordArtForPrint(renderRoot) > 0) {
-      await waitForPaginationRenderStable(
-        renderRoot,
-        override?.stability,
-        override?.signal,
-      )
-    }
   } catch (error) {
     if (
       override?.resourcePolicy === 'best-effort'
@@ -474,6 +465,12 @@ export async function buildPaginatedPrintSurface(
   }
 
   document.body.appendChild(container);
+
+  // WKWebView 原生 PDF 不实现 CSS background-clip:text。必须等固定页盒（包括每页
+  // placement plane 克隆）全部组装并挂载后，才在最终、无框架所有权的打印副本中把
+  // 艺术字物化为等尺寸 SVG。这样 Range 读取的就是最终纸面坐标，也不会在中途 await
+  // 时被只读 Angular 组件重渲染回 CSS 渐变文字；原编辑 DOM 与稳定分页模型均不受影响。
+  materializeWordArtForPrint(container);
 
   return {
     container,

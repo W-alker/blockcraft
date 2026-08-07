@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-08-04
+> Last updated: 2026-08-07
 
 ## Architecture Overview
 
@@ -179,7 +179,9 @@ gaps without adding methods to the public `InlineRuntime` contract. The
 projection splits only real TextBlots at those offsets and inserts block-like markers carrying
 `data-bc-inline-pagination-gap`; markers have zero model length, are ignored by
 DOM/model mapping, selection and serialization, and are merged away by
-projection cleanup. Pagination temporarily revokes the float projection
+projection cleanup. They are transparent layout spacers: the table-level mask,
+not each cell-local text anchor, paints the shared sheet/background bands.
+Pagination temporarily revokes the float projection
 before taking ownership of the same real Blot DOM. `render()`, `applyDelta()`
 and `destroy()` always revoke pagination first, so stale anchors cannot survive
 a model mutation or component teardown. Selection projection guards preserve

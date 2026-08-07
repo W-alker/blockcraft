@@ -79,6 +79,7 @@ describe('InlineRuntime inline float lifecycle', () => {
     )
     expect(marker).not.toBeNull()
     expect(marker!.style.height).toBe('140px')
+    expect(marker!.style.background).toBe('transparent')
     expect(runtime.textLength).toBe(6)
     expect(runtime.scrollBlot.leaves.length).toBe(2)
     expect(runtime.modelPointToDom(3).node.textContent).toBe('abc')

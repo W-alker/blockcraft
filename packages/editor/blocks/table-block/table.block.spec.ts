@@ -1326,7 +1326,7 @@ describe("TableBlockComponent pagination hot-path caches", () => {
     table.fullscreenController = {get isFullscreen() { return fullscreen; }};
     table._normalFlowPaginationGeometry = null;
     table._splitCells = new Set();
-    table._cellFlowMarkers = new Set();
+    table._cellFlowBlockOffsets = new Map();
     table._cellFlowMasks = new Set();
     const measure = spyOn(table, "_measurePaginationGeometryWithoutFullscreen")
       .and.returnValues(normalGeometry, fullscreenGeometry);
@@ -1498,27 +1498,43 @@ describe("TableBlockComponent pagination hot-path caches", () => {
     expect(budget.safeAnchors).toBe(1);
   });
 
-  it("coalesces repeated page gaps at the same cell anchor into one view node", () => {
+  it("projects repeated block-anchor gaps as one reversible offset without injecting cell DOM", () => {
     const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
     const wrapper = document.createElement("div");
     wrapper.className = "table-cell__children-wrapper";
+    wrapper.style.paddingTop = "1px";
+    const previous = document.createElement("div");
+    previous.textContent = "previous";
+    previous.style.marginBottom = "12px";
     const paragraph = document.createElement("p");
-    wrapper.appendChild(paragraph);
-    const cellHost = document.createElement("td");
+    paragraph.textContent = "paragraph";
+    paragraph.style.setProperty("margin-top", "7px", "important");
+    const next = document.createElement("p");
+    next.textContent = "next";
+    next.style.marginTop = "5px";
+    wrapper.append(previous, paragraph, next);
+    const cellHost = document.createElement("div");
     cellHost.appendChild(wrapper);
+    document.body.appendChild(cellHost);
     const cell = Object.create(TableCellBlockComponent.prototype);
     Object.defineProperties(cell, {
       id: {value: "cell-1"},
       hostElement: {value: cellHost},
     });
-    cell.getChildrenBlocks = () => [{id: "paragraph-1", hostElement: paragraph}];
+    cell.getChildrenBlocks = () => [
+      {id: "previous", hostElement: previous},
+      {id: "paragraph-1", hostElement: paragraph},
+      {id: "paragraph-2", hostElement: next},
+    ];
     table.getChildrenBlocks = () => [{getChildrenBlocks: () => [cell]}];
     table._cellFlowSig = "";
-    table._cellFlowMarkers = new Set();
+    table._cellFlowBlockOffsets = new Map();
     table._cellFlowMasks = new Set();
     table._cellFlowRuntimes = new Set();
     table.tableWrapper = {nativeElement: document.createElement("div")};
 
+    const naturalTop = paragraph.getBoundingClientRect().top;
+    const naturalNextTop = next.getBoundingClientRect().top;
     table._applyCellFlowProjection([
       {
         kind: "cell-flow",
@@ -1556,17 +1572,33 @@ describe("TableBlockComponent pagination hot-path caches", () => {
         }],
         mask: {top: 240, height: 60, backdropOffset: 30, backdropHeight: 20},
       },
+      {
+        kind: "cell-flow",
+        rowId: "row-1",
+        cells: [{
+          cellId: "cell-1",
+          anchor: {kind: "block", blockId: "paragraph-2"},
+          gap: 60,
+          backdropOffset: 30,
+          backdropHeight: 20,
+        }],
+        mask: {top: 360, height: 60, backdropOffset: 30, backdropHeight: 20},
+      },
     ]);
 
-    const markers = wrapper.querySelectorAll<HTMLElement>(".bc-pagination-cell-flow-gap");
-    expect(markers.length).toBe(1);
-    expect(markers[0].style.height).toBe("180px");
-    expect(markers[0].style.background).toContain("30px 50px");
-    expect(markers[0].style.background).toContain("90px 110px");
-    expect(markers[0].style.background).toContain("150px 170px");
-    expect(wrapper.lastElementChild).toBe(paragraph);
+    expect(wrapper.children.length).toBe(3);
+    expect(wrapper.lastElementChild).toBe(next);
+    expect(paragraph.getBoundingClientRect().top - naturalTop).toBeCloseTo(180, 1);
+    expect(next.getBoundingClientRect().top - naturalNextTop).toBeCloseTo(240, 1);
+    expect(paragraph.style.getPropertyPriority("margin-top")).toBe("important");
 
     table._clearCellFlowProjection();
-    expect(wrapper.querySelector(".bc-pagination-cell-flow-gap")).toBeNull();
+    expect(wrapper.children.length).toBe(3);
+    expect(paragraph.style.marginTop).toBe("7px");
+    expect(paragraph.style.getPropertyPriority("margin-top")).toBe("important");
+    expect(next.style.marginTop).toBe("5px");
+    expect(paragraph.getBoundingClientRect().top).toBeCloseTo(naturalTop, 1);
+    expect(next.getBoundingClientRect().top).toBeCloseTo(naturalNextTop, 1);
+    cellHost.remove();
   });
 });

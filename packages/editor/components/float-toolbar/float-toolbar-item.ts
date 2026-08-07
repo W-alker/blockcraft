@@ -1,12 +1,11 @@
 import {ChangeDetectionStrategy, Component, ElementRef, HostBinding, Input} from '@angular/core';
+import {MatIcon} from '@angular/material/icon';
 
 @Component({
   selector: 'bc-float-toolbar-item',
   template: `
     @if (svgIcon) {
-      <svg class="bc-toolbar-svg-icon" aria-hidden="true">
-        <use [attr.href]="'#' + svgIcon" [attr.xlink:href]="'#' + svgIcon"></use>
-      </svg>
+      <mat-icon class="bc-toolbar-svg-icon" [svgIcon]="svgIcon"></mat-icon>
     } @else if (icon) {
       <i [class]="['bc_icon',icon]"></i>
     }
@@ -23,6 +22,7 @@ import {ChangeDetectionStrategy, Component, ElementRef, HostBinding, Input} from
       overflow: visible;
     }
   `],
+  imports: [MatIcon],
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush
 })

@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-05
+> Last updated: 2026-08-07
 
 ## PlaceholderPlugin
 
@@ -330,7 +330,7 @@ border-box with one `ResizeObserver`; measured height plus the configured gap
 participates in first-page capacity and page-gap projection. Disable/destroy
 restores the element exactly.
 
-An actual table row taller than `contentHeight` is no longer treated as one overflowing fragment. The live measurement path derives safe continuation anchors from direct child-Block boundaries and complete visual text lines, then runs every logical cell as a parallel flow. Screen pagination installs reversible zero-model-length gaps into the real editable DOM; the stable print layout installs a readonly compressed projection and uses the same fragment offsets. The table's virtual flow height and every internal sheet gap are included in sparse Projection extents, so blocks after the table start at the same sheet coordinate in exact live, sparse live and print layouts. Composition keeps the previous stable projection until `compositionend`.
+An actual table row taller than `contentHeight` is no longer treated as one overflowing fragment. The live measurement path derives safe continuation anchors from direct child-Block boundaries and complete visual text lines, then runs every logical cell as a parallel flow. Block/cell-start anchors use reversible margin offsets on existing Block hosts; only text-line anchors need transparent zero-model-length Inline markers. One table-level mask paints every sheet/background band in the shared table coordinate system. The stable print layout installs a readonly compressed projection and uses the same fragment offsets. The table's virtual flow height and every internal sheet gap are included in sparse Projection extents, so blocks after the table start at the same sheet coordinate in exact live, sparse live and print layouts. Composition keeps the previous stable projection until `compositionend`.
 
 This cell-flow path is activated only when one physical `<tr>` is itself oversized. Ordinary rowspan/colspan tables keep the existing row-boundary policy; a content-bearing rowspan spanning several otherwise normal-height rows remains keep-together at the covered row boundaries. An irreducible nested atomic block is capped locally to `--bc-page-content-height` with clipping and no cell-level scroll container.
 
@@ -356,6 +356,15 @@ Keep `data-bc-placement-container` on `.bc-print-content` so under/flow/over
 stacking remains identical to the editor. The print projector restores the
 plane to full sheet width before resolving percentage x positions; strict mode
 reports `layout-diverged` if a non-empty plane has no readonly DOM.
+WKWebView PDF export materializes CSS gradient WordArt as SVG only after the
+fixed page boxes and per-page placement-plane clones are mounted. This keeps
+the framework-owned readonly source untouched and makes Range coordinates come
+from the exact tree consumed by native printing; live-print and iframe mounts
+repeat the operation idempotently after their final layout quiet period. SVG
+text lines are anchored from the source Range's visual top with
+`dominant-baseline="text-before-edge"`; do not rederive an alphabetic baseline
+from Canvas font metrics, because native PDF painters interpret that y
+coordinate differently and can shift CJK WordArt by roughly one ascent.
 
 ---
 

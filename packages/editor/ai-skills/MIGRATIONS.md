@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-06 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-07 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -73,6 +73,69 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 ---
 
 ## Releases
+
+### v0.3.0-alpha.13 - 2026-08-07 (patch) — restore registry-backed SVG icons
+
+**Severity**: patch
+
+**What changed**: BlockController trigger icons, nested menu icons and sort
+action icons now consistently render `svgIcon` values through Angular
+Material's `MatIconRegistry` again.
+
+**Why**: Rendering those values as raw `<svg><use>` references required a
+separate global symbol sprite that host applications using the documented icon
+registry integration do not load. Registered SVG icons consequently appeared
+blank inside documents.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-block.md`
+- `MIGRATIONS.md`
+
+#### Behavior Changes
+
+- Hosts that already register BlockCraft icons with `MatIconRegistry` need no
+  changes. A global SVG symbol sprite is no longer required by BlockController.
+
+### v0.3.0-alpha.12 - 2026-08-07 (patch) — isolate oversized-cell gap geometry from page painting
+
+**Severity**: patch
+
+**What changed**: Oversized table-cell live pagination no longer inserts
+`.bc-pagination-cell-flow-gap` siblings at Block/cell-start anchors. It applies
+one reversible margin offset to the existing Block host instead. Text-line
+continuations retain their zero-model-length Inline markers, but those markers
+are transparent; a single table-level mask now owns every sheet/background
+band in the table coordinate system.
+
+**Why**: Different logical cells can continue at different safe anchors. When
+each cell-local spacer painted its own page gradient, their local coordinates
+produced staggered gray rectangles inside otherwise valid sheet content and
+added unnecessary nodes to contenteditable cell DOM.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md`
+- `blockcraft-inline.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No host API, stored document or pagination configuration migration is required.
+Hosts that inspected `.bc-pagination-cell-flow-gap` should stop depending on
+that plugin-owned implementation class and style page colors through the
+existing `--bc-page-sheet-bg` / `--bc-pagination-backdrop-bg` tokens.
+
+#### Behavior Changes
+
+- Block/cell-start continuation projection adds no sibling DOM node and restores
+  the Block host's original inline margin exactly when pagination is cleared.
+- `[data-bc-inline-pagination-gap]` remains zero-model-length and now contributes
+  geometry only; it never paints a local page-gradient band.
+- `.bc-pagination-table-flow-mask` is the sole live table page-band painter, so
+  columns with different continuation anchors cannot expose staggered gray bars.
+- No public TypeScript API, stored schema or package version changed.
 
 ### v0.3.0-alpha.11 - 2026-08-05 (minor) — isolated PDF preparation and stability barrier
 

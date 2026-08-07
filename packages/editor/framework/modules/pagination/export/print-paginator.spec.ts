@@ -584,6 +584,153 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     }
   });
 
+  it('materializes WordArt only in the final per-page placement copies without moving its outer box', async () => {
+    const pageGap = 24;
+    const pageStride = 220 + pageGap;
+    const wordArtY = pageStride + 20;
+    const wordArt: IBlockSnapshot = {
+      id: 'word-art',
+      flavour: 'word-art',
+      nodeType: BlockNodeType.editable,
+      meta: {},
+      props: {placement: {mode: 'absolute', x: 24, y: wordArtY}},
+      children: [{insert: '非常帅气'}],
+    };
+    const placement = placementLayout('placement', [wordArt]);
+    const snapshot = root([
+      paragraph('p1', 'first page'),
+      paragraph('p2', 'second page'),
+      placement,
+    ]);
+    const config: PaginationConfig = {...SMALL_PAGE, pageGap};
+    const geometry = resolveScreenGeometry(config);
+    const items = [
+      {id: 'p1', height: CONTENT_HEIGHT, breakable: false, keepWithNext: false},
+      {id: 'p2', height: 40, breakable: false, keepWithNext: false},
+      {id: 'placement', height: 0, breakable: false, keepWithNext: false},
+    ];
+    const layout = createStablePaginationLayout(17, config, geometry, items, {
+      pages: [
+        {index: 0, usedHeight: CONTENT_HEIGHT, slots: [{id: 'p1'}]},
+        {index: 1, usedHeight: 40, slots: [{id: 'p2'}, {id: 'placement'}]},
+      ],
+      byBlock: new Map([
+        ['p1', {pageIndex: 0}],
+        ['p2', {pageIndex: 1}],
+        ['placement', {pageIndex: 1}],
+      ]),
+    });
+    const offscreen = document.createElement('div');
+    offscreen.style.cssText = 'position:absolute;left:-99999px;top:0;width:380px;';
+    for (const [id, height] of [['p1', CONTENT_HEIGHT], ['p2', 40]] as const) {
+      const element = document.createElement('div');
+      element.dataset['blockId'] = id;
+      element.style.cssText = `height:${height}px;margin:0;`;
+      offscreen.appendChild(element);
+    }
+    const placementElement = document.createElement('div');
+    placementElement.dataset['blockId'] = 'placement';
+    placementElement.setAttribute('data-bc-placement-layout', '');
+    placementElement.style.cssText =
+      'position:absolute;top:0;left:0;width:100%;height:0;margin:0;';
+    const placementChildren = document.createElement('div');
+    placementChildren.className = 'children-render-container';
+    placementChildren.style.cssText = 'position:relative;width:100%;';
+    const wordArtHost = document.createElement('div');
+    wordArtHost.dataset['blockId'] = 'word-art';
+    wordArtHost.dataset['bcPlacement'] = 'absolute';
+    wordArtHost.className = 'word-art-block';
+    wordArtHost.style.cssText =
+      `position:absolute;top:${wordArtY}px;left:24px;width:320px;height:96px;margin:0;`;
+    const surface = document.createElement('div');
+    surface.className = 'word-art-block__surface';
+    surface.style.cssText =
+      'display:flex;align-items:center;width:320px;height:96px;';
+    const editor = document.createElement('div');
+    editor.className = 'word-art-block__editor';
+    editor.setAttribute('data-bc-word-art-print-props', JSON.stringify({
+      fillType: 'linear-gradient',
+      fillColor: '#f97316',
+      gradientAngle: 180,
+      gradientColors: ['#fde047', '#f97316', '#dc2626'],
+      gradientStops: [0, 0.58, 1],
+      outlineColor: '#9a3412',
+      outlineWidthEm: 0.03,
+      shadowEnabled: true,
+      shadowColor: '#7c2d12',
+      shadowOpacity: 0.3,
+      shadowOffsetXEm: 0.08,
+      shadowOffsetYEm: 0.12,
+      shadowBlurEm: 0.04,
+    }));
+    editor.style.cssText = [
+      'display:block',
+      'box-sizing:border-box',
+      'width:320px',
+      'height:60px',
+      'padding:4px 6px',
+      'font-family:Arial,sans-serif',
+      'font-size:48px',
+      'font-weight:700',
+      'line-height:1.1',
+      'background-image:linear-gradient(180deg,#fde047 0%,#f97316 58%,#dc2626 100%)',
+      'background-clip:text',
+      '-webkit-background-clip:text',
+      '-webkit-text-fill-color:transparent',
+    ].join(';');
+    editor.textContent = '非常帅气';
+    surface.appendChild(editor);
+    wordArtHost.appendChild(surface);
+    placementChildren.appendChild(wordArtHost);
+    placementElement.appendChild(placementChildren);
+    offscreen.appendChild(placementElement);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, config, {
+      layout,
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      const vectorSelector = 'svg[data-bc-print-word-art-vector="true"]';
+      const sourceSelector = '[data-bc-word-art-print-props]';
+
+      // Source remains framework-owned and untouched; only the fixed print copies are materialized.
+      expect(offscreen.querySelector(sourceSelector)).toBe(editor);
+      expect(offscreen.querySelector(vectorSelector)).toBeNull();
+      expect(pages.container.querySelector(sourceSelector)).toBeNull();
+      expect(pages.container.querySelectorAll(vectorSelector).length).toBe(pages.pageCount);
+
+      pages.pages.forEach((page, pageIndex) => {
+        const plane = page.querySelector<HTMLElement>(
+          '[data-bc-print-placement-plane="true"]',
+        )!;
+        const renderedHost = plane.querySelector<HTMLElement>(
+          '[data-block-id="word-art"]',
+        )!;
+        const vector = renderedHost.querySelector<SVGSVGElement>(vectorSelector)!;
+        const pageRect = page.getBoundingClientRect();
+        const planeRect = plane.getBoundingClientRect();
+        const hostRect = renderedHost.getBoundingClientRect();
+
+        expect(plane.querySelectorAll(vectorSelector).length).toBe(1);
+        expect(renderedHost.style.top).toBe(`${wordArtY}px`);
+        expect(renderedHost.style.left).toBe('24px');
+        expect(hostRect.top - planeRect.top).toBeCloseTo(wordArtY, 1);
+        expect(hostRect.left - pageRect.left).toBeCloseTo(24, 1);
+        expect(hostRect.top - pageRect.top).toBeCloseTo(
+          10 + wordArtY - pageIndex * pageStride,
+          1,
+        );
+        expect(hostRect.width).toBeCloseTo(320, 1);
+        expect(hostRect.height).toBeCloseTo(96, 1);
+        expect(vector.width.baseVal.value).toBe(320);
+        expect(vector.height.baseVal.value).toBe(60);
+      });
+    } finally {
+      pages.dispose();
+    }
+  });
+
   it('keeps absolute placement x coordinates relative to the full sheet with asymmetric margins', async () => {
     const config: PaginationConfig = {
       ...SMALL_PAGE,

@@ -265,7 +265,6 @@ function buildSvg(
   svg.appendChild(group)
 
   const fontSize = parseFloat(computed.fontSize) || 16
-  const {ascent, descent} = measureFont(computed, fontSize)
   const strokeWidth = Math.max(0, props.outlineWidthEm * fontSize)
   const direction = computed.direction || 'ltr'
   const textLines: SvgTextLine[] = []
@@ -273,13 +272,17 @@ function buildSvg(
   for (const line of lines) {
     if (!line.text) continue
     const element = createSvgElement('text')
-    const lineHeight = Math.max(0, line.bottom - line.top)
-    const baseline = line.top + Math.max(0, (lineHeight - ascent - descent) / 2) + ascent
     const lineWidth = Math.max(0, line.right - line.left)
     element.textContent = line.text
     element.setAttributeNS(XML_NS, 'xml:space', 'preserve')
     element.setAttribute('x', `${direction === 'rtl' ? line.right : line.left}`)
-    element.setAttribute('y', `${baseline}`)
+    // `Range` 已经给出了源字形的视觉顶部。用 before-edge 明确锚定这个坐标，
+    // 不再把它换算成 alphabetic baseline：WKWebView 的 Quartz PDF painter 会把
+    // SVG text 的 baseline y 当作绘制顶部，导致中文艺术字额外下移约一个 ascent。
+    // 浏览器与原生 PDF 对 text-before-edge 都以同一视觉顶部解释，因此无需猜字体
+    // ascent/descent，也不会受回退字体的 Canvas metrics 差异影响。
+    element.setAttribute('y', `${line.top}`)
+    element.setAttribute('dominant-baseline', 'text-before-edge')
     element.setAttribute('fill', fill)
     element.setAttribute('stroke', props.outlineColor)
     element.setAttribute('stroke-width', `${strokeWidth}`)
@@ -377,29 +380,6 @@ function createShadowFilter(
   shadow.setAttribute('flood-opacity', `${clamp(props.shadowOpacity, 0, 1)}`)
   filter.appendChild(shadow)
   return filter
-}
-
-function measureFont(
-  computed: CSSStyleDeclaration,
-  fontSize: number,
-): {ascent: number; descent: number} {
-  const canvas = document.createElement('canvas')
-  const context = canvas.getContext('2d')
-  if (!context) return {ascent: fontSize * 0.8, descent: fontSize * 0.2}
-  context.font = [
-    computed.fontStyle,
-    computed.fontWeight,
-    `${fontSize}px`,
-    computed.fontFamily,
-  ].filter(Boolean).join(' ')
-  const metrics = context.measureText('Mg国') as TextMetrics & {
-    fontBoundingBoxAscent?: number
-    fontBoundingBoxDescent?: number
-  }
-  return {
-    ascent: metrics.fontBoundingBoxAscent ?? metrics.actualBoundingBoxAscent ?? fontSize * 0.8,
-    descent: metrics.fontBoundingBoxDescent ?? metrics.actualBoundingBoxDescent ?? fontSize * 0.2,
-  }
 }
 
 function parsePrintProps(value: string | null): WordArtPrintProps | null {

@@ -167,70 +167,30 @@ interface TableCellFlowMeasurementBudget {
   safeAnchors: number
 }
 
+interface TableCellFlowBlockOffsetSnapshot {
+  value: string
+  priority: string
+}
+
 function applyPaginationGapStyle(
   element: HTMLElement,
   height: number,
   backdropOffset: number,
   backdropHeight: number,
 ): void {
-  applyPaginationGapSequenceStyle(element, [{gap: height, backdropOffset, backdropHeight}])
-}
-
-function applyPaginationGapSequenceStyle(
-  element: HTMLElement,
-  gaps: readonly Pick<TableCellFlowRenderGap, 'gap' | 'backdropOffset' | 'backdropHeight'>[],
-): void {
-  const ranges: Array<{start: number; end: number; backdrop: boolean}> = []
-  let offset = 0
-  const append = (start: number, end: number, backdrop: boolean): void => {
-    if (end <= start) return
-    const previous = ranges[ranges.length - 1]
-    if (previous && previous.backdrop === backdrop && Math.abs(previous.end - start) <= 0.01) {
-      previous.end = end
-      return
-    }
-    ranges.push({start, end, backdrop})
-  }
-
-  for (const gap of gaps) {
-    const safeHeight = Math.max(0, gap.gap)
-    const bandStart = Math.max(0, Math.min(safeHeight, gap.backdropOffset))
-    const bandEnd = Math.max(
-      bandStart,
-      Math.min(safeHeight, bandStart + Math.max(0, gap.backdropHeight)),
-    )
-    append(offset, offset + bandStart, false)
-    append(offset + bandStart, offset + bandEnd, true)
-    append(offset + bandEnd, offset + safeHeight, false)
-    offset += safeHeight
-  }
-
-  element.style.height = `${offset}px`
-  const stops = ranges.map(range => {
-    const color = range.backdrop
-      ? 'var(--bc-pagination-backdrop-bg, #f3f4f6)'
-      : 'var(--bc-page-sheet-bg, #fff)'
-    return `${color} ${range.start}px ${range.end}px`
-  })
-  element.style.background = stops.length
-    ? `linear-gradient(to bottom, ${stops.join(', ')})`
-    : ''
-}
-
-function buildCellPaginationGap(
-  gaps: readonly TableCellFlowRenderGap[],
-): HTMLDivElement {
-  const marker = document.createElement('div')
-  marker.className = 'bc-pagination-cell-flow-gap'
-  marker.setAttribute('contenteditable', 'false')
-  marker.setAttribute('aria-hidden', 'true')
-  marker.style.margin = '0'
-  marker.style.padding = '0'
-  marker.style.pointerEvents = 'none'
-  marker.style.userSelect = 'none'
-  marker.style.webkitUserSelect = 'none'
-  applyPaginationGapSequenceStyle(marker, gaps)
-  return marker
+  const safeHeight = Math.max(0, height)
+  const bandStart = Math.max(0, Math.min(safeHeight, backdropOffset))
+  const bandEnd = Math.max(
+    bandStart,
+    Math.min(safeHeight, bandStart + Math.max(0, backdropHeight)),
+  )
+  element.style.height = `${safeHeight}px`
+  element.style.background = [
+    'linear-gradient(to bottom',
+    `var(--bc-page-sheet-bg, #fff) 0 ${bandStart}px`,
+    `var(--bc-pagination-backdrop-bg, #f3f4f6) ${bandStart}px ${bandEnd}px`,
+    `var(--bc-page-sheet-bg, #fff) ${bandEnd}px 100%)`,
+  ].join(', ')
 }
 
 function buildTablePaginationMask(
@@ -592,9 +552,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
    * 仍是旧列数 → 错位。签名变化时强制重建。
    */
   private _pageBreakSig = ''
-  /** 当前超高单元格投影；全部是可逆的零模型长度 DOM。 */
+  /** 当前超高单元格投影；块锚点用可逆 margin，文字锚点用零模型长度 Inline 投影。 */
   private _cellFlowSig = ''
-  private _cellFlowMarkers = new Set<HTMLElement>()
+  private _cellFlowBlockOffsets = new Map<HTMLElement, TableCellFlowBlockOffsetSnapshot>()
   private _cellFlowMasks = new Set<HTMLElement>()
   private _cellFlowRuntimes = new Set<object>()
   private _lastPaginationBreaks: TablePaginationBreak[] = []
@@ -2644,7 +2604,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   ): TablePaginationGeometry {
     if (
       this._splitCells.size > 0
-      || this._cellFlowMarkers.size > 0
+      || this._cellFlowBlockOffsets.size > 0
       || this._cellFlowMasks.size > 0
     ) {
       const snapshot = [...this._lastPaginationBreaks]
@@ -3203,10 +3163,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       backdropOffset: number
       backdropHeight: number
     }>>()
-    const blockGapGroups = new Map<string, {
+    const blockOffsets = new Map<HTMLElement, {
+      offset: number
       wrapper: HTMLElement
-      target: Node | null
-      gaps: TableCellFlowRenderGap[]
+      previous: HTMLElement | null
     }>()
 
     for (const pageBreak of breaks) {
@@ -3238,27 +3198,61 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         if (!wrapper) continue
         const target = anchor.kind === 'block'
           ? children.find(child => child.id === anchor.blockId)?.hostElement ?? null
-          : children[0]?.hostElement ?? wrapper.firstChild
-        const anchorKey = anchor.kind === 'block'
-          ? `block:${anchor.blockId}`
-          : 'cell-start'
-        const groupKey = `${cell.id}\u0000${anchorKey}`
-        const group = blockGapGroups.get(groupKey)
-        if (group) {
-          group.gaps.push(gap)
+          : children[0]?.hostElement ?? wrapper.firstElementChild
+        if (!(target instanceof HTMLElement)) continue
+        const childIndex = children.findIndex(child => child.hostElement === target)
+        const previous = childIndex > 0
+          ? children[childIndex - 1]?.hostElement ?? null
+          : null
+        const current = blockOffsets.get(target)
+        if (current) {
+          current.offset += gap.gap
         } else {
-          blockGapGroups.set(groupKey, {wrapper, target, gaps: [gap]})
+          blockOffsets.set(target, {offset: gap.gap, wrapper, previous})
         }
       }
     }
 
-    // 同一单元格可能在首个 Block 前跨越很多页。分页几何仍逐页保留，
-    // 但同一锚点只投影一个 marker，避免按页数向内容 DOM 注入兄弟节点。
-    for (const {wrapper, target, gaps} of blockGapGroups.values()) {
-      const marker = buildCellPaginationGap(gaps)
-      wrapper.insertBefore(marker, target)
-      this._cellFlowMarkers.add(marker)
+    // 先批量读取自然 margin，再批量写入，避免 read/write 交错触发布局抖动。
+    // 块边界只需要把锚点及其后续内容下推；直接复用真实块的 margin，不再向
+    // contenteditable 单元格注入可见占位节点。页面灰色间隔统一由 table mask 绘制。
+    const offsets = [...blockOffsets]
+    const measured = offsets.map(([target, {offset, wrapper, previous}]) => ({
+      target,
+      offset,
+      wrapper,
+      previous,
+      naturalDistance: target.getBoundingClientRect().top - (previous
+        ? previous.getBoundingClientRect().bottom
+        : wrapper.getBoundingClientRect().top),
+      marginTop: Number.parseFloat(
+        target.ownerDocument.defaultView?.getComputedStyle(target).marginTop ?? '',
+      ) || 0,
+    }))
+    for (const {target, offset, marginTop} of measured) {
+      this._cellFlowBlockOffsets.set(target, {
+        value: target.style.getPropertyValue('margin-top'),
+        priority: target.style.getPropertyPriority('margin-top'),
+      })
+      target.style.setProperty('margin-top', `${marginTop + offset}px`, 'important')
     }
+    // 相邻 Block 的上下 margin 会折叠。仅做 `natural margin + offset` 会吞掉
+    // 原本由前一块 margin-bottom 提供的间距，导致每个 Block 边界少推进几像素，
+    // 多页后累积漂移。统一写完后批量读一次真实位移，再校正到精确 offset。
+    const projectedDistances = measured.map(({target, wrapper, previous}) =>
+      target.getBoundingClientRect().top - (previous
+        ? previous.getBoundingClientRect().bottom
+        : wrapper.getBoundingClientRect().top),
+    )
+    measured.forEach(({target, offset, naturalDistance, marginTop}, index) => {
+      const correction = offset - (projectedDistances[index] - naturalDistance)
+      if (Math.abs(correction) <= 0.01) return
+      target.style.setProperty(
+        'margin-top',
+        `${marginTop + offset + correction}px`,
+        'important',
+      )
+    })
 
     for (const [runtime, gaps] of runtimeGaps) {
       if (!applyInlinePaginationGaps(runtime, gaps)) {
@@ -3290,8 +3284,14 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _clearCellFlowProjection(): void {
     for (const runtime of this._cellFlowRuntimes) clearInlinePaginationGaps(runtime)
     this._cellFlowRuntimes.clear()
-    for (const marker of this._cellFlowMarkers) marker.remove()
-    this._cellFlowMarkers.clear()
+    for (const [target, snapshot] of this._cellFlowBlockOffsets) {
+      if (snapshot.value) {
+        target.style.setProperty('margin-top', snapshot.value, snapshot.priority)
+      } else {
+        target.style.removeProperty('margin-top')
+      }
+    }
+    this._cellFlowBlockOffsets.clear()
     for (const mask of this._cellFlowMasks) mask.remove()
     this._cellFlowMasks.clear()
     this._cellFlowSig = ''
