@@ -596,10 +596,13 @@ root 尾部的 `placement-layout` 是全局 absolute 平面，导出会按 `shee
 `data-bc-placement-container`，确保 under / flow / over 层级与编辑界面一致；plane 会从正文盒向左
 扩回整张纸宽，百分比 x 继续相对 live sheet。非空 placement 快照缺少只读 DOM 时，strict 导出以
 `layout-diverged` 失败，不能静默丢对象。
-若宿主先在隔离分页视图中捕获稳定布局，再关闭投影重组固定页盒，应同时把该视图中
-`placement-layout` 相对分页 root 的实际 layout-px 原点通过
-`PrintRenderResult.placementOriginY` 传入。打印面优先消费这个最终 formatting context，
-而不是从 `leadingContent` 高度重复推导坐标原点。
+`PaginationPlugin.captureStableLayout()` 会在同一个同步导出屏障中，把已投影
+`placement-layout` 相对分页 root 的实际 layout-px 原点写入
+`StablePaginationLayout.placementOriginY`；测量使用最终 DOMRect，并消除页面 visual scale。
+打印面优先消费该稳定原点，而不是从 `leadingContent`、页边距或 CSS `top` 再猜一次。
+`PrintRenderResult.placementOriginY` 仅保留为旧宿主兼容入口。稳定布局已经扣除首页
+documentHeader、但只读 provider 无法重建其 DOM 时，固定页盒仍会保留相同的首页正文起点，
+不能让 flow 上移而 absolute plane 留在原处。
 
 WordArt 的编辑、只读与 snapshot 展示统一使用 SVG 作为最终视觉层；contenteditable 只保留
 字体、字号、字重、行高、字距、对齐、换行和 caret 等输入几何样式。填充、渐变、描边、阴影与

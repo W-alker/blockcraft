@@ -863,7 +863,10 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       const planes = pages.pages.map(page =>
         page.querySelector<HTMLElement>('[data-bc-print-placement-plane="true"]')!,
       );
-      expect(planes[0]!.style.top).toBe(`${firstPageExtraTop}px`);
+      // stable geometry 已把首页 leading 放进 content.top；placement plane 不再重复加一次。
+      expect(pages.pages[0]!.querySelector<HTMLElement>('.bc-print-content')!.style.top)
+        .toBe(`${10 + firstPageExtraTop}px`);
+      expect(planes[0]!.style.top).toBe('0px');
       expect(planes[1]!.style.top).toBe(`${firstPageExtraTop - pageStride}px`);
     } finally {
       pages.dispose();
@@ -1018,6 +1021,151 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       expect(contents[1]!.style.top).toBe('10px');
     } finally {
       pages.dispose();
+    }
+  });
+
+  it('keeps stable placement geometry without leading content when provider origin is absent or conflicting', async () => {
+    const pageGap = 24;
+    const headerHeight = 36;
+    const headerGap = 16;
+    const leadingHeight = headerHeight + headerGap;
+    const contentTop = 10;
+    const liveFlowTop = contentTop + leadingHeight;
+    // 故意与 contentTop + leadingHeight 相差 12px，证明打印消费的是 stable layout
+    // 捕获的真实 placement 原点，而不是 provider 或配置再次推导出的近似值。
+    const stablePlacementOriginY = liveFlowTop + 12;
+    const placementChildren: Array<{
+      id: string;
+      flavour: string;
+      y: number;
+    }> = [
+      {id: 'shape-absolute', flavour: 'shape', y: 12},
+      {id: 'word-art-absolute', flavour: 'word-art', y: 48},
+      {id: 'image-absolute', flavour: 'image', y: 96},
+    ];
+    const placementSnapshots: IBlockSnapshot[] = [
+      absoluteShape('shape-absolute', 12),
+      {
+        id: 'word-art-absolute',
+        flavour: 'word-art',
+        nodeType: BlockNodeType.editable,
+        meta: {},
+        props: {placement: {mode: 'absolute', x: 0, y: 48}},
+        children: [{insert: 'WordArt'}],
+      },
+      {
+        id: 'image-absolute',
+        flavour: 'image',
+        nodeType: BlockNodeType.block,
+        meta: {},
+        props: {placement: {mode: 'absolute', x: 0, y: 96}},
+        children: [],
+      },
+    ];
+    const placement = placementLayout('placement', placementSnapshots);
+    const snapshot = root([paragraph('p1', 'first page'), placement]);
+    const config: PaginationConfig = {...SMALL_PAGE, pageGap};
+    const geometry = resolveScreenGeometry(config);
+    geometry.geometry.firstPageContentHeight = CONTENT_HEIGHT - leadingHeight;
+    const items = [
+      {id: 'p1', height: 40, breakable: false, keepWithNext: false},
+      {id: 'placement', height: 0, breakable: false, keepWithNext: false},
+    ];
+    const layout = {
+      ...createStablePaginationLayout(18, config, geometry, items, {
+        pages: [{
+          index: 0,
+          usedHeight: 40,
+          slots: [{id: 'p1'}, {id: 'placement'}],
+        }],
+        byBlock: new Map([
+          ['p1', {pageIndex: 0}],
+          ['placement', {pageIndex: 0}],
+        ]),
+      }),
+      placementOriginY: stablePlacementOriginY,
+    };
+
+    for (const providerPlacementOriginY of [
+      undefined,
+      stablePlacementOriginY + 30,
+    ]) {
+      const context = providerPlacementOriginY == null
+        ? 'provider without placement origin'
+        : 'provider with conflicting placement origin';
+      const offscreen = document.createElement('div');
+      offscreen.style.cssText = 'position:absolute;left:-99999px;top:0;width:380px;';
+      const flow = document.createElement('div');
+      flow.dataset['blockId'] = 'p1';
+      flow.style.cssText = 'height:40px;margin:0;';
+      offscreen.appendChild(flow);
+      const placementElement = document.createElement('div');
+      placementElement.dataset['blockId'] = 'placement';
+      placementElement.setAttribute('data-bc-placement-layout', '');
+      placementElement.style.cssText =
+        'position:absolute;top:0;left:0;width:100%;height:0;margin:0;';
+      const placementContainer = document.createElement('div');
+      placementContainer.className = 'children-render-container';
+      placementContainer.style.cssText = 'position:relative;width:100%;';
+      for (const child of placementChildren) {
+        const host = document.createElement('div');
+        host.dataset['blockId'] = child.id;
+        host.dataset['bcPlacement'] = 'absolute';
+        host.className = `${child.flavour}-block`;
+        host.style.cssText =
+          `position:absolute;top:${child.y}px;left:20px;width:40px;height:20px;margin:0;`;
+        placementContainer.appendChild(host);
+      }
+      placementElement.appendChild(placementContainer);
+      offscreen.appendChild(placementElement);
+      document.body.appendChild(offscreen);
+
+      const pages = await buildPaginatedPrintSurface(snapshot, config, {
+        layout,
+        render: async () => ({
+          root: offscreen,
+          ...(providerPlacementOriginY == null
+            ? {}
+            : {placementOriginY: providerPlacementOriginY}),
+          dispose: () => offscreen.remove(),
+        }),
+      });
+      try {
+        const page = pages.pages[0]!;
+        const pageRect = page.getBoundingClientRect();
+        const renderedFlow = page.querySelector<HTMLElement>('[data-block-id="p1"]')!;
+        const flowTop = renderedFlow.getBoundingClientRect().top - pageRect.top;
+
+        expect(page.querySelector('.bc-print-leading-content'))
+          .withContext(context)
+          .toBeNull();
+        expect(page.querySelector<HTMLElement>('.bc-print-content')!.style.top)
+          .withContext(context)
+          .toBe(`${liveFlowTop}px`);
+        expect(flowTop)
+          .withContext(context)
+          .toBeCloseTo(liveFlowTop, 1);
+
+        for (const child of placementChildren) {
+          const rendered = page.querySelector<HTMLElement>(
+            `[data-block-id="${child.id}"]`,
+          )!;
+          const renderedTop = rendered.getBoundingClientRect().top - pageRect.top;
+          const liveTop = stablePlacementOriginY + child.y;
+
+          expect(rendered.style.top)
+            .withContext(`${context}: ${child.flavour} keeps model y`)
+            .toBe(`${child.y}px`);
+          expect(renderedTop)
+            .withContext(`${context}: ${child.flavour} keeps live sheet top`)
+            .toBeCloseTo(liveTop, 1);
+          expect(renderedTop - flowTop)
+            .withContext(`${context}: ${child.flavour} keeps live flow delta`)
+            .toBeCloseTo(liveTop - liveFlowTop, 1);
+        }
+      } finally {
+        pages.dispose();
+      }
     }
   });
 

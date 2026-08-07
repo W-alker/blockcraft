@@ -286,7 +286,35 @@ export class PaginatedViewController {
     this._heightSource.invalidateNaturalMeasurements();
     if (this._rafId) cancelAnimationFrame(this._rafId);
     this._rafId = 0;
-    return this._recompute();
+    const layout = this._recompute();
+    if (!layout) return null;
+    const placementOriginY = this._capturePlacementOriginY();
+    return placementOriginY == null
+      ? layout
+      : {...layout, placementOriginY};
+  }
+
+  /**
+   * 捕获用户此刻看到的 placement plane 原点，而不是再次解释 CSS top。
+   * DOMRect 属于 visual px；除以 root 的实测视觉比例后回到稳定布局使用的 layout px。
+   * 该读取仅发生在显式导出屏障，不进入编辑/拖拽热路径。
+   */
+  private _capturePlacementOriginY(): number | undefined {
+    const root = this.doc.root.hostElement;
+    const plane = Array.from(root.children).find(element =>
+      element.hasAttribute('data-bc-placement-layout'),
+    ) as HTMLElement | undefined;
+    if (!plane) return undefined;
+    const rootRect = root.getBoundingClientRect();
+    const planeRect = plane.getBoundingClientRect();
+    const measuredScale = root.offsetWidth > 0
+      ? rootRect.width / root.offsetWidth
+      : this.doc.viewScale?.geometryScale ?? 1;
+    const visualScale = Number.isFinite(measuredScale) && measuredScale > 0
+      ? measuredScale
+      : 1;
+    const originY = (planeRect.top - rootRect.top) / visualScale;
+    return Number.isFinite(originY) ? Math.max(0, originY) : undefined;
   }
 
   /** @internal Phase B diagnostic snapshot; never drives the live view. */

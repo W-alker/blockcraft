@@ -74,6 +74,41 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v0.3.0-alpha.19 - 2026-08-07 (patch) — capture absolute placement with the stable page layout
+
+**Severity**: patch
+
+**What changed**: `StablePaginationLayout` now carries the optional
+`placementOriginY` captured from the rendered pagination plane in the same
+synchronous export barrier as page breaks. Fixed print pages prefer that value
+over provider hints and inferred header offsets. When stable first-page geometry
+contains a document-header leading offset but the readonly renderer cannot
+return the header DOM, the body keeps the same offset instead of moving only the
+normal flow upward.
+
+**Why**: Interpreting the same CSS `top` again after reparenting into print page
+boxes could put every absolute shape, image, and WordArt block at a different Y
+position from the editor. A missing generic `leadingContent` widened the error
+by exactly the document-header height.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### API Additions
+
+- `StablePaginationLayout.placementOriginY?: number`
+
+#### Behavior Changes
+
+- Stable-layout export uses the captured live placement-plane origin.
+- `PrintRenderResult.placementOriginY` remains a backward-compatible fallback.
+- A stable first-page leading offset also applies to normal flow when the
+  generic readonly provider cannot reproduce the external header DOM.
+
 ### v0.3.0-alpha.18 - 2026-08-07 (patch) — apply document text color to headings
 
 **Severity**: patch

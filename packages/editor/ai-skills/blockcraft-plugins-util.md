@@ -366,10 +366,16 @@ Keep `data-bc-placement-container` on `.bc-print-content` so under/flow/over
 stacking remains identical to the editor. The print projector restores the
 plane to full sheet width before resolving percentage x positions; strict mode
 reports `layout-diverged` if a non-empty plane has no readonly DOM.
-If a host captures stable pagination before rebuilding fixed page boxes, it may
-also pass the live projected plane origin as `PrintRenderResult.placementOriginY`.
-This value is relative to the paginated root in layout pixels and prevents host
-header/surface offsets from being inferred a second time.
+`captureStableLayout()` also captures the rendered placement-plane origin as
+`StablePaginationLayout.placementOriginY` in the same synchronous barrier. It
+normalizes the live DOMRect through the measured visual scale, so fixed pages
+consume the actual root-relative layout coordinate instead of interpreting CSS
+`top`, header height, or surface offsets again. `PrintRenderResult.placementOriginY`
+remains a compatibility input for older host-managed stable layouts. If stable
+first-page geometry includes an external document header but a generic readonly
+provider cannot render that element, the body still keeps the same leading
+offset; otherwise normal flow and every absolute object would diverge by the
+header height.
 WordArt now uses SVG as its final visual layer in editable, readonly and
 snapshot rendering. The contenteditable host retains only font/layout metrics,
 wrapping, alignment and caret styles for input and selection; fill, gradient,

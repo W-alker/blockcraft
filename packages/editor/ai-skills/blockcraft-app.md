@@ -472,10 +472,11 @@ from the narrower content box back to full sheet width before applying
 percentage x coordinates. A non-empty placement snapshot without its readonly
 DOM plane is a strict `layout-diverged` failure, not a silent content drop.
 When the host rebuilds print pages from an already projected isolated view,
-capture the computed top of its root `placement-layout` before disabling
-pagination and return it as `PrintRenderResult.placementOriginY`. This makes the
-print plane consume the actual layout origin rather than recomputing one from
-the same config and host-header height.
+pass the result of `captureStableLayout()` unchanged. The snapshot now owns the
+rendered root-relative placement origin in `StablePaginationLayout.placementOriginY`;
+BlockCraft derives it from DOMRect geometry in layout pixels before pagination
+is disabled. Do not parse the plane's computed CSS `top`. The older
+`PrintRenderResult.placementOriginY` field remains a compatibility fallback.
 
 WordArt display is SVG-native in editable, readonly and snapshot surfaces. Its
 HTML contenteditable keeps only input-geometry and caret styles as a transparent

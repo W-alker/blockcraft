@@ -221,6 +221,55 @@ function mismatchCoordinator(doc: BlockCraft.Doc): PaginationLayoutCoordinator {
 }
 
 describe("PaginatedViewController shadow layout", () => {
+  it("captures the rendered placement origin in layout pixels at the export barrier", () => {
+    const harness = createHarness();
+    const plane = document.createElement("div");
+    plane.setAttribute("data-bc-placement-layout", "");
+    harness.rootHost.appendChild(plane);
+    Object.defineProperty(harness.rootHost, "offsetWidth", {
+      configurable: true,
+      value: 400,
+    });
+    spyOn(harness.rootHost, "getBoundingClientRect").and.returnValue({
+      top: 100,
+      left: 20,
+      width: 800,
+      height: 440,
+      right: 820,
+      bottom: 540,
+      x: 20,
+      y: 100,
+      toJSON: () => ({}),
+    });
+    spyOn(plane, "getBoundingClientRect").and.returnValue({
+      top: 440,
+      left: 20,
+      width: 800,
+      height: 0,
+      right: 820,
+      bottom: 440,
+      x: 20,
+      y: 440,
+      toJSON: () => ({}),
+    });
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+    );
+
+    try {
+      controller.enable();
+      const layout = controller.captureStableLayout();
+
+      // visual delta 340px / measured 2x zoom = paper-local 170 layout px.
+      expect(layout?.placementOriginY).toBe(170);
+    } finally {
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
   it("captures a shadow layout equal to the authoritative legacy layout", () => {
     const harness = createHarness();
     const controller = new PaginatedViewController(

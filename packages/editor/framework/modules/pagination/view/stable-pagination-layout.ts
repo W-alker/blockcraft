@@ -10,6 +10,13 @@ export interface StablePaginationLayout {
   readonly revision: number
   readonly config: Readonly<PaginationConfig>
   readonly geometry: Readonly<ResolvedPaginationGeometry>
+  /**
+   * placement-layout 相对分页 root 纸面顶部的实际 Y 原点（layout px）。
+   *
+   * 该值在同步导出屏障中从已经投影完成的 live DOM 捕获；它和分页断点属于
+   * 同一个稳定版本，固定页盒不得再根据页边距或宿主 documentHeader 重算。
+   */
+  readonly placementOriginY?: number
   readonly items: readonly PaginationItem[]
   readonly result: PaginationResult
 }

@@ -373,9 +373,14 @@ export async function buildPaginatedPrintSurface(
     ? geometryLeadingHeight
     : Math.max(geometryLeadingHeight, renderedLeadingHeight);
   const fallbackPlacementOriginY = contentTop + firstPageLeadingHeight;
-  const placementOriginY = Number.isFinite(capturedPlacementOriginY)
-    ? Math.max(0, capturedPlacementOriginY ?? fallbackPlacementOriginY)
-    : fallbackPlacementOriginY;
+  const stablePlacementOriginY = override?.layout?.placementOriginY;
+  // 稳定布局和 placement 原点必须来自同一个同步捕获版本。render provider 的值仅
+  // 保留给尚未升级 stable-layout 契约的宿主；最后才回退到理论页边距/leading 推导。
+  const placementOriginY = Number.isFinite(stablePlacementOriginY)
+    ? Math.max(0, stablePlacementOriginY ?? fallbackPlacementOriginY)
+    : Number.isFinite(capturedPlacementOriginY)
+      ? Math.max(0, capturedPlacementOriginY ?? fallbackPlacementOriginY)
+      : fallbackPlacementOriginY;
   const screenPageStride = sheetHeightPx + geom.pageGap;
   for (const page of result.pages) {
     const pageEl = document.createElement('div');
@@ -401,7 +406,12 @@ export async function buildPaginatedPrintSurface(
     // 克隆进来的 placement plane 会退回普通 DOM 绘制顺序，under 对象也可能盖住正文。
     content.setAttribute('data-bc-placement-container', '');
     content.className = 'readonly bc-print-content';
-    const pageLeadingHeight = page.index === 0 && leadingContent
+    // stable geometry 的 firstPageContentHeight 已经扣除了宿主 documentHeader。
+    // 即使通用只读 provider 无法重建该宿主 DOM，正文也必须保留同一首页起点；
+    // 否则 flow 会上移而 placement plane 仍停在 header 后，所有绝对块统一错位。
+    const pageLeadingHeight = page.index === 0 && (
+      leadingContent || (override?.layout && geometryLeadingHeight > 0)
+    )
       ? firstPageLeadingHeight
       : 0;
     content.style.cssText =
