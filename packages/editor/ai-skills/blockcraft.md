@@ -162,9 +162,10 @@ const revealed = await doc.navigateToBlock(blockId)
 The root block exposes optional document appearance props. `background` keeps
 the CSS shorthand as one string so color, image, position/size, repeat,
 attachment and origin/clip remain CSS-native and compact in Yjs/snapshots.
-`color` is applied to the root host and becomes the inherited default text
-color; explicit inline/block colors still win. Hosts own background projection
-because flow view and paginated page sheets use different DOM surfaces:
+`color` is applied to the root host and synchronized to its `--bc-color` theme
+token, so normal text and headings share the document default; explicit
+inline/block colors still win. Hosts own background projection because flow
+view and paginated page sheets use different DOM surfaces:
 
 ```typescript
 doc.crud.updateBlockProps(doc.rootId, {

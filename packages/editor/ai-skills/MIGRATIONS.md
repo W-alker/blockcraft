@@ -74,6 +74,28 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v0.3.0-alpha.18 - 2026-08-07 (patch) — apply document text color to headings
+
+**Severity**: patch
+
+**What changed**: The root `color` prop now updates both the root host `color`
+style and the root-scoped `--bc-color` theme token. Headings and other default
+text styles that consume the theme token therefore follow the document color.
+
+**Why**: The first root color implementation relied on inheritance, but heading
+styles explicitly consume `--bc-color` and could keep the theme default.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+#### Behavior Changes
+
+- Root document color now covers headings and other default theme-token text.
+- Explicit inline and block colors continue to override the document default.
+
 ### v0.3.0-alpha.17 - 2026-08-07 (minor) — persist the inherited document text color
 
 **Severity**: minor (additive schema field)

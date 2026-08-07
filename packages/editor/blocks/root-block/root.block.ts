@@ -12,6 +12,7 @@ import {BlockNodeType} from "../../framework";
   host: {
     '[style.font-family]': 'props.ff',
     '[style.color]': 'props.color',
+    '[style.--bc-color]': 'props.color',
   }
 })
 export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {

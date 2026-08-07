@@ -1088,8 +1088,8 @@ image, x/y position, size, repeat, attachment and origin/clip without a verbose
 document-data object. It is included in collaboration, Undo/Redo and
 `doc.exportSnapshot()` automatically. `RootBlockModel.props.color?: string`
 stores the default document text color and BlockCraft applies it to the root
-host so normal document text inherits it; explicit inline/block colors override
-the inherited value.
+host and its `--bc-color` theme token so normal text and headings inherit it;
+explicit inline/block colors override the inherited value.
 
 ```typescript
 const background =
