@@ -1096,6 +1096,44 @@ describe('BlockPlacementManager', () => {
     container.remove()
   })
 
+  it('makes absolute objects pointer-transparent during a flow mouse gesture', () => {
+    const {container, host, manager} = makeHarness()
+    host.setAttribute('data-block-id', 'image-1')
+    host.setAttribute('data-bc-placement', 'absolute')
+    const flowText = document.createElement('span')
+    container.appendChild(flowText)
+
+    flowText.dispatchEvent(pointer('pointerdown'))
+
+    expect(container.hasAttribute(
+      'data-bc-flow-selection-passthrough',
+    )).toBeTrue()
+
+    window.dispatchEvent(pointer('pointerup'))
+
+    expect(container.hasAttribute(
+      'data-bc-flow-selection-passthrough',
+    )).toBeFalse()
+
+    manager.destroy()
+    container.remove()
+  })
+
+  it('keeps an absolute-object-originated mouse gesture interactive', () => {
+    const {container, host, manager} = makeHarness()
+    host.setAttribute('data-block-id', 'image-1')
+    host.setAttribute('data-bc-placement', 'absolute')
+
+    host.dispatchEvent(pointer('pointerdown'))
+
+    expect(container.hasAttribute(
+      'data-bc-flow-selection-passthrough',
+    )).toBeFalse()
+
+    manager.destroy()
+    container.remove()
+  })
+
   it('previews pointer movement and commits one placement update on pointerup', () => {
     const {container, host, props, block, manager, doc, releaseLease} = makeHarness()
     props['placement'] = {mode: 'absolute', x: 20, y: 30}

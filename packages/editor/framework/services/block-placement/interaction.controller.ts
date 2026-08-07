@@ -26,6 +26,7 @@ export class BlockPlacementInteractionController {
   }>()
   private readonly underBlocks = new Set<BlockCraft.BlockComponent>()
   private cleanupDrag: (() => void) | null = null
+  private cleanupFlowSelectionPassthrough: (() => void) | null = null
   private rootHost: HTMLElement | null = null
 
   constructor(
@@ -269,6 +270,7 @@ export class BlockPlacementInteractionController {
 
   destroy(): void {
     this.cancelDrag()
+    this.cleanupFlowSelectionPassthrough?.()
     if (this.rootHost) {
       this.rootHost.removeEventListener(
         'pointerdown',
@@ -338,6 +340,7 @@ export class BlockPlacementInteractionController {
   }
 
   private readonly onRootPointerDown = (event: PointerEvent): void => {
+    this.armFlowSelectionPassthrough(event)
     if (
       event.defaultPrevented ||
       event.button !== 0 ||
@@ -408,6 +411,59 @@ export class BlockPlacementInteractionController {
       this.doc.selection.blur()
     }
     this.doc.selection.selectBlock(candidate)
+  }
+
+  /**
+   * Native drag selection uses pointer hit-testing to place its moving DOM
+   * endpoint. An overlaid absolute object can otherwise steal that endpoint
+   * even though it lives outside the ordinary flow selection in the model.
+   * Keep object-originated gestures interactive, but let a mouse/pen gesture
+   * that starts in flow content continue to hit the content below overlays.
+   */
+  private armFlowSelectionPassthrough(event: PointerEvent): void {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.pointerType === 'touch' ||
+      !this.rootHost
+    ) {
+      return
+    }
+    const target = event.target instanceof Element
+      ? event.target
+      : event.target instanceof Node
+        ? event.target.parentElement
+        : null
+    if (target?.closest('[data-block-id][data-bc-placement="absolute"]')) {
+      return
+    }
+
+    this.cleanupFlowSelectionPassthrough?.()
+    const rootHost = this.rootHost
+    const ownerWindow = rootHost.ownerDocument.defaultView
+    if (!ownerWindow) return
+    const pointerId = event.pointerId
+    let cleaned = false
+    const cleanup = () => {
+      if (cleaned) return
+      cleaned = true
+      ownerWindow.removeEventListener('pointerup', onPointerEnd, true)
+      ownerWindow.removeEventListener('pointercancel', onPointerEnd, true)
+      ownerWindow.removeEventListener('blur', cleanup)
+      rootHost.removeAttribute('data-bc-flow-selection-passthrough')
+      if (this.cleanupFlowSelectionPassthrough === cleanup) {
+        this.cleanupFlowSelectionPassthrough = null
+      }
+    }
+    const onPointerEnd = (endEvent: PointerEvent) => {
+      if (endEvent.pointerId === pointerId) cleanup()
+    }
+
+    rootHost.setAttribute('data-bc-flow-selection-passthrough', '')
+    ownerWindow.addEventListener('pointerup', onPointerEnd, true)
+    ownerWindow.addEventListener('pointercancel', onPointerEnd, true)
+    ownerWindow.addEventListener('blur', cleanup)
+    this.cleanupFlowSelectionPassthrough = cleanup
   }
 
   private unregisterBlockView(id: string): void {

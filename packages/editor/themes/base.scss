@@ -134,6 +134,17 @@
     margin: 0;
   }
 
+  // A native text drag that starts in flow content must keep hit-testing the
+  // flow beneath overlaid objects. Object-originated gestures never set this
+  // transient root attribute, so selection/edit/drag inside the object keeps
+  // its normal pointer behavior.
+  &[data-bc-flow-selection-passthrough]
+    [data-block-id][data-bc-placement='absolute'],
+  &[data-bc-flow-selection-passthrough]
+    [data-block-id][data-bc-placement='absolute'] * {
+    pointer-events: none !important;
+  }
+
   // The root placement layout is an infrastructure surface, not an editable
   // document block. It must not intercept the pointer, while each positioned
   // object remains independently interactive.
