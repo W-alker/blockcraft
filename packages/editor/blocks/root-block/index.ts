@@ -8,6 +8,8 @@ export interface RootBlockModel extends NoEditableBlockNative {
   nodeType: BlockNodeType.root,
   props: {
     ff?: string
+    /** Default CSS text color inherited by document blocks. */
+    color?: string
     /** CSS `background` shorthand persisted with the document root. */
     background?: string
   }

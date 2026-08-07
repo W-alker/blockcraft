@@ -11,6 +11,7 @@ import {BlockNodeType} from "../../framework";
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[style.font-family]': 'props.ff',
+    '[style.color]': 'props.color',
   }
 })
 export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {

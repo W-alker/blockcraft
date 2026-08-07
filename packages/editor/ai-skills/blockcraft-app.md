@@ -1080,24 +1080,27 @@ doc.navigateToBlock(blockId)                 // Promise<boolean>; reveal stable 
 doc.afterInit(fn)          // run fn once root is ready
 ```
 
-### Persistent document background
+### Persistent document appearance
 
 `RootBlockModel.props.background?: string` stores one CSS `background`
 shorthand in the root Yjs props. A single value can represent background color,
 image, x/y position, size, repeat, attachment and origin/clip without a verbose
 document-data object. It is included in collaboration, Undo/Redo and
-`doc.exportSnapshot()` automatically.
+`doc.exportSnapshot()` automatically. `RootBlockModel.props.color?: string`
+stores the default document text color and BlockCraft applies it to the root
+host so normal document text inherits it; explicit inline/block colors override
+the inherited value.
 
 ```typescript
 const background =
   '#f7f7f7 url("https://cdn.example.com/bg.png") center 24px / cover no-repeat scroll'
 
-doc.crud.updateBlockProps(doc.rootId, {background})
+doc.crud.updateBlockProps(doc.rootId, {background, color: '#182230'})
 
 const current = doc.model.getProps(doc.rootId)?.['background'] as string | undefined
 
 // `null` deletes the prop instead of persisting an empty string.
-doc.crud.updateBlockProps(doc.rootId, {background: null})
+doc.crud.updateBlockProps(doc.rootId, {background: null, color: null})
 ```
 
 BlockCraft persists the value but deliberately does not paint it on a fixed DOM

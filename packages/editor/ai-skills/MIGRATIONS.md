@@ -74,6 +74,44 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v0.3.0-alpha.17 - 2026-08-07 (minor) — persist the inherited document text color
+
+**Severity**: minor (additive schema field)
+
+**What changed**: `RootBlockModel.props` now declares the optional `color?:
+string` field. `RootBlockComponent` applies it as its host CSS `color`, making it
+the inherited default for document blocks while preserving explicit inline and
+block-level colors.
+
+**Why**: Document-level appearance settings need a collaborative, snapshot-safe
+default text color that can be committed in the same root props transaction as
+the document background.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `RootBlockModel.props.color?: string`
+
+#### Migration Recipe
+
+No existing document needs migration. Set or clear the inherited text color
+through normal root props mutations:
+
+```typescript
+doc.crud.updateBlockProps(doc.rootId, {color: '#182230'})
+doc.crud.updateBlockProps(doc.rootId, {color: null})
+```
+
+#### Behavior Changes
+
+- When present, the root `color` prop is rendered on the BlockCraft root host
+  and inherited by descendants that do not declare their own color.
+
 ### v0.3.0-alpha.16 - 2026-08-07 (minor) — persist CSS document backgrounds on the root block
 
 **Severity**: minor (additive schema field)
