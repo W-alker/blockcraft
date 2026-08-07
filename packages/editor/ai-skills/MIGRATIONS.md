@@ -74,28 +74,41 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
-### v0.3.0-alpha.13 - 2026-08-07 (patch) — restore registry-backed SVG icons
+### v0.3.0-alpha.13 - 2026-08-07 (patch) — stabilize paginated WordArt and registry-backed SVG icons
 
 **Severity**: patch
 
-**What changed**: BlockController trigger icons, nested menu icons and sort
-action icons now consistently render `svgIcon` values through Angular
+**What changed**: Paginated PDF, live-print and vector-print surfaces now
+materialize CSS gradient WordArt as SVG only after their final page boxes and
+per-page placement planes are mounted. SVG text uses the source Range's visual
+top edge directly. BlockController trigger icons, nested menu icons and sort
+action icons also consistently render `svgIcon` values through Angular
 Material's `MatIconRegistry` again.
 
-**Why**: Rendering those values as raw `<svg><use>` references required a
-separate global symbol sprite that host applications using the documented icon
-registry integration do not load. Registered SVG icons consequently appeared
-blank inside documents.
+**Why**: WKWebView's native PDF painter can expand
+`background-clip:text` into a full gradient rectangle and interpret an
+alphabetic SVG baseline differently from browsers. Materializing the final
+static print tree prevents renderer races and keeps absolute placement aligned
+with the paginated screen surface. Rendering registered icons as raw
+`<svg><use>` references also required a global symbol sprite that documented
+host integrations do not load, leaving those icons blank.
 
 **Affected ai-skills files**:
 
 - `blockcraft-plugins-block.md`
+- `blockcraft-plugins-util.md`
 - `MIGRATIONS.md`
 
 #### Behavior Changes
 
 - Hosts that already register BlockCraft icons with `MatIconRegistry` need no
   changes. A global SVG symbol sprite is no longer required by BlockController.
+- CSS gradient WordArt is converted only inside framework-owned readonly print
+  copies. The live document, stored block data, placement coordinates and
+  stable pagination layout remain unchanged.
+- WordArt SVG lines use `dominant-baseline="text-before-edge"` with the visual
+  top returned by `Range`; native PDF output no longer receives a guessed
+  Canvas alphabetic baseline that can move CJK glyphs by roughly one ascent.
 
 ### v0.3.0-alpha.12 - 2026-08-07 (patch) — isolate oversized-cell gap geometry from page painting
 
