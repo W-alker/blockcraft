@@ -8,7 +8,8 @@ import type {PlacementLayoutBlockModel} from './index'
  *
  * The host deliberately has no height and creates no stacking context. Its
  * children therefore share the root document's under / flow / over z-index
- * tiers while their coordinates keep the same root-content origin.
+ * tiers. The plane inherits root padding and exposes its own content box as
+ * the containing block, so placement x/y never include the root padding.
  */
 @Component({
   selector: 'div.placement-layout-block',
@@ -20,8 +21,11 @@ import type {PlacementLayoutBlockModel} from './index'
     // 分页只改变 root 的视图内容起点，不改 placement 数据；连续流回退为 0。
     '[style.top]': "'var(--bc-placement-content-origin-y, 0px)'",
     '[style.left.px]': '0',
-    '[style.width.%]': '100',
+    '[style.right.px]': '0',
+    '[style.width]': "'auto'",
     '[style.height.px]': '0',
+    '[style.box-sizing]': "'border-box'",
+    '[style.padding]': "'inherit'",
     '[style.margin]': "'0'",
     '[style.pointer-events]': "'none'",
     '[attr.data-bc-placement-layer-bridge]': "''",
@@ -30,7 +34,8 @@ import type {PlacementLayoutBlockModel} from './index'
   template: `
     <div
       class="children-render-container"
-      style="isolation: auto; pointer-events: none">
+      style="position: relative; box-sizing: border-box; width: 100%; height: 0;
+        isolation: auto; pointer-events: none">
     </div>
   `,
 })

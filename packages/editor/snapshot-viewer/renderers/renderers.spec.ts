@@ -29,7 +29,7 @@ describe("snapshot-viewer renderers", () => {
     expect(host.querySelector("figcaption.caption-block")).not.toBeNull()
   })
 
-  it("renders editable word art with whole-block presentation styles", () => {
+  it("renders editable word art with SVG-owned presentation data", () => {
     const wordArt = WordArtBlockSchema.createSnapshot("新品发布", {
       width: 360,
       height: 110,
@@ -54,9 +54,11 @@ describe("snapshot-viewer renderers", () => {
     expect(surface.style.transform).toBe("rotate(15deg)")
     expect(content.textContent).toBe("新品发布")
     expect(content.style.fontSize).toBe("54px")
-    expect(content.style.backgroundImage).toContain("linear-gradient")
-    expect(content.style.webkitTextFillColor).toBe("transparent")
-    expect(content.style.transform).toBe("skewX(10deg)")
+    expect(content.style.backgroundImage).toBe("")
+    expect(content.style.webkitTextFillColor).toBe("")
+    expect(content.style.transform).toBe("")
+    expect(content.dataset["bcWordArtPrintProps"]).toContain("linear-gradient")
+    expect(content.dataset["bcWordArtEffectTransform"]).toBe("skewX(10deg)")
   })
 
   it("renders divider and columns shells", () => {
@@ -66,6 +68,28 @@ describe("snapshot-viewer renderers", () => {
     expect(host.querySelector(".divider-block .divide-line.dashed")).not.toBeNull()
     expect(host.querySelector(".columns-block .columns-layout")).not.toBeNull()
     expect(host.querySelectorAll(".column-block .column-content").length).toBe(2)
+  })
+
+  it("uses the root content box for readonly absolute placement", () => {
+    const host = renderFixture({
+      id: "placement",
+      flavour: "placement-layout",
+      nodeType: BlockNodeType.block,
+      meta: {},
+      props: {},
+      children: [],
+    })
+    const plane = host.querySelector<HTMLElement>("[data-bc-placement-layout]")!
+    const content = plane.querySelector<HTMLElement>(
+      ":scope > .children-render-container",
+    )!
+
+    expect(plane.style.left).toBe("0px")
+    expect(plane.style.right).toBe("0px")
+    expect(plane.style.width).toBe("auto")
+    expect(plane.style.padding).toBe("inherit")
+    expect(content.style.position).toBe("relative")
+    expect(content.style.width).toBe("100%")
   })
 
   it("renders frame indentation and code shell", () => {

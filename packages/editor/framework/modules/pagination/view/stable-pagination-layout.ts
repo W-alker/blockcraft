@@ -17,9 +17,9 @@ export interface StablePaginationLayout {
    * 同一个稳定版本，固定页盒不得再根据页边距或宿主 documentHeader 重算。
    */
   readonly placementOriginY?: number
-  /** placement plane 相对首张纸左缘的固定 X 原点（layout px）。 */
+  /** placement content box 相对首张纸左缘的固定 X 原点（layout px）。 */
   readonly placementOriginX?: number
-  /** placement plane 的实际 layout 宽度；固定坐标导出不得另选 containing block。 */
+  /** placement content box 的实际宽度；不包含 root 左右 padding。 */
   readonly placementWidth?: number
   readonly items: readonly PaginationItem[]
   readonly result: PaginationResult

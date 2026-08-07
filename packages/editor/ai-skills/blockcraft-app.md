@@ -368,9 +368,11 @@ page content width, observes its border-box height and deducts that height only
 from the first page. Disable/destroy restores the original parent, sibling
 position and inline style; host code must not reparent it while pagination is
 enabled. If removing the header from its original normal flow moves the root,
-the plugin measures that displacement once and applies it only to the live
-`placement-layout` origin. Persisted root-relative `placement.x/y`, undo history
-and collaborative data are not rewritten when the view changes.
+the plugin moves the whole root instead of rewriting placement data. Absolute
+`placement.x/y` always use fixed layout pixels from the root content-box origin;
+root padding is excluded in continuous view, pagination, readonly rendering and
+fixed-page export. Undo history and collaborative data are not rewritten when
+the view changes.
 
 ### Whole-document view scale
 

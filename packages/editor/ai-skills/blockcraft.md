@@ -358,6 +358,9 @@ Schemas can independently opt into free block positioning with
 `metadata.placement: {modes: ['relative', 'absolute']}`. Placement is persisted
 in `props.placement`; absolute state can also carry
 `layer: 'under' | 'over'` (`over` is the default and is omitted when persisted).
+Absolute `placement.x/y` are fixed layout pixels relative to the root content
+box. Root padding is never part of either coordinate, and legacy percentage x
+values resolve against the content width rather than the padding box.
 `doc.placement.setMode()` preserves the current visual position when switching
 to absolute. The standard transition is root-only: it lazily moves the object
 under one hidden, zero-height `placement-layout` at the end of `root.children`.

@@ -364,12 +364,14 @@ against the captured first-page geometry, and mounts it at z=2 above body z=1;
 do not synthesize a replacement block or measure the header in a wider host.
 Keep `data-bc-placement-container` on `.bc-print-content` so under/flow/over
 stacking remains identical to the editor. The print projector restores the
-plane to full sheet width before resolving percentage x positions; strict mode
-reports `layout-diverged` if a non-empty plane has no readonly DOM.
+plane to the captured root content width before resolving legacy percentage x
+positions. The captured X/Y origin is the content-box origin, so root padding is
+not encoded into fixed `placement.x/y`; strict mode reports `layout-diverged`
+if a non-empty plane has no readonly DOM.
 `captureStableLayout()` also captures the rendered placement-plane origin as
 `StablePaginationLayout.placementOriginY` in the same synchronous barrier. It
-normalizes the live DOMRect through the measured visual scale, so fixed pages
-consume the actual root-relative layout coordinate instead of interpreting CSS
+normalizes the live content-container DOMRect through the measured visual scale,
+so fixed pages consume the actual content-box layout coordinate instead of interpreting CSS
 `top`, header height, or surface offsets again. `PrintRenderResult.placementOriginY`
 remains a compatibility input for older host-managed stable layouts. If stable
 first-page geometry includes an external document header but a generic readonly

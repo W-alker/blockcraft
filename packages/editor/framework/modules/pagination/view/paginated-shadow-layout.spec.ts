@@ -269,6 +269,9 @@ describe("PaginatedViewController shadow layout", () => {
     const harness = createHarness();
     const plane = document.createElement("div");
     plane.setAttribute("data-bc-placement-layout", "");
+    const placementContainer = document.createElement("div");
+    placementContainer.className = "children-render-container";
+    plane.appendChild(placementContainer);
     harness.rootHost.appendChild(plane);
     Object.defineProperty(harness.rootHost, "offsetWidth", {
       configurable: true,
@@ -285,15 +288,15 @@ describe("PaginatedViewController shadow layout", () => {
       y: 120,
       toJSON: () => ({}),
     });
-    spyOn(plane, "getBoundingClientRect").and.returnValue({
-      top: 120,
-      left: 20,
-      width: 800,
+    spyOn(placementContainer, "getBoundingClientRect").and.returnValue({
+      top: 140,
+      left: 80,
+      width: 680,
       height: 0,
-      right: 820,
-      bottom: 120,
-      x: 20,
-      y: 120,
+      right: 760,
+      bottom: 140,
+      x: 80,
+      y: 140,
       toJSON: () => ({}),
     });
     const controller = new PaginatedViewController(
@@ -325,10 +328,12 @@ describe("PaginatedViewController shadow layout", () => {
       });
       const layout = controller.captureStableLayout();
 
-      // root-local delta = 0; paper-local visual delta 20px / 2x = 10px.
-      expect(layout?.placementOriginY).toBe(10);
-      expect(layout?.placementOriginX).toBe(0);
-      expect(layout?.placementWidth).toBe(400);
+      // The placement containing block is the root content box: visual
+      // padding (60px x / 20px y at 2x) is preserved in the paper-local
+      // origin while its width excludes both horizontal paddings.
+      expect(layout?.placementOriginY).toBe(20);
+      expect(layout?.placementOriginX).toBe(30);
+      expect(layout?.placementWidth).toBe(340);
     } finally {
       controller.destroy();
       harness.destroy();

@@ -57,8 +57,11 @@ function renderPlacementLayout(
     position: "absolute",
     top: "0",
     left: "0",
-    width: "100%",
+    right: "0",
+    width: "auto",
     height: "0",
+    boxSizing: "border-box",
+    padding: "inherit",
     margin: "0",
     pointerEvents: "none",
     overflow: "visible",
@@ -67,6 +70,9 @@ function renderPlacementLayout(
   content.classList.add("children-render-container")
   content.setAttribute("data-bc-placement-container", "")
   content.style.position = "relative"
+  content.style.boxSizing = "border-box"
+  content.style.width = "100%"
+  content.style.height = "0"
   content.style.isolation = "auto"
   content.style.pointerEvents = "none"
   appendChildren(content, ctx, snapshot.children)

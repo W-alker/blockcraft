@@ -74,6 +74,37 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v0.3.0-alpha.22 - 2026-08-07 (patch) — make absolute placement content-box relative
+
+**Severity**: patch
+
+**What changed**: Interactive blocks, Snapshot Viewer, pagination capture and
+fixed-page export now use the root content box as the single absolute-placement
+containing block. The placement plane mirrors root padding around a zero-height
+content container, while geometry measurement subtracts that padding from its
+origin and width.
+
+**Why**: Treating `root.clientWidth` and the outer placement plane as the
+coordinate space included root padding in some paths but not in isolated print
+pages. Fixed `placement.x/y` therefore shifted whenever the editor and export
+roots used the same paper width with different padding contexts.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### Behavior Changes
+
+- `placement.x/y = 0` now resolves to the root content-box top-left in every
+  renderer.
+- Legacy percentage `placement.x` resolves against content width, excluding
+  left and right root padding.
+- `StablePaginationLayout.placementOriginX/placementOriginY/placementWidth`
+  describe the placement content box, not the outer root padding box.
+
 ### v0.3.0-alpha.19 - 2026-08-07 (patch) — capture absolute placement with the stable page layout
 
 **Severity**: patch

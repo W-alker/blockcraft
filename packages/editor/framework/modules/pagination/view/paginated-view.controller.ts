@@ -314,8 +314,11 @@ export class PaginatedViewController {
       element.hasAttribute('data-bc-placement-layout'),
     ) as HTMLElement | undefined;
     if (!plane) return undefined;
+    const placementContainer = plane.querySelector<HTMLElement>(
+      ':scope > .children-render-container',
+    ) ?? plane;
     const rootRect = root.getBoundingClientRect();
-    const planeRect = plane.getBoundingClientRect();
+    const planeRect = placementContainer.getBoundingClientRect();
     const firstSheet = root.parentElement?.querySelector<HTMLElement>(
       ':scope > .bc-pagination-backdrop > .bc-page-sheet',
     ) ?? null;
@@ -328,7 +331,9 @@ export class PaginatedViewController {
     const visualScale = Number.isFinite(measuredScale) && measuredScale > 0
       ? measuredScale
       : 1;
-    // Stable export needs the placement origin in sheet-local coordinates.
+    // Stable export needs the placement content-box origin in sheet-local
+    // coordinates. The outer plane mirrors root padding; measuring it would
+    // incorrectly make x/y relative to the root padding box.
     // The paginated root itself now starts at the body origin, so a root-local
     // measurement would always be zero and would lose the external header /
     // page-margin offset. Prefer the rendered first sheet; the inline root

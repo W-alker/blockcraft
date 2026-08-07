@@ -9,6 +9,7 @@ import {
   resolveBlockPlacement,
   resolvePlacementXInPixels,
 } from './block-placement.manager'
+import {resolvePlacementContainerBox} from './block-placement/geometry'
 import {BaseBlockComponent} from '../block-std/block/component/base-block'
 
 function setRect(el: HTMLElement, rect: Partial<DOMRect>): void {
@@ -549,6 +550,31 @@ describe('BlockPlacementManager', () => {
 
     expect(measureObjectPlacement(host, root))
       .toEqual({mode: 'absolute', x: 125, y: 40, unit: 'px', layer: 'over'})
+
+    root.remove()
+  })
+
+  it('excludes root padding from placement coordinates and width', () => {
+    const root = document.createElement('div')
+    const host = document.createElement('div')
+    root.style.padding = '10px 20px 30px 40px'
+    root.style.setProperty('--bc-placement-content-origin-y', '120px')
+    root.appendChild(host)
+    document.body.appendChild(root)
+    setRect(root, {left: 100, top: 50, width: 500})
+    setRect(host, {left: 225, top: 210, width: 100, height: 80})
+    Object.defineProperty(root, 'offsetWidth', {configurable: true, value: 500})
+    Object.defineProperty(root, 'clientWidth', {configurable: true, value: 500})
+    Object.defineProperty(root, 'clientLeft', {configurable: true, value: 0})
+    Object.defineProperty(root, 'clientTop', {configurable: true, value: 0})
+
+    expect(measureObjectPlacement(host, root))
+      .toEqual({mode: 'absolute', x: 85, y: 30, unit: 'px', layer: 'over'})
+
+    const box = resolvePlacementContainerBox(root)
+    expect(box.originX).toBe(140)
+    expect(box.originY).toBe(180)
+    expect(box.width).toBe(440)
 
     root.remove()
   })

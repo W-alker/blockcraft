@@ -14,6 +14,10 @@ export const resolvePlacementContainerBox = (
   const visualScale = Number.isFinite(measuredScale) && measuredScale > 0
     ? measuredScale
     : 1
+  const style = container.ownerDocument.defaultView?.getComputedStyle(container)
+  const paddingLeft = parseLayoutLength(style?.paddingLeft)
+  const paddingRight = parseLayoutLength(style?.paddingRight)
+  const paddingTop = parseLayoutLength(style?.paddingTop)
   const configuredOriginY = Number.parseFloat(
     container.style.getPropertyValue('--bc-placement-content-origin-y'),
   )
@@ -22,11 +26,23 @@ export const resolvePlacementContainerBox = (
     : 0
   return {
     container,
-    originX: rect.left + container.clientLeft * visualScale,
-    originY: rect.top + (container.clientTop + contentOriginY) * visualScale,
-    width: container.clientWidth || rect.width || 1,
+    originX: rect.left + (container.clientLeft + paddingLeft) * visualScale,
+    originY: rect.top + (
+      container.clientTop + paddingTop + contentOriginY
+    ) * visualScale,
+    width: Math.max(
+      1,
+      (container.clientWidth || rect.width / visualScale || 1)
+        - paddingLeft
+        - paddingRight,
+    ),
     visualScale,
   }
+}
+
+const parseLayoutLength = (value: string | undefined): number => {
+  const parsed = Number.parseFloat(value ?? '')
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
 }
 
 export function resolvePlacementBox(host: HTMLElement): PlacementBox | null {
