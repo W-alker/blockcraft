@@ -1,3 +1,5 @@
+import {PaginationExportError} from './pdf-export.types'
+
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const XML_NS = 'http://www.w3.org/XML/1998/namespace'
 const PRINT_PROPS_ATTR = 'data-bc-word-art-print-props'
@@ -59,23 +61,25 @@ interface WordArtVectorGeometry {
 let vectorSequence = 0
 
 /**
- * 打印面直接复用可编辑、只读与 snapshot 已经稳定的 SVG 视觉节点；旧宿主没有视觉节点时，
- * 才用同一字体、实际视觉行坐标和 WordArt 参数原地生成 SVG。这样仍保留外层块的尺寸、
- * 旋转、placement 与分页断点，也不再让 WKWebView 绘制 CSS `background-clip:text`。
+ * 固定打印面只能复用可编辑、只读与 snapshot 稳定阶段已经生成的 SVG 视觉节点。
+ * 这里不读取 Range/DOMRect，也不创建新 SVG；缺失稳定视觉层说明只读副本尚未完成渲染，
+ * 必须终止导出，不能用另一套打印时几何悄悄替代页面上的实际结果。
  */
-export function materializeWordArtForPrint(root: HTMLElement): number {
+export function finalizeWordArtVectorsForPrint(root: HTMLElement): number {
   const targets = [
     ...(root.matches(`[${PRINT_PROPS_ATTR}]`) ? [root] : []),
     ...Array.from(root.querySelectorAll<HTMLElement>(`[${PRINT_PROPS_ATTR}]`)),
   ]
   let count = 0
   for (const target of targets) {
-    const props = parsePrintProps(target.getAttribute(PRINT_PROPS_ATTR))
-    if (!props) {
-      throw new Error('艺术字打印参数缺失或无效')
-    }
     if (!reuseVectorMirrorForPrint(target)) {
-      materializeTarget(target, props)
+      const blockId = target.closest<HTMLElement>('[data-block-id]')
+        ?.dataset['blockId']
+      throw new PaginationExportError(
+        'layout-not-ready',
+        `艺术字${blockId ? ` ${blockId}` : ''}的稳定 SVG 尚未就绪，导出阶段禁止重新测量`,
+        {stage: 'layout', ...(blockId ? {blockId} : {})},
+      )
     }
     count += 1
   }
@@ -88,12 +92,13 @@ export function materializeWordArtForPrint(root: HTMLElement): number {
  */
 export function refreshWordArtVectorMirror(target: HTMLElement): boolean {
   if (!target.isConnected) return false
-  const props = parsePrintProps(target.getAttribute(PRINT_PROPS_ATTR))
-  if (!props) return false
   const owner = target.closest<HTMLElement>(
     '.word-art-block__surface, .bc-inline-word-art-frame',
   )
   if (!owner) return false
+  owner.removeAttribute(VECTOR_READY_ATTR)
+  const props = parsePrintProps(target.getAttribute(PRINT_PROPS_ATTR))
+  if (!props) return false
 
   const previous = owner.querySelector<SVGSVGElement>(
     `:scope > [${VECTOR_MIRROR_ATTR}]`,
@@ -147,23 +152,13 @@ function reuseVectorMirrorForPrint(target: HTMLElement): boolean {
   const mirror = owner?.querySelector<SVGSVGElement>(
     `:scope > [${VECTOR_MIRROR_ATTR}]`,
   )
-  if (!owner || !mirror) return false
+  if (!owner?.hasAttribute(VECTOR_READY_ATTR) || !mirror) return false
   target.remove()
   owner.removeAttribute(VECTOR_READY_ATTR)
   mirror.removeAttribute(VECTOR_MIRROR_ATTR)
   mirror.removeAttribute('aria-hidden')
   mirror.setAttribute('data-bc-print-word-art-vector', 'true')
   return true
-}
-
-function materializeTarget(
-  target: HTMLElement,
-  props: WordArtPrintProps,
-): void {
-  const {svg, textLines} = buildVectorFromTarget(target, props)
-  svg.setAttribute('data-bc-print-word-art-vector', 'true')
-  target.replaceWith(svg)
-  fitSvgTextLines(textLines)
 }
 
 function buildVectorFromTarget(

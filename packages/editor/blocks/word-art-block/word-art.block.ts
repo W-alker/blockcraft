@@ -201,7 +201,11 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
 
   private _installVectorRenderer(): void {
     const editor = this.containerElement
+    const surface = this.surfaceElement
     const schedule = () => {
+      // 内容、尺寸、属性或字体只要进入下一轮 SVG 计算，当前镜像就不再代表
+      // 可导出的稳定布局。分页稳定等待会观察到该属性变化，并等新镜像 ready。
+      surface.removeAttribute('data-bc-word-art-vector-ready')
       if (this._vectorFrame) return
       this._vectorFrame = requestAnimationFrame(() => {
         this._vectorFrame = 0

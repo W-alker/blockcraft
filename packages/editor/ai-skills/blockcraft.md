@@ -584,7 +584,8 @@ root 尾部的 `placement-layout` 是全局 absolute 平面，导出会按 `shee
 WordArt 的编辑、只读与 snapshot 展示统一使用 SVG 作为最终视觉层；contenteditable 只保留
 字体、字号、字重、行高、字距、对齐、换行和 caret 等输入几何样式。填充、渐变、描边、阴影与
 艺术变形不再写入其行内样式，CSS 字形在 SVG 就绪后透明。分页打印直接复用隔离副本中已稳定的同一 SVG，
-仅在旧宿主或无视觉层的兼容路径中执行最终物化。`wordArtPresentationToInlineStyle()` 只服务独立
+导出阶段不再读取文字 Range/DOMRect 或重建 SVG；稳定副本缺失 SVG 时以
+`layout-not-ready` 失败。`wordArtPresentationToInlineStyle()` 只服务独立
 HTML adapter 的无 SVG 降级输出，不会回写编辑器里的 `c-element` / `c-text`。
 SVG-ready 的透明交互层规则直接绑定 surface/frame 自身，不能依赖
 `[data-blockcraft-root]`：行内对象拖拽代理和其他 portal 会被挂到 `document.body`。

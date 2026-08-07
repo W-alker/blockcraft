@@ -374,9 +374,10 @@ WordArt now uses SVG as its final visual layer in editable, readonly and
 snapshot rendering. The contenteditable host retains only font/layout metrics,
 wrapping, alignment and caret styles for input and selection; fill, gradient,
 outline, shadow and effect transforms are SVG-owned. Print reuses that
-already-stable SVG node. Legacy/custom renderers
-without a vector layer are still materialized after the fixed page boxes and
-per-page placement-plane clones are mounted. SVG
+already-stable SVG node. Fixed-page assembly never remeasures CSS text or
+creates a replacement vector; legacy/custom renderers must finish their vector
+layer before layout stability, otherwise export fails with `layout-not-ready`.
+SVG
 text lines are anchored from the source Range's visual top with
 `dominant-baseline="text-before-edge"`; do not rederive an alphabetic baseline
 from Canvas font metrics, because native PDF painters interpret that y

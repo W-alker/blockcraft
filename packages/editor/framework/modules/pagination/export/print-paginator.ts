@@ -30,7 +30,7 @@ import {
   PaginationResourcePolicy,
 } from "./pdf-export.types";
 import {appendFlowSentinel} from './print-dom';
-import {materializeWordArtForPrint} from './print-word-art'
+import {finalizeWordArtVectorsForPrint} from './print-word-art'
 import {preparePrintResources} from "./print-resources";
 import {waitForPaginationRenderStable} from './render-stability'
 import {resolvePrintPageDimensions} from './print-page-geometry'
@@ -483,11 +483,16 @@ export async function buildPaginatedPrintSurface(
 
   document.body.appendChild(container);
 
-  // WKWebView 原生 PDF 不实现 CSS background-clip:text。必须等固定页盒（包括每页
-  // placement plane 克隆）全部组装并挂载后，才在最终、无框架所有权的打印副本中把
-  // 艺术字物化为等尺寸 SVG。这样 Range 读取的就是最终纸面坐标，也不会在中途 await
-  // 时被只读 Angular 组件重渲染回 CSS 渐变文字；原编辑 DOM 与稳定分页模型均不受影响。
-  materializeWordArtForPrint(container);
+  // WordArt 的 SVG 必须在只读渲染和布局稳定阶段已经完成。页盒组装后
+  // 只验收并复用同一 SVG 节点；不允许从最终纸面重读 Range/DOMRect 或重建。
+  try {
+    finalizeWordArtVectorsForPrint(container);
+  } catch (error) {
+    container.remove();
+    leadingStage?.root.remove();
+    disposeRender();
+    throw error;
+  }
 
   return {
     container,

@@ -74,6 +74,44 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v0.3.0-alpha.15 - 2026-08-07 (patch) — require stable WordArt SVG before fixed-page export
+
+**Severity**: patch
+
+**What changed**: Fixed-page export no longer constructs or recomputes WordArt
+SVG from CSS text inside final page boxes. It now accepts only the stable SVG
+produced by the readonly/snapshot renderer, reuses that exact node and geometry,
+and removes the CSS text layer. WordArt content, size, props or font changes
+clear the ready marker immediately so pagination waits for the next stable SVG.
+
+**Why**: Export-time `Range` / `DOMRect` sampling ran in a different formatting
+context from the user-visible paginated page. That second geometry calculation
+could move WordArt even when both surfaces used the same editor configuration.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+Built-in WordArt consumers require no code change. Custom readonly or snapshot
+renderers that emit WordArt print metadata must finish the normal BlockCraft SVG
+rendering path before reporting pagination stability; export no longer provides
+a CSS-text fallback renderer.
+
+#### Behavior Changes
+
+- Final fixed page boxes never call `Range` / `DOMRect` and never create a new
+  WordArt SVG.
+- Missing or stale stable WordArt SVG now fails with `layout-not-ready` instead
+  of silently exporting geometry calculated from the print surface.
+- The same SVG node, fractional dimensions, transforms and glyph positions from
+  stable readonly rendering are preserved through page assembly and native PDF.
+- Repeated WordArt finalization from print-live and print-vector stages has been
+  removed; the assembled page surface finalizes exactly once.
+
 ### v0.3.0-alpha.14 - 2026-08-07 (minor) — allow host-rendered find/replace panels
 
 **Severity**: minor (additive API)

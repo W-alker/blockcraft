@@ -7,6 +7,7 @@ import {createStablePaginationLayout} from '../view/stable-pagination-layout';
 import {planTableCellFlow} from '../engine/table-cell-flow';
 import {setTableCellFlowPlan} from '../engine/table-cell-flow-metadata';
 import {paginate} from '../engine';
+import {refreshWordArtVectorMirror} from './print-word-art'
 
 function paragraph(id: string, text: string): IBlockSnapshot {
   return {id, flavour: "paragraph", nodeType: BlockNodeType.editable, meta: {}, props: {depth: 0}, children: [{insert: text}]};
@@ -584,7 +585,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     }
   });
 
-  it('materializes WordArt only in the final per-page placement copies without moving its outer box', async () => {
+  it('reuses the stable WordArt SVG in final placement copies without moving its outer box', async () => {
     const pageGap = 24;
     const pageStride = 220 + pageGap;
     const wordArtY = pageStride + 20;
@@ -685,6 +686,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     placementElement.appendChild(placementChildren);
     offscreen.appendChild(placementElement);
     document.body.appendChild(offscreen);
+    expect(refreshWordArtVectorMirror(editor)).toBeTrue();
 
     const pages = await buildPaginatedPrintSurface(snapshot, config, {
       layout,
@@ -694,9 +696,10 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       const vectorSelector = 'svg[data-bc-print-word-art-vector="true"]';
       const sourceSelector = '[data-bc-word-art-print-props]';
 
-      // Source remains framework-owned and untouched; only the fixed print copies are materialized.
+      // Source remains framework-owned and untouched; fixed copies reuse its stable SVG.
       expect(offscreen.querySelector(sourceSelector)).toBe(editor);
       expect(offscreen.querySelector(vectorSelector)).toBeNull();
+      expect(offscreen.querySelector('[data-bc-word-art-vector-mirror]')).not.toBeNull();
       expect(pages.container.querySelector(sourceSelector)).toBeNull();
       expect(pages.container.querySelectorAll(vectorSelector).length).toBe(pages.pageCount);
 

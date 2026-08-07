@@ -1,10 +1,10 @@
 import {
-  materializeWordArtForPrint,
+  finalizeWordArtVectorsForPrint,
   mutationAffectsWordArtVector,
   refreshWordArtVectorMirror,
 } from './print-word-art'
 
-describe('materializeWordArtForPrint', () => {
+describe('finalizeWordArtVectorsForPrint', () => {
   let root: HTMLElement
 
   beforeEach(() => {
@@ -15,7 +15,9 @@ describe('materializeWordArtForPrint', () => {
 
   afterEach(() => root.remove())
 
-  it('replaces CSS gradient text with an equal-size SVG vector', () => {
+  it('rejects WordArt without a stable SVG instead of remeasuring it during export', () => {
+    const surface = document.createElement('div')
+    surface.className = 'word-art-block__surface'
     const target = document.createElement('div')
     target.setAttribute('data-bc-word-art-print-props', JSON.stringify({
       fillType: 'linear-gradient',
@@ -48,32 +50,30 @@ describe('materializeWordArtForPrint', () => {
       '-webkit-text-fill-color:transparent',
     ].join(';')
     target.textContent = '非常帅气'
-    root.appendChild(target)
-    const originalSize = [target.offsetWidth, target.offsetHeight]
-    const sourceRange = document.createRange()
-    sourceRange.selectNodeContents(target)
-    const sourceRect = sourceRange.getBoundingClientRect()
-    sourceRange.detach()
+    surface.appendChild(target)
+    root.appendChild(surface)
+    const rectSpy = spyOn(target, 'getBoundingClientRect')
 
-    expect(materializeWordArtForPrint(root)).toBe(1)
+    let thrown: unknown
+    try {
+      finalizeWordArtVectorsForPrint(root)
+    } catch (error) {
+      thrown = error
+    }
 
-    const svg = root.querySelector<SVGSVGElement>(
-      'svg[data-bc-print-word-art-vector="true"]',
-    )
-    expect(svg).not.toBeNull()
-    expect([svg!.width.baseVal.value, svg!.height.baseVal.value]).toEqual(originalSize)
-    expect(svg!.querySelectorAll('linearGradient stop').length).toBe(3)
-    expect(svg!.querySelector('text')?.textContent).toBe('非常帅气')
-    expect(svg!.querySelector('text')?.getAttribute('fill')).toMatch(/^url\(#bc-word-art-gradient-/)
-    expect(svg!.querySelector('text')?.getAttribute('stroke')).toBe('#9a3412')
-    expect(svg!.querySelector('feDropShadow')).not.toBeNull()
-    const vectorRect = svg!.querySelector('text')!.getBoundingClientRect()
-    expect(Math.abs(vectorRect.left - sourceRect.left)).toBeLessThan(1)
-    expect(Math.abs(vectorRect.top - sourceRect.top)).toBeLessThan(1)
-    expect(root.querySelector('[data-bc-word-art-print-props]')).toBeNull()
+    expect(thrown).toEqual(jasmine.objectContaining({
+      code: 'layout-not-ready',
+      context: jasmine.objectContaining({stage: 'layout'}),
+    }))
+    expect(rectSpy).not.toHaveBeenCalled()
+    expect(target.isConnected).toBeTrue()
+    expect(root.querySelector('svg')).toBeNull()
   })
 
-  it('uses a direct fill for solid WordArt', () => {
+  it('preserves the direct fill from the stable screen SVG', () => {
+    const surface = document.createElement('div')
+    surface.className = 'word-art-block__surface'
+    surface.style.cssText = 'position:relative;width:180px;height:56px;'
     const target = document.createElement('span')
     target.setAttribute('data-bc-word-art-print-props', JSON.stringify({
       fillType: 'solid',
@@ -92,9 +92,11 @@ describe('materializeWordArtForPrint', () => {
     }))
     target.style.cssText = 'display:block;width:180px;height:56px;font:700 36px/1.2 Arial;'
     target.textContent = 'Solid'
-    root.appendChild(target)
+    surface.appendChild(target)
+    root.appendChild(surface)
 
-    materializeWordArtForPrint(root)
+    expect(refreshWordArtVectorMirror(target)).toBeTrue()
+    finalizeWordArtVectorsForPrint(root)
 
     const svg = root.querySelector('svg')!
     expect(svg.querySelector('linearGradient')).toBeNull()
@@ -144,12 +146,35 @@ describe('materializeWordArtForPrint', () => {
     expect(target.isConnected).toBeTrue()
     expect(target.isContentEditable).toBeTrue()
 
-    expect(materializeWordArtForPrint(root)).toBe(1)
+    const vectorGeometry = {
+      width: vector.getAttribute('width'),
+      height: vector.getAttribute('height'),
+      viewBox: vector.getAttribute('viewBox'),
+      style: vector.getAttribute('style'),
+      transform: vector.style.transform,
+      textX: vector.querySelector('text')?.getAttribute('x'),
+      textY: vector.querySelector('text')?.getAttribute('y'),
+    }
+    const rectSpy = spyOn(target, 'getBoundingClientRect')
+    const rangeSpy = spyOn(document, 'createRange')
+
+    expect(finalizeWordArtVectorsForPrint(root)).toBe(1)
+    expect(rectSpy).not.toHaveBeenCalled()
+    expect(rangeSpy).not.toHaveBeenCalled()
     expect(target.isConnected).toBeFalse()
     expect(surface.querySelectorAll('svg').length).toBe(1)
     expect(surface.querySelector('svg')).toBe(vector)
     expect(vector.hasAttribute('data-bc-word-art-vector-mirror')).toBeFalse()
     expect(vector.getAttribute('data-bc-print-word-art-vector')).toBe('true')
+    expect({
+      width: vector.getAttribute('width'),
+      height: vector.getAttribute('height'),
+      viewBox: vector.getAttribute('viewBox'),
+      style: vector.getAttribute('style'),
+      transform: vector.style.transform,
+      textX: vector.querySelector('text')?.getAttribute('x'),
+      textY: vector.querySelector('text')?.getAttribute('y'),
+    }).toEqual(vectorGeometry)
   })
 
   it('preserves Chrome subpixel flex geometry for the editable SVG mirror', () => {
@@ -298,6 +323,9 @@ describe('materializeWordArtForPrint', () => {
   })
 
   it('ignores a Safari zero-width boundary rect before the visual glyph rect', () => {
+    const surface = document.createElement('div')
+    surface.className = 'word-art-block__surface'
+    surface.style.cssText = 'position:relative;width:180px;height:56px;'
     const target = document.createElement('div')
     target.setAttribute('data-bc-word-art-print-props', JSON.stringify({
       fillType: 'solid',
@@ -317,7 +345,8 @@ describe('materializeWordArtForPrint', () => {
     target.style.cssText =
       'display:block;width:180px;height:56px;font:700 36px/1.2 Arial;'
     target.textContent = 'A'
-    root.appendChild(target)
+    surface.appendChild(target)
+    root.appendChild(surface)
     Object.defineProperties(target, {
       offsetWidth: {configurable: true, value: 180},
       offsetHeight: {configurable: true, value: 56},
@@ -364,9 +393,9 @@ describe('materializeWordArtForPrint', () => {
     }
     spyOn(document, 'createRange').and.returnValue(range as unknown as Range)
 
-    materializeWordArtForPrint(root)
+    expect(refreshWordArtVectorMirror(target)).toBeTrue()
 
-    const text = root.querySelector('svg text')!
+    const text = surface.querySelector('svg text')!
     expect(text.getAttribute('x')).toBe('12')
     expect(text.getAttribute('y')).toBe('8')
     expect(text.getAttribute('dominant-baseline')).toBe('text-before-edge')

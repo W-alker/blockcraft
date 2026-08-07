@@ -2,7 +2,6 @@
 import {PaginationConfig} from "../pagination.types";
 import {PrintPages} from "./print-paginator";
 import {resolvePrintPageDimensions} from './print-page-geometry'
-import {materializeWordArtForPrint} from './print-word-art'
 
 /**
  * 矢量浏览器打印：把逐页 A4 页盒放进打印 iframe，`@page{margin:0}` 让每个页盒 = 一张物理页。
@@ -46,10 +45,6 @@ export async function printPagesVector(pages: PrintPages, _config: PaginationCon
 
   await copyStylesheets(document, idoc);
   await rasterizeCanvases(pages.container);
-  // importNode 前以最终主文档布局再幂等收口一次，避免异步只读组件把艺术字恢复成
-  // WKWebView/浏览器打印器解释不一致的 CSS background-clip:text。
-  materializeWordArtForPrint(pages.container)
-
   const imported = idoc.importNode(pages.container, true) as HTMLElement;
   imported.removeAttribute('style');
   idoc.body.appendChild(imported);
