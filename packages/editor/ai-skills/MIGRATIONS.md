@@ -74,7 +74,7 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
-### Unreleased - 2026-08-07 (minor) — allow host-rendered find/replace panels
+### v0.3.0-alpha.14 - 2026-08-07 (minor) — allow host-rendered find/replace panels
 
 **Severity**: minor (additive API)
 
@@ -117,7 +117,7 @@ findReplace.helper.replaceOne(replacement)
   constructed `FindReplaceDialog` instances without a helper input retain the
   previous self-owned fallback behavior.
 
-### Unreleased - 2026-08-07 (minor) — allow host presence layers to suppress the local cursor
+### v0.3.0-alpha.14 - 2026-08-07 (minor) — allow host presence layers to suppress the local cursor
 
 **Severity**: minor (additive API)
 
@@ -159,7 +159,7 @@ cursorAwareness.setLocalCursorEnabled(presenceStatus === 'editing')
 - Calling the new method with the current value is a no-op. Calls after
   `destroy()` are ignored.
 
-### Unreleased - 2026-08-07 (patch) — make WordArt SVG-native and preserve the projected placement origin
+### v0.3.0-alpha.14 - 2026-08-07 (patch) — make WordArt SVG-native and preserve the projected placement origin
 
 **Severity**: patch
 
