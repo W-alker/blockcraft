@@ -159,6 +159,23 @@ doc.crud.moveBlocks(parentId, index, count, targetParentId, targetIndex)
 const revealed = await doc.navigateToBlock(blockId)
 ```
 
+The root block exposes an optional CSS `background` shorthand for a
+document-persistent background. Keep the shorthand as one string so color,
+image, position/size, repeat, attachment and origin/clip remain CSS-native and
+compact in Yjs/snapshots. Hosts own the visual projection because flow view and
+paginated page sheets use different DOM surfaces:
+
+```typescript
+doc.crud.updateBlockProps(doc.rootId, {
+  background: '#f7f7f7 url("https://cdn.example.com/bg.png") center / cover no-repeat',
+})
+
+const background = doc.model.getProps(doc.rootId)?.['background'] as string | undefined
+
+// Remove the document background.
+doc.crud.updateBlockProps(doc.rootId, {background: null})
+```
+
 `doc.model` is read-only. Use `DocCRUD` / `DocChain` for every mutation. Model
 existence means the YBlock is reachable from the current root; it does not mean
 `doc.vm` has mounted a component. `getBlockById()` keeps its mounted-component

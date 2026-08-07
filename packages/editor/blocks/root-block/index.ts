@@ -8,6 +8,8 @@ export interface RootBlockModel extends NoEditableBlockNative {
   nodeType: BlockNodeType.root,
   props: {
     ff?: string
+    /** CSS `background` shorthand persisted with the document root. */
+    background?: string
   }
 }
 

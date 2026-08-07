@@ -74,6 +74,49 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### v0.3.0-alpha.16 - 2026-08-07 (minor) — persist CSS document backgrounds on the root block
+
+**Severity**: minor (additive schema field)
+
+**What changed**: `RootBlockModel.props` now declares the optional
+`background?: string` field. The value is a standard CSS `background` shorthand
+stored in the root Yjs props and therefore participates in collaboration,
+Undo/Redo and full-document snapshots.
+
+**Why**: Document backgrounds need one compact, durable value that can express
+color, image, position/size, repeat, attachment and origin/clip while allowing
+flow and paginated hosts to project the same data onto different visual
+surfaces.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `RootBlockModel.props.background?: string`
+
+#### Migration Recipe
+
+No existing document needs migration. Hosts can opt in with a normal model-first
+props mutation and project the value onto their own view surface:
+
+```typescript
+doc.crud.updateBlockProps(doc.rootId, {
+  background: '#fff url("https://cdn.example.com/bg.png") center / cover no-repeat',
+})
+```
+
+Use `{background: null}` to remove the field. Do not persist view-specific DOM
+selectors or personal preferences in this root prop.
+
+#### Behavior Changes
+
+- BlockCraft persists but does not automatically paint the background. Flow
+  containers and paginated sheets remain host-owned rendering surfaces.
+
 ### v0.3.0-alpha.15 - 2026-08-07 (patch) — require stable WordArt SVG before fixed-page export
 
 **Severity**: patch

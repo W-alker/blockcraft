@@ -120,6 +120,24 @@ describe("BlockModelGraph basic reads", () => {
     expect(h.graph.getTextLength("p")).toBe(5);
   });
 
+  it("preserves the root CSS background shorthand in document snapshots", () => {
+    const h = createHarness();
+    const background = '#f7f7f7 url("https://cdn.example.com/bg.png") center / cover no-repeat';
+    const root = native2YBlock({
+      id: "root",
+      flavour: "root",
+      nodeType: BlockNodeType.root,
+      props: {background},
+      meta: {},
+      children: [],
+    } as NativeBlockModel);
+    h.set({root});
+    h.graph.build("root");
+
+    expect(h.graph.getProps("root")?.["background"]).toBe(background);
+    expect(h.graph.toSnapshot("root")?.props["background"]).toBe(background);
+  });
+
   it("reads rich text deltas without a mounted block component", () => {
     const h = createHarness();
     h.set({

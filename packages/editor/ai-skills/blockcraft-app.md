@@ -1080,6 +1080,32 @@ doc.navigateToBlock(blockId)                 // Promise<boolean>; reveal stable 
 doc.afterInit(fn)          // run fn once root is ready
 ```
 
+### Persistent document background
+
+`RootBlockModel.props.background?: string` stores one CSS `background`
+shorthand in the root Yjs props. A single value can represent background color,
+image, x/y position, size, repeat, attachment and origin/clip without a verbose
+document-data object. It is included in collaboration, Undo/Redo and
+`doc.exportSnapshot()` automatically.
+
+```typescript
+const background =
+  '#f7f7f7 url("https://cdn.example.com/bg.png") center 24px / cover no-repeat scroll'
+
+doc.crud.updateBlockProps(doc.rootId, {background})
+
+const current = doc.model.getProps(doc.rootId)?.['background'] as string | undefined
+
+// `null` deletes the prop instead of persisting an empty string.
+doc.crud.updateBlockProps(doc.rootId, {background: null})
+```
+
+BlockCraft persists the value but deliberately does not paint it on a fixed DOM
+node. The host must apply it to the flow document surface and, in paginated
+mode, to each `.bc-page-sheet`; applying it to the continuous paginated root
+would paint across inter-page gaps. Assign through `HTMLElement.style.background`
+so the browser parses the shorthand and rejects invalid CSS consistently.
+
 `doc.objectSizing.rootContentWidth` is the cached root children content-box
 width. `widthChange$` emits deduplicated width changes and
 `resolve(flavour, props)` returns responsive or legacy pixel dimensions for a
