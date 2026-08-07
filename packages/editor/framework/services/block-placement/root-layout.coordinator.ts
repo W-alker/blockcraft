@@ -111,6 +111,7 @@ export class RootPlacementLayoutCoordinator {
           mode: 'absolute',
           x: placement.x,
           y: placement.y,
+          unit: 'px',
           ...(layer === 'under' ? {layer} : {}),
         },
       },
@@ -182,20 +183,25 @@ export class RootPlacementLayoutCoordinator {
       !!anchorRect &&
       Number.isFinite(anchorRect.left) &&
       Number.isFinite(anchorRect.top)
-    const rawX = hasAnchor
-      ? ((anchorRect!.left - box.originX) / box.width) * 100
+    // Selection rects are visual viewport pixels while placement is persisted
+    // in layout coordinates.  CSS zoom / a transformed document surface makes
+    // these spaces diverge, so normalise both axes through the measured plane
+    // scale before writing model data.
+    const localX = hasAnchor
+      ? (anchorRect!.left - box.originX) / box.visualScale
       : 0
     const objectWidth = finitePlacementNumber(snapshot.props?.['width'])
     const maxX = objectWidth > 0
-      ? Math.max(0, 100 - objectWidth / box.width * 100)
-      : 100
+      ? Math.max(0, box.width - objectWidth)
+      : box.width
     return {
       mode: 'absolute',
-      x: Math.round(Math.min(maxX, Math.max(0, rawX)) * 10) / 10,
+      x: Math.round(Math.min(maxX, Math.max(0, localX))),
       y: Math.round(Math.max(
         0,
-        hasAnchor ? anchorRect!.top - box.originY : 0,
+        hasAnchor ? (anchorRect!.top - box.originY) / box.visualScale : 0,
       )),
+      unit: 'px',
       layer,
     }
   }

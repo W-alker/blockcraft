@@ -87,6 +87,9 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           mode: 'absolute',
           x: numberProperty(o.node, 'dataShapePlacementX') ?? 0,
           y: numberProperty(o.node, 'dataShapePlacementY') ?? 0,
+          ...(stringProperty(o.node, 'dataShapePlacementUnit') === 'px'
+            ? {unit: 'px' as const}
+            : {}),
           layer: stringProperty(o.node, 'dataShapePlacementLayer') === 'under'
             ? 'under'
             : 'over',
@@ -131,6 +134,9 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
             dataShapePlacementMode: 'absolute',
             dataShapePlacementX: placement.x ?? 0,
             dataShapePlacementY: placement.y ?? 0,
+            ...(placement.unit === 'px'
+              ? {dataShapePlacementUnit: 'px'}
+              : {}),
             dataShapePlacementLayer:
               placement.layer === 'under' ? 'under' : 'over',
           } : {}),

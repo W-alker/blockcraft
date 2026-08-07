@@ -177,7 +177,8 @@ describe('PaginationPlugin', () => {
     })._controller
     controller.captureStableLayout()
 
-    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('60px')
+    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('0px')
+    expect(rootHost.style.getPropertyValue('--bc-page-root-offset-top')).toBe('60px')
     const header = scrollContainer.querySelector<HTMLElement>('.bc-page-header')!
     expect(header.style.height).toBe('40px')
     expect(header.querySelector('.bc-page-chrome-left')?.textContent).toBe('Project')
@@ -185,7 +186,8 @@ describe('PaginationPlugin', () => {
 
     plugin.updateConfig({header: {right: 'Updated', height: 64}})
     controller.captureStableLayout()
-    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('84px')
+    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('0px')
+    expect(rootHost.style.getPropertyValue('--bc-page-root-offset-top')).toBe('84px')
     expect(scrollContainer.querySelector<HTMLElement>('.bc-page-header')?.style.height).toBe('64px')
     expect(scrollContainer.querySelector('.bc-page-chrome-right')?.textContent).toBe('Updated')
 
@@ -209,7 +211,8 @@ describe('PaginationPlugin', () => {
     })._controller
     controller.captureStableLayout()
 
-    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('72px')
+    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('0px')
+    expect(rootHost.style.getPropertyValue('--bc-page-root-offset-top')).toBe('72px')
     expect(rootHost.style.getPropertyValue('--bc-page-margin-bottom')).toBe('72px')
     expect(scrollContainer.querySelector<HTMLElement>('.bc-page-header')?.style.top).toBe('48px')
     expect(scrollContainer.querySelector<HTMLElement>('.bc-page-footer')?.style.top).toBe('940px')
@@ -248,9 +251,10 @@ describe('PaginationPlugin', () => {
     expect(documentHeader.classList.contains('bc-pagination-document-header')).toBeTrue()
     expect(documentHeader.style.width).toBe('649px')
     expect(documentHeader.style.top).toBe('96px')
-    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('208px')
-    // 绝对块使用与正文 padding 完全相同的确定性内容起点；不依赖投影前后测量。
-    expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('208px')
+    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('0px')
+    expect(rootHost.style.getPropertyValue('--bc-page-root-offset-top')).toBe('208px')
+    // header 是 root 外部的首页 sibling；正文与绝对块共享 root-local 零点。
+    expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('0px')
     expect(layoutSurface.querySelector(':scope > .bc-pagination-backdrop')).not.toBeNull()
     expect(scrollContainer.contains(layoutSurface)).toBeTrue()
 
@@ -258,7 +262,7 @@ describe('PaginationPlugin', () => {
     // 主动读取最终 header 高度并把它写入同一次稳定分页 geometry。
     documentHeaderHeight = 144
     plugin.captureStableLayout()
-    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('232px')
+    expect(rootHost.style.getPropertyValue('--bc-page-root-offset-top')).toBe('232px')
 
     plugin.disable()
 
@@ -268,8 +272,10 @@ describe('PaginationPlugin', () => {
     expect(documentHeader.style.cssText).toBe('')
 
     plugin.enable()
-    expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('232px')
+    expect(rootHost.style.getPropertyValue('--bc-page-root-offset-top')).toBe('232px')
+    expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('0px')
     plugin.disable()
+    expect(rootHost.style.getPropertyValue('--bc-page-root-offset-top')).toBe('')
     expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('')
     plugin.destroy()
     scrollContainer.remove()
@@ -297,8 +303,9 @@ describe('PaginationPlugin', () => {
 
     expect(documentHeader.style.top).toBe('44px')
     // body top = 96；header end = 20 + 120 + 16，因此只额外扣除 60。
-    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('156px')
-    expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('156px')
+    expect(rootHost.style.getPropertyValue('--bc-page-margin-top')).toBe('0px')
+    expect(rootHost.style.getPropertyValue('--bc-page-root-offset-top')).toBe('156px')
+    expect(rootHost.style.getPropertyValue('--bc-placement-content-origin-y')).toBe('0px')
 
     plugin.destroy()
     scrollContainer.remove()

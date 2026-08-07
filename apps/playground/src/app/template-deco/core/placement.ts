@@ -112,6 +112,7 @@ const canonicalPlacement = (
     mode: 'absolute',
     x: finiteNumber(candidate.x) ?? 0,
     y: finiteNumber(candidate.y) ?? 0,
+    ...(candidate.unit === 'px' ? {unit: 'px' as const} : {}),
     ...(under ? {layer: 'under'} : {}),
   }
 }

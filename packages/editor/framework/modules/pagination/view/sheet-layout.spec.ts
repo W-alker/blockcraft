@@ -53,6 +53,24 @@ describe('sheet-layout', () => {
     expect(computeBlockGaps(r, 1000, 20).get('b')).toBe(20);
   });
 
+  it('首页外置 header 下移整个 root 后，第二页正文仍对齐纸面内容起点', () => {
+    const sheetHeight = 220;
+    const pageGap = 20;
+    const contentTop = 10;
+    const documentHeaderExtraTop = 30;
+    const firstBlockHeight = 170;
+    const r = result([
+      {ids: ['first'], usedHeight: documentHeaderExtraTop + firstBlockHeight},
+      {ids: ['second'], usedHeight: 40},
+    ]);
+
+    const rootOffset = contentTop + documentHeaderExtraTop;
+    const secondPageGap = computeBlockGaps(r, sheetHeight, pageGap).get('second')!;
+
+    expect(rootOffset + firstBlockHeight + secondPageGap)
+      .toBe(sheetHeight + pageGap + contentTop);
+  });
+
   it('computeBlockGaps：续页首块是延续片段(fromOffset>0)则跳过', () => {
     const r = result([
       {ids: ['t'], usedHeight: 1000},

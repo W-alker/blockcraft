@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, ElementRef, NgZone, OnDestroy, ViewChild, inject } from '@angular/core';
+import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, NgZone, OnDestroy, ViewChild, inject } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import { MatIconRegistry } from '@angular/material/icon';
 import {
@@ -10,6 +10,7 @@ import {
   DocExportManager,
   EditableBlockComponent,
   EditorComponent,
+  FixedTextToolbarComponent,
   IBlockSnapshot,
   ISelectionJSON,
   MarkdownStreamViewer,
@@ -220,6 +221,7 @@ const ACTION_SECTIONS: DebugSection[] = [
   standalone: true,
   imports: [
     EditorComponent,
+    FixedTextToolbarComponent,
     SnapshotViewerComponent,
     PaginationSettingsComponent,
     DocumentScaleSettingsComponent,
@@ -446,20 +448,43 @@ const ACTION_SECTIONS: DebugSection[] = [
         </div>
 
         @if (activeMainTab === 'editor') {
-          <section class="editor-stage">
+          @if (editorDoc; as doc) {
+            <bc-fixed-toolbar
+              class="playground-editor-toolbar"
+              [doc]="doc"
+              [stickyTop]="0">
+            </bc-fixed-toolbar>
+          }
+          <section
+            class="editor-stage"
+            [class.editor-stage--flow]="!paginationEnabled">
+            <article #documentHeader class="playground-document-header">
+              <div class="playground-document-header__eyebrow">宿主文档头 · root 外部</div>
+              <h1>BlockCraft 分页坐标验证文档</h1>
+              <div class="playground-document-header__meta">
+                <span class="playground-document-header__avatar">BC</span>
+                <span>BlockCraft Playground</span>
+                <span class="playground-document-header__divider" aria-hidden="true"></span>
+                <span>连续布局与分页布局复用同一 DOM</span>
+              </div>
+            </article>
             @if (virtualizationEnabled) {
               <block-craft-editor
                 #editor
                 [stickyTop]="0"
+                [showFixedToolbar]="false"
                 [virtualizationEnabled]="true"
-                [paginationSparseView]="true">
+                [paginationSparseView]="true"
+                [paginationDocumentHeader]="paginationDocumentHeaderOptions">
               </block-craft-editor>
             } @else {
               <block-craft-editor
                 #editor
                 [stickyTop]="0"
+                [showFixedToolbar]="false"
                 [virtualizationEnabled]="false"
-                [paginationSparseView]="false">
+                [paginationSparseView]="false"
+                [paginationDocumentHeader]="paginationDocumentHeaderOptions">
               </block-craft-editor>
             }
           </section>
@@ -1392,8 +1417,9 @@ const ACTION_SECTIONS: DebugSection[] = [
     }
   `]
 })
-export class AppComponent implements OnDestroy {
+export class AppComponent implements AfterViewInit, OnDestroy {
   @ViewChild('editor') editor?: EditorComponent;
+  @ViewChild('documentHeader', {read: ElementRef}) documentHeader?: ElementRef<HTMLElement>;
   @ViewChild('markdownStreamHost') markdownStreamHost?: ElementRef<HTMLElement>;
 
   readonly actionSections = ACTION_SECTIONS;
@@ -1419,6 +1445,11 @@ export class AppComponent implements OnDestroy {
   documentScaleViewport: HTMLElement | null = null;
   documentScaleStage: HTMLElement | null = null;
   documentScaleSurface: HTMLElement | null = null;
+  readonly paginationDocumentHeaderOptions = {
+    element: () => this.documentHeader?.nativeElement ?? null,
+    placement: 'content' as const,
+    gap: 24,
+  };
 
   // 临时调试：复制时过滤行内链接属性（a:link），可开关
   copyFilterActive = false;
@@ -1482,6 +1513,12 @@ graph TD
     );
   }
 
+  ngAfterViewInit(): void {
+    // 外置工具栏依赖子编辑器在 ngOnInit 中创建的 Doc；ViewChild 就绪后补一轮
+    // 检测，让工具栏从首屏开始位于 .editor-stage 外，而不是等首次用户操作。
+    this.cdr.detectChanges();
+  }
+
   ngOnDestroy(): void {
     if (this._autoInitTimer !== null) {
       window.clearTimeout(this._autoInitTimer);
@@ -1503,6 +1540,10 @@ graph TD
 
   get isReadonly() {
     return this.editor?.doc.isReadonly ?? true;
+  }
+
+  get editorDoc() {
+    return this.editor?.doc ?? null;
   }
 
   get paginationPlugin(): PaginationPlugin | null {

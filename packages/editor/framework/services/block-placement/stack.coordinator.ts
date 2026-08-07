@@ -48,6 +48,7 @@ export class BlockPlacementStackCoordinator {
       mode: 'absolute',
       x: current.x,
       y: current.y,
+      ...(current.unit === 'px' ? {unit: 'px' as const} : {}),
       ...(layer === 'over' ? {} : {layer}),
     }
     block.updateProps({placement})
@@ -169,11 +170,13 @@ export class BlockPlacementStackCoordinator {
             'before',
           )
         }
+        const placement = this.runtime.getPersistedPlacement(context.block.id)
         context.block.updateProps({
           placement: {
             mode: 'absolute',
-            x: this.runtime.getPersistedPlacement(context.block.id).x,
-            y: this.runtime.getPersistedPlacement(context.block.id).y,
+            x: placement.x,
+            y: placement.y,
+            ...(placement.unit === 'px' ? {unit: 'px' as const} : {}),
           },
         })
         moved = true
@@ -206,6 +209,7 @@ export class BlockPlacementStackCoordinator {
           mode: 'absolute',
           x: placement.x,
           y: placement.y,
+          ...(placement.unit === 'px' ? {unit: 'px' as const} : {}),
           layer: 'under',
         },
       })

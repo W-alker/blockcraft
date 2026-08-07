@@ -7,6 +7,7 @@ import {
   measureBlockPlacement,
   measureObjectPlacement,
   resolveBlockPlacement,
+  resolvePlacementXInPixels,
 } from './block-placement.manager'
 import {BaseBlockComponent} from '../block-std/block/component/base-block'
 
@@ -480,16 +481,58 @@ describe('BlockPlacementManager', () => {
       .toEqual({mode: 'absolute', x: 1, y: 2, layer: 'over'})
     expect(resolveBlockPlacement({mode: 'absolute', x: 1, y: 2, layer: 'top'}))
       .toEqual({mode: 'absolute', x: 1, y: 2, layer: 'over'})
+    expect(resolveBlockPlacement({mode: 'absolute', x: 120, y: 2, unit: 'px'}))
+      .toEqual({mode: 'absolute', x: 120, y: 2, unit: 'px', layer: 'over'})
+    expect(resolvePlacementXInPixels(
+      {mode: 'absolute', x: 25, y: 2},
+      500,
+    )).toBe(125)
+    expect(resolvePlacementXInPixels(
+      {mode: 'absolute', x: 25, y: 2, unit: 'px'},
+      500,
+    )).toBe(25)
   })
 
   it('measures absolute coordinates against the direct children container', () => {
     const {container, host, manager} = makeHarness()
     expect(measureBlockPlacement(host))
-      .toEqual({mode: 'absolute', x: 25, y: 40, layer: 'over'})
+      .toEqual({mode: 'absolute', x: 125, y: 40, unit: 'px', layer: 'over'})
     expect(measureObjectPlacement(host, container, 'under'))
-      .toEqual({mode: 'absolute', x: 25, y: 40, layer: 'under'})
+      .toEqual({mode: 'absolute', x: 125, y: 40, unit: 'px', layer: 'under'})
     manager.destroy()
     container.remove()
+  })
+
+  it('projects legacy percent x to a fixed inline px value before print cloning', () => {
+    const container = document.createElement('div')
+    const host = document.createElement('div')
+    container.appendChild(host)
+    Object.defineProperty(container, 'clientWidth', {
+      configurable: true,
+      value: 500,
+    })
+    const block = Object.create(BaseBlockComponent.prototype) as BaseBlockComponent
+    Object.assign(block as any, {
+      hostElement: host,
+      doc: {
+        schemas: {
+          get: () => ({metadata: {placement: {modes: ['absolute']}}}),
+        },
+      },
+      _native: {
+        flavour: 'shape',
+        props: {placement: {mode: 'absolute', x: 25, y: 40}},
+      },
+    })
+
+    expect(block.placementLeft).toBe(125)
+    ;(block as any)._native.props.placement = {
+      mode: 'absolute',
+      x: 25,
+      y: 40,
+      unit: 'px',
+    }
+    expect(block.placementLeft).toBe(25)
   })
 
   it('measures paginated absolute coordinates from the deterministic content origin', () => {
@@ -505,7 +548,7 @@ describe('BlockPlacementManager', () => {
     Object.defineProperty(root, 'clientTop', {configurable: true, value: 0})
 
     expect(measureObjectPlacement(host, root))
-      .toEqual({mode: 'absolute', x: 25, y: 40, layer: 'over'})
+      .toEqual({mode: 'absolute', x: 125, y: 40, unit: 'px', layer: 'over'})
 
     root.remove()
   })
@@ -513,7 +556,10 @@ describe('BlockPlacementManager', () => {
   it('inserts a new object directly into the root placement layout', () => {
     const rootHost = document.createElement('div')
     document.body.appendChild(rootHost)
-    setRect(rootHost, {left: 100, top: 50, width: 500, height: 800})
+    // The host is visually scaled to 2x while its layout width stays 500px.
+    // Selection DOMRects are visual pixels and must be normalised before the
+    // placement is persisted.
+    setRect(rootHost, {left: 100, top: 50, width: 1000, height: 1600})
     Object.defineProperty(rootHost, 'clientWidth', {
       configurable: true,
       value: 500,
@@ -602,7 +648,7 @@ describe('BlockPlacementManager', () => {
         fn({hostElement: rootHost}),
       selection: {
         getSelectionRect: jasmine.createSpy('getSelectionRect').and.returnValue(
-          new DOMRect(225, 90, 0, 24),
+          new DOMRect(350, 210, 0, 48),
         ),
       },
       logger: {warn: jasmine.createSpy('warn')},
@@ -617,7 +663,7 @@ describe('BlockPlacementManager', () => {
         ...shape,
         props: {
           ...shape.props,
-          placement: {mode: 'absolute', x: 25, y: 40},
+          placement: {mode: 'absolute', x: 125, y: 80, unit: 'px'},
         },
       }]])
     expect(insertBlockSnapshots).toHaveBeenCalledTimes(1)
@@ -630,7 +676,7 @@ describe('BlockPlacementManager', () => {
           ...shape,
           props: {
             ...shape.props,
-            placement: {mode: 'absolute', x: 25, y: 40},
+            placement: {mode: 'absolute', x: 125, y: 80, unit: 'px'},
           },
         }],
       }],
@@ -658,8 +704,9 @@ describe('BlockPlacementManager', () => {
     expect(doc.crud.transact).toHaveBeenCalledTimes(1)
     expect(props['placement']).toEqual({
       mode: 'absolute',
-      x: 25,
+      x: 125,
       y: 40,
+      unit: 'px',
       layer: 'under',
     })
     expect(manager.getObjectLayout(block as any)).toBe('under')
@@ -692,7 +739,7 @@ describe('BlockPlacementManager', () => {
     const {container, props, block, manager} = makeHarness()
 
     expect(manager.setMode(block as any, 'absolute')).toBeTrue()
-    expect(props['placement']).toEqual({mode: 'absolute', x: 25, y: 40})
+    expect(props['placement']).toEqual({mode: 'absolute', x: 125, y: 40, unit: 'px'})
 
     expect(manager.setMode(block as any, 'relative')).toBeTrue()
     expect(props['placement']).toBeUndefined()
@@ -1152,12 +1199,38 @@ describe('BlockPlacementManager', () => {
     window.dispatchEvent(pointer('pointerup', {clientX: 250, clientY: 125}))
 
     expect(manager.state).toBe('idle')
-    expect(props['placement']).toEqual({mode: 'absolute', x: 30, y: 55})
+    expect(props['placement']).toEqual({mode: 'absolute', x: 150, y: 55, unit: 'px'})
     expect(host.style.transform).toBe('')
     expect(doc.virtualization.acquireBlockViewLease).toHaveBeenCalledOnceWith(['image-1'])
     expect(releaseLease).toHaveBeenCalledTimes(1)
     expect(doc.selection.setSuppressRecalculate).toHaveBeenCalledWith(false)
     expect(block.updateProps).toHaveBeenCalledTimes(1)
+
+    manager.destroy()
+    container.remove()
+  })
+
+  it('uses the measured placement scale for pointer drag geometry', () => {
+    const {container, host, props, block, manager, doc} = makeHarness()
+    props['placement'] = {mode: 'absolute', x: 20, y: 30}
+    setRect(container, {left: 100, top: 50, width: 1000})
+    // Deliberately conflict with the real DOM scale. Placement interactions
+    // must follow the containing plane, not a configured toolbar value.
+    ;(doc as any).viewScale = {value: 0.5}
+
+    expect(manager.startDrag(
+      pointer('pointerdown', {clientX: 200, clientY: 100}),
+      block as any,
+    )).toBeTrue()
+
+    window.dispatchEvent(pointer('pointermove', {clientX: 250, clientY: 120}))
+    expect(manager.state).toBe('dragging')
+    expect(host.style.transform).toContain('translate3d(25px, 10px, 0px)')
+
+    window.dispatchEvent(pointer('pointerup', {clientX: 250, clientY: 120}))
+
+    expect(props['placement']).toEqual({mode: 'absolute', x: 125, y: 40, unit: 'px'})
+    expect(host.style.transform).toBe('')
 
     manager.destroy()
     container.remove()

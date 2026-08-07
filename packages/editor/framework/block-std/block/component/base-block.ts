@@ -30,7 +30,10 @@ import {
   BlockReadonlyOperation,
   BlockReadonlySource,
 } from "../../../doc/block-readonly.types";
-import {resolveBlockPlacement} from "../../../services/block-placement.manager";
+import {
+  resolveBlockPlacement,
+  resolvePlacementXInPixels,
+} from "../../../services/block-placement.manager";
 
 export type BlockViewState = 'mounted' | 'retained' | 'destroyed'
 
@@ -107,10 +110,15 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return this.resolvedPlacement.mode === 'absolute' ? 'absolute' : null
   }
 
-  @HostBinding('style.left.%')
+  @HostBinding('style.left.px')
   get placementLeft(): number | null {
     const placement = this.resolvedPlacement
-    return placement.mode === 'absolute' ? placement.x : null
+    if (placement.mode !== 'absolute') return null
+    const container = this.hostElement.parentElement
+    return resolvePlacementXInPixels(
+      this._native?.props?.placement,
+      container?.clientWidth ?? 0,
+    )
   }
 
   @HostBinding('style.top.px')

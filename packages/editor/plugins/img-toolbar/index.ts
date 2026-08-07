@@ -1253,6 +1253,7 @@ export class ImgToolbarPlugin extends DocPlugin {
         mode: 'absolute',
         x: measured.x,
         y: measured.y,
+        unit: 'px',
         ...(layout === 'under' ? {layer: layout} : {}),
       };
       result.image.props = {
@@ -1368,6 +1369,10 @@ export class ImgToolbarPlugin extends DocPlugin {
         }
       : current;
     const placement = this.doc.placement.getState(imgBlock);
+    const placementWidth = imgBlock.hostElement.parentElement?.clientWidth ?? 0;
+    const normalizedPlacementX = placement.unit === 'px'
+      ? placement.x / Math.max(1, placementWidth)
+      : placement.x / 100;
     const textTarget = wrap && placement.mode === 'absolute'
       ? this._resolveWrappedInlineTextTarget(
           imgBlock,
@@ -1382,7 +1387,7 @@ export class ImgToolbarPlugin extends DocPlugin {
             wrap: true,
             side: 'auto',
             x: textTarget?.normalizedX ??
-              Math.max(0, Math.min(1, placement.x / 100)),
+              Math.max(0, Math.min(1, normalizedPlacementX)),
             gap: DEFAULT_INLINE_IMAGE_WRAP_GAP,
           }
         : undefined,

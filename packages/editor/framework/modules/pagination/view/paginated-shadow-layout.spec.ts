@@ -221,6 +221,50 @@ function mismatchCoordinator(doc: BlockCraft.Doc): PaginationLayoutCoordinator {
 }
 
 describe("PaginatedViewController shadow layout", () => {
+  it("moves the whole first-page root below an external document header", () => {
+    const harness = createHarness();
+    const header = document.createElement("div");
+    header.textContent = "host document header";
+    harness.scrollContainer.insertBefore(header, harness.rootHost);
+    Object.defineProperty(header, "offsetHeight", {
+      configurable: true,
+      value: 36,
+    });
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+      undefined,
+      {
+        documentHeader: {
+          element: header,
+          placement: "content",
+          gap: 16,
+        },
+      },
+    );
+
+    try {
+      controller.enable();
+
+      // 第一页 root 从纸面正文顶边距(10) + header(36) + gap(16) 之后开始。
+      // root 内部不再保留等量 padding，placement plane 也保持 root-local 0。
+      expect(
+        harness.rootHost.style.getPropertyValue("--bc-page-root-offset-top"),
+      ).toBe("62px");
+      expect(
+        harness.rootHost.style.getPropertyValue("--bc-page-margin-top"),
+      ).toBe("0px");
+      expect(
+        harness.rootHost.style.getPropertyValue("--bc-placement-content-origin-y"),
+      ).toBe("0px");
+      expect(header.nextSibling).toBe(harness.rootHost);
+    } finally {
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
   it("captures the rendered placement origin in layout pixels at the export barrier", () => {
     const harness = createHarness();
     const plane = document.createElement("div");
@@ -231,25 +275,25 @@ describe("PaginatedViewController shadow layout", () => {
       value: 400,
     });
     spyOn(harness.rootHost, "getBoundingClientRect").and.returnValue({
-      top: 100,
+      top: 120,
       left: 20,
       width: 800,
       height: 440,
       right: 820,
-      bottom: 540,
+      bottom: 560,
       x: 20,
-      y: 100,
+      y: 120,
       toJSON: () => ({}),
     });
     spyOn(plane, "getBoundingClientRect").and.returnValue({
-      top: 440,
+      top: 120,
       left: 20,
       width: 800,
       height: 0,
       right: 820,
-      bottom: 440,
+      bottom: 120,
       x: 20,
-      y: 440,
+      y: 120,
       toJSON: () => ({}),
     });
     const controller = new PaginatedViewController(
@@ -260,10 +304,31 @@ describe("PaginatedViewController shadow layout", () => {
 
     try {
       controller.enable();
+      // The root and placement plane share the body-local origin.  Stable
+      // export still needs the origin relative to the physical first sheet.
+      const backdrop = harness.rootHost.parentElement!.querySelector<HTMLElement>(
+        ':scope > .bc-pagination-backdrop',
+      )!;
+      const firstSheet = document.createElement('div');
+      firstSheet.className = 'bc-page-sheet';
+      backdrop.appendChild(firstSheet);
+      spyOn(firstSheet, 'getBoundingClientRect').and.returnValue({
+        top: 100,
+        left: 20,
+        width: 800,
+        height: 440,
+        right: 820,
+        bottom: 540,
+        x: 20,
+        y: 100,
+        toJSON: () => ({}),
+      });
       const layout = controller.captureStableLayout();
 
-      // visual delta 340px / measured 2x zoom = paper-local 170 layout px.
-      expect(layout?.placementOriginY).toBe(170);
+      // root-local delta = 0; paper-local visual delta 20px / 2x = 10px.
+      expect(layout?.placementOriginY).toBe(10);
+      expect(layout?.placementOriginX).toBe(0);
+      expect(layout?.placementWidth).toBe(400);
     } finally {
       controller.destroy();
       harness.destroy();

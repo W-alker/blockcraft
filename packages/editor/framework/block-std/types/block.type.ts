@@ -62,13 +62,16 @@ export type BlockPlacementLayer = 'under' | 'over'
  * Persistent block placement. The omitted value is equivalent to
  * `{ mode: 'relative' }`.
  *
- * `x` is a percentage of the direct children render container width while
- * `y` is a CSS pixel offset from that container's top edge.
+ * New absolute placements use fixed CSS layout pixels for both `x` and `y`
+ * relative to the root placement plane. Legacy documents omitted `unit` and
+ * stored `x` as a percentage; renderers keep that format read-compatible but
+ * every new mutation writes the canonical pixel form.
  */
 export type BlockPositionState = {
   mode: BlockPlacementMode
   x?: number
   y?: number
+  unit?: 'px'
   layer?: BlockPlacementLayer
 }
 
@@ -76,6 +79,7 @@ export type ResolvedBlockPosition = {
   mode: BlockPlacementMode
   x: number
   y: number
+  unit?: 'px'
   layer: BlockPlacementLayer
 }
 

@@ -41,7 +41,7 @@ export function pxToPagePct(px: number, columnContentWidth: number): number {
  * 各可缩放块的 onResized 调它一句即可，换算/度量不再各抄一遍（新块要缩放只需调这个函数）。
  * 只在拖拽那一下跑一次；渲染时各块自己读 props.width（见对应模板绑定）。
  * `maxPct`（可选）= 宽度上限%：自由定位(absolute)物料传 `100 - x`，防止缩放把右缘拉出定位父
- * （框架 resizer 只按整列宽封顶、不感知 left:x% 偏移，故在这一步兜住）。
+ * （框架 resizer 只按整列宽封顶、不感知绝对定位块的固定 x 偏移，故在这一步兜住）。
  */
 export function storeResizedWidth(
   block: {

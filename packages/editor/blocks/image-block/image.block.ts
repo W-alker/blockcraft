@@ -4,6 +4,7 @@ import {
   deriveObjectSizeFromPixels,
   DOC_FILE_SERVICE_TOKEN,
   DocFileService,
+  resolvePlacementXInPixels,
 } from '../../framework';
 import {ImageBlockModel} from './index';
 import {
@@ -405,7 +406,9 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
         ? {
             placement: {
               ...placement,
-              x: (placement.x ?? 0) + event.offsetX / event.basisWidth * 100,
+              x: resolvePlacementXInPixels(placement, event.basisWidth) +
+                event.offsetX,
+              unit: 'px',
             },
           }
         : {}),

@@ -323,6 +323,7 @@ export class ShapeResizerComponent implements OnDestroy {
   private _startRotation = 0
   private _startCenter: ShapeVector | null = null
   private _startPointerAngle = 0
+  private _gestureVisualScale = 1
   private _startBox: ShapeResizeBox | null = null
   private _previewBox: ShapeResizeBox | null = null
   private _previewRotation: number | null = null
@@ -365,6 +366,13 @@ export class ShapeResizerComponent implements OnDestroy {
     this._activeGesture = gesture
     this._startClientX = event.clientX
     this._startClientY = event.clientY
+    const scaleContainer = this.maxWidthContainer
+    const measuredScale = scaleContainer && scaleContainer.clientWidth > 0
+      ? scaleContainer.getBoundingClientRect().width / scaleContainer.clientWidth
+      : 1
+    this._gestureVisualScale = Number.isFinite(measuredScale) && measuredScale > 0
+      ? measuredScale
+      : 1
     this._startRotation = normalizeShapeRotation(this.rotation)
     this._startCenter = {
       x: rect.left + rect.width / 2,
@@ -510,6 +518,7 @@ export class ShapeResizerComponent implements OnDestroy {
     this._previewRotation = null
     this._startInlineStyle = null
     this._startMirrorInlineStyle = null
+    this._gestureVisualScale = 1
   }
 
   private _applyPointerPreview(event: PointerEvent): void {
@@ -581,8 +590,8 @@ export class ShapeResizerComponent implements OnDestroy {
       this.maxWidthContainer?.clientWidth ?? Number.POSITIVE_INFINITY
     const localDelta = rotateShapeVector(
       {
-        x: event.clientX - this._startClientX,
-        y: event.clientY - this._startClientY,
+        x: (event.clientX - this._startClientX) / this._gestureVisualScale,
+        y: (event.clientY - this._startClientY) / this._gestureVisualScale,
       },
       -this._startRotation,
     )

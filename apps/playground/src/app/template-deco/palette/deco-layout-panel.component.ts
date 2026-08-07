@@ -4,6 +4,7 @@ import {
   BlockLockError,
   BlockPlacementLayer,
   resolveBlockPlacement,
+  resolvePlacementXInPixels,
 } from '@ccc/blockcraft'
 import { Subscription } from 'rxjs'
 import { ActiveDecoService, DecoBlockRef } from '../core/active-deco.service'
@@ -86,12 +87,18 @@ const freezeVM = (
 const toVM = (doc: BlockCraftDoc, blockId: string, b: DecoBlockRef): PanelVM => {
   const mode = placementModeFromProps(b.props)
   const position = resolveBlockPlacement(b.props?.placement)
+  const host = (b as unknown as {hostElement?: HTMLElement}).hostElement
   return {
     ...freezeVM(doc, blockId),
     mode,
     floatSide: b.props?.float === 'right' ? 'right' : 'left',
     align: b.props?.align ?? 'left',
-    x: mode === 'absolute' ? position.x : null,
+    x: mode === 'absolute'
+      ? Math.round(resolvePlacementXInPixels(
+          b.props?.placement,
+          host?.parentElement?.clientWidth ?? 0,
+        ))
+      : null,
     y: mode === 'absolute' ? position.y : b.props?.y ?? null,
     layer: position.layer,
     deg: (b.props as PlaceableProps | undefined)?.deg ?? null,
@@ -108,7 +115,7 @@ const toVM = (doc: BlockCraftDoc, blockId: string, b: DecoBlockRef): PanelVM => 
  *   上下型会自动回到相对定位；模板特有的四周型继续使用 float；
  * - 独占出「对齐 左/中/右」、环绕出「图在左 / 右」，两者共用四向边距盒（上/下 px、左/右列宽%；
  *   独占的左右仅对齐锚定侧可改，x 是悬浮判别位、独占不用 x，见 PlaceableProps 注释）；
- * - 浮于/衬于文字时显示 Figma 检查器式字段格：x（占列宽%）/ y（离顶 px）与旋转；
+ * - 浮于/衬于文字时显示 Figma 检查器式字段格：x/y 均为相对 root 原点的固定 px 与旋转；
  * - 「删除物料」收在标题行右上角图标（悬浮物料绕开了框架选区、键盘删不着，这是唯一删除入口）。
  *
  * 数据源：订阅 `ActiveDecoService.active$`（物料点/拖时 next 自己的 id）+ yDoc `afterAllTransactions`。
@@ -192,7 +199,7 @@ const toVM = (doc: BlockCraftDoc, blockId: string, b: DecoBlockRef): PanelVM => 
           @if (v.mode==='absolute') {
             <!-- 悬浮：Figma 检查器式字段格——标签/数值/单位装进同一个描边格，focus 整格点亮 -->
             <div class="tpl-layout__grid">
-              <label class="tpl-cell"><span class="k">X</span><input type="number" [value]="v.x ?? ''" (focus)="clearZero($event)" (change)="setX($event)" /><span class="u">%</span></label>
+              <label class="tpl-cell"><span class="k">X</span><input type="number" [value]="v.x ?? ''" (focus)="clearZero($event)" (change)="setX($event)" /><span class="u">px</span></label>
               <label class="tpl-cell"><span class="k">Y</span><input type="number" [value]="v.y ?? ''" (focus)="clearZero($event)" (change)="setY($event)" /><span class="u">px</span></label>
             </div>
             <div class="tpl-layout__grid">

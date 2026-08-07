@@ -4,6 +4,7 @@ import {
   deriveObjectSizeFromPixels,
   DocFileService,
   DOC_FILE_SERVICE_TOKEN,
+  resolvePlacementXInPixels,
   ResizeContainerComponent,
 } from '@ccc/blockcraft'
 import { pickImageAsDataURL } from '../_shared/image-pick'
@@ -96,7 +97,9 @@ export class LogoTemplateEditComponent extends PlaceableEditBase<LogoModel> {
         ? {
             placement: {
               ...placement,
-              x: (placement.x ?? 0) + event.offsetX / event.basisWidth * 100,
+              x: resolvePlacementXInPixels(placement, event.basisWidth) +
+                event.offsetX,
+              unit: 'px',
             },
           }
         : {}),

@@ -87,6 +87,9 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
               mode: 'absolute',
               x: toFinite(placementSource.properties['dataImagePlacementX']),
               y: toFinite(placementSource.properties['dataImagePlacementY']),
+              ...(placementSource.properties['dataImagePlacementUnit'] === 'px'
+                ? {unit: 'px' as const}
+                : {}),
               ...(placementSource.properties['dataImagePlacementLayer'] === 'under'
                 ? {layer: 'under' as const}
                 : {}),
@@ -137,6 +140,9 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
                 dataImagePlacementMode: 'absolute',
                 dataImagePlacementX: placement.x ?? 0,
                 dataImagePlacementY: placement.y ?? 0,
+                ...(placement.unit === 'px'
+                  ? {dataImagePlacementUnit: 'px'}
+                  : {}),
                 dataImagePlacementLayer:
                   placement.layer === 'under' ? 'under' : 'over',
               } : {}),

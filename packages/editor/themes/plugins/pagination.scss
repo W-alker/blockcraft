@@ -70,7 +70,11 @@
   box-sizing: border-box;
   width: var(--bc-page-width);
   flex: 0 0 auto;
-  margin: 0;
+  /* The host document header remains a sibling of the editor root.  Move the
+     whole root to the first-page body origin instead of simulating that origin
+     with root padding and a second placement-plane offset.  Flow and paginated
+     views therefore expose the same root-local coordinate space. */
+  margin: var(--bc-page-root-offset-top, 0px) 0 0;
   padding: var(--bc-page-margin-top) var(--bc-page-margin-right) var(--bc-page-margin-bottom) var(--bc-page-margin-left);
   background: transparent;
 

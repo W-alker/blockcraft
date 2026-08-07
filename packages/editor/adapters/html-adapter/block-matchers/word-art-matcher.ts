@@ -163,6 +163,9 @@ export const wordArtBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           mode: 'absolute',
           x: numberProperty(o.node, 'dataWordArtPlacementX') ?? 0,
           y: numberProperty(o.node, 'dataWordArtPlacementY') ?? 0,
+          ...(stringProperty(o.node, 'dataWordArtPlacementUnit') === 'px'
+            ? {unit: 'px' as const}
+            : {}),
           layer:
             stringProperty(o.node, 'dataWordArtPlacementLayer') === 'under'
               ? 'under'
@@ -222,6 +225,9 @@ export const wordArtBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
             dataWordArtPlacementMode: 'absolute',
             dataWordArtPlacementX: placement.x ?? 0,
             dataWordArtPlacementY: placement.y ?? 0,
+            ...(placement.unit === 'px'
+              ? {dataWordArtPlacementUnit: 'px'}
+              : {}),
             dataWordArtPlacementLayer:
               placement.layer === 'under' ? 'under' : 'over',
           } : {}),

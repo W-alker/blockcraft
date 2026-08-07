@@ -28,7 +28,10 @@ export {
   measureObjectPlacement,
   resolvePlacementBox,
 } from './block-placement/geometry'
-export {resolveBlockPlacement} from './block-placement/state'
+export {
+  resolveBlockPlacement,
+  resolvePlacementXInPixels,
+} from './block-placement/state'
 export {
   BLOCK_OBJECT_LAYOUT_OPTIONS,
   BLOCK_PLACEMENT_LAYOUT_FLAVOUR,

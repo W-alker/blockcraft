@@ -4,7 +4,7 @@ import {BlockReadonlyError} from '../../doc/block-readonly.types'
 import {deleteAbsolutePlacementObject} from './delete-command'
 import {resolvePlacementBox} from './geometry'
 import {BlockPlacementRuntime} from './runtime'
-import {finitePlacementNumber} from './state'
+import {finitePlacementNumber, resolvePlacementXInPixels} from './state'
 import {
   BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
   type BlockPlacementDragState,
@@ -118,10 +118,16 @@ export class BlockPlacementInteractionController {
     }
     const current = this.runtime.getState(block)
     if (current.mode !== 'absolute') return false
+    const box = resolvePlacementBox(block.hostElement)
+    const currentX = resolvePlacementXInPixels(
+      block.props?.placement,
+      box?.width ?? 0,
+    )
     const next: BlockPositionState = {
       mode: 'absolute',
-      x: finitePlacementNumber(patch.x, current.x),
+      x: finitePlacementNumber(patch.x, currentX),
       y: finitePlacementNumber(patch.y, current.y),
+      unit: 'px',
       ...(current.layer === 'over' ? {} : {layer: current.layer}),
     }
     block.updateProps({placement: next})
@@ -152,9 +158,13 @@ export class BlockPlacementInteractionController {
     if (!box) return false
 
     const pointerId = event.pointerId
-    const startX = event.clientX
-    const startY = event.clientY
+    const pointerStartX = event.clientX
+    const pointerStartY = event.clientY
     const start = this.runtime.getState(block)
+    const placementStartX = resolvePlacementXInPixels(
+      block.props?.placement,
+      box.width,
+    )
     const threshold = options.movementThreshold ??
       (
         (event.pointerType || 'mouse') === 'touch'
@@ -202,8 +212,8 @@ export class BlockPlacementInteractionController {
         cleanup()
         return
       }
-      dx = moveEvent.clientX - startX
-      dy = moveEvent.clientY - startY
+      dx = moveEvent.clientX - pointerStartX
+      dy = moveEvent.clientY - pointerStartY
       if (!moved && dx * dx + dy * dy < threshold * threshold) return
       if (!moved) {
         moved = true
@@ -216,9 +226,12 @@ export class BlockPlacementInteractionController {
         } catch {}
       }
       moveEvent.preventDefault()
-      const scale = Math.max(0.0001, this.doc.viewScale?.value ?? 1)
-      const layoutDx = dx / scale
-      const layoutDy = dy / scale
+      // Pointer events expose visual viewport pixels.  Use the containing
+      // placement plane's measured scale instead of the configured view scale:
+      // browser zoom and host transforms can make the latter differ from the
+      // geometry that actually produced the pointer coordinates.
+      const layoutDx = dx / box.visualScale
+      const layoutDy = dy / box.visualScale
       host.style.transform =
         `translate3d(${layoutDx}px, ${layoutDy}px, 0)` +
         `${originalTransform ? ` ${originalTransform}` : ''}`
@@ -228,10 +241,9 @@ export class BlockPlacementInteractionController {
       const shouldCommit = moved && isLiveWritable()
       cleanup()
       if (!shouldCommit) return
-      const scale = Math.max(0.0001, this.doc.viewScale?.value ?? 1)
       this.updateAbsolute(block, {
-        x: start.x + ((dx / scale) / box.width) * 100,
-        y: start.y + dy / scale,
+        x: placementStartX + dx / box.visualScale,
+        y: start.y + dy / box.visualScale,
       })
     }
     const onPointerCancel = (cancelEvent: PointerEvent) => {

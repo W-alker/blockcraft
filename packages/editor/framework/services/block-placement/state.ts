@@ -29,6 +29,19 @@ export function resolveBlockPlacement(value: unknown): ResolvedBlockPosition {
     mode: 'absolute',
     x: finitePlacementNumber(placement.x),
     y: finitePlacementNumber(placement.y),
+    ...(placement.unit === 'px' ? {unit: 'px' as const} : {}),
     layer: resolveLayer(placement.layer),
   }
+}
+
+/** Resolve the persisted horizontal coordinate into root-local layout px. */
+export function resolvePlacementXInPixels(
+  value: unknown,
+  rootWidth: number,
+): number {
+  const placement = resolveBlockPlacement(value)
+  if (placement.mode !== 'absolute') return 0
+  if (placement.unit === 'px') return placement.x
+  const width = Number.isFinite(rootWidth) && rootWidth > 0 ? rootWidth : 0
+  return placement.x / 100 * width
 }

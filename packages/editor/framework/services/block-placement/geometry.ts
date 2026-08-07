@@ -49,14 +49,17 @@ export function measureObjectPlacement(
   const rect = element.getBoundingClientRect()
   return {
     mode: 'absolute',
-    x: Math.round((((rect.left - box.originX) / box.visualScale) / box.width) * 1000) / 10,
+    x: Math.round((rect.left - box.originX) / box.visualScale),
     y: Math.round((rect.top - box.originY) / box.visualScale),
+    unit: 'px',
     layer,
   }
 }
 
 export function measureBlockPlacement(host: HTMLElement): ResolvedBlockPosition {
   const box = resolvePlacementBox(host)
-  if (!box) return {mode: 'absolute', x: 0, y: 0, layer: 'over'}
+  if (!box) {
+    return {mode: 'absolute', x: 0, y: 0, unit: 'px', layer: 'over'}
+  }
   return measureObjectPlacement(host, box.container)
 }

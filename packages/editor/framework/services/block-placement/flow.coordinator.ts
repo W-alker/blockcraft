@@ -187,6 +187,7 @@ export class BlockPlacementFlowCoordinator {
             mode: 'absolute',
             x: measured.x,
             y: measured.y,
+            unit: 'px',
             ...(layer === 'under' ? {layer} : {}),
           },
         } as any)
@@ -216,6 +217,7 @@ export class BlockPlacementFlowCoordinator {
           mode: 'absolute',
           x: measured.x,
           y: measured.y,
+          unit: 'px',
           ...(layer === 'under' ? {layer} : {}),
         },
       } as any)

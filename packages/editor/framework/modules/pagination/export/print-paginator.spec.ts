@@ -734,7 +734,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     }
   });
 
-  it('keeps absolute placement x coordinates relative to the full sheet with asymmetric margins', async () => {
+  it('keeps fixed root-px placement x coordinates with asymmetric margins', async () => {
     const config: PaginationConfig = {
       ...SMALL_PAGE,
       margins: {top: 10, right: 10, bottom: 10, left: 30},
@@ -746,13 +746,17 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       {id: 'p1', height: 40, breakable: false, keepWithNext: false},
       {id: 'placement', height: 0, breakable: false, keepWithNext: false},
     ];
-    const layout = createStablePaginationLayout(16, config, geometry, items, {
-      pages: [{index: 0, usedHeight: 40, slots: [{id: 'p1'}, {id: 'placement'}]}],
-      byBlock: new Map([
-        ['p1', {pageIndex: 0}],
-        ['placement', {pageIndex: 0}],
-      ]),
-    });
+    const layout = {
+      ...createStablePaginationLayout(16, config, geometry, items, {
+        pages: [{index: 0, usedHeight: 40, slots: [{id: 'p1'}, {id: 'placement'}]}],
+        byBlock: new Map([
+          ['p1', {pageIndex: 0}],
+          ['placement', {pageIndex: 0}],
+        ]),
+      }),
+      placementOriginX: 8,
+      placementWidth: 360,
+    };
     const offscreen = document.createElement('div');
     offscreen.style.cssText = 'position:absolute;left:-99999px;top:0;width:360px;';
     const flow = document.createElement('div');
@@ -769,7 +773,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     const shape = document.createElement('div');
     shape.dataset['blockId'] = 'shape';
     shape.dataset['bcPlacement'] = 'absolute';
-    shape.style.cssText = 'position:absolute;left:50%;top:20px;width:20px;height:20px;margin:0;';
+    shape.style.cssText = 'position:absolute;left:200px;top:20px;width:20px;height:20px;margin:0;';
     placementChildren.appendChild(shape);
     placementElement.appendChild(placementChildren);
     offscreen.appendChild(placementElement);
@@ -783,9 +787,10 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       const page = pages.pages[0]!;
       const plane = page.querySelector<HTMLElement>('[data-bc-print-placement-plane="true"]')!;
       const renderedShape = plane.querySelector<HTMLElement>('[data-block-id="shape"]')!;
-      expect(plane.style.left).toBe('-30px');
-      expect(plane.style.width).toBe('400px');
-      expect(Math.round(renderedShape.getBoundingClientRect().left - page.getBoundingClientRect().left)).toBe(200);
+      expect(plane.style.left).toBe('-22px');
+      expect(plane.style.width).toBe('360px');
+      expect(renderedShape.style.left).toBe('200px');
+      expect(Math.round(renderedShape.getBoundingClientRect().left - page.getBoundingClientRect().left)).toBe(208);
     } finally {
       pages.dispose();
     }

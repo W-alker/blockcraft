@@ -442,6 +442,60 @@ describe('Shape block domain', () => {
     expect(target.style.transform).toBe('')
   })
 
+  it('normalises resize pointer deltas through the measured container scale', () => {
+    const zone = {
+      runOutsideAngular: (fn: () => void) => fn(),
+      run: (fn: () => void) => fn(),
+    } as any
+    const resizer = new ShapeResizerComponent(zone)
+    const target = document.createElement('div')
+    target.style.width = '180px'
+    target.style.height = '100px'
+    spyOn(target, 'getBoundingClientRect').and.returnValue({
+      left: 0,
+      top: 0,
+      width: 360,
+      height: 200,
+    } as DOMRect)
+    const container = document.createElement('div')
+    Object.defineProperty(container, 'clientWidth', {value: 500})
+    spyOn(container, 'getBoundingClientRect').and.returnValue({
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 1200,
+    } as DOMRect)
+    resizer.target = target
+    resizer.maxWidthContainer = container
+
+    const commits: any[] = []
+    resizer.resizeCommit.subscribe((event) => commits.push(event))
+    const handle = document.createElement('button')
+    spyOn(handle, 'setPointerCapture')
+    const down = new PointerEvent('pointerdown', {
+      button: 0,
+      pointerId: 27,
+      clientX: 100,
+      clientY: 100,
+    })
+    Object.defineProperty(down, 'currentTarget', {value: handle})
+    resizer.onPointerDown(down, 'south-east')
+
+    ;(resizer as any)._onPointerUp(new PointerEvent('pointerup', {
+      pointerId: 27,
+      clientX: 180,
+      clientY: 160,
+    }))
+
+    expect(commits).toEqual([{
+      width: 220,
+      height: 130,
+      offsetX: 0,
+      offsetY: 0,
+      handle: 'south-east',
+    }])
+  })
+
   it('commits the final drag rotation once and restores preview ownership', () => {
     const zone = {
       runOutsideAngular: (fn: () => void) => fn(),
@@ -679,8 +733,9 @@ describe('Shape block domain', () => {
       height: 80,
       placement: {
         mode: 'absolute',
-        x: 20,
+        x: 40,
         y: 25,
+        unit: 'px',
         layer: 'over',
       },
     })

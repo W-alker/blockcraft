@@ -7,7 +7,10 @@ import {
   ViewChild,
 } from '@angular/core'
 import {fromEvent, takeUntil} from 'rxjs'
-import {EditableBlockComponent} from '../../framework'
+import {
+  EditableBlockComponent,
+  resolvePlacementXInPixels,
+} from '../../framework'
 import {
   ShapeResizerComponent,
   type ShapeResizeCommit,
@@ -168,10 +171,10 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
       const containerWidth = this.placementContainer?.clientWidth ?? 0
       next.placement = {
         ...current.placement,
-        x:
-          (current.placement.x ?? 0) +
-          (containerWidth > 0 ? (event.offsetX / containerWidth) * 100 : 0),
+        x: resolvePlacementXInPixels(current.placement, containerWidth) +
+          event.offsetX,
         y: (current.placement.y ?? 0) + event.offsetY,
+        unit: 'px',
       }
     }
     this.updateProps(next)

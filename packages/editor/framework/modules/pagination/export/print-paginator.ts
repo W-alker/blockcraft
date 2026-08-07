@@ -68,6 +68,9 @@ export interface PrintRenderResult {
    * 真实原点，不能再用同一组配置重复猜一次。
    */
   placementOriginY?: number;
+  /** placement plane 相对纸张左缘的实际固定原点与宽度（layout px）。 */
+  placementOriginX?: number;
+  placementWidth?: number;
 }
 
 export type PrintRenderProvider = (contentWidthPx: number) => Promise<PrintRenderResult>;
@@ -153,6 +156,8 @@ export async function buildPaginatedPrintSurface(
   let disposeRender: () => void;
   let resolvePlacementOriginOffset: (() => number) | undefined;
   let capturedPlacementOriginY: number | undefined;
+  let capturedPlacementOriginX: number | undefined;
+  let capturedPlacementWidth: number | undefined;
   let leadingContent: PrintRenderResult['leadingContent'];
   let leadingStage: {root: HTMLElement; host: HTMLElement} | undefined;
   if (override?.render) {
@@ -161,6 +166,8 @@ export async function buildPaginatedPrintSurface(
     disposeRender = r.dispose;
     resolvePlacementOriginOffset = r.resolvePlacementOriginOffset;
     capturedPlacementOriginY = r.placementOriginY;
+    capturedPlacementOriginX = r.placementOriginX;
+    capturedPlacementWidth = r.placementWidth;
     leadingContent = r.leadingContent;
   } else {
     const offscreen = document.createElement('div');
@@ -381,6 +388,18 @@ export async function buildPaginatedPrintSurface(
     : Number.isFinite(capturedPlacementOriginY)
       ? Math.max(0, capturedPlacementOriginY ?? fallbackPlacementOriginY)
       : fallbackPlacementOriginY;
+  const stablePlacementOriginX = override?.layout?.placementOriginX;
+  const stablePlacementWidth = override?.layout?.placementWidth;
+  const placementOriginX = Number.isFinite(stablePlacementOriginX)
+    ? stablePlacementOriginX!
+    : Number.isFinite(capturedPlacementOriginX)
+      ? capturedPlacementOriginX!
+      : 0;
+  const placementWidth = Number.isFinite(stablePlacementWidth) && stablePlacementWidth! > 0
+    ? stablePlacementWidth!
+    : Number.isFinite(capturedPlacementWidth) && capturedPlacementWidth! > 0
+      ? capturedPlacementWidth!
+      : sheetWidthPx;
   const screenPageStride = sheetHeightPx + geom.pageGap;
   for (const page of result.pages) {
     const pageEl = document.createElement('div');
@@ -479,8 +498,8 @@ export async function buildPaginatedPrintSurface(
         - contentTop
         - pageLeadingHeight
         - page.index * screenPageStride,
-      -margins.left,
-      sheetWidthPx,
+      placementOriginX - margins.left,
+      placementWidth,
     );
     // live root 尾部存在编辑器辅助节点，因此最后一个顶层块不会命中
     // `[data-block-id]:last-child { margin-bottom: 0 }`。打印面没有这些辅助节点，
@@ -575,8 +594,9 @@ function appendPlacementPlanes(
     const plane = source.cloneNode(true) as HTMLElement;
     plane.setAttribute('data-bc-print-placement-plane', 'true');
     plane.style.top = `${top}px`;
-    // live placement.x 是相对整张分页 root（含左右 padding）的百分比；打印正文盒仅有
-    // content width。把 plane 向左扩回整张纸，才能让 x=0/50/100% 与屏幕保持同一坐标系。
+    // placement.x/y 是相对整张分页 root 原点的固定 layout px；打印正文盒从正文
+    // 左边距开始，因此 placement plane 必须向左还原到同一个 root 原点。旧百分比
+    // 数据已在只读渲染阶段固化为 left:px，克隆后同样不再依赖打印盒宽度。
     plane.style.left = `${left}px`;
     plane.style.right = 'auto';
     plane.style.width = `${width}px`;

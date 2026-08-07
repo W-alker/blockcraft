@@ -120,6 +120,10 @@ export class InlineObjectInteractionController {
     const snapshot = this._doc.model.toSnapshot(block.id)
     if (!snapshot) return false
     const placement = this._doc.placement.getState(block)
+    const placementWidth = block.hostElement.parentElement?.clientWidth ?? 0
+    const normalizedPlacementX = placement.unit === 'px'
+      ? placement.x / Math.max(1, placementWidth)
+      : placement.x / 100
     const visual = this._visualElement(block)
     const rect = visual.getBoundingClientRect()
     const target = wrap && placement.mode === 'absolute'
@@ -132,7 +136,7 @@ export class InlineObjectInteractionController {
             wrap: true,
             side: 'auto',
             x: target?.normalizedX ??
-              Math.max(0, Math.min(1, placement.x / 100)),
+              Math.max(0, Math.min(1, normalizedPlacementX)),
             gap: DEFAULT_INLINE_IMAGE_WRAP_GAP,
           }
         : undefined,
@@ -591,6 +595,7 @@ export class InlineObjectInteractionController {
         mode: 'absolute',
         x: measured.x,
         y: measured.y,
+        unit: 'px',
         ...(layout === 'under' ? {layer: 'under'} : {}),
       }
       result.object.props = {...result.object.props, placement}

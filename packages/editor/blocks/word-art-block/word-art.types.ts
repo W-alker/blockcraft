@@ -157,10 +157,12 @@ const normalizePlacement = (
   if (!value || typeof value !== 'object') return undefined
   const placement = value as Record<string, unknown>
   if (placement['mode'] !== 'absolute') return undefined
+  const unit = placement['unit'] === 'px' ? 'px' as const : undefined
   return {
     mode: 'absolute',
-    x: finiteNumber(placement['x'], 0, 0, 100),
+    x: finiteNumber(placement['x'], 0, 0, unit === 'px' ? 1_000_000 : 100),
     y: finiteNumber(placement['y'], 0, 0, 1_000_000),
+    ...(unit ? {unit} : {}),
     layer: placement['layer'] === 'under' ? 'under' : 'over',
   }
 }

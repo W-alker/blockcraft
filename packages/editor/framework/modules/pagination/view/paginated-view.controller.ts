@@ -288,10 +288,15 @@ export class PaginatedViewController {
     this._rafId = 0;
     const layout = this._recompute();
     if (!layout) return null;
-    const placementOriginY = this._capturePlacementOriginY();
-    return placementOriginY == null
+    const placementGeometry = this._capturePlacementGeometry();
+    return placementGeometry == null
       ? layout
-      : {...layout, placementOriginY};
+      : {
+          ...layout,
+          placementOriginX: placementGeometry.x,
+          placementOriginY: placementGeometry.y,
+          placementWidth: placementGeometry.width,
+        };
   }
 
   /**
@@ -299,7 +304,11 @@ export class PaginatedViewController {
    * DOMRect 属于 visual px；除以 root 的实测视觉比例后回到稳定布局使用的 layout px。
    * 该读取仅发生在显式导出屏障，不进入编辑/拖拽热路径。
    */
-  private _capturePlacementOriginY(): number | undefined {
+  private _capturePlacementGeometry(): {
+    x: number;
+    y: number;
+    width: number;
+  } | undefined {
     const root = this.doc.root.hostElement;
     const plane = Array.from(root.children).find(element =>
       element.hasAttribute('data-bc-placement-layout'),
@@ -307,14 +316,45 @@ export class PaginatedViewController {
     if (!plane) return undefined;
     const rootRect = root.getBoundingClientRect();
     const planeRect = plane.getBoundingClientRect();
-    const measuredScale = root.offsetWidth > 0
-      ? rootRect.width / root.offsetWidth
-      : this.doc.viewScale?.geometryScale ?? 1;
+    const firstSheet = root.parentElement?.querySelector<HTMLElement>(
+      ':scope > .bc-pagination-backdrop > .bc-page-sheet',
+    ) ?? null;
+    const sheetRect = firstSheet?.getBoundingClientRect();
+    const measuredScale = sheetRect && sheetRect.width > 0
+      ? sheetRect.width / this._geom.sheetWidthPx
+      : root.offsetWidth > 0
+        ? rootRect.width / root.offsetWidth
+        : this.doc.viewScale?.geometryScale ?? 1;
     const visualScale = Number.isFinite(measuredScale) && measuredScale > 0
       ? measuredScale
       : 1;
-    const originY = (planeRect.top - rootRect.top) / visualScale;
-    return Number.isFinite(originY) ? Math.max(0, originY) : undefined;
+    // Stable export needs the placement origin in sheet-local coordinates.
+    // The paginated root itself now starts at the body origin, so a root-local
+    // measurement would always be zero and would lose the external header /
+    // page-margin offset. Prefer the rendered first sheet; the inline root
+    // offset is the deterministic fallback for layout-less test environments.
+    const configuredRootOffset = Number.parseFloat(
+      root.style.getPropertyValue('--bc-page-root-offset-top'),
+    );
+    const originY = sheetRect && sheetRect.height > 0
+      ? (planeRect.top - sheetRect.top) / visualScale
+      : (planeRect.top - rootRect.top) / visualScale + (
+        Number.isFinite(configuredRootOffset) ? configuredRootOffset : 0
+      );
+    const originX = sheetRect && sheetRect.width > 0
+      ? (planeRect.left - sheetRect.left) / visualScale
+      : (planeRect.left - rootRect.left) / visualScale;
+    const width = planeRect.width / visualScale;
+    return Number.isFinite(originX) &&
+        Number.isFinite(originY) &&
+        Number.isFinite(width) &&
+        width > 0
+      ? {
+          x: originX,
+          y: Math.max(0, originY),
+          width,
+        }
+      : undefined;
   }
 
   /** @internal Phase B diagnostic snapshot; never drives the live view. */
@@ -884,12 +924,13 @@ export class PaginatedViewController {
     root.classList.add('bc-paginated');
     root.style.setProperty('--bc-page-width', `${sheetWidthPx}px`);
     root.style.setProperty('--bc-page-content-height', `${this._geom.geometry.contentHeight}px`);
-    // 正文上下内边距要把页眉/页脚带也让出来，使首块落在「页边距 + 页眉」之下、
-    // 与背景层里 header 之下的内容区顶对齐（contentHeight 已扣除页眉/页脚）。
+    // 宿主文档头始终处于 root 外部。整个 root 从第一页正文起点开始，header
+    // 高度只影响首页容量；普通块和 placement plane 不再各自重复补偿 header。
     const documentHeaderOffset = this._documentHeaderExtraTop();
     const contentOriginY = (this._geom.contentTop ?? margins.top + this._geom.headerHeight) + documentHeaderOffset;
-    root.style.setProperty('--bc-page-margin-top', `${contentOriginY}px`);
-    root.style.setProperty('--bc-placement-content-origin-y', `${contentOriginY}px`);
+    root.style.setProperty('--bc-page-root-offset-top', `${contentOriginY}px`);
+    root.style.setProperty('--bc-page-margin-top', '0px');
+    root.style.setProperty('--bc-placement-content-origin-y', '0px');
     root.style.setProperty(
       '--bc-page-margin-bottom',
       `${this._geom.contentBottom ?? margins.bottom + this._geom.footerHeight}px`,
@@ -903,7 +944,7 @@ export class PaginatedViewController {
   private _removeContainerStyles(): void {
     const root = this.doc.root.hostElement;
     root.classList.remove('bc-paginated');
-    ['--bc-page-width', '--bc-page-content-height', '--bc-page-margin-top', '--bc-page-margin-right', '--bc-page-margin-bottom', '--bc-page-margin-left', '--bc-placement-content-origin-y']
+    ['--bc-page-width', '--bc-page-content-height', '--bc-page-root-offset-top', '--bc-page-margin-top', '--bc-page-margin-right', '--bc-page-margin-bottom', '--bc-page-margin-left', '--bc-placement-content-origin-y']
       .forEach(p => root.style.removeProperty(p));
     this.scrollContainer.classList.remove('bc-paginated-scroll');
   }

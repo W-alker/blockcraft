@@ -7,7 +7,8 @@ import {
   DOC_LINK_PREVIEWER_SERVICE_TOKEN,
   DOC_MESSAGE_SERVICE_TOKEN,
   DocLinkPreviewerService,
-  generateId
+  generateId,
+  PaginationDocumentHeaderOptions
 } from "../framework";
 import {ConsoleLogger} from "../global";
 import {FixedTextToolbarComponent} from "../plugins/fixed-toolbar";
@@ -43,7 +44,9 @@ const mentionRequest = async (keyword: string, _type?: string) => {
   selector: "block-craft-editor",
   template: `
     <section class="editor-shell">
-      <bc-fixed-toolbar [doc]="doc" [stickyTop]="stickyTop"></bc-fixed-toolbar>
+      @if (showFixedToolbar) {
+        <bc-fixed-toolbar [doc]="doc" [stickyTop]="stickyTop"></bc-fixed-toolbar>
+      }
 
       <div
         class="editor-container"
@@ -141,8 +144,14 @@ const mentionRequest = async (keyword: string, _type?: string) => {
 export class EditorComponent implements OnInit, OnDestroy {
   @ViewChild("container", { read: ElementRef }) container!: ElementRef;
   @Input() stickyTop = 0;
+  @Input() showFixedToolbar = true;
   @Input() virtualizationEnabled = true;
   @Input() paginationSparseView = false;
+  /**
+   * 宿主拥有的文档头。它始终位于编辑器 root 之外，分页插件只在分页期间
+   * 把同一个 DOM 节点投影到首页并测量，不会把它写进文档数据。
+   */
+  @Input() paginationDocumentHeader?: PaginationDocumentHeaderOptions;
   constructor(
     private injector: Injector,
     private logger: ConsoleLogger,
@@ -193,6 +202,7 @@ export class EditorComponent implements OnInit, OnDestroy {
         pageSize: 'A4',
         printShortcut: true,
         experimentalSparseView: this.paginationSparseView,
+        documentHeader: this.paginationDocumentHeader,
       },
     })
     return new BlockCraftDoc({
