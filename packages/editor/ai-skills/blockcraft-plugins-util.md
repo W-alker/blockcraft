@@ -143,11 +143,16 @@ so model-only integrations should use `blockId`.
 
 ### Configuration
 
-No configuration options.
-
 ```typescript
 new FindReplacePlugin()
+
+// Host supplies its own panel and delegates behavior to plugin.helper.
+new FindReplacePlugin({defaultDialog: false})
 ```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `defaultDialog` | `boolean` | `true` | Whether Cmd/Ctrl+F is consumed to open BlockCraft's bundled dialog. Set `false` for a host-rendered UI; the plugin still owns and exposes the fully initialized `helper`. |
 
 ### Built-in Hotkeys
 
@@ -160,6 +165,11 @@ new FindReplacePlugin()
 | Property | Type | Description |
 |----------|------|-------------|
 | `helper` | `FindReplaceHelper` | Programmatic find/replace without UI |
+
+The bundled dialog and host-rendered panels should reuse `plugin.helper`; do
+not create another helper for the same document. The plugin owns
+`listen()` / `destroy()`. A host panel may call `clearAll()` when it closes, but
+must not destroy the shared helper.
 
 ---
 

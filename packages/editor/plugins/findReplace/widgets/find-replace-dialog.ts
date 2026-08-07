@@ -26,13 +26,19 @@ export class FindReplaceDialog implements OnInit, OnDestroy {
   findText = ''
   replaceText = ''
 
+  @Input()
   helper!: FindReplaceHelper
+
   private _destroyed = false
+  private _ownsHelper = false
 
   ngOnInit() {
     this._destroyed = false
-    this.helper = new FindReplaceHelper(this.doc)
-    this.helper.listen()
+    if (!this.helper) {
+      this.helper = new FindReplaceHelper(this.doc)
+      this.helper.listen()
+      this._ownsHelper = true
+    }
   }
 
   ngAfterViewInit() {
@@ -45,10 +51,11 @@ export class FindReplaceDialog implements OnInit, OnDestroy {
       clearTimeout(this._timer)
       this._timer = null
     }
-    this.helper?.destroy()
+    if (this._ownsHelper) this.helper?.destroy()
+    else this.helper?.clearAll()
   }
 
-  onFlagChange(item: typeof this.helper.regFlagList[number]) {
+  onFlagChange(item: FindReplaceHelper['regFlagList'][number]) {
     this.helper.toggleFlag(item)
     this.helper.findAll(this.findText)
     this.cdr.markForCheck()

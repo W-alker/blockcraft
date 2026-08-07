@@ -74,6 +74,91 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 ## Releases
 
+### Unreleased - 2026-08-07 (minor) — allow host-rendered find/replace panels
+
+**Severity**: minor (additive API)
+
+**What changed**: `FindReplacePlugin` now accepts
+`{defaultDialog?: boolean}`. Setting it to `false` leaves Cmd/Ctrl+F available
+to the host while the plugin continues to own and expose its initialized
+`FindReplaceHelper`. BlockCraft's bundled dialog now reuses that same helper
+instead of creating a second model listener and highlight projection.
+
+**Why**: Host applications need product-specific search panel styling without
+copying the model scan, virtualized highlight, navigation, readonly and Yjs
+replacement behavior.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `FindReplacePluginOptions.defaultDialog?: boolean`
+
+#### Migration Recipe
+
+Hosts with their own panel can register the headless presentation mode and
+delegate all operations to the plugin-owned helper:
+
+```typescript
+const findReplace = new FindReplacePlugin({defaultDialog: false})
+plugins.push(findReplace)
+
+findReplace.helper.findAll(query)
+findReplace.helper.findNext()
+findReplace.helper.replaceOne(replacement)
+```
+
+#### Behavior Changes
+
+- The bundled dialog and plugin now share one helper lifecycle. Directly
+  constructed `FindReplaceDialog` instances without a helper input retain the
+  previous self-owned fallback behavior.
+
+### Unreleased - 2026-08-07 (minor) — allow host presence layers to suppress the local cursor
+
+**Severity**: minor (additive API)
+
+**What changed**: `BlockCraftAwareness` now exposes
+`setLocalCursorEnabled(enabled)` and the readonly `localCursorEnabled` state.
+Disabling clears only the local awareness cursor; remote cursor rendering,
+virtualized reprojection and the collaboration connection remain active.
+Re-enabling immediately publishes the current canonical BlockCraft selection.
+The class is now exported from the package root, and its optional config accepts
+`shouldRenderRemoteCursor(state)` for host presence filtering.
+
+**Why**: Host applications need editing/viewing presence states without
+copying BlockCraft's cursor renderer and falling behind its virtualization,
+selection, scrolling and lifecycle behavior.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `BlockCraftAwareness.setLocalCursorEnabled(enabled: boolean): void`
+- `BlockCraftAwareness.localCursorEnabled: boolean`
+- `BlockCraftAwarenessConfig.shouldRenderRemoteCursor(state): boolean`
+- Root export: `import {BlockCraftAwareness} from '@ccc/blockcraft'`
+
+#### Migration Recipe
+
+Hosts with a custom viewing state can delegate cursor projection to BlockCraft:
+
+```typescript
+cursorAwareness.setLocalCursorEnabled(presenceStatus === 'editing')
+```
+
+#### Behavior Changes
+
+- Calling the new method with the current value is a no-op. Calls after
+  `destroy()` are ignored.
+
 ### Unreleased - 2026-08-07 (patch) — make WordArt SVG-native and preserve the projected placement origin
 
 **Severity**: patch

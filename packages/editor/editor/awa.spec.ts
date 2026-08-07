@@ -1,4 +1,4 @@
-import {Subject} from 'rxjs'
+import {BehaviorSubject, Subject} from 'rxjs'
 import {BlockCraftAwareness} from './awa'
 import {ISelectionJSON} from '../framework'
 
@@ -696,6 +696,155 @@ describe('BlockCraftAwareness cursor view reconciliation', () => {
         .toBe('rgba(15, 118, 110, 0.18)')
       expect(label?.innerText).toBe('Remote renamed')
       expect(label?.style.backgroundColor).toBe('rgb(15, 118, 110)')
+    } finally {
+      manager.destroy()
+      rootHost.remove()
+      selectionChange$.complete()
+      onTextUpdate$.complete()
+      onDestroy$.complete()
+    }
+  })
+})
+
+describe('BlockCraftAwareness local cursor broadcast control', () => {
+  it('clears the local cursor while disabled and restores the current selection when enabled', () => {
+    jasmine.clock().install()
+    const selectionChange$ = new BehaviorSubject<any>(null)
+    const onTextUpdate$ = new Subject<any>()
+    const onDestroy$ = new Subject<void>()
+    const rootHost = document.createElement('div')
+    document.body.appendChild(rootHost)
+    const doc = {
+      selection: {
+        selectionChange$,
+        get value() {
+          return selectionChange$.value
+        },
+      },
+      crud: {onTextUpdate$},
+      onDestroy$,
+      afterInit: (callback: (root: any) => void) => callback({hostElement: rootHost}),
+      scrollContainer: null,
+      config: {},
+      logger: {warn: jasmine.createSpy('warn')},
+    }
+    const awareness = new AwarenessHarness()
+    const manager = new BlockCraftAwareness(doc as any, awareness as any)
+    const first = {
+      anchor: {blockId: 'p1', type: 'text', offset: 1},
+      head: {blockId: 'p1', type: 'text', offset: 1},
+      commonParent: 'p1',
+    }
+    const second = {
+      anchor: {blockId: 'p2', type: 'text', offset: 2},
+      head: {blockId: 'p2', type: 'text', offset: 2},
+      commonParent: 'p2',
+    }
+
+    try {
+      jasmine.clock().tick(100)
+      awareness.setLocalStateField.calls.reset()
+
+      selectionChange$.next({toJSON: () => first})
+      jasmine.clock().tick(100)
+      expect(awareness.setLocalStateField).toHaveBeenCalledWith('cursor', first)
+
+      manager.setLocalCursorEnabled(false)
+      expect(manager.localCursorEnabled).toBeFalse()
+      expect(awareness.setLocalStateField).toHaveBeenCalledWith('cursor', null)
+
+      awareness.setLocalStateField.calls.reset()
+      selectionChange$.next({toJSON: () => second})
+      jasmine.clock().tick(100)
+      expect(awareness.setLocalStateField).toHaveBeenCalledOnceWith('cursor', null)
+
+      manager.setLocalCursorEnabled(true)
+      expect(manager.localCursorEnabled).toBeTrue()
+      expect(awareness.setLocalStateField).toHaveBeenCalledWith('cursor', second)
+    } finally {
+      manager.destroy()
+      rootHost.remove()
+      selectionChange$.complete()
+      onTextUpdate$.complete()
+      onDestroy$.complete()
+      jasmine.clock().uninstall()
+    }
+  })
+
+  it('keeps filtered presence states connected without rendering their remote cursor', () => {
+    const selectionChange$ = new BehaviorSubject<any>(null)
+    const onTextUpdate$ = new Subject<any>()
+    const onDestroy$ = new Subject<void>()
+    const rootHost = document.createElement('div')
+    document.body.appendChild(rootHost)
+    const destroyRange = jasmine.createSpy('destroyRange')
+    const createFakeRange = jasmine.createSpy('createFakeRange').and.callFake(() => {
+      const overlay = document.createElement('span')
+      overlay.appendChild(document.createElement('span'))
+      rootHost.appendChild(overlay)
+      return {
+        fakeSpans: [overlay],
+        hasLostRenderedSpans: false,
+        destroy: () => {
+          destroyRange()
+          overlay.remove()
+        },
+      }
+    })
+    const point = {blockId: 'p1', type: 'selected'}
+    const doc = {
+      selection: {
+        selectionChange$,
+        value: null,
+        createSelection: () => ({
+          start: point,
+          end: point,
+          firstBlockId: 'p1',
+          lastBlockId: 'p1',
+          isInSameBlock: true,
+          collapsed: true,
+        }),
+        createFakeRange,
+      },
+      crud: {onTextUpdate$},
+      onDestroy$,
+      afterInit: (callback: (root: any) => void) => callback({hostElement: rootHost}),
+      scrollContainer: null,
+      config: {},
+      queryBlocksBetween: () => [],
+      logger: {warn: jasmine.createSpy('warn')},
+    }
+    const awareness = new AwarenessHarness()
+    const manager = new BlockCraftAwareness(doc as any, awareness as any, {
+      shouldRenderRemoteCursor: state => state['status'] !== 'viewing',
+    })
+    const cursor = {anchor: point, head: point, commonParent: 'root'}
+
+    try {
+      manager.setLocalUser({id: 'local', name: 'Local'})
+      awareness.states.set(7, {
+        user: {id: 'remote', name: 'Remote'},
+        status: 'viewing',
+        cursor,
+      })
+      awareness.emitChange({added: [7], updated: [], removed: []})
+      expect(createFakeRange).not.toHaveBeenCalled()
+
+      awareness.states.set(7, {
+        user: {id: 'remote', name: 'Remote'},
+        status: 'editing',
+        cursor,
+      })
+      awareness.emitChange({added: [], updated: [7], removed: []})
+      expect(createFakeRange).toHaveBeenCalledTimes(1)
+
+      awareness.states.set(7, {
+        user: {id: 'remote', name: 'Remote'},
+        status: 'viewing',
+        cursor,
+      })
+      awareness.emitChange({added: [], updated: [7], removed: []})
+      expect(destroyRange).toHaveBeenCalledTimes(1)
     } finally {
       manager.destroy()
       rootHost.remove()

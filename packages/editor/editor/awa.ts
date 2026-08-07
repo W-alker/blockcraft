@@ -16,10 +16,12 @@ import type {
   CollaborationUser,
 } from "./collaboration-cursor-color";
 
+export {resolveCollaborationCursorColor} from "./collaboration-cursor-color";
 export type {CollaborationUser} from "./collaboration-cursor-color";
 
-interface Config {
+export interface BlockCraftAwarenessConfig {
   throttleTime?: number;
+  shouldRenderRemoteCursor?: (state: Readonly<Record<string, unknown>>) => boolean;
 }
 
 interface IAwarenessState {
@@ -451,6 +453,7 @@ export class BlockCraftAwareness {
   private _labelRefreshFrame: number | null = null;
   private _labelViewportRefreshPending = false;
   private _mountedRootIds: readonly string[] | null = null;
+  private _localCursorEnabled = true;
 
   private _localUser?: IAwarenessState['user'];
 
@@ -462,14 +465,17 @@ export class BlockCraftAwareness {
 
   constructor(private readonly doc: BlockCraft.Doc,
               private readonly awareness: Awareness,
-              config?: Config) {
+              private readonly config: BlockCraftAwarenessConfig = {}) {
 
     this.doc.selection.selectionChange$.pipe(
       takeUntil(this._destroy$),
       takeUntil(this.doc.onDestroy$),
     ).subscribe(debounce(selection => {
-      this.awareness.setLocalStateField('cursor', selection?.toJSON());
-    }, 100));
+      this.awareness.setLocalStateField(
+        'cursor',
+        this._localCursorEnabled ? selection?.toJSON() : null,
+      );
+    }, config.throttleTime ?? 100));
 
     this.doc.crud.onTextUpdate$.pipe(
       takeUntil(this._destroy$),
@@ -542,6 +548,10 @@ export class BlockCraftAwareness {
               this.removeCursor(id);
               return;
             }
+            if (!this._shouldRenderRemoteCursor(state)) {
+              this.removeCursor(id);
+              return;
+            }
             if (!this.cursors.has(id)) {
               this.addCursor(id);
             }
@@ -566,13 +576,39 @@ export class BlockCraftAwareness {
     this.awareness.setLocalStateField('user', this._localUser = user);
   }
 
+  /**
+   * Enables or suppresses this client's collaboration cursor without
+   * disabling remote cursor rendering or tearing down Awareness.
+   *
+   * Host presence layers can use this for viewing/readonly states. Re-enabling
+   * publishes the current canonical BlockCraft selection immediately.
+   */
+  setLocalCursorEnabled(enabled: boolean) {
+    if (this._destroyed || this._localCursorEnabled === enabled) return;
+    this._localCursorEnabled = enabled;
+    this.awareness.setLocalStateField(
+      'cursor',
+      enabled ? this.doc.selection.value?.toJSON() ?? null : null,
+    );
+  }
+
+  get localCursorEnabled() {
+    return this._localCursorEnabled;
+  }
+
   getUsers() {
     return Array.from(this._states.values()).map(state => state.user);
   }
 
   protected addCursor(clientId: number) {
     const state = this._states.get(clientId)
-    if (!state || !state.user || this._localUser?.id === state.user.id || this.cursors.has(clientId)) return;
+    if (
+      !state ||
+      !state.user ||
+      !this._shouldRenderRemoteCursor(state) ||
+      this._localUser?.id === state.user.id ||
+      this.cursors.has(clientId)
+    ) return;
     this.cursors.set(clientId, new Cursor(
       this.doc,
       state.user,
@@ -583,6 +619,10 @@ export class BlockCraftAwareness {
   protected removeCursor(clientId: number) {
     this.cursors.get(clientId)?.destroy();
     this.cursors.delete(clientId);
+  }
+
+  private _shouldRenderRemoteCursor(state: IAwarenessState) {
+    return this.config.shouldRenderRemoteCursor?.(state) ?? true;
   }
 
   private _scheduleTextViewRefresh() {

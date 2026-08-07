@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-05 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-07 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -733,14 +733,17 @@ doc.chain()
 ### Collaboration Cursor Lifecycle
 
 ```typescript
-import { BlockCraftAwareness } from '@ccc/blockcraft/editor/awa'
+import { BlockCraftAwareness } from '@ccc/blockcraft'
 
-const cursorAwareness = new BlockCraftAwareness(doc, provider.awareness)
+const cursorAwareness = new BlockCraftAwareness(doc, provider.awareness, {
+  shouldRenderRemoteCursor: state => state['status'] !== 'viewing',
+})
 cursorAwareness.setLocalUser({
   id: currentUser.id,
   name: currentUser.name,
   color: currentUser.profileColor, // optional concrete CSS color
 })
+cursorAwareness.setLocalCursorEnabled(canEdit)
 
 // With root virtualization, offscreen remote selections remain model-only and
 // reappear automatically when their root units enter this client's view.
@@ -748,6 +751,11 @@ cursorAwareness.setLocalUser({
 // Required when leaving a room without destroying the document.
 cursorAwareness.destroy()
 ```
+
+`setLocalCursorEnabled(false)` clears only this client's broadcast cursor;
+remote cursor projection and the Awareness connection stay active. Re-enabling
+publishes the current canonical BlockCraft selection immediately, so host
+presence layers can model editing/viewing without forking the cursor runtime.
 
 When `color` is omitted or invalid, the user ID maps deterministically to the
 built-in collaboration palette. The same user therefore keeps the same color

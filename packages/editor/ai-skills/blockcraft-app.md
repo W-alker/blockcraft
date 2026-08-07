@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-05
+> Last updated: 2026-08-07
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -992,12 +992,15 @@ Connect a Yjs provider (`y-websocket`, `y-webrtc`, custom) to `doc.yDoc`. Initia
 
 ```typescript
 const provider = new WebsocketProvider(WS_URL, this.docId, this.doc.yDoc)
-const cursorAwareness = new BlockCraftAwareness(this.doc, provider.awareness)
+const cursorAwareness = new BlockCraftAwareness(this.doc, provider.awareness, {
+  shouldRenderRemoteCursor: state => state['status'] !== 'viewing',
+})
 cursorAwareness.setLocalUser({
   id: currentUser.id,
   name: currentUser.name,
   color: currentUser.profileColor, // optional concrete CSS color
 })
+cursorAwareness.setLocalCursorEnabled(canEdit)
 provider.once('synced', () => {
   const yRoot = this.doc.yDoc.getMap('blocks').get(this.rootId) as YBlock
   this.doc.initByYBlock(yRoot, this.containerRef.nativeElement)
@@ -1008,11 +1011,20 @@ cursorAwareness.destroy()
 provider.destroy()
 ```
 
-Import `BlockCraftAwareness` from `@ccc/blockcraft/editor/awa`. A host that enters and leaves collaboration rooms without destroying the editor document must call `destroy()` before discarding the provider.
+Import `BlockCraftAwareness` from `@ccc/blockcraft`. A host that enters and
+leaves collaboration rooms without destroying the editor document must call
+`destroy()` before discarding the provider.
 `setLocalUser()` accepts `{id, name, color?: string}`. A valid concrete CSS
 `color` is used for the remote label/caret; otherwise BlockCraft maps `id`
 deterministically to its curated palette. Solid label/caret color and the
 18%-opacity range color are resolved only when remote user identity changes.
+`setLocalCursorEnabled(false)` clears the local awareness cursor while keeping
+remote cursors and the Awareness connection active. Re-enabling immediately
+publishes the current canonical selection. Presence adapters should use this
+for viewing/readonly states instead of forking the cursor projection runtime.
+`shouldRenderRemoteCursor(state)` is an optional host presence filter. Returning
+`false` suppresses that state's cursor without removing the collaborator or
+disconnecting Awareness.
 
 ## Step 10 — Cleanup
 
