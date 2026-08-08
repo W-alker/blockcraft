@@ -3,7 +3,6 @@ import {createSnapshotRenderer} from "../../../../snapshot-viewer";
 import {IBlockSnapshot} from "../../../block-std/types/block.type";
 import {
   isManualBreak,
-  fitsOversizedMedia,
   paginate,
   PageSlotFragment,
   PaginationItem,
@@ -23,6 +22,12 @@ import {
 } from '../view/block-visual-height'
 import {computeSplitOffsets, computeTableSplitOffsets} from "../view/split-points";
 import {StablePaginationLayout} from "../view/stable-pagination-layout";
+import {
+  applyPageMediaFit,
+  canFitPageMedia,
+  clearPageMediaFit,
+  measureNaturalPageMedia,
+} from '../view/page-media-fit'
 import {
   PaginationExportError,
   PaginationExportWarning,
@@ -312,6 +317,7 @@ export async function buildPaginatedPrintSurface(
   // 2) 顶层块 id → 渲染 DOM（始终建立，用于把块搬进页盒）。按唯一 id 在渲染根内查找，
   //    兼容两种渲染源（snapshot-viewer 的 data-blockcraft-root 直接子级 / 只读 doc 的嵌套结构）。
   const topSnapshots = (snapshot.children as IBlockSnapshot[]) ?? [];
+  const topSnapshotById = new Map(topSnapshots.map(block => [block.id, block]));
   const elById = new Map<string, HTMLElement>();
   for (const blk of topSnapshots) {
     const el = renderRoot.querySelector(`[data-block-id="${blk.id}"]`) as HTMLElement | null;
@@ -421,7 +427,18 @@ export async function buildPaginatedPrintSurface(
   const repeatHeaderById = new Map<string, number>();
   for (const it of items) {
     if (it.lockHeight != null && it.lockHeight > 0) lockedIds.add(it.id);
-    if (it.fitScale != null && it.fitScale > 0 && it.fitScale < 1) fitScaleById.set(it.id, it.fitScale);
+    const block = topSnapshotById.get(it.id);
+    const element = elById.get(it.id);
+    if (
+      block &&
+      element &&
+      canFitPageMedia(element, block.flavour) &&
+      it.fitScale != null &&
+      it.fitScale > 0 &&
+      it.fitScale < 1
+    ) {
+      fitScaleById.set(it.id, it.fitScale);
+    }
     if (it.repeatHeaderHeight != null && it.repeatHeaderHeight > 0) repeatHeaderById.set(it.id, it.repeatHeaderHeight);
   }
 
@@ -594,12 +611,14 @@ export async function buildPaginatedPrintSurface(
         // live paginated root 对所有直接 block 统一 margin-top:0；打印页重父后也必须
         // 固化同一约束，否则测量忽略的 margin-top 会在页盒内重新出现并下推内容。
         el.style.marginTop = '0';
-        el.classList.toggle('bc-page-height-locked', lockedIds.has(slot.id));
+        const locked = lockedIds.has(slot.id);
         const fitScale = fitScaleById.get(slot.id);
-        el.classList.toggle('bc-page-height-fitted', fitScale != null);
-        if (fitScale != null) el.style.setProperty('--bc-page-fit-scale', `${fitScale}`);
-        else el.style.removeProperty('--bc-page-fit-scale');
-        // capHeight 块由锁定 class 约束；带 fitScale 的媒体/原子块改为整体缩放。
+        el.classList.remove('bc-page-height-fitted');
+        el.style.removeProperty('--bc-page-fit-scale');
+        el.classList.toggle('bc-page-height-locked', locked && fitScale == null);
+        if (fitScale != null) applyPageMediaFit(el, fitScale);
+        else clearPageMediaFit(el);
+        // 非媒体 capHeight 块仍由锁定 class 约束；图片/视频只限制其媒体 wrapper。
         content.appendChild(el); // 整块：搬移（从离屏 root 移走，DOM 节点唯一）
       }
     }
@@ -1668,13 +1687,14 @@ function validateStableLayout(
       continue;
     }
     // 未 fit 的 capHeight 块使用裁剪后页高，不能与自然 scrollHeight 做等值比较。
-    // 媒体同时带 fitScale 时并不裁剪（locked+fitted 主题会解除 max-height），
-    // 必须继续校验整体缩放后的视觉高，防止图片/caption 少载静默通过。
+    // 图片/视频 fit 只缩小媒体 wrapper，caption/尾距保持自然尺寸。
     if (item.lockHeight != null && item.fitScale == null) continue;
-    // live layout 会在分页前把“仅超宽”的不可拆块高度按同一 fitScale 缩放；此时
-    // readonly DOM 仍是自然尺寸，class/zoom 要到构页阶段才应用。校验必须比较缩放后
-    // 的视觉高度，否则所有 width-only fitted 业务块都会被 strict 误判为 layout-diverged。
-    const renderedHeight = (naturalHeight + marginBottom) * (item.fitScale ?? 1);
+    const media = item.fitScale != null ? measureNaturalPageMedia(el) : null;
+    const mediaHeight = media?.height ?? 0;
+    const naturalStride = naturalHeight + marginBottom;
+    const renderedHeight = item.fitScale != null && mediaHeight > 0
+      ? naturalStride - mediaHeight + mediaHeight * item.fitScale
+      : naturalStride;
     if (Math.abs(renderedHeight - item.height) > tolerance) {
       const overflowY = style.overflowY || style.overflow || 'visible';
       const scale = item.fitScale ?? 1;
@@ -1683,7 +1703,7 @@ function validateStableLayout(
         `只读打印面块 ${item.id} 高 ${renderedHeight}px`
           + `（内容 ${naturalHeight}px + 尾距 ${marginBottom}px，`
           + `offset ${el.offsetHeight}px / scroll ${el.scrollHeight}px，`
-          + `overflow-y ${overflowY}${scale === 1 ? '' : `，缩放 ${scale}`}）`
+          + `overflow-y ${overflowY}${scale === 1 ? '' : `，媒体约束比例 ${scale}`}）`
           + `与分页视图 ${item.height}px 不一致`,
         policy,
         warnings,
@@ -1750,28 +1770,32 @@ function measureItemsFromDom(
       if (offsets.length) splitOffsets = offsets;
     }
 
-    // capHeight 块超高 → 锁定分页占位到一页内；图片/视频整体 fit，其余原子块保留裁剪策略。
+    // capHeight 块超高 → 图片/视频限制媒体 wrapper，其余原子块保留裁剪策略。
     // visible overflow 属于块的外部视觉高度；hidden/clip/scroll overflow 只属于块内部。
     let lockHeight: number | undefined;
     const naturalStride = height
-    const naturalWidth = el ? measureBlockContentWidth(el, contentWidth) : 0
-    const widthScale = el
+    const pageMedia = !!el && canFitPageMedia(el, blk.flavour)
+    const media = pageMedia && el ? measureNaturalPageMedia(el) : null
+    const mediaHeight = media?.height ?? 0
+    const nonMediaStride = mediaHeight > 0 ? Math.max(0, naturalStride - mediaHeight) : 0
+    const naturalWidth = media?.width ?? (el ? measureBlockContentWidth(el, contentWidth) : 0)
+    const widthScale = pageMedia
       && !policy.breakable
       && naturalWidth > contentWidth + 0.5
         ? contentWidth / naturalWidth
         : 1
-    const heightScale = policy.capHeight
-      && fitsOversizedMedia(blk.flavour)
-      && visualContentHeight > regularContentHeight
-        ? regularContentHeight / naturalStride
+    const heightScale = pageMedia
+      && mediaHeight > 0
+      && naturalStride > regularContentHeight
+        ? Math.max(0.01, regularContentHeight - nonMediaStride) / mediaHeight
         : 1
     const fitScale = Math.max(0.01, Math.min(1, widthScale, heightScale))
-    let effHeight = fitScale < 1 ? naturalStride * fitScale : height;
+    let effHeight = pageMedia && mediaHeight > 0 && fitScale < 1
+      ? mediaHeight * fitScale + nonMediaStride
+      : height;
     if (policy.capHeight && visualContentHeight > regularContentHeight && regularContentHeight > 0) {
-      lockHeight = regularContentHeight;
-      effHeight = fitsOversizedMedia(blk.flavour)
-        ? Math.min(regularContentHeight, effHeight)
-        : regularContentHeight;
+      lockHeight = pageMedia && fitScale < 1 ? undefined : regularContentHeight;
+      if (!pageMedia) effHeight = regularContentHeight;
     }
 
     items.push({
@@ -1782,7 +1806,7 @@ function measureItemsFromDom(
       splitOffsets,
       preferredSplitOffsets,
       lockHeight,
-      fitScale: fitScale < 1 ? fitScale : undefined,
+      fitScale: pageMedia && fitScale < 1 ? fitScale : undefined,
       repeatHeaderHeight,
       splitStartsNewPage: blk.flavour === 'table' || undefined, // 表格拆分独占新页起
       manualBreak: isManualBreak(blk.flavour),

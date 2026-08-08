@@ -43,10 +43,13 @@ import {LiveHeightSource} from './live-height-source';
         </figure>
       </div>
 
-      <div class="image-block bc-page-height-locked bc-page-height-fitted"
-           data-block-id="image-fitted" data-node-type="block"
-           style="--bc-page-fit-scale: 0.5; height: 400px">
-        fitted image
+      <div class="image-block" data-block-id="image-fitted" data-node-type="block">
+        <figure class="image-block__container">
+          <div class="img-wrapper" data-bc-page-media-fitted
+               style="width: 400px; height: 400px; max-width: 200px; max-height: 200px">
+            fitted image
+          </div>
+        </figure>
       </div>
 
       <div class="table-block">
@@ -169,12 +172,16 @@ describe('pagination theme block constraints', () => {
     expect(getComputedStyle(nestedImage).overflow).toBe('hidden');
   });
 
-  it('uses layout zoom to preserve the whole oversized media block', () => {
+  it('constrains the media wrapper without zooming the block coordinate system', () => {
     const fitted = (fixture.nativeElement as HTMLElement)
       .querySelector<HTMLElement>('[data-block-id="image-fitted"]')!;
+    const wrapper = fitted.querySelector<HTMLElement>('.img-wrapper')!;
 
-    expect(getComputedStyle(fitted).zoom).toBe('0.5');
-    expect(fitted.getBoundingClientRect().height).toBeCloseTo(200, 1);
+    expect(getComputedStyle(fitted).zoom).toBe('1');
+    expect(getComputedStyle(wrapper).maxWidth).toBe('200px');
+    expect(getComputedStyle(wrapper).maxHeight).toBe('200px');
+    expect(wrapper.getBoundingClientRect().width).toBeCloseTo(200, 1);
+    expect(wrapper.getBoundingClientRect().height).toBeCloseTo(200, 1);
   });
 
   it('keeps the resized code block locked after flex layout collapses its scroll height', () => {

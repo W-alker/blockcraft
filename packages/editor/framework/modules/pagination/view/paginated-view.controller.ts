@@ -2,7 +2,7 @@
 import {fromEvent, Subscription} from "rxjs";
 import {performanceTest} from "../../../../global";
 import {isNativeInputTarget} from "../../../utils";
-import {fitsOversizedMedia, paginate, PaginationItem} from "../engine";
+import {paginate, PaginationItem} from "../engine";
 import {cloneTableCellFlowPlan} from "../engine/table-cell-flow";
 import {setTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
 import {
@@ -564,11 +564,9 @@ export class PaginatedViewController {
 
   private _metasFromState(state: PaginationLayoutState): BlockMeta[] {
     return state.entries.map(entry => {
-      const fitScale = entry.fitScale ?? (entry.lockHeight != null
-        && entry.naturalHeight > entry.lockHeight
-        && fitsOversizedMedia(entry.flavour)
-          ? Math.max(0.01, Math.min(1, entry.lockHeight / entry.naturalHeight))
-          : undefined)
+      // fitScale 只能来自完整 DOM 对流式图片/视频 wrapper 的确定测量。
+      // 不从 lockHeight/flavour 反推，避免形状、绝对定位媒体或稀疏估算被整块缩放。
+      const fitScale = entry.fitScale
       const meta: BlockMeta = {
         id: entry.blockId,
         flavour: entry.flavour,
@@ -612,7 +610,7 @@ export class PaginatedViewController {
       }
       if (meta.fitScale != null) {
         fitScales.set(meta.id, meta.fitScale);
-        // `zoom` 会改变宿主 border-box；宽度单独触发的 fit 也属于分页投影自有 resize。
+        // 媒体 wrapper 的 max-size 会改变宿主 border-box，属于分页投影自有 resize。
         nextLayoutOwnedIds.add(meta.id);
       }
       // 小表格不会插断点 DOM，不需要为它增加一次最终尺寸读取。

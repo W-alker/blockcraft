@@ -37,14 +37,13 @@ export interface PaginationItem {
    */
   splitStartsNewPage?: boolean;
   /**
-   * 锁定最大高度（px）：capHeight 块超高时把分页占位锁到 ≤ 一页；媒体可配合 fitScale 整体缩放。
-   * 引擎使用已投影的 `height` 定位：普通裁剪块等于 lockHeight，整体 fit 媒体可更小；
-   * 这类块始终 ≤ 一页并整块放置。视图层给命中的块增加锁定 class，再通过根级
-   * `--bc-page-content-height` 变量设置 max-height；locked+fitted 媒体由 fit 解除裁剪。
+   * 锁定最大高度（px）：capHeight 块超高时把分页占位锁到 ≤ 一页。
+   * 引擎使用已投影的 `height` 定位；普通裁剪块等于 lockHeight。流式图片/视频
+   * 通过 fitScale 约束内部媒体 wrapper，因此通常不再设置 lockHeight。
    * 缺省 = 不锁定。
    */
   lockHeight?: number;
-  /** 图片/视频超高时的等比页内缩放比例；与 lockHeight 一起使用。 */
+  /** 流式图片/视频媒体 wrapper 的等比页内约束比例；绝对定位对象不得设置。 */
   fitScale?: number;
   /**
    * 拆分时**续页重复表头**的表头高（px）：带表头（rowHead）的表格跨页拆分时，每个续页（fromOffset>0 的片段）

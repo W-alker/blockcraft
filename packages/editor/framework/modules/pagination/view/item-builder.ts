@@ -36,7 +36,7 @@ export interface BlockMeta {
   tableRows?: TableRowGeom[];
   /** 锁定最大高度（px）：capHeight 块超高时由高度源算出，视图层据此增量标记锁定 class。 */
   lockHeight?: number;
-  /** 超高图片/视频整体缩放到一页内，避免 max-height 裁掉媒体内容。 */
+  /** 流式图片/视频只约束媒体 wrapper，caption 与 block 坐标系保持原尺寸。 */
   fitScale?: number;
   /** 续页重复表头高（px）：带表头（rowHead）的表格跨页拆分时由高度源算出，引擎据此预留、渲染层据此插表头。 */
   repeatHeaderHeight?: number;

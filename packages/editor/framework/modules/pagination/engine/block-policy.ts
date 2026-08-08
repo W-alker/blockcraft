@@ -8,7 +8,8 @@ export interface BlockPolicy {
   breakable: boolean;
   keepWithNext: boolean;
   /**
-   * 超高时**锁定最大高度到 ≤ 一页**：图片/视频可整体 fit，其余原子块仍裁剪；都不拆、不溢出。
+   * 超高时**锁定最大高度到 ≤ 一页**：流式图片/视频可约束媒体 wrapper，
+   * 其余原子块仍裁剪；都不拆、不溢出。
    * 图片/视频/音频/mermaid/公式/书签/各类嵌入等原子块 + 代码块。与 `breakable` 互斥。
    */
   capHeight: boolean;
@@ -25,7 +26,7 @@ export function isManualBreak(flavour: string): boolean {
   return flavour === MANUAL_BREAK_FLAVOUR;
 }
 
-/** 超高时应整体等比缩放、不能裁掉内容的媒体块。 */
+/** @deprecated 仅表示媒体 flavour；是否允许分页约束还必须检查流式 placement 与真实 wrapper。 */
 export function fitsOversizedMedia(flavour: string): boolean {
   return flavour === 'image' || flavour === 'video'
 }

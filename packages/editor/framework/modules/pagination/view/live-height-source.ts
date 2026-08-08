@@ -1,13 +1,19 @@
 // packages/editor/framework/modules/pagination/view/live-height-source.ts
 import {Subject} from "rxjs";
 import {BlockNodeType} from "../../../block-std/types/block.type";
-import {fitsOversizedMedia, resolveBlockPolicy} from "../engine";
+import {resolveBlockPolicy} from "../engine";
 import {
   cloneTableCellFlowPlan,
   TableCellFlowPlan,
 } from "../engine/table-cell-flow";
 import {setTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
 import {BlockMeta} from "./item-builder";
+import {
+  canFitPageMedia,
+  hasPageMediaFit,
+  resolvePageMediaSurface,
+  suspendPageMediaFit,
+} from './page-media-fit'
 import {
   measureBlockContentWidth,
   measureBlockVisualHeight,
@@ -20,7 +26,7 @@ import {
 
 /** 测量时传入：每页内容高（判定 oversized）+ widow/orphan 最少行。 */
 export interface MeasureOptions extends TablePaginationMeasureOptions {
-  /** 当前分页正文宽度；原子块固有宽度超过它时整体缩放，不能交给页盒硬裁。 */
+  /** 当前分页正文宽度；流式图片/视频主体超过它时约束媒体 wrapper。 */
   contentWidth?: number
 }
 
@@ -34,7 +40,8 @@ interface NaturalDomSnapshot {
   width: number
   renderedHeight: number
   marginBottom: number
-  imageWrapperHeight: number | null
+  mediaSurfaceWidth: number | null
+  mediaSurfaceHeight: number | null
   contentWidth: number | null
 }
 
@@ -60,13 +67,8 @@ export class LiveHeightSource {
    */
   private _layoutOwnedBlockSizes = new Map<Element, number>();
   /**
-   * 分页 fit 前的顶层块自然 DOM 几何。
-   *
-   * CSS `zoom` 会让 auto-width 块在 Chromium 中反向扩张 layout width：例如
-   * 650px 容器里的 `zoom: .75` 块，offsetWidth 会变成约 867px。若下一轮又拿
-   * 867px 计算 fitScale，分页输出就会重新成为输入，图片会在连续重排中逐步
-   * 收窄。zoom 同时会让业务卡片内部重排，所以高宽与尾距必须作为同一份
-   * 未 fit 快照复用，不能让分页投影反向成为自然输入。
+   * 分页媒体 max-size 约束前的顶层块自然 DOM 几何。ResizeObserver 会在约束
+   * image/video wrapper 后再次触发；自然快照阻止分页输出反向成为下一轮输入。
    */
   private _naturalDom = new Map<HTMLElement, NaturalDomSnapshot>();
   /**
@@ -198,7 +200,7 @@ export class LiveHeightSource {
         continue;
       }
 
-      // capHeight 块超高时锁定分页占位到一页内；图片/视频整体 fit，其余原子块裁剪不溢出。
+      // capHeight 块超高时锁定分页占位到一页内；图片/视频只约束媒体 wrapper。
       // 通常 scrollHeight 能保留未裁剪的完整内容高；代码块的 flex 内滚动布局会让它在锁定后
       // 一起降到页高，因此再由 _resolveCapHeight 保留最后一次未受约束的高度，阻断锁/解锁反馈环。
       const policy = resolveBlockPolicy({
@@ -223,37 +225,46 @@ export class LiveHeightSource {
             el,
             objectDimensions.height,
             domNaturalContentHeight,
-            naturalDom.imageWrapperHeight,
+            naturalDom.mediaSurfaceHeight,
           )
         : domNaturalContentHeight
       const naturalHeight = naturalContentHeight + mb;
-      // 图片主体几何由 wr/ar + rootContentWidth 唯一决定。分页不能再从已经
-      // zoom 投影过的宿主反推宽高；DOM 只补 caption 等主体之外的额外高度。
-      const naturalWidth = objectDimensions
+      const pageMedia = canFitPageMedia(el, block.flavour)
+      const mediaHeight = pageMedia
+        ? naturalDom.mediaSurfaceHeight ?? naturalContentHeight
+        : null
+      const nonMediaStride = mediaHeight != null
+        ? Math.max(0, naturalHeight - mediaHeight)
+        : 0
+      // 图片主体几何由 wr/ar + rootContentWidth 唯一决定；视频读取实际 wrapper。
+      const naturalWidth = pageMedia
+        ? naturalDom.mediaSurfaceWidth ?? naturalDom.width
+        : objectDimensions
         ? Math.min(
             objectDimensions.width,
             opts?.contentWidth ?? objectDimensions.width,
           )
         : naturalDom.width
-      const widthScale = !policy.breakable
+      const widthScale = pageMedia
+        && !policy.breakable
         && opts?.contentWidth != null
         && opts.contentWidth > 0
         && naturalWidth > opts.contentWidth + 0.5
           ? opts.contentWidth / naturalWidth
           : 1
-      const heightScale = capHeight
+      const heightScale = pageMedia
+        && mediaHeight != null
+        && mediaHeight > 0
         && opts
         && opts.contentHeight > 0
-        && naturalContentHeight > opts.contentHeight
-        && fitsOversizedMedia(block.flavour)
-          ? opts.contentHeight / naturalHeight
+        && naturalHeight > opts.contentHeight
+          ? Math.max(0.01, opts.contentHeight - nonMediaStride) / mediaHeight
           : 1
       const fitScale = Math.max(0.01, Math.min(1, widthScale, heightScale))
       if (capHeight && opts && opts.contentHeight > 0 && naturalContentHeight > opts.contentHeight) {
-        // 媒体可能同时超高与超宽。若宽度约束产生的 scale 更小，整体缩放后
-        // 视觉高度会小于一页；分页占位必须使用该真实高度，不能仍强制占满整页。
-        const fittedHeight = fitScale < 1 && fitsOversizedMedia(block.flavour)
-          ? Math.min(opts.contentHeight, naturalHeight * fitScale)
+        // 图片/视频只约束媒体 wrapper，caption/尾距保持正常字号和自然高度。
+        const fittedHeight = pageMedia && mediaHeight != null && fitScale < 1
+          ? mediaHeight * fitScale + nonMediaStride
           : opts.contentHeight
         metas.push({
           id,
@@ -262,20 +273,20 @@ export class LiveHeightSource {
           isHeading: false,
           naturalHeight,
           height: fittedHeight,
-          lockHeight: opts.contentHeight,
-          fitScale: fitScale < 1 ? fitScale : undefined,
+          lockHeight: pageMedia && fitScale < 1 ? undefined : opts.contentHeight,
+          fitScale: pageMedia && fitScale < 1 ? fitScale : undefined,
         });
         continue;
       }
 
-      if (fitScale < 1) {
+      if (pageMedia && mediaHeight != null && fitScale < 1) {
         metas.push({
           id,
           flavour: block.flavour,
           nodeType: block.nodeType,
           isHeading: false,
           naturalHeight,
-          height: naturalHeight * fitScale,
+          height: mediaHeight * fitScale + nonMediaStride,
           fitScale,
         })
         continue
@@ -365,7 +376,7 @@ export class LiveHeightSource {
     const contextWidth = Number.isFinite(contentWidth) && contentWidth! > 0
       ? contentWidth!
       : null
-    const fitted = el.classList.contains('bc-page-height-fitted')
+    const fitted = hasPageMediaFit(el)
     const cached = this._naturalDom.get(el)
     if (
       fitted &&
@@ -375,29 +386,30 @@ export class LiveHeightSource {
       return cached
     }
 
-    // 虚拟渲染 reattach 时 HeightLockApplier 可能先把上一轮 fit 状态投影到
-    // 新宿主；该宿主还没有自然尺寸缓存。高宽必须在同一个未投影状态中读取，
-    // 否则 CSS zoom 引发的内容重排会把分页输出再当成下一轮的 naturalHeight。
-    // fitted + locked 媒体还要一并解除页高锁，避免 max-height 污染自然高。
+    // 虚拟渲染 reattach 时 HeightLockApplier 可能先把上一轮媒体 max-size 状态
+    // 投影到新宿主；高宽必须在同一个未约束状态中读取。
     const locked = fitted && el.classList.contains('bc-page-height-locked')
-    if (fitted) el.classList.remove('bc-page-height-fitted')
     if (locked) el.classList.remove('bc-page-height-locked')
     let measurement: NaturalDomSnapshot
     try {
-      const style = getComputedStyle(el)
-      const wrapper = el.querySelector<HTMLElement>('.img-wrapper')
-      measurement = {
-        width: measureBlockContentWidth(el, contentWidth),
-        renderedHeight: measureBlockVisualHeight(el, capHeight, style),
-        marginBottom: parseFloat(style.marginBottom) || 0,
-        imageWrapperHeight: wrapper
-          ? Math.max(wrapper.offsetHeight, wrapper.scrollHeight)
-          : null,
-        contentWidth: contextWidth,
-      }
+      measurement = suspendPageMediaFit(el, () => {
+        const style = getComputedStyle(el)
+        const surface = resolvePageMediaSurface(el)
+        return {
+          width: measureBlockContentWidth(el, contentWidth),
+          renderedHeight: measureBlockVisualHeight(el, capHeight, style),
+          marginBottom: parseFloat(style.marginBottom) || 0,
+          mediaSurfaceWidth: surface
+            ? Math.max(surface.offsetWidth, surface.scrollWidth)
+            : null,
+          mediaSurfaceHeight: surface
+            ? Math.max(surface.offsetHeight, surface.scrollHeight)
+            : null,
+          contentWidth: contextWidth,
+        }
+      })
     } finally {
       if (locked) el.classList.add('bc-page-height-locked')
-      if (fitted) el.classList.add('bc-page-height-fitted')
     }
     if (measurement.width > 0) {
       this._naturalDom.set(el, measurement)

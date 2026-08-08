@@ -10,6 +10,7 @@ import {registerTablePaginationAccess} from './table-pagination-access'
 describe('LiveHeightSource atomic block measurement', () => {
   let source: LiveHeightSource
   let host: HTMLElement
+  let mediaSurface: HTMLElement | undefined
   let releaseTableAccess: (() => void) | undefined
 
   function createSource(
@@ -29,6 +30,30 @@ describe('LiveHeightSource atomic block measurement', () => {
     document.body.appendChild(host)
     Object.defineProperty(host, 'offsetHeight', {configurable: true, value: offsetHeight})
     Object.defineProperty(host, 'scrollHeight', {configurable: true, value: scrollHeight})
+    mediaSurface = undefined
+    if (flavour === 'image' || flavour === 'video') {
+      mediaSurface = document.createElement('div')
+      mediaSurface.className = flavour === 'image' ? 'img-wrapper' : 'video-block__wrapper'
+      host.appendChild(mediaSurface)
+      Object.defineProperties(mediaSurface, {
+        offsetWidth: {
+          configurable: true,
+          get: () => Math.max(host.offsetWidth, host.scrollWidth),
+        },
+        scrollWidth: {
+          configurable: true,
+          get: () => Math.max(host.offsetWidth, host.scrollWidth),
+        },
+        offsetHeight: {
+          configurable: true,
+          get: () => Math.max(host.offsetHeight, host.scrollHeight),
+        },
+        scrollHeight: {
+          configurable: true,
+          get: () => Math.max(host.offsetHeight, host.scrollHeight),
+        },
+      })
+    }
     const block = {
       hostElement: host,
       nodeType,
@@ -102,7 +127,8 @@ describe('LiveHeightSource atomic block measurement', () => {
 
     expect(meta?.height).toBe(900)
     expect(meta?.naturalHeight).toBe(1208)
-    expect(meta?.lockHeight).toBe(900)
+    expect(meta?.lockHeight).toBeUndefined()
+    expect(meta?.fitScale).toBeCloseTo(892 / 1200, 6)
   })
 
   it('uses the table natural geometry as its full stride', () => {
@@ -212,8 +238,8 @@ describe('LiveHeightSource atomic block measurement', () => {
     const [image] = source.measure({contentHeight: 900, widowOrphanLines: 2})
 
     expect(image?.height).toBe(900)
-    expect(image?.lockHeight).toBe(900)
-    expect(image?.fitScale).toBeCloseTo(900 / 1208, 6)
+    expect(image?.lockHeight).toBeUndefined()
+    expect(image?.fitScale).toBeCloseTo(892 / 1200, 6)
     expect(buildPaginationItems([image!])[0]?.fitScale).toBe(image?.fitScale)
   })
 
@@ -229,10 +255,10 @@ describe('LiveHeightSource atomic block measurement', () => {
     })
 
     expect(image?.naturalHeight).toBe(1208)
-    expect(image?.lockHeight).toBe(900)
+    expect(image?.lockHeight).toBeUndefined()
     expect(image?.fitScale).toBe(0.5)
-    expect(image?.height).toBe(604)
-    expect(buildPaginationItems([image!])[0]?.height).toBe(604)
+    expect(image?.height).toBe(608)
+    expect(buildPaginationItems([image!])[0]?.height).toBe(608)
   })
 
   it('uses responsive wr/ar geometry as the image body height', () => {
@@ -269,10 +295,9 @@ describe('LiveHeightSource atomic block measurement', () => {
       contentWidth: 650,
       widowOrphanLines: 2,
     })
-    host.classList.add('bc-page-height-fitted')
-    // Chromium 会把 zoom:.75 的 auto-width layout box 反向扩张到约 867px。
-    Object.defineProperty(host, 'offsetWidth', {configurable: true, value: 900})
-    Object.defineProperty(host, 'scrollWidth', {configurable: true, value: 900})
+    mediaSurface!.setAttribute('data-bc-page-media-fitted', '')
+    mediaSurface!.style.maxWidth = '483.1666666667px'
+    mediaSurface!.style.maxHeight = '892px'
 
     const [next] = source.measure({
       contentHeight: 900,
@@ -308,17 +333,9 @@ describe('LiveHeightSource atomic block measurement', () => {
     expect(trailingGap.style.display).toBe('')
   })
 
-  it('does not feed a fitted host height back into its natural measurement', () => {
+  it('does not fit a wide non-media atomic block', () => {
     source = createSource(185, 185, 'wide-embed', BlockNodeType.void)
     host.style.marginBottom = '10px'
-    Object.defineProperty(host, 'offsetHeight', {
-      configurable: true,
-      get: () => host.classList.contains('bc-page-height-fitted') ? 181 : 185,
-    })
-    Object.defineProperty(host, 'scrollHeight', {
-      configurable: true,
-      get: () => host.classList.contains('bc-page-height-fitted') ? 181 : 185,
-    })
     Object.defineProperty(host, 'offsetWidth', {configurable: true, value: 652})
     Object.defineProperty(host, 'scrollWidth', {configurable: true, value: 652})
     const options = {
@@ -328,29 +345,28 @@ describe('LiveHeightSource atomic block measurement', () => {
     }
 
     const [initial] = source.measure(options)
-    host.classList.add('bc-page-height-fitted')
     const [next] = source.measure(options)
 
-    const expectedScale = 649.7007874015749 / 652
     expect(initial?.naturalHeight).toBe(195)
     expect(next?.naturalHeight).toBe(195)
-    expect(initial?.fitScale).toBeCloseTo(expectedScale, 12)
-    expect(next?.fitScale).toBeCloseTo(expectedScale, 12)
-    expect(initial?.height).toBeCloseTo(195 * expectedScale, 12)
-    expect(next?.height).toBeCloseTo(initial!.height, 12)
-    expect(host.classList.contains('bc-page-height-fitted')).toBeTrue()
+    expect(initial?.fitScale).toBeUndefined()
+    expect(next?.fitScale).toBeUndefined()
+    expect(initial?.height).toBe(195)
+    expect(next?.height).toBe(195)
   })
 
   it('measures the natural width when a virtualized image reattaches already fitted', () => {
     source = createSource(1200, 1200, 'image', BlockNodeType.block)
-    host.classList.add('bc-page-height-fitted')
-    Object.defineProperty(host, 'offsetWidth', {
+    mediaSurface!.setAttribute('data-bc-page-media-fitted', '')
+    mediaSurface!.style.maxWidth = '650px'
+    mediaSurface!.style.maxHeight = '892px'
+    Object.defineProperty(mediaSurface!, 'offsetWidth', {
       configurable: true,
-      get: () => host.classList.contains('bc-page-height-fitted') ? 900 : 650,
+      get: () => mediaSurface!.hasAttribute('data-bc-page-media-fitted') ? 650 : 900,
     })
-    Object.defineProperty(host, 'scrollWidth', {
+    Object.defineProperty(mediaSurface!, 'scrollWidth', {
       configurable: true,
-      get: () => host.classList.contains('bc-page-height-fitted') ? 900 : 650,
+      get: () => mediaSurface!.hasAttribute('data-bc-page-media-fitted') ? 650 : 900,
     })
 
     const [measurement] = source.measure({
@@ -359,8 +375,47 @@ describe('LiveHeightSource atomic block measurement', () => {
       widowOrphanLines: 2,
     })
 
-    expect(measurement?.fitScale).toBeCloseTo(900 / 1208, 6)
-    expect(host.classList.contains('bc-page-height-fitted')).toBeTrue()
+    expect(measurement?.fitScale).toBeCloseTo(650 / 900, 6)
+    expect(mediaSurface!.hasAttribute('data-bc-page-media-fitted')).toBeTrue()
+  })
+
+  it('never fits an absolute image, shape, or placement plane', () => {
+    source = createSource(1200, 1200, 'image', BlockNodeType.block)
+    host.setAttribute('data-bc-placement', 'absolute')
+
+    const [absoluteImage] = source.measure({
+      contentHeight: 900,
+      contentWidth: 650,
+      widowOrphanLines: 2,
+    })
+    expect(absoluteImage?.fitScale).toBeUndefined()
+    expect(absoluteImage?.lockHeight).toBe(900)
+
+    source.destroy()
+    host.remove()
+    source = createSource(300, 300, 'shape', BlockNodeType.void)
+    Object.defineProperty(host, 'offsetWidth', {configurable: true, value: 900})
+    Object.defineProperty(host, 'scrollWidth', {configurable: true, value: 900})
+    const [shape] = source.measure({
+      contentHeight: 900,
+      contentWidth: 650,
+      widowOrphanLines: 2,
+    })
+    expect(shape?.fitScale).toBeUndefined()
+    expect(shape?.height).toBe(308)
+
+    source.destroy()
+    host.remove()
+    source = createSource(0, 0, 'placement-layout', BlockNodeType.block)
+    Object.defineProperty(host, 'offsetWidth', {configurable: true, value: 794})
+    Object.defineProperty(host, 'scrollWidth', {configurable: true, value: 794})
+    const [placement] = source.measure({
+      contentHeight: 900,
+      contentWidth: 650,
+      widowOrphanLines: 2,
+    })
+    expect(placement?.fitScale).toBeUndefined()
+    expect(placement?.height).toBe(8)
   })
 
   it('filters the ResizeObserver echo of a pagination-owned table projection', () => {

@@ -159,7 +159,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     }
   });
 
-  it('marks an oversized image for whole-object fitting instead of clipping its content', async () => {
+  it('constrains only an oversized image wrapper instead of zooming the block host', async () => {
     const imageSnapshot = root([{
       id: 'image-1',
       flavour: 'image',
@@ -171,10 +171,19 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     const offscreen = document.createElement('div');
     const image = document.createElement('div');
     image.dataset['blockId'] = 'image-1';
+    const imageWrapper = document.createElement('div');
+    imageWrapper.className = 'img-wrapper';
+    image.appendChild(imageWrapper);
     Object.defineProperty(image, 'offsetWidth', {value: 380});
     Object.defineProperty(image, 'scrollWidth', {value: 380});
     Object.defineProperty(image, 'offsetHeight', {value: 400});
     Object.defineProperty(image, 'scrollHeight', {value: 400});
+    Object.defineProperties(imageWrapper, {
+      offsetWidth: {value: 380},
+      scrollWidth: {value: 380},
+      offsetHeight: {value: 400},
+      scrollHeight: {value: 400},
+    });
     offscreen.appendChild(image);
     document.body.appendChild(offscreen);
 
@@ -183,17 +192,22 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     });
     try {
       const rendered = pages.pages[0]!.querySelector<HTMLElement>('[data-block-id="image-1"]')!;
-      expect(rendered.classList.contains('bc-page-height-fitted')).toBeTrue();
-      expect(Number(rendered.style.getPropertyValue('--bc-page-fit-scale'))).toBeCloseTo(0.5, 6);
+      const renderedWrapper = rendered.querySelector<HTMLElement>('.img-wrapper')!;
+      expect(rendered.classList.contains('bc-page-height-fitted')).toBeFalse();
+      expect(rendered.style.getPropertyValue('--bc-page-fit-scale')).toBe('');
+      expect(rendered.style.zoom).toBe('');
+      expect(renderedWrapper.hasAttribute('data-bc-page-media-fitted')).toBeTrue();
+      expect(renderedWrapper.style.maxWidth).toBe('190px');
+      expect(renderedWrapper.style.maxHeight).toBe('200px');
     } finally {
       pages.dispose();
     }
   });
 
-  it('fits a wide atomic business block to the page content width', async () => {
+  it('does not fit or zoom a wide shape block', async () => {
     const snapshot = root([{
       id: 'embed-1',
-      flavour: 'bookmark',
+      flavour: 'shape',
       nodeType: BlockNodeType.void,
       meta: {},
       props: {},
@@ -214,8 +228,10 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     });
     try {
       const rendered = pages.pages[0]!.querySelector<HTMLElement>('[data-block-id="embed-1"]')!;
-      expect(rendered.classList.contains('bc-page-height-fitted')).toBeTrue();
-      expect(Number(rendered.style.getPropertyValue('--bc-page-fit-scale'))).toBeCloseTo(0.5, 6);
+      expect(rendered.classList.contains('bc-page-height-fitted')).toBeFalse();
+      expect(rendered.style.getPropertyValue('--bc-page-fit-scale')).toBe('');
+      expect(rendered.style.zoom).toBe('');
+      expect(rendered.hasAttribute('data-bc-page-media-fitted')).toBeFalse();
     } finally {
       pages.dispose();
     }
@@ -260,18 +276,18 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     }
   });
 
-  it('validates a stable width-only fitted block using its visual height', async () => {
+  it('validates a stable width-only fitted image using its constrained media height', async () => {
     const snapshot = root([{
-      id: 'embed-stable',
-      flavour: 'bookmark',
-      nodeType: BlockNodeType.void,
+      id: 'image-stable',
+      flavour: 'image',
+      nodeType: BlockNodeType.block,
       meta: {},
       props: {},
       children: [],
     }]);
     const geometry = resolveScreenGeometry(SMALL_PAGE);
     const items = [{
-      id: 'embed-stable',
+      id: 'image-stable',
       height: 40,
       naturalHeight: 80,
       fitScale: 0.5,
@@ -286,13 +302,22 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       paginate(items, geometry.geometry),
     );
     const offscreen = document.createElement('div');
-    const embed = document.createElement('div');
-    embed.dataset['blockId'] = 'embed-stable';
-    Object.defineProperty(embed, 'offsetWidth', {value: 760});
-    Object.defineProperty(embed, 'scrollWidth', {value: 760});
-    Object.defineProperty(embed, 'offsetHeight', {value: 80});
-    Object.defineProperty(embed, 'scrollHeight', {value: 80});
-    offscreen.appendChild(embed);
+    const image = document.createElement('div');
+    image.dataset['blockId'] = 'image-stable';
+    const imageWrapper = document.createElement('div');
+    imageWrapper.className = 'img-wrapper';
+    image.appendChild(imageWrapper);
+    Object.defineProperty(image, 'offsetWidth', {value: 760});
+    Object.defineProperty(image, 'scrollWidth', {value: 760});
+    Object.defineProperty(image, 'offsetHeight', {value: 80});
+    Object.defineProperty(image, 'scrollHeight', {value: 80});
+    Object.defineProperties(imageWrapper, {
+      offsetWidth: {value: 760},
+      scrollWidth: {value: 760},
+      offsetHeight: {value: 80},
+      scrollHeight: {value: 80},
+    });
+    offscreen.appendChild(image);
     document.body.appendChild(offscreen);
 
     const pages = await buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
@@ -301,9 +326,12 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
     });
     try {
-      const rendered = pages.pages[0]!.querySelector<HTMLElement>('[data-block-id="embed-stable"]')!;
-      expect(rendered.classList.contains('bc-page-height-fitted')).toBeTrue();
-      expect(rendered.style.getPropertyValue('--bc-page-fit-scale')).toBe('0.5');
+      const rendered = pages.pages[0]!.querySelector<HTMLElement>('[data-block-id="image-stable"]')!;
+      const renderedWrapper = rendered.querySelector<HTMLElement>('.img-wrapper')!;
+      expect(rendered.classList.contains('bc-page-height-fitted')).toBeFalse();
+      expect(rendered.style.getPropertyValue('--bc-page-fit-scale')).toBe('');
+      expect(renderedWrapper.style.maxWidth).toBe('380px');
+      expect(renderedWrapper.style.maxHeight).toBe('40px');
     } finally {
       pages.dispose();
     }

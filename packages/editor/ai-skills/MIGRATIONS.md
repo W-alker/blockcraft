@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-08 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-09 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,37 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+### Unreleased - 2026-08-09 (patch) — constrain paginated media without changing block coordinates
+
+**What changed**: Paginated live and fixed-page print views no longer apply CSS
+`zoom` to an entire oversized block. Only flow-layout image/video media wrappers
+receive deterministic `max-width` and `max-height` constraints. Captions, block
+hosts and editor controls keep their normal font and coordinate system. Absolute
+image/video objects, shapes and all other atomic blocks never receive a media
+fit projection. Sparse pagination also stops inferring fit from flavour and
+`lockHeight`; only a stable full-DOM media measurement may publish `fitScale`.
+
+**Why**: Whole-block `zoom` changed the coordinate system inherited by absolute
+placement objects and was not reproduced identically by every browser/print
+host. It could therefore shift image and shape coordinates even when paper and
+content-box dimensions matched. Constraining the actual media surface keeps the
+page root and placement plane at 100% while still fitting oversized flow media.
+
+**Affected ai-skills files**:
+
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `.bc-page-height-fitted` and `--bc-page-fit-scale` are no longer used for
+  rendering; stale copies are removed defensively when constructing print pages.
+- Flow image/video captions are not scaled. The available page content height
+  is reduced by their natural non-media stride before the wrapper limit is
+  calculated.
+- Shapes, bookmarks and absolute placement objects retain their persisted pixel
+  width, height, x and y; an oversized non-media atomic block follows its normal
+  cap/overflow policy instead of being silently zoomed.
 
 ### Unreleased - 2026-08-08 (patch) — restore CSS-native WordArt rendering
 

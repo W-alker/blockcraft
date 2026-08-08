@@ -5,7 +5,6 @@ import {
 } from "../../../doc/model-graph";
 import {
   paginate,
-  fitsOversizedMedia,
   PaginationItem,
   PaginationResult,
 } from "../engine";
@@ -58,11 +57,9 @@ interface RootSnapshot {
 }
 
 function entryToMeta(entry: PaginationGeometryEntry): BlockMeta {
-  const fitScale = entry.fitScale ?? (entry.lockHeight != null
-    && entry.naturalHeight > entry.lockHeight
-    && fitsOversizedMedia(entry.flavour)
-      ? Math.max(0.01, Math.min(1, entry.lockHeight / entry.naturalHeight))
-      : undefined)
+  // 只有完整 DOM 测量能确认流式图片/视频的媒体主体；稀疏布局不得从
+  // lockHeight/flavour 猜测 fitScale，否则会把固定坐标对象误当成可缩放块。
+  const fitScale = entry.fitScale
   const meta: BlockMeta = {
     id: entry.blockId,
     flavour: entry.flavour,

@@ -50,6 +50,15 @@ describe('HeightLockApplier', () => {
 
   it('applies and clears an exact media fit scale without clipping ownership leaks', () => {
     const host = document.createElement('div');
+    const surface = document.createElement('div');
+    surface.className = 'img-wrapper';
+    host.appendChild(surface);
+    Object.defineProperties(surface, {
+      offsetWidth: {configurable: true, value: 800},
+      scrollWidth: {configurable: true, value: 800},
+      offsetHeight: {configurable: true, value: 640},
+      scrollHeight: {configurable: true, value: 640},
+    });
     const doc = {
       getBlockById: () => ({hostElement: host}),
     } as unknown as BlockCraft.Doc;
@@ -57,14 +66,73 @@ describe('HeightLockApplier', () => {
 
     applier.apply(new Set(['image-1']), new Map([['image-1', 0.625]]));
 
-    expect(host.classList.contains('bc-page-height-locked')).toBeTrue();
-    expect(host.classList.contains('bc-page-height-fitted')).toBeTrue();
-    expect(host.style.getPropertyValue('--bc-page-fit-scale')).toBe('0.625');
+    expect(host.classList.contains('bc-page-height-locked')).toBeFalse();
+    expect(surface.hasAttribute('data-bc-page-media-fitted')).toBeTrue();
+    expect(surface.style.maxWidth).toBe('500px');
+    expect(surface.style.maxHeight).toBe('400px');
+    expect(host.style.zoom).toBe('');
 
     applier.apply(new Set());
 
-    expect(host.classList.contains('bc-page-height-fitted')).toBeFalse();
-    expect(host.style.getPropertyValue('--bc-page-fit-scale')).toBe('');
+    expect(surface.hasAttribute('data-bc-page-media-fitted')).toBeFalse();
+    expect(surface.style.maxWidth).toBe('');
+    expect(surface.style.maxHeight).toBe('');
+  });
+
+  it('never fits an absolute media block or a shape host', () => {
+    const absoluteImage = document.createElement('div');
+    absoluteImage.setAttribute('data-bc-placement', 'absolute');
+    const imageSurface = document.createElement('div');
+    imageSurface.className = 'img-wrapper';
+    absoluteImage.appendChild(imageSurface);
+    Object.defineProperties(imageSurface, {
+      offsetWidth: {configurable: true, value: 800},
+      scrollWidth: {configurable: true, value: 800},
+      offsetHeight: {configurable: true, value: 640},
+      scrollHeight: {configurable: true, value: 640},
+    });
+    const shape = document.createElement('div');
+    const blocks = new Map([
+      ['image-1', {hostElement: absoluteImage}],
+      ['shape-1', {hostElement: shape}],
+    ]);
+    const applier = new HeightLockApplier({
+      getBlockById: (id: string) => blocks.get(id) ?? null,
+    } as unknown as BlockCraft.Doc);
+
+    applier.apply(
+      new Set(['image-1', 'shape-1']),
+      new Map([['image-1', 0.5], ['shape-1', 0.5]]),
+    );
+
+    expect(absoluteImage.classList.contains('bc-page-height-locked')).toBeTrue();
+    expect(imageSurface.hasAttribute('data-bc-page-media-fitted')).toBeFalse();
+    expect(imageSurface.style.maxWidth).toBe('');
+    expect(shape.classList.contains('bc-page-height-locked')).toBeTrue();
+    expect(shape.style.zoom).toBe('');
+  });
+
+  it('constrains a flow video wrapper with the same media-only contract', () => {
+    const host = document.createElement('div');
+    const surface = document.createElement('div');
+    surface.className = 'video-block__wrapper';
+    host.appendChild(surface);
+    Object.defineProperties(surface, {
+      offsetWidth: {configurable: true, value: 640},
+      scrollWidth: {configurable: true, value: 640},
+      offsetHeight: {configurable: true, value: 360},
+      scrollHeight: {configurable: true, value: 360},
+    });
+    const applier = new HeightLockApplier({
+      getBlockById: () => ({hostElement: host}),
+    } as unknown as BlockCraft.Doc);
+
+    applier.apply(new Set(), new Map([['video-1', 0.5]]));
+
+    expect(surface.hasAttribute('data-bc-page-media-fitted')).toBeTrue();
+    expect(surface.style.maxWidth).toBe('320px');
+    expect(surface.style.maxHeight).toBe('180px');
+    expect(host.style.zoom).toBe('');
   });
 
   it('clears an unmounted host and replays the desired lock on remount', () => {

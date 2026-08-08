@@ -1,3 +1,5 @@
+import {applyPageMediaFit, clearPageMediaFit, resolvePageMediaSurface} from './page-media-fit'
+
 export class HeightLockApplier {
   private _applied = new Map<string, HTMLElement>();
   private _locks = new Set<string>();
@@ -70,16 +72,17 @@ export class HeightLockApplier {
   }
 
   private _applyHost(element: HTMLElement, locked: boolean, scale: number | undefined): void {
-    element.classList.toggle('bc-page-height-locked', locked)
     const fitted = Number.isFinite(scale) && scale! > 0 && scale! < 1
-    element.classList.toggle('bc-page-height-fitted', fitted)
-    if (fitted) element.style.setProperty('--bc-page-fit-scale', `${scale}`)
-    else element.style.removeProperty('--bc-page-fit-scale')
+      && element.getAttribute('data-bc-placement') !== 'absolute'
+      && !!resolvePageMediaSurface(element)
+    // 图片/视频通过主体 wrapper 的 max-size 进入一页，不再锁高或 zoom 整个块。
+    element.classList.toggle('bc-page-height-locked', locked && !fitted)
+    applyPageMediaFit(element, fitted ? scale : undefined)
   }
 
   private _clearHost(element: HTMLElement): void {
-    element.classList.remove('bc-page-height-locked', 'bc-page-height-fitted')
-    element.style.removeProperty('--bc-page-fit-scale')
+    element.classList.remove('bc-page-height-locked')
+    clearPageMediaFit(element)
   }
 }
 

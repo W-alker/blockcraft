@@ -42,7 +42,7 @@ export interface PaginationGeometryEntry {
   readonly preferredSplitOffsets?: readonly number[]
   readonly tableRows?: readonly TableRowGeom[]
   readonly lockHeight?: number
-  /** 整体缩放比例；用于让 sparse 视图与完整 DOM 测量使用同一视觉尺寸。 */
+  /** 流式图片/视频媒体 wrapper 约束比例；由完整 DOM 测量提供。 */
   readonly fitScale?: number
   readonly repeatHeaderHeight?: number
   readonly tableCellFlowPlan?: TableCellFlowPlan
