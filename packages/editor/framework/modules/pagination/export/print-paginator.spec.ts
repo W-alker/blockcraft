@@ -1,5 +1,9 @@
 // packages/editor/framework/modules/pagination/export/print-paginator.spec.ts
-import {buildPaginatedPrintSurface, buildPrintPages} from "./print-paginator";
+import {
+  buildPaginatedPrintSurface,
+  buildPrintPages,
+  captureStablePrintPlacementPlanes,
+} from "./print-paginator";
 import {BlockNodeType, IBlockSnapshot} from "../../../block-std/types/block.type";
 import {PaginationConfig} from "../pagination.types";
 import {resolveScreenGeometry} from '../view/pagination-geometry';
@@ -7,7 +11,6 @@ import {createStablePaginationLayout} from '../view/stable-pagination-layout';
 import {planTableCellFlow} from '../engine/table-cell-flow';
 import {setTableCellFlowPlan} from '../engine/table-cell-flow-metadata';
 import {paginate} from '../engine';
-import {refreshWordArtVectorMirror} from './print-word-art'
 
 function paragraph(id: string, text: string): IBlockSnapshot {
   return {id, flavour: "paragraph", nodeType: BlockNodeType.editable, meta: {}, props: {depth: 0}, children: [{insert: text}]};
@@ -68,6 +71,46 @@ const SMALL_PAGE: PaginationConfig = {
 const CONTENT_HEIGHT = 200;
 
 const LONG_TEXT = Array.from({length: 400}, (_, i) => `word${i}`).join(" ");
+
+function createPlacementRenderRoot(input: {
+  id?: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}): {
+  root: HTMLElement;
+  plane: HTMLElement;
+  block: HTMLElement;
+} {
+  const rootElement = document.createElement('div');
+  rootElement.style.cssText =
+    'position:absolute;left:-99999px;top:0;width:380px;min-height:200px;';
+  const flow = document.createElement('div');
+  flow.dataset['blockId'] = 'p1';
+  flow.style.cssText = 'height:40px;margin:0;';
+  rootElement.appendChild(flow);
+
+  const plane = document.createElement('div');
+  plane.dataset['blockId'] = 'placement';
+  plane.setAttribute('data-bc-placement-layout', '');
+  plane.style.cssText =
+    'position:absolute;top:0;left:0;width:100%;height:0;margin:0;';
+  const content = document.createElement('div');
+  content.className = 'children-render-container';
+  content.style.cssText = 'position:relative;width:100%;height:0;';
+  const block = document.createElement('div');
+  block.dataset['blockId'] = input.id ?? 'shape';
+  block.dataset['bcPlacement'] = 'absolute';
+  block.style.cssText =
+    `position:absolute;left:${input.left}px;top:${input.top}px;`
+    + `width:${input.width}px;height:${input.height}px;margin:0;`;
+  content.appendChild(block);
+  plane.appendChild(content);
+  rootElement.appendChild(plane);
+  document.body.appendChild(rootElement);
+  return {root: rootElement, plane, block};
+}
 
 describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
   it('uses the page content-height variable instead of per-block inline caps', async () => {
@@ -585,7 +628,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     }
   });
 
-  it('reuses the stable WordArt SVG in final placement copies without moving its outer box', async () => {
+  it('prints stable WordArt CSS text without measuring or moving its outer box', async () => {
     const pageGap = 24;
     const pageStride = 220 + pageGap;
     const wordArtY = pageStride + 20;
@@ -686,22 +729,20 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     placementElement.appendChild(placementChildren);
     offscreen.appendChild(placementElement);
     document.body.appendChild(offscreen);
-    expect(refreshWordArtVectorMirror(editor)).toBeTrue();
+    const rangeSpy = spyOn(document, 'createRange');
 
     const pages = await buildPaginatedPrintSurface(snapshot, config, {
       layout,
       render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
     });
     try {
-      const vectorSelector = 'svg[data-bc-print-word-art-vector="true"]';
       const sourceSelector = '[data-bc-word-art-print-props]';
 
-      // Source remains framework-owned and untouched; fixed copies reuse its stable SVG.
+      // Source remains framework-owned and untouched; fixed copies reveal the same stable
+      // CSS text node without another Range measurement.
       expect(offscreen.querySelector(sourceSelector)).toBe(editor);
-      expect(offscreen.querySelector(vectorSelector)).toBeNull();
-      expect(offscreen.querySelector('[data-bc-word-art-vector-mirror]')).not.toBeNull();
-      expect(pages.container.querySelector(sourceSelector)).toBeNull();
-      expect(pages.container.querySelectorAll(vectorSelector).length).toBe(pages.pageCount);
+      expect(pages.container.querySelectorAll(sourceSelector).length).toBe(pages.pageCount);
+      expect(rangeSpy).not.toHaveBeenCalled();
 
       pages.pages.forEach((page, pageIndex) => {
         const plane = page.querySelector<HTMLElement>(
@@ -710,12 +751,15 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
         const renderedHost = plane.querySelector<HTMLElement>(
           '[data-block-id="word-art"]',
         )!;
-        const vector = renderedHost.querySelector<SVGSVGElement>(vectorSelector)!;
+        const renderedText = renderedHost.querySelector<HTMLElement>(sourceSelector)!;
         const pageRect = page.getBoundingClientRect();
         const planeRect = plane.getBoundingClientRect();
         const hostRect = renderedHost.getBoundingClientRect();
 
-        expect(plane.querySelectorAll(vectorSelector).length).toBe(1);
+        expect(renderedText.dataset['bcPrintWordArtCss']).toBe('true');
+        expect(renderedText.style.backgroundImage).toContain('linear-gradient(');
+        expect(renderedText.style.backgroundImage).toContain('rgb(253, 224, 71)');
+        expect(renderedText.style.webkitTextFillColor).toBe('transparent');
         expect(renderedHost.style.top).toBe(`${wordArtY}px`);
         expect(renderedHost.style.left).toBe('24px');
         expect(hostRect.top - planeRect.top).toBeCloseTo(wordArtY, 1);
@@ -726,8 +770,8 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
         );
         expect(hostRect.width).toBeCloseTo(320, 1);
         expect(hostRect.height).toBeCloseTo(96, 1);
-        expect(vector.width.baseVal.value).toBe(320);
-        expect(vector.height.baseVal.value).toBe(60);
+        expect(renderedText.offsetWidth).toBe(320);
+        expect(renderedText.offsetHeight).toBe(60);
       });
     } finally {
       pages.dispose();
@@ -788,11 +832,228 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       const plane = page.querySelector<HTMLElement>('[data-bc-print-placement-plane="true"]')!;
       const renderedShape = plane.querySelector<HTMLElement>('[data-block-id="shape"]')!;
       expect(plane.style.left).toBe('0px');
-      expect(plane.style.right).toBe('0px');
-      expect(plane.style.width).toBe('auto');
+      expect(plane.style.right).toBe('auto');
+      expect(plane.style.width).toBe('100%');
+      expect(plane.style.height).toBe('0px');
       expect(plane.style.padding).toBe('0px');
       expect(renderedShape.style.left).toBe('200px');
       expect(Math.round(renderedShape.getBoundingClientRect().left - page.getBoundingClientRect().left)).toBe(230);
+    } finally {
+      pages.dispose();
+    }
+  });
+
+  it('uses placement planes captured before the readonly root changes', async () => {
+    const placement = placementLayout('placement', [absoluteShape('shape', 24)]);
+    const snapshot = root([paragraph('p1', 'flow'), placement]);
+    const geometry = resolveScreenGeometry(SMALL_PAGE);
+    const items = [
+      {id: 'p1', height: 40, breakable: false, keepWithNext: false},
+      {id: 'placement', height: 0, breakable: false, keepWithNext: false},
+    ];
+    const layout = createStablePaginationLayout(19, SMALL_PAGE, geometry, items, {
+      pages: [{
+        index: 0,
+        usedHeight: 40,
+        slots: [{id: 'p1'}, {id: 'placement'}],
+      }],
+      byBlock: new Map([
+        ['p1', {pageIndex: 0}],
+        ['placement', {pageIndex: 0}],
+      ]),
+    });
+    const render = createPlacementRenderRoot({
+      left: 30,
+      top: 24,
+      width: 40,
+      height: 20,
+    });
+    // 实际分页 root/plane 会用 padding 划出 380px content box；宿主显示层再整体缩放。
+    render.root.style.width = '420px';
+    render.root.style.boxSizing = 'border-box';
+    render.root.style.padding = '12px 20px';
+    render.plane.style.width = 'auto';
+    render.plane.style.right = '0';
+    render.plane.style.boxSizing = 'border-box';
+    render.plane.style.padding = 'inherit';
+    render.root.style.transform = 'scale(0.8, 0.65)';
+    render.root.style.transformOrigin = '0 0';
+    render.block.style.right = '10%';
+    render.block.style.bottom = '5%';
+    render.block.style.maxWidth = '100%';
+    expect(render.plane.querySelector<HTMLElement>('.children-render-container')!.clientWidth)
+      .toBe(380);
+    const placementPlanes = captureStablePrintPlacementPlanes(render.root);
+    const stableBlock = placementPlanes[0]!.element.querySelector<HTMLElement>(
+      '[data-block-id="shape"]',
+    )!;
+    expect(stableBlock.style.right).toBe('auto');
+    expect(stableBlock.style.bottom).toBe('auto');
+    expect(stableBlock.style.maxWidth).toBe('none');
+
+    // 模拟宿主在稳定捕获后关闭分页/重设 root，Angular live block 随之重新计算。
+    render.block.style.left = '150px';
+    render.block.style.top = '80px';
+    render.block.style.width = '90px';
+    render.block.style.height = '60px';
+
+    const pages = await buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+      layout,
+      render: async () => ({
+        root: render.root,
+        placementPlanes,
+        dispose: () => render.root.remove(),
+      }),
+    });
+    try {
+      const page = pages.pages[0]!;
+      const content = page.querySelector<HTMLElement>('.bc-print-content')!;
+      const plane = page.querySelector<HTMLElement>(
+        '[data-bc-print-placement-plane="true"]',
+      )!;
+      const block = plane.querySelector<HTMLElement>('[data-block-id="shape"]')!;
+      const projectedContent = plane.querySelector<HTMLElement>(
+        '.children-render-container',
+      )!;
+      const blockRect = block.getBoundingClientRect();
+      const contentRect = content.getBoundingClientRect();
+
+      expect(blockRect.left - contentRect.left).toBeCloseTo(30, 1);
+      expect(blockRect.top - contentRect.top).toBeCloseTo(24, 1);
+      expect(blockRect.width).toBeCloseTo(40, 1);
+      expect(blockRect.height).toBeCloseTo(20, 1);
+      expect(plane.style.position).toBe('absolute');
+      expect(plane.style.width).toBe('100%');
+      expect(plane.style.height).toBe('0px');
+      expect(projectedContent.style.position).toBe('relative');
+      expect(projectedContent.style.width).toBe('100%');
+      expect(projectedContent.style.height).toBe('0px');
+      expect(projectedContent.style.transform).toBe('none');
+      expect(render.block.style.left).toBe('150px');
+    } finally {
+      pages.dispose();
+    }
+  });
+
+  it('rejects a stable placement snapshot whose internal visual surface drifted', async () => {
+    const placement = placementLayout('placement', [absoluteShape('shape', 24)]);
+    const snapshot = root([paragraph('p1', 'flow'), placement]);
+    const geometry = resolveScreenGeometry(SMALL_PAGE);
+    const items = [
+      {id: 'p1', height: 40, breakable: false, keepWithNext: false},
+      {id: 'placement', height: 0, breakable: false, keepWithNext: false},
+    ];
+    const layout = createStablePaginationLayout(20, SMALL_PAGE, geometry, items, {
+      pages: [{
+        index: 0,
+        usedHeight: 40,
+        slots: [{id: 'p1'}, {id: 'placement'}],
+      }],
+      byBlock: new Map([
+        ['p1', {pageIndex: 0}],
+        ['placement', {pageIndex: 0}],
+      ]),
+    });
+    const render = createPlacementRenderRoot({
+      left: 30,
+      top: 24,
+      width: 40,
+      height: 20,
+    });
+    const surface = document.createElement('div');
+    surface.setAttribute('data-bc-print-visual-surface', '');
+    surface.style.cssText =
+      'position:absolute;left:3px;top:2px;width:30px;height:12px;';
+    render.block.appendChild(surface);
+    const placementPlanes = captureStablePrintPlacementPlanes(render.root);
+    const capturedSurface = placementPlanes[0]!.element.querySelector<HTMLElement>(
+      '[data-bc-print-visual-surface]',
+    )!;
+    capturedSurface.style.setProperty('width', '60px', 'important');
+
+    await expectAsync(buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+      layout,
+      resourcePolicy: 'strict',
+      render: async () => ({
+        root: render.root,
+        placementPlanes,
+        dispose: () => render.root.remove(),
+      }),
+    })).toBeRejectedWith(jasmine.objectContaining({
+      code: 'layout-diverged',
+      message: jasmine.stringMatching('真实视觉面与稳定分页不一致'),
+      context: jasmine.objectContaining({blockId: 'shape'}),
+    }));
+  });
+
+  it('rejects a rotated placement coordinate context instead of inferring scale from its BCR', () => {
+    const render = createPlacementRenderRoot({
+      left: 30,
+      top: 24,
+      width: 40,
+      height: 20,
+    });
+    render.root.style.transform = 'rotate(2deg)';
+    try {
+      let thrown: unknown;
+      try {
+        captureStablePrintPlacementPlanes(render.root);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toEqual(jasmine.objectContaining({
+        code: 'layout-not-ready',
+        context: jasmine.objectContaining({blockId: 'placement'}),
+      }));
+    } finally {
+      render.root.remove();
+    }
+  });
+
+  it('reports stable placement block drift as a best-effort warning', async () => {
+    const placement = placementLayout('placement', [absoluteShape('shape', 24)]);
+    const snapshot = root([paragraph('p1', 'flow'), placement]);
+    const geometry = resolveScreenGeometry(SMALL_PAGE);
+    const items = [
+      {id: 'p1', height: 40, breakable: false, keepWithNext: false},
+      {id: 'placement', height: 0, breakable: false, keepWithNext: false},
+    ];
+    const layout = createStablePaginationLayout(21, SMALL_PAGE, geometry, items, {
+      pages: [{
+        index: 0,
+        usedHeight: 40,
+        slots: [{id: 'p1'}, {id: 'placement'}],
+      }],
+      byBlock: new Map([
+        ['p1', {pageIndex: 0}],
+        ['placement', {pageIndex: 0}],
+      ]),
+    });
+    const render = createPlacementRenderRoot({
+      left: 30,
+      top: 24,
+      width: 40,
+      height: 20,
+    });
+    const placementPlanes = captureStablePrintPlacementPlanes(render.root);
+    placementPlanes[0]!.element.querySelector<HTMLElement>(
+      '[data-block-id="shape"]',
+    )!.style.setProperty('height', '50px', 'important');
+
+    const pages = await buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+      layout,
+      resourcePolicy: 'best-effort',
+      render: async () => ({
+        root: render.root,
+        placementPlanes,
+        dispose: () => render.root.remove(),
+      }),
+    });
+    try {
+      expect(pages.warnings).toContain(jasmine.objectContaining({
+        code: 'layout-diverged',
+        blockId: 'shape',
+      }));
     } finally {
       pages.dispose();
     }
@@ -813,6 +1074,31 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     await expectAsync(buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
       resourcePolicy: 'strict',
       render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    })).toBeRejectedWith(jasmine.objectContaining({
+      code: 'layout-diverged',
+      context: jasmine.objectContaining({blockId: 'placement'}),
+    }));
+  });
+
+  it('does not fall back to a changed root when the stable plane set is incomplete', async () => {
+    const snapshot = root([
+      paragraph('p1', 'flow'),
+      placementLayout('placement', [absoluteShape('shape', 24)]),
+    ]);
+    const render = createPlacementRenderRoot({
+      left: 30,
+      top: 24,
+      width: 40,
+      height: 20,
+    });
+
+    await expectAsync(buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+      resourcePolicy: 'strict',
+      render: async () => ({
+        root: render.root,
+        placementPlanes: [],
+        dispose: () => render.root.remove(),
+      }),
     })).toBeRejectedWith(jasmine.objectContaining({
       code: 'layout-diverged',
       context: jasmine.objectContaining({blockId: 'placement'}),

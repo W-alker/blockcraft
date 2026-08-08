@@ -30,7 +30,7 @@ import {
   PaginationResourcePolicy,
 } from "./pdf-export.types";
 import {appendFlowSentinel} from './print-dom';
-import {finalizeWordArtVectorsForPrint} from './print-word-art'
+import {finalizeWordArtCssForPrint} from './print-word-art'
 import {preparePrintResources} from "./print-resources";
 import {waitForPaginationRenderStable} from './render-stability'
 import {resolvePrintPageDimensions} from './print-page-geometry'
@@ -42,6 +42,14 @@ import {resolvePrintPageDimensions} from './print-page-geometry'
 export interface PrintRenderResult {
   root: HTMLElement;
   dispose(): void;
+  /**
+   * 分页稳定屏障内捕获的 root placement 平面。
+   *
+   * 宿主若会在 render provider 中关闭分页、调整 root 宽度或重建只读视图，必须在
+   * 这些切换之前调用 `captureStablePrintPlacementPlanes()`，并把结果原样返回。
+   * 打印构页优先消费该快照，不再从切换后的 `root` 重新读取 absolute block DOM。
+   */
+  placementPlanes?: readonly StablePrintPlacementPlane[];
   /**
    * 不属于文档 block snapshot、但属于首页正文流的宿主内容（例如文档标题区）。
    *
@@ -68,6 +76,53 @@ export interface PrintRenderResult {
   /** placement content box 相对纸张左缘的原点与宽度；仅作一致性校验。 */
   placementOriginX?: number;
   placementWidth?: number;
+}
+
+/** 块内真实对象面在稳定 plane / host 坐标系中的可视边界（layout px）。 */
+export interface StablePrintPlacementVisualSurfaceBounds {
+  contentLeft: number;
+  contentTop: number;
+  hostLeft: number;
+  hostTop: number;
+  width: number;
+  height: number;
+  transform: string;
+}
+
+/** placement block 在稳定 plane content-box 坐标系中的可视边界（layout px）。 */
+export interface StablePrintPlacementBlockBounds {
+  id: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  transform: string;
+  visualSurface?: StablePrintPlacementVisualSurfaceBounds;
+}
+
+/**
+ * 分页稳定阶段捕获的 placement plane DOM 与逐块几何清单。
+ * `element` 是 detached clone，后续编辑器状态切换不会再改写它。
+ */
+export interface StablePrintPlacementPlane {
+  id: string;
+  element: HTMLElement;
+  blocks: readonly StablePrintPlacementBlockBounds[];
+}
+
+/**
+ * 在分页稳定屏障内一次性捕获 root placement 平面。
+ *
+ * 捕获为 O(absolute blocks)，并把 absolute host 的 layout box 固化到 clone 上；
+ * manifest 则保存相对 plane content-box、已抵消宿主 zoom/transform 的可视 bounds。
+ */
+export function captureStablePrintPlacementPlanes(
+  root: HTMLElement,
+): StablePrintPlacementPlane[] {
+  const planes = Array.from(
+    root.querySelectorAll<HTMLElement>(':scope > [data-bc-placement-layout]'),
+  );
+  return planes.map(source => captureStablePrintPlacementPlane(source));
 }
 
 export type PrintRenderProvider = (contentWidthPx: number) => Promise<PrintRenderResult>;
@@ -107,6 +162,20 @@ export interface BuildPrintPagesOverride {
 }
 
 const PLACEMENT_LAYOUT_FLAVOUR = 'placement-layout';
+
+type ResolvedPrintPlacementPlane = {
+  id: string;
+  element: HTMLElement;
+  blocks?: readonly StablePrintPlacementBlockBounds[];
+};
+
+type ProjectedPrintPlacementPlane = {
+  element: HTMLElement;
+  expectedTop: number;
+  blocks?: readonly StablePrintPlacementBlockBounds[];
+};
+
+let printSurfaceSequence = 0;
 
 /**
  * 由快照 + 分页配置构建「逐页 A4 页容器」的打印 DOM：
@@ -155,6 +224,7 @@ export async function buildPaginatedPrintSurface(
   let capturedPlacementOriginY: number | undefined;
   let capturedPlacementOriginX: number | undefined;
   let capturedPlacementWidth: number | undefined;
+  let capturedPlacementPlanes: readonly StablePrintPlacementPlane[] | undefined;
   let leadingContent: PrintRenderResult['leadingContent'];
   let leadingStage: {root: HTMLElement; host: HTMLElement} | undefined;
   if (override?.render) {
@@ -165,6 +235,7 @@ export async function buildPaginatedPrintSurface(
     capturedPlacementOriginY = r.placementOriginY;
     capturedPlacementOriginX = r.placementOriginX;
     capturedPlacementWidth = r.placementWidth;
+    capturedPlacementPlanes = r.placementPlanes;
     leadingContent = r.leadingContent;
   } else {
     const offscreen = document.createElement('div');
@@ -254,13 +325,28 @@ export async function buildPaginatedPrintSurface(
       .filter(block => block.flavour === PLACEMENT_LAYOUT_FLAVOUR)
       .map(block => block.id),
   );
+  const capturedPlacementPlaneById = capturedPlacementPlanes == null
+    ? undefined
+    : new Map(capturedPlacementPlanes.map(plane => [plane.id, plane]));
+  const placementPlanes: ResolvedPrintPlacementPlane[] = Array.from(
+    placementPlaneIds,
+    id => {
+      const captured = capturedPlacementPlaneById?.get(id);
+      if (captured) return captured;
+      // 一旦 provider 显式交付稳定快照，它就是 placement DOM 的唯一来源；缺失时
+      // 不能悄悄回退到状态切换后的 root，否则会重新引入逐块几何漂移。
+      if (capturedPlacementPlaneById) return undefined;
+      const element = elById.get(id);
+      return element ? {id, element} : undefined;
+    },
+  ).filter((plane): plane is ResolvedPrintPlacementPlane => !!plane);
   try {
     for (const block of topSnapshots) {
       if (
         block.flavour === PLACEMENT_LAYOUT_FLAVOUR
         && Array.isArray(block.children)
         && block.children.length > 0
-        && !elById.has(block.id)
+        && !placementPlanes.some(plane => plane.id === block.id)
       ) {
         reportLayoutDivergence(
           block.id,
@@ -275,8 +361,6 @@ export async function buildPaginatedPrintSurface(
     disposeRender();
     throw error;
   }
-  const placementPlanes = Array.from(placementPlaneIds, id => elById.get(id))
-    .filter((element): element is HTMLElement => !!element);
   const hasPlacementContent = topSnapshots.some(block =>
     block.flavour === PLACEMENT_LAYOUT_FLAVOUR
       && Array.isArray(block.children)
@@ -407,6 +491,12 @@ export async function buildPaginatedPrintSurface(
     }
   }
   const screenPageStride = sheetHeightPx + geom.pageGap;
+  const printCloneNamespace = `bc-print-${++printSurfaceSequence}`;
+  const placementPlaneProjections: ProjectedPrintPlacementPlane[] = [];
+  const stablePlacementProjections: Array<{
+    plane: HTMLElement;
+    blocks: readonly StablePrintPlacementBlockBounds[];
+  }> = [];
   for (const page of result.pages) {
     const pageEl = document.createElement('div');
     pageEl.className = 'bc-print-page';
@@ -497,28 +587,69 @@ export async function buildPaginatedPrintSurface(
         content.appendChild(el); // 整块：搬移（从离屏 root 移走，DOM 节点唯一）
       }
     }
-    appendPlacementPlanes(
+    const projectedPlanes = appendPlacementPlanes(
       content,
       placementPlanes,
       page.index === 0
         ? 0
         : firstPageLeadingHeight - page.index * screenPageStride,
     );
+    placementPlaneProjections.push(...projectedPlanes);
+    // 每页使用同一个规范 plane，只需验收第一页即可把复杂度保持在 O(objects)。
+    if (page.index === 0) {
+      for (const projected of projectedPlanes) {
+        if (projected.blocks) {
+          stablePlacementProjections.push({
+            plane: projected.element,
+            blocks: projected.blocks,
+          });
+        }
+      }
+    }
     // live root 尾部存在编辑器辅助节点，因此最后一个顶层块不会命中
     // `[data-block-id]:last-child { margin-bottom: 0 }`。打印面没有这些辅助节点，
     // 补一个不参与布局的结构哨兵，确保逐页搬移后仍保留分页计算时的块间距。
     appendFlowSentinel(content);
     pageEl.appendChild(content);
+    namespacePrintSvgIds(pageEl, `${printCloneNamespace}-p${page.index}`);
     container.appendChild(pageEl);
     pageEls.push(pageEl);
   }
 
   document.body.appendChild(container);
 
-  // WordArt 的 SVG 必须在只读渲染和布局稳定阶段已经完成。页盒组装后
-  // 只验收并复用同一 SVG 节点；不允许从最终纸面重读 Range/DOMRect 或重建。
   try {
-    finalizeWordArtVectorsForPrint(container);
+    const preparedFinal = await preparePrintResources(container, {
+      resourcePolicy: override?.resourcePolicy,
+      signal: override?.signal,
+    });
+    warnings.push(...preparedFinal.warnings);
+    await waitForPaginationRenderStable(
+      container,
+      override?.stability,
+      override?.signal,
+    );
+    validateProjectedPlacementPlanes(
+      placementPlaneProjections,
+      override?.resourcePolicy ?? 'strict',
+      warnings,
+    );
+    validateStablePlacementPlanes(
+      stablePlacementProjections,
+      override?.resourcePolicy ?? 'strict',
+      warnings,
+    );
+  } catch (error) {
+    container.remove();
+    leadingStage?.root.remove();
+    disposeRender();
+    throw error;
+  }
+
+  // WordArt 保留稳定 clone 的真实文字/字体盒，只在最终纸面写入确定性 CSS 视觉参数。
+  // 禁止在这里读取 Range/DOMRect 或生成 SVG，避免 WebKit SVG text baseline 漂移。
+  try {
+    finalizeWordArtCssForPrint(container);
   } catch (error) {
     container.remove();
     leadingStage?.root.remove();
@@ -588,22 +719,804 @@ function stageLeadingContent(
  */
 function appendPlacementPlanes(
   content: HTMLElement,
-  sources: readonly HTMLElement[],
+  sources: readonly ResolvedPrintPlacementPlane[],
   top: number,
-): void {
+): ProjectedPrintPlacementPlane[] {
+  const projected: ProjectedPrintPlacementPlane[] = [];
   for (const source of sources) {
-    const plane = source.cloneNode(true) as HTMLElement;
+    const plane = source.element.cloneNode(true) as HTMLElement;
     plane.setAttribute('data-bc-print-placement-plane', 'true');
-    plane.style.top = `${top}px`;
     // placement.x/y 是相对 root content box 的固定 layout px。打印正文盒本身就是
     // 该 content box，因此克隆面必须规范化为 0/0 并直接占满内容宽；纸面原点测量值
     // 只用于上游一致性校验，不能再作为补偿量写回这里。
-    plane.style.left = '0px';
-    plane.style.right = '0px';
-    plane.style.width = 'auto';
-    plane.style.padding = '0px';
+    normalizeProjectedPlacementPlane(plane, top);
     content.appendChild(plane);
+    projected.push({element: plane, expectedTop: top, blocks: source.blocks});
   }
+  return projected;
+}
+
+function normalizeProjectedPlacementPlane(
+  plane: HTMLElement,
+  top: number,
+): void {
+  const setFixed = (
+    element: HTMLElement,
+    property: string,
+    value: string,
+  ): void => element.style.setProperty(property, value, 'important');
+  const normalizeBox = (
+    element: HTMLElement,
+    position: 'absolute' | 'relative',
+    resolvedTop: number,
+  ): void => {
+    setFixed(element, 'position', position);
+    setFixed(element, 'inset', 'auto');
+    setFixed(element, 'top', `${resolvedTop}px`);
+    setFixed(element, 'left', '0px');
+    setFixed(element, 'right', 'auto');
+    setFixed(element, 'bottom', 'auto');
+    setFixed(element, 'width', '100%');
+    setFixed(element, 'height', '0px');
+    setFixed(element, 'inline-size', '100%');
+    setFixed(element, 'block-size', '0px');
+    setFixed(element, 'min-width', '0px');
+    setFixed(element, 'min-height', '0px');
+    setFixed(element, 'max-width', 'none');
+    setFixed(element, 'max-height', 'none');
+    setFixed(element, 'box-sizing', 'border-box');
+    setFixed(element, 'margin', '0px');
+    setFixed(element, 'padding', '0px');
+    setFixed(element, 'border', '0px');
+    setFixed(element, 'transform', 'none');
+    setFixed(element, 'translate', 'none');
+    setFixed(element, 'rotate', 'none');
+    setFixed(element, 'scale', 'none');
+    setFixed(element, 'overflow', 'visible');
+  };
+
+  normalizeBox(plane, 'absolute', top);
+  const content = resolvePlacementPlaneContent(plane);
+  if (content !== plane) normalizeBox(content, 'relative', 0);
+}
+
+function namespacePrintSvgIds(root: HTMLElement, namespace: string): void {
+  const svgs = Array.from(root.querySelectorAll<SVGSVGElement>('svg'));
+  svgs.forEach((svg, svgIndex) => {
+    const idMap = new Map<string, string>();
+    const idElements = Array.from(svg.querySelectorAll<SVGElement>('[id]'));
+    idElements.forEach((element, idIndex) => {
+      const previous = element.id;
+      if (!previous) return;
+      const stableToken = previous.replace(/[^a-zA-Z0-9_.:-]/g, '-');
+      const next = `${namespace}-s${svgIndex}-i${idIndex}-${stableToken}`;
+      if (!idMap.has(previous)) idMap.set(previous, next);
+      element.id = next;
+    });
+    if (idMap.size === 0) return;
+
+    const descendants = [svg, ...Array.from(svg.querySelectorAll<SVGElement>('*'))];
+    for (const element of descendants) {
+      for (const attribute of Array.from(element.attributes)) {
+        const rewritten = rewritePrintSvgReference(
+          attribute.value,
+          idMap,
+          attribute.localName === 'href',
+        );
+        if (rewritten !== attribute.value) {
+          element.setAttributeNS(attribute.namespaceURI, attribute.name, rewritten);
+        }
+      }
+      if (element.localName === 'style' && element.textContent) {
+        element.textContent = rewritePrintSvgReference(
+          element.textContent,
+          idMap,
+          false,
+        );
+      }
+    }
+  });
+}
+
+function rewritePrintSvgReference(
+  value: string,
+  idMap: ReadonlyMap<string, string>,
+  allowExactHash: boolean,
+): string {
+  const exact = allowExactHash ? /^#([^\s]+)$/.exec(value) : null;
+  if (exact) {
+    const replacement = idMap.get(exact[1]!);
+    if (replacement) return `#${replacement}`;
+  }
+  return value.replace(
+    /url\(\s*(["']?)#([^\s)"']+)\1\s*\)/g,
+    (match, quote: string, id: string) => {
+      const replacement = idMap.get(id);
+      return replacement ? `url(${quote}#${replacement}${quote})` : match;
+    },
+  );
+}
+
+function captureStablePrintPlacementPlane(
+  source: HTMLElement,
+): StablePrintPlacementPlane {
+  const id = source.dataset['blockId'];
+  if (!id) {
+    throw new PaginationExportError(
+      'layout-not-ready',
+      '稳定分页 placement-layout 缺少 data-block-id',
+      {stage: 'layout'},
+    );
+  }
+  const sourceContent = resolvePlacementPlaneContent(source);
+  const sourceBox = resolvePlacementContentVisualBox(sourceContent, id);
+  const clone = source.cloneNode(true) as HTMLElement;
+  stabilizeCapturedPlacementMedia(source, clone, id);
+  const cloneContent = resolvePlacementPlaneContent(clone);
+  const sourceBlocks = resolveDirectPlacementBlocks(sourceContent);
+  const cloneBlocks = resolveDirectPlacementBlocks(cloneContent);
+  const blocks: StablePrintPlacementBlockBounds[] = [];
+
+  for (let index = 0; index < sourceBlocks.length; index += 1) {
+    const sourceBlock = sourceBlocks[index]!;
+    const blockId = sourceBlock.dataset['blockId'];
+    if (!blockId) {
+      throw new PaginationExportError(
+        'layout-not-ready',
+        `稳定分页 placement-layout ${id} 含缺少 data-block-id 的绝对定位块`,
+        {stage: 'layout', blockId: id},
+      );
+    }
+    const cloneBlock = cloneBlocks[index];
+    if (!cloneBlock) {
+      throw new PaginationExportError(
+        'layout-not-ready',
+        `稳定分页 placement-layout ${id} 无法克隆绝对定位块 ${blockId}`,
+        {stage: 'layout', blockId},
+      );
+    }
+    const computed = getComputedStyle(sourceBlock);
+    const bounds = readPlacementBlockVisualBounds(
+      sourceBlock,
+      sourceBox,
+      blockId,
+      readPlacementTransformSignature(computed),
+    );
+    const visualSurface = resolvePlacementVisualSurface(sourceBlock, blockId);
+    if (visualSurface) {
+      bounds.visualSurface = readPlacementVisualSurfaceBounds(
+        visualSurface,
+        sourceBlock,
+        sourceBox,
+      );
+    }
+    freezePlacementBlockLayout(
+      sourceBlock,
+      cloneBlock,
+      sourceContent,
+      computed,
+      bounds,
+    );
+    blocks.push(bounds);
+  }
+
+  return {id, element: clone, blocks};
+}
+
+function resolvePlacementPlaneContent(plane: HTMLElement): HTMLElement {
+  const direct = Array.from(plane.children).find(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement
+      && child.classList.contains('children-render-container'),
+  );
+  return direct ?? plane;
+}
+
+function resolveDirectPlacementBlocks(content: HTMLElement): HTMLElement[] {
+  return Array.from(content.children).filter(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement
+      && child.dataset['bcPlacement'] === 'absolute'
+      && child.hasAttribute('data-block-id'),
+  );
+}
+
+function resolvePlacementVisualSurface(
+  block: HTMLElement,
+  blockId: string,
+): HTMLElement | undefined {
+  const belongsToBlock = (candidate: HTMLElement): boolean =>
+    candidate.closest<HTMLElement>('[data-block-id]') === block;
+  const marked = Array.from(
+    block.querySelectorAll<HTMLElement>('[data-bc-print-visual-surface]'),
+  ).filter(belongsToBlock);
+  if (marked.length > 1) {
+    throw new PaginationExportError(
+      'layout-not-ready',
+      `绝对定位块 ${blockId} 含多个打印视觉面`,
+      {stage: 'layout', blockId},
+    );
+  }
+  if (marked[0]) return marked[0];
+
+  // 兼容尚未升级标记的 provider；只接受当前 absolute host 自己的对象盒，
+  // 绝不穿透到嵌套 block 的 surface。
+  const legacy = Array.from(block.querySelectorAll<HTMLElement>([
+    '.image-block__container > .img-wrapper',
+    '.shape-block__shell',
+    '.word-art-block__surface',
+  ].join(','))).filter(belongsToBlock);
+  return legacy.length === 1 ? legacy[0] : undefined;
+}
+
+type PlacementContentVisualBox = {
+  originX: number;
+  originY: number;
+  scaleX: number;
+  scaleY: number;
+};
+
+function resolvePlacementContentVisualBox(
+  content: HTMLElement,
+  blockId: string,
+): PlacementContentVisualBox {
+  const rect = content.getBoundingClientRect();
+  const computed = getComputedStyle(content);
+  assertAxisAlignedPlacementContext(content, blockId);
+  const scaleX = resolvePlacementAxisScale(content, 'width');
+  const scaleY = resolvePlacementAxisScale(content, 'height');
+  const borderLeft = parseFloat(computed.borderLeftWidth) || 0;
+  const borderTop = parseFloat(computed.borderTopWidth) || 0;
+  const paddingLeft = parseFloat(computed.paddingLeft) || 0;
+  const paddingTop = parseFloat(computed.paddingTop) || 0;
+  if (
+    !Number.isFinite(scaleX) || scaleX <= 0
+    || !Number.isFinite(scaleY) || scaleY <= 0
+  ) {
+    throw new PaginationExportError(
+      'layout-not-ready',
+      `稳定分页 placement-layout ${blockId} 的 content box 尚不可测量`,
+      {stage: 'layout', blockId},
+    );
+  }
+  return {
+    originX: rect.left + (borderLeft + paddingLeft) * scaleX,
+    originY: rect.top + (borderTop + paddingTop) * scaleY,
+    scaleX,
+    scaleY,
+  };
+}
+
+function resolvePlacementAxisScale(
+  content: HTMLElement,
+  axis: 'width' | 'height',
+): number {
+  for (
+    let element: HTMLElement | null = content;
+    element;
+    element = element.parentElement
+  ) {
+    const computed = getComputedStyle(element);
+    const layoutSize = readLayoutBorderBoxSize(element, computed, axis);
+    const visualSize = axis === 'width'
+      ? element.getBoundingClientRect().width
+      : element.getBoundingClientRect().height;
+    if (layoutSize > 0.000001 && visualSize > 0.000001) {
+      return visualSize / layoutSize;
+    }
+  }
+  return 0;
+}
+
+function assertAxisAlignedPlacementContext(
+  content: HTMLElement,
+  blockId: string,
+): void {
+  const epsilon = 0.000001;
+  for (let element: HTMLElement | null = content; element; element = element.parentElement) {
+    const computed = getComputedStyle(element);
+    const perspective = computed.perspective.trim();
+    if (perspective !== '' && perspective !== 'none' && parseFloat(perspective) !== 0) {
+      throwUnsupportedPlacementTransform(blockId, element, 'perspective');
+    }
+
+    const rotate = computed.getPropertyValue('rotate').trim();
+    if (rotate !== '' && rotate !== 'none' && !isZeroCssRotation(rotate)) {
+      throwUnsupportedPlacementTransform(blockId, element, 'rotate');
+    }
+    const scale = computed.getPropertyValue('scale').trim();
+    if (scale !== '' && scale !== 'none') {
+      const values = scale.split(/\s+/).map(value => parseFloat(value));
+      if (
+        values.length > 3
+        || values.some(value => !Number.isFinite(value))
+        || (values[0] ?? 0) <= 0
+        || (values[1] ?? values[0] ?? 0) <= 0
+        || (values[2] != null && Math.abs(values[2] - 1) > epsilon)
+      ) {
+        throwUnsupportedPlacementTransform(blockId, element, 'scale');
+      }
+    }
+
+    const transform = computed.transform.trim();
+    if (transform === '' || transform === 'none') continue;
+    const Matrix = element.ownerDocument.defaultView?.DOMMatrixReadOnly;
+    if (!Matrix) {
+      throwUnsupportedPlacementTransform(blockId, element, 'transform');
+    }
+    let matrix: DOMMatrixReadOnly;
+    try {
+      matrix = new Matrix(transform);
+    } catch {
+      throwUnsupportedPlacementTransform(blockId, element, 'transform');
+    }
+    if (
+      !matrix.is2D
+      || Math.abs(matrix.m12) > epsilon
+      || Math.abs(matrix.m21) > epsilon
+      || matrix.m11 <= 0
+      || matrix.m22 <= 0
+    ) {
+      throwUnsupportedPlacementTransform(blockId, element, 'rotate/skew/3d');
+    }
+  }
+}
+
+function isZeroCssRotation(value: string): boolean {
+  const parts = value.split(/\s+/);
+  const angle = parts[parts.length - 1] ?? value;
+  if (angle.endsWith('deg')) return Math.abs(parseFloat(angle)) < 0.000001;
+  if (angle.endsWith('rad')) return Math.abs(parseFloat(angle)) < 0.000001;
+  if (angle.endsWith('turn')) return Math.abs(parseFloat(angle)) < 0.000001;
+  return false;
+}
+
+function throwUnsupportedPlacementTransform(
+  blockId: string,
+  element: HTMLElement,
+  kind: string,
+): never {
+  const label = element === element.ownerDocument.documentElement
+    ? 'documentElement'
+    : element.dataset['blockId'] || element.className || element.localName;
+  throw new PaginationExportError(
+    'layout-not-ready',
+    `稳定分页 placement-layout ${blockId} 的 ${label} 含不可轴对齐 ${kind} 变换`,
+    {stage: 'layout', blockId},
+  );
+}
+
+function stabilizeCapturedPlacementMedia(
+  source: HTMLElement,
+  clone: HTMLElement,
+  planeId: string,
+): void {
+  const sourceImages = Array.from(source.querySelectorAll('img'));
+  const cloneImages = Array.from(clone.querySelectorAll('img'));
+  sourceImages.forEach((sourceImage, index) => {
+    const cloneImage = cloneImages[index];
+    if (!cloneImage) return;
+    const resolvedSource = sourceImage.currentSrc || sourceImage.src;
+    if (resolvedSource) cloneImage.src = resolvedSource;
+    cloneImage.removeAttribute('srcset');
+    cloneImage.removeAttribute('sizes');
+    cloneImage.loading = 'eager';
+  });
+
+  const sourceCanvases = Array.from(source.querySelectorAll('canvas'));
+  const cloneCanvases = Array.from(clone.querySelectorAll('canvas'));
+  sourceCanvases.forEach((sourceCanvas, index) => {
+    const cloneCanvas = cloneCanvases[index];
+    if (!cloneCanvas) return;
+    try {
+      const image = createStaticMediaImage(
+        cloneCanvas,
+        sourceCanvas.toDataURL('image/png'),
+      );
+      image.width = sourceCanvas.width;
+      image.height = sourceCanvas.height;
+      cloneCanvas.replaceWith(image);
+    } catch (error) {
+      throw new PaginationExportError(
+        'layout-not-ready',
+        `稳定分页 placement-layout ${planeId} 无法固化 canvas 位图`,
+        {stage: 'layout', blockId: planeId},
+        error,
+      );
+    }
+  });
+
+  const sourceVideos = Array.from(source.querySelectorAll('video'));
+  const cloneVideos = Array.from(clone.querySelectorAll('video'));
+  sourceVideos.forEach((sourceVideo, index) => {
+    const cloneVideo = cloneVideos[index];
+    if (!cloneVideo || !sourceVideo.poster) return;
+    const image = createStaticMediaImage(cloneVideo, sourceVideo.poster);
+    image.width = sourceVideo.clientWidth || sourceVideo.width;
+    image.height = sourceVideo.clientHeight || sourceVideo.height;
+    cloneVideo.replaceWith(image);
+  });
+}
+
+function createStaticMediaImage(
+  source: HTMLElement,
+  src: string,
+): HTMLImageElement {
+  const image = source.ownerDocument.createElement('img');
+  for (const attribute of Array.from(source.attributes)) {
+    if (['src', 'srcset', 'sizes', 'poster'].includes(attribute.name)) continue;
+    image.setAttribute(attribute.name, attribute.value);
+  }
+  image.src = src;
+  image.loading = 'eager';
+  image.decoding = 'sync';
+  image.draggable = false;
+  return image;
+}
+
+function readPlacementBlockVisualBounds(
+  block: HTMLElement,
+  box: PlacementContentVisualBox,
+  id: string,
+  transform: string,
+): StablePrintPlacementBlockBounds {
+  const rect = block.getBoundingClientRect();
+  return {
+    id,
+    left: (rect.left - box.originX) / box.scaleX,
+    top: (rect.top - box.originY) / box.scaleY,
+    width: rect.width / box.scaleX,
+    height: rect.height / box.scaleY,
+    transform,
+  };
+}
+
+function readPlacementVisualSurfaceBounds(
+  surface: HTMLElement,
+  host: HTMLElement,
+  box: PlacementContentVisualBox,
+): StablePrintPlacementVisualSurfaceBounds {
+  const surfaceRect = surface.getBoundingClientRect();
+  const hostRect = host.getBoundingClientRect();
+  return {
+    contentLeft: (surfaceRect.left - box.originX) / box.scaleX,
+    contentTop: (surfaceRect.top - box.originY) / box.scaleY,
+    hostLeft: (surfaceRect.left - hostRect.left) / box.scaleX,
+    hostTop: (surfaceRect.top - hostRect.top) / box.scaleY,
+    width: surfaceRect.width / box.scaleX,
+    height: surfaceRect.height / box.scaleY,
+    transform: readPlacementTransformSignature(getComputedStyle(surface)),
+  };
+}
+
+function freezePlacementBlockLayout(
+  source: HTMLElement,
+  clone: HTMLElement,
+  content: HTMLElement,
+  computed: CSSStyleDeclaration,
+  bounds: StablePrintPlacementBlockBounds,
+): void {
+  const width = readLayoutBorderBoxSize(source, computed, 'width');
+  const height = readLayoutBorderBoxSize(source, computed, 'height');
+  const origin = resolveUntransformedPlacementOrigin(
+    source,
+    content,
+    bounds,
+    width,
+    height,
+    computed,
+  );
+  const setFixed = (property: string, value: string): void => {
+    clone.style.setProperty(property, value, 'important');
+  };
+
+  // 先清掉所有物理/逻辑 inset，再按稳定 content-box 坐标写回。否则 provider
+  // 交付的 clone 仍可能受旧 right/bottom、百分比 inset 或响应式 max-size 约束。
+  setFixed('inset', 'auto');
+  setFixed('inset-inline', 'auto');
+  setFixed('inset-block', 'auto');
+  setFixed('right', 'auto');
+  setFixed('bottom', 'auto');
+  setFixed('position', 'absolute');
+  setFixed('left', `${origin.left}px`);
+  setFixed('top', `${origin.top}px`);
+  setFixed('width', `${width}px`);
+  setFixed('height', `${height}px`);
+  const verticalWriting = computed.writingMode.startsWith('vertical');
+  setFixed('inline-size', `${verticalWriting ? height : width}px`);
+  setFixed('block-size', `${verticalWriting ? width : height}px`);
+  setFixed('min-width', '0px');
+  setFixed('min-height', '0px');
+  setFixed('max-width', 'none');
+  setFixed('max-height', 'none');
+  setFixed('min-inline-size', '0px');
+  setFixed('min-block-size', '0px');
+  setFixed('max-inline-size', 'none');
+  setFixed('max-block-size', 'none');
+  setFixed('box-sizing', 'border-box');
+  setFixed('aspect-ratio', 'auto');
+  setFixed('margin', '0px');
+  setFixed('transform', computed.transform === 'none' ? 'none' : computed.transform);
+  setFixed('transform-origin', computed.transformOrigin);
+  setFixed('translate', computed.getPropertyValue('translate') || 'none');
+  setFixed('rotate', computed.getPropertyValue('rotate') || 'none');
+  setFixed('scale', computed.getPropertyValue('scale') || 'none');
+  setFixed('animation', 'none');
+  setFixed('transition', 'none');
+}
+
+function resolveUntransformedPlacementOrigin(
+  source: HTMLElement,
+  content: HTMLElement,
+  bounds: StablePrintPlacementBlockBounds,
+  width: number,
+  height: number,
+  computed: CSSStyleDeclaration,
+): {left: number; top: number} {
+  const hasIndividualTransform = ['translate', 'rotate', 'scale'].some(property => {
+    const value = computed.getPropertyValue(property).trim();
+    return value !== '' && value !== 'none';
+  });
+  if (hasIndividualTransform) {
+    if (source.offsetParent === content) {
+      return {left: source.offsetLeft, top: source.offsetTop};
+    }
+    throw new PaginationExportError(
+      'layout-not-ready',
+      `绝对定位块 ${bounds.id} 的独立变换无法解析到 placement content box 坐标`,
+      {stage: 'layout', blockId: bounds.id},
+    );
+  }
+  const transform = computed.transform;
+  if (!transform || transform === 'none') {
+    return {left: bounds.left, top: bounds.top};
+  }
+  try {
+    const Matrix = source.ownerDocument.defaultView?.DOMMatrixReadOnly
+      ?? DOMMatrixReadOnly;
+    const matrix = new Matrix(transform);
+    const [originX, originY] = computed.transformOrigin
+      .split(/\s+/)
+      .slice(0, 2)
+      .map(value => parseFloat(value) || 0);
+    const corners = [
+      [0, 0],
+      [width, 0],
+      [0, height],
+      [width, height],
+    ] as const;
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    for (const [x, y] of corners) {
+      const localX = x - originX!;
+      const localY = y - originY!;
+      const transformedW = matrix.m14 * localX
+        + matrix.m24 * localY
+        + matrix.m44;
+      const divisor = Math.abs(transformedW) > 0.000001 ? transformedW : 1;
+      const transformedX = originX! + (
+        matrix.m11 * localX + matrix.m21 * localY + matrix.m41
+      ) / divisor;
+      const transformedY = originY! + (
+        matrix.m12 * localX + matrix.m22 * localY + matrix.m42
+      ) / divisor;
+      minX = Math.min(minX, transformedX);
+      minY = Math.min(minY, transformedY);
+    }
+    if (Number.isFinite(minX) && Number.isFinite(minY)) {
+      return {left: bounds.left - minX, top: bounds.top - minY};
+    }
+  } catch {
+    // Older WebViews may not expose DOMMatrixReadOnly. The standard plane makes
+    // the content container the offset parent, so keep that exact fallback only.
+  }
+  if (source.offsetParent === content) {
+    return {left: source.offsetLeft, top: source.offsetTop};
+  }
+  throw new PaginationExportError(
+    'layout-not-ready',
+    `绝对定位块 ${bounds.id} 无法解析到 placement content box 坐标`,
+    {stage: 'layout', blockId: bounds.id},
+  );
+}
+
+function readPlacementTransformSignature(computed: CSSStyleDeclaration): string {
+  return [
+    computed.transform || 'none',
+    computed.getPropertyValue('translate') || 'none',
+    computed.getPropertyValue('rotate') || 'none',
+    computed.getPropertyValue('scale') || 'none',
+  ].join('|');
+}
+
+function readLayoutBorderBoxSize(
+  element: HTMLElement,
+  computed: CSSStyleDeclaration,
+  axis: 'width' | 'height',
+): number {
+  const value = parseFloat(axis === 'width' ? computed.width : computed.height);
+  if (Number.isFinite(value)) {
+    if (computed.boxSizing === 'border-box') return Math.max(0, value);
+    const startPadding = parseFloat(
+      axis === 'width' ? computed.paddingLeft : computed.paddingTop,
+    ) || 0;
+    const endPadding = parseFloat(
+      axis === 'width' ? computed.paddingRight : computed.paddingBottom,
+    ) || 0;
+    const startBorder = parseFloat(
+      axis === 'width' ? computed.borderLeftWidth : computed.borderTopWidth,
+    ) || 0;
+    const endBorder = parseFloat(
+      axis === 'width' ? computed.borderRightWidth : computed.borderBottomWidth,
+    ) || 0;
+    return Math.max(
+      0,
+      value + startPadding + endPadding + startBorder + endBorder,
+    );
+  }
+  return axis === 'width' ? element.offsetWidth : element.offsetHeight;
+}
+
+function validateProjectedPlacementPlanes(
+  projections: readonly ProjectedPrintPlacementPlane[],
+  policy: PaginationResourcePolicy,
+  warnings: PaginationExportWarning[],
+): void {
+  const tolerance = 1;
+  for (const projection of projections) {
+    const plane = projection.element;
+    const content = plane.parentElement;
+    const planeId = plane.dataset['blockId'] ?? 'placement-layout';
+    if (!content) {
+      reportLayoutDivergence(
+        planeId,
+        `打印 placement plane ${planeId} 未挂载到正文 content box`,
+        policy,
+        warnings,
+      );
+      continue;
+    }
+    const planeRect = plane.getBoundingClientRect();
+    const contentRect = content.getBoundingClientRect();
+    const actualLeft = planeRect.left - contentRect.left;
+    const actualTop = planeRect.top - contentRect.top;
+    const diverged = (
+      Math.abs(actualLeft) > tolerance
+      || Math.abs(actualTop - projection.expectedTop) > tolerance
+      || Math.abs(planeRect.width - contentRect.width) > tolerance
+    );
+    if (!diverged) continue;
+    reportLayoutDivergence(
+      planeId,
+      `打印 placement plane ${planeId} 未规范化到 content box：`
+        + `期望 {left:0.00, top:${formatGeometry(projection.expectedTop)}, `
+        + `width:${formatGeometry(contentRect.width)}}；打印 `
+        + `{left:${formatGeometry(actualLeft)}, top:${formatGeometry(actualTop)}, `
+        + `width:${formatGeometry(planeRect.width)}}`,
+      policy,
+      warnings,
+    );
+  }
+}
+
+function validateStablePlacementPlanes(
+  projections: readonly {
+    plane: HTMLElement;
+    blocks: readonly StablePrintPlacementBlockBounds[];
+  }[],
+  policy: PaginationResourcePolicy,
+  warnings: PaginationExportWarning[],
+): void {
+  const tolerance = 1;
+  for (const projection of projections) {
+    const content = resolvePlacementPlaneContent(projection.plane);
+    const box = resolvePlacementContentVisualBox(
+      content,
+      projection.plane.dataset['blockId'] ?? 'placement-layout',
+    );
+    const renderedById = new Map(
+      resolveDirectPlacementBlocks(content).map(block => [
+        block.dataset['blockId']!,
+        block,
+      ]),
+    );
+    for (const expected of projection.blocks) {
+      const rendered = renderedById.get(expected.id);
+      if (!rendered) {
+        reportLayoutDivergence(
+          expected.id,
+          `打印 placement plane 缺少稳定分页中的绝对定位块 ${expected.id}`,
+          policy,
+          warnings,
+        );
+        continue;
+      }
+      const computed = getComputedStyle(rendered);
+      const actual = readPlacementBlockVisualBounds(
+        rendered,
+        box,
+        expected.id,
+        readPlacementTransformSignature(computed),
+      );
+      const geometryDiverged = (
+        Math.abs(actual.left - expected.left) > tolerance
+        || Math.abs(actual.top - expected.top) > tolerance
+        || Math.abs(actual.width - expected.width) > tolerance
+        || Math.abs(actual.height - expected.height) > tolerance
+      );
+      const transformDiverged = actual.transform !== expected.transform;
+      if (geometryDiverged || transformDiverged) {
+        reportLayoutDivergence(
+          expected.id,
+          `打印绝对定位块 ${expected.id} 几何与稳定分页不一致：`
+            + `稳定 {left:${formatGeometry(expected.left)}, top:${formatGeometry(expected.top)}, `
+            + `width:${formatGeometry(expected.width)}, height:${formatGeometry(expected.height)}, `
+            + `transform:${expected.transform}}；打印 `
+            + `{left:${formatGeometry(actual.left)}, top:${formatGeometry(actual.top)}, `
+            + `width:${formatGeometry(actual.width)}, height:${formatGeometry(actual.height)}, `
+            + `transform:${actual.transform}}`,
+          policy,
+          warnings,
+        );
+      }
+
+      if (!expected.visualSurface) continue;
+      let surface: HTMLElement | undefined;
+      try {
+        surface = resolvePlacementVisualSurface(rendered, expected.id);
+      } catch {
+        surface = undefined;
+      }
+      if (!surface) {
+        reportLayoutDivergence(
+          expected.id,
+          `打印绝对定位块 ${expected.id} 缺少稳定分页中的真实视觉面`,
+          policy,
+          warnings,
+        );
+        continue;
+      }
+      const actualSurface = readPlacementVisualSurfaceBounds(
+        surface,
+        rendered,
+        box,
+      );
+      const surfaceDiverged = (
+        Math.abs(actualSurface.contentLeft - expected.visualSurface.contentLeft) > tolerance
+        || Math.abs(actualSurface.contentTop - expected.visualSurface.contentTop) > tolerance
+        || Math.abs(actualSurface.hostLeft - expected.visualSurface.hostLeft) > tolerance
+        || Math.abs(actualSurface.hostTop - expected.visualSurface.hostTop) > tolerance
+        || Math.abs(actualSurface.width - expected.visualSurface.width) > tolerance
+        || Math.abs(actualSurface.height - expected.visualSurface.height) > tolerance
+        || actualSurface.transform !== expected.visualSurface.transform
+      );
+      if (!surfaceDiverged) continue;
+      reportLayoutDivergence(
+        expected.id,
+        `打印绝对定位块 ${expected.id} 的真实视觉面与稳定分页不一致：`
+          + `稳定 {contentLeft:${formatGeometry(expected.visualSurface.contentLeft)}, `
+          + `contentTop:${formatGeometry(expected.visualSurface.contentTop)}, `
+          + `hostLeft:${formatGeometry(expected.visualSurface.hostLeft)}, `
+          + `hostTop:${formatGeometry(expected.visualSurface.hostTop)}, `
+          + `width:${formatGeometry(expected.visualSurface.width)}, `
+          + `height:${formatGeometry(expected.visualSurface.height)}, `
+          + `transform:${expected.visualSurface.transform}}；打印 `
+          + `{contentLeft:${formatGeometry(actualSurface.contentLeft)}, `
+          + `contentTop:${formatGeometry(actualSurface.contentTop)}, `
+          + `hostLeft:${formatGeometry(actualSurface.hostLeft)}, `
+          + `hostTop:${formatGeometry(actualSurface.hostTop)}, `
+          + `width:${formatGeometry(actualSurface.width)}, `
+          + `height:${formatGeometry(actualSurface.height)}, `
+          + `transform:${actualSurface.transform}}`,
+        policy,
+        warnings,
+      );
+    }
+  }
+}
+
+function formatGeometry(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(2) : String(value);
 }
 
 function validatePlacementContentBoxGeometry(input: {
@@ -652,6 +1565,16 @@ function appendPrintOnlyStyles(page: HTMLElement): void {
     .bc-print-content [data-bc-print-scrollable="true"]::-webkit-scrollbar-corner {
       background: transparent !important;
       border-color: transparent !important;
+    }
+    .bc-print-content [data-bc-print-word-art-css="true"] *,
+    .bc-print-leading-content [data-bc-print-word-art-css="true"] * {
+      font: inherit !important;
+      letter-spacing: inherit !important;
+      color: inherit !important;
+      -webkit-text-fill-color: inherit !important;
+      -webkit-text-stroke: inherit !important;
+      text-shadow: inherit !important;
+      background: none !important;
     }
   `;
   page.appendChild(style);

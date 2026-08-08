@@ -132,19 +132,45 @@ async function waitForImages(
   warnings: PaginationExportWarning[],
   signal?: AbortSignal,
 ): Promise<void> {
-  await Promise.all(Array.from(root.querySelectorAll('img')).map(img => {
+  await Promise.all(Array.from(root.querySelectorAll('img')).map(async img => {
     // 离屏打印树永远不会进入视口；保留 lazy 会让部分浏览器/WebView 永不发起请求。
     img.loading = 'eager'
     if (img.complete) {
       if (img.naturalWidth === 0 && img.currentSrc) {
         handleResourceFailure(img, '图片加载失败', policy, warnings, img.currentSrc)
       }
-      return Promise.resolve()
+    } else {
+      try {
+        await waitForImage(img, timeoutMs, signal)
+      } catch (error) {
+        if (error instanceof PaginationExportError) throw error
+        handleResourceFailure(
+          img,
+          '图片资源等待超时或加载失败',
+          policy,
+          warnings,
+          img.currentSrc || img.src,
+          error,
+        )
+        return
+      }
     }
-    return waitForImage(img, timeoutMs, signal).catch(error => {
-      if (error instanceof PaginationExportError) throw error
-      handleResourceFailure(img, '图片资源等待超时或加载失败', policy, warnings, img.currentSrc || img.src, error)
-    })
+    if (typeof img.decode !== 'function' || !(img.currentSrc || img.src)) return
+    try {
+      await raceWithTimeout(img.decode(), timeoutMs, signal)
+    } catch (error) {
+      if (error instanceof PaginationExportError && error.code === 'aborted') {
+        throw error
+      }
+      handleResourceFailure(
+        img,
+        '图片资源解码失败或超时',
+        policy,
+        warnings,
+        img.currentSrc || img.src,
+        error,
+      )
+    }
   }))
 }
 
@@ -167,6 +193,12 @@ function waitForImage(img: HTMLImageElement, timeoutMs: number, signal?: AbortSi
     img.addEventListener('load', onLoad, {once: true})
     img.addEventListener('error', onError, {once: true})
     signal?.addEventListener('abort', onAbort, {once: true})
+    // `complete` 可能在调用方首次检查与监听器注册之间翻转；监听完成后必须
+    // 再读一次，避免已完成的离屏图片丢失 load/error 事件并误等到超时。
+    if (signal?.aborted) onAbort()
+    else if (img.complete) {
+      img.naturalWidth > 0 ? onLoad() : onError()
+    }
   })
 }
 

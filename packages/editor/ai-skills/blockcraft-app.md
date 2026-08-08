@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-07
+> Last updated: 2026-08-08
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -475,6 +475,21 @@ that content width. Fixed `placement.x/y` never include root padding; legacy
 percentage x is resolved once against content width by the readonly renderer.
 A non-empty placement snapshot without its readonly
 DOM plane is a strict `layout-diverged` failure, not a silent content drop.
+If a custom render provider disables pagination, changes root sizing, or rebuilds
+the readonly view after the page layout becomes stable, capture the plane first:
+
+```typescript
+const placementPlanes = captureStablePrintPlacementPlanes(readonlyRoot)
+// It is now safe to switch the readonly root into its print/flow state.
+return {root: readonlyRoot, placementPlanes, dispose}
+```
+
+`PrintRenderResult.placementPlanes` is then the only placement DOM source;
+BlockCraft does not fall back to the changed root when that stable set is
+present. The helper deep-clones each root plane and records every absolute
+block's visual bounds relative to the plane content box, with host zoom removed.
+Fixed-page assembly validates the first canonical projection in O(objects):
+strict mode throws `layout-diverged`, while best-effort mode emits a warning.
 When the host rebuilds print pages from an already projected isolated view,
 pass the result of `captureStableLayout()` unchanged. The snapshot now owns the
 canonical root content-box placement origin in `StablePaginationLayout.placementOriginY`;
@@ -488,11 +503,13 @@ The root, host header, and page sheet all use the same `left: 50%` plus
 This keeps them aligned in narrow/custom-element hosts; overflow becomes
 horizontal scrolling rather than a root-only alignment fallback.
 
-WordArt display is SVG-native in editable, readonly and snapshot surfaces. Its
-HTML contenteditable keeps only input-geometry and caret styles as a transparent
-interaction layer; fill, gradient, outline, shadow and effect transforms belong
-to SVG. Print
-reuses the same vector node instead of performing a second visual conversion.
+WordArt display is CSS-text-native in editable, readonly, snapshot and inline
+surfaces. The same real text node owns font geometry, fill, gradient, outline,
+shadow, effect transform, caret and selection; no SVG glyph mirror is generated.
+Fixed-page export keeps that cloned text box and freezes only deterministic CSS.
+On WKWebView native PDF, gradient fill deliberately falls back to the first
+gradient color because WebKit may otherwise paint `background-clip:text` as a
+full rectangle. Solid fill and all non-gradient effects remain unchanged.
 
 The print surface fits an oversized image/video and an over-wide non-breakable
 atomic block into the page content box as a whole. It does not apply that policy

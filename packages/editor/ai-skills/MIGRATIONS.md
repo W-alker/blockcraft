@@ -69,13 +69,52 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
-### Unreleased - 2026-08-08 (patch) — canonicalize placement print projection
+### Unreleased - 2026-08-08 (patch) — restore CSS-native WordArt rendering
+
+**What changed**: Editable, readonly, snapshot and inline WordArt now paint the
+real CSS text node again. The block no longer mounts an SVG visual mirror or
+makes the editable glyph layer transparent. Fixed-page export preserves the
+stable cloned text box and freezes presentation CSS without measuring Range or
+DOMRect. WKWebView print degrades gradient fill to the first configured gradient
+color; solid fill, font metrics, stroke, shadow and transform remain intact.
+
+**Why**: Keeping contenteditable HTML only as a transparent interaction layer
+made caret/selection/drag proxies vulnerable to a second black glyph run and
+kept browser text layout separate from what users actually saw. Native WebKit
+PDF still cannot safely receive CSS gradient clipping, so only that unsupported
+paint is degraded instead of maintaining an SVG rendering system everywhere.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+#### Behavior Changes
+
+- Screen/editor/snapshot/inline WordArt contains no generated SVG glyph layer.
+- Legacy rich-text styling on WordArt child blots no longer overrides the
+  block's plain-text presentation during selection or drag proxies.
+- Native PDF gradient WordArt uses the first gradient color as a deterministic
+  WebKit fallback; non-gradient presentation remains unchanged.
+
+> The version in `packages/editor/package.json` MUST be bumped according to this rule before running `pnpm publish:editor`.
+
+---
+
+### Unreleased - 2026-08-08 (minor) — canonicalize and freeze placement print projection
 
 **What changed**: Flow, live pagination, and fixed-page export now keep the
 root placement plane at `top/left = 0/0` inside the root content box and fill
 the content width. Stable placement geometry now comes directly from resolved
 pagination margins, page chrome and first-page leading geometry; print no longer
 converts DOMRect measurements into X/Y/width compensation.
+Custom render providers can now capture detached placement-plane DOM and its
+per-block visual geometry before disabling pagination or changing root sizing;
+fixed-page assembly consumes that stable source and validates one canonical
+projection instead of reading the post-switch root.
 
 **Why**: A DOMRect captured in a scaled screen view or isolated readonly window
 can include host padding or a different zoom/transform chain. Converting that
@@ -98,10 +137,21 @@ canonical 72px margin even though persisted `placement.x/y` was correct.
   remains diagnostic and reports `layout-diverged` instead of becoming a print offset.
 - `PrintRenderResult.placementOriginX/Y/placementWidth` remain accepted as
   compatibility diagnostics but no longer control print layout.
+- When `PrintRenderResult.placementPlanes` is present, it is the only placement
+  DOM source. An incomplete set is `layout-diverged`; it never falls back to the
+  changed readonly root.
 - The live pagination surface has `min-width` equal to the sheet width, keeping
   root, external header, and page backdrop center-aligned in narrow hosts. All
   three use the same `left:50% + translateX(-50%)` centerline; root no longer
   relies on flex centering.
+
+### New APIs / Features
+
+- `captureStablePrintPlacementPlanes(root)` captures detached root placement
+  planes and O(objects) visual-bounds manifests inside the stable pagination
+  barrier.
+- `PrintRenderResult.placementPlanes?: readonly StablePrintPlacementPlane[]`
+  lets a custom provider deliver those snapshots to fixed-page assembly.
 
 > The version in `packages/editor/package.json` MUST be bumped according to this rule before running `pnpm publish:editor`.
 

@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-07 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-08 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -600,6 +600,11 @@ root 尾部的 `placement-layout` 是全局 absolute 平面，导出会按 `shee
 分页和打印中都固定以 root content box 的 `0/0` 为原点并占满 content width。固定
 `placement.x/y` 不包含 root padding；旧百分比 x 仅在只读渲染阶段按 content width 固化一次。
 非空 placement 快照缺少只读 DOM 时，strict 导出以 `layout-diverged` 失败，不能静默丢对象。
+自定义 render provider 若会在分页稳定后关闭分页或改写 root 尺寸，必须先调用
+`captureStablePrintPlacementPlanes(root)`，再通过 `PrintRenderResult.placementPlanes` 返回 detached
+plane 快照。此后打印只消费这份快照，不回退读取切换后的 root；快照同时保存每个 absolute block
+相对 plane content-box、已抵消宿主缩放的可视 bounds。构页仅验收第一页规范投影，strict 漂移失败、
+best-effort 记录 warning，复杂度保持 O(objects)。
 `PaginationPlugin.captureStableLayout()` 会在同一个同步导出屏障中，直接把分页模型解析出的
 content-box 原点和宽度写入 `StablePaginationLayout`：X 来自左页边距，Y 来自正文起点与首页
 documentHeader 占位，宽度来自纸宽扣除左右页边距。这里不读取 DOMRect，宿主 padding、CSS zoom
@@ -614,15 +619,13 @@ documentHeader、但只读 provider 无法重建其 DOM 时，固定页盒仍会
 `left:50% + translateX(-50%)` 中线公式；root 不再依赖 flex center。超出宿主的纸张通过横向
 滚动查看，不压缩或改变模型坐标。
 
-WordArt 的编辑、只读与 snapshot 展示统一使用 SVG 作为最终视觉层；contenteditable 只保留
-字体、字号、字重、行高、字距、对齐、换行和 caret 等输入几何样式。填充、渐变、描边、阴影与
-艺术变形不再写入其行内样式，CSS 字形在 SVG 就绪后透明。分页打印直接复用隔离副本中已稳定的同一 SVG，
-导出阶段不再读取文字 Range/DOMRect 或重建 SVG；稳定副本缺失 SVG 时以
-`layout-not-ready` 失败。`wordArtPresentationToInlineStyle()` 只服务独立
-HTML adapter 的无 SVG 降级输出，不会回写编辑器里的 `c-element` / `c-text`。
-SVG-ready 的透明交互层规则直接绑定 surface/frame 自身，不能依赖
-`[data-blockcraft-root]`：行内对象拖拽代理和其他 portal 会被挂到 `document.body`。
-选区规则需保留高于宿主通用 `.no-native-selection ...::selection` 的权重。
+WordArt 的编辑、只读、snapshot 与行内展示统一使用真实 CSS 文字节点；字体几何、填充、渐变、
+描边、阴影、艺术变形、caret 与选区不再拆成 HTML/SVG 两套字形。WordArt 是 plain-text block，
+其后代 blot 强制继承同一 presentation；该直连规则不依赖 `[data-blockcraft-root]`，所以选中态与
+挂到 `document.body` 的拖拽 proxy 也不会恢复黑色行内样式。分页打印保留稳定 clone 的真实文字盒，
+不读取 Range/DOMRect。WKWebView 原生 PDF 对 `background-clip:text` 渐变存在整块矩形误绘，
+因此打印时只把渐变填充确定性降级为首个 gradient color；solid fill、字体尺寸、描边、阴影和
+transform 保持不变。
 
 当一个真实表格行因超长单元格而高过页面内容区时，分页器会惰性收集单元格直属 Block 边界和 Editable Block 的视觉行首，在同一逻辑单元格内生成可逆续排。各列可以在不同安全锚点换页，屏幕投影只插入零模型长度页缝，不拆 Yjs 行/单元格，也不创建 Undo 历史。表格的虚拟内容高度、屏幕内部页缝和后续顶层 Block 共同进入同一布局坐标系，因此表格下方内容不会再沿用表格的自然高度而向上漂移。IME composition 期间保留上一版稳定布局，结束后再重排；打印/PDF 消费同一稳定锚点快照。
 

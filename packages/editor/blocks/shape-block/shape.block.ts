@@ -33,6 +33,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
     <div
       #shapeShell
       class="shape-block__shell"
+      data-bc-print-visual-surface
       contenteditable="false"
       [style.width.px]="shapeProps.width"
       [style.height.px]="shapeProps.height"

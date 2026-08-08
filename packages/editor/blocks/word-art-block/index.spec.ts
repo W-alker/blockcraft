@@ -1,4 +1,4 @@
-import {Component} from '@angular/core'
+import {Component, CUSTOM_ELEMENTS_SCHEMA} from '@angular/core'
 import {TestBed} from '@angular/core/testing'
 import * as Y from 'yjs'
 import {BlockNodeType} from '../../framework'
@@ -27,10 +27,30 @@ import {
     </div>
   `,
   styleUrl: '../../themes/blocks/word-art-block.scss',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 class WordArtTransformVisibilityHarness {
   focused = true
 }
+
+@Component({
+  selector: 'word-art-css-inheritance-harness',
+  standalone: true,
+  template: `
+    <div
+      class="word-art-block__editor"
+      data-bc-word-art-print-props="{}"
+      style="color: transparent; -webkit-text-fill-color: transparent; font: 900 48px/1.1 sans-serif"
+    >
+      <c-element style="color: black; -webkit-text-fill-color: black; font: 16px serif">
+        <c-text>艺术字</c-text>
+      </c-element>
+    </div>
+  `,
+  styleUrl: '../../themes/blocks/word-art-block.scss',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+})
+class WordArtCssInheritanceHarness {}
 
 describe('Word art block domain', () => {
   it('shows transform controls for the editable focused state', async () => {
@@ -51,6 +71,34 @@ describe('Word art block domain', () => {
 
     fixture.destroy()
     TestBed.resetTestingModule()
+  })
+
+  it('keeps legacy inline glyph styles from turning selection or drag clones black', async () => {
+    await TestBed.configureTestingModule({
+      imports: [WordArtCssInheritanceHarness],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(WordArtCssInheritanceHarness)
+    fixture.detectChanges()
+    const editor = fixture.nativeElement.querySelector(
+      '.word-art-block__editor',
+    ) as HTMLElement
+    const clone = editor.cloneNode(true) as HTMLElement
+    document.body.appendChild(clone)
+
+    try {
+      for (const host of [editor, clone]) {
+        const inline = host.querySelector('c-element') as HTMLElement
+        const computed = getComputedStyle(inline)
+        expect(computed.color).toBe('rgba(0, 0, 0, 0)')
+        expect(computed.webkitTextFillColor).toBe('rgba(0, 0, 0, 0)')
+        expect(computed.fontSize).toBe('48px')
+        expect(computed.fontWeight).toBe('900')
+      }
+    } finally {
+      clone.remove()
+      fixture.destroy()
+      TestBed.resetTestingModule()
+    }
   })
 
   it('restores a real caret host inside a non-editable placement shell', async () => {
@@ -105,24 +153,18 @@ describe('Word art block domain', () => {
       const editor = fixture.nativeElement.querySelector(
         '.word-art-block__editor',
       ) as HTMLElement
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-      const vector = fixture.nativeElement.querySelector(
-        'svg[data-bc-word-art-vector-mirror="true"]',
-      ) as SVGSVGElement | null
 
       expect(placementShell.isContentEditable).toBeFalse()
-      expect(vector).not.toBeNull()
-      expect(vector?.querySelector('text')?.textContent).toBe('艺术字')
-      expect(
-        fixture.nativeElement.querySelector('.word-art-block__surface')
-          ?.hasAttribute('data-bc-word-art-vector-ready'),
-      ).toBeTrue()
-      expect(editor.style.color).toBe('')
-      expect(editor.style.webkitTextFillColor).toBe('')
-      expect(editor.style.backgroundImage).toBe('')
-      expect(editor.style.backgroundClip).toBe('')
-      expect(editor.style.getPropertyValue('-webkit-text-stroke')).toBe('')
-      expect(editor.style.textShadow).toBe('')
+      expect(fixture.nativeElement.querySelector('svg')).toBeNull()
+      expect(editor.style.color).toBe('transparent')
+      expect(editor.style.webkitTextFillColor).toBe('transparent')
+      expect(editor.style.backgroundImage).toContain('linear-gradient(')
+      expect(editor.style.backgroundClip).toBe('text')
+      expect(editor.style.getPropertyValue('-webkit-background-clip'))
+        .toBe('text')
+      expect(editor.style.getPropertyValue('-webkit-text-stroke'))
+        .toContain('0.03em')
+      expect(editor.style.textShadow).toContain('rgba(124, 45, 18, 0.3)')
       expect(editor.style.transform).toBe('')
       expect(editor.getAttribute('contenteditable')).toBe('true')
       expect(editor.isContentEditable).toBeTrue()

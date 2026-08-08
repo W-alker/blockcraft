@@ -77,6 +77,7 @@ function renderImage(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
   const wrapper = document.createElement("div")
   wrapper.classList.add("img-wrapper")
+  wrapper.setAttribute("data-bc-print-visual-surface", "")
 
   const img = document.createElement("img")
   img.loading = "lazy"

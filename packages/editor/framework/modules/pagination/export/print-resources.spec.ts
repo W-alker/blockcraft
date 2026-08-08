@@ -93,4 +93,16 @@ describe('preparePrintResources', () => {
 
     expect(img.loading).toBe('eager')
   })
+
+  it('does not miss an image that completes while load listeners are attached', async () => {
+    const root = document.createElement('div')
+    const img = document.createElement('img')
+    root.appendChild(img)
+    spyOnProperty(img, 'complete', 'get').and.returnValues(false, true)
+    spyOnProperty(img, 'naturalWidth', 'get').and.returnValue(1)
+
+    await preparePrintResources(root, {timeoutMs: 10})
+
+    expect(img.loading).toBe('eager')
+  })
 })

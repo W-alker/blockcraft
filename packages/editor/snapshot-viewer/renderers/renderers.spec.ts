@@ -29,7 +29,7 @@ describe("snapshot-viewer renderers", () => {
     expect(host.querySelector("figcaption.caption-block")).not.toBeNull()
   })
 
-  it("renders editable word art with SVG-owned presentation data", () => {
+  it("renders editable word art with CSS-owned presentation data", () => {
     const wordArt = WordArtBlockSchema.createSnapshot("新品发布", {
       width: 360,
       height: 110,
@@ -54,11 +54,16 @@ describe("snapshot-viewer renderers", () => {
     expect(surface.style.transform).toBe("rotate(15deg)")
     expect(content.textContent).toBe("新品发布")
     expect(content.style.fontSize).toBe("54px")
-    expect(content.style.backgroundImage).toBe("")
-    expect(content.style.webkitTextFillColor).toBe("")
-    expect(content.style.transform).toBe("")
+    expect(content.style.backgroundImage).toContain("linear-gradient(")
+    expect(content.style.webkitTextFillColor).toBe("transparent")
+    expect(content.style.backgroundClip).toBe("text")
+    expect(content.style.getPropertyValue("-webkit-background-clip")).toBe("text")
+    expect(content.style.getPropertyValue("-webkit-text-stroke"))
+      .toContain("0.05em")
+    expect(content.style.transform).toBe("skewX(10deg)")
     expect(content.dataset["bcWordArtPrintProps"]).toContain("linear-gradient")
     expect(content.dataset["bcWordArtEffectTransform"]).toBe("skewX(10deg)")
+    expect(surface.querySelector("svg")).toBeNull()
   })
 
   it("renders divider and columns shells", () => {

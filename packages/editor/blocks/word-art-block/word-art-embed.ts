@@ -19,7 +19,6 @@ import {
   resolveWordArtPresentation,
   type WordArtBlockProps,
 } from './word-art.types'
-import {refreshWordArtVectorMirror} from '../../framework/modules/pagination/export/print-word-art'
 
 export const INLINE_WORD_ART_EMBED_KEY = 'word-art'
 
@@ -147,13 +146,17 @@ export const createInlineWordArtEmbedConverter = (): EmbedConverter => ({
     text.style.letterSpacing = `${props.letterSpacingEm}em`
     text.style.lineHeight = String(props.lineHeight)
     text.style.textAlign = props.horizontalAlign
+    text.style.color = presentation.textColor
+    text.style.webkitTextFillColor = presentation.textColor
     text.style.caretColor = presentation.fallbackColor
+    text.style.backgroundImage = presentation.backgroundImage
+    text.style.backgroundClip = 'text'
+    text.style.setProperty('-webkit-background-clip', 'text')
+    text.style.setProperty('-webkit-text-stroke', presentation.textStroke)
+    text.style.textShadow = presentation.textShadow
+    text.style.transform = presentation.effectTransform
     text.dataset['bcWordArtEffectTransform'] = presentation.effectTransform
     frame.appendChild(text)
-    queueMicrotask(() => {
-      if (refreshWordArtVectorMirror(text)) return
-      requestAnimationFrame(() => refreshWordArtVectorMirror(text))
-    })
     return shell
   },
   toDelta: element => {

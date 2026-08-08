@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-07
+> Last updated: 2026-08-08
 
 ## Theme Structure
 
@@ -240,7 +240,11 @@ remove the data attributes or add/remove the selected class directly.
 During a Shape/WordArt Embed drag, the presentation-only
 `.bc-inline-object-drag-proxy` is appended under `body`. Themes may refine its
 opacity/outline, but it must remain inert and must not participate in editor
-layout or serialization.
+layout or serialization. Because that proxy is outside `[data-blockcraft-root]`,
+the bundled theme repeats the WordArt frame/text display and box-model rules on
+the proxy itself. Keep those global proxy rules aligned with the ordinary
+`.bc-inline-word-art-frame` / `.bc-inline-word-art__text` rules; otherwise CSS
+WordArt can change size or lose its effect transform only while dragging.
 
 ### Pagination View
 

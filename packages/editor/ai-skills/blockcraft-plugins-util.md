@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-07
+> Last updated: 2026-08-08
 
 ## PlaceholderPlugin
 
@@ -383,18 +383,14 @@ The pagination surface is never narrower than its sheet. This prevents Chromium
 from safe-aligning an overflowing flex root to the start while the absolute page
 backdrop remains centered. Root, backdrop, and external header use the same
 `left:50% + translateX(-50%)` centerline; narrow hosts scroll horizontally.
-WordArt now uses SVG as its final visual layer in editable, readonly and
-snapshot rendering. The contenteditable host retains only font/layout metrics,
-wrapping, alignment and caret styles for input and selection; fill, gradient,
-outline, shadow and effect transforms are SVG-owned. Print reuses that
-already-stable SVG node. Fixed-page assembly never remeasures CSS text or
-creates a replacement vector; legacy/custom renderers must finish their vector
-layer before layout stability, otherwise export fails with `layout-not-ready`.
-SVG
-text lines are anchored from the source Range's visual top with
-`dominant-baseline="text-before-edge"`; do not rederive an alphabetic baseline
-from Canvas font metrics, because native PDF painters interpret that y
-coordinate differently and can shift CJK WordArt by roughly one ascent.
+WordArt uses the real CSS text node in editable, readonly, snapshot and inline
+rendering. Font, fill, gradient, outline, shadow and effect transform are all
+projected onto that same node, so the caret, selection and drag proxy cannot
+diverge from a second SVG glyph layer. Fixed-page assembly keeps the cloned text
+box and only freezes deterministic CSS props; it never reads Range/DOMRect.
+Because WKWebView native PDF can paint `background-clip:text` gradients as a
+full rectangle, print degrades gradient fill to its first configured color.
+Solid fill, font metrics, stroke, shadow and transform remain unchanged.
 
 ---
 

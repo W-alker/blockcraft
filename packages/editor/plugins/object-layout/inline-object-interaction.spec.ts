@@ -9,17 +9,23 @@ import {InlineImageDragProxy} from '../img-toolbar/inline-image-drag'
 import {InlineObjectInteractionController} from './inline-object-interaction'
 
 describe('InlineObjectInteractionController', () => {
-  it('keeps the SVG-ready WordArt contract when its drag proxy moves under body', () => {
+  it('keeps the CSS WordArt presentation when its drag proxy moves under body', () => {
     const frame = document.createElement('span')
     frame.className = 'bc-inline-object-frame bc-inline-word-art-frame'
-    frame.setAttribute('data-bc-word-art-vector-ready', 'true')
     const text = document.createElement('span')
     text.className = 'bc-inline-word-art__text'
     text.setAttribute('data-bc-word-art-print-props', '{}')
+    text.style.color = 'transparent'
+    text.style.webkitTextFillColor = 'transparent'
+    text.style.backgroundImage =
+      'linear-gradient(180deg, #fde047 0%, #f97316 58%, #dc2626 100%)'
+    text.style.backgroundClip = 'text'
+    text.style.setProperty('-webkit-background-clip', 'text')
+    text.style.setProperty('-webkit-text-stroke', '0.03em #9a3412')
+    text.style.textShadow = '0.08em 0.12em 0.04em rgba(124, 45, 18, 0.3)'
+    text.style.transform = 'skewX(10deg)'
     text.textContent = '艺术字'
-    const vector = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    vector.setAttribute('data-bc-word-art-vector-mirror', 'true')
-    frame.append(text, vector)
+    frame.append(text)
 
     const proxy = new InlineImageDragProxy(
       frame,
@@ -38,11 +44,19 @@ describe('InlineObjectInteractionController', () => {
         '.bc-inline-word-art-frame',
       )!
       expect(proxy.element.parentElement).toBe(document.body)
-      expect(clone.hasAttribute('data-bc-word-art-vector-ready')).toBeTrue()
-      expect(clone.querySelector('[data-bc-word-art-vector-mirror]'))
-        .not.toBeNull()
-      expect(clone.querySelector('.bc-inline-word-art__text')
-        ?.hasAttribute('data-bc-word-art-print-props')).toBeTrue()
+      expect(clone.querySelector('svg')).toBeNull()
+      const clonedText = clone.querySelector<HTMLElement>(
+        '.bc-inline-word-art__text',
+      )!
+      expect(clonedText.hasAttribute('data-bc-word-art-print-props')).toBeTrue()
+      expect(clonedText.style.color).toBe('transparent')
+      expect(clonedText.style.webkitTextFillColor).toBe('transparent')
+      expect(clonedText.style.backgroundImage).toContain('linear-gradient')
+      expect(clonedText.style.backgroundClip).toBe('text')
+      expect(clonedText.style.getPropertyValue('-webkit-text-stroke'))
+        .toContain('0.03em')
+      expect(clonedText.style.textShadow).toContain('rgba(124, 45, 18, 0.3)')
+      expect(clonedText.style.transform).toBe('skewX(10deg)')
     } finally {
       proxy.destroy()
     }

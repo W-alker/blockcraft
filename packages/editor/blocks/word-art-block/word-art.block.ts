@@ -25,10 +25,6 @@ import {
   type WordArtBlockProps,
   type WordArtPresentation,
 } from './word-art.types'
-import {
-  mutationAffectsWordArtVector,
-  refreshWordArtVectorMirror,
-} from '../../framework/modules/pagination/export/print-word-art'
 
 const rotationTransform = (rotation: number): string =>
   rotation === 0 ? '' : `rotate(${rotation}deg)`
@@ -42,6 +38,7 @@ const rotationTransform = (rotation: number): string =>
     <div
       #surface
       class="word-art-block__surface"
+      data-bc-print-visual-surface
       data-bc-fake-range-overlay-host
       data-bc-scale-font-on-corner
       [attr.data-bc-resize-preview-anchor]="
@@ -63,7 +60,15 @@ const rotationTransform = (rotation: number): string =>
         [style.letter-spacing.em]="wordArtProps.letterSpacingEm"
         [style.line-height]="wordArtProps.lineHeight"
         [style.text-align]="wordArtProps.horizontalAlign"
+        [style.color]="presentation.textColor"
+        [style.-webkit-text-fill-color]="presentation.textColor"
         [style.caret-color]="presentation.fallbackColor"
+        [style.background-image]="presentation.backgroundImage"
+        [style.background-clip]="'text'"
+        [style.-webkit-background-clip]="'text'"
+        [style.-webkit-text-stroke]="presentation.textStroke"
+        [style.text-shadow]="presentation.textShadow"
+        [style.transform]="presentation.effectTransform"
         [attr.data-bc-word-art-effect-transform]="presentation.effectTransform"
       ></div>
       @if (!isReadonly) {
@@ -86,9 +91,6 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
   override plainTextOnly = true
   readonly resizeCalculator = calculateWordArtResize
   private readonly _ngZone = inject(NgZone)
-  private _vectorFrame = 0
-  private _vectorTextObserver?: MutationObserver
-  private _vectorSizeObserver?: ResizeObserver
 
   @ViewChild('surface', {read: ElementRef})
   private readonly _surface?: ElementRef<HTMLElement>
@@ -99,7 +101,6 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
       fromEvent(this.containerElement, 'scroll', {passive: true})
         .pipe(takeUntil(this.onDestroy$))
         .subscribe(() => this._resetEditorScroll())
-      this._installVectorRenderer()
     })
   }
 
@@ -200,46 +201,5 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
     const editor = this.containerElement
     if (editor.scrollTop !== 0) editor.scrollTop = 0
     if (editor.scrollLeft !== 0) editor.scrollLeft = 0
-  }
-
-  private _installVectorRenderer(): void {
-    const editor = this.containerElement
-    const surface = this.surfaceElement
-    const schedule = () => {
-      // 内容、尺寸、属性或字体只要进入下一轮 SVG 计算，当前镜像就不再代表
-      // 可导出的稳定布局。分页稳定等待会观察到该属性变化，并等新镜像 ready。
-      surface.removeAttribute('data-bc-word-art-vector-ready')
-      if (this._vectorFrame) return
-      this._vectorFrame = requestAnimationFrame(() => {
-        this._vectorFrame = 0
-        refreshWordArtVectorMirror(editor)
-      })
-    }
-
-    this._vectorTextObserver = new MutationObserver(mutations => {
-      if (mutationAffectsWordArtVector(mutations)) schedule()
-    })
-    this._vectorTextObserver.observe(editor, {
-      childList: true,
-      characterData: true,
-      subtree: true,
-    })
-    this._vectorSizeObserver = new ResizeObserver(schedule)
-    this._vectorSizeObserver.observe(editor)
-    this.onPropsChange
-      .pipe(takeUntil(this.onDestroy$))
-      .subscribe(schedule)
-
-    const fonts = editor.ownerDocument.fonts
-    const onFontsLoaded = () => schedule()
-    fonts?.addEventListener?.('loadingdone', onFontsLoaded)
-    this.destroyRef.onDestroy(() => {
-      if (this._vectorFrame) cancelAnimationFrame(this._vectorFrame)
-      this._vectorFrame = 0
-      this._vectorTextObserver?.disconnect()
-      this._vectorSizeObserver?.disconnect()
-      fonts?.removeEventListener?.('loadingdone', onFontsLoaded)
-    })
-    schedule()
   }
 }

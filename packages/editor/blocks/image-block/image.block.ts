@@ -50,6 +50,7 @@ export function deriveInitialImageObjectSize(
     <figure class="image-block__container" [attr.data-align]="props.align">
       <div
         class="img-wrapper"
+        data-bc-print-visual-surface
         #imgWrapper
         bcResourcePlaceholder
         [resourceKey]="resourcePreviewUrl"

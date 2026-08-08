@@ -6,7 +6,6 @@ import {
 import type {InlineModel} from '../../framework/block-std/types/inline.type'
 import {createBlockShell} from '../dom/create-block-shell'
 import type {SnapshotBlockRenderer} from '../types'
-import {refreshWordArtVectorMirror} from '../../framework/modules/pagination/export/print-word-art'
 
 export function createWordArtRenderers(): SnapshotBlockRenderer[] {
   return [{
@@ -20,6 +19,7 @@ export function createWordArtRenderers(): SnapshotBlockRenderer[] {
 
       const surface = document.createElement('div')
       surface.classList.add('word-art-block__surface')
+      surface.setAttribute('data-bc-print-visual-surface', '')
       surface.style.width = `${props.width}px`
       surface.style.height = `${props.height}px`
       surface.style.transform = props.rotation === 0
@@ -42,7 +42,18 @@ export function createWordArtRenderers(): SnapshotBlockRenderer[] {
       content.style.letterSpacing = `${props.letterSpacingEm}em`
       content.style.lineHeight = `${props.lineHeight}`
       content.style.textAlign = props.horizontalAlign
+      content.style.color = presentation.textColor
+      content.style.webkitTextFillColor = presentation.textColor
       content.style.caretColor = presentation.fallbackColor
+      content.style.backgroundImage = presentation.backgroundImage
+      content.style.backgroundClip = 'text'
+      content.style.setProperty('-webkit-background-clip', 'text')
+      content.style.setProperty(
+        '-webkit-text-stroke',
+        presentation.textStroke,
+      )
+      content.style.textShadow = presentation.textShadow
+      content.style.transform = presentation.effectTransform
       content.dataset['bcWordArtEffectTransform'] =
         presentation.effectTransform
       content.append(
@@ -51,10 +62,6 @@ export function createWordArtRenderers(): SnapshotBlockRenderer[] {
 
       surface.append(content)
       element.append(surface)
-      queueMicrotask(() => {
-        if (refreshWordArtVectorMirror(content)) return
-        requestAnimationFrame(() => refreshWordArtVectorMirror(content))
-      })
       return {element}
     },
   }]

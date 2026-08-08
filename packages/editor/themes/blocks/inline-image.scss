@@ -165,4 +165,22 @@
     outline-offset: -2px;
     border-radius: 3px;
   }
+
+  // Inline object proxies are mounted directly under document.body, outside
+  // [data-blockcraft-root]. Recreate the WordArt frame's layout context here
+  // so its CSS text keeps the same box and effect transform while dragging.
+  > .bc-inline-word-art-frame {
+    display: flex;
+    overflow: visible;
+    transform-origin: center;
+  }
+
+  .bc-inline-word-art__text {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    white-space: pre-wrap;
+  }
 }

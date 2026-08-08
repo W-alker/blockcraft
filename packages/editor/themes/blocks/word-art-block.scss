@@ -35,13 +35,13 @@
     overflow: hidden;
     overflow: clip;
     outline: 0;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
     transform-origin: center center;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-  }
-
-  [data-bc-word-art-vector-mirror] {
-    z-index: 0;
   }
 
   .word-art-block__editor::before {
@@ -52,55 +52,48 @@
   }
 
   .word-art-block__editor * {
+    color: inherit;
+    -webkit-text-fill-color: inherit;
     font: inherit;
     letter-spacing: inherit;
+    background: transparent;
+    -webkit-text-stroke: inherit;
+    text-shadow: inherit;
   }
 }
 
-// SVG-ready 是视觉节点自身的状态，不能依赖 editor/snapshot 祖先。
-// 行内对象拖拽代理会把 frame 克隆到 document.body；全局直连选择器保证 clone/portal
-// 仍只显示 SVG，不会把透明交互层重新绘制成一份灰黑色 HTML 字形。
-.word-art-block__surface[data-bc-word-art-vector-ready] > .word-art-block__editor,
-.word-art-block__surface[data-bc-word-art-vector-ready] > .word-art-block__editor *,
-.bc-inline-word-art-frame[data-bc-word-art-vector-ready]
-  > .bc-inline-word-art__text {
-  color: transparent !important;
-  -webkit-text-fill-color: transparent !important;
-  background-image: none !important;
-  -webkit-text-stroke: 0 !important;
-  text-shadow: none !important;
+// Block/inline WordArt 都可能被拖拽代理克隆到 document.body，不能只依赖
+// editor root。WordArt 是 plain-text block；强制内容 blot 继承唯一 CSS 视觉层，
+// 避免遗留 c-element 行内格式或拖拽容器的默认 color 再绘制一层黑字。
+.word-art-block__editor c-element:not([data-cursor-blot]),
+.word-art-block__editor c-element:not([data-cursor-blot]) *,
+.bc-inline-word-art__text * {
+  color: inherit !important;
+  -webkit-text-fill-color: inherit !important;
+  font: inherit !important;
+  letter-spacing: inherit !important;
+  background: transparent !important;
+  -webkit-text-stroke: inherit !important;
+  text-shadow: inherit !important;
 }
 
-.bc-inline-word-art-frame[data-bc-word-art-vector-ready]
-  > .bc-inline-word-art__text {
-  position: relative;
-  z-index: 1;
+.word-art-block__editor[data-bc-word-art-print-props]::selection,
+.word-art-block__editor[data-bc-word-art-print-props] *::selection,
+.bc-inline-word-art__text[data-bc-word-art-print-props]::selection,
+.bc-inline-word-art__text[data-bc-word-art-print-props] *::selection {
+  color: inherit !important;
+  -webkit-text-fill-color: inherit !important;
+  -webkit-text-stroke: inherit !important;
+  text-shadow: inherit !important;
 }
 
-// base theme 会给原生选区单独指定文字颜色；这里必须再次清空选中字形，
-// 否则透明输入层会在 SVG 上方额外绘制一份黑字。选区背景仍沿用主题色。
-.word-art-block__surface[data-bc-word-art-vector-ready]
-  > .word-art-block__editor[data-bc-word-art-print-props]::selection,
-.word-art-block__surface[data-bc-word-art-vector-ready]
-  > .word-art-block__editor[data-bc-word-art-print-props] *::selection,
-.bc-inline-word-art-frame[data-bc-word-art-vector-ready]
-  > .bc-inline-word-art__text[data-bc-word-art-print-props]::selection {
-  color: transparent !important;
-  -webkit-text-fill-color: transparent !important;
-  -webkit-text-stroke: 0 !important;
-  text-shadow: none !important;
-}
-
-// 不要和标准 ::selection 合并：Chromium 遇到未知的 ::-moz-selection 时会
-// 丢弃整个选择器列表，导致上面的透明字形规则完全不进入 CSSOM。
-.word-art-block__surface[data-bc-word-art-vector-ready]
-  > .word-art-block__editor[data-bc-word-art-print-props]::-moz-selection,
-.word-art-block__surface[data-bc-word-art-vector-ready]
-  > .word-art-block__editor[data-bc-word-art-print-props] *::-moz-selection,
-.bc-inline-word-art-frame[data-bc-word-art-vector-ready]
-  > .bc-inline-word-art__text[data-bc-word-art-print-props]::-moz-selection {
-  color: transparent !important;
-  -webkit-text-fill-color: transparent !important;
-  -webkit-text-stroke: 0 !important;
-  text-shadow: none !important;
+// Firefox 伪元素必须单列；Chromium 会丢弃含未知 ::-moz-selection 的整组规则。
+.word-art-block__editor[data-bc-word-art-print-props]::-moz-selection,
+.word-art-block__editor[data-bc-word-art-print-props] *::-moz-selection,
+.bc-inline-word-art__text[data-bc-word-art-print-props]::-moz-selection,
+.bc-inline-word-art__text[data-bc-word-art-print-props] *::-moz-selection {
+  color: inherit !important;
+  -webkit-text-fill-color: inherit !important;
+  -webkit-text-stroke: inherit !important;
+  text-shadow: inherit !important;
 }
