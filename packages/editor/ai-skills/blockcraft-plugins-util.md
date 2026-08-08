@@ -365,6 +365,9 @@ do not synthesize a replacement block or measure the header in a wider host.
 Keep `data-bc-placement-container` on `.bc-print-content` so under/flow/over
 stacking remains identical to the editor. In flow, live pagination, and print,
 the plane starts at `0/0` inside the root content box and fills its width.
+Fixed-page assembly uses a fresh canonical wrapper around the captured placement
+content, requires that wrapper's `offsetParent` to be `.bc-print-content`, and
+lays out the hidden build surface at viewport `0/0` for WebKit-safe geometry.
 Legacy percentage x is resolved once against content width; root padding is not
 encoded into fixed `placement.x/y`. Strict mode reports `layout-diverged`
 if a non-empty plane has no readonly DOM.

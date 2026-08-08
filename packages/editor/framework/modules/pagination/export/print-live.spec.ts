@@ -6,6 +6,7 @@ describe('mountPrintPagesInPage', () => {
   it('keeps the print mirror mounted for a host backend and disposes idempotently', async () => {
     const container = document.createElement('div')
     container.className = 'bc-print-root'
+    container.style.visibility = 'hidden'
     const pageElements = Array.from({length: 7}, (_, index) => {
       const pageElement = document.createElement('div')
       pageElement.className = 'bc-print-page'
@@ -34,6 +35,7 @@ describe('mountPrintPagesInPage', () => {
 
     expect(mounted.printRoot).toBe(container)
     expect(container.classList.contains('bc-print-mirror')).toBeTrue()
+    expect(container.style.visibility).toBe('')
     expect(document.head.querySelector('[data-bc-print-mirror-style]')).not.toBeNull()
     const css = document.head.querySelector('[data-bc-print-mirror-style]')?.textContent ?? ''
     expect(css).toContain('break-before: auto !important')
@@ -68,6 +70,7 @@ describe('mountPrintPagesInPage', () => {
     mounted.dispose()
 
     expect(container.classList.contains('bc-print-mirror')).toBeFalse()
+    expect(container.style.visibility).toBe('hidden')
     expect(container.querySelector(':scope > .bc-print-page')).toBe(pageElement)
     expect(container.querySelectorAll(':scope > .bc-print-page')).toHaveSize(7)
     expect(container.querySelector('.bc-print-page-slot')).toBeNull()

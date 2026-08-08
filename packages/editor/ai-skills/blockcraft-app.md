@@ -490,6 +490,12 @@ present. The helper deep-clones each root plane and records every absolute
 block's visual bounds relative to the plane content box, with host zoom removed.
 Fixed-page assembly validates the first canonical projection in O(objects):
 strict mode throws `layout-diverged`, while best-effort mode emits a warning.
+Assembly does not reuse the framework-owned placement host. It mounts the
+captured content tree inside a fresh print wrapper whose `offsetParent` is the
+page `.bc-print-content`, with `left/top = 0/0`, `width = 100%`, and `zoom = 1`.
+The hidden build surface is laid out at viewport `0/0` instead of a very large
+negative coordinate so WebKit cannot quantize parent and zero-height child boxes
+into different coordinate ranges.
 When the host rebuilds print pages from an already projected isolated view,
 pass the result of `captureStableLayout()` unchanged. The snapshot now owns the
 canonical root content-box placement origin in `StablePaginationLayout.placementOriginY`;

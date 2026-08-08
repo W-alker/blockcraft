@@ -132,6 +132,10 @@ canonical 72px margin even though persisted `placement.x/y` was correct.
 
 - Print page 1 mounts the placement plane at `0/0`; later pages apply only the
   continuous-screen page-stride Y projection.
+- Fixed pages mount captured placement content in a fresh `100%`/`zoom:1`
+  wrapper whose containing block is `.bc-print-content`. Hidden page assembly
+  happens at viewport `0/0`, avoiding WebKit drift from very large negative
+  staging coordinates.
 - Fixed `placement.x/y` remain unchanged and exclude root padding everywhere.
 - Stable placement geometry is canonical model data. Optional provider geometry
   remains diagnostic and reports `layout-diverged` instead of becoming a print offset.

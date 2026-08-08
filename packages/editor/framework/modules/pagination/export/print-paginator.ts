@@ -128,7 +128,7 @@ export function captureStablePrintPlacementPlanes(
 export type PrintRenderProvider = (contentWidthPx: number) => Promise<PrintRenderResult>;
 
 export interface PrintPages {
-  /** 包含 N 个 `.bc-print-page` 的容器（已挂到 document.body 的离屏位置）。 */
+  /** 包含 N 个 `.bc-print-page` 的容器（已在 document.body 的隐藏构页层完成布局）。 */
   container: HTMLElement;
   pages: HTMLElement[];
   pageCount: number;
@@ -429,7 +429,11 @@ export async function buildPaginatedPrintSurface(
   const container = document.createElement('div');
   container.className = 'bc-print-root';
   container.setAttribute('data-bc-print-root', 'true');
-  container.style.cssText = `position:absolute; left:-99999px; top:0;`;
+  // WebKit 对极远负坐标中的 absolute containing block 存在坐标量化差异：父盒与
+  // 零高子平面可能落入不同的内部坐标范围。构页阶段改在视口原点完成真实布局，
+  // 用 visibility 隐藏；mount 后由 print mirror 的 display 规则接管可见性。
+  container.style.cssText =
+    'position:absolute; left:0; top:0; visibility:hidden; pointer-events:none;';
 
   const pageEls: HTMLElement[] = [];
   const total = result.pages.length;
@@ -537,6 +541,18 @@ export async function buildPaginatedPrintSurface(
       `position:absolute; z-index:1; box-sizing:border-box; width:auto; min-width:0; max-width:none; min-height:0; padding:0; overflow:visible;` +
       `top:${contentTop + pageLeadingHeight}px; left:${margins.left}px; right:${margins.right}px;` +
       `bottom:${contentBottom}px;`;
+    // 这是 placement plane 的唯一 containing block。宿主主题即便带 !important
+    // root 规则，也不能把它退回 static/整纸宽；否则 absolute x/y 会相对 page。
+    content.style.setProperty('position', 'absolute', 'important');
+    content.style.setProperty('box-sizing', 'border-box', 'important');
+    content.style.setProperty('width', 'auto', 'important');
+    content.style.setProperty('min-width', '0px', 'important');
+    content.style.setProperty('max-width', 'none', 'important');
+    content.style.setProperty('padding', '0px', 'important');
+    content.style.setProperty('top', `${contentTop + pageLeadingHeight}px`, 'important');
+    content.style.setProperty('left', `${margins.left}px`, 'important');
+    content.style.setProperty('right', `${margins.right}px`, 'important');
+    content.style.setProperty('bottom', `${contentBottom}px`, 'important');
     // 屏幕分页允许块的阴影、抓手和业务控件伸入页边距，最终只在纸张边缘裁剪。
     // 打印不能在正文区左右边界直接 overflow:hidden，否则所有块右缘都会少一截。
     // 分片窗口和锁高块各自负责内容裁剪，最后统一由 pageEl 在纸张边缘裁剪。
@@ -724,7 +740,17 @@ function appendPlacementPlanes(
 ): ProjectedPrintPlacementPlane[] {
   const projected: ProjectedPrintPlacementPlane[] = [];
   for (const source of sources) {
-    const plane = source.element.cloneNode(true) as HTMLElement;
+    // 不复用 Angular placement host：其 class、宿主绑定或视图缩放都只属于捕获
+    // 环境。打印阶段建立一个无状态 canonical wrapper，只复用已经稳定化的内容树。
+    const capturedHost = source.element.cloneNode(true) as HTMLElement;
+    const capturedContent = resolvePlacementPlaneContent(capturedHost);
+    const plane = document.createElement('div');
+    plane.dataset['blockId'] = source.id;
+    plane.setAttribute('data-bc-placement-layout', '');
+    plane.setAttribute('data-bc-placement-layer-bridge', '');
+    plane.appendChild(capturedContent === capturedHost
+      ? wrapLegacyPlacementContent(capturedHost)
+      : capturedContent);
     plane.setAttribute('data-bc-print-placement-plane', 'true');
     // placement.x/y 是相对 root content box 的固定 layout px。打印正文盒本身就是
     // 该 content box，因此克隆面必须规范化为 0/0 并直接占满内容宽；纸面原点测量值
@@ -734,6 +760,13 @@ function appendPlacementPlanes(
     projected.push({element: plane, expectedTop: top, blocks: source.blocks});
   }
   return projected;
+}
+
+function wrapLegacyPlacementContent(host: HTMLElement): HTMLElement {
+  const content = document.createElement('div');
+  content.className = 'children-render-container';
+  while (host.firstChild) content.appendChild(host.firstChild);
+  return content;
 }
 
 function normalizeProjectedPlacementPlane(
@@ -772,6 +805,10 @@ function normalizeProjectedPlacementPlane(
     setFixed(element, 'translate', 'none');
     setFixed(element, 'rotate', 'none');
     setFixed(element, 'scale', 'none');
+    // 打印 placement plane 的契约恒为 100% layout scale。宿主分页 surface 的
+    // 视图缩放只允许在捕获边界用于把 DOMRect 还原成 layout px，不能进入最终
+    // wrapper；绝对块自身合法的 fit/zoom 仍由冻结几何与各自样式保留。
+    setFixed(element, 'zoom', '1');
     setFixed(element, 'overflow', 'visible');
   };
 
@@ -1380,8 +1417,10 @@ function validateProjectedPlacementPlanes(
     const contentRect = content.getBoundingClientRect();
     const actualLeft = planeRect.left - contentRect.left;
     const actualTop = planeRect.top - contentRect.top;
+    const ownsContainingBlock = plane.offsetParent === content;
     const diverged = (
-      Math.abs(actualLeft) > tolerance
+      !ownsContainingBlock
+      || Math.abs(actualLeft) > tolerance
       || Math.abs(actualTop - projection.expectedTop) > tolerance
       || Math.abs(planeRect.width - contentRect.width) > tolerance
     );
@@ -1390,9 +1429,10 @@ function validateProjectedPlacementPlanes(
       planeId,
       `打印 placement plane ${planeId} 未规范化到 content box：`
         + `期望 {left:0.00, top:${formatGeometry(projection.expectedTop)}, `
-        + `width:${formatGeometry(contentRect.width)}}；打印 `
+        + `width:${formatGeometry(contentRect.width)}, offsetParent:content}；打印 `
         + `{left:${formatGeometry(actualLeft)}, top:${formatGeometry(actualTop)}, `
-        + `width:${formatGeometry(planeRect.width)}}`,
+        + `width:${formatGeometry(planeRect.width)}, offsetParent:`
+        + `${plane.offsetParent === content ? 'content' : 'other'}}`,
       policy,
       warnings,
     );

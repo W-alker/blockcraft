@@ -935,6 +935,90 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     }
   });
 
+  it('projects an offscreen A4 plane through the canonical print content box', async () => {
+    const firstPageExtraTop = 26.61;
+    const config: PaginationConfig = {
+      pageSize: 'A4',
+      margins: {top: 72, right: 72, bottom: 72, left: 72},
+    };
+    const geometry = resolveScreenGeometry(config, {firstPageExtraTop});
+    const contentWidth = geometry.sheetWidthPx
+      - geometry.margins.left
+      - geometry.margins.right;
+    const placement = placementLayout('placement', [absoluteShape('shape', 24)]);
+    const snapshot = root([paragraph('p1', 'flow'), placement]);
+    const items = [
+      {id: 'p1', height: 40, breakable: false, keepWithNext: false},
+      {id: 'placement', height: 0, breakable: false, keepWithNext: false},
+    ];
+    const layout = createStablePaginationLayout(21, config, geometry, items, {
+      pages: [{
+        index: 0,
+        usedHeight: 40,
+        slots: [{id: 'p1'}, {id: 'placement'}],
+      }],
+      byBlock: new Map([
+        ['p1', {pageIndex: 0}],
+        ['placement', {pageIndex: 0}],
+      ]),
+    });
+    const render = createPlacementRenderRoot({
+      left: 30,
+      top: 24,
+      width: 40,
+      height: 20,
+    });
+    render.root.style.width = `${geometry.sheetWidthPx}px`;
+    render.root.style.boxSizing = 'border-box';
+    render.root.style.padding = `0 ${geometry.margins.right}px 0 ${geometry.margins.left}px`;
+    render.plane.style.width = 'auto';
+    render.plane.style.right = '0';
+    render.plane.style.boxSizing = 'border-box';
+    render.plane.style.padding = 'inherit';
+    const placementPlanes = captureStablePrintPlacementPlanes(render.root);
+
+    // 模拟 provider 捕获后关闭分页，并把只读 root 改成最终正文宽。
+    render.root.style.width = `${contentWidth}px`;
+    render.root.style.padding = '0';
+
+    const pages = await buildPaginatedPrintSurface(snapshot, config, {
+      layout,
+      resourcePolicy: 'strict',
+      render: async () => ({
+        root: render.root,
+        placementPlanes,
+        dispose: () => render.root.remove(),
+      }),
+    });
+    try {
+      const content = pages.pages[0]!.querySelector<HTMLElement>('.bc-print-content')!;
+      const plane = content.querySelector<HTMLElement>(
+        '[data-bc-print-placement-plane="true"]',
+      )!;
+      const placementContent = plane.querySelector<HTMLElement>(
+        '.children-render-container',
+      )!;
+      const renderedShape = placementContent.querySelector<HTMLElement>(
+        '[data-block-id="shape"]',
+      )!;
+      const planeRect = plane.getBoundingClientRect();
+      const contentRect = content.getBoundingClientRect();
+      const pageRect = pages.pages[0]!.getBoundingClientRect();
+
+      expect(pages.container.style.left).toBe('0px');
+      expect(pages.container.style.visibility).toBe('hidden');
+      expect(getComputedStyle(plane).zoom).toBe('1');
+      expect(plane.offsetParent).toBe(content);
+      expect(renderedShape.offsetParent).toBe(placementContent);
+      expect(contentRect.top - pageRect.top).toBeCloseTo(72 + firstPageExtraTop, 1);
+      expect(planeRect.left - contentRect.left).toBeCloseTo(0, 1);
+      expect(planeRect.top - contentRect.top).toBeCloseTo(0, 1);
+      expect(planeRect.width).toBeCloseTo(contentRect.width, 1);
+    } finally {
+      pages.dispose();
+    }
+  });
+
   it('rejects a stable placement snapshot whose internal visual surface drifted', async () => {
     const placement = placementLayout('placement', [absoluteShape('shape', 24)]);
     const snapshot = root([paragraph('p1', 'flow'), placement]);

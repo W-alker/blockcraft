@@ -48,7 +48,11 @@ export async function mountPrintPagesInPage(
   _config: PaginationConfig,
 ): Promise<MountedPrintPages> {
   const container = pages.container;
+  const stagedVisibility = container.style.getPropertyValue('visibility');
   container.classList.add(MIRROR_CLASS);
+  // build 阶段在视口原点以 visibility:hidden 完成 WebKit 可靠测量；mirror 已用
+  // display:none 隐藏屏幕态，必须清掉 inline visibility 才能在 print media 显示。
+  container.style.removeProperty('visibility');
   // build 阶段产出的页几何是 SoT；mount 不能再从 config 独立解析一次。
   const page = {widthCss: pages.pageWidthCss, heightCss: pages.pageHeightCss};
   // WebKit 的 paged layout 会把物理纸高换算为整数 CSS px 再切页（例如 A4：
@@ -138,6 +142,7 @@ export async function mountPrintPagesInPage(
       slot.remove();
     }
     container.classList.remove(MIRROR_CLASS);
+    if (stagedVisibility) container.style.setProperty('visibility', stagedVisibility);
   };
 
   try {
