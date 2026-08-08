@@ -8,11 +8,15 @@ import {LiveHeightSource} from './live-height-source';
   encapsulation: ViewEncapsulation.None,
   styleUrl: '../../../../themes/base.scss',
   template: `
-    <div data-blockcraft-root="true"
-         class="bc-paginated"
-         style="--bc-page-content-height: 200px; --bc-page-width: 400px;
-                --bc-page-margin-top: 0; --bc-page-margin-right: 0;
-                --bc-page-margin-bottom: 0; --bc-page-margin-left: 0">
+    <div class="bc-pagination-surface" style="width: 360px; --bc-page-width: 400px">
+      <div class="bc-pagination-backdrop">
+        <div class="bc-page-sheet" style="top: 0; width: 400px; height: 200px"></div>
+      </div>
+      <div data-blockcraft-root="true"
+           class="bc-paginated"
+           style="--bc-page-content-height: 200px; --bc-page-width: 400px;
+                  --bc-page-margin-top: 0; --bc-page-margin-right: 72px;
+                  --bc-page-margin-bottom: 0; --bc-page-margin-left: 72px">
       <div class="code-block focused bc-page-height-locked" data-block-id="code-1" data-node-type="editable">
         <div class="code-block__head">header</div>
         <div class="edit-container-wrapper">
@@ -70,6 +74,13 @@ import {LiveHeightSource} from './live-height-source';
         locked
         <span data-zero-space="true" data-block-zero-space="true" data-block-gap-side="after">&#8203;</span>
       </div>
+      <div data-bc-placement-layout
+           style="position: absolute; inset: 0 0 auto; width: auto; height: 0;
+                  box-sizing: border-box; padding: inherit">
+        <div class="children-render-container"
+             style="position: relative; box-sizing: border-box; width: 100%; height: 0"></div>
+      </div>
+      </div>
     </div>
   `,
 })
@@ -85,6 +96,32 @@ describe('pagination theme block constraints', () => {
   });
 
   afterEach(() => fixture.destroy());
+
+  it('keeps the paginated root and physical sheet on the same centerline', () => {
+    const host = fixture.nativeElement as HTMLElement;
+    const surface = host.querySelector<HTMLElement>('.bc-pagination-surface')!;
+    const root = host.querySelector<HTMLElement>('[data-blockcraft-root="true"]')!;
+    const sheet = host.querySelector<HTMLElement>('.bc-page-sheet')!;
+
+    expect(getComputedStyle(surface).minWidth).toBe('400px');
+    expect(root.getBoundingClientRect().left).toBeCloseTo(
+      sheet.getBoundingClientRect().left,
+      1,
+    );
+    expect(root.getBoundingClientRect().width).toBeCloseTo(
+      sheet.getBoundingClientRect().width,
+      1,
+    );
+
+    const placementContent = root.querySelector<HTMLElement>(
+      '[data-bc-placement-layout] > .children-render-container',
+    )!;
+    expect(
+      placementContent.getBoundingClientRect().left
+        - sheet.getBoundingClientRect().left,
+    ).toBeCloseTo(72, 1);
+    expect(placementContent.getBoundingClientRect().width).toBeCloseTo(256, 1);
+  });
 
   it('keeps interactive hosts visible and constrains their inner content surfaces', () => {
     const host = fixture.nativeElement as HTMLElement;

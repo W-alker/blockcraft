@@ -363,21 +363,26 @@ DOM inside the final paper/content width, waits for it to stabilize, validates i
 against the captured first-page geometry, and mounts it at z=2 above body z=1;
 do not synthesize a replacement block or measure the header in a wider host.
 Keep `data-bc-placement-container` on `.bc-print-content` so under/flow/over
-stacking remains identical to the editor. The print projector restores the
-plane to the captured root content width before resolving legacy percentage x
-positions. The captured X/Y origin is the content-box origin, so root padding is
-not encoded into fixed `placement.x/y`; strict mode reports `layout-diverged`
+stacking remains identical to the editor. In flow, live pagination, and print,
+the plane starts at `0/0` inside the root content box and fills its width.
+Legacy percentage x is resolved once against content width; root padding is not
+encoded into fixed `placement.x/y`. Strict mode reports `layout-diverged`
 if a non-empty plane has no readonly DOM.
-`captureStableLayout()` also captures the rendered placement-plane origin as
-`StablePaginationLayout.placementOriginY` in the same synchronous barrier. It
-normalizes the live content-container DOMRect through the measured visual scale,
-so fixed pages consume the actual content-box layout coordinate instead of interpreting CSS
-`top`, header height, or surface offsets again. `PrintRenderResult.placementOriginY`
-remains a compatibility input for older host-managed stable layouts. If stable
+`captureStableLayout()` publishes the canonical placement content-box origin and
+width from the same resolved pagination geometry as the page breaks. It never
+converts a live DOMRect back into layout data, so host padding, CSS zoom, WebView
+scale and transforms cannot change fixed placement coordinates. The projector
+applies only the later-page vertical stride.
+`PrintRenderResult.placementOriginX/Y` and `placementWidth` remain compatibility
+diagnostics for older host-managed stable layouts. If stable
 first-page geometry includes an external document header but a generic readonly
 provider cannot render that element, the body still keeps the same leading
 offset; otherwise normal flow and every absolute object would diverge by the
 header height.
+The pagination surface is never narrower than its sheet. This prevents Chromium
+from safe-aligning an overflowing flex root to the start while the absolute page
+backdrop remains centered. Root, backdrop, and external header use the same
+`left:50% + translateX(-50%)` centerline; narrow hosts scroll horizontally.
 WordArt now uses SVG as its final visual layer in editable, readonly and
 snapshot rendering. The contenteditable host retains only font/layout metrics,
 wrapping, alignment and caret styles for input and selection; fill, gradient,

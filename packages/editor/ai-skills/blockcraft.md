@@ -596,16 +596,23 @@ root 尾部的 `placement-layout` 是全局 absolute 平面，导出会按 `shee
 先把同一 DOM 挂进最终纸张、最终正文宽度的 staging context，等待资源与尺寸稳定，再与
 `firstPageContentHeight` 校验，并以独立 z=2 层放回首页。不要复制成 synthetic block，也不要在宽度
 不同的宿主容器里提前测高。打印正文根保留
-`data-bc-placement-container`，确保 under / flow / over 层级与编辑界面一致；plane 会从正文盒向左
-扩回整张纸宽，百分比 x 继续相对 live sheet。非空 placement 快照缺少只读 DOM 时，strict 导出以
-`layout-diverged` 失败，不能静默丢对象。
-`PaginationPlugin.captureStableLayout()` 会在同一个同步导出屏障中，把已投影
-`placement-layout` 相对分页 root 的实际 layout-px 原点写入
-`StablePaginationLayout.placementOriginY`；测量使用最终 DOMRect，并消除页面 visual scale。
-打印面优先消费该稳定原点，而不是从 `leadingContent`、页边距或 CSS `top` 再猜一次。
-`PrintRenderResult.placementOriginY` 仅保留为旧宿主兼容入口。稳定布局已经扣除首页
+`data-bc-placement-container`，确保 under / flow / over 层级与编辑界面一致；plane 在 flow、live
+分页和打印中都固定以 root content box 的 `0/0` 为原点并占满 content width。固定
+`placement.x/y` 不包含 root padding；旧百分比 x 仅在只读渲染阶段按 content width 固化一次。
+非空 placement 快照缺少只读 DOM 时，strict 导出以 `layout-diverged` 失败，不能静默丢对象。
+`PaginationPlugin.captureStableLayout()` 会在同一个同步导出屏障中，直接把分页模型解析出的
+content-box 原点和宽度写入 `StablePaginationLayout`：X 来自左页边距，Y 来自正文起点与首页
+documentHeader 占位，宽度来自纸宽扣除左右页边距。这里不读取 DOMRect，宿主 padding、CSS zoom
+与 WebView transform 不会进入布局数据。打印面仅用该稳定几何验收 content-box 契约；第一页 plane
+固定 `top/left=0/0`，后续页只应用连续分页步长的纵向投影。
+`PrintRenderResult.placementOriginX/Y/placementWidth` 仅保留为兼容诊断输入。稳定布局已经扣除首页
 documentHeader、但只读 provider 无法重建其 DOM 时，固定页盒仍会保留相同的首页正文起点，
 不能让 flow 上移而 absolute plane 留在原处。
+分页 surface 的 `min-width` 固定为当前纸宽：窄宿主中不能只让绝对定位的 sheet 居中、却让
+过宽 flex root 因 Chromium safe alignment 回退到左对齐，否则整个 root content box 会相对纸张
+右移半个溢出宽。分页 root、sheet 和外部 document header 统一使用同一包含块内的
+`left:50% + translateX(-50%)` 中线公式；root 不再依赖 flex center。超出宿主的纸张通过横向
+滚动查看，不压缩或改变模型坐标。
 
 WordArt 的编辑、只读与 snapshot 展示统一使用 SVG 作为最终视觉层；contenteditable 只保留
 字体、字号、字重、行高、字距、对齐、换行和 caret 等输入几何样式。填充、渐变、描边、阴影与

@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-07 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-08 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,41 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+### Unreleased - 2026-08-08 (patch) — canonicalize placement print projection
+
+**What changed**: Flow, live pagination, and fixed-page export now keep the
+root placement plane at `top/left = 0/0` inside the root content box and fill
+the content width. Stable placement geometry now comes directly from resolved
+pagination margins, page chrome and first-page leading geometry; print no longer
+converts DOMRect measurements into X/Y/width compensation.
+
+**Why**: A DOMRect captured in a scaled screen view or isolated readonly window
+can include host padding or a different zoom/transform chain. Converting that
+visual value back into pagination data produced origins such as 93px for a
+canonical 72px margin even though persisted `placement.x/y` was correct.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Print page 1 mounts the placement plane at `0/0`; later pages apply only the
+  continuous-screen page-stride Y projection.
+- Fixed `placement.x/y` remain unchanged and exclude root padding everywhere.
+- Stable placement geometry is canonical model data. Optional provider geometry
+  remains diagnostic and reports `layout-diverged` instead of becoming a print offset.
+- `PrintRenderResult.placementOriginX/Y/placementWidth` remain accepted as
+  compatibility diagnostics but no longer control print layout.
+- The live pagination surface has `min-width` equal to the sheet width, keeping
+  root, external header, and page backdrop center-aligned in narrow hosts. All
+  three use the same `left:50% + translateX(-50%)` centerline; root no longer
+  relies on flex centering.
+
 > The version in `packages/editor/package.json` MUST be bumped according to this rule before running `pnpm publish:editor`.
 
 ---

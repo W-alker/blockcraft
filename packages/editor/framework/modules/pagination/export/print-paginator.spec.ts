@@ -719,7 +719,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
         expect(renderedHost.style.top).toBe(`${wordArtY}px`);
         expect(renderedHost.style.left).toBe('24px');
         expect(hostRect.top - planeRect.top).toBeCloseTo(wordArtY, 1);
-        expect(hostRect.left - pageRect.left).toBeCloseTo(24, 1);
+        expect(hostRect.left - pageRect.left).toBeCloseTo(10 + 24, 1);
         expect(hostRect.top - pageRect.top).toBeCloseTo(
           10 + wordArtY - pageIndex * pageStride,
           1,
@@ -754,7 +754,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
           ['placement', {pageIndex: 0}],
         ]),
       }),
-      placementOriginX: 8,
+      placementOriginX: 30,
       placementWidth: 360,
     };
     const offscreen = document.createElement('div');
@@ -787,10 +787,12 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       const page = pages.pages[0]!;
       const plane = page.querySelector<HTMLElement>('[data-bc-print-placement-plane="true"]')!;
       const renderedShape = plane.querySelector<HTMLElement>('[data-block-id="shape"]')!;
-      expect(plane.style.left).toBe('-22px');
-      expect(plane.style.width).toBe('360px');
+      expect(plane.style.left).toBe('0px');
+      expect(plane.style.right).toBe('0px');
+      expect(plane.style.width).toBe('auto');
+      expect(plane.style.padding).toBe('0px');
       expect(renderedShape.style.left).toBe('200px');
-      expect(Math.round(renderedShape.getBoundingClientRect().left - page.getBoundingClientRect().left)).toBe(208);
+      expect(Math.round(renderedShape.getBoundingClientRect().left - page.getBoundingClientRect().left)).toBe(230);
     } finally {
       pages.dispose();
     }
@@ -961,13 +963,12 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     }
   });
 
-  it('projects placement planes from the captured live origin instead of recomputing it from leading content', async () => {
+  it('rejects a readonly placement origin that diverges from the root content box', async () => {
     const pageGap = 24;
     const headerHeight = 36;
     const headerGap = 16;
     const leadingHeight = headerHeight + headerGap;
     const capturedOriginY = 34;
-    const pageStride = 220 + pageGap;
     const placement = placementLayout('placement', [absoluteShape('shape', 0)]);
     const snapshot = root([
       paragraph('p1', 'first page'),
@@ -1006,39 +1007,29 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     offscreen.appendChild(placementElement);
     document.body.appendChild(offscreen);
 
-    const pages = await buildPaginatedPrintSurface(snapshot, config, {
+    await expectAsync(buildPaginatedPrintSurface(snapshot, config, {
       layout,
+      resourcePolicy: 'strict',
       render: async () => ({
         root: offscreen,
         placementOriginY: capturedOriginY,
         leadingContent: {element: header, gap: headerGap},
         dispose: () => offscreen.remove(),
       }),
-    });
-    try {
-      const contents = pages.pages.map(page => page.querySelector<HTMLElement>('.bc-print-content')!);
-      const planes = pages.pages.map(page =>
-        page.querySelector<HTMLElement>('[data-bc-print-placement-plane="true"]')!,
-      );
-      expect(planes[0]!.style.top).toBe(`${capturedOriginY - 10 - leadingHeight}px`);
-      expect(planes[1]!.style.top).toBe(`${capturedOriginY - 10 - pageStride}px`);
-      expect(contents[0]!.style.top).toBe(`${10 + leadingHeight}px`);
-      expect(contents[1]!.style.top).toBe('10px');
-    } finally {
-      pages.dispose();
-    }
+    })).toBeRejectedWith(jasmine.objectContaining({
+      code: 'layout-diverged',
+      message: jasmine.stringMatching('只读打印原点 Y'),
+    }));
   });
 
-  it('keeps stable placement geometry without leading content when provider origin is absent or conflicting', async () => {
+  it('keeps model x/y relative to the canonical root content box', async () => {
     const pageGap = 24;
     const headerHeight = 36;
     const headerGap = 16;
     const leadingHeight = headerHeight + headerGap;
     const contentTop = 10;
     const liveFlowTop = contentTop + leadingHeight;
-    // 故意与 contentTop + leadingHeight 相差 12px，证明打印消费的是 stable layout
-    // 捕获的真实 placement 原点，而不是 provider 或配置再次推导出的近似值。
-    const stablePlacementOriginY = liveFlowTop + 12;
+    const stablePlacementOriginY = liveFlowTop;
     const placementChildren: Array<{
       id: string;
       flavour: string;
@@ -1091,13 +1082,8 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       placementOriginY: stablePlacementOriginY,
     };
 
-    for (const providerPlacementOriginY of [
-      undefined,
-      stablePlacementOriginY + 30,
-    ]) {
-      const context = providerPlacementOriginY == null
-        ? 'provider without placement origin'
-        : 'provider with conflicting placement origin';
+    for (const providerPlacementOriginY of [undefined]) {
+      const context = 'provider without placement origin';
       const offscreen = document.createElement('div');
       offscreen.style.cssText = 'position:absolute;left:-99999px;top:0;width:380px;';
       const flow = document.createElement('div');
@@ -1129,9 +1115,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
         layout,
         render: async () => ({
           root: offscreen,
-          ...(providerPlacementOriginY == null
-            ? {}
-            : {placementOriginY: providerPlacementOriginY}),
+          ...(providerPlacementOriginY == null ? {} : {placementOriginY: providerPlacementOriginY}),
           dispose: () => offscreen.remove(),
         }),
       });

@@ -469,16 +469,24 @@ and placement origin aligned with the live page; do not create a synthetic flow
 block or pre-measure the header in the host window.
 The generated `.bc-print-content` remains a `data-bc-placement-container`, so
 hosts must not strip that attribute when mounting or cloning print pages; it
-owns the normal under/flow/over stacking tiers. BlockCraft expands the plane
-from the narrower content box back to full sheet width before applying
-percentage x coordinates. A non-empty placement snapshot without its readonly
+owns the normal under/flow/over stacking tiers. In flow, live pagination, and
+print, the placement plane starts at `0/0` inside the root content box and fills
+that content width. Fixed `placement.x/y` never include root padding; legacy
+percentage x is resolved once against content width by the readonly renderer.
+A non-empty placement snapshot without its readonly
 DOM plane is a strict `layout-diverged` failure, not a silent content drop.
 When the host rebuilds print pages from an already projected isolated view,
 pass the result of `captureStableLayout()` unchanged. The snapshot now owns the
-rendered root-relative placement origin in `StablePaginationLayout.placementOriginY`;
-BlockCraft derives it from DOMRect geometry in layout pixels before pagination
-is disabled. Do not parse the plane's computed CSS `top`. The older
-`PrintRenderResult.placementOriginY` field remains a compatibility fallback.
+canonical root content-box placement origin in `StablePaginationLayout.placementOriginY`;
+BlockCraft derives it from resolved page margins, chrome and first-page leading
+geometry before pagination is disabled. It never reads DOMRect or the plane's
+computed CSS `top`. The older `PrintRenderResult.placementOriginX/Y`
+and `placementWidth` fields remain compatibility diagnostics.
+The pagination surface has a minimum width equal to the current sheet width.
+The root, host header, and page sheet all use the same `left: 50%` plus
+`translateX(-50%)` centerline instead of mixing flex and absolute centering.
+This keeps them aligned in narrow/custom-element hosts; overflow becomes
+horizontal scrolling rather than a root-only alignment fallback.
 
 WordArt display is SVG-native in editable, readonly and snapshot surfaces. Its
 HTML contenteditable keeps only input-geometry and caret styles as a transparent

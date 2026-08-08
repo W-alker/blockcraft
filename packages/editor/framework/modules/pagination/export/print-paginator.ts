@@ -61,14 +61,11 @@ export interface PrintRenderResult {
    */
   resolvePlacementOriginOffset?(): number;
   /**
-   * 分页视图中 placement-layout 相对分页 root 的实际 Y 原点（layout px）。
-   *
-   * `PaginationConfig` 只能推导理论内容起点；宿主 documentHeader、页面 surface
-   * 或主题若改变了最终 formatting context，导出必须消费隔离分页视图已经投影出的
-   * 真实原点，不能再用同一组配置重复猜一次。
+   * 分页视图中 placement content box 相对纸面的实际 Y 原点（layout px）。
+   * 仅用于校验只读渲染仍遵守统一 content-box 契约，不参与打印定位补偿。
    */
   placementOriginY?: number;
-  /** placement content box 相对纸张左缘的固定原点与宽度（layout px）。 */
+  /** placement content box 相对纸张左缘的原点与宽度；仅作一致性校验。 */
   placementOriginX?: number;
   placementWidth?: number;
 }
@@ -280,6 +277,11 @@ export async function buildPaginatedPrintSurface(
   }
   const placementPlanes = Array.from(placementPlaneIds, id => elById.get(id))
     .filter((element): element is HTMLElement => !!element);
+  const hasPlacementContent = topSnapshots.some(block =>
+    block.flavour === PLACEMENT_LAYOUT_FLAVOUR
+      && Array.isArray(block.children)
+      && block.children.length > 0,
+  );
 
   // 分页 items：优先用调用方传入的（屏幕 live 测量，保证打印断点 == 屏幕所见）；
   // 否则就地测离屏渲染高度（无 live 编辑器的纯导出路径，行为同前）。
@@ -379,27 +381,31 @@ export async function buildPaginatedPrintSurface(
   const firstPageLeadingHeight = override?.layout
     ? geometryLeadingHeight
     : Math.max(geometryLeadingHeight, renderedLeadingHeight);
-  const fallbackPlacementOriginY = contentTop + firstPageLeadingHeight;
-  const stablePlacementOriginY = override?.layout?.placementOriginY;
-  // 稳定布局和 placement 原点必须来自同一个同步捕获版本。render provider 的值仅
-  // 保留给尚未升级 stable-layout 契约的宿主；最后才回退到理论页边距/leading 推导。
-  const placementOriginY = Number.isFinite(stablePlacementOriginY)
-    ? Math.max(0, stablePlacementOriginY ?? fallbackPlacementOriginY)
-    : Number.isFinite(capturedPlacementOriginY)
-      ? Math.max(0, capturedPlacementOriginY ?? fallbackPlacementOriginY)
-      : fallbackPlacementOriginY;
-  const stablePlacementOriginX = override?.layout?.placementOriginX;
-  const stablePlacementWidth = override?.layout?.placementWidth;
-  const placementOriginX = Number.isFinite(stablePlacementOriginX)
-    ? stablePlacementOriginX!
-    : Number.isFinite(capturedPlacementOriginX)
-      ? capturedPlacementOriginX!
-      : 0;
-  const placementWidth = Number.isFinite(stablePlacementWidth) && stablePlacementWidth! > 0
-    ? stablePlacementWidth!
-    : Number.isFinite(capturedPlacementWidth) && capturedPlacementWidth! > 0
-      ? capturedPlacementWidth!
-      : sheetWidthPx;
+  // flow、live 分页和打印面必须共用同一个 root content-box 坐标系。
+  // 稳定布局捕获值只用于验收该契约，绝不能反向驱动打印 CSS；否则宿主缩放、
+  // 只读窗口或小数像素产生的测量误差会被固化成所有 absolute block 的整体偏移。
+  if (hasPlacementContent) {
+    try {
+      validatePlacementContentBoxGeometry({
+        expectedX: margins.left,
+        expectedY: contentTop + firstPageLeadingHeight,
+        expectedWidth: contentWidthPx,
+        stableX: override?.layout?.placementOriginX,
+        stableY: override?.layout?.placementOriginY,
+        stableWidth: override?.layout?.placementWidth,
+        capturedX: capturedPlacementOriginX,
+        capturedY: capturedPlacementOriginY,
+        capturedWidth: capturedPlacementWidth,
+        policy: override?.resourcePolicy ?? 'strict',
+        warnings,
+      });
+    } catch (error) {
+      container.remove();
+      leadingStage?.root.remove();
+      disposeRender();
+      throw error;
+    }
+  }
   const screenPageStride = sheetHeightPx + geom.pageGap;
   for (const page of result.pages) {
     const pageEl = document.createElement('div');
@@ -494,12 +500,9 @@ export async function buildPaginatedPrintSurface(
     appendPlacementPlanes(
       content,
       placementPlanes,
-      placementOriginY
-        - contentTop
-        - pageLeadingHeight
-        - page.index * screenPageStride,
-      placementOriginX - margins.left,
-      placementWidth,
+      page.index === 0
+        ? 0
+        : firstPageLeadingHeight - page.index * screenPageStride,
     );
     // live root 尾部存在编辑器辅助节点，因此最后一个顶层块不会命中
     // `[data-block-id]:last-child { margin-bottom: 0 }`。打印面没有这些辅助节点，
@@ -587,20 +590,52 @@ function appendPlacementPlanes(
   content: HTMLElement,
   sources: readonly HTMLElement[],
   top: number,
-  left: number,
-  width: number,
 ): void {
   for (const source of sources) {
     const plane = source.cloneNode(true) as HTMLElement;
     plane.setAttribute('data-bc-print-placement-plane', 'true');
     plane.style.top = `${top}px`;
     // placement.x/y 是相对 root content box 的固定 layout px。打印正文盒本身就是
-    // 该 content box，所以稳定捕获的纸面原点只负责把克隆面还原到相同 containing
-    // block；旧百分比数据已在只读渲染阶段固化为 left:px。
-    plane.style.left = `${left}px`;
-    plane.style.right = 'auto';
-    plane.style.width = `${width}px`;
+    // 该 content box，因此克隆面必须规范化为 0/0 并直接占满内容宽；纸面原点测量值
+    // 只用于上游一致性校验，不能再作为补偿量写回这里。
+    plane.style.left = '0px';
+    plane.style.right = '0px';
+    plane.style.width = 'auto';
+    plane.style.padding = '0px';
     content.appendChild(plane);
+  }
+}
+
+function validatePlacementContentBoxGeometry(input: {
+  expectedX: number;
+  expectedY: number;
+  expectedWidth: number;
+  stableX?: number;
+  stableY?: number;
+  stableWidth?: number;
+  capturedX?: number;
+  capturedY?: number;
+  capturedWidth?: number;
+  policy: PaginationResourcePolicy;
+  warnings: PaginationExportWarning[];
+}): void {
+  const tolerance = 2;
+  const checks = [
+    ['稳定分页原点 X', input.stableX, input.expectedX],
+    ['稳定分页原点 Y', input.stableY, input.expectedY],
+    ['稳定分页内容宽', input.stableWidth, input.expectedWidth],
+    ['只读打印原点 X', input.capturedX, input.expectedX],
+    ['只读打印原点 Y', input.capturedY, input.expectedY],
+    ['只读打印内容宽', input.capturedWidth, input.expectedWidth],
+  ] as const;
+  for (const [label, actual, expected] of checks) {
+    if (!Number.isFinite(actual) || Math.abs(actual! - expected) <= tolerance) continue;
+    reportLayoutDivergence(
+      'placement-layout',
+      `${label} ${actual}px 与 root content box ${expected}px 不一致`,
+      input.policy,
+      input.warnings,
+    );
   }
 }
 

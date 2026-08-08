@@ -20,6 +20,10 @@
   padding: 24px 0 !important;
   box-sizing: border-box;
   width: 100%;
+  /* Root 与绝对定位的纸张 backdrop 必须共享同一个中心。若 surface 比纸宽，
+     Chromium 会把过宽 flex 子项的 center 安全回退到 start，但 backdrop 仍居中，
+     两者便相差半个溢出宽。最小纸宽同时提供确定的横向滚动范围。 */
+  min-width: var(--bc-page-width, 0px);
 }
 
 .bc-pagination-backdrop {
@@ -70,6 +74,12 @@
   box-sizing: border-box;
   width: var(--bc-page-width);
   flex: 0 0 auto;
+  /* 与 .bc-page-sheet、外部 document header 使用完全相同的定位公式。
+     不能让 root 依赖 flex center、纸张依赖 absolute 50%：窄宿主、滚动条和
+     custom-element containing block 会让两种算法产生不同的安全对齐结果。 */
+  align-self: flex-start;
+  left: 50%;
+  transform: translateX(-50%);
   /* The host document header remains a sibling of the editor root.  Move the
      whole root to the first-page body origin instead of simulating that origin
      with root padding and a second placement-plane offset.  Flow and paginated

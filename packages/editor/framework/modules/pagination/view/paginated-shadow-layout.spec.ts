@@ -221,6 +221,35 @@ function mismatchCoordinator(doc: BlockCraft.Doc): PaginationLayoutCoordinator {
 }
 
 describe("PaginatedViewController shadow layout", () => {
+  it("keeps the shared pagination surface at least one sheet wide", () => {
+    const harness = createHarness();
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+    );
+
+    try {
+      controller.enable();
+      expect(
+        harness.scrollContainer.style.getPropertyValue("--bc-page-width"),
+      ).toBe("400px");
+
+      controller.updateConfig({pageSize: {width: 420, height: 300}});
+      expect(
+        harness.scrollContainer.style.getPropertyValue("--bc-page-width"),
+      ).toBe("420px");
+
+      controller.disable();
+      expect(
+        harness.scrollContainer.style.getPropertyValue("--bc-page-width"),
+      ).toBe("");
+    } finally {
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
   it("moves the whole first-page root below an external document header", () => {
     const harness = createHarness();
     const header = document.createElement("div");
@@ -259,13 +288,17 @@ describe("PaginatedViewController shadow layout", () => {
         harness.rootHost.style.getPropertyValue("--bc-placement-content-origin-y"),
       ).toBe("0px");
       expect(header.nextSibling).toBe(harness.rootHost);
+      const layout = controller.captureStableLayout();
+      expect(layout?.placementOriginX).toBe(10);
+      expect(layout?.placementOriginY).toBe(62);
+      expect(layout?.placementWidth).toBe(380);
     } finally {
       controller.destroy();
       harness.destroy();
     }
   });
 
-  it("captures the rendered placement origin in layout pixels at the export barrier", () => {
+  it("publishes canonical placement geometry without remeasuring the visual DOM", () => {
     const harness = createHarness();
     const plane = document.createElement("div");
     plane.setAttribute("data-bc-placement-layout", "");
@@ -307,8 +340,8 @@ describe("PaginatedViewController shadow layout", () => {
 
     try {
       controller.enable();
-      // The root and placement plane share the body-local origin.  Stable
-      // export still needs the origin relative to the physical first sheet.
+      // 即使视觉 DOM 模拟了 root 2x、placement 位置与宽度漂移，稳定分页也只能
+      // 发布 PaginationConfig 对应的 content-box layout px。
       const backdrop = harness.rootHost.parentElement!.querySelector<HTMLElement>(
         ':scope > .bc-pagination-backdrop',
       )!;
@@ -328,12 +361,9 @@ describe("PaginatedViewController shadow layout", () => {
       });
       const layout = controller.captureStableLayout();
 
-      // The placement containing block is the root content box: visual
-      // padding (60px x / 20px y at 2x) is preserved in the paper-local
-      // origin while its width excludes both horizontal paddings.
-      expect(layout?.placementOriginY).toBe(20);
-      expect(layout?.placementOriginX).toBe(30);
-      expect(layout?.placementWidth).toBe(340);
+      expect(layout?.placementOriginY).toBe(10);
+      expect(layout?.placementOriginX).toBe(10);
+      expect(layout?.placementWidth).toBe(380);
     } finally {
       controller.destroy();
       harness.destroy();

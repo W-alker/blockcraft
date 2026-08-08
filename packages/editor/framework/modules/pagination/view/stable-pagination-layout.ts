@@ -11,15 +11,13 @@ export interface StablePaginationLayout {
   readonly config: Readonly<PaginationConfig>
   readonly geometry: Readonly<ResolvedPaginationGeometry>
   /**
-   * placement-layout 相对分页首张纸顶部的实际 Y 原点（layout px）。
-   *
-   * 该值在同步导出屏障中从已经投影完成的 live DOM 捕获；它和分页断点属于
-   * 同一个稳定版本，固定页盒不得再根据页边距或宿主 documentHeader 重算。
+   * placement-layout 相对分页首张纸顶部的 canonical Y 原点（layout px）。
+   * 由同一稳定分页几何的正文起点与首页额外占位直接组成，不读取视觉 DOM。
    */
   readonly placementOriginY?: number
-  /** placement content box 相对首张纸左缘的固定 X 原点（layout px）。 */
+  /** placement content box 相对首张纸左缘的 canonical X 原点（layout px）。 */
   readonly placementOriginX?: number
-  /** placement content box 的实际宽度；不包含 root 左右 padding。 */
+  /** placement content box 的 canonical 宽度；不包含 root 左右 padding。 */
   readonly placementWidth?: number
   readonly items: readonly PaginationItem[]
   readonly result: PaginationResult
