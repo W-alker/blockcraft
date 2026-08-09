@@ -38,6 +38,8 @@ export interface PaginationGeometryEntry {
   readonly naturalHeight: number
   /** 分页实际占位高度；宽度/高度 fit 后可小于 naturalHeight。 */
   readonly effectiveHeight: number
+  /** 已计入高度、由同一稳定 DOM 帧捕获的块尾间距。 */
+  readonly trailingSpacing?: number
   readonly splitOffsets?: readonly number[]
   readonly preferredSplitOffsets?: readonly number[]
   readonly tableRows?: readonly TableRowGeom[]
@@ -55,6 +57,7 @@ export interface PaginationGeometryMeasurement {
   readonly isHeading: boolean
   readonly naturalHeight: number
   readonly height: number
+  readonly trailingSpacing?: number
   readonly splitOffsets?: readonly number[]
   readonly preferredSplitOffsets?: readonly number[]
   readonly tableRows?: readonly TableRowGeom[]
@@ -101,6 +104,11 @@ function validateMeasurement(measurement: PaginationGeometryMeasurement): void {
   }
   if (measurement.repeatHeaderHeight != null) {
     assertNonNegativeFinite(measurement.repeatHeaderHeight, `repeatHeaderHeight for ${measurement.id}`)
+  }
+  if (measurement.trailingSpacing != null) {
+    if (!Number.isFinite(measurement.trailingSpacing)) {
+      throw new RangeError(`trailingSpacing for ${measurement.id} must be finite`)
+    }
   }
   validateOffsets(measurement.splitOffsets, `splitOffsets for ${measurement.id}`)
   validateOffsets(measurement.preferredSplitOffsets, `preferredSplitOffsets for ${measurement.id}`)
@@ -213,6 +221,7 @@ function entriesEqual(left: PaginationGeometryEntry, right: PaginationGeometryEn
     && left.source === right.source
     && left.naturalHeight === right.naturalHeight
     && left.effectiveHeight === right.effectiveHeight
+    && left.trailingSpacing === right.trailingSpacing
     && left.lockHeight === right.lockHeight
     && left.fitScale === right.fitScale
     && left.repeatHeaderHeight === right.repeatHeaderHeight
@@ -418,6 +427,9 @@ export class PaginationGeometryIndex {
         source: 'measured',
         naturalHeight: measurement.naturalHeight,
         effectiveHeight: measurement.height,
+        ...(measurement.trailingSpacing != null
+          ? {trailingSpacing: measurement.trailingSpacing}
+          : {}),
         splitOffsets: measurement.splitOffsets ? [...measurement.splitOffsets] : undefined,
         preferredSplitOffsets: measurement.preferredSplitOffsets ? [...measurement.preferredSplitOffsets] : undefined,
         tableRows: cloneRows(measurement.tableRows),

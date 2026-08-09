@@ -190,6 +190,7 @@ export class LiveHeightSource {
           isHeading: false,
           naturalHeight,
           height,
+          trailingSpacing: currentMarginBottom,
           splitOffsets,
           preferredSplitOffsets,
           repeatHeaderHeight,
@@ -273,6 +274,7 @@ export class LiveHeightSource {
           isHeading: false,
           naturalHeight,
           height: fittedHeight,
+          trailingSpacing: mb,
           lockHeight: pageMedia && fitScale < 1 ? undefined : opts.contentHeight,
           fitScale: pageMedia && fitScale < 1 ? fitScale : undefined,
         });
@@ -287,6 +289,7 @@ export class LiveHeightSource {
           isHeading: false,
           naturalHeight,
           height: mediaHeight * fitScale + nonMediaStride,
+          trailingSpacing: mb,
           fitScale,
         })
         continue
@@ -299,6 +302,7 @@ export class LiveHeightSource {
         isHeading: this._isHeading(block),
         naturalHeight,
         height: naturalHeight,
+        trailingSpacing: mb,
       });
     }
     return metas;

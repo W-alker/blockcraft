@@ -77,6 +77,7 @@ function entryToMeta(entry: PaginationGeometryEntry): BlockMeta {
     fitScale,
     repeatHeaderHeight: entry.repeatHeaderHeight,
   };
+  if (entry.trailingSpacing != null) meta.trailingSpacing = entry.trailingSpacing;
   setTableCellFlowPlan(
     meta,
     entry.tableCellFlowPlan

@@ -87,6 +87,8 @@ describe('LiveHeightSource atomic block measurement', () => {
 
     expect(meta?.height).toBe(472)
     expect(meta?.naturalHeight).toBe(472)
+    expect(meta?.trailingSpacing).toBe(8)
+    expect(buildPaginationItems([meta!])[0]?.trailingSpacing).toBe(8)
     expect(meta?.lockHeight).toBeUndefined()
   })
 
@@ -146,6 +148,7 @@ describe('LiveHeightSource atomic block measurement', () => {
 
     expect(meta?.height).toBe(428)
     expect(meta?.naturalHeight).toBe(428)
+    expect(meta?.trailingSpacing).toBe(8)
     expect(meta?.tableRows).toEqual(rows)
   })
 

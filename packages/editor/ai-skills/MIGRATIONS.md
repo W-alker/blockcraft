@@ -69,6 +69,40 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+### v0.3.0-alpha.28 - 2026-08-09 (minor) — preserve stable block trailing spacing in paginated print
+
+**What changed**: `PaginationItem` now carries optional `trailingSpacing`, the
+block-end spacing already included in its measured `height`. Live pagination,
+sparse geometry, readonly fallback measurement and paginated printing preserve
+that value through the stable layout. Printing freezes it on each whole-block
+host before validation and page reparenting; table fragments continue to carry
+the same spacing only in their stable final fragment window.
+
+**Why**: the readonly print tree appends structural sentinels so non-terminal
+page blocks do not lose their gap when reparented. For a real document-tail block,
+that sentinel changes `:last-child` and can revive the default 10px margin after
+the stable layout captured a zero margin. Re-reading computed margin in the print
+tree therefore produced a false `24px` versus `34px` divergence after oversized
+tables and could move whole blocks. Stable spacing is now data, not a print-DOM
+side effect.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `PaginationItem.trailingSpacing?: number` — stable block-end spacing in layout
+  pixels, already included in `height`; custom stable-layout providers may set it
+  when their render tree can change `:last-child` during export.
+
+### Behavior Changes
+
+- Stable paginated print no longer derives a captured block's tail spacing from
+  the reparented readonly DOM. Legacy layouts without `trailingSpacing` retain the
+  previous computed-style fallback.
+
 ### v0.3.0-alpha.27 - 2026-08-09 (minor) — structured pagination chrome content
 
 **What changed**: `PageChrome` now accepts optional serializable `content` for

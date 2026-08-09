@@ -391,6 +391,11 @@ export async function buildPaginatedPrintSurface(
   const items = measuredItems.filter(item => !placementPlaneIds.has(item.id));
   const itemById = new Map(items.map(item => [item.id, item]));
 
+  // `:last-child` 会随只读副本追加哨兵、逐页重父而变化，不能再让打印 DOM
+  // 重新决定块尾距。稳定布局已把同帧的 trailingSpacing 计入 item.height；
+  // 在任何复验和构页前把它固化回块 host，保证内容变化仍会被严格校验。
+  normalizeStableTrailingSpacing(items, elById);
+
   // 只读打印 DOM 没有 live TableBlockComponent；按稳定快照里的同一组锚点插入“压缩页缝”——
   // 只补齐各列在同一页片段中的高度差，不包含屏幕纸间距。这样表格 DOM 的线性高度正好等于
   // tableCellFlowPlan.paginationHeight，下面通用 fragment window 可直接复用同一 from/toOffset。
@@ -1682,7 +1687,8 @@ function validateStableLayout(
       capHeightById.get(item.id) ?? false,
       style,
     );
-    const marginBottom = parseFloat(style.marginBottom) || 0;
+    const marginBottom = item.trailingSpacing
+      ?? (parseFloat(style.marginBottom) || 0);
     if (maxFragment != null && maxFragment > naturalHeight + marginBottom + tolerance) {
       reportLayoutDivergence(item.id, '只读打印面的块高度不足以覆盖当前分页片段', policy, warnings);
       continue;
@@ -1802,6 +1808,7 @@ function measureItemsFromDom(
     items.push({
       id: blk.id,
       height: effHeight,
+      trailingSpacing: mb,
       breakable: policy.breakable,
       keepWithNext: policy.keepWithNext,
       splitOffsets,
@@ -1814,6 +1821,21 @@ function measureItemsFromDom(
     });
   }
   return items;
+}
+
+function normalizeStableTrailingSpacing(
+  items: readonly PaginationItem[],
+  elById: ReadonlyMap<string, HTMLElement>,
+): void {
+  for (const item of items) {
+    if (item.trailingSpacing == null) continue;
+    const element = elById.get(item.id);
+    if (!element) continue;
+    const spacing = Number.isFinite(item.trailingSpacing)
+      ? item.trailingSpacing
+      : 0;
+    element.style.setProperty('margin-bottom', `${spacing}px`, 'important');
+  }
 }
 
 /** 构建页眉/页脚元素（左/中/右三段 + {page}/{total} 替换），绝对定位在页边距带内。 */

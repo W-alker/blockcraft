@@ -17,6 +17,11 @@ export interface PaginationItem {
   id: string;
   /** border-box 高度（px），含块外边距。manualBreak 块此值被忽略。 */
   height: number;
+  /**
+   * 稳定测量帧中已经计入 `height` 的块尾间距（当前为 root 顶层块的
+   * computed margin-bottom）。打印重父和结构哨兵不得重新推导这个值。
+   */
+  trailingSpacing?: number;
   /** 高于一整页时是否可在 splitOffsets 处拆开。 */
   breakable: boolean;
   /** 如 heading：不要孤悬页底，与下一块一起下推。 */

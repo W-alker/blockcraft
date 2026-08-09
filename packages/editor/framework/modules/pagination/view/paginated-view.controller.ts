@@ -585,6 +585,7 @@ export class PaginatedViewController {
         fitScale,
         repeatHeaderHeight: entry.repeatHeaderHeight,
       };
+      if (entry.trailingSpacing != null) meta.trailingSpacing = entry.trailingSpacing;
       setTableCellFlowPlan(
         meta,
         entry.tableCellFlowPlan

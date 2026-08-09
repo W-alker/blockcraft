@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-08
+> Last updated: 2026-08-09
 
 ## PlaceholderPlugin
 
@@ -349,6 +349,12 @@ The default `experimentalSparseView: false` path preserves the existing exact li
 The sparse option is a Phase C rollout switch, not yet the default exact live-pagination mode. A non-exact sparse result is not reused for `print()` or `exportToPdf()`; those operations use the complete readonly reflow path. A host that creates its own isolated readonly export copy should wait until that copy is exact and call `captureStableLayout()` synchronously with its snapshot capture. That stable layout—not a second print-time measurement—is the authoritative page model. `exportToPdf()` opens a browser print dialog by default, or invokes a `PaginationPdfHostBackend` while the current top-level WebView print mirror is mounted. It does not return PDF bytes. The readonly path uses BlockCraft block components, not snapshot-viewer or DOM rasterization. Explicit `options.pagination` means a new reflow. Register `PageDividerBlockSchema` to expose manual page breaks. The package intentionally does not publish a settings component: host UI reads `plugin.config` and sends changes through `plugin.updateConfig(...)`; the playground keeps its own debug-only panel as an integration example.
 
 Atomic block height follows painted overflow, not raw internal scroll geometry. When the top-level host's effective vertical overflow is `visible`, pagination includes `max(offsetHeight, scrollHeight)` so Safari iframe/embed cards that paint beyond their host remain intact. For `hidden`, `clip`, `auto` or `scroll`, pagination uses `offsetHeight` because the excess is clipped or contained. Live measurement, export fallback measurement and stable-layout validation all use this same rule; hosts should express intentional clipping/scrolling on the block host instead of compensating with export-only margins.
+
+Stable `PaginationItem.height` also includes the block's captured tail spacing in
+`trailingSpacing`. Paginated printing freezes this value before adding flow
+sentinels or reparenting blocks into page boxes. Do not recompute a stable item's
+margin from the print DOM: `:last-child` can change even when content geometry is
+unchanged, especially after an oversized table followed by a terminal paragraph.
 
 The mounted mirror already owns exact physical paper geometry. Each fixed-height
 slot naturally occupies one physical page; never add an adjacent-slot forced

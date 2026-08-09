@@ -28,6 +28,8 @@ export interface BlockMeta {
   isHeading: boolean;
   /** 已含块外边距的高度（px）。表格为自然高度（不含占位行）+ marginBottom。 */
   height: number;
+  /** 与本次高度同帧捕获、且已经计入 height 的块尾间距。 */
+  trailingSpacing?: number;
   /** 安全切点（块顶起算 px，已过 widow/orphan）。表格=所有行边界；文本=行盒边界。 */
   splitOffsets?: number[];
   /** 优先切点（splitOffsets 子集）：表格的「干净」行边界（不跨合并单元格），引擎优先选。 */
@@ -54,6 +56,7 @@ export function buildPaginationItems(metas: BlockMeta[]): PaginationItem[] {
       keepWithNext,
       manualBreak: isManualBreak(m.flavour),
     };
+    if (m.trailingSpacing != null) item.trailingSpacing = m.trailingSpacing;
     if (m.splitOffsets) item.splitOffsets = m.splitOffsets; // 可拆块才带切点
     if (m.preferredSplitOffsets) item.preferredSplitOffsets = m.preferredSplitOffsets;
     if (m.lockHeight != null) item.lockHeight = m.lockHeight; // capHeight 块的锁定高度

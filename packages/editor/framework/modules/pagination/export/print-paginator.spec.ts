@@ -457,6 +457,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       id: 'tail-task-card',
       height: 188,
       naturalHeight: 188,
+      trailingSpacing: 4,
       breakable: false,
       keepWithNext: false,
     }];
@@ -491,8 +492,90 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       });
       try {
         expect(pages.pageCount).toBe(1);
-        expect(pages.pages[0]!.querySelector('[data-block-id="tail-task-card"]')).not.toBeNull();
+        const rendered = pages.pages[0]!.querySelector<HTMLElement>(
+          '[data-block-id="tail-task-card"]',
+        )!;
+        expect(rendered).not.toBeNull();
+        expect(getComputedStyle(rendered).marginBottom).toBe('4px');
         expect(pages.pages[0]!.querySelectorAll('.bc-print-flow-sentinel').length).toBe(1);
+      } finally {
+        pages.dispose();
+      }
+    } finally {
+      style.remove();
+      offscreen.remove();
+    }
+  });
+
+  it('preserves a zero stable tail after an oversized table instead of reviving the theme gap', async () => {
+    const style = document.createElement('style');
+    style.textContent = `
+      [data-test-print-table-tail] > [data-block-id] {
+        margin-bottom: 10px;
+      }
+      [data-test-print-table-tail] > [data-block-id]:last-child {
+        margin-bottom: 0;
+      }
+    `;
+    document.head.appendChild(style);
+
+    const snapshot = root([
+      table('long-table', 12),
+      paragraph('terminal-paragraph', ''),
+    ]);
+    const geometry = resolveScreenGeometry(SMALL_PAGE);
+    const items = [{
+      id: 'long-table',
+      height: 500,
+      trailingSpacing: 10,
+      breakable: true,
+      keepWithNext: false,
+      splitOffsets: [200, 400],
+      splitStartsNewPage: true,
+    }, {
+      id: 'terminal-paragraph',
+      height: 24,
+      trailingSpacing: 0,
+      breakable: true,
+      keepWithNext: false,
+    }];
+    const result = paginate(items, geometry.geometry);
+    const layout = createStablePaginationLayout(
+      12,
+      SMALL_PAGE,
+      geometry,
+      items,
+      result,
+    );
+    const offscreen = document.createElement('div');
+    offscreen.setAttribute('data-test-print-table-tail', '');
+    const tableElement = document.createElement('div');
+    tableElement.dataset['blockId'] = 'long-table';
+    Object.defineProperty(tableElement, 'offsetHeight', {value: 490});
+    Object.defineProperty(tableElement, 'scrollHeight', {value: 490});
+    offscreen.appendChild(tableElement);
+    const terminal = document.createElement('div');
+    terminal.dataset['blockId'] = 'terminal-paragraph';
+    Object.defineProperty(terminal, 'offsetHeight', {value: 24});
+    Object.defineProperty(terminal, 'scrollHeight', {value: 24});
+    offscreen.appendChild(terminal);
+    document.body.appendChild(offscreen);
+
+    try {
+      expect(getComputedStyle(terminal).marginBottom).toBe('0px');
+      const pages = await buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+        layout,
+        resourcePolicy: 'strict',
+        render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+      });
+      try {
+        expect(pages.pageCount).toBe(result.pages.length);
+        const renderedTerminal = pages.container.querySelector<HTMLElement>(
+          '[data-block-id="terminal-paragraph"]',
+        )!;
+        expect(renderedTerminal).not.toBeNull();
+        expect(getComputedStyle(renderedTerminal).marginBottom).toBe('0px');
+        expect(renderedTerminal.style.getPropertyPriority('margin-bottom')).toBe('important');
       } finally {
         pages.dispose();
       }
