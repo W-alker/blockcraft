@@ -69,6 +69,38 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+### v0.3.0-alpha.29 - 2026-08-09 (patch) — bound final print stability observation
+
+**What changed**: The final fixed-page print surface still requires the complete
+DOM subtree to stop mutating, but its `ResizeObserver` now watches only physical
+page boundaries, direct page layers and top-level content slots/fragments. It no
+longer installs one resize target for every deeply cloned `data-block-id`.
+Timeout diagnostics now report the final change target plus mutation, resize and
+observed-boundary counts.
+
+**Why**: An oversized cell-flow table can be cloned across many pages and contain
+hundreds of nested cell/text blocks per fragment. Observing every clone made the
+stability gate scale as `pages × nested blocks` and could exhaust the fixed wait
+budget even after the physical page boxes were stable. The active paginated root
+also produces its own synchronous clear/restore projection mutations while
+capturing table geometry, so host-managed readonly export copies should use one
+synchronous stable-layout capture rather than a second generic DOM-silence gate.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Final `.bc-print-root[data-bc-print-root="true"]` surfaces keep subtree mutation
+  stability, while resize stability is evaluated at page-geometry boundaries.
+  Changes that alter a whole block or fragment size are still observed.
+- A host that owns an already-active paginated readonly copy should finish its
+  business/resource preparation, then call `captureStableLayout()` exactly once
+  and capture the snapshot in the same task. It should not wait for generic DOM
+  silence on that active projection first.
+
 ### v0.3.0-alpha.28 - 2026-08-09 (minor) — preserve stable block trailing spacing in paginated print
 
 **What changed**: `PaginationItem` now carries optional `trailingSpacing`, the
