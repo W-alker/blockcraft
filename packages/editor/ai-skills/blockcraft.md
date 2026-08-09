@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-08 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-09 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -571,6 +571,9 @@ pagination.disable()
 ```
 
 `PageChrome.distance` 独立表示页眉距纸张顶部、或页脚距纸张底部的像素距离。
+`PageChrome.content` 可以为左/中/右区域提供可序列化的图片与文本项；结构化文本项同样支持
+`{page}` / `{total}` token，且 live 页框与固定 PDF 页盒使用同一个 DOM 构建器。宿主应先把品牌、
+日期等业务参数解析成最终 content，框架不识别业务 token。`separator` 可为页眉/页脚增加通用分隔线。
 缺省时继续沿用对应上/下页边距以兼容旧布局；显式距离让页眉/页脚优先占用页边距带，
 只有越过正文边界的部分才压缩正文。除 `{page}` / `{total}` 外，数字 token 还支持
 `:roman-upper`、`:roman-lower`、`:chinese` 样式，live、打印和 PDF 使用同一套解析。

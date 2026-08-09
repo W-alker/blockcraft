@@ -1,7 +1,7 @@
 import {PaginationItem, PaginationResult} from '../engine'
 import {cloneTableCellFlowPlan} from '../engine/table-cell-flow'
 import {copyTableCellFlowPlan} from '../engine/table-cell-flow-metadata'
-import {PaginationConfig, ResolvedPaginationGeometry} from '../pagination.types'
+import {PageChrome, PageChromeInlineContent, PaginationConfig, ResolvedPaginationGeometry} from '../pagination.types'
 
 /**
  * 一次分页计算的纯数据快照。它不持有 DOM/Block 引用，可安全交给异步打印流程。
@@ -56,9 +56,26 @@ function cloneConfig(config: PaginationConfig): PaginationConfig {
     ...config,
     pageSize: typeof config.pageSize === 'object' ? {...config.pageSize} : config.pageSize,
     margins: config.margins ? {...config.margins} : undefined,
-    header: config.header ? {...config.header} : undefined,
-    footer: config.footer ? {...config.footer} : undefined,
+    header: cloneChrome(config.header),
+    footer: cloneChrome(config.footer),
   }
+}
+
+function cloneChrome(chrome: PageChrome | undefined): PageChrome | undefined {
+  if (!chrome) return undefined
+  const clone: PageChrome = {...chrome}
+  if (chrome.content) {
+    clone.content = {
+      left: cloneInlineContent(chrome.content.left),
+      center: cloneInlineContent(chrome.content.center),
+      right: cloneInlineContent(chrome.content.right),
+    }
+  }
+  return clone
+}
+
+function cloneInlineContent(content: PageChromeInlineContent | undefined): PageChromeInlineContent | undefined {
+  return content ? {...content, items: content.items.map(item => ({...item}))} : undefined
 }
 
 function cloneGeometry(geometry: ResolvedPaginationGeometry): ResolvedPaginationGeometry {

@@ -1,5 +1,5 @@
 // packages/editor/framework/modules/pagination/view/chrome-tokens.ts
-import {PageChrome, PageChromeSegments} from "../pagination.types";
+import {PageChrome, PageChromeInlineContent, PageChromeSegments} from "../pagination.types";
 
 export type PageNumberTokenStyle = 'decimal' | 'roman-upper' | 'roman-lower' | 'chinese';
 
@@ -8,7 +8,12 @@ export const DEFAULT_CHROME_HEIGHT = 24;
 
 /** 页眉/页脚是否有任一段文本。 */
 export function hasChromeText(c?: PageChrome): boolean {
-  return !!(c && (c.left || c.center || c.right));
+  return !!(c && (
+    c.left || c.center || c.right ||
+    hasInlineContent(c.content?.left) ||
+    hasInlineContent(c.content?.center) ||
+    hasInlineContent(c.content?.right)
+  ));
 }
 
 /** 页眉/页脚高度（px）：无文本 = 0；有文本且未给出合法高度时用默认高度。 */
@@ -117,4 +122,23 @@ export function resolveChromeSegments(c: PageChrome | undefined, page: number, t
     center: substituteTokens(c?.center, page, total),
     right: substituteTokens(c?.right, page, total),
   };
+}
+
+/** 解析结构化文本项中的页码 token；图片项保持原值。 */
+export function resolveChromeInlineContent(
+  content: PageChromeInlineContent | undefined,
+  page: number,
+  total: number,
+): PageChromeInlineContent | undefined {
+  if (!content) return undefined;
+  return {
+    ...content,
+    items: content.items.map(item => item.kind === 'text'
+      ? {...item, text: substituteTokens(item.text, page, total)}
+      : item),
+  };
+}
+
+function hasInlineContent(content: PageChromeInlineContent | undefined): boolean {
+  return !!content?.items?.some(item => item.kind === 'image' ? !!item.src : !!item.text);
 }

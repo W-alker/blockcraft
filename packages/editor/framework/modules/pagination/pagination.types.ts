@@ -14,8 +14,49 @@ export interface PageChromeSegments {
   right?: string;
 }
 
+/** 页眉/页脚结构化文本项；宿主仍负责把业务参数解析成最终文本。 */
+export interface PageChromeTextContent {
+  kind: 'text';
+  text: string;
+  /** `muted` 使用页眉/页脚次要文字颜色。 */
+  tone?: 'default' | 'muted';
+}
+
+/** 页眉/页脚结构化图片项。 */
+export interface PageChromeImageContent {
+  kind: 'image';
+  src: string;
+  alt?: string;
+  width?: number;
+  height?: number;
+  maxWidth?: number;
+  borderRadius?: number;
+}
+
+export type PageChromeContentItem = PageChromeTextContent | PageChromeImageContent;
+
+/** 单个左/中/右区域的结构化行内内容。 */
+export interface PageChromeInlineContent {
+  items: readonly PageChromeContentItem[];
+  /** 项间距（px），默认 4。 */
+  gap?: number;
+}
+
+export interface PageChromeContentSegments {
+  left?: PageChromeInlineContent;
+  center?: PageChromeInlineContent;
+  right?: PageChromeInlineContent;
+}
+
 /** 页眉或页脚配置。 */
 export interface PageChrome extends PageChromeSegments {
+  /**
+   * 可序列化的结构化内容；某一区域存在有效 content 时覆盖同区域纯文本。
+   * 文本项同样支持 `{page}` / `{total}` token。
+   */
+  content?: PageChromeContentSegments;
+  /** 可选分隔线；`top` 常用于页脚，`bottom` 常用于页眉。 */
+  separator?: 'top' | 'bottom';
   /**
    * 页眉距纸张顶部、或页脚距纸张底部的距离（px）。
    *

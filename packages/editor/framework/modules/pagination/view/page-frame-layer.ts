@@ -1,8 +1,9 @@
 // packages/editor/framework/modules/pagination/view/page-frame-layer.ts
 import {SheetRect} from "./sheet-layout";
-import {PageChrome, PageChromeSegments} from "../pagination.types";
+import {PageChrome} from "../pagination.types";
 import {PageMargins} from "../engine";
-import {resolveChromeSegments} from "./chrome-tokens";
+import {resolveChromeInlineContent, resolveChromeSegments} from "./chrome-tokens";
+import {applyChromeAppearance, createChromeSegmentElement} from "./chrome-content";
 
 /** 一次渲染所需的全部输入。 */
 export interface FrameRenderInput {
@@ -76,16 +77,25 @@ export class PageFrameLayer {
       s.replaceChildren();
       const page = i + 1;
       if (headerHeight > 0) {
-        s.appendChild(this._chromeEl('bc-page-header', resolveChromeSegments(header, page, total), headerDistance, headerHeight, margins));
+        s.appendChild(this._chromeEl('bc-page-header', header, page, total, headerDistance, headerHeight, margins));
       }
       if (footerHeight > 0) {
         const top = r.height - footerDistance - footerHeight;
-        s.appendChild(this._chromeEl('bc-page-footer', resolveChromeSegments(footer, page, total), top, footerHeight, margins));
+        s.appendChild(this._chromeEl('bc-page-footer', footer, page, total, top, footerHeight, margins));
       }
     });
   }
 
-  private _chromeEl(cls: string, segs: PageChromeSegments, top: number, height: number, margins: PageMargins): HTMLElement {
+  private _chromeEl(
+    cls: string,
+    chrome: PageChrome | undefined,
+    page: number,
+    total: number,
+    top: number,
+    height: number,
+    margins: PageMargins,
+  ): HTMLElement {
+    const segs = resolveChromeSegments(chrome, page, total);
     const el = document.createElement('div');
     el.className = cls;
     el.style.position = 'absolute';
@@ -93,15 +103,19 @@ export class PageFrameLayer {
     el.style.height = `${height}px`;
     el.style.left = `${margins.left}px`;
     el.style.right = `${margins.right}px`;
-    const mk = (segCls: string, txt?: string): HTMLElement => {
-      const sp = document.createElement('span');
-      sp.className = segCls;
-      sp.textContent = txt || '';
-      return sp;
-    };
-    el.appendChild(mk('bc-page-chrome-left', segs.left));
-    el.appendChild(mk('bc-page-chrome-center', segs.center));
-    el.appendChild(mk('bc-page-chrome-right', segs.right));
+    applyChromeAppearance(el, chrome);
+    el.appendChild(createChromeSegmentElement({
+      className: 'bc-page-chrome-left', text: segs.left,
+      content: resolveChromeInlineContent(chrome?.content?.left, page, total), align: 'left',
+    }));
+    el.appendChild(createChromeSegmentElement({
+      className: 'bc-page-chrome-center', text: segs.center,
+      content: resolveChromeInlineContent(chrome?.content?.center, page, total), align: 'center',
+    }));
+    el.appendChild(createChromeSegmentElement({
+      className: 'bc-page-chrome-right', text: segs.right,
+      content: resolveChromeInlineContent(chrome?.content?.right, page, total), align: 'right',
+    }));
     return el;
   }
 

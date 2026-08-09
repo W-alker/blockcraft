@@ -69,6 +69,48 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+### v0.3.0-alpha.27 - 2026-08-09 (minor) — structured pagination chrome content
+
+**What changed**: `PageChrome` now accepts optional serializable `content` for
+the left, center and right regions. Each region can contain image and text items,
+including muted text and page-number tokens. An optional `separator` renders the
+same divider box in live pagination and fixed PDF page surfaces.
+
+**Why**: Host applications need to compose brand, date and page-number content
+without converting a whole footer to a bitmap or maintaining separate live and
+print renderers.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `PageChrome.content` / `PageChromeContentSegments`
+- `PageChromeInlineContent` and serializable text/image content item types
+- `PageChrome.separator: 'top' | 'bottom'`
+
+### Migration Recipe
+
+Existing string segments remain valid. A structured brand region can be added
+incrementally:
+
+```typescript
+footer: {
+  content: {
+    left: {items: [
+      {kind: 'image', src: logo, height: 20, maxWidth: 28},
+      {kind: 'text', text: company},
+      {kind: 'text', text: appVersion, tone: 'muted'},
+    ]},
+  },
+  center: '{page}',
+  right: exportDate,
+  separator: 'top',
+}
+```
+
 ### Unreleased - 2026-08-09 (patch) — constrain paginated media without changing block coordinates
 
 **What changed**: Paginated live and fixed-page print views no longer apply CSS

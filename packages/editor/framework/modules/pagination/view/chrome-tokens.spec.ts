@@ -4,6 +4,7 @@ import {
   DEFAULT_CHROME_HEIGHT,
   formatPageNumber,
   hasChromeText,
+  resolveChromeInlineContent,
   resolveChromeSegments,
   substituteTokens,
 } from "./chrome-tokens";
@@ -44,6 +45,15 @@ describe('chrome-tokens', () => {
       expect(hasChromeText({center: '{page}'})).toBe(true);
       expect(chromeHeight({center: '{page}'})).toBe(DEFAULT_CHROME_HEIGHT);
     });
+    it('只有结构化内容时也占用页眉页脚高度', () => {
+      const chrome = {
+        content: {
+          left: {items: [{kind: 'image' as const, src: 'data:image/png;base64,AA=='}]},
+        },
+      };
+      expect(hasChromeText(chrome)).toBe(true);
+      expect(chromeHeight(chrome)).toBe(DEFAULT_CHROME_HEIGHT);
+    });
     it('显式 height 覆盖默认', () => {
       expect(chromeHeight({left: 'x', height: 40})).toBe(40);
     });
@@ -59,6 +69,19 @@ describe('chrome-tokens', () => {
     });
     it('undefined chrome → 三段空串', () => {
       expect(resolveChromeSegments(undefined, 1, 1)).toEqual({left: '', center: '', right: ''});
+    });
+  });
+
+  describe('resolveChromeInlineContent', () => {
+    it('只替换结构化文本 token，并保留图片项', () => {
+      const image = {kind: 'image' as const, src: 'data:image/png;base64,AA=='};
+      expect(resolveChromeInlineContent({
+        gap: 8,
+        items: [image, {kind: 'text', text: '第 {page}/{total} 页', tone: 'muted'}],
+      }, 2, 7)).toEqual({
+        gap: 8,
+        items: [image, {kind: 'text', text: '第 2/7 页', tone: 'muted'}],
+      });
     });
   });
 });

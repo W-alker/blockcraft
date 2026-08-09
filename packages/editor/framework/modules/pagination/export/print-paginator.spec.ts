@@ -1597,6 +1597,62 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     }
   });
 
+  it('prints structured brand chrome with the same token and separator contract', async () => {
+    const snapshot = root([paragraph('p1', 'first')]);
+    const config: PaginationConfig = {
+      pageSize: {width: 800, height: 1000},
+      margins: {top: 72, right: 72, bottom: 72, left: 72},
+      footer: {
+        height: 28,
+        distance: 36,
+        separator: 'top',
+        content: {
+          left: {
+            items: [
+              {
+                kind: 'image',
+                src: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+                height: 20,
+                maxWidth: 28,
+              },
+              {kind: 'text', text: '品牌'},
+              {kind: 'text', text: '@CSES', tone: 'muted'},
+            ],
+          },
+          center: {items: [{kind: 'text', text: '{page} / {total}'}]},
+        },
+        right: '2026-08-09',
+      },
+    };
+    const layout = createStablePaginationLayout(13, config, resolveScreenGeometry(config), [{
+      id: 'p1', height: 40, breakable: false, keepWithNext: false,
+    }], {
+      pages: [{index: 0, usedHeight: 40, slots: [{id: 'p1'}]}],
+      byBlock: new Map([['p1', {pageIndex: 0}]]),
+    });
+    const offscreen = document.createElement('div');
+    const paragraphElement = document.createElement('div');
+    paragraphElement.dataset['blockId'] = 'p1';
+    paragraphElement.style.height = '40px';
+    offscreen.appendChild(paragraphElement);
+    document.body.appendChild(offscreen);
+
+    const pages = await buildPaginatedPrintSurface(snapshot, config, {
+      layout,
+      render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
+    });
+    try {
+      const footer = pages.pages[0]!.querySelector<HTMLElement>('.bc-print-chrome')!;
+      expect(footer.classList).toContain('bc-page-chrome--separator-top');
+      expect(footer.querySelector('.bc-page-chrome-left')!.textContent).toBe('品牌@CSES');
+      expect(footer.querySelector('.bc-page-chrome-center')!.textContent).toBe('1 / 1');
+      expect(footer.querySelector('.bc-page-chrome-right')!.textContent).toBe('2026-08-09');
+      expect(footer.querySelector('img')?.getAttribute('src')).toContain('data:image/png');
+    } finally {
+      pages.dispose();
+    }
+  });
+
   it("高过一整页的段落被拆成多页的裁剪窗口，且无单片溢出整页", async () => {
     const pages = await buildPrintPages(root([paragraph("p-long", LONG_TEXT)]), SMALL_PAGE);
     try {

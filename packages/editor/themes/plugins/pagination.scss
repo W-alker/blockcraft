@@ -68,6 +68,19 @@
 .bc-page-chrome-center { text-align: center; }
 .bc-page-chrome-right { text-align: right; }
 
+.bc-page-chrome-rich {
+  overflow: hidden;
+}
+
+.bc-page-chrome-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bc-page-chrome-text--muted {
+  color: var(--bc-page-chrome-muted-color);
+}
+
 [data-blockcraft-root="true"].bc-paginated {
   position: relative;
   z-index: 1;

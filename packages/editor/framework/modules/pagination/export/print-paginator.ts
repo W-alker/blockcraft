@@ -15,7 +15,8 @@ import {
 import {getTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
 import {PageChrome, PaginationConfig} from "../pagination.types";
 import {resolveScreenGeometry} from "../view/pagination-geometry";
-import {resolveChromeSegments} from "../view/chrome-tokens";
+import {resolveChromeInlineContent, resolveChromeSegments} from "../view/chrome-tokens";
+import {applyChromeAppearance, createChromeSegmentElement} from "../view/chrome-content";
 import {
   measureBlockContentWidth,
   measureBlockVisualHeight,
@@ -1832,15 +1833,19 @@ function buildChrome(
     `top:${top}px; height:${height}px; left:${margins.left}px; right:${margins.right}px;` +
     `font-size:var(--bc-page-chrome-fs,12px); line-height:1.2; color:var(--bc-page-chrome-color,#9b9b97);` +
     `white-space:nowrap; overflow:hidden;`;
-  const mk = (txt: string | undefined, align: string): HTMLElement => {
-    const sp = document.createElement('span');
-    sp.style.textAlign = align;
-    sp.textContent = txt || '';
-    return sp;
-  };
-  el.appendChild(mk(segs.left, 'left'));
-  el.appendChild(mk(segs.center, 'center'));
-  el.appendChild(mk(segs.right, 'right'));
+  applyChromeAppearance(el, chrome);
+  el.appendChild(createChromeSegmentElement({
+    className: 'bc-page-chrome-left', text: segs.left,
+    content: resolveChromeInlineContent(chrome?.content?.left, page, total), align: 'left',
+  }));
+  el.appendChild(createChromeSegmentElement({
+    className: 'bc-page-chrome-center', text: segs.center,
+    content: resolveChromeInlineContent(chrome?.content?.center, page, total), align: 'center',
+  }));
+  el.appendChild(createChromeSegmentElement({
+    className: 'bc-page-chrome-right', text: segs.right,
+    content: resolveChromeInlineContent(chrome?.content?.right, page, total), align: 'right',
+  }));
   return el;
 }
 
