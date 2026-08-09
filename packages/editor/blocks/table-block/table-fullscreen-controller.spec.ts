@@ -78,16 +78,85 @@ describe('TableFullscreenController', () => {
       controller.set(true)
       expect(host.parentElement).toBe(parent)
       expect(host.previousElementSibling?.classList.contains('bc-table-fullscreen-placeholder')).toBe(true)
+      expect(parent.classList.contains('bc-table-fullscreen-isolation-container')).toBe(true)
+      expect(host.classList.contains('bc-table-fullscreen-isolation-branch')).toBe(true)
+      expect(before.classList.contains('bc-table-fullscreen-isolation-branch')).toBe(false)
       expect(editor.contentEditable).toBe('true')
       expect(document.activeElement).toBe(editor)
 
       controller.set(false)
       expect(host.parentElement).toBe(parent)
       expect(host.previousElementSibling).toBe(before)
+      expect(parent.classList.contains('bc-table-fullscreen-isolation-container')).toBe(false)
+      expect(host.classList.contains('bc-table-fullscreen-isolation-branch')).toBe(false)
       expect(editor.contentEditable).toBe('true')
       expect(document.activeElement).toBe(editor)
 
       parent.remove()
+    })
+
+    it('uses owned path markers without taking over sibling styles or attributes', () => {
+      const parent = document.createElement('section')
+      const sibling = document.createElement('aside')
+      const overlay = document.createElement('div')
+      sibling.style.setProperty('visibility', 'collapse', 'important')
+      sibling.style.setProperty('opacity', '0.4')
+      sibling.style.setProperty('pointer-events', 'auto')
+      sibling.setAttribute('inert', 'existing')
+      sibling.setAttribute('aria-hidden', 'false')
+      overlay.className = 'cdk-overlay-container'
+      parent.append(sibling, host)
+      document.body.append(parent, overlay)
+
+      controller.set(true)
+
+      expect(parent.classList.contains('bc-table-fullscreen-isolation-container')).toBe(true)
+      expect(host.classList.contains('bc-table-fullscreen-isolation-branch')).toBe(true)
+      expect(sibling.style.getPropertyValue('visibility')).toBe('collapse')
+      expect(sibling.style.getPropertyPriority('visibility')).toBe('important')
+      expect(sibling.style.getPropertyValue('opacity')).toBe('0.4')
+      expect(sibling.style.getPropertyValue('pointer-events')).toBe('auto')
+      expect(sibling.getAttribute('inert')).toBe('existing')
+      expect(sibling.getAttribute('aria-hidden')).toBe('false')
+      expect(overlay.classList.contains('bc-table-fullscreen-isolation-branch')).toBe(false)
+
+      controller.set(false)
+
+      expect(parent.classList.contains('bc-table-fullscreen-isolation-container')).toBe(false)
+      expect(host.classList.contains('bc-table-fullscreen-isolation-branch')).toBe(false)
+      expect(sibling.style.getPropertyValue('visibility')).toBe('collapse')
+      expect(sibling.style.getPropertyPriority('visibility')).toBe('important')
+      expect(sibling.style.getPropertyValue('opacity')).toBe('0.4')
+      expect(sibling.style.getPropertyValue('pointer-events')).toBe('auto')
+      expect(sibling.getAttribute('inert')).toBe('existing')
+      expect(sibling.getAttribute('aria-hidden')).toBe('false')
+
+      parent.remove()
+      overlay.remove()
+    })
+
+    it('refreshes path markers if pagination reparents the table while fullscreen', async () => {
+      const firstParent = document.createElement('section')
+      const secondParent = document.createElement('section')
+      firstParent.appendChild(host)
+      document.body.append(firstParent, secondParent)
+
+      controller.set(true)
+      expect(firstParent.classList.contains('bc-table-fullscreen-isolation-container')).toBe(true)
+
+      secondParent.appendChild(host)
+      await new Promise<void>(resolve => setTimeout(resolve))
+
+      expect(firstParent.classList.contains('bc-table-fullscreen-isolation-container')).toBe(false)
+      expect(secondParent.classList.contains('bc-table-fullscreen-isolation-container')).toBe(true)
+      expect(host.classList.contains('bc-table-fullscreen-isolation-branch')).toBe(true)
+
+      controller.set(false)
+      expect(secondParent.classList.contains('bc-table-fullscreen-isolation-container')).toBe(false)
+      expect(host.classList.contains('bc-table-fullscreen-isolation-branch')).toBe(false)
+
+      firstParent.remove()
+      secondParent.remove()
     })
 
     it('cancels host document zoom only while fullscreen is open', () => {

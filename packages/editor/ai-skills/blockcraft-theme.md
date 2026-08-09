@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-08
+> Last updated: 2026-08-10
 
 ## Theme Structure
 
@@ -205,12 +205,22 @@ Companion class names (also part of the public CSS contract):
 - `.table-block.is-fullscreen` — applied to the table host while in fullscreen view
 - `.bc-table-fullscreen-btn` — hover button at the top-right of every table block
 - `body.bc-table-fullscreen-lock` — applied to `<body>` to suppress background scrolling while a table is fullscreen
+- `.bc-table-fullscreen-isolation-container` — applied to each ancestor on the active table's DOM ownership path
+- `.bc-table-fullscreen-isolation-branch` — applied to the child branch that continues from an isolation container toward the active table
 
-Fullscreen is a viewport-isolated view: while the body lock is active, the host
-application tree is hidden with inherited `visibility` and only the active table
-is restored. The table remains at its Angular-owned DOM position so pagination,
-virtualization and collaborative block reconciliation keep ownership of the same
-node. A host document scale attached through `doc.viewScale` is cancelled on the
+Fullscreen is a viewport-isolated view. The table remains at its Angular-owned
+DOM position so pagination, virtualization and collaborative block reconciliation
+keep ownership of the same node. BlockCraft marks the active table's ancestor path
+with the isolation classes above and hides only sibling branches. Do not hide an
+ancestor on that path: Chromium can otherwise dispatch native `input` without
+`beforeinput`, bypassing the editor input transformer and collaborative text model.
+The markers are refreshed if pagination or virtualization reparents the table.
+
+While a paginated table is fullscreen, BlockCraft also suspends its page-only
+spacers, inline gaps and masks, and temporarily removes the paginated root's own
+centering transform. This lets `position: fixed; inset: 0` use the viewport rather
+than the paper coordinate system. The latest pagination projection is replayed on
+exit. A host document scale attached through `doc.viewScale` is cancelled on the
 fullscreen table host and restored exactly on exit; table-local fullscreen zoom
 continues to work independently. CDK overlay containers remain visible for menus
 opened from the table.

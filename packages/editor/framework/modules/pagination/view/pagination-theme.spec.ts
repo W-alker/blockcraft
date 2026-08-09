@@ -126,6 +126,52 @@ describe('pagination theme block constraints', () => {
     expect(placementContent.getBoundingClientRect().width).toBeCloseTo(256, 1);
   });
 
+  it('lets a fullscreen table escape the paginated root while keeping its editable child focusable', () => {
+    const host = fixture.nativeElement as HTMLElement;
+    const root = host.querySelector<HTMLElement>('[data-blockcraft-root="true"]')!;
+    const table = host.querySelector<HTMLElement>('.table-block')!;
+    const cell = table.querySelector<HTMLTableCellElement>('.table-cell-block')!;
+    const editable = document.createElement('p');
+    editable.className = 'paragraph-block edit-container';
+    editable.contentEditable = 'true';
+    editable.textContent = 'editable';
+    cell.appendChild(editable);
+    const dynamicSibling = document.createElement('aside');
+    root.appendChild(dynamicSibling);
+
+    const normalTransform = getComputedStyle(root).transform;
+    expect(normalTransform).not.toBe('none');
+
+    document.body.classList.add('bc-table-fullscreen-lock');
+    root.classList.add('bc-table-fullscreen-isolation-container');
+    table.classList.add('bc-table-fullscreen-isolation-branch');
+    table.classList.add('is-fullscreen');
+    try {
+      expect(getComputedStyle(root).transform).toBe('none');
+      expect(getComputedStyle(dynamicSibling).visibility).toBe('hidden');
+      expect(getComputedStyle(dynamicSibling).pointerEvents).toBe('none');
+      const rect = table.getBoundingClientRect();
+      expect(rect.left).toBeCloseTo(0, 0);
+      expect(rect.top).toBeCloseTo(0, 0);
+      expect(rect.width).toBeCloseTo(document.documentElement.clientWidth, 0);
+      expect(rect.height).toBeCloseTo(document.documentElement.clientHeight, 0);
+
+      editable.focus();
+      expect(document.activeElement).toBe(editable);
+      expect(editable.isContentEditable).toBeTrue();
+    } finally {
+      table.classList.remove('is-fullscreen');
+      table.classList.remove('bc-table-fullscreen-isolation-branch');
+      root.classList.remove('bc-table-fullscreen-isolation-container');
+      document.body.classList.remove('bc-table-fullscreen-lock');
+      editable.remove();
+    }
+
+    expect(getComputedStyle(root).transform).toBe(normalTransform);
+    expect(getComputedStyle(dynamicSibling).visibility).toBe('visible');
+    dynamicSibling.remove();
+  });
+
   it('keeps interactive hosts visible and constrains their inner content surfaces', () => {
     const host = fixture.nativeElement as HTMLElement;
     const code = host.querySelector<HTMLElement>('.code-block')!;

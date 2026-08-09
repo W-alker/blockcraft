@@ -1310,6 +1310,37 @@ describe("TableBlockComponent cell drag native-selection handoff", () => {
 });
 
 describe("TableBlockComponent pagination hot-path caches", () => {
+  it("suspends table-local pagination DOM in fullscreen and replays the latest breaks on exit", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const initialBreaks = [{beforeRowId: "row-1", gap: 40}];
+    const latestBreaks = [{beforeRowId: "row-2", gap: 60}];
+    table.tableBody = document.createElement("tbody");
+    table._paginationProjectionSuspended = false;
+    table._lastPaginationBreaks = initialBreaks;
+    const render = spyOn(table, "_renderPaginationBreaks");
+
+    table._setPaginationProjectionSuspended(true);
+
+    expect(table._paginationProjectionSuspended).toBeTrue();
+    expect(render).toHaveBeenCalledOnceWith([]);
+    expect(table._lastPaginationBreaks).toEqual(initialBreaks);
+
+    table._setPaginationProjectionSuspended(true);
+    expect(render).toHaveBeenCalledTimes(1);
+
+    table._applyPaginationBreaks(latestBreaks);
+
+    expect(table._lastPaginationBreaks).toEqual(latestBreaks);
+    expect(table._lastPaginationBreaks).not.toBe(latestBreaks);
+    expect(render).toHaveBeenCalledTimes(1);
+
+    table._setPaginationProjectionSuspended(false);
+
+    expect(table._paginationProjectionSuspended).toBeFalse();
+    expect(render).toHaveBeenCalledTimes(2);
+    expect(render.calls.mostRecent().args[0]).toEqual(latestBreaks);
+  });
+
   it("keeps normal-flow pagination geometry stable while fullscreen is active", () => {
     const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
     const normalGeometry = {

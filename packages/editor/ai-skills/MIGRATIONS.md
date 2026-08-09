@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-09 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-10 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,39 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+### v0.3.0-alpha.30 - 2026-08-10 (patch) — preserve paginated table fullscreen editing
+
+**What changed**: Table fullscreen now isolates only sibling branches along the
+active table's DOM ownership path instead of hiding an application ancestor. The
+controller uses the table's `ownerDocument` realm, refreshes isolation markers
+after pagination or virtualization reparents the block, suspends table-local page
+decorations while fullscreen, and replays the latest projection on exit. A
+paginated root also drops its own centering transform for the fullscreen lifetime
+so the fixed table is viewport-relative.
+
+**Why**: Chromium can emit native `input` without `beforeinput` when a
+contenteditable editing host has a hidden ancestor. That bypasses BlockCraft's
+input transformer and Y.Text update path. Separately, the pagination root's
+centering transform creates a containing block for `position: fixed`, while page
+spacers, gaps and masks are view-only artifacts that should not appear inside the
+fullscreen table.
+
+**Affected ai-skills files**:
+
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Fullscreen themes must preserve the active path marked by
+  `.bc-table-fullscreen-isolation-container` and
+  `.bc-table-fullscreen-isolation-branch`; only sibling branches are hidden.
+- Entering fullscreen temporarily suspends table pagination decorations and the
+  BlockCraft-owned paginated-root transform. Both are restored from the latest
+  projection when fullscreen exits.
+- Existing `.table-block.is-fullscreen`, `body.bc-table-fullscreen-lock` and CDK
+  overlay behavior remain compatible.
 
 ### v0.3.0-alpha.29 - 2026-08-09 (patch) — bound final print stability observation
 

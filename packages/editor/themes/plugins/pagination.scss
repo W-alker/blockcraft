@@ -107,6 +107,15 @@
 
 }
 
+/* 分页 root 用 transform 与纸张共享中线，但 transform 也会把后代的
+   position:fixed 困在 root 坐标系。表格全屏期间由既有 body lock 生命周期
+   临时解除这一个 BlockCraft 自有 transform，使表格继续留在原 DOM/编辑树中，
+   同时让 inset:0 真正相对 viewport；退出后正常分页中线自动恢复。 */
+body.bc-table-fullscreen-lock
+  [data-blockcraft-root="true"].bc-paginated.bc-table-fullscreen-isolation-container {
+  transform: none;
+}
+
 /* live 与 print 共用同一块约束。图片/视频由分页层直接限制媒体 wrapper，
    其余确认超页的原子块才裁剪。 */
 [data-blockcraft-root="true"].bc-paginated,

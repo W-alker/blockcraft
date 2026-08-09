@@ -3,6 +3,8 @@ import { BehaviorSubject } from 'rxjs'
 const HOST_CLASS = 'is-fullscreen'
 const BODY_CLASS = 'bc-table-fullscreen-lock'
 const PLACEHOLDER_CLASS = 'bc-table-fullscreen-placeholder'
+const ISOLATION_CONTAINER_CLASS = 'bc-table-fullscreen-isolation-container'
+const ISOLATION_BRANCH_CLASS = 'bc-table-fullscreen-isolation-branch'
 const VIEW_ANCHOR_EPSILON = 0.5
 const VIEW_ANCHOR_STABLE_FRAMES = 2
 const VIEW_ANCHOR_MAX_FRAMES = 8
@@ -26,8 +28,10 @@ interface FullscreenViewAnchor {
  * - `compositionstart` / `compositionend` are observed on the host with capture phase so
  *   any descendant composing (e.g. cell editor) is detected.
  * - The host remains in its Angular-owned DOM position. Fullscreen isolation is handled by
- *   the body lock stylesheet, while an inverse host `zoom` cancels a host-owned document
- *   view scale. This avoids reparenting the block out of pagination / virtualization trees.
+ *   hiding sibling branches along its ancestor path, while an inverse host `zoom` cancels a
+ *   host-owned document view scale. Ancestors themselves must stay visible: Chromium omits
+ *   `beforeinput` when a contenteditable editing host has a `visibility:hidden` ancestor.
+ *   This avoids reparenting the block out of pagination / virtualization trees.
  *
  * Lifetime is tied to the owning component: call {@link destroy} from the component's
  * destroy hook to guarantee body-class cleanup (otherwise a destroyed-while-fullscreen
@@ -67,6 +71,9 @@ export class TableFullscreenController {
   private viewAnchorStableFrames = 0
   private flowPlaceholder: HTMLElement | null = null
   private originalHostZoom: string | null = null
+  private isolationContainers = new Set<HTMLElement>()
+  private isolationBranches = new Set<HTMLElement>()
+  private isolationObserver: MutationObserver | null = null
 
   private readonly compositionStartHandler = (): void => {
     this.isImeComposing = true
@@ -91,7 +98,8 @@ export class TableFullscreenController {
    */
   private readonly wheelHandler = (e: WheelEvent): void => {
     const target = e.target
-    if (!(target instanceof Node) || !this.host.contains(target)) return
+    const NodeConstructor = this.host.ownerDocument.defaultView?.Node
+    if (!NodeConstructor || !(target instanceof NodeConstructor) || !this.host.contains(target)) return
     if (!(e.ctrlKey || e.metaKey)) return
     e.preventDefault()
     // This listener runs on document capture, before a host document-scale surface.
@@ -150,20 +158,24 @@ export class TableFullscreenController {
     }
 
     if (value) {
+      const ownerDocument = this.host.ownerDocument
       this.host.classList.add(HOST_CLASS)
       this.installDocumentScaleCompensation()
-      document.body.classList.add(BODY_CLASS)
-      document.addEventListener('keydown', this.escHandler, { capture: true })
-      document.addEventListener('wheel', this.wheelHandler, { passive: false, capture: true })
+      this.installViewIsolation()
+      ownerDocument.body.classList.add(BODY_CLASS)
+      ownerDocument.addEventListener('keydown', this.escHandler, { capture: true })
+      ownerDocument.addEventListener('wheel', this.wheelHandler, { passive: false, capture: true })
     } else {
+      const ownerDocument = this.host.ownerDocument
       // 占位符移除与 fixed class 撤销之间不做任何布局读取，浏览器只会看到
       // 最终的普通流，不会在中间态先 clamp scrollTop。
       this.removeFlowPlaceholder()
       this.host.classList.remove(HOST_CLASS)
       this.removeDocumentScaleCompensation()
-      document.body.classList.remove(BODY_CLASS)
-      document.removeEventListener('keydown', this.escHandler, { capture: true })
-      document.removeEventListener('wheel', this.wheelHandler, { capture: true })
+      this.removeViewIsolation()
+      ownerDocument.body.classList.remove(BODY_CLASS)
+      ownerDocument.removeEventListener('keydown', this.escHandler, { capture: true })
+      ownerDocument.removeEventListener('wheel', this.wheelHandler, { capture: true })
       // 退出全屏 → 重置缩放
       if (this.zoom$.value !== 1) this.zoom$.next(1)
       // `position: fixed` 恢复为普通流后，先在本帧恢复一次，避免退出时先闪到
@@ -200,6 +212,92 @@ export class TableFullscreenController {
       this.host.style.removeProperty('zoom')
     }
     this.originalHostZoom = null
+  }
+
+  /**
+   * Hide only branches that are siblings of the active table's DOM ownership
+   * path. Hiding an ancestor of the root editing host makes Chromium emit native
+   * `input` without `beforeinput`, bypassing InputTransformer and Y.Text. Marking
+   * the active branch at each ancestor lets CSS isolate both existing and newly
+   * inserted siblings without O(document-size) inline writes. A child-list observer
+   * watches only the current ancestor path and refreshes these O(depth) markers if
+   * pagination or virtualization reparents the table while fullscreen is open.
+   */
+  private installViewIsolation(): void {
+    this.removeViewIsolation()
+    this.syncViewIsolationPath()
+
+    const view = this.host.ownerDocument.defaultView
+    if (!view) return
+    this.isolationObserver = new view.MutationObserver(() => {
+      if (!this.state$.value) return
+      this.syncViewIsolationPath()
+      this.observeIsolationPath()
+    })
+    this.observeIsolationPath()
+  }
+
+  private observeIsolationPath(): void {
+    if (!this.isolationObserver) return
+    this.isolationObserver.disconnect()
+    for (const container of this.isolationContainers) {
+      this.isolationObserver.observe(container, { childList: true })
+    }
+  }
+
+  private syncViewIsolationPath(): void {
+    const nextContainers = new Set<HTMLElement>()
+    const nextBranches = new Set<HTMLElement>()
+    const body = this.host.ownerDocument.body
+    let branch: HTMLElement = this.host
+    let parent = branch.parentElement
+
+    while (parent) {
+      nextContainers.add(parent)
+      nextBranches.add(branch)
+      if (parent === body) break
+      branch = parent
+      parent = parent.parentElement
+    }
+
+    this.replaceIsolationMarkers(
+      this.isolationContainers,
+      nextContainers,
+      ISOLATION_CONTAINER_CLASS,
+    )
+    this.replaceIsolationMarkers(
+      this.isolationBranches,
+      nextBranches,
+      ISOLATION_BRANCH_CLASS,
+    )
+    this.isolationContainers = nextContainers
+    this.isolationBranches = nextBranches
+  }
+
+  private replaceIsolationMarkers(
+    previous: ReadonlySet<HTMLElement>,
+    next: ReadonlySet<HTMLElement>,
+    className: string,
+  ): void {
+    for (const element of previous) {
+      if (!next.has(element)) element.classList.remove(className)
+    }
+    for (const element of next) {
+      if (!previous.has(element)) element.classList.add(className)
+    }
+  }
+
+  private removeViewIsolation(): void {
+    this.isolationObserver?.disconnect()
+    this.isolationObserver = null
+    for (const element of this.isolationContainers) {
+      element.classList.remove(ISOLATION_CONTAINER_CLASS)
+    }
+    for (const element of this.isolationBranches) {
+      element.classList.remove(ISOLATION_BRANCH_CLASS)
+    }
+    this.isolationContainers.clear()
+    this.isolationBranches.clear()
   }
 
   /**
@@ -356,6 +454,7 @@ export class TableFullscreenController {
     this.cancelViewAnchorRestore()
     this.removeFlowPlaceholder()
     this.removeDocumentScaleCompensation()
+    this.removeViewIsolation()
     this.host.removeEventListener('compositionstart', this.compositionStartHandler, { capture: true })
     this.host.removeEventListener('compositionend', this.compositionEndHandler, { capture: true })
     if (!this.state$.closed) {

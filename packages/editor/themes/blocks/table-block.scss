@@ -897,21 +897,19 @@
 
 // 表格全屏期间锁定 body，并把宿主应用的其余视觉层隔离出去。
 //
-// 不能只依赖 z-index：宿主的分页纸张、文档缩放面、绝对定位对象和固定工具栏
-// 可能各自在独立 stacking context 内。全屏表格仍留在 Angular / 虚拟渲染拥有的
-// 原 DOM 位置（不能 portal，否则块树重排会把它抢回去），因此这里用 visibility
-// 建立视图隔离；visibility 允许全屏表格子树显式恢复可见，同时不改变宿主布局、
-// scrollHeight 或分页测量。CDK overlay container 保留，供表格内下拉菜单使用。
+// 不能把宿主应用的顶层祖先直接设为 visibility:hidden：Chromium 会把隐藏祖先下的
+// contenteditable 当成没有活动 editing host，只发原生 input、不发 beforeinput，输入
+// 因而绕过 InputTransformer / Y.Text。TableFullscreenController 改为仅隐藏活动表格
+// DOM 路径两侧的 sibling branches；祖先和 root editing host 始终保持 visible。
+// 路径标记随分页/虚拟化重父更新，CSS 也会自动覆盖全屏期间新插入的 sibling。
+// CDK overlay container 保留，供表格内下拉菜单使用。
 body.bc-table-fullscreen-lock {
   overflow: hidden;
   background: var(--bc-table-fullscreen-bg);
 
-  > :not(.cdk-overlay-container) {
-    visibility: hidden !important;
-  }
-
-  // Fullscreen table stays inside the hidden application tree so Angular,
-  // pagination and virtualization retain DOM ownership. Restore only this subtree.
+  // Fullscreen table stays in its Angular-owned tree. Explicit visibility is a
+  // compatibility guard for host themes; no ancestor in BlockCraft's isolation
+  // path is hidden.
   .table-block.is-fullscreen {
     visibility: visible !important;
   }
@@ -921,4 +919,14 @@ body.bc-table-fullscreen-lock {
     visibility: visible !important;
     z-index: calc(var(--bc-table-fullscreen-z) + 1);
   }
+}
+
+body.bc-table-fullscreen-lock.bc-table-fullscreen-isolation-container
+  > :not(.bc-table-fullscreen-isolation-branch):not(.cdk-overlay-container),
+body.bc-table-fullscreen-lock
+  .bc-table-fullscreen-isolation-container
+  > :not(.bc-table-fullscreen-isolation-branch):not(.cdk-overlay-container) {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }

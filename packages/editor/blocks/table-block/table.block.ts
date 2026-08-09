@@ -558,6 +558,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _cellFlowMasks = new Set<HTMLElement>()
   private _cellFlowRuntimes = new Set<object>()
   private _lastPaginationBreaks: TablePaginationBreak[] = []
+  /**
+   * 全屏是连续表格编辑视角：纸张 backdrop 已被隔离，表格内部的 spacer / inline gap /
+   * flow mask 若继续投影，只会留下没有页面上下文的灰带和错位手柄。暂停期间仍接收并
+   * 记录分页引擎的最新断点，退出全屏后一次性重放，普通流与分页状态均不丢失。
+   */
+  private _paginationProjectionSuspended = false
   private _appliedPaginationBreakSig = ''
   private _appliedPaginationGrid: TableModelGrid | null = null
   private _nestedAtomicLocks = new Set<HTMLElement>()
@@ -611,6 +617,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.fullscreenController.state$
       .pipe(takeUntil(this.onDestroy$))
       .subscribe(isFullscreen => {
+        this._setPaginationProjectionSuspended(isFullscreen)
         // state$ 在 controller 完成 class/zoom 切换后发出。退出时立即放开快照，
         // 后续 ResizeObserver 只需提交一次真实普通流几何。
         if (!isFullscreen) this._normalFlowPaginationGeometry = null
@@ -3061,6 +3068,17 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private _applyPaginationBreaks(breaks: TablePaginationBreak[]): void {
     if (!this.tableBody) return
+    this._lastPaginationBreaks = [...breaks]
+    if (this._paginationProjectionSuspended) return
+    this._renderPaginationBreaks(breaks)
+  }
+
+  /**
+   * 只更新表格 DOM 的分页投影，不改 `_lastPaginationBreaks`。全屏切换用它清除/恢复
+   * 纯视图节点，避免清除动作把待恢复的最新断点覆盖成空数组。
+   */
+  private _renderPaginationBreaks(breaks: TablePaginationBreak[]): void {
+    if (!this.tableBody) return
     const breakSig = JSON.stringify(breaks)
     const modelGrid = this._getTableModelGrid()
     // 同一模型投影 + 同一断点的 ResizeObserver 反馈轮次无需再构建 row map、
@@ -3071,11 +3089,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       && modelGrid !== null
       && modelGrid === this._appliedPaginationGrid
     ) {
-      this._lastPaginationBreaks = [...breaks]
       return
     }
     this._invalidateColumnResizeHandle()
-    this._lastPaginationBreaks = [...breaks]
     const rowBreaks = breaks.filter(
       (value): value is {beforeRowId: string; gap: number} =>
         !('kind' in value),
@@ -3141,6 +3157,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.rowBarComponent?.changeDetectionRef.markForCheck()
     this._appliedPaginationBreakSig = breakSig
     this._appliedPaginationGrid = modelGrid
+  }
+
+  private _setPaginationProjectionSuspended(suspended: boolean): void {
+    if (this._paginationProjectionSuspended === suspended) return
+    this._paginationProjectionSuspended = suspended
+    if (!this.tableBody) return
+    this._renderPaginationBreaks(suspended ? [] : this._lastPaginationBreaks)
   }
 
   private _applyCellFlowProjection(
