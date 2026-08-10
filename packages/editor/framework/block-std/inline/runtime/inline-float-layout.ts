@@ -7,10 +7,12 @@ import {
 import {EmbedBlot, ScrollBlot} from '../blot'
 import {
   buildInlineFragmentPlan,
+  INLINE_FRAGMENT_GROUP_ATTRIBUTE,
   InlineDualFragmentPlan,
   InlineFragmentProjection,
   InlineRangeMeasurer,
 } from './inline-fragment-layout'
+import type {InlinePaginationGap} from './inline-pagination-projection'
 
 export const INLINE_FLOAT_OWNER_ATTRIBUTE = 'data-bc-inline-float-owner'
 export const INLINE_FLOAT_PREVIEW_ATTRIBUTE = 'data-bc-inline-float-preview'
@@ -24,6 +26,55 @@ const INLINE_FLOAT_SELECTOR =
 const inlineFloatFrame = (shell: HTMLElement): HTMLElement | null =>
   shell.querySelector<HTMLElement>('[data-bc-inline-float-frame]') ??
   shell.querySelector<HTMLElement>('.bc-inline-image-frame')
+
+export interface InlineFloatPaginationBand {
+  top: number
+  bottom: number
+}
+
+/**
+ * Snapshot the painted exclusion bands owned by wrapped inline objects.
+ * Single-side CSS floats use the shell box because it includes the configured
+ * wrap gap; dual-side projections also contribute their fragment group and
+ * transformed frame. Zero-sized logical anchors are ignored.
+ *
+ * @internal Pagination measurement only.
+ */
+export function measureInlineFloatPaginationBands(
+  root: HTMLElement,
+  originTop = root.getBoundingClientRect().top,
+): InlineFloatPaginationBand[] {
+  const elements = [
+    ...Array.from(root.querySelectorAll<HTMLElement>(
+      `[${INLINE_FRAGMENT_GROUP_ATTRIBUTE}]`,
+    )),
+    ...Array.from(root.querySelectorAll<HTMLElement>(INLINE_FLOAT_SELECTOR))
+      .flatMap(shell => [shell, inlineFloatFrame(shell)])
+      .filter((element): element is HTMLElement => !!element),
+  ]
+  return elements
+    .map(element => element.getBoundingClientRect())
+    .filter(rect =>
+      Number.isFinite(rect.top)
+      && Number.isFinite(rect.bottom)
+      && rect.bottom - rect.top > 0.75,
+    )
+    .map(rect => ({
+      top: rect.top - originTop,
+      bottom: rect.bottom - originTop,
+    }))
+}
+
+const samePaginationGaps = (
+  left: readonly InlinePaginationGap[],
+  right: readonly InlinePaginationGap[],
+): boolean => left.length === right.length && left.every((gap, index) => {
+  const other = right[index]
+  return gap.offset === other.offset
+    && gap.height === other.height
+    && gap.backdropOffset === other.backdropOffset
+    && gap.backdropHeight === other.backdropHeight
+})
 
 export interface InlineFloatGeometryInput {
   containerWidth: number
@@ -342,8 +393,12 @@ export class InlineFloatLayoutController {
   private _destroyed = false
   private _freezeCount = 0
   private _dirtyWhileFrozen = false
+  private _notifyPaginationReadyAfterRefresh = false
+  private readonly _paginationReadyListeners = new Set<() => void>()
   private readonly _projection?: InlineFragmentProjection
   private readonly _measurer?: InlineRangeMeasurer
+  private _activePlans: InlineDualFragmentPlan[] = []
+  private _paginationGaps: InlinePaginationGap[] = []
 
   constructor(
     readonly container: HTMLElement,
@@ -376,8 +431,12 @@ export class InlineFloatLayoutController {
     this.container.toggleAttribute(INLINE_FLOAT_OWNER_ATTRIBUTE, hasFloats)
 
     if (!hasFloats) {
+      this._activePlans = []
+      this._paginationGaps = []
       this._revokeProjection()
       this._disconnectObserver()
+      this._notifyPaginationReadyAfterRefresh = false
+      this._notifyPaginationReady()
       return
     }
     this._ensureObserver()
@@ -407,9 +466,117 @@ export class InlineFloatLayoutController {
   }
 
   /** Restore canonical direct-Blot DOM before an incremental Delta patch. */
-  beforeMutation(): void {
+  beforeMutation(selectionAlreadyGuarded = false): void {
     if (this._destroyed) return
-    this._revokeProjection()
+    this._activePlans = []
+    this._paginationGaps = []
+    if (selectionAlreadyGuarded) this._projection?.revoke()
+    else this._revokeProjection()
+  }
+
+  get hasFloatOwner(): boolean {
+    return this.container.hasAttribute(INLINE_FLOAT_OWNER_ATTRIBUTE)
+  }
+
+  get hasPaginationGaps(): boolean {
+    return this._paginationGaps.length > 0
+  }
+
+  get hasProjection(): boolean {
+    return this._projection?.active ?? false
+  }
+
+  get paginationProjectionWritable(): boolean {
+    return this._destroyed
+      || !this.hasFloatOwner
+      || (
+        this._freezeCount === 0
+        && !this._dirtyWhileFrozen
+        && !this._notifyPaginationReadyAfterRefresh
+      )
+  }
+
+  /** Notify pagination once a pointer/IME layout lease is fully released. */
+  whenPaginationProjectionWritable(listener: () => void): () => void {
+    if (this.paginationProjectionWritable) {
+      let active = true
+      queueMicrotask(() => {
+        if (active) listener()
+      })
+      return () => { active = false }
+    }
+    this._paginationReadyListeners.add(listener)
+    return () => this._paginationReadyListeners.delete(listener)
+  }
+
+  /**
+   * A wrapped object and the visual rows that surround it form one atomic
+   * inline band. Pagination may cut immediately before or after that band, but
+   * never through its model interval or painted vertical extent.
+   */
+  paginationBoundaryGuard(): (offset: number, lineTop: number) => boolean {
+    if (!this.hasFloatOwner) return () => true
+    const modelBands = this._activePlans.map(plan => ({
+      start: plan.startOffset,
+      end: plan.endOffset,
+    }))
+    const containerTop = this.container.getBoundingClientRect().top
+    const visualBands = measureInlineFloatPaginationBands(
+      this.container,
+      containerTop,
+    )
+
+    return (offset, lineTop) =>
+      modelBands.every(band => offset <= band.start || offset >= band.end)
+      && visualBands.every(band =>
+        lineTop <= band.top + 0.75 || lineTop >= band.bottom - 0.75,
+      )
+  }
+
+  /** Apply page gaps through the same projection that owns dual-side rows. */
+  applyPaginationGaps(gaps: readonly InlinePaginationGap[]): boolean {
+    if (
+      this._destroyed
+      || !this.hasFloatOwner
+      || !this._projection
+      || !this.paginationProjectionWritable
+    ) {
+      return false
+    }
+    const previous = this._paginationGaps.map(gap => ({...gap}))
+    const next = gaps.map(gap => ({...gap}))
+    if (
+      this._projection.active
+      && samePaginationGaps(previous, next)
+    ) {
+      return true
+    }
+    const applied = this._projection.apply(this._activePlans, next)
+    if (!applied) {
+      if (!this._projection.apply(this._activePlans, previous)) {
+        this._activePlans = []
+        this._paginationGaps = []
+        this._scheduleRefresh()
+      }
+      return false
+    }
+    this._paginationGaps = next
+    return true
+  }
+
+  /** Rebuild the natural wrapped projection synchronously before measurement. */
+  clearPaginationGaps(): void {
+    if (!this._paginationGaps.length || !this._projection) return
+    this._paginationGaps = []
+    if (this._freezeCount > 0) {
+      this._projection.clearPaginationLayerInPlace()
+      this._dirtyWhileFrozen = true
+      return
+    }
+    if (!this._projection.apply(this._activePlans)) {
+      this._activePlans = []
+      this._scheduleRefresh()
+    }
   }
 
   /**
@@ -424,9 +591,15 @@ export class InlineFloatLayoutController {
       if (released) return
       released = true
       this._freezeCount = Math.max(0, this._freezeCount - 1)
-      if (this._freezeCount === 0 && this._dirtyWhileFrozen) {
+      if (this._freezeCount !== 0) return
+      if (this._dirtyWhileFrozen) {
         this._dirtyWhileFrozen = false
+        this._notifyPaginationReadyAfterRefresh = true
         this._scheduleRefresh()
+      } else if (this._scheduledFrame !== undefined) {
+        this._notifyPaginationReadyAfterRefresh = true
+      } else {
+        this._notifyPaginationReady()
       }
     }
   }
@@ -531,7 +704,9 @@ export class InlineFloatLayoutController {
         previousEnd = plan.endOffset
       }
 
-      if (!this._projection!.apply(plans)) {
+      if (!this._projection!.apply(plans, this._paginationGaps)) {
+        this._activePlans = []
+        this._paginationGaps = []
         for (const candidate of candidates) {
           clearInlineImageFloatLayout(candidate.shell)
           applyInlineImageFloatLayout(
@@ -539,9 +714,13 @@ export class InlineFloatLayoutController {
             readInlineImageFloatInput(candidate.shell, width),
           )
         }
+      } else {
+        this._activePlans = plans
       }
     } catch {
       this._projection!.revoke()
+      this._activePlans = []
+      this._paginationGaps = []
       const width =
         this.container.clientWidth ||
         this.container.getBoundingClientRect().width
@@ -562,6 +741,12 @@ export class InlineFloatLayoutController {
   destroy(): void {
     if (this._destroyed) return
     this._destroyed = true
+    this._freezeCount = 0
+    this._notifyPaginationReady()
+    this._activePlans = []
+    this._paginationGaps = []
+    this._notifyPaginationReadyAfterRefresh = false
+    this._paginationReadyListeners.clear()
     this._revokeProjection()
     for (const shell of this._shells()) clearInlineImageFloatLayout(shell)
     this.container.removeAttribute(INLINE_FLOAT_OWNER_ATTRIBUTE)
@@ -615,13 +800,38 @@ export class InlineFloatLayoutController {
   private _scheduleRefresh(): void {
     if (this._destroyed || this._scheduledFrame !== undefined) return
     if (typeof requestAnimationFrame === 'undefined') {
-      this.refresh()
+      try {
+        this.refresh()
+      } finally {
+        this._notifyPaginationAfterRefresh()
+      }
       return
     }
     this._scheduledFrame = requestAnimationFrame(() => {
-      this._scheduledFrame = undefined
-      this.refresh()
+      try {
+        this.refresh()
+      } finally {
+        this._scheduledFrame = undefined
+        this._notifyPaginationAfterRefresh()
+      }
     })
+  }
+
+  private _notifyPaginationAfterRefresh(): void {
+    this._notifyPaginationReadyAfterRefresh = false
+    this._notifyPaginationReady()
+  }
+
+  private _notifyPaginationReady(): void {
+    if (
+      !this.paginationProjectionWritable
+      || !this._paginationReadyListeners.size
+    ) {
+      return
+    }
+    const listeners = [...this._paginationReadyListeners]
+    this._paginationReadyListeners.clear()
+    for (const listener of listeners) listener()
   }
 
   private _revokeProjection(): void {

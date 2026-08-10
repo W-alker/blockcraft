@@ -1,6 +1,8 @@
 import {
   applyInlinePaginationGaps,
   clearInlinePaginationGaps,
+  isInlinePaginationProjectionWritable,
+  whenInlinePaginationProjectionWritable,
 } from '../../../block-std/inline/runtime/inline-pagination-access'
 import type {InlinePaginationGap} from '../../../block-std/inline/runtime/inline-pagination-projection'
 import type {PaginationResult} from '../engine'
@@ -77,12 +79,38 @@ export class InlineBreakApplier {
   private _suspended = false
   private _revision = 0
   private _activeUpdate: number | null = null
+  private readonly _projectionReadyWatches = new Map<
+    string,
+    {runtime: object; release: () => void}
+  >()
 
-  constructor(private readonly doc: BlockCraft.Doc) {}
+  constructor(
+    private readonly doc: BlockCraft.Doc,
+    private readonly _onProjectionReady: () => void = () => undefined,
+  ) {}
 
   /** Defensive snapshot used by the controller's ResizeObserver echo filter. */
   get layoutOwnedIds(): ReadonlySet<string> {
     return new Set([...this._gaps.keys(), ...this._applied.keys()])
+  }
+
+  /**
+   * Keep the current stable DOM while an inline float owns a pointer/IME lease.
+   * Sparse mode scans only its mounted window; full mode already measures all
+   * mounted roots in the same pass, so the preflight preserves correctness for
+   * a frozen paragraph that is about to paginate for the first time.
+   */
+  deferUpdateWhileProjectionFrozen(): boolean {
+    let deferred = false
+    const ids = this._mountedIds
+      ?? new Set([...this._gaps.keys(), ...this._applied.keys()])
+    for (const id of ids) {
+      const runtime = this._applied.get(id) ?? safeInlineRuntime(this.doc, id)
+      if (!runtime || isInlinePaginationProjectionWritable(runtime)) continue
+      deferred = true
+      this._watchProjectionReady(id, runtime)
+    }
+    return deferred
   }
 
   apply(
@@ -155,6 +183,7 @@ export class InlineBreakApplier {
       this._gaps.delete(id)
       this._unmaterialized.delete(id)
       const runtime = this._applied.get(id)
+      this._releaseProjectionReadyWatch(id)
       if (!runtime) continue
       clearInlinePaginationGaps(runtime)
       this._applied.delete(id)
@@ -227,6 +256,7 @@ export class InlineBreakApplier {
     this._clearApplied()
     this._gaps.clear()
     this._unmaterialized.clear()
+    this._releaseAllProjectionReadyWatches()
   }
 
   destroy(): void {
@@ -241,6 +271,7 @@ export class InlineBreakApplier {
       if (this._gaps.has(id) && this._isMounted(id)) continue
       clearInlinePaginationGaps(runtime)
       this._applied.delete(id)
+      this._releaseProjectionReadyWatch(id)
     }
 
     for (const [id, gaps] of this._gaps) {
@@ -250,17 +281,25 @@ export class InlineBreakApplier {
       if (previous && previous !== runtime) {
         clearInlinePaginationGaps(previous)
         this._applied.delete(id)
+        this._releaseProjectionReadyWatch(id)
       }
       if (!runtime) {
+        this._releaseProjectionReadyWatch(id)
         failed.add(id)
         continue
       }
       if (!applyInlinePaginationGaps(runtime, gaps)) {
         clearInlinePaginationGaps(runtime)
         this._applied.delete(id)
+        if (!isInlinePaginationProjectionWritable(runtime)) {
+          this._watchProjectionReady(id, runtime)
+        } else {
+          this._releaseProjectionReadyWatch(id)
+        }
         failed.add(id)
         continue
       }
+      this._releaseProjectionReadyWatch(id)
       this._applied.set(id, runtime)
     }
     return failed
@@ -271,6 +310,32 @@ export class InlineBreakApplier {
       clearInlinePaginationGaps(runtime)
     }
     this._applied.clear()
+  }
+
+  private _watchProjectionReady(id: string, runtime: object): void {
+    const current = this._projectionReadyWatches.get(id)
+    if (current?.runtime === runtime) return
+    current?.release()
+    let release: () => void = () => undefined
+    release = whenInlinePaginationProjectionWritable(runtime, () => {
+      if (this._projectionReadyWatches.get(id)?.runtime !== runtime) return
+      this._projectionReadyWatches.delete(id)
+      release()
+      this._onProjectionReady()
+    })
+    this._projectionReadyWatches.set(id, {runtime, release})
+  }
+
+  private _releaseProjectionReadyWatch(id: string): void {
+    const current = this._projectionReadyWatches.get(id)
+    if (!current) return
+    this._projectionReadyWatches.delete(id)
+    current.release()
+  }
+
+  private _releaseAllProjectionReadyWatches(): void {
+    for (const {release} of this._projectionReadyWatches.values()) release()
+    this._projectionReadyWatches.clear()
   }
 
   private _isMounted(id: string): boolean {

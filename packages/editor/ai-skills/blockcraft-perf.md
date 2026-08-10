@@ -206,6 +206,12 @@ in the root extent, and non-exact sparse state is never reused for printing. A
 missing or rejected live anchor triggers a bounded retry plus atomic screen
 fallback; that fallback snapshot is also excluded from print reuse, so readonly
 export performs a complete remeasurement rather than clipping oversized text.
+Wrapped text snapshots all shell/frame/group exclusion rectangles once per lazy
+oversized measurement; candidate-line filtering performs no repeated DOM reads.
+The float and pagination layers share one reversible projection. A pointer, IME
+or wrapped-object lease defers the whole pagination transaction before markers
+are cleared, then schedules one recompute after the animation-frame float refresh,
+so natural measurement never observes a half-rebuilt Blot tree.
 
 Each frame adds only constant-time checks for local height/index lengths and the
 model structure revision. A mismatch performs one cold `O(N)` rebuild. A

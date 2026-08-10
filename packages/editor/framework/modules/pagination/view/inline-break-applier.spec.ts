@@ -126,6 +126,84 @@ describe('InlineBreakApplier', () => {
     }
   })
 
+  it('keeps the stable projection while a wrapped runtime is frozen and retries on release', () => {
+    const runtime = {}
+    const apply = jasmine.createSpy('apply').and.returnValue(true)
+    const clear = jasmine.createSpy('clear')
+    const ready = jasmine.createSpy('ready')
+    let writable = true
+    let notifyWritable: (() => void) | undefined
+    const release = registerInlinePaginationAccess(runtime, {
+      apply,
+      clear,
+      measureLineStarts: () => [],
+      projectionWritable: () => writable,
+      whenProjectionWritable: listener => {
+        notifyWritable = listener
+        return () => {
+          if (notifyWritable === listener) notifyWritable = undefined
+        }
+      },
+    })
+    const doc = {
+      getBlockById: () => ({runtime}),
+    } as unknown as BlockCraft.Doc
+    const applier = new InlineBreakApplier(doc, ready)
+
+    try {
+      applier.apply([meta()], result, 100, 20, 10)
+      writable = false
+
+      expect(applier.deferUpdateWhileProjectionFrozen()).toBeTrue()
+      expect(applier.deferUpdateWhileProjectionFrozen()).toBeTrue()
+      expect(clear).not.toHaveBeenCalled()
+      expect(apply).toHaveBeenCalledTimes(1)
+
+      writable = true
+      notifyWritable?.()
+      expect(ready).toHaveBeenCalledTimes(1)
+      expect(applier.deferUpdateWhileProjectionFrozen()).toBeFalse()
+    } finally {
+      applier.destroy()
+      release()
+    }
+  })
+
+  it('preflights a mounted frozen runtime before its first continuation', () => {
+    const runtime = {}
+    const ready = jasmine.createSpy('ready')
+    let writable = false
+    let notifyWritable: (() => void) | undefined
+    const release = registerInlinePaginationAccess(runtime, {
+      apply: () => true,
+      clear: () => undefined,
+      measureLineStarts: () => [],
+      projectionWritable: () => writable,
+      whenProjectionWritable: listener => {
+        notifyWritable = listener
+        return () => {
+          if (notifyWritable === listener) notifyWritable = undefined
+        }
+      },
+    })
+    const applier = new InlineBreakApplier({
+      getBlockById: () => ({runtime}),
+    } as unknown as BlockCraft.Doc, ready)
+
+    try {
+      applier.syncMounted(['text'])
+      expect(applier.layoutOwnedIds.size).toBe(0)
+      expect(applier.deferUpdateWhileProjectionFrozen()).toBeTrue()
+
+      writable = true
+      notifyWritable?.()
+      expect(ready).toHaveBeenCalledTimes(1)
+    } finally {
+      applier.destroy()
+      release()
+    }
+  })
+
   it('rolls back an uncommitted layout update to the previous projection', () => {
     const runtime = {}
     const apply = jasmine.createSpy('apply').and.returnValue(true)

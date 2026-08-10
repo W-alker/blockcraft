@@ -69,6 +69,35 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+### Unreleased - 2026-08-10 (patch) — paginate oversized wrapped paragraphs
+
+**What changed**: An oversized editable paragraph that contains a wrapped
+image, Shape or WordArt now continues across pages at safe visual-line
+boundaries outside the object's exclusion band. The wrapped object plus its
+single-side shell/gap or dual-side fragment group remains indivisible. Live,
+sparse and readonly print measurement use the same exclusion-band rule.
+
+**Why**: Wrapped InlineRuntime owners previously returned no line anchors at
+all, forcing the entire oversized paragraph into an atomic overflow fallback.
+Float and pagination projections now share one reversible DOM owner, and
+pointer/IME/object-layout leases defer pagination until the float plan is
+writable instead of exposing a partially rebuilt Blot tree.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-inline.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Wrapped objects are never cut through their painted exclusion band, but text
+  before and after that band can now paginate when the containing paragraph is
+  taller than one full content page.
+- No public API, Yjs data, Undo history or host migration is required.
+
 ### Unreleased - 2026-08-10 (major) — adopt `@cses/ui@4.23.0` and stabilize virtualized scrolling
 
 **What changed**: BlockCraft now declares the exact `@cses/ui@4.23.0` peer and

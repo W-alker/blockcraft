@@ -11,6 +11,8 @@ interface InlinePaginationAccess {
   apply(gaps: readonly InlinePaginationGap[]): boolean
   clear(): void
   measureLineStarts(limit?: number): InlinePaginationLineStart[]
+  projectionWritable?(): boolean
+  whenProjectionWritable?(listener: () => void): () => void
 }
 
 const accessByRuntime = new WeakMap<object, InlinePaginationAccess>()
@@ -39,4 +41,25 @@ export function measureInlinePaginationLineStarts(
   limit?: number,
 ): InlinePaginationLineStart[] {
   return accessByRuntime.get(runtime)?.measureLineStarts(limit) ?? []
+}
+
+export function isInlinePaginationProjectionWritable(
+  runtime: object,
+): boolean {
+  return accessByRuntime.get(runtime)?.projectionWritable?.() ?? true
+}
+
+export function whenInlinePaginationProjectionWritable(
+  runtime: object,
+  listener: () => void,
+): () => void {
+  const access = accessByRuntime.get(runtime)
+  if (!access?.whenProjectionWritable) {
+    let active = true
+    queueMicrotask(() => {
+      if (active) listener()
+    })
+    return () => { active = false }
+  }
+  return access.whenProjectionWritable(listener)
 }

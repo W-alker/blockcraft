@@ -1,5 +1,10 @@
 import {EmbedBlot, ScrollBlot, TextBlot} from '../blot'
 import type {InlineFloatGeometry} from './inline-float-layout'
+import {
+  buildInlinePaginationGapMarker,
+  type InlinePaginationGap,
+  normalizeInlinePaginationGaps,
+} from './inline-pagination-projection'
 
 export const INLINE_FRAGMENT_GROUP_ATTRIBUTE = 'data-bc-inline-fragment-group'
 export const INLINE_FRAGMENT_ROW_ATTRIBUTE = 'data-bc-inline-fragment-row'
@@ -631,28 +636,48 @@ interface StyleSnapshot {
   anchorAttribute: boolean
 }
 
+interface AppliedFragmentGroup {
+  plan: InlineDualFragmentPlan
+  element: HTMLElement
+}
+
 /**
- * Reversible DOM projection for dual-sided rows. It moves real Blot nodes;
- * no visible text clone is created and no model data is changed.
+ * Reversible DOM projection for dual-sided rows and pagination gaps. It moves
+ * real Blot nodes; no visible text clone is created and no model data changes.
  *
  * @internal
  */
 export class InlineFragmentProjection {
   private _splits: Array<readonly [TextBlot, TextBlot]> = []
   private _groups: HTMLElement[] = []
+  private _appliedGroups: AppliedFragmentGroup[] = []
+  private _paginationMarkers: HTMLElement[] = []
   private _styleSnapshots: StyleSnapshot[] = []
+  private _containerWidthSnapshot?: {value: string; priority: string}
 
   constructor(private readonly _scroll: ScrollBlot) {}
 
   get active(): boolean {
     return this._groups.length > 0
+      || this._paginationMarkers.length > 0
+      || this._splits.length > 0
+      || this._styleSnapshots.length > 0
+      || !!this._containerWidthSnapshot
   }
 
-  apply(plans: readonly InlineDualFragmentPlan[]): boolean {
+  apply(
+    plans: readonly InlineDualFragmentPlan[],
+    paginationGaps: readonly InlinePaginationGap[] = [],
+  ): boolean {
+    const normalizedGaps = normalizeInlinePaginationGaps(
+      paginationGaps,
+      this._scroll.textLength,
+    )
     this.revoke()
-    if (!plans.length) return true
+    if (!plans.length && !normalizedGaps.length) return true
 
     try {
+      if (normalizedGaps.length) this._freezeContainerWidth()
       const boundaries = new Set<number>()
       for (const plan of plans) {
         boundaries.add(plan.startOffset)
@@ -664,12 +689,19 @@ export class InlineFragmentProjection {
           boundaries.add(row.right.end)
         }
       }
+      for (const gap of normalizedGaps) boundaries.add(gap.offset)
       for (const boundary of [...boundaries].sort((a, b) => a - b)) {
         const split = this._scroll.splitTextForLayout(boundary)
         if (split) this._splits.push(split)
       }
 
-      for (const plan of plans) this._applyPlan(plan)
+      for (const plan of plans) {
+        this._appliedGroups.push({
+          plan,
+          element: this._applyPlan(plan),
+        })
+      }
+      this._applyPaginationGaps(normalizedGaps)
       return true
     } catch {
       this.revoke()
@@ -680,15 +712,20 @@ export class InlineFragmentProjection {
   revoke(): void {
     if (
       !this._groups.length &&
+      !this._paginationMarkers.length &&
       !this._splits.length &&
-      !this._styleSnapshots.length
+      !this._styleSnapshots.length &&
+      !this._containerWidthSnapshot
     ) {
       return
     }
 
     this._scroll.restoreCanonicalDomOrder()
+    for (const marker of this._paginationMarkers) marker.remove()
+    this._paginationMarkers = []
     for (const group of this._groups) group.remove()
     this._groups = []
+    this._appliedGroups = []
 
     for (let i = this._styleSnapshots.length - 1; i >= 0; i--) {
       const snapshot = this._styleSnapshots[i]
@@ -705,9 +742,20 @@ export class InlineFragmentProjection {
       this._scroll.mergeLayoutTextSplit(this._splits[i])
     }
     this._splits = []
+    this._restoreContainerWidth()
   }
 
-  private _applyPlan(plan: InlineDualFragmentPlan): void {
+  /**
+   * Remove only the zero-model-length page layer. Used while a pointer/IME
+   * lease forbids rebuilding fragment groups or merging layout TextBlots.
+   */
+  clearPaginationLayerInPlace(): void {
+    for (const marker of this._paginationMarkers) marker.remove()
+    this._paginationMarkers = []
+    this._restoreContainerWidth()
+  }
+
+  private _applyPlan(plan: InlineDualFragmentPlan): HTMLElement {
     const leaves = this._scroll.leaves
     const entries = leaves.map(blot => ({
       blot,
@@ -764,6 +812,72 @@ export class InlineFragmentProjection {
     }
 
     this._projectAnchor(plan, group)
+    return group
+  }
+
+  private _applyPaginationGaps(gaps: readonly InlinePaginationGap[]): void {
+    for (const gap of gaps) {
+      const containing = this._appliedGroups.find(({plan}) =>
+        gap.offset > plan.startOffset && gap.offset < plan.endOffset,
+      )
+      if (containing) {
+        throw new Error('Inline pagination gap intersects a float band')
+      }
+
+      const startingGroup = this._appliedGroups.find(
+        ({plan}) => plan.startOffset === gap.offset,
+      )
+      const reference = startingGroup?.element
+        ?? this._directNodeAtOffset(gap.offset)
+      const marker = buildInlinePaginationGapMarker(gap)
+      this._scroll.domNode.insertBefore(marker, reference)
+      this._paginationMarkers.push(marker)
+    }
+  }
+
+  private _directNodeAtOffset(offset: number): Node | null {
+    const leaf = this._scroll.leaves.find(
+      candidate => this._scroll.offsetOf(candidate) >= offset,
+    )
+    if (leaf) {
+      const group = leaf.domNode.parentElement?.closest(
+        `[${INLINE_FRAGMENT_GROUP_ATTRIBUTE}]`,
+      )
+      if (group) {
+        throw new Error('Inline pagination anchor is inside a float band')
+      }
+      return leaf.domNode
+    }
+    return this._scroll.children.find(child => child.type === 'break')
+      ?.domNode ?? null
+  }
+
+  private _freezeContainerWidth(): void {
+    const container = this._scroll.domNode
+    const width = container.clientWidth
+      || container.getBoundingClientRect().width
+    if (!Number.isFinite(width) || width <= 0) return
+
+    this._containerWidthSnapshot = {
+      value: container.style.getPropertyValue('width'),
+      priority: container.style.getPropertyPriority('width'),
+    }
+    container.style.setProperty('width', `${width}px`)
+  }
+
+  private _restoreContainerWidth(): void {
+    const snapshot = this._containerWidthSnapshot
+    if (!snapshot) return
+    this._containerWidthSnapshot = undefined
+    if (snapshot.value) {
+      this._scroll.domNode.style.setProperty(
+        'width',
+        snapshot.value,
+        snapshot.priority,
+      )
+    } else {
+      this._scroll.domNode.style.removeProperty('width')
+    }
   }
 
   private _moveRange(

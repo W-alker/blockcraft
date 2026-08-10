@@ -8,8 +8,74 @@ import {InlineRangeMeasurer} from './inline-fragment-layout'
 import {
   applyInlinePaginationGaps,
   clearInlinePaginationGaps,
+  isInlinePaginationProjectionWritable,
   measureInlinePaginationLineStarts,
+  whenInlinePaginationProjectionWritable,
 } from './inline-pagination-access'
+import {
+  createInlineShapeDelta,
+  createInlineShapeEmbedConverter,
+} from '../../../../blocks/shape-block/shape-embed'
+
+const TEST_IMAGE_URL =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
+
+function createConnectedInlineRuntime(
+  width = 600,
+  options?: ConstructorParameters<typeof InlineRuntime>[2],
+): {
+  host: HTMLElement
+  container: HTMLElement
+  runtime: InlineRuntime
+} {
+  const host = document.createElement('div')
+  const container = document.createElement('div')
+  host.dataset['inlineRuntimeTestHost'] = 'true'
+  host.style.width = `${width}px`
+  container.className = 'edit-container'
+  container.style.cssText = [
+    `width:${width}px`,
+    'font:16px/20px monospace',
+    'white-space:break-spaces',
+    'word-break:break-all',
+  ].join(';')
+  host.appendChild(container)
+  document.body.appendChild(host)
+
+  const runtime = new InlineRuntime(
+    container,
+    new Map([
+      ...withDefaultEmbedConverters(),
+      ['shape', createInlineShapeEmbedConverter()] as const,
+    ]),
+    options,
+  )
+  return {host, container, runtime}
+}
+
+function refreshInlineFloatLayout(runtime: InlineRuntime): void {
+  ;(runtime as unknown as {
+    _inlineFloatLayout: {refresh(): void}
+  })._inlineFloatLayout.refresh()
+}
+
+function runtimeModelOrder(runtime: InlineRuntime): string {
+  return runtime.scrollBlot.leaves
+    .map(leaf => leaf.domNode.textContent ?? '')
+    .join('')
+}
+
+function relativeBand(
+  container: HTMLElement,
+  element: HTMLElement,
+): {top: number; bottom: number} {
+  const containerRect = container.getBoundingClientRect()
+  const rect = element.getBoundingClientRect()
+  return {
+    top: rect.top - containerRect.top,
+    bottom: rect.bottom - containerRect.top,
+  }
+}
 
 describe('InlineRuntime inline float lifecycle', () => {
   afterEach(() => {
@@ -291,6 +357,240 @@ describe('InlineRuntime inline float lifecycle', () => {
     runtime.destroy()
   })
 
+  it('measures dual-auto pagination anchors only outside a wrapped shape band', () => {
+    const {container, runtime} = createConnectedInlineRuntime()
+    const before = '环绕对象之前的普通段落文本。'.repeat(8)
+    const after = '环绕对象之后继续形成足够多的视觉行用于分页。'.repeat(45)
+    runtime.render([
+      {insert: before},
+      createInlineShapeDelta(
+        {shapeType: 'ellipse', width: 180, height: 100},
+        [{insert: '环绕形状'}],
+        {wrap: true, side: 'auto', x: 0.35, gap: 12},
+      ),
+      {insert: after},
+    ])
+    refreshInlineFloatLayout(runtime)
+
+    const group = container.querySelector<HTMLElement>(
+      '[data-bc-inline-fragment-group]',
+    )!
+    expect(group).not.toBeNull()
+    const band = relativeBand(container, group)
+    expect(band.bottom - band.top).toBeGreaterThanOrEqual(112)
+
+    const points = measureInlinePaginationLineStarts(runtime, 256)
+
+    expect(points.length).toBeGreaterThan(2)
+    expect(points.some(point => point.top < band.top - 0.75)).toBeTrue()
+    expect(points.some(point => point.top >= band.bottom - 0.75)).toBeTrue()
+    expect(points.filter(point =>
+      point.top > band.top + 0.75
+      && point.top < band.bottom - 0.75,
+    )).toEqual([])
+    expect(points.every((point, index) =>
+      point.offset > (points[index - 1]?.offset ?? 0)
+      && point.top > (points[index - 1]?.top ?? -1),
+    )).toBeTrue()
+    runtime.destroy()
+  })
+
+  it('composes dual-auto wrapping with page gaps without changing model offsets', () => {
+    const releases: jasmine.Spy[] = []
+    const beginSelectionProjection = jasmine.createSpy(
+      'beginSelectionProjection',
+    ).and.callFake(() => {
+      const release = jasmine.createSpy('releaseSelectionProjection')
+      releases.push(release)
+      return release
+    })
+    const {container, runtime} = createConnectedInlineRuntime(600, {
+      beginSelectionProjection,
+    })
+    const before = '图片之前的文字用于建立稳定锚点。'.repeat(6)
+    const after = '图片之后的长文本继续跨越多个页面视觉行。'.repeat(50)
+    runtime.render([
+      {insert: before},
+      createInlineImageDelta(TEST_IMAGE_URL, 180, 100, {
+        wrap: true,
+        side: 'auto',
+        x: 0.35,
+        gap: 12,
+      })!,
+      {insert: after},
+    ])
+    refreshInlineFloatLayout(runtime)
+    beginSelectionProjection.calls.reset()
+    releases.length = 0
+
+    const naturalGroup = container.querySelector<HTMLElement>(
+      '[data-bc-inline-fragment-group]',
+    )!
+    const band = relativeBand(container, naturalGroup)
+    const point = measureInlinePaginationLineStarts(runtime, 256).find(
+      candidate => candidate.top >= band.bottom - 0.75,
+    )!
+    expect(point).toBeDefined()
+    const originalLength = runtime.textLength
+    const originalOrder = runtimeModelOrder(runtime)
+    const mappedOffset = Math.min(originalLength - 1, point.offset + 3)
+
+    const gap = {
+      offset: point.offset,
+      height: 140,
+      backdropOffset: 100,
+      backdropHeight: 20,
+    }
+    expect(applyInlinePaginationGaps(runtime, [gap])).toBeTrue()
+
+    const marker = container.querySelector<HTMLElement>(
+      `[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`,
+    )!
+    const projectedGroup = container.querySelector<HTMLElement>(
+      '[data-bc-inline-fragment-group]',
+    )
+    const frame = container.querySelector<HTMLElement>(
+      '.bc-inline-image-frame',
+    )
+    expect(marker).not.toBeNull()
+    expect(marker.parentElement).toBe(container)
+    expect(projectedGroup).not.toBeNull()
+    expect(frame).not.toBeNull()
+    expect(frame!.isConnected).toBeTrue()
+    expect(frame!.style.visibility).toBe('visible')
+    expect(applyInlinePaginationGaps(runtime, [gap])).toBeTrue()
+    expect(container.querySelector(
+      `[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`,
+    )).toBe(marker)
+    expect(container.querySelector(
+      '[data-bc-inline-fragment-group]',
+    )).toBe(projectedGroup)
+    expect(runtime.textLength).toBe(originalLength)
+    expect(runtimeModelOrder(runtime)).toBe(originalOrder)
+    let domPoint = runtime.modelPointToDom(mappedOffset)
+    expect(runtime.domPointToModel(domPoint.node, domPoint.offset))
+      .toBe(mappedOffset)
+
+    clearInlinePaginationGaps(runtime)
+
+    expect(container.querySelector(
+      `[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`,
+    )).toBeNull()
+    expect(container.querySelector(
+      '[data-bc-inline-fragment-group]',
+    )).not.toBeNull()
+    expect(container.querySelector('.bc-inline-image-frame')).not.toBeNull()
+    expect(runtime.textLength).toBe(originalLength)
+    expect(runtimeModelOrder(runtime)).toBe(originalOrder)
+    domPoint = runtime.modelPointToDom(mappedOffset)
+    expect(runtime.domPointToModel(domPoint.node, domPoint.offset))
+      .toBe(mappedOffset)
+    expect(beginSelectionProjection).toHaveBeenCalled()
+    expect(releases.length).toBe(beginSelectionProjection.calls.count())
+    expect(releases.every(release => release.calls.count() === 1)).toBeTrue()
+    runtime.destroy()
+  })
+
+  it('fails closed when a manual page gap intersects a dual float group', () => {
+    const {container, runtime} = createConnectedInlineRuntime()
+    const before = '环绕图片前置文本。'.repeat(5)
+    const after = '环绕图片带内以及带后的正文。'.repeat(35)
+    runtime.render([
+      {insert: before},
+      createInlineImageDelta(TEST_IMAGE_URL, 180, 100, {
+        wrap: true,
+        side: 'auto',
+        x: 0.35,
+        gap: 12,
+      })!,
+      {insert: after},
+    ])
+    refreshInlineFloatLayout(runtime)
+    const originalLength = runtime.textLength
+    const originalOrder = runtimeModelOrder(runtime)
+    const insideGroupOffset = before.length + 1
+
+    expect(applyInlinePaginationGaps(runtime, [{
+      offset: insideGroupOffset,
+      height: 140,
+      backdropOffset: 100,
+      backdropHeight: 20,
+    }])).toBeFalse()
+
+    expect(container.querySelector(
+      `[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`,
+    )).toBeNull()
+    expect(container.querySelector(
+      '[data-bc-inline-fragment-group]',
+    )).not.toBeNull()
+    const frame = container.querySelector<HTMLElement>(
+      '.bc-inline-image-frame',
+    )
+    expect(frame).not.toBeNull()
+    expect(frame!.isConnected).toBeTrue()
+    expect(frame!.style.visibility).toBe('visible')
+    expect(runtime.textLength).toBe(originalLength)
+    expect(runtimeModelOrder(runtime)).toBe(originalOrder)
+    runtime.destroy()
+  })
+
+  it('paginates after an explicit single-side shape band without clearing its float', () => {
+    const {container, runtime} = createConnectedInlineRuntime()
+    const after = '单侧环绕形状后的长文本继续形成安全视觉行。'.repeat(55)
+    runtime.render([
+      createInlineShapeDelta(
+        {shapeType: 'ellipse', width: 160, height: 80},
+        [{insert: '单侧形状'}],
+        {wrap: true, side: 'right', x: 0.1, gap: 12},
+      ),
+      {insert: after},
+    ])
+    refreshInlineFloatLayout(runtime)
+
+    const shell = container.querySelector<HTMLElement>(
+      '[data-bc-inline-object="shape"]',
+    )!
+    expect(shell).not.toBeNull()
+    expect(shell.style.cssFloat).toBe('left')
+    expect(container.querySelector(
+      '[data-bc-inline-fragment-group]',
+    )).toBeNull()
+    const band = relativeBand(container, shell)
+    const points = measureInlinePaginationLineStarts(runtime, 256)
+    expect(points.length).toBeGreaterThan(0)
+    expect(points.every(point => point.top >= band.bottom - 0.75)).toBeTrue()
+    const point = points[0]
+    const originalLength = runtime.textLength
+    const originalOrder = runtimeModelOrder(runtime)
+
+    expect(applyInlinePaginationGaps(runtime, [{
+      offset: point.offset,
+      height: 140,
+      backdropOffset: 100,
+      backdropHeight: 20,
+    }])).toBeTrue()
+
+    const marker = container.querySelector<HTMLElement>(
+      `[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`,
+    )!
+    expect(marker).not.toBeNull()
+    expect(marker.parentElement).toBe(container)
+    expect(shell.isConnected).toBeTrue()
+    expect(shell.style.cssFloat).toBe('left')
+    expect(container.querySelector('.bc-inline-shape-frame')).not.toBeNull()
+    expect(runtime.textLength).toBe(originalLength)
+    expect(runtimeModelOrder(runtime)).toBe(originalOrder)
+
+    clearInlinePaginationGaps(runtime)
+    expect(container.querySelector(
+      `[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`,
+    )).toBeNull()
+    expect(shell.style.cssFloat).toBe('left')
+    expect(runtime.textLength).toBe(originalLength)
+    expect(runtimeModelOrder(runtime)).toBe(originalOrder)
+    runtime.destroy()
+  })
+
   it('projects eligible auto wrapping into real left and right text fragments', () => {
     const host = document.createElement('div')
     const container = document.createElement('div')
@@ -356,6 +656,11 @@ describe('InlineRuntime inline float lifecycle', () => {
   })
 
   it('defers a dirty refresh while a layout freeze lease is held', () => {
+    let scheduledFrame: FrameRequestCallback | undefined
+    spyOn(window, 'requestAnimationFrame').and.callFake(callback => {
+      scheduledFrame = callback
+      return 1
+    })
     const container = document.createElement('div')
     Object.defineProperty(container, 'clientWidth', {
       configurable: true,
@@ -378,12 +683,19 @@ describe('InlineRuntime inline float lifecycle', () => {
     )!
     const originalWidth = shell.style.width
     const release = runtime.acquireFloatLayoutFreeze()
+    const projectionReady = jasmine.createSpy('projectionReady')
+    whenInlinePaginationProjectionWritable(runtime, projectionReady)
+    expect(isInlinePaginationProjectionWritable(runtime)).toBeFalse()
     shell.dataset['bcInlineImageWrapX'] = '.5'
     ;(runtime as any)._inlineFloatLayout.refresh()
     expect(shell.style.width).toBe(originalWidth)
 
     release()
-    ;(runtime as any)._inlineFloatLayout.refresh()
+    expect(projectionReady).not.toHaveBeenCalled()
+    expect(scheduledFrame).toBeDefined()
+    scheduledFrame!(performance.now())
+    expect(isInlinePaginationProjectionWritable(runtime)).toBeTrue()
+    expect(projectionReady).toHaveBeenCalledTimes(1)
     expect(shell.style.width).not.toBe(originalWidth)
     runtime.destroy()
   })

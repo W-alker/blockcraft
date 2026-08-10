@@ -332,7 +332,13 @@ with its Y.Text UTF-16 anchor and applies reversible zero-model-length gaps;
 stable printing consumes the same pixel fragments. If the mounted Runtime cannot
 apply every anchor, the screen uses an atomic fallback and printing rejects that
 snapshot so its readonly document can remeasure all lines. Short text Blocks
-never pay the Range line-measurement cost.
+never pay the Range line-measurement cost. In an oversized paragraph containing
+a wrapped inline object, the object and its complete exclusion band (including
+single-side wrap gap or dual-side fragment group) stay together, but safe visual
+lines outside the band continue across pages. Live and readonly print paths use
+the same exclusion-band rule. During pointer/IME/object-layout leases, the
+controller retains the previous stable projection and recomputes after the
+wrapped layout refresh finishes.
 
 `header` / `footer` customize fixed-height page chrome through the
 `left` / `center` / `right` text segments. `{page}` / `{total}` render decimal

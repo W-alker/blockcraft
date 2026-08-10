@@ -186,12 +186,17 @@ projection splits only real TextBlots at those offsets and inserts block-like ma
 DOM/model mapping, selection and serialization, and are merged away by
 projection cleanup. They are transparent layout spacers: the table-level mask,
 not each cell-local text anchor, paints the shared sheet/background bands.
-Pagination temporarily revokes the float projection
-before taking ownership of the same real Blot DOM. `render()`, `applyDelta()`
-and `destroy()` always revoke pagination first, so stale anchors cannot survive
-a model mutation or component teardown. Selection projection guards preserve
-the current anchor/head, while the pagination controller defers all projection
-rewrites during IME composition.
+Wrapped paragraphs use one composed owner for float fragment groups, their
+layout-only TextBlot splits and pagination markers. A wrapped object plus the
+painted shell/group exclusion band is atomic, while visual-line anchors before
+and after that band remain eligible continuation points. Single-side shell
+height includes the configured wrap gap; dual-side mode includes the projected
+fragment group and transformed frame. `render()`, `applyDelta()` and `destroy()`
+restore canonical DOM once, so stale anchors cannot survive a model mutation or
+component teardown. Selection projection guards preserve the current
+anchor/head. Pointer, wrapped-object and IME leases keep the previous stable
+projection in place; pagination retries only after the refreshed float plan is
+writable again.
 
 Before natural text geometry is read again, the pagination owner synchronously
 revokes its previous inline gaps. It batches all natural DOM reads before

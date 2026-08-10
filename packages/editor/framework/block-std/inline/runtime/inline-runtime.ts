@@ -156,6 +156,10 @@ export class InlineRuntime {
       apply: gaps => this._applyPaginationGaps(gaps),
       clear: () => this._clearPaginationGaps(),
       measureLineStarts: limit => this._measurePaginationLineStarts(limit),
+      projectionWritable: () =>
+        this._inlineFloatLayout.paginationProjectionWritable,
+      whenProjectionWritable: listener =>
+        this._inlineFloatLayout.whenPaginationProjectionWritable(listener),
     })
   }
 
@@ -176,8 +180,7 @@ export class InlineRuntime {
    * Replaces all existing blots and DOM.
    */
   render(deltas: InlineModel) {
-    this._clearPaginationGaps()
-    this._inlineFloatLayout.beforeMutation()
+    this._prepareForMutation()
     this._scrollBlot.build(deltas)
     this._inlineFloatLayout.sync()
   }
@@ -187,8 +190,7 @@ export class InlineRuntime {
    * Updates the blot tree and patches the DOM in-place.
    */
   applyDelta(ops: DeltaOperation[]) {
-    this._clearPaginationGaps()
-    this._inlineFloatLayout.beforeMutation()
+    this._prepareForMutation()
     this._scrollBlot.applyDelta(ops)
     this._inlineFloatLayout.sync()
   }
@@ -208,6 +210,9 @@ export class InlineRuntime {
     }
     const releaseSelectionGuard = this._beginSelectionProjection?.()
     try {
+      if (this._inlineFloatLayout.hasFloatOwner) {
+        return this._inlineFloatLayout.applyPaginationGaps(gaps)
+      }
       if (!this._releaseFloatForPagination) {
         this._releaseFloatForPagination = this._inlineFloatLayout.acquireFreeze()
       }
@@ -226,16 +231,39 @@ export class InlineRuntime {
   private _clearPaginationGaps(): void {
     const hadProjection = this._paginationProjection.active
       || !!this._releaseFloatForPagination
+      || this._inlineFloatLayout.hasPaginationGaps
     if (!hadProjection) return
 
     const releaseSelectionGuard = this._beginSelectionProjection?.()
     try {
+      this._inlineFloatLayout.clearPaginationGaps()
       this._paginationProjection.revoke()
       const releaseFloat = this._releaseFloatForPagination
       this._releaseFloatForPagination = undefined
       // Mark the float layout dirty while its lease is still held, then let
       // release coalesce one canonical refresh into the next animation frame.
-      this._inlineFloatLayout.sync()
+      if (releaseFloat) {
+        this._inlineFloatLayout.sync()
+        releaseFloat()
+      }
+    } finally {
+      releaseSelectionGuard?.()
+    }
+  }
+
+  /** Restore one canonical DOM once before a model-owned Blot mutation. */
+  private _prepareForMutation(): void {
+    const hasProjection = this._paginationProjection.active
+      || !!this._releaseFloatForPagination
+      || this._inlineFloatLayout.hasProjection
+    const releaseSelectionGuard = hasProjection
+      ? this._beginSelectionProjection?.()
+      : undefined
+    try {
+      this._paginationProjection.revoke()
+      this._inlineFloatLayout.beforeMutation(hasProjection)
+      const releaseFloat = this._releaseFloatForPagination
+      this._releaseFloatForPagination = undefined
       releaseFloat?.()
     } finally {
       releaseSelectionGuard?.()
@@ -244,7 +272,7 @@ export class InlineRuntime {
 
   /**
    * 测出自然行盒的续排锚点。每一项都指向“下一行行首”，因此投影页缝不会切开字素或视觉行。
-   * 带双侧环绕投影的段落暂不混合两套 DOM 投影，调用方应把该块当作原子内容降级。
+   * 环绕对象及其占用的视觉行带保持原子；带外行首仍可作为分页锚点。
    *
    * @internal Pagination measurement only.
    */
@@ -254,7 +282,6 @@ export class InlineRuntime {
       safeLimit === 0
       || !this.container.isConnected
       || this.textLength <= 0
-      || this.container.hasAttribute('data-bc-inline-float-owner')
     ) {
       return []
     }
@@ -268,6 +295,7 @@ export class InlineRuntime {
     const containerTop = containerRect.top
     const lineHeight = measurer.lineHeight()
     if (!Number.isFinite(lineHeight) || lineHeight <= 0) return []
+    const isBoundarySafe = this._inlineFloatLayout.paginationBoundaryGuard()
     const estimatedLineCount = Math.max(
       1,
       Math.round(containerRect.height / lineHeight),
@@ -277,7 +305,11 @@ export class InlineRuntime {
     // Large blocks resolve a bounded set of vertical targets instead.
     const sampledTops = estimatedLineCount <= PAGINATION_EXACT_LINE_LIMIT
       ? sampleLineTops(
-        visualLineTops(this.modelRangeToClientRects(0, this.textLength)).slice(1),
+        visualLineTops(
+          this._inlineFloatLayout.hasFloatOwner
+            ? this._paginationTextClientRects()
+            : this.modelRangeToClientRects(0, this.textLength),
+        ).slice(1),
         safeLimit,
       )
       : estimatedLineTops(
@@ -310,6 +342,9 @@ export class InlineRuntime {
         const top = rect.top
           - Math.max(0, (lineHeight - rect.height) / 2)
           - containerTop
+        if (!isBoundarySafe(offset, top)) {
+          continue
+        }
         const previous = points[points.length - 1]
         if (
           offset <= (previous?.offset ?? 0)
@@ -326,6 +361,21 @@ export class InlineRuntime {
       measurer.endLayoutPass()
     }
     return points
+  }
+
+  private _paginationTextClientRects(): DOMRect[] {
+    const rects: DOMRect[] = []
+    for (const leaf of this._scrollBlot.leaves) {
+      if (!(leaf instanceof TextBlot) || !leaf.length) continue
+      try {
+        const range = document.createRange()
+        range.selectNodeContents(leaf.textNode)
+        rects.push(...Array.from(range.getClientRects()))
+      } catch {
+        return []
+      }
+    }
+    return rects
   }
 
   private _findPaginationOffsetAtTop(

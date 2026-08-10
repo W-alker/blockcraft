@@ -33,7 +33,10 @@ export class InlinePaginationProjection {
   }
 
   apply(gaps: readonly InlinePaginationGap[]): boolean {
-    const normalized = normalizeGaps(gaps, this._scroll.textLength)
+    const normalized = normalizeInlinePaginationGaps(
+      gaps,
+      this._scroll.textLength,
+    )
     const signature = JSON.stringify(normalized)
     if (signature === this._signature) return true
 
@@ -49,7 +52,7 @@ export class InlinePaginationProjection {
 
       const anchors = this._nodesAtOffsets(normalized.map(gap => gap.offset))
       for (const gap of normalized) {
-        const marker = buildMarker(gap)
+        const marker = buildInlinePaginationGapMarker(gap)
         const anchor = anchors.get(gap.offset) ?? null
         this._scroll.domNode.insertBefore(marker, anchor)
         this._markers.push(marker)
@@ -139,7 +142,8 @@ export class InlinePaginationProjection {
   }
 }
 
-function normalizeGaps(
+/** @internal Shared with the composed inline-float pagination projection. */
+export function normalizeInlinePaginationGaps(
   gaps: readonly InlinePaginationGap[],
   textLength: number,
 ): InlinePaginationGap[] {
@@ -163,7 +167,10 @@ function normalizeGaps(
     .sort((left, right) => left.offset - right.offset)
 }
 
-function buildMarker(gap: InlinePaginationGap): HTMLElement {
+/** @internal Shared with the composed inline-float pagination projection. */
+export function buildInlinePaginationGapMarker(
+  gap: InlinePaginationGap,
+): HTMLElement {
   const marker = document.createElement('span')
   marker.setAttribute(INLINE_PAGINATION_GAP_ATTRIBUTE, '')
   marker.setAttribute('contenteditable', 'false')

@@ -116,7 +116,10 @@ export class PaginatedViewController {
     }
     this._gapApplier = new GapApplier(doc);
     this._tableBreaks = new TableBreakApplier(doc);
-    this._inlineBreaks = new InlineBreakApplier(doc);
+    this._inlineBreaks = new InlineBreakApplier(
+      doc,
+      () => this.scheduleRecompute(),
+    );
     this._heightLockApplier = new HeightLockApplier(doc);
   }
 
@@ -290,7 +293,10 @@ export class PaginatedViewController {
    * 供打印复用 → 打印断点 == 屏幕所见（含 embed/媒体块按 live 高度定断点）。
    */
   computePrintItems(): PaginationItem[] {
-    if (this._isCompositionInProgress()) {
+    if (
+      this._isCompositionInProgress()
+      || this._inlineBreaks.deferUpdateWhileProjectionFrozen()
+    ) {
       return clonePaginationItems(this._stableLayout?.items ?? []);
     }
     const previousInlineIds = this._inlineBreaks.layoutOwnedIds;
@@ -407,6 +413,16 @@ export class PaginatedViewController {
     if (this._isCompositionInProgress()) {
       this._compositionRecomputePending = true;
       this._pendingRecomputeKind = 'full';
+      if (this.options.sparseView) {
+        this._sparseProjectionUpdateDeferred = true;
+      }
+      return this._stableLayout;
+    }
+    // Pointer selection and wrapped-object gestures hold the current composite
+    // inline projection stable. Keep that exact DOM/layout pair until the
+    // runtime refreshes its float plan and signals that projection is writable.
+    if (this._inlineBreaks.deferUpdateWhileProjectionFrozen()) {
+      this._stableLayoutReusableForExport = false;
       if (this.options.sparseView) {
         this._sparseProjectionUpdateDeferred = true;
       }

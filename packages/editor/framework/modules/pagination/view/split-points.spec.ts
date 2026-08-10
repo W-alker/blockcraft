@@ -1,5 +1,11 @@
 // packages/editor/framework/modules/pagination/view/split-points.spec.ts
-import {computeSplitOffsets, computeTableSplitOffsets, rowSplitOffsets, widowOrphanCuts} from "./split-points";
+import {
+  computeSplitOffsets,
+  computeTableSplitOffsets,
+  excludeCutsInsideVerticalBands,
+  rowSplitOffsets,
+  widowOrphanCuts,
+} from "./split-points";
 
 describe('split-points - widowOrphanCuts (纯逻辑)', () => {
   const bottoms = (n: number, step = 20) => Array.from({length: n}, (_, i) => (i + 1) * step);
@@ -61,6 +67,25 @@ describe('split-points - rowSplitOffsets (rowspan 感知，纯逻辑)', () => {
     const b = bottoms(6);
     const covered = [false, true, true, true, true, true]; // 一个跨全表的合并单元格
     expect(rowSplitOffsets(b, covered, 2)).toEqual([]);
+  });
+});
+
+describe('split-points - 环绕对象不可切区间（纯逻辑）', () => {
+  it('只排除区间内部切点，区间前后与上下边界仍允许', () => {
+    expect(excludeCutsInsideVerticalBands(
+      [20, 40, 60, 80, 100],
+      [{top: 40, bottom: 80}],
+    )).toEqual([20, 40, 80, 100]);
+  });
+
+  it('忽略无效区间并保留普通段落切点', () => {
+    expect(excludeCutsInsideVerticalBands(
+      [20, 40, 60],
+      [
+        {top: Number.NaN, bottom: 50},
+        {top: 80, bottom: 40},
+      ],
+    )).toEqual([20, 40, 60]);
   });
 });
 
@@ -168,6 +193,51 @@ describe('split-points - computeSplitOffsets (真实 DOM)', () => {
   it('空块 → 无切点', () => {
     const host = track(mountLines(0, 20));
     expect(computeSplitOffsets(host, 'paragraph')).toEqual([]);
+  });
+
+  it('双侧环绕 fragment group 内部不可切，但 group 上下边界仍允许', () => {
+    const host = track(mountLines(10, 20));
+    const baseline = computeSplitOffsets(host, 'paragraph');
+    const top = baseline[2];
+    const bottom = baseline[4];
+    const group = document.createElement('span');
+    group.setAttribute('data-bc-inline-fragment-group', '');
+    group.style.cssText =
+      `position:absolute;left:0;top:${top}px;width:10px;height:${bottom - top}px;`;
+    host.appendChild(group);
+
+    expect(computeSplitOffsets(host, 'paragraph')).toEqual(
+      baseline.filter(cut => cut <= top || cut >= bottom),
+    );
+    expect(computeSplitOffsets(host, 'paragraph')).toContain(top);
+    expect(computeSplitOffsets(host, 'paragraph')).toContain(bottom);
+  });
+
+  it('单侧 wrap shell 的排除带含 gap，不只是 frame 高度', () => {
+    const host = track(mountLines(10, 20));
+    const baseline = computeSplitOffsets(host, 'paragraph');
+    const top = baseline[1];
+    const frameBottom = baseline[4];
+    const shellBottom = baseline[5];
+    const shell = document.createElement('span');
+    shell.setAttribute('data-bc-inline-float', '');
+    shell.setAttribute('data-bc-inline-float-layout', 'wrap');
+    shell.style.cssText =
+      `position:absolute;left:0;top:${top}px;width:10px;` +
+      `height:${shellBottom - top}px;`;
+    const frame = document.createElement('span');
+    frame.setAttribute('data-bc-inline-float-frame', '');
+    frame.style.cssText =
+      `position:absolute;left:0;top:0;width:10px;height:${frameBottom - top}px;`;
+    shell.appendChild(frame);
+    host.appendChild(shell);
+
+    expect(computeSplitOffsets(host, 'paragraph')).toEqual(
+      baseline.filter(cut => cut <= top || cut >= shellBottom),
+    );
+    expect(computeSplitOffsets(host, 'paragraph')).toContain(top);
+    expect(computeSplitOffsets(host, 'paragraph')).toContain(shellBottom);
+    expect(computeSplitOffsets(host, 'paragraph')).not.toContain(frameBottom);
   });
 
   it('table 按 <tr> 切（8 行，widow/orphan 2）→ 5 个切点', () => {

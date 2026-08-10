@@ -8,6 +8,7 @@ import {
   InlineFragmentProjection,
   InlineRangeMeasurer,
 } from './inline-fragment-layout'
+import {INLINE_PAGINATION_GAP_ATTRIBUTE} from './inline-pagination-projection'
 
 describe('inline fragment layout', () => {
   const converter: EmbedConverter = {
@@ -298,6 +299,33 @@ describe('inline fragment layout', () => {
     ).toBe(originalText)
     expect((scroll.leaves[0] as TextBlot).attrs).toEqual({bold: true})
     expect((scroll.leaves[2] as TextBlot).attrs).toEqual({italic: true})
+  })
+
+  it('keeps layout text splits owned after clearing only the pagination layer', () => {
+    const {container, scroll} = createScroll([{insert: 'abcdefgh'}])
+    const projection = new InlineFragmentProjection(scroll)
+
+    expect(projection.apply([], [{
+      offset: 4,
+      height: 120,
+      backdropOffset: 80,
+      backdropHeight: 20,
+    }])).toBeTrue()
+    expect(scroll.leaves.length).toBe(2)
+    expect(container.querySelector(
+      `[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`,
+    )).not.toBeNull()
+
+    projection.clearPaginationLayerInPlace()
+    expect(container.querySelector(
+      `[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`,
+    )).toBeNull()
+    expect(projection.active).toBeTrue()
+
+    projection.revoke()
+    expect(projection.active).toBeFalse()
+    expect(scroll.leaves.length).toBe(1)
+    expect(scroll.textLength).toBe(8)
   })
 
   it('repeated apply and revoke cycles are idempotent', () => {

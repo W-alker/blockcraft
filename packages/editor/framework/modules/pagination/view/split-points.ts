@@ -10,6 +10,8 @@
 // 偏移以块 border-box 顶（getBoundingClientRect().top）为原点，故落在 (0, offsetHeight) 内，
 // 严格小于引擎用的块总高（offsetHeight + marginBottom），是合法内部切点。
 
+import {measureInlineFloatPaginationBands} from '../../../block-std/inline/runtime/inline-float-layout';
+
 export interface SplitPointsOptions {
   /** 拆分时每侧至少保留的行/行盒数（widow/orphan 控制），默认 2。 */
   widowOrphanLines?: number;
@@ -34,7 +36,31 @@ interface LineBox {
 export function computeSplitOffsets(el: HTMLElement, flavour: string, opts: SplitPointsOptions = {}): number[] {
   const minLines = Math.max(1, Math.floor(opts.widowOrphanLines ?? DEFAULT_WIDOW_ORPHAN));
   if (flavour === 'table') return computeTableSplitOffsets(el, opts).all;
-  return widowOrphanCuts(lineBottoms(el, el.getBoundingClientRect().top), minLines);
+  const originTop = el.getBoundingClientRect().top;
+  const cuts = widowOrphanCuts(lineBottoms(el, originTop), minLines);
+  return excludeCutsInsideVerticalBands(
+    cuts,
+    measureInlineFloatPaginationBands(el, originTop),
+  );
+}
+
+/**
+ * 排除严格落在环绕对象垂直内部的文本切点。区间上下边界仍是合法切点，
+ * 这样打印 fallback 可以在环绕带之前或之后断页，而不会把对象本身裁成两半。
+ */
+export function excludeCutsInsideVerticalBands(
+  cuts: readonly number[],
+  bands: readonly {top: number; bottom: number}[],
+): number[] {
+  const validBands = bands.filter(band =>
+    Number.isFinite(band.top)
+    && Number.isFinite(band.bottom)
+    && band.bottom > band.top,
+  );
+  if (!validBands.length) return [...cuts];
+  return cuts.filter(cut => !validBands.some(
+    band => cut > band.top && cut < band.bottom,
+  ));
 }
 
 /**

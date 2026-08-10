@@ -714,6 +714,47 @@ describe("PaginatedViewController shadow layout", () => {
     }
   });
 
+  it("keeps the stable DOM/layout pair while a wrapped inline projection is frozen", () => {
+    const harness = createHarness();
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+    );
+
+    try {
+      controller.enable();
+      controller.captureStableLayout();
+      const internals = controller as unknown as {
+        _stableLayout: unknown;
+        _recompute(): unknown;
+        _inlineBreaks: {
+          deferUpdateWhileProjectionFrozen(): boolean;
+          beginUpdate(): {commit(): void; rollback(): void};
+        };
+        _heightSource: {measure(...args: unknown[]): unknown};
+      };
+      const stable = internals._stableLayout;
+      spyOn(
+        internals._inlineBreaks,
+        "deferUpdateWhileProjectionFrozen",
+      ).and.returnValue(true);
+      const beginUpdate = spyOn(
+        internals._inlineBreaks,
+        "beginUpdate",
+      ).and.callThrough();
+      const measure = spyOn(internals._heightSource, "measure").and.callThrough();
+
+      expect(internals._recompute()).toBe(stable);
+      expect(beginUpdate).not.toHaveBeenCalled();
+      expect(measure).not.toHaveBeenCalled();
+      expect(controller.canReuseStableLayoutForExport).toBeFalse();
+    } finally {
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
   it("publishes an atomic stable fallback when inline continuation projection fails", () => {
     const harness = createHarness();
     const controller = new PaginatedViewController(
