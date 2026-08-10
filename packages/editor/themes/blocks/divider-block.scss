@@ -1,3 +1,5 @@
+@use "divider-patterns" as *;
+
 [data-blockcraft-root="true"] {
   .divider-block {
     margin: 8px 0;
@@ -178,6 +180,37 @@
         }
 
       }
+
+      // 花边：透明底图案条，不带胶带的撕边 clip-path 和旋转；size 与胶带同款只调宽度。
+      &.edge-grass,
+      &.edge-flower {
+        margin: 6px 0;
+        background-color: transparent;
+        width: 70%;
+
+        &[data-size="thin"] {
+          min-width: 100px;
+          width: 30%;
+        }
+
+        &[data-size="small"] {
+          width: 50%;
+        }
+
+        &[data-size="large"] {
+          width: 100%;
+        }
+      }
+
+      &.edge-grass {
+        height: 26px;
+        @include bc-divider-edge(grass, 26px);
+      }
+
+      &.edge-flower {
+        height: 24px;
+        @include bc-divider-edge(flower, 24px);
+      }
     }
 
     .divide-line.divide-tape {
@@ -245,6 +278,17 @@
         &.double {
           height: 0;
           border-bottom: 3px double var(--bc-divider-color);
+        }
+
+        // 文字装订 + 花边：左右两段各自平铺图案条（小草 - 文字 - 小草）。
+        &.edge-grass {
+          height: 20px;
+          @include bc-divider-edge(grass, 20px);
+        }
+
+        &.edge-flower {
+          height: 18px;
+          @include bc-divider-edge(flower, 18px);
         }
       }
 

@@ -27,6 +27,7 @@ export class DividerStylePopupComponent {
   styleTabs = [
     { key: 'line', label: '线型', icon: 'bc_icon bc_tubiao_xianduan-leixing' },
     { key: 'tape', label: '贴纸胶带', icon: 'bc_jiaodai bc_icon' },
+    { key: 'edge', label: '花边', icon: 'bc_icon bc_star' },
     { key: 'text', label: '文字装订', icon: 'bc_icon bc_wenben' }
   ];
 
@@ -39,6 +40,10 @@ export class DividerStylePopupComponent {
 
   tapePatterns = [
     'tape-dot-black', 'tape-grid-pattern', 'tape-regular-lines', 'tape-gradient-blocks', 'tape-gray-lines'
+  ];
+
+  edgePatterns = [
+    'edge-grass', 'edge-flower'
   ];
 
   colors = ['#EF5350', '#FFA726', '#FFCA28', '#66BB6A', '#26A69A', '#42A5F5', '#7E57C2', '#EC407A', '#8D6E63', '#90A4AE', '#29B6F6'];
@@ -64,6 +69,8 @@ export class DividerStylePopupComponent {
     this.activeColor = this.dividerBlock.props.color ?? '';
     if (this.selectedStyle.startsWith('tape')) {
       this.activeTab = 'tape';
+    } else if (this.selectedStyle.startsWith('edge')) {
+      this.activeTab = 'edge';
     }
   }
 

@@ -1,0 +1,18 @@
+// 分割线「花边」图案的单一真源。三个消费方（正文整条 / 正文文字两侧 / 样式弹窗预览）只传自己的高度，
+// 图案、平铺方向、贴边基线都由 mixin 决定——漏改一处就会草浮空，所以不外露原始 URI（$_ 前缀即 Sass 私有）。
+$_grass: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='26' viewBox='0 0 44 26'%3E%3Cg fill='none' stroke-linecap='round'%3E%3Cpath d='M4 26C4 19 2.5 15 2.5 10' stroke='%234CAF50' stroke-width='2.4'/%3E%3Cpath d='M8.5 26C8.5 17 11 12 13 7' stroke='%23388E3C' stroke-width='2.6'/%3E%3Cpath d='M13 26C13 21 11.5 18 11 15' stroke='%2381C784' stroke-width='2.2'/%3E%3Cpath d='M19 26C19 16 17 11 16.5 5' stroke='%2343A047' stroke-width='2.6'/%3E%3Cpath d='M24 26C24 20 26 16 27 12' stroke='%2366BB6A' stroke-width='2.4'/%3E%3Cpath d='M30 26C30 17 32.5 12 34.5 8' stroke='%23388E3C' stroke-width='2.6'/%3E%3Cpath d='M35 26C35 21 33.5 18 33 14' stroke='%2381C784' stroke-width='2.2'/%3E%3Cpath d='M40 26C40 18 41.5 14 41.5 9' stroke='%234CAF50' stroke-width='2.4'/%3E%3C/g%3E%3C/svg%3E");
+$_flower: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='24' viewBox='0 0 64 24'%3E%3Cg fill='%23F06292'%3E%3Ccircle cx='12' cy='6.2' r='3'/%3E%3Ccircle cx='16.6' cy='9.5' r='3'/%3E%3Ccircle cx='14.8' cy='14.9' r='3'/%3E%3Ccircle cx='9.2' cy='14.9' r='3'/%3E%3Ccircle cx='7.4' cy='9.5' r='3'/%3E%3C/g%3E%3Ccircle cx='12' cy='11' r='2.6' fill='%23FFD54F'/%3E%3Cellipse cx='26' cy='17' rx='4' ry='2' fill='%2381C784' transform='rotate(-25 26 17)'/%3E%3Cg fill='%23BA68C8'%3E%3Ccircle cx='40' cy='7.8' r='2.6'/%3E%3Ccircle cx='44' cy='10.7' r='2.6'/%3E%3Ccircle cx='42.5' cy='15.4' r='2.6'/%3E%3Ccircle cx='37.5' cy='15.4' r='2.6'/%3E%3Ccircle cx='36' cy='10.7' r='2.6'/%3E%3C/g%3E%3Ccircle cx='40' cy='12' r='2.2' fill='%23FFF176'/%3E%3Cellipse cx='52' cy='9' rx='3.6' ry='1.8' fill='%2366BB6A' transform='rotate(20 52 9)'/%3E%3Ccircle cx='58' cy='15' r='1.8' fill='%23F48FB1'/%3E%3C/svg%3E");
+
+// $pattern: grass | flower，$size: 图案条渲染高度（宽度按原比例平铺）。
+@mixin bc-divider-edge($pattern, $size) {
+  background-repeat: repeat-x;
+  background-size: auto $size;
+
+  @if $pattern == grass {
+    background-image: $_grass;
+    background-position: left bottom;   // 草根贴底，浮空就不像草地了
+  } @else {
+    background-image: $_flower;
+    background-position: left center;
+  }
+}

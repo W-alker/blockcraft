@@ -31,6 +31,17 @@
     </div>
   </div>
 
+  <!-- Edge pattern strips (花边：小草/小花朵等图案条) -->
+  <div class="patterns" *ngIf="activeTab === 'edge'">
+    <div class="pattern-grid">
+      <div *ngFor="let p of edgePatterns" [attr.data-tab-size]="activeSize"
+           class="edge-box" [ngClass]="p"
+           [class.selected]="selectedStyle === p"
+           (click)="selectStyle(p)">
+      </div>
+    </div>
+  </div>
+
   <!-- Text Label options -->
   <div class="text-options" *ngIf="activeTab === 'text'">
     <input cs-input csSize="sm" class="text-input" type="text"
