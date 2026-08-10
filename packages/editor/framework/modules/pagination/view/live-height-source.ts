@@ -6,9 +6,13 @@ import {
   cloneTableCellFlowPlan,
   TableCellFlowPlan,
 } from "../engine/table-cell-flow";
-import {setTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
+import {
+  getTableCellFlowPlan,
+  setTableCellFlowPlan,
+} from "../engine/table-cell-flow-metadata";
 import {BlockMeta} from "./item-builder";
 import {
+  cloneInlinePaginationBreakPlan,
   createInlinePaginationBreakPlan,
   InlinePaginationBreakPlan,
   visualDistanceToHostLayout,
@@ -51,6 +55,25 @@ interface NaturalDomSnapshot {
   contentWidth: number | null
 }
 
+interface NaturalDomCacheEntry {
+  epoch: number
+  snapshot: NaturalDomSnapshot
+}
+
+interface MeasurementOptionsKey {
+  contentHeight: number | null
+  contentWidth: number | null
+  widowOrphanLines: number | null
+}
+
+interface CompletedMeasurement {
+  blockId: string
+  epoch: number
+  options: MeasurementOptionsKey
+  borderBoxSize: number
+  value: LivePaginationMeasurement
+}
+
 const MIN_INLINE_LINE_SAMPLES = 64
 const INLINE_LINE_SAMPLES_PER_PAGE = 8
 const MAX_INLINE_LINE_SAMPLES = 2048
@@ -68,6 +91,8 @@ export class LiveHeightSource {
   readonly resize$ = new Subject<void>();
   private _ro: ResizeObserver;
   private _observed = new Set<Element>();
+  /** Newly observed hosts receive one RO delivery even without a resize. */
+  private _pendingInitialResize = new WeakSet<Element>();
   /**
    * 分页投影本身会改变表格/高度锁定块的 border-box。ResizeObserver 的通知晚于
    * 同步 DOM 提交到达，因此单纯用“正在 apply”的布尔锁挡不住下一帧反馈。
@@ -80,7 +105,14 @@ export class LiveHeightSource {
    * 分页媒体 max-size 约束前的顶层块自然 DOM 几何。ResizeObserver 会在约束
    * image/video wrapper 后再次触发；自然快照阻止分页输出反向成为下一轮输入。
    */
-  private _naturalDom = new Map<HTMLElement, NaturalDomSnapshot>();
+  private _naturalDom = new WeakMap<HTMLElement, NaturalDomCacheEntry>();
+  /**
+   * 已完成的自然分页测量，以 host identity 为弱键跨 detach/reattach 复用。
+   * 模型内容、字体/主题/分页正文上下文变化时推进 epoch；新 HTMLElement
+   * 天然 cache miss，因此不会把旧组件的几何投给重建后的视图。
+   */
+  private _completedMeasurements = new WeakMap<HTMLElement, CompletedMeasurement>();
+  private _measurementEpoch = 0;
   /**
    * capHeight 块最近一次未被页高裁剪的可见高度。
    *
@@ -93,6 +125,11 @@ export class LiveHeightSource {
 
   constructor(private doc: BlockCraft.Doc) {
     this._ro = new ResizeObserver(entries => this._handleResize(entries));
+  }
+
+  /** @internal 当前自然测量世代；只表示新鲜度，不等同于分页几何 revision。 */
+  get measurementEpoch(): number {
+    return this._measurementEpoch;
   }
 
   /**
@@ -116,12 +153,31 @@ export class LiveHeightSource {
   /** 模型内容已经变化；后续 resize 必须重新作为自然尺寸输入处理。 */
   clearLayoutOwnedResize(): void {
     this._layoutOwnedBlockSizes.clear();
+    // 模型变化使此前排队的 cold-host 初始通知不再是无害回声。
+    // 必须让它进入 resize$，清理尚未消费的分页投影尺寸。
+    this._pendingInitialResize = new WeakSet();
     this.invalidateNaturalMeasurements();
   }
 
   /** 字体/主题/宿主布局上下文变化后，下一轮必须重读未 fit DOM。 */
   invalidateNaturalMeasurements(): void {
-    this._naturalDom.clear();
+    this._measurementEpoch++;
+  }
+
+  /**
+   * @internal 当前 mounted roots 是否还有未完成、上下文过期或 host 已替换的测量。
+   * 调用不读取布局；真实尺寸变化仍由 ResizeObserver 使对应 host cache 失效。
+   */
+  hasUnmeasuredMountedRoots(
+    rootIds: readonly string[],
+    opts?: MeasureOptions,
+  ): boolean {
+    const options = measurementOptionsKey(opts);
+    for (const id of rootIds) {
+      const host = this._safeBlock(id)?.hostElement as HTMLElement | undefined;
+      if (!host || !this._hasReusableMeasurement(id, host, options)) return true;
+    }
+    return false;
   }
 
   /** 根据当前 root 子块同步 observe 集合（增 observe、删 unobserve）。 */
@@ -131,14 +187,29 @@ export class LiveHeightSource {
       if (!hosts.has(el)) {
         this._ro.unobserve(el);
         this._observed.delete(el);
+        this._pendingInitialResize.delete(el);
         this._layoutOwnedBlockSizes.delete(el);
-        this._naturalDom.delete(el as HTMLElement);
       }
     }
     for (const el of hosts) {
       if (!this._observed.has(el)) {
         this._ro.observe(el, {box: 'border-box'});
         this._observed.add(el);
+      }
+    }
+  }
+
+  /**
+   * @internal controller 已为这些未测 host 排入 mounted-window measurement。
+   * 仅此时首个 RO 初始通知可被该测量兜底，不能升级为 full recompute。
+   */
+  markMountedMeasurementQueued(rootIds: readonly string[]): void {
+    for (const host of this._childHosts(rootIds)) {
+      if (
+        this._observed.has(host)
+        && !this._completedMeasurements.has(host)
+      ) {
+        this._pendingInitialResize.add(host);
       }
     }
   }
@@ -153,10 +224,16 @@ export class LiveHeightSource {
     rootIds?: readonly string[],
   ): LivePaginationMeasurement[] {
     const metas: LivePaginationMeasurement[] = [];
+    const options = measurementOptionsKey(opts);
     for (const id of rootIds ?? this.doc.root.childrenIds) {
       const block = this._safeBlock(id);
       if (!block) continue;
-      const el = block.hostElement;
+      const el = block.hostElement as HTMLElement;
+      const cached = this._cachedMeasurement(id, el, options);
+      if (cached) {
+        metas.push(cached);
+        continue;
+      }
       const cs = getComputedStyle(el);
       // 忽略 margin-top（它要么是 0，要么是 gap-applier 施加的下推间隙，都不算块自身高度）。
       const currentMarginBottom = parseFloat(cs.marginBottom) || 0;
@@ -207,7 +284,7 @@ export class LiveHeightSource {
           tableRows: geom.rows,
         };
         setTableCellFlowPlan(meta, cellFlowPlan);
-        metas.push(meta);
+        this._appendMeasurement(metas, id, el, options, meta);
         continue;
       }
 
@@ -277,7 +354,7 @@ export class LiveHeightSource {
         const fittedHeight = pageMedia && mediaHeight != null && fitScale < 1
           ? mediaHeight * fitScale + nonMediaStride
           : opts.contentHeight
-        metas.push({
+        this._appendMeasurement(metas, id, el, options, {
           id,
           flavour: block.flavour,
           nodeType: block.nodeType,
@@ -292,7 +369,7 @@ export class LiveHeightSource {
       }
 
       if (pageMedia && mediaHeight != null && fitScale < 1) {
-        metas.push({
+        this._appendMeasurement(metas, id, el, options, {
           id,
           flavour: block.flavour,
           nodeType: block.nodeType,
@@ -305,7 +382,7 @@ export class LiveHeightSource {
         continue
       }
 
-      metas.push({
+      this._appendMeasurement(metas, id, el, options, {
         id,
         flavour: block.flavour,
         nodeType: block.nodeType,
@@ -323,6 +400,48 @@ export class LiveHeightSource {
       });
     }
     return metas;
+  }
+
+  private _cachedMeasurement(
+    blockId: string,
+    host: HTMLElement,
+    options: MeasurementOptionsKey,
+  ): LivePaginationMeasurement | null {
+    if (!this._hasReusableMeasurement(blockId, host, options)) return null;
+    return cloneLivePaginationMeasurement(
+      this._completedMeasurements.get(host)!.value,
+    );
+  }
+
+  private _hasReusableMeasurement(
+    blockId: string,
+    host: HTMLElement,
+    options: MeasurementOptionsKey,
+  ): boolean {
+    const cached = this._completedMeasurements.get(host);
+    return !!cached
+      && cached.blockId === blockId
+      && cached.epoch === this._measurementEpoch
+      && measurementOptionsEqual(cached.options, options)
+  }
+
+  private _appendMeasurement(
+    target: LivePaginationMeasurement[],
+    blockId: string,
+    host: HTMLElement,
+    options: MeasurementOptionsKey,
+    value: LivePaginationMeasurement,
+  ): void {
+    const cachedValue = cloneLivePaginationMeasurement(value);
+    this._completedMeasurements.set(host, {
+      blockId,
+      epoch: this._measurementEpoch,
+      options,
+      borderBoxSize: host.offsetHeight,
+      value: cachedValue,
+    });
+    this._pendingInitialResize.delete(host);
+    target.push(value);
   }
 
   private _childHosts(rootIds?: readonly string[]): HTMLElement[] {
@@ -424,22 +543,58 @@ export class LiveHeightSource {
   private _handleResize(entries: readonly ResizeObserverEntry[]): void {
     let hasNaturalResize = false;
     for (const entry of entries) {
+      const host = entry.target as HTMLElement;
+      const actual = resizeEntryBlockSize(entry);
+      const isInitialDelivery = this._pendingInitialResize.delete(entry.target);
       const expected = this._layoutOwnedBlockSizes.get(entry.target);
-      if (expected === undefined) {
-        this._naturalDom.delete(entry.target as HTMLElement)
+      if (expected !== undefined) {
+        // 每个期望值只消费一次；后续变化必须重新进入分页测量。
+        this._layoutOwnedBlockSizes.delete(entry.target);
+        if (Number.isFinite(actual) && Math.abs(actual - expected) <= 0.5) {
+          this._updateCachedBorderBoxSize(host, actual);
+          continue;
+        }
+        this._invalidateHostMeasurement(host);
         hasNaturalResize = true;
         continue;
       }
 
-      // 每个期望值只消费一次；后续变化必须重新进入分页测量。
-      this._layoutOwnedBlockSizes.delete(entry.target);
-      const actual = resizeEntryBlockSize(entry);
-      if (!Number.isFinite(actual) || Math.abs(actual - expected) > 0.5) {
-        this._naturalDom.delete(entry.target as HTMLElement)
-        hasNaturalResize = true;
+      const completed = this._completedMeasurements.get(host);
+      if (
+        completed
+        && completed.epoch === this._measurementEpoch
+        && Number.isFinite(actual)
+        && Math.abs(actual - completed.borderBoxSize) <= 0.5
+      ) {
+        // ResizeObserver 在重新 observe retained host 时仍会投递一次初始值。
+        // 同一 host、同一最终 border-box 不代表自然布局变化，保留完成态即可。
+        completed.borderBoxSize = actual;
+        continue;
       }
+
+      if (isInitialDelivery && !completed) {
+        // A cold/new host is already queued for mounted-window measurement by
+        // the controller. Its mandatory initial RO delivery must not promote
+        // that O(mounted) verification into a full pagination recompute.
+        continue;
+      }
+
+      this._invalidateHostMeasurement(host);
+      hasNaturalResize = true;
     }
     if (hasNaturalResize) this.resize$.next();
+  }
+
+  private _updateCachedBorderBoxSize(host: HTMLElement, value: number): void {
+    const completed = this._completedMeasurements.get(host);
+    if (completed?.epoch === this._measurementEpoch) {
+      completed.borderBoxSize = value;
+    }
+  }
+
+  private _invalidateHostMeasurement(host: HTMLElement): void {
+    this._naturalDom.delete(host);
+    this._completedMeasurements.delete(host);
   }
 
   private _resolveCapHeight(
@@ -473,9 +628,10 @@ export class LiveHeightSource {
     if (
       fitted &&
       cached &&
-      cached.contentWidth === contextWidth
+      cached.epoch === this._measurementEpoch &&
+      cached.snapshot.contentWidth === contextWidth
     ) {
-      return cached
+      return cached.snapshot
     }
 
     // 虚拟渲染 reattach 时 HeightLockApplier 可能先把上一轮媒体 max-size 状态
@@ -504,7 +660,10 @@ export class LiveHeightSource {
       if (locked) el.classList.add('bc-page-height-locked')
     }
     if (measurement.width > 0) {
-      this._naturalDom.set(el, measurement)
+      this._naturalDom.set(el, {
+        epoch: this._measurementEpoch,
+        snapshot: measurement,
+      })
     }
     return measurement
   }
@@ -532,9 +691,52 @@ export class LiveHeightSource {
     this._ro.disconnect();
     this._observed.clear();
     this._layoutOwnedBlockSizes.clear();
-    this._naturalDom.clear();
+    this._naturalDom = new WeakMap();
+    this._completedMeasurements = new WeakMap();
+    this._pendingInitialResize = new WeakSet();
     this.resize$.complete();
   }
+}
+
+function measurementOptionsKey(opts?: MeasureOptions): MeasurementOptionsKey {
+  return {
+    contentHeight: finiteOption(opts?.contentHeight),
+    contentWidth: finiteOption(opts?.contentWidth),
+    widowOrphanLines: finiteOption(opts?.widowOrphanLines),
+  }
+}
+
+function finiteOption(value: number | undefined): number | null {
+  return Number.isFinite(value) ? value! : null
+}
+
+function measurementOptionsEqual(
+  left: MeasurementOptionsKey,
+  right: MeasurementOptionsKey,
+): boolean {
+  return left.contentHeight === right.contentHeight
+    && left.contentWidth === right.contentWidth
+    && left.widowOrphanLines === right.widowOrphanLines
+}
+
+function cloneLivePaginationMeasurement(
+  source: LivePaginationMeasurement,
+): LivePaginationMeasurement {
+  const clone: LivePaginationMeasurement = {
+    ...source,
+    splitOffsets: source.splitOffsets ? [...source.splitOffsets] : undefined,
+    inlineBreakPlan: cloneInlinePaginationBreakPlan(source.inlineBreakPlan),
+    preferredSplitOffsets: source.preferredSplitOffsets
+      ? [...source.preferredSplitOffsets]
+      : undefined,
+    tableRows: source.tableRows?.map(row => ({...row})),
+  }
+  const cellFlowPlan = getTableCellFlowPlan(source)
+  setTableCellFlowPlan(
+    clone,
+    cellFlowPlan ? cloneTableCellFlowPlan(cellFlowPlan) : undefined,
+  )
+  return clone
 }
 
 function resizeEntryBlockSize(entry: ResizeObserverEntry): number {

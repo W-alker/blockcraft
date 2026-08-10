@@ -88,6 +88,7 @@ function tableEntry(
     isHeading: false,
     contentRevision: 0,
     measureContextRevision: 0,
+    measurementEpoch: 0,
     source: "measured",
     naturalHeight: 100,
     effectiveHeight: 100,

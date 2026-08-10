@@ -82,7 +82,7 @@ export function inlinePaginationBreakPlansEqual(
   return left.points.every((point, index) => {
     const candidate = right.points[index]
     return !!candidate
-      && point.layoutOffset === candidate.layoutOffset
+      && Math.abs(point.layoutOffset - candidate.layoutOffset) <= OFFSET_TOLERANCE
       && point.textOffset === candidate.textOffset
   })
 }

@@ -33,6 +33,15 @@ describe('InlinePaginationBreakPlan', () => {
     expect(clone).not.toBe(source)
     expect(clone.points[0]).not.toBe(source.points[0])
     expect(inlinePaginationBreakPlansEqual(source, clone)).toBeTrue()
+    expect(inlinePaginationBreakPlansEqual(source, {
+      points: [{layoutOffset: 80.4, textOffset: 8}],
+    })).toBeTrue()
+    expect(inlinePaginationBreakPlansEqual(source, {
+      points: [{layoutOffset: 80.6, textOffset: 8}],
+    })).toBeFalse()
+    expect(inlinePaginationBreakPlansEqual(source, {
+      points: [{layoutOffset: 80.4, textOffset: 9}],
+    })).toBeFalse()
     expect(inlinePaginationBreakPlansEqual(source, undefined)).toBeFalse()
   })
 

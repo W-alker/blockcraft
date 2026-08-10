@@ -1,7 +1,13 @@
 import {applyPageMediaFit, clearPageMediaFit, resolvePageMediaSurface} from './page-media-fit'
 
+interface AppliedHeightState {
+  readonly element: HTMLElement
+  readonly locked: boolean
+  readonly fitScale: number | undefined
+}
+
 export class HeightLockApplier {
-  private _applied = new Map<string, HTMLElement>();
+  private _applied = new Map<string, AppliedHeightState>();
   private _locks = new Set<string>();
   private _fitScales = new Map<string, number>();
   private _mountedIds: ReadonlySet<string> | null = null;
@@ -25,12 +31,9 @@ export class HeightLockApplier {
 
   private _reconcile(): void {
     const desiredIds = new Set([...this._locks, ...this._fitScales.keys()])
-    for (const [id, el] of this._applied) {
-      if (desiredIds.has(id) && this._isMounted(id)) {
-        this._applyHost(el, this._locks.has(id), this._fitScales.get(id));
-        continue;
-      }
-      this._clearHost(el);
+    for (const [id, state] of this._applied) {
+      if (desiredIds.has(id) && this._isMounted(id)) continue;
+      this._clearHost(state.element);
       this._applied.delete(id);
     }
 
@@ -38,25 +41,30 @@ export class HeightLockApplier {
       if (!this._isMounted(id)) continue;
       const el = safeBlockHost(this.doc, id);
       const previous = this._applied.get(id);
-      if (previous === el) {
-        this._applyHost(el, this._locks.has(id), this._fitScales.get(id));
+      const locked = this._locks.has(id);
+      const fitScale = this._fitScales.get(id);
+      if (
+        previous?.element === el
+        && previous.locked === locked
+        && previous.fitScale === fitScale
+      ) {
         continue;
       }
 
-      if (previous) this._clearHost(previous);
+      if (previous && previous.element !== el) this._clearHost(previous.element);
       if (!el) {
         this._applied.delete(id);
         continue;
       }
 
-      this._applyHost(el, this._locks.has(id), this._fitScales.get(id));
-      this._applied.set(id, el);
+      this._applyHost(el, locked, fitScale);
+      this._applied.set(id, {element: el, locked, fitScale});
     }
   }
 
   clear(): void {
-    for (const el of this._applied.values()) {
-      this._clearHost(el);
+    for (const state of this._applied.values()) {
+      this._clearHost(state.element);
     }
     this._applied.clear();
     this._locks.clear();

@@ -13,9 +13,11 @@ describe('LiveHeightSource atomic block measurement', () => {
   let source: LiveHeightSource
   let host: HTMLElement
   let mediaSurface: HTMLElement | undefined
+  let block: any
   let releaseTableAccess: (() => void) | undefined
   let releaseInlineAccess: (() => void) | undefined
   let inlineMeasure: jasmine.Spy | undefined
+  let tableMeasure: jasmine.Spy | undefined
 
   function createSource(
     offsetHeight: number,
@@ -59,14 +61,16 @@ describe('LiveHeightSource atomic block measurement', () => {
         },
       })
     }
-    const block = {
+    block = {
       hostElement: host,
       nodeType,
       flavour,
     } as any
     if (tableGeometry) {
+      tableMeasure = jasmine.createSpy('measureTableGeometry')
+        .and.returnValue(tableGeometry)
       releaseTableAccess = registerTablePaginationAccess(block, {
-        measure: () => tableGeometry,
+        measure: tableMeasure,
         apply: () => undefined,
         clear: () => undefined,
       })
@@ -97,6 +101,7 @@ describe('LiveHeightSource atomic block measurement', () => {
     releaseInlineAccess?.()
     releaseInlineAccess = undefined
     inlineMeasure = undefined
+    tableMeasure = undefined
     host?.remove()
   })
 
@@ -341,6 +346,7 @@ describe('LiveHeightSource atomic block measurement', () => {
 
   it('keeps a code block locked when the lock layout collapses its measured scroll height', () => {
     source = createSource(1013, 1011, 'code', BlockNodeType.editable)
+    source.syncObserved(['embed-1'])
 
     const [beforeLock] = source.measure({contentHeight: 900, widowOrphanLines: 2})
     expect(beforeLock?.lockHeight).toBe(900)
@@ -348,6 +354,13 @@ describe('LiveHeightSource atomic block measurement', () => {
     host.classList.add('bc-page-height-locked')
     Object.defineProperty(host, 'offsetHeight', {configurable: true, value: 900})
     Object.defineProperty(host, 'scrollHeight', {configurable: true, value: 898})
+    source.captureLayoutOwnedResize(['embed-1'])
+    ;(source as unknown as {
+      _handleResize(entries: readonly ResizeObserverEntry[]): void
+    })._handleResize([{
+      target: host,
+      borderBoxSize: [{blockSize: 900}],
+    } as unknown as ResizeObserverEntry])
 
     const [whileLocked] = source.measure({contentHeight: 900, widowOrphanLines: 2})
     expect(whileLocked?.height).toBe(900)
@@ -355,6 +368,12 @@ describe('LiveHeightSource atomic block measurement', () => {
 
     Object.defineProperty(host, 'offsetHeight', {configurable: true, value: 534})
     Object.defineProperty(host, 'scrollHeight', {configurable: true, value: 532})
+    ;(source as unknown as {
+      _handleResize(entries: readonly ResizeObserverEntry[]): void
+    })._handleResize([{
+      target: host,
+      borderBoxSize: [{blockSize: 534}],
+    } as unknown as ResizeObserverEntry])
 
     const [afterRealShrink] = source.measure({contentHeight: 900, widowOrphanLines: 2})
     expect(afterRealShrink?.height).toBe(542)
@@ -603,6 +622,7 @@ describe('LiveHeightSource atomic block measurement', () => {
     source.resize$.subscribe(resize)
 
     source.captureLayoutOwnedResize(['embed-1'])
+    source.markMountedMeasurementQueued(['embed-1'])
     source.clearLayoutOwnedResize()
     ;(source as unknown as {
       _handleResize(entries: readonly ResizeObserverEntry[]): void
@@ -646,5 +666,135 @@ describe('LiveHeightSource atomic block measurement', () => {
       sparseSource.destroy()
       mountedHost.remove()
     }
+  })
+
+  it('reuses a completed measurement when the same retained host re-enters', () => {
+    source = createSource(500, 500, 'table', BlockNodeType.block, {
+      naturalHeight: 500,
+      headerHeight: 0,
+      rows: [{id: 'row-1', top: 0, bottom: 500, coveredFromAbove: false}],
+    })
+    const options = {contentHeight: 900, contentWidth: 650, widowOrphanLines: 2}
+
+    source.syncObserved(['embed-1'])
+    expect(source.hasUnmeasuredMountedRoots(['embed-1'], options)).toBeTrue()
+    source.measure(options, ['embed-1'])
+    expect(source.hasUnmeasuredMountedRoots(['embed-1'], options)).toBeFalse()
+
+    source.syncObserved([])
+    source.syncObserved(['embed-1'])
+    expect(source.hasUnmeasuredMountedRoots(['embed-1'], options)).toBeFalse()
+    source.measure(options, ['embed-1'])
+
+    expect(tableMeasure).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores the same-size initial resize notification after re-observing a retained host', () => {
+    source = createSource(500, 500, 'table', BlockNodeType.block, {
+      naturalHeight: 500,
+      headerHeight: 0,
+      rows: [{id: 'row-1', top: 0, bottom: 500, coveredFromAbove: false}],
+    })
+    const options = {contentHeight: 900, widowOrphanLines: 2}
+    source.syncObserved(['embed-1'])
+    source.measure(options, ['embed-1'])
+    source.syncObserved([])
+    source.syncObserved(['embed-1'])
+    const resize = jasmine.createSpy('resize')
+    source.resize$.subscribe(resize)
+
+    ;(source as unknown as {
+      _handleResize(entries: readonly ResizeObserverEntry[]): void
+    })._handleResize([{
+      target: host,
+      borderBoxSize: [{blockSize: 500}],
+    } as unknown as ResizeObserverEntry])
+
+    expect(resize).not.toHaveBeenCalled()
+    expect(source.hasUnmeasuredMountedRoots(['embed-1'], options)).toBeFalse()
+  })
+
+  it('does not promote a cold host initial resize before its queued measurement', () => {
+    source = createSource(500, 500, 'table', BlockNodeType.block, {
+      naturalHeight: 500,
+      headerHeight: 0,
+      rows: [{id: 'row-1', top: 0, bottom: 500, coveredFromAbove: false}],
+    })
+    const options = {contentHeight: 900, widowOrphanLines: 2}
+    const resize = jasmine.createSpy('resize')
+    source.resize$.subscribe(resize)
+    source.syncObserved(['embed-1'])
+    source.markMountedMeasurementQueued(['embed-1'])
+
+    ;(source as unknown as {
+      _handleResize(entries: readonly ResizeObserverEntry[]): void
+    })._handleResize([{
+      target: host,
+      borderBoxSize: [{blockSize: 500}],
+    } as unknown as ResizeObserverEntry])
+
+    expect(resize).not.toHaveBeenCalled()
+    expect(source.hasUnmeasuredMountedRoots(['embed-1'], options)).toBeTrue()
+  })
+
+  it('invalidates a retained measurement for a real resize beyond tolerance', () => {
+    source = createSource(500, 500, 'table', BlockNodeType.block, {
+      naturalHeight: 500,
+      headerHeight: 0,
+      rows: [{id: 'row-1', top: 0, bottom: 500, coveredFromAbove: false}],
+    })
+    const options = {contentHeight: 900, widowOrphanLines: 2}
+    source.syncObserved(['embed-1'])
+    source.measure(options, ['embed-1'])
+    const resize = jasmine.createSpy('resize')
+    source.resize$.subscribe(resize)
+
+    ;(source as unknown as {
+      _handleResize(entries: readonly ResizeObserverEntry[]): void
+    })._handleResize([{
+      target: host,
+      borderBoxSize: [{blockSize: 500.75}],
+    } as unknown as ResizeObserverEntry])
+
+    expect(resize).toHaveBeenCalledTimes(1)
+    expect(source.hasUnmeasuredMountedRoots(['embed-1'], options)).toBeTrue()
+  })
+
+  it('invalidates completed measurements for layout, content, options, and host identity changes', () => {
+    source = createSource(500, 500, 'table', BlockNodeType.block, {
+      naturalHeight: 500,
+      headerHeight: 0,
+      rows: [{id: 'row-1', top: 0, bottom: 500, coveredFromAbove: false}],
+    })
+    const options = {contentHeight: 900, contentWidth: 650, widowOrphanLines: 2}
+    source.syncObserved(['embed-1'])
+    source.measure(options, ['embed-1'])
+
+    source.invalidateNaturalMeasurements()
+    expect(source.hasUnmeasuredMountedRoots(['embed-1'], options)).toBeTrue()
+    source.measure(options, ['embed-1'])
+
+    source.clearLayoutOwnedResize()
+    expect(source.hasUnmeasuredMountedRoots(['embed-1'], options)).toBeTrue()
+    source.measure(options, ['embed-1'])
+
+    const widerOptions = {...options, contentWidth: 700}
+    expect(source.hasUnmeasuredMountedRoots(['embed-1'], widerOptions)).toBeTrue()
+    source.measure(widerOptions, ['embed-1'])
+
+    const previousHost = host
+    host = document.createElement('div')
+    host.style.marginBottom = '8px'
+    Object.defineProperty(host, 'offsetHeight', {configurable: true, value: 500})
+    Object.defineProperty(host, 'scrollHeight', {configurable: true, value: 500})
+    document.body.append(host)
+    block.hostElement = host
+    previousHost.remove()
+    source.syncObserved(['embed-1'])
+
+    expect(source.hasUnmeasuredMountedRoots(['embed-1'], widerOptions)).toBeTrue()
+    source.measure(widerOptions, ['embed-1'])
+    expect(source.hasUnmeasuredMountedRoots(['embed-1'], widerOptions)).toBeFalse()
+    expect(tableMeasure).toHaveBeenCalledTimes(5)
   })
 })

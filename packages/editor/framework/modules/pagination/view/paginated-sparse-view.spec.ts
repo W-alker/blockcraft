@@ -4,6 +4,7 @@ import {
   IBlockModelContentChange,
   IBlockModelStructureChange,
 } from '../../../doc/model-graph'
+import {PaginationLayoutCoordinator} from '../layout/pagination-layout-coordinator'
 import {PaginatedViewController} from './paginated-view.controller'
 
 describe('PaginatedViewController sparse view', () => {
@@ -172,18 +173,259 @@ describe('PaginatedViewController sparse view', () => {
       scrollContainer.remove()
     }
   })
+
+  it('skips a full recompute when returning to a warm mounted host', () => {
+    const harness = createWarmWindowHarness()
+    const callbacks = new Map<number, FrameRequestCallback>()
+    let nextFrameId = 0
+    spyOn(window, 'requestAnimationFrame').and.callFake((callback) => {
+      const frameId = ++nextFrameId
+      callbacks.set(frameId, callback)
+      return frameId
+    })
+    spyOn(window, 'cancelAnimationFrame').and.callFake((frameId) => {
+      callbacks.delete(frameId)
+    })
+    const flushFrame = () => {
+      const pending = [...callbacks.values()]
+      callbacks.clear()
+      pending.forEach((callback) => callback(performance.now()))
+    }
+    const compute = spyOn(harness.coordinator, 'compute').and.callThrough()
+    const heightSource = (
+      harness.controller as unknown as {
+        _heightSource: {
+          measure(...args: unknown[]): unknown
+          _handleResize(entries: readonly ResizeObserverEntry[]): void
+        }
+      }
+    )._heightSource
+    const measure = spyOn(heightSource, 'measure').and.callThrough()
+    const applyLayout = spyOn(
+      harness.controller as unknown as {
+        _applyLayoutView(...args: unknown[]): ReadonlySet<string>
+      },
+      '_applyLayoutView',
+    ).and.callThrough()
+
+    try {
+      harness.controller.enable()
+      harness.controller.captureStableLayout()
+
+      // B is a cold host, so its first mounted window must still be measured
+      // and published through the complete sparse-pagination path.
+      compute.calls.reset()
+      measure.calls.reset()
+      applyLayout.calls.reset()
+      harness.mount('b')
+      flushFrame()
+      expect(compute).toHaveBeenCalledTimes(1)
+      expect(measure).toHaveBeenCalledTimes(1)
+      expect(applyLayout).toHaveBeenCalledTimes(1)
+
+      // A and B now both have a completed measurement for the same host and
+      // measure context. Returning to either window only replays its cached DOM
+      // projection; it must not scan/paginate/publish the whole document again.
+      compute.calls.reset()
+      measure.calls.reset()
+      applyLayout.calls.reset()
+      let projectionChanges = 0
+      harness.projection.change$.subscribe(() => projectionChanges++)
+
+      harness.mount('a')
+      flushFrame()
+      harness.mount('b')
+      flushFrame()
+
+      expect(compute).not.toHaveBeenCalled()
+      expect(measure).not.toHaveBeenCalled()
+      expect(applyLayout).not.toHaveBeenCalled()
+      expect(projectionChanges).toBe(0)
+
+      // A remount backed by a new HTMLElement is not a warm-host cache hit: it
+      // must be measured once, while equal geometry still avoids compute/publish.
+      const replacement = blockHost('a', 160)
+      harness.replaceHost('a', replacement)
+      harness.mount('a')
+      // Browsers deliver an initial RO entry for a newly observed host before
+      // the next rAF. It must not promote the queued mounted measurement to a
+      // full invalidation.
+      heightSource._handleResize([
+        {
+          target: replacement,
+          borderBoxSize: [{blockSize: 160}],
+        } as unknown as ResizeObserverEntry,
+      ])
+      flushFrame()
+
+      expect(compute).not.toHaveBeenCalled()
+      expect(measure).toHaveBeenCalledTimes(1)
+      expect(applyLayout).not.toHaveBeenCalled()
+      expect(projectionChanges).toBe(0)
+
+      // A real ResizeObserver change on that same host invalidates its completed
+      // measurement and must publish the new pagination geometry.
+      compute.calls.reset()
+      measure.calls.reset()
+      applyLayout.calls.reset()
+      Object.defineProperty(replacement, 'offsetHeight', {
+        configurable: true,
+        value: 180,
+      })
+      Object.defineProperty(replacement, 'scrollHeight', {
+        configurable: true,
+        value: 180,
+      })
+      heightSource._handleResize([
+        {
+          target: replacement,
+          borderBoxSize: [{blockSize: 180}],
+        } as unknown as ResizeObserverEntry,
+      ])
+      flushFrame()
+
+      expect(compute).toHaveBeenCalledTimes(1)
+      expect(measure).toHaveBeenCalledTimes(1)
+      expect(applyLayout).toHaveBeenCalledTimes(1)
+      expect(projectionChanges).toBe(1)
+
+      // The synchronous sparse export barrier invalidates every old DOM epoch,
+      // but only the mounted root can be refreshed here. Offscreen entries must
+      // therefore keep the layout non-exact and force readonly export reflow.
+      expect(harness.controller.captureStableLayout()).not.toBeNull()
+      expect(harness.controller.canReuseStableLayoutForExport).toBeFalse()
+    } finally {
+      harness.destroy()
+    }
+  })
 })
 
 function blockHost(id: string, height: number): HTMLElement {
   const host = document.createElement('div')
   host.dataset['blockId'] = id
   host.style.marginBottom = '0'
-  Object.defineProperty(host, 'offsetHeight', {value: height})
-  Object.defineProperty(host, 'scrollHeight', {value: height})
+  Object.defineProperty(host, 'offsetHeight', {configurable: true, value: height})
+  Object.defineProperty(host, 'scrollHeight', {configurable: true, value: height})
   return host
 }
 
 function gapBefore(host: HTMLElement): HTMLElement | null {
   const previous = host.previousElementSibling as HTMLElement | null
   return previous?.dataset['bcPageGapSpacer'] ? previous : null
+}
+
+function createWarmWindowHarness() {
+  const scrollContainer = document.createElement('div')
+  const rootHost = document.createElement('div')
+  const hosts = new Map([
+    ['a', blockHost('a', 160)],
+    ['b', blockHost('b', 160)],
+  ])
+  rootHost.setAttribute('data-blockcraft-root', 'true')
+  rootHost.append(hosts.get('a')!)
+  scrollContainer.append(rootHost)
+  document.body.append(scrollContainer)
+
+  let mountedIds = ['a']
+  let projection: any = null
+  const viewChange$ = new Subject<{mountedRootIds: readonly string[]}>()
+  const contentChange$ = new Subject<IBlockModelContentChange>()
+  const structureChange$ = new Subject<IBlockModelStructureChange>()
+  const themeChange$ = new Subject<string>()
+  const childrenChange$ = new Subject<void>()
+  const config = {
+    scrollContainer,
+    theme: 'light',
+    virtualization: {
+      enabled: true,
+      estimatedHeights: {paragraph: 160},
+    },
+  }
+  const doc = {
+    rootId: 'root',
+    root: {
+      childrenIds: ['a', 'b'],
+      hostElement: rootHost,
+    },
+    model: {
+      contentChange$,
+      structureChange$,
+      getChildrenIds: (id: string) => (id === 'root' ? ['a', 'b'] : []),
+      getPath: (id: string) => ['root', id],
+      getFlavour: () => 'paragraph',
+      getNodeType: () => BlockNodeType.editable,
+      getProps: () => ({}),
+    },
+    config,
+    get theme() {
+      return config.theme
+    },
+    themeChange$,
+    onChildrenUpdate$: childrenChange$,
+    getBlockById: (id: string, onError?: () => void) => {
+      if (!mountedIds.includes(id)) {
+        onError?.()
+        throw new Error(`Block not found: ${id}`)
+      }
+      return {
+        id,
+        flavour: 'paragraph',
+        nodeType: BlockNodeType.editable,
+        hostElement: hosts.get(id),
+        heading: false,
+      }
+    },
+    vm: {getMountedRootChildIds: () => [...mountedIds]},
+    virtualization: {
+      enabled: true,
+      viewChange$,
+      registerLayoutProjection: (nextProjection: unknown, hooks: any) => {
+        projection = nextProjection
+        hooks.beforeActivate?.()
+        return () => hooks.beforeDeactivate?.()
+      },
+    },
+    inputManger: {compositionSession: {isIdle: true}},
+    event: {status: {isComposing: false}},
+    ngZone: {runOutsideAngular: (run: () => void) => run()},
+    logger: {warn: jasmine.createSpy('warn')},
+  } as unknown as BlockCraft.Doc
+  const coordinator = new PaginationLayoutCoordinator(doc)
+  const controller = new PaginatedViewController(
+    doc,
+    {
+      pageSize: {width: 400, height: 220},
+      margins: {top: 10, right: 10, bottom: 10, left: 10},
+      pageGap: 20,
+    },
+    scrollContainer,
+    coordinator,
+    {sparseView: true},
+  )
+
+  return {
+    controller,
+    coordinator,
+    get projection() {
+      if (!projection) throw new Error('Sparse projection is not registered')
+      return projection
+    },
+    mount(id: 'a' | 'b') {
+      mountedIds = [id]
+      rootHost.replaceChildren(hosts.get(id)!)
+      viewChange$.next({mountedRootIds: [...mountedIds]})
+    },
+    replaceHost(id: 'a' | 'b', host: HTMLElement) {
+      hosts.set(id, host)
+    },
+    destroy() {
+      controller.destroy()
+      contentChange$.complete()
+      structureChange$.complete()
+      themeChange$.complete()
+      childrenChange$.complete()
+      viewChange$.complete()
+      scrollContainer.remove()
+    },
+  }
 }

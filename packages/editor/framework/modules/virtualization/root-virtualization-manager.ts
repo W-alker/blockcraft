@@ -41,6 +41,7 @@ const MAX_CUSTOM_PROJECTION_FAILURES = 3
 const FULL_MOUNT_FALLBACK_MESSAGE = '虚拟渲染异常，已切换为完整渲染'
 const ABSOLUTE_PLACEMENT_OVERSCAN_VIEWPORTS = 1
 const SEGMENT_MERGE_MAX_VIEWPORT_RATIO = 0.25
+const HEIGHT_MEASUREMENT_EPSILON = 0.5
 
 type SelectionPinSnapshot = Pick<ISelectionJSON, 'anchor' | 'head'>
 
@@ -59,6 +60,15 @@ interface BlockNavigationTask {
   frames: number
   projectionWaitFrames: number
   stableFrames: number
+}
+
+interface ReconciledWindowSnapshot {
+  readonly projection: VerticalLayoutProjection
+  readonly projectionRevision: number
+  readonly segments: readonly RenderedSegment[]
+  readonly visibleAbsoluteLayoutIds: readonly string[]
+  readonly mountedRootIds: readonly string[]
+  readonly retainedRootIds: readonly string[]
 }
 
 export interface VirtualizationViewChange {
@@ -136,6 +146,12 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   private customLayoutProjectionHooks: LayoutProjectionRegistrationHooks | null = null
   private customProjectionValidationPending = false
   private customProjectionFailureCount = 0
+  // Scroll-only frames may reuse the last DOM window. Every other scheduling
+  // source increments this revision, including pins, structure, measurements,
+  // projection changes, resize, navigation and fallback retries.
+  private reconcileInvalidationRevision = 0
+  private reconciledInvalidationRevision = -1
+  private lastReconciledWindow: ReconciledWindowSnapshot | null = null
 
   readonly viewChange$ = new Subject<VirtualizationViewChange>()
 
@@ -147,7 +163,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       // snap a user scroll back to its previous location.
       this.pendingStructureAnchor = this.captureCurrentStructureAnchor()
     }
-    if (!this.fullMountFallback) this.schedule()
+    if (!this.fullMountFallback) this.schedule(false)
   }
   private readonly onResize = () => {
     if (!this.fullMountFallback) this.schedule()
@@ -279,6 +295,8 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     this.ownerWindow = null
     this.lastPublishedMountedIds = []
     this.sparseRootReconcilePending = false
+    this.lastReconciledWindow = null
+    this.reconciledInvalidationRevision = -1
     this.viewChange$.complete()
   }
 
@@ -579,7 +597,8 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     }
   }
 
-  private schedule(): void {
+  private schedule(invalidateReconciliation = true): void {
+    if (invalidateReconciliation) this.reconcileInvalidationRevision++
     if (this.disposed || this.frame !== null || !this.scrollContainer) return
     this.frame = this.requestFrame(() => {
       this.frame = null
@@ -608,6 +627,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   }
 
   private reconcileFrame(): void {
+    const invalidationRevision = this.reconcileInvalidationRevision
     if (this.doc.vm.hasDeferredSparseRootOrder) {
       // Safari may cancel native composition without dispatching compositionend.
       // Once the event layer releases DOM ownership, a stale input session must
@@ -717,7 +737,20 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
             viewportHeight * SEGMENT_MERGE_MAX_VIEWPORT_RATIO,
         )
     const target = this.expandSegments(segments)
-    const mounted = new Set(this.doc.vm.getMountedRootChildIds())
+    const mountedRootIds = this.doc.vm.getMountedRootChildIds()
+    // Range lookup remains on every scroll frame. Once it resolves to the same
+    // projection window and no non-scroll owner invalidated reconciliation,
+    // avoid repeating component, observer and spacer DOM synchronization.
+    if (this.canSkipStableDomReconciliation(
+      invalidationRevision,
+      segments,
+      visibleAbsoluteLayouts,
+      mountedRootIds,
+      settledSparseRoot,
+    )) {
+      return
+    }
+    const mounted = new Set(mountedRootIds)
 
     mounted.forEach((id) => {
       if (!target.has(id)) this.retainRootView(id)
@@ -741,6 +774,51 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     }
     this.restorePendingStructureAnchor(structureRestore)
     this.publishViewChange()
+    this.rememberReconciledWindow(
+      invalidationRevision,
+      segments,
+      visibleAbsoluteLayouts,
+    )
+  }
+
+  private canSkipStableDomReconciliation(
+    invalidationRevision: number,
+    segments: readonly RenderedSegment[],
+    visibleAbsoluteLayoutIds: readonly string[],
+    mountedRootIds: readonly string[],
+    settledSparseRoot: boolean,
+  ): boolean {
+    const previous = this.lastReconciledWindow
+    return !this.fullMountFallback &&
+      !settledSparseRoot &&
+      !this.pendingStructureAnchor &&
+      !this.customProjectionValidationPending &&
+      !this.blockNavigationTask &&
+      this.reconcileFailureCount === 0 &&
+      this.reconciledInvalidationRevision === invalidationRevision &&
+      previous !== null &&
+      previous.projection === this.layoutProjection &&
+      previous.projectionRevision === this.layoutProjection.revision &&
+      segmentsEqual(previous.segments, segments) &&
+      arraysEqual(previous.visibleAbsoluteLayoutIds, visibleAbsoluteLayoutIds) &&
+      arraysEqual(previous.mountedRootIds, mountedRootIds) &&
+      arraysEqual(previous.retainedRootIds, this.doc.vm.getRetainedRootChildIds())
+  }
+
+  private rememberReconciledWindow(
+    invalidationRevision: number,
+    segments: readonly RenderedSegment[],
+    visibleAbsoluteLayoutIds: readonly string[],
+  ): void {
+    this.reconciledInvalidationRevision = invalidationRevision
+    this.lastReconciledWindow = {
+      projection: this.layoutProjection,
+      projectionRevision: this.layoutProjection.revision,
+      segments: segments.map(([start, end]): RenderedSegment => [start, end]),
+      visibleAbsoluteLayoutIds: [...visibleAbsoluteLayoutIds],
+      mountedRootIds: this.doc.vm.getMountedRootChildIds(),
+      retainedRootIds: this.doc.vm.getRetainedRootChildIds(),
+    }
   }
 
   private rebuildModel(nextBlockIds?: readonly string[]): void {
@@ -1254,7 +1332,12 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     let changed = false
     measurements.forEach(([id, height]) => {
       const index = this.indexById.get(id)
-      if (index === undefined || this.heights.get(index) === height) return
+      if (
+        index === undefined ||
+        Math.abs(this.heights.get(index) - height) <= HEIGHT_MEASUREMENT_EPSILON
+      ) {
+        return
+      }
       this.heights.update(index, height)
       changed = true
     })
@@ -1524,6 +1607,14 @@ export function registerRootLayoutProjection(
 
 function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function segmentsEqual(
+  left: readonly RenderedSegment[],
+  right: readonly RenderedSegment[],
+): boolean {
+  return left.length === right.length && left.every((segment, index) =>
+    segment[0] === right[index]?.[0] && segment[1] === right[index]?.[1])
 }
 
 function clampBoundaryIndex(index: number | undefined, length: number): number {

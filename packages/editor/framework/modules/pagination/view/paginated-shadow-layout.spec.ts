@@ -195,10 +195,13 @@ function mismatchCoordinator(doc: BlockCraft.Doc): PaginationLayoutCoordinator {
         PaginationLayoutCoordinator["updateMeasureContext"]
       >[0],
     ) => delegate.updateMeasureContext(context),
+    setRequiredMeasurementEpoch: (epoch: number) =>
+      delegate.setRequiredMeasurementEpoch(epoch),
     applyMeasured: (
       measurements: readonly PaginationGeometryMeasurement[],
       revision: number,
-    ) => delegate.applyMeasured(measurements, revision),
+      measurementEpoch: number,
+    ) => delegate.applyMeasured(measurements, revision, measurementEpoch),
     compute: (...args: Parameters<PaginationLayoutCoordinator["compute"]>) => {
       const state = delegate.compute(...args);
       return {
@@ -1105,7 +1108,9 @@ describe("PaginatedViewController shadow layout", () => {
           PaginationLayoutCoordinator["updateMeasureContext"]
         >[0],
       ) => delegate.updateMeasureContext(context),
-      applyMeasured: () => false,
+      setRequiredMeasurementEpoch: (epoch: number) =>
+        delegate.setRequiredMeasurementEpoch(epoch),
+      applyMeasured: () => ({accepted: false, changed: false}),
       compute,
       dispose: () => delegate.dispose(),
     } as unknown as PaginationLayoutCoordinator;
@@ -1154,10 +1159,13 @@ describe("PaginatedViewController shadow layout", () => {
           PaginationLayoutCoordinator["updateMeasureContext"]
         >[0],
       ) => delegate.updateMeasureContext(context),
+      setRequiredMeasurementEpoch: (epoch: number) =>
+        delegate.setRequiredMeasurementEpoch(epoch),
       applyMeasured: (
         measurements: readonly PaginationGeometryMeasurement[],
         revision: number,
-      ) => delegate.applyMeasured(measurements, revision),
+        measurementEpoch: number,
+      ) => delegate.applyMeasured(measurements, revision, measurementEpoch),
       compute: () => {
         throw {
           toString: () => {

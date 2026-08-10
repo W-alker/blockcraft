@@ -13,6 +13,9 @@ import {
   inlinePaginationBreakPlansEqual,
 } from '../view/inline-break-plan'
 
+/** DOM/layout coordinates may drift by a fraction of a CSS pixel across mounts. */
+const LAYOUT_TOLERANCE = 0.5
+
 export interface PaginationMeasureContext {
   readonly contentWidth: number
   /** Regular-page content height; controls whether text is oversized and needs line anchors. */
@@ -44,6 +47,8 @@ export interface PaginationGeometryEntry {
   readonly isHeading: boolean
   readonly contentRevision: number
   readonly measureContextRevision: number
+  /** Natural-DOM measurement generation; freshness only, not geometry identity. */
+  readonly measurementEpoch: number
   readonly source: 'estimated' | 'measured'
   readonly naturalHeight: number
   /** 分页实际占位高度；宽度/高度 fit 后可小于 naturalHeight。 */
@@ -187,10 +192,20 @@ function cloneEntry(entry: PaginationGeometryEntry): PaginationGeometryEntry {
   }
 }
 
+function numbersEqual(
+  left: number | undefined,
+  right: number | undefined,
+  tolerance = LAYOUT_TOLERANCE,
+): boolean {
+  if (left === right) return true
+  if (left == null || right == null) return false
+  return Math.abs(left - right) <= tolerance
+}
+
 function arraysEqual(left: readonly number[] | undefined, right: readonly number[] | undefined): boolean {
   if (left === right) return true
   if (!left || !right || left.length !== right.length) return false
-  return left.every((value, index) => value === right[index])
+  return left.every((value, index) => numbersEqual(value, right[index]))
 }
 
 function rowsEqual(left: readonly TableRowGeom[] | undefined, right: readonly TableRowGeom[] | undefined): boolean {
@@ -199,8 +214,8 @@ function rowsEqual(left: readonly TableRowGeom[] | undefined, right: readonly Ta
   return left.every((row, index) => {
     const other = right[index]!
     return row.id === other.id
-      && row.top === other.top
-      && row.bottom === other.bottom
+      && numbersEqual(row.top, other.top)
+      && numbersEqual(row.bottom, other.bottom)
       && row.coveredFromAbove === other.coveredFromAbove
       && row.coveredByContentMerge === other.coveredByContentMerge
   })
@@ -227,7 +242,7 @@ function plansEqual(
   if (left === right) return true
   if (!left || !right) return false
   if (
-    left.paginationHeight !== right.paginationHeight
+    !numbersEqual(left.paginationHeight, right.paginationHeight)
     || !arraysEqual(left.splitOffsets, right.splitOffsets)
     || left.segments.length !== right.segments.length
   ) return false
@@ -236,9 +251,9 @@ function plansEqual(
     const other = right.segments[index]
     if (
       !other
-      || segment.fromOffset !== other.fromOffset
-      || segment.toOffset !== other.toOffset
-      || segment.height !== other.height
+      || !numbersEqual(segment.fromOffset, other.fromOffset)
+      || !numbersEqual(segment.toOffset, other.toOffset)
+      || !numbersEqual(segment.height, other.height)
       || segment.breakAfter?.kind !== other.breakAfter?.kind
     ) return false
 
@@ -255,7 +270,7 @@ function plansEqual(
         const otherContinuation = otherSplit.continuations[continuationIndex]
         return !!otherContinuation
           && continuation.cellId === otherContinuation.cellId
-          && continuation.pageOffset === otherContinuation.pageOffset
+          && numbersEqual(continuation.pageOffset, otherContinuation.pageOffset)
           && anchorsEqual(continuation.anchor, otherContinuation.anchor)
       })
   })
@@ -269,12 +284,14 @@ function entriesEqual(left: PaginationGeometryEntry, right: PaginationGeometryEn
     && left.contentRevision === right.contentRevision
     && left.measureContextRevision === right.measureContextRevision
     && left.source === right.source
-    && left.naturalHeight === right.naturalHeight
-    && left.effectiveHeight === right.effectiveHeight
-    && left.trailingSpacing === right.trailingSpacing
-    && left.lockHeight === right.lockHeight
-    && left.fitScale === right.fitScale
-    && left.repeatHeaderHeight === right.repeatHeaderHeight
+    && numbersEqual(left.naturalHeight, right.naturalHeight)
+    && numbersEqual(left.effectiveHeight, right.effectiveHeight)
+    && numbersEqual(left.trailingSpacing, right.trailingSpacing)
+    && numbersEqual(left.lockHeight, right.lockHeight)
+    // fitScale is dimensionless and can amplify across very wide media. Its
+    // derived max-width/max-height are unavailable here, so keep it exact.
+    && numbersEqual(left.fitScale, right.fitScale, 0)
+    && numbersEqual(left.repeatHeaderHeight, right.repeatHeaderHeight)
     && arraysEqual(left.splitOffsets, right.splitOffsets)
     && inlinePaginationBreakPlansEqual(left.inlineBreakPlan, right.inlineBreakPlan)
     && arraysEqual(left.preferredSplitOffsets, right.preferredSplitOffsets)
@@ -335,6 +352,7 @@ export class PaginationGeometryIndex {
           isHeading: seed.isHeading,
           contentRevision: 0,
           measureContextRevision: this.measureContextRevisionValue,
+          measurementEpoch: 0,
           source: 'estimated',
           naturalHeight: seed.estimatedHeight,
           effectiveHeight: seed.estimatedHeight,
@@ -355,6 +373,7 @@ export class PaginationGeometryIndex {
           isHeading: seed.isHeading,
           contentRevision: current.contentRevision,
           measureContextRevision: this.measureContextRevisionValue,
+          measurementEpoch: 0,
           source: 'estimated',
           naturalHeight: seed.estimatedHeight,
           effectiveHeight: seed.estimatedHeight,
@@ -366,7 +385,7 @@ export class PaginationGeometryIndex {
 
       if (current.source === 'estimated'
         && !this.measuredGeometryIds.has(seed.blockId)
-        && current.naturalHeight !== seed.estimatedHeight) {
+        && !numbersEqual(current.naturalHeight, seed.estimatedHeight)) {
         this.entries.set(seed.blockId, {
           ...current,
           naturalHeight: seed.estimatedHeight,
@@ -411,7 +430,7 @@ export class PaginationGeometryIndex {
       this.measuredGeometryIds.delete(estimate.blockId)
       if (
         current.source === 'estimated' &&
-        current.naturalHeight === estimate.height
+        numbersEqual(current.naturalHeight, estimate.height)
       ) {
         continue
       }
@@ -444,7 +463,11 @@ export class PaginationGeometryIndex {
     return true
   }
 
-  applyMeasured(measurements: readonly PaginationGeometryMeasurement[]): boolean {
+  applyMeasured(
+    measurements: readonly PaginationGeometryMeasurement[],
+    measurementEpoch = 0,
+  ): boolean {
+    assertNonNegativeFinite(measurementEpoch, 'measurementEpoch')
     const measurementIds = new Set<string>()
     for (const measurement of measurements) {
       if (measurementIds.has(measurement.id)) {
@@ -465,6 +488,7 @@ export class PaginationGeometryIndex {
     }
 
     const updates = new Map<string, PaginationGeometryEntry>()
+    const freshnessUpdates = new Map<string, PaginationGeometryEntry>()
     for (const measurement of measurements) {
       const blockId = measurement.id
       const current = this.entries.get(blockId)
@@ -477,6 +501,7 @@ export class PaginationGeometryIndex {
         isHeading: current.isHeading,
         contentRevision: current.contentRevision,
         measureContextRevision: this.measureContextRevisionValue,
+        measurementEpoch,
         source: 'measured',
         naturalHeight: measurement.naturalHeight,
         effectiveHeight: measurement.height,
@@ -494,9 +519,22 @@ export class PaginationGeometryIndex {
           ? cloneTableCellFlowPlan(tableCellFlowPlan)
           : undefined,
       }
-      if (!entriesEqual(current, next)) updates.set(blockId, next)
+      if (!entriesEqual(current, next)) {
+        updates.set(blockId, next)
+      } else if (current.measurementEpoch !== measurementEpoch) {
+        // Refreshing an identical geometry for a newer natural-DOM epoch makes
+        // the entry exact again without manufacturing a geometry revision.
+        freshnessUpdates.set(blockId, {
+          ...current,
+          measurementEpoch,
+        })
+      }
     }
 
+    freshnessUpdates.forEach((entry, blockId) => {
+      this.entries.set(blockId, entry)
+      this.measuredGeometryIds.add(blockId)
+    })
     if (!updates.size) return false
     updates.forEach((entry, blockId) => {
       this.entries.set(blockId, entry)

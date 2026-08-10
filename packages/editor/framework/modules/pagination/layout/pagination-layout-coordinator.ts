@@ -52,6 +52,14 @@ export interface PaginationLayoutState {
   readonly projection: PaginatedLayoutProjection;
 }
 
+/** @internal Result of applying one DOM-measurement ticket. */
+export interface PaginationMeasurementApplyResult {
+  /** False means the geometry changed after the caller captured its ticket. */
+  readonly accepted: boolean;
+  /** True only when the accepted batch changed stored pagination geometry. */
+  readonly changed: boolean;
+}
+
 interface RootSnapshot {
   readonly rootIds: readonly string[];
   readonly seeds: readonly PaginationGeometrySeed[];
@@ -133,6 +141,7 @@ export class PaginationLayoutCoordinator {
   private readonly layoutProjection = new PaginatedLayoutProjection();
   private preparedRootSnapshot: RootSnapshot | null = null;
   private revisionValue = 0;
+  private requiredMeasurementEpoch = 0;
   private disposed = false;
 
   constructor(private readonly doc: BlockCraft.Doc) {}
@@ -173,6 +182,18 @@ export class PaginationLayoutCoordinator {
     this.geometryIndex.setMeasureContext(context);
   }
 
+  /**
+   * @internal Sets the natural-DOM freshness required for an exact snapshot.
+   * This deliberately does not mutate geometry revision.
+   */
+  setRequiredMeasurementEpoch(epoch: number): void {
+    if (this.disposed) return;
+    if (!Number.isFinite(epoch) || epoch < 0) {
+      throw new RangeError('measurementEpoch must be a finite non-negative number');
+    }
+    this.requiredMeasurementEpoch = epoch;
+  }
+
   refreshObjectSizingEstimates(rootIds?: readonly string[]): void {
     if (this.disposed) return;
     const candidates =
@@ -196,15 +217,19 @@ export class PaginationLayoutCoordinator {
   applyMeasured(
     measurements: readonly PaginationGeometryMeasurement[],
     expectedGeometryRevision: number,
-  ): boolean {
+    measurementEpoch: number,
+  ): PaginationMeasurementApplyResult {
     if (
       this.disposed ||
-      expectedGeometryRevision !== this.geometryIndex.revision
+      expectedGeometryRevision !== this.geometryIndex.revision ||
+      measurementEpoch !== this.requiredMeasurementEpoch
     ) {
-      return false;
+      return {accepted: false, changed: false};
     }
-    this.geometryIndex.applyMeasured(measurements);
-    return true;
+    return {
+      accepted: true,
+      changed: this.geometryIndex.applyMeasured(measurements, measurementEpoch),
+    };
   }
 
   compute(
@@ -245,7 +270,10 @@ export class PaginationLayoutCoordinator {
 
     return {
       revision: ++this.revisionValue,
-      exact: entries.every((entry) => entry.source === "measured"),
+      exact: entries.every((entry) =>
+        entry.source === "measured"
+        && entry.measurementEpoch === this.requiredMeasurementEpoch
+      ),
       geometryRevision: this.geometryIndex.revision,
       rootIds: [...rootIds],
       entries: entries.map((entry) => ({

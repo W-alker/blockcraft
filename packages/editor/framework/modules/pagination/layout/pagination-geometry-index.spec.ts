@@ -408,10 +408,45 @@ describe('PaginationGeometryIndex', () => {
       tableRows: [{id: 'row', top: 0, bottom: 40, coveredFromAbove: false}],
     })
 
-    expect(index.applyMeasured([measured])).toBeTrue()
+    expect(index.applyMeasured([measured], 1)).toBeTrue()
     const revision = index.revision
-    expect(index.applyMeasured([measured])).toBeFalse()
+    expect(index.get('a')?.measurementEpoch).toBe(1)
+    expect(index.applyMeasured([measured], 2)).toBeFalse()
     expect(index.revision).toBe(revision)
+    expect(index.get('a')?.measurementEpoch).toBe(2)
+  })
+
+  it('ignores subpixel DOM drift while keeping model anchors exact', () => {
+    const index = new PaginationGeometryIndex()
+    index.syncRootOrder([seed('a')])
+    const measured = measurement('a', 120, {
+      trailingSpacing: 8,
+      splitOffsets: [40],
+      inlineBreakPlan: {points: [{layoutOffset: 40, textOffset: 8}]},
+      tableRows: [{id: 'row', top: 0, bottom: 40, coveredFromAbove: false}],
+    })
+    expect(index.applyMeasured([measured], 1)).toBeTrue()
+    const revision = index.revision
+
+    expect(index.applyMeasured([measurement('a', 120.4, {
+      height: 120.3,
+      trailingSpacing: 8.2,
+      splitOffsets: [40.4],
+      inlineBreakPlan: {points: [{layoutOffset: 40.4, textOffset: 8}]},
+      tableRows: [{id: 'row', top: 0.2, bottom: 40.4, coveredFromAbove: false}],
+    })], 2)).toBeFalse()
+    expect(index.revision).toBe(revision)
+    expect(index.get('a')?.naturalHeight).toBe(120)
+    expect(index.get('a')?.measurementEpoch).toBe(2)
+
+    expect(index.applyMeasured([measurement('a', 120.4, {
+      height: 120.3,
+      trailingSpacing: 8.2,
+      splitOffsets: [40.4],
+      inlineBreakPlan: {points: [{layoutOffset: 40.4, textOffset: 9}]},
+      tableRows: [{id: 'row', top: 0.2, bottom: 40.4, coveredFromAbove: false}],
+    })])).toBeTrue()
+    expect(index.revision).toBe(revision + 1)
   })
 
   it('retains width-only fit scale and effective height in measured geometry', () => {
@@ -439,6 +474,12 @@ describe('PaginationGeometryIndex', () => {
     const revision = index.revision
     expect(index.applyMeasured([fitted])).toBeFalse()
     expect(index.revision).toBe(revision)
+
+    expect(index.applyMeasured([{
+      ...fitted,
+      fitScale: 0.50005,
+    }])).toBeTrue()
+    expect(index.revision).toBe(revision + 1)
   })
 
   it('rejects duplicate measurement ids atomically', () => {

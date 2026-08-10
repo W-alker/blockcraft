@@ -1,10 +1,16 @@
 export type HeightMeasurement = readonly [blockId: string, height: number]
 export type ResizeObserverFactory = (callback: ResizeObserverCallback) => ResizeObserver
 
+const HEIGHT_MEASUREMENT_EPSILON = 0.5
+
 export class HeightObserver {
   private readonly observer: ResizeObserver | null
   private readonly elementsById = new Map<string, Element>()
   private readonly idsByElement = new Map<Element, string>()
+  // Keep the last reported stride with the Element rather than its transient
+  // observed state. A retained host can therefore be unobserved and observed
+  // again without replaying the same subpixel geometry.
+  private readonly lastLayoutStrideByElement = new WeakMap<Element, number>()
 
   constructor(
     private readonly onMeasurements: (measurements: HeightMeasurement[]) => void,
@@ -53,7 +59,22 @@ export class HeightObserver {
       const borderBox = Array.isArray(entry.borderBoxSize)
         ? entry.borderBoxSize[0]
         : (entry.borderBoxSize as unknown as ResizeObserverSize | undefined)
-      const height = this.getLayoutStride(entry.target, rects) ?? borderBox?.blockSize ?? entry.contentRect?.height ?? 0
+      const layoutStride = this.getLayoutStride(entry.target, rects)
+      const height = layoutStride ?? borderBox?.blockSize ?? entry.contentRect?.height ?? 0
+      if (layoutStride === undefined) {
+        // A fallback box measurement may differ from the previous sibling
+        // stride. Do not let an older stride suppress the next valid one.
+        this.lastLayoutStrideByElement.delete(entry.target)
+      } else {
+        const previous = this.lastLayoutStrideByElement.get(entry.target)
+        if (
+          previous !== undefined &&
+          Math.abs(previous - layoutStride) <= HEIGHT_MEASUREMENT_EPSILON
+        ) {
+          return
+        }
+        this.lastLayoutStrideByElement.set(entry.target, layoutStride)
+      }
       if (Number.isFinite(height) && height > 0) values.set(id, height)
     })
     if (values.size) this.onMeasurements([...values])

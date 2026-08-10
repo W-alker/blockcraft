@@ -72,6 +72,14 @@ describe('HeightLockApplier', () => {
     expect(surface.style.maxHeight).toBe('400px');
     expect(host.style.zoom).toBe('');
 
+    const setProperty = spyOn(surface.style, 'setProperty').and.callThrough();
+    const removeProperty = spyOn(surface.style, 'removeProperty').and.callThrough();
+    applier.apply(new Set(['image-1']), new Map([['image-1', 0.625]]));
+    applier.syncMounted(['image-1']);
+
+    expect(setProperty).not.toHaveBeenCalled();
+    expect(removeProperty).not.toHaveBeenCalled();
+
     applier.apply(new Set());
 
     expect(surface.hasAttribute('data-bc-page-media-fitted')).toBeFalse();

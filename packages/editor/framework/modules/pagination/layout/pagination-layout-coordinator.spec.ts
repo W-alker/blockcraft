@@ -185,7 +185,7 @@ describe("PaginationLayoutCoordinator", () => {
       fitScale: 0.5,
     });
     const body = measurement("body", 60);
-    coordinator.applyMeasured([wide, body], coordinator.geometryRevision);
+    coordinator.applyMeasured([wide, body], coordinator.geometryRevision, 0);
 
     const sparse = coordinator.compute(config(), geometry());
     const legacy = buildPaginationItems([
@@ -278,6 +278,7 @@ describe("PaginationLayoutCoordinator", () => {
         height: 210,
       }],
       coordinator.geometryRevision,
+      0,
     );
     resolvedHeight = 250;
     coordinator.refreshObjectSizingEstimates();
@@ -315,6 +316,7 @@ describe("PaginationLayoutCoordinator", () => {
         }),
       ],
       coordinator.geometryRevision,
+      0,
     );
 
     coordinator.applyContentChange(contentChange(["paragraph", "paragraph"]));
@@ -401,6 +403,7 @@ describe("PaginationLayoutCoordinator", () => {
         }),
       ],
       coordinator.geometryRevision,
+      0,
     );
 
     model.rootIds = ["right", "left"];
@@ -450,6 +453,7 @@ describe("PaginationLayoutCoordinator", () => {
     coordinator.applyMeasured(
       [measurement("a", 40)],
       coordinator.geometryRevision,
+      0,
     );
 
     const initial = coordinator.compute(config(), geometry());
@@ -507,6 +511,7 @@ describe("PaginationLayoutCoordinator", () => {
         measurement("body", 90),
       ],
       coordinator.geometryRevision,
+      0,
     );
 
     const state = coordinator.compute(config(), geometry());
@@ -620,6 +625,7 @@ describe("PaginationLayoutCoordinator", () => {
         },
       })],
       coordinator.geometryRevision,
+      0,
     );
     const first = coordinator.compute(config(), geometry());
 
@@ -656,16 +662,17 @@ describe("PaginationLayoutCoordinator", () => {
     const contentTicket = coordinator.geometryRevision;
     coordinator.applyContentChange(contentChange(["a"]));
     expect(
-      coordinator.applyMeasured([measurement("a", 40)], contentTicket),
-    ).toBeFalse();
+      coordinator.applyMeasured([measurement("a", 40)], contentTicket, 0),
+    ).toEqual({accepted: false, changed: false});
     expect(coordinator.compute(config(), geometry()).exact).toBeFalse();
 
     expect(
       coordinator.applyMeasured(
         [measurement("a", 40)],
         coordinator.geometryRevision,
+        0,
       ),
-    ).toBeTrue();
+    ).toEqual({accepted: true, changed: true});
     expect(coordinator.compute(config(), geometry()).exact).toBeTrue();
 
     const contextTicket = coordinator.geometryRevision;
@@ -678,16 +685,17 @@ describe("PaginationLayoutCoordinator", () => {
       rendererRevision: 0,
     });
     expect(
-      coordinator.applyMeasured([measurement("a", 50)], contextTicket),
-    ).toBeFalse();
+      coordinator.applyMeasured([measurement("a", 50)], contextTicket, 0),
+    ).toEqual({accepted: false, changed: false});
     expect(coordinator.compute(config(), geometry()).exact).toBeFalse();
 
     expect(
       coordinator.applyMeasured(
         [measurement("a", 50)],
         coordinator.geometryRevision,
+        0,
       ),
-    ).toBeTrue();
+    ).toEqual({accepted: true, changed: true});
     const refreshed = coordinator.compute(config(), geometry());
     expect(refreshed.exact).toBeTrue();
     expect(refreshed.entries[0].naturalHeight).toBe(50);
@@ -698,21 +706,35 @@ describe("PaginationLayoutCoordinator", () => {
     const { doc } = createHarness(["a"], facts);
     const coordinator = new PaginationLayoutCoordinator(doc);
     coordinator.syncRootOrder();
+    coordinator.setRequiredMeasurementEpoch(1);
 
     expect(
       coordinator.applyMeasured(
         [measurement("a", 40)],
         coordinator.geometryRevision,
+        1,
       ),
-    ).toBeTrue();
+    ).toEqual({accepted: true, changed: true});
     const measuredRevision = coordinator.geometryRevision;
 
+    coordinator.setRequiredMeasurementEpoch(2);
+    expect(coordinator.geometryRevision).toBe(measuredRevision);
+    expect(coordinator.compute(config(), geometry()).exact).toBeFalse();
     expect(
       coordinator.applyMeasured(
         [measurement("a", 40)],
         coordinator.geometryRevision,
+        1,
       ),
-    ).toBeTrue();
+    ).toEqual({accepted: false, changed: false});
+
+    expect(
+      coordinator.applyMeasured(
+        [measurement("a", 40)],
+        coordinator.geometryRevision,
+        2,
+      ),
+    ).toEqual({accepted: true, changed: false});
     expect(coordinator.geometryRevision).toBe(measuredRevision);
     expect(coordinator.compute(config(), geometry()).exact).toBeTrue();
   });

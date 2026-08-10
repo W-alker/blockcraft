@@ -24,7 +24,7 @@ import {
 import {resolveScreenGeometry} from "./pagination-geometry";
 import {computeBackdropHeight, computeBlockGaps, computeSheetRects} from "./sheet-layout";
 import {BlockMeta, buildPaginationItems} from "./item-builder";
-import {LiveHeightSource} from "./live-height-source";
+import {LiveHeightSource, type MeasureOptions} from "./live-height-source";
 import {PageFrameLayer} from "./page-frame-layer";
 import {GapApplier} from "./gap-applier";
 import {TableBreakApplier} from "./table-break-applier";
@@ -61,6 +61,7 @@ export class PaginatedViewController {
   private _subs = new Subscription();
   private _containerRO: ResizeObserver | null = null;
   private _rafId = 0;
+  private _pendingRecomputeKind: 'none' | 'mounted-measurement' | 'full' = 'none';
   private _compositionRecomputePending = false;
   private _sparseProjectionUpdateDeferred = false;
   private _enabled = false;
@@ -246,15 +247,21 @@ export class PaginatedViewController {
       // Phase B 中该视图信号只同步 ResizeObserver；重算由 ModelGraph.structureChange$ 调度。
       this._subs.add(
         this.doc.onChildrenUpdate$.subscribe(() => {
-          this._syncMountedViews(this._mountedRootIds());
+          const mountedRootIds = this._mountedRootIds();
+          const needsMeasurement = this._syncMountedViews(mountedRootIds);
+          if (this.options.sparseView && needsMeasurement) {
+            this._scheduleMountedMeasurement(mountedRootIds);
+          }
         }),
       );
       const viewChange$ = this.doc.virtualization?.viewChange$;
       if (viewChange$) {
         this._subs.add(
           viewChange$.subscribe(change => {
-            this._syncMountedViews(change.mountedRootIds);
-            if (this.options.sparseView) this.scheduleRecompute();
+            const needsMeasurement = this._syncMountedViews(change.mountedRootIds);
+            if (this.options.sparseView && needsMeasurement) {
+              this._scheduleMountedMeasurement(change.mountedRootIds);
+            }
           }),
         );
       }
@@ -289,11 +296,7 @@ export class PaginatedViewController {
     const previousInlineIds = this._inlineBreaks.layoutOwnedIds;
     const restoreInlineBreaks = this._inlineBreaks.suspend();
     try {
-      const metas = this._heightSource.measure({
-        contentHeight: this._geom.geometry.contentHeight,
-        contentWidth: this._contentWidth(),
-        widowOrphanLines: this._config.widowOrphanLines ?? 2,
-      });
+      const metas = this._heightSource.measure(this._measureOptions());
       return buildPaginationItems(metas);
     } finally {
       restoreInlineBreaks();
@@ -319,7 +322,10 @@ export class PaginatedViewController {
     this._heightSource.invalidateNaturalMeasurements();
     if (this._rafId) cancelAnimationFrame(this._rafId);
     this._rafId = 0;
-    const layout = this._recompute();
+    this._pendingRecomputeKind = 'none';
+    this._stableLayoutReusableForExport = false;
+    this._shadowLayout = null;
+    const layout = this._recompute(false);
     if (!layout) return null;
     const {geometry} = layout;
     const firstPageExtraTop = geometry.geometry.firstPageContentHeight == null
@@ -353,12 +359,29 @@ export class PaginatedViewController {
   }
 
   scheduleRecompute(): void {
+    this._queueRecompute('full');
+  }
+
+  private _scheduleMountedMeasurement(rootIds: readonly string[]): void {
+    this._heightSource.markMountedMeasurementQueued(rootIds);
+    this._queueRecompute('mounted-measurement');
+  }
+
+  private _queueRecompute(kind: 'mounted-measurement' | 'full'): void {
     if (!this._enabled) return;
-    this._stableLayoutReusableForExport = false;
-    this._shadowLayout = null;
+    if (kind === 'full') {
+      this._pendingRecomputeKind = 'full';
+      this._stableLayoutReusableForExport = false;
+      this._shadowLayout = null;
+    } else if (this._pendingRecomputeKind === 'none') {
+      this._pendingRecomputeKind = 'mounted-measurement';
+    } else if (this._pendingRecomputeKind === 'full' && this._rafId) {
+      // The already queued full pass measures the latest mounted window too.
+      return;
+    }
     if (this._isCompositionInProgress()) {
       this._compositionRecomputePending = true;
-      if (this.options.sparseView) {
+      if (kind === 'full' && this.options.sparseView) {
         this._sparseProjectionUpdateDeferred = true;
       }
       if (this._rafId) cancelAnimationFrame(this._rafId);
@@ -369,31 +392,38 @@ export class PaginatedViewController {
     if (this._rafId) cancelAnimationFrame(this._rafId);
     this._rafId = requestAnimationFrame(() => {
       this._rafId = 0;
-      this._recompute();
+      const pendingKind = this._pendingRecomputeKind;
+      this._pendingRecomputeKind = 'none';
+      this._recompute(pendingKind === 'mounted-measurement');
     });
   }
 
   @performanceTest('pagination view recompute', 16)
-  private _recompute(): StablePaginationLayout | null {
+  private _recompute(mountedMeasurementOnly = false): StablePaginationLayout | null {
     if (!this._enabled) return null;
     // IME 组合期间 DOM 含浏览器管理的临时文本节点；此时重建分页投影会破坏组合范围。
     // 表格选区实体化可能替换 compositionstart 的宿主，使原生状态提前复位；
     // 模型会话覆盖 active/committing 全周期，必须同时作为分页重排的权威门禁。
     if (this._isCompositionInProgress()) {
       this._compositionRecomputePending = true;
+      this._pendingRecomputeKind = 'full';
       if (this.options.sparseView) {
         this._sparseProjectionUpdateDeferred = true;
       }
       return this._stableLayout;
     }
-    this._stableLayoutReusableForExport = false;
+    if (!mountedMeasurementOnly) {
+      this._stableLayoutReusableForExport = false;
+    }
     const previousInlineIds = this._inlineBreaks.layoutOwnedIds;
     const inlineUpdate = this._inlineBreaks.beginUpdate();
     let inlineUpdateCommitted = false;
     try {
       let measurementRevision: number | null = null;
       try {
-        this.layoutCoordinator.syncRootOrder();
+        // Root order is synchronized on enable and by the model structure
+        // subscription. Re-reading every model seed here would turn a mounted
+        // window change back into an O(total roots) scroll path.
         this._syncMeasureContext();
         measurementRevision = this.layoutCoordinator.geometryRevision;
       } catch (error) {
@@ -401,7 +431,10 @@ export class PaginatedViewController {
       }
 
       if (this.options.sparseView) {
-        const sparseLayout = this._recomputeSparse(measurementRevision);
+        const sparseLayout = this._recomputeSparse(
+          measurementRevision,
+          mountedMeasurementOnly,
+        );
         if (sparseLayout) {
           inlineUpdate.commit();
           inlineUpdateCommitted = true;
@@ -411,11 +444,7 @@ export class PaginatedViewController {
 
       // measure() 已忽略 margin-top（gap），无需先清空 gap——少一次「清空→强制回流→重设」的布局抖动，
       // 同时保留浏览器原生 overflow-anchor 对视口上方内容变化的滚动补偿（实测能稳住编辑滚动）。
-      const metas = this._heightSource.measure({
-        contentHeight: this._geom.geometry.contentHeight,
-        contentWidth: this._contentWidth(),
-        widowOrphanLines: this._config.widowOrphanLines ?? 2,
-      });
+      const metas = this._heightSource.measure(this._measureOptions());
       const items = buildPaginationItems(metas);
       const result = paginate(items, this._geom.geometry);
       const initialLayout = createStablePaginationLayout(
@@ -448,7 +477,12 @@ export class PaginatedViewController {
     } finally {
       // 只有完整发布成功才提交新行内投影；任一后续 applier 抛错时恢复
       // 旧 stable 对应的页缝，避免数据快照与 live DOM 各处于一版。
-      if (!inlineUpdateCommitted) inlineUpdate.rollback();
+      if (!inlineUpdateCommitted) {
+        inlineUpdate.rollback();
+        this._handleInlineProjectionFailures(
+          this._inlineBreaks.syncMounted(this._mountedRootIds()),
+        );
+      }
       this._heightSource.captureLayoutOwnedResize(new Set([
         ...previousInlineIds,
         ...this._inlineBreaks.layoutOwnedIds,
@@ -546,6 +580,7 @@ export class PaginatedViewController {
 
   private _recomputeSparse(
     measurementRevision: number | null,
+    mountedMeasurementOnly: boolean,
   ): StablePaginationLayout | null {
     try {
       if (measurementRevision === null) {
@@ -578,19 +613,35 @@ export class PaginatedViewController {
       const mountedIds = this._mountedRootIds();
       this._syncMountedViews(mountedIds);
       const measurements = this._heightSource.measure(
-        {
-          contentHeight: this._geom.geometry.contentHeight,
-          contentWidth: this._contentWidth(),
-          widowOrphanLines: this._config.widowOrphanLines ?? 2,
-        },
+        this._measureOptions(),
         mountedIds,
       );
-      const accepted = this.layoutCoordinator.applyMeasured(
+      const measuredIds = new Set(measurements.map(measurement => measurement.id));
+      const missingMountedIds = mountedIds.filter(id => !measuredIds.has(id));
+      if (missingMountedIds.length) {
+        throw new Error(
+          `Mounted pagination hosts are not measurable yet: ${missingMountedIds.join(', ')}`,
+        );
+      }
+      const applied = this.layoutCoordinator.applyMeasured(
         measurements,
         measurementRevision,
+        this._heightSource.measurementEpoch,
       );
-      if (!accepted) {
+      if (!applied.accepted) {
         this.scheduleRecompute();
+        return null;
+      }
+      if (
+        mountedMeasurementOnly
+        && !applied.changed
+        && !this._sparseProjectionUpdateDeferred
+      ) {
+        // Retained/recreated DOM confirmed the geometry already stored in the
+        // index. The surrounding inline transaction rolls back its temporary
+        // natural-measurement suspension; no paginate/publish/anchor cycle is
+        // needed for this window change.
+        this._sparseFailureCount = 0;
         return null;
       }
 
@@ -868,19 +919,28 @@ export class PaginatedViewController {
     return [...rootIds];
   }
 
-  private _syncMountedViews(mountedRootIds: readonly string[]): void {
+  private _syncMountedViews(mountedRootIds: readonly string[]): boolean {
+    const needsMeasurement = !!this.options.sparseView
+      && this._heightSource.hasUnmeasuredMountedRoots(
+        mountedRootIds,
+        this._measureOptions(),
+      );
     this._heightSource.syncObserved(mountedRootIds);
     this._gapApplier.syncMounted(mountedRootIds);
     const inlineFailures = this._inlineBreaks.syncMounted(mountedRootIds);
     this._tableBreaks.syncMounted(mountedRootIds);
     this._heightLockApplier.syncMounted(mountedRootIds);
-    if (inlineFailures.size) {
-      this._stableLayoutReusableForExport = false;
-      if (this._shadowLayout) {
-        this._shadowLayout = {...this._shadowLayout, exact: false};
-      }
-      this.scheduleRecompute();
+    this._handleInlineProjectionFailures(inlineFailures);
+    return needsMeasurement;
+  }
+
+  private _handleInlineProjectionFailures(failures: ReadonlySet<string>): void {
+    if (!failures.size) return;
+    this._stableLayoutReusableForExport = false;
+    if (this._shadowLayout) {
+      this._shadowLayout = {...this._shadowLayout, exact: false};
     }
+    this.scheduleRecompute();
   }
 
   private _reconcileShadow(
@@ -890,11 +950,12 @@ export class PaginatedViewController {
   ): void {
     let stage = 'apply-measured';
     try {
-      const accepted = this.layoutCoordinator.applyMeasured(
+      const applied = this.layoutCoordinator.applyMeasured(
         measurements,
         measurementRevision,
+        this._heightSource.measurementEpoch,
       );
-      if (!accepted) {
+      if (!applied.accepted) {
         this._shadowLayout = null;
         this._lastShadowMismatchSignature = null;
         this._lastShadowErrorSignature = null;
@@ -945,6 +1006,17 @@ export class PaginatedViewController {
       fontEpoch: this._fontEpoch,
       rendererRevision: 0,
     });
+    this.layoutCoordinator.setRequiredMeasurementEpoch(
+      this._heightSource.measurementEpoch,
+    );
+  }
+
+  private _measureOptions(): MeasureOptions {
+    return {
+      contentHeight: this._geom.geometry.contentHeight,
+      contentWidth: this._contentWidth(),
+      widowOrphanLines: this._config.widowOrphanLines ?? 2,
+    };
   }
 
   private _contentWidth(): number {
@@ -1126,6 +1198,7 @@ export class PaginatedViewController {
     this._enabled = false;
     if (this._rafId) cancelAnimationFrame(this._rafId);
     this._rafId = 0;
+    this._pendingRecomputeKind = 'none';
     this._subs.unsubscribe();
     this._subs = new Subscription();
     this._containerRO?.disconnect();

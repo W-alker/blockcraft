@@ -69,23 +69,31 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
-### Unreleased - 2026-08-10 (major) — adopt `@cses/ui@4.23.0` for standard editor chrome
+### Unreleased - 2026-08-10 (major) — adopt `@cses/ui@4.23.0` and stabilize virtualized scrolling
 
 **What changed**: BlockCraft now declares the exact `@cses/ui@4.23.0` peer and
 uses its public Button, Input, Tooltip, Dropdown/Menu, Empty and Message APIs for
 generic editor chrome. The old `ng-zorro-antd` peer and runtime imports are
 removed. BlockCraft theme variables, existing `bc_icon` and Angular Material
-SVG/brand-icon paths are unchanged.
+SVG/brand-icon paths are unchanged. Root virtualization now also preserves
+completed element measurements across retained detach/reattach cycles, skips
+stable-window DOM reconciliation, and treats layout-stride drift of at most
+`0.5px` as ResizeObserver noise. Sparse pagination verifies a recreated host
+only within the mounted window and avoids full-document pagination when its
+canonical geometry is unchanged.
 
 **Why**: Standard controls need one CSES-owned implementation instead of a mix
 of native controls and ng-zorro. Editor-specific geometry controls remain
 BlockCraft-owned because generic components do not cover their interaction
-contracts.
+contracts. Re-observing retained views previously replayed equivalent geometry
+through pagination and scroll-anchor correction, so a stable document could
+still do whole-document work or visibly move its scrollbar while scrolling.
 
 **Affected ai-skills files**:
 
 - `blockcraft.md`
 - `blockcraft-app.md`
+- `blockcraft-perf.md`
 - `blockcraft-toolbar.md`
 - `MIGRATIONS.md`
 
@@ -111,7 +119,7 @@ contracts.
 // after
 {
   "dependencies": {
-    "@ccc/blockcraft": "0.3.0-alpha.31",
+    "@ccc/blockcraft": "0.3.0-alpha.32",
     "@cses/ui": "4.23.0"
   }
 }
@@ -130,6 +138,14 @@ contracts.
   and messages follow CSES component behavior, focus styles and accessibility.
 - BlockCraft light/dark themes, inline color matrix, drag/resize/table geometry
   controls and all existing icon paths keep their current ownership.
+- `HeightObserver` does not publish a repeated layout stride when the same
+  `Element` is re-observed and differs by no more than `0.5px`; a new element
+  or a larger change still publishes normally.
+- Returning to a warm sparse-pagination window no longer measures, paginates,
+  republishes page DOM, or writes `scrollTop`. A recreated host is measured once
+  for correctness, but equal geometry stops before full pagination.
+- Content, structure, navigation, projection, measure-context, and genuine
+  geometry changes still invalidate the stable-window fast path.
 
 ### v0.3.0-alpha.31 - 2026-08-10 (patch) — keep short text blocks whole and flow oversized text by visual line
 

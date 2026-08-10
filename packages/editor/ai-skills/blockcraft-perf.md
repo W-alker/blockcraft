@@ -83,7 +83,12 @@ leases, but the omitted projected height is additionally capped at one quarter
 of the viewport so giant tables cannot bypass the height window.
 `ResizeObserver` corrects estimates and
 records each mounted block's layout stride, including inter-block spacing, then
-restores an ID-based scroll anchor. Nested subtrees are atomic in this phase.
+restores an ID-based scroll anchor. The public `HeightObserver` remembers that
+stride by `Element` across detach/reattach and suppresses a repeated value whose
+drift is at most `0.5px`; replacement elements and larger changes still publish.
+After projected range lookup, an otherwise identical scroll window also skips
+mount/retain, observer, spacer and `viewChange$` reconciliation. Nested subtrees
+are atomic in this phase.
 
 Custom blocks can provide a model-driven estimate through
 `schema.metadata.virtualization.estimateHeight(context)`. It runs before
@@ -138,7 +143,12 @@ product path still uses an exact full-document lease. In sparse mode,
 Gap/TableBreak/HeightLock appliers cache complete layout facts but query and
 mutate only the mounted-ID diff. `LiveHeightSource` observes and measures only
 the mounted window; unmounted records keep flavour estimates. A remounted root
-immediately replays its cached pagination state before its next measurement.
+immediately replays its cached pagination state. A retained host whose completed
+measurement is still current does not schedule pagination work. A recreated
+host performs one mounted-window verification; if its canonical geometry is
+unchanged, the controller stops before the `O(N)` pagination/projection/DOM
+publish path. Content, structure, measure-context and genuine geometry changes
+still invalidate the cache and take the normal recomputation path.
 
 Sparse content/structure/props events all schedule at most one recomputation
 per animation frame because an offscreen text mutation has no

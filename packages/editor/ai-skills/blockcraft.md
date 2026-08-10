@@ -450,6 +450,15 @@ failed mount cannot leave stale blank geometry behind.
 `doc.virtualization.viewChange$` emits only when the mounted root-ID window
 actually changes, allowing view plugins to bind and release DOM projections
 without subscribing directly to scroll events.
+Scroll frames still resolve the projected range, but a frame whose projection,
+segments, mounted/retained IDs and absolute-placement visibility are unchanged
+skips component, `HeightObserver`, spacer and `viewChange$` reconciliation.
+`HeightObserver` retains the last layout stride per `Element` across
+detach/reattach and ignores drift of at most `0.5px`; a replacement element or
+larger change is measured normally. Sparse pagination applies the same boundary:
+a warm retained host performs no pagination measurement, while a recreated host
+is verified once and equal canonical geometry stops before full pagination or
+scroll-anchor restoration.
 Local selection classes consume the same signal: only mounted covered blocks
 receive `.selected` / `.focused`, and newly mounted fragments are repainted
 from the current model selection without enumerating the complete range. A

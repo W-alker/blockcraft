@@ -842,6 +842,115 @@ describe('RootVirtualizationManager', () => {
     h.manager.dispose()
   })
 
+  it('ignores subpixel height drift but applies measurements beyond 0.5px', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrames(2)
+    const projection = (h.manager as any)
+      .continuousLayoutProjection as ContinuousLayoutProjection
+    const notifyChange = spyOn(projection, 'notifyChange').and.callThrough()
+    const heights = (h.manager as any).heights as HeightMap
+    const previousRevision = projection.revision
+    h.scrollContainer.scrollTop = 480
+
+    ;(h.manager as any).applyMeasurements([['b0', 48.5]])
+
+    expect(heights.get(0)).toBe(48)
+    expect(notifyChange).not.toHaveBeenCalled()
+    expect(projection.revision).toBe(previousRevision)
+    expect(h.scrollContainer.scrollTop).toBe(480)
+
+    ;(h.manager as any).applyMeasurements([['b0', 48.6]])
+
+    expect(heights.get(0)).toBe(48.6)
+    expect(notifyChange).toHaveBeenCalledTimes(1)
+    expect(projection.revision).toBe(previousRevision + 1)
+    expect(h.scrollContainer.scrollTop).toBeCloseTo(480.6, 6)
+    h.manager.dispose()
+  })
+
+  it('skips DOM reconciliation when scrolling stays inside the same projected window', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    // Settle the viewport ResizeObserver's initial delivery so this frame is
+    // driven by scroll alone.
+    await nextAnimationFrame()
+    ;(h.manager as any).viewportResizeObserver?.disconnect()
+    await nextAnimationFrame()
+    expect((h.manager as any).reconciledInvalidationRevision)
+      .toBe((h.manager as any).reconcileInvalidationRevision)
+
+    const rangeLookup = spyOn(
+      (h.manager as any).continuousLayoutProjection,
+      'indexAtOffset',
+    ).and.callThrough()
+    const heightSync = spyOn((h.manager as any).heightObserver, 'sync').and.callThrough()
+    const spacerSync = spyOn((h.manager as any).spacerLayer, 'sync').and.callThrough()
+    const publishViewChange = spyOn<any>(h.manager, 'publishViewChange').and.callThrough()
+    h.vm.mountRootChild.calls.reset()
+    h.vm.retainRootChild.calls.reset()
+
+    h.scrollContainer.scrollTop = 1
+    h.scrollContainer.dispatchEvent(new Event('scroll'))
+    await nextAnimationFrame()
+
+    expect(rangeLookup).toHaveBeenCalledTimes(2)
+    expect(h.vm.mountRootChild).not.toHaveBeenCalled()
+    expect(h.vm.retainRootChild).not.toHaveBeenCalled()
+    expect(heightSync).not.toHaveBeenCalled()
+    expect(spacerSync).not.toHaveBeenCalled()
+    expect(publishViewChange).not.toHaveBeenCalled()
+    h.manager.dispose()
+  })
+
+  it('still reconciles DOM when scrolling enters a different projected window', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    const heightSync = spyOn((h.manager as any).heightObserver, 'sync').and.callThrough()
+    const spacerSync = spyOn((h.manager as any).spacerLayer, 'sync').and.callThrough()
+    h.vm.mountRootChild.calls.reset()
+    h.vm.retainRootChild.calls.reset()
+
+    h.scrollContainer.scrollTop = 480
+    h.scrollContainer.dispatchEvent(new Event('scroll'))
+    await nextAnimationFrame()
+
+    expect(h.vm.mountRootChild).toHaveBeenCalled()
+    expect(h.vm.retainRootChild).toHaveBeenCalled()
+    expect(heightSync).toHaveBeenCalledTimes(1)
+    expect(spacerSync).toHaveBeenCalledTimes(1)
+    h.manager.dispose()
+  })
+
+  it('still reconciles DOM when the active projection revision changes inside the same window', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 48))
+    const projection = customProjection(h.ids, heights)
+    const release = registerRootLayoutProjection(h.manager, projection)
+    await nextAnimationFrame()
+
+    const spacerSync = spyOn((h.manager as any).spacerLayer, 'sync').and.callThrough()
+    h.vm.mountRootChild.calls.reset()
+    h.vm.retainRootChild.calls.reset()
+
+    projection.notifyChange()
+    await nextAnimationFrame()
+
+    expect(h.vm.mountRootChild).not.toHaveBeenCalled()
+    expect(h.vm.retainRootChild).not.toHaveBeenCalled()
+    expect(spacerSync).toHaveBeenCalledTimes(1)
+
+    release()
+    h.manager.dispose()
+    projection.dispose()
+  })
+
   it('completes the continuous layout projection once on disposal', () => {
     const h = createHarness()
     const complete = jasmine.createSpy('complete')

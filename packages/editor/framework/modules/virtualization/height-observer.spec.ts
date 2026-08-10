@@ -111,4 +111,60 @@ describe('HeightObserver', () => {
 
     expect(measurements).toEqual([[['a', 34]]])
   })
+
+  it('retains stable layout strides across re-observation without suppressing new hosts', () => {
+    const container = document.createElement('div')
+    const a = document.createElement('div')
+    const replacementA = document.createElement('div')
+    const b = document.createElement('div')
+    container.append(a, b)
+    let nextTop = 44
+    spyOn(a, 'getBoundingClientRect').and.returnValue({top: 10} as DOMRect)
+    spyOn(replacementA, 'getBoundingClientRect').and.returnValue({top: 10} as DOMRect)
+    spyOn(b, 'getBoundingClientRect').and.callFake(() => ({top: nextTop}) as DOMRect)
+
+    let callback!: ResizeObserverCallback
+    const observer = {
+      observe: jasmine.createSpy('observe'),
+      unobserve: jasmine.createSpy('unobserve'),
+      disconnect: jasmine.createSpy('disconnect'),
+    } as unknown as ResizeObserver
+    const measurements: Array<readonly [string, number]>[] = []
+    const heightObserver = new HeightObserver(
+      values => measurements.push(values),
+      cb => {
+        callback = cb
+        return observer
+      },
+    )
+    const entryFor = (target: Element) => ([{
+      target,
+      borderBoxSize: [{blockSize: 24}],
+    }] as unknown as ResizeObserverEntry[])
+
+    heightObserver.sync(['a', 'b'], id => ({a, b})[id])
+    callback(entryFor(a), observer)
+    heightObserver.sync(['b'], id => ({b})[id])
+    heightObserver.sync(['a', 'b'], id => ({a, b})[id])
+
+    nextTop = 44.5
+    callback(entryFor(a), observer)
+    expect(measurements).toEqual([[['a', 34]]])
+
+    nextTop = 44.6
+    callback(entryFor(a), observer)
+    expect(measurements).toEqual([
+      [['a', 34]],
+      [['a', 34.6]],
+    ])
+
+    container.replaceChild(replacementA, a)
+    heightObserver.sync(['a', 'b'], id => ({a: replacementA, b})[id])
+    callback(entryFor(replacementA), observer)
+    expect(measurements).toEqual([
+      [['a', 34]],
+      [['a', 34.6]],
+      [['a', 34.6]],
+    ])
+  })
 })
