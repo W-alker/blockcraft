@@ -228,6 +228,14 @@ export class PaginatedViewController {
       );
       this._subs.add(
         this.doc.model.structureChange$.subscribe(change => {
+          if (this.options.sparseView) {
+            // RootVirtualizationManager validates custom projection order before
+            // consuming it. A structure notification updates the canonical root
+            // model synchronously, while the matching pagination projection is
+            // published on our trailing frame. Keep validation deferred across
+            // that complete owner handoff, not only across IME composition.
+            this._sparseProjectionUpdateDeferred = true;
+          }
           this._heightSource.clearLayoutOwnedResize();
           this._inlineBreaks.invalidate(
             change.affectedRootIds ?? this._mountedRootIds(),
@@ -559,10 +567,7 @@ export class PaginatedViewController {
           isValidationDeferred: () =>
             this._sparseProjectionUpdateDeferred ||
             this._isCompositionInProgress(),
-          onInvalid: error => {
-            this.disable();
-            this.options.onSparseViewFailure?.(error);
-          },
+          onInvalid: error => this._handleSparseViewFailure(error),
         },
       );
       if (state.projection.willChange$) {
@@ -588,7 +593,9 @@ export class PaginatedViewController {
     } catch (error) {
       const releaseLayoutProjection = this._releaseLayoutProjection;
       this._releaseLayoutProjection = null;
-      releaseLayoutProjection?.();
+      this._runCleanup('sparse-activation-release', () => {
+        releaseLayoutProjection?.();
+      });
       this._clearPaginationView();
       throw error;
     }
@@ -694,10 +701,30 @@ export class PaginatedViewController {
       this._sparseFailureCount = 0;
       const releaseLayoutProjection = this._releaseLayoutProjection;
       this._releaseLayoutProjection = null;
-      releaseLayoutProjection?.();
-      this.disable();
-      this.options.onSparseViewFailure?.(error);
+      this._runCleanup('sparse-reconcile-release', () => {
+        releaseLayoutProjection?.();
+      });
+      this._handleSparseViewFailure(error);
       return null;
+    }
+  }
+
+  private _handleSparseViewFailure(error: unknown): void {
+    try {
+      this.disable();
+    } catch (cleanupError) {
+      // disable() is intentionally best-effort, but keep the failure callback
+      // guaranteed even if a future teardown step unexpectedly escapes.
+      this._warn('paginationViewCleanupError: ', {
+        stage: 'sparse-failure-disable',
+        error: cleanupError,
+      });
+    } finally {
+      try {
+        this.options.onSparseViewFailure?.(error);
+      } catch (callbackError) {
+        this._warn('paginationSparseFailureCallbackError: ', callbackError);
+      }
     }
   }
 
@@ -1212,40 +1239,75 @@ export class PaginatedViewController {
   disable(): void {
     if (!this._enabled) return;
     this._enabled = false;
-    if (this._rafId) cancelAnimationFrame(this._rafId);
-    this._rafId = 0;
-    this._pendingRecomputeKind = 'none';
-    this._subs.unsubscribe();
-    this._subs = new Subscription();
-    this._containerRO?.disconnect();
-    this._containerRO = null;
-    this._removeFontListener();
-    this._heightSource.clearLayoutOwnedResize();
-    const releaseLayoutProjection = this._releaseLayoutProjection;
-    this._releaseLayoutProjection = null;
-    releaseLayoutProjection?.();
-    this._clearPaginationView();
-    this._stableLayout = null;
-    this._stableLayoutReusableForExport = false;
-    this._shadowLayout = null;
-    this._compositionRecomputePending = false;
-    this._sparseProjectionUpdateDeferred = false;
-    this._sparseFailureCount = 0;
-    this._inlineProjectionFailureCount = 0;
-    this._pendingSparseContainerStyles = false;
-    this._layoutOwnedRootIds.clear();
-    this._lastShadowMismatchSignature = null;
-    this._lastShadowErrorSignature = null;
+    try {
+      const rafId = this._rafId;
+      this._rafId = 0;
+      if (rafId) {
+        this._runCleanup('cancel-recompute-frame', () => {
+          cancelAnimationFrame(rafId);
+        });
+      }
+
+      const subscriptions = this._subs;
+      this._subs = new Subscription();
+      this._runCleanup('subscriptions', () => subscriptions.unsubscribe());
+
+      const containerRO = this._containerRO;
+      this._containerRO = null;
+      this._runCleanup('container-resize-observer', () => {
+        containerRO?.disconnect();
+      });
+      this._runCleanup('font-listener', () => this._removeFontListener());
+      this._runCleanup('height-source-resize-state', () => {
+        this._heightSource.clearLayoutOwnedResize();
+      });
+
+      const releaseLayoutProjection = this._releaseLayoutProjection;
+      this._releaseLayoutProjection = null;
+      this._runCleanup('layout-projection-release', () => {
+        releaseLayoutProjection?.();
+      });
+      this._clearPaginationView();
+    } finally {
+      // State reset is unconditional: teardown hooks belong to external DOM and
+      // projection owners, so one failure must not make this controller look
+      // enabled while its subscriptions or layout projection are already gone.
+      this._rafId = 0;
+      this._pendingRecomputeKind = 'none';
+      this._containerRO = null;
+      this._releaseLayoutProjection = null;
+      this._stableLayout = null;
+      this._stableLayoutReusableForExport = false;
+      this._shadowLayout = null;
+      this._compositionRecomputePending = false;
+      this._sparseProjectionUpdateDeferred = false;
+      this._sparseFailureCount = 0;
+      this._inlineProjectionFailureCount = 0;
+      this._pendingSparseContainerStyles = false;
+      this._layoutOwnedRootIds.clear();
+      this._lastShadowMismatchSignature = null;
+      this._lastShadowErrorSignature = null;
+    }
   }
 
   private _clearPaginationView(): void {
-    this._gapApplier.clear();
-    this._inlineBreaks.clear();
-    this._tableBreaks.clear();
-    this._heightLockApplier.clear();
-    this._frameLayer.destroy();
-    this._documentHeaderLayer?.destroy();
-    this._removeContainerStyles();
+    this._runCleanup('gap-view', () => this._gapApplier.clear());
+    this._runCleanup('inline-break-view', () => this._inlineBreaks.clear());
+    this._runCleanup('table-break-view', () => this._tableBreaks.clear());
+    this._runCleanup('height-lock-view', () => this._heightLockApplier.clear());
+    this._runCleanup('page-frame-view', () => this._frameLayer.destroy());
+    this._runCleanup('document-header-view', () => {
+      this._documentHeaderLayer?.destroy();
+    });
+    this._runCleanup('container-styles', () => this._removeContainerStyles());
+  }
+
+  private _runCleanup(stage: string, cleanup: () => void): void {
+    try {
+      cleanup();
+    } catch (error) {
+      this._warn('paginationViewCleanupError: ', {stage, error});
+    }
   }
 
   destroy(): void {

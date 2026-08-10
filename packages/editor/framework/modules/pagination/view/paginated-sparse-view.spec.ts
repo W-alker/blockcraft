@@ -21,6 +21,10 @@ describe('PaginatedViewController sparse view', () => {
     document.body.append(scrollContainer)
 
     let mountedIds = ['a']
+    const headingById = new Map<string, number | undefined>([
+      ['a', undefined],
+      ['b', undefined],
+    ])
     const viewChange$ = new Subject<{mountedRootIds: readonly string[]}>()
     const contentChange$ = new Subject<IBlockModelContentChange>()
     const structureChange$ = new Subject<IBlockModelStructureChange>()
@@ -50,7 +54,9 @@ describe('PaginatedViewController sparse view', () => {
           flavour: 'paragraph',
           nodeType: BlockNodeType.editable,
           hostElement: hosts.get(id),
-          heading: false,
+          get heading() {
+            return headingById.get(id)
+          },
         }
       },
     )
@@ -77,7 +83,10 @@ describe('PaginatedViewController sparse view', () => {
         getPath: (id: string) => ['root', id],
         getFlavour: () => 'paragraph',
         getNodeType: () => BlockNodeType.editable,
-        getProps: () => ({}),
+        getProps: (id: string) => {
+          const heading = headingById.get(id)
+          return heading == null ? {} : {heading}
+        },
       },
       config,
       get theme() {
@@ -97,6 +106,7 @@ describe('PaginatedViewController sparse view', () => {
       ngZone: {runOutsideAngular: (run: () => void) => run()},
       logger: {warn: jasmine.createSpy('warn')},
     } as unknown as BlockCraft.Doc
+    const onSparseViewFailure = jasmine.createSpy('onSparseViewFailure')
     const controller = new PaginatedViewController(
       doc,
       {
@@ -106,7 +116,7 @@ describe('PaginatedViewController sparse view', () => {
       },
       scrollContainer,
       undefined,
-      {sparseView: true},
+      {sparseView: true, onSparseViewFailure},
     )
 
     try {
@@ -118,6 +128,23 @@ describe('PaginatedViewController sparse view', () => {
       const entries = controller.captureShadowLayout()!.entries
       expect(entries.find(entry => entry.blockId === 'a')?.source).toBe('measured')
       expect(entries.find(entry => entry.blockId === 'b')?.source).toBe('estimated')
+
+      for (const heading of [1, 2, undefined]) {
+        headingById.set('a', heading)
+        contentChange$.next({
+          blockIds: ['a'],
+          kinds: ['props'],
+          origin: 'heading-test',
+          local: true,
+          isUndoRedo: false,
+        })
+
+        expect(controller.captureStableLayout()).not.toBeNull()
+        expect(controller.captureShadowLayout()?.entries[0].isHeading)
+          .toBe(heading != null)
+        expect(rootHost.classList.contains('bc-paginated')).toBeTrue()
+        expect(onSparseViewFailure).not.toHaveBeenCalled()
+      }
 
       controller.updateConfig({pageSize: {width: 500, height: 220}})
       expect(rootHost.style.getPropertyValue('--bc-page-width')).toBe('400px')
@@ -140,6 +167,22 @@ describe('PaginatedViewController sparse view', () => {
       expect(registrationHooks.isValidationDeferred()).toBeFalse()
       expect(registeredProjection.revision).toBeGreaterThan(projectionRevision)
 
+      headingById.set('b', 1)
+      contentChange$.next({
+        blockIds: ['b'],
+        kinds: ['props'],
+        origin: 'offscreen-heading-test',
+        local: false,
+        isUndoRedo: false,
+      })
+      expect(controller.captureStableLayout()).not.toBeNull()
+      expect(controller.captureShadowLayout()?.entries.find(
+        entry => entry.blockId === 'b',
+      )).toEqual(jasmine.objectContaining({
+        isHeading: true,
+        source: 'estimated',
+      }))
+
       const scheduleRecompute = spyOn(controller, 'scheduleRecompute')
       contentChange$.next({
         blockIds: ['b'],
@@ -155,9 +198,18 @@ describe('PaginatedViewController sparse view', () => {
       mountedIds = ['b']
       viewChange$.next({mountedRootIds: mountedIds})
 
+      expect(controller.captureStableLayout()).not.toBeNull()
+      expect(controller.captureShadowLayout()?.entries.find(
+        entry => entry.blockId === 'b',
+      )).toEqual(jasmine.objectContaining({
+        isHeading: true,
+        source: 'measured',
+      }))
       expect(getBlockById).not.toHaveBeenCalledWith('a', jasmine.anything())
       expect(gapBefore(hosts.get('a')!)).toBeNull()
       expect(gapBefore(hosts.get('b')!)?.style.height).toBe('80px')
+      expect(rootHost.classList.contains('bc-paginated')).toBeTrue()
+      expect(onSparseViewFailure).not.toHaveBeenCalled()
 
       controller.disable()
       expect(releaseProjection).toHaveBeenCalledTimes(1)
@@ -298,6 +350,102 @@ describe('PaginatedViewController sparse view', () => {
       harness.destroy()
     }
   })
+
+  it('defers structure validation until the matching sparse projection publishes', () => {
+    const harness = createWarmWindowHarness()
+
+    try {
+      harness.controller.enable()
+      expect(harness.controller.captureStableLayout()).not.toBeNull()
+      const projectionRevision = harness.projection.revision
+
+      harness.structureChange$.next({
+        revision: 1,
+        reachableAddedIds: [],
+        reachableRemovedIds: [],
+        affectedParentIds: ['root'],
+        affectedRootIds: [],
+      })
+
+      expect(harness.registrationHooks.isValidationDeferred()).toBeTrue()
+      expect(harness.projection.revision).toBe(projectionRevision)
+
+      expect(harness.controller.captureStableLayout()).not.toBeNull()
+      expect(harness.registrationHooks.isValidationDeferred()).toBeFalse()
+      expect(harness.projection.revision).toBeGreaterThan(projectionRevision)
+    } finally {
+      harness.destroy()
+    }
+  })
+
+  it('finishes sparse failure teardown when projection release and one view cleanup throw', () => {
+    const harness = createWarmWindowHarness()
+    let restoreGapClear: (() => void) | null = null
+
+    try {
+      harness.controller.enable()
+      expect(harness.controller.captureStableLayout()).not.toBeNull()
+      const internals = harness.controller as unknown as {
+        _enabled: boolean
+        _subs: {readonly closed: boolean}
+        _containerRO: ResizeObserver | null
+        _releaseLayoutProjection: (() => void) | null
+        _sparseProjectionUpdateDeferred: boolean
+        _recomputeSparse(
+          measurementRevision: number | null,
+          mountedMeasurementOnly: boolean,
+        ): unknown
+        _gapApplier: {clear(): void}
+        _inlineBreaks: {clear(): void}
+        _tableBreaks: {clear(): void}
+        _heightLockApplier: {clear(): void}
+      }
+      const previousSubscriptions = internals._subs
+      const gapCleanupError = new Error('forced gap cleanup failure')
+      const releaseError = new Error('forced projection release failure')
+      harness.setProjectionReleaseError(releaseError)
+      const gapClear = spyOn(internals._gapApplier, 'clear').and.callFake(() => {
+        throw gapCleanupError
+      })
+      restoreGapClear = () => gapClear.and.callThrough()
+      const inlineClear = spyOn(internals._inlineBreaks, 'clear').and.callThrough()
+      const tableClear = spyOn(internals._tableBreaks, 'clear').and.callThrough()
+      const heightLockClear = spyOn(internals._heightLockApplier, 'clear').and.callThrough()
+
+      expect(() => {
+        internals._recomputeSparse(null, false)
+        internals._recomputeSparse(null, false)
+        internals._recomputeSparse(null, false)
+      }).not.toThrow()
+
+      expect(harness.releaseProjection).toHaveBeenCalledTimes(1)
+      expect(harness.onSparseViewFailure).toHaveBeenCalledTimes(1)
+      expect(harness.onSparseViewFailure).toHaveBeenCalledWith(jasmine.any(Error))
+      expect(previousSubscriptions.closed).toBeTrue()
+      expect(internals._enabled).toBeFalse()
+      expect(internals._containerRO).toBeNull()
+      expect(internals._releaseLayoutProjection).toBeNull()
+      expect(internals._sparseProjectionUpdateDeferred).toBeFalse()
+      expect(inlineClear).toHaveBeenCalled()
+      expect(tableClear).toHaveBeenCalled()
+      expect(heightLockClear).toHaveBeenCalled()
+      expect(harness.rootHost.classList.contains('bc-paginated')).toBeFalse()
+      expect(harness.logger.warn).toHaveBeenCalledWith(
+        'paginationViewCleanupError: ',
+        jasmine.objectContaining({stage: 'gap-view', error: gapCleanupError}),
+      )
+      expect(harness.logger.warn).toHaveBeenCalledWith(
+        'paginationViewCleanupError: ',
+        jasmine.objectContaining({
+          stage: 'sparse-reconcile-release',
+          error: releaseError,
+        }),
+      )
+    } finally {
+      restoreGapClear?.()
+      harness.destroy()
+    }
+  })
 })
 
 function blockHost(id: string, height: number): HTMLElement {
@@ -328,11 +476,15 @@ function createWarmWindowHarness() {
 
   let mountedIds = ['a']
   let projection: any = null
+  let registrationHooks: any = null
+  let projectionReleaseError: Error | null = null
   const viewChange$ = new Subject<{mountedRootIds: readonly string[]}>()
   const contentChange$ = new Subject<IBlockModelContentChange>()
   const structureChange$ = new Subject<IBlockModelStructureChange>()
   const themeChange$ = new Subject<string>()
   const childrenChange$ = new Subject<void>()
+  const releaseProjection = jasmine.createSpy('releaseProjection')
+  const onSparseViewFailure = jasmine.createSpy('onSparseViewFailure')
   const config = {
     scrollContainer,
     theme: 'light',
@@ -381,8 +533,16 @@ function createWarmWindowHarness() {
       viewChange$,
       registerLayoutProjection: (nextProjection: unknown, hooks: any) => {
         projection = nextProjection
+        registrationHooks = hooks
         hooks.beforeActivate?.()
-        return () => hooks.beforeDeactivate?.()
+        let active = true
+        return () => {
+          if (!active) return
+          active = false
+          hooks.beforeDeactivate?.()
+          releaseProjection()
+          if (projectionReleaseError) throw projectionReleaseError
+        }
       },
     },
     inputManger: {compositionSession: {isIdle: true}},
@@ -400,15 +560,29 @@ function createWarmWindowHarness() {
     },
     scrollContainer,
     coordinator,
-    {sparseView: true},
+    {sparseView: true, onSparseViewFailure},
   )
 
   return {
     controller,
     coordinator,
+    structureChange$,
+    rootHost,
+    logger: doc.logger,
+    releaseProjection,
+    onSparseViewFailure,
     get projection() {
       if (!projection) throw new Error('Sparse projection is not registered')
       return projection
+    },
+    get registrationHooks() {
+      if (!registrationHooks) {
+        throw new Error('Sparse projection hooks are not registered')
+      }
+      return registrationHooks
+    },
+    setProjectionReleaseError(error: Error | null) {
+      projectionReleaseError = error
     },
     mount(id: 'a' | 'b') {
       mountedIds = [id]

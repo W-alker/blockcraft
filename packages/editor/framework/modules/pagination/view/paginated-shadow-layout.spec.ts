@@ -38,6 +38,7 @@ interface Harness {
   readonly compositionSession: { isIdle: boolean };
   readonly eventStatus: { isComposing: boolean };
   readonly logger: { warn: jasmine.Spy };
+  setHeading(heading: number | undefined): void;
   destroy(): void;
 }
 
@@ -101,12 +102,15 @@ function createHarness(): Harness {
   const logger = { warn: jasmine.createSpy("warn") };
   const compositionSession = { isIdle: true };
   const eventStatus = { isComposing: false };
+  let heading: number | undefined;
   const block = {
     id: "root-block",
     flavour: "paragraph",
     nodeType: BlockNodeType.editable,
     hostElement: blockHost,
-    heading: false,
+    get heading() {
+      return heading;
+    },
   };
   const model = {
     contentChange$,
@@ -161,6 +165,15 @@ function createHarness(): Harness {
     compositionSession,
     eventStatus,
     logger,
+    setHeading: nextHeading => {
+      heading = nextHeading;
+      facts.set("root-block", {
+        flavour: "paragraph",
+        nodeType: BlockNodeType.editable,
+        props: nextHeading == null ? {} : {heading: nextHeading},
+        path: ["root", "root-block"],
+      });
+    },
     destroy: () => {
       contentChange$.complete();
       structureChange$.complete();
@@ -668,6 +681,38 @@ describe("PaginatedViewController shadow layout", () => {
       expect(applyContentChange).toHaveBeenCalledTimes(3);
       expect(requestFrame).toHaveBeenCalledTimes(3);
       expect(cancelFrame).toHaveBeenCalledTimes(2);
+    } finally {
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
+  it("keeps normal pagination active while heading props change", () => {
+    const harness = createHarness();
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+    );
+
+    try {
+      controller.enable();
+      expect(controller.captureStableLayout()).not.toBeNull();
+
+      for (const heading of [1, 2, undefined]) {
+        harness.setHeading(heading);
+        harness.contentChange$.next(contentChange(["root-block"], ["props"]));
+
+        expect(controller.captureStableLayout()).not.toBeNull();
+        expect(controller.captureShadowLayout()?.entries[0].isHeading)
+          .toBe(heading != null);
+        expect(harness.rootHost.classList.contains("bc-paginated")).toBeTrue();
+      }
+
+      expect(shadowWarnings(
+        harness.logger,
+        "paginationShadowLayoutError: ",
+      )).toEqual([]);
     } finally {
       controller.destroy();
       harness.destroy();

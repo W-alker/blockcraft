@@ -26,6 +26,7 @@ import {
   PaginationGeometrySeed,
   PaginationMeasureContext,
 } from "./pagination-geometry-index";
+import {isPaginationHeading} from './pagination-heading';
 import {
   buildProjectedBlockPlacements,
   PaginatedLayoutProjection,
@@ -64,6 +65,11 @@ interface RootSnapshot {
   readonly rootIds: readonly string[];
   readonly seeds: readonly PaginationGeometrySeed[];
 }
+
+type PaginationGeometrySemantics = Omit<
+  PaginationGeometrySeed,
+  'estimatedHeight'
+>;
 
 function entryToMeta(entry: PaginationGeometryEntry): BlockMeta {
   // 只有完整 DOM 测量能确认流式图片/视频的媒体主体；稀疏布局不得从
@@ -160,12 +166,23 @@ export class PaginationLayoutCoordinator {
   applyContentChange(change: IBlockModelContentChange): void {
     if (this.disposed) return;
     const rootIds = new Set<string>();
+    const semanticRootIds = new Set<string>();
     for (const blockId of change.blockIds) {
       const path = this.doc.model.getPath(blockId);
-      if (path?.[0] === this.doc.rootId && path[1]) rootIds.add(path[1]);
+      const rootId = path?.[0] === this.doc.rootId ? path[1] : undefined;
+      if (!rootId) continue;
+      rootIds.add(rootId);
+      if (change.kinds.includes("props") && blockId === rootId) {
+        semanticRootIds.add(rootId);
+      }
     }
     const affectedRootIds = [...rootIds];
     this.geometryIndex.markContentDirty(affectedRootIds);
+    if (semanticRootIds.size) {
+      this.geometryIndex.syncRootSemantics(
+        [...semanticRootIds].map(blockId => this.semanticsFromModel(blockId)),
+      );
+    }
     this.refreshObjectSizingEstimates(affectedRootIds.filter(blockId =>
       modelHeightEstimateAffectedByContentChange(this.doc, blockId, change),
     ));
@@ -173,8 +190,18 @@ export class PaginationLayoutCoordinator {
 
   applyStructureChange(change: IBlockModelStructureChange): void {
     if (this.disposed) return;
+    const affectedRootIds = change.affectedRootIds
+      ?? this.doc.model.getChildrenIds(this.doc.rootId);
+    const estimateRootIds = this.structureEstimateRootIds(
+      change,
+      affectedRootIds,
+    );
+    const estimateRootIdSet = new Set(estimateRootIds);
+    this.geometryIndex.markStructureDirty(estimateRootIds);
+    this.geometryIndex.markContentDirty(
+      affectedRootIds.filter(blockId => !estimateRootIdSet.has(blockId)),
+    );
     this.syncRootOrder();
-    this.geometryIndex.markContentDirty(change.affectedRootIds ?? []);
   }
 
   updateMeasureContext(context: PaginationMeasureContext): void {
@@ -319,13 +346,62 @@ export class PaginationLayoutCoordinator {
       blockId,
       flavour,
       nodeType,
-      isHeading: nodeType === BlockNodeType.editable && !!props?.["heading"],
+      isHeading: this.isHeading(flavour, nodeType, props?.["heading"]),
       estimatedHeight: this.resolveEstimatedHeight(blockId, {
         flavour,
         nodeType,
         props,
       }),
     };
+  }
+
+  private semanticsFromModel(blockId: string): PaginationGeometrySemantics {
+    const flavour = this.doc.model.getFlavour(blockId) ?? "unknown";
+    const nodeType = this.doc.model.getNodeType(blockId) ?? BlockNodeType.void;
+    const heading = nodeType === BlockNodeType.editable
+      ? this.doc.model.getProps(blockId)?.["heading"]
+      : undefined;
+    return {
+      blockId,
+      flavour,
+      nodeType,
+      isHeading: this.isHeading(flavour, nodeType, heading),
+    };
+  }
+
+  private isHeading(
+    flavour: string,
+    nodeType: BlockNodeType,
+    heading: unknown,
+  ): boolean {
+    return isPaginationHeading({
+      nodeType,
+      heading,
+      plainTextOnly:
+        this.doc.schemas?.get(flavour, false)?.metadata.plainTextOnly === true,
+    });
+  }
+
+  private structureEstimateRootIds(
+    change: IBlockModelStructureChange,
+    affectedRootIds: readonly string[],
+  ): readonly string[] {
+    const parentIds = change.affectedParentIds ?? [];
+    if (!parentIds.length) return affectedRootIds;
+
+    const rootIds = new Set<string>();
+    for (const parentId of parentIds) {
+      // Direct-root insertion, deletion or reordering changes the root list but
+      // not the surviving roots' own extent.
+      if (parentId === this.doc.rootId) continue;
+      const path = this.doc.model.getPath(parentId);
+      const rootId = path?.[0] === this.doc.rootId ? path[1] : undefined;
+      // A removed parent can no longer be resolved after ModelGraph publishes.
+      // In that uncommon case, refresh the producer-provided affected roots.
+      if (!rootId) return affectedRootIds;
+      rootIds.add(rootId);
+    }
+    return [...rootIds];
   }
 
   private resolveEstimatedHeight(

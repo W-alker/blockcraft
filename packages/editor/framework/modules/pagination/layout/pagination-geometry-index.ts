@@ -192,6 +192,33 @@ function cloneEntry(entry: PaginationGeometryEntry): PaginationGeometryEntry {
   }
 }
 
+/**
+ * Keep only the last-known extent when model state invalidates a DOM
+ * measurement. Split anchors, table flow and media constraints belong to the
+ * exact DOM/content pair that produced them and must not survive as estimates.
+ */
+function invalidateMeasuredMetadata(
+  entry: PaginationGeometryEntry,
+  overrides: Partial<PaginationGeometryEntry> = {},
+): PaginationGeometryEntry {
+  return {
+    blockId: entry.blockId,
+    flavour: entry.flavour,
+    nodeType: entry.nodeType,
+    isHeading: entry.isHeading,
+    contentRevision: entry.contentRevision,
+    measureContextRevision: entry.measureContextRevision,
+    measurementEpoch: 0,
+    source: 'estimated',
+    naturalHeight: entry.naturalHeight,
+    effectiveHeight: entry.effectiveHeight,
+    ...(entry.trailingSpacing != null
+      ? {trailingSpacing: entry.trailingSpacing}
+      : {}),
+    ...overrides,
+  }
+}
+
 function numbersEqual(
   left: number | undefined,
   right: number | undefined,
@@ -324,14 +351,7 @@ export class PaginationGeometryIndex {
   }
 
   syncRootOrder(seeds: readonly PaginationGeometrySeed[]): boolean {
-    const seedIds = new Set<string>()
-    for (const seed of seeds) {
-      validateSeed(seed)
-      if (seedIds.has(seed.blockId)) {
-        throw new Error(`Duplicate pagination root id: ${seed.blockId}`)
-      }
-      seedIds.add(seed.blockId)
-    }
+    const seedIds = this.validateSeeds(seeds)
 
     let changed = false
     for (const blockId of this.entries.keys()) {
@@ -342,6 +362,66 @@ export class PaginationGeometryIndex {
       }
     }
 
+    changed = this.syncSeeds(seeds) || changed
+
+    if (changed) this.revisionValue++
+    return changed
+  }
+
+  /**
+   * Refresh semantics for selected roots without pruning unrelated entries or
+   * rerunning model-height estimators. Props changes keep root order stable and
+   * heading identity is independent from the retained last-known extent.
+   */
+  syncRootSemantics(
+    semantics: readonly Omit<PaginationGeometrySeed, 'estimatedHeight'>[],
+  ): boolean {
+    const ids = new Set<string>()
+    for (const next of semantics) {
+      if (ids.has(next.blockId)) {
+        throw new Error(`Duplicate pagination root id: ${next.blockId}`)
+      }
+      ids.add(next.blockId)
+    }
+
+    let changed = false
+    for (const next of semantics) {
+      const current = this.entries.get(next.blockId)
+      if (!current) continue
+      if (
+        current.flavour === next.flavour
+        && current.nodeType === next.nodeType
+        && current.isHeading === next.isHeading
+      ) continue
+
+      this.entries.set(next.blockId, invalidateMeasuredMetadata(current, {
+        flavour: next.flavour,
+        nodeType: next.nodeType,
+        isHeading: next.isHeading,
+      }))
+      this.measuredGeometryIds.delete(next.blockId)
+      changed = true
+    }
+    if (changed) this.revisionValue++
+    return changed
+  }
+
+  private validateSeeds(
+    seeds: readonly PaginationGeometrySeed[],
+  ): Set<string> {
+    const seedIds = new Set<string>()
+    for (const seed of seeds) {
+      validateSeed(seed)
+      if (seedIds.has(seed.blockId)) {
+        throw new Error(`Duplicate pagination root id: ${seed.blockId}`)
+      }
+      seedIds.add(seed.blockId)
+    }
+    return seedIds
+  }
+
+  private syncSeeds(seeds: readonly PaginationGeometrySeed[]): boolean {
+    let changed = false
     for (const seed of seeds) {
       const current = this.entries.get(seed.blockId)
       if (!current) {
@@ -394,8 +474,6 @@ export class PaginationGeometryIndex {
         changed = true
       }
     }
-
-    if (changed) this.revisionValue++
     return changed
   }
 
@@ -404,15 +482,25 @@ export class PaginationGeometryIndex {
     for (const blockId of new Set(rootIds)) {
       const entry = this.entries.get(blockId)
       if (!entry) continue
-      this.entries.set(blockId, {
-        ...entry,
+      this.entries.set(blockId, invalidateMeasuredMetadata(entry, {
         contentRevision: entry.contentRevision + 1,
-        source: 'estimated',
-      })
+      }))
       changed = true
     }
 
     if (changed) this.revisionValue++
+    return changed
+  }
+
+  /**
+   * Structural changes invalidate both DOM metadata and the retained measured
+   * extent. The following root-order sync may therefore install its freshly
+   * computed model seed for each affected root.
+   */
+  markStructureDirty(rootIds: readonly string[]): boolean {
+    const uniqueIds = [...new Set(rootIds)]
+    const changed = this.markContentDirty(uniqueIds)
+    uniqueIds.forEach(blockId => this.measuredGeometryIds.delete(blockId))
     return changed
   }
 
@@ -428,18 +516,12 @@ export class PaginationGeometryIndex {
       const current = this.entries.get(estimate.blockId)
       if (!current) continue
       this.measuredGeometryIds.delete(estimate.blockId)
-      if (
-        current.source === 'estimated' &&
-        numbersEqual(current.naturalHeight, estimate.height)
-      ) {
-        continue
-      }
-      this.entries.set(estimate.blockId, {
-        ...current,
-        source: 'estimated',
+      const next = invalidateMeasuredMetadata(current, {
         naturalHeight: estimate.height,
         effectiveHeight: estimate.height,
       })
+      if (entriesEqual(current, next)) continue
+      this.entries.set(estimate.blockId, next)
       changed = true
     }
     if (changed) this.revisionValue++

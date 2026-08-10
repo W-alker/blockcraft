@@ -10,6 +10,7 @@ import {
   getTableCellFlowPlan,
   setTableCellFlowPlan,
 } from "../engine/table-cell-flow-metadata";
+import {isPaginationHeading} from '../layout/pagination-heading'
 import {BlockMeta} from "./item-builder";
 import {
   cloneInlinePaginationBreakPlan,
@@ -274,7 +275,7 @@ export class LiveHeightSource {
           id,
           flavour: block.flavour,
           nodeType: block.nodeType,
-          isHeading: false,
+          isHeading: this._isHeading(block),
           naturalHeight,
           height,
           trailingSpacing: currentMarginBottom,
@@ -358,7 +359,7 @@ export class LiveHeightSource {
           id,
           flavour: block.flavour,
           nodeType: block.nodeType,
-          isHeading: false,
+          isHeading: this._isHeading(block),
           naturalHeight,
           height: fittedHeight,
           trailingSpacing: mb,
@@ -373,7 +374,7 @@ export class LiveHeightSource {
           id,
           flavour: block.flavour,
           nodeType: block.nodeType,
-          isHeading: false,
+          isHeading: this._isHeading(block),
           naturalHeight,
           height: mediaHeight * fitScale + nonMediaStride,
           trailingSpacing: mb,
@@ -464,9 +465,12 @@ export class LiveHeightSource {
   }
 
   private _isHeading(block: any): boolean {
-    if (block?.nodeType !== BlockNodeType.editable) return false;
     // editable-block 暴露 get heading()；兜底读 model.props.heading
-    return !!(block.heading ?? block.model?.props?.heading);
+    return isPaginationHeading({
+      nodeType: block?.nodeType,
+      heading: block?.heading ?? block?.model?.props?.heading,
+      plainTextOnly: block?.plainTextOnly === true,
+    });
   }
 
   /**

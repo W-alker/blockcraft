@@ -129,6 +129,38 @@ describe('PaginationGeometryIndex', () => {
     }
   })
 
+  it('refreshes selected root semantics without pruning unrelated geometry', () => {
+    const index = new PaginationGeometryIndex()
+    index.syncRootOrder([seed('a'), seed('b')])
+    index.applyMeasured([
+      measurement('a', 120, {splitOffsets: [60]}),
+      measurement('b', 80),
+    ])
+    index.markContentDirty(['a'])
+    const revision = index.revision
+
+    expect(index.syncRootSemantics([{
+      blockId: 'a',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      isHeading: true,
+    }])).toBeTrue()
+
+    expect(index.get('a')).toEqual(jasmine.objectContaining({
+      isHeading: true,
+      contentRevision: 1,
+      naturalHeight: 120,
+      source: 'estimated',
+    }))
+    expect(index.get('a')?.splitOffsets).toBeUndefined()
+    expect(index.get('b')).toEqual(jasmine.objectContaining({
+      isHeading: false,
+      naturalHeight: 80,
+      source: 'measured',
+    }))
+    expect(index.revision).toBe(revision + 1)
+  })
+
   it('updates seed-owned estimates but never overwrites retained measured geometry', () => {
     const index = new PaginationGeometryIndex()
     index.syncRootOrder([seed('block', 48)])
@@ -159,7 +191,22 @@ describe('PaginationGeometryIndex', () => {
   it('marks one root dirty once for a coalesced content batch', () => {
     const index = new PaginationGeometryIndex()
     index.syncRootOrder([seed('a'), seed('b')])
-    index.applyMeasured([measurement('a', 120), measurement('b', 80)])
+    index.applyMeasured([
+      measurement('a', 120, {
+        splitOffsets: [40, 80],
+        preferredSplitOffsets: [40],
+        tableRows: [{
+          id: 'old-row',
+          top: 0,
+          bottom: 40,
+          coveredFromAbove: false,
+        }],
+        lockHeight: 100,
+        fitScale: 0.5,
+        repeatHeaderHeight: 20,
+      }),
+      measurement('b', 80),
+    ])
     const revision = index.revision
 
     expect(index.markContentDirty(['a', 'a', 'missing'])).toBeTrue()
@@ -169,6 +216,12 @@ describe('PaginationGeometryIndex', () => {
       naturalHeight: 120,
       source: 'estimated',
     }))
+    expect(index.get('a')?.splitOffsets).toBeUndefined()
+    expect(index.get('a')?.preferredSplitOffsets).toBeUndefined()
+    expect(index.get('a')?.tableRows).toBeUndefined()
+    expect(index.get('a')?.lockHeight).toBeUndefined()
+    expect(index.get('a')?.fitScale).toBeUndefined()
+    expect(index.get('a')?.repeatHeaderHeight).toBeUndefined()
     expect(index.get('b')).toEqual(jasmine.objectContaining({
       contentRevision: 0,
       source: 'measured',

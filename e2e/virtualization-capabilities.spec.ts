@@ -1,7 +1,7 @@
 import {expect, test, type Page} from '@playwright/test'
 
 const editorSelector = 'block-craft-editor'
-const fatalConsolePattern = /Block not found|Doc not init yet|Cannot read properties|virtualization(?:Reconcile|Fallback|FullMount)Error|paginationSparse|layoutProjectionInvalid|unhandled|\bERROR\b/i
+const fatalConsolePattern = /Block not found|Doc not init yet|Cannot read properties|virtualization(?:Reconcile|Fallback|FullMount)Error|pagination(?:Sparse|\s+sparse)|layoutProjectionInvalid|unhandled|\bERROR\b/i
 const externalResourcePattern = /figma\.com|juejin\.cn|zijieapi\.com|byte(?:dance|replay)|youtube\.com|youtu\.be|googlevideo\.com|unsplash\.com|example\.com|angular\.dev|affine-worker\.toeverything\.workers\.dev|api\.translate\.zvo\.cn/i
 
 async function waitForEditor(page: Page): Promise<void> {
@@ -12,6 +12,14 @@ async function waitForEditor(page: Page): Promise<void> {
     }).ng
     return !!element && !!debug?.getComponent(element)?.doc?.isInitialized
   }, editorSelector)
+}
+
+async function waitForAnimationFrames(page: Page, count = 4): Promise<void> {
+  await page.evaluate(async frameCount => {
+    for (let index = 0; index < frameCount; index++) {
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    }
+  }, count)
 }
 
 function observeFatalDiagnostics(page: Page): string[] {
@@ -264,6 +272,142 @@ test('experimental pagination keeps root mounting sparse across scroll and confi
     sheets: 0,
   })
   expect((await readState()).mountedCount).toBeLessThan(40)
+  expect(fatal).toEqual([])
+})
+
+test('sparse pagination survives mounted heading switches and an offscreen heading mount', async ({page}) => {
+  test.setTimeout(60_000)
+  const fatal = observeFatalDiagnostics(page)
+  page.on('console', message => {
+    const detail = message.text()
+    const source = message.location().url
+    if (
+      !externalResourcePattern.test(`${source} ${detail}`) &&
+      fatalConsolePattern.test(detail)
+    ) {
+      fatal.push(detail)
+    }
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await waitForEditor(page)
+
+  const targets = await page.evaluate(async (selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const snapshots = Array.from({length: 100}, (_, index) =>
+      doc.schemas.createSnapshot('paragraph', [[{
+        insert: `heading pagination filler ${index}`,
+      }]]),
+    )
+    const insertedIds = doc.crud.insertBlockSnapshots(
+      doc.rootId,
+      doc.model.getChildrenIds(doc.rootId).length,
+      snapshots,
+    ) as string[]
+    const pagination = doc.plugins.find((plugin: any) => plugin.name === 'pagination')
+    if (!pagination) throw new Error('PaginationPlugin is unavailable')
+    pagination.enable()
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+
+    const mountedIds = doc.vm.getMountedRootChildIds() as string[]
+    const mountedId = mountedIds.find(id =>
+      doc.model.getFlavour(id) === 'paragraph' && !!doc.getBlockById(id))
+    const mounted = new Set(mountedIds)
+    const offscreenId = [...insertedIds].reverse().find(id => !mounted.has(id))
+    if (!mountedId || !offscreenId) {
+      throw new Error('Heading pagination targets are unavailable')
+    }
+    doc.selection.setCursorAtBlock(mountedId, true, false)
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    return {mountedId, offscreenId}
+  }, editorSelector)
+
+  const readHeadingState = (blockId: string) => page.evaluate(
+    ({selector, id}) => {
+      const editor = document.querySelector(selector)
+      const debug = (window as unknown as {
+        ng: {getComponent: (target: Element) => {doc: any}}
+      }).ng
+      const doc = debug.getComponent(editor!).doc
+      const pagination = doc.plugins.find((plugin: any) =>
+        plugin.name === 'pagination')
+      const mountedIds = doc.vm.getMountedRootChildIds() as string[]
+      const block = mountedIds.includes(id) ? doc.getBlockById(id) : null
+      return {
+        enabled: pagination?.enabled === true,
+        paginated: doc.root.hostElement.classList.contains('bc-paginated'),
+        heading: doc.model.getProps(id)?.heading ?? null,
+        mounted: mountedIds.includes(id),
+        domHeading: block?.hostElement?.getAttribute('data-heading') ?? null,
+      }
+    },
+    {selector: editorSelector, id: blockId},
+  )
+
+  const styleButton = page.locator('bc-fixed-toolbar .toolbar-btn--style')
+  await expect(styleButton).toBeEnabled()
+  for (const [label, heading, domHeading] of [
+    ['一级标题', 1, '1'],
+    ['二级标题', 2, '2'],
+    ['正文', null, null],
+  ] as const) {
+    await styleButton.click()
+    await page.locator('bc-float-toolbar-item')
+      .filter({hasText: label})
+      .click()
+    await waitForAnimationFrames(page)
+
+    expect(await readHeadingState(targets.mountedId)).toEqual({
+      enabled: true,
+      paginated: true,
+      heading,
+      mounted: true,
+      domHeading,
+    })
+  }
+
+  await page.evaluate(async ({selector, id}) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    doc.crud.updateBlockProps(id, {heading: 1})
+  }, {selector: editorSelector, id: targets.offscreenId})
+  await waitForAnimationFrames(page)
+  expect(await readHeadingState(targets.offscreenId)).toEqual({
+    enabled: true,
+    paginated: true,
+    heading: 1,
+    mounted: false,
+    domHeading: null,
+  })
+
+  await page.evaluate(async ({selector, id}) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    await doc.virtualization.scrollToBlock(id)
+  }, {selector: editorSelector, id: targets.offscreenId})
+  await waitForAnimationFrames(page)
+  expect(await readHeadingState(targets.offscreenId)).toEqual({
+    enabled: true,
+    paginated: true,
+    heading: 1,
+    mounted: true,
+    domHeading: '1',
+  })
   expect(fatal).toEqual([])
 })
 

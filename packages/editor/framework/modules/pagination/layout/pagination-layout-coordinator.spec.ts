@@ -11,6 +11,11 @@ import {
 import { PaginationGeometryMeasurement } from "./pagination-geometry-index";
 import { PaginationLayoutCoordinator } from "./pagination-layout-coordinator";
 import {buildPaginationItems} from '../view/item-builder';
+import {planTableCellFlow} from '../engine/table-cell-flow';
+import {
+  getTableCellFlowPlan,
+  setTableCellFlowPlan,
+} from '../engine/table-cell-flow-metadata';
 
 interface ModelFact {
   readonly flavour: string;
@@ -91,10 +96,15 @@ function createHarness(
     model,
     config: { virtualization: { estimatedHeights } },
     schemas: {
-      get: (flavour: string) =>
-        flavour === PageDividerBlockSchema.flavour
-          ? PageDividerBlockSchema
-          : null,
+      get: (flavour: string) => {
+        if (flavour === PageDividerBlockSchema.flavour) {
+          return PageDividerBlockSchema;
+        }
+        if (flavour === "code") {
+          return {metadata: {plainTextOnly: true}};
+        }
+        return null;
+      },
     },
     get vm(): never {
       throw new Error("Coordinator must not read doc.vm");
@@ -137,12 +147,13 @@ function contentChange(
 
 function structureChange(
   affectedRootIds: readonly string[],
+  affectedParentIds: readonly string[] = [],
 ): IBlockModelStructureChange {
   return {
     revision: 1,
     reachableAddedIds: [],
     reachableRemovedIds: [],
-    affectedParentIds: [],
+    affectedParentIds,
     affectedRootIds,
   };
 }
@@ -275,7 +286,8 @@ describe("PaginationLayoutCoordinator", () => {
         nodeType: BlockNodeType.block,
         isHeading: false,
         naturalHeight: 210,
-        height: 210,
+        height: 105,
+        fitScale: 0.5,
       }],
       coordinator.geometryRevision,
       0,
@@ -285,8 +297,12 @@ describe("PaginationLayoutCoordinator", () => {
     const resizedState = coordinator.compute(config(), geometry());
     expect(resizedState.entries[0]).toEqual(jasmine.objectContaining({
       naturalHeight: 250,
+      effectiveHeight: 250,
       source: "estimated",
     }));
+    expect(resizedState.entries[0].fitScale).toBeUndefined();
+    expect(resizedState.entries[0].lockHeight).toBeUndefined();
+    expect(resizedState.items[0].height).toBe(250);
   });
 
   it("maps nested content changes to one direct-root geometry record", () => {
@@ -305,7 +321,7 @@ describe("PaginationLayoutCoordinator", () => {
         }),
       ],
     ]);
-    const { doc } = createHarness(["callout"], facts);
+    const {doc, model} = createHarness(["callout"], facts);
     const coordinator = new PaginationLayoutCoordinator(doc);
     coordinator.syncRootOrder();
     coordinator.applyMeasured(
@@ -318,15 +334,36 @@ describe("PaginationLayoutCoordinator", () => {
       coordinator.geometryRevision,
       0,
     );
+    model.reads.flavour = 0;
+    model.reads.nodeType = 0;
+    model.reads.props = 0;
 
-    coordinator.applyContentChange(contentChange(["paragraph", "paragraph"]));
+    facts.set("paragraph", fact("paragraph", {
+      path: ["root", "callout", "paragraph"],
+      props: {heading: 1},
+    }));
+    coordinator.applyContentChange(
+      contentChange(["paragraph", "paragraph"], ["props"]),
+    );
+    expect(model.reads.props).toBe(0);
+    expect(model.reads.nodeType).toBe(1);
+    expect(coordinator.applyMeasured(
+      [measurement("callout", 80, {
+        flavour: "callout",
+        nodeType: BlockNodeType.block,
+        isHeading: false,
+      })],
+      coordinator.geometryRevision,
+      0,
+    ).accepted).toBeTrue();
     const state = coordinator.compute(config(), geometry());
 
     expect(state.entries).toEqual([
       jasmine.objectContaining({
         blockId: "callout",
         contentRevision: 1,
-        source: "estimated",
+        isHeading: false,
+        source: "measured",
         naturalHeight: 80,
       }),
     ]);
@@ -407,7 +444,7 @@ describe("PaginationLayoutCoordinator", () => {
     );
 
     model.rootIds = ["right", "left"];
-    coordinator.applyStructureChange(structureChange([]));
+    coordinator.applyStructureChange(structureChange([], ["root"]));
     let state = coordinator.compute(config(), geometry());
     expect(state.rootIds).toEqual(["right", "left"]);
     expect(
@@ -422,7 +459,7 @@ describe("PaginationLayoutCoordinator", () => {
     ]);
 
     coordinator.applyStructureChange(
-      structureChange(["left", "right", "left"]),
+      structureChange(["left", "right", "left"], ["left", "right"]),
     );
     state = coordinator.compute(config(), geometry());
     expect(
@@ -526,6 +563,192 @@ describe("PaginationLayoutCoordinator", () => {
     ]);
     expect(state.projection.revision).toBe(1);
     expect(state.projection.length).toBe(2);
+  });
+
+  it("refreshes root semantics before measuring heading prop changes", () => {
+    const facts = new Map<string, ModelFact>([
+      ["paragraph", fact("paragraph")],
+    ]);
+    const {doc, model} = createHarness(["paragraph"], facts);
+    const coordinator = new PaginationLayoutCoordinator(doc);
+    coordinator.syncRootOrder();
+    coordinator.applyMeasured(
+      [measurement("paragraph", 32)],
+      coordinator.geometryRevision,
+      0,
+    );
+    coordinator.compute(config(), geometry());
+
+    for (const [heading, naturalHeight] of [
+      [1, 48],
+      [2, 40],
+      [undefined, 32],
+    ] as const) {
+      facts.set("paragraph", fact("paragraph", {
+        props: heading == null ? {} : {heading},
+      }));
+      model.reads.props = 0;
+      coordinator.applyContentChange(
+        contentChange(["paragraph"], ["props"]),
+      );
+      expect(model.reads.props).toBe(1);
+
+      const isHeading = heading != null;
+      const applied = coordinator.applyMeasured(
+        [measurement("paragraph", naturalHeight, {isHeading})],
+        coordinator.geometryRevision,
+        0,
+      );
+      const state = coordinator.compute(config(), geometry());
+
+      expect(applied.accepted).toBeTrue();
+      expect(state.entries[0]).toEqual(jasmine.objectContaining({
+        blockId: "paragraph",
+        isHeading,
+        naturalHeight,
+        source: "measured",
+      }));
+      expect(state.exact).toBeTrue();
+    }
+  });
+
+  it("ignores retained heading props on plain-text editable roots", () => {
+    const facts = new Map<string, ModelFact>([
+      ["code", fact("code", {
+        flavour: "code",
+        props: {heading: 1},
+      })],
+    ]);
+    const {doc} = createHarness(["code"], facts);
+    const coordinator = new PaginationLayoutCoordinator(doc);
+    coordinator.syncRootOrder();
+
+    expect(coordinator.compute(config(), geometry()).entries[0].isHeading)
+      .toBeFalse();
+    expect(coordinator.applyMeasured(
+      [measurement("code", 160, {
+        flavour: "code",
+        isHeading: false,
+        height: 100,
+        lockHeight: 100,
+      })],
+      coordinator.geometryRevision,
+      0,
+    ).accepted).toBeTrue();
+  });
+
+  it("publishes offscreen heading semantics before its first measurement", () => {
+    const facts = new Map<string, ModelFact>([
+      ["mounted", fact("mounted")],
+      ["offscreen", fact("offscreen")],
+    ]);
+    const {doc} = createHarness(["mounted", "offscreen"], facts);
+    const coordinator = new PaginationLayoutCoordinator(doc);
+    coordinator.syncRootOrder();
+    coordinator.applyMeasured(
+      [measurement("mounted", 32)],
+      coordinator.geometryRevision,
+      0,
+    );
+    coordinator.compute(config(), geometry());
+
+    facts.set("offscreen", fact("offscreen", {props: {heading: 1}}));
+    coordinator.applyContentChange(
+      contentChange(["offscreen"], ["props"]),
+    );
+
+    const estimated = coordinator.compute(config(), geometry());
+    expect(estimated.entries.find(entry => entry.blockId === "offscreen"))
+      .toEqual(jasmine.objectContaining({
+        isHeading: true,
+        source: "estimated",
+      }));
+
+    const applied = coordinator.applyMeasured(
+      [measurement("offscreen", 48, {isHeading: true})],
+      coordinator.geometryRevision,
+      0,
+    );
+    const measured = coordinator.compute(config(), geometry());
+
+    expect(applied.accepted).toBeTrue();
+    expect(measured.entries.find(entry => entry.blockId === "offscreen"))
+      .toEqual(jasmine.objectContaining({
+        isHeading: true,
+        naturalHeight: 48,
+        source: "measured",
+      }));
+  });
+
+  it("replaces stale measured table flow after an offscreen structure change", () => {
+    const facts = new Map<string, ModelFact>([
+      ["table", fact("table", {
+        flavour: "table",
+        nodeType: BlockNodeType.block,
+        children: ["row-1", "row-2"],
+      })],
+      ["row-1", fact("row-1", {
+        flavour: "table-row",
+        nodeType: BlockNodeType.block,
+        path: ["root", "table", "row-1"],
+      })],
+      ["row-2", fact("row-2", {
+        flavour: "table-row",
+        nodeType: BlockNodeType.block,
+        path: ["root", "table", "row-2"],
+      })],
+      ["row-3", fact("row-3", {
+        flavour: "table-row",
+        nodeType: BlockNodeType.block,
+        path: ["root", "table", "row-3"],
+      })],
+    ]);
+    const {doc} = createHarness(["table"], facts);
+    const coordinator = new PaginationLayoutCoordinator(doc);
+    coordinator.syncRootOrder();
+    const measured = measurement("table", 300, {
+      flavour: "table",
+      nodeType: BlockNodeType.block,
+      splitOffsets: [80],
+      preferredSplitOffsets: [80],
+      tableRows: [{
+        id: "row-1",
+        top: 0,
+        bottom: 80,
+        coveredFromAbove: false,
+      }],
+    });
+    setTableCellFlowPlan(measured, planTableCellFlow([{
+      kind: "atomic",
+      rowId: "row-1",
+      height: 80,
+    }], 100));
+    coordinator.applyMeasured(
+      [measured],
+      coordinator.geometryRevision,
+      0,
+    );
+    expect(coordinator.compute(config(), geometry()).items[0].height).toBe(80);
+
+    facts.set("table", fact("table", {
+      flavour: "table",
+      nodeType: BlockNodeType.block,
+      children: ["row-1", "row-2", "row-3"],
+    }));
+    coordinator.applyStructureChange(structureChange(["table"], ["table"]));
+    const state = coordinator.compute(config(), geometry());
+
+    expect(state.entries[0]).toEqual(jasmine.objectContaining({
+      naturalHeight: 180,
+      effectiveHeight: 180,
+      source: "estimated",
+    }));
+    expect(state.entries[0].splitOffsets).toBeUndefined();
+    expect(state.entries[0].preferredSplitOffsets).toBeUndefined();
+    expect(state.entries[0].tableRows).toBeUndefined();
+    expect(state.entries[0].tableCellFlowPlan).toBeUndefined();
+    expect(state.items[0].height).toBe(180);
+    expect(getTableCellFlowPlan(state.items[0])).toBeUndefined();
   });
 
   it("seeds estimates from model facts and marks new roots inexact", () => {

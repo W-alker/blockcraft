@@ -147,6 +147,27 @@ describe('LiveHeightSource atomic block measurement', () => {
     expect(meta?.lockHeight).toBe(900)
   })
 
+  it('does not treat a retained heading prop on a plain-text editable as a heading', () => {
+    source = createSource(80, 80, 'code', BlockNodeType.editable)
+    block.plainTextOnly = true
+    block.model = {props: {heading: 1}}
+
+    const [meta] = source.measure({contentHeight: 900, widowOrphanLines: 2})
+
+    expect(meta?.isHeading).toBeFalse()
+  })
+
+  it('keeps the same plain-text heading identity on the oversized cap path', () => {
+    source = createSource(55, 1200, 'code', BlockNodeType.editable)
+    block.plainTextOnly = true
+    block.model = {props: {heading: 1}}
+
+    const [meta] = source.measure({contentHeight: 900, widowOrphanLines: 2})
+
+    expect(meta?.isHeading).toBeFalse()
+    expect(meta?.lockHeight).toBe(900)
+  })
+
   it('locks an oversized image even though its caption makes it a container block', () => {
     source = createSource(55, 1200, 'image', BlockNodeType.block)
 
