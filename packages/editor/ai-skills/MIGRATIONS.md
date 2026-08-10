@@ -69,7 +69,7 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
-### Unreleased - 2026-08-10 (patch) — paginate oversized wrapped paragraphs
+### v0.3.0-alpha.32 - 2026-08-10 (patch) — paginate oversized wrapped paragraphs
 
 **What changed**: An oversized editable paragraph that contains a wrapped
 image, Shape or WordArt now continues across pages at safe visual-line
@@ -98,7 +98,7 @@ writable instead of exposing a partially rebuilt Blot tree.
   taller than one full content page.
 - No public API, Yjs data, Undo history or host migration is required.
 
-### Unreleased - 2026-08-10 (major) — adopt `@cses/ui@4.23.0` and stabilize virtualized scrolling
+### v0.3.0-alpha.32 - 2026-08-10 (major) — adopt `@cses/ui@4.23.0` and stabilize virtualized scrolling
 
 **What changed**: BlockCraft now declares the exact `@cses/ui@4.23.0` peer and
 uses its public Button, Input, Tooltip, Dropdown/Menu, Empty and Message APIs for
