@@ -434,12 +434,14 @@ describe("PaginationLayoutCoordinator", () => {
     ]);
   });
 
-  it("invalidates natural geometry for width, theme and font but not page height or page gap", () => {
+  it("invalidates natural geometry for width, page height, widow/orphan, theme and font but not page gap", () => {
     const facts = new Map<string, ModelFact>([["a", fact("a")]]);
     const { doc } = createHarness(["a"], facts);
     const coordinator = new PaginationLayoutCoordinator(doc);
     coordinator.updateMeasureContext({
       contentWidth: 720,
+      contentHeight: 100,
+      widowOrphanLines: 2,
       theme: "light",
       fontEpoch: 0,
       rendererRevision: 0,
@@ -451,22 +453,37 @@ describe("PaginationLayoutCoordinator", () => {
     );
 
     const initial = coordinator.compute(config(), geometry());
-    const changedPages = coordinator.compute(
-      config({ pageGap: 80, pageSize: { width: 800, height: 300 } }),
+    const changedGap = coordinator.compute(
+      config({ pageGap: 80 }),
       geometry({
-        sheetHeightPx: 300,
         pageGap: 80,
-        geometry: { contentHeight: 280 },
       }),
     );
-    expect(changedPages.geometryRevision).toBe(initial.geometryRevision);
-    expect(changedPages.exact).toBeTrue();
+    expect(changedGap.geometryRevision).toBe(initial.geometryRevision);
+    expect(changedGap.exact).toBeTrue();
 
-    let previousRevision = changedPages.geometryRevision;
+    let previousRevision = changedGap.geometryRevision;
     for (const context of [
-      { contentWidth: 640, theme: "light", fontEpoch: 0, rendererRevision: 0 },
-      { contentWidth: 640, theme: "dark", fontEpoch: 0, rendererRevision: 0 },
-      { contentWidth: 640, theme: "dark", fontEpoch: 1, rendererRevision: 0 },
+      {
+        contentWidth: 720, contentHeight: 80, widowOrphanLines: 2,
+        theme: "light", fontEpoch: 0, rendererRevision: 0,
+      },
+      {
+        contentWidth: 720, contentHeight: 80, widowOrphanLines: 3,
+        theme: "light", fontEpoch: 0, rendererRevision: 0,
+      },
+      {
+        contentWidth: 640, contentHeight: 80, widowOrphanLines: 3,
+        theme: "light", fontEpoch: 0, rendererRevision: 0,
+      },
+      {
+        contentWidth: 640, contentHeight: 80, widowOrphanLines: 3,
+        theme: "dark", fontEpoch: 0, rendererRevision: 0,
+      },
+      {
+        contentWidth: 640, contentHeight: 80, widowOrphanLines: 3,
+        theme: "dark", fontEpoch: 1, rendererRevision: 0,
+      },
     ]) {
       coordinator.updateMeasureContext(context);
       const state = coordinator.compute(config(), geometry());
@@ -596,7 +613,12 @@ describe("PaginationLayoutCoordinator", () => {
     const coordinator = new PaginationLayoutCoordinator(doc);
     coordinator.syncRootOrder();
     coordinator.applyMeasured(
-      [measurement("a", 40, { splitOffsets: [20] })],
+      [measurement("a", 40, {
+        splitOffsets: [20],
+        inlineBreakPlan: {
+          points: [{layoutOffset: 20, textOffset: 8}],
+        },
+      })],
       coordinator.geometryRevision,
     );
     const first = coordinator.compute(config(), geometry());
@@ -605,6 +627,8 @@ describe("PaginationLayoutCoordinator", () => {
     (first.entries[0] as { naturalHeight: number }).naturalHeight = 999;
     first.items[0]!.height = 999;
     first.items[0]!.splitOffsets![0] = 999;
+    (first.entries[0].inlineBreakPlan!.points as unknown as Array<{textOffset: number}>)[0]!
+      .textOffset = 999;
     first.result.pages[0]!.slots[0]!.id = "mutated";
     first.result.byBlock.clear();
     (first.placements[0] as { beforeGap: number }).beforeGap = 999;
@@ -615,6 +639,9 @@ describe("PaginationLayoutCoordinator", () => {
     expect(second.entries[0].naturalHeight).toBe(40);
     expect(second.items[0].height).toBe(40);
     expect(second.items[0].splitOffsets).toEqual([20]);
+    expect(second.entries[0].inlineBreakPlan).toEqual({
+      points: [{layoutOffset: 20, textOffset: 8}],
+    });
     expect(second.result.pages[0].slots[0].id).toBe("a");
     expect(second.result.byBlock.has("a")).toBeTrue();
     expect(second.placements[0].beforeGap).not.toBe(999);
@@ -644,6 +671,8 @@ describe("PaginationLayoutCoordinator", () => {
     const contextTicket = coordinator.geometryRevision;
     coordinator.updateMeasureContext({
       contentWidth: 640,
+      contentHeight: 100,
+      widowOrphanLines: 2,
       theme: "dark",
       fontEpoch: 1,
       rendererRevision: 0,

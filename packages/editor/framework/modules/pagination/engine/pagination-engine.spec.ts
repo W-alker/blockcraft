@@ -83,27 +83,27 @@ describe('paginate - 基础', () => {
 });
 
 describe('paginate - keepWithNext', () => {
-  it('标题不孤悬页底：与下一块一起下推', () => {
-    // 容量 250；a(100) 段落，h(100) 标题 keepWithNext，b(100) 段落。
-    // a 占 100；h 放得下(≤150)，但其后剩 50 装不下 b(100)，且 h+b=200≤250 → h,b 一起下推
-    const items = [para('a'), item('h', 100, {breakable: true, keepWithNext: true}), para('b')];
-    expect(pageIds(paginate(items, geo(250)))).toEqual([['a'], ['h', 'b']]);
+  it('通用 keepWithNext 信号仍能把当前块与下一块一起下推', () => {
+    // 容量 250；a(100)，k(100) 显式 keepWithNext，b(100)。
+    // a 占 100；k 放得下(≤150)，但其后剩 50 装不下 b，且 k+b=200≤250 → k,b 一起下推
+    const items = [para('a'), item('k', 100, {breakable: true, keepWithNext: true}), para('b')];
+    expect(pageIds(paginate(items, geo(250)))).toEqual([['a'], ['k', 'b']]);
   });
 
-  it('标题已在页首时不触发下推', () => {
-    const items = [item('h', 100, {keepWithNext: true}), para('b')];
-    expect(pageIds(paginate(items, geo(250)))).toEqual([['h', 'b']]);
+  it('keepWithNext 块已在页首时不触发下推', () => {
+    const items = [item('k', 100, {keepWithNext: true}), para('b')];
+    expect(pageIds(paginate(items, geo(250)))).toEqual([['k', 'b']]);
   });
 
-  it('标题是最后一块时正常放置', () => {
-    const items = [para('a'), item('h', 100, {keepWithNext: true})];
-    expect(pageIds(paginate(items, geo(250)))).toEqual([['a', 'h']]);
+  it('keepWithNext 块是最后一块时正常放置', () => {
+    const items = [para('a'), item('k', 100, {keepWithNext: true})];
+    expect(pageIds(paginate(items, geo(250)))).toEqual([['a', 'k']]);
   });
 
-  it('标题+下一块合计超过一页时不强行下推（放得下就放）', () => {
-    // 容量 150；a(100)，h(100) keepWithNext，b(100)。h+b=200>150 → 不一起下推，h 自己整块下推
-    const items = [para('a'), item('h', 100, {keepWithNext: true}), para('b')];
-    expect(pageIds(paginate(items, geo(150)))).toEqual([['a'], ['h'], ['b']]);
+  it('keepWithNext 块与下一块合计超过一页时不强行绑定', () => {
+    // 容量 150；a(100)，k(100) keepWithNext，b(100)。k+b=200>150 → 不一起下推，k 自己整块下推
+    const items = [para('a'), item('k', 100, {keepWithNext: true}), para('b')];
+    expect(pageIds(paginate(items, geo(150)))).toEqual([['a'], ['k'], ['b']]);
   });
 });
 
@@ -141,11 +141,18 @@ describe('paginate - 超大块', () => {
     expect(pageIds(r)).toEqual([['a', 't[0-50]'], ['t[50-120]'], ['t[120-200]']]);
   });
 
-  it('可拆块整表能进一页、但塞不进当前页剩余 → 就地拆开填满本页（Word 式，不浪费页底）', () => {
-    // 容量 100；a(60) 占页0 剩 40；可拆块高 90（≤容量，非超大）切点[30,60]
-    // 剩40 内有安全切点 30 → 填充：页0 [a, t0-30]，页1 t30-90（不再整体甩到下一页）
+  it('可拆块不超过一页时，即使剩余空间内有安全切点也整块下推', () => {
+    // 容量 100；a(60) 占页0 剩 40；可拆块高 90（≤容量）且切点[30,60]。
+    // 只按“块自身是否超过一页”决定能否拆，因此 t 整块下推到页1。
     const r = paginate([para('a', 60), breakBlock('t', 90, [30, 60])], geo(100));
-    expect(pageIds(r)).toEqual([['a', 't[0-30]'], ['t[30-90]']]);
+    expect(pageIds(r)).toEqual([['a'], ['t']]);
+  });
+
+  it('可拆块高度恰好等于一页时仍整块放置', () => {
+    // 容量 100；a(20) 后剩80，t 高度恰好100且带切点[50]，仍不进入拆分循环。
+    const r = paginate([para('a', 20), breakBlock('t', 100, [50])], geo(100));
+    expect(pageIds(r)).toEqual([['a'], ['t']]);
+    expect(r.pages[1].usedHeight).toBe(100);
   });
 
   it('splitStartsNewPage（表格强制拆分）独占新页起：不填当前页剩余', () => {

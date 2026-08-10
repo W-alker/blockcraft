@@ -23,9 +23,9 @@ describe('block-policy', () => {
       .toEqual({breakable: true, keepWithNext: false, capHeight: false});
   });
 
-  it('标题段落 keepWithNext', () => {
+  it('标题段落也独立分页，不默认 keepWithNext', () => {
     expect(resolveBlockPolicy({flavour: 'paragraph', nodeType: BlockNodeType.editable, isHeading: true}))
-      .toEqual({breakable: true, keepWithNext: true, capHeight: false});
+      .toEqual({breakable: true, keepWithNext: false, capHeight: false});
   });
 
   it('表格可按行拆、不锁高', () => {

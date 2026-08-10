@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-09 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-10 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -629,6 +629,12 @@ WordArt 的编辑、只读、snapshot 与行内展示统一使用真实 CSS 文�
 不读取 Range/DOMRect。WKWebView 原生 PDF 对 `background-clip:text` 渐变存在整块矩形误绘，
 因此打印时只把渐变填充确定性降级为首个 gradient color；solid fill、字体尺寸、描边、阴影和
 transform 保持不变。
+
+内置标题段落不再自动与下一块绑定。任一可拆顶层文本块只要自身不高于一张完整正文页，
+就始终作为完整 Block 放置：当前页放不下时整块移到下一页，即使当前页剩余空间能容纳
+若干视觉行也不会提前拆分。只有文本块自身高过完整正文页时，分页器才惰性解析安全视觉
+行首，并以“布局像素切点 + Y.Text offset”计划跨页；屏幕插入零模型长度透明页缝，打印/PDF
+消费同一稳定 fragment。该投影不写 Yjs，也不创建 Undo 历史。
 
 当一个真实表格行因超长单元格而高过页面内容区时，分页器会惰性收集单元格直属 Block 边界和 Editable Block 的视觉行首，在同一逻辑单元格内生成可逆续排。各列可以在不同安全锚点换页，屏幕投影只插入零模型长度页缝，不拆 Yjs 行/单元格，也不创建 Undo 历史。表格的虚拟内容高度、屏幕内部页缝和后续顶层 Block 共同进入同一布局坐标系，因此表格下方内容不会再沿用表格的自然高度而向上漂移。IME composition 期间保留上一版稳定布局，结束后再重排；打印/PDF 消费同一稳定锚点快照。
 

@@ -133,13 +133,9 @@ export function paginate(items: PaginationItem[], geometry: PageGeometry): Pagin
       continue;
     }
 
-    // 情况3a：可拆块跨页拆。两种触发：
-    //   ① 本身高过一整页（必须拆）；
-    //   ② 本页剩余空间内存在安全切点 → 就地拆开填满本页再续下页（Word 式填充，不浪费页底空白）。
-    // 仅 ① 时 ② 也可能为假（剩余太小放不下最小安全片），那就走情况2 整块下推。
-    const safeCutFitsRemaining = it.breakable
-      && (it.splitOffsets?.some(o => o > 0 && o <= remaining) ?? false);
-    if (it.breakable && (it.height > capacity() || safeCutFitsRemaining)) {
+    // 情况3a：只有块自身高过一整页时才跨页拆。
+    // 不超过一页的块即使携带安全切点，也保持整块并在当前页放不下时下推。
+    if (it.breakable && it.height > capacity()) {
       // 拆分独占新页起（表格）：当前页已有内容则先 commit，让被拆块从新页顶开始、不拼前一页剩余。
       if (it.splitStartsNewPage && hasPageContent()) commit();
       const total = it.height;
@@ -173,7 +169,7 @@ export function paginate(items: PaginationItem[], geometry: PageGeometry): Pagin
       continue;
     }
 
-    // 情况2：放不下整块、且不在剩余空间内安全拆 → 整块下推到下一页（keep-together）
+    // 情况2：放不下整块、但自身不超过一页 → 整块下推到下一页（keep-together）
     if (it.height <= capacity()) {
       if (hasPageContent()) commit();
       recordFirstPage(it.id);

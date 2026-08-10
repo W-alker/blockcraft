@@ -4,7 +4,10 @@ import {performanceTest} from "../../../../global";
 import {isNativeInputTarget} from "../../../utils";
 import {paginate, PaginationItem} from "../engine";
 import {cloneTableCellFlowPlan} from "../engine/table-cell-flow";
-import {setTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
+import {
+  getTableCellFlowPlan,
+  setTableCellFlowPlan,
+} from "../engine/table-cell-flow-metadata";
 import {
   PaginationLayoutCoordinator,
   PaginationLayoutState,
@@ -29,6 +32,8 @@ import {HeightLockApplier} from "./height-lock-applier";
 import {createStablePaginationLayout, StablePaginationLayout} from "./stable-pagination-layout";
 import {registerRootLayoutProjection} from "../../virtualization/root-virtualization-manager";
 import {DocumentHeaderLayer} from './document-header-layer';
+import {InlineBreakApplier} from './inline-break-applier';
+import {cloneInlinePaginationBreakPlan} from './inline-break-plan';
 
 interface FontLoadingEventTarget {
   addEventListener(type: "loadingdone", listener: EventListener): void;
@@ -51,6 +56,7 @@ export class PaginatedViewController {
   private _documentHeaderHeight = 0;
   private _gapApplier: GapApplier;
   private _tableBreaks: TableBreakApplier;
+  private _inlineBreaks: InlineBreakApplier;
   private _heightLockApplier: HeightLockApplier;
   private _subs = new Subscription();
   private _containerRO: ResizeObserver | null = null;
@@ -61,6 +67,7 @@ export class PaginatedViewController {
   private _destroyed = false;
   private _layoutRevision = 0;
   private _stableLayout: StablePaginationLayout | null = null;
+  private _stableLayoutReusableForExport = false;
   private _shadowLayout: PaginationLayoutState | null = null;
   private _lastShadowMismatchSignature: string | null = null;
   private _lastShadowErrorSignature: string | null = null;
@@ -69,6 +76,7 @@ export class PaginatedViewController {
   private _fontEventTarget: FontLoadingEventTarget | null = null;
   private _releaseLayoutProjection: (() => void) | null = null;
   private _sparseFailureCount = 0;
+  private _inlineProjectionFailureCount = 0;
   private _pendingSparseContainerStyles = false;
   /** 上一轮会直接改变根块 border-box 的分页投影，用于覆盖本轮的移除操作。 */
   private _layoutOwnedRootIds = new Set<string>();
@@ -107,12 +115,19 @@ export class PaginatedViewController {
     }
     this._gapApplier = new GapApplier(doc);
     this._tableBreaks = new TableBreakApplier(doc);
+    this._inlineBreaks = new InlineBreakApplier(doc);
     this._heightLockApplier = new HeightLockApplier(doc);
   }
 
   /** 当前配置（含未显式传入的字段为 undefined，几何默认值见 resolveScreenGeometry）。 */
   get config(): PaginationConfig {
     return this._config;
+  }
+
+  /** @internal Export must fall back to readonly remeasurement when false. */
+  get canReuseStableLayoutForExport(): boolean {
+    return this._stableLayoutReusableForExport
+      && !this._isCompositionInProgress();
   }
 
   /**
@@ -194,21 +209,25 @@ export class PaginatedViewController {
       this._subs.add(
         this.doc.model.contentChange$.subscribe(change => {
           this._heightSource.clearLayoutOwnedResize();
+          this._inlineBreaks.invalidate(
+            this._rootIdsForChangedBlocks(change.blockIds),
+          );
           this._shadowLayout = null;
           this._runShadowMutation('content-change', () =>
             this.layoutCoordinator.applyContentChange(change),
           );
-          // Legacy live views receive text geometry through ResizeObserver. Sparse
-          // views have no DOM for offscreen roots, so model changes must also
-          // invalidate the projected layout directly.
-          if (this.options.sparseView || change.kinds.includes('props')) {
-            this.scheduleRecompute();
-          }
+          // InlineRuntime 会在任意文本/格式 Delta 前撤销零模型长度分页页缝。
+          // 即使新旧自然 border-box 等高，也必须在下一帧重放分页投影；不能只依赖
+          // ResizeObserver。scheduleRecompute 自身会把同帧内容变化合并为一次。
+          this.scheduleRecompute();
         }),
       );
       this._subs.add(
         this.doc.model.structureChange$.subscribe(change => {
           this._heightSource.clearLayoutOwnedResize();
+          this._inlineBreaks.invalidate(
+            change.affectedRootIds ?? this._mountedRootIds(),
+          );
           this._runShadowMutation('structure-change', () =>
             this.layoutCoordinator.applyStructureChange(change),
           );
@@ -245,7 +264,6 @@ export class PaginatedViewController {
         fromEvent<CompositionEvent>(
           this.doc.root.hostElement,
           'compositionend',
-          {capture: true},
         ).subscribe(event => {
           if (isNativeInputTarget(event.target)) return;
           this._flushCompositionRecompute();
@@ -265,12 +283,25 @@ export class PaginatedViewController {
    * 供打印复用 → 打印断点 == 屏幕所见（含 embed/媒体块按 live 高度定断点）。
    */
   computePrintItems(): PaginationItem[] {
-    const metas = this._heightSource.measure({
-      contentHeight: this._geom.geometry.contentHeight,
-      contentWidth: this._contentWidth(),
-      widowOrphanLines: this._config.widowOrphanLines ?? 2,
-    });
-    return buildPaginationItems(metas);
+    if (this._isCompositionInProgress()) {
+      return clonePaginationItems(this._stableLayout?.items ?? []);
+    }
+    const previousInlineIds = this._inlineBreaks.layoutOwnedIds;
+    const restoreInlineBreaks = this._inlineBreaks.suspend();
+    try {
+      const metas = this._heightSource.measure({
+        contentHeight: this._geom.geometry.contentHeight,
+        contentWidth: this._contentWidth(),
+        widowOrphanLines: this._config.widowOrphanLines ?? 2,
+      });
+      return buildPaginationItems(metas);
+    } finally {
+      restoreInlineBreaks();
+      this._heightSource.captureLayoutOwnedResize(new Set([
+        ...previousInlineIds,
+        ...this._inlineBreaks.layoutOwnedIds,
+      ]));
+    }
   }
 
   /**
@@ -323,6 +354,7 @@ export class PaginatedViewController {
 
   scheduleRecompute(): void {
     if (!this._enabled) return;
+    this._stableLayoutReusableForExport = false;
     this._shadowLayout = null;
     if (this._isCompositionInProgress()) {
       this._compositionRecomputePending = true;
@@ -354,44 +386,74 @@ export class PaginatedViewController {
       }
       return this._stableLayout;
     }
-    let measurementRevision: number | null = null;
+    this._stableLayoutReusableForExport = false;
+    const previousInlineIds = this._inlineBreaks.layoutOwnedIds;
+    const inlineUpdate = this._inlineBreaks.beginUpdate();
+    let inlineUpdateCommitted = false;
     try {
-      this.layoutCoordinator.syncRootOrder();
-      this._syncMeasureContext();
-      measurementRevision = this.layoutCoordinator.geometryRevision;
-    } catch (error) {
-      this._failShadow('prepare', error);
+      let measurementRevision: number | null = null;
+      try {
+        this.layoutCoordinator.syncRootOrder();
+        this._syncMeasureContext();
+        measurementRevision = this.layoutCoordinator.geometryRevision;
+      } catch (error) {
+        this._failShadow('prepare', error);
+      }
+
+      if (this.options.sparseView) {
+        const sparseLayout = this._recomputeSparse(measurementRevision);
+        if (sparseLayout) {
+          inlineUpdate.commit();
+          inlineUpdateCommitted = true;
+        }
+        return sparseLayout;
+      }
+
+      // measure() 已忽略 margin-top（gap），无需先清空 gap——少一次「清空→强制回流→重设」的布局抖动，
+      // 同时保留浏览器原生 overflow-anchor 对视口上方内容变化的滚动补偿（实测能稳住编辑滚动）。
+      const metas = this._heightSource.measure({
+        contentHeight: this._geom.geometry.contentHeight,
+        contentWidth: this._contentWidth(),
+        widowOrphanLines: this._config.widowOrphanLines ?? 2,
+      });
+      const items = buildPaginationItems(metas);
+      const result = paginate(items, this._geom.geometry);
+      const initialLayout = createStablePaginationLayout(
+        ++this._layoutRevision,
+        this._config,
+        this._geom,
+        items,
+        result,
+      );
+      const published = this._publishLayoutWithInlineFallback(
+        initialLayout,
+        metas,
+      );
+      this._stableLayout = published.layout;
+      this._stableLayoutReusableForExport = !published.inlineProjectionFailed;
+
+      // Phase B shadow 永远最后运行，任何失败都不能阻断上面的 legacy DOM 输出。
+      if (published.inlineProjectionFailed) {
+        this._shadowLayout = null;
+      } else if (measurementRevision !== null) {
+        this._reconcileShadow(
+          published.layout,
+          published.metas,
+          measurementRevision,
+        );
+      }
+      inlineUpdate.commit();
+      inlineUpdateCommitted = true;
+      return published.layout;
+    } finally {
+      // 只有完整发布成功才提交新行内投影；任一后续 applier 抛错时恢复
+      // 旧 stable 对应的页缝，避免数据快照与 live DOM 各处于一版。
+      if (!inlineUpdateCommitted) inlineUpdate.rollback();
+      this._heightSource.captureLayoutOwnedResize(new Set([
+        ...previousInlineIds,
+        ...this._inlineBreaks.layoutOwnedIds,
+      ]));
     }
-
-    if (this.options.sparseView) {
-      return this._recomputeSparse(measurementRevision);
-    }
-
-    // measure() 已忽略 margin-top（gap），无需先清空 gap——少一次「清空→强制回流→重设」的布局抖动，
-    // 同时保留浏览器原生 overflow-anchor 对视口上方内容变化的滚动补偿（实测能稳住编辑滚动）。
-    const metas = this._heightSource.measure({
-      contentHeight: this._geom.geometry.contentHeight,
-      contentWidth: this._contentWidth(),
-      widowOrphanLines: this._config.widowOrphanLines ?? 2,
-    });
-    const items = buildPaginationItems(metas);
-    const result = paginate(items, this._geom.geometry);
-    const layout = createStablePaginationLayout(
-      ++this._layoutRevision,
-      this._config,
-      this._geom,
-      items,
-      result,
-    );
-    this._stableLayout = layout;
-
-    this._applyLayoutView(layout, metas);
-
-    // Phase B shadow 永远最后运行，任何失败都不能阻断上面的 legacy DOM 输出。
-    if (measurementRevision !== null) {
-      this._reconcileShadow(layout, metas, measurementRevision);
-    }
-    return layout;
   }
 
   private _isCompositionInProgress(): boolean {
@@ -400,9 +462,10 @@ export class PaginatedViewController {
   }
 
   private _flushCompositionRecompute(): void {
-    // compositionend 的模型写入、规范 DOM 重建和光标恢复都在同一原生事件内同步完成。
-    // 推迟到监听器链结束后再刷新，既不会读取中间 DOM，也能覆盖文字等高但分页投影
-    // 已被 InlineRuntime.render() 撤销的情况。
+    // CompositionControl 在插件之前注册于同一 root；本监听器必须留在 bubble
+    // 阶段，等它同步完成 Y.Text 写入、规范 DOM 重建、光标恢复和 session.end()。
+    // 部分 Zone/WebKit 组合会在 capture/bubble 之间执行 microtask checkpoint，
+    // 因此不能在 capture 阶段预先排这个 microtask。
     queueMicrotask(() => {
       if (!this._enabled) return;
       if (this._isCompositionInProgress()) {
@@ -461,9 +524,16 @@ export class PaginatedViewController {
           }),
         );
       }
-      this._shadowLayout = state;
-      this._stableLayout = layout;
-      this._applyLayoutView(layout, this._metasFromState(state));
+      const published = this._publishLayoutWithInlineFallback(
+        layout,
+        this._metasFromState(state),
+      );
+      this._shadowLayout = published.inlineProjectionFailed
+        ? {...state, exact: false}
+        : state;
+      this._stableLayout = published.layout;
+      this._stableLayoutReusableForExport = !published.inlineProjectionFailed
+        && state.exact;
       this.scheduleRecompute();
     } catch (error) {
       const releaseLayoutProjection = this._releaseLayoutProjection;
@@ -491,12 +561,19 @@ export class PaginatedViewController {
         });
         this._sparseProjectionUpdateDeferred = false;
         const layout = this._stableLayoutFromState(state);
-        this._shadowLayout = state;
-        this._stableLayout = layout;
-        this._applyLayoutView(layout, this._metasFromState(state));
+        const published = this._publishLayoutWithInlineFallback(
+          layout,
+          this._metasFromState(state),
+        );
+        this._shadowLayout = published.inlineProjectionFailed
+          ? {...state, exact: false}
+          : state;
+        this._stableLayout = published.layout;
+        this._stableLayoutReusableForExport = !published.inlineProjectionFailed
+          && state.exact;
         this._sparseFailureCount = 0;
         this.scheduleRecompute();
-        return layout;
+        return published.layout;
       }
       const mountedIds = this._mountedRootIds();
       this._syncMountedViews(mountedIds);
@@ -525,11 +602,18 @@ export class PaginatedViewController {
       });
       this._sparseProjectionUpdateDeferred = false;
       const layout = this._stableLayoutFromState(state);
-      this._shadowLayout = state;
-      this._stableLayout = layout;
-      this._applyLayoutView(layout, this._metasFromState(state));
+      const published = this._publishLayoutWithInlineFallback(
+        layout,
+        this._metasFromState(state),
+      );
+      this._shadowLayout = published.inlineProjectionFailed
+        ? {...state, exact: false}
+        : state;
+      this._stableLayout = published.layout;
+      this._stableLayoutReusableForExport = !published.inlineProjectionFailed
+        && state.exact;
       this._sparseFailureCount = 0;
-      return layout;
+      return published.layout;
     } catch (error) {
       this._sparseFailureCount++;
       if (this._sparseFailureCount < 3) {
@@ -577,6 +661,12 @@ export class PaginatedViewController {
             ? entry.lockHeight
             : entry.effectiveHeight),
         splitOffsets: entry.splitOffsets ? [...entry.splitOffsets] : undefined,
+        // Estimated/dirty sparse entries may retain their old plan only to keep
+        // offscreen extent stable. Never replay those anchors into a remounted
+        // Runtime before its current DOM has been measured again.
+        inlineBreakPlan: entry.source === 'measured'
+          ? cloneInlinePaginationBreakPlan(entry.inlineBreakPlan)
+          : undefined,
         preferredSplitOffsets: entry.preferredSplitOffsets
           ? [...entry.preferredSplitOffsets]
           : undefined,
@@ -596,10 +686,93 @@ export class PaginatedViewController {
     });
   }
 
+  /**
+   * Publish the requested layout, but never keep a fragmented stable result if
+   * its mounted InlineRuntime cannot materialize the matching continuation
+   * gaps. Failed text roots are republished atomically and retried a bounded
+   * number of frames. The atomic result keeps the live screen coherent, but is
+   * marked non-reusable so export performs a complete readonly reflow.
+   */
+  private _publishLayoutWithInlineFallback<TMeta extends BlockMeta>(
+    layout: StablePaginationLayout,
+    metas: TMeta[],
+  ): {
+    layout: StablePaginationLayout;
+    metas: TMeta[];
+    inlineProjectionFailed: boolean;
+  } {
+    let publishedLayout = layout;
+    let publishedMetas = metas;
+    const failedIds = new Set<string>();
+    const maximumAttempts = Math.max(
+      2,
+      metas.filter(meta => meta.inlineBreakPlan).length + 1,
+    );
+
+    for (let attempt = 0; attempt < maximumAttempts; attempt++) {
+      const failures = this._applyLayoutView(publishedLayout, publishedMetas);
+      let hasNewFailure = false;
+      for (const id of failures) {
+        if (failedIds.has(id)) continue;
+        failedIds.add(id);
+        hasNewFailure = true;
+      }
+      if (!hasNewFailure) break;
+
+      publishedMetas = publishedMetas.map(meta => failedIds.has(meta.id)
+        ? {
+            ...meta,
+            splitOffsets: undefined,
+            preferredSplitOffsets: undefined,
+            inlineBreakPlan: undefined,
+          } as TMeta
+        : meta,
+      );
+      const fallbackItems = buildPaginationItems(publishedMetas).map(item =>
+        failedIds.has(item.id)
+          ? {
+              ...item,
+              breakable: false,
+              splitOffsets: undefined,
+              preferredSplitOffsets: undefined,
+            }
+          : item,
+      );
+      const fallbackResult = paginate(fallbackItems, this._geom.geometry);
+      publishedLayout = createStablePaginationLayout(
+        ++this._layoutRevision,
+        this._config,
+        this._geom,
+        fallbackItems,
+        fallbackResult,
+      );
+    }
+
+    if (!failedIds.size) {
+      this._inlineProjectionFailureCount = 0;
+    } else {
+      this._inlineProjectionFailureCount++;
+      if (this._inlineProjectionFailureCount < 3) {
+        this.scheduleRecompute();
+      } else if (this._inlineProjectionFailureCount === 3) {
+        this._warn('paginationInlineProjectionFallback: ', {
+          attempts: this._inlineProjectionFailureCount,
+          blockIds: [...failedIds],
+        });
+      }
+    }
+
+    return {
+      layout: publishedLayout,
+      metas: publishedMetas,
+      inlineProjectionFailed: failedIds.size > 0,
+    };
+  }
+
   private _applyLayoutView(
     layout: StablePaginationLayout,
     metas: BlockMeta[],
-  ): void {
+  ): ReadonlySet<string> {
     const result = layout.result;
     const lockedIds = new Set<string>();
     const fitScales = new Map<string, number>();
@@ -621,6 +794,7 @@ export class PaginatedViewController {
       ) {
         nextLayoutOwnedIds.add(meta.id);
       }
+      if (meta.inlineBreakPlan) nextLayoutOwnedIds.add(meta.id);
     }
     const layoutOwnedIds = new Set([
       ...this._layoutOwnedRootIds,
@@ -652,10 +826,20 @@ export class PaginatedViewController {
       this._geom.pageGap,
       this._geom.contentTop ?? this._geom.margins.top + this._geom.headerHeight,
     );
-    // 表格断点/单元格流投影和高度锁会改变根块 border-box。登记提交后的
+    // Inline projection commits last: if table projection throws, the surrounding
+    // update transaction can still restore the previously published text gaps.
+    const inlineProjectionFailures = this._inlineBreaks.apply(
+      metas,
+      result,
+      this._geom.sheetHeightPx,
+      this._geom.pageGap,
+      this._geom.contentTop ?? this._geom.margins.top + this._geom.headerHeight,
+    );
+    // 文本页缝、表格断点/单元格流投影和高度锁会改变根块 border-box。登记提交后的
     // 最终尺寸，避免它们的异步 ResizeObserver 回声再启动一轮分页。
     this._heightSource.captureLayoutOwnedResize(layoutOwnedIds);
     this._layoutOwnedRootIds = nextLayoutOwnedIds;
+    return inlineProjectionFailures;
   }
 
   private _mountedRootIds(): readonly string[] {
@@ -669,11 +853,34 @@ export class PaginatedViewController {
     }
   }
 
+  private _rootIdsForChangedBlocks(
+    blockIds: readonly string[],
+  ): readonly string[] {
+    const rootIds = new Set<string>();
+    for (const blockId of blockIds) {
+      try {
+        const path = this.doc.model.getPath(blockId);
+        if (path?.[0] === this.doc.rootId && path[1]) rootIds.add(path[1]);
+      } catch {
+        // A concurrent delete may remove the path before notification delivery.
+      }
+    }
+    return [...rootIds];
+  }
+
   private _syncMountedViews(mountedRootIds: readonly string[]): void {
     this._heightSource.syncObserved(mountedRootIds);
     this._gapApplier.syncMounted(mountedRootIds);
+    const inlineFailures = this._inlineBreaks.syncMounted(mountedRootIds);
     this._tableBreaks.syncMounted(mountedRootIds);
     this._heightLockApplier.syncMounted(mountedRootIds);
+    if (inlineFailures.size) {
+      this._stableLayoutReusableForExport = false;
+      if (this._shadowLayout) {
+        this._shadowLayout = {...this._shadowLayout, exact: false};
+      }
+      this.scheduleRecompute();
+    }
   }
 
   private _reconcileShadow(
@@ -732,6 +939,8 @@ export class PaginatedViewController {
     const contentWidth = this._contentWidth();
     this.layoutCoordinator.updateMeasureContext({
       contentWidth,
+      contentHeight: this._geom.geometry.contentHeight,
+      widowOrphanLines: this._config.widowOrphanLines ?? 2,
       theme: this._theme,
       fontEpoch: this._fontEpoch,
       rendererRevision: 0,
@@ -928,10 +1137,12 @@ export class PaginatedViewController {
     releaseLayoutProjection?.();
     this._clearPaginationView();
     this._stableLayout = null;
+    this._stableLayoutReusableForExport = false;
     this._shadowLayout = null;
     this._compositionRecomputePending = false;
     this._sparseProjectionUpdateDeferred = false;
     this._sparseFailureCount = 0;
+    this._inlineProjectionFailureCount = 0;
     this._pendingSparseContainerStyles = false;
     this._layoutOwnedRootIds.clear();
     this._lastShadowMismatchSignature = null;
@@ -940,6 +1151,7 @@ export class PaginatedViewController {
 
   private _clearPaginationView(): void {
     this._gapApplier.clear();
+    this._inlineBreaks.clear();
     this._tableBreaks.clear();
     this._heightLockApplier.clear();
     this._frameLayer.destroy();
@@ -953,6 +1165,7 @@ export class PaginatedViewController {
     this.disable();
     this._heightSource.destroy();
     this._gapApplier.destroy();
+    this._inlineBreaks.destroy();
     this._heightLockApplier.destroy();
     try {
       this.layoutCoordinator.dispose();
@@ -960,4 +1173,21 @@ export class PaginatedViewController {
       this._failShadow('dispose', error);
     }
   }
+}
+
+function clonePaginationItems(items: readonly PaginationItem[]): PaginationItem[] {
+  return items.map(item => {
+    const clone: PaginationItem = {
+      ...item,
+      splitOffsets: item.splitOffsets ? [...item.splitOffsets] : undefined,
+      preferredSplitOffsets: item.preferredSplitOffsets
+        ? [...item.preferredSplitOffsets]
+        : undefined,
+    };
+    const tableCellFlowPlan = getTableCellFlowPlan(item);
+    if (tableCellFlowPlan) {
+      setTableCellFlowPlan(clone, cloneTableCellFlowPlan(tableCellFlowPlan));
+    }
+    return clone;
+  });
 }

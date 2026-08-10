@@ -295,19 +295,21 @@ export class PaginationPlugin extends DocPlugin {
   }
 
   /**
-   * 稀疏分页的离屏几何允许来自模型估算，但打印/PDF 不能静默复用估算断点。
-   * 返回 undefined 会让只读导出文档完整挂载并重新测量，得到 exact 布局。
+   * 只有 controller 已完整物化且判定 exact 的 live 布局才可复用。稀疏估算、
+   * IME 中间态或行内投影原子回退都返回 undefined，让只读导出文档完整挂载、
+   * 重新测量并得到可打印的视觉行断点。
    */
   private _captureReusableLayout(): ReturnType<
     PaginatedViewController['captureStableLayout']
   > extends infer Layout
     ? NonNullable<Layout> | undefined
     : never {
-    const layout = this._controller?.captureStableLayout() ?? undefined
-    if (!layout || !this._experimentalSparseView) return layout
-    return this._controller?.captureShadowLayout()?.exact === false
-      ? undefined
-      : layout
+    const controller = this._controller
+    const layout = controller?.captureStableLayout() ?? undefined
+    if (!layout || controller?.canReuseStableLayoutForExport !== true) {
+      return undefined
+    }
+    return layout
   }
 
   private _snapshot() {

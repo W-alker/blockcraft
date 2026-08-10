@@ -24,7 +24,7 @@ export interface PaginationItem {
   trailingSpacing?: number;
   /** 高于一整页时是否可在 splitOffsets 处拆开。 */
   breakable: boolean;
-  /** 如 heading：不要孤悬页底，与下一块一起下推。 */
+  /** 通用的相邻块绑定信号；为 true 时尽量与下一内容块一起下推。内置标题策略默认不启用。 */
   keepWithNext: boolean;
   /** 安全拆分点（块顶起算偏移 px，升序），仅在 oversized && breakable 时使用。 */
   splitOffsets?: number[];
@@ -38,7 +38,7 @@ export interface PaginationItem {
   manualBreak?: boolean;
   /**
    * 拆分时**独占新页起**：在 splitOffsets 处拆开前先 commit 当前页，不把首片塞进当前页剩余空间。
-   * 表格用——强制拆分的表格从新页顶开始，不与前一页内容拼。文本块不设此项（仍 Word 式填充当前页）。
+   * 表格用——强制拆分的表格从新页顶开始，不与前一页内容拼。超页文本块不设此项，首片仍可利用当前页剩余空间。
    */
   splitStartsNewPage?: boolean;
   /**

@@ -18,6 +18,7 @@ import {
   ResolvedPaginationGeometry,
 } from "../pagination.types";
 import { BlockMeta, buildPaginationItems } from "../view/item-builder";
+import {cloneInlinePaginationBreakPlan} from '../view/inline-break-plan';
 import {
   PaginationGeometryEntry,
   PaginationGeometryIndex,
@@ -70,6 +71,7 @@ function entryToMeta(entry: PaginationGeometryEntry): BlockMeta {
         ? entry.lockHeight
         : entry.effectiveHeight),
     splitOffsets: entry.splitOffsets ? [...entry.splitOffsets] : undefined,
+    inlineBreakPlan: cloneInlinePaginationBreakPlan(entry.inlineBreakPlan),
     preferredSplitOffsets: entry.preferredSplitOffsets
       ? [...entry.preferredSplitOffsets]
       : undefined,
@@ -249,6 +251,7 @@ export class PaginationLayoutCoordinator {
       entries: entries.map((entry) => ({
         ...entry,
         splitOffsets: entry.splitOffsets ? [...entry.splitOffsets] : undefined,
+        inlineBreakPlan: cloneInlinePaginationBreakPlan(entry.inlineBreakPlan),
         preferredSplitOffsets: entry.preferredSplitOffsets
           ? [...entry.preferredSplitOffsets]
           : undefined,

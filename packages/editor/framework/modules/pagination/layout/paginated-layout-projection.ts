@@ -20,7 +20,7 @@ export interface ProjectedBlockPlacement {
   readonly fragments: readonly PageSlotFragment[];
 }
 
-interface TableContinuation {
+interface FragmentContinuation {
   readonly fromOffset: number;
   readonly gap: number;
 }
@@ -120,7 +120,7 @@ function uniqueMap<T>(
 
 function sumTablePageGaps(
   entry: PaginationGeometryEntry,
-  continuations: readonly TableContinuation[] | undefined,
+  continuations: readonly FragmentContinuation[] | undefined,
 ): number {
   if (!continuations?.length) return 0;
 
@@ -172,6 +172,15 @@ function sumTablePageGaps(
   return total;
 }
 
+function sumFragmentPageGaps(
+  continuations: readonly FragmentContinuation[] | undefined,
+): number {
+  return continuations?.reduce(
+    (total, continuation) => total + continuation.gap,
+    0,
+  ) ?? 0;
+}
+
 export function buildProjectedBlockPlacements(
   rootIds: readonly string[],
   entries: readonly PaginationGeometryEntry[],
@@ -199,7 +208,7 @@ export function buildProjectedBlockPlacements(
 
   const firstPageById = new Map<string, number>();
   const fragmentsById = new Map<string, PageSlotFragment[]>();
-  const tableContinuations = new Map<string, TableContinuation[]>();
+  const fragmentContinuations = new Map<string, FragmentContinuation[]>();
   const slotKindById = new Map<string, "whole" | "fragment">();
   const lastFragmentById = new Map<string, PageSlotFragment>();
   for (let pageIndex = 0; pageIndex < result.pages.length; pageIndex++) {
@@ -277,9 +286,9 @@ export function buildProjectedBlockPlacements(
       geometry.pageGap -
       result.pages[pageIndex - 1]!.usedHeight;
     if (gap <= 0) continue;
-    const continuations = tableContinuations.get(first.id) ?? [];
+    const continuations = fragmentContinuations.get(first.id) ?? [];
     continuations.push({ fromOffset: first.fragment.fromOffset, gap });
-    tableContinuations.set(first.id, continuations);
+    fragmentContinuations.set(first.id, continuations);
   }
 
   const blockGaps = computeBlockGaps(
@@ -311,8 +320,10 @@ export function buildProjectedBlockPlacements(
         ),
       internalPageGap:
         entry.flavour === "table"
-          ? sumTablePageGaps(entry, tableContinuations.get(rootId))
-          : 0,
+          ? sumTablePageGaps(entry, fragmentContinuations.get(rootId))
+          : entry.inlineBreakPlan
+            ? sumFragmentPageGaps(fragmentContinuations.get(rootId))
+            : 0,
       fragments:
         fragmentsById.get(rootId)?.map((fragment) => ({ ...fragment })) ?? [],
     });

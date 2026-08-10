@@ -4,7 +4,8 @@ import {copyTableCellFlowPlan} from '../engine/table-cell-flow-metadata'
 import {PageChrome, PageChromeInlineContent, PaginationConfig, ResolvedPaginationGeometry} from '../pagination.types'
 
 /**
- * 一次分页计算的纯数据快照。它不持有 DOM/Block 引用，可安全交给异步打印流程。
+ * 一次分页计算的纯数据快照。它不持有 DOM/Block 引用；能否语义复用于异步打印，
+ * 由 PaginationPlugin 的同步捕获入口结合当前 live 投影状态判定。
  */
 export interface StablePaginationLayout {
   readonly revision: number

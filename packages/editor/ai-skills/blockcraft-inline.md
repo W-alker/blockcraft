@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-08-07
+> Last updated: 2026-08-10
 
 ## Architecture Overview
 
@@ -172,7 +172,12 @@ anchor/head Range afterward. CompositionSession, native pointer selection and
 wrapped-image dragging hold ref-counted layout leases; while frozen,
 invalidations only mark the controller dirty.
 
-Oversized table-cell pagination uses a second reversible layout projection.
+Oversized top-level text and table-cell pagination use a second reversible
+layout projection. A top-level text Block remains atomic while its natural
+stride is at most one regular content page; only an oversized Block requests
+visual-line anchors. Pagination keeps an internal plan pairing each block-top
+layout offset with the corresponding Y.Text UTF-16 offset, so the pure engine
+sees only pixels while the live view can insert at a stable model position.
 The package-internal `inline-pagination-access.ts` seam measures complete
 visual-line boundaries as revision-scoped Y.Text UTF-16 offsets and applies
 gaps without adding methods to the public `InlineRuntime` contract. The
@@ -187,6 +192,13 @@ and `destroy()` always revoke pagination first, so stale anchors cannot survive
 a model mutation or component teardown. Selection projection guards preserve
 the current anchor/head, while the pagination controller defers all projection
 rewrites during IME composition.
+
+Before natural text geometry is read again, the pagination owner synchronously
+revokes its previous inline gaps. It batches all natural DOM reads before
+applying the new gaps and registers the final host heights as pagination-owned
+ResizeObserver output. A stale content/context revision or a replaced Runtime
+clears the projection and schedules a fresh plan; offsets are never clamped and
+reused across revisions.
 
 `ImgToolbarPlugin` changes `wrap/side/x/gap` through one Embed
 `formatText()` transaction. Wrapped-image drag leaves the committed frame and

@@ -488,6 +488,74 @@ describe("buildProjectedBlockPlacements", () => {
     expect(projection.contentOffsetAt(1)).toBe(420);
   });
 
+  it("counts every inline-text continuation gap and keeps the following block on its computed sheet", () => {
+    const textEntry = entry("text", 250, {
+      splitOffsets: [80, 160],
+      inlineBreakPlan: {
+        points: [
+          {layoutOffset: 80, textOffset: 20},
+          {layoutOffset: 160, textOffset: 40},
+        ],
+      },
+    });
+    const result: PaginationResult = {
+      pages: [
+        {
+          index: 0,
+          slots: [{id: "text", fragment: {fromOffset: 0, toOffset: 80}}],
+          usedHeight: 80,
+        },
+        {
+          index: 1,
+          slots: [{id: "text", fragment: {fromOffset: 80, toOffset: 160}}],
+          usedHeight: 80,
+        },
+        {
+          index: 2,
+          slots: [{id: "text", fragment: {fromOffset: 160, toOffset: 250}}],
+          usedHeight: 90,
+        },
+        {index: 3, slots: [{id: "after"}], usedHeight: 30},
+      ],
+      byBlock: new Map([
+        ["text", {pageIndex: 0}],
+        ["after", {pageIndex: 3}],
+      ]),
+    };
+    const placements = buildProjectedBlockPlacements(
+      ["text", "after"],
+      [textEntry, entry("after", 30)],
+      [
+        item("text", 250, {splitOffsets: [80, 160]}),
+        item("after", 30),
+      ],
+      result,
+      geometry(),
+    );
+
+    expect(placements).toEqual([
+      placement("text", {
+        projectedHostHeight: 250,
+        internalPageGap: 120,
+        fragments: [
+          {fromOffset: 0, toOffset: 80},
+          {fromOffset: 80, toOffset: 160},
+          {fromOffset: 160, toOffset: 250},
+        ],
+      }),
+      placement("after", {
+        firstPageIndex: 3,
+        beforeGap: 50,
+        projectedHostHeight: 30,
+      }),
+    ]);
+
+    const projection = new PaginatedLayoutProjection();
+    projection.update(placements);
+    expect(projection.extentAt(0)).toBe(370);
+    expect(projection.contentOffsetAt(1)).toBe(420);
+  });
+
   it("rejects duplicate and missing IDs before returning a partial layout", () => {
     const data = fixture();
 

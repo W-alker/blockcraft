@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-05
+> Last updated: 2026-08-10
 
 ## Core Performance Principles
 
@@ -181,6 +181,21 @@ the next root Block receives the correct offset without a DOM query. Screen
 projection application is signature-idempotent, all reads remain outside
 Angular change detection, and IME composition skips recomputation until the
 model-owned composition completes.
+
+Top-level text follows the same lazy boundary. Editable text blocks at or
+below one regular content page never enumerate Range line geometry and stay
+whole even when the current page remainder is smaller. Only an oversized text
+Block builds an immutable `{layoutOffset, textOffset}` break plan. The engine
+consumes the pixel offsets, while the mounted view replays at most one
+zero-model-length marker per continuation page. Before remeasurement, old
+markers are revoked in one write phase; natural heights and line geometry are
+then batch-read before the next projection write. The old and new projected
+root IDs are registered together so ResizeObserver delivery cannot create a
+pagination feedback loop. Sparse geometry includes every internal text page gap
+in the root extent, and non-exact sparse state is never reused for printing. A
+missing or rejected live anchor triggers a bounded retry plus atomic screen
+fallback; that fallback snapshot is also excluded from print reuse, so readonly
+export performs a complete remeasurement rather than clipping oversized text.
 
 Each frame adds only constant-time checks for local height/index lengths and the
 model structure revision. A mismatch performs one cold `O(N)` rebuild. A

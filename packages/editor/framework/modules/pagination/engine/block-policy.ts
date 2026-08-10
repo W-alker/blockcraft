@@ -18,7 +18,7 @@ export interface BlockPolicy {
 export interface BlockPolicyInput {
   flavour: string;
   nodeType: BlockNodeType;
-  /** 是否标题（props.heading 真值），由调用方解析后传入。 */
+  /** 是否标题（props.heading 真值）；保留在输入契约中，内置分页策略不据此绑定下一块。 */
   isHeading?: boolean;
 }
 
@@ -33,7 +33,7 @@ export function fitsOversizedMedia(flavour: string): boolean {
 
 /** 按 flavour + nodeType 解析分页策略（spec §7 默认表）。 */
 export function resolveBlockPolicy(input: BlockPolicyInput): BlockPolicy {
-  const {flavour, nodeType, isHeading = false} = input;
+  const {flavour, nodeType} = input;
 
   // void 块一律原子（图片/视频/分割线/公式/嵌入…）；超高时锁定最大高度到一页内，不溢出。
   if (nodeType === BlockNodeType.void) {
@@ -45,7 +45,8 @@ export function resolveBlockPolicy(input: BlockPolicyInput): BlockPolicy {
       // 图片可带 caption 子块，因此 schema 是 block；分页仍把整张图片卡片视为原子块。
       return {breakable: false, keepWithNext: false, capHeight: true};
     case 'paragraph':
-      return {breakable: true, keepWithNext: isHeading, capHeight: false};
+      // 标题与普通段落都独立参与分页：当前页能放下就保留，不默认与下一块绑定。
+      return {breakable: true, keepWithNext: false, capHeight: false};
     case 'bullet':
     case 'ordered':
     case 'todo':

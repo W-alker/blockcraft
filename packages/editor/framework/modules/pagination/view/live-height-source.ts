@@ -9,6 +9,12 @@ import {
 import {setTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
 import {BlockMeta} from "./item-builder";
 import {
+  createInlinePaginationBreakPlan,
+  InlinePaginationBreakPlan,
+  visualDistanceToHostLayout,
+} from './inline-break-plan'
+import {measureInlinePaginationLineStarts} from '../../../block-std/inline/runtime/inline-pagination-access'
+import {
   canFitPageMedia,
   hasPageMediaFit,
   resolvePageMediaSurface,
@@ -44,6 +50,10 @@ interface NaturalDomSnapshot {
   mediaSurfaceHeight: number | null
   contentWidth: number | null
 }
+
+const MIN_INLINE_LINE_SAMPLES = 64
+const INLINE_LINE_SAMPLES_PER_PAGE = 8
+const MAX_INLINE_LINE_SAMPLES = 2048
 
 /**
  * 自有 ResizeObserver（BlockActiveTracker 的 heightMap 是 private 不可复用）。
@@ -303,6 +313,13 @@ export class LiveHeightSource {
         naturalHeight,
         height: naturalHeight,
         trailingSpacing: mb,
+        ...this._measureInlineBreakMetadata(
+          block,
+          el,
+          naturalHeight,
+          policy.breakable,
+          opts,
+        ),
       });
     }
     return metas;
@@ -331,6 +348,77 @@ export class LiveHeightSource {
     if (block?.nodeType !== BlockNodeType.editable) return false;
     // editable-block 暴露 get heading()；兜底读 model.props.heading
     return !!(block.heading ?? block.model?.props?.heading);
+  }
+
+  /**
+   * Measure visual lines only for a supported editable block that is genuinely
+   * taller than a full page. Ordinary paragraphs stay on the cheap height-only
+   * path and therefore keep their whole-block pagination semantics.
+   */
+  private _measureInlineBreakMetadata(
+    block: any,
+    host: HTMLElement,
+    naturalHeight: number,
+    breakable: boolean,
+    opts?: MeasureOptions,
+  ): Pick<BlockMeta, 'inlineBreakPlan' | 'splitOffsets'> {
+    if (
+      !opts
+      || !breakable
+      || opts.contentHeight <= 0
+      || naturalHeight <= opts.contentHeight
+      || block?.nodeType !== BlockNodeType.editable
+    ) {
+      return {}
+    }
+
+    let runtime: object | null = null
+    let container: HTMLElement | null = null
+    try {
+      runtime = block.runtime ?? null
+      container = block.containerElement ?? null
+    } catch {
+      return {}
+    }
+    if (!runtime || !container || !container.isConnected) return {}
+
+    const requestedSamples = Math.min(
+      MAX_INLINE_LINE_SAMPLES,
+      Math.max(
+        MIN_INLINE_LINE_SAMPLES,
+        Math.ceil(naturalHeight / opts.contentHeight)
+          * INLINE_LINE_SAMPLES_PER_PAGE,
+      ),
+    )
+    const lines = measureInlinePaginationLineStarts(runtime, requestedSamples)
+    if (!lines.length) return {}
+
+    const minimum = Math.max(1, Math.floor(opts.widowOrphanLines))
+    const totalLines = lines.length + 1
+    const strictLines = lines.filter((_line, index) => {
+      const boundaryLine = index + 1
+      return boundaryLine >= minimum
+        && totalLines - boundaryLine >= minimum
+    })
+    // A genuinely oversized paragraph must not fall back to atomic overflow
+    // solely because 2/2 aesthetics remove every cut. Relax to 1/1 only when
+    // the strict set is empty.
+    const usableLines = strictLines.length ? strictLines : lines
+    const hostRect = host.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+    const hostLayoutHeight = host.offsetHeight
+    const plan = createInlinePaginationBreakPlan(
+      usableLines.map(line => ({
+        layoutOffset: visualDistanceToHostLayout(
+          containerRect.top - hostRect.top + line.top,
+          hostRect.height,
+          hostLayoutHeight,
+        ),
+        textOffset: line.offset,
+      })),
+      naturalHeight,
+    )
+    return breakPlanMetadata(plan)
   }
 
   private _handleResize(entries: readonly ResizeObserverEntry[]): void {
@@ -457,6 +545,16 @@ function resizeEntryBlockSize(entry: ResizeObserverEntry): number {
   const size = Array.isArray(borderBox) ? borderBox[0] : borderBox;
   if (size && Number.isFinite(size.blockSize)) return size.blockSize;
   return entry.target.getBoundingClientRect().height;
+}
+
+function breakPlanMetadata(
+  plan: InlinePaginationBreakPlan | undefined,
+): Pick<BlockMeta, 'inlineBreakPlan' | 'splitOffsets'> {
+  if (!plan) return {}
+  return {
+    inlineBreakPlan: plan,
+    splitOffsets: plan.points.map(point => point.layoutOffset),
+  }
 }
 
 function appendTrailingHeight(

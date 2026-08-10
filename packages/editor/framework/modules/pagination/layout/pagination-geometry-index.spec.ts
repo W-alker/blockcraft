@@ -40,6 +40,8 @@ function measurement(
 function context(overrides: Partial<PaginationMeasureContext> = {}): PaginationMeasureContext {
   return {
     contentWidth: 720,
+    contentHeight: 900,
+    widowOrphanLines: 2,
     theme: 'light',
     fontEpoch: 0,
     rendererRevision: 0,
@@ -174,7 +176,7 @@ describe('PaginationGeometryIndex', () => {
     expect(index.revision).toBe(revision + 1)
   })
 
-  it('invalidates every record only when all four measure-context fields change', () => {
+  it('invalidates every record when any measure-context field changes', () => {
     const index = new PaginationGeometryIndex()
     index.syncRootOrder([seed('a')])
     index.applyMeasured([measurement('a', 120, {splitOffsets: [40, 80]})])
@@ -200,6 +202,8 @@ describe('PaginationGeometryIndex', () => {
       context({contentWidth: 640, theme: 'dark'}),
       context({contentWidth: 640, theme: 'dark', fontEpoch: 1}),
       context({contentWidth: 640, theme: 'dark', fontEpoch: 1, rendererRevision: 1}),
+      context({contentWidth: 640, contentHeight: 800, theme: 'dark', fontEpoch: 1, rendererRevision: 1}),
+      context({contentWidth: 640, contentHeight: 800, widowOrphanLines: 3, theme: 'dark', fontEpoch: 1, rendererRevision: 1}),
     ]) {
       const previousContextRevision = index.measureContextRevision
       const previousRevision = index.revision
@@ -209,6 +213,19 @@ describe('PaginationGeometryIndex', () => {
       expect(index.get('a')?.measureContextRevision).toBe(index.measureContextRevision)
       expect(index.get('a')?.source).toBe('estimated')
     }
+  })
+
+  it('rejects invalid page-height and widow/orphan measurement context', () => {
+    const index = new PaginationGeometryIndex()
+
+    expect(() => index.setMeasureContext(context({contentHeight: -1})))
+      .toThrowError(RangeError)
+    expect(() => index.setMeasureContext(context({contentHeight: Number.NaN})))
+      .toThrowError(RangeError)
+    expect(() => index.setMeasureContext(context({widowOrphanLines: -1})))
+      .toThrowError(RangeError)
+    expect(() => index.setMeasureContext(context({widowOrphanLines: Number.NaN})))
+      .toThrowError(RangeError)
   })
 
   it('removes deleted roots and seeds newly reachable roots without disturbing survivors', () => {
@@ -272,6 +289,61 @@ describe('PaginationGeometryIndex', () => {
     }))
   })
 
+  it('owns immutable inline break plans and treats anchor changes as geometry changes', () => {
+    const index = new PaginationGeometryIndex()
+    index.syncRootOrder([seed('paragraph', 240)])
+    const splitOffsets = [80, 160]
+    const inlineBreakPlan = {
+      points: [
+        {layoutOffset: 80, textOffset: 12},
+        {layoutOffset: 160, textOffset: 28},
+      ],
+    }
+
+    expect(index.applyMeasured([measurement('paragraph', 240, {
+      splitOffsets,
+      inlineBreakPlan,
+    })])).toBeTrue()
+    splitOffsets[0] = 999
+    inlineBreakPlan.points[0]!.layoutOffset = 999
+    inlineBreakPlan.points[0]!.textOffset = 999
+
+    const first = index.get('paragraph')!
+    expect(first.inlineBreakPlan).toEqual({
+      points: [
+        {layoutOffset: 80, textOffset: 12},
+        {layoutOffset: 160, textOffset: 28},
+      ],
+    })
+    ;(first.inlineBreakPlan!.points as unknown as Array<{layoutOffset: number; textOffset: number}>)[0]!
+      .textOffset = 777
+    expect(index.get('paragraph')?.inlineBreakPlan?.points[0]?.textOffset).toBe(12)
+
+    const stableRevision = index.revision
+    const stableMeasurement = measurement('paragraph', 240, {
+      splitOffsets: [80, 160],
+      inlineBreakPlan: {
+        points: [
+          {layoutOffset: 80, textOffset: 12},
+          {layoutOffset: 160, textOffset: 28},
+        ],
+      },
+    })
+    expect(index.applyMeasured([stableMeasurement])).toBeFalse()
+    expect(index.revision).toBe(stableRevision)
+
+    expect(index.applyMeasured([measurement('paragraph', 240, {
+      splitOffsets: [80, 160],
+      inlineBreakPlan: {
+        points: [
+          {layoutOffset: 80, textOffset: 13},
+          {layoutOffset: 160, textOffset: 28},
+        ],
+      },
+    })])).toBeTrue()
+    expect(index.revision).toBe(stableRevision + 1)
+  })
+
   it('rejects invalid seed geometry before mutating the index', () => {
     const index = new PaginationGeometryIndex()
 
@@ -291,6 +363,25 @@ describe('PaginationGeometryIndex', () => {
       measurement('b', 20, {repeatHeaderHeight: -1}),
       measurement('b', 20, {splitOffsets: [10, -1]}),
       measurement('b', 20, {preferredSplitOffsets: [Number.NaN]}),
+      measurement('b', 20, {
+        splitOffsets: [10],
+        inlineBreakPlan: {points: []},
+      }),
+      measurement('b', 20, {
+        splitOffsets: [10],
+        inlineBreakPlan: {points: [{layoutOffset: 20, textOffset: 1}]},
+      }),
+      measurement('b', 20, {
+        splitOffsets: [10, 15],
+        inlineBreakPlan: {points: [
+          {layoutOffset: 10, textOffset: 2},
+          {layoutOffset: 15, textOffset: 1},
+        ]},
+      }),
+      measurement('b', 20, {
+        splitOffsets: [9],
+        inlineBreakPlan: {points: [{layoutOffset: 10, textOffset: 1}]},
+      }),
       measurement('b', 20, {tableRows: [{id: 'row', top: -1, bottom: 20, coveredFromAbove: false}]}),
       measurement('b', 20, {tableRows: [{id: 'row', top: 20, bottom: 10, coveredFromAbove: false}]}),
     ]

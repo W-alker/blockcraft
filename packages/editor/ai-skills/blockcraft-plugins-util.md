@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-09
+> Last updated: 2026-08-10
 
 ## PlaceholderPlugin
 
@@ -321,6 +321,18 @@ ancestor rather than the root's direct parent. The actual scroll container
 continues to drive viewport observation and virtualization; the root's direct
 parent becomes the page-frame layout surface. This keeps page sheets aligned
 with content even when host-owned headers or wrappers precede the editor.
+
+Built-in heading paragraphs are independent pagination items; heading styling
+does not implicitly keep the following Block on the same page. A breakable
+top-level text Block whose natural stride is at most one regular content page
+always stays whole and moves to the next page when the current remainder is too
+small. Only a text Block that is itself taller than one regular content page is
+split at safe visual-line boundaries. Live layout pairs every pixel boundary
+with its Y.Text UTF-16 anchor and applies reversible zero-model-length gaps;
+stable printing consumes the same pixel fragments. If the mounted Runtime cannot
+apply every anchor, the screen uses an atomic fallback and printing rejects that
+snapshot so its readonly document can remeasure all lines. Short text Blocks
+never pay the Range line-measurement cost.
 
 `header` / `footer` customize fixed-height page chrome through the
 `left` / `center` / `right` text segments. `{page}` / `{total}` render decimal

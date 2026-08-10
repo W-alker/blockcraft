@@ -384,6 +384,7 @@ describe("PaginatedViewController shadow layout", () => {
       const shadow = controller.captureShadowLayout();
 
       expect(legacy).not.toBeNull();
+      expect(controller.canReuseStableLayoutForExport).toBeTrue();
       expect(shadow).not.toBeNull();
       expect(shadow?.exact).toBeTrue();
       expect(shadow?.result.pages).toEqual(legacy?.result.pages);
@@ -500,6 +501,81 @@ describe("PaginatedViewController shadow layout", () => {
     }
   });
 
+  it("restores inline pagination after the earlier bubble-phase IME commit", async () => {
+    const harness = createHarness();
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+    );
+    const releaseComposition = () => {
+      harness.compositionSession.isIdle = true;
+    };
+    const internals = controller as unknown as {
+      _flushCompositionRecompute(): void;
+    };
+    const flushCompositionRecompute =
+      internals._flushCompositionRecompute.bind(controller);
+    const idleStatesAtPaginationListener: boolean[] = [];
+
+    try {
+      // CompositionControl is registered before pagination during document init.
+      harness.rootHost.addEventListener("compositionend", releaseComposition);
+      controller.enable();
+      controller.captureStableLayout();
+      const callbacks = new Map<number, FrameRequestCallback>();
+      let nextFrameId = 0;
+      spyOn(window, "requestAnimationFrame").and.callFake(callback => {
+        const frameId = ++nextFrameId;
+        callbacks.set(frameId, callback);
+        return frameId;
+      });
+      spyOn(window, "cancelAnimationFrame").and.callFake(frameId => {
+        callbacks.delete(frameId);
+      });
+      const applyLayout = spyOn(
+        controller as unknown as {_applyLayoutView(...args: unknown[]): void},
+        "_applyLayoutView",
+      ).and.callThrough();
+      spyOn(internals, "_flushCompositionRecompute").and.callFake(() => {
+        idleStatesAtPaginationListener.push(harness.compositionSession.isIdle);
+        flushCompositionRecompute();
+      });
+
+      // InlineRuntime.render() has already revoked the paragraph's old page gaps,
+      // but the model-owned session is still committing, so the content echo can
+      // only mark pagination as pending.
+      harness.compositionSession.isIdle = false;
+      harness.contentChange$.next(contentChange(["root-block"], ["text"]));
+      expect(callbacks.size).toBe(0);
+
+      // Zone/WebKit can run a microtask checkpoint between listeners. Model the
+      // pagination microtask as immediate: the earlier CompositionControl bubble
+      // handler must already have completed rerender/caret restoration/session.end.
+      spyOn(window, "queueMicrotask").and.callFake(callback => callback());
+      harness.blockHost.dispatchEvent(new CompositionEvent("compositionend", {
+        bubbles: true,
+      }));
+      await Promise.resolve();
+
+      const flushFrame = () => {
+        const pending = [...callbacks.entries()];
+        callbacks.clear();
+        pending.forEach(([, callback]) => callback(performance.now()));
+      };
+      flushFrame();
+      flushFrame();
+
+      expect(harness.compositionSession.isIdle).toBeTrue();
+      expect(idleStatesAtPaginationListener).toEqual([true]);
+      expect(applyLayout).toHaveBeenCalledTimes(1);
+    } finally {
+      harness.rootHost.removeEventListener("compositionend", releaseComposition);
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
   it("coalesces a structural deletion and its resize notification into one frame", () => {
     const harness = createHarness();
     const controller = new PaginatedViewController(
@@ -554,7 +630,7 @@ describe("PaginatedViewController shadow layout", () => {
     }
   });
 
-  it("invalidates all content but only schedules props-bearing changes", () => {
+  it("invalidates and schedules every content change so inline page gaps are replayed", () => {
     const harness = createHarness();
     const coordinator = new PaginationLayoutCoordinator(harness.doc);
     const applyContentChange = spyOn(
@@ -579,7 +655,7 @@ describe("PaginatedViewController shadow layout", () => {
       harness.contentChange$.next(contentChange(["root-block"], ["text"]));
       expect(applyContentChange).toHaveBeenCalledTimes(1);
       expect(controller.captureShadowLayout()).toBeNull();
-      expect(requestFrame).not.toHaveBeenCalled();
+      expect(requestFrame).toHaveBeenCalledTimes(1);
 
       harness.contentChange$.next(
         contentChange(["root-block"], ["text", "props"]),
@@ -587,8 +663,166 @@ describe("PaginatedViewController shadow layout", () => {
       harness.contentChange$.next(contentChange(["nested"], ["props"]));
 
       expect(applyContentChange).toHaveBeenCalledTimes(3);
-      expect(requestFrame).toHaveBeenCalledTimes(2);
-      expect(cancelFrame).toHaveBeenCalledTimes(1);
+      expect(requestFrame).toHaveBeenCalledTimes(3);
+      expect(cancelFrame).toHaveBeenCalledTimes(2);
+    } finally {
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
+  it("starts an inline update before natural measurement and applies it after pagination", () => {
+    const harness = createHarness();
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+    );
+    const internals = controller as unknown as {
+      _inlineBreaks: {
+        beginUpdate(): {commit(): void; rollback(): void};
+        apply(...args: unknown[]): void;
+      };
+      _heightSource: {measure(...args: unknown[]): unknown};
+    };
+    const beginUpdate = spyOn(
+      internals._inlineBreaks,
+      "beginUpdate",
+    ).and.callThrough();
+    const measure = spyOn(internals._heightSource, "measure").and.callThrough();
+    const apply = spyOn(internals._inlineBreaks, "apply").and.callThrough();
+
+    try {
+      controller.enable();
+      controller.captureStableLayout();
+
+      expect(beginUpdate).toHaveBeenCalled();
+      expect(measure).toHaveBeenCalled();
+      expect(apply).toHaveBeenCalled();
+      const invocationOrder = (call: unknown) =>
+        (call as {invocationOrder: number}).invocationOrder;
+      expect(invocationOrder(beginUpdate.calls.first()))
+        .toBeLessThan(invocationOrder(measure.calls.first()));
+      expect(invocationOrder(measure.calls.first()))
+        .toBeLessThan(invocationOrder(apply.calls.first()));
+    } finally {
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
+  it("publishes an atomic stable fallback when inline continuation projection fails", () => {
+    const harness = createHarness();
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+    );
+    const internals = controller as unknown as {
+      _heightSource: {measure(...args: unknown[]): unknown};
+      _inlineBreaks: {
+        apply(...args: unknown[]): ReadonlySet<string>;
+      };
+    };
+    spyOn(internals._heightSource, "measure").and.returnValue([{
+      id: "root-block",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      isHeading: false,
+      naturalHeight: 400,
+      height: 400,
+      splitOffsets: [100, 200, 300],
+      inlineBreakPlan: {
+        points: [
+          {layoutOffset: 100, textOffset: 5},
+          {layoutOffset: 200, textOffset: 10},
+          {layoutOffset: 300, textOffset: 15},
+        ],
+      },
+    }]);
+    const apply = spyOn(internals._inlineBreaks, "apply").and.returnValues(
+      new Set(["root-block"]),
+      new Set(),
+    );
+
+    try {
+      controller.enable();
+      const layout = controller.captureStableLayout();
+
+      expect(apply).toHaveBeenCalledTimes(2);
+      expect(layout?.items[0]?.breakable).toBeFalse();
+      expect(layout?.items[0]?.splitOffsets).toBeUndefined();
+      expect(layout?.result.pages[0]?.slots[0]?.id).toBe("root-block");
+      expect(layout?.result.pages[0]?.slots[0]?.fragment).toBeUndefined();
+      expect(controller.canReuseStableLayoutForExport).toBeFalse();
+    } finally {
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
+  it("falls back atomically when oversized text has no live line anchors", () => {
+    const harness = createHarness();
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+    );
+    const internals = controller as unknown as {
+      _heightSource: {measure(...args: unknown[]): unknown};
+    };
+    spyOn(internals._heightSource, "measure").and.returnValue([{
+      id: "root-block",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      isHeading: false,
+      naturalHeight: 400,
+      height: 400,
+    }]);
+
+    try {
+      controller.enable();
+      const layout = controller.captureStableLayout();
+
+      expect(layout?.items[0]?.breakable).toBeFalse();
+      expect(layout?.result.pages[0]?.slots[0]?.fragment).toBeUndefined();
+      expect(controller.canReuseStableLayoutForExport).toBeFalse();
+    } finally {
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
+  it("rolls back the inline update when a later view applier throws", () => {
+    const harness = createHarness();
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+    );
+    const commit = jasmine.createSpy("commit");
+    const rollback = jasmine.createSpy("rollback");
+    const internals = controller as unknown as {
+      _inlineBreaks: {
+        beginUpdate(): {commit(): void; rollback(): void};
+      };
+      _tableBreaks: {apply(...args: unknown[]): void};
+    };
+    spyOn(internals._inlineBreaks, "beginUpdate").and.returnValue({
+      commit,
+      rollback,
+    });
+    spyOn(internals._tableBreaks, "apply").and.throwError("forced table failure");
+
+    try {
+      controller.enable();
+
+      expect(() => controller.captureStableLayout()).toThrowError(
+        "forced table failure",
+      );
+      expect(commit).not.toHaveBeenCalled();
+      expect(rollback).toHaveBeenCalledTimes(1);
+      expect(controller.canReuseStableLayoutForExport).toBeFalse();
     } finally {
       controller.destroy();
       harness.destroy();
@@ -641,7 +875,7 @@ describe("PaginatedViewController shadow layout", () => {
     }
   });
 
-  it("invalidates measurement only for width, theme and font changes", () => {
+  it("invalidates measurement for text-layout context changes, but not page gap", () => {
     const harness = createHarness();
     const addFontListener = spyOn(
       harness.scrollContainer.ownerDocument.fonts,
@@ -658,20 +892,31 @@ describe("PaginatedViewController shadow layout", () => {
       controller.captureStableLayout();
       const initial = controller.captureShadowLayout()!;
 
-      controller.updateConfig({
-        pageSize: { width: 400, height: 300 },
-        pageGap: 48,
-      });
+      controller.updateConfig({pageGap: 48});
       controller.captureStableLayout();
       expect(controller.captureShadowLayout()!.geometryRevision).toBe(
         initial.geometryRevision,
+      );
+
+      controller.updateConfig({pageSize: { width: 400, height: 300 }});
+      controller.captureStableLayout();
+      const afterHeight = controller.captureShadowLayout()!;
+      expect(afterHeight.geometryRevision).toBeGreaterThan(
+        initial.geometryRevision,
+      );
+
+      controller.updateConfig({widowOrphanLines: 3});
+      controller.captureStableLayout();
+      const afterWidowOrphan = controller.captureShadowLayout()!;
+      expect(afterWidowOrphan.geometryRevision).toBeGreaterThan(
+        afterHeight.geometryRevision,
       );
 
       controller.updateConfig({ pageSize: { width: 420, height: 300 } });
       controller.captureStableLayout();
       const afterWidth = controller.captureShadowLayout()!;
       expect(afterWidth.geometryRevision).toBeGreaterThan(
-        initial.geometryRevision,
+        afterWidowOrphan.geometryRevision,
       );
 
       (harness.doc.config as { theme?: string }).theme = "dark";

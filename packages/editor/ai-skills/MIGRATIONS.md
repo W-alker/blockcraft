@@ -69,6 +69,48 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+### Unreleased - 2026-08-10 (patch) — keep short text blocks whole and flow oversized text by visual line
+
+**What changed**: Built-in heading paragraphs no longer keep the following
+Block with them during pagination. Every breakable top-level text Block whose
+natural stride is at most one regular content page now stays whole and moves to
+the next page when necessary. A text Block is split only when it is itself
+taller than a page; live layout then pairs safe visual-line pixel cuts with
+Y.Text offsets and applies reversible zero-model-length continuation gaps.
+Sparse projection and stable printing consume the same fragment geometry. If a
+mounted Runtime cannot materialize every continuation, the live view falls back
+atomically and marks that snapshot as non-reusable so readonly export measures
+its own complete visual-line plan instead of clipping the oversized tail. IME
+composition-end recovery now waits until the model-owned commit has settled, so
+the visual-line projection is restored without requiring a later scroll event.
+
+**Why**: The engine could previously split a short Block merely because one of
+its safe cuts fitted the current remainder, while heading policy could move an
+otherwise fitting title together with an entire following list. Live ordinary
+text also supplied no line anchors, so a paragraph taller than one page
+overflowed instead of continuing. This restores the documented oversized-only
+split contract and keeps screen and PDF pagination aligned.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-inline.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Heading styling alone no longer keeps the next Block on the same page.
+- A breakable text Block with `height <= contentHeight` is never fragmented,
+  even when it carries safe split offsets; it moves whole to the next page.
+- Standard oversized editable text uses reversible visual-line continuation in
+  live pagination without changing Yjs, Snapshot, collaboration or Undo data.
+- IME edits inside a continued paragraph restore live pagination after the
+  composition commit without waiting for scroll or ResizeObserver activity.
+- Wrapped inline-float owners and a single visual line taller than a page remain
+  atomic fallbacks until they have a separate safe visual policy.
+
 ### v0.3.0-alpha.30 - 2026-08-10 (patch) — preserve paginated table fullscreen editing
 
 **What changed**: Table fullscreen now isolates only sibling branches along the

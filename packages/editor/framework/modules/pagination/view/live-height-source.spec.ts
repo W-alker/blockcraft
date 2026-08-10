@@ -6,12 +6,16 @@ import {LiveHeightSource} from './live-height-source'
 import {planTableCellFlow, TableCellFlowPlan} from '../engine/table-cell-flow'
 import {getTableCellFlowPlan} from '../engine/table-cell-flow-metadata'
 import {registerTablePaginationAccess} from './table-pagination-access'
+import {registerInlinePaginationAccess} from '../../../block-std/inline/runtime/inline-pagination-access'
+import type {InlinePaginationLineStart} from '../../../block-std/inline/runtime/inline-pagination-access'
 
 describe('LiveHeightSource atomic block measurement', () => {
   let source: LiveHeightSource
   let host: HTMLElement
   let mediaSurface: HTMLElement | undefined
   let releaseTableAccess: (() => void) | undefined
+  let releaseInlineAccess: (() => void) | undefined
+  let inlineMeasure: jasmine.Spy | undefined
 
   function createSource(
     offsetHeight: number,
@@ -24,6 +28,7 @@ describe('LiveHeightSource atomic block measurement', () => {
       rows: TableRowGeom[]
       cellFlowPlan?: TableCellFlowPlan
     },
+    inlineLines?: InlinePaginationLineStart[],
   ): LiveHeightSource {
     host = document.createElement('div')
     host.style.marginBottom = '8px'
@@ -58,13 +63,25 @@ describe('LiveHeightSource atomic block measurement', () => {
       hostElement: host,
       nodeType,
       flavour,
-    }
+    } as any
     if (tableGeometry) {
       releaseTableAccess = registerTablePaginationAccess(block, {
         measure: () => tableGeometry,
         apply: () => undefined,
         clear: () => undefined,
       })
+    }
+    if (inlineLines) {
+      const runtime = {}
+      inlineMeasure = jasmine.createSpy('measureLineStarts')
+        .and.returnValue(inlineLines)
+      releaseInlineAccess = registerInlinePaginationAccess(runtime, {
+        apply: () => true,
+        clear: () => undefined,
+        measureLineStarts: inlineMeasure,
+      })
+      block.runtime = runtime
+      block.containerElement = host
     }
     const doc = {
       root: {childrenIds: ['embed-1']},
@@ -77,6 +94,9 @@ describe('LiveHeightSource atomic block measurement', () => {
     source?.destroy()
     releaseTableAccess?.()
     releaseTableAccess = undefined
+    releaseInlineAccess?.()
+    releaseInlineAccess = undefined
+    inlineMeasure = undefined
     host?.remove()
   })
 
@@ -211,6 +231,112 @@ describe('LiveHeightSource atomic block measurement', () => {
 
     expect(buildPaginationItems(measurements)[0]?.height).toBe(472)
     expect(geometryMeasurements[0]?.naturalHeight).toBe(472)
+  })
+
+  it('lazily measures supported oversized editable text and carries its text anchors', () => {
+    source = createSource(
+      1200,
+      1200,
+      'paragraph',
+      BlockNodeType.editable,
+      undefined,
+      [
+        {offset: 4, top: 80},
+        {offset: 8, top: 160},
+        {offset: 12, top: 240},
+        {offset: 16, top: 320},
+      ],
+    )
+
+    const [meta] = source.measure({contentHeight: 900, widowOrphanLines: 2})
+
+    expect(inlineMeasure).toHaveBeenCalledTimes(1)
+    expect(meta.inlineBreakPlan?.points).toEqual([
+      {layoutOffset: 160, textOffset: 8},
+      {layoutOffset: 240, textOffset: 12},
+    ])
+    expect(meta.splitOffsets).toEqual([160, 240])
+    expect(buildPaginationItems([meta])[0]?.splitOffsets).toEqual([160, 240])
+  })
+
+  it('relaxes widow/orphan to 1/1 when an oversized paragraph otherwise has no cut', () => {
+    source = createSource(
+      1200,
+      1200,
+      'ordered',
+      BlockNodeType.editable,
+      undefined,
+      [{offset: 6, top: 600}],
+    )
+
+    const [meta] = source.measure({contentHeight: 900, widowOrphanLines: 2})
+
+    expect(meta.inlineBreakPlan?.points).toEqual([
+      {layoutOffset: 600, textOffset: 6},
+    ])
+  })
+
+  it('converts InlineRuntime visual line tops to host-relative layout pixels', () => {
+    source = createSource(
+      1200,
+      1200,
+      'caption',
+      BlockNodeType.editable,
+      undefined,
+      [{offset: 6, top: 1200}],
+    )
+    host.getBoundingClientRect = () => ({
+      x: 0,
+      y: 100,
+      top: 100,
+      right: 100,
+      bottom: 2500,
+      left: 0,
+      width: 100,
+      height: 2400,
+      toJSON: () => ({}),
+    })
+
+    const [meta] = source.measure({contentHeight: 900, widowOrphanLines: 2})
+
+    expect(meta.inlineBreakPlan?.points).toEqual([
+      {layoutOffset: 600, textOffset: 6},
+    ])
+  })
+
+  it('does not enumerate visual lines for a paragraph that fits one full page', () => {
+    source = createSource(
+      800,
+      800,
+      'paragraph',
+      BlockNodeType.editable,
+      undefined,
+      [{offset: 4, top: 400}],
+    )
+
+    const [meta] = source.measure({contentHeight: 900, widowOrphanLines: 2})
+
+    expect(inlineMeasure).not.toHaveBeenCalled()
+    expect(meta.inlineBreakPlan).toBeUndefined()
+    expect(meta.splitOffsets).toBeUndefined()
+  })
+
+  it('measures any oversized editable flavour that exposes inline pagination access', () => {
+    source = createSource(
+      1200,
+      1200,
+      'blockquote',
+      BlockNodeType.editable,
+      undefined,
+      [{offset: 4, top: 400}],
+    )
+
+    const [meta] = source.measure({contentHeight: 900, widowOrphanLines: 2})
+
+    expect(inlineMeasure).toHaveBeenCalledTimes(1)
+    expect(meta.inlineBreakPlan?.points).toEqual([
+      {layoutOffset: 400, textOffset: 4},
+    ])
   })
 
   it('keeps a code block locked when the lock layout collapses its measured scroll height', () => {

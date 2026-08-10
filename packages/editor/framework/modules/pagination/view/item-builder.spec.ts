@@ -12,7 +12,7 @@ describe('item-builder', () => {
     ]);
     expect(items).toEqual([
       {id: 'a', height: 100, breakable: true, keepWithNext: false, manualBreak: false},
-      {id: 'h', height: 40, breakable: true, keepWithNext: true, manualBreak: false},
+      {id: 'h', height: 40, breakable: true, keepWithNext: false, manualBreak: false},
       {id: 'img', height: 300, breakable: false, keepWithNext: false, manualBreak: false},
       {id: 'd', height: 0, breakable: false, keepWithNext: false, manualBreak: true},
     ]);

@@ -6,9 +6,19 @@ import {
   TableCellFlowPlan,
 } from '../engine/table-cell-flow'
 import {getTableCellFlowPlan} from '../engine/table-cell-flow-metadata'
+import {
+  cloneInlinePaginationBreakPlan,
+  createInlinePaginationBreakPlan,
+  InlinePaginationBreakPlan,
+  inlinePaginationBreakPlansEqual,
+} from '../view/inline-break-plan'
 
 export interface PaginationMeasureContext {
   readonly contentWidth: number
+  /** Regular-page content height; controls whether text is oversized and needs line anchors. */
+  readonly contentHeight: number
+  /** Minimum visual lines retained on each side of an inline split. */
+  readonly widowOrphanLines: number
   readonly theme: string
   readonly fontEpoch: number
   readonly rendererRevision: number
@@ -41,6 +51,7 @@ export interface PaginationGeometryEntry {
   /** 已计入高度、由同一稳定 DOM 帧捕获的块尾间距。 */
   readonly trailingSpacing?: number
   readonly splitOffsets?: readonly number[]
+  readonly inlineBreakPlan?: InlinePaginationBreakPlan
   readonly preferredSplitOffsets?: readonly number[]
   readonly tableRows?: readonly TableRowGeom[]
   readonly lockHeight?: number
@@ -59,6 +70,7 @@ export interface PaginationGeometryMeasurement {
   readonly height: number
   readonly trailingSpacing?: number
   readonly splitOffsets?: readonly number[]
+  readonly inlineBreakPlan?: InlinePaginationBreakPlan
   readonly preferredSplitOffsets?: readonly number[]
   readonly tableRows?: readonly TableRowGeom[]
   readonly lockHeight?: number
@@ -86,6 +98,40 @@ function validateRows(rows: readonly TableRowGeom[] | undefined): void {
   })
 }
 
+function validateInlineBreakPlan(
+  measurement: PaginationGeometryMeasurement,
+): void {
+  const plan = measurement.inlineBreakPlan
+  if (!plan) return
+
+  const normalized = createInlinePaginationBreakPlan(
+    plan.points,
+    measurement.naturalHeight,
+  )
+  if (!normalized || !inlinePaginationBreakPlansEqual(plan, normalized)) {
+    throw new RangeError(
+      `inlineBreakPlan for ${measurement.id} must contain ordered, unique points within naturalHeight`,
+    )
+  }
+
+  let previousTextOffset = 0
+  for (const [index, point] of plan.points.entries()) {
+    if (point.textOffset <= previousTextOffset) {
+      throw new RangeError(
+        `inlineBreakPlan.points[${index}].textOffset for ${measurement.id} must be strictly increasing`,
+      )
+    }
+    previousTextOffset = point.textOffset
+  }
+
+  const layoutOffsets = plan.points.map(point => point.layoutOffset)
+  if (!arraysEqual(layoutOffsets, measurement.splitOffsets)) {
+    throw new RangeError(
+      `inlineBreakPlan for ${measurement.id} must map every splitOffset`,
+    )
+  }
+}
+
 function validateSeed(seed: PaginationGeometrySeed): void {
   assertNonNegativeFinite(seed.estimatedHeight, `estimatedHeight for ${seed.blockId}`)
 }
@@ -111,12 +157,15 @@ function validateMeasurement(measurement: PaginationGeometryMeasurement): void {
     }
   }
   validateOffsets(measurement.splitOffsets, `splitOffsets for ${measurement.id}`)
+  validateInlineBreakPlan(measurement)
   validateOffsets(measurement.preferredSplitOffsets, `preferredSplitOffsets for ${measurement.id}`)
   validateRows(measurement.tableRows)
 }
 
 function validateContext(context: PaginationMeasureContext): void {
   assertNonNegativeFinite(context.contentWidth, 'contentWidth')
+  assertNonNegativeFinite(context.contentHeight, 'contentHeight')
+  assertNonNegativeFinite(context.widowOrphanLines, 'widowOrphanLines')
   assertNonNegativeFinite(context.fontEpoch, 'fontEpoch')
   assertNonNegativeFinite(context.rendererRevision, 'rendererRevision')
 }
@@ -129,6 +178,7 @@ function cloneEntry(entry: PaginationGeometryEntry): PaginationGeometryEntry {
   return {
     ...entry,
     splitOffsets: entry.splitOffsets ? [...entry.splitOffsets] : undefined,
+    inlineBreakPlan: cloneInlinePaginationBreakPlan(entry.inlineBreakPlan),
     preferredSplitOffsets: entry.preferredSplitOffsets ? [...entry.preferredSplitOffsets] : undefined,
     tableRows: cloneRows(entry.tableRows),
     tableCellFlowPlan: entry.tableCellFlowPlan
@@ -226,6 +276,7 @@ function entriesEqual(left: PaginationGeometryEntry, right: PaginationGeometryEn
     && left.fitScale === right.fitScale
     && left.repeatHeaderHeight === right.repeatHeaderHeight
     && arraysEqual(left.splitOffsets, right.splitOffsets)
+    && inlinePaginationBreakPlansEqual(left.inlineBreakPlan, right.inlineBreakPlan)
     && arraysEqual(left.preferredSplitOffsets, right.preferredSplitOffsets)
     && rowsEqual(left.tableRows, right.tableRows)
     && plansEqual(left.tableCellFlowPlan, right.tableCellFlowPlan)
@@ -233,6 +284,8 @@ function entriesEqual(left: PaginationGeometryEntry, right: PaginationGeometryEn
 
 function contextsEqual(left: PaginationMeasureContext | null, right: PaginationMeasureContext): boolean {
   return left?.contentWidth === right.contentWidth
+    && left.contentHeight === right.contentHeight
+    && left.widowOrphanLines === right.widowOrphanLines
     && left.theme === right.theme
     && left.fontEpoch === right.fontEpoch
     && left.rendererRevision === right.rendererRevision
@@ -431,6 +484,7 @@ export class PaginationGeometryIndex {
           ? {trailingSpacing: measurement.trailingSpacing}
           : {}),
         splitOffsets: measurement.splitOffsets ? [...measurement.splitOffsets] : undefined,
+        inlineBreakPlan: cloneInlinePaginationBreakPlan(measurement.inlineBreakPlan),
         preferredSplitOffsets: measurement.preferredSplitOffsets ? [...measurement.preferredSplitOffsets] : undefined,
         tableRows: cloneRows(measurement.tableRows),
         lockHeight: measurement.lockHeight,

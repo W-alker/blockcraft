@@ -418,8 +418,7 @@ describe('PaginationPlugin', () => {
     const controller = {
       captureStableLayout: jasmine.createSpy('captureStableLayout')
         .and.returnValue(layout),
-      captureShadowLayout: jasmine.createSpy('captureShadowLayout')
-        .and.returnValue({exact: false}),
+      canReuseStableLayoutForExport: false,
     }
     ;(plugin as any)._controller = controller
 
@@ -430,7 +429,27 @@ describe('PaginationPlugin', () => {
 
     expect(plugin.captureStableLayout()).toBeUndefined()
 
-    controller.captureShadowLayout.and.returnValue({exact: true})
+    controller.canReuseStableLayoutForExport = true
+    expect(plugin.captureStableLayout()).toBe(layout as any)
+  })
+
+  it('does not reuse a live layout whose inline projection fell back', () => {
+    const plugin = new PaginationPlugin()
+    const layout = {revision: 1}
+    const controller = {
+      captureStableLayout: jasmine.createSpy('captureStableLayout')
+        .and.returnValue(layout),
+      canReuseStableLayoutForExport: false,
+    }
+    ;(plugin as any)._controller = controller
+    ;(plugin as any)._registered = true
+    ;(plugin as any)._enabled = true
+    ;(plugin as any)._destroyed = false
+    ;(plugin as any).doc = {isInitialized: true}
+
+    expect(plugin.captureStableLayout()).toBeUndefined()
+
+    controller.canReuseStableLayoutForExport = true
     expect(plugin.captureStableLayout()).toBe(layout as any)
   })
 

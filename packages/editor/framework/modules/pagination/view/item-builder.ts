@@ -5,6 +5,7 @@ import {
   getTableCellFlowPlan,
   setTableCellFlowPlan,
 } from "../engine/table-cell-flow-metadata";
+import type {InlinePaginationBreakPlan} from './inline-break-plan'
 
 /** 表格行的自然几何（相对表格 host 顶，已扣除分页占位高度），用于把切点映射回行。 */
 export interface TableRowGeom {
@@ -32,6 +33,8 @@ export interface BlockMeta {
   trailingSpacing?: number;
   /** 安全切点（块顶起算 px，已过 widow/orphan）。表格=所有行边界；文本=行盒边界。 */
   splitOffsets?: number[];
+  /** 文本切点的 layout px ↔ Y.Text 锚点映射，仅供 live 视图投影，不进入纯引擎。 */
+  inlineBreakPlan?: InlinePaginationBreakPlan;
   /** 优先切点（splitOffsets 子集）：表格的「干净」行边界（不跨合并单元格），引擎优先选。 */
   preferredSplitOffsets?: number[];
   /** 仅可屏幕拆分的表格：行自然几何，供切点→断点行映射。 */
