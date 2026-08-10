@@ -69,7 +69,7 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
-### Unreleased - 2026-08-10 (patch) — keep short text blocks whole and flow oversized text by visual line
+### v0.3.0-alpha.31 - 2026-08-10 (patch) — keep short text blocks whole and flow oversized text by visual line
 
 **What changed**: Built-in heading paragraphs no longer keep the following
 Block with them during pagination. Every breakable top-level text Block whose
