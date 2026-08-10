@@ -6,7 +6,7 @@ import {
   Input,
   Output,
 } from "@angular/core";
-import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
+import { CsTooltipDirective } from "@cses/ui";
 import {
   BLOCK_OBJECT_LAYOUT_OPTIONS,
   type BlockObjectLayout,
@@ -43,7 +43,7 @@ export type WordArtToolbarAction =
     BcFloatToolbarComponent,
     BcFloatToolbarItemComponent,
     BcOverlayTriggerDirective,
-    NzTooltipDirective,
+    CsTooltipDirective,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -74,7 +74,7 @@ export type WordArtToolbarAction =
       </bc-float-toolbar-item>
 
       @if (props.fillType === "solid") {
-        <label class="word-art-toolbar__color" nz-tooltip="填充颜色">
+        <label class="word-art-toolbar__color" csTooltip="填充颜色">
           <input
             type="color"
             aria-label="填充颜色"
@@ -86,7 +86,7 @@ export type WordArtToolbarAction =
         @for (color of props.gradientColors; track $index) {
           <label
             class="word-art-toolbar__color"
-            [nz-tooltip]="'渐变色 ' + ($index + 1)"
+            [csTooltip]="'渐变色 ' + ($index + 1)"
           >
             <input
               type="color"
@@ -109,7 +109,7 @@ export type WordArtToolbarAction =
         </label>
       }
 
-      <label class="word-art-toolbar__color" nz-tooltip="描边颜色">
+      <label class="word-art-toolbar__color" csTooltip="描边颜色">
         <input
           type="color"
           aria-label="描边颜色"
@@ -117,7 +117,7 @@ export type WordArtToolbarAction =
           (change)="setColor('outlineColor', $event)"
         />
       </label>
-      <label class="word-art-toolbar__range" nz-tooltip="描边粗细">
+      <label class="word-art-toolbar__range" csTooltip="描边粗细">
         <span>描边</span>
         <input
           type="range"
@@ -134,7 +134,7 @@ export type WordArtToolbarAction =
 
       <button
         type="button"
-        nz-tooltip="投影"
+        csTooltip="投影"
         aria-label="投影"
         [class.active]="props.shadowEnabled"
         (click)="toggleShadow()"
@@ -142,7 +142,7 @@ export type WordArtToolbarAction =
         <i class="bc_icon bc_wenziyinying"></i>
       </button>
 
-      <label class="word-art-toolbar__range" nz-tooltip="字间距">
+      <label class="word-art-toolbar__range" csTooltip="字间距">
         <span>字距</span>
         <input
           type="range"
@@ -176,7 +176,7 @@ export type WordArtToolbarAction =
         class="word-art-toolbar__menu-trigger word-art-toolbar__align-trigger"
         name="horizontal-align"
         aria-label="水平对齐"
-        nz-tooltip="水平对齐"
+        csTooltip="水平对齐"
         [icon]="horizontalAlignIcon"
         [expandable]="true"
         [bcOverlayTrigger]="horizontalAlignMenu"
@@ -190,7 +190,7 @@ export type WordArtToolbarAction =
         class="word-art-toolbar__menu-trigger word-art-toolbar__align-trigger"
         name="vertical-align"
         aria-label="垂直对齐"
-        nz-tooltip="垂直对齐"
+        csTooltip="垂直对齐"
         [icon]="verticalAlignIcon"
         [expandable]="true"
         [bcOverlayTrigger]="verticalAlignMenu"
@@ -205,7 +205,7 @@ export type WordArtToolbarAction =
       @for (item of layoutOptions; track item.value) {
         <button
           type="button"
-          [nz-tooltip]="item.label"
+          [csTooltip]="item.label"
           [attr.aria-label]="item.label"
           [class.active]="objectLayout === item.value"
           (click)="action.emit({ name: 'object-layout', value: item.value })"
@@ -217,7 +217,7 @@ export type WordArtToolbarAction =
       @if (isAbsolute) {
         <button
           type="button"
-          nz-tooltip="上移一层"
+          csTooltip="上移一层"
           aria-label="上移一层"
           [disabled]="!canMoveForward"
           (click)="action.emit({ name: 'move-forward' })"
@@ -226,7 +226,7 @@ export type WordArtToolbarAction =
         </button>
         <button
           type="button"
-          nz-tooltip="下移一层"
+          csTooltip="下移一层"
           aria-label="下移一层"
           [disabled]="!canMoveBackward"
           (click)="action.emit({ name: 'move-backward' })"
@@ -238,7 +238,7 @@ export type WordArtToolbarAction =
       <span class="word-art-toolbar__divider"></span>
       <button
         type="button"
-        nz-tooltip="删除艺术字"
+        csTooltip="删除艺术字"
         aria-label="删除艺术字"
         (click)="action.emit({ name: 'delete' })"
       >
@@ -292,7 +292,7 @@ export type WordArtToolbarAction =
             [value]="align.value"
             [icon]="align.icon"
             [active]="props.horizontalAlign === align.value"
-            [nz-tooltip]="align.label"
+            [csTooltip]="align.label"
             [attr.aria-label]="align.label"
           >
           </bc-float-toolbar-item>
@@ -312,7 +312,7 @@ export type WordArtToolbarAction =
             [value]="align.value"
             [icon]="align.icon"
             [active]="props.verticalAlign === align.value"
-            [nz-tooltip]="align.label"
+            [csTooltip]="align.label"
             [attr.aria-label]="align.label"
           >
           </bc-float-toolbar-item>

@@ -1,6 +1,6 @@
 import {TestBed} from '@angular/core/testing';
 import {By} from '@angular/platform-browser';
-import {NzTooltipDirective} from 'ng-zorro-antd/tooltip';
+import {CsTooltipDirective} from '@cses/ui';
 import {InlineImageToolbar} from './inline-image.toolbar';
 
 describe('InlineImageToolbar', () => {
@@ -63,7 +63,7 @@ describe('InlineImageToolbar', () => {
     );
     expect(sideItems.length).toBe(3);
     expect(fixture.debugElement.queryAll(
-      By.directive(NzTooltipDirective),
+      By.directive(CsTooltipDirective),
     ).length).toBe(8);
     expect(sideItems[1].classList.contains('active')).toBeTrue();
 

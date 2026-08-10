@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-07-29
+> Last updated: 2026-08-10
 
 ## Overlay Service
 
@@ -193,6 +193,23 @@ export class MyToolbarComponent {
 | `TableSizePickerComponent` | `components/` | Table row/column picker |
 | `ColumnCountPickerComponent` | `components/` | Column count selector |
 | `MediaCreatorComponent` | `components/` | Media upload/URL input |
+
+## Standard Control Source
+
+Use the exact `@cses/ui@4.23.0` peer for generic toolbar chrome:
+
+- `CsButtonComponent` for textual confirm/cancel and ordinary actions;
+- `CsInputDirective` for native text inputs that must keep editor-specific
+  value/event handling;
+- `CsTooltipDirective` for hover help;
+- `CsDropdownDirective` + `CsDropdownMenuComponent` + `CsMenuDirective` /
+  `CsMenuItemComponent` for accessible menus;
+- `CsEmptyComponent` and `CsMessageService` for standard feedback.
+
+Keep BlockCraft-owned components when the behavior is editor-specific, such as
+block drag handles, the inline color matrix, resize handles and table structure
+geometry. `bc_icon` and the existing Material SVG/brand-icon path remain the
+icon sources until the separate icon migration is authorized.
 
 ## Overlay Lifecycle Management
 

@@ -1,6 +1,6 @@
 import { TestBed } from "@angular/core/testing";
 import { By } from "@angular/platform-browser";
-import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
+import { CsTooltipDirective } from "@cses/ui";
 import {
   resolveWordArtPresentation,
   WORD_ART_PRESETS,
@@ -89,7 +89,7 @@ describe("WordArtPresetPickerComponent", () => {
     ocean.nativeElement.click();
 
     expect(picked).toEqual(["ocean"]);
-    expect(ocean.injector.get(NzTooltipDirective).directiveTitle).toBe(
+    expect(ocean.injector.get(CsTooltipDirective).csTooltip()).toBe(
       "深海蓝",
     );
   });

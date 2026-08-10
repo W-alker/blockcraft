@@ -1,6 +1,6 @@
 import {ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, Output, ViewChild} from "@angular/core";
-import {NzButtonModule} from "ng-zorro-antd/button";
 import {FormsModule} from "@angular/forms";
+import {CsButtonComponent, CsInputDirective} from "@cses/ui";
 import {isUrl} from "../../../global";
 
 @Component({
@@ -8,20 +8,16 @@ import {isUrl} from "../../../global";
   template: `
     <div class="input-group" style="margin-bottom: 8px">
       <span>文本</span>
-      <input type="text" placeholder="请输入标题" [(ngModel)]="updatedText"
-             [class.error]="titleError" #titleInput (keyup.enter)="onUpdate()"
+      <input cs-input csSize="sm" type="text" placeholder="请输入标题" [(ngModel)]="updatedText"
+             [csError]="titleError" #titleInput (keyup.enter)="onUpdate()"
              (keydown.tab)="titleInput.focus()" (keydown.escape)="close.emit()">
     </div>
     <div class="input-group">
       <span>地址</span>
-      <input type="text" placeholder="请输入地址" [(ngModel)]="updatedHref" [class.error]="urlError"
+      <input cs-input csSize="sm" type="text" placeholder="请输入地址" [(ngModel)]="updatedHref" [csError]="urlError"
               #urlInput (keyup.enter)="onUpdate()" (keydown.escape)="close.emit()">
-      <button nz-button nzType="primary" (click)="onUpdate()">确定</button>
+      <button cs-button csType="primary" csSize="sm" (click)="onUpdate()">确定</button>
     </div>
-
-<!--    <div style="width: 100%; display: flex; justify-content: flex-end; gap: 16px">-->
-      <!--      <button nz-button (click)="onClose()">取消</button>-->
-<!--    </div>-->
   `,
   styles: [`
     :host {
@@ -68,7 +64,8 @@ import {isUrl} from "../../../global";
   `],
   standalone: true,
   imports: [
-    NzButtonModule,
+    CsButtonComponent,
+    CsInputDirective,
     FormsModule,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush

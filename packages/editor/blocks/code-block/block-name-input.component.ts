@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, EventEmitter, Input, Output, ViewChild } from "@angular/core";
+import {CsInputDirective} from "@cses/ui";
 
 @Component({
   selector: "code-block-name-input",
   template: `
     <div class="input-wrapper">
-      <input
+      <input cs-input csSize="sm"
         #inputEle
         placeholder="输入代码块名称"
         [value]="value"
@@ -69,6 +70,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, EventEmitte
     }
   `],
   standalone: true,
+  imports: [CsInputDirective],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class CodeBlockNameInputComponent {

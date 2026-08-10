@@ -8,6 +8,7 @@ import {
   Output,
   ViewChild
 } from "@angular/core";
+import {CsButtonComponent, CsInputDirective} from "@cses/ui";
 import {IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
 import {figmaUrlRegex, jueJinUrlRegex, urlRegex} from "../../global";
 
@@ -17,9 +18,9 @@ import {figmaUrlRegex, jueJinUrlRegex, urlRegex} from "../../global";
     <h3>{{ schema.metadata.label }}</h3>
     <div class="desc">{{ schema.metadata.description }}</div>
 
-    <input type="text" [placeholder]="EMBED_FRAME_URL_START_MAP[schema.flavour] + '/...'" (input)="verifyUrl()"
+    <input cs-input csSize="sm" type="text" [placeholder]="EMBED_FRAME_URL_START_MAP[schema.flavour] + '/...'" (input)="verifyUrl()"
            (keydown.enter)="trySubmit($event)" (keydown.escape)="onCancel.emit()" #inputElement/>
-    <button [disabled]="isDisabled" (mousedown)="trySubmit($event)">确定</button>
+    <button cs-button csType="primary" csSize="sm" [disabled]="isDisabled" (mousedown)="trySubmit($event)">确定</button>
   `,
   styles: [`
     :host {
@@ -54,25 +55,10 @@ import {figmaUrlRegex, jueJinUrlRegex, urlRegex} from "../../global";
         margin: 0;
       }
 
-      button {
-        border: 1px solid var(--bc-border-color);
-        border-radius: 4px;
-        padding: 4px 8px;
-        outline: none;
-        cursor: pointer;
-        background: var(--bc-active-color);
-        color: #fff;
-
-        &[disabled] {
-          color: #999;
-          cursor: not-allowed;
-          border-color: var(--bc-border-color-light);
-          background: transparent;
-        }
-      }
     }
   `],
   standalone: true,
+  imports: [CsButtonComponent, CsInputDirective],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class EmbedFrameCreator {

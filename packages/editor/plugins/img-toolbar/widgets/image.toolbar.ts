@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, Output } from "@angular/core";
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent } from "../../../components";
-import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
+import { CsTooltipDirective } from "@cses/ui";
 import {
   BLOCK_OBJECT_LAYOUT_OPTIONS,
   BlockObjectLayout,
@@ -40,7 +40,7 @@ const ALIGN_LIST = [
       <bc-float-toolbar-item
         icon="bc_tianjiamiaoshu"
         name="caption"
-        [nz-tooltip]="imgBlock.childrenLength > 0 ? '取消图片标题' : '添加图片标题'"
+        [csTooltip]="imgBlock.childrenLength > 0 ? '取消图片标题' : '添加图片标题'"
         [attr.aria-label]="imgBlock.childrenLength > 0 ? '取消图片标题' : '添加图片标题'"
         [active]="imgBlock.childrenLength > 0">
       </bc-float-toolbar-item>
@@ -49,7 +49,7 @@ const ALIGN_LIST = [
 
       @for (item of ALIGN_LIST; track item.value) {
         <bc-float-toolbar-item [name]="item.name" [icon]="item.icon" [value]="item.value"
-                               [nz-tooltip]="item.intro" [attr.aria-label]="item.intro"
+                               [csTooltip]="item.intro" [attr.aria-label]="item.intro"
                                [active]="imgBlock.props.align === item.value"></bc-float-toolbar-item>
       }
 
@@ -60,7 +60,7 @@ const ALIGN_LIST = [
             [icon]="item.icon"
             name="object-layout"
             [value]="item.value"
-            [nz-tooltip]="item.label"
+            [csTooltip]="item.label"
             [attr.aria-label]="item.label"
             [active]="objectLayout === item.value">
           </bc-float-toolbar-item>
@@ -72,14 +72,14 @@ const ALIGN_LIST = [
         <bc-float-toolbar-item
           icon="bc_cengji-shangyi"
           name="move-forward"
-          nz-tooltip="上移一层"
+          csTooltip="上移一层"
           aria-label="上移一层"
           [disabled]="!canMoveForward">
         </bc-float-toolbar-item>
         <bc-float-toolbar-item
           icon="bc_cengji-xiayi"
           name="move-backward"
-          nz-tooltip="下移一层"
+          csTooltip="下移一层"
           aria-label="下移一层"
           [disabled]="!canMoveBackward">
         </bc-float-toolbar-item>
@@ -89,13 +89,13 @@ const ALIGN_LIST = [
       <bc-float-toolbar-item
         icon="bc_xiazai"
         name="download"
-        nz-tooltip="下载图片"
+        csTooltip="下载图片"
         aria-label="下载图片">
       </bc-float-toolbar-item>
       <bc-float-toolbar-item
         icon="bc_tupianlianjie"
         name="copy-url"
-        nz-tooltip="复制图片链接"
+        csTooltip="复制图片链接"
         aria-label="复制图片链接">
       </bc-float-toolbar-item>
 
@@ -105,7 +105,7 @@ const ALIGN_LIST = [
           <bc-float-toolbar-item
             [icon]="item.icon"
             [name]="item.name"
-            [nz-tooltip]="item.label"
+            [csTooltip]="item.label"
             [attr.aria-label]="item.label">
           </bc-float-toolbar-item>
         }
@@ -116,7 +116,7 @@ const ALIGN_LIST = [
   imports: [
     BcFloatToolbarComponent,
     BcFloatToolbarItemComponent,
-    NzTooltipDirective
+    CsTooltipDirective
   ],
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush

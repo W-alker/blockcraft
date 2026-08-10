@@ -23,7 +23,7 @@ import {merge} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {LinkInputPad} from "./link-input-pad";
 import {TextToolbarUtils} from "../utils";
-import {NzTooltipDirective} from "ng-zorro-antd/tooltip";
+import {CsTooltipDirective} from "@cses/ui";
 import {isFloatTextToolbarSelection} from "../selection";
 import {isSelectionAlive} from "../../../framework/modules/selection/liveness";
 
@@ -208,7 +208,8 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
         <bc-float-toolbar-item [name]="item.name" [value]="activeAttrs.has(item.name) ? null : true"
                                [icon]="item.icon" [title]="item.tip" [active]="activeAttrs.has(item.name)"
-                               [nz-tooltip]="item.tip">
+                               [csTooltip]="item.tip ?? ''"
+                               [csTooltipDisabled]="!item.tip">
         </bc-float-toolbar-item>
       }
 
@@ -220,7 +221,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
       <bc-float-toolbar-item name="formula" [value]="true"
                              icon="bc_gongshi" title="行内公式" *ngIf="isLinkAble"
-                             nz-tooltip="行内公式">
+                             csTooltip="行内公式">
       </bc-float-toolbar-item>
 
       <span class="bc-float-toolbar__divider"></span>
@@ -234,7 +235,8 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
           <bc-float-toolbar-item [name]="item.name" [value]="item.value"
                                  [icon]="item.icon" [title]="item.tip"
                                  [active]="item.active"
-                                 [nz-tooltip]="item.tip">
+                                 [csTooltip]="item.tip ?? ''"
+                                 [csTooltipDisabled]="!item.tip">
           </bc-float-toolbar-item>
         }
       }
@@ -355,7 +357,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     NgForOf,
     ColorPickerComponent,
     NgIf,
-    NzTooltipDirective
+    CsTooltipDirective
   ],
   standalone: true,
   host: {

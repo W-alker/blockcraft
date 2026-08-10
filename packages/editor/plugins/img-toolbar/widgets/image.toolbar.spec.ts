@@ -1,7 +1,7 @@
 import {ChangeDetectorRef} from '@angular/core'
 import {TestBed} from '@angular/core/testing'
 import {By} from '@angular/platform-browser'
-import {NzTooltipDirective} from 'ng-zorro-antd/tooltip'
+import {CsTooltipDirective} from '@cses/ui'
 import {ImageToolbar} from './image.toolbar'
 
 describe('ImageToolbar', () => {
@@ -86,9 +86,9 @@ describe('ImageToolbar', () => {
     expect(host.querySelector('[title]')).toBeNull()
 
     const tooltipTitles = fixture.debugElement
-      .queryAll(By.directive(NzTooltipDirective))
+      .queryAll(By.directive(CsTooltipDirective))
       .map(debugElement =>
-        debugElement.injector.get(NzTooltipDirective).directiveTitle,
+        debugElement.injector.get(CsTooltipDirective).csTooltip(),
       )
     const expectedTitles = [
       '添加图片标题',

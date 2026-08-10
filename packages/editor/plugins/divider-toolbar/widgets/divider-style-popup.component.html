@@ -33,7 +33,7 @@
 
   <!-- Text Label options -->
   <div class="text-options" *ngIf="activeTab === 'text'">
-    <input class="text-input" type="text"
+    <input cs-input csSize="sm" class="text-input" type="text"
            [value]="labelText"
            placeholder="输入文字…"
            (mousedown)="$event.stopPropagation()"

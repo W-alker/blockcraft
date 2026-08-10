@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component } from "@angular/core";
 import { BaseBlockComponent, ORIGIN_SYSTEM_REPAIR } from "../../framework";
 import { ColumnsBlockModel, ColumnBlockSchema } from "./index";
-import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
+import { CsTooltipDirective } from "@cses/ui";
 
 /**
  * 多栏布局容器组件
@@ -27,21 +27,21 @@ import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
                [attr.data-divider-index]="i"
                (mousedown)="startResize($event, i)"
                contenteditable="false">
-            <div class="add-point" nz-tooltip="添加列" (mousedown)="addColumn($event, i + 1)"></div>
+            <div class="add-point" csTooltip="添加列" (mousedown)="addColumn($event, i + 1)"></div>
             <div class="divider-line"></div>
           </div>
         }
       }
       @if(!isReadonly && dividerArray.length < 7) {
         <div class="column-divider">
-          <div class="add-point" nz-tooltip="添加列" (mousedown)="addColumn($event)"></div>
+          <div class="add-point" csTooltip="添加列" (mousedown)="addColumn($event)"></div>
         </div>
       }
     </div>
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NzTooltipDirective]
+  imports: [CsTooltipDirective]
 })
 export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel> {
 

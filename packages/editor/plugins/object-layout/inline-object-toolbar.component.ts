@@ -5,7 +5,7 @@ import {
   Input,
   Output,
 } from '@angular/core'
-import {NzTooltipDirective} from 'ng-zorro-antd/tooltip'
+import {CsTooltipDirective} from '@cses/ui'
 import {
   BcFloatToolbarComponent,
   BcFloatToolbarItemComponent,
@@ -40,7 +40,7 @@ const INLINE_OBJECT_WRAP_SIDE_OPTIONS: readonly {
   imports: [
     BcFloatToolbarComponent,
     BcFloatToolbarItemComponent,
-    NzTooltipDirective,
+    CsTooltipDirective,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -52,7 +52,7 @@ const INLINE_OBJECT_WRAP_SIDE_OPTIONS: readonly {
           [icon]="item.icon"
           name="object-layout"
           [value]="item.value"
-          [nz-tooltip]="item.label"
+          [csTooltip]="item.label"
           [attr.aria-label]="item.label"
           [active]="item.value === layout" />
       }
@@ -63,7 +63,7 @@ const INLINE_OBJECT_WRAP_SIDE_OPTIONS: readonly {
             [icon]="item.icon"
             name="inline-wrap-side"
             [value]="item.value"
-            [nz-tooltip]="item.label"
+            [csTooltip]="item.label"
             [attr.aria-label]="item.label"
             [active]="item.value === side" />
         }

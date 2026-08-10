@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, HostBinding, HostListener, Input } from '@angular/core';
 import { NgClass, NgForOf, NgIf } from "@angular/common";
 import { FormsModule } from "@angular/forms";
+import { CsInputDirective } from "@cses/ui";
 
 @Component({
   selector: 'app-divider-style-popup',
@@ -10,7 +11,8 @@ import { FormsModule } from "@angular/forms";
     NgForOf,
     NgClass,
     FormsModule,
-    NgIf
+    NgIf,
+    CsInputDirective,
   ],
   styleUrls: ['./divider-style-popup.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush

@@ -10,8 +10,13 @@ import {
   SimpleChanges,
 } from '@angular/core'
 import { NgForOf, NgIf } from '@angular/common'
-import { NzTooltipDirective } from 'ng-zorro-antd/tooltip'
-import { NzDropDownDirective, NzDropdownMenuComponent } from 'ng-zorro-antd/dropdown'
+import {
+  CsDropdownDirective,
+  CsDropdownMenuComponent,
+  CsMenuDirective,
+  CsMenuItemComponent,
+  CsTooltipDirective,
+} from '@cses/ui'
 import { Subscription } from 'rxjs'
 import { ColorGroup, ColorPickerComponent } from '../../../components'
 import { nextTick } from '../../../global'
@@ -47,9 +52,11 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
   imports: [
     NgForOf,
     NgIf,
-    NzTooltipDirective,
-    NzDropDownDirective,
-    NzDropdownMenuComponent,
+    CsTooltipDirective,
+    CsDropdownDirective,
+    CsDropdownMenuComponent,
+    CsMenuDirective,
+    CsMenuItemComponent,
     ColorPickerComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -61,22 +68,19 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
       <ng-container *ngIf="showRowOps">
         <button type="button"
                 class="table-structure-toolbar__item"
-                nz-tooltip
-                [nzTooltipTitle]="'在上方插入行'"
+                csTooltip="在上方插入行"
                 (click)="insertRowBefore($event)">
           <i class="bc_icon bc_shangjiantou-jia"></i>
         </button>
         <button type="button"
                 class="table-structure-toolbar__item"
-                nz-tooltip
-                [nzTooltipTitle]="'在下方插入行'"
+                csTooltip="在下方插入行"
                 (click)="insertRowAfter($event)">
           <i class="bc_icon bc_xiajiantou-jia"></i>
         </button>
         <button type="button"
                 class="table-structure-toolbar__item table-structure-toolbar__item--danger"
-                nz-tooltip
-                [nzTooltipTitle]="'删除当前行'"
+                csTooltip="删除当前行"
                 (click)="deleteRow($event)">
           <i class="bc_icon bc_shanchu-2"></i>
         </button>
@@ -85,22 +89,19 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
       <ng-container *ngIf="showColOps">
         <button type="button"
                 class="table-structure-toolbar__item"
-                nz-tooltip
-                [nzTooltipTitle]="'在左侧插入列'"
+                csTooltip="在左侧插入列"
                 (click)="insertColBefore($event)">
           <i class="bc_icon bc_zuojiantou-jia"></i>
         </button>
         <button type="button"
                 class="table-structure-toolbar__item"
-                nz-tooltip
-                [nzTooltipTitle]="'在右侧插入列'"
+                csTooltip="在右侧插入列"
                 (click)="insertColAfter($event)">
           <i class="bc_icon bc_youjiantou-jia"></i>
         </button>
         <button type="button"
                 class="table-structure-toolbar__item table-structure-toolbar__item--danger"
-                nz-tooltip
-                [nzTooltipTitle]="'删除当前列'"
+                csTooltip="删除当前列"
                 (click)="deleteCol($event)">
           <i class="bc_icon bc_shanchu-2"></i>
         </button>
@@ -112,8 +113,7 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
                 type="button"
                 class="table-structure-toolbar__item"
                 [class.active]="!!table.props.rowHead"
-                nz-tooltip
-                [nzTooltipTitle]="table.props.rowHead ? '取消标题行' : '设为标题行'"
+                [csTooltip]="table.props.rowHead ? '取消标题行' : '设为标题行'"
                 (click)="toggleHeaderRow($event)">
           <i class="bc_icon bc_biaotihang"></i>
         </button>
@@ -121,8 +121,7 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
                 type="button"
                 class="table-structure-toolbar__item"
                 [class.active]="!!table.props.colHead"
-                nz-tooltip
-                [nzTooltipTitle]="table.props.colHead ? '取消标题列' : '设为标题列'"
+                [csTooltip]="table.props.colHead ? '取消标题列' : '设为标题列'"
                 (click)="toggleHeaderColumn($event)">
           <i class="bc_icon bc_biaotilie"></i>
         </button>
@@ -133,8 +132,7 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
         <button type="button"
                 class="table-structure-toolbar__item"
                 [class.active]="isMerged"
-                nz-tooltip
-                [nzTooltipTitle]="isMerged ? '解除合并' : '合并单元格'"
+                [csTooltip]="isMerged ? '解除合并' : '合并单元格'"
                 (click)="toggleMerge($event)">
           <i class="bc_icon bc_hebingdanyuange1"></i>
         </button>
@@ -143,26 +141,24 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
       <span class="table-structure-toolbar__divider"></span>
       <button type="button"
               class="table-structure-toolbar__item table-structure-toolbar__item--expandable"
-              nz-dropdown
-              [nzDropdownMenu]="alignMenu"
-              nzPlacement="bottomCenter"
-              [(nzVisible)]="dropdownVisibleMap.align"
+              csDropdown
+              [csDropdownMenu]="alignMenu"
+              csPlacement="bottom"
+              [(csOpen)]="dropdownVisibleMap.align"
               [class.active]="dropdownVisibleMap.align"
-              nz-tooltip
-              [nzTooltipTitle]="'对齐方式'"
+              csTooltip="对齐方式"
               (click)="$event.preventDefault(); $event.stopPropagation()">
         <i class="bc_icon bc_zuoduiqi"></i>
         <i class="bc_icon bc_xiajaintou table-structure-toolbar__caret"></i>
       </button>
       <button type="button"
               class="table-structure-toolbar__item table-structure-toolbar__item--expandable"
-              nz-dropdown
-              [nzDropdownMenu]="colorMenu"
-              nzPlacement="bottomCenter"
-              [(nzVisible)]="dropdownVisibleMap.color"
+              csDropdown
+              [csDropdownMenu]="colorMenu"
+              csPlacement="bottom"
+              [(csOpen)]="dropdownVisibleMap.color"
               [class.active]="dropdownVisibleMap.color"
-              nz-tooltip
-              [nzTooltipTitle]="'颜色'"
+              csTooltip="颜色"
               (click)="$event.preventDefault(); $event.stopPropagation()">
         <i class="bc_icon bc_sepan"></i>
         <i class="bc_icon bc_xiajaintou table-structure-toolbar__caret"></i>
@@ -172,8 +168,7 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
       <button type="button"
               class="table-structure-toolbar__item"
               [class.active]="isFullscreen"
-              nz-tooltip
-              [nzTooltipTitle]="isFullscreen ? '退出全屏' : '全屏'"
+              [csTooltip]="isFullscreen ? '退出全屏' : '全屏'"
               (click)="toggleFullscreen($event)">
         <i class="bc_icon"
            [class.bc_arrow-expand]="!isFullscreen"
@@ -181,36 +176,34 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
       </button>
     </div>
 
-    <nz-dropdown-menu #alignMenu="nzDropdownMenu">
-      <div class="table-structure-toolbar__menu" (mousedown)="$event.preventDefault()">
-        <button *ngFor="let item of HORIZON_ALIGN_LIST"
+    <cs-dropdown-menu #alignMenu="csDropdownMenu">
+      <div csMenu csMode="horizontal" [csSelectable]="false" class="table-structure-toolbar__menu" (mousedown)="$event.preventDefault()">
+        <button csMenuItem *ngFor="let item of HORIZON_ALIGN_LIST"
                 type="button"
                 class="table-structure-toolbar__item"
                 [class.active]="textAlign === item.value"
-                nz-tooltip
-                [nzTooltipTitle]="item.text"
+                [csTooltip]="item.text"
                 (click)="onAlignPicked($event, item)">
           <i [class]="'bc_icon ' + item.icon"></i>
         </button>
         <span class="table-structure-toolbar__divider"></span>
-        <button *ngFor="let item of VERTICAL_ALIGN_LIST"
+        <button csMenuItem *ngFor="let item of VERTICAL_ALIGN_LIST"
                 type="button"
                 class="table-structure-toolbar__item"
                 [class.active]="verticalAlign === item.value"
-                nz-tooltip
-                [nzTooltipTitle]="item.text"
+                [csTooltip]="item.text"
                 (click)="onAlignPicked($event, item)">
           <i [class]="'bc_icon ' + item.icon"></i>
         </button>
       </div>
-    </nz-dropdown-menu>
+    </cs-dropdown-menu>
 
-    <nz-dropdown-menu #colorMenu="nzDropdownMenu">
-      <div (mousedown)="$event.preventDefault()">
+    <cs-dropdown-menu #colorMenu="csDropdownMenu">
+      <div csMenu [csSelectable]="false" (mousedown)="$event.preventDefault()">
         <bc-color-picker [activeColors]="activeColors"
                          (colorPicked)="onColorPicked($event)"></bc-color-picker>
       </div>
-    </nz-dropdown-menu>
+    </cs-dropdown-menu>
   `,
   styles: [`
     :host {

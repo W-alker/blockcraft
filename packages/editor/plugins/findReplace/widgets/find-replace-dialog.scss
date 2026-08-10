@@ -150,29 +150,6 @@ $icon-btn-size: 26px;
   .action-btn {
     flex-shrink: 0;
     height: $field-height;
-    padding: 0 10px;
-    font-size: var(--bc-fs-xs, 12px);
-    border: 1px solid var(--bc-border-color, #E9E9E7);
-    border-radius: var(--bc-radius-md, 4px);
-    background: var(--bc-bg-primary, #fff);
-    color: var(--bc-color, #1f2e3c);
-    cursor: pointer;
     white-space: nowrap;
-    transition: background-color var(--bc-transition-fast, 0.15s ease),
-                border-color var(--bc-transition-fast, 0.15s ease);
-
-    &:hover {
-      background: var(--bc-bg-hover, #F1F1EF);
-      border-color: var(--bc-border-color-dark, #ccc);
-    }
-
-    &:active {
-      background: var(--bc-border-color, #E9E9E7);
-    }
-
-    &:disabled {
-      opacity: 0.35;
-      pointer-events: none;
-    }
   }
 }

@@ -4,7 +4,7 @@ import {
   EventEmitter,
   Output,
 } from "@angular/core";
-import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
+import { CsTooltipDirective } from "@cses/ui";
 import {
   resolveWordArtPresentation,
   WORD_ART_PRESETS,
@@ -14,7 +14,7 @@ import {
 @Component({
   selector: "bc-word-art-preset-picker",
   standalone: true,
-  imports: [NzTooltipDirective],
+  imports: [CsTooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div
@@ -33,7 +33,7 @@ import {
             [attr.data-preset-id]="item.id"
             [attr.aria-label]="item.label"
             [title]="item.label"
-            [nz-tooltip]="item.label"
+            [csTooltip]="item.label"
             (click)="pick.emit(item.id)"
           >
             <span

@@ -8,10 +8,9 @@ import {
   Input,
   Output,
 } from "@angular/core";
-import {NzEmptyModule} from "ng-zorro-antd/empty";
-import {NzButtonComponent} from "ng-zorro-antd/button";
+import {CsButtonComponent, CsEmptyComponent} from "@cses/ui";
 import {IMentionData, MentionType} from "../types";
-import {NgForOf, NgIf} from "@angular/common";
+import {NgForOf} from "@angular/common";
 
 const MENTION_TABS: {
   label: string,
@@ -34,9 +33,8 @@ const MENTION_TABS: {
   standalone: true,
   imports: [
     NgForOf,
-    NgIf,
-    NzEmptyModule,
-    NzButtonComponent
+    CsButtonComponent,
+    CsEmptyComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })

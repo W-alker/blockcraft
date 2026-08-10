@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-08
+> Last updated: 2026-08-10
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -20,6 +20,15 @@ Host Angular component
 ## Step 1 — Install & Import
 
 The editor lives in `packages/editor`. Inside this monorepo it's published as `@org/blockcraft-editor` (consult the `package.json`). External consumers import from the package barrel `index.ts` which re-exports framework, blocks, plugins, services and types.
+
+BlockCraft's built-in editor chrome consumes the exact peer
+`@cses/ui@4.23.0`. Install that version beside `@ccc/blockcraft`; do not add
+`ng-zorro-antd` for BlockCraft. Angular Material remains a peer only for the
+existing SVG/brand-icon path.
+
+```bash
+pnpm add @ccc/blockcraft @cses/ui@4.23.0
+```
 
 ```typescript
 import {
@@ -891,13 +900,17 @@ private buildEmptyRootSnapshot(): IBlockSnapshot {
 
 ## Step 6 — Theme
 
-The bundled themes live in `packages/editor/themes/`. Import the entry SCSS in your app's global stylesheet, or load CSS files dynamically.
+Load the CSES UI global entry for the built-in CSES inputs, buttons, menus and
+overlays, then load the unchanged BlockCraft base and selected theme. The
+BlockCraft `--bc-*` theme contract remains independent.
 
 ```scss
 // styles.scss
-@use '@org/blockcraft-editor/themes/light';
+@use '@cses/ui/styles/cses-ui';
+@use '@ccc/blockcraft/themes/base';
+@use '@ccc/blockcraft/themes/light';
 // or
-@use '@org/blockcraft-editor/themes/dark';
+@use '@ccc/blockcraft/themes/dark';
 ```
 
 You can switch themes at runtime:
@@ -1307,7 +1320,9 @@ doc.dragController.isDragging  // boolean
 - [ ] A fresh bundled capability result is used per Doc (if using the factory)
 - [ ] `BlockCraftDoc` constructed with `yDoc`, `docId`, `schemas`, `logger`, `injector`
 - [ ] Container element passed to `initBySnapshot` or `initByYBlock`
-- [ ] Theme stylesheet imported
+- [ ] Exact `@cses/ui@4.23.0` peer installed
+- [ ] `@cses/ui/styles/cses-ui.scss` loaded for CSES component styles
+- [ ] BlockCraft base + selected theme stylesheet imported
 - [ ] Persistence wired up (snapshot save/load OR Yjs provider)
 - [ ] Subscriptions tied to `doc.onDestroy$`
 - [ ] Readonly state hooked into UI mode switching (if applicable)

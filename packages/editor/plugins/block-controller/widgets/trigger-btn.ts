@@ -32,7 +32,7 @@ import {
   IContextMenuItem
 } from "../types";
 import { parseInt } from "lib0/number";
-import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
+import { CsTooltipDirective } from "@cses/ui";
 import { MatIcon } from "@angular/material/icon";
 import { BlockMenuComponent } from "./block-menu";
 
@@ -168,8 +168,8 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
         @if (!isMultiSelection && !activeBlockProtected && activeBlock?.nodeType === BlockNodeType.editable) {
           <h4 class="title">基础
             <i class="bc_icon bc_xinxi" style="cursor: pointer;"
-               nz-tooltip="鼠标停留在内容块选项上一段时间以查看对应快捷键和快速转化语法"
-               [nzTooltipPlacement]="'top'"></i>
+               csTooltip="鼠标停留在内容块选项上一段时间以查看对应快捷键和快速转化语法"
+               csTooltipPlacement="top"></i>
           </h4>
           <ul class='base-list' (mousedown)="$event.preventDefault()">
             @for (item of HEADING_LEVEL_LIST; track item.value) {
@@ -272,7 +272,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
     </ng-template>
   `,
   styleUrls: ['./trigger-btn.scss'],
-  imports: [NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective, NzTooltipDirective, MatIcon, BlockMenuComponent],
+  imports: [NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective, CsTooltipDirective, MatIcon, BlockMenuComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.contenteditable]': 'false',

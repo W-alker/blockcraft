@@ -3,7 +3,7 @@
   <div class="find-row">
     <div class="field">
       <i class="bc_icon bc_search field-icon"></i>
-      <input type="text" placeholder="查找" [(ngModel)]="findText" (ngModelChange)="onFindTextChange()"
+      <input cs-input csSize="sm" type="text" placeholder="查找" [(ngModel)]="findText" (ngModelChange)="onFindTextChange()"
              (keydown.shift.enter)="findPrev()" (keydown.enter)="findNext()" (keydown.escape)="onClose.emit()"
              #findInput/>
       <span class="flag-group">
@@ -38,11 +38,11 @@
     <div class="replace-row">
       <div class="field">
         <i class="bc_icon bc_file-search-02 field-icon"></i>
-        <input type="text" placeholder="替换为" [(ngModel)]="replaceText" (keydown.escape)="onClose.emit()"/>
+        <input cs-input csSize="sm" type="text" placeholder="替换为" [(ngModel)]="replaceText" (keydown.escape)="onClose.emit()"/>
       </div>
 
-      <button class="action-btn" [disabled]="!helper.matchedList.length" (click)="replaceOne()">替换</button>
-      <button class="action-btn" [disabled]="!helper.matchedList.length" (click)="replaceAll()">全部</button>
+      <button cs-button csType="secondary" csSize="sm" class="action-btn" [disabled]="!helper.matchedList.length" (click)="replaceOne()">替换</button>
+      <button cs-button csType="secondary" csSize="sm" class="action-btn" [disabled]="!helper.matchedList.length" (click)="replaceAll()">全部</button>
     </div>
   }
 </div>

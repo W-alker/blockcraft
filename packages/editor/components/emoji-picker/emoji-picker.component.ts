@@ -7,7 +7,8 @@ import {
 } from '@angular/core';
 import {EMOJI_DATA} from "./const";
 import {FormsModule} from "@angular/forms";
-import {NgForOf, NgIf} from "@angular/common";
+import {NgForOf} from "@angular/common";
+import {CsInputDirective} from "@cses/ui";
 
 @Component({
   selector: 'app-emoji-picker',
@@ -16,7 +17,7 @@ import {NgForOf, NgIf} from "@angular/common";
   imports: [
     FormsModule,
     NgForOf,
-    NgIf
+    CsInputDirective,
   ],
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush

@@ -2,6 +2,7 @@ import {
   AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef, Component,
   ElementRef, EventEmitter, Input, OnDestroy, Output, ViewChild,
 } from "@angular/core";
+import {CsButtonComponent, CsInputDirective} from "@cses/ui";
 // @ts-ignore
 import katex from 'katex';
 
@@ -11,13 +12,13 @@ import katex from 'katex';
     <div class="ft-container">
       <div class="ft-preview" #preview></div>
       <div class="ft-editor">
-        <textarea #latexInput class="ft-input" [value]="latex"
+        <textarea cs-input csSize="sm" #latexInput class="ft-input" [value]="latex"
           (input)="onInput($event)" (keydown.meta.enter)="onConfirm()"
           (keydown.control.enter)="onConfirm()"
           placeholder="输入 LaTeX 公式，如 E = mc^2" rows="3"></textarea>
         <div class="ft-footer">
           <span class="ft-hint">Ctrl + Enter 确认</span>
-          <button class="ft-btn" (click)="onConfirm()">确定</button>
+          <button cs-button csType="primary" csSize="sm" class="ft-btn" (click)="onConfirm()">确定</button>
         </div>
       </div>
     </div>
@@ -75,18 +76,9 @@ import katex from 'katex';
       font-size: 11px;
       color: var(--bc-color-lighter);
     }
-    .ft-btn {
-      padding: 4px 20px;
-      border: none;
-      border-radius: 4px;
-      background: var(--bc-active-color);
-      color: #fff;
-      font-size: 13px;
-      cursor: pointer;
-    }
-    .ft-btn:hover { opacity: 0.85; }
   `],
   standalone: true,
+  imports: [CsButtonComponent, CsInputDirective],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FormulaBlockToolbar implements AfterViewInit, OnDestroy {

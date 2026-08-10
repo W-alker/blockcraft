@@ -69,6 +69,68 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+### Unreleased - 2026-08-10 (major) — adopt `@cses/ui@4.23.0` for standard editor chrome
+
+**What changed**: BlockCraft now declares the exact `@cses/ui@4.23.0` peer and
+uses its public Button, Input, Tooltip, Dropdown/Menu, Empty and Message APIs for
+generic editor chrome. The old `ng-zorro-antd` peer and runtime imports are
+removed. BlockCraft theme variables, existing `bc_icon` and Angular Material
+SVG/brand-icon paths are unchanged.
+
+**Why**: Standard controls need one CSES-owned implementation instead of a mix
+of native controls and ng-zorro. Editor-specific geometry controls remain
+BlockCraft-owned because generic components do not cover their interaction
+contracts.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- Hosts must install the exact `@cses/ui@4.23.0` peer.
+- Hosts must load `@cses/ui/styles/cses-ui.scss` so the replaced CSES controls
+  receive their required global styles.
+- `ng-zorro-antd` is no longer a BlockCraft peer and should be removed when the
+  host does not use it independently.
+
+### Migration Recipe
+
+```jsonc
+// before
+{
+  "dependencies": {
+    "@ccc/blockcraft": "0.3.0-alpha.31",
+    "ng-zorro-antd": "^20.0.0"
+  }
+}
+
+// after
+{
+  "dependencies": {
+    "@ccc/blockcraft": "0.3.0-alpha.31",
+    "@cses/ui": "4.23.0"
+  }
+}
+```
+
+```scss
+// global styles, before BlockCraft entries
+@use '@cses/ui/styles/cses-ui';
+@use '@ccc/blockcraft/themes/base';
+@use '@ccc/blockcraft/themes/light';
+```
+
+### Behavior Changes
+
+- Built-in generic buttons, text inputs, tooltips, dropdown menus, empty states
+  and messages follow CSES component behavior, focus styles and accessibility.
+- BlockCraft light/dark themes, inline color matrix, drag/resize/table geometry
+  controls and all existing icon paths keep their current ownership.
+
 ### v0.3.0-alpha.31 - 2026-08-10 (patch) — keep short text blocks whole and flow oversized text by visual line
 
 **What changed**: Built-in heading paragraphs no longer keep the following

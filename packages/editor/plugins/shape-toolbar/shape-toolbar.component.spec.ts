@@ -1,7 +1,7 @@
 import {ChangeDetectorRef} from '@angular/core'
 import {By} from '@angular/platform-browser'
 import {TestBed} from '@angular/core/testing'
-import {NzTooltipDirective} from 'ng-zorro-antd/tooltip'
+import {CsTooltipDirective} from '@cses/ui'
 import {
   BcFloatToolbarItemComponent,
   BcOverlayTriggerDirective,
@@ -129,9 +129,9 @@ describe('ShapeToolbarComponent', () => {
     expect(host.querySelector('.shape-toolbar [title]')).toBeNull()
 
     const tooltipTitles = fixture.debugElement
-      .queryAll(By.directive(NzTooltipDirective))
+      .queryAll(By.directive(CsTooltipDirective))
       .map(debugElement =>
-        debugElement.injector.get(NzTooltipDirective).directiveTitle,
+        debugElement.injector.get(CsTooltipDirective).csTooltip(),
       )
     expect(tooltipTitles).toEqual([
       '形状填充',
@@ -186,14 +186,14 @@ describe('ShapeToolbarComponent', () => {
     forward!.click()
     expect(actions).toContain({name: 'move-forward'})
     const tooltipTitles = fixture.debugElement
-      .queryAll(By.directive(NzTooltipDirective))
+      .queryAll(By.directive(CsTooltipDirective))
       .map(debugElement =>
-        debugElement.injector.get(NzTooltipDirective).directiveTitle,
+        debugElement.injector.get(CsTooltipDirective).csTooltip(),
       )
     expect(tooltipTitles).toContain('上移一层')
     expect(tooltipTitles).toContain('下移一层')
     expect(host.querySelector(
-      '.shape-toolbar__tooltip-host[nz-tooltip] button:disabled',
+      '.shape-toolbar__tooltip-host[csTooltip] button:disabled',
     )).not.toBeNull()
 
     fixture.destroy()

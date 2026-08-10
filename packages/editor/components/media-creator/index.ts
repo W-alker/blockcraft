@@ -10,6 +10,7 @@ import {
   ViewChild,
   inject
 } from '@angular/core';
+import {CsButtonComponent, CsInputDirective} from '@cses/ui';
 import {DOC_FILE_SERVICE_TOKEN, IBlockSchemaOptions} from "../../framework";
 import {urlRegex} from "../../global";
 
@@ -49,7 +50,7 @@ export interface MediaCreatorResult {
     <div class="mc-body">
       @if (activeTab === 'link') {
         <div class="mc-input-wrap">
-          <input type="text"
+          <input cs-input csSize="sm" type="text"
                  [placeholder]="getUrlPlaceholder()"
                  (input)="verifyUrl()"
                  (keydown.enter)="trySubmit()"
@@ -92,8 +93,8 @@ export interface MediaCreatorResult {
     </div>
 
     <div class="mc-footer">
-      <button class="mc-btn mc-btn--cancel" (mousedown)="onCancel.emit()">取消</button>
-      <button class="mc-btn mc-btn--primary" [disabled]="isDisabled" (mousedown)="trySubmit()">确定</button>
+      <button cs-button csType="secondary" csSize="sm" class="mc-btn mc-btn--cancel" (mousedown)="onCancel.emit()">取消</button>
+      <button cs-button csType="primary" csSize="sm" class="mc-btn mc-btn--primary" [disabled]="isDisabled" (mousedown)="trySubmit()">确定</button>
     </div>
   `,
   styles: [`
@@ -235,7 +236,7 @@ export interface MediaCreatorResult {
                   background var(--bc-transition-fast, 0.15s ease);
       background: var(--bc-bg-secondary, #fafaf7);
 
-      &:hover, &--dragover {
+      &:hover, &.mc-upload-area--dragover {
         border-color: var(--bc-active-color, #4857E2);
         background: var(--bc-active-color-lighter, rgba(72, 87, 226, 0.1));
       }
@@ -331,46 +332,9 @@ export interface MediaCreatorResult {
       border-top: 1px solid var(--bc-border-color-light, #F1F1EF);
     }
 
-    .mc-btn {
-      appearance: none;
-      padding: 6px 16px;
-      border-radius: var(--bc-radius-md, 4px);
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background var(--bc-transition-fast, 0.15s ease),
-                  border-color var(--bc-transition-fast, 0.15s ease),
-                  opacity var(--bc-transition-fast, 0.15s ease);
-
-      &--cancel {
-        border: 1px solid var(--bc-border-color, #E9E9E7);
-        background: var(--bc-bg-primary, #fff);
-        color: var(--bc-color-light, #5f7184);
-
-        &:hover {
-          background: var(--bc-bg-hover, #F1F1EF);
-          border-color: var(--bc-border-color-dark, #CCC);
-        }
-      }
-
-      &--primary {
-        border: 1px solid transparent;
-        background: var(--bc-active-color, #4857E2);
-        color: #fff;
-
-        &:hover:not([disabled]) {
-          opacity: 0.85;
-        }
-
-        &[disabled] {
-          background: var(--bc-bg-hover, #F1F1EF);
-          color: var(--bc-color-lighter, #8b9cad);
-          cursor: not-allowed;
-        }
-      }
-    }
   `],
   standalone: true,
+  imports: [CsButtonComponent, CsInputDirective],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MediaCreatorComponent {

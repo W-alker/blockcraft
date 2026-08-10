@@ -21,7 +21,7 @@ import {
   type ShapeTextAlign,
   type ShapeVerticalAlign,
 } from '../../blocks/shape-block'
-import {NzTooltipDirective} from 'ng-zorro-antd/tooltip'
+import {CsTooltipDirective} from '@cses/ui'
 import {
   INLINE_OBJECT_WRAP_LAYOUT_OPTION,
 } from '../object-layout/inline-object-toolbar.component'
@@ -50,14 +50,14 @@ export type ShapeToolbarAction =
     BcFloatToolbarComponent,
     BcFloatToolbarItemComponent,
     BcOverlayTriggerDirective,
-    NzTooltipDirective,
+    CsTooltipDirective,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="shape-toolbar" contenteditable="false">
       <label
         class="shape-toolbar__color"
-        nz-tooltip="形状填充"
+        csTooltip="形状填充"
         aria-label="形状填充">
         <i class="bc_icon bc_tianchongyanse"></i>
         <input
@@ -67,7 +67,7 @@ export type ShapeToolbarAction =
       </label>
       <label
         class="shape-toolbar__range"
-        nz-tooltip="填充透明度"
+        csTooltip="填充透明度"
         aria-label="填充透明度">
         <span>透明度</span>
         <input
@@ -83,7 +83,7 @@ export type ShapeToolbarAction =
 
       <label
         class="shape-toolbar__color"
-        nz-tooltip="轮廓颜色"
+        csTooltip="轮廓颜色"
         aria-label="轮廓颜色">
         <i class="bc_icon bc_tubiao_xianduan-leixing"></i>
         <input
@@ -94,7 +94,7 @@ export type ShapeToolbarAction =
       <bc-float-toolbar-item
         class="shape-toolbar__stroke-width"
         name="stroke-width"
-        nz-tooltip="轮廓粗细"
+        csTooltip="轮廓粗细"
         aria-label="轮廓粗细"
         [expandable]="true"
         [bcOverlayTrigger]="strokeWidthMenu"
@@ -105,7 +105,7 @@ export type ShapeToolbarAction =
       </bc-float-toolbar-item>
       <button
         type="button"
-        nz-tooltip="实线/虚线"
+        csTooltip="实线/虚线"
         aria-label="实线/虚线"
         [class.active]="shapeBlock.props.strokeStyle === 'dashed'"
         (click)="toggleStrokeStyle()">
@@ -117,7 +117,7 @@ export type ShapeToolbarAction =
       @for (item of layoutOptions; track item.value) {
         <button
           type="button"
-          [nz-tooltip]="item.label"
+          [csTooltip]="item.label"
           [attr.aria-label]="item.label"
           [class.active]="objectLayout === item.value"
           (click)="action.emit({name: 'object-layout', value: item.value})">
@@ -127,7 +127,7 @@ export type ShapeToolbarAction =
 
       @if (isAbsolute) {
         <span class="shape-toolbar__divider"></span>
-        <span class="shape-toolbar__tooltip-host" nz-tooltip="上移一层">
+        <span class="shape-toolbar__tooltip-host" csTooltip="上移一层">
           <button
             type="button"
             aria-label="上移一层"
@@ -136,7 +136,7 @@ export type ShapeToolbarAction =
             <i class="bc_icon bc_cengji-shangyi"></i>
           </button>
         </span>
-        <span class="shape-toolbar__tooltip-host" nz-tooltip="下移一层">
+        <span class="shape-toolbar__tooltip-host" csTooltip="下移一层">
           <button
             type="button"
             aria-label="下移一层"
@@ -150,7 +150,7 @@ export type ShapeToolbarAction =
       <span class="shape-toolbar__divider"></span>
       <button
         type="button"
-        nz-tooltip="删除形状"
+        csTooltip="删除形状"
         aria-label="删除形状"
         (click)="action.emit({name: 'delete'})">
         <i class="bc_icon bc_shanchu"></i>

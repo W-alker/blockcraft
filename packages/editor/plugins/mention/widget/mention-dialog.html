@@ -8,7 +8,7 @@
 </div>
 <div class="mention-dialog__content" (mousedown)="onItemClick($event)">
   @if (!list.length) {
-    <nz-empty nzNotFoundImage="simple"></nz-empty>
+    <cs-empty csMode="simple" csDescription="暂无结果"></cs-empty>
   } @else {
 
     @if (activeTabIndex === 0) {
@@ -33,7 +33,6 @@
   }
 </div>
 <div class="mention-dialog__footer">
-  <div class="mention-dialog__footer__button" (click)="onSure()">确定</div>
+  <button cs-button csType="primary" csSize="sm" type="button"
+          class="mention-dialog__footer__button" [disabled]="!list.length" (click)="onSure()">确定</button>
 </div>
-
-

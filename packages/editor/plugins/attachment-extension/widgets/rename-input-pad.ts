@@ -1,10 +1,11 @@
 import {ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, Output, ViewChild} from "@angular/core";
+import {CsInputDirective} from "@cses/ui";
 
 @Component({
   selector: "rename-input-pad",
   template: `
     <div class="input-wrapper" [class.is-error]="isError">
-      <input placeholder="输入文件名" [value]="value" (keydown.enter)="$event.preventDefault(); onSubmit()"
+      <input cs-input csSize="sm" placeholder="输入文件名" [value]="value" (keydown.enter)="$event.preventDefault(); onSubmit()"
              (keydown.escape)="cancel.emit()"
              #inputEle/>
       <span>{{ '.' + suffix }}</span>
@@ -77,6 +78,7 @@ import {ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, Out
     }
   `],
   standalone: true,
+  imports: [CsInputDirective],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class RenameInputPad {
