@@ -90,6 +90,42 @@ describe("WordArtToolbarComponent", () => {
     TestBed.resetTestingModule();
   });
 
+  it("keeps special settings and object actions in two fixed rows", async () => {
+    await TestBed.configureTestingModule({
+      imports: [WordArtToolbarComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(WordArtToolbarComponent);
+    fixture.componentInstance.wordArtBlock = createBlock();
+    fixture.detectChanges();
+    const host = fixture.nativeElement as HTMLElement;
+    const toolbar = host.querySelector<HTMLElement>(".word-art-toolbar")!;
+    const rows = toolbar.querySelectorAll<HTMLElement>(
+      ":scope > .word-art-toolbar__row",
+    );
+
+    expect(rows.length).toBe(2);
+    expect(getComputedStyle(toolbar).flexDirection).toBe("column");
+    expect(getComputedStyle(rows[0]).flexWrap).toBe("nowrap");
+    expect(getComputedStyle(rows[1]).flexWrap).toBe("nowrap");
+    expect(
+      rows[0].classList.contains("word-art-toolbar__row--special-settings"),
+    ).toBeTrue();
+    expect(rows[0].querySelector('[aria-label="艺术字效果"]')).not.toBeNull();
+    expect(rows[0].querySelector('[aria-label="水平对齐"]')).toBeNull();
+    expect(
+      rows[1].classList.contains("word-art-toolbar__row--object-actions"),
+    ).toBeTrue();
+    expect(rows[1].firstElementChild?.getAttribute("aria-label")).toBe(
+      "水平对齐",
+    );
+    expect(rows[1].lastElementChild?.getAttribute("aria-label")).toBe(
+      "删除艺术字",
+    );
+
+    fixture.destroy();
+    TestBed.resetTestingModule();
+  });
+
   it("emits typed updates and closes every overlay menu", () => {
     const component = new WordArtToolbarComponent({} as any);
     component.wordArtBlock = createBlock();

@@ -23,9 +23,7 @@ import {
   type WordArtHorizontalAlign,
   type WordArtVerticalAlign,
 } from "../../blocks/word-art-block";
-import {
-  INLINE_OBJECT_WRAP_LAYOUT_OPTION,
-} from "../object-layout/inline-object-toolbar.component";
+import { INLINE_OBJECT_WRAP_LAYOUT_OPTION } from "../object-layout/inline-object-toolbar.component";
 
 export type WordArtObjectLayout = BlockObjectLayout | "wrap";
 
@@ -48,202 +46,208 @@ export type WordArtToolbarAction =
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="word-art-toolbar" contenteditable="false">
-      <label class="word-art-toolbar__field word-art-toolbar__field--number">
-        <span>字号</span>
-        <input
-          type="number"
-          min="8"
-          max="512"
-          step="1"
-          [value]="props.fontSize"
-          (change)="setNumber('fontSize', $event)"
-        />
-      </label>
-
-      <bc-float-toolbar-item
-        class="word-art-toolbar__menu-trigger"
-        name="fill-type"
-        aria-label="艺术字填充类型"
-        [expandable]="true"
-        [bcOverlayTrigger]="fillTypeMenu"
-        #fillTypeTrigger="bcOverlayTrigger"
-        [positions]="['bottom-left', 'top-left']"
-        [offsetY]="8"
+      <div
+        class="word-art-toolbar__row word-art-toolbar__row--special-settings"
       >
-        {{ fillTypeLabel }}
-      </bc-float-toolbar-item>
-
-      @if (props.fillType === "solid") {
-        <label class="word-art-toolbar__color" csTooltip="填充颜色">
+        <label class="word-art-toolbar__field word-art-toolbar__field--number">
+          <span>字号</span>
           <input
-            type="color"
-            aria-label="填充颜色"
-            [value]="props.fillColor"
-            (change)="setColor('fillColor', $event)"
+            type="number"
+            min="8"
+            max="512"
+            step="1"
+            [value]="props.fontSize"
+            (change)="setNumber('fontSize', $event)"
           />
         </label>
-      } @else {
-        @for (color of props.gradientColors; track $index) {
-          <label
-            class="word-art-toolbar__color"
-            [csTooltip]="'渐变色 ' + ($index + 1)"
-          >
+
+        <bc-float-toolbar-item
+          class="word-art-toolbar__menu-trigger"
+          name="fill-type"
+          aria-label="艺术字填充类型"
+          [expandable]="true"
+          [bcOverlayTrigger]="fillTypeMenu"
+          #fillTypeTrigger="bcOverlayTrigger"
+          [positions]="['bottom-left', 'top-left']"
+          [offsetY]="8"
+        >
+          {{ fillTypeLabel }}
+        </bc-float-toolbar-item>
+
+        @if (props.fillType === "solid") {
+          <label class="word-art-toolbar__color" csTooltip="填充颜色">
             <input
               type="color"
-              [attr.aria-label]="'渐变色 ' + ($index + 1)"
-              [value]="color"
-              (change)="setGradientColor($index, $event)"
+              aria-label="填充颜色"
+              [value]="props.fillColor"
+              (change)="setColor('fillColor', $event)"
+            />
+          </label>
+        } @else {
+          @for (color of props.gradientColors; track $index) {
+            <label
+              class="word-art-toolbar__color"
+              [csTooltip]="'渐变色 ' + ($index + 1)"
+            >
+              <input
+                type="color"
+                [attr.aria-label]="'渐变色 ' + ($index + 1)"
+                [value]="color"
+                (change)="setGradientColor($index, $event)"
+              />
+            </label>
+          }
+          <label
+            class="word-art-toolbar__field word-art-toolbar__field--number"
+          >
+            <span>角度</span>
+            <input
+              type="number"
+              min="0"
+              max="360"
+              step="15"
+              [value]="props.gradientAngle"
+              (change)="setNumber('gradientAngle', $event)"
             />
           </label>
         }
-        <label class="word-art-toolbar__field word-art-toolbar__field--number">
-          <span>角度</span>
+
+        <label class="word-art-toolbar__color" csTooltip="描边颜色">
           <input
-            type="number"
-            min="0"
-            max="360"
-            step="15"
-            [value]="props.gradientAngle"
-            (change)="setNumber('gradientAngle', $event)"
+            type="color"
+            aria-label="描边颜色"
+            [value]="props.outlineColor"
+            (change)="setColor('outlineColor', $event)"
           />
         </label>
-      }
+        <label class="word-art-toolbar__range" csTooltip="描边粗细">
+          <span>描边</span>
+          <input
+            type="range"
+            aria-label="描边粗细"
+            min="0"
+            max="0.2"
+            step="0.01"
+            [value]="props.outlineWidthEm"
+            [style.--word-art-range-progress]="outlineWidthProgress"
+            (input)="syncRangeProgress($event)"
+            (change)="setNumber('outlineWidthEm', $event)"
+          />
+        </label>
 
-      <label class="word-art-toolbar__color" csTooltip="描边颜色">
-        <input
-          type="color"
-          aria-label="描边颜色"
-          [value]="props.outlineColor"
-          (change)="setColor('outlineColor', $event)"
-        />
-      </label>
-      <label class="word-art-toolbar__range" csTooltip="描边粗细">
-        <span>描边</span>
-        <input
-          type="range"
-          aria-label="描边粗细"
-          min="0"
-          max="0.2"
-          step="0.01"
-          [value]="props.outlineWidthEm"
-          [style.--word-art-range-progress]="outlineWidthProgress"
-          (input)="syncRangeProgress($event)"
-          (change)="setNumber('outlineWidthEm', $event)"
-        />
-      </label>
-
-      <button
-        type="button"
-        csTooltip="投影"
-        aria-label="投影"
-        [class.active]="props.shadowEnabled"
-        (click)="toggleShadow()"
-      >
-        <i class="bc_icon bc_wenziyinying"></i>
-      </button>
-
-      <label class="word-art-toolbar__range" csTooltip="字间距">
-        <span>字距</span>
-        <input
-          type="range"
-          aria-label="字间距"
-          min="-0.2"
-          max="1"
-          step="0.02"
-          [value]="props.letterSpacingEm"
-          [style.--word-art-range-progress]="letterSpacingProgress"
-          (input)="syncRangeProgress($event)"
-          (change)="setNumber('letterSpacingEm', $event)"
-        />
-      </label>
-
-      <bc-float-toolbar-item
-        class="word-art-toolbar__menu-trigger"
-        name="effect"
-        aria-label="艺术字效果"
-        [expandable]="true"
-        [bcOverlayTrigger]="effectMenu"
-        #effectTrigger="bcOverlayTrigger"
-        [positions]="['bottom-left', 'top-left']"
-        [offsetY]="8"
-      >
-        {{ effectLabel }}
-      </bc-float-toolbar-item>
-
-      <span class="word-art-toolbar__divider"></span>
-
-      <bc-float-toolbar-item
-        class="word-art-toolbar__menu-trigger word-art-toolbar__align-trigger"
-        name="horizontal-align"
-        aria-label="水平对齐"
-        csTooltip="水平对齐"
-        [icon]="horizontalAlignIcon"
-        [expandable]="true"
-        [bcOverlayTrigger]="horizontalAlignMenu"
-        #horizontalAlignTrigger="bcOverlayTrigger"
-        [positions]="['bottom-left', 'top-left']"
-        [offsetY]="8"
-      >
-      </bc-float-toolbar-item>
-
-      <bc-float-toolbar-item
-        class="word-art-toolbar__menu-trigger word-art-toolbar__align-trigger"
-        name="vertical-align"
-        aria-label="垂直对齐"
-        csTooltip="垂直对齐"
-        [icon]="verticalAlignIcon"
-        [expandable]="true"
-        [bcOverlayTrigger]="verticalAlignMenu"
-        #verticalAlignTrigger="bcOverlayTrigger"
-        [positions]="['bottom-left', 'top-left']"
-        [offsetY]="8"
-      >
-      </bc-float-toolbar-item>
-
-      <span class="word-art-toolbar__divider"></span>
-
-      @for (item of layoutOptions; track item.value) {
         <button
           type="button"
-          [csTooltip]="item.label"
-          [attr.aria-label]="item.label"
-          [class.active]="objectLayout === item.value"
-          (click)="action.emit({ name: 'object-layout', value: item.value })"
+          csTooltip="投影"
+          aria-label="投影"
+          [class.active]="props.shadowEnabled"
+          (click)="toggleShadow()"
         >
-          <i [class]="'bc_icon ' + item.icon"></i>
+          <i class="bc_icon bc_wenziyinying"></i>
         </button>
-      }
 
-      @if (isAbsolute) {
+        <label class="word-art-toolbar__range" csTooltip="字间距">
+          <span>字距</span>
+          <input
+            type="range"
+            aria-label="字间距"
+            min="-0.2"
+            max="1"
+            step="0.02"
+            [value]="props.letterSpacingEm"
+            [style.--word-art-range-progress]="letterSpacingProgress"
+            (input)="syncRangeProgress($event)"
+            (change)="setNumber('letterSpacingEm', $event)"
+          />
+        </label>
+
+        <bc-float-toolbar-item
+          class="word-art-toolbar__menu-trigger"
+          name="effect"
+          aria-label="艺术字效果"
+          [expandable]="true"
+          [bcOverlayTrigger]="effectMenu"
+          #effectTrigger="bcOverlayTrigger"
+          [positions]="['bottom-left', 'top-left']"
+          [offsetY]="8"
+        >
+          {{ effectLabel }}
+        </bc-float-toolbar-item>
+      </div>
+
+      <div class="word-art-toolbar__row word-art-toolbar__row--object-actions">
+        <bc-float-toolbar-item
+          class="word-art-toolbar__menu-trigger word-art-toolbar__align-trigger"
+          name="horizontal-align"
+          aria-label="水平对齐"
+          csTooltip="水平对齐"
+          [icon]="horizontalAlignIcon"
+          [expandable]="true"
+          [bcOverlayTrigger]="horizontalAlignMenu"
+          #horizontalAlignTrigger="bcOverlayTrigger"
+          [positions]="['bottom-left', 'top-left']"
+          [offsetY]="8"
+        >
+        </bc-float-toolbar-item>
+
+        <bc-float-toolbar-item
+          class="word-art-toolbar__menu-trigger word-art-toolbar__align-trigger"
+          name="vertical-align"
+          aria-label="垂直对齐"
+          csTooltip="垂直对齐"
+          [icon]="verticalAlignIcon"
+          [expandable]="true"
+          [bcOverlayTrigger]="verticalAlignMenu"
+          #verticalAlignTrigger="bcOverlayTrigger"
+          [positions]="['bottom-left', 'top-left']"
+          [offsetY]="8"
+        >
+        </bc-float-toolbar-item>
+
+        <span class="word-art-toolbar__divider"></span>
+
+        @for (item of layoutOptions; track item.value) {
+          <button
+            type="button"
+            [csTooltip]="item.label"
+            [attr.aria-label]="item.label"
+            [class.active]="objectLayout === item.value"
+            (click)="action.emit({ name: 'object-layout', value: item.value })"
+          >
+            <i [class]="'bc_icon ' + item.icon"></i>
+          </button>
+        }
+
+        @if (isAbsolute) {
+          <button
+            type="button"
+            csTooltip="上移一层"
+            aria-label="上移一层"
+            [disabled]="!canMoveForward"
+            (click)="action.emit({ name: 'move-forward' })"
+          >
+            <i class="bc_icon bc_cengji-shangyi"></i>
+          </button>
+          <button
+            type="button"
+            csTooltip="下移一层"
+            aria-label="下移一层"
+            [disabled]="!canMoveBackward"
+            (click)="action.emit({ name: 'move-backward' })"
+          >
+            <i class="bc_icon bc_cengji-xiayi"></i>
+          </button>
+        }
+
+        <span class="word-art-toolbar__divider"></span>
         <button
           type="button"
-          csTooltip="上移一层"
-          aria-label="上移一层"
-          [disabled]="!canMoveForward"
-          (click)="action.emit({ name: 'move-forward' })"
+          csTooltip="删除艺术字"
+          aria-label="删除艺术字"
+          (click)="action.emit({ name: 'delete' })"
         >
-          <i class="bc_icon bc_cengji-shangyi"></i>
+          <i class="bc_icon bc_shanchu"></i>
         </button>
-        <button
-          type="button"
-          csTooltip="下移一层"
-          aria-label="下移一层"
-          [disabled]="!canMoveBackward"
-          (click)="action.emit({ name: 'move-backward' })"
-        >
-          <i class="bc_icon bc_cengji-xiayi"></i>
-        </button>
-      }
-
-      <span class="word-art-toolbar__divider"></span>
-      <button
-        type="button"
-        csTooltip="删除艺术字"
-        aria-label="删除艺术字"
-        (click)="action.emit({ name: 'delete' })"
-      >
-        <i class="bc_icon bc_shanchu"></i>
-      </button>
+      </div>
     </div>
 
     <ng-template #fillTypeMenu>
@@ -324,19 +328,30 @@ export type WordArtToolbarAction =
     `
       .word-art-toolbar {
         display: flex;
-        flex-wrap: wrap;
-        align-items: center;
+        flex-direction: column;
+        align-items: flex-start;
         gap: 4px;
         box-sizing: border-box;
+        width: max-content;
         max-width: min(920px, calc(100vw - 24px));
         min-height: 42px;
         padding: 5px 7px;
+        overflow-x: auto;
         border: 1px solid var(--bc-border-color);
         border-radius: 10px;
         background: var(--bc-bg-primary);
         box-shadow: var(--bc-shadow-md);
         color: var(--bc-color);
         font-size: 12px;
+      }
+
+      .word-art-toolbar__row {
+        display: flex;
+        flex: none;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 4px;
+        width: max-content;
       }
 
       button,
