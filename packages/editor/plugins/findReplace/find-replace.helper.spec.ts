@@ -33,9 +33,19 @@ describe("FindReplaceHelper virtualized model reads", () => {
     const textChange$ = new Subject<any>();
     const structureChange$ = new Subject<any>();
     const viewChange$ = new Subject<any>();
-    const createFakeRange = jasmine.createSpy("createFakeRange").and.returnValue({
-      setColor: jasmine.createSpy("setColor"),
-      destroy: jasmine.createSpy("destroy"),
+    const fakeRanges: Array<{fragment: HTMLElement}> = [];
+    const createFakeRange = jasmine.createSpy("createFakeRange").and.callFake((selection: any) => {
+      const overlay = document.createElement("span");
+      const fragment = document.createElement("span");
+      spyOn(fragment, "scrollIntoView");
+      overlay.appendChild(fragment);
+      mounted.get(selection.from.blockId)?.hostElement.appendChild(overlay);
+      fakeRanges.push({fragment});
+      return {
+        fakeSpans: [overlay],
+        setColor: jasmine.createSpy("setColor"),
+        destroy: jasmine.createSpy("destroy"),
+      };
     });
     const applyTextDelta = jasmine.createSpy("applyTextDelta");
     const doc = {
@@ -89,6 +99,7 @@ describe("FindReplaceHelper virtualized model reads", () => {
       structureChange$,
       viewChange$,
       createFakeRange,
+      fakeRanges,
       applyTextDelta,
       cleanup: () => mounted.forEach(block => block.hostElement.remove()),
     };
@@ -121,6 +132,44 @@ describe("FindReplaceHelper virtualized model reads", () => {
     expect(h.ensureViewMounted).toHaveBeenCalledOnceWith(["p2"]);
     expect(h.scrollToBlock).toHaveBeenCalledOnceWith("p2");
     expect(h.mounted.get("p2").hostElement.scrollIntoView).not.toHaveBeenCalled();
+    h.cleanup();
+  });
+
+  it("refines virtual block navigation to the active rendered match", async () => {
+    const h = makeModelHarness();
+
+    h.helper.findAll("needle");
+    await h.scrollToBlock.calls.mostRecent().returnValue;
+    await Promise.resolve();
+
+    expect(h.fakeRanges[0].fragment.scrollIntoView).toHaveBeenCalledOnceWith({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+    expect(h.mounted.get("p1").hostElement.scrollIntoView).not.toHaveBeenCalled();
+    h.cleanup();
+  });
+
+  it("moves directly between matches in the same mounted paragraph", async () => {
+    const h = makeModelHarness();
+    h.textById.set("p1", [{insert: "first needle then needle"}]);
+    h.textById.set("p2", [{insert: "second"}]);
+
+    h.helper.findAll("needle");
+    await h.scrollToBlock.calls.mostRecent().returnValue;
+    await Promise.resolve();
+    h.scrollToBlock.calls.reset();
+
+    h.helper.findNext();
+
+    expect(h.helper.matchedList[h.helper.matchIndex].blockId).toBe("p1");
+    expect(h.scrollToBlock).not.toHaveBeenCalled();
+    expect(h.fakeRanges[1].fragment.scrollIntoView).toHaveBeenCalledOnceWith({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest",
+    });
     h.cleanup();
   });
 
@@ -252,7 +301,15 @@ describe("FindReplaceHelper stale fake range handling", () => {
   });
 
   it("continues to the next match when the current fake range is stale", () => {
+    const overlay = document.createElement("span");
+    const fragments = Array.from({length: 3}, () => {
+      const fragment = document.createElement("span");
+      spyOn(fragment, "scrollIntoView");
+      overlay.appendChild(fragment);
+      return fragment;
+    });
     const fakeRange = {
+      fakeSpans: [overlay],
       setColor: jasmine.createSpy("setColor"),
       destroy: jasmine.createSpy("destroy"),
     };
@@ -263,13 +320,21 @@ describe("FindReplaceHelper stale fake range handling", () => {
       return fakeRange;
     });
     const {helper, hostElement} = makeHarness(createFakeRange);
+    hostElement.appendChild(overlay);
 
     expect(() => helper.findAll("a")).not.toThrow();
 
     expect(helper.matchedList.length).toBe(1);
     expect(helper.matchedBlockMap.get("p1")?.length).toBe(1);
     expect(fakeRange.setColor).toHaveBeenCalledOnceWith({bgColor: "rgba(245, 74, 69, .4)"});
-    expect(hostElement.scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(fragments[1].scrollIntoView).toHaveBeenCalledOnceWith({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+    expect(fragments[0].scrollIntoView).not.toHaveBeenCalled();
+    expect(fragments[2].scrollIntoView).not.toHaveBeenCalled();
+    expect(hostElement.scrollIntoView).not.toHaveBeenCalled();
     hostElement.remove();
   });
 

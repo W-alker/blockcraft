@@ -60,6 +60,7 @@ export class FindReplaceHelper {
   private _refreshQueued = false
   private _refreshAll = false
   private _pendingTextBlockIds = new Set<string>()
+  private _scrollRequest = 0
 
   /** 当前搜索是否使用懒加载模式 */
   private _lazyMode = false
@@ -90,6 +91,7 @@ export class FindReplaceHelper {
 
   destroy() {
     this._destroyed = true
+    this._scrollRequest++
     this.clearAll()
     this._destroyObserver()
     this._subs.forEach(s => s.unsubscribe())
@@ -257,21 +259,23 @@ export class FindReplaceHelper {
   }
 
   highlightCurrent(withScroll = true) {
+    const scrollRequest = ++this._scrollRequest
     while (this.matchedList.length) {
       this._clampMatchIndex()
       const match = this.matchedList[this.matchIndex]
+      const blockId = this._matchBlockId(match)
+      const needsBlockNavigation = !!this.doc.virtualization?.enabled &&
+        !this.doc.vm.isMounted(blockId)
       if (!this._ensureFakeRange(match)) continue
       match.fakeRange!.setColor({bgColor: ACTIVE_COLOR})
       if (withScroll) {
-        const blockId = this._matchBlockId(match)
-        if (this.doc.virtualization?.enabled) {
-          void this.doc.virtualization.scrollToBlock(blockId)
-        } else {
-          this._resolveBlockView(blockId, false)?.hostElement.scrollIntoView({
-            behavior: 'smooth',
-            block: 'center',
-            inline: 'center',
+        if (needsBlockNavigation) {
+          void this.doc.virtualization.scrollToBlock(blockId).then(revealed => {
+            if (!revealed || scrollRequest !== this._scrollRequest) return
+            this._scrollMatchIntoView(match)
           })
+        } else {
+          this._scrollMatchIntoView(match)
         }
       }
       return
@@ -340,6 +344,7 @@ export class FindReplaceHelper {
   // ── Internal ─────────────────────────────────────────────────
 
   private _clearMatches() {
+    this._scrollRequest++
     this.matchIndex = 0
     this._destroyAllFakeRanges()
     this.matchedList = []
@@ -435,6 +440,32 @@ export class FindReplaceHelper {
       },
       to: null
     }, {bgColor: MATCH_COLOR})
+  }
+
+  /**
+   * Scroll the rendered match fragment instead of its block host. A single
+   * editable block can span many viewport heights, so block-level navigation
+   * cannot distinguish matches on different visual lines.
+   */
+  private _scrollMatchIntoView(match: FindReplaceMatch) {
+    if (this.matchedList[this.matchIndex] !== match || !match.fakeRange) return
+
+    const overlays = match.fakeRange.fakeSpans?.filter(span =>
+      span.isConnected && span.getAttribute('data-fake-range-detached') !== 'true'
+    ) ?? []
+    const fragments = overlays.flatMap(overlay =>
+      Array.from(overlay.children).filter(child => child.isConnected)
+    )
+    const target = fragments[Math.floor(fragments.length / 2)]
+      ?? overlays[0]
+      ?? this._resolveBlockView(this._matchBlockId(match), false)?.hostElement
+    if (!target?.isConnected) return
+
+    target.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+      inline: 'nearest',
+    })
   }
 
   /** Pure model collection: no ComponentRef, DOM or observer work. */
