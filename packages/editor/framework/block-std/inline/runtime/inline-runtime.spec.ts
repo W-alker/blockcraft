@@ -270,6 +270,51 @@ describe('InlineRuntime inline float lifecycle', () => {
     runtime.destroy()
   })
 
+  it('rebuilds the same pagination projection after a marker is detached', () => {
+    const container = document.createElement('div')
+    const runtime = new InlineRuntime(container, new Map())
+    runtime.render([{insert: 'abcdefghijkl'}])
+    const gaps = [{
+      offset: 6,
+      height: 100,
+      backdropOffset: 70,
+      backdropHeight: 20,
+    }]
+
+    expect(applyInlinePaginationGaps(runtime, gaps)).toBeTrue()
+    const firstMarker = container.querySelector<HTMLElement>(
+      `[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`,
+    )!
+    firstMarker.remove()
+
+    expect(applyInlinePaginationGaps(runtime, gaps)).toBeTrue()
+    const replayedMarker = container.querySelector<HTMLElement>(
+      `[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`,
+    )
+    expect(replayedMarker).not.toBeNull()
+    expect(replayedMarker).not.toBe(firstMarker)
+    expect(replayedMarker!.parentElement).toBe(container)
+    expect(runtime.scrollBlot.leaves.length).toBe(2)
+    expect(runtime.textLength).toBe(12)
+    runtime.destroy()
+  })
+
+  it('restores a detached model-owned break before an unprojected mutation', () => {
+    const container = document.createElement('div')
+    const runtime = new InlineRuntime(container, new Map())
+    runtime.render([{insert: 'abcdef'}])
+    const breakBlot = runtime.scrollBlot.children.find(
+      child => child.type === 'break',
+    )!
+    breakBlot.domNode.parentNode?.removeChild(breakBlot.domNode)
+
+    runtime.applyDelta([{retain: 6}, {insert: '!'}])
+
+    expect(breakBlot.domNode.parentNode).toBe(container)
+    expect(runtime.textLength).toBe(7)
+    runtime.destroy()
+  })
+
   it('does not enumerate every native line rect for a very long paragraph', () => {
     const host = document.createElement('div')
     const container = document.createElement('div')
@@ -324,6 +369,107 @@ describe('InlineRuntime inline float lifecycle', () => {
       point.offset > (points[index - 1]?.offset ?? 0)
       && point.top > (points[index - 1]?.top ?? -1),
     )).toBeTrue()
+    runtime.destroy()
+  })
+
+  it('keeps heading line-box anchors in visual coordinates under CSS zoom', () => {
+    const host = document.createElement('div')
+    const container = document.createElement('div')
+    host.dataset['inlineRuntimeTestHost'] = 'true'
+    host.style.zoom = '1.25'
+    container.style.cssText = [
+      'width:360px',
+      'font:700 28px/42px sans-serif',
+      'white-space:pre-wrap',
+    ].join(';')
+    host.appendChild(container)
+    document.body.appendChild(host)
+    const runtime = new InlineRuntime(container, new Map())
+    runtime.render([{insert: 'MVP workflow 标题\n第二行标题\n第三行标题'}])
+
+    const points = measureInlinePaginationLineStarts(runtime, 64)
+    const containerRect = container.getBoundingClientRect()
+    const nextInkRect = runtime.modelRangeToClientRects(
+      points[0].offset,
+      points[0].offset + 1,
+    )[0]
+    const layoutLineHeight = Number.parseFloat(getComputedStyle(container).lineHeight)
+    const visualScale = containerRect.height / container.offsetHeight
+    const expectedLineBoxTop = nextInkRect.top
+      - Math.max(0, (layoutLineHeight * visualScale - nextInkRect.height) / 2)
+      - containerRect.top
+
+    expect(visualScale).toBeCloseTo(1.25, 1)
+    expect(points.length).toBe(2)
+    expect(points[0].top).toBeCloseTo(expectedLineBoxTop, 1)
+    expect(points[0].visualGuardHeight).toBeCloseTo(
+      Math.max(layoutLineHeight * visualScale, nextInkRect.height)
+        + 0.75,
+      1,
+    )
+    runtime.destroy()
+  })
+
+  it('keeps a normal line-height guard in visual pixels without double-applying CSS zoom', () => {
+    const host = document.createElement('div')
+    const container = document.createElement('div')
+    host.dataset['inlineRuntimeTestHost'] = 'true'
+    host.style.zoom = '1.25'
+    container.style.cssText = [
+      'width:360px',
+      'font:700 28px sans-serif',
+      'line-height:normal',
+      'white-space:pre-wrap',
+    ].join(';')
+    host.appendChild(container)
+    document.body.appendChild(host)
+    const runtime = new InlineRuntime(container, new Map())
+    runtime.render([{insert: 'normal first line\nnormal second line\nnormal third line'}])
+
+    const points = measureInlinePaginationLineStarts(runtime, 64)
+    const containerRect = container.getBoundingClientRect()
+    const visualScale = containerRect.height / container.offsetHeight
+    const nextInkRect = runtime.modelRangeToClientRects(
+      points[0].offset,
+      points[0].offset + 1,
+    )[0]
+
+    expect(getComputedStyle(container).lineHeight).toBe('normal')
+    expect(visualScale).toBeCloseTo(1.25, 1)
+    expect(points.length).toBe(2)
+    // InlineRangeMeasurer's normal fallback is already a Range BCR height.
+    // Multiplying it by visualScale again would make this 1.25x too large.
+    expect(points[0].visualGuardHeight).toBeCloseTo(
+      nextInkRect.height + 0.75,
+      1,
+    )
+    runtime.destroy()
+  })
+
+  it('does not reserve a guard when a visual line already starts at a Blot boundary', () => {
+    const host = document.createElement('div')
+    const container = document.createElement('div')
+    host.dataset['inlineRuntimeTestHost'] = 'true'
+    container.style.cssText = [
+      'width:420px',
+      'font:24px/40px sans-serif',
+      'white-space:pre-wrap',
+    ].join(';')
+    host.appendChild(container)
+    document.body.appendChild(host)
+    const runtime = new InlineRuntime(container, new Map())
+    const firstLine = '第一行\n'
+    runtime.render([
+      {insert: firstLine, attributes: {bold: true}},
+      {insert: '第二行\n第三行'},
+    ])
+
+    const points = measureInlinePaginationLineStarts(runtime, 64)
+
+    expect(points.length).toBe(2)
+    expect(points[0].offset).toBe(firstLine.length)
+    expect(points[0].visualGuardHeight).toBe(0)
+    expect(points[1].visualGuardHeight).toBeGreaterThan(0)
     runtime.destroy()
   })
 

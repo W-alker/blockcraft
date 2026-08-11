@@ -1,5 +1,5 @@
 // packages/editor/framework/modules/pagination/view/paginated-view.controller.ts
-import {fromEvent, Subscription} from "rxjs";
+import {fromEvent, skip, Subscription} from "rxjs";
 import {performanceTest} from "../../../../global";
 import {isNativeInputTarget} from "../../../utils";
 import {paginate, PaginationItem} from "../engine";
@@ -205,6 +205,22 @@ export class PaginatedViewController {
             this._heightSource.invalidateNaturalMeasurements();
             this._runShadowMutation('layout-metrics-change', () =>
               this.layoutCoordinator.refreshObjectSizingEstimates(),
+            );
+            this.scheduleRecompute();
+          }),
+        );
+      }
+      const viewScale$ = this.doc.viewScale?.scale$;
+      if (viewScale$) {
+        this._subs.add(
+          viewScale$.pipe(skip(1)).subscribe(() => {
+            // Scale changes BCR/layout-px conversion without changing the
+            // model or the element's layout height. Invalidate the completed
+            // natural measurements explicitly; a plain recompute would reuse
+            // the pre-scale table cell-flow anchors.
+            this._heightSource.invalidateNaturalMeasurements();
+            this._runShadowMutation('view-scale-change', () =>
+              this._syncMeasureContext(),
             );
             this.scheduleRecompute();
           }),

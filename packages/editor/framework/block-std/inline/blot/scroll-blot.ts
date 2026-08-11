@@ -384,13 +384,15 @@ export class ScrollBlot implements IScrollBlot {
    * @internal InlineFragmentProjection only.
    */
   restoreCanonicalDomOrder(): void {
-    const breakBlot = this._children.find(child => child.type === BlotType.Break)
-    const breakNode = breakBlot?.domNode ?? null
+    // Do not use BreakBlot as insertBefore's reference. Firefox may detach the
+    // trailing <br> while committing a native contenteditable mutation; using
+    // that disconnected node as a reference throws before InputTransformer can
+    // restore the model-owned view. appendChild reparents every retained Blot
+    // and deterministically restores `_children` order in one pass.
     for (const child of this._children) {
-      if (child === breakBlot) continue
-      this.domNode.insertBefore(child.domNode, breakNode)
+      this.domNode.appendChild(child.domNode)
     }
-    if (breakNode) this.domNode.appendChild(breakNode)
+    this._invalidateIndex()
   }
 
   /**

@@ -1,4 +1,4 @@
-import { Subject } from "rxjs";
+import { BehaviorSubject, Subject } from "rxjs";
 import { BlockNodeType } from "../../../block-std/types/block.type";
 import {
   IBlockModelContentChange,
@@ -33,6 +33,7 @@ interface Harness {
   readonly contentChange$: Subject<IBlockModelContentChange>;
   readonly structureChange$: Subject<IBlockModelStructureChange>;
   readonly themeChange$: Subject<string>;
+  readonly viewScale$: BehaviorSubject<number>;
   readonly onChildrenUpdate$: Subject<void>;
   readonly onPropsUpdate$: Subject<void>;
   readonly compositionSession: { isIdle: boolean };
@@ -97,6 +98,7 @@ function createHarness(): Harness {
   const contentChange$ = new Subject<IBlockModelContentChange>();
   const structureChange$ = new Subject<IBlockModelStructureChange>();
   const themeChange$ = new Subject<string>();
+  const viewScale$ = new BehaviorSubject(1);
   const onChildrenUpdate$ = new Subject<void>();
   const onPropsUpdate$ = new Subject<void>();
   const logger = { warn: jasmine.createSpy("warn") };
@@ -142,6 +144,7 @@ function createHarness(): Harness {
       return config.theme || "light";
     },
     themeChange$,
+    viewScale: { scale$: viewScale$ },
     onChildrenUpdate$,
     onPropsUpdate$,
     inputManger: { compositionSession },
@@ -160,6 +163,7 @@ function createHarness(): Harness {
     contentChange$,
     structureChange$,
     themeChange$,
+    viewScale$,
     onChildrenUpdate$,
     onPropsUpdate$,
     compositionSession,
@@ -178,6 +182,7 @@ function createHarness(): Harness {
       contentChange$.complete();
       structureChange$.complete();
       themeChange$.complete();
+      viewScale$.complete();
       onChildrenUpdate$.complete();
       onPropsUpdate$.complete();
       scrollContainer.remove();
@@ -640,6 +645,63 @@ describe("PaginatedViewController shadow layout", () => {
       expect(callbacks.size).toBe(1);
       callbacks.forEach(callback => callback(performance.now()));
       expect(recompute).toHaveBeenCalledTimes(1);
+    } finally {
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
+  it("invalidates natural measurements on view scale changes and unsubscribes when disabled", () => {
+    const harness = createHarness();
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+    );
+    const heightSource = (
+      controller as unknown as {
+        _heightSource: {
+          readonly measurementEpoch: number;
+          invalidateNaturalMeasurements(): void;
+        };
+      }
+    )._heightSource;
+    const invalidateNaturalMeasurements = spyOn(
+      heightSource,
+      "invalidateNaturalMeasurements",
+    ).and.callThrough();
+
+    try {
+      controller.enable();
+      // BehaviorSubject's current value is only subscription setup context; it
+      // must not manufacture an extra measurement generation on enable.
+      expect(invalidateNaturalMeasurements).not.toHaveBeenCalled();
+
+      controller.captureStableLayout();
+      invalidateNaturalMeasurements.calls.reset();
+      const measurementEpoch = heightSource.measurementEpoch;
+      const scheduleRecompute = spyOn(
+        controller,
+        "scheduleRecompute",
+      ).and.callThrough();
+
+      harness.viewScale$.next(1.25);
+
+      expect(heightSource.measurementEpoch).toBe(measurementEpoch + 1);
+      expect(invalidateNaturalMeasurements).toHaveBeenCalledTimes(1);
+      expect(scheduleRecompute).toHaveBeenCalledTimes(1);
+      expect(controller.canReuseStableLayoutForExport).toBeFalse();
+
+      controller.disable();
+      invalidateNaturalMeasurements.calls.reset();
+      scheduleRecompute.calls.reset();
+      const disabledMeasurementEpoch = heightSource.measurementEpoch;
+
+      harness.viewScale$.next(1.5);
+
+      expect(heightSource.measurementEpoch).toBe(disabledMeasurementEpoch);
+      expect(invalidateNaturalMeasurements).not.toHaveBeenCalled();
+      expect(scheduleRecompute).not.toHaveBeenCalled();
     } finally {
       controller.destroy();
       harness.destroy();

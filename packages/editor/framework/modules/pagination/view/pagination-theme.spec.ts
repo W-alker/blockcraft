@@ -140,6 +140,7 @@ describe('pagination theme block constraints', () => {
     root.appendChild(dynamicSibling);
 
     const normalTransform = getComputedStyle(root).transform;
+    const normalLeft = getComputedStyle(root).left;
     expect(normalTransform).not.toBe('none');
 
     document.body.classList.add('bc-table-fullscreen-lock');
@@ -148,6 +149,8 @@ describe('pagination theme block constraints', () => {
     table.classList.add('is-fullscreen');
     try {
       expect(getComputedStyle(root).transform).toBe('none');
+      expect(getComputedStyle(root).left).toBe('0px');
+      expect(root.parentElement!.scrollWidth).toBeLessThanOrEqual(root.parentElement!.clientWidth + 1);
       expect(getComputedStyle(dynamicSibling).visibility).toBe('hidden');
       expect(getComputedStyle(dynamicSibling).pointerEvents).toBe('none');
       const rect = table.getBoundingClientRect();
@@ -168,6 +171,7 @@ describe('pagination theme block constraints', () => {
     }
 
     expect(getComputedStyle(root).transform).toBe(normalTransform);
+    expect(getComputedStyle(root).left).toBe(normalLeft);
     expect(getComputedStyle(dynamicSibling).visibility).toBe('visible');
     dynamicSibling.remove();
   });

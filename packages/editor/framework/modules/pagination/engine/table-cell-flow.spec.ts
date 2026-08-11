@@ -1,4 +1,5 @@
 import {
+  cloneTableCellFlowPlan,
   planTableCellFlow,
   TableCellFlowPlanningError,
   TableFlowRowInput,
@@ -35,6 +36,82 @@ describe("planTableCellFlow", () => {
       rowId: "r1",
       continuations: [{cellId: "c1", anchor: {kind: "text", blockId: "c1-p", offset: 1}, pageOffset: 80}],
     });
+  });
+
+  it("文字切点用 requiredTail 推进虚拟页面，但 continuation 保留真实锚点偏移", () => {
+    const plan = planTableCellFlow([{
+      kind: "cell-flow",
+      rowId: "r1",
+      cells: [{
+        cellId: "c1",
+        points: [
+          {
+            offset: 80,
+            requiredTail: 20,
+            anchor: {kind: "text", blockId: "p1", offset: 8},
+          },
+          {
+            offset: 160,
+            requiredTail: 20,
+            anchor: {kind: "text", blockId: "p1", offset: 16},
+          },
+          {offset: 240, anchor: {kind: "cell-end"}},
+        ],
+      }],
+    }], 100);
+
+    expect(plan.segments.map(segment => segment.height)).toEqual([100, 100, 80]);
+    expect(plan.paginationHeight).toBe(280);
+    expect(plan.splitOffsets).toEqual([100, 200]);
+    expect(plan.segments[0].breakAfter).toEqual({
+      kind: "cell-flow",
+      rowId: "r1",
+      continuations: [{
+        cellId: "c1",
+        anchor: {kind: "text", blockId: "p1", offset: 8},
+        pageOffset: 80,
+      }],
+    });
+    expect(plan.segments[1].breakAfter).toEqual({
+      kind: "cell-flow",
+      rowId: "r1",
+      continuations: [{
+        cellId: "c1",
+        anchor: {kind: "text", blockId: "p1", offset: 16},
+        pageOffset: 80,
+      }],
+    });
+
+    const cloned = cloneTableCellFlowPlan(plan);
+    expect(cloned).toEqual(plan);
+    expect(cloned).not.toBe(plan);
+    expect(cloned.segments[0]).not.toBe(plan.segments[0]);
+    expect(cloned.segments[0].breakAfter).not.toBe(plan.segments[0].breakAfter);
+  });
+
+  it("保护带容不下文字切点时仍可选择后续完整 cell-end", () => {
+    const plan = planTableCellFlow([{
+      kind: "cell-flow",
+      rowId: "r1",
+      cells: [{
+        cellId: "c1",
+        points: [
+          {
+            offset: 90,
+            requiredTail: 20,
+            anchor: {kind: "text", blockId: "p1", offset: 9},
+          },
+          {offset: 100, anchor: {kind: "cell-end"}},
+        ],
+      }],
+    }], 100);
+
+    expect(plan.segments).toEqual([{
+      fromOffset: 0,
+      toOffset: 100,
+      height: 100,
+    }]);
+    expect(plan.splitOffsets).toEqual([]);
   });
 
   it("不同单元格可选择不同高度的安全锚点，并以最深内容决定当前片段高度", () => {

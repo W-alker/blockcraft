@@ -267,10 +267,10 @@ describe('LiveHeightSource atomic block measurement', () => {
       BlockNodeType.editable,
       undefined,
       [
-        {offset: 4, top: 80},
-        {offset: 8, top: 160},
-        {offset: 12, top: 240},
-        {offset: 16, top: 320},
+        {offset: 4, top: 80, visualGuardHeight: 20},
+        {offset: 8, top: 160, visualGuardHeight: 20},
+        {offset: 12, top: 240, visualGuardHeight: 20},
+        {offset: 16, top: 320, visualGuardHeight: 20},
       ],
     )
 
@@ -292,7 +292,7 @@ describe('LiveHeightSource atomic block measurement', () => {
       'ordered',
       BlockNodeType.editable,
       undefined,
-      [{offset: 6, top: 600}],
+      [{offset: 6, top: 600, visualGuardHeight: 20}],
     )
 
     const [meta] = source.measure({contentHeight: 900, widowOrphanLines: 2})
@@ -309,7 +309,7 @@ describe('LiveHeightSource atomic block measurement', () => {
       'caption',
       BlockNodeType.editable,
       undefined,
-      [{offset: 6, top: 1200}],
+      [{offset: 6, top: 1200, visualGuardHeight: 20}],
     )
     host.getBoundingClientRect = () => ({
       x: 0,
@@ -337,7 +337,7 @@ describe('LiveHeightSource atomic block measurement', () => {
       'paragraph',
       BlockNodeType.editable,
       undefined,
-      [{offset: 4, top: 400}],
+      [{offset: 4, top: 400, visualGuardHeight: 20}],
     )
 
     const [meta] = source.measure({contentHeight: 900, widowOrphanLines: 2})
@@ -354,7 +354,7 @@ describe('LiveHeightSource atomic block measurement', () => {
       'blockquote',
       BlockNodeType.editable,
       undefined,
-      [{offset: 4, top: 400}],
+      [{offset: 4, top: 400, visualGuardHeight: 20}],
     )
 
     const [meta] = source.measure({contentHeight: 900, widowOrphanLines: 2})

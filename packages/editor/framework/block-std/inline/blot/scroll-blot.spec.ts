@@ -213,6 +213,32 @@ describe('ScrollBlot offsetOf', () => {
       expect(layoutWrapper.childNodes.length).toBe(0);
     });
 
+    it('reparents a detached trailing break before restoring canonical order', () => {
+      const scroll = createScroll([
+        {insert: 'left'},
+        {insert: {test: 'v'}},
+        {insert: 'right'},
+      ]);
+      const canonical = scroll.children.map(child => child.domNode);
+      const breakBlot = scroll.children.find(child => child.type === 'break')!;
+      // Build the lazy prefix index before simulating Firefox's native
+      // contenteditable mutation, which may disconnect the trailing <br>.
+      expect(scroll.textLength).toBe(10);
+      breakBlot.domNode.parentNode?.removeChild(breakBlot.domNode);
+
+      expect(() => scroll.restoreCanonicalDomOrder()).not.toThrow();
+
+      const directCanonical = Array.from(container.childNodes)
+        .filter(node => canonical.includes(node as HTMLElement));
+      expect(directCanonical.length).toBe(canonical.length);
+      directCanonical.forEach((node, index) => {
+        expect(node).toBe(canonical[index] as ChildNode);
+      });
+      expect(canonical.every(node => node.parentNode === container)).toBeTrue();
+      expect(scroll.textLength).toBe(10);
+      expect(scroll.offsetOf(breakBlot)).toBe(10);
+    });
+
     it('refuses to merge a stale or non-adjacent split record', () => {
       const scroll = createScroll([{insert: 'abcdef'}]);
       const first = scroll.splitTextForLayout(2)!;

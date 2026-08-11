@@ -14,6 +14,12 @@ export interface InlinePaginationGap {
   backdropHeight: number
 }
 
+interface InlinePaginationShiftSnapshot {
+  element: HTMLElement
+  position: {value: string; priority: string}
+  top: {value: string; priority: string}
+}
+
 /**
  * 可逆的行内分页 DOM 投影。它只拆分真实 TextBlot 并插入零模型长度节点，
  * revoke 后恢复规范 DOM 顺序并合并所有临时文本段。
@@ -22,9 +28,11 @@ export interface InlinePaginationGap {
  */
 export class InlinePaginationProjection {
   private _splits: Array<readonly [TextBlot, TextBlot]> = []
+  private _shiftSnapshots: InlinePaginationShiftSnapshot[] = []
   private _markers: HTMLElement[] = []
   private _signature = ''
   private _containerWidthSnapshot?: {value: string; priority: string}
+  private _containerPaddingSnapshot?: {value: string; priority: string}
 
   constructor(private readonly _scroll: ScrollBlot) {}
 
@@ -38,7 +46,9 @@ export class InlinePaginationProjection {
       this._scroll.textLength,
     )
     const signature = JSON.stringify(normalized)
-    if (signature === this._signature) return true
+    if (signature === this._signature && this._isHealthy(normalized.length)) {
+      return true
+    }
 
     this.revoke()
     if (!normalized.length) return true
@@ -49,14 +59,7 @@ export class InlinePaginationProjection {
         const split = this._scroll.splitTextForLayout(offset)
         if (split) this._splits.push(split)
       }
-
-      const anchors = this._nodesAtOffsets(normalized.map(gap => gap.offset))
-      for (const gap of normalized) {
-        const marker = buildInlinePaginationGapMarker(gap)
-        const anchor = anchors.get(gap.offset) ?? null
-        this._scroll.domNode.insertBefore(marker, anchor)
-        this._markers.push(marker)
-      }
+      this._applyRelativeFlow(normalized)
       this._signature = signature
       return true
     } catch {
@@ -68,9 +71,12 @@ export class InlinePaginationProjection {
   revoke(): void {
     if (
       !this._markers.length
+      && !this._shiftSnapshots.length
       && !this._splits.length
       && !this._signature
       && !this._containerWidthSnapshot
+      && !this._containerPaddingSnapshot
+      && this._hasCanonicalDomOrder()
     ) {
       return
     }
@@ -78,12 +84,18 @@ export class InlinePaginationProjection {
     this._scroll.restoreCanonicalDomOrder()
     for (const marker of this._markers) marker.remove()
     this._markers = []
-
+    for (let index = this._shiftSnapshots.length - 1; index >= 0; index--) {
+      const snapshot = this._shiftSnapshots[index]
+      this._restoreStyleProperty(snapshot.element, 'position', snapshot.position)
+      this._restoreStyleProperty(snapshot.element, 'top', snapshot.top)
+    }
+    this._shiftSnapshots = []
     for (let index = this._splits.length - 1; index >= 0; index--) {
       this._scroll.mergeLayoutTextSplit(this._splits[index])
     }
     this._splits = []
     this._signature = ''
+    this._restoreContainerPadding()
     this._restoreContainerWidth()
   }
 
@@ -120,26 +132,118 @@ export class InlinePaginationProjection {
     }
   }
 
-  /** Resolve all insertion anchors in one monotonic pass over the split leaves. */
-  private _nodesAtOffsets(offsets: readonly number[]): Map<number, Node | null> {
-    const result = new Map<number, Node | null>()
-    const targets = [...new Set(offsets)].sort((left, right) => left - right)
+  /**
+   * Move only the painted continuation fragments. The hidden marker cannot
+   * participate in inline formatting; bottom padding contributes the same
+   * total height to the row.
+   */
+  private _applyRelativeFlow(gaps: readonly InlinePaginationGap[]): void {
+    const container = this._scroll.domNode
     const leaves = this._scroll.leaves
+    const anchors = new Map<number, Node | null>()
     const breakNode = this._scroll.children.find(
       child => child.type === 'break',
     )?.domNode ?? null
     let leafIndex = 0
     let leafOffset = 0
-
-    for (const target of targets) {
+    let cumulativeShift = 0
+    let gapIndex = 0
+    for (const target of [...new Set(gaps.map(gap => gap.offset))]) {
       while (leafIndex < leaves.length && leafOffset < target) {
         leafOffset += leaves[leafIndex].length
         leafIndex++
       }
-      result.set(target, leaves[leafIndex]?.domNode ?? breakNode)
+      if (leafOffset !== target) {
+        throw new Error(`Inline pagination offset ${target} is not projectable`)
+      }
+      anchors.set(target, leaves[leafIndex]?.domNode ?? breakNode)
     }
-    return result
+
+    for (const leaf of leaves) {
+      const start = this._scroll.offsetOf(leaf)
+      while (gapIndex < gaps.length && gaps[gapIndex].offset <= start) {
+        cumulativeShift += gaps[gapIndex].height
+        gapIndex++
+      }
+      if (cumulativeShift <= 0) continue
+      const element = leaf.domNode as HTMLElement
+      this._shiftSnapshots.push({
+        element,
+        position: this._snapshotStyleProperty(element, 'position'),
+        top: this._snapshotStyleProperty(element, 'top'),
+      })
+      element.style.setProperty('position', 'relative')
+      element.style.setProperty('top', `${cumulativeShift}px`)
+    }
+
+    const totalGap = gaps.reduce((sum, gap) => sum + gap.height, 0)
+    const computedPadding = Number.parseFloat(
+      container.ownerDocument.defaultView?.getComputedStyle(container).paddingBottom
+        ?? '0',
+    )
+    this._containerPaddingSnapshot = this._snapshotStyleProperty(
+      container,
+      'padding-bottom',
+    )
+    container.style.setProperty(
+      'padding-bottom',
+      `${Math.max(0, Number.isFinite(computedPadding) ? computedPadding : 0) + totalGap}px`,
+    )
+
+    for (const gap of gaps) {
+      const marker = buildInlinePaginationGapMarker(gap)
+      marker.style.display = 'none'
+      container.insertBefore(marker, anchors.get(gap.offset) ?? null)
+      this._markers.push(marker)
+    }
   }
+
+  private _snapshotStyleProperty(
+    element: HTMLElement,
+    property: string,
+  ): {value: string; priority: string} {
+    return {
+      value: element.style.getPropertyValue(property),
+      priority: element.style.getPropertyPriority(property),
+    }
+  }
+
+  private _restoreStyleProperty(
+    element: HTMLElement,
+    property: string,
+    snapshot: {value: string; priority: string},
+  ): void {
+    if (snapshot.value) {
+      element.style.setProperty(property, snapshot.value, snapshot.priority)
+    } else {
+      element.style.removeProperty(property)
+    }
+  }
+
+  private _restoreContainerPadding(): void {
+    const snapshot = this._containerPaddingSnapshot
+    if (!snapshot) return
+    this._containerPaddingSnapshot = undefined
+    this._restoreStyleProperty(this._scroll.domNode, 'padding-bottom', snapshot)
+  }
+
+  private _isHealthy(expectedMarkerCount: number): boolean {
+    return this._markers.length === expectedMarkerCount
+      && this._markers.every(marker =>
+        marker.isConnected && marker.parentNode === this._scroll.domNode,
+      )
+      && this._hasCanonicalDomOrder()
+  }
+
+  private _hasCanonicalDomOrder(): boolean {
+    const expected = this._scroll.children.map(child => child.domNode)
+    const owned = new Set<Node>(expected)
+    const direct = Array.from(this._scroll.domNode.childNodes)
+      .filter(node => owned.has(node))
+    return direct.length === expected.length
+      && direct.every((node, index) => node === expected[index])
+  }
+
 }
 
 /** @internal Shared with the composed inline-float pagination projection. */

@@ -20,6 +20,30 @@ import {
 const PAGINATION_LINE_TOLERANCE = 0.75
 const PAGINATION_EXACT_LINE_LIMIT = 64
 
+/** Resolve layout-px line metrics into the same visual coordinate space as BCR. */
+function visualScaleForLayout(
+  element: HTMLElement,
+  rect: DOMRect,
+): number {
+  const layoutHeight = element.offsetHeight
+  if (
+    layoutHeight > 0
+    && Number.isFinite(rect.height)
+    && rect.height > 0
+  ) {
+    return rect.height / layoutHeight
+  }
+  const layoutWidth = element.offsetWidth
+  if (
+    layoutWidth > 0
+    && Number.isFinite(rect.width)
+    && rect.width > 0
+  ) {
+    return rect.width / layoutWidth
+  }
+  return 1
+}
+
 /**
  * Collapse the client rects of rich inline runs into visual lines.
  *
@@ -295,10 +319,26 @@ export class InlineRuntime {
     const containerTop = containerRect.top
     const lineHeight = measurer.lineHeight()
     if (!Number.isFinite(lineHeight) || lineHeight <= 0) return []
+    const visualScale = visualScaleForLayout(this.container, containerRect)
+    const computedLineHeight = Number.parseFloat(
+      getComputedStyle(this.container).lineHeight,
+    )
+    // A numeric computed line-height is layout px, while
+    // InlineRangeMeasurer's `normal` fallback comes from a Range BCR and is
+    // already visual px under CSS zoom. Keep this distinction explicit to
+    // avoid applying zoom twice. Embed-only content has no glyph BCR fallback,
+    // so its font-size fallback remains layout px and still needs scaling.
+    const normalUsesGlyphBcr = !Number.isFinite(computedLineHeight)
+      && this._scrollBlot.leaves.some(
+        leaf => leaf instanceof TextBlot && leaf.length > 0,
+      )
+    const visualLineHeight = normalUsesGlyphBcr
+      ? lineHeight
+      : lineHeight * visualScale
     const isBoundarySafe = this._inlineFloatLayout.paginationBoundaryGuard()
     const estimatedLineCount = Math.max(
       1,
-      Math.round(containerRect.height / lineHeight),
+      Math.round(containerRect.height / visualLineHeight),
     )
     // Exact native Range rect enumeration is cheap for ordinary paragraphs,
     // but becomes a main-thread trap when repeated across many rich cells.
@@ -315,7 +355,7 @@ export class InlineRuntime {
       : estimatedLineTops(
         containerTop,
         containerRect.height,
-        lineHeight,
+        visualLineHeight,
         estimatedLineCount,
         safeLimit,
       )
@@ -340,7 +380,7 @@ export class InlineRuntime {
         // page backdrop when line-height contains leading. Project against the
         // estimated line-box top so the entire next line moves as one unit.
         const top = rect.top
-          - Math.max(0, (lineHeight - rect.height) / 2)
+          - Math.max(0, (visualLineHeight - rect.height) / 2)
           - containerTop
         if (!isBoundarySafe(offset, top)) {
           continue
@@ -352,7 +392,22 @@ export class InlineRuntime {
         ) {
           continue
         }
-        points.push({offset, top})
+        const splitCandidate = this._scrollBlot.findByOffset(offset)
+        const requiresSplitGuard = splitCandidate?.blot instanceof TextBlot
+          && splitCandidate.localOffset > 0
+          && splitCandidate.localOffset < splitCandidate.blot.length
+        points.push({
+          offset,
+          top,
+          // WebKit can keep the split TextBlot's last painted glyph in this
+          // line even though the measured model boundary starts the line.
+          // Existing Blot boundaries need no split and therefore no spare
+          // line; reserving one there would only reduce page utilization.
+          visualGuardHeight: requiresSplitGuard
+            ? Math.max(visualLineHeight, rect.height)
+                + PAGINATION_LINE_TOLERANCE
+            : 0,
+        })
         minimumOffset = offset + 1
       }
     } catch {

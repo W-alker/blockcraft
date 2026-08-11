@@ -5,6 +5,8 @@ export interface InlinePaginationLineStart {
   offset: number
   /** 下一视觉行顶相对 edit-container 顶边的自然 y。 */
   top: number
+  /** 保留一整个视觉行所需的高度（与 BCR 相同的 visual px）。 */
+  visualGuardHeight: number
 }
 
 interface InlinePaginationAccess {

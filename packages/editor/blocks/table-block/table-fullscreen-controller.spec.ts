@@ -205,6 +205,82 @@ describe('TableFullscreenController', () => {
       controller.set(false)
       expect(document.querySelector('.bc-table-fullscreen-placeholder')).toBeNull()
     })
+
+    it('locks only the resolved background scroller and restores its exact state', () => {
+      controller.destroy()
+      const scrollContainer = document.createElement('div')
+      const tableScroller = document.createElement('div')
+      scrollContainer.style.setProperty('overflow-x', 'auto', 'important')
+      scrollContainer.style.setProperty('overflow-y', 'scroll')
+      tableScroller.style.setProperty('overflow-x', 'auto')
+      tableScroller.style.setProperty('overflow-y', 'hidden')
+      let scrollLeft = 31
+      let scrollTop = 47
+      Object.defineProperty(scrollContainer, 'scrollLeft', {
+        configurable: true,
+        get: () => scrollLeft,
+        set: value => { scrollLeft = value },
+      })
+      Object.defineProperty(scrollContainer, 'scrollTop', {
+        configurable: true,
+        get: () => scrollTop,
+        set: value => { scrollTop = value },
+      })
+      host.appendChild(tableScroller)
+      scrollContainer.appendChild(host)
+      document.body.appendChild(scrollContainer)
+      controller = new TableFullscreenController(host, () => scrollContainer)
+
+      controller.set(true)
+
+      expect(scrollContainer.style.getPropertyValue('overflow-x')).toBe('hidden')
+      expect(scrollContainer.style.getPropertyPriority('overflow-x')).toBe('important')
+      expect(scrollContainer.style.getPropertyValue('overflow-y')).toBe('hidden')
+      expect(scrollContainer.style.getPropertyPriority('overflow-y')).toBe('important')
+      expect(tableScroller.style.getPropertyValue('overflow-x')).toBe('auto')
+      expect(tableScroller.style.getPropertyValue('overflow-y')).toBe('hidden')
+
+      scrollContainer.scrollLeft = 0
+      scrollContainer.scrollTop = 0
+      controller.set(false)
+
+      expect(scrollContainer.style.getPropertyValue('overflow-x')).toBe('auto')
+      expect(scrollContainer.style.getPropertyPriority('overflow-x')).toBe('important')
+      expect(scrollContainer.style.getPropertyValue('overflow-y')).toBe('scroll')
+      expect(scrollContainer.style.getPropertyPriority('overflow-y')).toBe('')
+      expect(scrollContainer.scrollLeft).toBe(31)
+      expect(scrollContainer.scrollTop).toBe(47)
+      scrollContainer.remove()
+    })
+
+    it('does not lock a resolved scroller inside the fullscreen table', () => {
+      controller.destroy()
+      const tableScroller = document.createElement('div')
+      tableScroller.style.overflowX = 'auto'
+      tableScroller.style.overflowY = 'auto'
+      host.appendChild(tableScroller)
+      controller = new TableFullscreenController(host, () => tableScroller)
+
+      controller.set(true)
+
+      expect(tableScroller.style.overflowX).toBe('auto')
+      expect(tableScroller.style.overflowY).toBe('auto')
+    })
+
+    it('does not lock an unrelated connected scroller', () => {
+      controller.destroy()
+      const unrelatedScroller = document.createElement('div')
+      unrelatedScroller.style.overflowX = 'auto'
+      unrelatedScroller.style.overflowY = 'scroll'
+      document.body.appendChild(unrelatedScroller)
+      controller = new TableFullscreenController(host, () => unrelatedScroller)
+
+      controller.set(true)
+
+      expect(unrelatedScroller.style.overflowX).toBe('auto')
+      expect(unrelatedScroller.style.overflowY).toBe('scroll')
+      unrelatedScroller.remove()
+    })
   })
 
   describe('editor scroll anchor', () => {
@@ -298,6 +374,24 @@ describe('TableFullscreenController', () => {
     it('is safe to call twice', () => {
       controller.destroy()
       expect(() => controller.destroy()).not.toThrow()
+    })
+
+    it('restores the resolved background scroller when destroyed fullscreen', () => {
+      controller.destroy()
+      const scrollContainer = document.createElement('div')
+      scrollContainer.style.overflow = 'auto'
+      scrollContainer.appendChild(host)
+      document.body.appendChild(scrollContainer)
+      controller = new TableFullscreenController(host, () => scrollContainer)
+
+      controller.set(true)
+      expect(getComputedStyle(scrollContainer).overflowX).toBe('hidden')
+
+      controller.destroy()
+      expect(scrollContainer.style.overflow).toBe('auto')
+      expect(scrollContainer.style.getPropertyValue('overflow-x')).toBe('auto')
+      expect(scrollContainer.style.getPropertyValue('overflow-y')).toBe('auto')
+      scrollContainer.remove()
     })
   })
 

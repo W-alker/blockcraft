@@ -1,5 +1,8 @@
 import {TableBlockComponent} from "./table.block";
 import {TableCellBlockComponent} from "./table-cell.block";
+import {EditableBlockComponent} from "../../framework";
+import {InlineRuntime} from "../../framework/block-std/inline/runtime/inline-runtime";
+import {registerInlinePaginationAccess} from "../../framework/block-std/inline/runtime/inline-pagination-access";
 import {BlockSelection} from "../../framework/modules/selection/blockSelection";
 import {BehaviorSubject, Subject} from "rxjs";
 import {isNativeInputTarget} from "../../framework/utils/node-search";
@@ -1310,6 +1313,33 @@ describe("TableBlockComponent cell drag native-selection handoff", () => {
 });
 
 describe("TableBlockComponent pagination hot-path caches", () => {
+  it("rechecks cell-flow health before returning from the table break cache", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const grid = {};
+    const breaks = [{
+      kind: "cell-flow" as const,
+      rowId: "row-1",
+      cells: [{
+        cellId: "cell-1",
+        anchor: {kind: "cell-end" as const},
+        gap: 40,
+        backdropOffset: 20,
+        backdropHeight: 10,
+      }],
+      mask: {top: 80, height: 40, backdropOffset: 20, backdropHeight: 10},
+    }];
+    table.tableBody = document.createElement("tbody");
+    Object.defineProperty(table, "props", {value: {rowHead: false}});
+    table._getTableModelGrid = () => grid;
+    table._appliedPaginationBreakSig = JSON.stringify(breaks);
+    table._appliedPaginationGrid = grid;
+    const applyCellFlow = spyOn(table, "_applyCellFlowProjection");
+
+    table._renderPaginationBreaks(breaks);
+
+    expect(applyCellFlow).toHaveBeenCalledOnceWith(breaks);
+  });
+
   it("suspends table-local pagination DOM in fullscreen and replays the latest breaks on exit", () => {
     const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
     const initialBreaks = [{beforeRowId: "row-1", gap: 40}];
@@ -1415,6 +1445,7 @@ describe("TableBlockComponent pagination hot-path caches", () => {
 
   it("allows a rowspan boundary after the merged cell content has ended", () => {
     const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    table._layoutDistanceFromBcr = (distance: number) => distance;
     const grid = {};
     const content = document.createElement("div");
     content.getBoundingClientRect = () => new DOMRect(0, 20, 100, 130);
@@ -1481,8 +1512,9 @@ describe("TableBlockComponent pagination hot-path caches", () => {
 
   it("keeps the first Block boundary for a vertically aligned short cell", () => {
     const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    table._layoutDistanceFromBcr = (distance: number) => distance / 1.25;
     const childElement = document.createElement("div");
-    childElement.getBoundingClientRect = () => new DOMRect(0, 1_500, 100, 50);
+    childElement.getBoundingClientRect = () => new DOMRect(0, 1_875, 125, 62.5);
     const cell = {
       id: "cell-short",
       getChildrenBlocks: () => [{id: "first-child", hostElement: childElement}],
@@ -1506,6 +1538,57 @@ describe("TableBlockComponent pagination hot-path caches", () => {
         {offset: 1_550, anchor: {kind: "cell-end"}},
       ],
     });
+  });
+
+  it("converts the measured visual line guard into table layout pixels", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    table._layoutDistanceFromBcr = (distance: number) => distance / 1.25;
+    const childHost = document.createElement("div");
+    const container = document.createElement("div");
+    childHost.appendChild(container);
+    childHost.getBoundingClientRect = () => new DOMRect(0, 0, 125, 200);
+    container.getBoundingClientRect = () => new DOMRect(0, 0, 125, 200);
+    const runtime = {};
+    const release = registerInlinePaginationAccess(runtime, {
+      apply: () => true,
+      clear: () => undefined,
+      measureLineStarts: () => [{
+        offset: 5,
+        top: 50,
+        visualGuardHeight: 25,
+      }],
+    });
+    const child = Object.create(EditableBlockComponent.prototype);
+    Object.defineProperties(child, {
+      id: {value: "paragraph-1"},
+      hostElement: {value: childHost},
+      containerElement: {value: container},
+      runtime: {value: runtime},
+    });
+    const cell = {
+      id: "cell-1",
+      getChildrenBlocks: () => [child],
+    };
+
+    try {
+      const input = table._measureSingleCellFlow(
+        cell,
+        0,
+        160,
+        0,
+        100,
+        1,
+        {continuations: 0, safeAnchors: 0},
+      );
+
+      expect(input?.points[0]).toEqual({
+        offset: 40,
+        anchor: {kind: "text", blockId: "paragraph-1", offset: 5},
+        requiredTail: 20,
+      });
+    } finally {
+      release();
+    }
   });
 
   it("finishes an empty visible cell without reserving the oversized row stride", () => {
@@ -1557,12 +1640,19 @@ describe("TableBlockComponent pagination hot-path caches", () => {
       {id: "paragraph-1", hostElement: paragraph},
       {id: "paragraph-2", hostElement: next},
     ];
-    table.getChildrenBlocks = () => [{getChildrenBlocks: () => [cell]}];
+    table.getChildrenBlocks = () => [{id: "row-1", getChildrenBlocks: () => [cell]}];
     table._cellFlowSig = "";
     table._cellFlowBlockOffsets = new Map();
     table._cellFlowMasks = new Set();
     table._cellFlowRuntimes = new Set();
-    table.tableWrapper = {nativeElement: document.createElement("div")};
+    table._cellFlowRuntimeGaps = new Map();
+    table._cellFlowAnchorOwners = new Map();
+    const tableWrapper = document.createElement("div");
+    tableWrapper.appendChild(document.createElement("table"));
+    document.body.appendChild(tableWrapper);
+    table.hostElement = tableWrapper;
+    table._stylePositionFromBcrDistance = (distance: number) => distance;
+    table.tableWrapper = {nativeElement: tableWrapper};
 
     const naturalTop = paragraph.getBoundingClientRect().top;
     const naturalNextTop = next.getBoundingClientRect().top;
@@ -1631,5 +1721,84 @@ describe("TableBlockComponent pagination hot-path caches", () => {
     expect(paragraph.getBoundingClientRect().top).toBeCloseTo(naturalTop, 1);
     expect(next.getBoundingClientRect().top).toBeCloseTo(naturalNextTop, 1);
     cellHost.remove();
+    tableWrapper.remove();
+  });
+
+  it("restores a revoked text gap before reusing the same cell-flow mask", () => {
+    const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+    const wrapperHost = document.createElement("div");
+    const tableElement = document.createElement("table");
+    const body = document.createElement("tbody");
+    const rowElement = document.createElement("tr");
+    const cellHost = document.createElement("td");
+    const childrenWrapper = document.createElement("div");
+    const paragraphHost = document.createElement("p");
+    const editContainer = document.createElement("span");
+    childrenWrapper.className = "table-cell__children-wrapper";
+    paragraphHost.appendChild(editContainer);
+    childrenWrapper.appendChild(paragraphHost);
+    cellHost.appendChild(childrenWrapper);
+    rowElement.appendChild(cellHost);
+    body.appendChild(rowElement);
+    tableElement.appendChild(body);
+    wrapperHost.appendChild(tableElement);
+    document.body.appendChild(wrapperHost);
+
+    const runtime = new InlineRuntime(editContainer, new Map());
+    runtime.render([{insert: "abcdef"}]);
+    const editable = Object.create(EditableBlockComponent.prototype);
+    Object.defineProperties(editable, {
+      id: {value: "paragraph-1"},
+      hostElement: {value: paragraphHost},
+      containerElement: {value: editContainer},
+      runtime: {value: runtime},
+    });
+    const cell = Object.create(TableCellBlockComponent.prototype);
+    Object.defineProperties(cell, {
+      id: {value: "cell-1"},
+      hostElement: {value: cellHost},
+    });
+    cell.getChildrenBlocks = () => [editable];
+    table.getChildrenBlocks = () => [{id: "row-1", getChildrenBlocks: () => [cell]}];
+    table.hostElement = wrapperHost;
+    table.tableWrapper = {nativeElement: wrapperHost};
+    table._stylePositionFromBcrDistance = (distance: number) => distance;
+    table._cellFlowSig = "";
+    table._cellFlowBlockOffsets = new Map();
+    table._cellFlowMasks = new Set();
+    table._cellFlowRuntimes = new Set();
+    table._cellFlowRuntimeGaps = new Map();
+    table._cellFlowAnchorOwners = new Map();
+    const breaks = [{
+      kind: "cell-flow" as const,
+      rowId: "row-1",
+      cells: [{
+        cellId: "cell-1",
+        anchor: {kind: "text" as const, blockId: "paragraph-1", offset: 3},
+        gap: 60,
+        backdropOffset: 30,
+        backdropHeight: 20,
+      }],
+      mask: {top: 0, height: 60, backdropOffset: 30, backdropHeight: 20},
+    }];
+
+    table._applyCellFlowProjection(breaks);
+    expect(editContainer.querySelector("[data-bc-inline-pagination-gap]")).not.toBeNull();
+    expect(wrapperHost.querySelectorAll(".bc-pagination-table-flow-mask").length).toBe(1);
+
+    // Inline model updates deliberately revoke view-only markers first. The
+    // table must not let the unchanged break signature leave only its mask.
+    runtime.applyDelta([{retain: 6}, {insert: "!"}]);
+    expect(editContainer.querySelector("[data-bc-inline-pagination-gap]")).toBeNull();
+
+    table._applyCellFlowProjection(breaks);
+    expect(editContainer.querySelector("[data-bc-inline-pagination-gap]")).not.toBeNull();
+    expect(wrapperHost.querySelectorAll(".bc-pagination-table-flow-mask").length).toBe(1);
+
+    runtime.destroy();
+    table._applyCellFlowProjection(breaks);
+    expect(wrapperHost.querySelector(".bc-pagination-table-flow-mask")).toBeNull();
+
+    wrapperHost.remove();
   });
 });

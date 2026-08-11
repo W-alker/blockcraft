@@ -55,6 +55,14 @@ test('paginated table fullscreen fills the viewport and keeps cell input editabl
       ng: {getComponent: (target: Element) => any}
     }).ng
     const component = debug.getComponent(host)
+    const backgroundScroller = component.doc.scrollContainer as HTMLElement
+    const backgroundBefore = {
+      overflowX: getComputedStyle(backgroundScroller).overflowX,
+      overflowY: getComputedStyle(backgroundScroller).overflowY,
+      scrollLeft: backgroundScroller.scrollLeft,
+      scrollTop: backgroundScroller.scrollTop,
+      maxScrollLeft: Math.max(0, backgroundScroller.scrollWidth - backgroundScroller.clientWidth),
+    }
     component._applyPaginationBreaks([
       {beforeRowId: projection.beforeRowId, gap: 48},
       {
@@ -62,7 +70,11 @@ test('paginated table fullscreen fills the viewport and keeps cell input editabl
         rowId: projection.rowId,
         cells: [{
           cellId: projection.cellId,
-          anchor: {kind: 'cell-end'},
+          anchor: {
+            kind: 'text',
+            blockId: projection.paragraphId,
+            offset: Math.min(3, Math.max(1, projection.initialText.length - 1)),
+          },
           gap: 48,
           backdropOffset: 14,
           backdropHeight: 20,
@@ -73,24 +85,71 @@ test('paginated table fullscreen fills the viewport and keeps cell input editabl
     const before = {
       masks: host.querySelectorAll('.bc-pagination-table-flow-mask').length,
       spacers: host.querySelectorAll('tr.bc-pagination-spacer').length,
+      textGaps: host.querySelectorAll('[data-bc-inline-pagination-gap]').length,
     }
     component.setFullscreen(true)
+    const after = {
+      masks: host.querySelectorAll('.bc-pagination-table-flow-mask').length,
+      spacers: host.querySelectorAll('tr.bc-pagination-spacer').length,
+      textGaps: host.querySelectorAll('[data-bc-inline-pagination-gap]').length,
+    }
+    component.setFullscreen(false)
+    const replayed = {
+      masks: host.querySelectorAll('.bc-pagination-table-flow-mask').length,
+      spacers: host.querySelectorAll('tr.bc-pagination-spacer').length,
+      textGaps: host.querySelectorAll('[data-bc-inline-pagination-gap]').length,
+    }
+    component.setFullscreen(true)
+    const tableScroller = host.querySelector<HTMLElement>('.table-scrollable')!
+    const root = host.closest<HTMLElement>('[data-blockcraft-root="true"]')!
     return {
+      backgroundBefore,
       before,
-      after: {
-        masks: host.querySelectorAll('.bc-pagination-table-flow-mask').length,
-        spacers: host.querySelectorAll('tr.bc-pagination-spacer').length,
+      after,
+      replayed,
+      fullscreen: {
+        backgroundOverflowX: getComputedStyle(backgroundScroller).overflowX,
+        backgroundOverflowY: getComputedStyle(backgroundScroller).overflowY,
+        backgroundScrollLeft: backgroundScroller.scrollLeft,
+        backgroundScrollTop: backgroundScroller.scrollTop,
+        backgroundMaxScrollLeft: Math.max(
+          0,
+          backgroundScroller.scrollWidth - backgroundScroller.clientWidth,
+        ),
+        hostOverflowX: getComputedStyle(host).overflowX,
+        hostOverflowY: getComputedStyle(host).overflowY,
+        tableOverflowX: getComputedStyle(tableScroller).overflowX,
+        tableOverflowY: getComputedStyle(tableScroller).overflowY,
+        tableMaxScrollLeft: Math.max(0, tableScroller.scrollWidth - tableScroller.clientWidth),
+        rootLeft: getComputedStyle(root).left,
+        rootTransform: getComputedStyle(root).transform,
       },
     }
   }, {
     beforeRowId: target.rowIds[1],
     rowId: target.rowIds[0],
     cellId: target.cellId,
+    paragraphId: target.paragraphId,
+    initialText: target.initialText,
   })
-  expect(projectionState).toEqual({
-    before: {masks: 1, spacers: 1},
-    after: {masks: 0, spacers: 0},
+  expect(projectionState.before).toEqual({masks: 1, spacers: 1, textGaps: 1})
+  expect(projectionState.after).toEqual({masks: 0, spacers: 0, textGaps: 0})
+  expect(projectionState.replayed).toEqual(projectionState.before)
+  expect(projectionState.fullscreen).toMatchObject({
+    backgroundOverflowX: 'hidden',
+    backgroundOverflowY: 'hidden',
+    backgroundScrollLeft: projectionState.backgroundBefore.scrollLeft,
+    backgroundScrollTop: projectionState.backgroundBefore.scrollTop,
+    hostOverflowX: 'hidden',
+    hostOverflowY: 'auto',
+    tableOverflowX: 'auto',
+    tableOverflowY: 'hidden',
+    tableMaxScrollLeft: 0,
+    rootLeft: '0px',
+    rootTransform: 'none',
   })
+  expect(projectionState.fullscreen.backgroundMaxScrollLeft)
+    .toBeLessThanOrEqual(projectionState.backgroundBefore.maxScrollLeft + 1)
 
   await expect(table).toHaveClass(/\bis-fullscreen\b/)
   await expect(page.locator('body')).toHaveClass(/\bbc-table-fullscreen-lock\b/)
@@ -124,7 +183,40 @@ test('paginated table fullscreen fills the viewport and keeps cell input editabl
     element.textContent?.replace(/[\u200b-\u200d\ufeff]/g, '') ?? '',
   )).toBe(expectedText)
 
+  const expectedProjectionAfterExit = await table.evaluate(host => {
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => any}
+    }).ng
+    const breaks = debug.getComponent(host)._lastPaginationBreaks as Array<{
+      kind?: string
+    }>
+    return {
+      masks: breaks.filter(value => value.kind === 'cell-flow').length,
+      spacers: breaks.filter(value => value.kind === undefined).length,
+    }
+  })
+
   await page.keyboard.press('Escape')
   await expect(table).not.toHaveClass(/\bis-fullscreen\b/)
   await expect(page.locator('body')).not.toHaveClass(/\bbc-table-fullscreen-lock\b/)
+  await expect(table.locator('.bc-pagination-table-flow-mask')).toHaveCount(
+    expectedProjectionAfterExit.masks,
+  )
+  await expect(table.locator('tr.bc-pagination-spacer')).toHaveCount(
+    expectedProjectionAfterExit.spacers,
+  )
+  const backgroundAfter = await table.evaluate(host => {
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => any}
+    }).ng
+    const backgroundScroller = debug.getComponent(host).doc.scrollContainer as HTMLElement
+    return {
+      overflowX: getComputedStyle(backgroundScroller).overflowX,
+      overflowY: getComputedStyle(backgroundScroller).overflowY,
+    }
+  })
+  expect(backgroundAfter).toEqual({
+    overflowX: projectionState.backgroundBefore.overflowX,
+    overflowY: projectionState.backgroundBefore.overflowY,
+  })
 })

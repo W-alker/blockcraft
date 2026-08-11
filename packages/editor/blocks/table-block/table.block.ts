@@ -172,6 +172,18 @@ interface TableCellFlowBlockOffsetSnapshot {
   priority: string
 }
 
+interface TableCellFlowRuntimeGap {
+  offset: number
+  height: number
+  backdropOffset: number
+  backdropHeight: number
+}
+
+interface TableCellFlowAnchorOwner {
+  rowId: string
+  rowElement: Element | null
+}
+
 function applyPaginationGapStyle(
   element: HTMLElement,
   height: number,
@@ -557,6 +569,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _cellFlowBlockOffsets = new Map<HTMLElement, TableCellFlowBlockOffsetSnapshot>()
   private _cellFlowMasks = new Set<HTMLElement>()
   private _cellFlowRuntimes = new Set<object>()
+  /** Same-signature health check; bounded by the number of actual continuations. */
+  private _cellFlowRuntimeGaps = new Map<object, TableCellFlowRuntimeGap[]>()
+  private _cellFlowAnchorOwners = new Map<HTMLElement, TableCellFlowAnchorOwner>()
   private _lastPaginationBreaks: TablePaginationBreak[] = []
   /**
    * 全屏是连续表格编辑视角：纸张 backdrop 已被隔离，表格内部的 spacer / inline gap /
@@ -2661,8 +2676,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       const r = tr.getBoundingClientRect()
       rows.push({
         id: rowBlocks[dataIdx]?.id ?? (tr.getAttribute('data-block-id') ?? ''),
-        top: r.top - hostTop - accGap,
-        bottom: r.bottom - hostTop - accGap,
+        // Pagination geometry is expressed in layout px (offsetHeight,
+        // contentHeight). BCR is visual px under CSS zoom, so mixing it here
+        // shifts cell-flow anchors away from the table mask at non-100% scale.
+        top: this._layoutDistanceFromBcr(r.top - hostTop) - accGap,
+        bottom: this._layoutDistanceFromBcr(r.bottom - hostTop) - accGap,
         coveredFromAbove: covered[dataIdx] ?? false,
         coveredByContentMerge: coveredByContent[dataIdx] ?? false,
       })
@@ -2795,7 +2813,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         if (!element) continue
         const rect = element.getBoundingClientRect()
         if (!Number.isFinite(rect.bottom)) continue
-        contentBottom = Math.max(contentBottom, rect.bottom - hostTop)
+        contentBottom = Math.max(
+          contentBottom,
+          this._layoutDistanceFromBcr(rect.bottom - hostTop),
+        )
       }
 
       // 缺失/断连 DOM 时保持旧的保守语义，不能凭空允许一个可能腰斩内容的切点。
@@ -2974,14 +2995,15 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     for (let childIndex = 0; childIndex < children.length; childIndex++) {
       const child = children[childIndex]
       const childRect = child.hostElement.getBoundingClientRect()
+      const childTop = this._layoutDistanceFromBcr(childRect.top - hostTop)
       // Keep the first child's top as an explicit boundary too. A short cell
       // may be vertically centered inside a multi-page row, leaving more than
       // one page of safe empty prefix before this boundary.
-      if (childIndex > 0 || childRect.top - hostTop - rowOrigin > 0.01) {
+      if (childIndex > 0 || childTop - rowOrigin > 0.01) {
         if (budget.safeAnchors >= TABLE_CELL_FLOW_MAX_SAFE_ANCHORS) return null
         budget.safeAnchors++
         points.push({
-          offset: childRect.top - hostTop - rowOrigin,
+          offset: childTop - rowOrigin,
           anchor: {kind: 'block', blockId: child.id},
         })
       }
@@ -2989,7 +3011,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       if (child instanceof EditableBlockComponent) {
         const requestedLineSamples = Math.max(
           TABLE_CELL_FLOW_MIN_LINE_SAMPLES,
-          Math.ceil(Math.max(0, childRect.height) / contentHeight)
+          Math.ceil(
+            Math.max(0, this._layoutDistanceFromBcr(childRect.height))
+              / contentHeight,
+          )
             * TABLE_CELL_FLOW_LINE_SAMPLES_PER_PAGE,
         )
         const availableLineSamples = Math.min(
@@ -3016,8 +3041,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         const containerTop = child.containerElement.getBoundingClientRect().top
         usableLines.forEach(line => {
           points.push({
-            offset: containerTop + line.top - hostTop - rowOrigin,
+            offset: this._layoutDistanceFromBcr(
+              containerTop + line.top - hostTop,
+            ) - rowOrigin,
             anchor: {kind: 'text', blockId: child.id, offset: line.offset},
+            requiredTail: this._layoutDistanceFromBcr(
+              line.visualGuardHeight,
+            ),
           })
         })
       }
@@ -3034,9 +3064,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         0.01,
         Math.min(
           rowStride,
-          lastChild.hostElement.getBoundingClientRect().bottom
+          this._layoutDistanceFromBcr(
+            lastChild.hostElement.getBoundingClientRect().bottom - hostTop,
+          )
             + marginBottom
-            - hostTop
             - rowOrigin,
         ),
       )
@@ -3081,6 +3112,10 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     if (!this.tableBody) return
     const breakSig = JSON.stringify(breaks)
     const modelGrid = this._getTableModelGrid()
+    const cellFlowBreaks = breaks.filter(
+      (value): value is Extract<TablePaginationBreak, {kind: 'cell-flow'}> =>
+        'kind' in value && value.kind === 'cell-flow',
+    )
     // 同一模型投影 + 同一断点的 ResizeObserver 反馈轮次无需再构建 row map、
     // 拆分矩阵或触碰 DOM。表头克隆目前禁用；若恢复，则 rowHead 仍走完整签名校验。
     if (
@@ -3089,16 +3124,16 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       && modelGrid !== null
       && modelGrid === this._appliedPaginationGrid
     ) {
+      // InlineRuntime revokes its zero-model marker before text mutations.
+      // Numeric breaks can remain identical, so the table-level cache still
+      // has to run the bounded cell-flow health check before returning.
+      this._applyCellFlowProjection(cellFlowBreaks)
       return
     }
     this._invalidateColumnResizeHandle()
     const rowBreaks = breaks.filter(
       (value): value is {beforeRowId: string; gap: number} =>
         !('kind' in value),
-    )
-    const cellFlowBreaks = breaks.filter(
-      (value): value is Extract<TablePaginationBreak, {kind: 'cell-flow'}> =>
-        'kind' in value && value.kind === 'cell-flow',
     )
     const next: Record<string, number> = {}
     for (const b of rowBreaks) {
@@ -3170,38 +3205,89 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     breaks: Array<Extract<TablePaginationBreak, {kind: 'cell-flow'}>>,
   ): void {
     const signature = JSON.stringify(breaks)
-    if (signature === this._cellFlowSig) return
-    this._clearCellFlowProjection()
-    if (!breaks.length) return
+    if (!breaks.length) {
+      this._clearCellFlowProjection()
+      return
+    }
 
-    const cells = new Map<string, TableCellBlockComponent>()
-    for (const row of this.getChildrenBlocks()) {
+    // Preserve the old O(continuations) hot path. Inline model mutations revoke
+    // their markers without changing numeric breaks, so a signature match must
+    // still re-apply runtime gaps and verify the small set of published owners.
+    if (signature === this._cellFlowSig) {
+      const projectionStillMatches = [...this._cellFlowBlockOffsets.keys()]
+        .every(target => target.isConnected)
+        && [...this._cellFlowAnchorOwners].every(([cellHost, owner]) => {
+          if (!cellHost.isConnected) return false
+          const currentRow = cellHost.closest('tr')
+          if (currentRow !== owner.rowElement) return false
+          const currentRowId = currentRow?.getAttribute('data-block-id')
+          return !currentRowId || currentRowId === owner.rowId
+        })
+        && this._cellFlowMasks.size === breaks.length
+        && [...this._cellFlowMasks].every(mask =>
+          mask.isConnected && mask.parentElement === this.tableWrapper.nativeElement)
+      if (projectionStillMatches) {
+        for (const [runtime, gaps] of this._cellFlowRuntimeGaps) {
+          if (!applyInlinePaginationGaps(runtime, gaps)) {
+            this._clearCellFlowProjection()
+            return
+          }
+        }
+        return
+      }
+      this._clearCellFlowProjection()
+    }
+
+    const rows = this.getChildrenBlocks()
+    const cellsByRow = new Map<string, Map<string, TableCellBlockComponent>>()
+    for (const row of rows) {
+      const cells = new Map<string, TableCellBlockComponent>()
       for (const block of row.getChildrenBlocks()) {
         if (block instanceof TableCellBlockComponent) cells.set(block.id, block)
       }
+      cellsByRow.set(row.id, cells)
     }
-    const runtimeGaps = new Map<object, Array<{
-      offset: number
-      height: number
-      backdropOffset: number
-      backdropHeight: number
-    }>>()
+    const runtimeGaps = new Map<object, TableCellFlowRuntimeGap[]>()
     const blockOffsets = new Map<HTMLElement, {
       offset: number
       wrapper: HTMLElement
       previous: HTMLElement | null
     }>()
+    const anchorOwners = new Map<HTMLElement, TableCellFlowAnchorOwner>()
 
     for (const pageBreak of breaks) {
+      // A flow mask and every continuation gap are one visual transaction.
+      // Model/DOM updates can temporarily invalidate a measured row or anchor;
+      // publishing only the mask would cover still-unprojected cell content.
+      const rowCells = cellsByRow.get(pageBreak.rowId)
+      if (!rowCells) {
+        this._clearCellFlowProjection()
+        return
+      }
       for (const gap of pageBreak.cells) {
-        const cell = cells.get(gap.cellId)
-        if (!cell) continue
+        const cell = rowCells.get(gap.cellId)
+        if (!cell) {
+          this._clearCellFlowProjection()
+          return
+        }
+        const cellHost = cell.hostElement
+        if (!(cellHost instanceof HTMLElement) || !cellHost.isConnected) {
+          this._clearCellFlowProjection()
+          return
+        }
+        anchorOwners.set(cellHost, {
+          rowId: pageBreak.rowId,
+          rowElement: cellHost.closest('tr'),
+        })
         const children = cell.getChildrenBlocks()
         const anchor = gap.anchor
 
         if (anchor.kind === 'text') {
           const editable = children.find(child => child.id === anchor.blockId)
-          if (!(editable instanceof EditableBlockComponent)) continue
+          if (!(editable instanceof EditableBlockComponent)) {
+            this._clearCellFlowProjection()
+            return
+          }
           const runtime = editable.runtime
           const list = runtimeGaps.get(runtime) ?? []
           list.push({
@@ -3218,11 +3304,17 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         const wrapper = cell.hostElement.querySelector<HTMLElement>(
           ':scope > .table-cell__children-wrapper',
         )
-        if (!wrapper) continue
+        if (!wrapper) {
+          this._clearCellFlowProjection()
+          return
+        }
         const target = anchor.kind === 'block'
           ? children.find(child => child.id === anchor.blockId)?.hostElement ?? null
           : children[0]?.hostElement ?? wrapper.firstElementChild
-        if (!(target instanceof HTMLElement)) continue
+        if (!(target instanceof HTMLElement)) {
+          this._clearCellFlowProjection()
+          return
+        }
         const childIndex = children.findIndex(child => child.hostElement === target)
         const previous = childIndex > 0
           ? children[childIndex - 1]?.hostElement ?? null
@@ -3235,6 +3327,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         }
       }
     }
+
+    this._clearCellFlowProjection()
 
     // 先批量读取自然 margin，再批量写入，避免 read/write 交错触发布局抖动。
     // 块边界只需要把锚点及其后续内容下推；直接复用真实块的 margin，不再向
@@ -3286,21 +3380,30 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
 
     const table = this.tableWrapper.nativeElement.querySelector<HTMLElement>('table')
-    if (table) {
-      const tableTopFromHost = this._stylePositionFromBcrDistance(
-        table.getBoundingClientRect().top
-          - this.hostElement.getBoundingClientRect().top,
-      )
-      for (const pageBreak of breaks) {
-        const mask = buildTablePaginationMask(
-          pageBreak.mask,
-          table,
-          table.offsetTop + pageBreak.mask.top - tableTopFromHost,
-        )
-        this.tableWrapper.nativeElement.appendChild(mask)
-        this._cellFlowMasks.add(mask)
-      }
+    if (!table) {
+      this._clearCellFlowProjection()
+      return
     }
+    const tableTopFromHost = this._stylePositionFromBcrDistance(
+      table.getBoundingClientRect().top
+        - this.hostElement.getBoundingClientRect().top,
+    )
+    for (const pageBreak of breaks) {
+      const mask = buildTablePaginationMask(
+        pageBreak.mask,
+        table,
+        table.offsetTop + pageBreak.mask.top - tableTopFromHost,
+      )
+      this.tableWrapper.nativeElement.appendChild(mask)
+      this._cellFlowMasks.add(mask)
+    }
+    this._cellFlowRuntimeGaps = new Map(
+      [...runtimeGaps].map(([runtime, gaps]) => [
+        runtime,
+        gaps.map(gap => ({...gap})),
+      ]),
+    )
+    this._cellFlowAnchorOwners = anchorOwners
     this._cellFlowSig = signature
   }
 
@@ -3317,6 +3420,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this._cellFlowBlockOffsets.clear()
     for (const mask of this._cellFlowMasks) mask.remove()
     this._cellFlowMasks.clear()
+    this._cellFlowRuntimeGaps.clear()
+    this._cellFlowAnchorOwners.clear()
     this._cellFlowSig = ''
   }
 

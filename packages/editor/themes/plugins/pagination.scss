@@ -107,12 +107,14 @@
 
 }
 
-/* 分页 root 用 transform 与纸张共享中线，但 transform 也会把后代的
+/* 分页 root 用 left:50% + transform 与纸张共享中线，但 transform 也会把后代的
    position:fixed 困在 root 坐标系。表格全屏期间由既有 body lock 生命周期
-   临时解除这一个 BlockCraft 自有 transform，使表格继续留在原 DOM/编辑树中，
-   同时让 inset:0 真正相对 viewport；退出后正常分页中线自动恢复。 */
+   临时解除这一个 BlockCraft 自有 transform，并同步归零配套的 left 偏移；前者让
+   inset:0 真正相对 viewport，后者避免背景 scrollContainer 多出半张纸的横向 overflow。
+   退出后正常分页中线自动恢复。 */
 body.bc-table-fullscreen-lock
   [data-blockcraft-root="true"].bc-paginated.bc-table-fullscreen-isolation-container {
+  left: 0;
   transform: none;
 }
 

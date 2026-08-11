@@ -15,6 +15,19 @@ interface FullscreenViewAnchor {
   relativeTop: number
 }
 
+interface InlineStyleSnapshot {
+  value: string
+  priority: string
+}
+
+interface FullscreenScrollLock {
+  scrollContainer: HTMLElement
+  scrollLeft: number
+  scrollTop: number
+  overflowX: InlineStyleSnapshot
+  overflowY: InlineStyleSnapshot
+}
+
 /**
  * Manages the local "fullscreen view" state for a TableBlockComponent.
  *
@@ -71,6 +84,7 @@ export class TableFullscreenController {
   private viewAnchorStableFrames = 0
   private flowPlaceholder: HTMLElement | null = null
   private originalHostZoom: string | null = null
+  private backgroundScrollLock: FullscreenScrollLock | null = null
   private isolationContainers = new Set<HTMLElement>()
   private isolationBranches = new Set<HTMLElement>()
   private isolationObserver: MutationObserver | null = null
@@ -135,6 +149,7 @@ export class TableFullscreenController {
    * Side effects (when entering):
    * - Exits any other table that is currently fullscreen.
    * - Adds `.is-fullscreen` to host, `.bc-table-fullscreen-lock` to body.
+   * - Locks the resolved background editor scroller without touching table-local scrollers.
    * - Attaches capture-phase Escape handler on `document`.
    *
    * Side effects (when leaving): reverses all of the above.
@@ -152,6 +167,7 @@ export class TableFullscreenController {
       }
       const normalFlowRect = this.captureViewAnchor()
       this.installFlowPlaceholder(normalFlowRect)
+      this.installBackgroundScrollLock()
       TableFullscreenController.current = new WeakRef(this)
     } else if (TableFullscreenController.current?.deref() === this) {
       TableFullscreenController.current = null
@@ -174,6 +190,7 @@ export class TableFullscreenController {
       this.removeDocumentScaleCompensation()
       this.removeViewIsolation()
       ownerDocument.body.classList.remove(BODY_CLASS)
+      this.removeBackgroundScrollLock()
       ownerDocument.removeEventListener('keydown', this.escHandler, { capture: true })
       ownerDocument.removeEventListener('wheel', this.wheelHandler, { capture: true })
       // 退出全屏 → 重置缩放
@@ -212,6 +229,69 @@ export class TableFullscreenController {
       this.host.style.removeProperty('zoom')
     }
     this.originalHostZoom = null
+  }
+
+  /**
+   * The editor normally scrolls inside `doc.scrollContainer`, not `body`. Safari
+   * paints that ancestor's native scrollbars above a viewport-fixed descendant,
+   * so the body lock alone still exposes the paginated background scrollbars.
+   * Lock only the resolved background scroller and restore its exact inline
+   * overflow declarations and scroll offsets on exit. Descendant scrollers are
+   * deliberately ignored so the table's own horizontal/vertical navigation
+   * remains available while fullscreen is open.
+   */
+  private installBackgroundScrollLock(): void {
+    this.removeBackgroundScrollLock()
+    const scrollContainer = this.resolveScrollContainer()
+    if (
+      !scrollContainer?.isConnected
+      || scrollContainer === this.host
+      || this.host.contains(scrollContainer)
+      || !scrollContainer.contains(this.host)
+    ) {
+      return
+    }
+
+    this.backgroundScrollLock = {
+      scrollContainer,
+      scrollLeft: scrollContainer.scrollLeft,
+      scrollTop: scrollContainer.scrollTop,
+      overflowX: this.captureInlineStyle(scrollContainer, 'overflow-x'),
+      overflowY: this.captureInlineStyle(scrollContainer, 'overflow-y'),
+    }
+    scrollContainer.style.setProperty('overflow-x', 'hidden', 'important')
+    scrollContainer.style.setProperty('overflow-y', 'hidden', 'important')
+  }
+
+  private removeBackgroundScrollLock(): void {
+    const lock = this.backgroundScrollLock
+    if (!lock) return
+    this.backgroundScrollLock = null
+
+    this.restoreInlineStyle(lock.scrollContainer, 'overflow-x', lock.overflowX)
+    this.restoreInlineStyle(lock.scrollContainer, 'overflow-y', lock.overflowY)
+    if (!lock.scrollContainer.isConnected) return
+    lock.scrollContainer.scrollLeft = lock.scrollLeft
+    lock.scrollContainer.scrollTop = lock.scrollTop
+  }
+
+  private captureInlineStyle(element: HTMLElement, property: string): InlineStyleSnapshot {
+    return {
+      value: element.style.getPropertyValue(property),
+      priority: element.style.getPropertyPriority(property),
+    }
+  }
+
+  private restoreInlineStyle(
+    element: HTMLElement,
+    property: string,
+    snapshot: InlineStyleSnapshot,
+  ): void {
+    if (snapshot.value) {
+      element.style.setProperty(property, snapshot.value, snapshot.priority)
+    } else {
+      element.style.removeProperty(property)
+    }
   }
 
   /**
@@ -454,6 +534,7 @@ export class TableFullscreenController {
     this.cancelViewAnchorRestore()
     this.removeFlowPlaceholder()
     this.removeDocumentScaleCompensation()
+    this.removeBackgroundScrollLock()
     this.removeViewIsolation()
     this.host.removeEventListener('compositionstart', this.compositionStartHandler, { capture: true })
     this.host.removeEventListener('compositionend', this.compositionEndHandler, { capture: true })

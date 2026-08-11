@@ -18,6 +18,11 @@ export type TableCellFlowAnchor =
 export interface TableCellFlowPoint {
   offset: number;
   anchor: TableCellFlowAnchor;
+  /**
+   * 选中该切点时，本页在真实锚点之后还必须保留的安全高度。
+   * 它只计入页面/片段的视觉推进，不改变 anchor offset 和 continuation.pageOffset。
+   */
+  requiredTail?: number;
 }
 
 export interface TableCellFlowInput {
@@ -91,7 +96,10 @@ interface CellCursor {
 interface PointSelection {
   point?: TableCellFlowPoint;
   pointIndex: number;
+  /** 单元格自然内容流中的真实推进量。 */
   delta: number;
+  /** 计入 requiredTail 后的页面/虚拟片段推进量。 */
+  pageAdvance: number;
   /** Advance only through the empty prefix before the first child block. */
   emptyPrefix?: boolean;
 }
@@ -155,7 +163,10 @@ export function planTableCellFlow(
       const remaining = contentHeight - pageUsed;
       const rowPageStart = pageUsed;
       const selections = cursors.map(cursor => selectPoint(cursor, remaining));
-      const progress = selections.reduce((max, selection) => Math.max(max, selection.delta), 0);
+      const progress = selections.reduce(
+        (max, selection) => Math.max(max, selection.pageAdvance),
+        0,
+      );
 
       if (progress <= EPSILON) {
         // 当前页已有前序行时，先把整行移到下一页再重新尝试。
@@ -212,7 +223,9 @@ export function cloneTableCellFlowPlan(plan: TableCellFlowPlan): TableCellFlowPl
     splitOffsets: [...plan.splitOffsets],
     segments: plan.segments.map(segment => ({
       ...segment,
-      breakAfter: segment.breakAfter ? cloneBreak(segment.breakAfter) : undefined,
+      ...(segment.breakAfter
+        ? {breakAfter: cloneBreak(segment.breakAfter)}
+        : {}),
     })),
   };
 }
@@ -221,13 +234,24 @@ function selectPoint(
   cursor: CellCursor,
   remaining: number,
 ): PointSelection {
-  if (cursor.ended) return {pointIndex: cursor.pointIndex, delta: 0};
+  if (cursor.ended) {
+    return {pointIndex: cursor.pointIndex, delta: 0, pageAdvance: 0};
+  }
 
   let selectedIndex = cursor.pointIndex;
+  let selectedDelta = 0;
+  let selectedPageAdvance = 0;
   for (let index = cursor.pointIndex + 1; index < cursor.input.points.length; index++) {
     const point = cursor.input.points[index];
-    if (point.offset - cursor.offset > remaining + EPSILON) break;
+    const delta = point.offset - cursor.offset;
+    if (delta > remaining + EPSILON) break;
+    const pageAdvance = delta + (point.requiredTail ?? 0);
+    // A guarded text point can fail while a later unguarded cell-end still
+    // fits. Keep scanning instead of breaking on the guard alone.
+    if (pageAdvance > remaining + EPSILON) continue;
     selectedIndex = index;
+    selectedDelta = delta;
+    selectedPageAdvance = pageAdvance;
   }
   if (selectedIndex === cursor.pointIndex) {
     const nextPoint = cursor.input.points[cursor.pointIndex + 1];
@@ -245,13 +269,19 @@ function selectPoint(
       return {
         pointIndex: cursor.pointIndex,
         delta: remaining,
+        pageAdvance: remaining,
         emptyPrefix: true,
       };
     }
-    return {pointIndex: cursor.pointIndex, delta: 0};
+    return {pointIndex: cursor.pointIndex, delta: 0, pageAdvance: 0};
   }
   const point = cursor.input.points[selectedIndex];
-  return {point, pointIndex: selectedIndex, delta: point.offset - cursor.offset};
+  return {
+    point,
+    pointIndex: selectedIndex,
+    delta: selectedDelta,
+    pageAdvance: selectedPageAdvance,
+  };
 }
 
 function validateRow(row: TableFlowRowInput): void {
@@ -272,6 +302,12 @@ function validateRow(row: TableFlowRowInput): void {
     cell.points.forEach((point, index) => {
       if (!Number.isFinite(point.offset) || point.offset <= previous + EPSILON) {
         throw new TableCellFlowPlanningError(`单元格 ${cell.cellId} 的切点必须严格递增`);
+      }
+      if (
+        point.requiredTail !== undefined
+        && (!Number.isFinite(point.requiredTail) || point.requiredTail < 0)
+      ) {
+        throw new TableCellFlowPlanningError(`单元格 ${cell.cellId} 的切点 requiredTail 无效`);
       }
       if (point.anchor.kind === "text" && (!Number.isInteger(point.anchor.offset) || point.anchor.offset < 0)) {
         throw new TableCellFlowPlanningError(`单元格 ${cell.cellId} 的文字锚点 offset 无效`);
